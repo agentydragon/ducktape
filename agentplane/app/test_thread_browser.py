@@ -215,18 +215,14 @@ async def test_archived_thread_page_survives_deleted_sandbox_and_reload(
         assert await event_logs.events(thread_id, limit=100) == thread_source.entries
 
 
-async def test_switching_threads_starts_at_each_threads_tail(
-    page: Page,
-    db_url: str,
-    store: ThreadStore,
-    event_logs: EventLogStore,
-    ingestion: Ingestion,
-    electric: ElectricService,
-    certificate: BrowserCertificate,
-) -> None:
+async def _seed_navigation_threads(
+    event_logs: EventLogStore, ingestion: Ingestion, store: ThreadStore
+) -> tuple[list[UUID], list[ReplicationSource]]:
+    """Two threads of 130 messages, "Thread N message M", named "Test navigation thread N"."""
     lease = await ingestion.acquire(SANDBOX, timedelta(minutes=1))
     assert lease is not None
-    threads: list[str] = []
+    threads: list[UUID] = []
+    sources: list[ReplicationSource] = []
     for number in range(2):
         source = ReplicationSource()
         source.attached.session_id = f"test-navigation-session-{number}"
@@ -248,8 +244,22 @@ async def test_switching_threads_starts_at_each_threads_tail(
         await ingestion.set_attached(thread, source.attached, lease=lease)
         await ingestion.record(thread, source.entries, lease=lease)
         await store.rename(thread, f"Test navigation thread {number}")
-        threads.append(str(thread))
+        threads.append(thread)
+        sources.append(source)
     await ingestion.release(lease)
+    return threads, sources
+
+
+async def test_switching_threads_starts_at_each_threads_tail(
+    page: Page,
+    db_url: str,
+    store: ThreadStore,
+    event_logs: EventLogStore,
+    ingestion: Ingestion,
+    electric: ElectricService,
+    certificate: BrowserCertificate,
+) -> None:
+    threads, _ = await _seed_navigation_threads(event_logs, ingestion, store)
     directory = get_required_path("_main/agentplane/app/frontend/dist/index.html").parent
     async with (
         app_process(
@@ -276,6 +286,116 @@ async def test_switching_threads_starts_at_each_threads_tail(
             )
             await expect(page.get_by_text(f"Thread {number} message 129", exact=True)).to_be_visible()
         await page.screenshot(path=undeclared_outputs_dir() / "thread-navigation.png")
+
+
+def _older_page_bound(request: Request) -> int | None:
+    """The `entity_index` a read of the page before the oldest row held is bounded by; None for any other request."""
+    body = request.post_data or ""
+    if request.method != "POST" or "entity_index < $1" not in body:
+        return None
+    return int(json.loads(body)["params"]["1"])
+
+
+def _entity_handles(requests: list[Request]) -> set[str]:
+    return {
+        handle
+        for request in requests
+        if "/sync/entities?" in request.url
+        for handle in parse_qs(urlsplit(request.url).query).get("handle", [])
+    }
+
+
+async def test_returning_to_a_thread_reads_only_what_changed_while_the_reader_was_away(
+    page: Page,
+    db_url: str,
+    store: ThreadStore,
+    event_logs: EventLogStore,
+    ingestion: Ingestion,
+    electric: ElectricService,
+    certificate: BrowserCertificate,
+) -> None:
+    threads, sources = await _seed_navigation_threads(event_logs, ingestion, store)
+    directory = get_required_path("_main/agentplane/app/frontend/dist/index.html").parent
+    async with (
+        app_process(
+            db_url, runner_port=0, frontend_directory=directory, sandbox_present=False, electric_url=electric.url
+        ) as app,
+        http2_proxy(app.url, certificate) as ingress,
+    ):
+        requests: list[Request] = []
+
+        # Playwright cannot register a builtin method such as `list.append` as a handler.
+        def record(request: Request) -> None:
+            requests.append(request)
+
+        page.on("request", record)
+
+        def of(thread: UUID, since: int = 0) -> list[Request]:
+            return [request for request in requests[since:] if f"/threads/{thread}/sync/" in request.url]
+
+        async def open_thread(number: int) -> None:
+            async with page.expect_request(f"**/threads/{threads[number]}/sync/scope"):
+                await page.locator(".agentplane-sidebar-row-name", has_text=f"Test navigation thread {number}").click()
+
+        history = page.get_by_role("region", name="Thread history", exact=True)
+        await page.goto(f"{ingress.url}/#/threads/{threads[0]}")
+        await expect(page.get_by_text("Thread 0 message 129", exact=True)).to_be_visible()
+        await history.hover()
+        async with page.expect_request(lambda request: _older_page_bound(request) is not None):
+            await page.mouse.wheel(0, -10_000)
+        await expect(page.get_by_text("Thread 0 message 40", exact=True)).to_be_visible()
+        first_visit = of(threads[0])
+        held_down_to = min(bound for request in first_visit if (bound := _older_page_bound(request)) is not None)
+        (handle,) = _entity_handles(first_visit)
+
+        await open_thread(1)
+        await expect(page.get_by_text("Thread 1 message 129", exact=True)).to_be_visible()
+        # A message lands in the thread while the reader is elsewhere.
+        lease = await ingestion.acquire(SANDBOX, timedelta(minutes=1))
+        assert lease is not None
+        source = sources[0]
+        source.append(
+            event_pb2.Event(
+                item_started=event_pb2.ItemStarted(
+                    item_id="test-navigation-item-away", kind=event_pb2.ITEM_KIND_ASSISTANT_TEXT
+                )
+            )
+        )
+        source.append(
+            event_pb2.Event(
+                item_completed=event_pb2.ItemCompleted(
+                    item_id="test-navigation-item-away", text="Thread 0 message while away"
+                )
+            )
+        )
+        await ingestion.record(threads[0], source.entries[-2:], lease=lease)
+        await ingestion.release(lease)
+
+        mark = len(requests)
+        await open_thread(0)
+        await expect(page.get_by_text("Thread 0 message while away", exact=True)).to_be_visible(timeout=30_000)
+        await page.screenshot(path=undeclared_outputs_dir() / "thread-returned-to.png")
+        returned = of(threads[0], mark)
+        # No row is read again: the thread's log is followed on from where the reader left it.
+        assert not [request for request in returned if request.method == "POST" and "/sync/entities?" in request.url]
+        (read, *_) = [request for request in returned if "/sync/entities?" in request.url]
+        query = parse_qs(urlsplit(read.url).query)
+        assert (query["handle"], query["offset"][0] not in {"now", "-1"}) == ([handle], True)
+        # Nor is a body already held: the one read is the message that arrived.
+        bodies = [
+            len(json.loads(request.post_data or "{}")["params"]) // 2
+            for request in returned
+            if request.method == "POST" and "/sync/chunks/" in request.url
+        ]
+        assert sum(bodies) <= 1
+
+        # The pages loaded before the reader left are still held: the next one is the page before them.
+        await history.hover()
+        async with page.expect_request(lambda request: _older_page_bound(request) is not None) as older:
+            await page.mouse.wheel(0, -10_000)
+        next_page = _older_page_bound(await older.value)
+        assert next_page is not None
+        assert next_page < held_down_to
 
 
 async def test_projection_epoch_replacement_retires_old_requests_and_preserves_draft(

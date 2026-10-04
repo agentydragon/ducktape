@@ -6,6 +6,10 @@
  * scrolls back to, the view state, the commands it is waiting on, the bodies in view — arrive as
  * subsets of those shapes, and every later change to them on the shapes' live logs. A window
  * therefore moves by loading more, never by opening another shape.
+ *
+ * A reader who leaves a thread keeps its window, suspended: the shapes' streams close, and the rows
+ * and bodies stay with the position in each log they were read through. Coming back opens streams
+ * at those positions, so only what changed meanwhile is read.
  */
 import {
   FetchError,
@@ -14,6 +18,7 @@ import {
   snakeToCamel,
   type ColumnMapper,
   type Message,
+  type Offset,
   type Row,
   type SubsetParams,
 } from "@electric-sql/client";
@@ -189,30 +194,43 @@ async function keepingOffset(input: RequestInfo | URL, init?: RequestInit): Prom
   return new Response(response.body, { status: response.status, statusText: response.statusText, headers });
 }
 
+/** How far into a shape's log a reader has applied it: a stream opened here reads on from there. */
+interface ShapePosition {
+  handle: string;
+  offset: Offset;
+}
+
 /**
- * One Electric shape from now: its rows arrive as subsets of it, and as its live changes, followed
- * over SSE. Electric's client long-polls a shape instead once three SSE responses in a row have
- * ended within a second, as Electric's answers to a reader behind the log do.
+ * One Electric shape, from now or from a `ShapePosition`: its rows arrive as subsets of it, and as
+ * its live changes, followed over SSE. Electric's client long-polls a shape instead once three SSE
+ * responses in a row have ended within a second, as Electric's answers to a reader behind the log
+ * do.
  */
 class Shape {
   readonly #abort = new AbortController();
   readonly #stream: ShapeStream<Row>;
   readonly #onAttempt: (failure: string | null) => void;
   // Settles with the shape's first subset. Electric answers that one from the shape's definition
-  // with the handle and offset the stream then follows; later subsets name that handle.
-  #opened: Promise<unknown> | null = null;
+  // with the handle and offset the stream then follows; later subsets name that handle. A shape
+  // opened at a position already has its handle.
+  #opened: Promise<unknown> | null;
   #retrying = false;
+  #position: ShapePosition | null;
 
   constructor(
     url: string,
     onMessages: (messages: Message<Row>[]) => void,
     onError: (error: unknown) => void,
-    onAttempt: (failure: string | null) => void
+    onAttempt: (failure: string | null) => void,
+    from: ShapePosition | null
   ) {
     this.#onAttempt = onAttempt;
+    this.#opened = from === null ? null : Promise.resolve();
+    this.#position = from;
     this.#stream = new ShapeStream({
       url,
-      offset: "now",
+      offset: from?.offset ?? "now",
+      handle: from?.handle,
       log: "changes_only",
       liveSse: true,
       subsetMethod: "POST",
@@ -223,7 +241,31 @@ class Shape {
         if (!this.#abort.signal.aborted) onError(error);
       },
     });
-    this.#stream.subscribe(onMessages);
+    this.#stream.subscribe((messages) => {
+      onMessages(messages);
+      this.#position = messages.some(
+        (message) => !isChangeMessage(message) && message.headers.control === "must-refetch"
+      )
+        ? null
+        : this.#reached();
+    });
+  }
+
+  /**
+   * Where the shape's log has been applied through, or null where nothing yet says so. The client
+   * moves its offset ahead of the messages it ends up delivering (a long poll's offset is in its
+   * headers, read before its body), so the offset is read as each batch is delivered or a subset
+   * answers (the stream is held for it, with nothing half-read), not when asked; and a log that was
+   * just retired has no position until a batch is delivered on its successor.
+   */
+  get position(): ShapePosition | null {
+    return this.#position;
+  }
+
+  #reached(): ShapePosition | null {
+    const { shapeHandle: handle, lastOffset: offset } = this.#stream;
+    // A stream at `now` or `-1` follows on from the log's end when opened, not from its own.
+    return handle === undefined || offset === "now" || offset === "-1" ? null : { handle, offset };
   }
 
   /**
@@ -265,6 +307,7 @@ class Shape {
     // A failed first subset reaches its own caller; the ones after it still go.
     this.#opened ??= request.catch(() => undefined);
     const { data } = await request;
+    this.#position = this.#reached() ?? this.#position;
     return data.map((message) => message.value);
   }
 
@@ -291,6 +334,9 @@ class PayloadShape extends Listeners {
   #version = 0;
   #error: string | null = null;
   #closed = false;
+  #suspended = false;
+  // Where the shape was read through when it was suspended, until it is opened there.
+  #position: ShapePosition | null = null;
 
   constructor(url: string, onGone: () => void, onAttempt: (failure: string | null) => void) {
     super();
@@ -336,9 +382,39 @@ class PayloadShape extends Listeners {
     this.#queue([...this.#requested.values()]);
   };
 
+  /** Stops following the log, keeping the chunks held and where in the log they are read through. */
+  suspend(): void {
+    this.#suspended = true;
+    this.#position = this.#shape?.position ?? null;
+    this.#shape?.close();
+    this.#shape = null;
+  }
+
+  /** Follows the log on from where it was suspended. Where nothing says how far that was, the bodies
+   * held are read again. */
+  resume(): void {
+    this.#suspended = false;
+    if (this.#position === null) this.#queued = [...this.#requested.values()];
+    else {
+      this.#shape = this.#open(this.#position);
+      this.#position = null;
+    }
+    if (this.#queued.length > 0) this.#flush();
+  }
+
   close(): void {
     this.#closed = true;
     this.#shape?.close();
+  }
+
+  #open(from: ShapePosition | null): Shape {
+    return new Shape(
+      this.#url,
+      (messages) => this.#apply(messages),
+      (error) => this.#fail(error),
+      this.#onAttempt,
+      from
+    );
   }
 
   #queue(references: { ownerId: string; generation: string }[]): void {
@@ -348,13 +424,8 @@ class PayloadShape extends Listeners {
   }
 
   #flush(): void {
-    if (this.#closed) return;
-    const shape = (this.#shape ??= new Shape(
-      this.#url,
-      (messages) => this.#apply(messages),
-      (error) => this.#fail(error),
-      this.#onAttempt
-    ));
+    if (this.#closed || this.#suspended) return;
+    const shape = (this.#shape ??= this.#open(null));
     for (const batch of batches(this.#queued.splice(0), SUBSET_BODIES))
       shape.subset(bodySubset(batch)).catch((error: unknown) => {
         if (!shape.closed) this.#fail(error);
@@ -363,10 +434,15 @@ class PayloadShape extends Listeners {
 
   #apply(messages: Message<Row>[]): void {
     let changed = false;
+    let retired = false;
     for (const message of messages) {
+      if (!isChangeMessage(message)) {
+        retired ||= message.headers.control === "must-refetch";
+        continue;
+      }
       // Chunks are insert-only. The field's log carries every body of the thread, and a reader
       // keeps the ones it shows.
-      if (!isChangeMessage(message) || message.headers.operation !== "insert") continue;
+      if (message.headers.operation !== "insert") continue;
       const chunk = chunkSchema.parse(message.value);
       const key = bodyKey(chunk.ownerId, chunk.generation.toString());
       if (!this.#requested.has(key)) continue;
@@ -376,6 +452,8 @@ class PayloadShape extends Listeners {
       changed = true;
     }
     if (changed) this.#changed();
+    // The chunks written while the log was being rebuilt are not on it: read the bodies shown again.
+    if (retired) this.#queue([...this.#requested.values()]);
   }
 
   #fail(error: unknown): void {
@@ -414,9 +492,9 @@ const NO_WINDOW: WindowState = {
 
 /** A thread's rows at one projection epoch: the pages a reader has loaded, and what it waits on. */
 class EpochWindow extends Listeners {
-  readonly scope: ThreadScope;
+  readonly epoch: string;
   readonly #threadId: string;
-  readonly #shape: Shape;
+  #shape: Shape;
   readonly #onGone: () => void;
   // Keyed by Electric's row key, which a delete carries without the row.
   readonly #rows = new Map<string, ThreadEntity>();
@@ -436,19 +514,21 @@ class EpochWindow extends Listeners {
   readonly #retrying = new Set<string>();
   #connection: StreamConnection = { phase: "live", since: Date.now() };
   #closed = false;
+  #suspended = false;
+  // The last event the fold had applied when the scope was read; null while suspended, until it is
+  // read again, as the rows held reach no scope then.
+  #through: bigint | null;
+  // Where the entities' log was read through when the window was suspended.
+  #position: ShapePosition | null = null;
   #state: WindowState = NO_WINDOW;
 
   constructor(threadId: string, scope: ThreadScope, onGone: () => void) {
     super();
     this.#threadId = threadId;
-    this.scope = scope;
+    this.epoch = scope.projection_epoch;
+    this.#through = BigInt(scope.through_cursor);
     this.#onGone = onGone;
-    this.#shape = new Shape(
-      this.#url("entities"),
-      (messages) => this.#apply(messages),
-      (error) => this.#fail(error),
-      (failure) => this.#attempted("entities", failure)
-    );
+    this.#shape = this.#open(null);
     void this.#guard(async () => {
       await Promise.all([
         this.#serial(() => this.#catchUp(INITIAL_ROWS)),
@@ -493,15 +573,59 @@ class EpochWindow extends Listeners {
     return shape;
   }
 
+  get suspended(): boolean {
+    return this.#suspended;
+  }
+
+  /** Whether a suspended window can follow its thread on: it had loaded what it was asked to, and
+   * nothing has stopped it or retired its epoch since. */
+  get resumable(): boolean {
+    return this.#ready && this.#refreshed === null && !this.#gone && this.#state.error === null;
+  }
+
+  /** Stops following the thread, keeping the rows and bodies held and where in each log they are read through. */
+  suspend(): void {
+    this.#suspended = true;
+    this.#through = null;
+    this.#position = this.#shape.position;
+    this.#shape.close();
+    for (const shape of this.#bodies.values()) shape.suspend();
+    this.#publish();
+  }
+
+  /** Follows the thread on from where it was suspended, to `through` and beyond. Where nothing says
+   * how far its log was read, the rows held are read again. */
+  resume(through: bigint): void {
+    this.#suspended = false;
+    this.#through = through;
+    this.#connection = { phase: "live", since: Date.now() };
+    this.#retrying.clear();
+    this.#shape = this.#open(this.#position);
+    for (const shape of this.#bodies.values()) shape.resume();
+    if (this.#position === null) void this.#refetch();
+    this.#position = null;
+    this.#publish();
+  }
+
   close(): void {
     this.#closed = true;
     this.#shape.close();
     for (const shape of this.#bodies.values()) shape.close();
   }
 
+  #open(from: ShapePosition | null): Shape {
+    return new Shape(
+      this.#url("entities"),
+      (messages) => this.#apply(messages),
+      (error) => this.#fail(error),
+      (failure) => this.#attempted("entities", failure),
+      from
+    );
+  }
+
   #url(path: string): string {
     const url = new URL(`/threads/${encodeURIComponent(this.#threadId)}/sync/${path}`, window.location.href);
-    url.searchParams.set("projection_epoch", this.scope.projection_epoch);
+    url.searchParams.set("projection_epoch", this.epoch);
     return url.toString();
   }
 
@@ -628,7 +752,10 @@ class EpochWindow extends Listeners {
     this.#state = {
       rows,
       caughtUp:
-        this.#ready && view !== undefined && decimalBigInt(view.revisionCursor) >= BigInt(this.scope.through_cursor),
+        this.#ready &&
+        this.#through !== null &&
+        view !== undefined &&
+        decimalBigInt(view.revisionCursor) >= this.#through,
       olderAvailable: this.#lowest !== null && !this.#exhausted,
       loadingOlder: this.#loadingOlder,
       connection: this.#connection,
@@ -651,6 +778,7 @@ class ThreadEpochs extends Listeners {
   #resolving: AbortController | null = null;
   #retry: number | undefined;
   #closed = false;
+  #suspended = false;
   #state: SyncState = { window: null, error: null };
 
   constructor(threadId: string) {
@@ -662,8 +790,24 @@ class ThreadEpochs extends Listeners {
   getState = (): SyncState => this.#state;
 
   refresh = (): void => {
-    void this.#resolve();
+    // A suspended thread follows nothing, whatever a read it had in flight finds.
+    if (!this.#suspended) void this.#resolve();
   };
+
+  /** Stops following the thread; its window stays, off the network, until `resume` or `close`. */
+  suspend(): void {
+    this.#suspended = true;
+    this.#resolving?.abort();
+    window.clearTimeout(this.#retry);
+    this.#next?.close();
+    this.#next = null;
+    this.#state.window?.suspend();
+  }
+
+  resume(): void {
+    this.#suspended = false;
+    void this.#resolve();
+  }
 
   close(): void {
     this.#closed = true;
@@ -682,6 +826,11 @@ class ThreadEpochs extends Listeners {
       if (resolving.signal.aborted || this.#closed) return;
       // The runner has recorded nothing for the whole of the server's hold: hold another read.
       if (scope === null) return this.refresh();
+      const suspended = this.#state.window?.suspended ? this.#state.window : null;
+      if (suspended?.resumable && suspended.epoch === scope.projection_epoch) {
+        suspended.resume(BigInt(scope.through_cursor));
+        return this.#set({ window: suspended, error: null });
+      }
       this.#next?.close();
       const next = new EpochWindow(this.#threadId, scope, this.refresh);
       // The first window shows its own catch-up; a replacement takes over once it has caught up,
@@ -736,14 +885,50 @@ function threadRow(row: ThreadEntity): boolean {
   );
 }
 
-function Thread({ threadId, children }: { threadId: string; children: ReactNode }): JSX.Element {
-  const [thread, setThread] = useState<ThreadEpochs | null>(null);
-  useEffect(() => {
-    const next = new ThreadEpochs(threadId);
-    setThread(next);
-    return () => next.close();
-  }, [threadId]);
-  return <ThreadContext.Provider value={thread}>{children}</ThreadContext.Provider>;
+// How many threads a reader can leave and come back to without their windows being read again.
+const RETAINED_THREADS = 8;
+
+/** The threads a reader has left, least recently left first, each suspended. */
+class RetainedThreads {
+  readonly #left = new Map<string, ThreadEpochs>();
+
+  /** The thread's retained window, resumed, or else a new one. */
+  open(threadId: string): ThreadEpochs {
+    const retained = this.#left.get(threadId);
+    if (retained === undefined) return new ThreadEpochs(threadId);
+    this.#left.delete(threadId);
+    retained.resume();
+    return retained;
+  }
+
+  leave(threadId: string, epochs: ThreadEpochs): void {
+    epochs.suspend();
+    this.#left.get(threadId)?.close();
+    this.#left.delete(threadId);
+    this.#left.set(threadId, epochs);
+    for (const [evicted, forgotten] of this.#left) {
+      if (this.#left.size <= RETAINED_THREADS) break;
+      forgotten.close();
+      this.#left.delete(evicted);
+    }
+  }
+}
+
+/** A thread sync with a cache of left threads' windows of its own, so instances (a test's, say) share none. */
+export function createElectricThreadSync(): ThreadSync {
+  const retained = new RetainedThreads();
+
+  function Thread({ threadId, children }: { threadId: string; children: ReactNode }): JSX.Element {
+    const [thread, setThread] = useState<ThreadEpochs | null>(null);
+    useEffect(() => {
+      const next = retained.open(threadId);
+      setThread(next);
+      return () => retained.leave(threadId, next);
+    }, [threadId]);
+    return <ThreadContext.Provider value={thread}>{children}</ThreadContext.Provider>;
+  }
+
+  return { Thread, useThread, useCommandRows, usePayload };
 }
 
 function useThread(): ThreadState {
@@ -788,4 +973,4 @@ function usePayload(reference: PayloadRef): Payload {
   return { body: shape.body(reference), error: shape.error, retry: shape.retry };
 }
 
-export const electricThreadSync: ThreadSync = { Thread, useThread, useCommandRows, usePayload };
+export const electricThreadSync: ThreadSync = createElectricThreadSync();

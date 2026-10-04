@@ -8,8 +8,8 @@ import { act, type JSX, type ReactNode } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, expect, it, vi } from "vitest";
 
-import { electricThreadSync } from "./thread_store";
-import { type PayloadRef, type ThreadEntity, type ThreadWindow } from "./thread_sync";
+import { createElectricThreadSync, electricThreadSync } from "./thread_store";
+import { type PayloadRef, type ThreadEntity, type ThreadSync, type ThreadWindow } from "./thread_sync";
 
 type Json = Record<string, unknown>;
 
@@ -178,7 +178,8 @@ class FakeSync {
   liveUnanswered = false;
   /** How many live reads are waiting for an answer. */
   waiting = 0;
-  readonly requests: { method: string; path: string; query: URLSearchParams; subset: Subset | null }[] = [];
+  readonly requests: { thread: string; method: string; path: string; query: URLSearchParams; subset: Subset | null }[] =
+    [];
   readonly #live = new Map<string, Connection>();
   // The held scope read, answered by `respond`.
   #held: ((response: Response) => void) | null = null;
@@ -191,8 +192,8 @@ class FakeSync {
     const url = new URL(input instanceof Request ? input.url : String(input));
     const method = init?.method ?? "GET";
     const subset = typeof init?.body === "string" ? (JSON.parse(init.body) as Subset) : null;
-    const path = url.pathname.split("/sync/")[1];
-    this.requests.push({ method, path, query: url.searchParams, subset });
+    const [thread, path] = url.pathname.replace("/threads/", "").split("/sync/");
+    this.requests.push({ thread: decodeURIComponent(thread), method, path, query: url.searchParams, subset });
     if (path === "scope") return this.folded ? this.scope() : this.#hold(init?.signal);
     if (this.loggedOut) return Response.json({ detail: "test session expired" }, { status: 401 });
     if (this.unreachable) throw new TypeError("Failed to fetch");
@@ -294,6 +295,11 @@ class FakeSync {
     await this.close(path);
   }
 
+  /** Make Electric answer a read of the shape at `handle` as it does one of a retired log: with a 409 naming `successor`. */
+  retire(handle: string, successor: string): void {
+    this.#rotated.set(handle, successor);
+  }
+
   posted(path: string): Subset[] {
     return this.requests
       .filter((request) => request.method === "POST" && request.path === path)
@@ -361,8 +367,27 @@ afterEach(async () => {
   vi.unstubAllGlobals();
 });
 
-function renderThread(children: ReactNode): Promise<HTMLDivElement> {
-  return render(<electricThreadSync.Thread threadId="thread">{children}</electricThreadSync.Thread>);
+function renderThread(
+  children: ReactNode,
+  threads: ThreadSync = createElectricThreadSync(),
+  threadId = "thread"
+): Promise<HTMLDivElement> {
+  return render(
+    <threads.Thread key={threadId} threadId={threadId}>
+      {children}
+    </threads.Thread>
+  );
+}
+
+/** The reader moves to another thread in the same view, as the app's `key` on the thread makes it. */
+async function switchThread(threads: ThreadSync, threadId: string, children: ReactNode): Promise<void> {
+  await act(async () =>
+    root?.render(
+      <threads.Thread key={threadId} threadId={threadId}>
+        {children}
+      </threads.Thread>
+    )
+  );
 }
 
 /** What a view shows of the thread: nothing until its window opens, and no rows until that has caught up. */
@@ -746,4 +771,205 @@ it("loads commands by id as a quoted array", async () => {
     order_by: "entity_index DESC",
     limit: 2,
   });
+});
+
+const itemsView = <Shown>{(rows, history) => <Rows rows={rows} history={history} />}</Shown>;
+const bodiesView = (
+  <Shown>
+    {(rows) => (
+      <>
+        {rows.map((row) =>
+          row.textRef ? <Body key={row.entityId} id={row.entityId} reference={row.textRef} /> : null
+        )}
+      </>
+    )}
+  </Shown>
+);
+
+/** What the thread asked of the proxy since `mark` requests had been made. */
+function since(sync: FakeSync, mark: number, threadId: string): FakeSync["requests"] {
+  return sync.requests.slice(mark).filter((request) => request.thread === threadId);
+}
+
+/** A thread of 130 rows, opened on its tail and paged back once, with its live log followed. */
+async function pagedThread(
+  sync: FakeSync,
+  threads: ThreadSync
+): Promise<{ container: HTMLDivElement; reading: string | null }> {
+  thread(sync, 130);
+  const container = await renderThread(itemsView, threads);
+  await vi.waitFor(() => expect(itemsShown(container)).toHaveLength(90));
+  await act(async () => container.querySelector("button")!.click());
+  await vi.waitFor(() => expect(itemsShown(container)).toHaveLength(120));
+  return { container, reading: await sync.liveOffset("entities") };
+}
+
+it("reads only what changed when the reader comes back to a thread, keeping the pages it had loaded", async () => {
+  const sync = stubSync();
+  const threads = createElectricThreadSync();
+  const { container, reading } = await pagedThread(sync, threads);
+  await switchThread(threads, "other", itemsView);
+  await vi.waitFor(() => expect(itemsShown(container)).toHaveLength(90));
+  const left = sync.requests.length;
+
+  // The thread moved on while the reader was away.
+  sync.through = "71";
+  await switchThread(threads, "thread", itemsView);
+  await vi.waitFor(() => expect(since(sync, left, "thread").some((request) => request.path === "entities")).toBe(true));
+  // The rows held stop short of the thread, so they are not shown as the thread.
+  expect(itemsShown(container)).toEqual([]);
+
+  await sync.send("entities", (relation) => [
+    change(relation, "update", viewState("71")),
+    change(relation, "insert", item(131)),
+  ]);
+  await vi.waitFor(() => expect(itemsShown(container)).toHaveLength(121));
+  expect(itemsShown(container)).toContain("item-11@11");
+
+  const asked = since(sync, left, "thread");
+  expect(asked.filter((request) => request.method === "POST")).toEqual([]);
+  // The log is read on from where the reader left it.
+  const [read] = asked.filter((request) => request.path === "entities");
+  expect([read.query.get("handle"), read.query.get("offset")]).toEqual(["entities-1", reading]);
+});
+
+it("shows the rows it held at once on coming back to a thread that has not moved", async () => {
+  const sync = stubSync();
+  const threads = createElectricThreadSync();
+  const { container } = await pagedThread(sync, threads);
+  await switchThread(threads, "other", itemsView);
+  await vi.waitFor(() => expect(itemsShown(container)).toHaveLength(90));
+  const left = sync.requests.length;
+
+  await switchThread(threads, "thread", itemsView);
+
+  await vi.waitFor(() => expect(itemsShown(container)).toHaveLength(120));
+  expect(since(sync, left, "thread").filter((request) => request.method === "POST")).toEqual([]);
+});
+
+it("opens a new window on coming back to a thread whose epoch changed while the reader was away", async () => {
+  const sync = stubSync();
+  const threads = createElectricThreadSync();
+  const { container } = await pagedThread(sync, threads);
+  await switchThread(threads, "other", itemsView);
+  await vi.waitFor(() => expect(itemsShown(container)).toHaveLength(90));
+  const left = sync.requests.length;
+
+  sync.epoch = "epoch-2";
+  thread(sync, 4, "epoch-2");
+  await switchThread(threads, "thread", itemsView);
+
+  await vi.waitFor(() => expect(itemsShown(container)).toHaveLength(4));
+  expect(since(sync, left, "thread").filter((request) => request.query.get("projection_epoch") === "epoch-1")).toEqual(
+    []
+  );
+});
+
+it("reads as many rows as it held when the log it was to follow on from has been retired meanwhile", async () => {
+  const sync = stubSync();
+  const threads = createElectricThreadSync();
+  const { container } = await pagedThread(sync, threads);
+  await switchThread(threads, "other", itemsView);
+  await vi.waitFor(() => expect(itemsShown(container)).toHaveLength(90));
+
+  sync.retire("entities-1", "entities-2");
+  sync.entities = sync.entities.filter((row) => row.entity_id !== "item-50");
+  await switchThread(threads, "thread", itemsView);
+
+  await vi.waitFor(() => expect(itemsShown(container)).not.toContain("item-50@50"));
+  expect(itemsShown(container)).toHaveLength(120);
+  expect(itemsShown(container)).toContain("item-10@10");
+});
+
+function bodyText(container: HTMLElement): string | null | undefined {
+  return container.querySelector('[data-body="item-1"]')?.textContent;
+}
+
+function threadWithBody(sync: FakeSync): void {
+  sync.through = "2";
+  sync.entities = [viewState("2"), item(1, "epoch-1", { text_ref: textRef("a", 2) })];
+  sync.chunks = [chunk("a", 0, "Hel"), chunk("a", 1, "lo")];
+}
+
+it("keeps the bodies it held when the reader leaves a thread, and follows their appends on coming back", async () => {
+  const sync = stubSync();
+  threadWithBody(sync);
+  const threads = createElectricThreadSync();
+  const container = await renderThread(bodiesView, threads);
+  await vi.waitFor(() => expect(bodyText(container)).toBe("Hello"));
+  await sync.liveOffset("chunks/text");
+  await switchThread(threads, "other", <></>);
+  const left = sync.requests.length;
+
+  await switchThread(threads, "thread", bodiesView);
+
+  await vi.waitFor(() => expect(bodyText(container)).toBe("Hello"));
+  await sync.send("chunks/text", (relation) => [change(relation, "insert", chunk("a", 2, " there"))]);
+  await sync.send("entities", (relation) => [
+    change(relation, "update", item(1, "epoch-1", { text_ref: textRef("a", 3) })),
+  ]);
+  await vi.waitFor(() => expect(bodyText(container)).toBe("Hello there"));
+  expect(since(sync, left, "thread").filter((request) => request.method === "POST")).toEqual([]);
+});
+
+it("reads the bodies it held again on coming back when their log was retired meanwhile", async () => {
+  const sync = stubSync();
+  threadWithBody(sync);
+  const threads = createElectricThreadSync();
+  const container = await renderThread(bodiesView, threads);
+  await vi.waitFor(() => expect(bodyText(container)).toBe("Hello"));
+  await sync.liveOffset("chunks/text");
+  await switchThread(threads, "other", <></>);
+  const left = sync.requests.length;
+
+  sync.retire("chunks/text-1", "chunks/text-2");
+  sync.chunks.push(chunk("a", 2, " there"));
+  await switchThread(threads, "thread", bodiesView);
+  await sync.send("entities", (relation) => [
+    change(relation, "update", item(1, "epoch-1", { text_ref: textRef("a", 3) })),
+  ]);
+
+  await vi.waitFor(() => expect(bodyText(container)).toBe("Hello there"));
+  expect(
+    since(sync, left, "thread").filter((request) => request.path === "chunks/text" && request.method === "POST")
+  ).toHaveLength(1);
+});
+
+it("reads the bodies in view again when Electric retires their log, for the chunks written meanwhile", async () => {
+  const sync = stubSync();
+  threadWithBody(sync);
+  const container = await renderThread(bodiesView);
+  await vi.waitFor(() => expect(bodyText(container)).toBe("Hello"));
+  const before = sync.posted("chunks/text").length;
+
+  // Written while the log was rebuilt, so on neither its old nor its new life.
+  sync.chunks.push(chunk("a", 2, " there"));
+  await sync.rotate("chunks/text", "chunks/text-2");
+  await sync.send("entities", (relation) => [
+    change(relation, "update", item(1, "epoch-1", { text_ref: textRef("a", 3) })),
+  ]);
+
+  await vi.waitFor(() => expect(bodyText(container)).toBe("Hello there"));
+  expect(sync.posted("chunks/text").length - before).toBe(1);
+});
+
+it("retains the windows of the last few threads the reader left, not every one", async () => {
+  const sync = stubSync();
+  thread(sync, 3);
+  const threads = createElectricThreadSync();
+  const container = await renderThread(itemsView, threads);
+  await vi.waitFor(() => expect(itemsShown(container)).toHaveLength(3));
+  const visit = async (threadId: string) => {
+    await switchThread(threads, threadId, itemsView);
+    await vi.waitFor(() => expect(itemsShown(container)).toHaveLength(3));
+  };
+  for (let n = 1; n <= 9; n++) await visit(`other-${n}`);
+
+  // The first thread left is the one forgotten; the latest is not.
+  let mark = sync.requests.length;
+  await visit("thread");
+  expect(since(sync, mark, "thread").filter((request) => request.method === "POST")).not.toEqual([]);
+  mark = sync.requests.length;
+  await visit("other-9");
+  expect(since(sync, mark, "other-9").filter((request) => request.method === "POST")).toEqual([]);
 });
