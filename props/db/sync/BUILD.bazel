@@ -77,8 +77,9 @@ assert_no_deps(
 
 py_test(
     name = "test_example_generation",
-    # Four fresh Postgres-backed fixture databases run close to the 60s small
-    # budget in isolation and timed out under the full //... test sweep.
+    # Postgres container startup plus a synced fixture database take over half the
+    # 60s small budget in isolation (34s on RBE) and timed out under the full //...
+    # test sweep.
     size = "medium",
     srcs = ["test_example_generation.py"],
     requires_docker = True,
@@ -86,7 +87,6 @@ py_test(
         "//:conftest",
         "//props:conftest",
         "//props/core:ids",
-        "//props/core:splits",
         "//props/core/models:examples",
         "//props/db:conftest",
         "//props/db:database",
