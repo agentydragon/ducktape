@@ -5,14 +5,13 @@ load("@npm_ducktape//:defs.bzl", "npm_link_all_packages")
 load("//devinfra/js:json_schema.bzl", "js_json_schema")
 load("//devinfra/js:spa_bundle.bzl", "spa_bundle")
 load("//devinfra/js:ts_library.bzl", "ts_library")
-load("//devinfra/js:vitest.bzl", "check_vitest_specs", "vitest_config", "vitest_test")
+load("//devinfra/js:vitest.bzl", "check_vitest_specs", "vitest_config")
 load("//util/testing/frontend_visual:visual_test.bzl", "visual_test")
+load(":vitest.bzl", "airlock_vitest_test")
 
 npm_link_all_packages(name = "node_modules")
 
 TSCONFIG = ":tsconfig"
-
-VITEST_CONFIG = ":vitest_config"
 
 ts_config(
     name = "tsconfig",
@@ -131,12 +130,10 @@ ts_library(
     ],
 )
 
-vitest_test(
+airlock_vitest_test(
     name = "api_test",
     srcs = ["api.test.ts"],
-    config = VITEST_CONFIG,
     isolated_typecheck = True,
-    tsconfig = TSCONFIG,
     deps = [
         ":api",
         "//:node_modules/vitest",
