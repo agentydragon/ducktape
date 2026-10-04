@@ -82,10 +82,6 @@ table ip {_NFT_TABLE} {{
     logger.debug("NAT: %s via %s → MASQUERADE", SUBNET, HOST_IFACE)
 
 
-def _teardown_nat() -> None:
-    subprocess.run(["nft", "delete", "table", "ip", _NFT_TABLE], check=False, capture_output=True, text=True)
-
-
 def setup_tap_and_nat() -> NetworkSetup:
     """Create TAP device, assign IP, enable forwarding, set up NAT."""
     _enable_ip_forward()
@@ -97,15 +93,3 @@ def setup_tap_and_nat() -> NetworkSetup:
     return NetworkSetup(
         tap_name=TAP_NAME, tap_ip=TAP_IP, guest_ip=GUEST_IP, guest_gateway=TAP_IP, guest_netmask="255.255.255.0"
     )
-
-
-def teardown_tap_and_nat() -> None:
-    """Remove TAP device and NAT rules. Best-effort, logs errors."""
-    _teardown_nat()
-    try:
-        with IPRoute() as ipr:
-            links = ipr.link_lookup(ifname=TAP_NAME)
-            if links:
-                ipr.link("del", index=links[0])
-    except Exception:
-        logger.warning("Failed to remove TAP %s", TAP_NAME, exc_info=True)
