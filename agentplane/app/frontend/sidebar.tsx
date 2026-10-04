@@ -22,7 +22,7 @@ import { SANDBOX_STATUS_MARKS } from "./status_mark";
 import "./sidebar.css";
 import { ConnectionIndicator } from "./stream_status";
 import { archivedCount, groupThreads, type ThreadGroup } from "./thread_groups";
-import { ThreadStatusDot } from "./thread_status_dot";
+import { ThreadStatusIndicator } from "./thread_status_indicator";
 import { snapshotFresh, threadStatusFromSnapshot } from "./thread_status";
 
 const SIDEBAR_WIDTH_STORAGE_KEY = "agentplane-sidebar-width";
@@ -211,7 +211,7 @@ function ThreadRow({
         }
       }}
     >
-      <ThreadStatusDot kind={status.kind} label={status.label} size="small" />
+      <ThreadStatusIndicator kind={status.kind} label={status.label} size="small" />
       <span className="agentplane-sidebar-row-name">{label}</span>
       <Tooltip
         label={thread.archived ? "Unarchive" : harnessRunning ? "Stop the harness before archiving" : "Archive"}
