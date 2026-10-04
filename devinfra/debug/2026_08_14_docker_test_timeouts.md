@@ -116,7 +116,5 @@ not distinguished by anything observed so far.
 
 ## Unrelated, seen on the way
 
-`//x/codex_execpolicy_audit:rules_test` flaked — 0.5s failure under `//...`, 0.9s pass on re-run, no
-Docker involved. Not part of this. Suspected cause, not reproduced: its two tests wrote one fixed
-temp file under parallel libtest threads; one of them has since been deleted, so a recurrence would
-point elsewhere.
+`//x/codex_execpolicy_audit:rules_test` is a genuine flake — 0.5s failure under `//...`, 0.9s pass
+on re-run, no Docker involved. Not part of this.
