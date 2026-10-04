@@ -216,7 +216,7 @@ it("does not show a running dot for an archived thread or an ended/failed runner
   expect(threadStatusFromSnapshot(running, box, false).kind).toBe("inactive");
 });
 
-it("uses the shared blinking status dot when a fresh sidebar thread has an active turn", async () => {
+it("shows chevrons in the shared status indicator when a fresh sidebar thread has an active turn", async () => {
   const active = thread({
     id: "t-1",
     sandbox: "test-sandbox",
@@ -228,6 +228,7 @@ it("uses the shared blinking status dot when a fresh sidebar thread has an activ
   const { stream } = await render([active], { "test-sandbox": sandbox("test-sandbox") });
   const dot = container.querySelector('.agentplane-thread-status-dot[aria-label^="Turn running"]');
   expect(dot?.getAttribute("data-status")).toBe("running");
+  expect(dot?.querySelector("svg")).not.toBeNull();
 
   const stale = snapshot([active], { "test-sandbox": sandbox("test-sandbox") });
   stale.watch.fresh = false;

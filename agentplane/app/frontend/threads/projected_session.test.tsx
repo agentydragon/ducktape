@@ -466,7 +466,7 @@ it("uses the shared list feed instead of a healthy conversation projection for t
 
 const faviconSvg = (): string => decodeURIComponent(favicon.getAttribute("href")?.split(",")[1] ?? "");
 
-it("blinks the favicon's green dot and labels the status dot while a turn is active", async () => {
+it("shows moving green chevrons in the status dot and the favicon while a turn is active", async () => {
   vi.useFakeTimers();
   sharedThread = { active_turn_id: "turn-1" };
   const dot = (await render(threadState({ rows: [viewState({ activeTurn: "turn-1" })] }))).querySelector(
@@ -474,21 +474,20 @@ it("blinks the favicon's green dot and labels the status dot while a turn is act
   );
   expect(dot?.getAttribute("aria-label")).toBe("Turn running · Runner feed active · harness running");
   expect(dot?.getAttribute("data-status")).toBe("running");
+  expect(dot?.querySelector("svg")).not.toBeNull();
   expect(document.title).toBe("Test thread · Running — Agentplane");
   expect(favicon.getAttribute("href")).toMatch(/^data:image\/svg\+xml,/);
-  expect(faviconSvg()).toContain('<path d="M5 14.5 27 5 18 27');
-  expect(faviconSvg()).toContain('fill="none"');
-  expect(faviconSvg()).not.toContain("<rect");
-  expect(faviconSvg()).toContain(`fill="${THREAD_STATUS_COLORS.running}" stroke="#102a43" stroke-width="3"`);
-  expect(faviconSvg()).toContain('fill="none" stroke="#fff" stroke-width="1.5"');
+  const firstFrame = faviconSvg();
+  expect(firstFrame).toContain('<path d="M5 14.5 27 5 18 27');
+  expect(firstFrame).toContain('fill="none"');
+  expect(firstFrame).not.toContain("<rect");
+  expect(firstFrame).not.toContain("<circle");
+  expect(firstFrame).toContain(`stroke="${THREAD_STATUS_COLORS.running}"`);
   await act(async () => {
-    vi.advanceTimersByTime(700);
+    vi.advanceTimersByTime(300);
   });
-  expect(faviconSvg()).not.toContain("<circle");
-  await act(async () => {
-    vi.advanceTimersByTime(600);
-  });
-  expect(faviconSvg()).toContain('<circle cx="24.5"');
+  expect(faviconSvg()).toContain(`stroke="${THREAD_STATUS_COLORS.running}"`);
+  expect(faviconSvg()).not.toBe(firstFrame);
 });
 
 it("shows an idle thread as a steady dot in the idle color, in the favicon too", async () => {
@@ -496,9 +495,10 @@ it("shows an idle thread as a steady dot in the idle color, in the favicon too",
   sharedThread = {};
   const dot = (await render()).querySelector(".agentplane-thread-status-dot");
   expect(dot?.getAttribute("data-status")).toBe("idle");
+  expect(dot?.querySelector("svg")).toBeNull();
   const idleDot = `fill="${THREAD_STATUS_COLORS.idle}" stroke="#102a43"`;
   expect(faviconSvg()).toContain(idleDot);
-  // Past the point where a running turn's dot is hidden.
+  // Long enough for a running turn's favicon to have moved.
   await act(async () => {
     vi.advanceTimersByTime(700);
   });

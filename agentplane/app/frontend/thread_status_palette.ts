@@ -1,9 +1,9 @@
-/** What a thread's status looks like. The in-page status dot and the tab favicon both read this, so they cannot drift. */
+/** What a thread's status looks like. The in-page status indicator and the tab favicon both read this, so they cannot drift. */
 
 /**
- * `running`: a turn is in flight. `idle`: the harness is live and waiting for input. `failed`: the
- * runner feed failed. `inactive`: nothing live to show (archived, Sandbox suspended or gone, harness
- * stopped, feed ended, or not confirmed).
+ * `running`: a turn is in flight, drawn as moving chevrons rather than a dot. `idle`: the harness is
+ * live and waiting for input. `failed`: the runner feed failed. `inactive`: nothing live to show
+ * (archived, Sandbox suspended or gone, harness stopped, feed ended, or not confirmed).
  */
 export type ThreadStatusKind = "running" | "idle" | "failed" | "inactive";
 
@@ -16,5 +16,5 @@ export const THREAD_STATUS_COLORS: Record<ThreadStatusKind, string> = {
   inactive: "#868e96", // gray-6
 };
 
-/** One full on-and-off cycle of the `running` blink, for the dot's CSS animation and the favicon's frames alike. */
-export const THREAD_STATUS_BLINK_MS = 1_000;
+/** Time for the running chevrons to advance one chevron pitch to the right, for the in-page CSS animation and the favicon's frames alike. */
+export const THREAD_STATUS_RUN_CYCLE_MS = 1_000;
