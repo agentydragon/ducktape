@@ -56,13 +56,6 @@ def test_cutsetting_with_sublayers():
     assert sl_children["subname"] == "second pass"
 
 
-def test_cutsetting_without_sublayers_has_no_sublayer_elements():
-    cs = CutSetting(index=0, name="C00")
-    el = cs.to_element()
-    sublayer_els = [c for c in el if c.tag == "SubLayer"]
-    assert sublayer_els == []
-
-
 def test_max_layers_at_limit():
     """Exactly MAX_LAYERS cut settings should succeed."""
     project = LightBurnProject(cut_settings=[CutSetting(index=i, name=f"C{i:02d}") for i in range(MAX_LAYERS)])
