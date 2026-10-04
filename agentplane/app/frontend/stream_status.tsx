@@ -87,22 +87,34 @@ export class StreamRegistry {
 export const streamRegistry: StreamRegistry = new StreamRegistry();
 
 /** Reports `connection` as the stream `name` for as long as the caller is mounted, or nothing while
- * it is null, and reads back how the stream stands. */
-export function useStreamStatus(name: string, connection: StreamConnection): StreamStatus;
-export function useStreamStatus(name: string, connection: StreamConnection | null): StreamStatus | null;
-export function useStreamStatus(name: string, connection: StreamConnection | null): StreamStatus | null {
+ * it is null, and reads back what the registry has made of it. */
+function useReported(name: string, connection: StreamConnection | null): StreamStatus | undefined {
   const [key] = useState(() => Symbol(name));
   useEffect(() => {
     if (connection === null) streamRegistry.remove(key);
     else streamRegistry.report(key, name, connection);
   }, [key, name, connection]);
   useEffect(() => () => streamRegistry.remove(key), [key]);
-  const reported = useSyncExternalStore(streamRegistry.subscribe, () => streamRegistry.getStatuses().get(key));
-  if (connection === null) return null;
-  // Until the report above lands, the connection as it stands now.
+  return useSyncExternalStore(streamRegistry.subscribe, () => streamRegistry.getStatuses().get(key));
+}
+
+/** What `reported` says of `connection`, or until the report lands, the connection as it stands now. */
+function statusOf(reported: StreamStatus | undefined, name: string, connection: StreamConnection): StreamStatus {
   return reported?.connection === connection
     ? reported
     : { name, connection, standing: standingAt(connection, streamRegistry.now()) };
+}
+
+/** Reports `connection` as the stream `name` for as long as the caller is mounted, and reads back
+ * how the stream stands. */
+export function useStreamStatus(name: string, connection: StreamConnection): StreamStatus {
+  return statusOf(useReported(name, connection), name, connection);
+}
+
+/** As `useStreamStatus`, for a stream that may not exist: nothing while `connection` is null. */
+export function useOptionalStreamStatus(name: string, connection: StreamConnection | null): StreamStatus | null {
+  const reported = useReported(name, connection);
+  return connection === null ? null : statusOf(reported, name, connection);
 }
 
 const CLOCK = new Intl.DateTimeFormat("en-GB", { hour: "2-digit", minute: "2-digit", second: "2-digit" });

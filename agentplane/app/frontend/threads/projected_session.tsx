@@ -46,7 +46,7 @@ import {
   type HistoryRow,
 } from "./history_rows";
 import { liveSandboxesUrl, LiveStatus, useLive, useRequiredThreadsLive, type SandboxesSnapshot } from "../live";
-import { StaleNotice, useStreamStatus, type StreamStatus } from "../stream_status";
+import { StaleNotice, useOptionalStreamStatus, type StreamStatus } from "../stream_status";
 import { RetainedDisclosure, RetainedDisclosureProvider, useRetainedDisclosure } from "./retained_disclosures";
 import { CollapsibleCard, EntityCard, ItemStatus, pendingSentMessage } from "./thread_cards";
 import {
@@ -1132,7 +1132,7 @@ function SyncedThread({
 }): JSX.Element {
   const { window: shown, error } = useThreadSync().useThread();
   // A stopped window is not following the thread at all, and its alert says so.
-  const stream = useStreamStatus("Thread", shown !== null && shown.error === null ? shown.connection : null);
+  const stream = useOptionalStreamStatus("Thread", shown !== null && shown.error === null ? shown.connection : null);
   if (!shown) {
     if (error) return <p role="alert">Thread sync failed: {error}</p>;
     return <p role="status">Loading thread…</p>;

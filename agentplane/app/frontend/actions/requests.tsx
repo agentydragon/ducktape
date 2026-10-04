@@ -5,7 +5,7 @@ import { createContext, type JSX, useCallback, useContext, useEffect, useState }
 
 import { displayableError } from "../client";
 import { followStream, type StreamConnection } from "../live_stream";
-import { StaleNotice, useStreamStatus, type StreamStatus } from "../stream_status";
+import { StaleNotice, useOptionalStreamStatus, type StreamStatus } from "../stream_status";
 import { ActionCall } from "./call";
 import { actionService, type ActionRequestView, type ActionService, type ActionState, type Verdict } from "./client";
 
@@ -32,7 +32,7 @@ export function useActionRequests(
   const [loading, setLoading] = useState(true);
   const [connection, setConnection] = useState<StreamConnection | null>(null);
   const [deciding, setDeciding] = useState<string | null>(null);
-  const stream = useStreamStatus("Actions", connection);
+  const stream = useOptionalStreamStatus("Actions", connection);
 
   const refresh = useCallback(async (): Promise<void> => {
     setLoading(true);
