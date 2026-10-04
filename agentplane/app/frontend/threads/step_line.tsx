@@ -10,6 +10,7 @@ export function StepLine({
   title,
   preview,
   previewRef,
+  failed = false,
   trailing,
   aside,
   controls,
@@ -21,6 +22,8 @@ export function StepLine({
   title: string;
   preview: ReactNode;
   previewRef?: Ref<HTMLDivElement>;
+  /** The step failed: its title in red, which is how a folded line shows it. */
+  failed?: boolean;
   /** Kept on the line when open, after the preview: a step's status. */
   trailing?: ReactNode;
   /** Beside the line, outside its disclosure. */
@@ -36,7 +39,12 @@ export function StepLine({
 }): JSX.Element {
   const summary = (
     <div className="agentplane-step-summary">
-      <Text component="span" className="agentplane-step-title" c="dimmed">
+      <Text
+        component="span"
+        className="agentplane-step-title"
+        c={failed ? "red" : "dimmed"}
+        title={failed ? "Failed" : undefined}
+      >
         {title}
       </Text>
       <div className="agentplane-step-preview" ref={previewRef}>

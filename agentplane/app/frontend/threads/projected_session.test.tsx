@@ -1248,6 +1248,38 @@ describe("tool call rows", () => {
     expect(container.querySelector('input[type="checkbox"]')).toBeNull();
   });
 
+  it("marks a failed call by its title in red while folded, and by a badge once opened", async () => {
+    const container = await renderCard(
+      entity(
+        "item",
+        {
+          kind: ItemKind.TOOL_CALL,
+          tool_name: "Bash",
+          completion: "tool",
+          tool_succeeded: false,
+          recovery: null,
+          recovery_reason: "",
+        },
+        { outputRef: reference("test-tool", "output") }
+      ),
+      { "test-tool:output": "test-failure" }
+    );
+    const title = container.querySelector(".agentplane-step-title")!;
+    expect(title.getAttribute("style")).toContain("red");
+    expect(title.getAttribute("title")).toBe("Failed");
+    expect(container.querySelector('[aria-label="Failed"]')).toBeNull();
+
+    await toggle(container.querySelector("summary")!);
+    expect(container.querySelector(".agentplane-step-title")?.getAttribute("style")).not.toContain("red");
+    expect(container.querySelector('[aria-label="Failed"]')).not.toBeNull();
+  });
+
+  it("leaves a call that went well in the dimmed title every line has", async () => {
+    const container = await renderTool("Bash", { command: "ls" });
+    expect(container.querySelector(".agentplane-step-title")?.getAttribute("style")).not.toContain("red");
+    expect(container.querySelector(".agentplane-step-title")?.getAttribute("title")).toBeNull();
+  });
+
   it("keeps a call's open state and Raw where the reader left them when its row leaves the DOM", async () => {
     const container = document.createElement("div");
     document.body.append(container);

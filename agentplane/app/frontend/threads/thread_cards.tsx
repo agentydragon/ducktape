@@ -370,6 +370,8 @@ function ToolCard({
   const output = useRetainedDisclosure(`${id}:output`);
   const disclosable =
     entity.argumentsRef !== null || entity.outputRef !== null || entity.textRef !== null || state.recovery !== null;
+  const opened = open && disclosable;
+  const failed = state.tool_succeeded === false;
   return (
     <OptionalPayload reference={entity.argumentsRef}>
       {(args) => {
@@ -433,9 +435,10 @@ function ToolCard({
           );
         }
         return (
-          <CollapsibleCard open={open && disclosable} stableInlineSize>
+          <CollapsibleCard open={opened} stableInlineSize>
             <StepLine
               title={call?.label ?? (state.tool_name || "tool")}
+              failed={failed && !opened}
               preview={
                 args &&
                 (argumentsBody === null ? (
@@ -448,7 +451,7 @@ function ToolCard({
                   </Text>
                 ))
               }
-              trailing={<ItemStatus items={[entity]} live={live} />}
+              trailing={<ItemStatus items={[entity]} live={live} omitFailed={!opened} />}
               aside={
                 args?.error && (
                   <button className="agentplane-step-retry" onClick={args.retry} type="button">
@@ -597,7 +600,16 @@ export function EntityCard({
 
 /** Whether any of `items` is unfinished -- streaming while `live`, otherwise never completed in
  * the retained history -- and whether any tool call among them failed. */
-export function ItemStatus({ items, live }: { items: ThreadEntity[]; live: boolean }): JSX.Element {
+export function ItemStatus({
+  items,
+  live,
+  omitFailed = false,
+}: {
+  items: ThreadEntity[];
+  live: boolean;
+  /** Leave out the Failed badge, for a line that shows failure another way. */
+  omitFailed?: boolean;
+}): JSX.Element {
   const states = items.flatMap((item) => ("kind" in item.state ? [item.state] : []));
   const unfinished = states.some((state) => state.completion === null && state.recovery === null);
   const interrupted = states.some((state) => state.completion === null && state.recovery !== null);
@@ -627,7 +639,7 @@ export function ItemStatus({ items, live }: { items: ThreadEntity[]; live: boole
           Succeeded
         </Badge>
       )}
-      {states.some((state) => state.tool_succeeded === false) && (
+      {!omitFailed && states.some((state) => state.tool_succeeded === false) && (
         <Badge color="red" role="img" aria-label="Failed">
           Failed
         </Badge>
