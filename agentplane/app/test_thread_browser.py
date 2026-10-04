@@ -1112,11 +1112,10 @@ async def test_failed_turn_preserves_confirmed_input_and_allows_another_turn(
         raw_frames = lifecycle.locator("summary", has_text=f"Observation {failed.cursor} raw frames")
         await raw_frames.click()
         frames_panel = raw_frames.locator("..")
-        code_view = frames_panel.locator(".agentplane-code-block, .agentplane-code-block-placeholder")
-        await expect(code_view).to_be_attached()
-        # CodeBlock mounts its editor only near the viewport; the mobile disclosure can open
-        # below the visible region after reload, so bring its placeholder into view first.
-        await code_view.scroll_into_view_if_needed()
+        # CodeBlock mounts its editor only near the viewport, replacing its placeholder when it does.
+        # The mobile disclosure can open below the visible region after reload, so scroll the panel
+        # into view -- the placeholder is never the target, as it can be swapped out mid-action.
+        await frames_panel.scroll_into_view_if_needed()
         frame = frames_panel.locator(".agentplane-code-block")
         await expect(frame).to_contain_text("unsafe diagnostic")
         assert json_format.Parse(await frame.inner_text(), event_log_pb2.EventEntry()) == native
