@@ -377,7 +377,7 @@ ts_library(
 )
 
 vitest_test(
-    name = "actions_rendering_index_test",
+    name = "actions_rendering_test",
     srcs = ["actions/rendering/index.test.tsx"],
     config = VITEST_CONFIG,
     tsconfig = TSCONFIG,
@@ -480,7 +480,7 @@ ts_library(
 )
 
 vitest_test(
-    name = "settings_mcp_servers_test",
+    name = "mcp_servers_test",
     srcs = ["settings/mcp_servers.test.tsx"],
     config = VITEST_CONFIG,
     tsconfig = TSCONFIG,
@@ -520,7 +520,7 @@ ts_library(
 )
 
 vitest_test(
-    name = "settings_connections_test",
+    name = "connections_test",
     srcs = ["settings/connections.test.tsx"],
     config = VITEST_CONFIG,
     tsconfig = TSCONFIG,
@@ -1252,7 +1252,7 @@ js_test(
 )
 
 vitest_test(
-    name = "settings_push_test",
+    name = "push_test",
     srcs = ["settings/push.test.tsx"],
     config = VITEST_CONFIG,
     tsconfig = TSCONFIG,

@@ -223,7 +223,7 @@ vitest_test(
 )
 
 vitest_test(
-    name = "vocabulary_test",
+    name = "variant_test",
     srcs = ["vocabulary.test.ts"],
     config = VITEST_CONFIG,
     isolated_typecheck = True,

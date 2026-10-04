@@ -1259,7 +1259,7 @@ vitest_test(
 )
 
 vitest_test(
-    name = "screenshots_sample_data_test",
+    name = "sample_data_test",
     srcs = ["screenshots/sample_data.test.ts"],
     config = VITEST_CONFIG,
     isolated_typecheck = True,
