@@ -19,7 +19,6 @@ from finance.augur.calibration.calibration import (
     _fit_ladder_curve,
     _monotone_probabilities,
     build_anchored_level_paths,
-    mark_fan,
     run_calibration,
     sample_private_equity_bundle,
     wilson_interval,
@@ -48,7 +47,6 @@ from finance.augur.calibration.platform import Direction, Market, PriceClient
 from finance.augur.calibration.quote import BookQuote, PoolQuote
 from finance.augur.calibration.testing import KalshiRungQuote, mock_price_clients
 from finance.augur.model.exogenous import ExogenousSamplingRequest
-from finance.augur.model.private_equity_bundle import PrivateEquityFloatChannel
 from finance.augur.model.series import SP500_SYMBOL, InflationKey, IssuerId, PrivateEquityEventKindCode, SecurityKey
 from finance.augur.model.testing import ConstantFrameModel, PrivateEquityChannels
 from finance.evidence.markets import Platform
@@ -165,21 +163,6 @@ async def test_surfaced_row_carries_augur_context(
     assert surfaced.augur_context is not None
     assert surfaced.augur_context.signal == "P(PUBLIC_MARKET_OPEN by deadline)"
     assert surfaced.augur_context.p_model == 0.25
-
-
-def test_mark_fan_shape(model: ConstantFrameModel) -> None:
-    request = ExogenousSamplingRequest(
-        horizon_months=_HORIZON,
-        rollout_seeds=tuple(range(4)),
-        required_private_equity_issuers=frozenset({IssuerId(_ISSUER)}),
-    )
-    bundle = model.sample(request).private_equity
-    fan = mark_fan(bundle, issuer=_ISSUER, rollout_count=4, horizon_months=_HORIZON, percentiles=(5.0, 50.0, 95.0))
-    assert fan.channel == PrivateEquityFloatChannel.MARK_USD_PER_UNIT
-    assert fan.percentiles == [5.0, 50.0, 95.0]
-    assert len(fan.months) == _HORIZON + 1
-    # Constant 50.0 mark -> every percentile band is 50.0.
-    assert fan.months[0].values == {"5.0": 50.0, "50.0": 50.0, "95.0": 50.0}
 
 
 _SP500_ANCHOR = 6000.0
