@@ -382,15 +382,30 @@ re-assemble a bundle at runtime. Per-client details (`pygit2` ignores
     that snapshot is the only pin a generated artifact gets, so no second test reads the
     committed file. Exact wire-format pins are valid only when an external contract or
     still-live consumer requires that value; name that contract in the test.
+  - **Expected values the code computes**: never compute the expected value with
+    the code under test or a copy of it. A test proving a transitional adapter
+    equals the old path is deleted with the adapter. A closed-form check, a
+    published reference data set, or a deliberate second implementation stays.
 - **Test value: what must break for this to fail?** Judge every test by that
   question. If the answer is bread-and-butter behavior of a standard library —
   pydantic parsing a plain `foo: int`, a StrEnum equalling its string, a
   yaml-load echo — or the test restates the declarations it exercises (field
-  aliases, a default compared against the same imported constant), delete it:
-  libraries' documented basics get no tests here; our choices and edges do.
+  aliases, a default compared against its declaration or the same imported
+  constant, a model built and read back, one test per field) or asserts what
+  `mypy` already guarantees, delete it: libraries' documented basics get no
+  tests here; our choices and edges do. Defaults and validators that are our own
+  logic (an exactly-one-of check, a clamp), published schemas, and library
+  spikes (below) stay.
   - **Bulk is the multiplier**: a short trivial test is a minor sin; a file
     full of them, or 150 lines of JSON `model_validate`d onto a plain model, is
     the real cost. A cheap one-liner may stay on judgment.
+  - **Duplicates and implied assertions**: a case pinning a distinct boundary,
+    branch, ordering, or error path stays, as does a positive anchor that keeps
+    a negative from passing vacuously (**Anchors and guards**, below).
+    Otherwise cut: one parametrized test over representative classes of input,
+    not a case per input driving the same path; no assertion a stronger one in
+    the same test implies; no test whose behavior another test at the same
+    level already asserts.
   - **Library spikes are not trivia**: where a library's usage had to be
     figured out (sharp edges, non-obvious wiring), a test pinning the working
     pattern is executable documentation CI keeps honest — keep it, and say so
@@ -419,6 +434,14 @@ re-assemble a bundle at runtime. Per-client details (`pygit2` ignores
     (the token request asks for the full scope list) — not
     `field default == the same imported constant`, which passes even when the
     constant changes.
+  - **Removed stays removed**: deleting a feature deletes its tests; add no test
+    that a removed thing stays removed. When a reminder is needed, leave a
+    `CLEANUP` tombstone with a verifiable gate (§ Tombstones). Exception: a test
+    that holds an authentication, authorization, or approval boundary stays.
+  - **Regression tests**: a test added with a fix either fails on the pre-fix
+    code (the PR says so) or is not presented as a regression test and earns its
+    place as ordinary behavior coverage. A regression test that passes on the
+    pre-fix code, or whose premise no longer exists, is deleted.
   - **Anchors and guards inherit their unit's value**: a positive anchor keeps
     its negatives from passing vacuously; an anti-vacuity assert keeps an
     invariant honest. Judge the unit, not the line.
