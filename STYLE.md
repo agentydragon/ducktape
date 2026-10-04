@@ -421,6 +421,12 @@ re-assemble a bundle at runtime. Per-client details (`pygit2` ignores
     in the test or file docstring, unless local context (a README, an `x/`
     folder) already does. The axis is triviality of the usage, not the
     presence of a library.
+  - **Externally owned protocols are our edge, not the library's**: where a
+    model must conform to a protocol or format we do not control (a harness's
+    wire messages, a vendor API), a test that feeds it payloads observed from
+    the real counterpart, tricky shapes included, stays. It pins that our model
+    of the format is right, which takes iteration to get and nothing else
+    checks. Say in the test where the payloads come from.
   - **Change-detector guarding a real constraint → comment at the
     declaration**: when a test's only enforcement is "the editor must update a
     mirrored literal in a second file" _and_ the guarded thing can only break
