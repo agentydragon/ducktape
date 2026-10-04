@@ -159,6 +159,7 @@ agentplane_vitest_test(
         ":thread_cards",
         ":thread_commands",
         ":thread_entity_fixture",
+        ":thread_state_fixture",
         ":thread_sync",
         "//:node_modules/@bufbuild/protobuf",
         "//:node_modules/@mantine/core",
@@ -301,6 +302,19 @@ ts_library(
     deps = [
         ":thread_sync",
         "//agentplane/protocol:event_pb",
+    ],
+)
+
+ts_library(
+    name = "thread_state_fixture",
+    testonly = True,
+    srcs = ["thread_state_fixture.tsx"],
+    tsconfig = TSCONFIG,
+    deps = [
+        ":thread_sync",
+        "//:node_modules/@types/react",
+        "//:node_modules/react",
+        "//agentplane/app/frontend:client",
     ],
 )
 
