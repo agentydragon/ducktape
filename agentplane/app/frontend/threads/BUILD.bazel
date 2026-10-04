@@ -156,7 +156,6 @@ agentplane_vitest_test(
         ":local_commands",
         ":projected_session",
         ":retained_disclosures",
-        ":thread_cards",
         ":thread_commands",
         ":thread_entity_fixture",
         ":thread_state_fixture",
@@ -253,6 +252,26 @@ ts_library(
         "//agentplane/app/frontend:json_view",
         "//agentplane/app/frontend:markdown",
         "//agentplane/app/frontend:raw_switch",
+        "//agentplane/protocol:event_pb",
+    ],
+)
+
+agentplane_vitest_test(
+    name = "thread_cards_test",
+    srcs = ["thread_cards.test.tsx"],
+    deps = [
+        ":retained_disclosures",
+        ":thread_cards",
+        ":thread_entity_fixture",
+        ":thread_state_fixture",
+        ":thread_sync",
+        "//:node_modules/@bufbuild/protobuf",
+        "//:node_modules/@mantine/core",
+        "//:node_modules/@types/react",
+        "//:node_modules/@types/react-dom",
+        "//:node_modules/react",
+        "//:node_modules/react-dom",
+        "//:node_modules/vitest",
         "//agentplane/protocol:event_pb",
     ],
 )
