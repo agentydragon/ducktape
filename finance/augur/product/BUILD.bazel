@@ -342,7 +342,6 @@ py_test(
         "//finance/augur/sim:world",
         "//finance/augur/sim/testing:session",
         "@pypi//numpy",
-        "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],
 )

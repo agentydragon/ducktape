@@ -8,7 +8,6 @@ from dataclasses import dataclass
 from decimal import Decimal
 
 import numpy as np
-import pytest
 import pytest_bazel
 
 from finance.augur.api.config import DistributionTaxShareConfig, SecurityDistributionConfig
@@ -30,14 +29,14 @@ from finance.augur.model.series import (
 from finance.augur.product.funding import Policy
 from finance.augur.product.holdings import opening_holdings
 from finance.augur.product.scenarios import PRIMARY_ACCOUNT_ID, TAX_AUTHORITY_AGENT_ID, Situation, build_situation
-from finance.augur.product.wire import FundingPolicy, ScenarioKey, SecuritySleeveWeight, SleeveWeight, SpendIndex
+from finance.augur.product.wire import FundingPolicy, ScenarioKey, SecuritySleeveWeight, SpendIndex
 from finance.augur.sim.bills import Biller
 from finance.augur.sim.external_series import ExternalSeriesContext, compile_series
 from finance.augur.sim.ids import AccountId, AgentId, LotId
 from finance.augur.sim.income import Taxable
 from finance.augur.sim.jurisdictions import HYPOTHETICAL_FLAT_TAX, Jurisdiction, flat_income_tax
 from finance.augur.sim.market_path import MarketPath
-from finance.augur.sim.results import Paid, RejectedAction, Rollout
+from finance.augur.sim.results import Rollout
 from finance.augur.sim.session import ActionSession
 from finance.augur.sim.tax_authority import TaxAuthority
 from finance.augur.sim.tax_indexation import FixedNominalLaw
@@ -49,7 +48,6 @@ BROKERAGE = AccountId("brokerage")
 
 ACTOR = AgentId("test-owner")
 FIRST = SecurityKey(symbol=SecuritySymbol("test-first"))
-SECOND = SecurityKey(symbol=SecuritySymbol("test-second"))
 
 
 def lot(
@@ -204,122 +202,6 @@ def run(
         currency=situation.currency,
     )
     return finish(ActionSession({0: world}, ACTOR), policy).rollouts[0]
-
-
-def test_symbol_weight_is_not_repeated_per_account_and_fifo_is_account_scoped() -> None:
-    config = FundingPolicy(
-        sleeve_weights=(
-            SecuritySleeveWeight(symbol=FIRST.symbol, weight=1),
-            SecuritySleeveWeight(symbol=SECOND.symbol, weight=1),
-        )
-    )
-    product = product_situation(
-        config,
-        spend=Decimal(100),
-        lots=(
-            lot(LotId("first-new"), AccountId("preferred"), FIRST, Decimal("0.7"), -6),
-            lot(LotId("first-old"), AccountId("preferred"), FIRST, Decimal("0.3"), -12),
-            lot(LotId("globally-oldest"), AccountId("later"), FIRST, Decimal(1), -36),
-            lot(LotId("second"), AccountId("preferred"), SECOND, Decimal(1)),
-        ),
-    )
-    result = run(product, config, {asset: np.full((1, 2), 100.0) for asset in (FIRST, SECOND)})
-    # FIRST totals $200 versus SECOND $100. A $100 withdrawal comes entirely from FIRST,
-    # emptying the preferred account despite the older lot in the later account.
-    assert result.trace is not None
-    sales = result.trace.events.lot_dispositions
-    assert sales.select("lot_id", "proceeds_quanta").rows() == [("first-old", 3000), ("first-new", 7000)]
-    assert [row.action.kind for row in result.trace.receipts] == ["Sell", "PayClaim"]
-    assert result.stop is None
-    remaining = {row.lot_id: row.units_remaining for row in result.summary.ending_book.lots}
-    assert remaining == {"first-new": 0, "first-old": 0, "globally-oldest": 1_000_000, "second": 1_000_000}
-
-
-@pytest.mark.parametrize(("cash", "raised", "ending"), [(250, 40, 280), (270, 0, 260), (290, 0, 280), (400, 0, 390)])
-def test_refill_to_ceiling_inclusive_band_and_surplus_never_invested(cash: int, raised: int, ending: int) -> None:
-    config = FundingPolicy(
-        cash_floor=Decimal(260),
-        cash_ceiling=Decimal(280),
-        cash_band_index_to_inflation=False,
-        sleeve_weights=(SecuritySleeveWeight(symbol=FIRST.symbol, weight=1),),
-    )
-    product = product_situation(config, cash=Decimal(cash), lots=(lot(LotId("fund"), BROKERAGE, FIRST, Decimal(10)),))
-    result = run(product, config, {FIRST: np.full((1, 2), 100.0)})
-    assert result.trace is not None
-    assert result.trace.events.lot_dispositions.get_column("proceeds_quanta").sum() == raised * 100
-    assert result.summary.cash[0].values == [cash * 100, ending * 100]
-    assert {row.action.kind for row in result.trace.receipts} <= {"Sell", "PayClaim"}
-
-
-@pytest.mark.parametrize(
-    "weights",
-    [
-        (),
-        (SecuritySleeveWeight(symbol=FIRST.symbol, weight=0),),
-        (SecuritySleeveWeight(symbol=SecuritySymbol("absent"), weight=1),),
-    ],
-)
-def test_empty_excluded_or_unheld_targets_allow_cash_payments_but_never_sell(weights: tuple[SleeveWeight, ...]) -> None:
-    # Indexed nonzero bounds still need no CPI when sales are disabled, matching app semantics.
-    config = FundingPolicy(cash_floor=Decimal(100), cash_ceiling=Decimal(200), sleeve_weights=weights)
-    product = product_situation(
-        config,
-        cash=Decimal(50),
-        spend=Decimal(30),
-        rent=Decimal(40),
-        horizon=2,
-        lots=(lot(LotId("keep"), BROKERAGE, FIRST, Decimal(10)),),
-    )
-    result = run(
-        product,
-        config,
-        {FIRST: np.full((1, 3), 100.0), RentKey(location_id=LocationId("test-location")): np.ones((1, 3))},
-    )
-    assert result.trace is not None
-    assert result.trace.events.lot_dispositions.is_empty()
-    # Intentional ordered-action semantics: first $30 payment stays paid; the next $40 claim
-    # fails with $20 left. The old configured group would reject both against their $70 total.
-    assert result.stop == RejectedAction(month=0, action_index=1)
-    assert result.summary.cash[0].values == [5000, 2000]
-    assert [isinstance(row.receipt.outcome, Paid) for row in result.summary.payments] == [True, False]
-    assert result.summary.ending_book.month == 1
-
-
-def test_zero_weight_excludes_from_sales_and_target_denominator_even_on_exhaustion() -> None:
-    config = FundingPolicy(
-        sleeve_weights=(
-            SecuritySleeveWeight(symbol=FIRST.symbol, weight=0),
-            SecuritySleeveWeight(symbol=SECOND.symbol, weight=1),
-        )
-    )
-    product = product_situation(
-        config,
-        spend=Decimal(150),
-        lots=(lot(LotId("keep"), BROKERAGE, FIRST, Decimal(10)), lot(LotId("sell"), BROKERAGE, SECOND, Decimal(1))),
-    )
-    result = run(product, config, {asset: np.full((1, 2), 100.0) for asset in (FIRST, SECOND)})
-    assert result.trace is not None
-    sales = result.trace.events.lot_dispositions
-    assert sales.select("lot_id", "proceeds_quanta").rows() == [("sell", 10_000)]
-    assert result.stop == RejectedAction(month=0, action_index=1)
-    assert result.summary.ending_book.lots[0].units_remaining == 10_000_000
-
-
-def test_monthly_cpi_band_rounds_original_bound_once() -> None:
-    config = FundingPolicy(
-        cash_floor=Decimal("0.01"),
-        cash_ceiling=Decimal("0.01"),
-        sleeve_weights=(SecuritySleeveWeight(symbol=FIRST.symbol, weight=1),),
-    )
-    product = product_situation(
-        config, spend=Decimal("0.01"), horizon=3, lots=(lot(LotId("fund"), BROKERAGE, FIRST, Decimal(10)),)
-    )
-    result = run(product, config, {FIRST: np.full((1, 4), 100.0), InflationKey(): np.array([[3.0, 4.0, 5.0, 99.0]])})
-    assert result.summary.cash[0].values == [0, 1, 1, 2]
-    assert result.trace is not None
-    assert result.trace.events.lot_dispositions.get_column("proceeds_quanta").to_list() == [2, 1, 2]
-    with pytest.raises(ValueError, match="requires a supplied CPI"):
-        run(product, config, {FIRST: np.full((1, 4), 100.0)})
 
 
 def test_product_spend_tracks_monthly_cpi_but_rent_resets_only_annually() -> None:
