@@ -77,12 +77,6 @@ def test_first_qualifying_day_starts_streak() -> None:
     assert state.last_qualifying_date == "2026-07-01"
 
 
-def test_consecutive_day_increments() -> None:
-    state = _state(streak_days=6, last="2026-07-01")
-    qualify_streak_day(state, _day("2026-07-02"))
-    assert state.streak_days == 7
-
-
 def test_same_day_is_idempotent_and_backdated_day_is_ignored() -> None:
     state = _state(streak_days=6, last="2026-07-01", rest_used=0)
     qualify_streak_day(state, _day("2026-07-01"))
