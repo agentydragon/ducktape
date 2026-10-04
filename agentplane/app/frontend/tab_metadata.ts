@@ -1,12 +1,11 @@
+import type { ThreadStatusKind } from "./thread_status_palette";
+
 export const DEFAULT_APP_TITLE = "Agentplane";
 
-export type ThreadStatusColor = "green" | "yellow" | "red" | "gray";
-
 export interface ThreadTabStatus {
-  color: ThreadStatusColor;
+  kind: ThreadStatusKind;
   label: string;
   tabLabel: string;
-  pulse?: boolean;
 }
 
 /** The shell's non-thread routes, named so their browser tabs identify the current surface. */

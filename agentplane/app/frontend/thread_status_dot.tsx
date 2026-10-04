@@ -2,25 +2,19 @@
 import { Box, Tooltip } from "@mantine/core";
 import type { JSX } from "react";
 
+import { THREAD_STATUS_BLINK_MS, THREAD_STATUS_COLORS, type ThreadStatusKind } from "./thread_status_palette";
 import "./thread_status_dot.css";
 
 export function ThreadStatusDot({
-  color,
+  kind,
   label,
-  pulse = false,
   size = "regular",
 }: {
-  color: string;
+  kind: ThreadStatusKind;
   label: string;
-  /** Indicates unsettled sync or an active turn. */
-  pulse?: boolean;
   size?: "small" | "regular";
 }): JSX.Element {
-  const className = [
-    "agentplane-thread-status-dot",
-    size === "small" && "agentplane-thread-status-dot-small",
-    pulse && "agentplane-thread-status-dot-pulsing",
-  ]
+  const className = ["agentplane-thread-status-dot", size === "small" && "agentplane-thread-status-dot-small"]
     .filter(Boolean)
     .join(" ");
   return (
@@ -32,7 +26,8 @@ export function ThreadStatusDot({
         title={label}
         tabIndex={0}
         className={className}
-        style={{ backgroundColor: `var(--mantine-color-${color}-6)` }}
+        data-status={kind}
+        style={{ backgroundColor: THREAD_STATUS_COLORS[kind], animationDuration: `${THREAD_STATUS_BLINK_MS}ms` }}
       />
     </Tooltip>
   );

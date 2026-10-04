@@ -12,25 +12,33 @@
   height: 0.375rem;
 }
 
-.agentplane-thread-status-dot-pulsing {
-  animation: agentplane-thread-status-breathe 1.2s ease-in-out infinite;
+/* The duration is set inline from THREAD_STATUS_BLINK_MS, so the favicon blinks in step. */
+.agentplane-thread-status-dot[data-status="running"] {
+  animation: agentplane-thread-status-blink ease-in-out infinite;
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .agentplane-thread-status-dot-pulsing {
+  .agentplane-thread-status-dot[data-status="running"] {
     animation: none;
   }
 }
 
-@keyframes agentplane-thread-status-breathe {
+/* Fully on for the first half of the cycle and nearly off for the second, as the favicon does. */
+@keyframes agentplane-thread-status-blink {
   0%,
-  100% {
-    opacity: 0.35;
-    transform: scale(0.8);
+  45% {
+    opacity: 1;
+    transform: scale(1);
   }
 
-  50% {
+  55%,
+  95% {
+    opacity: 0.12;
+    transform: scale(0.7);
+  }
+
+  100% {
     opacity: 1;
-    transform: scale(1.15);
+    transform: scale(1);
   }
 }

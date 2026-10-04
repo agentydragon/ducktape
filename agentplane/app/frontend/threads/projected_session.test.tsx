@@ -20,6 +20,7 @@ import { pruneCommandErrors } from "./thread_commands";
 import { EntityCard } from "./thread_cards";
 import { RetainedDisclosureProvider } from "./retained_disclosures";
 import { DEGRADED_AFTER_MS, STALE_AFTER_MS } from "../stream_status";
+import { THREAD_STATUS_COLORS } from "../thread_status_palette";
 import { testItem } from "./thread_entity_fixture";
 import {
   ThreadSyncContext,
@@ -442,20 +443,19 @@ it("disables shutdown while the harness is not running", async () => {
 });
 
 it.each([
-  [{ feed_status: "failed" }, "Runner feed failed", "red", false],
-  [{ feed_status: "ended" }, "Runner feed ended", "gray", false],
-  [{ harness_state: "HARNESS_STATE_STOPPED" }, "Harness not running", "gray", false],
-  [{ active_turn_id: "turn-1" }, "Turn running · Runner feed active · harness running", "green", true],
-  [{}, "Runner feed active · harness running", "green", false],
-] as const)("uses shared thread row %o for the topbar status", async (row, label, color, pulse) => {
+  [{ feed_status: "failed" }, "Runner feed failed", "failed"],
+  [{ feed_status: "ended" }, "Runner feed ended", "inactive"],
+  [{ harness_state: "HARNESS_STATE_STOPPED" }, "Harness not running", "inactive"],
+  [{ active_turn_id: "turn-1" }, "Turn running · Runner feed active · harness running", "running"],
+  [{}, "Runner feed active · harness running", "idle"],
+] as const)("uses shared thread row %o for the topbar status", async (row, label, kind) => {
   sharedThread = row;
   const container = await render();
   const dot = container.querySelector(".agentplane-thread-status-dot");
   expect(dot?.closest(".agentplane-composer-controls")).toBeNull();
   expect(mounted.at(-1)?.topbarTitle?.contains(dot ?? null)).toBe(true);
   expect(dot?.getAttribute("aria-label")).toBe(label);
-  expect(dot?.getAttribute("style")).toContain(`--mantine-color-${color}-6`);
-  expect(dot?.classList.contains("agentplane-thread-status-dot-pulsing")).toBe(pulse);
+  expect(dot?.getAttribute("data-status")).toBe(kind);
 });
 
 it("uses the shared list feed instead of a healthy conversation projection for the composer dot", async () => {
@@ -464,32 +464,45 @@ it("uses the shared list feed instead of a healthy conversation projection for t
   expect(failed.querySelector('.agentplane-thread-status-dot[aria-label="Runner feed failed"]')).not.toBeNull();
 });
 
-it("pulses and labels the healthy status dot while a turn is active", async () => {
+const faviconSvg = (): string => decodeURIComponent(favicon.getAttribute("href")?.split(",")[1] ?? "");
+
+it("blinks the favicon's green dot and labels the status dot while a turn is active", async () => {
   vi.useFakeTimers();
   sharedThread = { active_turn_id: "turn-1" };
   const dot = (await render(threadState({ rows: [viewState({ activeTurn: "turn-1" })] }))).querySelector(
     ".agentplane-thread-status-dot"
   );
   expect(dot?.getAttribute("aria-label")).toBe("Turn running · Runner feed active · harness running");
-  expect(dot?.getAttribute("style")).toContain("--mantine-color-green-6");
-  expect(dot?.classList.contains("agentplane-thread-status-dot-pulsing")).toBe(true);
+  expect(dot?.getAttribute("data-status")).toBe("running");
   expect(document.title).toBe("Test thread · Running — Agentplane");
-  const firstFrame = favicon.getAttribute("href");
-  expect(firstFrame).toMatch(/^data:image\/svg\+xml,/);
-  const svg = (href: string | null): string => decodeURIComponent(href?.split(",")[1] ?? "");
-  expect(svg(firstFrame)).toContain('<path d="M5 14.5 27 5 18 27');
-  expect(svg(firstFrame)).toContain('fill="none"');
-  expect(svg(firstFrame)).not.toContain("<rect");
-  expect(svg(firstFrame)).toContain('stroke="#102a43" stroke-width="3"');
-  expect(svg(firstFrame)).toContain('fill="none" stroke="#fff" stroke-width="1.5"');
+  expect(favicon.getAttribute("href")).toMatch(/^data:image\/svg\+xml,/);
+  expect(faviconSvg()).toContain('<path d="M5 14.5 27 5 18 27');
+  expect(faviconSvg()).toContain('fill="none"');
+  expect(faviconSvg()).not.toContain("<rect");
+  expect(faviconSvg()).toContain(`fill="${THREAD_STATUS_COLORS.running}" stroke="#102a43" stroke-width="3"`);
+  expect(faviconSvg()).toContain('fill="none" stroke="#fff" stroke-width="1.5"');
   await act(async () => {
     vi.advanceTimersByTime(700);
   });
-  expect(svg(favicon.getAttribute("href"))).not.toContain("<circle");
+  expect(faviconSvg()).not.toContain("<circle");
   await act(async () => {
     vi.advanceTimersByTime(600);
   });
-  expect(svg(favicon.getAttribute("href"))).toContain('<circle cx="24.5"');
+  expect(faviconSvg()).toContain('<circle cx="24.5"');
+});
+
+it("shows an idle thread as a steady dot in the idle color, in the favicon too", async () => {
+  vi.useFakeTimers();
+  sharedThread = {};
+  const dot = (await render()).querySelector(".agentplane-thread-status-dot");
+  expect(dot?.getAttribute("data-status")).toBe("idle");
+  const idleDot = `fill="${THREAD_STATUS_COLORS.idle}" stroke="#102a43"`;
+  expect(faviconSvg()).toContain(idleDot);
+  // Past the point where a running turn's dot is hidden.
+  await act(async () => {
+    vi.advanceTimersByTime(700);
+  });
+  expect(faviconSvg()).toContain(idleDot);
 });
 
 it("does not show active-turn status when the runner is not active", async () => {
@@ -497,7 +510,7 @@ it("does not show active-turn status when the runner is not active", async () =>
   sharedThread = { active_turn_id: "turn-1" };
   const dot = (await render()).querySelector(".agentplane-thread-status-dot");
   expect(dot?.getAttribute("aria-label")).toBe("Runner feed ended");
-  expect(dot?.classList.contains("agentplane-thread-status-dot-pulsing")).toBe(false);
+  expect(dot?.getAttribute("data-status")).toBe("inactive");
 });
 
 // Retained history still says the harness runs and the feed failed; neither is live any more.
@@ -505,7 +518,7 @@ it.each([
   [{ archived: true }, [inventorySandbox()], "Thread archived"],
   [{ archived: false }, [], "Sandbox unavailable"],
   [{ archived: false }, [inventorySandbox("Suspended")], "Sandbox unavailable"],
-])("shows a gray dot for thread %o with sandboxes %o: %s", async (overrides, inventory, label) => {
+])("shows an inactive dot for thread %o with sandboxes %o: %s", async (overrides, inventory, label) => {
   vi.mocked(getThread).mockResolvedValue({ ...THREAD, ...overrides });
   sharedThread = overrides;
   sandboxes = inventory;
@@ -513,7 +526,7 @@ it.each([
     ".agentplane-thread-status-dot"
   );
   expect(dot?.getAttribute("aria-label")).toBe(label);
-  expect(dot?.getAttribute("style")).toContain("--mantine-color-gray-6");
+  expect(dot?.getAttribute("data-status")).toBe("inactive");
 });
 
 const RUNNING = inventorySandbox();
