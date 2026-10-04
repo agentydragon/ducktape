@@ -743,10 +743,8 @@ The `haku-egress-proxy` namespace is the other half of the estate. It is not pub
 this milestone does not retire it, but it is the same question asked of different workloads, so its
 consumers are listed here rather than discovered later:
 
-- **Haku Console Sandbox MCP (retired).** Its Haku-specific SandboxTemplate and warm pool were
-  removed from `haku-sandbox`; the old MCP and image sources are parked in
-  `haku/x/sandbox_mcp/`. The generic egress injection remains relevant to other Pods admitted in
-  `haku-sandbox`, including Haku-authored workloads.
+- **Pods admitted in `haku-sandbox`**, including Haku-authored workloads, which the generic egress
+  injection still reaches.
 - **`haku-ci`**, which wires it explicitly instead: `HTTP(S)_PROXY` env in
   `cluster/cdk8s/haku_ci/runner.py`, including for dockerd's image pulls.
 - **One more iron-proxy listener it hosts**: `haku-openclaw-spike-proxy` for

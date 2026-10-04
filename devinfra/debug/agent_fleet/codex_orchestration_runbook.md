@@ -236,8 +236,8 @@ Tier-2 below is "rebuild it," with that code in git history as the reference.
 - **Former Haku Console `sandbox__*` MCP tools (retired)** → `haku-sandbox` namespace and the
   `haku-sandbox-image` (**no codex/node/claude**). `exec_sandbox` was **one-shot `pods/exec` with
   `stdin=False`, buffered output, 5-min / 100 KB cap**
-  (`haku/x/sandbox_mcp/kubernetes_client.py`) — it could not hold a live stdio JSON-RPC channel.
-  The source is archived; this is not a current web-session launch path.
+  (`haku/x/sandbox_mcp/kubernetes_client.py` at commit `ca7333002`) — it could not hold a live stdio
+  JSON-RPC channel. The source is deleted; this is not a current web-session launch path.
 - **`haku/runner` runtimes** (`codex_app_server`) → the pod pattern above; gone since #5992.
 - **legacy `agent-workspaces`** → image `agent-workspace` bakes claude+codex+node
   (`cluster/images/agent-workspace/Dockerfile`), region-pinned OVH.

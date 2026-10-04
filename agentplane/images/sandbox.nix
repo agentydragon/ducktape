@@ -4,9 +4,10 @@
 # plus the runner and both harnesses, and the build image (<build.nix>) this definition plus Bazel
 # and what a build compiles with, so a tool added here reaches all three.
 #
-# The egress proxy's CA comes from the pod, not from this image: nothing here sets
-# SSL_CERT_FILE, for the reason the Haku image records beside its own `Env`
-# (<../../haku/x/sandbox_mcp/image/default.nix>).
+# The egress proxy's CA comes from the pod, not from this image: nothing here sets SSL_CERT_FILE
+# or GIT_SSL_CAINFO. Pointing them at the public cacert bundle breaks TLS in-cluster, since the
+# proxy re-signs every external host with a CA that bundle lacks, and GIT_SSL_CAINFO overrides
+# git's `http.sslCAInfo`, so the pod's git configuration cannot repair it.
 #
 # Build:  nix build .#agentplane-sandbox-image
 # Load:   docker load < result

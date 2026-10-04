@@ -36,3 +36,11 @@ and move this output/pin back under the active roots.
 Restore `agent-workspaces` in the Forgejo image SecretStore consumer list and
 `agent-workspace` in the image-automation roster. Regenerate and validate before
 merging; reviving the namespace creates a fresh warm workspace, not the deleted data.
+
+**Gotcha: an idle warm Sandbox can outlive an image bump.** Under `updateStrategy: Recreate`, an
+image-pin-only template change did not replace the pool's idle Sandbox (observed on the retired
+Haku pool, 2026-07-25), so a claim made after the bump adopted a pod still on the previous image;
+a change that also edited other `podTemplate` fields did replace it (2026-08-26). Whether an
+image-only bump ever recycles an idle pod is unsettled. The
+`agents.x-k8s.io/sandbox-template-ref-hash` label cannot tell: it hashes the template reference,
+not its content, so only the pod spec shows whether a pod carries the current template.

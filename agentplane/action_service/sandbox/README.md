@@ -133,10 +133,9 @@ while `dispose` + `create` of it reached `Ready` in about 45 s. So an exceeded-q
 `ReconcilerError` is the caller's cue to `list` its sandboxes, `dispose` the ones it has finished
 with, then `dispose` + `create` the refused one.
 
-The argument and result shapes draw on the retired Console surface retained at
-<../../../haku/x/sandbox_mcp/tools.py>: one bounded Bash script per call, a per-deployment ceiling
-on timeout and retained output patched into the advertised schema, and nonzero exits reported as
-results rather than transport errors.
+`exec` takes one bounded Bash script per call: the deployment's ceiling on timeout and retained
+output is patched into the advertised schema, and a nonzero exit is a result rather than a
+transport error.
 
 Properties of the Action path the tool documentation has to state, because an agent assuming
 otherwise misreads every call:

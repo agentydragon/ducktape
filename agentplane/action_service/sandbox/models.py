@@ -1,9 +1,6 @@
 """Agent-facing arguments and results for the sandbox Actions.
 
-Shapes follow the retired Console exec surface retained at
-<../../haku/x/sandbox_mcp/tools.py>, because an agent that knows one should not have to learn the
-other. What differs is ownership:
-these sandboxes run as the ServiceAccount that called the Action, so nothing here names an
+These sandboxes run as the ServiceAccount that called the Action, so nothing here names an
 identity -- the caller's is the only one available and the executor reads it off the request.
 """
 

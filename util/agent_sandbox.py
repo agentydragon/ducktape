@@ -1,17 +1,16 @@
 """The Agent Sandbox CRDs' vocabulary, as the upstream controller publishes it.
 
-Three components read these objects — the parked Haku sandbox client
-(<../haku/x/sandbox_mcp/kubernetes_client.py>), the Agentplane integration app's inventory
+Two components read these objects — the Agentplane integration app's inventory
 (<../agentplane/sandbox_service/inventory.py>) and the sandbox Actions'
-(<../agentplane/action_service/sandbox/inventory.py>) — and each re-derived the API's
-coordinates and its own way of reading a status condition. That is how the sandbox Actions shipped
-searching for a Pod by a label the controller does not write: the annotation that actually links
-the two objects was declared correctly in one consumer and absent from the next.
+(<../agentplane/action_service/sandbox/inventory.py>) — and each would otherwise re-derive the
+API's coordinates and its own way of reading a status condition. That is how the sandbox Actions
+shipped searching for a Pod by a label the controller does not write: the annotation that actually
+links the two objects was declared correctly in one consumer and absent from the next.
 
 What belongs here is only what upstream owns. Each consumer's managed-by labels, naming scheme and
 notion of a usable box differ deliberately and stay with it. The app's inventory parses these
-objects into its own typed models, so it takes the coordinates and leaves `condition` to the two
-consumers that read the API server's dicts directly.
+objects into its own typed models, so it takes the coordinates and leaves `condition` to the
+consumer that reads the API server's dicts directly.
 """
 
 from __future__ import annotations
