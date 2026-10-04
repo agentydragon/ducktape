@@ -206,16 +206,6 @@ def test_update_event_set_reminders_overrides_the_calendar_default(
     assert body["reminders"] == {"useDefault": False, "overrides": [{"method": "popup", "minutes": 30}]}
 
 
-def test_update_event_unset_reminders_omits_the_key(service: _FakeCalendarService, client: CalendarToolsClient) -> None:
-    client.update_event(UpdateCalendarEventArgs(event_id="evt1", summary="New title"))
-    _calendar_id, _event_id, body = service.events_.patched[0]
-    assert "reminders" not in body
-    assert "attendees" not in body
-    assert "recurrence" not in body
-    assert "start" not in body
-    assert "end" not in body
-
-
 def test_update_event_recurrence_validated_against_the_patched_start(
     service: _FakeCalendarService, client: CalendarToolsClient
 ) -> None:

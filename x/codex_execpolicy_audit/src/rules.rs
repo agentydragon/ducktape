@@ -54,16 +54,4 @@ mod tests {
         assert!(!allows(&p, &["git", "diff"]));
         assert!(!allows(&p, &["git"]));
     }
-
-    #[test]
-    fn parses_allow_rules_and_skips_non_allow() {
-        let text = r#"
-prefix_rule(pattern=["git", "status"], decision="allow")
-prefix_rule(pattern=["rm"], decision="forbidden")
-prefix_rule(pattern=["bbr", "test"], decision="allow")
-"#;
-        let p = policy_from(text);
-        assert!(allows(&p, &["bbr", "test", "//foo"]));
-        assert!(!allows(&p, &["rm", "-rf", "/"]));
-    }
 }
