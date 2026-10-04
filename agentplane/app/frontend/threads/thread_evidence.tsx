@@ -1,6 +1,6 @@
 import { ActionIcon, Button, Group, Stack, Text } from "@mantine/core";
 import IconZoomCode from "@tabler/icons-react/dist/esm/icons/IconZoomCode.mjs";
-import { type CSSProperties, type JSX, useEffect, useRef, useState } from "react";
+import { type CSSProperties, type JSX, useEffect, useEffectEvent, useRef, useState } from "react";
 
 import {
   displayableError,
@@ -33,8 +33,9 @@ function EvidenceFramesPage({
     entityKind: entity.entityKind,
     entityId: entity.entityId,
   };
+  const loadFirstPage = useEffectEvent(() => load());
   useEffect(() => {
-    load();
+    loadFirstPage();
     return () => request.current?.abort();
   }, []);
   const load = (after = "0"): void => {
@@ -120,8 +121,9 @@ function EvidencePageView({ threadId, entity }: { threadId: string; entity: Thre
     entityKind: entity.entityKind,
     entityId: entity.entityId,
   };
+  const loadFirstPage = useEffectEvent(() => load());
   useEffect(() => {
-    load();
+    loadFirstPage();
     return () => request.current?.abort();
   }, []);
   const load = (after = "0"): void => {

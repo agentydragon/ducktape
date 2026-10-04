@@ -16,7 +16,7 @@ import {
 } from "@mantine/core";
 // Per-icon subpaths, never the barrel: see tabler_icons.d.ts.
 import IconDotsVertical from "@tabler/icons-react/dist/esm/icons/IconDotsVertical.mjs";
-import { type JSX, useEffect, useState } from "react";
+import { type JSX, useEffect, useEffectEvent, useState } from "react";
 import { useSearchParams } from "react-router";
 
 import { fromJson, type JsonValue } from "@bufbuild/protobuf";
@@ -357,7 +357,7 @@ export function SandboxPage({
     if (option && !option.reasoning_efforts.includes(effort)) setEffort(option.reasoning_efforts[0] ?? "");
   }, [effort, model, models]);
 
-  useEffect(() => {
+  const applyBindingDefaults = useEffectEvent(() => {
     const binding = sandbox?.binding;
     if (!binding) {
       setDefaultsLabel(null);
@@ -378,7 +378,8 @@ export function SandboxPage({
     setInstructions(defaults.instructions ?? "");
     setCwdTemplate(defaults.cwd ?? "/state/workspaces/{session_id}");
     setSetupScript(defaults.setup_script ?? "");
-  }, [bindingKey]);
+  });
+  useEffect(() => applyBindingDefaults(), [bindingKey]);
 
   // No re-read after an action: the change reaches the API server, and the watch behind the
   // stream brings the sandbox's new state back on its own.
