@@ -23,6 +23,10 @@ jobs:
       - name: Check out code
         uses: actions/checkout@v7
 
+      - name: Discover changed files for pre-commit
+        id: changed-files
+        run: python3 devinfra/ci/precommit_file_selection.py
+
       # ============================================================================
       # ENVIRONMENT SETUP
       # ============================================================================
@@ -37,6 +41,7 @@ jobs:
       # Cache Ansible Galaxy roles (required for syntax check - meta/main.yml dependencies)
       - name: Restore Ansible Galaxy roles cache
         id: cache-ansible-roles-restore
+        if: steps.changed-files.outputs.needs_ansible_roles == 'true'
         uses: actions/cache/restore@v6
         with:
           path: ~/.ansible/roles
@@ -47,6 +52,7 @@ jobs:
       # role dependencies from meta/main.yml files (e.g., legacy_gui depends on
       # petermosmans.customize-gnome)
       - name: Install Ansible Galaxy roles
+        if: steps.changed-files.outputs.needs_ansible_roles == 'true'
         run: |
           cd ansible
           ansible-galaxy role install -r requirements.yaml
@@ -74,14 +80,12 @@ jobs:
           # Unset NODE_OPTIONS to avoid global-agent requirement in pre-commit's
           # isolated node environments (markdownlint-cli2 hook uses npm)
           unset NODE_OPTIONS
+          set -euo pipefail
 
           # PRs: check only files changed in the PR (fast feedback).
           # Branch pushes + manual runs: check all files (full gate before merge).
           if [ "$GITHUB_EVENT_NAME" = "pull_request" ]; then
-            # GITHUB_BASE_REF is only set on pull_request events. A depth-1 fetch is
-            # enough: git diff compares the two trees directly (no merge-base needed).
-            git fetch --depth=1 origin "$GITHUB_BASE_REF"
-            mapfile -t changed < <(git diff --name-only --diff-filter=d "origin/$GITHUB_BASE_REF" HEAD)
+            mapfile -d '' -t changed < "$RUNNER_TEMP/pre-commit-changed-files"
             if [ "${#changed[@]}" -eq 0 ]; then
               echo "No files changed; nothing for pre-commit to check."
               exit 0
@@ -105,7 +109,10 @@ jobs:
           key: ${{ steps.cache-precommit-restore.outputs.cache-primary-key }}
 
       - name: Save Ansible Galaxy roles cache
-        if: always() && steps.cache-ansible-roles-restore.outputs.cache-hit != 'true'
+        if: >-
+          always() &&
+          steps.changed-files.outputs.needs_ansible_roles == 'true' &&
+          steps.cache-ansible-roles-restore.outputs.cache-hit != 'true'
         uses: actions/cache/save@v6
         with:
           path: ~/.ansible/roles
