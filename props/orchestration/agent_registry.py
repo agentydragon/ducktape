@@ -795,11 +795,6 @@ class AgentRegistry:
                 return None
             return AgentRunView.from_orm(db_run)
 
-    def list_recent(self, limit: int = 50) -> list[AgentRunView]:
-        with self._db.session() as session:
-            runs = session.query(AgentRun).order_by(AgentRun.created_at.desc()).limit(limit).all()
-            return [AgentRunView.from_orm(r) for r in runs]
-
     async def start_snapshot_grader(
         self, *, image: ResolvedImage, snapshot_slug: SnapshotSlug, model: str
     ) -> AgentRunHandle:

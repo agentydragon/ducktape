@@ -35,12 +35,6 @@ GTRef = Annotated[TPRef | FPRef, Field(discriminator="type")]
 # --- Tool argument models ---
 
 
-class ListPendingArgs(OpenAIStrictModeBaseModel):
-    issue: str | None = Field(None, description="Filter to specific critique issue ID")
-    gt: GTRef | None = Field(None, description="Filter to specific GT occurrence")
-    run: UUID | None = Field(None, description="Filter to specific critic run ID")
-
-
 class ShowIssueArgs(OpenAIStrictModeBaseModel):
     run: UUID = Field(..., description="Critic run ID")
     issue_id: str = Field(..., description="Critique issue ID to show")
@@ -131,15 +125,6 @@ class DeleteClusterArgs(OpenAIStrictModeBaseModel):
 
 
 # --- Result models ---
-
-
-class PendingEdge(BaseModel):
-    """A pending grading edge from grading_pending view."""
-
-    critique_run_id: UUID
-    critique_issue_id: str
-    snapshot_slug: str
-    gt_ref: GTRef
 
 
 class OccurrenceInfo(BaseModel):

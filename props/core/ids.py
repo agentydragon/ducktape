@@ -2,7 +2,6 @@
 
 Provides strongly-typed IDs with namespace separation:
 - BaseIssueID: Un-namespaced IDs (used in specimens, critique)
-- InputIssueID: NewType wrapper for type safety
 
 All IDs are Pydantic-validated. NewTypes provide compile-time type safety
 (mypy distinguishes them) while remaining strings at runtime (work as JSON dict keys).
@@ -53,28 +52,7 @@ SnapshotSlug = NewType("SnapshotSlug", _SnapshotSlugBase)
 # At runtime, these are just BaseIssueID strings (work as JSON dict keys)
 # Type is implied by position in data structure
 
-InputIssueID = NewType("InputIssueID", BaseIssueID)
 """Input critique ID. Compile-time distinct from other ID types, runtime is BaseIssueID string."""
 
 DefinitionId = NewType("DefinitionId", str)
 """Agent definition ID. Compile-time distinct from str, runtime is string."""
-
-
-def split_snapshot_slug(slug: SnapshotSlug) -> tuple[str, str]:
-    """Split snapshot slug into repo and version components.
-
-    Args:
-        slug: Snapshot slug like "ducktape/2025-11-26-00"
-
-    Returns:
-        Tuple of (repo, version) e.g., ('ducktape', '2025-11-26-00')
-
-    Example:
-        >>> repo, version = split_snapshot_slug(SnapshotSlug("ducktape/2025-11-26-00"))
-        >>> repo
-        'ducktape'
-        >>> version
-        '2025-11-26-00'
-    """
-    parts = str(slug).split("/", 1)
-    return parts[0], parts[1]

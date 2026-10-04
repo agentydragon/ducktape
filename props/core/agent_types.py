@@ -8,7 +8,6 @@ from __future__ import annotations
 
 from enum import StrEnum
 from typing import Annotated, Literal
-from uuid import UUID
 
 from pydantic import BaseModel, Field
 
@@ -133,23 +132,3 @@ TypeConfig = Annotated[
     CriticTypeConfig | GraderTypeConfig | FreeformTypeConfig | CriticDevOptimizeTypeConfig | CriticDevImproveTypeConfig,
     Field(discriminator="agent_type"),
 ]
-
-
-class AgentConfig(BaseModel):
-    """Full agent configuration for creating agent runs.
-
-    Combines shared fields (image ref, model, parent) with type-specific config.
-    The type_config is stored as JSONB in the database and determines what
-    MCP server, handlers, and mounts are used for the agent.
-    """
-
-    image_ref: str = Field(description="Image reference (short name or digest) - resolved to image_digest")
-    model: str = Field(description="LLM model to use (e.g., 'claude-sonnet-5')")
-    parent_agent_run_id: UUID | None = Field(
-        default=None, description="Parent agent run ID for sub-agents (FK to agent_runs)"
-    )
-    type_config: TypeConfig = Field(description="Type-specific configuration (stored as JSONB)")
-
-    @property
-    def agent_type(self) -> AgentType:
-        return self.type_config.agent_type

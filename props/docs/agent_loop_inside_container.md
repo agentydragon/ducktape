@@ -26,7 +26,7 @@ run_loop_agent()
 ### Key implementations
 
 - **Critic:** `props/agents/critic/main.py` — `DirectToolProvider` with exec, insert_issue, submit, report_failure tools. Entry point: `CMD ["/app/critic"]`.
-- **Grader:** `props/agents/grader/loop.py` — `DirectToolProvider` with exec, list_pending, show_issue, show_tp/fp, insert_edges, fill_remaining, delete_edges, submit, report_failure tools. Snapshot grader mode via `props/agents/grader/main.py` with pg_notify.
+- **Grader:** `props/agents/grader/loop.py` — `DirectToolProvider` with exec, show_issue, show_tp/fp, insert_edges, fill_remaining, delete_edges, submit, report_failure tools. Snapshot grader mode via `props/agents/grader/main.py` with pg_notify.
 - **Critic-dev (optimizer/improver):** `props/agents/critic_dev/optimize/main.py`, `props/agents/critic_dev/improve/main.py` — `DirectToolProvider` with exec, start_critic, wait_until_graded_tool, submit, report_failure tools.
 - **Host scaffold:** `props/orchestration/agent_registry.py` — creates agent DB role, starts container, waits for exit, captures logs, determines status from exit code.
 
@@ -171,17 +171,16 @@ The `llm_run_costs` view joins `llm_requests` with `model_metadata` pricing tabl
 
 **Grader Tools (DirectToolProvider):**
 
-| Tool             | Args                                              | Returns             | Mode    | Purpose                                     |
-| ---------------- | ------------------------------------------------- | ------------------- | ------- | ------------------------------------------- |
-| `exec`           | `cmd`, `timeout_ms`, `cwd`                        | `ExecResult`        | both    | Shell commands for file reading, psql, etc. |
-| `list_pending`   | `issue?`, `gt?`, `run?`                           | `list[PendingEdge]` | both    | Query `grading_pending` view                |
-| `show_issue`     | `issue_id`, `run?`                                | `IssueDetails`      | both    | View reported issue + occurrence locations  |
-| `show_gt`        | `gt_ref` (tp/id/occ or fp/id/occ)                 | `GTDetails`         | both    | View ground truth occurrence + rationale    |
-| `insert_edges`   | `issue_id`, `rationale`, `edges[]`                | `str`               | both    | Create multiple edges: `{gt_ref, credit}`   |
-| `fill_remaining` | `issue_id`, `expected_count`, `rationale`, `run?` | `str`               | both    | Bulk-fill remaining edges with credit=0     |
-| `delete_edges`   | `issue_id`, `run?`                                | `str`               | both    | Delete all edges for issue (to redo)        |
-| `submit`         | `summary`                                         | `None`              | one-off | Finalize grading (validates no pending)     |
-| `report_failure` | `message`                                         | `None`              | both    | Report blocking error, exit                 |
+| Tool             | Args                                              | Returns        | Mode    | Purpose                                     |
+| ---------------- | ------------------------------------------------- | -------------- | ------- | ------------------------------------------- |
+| `exec`           | `cmd`, `timeout_ms`, `cwd`                        | `ExecResult`   | both    | Shell commands for file reading, psql, etc. |
+| `show_issue`     | `issue_id`, `run?`                                | `IssueDetails` | both    | View reported issue + occurrence locations  |
+| `show_gt`        | `gt_ref` (tp/id/occ or fp/id/occ)                 | `GTDetails`    | both    | View ground truth occurrence + rationale    |
+| `insert_edges`   | `issue_id`, `rationale`, `edges[]`                | `str`          | both    | Create multiple edges: `{gt_ref, credit}`   |
+| `fill_remaining` | `issue_id`, `expected_count`, `rationale`, `run?` | `str`          | both    | Bulk-fill remaining edges with credit=0     |
+| `delete_edges`   | `issue_id`, `run?`                                | `str`          | both    | Delete all edges for issue (to redo)        |
+| `submit`         | `summary`                                         | `None`         | one-off | Finalize grading (validates no pending)     |
+| `report_failure` | `message`                                         | `None`         | both    | Report blocking error, exit                 |
 
 **Edge model:** Every `(critique_issue, matchable_gt_occurrence)` pair needs an edge. Credit 0.0-1.0 for both TPs and FPs. Use credit=0 for non-matches, >0 for matches (quality of match).
 
