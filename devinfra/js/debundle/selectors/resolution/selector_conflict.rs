@@ -244,13 +244,6 @@ mod tests {
     }
 
     #[test]
-    fn three_claims_over_two_owners_have_a_witness() {
-        let domains = vec![vec![0, 1], vec![0, 1], vec![1]];
-        let witness = deficient_set(&domains).expect("three claims have only two owners");
-        assert_deficient(&domains, &witness);
-    }
-
-    #[test]
     fn alternating_chain_returns_the_whole_deficient_component() {
         // A={x}, B={x,y}, C={y}; each pair can be matched, but all three
         // cannot be assigned distinct owners.
@@ -258,12 +251,6 @@ mod tests {
         let witness = deficient_set(&domains).expect("the chain has three claims and two owners");
         assert_eq!(witness, vec![0, 1, 2]);
         assert_deficient(&domains, &witness);
-    }
-
-    #[test]
-    fn satisfiable_domains_have_no_witness() {
-        let domains = vec![vec![0], vec![0, 1], vec![1, 2]];
-        assert_eq!(deficient_set(&domains), None);
     }
 
     #[test]

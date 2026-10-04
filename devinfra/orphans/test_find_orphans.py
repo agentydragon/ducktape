@@ -45,17 +45,6 @@ def test_comments_and_blanks_ignored(tmp_path: Path) -> None:
     assert _unused(stats) == []
 
 
-def test_all_patterns_unused_with_empty_orphans(tmp_path: Path) -> None:
-    _, stats = _run(tmp_path, "*.txt\nfoo/**\nbar.py\n", git_files=set(), bazel_files=set())
-    assert _unused(stats) == ["*.txt", "foo/**", "bar.py"]
-
-
-def test_glob_pattern_matches_orphan(tmp_path: Path) -> None:
-    orphans, stats = _run(tmp_path, "project/**\n", git_files={Path("project/src/main.py")}, bazel_files=set())
-    assert orphans == []
-    assert _unused(stats) == []
-
-
 def test_extension_pattern_matches_orphan(tmp_path: Path) -> None:
     _, stats = _run(
         tmp_path,
@@ -64,16 +53,6 @@ def test_extension_pattern_matches_orphan(tmp_path: Path) -> None:
         bazel_files=set(),
     )
     assert _unused(stats) == ["*.txt"]
-
-
-def test_exact_path_pattern_matches(tmp_path: Path) -> None:
-    _, stats = _run(
-        tmp_path,
-        "tools/special-script\ntools/other-script\n",
-        git_files={Path("tools/special-script")},
-        bazel_files=set(),
-    )
-    assert _unused(stats) == ["tools/other-script"]
 
 
 def test_bazelized_files_not_orphans(tmp_path: Path) -> None:

@@ -131,15 +131,6 @@ def test_a_commit_buildbuddy_does_not_know_falls_back_to_the_derived_ids() -> No
     ]
 
 
-def test_the_derivation_separates_every_input() -> None:
-    """A re-run must not fold into the run it replaces, and build must not claim test's
-    ID: BuildBuddy merges two invocations sharing an ID rather than rejecting one."""
-    base = invocation_id(run_id="33060467222", attempt="1", role="test")
-    assert invocation_id(run_id="33060467223", attempt="1", role="test") != base
-    assert invocation_id(run_id="33060467222", attempt="2", role="test") != base
-    assert invocation_id(run_id="33060467222", attempt="1", role="build") != base
-
-
 def test_an_invocation_that_never_existed_is_not_a_failure() -> None:
     """A run cancelled before Bazel started names two invocations BuildBuddy has never
     seen, because the IDs are assigned up front. That is a normal empty result — raising

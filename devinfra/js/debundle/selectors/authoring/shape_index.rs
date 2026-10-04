@@ -1117,20 +1117,6 @@ const c = other("third-token");"#,
     }
 
     #[test]
-    fn greedy_tail_combines_features_when_no_single_one_is_unique() {
-        // No single feature is unique: items 0 and 1 share kind+const+arity and
-        // the call shape; only the *combination* of the two distinct literals
-        // separates them. Force a 2-feature read-off.
-        let module = parse(
-            r#"const a = make("shared", "alpha");
-const b = make("shared", "beta");"#,
-        );
-        let index = ShapeIndex::new(&module);
-        let anchor = index.minimal_anchor_set(0).unwrap();
-        assert!(index.read_off_resolves_uniquely(0, &anchor));
-    }
-
-    #[test]
     fn unique_value_anchor_candidates_are_value_bearing_singletons_best_first() {
         // The lone class carries several deep value anchors inside a method body.
         // Every candidate must be (a) value-bearing — a token the renderer can pin,

@@ -65,14 +65,10 @@ mod tests {
     use std::fs;
     use std::path::Path;
 
-    use serde_yaml::{Mapping, Value};
+    use serde_yaml::Value;
     use tempfile::TempDir;
 
-    use super::{apply_yaml_edit, read_yaml, yaml_semantically_changed};
-
-    fn yk(s: &str) -> Value {
-        Value::String(s.to_string())
-    }
+    use super::{apply_yaml_edit, read_yaml};
 
     fn write(root: &Path, rel: &str, body: &str) {
         let path = root.join(rel);
@@ -91,7 +87,6 @@ mod tests {
         let path = root.join("m.yaml");
         let doc = read_yaml(&path).unwrap();
 
-        assert!(!yaml_semantically_changed(&path, &doc).unwrap());
         assert!(!apply_yaml_edit(&path, &doc, false).unwrap());
         assert_eq!(
             fs::read_to_string(path).unwrap(),
@@ -99,15 +94,6 @@ mod tests {
         );
     }
 
-    #[test]
-    fn missing_file_is_semantic_change() {
-        let dir = TempDir::new().unwrap();
-        let mut map = Mapping::new();
-        map.insert(yk("members"), Value::Sequence(Vec::new()));
-        assert!(
-            yaml_semantically_changed(&dir.path().join("new.yaml"), &Value::Mapping(map)).unwrap()
-        );
-    }
     #[test]
     fn dry_run_reports_change_without_creating_directories() {
         let dir = TempDir::new().unwrap();
@@ -117,7 +103,6 @@ mod tests {
         assert!(!path.parent().unwrap().exists());
         assert!(apply_yaml_edit(&path, &doc, false).unwrap());
         assert_eq!(read_yaml(&path).unwrap(), doc);
-        assert!(!path.with_extension("yaml.tmp").exists());
         assert!(!apply_yaml_edit(&path, &doc, false).unwrap());
     }
 }

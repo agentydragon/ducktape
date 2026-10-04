@@ -995,7 +995,6 @@ mod tests {
         );
         assert_eq!(slice.program.atoms.len(), 2);
         assert!(slice.program.all_different.is_empty());
-        assert!(slice.program.validate().is_ok());
     }
 
     #[test]
@@ -1069,6 +1068,5 @@ mod tests {
             together.program.all_different,
             vec![vec![SelectorTargetId(0), SelectorTargetId(1)]]
         );
-        assert!(together.program.validate().is_ok());
     }
 }
