@@ -40,7 +40,6 @@ py_library(
     visibility = ["//:__subpackages__"],
     deps = [
         ":logging_utils",
-        "//x/inop/engine:models",
         "@pypi//pydantic",
         "@pypi//pyyaml",
     ],

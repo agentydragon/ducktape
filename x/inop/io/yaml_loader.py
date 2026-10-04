@@ -1,4 +1,4 @@
-"""YAML loader for seeds and graders."""
+"""YAML loader for graders."""
 
 from pathlib import Path
 from typing import Any
@@ -6,7 +6,6 @@ from typing import Any
 import yaml
 from pydantic import BaseModel
 
-from x.inop.engine.models import SeedTask
 from x.inop.io.logging_utils import DualOutputLogging
 
 logger = DualOutputLogging.get_logger()
@@ -22,31 +21,14 @@ class GraderDataModel(BaseModel):
 class YamlLoader:
     """Handles loading YAML files."""
 
-    def __init__(self, seeds_yaml_path: Path, graders_yaml_path: Path):
-        self.seeds_yaml_path = Path(seeds_yaml_path)
+    def __init__(self, graders_yaml_path: Path):
         self.graders_yaml_path = Path(graders_yaml_path)
-        self._seeds_models: list[SeedTask] | None = None
         self._graders_models: list[GraderDataModel] | None = None
 
     def _load_yaml_file(self, path: Path) -> Any:
         """Load YAML file content."""
         with path.open(encoding="utf-8") as f:
             return yaml.safe_load(f)
-
-    @property
-    def seeds_data(self) -> list[SeedTask]:
-        """Load and validate seeds YAML as SeedTask models (cached)."""
-        if self._seeds_models is None:
-            data = self._load_yaml_file(self.seeds_yaml_path)
-            if not isinstance(data, list):
-                raise ValueError(f"Seeds YAML must contain a list of tasks, got {type(data)}")
-            models: list[SeedTask] = []
-            for item in data:
-                if not isinstance(item, dict):
-                    raise TypeError("Each seed task must be a mapping")
-                models.append(SeedTask(**item))
-            self._seeds_models = models
-        return self._seeds_models
 
     @property
     def graders_data(self) -> list[GraderDataModel]:
@@ -71,6 +53,6 @@ class YamlLoader:
         return self._graders_models
 
 
-def load_yaml_files(seeds_yaml_path: Path | str, graders_yaml_path: Path | str) -> YamlLoader:
+def load_yaml_files(graders_yaml_path: Path | str) -> YamlLoader:
     """Create and return a configured YAML loader."""
-    return YamlLoader(seeds_yaml_path=Path(seeds_yaml_path), graders_yaml_path=Path(graders_yaml_path))
+    return YamlLoader(graders_yaml_path=Path(graders_yaml_path))

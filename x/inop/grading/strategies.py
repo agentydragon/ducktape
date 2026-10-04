@@ -212,7 +212,7 @@ def create_grading_strategy(grading_config: GradingConfig, config_path: Path | N
                 criteria_file = Path(grading_config.criteria_file)
 
             if criteria_file.exists():
-                gl_file: YamlLoader = load_yaml_files(str(criteria_file), str(criteria_file))
+                gl_file: YamlLoader = load_yaml_files(criteria_file)
                 criteria = [Criterion(name=g.id, description=g.description) for g in gl_file.graders_data]
         return FileBasedGradingStrategy(criteria)
 
@@ -225,7 +225,7 @@ def create_grading_strategy(grading_config: GradingConfig, config_path: Path | N
                 criteria_file = Path(grading_config.criteria_file)
 
             if criteria_file.exists():
-                gl2: YamlLoader = load_yaml_files(str(criteria_file), str(criteria_file))
+                gl2: YamlLoader = load_yaml_files(criteria_file)
                 criteria = [Criterion(name=g.id, description=g.description) for g in gl2.graders_data]
         return MessageBasedGradingStrategy(criteria)
 

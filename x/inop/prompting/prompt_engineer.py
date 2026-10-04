@@ -10,8 +10,6 @@ from x.inop.io.logging_utils import DualOutputLogging
 
 logger = DualOutputLogging.get_logger()
 
-SUBMIT_PROMPT_FUNCTION_NAME = "submit_prompt"
-
 
 class FeedbackMode(Enum):
     """Processing mode for prompt optimization."""

@@ -532,7 +532,7 @@ Examples:
 
     # Load grading criteria from YAML
     logger.info("Loading grading criteria")
-    yaml_loader = load_yaml_files(seeds_path, graders_path)
+    yaml_loader = load_yaml_files(graders_path)
 
     # Load grading criteria
     criteria = [

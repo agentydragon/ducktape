@@ -1,7 +1,6 @@
 """Unified truncation utilities for the Claude instruction optimizer."""
 
 import json
-from pathlib import Path
 from typing import Protocol
 
 import tiktoken
@@ -110,16 +109,3 @@ class TruncationManager:
         final = self._count_files_tokens(result)
         assert final <= max_tokens, f"File truncation failed: {final} tokens > {max_tokens} limit"
         return result
-
-    def truncate_file_by_bytes(self, file_path: Path, max_bytes: int) -> str:
-        """Read and truncate a single file by byte size."""
-        try:
-            file_size = file_path.stat().st_size
-
-            if file_size > max_bytes:
-                with file_path.open("r", encoding="utf-8") as f:
-                    content = f.read(max_bytes)
-                return self._truncated_content(content, len(content))
-            return file_path.read_text()
-        except UnicodeDecodeError:
-            return "<<not a plaintext file>>"

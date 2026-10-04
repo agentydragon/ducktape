@@ -55,20 +55,6 @@ class DebugConfig(BaseModel):
     enable_strace: bool = Field(default=False, description="Enable strace debugging of Claude CLI execution")
 
 
-class DockerLayerConfig(BaseModel):
-    image_tag: str = Field(description="Docker image tag")
-    depends_on: list[str] = Field(default_factory=list, description="Layer dependencies")
-    capabilities: list[str] = Field(default_factory=list, description="New capabilities this layer adds")
-
-
-class ExternalImageConfig(BaseModel):
-    base_image: str = Field(description="Base image name/tag from external registry")
-    source: str = Field(description="Source identifier (e.g., 'azure_cr', 'external_registry')")
-    description: str = Field(description="Human-readable description of this image")
-    add_claude: bool = Field(default=True, description="Whether to layer Claude Code on top of this image")
-    platform: str | None = Field(default=None, description="Docker platform (e.g., 'linux/amd64', 'linux/arm64')")
-
-
 class OptimizerConfig(BaseModel):
     pre_task_setup_script: str | None = Field(
         default=None, description="Path to global pre-task setup script (runs outside container with docker access)"
