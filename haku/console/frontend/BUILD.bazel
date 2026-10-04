@@ -6,12 +6,14 @@ load("//devinfra/js:json_schema.bzl", "js_json_schema")
 load("//devinfra/js:openapi.bzl", "js_openapi_schema")
 load("//devinfra/js:spa_bundle.bzl", "spa_bundle")
 load("//devinfra/js:ts_library.bzl", "ts_library")
-load("//devinfra/js:vitest.bzl", "vitest_suite")
+load("//devinfra/js:vitest.bzl", "check_vitest_specs", "vitest_config", "vitest_test")
 load("//util:data_uri.bzl", "data_uri_module")
 
 package(default_visibility = ["//visibility:public"])
 
 TSCONFIG = ":tsconfig"
+
+VITEST_CONFIG = ":vitest_config"
 
 # Compiler options every ts_library in this package tree extends, subpackages included.
 ts_config(
@@ -299,9 +301,10 @@ ts_library(
     deps = ["//haku/console/frontend/tool_rendering:actions"],
 )
 
-ts_library(
+vitest_test(
     name = "sw_test",
     srcs = ["sw.test.ts"],
+    config = VITEST_CONFIG,
     isolated_typecheck = True,
     tsconfig = TSCONFIG,
     deps = [
@@ -695,9 +698,10 @@ ts_library(
     ],
 )
 
-ts_library(
+vitest_test(
     name = "tool_calls_page_test",
     srcs = ["tool_calls_page.test.ts"],
+    config = VITEST_CONFIG,
     isolated_typecheck = True,
     tsconfig = TSCONFIG,
     deps = [
@@ -1053,9 +1057,10 @@ js_test(
 # `.test.js`. There is no separate whole-project type-check target to keep the file list in step
 # with; `vitest_suite` below fails the package's load for a spec file it does not list.
 
-ts_library(
+vitest_test(
     name = "approval_state_test",
     srcs = ["approval_state.test.ts"],
+    config = VITEST_CONFIG,
     isolated_typecheck = True,
     tsconfig = TSCONFIG,
     deps = [
@@ -1065,9 +1070,10 @@ ts_library(
     ],
 )
 
-ts_library(
+vitest_test(
     name = "time_test",
     srcs = ["time.test.ts"],
+    config = VITEST_CONFIG,
     isolated_typecheck = True,
     tsconfig = TSCONFIG,
     deps = [
@@ -1076,9 +1082,10 @@ ts_library(
     ],
 )
 
-ts_library(
+vitest_test(
     name = "bridge_test",
     srcs = ["bridge.test.ts"],
+    config = VITEST_CONFIG,
     isolated_typecheck = True,
     tsconfig = TSCONFIG,
     deps = [
@@ -1087,9 +1094,10 @@ ts_library(
     ],
 )
 
-ts_library(
+vitest_test(
     name = "bridge_client_test",
     srcs = ["bridge_client.test.ts"],
+    config = VITEST_CONFIG,
     isolated_typecheck = True,
     tsconfig = TSCONFIG,
     deps = [
@@ -1098,9 +1106,10 @@ ts_library(
     ],
 )
 
-ts_library(
+vitest_test(
     name = "calendar_client_test",
     srcs = ["calendar_client.test.ts"],
+    config = VITEST_CONFIG,
     isolated_typecheck = True,
     tsconfig = TSCONFIG,
     deps = [
@@ -1109,9 +1118,10 @@ ts_library(
     ],
 )
 
-ts_library(
+vitest_test(
     name = "client_test",
     srcs = ["client.test.ts"],
+    config = VITEST_CONFIG,
     isolated_typecheck = True,
     tsconfig = TSCONFIG,
     deps = [
@@ -1120,9 +1130,10 @@ ts_library(
     ],
 )
 
-ts_library(
+vitest_test(
     name = "code_block_test",
     srcs = ["code_block.test.ts"],
+    config = VITEST_CONFIG,
     isolated_typecheck = True,
     tsconfig = TSCONFIG,
     deps = [
@@ -1135,9 +1146,10 @@ ts_library(
     ],
 )
 
-ts_library(
+vitest_test(
     name = "geolocation_test",
     srcs = ["geolocation.test.ts"],
+    config = VITEST_CONFIG,
     isolated_typecheck = True,
     tsconfig = TSCONFIG,
     deps = [
@@ -1146,9 +1158,10 @@ ts_library(
     ],
 )
 
-ts_library(
+vitest_test(
     name = "gmail_client_test",
     srcs = ["gmail_client.test.ts"],
+    config = VITEST_CONFIG,
     isolated_typecheck = True,
     tsconfig = TSCONFIG,
     deps = [
@@ -1158,9 +1171,10 @@ ts_library(
     ],
 )
 
-ts_library(
+vitest_test(
     name = "haku_ui_embed_test",
     srcs = ["haku_ui_embed.test.ts"],
+    config = VITEST_CONFIG,
     isolated_typecheck = True,
     tsconfig = TSCONFIG,
     deps = [
@@ -1172,9 +1186,10 @@ ts_library(
     ],
 )
 
-ts_library(
+vitest_test(
     name = "mcp_tool_result_schema_test",
     srcs = ["mcp_tool_result_schema.test.ts"],
+    config = VITEST_CONFIG,
     isolated_typecheck = True,
     tsconfig = TSCONFIG,
     deps = [
@@ -1183,9 +1198,10 @@ ts_library(
     ],
 )
 
-ts_library(
+vitest_test(
     name = "mcp_tool_schema_test",
     srcs = ["mcp_tool_schema.test.ts"],
+    config = VITEST_CONFIG,
     isolated_typecheck = True,
     tsconfig = TSCONFIG,
     deps = [
@@ -1194,9 +1210,10 @@ ts_library(
     ],
 )
 
-ts_library(
+vitest_test(
     name = "open_external_test",
     srcs = ["open_external.test.ts"],
+    config = VITEST_CONFIG,
     isolated_typecheck = True,
     tsconfig = TSCONFIG,
     deps = [
@@ -1205,9 +1222,10 @@ ts_library(
     ],
 )
 
-ts_library(
+vitest_test(
     name = "operator_login_test",
     srcs = ["operator_login.test.ts"],
+    config = VITEST_CONFIG,
     isolated_typecheck = True,
     tsconfig = TSCONFIG,
     deps = [
@@ -1216,9 +1234,10 @@ ts_library(
     ],
 )
 
-ts_library(
+vitest_test(
     name = "routing_test",
     srcs = ["routing.test.ts"],
+    config = VITEST_CONFIG,
     isolated_typecheck = True,
     tsconfig = TSCONFIG,
     deps = [
@@ -1227,9 +1246,10 @@ ts_library(
     ],
 )
 
-ts_library(
+vitest_test(
     name = "screenshot_capture_test",
     srcs = ["screenshot_capture.test.ts"],
+    config = VITEST_CONFIG,
     isolated_typecheck = True,
     tsconfig = TSCONFIG,
     deps = [
@@ -1238,9 +1258,10 @@ ts_library(
     ],
 )
 
-ts_library(
+vitest_test(
     name = "screenshots_sample_data_test",
     srcs = ["screenshots/sample_data.test.ts"],
+    config = VITEST_CONFIG,
     isolated_typecheck = True,
     tsconfig = TSCONFIG,
     deps = [
@@ -1250,9 +1271,10 @@ ts_library(
     ],
 )
 
-ts_library(
+vitest_test(
     name = "settings_panel_test",
     srcs = ["settings_panel.test.ts"],
+    config = VITEST_CONFIG,
     isolated_typecheck = True,
     tsconfig = TSCONFIG,
     deps = [
@@ -1268,9 +1290,10 @@ ts_library(
     ],
 )
 
-ts_library(
+vitest_test(
     name = "shell_chrome_test",
     srcs = ["shell_chrome.test.ts"],
+    config = VITEST_CONFIG,
     isolated_typecheck = True,
     tsconfig = TSCONFIG,
     deps = [
@@ -1279,9 +1302,10 @@ ts_library(
     ],
 )
 
-ts_library(
+vitest_test(
     name = "tana_client_test",
     srcs = ["tana_client.test.ts"],
+    config = VITEST_CONFIG,
     isolated_typecheck = True,
     tsconfig = TSCONFIG,
     deps = [
@@ -1290,9 +1314,10 @@ ts_library(
     ],
 )
 
-ts_library(
+vitest_test(
     name = "tool_call_decision_test",
     srcs = ["tool_call_decision.test.ts"],
+    config = VITEST_CONFIG,
     isolated_typecheck = True,
     tsconfig = TSCONFIG,
     deps = [
@@ -1306,38 +1331,14 @@ ts_library(
     ],
 )
 
-vitest_suite(
-    name = "vitest_test",
+vitest_config(
+    name = "vitest_config",
     data = [
         "//:node_modules/@haku/console-bridge",
         # @mantine/hooks imports it without declaring it, so Node finds it only at the workspace root.
         "//:node_modules/react-dom",
     ],
     environment = "jsdom",  # DOMPurify (in markdown.ts) needs a DOM
-    specs = [
-        ":approval_state_test",
-        ":bridge_client_test",
-        ":bridge_test",
-        ":calendar_client_test",
-        ":client_test",
-        ":code_block_test",
-        ":geolocation_test",
-        ":gmail_client_test",
-        ":haku_ui_embed_test",
-        ":mcp_tool_result_schema_test",
-        ":mcp_tool_schema_test",
-        ":open_external_test",
-        ":operator_login_test",
-        ":routing_test",
-        ":screenshot_capture_test",
-        ":screenshots_sample_data_test",
-        ":settings_panel_test",
-        ":shell_chrome_test",
-        ":sw_test",
-        ":tana_client_test",
-        ":time_test",
-        ":tool_call_decision_test",
-        ":tool_calls_page_test",
-    ],
-    suites = ["//haku/console/frontend/tool_rendering:vitest_test"],
 )
+
+check_vitest_specs()

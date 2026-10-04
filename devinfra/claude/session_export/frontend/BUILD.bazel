@@ -4,12 +4,14 @@ load("@aspect_rules_ts//ts:defs.bzl", "ts_config")
 load("//devinfra/js:openapi.bzl", "js_openapi_schema")
 load("//devinfra/js:spa_bundle.bzl", "spa_bundle")
 load("//devinfra/js:ts_library.bzl", "ts_library")
-load("//devinfra/js:vitest.bzl", "vitest_suite")
+load("//devinfra/js:vitest.bzl", "check_vitest_specs", "vitest_config", "vitest_test")
 load("//util/testing/frontend_visual:visual_test.bzl", "visual_test")
 
 package(default_visibility = ["//devinfra/claude/session_export:__pkg__"])
 
 TSCONFIG = ":tsconfig"
+
+VITEST_CONFIG = ":vitest_config"
 
 ts_config(
     name = "tsconfig",
@@ -183,10 +185,10 @@ spa_bundle(
 
 # ── Unit tests ─────────────────────────────────────────────────────────────────
 
-ts_library(
+vitest_test(
     name = "status_test",
-    testonly = True,
     srcs = ["status.test.ts"],
+    config = VITEST_CONFIG,
     isolated_typecheck = True,
     tsconfig = TSCONFIG,
     deps = [
@@ -195,10 +197,10 @@ ts_library(
     ],
 )
 
-ts_library(
+vitest_test(
     name = "transcript_test",
-    testonly = True,
     srcs = ["transcript.test.ts"],
+    config = VITEST_CONFIG,
     isolated_typecheck = True,
     tsconfig = TSCONFIG,
     deps = [
@@ -208,10 +210,10 @@ ts_library(
     ],
 )
 
-ts_library(
+vitest_test(
     name = "narration_test",
-    testonly = True,
     srcs = ["narration.test.ts"],
+    config = VITEST_CONFIG,
     isolated_typecheck = True,
     tsconfig = TSCONFIG,
     deps = [
@@ -220,10 +222,10 @@ ts_library(
     ],
 )
 
-ts_library(
+vitest_test(
     name = "api_test",
-    testonly = True,
     srcs = ["api.test.ts"],
+    config = VITEST_CONFIG,
     isolated_typecheck = True,
     tsconfig = TSCONFIG,
     deps = [
@@ -241,10 +243,10 @@ ts_library(
     deps = [":api"],
 )
 
-ts_library(
+vitest_test(
     name = "viewer_test",
-    testonly = True,
     srcs = ["viewer.test.tsx"],
+    config = VITEST_CONFIG,
     isolated_typecheck = True,
     tsconfig = TSCONFIG,
     deps = [
@@ -260,10 +262,10 @@ ts_library(
     ],
 )
 
-ts_library(
+vitest_test(
     name = "tool_groups_test",
-    testonly = True,
     srcs = ["tool-groups.test.ts"],
+    config = VITEST_CONFIG,
     isolated_typecheck = True,
     tsconfig = TSCONFIG,
     deps = [
@@ -274,10 +276,10 @@ ts_library(
     ],
 )
 
-ts_library(
+vitest_test(
     name = "event_timeline_test",
-    testonly = True,
     srcs = ["event-timeline.test.tsx"],
+    config = VITEST_CONFIG,
     isolated_typecheck = True,
     tsconfig = TSCONFIG,
     deps = [
@@ -292,20 +294,11 @@ ts_library(
     ],
 )
 
-vitest_suite(
-    name = "vitest_test",
+vitest_config(
+    name = "vitest_config",
     # Specs that need a DOM opt in with `// @vitest-environment happy-dom`.
     data = ["//:node_modules/happy-dom"],
     environment = "node",
-    specs = [
-        ":api_test",
-        ":event_timeline_test",
-        ":narration_test",
-        ":status_test",
-        ":tool_groups_test",
-        ":transcript_test",
-        ":viewer_test",
-    ],
 )
 
 # The screenshot harness mounts the full app with deterministic API fixtures. CI publishes
@@ -374,3 +367,5 @@ visual_test(
     scenarios = ":visual_scenarios",
     shard_count = 2,
 )
+
+check_vitest_specs()

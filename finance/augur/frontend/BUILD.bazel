@@ -11,12 +11,14 @@ load("@rules_oci//oci:defs.bzl", "oci_image", "oci_load")
 load("@rules_pkg//pkg:tar.bzl", "pkg_tar")
 load("@rules_python//python:defs.bzl", "py_library")
 load("//devinfra/js:ts_library.bzl", "ts_library")
-load("//devinfra/js:vitest.bzl", "vitest_suite")
+load("//devinfra/js:vitest.bzl", "check_vitest_specs", "vitest_config", "vitest_test")
 load("//devinfra/python:defs.bzl", "py_binary")
 
 package(default_visibility = ["//visibility:public"])
 
 TSCONFIG = ":tsconfig"
+
+VITEST_CONFIG = ":vitest_config"
 
 # Compiler options every ts_library in this package tree extends, lib/ included.
 ts_config(
@@ -622,9 +624,10 @@ filegroup(
 
 # One ts_library per spec, so each declares what it imports and is type-checked as it compiles;
 # vitest then runs the emitted `.test.js`.
-ts_library(
+vitest_test(
     name = "sanity_bands_test",
     srcs = ["sanity_bands.test.ts"],
+    config = VITEST_CONFIG,
     tsconfig = TSCONFIG,
     deps = [
         ":sanity_bands",
@@ -632,9 +635,10 @@ ts_library(
     ],
 )
 
-ts_library(
+vitest_test(
     name = "budget_adjustments_test",
     srcs = ["budget_adjustments.test.ts"],
+    config = VITEST_CONFIG,
     tsconfig = TSCONFIG,
     deps = [
         ":budget_adjustments",
@@ -642,9 +646,10 @@ ts_library(
     ],
 )
 
-ts_library(
+vitest_test(
     name = "input_helpers_test",
     srcs = ["input_helpers.test.ts"],
+    config = VITEST_CONFIG,
     tsconfig = TSCONFIG,
     deps = [
         ":input_helpers",
@@ -652,9 +657,10 @@ ts_library(
     ],
 )
 
-ts_library(
+vitest_test(
     name = "format_test",
     srcs = ["format.test.ts"],
+    config = VITEST_CONFIG,
     tsconfig = TSCONFIG,
     deps = [
         "//:node_modules/vitest",
@@ -662,9 +668,10 @@ ts_library(
     ],
 )
 
-ts_library(
+vitest_test(
     name = "data_helpers_test",
     srcs = ["data_helpers.test.ts"],
+    config = VITEST_CONFIG,
     tsconfig = TSCONFIG,
     deps = [
         ":data_helpers",
@@ -673,9 +680,10 @@ ts_library(
     ],
 )
 
-ts_library(
+vitest_test(
     name = "url_state_test",
     srcs = ["url_state.test.ts"],
+    config = VITEST_CONFIG,
     tsconfig = TSCONFIG,
     deps = [
         ":url_state",
@@ -683,9 +691,10 @@ ts_library(
     ],
 )
 
-ts_library(
+vitest_test(
     name = "product_test",
     srcs = ["product.test.tsx"],
+    config = VITEST_CONFIG,
     tsconfig = TSCONFIG,
     deps = [
         ":input_helpers",
@@ -698,18 +707,11 @@ ts_library(
     ],
 )
 
-vitest_suite(
-    name = "vitest_test",
+vitest_config(
+    name = "vitest_config",
     # product.test.tsx opts into a DOM with `// @vitest-environment happy-dom`.
     data = ["//:node_modules/happy-dom"],
     environment = "node",
-    specs = [
-        ":budget_adjustments_test",
-        ":data_helpers_test",
-        ":format_test",
-        ":input_helpers_test",
-        ":product_test",
-        ":sanity_bands_test",
-        ":url_state_test",
-    ],
 )
+
+check_vitest_specs()

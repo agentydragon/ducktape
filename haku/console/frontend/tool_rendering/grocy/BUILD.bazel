@@ -1,10 +1,12 @@
 load("//devinfra/js:ts_library.bzl", "ts_library")
-load("//devinfra/js:vitest.bzl", "vitest_subsuite")
+load("//devinfra/js:vitest.bzl", "check_vitest_specs", "vitest_test")
 load("//haku/console/frontend/tool_rendering/screenshot:screenshot_test.bzl", "preview_screenshots")
 
 package(default_visibility = ["//visibility:public"])
 
 TSCONFIG = "//haku/console/frontend:tsconfig"
+
+VITEST_CONFIG = "//haku/console/frontend:vitest_config"
 
 # The `grocy-sf` server's tool-call rendering widgets (see ../BUILD.bazel for the tree's shape).
 
@@ -63,9 +65,10 @@ filegroup(
     srcs = glob(["*.tsx"]),
 )
 
-ts_library(
+vitest_test(
     name = "requests_test",
     srcs = ["requests.test.ts"],
+    config = VITEST_CONFIG,
     isolated_typecheck = True,
     tsconfig = TSCONFIG,
     deps = [
@@ -75,9 +78,10 @@ ts_library(
     ],
 )
 
-ts_library(
+vitest_test(
     name = "responses_test",
     srcs = ["responses.test.ts"],
+    config = VITEST_CONFIG,
     isolated_typecheck = True,
     tsconfig = TSCONFIG,
     deps = [
@@ -126,11 +130,4 @@ preview_screenshots(
     ],
 )
 
-vitest_subsuite(
-    name = "vitest_test",
-    base = "//haku/console/frontend:vitest_test",
-    specs = [
-        ":requests_test",
-        ":responses_test",
-    ],
-)
+check_vitest_specs()

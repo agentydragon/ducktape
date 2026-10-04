@@ -1,10 +1,12 @@
 load("@aspect_rules_js//js:defs.bzl", "js_library")
 load("//devinfra/js:ts_library.bzl", "ts_library")
-load("//devinfra/js:vitest.bzl", "vitest_subsuite")
+load("//devinfra/js:vitest.bzl", "check_vitest_specs", "vitest_test")
 
 package(default_visibility = ["//agentplane/app:__subpackages__"])
 
 TSCONFIG = "//agentplane/app/frontend:tsconfig"
+
+VITEST_CONFIG = "//agentplane/app/frontend:vitest_config"
 
 ts_library(
     name = "chronological_debug",
@@ -29,10 +31,10 @@ ts_library(
     tsconfig = TSCONFIG,
 )
 
-ts_library(
+vitest_test(
     name = "history_sizes_test",
-    testonly = True,
     srcs = ["history_sizes.test.ts"],
+    config = VITEST_CONFIG,
     tsconfig = TSCONFIG,
     deps = [
         ":history_sizes",
@@ -46,10 +48,10 @@ ts_library(
     tsconfig = TSCONFIG,
 )
 
-ts_library(
+vitest_test(
     name = "history_trace_test",
-    testonly = True,
     srcs = ["history_trace.test.ts"],
+    config = VITEST_CONFIG,
     tsconfig = TSCONFIG,
     deps = [
         ":history_trace",
@@ -68,10 +70,10 @@ ts_library(
     ],
 )
 
-ts_library(
+vitest_test(
     name = "history_rows_test",
-    testonly = True,
     srcs = ["history_rows.test.ts"],
+    config = VITEST_CONFIG,
     tsconfig = TSCONFIG,
     deps = [
         ":history_rows",
@@ -94,10 +96,10 @@ ts_library(
     ],
 )
 
-ts_library(
+vitest_test(
     name = "local_commands_test",
-    testonly = True,
     srcs = ["local_commands.test.ts"],
+    config = VITEST_CONFIG,
     tsconfig = TSCONFIG,
     deps = [
         ":local_commands",
@@ -155,10 +157,10 @@ js_library(
     srcs = ["projected_session.css"],
 )
 
-ts_library(
+vitest_test(
     name = "projected_session_test",
-    testonly = True,
     srcs = ["projected_session.test.tsx"],
+    config = VITEST_CONFIG,
     tsconfig = TSCONFIG,
     deps = [
         ":history_rows",
@@ -197,10 +199,10 @@ ts_library(
     ],
 )
 
-ts_library(
+vitest_test(
     name = "retained_disclosures_test",
-    testonly = True,
     srcs = ["retained_disclosures.test.tsx"],
+    config = VITEST_CONFIG,
     tsconfig = TSCONFIG,
     deps = [
         ":retained_disclosures",
@@ -223,10 +225,10 @@ ts_library(
     ],
 )
 
-ts_library(
+vitest_test(
     name = "command_calls_test",
-    testonly = True,
     srcs = ["command_calls.test.ts"],
+    config = VITEST_CONFIG,
     tsconfig = TSCONFIG,
     deps = [
         ":command_calls",
@@ -332,10 +334,10 @@ ts_library(
     ],
 )
 
-ts_library(
+vitest_test(
     name = "thread_store_test",
-    testonly = True,
     srcs = ["thread_store.test.tsx"],
+    config = VITEST_CONFIG,
     tsconfig = TSCONFIG,
     deps = [
         ":thread_store",
@@ -384,10 +386,10 @@ js_library(
     srcs = ["thread_title.css"],
 )
 
-ts_library(
+vitest_test(
     name = "thread_title_test",
-    testonly = True,
     srcs = ["thread_title.test.tsx"],
+    config = VITEST_CONFIG,
     tsconfig = TSCONFIG,
     deps = [
         ":thread_title",
@@ -401,18 +403,4 @@ ts_library(
     ],
 )
 
-vitest_subsuite(
-    name = "vitest_test",
-    base = "//agentplane/app/frontend:vitest_test",
-    specs = [
-        ":command_calls_test",
-        ":history_rows_test",
-        ":history_sizes_test",
-        ":history_trace_test",
-        ":local_commands_test",
-        ":projected_session_test",
-        ":retained_disclosures_test",
-        ":thread_store_test",
-        ":thread_title_test",
-    ],
-)
+check_vitest_specs()

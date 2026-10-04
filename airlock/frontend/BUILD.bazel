@@ -5,12 +5,14 @@ load("@npm_ducktape//:defs.bzl", "npm_link_all_packages")
 load("//devinfra/js:json_schema.bzl", "js_json_schema")
 load("//devinfra/js:spa_bundle.bzl", "spa_bundle")
 load("//devinfra/js:ts_library.bzl", "ts_library")
-load("//devinfra/js:vitest.bzl", "vitest_suite")
+load("//devinfra/js:vitest.bzl", "check_vitest_specs", "vitest_config", "vitest_test")
 load("//util/testing/frontend_visual:visual_test.bzl", "visual_test")
 
 npm_link_all_packages(name = "node_modules")
 
 TSCONFIG = ":tsconfig"
+
+VITEST_CONFIG = ":vitest_config"
 
 ts_config(
     name = "tsconfig",
@@ -129,10 +131,10 @@ ts_library(
     ],
 )
 
-ts_library(
+vitest_test(
     name = "api_test",
-    testonly = True,
     srcs = ["api.test.ts"],
+    config = VITEST_CONFIG,
     isolated_typecheck = True,
     tsconfig = TSCONFIG,
     deps = [
@@ -141,10 +143,9 @@ ts_library(
     ],
 )
 
-vitest_suite(
-    name = "vitest_test",
+vitest_config(
+    name = "vitest_config",
     environment = "happy-dom",
-    specs = [":api_test"],
 )
 
 esbuild(
@@ -185,3 +186,5 @@ visual_test(
     harness = ":visual_harness_js",
     scenarios = ":visual_scenarios",
 )
+
+check_vitest_specs()

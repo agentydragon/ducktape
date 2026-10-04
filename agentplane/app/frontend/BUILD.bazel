@@ -4,12 +4,14 @@ load("@aspect_rules_ts//ts:defs.bzl", "ts_config")
 load("//devinfra/js:openapi.bzl", "js_openapi_schema")
 load("//devinfra/js:spa_bundle.bzl", "spa_bundle")
 load("//devinfra/js:ts_library.bzl", "ts_library")
-load("//devinfra/js:vitest.bzl", "vitest_suite")
+load("//devinfra/js:vitest.bzl", "check_vitest_specs", "vitest_config", "vitest_test")
 load("//util/testing/frontend_visual:visual_test.bzl", "visual_test")
 
 package(default_visibility = ["//agentplane/app:__subpackages__"])
 
 TSCONFIG = ":tsconfig"
+
+VITEST_CONFIG = ":vitest_config"
 
 ts_config(
     name = "tsconfig",
@@ -43,10 +45,10 @@ ts_library(
     deps = [":status_mark"],
 )
 
-ts_library(
+vitest_test(
     name = "tab_metadata_test",
-    testonly = True,
     srcs = ["tab_metadata.test.ts"],
+    config = VITEST_CONFIG,
     tsconfig = TSCONFIG,
     deps = [
         ":status_mark",
@@ -80,10 +82,10 @@ ts_library(
     ],
 )
 
-ts_library(
+vitest_test(
     name = "client_test",
-    testonly = True,
     srcs = ["client.test.ts"],
+    config = VITEST_CONFIG,
     tsconfig = TSCONFIG,
     deps = [
         ":client",
@@ -133,10 +135,10 @@ ts_library(
     ],
 )
 
-ts_library(
+vitest_test(
     name = "consent_test",
-    testonly = True,
     srcs = ["consent.test.tsx"],
+    config = VITEST_CONFIG,
     tsconfig = TSCONFIG,
     deps = [
         ":connections_fixture",
@@ -208,10 +210,10 @@ ts_library(
     ],
 )
 
-ts_library(
+vitest_test(
     name = "actions_requests_test",
-    testonly = True,
     srcs = ["actions/requests.test.tsx"],
+    config = VITEST_CONFIG,
     tsconfig = TSCONFIG,
     deps = [
         ":actions_affordance",
@@ -272,10 +274,10 @@ ts_library(
     ],
 )
 
-ts_library(
+vitest_test(
     name = "clamped_block_test",
-    testonly = True,
     srcs = ["clamped_block.test.tsx"],
+    config = VITEST_CONFIG,
     tsconfig = TSCONFIG,
     deps = [
         ":actions_testing",
@@ -374,10 +376,10 @@ ts_library(
     ],
 )
 
-ts_library(
+vitest_test(
     name = "actions_rendering_index_test",
-    testonly = True,
     srcs = ["actions/rendering/index.test.tsx"],
+    config = VITEST_CONFIG,
     tsconfig = TSCONFIG,
     deps = [
         ":actions_call_tool_result",
@@ -388,10 +390,10 @@ ts_library(
     ],
 )
 
-ts_library(
+vitest_test(
     name = "actions_rendering_ssh_test",
-    testonly = True,
     srcs = ["actions/rendering/ssh.test.tsx"],
+    config = VITEST_CONFIG,
     tsconfig = TSCONFIG,
     deps = [
         ":actions_rendering_entry",
@@ -404,10 +406,10 @@ ts_library(
     ],
 )
 
-ts_library(
+vitest_test(
     name = "actions_call_tool_result_test",
-    testonly = True,
     srcs = ["actions/call_tool_result.test.tsx"],
+    config = VITEST_CONFIG,
     tsconfig = TSCONFIG,
     deps = [
         ":actions_call_tool_result",
@@ -420,10 +422,10 @@ ts_library(
     ],
 )
 
-ts_library(
+vitest_test(
     name = "actions_history_test",
-    testonly = True,
     srcs = ["actions/history.test.tsx"],
+    config = VITEST_CONFIG,
     tsconfig = TSCONFIG,
     deps = [
         ":actions_client",
@@ -477,10 +479,10 @@ ts_library(
     ],
 )
 
-ts_library(
+vitest_test(
     name = "settings_mcp_servers_test",
-    testonly = True,
     srcs = ["settings/mcp_servers.test.tsx"],
+    config = VITEST_CONFIG,
     tsconfig = TSCONFIG,
     deps = [
         ":actions_client",
@@ -517,10 +519,10 @@ ts_library(
     ],
 )
 
-ts_library(
+vitest_test(
     name = "settings_connections_test",
-    testonly = True,
     srcs = ["settings/connections.test.tsx"],
+    config = VITEST_CONFIG,
     tsconfig = TSCONFIG,
     deps = [
         ":client",
@@ -542,10 +544,10 @@ ts_library(
     deps = [":client"],
 )
 
-ts_library(
+vitest_test(
     name = "live_stream_test",
-    testonly = True,
     srcs = ["live_stream.test.ts"],
+    config = VITEST_CONFIG,
     tsconfig = TSCONFIG,
     deps = [
         ":live_stream",
@@ -565,10 +567,10 @@ ts_library(
     ],
 )
 
-ts_library(
+vitest_test(
     name = "stream_status_test",
-    testonly = True,
     srcs = ["stream_status.test.tsx"],
+    config = VITEST_CONFIG,
     tsconfig = TSCONFIG,
     deps = [
         ":live_stream",
@@ -659,10 +661,10 @@ ts_library(
     deps = [":client"],
 )
 
-ts_library(
+vitest_test(
     name = "thread_groups_test",
-    testonly = True,
     srcs = ["thread_groups.test.ts"],
+    config = VITEST_CONFIG,
     tsconfig = TSCONFIG,
     deps = [
         ":client",
@@ -774,10 +776,10 @@ ts_library(
     ],
 )
 
-ts_library(
+vitest_test(
     name = "sidebar_test",
-    testonly = True,
     srcs = ["sidebar.test.tsx"],
+    config = VITEST_CONFIG,
     tsconfig = TSCONFIG,
     deps = [
         ":client",
@@ -823,10 +825,10 @@ ts_library(
     ],
 )
 
-ts_library(
+vitest_test(
     name = "actions_policy_test",
-    testonly = True,
     srcs = ["actions/policy.test.tsx"],
+    config = VITEST_CONFIG,
     tsconfig = TSCONFIG,
     deps = [
         ":actions_client",
@@ -872,10 +874,10 @@ ts_library(
     ],
 )
 
-ts_library(
+vitest_test(
     name = "sandbox_page_test",
-    testonly = True,
     srcs = ["sandbox_page.test.tsx"],
+    config = VITEST_CONFIG,
     tsconfig = TSCONFIG,
     deps = [
         ":client",
@@ -922,10 +924,10 @@ ts_library(
     ],
 )
 
-ts_library(
+vitest_test(
     name = "markdown_test",
-    testonly = True,
     srcs = ["markdown.test.tsx"],
+    config = VITEST_CONFIG,
     tsconfig = TSCONFIG,
     deps = [
         ":markdown",
@@ -968,10 +970,10 @@ ts_library(
     ],
 )
 
-ts_library(
+vitest_test(
     name = "code_block_test",
-    testonly = True,
     srcs = ["code_block.test.ts"],
+    config = VITEST_CONFIG,
     tsconfig = TSCONFIG,
     deps = [
         ":code_block",
@@ -980,10 +982,10 @@ ts_library(
 )
 
 # The JSON and plain-text adapters reuse the shared CodeMirror payload widget.
-ts_library(
+vitest_test(
     name = "inline_code_test",
-    testonly = True,
     srcs = ["inline_code.test.tsx"],
+    config = VITEST_CONFIG,
     tsconfig = TSCONFIG,
     deps = [
         ":actions_testing",
@@ -1004,10 +1006,10 @@ ts_library(
     ],
 )
 
-ts_library(
+vitest_test(
     name = "json_view_test",
-    testonly = True,
     srcs = ["json_view.test.tsx"],
+    config = VITEST_CONFIG,
     tsconfig = TSCONFIG,
     deps = [
         ":json_view",
@@ -1119,10 +1121,10 @@ spa_bundle(
     deps = [":main_lib"],
 )
 
-ts_library(
+vitest_test(
     name = "sandboxes_test",
-    testonly = True,
     srcs = ["sandboxes.test.tsx"],
+    config = VITEST_CONFIG,
     tsconfig = TSCONFIG,
     deps = [
         ":actions_client",
@@ -1139,8 +1141,8 @@ ts_library(
     ],
 )
 
-vitest_suite(
-    name = "vitest_test",
+vitest_config(
+    name = "vitest_config",
     # Specs that need a DOM select one with an `// @vitest-environment` pragma: happy-dom, or
     # jsdom for code_block.test.ts and markdown.test.tsx.
     data = [
@@ -1149,32 +1151,6 @@ vitest_suite(
     ],
     environment = "node",
     setup_files = ["test_setup.ts"],
-    specs = [
-        ":actions_call_tool_result_test",
-        ":actions_history_test",
-        ":actions_policy_test",
-        ":actions_rendering_index_test",
-        ":actions_rendering_ssh_test",
-        ":actions_requests_test",
-        ":clamped_block_test",
-        ":client_test",
-        ":code_block_test",
-        ":consent_test",
-        ":inline_code_test",
-        ":json_view_test",
-        ":live_stream_test",
-        ":markdown_test",
-        ":sandbox_page_test",
-        ":sandboxes_test",
-        ":settings_connections_test",
-        ":settings_mcp_servers_test",
-        ":settings_push_test",
-        ":sidebar_test",
-        ":stream_status_test",
-        ":tab_metadata_test",
-        ":thread_groups_test",
-    ],
-    suites = ["//agentplane/app/frontend/threads:vitest_test"],
 )
 
 # Visual render-health tests: the app mounted by visual/harness.tsx on canned inventory and runner
@@ -1275,10 +1251,10 @@ js_test(
     env = {"SW_SOURCE": "$(rootpath :service_worker)"},
 )
 
-ts_library(
+vitest_test(
     name = "settings_push_test",
-    testonly = True,
     srcs = ["settings/push.test.tsx"],
+    config = VITEST_CONFIG,
     tsconfig = TSCONFIG,
     deps = [
         ":push",
@@ -1290,3 +1266,5 @@ ts_library(
         "//:node_modules/vitest",
     ],
 )
+
+check_vitest_specs()

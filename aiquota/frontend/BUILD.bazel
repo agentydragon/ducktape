@@ -4,11 +4,13 @@ load("@aspect_rules_ts//ts:defs.bzl", "ts_config")
 load("//devinfra/js:openapi.bzl", "js_openapi_schema")
 load("//devinfra/js:spa_bundle.bzl", "spa_bundle")
 load("//devinfra/js:ts_library.bzl", "ts_library")
-load("//devinfra/js:vitest.bzl", "vitest_suite")
+load("//devinfra/js:vitest.bzl", "check_vitest_specs", "vitest_config", "vitest_test")
 
 package(default_visibility = ["//visibility:public"])
 
 TSCONFIG = ":tsconfig"
+
+VITEST_CONFIG = ":vitest_config"
 
 ts_config(
     name = "tsconfig",
@@ -161,10 +163,10 @@ filegroup(
 
 # ── Unit tests ─────────────────────────────────────────────────────────────────
 
-ts_library(
+vitest_test(
     name = "format_test",
-    testonly = True,
     srcs = ["format.test.ts"],
+    config = VITEST_CONFIG,
     isolated_typecheck = True,
     tsconfig = TSCONFIG,
     deps = [
@@ -175,10 +177,10 @@ ts_library(
     ],
 )
 
-ts_library(
+vitest_test(
     name = "quotas_test",
-    testonly = True,
     srcs = ["quotas.test.ts"],
+    config = VITEST_CONFIG,
     isolated_typecheck = True,
     tsconfig = TSCONFIG,
     deps = [
@@ -187,13 +189,9 @@ ts_library(
     ],
 )
 
-vitest_suite(
-    name = "vitest_test",
+vitest_config(
+    name = "vitest_config",
     environment = "node",
-    specs = [
-        ":format_test",
-        ":quotas_test",
-    ],
 )
 
 # ── Visual renders ─────────────────────────────────────────────────────────────
@@ -277,3 +275,5 @@ js_test(
     no_copy_to_bin = SCREENSHOT_DATA,
     tags = ["visual"],
 )
+
+check_vitest_specs()

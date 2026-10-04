@@ -53,7 +53,7 @@ candidate spike adds a regression test for the general case before it can claim 
 
 A candidate implementation is evaluated the way agentydragon/ducktape#7841 evaluated
 `react-virtuoso`: each variant run 3× against the tests above plus
-`//agentplane/app/frontend:visual`, `vitest_test`, and `sw_test`, against a control run the same
+`//agentplane/app/frontend:visual`, `sw_test`, and the vitest specs (`*_test` under `//agentplane/app/frontend/...`), against a control run the same
 way on unmodified `devel`. A guarantee counts as met only at 3/3, not on a majority — and a test
 setup that avoids exercising the guarantee (nothing mounted above the viewport, no rows present to
 grow) doesn't count as meeting it.

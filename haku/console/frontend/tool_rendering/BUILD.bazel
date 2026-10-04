@@ -1,9 +1,11 @@
 load("//devinfra/js:ts_library.bzl", "ts_library")
-load("//devinfra/js:vitest.bzl", "vitest_subsuite")
+load("//devinfra/js:vitest.bzl", "check_vitest_specs", "vitest_test")
 
 package(default_visibility = ["//visibility:public"])
 
 TSCONFIG = "//haku/console/frontend:tsconfig"
+
+VITEST_CONFIG = "//haku/console/frontend:vitest_config"
 
 # Shared leaves of the server-first tool-rendering tree plus the dispatch registry. Each
 # `<server>/` subpackage owns one server's widgets — `requests.tsx` exports the server id + a
@@ -68,10 +70,10 @@ ts_library(
     ],
 )
 
-ts_library(
+vitest_test(
     name = "actions_test",
-    testonly = True,
     srcs = ["actions.test.ts"],
+    config = VITEST_CONFIG,
     isolated_typecheck = True,
     tsconfig = TSCONFIG,
     deps = [
@@ -181,9 +183,10 @@ filegroup(
 # js_library so the dep graph stays per-file; the frontend's aggregate tsc_test + bridge_test
 # consume them (a js_test can't take a source file from another package directly, only via a
 # library).
-ts_library(
+vitest_test(
     name = "index_test",
     srcs = ["index.test.ts"],
+    config = VITEST_CONFIG,
     isolated_typecheck = True,
     tsconfig = TSCONFIG,
     deps = [
@@ -192,9 +195,10 @@ ts_library(
     ],
 )
 
-ts_library(
+vitest_test(
     name = "result_entry_test",
     srcs = ["result_entry.test.ts"],
+    config = VITEST_CONFIG,
     isolated_typecheck = True,
     tsconfig = TSCONFIG,
     deps = [
@@ -203,9 +207,10 @@ ts_library(
     ],
 )
 
-ts_library(
+vitest_test(
     name = "call_entry_test",
     srcs = ["call_entry.test.ts"],
+    config = VITEST_CONFIG,
     isolated_typecheck = True,
     tsconfig = TSCONFIG,
     deps = [
@@ -217,9 +222,10 @@ ts_library(
     ],
 )
 
-ts_library(
+vitest_test(
     name = "vocabulary_test",
     srcs = ["vocabulary.test.ts"],
+    config = VITEST_CONFIG,
     isolated_typecheck = True,
     tsconfig = TSCONFIG,
     deps = [
@@ -228,23 +234,4 @@ ts_library(
     ],
 )
 
-vitest_subsuite(
-    name = "vitest_test",
-    base = "//haku/console/frontend:vitest_test",
-    specs = [
-        ":actions_test",
-        ":call_entry_test",
-        ":index_test",
-        ":result_entry_test",
-        ":vocabulary_test",
-    ],
-    suites = [
-        "//haku/console/frontend/tool_rendering/gmail:vitest_test",
-        "//haku/console/frontend/tool_rendering/google_calendar:vitest_test",
-        "//haku/console/frontend/tool_rendering/grants:vitest_test",
-        "//haku/console/frontend/tool_rendering/grocy:vitest_test",
-        "//haku/console/frontend/tool_rendering/haku_routine:vitest_test",
-        "//haku/console/frontend/tool_rendering/kubectl:vitest_test",
-        "//haku/console/frontend/tool_rendering/tana:vitest_test",
-    ],
-)
+check_vitest_specs()
