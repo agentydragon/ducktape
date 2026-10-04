@@ -4,7 +4,7 @@
 #   "openai",
 # ]
 # ///
-"""Test Ollama with OpenAI Responses API."""
+"""Demo: call Ollama through the OpenAI Responses API."""
 
 from openai import OpenAI
 
