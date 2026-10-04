@@ -190,7 +190,11 @@ py_test(
     deps = [
         ":conftest",
         ":instructions",
+        ":session_lifecycle",
         "//:conftest",
+        "//agentplane/runner:protocol_pb2",
+        "//agentplane/sandbox_service:protocol_pb2",
+        "@pypi//protobuf",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],
