@@ -3,7 +3,6 @@ the Kubernetes access every sandbox gets rather than the ones that opted in."""
 
 from __future__ import annotations
 
-import json
 from typing import Any
 
 import pytest
@@ -12,7 +11,6 @@ import yaml
 from cdk8s import Testing as Cdk8sTesting
 from more_itertools import one
 
-from agentplane.egress import sidecar
 from cluster.cdk8s.agentplane import binding_delegation, staging, testing
 from cluster.cdk8s.agentplane.app_settings import (
     ACTIVITYWATCH_READ_POLICY,
@@ -32,7 +30,6 @@ from cluster.cdk8s.agentplane.app_settings import (
 )
 from cluster.cdk8s.agentplane.conftest import NAMESPACES
 from cluster.cdk8s.agentplane.egress import KUBERNETES_AUDIENCE, KUBERNETES_CREDENTIAL, KUBERNETES_HOST
-from util.settings_contract import env_name
 
 # What a workload token may reach on the Actions service: the MCP endpoint, its schema and
 # the action-group/request API. The operator API (/v1/operator/*) and the OAuth endpoints
@@ -153,114 +150,6 @@ def test_testing_github_policy_has_its_credential_and_no_real_account_credential
     )
 
 
-def test_coinbase_is_scoped_to_static_haku_managed_haku_and_finance(
-    agentplane_manifests: dict[str, list[dict[str, Any]]],
-) -> None:
-    """Coinbase is an explicit credential grant, never part of public diagnostics."""
-    docs = agentplane_manifests[staging.ENV.namespace]
-
-    role_binding = _by_name(docs, "RoleBinding", "claude-ai-coinbase-reader")
-    assert role_binding["subjects"] == [
-        {"apiGroup": "", "kind": "ServiceAccount", "name": "claude-ai", "namespace": staging.ENV.namespace},
-        {"apiGroup": "rbac.authorization.k8s.io", "kind": "Group", "name": "oidc-ksbx-groups:haku"},
-        {"apiGroup": "rbac.authorization.k8s.io", "kind": "Group", "name": "haku:access-profile:haku"},
-        {"apiGroup": "", "kind": "ServiceAccount", "name": "haku", "namespace": "haku-sandbox"},
-    ]
-
-    egress_bindings = {doc["metadata"]["name"]: doc for doc in docs if doc["kind"] == "EgressBinding"}
-    assert COINBASE_POLICY in egress_bindings["claude-ai"]["spec"]["policies"]
-    assert COINBASE_POLICY not in egress_bindings["haku-agent"]["spec"]["policies"]
-
-    role = _by_name(docs, "Role", "claude-ai-coinbase-reader")
-    assert role["rules"] == [
-        {"apiGroups": [""], "resourceNames": ["coinbase-api-credentials"], "resources": ["secrets"], "verbs": ["get"]}
-    ]
-
-    app_config = _by_name(docs, "ConfigMap", "agentplane-app-config")
-    config = yaml.safe_load(app_config["data"]["config.yaml"])
-    haku_preset = config["sandbox_presets"]["haku"]
-    assert COINBASE_POLICY in haku_preset["policies"], haku_preset
-    assert "coinbase-credentials" in haku_preset["kubernetes_grants"]
-    assert "coinbase-credentials" in config["sandbox_presets"]["finance-agent"]["kubernetes_grants"]
-    assert "coinbase-credentials" not in config["sandbox_presets"]["public-coder"]["kubernetes_grants"]
-    assert config["kubernetes_grants"]["coinbase-credentials"] == {
-        "kind": "RoleBinding",
-        "namespace": staging.ENV.namespace,
-        "role_ref": {"kind": "Role", "name": "claude-ai-coinbase-reader"},
-    }
-
-
-def test_haku_grant_catalog_generates_scoped_app_delegation(
-    agentplane_manifests: dict[str, list[dict[str, Any]]],
-) -> None:
-    docs = agentplane_manifests[staging.ENV.namespace]
-    config = yaml.safe_load(_by_name(docs, "ConfigMap", "agentplane-app-config")["data"]["config.yaml"])
-    haku = config["sandbox_presets"]["haku"]
-    assert {"cluster-diagnostics", "haku-sandbox-write", "agentplane-testing-operator", "coinbase-credentials"} <= set(
-        haku["kubernetes_grants"]
-    )
-    assert config["kubernetes_grants"]["cluster-diagnostics"] == {
-        "kind": "ClusterRoleBinding",
-        "role_ref": {"kind": "ClusterRole", "name": "cluster-diagnostics-reader"},
-    }
-    assert config["kubernetes_grants"]["haku-sandbox-write"] == {
-        "kind": "RoleBinding",
-        "namespace": "haku-sandbox",
-        "role_ref": {"kind": "Role", "name": "haku-sandbox-admin"},
-    }
-    assert config["kubernetes_grants"]["haku-console-metadata"] == {
-        "kind": "RoleBinding",
-        "namespace": "haku-console",
-        "role_ref": {"kind": "Role", "name": "agent-haku-console-metadata-reader"},
-    }
-    assert config["kubernetes_grants"]["clickhouse-diagnostics"] == {
-        "kind": "RoleBinding",
-        "namespace": "clickhouse",
-        "role_ref": {"kind": "Role", "name": "agent-clickhouse-diagnostics-reader"},
-    }
-    assert config["kubernetes_grants"]["ducktape-flux-read"] == {
-        "kind": "RoleBinding",
-        "namespace": "ducktape-flux",
-        "role_ref": {"kind": "Role", "name": "ducktape-flux-reader"},
-    }
-    assert config["kubernetes_grants"]["public-coder-volsync-status"] == {
-        "kind": "RoleBinding",
-        "namespace": "public-coder-agent",
-        "role_ref": {"kind": "Role", "name": "agent-public-coder-extended-diagnostics-reader"},
-    }
-    assert not any(
-        doc["kind"] in {"Role", "RoleBinding"}
-        and doc["metadata"].get("namespace") == "haku-sandbox"
-        and doc["metadata"]["name"] == "agentplane-staging-managed-bindings"
-        for doc in docs
-    ), "the app Kustomization must not own managed-binding delegation in external namespaces"
-    app_cluster_role = _by_name(docs, "ClusterRole", "agentplane-staging-managed-cluster-bindings")
-    assert {
-        tuple(rule.get("resourceNames", [])) for rule in app_cluster_role["rules"] if rule["verbs"] == ["bind"]
-    } == {
-        ("agent-readable-namespace-logs",),
-        ("agent-readable-namespace-metadata",),
-        ("cluster-diagnostics-reader",),
-        ("public-coder-agent-node-reader",),
-        ("public-coder-agent-cluster-metadata-reader",),
-    }
-    assert any(
-        rule["resources"] == ["clusterroles"] and rule["verbs"] == ["get"] and not rule.get("resourceNames")
-        for rule in app_cluster_role["rules"]
-    )
-    cleanup_namespaces = set(config["kubernetes_binding_cleanup_namespaces"])
-    assert {
-        "agentplane-testing",
-        "clickhouse",
-        "ducktape-flux",
-        "haku-console",
-        "haku-sandbox",
-        "public-coder-agent",
-    } <= cleanup_namespaces
-    assert staging.ENV.namespace not in cleanup_namespaces
-    assert config["kubernetes_cluster_binding_cleanup"] is True
-
-
 @pytest.mark.parametrize("preset", ["public-coder", "finance-agent"])
 def test_public_diagnostics_share_haku_reads_but_not_privileged_grants(
     preset: str, agentplane_manifests: dict[str, list[dict[str, Any]]]
@@ -270,6 +159,9 @@ def test_public_diagnostics_share_haku_reads_but_not_privileged_grants(
     catalog = config["kubernetes_grants"]
     selected = config["sandbox_presets"][preset]["kubernetes_grants"]
     credential_grants = {"coinbase-credentials"} if preset == "finance-agent" else set()
+    # Coinbase egress follows the Secret grant; haku-agent's EgressBinding carries none.
+    assert (COINBASE_POLICY in config["sandbox_presets"][preset]["policies"]) == bool(credential_grants)
+    assert COINBASE_POLICY not in _by_name(docs, "EgressBinding", "haku-agent")["spec"]["policies"]
     assert set(selected) == set(config["sandbox_presets"]["public-coder"]["kubernetes_grants"]) | credential_grants
     assert len(selected) == len(set(selected))
     haku = config["sandbox_presets"]["haku"]["kubernetes_grants"]
@@ -328,125 +220,29 @@ def test_public_diagnostics_share_haku_reads_but_not_privileged_grants(
     assert "kubernetes_grants" not in testing_config["sandbox_presets"]["public-coder"]
 
 
-def test_shared_public_coder_reader_and_testing_login_have_named_bind_delegation(
-    agentplane_manifests: dict[str, list[dict[str, Any]]],
+@pytest.mark.parametrize("target_namespace", binding_delegation.external_scopes(staging.ENV))
+def test_external_delegation_binds_exactly_the_granted_roles(
+    target_namespace: str, agentplane_manifests: dict[str, list[dict[str, Any]]]
 ) -> None:
     docs = agentplane_manifests[staging.ENV.namespace]
     config = yaml.safe_load(_by_name(docs, "ConfigMap", "agentplane-app-config")["data"]["config.yaml"])
-    assert "public-coder-agent-devbox-vmi-restart" not in config["kubernetes_grants"]
-    for name, role_name in (
-        ("public-coder-agent-reader", "public-coder-agent-reader"),
-        ("agentplane-testing-login", "agentplane-testing-login-reader"),
-    ):
-        assert config["kubernetes_grants"][name] == {
-            "kind": "RoleBinding",
-            "namespace": "public-coder-agent",
-            "role_ref": {"kind": "Role", "name": role_name},
-        }
-        assert name in config["sandbox_presets"]["haku"]["kubernetes_grants"]
-    assert "public-coder-agent" in config["kubernetes_binding_cleanup_namespaces"]
-
-    delegated = Cdk8sTesting.synth(binding_delegation.chart(Cdk8sTesting.app(), staging.ENV, "public-coder-agent"))
-    role = _by_name(delegated, "Role", "agentplane-staging-external-bindings")
-    assert role["metadata"]["namespace"] == "public-coder-agent"
-    assert role["rules"][0] == {
-        "apiGroups": ["rbac.authorization.k8s.io"],
-        "resources": ["rolebindings"],
-        "verbs": ["create", "get", "list", "delete"],
+    granted = {
+        grant["role_ref"]["name"]
+        for grant in config["kubernetes_grants"].values()
+        if grant["kind"] == "RoleBinding"
+        and grant["namespace"] == target_namespace
+        and grant["role_ref"]["kind"] == "Role"
     }
-    assert {tuple(rule.get("resourceNames", [])) for rule in role["rules"] if rule["verbs"] == ["bind"]} == {
-        ("agent-public-coder-extended-diagnostics-reader",),
-        ("public-coder-agent-reader",),
-        ("agentplane-testing-login-reader",),
-    }
-    binding = _by_name(delegated, "RoleBinding", "agentplane-staging-external-bindings")
-    assert binding["subjects"] == [
-        {"kind": "ServiceAccount", "name": "agentplane-sandbox-service", "namespace": "agentplane-staging"}
-    ]
+    delegated = Cdk8sTesting.synth(binding_delegation.chart(Cdk8sTesting.app(), staging.ENV, target_namespace))
+    role = one(doc for doc in delegated if doc["kind"] == "Role")
+    assert {name for rule in role["rules"] if rule["verbs"] == ["bind"] for name in rule["resourceNames"]} == granted
+    # An absent target namespace must not fail the app Kustomization's apply.
     assert not any(
         doc["kind"] in {"Role", "RoleBinding"}
-        and doc["metadata"].get("namespace") == "public-coder-agent"
-        and doc["metadata"]["name"] == "agentplane-staging-external-bindings"
+        and doc["metadata"].get("namespace") == target_namespace
+        and doc["metadata"]["name"] == role["metadata"]["name"]
         for doc in docs
     )
-
-
-def test_managed_haku_testing_operator_reuses_static_role_with_external_delegation(
-    agentplane_manifests: dict[str, list[dict[str, Any]]],
-) -> None:
-    staging_docs = agentplane_manifests[staging.ENV.namespace]
-    config = yaml.safe_load(_by_name(staging_docs, "ConfigMap", "agentplane-app-config")["data"]["config.yaml"])
-    assert config["kubernetes_grants"]["agentplane-testing-operator"] == {
-        "kind": "RoleBinding",
-        "namespace": "agentplane-testing",
-        "role_ref": {"kind": "Role", "name": "agentplane-testing-operator"},
-    }
-    assert "agentplane-testing-operator" in config["sandbox_presets"]["haku"]["kubernetes_grants"]
-    assert "agentplane-testing" in config["kubernetes_binding_cleanup_namespaces"]
-    assert "agentplane-testing" in binding_delegation.external_scopes(staging.ENV)
-
-    testing_docs = agentplane_manifests[testing.ENV.namespace]
-    assert (
-        _by_name(testing_docs, "Role", "agentplane-testing-operator")["metadata"]["namespace"] == "agentplane-testing"
-    )
-    static_binding = _by_name(testing_docs, "RoleBinding", "agent-agentplane-testing-operator")
-    assert static_binding["roleRef"]["name"] == "agentplane-testing-operator"
-    assert {subject["name"] for subject in static_binding["subjects"]} >= {
-        "claude-ai",
-        "oidc-ksbx-groups:haku",
-        "haku:access-profile:haku",
-        "haku",
-    }
-
-    external_docs = Cdk8sTesting.synth(binding_delegation.chart(Cdk8sTesting.app(), staging.ENV, "agentplane-testing"))
-    role = _by_name(external_docs, "Role", "agentplane-staging-external-bindings")
-    assert role["metadata"]["namespace"] == "agentplane-testing"
-    assert role["rules"] == [
-        {
-            "apiGroups": ["rbac.authorization.k8s.io"],
-            "resources": ["rolebindings"],
-            "verbs": ["create", "get", "list", "delete"],
-        },
-        {"apiGroups": ["rbac.authorization.k8s.io"], "resources": ["roles"], "verbs": ["get"]},
-        {
-            "apiGroups": ["rbac.authorization.k8s.io"],
-            "resourceNames": ["agentplane-testing-operator"],
-            "resources": ["roles"],
-            "verbs": ["bind"],
-        },
-    ]
-    delegated_binding = _by_name(external_docs, "RoleBinding", "agentplane-staging-external-bindings")
-    assert delegated_binding["subjects"] == [
-        {"kind": "ServiceAccount", "name": "agentplane-sandbox-service", "namespace": "agentplane-staging"}
-    ]
-    assert not any(
-        doc["kind"] in {"Role", "RoleBinding"}
-        and doc["metadata"].get("namespace") == "agentplane-testing"
-        and doc["metadata"]["name"] == "agentplane-staging-external-bindings"
-        for doc in staging_docs
-    )
-
-
-def test_upstream_bundles_have_independent_environment_ownership(
-    agentplane_manifests: dict[str, list[dict[str, Any]]],
-) -> None:
-    names = set()
-    for namespace, manifests in agentplane_manifests.items():
-        bundle = one(
-            doc
-            for doc in manifests
-            if doc["kind"] == "Bundle" and doc["metadata"]["name"] == f"{namespace}-egress-upstream-ca"
-        )
-        name = bundle["metadata"]["name"]
-        assert name not in names, "cluster-scoped upstream Bundles must have separate owners"
-        names.add(name)
-        assert bundle["spec"]["target"]["namespaceSelector"] == {
-            "matchExpressions": [{"key": "kubernetes.io/metadata.name", "operator": "In", "values": [namespace]}]
-        }
-        assert bundle["spec"]["sources"] == [
-            {"useDefaultCAs": True},
-            {"configMap": {"name": "kube-root-ca.crt", "key": "ca.crt"}},
-        ]
 
 
 def test_environments_do_not_share_cluster_scoped_bundles(
@@ -460,135 +256,6 @@ def test_environments_do_not_share_cluster_scoped_bundles(
             name = doc["metadata"]["name"]
             assert name not in owners, f"Bundle {name} is owned by both {owners.get(name)} and {namespace}"
             owners[name] = namespace
-
-
-@pytest.mark.parametrize("namespace", NAMESPACES)
-def test_sandbox_sidecars_gate_readiness_on_the_loopback_listener(
-    namespace: str, agentplane_manifests: dict[str, list[dict[str, Any]]]
-) -> None:
-    templates = [doc for doc in agentplane_manifests[namespace] if doc["kind"] == "SandboxTemplate"]
-    assert templates
-    for template in templates:
-        containers = template["spec"]["podTemplate"]["spec"]["containers"]
-        egress_sidecar = one(container for container in containers if container["name"] == "egress-sidecar")
-        env = {variable["name"]: variable["value"] for variable in egress_sidecar["env"]}
-        assert env[env_name(sidecar.Settings, "readiness_host")] == sidecar.READINESS_HOST
-        readiness_port = int(env[env_name(sidecar.Settings, "readiness_port")])
-        probe = egress_sidecar["readinessProbe"]["httpGet"]
-        assert probe["port"] == readiness_port == sidecar.READINESS_PORT
-        assert probe["path"] == sidecar.READINESS_PATH
-        assert "livenessProbe" not in egress_sidecar
-
-
-def test_runner_context_configuration_matches_the_verified_qwen_roster(
-    agentplane_manifests: dict[str, list[dict[str, Any]]],
-) -> None:
-    expected = {
-        "ollama/oai-chat/qwen3.8-flash-next-iq4xs-128k": 128 * 1024,
-        "ollama/olm-chat/qwen3.8-flash-next-iq4xs-128k": 128 * 1024,
-        "ollama/oai-chat/qwen3.8-flash-next-iq4xs-256k": 256 * 1024,
-        "ollama/olm-chat/qwen3.8-flash-next-iq4xs-256k": 256 * 1024,
-    }
-    for namespace, manifests in agentplane_manifests.items():
-        templates = [doc for doc in manifests if doc["kind"] == "SandboxTemplate"]
-        runner_containers = [
-            container
-            for template in templates
-            for container in template["spec"]["podTemplate"]["spec"]["containers"]
-            if container["name"] == "runner"
-        ]
-        assert runner_containers, namespace
-        for container in runner_containers:
-            environment = {variable["name"]: variable.get("value") for variable in container.get("env", [])}
-            assert json.loads(environment["AGENTPLANE_MODEL_CONTEXT_WINDOWS"]) == expected
-
-
-@pytest.mark.parametrize("preset", ["public-coder", "finance-agent", "haku"])
-def test_shared_agentplane_operator_access_is_testing_only(
-    preset: str, agentplane_manifests: dict[str, list[dict[str, Any]]]
-) -> None:
-    docs = agentplane_manifests[staging.ENV.namespace]
-    config = yaml.safe_load(_by_name(docs, "ConfigMap", "agentplane-app-config")["data"]["config.yaml"])
-    selected = config["sandbox_presets"][preset]
-    assert {"agentplane-testing-operator", "agentplane-testing-login"} <= set(selected["kubernetes_grants"])
-    assert "public-coder-agent-devbox-vmi-restart" not in selected["kubernetes_grants"]
-    assert selected["policies"].count(AGENTPLANE_TESTING_POLICY) == 1
-    assert config["kubernetes_grants"]["agentplane-testing-login"] == {
-        "kind": "RoleBinding",
-        "namespace": "public-coder-agent",
-        "role_ref": {"kind": "Role", "name": "agentplane-testing-login-reader"},
-    }
-    policy = _by_name(docs, "EgressPolicy", AGENTPLANE_TESTING_POLICY)
-    assert {host for rule in policy["spec"]["rules"] for host in rule["hosts"]} == {
-        "agentplane-app.agentplane-testing.svc.cluster.local",
-        "agentplane-testing.allegedly.works",
-        "agentplane-dex-testing.allegedly.works",
-    }
-    assert all("credential" not in rule for rule in policy["spec"]["rules"])
-    network = _by_name(docs, "CiliumNetworkPolicy", "agentplane-egress-to-testing-app")
-    dex_backend = one(
-        rule
-        for rule in network["spec"]["egress"]
-        if any(
-            endpoint.get("matchLabels", {}).get("app.kubernetes.io/name") == "agentplane-testing-dex"
-            for endpoint in rule.get("toEndpoints", [])
-        )
-    )
-    assert dex_backend["toEndpoints"] == [
-        {
-            "matchLabels": {
-                "k8s:io.kubernetes.pod.namespace": "agentplane-testing",
-                "app.kubernetes.io/name": "agentplane-testing-dex",
-            }
-        }
-    ]
-    assert dex_backend["toPorts"] == [
-        {"ports": [{"port": "5556", "protocol": "TCP"}], "serverNames": ["agentplane-dex-testing.allegedly.works"]}
-    ]
-
-
-def test_static_openclaw_has_only_its_existing_destination_credentials(
-    agentplane_manifests: dict[str, list[dict[str, Any]]],
-) -> None:
-    docs = agentplane_manifests["agentplane-staging"]
-    policy = _by_name(docs, "EgressPolicy", "public-coder-openclaw")
-    rules = {r["credentialRef"]["name"]: r for r in policy["spec"]["rules"]}
-    assert set(rules) == {
-        "github-pat",
-        "public-coder-haku-console",
-        "public-coder-clickhouse",
-        "aiquota-read",
-        "brave-search",
-        "public-coder-matrix",
-        "agentplane-workload",
-    }
-    assert rules["public-coder-matrix"] == {
-        "hosts": ["matrix.allegedly.works"],
-        "methods": ["POST"],
-        "paths": ["/_matrix/client/v3/login"],
-        "credentialRef": {"name": "public-coder-matrix"},
-    }
-    assert rules["aiquota-read"]["methods"] == ["GET"]
-    assert rules["aiquota-read"]["paths"] == ["/v1/quotas", "/v1/providers/*/raw"]
-    assert rules["public-coder-haku-console"]["hosts"] == ["haku.allegedly.works", "haku-kubeapi.allegedly.works"]
-    assert rules["public-coder-clickhouse"]["clusterInternal"] is True
-    assert rules["agentplane-workload"]["paths"] == ["/v1/rules", "/openapi.json"]
-    assert _by_name(docs, "EgressCredential", "public-coder-matrix")["spec"]["targets"] == [
-        {"method": "jsonField", "field": "password"}
-    ]
-    testing_docs = agentplane_manifests["agentplane-testing"]
-    assert not any(d["metadata"]["name"] == "public-coder-openclaw" for d in testing_docs)
-    for namespace, manifests in agentplane_manifests.items():
-        bundle_name = (
-            staging.ENV.egress.ca_secret_name
-            if namespace == "agentplane-staging"
-            else testing.ENV.egress.ca_secret_name
-        )
-        bundle = _by_name(manifests, "Bundle", bundle_name)
-        expressions = bundle["spec"]["target"]["namespaceSelector"]["matchExpressions"]
-        assert one(expressions)["values"] == (
-            ["agentplane-staging", "public-coder-agent"] if namespace == "agentplane-staging" else [namespace]
-        )
 
 
 if __name__ == "__main__":

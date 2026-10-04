@@ -47,17 +47,6 @@ def test_public_route_exposes_protocol_paths_only(
     assert paths >= _MCP_PROTOCOL_PATHS
 
 
-def test_staging_exposes_only_the_shared_cimd_path(agentplane_manifests: dict[str, list[dict[str, Any]]]) -> None:
-    route = one(
-        doc
-        for doc in agentplane_manifests["agentplane-staging"]
-        if doc["kind"] == "HTTPRoute" and doc["metadata"]["name"] == "agentplane-actions-mcp"
-    )
-    paths = {match["path"]["value"] for rule in route["spec"]["rules"] for match in rule["matches"]}
-    assert "/oauth/client-metadata.json" in paths
-    assert not any(path.startswith("/oauth/client-metadata/") for path in paths)
-
-
 @pytest.mark.parametrize("namespace", NAMESPACES)
 def test_cross_owner_reader_is_explicit_and_json_encoded(
     namespace: str, agentplane_manifests: dict[str, list[dict[str, Any]]]

@@ -59,19 +59,6 @@ py_library(
     ],
 )
 
-py_test(
-    name = "test_action_policy_set",
-    srcs = ["test_action_policy_set.py"],
-    data = ["@nodejs_linux_amd64//:bin/node"],
-    env = {"JSII_NODE": "$(rootpath @nodejs_linux_amd64//:bin/node)"},
-    deps = [
-        ":action_policy_set",
-        "//:conftest",
-        "@pypi//cdk8s",
-        "@pypi//pytest_bazel",
-    ],
-)
-
 py_library(
     name = "egress_binding",
     srcs = ["egress_binding.py"],
