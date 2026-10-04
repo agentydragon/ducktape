@@ -43,7 +43,7 @@ class Exclusions(BaseModel):
     # permissions). Covers non-deterministic builds like uv tools, rbenv, nvm.
     volatile_paths: list[str] = []
     # Session start hook artifacts: created by devinfra/claude at runtime,
-    # not part of the base container image. Treated as expected_only_in_live.
+    # not part of the base container image. Treated as only_in_live.
     session_hook_artifacts: list[str] = []
 
     def matching_skip(self, path: str) -> str | None:
@@ -52,26 +52,17 @@ class Exclusions(BaseModel):
                 return p
         return None
 
-    def should_skip(self, path: str) -> bool:
-        return self.matching_skip(path) is not None
-
     def matching_volatile(self, path: str) -> str | None:
         for pat in self.volatile_paths:
             if fnmatch.fnmatch(path, pat):
                 return pat
         return None
 
-    def is_volatile(self, path: str) -> bool:
-        return self.matching_volatile(path) is not None
-
     def matching_hash_ok(self, path: str) -> str | None:
         for pat in self.hash_may_differ:
             if fnmatch.fnmatch(path, pat):
                 return pat
         return None
-
-    def hash_ok_to_differ(self, path: str) -> bool:
-        return self.matching_hash_ok(path) is not None
 
     def matching_only_in_live(self, path: str) -> tuple[str, str] | None:
         """Return (category, pattern) for matching only_in_live or session_hook_artifacts."""
@@ -83,17 +74,11 @@ class Exclusions(BaseModel):
                 return ("session_hook_artifacts", pat)
         return None
 
-    def expected_only_in_live(self, path: str) -> bool:
-        return self.matching_only_in_live(path) is not None
-
     def matching_only_in_built(self, path: str) -> str | None:
         for pat in self.only_in_built:
             if fnmatch.fnmatch(path, pat):
                 return pat
         return None
-
-    def expected_only_in_built(self, path: str) -> bool:
-        return self.matching_only_in_built(path) is not None
 
     def all_patterns(self) -> list[tuple[str, str]]:
         """All (category, pattern) pairs across all exclusion categories."""
