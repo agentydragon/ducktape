@@ -1,12 +1,8 @@
 from __future__ import annotations
 
 import ast
-from collections.abc import Callable, Iterable
+from collections.abc import Iterable
 from pathlib import Path
-from typing import TYPE_CHECKING
-
-if TYPE_CHECKING:  # pragma: no cover - typing only
-    from py_detectors.models import Detection
 
 EXCLUDES = {".git", ".hg", ".svn", "node_modules", ".venv", "venv", "__pycache__", ".mypy_cache"}
 
@@ -17,23 +13,6 @@ def iter_py_files(root: Path) -> Iterable[Path]:
         if parts & EXCLUDES:
             continue
         yield p
-
-
-def run_file_detector(root: Path, finder: Callable[[Path], list[Detection]]) -> list[Detection]:
-    """Apply a per-file detector across the repository Python files."""
-    detections: list[Detection] = []
-    for path in iter_py_files(root):
-        detections.extend(finder(path))
-    return detections
-
-
-def make_root_detector(finder: Callable[[Path], list[Detection]]) -> Callable[[Path], list[Detection]]:
-    """Wrap a per-file finder into a repository-level detector."""
-
-    def _run(root: Path) -> list[Detection]:
-        return run_file_detector(root, finder)
-
-    return _run
 
 
 def parse_python_file(path: Path) -> tuple[ast.AST, str] | None:

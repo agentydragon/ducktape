@@ -1,14 +1,7 @@
 from __future__ import annotations
 
 import ast
-from dataclasses import dataclass
 from pathlib import Path
-
-
-@dataclass(frozen=True)
-class ModuleInfo:
-    path: Path
-    name: str
 
 
 def module_name_for_path(root: Path, file_path: Path) -> str:
