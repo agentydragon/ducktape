@@ -2,7 +2,10 @@
 // into every page before it loads (history_probe.py); read back through window.__historyProbe.
 //
 // The history positions its rows with `transform`, which the browser's layout-instability API
-// does not count, so this also compares what each frame painted with the frame before it.
+// does not count, so this also compares what each frame painted with the frame before it. A frame
+// is read in the task after its animation callbacks, style, layout and resize-observer delivery
+// have run, which is when the browser has committed it: a `requestAnimationFrame` callback runs
+// before all of those and would report a state the frame never shows.
 (() => {
   const AREA = '[aria-label="Thread history"]';
   const ROW = "[data-thread-anchor]";
@@ -59,8 +62,14 @@
     }
   }).observe({ type: "layout-shift", buffered: true });
 
+  const frameTasks = new MessageChannel();
   const frame = (now) => {
     requestAnimationFrame(frame);
+    frameTasks.port2.postMessage(now);
+  };
+  frameTasks.port1.onmessage = (message) => committed(message.data);
+
+  const committed = (now) => {
     probe.frames++;
     if (previousTime !== null) {
       const gap = now - previousTime;
