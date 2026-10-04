@@ -219,6 +219,11 @@ def make_token(name: str = "x", sops_file: str = "s.yaml", **kw: Any) -> Token:
     return Token.model_validate(base)
 
 
+def test_token_without_push_grants_no_push_scope():
+    # The generated roster omits `push` for the read-only tokens, so this default is their only source.
+    assert make_token().push == []
+
+
 @pytest.fixture
 def upstream(tmp_path: Path) -> Path:
     """A local bare git repo on `devel` with one commit, as the rotator's push target.
