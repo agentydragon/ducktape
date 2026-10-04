@@ -5,16 +5,19 @@
   flex: 0 0 auto;
 }
 
-/* A dot and chevrons share one fixed slot, so a row's name does not move when its mark changes
-   between them. Icons keep their own size. */
+/* The thread marks (a dot, chevrons, the power icon) share one fixed slot, so a row's name does not
+   move when its thread's mark changes between them. The icon is a little taller than the slot and
+   overflows it evenly. Sandbox icons keep their own size. */
 .agentplane-mark-dot,
-.agentplane-mark-chevrons {
+.agentplane-mark-chevrons,
+.agentplane-mark-power {
   width: 0.875rem;
   height: 0.625rem;
 }
 
 .agentplane-mark-small.agentplane-mark-dot,
-.agentplane-mark-small.agentplane-mark-chevrons {
+.agentplane-mark-small.agentplane-mark-chevrons,
+.agentplane-mark-small.agentplane-mark-power {
   width: 0.75rem;
   height: 0.5rem;
 }

@@ -22,7 +22,7 @@ export function threadStatusFromSnapshot(
   if (thread.feed_status !== "active")
     return { kind: "inactive", label: "No live harness confirmed", tabLabel: "Starting" };
   if (thread.harness_state !== "HARNESS_STATE_RUNNING")
-    return { kind: "inactive", label: "Harness not running", tabLabel: "Stopped" };
+    return { kind: "stopped", label: "Harness not running", tabLabel: "Stopped" };
   const activeTurn = Boolean(thread.active_turn_id);
   return {
     kind: activeTurn ? "running" : "idle",

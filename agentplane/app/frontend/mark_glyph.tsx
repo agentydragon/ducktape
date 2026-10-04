@@ -5,11 +5,12 @@ import IconCircleX from "@tabler/icons-react/dist/esm/icons/IconCircleX.mjs";
 import IconClock from "@tabler/icons-react/dist/esm/icons/IconClock.mjs";
 import IconPlayerPause from "@tabler/icons-react/dist/esm/icons/IconPlayerPause.mjs";
 import IconPlayerPlay from "@tabler/icons-react/dist/esm/icons/IconPlayerPlay.mjs";
+import IconPower from "@tabler/icons-react/dist/esm/icons/IconPower.mjs";
 
 import { CHEVRON_CYCLE_MS, type MarkShape, type StatusMark } from "./status_mark";
 import "./mark_glyph.css";
 
-const ICON_PX = 13;
+const ICON_PX = { regular: 13, small: 11 };
 
 // Chevrons are drawn in a 14x10 box, one every CHEVRON_PITCH. The track holds enough of them that
 // shifting it right by one pitch looks the same as not shifting it, so the CSS animation can loop.
@@ -36,20 +37,23 @@ function Chevrons(): JSX.Element {
   );
 }
 
-function Shape({ shape }: { shape: MarkShape }): JSX.Element {
+function Shape({ shape, size }: { shape: MarkShape; size: keyof typeof ICON_PX }): JSX.Element {
+  const px = ICON_PX[size];
   switch (shape) {
     case "dot":
       return <span className="agentplane-mark-disc" />;
     case "chevrons":
       return <Chevrons />;
+    case "power":
+      return <IconPower size={px} />;
     case "play":
-      return <IconPlayerPlay size={ICON_PX} />;
+      return <IconPlayerPlay size={px} />;
     case "pause":
-      return <IconPlayerPause size={ICON_PX} />;
+      return <IconPlayerPause size={px} />;
     case "clock":
-      return <IconClock size={ICON_PX} />;
+      return <IconClock size={px} />;
     case "cross":
-      return <IconCircleX size={ICON_PX} />;
+      return <IconCircleX size={px} />;
   }
 }
 
@@ -59,7 +63,7 @@ export function MarkGlyph({ mark, size = "regular" }: { mark: StatusMark; size?:
     .join(" ");
   return (
     <span className={className} style={{ color: mark.color }}>
-      <Shape shape={mark.shape} />
+      <Shape shape={mark.shape} size={size} />
     </span>
   );
 }

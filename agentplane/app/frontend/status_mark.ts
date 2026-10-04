@@ -5,11 +5,12 @@
  */
 
 /**
- * `running`: a turn is in flight. `idle`: the harness is live and waiting for input. `failed`: the
- * runner feed failed. `inactive`: nothing live to show (archived, Sandbox suspended or gone, harness
- * stopped, feed ended, or not confirmed).
+ * `running`: a turn is in flight. `idle`: the harness is live and waiting for input. `stopped`: the
+ * runner feed is attached but the harness is down (shut down or lost). `failed`: the runner feed
+ * failed. `inactive`: nothing live to show (archived, Sandbox suspended or gone, feed ended, or not
+ * confirmed).
  */
-export type ThreadStatusKind = "running" | "idle" | "failed" | "inactive";
+export type ThreadStatusKind = "running" | "idle" | "stopped" | "failed" | "inactive";
 
 /**
  * `ready`: the Pod is up and can take sessions. `pending`: on its way (grants applying, no Pod yet,
@@ -19,7 +20,7 @@ export type ThreadStatusKind = "running" | "idle" | "failed" | "inactive";
 export type SandboxStatusKind = "ready" | "pending" | "suspended" | "failed" | "gone";
 
 /** The shapes a thread's mark can take, in the page and in the favicon alike. */
-export type ThreadMarkShape = "dot" | "chevrons";
+export type ThreadMarkShape = "dot" | "chevrons" | "power";
 export type MarkShape = ThreadMarkShape | "play" | "pause" | "clock" | "cross";
 
 export interface StatusMark<Shape extends MarkShape = MarkShape> {
@@ -47,6 +48,7 @@ export interface ThreadStatusMark extends StatusMark<ThreadMarkShape> {
 export const THREAD_STATUS_MARKS: Record<ThreadStatusKind, ThreadStatusMark> = {
   running: { shape: "chevrons", color: GREEN, glyph: "»" },
   idle: { shape: "dot", color: BLUE, glyph: "●" },
+  stopped: { shape: "power", color: GRAY, glyph: "⏻" },
   failed: { shape: "dot", color: RED, glyph: "×" },
   inactive: { shape: "dot", color: GRAY, glyph: "○" },
 };
