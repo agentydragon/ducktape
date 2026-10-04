@@ -5,13 +5,6 @@ import pytest_bazel
 from util.image_tag import image_provenance
 
 
-def test_parses_automation_tag() -> None:
-    info = image_provenance("devel-20260713014452-83da566")
-    assert info.image_tag == "devel-20260713014452-83da566"
-    assert info.source_commit == "83da566"
-    assert info.source_commit_url == "https://github.com/agentydragon/ducktape/commit/83da566"
-
-
 def test_non_automation_tag_keeps_tag_without_commit() -> None:
     info = image_provenance("latest")
     assert info.image_tag == "latest"

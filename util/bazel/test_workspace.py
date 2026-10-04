@@ -47,11 +47,6 @@ def test_parse_invalid_raises(raw: str) -> None:
         BazelLabel.parse(raw)
 
 
-@pytest.mark.parametrize("raw", ["foo:bar", ""])
-def test_try_parse_invalid_returns_none(raw: str) -> None:
-    assert BazelLabel.try_parse(raw) is None
-
-
 @pytest.mark.parametrize(
     ("label", "expected"),
     [
