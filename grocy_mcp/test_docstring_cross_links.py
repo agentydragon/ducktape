@@ -12,47 +12,10 @@ import re
 import pytest_bazel
 from fastmcp.client import Client
 from fastmcp.client.transports import FastMCPTransport
-from pydantic import BaseModel
 
 from grocy_mcp.client import GrocyClient
-from grocy_mcp.grocy_types import PRODUCT_WRITABLE_FIELDS, EntityType, ReadableEntityType, WriteableEntityType
-from grocy_mcp.mcp_types import (
-    AddItem,
-    BriefListItem,
-    BriefQuantityUnit,
-    ConsumeItem,
-    CreateError,
-    CreateItem,
-    CreateLocationItem,
-    CreateOk,
-    CreateProductGroupItem,
-    CreateProductItem,
-    CreateQuantityUnitItem,
-    CreateShoppingListItem,
-    EditProductField,
-    EditProductItem,
-    EditShoppingListField,
-    EditStockEntryField,
-    EditStockEntryItem,
-    FullLocation,
-    FullProduct,
-    FullProductGroup,
-    FullQuantityUnit,
-    FullShoppingList,
-    GetError,
-    GetOk,
-    ServerSettings,
-    SetItem,
-    ShoppingItem,
-    ShoppingListItemError,
-    ShoppingListItemOk,
-    StockEntry,
-    StockEntryDetail,
-    StockEntryError,
-    StockEntryOk,
-    StockOpError,
-    StockOpOk,
-)
+from grocy_mcp.grocy_types import PRODUCT_WRITABLE_FIELDS
+from grocy_mcp.mcp_types import ServerSettings
 from grocy_mcp.server import build_mcp
 from mcp_infra.request_scoped_openapi import borrowed_http_client_provider
 
@@ -67,52 +30,9 @@ _KNOWN_NON_TOOL_REFERENCES = {
     "EditShoppingListField",
 }
 
-_PYDANTIC_MODELS: list[type[BaseModel]] = [
-    AddItem,
-    BriefListItem,
-    BriefQuantityUnit,
-    ConsumeItem,
-    CreateError,
-    CreateItem,
-    CreateLocationItem,
-    CreateOk,
-    CreateProductGroupItem,
-    CreateProductItem,
-    CreateQuantityUnitItem,
-    CreateShoppingListItem,
-    EditProductItem,
-    EditStockEntryItem,
-    FullLocation,
-    FullProduct,
-    FullProductGroup,
-    FullQuantityUnit,
-    FullShoppingList,
-    GetError,
-    GetOk,
-    SetItem,
-    ShoppingItem,
-    ShoppingListItemError,
-    ShoppingListItemOk,
-    StockEntry,
-    StockEntryDetail,
-    StockEntryError,
-    StockEntryOk,
-    StockOpError,
-    StockOpOk,
-]
-
-_ENUMS = [
-    EditProductField,
-    EditShoppingListField,
-    EditStockEntryField,
-    EntityType,
-    ReadableEntityType,
-    WriteableEntityType,
-]
-
-# Tokens that appear backtick-quoted in tool descriptions but are not
-# representable as Pydantic model fields or enum values — function parameter
-# names, response dict keys, and OpenAPI tokens.
+# Tokens that appear backtick-quoted in tool descriptions but that no tool's
+# schema carries as a property name or enum value — function parameter names,
+# response dict keys, and OpenAPI tokens.
 _RESIDUAL_TOKENS: set[str] = {
     # Function parameters and response dict keys not in Pydantic models
     "days_ahead",
@@ -139,12 +59,17 @@ _RESIDUAL_TOKENS: set[str] = {
     "true",
 }
 
-_KNOWN_NON_TOOL_TOKENS = (
-    {field for model in _PYDANTIC_MODELS for field in model.model_fields}
-    | {v.value for enum in _ENUMS for v in enum}
-    | PRODUCT_WRITABLE_FIELDS
-    | _RESIDUAL_TOKENS
-)
+
+def _schema_tokens(node: object) -> set[str]:
+    """Property names and string enum values anywhere in a JSON schema, `$defs` included."""
+    match node:
+        case dict():
+            own = set(node.get("properties", {})) | {value for value in node.get("enum", []) if isinstance(value, str)}
+            return own.union(*(_schema_tokens(child) for child in node.values()))
+        case list():
+            return set().union(*(_schema_tokens(child) for child in node))
+        case _:
+            return set()
 
 
 async def test_docstring_cross_links_resolve() -> None:
@@ -157,7 +82,12 @@ async def test_docstring_cross_links_resolve() -> None:
 
     actual_names = {t.name for t in tools}
     tool_ref_re = re.compile(r"`([a-z][a-z0-9_]*)`")
-    known_non_tools = _KNOWN_NON_TOOL_REFERENCES | _KNOWN_NON_TOOL_TOKENS
+    known_non_tools = (
+        _KNOWN_NON_TOOL_REFERENCES
+        | PRODUCT_WRITABLE_FIELDS
+        | _RESIDUAL_TOKENS
+        | _schema_tokens([[tool.input_schema, tool.output_schema] for tool in tools])
+    )
 
     def _refs_in(text: str) -> set[str]:
         return {tok for tok in tool_ref_re.findall(text) if tok not in known_non_tools}

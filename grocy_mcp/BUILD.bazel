@@ -191,7 +191,6 @@ py_test(
         "//:conftest",
         "//mcp_infra:request_scoped_openapi",
         "@pypi//fastmcp_slim",
-        "@pypi//pydantic",
         "@pypi//pytest_bazel",
     ],
 )
