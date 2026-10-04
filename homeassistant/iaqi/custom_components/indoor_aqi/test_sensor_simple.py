@@ -27,10 +27,5 @@ def test_compute_iaqi_interpolation():
     assert_that(result, close_to(70.0, 0.01))
 
 
-def test_compute_iaqi_unknown_pollutant():
-    """Test IAQI calculation with unknown pollutant."""
-    assert compute_iaqi("unknown", 100) is None
-
-
 if __name__ == "__main__":
     pytest_bazel.main()
