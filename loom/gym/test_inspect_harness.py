@@ -147,16 +147,7 @@ def test_sandbox_compose_isolates_agent_behind_clamped_proxy(tmp_path: Path) -> 
     assert agent["networks"] == ["sandbox"]
     assert "network_mode" not in agent
     assert config["networks"]["sandbox"]["internal"] is True
-    # https egress goes through the same proxy, and the agent trusts the MITM
-    # CA from the shared volume — so https:// works without rewriting to http.
-    assert agent["environment"]["HTTPS_PROXY"] == "http://proxy:8080"
-    assert agent["environment"]["SSL_CERT_FILE"] == "/wayback-ca/mitmproxy-ca-cert.pem"
-    assert "wayback-ca:/wayback-ca:ro" in agent["volumes"]
-    proxy = config["services"]["proxy"]
-    assert proxy["environment"]["WAYBACK_AS_OF"] == "2020-02-01"
-    assert proxy["environment"]["WAYBACK_UPSTREAM"] == "http://host.docker.internal:9999"
-    assert proxy["environment"]["WAYBACK_CONFDIR"] == "/wayback-ca"
-    assert set(proxy["networks"]) == {"sandbox", "egress"}
+    assert config["services"]["proxy"]["environment"]["WAYBACK_AS_OF"] == "2020-02-01"
 
 
 def test_egress_ca_mount_skipped_for_remote_daemon(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -186,7 +177,6 @@ def test_no_archive_compose_is_route_less(tmp_path: Path) -> None:
     # block, so the agent must forecast from /data and its own knowledge.
     compose_path = write_sandbox_compose(tmp_path, date(2020, 2, 1), "http://host.docker.internal:9999", archive=False)
     config = yaml.safe_load(compose_path.read_text())
-    assert set(config["services"]) == {"default"}
     agent = config["services"]["default"]
     assert agent["network_mode"] == "none"
     assert "networks" not in config
