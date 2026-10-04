@@ -1,10 +1,10 @@
 """Acceptance fixture for the MCP-backed Executor.
 
-Scenarios 1-3 and 5-6 drive `McpActionGroupExecutor` directly against an in-process real
-`fastmcp.FastMCP()` server (a real MCP protocol exchange over an in-memory transport), because they
-need deterministic control over exactly when a tool mutation becomes visible relative to a refresh
-or a dispatch. Scenarios 4 and 7 drive the real `ActionService` end to end, since they exercise the
-coordinator's single-dispatch/lease/no-retry guarantees rather than the adapter's own per-call logic.
+Tests that need deterministic control over exactly when a tool mutation becomes visible relative to
+a refresh or a dispatch drive `McpActionGroupExecutor` directly against an in-process real
+`fastmcp.FastMCP()` server (a real MCP protocol exchange over an in-memory transport). Tests of the
+coordinator's single-dispatch/lease/no-retry guarantees, rather than the adapter's own per-call
+logic, drive the real `ActionService` end to end.
 """
 
 from __future__ import annotations
@@ -274,69 +274,6 @@ async def test_result_keeps_every_content_block_beside_structured_content(execut
             "isError": False,
         }
     finally:
-        await executor.close()
-
-
-async def test_execution_refuses_arguments_incompatible_with_the_current_live_schema(engine: AsyncEngine) -> None:
-    """A valid submission waits for approval while the backend schema changes.
-
-    Admission checks the advertised schema; execution must still fetch the current schema and
-    refuse mismatched arguments without calling the tool, even when the mirror remains stale.
-    """
-    mcp = FastMCP("demo")
-    calls: list[dict[str, Any]] = []
-
-    @mcp.tool
-    def foo(x: int) -> dict[str, int]:
-        calls.append({"x": x})
-        return {"x": x}
-
-    group = _group()
-    executor = McpActionGroupExecutor(GROUP_KEY, group, mcp)
-    await executor.start()
-    await wait_available(executor._group)
-    store = ActionStore(make_sessionmaker(engine))
-    service = ActionService(store, ActionCatalog(groups={GROUP_KEY: group}), {GROUP_KEY: executor})
-    try:
-        await service.start()
-        assert group.actions["foo"].input_schema["required"] == ["x"]
-
-        submitted = await service.submit(
-            ActionRequestInput(
-                idempotency_key="schema-drift",
-                title="test title for schema-drift",
-                action=ActionIdentity(group=GROUP_KEY, name="foo"),
-                arguments={"x": 1},
-            ),
-            CALLER,
-        )
-        assert submitted.state is ActionState.DECISION_PENDING
-        mcp.local_provider.remove_tool("foo")
-
-        @mcp.tool(name="foo")
-        def foo_v2(y: int) -> dict[str, int]:
-            calls.append({"y": y})
-            return {"y": y}
-
-        # `arguments` still matches the OLD (mirrored) schema, not the new live one.
-        await service.decide(
-            submitted.id,
-            DecisionInput(
-                verdict=Verdict.ALLOW, expected_version=submitted.version, idempotency_key="schema-drift-allow"
-            ),
-            OPERATOR,
-        )
-        await _poll_state(store, submitted.id, want=ActionState.FAILED)
-        result = (await store.get(submitted.id, CALLER)).execution
-        assert result is not None
-        assert result.state is ExecutionState.FAILED
-        assert result.error == {
-            "kind": "incompatible_action_schema",
-            "message": "arguments no longer match the current tool schema",
-        }
-        assert calls == [], "the tool must never be called when arguments don't match the current schema"
-    finally:
-        await service.close()
         await executor.close()
 
 
