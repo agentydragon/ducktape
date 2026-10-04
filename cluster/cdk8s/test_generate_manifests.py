@@ -9,6 +9,7 @@ are pinned only one way.
 
 from difflib import unified_diff
 from pathlib import Path
+from typing import Any
 
 import pytest
 import pytest_bazel
@@ -48,6 +49,12 @@ def generated(tmp_path_factory: pytest.TempPathFactory, checkout: Path) -> Path:
 
 
 @pytest.fixture(scope="module")
+def parsed_yaml_documents(generated: Path) -> dict[Path, tuple[Any, ...]]:
+    """Cache parsed documents for read-only inspection by manifest assertions."""
+    return {path: tuple(yaml.safe_load_all(path.read_text())) for path in generated.rglob("*.yaml")}
+
+
+@pytest.fixture(scope="module")
 def checkout() -> Path:
     """The runfiles tree, which holds each committed file the data deps package at its repo path."""
     return get_required_path(f"_main/{GENERATED_ROOT}").parents[1]
@@ -76,11 +83,13 @@ def test_generated_root_holds_only_generated_files(generated: Path, checkout: Pa
     )
 
 
-def test_ducktape_artifact_copy_sources_are_in_sparse_checkout(generated: Path) -> None:
+def test_ducktape_artifact_copy_sources_are_in_sparse_checkout(
+    generated: Path, parsed_yaml_documents: dict[Path, tuple[Any, ...]]
+) -> None:
     documents = [
         document
         for path in generated.rglob("*.yaml")
-        for document in yaml.safe_load_all(path.read_text())
+        for document in parsed_yaml_documents[path]
         if isinstance(document, dict)
     ]
     source = next(
@@ -136,12 +145,12 @@ def test_no_image_automation_markers(generated: Path) -> None:
     assert not marked, "Generated files must not carry a Flux image-automation marker:\n" + "\n".join(marked)
 
 
-def test_haku_spike_stays_unwired(generated: Path) -> None:
+def test_haku_spike_stays_unwired(generated: Path, parsed_yaml_documents: dict[Path, tuple[Any, ...]]) -> None:
     active = [
         doc
         for path in generated.rglob("*.k8s.yaml")
         if "parked" not in path.parts
-        for doc in yaml.safe_load_all(path.read_text())
+        for doc in parsed_yaml_documents[path]
         if doc
     ]
     spike = "haku-openclaw-spike"
@@ -171,7 +180,7 @@ def test_haku_spike_stays_unwired(generated: Path) -> None:
     assert ("public-coder-agent", "proxy") in deployments
     # Preserved snapshots remain reproducible outside the live manifest roots.
     archived = generated / "cluster/parked/haku-openclaw-spike"
-    app = list(yaml.safe_load_all((archived / "app/app.k8s.yaml").read_text()))
+    app = parsed_yaml_documents[archived / "app/app.k8s.yaml"]
     assert any(doc["kind"] == "PersistentVolumeClaim" for doc in app)
     bucket = next(doc for doc in app if doc["kind"] == "Bucket")
     assert bucket["spec"]["reclaimPolicy"] == "Retain"
@@ -179,12 +188,12 @@ def test_haku_spike_stays_unwired(generated: Path) -> None:
     assert (archived / "proxy/proxy.k8s.yaml").is_file()
 
 
-def test_legacy_sandboxes_stay_unwired(generated: Path) -> None:
+def test_legacy_sandboxes_stay_unwired(generated: Path, parsed_yaml_documents: dict[Path, tuple[Any, ...]]) -> None:
     active = [
         doc
         for path in generated.rglob("*.k8s.yaml")
         if "parked" not in path.parts
-        for doc in yaml.safe_load_all(path.read_text())
+        for doc in parsed_yaml_documents[path]
         if isinstance(doc, dict)
     ]
     retired_namespaces = {"agents-mitmproxy", "agent-workspaces"}
@@ -220,18 +229,20 @@ def test_legacy_sandboxes_stay_unwired(generated: Path) -> None:
         archived = [
             doc
             for path in (generated / "cluster/parked" / directory).glob("*.k8s.yaml")
-            for doc in yaml.safe_load_all(path.read_text())
+            for doc in parsed_yaml_documents[path]
             if isinstance(doc, dict)
         ]
         assert any(doc["kind"] == kind and doc["spec"]["replicas"] == 1 for doc in archived)
     assert not any(doc["kind"] == "ImagePolicy" and doc["metadata"]["name"] == "agent-workspace" for doc in active)
 
 
-def test_openclaw_cutover_waits_for_agentplane_credentials(generated: Path) -> None:
+def test_openclaw_cutover_waits_for_agentplane_credentials(
+    generated: Path, parsed_yaml_documents: dict[Path, tuple[Any, ...]]
+) -> None:
     owners = {
         doc["metadata"]["name"]: doc
         for path in generated.rglob("*.k8s.yaml")
-        for doc in yaml.safe_load_all(path.read_text())
+        for doc in parsed_yaml_documents[path]
         if isinstance(doc, dict) and doc["kind"] == "Kustomization"
     }
     app = owners["public-coder-agent-app"]["spec"]
