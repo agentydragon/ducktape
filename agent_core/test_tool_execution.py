@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import asyncio
 import json
-import time
 from collections.abc import Callable
 from typing import Annotated, Any, Final, Literal
 
@@ -44,11 +43,11 @@ def text_content():
 
 
 class _EmptyInput(OpenAIStrictModeBaseModel):
-    """Empty input for slow tools."""
+    """Empty input for rendezvous tools."""
 
 
-class _SlowOutput(BaseModel):
-    """Output for slow tools."""
+class _RendezvousOutput(BaseModel):
+    """Output for rendezvous tools."""
 
     ok: bool
     tool: str
@@ -56,15 +55,18 @@ class _SlowOutput(BaseModel):
 
 
 @pytest.fixture
-def slow_server() -> FlatModelMixin:
-    """FastMCP server with a slow async tool for parallel call testing."""
+def rendezvous_server() -> FlatModelMixin:
+    """FastMCP server whose tool returns only once a second call of it is running too."""
     mcp = FlatModelMixin("dummy")
+    both_running = asyncio.Barrier(2)
 
     @mcp.flat_model()
-    async def slow(input: _EmptyInput) -> _SlowOutput:
-        """Slow tool that takes 0.30s."""
-        await asyncio.sleep(0.30)
-        return _SlowOutput(ok=True, tool="slow", args={})
+    async def rendezvous(input: _EmptyInput) -> _RendezvousOutput:
+        """Waits for another call of this tool to be in flight."""
+        # Serial execution never brings the second call; the timeout turns that deadlock into a failure.
+        async with asyncio.timeout(5):
+            await both_running.wait()
+        return _RendezvousOutput(ok=True, tool="rendezvous", args={})
 
     return mcp
 
@@ -166,15 +168,13 @@ class OneShotSyntheticHandler(BaseHandler):
         return Abort()
 
 
-async def test_parallel_tool_calls_reduce_wall_time(
-    compositor, mcp_tool_provider, slow_server, recording_handler, responses_factory
+async def test_parallel_tool_calls_run_concurrently(
+    compositor, mcp_tool_provider, rendezvous_server, recording_handler, responses_factory
 ):
-    # Two tool calls with ~0.30s latency each; if run in parallel, wall time ~0.30-0.45s
-    # Mount slow server and capture Mounted object
-    mounted_slow = await compositor.mount_inproc(MCPMountPrefix("dummy"), slow_server)
+    mounted = await compositor.mount_inproc(MCPMountPrefix("dummy"), rendezvous_server)
 
-    tc1 = responses_factory.mcp_tool_call(mounted_slow.prefix, "slow", _EmptyInput(), call_id="call_1")
-    tc2 = responses_factory.mcp_tool_call(mounted_slow.prefix, "slow", _EmptyInput(), call_id="call_2")
+    tc1 = responses_factory.mcp_tool_call(mounted.prefix, "rendezvous", _EmptyInput(), call_id="call_1")
+    tc2 = responses_factory.mcp_tool_call(mounted.prefix, "rendezvous", _EmptyInput(), call_id="call_2")
 
     handler = OneShotSyntheticHandler(outputs=[tc1, tc2])
 
@@ -187,19 +187,13 @@ async def test_parallel_tool_calls_reduce_wall_time(
     )
     agent.process_message(UserMessage.text("go"))
 
-    t0 = time.perf_counter()
     await agent.run()
-    elapsed = time.perf_counter() - t0
 
-    # Assert shorter than serial (~0.60s), with generous headroom for CI noise
-    # Threshold tuned for CI noise; serial takes ~0.60s, expect faster here
-    assert elapsed < 0.55, f"expected parallel speedup; took {elapsed:.3f}s"
-
-    # Sanity checks on outputs/metrics via recording handler
     tool_calls = [e for e in recording_handler.records if isinstance(e, ToolCall)]
     tool_outputs = [e for e in recording_handler.records if isinstance(e, ToolCallOutput)]
     assert_that(tool_calls, has_length(greater_than_or_equal_to(2)))
     assert_that(tool_outputs, has_length(greater_than_or_equal_to(2)))
+    assert not any(output.result.is_error for output in tool_outputs)
 
 
 # --- Malformed JSON tests ---
