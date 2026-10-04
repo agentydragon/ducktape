@@ -227,10 +227,46 @@ items behind actionable fixes unless missing evidence actually blocks the choice
 
 ## Refresh the artifact
 
-Include the observation window, source commit, sample/coverage limits, PR-class
-feedback and agent-availability distributions, runner and remote-compute
-breakdowns, representative critical-path timelines, current required checks,
-unknown intervals, and ranked proposals. Include CodeQL/queued-Bazel overlaps
+### Design for a busy reader
+
+The reader opens `index.html` in a browser to quickly understand **how CI is
+doing, what matters, and what decisions or actions follow**. Author actual,
+standalone HTML using your judgment about the findings. Do not wrap raw Markdown
+in HTML. There is no prescribed template, section order, dashboard, or mandatory
+chart collection: let the diagnosis determine the presentation.
+
+A prolonged failure caused by an exhausted quota should lead with the incident,
+its impact, the evidence for the cause, and the decision needed to restore service.
+A healthy system with modest optimization opportunities may benefit from a time
+breakdown and a short comparison of worthwhile improvements. These warrant
+different presentations; do not force either into the other's structure.
+
+- Make the main conclusion and any recommended decision easy to find on the first
+  screen. Distinguish urgent action, optional improvements, and no action needed.
+  Explain expected benefit, cost or tradeoffs, and uncertainty when recommending work.
+- Respect attention: prioritize the few findings that change the reader's judgment.
+  Give enough context to understand them, with supporting detail available farther
+  down or through expandable sections and direct evidence links. Do not make the
+  reader reconstruct the conclusion from a dump of metrics or logs.
+- Use visualizations where they clarify a comparison, distribution, sequence or
+  bottleneck. Choose the form for the evidence; plain prose may be better. Label
+  units, populations and sample sizes, and keep material limitations near claims.
+  Use readable tables when precise comparisons are useful.
+- Make the report pleasant and usable in a browser: clear visual hierarchy,
+  readable typography, useful clickable links, semantic headings and accessible
+  labels, adequate contrast, and layouts that work on desktop and mobile. Avoid
+  decorative noise and reliance on color alone. Inspect the actual rendered page
+  at desktop and mobile widths before publication; successful packaging is not
+  visual review.
+
+### Preserve the evidence behind the presentation
+
+Make the observation window, source commit, sample/coverage limits, and important
+unknowns easy to find. Include relevant PR-class feedback and agent-availability
+distributions, runner and remote-compute breakdowns, representative critical-path
+timelines, and current required checks where they support the diagnosis. Keep
+supporting measurements in the evidence rather than displaying every available
+metric. Do not invent findings or recommendations to fill a section. Include CodeQL/queued-Bazel overlaps
 only when current evidence supports that diagnosis. Generate `evidence.json` with
 `evidence.sh` as **supporting data**; review the derived evidence and explain its
 significance before publishing the report and evidence together as the latest
@@ -254,16 +290,19 @@ covering queue/runtime arithmetic and CodeQL contention. Package and tests are u
 
 `agentydragon/ducktape`'s canonical [`ci-latency-history` branch](https://github.com/agentydragon/ducktape/tree/ci-latency-history)
 holds the latest reviewed report and its evidence. Its root contains `README.md`,
-`report.md`, `evidence.json`, `manifest.json`, a standalone `index.html`, and
-optionally `attribution.json`. The README provides durable navigation; the HTML
-renders the current report. Keep exactly one snapshot at the root, with no dated
-run directories or generated archive index. Git commit history preserves earlier
-snapshots. Each new report replaces only the snapshot files; preserve the README
-and any unrelated files. If a new run has no attribution, remove the old
-`attribution.json` so it cannot be mistaken for current evidence. The history
-branch is not a mirror of `devel`. Its earlier commits preserve the explicitly
-labeled _historical_ copy of the former maintained report, not a fresh cdk8s
-comparison. Read it as a baseline for **methodology**, not proof of current
+`evidence.json`, `manifest.json`, a standalone `index.html`, and optionally
+`attribution.json`. The README provides durable navigation; `index.html` is the
+only published report. Author and visually review the standalone HTML according
+to the reader objectives above; do not commit a duplicate `report.md`. Escape
+external strings during authoring and never copy raw logs, payloads or scripts into
+the page blindly. Keep exactly one snapshot at
+the root, with no dated run directories or generated archive index. Git commit
+history preserves earlier snapshots. Each new report replaces only the snapshot
+files; preserve the README and any unrelated files. If a new run has no attribution,
+remove the old `attribution.json` so it cannot be mistaken for current evidence.
+The history branch is not a mirror of `devel`. Its earlier commits preserve the
+explicitly labeled _historical_ copy of the former maintained report, not a fresh
+cdk8s comparison. Read it as a baseline for **methodology**, not proof of current
 performance.
 
 For each run, fetch the canonical history branch and create a separate worktree
@@ -281,11 +320,12 @@ python3 "$SKILL/publish.py" --source "$DEVEL_SHA" \
 # Add --attribution "$ATTRIBUTION" only when measured attribution is available.
 ```
 
-`publish.py` only packages an **already written and reviewed** report and a safe
-HTML rendering of its text; it does not investigate CI, rank fixes, or validate
-conclusions. Review the narrative before publishing. The publisher replaces only
-the root snapshot files and leaves `README.md` and unrelated files intact. Do not
-mistake successful script execution for completion of the skill. Open a PR
+`publish.py` copies the **already written and reviewed standalone HTML** to
+`index.html` byte for byte; it does not render, sanitize or validate the report,
+investigate CI, rank fixes, or validate conclusions. Review the narrative and
+rendered page before publishing. The publisher replaces only the root snapshot
+files, removes any leftover `report.md`, and leaves `README.md` and unrelated files
+intact. Do not mistake successful script execution for completion of the skill. Open a PR
 targeting the canonical `ci-latency-history` branch. Before submitting, fetch the
 branch again and confirm the PR includes its latest tip. If another run landed
 first, compare the observation windows and do not let an older run replace a
@@ -336,7 +376,7 @@ Reviewed JSON input example (one resource at a time):
 Use actual full SHA in place of the illustrative source field. Run
 `python3 scripts/attribution.py reviewed.json attribution.json`; inspect that
 sum of attributed seconds equals measured seconds. Include invocation/job URLs,
-selection and timing methodology in `report.md`. A runner step measures runner
+selection and timing methodology in the published HTML report. A runner step measures runner
 occupancy; an RBE action measures remote worker execution. **Never add these two
 resources**, or sum overlapping test wall times and call that feedback latency.
 Do not allocate an entire job to tests when provisioning, analysis, download,

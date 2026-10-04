@@ -6,9 +6,8 @@ import { MemoryRouter, Route, Routes, useLocation } from "react-router";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 
 import type { SandboxView, ThreadView } from "./client";
-import type { ThreadsSnapshot } from "./live";
+import { type ThreadsSnapshot, ThreadsLiveProvider } from "./live";
 import { Sidebar } from "./sidebar";
-import { ThreadsLiveProvider } from "./live";
 import { DEGRADED_AFTER_MS } from "./stream_status";
 
 const fetchMock = vi.hoisted(() => {

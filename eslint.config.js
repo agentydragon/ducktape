@@ -30,6 +30,7 @@ const unusedVarsOptions = { argsIgnorePattern: "^_", varsIgnorePattern: "^_" };
 // runs on it. Listing it here would be dead config implying coverage that does
 // not exist — re-add once it's Bazelized (per-file ts_library).
 const reactProjects = [
+  "agentplane/app/frontend/**",
   "aiquota/frontend/**",
   "airlock/frontend/**",
   "devinfra/claude/session_export/frontend/**",

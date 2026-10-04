@@ -61,7 +61,7 @@ py_test(
 py_test(
     name = "test_indexing",
     # Three history sizes up to 40,000 events folded into 20,000 materialized entities: minutes of
-    # bounded work, measured at ~217s for the four cases together.
+    # bounded work, measured at ~200s for the three cases together.
     size = "large",
     srcs = ["test_indexing.py"],
     deps = [

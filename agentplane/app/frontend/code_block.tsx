@@ -81,8 +81,10 @@ export function isRegisteredLanguage(language: string): language is Language {
 // Render Unicode bidi controls, default-ignorable code points (including zero-width characters),
 // and C0/C1 controls as widgets. Newlines and tabs remain normal layout characters. The document
 // itself is never rewritten, so copying from the read-only editor retains the original value.
+// The controls are `\p{Cc}` less tab, LF and CR: a class of escapes such as `\u0000-\u001F` is what
+// `no-control-regex` rejects.
 export const VISIBLE_SPECIAL_CHARS: RegExp =
-  /[\p{Bidi_Control}\p{Default_Ignorable_Code_Point}\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F-\u009F\u2028\u2029\uFFF9-\uFFFC]/gu;
+  /(?![\t\n\r])\p{Cc}|[\p{Bidi_Control}\p{Default_Ignorable_Code_Point}\u2028\u2029\uFFF9-\uFFFC]/gu;
 const BIDI_CONTROLS = /\p{Bidi_Control}/u;
 const CONTROL_NAMES: ReadonlyMap<number, string> = new Map([
   [0x0000, "NUL"],

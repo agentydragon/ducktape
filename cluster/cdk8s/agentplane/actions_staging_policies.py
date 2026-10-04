@@ -53,6 +53,7 @@ from cluster.cdk8s.agentplane.app_settings import (
 )
 from cluster.cdk8s.agentplane.staging_config import (
     FINANCE_AGENT_GAFFER_BRANCH_CREATION_SET,
+    FINANCE_AGENT_GAFFER_PR_CREATION_SET,
     PUBLIC_DUCKTAPE_FORK_READS_SET,
     PUBLIC_DUCKTAPE_READS_SET,
     PUBLIC_GAFFER_PRIVATE_READS_SET,
@@ -494,6 +495,44 @@ def add_staging_action_policies(scope: Construct) -> None:
                         "from_branch": {"type": "string", "minLength": 1},
                     },
                     "required": ["owner", "repo", "branch"],
+                    "additionalProperties": False,
+                },
+            )
+        ],
+    )
+
+    # Opening a PR creates a review object but does not merge it or change either branch. It may
+    # notify reviewers and trigger repository workflows, so scope auto-approval to this repository
+    # and the GitHub MCP create_pull_request Action alone. Reviewer requests stay on the human path.
+    _policy_set(
+        scope,
+        "finance-agent-gaffer-pr-creation",
+        metadata=ApiObjectMetadata(
+            name=FINANCE_AGENT_GAFFER_PR_CREATION_SET,
+            namespace=_NAMESPACE,
+            annotations={
+                "description": (
+                    "Auto-approves only GitHub MCP create_pull_request calls targeting "
+                    "agentydragon/gaffer-private; the PR is not merged and other writes remain human-approved."
+                )
+            },
+        ),
+        auto_approve_if=[
+            AutoApproveIf.argument_schema(
+                actions={"github": ["create_pull_request"]},
+                schema={
+                    "type": "object",
+                    "properties": {
+                        "owner": {"const": "agentydragon"},
+                        "repo": {"const": "gaffer-private"},
+                        "title": {"type": "string", "minLength": 1},
+                        "head": {"type": "string", "minLength": 1},
+                        "base": {"type": "string", "minLength": 1},
+                        "body": {"type": "string"},
+                        "draft": {"type": "boolean"},
+                        "maintainer_can_modify": {"const": False},
+                    },
+                    "required": ["owner", "repo", "title", "head", "base"],
                     "additionalProperties": False,
                 },
             )

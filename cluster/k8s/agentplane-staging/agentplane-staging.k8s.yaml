@@ -3157,6 +3157,7 @@ data:
           - github-identity-reads
           - ssh-reads
           - finance-agent-gaffer-branch-creation
+          - finance-agent-gaffer-pr-creation
           - ducktape-pr-failed-jobs
         kubernetes_grants:
           - agentplane-staging-metadata
@@ -6475,6 +6476,49 @@ spec:
           - owner
           - repo
           - branch
+        type: object
+---
+apiVersion: agentplane.allegedly.works/v1alpha1
+kind: ActionPolicySet
+metadata:
+  annotations:
+    description: Auto-approves only GitHub MCP create_pull_request calls targeting agentydragon/gaffer-private; the PR is not merged and other writes remain human-approved.
+  name: finance-agent-gaffer-pr-creation
+  namespace: agentplane-staging
+spec:
+  autoApproveIf:
+    - type: argument_schema
+      actions:
+        github:
+          - create_pull_request
+      schema:
+        additionalProperties: false
+        properties:
+          base:
+            minLength: 1
+            type: string
+          body:
+            type: string
+          draft:
+            type: boolean
+          head:
+            minLength: 1
+            type: string
+          maintainer_can_modify:
+            const: false
+          owner:
+            const: agentydragon
+          repo:
+            const: gaffer-private
+          title:
+            minLength: 1
+            type: string
+        required:
+          - owner
+          - repo
+          - title
+          - head
+          - base
         type: object
 ---
 apiVersion: external-secrets.io/v1

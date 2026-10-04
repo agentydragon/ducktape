@@ -3,7 +3,7 @@ import { Alert, Badge, Button, Code, Paper, Stack, Text } from "@mantine/core";
 
 import { displayableError } from "../client";
 import { JsonView } from "../json_view";
-import { StaleNotice, useStreamStatus } from "../stream_status";
+import { StaleNotice, useOptionalStreamStatus } from "../stream_status";
 import { followStream, type StreamConnection } from "../live_stream";
 import { ActionCall } from "./call";
 import { parseCallToolResult } from "./call_tool_result";
@@ -141,7 +141,7 @@ export function ActionHistory({
   const [loadingMore, setLoadingMore] = useState(false);
   const loadedMore = useRef(false);
   const [connection, setConnection] = useState<StreamConnection | null>(null);
-  const stream = useStreamStatus("Actions", connection);
+  const stream = useOptionalStreamStatus("Actions", connection);
   useEffect(() => {
     let active = true;
     let generation = 0;

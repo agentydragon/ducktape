@@ -64,6 +64,25 @@ def test_gaffer_branch_policy_approves_only_create_branch(
     assert approval["schema"]["additionalProperties"] is False
 
 
+def test_gaffer_pr_policy_approves_only_create_pull_request(
+    agentplane_manifests: dict[str, list[dict[str, Any]]],
+) -> None:
+    policy = one(
+        doc
+        for doc in agentplane_manifests["agentplane-staging"]
+        if doc["kind"] == "ActionPolicySet" and doc["metadata"]["name"] == "finance-agent-gaffer-pr-creation"
+    )
+    approval = one(policy["spec"]["autoApproveIf"])
+    assert approval["type"] == "argument_schema"
+    assert approval["actions"] == {"github": ["create_pull_request"]}
+    assert approval["schema"]["properties"]["owner"] == {"const": "agentydragon"}
+    assert approval["schema"]["properties"]["repo"] == {"const": "gaffer-private"}
+    assert approval["schema"]["required"] == ["owner", "repo", "title", "head", "base"]
+    assert approval["schema"]["properties"]["maintainer_can_modify"] == {"const": False}
+    assert "reviewers" not in approval["schema"]["properties"]
+    assert approval["schema"]["additionalProperties"] is False
+
+
 @pytest.mark.parametrize("namespace", NAMESPACES)
 def test_cross_owner_reader_is_explicit_and_json_encoded(
     namespace: str, agentplane_manifests: dict[str, list[dict[str, Any]]]

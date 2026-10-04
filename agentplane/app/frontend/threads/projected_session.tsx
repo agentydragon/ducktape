@@ -1,18 +1,4 @@
-import {
-  ActionIcon,
-  Alert,
-  Badge,
-  Box,
-  Button,
-  Flex,
-  Group,
-  Menu,
-  Paper,
-  Select,
-  Stack,
-  Text,
-  Textarea,
-} from "@mantine/core";
+import { ActionIcon, Box, Button, Flex, Group, Menu, Paper, Select, Stack, Text, Textarea } from "@mantine/core";
 import { create } from "@bufbuild/protobuf";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import IconArrowDown from "@tabler/icons-react/dist/esm/icons/IconArrowDown.mjs";
@@ -21,7 +7,17 @@ import IconHistory from "@tabler/icons-react/dist/esm/icons/IconHistory.mjs";
 import IconPlayerStop from "@tabler/icons-react/dist/esm/icons/IconPlayerStop.mjs";
 import IconPower from "@tabler/icons-react/dist/esm/icons/IconPower.mjs";
 import IconSend from "@tabler/icons-react/dist/esm/icons/IconSend.mjs";
-import { type JSX, type KeyboardEvent, type ReactNode, useEffect, useLayoutEffect, useRef, useState } from "react";
+import {
+  type JSX,
+  type KeyboardEvent,
+  type ReactNode,
+  useCallback,
+  useEffect,
+  useEffectEvent,
+  useLayoutEffect,
+  useRef,
+  useState,
+} from "react";
 
 import { CommandSchema } from "../../../protocol/command_pb";
 import { ItemKind } from "../../../protocol/event_pb";
@@ -36,7 +32,7 @@ import {
   type ThreadView,
 } from "../client";
 import { ComposerPendingActions } from "../actions/affordance";
-import { decimalBigInt, useThreadSync, type ThreadEntity, type ThreadState, type ThreadWindow } from "./thread_sync";
+import { decimalBigInt, useThreadSync, type ThreadEntity, type ThreadWindow } from "./thread_sync";
 import {
   historyRows,
   rowKey,
@@ -46,7 +42,7 @@ import {
   type HistoryRow,
 } from "./history_rows";
 import { liveSandboxesUrl, LiveStatus, useLive, useRequiredThreadsLive, type SandboxesSnapshot } from "../live";
-import { StaleNotice, useStreamStatus, type StreamStatus } from "../stream_status";
+import { StaleNotice, useOptionalStreamStatus, type StreamStatus } from "../stream_status";
 import { RetainedDisclosure, RetainedDisclosureProvider, useRetainedDisclosure } from "./retained_disclosures";
 import { CollapsibleCard, EntityCard, ItemStatus, pendingSentMessage } from "./thread_cards";
 import {
@@ -296,13 +292,6 @@ function VirtualizedHistory({
       viewport.current?.querySelector<HTMLElement>(`[data-thread-anchor="${rows[index].entities[0].cursor}"]`) ?? null
     );
   };
-  const cancelRestoration = () => {
-    if (restorationFrame.current !== null) cancelAnimationFrame(restorationFrame.current);
-    restorationFrame.current = null;
-    restorationSize.current = null;
-    restoringAnchor.current = null;
-    publishMode();
-  };
   const recordBottom = (element: HTMLDivElement) => {
     const bottom = element.scrollHeight - element.clientHeight;
     if (!recentBottoms.current.includes(bottom)) recentBottoms.current.push(bottom);
@@ -312,29 +301,42 @@ function VirtualizedHistory({
   // restoration's own scroll lands on the bottom, which is not the reader returning there.
   const restoringScroll = () => restorationFrame.current !== null;
   // What tests and a reader-position investigation read of the history's state, from the region.
-  const publishMode = () => {
+  const publishMode = useCallback(() => {
     const element = viewport.current;
     if (element)
       element.dataset.scrollMode = atBottom.current ? "following" : restoringScroll() ? "restoring" : "reading";
-  };
-  const setFollowing = (following: boolean, reason: FollowReason) => {
-    if (atBottom.current === following) return;
-    atBottom.current = following;
-    historyTrace.record({ kind: "follow", following, reason });
+  }, []);
+  const cancelRestoration = useCallback(() => {
+    if (restorationFrame.current !== null) cancelAnimationFrame(restorationFrame.current);
+    restorationFrame.current = null;
+    restorationSize.current = null;
+    restoringAnchor.current = null;
     publishMode();
-  };
+  }, [publishMode]);
+  const setFollowing = useCallback(
+    (following: boolean, reason: FollowReason) => {
+      if (atBottom.current === following) return;
+      atBottom.current = following;
+      historyTrace.record({ kind: "follow", following, reason });
+      publishMode();
+    },
+    [publishMode]
+  );
   const layoutChanged = () => layoutSettle.current?.changed();
-  const followPreviousBottom = (element: HTMLDivElement) => {
-    // A programmatic return to the old bottom can be delivered after a card grows. Preserve
-    // it before restoring a stale reader anchor, while an explicit user gesture owns its scroll,
-    // as does a restoration still settling.
-    if (captureNextScroll.current || restoringScroll() || element.scrollTop === clickedAt.current) return false;
-    if (!recentBottoms.current.some((bottom) => Math.abs(element.scrollTop - bottom) <= 2)) return false;
-    setFollowing(true, "returned-to-previous-bottom");
-    cancelRestoration();
-    element.scrollTop = element.scrollHeight;
-    return true;
-  };
+  const followPreviousBottom = useCallback(
+    (element: HTMLDivElement) => {
+      // A programmatic return to the old bottom can be delivered after a card grows. Preserve
+      // it before restoring a stale reader anchor, while an explicit user gesture owns its scroll,
+      // as does a restoration still settling.
+      if (captureNextScroll.current || restoringScroll() || element.scrollTop === clickedAt.current) return false;
+      if (!recentBottoms.current.some((bottom) => Math.abs(element.scrollTop - bottom) <= 2)) return false;
+      setFollowing(true, "returned-to-previous-bottom");
+      cancelRestoration();
+      element.scrollTop = element.scrollHeight;
+      return true;
+    },
+    [cancelRestoration, setFollowing]
+  );
   function correctRestoration(): number | null {
     const anchor = readingAnchor.current;
     const element = viewport.current;
@@ -416,7 +418,7 @@ function VirtualizedHistory({
   // where no scroll event will: rows too few to scroll, a gesture that ended at the top, a page that
   // landed with the reader still there. A gesture or restoration in progress has not settled where
   // the reader is, and until the tail shows there is no top to reach.
-  const loadOlderAtTop = () => {
+  const loadOlderAtTop = useEffectEvent(() => {
     const element = viewport.current;
     if (
       element &&
@@ -427,21 +429,24 @@ function VirtualizedHistory({
       element.scrollTop < loadOlderWithin(element)
     )
       history.loadOlder();
-  };
-  const captureReadingAnchor = (element: HTMLDivElement) => {
-    const viewportTop = element.getBoundingClientRect().top;
-    const first = [...element.querySelectorAll<HTMLElement>("[data-thread-anchor]")].find(
-      (candidate) => candidate.getBoundingClientRect().bottom > viewportTop
-    );
-    const firstRow = first
-      ? rows.find((row) => row.entities[0].cursor.toString() === first.dataset.threadAnchor)
-      : undefined;
-    if (first && firstRow) {
-      readingAnchor.current = { key: rowKey(firstRow), offset: first.getBoundingClientRect().top - viewportTop };
-      historyTrace.record({ kind: "anchor", ...readingAnchor.current });
-    }
-  };
-  const restoreAnchor = (anchor: { key: string; offset: number }, awaitMeasurement = false) => {
+  });
+  const captureReadingAnchor = useCallback(
+    (element: HTMLDivElement) => {
+      const viewportTop = element.getBoundingClientRect().top;
+      const first = [...element.querySelectorAll<HTMLElement>("[data-thread-anchor]")].find(
+        (candidate) => candidate.getBoundingClientRect().bottom > viewportTop
+      );
+      const firstRow = first
+        ? rows.find((row) => row.entities[0].cursor.toString() === first.dataset.threadAnchor)
+        : undefined;
+      if (first && firstRow) {
+        readingAnchor.current = { key: rowKey(firstRow), offset: first.getBoundingClientRect().top - viewportTop };
+        historyTrace.record({ kind: "anchor", ...readingAnchor.current });
+      }
+    },
+    [rows]
+  );
+  const restoreAnchor = useEffectEvent((anchor: { key: string; offset: number }, awaitMeasurement = false) => {
     const index = anchorIndex(anchor.key);
     if (index < 0) return;
     cancelRestoration();
@@ -474,7 +479,7 @@ function VirtualizedHistory({
       });
     });
     publishMode();
-  };
+  });
   useLayoutEffect(() => {
     const element = viewport.current;
     if (!element) return;
@@ -498,7 +503,7 @@ function VirtualizedHistory({
       delete window.agentplaneHistoryTrace;
       delete window.agentplaneHistoryEstimateErrors;
     };
-  }, []);
+  }, [publishMode]);
   useLayoutEffect(() => {
     const element = viewport.current;
     const firstKey = rows[0] ? rowKey(rows[0]) : null;
@@ -577,7 +582,7 @@ function VirtualizedHistory({
       observer.disconnect();
       mutations.disconnect();
     };
-  }, [rows, tail, virtualizer]);
+  }, [followPreviousBottom, rows, tail, virtualizer]);
   useEffect(() => {
     const element = viewport.current;
     const end = endOfHistory.current;
@@ -599,7 +604,7 @@ function VirtualizedHistory({
     element.scrollTop = element.scrollHeight;
   };
   // The observers above re-subscribe on every render's rows; a restoration in flight outlives that.
-  useLayoutEffect(() => cancelRestoration, []);
+  useLayoutEffect(() => cancelRestoration, [cancelRestoration]);
   useLayoutEffect(() => {
     const element = viewport.current;
     if (!element) return;
@@ -616,8 +621,10 @@ function VirtualizedHistory({
     };
     element.addEventListener("scrollend", onScrollEnd);
     return () => element.removeEventListener("scrollend", onScrollEnd);
-  }, [rows]);
-  useEffect(loadOlderAtTop);
+  }, [captureReadingAnchor]);
+  useEffect(() => {
+    loadOlderAtTop();
+  });
   return (
     <div
       ref={viewport}
@@ -856,7 +863,7 @@ function ProjectedSessionBody({
     () => onStatusChange({ kind: status.kind, tabLabel: status.tabLabel }),
     [onStatusChange, status.kind, status.tabLabel]
   );
-  useEffect(() => installThreadFavicon(status), [status.kind]);
+  useEffect(() => installThreadFavicon(status.kind), [status.kind]);
   const [modelOptions, setModelOptions] = useState<ModelOption[]>([]);
   const [modelError, setModelError] = useState<string | null>(null);
   const selectedModel = controls?.applied_model ?? thread.model;
@@ -1132,7 +1139,7 @@ function SyncedThread({
 }): JSX.Element {
   const { window: shown, error } = useThreadSync().useThread();
   // A stopped window is not following the thread at all, and its alert says so.
-  const stream = useStreamStatus("Thread", shown !== null && shown.error === null ? shown.connection : null);
+  const stream = useOptionalStreamStatus("Thread", shown !== null && shown.error === null ? shown.connection : null);
   if (!shown) {
     if (error) return <p role="alert">Thread sync failed: {error}</p>;
     return <p role="status">Loading thread…</p>;

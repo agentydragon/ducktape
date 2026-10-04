@@ -2,7 +2,6 @@
 """Publish one reviewed, source-pinned snapshot at the history branch root."""
 
 import argparse
-import html
 import json
 import re
 import subprocess
@@ -14,22 +13,14 @@ def git(*args):
     return subprocess.check_output(["git", *args], text=True).strip()
 
 
-def render(text):
-    # Plain text inside <pre> deliberately avoids interpreting untrusted Markdown/HTML.
-    return (
-        '<!doctype html><html lang="en"><meta charset="utf-8"><title>CI latency</title>'
-        "<style>body{max-width:95ch;margin:2em auto;padding:0 1em;font:16px/1.5 system-ui}"
-        "pre{white-space:pre-wrap;overflow-wrap:anywhere;font:14px/1.5 ui-monospace,monospace}</style>"
-        "<h1>CI latency report</h1><pre>" + html.escape(text) + "</pre></html>\n"
-    )
-
-
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--source", required=True, help="Full SHA of inspected devel commit")
     parser.add_argument("--window-start", required=True, help="UTC ISO-8601")
     parser.add_argument("--window-end", required=True, help="UTC ISO-8601")
-    parser.add_argument("--report", required=True, type=Path)
+    parser.add_argument(
+        "--report", required=True, type=Path, help="Authored standalone HTML report copied to index.html"
+    )
     parser.add_argument("--evidence", required=True, type=Path)
     parser.add_argument("--attribution", type=Path)
     parser.add_argument("--out", required=True, type=Path, help="History branch worktree root")
@@ -50,9 +41,9 @@ def main():
         parser.error("source is not an available commit")
     evidence = json.loads(args.evidence.read_text())
     attribution = json.loads(args.attribution.read_text()) if args.attribution else None
-    report = args.report.read_text()
+    report = args.report.read_bytes()
     args.out.mkdir(parents=True, exist_ok=True)
-    (args.out / "report.md").write_text(report)
+    (args.out / "report.md").unlink(missing_ok=True)
     (args.out / "evidence.json").write_text(json.dumps(evidence, indent=2) + "\n")
     if attribution is not None:
         (args.out / "attribution.json").write_text(json.dumps(attribution, indent=2) + "\n")
@@ -66,11 +57,7 @@ def main():
         "attribution": "measured" if attribution else "not collected",
     }
     (args.out / "manifest.json").write_text(json.dumps(manifest, indent=2) + "\n")
-    header = (
-        f"Source devel commit: {args.source}\nWindow (UTC): {args.window_start} - {args.window_end}\n"
-        f"Attribution: {manifest['attribution']}\n\n"
-    )
-    (args.out / "index.html").write_text(render(header + report))
+    (args.out / "index.html").write_bytes(report)
 
 
 if __name__ == "__main__":

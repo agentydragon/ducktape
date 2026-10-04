@@ -159,7 +159,7 @@ describe("ActionRequests", () => {
   });
 
   it("renders server-pushed pending state without list polling and closes the stream", async () => {
-    let stream: EventTarget | undefined;
+    const stream: { current?: EventTarget } = {};
     const close = vi.fn();
     class Stream extends EventTarget {
       onerror = null;
@@ -167,7 +167,7 @@ describe("ActionRequests", () => {
       constructor(url: string) {
         super();
         expect(url).toBe("/actions/stream?state=decision_pending");
-        stream = this;
+        stream.current = this;
       }
     }
     vi.stubGlobal("EventSource", Stream);
@@ -178,20 +178,22 @@ describe("ActionRequests", () => {
       expect(container.textContent).not.toContain("No requests are waiting");
       expect(container.textContent).not.toContain("Pending (0)");
       await act(async () => {
-        stream?.dispatchEvent(new MessageEvent("snapshot", { data: "not JSON" }));
+        stream.current?.dispatchEvent(new MessageEvent("snapshot", { data: "not JSON" }));
       });
       expect(container.textContent).toContain("The live Action update was invalid");
       await act(async () => {
-        stream?.dispatchEvent(new MessageEvent("snapshot", { data: "[]" }));
+        stream.current?.dispatchEvent(new MessageEvent("snapshot", { data: "[]" }));
       });
       expect(container.textContent).toContain("No requests are waiting");
       expect(container.textContent).not.toContain("Loading actions");
       await act(async () => {
-        stream?.dispatchEvent(new MessageEvent("snapshot", { data: JSON.stringify([request("decision_pending", 1)]) }));
+        stream.current?.dispatchEvent(
+          new MessageEvent("snapshot", { data: JSON.stringify([request("decision_pending", 1)]) })
+        );
       });
       expect(container.textContent).toContain("Pending (1)");
       await act(async () => {
-        stream?.dispatchEvent(new MessageEvent("snapshot", { data: JSON.stringify([request("denied", 1)]) }));
+        stream.current?.dispatchEvent(new MessageEvent("snapshot", { data: JSON.stringify([request("denied", 1)]) }));
       });
       expect(container.textContent).toContain("Pending (0)");
       expect(list).not.toHaveBeenCalled();
@@ -205,22 +207,24 @@ describe("ActionRequests", () => {
 
   it("keeps a dropped stream's requests without comment until it has been down a minute", async () => {
     vi.useFakeTimers({ now: new Date(2026, 0, 1, 17, 21, 4) });
-    let stream: EventTarget | undefined;
+    const stream: { current?: EventTarget } = {};
     class Stream extends EventTarget {
       // A drop is the network's, which the browser retries: the source stays CONNECTING.
       readyState = 0;
       close = vi.fn();
       constructor() {
         super();
-        stream = this;
+        stream.current = this;
       }
     }
     vi.stubGlobal("EventSource", Stream);
     try {
       const container = await render(actionService, ActionRequests);
       await act(async () => {
-        stream?.dispatchEvent(new MessageEvent("snapshot", { data: JSON.stringify([request("decision_pending", 1)]) }));
-        stream?.dispatchEvent(new Event("error"));
+        stream.current?.dispatchEvent(
+          new MessageEvent("snapshot", { data: JSON.stringify([request("decision_pending", 1)]) })
+        );
+        stream.current?.dispatchEvent(new Event("error"));
       });
       await act(async () => vi.advanceTimersByTime(STALE_AFTER_MS - 1));
       expect(container.querySelector('[role="alert"]')).toBeNull();
@@ -240,14 +244,14 @@ describe("ActionRequests", () => {
 
 describe("global Action affordance", () => {
   it("keeps incoming approvals modeless and collapsed, and shares decisions with the top bar", async () => {
-    let stream: EventTarget | undefined;
+    const stream: { current?: EventTarget } = {};
     const close = vi.fn();
     class Stream extends EventTarget {
       close = close;
       constructor(url: string) {
         super();
         expect(url).toBe("/actions/stream?state=decision_pending");
-        stream = this;
+        stream.current = this;
       }
     }
     vi.stubGlobal("EventSource", Stream);
@@ -257,7 +261,9 @@ describe("global Action affordance", () => {
       version: row.version + 1,
     }));
     const send = async (rows: ActionRequestView[]): Promise<void> => {
-      await act(async () => stream?.dispatchEvent(new MessageEvent("snapshot", { data: JSON.stringify(rows) })));
+      await act(async () =>
+        stream.current?.dispatchEvent(new MessageEvent("snapshot", { data: JSON.stringify(rows) }))
+      );
     };
     const topbar = document.createElement("div");
     document.body.append(topbar);

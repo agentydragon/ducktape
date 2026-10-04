@@ -18,7 +18,8 @@ import { button, render, request, sshExec, unmountLast, type View } from "./test
 /** The view reading its Action groups from `list` rather than the real `/action-groups`. */
 function historyOver(list: ActionGroupService["list"]): View {
   const groupService: ActionGroupService = { list };
-  return (props) => <ActionHistory {...props} groupService={groupService} />;
+  const HistoryOverList: View = (props) => <ActionHistory {...props} groupService={groupService} />;
+  return HistoryOverList;
 }
 
 const withoutGroups = historyOver(async () => []);
@@ -139,7 +140,7 @@ describe("ActionHistory", () => {
   });
 
   it("loads a bounded history page, follows invalidations, and pages on demand", async () => {
-    let stream: EventTarget | undefined;
+    const stream: { current?: EventTarget } = {};
     const close = vi.fn();
     class Stream extends EventTarget {
       readyState = 1;
@@ -147,7 +148,7 @@ describe("ActionHistory", () => {
       constructor(url: string) {
         super();
         expect(url).toBe("/actions/stream?state=decision_pending");
-        stream = this;
+        stream.current = this;
       }
     }
     vi.stubGlobal("EventSource", Stream);
@@ -160,7 +161,7 @@ describe("ActionHistory", () => {
     try {
       const container = await render(actionService, withoutGroups);
       expect(container.textContent).toContain("Denied");
-      await act(async () => stream?.dispatchEvent(new MessageEvent("snapshot", { data: "[]" })));
+      await act(async () => stream.current?.dispatchEvent(new MessageEvent("snapshot", { data: "[]" })));
       await act(async () => button(container, "Load more").click());
       expect(container.textContent).toContain("succeeded");
       expect(history).toHaveBeenCalledWith("page2");

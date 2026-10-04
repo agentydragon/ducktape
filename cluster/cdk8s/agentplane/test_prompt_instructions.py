@@ -6,6 +6,7 @@ from cluster.cdk8s.agentplane.app_settings import _PUBLIC_CODER_INSTRUCTIONS, DU
 from cluster.cdk8s.agentplane.staging_config import (
     _FINANCE_AGENT_INSTRUCTIONS,
     FINANCE_AGENT_GAFFER_BRANCH_CREATION_SET,
+    FINANCE_AGENT_GAFFER_PR_CREATION_SET,
     config,
 )
 
@@ -23,11 +24,15 @@ def test_finance_prompt_keeps_private_context_in_checkout() -> None:
     assert "api.coinbase.com" in _FINANCE_AGENT_INSTRUCTIONS
 
 
-def test_gaffer_branch_creation_policy_is_finance_agent_only() -> None:
+def test_gaffer_write_policies_are_finance_agent_only() -> None:
     cfg = config()
-    assert FINANCE_AGENT_GAFFER_BRANCH_CREATION_SET in cfg.sandbox_presets["finance-agent"].action_policy_sets
+    finance_policies = cfg.sandbox_presets["finance-agent"].action_policy_sets
+    assert FINANCE_AGENT_GAFFER_BRANCH_CREATION_SET in finance_policies
+    assert FINANCE_AGENT_GAFFER_PR_CREATION_SET in finance_policies
     for preset in ("public-coder", "haku"):
-        assert FINANCE_AGENT_GAFFER_BRANCH_CREATION_SET not in cfg.sandbox_presets[preset].action_policy_sets
+        policies = cfg.sandbox_presets[preset].action_policy_sets
+        assert FINANCE_AGENT_GAFFER_BRANCH_CREATION_SET not in policies
+        assert FINANCE_AGENT_GAFFER_PR_CREATION_SET not in policies
 
 
 if __name__ == "__main__":

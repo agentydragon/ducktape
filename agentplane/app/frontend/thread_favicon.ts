@@ -40,9 +40,9 @@ function faviconUrl(mark: StatusMark<ThreadMarkShape>): string {
  * Set the thread's status in the favicon, drawn from the same mark as the in-page indicator. It stays
  * still: a favicon is only seen in a background tab, where the browser throttles timers.
  */
-export function installThreadFavicon(status: ThreadTabStatus): () => void {
+export function installThreadFavicon(kind: ThreadTabStatus["kind"]): () => void {
   const icon = document.getElementById(FAVICON_ID);
   if (!(icon instanceof HTMLLinkElement)) return () => {};
-  icon.href = faviconUrl(THREAD_STATUS_MARKS[status.kind]);
+  icon.href = faviconUrl(THREAD_STATUS_MARKS[kind]);
   return () => icon.setAttribute("href", FAVICON_PATH);
 }
