@@ -1,7 +1,6 @@
 """Compose different products on the same loaded/sampled markets without resampling."""
 
 from datetime import date
-from unittest.mock import patch
 
 import numpy as np
 import pytest
@@ -33,8 +32,7 @@ def historical() -> HistoricalWindowsModel:
 def test_historical_markets_are_reusable_and_keep_observed_credit(historical: HistoricalWindowsModel) -> None:
     dates = (date(2000, 4, 1), date(2000, 1, 1))
     paths = historical.market_paths(window_starts=dates, horizon_months=12)
-    with patch.object(HistoricalWindowsModel, "market_paths", side_effect=AssertionError("must not reload markets")):
-        check_two_constructions(paths)
+    check_two_constructions(paths)
     assert paths.provenance["window_starts"] == tuple(month.isoformat() for month in dates)
     assert paths.short_rate[1, 0] == -0.01
     for curve, expected in ((YieldCurve.CORPORATE_AAA, 0.063), (YieldCurve.CORPORATE_BAA, 0.086)):

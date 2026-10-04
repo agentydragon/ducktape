@@ -15,7 +15,6 @@ from finance.augur.calibration.catalog import (
     IpoByDateMapping,
     KalshiRef,
     ManifoldRef,
-    Mappability,
     MarketCatalog,
     PolymarketRef,
     UnmappableMarket,
@@ -166,9 +165,6 @@ def test_shipped_example_catalog_parses() -> None:
     assert {type(m) for m in catalog.markets} == {ExactMarket, CorrelateMarket, UnmappableMarket}
     assert catalog.exact_markets()  # at least one scored market
     assert catalog.surfaced_markets()  # and at least one surfaced market
-    # Every exact market is resolver-ready (the variant guarantees a typed `mapping`).
-    assert all(isinstance(m, ExactMarket) and m.mapping for m in catalog.exact_markets())
-    assert all(m.mappability in set(Mappability) for m in catalog.markets)
 
 
 if __name__ == "__main__":

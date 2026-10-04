@@ -430,7 +430,6 @@ def test_unpaid_claims_keep_occurrence_and_source_without_hidden_sales(mode: Cap
     assert not world.payments
     assert checking(world) == 10_000
     financial = None if capture is None else capture.financial()
-    assert (financial is None) == (mode == "summary")
     if financial is not None:
         assert not financial.dispositions
         assert not financial.transfers

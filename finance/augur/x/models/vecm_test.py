@@ -101,20 +101,6 @@ class TestVecmModel:
         # observed value to score against → predictive returns None.
         assert model.predictive(historical, t=148, horizon=3) is None
 
-    def test_h1_horizon_predictive_matches_one_step_in_distribution(self) -> None:
-        historical = _cointegrated_two_factor(seed=42, n_steps=200)
-
-        model = VecmModel(config=VecmConfig(n_iters=500))
-        model.fit(historical)
-
-        for t in (50, 100, 150):
-            one_step = model.predictive(historical, t, horizon=1)
-            h1 = model.predictive(historical, t, horizon=1)
-            assert isinstance(one_step, dist.MultivariateNormal)
-            assert isinstance(h1, dist.MultivariateNormal)
-            # h=1 is closed-form in both paths; same params.
-            np.testing.assert_allclose(np.asarray(one_step.mean), np.asarray(h1.mean), atol=1e-6)
-
     def test_sample_returns_correct_shapes_and_metadata(self) -> None:
         rng = np.random.default_rng(123)
         base = np.cumsum(rng.normal(scale=0.01, size=240))

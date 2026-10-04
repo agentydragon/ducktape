@@ -727,7 +727,6 @@ py_test(
         "//finance/augur/model:bond_fund",
         "//finance/augur/model:equity",
         "//finance/augur/model:exogenous",
-        "//finance/augur/model:historical_windows",
         "//finance/augur/model:product_paths",
         "//finance/augur/model:series",
         "//finance/augur/model:testing",

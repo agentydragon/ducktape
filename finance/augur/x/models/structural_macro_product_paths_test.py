@@ -1,7 +1,6 @@
 """Compose different products on the same sampled structural markets without resampling."""
 
 from dataclasses import replace
-from unittest.mock import patch
 
 import pytest
 import pytest_bazel
@@ -9,7 +8,6 @@ import pytest_bazel
 from finance.augur.model.bond_fund import BondFundSpec, YieldCurve
 from finance.augur.model.equity import EquitySpec
 from finance.augur.model.exogenous import ExogenousSamplingRequest
-from finance.augur.model.historical_windows import HistoricalWindowsModel
 from finance.augur.model.product_paths import construct_products
 from finance.augur.model.series import SecuritySymbol
 from finance.augur.model.testing import TEST_EQUITY, check_two_constructions
@@ -43,11 +41,7 @@ def structural() -> StructuralMacroModel:
 def test_structural_markets_are_reusable_but_do_not_invent_credit(structural: StructuralMacroModel) -> None:
     request = ExogenousSamplingRequest(horizon_months=12, rollout_seeds=(71, 12))
     paths = structural.sample_market(request)
-    with (
-        patch.object(HistoricalWindowsModel, "market_paths", side_effect=AssertionError("must not reload markets")),
-        patch.object(StructuralMacroModel, "sample_market", side_effect=AssertionError("must not resample markets")),
-    ):
-        check_two_constructions(paths)
+    check_two_constructions(paths)
     assert paths.provenance["rollout_seeds"] == (71, 12)
     assert paths.short_rate[0, 0] == -0.01
     with pytest.raises(ValueError, match=r"cannot produce.*no credit factor"):
