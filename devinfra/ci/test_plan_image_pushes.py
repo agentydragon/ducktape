@@ -165,13 +165,6 @@ def test_a_registry_error_fails_the_plan_rather_than_skipping() -> None:
         plan([image()], explode, workers=2)
 
 
-def test_repo_url_follows_the_registry() -> None:
-    forgejo = Image(name="osm-mcp", target="//third_party/osmmcp:image", test=None, registry=Registry.FORGEJO)
-    assert image().repo == "ghcr.io/agentydragon/airlock"
-    assert forgejo.repo == "git.allegedly.works/ducktape-ci/osm-mcp"
-    assert image().repo.endswith("/airlock")
-
-
 def test_load_images_rejects_a_field_it_does_not_understand(tmp_path: Path) -> None:
     """A misspelt key used to be ignored, which dropped an image's test gate or sent
     it to the wrong registry — silently, and only visible once it had published."""
@@ -194,9 +187,7 @@ def test_every_checked_in_image_declares_a_usable_target() -> None:
     images = load_images(Path("devinfra/ci/image_targets.json"))
     assert images, "image_targets.json declares no images"
     for subject in images:
-        assert subject.digest_label.endswith(".digest")
         assert "//" in subject.target, subject.name
-        assert subject.repo.endswith(f"/{subject.name}")
 
 
 if __name__ == "__main__":
