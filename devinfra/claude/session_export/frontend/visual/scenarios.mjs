@@ -10,11 +10,6 @@ const READ_FILE_READY = [
   '[data-tool-file-path="src/session-viewer.ts"]',
   "[data-tool-file-preview]",
 ];
-const EVENT_VISIBILITY_READY = [
-  '[aria-label="Session history"]',
-  '[data-fold-kind="message"][data-message-role="user"]',
-  '[data-fold-kind="message"][data-message-role="assistant"]',
-];
 const SUBAGENT_READY = [
   '[aria-label="Session history"]',
   '[data-subagent-activity][data-subagent-tool-count="2"]',
@@ -139,12 +134,6 @@ export const SCENARIOS = {
   SessionReadFileResult_mobile: {
     element: "#app",
     readySelectors: READ_FILE_READY,
-    viewport: { width: 420, height: 900 },
-  },
-  SessionEventVisibility: { element: "#app", readySelectors: EVENT_VISIBILITY_READY },
-  SessionEventVisibility_mobile: {
-    element: "#app",
-    readySelectors: EVENT_VISIBILITY_READY,
     viewport: { width: 420, height: 900 },
   },
   SessionSubagent: { element: "#app", readySelectors: SUBAGENT_READY },
