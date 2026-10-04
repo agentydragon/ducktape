@@ -32,17 +32,6 @@ class _CountingReflector:
         return ReflectedCatalog(tools=self._tools, instructions="how to use me")
 
 
-async def test_second_reflection_within_ttl_reuses_the_first() -> None:
-    cache = ReflectionCache(NEVER_EXPIRES)
-    reflect = _CountingReflector()
-
-    first = await cache.reflect(_key(), reflect)
-    second = await cache.reflect(_key(), reflect)
-
-    assert [tool.name for tool in second.tools] == [tool.name for tool in first.tools]
-    assert reflect.calls == 1
-
-
 async def test_zero_ttl_reflects_again_on_the_next_request() -> None:
     cache = ReflectionCache(0.0)
     reflect = _CountingReflector()

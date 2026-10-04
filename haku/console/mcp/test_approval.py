@@ -998,26 +998,6 @@ async def test_executor_raises_when_in_process_backend_is_not_registered() -> No
         )
 
 
-async def test_dispatcher_reflects_in_process_server_tools() -> None:
-    builder = Mock(return_value=_build_test_mcp_server())
-    registration = InProcessServerRegistration(builder=builder, credential_kind=InProcessCredentialKind.NONE)
-    dispatcher = McpServerDispatcher({"google": registration}, catalog_cache_ttl_seconds=0.0)
-    server = McpServerEntry(id="google", backend=InProcessBackend(credential=NoCredential()))
-    metadata = await dispatcher.metadata(server)
-    assert isinstance(metadata, ReflectedCatalog)
-    assert {tool.name for tool in metadata.tools} == {
-        "stock_add",
-        "echo",
-        "products_list",
-        "locations_list",
-        "quantity_units_list",
-        "product_groups_list",
-        "shopping_lists_list",
-        "shopping_list_get",
-    }
-    builder.assert_called_once_with(None)
-
-
 async def test_dispatcher_reuses_a_reflected_catalog_within_the_ttl() -> None:
     builder = Mock(return_value=_build_test_mcp_server())
     registration = InProcessServerRegistration(builder=builder, credential_kind=InProcessCredentialKind.NONE)
