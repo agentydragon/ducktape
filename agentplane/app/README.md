@@ -268,14 +268,15 @@ RUNNING state alone does not make a suspended or deleted Sandbox look live. The 
 the feed's active turn so the sidebar and open-thread composer can use the same status-dot
 component. These are operational snapshots, not replacements for a Thread's runner Event prefix.
 
-Every status indicator is drawn from one table, `frontend/status_mark.ts`, which decides the shape and
-color of each thread and Sandbox status; the in-page glyph (`mark_glyph.tsx`) and the browser-tab
-favicon (`thread_favicon.ts`) only render what it says. A thread shows two green chevrons moving
-left to right in the page while a turn runs, a steady light blue dot when its harness is live and
-waiting, a gray power icon when its harness is down, a red dot when its runner feed failed, and a
-gray dot when nothing else is live. A Sandbox shows
-a light blue play icon when its Pod is ready, a yellow clock while it comes up, a gray pause when
-suspended, a red cross when failed, and a gray cross once deleted or ended.
+Every status indicator is drawn from one table, `frontend/status_mark.ts`, which gives each thread
+and Sandbox status its icon component (a Tabler icon, or one of `custom_mark_icons.tsx`) and color,
+and each thread status also its favicon shape and tab-title glyph. The in-page glyph (`mark_glyph.tsx`)
+and the browser-tab favicon (`thread_favicon.ts`, which hand-draws its own SVG) only render what it
+says. A thread shows two green chevrons moving left to right in the page while a turn runs, a steady
+light blue dot when its harness is live and waiting, a gray power icon when its harness is down, a red
+dot when its runner feed failed, and a gray dot when nothing else is live. A Sandbox shows a light blue
+play icon when its Pod is ready, a yellow clock while it comes up, a gray pause when suspended, a red
+cross when failed, and a gray cross once deleted or ended.
 
 The favicon draws the same marks but never moves, and the tab title leads with a plain text glyph for
 the thread's status (`»` running, `●` idle, `⏻` harness down, `○` not live, `×` failed). A favicon is only seen in a

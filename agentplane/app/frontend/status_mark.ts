@@ -1,8 +1,17 @@
 /**
  * What a status looks like, wherever it is drawn: a thread's or a Sandbox's indicator in the page, and
- * a thread's mark in the tab favicon. This is the only place that decides a status's shape and color;
- * mark_glyph.tsx and thread_favicon.ts only draw what these tables say.
+ * a thread's mark in the tab favicon and title. This is the only place that decides a status's icon and
+ * color; mark_glyph.tsx and thread_favicon.ts only draw what these tables say.
  */
+import type { ComponentType } from "react";
+// Per-icon subpaths, never the barrel: see tabler_icons.d.ts.
+import IconCircleX from "@tabler/icons-react/dist/esm/icons/IconCircleX.mjs";
+import IconClock from "@tabler/icons-react/dist/esm/icons/IconClock.mjs";
+import IconPlayerPause from "@tabler/icons-react/dist/esm/icons/IconPlayerPause.mjs";
+import IconPlayerPlay from "@tabler/icons-react/dist/esm/icons/IconPlayerPlay.mjs";
+import IconPower from "@tabler/icons-react/dist/esm/icons/IconPower.mjs";
+
+import { RunningChevrons, StatusDot } from "./custom_mark_icons";
 
 /**
  * `running`: a turn is in flight. `idle`: the harness is live and waiting for input. `stopped`: the
@@ -19,14 +28,16 @@ export type ThreadStatusKind = "running" | "idle" | "stopped" | "failed" | "inac
  */
 export type SandboxStatusKind = "ready" | "pending" | "suspended" | "failed" | "gone";
 
-/** The shapes a thread's mark can take, in the page and in the favicon alike. */
-export type ThreadMarkShape = "dot" | "chevrons" | "power";
-export type MarkShape = ThreadMarkShape | "play" | "pause" | "clock" | "cross";
+/** An icon the page draws: a library icon, or one of custom_mark_icons.tsx, sized by the CSS around it. */
+export type MarkIcon = ComponentType;
 
-export interface StatusMark<Shape extends MarkShape = MarkShape> {
-  readonly shape: Shape;
+export interface StatusMark {
+  readonly icon: MarkIcon;
   readonly color: string;
 }
+
+/** What the favicon hand-draws for a thread's status; thread_favicon.ts owns the art. */
+export type FaviconShape = "dot" | "chevrons" | "power";
 
 // Mantine default-palette shades. Blue means live and waiting, for a thread and a Sandbox alike, and
 // reads apart from both green (a turn running) and gray (switched off or gone).
@@ -37,29 +48,28 @@ const RED = "#fa5252"; // red-6
 const GRAY = "#868e96"; // gray-6
 
 /**
- * A thread's mark, plus the glyph its browser tab title leads with, where there is no color to draw
- * with. Plain text characters only: ones a platform may draw as emoji (▶, ✕) would not follow the tab's
- * text color. Filled means live and hollow means not live.
+ * A thread's mark, plus what the surfaces that cannot draw `icon` use instead: the favicon's shape,
+ * and the glyph its browser tab title leads with, where there is no color to draw with. The glyph is
+ * a plain text character: ones a platform may draw as emoji (▶, ✕) would not follow the tab's text
+ * color. Filled means live and hollow means not live.
  */
-export interface ThreadStatusMark extends StatusMark<ThreadMarkShape> {
+export interface ThreadStatusMark extends StatusMark {
+  readonly favicon: FaviconShape;
   readonly glyph: string;
 }
 
 export const THREAD_STATUS_MARKS: Record<ThreadStatusKind, ThreadStatusMark> = {
-  running: { shape: "chevrons", color: GREEN, glyph: "»" },
-  idle: { shape: "dot", color: BLUE, glyph: "●" },
-  stopped: { shape: "power", color: GRAY, glyph: "⏻" },
-  failed: { shape: "dot", color: RED, glyph: "×" },
-  inactive: { shape: "dot", color: GRAY, glyph: "○" },
+  running: { icon: RunningChevrons, color: GREEN, favicon: "chevrons", glyph: "»" },
+  idle: { icon: StatusDot, color: BLUE, favicon: "dot", glyph: "●" },
+  stopped: { icon: IconPower, color: GRAY, favicon: "power", glyph: "⏻" },
+  failed: { icon: StatusDot, color: RED, favicon: "dot", glyph: "×" },
+  inactive: { icon: StatusDot, color: GRAY, favicon: "dot", glyph: "○" },
 };
 
 export const SANDBOX_STATUS_MARKS: Record<SandboxStatusKind, StatusMark> = {
-  ready: { shape: "play", color: BLUE },
-  pending: { shape: "clock", color: YELLOW },
-  suspended: { shape: "pause", color: GRAY },
-  failed: { shape: "cross", color: RED },
-  gone: { shape: "cross", color: GRAY },
+  ready: { icon: IconPlayerPlay, color: BLUE },
+  pending: { icon: IconClock, color: YELLOW },
+  suspended: { icon: IconPlayerPause, color: GRAY },
+  failed: { icon: IconCircleX, color: RED },
+  gone: { icon: IconCircleX, color: GRAY },
 };
-
-/** Time for the in-page chevrons to advance one chevron pitch to the right. */
-export const CHEVRON_CYCLE_MS = 1_000;

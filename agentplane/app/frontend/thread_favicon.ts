@@ -1,5 +1,5 @@
 import type { ThreadTabStatus } from "./tab_metadata";
-import { THREAD_STATUS_MARKS, type StatusMark, type ThreadMarkShape } from "./status_mark";
+import { THREAD_STATUS_MARKS, type ThreadStatusMark } from "./status_mark";
 
 const FAVICON_ID = "agentplane-favicon";
 const FAVICON_PATH = "/favicon.svg";
@@ -35,8 +35,8 @@ function statusPower(color: string): string {
   return outlinedStroke(POWER_PATH, color, 3.6, 2.2);
 }
 
-function statusGlyph(mark: StatusMark<ThreadMarkShape>): string {
-  switch (mark.shape) {
+function statusGlyph(mark: ThreadStatusMark): string {
+  switch (mark.favicon) {
     case "dot":
       return statusDot(mark.color);
     case "chevrons":
@@ -46,7 +46,7 @@ function statusGlyph(mark: StatusMark<ThreadMarkShape>): string {
   }
 }
 
-function faviconUrl(mark: StatusMark<ThreadMarkShape>): string {
+function faviconUrl(mark: ThreadStatusMark): string {
   const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32"><path d="M5 14.5 27 5 18 27l-3.7-9.1L5 14.5Z" fill="none" stroke="#1c7ed6" stroke-linejoin="round" stroke-width="2.5"/><path d="m14.3 17.9 6.3-6.1" fill="none" stroke="#1c7ed6" stroke-linecap="round" stroke-width="2"/>${statusGlyph(mark)}</svg>`;
   return `data:image/svg+xml,${encodeURIComponent(svg)}`;
 }

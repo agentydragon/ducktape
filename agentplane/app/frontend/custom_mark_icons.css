@@ -1,0 +1,51 @@
+/* These size themselves inside `.agentplane-mark`; `.agentplane-mark-small` on it picks the small
+   variant. Library icons are sized in mark_glyph.css. */
+
+.agentplane-mark-disc {
+  width: 0.5rem;
+  height: 0.5rem;
+  border-radius: 50%;
+  background-color: currentColor;
+}
+
+.agentplane-mark-small .agentplane-mark-disc {
+  width: 0.375rem;
+  height: 0.375rem;
+}
+
+/* Two classes, to outrank mark_glyph.css's size for the `svg` of a library icon. */
+.agentplane-mark .agentplane-mark-chevron-svg {
+  width: 0.875rem;
+  height: 0.625rem;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2.1;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  /* Chevrons fade in and out at the edges rather than being cut off, and the ones just past the
+     edge at rest stay invisible. */
+  mask-image: linear-gradient(to right, transparent 8%, #000 24%, #000 76%, transparent 92%);
+}
+
+.agentplane-mark-small .agentplane-mark-chevron-svg {
+  width: 0.75rem;
+  height: 0.5rem;
+}
+
+/* Duration and --chevron-pitch are set inline from custom_mark_icons.tsx. The chevrons travel the
+   way they point. */
+.agentplane-mark-chevron-track {
+  animation: agentplane-mark-run linear infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .agentplane-mark-chevron-track {
+    animation: none;
+  }
+}
+
+@keyframes agentplane-mark-run {
+  to {
+    transform: translateX(var(--chevron-pitch));
+  }
+}

@@ -33,8 +33,39 @@ ts_library(
 
 ts_library(
     name = "status_mark",
-    srcs = ["status_mark.ts"],
+    srcs = [
+        "status_mark.ts",
+        # Ambient module declarations for the @tabler/icons-react per-icon subpaths this file
+        # imports. A declaration file is type-only, so it joins this target's program without
+        # being emitted.
+        "tabler_icons.d.ts",
+    ],
     tsconfig = TSCONFIG,
+    deps = [
+        ":custom_mark_icons",
+        "//:node_modules/@tabler/icons-react",
+        "//:node_modules/@types/react",
+    ],
+)
+
+# The status marks no icon library supplies: a dot, and the moving chevrons.
+ts_library(
+    name = "custom_mark_icons",
+    srcs = [
+        "css.d.ts",
+        "custom_mark_icons.tsx",
+    ],
+    tsconfig = TSCONFIG,
+    deps = [
+        ":custom_mark_icons_css",
+        "//:node_modules/@types/react",
+        "//:node_modules/react",
+    ],
+)
+
+js_library(
+    name = "custom_mark_icons_css",
+    srcs = ["custom_mark_icons.css"],
 )
 
 ts_library(
@@ -679,16 +710,11 @@ ts_library(
     srcs = [
         "css.d.ts",
         "mark_glyph.tsx",
-        # Ambient module declarations for the @tabler/icons-react per-icon subpaths this file
-        # imports. A declaration file is type-only, so it joins this target's program without
-        # being emitted.
-        "tabler_icons.d.ts",
     ],
     tsconfig = TSCONFIG,
     deps = [
         ":mark_glyph_css",
         ":status_mark",
-        "//:node_modules/@tabler/icons-react",
         "//:node_modules/@types/react",
         "//:node_modules/react",
     ],
