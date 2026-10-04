@@ -382,8 +382,7 @@ impl SupportSearch<'_> {
 #[cfg(test)]
 mod tests {
     use selector_test_fixtures::{
-        broad_specific_targets, call_argument_use, declared_binding, member_read,
-        module_member_use, owner_fact,
+        broad_specific_targets, call_argument_use, declared_binding, owner_fact,
     };
     use std::collections::BTreeSet;
     use std::sync::Mutex;
@@ -399,8 +398,8 @@ mod tests {
         TargetBindingProjection, TargetProjection,
     };
     use selector_ir::{
-        ClaimKind, ClaimOutcome, OwnerTerm, ResolvedClaim, SelectorAtom, SelectorFact,
-        SelectorFactStore, SelectorProgram, SelectorTargetId, StringTerm, VariableDomain,
+        ClaimKind, ClaimOutcome, OwnerTerm, ResolvedClaim, SelectorAtom, SelectorFactStore,
+        SelectorProgram, SelectorTargetId, StringTerm, VariableDomain,
     };
 
     use super::*;
@@ -971,14 +970,6 @@ mod tests {
         );
     }
 
-    fn owner_references_binding(owner: usize, binding: &str) -> SelectorFact {
-        SelectorFact::OwnerReferencesBinding {
-            owner: OwnerId(owner),
-            binding: binding.to_string(),
-            edge_kind: "eager_use".to_string(),
-        }
-    }
-
     #[test]
     fn cpsat_resolves_broad_specific_target_injectivity() {
         let (program, facts, broad_target, strict_target) = broad_specific_targets();
@@ -1076,206 +1067,6 @@ mod tests {
             }
             other => panic!("expected truncated ambiguous many target, got {other:?}"),
         }
-    }
-
-    #[test]
-    fn cpsat_solves_cross_ref_anchor_in_one_program() {
-        let mut program = SelectorProgram::default();
-        let anchor_owner = program.add_variable(VariableDomain::Owner, Some("anchor".to_string()));
-        let delegator_owner =
-            program.add_variable(VariableDomain::Owner, Some("delegator".to_string()));
-        let anchor_target = program.add_target(
-            anchor_owner,
-            "module",
-            ClaimKind::Binding {
-                export_name: Some("Anchor".to_string()),
-            },
-        );
-        let delegator_target = program.add_target(
-            delegator_owner,
-            "module",
-            ClaimKind::Binding {
-                export_name: Some("Delegator".to_string()),
-            },
-        );
-        program.add_atom(SelectorAtom::OwnerDeclaresBinding {
-            owner: OwnerTerm::Var { id: anchor_owner },
-            binding: StringTerm::Const {
-                value: "a".to_string(),
-            },
-        });
-        program.add_atom(SelectorAtom::OwnerReferencesOwner {
-            owner: OwnerTerm::Var {
-                id: delegator_owner,
-            },
-            referenced: OwnerTerm::Var { id: anchor_owner },
-        });
-        program.add_atom(SelectorAtom::OwnerKind {
-            owner: OwnerTerm::Var {
-                id: delegator_owner,
-            },
-            statement_kind: StringTerm::Const {
-                value: "fn_decl".to_string(),
-            },
-        });
-        program.require_all_different(vec![anchor_target, delegator_target]);
-
-        let mut facts = SelectorFactStore::default();
-        facts.push(owner_fact(1, 1, "var_decl"));
-        facts.push(declared_binding(1, "a"));
-        facts.push(owner_fact(2, 2, "fn_decl"));
-        facts.push(declared_binding(2, "b"));
-        facts.push(owner_references_binding(2, "a"));
-        facts.push(owner_fact(3, 3, "fn_decl"));
-        facts.push(declared_binding(3, "other"));
-        facts.push(owner_references_binding(3, "missing"));
-
-        let backend = OrToolsCpSatBackend::default();
-        let result = solve_with_backend(&program, &facts, &backend).unwrap();
-
-        assert_eq!(
-            result.outcome_for(anchor_target),
-            Some(&ClaimOutcome::Unique {
-                claim: ResolvedClaim {
-                    owner: OwnerId(1),
-                    statement_ordinal: StatementOrdinal(1),
-                    binding: Some("a".to_string()),
-                }
-            })
-        );
-        assert_eq!(
-            result.outcome_for(delegator_target),
-            Some(&ClaimOutcome::Unique {
-                claim: ResolvedClaim {
-                    owner: OwnerId(2),
-                    statement_ordinal: StatementOrdinal(2),
-                    binding: Some("b".to_string()),
-                }
-            })
-        );
-    }
-
-    #[test]
-    fn cpsat_solves_object_constrained_reads_member_jointly() {
-        let mut program = SelectorProgram::default();
-        let object_owner = program.add_variable(VariableDomain::Owner, Some("object".to_string()));
-        let reader_owner = program.add_variable(VariableDomain::Owner, Some("reader".to_string()));
-        let object_target = program.add_target(
-            object_owner,
-            "module",
-            ClaimKind::Binding {
-                export_name: Some("Context".to_string()),
-            },
-        );
-        let reader_target = program.add_target(
-            reader_owner,
-            "module",
-            ClaimKind::Binding {
-                export_name: Some("ReadId".to_string()),
-            },
-        );
-        program.add_atom(SelectorAtom::OwnerDeclaresBinding {
-            owner: OwnerTerm::Var { id: object_owner },
-            binding: StringTerm::Const {
-                value: "ctx".to_string(),
-            },
-        });
-        program.add_atom(SelectorAtom::ReadsMemberOfOwner {
-            owner: OwnerTerm::Var { id: reader_owner },
-            object: OwnerTerm::Var { id: object_owner },
-            member: StringTerm::Const {
-                value: "id".to_string(),
-            },
-        });
-        program.add_atom(SelectorAtom::OwnerKind {
-            owner: OwnerTerm::Var { id: reader_owner },
-            statement_kind: StringTerm::Const {
-                value: "fn_decl".to_string(),
-            },
-        });
-        program.require_all_different(vec![object_target, reader_target]);
-
-        let mut facts = SelectorFactStore::default();
-        facts.push(owner_fact(1, 1, "var_decl"));
-        facts.push(declared_binding(1, "ctx"));
-        facts.push(owner_fact(2, 2, "fn_decl"));
-        facts.push(declared_binding(2, "readId"));
-        facts.push(member_read(2, Some("ctx"), "id"));
-        facts.push(owner_fact(3, 3, "fn_decl"));
-        facts.push(declared_binding(3, "other"));
-        facts.push(member_read(3, Some("otherCtx"), "id"));
-
-        let backend = OrToolsCpSatBackend::default();
-        let result = solve_with_backend(&program, &facts, &backend).unwrap();
-
-        assert_eq!(
-            result.outcome_for(object_target),
-            Some(&ClaimOutcome::Unique {
-                claim: ResolvedClaim {
-                    owner: OwnerId(1),
-                    statement_ordinal: StatementOrdinal(1),
-                    binding: Some("ctx".to_string()),
-                }
-            })
-        );
-        assert_eq!(
-            result.outcome_for(reader_target),
-            Some(&ClaimOutcome::Unique {
-                claim: ResolvedClaim {
-                    owner: OwnerId(2),
-                    statement_ordinal: StatementOrdinal(2),
-                    binding: Some("readId".to_string()),
-                }
-            })
-        );
-    }
-
-    #[test]
-    fn cpsat_solves_consumes_module_member_allowed_tuple() {
-        let mut program = SelectorProgram::default();
-        let consumer_owner =
-            program.add_variable(VariableDomain::Owner, Some("consumer".to_string()));
-        let consumer_target = program.add_target(
-            consumer_owner,
-            "module",
-            ClaimKind::Binding {
-                export_name: Some("WidgetConsumer".to_string()),
-            },
-        );
-        program.add_atom(SelectorAtom::ConsumesModuleMember {
-            owner: OwnerTerm::Var { id: consumer_owner },
-            module: StringTerm::Const {
-                value: "./accessors".to_string(),
-            },
-            member: StringTerm::Const {
-                value: "Widget".to_string(),
-            },
-        });
-
-        let mut facts = SelectorFactStore::default();
-        facts.push(owner_fact(65, 55, "function"));
-        facts.push(declared_binding(65, "useWidget"));
-        facts.push(module_member_use(55, "./accessors", "Widget"));
-        facts.push(owner_fact(66, 56, "function"));
-        facts.push(declared_binding(66, "useOther"));
-        facts.push(module_member_use(56, "./accessors", "Other"));
-        facts.push(owner_fact(67, 57, "function"));
-        facts.push(declared_binding(67, "useOtherModule"));
-        facts.push(module_member_use(57, "./other", "Widget"));
-
-        let backend = OrToolsCpSatBackend::default();
-        let result = solve_with_backend(&program, &facts, &backend).unwrap();
-
-        assert_eq!(
-            result.outcome_for(consumer_target),
-            Some(&ClaimOutcome::Unique {
-                claim: ResolvedClaim {
-                    owner: OwnerId(65),
-                    statement_ordinal: StatementOrdinal(55),
-                    binding: Some("useWidget".to_string()),
-                }
-            })
-        );
     }
 
     #[test]

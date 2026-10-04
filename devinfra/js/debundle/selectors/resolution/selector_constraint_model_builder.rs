@@ -2010,6 +2010,10 @@ mod tests {
             owner_fact(66, 56, "function"),
             declared_binding(66, "otherModuleConsumer"),
             module_member_use(56, "./accessors", "Other"),
+            // Same member of a different module: not a consumer of `./accessors`.
+            owner_fact(67, 57, "function"),
+            declared_binding(67, "otherSourceConsumer"),
+            module_member_use(57, "./other", "Widget"),
             owner_fact(70, 6, "class"),
             declared_binding(70, "Class"),
             decorate_call("decorate", "Class", Some("field")),
