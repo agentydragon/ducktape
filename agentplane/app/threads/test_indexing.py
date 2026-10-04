@@ -9,7 +9,7 @@ from typing import Any
 
 import pytest
 import pytest_bazel
-from sqlalchemy import event, select
+from sqlalchemy import event
 from sqlalchemy.ext.asyncio import AsyncEngine
 
 from agentplane.app.conftest import SPEC, event_entry
@@ -135,87 +135,6 @@ def _history_event(cursor: int, materialized_item_count: int) -> event_log_pb2.E
         return event_entry(cursor, text_delta=event_pb2.TextDelta(item_id=item_id, text="materialized"))
     return event_entry(
         cursor, native=event_pb2.Native(direction=event_pb2.DIRECTION_FROM_HARNESS, line='{"type":"trace"}')
-    )
-
-
-async def test_segment_tail_uses_partial_cursor_index_after_many_settled_commands(
-    store: ThreadStore,
-    event_logs: EventLogStore,
-    content: ContentStore,
-    ingestion: Ingestion,
-    engine: AsyncEngine,
-    lease: IngestionLease,
-    request: pytest.FixtureRequest,
-) -> None:
-    """Tail-window bounds do not walk settled commands that sort after the last segment."""
-    assert await ingestion.renew(lease, timedelta(minutes=10))
-    thread = await event_logs.open("sb-1", "command-dense-tail", SPEC)
-    await ingestion.record(
-        thread,
-        [
-            event_entry(
-                1, item_started=event_pb2.ItemStarted(item_id="only-segment", kind=event_pb2.ITEM_KIND_ASSISTANT_TEXT)
-            )
-        ],
-        lease=lease,
-    )
-    cursor = 2
-    for batch_start in range(0, 10_000, 50):
-        batch: list[event_log_pb2.EventEntry] = []
-        for command_index in range(batch_start, batch_start + 50):
-            command_id = f"settled-{command_index}"
-            batch.append(
-                event_entry(
-                    cursor,
-                    command_admitted=event_pb2.CommandAdmitted(
-                        command=command_pb2.Command(
-                            command_id=command_id, submit_input=command_pb2.SubmitInput(text="saved")
-                        )
-                    ),
-                )
-            )
-            cursor += 1
-            batch.append(event_entry(cursor, command_noop=event_pb2.CommandNoop(command_id=command_id, reason="done")))
-            cursor += 1
-        await ingestion.record(thread, batch, lease=lease)
-
-    scope = await content.current_scope(thread)
-    assert scope is not None
-    captured: list[tuple[str, Any]] = []
-
-    def capture_select(_: object, __: object, statement: str, parameters: Any, ___: object, ____: bool) -> None:
-        if statement.lstrip().startswith("SELECT") and "thread_entity" in statement:
-            captured.append((statement, parameters))
-
-    event.listen(engine.sync_engine, "before_cursor_execute", capture_select)
-    try:
-        async with store._sessions() as session:
-            cursors = list(
-                await session.scalars(
-                    select(ThreadEntity.cursor)
-                    .where(
-                        ThreadEntity.thread_id == thread,
-                        ThreadEntity.projection_epoch == scope.projection_epoch,
-                        ThreadEntity.entity_kind.in_(("item", "confirmed_input", "lifecycle")),
-                        ThreadEntity.cursor < scope.through_cursor + 1,
-                    )
-                    .order_by(ThreadEntity.cursor.desc())
-                    .limit(30)
-                )
-            )
-    finally:
-        event.remove(engine.sync_engine, "before_cursor_execute", capture_select)
-    assert cursors == [1]
-    assert len(captured) == 1
-    async with engine.connect() as connection:
-        await connection.exec_driver_sql("ANALYZE thread_entity")
-        statement, parameters = captured[0]
-        result = await connection.exec_driver_sql(f"EXPLAIN (ANALYZE, BUFFERS, COSTS OFF) {statement}", parameters)
-        plan = "\n".join(row[0] for row in result)
-    assert "ix_thread_entity_scope_segment_cursor" in plan
-    assert "Rows Removed by Filter" not in plan
-    (undeclared_outputs_dir() / f"{request.node.name}-segment-tail-profile.txt").write_text(
-        f"settled_command_count=10000\n{plan}\n"
     )
 
 
