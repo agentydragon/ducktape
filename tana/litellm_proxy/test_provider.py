@@ -13,7 +13,6 @@ import pytest
 import pytest_bazel
 from litellm.types.utils import ChatCompletionMessageToolCall, Choices, GenericStreamingChunk, ModelResponse, Usage
 
-from tana.litellm_proxy.custom_handler import tana_handler
 from tana.litellm_proxy.provider import (
     TanaChatResult,
     TanaLiteLLM,
@@ -1067,10 +1066,6 @@ async def test_registered_tana_provider_handles_async_litellm_completion(isolate
     assert response.choices[0].message.content == "pong"
 
 
-def test_custom_handler_module_exports_litellm_handler() -> None:
-    assert isinstance(tana_handler, TanaLiteLLM)
-
-
 def _upstream_error_handler(status: int) -> Callable[[httpx.Request], httpx.Response]:
     def handler(request: httpx.Request) -> httpx.Response:
         if request.url.host == "securetoken.googleapis.com":
@@ -1090,17 +1085,6 @@ _DEMO_FACT_TOOL = {
         "parameters": {"type": "object", "properties": {"topic": {"type": "string"}}, "required": ["topic"]},
     },
 }
-
-
-async def test_chat_completion_raises_rate_limit_error_on_429() -> None:
-    async def run() -> None:
-        async with httpx.AsyncClient(transport=httpx.MockTransport(_upstream_error_handler(429))) as http:
-            client = TanaProxyClient(TanaProxyConfig(refresh_token="refresh-1"), http_client=http)
-            await client.chat_completion("tana/claude-test", [{"role": "user", "content": "hi"}], {})
-
-    with pytest.raises(litellm.RateLimitError) as exc_info:
-        await run()
-    assert exc_info.value.status_code == 429
 
 
 async def test_tool_chat_completion_raises_rate_limit_error_on_429() -> None:

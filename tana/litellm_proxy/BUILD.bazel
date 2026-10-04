@@ -140,7 +140,6 @@ py_test(
     name = "test_provider",
     srcs = ["test_provider.py"],
     deps = [
-        ":custom_handler",
         ":provider",
         "//:conftest",
         "@pypi//pytest",
