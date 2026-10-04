@@ -12,8 +12,6 @@ from fastmcp import FastMCP
 
 from haku.console.auto_approval.decision import AutoApprovalDecision, AutoApproved, AutoDenied, NotAutoApproved
 from haku.console.auto_approval.home_assistant import CALL_SERVICE_TOOL, evaluate_entity_control
-from haku.console.auto_approval.kubernetes import evaluate_passthrough_redundancy
-from haku.console.grants.kubernetes.authorization_service import KubernetesAuthorizationService
 from haku.console.mcp_config import (
     AnyOfAutoApprovalPolicy,
     AutoApprovalPolicy,
@@ -21,7 +19,6 @@ from haku.console.mcp_config import (
     ExactToolsAutoApprovalPolicy,
     GrantSelfListAutoApprovalPolicy,
     HomeAssistantEntityControlAutoApprovalPolicy,
-    KubernetesPassthroughAutoApprovalPolicy,
     NeverAutoApprovalPolicy,
 )
 from haku.console.tool_call_actor import AgentActor, OperatorActor, RuntimeActor
@@ -96,9 +93,7 @@ class AutoApprovalEvaluation:
 class AutoApprovalPolicyRegistry:
     """Validated policy graph selected through durable, config-defined Agent access profiles."""
 
-    def __init__(
-        self, config: ConsoleConfigFile, *, kubernetes_authorization: KubernetesAuthorizationService | None = None
-    ) -> None:
+    def __init__(self, config: ConsoleConfigFile) -> None:
         self._config = config
         self._profiles = {profile.id: profile for profile in config.access_profiles}
         self._policies: dict[str, AutoApprovalPolicy] = {policy.id: policy for policy in config.auto_approval_policies}
@@ -106,7 +101,6 @@ class AutoApprovalPolicyRegistry:
         # Preserve the useful transparent schema for any tool that an assigned Agent policy always
         # auto-approves; this affects presentation only, never Operator authorization.
         self._assigned_roots = tuple(dict.fromkeys(profile.auto_approval_policy for profile in self._profiles.values()))
-        self._kubernetes_authorization = kubernetes_authorization
 
     def _actor_root(self, actor: AgentActor) -> str | None:
         profile = self._profiles.get(actor.access_profile_id) if actor.access_profile_id is not None else None
@@ -145,8 +139,6 @@ class AutoApprovalPolicyRegistry:
                     if server_id == server and tool_name == CALL_SERVICE_TOOL
                     else ToolAutoApprovalMode.MANUAL_APPROVAL_REQUIRED
                 )
-            case KubernetesPassthroughAutoApprovalPolicy():
-                return ToolAutoApprovalMode.MANUAL_APPROVAL_REQUIRED
             case AnyOfAutoApprovalPolicy(policies=members):
                 return max(
                     (self._policy_mode(member, server_id, tool_name) for member in members),
@@ -167,13 +159,7 @@ class AutoApprovalPolicyRegistry:
 
         evaluation = AutoApprovalEvaluation()
         await self._evaluate_policy(
-            root,
-            actor=actor,
-            policy_path=(),
-            server_id=server_id,
-            tool_name=tool_name,
-            arguments=arguments,
-            evaluation=evaluation,
+            root, policy_path=(), server_id=server_id, tool_name=tool_name, arguments=arguments, evaluation=evaluation
         )
         if evaluation.denials:
             step = evaluation.denials[0]
@@ -198,7 +184,6 @@ class AutoApprovalPolicyRegistry:
         self,
         policy_id: str,
         *,
-        actor: RuntimeActor,
         policy_path: tuple[str, ...],
         server_id: str,
         tool_name: str,
@@ -233,19 +218,10 @@ class AutoApprovalPolicyRegistry:
                 if server_id != server or tool_name != CALL_SERVICE_TOOL:
                     return
                 evaluation.record(current_path, evaluate_entity_control(tool_name, arguments, entities))
-            case KubernetesPassthroughAutoApprovalPolicy(server=server):
-                if server_id != server:
-                    return
-                passthrough_decision = await evaluate_passthrough_redundancy(
-                    actor, tool_name, arguments, self._kubernetes_authorization
-                )
-                if passthrough_decision is not None:
-                    evaluation.record(current_path, passthrough_decision)
             case AnyOfAutoApprovalPolicy(policies=members):
                 for member in members:
                     await self._evaluate_policy(
                         member,
-                        actor=actor,
                         policy_path=current_path,
                         server_id=server_id,
                         tool_name=tool_name,
