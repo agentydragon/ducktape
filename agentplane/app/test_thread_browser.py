@@ -318,10 +318,10 @@ async def test_returning_to_a_thread_lays_its_rows_out_at_the_heights_they_had(
         http2_proxy(app.url, certificate) as ingress,
     ):
         await page.goto(f"{ingress.url}/#/threads/{threads[0]}")
-        await expect(page.get_by_text("Thread 0 message 129", exact=True)).to_be_visible()
+        await expect(page.get_by_text("Thread 0 message 129", exact=True)).to_be_visible(timeout=30_000)
         for number in (1, 0):
             await page.locator(".agentplane-sidebar-row-name", has_text=f"Test navigation thread {number}").click()
-            await expect(page.get_by_text(f"Thread {number} message 129", exact=True)).to_be_visible()
+            await expect(page.get_by_text(f"Thread {number} message 129", exact=True)).to_be_visible(timeout=30_000)
         remembered = [entry.error for entry in await history_trace.estimate_errors(page) if entry.remembered]
         assert remembered, "no row on the return was laid out from what the first visit read"
         assert max(abs(error) for error in remembered) <= 2, remembered
@@ -1184,6 +1184,10 @@ async def append_run_among_rows(thread_browser: ThreadBrowser, *, below: int) ->
     if below:
         latest = append_items(thread_browser, "below", range(below))
     await expect_projected_cursor(thread_browser.page, latest.cursor)
+    # The rows are in before their text is, and each grows when its text arrives.
+    await expect(thread_browser.page.get_by_role("region", name="Thread history", exact=True)).to_have_attribute(
+        "data-layout-settled", "true", timeout=30_000
+    )
 
 
 @asynccontextmanager

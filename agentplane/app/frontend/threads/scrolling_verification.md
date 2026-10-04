@@ -16,17 +16,18 @@ timing:
 
 - `data-scroll-mode` on the "Thread history" region: `following` the tail, `reading` where the
   reader is, or `restoring` the reader's row after a layout change.
-- `data-layout-settled`: `true` once the layout has stayed put for a few frames and no correction is
-  in flight, `false` while rows are still being measured. A test that needs a line's resting position
+- `data-layout-settled`: `true` once the layout has stayed put for a few frames, no correction is in
+  flight and no row is still loading its text (`aria-busy="true"`, which grows the row when the text
+  arrives); `false` while rows are still being measured. A test that needs a line's resting position
   waits for it (`holding_still` does) rather than counting frames.
 - `window.agentplaneHistoryTrace()`: the history's last 2,000 scroll and layout decisions
-  (`history_trace.ts`), always on. A failing browser test prints the relevant slice
-  (`format_history_trace`).
+  (`history_trace.ts`), always on. A failing browser test prints the relevant slice, and every
+  browser test writes the whole recording as `<test>-history-trace.jsonl`.
 
 `agentplane/app/testing/history_probe.js` is injected into every browser test's pages and writes
 `<test>-history-probe.json` to the undeclared outputs: per frame, rows overlapping or leaving a gap
 (layout not yet caught up with measurement), content that moved on screen more than scrolling
-explains, and the browser's layout-instability entries. Rows are positioned with `transform`, which
+explains, the browser's layout-instability entries, and when the page's `/sync/` reads finished. Rows are positioned with `transform`, which
 the layout-instability API does not count, hence the per-frame comparison. Set
 `--test_env=AGENTPLANE_CPU_THROTTLE=4` to run the page that many times slower, which makes timing
 races show up in one run instead of one in thirty.

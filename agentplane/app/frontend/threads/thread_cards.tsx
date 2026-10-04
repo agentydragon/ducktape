@@ -67,7 +67,13 @@ function PayloadView({
           Payload synchronization stopped: {error} <button onClick={retry}>Retry payload synchronization</button>
         </p>
       )}
-      {body === null ? <Text c="dimmed">Loading complete revision…</Text> : children(body)}
+      {body === null ? (
+        <Text c="dimmed" aria-busy={error === null}>
+          Loading complete revision…
+        </Text>
+      ) : (
+        children(body)
+      )}
     </>
   );
 }
@@ -277,7 +283,7 @@ function ReasoningPreview({
       trailing={open && expandable ? status : undefined}
       preview={
         body === null ? (
-          <Text component="span" c="dimmed">
+          <Text component="span" c="dimmed" aria-busy={!error}>
             {error ? "Preview unavailable" : "Loading preview…"}
           </Text>
         ) : (
@@ -403,7 +409,11 @@ function ToolCard({
           <Stack gap="xs">
             <RecoveryNotes state={state} tool />
             {entity.textRef && <Body reference={entity.textRef} format="markdown" />}
-            {args && argumentsBody === null && <Text c="dimmed">Loading complete revision…</Text>}
+            {args && argumentsBody === null && (
+              <Text c="dimmed" aria-busy={!args.error}>
+                Loading complete revision…
+              </Text>
+            )}
             {argumentsBody !== null &&
               (call && !raw ? (
                 <CommandCallView
@@ -467,7 +477,7 @@ function ToolCard({
               preview={
                 args &&
                 (argumentsBody === null ? (
-                  <Text component="span" c="dimmed">
+                  <Text component="span" c="dimmed" aria-busy={!args.error}>
                     {args.error ? "Preview unavailable" : "Loading preview…"}
                   </Text>
                 ) : call && !call.description ? (

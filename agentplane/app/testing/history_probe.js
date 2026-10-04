@@ -68,7 +68,7 @@
   new PerformanceObserver((list) => {
     for (const entry of list.getEntries()) {
       const { pathname } = new URL(entry.name);
-      if (pathname.startsWith("/sync/") && probe.syncResponses.length < MAX_EVENTS) {
+      if (pathname.includes("/sync/") && probe.syncResponses.length < MAX_EVENTS) {
         probe.syncResponses.push({ started: entry.startTime, finished: entry.responseEnd, path: pathname });
       }
     }

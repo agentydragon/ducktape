@@ -478,10 +478,15 @@ function VirtualizedHistory({
   useLayoutEffect(() => {
     const element = viewport.current;
     if (!element) return;
-    const settle = new LayoutSettle(restoringScroll, (settled) => {
-      element.dataset.layoutSettled = String(settled);
-      historyTrace.record({ kind: "settled", settled });
-    });
+    // A row that is still loading its text grows when the text arrives, which is a layout change not yet seen.
+    const loading = () => element.querySelector('[aria-busy="true"]') !== null;
+    const settle = new LayoutSettle(
+      () => restoringScroll() || loading(),
+      (settled) => {
+        element.dataset.layoutSettled = String(settled);
+        historyTrace.record({ kind: "settled", settled });
+      }
+    );
     layoutSettle.current = settle;
     element.dataset.layoutSettled = "false";
     publishMode();

@@ -85,7 +85,8 @@ const QUIET_FRAMES = 5;
 
 /**
  * Whether a layout has come to rest. `changed()` says it moved; it is unsettled until it has
- * stayed put for `QUIET_FRAMES` frames, and while `busy()` says a correction is still in flight.
+ * stayed put for `QUIET_FRAMES` frames, and while `busy()` says something that will move it is still
+ * under way: a correction, or content a row is waiting for.
  */
 export class LayoutSettle {
   readonly #busy: () => boolean;
