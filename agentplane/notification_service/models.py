@@ -1,7 +1,7 @@
 """Agent-facing HTTP models. Source content remains provider-defined."""
 
 from datetime import datetime
-from typing import Literal
+from typing import Annotated, Literal
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, JsonValue
@@ -24,6 +24,25 @@ class DestinationRef(Model):
     uid: str = Field(min_length=1, max_length=128)
 
 
+class ActionsSource(Model):
+    provider: Literal["actions"]
+    request_id: UUID
+    after_sequence: int = Field(default=0, ge=0, le=2**31 - 1)
+
+
+# Only implemented providers belong in these tagged unions.
+type Source = Annotated[ActionsSource, Field(discriminator="provider")]
+
+
+class ActionsEvent(Model):
+    provider: Literal["actions"]
+    request_id: UUID
+    sequence: int = Field(ge=1)
+
+
+type EventIdentity = Annotated[ActionsEvent, Field(discriminator="provider")]
+
+
 class Subscribe(Model):
     destination_ref: DestinationRef
     session_id: str = Field(min_length=1, max_length=200)
@@ -32,26 +51,21 @@ class Subscribe(Model):
         max_length=200,
         description="Inbox-local creation idempotency key. Identical retries return the existing subscription.",
     )
-    provider: Literal["actions"] = "actions"
-    request_id: UUID
-    after_sequence: int = Field(default=0, ge=0, le=2**31 - 1)
+    source: Source
     lifetime_days: int = Field(default=7, ge=1, le=30)
 
 
 class SubscriptionUpdate(Model):
     version: int = Field(ge=1)
-    paused: bool
     lifetime_days: int = Field(default=7, ge=1, le=30)
 
 
 class SubscriptionView(Model):
     id: UUID
     inbox_id: UUID
-    request_id: UUID
+    source: Source
     idempotency_key: str
     version: int
-    after_sequence: int
-    paused: bool
     cancelled: bool
     expires_at: datetime
     error: str | None
@@ -71,8 +85,7 @@ class InboxView(Model):
 
 class EntryView(Model):
     cursor: int
-    request_id: UUID
-    source_sequence: int
+    event: EventIdentity
     payload: dict[str, JsonValue]
     subscriptions: list[UUID]
 

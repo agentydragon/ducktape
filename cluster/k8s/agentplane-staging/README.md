@@ -20,9 +20,10 @@ ServiceAccounts such as `claude-ai` are defined in
 `agentplane-staging.k8s.yaml`; a new set, or a binding for a ServiceAccount, is a PR to
 that Python module (regenerate with `bb run //cluster/cdk8s:generate_manifests`). Bindings
 for Sandbox subjects are written by the integration app when it creates the Sandbox and
-are never checked in. `//cluster/validation:test_agentplane_action_policies` parses every
-set and binding with the Action Service's own models, so a spec the service would refuse
-fails CI instead of reporting `Ready=False` on the cluster.
+are never checked in. The generator parses every set and binding with the Action
+Service's own models, so a spec the service would refuse fails generation (and CI's
+`//cluster/cdk8s:test_generate_manifests`) instead of reporting `Ready=False` on the
+cluster.
 
 ## Browser notifications
 
@@ -66,3 +67,18 @@ outside this repository. Its owner must include
 callback URLs. GitHub Apps support
 [multiple callback URLs](https://docs.github.com/en/apps/creating-github-apps/registering-a-github-app/about-the-user-authorization-callback-url).
 Changing this deployment's `redirect_uri` does not update the registration.
+
+## Staging GitHub App (planned)
+
+A new `agentplane-staging` GitHub App will serve the staging environment, initially for
+PR, branch, and commit notifications. It is separate from the existing MCP OAuth App
+above. All authenticated agents may subscribe to repositories accessible through the
+new App, including private repositories; install it with that sharing policy in mind.
+
+Registration, event permissions, and access-loss semantics are recorded in the
+[notification plan](../../../agentplane/plans/notifications.md#registration-and-credential-preparation).
+The [credential template](../../../agentplane/plans/github-app-credentials.example.yaml)
+contains only empty placeholders. The operator will supply `github-app.sops.yaml` later;
+the implementation must wire it through the chart/Kustomization and configure direct
+notification-service HTTPS ingress. No placeholder Secret is deployed, and existing
+MCP credentials/callbacks are unchanged.

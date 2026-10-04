@@ -1,4 +1,4 @@
-import type { ThreadStatusKind } from "./thread_status_palette";
+import type { ThreadStatusKind } from "./status_mark";
 
 export const DEFAULT_APP_TITLE = "Agentplane";
 

@@ -8,6 +8,7 @@ import asyncio
 import json
 import re
 from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager, suppress
 from dataclasses import dataclass
 from datetime import timedelta
 from pathlib import Path
@@ -942,6 +943,251 @@ async def test_small_upward_scroll_stays_detached_when_tail_streams(thread_brows
     bottom_gap = await history.evaluate("area => area.scrollHeight - area.scrollTop - area.clientHeight")
     assert bottom_gap > 24, f"streaming growth pulled the reader back to the bottom (gap={bottom_gap:.1f}px)"
     await gesture.dispose()
+
+
+def append_items(thread_browser: ThreadBrowser, prefix: str, numbers: range) -> event_log_pb2.EventEntry:
+    """One finished assistant message per number, of varying height; the entry of the last."""
+    latest = None
+    for number in numbers:
+        item_id = f"{prefix}-{number:03d}"
+        thread_browser.source.append(
+            event_pb2.Event(
+                item_started=event_pb2.ItemStarted(item_id=item_id, kind=event_pb2.ITEM_KIND_ASSISTANT_TEXT)
+            )
+        )
+        latest = thread_browser.source.append(
+            event_pb2.Event(
+                item_completed=event_pb2.ItemCompleted(
+                    item_id=item_id,
+                    text=f"Window message {number:03d}: " + "measured variable-height text " * (number % 4 + 1),
+                )
+            )
+        )
+    assert latest is not None
+    return latest
+
+
+async def frames(page: Page) -> None:
+    """Waits for the paint after the next layout, and any effect or observer it runs."""
+    await page.evaluate("() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))")
+
+
+def append_tool_call(thread_browser: ThreadBrowser, name: str) -> event_log_pb2.EventEntry:
+    """A finished `Bash` call whose command and output are each taller than their clamps."""
+    item_id = f"resize-tool-{name}"
+    arguments = {
+        "command": "\n".join(f"echo command line {number}" for number in range(24)),
+        "description": f"Run tool {name}",
+    }
+    source = thread_browser.source
+    source.append(
+        event_pb2.Event(
+            item_started=event_pb2.ItemStarted(item_id=item_id, kind=event_pb2.ITEM_KIND_TOOL_CALL, tool_name="Bash")
+        )
+    )
+    source.append(
+        event_pb2.Event(tool_arguments=event_pb2.ToolArguments(item_id=item_id, arguments_json=json.dumps(arguments)))
+    )
+    output = "\n".join(f"output line {number}" for number in range(60))
+    return source.append(
+        event_pb2.Event(
+            item_completed=event_pb2.ItemCompleted(
+                item_id=item_id, tool=event_pb2.ToolResult(output=output, succeeded=True)
+            )
+        )
+    )
+
+
+async def append_run_among_rows(thread_browser: ThreadBrowser, *, below: int) -> None:
+    """Reading rows, a run of three finished tool calls, then `below` more rows, all in the thread."""
+    thread_browser.opened.replay.set()
+    await expect(thread_browser.page.get_by_text("Test retained prefix", exact=True)).to_be_visible(timeout=30_000)
+    append_items(thread_browser, "above", range(25))
+    for name in ("a", "b", "c"):
+        latest = append_tool_call(thread_browser, name)
+    if below:
+        latest = append_items(thread_browser, "below", range(below))
+    await expect_projected_cursor(thread_browser.page, latest.cursor)
+
+
+@asynccontextmanager
+async def output_streaming_in(thread_browser: ThreadBrowser) -> AsyncIterator[list[int]]:
+    """A call running at the tail whose output keeps arriving, each delta once the browser has it,
+    for the length of the block; yields the cursors delivered so far."""
+    source, page = thread_browser.source, thread_browser.page
+    source.append(
+        event_pb2.Event(
+            item_started=event_pb2.ItemStarted(
+                item_id="resize-live", kind=event_pb2.ITEM_KIND_TOOL_CALL, tool_name="Bash"
+            )
+        )
+    )
+    source.append(
+        event_pb2.Event(
+            tool_arguments=event_pb2.ToolArguments(
+                item_id="resize-live", arguments_json=json.dumps({"command": "tail -f /var/log/test.log"})
+            )
+        )
+    )
+    delivered: list[int] = []
+
+    async def stream() -> None:
+        while True:
+            entry = source.append(
+                event_pb2.Event(
+                    tool_output_delta=event_pb2.ToolOutputDelta(
+                        item_id="resize-live", text=f"streamed line {len(delivered)}\n"
+                    )
+                )
+            )
+            await expect_projected_cursor(page, entry.cursor)
+            delivered.append(entry.cursor)
+
+    streaming = asyncio.create_task(stream())
+    try:
+        yield delivered
+    finally:
+        streaming.cancel()
+        with suppress(asyncio.CancelledError):
+            await streaming
+
+
+async def read_at(page: Page, target: Locator, fraction: float) -> None:
+    """Wheels the history as a reader does until `target` sits `fraction` of the way down it, or the
+    history ends, and the gesture has ended, so the app has adopted the place it left the reader at."""
+    history = page.get_by_role("region", name="Thread history", exact=True)
+    await history.hover()
+    for _ in range(40):
+        # One evaluation, without Locator.evaluate's wait: the virtualizer can unmount the row between
+        # looking for it and measuring it.
+        distance = await target.evaluate_all(
+            """(elements, fraction) => {
+                const [element] = elements;
+                if (!element) return null;
+                const area = element.closest('[aria-label="Thread history"]');
+                const bounds = area.getBoundingClientRect();
+                const wanted = element.getBoundingClientRect().top - bounds.top - fraction * bounds.height;
+                return Math.min(wanted, area.scrollHeight - area.clientHeight - area.scrollTop);
+            }""",
+            fraction,
+        )
+        if distance is None:
+            distance = -400  # Not mounted: it is further up than the rows that are.
+        if abs(distance) <= 20:
+            await frames(page)
+            return
+        gesture = await history.evaluate_handle(
+            "area => ({ ended: new Promise(resolve => area.addEventListener('scrollend', () => resolve(), { once: true })) })"
+        )
+        await page.mouse.wheel(0, round(distance))
+        async with asyncio.timeout(30):
+            await gesture.evaluate("gesture => gesture.ended")
+        await gesture.dispose()
+    raise AssertionError(f"scrolling never brought {target} to {fraction} of the way down the history")
+
+
+@asynccontextmanager
+async def holding_still(page: Page, line: Locator) -> AsyncIterator[None]:
+    """Fails unless `line` stays where it is on screen, in every frame painted from here until the
+    block's layout has settled: the reader's place is what they just clicked, and the history's
+    scrolling may not carry it away."""
+    watch = await line.evaluate_handle(
+        """element => {
+            const start = element.getBoundingClientRect().top;
+            const state = { start, drift: 0, detached: false, stopped: false };
+            const sample = () => {
+                if (state.stopped) return;
+                if (element.isConnected) {
+                    state.drift = Math.max(state.drift, Math.abs(element.getBoundingClientRect().top - start));
+                } else state.detached = true;
+                requestAnimationFrame(sample);
+            };
+            requestAnimationFrame(sample);
+            return state;
+        }"""
+    )
+    try:
+        yield
+        await frames(page)
+        outcome = await watch.evaluate(
+            "state => { state.stopped = true; return { drift: state.drift, detached: state.detached }; }"
+        )
+    finally:
+        await watch.dispose()
+    assert not outcome["detached"], f"{line} left the page"
+    assert outcome["drift"] <= 2, f"{line} moved {outcome['drift']}px from where it was clicked"
+
+
+def tool_call_in(run: Locator, name: str) -> tuple[Locator, Locator]:
+    """A call in `run` and the card around it, whose top edge holds still as the call opens."""
+    selector = "details.agentplane-step-details"
+    call = run.locator(selector, has_text=f"Run tool {name}")
+    card = run.locator(".mantine-Paper-root").filter(has=run.page.locator(selector, has_text=f"Run tool {name}")).last
+    return call, card
+
+
+@pytest.mark.parametrize("following", [False, True], ids=["mid-thread", "following"])
+@pytest.mark.parametrize("phone", [False, True], ids=["desktop", "phone"])
+async def test_opening_a_call_and_its_output_leaves_the_clicked_line_where_it_was(
+    thread_browser: ThreadBrowser, phone: bool, following: bool, request: pytest.FixtureRequest
+) -> None:
+    """A row that grows on its own click -- the run, a call in it, an output past its clamp -- grows
+    below the line clicked, whether the reader is partway up the thread or at the tail it follows
+    with a few rows after the run."""
+    page = thread_browser.page
+    if phone:
+        await page.set_viewport_size({"width": 412, "height": 915})
+    await append_run_among_rows(thread_browser, below=8 if following else 40)
+    history = page.get_by_role("region", name="Thread history", exact=True)
+    run = history.locator("[data-thread-anchor]").filter(has_text="3 tool calls")
+    if following:
+        await expect_history_bottom(page)
+    else:
+        await read_at(page, run, 0.1)
+
+    # A card gains border and padding as it opens, which moves its label; its top edge is the place.
+    summary = run.locator("summary").first
+    async with holding_still(page, run):
+        await summary.click()
+        await expect(run.locator("details.agentplane-step-details")).to_have_count(3)
+
+    call, card = tool_call_in(run, "a")
+    show_all = call.get_by_role("button", name="Show all 60 lines")
+    async with holding_still(page, card):
+        await call.locator("summary").first.click()
+        await expect(show_all).to_be_visible()
+    await page.screenshot(path=undeclared_outputs_dir() / f"{request.node.name}-call-open.png")
+
+    await read_at(page, show_all, 0.3)
+    async with holding_still(page, call.get_by_text("Output", exact=True)):
+        await show_all.click()
+        await expect(call.get_by_role("button", name="Show less")).to_be_visible()
+    await page.screenshot(path=undeclared_outputs_dir() / f"{request.node.name}-output-open.png")
+
+
+async def test_opening_a_call_while_output_streams_in_leaves_the_clicked_line_where_it_was(
+    thread_browser: ThreadBrowser,
+) -> None:
+    page = thread_browser.page
+    await append_run_among_rows(thread_browser, below=40)
+    history = page.get_by_role("region", name="Thread history", exact=True)
+    run = history.locator("[data-thread-anchor]").filter(has_text="3 tool calls")
+    await read_at(page, run, 0.1)
+
+    call, card = tool_call_in(run, "a")
+    show_all = call.get_by_role("button", name="Show all 60 lines")
+    async with output_streaming_in(thread_browser) as delivered:
+        async with holding_still(page, run):
+            await run.locator("summary").first.click()
+            await expect(call).to_be_visible()
+        async with holding_still(page, card):
+            await call.locator("summary").first.click()
+            await expect(show_all).to_be_visible()
+        await read_at(page, show_all, 0.3)
+        async with holding_still(page, call.get_by_text("Output", exact=True)):
+            await show_all.click()
+            await expect(call.get_by_role("button", name="Show less")).to_be_visible()
+    assert len(delivered) >= 3, "the tail's output was not arriving while the call was opened"
 
 
 async def capture_reading_anchor(area: Locator) -> dict[str, str | float]:

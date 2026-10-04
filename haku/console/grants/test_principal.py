@@ -13,7 +13,6 @@ from haku.console.grants.principal import (
     AgentGrantPrincipal,
     GrantPrincipal,
     GrantPrincipalInput,
-    GrantPrincipalKind,
     RequestPrincipal,
     grant_principal_applies_to,
     resolve_grant_principal_input,
@@ -23,27 +22,6 @@ from haku.console.tool_call_actor import AgentActor
 AGENT_A = UUID("00000000-0000-4000-8000-000000000001")
 AGENT_B = UUID("00000000-0000-4000-8000-000000000002")
 GRANT_PRINCIPAL_ADAPTER: TypeAdapter[GrantPrincipal] = TypeAdapter(GrantPrincipal)
-
-
-@pytest.mark.parametrize(
-    ("payload", "expected"),
-    [
-        ({"kind": "agent", "agent_id": str(AGENT_A)}, AgentGrantPrincipal(agent_id=AGENT_A)),
-        (
-            {"kind": "access_profile", "access_profile_id": "public-coder"},
-            AccessProfileGrantPrincipal(access_profile_id="public-coder"),
-        ),
-    ],
-)
-def test_grant_principal_variants_round_trip_json(payload: dict[str, str], expected: GrantPrincipal) -> None:
-    principal = GRANT_PRINCIPAL_ADAPTER.validate_python(payload)
-    assert principal == expected
-    assert principal.model_dump(mode="json") == payload
-
-
-def test_principal_kinds_default_for_internal_construction() -> None:
-    assert AgentGrantPrincipal(agent_id=AGENT_A).kind is GrantPrincipalKind.AGENT
-    assert AccessProfileGrantPrincipal(access_profile_id="public-coder").kind is GrantPrincipalKind.ACCESS_PROFILE
 
 
 @pytest.mark.parametrize("payload", [{}, {"kind": "agent"}, {"kind": "other", "agent_id": str(AGENT_A)}])

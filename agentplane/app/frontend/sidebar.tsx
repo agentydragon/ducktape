@@ -7,11 +7,7 @@ import { ActionIcon, Alert, Switch, Text, Tooltip } from "@mantine/core";
 import IconArchive from "@tabler/icons-react/dist/esm/icons/IconArchive.mjs";
 import IconArchiveOff from "@tabler/icons-react/dist/esm/icons/IconArchiveOff.mjs";
 import IconBox from "@tabler/icons-react/dist/esm/icons/IconBox.mjs";
-import IconCircleX from "@tabler/icons-react/dist/esm/icons/IconCircleX.mjs";
-import IconClock from "@tabler/icons-react/dist/esm/icons/IconClock.mjs";
 import IconListCheck from "@tabler/icons-react/dist/esm/icons/IconListCheck.mjs";
-import IconPlayerPause from "@tabler/icons-react/dist/esm/icons/IconPlayerPause.mjs";
-import IconPlayerPlay from "@tabler/icons-react/dist/esm/icons/IconPlayerPlay.mjs";
 import IconPlus from "@tabler/icons-react/dist/esm/icons/IconPlus.mjs";
 import IconSettings from "@tabler/icons-react/dist/esm/icons/IconSettings.mjs";
 import IconX from "@tabler/icons-react/dist/esm/icons/IconX.mjs";
@@ -20,7 +16,9 @@ import { Link, useLocation, useMatch, useNavigate } from "react-router";
 
 import { archiveThread, displayableError, type SandboxView, type ThreadView } from "./client";
 import { LiveStatus, useRequiredThreadsLive, type Live, type ThreadsSnapshot } from "./live";
-import { sandboxStatusDetail, sandboxReady } from "./sandbox_status";
+import { MarkGlyph } from "./mark_glyph";
+import { sandboxStatusDetail, sandboxSummary } from "./sandbox_status";
+import { SANDBOX_STATUS_MARKS } from "./status_mark";
 import "./sidebar.css";
 import { ConnectionIndicator } from "./stream_status";
 import { archivedCount, groupThreads, type ThreadGroup } from "./thread_groups";
@@ -156,22 +154,17 @@ function GroupStateIcon({ sandbox }: { sandbox: SandboxView | null }): JSX.Eleme
   if (sandbox === null) {
     return (
       <Tooltip label="Sandbox deleted" withArrow>
-        <span className="agentplane-sidebar-state-icon deleted">
-          <IconCircleX size={13} />
+        <span className="agentplane-sidebar-state-icon" data-status="gone">
+          <MarkGlyph mark={SANDBOX_STATUS_MARKS.gone} />
         </span>
       </Tooltip>
     );
   }
-  const detail = sandboxStatusDetail(sandbox);
-  const [kind, Icon] = sandboxReady(sandbox)
-    ? (["running", IconPlayerPlay] as const)
-    : sandbox.operating_mode === "Suspended"
-      ? (["suspended", IconPlayerPause] as const)
-      : (["pending", IconClock] as const);
+  const { kind } = sandboxSummary(sandbox);
   return (
-    <Tooltip label={detail} multiline style={{ whiteSpace: "pre-line" }} withArrow>
-      <span className={`agentplane-sidebar-state-icon ${kind}`}>
-        <Icon size={13} />
+    <Tooltip label={sandboxStatusDetail(sandbox)} multiline style={{ whiteSpace: "pre-line" }} withArrow>
+      <span className="agentplane-sidebar-state-icon" data-status={kind}>
+        <MarkGlyph mark={SANDBOX_STATUS_MARKS[kind]} />
       </span>
     </Tooltip>
   );

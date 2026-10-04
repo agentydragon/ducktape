@@ -1947,13 +1947,10 @@ py_test(
     data = ["@nodejs_linux_amd64//:bin/node"],
     env = {"JSII_NODE": "$(rootpath @nodejs_linux_amd64//:bin/node)"},
     deps = [
-        ":agent_access_profiles",
         ":agent_namespace_rbac",
         ":flux",
         ":namespace_access",
         ":namespaces",
-        "//cluster/cdk8s/kyverno:app",
-        "//cluster/cdk8s/kyverno:policies",
         "//cluster/cdk8s/providers/flux:kustomization",
         "@pypi//cdk8s",
         "@pypi//pytest",

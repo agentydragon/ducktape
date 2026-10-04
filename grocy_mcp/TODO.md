@@ -36,8 +36,7 @@ remainder needs a bit more care:
 Tests currently share a session-scoped Grocy container and use uuid
 suffixes to avoid name collisions. Container startup is ~25-30s
 (LinuxServer image runs s6-overlay + nginx + PHP + SQLite migrations),
-so function-scoped containers would make the suite too slow (~4-5 min
-for 9 tests).
+so function-scoped containers would make the suite too slow.
 
 Options to explore:
 

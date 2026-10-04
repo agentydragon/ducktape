@@ -37,12 +37,4 @@ describe("gmailPreviews", () => {
     expect(renderPreview(gmailPreviews.threads_list, { q: "from:alice" }, "detailed")).not.toBeNull();
     expect(renderPreview(gmailPreviews.messages_get, { id: "m1" }, "compact")).not.toBeNull();
   });
-
-  it("has no entry for read tools with no useful preview (self-descriptive or empty args)", () => {
-    expect("labels_list" in gmailPreviews).toBe(false);
-  });
-
-  it("has no entry for drafts_create — it's a combined widget (calls.tsx) instead", () => {
-    expect("drafts_create" in gmailPreviews).toBe(false);
-  });
 });

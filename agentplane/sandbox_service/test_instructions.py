@@ -34,7 +34,8 @@ def test_notification_workflow_and_examples_augment_default_or_custom_prompt(con
     assert "http://notifications.test.invalid:8080/v1/inboxes/INBOX_ID/acknowledgement" in instructions
     assert '"idempotency_key": "follow-REAL_REQUEST_ID"' in instructions
     assert '"client_key"' not in instructions
-    assert '"after_sequence": 0' in instructions
+    assert '"source": {"provider": "actions", "request_id": "REAL_REQUEST_ID", "after_sequence": 0}' in instructions
+    assert "event.request_id and event.sequence" in instructions
     assert '"through_cursor": LAST_HANDLED_CURSOR' in instructions
     assert "Reads and runner delivery receipts never acknowledge." in instructions
     assert "unsubscribing is not withdrawal." in instructions

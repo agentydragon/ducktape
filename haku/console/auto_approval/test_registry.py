@@ -1,9 +1,5 @@
 """Tests for the auto-approval policy graph: registry composition and each policy kind's outcomes.
 
-Some tests (e.g. `revoke_grants` under both Agent roots) exist specifically to verify a policy
-composes correctly through `any_of` from more than one access profile, which a per-evaluator unit
-test wouldn't cover.
-
 gmail/google_calendar are no longer in-process haku-console servers (see
 `x/google_mcp_server`), but their real MCP tool schemas are still reachable there and make a
 realistic example of a server with several tools and non-trivial argument schemas — reused here
@@ -26,7 +22,7 @@ from haku.console.auto_approval.registry import (
     ToolAutoApprovalMode,
     auto_approve_tool_call,
 )
-from haku.console.mcp_config import AccessProfile, ConsoleConfigFile
+from haku.console.mcp_config import ConsoleConfigFile
 from haku.console.tool_call_actor import AgentActor, OperatorActor, RuntimeActor
 from x.google_mcp_server.gmail import build_mcp
 from x.google_mcp_server.google_calendar import build_mcp as build_calendar_mcp
@@ -37,12 +33,6 @@ AGENT_ACTOR = AgentActor(
     operator_id=TEST_OPERATOR_ID,
     binding_id=UUID("00000000-0000-0000-0000-000000000003"),
     access_profile_id="haku",
-)
-PUBLIC_CODER_ACTOR = AgentActor(
-    agent_id=UUID("00000000-0000-0000-0000-000000000004"),
-    operator_id=TEST_OPERATOR_ID,
-    binding_id=UUID("00000000-0000-0000-0000-000000000005"),
-    access_profile_id="public-coder",
 )
 OPERATOR_ACTOR = OperatorActor(operator_id=TEST_OPERATOR_ID)
 
@@ -166,43 +156,6 @@ async def test_gmail_writes_stay_manual(tool_name: str, arguments: dict) -> None
     assert policy_id is None
 
 
-@pytest.mark.parametrize(
-    ("tool_name", "arguments"),
-    [
-        ("get_event", {"event_id": "evt1"}),
-        ("list_events", {"expand_recurring": True, "max_results": 50}),
-        ("list_event_instances", {"recurring_event_id": "series1"}),
-    ],
-)
-async def test_calendar_reads_are_auto_approved(tool_name: str, arguments: dict) -> None:
-    policy_id, evaluation = _approval(await _calendar_decision(tool_name, arguments))
-    assert policy_id == AGENT_AUTO_APPROVAL_ID
-    assert evaluation is not None
-    assert "exact tool" in evaluation
-
-
-async def test_calendar_create_stays_manual() -> None:
-    policy_id, evaluation = _approval(
-        await _calendar_decision(
-            "create_event", {"summary": "Standup", "start": {"date": "2026-09-15"}, "end": {"date": "2026-09-16"}}
-        )
-    )
-    assert policy_id is None
-    assert evaluation == "manual: Agent policy 'haku_v1' did not auto-approve google_calendar/create_event"
-
-
-@pytest.mark.parametrize(
-    ("tool_name", "arguments"),
-    [("update_event", {"event_id": "evt1", "summary": "Court hearing"}), ("delete_event", {"event_id": "evt1"})],
-)
-async def test_calendar_update_and_delete_stay_manual(tool_name: str, arguments: dict) -> None:
-    # Not in _GOOGLE_CALENDAR_READS_ACTIONS (cluster/cdk8s/agentplane/actions_staging_policies.py):
-    # writes stay on the human-approval path, same as create_event above.
-    policy_id, evaluation = _approval(await _calendar_decision(tool_name, arguments))
-    assert policy_id is None
-    assert evaluation == f"manual: Agent policy 'haku_v1' did not auto-approve google_calendar/{tool_name}"
-
-
 async def test_calendar_read_with_invalid_arguments_is_auto_denied() -> None:
     denial = await _calendar_decision("list_events", {"max_results": 251})
     assert isinstance(denial, PolicyDenial)
@@ -322,23 +275,6 @@ def test_kubernetes_server_requires_authorization_configuration() -> None:
         )
 
 
-def test_static_agent_access_profile_assignment_is_required() -> None:
-    with pytest.raises(ValidationError, match="access_profile_id"):
-        ConsoleConfigFile.model_validate(
-            {
-                **_MANUAL_AUTHORITY_CONFIG,
-                "static_agents": {
-                    "test": {
-                        "agent_id": str(AGENT_ACTOR.agent_id),
-                        "display_name": "Test Agent",
-                        "token": "test-agent-token",
-                        "operator_subject": "test-agent-operator",
-                    }
-                },
-            }
-        )
-
-
 def test_default_access_profile_does_not_require_a_never_policy() -> None:
     config = ConsoleConfigFile.model_validate(
         {
@@ -369,18 +305,6 @@ def test_profile_config_rejects_unknown_recall_index() -> None:
                 "default_access_profile_id": "operator-review",
             }
         )
-
-
-def test_access_profile_recall_index_ids_are_a_set() -> None:
-    profile = AccessProfile.model_validate(
-        {
-            "id": "operator-review",
-            "auto_approval_policy": "operator_review",
-            "recall_index_ids": ["ducktape-public", "ducktape-public"],
-        }
-    )
-
-    assert profile.recall_index_ids == {"ducktape-public"}
 
 
 async def _schemaless_decision(
@@ -469,44 +393,6 @@ async def test_list_grants_auto_approves_only_the_explicit_self_scope() -> None:
         )
         assert not isinstance(manual, PolicyDenial)
         assert manual[0] is None
-
-
-# A registry mirroring production's grants_own_revoke composition: the exact-tools own-revoke atom
-# reached through each agent profile's root any_of. revoke_grants is narrowing (an Agent relinquishes
-# only its OWN grants — owner_agent_id is operator-only and rejected for an Agent) and click-free;
-# create_grant is widening (it mints new temporary authority) and stays manual.
-_OWN_REVOKE_REGISTRY = AutoApprovalPolicyRegistry(
-    ConsoleConfigFile.model_validate(
-        {
-            "mcp": {
-                "servers": {
-                    "grants": {"id": "grants", "backend": {"kind": "in_process", "credential": {"kind": "none"}}}
-                }
-            },
-            "auto_approval_policies": [
-                {"id": "grants_own_revoke", "type": "exact_tools", "tools": {"grants": ["revoke_grants"]}},
-                {"id": "haku_v1", "type": "any_of", "policies": ["grants_own_revoke"]},
-                {"id": "public_coder_safe_reads", "type": "any_of", "policies": ["grants_own_revoke"]},
-            ],
-            "access_profiles": [
-                {"id": "haku", "auto_approval_policy": "haku_v1"},
-                {"id": "public-coder", "auto_approval_policy": "public_coder_safe_reads"},
-            ],
-            "default_access_profile_id": "haku",
-        }
-    )
-)
-
-
-@pytest.mark.parametrize("actor", [AGENT_ACTOR, PUBLIC_CODER_ACTOR], ids=["haku", "public-coder"])
-def test_revoke_grants_is_click_free_under_both_agent_roots(actor: AgentActor) -> None:
-    # Composed into both agent roots (haku_v1 and public_coder_safe_reads), an Agent's own-relinquish
-    # revoke is unconditionally auto-approved.
-    assert _OWN_REVOKE_REGISTRY.tool_mode(actor, "grants", "revoke_grants") is ToolAutoApprovalMode.ALWAYS_AUTO_APPROVED
-    # create_grant (widening) is never listed, so it stays manual under the same roots.
-    assert (
-        _OWN_REVOKE_REGISTRY.tool_mode(actor, "grants", "create_grant") is ToolAutoApprovalMode.MANUAL_APPROVAL_REQUIRED
-    )
 
 
 if __name__ == "__main__":

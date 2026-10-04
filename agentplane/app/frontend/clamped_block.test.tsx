@@ -3,7 +3,7 @@ import { act, type JSX, useState } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { mount } from "./actions/testing";
-import { ClampedBlock } from "./clamped_block";
+import { ClampedBlock, lineCount } from "./clamped_block";
 
 // happy-dom does no layout, so the content's height is whatever a test says it is.
 function contentHeight(pixels: number): void {
@@ -39,6 +39,26 @@ describe("ClampedBlock", () => {
     expect(container.querySelector('[data-clamped="true"]')).not.toBeNull();
   });
 
+  it("says how many lines it hides, when told", async () => {
+    contentHeight(1000);
+    const container = await mount(
+      <ClampedBlock maxHeightRem={10} lines={32}>
+        test-content
+      </ClampedBlock>
+    );
+    expect(control(container, "Show all 32 lines")).toBeDefined();
+  });
+
+  it("does not count a single line, which can only be one that wraps", async () => {
+    contentHeight(1000);
+    const container = await mount(
+      <ClampedBlock maxHeightRem={10} lines={1}>
+        test-content
+      </ClampedBlock>
+    );
+    expect(control(container, "Show all")).toBeDefined();
+  });
+
   it("takes its expansion from the caller when given one", async () => {
     contentHeight(1000);
     const expand = vi.fn();
@@ -66,5 +86,11 @@ describe("ClampedBlock", () => {
     const container = await mount(<Retained />);
     expect(container.querySelector('[data-clamped="true"]')).toBeNull();
     expect(control(container, "Show less")).toBeDefined();
+  });
+});
+
+describe("lineCount", () => {
+  it("counts a final newline as ending a line, not starting one", () => {
+    expect([lineCount("a"), lineCount("a\nb"), lineCount("a\nb\n"), lineCount("")]).toEqual([1, 2, 2, 1]);
   });
 });

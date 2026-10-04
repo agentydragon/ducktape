@@ -232,10 +232,6 @@ no venv and no site-packages. Python tests are the usual victims only because th
 the largest, so they touch the layer most; nothing about `rules_python` or `bootstrap_impl=script` is
 at fault, and neither is any test in this repo.
 
-**Caveat on the earlier phase numbers in this entry** (the 252.83s VM prep)**Verified fix.** With the `py_test` default raised to `medium`, the same ten targets over ten runs
-each: **100 of 100 passed, no timeouts**, against 2-4 in 10 failing per target before. Several passing
-runs took 90-101s — above `small`'s cap outright, so those could not have passed under it.
-
 **Sized where it hits, and the default stays `small` (Rai).** The seven
 `//agentplane/egress` targets carry `size = "medium"` because they are the ones observed failing:
 one on CI, the rest at 2-4 in 10 locally. The `devinfra/python/defs.bzl` default is unchanged, so a

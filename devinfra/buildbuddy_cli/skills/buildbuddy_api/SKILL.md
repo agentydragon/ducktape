@@ -325,9 +325,11 @@ Proto definitions for request/response schemas:
 
 ## Known Limitations
 
-**Fork PRs don't have BuildBuddy invocations.** GitHub Actions does not pass
-`BUILDBUDDY_API_KEY` to workflows triggered by fork pull requests (head repo !=
-base repo). As a result, `bazel-check` and `bazel-test` are skipped entirely on
-fork PRs (see [#787](https://github.com/agentydragon/ducktape/issues/787)).
-When investigating a failed fork PR, BuildBuddy has no record of the run — check
-GitHub Actions logs directly instead.
+**Fork PRs have BuildBuddy invocations only through `trusted-fork-pr-ci.yml`.**
+GitHub Actions does not pass `BUILDBUDDY_API_KEY` to `pull_request` workflows
+triggered by forks (head repo != base repo), so `ci.yml` skips `bazel-ci` for them.
+Revisions authored by the agent identity or the repository owner run it
+automatically through `trusted-fork-pr-ci.yml`; every other author waits for
+review of the `fork-ci-review` environment. When investigating a fork PR that
+has not run there, BuildBuddy has no record of the run — check GitHub Actions
+logs directly instead.

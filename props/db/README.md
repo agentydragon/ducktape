@@ -4,7 +4,7 @@ PostgreSQL-based storage for properties evaluation results.
 
 ## Database Separation: Production vs Test
 
-We maintain **TWO separate databases** to ensure tests never affect production data:
+Tests never touch production data: they run against their own databases.
 
 ### Production Database: `eval_results`
 
@@ -12,11 +12,11 @@ We maintain **TWO separate databases** to ensure tests never affect production d
 - **DO NOT DROP/RECREATE**: Contains valuable data
 - **Connection**: Uses standard `PG*` environment variables (set by devenv)
 
-### Test Database: `eval_results_test`
+### Test Databases: `props_test_<test id>`
 
 - **Purpose**: Integration tests only
-- **FREELY DROP/RECREATE**: Tests use fixtures to reset state
-- **Connection**: Uses individual environment variables for test database configuration
+- **FREELY DROP/RECREATE**: Each test gets its own database inside a session-scoped Testcontainers PostgreSQL container (`props/testing/fixtures/db.py`)
+- **Connection**: Provided by the fixtures, not environment variables
 
 ## Setup
 
@@ -73,4 +73,4 @@ not by different roles or username patterns.
 
 ## Running Tests
 
-Tests use fixtures that **only affect eval_results_test**. Production data is never touched.
+Tests use fixtures that **only affect their own per-test databases**. Production data is never touched.

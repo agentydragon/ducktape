@@ -160,7 +160,8 @@ MANAGED_GRANTS = {
     "haku": (*SHARED_DIAGNOSTICS, *TESTING_ACCESS, *HAKU_EXTRAS, "coinbase-credentials"),
 }
 STATIC_GRANTS = {
-    # Independently scoped legacy OAuth identity, not an alias for the Haku profile.
+    # Independently scoped legacy OAuth identity, not an alias for the Haku profile. Widening it
+    # fails cluster/validation's test_legacy_agentplane_accounts_are_not_haku_profile_aliases.
     "claude-ai": (
         *TESTING_ACCESS,
         "haku-console-metadata",

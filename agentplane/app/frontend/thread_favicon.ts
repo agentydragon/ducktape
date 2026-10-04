@@ -1,5 +1,5 @@
 import type { ThreadTabStatus } from "./tab_metadata";
-import { THREAD_STATUS_COLORS, THREAD_STATUS_RUN_CYCLE_MS } from "./thread_status_palette";
+import { CHEVRON_CYCLE_MS, isMoving, THREAD_STATUS_MARKS, type StatusMark, type ThreadMarkShape } from "./status_mark";
 
 const FAVICON_ID = "agentplane-favicon";
 const FAVICON_PATH = "/favicon.svg";
@@ -36,38 +36,44 @@ function statusChevrons(color: string, phase: number): string {
   return `<clipPath id="corner"><path d="M13.5 16H31.5V32H13.5Z"/></clipPath><g clip-path="url(#corner)" fill="none" stroke-linecap="round" stroke-linejoin="round">${stroke("#102a43", 4)}${stroke(color, 2.6)}</g>`;
 }
 
-function faviconUrl(status: ThreadTabStatus, phase: number): string {
-  const color = THREAD_STATUS_COLORS[status.kind];
-  const mark = status.kind === "running" ? statusChevrons(color, phase) : statusDot(color);
-  const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32"><path d="M5 14.5 27 5 18 27l-3.7-9.1L5 14.5Z" fill="none" stroke="#1c7ed6" stroke-linejoin="round" stroke-width="2.5"/><path d="m14.3 17.9 6.3-6.1" fill="none" stroke="#1c7ed6" stroke-linecap="round" stroke-width="2"/>${mark}</svg>`;
+function statusGlyph(mark: StatusMark<ThreadMarkShape>, phase: number): string {
+  switch (mark.shape) {
+    case "dot":
+      return statusDot(mark.color);
+    case "chevrons":
+      return statusChevrons(mark.color, phase);
+  }
+}
+
+function faviconUrl(mark: StatusMark<ThreadMarkShape>, phase: number): string {
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32"><path d="M5 14.5 27 5 18 27l-3.7-9.1L5 14.5Z" fill="none" stroke="#1c7ed6" stroke-linejoin="round" stroke-width="2.5"/><path d="m14.3 17.9 6.3-6.1" fill="none" stroke="#1c7ed6" stroke-linecap="round" stroke-width="2"/>${statusGlyph(mark, phase)}</svg>`;
   return `data:image/svg+xml,${encodeURIComponent(svg)}`;
 }
 
-/** Set the thread's status in the favicon. A running turn moves its chevrons in step with the in-page indicator. */
+/** Set the thread's status in the favicon, drawn from the same mark as the in-page indicator and moving in step with it. */
 export function installThreadFavicon(status: ThreadTabStatus, pulseEpoch: ThreadFaviconPulseEpoch): () => void {
   const icon = document.getElementById(FAVICON_ID);
   if (!(icon instanceof HTMLLinkElement)) return () => {};
 
-  const running = status.kind === "running";
+  const mark = THREAD_STATUS_MARKS[status.kind];
+  const moving = isMoving(mark);
   const motionPreference = window.matchMedia("(prefers-reduced-motion: reduce)");
   let timer: number | undefined;
 
   const update = (): void => {
     const startedAt = pulseEpoch.current ?? Date.now();
     const phase =
-      running && !motionPreference.matches
-        ? ((Date.now() - startedAt) % THREAD_STATUS_RUN_CYCLE_MS) / THREAD_STATUS_RUN_CYCLE_MS
-        : 0;
-    icon.href = faviconUrl(status, phase);
+      moving && !motionPreference.matches ? ((Date.now() - startedAt) % CHEVRON_CYCLE_MS) / CHEVRON_CYCLE_MS : 0;
+    icon.href = faviconUrl(mark, phase);
   };
 
   const syncAnimation = (event?: MediaQueryListEvent): void => {
     // The CSS animation is removed for reduced motion. Re-enabling motion starts that
     // animation from its first frame, so restart the favicon's shared epoch at the same time.
-    if (event && !event.matches && running) pulseEpoch.current = Date.now();
-    if (running && !motionPreference.matches && timer === undefined) {
+    if (event && !event.matches && moving) pulseEpoch.current = Date.now();
+    if (moving && !motionPreference.matches && timer === undefined) {
       timer = window.setInterval(update, FRAME_INTERVAL_MS);
-    } else if ((!running || motionPreference.matches) && timer !== undefined) {
+    } else if ((!moving || motionPreference.matches) && timer !== undefined) {
       window.clearInterval(timer);
       timer = undefined;
     }

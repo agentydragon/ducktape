@@ -2,7 +2,7 @@ import { Alert, Badge, Box, Button, Group, Paper, Stack, Text, type MantineColor
 import { ItemKind, RecoveryDisposition } from "../../../protocol/event_pb";
 import { type JSX, type ReactNode, useLayoutEffect, useRef, useState } from "react";
 
-import { ClampedBlock } from "../clamped_block";
+import { ClampedBlock, lineCount } from "../clamped_block";
 import { InlineCode } from "../code_block";
 import { COMMAND_MAX_HEIGHT_REM, CommandCallView, OutputBlock } from "../command_view";
 import { HighlightedText } from "../json_view";
@@ -390,6 +390,9 @@ function ToolCard({
           ? "streaming"
           : "incomplete"
         : undefined;
+  // TODO: only if folded lines ever need optimizing. Opening a run reads every call's whole arguments to
+  // draw its one-line summary (`PayloadShape.want` fetches whole bodies); a bounded summary computed in
+  // the thread projection would spare a folded row the fetch.
   return (
     <OptionalPayload reference={entity.argumentsRef}>
       {(args) => {
@@ -414,7 +417,11 @@ function ToolCard({
                   <Text size="xs" c="dimmed" mb={4}>
                     Arguments
                   </Text>
-                  <ClampedBlock maxHeightRem={COMMAND_MAX_HEIGHT_REM} expansion={input}>
+                  <ClampedBlock
+                    maxHeightRem={COMMAND_MAX_HEIGHT_REM}
+                    lines={lineCount(argumentsBody)}
+                    expansion={input}
+                  >
                     <HighlightedText text={argumentsBody} />
                   </ClampedBlock>
                 </div>

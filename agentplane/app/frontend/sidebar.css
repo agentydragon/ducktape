@@ -131,16 +131,6 @@
   flex: 0 0 auto;
 }
 
-.agentplane-sidebar-state-icon.running {
-  color: var(--mantine-color-green-6);
-}
-
-.agentplane-sidebar-state-icon.suspended,
-.agentplane-sidebar-state-icon.deleted,
-.agentplane-sidebar-state-icon.pending {
-  color: var(--mantine-color-dimmed);
-}
-
 .agentplane-sidebar-row {
   display: flex;
   align-items: center;

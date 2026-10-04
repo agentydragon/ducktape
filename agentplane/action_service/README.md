@@ -413,7 +413,8 @@ manifests grants exactly that.
 Each policy kind is one module under `policies/` holding its wire model and its evaluator
 (`exact_actions`; `argument_schema` over the `jsonschema` package; `github_repository` and
 `github_public_repository` over the `github_policy` package, which lives here and holds the search-qualifier
-boundaries and the unauthenticated visibility lookup);
+boundaries and the unauthenticated visibility lookup; `home_assistant_entity_control`, an allow-list
+over the arguments of `ha_call_service`);
 `policies/registry` assembles the `type`-discriminated union and dispatches evaluation after the
 shared "is the Action listed" gate. `policy_evaluation` holds `resolve_bindings` (the caller's
 unexpired valid bindings and the valid sets they name, nothing before sync) and

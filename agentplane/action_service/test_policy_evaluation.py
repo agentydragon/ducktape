@@ -1,6 +1,6 @@
 """How a caller's bindings resolve from the index at one instant, what the caller and the operator
-read of that resolution, and the provider deciding the GitHub repository kinds over it: a match
-carries the repository in evidence, every miss is no opinion."""
+read of that resolution, and the provider deciding the GitHub repository kinds and the Home
+Assistant kind over it: a match carries its policy in evidence, every miss is no opinion."""
 
 from __future__ import annotations
 
@@ -38,6 +38,7 @@ from agentplane.action_service.policy_view import (
     ExactActionsView,
     GitHubPublicRepositoryView,
     GitHubRepositoryView,
+    HomeAssistantEntityControlView,
     caller_view,
     subject_view,
 )
@@ -150,6 +151,11 @@ def test_every_kind_projects_to_its_own_view() -> None:
                 SCHEMA_POLICY,
                 {"type": "github_repository", "actions": {"github": ["search_code"]}, "owner": "o", "repository": "r"},
                 {"type": "github_public_repository", "actions": {"github": ["get_file_contents"]}},
+                {
+                    "type": "home_assistant_entity_control",
+                    "actions": {"ha-test": ["ha_call_service"]},
+                    "entities": {"light.test_lamp": ["turn_on", "toggle"], "fan.test_fan": ["turn_off"]},
+                },
             ],
         ),
         binding("b-kinds", WORKLOAD.model_dump(), ["set-kinds"]),
@@ -160,6 +166,8 @@ def test_every_kind_projects_to_its_own_view() -> None:
     assert (views[2].owner, views[2].repository, views[2].actions) == ("o", "r", {"github": ["search_code"]})
     assert isinstance(views[3], GitHubPublicRepositoryView)
     assert views[3].actions == {"github": ["get_file_contents"]}
+    assert isinstance(views[4], HomeAssistantEntityControlView)
+    assert views[4].entities == {"fan.test_fan": ["turn_off"], "light.test_lamp": ["toggle", "turn_on"]}
 
 
 @pytest.fixture
@@ -391,6 +399,57 @@ async def test_github_public_repository_set_never_approves_without_a_confirmed_l
     outcome = await provider.decide(
         _context(GET_FILE, {"owner": "someone", "repo": "public-thing", "path": "README.md"}, PUBLIC_SET)
     )
+    assert outcome.verdict is ProviderVerdict.NO_OPINION
+    assert outcome.evidence is None
+
+
+CALL_SERVICE = ActionIdentity(group="ha-test", name="ha_call_service")
+HOME_ASSISTANT_SET = policy_set(
+    "set-home-assistant",
+    [
+        {
+            "type": "home_assistant_entity_control",
+            "actions": {"ha-test": ["ha_call_service"]},
+            "entities": {"light.test_lamp": ["turn_on"]},
+        }
+    ],
+)
+LAMP_ON: dict[str, JsonValue] = {"domain": "light", "service": "turn_on", "entity_id": "light.test_lamp"}
+
+
+async def test_home_assistant_set_auto_approves_a_configured_service_call(
+    github_visibility: Callable[..., RepositoryVisibilityService],
+) -> None:
+    assert isinstance(HOME_ASSISTANT_SET, ActionPolicySet)
+    provider = PolicySetDecisionProvider(visibility=github_visibility())
+    outcome = await provider.decide(_context(CALL_SERVICE, LAMP_ON, HOME_ASSISTANT_SET))
+    assert outcome.verdict is ProviderVerdict.ALLOW
+    assert outcome.evidence is not None
+    assert outcome.evidence.matched == MatchedPolicy(
+        namespace=NAMESPACE,
+        policy_set="set-home-assistant",
+        source="autoApproveIf",
+        index=0,
+        type=PolicyKind.HOME_ASSISTANT_ENTITY_CONTROL,
+    )
+
+
+@pytest.mark.parametrize(
+    ("action", "arguments"),
+    [
+        pytest.param(CALL_SERVICE, {**LAMP_ON, "ws_command": {"type": "config/anything"}}, id="websocket-escape-hatch"),
+        pytest.param(CALL_SERVICE, {**LAMP_ON, "entity_id": "light.test_other"}, id="another-entity"),
+        pytest.param(ActionIdentity(group="ha-test", name="ha_bulk_control"), LAMP_ON, id="unlisted-action"),
+    ],
+)
+async def test_home_assistant_set_misses_take_the_human_path(
+    action: ActionIdentity,
+    arguments: dict[str, JsonValue],
+    github_visibility: Callable[..., RepositoryVisibilityService],
+) -> None:
+    assert isinstance(HOME_ASSISTANT_SET, ActionPolicySet)
+    provider = PolicySetDecisionProvider(visibility=github_visibility())
+    outcome = await provider.decide(_context(action, arguments, HOME_ASSISTANT_SET))
     assert outcome.verdict is ProviderVerdict.NO_OPINION
     assert outcome.evidence is None
 

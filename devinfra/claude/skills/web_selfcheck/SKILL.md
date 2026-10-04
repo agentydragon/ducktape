@@ -15,8 +15,9 @@ specification at `devinfra/claude/claude_hook/SPEC.md`.
 ## How to use this skill
 
 1. **Read SPEC.md first.** It enumerates every behavior a healthy session
-   must satisfy, split into `### Common`, `### CLI only`, and
-   `### Web only` under the `## Observable Acceptance Criteria` heading.
+   must satisfy, as a numbered list under the `## Observable Acceptance Criteria`
+   heading; profile-specific criteria are prefixed `CLI profile:` or
+   `Web profile:`, the rest are common.
    The SPEC is the source of truth. If the SPEC and this skill disagree,
    the SPEC wins — update the skill.
 2. **Detect the profile.** `$DUCKTAPE_CLAUDE_HOOKS_PROFILE` (or the file

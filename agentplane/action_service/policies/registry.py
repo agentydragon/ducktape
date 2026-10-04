@@ -15,6 +15,7 @@ from agentplane.action_service.policies import (
     exact_actions,
     github_public_repository,
     github_repository,
+    home_assistant_entity_control,
 )
 from agentplane.action_service.policies.kind import Matched, NotMatched
 
@@ -22,7 +23,8 @@ Policy = Annotated[
     exact_actions.ExactActions
     | argument_schema.ArgumentSchema
     | github_repository.GitHubRepository
-    | github_public_repository.GitHubPublicRepository,
+    | github_public_repository.GitHubPublicRepository
+    | home_assistant_entity_control.HomeAssistantEntityControl,
     Field(discriminator="type"),
 ]
 
@@ -46,3 +48,5 @@ async def evaluate(
             return github_repository.evaluate(policy, action, arguments)
         case github_public_repository.GitHubPublicRepository():
             return await github_public_repository.evaluate(policy, action, arguments, visibility)
+        case home_assistant_entity_control.HomeAssistantEntityControl():
+            return home_assistant_entity_control.evaluate(policy, arguments)

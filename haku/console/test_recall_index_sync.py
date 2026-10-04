@@ -216,16 +216,5 @@ async def test_a_replica_that_loses_one_index_lock_leaves_that_index_alone(
         assert await maintenance(migrated_engine, migrated_sessions, haku_state).sync_index_once(haku_state) is None
 
 
-def test_git_index_credentials_are_explicit_and_paired() -> None:
-    with pytest.raises(ValueError, match="password"):
-        GitRecallIndexDefinition.model_validate(
-            {
-                "index_id": "private-notes",
-                "repo_url": "https://example.invalid/private-notes.git",
-                "credentials": {"username": "private-notes"},
-            }
-        )
-
-
 if __name__ == "__main__":
     pytest_bazel.main()

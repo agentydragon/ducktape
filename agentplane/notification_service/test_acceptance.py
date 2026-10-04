@@ -186,7 +186,7 @@ async def test_listen_deliver_read_ack_and_recover_lost_response_without_app(
                     body = {
                         "destination_ref": {"namespace": SANDBOX_NAMESPACE, "name": SANDBOX, "uid": SANDBOX_UID},
                         "session_id": "notifications",
-                        "request_id": request["id"],
+                        "source": {"provider": "actions", "request_id": request["id"]},
                         "idempotency_key": "listen",
                     }
                     assert (
@@ -210,12 +210,20 @@ async def test_listen_deliver_read_ack_and_recover_lost_response_without_app(
                     other_request.raise_for_status()
                     # Destination is owned, source is not: the worker's broad read access is not inherited.
                     assert (
-                        await agent.post("/v1/subscriptions", json=body | {"request_id": other_request.json()["id"]})
+                        await agent.post(
+                            "/v1/subscriptions",
+                            json=body | {"source": {"provider": "actions", "request_id": other_request.json()["id"]}},
+                        )
                     ).status_code == 403
                     response = await agent.post("/v1/subscriptions", json=body)
                     response.raise_for_status()
                     subscription = response.json()
                     assert subscription["idempotency_key"] == "listen"
+                    assert subscription["source"] == {
+                        "provider": "actions",
+                        "request_id": request["id"],
+                        "after_sequence": 0,
+                    }
                     assert "client_key" not in subscription
                     assert (await agent.post("/v1/subscriptions", json=body)).json() == subscription
                     initial = None
@@ -286,6 +294,10 @@ async def test_listen_deliver_read_ack_and_recover_lost_response_without_app(
                     assert page["notice"]["confirmed"]
                     assert page["inbox"]["acknowledged"] == 0
                     assert [entry["payload"]["state"] for entry in page["entries"]] == ["decision_pending", "denied"]
+                    assert [entry["event"] for entry in page["entries"]] == [
+                        {"provider": "actions", "request_id": request["id"], "sequence": sequence}
+                        for sequence in [1, 2]
+                    ]
                     assert (
                         await agent.get(
                             f"/v1/inboxes/{inbox_id}/entries", headers={"Authorization": "Bearer other-token"}

@@ -3,7 +3,7 @@
 Shared Puppeteer/Playwright infrastructure for visual render-health tests (see
 `visual-test-lib.mjs` for the JS/Puppeteer path used by `study_casino/frontend`,
 `props/frontend`, `airlock/frontend` and `agentplane/app/frontend`, and
-`frontend_visual.py` for the Python/Playwright path used by `study_casino/tests`
+`frontend_visual.py` for the Python/Playwright path used by `study_casino`
 and `finance/augur`). `capture.mjs` holds the lower-level page-prep/capture
 primitives (`prepareDeterministicPage`, `screenshotElement`, `waitForStable`) that
 `visual-test-lib.mjs` and haku console's own multi-scene renderers

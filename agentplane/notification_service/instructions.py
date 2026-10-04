@@ -34,11 +34,11 @@ build result before proceeding with deployment. React to useful outcomes, not ev
 
 POST {url}/v1/subscriptions with JSON:
 {{"destination_ref": YOUR_SUPPLIED_DESTINATION_REF, "session_id": YOUR_SUPPLIED_SESSION_ID,
- "idempotency_key": "follow-REAL_REQUEST_ID", "provider": "actions", "request_id": "REAL_REQUEST_ID",
- "after_sequence": 0, "lifetime_days": 7}}.
+ "idempotency_key": "follow-REAL_REQUEST_ID", "lifetime_days": 7,
+ "source": {{"provider": "actions", "request_id": "REAL_REQUEST_ID", "after_sequence": 0}}}}.
 Replace the destination/session values with their supplied JSON values and REAL_REQUEST_ID with the
 returned Action ID; do not invent an Action ID. Retry subscription creation with the identical key/body.
-Start from after_sequence=0, or the last Action event sequence you have actually recorded (not an inbox
+Start from source.after_sequence=0, or the last Action event sequence you have actually recorded (not an inbox
 cursor). History replay recovers approval/completion between submission and subscription creation.
 A failed creation is not a subscription. Retain the returned subscription id and inbox_id.
 
@@ -52,7 +52,9 @@ Incorporate updates into task state, resume eligible dependent work, or report f
 
 GET {url}/v1/inboxes/INBOX_ID/entries?after_cursor=0&limit=128.
 The response contains inbox.acknowledged, expired_through, and ordered entries. Process entries after
-the acknowledged cursor, paging after the last returned cursor. If expired_through exceeds your cursor,
+the acknowledged cursor, paging after the last returned cursor. Each entry identifies its provider in
+event.provider; Actions entries carry event.request_id and event.sequence, with the retained Action
+event in payload. If expired_through exceeds your cursor,
 explicitly account for the retention gap. Handle the contiguous prefix, then PUT
 {url}/v1/inboxes/INBOX_ID/acknowledgement with {{"through_cursor": LAST_HANDLED_CURSOR}}.
 This acknowledges ALL entries through that cursor; do not skip unhandled entries, including ones for

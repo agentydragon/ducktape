@@ -59,7 +59,7 @@ End-to-end, no Link UI: creates a fake public_token via `/sandbox/public_token/c
 exchanges it for an access_token, pulls `/accounts/get` and `/transactions/sync`.
 
 ```bash
-PLAID_ENV=sandbox bb run //plaid_utils:sandbox_smoke
+PLAID_ENV=sandbox bb run //finance/plaid/db:sandbox_smoke_bin
 ```
 
 ## Real-account links

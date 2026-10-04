@@ -24,6 +24,10 @@ browser on desktop and phone.
 - **A message actively streaming or otherwise resizing anywhere else** — off-screen above or below
   the viewport, or while the reader is not following — must not move the reader's scroll position,
   even by a pixel.
+- **Opening or closing a row** — a run, a tool call, an output past its height cap — keeps the row
+  the reader clicked in place, growing or shrinking below it, while messages arrive or the reader
+  follows the bottom. The click disengages following until the reader returns to the bottom,
+  unless the whole thread fits the view and has nothing to scroll away from.
 - **A deliberate scroll** (wheel, drag, keyboard, touch) away from the bottom disengages following
   immediately, without lag or fighting the input.
 - **Returning to the bottom** re-engages following, with the same tolerance as above.

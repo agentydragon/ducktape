@@ -10,12 +10,13 @@ from alembic import command
 from alembic.config import Config
 from sqlalchemy import text, update
 from sqlalchemy.engine import Connection
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncEngine
 
 from agentplane.action_service.models import ActionEventView, ActionState
 from agentplane.notification_service.database_migrate import RUNNER
 from agentplane.notification_service.db import Entry, Inbox, Subscription
-from agentplane.notification_service.models import DestinationRef, Subscribe, SubscriptionUpdate
+from agentplane.notification_service.models import ActionsSource, DestinationRef, Subscribe, SubscriptionUpdate
 from agentplane.notification_service.store import ClaimLostError, ConflictError, NotFoundError, Store
 from agentplane.protocol import command_pb2, event_log_pb2, event_pb2
 from agentplane.subjects import ServiceAccountRef
@@ -28,7 +29,7 @@ BODY = Subscribe(
     destination_ref=DestinationRef(namespace="test", name="sandbox", uid="sandbox-uid"),
     session_id="session",
     idempotency_key="first",
-    request_id=uuid4(),
+    source=ActionsSource(provider="actions", request_id=uuid4()),
 )
 
 
@@ -54,20 +55,31 @@ async def test_owner_idempotence_cancel_and_version(store: Store) -> None:
     assert other_session.id != first.id
     assert other_session.idempotency_key == first.idempotency_key
     with pytest.raises(ConflictError):
-        await store.subscribe(PRINCIPAL, BODY.model_copy(update={"request_id": uuid4()}))
+        await store.subscribe(
+            PRINCIPAL, BODY.model_copy(update={"source": ActionsSource(provider="actions", request_id=uuid4())})
+        )
+    with pytest.raises(ConflictError):
+        await store.subscribe(
+            PRINCIPAL, BODY.model_copy(update={"source": BODY.source.model_copy(update={"after_sequence": 1})})
+        )
     with pytest.raises(NotFoundError):
         await store.read(ServiceAccountRef(namespace="test", name="other"), first.inbox_id, 0, 128)
-    paused = await store.change(PRINCIPAL.account, first.id, SubscriptionUpdate(version=1, paused=True))
-    assert paused.paused
+    before_renewal = datetime.now(UTC)
+    renewed = await store.change(PRINCIPAL.account, first.id, SubscriptionUpdate(version=1, lifetime_days=30))
+    assert renewed.version == 2
+    assert before_renewal + timedelta(days=30) <= renewed.expires_at <= datetime.now(UTC) + timedelta(days=30)
     with pytest.raises(ConflictError):
-        await store.change(PRINCIPAL.account, first.id, SubscriptionUpdate(version=1, paused=False))
+        await store.change(PRINCIPAL.account, first.id, SubscriptionUpdate(version=1))
     cancelled = await store.change(PRINCIPAL.account, first.id, None)
     assert cancelled.cancelled
     assert await store.change(PRINCIPAL.account, first.id, None) == cancelled
     assert await store.subscribe(PRINCIPAL, BODY) == cancelled
+    with pytest.raises(ConflictError):
+        await store.change(PRINCIPAL.account, first.id, SubscriptionUpdate(version=cancelled.version))
 
 
-async def test_idempotency_key_migration_preserves_populated_inbox(store: Store, engine: AsyncEngine) -> None:
+@pytest.mark.parametrize("revision", ["0001_notifications", "0003_remove_pause"])
+async def test_creation_migrations_preserve_populated_inbox(store: Store, engine: AsyncEngine, revision: str) -> None:
     subscription = await store.subscribe(PRINCIPAL, BODY)
     claim = await store.claim()
     assert claim is not None
@@ -84,25 +96,102 @@ async def test_idempotency_key_migration_preserves_populated_inbox(store: Store,
         config = Config()
         config.set_main_option("script_location", str(RUNNER.migrations_dir))
         config.attributes["connection"] = connection
-        command.downgrade(config, "0001_notifications")
-        legacy = BODY.model_dump(mode="json")
-        legacy["client_key"] = legacy.pop("idempotency_key")
+        command.downgrade(config, revision)
+        legacy = BODY.model_dump(mode="json", exclude={"source"}) | BODY.source.model_dump(mode="json")
+        if revision == "0001_notifications":
+            legacy["client_key"] = legacy.pop("idempotency_key")
         row = connection.execute(
-            text("SELECT client_key, creation FROM subscription WHERE id = :id"), {"id": subscription.id}
+            text("SELECT creation, after_sequence FROM subscription WHERE id = :id"), {"id": subscription.id}
         ).one()
-        assert row[0] == BODY.idempotency_key
-        assert row[1] == legacy
+        assert row[0] == legacy
+        assert row[1] == 3
         RUNNER.run_for_connection(connection)
         # Reapplying the image-owned chain is harmless and verifies ORM/schema agreement.
         RUNNER.run_for_connection(connection)
+        # A stale replica must not reintroduce an unreadable creation snapshot after migration.
+        with pytest.raises(IntegrityError), connection.begin_nested():
+            connection.execute(
+                text(
+                    "UPDATE subscription SET creation = (creation - 'source') || (creation -> 'source') WHERE id = :id"
+                ),
+                {"id": subscription.id},
+            )
 
     async with engine.begin() as connection:
         await connection.run_sync(round_trip)
     replayed = await store.subscribe(PRINCIPAL, BODY)
     assert replayed.id == subscription.id
     assert replayed.idempotency_key == BODY.idempotency_key
-    assert replayed.after_sequence == 3
+    assert replayed.source == BODY.source
+    async with store.sessions() as session:
+        row = await session.get(Subscription, subscription.id)
+        assert row is not None
+        assert row.after_sequence == 3
+        assert row.creation == BODY.model_dump(mode="json")
+    assert await store.subscription(PRINCIPAL.account, subscription.id) == replayed
+    assert await store.subscriptions(PRINCIPAL.account) == [replayed]
     assert await store.read(PRINCIPAL.account, subscription.inbox_id, 0, 128) == before
+
+
+@pytest.mark.parametrize("paused", [False, True])
+@pytest.mark.parametrize("cancelled", [False, True])
+async def test_remove_pause_migration_preserves_inbox_and_stopped_intent(
+    store: Store, engine: AsyncEngine, paused: bool, cancelled: bool
+) -> None:
+    subscription = await store.subscribe(PRINCIPAL, BODY)
+    claim = await store.claim()
+    assert claim is not None
+    source = await store.source(claim)
+    assert source is not None
+    await store.record(claim, source, events())
+    notice = await store.notice(claim)
+    assert notice is not None
+    assert await store.attempt(claim, notice)
+    await store.acknowledge(PRINCIPAL.account, subscription.inbox_id, 1)
+    if cancelled:
+        await store.change(PRINCIPAL.account, subscription.id, None)
+    before = await store.subscription(PRINCIPAL.account, subscription.id)
+    inbox_before = await store.read(PRINCIPAL.account, subscription.inbox_id, 0, 128)
+
+    def round_trip(connection: Connection) -> None:
+        config = Config()
+        config.set_main_option("script_location", str(RUNNER.migrations_dir))
+        config.attributes["connection"] = connection
+        command.downgrade(config, "0002_idempotency_key")
+        connection.execute(
+            text("UPDATE subscription SET paused = :paused WHERE id = :id"), {"id": subscription.id, "paused": paused}
+        )
+        RUNNER.run_for_connection(connection)
+        RUNNER.run_for_connection(connection)
+        # Rollback preserves the cancellation rather than restoring a resumable state.
+        command.downgrade(config, "0002_idempotency_key")
+        row = connection.execute(
+            text("SELECT paused, cancelled FROM subscription WHERE id = :id"), {"id": subscription.id}
+        ).one()
+        assert row == (False, paused or cancelled)
+        RUNNER.run_for_connection(connection)
+
+    async with engine.begin() as connection:
+        await connection.run_sync(round_trip)
+    expected = before.model_copy(
+        update={"cancelled": paused or cancelled, "version": before.version + int(paused and not cancelled)}
+    )
+    assert await store.subscribe(PRINCIPAL, BODY) == expected
+    assert await store.read(PRINCIPAL.account, subscription.inbox_id, 0, 128) == inbox_before
+    async with store.sessions.begin() as session:
+        await session.execute(update(Subscription).values(next_poll=datetime.now(UTC) - timedelta(seconds=1)))
+    current = await store.source(claim)
+    if paused or cancelled:
+        assert current is None
+        # An in-flight fetch from before cancellation cannot append more events.
+        await store.record(claim, source, events(4))
+        assert await store.read(PRINCIPAL.account, subscription.inbox_id, 0, 128) == inbox_before
+    else:
+        assert current is not None
+        await store.record(claim, current, events(4))
+        page = await store.read(PRINCIPAL.account, subscription.inbox_id, 0, 128)
+        assert page.inbox.last_cursor == 4
+        assert page.inbox.acknowledged == 1
 
 
 async def test_overlapping_subscriptions_commit_one_prefix_and_read_does_not_ack(store: Store) -> None:
@@ -156,7 +245,13 @@ async def test_cancellation_fences_inflight_source_and_claim_loss_fences_worker(
 async def test_concurrent_sources_allocate_one_committed_prefix(store: Store) -> None:
     first = await store.subscribe(PRINCIPAL, BODY)
     second = await store.subscribe(
-        PRINCIPAL, BODY.model_copy(update={"idempotency_key": "another-action", "request_id": uuid4()})
+        PRINCIPAL,
+        BODY.model_copy(
+            update={
+                "idempotency_key": "another-action",
+                "source": ActionsSource(provider="actions", request_id=uuid4()),
+            }
+        ),
     )
     claim = await store.claim()
     assert claim is not None
@@ -168,7 +263,7 @@ async def test_concurrent_sources_allocate_one_committed_prefix(store: Store) ->
     await asyncio.gather(store.record(claim, a, events(1)), store.record(claim, b, events(1)))
     page = await store.read(PRINCIPAL.account, first.inbox_id, 0, 128)
     assert [entry.cursor for entry in page.entries] == [1, 2]
-    assert {entry.request_id for entry in page.entries} == {first.request_id, second.request_id}
+    assert {entry.event.request_id for entry in page.entries} == {first.source.request_id, second.source.request_id}
     await store.retire(PRINCIPAL.account, first.inbox_id)
     assert (await store.subscription(PRINCIPAL.account, first.id)).cancelled
     with pytest.raises(ClaimLostError):

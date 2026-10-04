@@ -78,6 +78,7 @@ class PolicyKind(StrEnum):
     ARGUMENT_SCHEMA = "argument_schema"
     GITHUB_REPOSITORY = "github_repository"
     GITHUB_PUBLIC_REPOSITORY = "github_public_repository"
+    HOME_ASSISTANT_ENTITY_CONTROL = "home_assistant_entity_control"
 
 
 class BindingEvidence(BaseModel):

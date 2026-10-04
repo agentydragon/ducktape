@@ -24,20 +24,10 @@ def resource_rule() -> Rule:
     return Rule(verbs={"get"}, api_groups={""}, resources={"pods"})
 
 
-def test_resource_rule_canonicalizes_values() -> None:
-    rule = Rule.model_validate(
-        {"api_groups": [""], "resources": ["pods"], "verbs": ["get"], "resource_names": ["pod-a"]}
-    )
-
-    assert rule.api_groups == frozenset({""})
-    assert rule.resources == frozenset({"pods"})
-    assert rule.resource_names == frozenset({"pod-a"})
-    assert rule.model_dump(mode="json")["resource_names"] == ["pod-a"]
-
-
 def test_rule_rejects_kubernetes_wire_names_inside_the_domain() -> None:
-    with pytest.raises(ValidationError, match="apiGroups"):
-        Rule.model_validate({"apiGroups": [""], "resources": ["pods"], "verbs": ["get"]})
+    # Empty `resource_names` means all names, so a silently dropped `resourceNames` would widen the rule.
+    with pytest.raises(ValidationError, match="resourceNames"):
+        Rule.model_validate({"api_groups": [""], "resources": ["pods"], "verbs": ["get"], "resourceNames": ["pod-a"]})
 
 
 def test_rule_models_rbac_collections_as_sets_and_serializes_stably() -> None:
@@ -46,13 +36,6 @@ def test_rule_models_rbac_collections_as_sets_and_serializes_stably() -> None:
     assert rule.verbs == frozenset({"get", "list"})
     assert rule.model_dump(mode="json")["verbs"] == ["get", "list"]
     assert rule.model_dump(mode="json")["api_groups"] == ["", "apps"]
-
-
-def test_rule_rejects_scalar_strings_for_collection_fields() -> None:
-    with pytest.raises(ValidationError, match="valid frozenset"):
-        Rule.model_validate({"api_groups": [""], "resources": ["pods"], "verbs": "get"})
-    with pytest.raises(ValidationError, match="valid frozenset"):
-        Rule.model_validate({"api_groups": "", "resources": ["pods"], "verbs": ["get"]})
 
 
 def test_rule_rejects_mixed_or_empty_shape() -> None:

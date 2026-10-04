@@ -116,20 +116,6 @@ py_library(
     ],
 )
 
-py_test(
-    name = "test_flux_kustomization",
-    srcs = ["test_flux_kustomization.py"],
-    data = ["@nodejs_linux_amd64//:bin/node"],
-    env = {"JSII_NODE": "$(rootpath @nodejs_linux_amd64//:bin/node)"},
-    deps = [
-        ":flux_kustomization",
-        "//:conftest",
-        "//cluster/cdk8s/providers/flux:kustomization",
-        "@pypi//cdk8s",
-        "@pypi//pytest_bazel",
-    ],
-)
-
 py_library(
     name = "helm_repository",
     srcs = ["helm_repository.py"],

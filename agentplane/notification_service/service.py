@@ -56,7 +56,7 @@ class Service:
         if body.session_id not in {session.session_id for session in await runner.list_sessions()}:
             raise DestinationRejectedError
         # Authorize source access before persistence, even when replay starts after the last event.
-        await self.actions.events(principal.account, body.request_id, body.after_sequence)
+        await self.actions.events(principal.account, body.source.request_id, body.source.after_sequence)
         return await self.store.subscribe(principal, body)
 
     async def deliver(self, claim: Inbox, runner: Runner, notice: Notice) -> None:

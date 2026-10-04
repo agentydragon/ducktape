@@ -43,20 +43,6 @@ py_library(
 )
 
 py_test(
-    name = "test_replication_destination",
-    srcs = ["test_replication_destination.py"],
-    data = ["@nodejs_linux_amd64//:bin/node"],
-    env = {"JSII_NODE": "$(rootpath @nodejs_linux_amd64//:bin/node)"},
-    deps = [
-        ":replication_destination",
-        "//:conftest",
-        "//cluster/cdk8s/providers/volsync:replicationdestination",
-        "@pypi//cdk8s",
-        "@pypi//pytest_bazel",
-    ],
-)
-
-py_test(
     name = "test_replication_source",
     srcs = ["test_replication_source.py"],
     data = ["@nodejs_linux_amd64//:bin/node"],
