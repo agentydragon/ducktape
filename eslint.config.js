@@ -32,6 +32,7 @@ const unusedVarsOptions = { argsIgnorePattern: "^_", varsIgnorePattern: "^_" };
 const reactProjects = [
   "aiquota/frontend/**",
   "airlock/frontend/**",
+  "devinfra/claude/session_export/frontend/**",
   "finance/augur/frontend/**",
   "haku/console/frontend/**",
   "props/frontend/**",
@@ -41,6 +42,7 @@ const projectGlobs = reactProjects;
 // All React projects' .ts/.tsx get the shared TypeScript, React, and hooks rules.
 const tsFiles = projectGlobs.map((g) => `${g}/*.{ts,tsx}`);
 const reactFiles = reactProjects.map((g) => `${g}/*.{ts,tsx}`);
+const testFiles = reactProjects.map((g) => `${g}/*.test.{ts,tsx}`);
 
 // Import ordering (the TS equivalent of ruff's isort) is intentionally OFF.
 // import/order crashes under Bazel: ranking an import calls getContextPackagePath,
@@ -118,6 +120,23 @@ export default [
       "react/prop-types": "off", // TypeScript handles prop types
       "react-hooks/rules-of-hooks": "error",
       "react-hooks/exhaustive-deps": "error",
+    },
+  },
+
+  // ── Tests: a focused or skipped test changes which tests run without failing anything ──
+  {
+    files: testFiles,
+    rules: {
+      "no-restricted-properties": [
+        "error",
+        ...["describe", "it", "test"].flatMap((object) =>
+          ["only", "skip"].map((property) => ({
+            object,
+            property,
+            message: "`.only` hides every other test in the run and `.skip` hides this one: fix the test or delete it.",
+          }))
+        ),
+      ],
     },
   },
 
