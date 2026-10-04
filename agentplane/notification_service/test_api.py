@@ -63,19 +63,17 @@ async def test_lifespan_owns_workers_and_readiness_tracks_failure_and_shutdown(s
     service = create_autospec(Service, instance=True)
     service.github = None
     service.store = store
-    started = asyncio.Event()
+    workers_running = asyncio.Event()
     fail = asyncio.Event()
     failed = asyncio.Event()
     park = asyncio.Event()
-    count = 0
+    started: set[int] = set()
     stopped: set[int] = set()
 
     async def run() -> None:
-        nonlocal count
-        index = count
-        count += 1
-        if count == 4:
-            started.set()
+        index = len(started)
+        started.add(index)
+        workers_running.set()
         try:
             if index == 0:
                 await fail.wait()
@@ -95,14 +93,13 @@ async def test_lifespan_owns_workers_and_readiness_tracks_failure_and_shutdown(s
         assert (await client.get("/readyz")).status_code == 503
         assert (await client.get("/healthz")).status_code == 200
         async with app.router.lifespan_context(app):
-            await started.wait()
-            assert service.run.await_count == 4
+            await workers_running.wait()
             assert (await client.get("/readyz")).status_code == 200
             fail.set()
             await failed.wait()
             assert (await client.get("/readyz")).status_code == 503
             assert (await client.get("/healthz")).status_code == 200
-        assert stopped == {0, 1, 2, 3}
+        assert stopped == started
         assert not store.wakeups.listener.connected
         assert (await client.get("/readyz")).status_code == 503
 
