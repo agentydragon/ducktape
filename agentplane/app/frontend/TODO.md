@@ -22,10 +22,10 @@ build time.
   per-thread menu, not one merged control, even though both would share the dots-icon pattern.
 - **Reasoning disclosure toggle with nothing behind it**: the reasoning branch of `EntityCard`'s body
   (`threads/thread_cards.tsx`) wraps a reasoning item's text in `LazyBody`'s `RetainedDisclosure` -- a
-  `<details>` (`threads/retained_disclosures.tsx`) whose payload isn't fetched until expanded -- whenever `entity.textRef`
-  is non-null. A reasoning item can still resolve to empty text once that payload loads, and by then the toggle
+  `<details>` (`threads/retained_disclosures.tsx`) whose body is shown only once expanded, though the window reads it
+  ahead -- whenever `entity.textRef` is non-null. A reasoning item can still resolve to empty text once that payload loads, and by then the toggle
   has already invited a click for nothing. Unlike the `textRef === null` case just below it (plain dimmed
-  "Reasoning" text, no toggle at all), there's no cheap signal to suppress the toggle before the lazy fetch
+  "Reasoning" text, no toggle at all), there's no cheap signal to suppress the toggle before the fetch
   resolves; worth figuring out one (e.g. from the fold/view layer) rather than always rendering it optimistically.
 - **Collapsing a long expanded block requires scrolling back up to its toggle**: `RetainedDisclosure`
   (`threads/retained_disclosures.tsx`) is a plain `<details>`/`<summary>` -- opening a long one (`LazyBody`'s

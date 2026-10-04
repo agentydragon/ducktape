@@ -501,7 +501,7 @@ async def test_projection_epoch_replacement_retires_old_requests_and_preserves_d
         await page.unroute("**/evidence?*", hold_old_evidence)
 
 
-async def test_projected_browser_streams_runner_events_and_loads_bodies_lazily(
+async def test_projected_browser_streams_runner_events_and_loads_evidence_lazily(
     page: Page, certificate: BrowserCertificate
 ) -> None:
     source = ReplicationSource()
@@ -544,11 +544,14 @@ async def test_projected_browser_streams_runner_events_and_loads_bodies_lazily(
     source.append(event_pb2.Event(tool_arguments_delta=event_pb2.ToolArgumentsDelta(item_id="tool", partial_json="{")))
     requests: list[str] = []
     body_reads: list[str] = []
+    closed_disclosures_read = asyncio.Event()
 
     def observe(request: Request) -> None:
         requests.append(request.url)
         if request.method == "POST" and "/sync/chunks/" in request.url:
             body_reads.append(request.post_data or "")
+            if all(any(f'"{owner}"' in read for read in body_reads) for owner in ("reasoning", "tool")):
+                closed_disclosures_read.set()
 
     page.on("request", observe)
     directory = get_required_path("_main/agentplane/app/frontend/dist/index.html").parent
@@ -570,13 +573,12 @@ async def test_projected_browser_streams_runner_events_and_loads_bodies_lazily(
                 await page.goto(f"{ingress.url}/#/threads/{thread}")
                 await expect(page.get_by_text("Projected browser prefix", exact=True)).to_be_visible()
                 await expect(page.get_by_text("A newer browser item", exact=True)).to_be_visible()
+                # The window reads the bodies of closed disclosures ahead of any opening, and shows none.
+                await closed_disclosures_read.wait()
                 await expect(
                     page.locator(f'[data-thread-anchor="{reasoning.cursor}"] .agentplane-reasoning-details')
                 ).to_have_count(0)
                 await expect(page.get_by_text("On-demand tool output", exact=True)).to_have_count(0)
-                # Closed disclosures read no bodies: no body subset names their owners.
-                assert body_reads
-                assert not any('"reasoning"' in read or '"tool"' in read for read in body_reads)
 
                 source.append(
                     event_pb2.Event(text_delta=event_pb2.TextDelta(item_id="first", text=" and streamed suffix"))

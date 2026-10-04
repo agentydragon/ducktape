@@ -32,8 +32,8 @@ Proposed execution order for the Thread correctness/UI track:
   and driver-hosted tools (`DT`). Neither blocks the current API-level acceptance closure.
 - **Low priority / deferred:** bounded browser cache state (`THREAD_LAZY_HISTORY`, desire D6),
   and optional app-wide/per-Thread raw-evidence retention controls (`THREAD_EVIDENCE_RETENTION`).
-  The current view sync lazily loads long content and retains loaded rows/bodies until the Thread
-  closes; it keeps the archive lossless.
+  The current view sync pages older rows in on demand, reads the bodies of the rows it holds ahead
+  of the reader, and retains the windows of the last few Threads left; it keeps the archive lossless.
 - **Unranked future harness capabilities:** project skills and commands, web search, visual input,
   native subagents, interactive controls, project hooks/plugins, and prompt suggestions. The
   existing P2 item `DT` is included below as a cross-reference and keeps its current priority; it
@@ -461,8 +461,8 @@ disclosures, visible running/failure state, and stable expansion/scroll behavior
 Events arrive. Preserve timeline order and Raw evidence. Add behavioral and visual
 coverage of the reviewed cases, including reload and reconnect.
 
-Reasoning and tool arguments and output already load on demand (`LazyBody` in
-`projected_session.tsx`); compact rows keep that loading and explicitly distinguish unloaded,
+Reasoning and tool arguments and output are read ahead by the Thread window and shown on demand
+(`LazyBody` in `thread_cards.tsx`); compact rows keep that and explicitly distinguish unloaded,
 streaming, empty, and unavailable details.
 
 ### `THREAD_WORKSPACE_BOOTSTRAP` — make Thread cwd and bootstrap ownership coherent
