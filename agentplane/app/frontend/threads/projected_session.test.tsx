@@ -13,7 +13,7 @@ import { ItemKind, RecoveryDisposition } from "../../../protocol/event_pb";
 import type * as ClientModule from "../client";
 import { command, getThread, models, resumeThread, type SandboxView, type ThreadView } from "../client";
 import { historyRows, rowKey } from "./history_rows";
-import { SandboxesLiveProvider, ThreadsLiveProvider } from "../live";
+import { SandboxesLiveProvider, ThreadsLiveProvider, useRequiredThreadsLive } from "../live";
 import { LocalCommands } from "./local_commands";
 import { STREAMING_CURSOR } from "../markdown";
 import { HistoryRowView, ProjectedSession } from "./projected_session";
@@ -83,6 +83,7 @@ let inventoryDrops = false;
 let sharedFeed: "active" | "ended" | "failed" = "active";
 let sharedThread: Partial<ThreadView> = {};
 let eventSourceUrls: string[] = [];
+let threadRows: ThreadView[] | null = null;
 
 beforeEach(() => {
   document.title = "Agentplane";
@@ -98,6 +99,7 @@ beforeEach(() => {
   sharedFeed = "active";
   sharedThread = {};
   eventSourceUrls = [];
+  threadRows = null;
   vi.mocked(getThread).mockResolvedValue(THREAD);
   vi.mocked(models).mockResolvedValue({
     models: [{ model: "test-model", display_name: "Test Model", reasoning_efforts: TEST_REASONING_EFFORTS }],
@@ -121,7 +123,7 @@ beforeEach(() => {
                 sandboxes,
                 ...(url === "/live/threads"
                   ? {
-                      threads: [
+                      threads: threadRows ?? [
                         { ...THREAD, harness_state: "HARNESS_STATE_RUNNING", feed_status: sharedFeed, ...sharedThread },
                       ],
                       updates_connected: true,
@@ -179,6 +181,30 @@ function TestLiveProviders({ children }: { children: JSX.Element }): JSX.Element
       <SandboxesLiveProvider>{children}</SandboxesLiveProvider>
     </ThreadsLiveProvider>
   );
+}
+
+function WaitForThreadsSnapshot({ children }: { children: JSX.Element }): JSX.Element | null {
+  const live = useRequiredThreadsLive();
+  return live.snapshot ? children : null;
+}
+
+async function renderAfterThreadsSnapshot(state: ThreadState = threadState()): Promise<HTMLDivElement> {
+  const container = document.createElement("div");
+  document.body.append(container);
+  const topbarTitle = document.createElement("div");
+  const topbarActions = document.createElement("div");
+  const root = createRoot(container);
+  mounted.push({ root, container, topbarTitle, topbarActions });
+  await act(async () => {
+    const content = page(state, topbarTitle, topbarActions);
+    root.render(
+      <TestLiveProviders>
+        <WaitForThreadsSnapshot>{content}</WaitForThreadsSnapshot>
+      </TestLiveProviders>
+    );
+  });
+  container.append(topbarTitle, topbarActions);
+  return container;
 }
 
 function page(
@@ -467,6 +493,22 @@ it("keeps one sandbox inventory stream mounted across thread route remounts", as
   });
 
   expect(eventSourceUrls.filter((url) => url === "/live/sandboxes")).toHaveLength(1);
+});
+
+it("mounts the thread from the live snapshot without fetching its metadata again", async () => {
+  const container = await renderAfterThreadsSnapshot();
+
+  expect(getThread).not.toHaveBeenCalled();
+  expect(container.querySelector("textarea")).not.toBeNull();
+});
+
+it("fetches thread metadata when it is absent from the live snapshot", async () => {
+  threadRows = [];
+
+  const container = await render();
+
+  expect(getThread).toHaveBeenCalledExactlyOnceWith(THREAD.id);
+  expect(container.querySelector("textarea")).not.toBeNull();
 });
 
 // Each of these but the first disables the controls, which the composer's indicator reports only as
