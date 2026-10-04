@@ -149,15 +149,20 @@ async def test_retry_after_503_returns_to_agent_when_wait_exceeds_budget(
 
 
 async def test_manifest_records_served_evidence(fetch: Fetch, manifest: io.StringIO) -> None:
+    """The documented `served` record (README): loom/gym's `gym_proper_loss` scorer splits the manifest on
+    `kind` and carries the evidence fields into the score. A further field is allowed."""
     await fetch(fake_ia.EXAMPLE_URL)
     record = json.loads(manifest.getvalue())
-    assert record == {
-        "kind": "served",
-        "url": fake_ia.EXAMPLE_URL,
-        "capture_ts": fake_ia.GOOD_TS,
-        "sha256": hashlib.sha256(fake_ia.EXAMPLE_BODY).hexdigest(),
-        "size": len(fake_ia.EXAMPLE_BODY),
-    }
+    assert (
+        record.items()
+        >= {
+            "kind": "served",
+            "url": fake_ia.EXAMPLE_URL,
+            "capture_ts": fake_ia.GOOD_TS,
+            "sha256": hashlib.sha256(fake_ia.EXAMPLE_BODY).hexdigest(),
+            "size": len(fake_ia.EXAMPLE_BODY),
+        }.items()
+    )
 
 
 async def test_no_capture_at_or_before_as_of_is_404(fetch: Fetch) -> None:
