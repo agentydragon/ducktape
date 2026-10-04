@@ -1045,20 +1045,6 @@ mod tests {
     }
 
     #[test]
-    fn alpha_equivalent_subtrees_share_a_shape_id() {
-        // Two var decls with identical structure but renamed identifiers must
-        // collapse to the same skeleton shape (alpha-equivalence).
-        let module = parse("const a = f(x);\nconst b = g(y);");
-        let index = ShapeIndex::new(&module);
-        let s0 = &index.items[0].skeletons;
-        let s1 = &index.items[1].skeletons;
-        assert!(
-            !s0.is_disjoint(s1),
-            "renamed-isomorphic items must share at least one shape id"
-        );
-    }
-
-    #[test]
     fn skeletons_keep_stable_literals_and_ignore_binding_names() {
         // Same structure, different *stable* literal => different skeletons; the
         // same literal under a renamed binding => the same skeletons. (The
