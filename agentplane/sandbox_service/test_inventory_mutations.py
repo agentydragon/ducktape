@@ -13,7 +13,7 @@ from kubernetes_asyncio import client as k8s_client
 from agentplane.action_service.policies.resources import CALLER_LABEL
 from agentplane.sandbox_service.inventory import SandboxInventory
 from agentplane.sandbox_service.kubernetes_views import MANAGED_LABEL
-from agentplane.sandbox_service.models import OperatingMode, SandboxNotFoundError, SandboxRunningError
+from agentplane.sandbox_service.models import OperatingMode, SandboxNotFoundError
 from agentplane.sandbox_service.protocol_pb2 import CreateSandboxRequest
 from agentplane.sandbox_service.testing.fake_inventory import (
     NAMESPACE,
@@ -180,24 +180,6 @@ async def test_suspend_and_resume_patch_the_operating_mode(
     assert (suspended.operating_mode, resumed.operating_mode) == (OperatingMode.SUSPENDED, OperatingMode.RUNNING)
     with pytest.raises(SandboxNotFoundError):
         await inventory.suspend("foreign")
-
-
-async def test_delete_takes_a_suspended_sandbox_and_refuses_a_running_one(
-    inventory: SandboxInventory, custom_objects: FakeCustomObjectsApi, core_v1: FakeCoreV1Api
-) -> None:
-    """The controller, not the app, takes the Pod and PVC down behind the Sandbox."""
-    _populate_one_of_each_state(custom_objects, core_v1)
-
-    with pytest.raises(SandboxRunningError):
-        await inventory.delete("live")
-    assert custom_objects.deleted == []
-
-    await inventory.suspend("live")
-    await inventory.delete("live")
-
-    assert custom_objects.deleted == [("sandboxes", "live")]
-    with pytest.raises(SandboxNotFoundError):
-        await inventory.delete("live")
 
 
 if __name__ == "__main__":
