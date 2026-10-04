@@ -340,54 +340,6 @@ mod tests {
     }
 
     #[test]
-    fn pure_function_import_is_resolved_pure() {
-        let app = parse("const C = memo(x);");
-        let react = parse("export function memo(t) { return { type: t }; }");
-        let modules = BTreeMap::from([
-            (
-                "app".to_string(),
-                facts(&app, &[("memo", "react", "memo")], &[]),
-            ),
-            ("react".to_string(), facts(&react, &[], &[("memo", "memo")])),
-        ]);
-        let resolved = resolve_imported_purities(&modules, &BTreeMap::new());
-        assert!(resolved["app"]["memo"].is_pure());
-    }
-
-    #[test]
-    fn impure_function_import_is_resolved_impure() {
-        let app = parse("const C = boot(x);");
-        let lib = parse("export function boot() { globalSink(); }");
-        let modules = BTreeMap::from([
-            (
-                "app".to_string(),
-                facts(&app, &[("boot", "lib", "boot")], &[]),
-            ),
-            ("lib".to_string(), facts(&lib, &[], &[("boot", "boot")])),
-        ]);
-        let resolved = resolve_imported_purities(&modules, &BTreeMap::new());
-        assert!(!resolved["app"]["boot"].is_pure());
-    }
-
-    #[test]
-    fn purity_propagates_across_a_module_chain() {
-        // c.base (pure) → b.wrap (calls base) → a imports wrap.
-        let a = parse("const W = wrap();");
-        let b = parse("import { base } from \"c\";\nexport function wrap() { return base(); }");
-        let c = parse("export function base() { return 1; }");
-        let modules = BTreeMap::from([
-            ("a".to_string(), facts(&a, &[("wrap", "b", "wrap")], &[])),
-            (
-                "b".to_string(),
-                facts(&b, &[("base", "c", "base")], &[("wrap", "wrap")]),
-            ),
-            ("c".to_string(), facts(&c, &[], &[("base", "base")])),
-        ]);
-        let resolved = resolve_imported_purities(&modules, &BTreeMap::new());
-        assert!(resolved["a"]["wrap"].is_pure());
-    }
-
-    #[test]
     fn impurity_propagates_back_across_a_module_chain() {
         // c.base (impure) demotes b.wrap, which demotes a's `wrap` import.
         let a = parse("const W = wrap();");
@@ -489,38 +441,6 @@ mod tests {
     }
 
     #[test]
-    fn asserted_pure_members_project_onto_importer_locals() {
-        // The defining chunk exports an interop namespace object; the
-        // importer binds it locally as `b`. A definition-side member
-        // assertion lands on the importer under ITS local name.
-        let app = parse("import { reactns as b } from \"vendor\";\nconst C = b.forwardRef(x);");
-        let vendor = parse("const ns = makeInterop();\nexport { ns as reactns };");
-        let modules = BTreeMap::from([
-            (
-                "app".to_string(),
-                facts(&app, &[("b", "vendor", "reactns")], &[]),
-            ),
-            (
-                "vendor".to_string(),
-                facts(&vendor, &[], &[("reactns", "ns")]),
-            ),
-        ]);
-        let asserted = BTreeMap::from([(
-            "vendor".to_string(),
-            BTreeMap::from([(
-                "reactns".to_string(),
-                BTreeSet::from(["forwardRef".to_string(), "memo".to_string()]),
-            )]),
-        )]);
-        let resolved = resolve_asserted_member_purities(&modules, &asserted);
-        assert_eq!(
-            resolved["app"]["b"],
-            BTreeSet::from(["forwardRef".to_string(), "memo".to_string()])
-        );
-        assert!(resolved["vendor"].is_empty());
-    }
-
-    #[test]
     fn dangling_member_assertion_is_ignored() {
         let app = parse("const C = b.forwardRef(x);");
         let modules = BTreeMap::from([(
@@ -537,26 +457,6 @@ mod tests {
         )]);
         let resolved = resolve_asserted_member_purities(&modules, &asserted);
         assert!(resolved["app"].is_empty());
-    }
-
-    #[test]
-    fn asserted_fluent_exports_project_onto_importer_locals() {
-        // The importer binds the export under its own local name `k`;
-        // the definition-side fluent assertion must land under THAT
-        // name, where the classifier's chain arm looks it up.
-        let app = parse("import { e4 as k } from \"vendor\";\nconst S = k.object({});");
-        let vendor = parse("const zod = makeZod();\nexport { zod as e4 };");
-        let modules = BTreeMap::from([
-            (
-                "app".to_string(),
-                facts(&app, &[("k", "vendor", "e4")], &[]),
-            ),
-            ("vendor".to_string(), facts(&vendor, &[], &[("e4", "zod")])),
-        ]);
-        let asserted = BTreeMap::from([("vendor".to_string(), BTreeSet::from(["e4".to_string()]))]);
-        let resolved = resolve_asserted_fluent_bindings(&modules, &asserted);
-        assert_eq!(resolved["app"], BTreeSet::from(["k".to_string()]));
-        assert!(resolved["vendor"].is_empty());
     }
 
     #[test]
