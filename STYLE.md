@@ -407,10 +407,13 @@ re-assemble a bundle at runtime. Per-client details (`pygit2` ignores
   yaml-load echo — or the test restates the declarations it exercises (field
   aliases, a default compared against its declaration or the same imported
   constant, a model built and read back, one test per field) or asserts what
-  `mypy` already guarantees, delete it: libraries' documented basics get no
-  tests here; our choices and edges do. Defaults and validators that are our own
-  logic (an exactly-one-of check, a clamp), published schemas, and library
-  spikes (below) stay.
+  `mypy` already guarantees, or holds an assertion that cannot be false (it
+  restates what the test just set up, an inequality that always holds, a filter
+  or tolerance that passes whatever the code does), delete it: libraries'
+  documented basics get no tests here; our choices and edges do. Defaults and
+  validators that are our own logic (an exactly-one-of check, a clamp),
+  published schemas, library spikes (below), and a smoke test that runs
+  something nothing else exercises and says so stay.
   - **Bulk is the multiplier**: a short trivial test is a minor sin; a file
     full of them, or 150 lines of JSON `model_validate`d onto a plain model, is
     the real cost. A cheap one-liner may stay on judgment.
