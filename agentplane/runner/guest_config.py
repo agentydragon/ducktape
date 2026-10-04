@@ -14,10 +14,8 @@ from agentplane.runner.config import ClaudeLaunch, CodexLaunch, RunnerConfig
 from agentplane.runner.main import async_main
 
 CONFIG_PATH = Path("/run/agentplane/config.json")
-CONFIG_DISK = Path("/dev/disk/by-id/virtio-agentplane-config")
 STATE_DEVICE = Path("/dev/disk/by-id/virtio-state")
 WORKSPACE_DEVICE = Path("/dev/disk/by-id/virtio-workspace")
-STATE_SCHEMA_VERSION = 1
 AGENT_UID = 1000
 AGENT_GID = 1000
 RUNNER_STATE_DIR = Path("/state")
