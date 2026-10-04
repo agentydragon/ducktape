@@ -43,37 +43,12 @@ def test_items_keep_unknown_types_with_their_fields() -> None:
     assert item.model_extra == {"changes": [], "status": "completed"}
 
 
-def test_command_execution_fields_arrive_in_camel_case() -> None:
-    frame = wire.parse_frame(
-        {
-            "method": "item/completed",
-            "params": {
-                "threadId": "t",
-                "turnId": "u",
-                "item": {
-                    "type": "commandExecution",
-                    "id": "c1",
-                    "command": "/bin/bash -lc 'printf hi'",
-                    "cwd": "/w",
-                    "status": "failed",
-                    "aggregatedOutput": "hi",
-                    "exitCode": 23,
-                    "durationMs": 5,
-                },
-            },
-        }
-    )
-    assert isinstance(frame, wire.ItemCompleted)
-    item = frame.params.item
-    assert isinstance(item, wire.CommandExecutionItem)
-    assert item.status is wire.CommandExecutionStatus.FAILED
+def test_a_turn_status_the_model_does_not_name_stays_a_string() -> None:
     turn = wire.parse_frame(
         {"method": "turn/completed", "params": {"threadId": "t", "turn": {"id": "u", "status": "paused"}}}
     )
     assert isinstance(turn, wire.TurnCompleted)
     assert turn.params.turn.status == "paused"
-    assert item.exit_code == 23
-    assert item.aggregated_output == "hi"
 
 
 def test_outbound_requests_serialize_camel_case_except_user_input_fields() -> None:

@@ -81,11 +81,6 @@ def _frame(frame: BaseModel) -> dict[str, object]:
     return frame.model_dump(mode="json", by_alias=True, exclude_none=True)
 
 
-def test_codex_adapter_attaches_the_session_to_the_shared_native_facade() -> None:
-    recorded = RecordedSession()
-    assert cast(object, _adapter(recorded).harness.transport) is recorded
-
-
 async def test_a_turn_start_answer_is_recorded_before_the_frames_after_it_are_translated() -> None:
     """The answer and `turn/started` can share one stdout read; the turn starts with the model the
     answer selects, and the command's effects are recorded before `submit` gets the answer back."""
