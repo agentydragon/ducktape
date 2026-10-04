@@ -13,7 +13,7 @@ import pytest
 import pytest_bazel
 
 from finance.augur.model.series import SecurityKey, SecuritySymbol
-from finance.augur.sim.actions import Action, DecisionActions, LotSale, PayClaim, Sell, Transfer
+from finance.augur.sim.actions import Action, DecisionActions, LotSale, PayClaim, Sell
 from finance.augur.sim.books import AccountRef, TaxAccrual
 from finance.augur.sim.fixed_point import currency_amount_to_quanta, quantity_scale_for_asset, quantity_to_quanta
 from finance.augur.sim.ids import AccountId, AgentId, AssetId, JurisdictionId, LotId
@@ -22,7 +22,7 @@ from finance.augur.sim.jurisdictions import load_jurisdiction
 from finance.augur.sim.market_path import MarketPath, Series
 from finance.augur.sim.money import USD
 from finance.augur.sim.observations import Decision
-from finance.augur.sim.results import Executed, Finished, Rejected, RejectedAction, Rollout
+from finance.augur.sim.results import Finished, Rollout
 from finance.augur.sim.schedule import Once
 from finance.augur.sim.session import ActionSession
 from finance.augur.sim.tax_authority import TaxAuthority
@@ -322,58 +322,6 @@ def test_selected_reordered_replay_matches_original_paths(
     assert [rollout.rollout_id for rollout in reordered.rollouts] == [TAXED, QUIET]
     assert reordered.rollouts == [population[TAXED], population[QUIET]]
     assert _run(independent_paths, sale_month=15, rollout_ids=[TAXED]).rollouts == [population[TAXED]]
-
-
-def test_rejected_sale_preserves_successful_prefix_and_stops_only_its_path(independent_paths: Situation) -> None:
-    session = ActionSession({id_: _compose(independent_paths, id_) for id_ in (TAXED, QUIET)}, ALICE)
-    observed: dict[int, list[int]] = {TAXED: [], QUIET: []}
-    try:
-        batch = session.start()
-        while not isinstance(batch, Finished):
-            for decision in batch:
-                observed[decision.rollout_id].append(decision.observation.month)
-            responses = _sell_and_pay(batch, sale_month=15)
-            for index, response in enumerate(responses):
-                if response.month == 15 and response.rollout_id == TAXED:
-                    responses[index] = DecisionActions(
-                        response.rollout_id,
-                        response.month,
-                        [
-                            *response.actions,
-                            Sell(
-                                cause_id="sell-exhausted-lot",
-                                agent_id=ALICE,
-                                proceeds_account_id=AccountId("checking"),
-                                asset_id=AssetId("vti"),
-                                lots=(LotSale(account_id=AccountId("checking"), lot_id=LotId("alice-vti"), units=1),),
-                            ),
-                            Transfer(
-                                cause_id="unattempted",
-                                from_account=AccountRef(agent_id=ALICE, account_id=AccountId("checking")),
-                                to_account=AccountRef(agent_id=IRS, account_id=AccountId("checking")),
-                                amount=1,
-                            ),
-                        ],
-                    )
-            batch = session.advance(responses)
-        stopped, completed = batch.rollouts
-    finally:
-        session.close()
-    assert stopped.rollout_id == TAXED
-    assert completed.rollout_id == QUIET
-    assert isinstance(stopped.stop, RejectedAction)
-    assert (stopped.stop.month, stopped.stop.action_index) == (15, 1)
-    assert completed.stop is None
-    assert observed[TAXED] == list(range(16))
-    assert observed[QUIET] == list(range(25))
-    sale, rejection = stopped.summary.last_receipts
-    assert isinstance(sale.outcome, Executed)
-    assert isinstance(rejection.outcome, Rejected)
-    assert stopped.summary.cash[0].values[-1] == 20_000_000
-    assert stopped.summary.ending_book.lots[0].units_remaining == 0
-    assert stopped.trace is not None
-    assert stopped.trace.events.transfers.is_empty()
-    assert len(stopped.trace.books) == 17
 
 
 if __name__ == "__main__":

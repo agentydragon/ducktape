@@ -152,7 +152,7 @@ def test_fifo_selection_sells_the_oldest_lot_first(books: Books) -> None:
     assert books.accounting.ledger.trial_balance() == 0
 
 
-@pytest.mark.parametrize("case", range(10))
+@pytest.mark.parametrize("case", range(11))
 def test_invalid_exact_lot_requests_leave_every_book_unchanged(books: Books, case: int) -> None:
     request = sale(LotId("old"), 3)
     selection = request.lots[0]
@@ -167,7 +167,10 @@ def test_invalid_exact_lot_requests_leave_every_book_unchanged(books: Books, cas
         {"lots": (selection, selection)},
         {"proceeds_account_id": "undeclared"},
         {"lots": ()},
+        {"lots": (selection.model_copy(update={"units": 1}),)},  # one more unit, after the whole lot is sold
     ]
+    if case == 10:
+        books.holdings.sell(books.accounting, 0, sale(LotId("old"), 10), price=10)
     before = books.snapshot()
     with pytest.raises(ValueError, match=r"unknown|does not belong|invalid quantity|duplicate lot|sale needs"):
         books.holdings.sell(books.accounting, 0, request.model_copy(update=changes[case]), price=10)
