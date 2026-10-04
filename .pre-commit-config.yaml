@@ -297,8 +297,6 @@ repos:
             cluster/k8s/litellm/app/(chatgpt-)?proxy-config\.yaml|
             cluster/k8s/litellm/tana/proxy-config\.yaml|
             haku/x/dispatch/deploy/workers-litellm-config\.yaml|
-            # per-index haku-indexer chunk config slices mounted via configMapGenerator
-            cluster/k8s/haku/console/indexer-chunk-[a-z0-9-]+-config\.yaml|
             # dispatcher Job template with ${...} placeholders, mounted via configMapGenerator
             haku/x/dispatch/deploy/job-template\.yaml|
             haku/x/dispatch/deploy/zones\.yaml|

@@ -263,11 +263,10 @@ def create_app(
                     f"MCP server {HAKU_INDEX_SERVER_ID!r} is configured but no embedder is: "
                     "search embeds its query, so it cannot run without one"
                 )
-            # A database reader only: the source and embedding maintenance stages run in the
-            # separately deployed haku-indexer worker (haku/console/indexer.py), so search keeps
-            # serving the last committed index state while maintenance fails or rolls. The
-            # request-path timeout applies: a search embeds one query and should fail rather
-            # than hang.
+            # A database reader only: this process runs no source or embedding maintenance (the
+            # haku-indexer worker that did was removed; last commit with it: 74b464467), so
+            # search serves whatever index state was last committed. The request-path timeout
+            # applies: a search embeds one query and should fail rather than hang.
             index_searcher = PostgresIndexSearcher(
                 db_sessions,
                 _embedder(settings.embedder, timeout=settings.embedder.timeout_seconds),

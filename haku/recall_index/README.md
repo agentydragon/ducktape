@@ -237,28 +237,27 @@ database schema and retained data stay in place until a separate data-retirement
   migration fails, the new replica never becomes Ready, and `maxUnavailable: 0` leaves the running
   version serving — so a change to either side wants the `Database` CR reconciled first.
 
-- **Sync when enabled.** `haku/console/recall_index_sync.py` sweeps every configured index from the
-  separately deployed `haku-indexer` worker (`haku/console/indexer.py`) in its `chunk` role (the
-  per-index `indexer-chunk-*-deployment.yaml` manifests); the same image's `embed` role drains the
-  shared embedding queue (`indexer-embed-deployment.yaml`). The console process only reads the
-  committed index state for search and status, so index maintenance failing or rolling never
-  touches the console's own availability. Each configured Git index runs every thirty seconds
-  against its own bare mirror on the chunk pod's `/tmp`. Each logical index takes its own Postgres
-  advisory lock, so exactly one replica syncs it and a slow fetch never delays another index. The
-  embedding drain needs no such leadership: every batch is claimed `FOR UPDATE SKIP LOCKED`, so
-  concurrent drains split the queue instead of electing one worker.
+- **Sync when enabled.** Nothing drives `sync.sync` or `embedding_sync.embed_pending` now. The
+  `haku-indexer` worker that did (`haku/console/indexer.py` over `haku/console/recall_index_sync.py`,
+  deployed as per-index `chunk` Deployments plus a shared `embed` one) was removed; `74b464467` is
+  the last commit with it. The console process only reads the committed index state for search and
+  status, so index maintenance failing or rolling never touches the console's own availability.
+  `sync.sync` takes no lock: the removed worker held a per-index Postgres advisory lock around it,
+  so a driver needs its own per-index exclusion. The embedding drain needs no such leadership:
+  every batch is claimed `FOR UPDATE SKIP LOCKED`, so concurrent drains split the queue instead of
+  electing one worker.
 
-  **The git tick is an `ls-remote`, not a fetch.** One round trip returns refs and no objects, so
-  the common case — nothing moved — costs almost nothing and can be asked often. The gate is
-  `sync.is_current`, the same predicate the sync itself early-outs on, because it must compare the
-  source regime: a chunker change has to re-materialize a tip that never moved, while a new
-  embedding model is handled independently by the shared worker's model-specific queue.
+  **The git tick should be an `ls-remote`, not a fetch.** One round trip returns refs and no
+  objects, so the common case — nothing moved — costs almost nothing and can be asked often. The
+  gate is `sync.is_current`, the same predicate the sync itself early-outs on, because it must
+  compare the source regime: a chunker change has to re-materialize a tip that never moved, while a
+  new embedding model is handled independently by the model-specific embedding queue.
 
   Git credentials are per-index: `haku-state` uses **Haku's own Forgejo account** (operator,
   2026-08-15), so a future indexer worker would hold something that could write haku-state even
   though nothing in it does. `ducktape-public` needs none: it clones the canonical public GitHub
   remote anonymously. The credential cost is recorded where it is paid: when enabled,
-  `tf/gitops/haku-state/main.tf` reflects the Secret into `haku-console`, and the indexer
+  `tf/gitops/haku-state/main.tf` reflects the Secret into `haku-console`, and the worker's
   Deployment consumes it.
 
 ## Not here yet

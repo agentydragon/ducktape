@@ -99,7 +99,8 @@ The deployed console does not register the `haku_index` MCP server, grant Recall
 access profile, or run source/embedding maintenance workers. This stops indexing and keeps retained
 indexes out of connected MCP-client catalogs. The `recall_index` schema/data and the narrow
 `haku_indexer` database role remain in place for now; no migration drops them. Re-enabling Recall
-must restore the catalog, access-profile grants, and maintenance workers as one reviewed change.
+must restore the catalog, access-profile grants, and maintenance workers as one reviewed change;
+the `haku-indexer` worker code was removed, and `74b464467` is the last commit with it.
 
 ## `haku-console-github-mcp-client-credentials` belongs to agentplane-staging
 

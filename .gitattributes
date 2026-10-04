@@ -134,8 +134,6 @@ cluster/k8s/agents/attic-jwt-rotation/rotators.yaml cluster-manifest-ignored=tru
 haku/x/dispatch/deploy/job-template.yaml cluster-manifest-ignored=true
 # dispatcher zone wiring, mounted via configMapGenerator — not a K8s manifest.
 haku/x/dispatch/deploy/zones.yaml cluster-manifest-ignored=true
-# per-index haku-indexer chunk config slices, mounted via configMapGenerator — not K8s manifests.
-cluster/k8s/haku/console/indexer-chunk-*-config.yaml cluster-manifest-ignored=true
 # Dotfiles/dotdirs follow their own naming conventions
 .* filename-conventions-ignored=true
 .*/** filename-conventions-ignored=true

@@ -68,73 +68,6 @@ py_test(
 )
 
 py_library(
-    name = "recall_index_sync",
-    srcs = ["recall_index_sync.py"],
-    deps = [
-        "//haku/recall_index:chunking",
-        "//haku/recall_index:config",
-        "//haku/recall_index:embedder",
-        "//haku/recall_index:embedding_sync",
-        "//haku/recall_index:git_tree",
-        "//haku/recall_index:schema",
-        "//haku/recall_index:store",
-        "//haku/recall_index:sync",
-        "@pypi//pygit2",
-        "@pypi//sqlalchemy",
-    ],
-)
-
-py_library(
-    name = "indexer_config",
-    srcs = ["indexer_config.py"],
-    deps = [
-        "//haku/recall_index:config",
-        "@pypi//pydantic",
-    ],
-)
-
-py_test(
-    name = "test_indexer_config",
-    srcs = ["test_indexer_config.py"],
-    deps = [
-        ":conftest",
-        ":indexer",
-        "//:conftest",
-        "//haku/recall_index:config",
-        "@pypi//more_itertools",
-        "@pypi//pydantic",
-        "@pypi//pytest",
-        "@pypi//pytest_bazel",
-    ],
-)
-
-py_library(
-    name = "indexer",
-    srcs = ["indexer.py"],
-    deps = [
-        ":indexer_config",
-        ":recall_index_sync",
-        "//haku/recall_index:config",
-        "//haku/recall_index:git_tree",
-        "//haku/recall_index:openai_embedder",
-        "//haku/recall_index:schema",
-        "@pypi//asyncpg",  # keep: runtime-only — SQLAlchemy's asyncpg dialect imports it dynamically for the async engine
-        "@pypi//openai",
-        "@pypi//psycopg",  # keep: runtime-only — SQLAlchemy's psycopg dialect imports it dynamically for the sync schema probe
-        "@pypi//pydantic",
-        "@pypi//pydantic_settings",
-        "@pypi//pyyaml",  # keep: YamlConfigSettingsSource imports yaml dynamically
-        "@pypi//sqlalchemy",
-    ],
-)
-
-py_binary(
-    name = "indexer_worker",
-    main_module = "haku.console.indexer",
-    deps = [":indexer"],
-)
-
-py_library(
     name = "recall_index_reader",
     srcs = ["recall_index_reader.py"],
     deps = [
@@ -509,47 +442,6 @@ oci_load(
     repo_tags = ["haku-console:latest"],
 )
 
-# ── OCI image (the haku-indexer worker) ───────────────────────────────────────
-# The recall-index maintenance worker, deployed separately from the console API so
-# index churn and failures never roll or disrupt the Console perimeter. Same base and
-# CA bundle: libgit2 verifies the public ducktape HTTPS remote against the system store.
-
-aspect_py_binary(
-    name = "indexer_bin",
-    main = "indexer.py",
-    deps = [":indexer"],
-)
-
-py_image_layer(
-    name = "indexer_layers",
-    binary = ":indexer_bin",
-    group = "1000",
-    owner = "1000",
-)
-
-oci_image(
-    name = "indexer_image",
-    base = "@debian_trixie_slim_linux_amd64",
-    entrypoint = py_image_entrypoint("indexer_bin"),
-    env = py_image_env(binary_name = "indexer_bin"),
-    labels = {
-        "org.opencontainers.image.source": "https://github.com/agentydragon/ducktape",
-        "org.opencontainers.image.title": "haku-indexer",
-    },
-    tars = [
-        ":indexer_layers",
-        "//third_party/debian_slim:cacerts",
-    ],
-    user = "1000:1000",
-    visibility = ["//visibility:public"],
-)
-
-oci_load(
-    name = "indexer_load",
-    image = ":indexer_image",
-    repo_tags = ["haku-indexer:latest"],
-)
-
 oci_image(
     name = "static_image",
     base = "@nginx_unprivileged_linux_amd64",
@@ -566,28 +458,6 @@ oci_layout_rloc(
     name = "static_test_image",
     testonly = True,
     image = ":static_image",
-)
-
-py_test(
-    name = "test_recall_index_sync",
-    size = "medium",
-    srcs = ["test_recall_index_sync.py"],
-    requires_docker = True,
-    deps = [
-        ":conftest",
-        ":mcp_config",
-        ":recall_index_reader",
-        ":recall_index_sync",
-        "//:conftest",
-        "//haku/console/tools:recall_index",
-        "//haku/recall_index:config",
-        "//haku/recall_index:fake_embedder",
-        "//haku/recall_index:schema",
-        "@pypi//pygit2",
-        "@pypi//pytest",
-        "@pypi//pytest_bazel",
-        "@pypi//sqlalchemy",
-    ],
 )
 
 py_test(
@@ -639,6 +509,18 @@ py_test(
         ":database_migrate",
         "//:conftest",
         "@pypi//pydantic",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_mcp_config",
+    srcs = ["test_mcp_config.py"],
+    deps = [
+        ":conftest",
+        ":mcp_config",
+        "//:conftest",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],

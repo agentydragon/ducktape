@@ -1,7 +1,7 @@
 """Deploy-owned recall-index configuration: the embedder endpoint and the logical-index registry.
 
-Shared by the console's query-time readers and the haku-indexer worker's maintenance stages, so
-one declaration keeps both on the same registry, credential slots, and chunk budget.
+Read by the console's query-time readers. The haku-indexer worker's maintenance stages shared it
+until the worker was removed (last commit with it: 74b464467).
 """
 
 from __future__ import annotations
