@@ -302,8 +302,10 @@ It wraps `ts_project`: the type check is the build step, and a module's dependen
 what it declares. Bundlers (`spa_bundle`, `esbuild`) take the emitted `.js` (entry point
 `main.js`, not `main.tsx`); vitest runs the emitted `.test.js`, so every spec is a
 `vitest_test` (`//devinfra/js:vitest.bzl`), which compiles it and runs it alone like any
-`*_test` (`bbr test //pkg:sidebar_test`). A package's one `vitest_config` generates the vitest
-config, and `check_vitest_specs()` at the end of its BUILD file fails the load for a spec file no
+`*_test` (`bbr test //pkg:sidebar_test`). A frontend writes it through its own
+`<frontend>_vitest_test` (`<frontend>/vitest.bzl`), which fills in the shared `config` and
+`tsconfig`. A package's one `vitest_config` generates the vitest config, and
+`check_vitest_specs()` at the end of its BUILD file fails the load for a spec file no
 `vitest_test` lists. Never a hand-written `vitest.config.*`.
 
 **Never `js_library` for `.ts`/`.tsx`, and never a whole-project `tsc_test`** — files

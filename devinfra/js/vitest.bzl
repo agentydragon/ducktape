@@ -126,4 +126,4 @@ def check_vitest_specs():
                 listed[src.rpartition(":")[2]] = True
     for spec in native.glob(_SPEC_GLOBS, allow_empty = True):
         if spec not in listed:
-            fail("//%s: spec file %s is in no `vitest_test`; add `vitest_test(name = \"%s_test\", srcs = [\"%s\"], ...)`" % (native.package_name(), spec, spec.rsplit(".test.", 1)[0].replace("/", "_"), spec))
+            fail("//%s: spec file %s is in no `vitest_test`; add one listing it in `srcs`" % (native.package_name(), spec))
