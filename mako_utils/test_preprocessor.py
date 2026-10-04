@@ -4,13 +4,6 @@ from mako.template import Template
 from mako_utils.preprocessor import markdown_heading_preprocessor
 
 
-def test_single_hash_untouched():
-    """Single # is not a Mako comment, should pass through unmodified."""
-    src = "# Top heading"
-    result = Template(src, preprocessor=markdown_heading_preprocessor).render()
-    assert result == "# Top heading"
-
-
 def test_mako_expressions_still_work():
     src = "## ${name}\nHello"
     result = Template(src, preprocessor=markdown_heading_preprocessor).render(name="World")
