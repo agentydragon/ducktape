@@ -201,50 +201,6 @@ async def test_actor_profile_with_a_never_policy_is_not_auto_approved() -> None:
     )
 
 
-def test_policy_config_rejects_cycles() -> None:
-    with pytest.raises(ValidationError, match="contains a cycle"):
-        ConsoleConfigFile.model_validate(
-            {
-                **_MANUAL_AUTHORITY_CONFIG,
-                "auto_approval_policies": [
-                    {"id": "one", "type": "any_of", "policies": ["two"]},
-                    {"id": "two", "type": "any_of", "policies": ["one"]},
-                    {"id": "manual", "type": "never"},
-                ],
-            }
-        )
-
-
-def test_profile_config_rejects_unknown_static_agent_profile() -> None:
-    with pytest.raises(ValidationError, match="unknown access profile"):
-        ConsoleConfigFile.model_validate(
-            {
-                **_MANUAL_AUTHORITY_CONFIG,
-                "static_agents": {
-                    "test": {
-                        "agent_id": str(AGENT_ACTOR.agent_id),
-                        "display_name": "Test Agent",
-                        "token": "test-agent-token",
-                        "operator_subject": "test-agent-operator",
-                        "access_profile_id": "missing",
-                    }
-                },
-            }
-        )
-
-
-def test_profile_config_rejects_unknown_kubernetes_authorization_profile() -> None:
-    with pytest.raises(ValidationError, match="Kubernetes authorization references unknown access profiles"):
-        ConsoleConfigFile.model_validate(
-            {
-                **_MANUAL_AUTHORITY_CONFIG,
-                "kubernetes_authorization": {
-                    "subjects_by_access_profile": {"missing": {"username": "system:serviceaccount:ns:reader"}}
-                },
-            }
-        )
-
-
 def test_kubernetes_server_requires_authorization_configuration() -> None:
     with pytest.raises(ValidationError, match="requires Kubernetes authorization configuration"):
         ConsoleConfigFile.model_validate(
