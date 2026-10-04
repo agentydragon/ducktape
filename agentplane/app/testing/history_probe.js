@@ -34,6 +34,7 @@
     sumShiftPx: 0,
     layoutShiftSum: 0,
     layoutShifts: [],
+    syncResponses: [],
     events: [],
   };
 
@@ -61,6 +62,17 @@
       }
     }
   }).observe({ type: "layout-shift", buffered: true });
+
+  // When the page's reads of rows and bodies finished, on the clock `HistoryTrace` stamps events
+  // with, to tell a layout change that follows data arriving from one that does not.
+  new PerformanceObserver((list) => {
+    for (const entry of list.getEntries()) {
+      const { pathname } = new URL(entry.name);
+      if (pathname.startsWith("/sync/") && probe.syncResponses.length < MAX_EVENTS) {
+        probe.syncResponses.push({ started: entry.startTime, finished: entry.responseEnd, path: pathname });
+      }
+    }
+  }).observe({ type: "resource", buffered: true });
 
   const frameTasks = new MessageChannel();
   const frame = (now) => {
