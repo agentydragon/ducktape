@@ -103,7 +103,6 @@ py_library(
     deps = [
         ":sandbox_models",
         "//agentplane/runner:harness",
-        "//agentplane/sandbox_service:instructions",
         "@pypi//pydantic",
     ],
 )

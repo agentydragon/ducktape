@@ -1,4 +1,4 @@
-"""Backend-owned operational instructions, also used by the app during the cutover."""
+"""Backend-owned operational instructions."""
 
 from jinja2 import StrictUndefined, Template
 

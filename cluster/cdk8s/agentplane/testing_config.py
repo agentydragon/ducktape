@@ -7,7 +7,7 @@ from __future__ import annotations
 
 from agentplane.app.action_federation import ActionFederationSettings
 from agentplane.app.main import AppSettingsConfig
-from cluster.cdk8s.agentplane.app_settings import OLLAMA_MODELS, platform_agent_instructions, settings
+from cluster.cdk8s.agentplane.app_settings import OLLAMA_MODELS, settings
 from cluster.cdk8s.litellm.keys import (
     ANTIGRAVITY_CHEAP_CLIENT_MODELS,
     CHEAP_EXPERIMENTS_CLAUDE_MODEL,
@@ -28,6 +28,5 @@ def config(action_federation: ActionFederationSettings | None = None) -> AppSett
         harness_claude=_HARNESS_CLAUDE,
         harness_codex=_HARNESS_CODEX,
         thread_preset_codex_model=_HARNESS_CODEX[0],
-        agent_instructions=platform_agent_instructions(_NAMESPACE),
         action_federation=action_federation,
     )

@@ -2,7 +2,7 @@
 
 ## Agentplane
 
-- [ ] Extend the image-owned Agentplane agent instructions once the interfaces are ready: explain
+- [ ] Extend the Agentplane platform agent instructions once the interfaces are ready: explain
       subagent operation and safe lookup of past conversations without putting task-specific procedures
       in the shared prompt.
 

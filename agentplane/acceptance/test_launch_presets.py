@@ -55,7 +55,7 @@ async def test_public_coder_preset_launches_an_initialized_editable_codex_thread
         preset.session_defaults.model,
         preset.session_defaults.reasoning_effort,
     )
-    # The app prepends its configured platform guidance to every session. The editable task
+    # The Sandbox Service prepends its configured platform guidance to every session. The editable task
     # instructions remain the exact final block; the Sandbox binding above stores only that edit.
     assert first.attached.spec.instructions.rsplit("\n\n", 1)[-1] == INSTRUCTIONS
 

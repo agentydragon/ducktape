@@ -12,7 +12,6 @@ from agentplane.app.api import ModelCatalog, ModelOption
 from agentplane.app.main import AppSettingsConfig
 from agentplane.app.presets import SandboxPreset, ThreadPreset
 from agentplane.runner.harness import Harness
-from agentplane.sandbox_service.instructions import render_agent_instructions_template
 from agentplane.sandbox_service.kubernetes_grants import KubernetesGrant
 from cluster.cdk8s.agentplane.model_display_names import display_name
 from cluster.cdk8s.model_rosters import OLLAMA_CHAT_MODELS, ApiShape, Provider, exposed_name, ollama_chat_variant
@@ -74,21 +73,12 @@ def reasoning_efforts(model: str) -> list[str]:
     return []
 
 
-def platform_agent_instructions(namespace: str) -> str:
-    """Explicitly configure the shared platform instructions for one deployment namespace."""
-    return render_agent_instructions_template(
-        egress_api_url=f"http://agentplane-egress.{namespace}.svc.cluster.local",
-        actions_service_url=f"http://agentplane-actions.{namespace}.svc.cluster.local:8080",
-    )
-
-
 def settings(
     *,
     namespace: str,
     harness_claude: list[str],
     harness_codex: list[str],
     thread_preset_codex_model: str,
-    agent_instructions: str,
     action_federation: ActionFederationSettings | None = None,
     action_policy_sets: list[str] | None = None,
     haku_preset_model: str | None = None,
@@ -108,7 +98,6 @@ def settings(
             ],
             harnesses={Harness.CLAUDE: harness_claude, Harness.CODEX: harness_codex},
         ),
-        agent_instructions=agent_instructions,
         kubernetes_grants=kubernetes_grants if kubernetes_grants is not None else {},
         **(
             {"kubernetes_binding_cleanup_namespaces": kubernetes_binding_cleanup_namespaces}
