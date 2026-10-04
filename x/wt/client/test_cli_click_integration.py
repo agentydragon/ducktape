@@ -26,6 +26,15 @@ class TestNewCLIIntegration:
         assert_output_contains(result.output, "No worktrees found")
 
     @patch("x.wt.client.wt_client.WtClient.list_worktrees")
+    def test_list_worktrees_command(self, mock_list, wt_env, build_status_response):
+        """Test ls command works via sh dispatcher."""
+        mock_list.return_value = WorktreeListResult(worktrees=[])
+
+        result = CliRunner().invoke(app, ["sh", "ls"])
+
+        assert result.exit_code == 0
+
+    @patch("x.wt.client.wt_client.WtClient.list_worktrees")
     def test_list_worktrees_with_data(self, mock_list, wt_env, build_status_response):
         """Test ls command with actual worktree data via sh dispatcher."""
         mock_list.return_value = WorktreeListResult(
