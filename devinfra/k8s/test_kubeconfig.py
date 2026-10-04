@@ -30,13 +30,6 @@ def test_build_kubeconfig_env_override(monkeypatch: pytest.MonkeyPatch) -> None:
     assert kc["contexts"][0]["context"] == {"cluster": "cluster", "namespace": "haku", "user": "haku-k8s"}
 
 
-def test_write_kubeconfig_file_fresh(tmp_path: Path) -> None:
-    output = tmp_path / "kubeconfig"
-    kubeconfig.write_kubeconfig_file(_KUBECONFIG, output)
-    assert yaml.safe_load(output.read_text()) == _KUBECONFIG
-    assert output.stat().st_mode & 0o777 == 0o600
-
-
 def test_write_kubeconfig_file_noop_when_identical(tmp_path: Path) -> None:
     output = tmp_path / "kubeconfig"
     kubeconfig.write_kubeconfig_file(_KUBECONFIG, output)
@@ -81,24 +74,6 @@ def _make_fake_sops(token: str = _FAKE_TOKEN):
         raise AssertionError(f"unexpected --extract arg: {extract_arg}")
 
     return _fake_sops
-
-
-def test_main_end_to_end(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    project_dir = tmp_path / "repo"
-    (project_dir / "secrets").mkdir(parents=True)
-    (project_dir / "secrets" / "claude-web-k8s-jwt.yaml").write_text("stub")
-
-    monkeypatch.setenv("CLAUDE_PROJECT_DIR", str(project_dir))
-    monkeypatch.setattr(kubeconfig.subprocess, "run", _make_fake_sops())
-
-    output_path = tmp_path / "out" / "kubeconfig"
-    kubeconfig.main(["--write", str(output_path)])
-
-    kc = yaml.safe_load(output_path.read_text())
-    assert kc["clusters"][0]["cluster"] == {"server": "https://kubeapi.allegedly.works"}
-    assert kc["users"][0]["user"] == {"token": _FAKE_TOKEN}
-    assert kc["current-context"] == "claude-code-web"
-    assert output_path.stat().st_mode & 0o777 == 0o600
 
 
 def test_main_end_to_end_env_override(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:

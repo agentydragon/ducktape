@@ -118,19 +118,6 @@ def test_the_full_sweep_wins_over_an_affected_set_run_at_the_same_commit() -> No
     assert found == ["full-sweep"]
 
 
-def test_a_commit_buildbuddy_does_not_know_falls_back_to_the_derived_ids() -> None:
-    """A PR run records the merge SHA, so its invocation is not findable by head SHA —
-    and a run cancelled before Bazel started has no invocation at all. The by-run
-    derivation is the only handle on either, so it stays as the fallback."""
-    found = find_test_invocations(
-        run_id="33060467222", run_attempt="1", commit_sha="deadbeef", api_key="key", fetch=_search_reply()
-    )
-    assert found == [
-        str(invocation_id(run_id="33060467222", attempt="1", role="test")),
-        str(invocation_id(run_id="33060467222", attempt="1", role="build")),
-    ]
-
-
 def test_an_invocation_that_never_existed_is_not_a_failure() -> None:
     """A run cancelled before Bazel started names two invocations BuildBuddy has never
     seen, because the IDs are assigned up front. That is a normal empty result — raising

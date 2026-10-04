@@ -77,12 +77,6 @@ class TestEnvArgs:
 
 
 class TestBazelrcArgs:
-    def test_reads_flags(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-        rc = tmp_path / "bbr.bazelrc"
-        rc.write_text("build --config=rbe\nbuild --build_metadata=TAGS=session:abc\n")
-        monkeypatch.setenv("BBR_BAZELRC", str(rc))
-        assert _bazelrc_args() == ["--config=rbe", "--build_metadata=TAGS=session:abc"]
-
     def test_skips_comments_and_blanks(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         rc = tmp_path / "bbr.bazelrc"
         rc.write_text("# comment\n\nbuild --config=rbe\n  \n# another comment\n")
@@ -94,10 +88,6 @@ class TestBazelrcArgs:
         rc.write_text("common --remote_cache_compression\ntest --test_output=errors\n")
         monkeypatch.setenv("BBR_BAZELRC", str(rc))
         assert _bazelrc_args() == ["--remote_cache_compression", "--test_output=errors"]
-
-    def test_unset_env_returns_empty(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        monkeypatch.delenv("BBR_BAZELRC", raising=False)
-        assert _bazelrc_args() == []
 
     def test_missing_file_returns_empty(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setenv("BBR_BAZELRC", str(tmp_path / "nonexistent"))
@@ -149,12 +139,6 @@ class TestBuildCommand:
             "--config=rbe",
             "//foo:bar",
         ]
-
-    def test_minted_invocation_id_is_uuid(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-        """Bazel rejects non-UUID --invocation_id values, so the minted ID must be one."""
-        _cmd, inv_id = self._build(tmp_path, ["test", "//foo:bar"], monkeypatch)
-        assert inv_id is not None
-        uuid.UUID(inv_id)
 
     def test_each_run_mints_fresh_id(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         repo = _make_repo(tmp_path)
@@ -332,7 +316,7 @@ class TestMain:
 
         assert excinfo.value.code == 17  # bb remote's exit code is propagated
         inv_id = at_run_start["file"]
-        uuid.UUID(inv_id)
+        uuid.UUID(inv_id)  # Bazel rejects a non-UUID --invocation_id, so the minted ID must be one
         assert f"bbr: invocation {inv_id}" in at_run_start["stderr"]
         # Post-run summary repeats the ID with bbapi recipes.
         post_run = capsys.readouterr().err

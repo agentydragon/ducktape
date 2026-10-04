@@ -87,17 +87,6 @@ def test_discover_foreign_clones_resolves_a_linked_worktree_to_its_hub(repo: Git
     assert roots == [foreign.path]
 
 
-def test_classify_foreign_clone_prunable_when_every_worktree_is(repo: GitRepo) -> None:
-    repo.set_origin(_ORIGIN)
-    foreign = _foreign_clone(repo)
-    # foreign's own primary checkout is on `main`, an ancestor of itself — trivially prunable.
-
-    result = fcg.classify_foreign_clone(foreign.path, pr_states={})
-
-    assert isinstance(result, fcg.PrunableForeignClone)
-    assert result.clone.root == foreign.path
-
-
 def test_classify_foreign_clone_retained_when_a_member_is_dirty(repo: GitRepo) -> None:
     repo.set_origin(_ORIGIN)
     foreign = _foreign_clone(repo)

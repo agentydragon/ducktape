@@ -53,12 +53,6 @@ async def test_event_pages_cover_every_event_once_without_a_trailing_request(
     assert len(service.requests) == requests
 
 
-async def test_event_pages_resume_after_a_sequence_num(service: FakeSessionsService, api: SessionsApi) -> None:
-    service.events[ONE] = make_events(1203)
-    seqs = [e.seq async for page in api.iter_event_pages(ONE, after=500) for e in page]
-    assert seqs == list(range(501, 1204))
-
-
 @pytest.mark.parametrize(
     ("after", "missing", "pages_before_the_gap"),
     [

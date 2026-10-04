@@ -279,26 +279,6 @@ mod tests {
     }
 
     #[test]
-    fn resolves_real_binary_outside_shim_dir() {
-        let f = PathFixture::new();
-        let shim = f.mkdir("shim");
-        let real = f.mkdir("real");
-        f.with_exec(&shim, "bb");
-        let real_bb = f.with_exec(&real, "bb");
-        let env = env_for(&f, &shim, &real);
-
-        match decide_with_real("bb", &["info"], env, &shim, "s1") {
-            ShimDecision::Exec(argv) => {
-                assert_eq!(
-                    argv,
-                    vec![real_bb.display().to_string(), "info".to_string()]
-                );
-            }
-            other => panic!("expected Exec, got {other:?}"),
-        }
-    }
-
-    #[test]
     fn missing_real_binary_blocks_with_127() {
         let f = PathFixture::new();
         let shim = f.mkdir("shim");

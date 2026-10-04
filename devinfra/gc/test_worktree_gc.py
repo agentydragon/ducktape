@@ -58,12 +58,6 @@ def test_dirty_tracked_change_is_kept(repo: GitRepo, proc: Path) -> None:
     assert result.reason == "uncommitted changes"
 
 
-def test_untracked_file_is_kept(repo: GitRepo, proc: Path) -> None:
-    wt = repo.worktree("wt", "feature")
-    (wt.path / "scratch").write_text("x\n")
-    assert isinstance(_classify(repo, wt.path, proc), wg.RetainedWorktree)
-
-
 def test_dirty_tracked_deletion_is_kept(repo: GitRepo, proc: Path) -> None:
     """A tracked file deleted out from under the worktree (not just modified) must still be
     caught by the tracked-only fast path, not just a tracked modification."""

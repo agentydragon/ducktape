@@ -307,7 +307,6 @@ py_test(
     srcs = ["test_image_registry.py"],
     deps = [
         ":image_registry",
-        "//util:crane",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],
