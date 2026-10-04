@@ -7372,5 +7372,143 @@
       "method": "sum dur for traceEvents cat Remote execution process wall time; do not sum nested root spans",
       "analysis_execution_boundary": "overlapping, not separately allocated"
     }
-  ]
+  ],
+  "followup_investigations": {
+    "inspected_devel_commit": "31d80cb4bf9478c011cb054197c3d9e202d931eb",
+    "source_comparison": "Relevant wheel, pre-commit, visual, Bazel-selection and manifest-test source unchanged from the original inspected commit.",
+    "shallow_checkout": {
+      "source_merge_commit": "3e094ead71d0393ccc37d301f2f87424dad0937d",
+      "expected_pr_head": "5f656f7d77cc6ffbb8d195225021a7b999476cd8",
+      "commands": [
+        "git fetch --no-tags --depth=2 origin 3e094ead71d0393ccc37d301f2f87424dad0937d",
+        "git checkout --detach FETCH_HEAD",
+        "SOURCE_COMMIT=3e094ead71d0393ccc37d301f2f87424dad0937d EXPECTED_HEAD_SHA=5f656f7d77cc6ffbb8d195225021a7b999476cd8 python3 devinfra/ci/pr_mergeability.py verify-source",
+        "git rev-parse --is-shallow-repository",
+        "git rev-list --count HEAD",
+        "git diff --name-only HEAD^1 HEAD"
+      ],
+      "observed": {
+        "verification_exit_code": 0,
+        "shallow": true,
+        "reachable_commits": 3,
+        "changed_files": [
+          "STYLE.md"
+        ],
+        "working_tree_clean": true
+      },
+      "limits": "No wheel build, Nix build, remote handoff, or before/after CI timing was run.",
+      "example_gate_saving_ceiling_seconds": 32
+    },
+    "ansible_setup": {
+      "command": "nix develop --command pre-commit run ansible-syntax-check --files STYLE.md",
+      "observed": "ansible-playbook --syntax-check: (no files to check) Skipped; exit 0",
+      "source_observation": "pre-commit.yml restores/installs roles before determining changed files; syntax hook matches only selected root Ansible playbooks.",
+      "limits": "Selection verified; conditional workflow not implemented and savings unmeasured."
+    },
+    "failure_recovery": {
+      "observed_date": "2026-10-04",
+      "pr_8666": {
+        "run_id": 36928767723,
+        "head_sha": "9f1865e95cbcd29b89f9491ec5c28ca78c09bbe6",
+        "failed_job_id": 110592539421,
+        "buildbuddy_test_invocation_id": "9770e729-1c46-54c9-8a26-e3ffa4a36e06",
+        "target": "//agentplane/app:test_thread_browser",
+        "failed_shards": [
+          {
+            "shard": 1,
+            "status": "TIMEOUT",
+            "elapsed_seconds": 301.5,
+            "pytest_progress_dots": 5,
+            "items_assigned": 8
+          },
+          {
+            "shard": 2,
+            "status": "TIMEOUT",
+            "elapsed_seconds": 301.5,
+            "pytest_progress_dots": 1,
+            "items_assigned": 7
+          }
+        ],
+        "test_xml": "Both XML artifacts contain only the shard-level timeout (exit code 142); no assertion traceback or active test name.",
+        "container_logs": "Electric connected to Postgres and began shape replication on both shards. PostgreSQL logs include permission denied for database postgres while creating a publication, then successful replication slot startup; this is not enough to attribute the timeout.",
+        "http2_ingress": "Shard 1 log contains normal page asset responses. Shard 2 shows page and sync requests with HTTP 200, two GET /actions/stream?state=decision_pending responses of HTTP 503 at 21:33:08 and 21:33:10 UTC, then further sync requests returning HTTP 200 through 21:33:12. No browser HAR/trace exists for the in-progress test because those artifacts are emitted by teardown.",
+        "rerun_actor": {
+          "actor": "agentydragon",
+          "triggering_actor": "agentydragon",
+          "run_started_at": "2026-10-01T22:00:17Z",
+          "conclusion": "success"
+        }
+      },
+      "pr_8823": {
+        "run_id": 37084302778,
+        "head_sha": "e55b47f0df1686c2138696dc3388c4a2055d0454",
+        "historical_failed_job_id": 111091291794,
+        "historical_error": "mirror.gcr.io returned HTTP 404 for a Postgres layer blob.",
+        "blob_digest": "sha256:af2a6480a0588ba2d48e077961144ed182076ebac70c8c26e6ce1986c8c3ff22",
+        "read_only_head_checks": [
+          {
+            "url": "https://mirror.gcr.io/v2/library/postgres/blobs/sha256:af2a6480a0588ba2d48e077961144ed182076ebac70c8c26e6ce1986c8c3ff22",
+            "status": 200
+          },
+          {
+            "url": "https://registry-1.docker.io/v2/library/postgres/blobs/sha256:af2a6480a0588ba2d48e077961144ed182076ebac70c8c26e6ce1986c8c3ff22",
+            "status": 200
+          }
+        ],
+        "rerun_actor": {
+          "actor": "agentydragon",
+          "triggering_actor": "agentydragon",
+          "run_started_at": "2026-10-03T01:24:15Z",
+          "conclusion": "success"
+        },
+        "interpretation": "The exact blob is currently available at both registries; this does not establish its availability at the historical failure time."
+      },
+      "interpretation_limits": [
+        "GitHub attempt-specific API exposes actor accounts but not whether the rerun was initiated via UI or API, nor the actor's motive.",
+        "The elapsed 20m34s and 26m53s gaps between failed jobs and rerun attempts do not identify their cause.",
+        "The BuildBuddy logs prove three automatic remote-execution transport retries during PR 8666 attempt 2; they do not expose the internal retry policy or prove retry-budget exhaustion.",
+        "The timed-out Pytest logs are quiet and artifacts from the active test's teardown are absent, so the failing test case and assertion-level cause remain unknown."
+      ],
+      "commands": [
+        "bbapi target log 9770e729-1c46-54c9-8a26-e3ffa4a36e06 //agentplane/app:test_thread_browser --all",
+        "bbapi artifact list 9770e729-1c46-54c9-8a26-e3ffa4a36e06",
+        "gh api repos/agentydragon/ducktape/actions/runs/36928767723/attempts/2",
+        "gh api repos/agentydragon/ducktape/actions/runs/37084302778/attempts/2"
+      ]
+    },
+    "manifest_parse_once": {
+      "source_commit": "38fd1c94e4bf46e5abf20e5bae16ed9482649936",
+      "command": "nix develop --command bbr test //cluster/cdk8s:test_generate_manifests",
+      "profile_scope": "Temporary cProfile wrapper around pytest_bazel.main, dumped through undeclared_outputs_dir; excludes earlier imports.",
+      "change": "Module-scoped yaml_documents map keyed by generated Path; four consumers reuse documents with existing all-yaml, k8s-yaml, parked exclusion and archived direct-child selections and all assertions preserved.",
+      "baseline": {
+        "invocation_id": "3ec487be-393c-4272-abf2-db50346552d6",
+        "tests_passed": 8,
+        "target_wall_seconds": 101.9,
+        "profile_total_seconds": 64.883,
+        "profile_calls": 86937818,
+        "yaml_loading_seconds": 36.587,
+        "generated_fixture_seconds": 22.5
+      },
+      "spike": {
+        "invocation_id": "80c2b23c-4d52-401d-bb44-62937662dc7b",
+        "tests_passed": 8,
+        "target_wall_seconds": 71.7,
+        "profile_total_seconds": 28.31,
+        "profile_calls": 34888093,
+        "yaml_loading_seconds": 9.47,
+        "generated_fixture_seconds": 14.8
+      },
+      "limits": "One profiled pair; fixture/subprocess timings varied. No unprofiled before/after or PR feedback measurement. Parsed documents retained until module teardown.",
+      "cleanup": "Temporary instrumentation and fixture change restored; no production change published.",
+      "setup_failures": "Initial profiling import ordering and candidate list[object] annotations failed Ruff/mypy respectively before test execution; corrected before the passing runs."
+    },
+    "pre_timeout_diagnostics": {
+      "invocation_id": "f6f546fd-5580-4107-bf82-d5cc19307e01",
+      "command": "nix develop --command bbr test //devinfra/ci/report_preview:hang_diagnostics --test_arg=-v --test_output=errors",
+      "experiment": "Temporary isolated test writes request.node.nodeid to active-case.txt, schedules faulthandler.dump_traceback_later(0.2) into pre-timeout-stack.txt, waits on threading.Event for 0.5 seconds, then asserts before teardown that the stack includes the active test function.",
+      "result": "PASSED on RBE; stack file present before teardown.",
+      "limits": "Demonstrates early stack and case capture; does not reproduce the historical browser hang, force a Bazel timeout, or preserve browser HAR."
+    }
+  }
 }
