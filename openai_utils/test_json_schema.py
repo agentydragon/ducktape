@@ -150,15 +150,14 @@ def test_newtype_with_description_passes_strict_mode():
     assert "pattern" in slug_prop
 
 
-def test_newtype_without_description_uses_bare_ref():
-    """NewType field WITHOUT Field(description) keeps $ref (no siblings, no inlining needed)."""
+def test_newtype_without_description_passes_strict_mode():
+    """NewType field WITHOUT Field(description) is valid for OpenAI strict mode."""
 
     class ModelNoDesc(OpenAIStrictModeBaseModel):
         slug: TestSnapshotSlug
 
     schema = ModelNoDesc.model_json_schema(schema_generator=OpenAICompatibleSchema)
-    # Bare $ref is valid for OpenAI strict mode — no inlining needed
-    assert "$ref" in schema["properties"]["slug"]
+    validate_openai_strict_mode_schema(schema, "ModelNoDesc")
 
 
 def test_newtype_default_generator_produces_ref_with_siblings():
