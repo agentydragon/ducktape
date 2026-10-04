@@ -1537,12 +1537,16 @@ async def expect_archived_events(
 
 
 async def expect_history_bottom(page: Page) -> None:
-    await page.wait_for_function(
-        """() => {
-            const area = document.querySelector('[aria-label="Thread history"]');
-            return area.scrollHeight - area.clientHeight - area.scrollTop <= 2;
-        }"""
-    )
+    try:
+        await page.wait_for_function(
+            """() => {
+                const area = document.querySelector('[aria-label="Thread history"]');
+                return area.scrollHeight - area.clientHeight - area.scrollTop <= 2;
+            }"""
+        )
+    except PlaywrightTimeoutError:
+        trace = format_history_trace((await history_trace(page))[-60:])
+        raise AssertionError(f"the history never reached its bottom; its last events:\n{trace}") from None
 
 
 @pytest.mark.parametrize("raw", [False, True], ids=["desktop-normal", "phone-raw"])
