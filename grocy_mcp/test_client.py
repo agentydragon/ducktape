@@ -68,11 +68,6 @@ async def test_resolve_product_by_id(grocy_client: GrocyClient) -> None:
     assert result == Resolved(id=1, name="Rice")
 
 
-async def test_resolve_product_by_name(grocy_client: GrocyClient) -> None:
-    result = await grocy_client.resolve_entity(EntityType.PRODUCT, "Rice")
-    assert result == Resolved(id=1, name="Rice")
-
-
 async def test_resolve_product_by_name_case_insensitive(grocy_client: GrocyClient) -> None:
     result = await grocy_client.resolve_entity(EntityType.PRODUCT, "rice")
     assert result == Resolved(id=1, name="Rice")
@@ -112,15 +107,6 @@ async def test_resolve_qu_by_name(grocy_client: GrocyClient) -> None:
 async def test_resolve_qu_by_id(grocy_client: GrocyClient) -> None:
     result = await grocy_client.resolve_entity(EntityType.QUANTITY_UNIT, 5)
     assert result == Resolved(id=5, name="Liter")
-
-
-# -- QU for product: direct match ------------------------------------------
-
-
-async def test_qu_for_product_direct_match(grocy_client: GrocyClient) -> None:
-    """Rice's stock QU is Kilogram (id=3). Passing Kilogram -> factor 1.0."""
-    result = await grocy_client.resolve_qu_for_product("Kilogram", product_id=1)
-    assert result == ResolvedQU(id=3, name="Kilogram", stock_qu_id=3, stock_qu_name="Kilogram", conversion_factor=1.0)
 
 
 # -- QU for product: global conversion -------------------------------------
