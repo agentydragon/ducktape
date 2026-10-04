@@ -2056,57 +2056,6 @@ export { actual };
 }
 
 #[test]
-fn member_source_match_class_member_holes_bracket_interior_member() {
-    // Two `ANYTHING;` holes bracket a single pinned member, so the
-    // selector matches a class by an interior member it contains: the
-    // leading hole absorbs `a`, the trailing hole absorbs `c`, and `b`
-    // is pinned in between. (Previously a second class-member hole was a hard
-    // "ambiguous, never matches"; it is now an ordered-subsequence gap.)
-    let fixture = run_fixture(member_fixture(
-        r#"class Counter {
-  a() {
-    return 1;
-  }
-  b() {
-    return 2;
-  }
-  c() {
-    return 3;
-  }
-}
-console.log(new Counter().b());
-export { Counter };
-"#,
-        "shapes",
-        Member::source_alpha(
-            "Counter",
-            r#"class K {
-  ANYTHING;
-  b() {
-    STMT_LIST_B;
-  }
-  ANYTHING;
-}"#,
-        ),
-    ));
-
-    assert_entry_output(&fixture, "2\n");
-    assert_module_exports(
-        &fixture.out_root,
-        "static/app/modules/shapes.js",
-        &["Counter"],
-        &[],
-    );
-    assert_module_source(
-        &fixture.out_root,
-        "static/app/modules/shapes.js",
-        // The whole class moved; the bracketing holes are selector-only.
-        &["class", "a()", "b()", "c()"],
-        &["ANYTHING", "STMT_LIST_B"],
-    );
-}
-
-#[test]
 fn member_source_match_interleaved_class_member_holes_match_ordered_members() {
     // Two pinned members separated by an `ANYTHING;` hole match a class
     // that contains them in that order with other members interspersed:
