@@ -24,8 +24,6 @@ from kyverno_clusterpolicy_crds.io.kyverno import (
     ClusterPolicySpecRulesMatchAny,
     ClusterPolicySpecRulesMatchAnyResources,
     ClusterPolicySpecRulesValidate,
-    ClusterPolicySpecRulesValidateCel,
-    ClusterPolicySpecRulesValidateCelExpressions,
     ClusterPolicySpecRulesValidateDeny,
     ClusterPolicySpecValidationFailureAction,
 )
@@ -42,10 +40,10 @@ def match_resources(resources: ClusterPolicySpecRulesMatchAnyResources) -> Clust
 
 
 class Validate:
-    """`ClusterPolicySpecRulesValidate`'s real variant shapes this repo uses: `deny`
-    (a JMESPath condition block, denying unconditionally when omitted) and `cel` (CEL
-    expressions). The schema also defines `pattern`/`anyPattern`/`podSecurity`/
-    `manifests`/`assert` -- add a factory for one the day this repo builds it.
+    """`ClusterPolicySpecRulesValidate`'s real variant shape this repo uses: `deny`
+    (a JMESPath condition block, denying unconditionally when omitted). The schema also
+    defines `cel`/`pattern`/`anyPattern`/`podSecurity`/`manifests`/`assert` -- add a
+    factory for one the day this repo builds it.
     """
 
     @staticmethod
@@ -55,15 +53,6 @@ class Validate:
         (`x-kubernetes-preserve-unknown-fields`) -- pass it as a raw dict."""
         return ClusterPolicySpecRulesValidate(
             message=message, deny=ClusterPolicySpecRulesValidateDeny(conditions=conditions)
-        )
-
-    @staticmethod
-    def cel(
-        *, message: str, expressions: Sequence[ClusterPolicySpecRulesValidateCelExpressions]
-    ) -> ClusterPolicySpecRulesValidate:
-        """Denies the request unless every CEL `expressions` entry evaluates true."""
-        return ClusterPolicySpecRulesValidate(
-            message=message, cel=ClusterPolicySpecRulesValidateCel(expressions=list(expressions))
         )
 
 

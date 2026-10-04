@@ -67,8 +67,6 @@ SERVICE = ServiceRef(
     port=Port(name="http", number=8080),
     pods=Pods(namespace=_NAME, labels=(("app.kubernetes.io/name", _NAME),)),
 )
-GMAIL_MCP_URL = f"{SERVICE.url}/gmail/mcp"
-CALENDAR_MCP_URL = f"{SERVICE.url}/calendar/mcp"
 # The caller-facing bearer this chart mints.
 BEARER = SecretRef(namespace=_NAME, name="google-mcp-bearer").key("bearer-token")
 # Populated by a ClusterExternalSecret in Airlock's own Kustomization
