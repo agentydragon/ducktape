@@ -1022,13 +1022,6 @@ async def _parse_tana_stream_lines_async(lines: AsyncIterator[str]) -> AsyncIter
         yield chunk
 
 
-def _parse_tana_stream_line(line: str) -> list[GenericStreamingChunk]:
-    parser = _TanaStreamParser()
-    chunks = parser.parse_line(line)
-    chunks.extend(parser.finish())
-    return chunks
-
-
 def _filter_stream_chunks(chunks: Iterator[GenericStreamingChunk]) -> Iterator[GenericStreamingChunk]:
     for chunk in chunks:
         if _is_empty_nonterminal_stream_chunk(chunk):

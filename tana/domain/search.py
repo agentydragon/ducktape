@@ -8,16 +8,6 @@ from pydantic import BaseModel, ConfigDict, Field
 from tana.domain.types import NodeId
 
 
-class SearchKind(StrEnum):
-    """Valid search expression kinds."""
-
-    TAG = "tag"
-    TYPE = "type"
-    TEXT = "text"
-    FIELD = "field"
-    BOOLEAN = "boolean"
-
-
 class BooleanOperator(StrEnum):
     AND = "AND"
     OR = "OR"
