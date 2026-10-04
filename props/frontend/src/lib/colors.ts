@@ -1,4 +1,4 @@
-// Shared color utilities for recall, split badges, and issue types
+// Shared color utilities for recall and issue types
 
 /** Returns Tailwind classes for recall value styling */
 export function recallColorClass(value: number | null | undefined): string {
@@ -6,20 +6,6 @@ export function recallColorClass(value: number | null | undefined): string {
   if (value >= 0.7) return "text-green-600 dark:text-green-400 font-medium";
   if (value >= 0.4) return "text-yellow-600 dark:text-yellow-400";
   return "text-red-600 dark:text-red-400";
-}
-
-/** Returns Tailwind classes for split badge styling */
-export function splitBadgeClass(split: string): string {
-  switch (split) {
-    case "train":
-      return "bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200";
-    case "valid":
-      return "bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200";
-    case "test":
-      return "bg-purple-100 text-purple-800 dark:bg-purple-900 dark:text-purple-200";
-    default:
-      return "bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-200";
-  }
 }
 
 export interface IssueColorScheme {

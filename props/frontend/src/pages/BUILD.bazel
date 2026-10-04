@@ -105,7 +105,6 @@ ts_library(
         "//props/frontend/src/components:CopyButton",
         "//props/frontend/src/components:FileTree",
         "//props/frontend/src/components:FileViewer",
-        "//props/frontend/src/components:TabButton",
         "//props/frontend/src/components/stats:CreditBadge",
         "//props/frontend/src/components/stats:OccurrenceStats",
         "//props/frontend/src/lib:OccurrenceLink",

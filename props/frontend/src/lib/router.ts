@@ -37,10 +37,6 @@ export function useRoute(): RouteLocation {
   return useSyncExternalStore(subscribe, getLocation, getLocation);
 }
 
-export function usePathname(): string {
-  return useRoute().pathname;
-}
-
 export function useSearchParams(): URLSearchParams {
   return useRoute().searchParams;
 }

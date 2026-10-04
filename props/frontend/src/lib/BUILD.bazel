@@ -105,7 +105,6 @@ ts_library(
     srcs = ["formatters.ts"],
     tsconfig = "//props/frontend:tsconfig",
     deps = [
-        ":client",
         ":types",
         "//props/frontend:node_modules/date-fns",
     ],

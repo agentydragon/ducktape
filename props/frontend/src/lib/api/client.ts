@@ -131,26 +131,12 @@ export async function fetchDefinitions(agentType?: AgentType) {
   return data;
 }
 
-// Fetch active runs
-export async function fetchActiveRuns() {
-  const { data, error } = await api.GET("/api/runs/active");
-  if (error) throw new Error(extractErrorMessage(error, "Failed to fetch active runs"));
-  return data;
-}
-
 // Trigger validation runs
 export async function triggerValidationRuns(request: ValidationRunRequest) {
   const { data, error } = await api.POST("/api/runs/validation", {
     body: request,
   });
   if (error) throw new Error(extractErrorMessage(error, "Failed to trigger validation runs"));
-  return data;
-}
-
-// Fetch validation jobs
-export async function fetchJobs() {
-  const { data, error } = await api.GET("/api/runs/jobs");
-  if (error) throw new Error(extractErrorMessage(error, "Failed to fetch jobs"));
   return data;
 }
 

@@ -6,17 +6,6 @@ package(default_visibility = [
 ])
 
 ts_library(
-    name = "TabButton",
-    srcs = ["TabButton.tsx"],
-    tsconfig = "//props/frontend:tsconfig",
-    deps = [
-        "//props/frontend:node_modules/@mantine/core",
-        "//props/frontend:node_modules/@types/react",
-        "//props/frontend:node_modules/react",
-    ],
-)
-
-ts_library(
     name = "CopyButton",
     srcs = ["CopyButton.tsx"],
     tsconfig = "//props/frontend:tsconfig",
