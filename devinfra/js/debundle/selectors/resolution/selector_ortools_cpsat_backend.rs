@@ -502,9 +502,9 @@ mod tests {
         OrToolsCpSatBackend::default().solve(problem).unwrap()
     }
 
-    fn invalid_problem(problem: &CompiledSelectorProblem) -> String {
+    fn invalid_problem(problem: &CompiledSelectorProblem) -> InvalidProblem {
         match OrToolsCpSatBackend::default().solve(problem) {
-            Err(OrToolsCpSatBackendError::InvalidProblem(err)) => err.to_string(),
+            Err(OrToolsCpSatBackendError::InvalidProblem(err)) => err,
             other => panic!("expected an invalid problem, got {other:?}"),
         }
     }
@@ -608,7 +608,7 @@ mod tests {
 
     #[test]
     fn missing_shared_sparse_domain_is_invalid() {
-        let message = invalid_problem(&CompiledSelectorProblem {
+        let invalid = invalid_problem(&CompiledSelectorProblem {
             variables: vec![variable(
                 0,
                 CompiledVariableDomain::SharedSparse(SharedVariableDomainId(99)),
@@ -617,9 +617,12 @@ mod tests {
             ..problem()
         });
 
-        assert!(
-            message.contains("unknown shared sparse domain 99"),
-            "{message}"
+        assert_eq!(
+            invalid,
+            InvalidProblem::UnknownSharedDomain {
+                variable: ConstraintVariableId(0),
+                domain: SharedVariableDomainId(99),
+            }
         );
     }
 
@@ -685,19 +688,25 @@ mod tests {
 
     #[test]
     fn missing_allowed_row_set_is_invalid() {
-        let message = invalid_problem(&CompiledSelectorProblem {
+        let invalid = invalid_problem(&CompiledSelectorProblem {
             variables: vec![dense(0, 2)],
             allowed_tuples: vec![table(3, &[0], 99)],
             target_projections: projections(&[0]),
             ..problem()
         });
 
-        assert!(message.contains("unknown row set 99"), "{message}");
+        assert_eq!(
+            invalid,
+            InvalidProblem::UnknownRowSet {
+                constraint: AllowedTupleConstraintId(3),
+                row_set: AllowedTupleRowsId(99),
+            }
+        );
     }
 
     #[test]
     fn shared_allowed_row_set_arity_mismatch_is_invalid() {
-        let message = invalid_problem(&CompiledSelectorProblem {
+        let invalid = invalid_problem(&CompiledSelectorProblem {
             variables: vec![dense(0, 2), dense(1, 2)],
             allowed_tuple_row_sets: vec![row_set(5, 1, &[1])],
             allowed_tuples: vec![table(4, &[0, 1], 5)],
@@ -705,21 +714,28 @@ mod tests {
             ..problem()
         });
 
-        assert!(message.contains("row set 5 has arity 1"), "{message}");
-        assert!(message.contains("expected 2"), "{message}");
+        assert_eq!(
+            invalid,
+            InvalidProblem::RowSetArityMismatch {
+                constraint: AllowedTupleConstraintId(4),
+                row_set: AllowedTupleRowsId(5),
+                arity: 1,
+                expected: 2,
+            }
+        );
     }
 
     #[test]
     fn empty_domain_is_invalid() {
-        let message = invalid_problem(&CompiledSelectorProblem {
+        let invalid = invalid_problem(&CompiledSelectorProblem {
             variables: vec![sparse(0, &[])],
             target_projections: projections(&[0]),
             ..problem()
         });
 
-        assert!(
-            message.contains("variable 0 has an empty domain"),
-            "{message}"
+        assert_eq!(
+            invalid,
+            InvalidProblem::EmptyDomain(ConstraintVariableId(0))
         );
     }
 
