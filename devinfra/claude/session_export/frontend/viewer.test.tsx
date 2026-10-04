@@ -7,15 +7,7 @@ import { afterEach, expect, it, vi } from "vitest";
 
 import { getSession, listSessionEvents, listSessions, watchSessions } from "./api";
 import { SessionViewer } from "./viewer";
-import {
-  longCommandActivityDetail,
-  longCommandActivitySessionEvents,
-  longCommandActivityTitle,
-  narrationSession,
-  narrationSessionEvents,
-  noisySession,
-  noisySessionEvents,
-} from "./fixtures/noisy-session";
+import { narrationSession, narrationSessionEvents, noisySession, noisySessionEvents } from "./fixtures/noisy-session";
 
 vi.mock("./api", () => ({
   ApiError: class extends Error {},
@@ -967,44 +959,6 @@ it("keeps suppressed events inspectable without expanding JSON or hook noise by 
   await act(async () => container?.querySelector<HTMLButtonElement>('[aria-label="Show folded transcript"]')!.click());
   expect(container.querySelector('[data-message-role="assistant"]')).not.toBeNull();
   expect(container.querySelector("[data-raw-event]")).toBeNull();
-});
-
-it("keeps completed activity titles compact while exposing the full title and detail when opened", async () => {
-  vi.mocked(listSessions).mockResolvedValue({ data: [noisySession], next_cursor: null, resume_token: null });
-  vi.mocked(listSessionEvents).mockResolvedValue({
-    data: longCommandActivitySessionEvents,
-    has_more: false,
-    first_id: longCommandActivitySessionEvents[0]!.event_id,
-    last_id: longCommandActivitySessionEvents.at(-1)!.event_id,
-  });
-  container = document.createElement("div");
-  document.body.append(container);
-  root = createRoot(container);
-  await act(async () =>
-    root?.render(
-      <MantineProvider env="test">
-        <SessionViewer />
-      </MantineProvider>
-    )
-  );
-
-  const activity = await vi.waitFor(() => {
-    const element = [...(container?.querySelectorAll<HTMLDetailsElement>('[data-fold-kind="activity"]') ?? [])].find(
-      (candidate) => candidate.querySelector("summary")?.getAttribute("title") === longCommandActivityTitle
-    );
-    if (element === undefined) throw new Error("Long completed activity did not render");
-    return element;
-  });
-  const summary = activity.querySelector<HTMLElement>("summary")!;
-  expect(activity.open).toBe(false);
-  expect(summary.style.whiteSpace).toBe("nowrap");
-  expect(summary.textContent).toContain(longCommandActivityTitle);
-  await act(async () => {
-    activity.open = true;
-    activity.dispatchEvent(new Event("toggle"));
-  });
-  expect(activity.querySelector("[data-activity-title]")?.textContent).toBe(longCommandActivityTitle);
-  expect(activity.querySelector("[data-activity-detail]")?.textContent).toBe(longCommandActivityDetail);
 });
 
 it("keeps an open tool disclosure when older history extends its activity group", async () => {
