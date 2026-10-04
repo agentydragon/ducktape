@@ -34,19 +34,6 @@ MCP_PATH = "/mcp"
 _CONSOLE_ROOT_PATH = "/_console"
 
 
-def _proxy_environment(*, proxy_url: str, no_proxy: str, ca_bundle: str, pip: bool = False) -> dict[str, str]:
-    """Build the common explicit-proxy and CA environment without alias drift."""
-    environment = {
-        **dict.fromkeys(("HTTP_PROXY", "HTTPS_PROXY"), proxy_url),
-        "NO_PROXY": no_proxy,
-        "NODE_USE_ENV_PROXY": "1",
-        **dict.fromkeys(("NODE_EXTRA_CA_CERTS", "SSL_CERT_FILE", "CURL_CA_BUNDLE", "REQUESTS_CA_BUNDLE"), ca_bundle),
-    }
-    if pip:
-        environment["PIP_CERT"] = ca_bundle
-    return environment
-
-
 def tool_call_console_url(console_base_url: str, tool_call_id: str) -> str:
     """The console URL that opens one tool call: the approvals drawer, that call expanded.
 

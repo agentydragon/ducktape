@@ -115,7 +115,7 @@ with the rarely-useful parts folded away:
 
 **Consistent vocabulary.**
 
-- The **action** is a one-line description on the card's identity line (`tool_action_line.tsx`),
+- The **action** is a one-line description on the card's identity line (`tool_call_card.tsx`),
   not a badge in the body: a registered tool supplies its own via `definePreview`'s third arg
   (`"Gmail: Draft email"`, `"Grocy: Add 5 items to stock"`; destructive ones flagged red), and a
   tool with no widget falls back to `serverId.toolName`. The widget body must not restate it.

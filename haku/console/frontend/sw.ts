@@ -81,7 +81,7 @@ function parsePush(event: PushEvent): PushMessage | null {
 function notificationTitle(message: PushShow): string {
   const action = toolActionDescription(message.server_id, message.tool_name, message.arguments);
   if (!action) return `${message.server_id}.${message.tool_name}`;
-  // The approvals card renders a destructive action's line in red (tool_action_line.tsx). An OS
+  // The approvals card renders a destructive action's line in red (tool_call_card.tsx). An OS
   // notification has no equivalent, so the same cue has to be carried in the text — and this is
   // the one surface where such a call can be approved without its arguments ever being seen.
   return action.destructive ? `⚠ ${action.text}` : action.text;

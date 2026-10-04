@@ -32,7 +32,6 @@ export interface ApprovalDisplayFields {
   argumentsJson: string;
   toolCallId: string;
   callerDisplayName: string;
-  callerAgentId: string | null;
   createdAt: string | null;
   decisionNote: string | null;
   decisionOperatorId: string | null;
@@ -111,7 +110,6 @@ export function approvalDisplayFields(approval: ToolCallRecord): ApprovalDisplay
     argumentsJson: JSON.stringify(args, null, 2) ?? "null",
     toolCallId: approval.tool_call_id,
     callerDisplayName: approval.caller.kind === "agent" ? approval.caller.display_name : "Operator",
-    callerAgentId: approval.caller.kind === "agent" ? approval.caller.agent_id : null,
     createdAt: approval.created_at ?? null,
     decisionNote: approval.decision_note ?? null,
     decisionOperatorId: approval.decision_operator_id ?? null,

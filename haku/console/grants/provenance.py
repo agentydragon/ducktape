@@ -17,7 +17,7 @@ from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from haku.console.database_schema import Agent, CredentialBinding, McpToolCall, McpToolCallPrincipal
-from haku.console.grants.envelope import GrantNotFoundError, GrantOwnershipError, GrantSourceError
+from haku.console.grants.envelope import GrantOwnershipError, GrantSourceError
 from haku.console.grants.principal import AccessProfileGrantPrincipal, AgentGrantPrincipal, GrantPrincipal
 from haku.console.identity.agent import AgentStatus
 from haku.console.tool_calls import ToolCallStatus
@@ -85,17 +85,3 @@ async def assert_owner_principal_and_source(
         valid_principal = isinstance(grant_principal, AccessProfileGrantPrincipal)
     if not valid_principal:
         raise GrantSourceError("grant principal must identify an eligible Agent or access profile")
-
-
-async def lock_owned_source(session: AsyncSession, *, owner_agent_id: UUID, source_tool_call_id: str) -> None:
-    """Lock the owner's durable source ToolCall, serializing grant-set lifecycle operations."""
-
-    source = await session.scalar(
-        select(McpToolCall)
-        .join(McpToolCallPrincipal, McpToolCallPrincipal.tool_call_id == McpToolCall.tool_call_id)
-        .join(CredentialBinding, CredentialBinding.binding_id == McpToolCallPrincipal.binding_id)
-        .where(McpToolCall.tool_call_id == source_tool_call_id, CredentialBinding.agent_id == owner_agent_id)
-        .with_for_update(of=McpToolCall)
-    )
-    if source is None:
-        raise GrantNotFoundError(source_tool_call_id)

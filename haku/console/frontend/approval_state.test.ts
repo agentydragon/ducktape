@@ -102,7 +102,6 @@ describe("approval queue state", () => {
     expect(fields.argumentsJson).toContain('"ids"');
     expect(fields.toolCallId).toBe("tc_1");
     expect(fields.callerDisplayName).toBe("Haku agent");
-    expect(fields.callerAgentId).toBe("11111111-1111-4111-8111-111111111111");
   });
 
   it("surfaces auto-approval policy provenance for terminal calls", () => {

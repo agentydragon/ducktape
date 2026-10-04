@@ -139,8 +139,6 @@ async def test_existing_authority_fails_closed_when_current_trust_changes(migrat
         is None
     )
     assert not await changed_domain_store.is_active(identity.operator_id)
-    with pytest.raises(InactiveOperatorError):
-        await changed_domain_store.require_active(identity.operator_id)
 
 
 def test_identity_config_rejects_empty_trust_domain() -> None:

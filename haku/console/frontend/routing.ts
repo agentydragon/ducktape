@@ -29,13 +29,6 @@ export function toolCallPath(toolCallId: string): string {
   return `${TOOL_CALLS_PATH}/${toolCallId}`;
 }
 
-/** Move the console to one of its own paths. The shell reads the view off `window.location` and
- * listens for `popstate`, which `pushState` does not fire by itself. */
-export function navigateToConsolePath(path: string): void {
-  history.pushState(null, "", path);
-  window.dispatchEvent(new PopStateEvent("popstate"));
-}
-
 export function toolCallIdForPathname(pathname: string): string | null {
   return TOOL_CALL_PATH.exec(pathname)?.[1] ?? null;
 }

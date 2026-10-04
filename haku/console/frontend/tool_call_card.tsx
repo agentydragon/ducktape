@@ -7,7 +7,6 @@ import {
   terminalStatusLabel,
   type ApprovalDisplayFields,
 } from "./approval_state";
-import { ToolCallAgentProvider } from "./agent_names";
 import type { ToolCallRecord } from "./client";
 import { ClockIcon, CloseIcon, SyncCurrentIcon, SyncErrorIcon } from "./icons";
 import { RawArgumentsDisclosure, ToolArgumentsField } from "./tool_arguments_field";
@@ -78,90 +77,88 @@ export function ToolCallCard({
   const combined = toolCallPreview(fields.serverId, fields.toolName, args, result, variant);
   const action = toolActionDescription(fields.serverId, fields.toolName, args);
   return (
-    <ToolCallAgentProvider agentId={fields.callerAgentId} displayName={fields.callerDisplayName}>
-      <section className="haku-tool-call" ref={containerRef}>
-        <Stack gap="sm">
-          <div className="haku-tool-call-summary">
-            <Text
-              fw={600}
-              size="sm"
-              className="haku-tool-call-title"
-              c={action?.destructive || status === "error" ? "red" : status === "running" ? "blue" : undefined}
-            >
-              {fields.title}
+    <section className="haku-tool-call" ref={containerRef}>
+      <Stack gap="sm">
+        <div className="haku-tool-call-summary">
+          <Text
+            fw={600}
+            size="sm"
+            className="haku-tool-call-title"
+            c={action?.destructive || status === "error" ? "red" : status === "running" ? "blue" : undefined}
+          >
+            {fields.title}
+          </Text>
+          <Group className="haku-tool-call-summary-actions" gap="xs" align="center" wrap="nowrap">
+            <ToolCallStatus status={status} />
+            <VariantControl variant={variant} onChange={onVariantChange} />
+          </Group>
+        </div>
+        <div className="haku-card-head">
+          {fields.rationale && <Text size="xs">{fields.rationale}</Text>}
+          {fields.decisionNote && (
+            <Text size="xs" c="dimmed">
+              {fields.decisionOperatorId ? "Operator note" : "Automatic decision"}: {fields.decisionNote}
             </Text>
-            <Group className="haku-tool-call-summary-actions" gap="xs" align="center" wrap="nowrap">
-              <ToolCallStatus status={status} />
-              <VariantControl variant={variant} onChange={onVariantChange} />
-            </Group>
-          </div>
-          <div className="haku-card-head">
-            {fields.rationale && <Text size="xs">{fields.rationale}</Text>}
-            {fields.decisionNote && (
-              <Text size="xs" c="dimmed">
-                {fields.decisionOperatorId ? "Operator note" : "Automatic decision"}: {fields.decisionNote}
-              </Text>
-            )}
-            {fields.withdrawalReason && (
-              <Text size="xs" c="dimmed">
-                Withdrawn: {fields.withdrawalReason}
-              </Text>
-            )}
-            {fields.approvalPolicyId && (
-              <Text size="xs" c="dimmed">
-                Auto-approved by {fields.approvalPolicyId}
-              </Text>
-            )}
-            {showsAutoApprovalEvaluation(fields, detailed) && (
-              <Text size="xs" c="dimmed">
-                Auto-approval: {fields.autoApprovalEvaluation}
-              </Text>
-            )}
-          </div>
-          {combined ? (
-            <>
-              {combined}
-              {detailed && <RawArgumentsDisclosure argumentsJson={fields.argumentsJson} />}
-            </>
-          ) : (
-            <ToolArgumentsField
-              serverId={fields.serverId}
-              toolName={fields.toolName}
-              args={args}
-              argumentsJson={fields.argumentsJson}
-              variant={variant}
-            />
           )}
-          {/* A failed call's error is its outcome — the failure counterpart of the result body
+          {fields.withdrawalReason && (
+            <Text size="xs" c="dimmed">
+              Withdrawn: {fields.withdrawalReason}
+            </Text>
+          )}
+          {fields.approvalPolicyId && (
+            <Text size="xs" c="dimmed">
+              Auto-approved by {fields.approvalPolicyId}
+            </Text>
+          )}
+          {showsAutoApprovalEvaluation(fields, detailed) && (
+            <Text size="xs" c="dimmed">
+              Auto-approval: {fields.autoApprovalEvaluation}
+            </Text>
+          )}
+        </div>
+        {combined ? (
+          <>
+            {combined}
+            {detailed && <RawArgumentsDisclosure argumentsJson={fields.argumentsJson} />}
+          </>
+        ) : (
+          <ToolArgumentsField
+            serverId={fields.serverId}
+            toolName={fields.toolName}
+            args={args}
+            argumentsJson={fields.argumentsJson}
+            variant={variant}
+          />
+        )}
+        {/* A failed call's error is its outcome — the failure counterpart of the result body
             below — so it renders under the arguments, not as a head subhead. Error and result
             are mutually exclusive (the ledger finishes a call with exactly one), so this never
             collides with the result field. */}
-          {error && (
-            <Text size="sm" c="red">
-              {error}
-            </Text>
-          )}
-          {/* Rendered for both variants; it self-gates (compact shows a result only when a
+        {error && (
+          <Text size="sm" c="red">
+            {error}
+          </Text>
+        )}
+        {/* Rendered for both variants; it self-gates (compact shows a result only when a
             per-tool widget makes it self-describing). A combined widget already rendered the
             result above (it's the same node as the arguments in that case), so this only adds
             the detailed-only Raw result disclosure. */}
-          {combined ? (
-            detailed && result != null && <RawResultDisclosure result={result} />
-          ) : (
-            <ToolResultField serverId={fields.serverId} toolName={fields.toolName} result={result} variant={variant} />
-          )}
-          {detailed && (
-            <ToolCallMeta
-              serverId={fields.serverId}
-              toolName={fields.toolName}
-              callerDisplayName={fields.callerDisplayName}
-              createdAt={fields.createdAt}
-              toolCallId={fields.toolCallId}
-            />
-          )}
-          {footer}
-        </Stack>
-      </section>
-    </ToolCallAgentProvider>
+        {combined ? (
+          detailed && result != null && <RawResultDisclosure result={result} />
+        ) : (
+          <ToolResultField serverId={fields.serverId} toolName={fields.toolName} result={result} variant={variant} />
+        )}
+        {detailed && (
+          <ToolCallMeta
+            serverId={fields.serverId}
+            toolName={fields.toolName}
+            callerDisplayName={fields.callerDisplayName}
+            createdAt={fields.createdAt}
+            toolCallId={fields.toolCallId}
+          />
+        )}
+        {footer}
+      </Stack>
+    </section>
   );
 }

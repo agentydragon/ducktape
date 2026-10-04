@@ -18,11 +18,11 @@ import asyncio
 import contextlib
 import logging
 from collections.abc import AsyncIterator, Callable, Iterable
-from typing import Annotated, Any, ClassVar, Literal, cast
+from typing import Any, ClassVar, Literal, cast
 from uuid import UUID
 
 import asyncpg
-from fastapi import APIRouter, Depends, Request, WebSocket, WebSocketDisconnect
+from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 from pydantic import BaseModel, ValidationError
 from sqlalchemy.engine import make_url
 
@@ -310,13 +310,6 @@ class ConsoleEventHub:
             await self._close_connections(code=1012, reason="console event relay reconnecting")
             self._wake_all_tool_call_waiters()
             await asyncio.sleep(1)
-
-
-def _event_hub(request: Request) -> ConsoleEventHub:
-    return cast(ConsoleEventHub, request.app.state.console_event_hub)
-
-
-ConsoleEventHubDep = Annotated[ConsoleEventHub, Depends(_event_hub)]
 
 
 @router.websocket("/api/events/ws")

@@ -126,10 +126,6 @@ class PostgresOperatorIdentityStore:
                 )
             )
 
-    async def require_active(self, operator_id: UUID) -> None:
-        if not await self.is_active(operator_id):
-            raise InactiveOperatorError("operator is disabled or missing")
-
     async def require_active_in_transaction(self, session: AsyncSession, operator_id: UUID) -> None:
         """Lock and validate an Operator inside a caller-owned database transaction.
 

@@ -587,26 +587,12 @@ ts_library(
 )
 
 ts_library(
-    name = "tool_action_line",
-    srcs = ["tool_action_line.tsx"],
-    isolated_typecheck = True,
-    tsconfig = TSCONFIG,
-    deps = [
-        "//:node_modules/@mantine/core",
-        "//:node_modules/@types/react",
-        "//:node_modules/react",
-        "//haku/console/frontend/tool_rendering:actions",
-    ],
-)
-
-ts_library(
     name = "tool_call_card",
     srcs = ["tool_call_card.tsx"],
     isolated_typecheck = True,
     tsconfig = TSCONFIG,
     deps = [
         ":approval_state",
-        ":tool_action_line",
         ":tool_arguments_field",
         ":tool_call_meta",
         ":tool_result_field",
@@ -615,6 +601,7 @@ ts_library(
         "//:node_modules/@types/react",
         "//:node_modules/react",
         "//haku/console/frontend/tool_rendering",
+        "//haku/console/frontend/tool_rendering:actions",
         "//haku/console/frontend/tool_rendering:variant",
     ],
 )
@@ -887,7 +874,6 @@ filegroup(
         "tana_client.ts",
         "theme.ts",
         "toast.ts",
-        "tool_action_line.tsx",
         "tool_arguments_field.tsx",
         "tool_call_card.tsx",
         "tool_call_decision.ts",
