@@ -82,9 +82,6 @@ class Mesh(BaseModel):
     def control_planes(self) -> dict[str, Host]:
         return {name: h for name, h in self.hosts.items() if h.role == "control-plane"}
 
-    def control_plane_endpoints(self, port: int = 6443) -> list[str]:
-        return [f"{h.nebula_ip}:{port}" for h in self.control_planes().values()]
-
     def public_kubernetes_nodes(self) -> dict[str, Host]:
         """Cluster nodes the internet can reach: the Gateway's and, for control planes, the API's addresses."""
         return {

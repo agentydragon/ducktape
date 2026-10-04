@@ -100,19 +100,6 @@ def tofu(*args: str, excludes: list[str], timeout: int = 600) -> subprocess.Comp
     return result
 
 
-def tofu_output(name: str) -> str:
-    result = run([_TOFU_BIN, "output", "-raw", name], cwd=TF_DIR, capture=True)
-    return result.stdout.strip()
-
-
-def state_has_resources() -> bool:
-    result = run([_TOFU_BIN, "show", "-json"], cwd=TF_DIR, capture=True, check=False)
-    if result.returncode != 0:
-        return False
-    resources = json.loads(result.stdout).get("values", {}).get("root_module", {}).get("resources", [])
-    return bool(resources)
-
-
 def preflight(root: Path) -> None:
     log.info("Preflight Validation")
 
