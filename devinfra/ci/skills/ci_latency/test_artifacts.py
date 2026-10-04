@@ -1,3 +1,6 @@
+import json
+import sys
+
 import pytest
 import pytest_bazel
 
@@ -44,6 +47,54 @@ def test_bad_values(triggers, seconds):
 def test_html_escapes():
     assert "&lt;script&gt;" in publish.render("<script>")
     assert "<script>" not in publish.render("<script>")
+
+
+def test_publish_replaces_root_snapshot_and_removes_stale_attribution(tmp_path, monkeypatch):
+    history = tmp_path / "history"
+    history.mkdir()
+    (history / "README.md").write_text("Navigation stays at the root.\n")
+    (history / "unrelated.txt").write_text("Keep this file.\n")
+    for name in ["report.md", "evidence.json", "manifest.json", "index.html", "attribution.json"]:
+        (history / name).write_text("old snapshot\n")
+
+    report = tmp_path / "report.md"
+    report.write_text("<script>alert(1)</script>\n")
+    evidence = tmp_path / "evidence.json"
+    evidence.write_text('{"jobs": 3}\n')
+    monkeypatch.setattr(publish, "git", lambda *_: "commit")
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "publish.py",
+            "--source",
+            "a" * 40,
+            "--window-start",
+            "2026-10-04T20:00:00+00:00",
+            "--window-end",
+            "2026-10-04T21:00:00+00:00",
+            "--report",
+            str(report),
+            "--evidence",
+            str(evidence),
+            "--out",
+            str(history),
+        ],
+    )
+
+    publish.main()
+
+    assert (history / "report.md").read_text() == report.read_text()
+    assert json.loads((history / "evidence.json").read_text()) == {"jobs": 3}
+    manifest = json.loads((history / "manifest.json").read_text())
+    assert manifest["source_devel_commit"] == "a" * 40
+    assert manifest["window_start_utc"] == "2026-10-04T20:00:00+00:00"
+    assert manifest["window_end_utc"] == "2026-10-04T21:00:00+00:00"
+    assert manifest["attribution"] == "not collected"
+    assert "&lt;script&gt;" in (history / "index.html").read_text()
+    assert not (history / "attribution.json").exists()
+    assert (history / "README.md").read_text() == "Navigation stays at the root.\n"
+    assert (history / "unrelated.txt").read_text() == "Keep this file.\n"
 
 
 if __name__ == "__main__":

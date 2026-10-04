@@ -10,19 +10,19 @@ single score. Answer: from a new PR commit to **eligible for auto-merge under th
 rules**, how long does it take for different kinds of PRs? When do each status,
 check result and diagnostic log become available to agents watching PR updates?
 Where do runner time and remote compute go, what blocks the user-visible critical
-path, and what changes offer the best payoff for the least cost/risk? Use the old
-`devinfra/ci/debug/ci_queue_saturation.md` report as a _hypothesis and historical
-example_, not as a conclusion about current CI. Refresh its current-state
-conclusions and evidence when requested; append reviewed snapshots to the separate
-history branch (below). `cihealth` covers release/pin currency and failed CI more
-broadly. No Mimir metric, Shapley calculation, or dashboard is required for a
-useful report; propose instrumentation only when it closes a decision-relevant
-evidence gap.
+path, and what changes offer the best payoff for the least cost/risk? Use reviewed
+snapshots and their commit history on the canonical [`ci-latency-history` branch](https://github.com/agentydragon/ducktape/tree/ci-latency-history)
+as _hypotheses and historical examples_, not conclusions about current CI. Keep
+working reports and measurement snapshots out of `devel`; publish each reviewed
+run as the latest snapshot on the history branch (below). `cihealth` covers
+release/pin currency and failed CI more broadly. No Mimir metric, Shapley
+calculation, or dashboard is required for a useful report; propose
+instrumentation only when it closes a decision-relevant evidence gap.
 
 ## Investigate, don't just run a recipe
 
-Treat the scripts and old reports as **starting points**, not a report generator
-or a fixed set of hypotheses. Decide what the operator actually needs to know;
+Treat the scripts and earlier history snapshots as **starting points**, not a
+report generator or a fixed set of hypotheses. Decide what the operator actually needs to know;
 follow surprising evidence across GitHub, BuildBuddy, Bazel and agent-visible
 notifications. Inspect the live workflow/ruleset and representative invocations;
 seek counterexamples and distinguish observation, inference and speculation. A
@@ -231,11 +231,12 @@ Include the observation window, source commit, sample/coverage limits, PR-class
 feedback and agent-availability distributions, runner and remote-compute
 breakdowns, representative critical-path timelines, current required checks,
 unknown intervals, and ranked proposals. Include CodeQL/queued-Bazel overlaps
-only when current evidence supports that diagnosis. Update
-`ci_latency_evidence.json` from `evidence.sh` as **supporting data**; review
-derived evidence and explain its significance before committing. Keep full API payloads,
-logs and profiles local unless a durable, reviewed fixture needs them. Publish
-small relevant excerpts and direct job/invocation URLs in the report.
+only when current evidence supports that diagnosis. Generate `evidence.json` with
+`evidence.sh` as **supporting data**; review the derived evidence and explain its
+significance before publishing the report and evidence together as the latest
+history snapshot. Keep full API payloads, logs and profiles local unless a durable,
+reviewed fixture needs them. Publish small relevant excerpts and direct
+job/invocation URLs in the report.
 
 Re-evaluate recommendations against current YAML and GitHub settings. Already-landed
 changes leave the recommendation list. If ongoing monitoring is warranted,
@@ -251,58 +252,50 @@ covering queue/runtime arithmetic and CodeQL contention. Package and tests are u
 
 ## Durable history and test-cost attribution
 
-The maintained `devinfra/ci/debug/` report remains a current-state summary. In
-addition, append **reviewed** reports to the orphan branch `ci-latency-history`.
-The branch currently lives on `agentydragon-agent/ducktape` as a staging home;
-**`agentydragon/ducktape` is its intended canonical home** once the upstream
-orphan ref is established through an explicitly authorized repository process.
-Do not create a second root or reset either history during migration: copy the
-existing tip and preserve its ancestry, then switch new runs to the upstream
-history. Its root `index.html` links to immutable
-`runs/YYYYMMDDTHHMMSSZ-<short-source-sha>/` directories. Each entry contains
-`manifest.json` (full inspected **devel** SHA and UTC observation window),
-`report.md`, `evidence.json`, a standalone viewable `index.html`, and optionally
-`attribution.json`. Earlier entries must never be rewritten; history is linear,
-not a mirror of `devel`. The initial entry is an explicitly labeled _historical_
-copy of the previously maintained report, not a fresh cdk8s comparison. Read it
-as a baseline for **methodology**, not proof of current performance.
+`agentydragon/ducktape`'s canonical [`ci-latency-history` branch](https://github.com/agentydragon/ducktape/tree/ci-latency-history)
+holds the latest reviewed report and its evidence. Its root contains `README.md`,
+`report.md`, `evidence.json`, `manifest.json`, a standalone `index.html`, and
+optionally `attribution.json`. The README provides durable navigation; the HTML
+renders the current report. Keep exactly one snapshot at the root, with no dated
+run directories or generated archive index. Git commit history preserves earlier
+snapshots. Each new report replaces only the snapshot files; preserve the README
+and any unrelated files. If a new run has no attribution, remove the old
+`attribution.json` so it cannot be mistaken for current evidence. The history
+branch is not a mirror of `devel`. Its earlier commits preserve the explicitly
+labeled _historical_ copy of the former maintained report, not a fresh cdk8s
+comparison. Read it as a baseline for **methodology**, not proof of current
+performance.
 
-For subsequent runs, fetch the canonical history branch (currently on the bot
-fork; upstream after migration), add a detached
-worktree at its tip and compare earlier manifests, windows, workload mixes and
-coverage. Collect fresh evidence and read the current workflow/path filters and
-BuildBuddy profiles. Pin the actual inspected devel SHA (do not use a merge SHA,
-PR head or the history branch's HEAD). Render to a **new** entry path:
+For each run, fetch the canonical history branch and create a separate worktree
+at its tip. Compare previous snapshots from earlier commits, along with their
+windows, workload mixes and coverage. Collect fresh evidence and read the current
+workflow/path filters and BuildBuddy profiles. Pin the actual inspected devel SHA
+(do not use a merge SHA, PR head or the history branch's HEAD). Publish into the
+history worktree root:
 
 ```bash
 SKILL=devinfra/ci/skills/ci_latency/scripts
 python3 "$SKILL/publish.py" --source "$DEVEL_SHA" \
   --window-start "$SINCE" --window-end "$UNTIL" \
-  --report "$REPORT" --evidence "$EVIDENCE" --out "$HISTORY/runs/$ENTRY"
-(cd "$HISTORY" && python3 "$SOURCE_CHECKOUT/$SKILL/index.py")
+  --report "$REPORT" --evidence "$EVIDENCE" --out "$HISTORY"
+# Add --attribution "$ATTRIBUTION" only when measured attribution is available.
 ```
 
 `publish.py` only packages an **already written and reviewed** report and a safe
 HTML rendering of its text; it does not investigate CI, rank fixes, or validate
-conclusions. Edit and review the narrative (and, if useful, improve the HTML
-presentation) before publishing. Do not mistake successful script execution for
-completion of the skill.
-
-For the first creation only, use `git switch --orphan ci-latency-history` in a
-_separate_ temporary worktree, clear any remaining tracked files and add only the new
-artifacts + `README.md` + root `index.html`. Never orphan/reset an existing
-history ref. On subsequent runs fetch the canonical ref and work from its tip;
-before publication fetch again and require the remote tip to be an ancestor of
-the new commit. If someone appended first, rebuild from the latest tip rather
-than force-push. For now, commit on the history branch and push **only to the bot
-fork**. Once upstream is established, do not push directly to upstream from this
-agent; hand the reviewed fast-forward update to the authorized upstream process.
-Do not quietly continue appending to the fork after the canonical ref has moved.
-Review the report and diff for credentials, identities, raw logs, payloads and
-personal data before publishing. A history-only update does not need a source PR;
-changes to this skill/script do. GitHub does not serve branch HTML as a hosted
-page: download/open the artifact locally, or use the raw URL; don't imply Pages
-is deployed.
+conclusions. Review the narrative before publishing. The publisher replaces only
+the root snapshot files and leaves `README.md` and unrelated files intact. Do not
+mistake successful script execution for completion of the skill. Open a PR
+targeting the canonical `ci-latency-history` branch. Before submitting, fetch the
+branch again and confirm the PR includes its latest tip. If another run landed
+first, compare the observation windows and do not let an older run replace a
+newer snapshot; rebase or rebuild on that tip and republish when the new run is
+later. Never reset, amend, or force-push history. Review the report and diff for
+credentials, identities, raw logs, payloads and personal data before publishing.
+History updates go through a PR to `ci-latency-history`; changes to this skill or
+its scripts go through a normal source PR. GitHub does not serve branch HTML as a hosted page:
+download/open the artifact locally, or use the raw URL; don't imply Pages is
+deployed.
 
 ### Quantifying who triggered work
 

@@ -17,10 +17,7 @@
 #           unproven, not changed. A failing test fails that image loudly and skips
 #           its push; other images are unaffected (`fail-fast: false`).
 #
-# Typically nothing changed and the push matrix is empty, so a merge costs one job
-# instead of forty-three. Previously every image got its own runner to rediscover
-# that its digest was unchanged: measured over 96 such jobs, exactly one pushed
-# anything. See devinfra/ci/debug/ci_queue_saturation.md.
+# When no image changed, the empty matrix avoids starting a per-image push job.
 #
 # Credentials live exactly where they should: registry auth happens on the GitHub
 # runner, not through the BB runner VM.

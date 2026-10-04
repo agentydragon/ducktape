@@ -12,7 +12,6 @@ skill_package(
         "scripts/collect.sh",
         "scripts/contention.jq",
         "scripts/evidence.sh",
-        "scripts/index.py",
         "scripts/inspect.sh",
         "scripts/publish.py",
         "scripts/summarize.jq",

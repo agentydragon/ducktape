@@ -12,8 +12,7 @@
 #             create`. Unchanged; the planner is purely a filter in front of it, and
 #             .github/actions/release-artifact still makes the same check itself.
 #
-# Typically nothing changed and the matrix is empty, so a merge costs one job instead
-# of fifty-one. See devinfra/ci/debug/ci_queue_saturation.md.
+# When no artifact changed, the empty matrix avoids starting a per-artifact job.
 #
 # The rows still come from devinfra/ci/artifact_targets.json — the same SSOT
 # .github/workflows/nix-wheel-check.yml reads. See the schema note at the top

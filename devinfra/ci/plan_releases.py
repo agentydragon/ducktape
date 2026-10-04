@@ -1,9 +1,6 @@
 """Decide which releases actually need publishing, before the matrix fans out.
 
-`.github/workflows/release.yml` gave every release its own matrix job to check out
-the repo, install the devshell, build its artifacts and hash them — almost always to
-discover the content was unchanged and the tag already existed. Fifty runner slots
-per merge to publish, typically, nothing. See devinfra/ci/debug/ci_queue_saturation.md.
+The planner avoids a per-artifact runner job when the content is unchanged.
 
 This runs once in the matrix job instead, and builds nothing at all. `bazel-ci`
 already built every default-config release on this commit, and BuildBuddy still

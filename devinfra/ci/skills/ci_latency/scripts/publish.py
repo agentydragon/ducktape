@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Render one reviewed, source-pinned report into a self-contained HTML history entry."""
+"""Publish one reviewed, source-pinned snapshot at the history branch root."""
 
 import argparse
 import html
@@ -32,7 +32,7 @@ def main():
     parser.add_argument("--report", required=True, type=Path)
     parser.add_argument("--evidence", required=True, type=Path)
     parser.add_argument("--attribution", type=Path)
-    parser.add_argument("--out", required=True, type=Path, help="New empty output directory")
+    parser.add_argument("--out", required=True, type=Path, help="History branch worktree root")
     args = parser.parse_args()
     if not re.fullmatch(r"[0-9a-f]{40}", args.source):
         parser.error("source must be a full SHA")
@@ -48,16 +48,16 @@ def main():
         parser.error("window end must follow start")
     if git("cat-file", "-t", args.source) != "commit":
         parser.error("source is not an available commit")
-    if args.out.exists():
-        parser.error("output directory already exists; never overwrite a historical entry")
     evidence = json.loads(args.evidence.read_text())
     attribution = json.loads(args.attribution.read_text()) if args.attribution else None
-    args.out.mkdir(parents=True)
     report = args.report.read_text()
+    args.out.mkdir(parents=True, exist_ok=True)
     (args.out / "report.md").write_text(report)
     (args.out / "evidence.json").write_text(json.dumps(evidence, indent=2) + "\n")
     if attribution is not None:
         (args.out / "attribution.json").write_text(json.dumps(attribution, indent=2) + "\n")
+    else:
+        (args.out / "attribution.json").unlink(missing_ok=True)
     manifest = {
         "source_devel_commit": args.source,
         "window_start_utc": args.window_start,
