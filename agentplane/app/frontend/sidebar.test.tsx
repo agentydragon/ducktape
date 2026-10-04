@@ -314,6 +314,23 @@ it.each([
   expect(container.querySelector(`.agentplane-sidebar-state-icon[data-status='${status}']`)).not.toBeNull();
 });
 
+it("renders only a suspended Sandbox's name in its icon's gray, not the link blue", async () => {
+  const running = sandbox("test-running");
+  const suspended = sandbox("test-suspended", { operating_mode: "Suspended", pod: null });
+  await render([], { [running.name]: running, [suspended.name]: suspended });
+  const link = (name: string): HTMLElement => {
+    const node = container.querySelector<HTMLElement>(`a[href="/sandboxes/${name}"]`);
+    if (!node) throw new Error(`missing Sandbox link ${name}`);
+    return node;
+  };
+  const icon = container.querySelector<HTMLElement>(
+    ".agentplane-sidebar-state-icon[data-status='suspended'] .agentplane-mark"
+  );
+  expect(icon?.style.color).toBeTruthy();
+  expect(link("test-suspended").style.color).toBe(icon?.style.color);
+  expect(link("test-running").style.color).toBe("");
+});
+
 it("opens the details of a provisioning Sandbox with no Threads", async () => {
   const pending = sandbox("test-provisioning", { pod: null });
   await render([], { [pending.name]: pending });
