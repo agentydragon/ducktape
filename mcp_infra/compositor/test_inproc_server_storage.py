@@ -16,18 +16,6 @@ from mcp_infra.compositor.mount import Mount
 from mcp_infra.prefix import MCPMountPrefix
 
 
-async def test_mount_stores_inproc_server(compositor):
-    """Test that Mount stores the server instance when setup_inproc() is called."""
-    server = FastMCP("test-server")
-
-    await compositor.mount_inproc(MCPMountPrefix("runtime"), server)
-
-    # Access the mount directly
-    mount = compositor._mounts.get("runtime")
-    assert mount is not None
-    assert mount.inproc_server is server
-
-
 async def test_mount_inproc_server_none_for_external():
     """Test that Mount.inproc_server returns None for non-inproc mounts."""
     mount = Mount(prefix=MCPMountPrefix("external"), pinned=False, spec=None)
@@ -91,16 +79,6 @@ async def test_compositor_get_inproc_servers_returns_all(compositor):
     # Infrastructure servers are also present
     assert MCPMountPrefix("resources") in servers
     assert MCPMountPrefix("compositor_meta") in servers
-
-
-async def test_compositor_get_inproc_servers_empty(compositor):
-    """Test that get_inproc_servers() returns infrastructure servers (not empty)."""
-    servers = await compositor.get_inproc_servers()
-    # Compositor always has infrastructure servers (resources, compositor_meta)
-    assert MCPMountPrefix("resources") in servers
-    assert MCPMountPrefix("compositor_meta") in servers
-    # At minimum these two servers
-    assert len(servers) >= 2
 
 
 async def test_compositor_get_inproc_servers_excludes_external():

@@ -12,24 +12,13 @@ load("//props:oci.bzl", "py_image_entrypoint", "py_image_env")
 package(default_visibility = ["//agentplane/notification_service:__subpackages__"])
 
 py_library(
-    name = "actions",
-    srcs = ["actions.py"],
-    deps = [
-        "//agentplane:subjects",
-        "//agentplane/action_service:models",
-        "@pypi//httpx",
-        "@pypi//pydantic",
-    ],
-)
-
-py_library(
     name = "api",
     srcs = ["api.py"],
     deps = [
-        ":actions",
         ":models",
         ":service",
         ":store",
+        "//agentplane/notification_service/sources:actions",
         "//agentplane/workload_auth:http",
         "//agentplane/workload_auth:principal",
         "@pypi//fastapi",
@@ -88,17 +77,16 @@ py_library(
     name = "main",
     srcs = ["main.py"],
     deps = [
-        ":actions",
         ":api",
         ":service",
+        ":settings",
         ":store",
+        "//agentplane/notification_service/sources:actions",
         "//agentplane/sandbox_service:client",
         "//agentplane/workload_auth:principal",
         "@pypi//asyncpg",
         "@pypi//httpx",
         "@pypi//kubernetes_asyncio",
-        "@pypi//pydantic",
-        "@pypi//pydantic_settings",
         "@pypi//sqlalchemy",
         "@pypi//uvicorn",
     ],
@@ -116,11 +104,11 @@ py_library(
     name = "service",
     srcs = ["service.py"],
     deps = [
-        ":actions",
         ":db",
         ":models",
         ":store",
         "//agentplane:subjects",
+        "//agentplane/notification_service/sources:actions",
         "//agentplane/protocol:command_pb2",
         "//agentplane/runner:errors",
         "//agentplane/runner:protocol_pb2",
@@ -165,7 +153,6 @@ py_test(
         "@platforms//os:linux",
     ],
     deps = [
-        ":actions",
         ":api",
         ":conftest",
         ":db",
@@ -183,6 +170,7 @@ py_test(
         "//agentplane/action_service:service",
         "//agentplane/action_service:updates",
         "//agentplane/action_service/test_fixtures:callers",
+        "//agentplane/notification_service/sources:actions",
         "//agentplane/protocol:command_pb2",
         "//agentplane/protocol:event_log_pb2",
         "//agentplane/runner:conftest",
@@ -302,4 +290,28 @@ oci_image(
     tars = [":migration_layers"],
     user = "1000:1000",
     visibility = ["//visibility:public"],
+)
+
+py_library(
+    name = "settings",
+    srcs = ["settings.py"],
+    visibility = ["//cluster/cdk8s/agentplane:__pkg__"],
+    deps = [
+        "@pypi//pydantic",
+        "@pypi//pydantic_settings",
+        "@pypi//pyyaml",
+    ],
+)
+
+py_test(
+    name = "test_settings",
+    srcs = ["test_settings.py"],
+    deps = [
+        ":conftest",
+        ":settings",
+        "//:conftest",
+        "@pypi//pydantic",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
 )

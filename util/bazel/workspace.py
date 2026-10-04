@@ -146,17 +146,6 @@ class BazelLabel:
             return None
         return self.package / self.name
 
-    @property
-    def package_path(self) -> Path | None:
-        """Package directory for local labels; ``None`` for external.
-
-        BazelLabel(repo="", package=Path("cluster/charts/attic"), ...) -> Path("cluster/charts/attic")
-        BazelLabel(repo="", package=Path(""),                     ...) -> Path("")
-        """
-        if self.is_external:
-            return None
-        return self.package
-
 
 class BazelBackend(enum.Enum):
     """How Bazel commands are executed."""

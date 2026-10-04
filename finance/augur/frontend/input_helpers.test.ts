@@ -9,7 +9,6 @@ import {
   makeVariant,
   resolveVariant,
   productInputDefaults,
-  productProjectionSamplingRequest,
   productProjectionSummaryRequest,
   productScenario,
   resolveSleeveWeights,
@@ -23,30 +22,6 @@ const bootstrap = { productInputDefaults: {}, locations: [] };
 function baseWith(overrides, label = "Base") {
   return { label, input: { ...productInputDefaults(bootstrap), ...overrides } };
 }
-
-test("the shared projection builder uses the caller's percentile set", () => {
-  const percentiles = [10, 50, 90];
-  const request = productProjectionSamplingRequest(
-    productInputDefaults(bootstrap),
-    { ...bootstrap, maxRolloutSamples: 100 },
-    { value: "cash" },
-    {
-      rolloutCount: 20,
-      firstSeed: 7,
-      model: "test-model",
-      horizonMonths: 12,
-      sellable: [],
-    },
-    percentiles
-  );
-
-  expect(request).toMatchObject({
-    firstSeed: 7,
-    rolloutCount: 20,
-    metric: "cash",
-    percentiles,
-  });
-});
 
 test("the combined projection builder carries distinct fan and terminal percentiles", () => {
   const request = productProjectionSummaryRequest(

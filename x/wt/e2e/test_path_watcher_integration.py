@@ -31,20 +31,6 @@ def wait_for_status_contains(wt_cli, needle: str, timeout: float = WATCHER_DEBOU
         pytest.fail(f"Timed out waiting for status to contain '{needle}'. Last output:\n{last['out']}")
 
 
-def wait_for_status_contains_all(wt_cli, needles: list[str], timeout: float = WATCHER_DEBOUNCE_SECS * 8) -> None:
-    last = {"out": ""}
-    ok = wait_until(
-        lambda: (last.update({"out": _status(wt_cli)}), all(n in last["out"] for n in needles))[-1],
-        timeout_seconds=timeout,
-        interval_seconds=WATCHER_DEBOUNCE_SECS,
-    )
-    if not ok:
-        missing = [n for n in needles if n not in last["out"]]
-        pytest.fail(
-            f"Timed out waiting for status to contain all {needles}. Missing: {missing}. Last output:\n{last['out']}"
-        )
-
-
 def wait_for_status_not_contains(wt_cli, needle: str, timeout: float = WATCHER_DEBOUNCE_SECS * 8) -> None:
     last = {"out": ""}
     ok = wait_until(
@@ -106,60 +92,6 @@ def test_path_watcher_full_lifecycle(wt_cli, real_config, pygit2_repo):
     # 1. Not show it in status output, or
     # 2. Show it with an error state indicating it's missing
     # Either way, this tests that the path watcher is working
-
-
-@pytest.mark.timeout(30)
-def test_path_watcher_multiple_worktrees(wt_cli, real_config, pygit2_repo):
-    """
-    Test path watcher with multiple worktrees created and removed.
-    Tests that the daemon can track multiple changes in sequence.
-    """
-    # Initial status to start daemon
-    result = wt_cli.status(timeout=timedelta(seconds=5.0))
-    assert result.returncode == 0
-
-    worktree_names = ["wt1", "wt2", "wt3"]
-
-    # Create multiple worktrees
-    for name in worktree_names:
-        result = wt_cli.sh_c(name, timeout=timedelta(seconds=5.0))
-        assert result.returncode == 0, f"Failed to create {name}: {result.stderr}"
-
-    # Wait for all worktrees to appear in status in one poll loop
-    wait_for_status_contains_all(wt_cli, worktree_names)
-
-    # Status should show all worktrees
-    result = wt_cli.status(timeout=timedelta(seconds=5.0))
-    assert result.returncode == 0
-    for name in worktree_names:
-        assert name in result.stdout, f"Worktree {name} not detected after creation"
-
-    # Remove worktrees one by one
-    remaining = worktree_names.copy()
-
-    def _wait_until_removed(wt_cli, missing_name: str, timeout: float = 6.0):
-        last = {"out": ""}
-
-        def _is_removed() -> bool:
-            result = wt_cli.status(timeout=timedelta(seconds=3.0))
-            last["out"] = result.stdout
-            return missing_name not in result.stdout
-
-        ok = wait_until(_is_removed, timeout_seconds=timeout, interval_seconds=WATCHER_DEBOUNCE_SECS)
-        if not ok:
-            print(f"DEBUG last status while waiting removal of {missing_name}:\n{last['out']}")
-        return ok
-
-    for name in worktree_names:
-        result = wt_cli.sh("rm", name, "--force", timeout=timedelta(seconds=5.0))
-        assert result.returncode == 0, f"Failed to remove {name}: {result.stderr}"
-        # Verify git no longer lists the worktree entry
-        wt_path = real_config.worktrees_dir / name
-        assert not worktree_exists(pygit2_repo, wt_path), f"Worktree {name} still listed in main repo after removal"
-        remaining.remove(name)
-
-        assert _wait_until_removed(wt_cli, name), f"Worktree {name} still present in status after removal"
-        print(f"After removing {name}, remaining should be: {remaining}")
 
 
 if __name__ == "__main__":

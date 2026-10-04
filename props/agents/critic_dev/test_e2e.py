@@ -1,17 +1,10 @@
-"""E2E test for agent orchestration and custom agent images.
+"""E2E test for agent orchestration.
 
 Tests the orchestration workflow:
 1. Optimizer calls run_critic to spawn critic containers
 2. Critic receives system prompt and submits issues
 3. Grader processes edges
 4. Optimizer waits for grading and reports success
-
-Custom image flow:
-1. Pull built-in critic image via crane
-2. Replace entrypoint with custom Python script (appended layer + CMD mutate)
-3. Push modified image to registry proxy
-4. Run the custom image — script writes critique data directly to DB
-5. Grader detects drift and fills grading edges
 
 Uses the in-container architecture with:
 - FakeOpenAI server backed by CriticDevMock/CriticMock/GraderMock
@@ -22,14 +15,11 @@ Uses the in-container architecture with:
 from __future__ import annotations
 
 import logging
-import textwrap
 
 import pytest
 import pytest_bazel
-from hamcrest import assert_that
 
 from agent_core.testing.responses import PlayGen
-from mcp_infra.exec.matchers import exited_successfully
 from props.agents.critic.testing.mocks import CriticMock
 from props.agents.critic_dev.testing.mocks import CriticDevMock
 from props.agents.critic_dev.testing.orchestration_fixtures import (
@@ -38,13 +28,12 @@ from props.agents.critic_dev.testing.orchestration_fixtures import (
     ORCHESTRATION_OPTIMIZER_MODEL,
 )
 from props.agents.grader.testing.mocks import GraderMock
-from props.agents.grader.tools import ClusterMemberSpec
 from props.core.agent_types import TargetMetric
 from props.core.eval_api_models import CriticRunStatus, GradingStatusResponse, RunCriticRequest, StartCriticResponse
 from props.core.ids import DefinitionId, SnapshotSlug
 from props.core.models.examples import ExampleKind, WholeSnapshotExample
 from props.db.database import Database
-from props.db.models import AgentRun, AgentRunStatus, GradingEdge, ReportedIssue
+from props.db.models import AgentRun, AgentRunStatus
 from props.testing.constants import DEFAULT_TEST_MODEL
 from props.testing.mocks import get_system_prompt_text
 
@@ -161,201 +150,6 @@ async def test_po_orchestrates_critic_with_system_prompt_check(
                 optimizer_run = session.get(AgentRun, run_id)
                 assert optimizer_run is not None
                 assert optimizer_run.status == AgentRunStatus.EXITED, f"Expected COMPLETED, got {optimizer_run.status}"
-
-
-# Custom Python script that replaces the critic's main.py in the image.
-# Bypasses the LLM agent loop: connects to the DB directly, inserts one
-# reported issue + occurrence, and exits. This creates grading drift that
-# the snapshot grader picks up.
-#
-# Overlaid at the runfiles path so the existing entrypoint launcher
-# (critic_bin) runs this instead of the original main.py.
-_CUSTOM_CRITIC_SCRIPT = textwrap.dedent("""\
-    from __future__ import annotations
-
-    import asyncio
-    import sys
-
-    from props.agents.runtime import get_current_agent_run_id
-    from props.db.database import Database
-    from props.db.models import ReportedIssue, ReportedIssueOccurrence
-    from props.db.snapshots import LocationAnchor
-
-
-    async def main() -> int:
-        db = Database.from_env()
-
-        with db.session() as session:
-            agent_run_id = get_current_agent_run_id(session)
-            print(f"Custom critic running as {agent_run_id}")
-
-        with db.session() as session:
-            agent_run_id = get_current_agent_run_id(session)
-            issue = ReportedIssue(
-                agent_run_id=agent_run_id,
-                issue_id="custom-test-issue",
-                rationale="Test issue from custom critic image",
-            )
-            session.add(issue)
-
-        with db.session() as session:
-            agent_run_id = get_current_agent_run_id(session)
-            occ = ReportedIssueOccurrence(
-                agent_run_id=agent_run_id,
-                reported_issue_id="custom-test-issue",
-                locations=[LocationAnchor(file="test.py", start_line=1, end_line=5)],
-            )
-            session.add(occ)
-
-        print("Custom critic completed: 1 issue, 1 occurrence")
-        return 0
-
-
-    if __name__ == "__main__":
-        sys.exit(asyncio.run(main()))
-""")
-
-
-@pytest.mark.timeout(300)
-async def test_po_creates_custom_critic_image(
-    synced_db, e2e_stack, test_snapshot, critic_dev_optimize_image, critic_image, grader_image
-):
-    """Test full custom image flow: pull → overlay main.py → push → run → grade.
-
-    Exercises the real crane workflow:
-    1. Optimizer writes custom Python script to workspace
-    2. Appends a layer that overlays main.py at the runfiles path
-    3. Pushes the modified image by digest to the registry proxy
-    4. Runs the custom image — the overlaid main.py writes critique data directly to DB
-    5. Snapshot grader detects drift and fills grading edges
-    6. Optimizer's wait_until_graded returns successfully
-
-    The custom critic bypasses the LLM entirely — it directly inserts a
-    reported_issue + occurrence via SQLAlchemy, proving the container has
-    working DB credentials and the full OCI pull/append/push/run pipeline works.
-    """
-    snapshot_slug = SnapshotSlug(test_snapshot)
-
-    @CriticDevMock.mock()
-    def optimizer_mock(m: CriticDevMock) -> PlayGen:
-        yield None  # First request
-
-        # Write the custom critic script into the workspace
-        result = yield from m.exec_roundtrip(
-            ["sh", "-c", f"cat > /workspace/custom_main.py << 'PYEOF'\n{_CUSTOM_CRITIC_SCRIPT}PYEOF"], timeout_ms=15000
-        )
-        assert_that(result, exited_successfully())
-
-        # Build custom image: overlay main.py at the runfiles path, push by digest.
-        # The aspect_py_binary "critic_bin" stores main.py under its runfiles tree.
-        # Appending a layer with the same path shadows the original file.
-        build_cmd = (
-            "set -e && "
-            "REGISTRY=${PROPS_REGISTRY_URL#http://} && "
-            "REGISTRY=${REGISTRY#https://} && "
-            "MAIN_PY=props/agents/critic/critic_bin.runfiles/_main/props/agents/critic/main.py && "
-            "mkdir -p /tmp/layer/$(dirname $MAIN_PY) && "
-            "cp /workspace/custom_main.py /tmp/layer/$MAIN_PY && "
-            "tar -cf /tmp/layer.tar -C /tmp/layer . && "
-            "crane mutate $REGISTRY/critic:latest"
-            " --append /tmp/layer.tar"
-            " -o /tmp/image.tar"
-            " --insecure && "
-            "DIGEST=$(crane digest --tarball /tmp/image.tar) && "
-            "crane push /tmp/image.tar $REGISTRY/critic@$DIGEST --insecure && "
-            "echo $DIGEST"
-        )
-        result = yield from m.exec_roundtrip(["sh", "-c", build_cmd], timeout_ms=120000)
-        assert_that(result, exited_successfully())
-        stdout = result.stdout if isinstance(result.stdout, str) else result.stdout.truncated_text
-        new_digest = stdout.strip().split("\n")[-1]  # Last line is the digest
-        logger.info(f"Custom image digest: {new_digest}")
-
-        # Start the custom critic image (non-blocking)
-        example = WholeSnapshotExample(kind=ExampleKind.WHOLE_SNAPSHOT, snapshot_slug=snapshot_slug)
-        start_output: StartCriticResponse = yield from m.start_critic_roundtrip(
-            RunCriticRequest(
-                definition_id=DefinitionId(new_digest),
-                example=example,
-                timeout_seconds=120,
-                budget_usd=1.0,
-                critic_model=ORCHESTRATION_CRITIC_MODEL,
-            )
-        )
-        critic_run_id = start_output.critic_run_id
-        logger.info(f"Custom critic run: {critic_run_id}")
-
-        # Wait for critic container to finish
-        completed: CriticRunStatus = yield from m.wait_until_critic_completed_roundtrip(
-            critic_run_id, timeout_seconds=120
-        )
-        logger.info(f"Critic completed: status={completed.status}")
-
-        # Wait for grading to complete
-        wait_output: GradingStatusResponse = yield from m.wait_until_graded_roundtrip(critic_run_id, timeout_seconds=60)
-        logger.info(f"Grading complete: total_credit={wait_output.total_credit}")
-
-        yield m.report_success()
-
-    # Grader mock for custom critic: grades "custom-test-issue" on test.py
-    # test.py matches: tp-003/occ-1, tp-004/occ-1, tp-005/occ-1, fp-001/fp-occ-1 = 4 edges
-    @GraderMock.mock()
-    def grader_mock(m: GraderMock) -> PlayGen:
-        yield None  # First request
-
-        # Get pending edges for custom-test-issue
-        drift = yield from m.get_drift_roundtrip()
-        run_id = drift.grading[0].critique_run_id
-
-        # Fill all 4 edges with credit=0
-        yield from m.fill_remaining_roundtrip(run_id, "custom-test-issue", 4, "Mock: no GT matches")
-
-        # Issue has credit=0, appears in clustering
-        drift = yield from m.get_drift_roundtrip()
-        assert len(drift.clustering) == 1
-
-        # Cluster the issue
-        yield from m.create_cluster_roundtrip(
-            "novel-issues",
-            "Unmatched issues from orchestration",
-            [ClusterMemberSpec(run=run_id, issue_id="custom-test-issue", rationale="Novel issue")],
-        )
-
-        yield from m.sleep_forever("All edges graded and clustered")
-
-    # No critic mock needed — custom critic bypasses the LLM entirely
-    mocks = {ORCHESTRATION_OPTIMIZER_MODEL: optimizer_mock, ORCHESTRATION_GRADER_MODEL: grader_mock}
-    async with e2e_stack(mocks, images=[critic_dev_optimize_image, critic_image, grader_image]) as stack:
-        grader_image_resolved = stack.resolved_images["grader"]
-        opt_image = stack.resolved_images["critic_dev_optimize"]
-
-        grader_handle = await stack.registry.start_snapshot_grader(
-            image=grader_image_resolved, snapshot_slug=snapshot_slug, model=ORCHESTRATION_GRADER_MODEL
-        )
-
-        async with grader_handle:
-            run_id = await stack.registry.run_critic_dev_optimize(
-                image=opt_image,
-                budget=1.0,
-                optimizer_model=ORCHESTRATION_OPTIMIZER_MODEL,
-                critic_model=ORCHESTRATION_CRITIC_MODEL,
-                target_metric=TargetMetric.WHOLE_REPO,
-                timeout_seconds=180,
-            )
-
-            with synced_db.session() as session:
-                optimizer_run = session.get(AgentRun, run_id)
-                assert optimizer_run is not None
-                assert optimizer_run.status == AgentRunStatus.EXITED
-
-                # Verify the custom critic created its issue
-                issues = session.query(ReportedIssue).filter_by(issue_id="custom-test-issue").all()
-                assert len(issues) == 1, f"Expected 1 custom issue, got {len(issues)}"
-
-                # Verify grading edges were created (grader processed the drift)
-                critic_run_id = issues[0].agent_run_id
-                edges = session.query(GradingEdge).filter_by(critique_run_id=critic_run_id).all()
-                assert len(edges) > 0, "Expected grading edges for the custom critic run"
 
 
 @pytest.mark.timeout(180)

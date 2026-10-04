@@ -2370,8 +2370,8 @@ if (scenario.checkComposerControls) {
     const effort = document.querySelector<HTMLElement>(".agentplane-composer-effort");
     const model = document.querySelector<HTMLElement>(".agentplane-composer-model");
     const controls = document.querySelector<HTMLElement>(".agentplane-composer-controls");
-    const dot = document.querySelector(".agentplane-topbar-title .agentplane-thread-status-dot");
-    if (!send || !effort || !model || !controls || !dot) return;
+    const indicator = document.querySelector(".agentplane-topbar-title .agentplane-thread-status-indicator");
+    if (!send || !effort || !model || !controls || !indicator) return;
     requestAnimationFrame(() => {
       const box = send.getBoundingClientRect();
       const modelBox = model.getBoundingClientRect();

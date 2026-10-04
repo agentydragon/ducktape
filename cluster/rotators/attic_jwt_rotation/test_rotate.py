@@ -11,7 +11,6 @@ import pygit2
 import pytest
 import pytest_bazel
 import yaml
-from pydantic import ValidationError
 
 from cluster.rotators.attic_jwt_rotation import rotate
 from cluster.rotators.attic_jwt_rotation.config import Config, Token
@@ -211,43 +210,6 @@ def test_rotate_one_mints_and_writes_when_absent(monkeypatch, tmp_path: Path):
     assert written["push_unencrypted"] == []
 
 
-def test_token_requires_all_fields():
-    with pytest.raises(ValidationError):
-        Token.model_validate({"name": "x"})  # missing sops_file, sub, validity, pull
-
-
-def test_token_push_defaults_to_empty():
-    token = Token.model_validate(
-        {"name": "x", "sops_file": "s.yaml", "sub": "x", "validity": "1 year", "pull": ["main"]}
-    )
-    assert token.push == []
-
-
-def test_config_parses_tokens_and_defaults():
-    config = Config.model_validate(
-        {
-            "tokens": [
-                {
-                    "name": "wyrm2 attic reader",
-                    "sops_file": "secrets/hosts/wyrm2-attic.yaml",
-                    "sub": "wyrm2",
-                    "validity": "1 year",
-                    "pull": ["main", "gaffer"],
-                    "push": [],
-                }
-            ]
-        }
-    )
-    (token,) = config.tokens
-    assert token.sub == "wyrm2"
-    assert token.pull == ["main", "gaffer"]
-    assert config.attic_namespace == "nix-cache"
-    assert config.attic_deployment == "deploy/attic"
-    assert config.server_config == "/config/server.toml"
-    assert config.token_field == "attic_token"
-    assert config.rotate_below_hours == 24
-
-
 # --- pygit2 git ops (clone_repo / commit_and_push) ---
 
 
@@ -255,6 +217,11 @@ def make_token(name: str = "x", sops_file: str = "s.yaml", **kw: Any) -> Token:
     base: dict[str, Any] = {"name": name, "sops_file": sops_file, "sub": name, "validity": "1 year", "pull": ["main"]}
     base.update(kw)
     return Token.model_validate(base)
+
+
+def test_token_without_push_grants_no_push_scope():
+    # The generated roster omits `push` for the read-only tokens, so this default is their only source.
+    assert make_token().push == []
 
 
 @pytest.fixture

@@ -22,11 +22,11 @@ from agentplane.action_service.models import DecisionInput, OperatorPrincipal, V
 from agentplane.action_service.service import ActionService
 from agentplane.action_service.test_fixtures.callers import admitted_callers
 from agentplane.action_service.updates import ActionUpdates
-from agentplane.notification_service.actions import Actions
 from agentplane.notification_service.api import create_app
 from agentplane.notification_service.db import Inbox
 from agentplane.notification_service.instructions import instructions
 from agentplane.notification_service.service import Service
+from agentplane.notification_service.sources.actions import Actions
 from agentplane.notification_service.store import Store
 from agentplane.protocol import command_pb2, event_log_pb2
 from agentplane.runner import protocol_pb2

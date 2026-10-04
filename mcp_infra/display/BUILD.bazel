@@ -85,14 +85,11 @@ py_test(
 py_test(
     name = "test_max_height",
     srcs = ["test_max_height.py"],
-    data = ["__snapshots__/test_max_height.ambr"],
-    uses_syrupy = True,
     deps = [
         ":rich_display",
         "//:conftest",
         "//mcp_infra:conftest",
         "@pypi//pytest_bazel",
         "@pypi//rich",
-        "@pypi//syrupy",
     ],
 )

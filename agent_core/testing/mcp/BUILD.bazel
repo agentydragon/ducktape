@@ -19,11 +19,8 @@ py_library(
     visibility = ["//:__subpackages__"],
     deps = [
         ":echo_server",
-        "//agent_core:events",
         "//agent_core:mcp_provider",
         "//agent_core:tool_provider",
-        "//mcp_infra:naming",
-        "//mcp_infra:prefix",
         "@pypi//fastmcp_slim",
         "@pypi//pytest",
     ],

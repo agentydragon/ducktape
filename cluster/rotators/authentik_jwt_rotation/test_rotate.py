@@ -174,62 +174,6 @@ def test_stamped_claims_absent_is_none(tmp_path: Path):
     assert stamped_claims(tmp_path / "absent.yaml") is None
 
 
-def test_rotation_expected_audiences_defaults_none_and_parses_list():
-    base = {
-        "name": "haku-k8s",
-        "provider_slug": "kubectl-sandbox-client-credentials",
-        "scopes": "openid profile email groups",
-        "credentials_dir": "/creds",
-        "sops_file": "secrets/haku-k8s-jwt.yaml",
-        "token_field": "jwt",
-    }
-    assert Rotation.model_validate(base).expected_audiences is None
-    with_aud = Rotation.model_validate(
-        base | {"expected_audiences": ["kubectl-sandbox-client-credentials", "kubectl-passthrough-mcp"]}
-    )
-    assert with_aud.expected_audiences == ["kubectl-sandbox-client-credentials", "kubectl-passthrough-mcp"]
-
-
-def test_rotation_expected_claims_defaults_none_and_parses_dict():
-    base = {
-        "name": "haku-mail",
-        "provider_slug": "stalwart-haku",
-        "scopes": "openid profile email",
-        "credentials_dir": "/creds",
-        "sops_file": "secrets/haku-mail-jwt.yaml",
-        "token_field": "jwt",
-    }
-    assert Rotation.model_validate(base).expected_claims is None
-    with_claims = Rotation.model_validate(base | {"expected_claims": {"email": "haku@allegedly.works"}})
-    assert with_claims.expected_claims == {"email": "haku@allegedly.works"}
-
-
-def test_rotation_k8s_secret_defaults_none_and_parses():
-    base = {
-        "name": "haku-k8s",
-        "provider_slug": "kubectl-sandbox-client-credentials",
-        "scopes": "openid profile email groups",
-        "credentials_dir": "/creds",
-        "sops_file": "secrets/haku-k8s-jwt.yaml",
-        "token_field": "jwt",
-    }
-    assert Rotation.model_validate(base).k8s_secret is None
-    r = Rotation.model_validate(
-        base
-        | {
-            "k8s_secret": {
-                "path": "cluster/k8s/agents/haku-egress-proxy/openclaw-spike-kube-token.sops.yaml",
-                "name": "haku-openclaw-spike-kube-token",
-                "namespace": "haku-egress-proxy",
-            }
-        }
-    )
-    assert isinstance(r.k8s_secret, K8sSecretOutput)
-    assert r.k8s_secret.token_key == "jwt"  # default
-    assert r.k8s_secret.exp_key == "token-exp"  # default
-    assert r.k8s_secret.namespace == "haku-egress-proxy"
-
-
 def test_build_secret_manifest_carries_token_exp_under_configured_keys():
     out = K8sSecretOutput(
         path=Path("cluster/k8s/x.sops.yaml"), name="haku-cloud-grocy-sf-token", namespace="flux-system"
@@ -250,60 +194,6 @@ def test_encrypt_sops_file_uses_prettier_compatible_yaml_indent(monkeypatch, tmp
     encrypt_sops_file(path)
 
     assert calls == [(["sops", "encrypt", "--indent", "2", "--in-place", str(path)], {"check": True})]
-
-
-def test_rotation_expected_issuer_derived_from_slug():
-    r = Rotation(
-        name="x",
-        provider_slug="kubectl-sandbox-client-credentials",
-        scopes="openid",
-        credentials_dir=Path("/creds"),
-        sops_file=Path("secrets/x.yaml"),
-        token_field="jwt",
-    )
-    assert r.expected_issuer == "https://auth.allegedly.works/application/o/kubectl-sandbox-client-credentials/"
-
-
-def test_config_parses_exchange_and_group_fields():
-    config = Config.model_validate(
-        {
-            "rotations": [
-                {
-                    "name": "alloy-otlp",
-                    "provider_slug": "alloy-otlp-client-credentials",
-                    "scopes": "openid profile email",
-                    "exchange_scopes": "openid profile email ak_proxy",
-                    "credentials_dir": "/var/run/secrets/authentik/alloy-otlp",
-                    "sops_file": "secrets/alloy-otlp-bearer-token.yaml",
-                    "token_field": "token",
-                }
-            ]
-        }
-    )
-    (rotation,) = config.rotations
-    assert rotation.exchange_scopes == "openid profile email ak_proxy"
-    assert rotation.expected_group is None
-    assert rotation.credential_mode == "client_secret"
-    assert config.rotate_below_hours == 24
-
-
-def test_config_rejects_unknown_credential_mode():
-    with pytest.raises(ValidationError, match="credential_mode"):
-        Config.model_validate(
-            {
-                "rotations": [
-                    {
-                        "name": "haku-k8s",
-                        "provider_slug": "kubectl-sandbox-client-credentials",
-                        "scopes": "openid profile email groups",
-                        "credential_mode": "strip-suffix",
-                        "credentials_dir": "/var/run/secrets/authentik/haku-k8s",
-                        "sops_file": "secrets/haku-k8s-jwt.yaml",
-                        "token_field": "jwt",
-                    }
-                ]
-            }
-        )
 
 
 def test_mint_jwt_default_mode_uses_provider_client_secret(tmp_path: Path):

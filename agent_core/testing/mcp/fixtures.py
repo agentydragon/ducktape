@@ -6,19 +6,12 @@ Register in downstream packages via conftest.py:
 
 from __future__ import annotations
 
-import json
-from collections.abc import Callable
-from typing import Any
-
 import pytest
 from fastmcp.server import FastMCP
 
-from agent_core.events import ToolCall
 from agent_core.mcp_provider import MCPToolProvider
 from agent_core.testing.mcp.echo_server import make_echo_server
 from agent_core.tool_provider import ToolProvider
-from mcp_infra.naming import build_mcp_function
-from mcp_infra.prefix import MCPMountPrefix
 
 # ---- MCP fixtures ----
 # Note: compositor and compositor_client fixtures are in mcp_infra.testing.fixtures
@@ -62,17 +55,3 @@ def mcp_tool_provider(compositor_client) -> ToolProvider:
 def mcp_tool_provider_echo(mcp_client_echo) -> ToolProvider:
     """MCPToolProvider wrapping echo-only client (no compositor)."""
     return MCPToolProvider(mcp_client_echo)
-
-
-# ---- Event/call factories ----
-
-
-@pytest.fixture
-def make_tool_call(call_id_gen: Callable[[], str]) -> Callable[..., ToolCall]:
-    """Factory for ToolCall events with auto call_id generation."""
-
-    def _make(server: MCPMountPrefix, tool: str, args: dict[str, Any] | None = None) -> ToolCall:
-        args_json = json.dumps(args) if args is not None else None
-        return ToolCall(name=build_mcp_function(server, tool), args_json=args_json, call_id=call_id_gen())
-
-    return _make

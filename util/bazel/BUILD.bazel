@@ -27,7 +27,6 @@ py_test(
     deps = [
         ":subprocess",
         "//:conftest",
-        "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],
 )

@@ -89,13 +89,6 @@ def test_apportioning_everything_moves_everything(basis: int, units: int) -> Non
     assert apportion(basis, units, units) == basis
 
 
-@given(amount=COUNTS, basis_points=st.integers(0, 10_000))
-def test_equal_factors_scale_money_identically(amount: int, basis_points: int) -> None:
-    assert scaled(amount, Fraction(basis_points, 10_000), "test") == mul_div(
-        amount, basis_points * 100_000, MONEY_FACTOR_SCALE, "test"
-    )
-
-
 @given(amount=st.integers(-(10**12), 10**12), parts=st.integers(0, MONEY_FACTOR_SCALE))
 def test_a_factor_and_its_complement_split_an_amount(amount: int, parts: int) -> None:
     factor = Fraction(parts, MONEY_FACTOR_SCALE)

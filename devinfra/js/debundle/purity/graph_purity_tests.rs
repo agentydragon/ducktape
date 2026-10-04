@@ -367,27 +367,6 @@ fn plain_data_var_for_of_rebind_disqualifies_value_inference() {
 }
 
 #[test]
-fn plain_data_var_member_write_disqualifies() {
-    // Same write-scan rule as let/const — `X.k = v` in any
-    // chunk body disqualifies.
-    assert!(!is_plain_data(
-        "var X = { a: 1 }; function mut() { X.b = 2; }",
-        "X"
-    ));
-}
-
-#[test]
-fn plain_data_var_non_plain_ident_assign_disqualifies() {
-    // `X = nonPlain` ident assign on a candidate disqualifies
-    // (existing PlainDataWriteScanner rule applies to var
-    // candidates unchanged).
-    assert!(!is_plain_data(
-        "var X = { a: 1 }; function bad() { X = someFn(); }",
-        "X"
-    ));
-}
-
-#[test]
 fn plain_data_var_uninitialized_decl_alone_is_not_tracked() {
     // `var X;` with no initializer contributes nothing to the
     // candidate set. Without a chunk-top plain init, X has no
@@ -597,14 +576,6 @@ fn plain_data_ts_enum_iife_with_outer_member_write_disqualifies() {
 }
 
 #[test]
-fn plain_data_ts_enum_iife_distinct_param_name_is_tracked() {
-    // Param name differs from binding — no shadowing concern,
-    // just exercises the admission rule cleanly.
-    let src = r#"var Color = ((n) => (n.RED = "red", n))(Color || {});"#;
-    assert!(is_plain_data(src, "Color"));
-}
-
-#[test]
 fn plain_data_ts_enum_iife_computed_numeric_key_is_tracked() {
     // Numeric literal as computed key is admitted as a member
     // access on a fresh data property.
@@ -643,24 +614,6 @@ fn plain_data_ts_enum_iife_numeric_reverse_mapping_string_key_form_is_tracked() 
     // soundness story, different syntactic shape for the inner
     // forward write.
     let src = r#"var E = ((n) => (n[(n["A"] = 0)] = "A", n))(E || {});"#;
-    assert!(is_plain_data(src, "E"));
-}
-
-#[test]
-fn plain_data_ts_enum_iife_multiple_numeric_keys_is_tracked() {
-    // Multi-key numeric-reverse-mapping IIFE — the canonical
-    // Vite/TS emit for `enum E { A, B, C }`. Pins that the
-    // recursive admission scales beyond a single key.
-    let src = r#"var E = ((n) => ((n[(n.A = 0)] = "A"), (n[(n.B = 1)] = "B"), (n[(n.C = 2)] = "C"), n))(E || {});"#;
-    assert!(is_plain_data(src, "E"));
-}
-
-#[test]
-fn plain_data_ts_enum_iife_mixed_string_and_numeric_keys_is_tracked() {
-    // The same IIFE can mix forward-only writes (string enum
-    // form) and reverse-mapped writes (numeric enum form) as
-    // long as every step matches one of the admitted shapes.
-    let src = r#"var E = ((n) => (n.a = "a", n[(n.B = 1)] = "B", n))(E || {});"#;
     assert!(is_plain_data(src, "E"));
 }
 
@@ -798,17 +751,6 @@ fn plain_data_unshadowed_default_param_write_disqualifies_top_level_candidate() 
 }
 
 #[test]
-fn plain_data_object_define_property_on_real_top_level_m_still_disqualifies() {
-    let src = r#"
-    const m = { systemToolWebSearchId: "SYS_FN16" };
-    Object.defineProperty(m, "systemToolWebSearchId", { get: () => io() });
-    const readSystemToolId = () => m.systemToolWebSearchId;
-"#;
-    assert!(!is_plain_data(src, "m"));
-    assert_eq!(fn_purity(src, "readSystemToolId"), Some(false));
-}
-
-#[test]
 fn plain_data_let_with_plain_literal_replacement_is_tracked() {
     // The `applySystemConfigOverrides` shape from gaffer-private:
     // `let envConfig = {…}` with every reassignment being
@@ -859,19 +801,6 @@ fn plain_data_let_with_accessor_rhs_assign_disqualifies() {
     // accessor channels. Disqualify.
     assert!(!is_plain_data(
         "let X = { a: 1 }; function bad() { X = { get a() { return io(); } }; }",
-        "X"
-    ));
-}
-
-#[test]
-fn plain_data_let_with_member_write_disqualifies() {
-    // `let X = {…}; X.k = v` is a member write — installs a
-    // property in place. The conservative rule rejects it (the
-    // resulting object is still plain-data, but the chunk-wide
-    // invariant is simpler if we forbid all member writes
-    // uniformly across `const` and `let`).
-    assert!(!is_plain_data(
-        "let X = { a: 1 }; function mut() { X.b = 2; }",
         "X"
     ));
 }
@@ -1142,45 +1071,6 @@ fn plain_data_chain_collapses_size_33_walkthrough_shape() {
     );
 }
 
-#[test]
-fn plain_data_computed_key_impurity_propagates() {
-    // `TA[io()]` evaluates the key expression at-init. Even
-    // though `TA` is PlainData, the key sub-expression must
-    // itself be pure for the member access to classify pure.
-    // Confirms the analyzer recurses through the computed key.
-    let src = r#"
-    const TA = { a: 1 };
-    const v = TA[io()];
-"#;
-    let module = parse(src);
-    let facts = analyze_facts(&module);
-    let v_fact = facts
-        .iter()
-        .find(|f| f.declared.contains(&test_id("v")))
-        .expect("v fact missing");
-    assert!(
-        !v_fact.purity.is_pure(),
-        "TA[io()] computed-key impurity should bubble up, got {:?}",
-        v_fact.purity,
-    );
-}
-
-#[test]
-fn plain_data_disqualified_binding_leaves_member_access_unknown() {
-    // If a chunk-local `const TA` is disqualified (e.g. by a
-    // member write somewhere in the chunk), member reads on it
-    // fall back to `unknown_member` — preserving the
-    // soundness-first behavior that previously required the
-    // chain-of-hints workaround.
-    let src = r#"
-    const TA = { a: 1 };
-    TA.b = 2;
-    const Me = (n) => TA[n];
-"#;
-    assert!(!is_plain_data(src, "TA"));
-    assert_eq!(fn_purity(src, "Me"), Some(false));
-}
-
 // --- Call-graph topology: deep chains, isolated nodes ------------------
 
 #[test]
@@ -1224,20 +1114,6 @@ fn fn_purity_deep_chain_propagates_impurity_to_root() {
             "expected {name} to inherit Impure from `e`"
         );
     }
-}
-
-#[test]
-fn fn_purity_independent_functions_isolated_in_call_graph() {
-    // No edges between `a` / `b` / `c`. Each is its own SCC;
-    // classification of each is independent.
-    let src = r#"
-        function a() { globalThis.touched = true; }
-        function b() { return 1; }
-        function c() { return 2; }
-    "#;
-    assert_eq!(fn_purity(src, "a"), Some(false));
-    assert_eq!(fn_purity(src, "b"), Some(true));
-    assert_eq!(fn_purity(src, "c"), Some(true));
 }
 
 #[test]

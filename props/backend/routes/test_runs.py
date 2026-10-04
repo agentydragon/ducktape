@@ -270,9 +270,6 @@ def test_run_critic_returns_critic_run_id(run_critic_client) -> None:
     assert response.status_code == 200
     body = response.json()
     assert body["critic_run_id"] == str(expected_run_id)
-    # Non-blocking: no status or container_exit_code in response
-    assert "status" not in body
-    assert "container_exit_code" not in body
 
 
 if __name__ == "__main__":

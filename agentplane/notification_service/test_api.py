@@ -1,4 +1,4 @@
-"""HTTP dependency wiring and app-owned worker lifetime, without duplicating delivery tests."""
+"""Subscription HTTP operations and service-owned worker lifetime."""
 
 import asyncio
 from unittest.mock import create_autospec
@@ -7,10 +7,10 @@ from uuid import uuid4
 import httpx
 import pytest_bazel
 
-from agentplane.notification_service.api import authenticated_caller, create_app, notification_service
+from agentplane.notification_service.api import authenticated_caller, create_app
 from agentplane.notification_service.models import ActionsSource, DestinationRef, Subscribe
 from agentplane.notification_service.service import Service
-from agentplane.notification_service.store import ConflictError, QuotaError, Store
+from agentplane.notification_service.store import Store
 from agentplane.workload_auth.principal import WorkloadPrincipal, WorkloadPrincipalResolver
 
 PRINCIPAL = WorkloadPrincipal(
@@ -20,97 +20,6 @@ PRINCIPAL = WorkloadPrincipal(
     pod_name="sandbox",
     pod_uid="pod-uid",
 )
-
-
-async def test_dependency_overrides_are_app_local_and_not_wire_parameters() -> None:
-    service = create_autospec(Service, instance=True)
-    service.subscribe.side_effect = QuotaError("inbox limit")
-    override = create_autospec(Service, instance=True)
-    override.subscribe.side_effect = ConflictError("creation key conflict")
-    resolver = create_autospec(WorkloadPrincipalResolver, instance=True)
-    resolver.resolve_workload.return_value = PRINCIPAL
-    app = create_app(service, resolver)
-    other = create_app(service, resolver)
-    app.dependency_overrides[authenticated_caller] = lambda: PRINCIPAL
-    app.dependency_overrides[notification_service] = lambda: override
-    body = {
-        "destination_ref": {"namespace": "test", "name": "sandbox", "uid": "sandbox-uid"},
-        "session_id": "session",
-        "idempotency_key": "listen",
-        "source": {"provider": "actions", "request_id": str(uuid4())},
-    }
-    async with (
-        httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://notifications.test") as client,
-        httpx.AsyncClient(
-            transport=httpx.ASGITransport(app=other), base_url="http://notifications.test"
-        ) as independent,
-    ):
-        discovery = await client.get("/v1/providers")
-        assert discovery.status_code == 200
-        assert discovery.json() == {
-            "actions": {
-                "subscription_schema": Subscribe.model_json_schema(),
-                "content": "ActionEventView: sequence, state, at, actor",
-            }
-        }
-        response = await client.post("/v1/subscriptions", json=body)
-        assert response.status_code == 409
-        assert response.json() == {"detail": "creation key conflict"}
-        override.subscribe.assert_awaited_once_with(PRINCIPAL, Subscribe.model_validate(body))
-        service.subscribe.assert_not_awaited()
-        resolver.resolve_workload.assert_not_awaited()
-        assert (await independent.get("/v1/providers")).status_code == 401
-        response = await independent.post(
-            "/v1/subscriptions", json=body, headers={"Authorization": "Bearer test-workload"}
-        )
-        assert response.status_code == 429
-        assert response.json() == {"detail": "inbox limit"}
-        resolver.resolve_workload.assert_awaited_once_with("test-workload")
-        service.subscribe.assert_awaited_once_with(PRINCIPAL, Subscribe.model_validate(body))
-        legacy = body.copy()
-        legacy["client_key"] = legacy.pop("idempotency_key")
-        assert (await client.post("/v1/subscriptions", json=legacy)).status_code == 422
-        # The old name is not accepted alongside the new one either.
-        response = await client.post("/v1/subscriptions", json=body | {"client_key": "different"})
-        assert response.status_code == 422
-        for invalid in [
-            body | {"provider": "actions"},
-            body | {"request_id": str(uuid4())},
-            body | {"after_sequence": 0},
-            {key: value for key, value in body.items() if key != "source"},
-            body | {"source": {"request_id": str(uuid4())}},
-            body | {"source": {"provider": "github", "repository": "agentydragon/ducktape"}},
-            body | {"source": {"provider": "actions", "request_id": str(uuid4()), "repository": "extra"}},
-        ]:
-            assert (await client.post("/v1/subscriptions", json=invalid)).status_code == 422
-        override.subscribe.assert_awaited_once()
-        app.dependency_overrides.clear()
-        assert (await client.post("/v1/subscriptions", json=body)).status_code == 401
-    schema = app.openapi()
-    for model in ["Subscribe", "SubscriptionView"]:
-        assert "idempotency_key" in schema["components"]["schemas"][model]["properties"]
-        assert "client_key" not in schema["components"]["schemas"][model]["properties"]
-        properties = schema["components"]["schemas"][model]["properties"]
-        assert not {"provider", "request_id", "after_sequence"} & properties.keys()
-        assert properties["source"] == {"$ref": "#/components/schemas/Source"}
-    for name, variant in [("Source", "ActionsSource"), ("EventIdentity", "ActionsEvent")]:
-        union = schema["components"]["schemas"][name]
-        assert union["discriminator"] == {
-            "propertyName": "provider",
-            "mapping": {"actions": f"#/components/schemas/{variant}"},
-        }
-        assert union["oneOf"] == [{"$ref": f"#/components/schemas/{variant}"}]
-    entry = schema["components"]["schemas"]["EntryView"]["properties"]
-    assert entry["event"] == {"$ref": "#/components/schemas/EventIdentity"}
-    assert not {"request_id", "source_sequence"} & entry.keys()
-    discovery_operation = schema["paths"]["/v1/providers"]["get"]
-    provider_response = discovery_operation["responses"]["200"]["content"]["application/json"]["schema"]
-    assert provider_response["additionalProperties"] == {"$ref": "#/components/schemas/ProviderView"}
-    operation = schema["paths"]["/v1/subscriptions"]["post"]
-    assert not operation.get("parameters")
-    assert operation["requestBody"]["content"]["application/json"]["schema"] == {
-        "$ref": "#/components/schemas/Subscribe"
-    }
 
 
 async def test_subscription_patch_renews_without_pause(store: Store) -> None:

@@ -1294,7 +1294,7 @@ spec:
         - DELETE
       paths:
         - /openapi.json
-        - /v1/providers
+        - /v1/sources
         - /v1/subscriptions
         - /v1/subscriptions/**
         - /v1/inboxes
@@ -5233,16 +5233,8 @@ spec:
                 secretKeyRef:
                   key: uri
                   name: postgres-notifications
-            - name: AGENTPLANE_NOTIFICATIONS_NAMESPACE
-              value: agentplane-staging
-            - name: AGENTPLANE_NOTIFICATIONS_ACTIONS_URL
-              value: http://agentplane-actions.agentplane-staging.svc.cluster.local:8080
-            - name: AGENTPLANE_NOTIFICATIONS_ACTIONS_TOKEN_FILE
-              value: /var/run/secrets/notifications/actions
-            - name: AGENTPLANE_NOTIFICATIONS_SANDBOX_SERVICE_TARGET
-              value: agentplane-sandbox-service.agentplane-staging.svc.cluster.local:8080
-            - name: AGENTPLANE_NOTIFICATIONS_SANDBOX_SERVICE_TOKEN_FILE
-              value: /var/run/secrets/notifications/sandboxes
+            - name: AGENTPLANE_NOTIFICATIONS_CONFIG_FILE
+              value: /etc/agentplane-notifications/settings.yaml
           image: git.allegedly.works/ducktape-ci/agentplane-notification-service:unset
           imagePullPolicy: IfNotPresent
           livenessProbe:
@@ -5281,6 +5273,9 @@ spec:
             readOnlyRootFilesystem: false
             runAsNonRoot: true
           volumeMounts:
+            - mountPath: /etc/agentplane-notifications
+              name: configmap-agentplane-notifications-settings
+              readOnly: true
             - mountPath: /var/run/secrets/notifications
               name: service-tokens
               readOnly: true
@@ -5328,6 +5323,9 @@ spec:
       shareProcessNamespace: false
       terminationGracePeriodSeconds: 30
       volumes:
+        - configMap:
+            name: agentplane-notifications-settings
+          name: configmap-agentplane-notifications-settings
         - name: service-tokens
           projected:
             sources:
@@ -5339,6 +5337,22 @@ spec:
                   audience: agentplane-sandbox-service
                   expirationSeconds: 3600
                   path: sandboxes
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: agentplane-notifications-settings
+  namespace: agentplane-staging
+data:
+  settings.yaml: |
+    namespace: agentplane-staging
+    actions:
+      url: http://agentplane-actions.agentplane-staging.svc.cluster.local:8080
+      token_file: /var/run/secrets/notifications/actions
+    sandbox_service:
+      target: agentplane-sandbox-service.agentplane-staging.svc.cluster.local:8080
+      token_file: /var/run/secrets/notifications/sandboxes
+immutable: false
 ---
 apiVersion: v1
 kind: Service

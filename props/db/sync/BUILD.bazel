@@ -111,6 +111,7 @@ py_test(
         "//props/db:conftest",
         "//props/db:models",
         "@pypi//more_itertools",
+        "@pypi//pytest",
         "@pypi//pytest_bazel",
         "@pypi//sqlalchemy",
     ],

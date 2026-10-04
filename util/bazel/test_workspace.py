@@ -55,17 +55,6 @@ def test_try_parse_invalid_returns_none(raw: str) -> None:
 @pytest.mark.parametrize(
     ("label", "expected"),
     [
-        (BazelLabel(repo="", package=Path("foo"), name="bar"), False),
-        (BazelLabel(repo="some_repo", package=Path("foo"), name="bar"), True),
-    ],
-)
-def test_is_external(label: BazelLabel, expected: bool) -> None:
-    assert label.is_external is expected
-
-
-@pytest.mark.parametrize(
-    ("label", "expected"),
-    [
         (BazelLabel(repo="", package=Path("foo/bar"), name="baz.py"), Path("foo/bar/baz.py")),
         (BazelLabel(repo="", package=Path("foo/bar"), name="sub/qux.go"), Path("foo/bar/sub/qux.go")),
         (BazelLabel(repo="", package=Path(), name="root.txt"), Path("root.txt")),
@@ -79,20 +68,6 @@ def test_is_external(label: BazelLabel, expected: bool) -> None:
 )
 def test_path_property(label: BazelLabel, expected: Path | None) -> None:
     assert label.path == expected
-
-
-@pytest.mark.parametrize(
-    ("label", "expected"),
-    [
-        (BazelLabel(repo="", package=Path("cluster/charts/attic"), name="attic"), Path("cluster/charts/attic")),
-        (BazelLabel(repo="", package=Path(), name="root"), Path()),
-        (BazelLabel(repo="", package=Path("devinfra/orphans"), name="find_orphans"), Path("devinfra/orphans")),
-        # external → None
-        (BazelLabel(repo="repo", package=Path("foo"), name="bar"), None),
-    ],
-)
-def test_package_path_property(label: BazelLabel, expected: Path | None) -> None:
-    assert label.package_path == expected
 
 
 @pytest.mark.parametrize(

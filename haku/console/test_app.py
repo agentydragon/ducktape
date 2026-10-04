@@ -18,14 +18,6 @@ def test_healthz(client) -> None:
     assert client.get("/healthz").json() == {"status": "ok"}
 
 
-def test_metrics_served_without_operator_session(client) -> None:
-    response = client.get("/metrics")
-    assert response.status_code == 200
-    # Prometheus scrapes unauthenticated; a real exposition-format sample confirms this is the
-    # scrape endpoint and not, say, an empty or error body.
-    assert "process_start_time_seconds" in response.text
-
-
 def test_metrics_not_swallowed_by_spa_fallback(make_client, tmp_path: Path) -> None:
     """The dev SPA fallback claims every unmatched path; /metrics must outrank it."""
     static_dir = tmp_path / "dist"

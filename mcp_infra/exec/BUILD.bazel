@@ -171,7 +171,6 @@ py_test(
     requires_docker = True,
     deps = [
         ":conftest",
-        ":models",
         "//:conftest",
         "//mcp_infra:conftest",
         "//mcp_infra:constants",

@@ -13,15 +13,6 @@ from util.oci import OciImage, load_oci_image
 from util.testing.container_logs import LoggedContainer
 
 
-def test_image_entrypoint_as_unprivileged_user() -> None:
-    tag = load_oci_image(OciImage("_main/devinfra/github_proxy/central/image_layout.rloc", "github-api-proxy:test"))
-    with LoggedContainer(tag, test_name="proxy-image-entrypoint", command=["--help"], network_mode="none") as container:
-        wrapped = container.get_wrapped_container()
-        assert wrapped.wait(timeout=15)["StatusCode"] == 0
-        assert b"--config" in wrapped.logs()
-        assert wrapped.attrs["Config"]["User"] == "1000:1000"
-
-
 async def test_image_boots_with_readonly_secrets_and_persistent_capture(tmp_path: Path) -> None:
     tag = load_oci_image(OciImage("_main/devinfra/github_proxy/central/image_layout.rloc", "github-api-proxy:test"))
     public_tls = tmp_path / "public-tls"

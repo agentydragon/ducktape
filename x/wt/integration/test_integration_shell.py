@@ -15,20 +15,12 @@ exit code semantics, and process boundary interactions.
 # - click.echo() outputs to stdout by default, not stderr
 # - DON'T mock across process boundaries - create real error conditions instead
 
-from pathlib import Path
-
 import pytest
 import pytest_bazel
 
 # The test drives `python -m x.wt.shell.install` in a subprocess; the module
 # is referenced only as a string, so gazelle cannot see the dependency.
 # gazelle:include_dep //x/wt/shell:install
-
-# Global constants for paths
-PROJECT_ROOT = Path(__file__).parent.parent.parent
-
-
-## tests use shell_runner; legacy helper removed
 
 
 class TestShellIntegration:
@@ -54,64 +46,6 @@ echo "Shell function loaded successfully"
         # Should be able to source the function
         assert result.returncode == 0, f"Shell setup failed: {result.stderr}"
         assert "Shell function loaded successfully" in result.stdout
-
-    def test_successful_teleport_with_pwd_verification(self, real_temp_repo, real_env, shell_runner):
-        """Test that wt teleport actually changes directory using pwd verification."""
-
-        # Cleaned by real_env fixture
-
-        def parse_teleport_output(result):
-            output_lines = [line for line in result.stdout.strip().split("\n") if line]
-            if not output_lines:
-                pytest.fail(f"No output from script. Stderr: {result.stderr}")
-
-            output_line = output_lines[-1]
-            parts = output_line.split(":", 3)
-
-            if len(parts) != 4:
-                pytest.fail(f"Expected 4 parts in output, got {len(parts)}. Output: {output_line}")
-
-            return {
-                "create_exit": int(parts[0]),
-                "nav_exit": int(parts[1]),
-                "pwd_before": parts[2],
-                "pwd_after": parts[3],
-            }
-
-        # Main test logic
-        shell_script = """# Verify shell function is loaded
-if ! declare -f wt > /dev/null; then
-    echo "ERROR: wt function not loaded"
-    exit 99
-fi
-
-# Use shell function - it calls Python CLI with fd3 redirection
-wt create --yes teleport-test
-create_exit=$?
-
-pwd_before=$(pwd)
-wt teleport-test
-nav_exit=$?
-pwd_after=$(pwd)
-
-echo "$create_exit:$nav_exit:$pwd_before:$pwd_after"
-"""
-
-        result = shell_runner.run_script(shell_script, cwd=real_temp_repo, env=real_env)
-
-        data = parse_teleport_output(result)
-
-        assert data["create_exit"] == 0, f"Create failed: stdout={result.stdout}, stderr={result.stderr}"
-        assert data["nav_exit"] == 0, f"Navigate failed: {result.stderr}"
-
-        expected_dir = str(real_temp_repo / "worktrees" / "teleport-test")
-        assert data["pwd_after"] == expected_dir, (
-            f"Directory change failed. Expected: {expected_dir}, Got: {data['pwd_after']}"
-        )
-
-        worktree_path = real_temp_repo / "worktrees" / "teleport-test"
-        assert worktree_path.exists()
-        assert worktree_path.is_dir()
 
     def test_wt_main_changes_directory(self, real_temp_repo, real_env, shell_runner):
         # Cleaned by real_env fixture

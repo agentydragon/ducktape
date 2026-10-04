@@ -700,16 +700,16 @@ ts_library(
 )
 
 ts_library(
-    name = "thread_status_dot",
+    name = "thread_status_indicator",
     srcs = [
         "css.d.ts",
-        "thread_status_dot.tsx",
+        "thread_status_indicator.tsx",
     ],
     tsconfig = TSCONFIG,
     deps = [
         ":mark_glyph",
         ":status_mark",
-        ":thread_status_dot_css",
+        ":thread_status_indicator_css",
         "//:node_modules/@mantine/core",
         "//:node_modules/@types/react",
         "//:node_modules/react",
@@ -743,8 +743,8 @@ js_library(
 )
 
 js_library(
-    name = "thread_status_dot_css",
-    srcs = ["thread_status_dot.css"],
+    name = "thread_status_indicator_css",
+    srcs = ["thread_status_indicator.css"],
 )
 
 # sidebar.tsx imports this stylesheet for the bundler.
@@ -781,7 +781,7 @@ ts_library(
         ":stream_status",
         ":thread_groups",
         ":thread_status",
-        ":thread_status_dot",
+        ":thread_status_indicator",
         "//:node_modules/@mantine/core",
         "//:node_modules/@tabler/icons-react",
         "//:node_modules/@types/react",

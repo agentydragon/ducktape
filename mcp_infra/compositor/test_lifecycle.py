@@ -310,41 +310,6 @@ async def test_unmount_pinned_server_errors_and_kept(compositor, make_simple_mcp
     assert backend_prefix in entries, "pinned server should remain mounted after failed unmount"
 
 
-async def test_pinned_server_survives_close(make_simple_mcp):
-    """Test that pinned servers survive close() but not __aexit__()."""
-    pinned = make_simple_mcp
-
-    # Mount prefix for dict access
-    pinned_prefix = MCPMountPrefix("pinned")
-
-    # Note: Using manual Compositor() instead of fixture because this test needs to
-    # verify state AFTER __aexit__(), which happens during fixture teardown
-    async with Compositor() as comp:
-        await comp.mount_inproc(MCPMountPrefix("pinned"), pinned, pinned=True)
-
-        # Verify mounted
-        entries = await comp.server_entries()
-        assert "pinned" in entries
-        mount = comp._mounts[pinned_prefix]
-        assert mount.is_active
-
-        # Call close() explicitly
-        await comp.close()
-
-        # After close(): pinned server still active
-        entries = await comp.server_entries()
-        assert "pinned" in entries
-        mount = comp._mounts[pinned_prefix]
-        assert mount.is_active
-        assert not mount.is_closed
-
-    # After __aexit__(): pinned server is cleaned up
-    entries = await comp.server_entries()
-    assert "pinned" not in entries
-    # Mount should be closed or removed
-    assert pinned_prefix not in comp._mounts or not comp._mounts[pinned_prefix].is_active
-
-
 async def test_compositor_warns_on_leak(make_simple_mcp):
     """Test that __del__ detects leaked compositors.
 

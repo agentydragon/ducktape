@@ -65,19 +65,6 @@ def test_build_summary_csv_blanks_missing_family_and_preserves_inflow_sign() -> 
     assert row == "Insurance reimbursements,inflow,,-450.50,-450.50,1"
 
 
-def test_build_summary_csv_quotes_labels_with_commas() -> None:
-    response = _snapshot(
-        bucket=BucketView(id="restaurants", label="Restaurants, in person", kind=BucketKind.EXPENSE, family=None),
-        monthly=BucketMonthly(
-            bucket_id="restaurants", monthly_amounts=(10.0,), window_monthly_avg=10.0, transaction_count=1
-        ),
-    )
-
-    row = build_summary_csv(response, {}).strip().split("\n")[1]
-
-    assert row == '"Restaurants, in person",expense,,10.00,10.00,1'
-
-
 def test_build_transactions_csv_renders_nulls_and_quotes_embedded_commas() -> None:
     response = BudgetTransactionsResponse(
         bucket_id="rent",

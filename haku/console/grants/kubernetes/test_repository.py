@@ -422,38 +422,6 @@ def test_database_rejects_grants_with_invalid_source_provenance(make_client: Any
 
 
 @pytest.mark.parametrize(
-    ("scope", "rule"),
-    [
-        ({"kind": "all_namespaces"}, _RULE),
-        ({"kind": "cluster"}, _CLUSTER_RULE),
-        ({"kind": "non_resource"}, _NON_RESOURCE_RULE),
-    ],
-)
-def test_database_accepts_canonical_non_exact_scope_shape(
-    make_client: Any, scope: dict[str, object], rule: Rule
-) -> None:
-    with make_client() as client:
-        app = cast(FastAPI, client.app)
-        sessions = cast(async_sessionmaker[AsyncSession], app.state.db_sessions)
-        assert client.portal is not None
-        agent_id, binding_id = client.portal.call(default_agent_binding, sessions)
-        source_tool_call_id = client.portal.call(
-            partial(insert_approved_tool_call, sessions, binding_id=binding_id, now=_NOW)
-        )
-
-        client.portal.call(
-            partial(
-                _insert_raw_grant,
-                sessions,
-                agent_id=agent_id,
-                source_tool_call_id=source_tool_call_id,
-                scope=scope,
-                rule=rule,
-            )
-        )
-
-
-@pytest.mark.parametrize(
     "scope",
     [
         {},

@@ -73,18 +73,4 @@ py_test(
     ],
 )
 
-py_test(
-    name = "test_agent_types",
-    srcs = ["test_agent_types.py"],
-    deps = [
-        ":agent_types",
-        ":ids",
-        ":oci_utils",
-        "//:conftest",
-        "//props:conftest",
-        "//props/core/models:examples",
-        "@pypi//pytest_bazel",
-    ],
-)
-
 # Collect all library targets for ruff

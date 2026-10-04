@@ -595,16 +595,14 @@ def test_create_link_token_initializes_requested_products() -> None:
 
     assert result.link_token == "link-token-1"
     assert result.products == ["transactions", "liabilities"]
-    # Only transactions is hard-required; liabilities is conditional, so a selected account set with
-    # no card or loan cannot fail the Link after the user has already consented at their bank.
-    assert api.link_token_requests[0]["products"] == ["transactions"]
-    assert api.link_token_requests[0]["required_if_supported_products"] == ["liabilities"]
     assert result.transaction_days_requested == 730
     assert api.link_token_requests == [
         {
             "client_name": "Plaid MCP",
             "country_codes": ["US"],
             "language": "en",
+            # Only transactions is hard-required; liabilities is conditional, so a selected account set with
+            # no card or loan cannot fail the Link after the user has already consented at their bank.
             "products": ["transactions"],
             "required_if_supported_products": ["liabilities"],
             "redirect_uri": "https://example.test/link/callback",
@@ -683,8 +681,6 @@ def test_create_update_link_token_requests_additional_consented_products_only() 
             "user": {"client_user_id": "owner"},
         }
     ]
-    assert "products" not in api.link_token_requests[0]
-    assert "transactions" not in api.link_token_requests[0]
 
 
 def test_exchange_public_token_uses_sdk_request() -> None:

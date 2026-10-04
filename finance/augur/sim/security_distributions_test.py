@@ -5,7 +5,6 @@ from decimal import Decimal
 from itertools import pairwise
 
 import numpy as np
-import pytest
 import pytest_bazel
 
 from finance.augur.model.series import LevelSeriesKey, SecurityDistributionKey
@@ -70,20 +69,21 @@ def payout_levels(per_unit: Decimal) -> np.ndarray:
     return np.full((1, HORIZON + 1), float(per_unit))
 
 
-# The payout every case but one runs on; composition reads it and never writes it.
+# The payout every case runs on; composition reads it and never writes it.
 PAYOUT = payout_levels(PER_UNIT)
 
 
-def _paths(payout: np.ndarray | None) -> tuple[Series, ...]:
-    """The fund's price and, unless it declares none, its per-unit payout.
+def _paths(payout: np.ndarray) -> tuple[Series, ...]:
+    """The fund's price and its per-unit payout.
 
     The two series have the same shape and units, which is the point of the payout being a
     primitive rather than a rate.
     """
 
-    blocks: dict[LevelSeriesKey, np.ndarray] = {FUND: np.full((1, HORIZON + 1), float(PRICE))}
-    if payout is not None:
-        blocks[SecurityDistributionKey(symbol=SYMBOL)] = payout
+    blocks: dict[LevelSeriesKey, np.ndarray] = {
+        FUND: np.full((1, HORIZON + 1), float(PRICE)),
+        SecurityDistributionKey(symbol=SYMBOL): payout,
+    }
     return level_series(blocks, rollout_count=1, horizon_months=HORIZON)
 
 
@@ -100,7 +100,7 @@ def compose(
     is_taxed: bool = True,
     distributes: bool = True,
     holding_account_id: AccountId = BROKERAGE,
-    payout: np.ndarray | None = PAYOUT,
+    payout: np.ndarray = PAYOUT,
     opening_cash: Decimal = Decimal(50_000),
     bill: Decimal | None = None,
 ) -> World:
@@ -317,13 +317,6 @@ def test_qualified_dividends_are_their_own_row_in_the_holders_tax_records() -> N
     [decision] = batch
     assert decision.observation.tax_records is not None
     assert decision.observation.tax_records.income == (("ordinary", 0), ("qualified_dividend", MONTHLY_PAYOUT_QUANTA))
-
-
-def test_a_declared_distribution_with_no_sampled_payout_series_is_rejected() -> None:
-    """Named by the missing series rather than surfacing later as a non-finite payout."""
-
-    with pytest.raises(ValueError, match="missing distribution series for 'bnd'"):
-        compose(payout=None)
 
 
 def test_current_payout_funds_an_explicit_same_month_claim() -> None:

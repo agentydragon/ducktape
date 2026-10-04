@@ -118,14 +118,9 @@ The fix is to remove (or drastically simplify) PYTHONPATH propagation in
 it. The only thing `python_env()` should still do is set `PYTHONSAFEPATH=1` to prevent
 CWD pollution.
 
-**Caveat**: `generate_shell_wrapper()` bakes PYTHONPATH into shell scripts. These
-wrappers run outside the venv (e.g., as standalone executables). They may still need
-PYTHONPATH. Need to check if those shell wrappers also have access to the venv
-Python or if they use a different interpreter.
-
-Also need to verify: does this work for the Nix devShell case (non-Bazel subprocess
-invocations)? The docstring mentions "Nix site.addsitedir paths" — these might not
-be in the venv.
+**Caveat**: need to verify that this works for the Nix devShell case (non-Bazel
+subprocess invocations). The docstring mentions "Nix site.addsitedir paths" — these
+might not be in the venv.
 
 ## Other failures
 

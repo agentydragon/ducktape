@@ -7,7 +7,6 @@ from io import StringIO
 import pytest_bazel
 from rich.console import Console
 from rich.text import Text
-from syrupy.assertion import SnapshotAssertion
 
 from mcp_infra.display.rich_display import MaxHeight
 
@@ -109,60 +108,6 @@ def test_max_height_exact_limit():
     # Should have exactly 20 lines (no truncation marker when at limit)
     assert len(lines) == 20, f"Expected 20 lines, got {len(lines)}"
     assert "more lines" not in result, "Should not show truncation marker at exact limit"
-
-
-# Snapshot tests ---------------------------------------------------------------
-
-
-def render_to_string(renderable, width: int = 30) -> str:
-    """Helper to render any Rich renderable to string."""
-    output = StringIO()
-    console = Console(file=output, width=width, legacy_windows=False, color_system=None)
-    console.print(renderable)
-    return output.getvalue()
-
-
-def test_max_height_wrapping_snapshot(snapshot: SnapshotAssertion):
-    """Snapshot test for MaxHeight with long lines wrapping.
-
-    Setup (as requested):
-    - Console width = 30 characters
-    - 20 logical lines, each 1000 characters long
-    - max_height = 20 visual lines
-
-    Expected: Shows first 20 visual lines (wrapping breaks up the first logical line),
-    then truncation marker.
-    """
-    # Create realistic text content (paragraphs from different "documents")
-    lines = [
-        "The quick brown fox jumps over the lazy dog again and again, repeating this classic pangram to fill up space and demonstrate how long lines wrap across multiple visual lines when the console width is narrow. "
-        * 10,
-        "In the realm of software development, testing is crucial for maintaining code quality and preventing regressions. This is especially true for display code where visual output matters greatly. "
-        * 10,
-        "Lorem ipsum dolor sit amet, consectetur adipiscing elit. Sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam, quis nostrud exercitation ullamco. "
-        * 10,
-        "Python is a high-level, interpreted programming language known for its clear syntax and readability. It supports multiple programming paradigms and has a comprehensive standard library. "
-        * 10,
-        "Rich is a Python library for rich text and beautiful formatting in the terminal. It provides a simple yet powerful API for creating visually appealing console applications with panels, tables, and more. "
-        * 10,
-    ]
-
-    # Pad to 20 lines (repeat the patterns)
-    while len(lines) < 20:
-        lines.extend(lines[:5])
-    lines = lines[:20]
-
-    content_text = "\n".join(lines)
-    renderable = Text(content_text)
-
-    # Apply MaxHeight constraint
-    constrained = MaxHeight(renderable, max_height=20)
-
-    # Render with narrow console
-    output = render_to_string(constrained, width=30)
-
-    # Compare against snapshot
-    assert output == snapshot
 
 
 if __name__ == "__main__":

@@ -62,6 +62,7 @@ def test_grader_prompt(db: Database):
     assert "grader" in rendered.lower()
     assert "test/snapshot-001" in rendered
     assert "grading_edges" in rendered
+    assert "reported_issues" in rendered
 
 
 def test_critic_dev_optimize_prompt(db: Database):
@@ -94,14 +95,6 @@ def test_critic_dev_improve_prompt(db: Database):
     )
     _write_output("critic_dev_improve.md", rendered)
     assert "allowed_examples" in rendered
-
-
-def test_describe_relation_in_prompts(db: Database):
-    """Verify describe_relation produces schema content in rendered prompts."""
-    rendered = _render(db, "props/agents/grader/prompt.md.mako", helpers={"snapshot_slug": "test/s"})
-    # describe_relation outputs should contain column type info
-    assert "grading_edges" in rendered
-    assert "reported_issues" in rendered
 
 
 if __name__ == "__main__":

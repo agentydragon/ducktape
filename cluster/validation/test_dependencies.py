@@ -8,11 +8,7 @@ import pytest
 import pytest_bazel
 
 from cluster.validation.cluster import ParsedCluster
-from cluster.validation.dependencies import (
-    check_source_references,
-    validate_dependencies,
-    validate_operator_dependencies,
-)
+from cluster.validation.dependencies import check_source_references, validate_dependencies
 from cluster.validation.flux import DependsOn, FluxKustomizationSpec, SourceRef
 from cluster.validation.k8s import K8sResource
 from cluster.validation.kustomize import KustomizeBuildResult
@@ -55,51 +51,6 @@ class TestValidateDependencies:
             if depends_on_provider
             else ["test-app uses Certificate resources but doesn't transitively depend on cert-manager"]
         )
-
-
-class TestValidateOperatorDependencies:
-    """Tests for validate_operator_dependencies."""
-
-    def test_direct_dep_passes(self, tmp_path: Path) -> None:
-        """Kustomization with direct dep on operator passes."""
-        cluster = _cluster(
-            {
-                "my-app": FluxKustomizationSpec(
-                    path="./cluster/k8s/my-app", depends_on=[DependsOn(name="some-operator")]
-                ),
-                "some-operator": FluxKustomizationSpec(path="./cluster/k8s/some-operator"),
-            },
-            build_results=[_build_result(tmp_path, "my-app", [("MyCRD", "example.com/v1")])],
-        )
-        assert validate_operator_dependencies(cluster, tmp_path, {"MyCRD": "some-operator"}) == []
-
-    def test_transitive_dep_passes(self, tmp_path: Path) -> None:
-        """Transitive dependency (app -> middle -> operator) is accepted."""
-        cluster = _cluster(
-            {
-                "my-app": FluxKustomizationSpec(path="./cluster/k8s/my-app", depends_on=[DependsOn(name="middle")]),
-                "middle": FluxKustomizationSpec(
-                    path="./cluster/k8s/middle", depends_on=[DependsOn(name="some-operator")]
-                ),
-                "some-operator": FluxKustomizationSpec(path="./cluster/k8s/some-operator"),
-            },
-            build_results=[_build_result(tmp_path, "my-app", [("MyCRD", "example.com/v1")])],
-        )
-        errors = validate_operator_dependencies(cluster, tmp_path, {"MyCRD": "some-operator"})
-        assert errors == [], f"Unexpected errors for transitive dep: {errors}"
-
-    def test_missing_dep_fails(self, tmp_path: Path) -> None:
-        """Kustomization with no path to operator is flagged."""
-        cluster = _cluster(
-            {
-                "my-app": FluxKustomizationSpec(path="./cluster/k8s/my-app", depends_on=[DependsOn(name="unrelated")]),
-                "some-operator": FluxKustomizationSpec(path="./cluster/k8s/some-operator"),
-                "unrelated": FluxKustomizationSpec(path="./cluster/k8s/unrelated"),
-            },
-            build_results=[_build_result(tmp_path, "my-app", [("MyCRD", "example.com/v1")])],
-        )
-        errors = validate_operator_dependencies(cluster, tmp_path, {"MyCRD": "some-operator"})
-        assert any("my-app" in e and "some-operator" in e for e in errors)
 
 
 class TestSourceReferences:

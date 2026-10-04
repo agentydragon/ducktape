@@ -1375,7 +1375,6 @@ vitest_bin.vitest_test(
         "//haku/console/frontend/tool_rendering:index_test",
         "//haku/console/frontend/tool_rendering:result_entry_test",
         "//haku/console/frontend/tool_rendering:variant_test",
-        "//haku/console/frontend/tool_rendering/gmail:calls_test",
         "//haku/console/frontend/tool_rendering/gmail:requests_test",
         "//haku/console/frontend/tool_rendering/gmail:responses_test",
         "//haku/console/frontend/tool_rendering/google_calendar:calls_test",

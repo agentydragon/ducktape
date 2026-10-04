@@ -1,19 +1,10 @@
 """Tests for util.bazel.subprocess module."""
 
-import sys
 from pathlib import Path
 
-import pytest
 import pytest_bazel
 
-from util.bazel.subprocess import (
-    _in_bazel_venv,
-    exports_from_dict,
-    generate_shell_wrapper,
-    python_env,
-    run_python_module,
-    write_shell_wrapper,
-)
+from util.bazel.subprocess import _in_bazel_venv, python_env, run_python_module
 
 
 def test_python_env_inherit_includes_path():
@@ -66,57 +57,6 @@ def test_run_python_module_version():
     # python -m platform prints platform info
     assert result.returncode == 0
     assert result.stdout.strip()  # Should have output
-
-
-def test_run_python_module_with_pathlike_args(tmp_path: Path):
-    """Args accept PathLike objects."""
-    result = run_python_module("json.tool", tmp_path / "nonexistent.json", capture_output=True, text=True, check=False)
-    # Will fail because file doesn't exist, but shouldn't raise TypeError
-    assert result.returncode != 0
-
-
-def test_generate_shell_wrapper():
-    wrapper = generate_shell_wrapper("my.module")
-    assert wrapper.startswith("#!/bin/sh\n")
-    assert "export PYTHONPATH=" in wrapper
-    assert f'exec "{sys.executable}" -m my.module "$@"' in wrapper
-
-
-def test_generate_shell_wrapper_extra_lines():
-    wrapper = generate_shell_wrapper("my.module", extra_lines='export FOO="bar"')
-    assert 'export FOO="bar"' in wrapper
-
-
-def test_generate_shell_wrapper_baked_env():
-    wrapper = generate_shell_wrapper("my.module", baked_env={"MY_VAR": "/some/path"})
-    assert "export MY_VAR=/some/path" in wrapper
-    assert "export PYTHONPATH=" in wrapper
-
-
-@pytest.mark.parametrize(
-    ("env", "expected"),
-    [
-        ({"FOO": "bar"}, ["export FOO=bar"]),
-        ({"BAZ": "/some/path"}, ["export BAZ=/some/path"]),
-        ({"P": "/a:/b"}, ["export P=/a:/b"]),  # colon-separated paths (PYTHONPATH-style)
-        ({"DIR": Path("/some/path")}, ["export DIR=/some/path"]),  # Path values
-        ({"MSG": "hello world"}, ["export MSG='hello world'"]),  # space requires quoting
-        ({"EXPR": "a$b"}, ["export EXPR='a$b'"]),  # $ requires quoting
-    ],
-)
-def test_exports_from_dict(env: dict, expected: list[str]):
-    assert exports_from_dict(env) == expected
-
-
-def test_write_shell_wrapper(tmp_path: Path):
-    path = tmp_path / "wrapper.sh"
-    result = write_shell_wrapper(path, "my.module")
-    assert result == path
-    assert path.exists()
-    assert path.stat().st_mode & 0o755
-    content = path.read_text()
-    assert content.startswith("#!/bin/sh\n")
-    assert "my.module" in content
 
 
 if __name__ == "__main__":

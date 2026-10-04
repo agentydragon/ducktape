@@ -7,7 +7,6 @@ from cdk8s_plus_34 import (
     Cpu,
     CpuResources,
     Deployment,
-    EnvValue,
     ImagePullPolicy,
     MemoryResources,
     PodSecurityContextProps,
@@ -17,6 +16,7 @@ from cdk8s_plus_34 import (
 )
 from constructs import Construct
 
+from agentplane.notification_service.settings import CONFIG_FILE_ENV, Settings
 from cluster.cdk8s import cilium, node_scheduling, pod_policy
 from cluster.cdk8s.agentplane import database
 from cluster.cdk8s.agentplane.environment import Environment
@@ -27,6 +27,7 @@ from cluster.cdk8s.probes import http_probe
 from cluster.cdk8s.providers.cilium.network_policy import EgressRule, Entity, IngressRule, NetworkPolicy
 from cluster.cdk8s.secret_ref import SecretRef
 from cluster.cdk8s.service_ref import Pods, Port, ServiceRef
+from cluster.cdk8s.settings_file import SettingsFile
 from cluster.cdk8s.token_reviewer_rbac import token_reviewer_cluster_rbac
 
 NAME = "agentplane-notifications"
@@ -76,17 +77,26 @@ class Notifications(Construct):
             security_context=PodSecurityContextProps(ensure_non_root=True, user=1000, group=1000, fs_group=1000),
             init_containers=[migrate_init_container(f"{_IMAGE}-migrate:unset", env_variables=variables)],
         )
-        variables |= {
-            f"AGENTPLANE_NOTIFICATIONS_{key}": EnvValue.from_value(value)
-            for key, value in {
-                "NAMESPACE": env.namespace,
-                "ACTIONS_URL": f"http://{actions.fqdn}:{actions.port.number}",
-                "ACTIONS_TOKEN_FILE": "/var/run/secrets/notifications/actions",
-                "SANDBOX_SERVICE_TARGET": f"{sandboxes.fqdn}:{sandboxes.port.number}",
-                "SANDBOX_SERVICE_TOKEN_FILE": "/var/run/secrets/notifications/sandboxes",
-            }.items()
-        }
-        deployment.add_container(
+        settings = SettingsFile(
+            self,
+            "settings",
+            metadata=ApiObjectMetadata(name=f"{NAME}-settings", namespace=env.namespace),
+            model=Settings,
+            path="/etc/agentplane-notifications/settings.yaml",
+            content={
+                "namespace": env.namespace,
+                "actions": {
+                    "url": f"http://{actions.fqdn}:{actions.port.number}",
+                    "token_file": "/var/run/secrets/notifications/actions",
+                },
+                "sandbox_service": {
+                    "target": f"{sandboxes.fqdn}:{sandboxes.port.number}",
+                    "token_file": "/var/run/secrets/notifications/sandboxes",
+                },
+            },
+            supplied=[("database_url",)],
+        )
+        container = deployment.add_container(
             name="notifications",
             image=f"{_IMAGE}:unset",
             image_pull_policy=ImagePullPolicy.IF_NOT_PRESENT,
@@ -100,33 +110,32 @@ class Notifications(Construct):
             ),
             security_context=ContainerSecurityContextProps(read_only_root_filesystem=False),
         )
+        settings.mount_into(container, env=CONFIG_FILE_ENV)
         ApiObject.of(deployment).add_json_patch(
             JsonPatch.add(
-                "/spec/template/spec/volumes",
-                [
-                    k8s.Volume(
-                        name="service-tokens",
-                        projected=k8s.ProjectedVolumeSource(
-                            sources=[
-                                k8s.VolumeProjection(
-                                    service_account_token=k8s.ServiceAccountTokenProjection(
-                                        audience=audience, expiration_seconds=3600, path=path
-                                    )
+                "/spec/template/spec/volumes/-",
+                k8s.Volume(
+                    name="service-tokens",
+                    projected=k8s.ProjectedVolumeSource(
+                        sources=[
+                            k8s.VolumeProjection(
+                                service_account_token=k8s.ServiceAccountTokenProjection(
+                                    audience=audience, expiration_seconds=3600, path=path
                                 )
-                                for path, audience in [
-                                    ("actions", "agentplane-egress"),
-                                    ("sandboxes", "agentplane-sandbox-service"),
-                                ]
+                            )
+                            for path, audience in [
+                                ("actions", "agentplane-egress"),
+                                ("sandboxes", "agentplane-sandbox-service"),
                             ]
-                        ),
-                    )
-                ],
+                        ]
+                    ),
+                ),
             )
         )
         ApiObject.of(deployment).add_json_patch(
             JsonPatch.add(
-                "/spec/template/spec/containers/0/volumeMounts",
-                [k8s.VolumeMount(name="service-tokens", mount_path="/var/run/secrets/notifications", read_only=True)],
+                "/spec/template/spec/containers/0/volumeMounts/-",
+                k8s.VolumeMount(name="service-tokens", mount_path="/var/run/secrets/notifications", read_only=True),
             )
         )
         pod_policy.place(deployment, node_scheduling.HIL_OVH)

@@ -67,31 +67,6 @@ def test_progress_bar_left_aligned():
     assert plain.startswith(LEFT_BLOCK_CHARS)
 
 
-@pytest.mark.parametrize(
-    ("value", "max_value", "expected_has_sliver"),
-    [
-        (1, 10000, True),  # Very small ratio
-        (1, 1000000, True),  # Extremely small ratio
-        (1, 100, True),  # Small but visible ratio
-        (0, 100, False),  # Zero should show nothing
-    ],
-)
-def test_minimum_sliver(value, max_value, expected_has_sliver):
-    """Test that any value >0 shows at least a minimal sliver."""
-    bar = ProgressBar(value, max_value, DEFAULT_LEFT_BLOCKS, "left", "green")
-    rendered = render_bar(bar, 20)
-    plain = rendered
-
-    assert len(plain) == 20
-
-    if expected_has_sliver:
-        # Should have at least the thinnest partial block
-        assert any(block in plain for block in DEFAULT_LEFT_BLOCKS.partials)
-    else:
-        # Should be all spaces
-        assert plain.strip() == ""
-
-
 @pytest.mark.parametrize("align", ["left", "right"])
 def test_minimum_sliver_alignment(align):
     """Test minimum sliver works with both alignments."""

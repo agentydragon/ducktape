@@ -90,16 +90,9 @@ def test_the_input_returns_resemble_the_papers(replay: Replay) -> None:
         assert replay.compound_return_percent[symbol] == pytest.approx(paper, abs=3.0), symbol
 
 
-def test_four_percent_over_thirty_years_fails_less_than_a_tenth_of_the_time(replay: Replay) -> None:
-    """The headline claim the 4% rule makes, and the one this reproduction exists to check."""
-
-    for equity_share in EQUITY_LED_SHARES:
-        failure = 1.0 - replay.success_rate(equity_share=equity_share, withdrawal_rate=0.04)
-        assert 0.0 <= failure <= 0.10, f"{equity_share:.0%} equity failed {failure:.1%} of windows"
-
-
 def test_the_four_percent_failure_rate_matches_the_published_one(replay: Replay) -> None:
-    """Being inside a 0-10% band is weaker than agreeing with Trinity, who put it at 2-5%."""
+    """The 4% rule's headline claim is that it fails under a tenth of the time. Trinity's own
+    published rate is 2-5%, which is tighter, so that is what is checked."""
 
     published_index = PUBLISHED_RATES.index(0.04)
     for equity_share in EQUITY_LED_SHARES:

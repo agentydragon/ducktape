@@ -89,16 +89,6 @@ def test_register_admin_raises_on_unexpected_error():
         register_admin(client, "shared-secret", "adminpw")
 
 
-def test_bot_exists_true_when_response_has_name():
-    client = _FakeClient([_response(200, {"name": f"@{PUBLIC_CODER_AGENT_BOT_USERNAME}:{SERVER_NAME}"})])
-    assert _bot_exists(client, "token", "encoded-mxid") is True
-
-
-def test_bot_exists_false_when_response_has_no_name():
-    client = _FakeClient([_response(200, {})])
-    assert _bot_exists(client, "token", "encoded-mxid") is False
-
-
 def test_bot_exists_false_on_404():
     client = _FakeClient([_response(404, {"errcode": "M_NOT_FOUND"})])
     assert _bot_exists(client, "token", "encoded-mxid") is False

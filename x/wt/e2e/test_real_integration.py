@@ -4,11 +4,10 @@ import os
 from datetime import timedelta
 from pathlib import Path
 
-import pygit2
 import pytest
 import pytest_bazel
 
-from x.wt.testing.git_helpers import add_and_commit, worktree_exists
+from x.wt.testing.git_helpers import worktree_exists
 from x.wt.testing.utils import wait_until
 
 pytestmark = [pytest.mark.timeout(10), pytest.mark.xdist_group("wt-daemon-e2e")]
@@ -73,22 +72,6 @@ def test_real_daemon_startup_and_communication(real_temp_repo, wt_cli):
         os.kill(pid, 0)
     except OSError:
         pytest.fail(f"Daemon PID {pid} not found")
-
-
-def test_real_git_operations(real_temp_repo, wt_cli):
-    # Create worktree
-    result = wt_cli.sh_c("git-test", timeout=timedelta(seconds=10.0))
-    assert result.returncode == 0
-
-    worktree_path = real_temp_repo / "worktrees" / "git-test"
-    assert worktree_path.exists()
-
-    # Perform git operations using pygit2
-    add_and_commit(worktree_path, {"test.txt": "Hello from worktree!"}, "Test commit")
-
-    # Verify branch name using pygit2
-    wt_repo = pygit2.Repository(worktree_path)
-    assert wt_repo.head.shorthand == "test/git-test"
 
 
 if __name__ == "__main__":

@@ -375,11 +375,11 @@ class WtCLI:
     def __init__(self, env: dict[str, str]):
         self.env: dict[str, str] = env
 
-    def sh(self, *args: str, timeout: timedelta = timedelta(seconds=30), cwd: Path | None = None, stdin=None):
-        return run_cli_command(["sh", *args], env=self.env, timeout=timeout, cwd=cwd, stdin=stdin)
+    def sh(self, *args: str, timeout: timedelta = timedelta(seconds=30), cwd: Path | None = None):
+        return run_cli_command(["sh", *args], env=self.env, timeout=timeout, cwd=cwd)
 
-    def sh_c(self, cmd: str, timeout: timedelta = timedelta(seconds=30), cwd: Path | None = None, stdin=None):
-        return run_cli_command(["sh", "create", "--yes", cmd], env=self.env, timeout=timeout, cwd=cwd, stdin=stdin)
+    def sh_c(self, cmd: str, timeout: timedelta = timedelta(seconds=30), cwd: Path | None = None):
+        return run_cli_command(["sh", "create", "--yes", cmd], env=self.env, timeout=timeout, cwd=cwd)
 
     def status(self, timeout: timedelta = timedelta(seconds=30), cwd: Path | None = None):
         return run_cli_command(["sh"], env=self.env, timeout=timeout, cwd=cwd)

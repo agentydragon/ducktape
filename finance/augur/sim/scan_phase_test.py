@@ -1,7 +1,7 @@
 """Each month books what the world was declared to hold.
 
-An unfundable bill and the year-end tax pass, on worlds composed from declared facts and
-driven by a household that pays every due claim in full, in order.
+An unfundable bill, on a world composed from declared facts and driven by a household that pays
+every due claim in full, in order.
 """
 
 from decimal import Decimal
@@ -11,23 +11,15 @@ import pytest_bazel
 from finance.augur.policy.funding import ClaimPayer
 from finance.augur.sim.bills import Biller
 from finance.augur.sim.books import AccountRef, Book
-from finance.augur.sim.ids import AccountId, AgentId, JurisdictionId
+from finance.augur.sim.ids import AccountId, AgentId
 from finance.augur.sim.income import ORDINARY_INCOME
-from finance.augur.sim.jurisdictions import load_jurisdiction
 from finance.augur.sim.market_path import MarketPath
 from finance.augur.sim.money import USD
 from finance.augur.sim.schedule import Recurring
-from finance.augur.sim.tax_authority import TaxAuthority
-from finance.augur.sim.tax_indexation import FixedNominalLaw
-from finance.augur.sim.tax_profile import FilingStatus, TaxProfile, compile_profile
 from finance.augur.sim.world import World
-
-IRS = AgentId("irs")
 
 ALICE = AgentId("alice")
 CHECKING = AccountId("checking")
-FEDERAL = JurisdictionId("federal_us")
-CALIFORNIA = JurisdictionId("california")
 
 
 def ref(agent_id: AgentId, account_id: AccountId = CHECKING) -> AccountRef:
@@ -45,25 +37,6 @@ def world_for(*accounts: tuple[AccountRef, int], horizon_months: int) -> World:
     for opened, balance in accounts:
         world.declare_account(account=opened, opening_balance=balance)
     return world
-
-
-def taxed_by(world: World, *jurisdiction_ids: JurisdictionId, prior_year_tax: Decimal = Decimal(0)) -> None:
-    world.track(
-        TaxAuthority(
-            compile_profile(
-                TaxProfile(
-                    agent_id=ALICE,
-                    filing_status=FilingStatus.SINGLE,
-                    jurisdiction_ids=list(jurisdiction_ids),
-                    tax_authority_agent_id=IRS,
-                    prior_year_tax=prior_year_tax,
-                ),
-                {id_: load_jurisdiction(id_) for id_ in jurisdiction_ids},
-                currency=USD,
-            ),
-            indexation=FixedNominalLaw(),
-        )
-    )
 
 
 def run(world: World) -> list[Book]:
@@ -112,29 +85,6 @@ def test_unfundable_bill_stops_the_path_keeping_both_parties_balances() -> None:
     assert cash(books, ALICE, 2) == 40_000
     assert cash(books, AgentId("landlord"), 2) == 60_000
     assert len(books) == 3  # the stopped month is the last one booked
-
-
-def test_year_end_tax_accrues_and_the_following_year_settles_it() -> None:
-    # Multi-year W-2 income + a tax profile with a prior-year tax: the December year-end pass
-    # accrues a federal + CA liability, and the following year's estimated-tax and true-up claims
-    # settle it.
-    horizon = 36
-    world = world_for(account(AgentId("payroll")), account(ALICE), account(IRS), horizon_months=horizon)
-    world.declare_flow(
-        schedule=Recurring(start_month=0, end_month=35),
-        cause_id="alice_paycheck",
-        from_account=ref(AgentId("payroll")),
-        to_account=ref(ALICE),
-        amount=USD.quanta(Decimal(120_000) / Decimal(12)),
-        income_category=ORDINARY_INCOME,
-        deduction_category=None,
-    )
-    # > 0 -> quarterly estimated-tax claims the next year.
-    taxed_by(world, FEDERAL, CALIFORNIA, prior_year_tax=Decimal(15_000))
-    books = run(world)
-
-    assert any(row.jurisdiction_id == FEDERAL and row.amount_owed > 0 for book in books for row in book.tax_liabilities)
-    assert cash(books, IRS, horizon) > 0  # estimated payments and true-ups reached the tax authority
 
 
 if __name__ == "__main__":
