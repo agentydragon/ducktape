@@ -16,6 +16,17 @@ playing the TextArena Wordle environment through multi-step tool calls (see
 - [ ] GRPO training loop
 - [ ] Evaluation harness for agentic tasks
 
+## Tests
+
+- [ ] Wire `test_wordle_env.py` into Bazel (it never runs in CI today). Blocked, not a
+      gazelle run: the tree is `# gazelle:exclude`d in the root `BUILD.bazel` (lifting
+      it also pulls in `wordle_train.py`, whose `torch`/`trl`/`peft` are not in the
+      lockfile), `wordle_env.py` imports `nltk` (absent from `pyproject.toml` and
+      `requirements_bazel.txt`), and at import it downloads NLTK corpora when they
+      are missing, which needs network. Needs the `nltk` dep plus a hermetic word
+      source (vendored data or an injected word list), and the test's top-level
+      `from wordle_env import ...` becomes `x.rl_finetune.wordle_env`.
+
 ## Throughput
 
 - [ ] Re-run async_grpo throughput probe once `trl.experimental.async_grpo`
