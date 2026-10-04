@@ -565,11 +565,15 @@ function VirtualizedHistory({
       onClickCapture={(event) => {
         // Opening or closing a row resizes it under the line the reader clicked. Following the tail
         // would pin the bottom instead, carrying that line away; so a click on a disclosure stops
-        // following, and adopts the place as it stands before the row moves.
+        // following, and adopts the place as it stands before the row moves. A history that does
+        // not scroll has no place to lose, and goes on following as it grows.
+        const element = event.currentTarget;
         if (!(event.target instanceof Element) || !event.target.closest("summary, [aria-expanded]")) return;
-        atBottom.current = false;
-        clickedAt.current = event.currentTarget.scrollTop;
-        captureReadingAnchor(event.currentTarget);
+        if (element.scrollHeight > element.clientHeight) {
+          atBottom.current = false;
+          clickedAt.current = element.scrollTop;
+        }
+        captureReadingAnchor(element);
       }}
       onScroll={(event) => {
         const element = event.currentTarget;

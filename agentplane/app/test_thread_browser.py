@@ -1058,17 +1058,20 @@ async def read_at(page: Page, target: Locator, fraction: float) -> None:
     history = page.get_by_role("region", name="Thread history", exact=True)
     await history.hover()
     for _ in range(40):
-        if await target.count():
-            distance = await target.evaluate(
-                """(element, fraction) => {
-                    const area = element.closest('[aria-label="Thread history"]');
-                    const bounds = area.getBoundingClientRect();
-                    const wanted = element.getBoundingClientRect().top - bounds.top - fraction * bounds.height;
-                    return Math.min(wanted, area.scrollHeight - area.clientHeight - area.scrollTop);
-                }""",
-                fraction,
-            )
-        else:
+        # One evaluation, without Locator.evaluate's wait: the virtualizer can unmount the row between
+        # looking for it and measuring it.
+        distance = await target.evaluate_all(
+            """(elements, fraction) => {
+                const [element] = elements;
+                if (!element) return null;
+                const area = element.closest('[aria-label="Thread history"]');
+                const bounds = area.getBoundingClientRect();
+                const wanted = element.getBoundingClientRect().top - bounds.top - fraction * bounds.height;
+                return Math.min(wanted, area.scrollHeight - area.clientHeight - area.scrollTop);
+            }""",
+            fraction,
+        )
+        if distance is None:
             distance = -400  # Not mounted: it is further up than the rows that are.
         if abs(distance) <= 20:
             await frames(page)
