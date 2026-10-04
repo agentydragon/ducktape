@@ -22,7 +22,6 @@ py_test(
         "//mcp_infra/compositor:resources_server",
         "//mcp_infra/enhanced:server",
         "@pypi//pyhamcrest",
-        "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],
 )
@@ -36,7 +35,6 @@ py_test(
         "//mcp_infra:prefix",
         "//mcp_infra/compositor:resources_server",
         "//mcp_infra/enhanced:server",
-        "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],
 )

@@ -117,7 +117,6 @@ class FakeRepository:
         return ended
 
 
-@pytest.mark.asyncio
 async def test_create_and_match_require_the_explicit_agent_id() -> None:
     repo = FakeRepository()
     service = GrantService(repo, max_lifetime=timedelta(hours=1), clock=lambda: _NOW)
@@ -148,7 +147,6 @@ async def test_create_and_match_require_the_explicit_agent_id() -> None:
     ).allowed
 
 
-@pytest.mark.asyncio
 async def test_permanent_grant_has_no_expiry_and_can_be_ended() -> None:
     repo = FakeRepository()
     service = GrantService(repo, max_lifetime=timedelta(hours=1), clock=lambda: _NOW)
@@ -174,7 +172,6 @@ async def test_permanent_grant_has_no_expiry_and_can_be_ended() -> None:
     assert ended.status is GrantStatus.ENDED
 
 
-@pytest.mark.asyncio
 async def test_create_many_uses_one_source_and_shared_timestamps() -> None:
     repo = FakeRepository()
     clock_calls = 0
@@ -201,7 +198,6 @@ async def test_create_many_uses_one_source_and_shared_timestamps() -> None:
     assert clock_calls == 1
 
 
-@pytest.mark.asyncio
 async def test_create_many_enforces_the_tool_batch_limit_in_the_service() -> None:
     service = GrantService(FakeRepository(), max_lifetime=timedelta(hours=1), clock=lambda: _NOW)
 
@@ -215,7 +211,6 @@ async def test_create_many_enforces_the_tool_batch_limit_in_the_service() -> Non
         )
 
 
-@pytest.mark.asyncio
 async def test_end_many_is_bounded_sequential_and_uses_one_timestamp() -> None:
     repo = FakeRepository()
     service = GrantService(repo, max_lifetime=timedelta(hours=1), clock=lambda: _NOW)
@@ -238,7 +233,6 @@ async def test_end_many_is_bounded_sequential_and_uses_one_timestamp() -> None:
     ]
 
 
-@pytest.mark.asyncio
 @pytest.mark.parametrize(
     ("grant_ids", "message"),
     [
@@ -254,7 +248,6 @@ async def test_end_many_rejects_invalid_lists(grant_ids, message) -> None:
         await service.end_grants(owner_agent_id=_AGENT, grant_ids=grant_ids)
 
 
-@pytest.mark.asyncio
 async def test_end_many_normalizes_a_blank_reason() -> None:
     repo = FakeRepository()
     service = GrantService(repo, max_lifetime=timedelta(hours=1), clock=lambda: _NOW)
@@ -264,7 +257,6 @@ async def test_end_many_normalizes_a_blank_reason() -> None:
     assert repo.end_calls == [((_AGENT,), UUID(int=1), None, _NOW)]
 
 
-@pytest.mark.asyncio
 async def test_end_many_keeps_earlier_ends_when_a_later_item_fails() -> None:
     repo = FakeRepository()
     service = GrantService(repo, max_lifetime=timedelta(hours=1), clock=lambda: _NOW)
@@ -283,7 +275,6 @@ async def test_end_many_keeps_earlier_ends_when_a_later_item_fails() -> None:
     assert repo.grants[grant.grant_id].status is GrantStatus.ENDED
 
 
-@pytest.mark.asyncio
 @pytest.mark.parametrize(
     ("source_tool_call_id", "rules", "expires_at", "message"),
     [
@@ -308,7 +299,6 @@ async def test_create_rejects_invalid_input(source_tool_call_id, rules, expires_
         )
 
 
-@pytest.mark.asyncio
 async def test_match_ignores_expired_rows_without_writing() -> None:
     repo = FakeRepository()
     grant = Grant(
@@ -333,7 +323,6 @@ async def test_match_ignores_expired_rows_without_writing() -> None:
     ).allowed
 
 
-@pytest.mark.asyncio
 async def test_get_returns_status_derived_from_facts_without_a_sweep() -> None:
     repo = FakeRepository()
     grant = Grant(
@@ -356,7 +345,6 @@ async def test_get_returns_status_derived_from_facts_without_a_sweep() -> None:
     assert repo.grants[grant.grant_id] is grant
 
 
-@pytest.mark.asyncio
 async def test_match_returns_the_earliest_expiration_bound() -> None:
     repo = FakeRepository()
     service = GrantService(repo, max_lifetime=timedelta(hours=1), clock=lambda: _NOW)

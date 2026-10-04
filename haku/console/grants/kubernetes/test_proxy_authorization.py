@@ -169,7 +169,6 @@ class EmptyGrantRepository:
         return ()
 
 
-@pytest.mark.asyncio
 async def test_service_uses_fixed_configured_subject_and_request_attributes() -> None:
     sar = FakeSarClient()
     result = await _service(sar).authorize(
@@ -184,7 +183,6 @@ async def test_service_uses_fixed_configured_subject_and_request_attributes() ->
     ]
 
 
-@pytest.mark.asyncio
 async def test_service_fails_closed_when_agent_profile_has_no_configured_subject() -> None:
     sar = FakeSarClient()
 
@@ -218,7 +216,6 @@ def test_endpoint_returns_sar_decision() -> None:
     assert "decision_id" not in body
 
 
-@pytest.mark.asyncio
 async def test_clean_sar_denial_with_real_empty_grant_service_remains_denied() -> None:
     grants = GrantService(
         cast(Any, EmptyGrantRepository()),
@@ -249,7 +246,6 @@ def test_endpoint_rejects_noncanonical_scope_or_rules(field: str, value: object)
     assert response.status_code == 422
 
 
-@pytest.mark.asyncio
 async def test_service_rejects_unknown_bearer_before_sar() -> None:
     sar = FakeSarClient()
 
@@ -260,7 +256,6 @@ async def test_service_rejects_unknown_bearer_before_sar() -> None:
     assert sar.calls == []
 
 
-@pytest.mark.asyncio
 async def test_service_surfaces_sar_failure_as_unavailable() -> None:
     sar = FakeSarClient(error=KubernetesAuthorizationUnavailableError("SAR failed"))
     with pytest.raises(KubernetesAuthorizationUnavailableError, match="SAR failed"):
@@ -269,7 +264,6 @@ async def test_service_surfaces_sar_failure_as_unavailable() -> None:
         )
 
 
-@pytest.mark.asyncio
 async def test_subject_access_review_client_builds_resource_request_for_fixed_subject() -> None:
     authorization = FakeAuthorizationApi()
     client = KubernetesSubjectAccessReviewClient(
@@ -288,7 +282,6 @@ async def test_subject_access_review_client_builds_resource_request_for_fixed_su
     assert request.spec.non_resource_attributes is None
 
 
-@pytest.mark.asyncio
 async def test_subject_access_review_client_fails_closed_on_evaluation_error() -> None:
     client = KubernetesSubjectAccessReviewClient(
         clients=KubernetesClients(
@@ -302,7 +295,6 @@ async def test_subject_access_review_client_fails_closed_on_evaluation_error() -
         )
 
 
-@pytest.mark.asyncio
 async def test_service_fails_closed_when_sar_times_out() -> None:
     class HangingSar(FakeSarClient):
         async def review(self, *, subject, attributes):
@@ -324,7 +316,6 @@ async def test_service_fails_closed_when_sar_times_out() -> None:
         await service.authorize(bearer="Bearer caller-token", request=AuthorizationRequest.model_validate(REQUEST))
 
 
-@pytest.mark.asyncio
 async def test_active_grant_is_consulted_only_after_clean_sar_denial() -> None:
     grants = AsyncMock()
     grants.match_request.return_value = GrantDecision(
@@ -349,7 +340,6 @@ async def test_active_grant_is_consulted_only_after_clean_sar_denial() -> None:
     assert kwargs["required_scope"].namespaces == {"demo"}
 
 
-@pytest.mark.asyncio
 async def test_sar_allow_does_not_consult_grants() -> None:
     grants = AsyncMock()
     result = await _service(FakeSarClient(result=SubjectAccessReviewResult(allowed=True)), grants=grants).authorize(
@@ -361,7 +351,6 @@ async def test_sar_allow_does_not_consult_grants() -> None:
     grants.match_request.assert_not_awaited()
 
 
-@pytest.mark.asyncio
 async def test_sar_outage_does_not_fall_back_to_a_matching_grant() -> None:
     grants = AsyncMock()
     grants.match_request.return_value = GrantDecision(allowed=True)
@@ -371,7 +360,6 @@ async def test_sar_outage_does_not_fall_back_to_a_matching_grant() -> None:
     grants.match_request.assert_not_awaited()
 
 
-@pytest.mark.asyncio
 async def test_grant_authority_failure_after_sar_denial_fails_closed() -> None:
     grants = AsyncMock()
     grants.match_request.side_effect = RuntimeError("database unavailable")

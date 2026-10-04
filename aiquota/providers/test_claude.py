@@ -2,7 +2,6 @@ import json
 from pathlib import Path
 
 import httpx
-import pytest
 import pytest_bazel
 import respx
 from pydantic import SecretStr
@@ -20,9 +19,6 @@ from devinfra.claude.claude_api.usage import UsageResponse
 
 if __name__ == "__main__":
     pytest_bazel.main()
-
-
-pytestmark = pytest.mark.asyncio
 
 
 def test_spend_shape_drives_extra_spend() -> None:
