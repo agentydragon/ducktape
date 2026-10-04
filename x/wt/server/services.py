@@ -4,14 +4,13 @@ import asyncio
 import contextlib
 from collections.abc import Awaitable, Callable, Iterable
 from pathlib import Path
-from typing import Protocol, cast, runtime_checkable
+from typing import Protocol, runtime_checkable
 
 from x.wt.server.gitstatus_refresh import DebouncedGitstatusRefresh
 from x.wt.server.gitstatusd_listener import GitstatusdListener
 from x.wt.server.types import DiscoveredWorktree
 from x.wt.server.worktree_ids import make_worktree_id
 from x.wt.server.worktree_index import WorktreeIndex
-from x.wt.shared.protocol import Collector, GitstatusdData
 
 
 class WorktreeIndexService:
@@ -29,21 +28,11 @@ class WorktreeIndexService:
     async def ensure_discovery(self) -> None:
         await self._run_discovery_once()
 
-    async def ensure_index(self) -> None:
-        if self._get_index() is None:
-            await self._rebuild_index()
-
     def list_paths(self) -> list[Path]:
         idx = self._get_index()
         if not idx:
             return []
         return list(idx.by_path.keys())
-
-    def get_by_path(self, p: Path) -> DiscoveredWorktree | None:
-        idx = self._get_index()
-        if not idx:
-            return None
-        return idx.get_by_path(p)
 
     def get_by_name(self, name: str) -> DiscoveredWorktree | None:
         idx = self._get_index()
@@ -80,13 +69,6 @@ class GitstatusdService:
         self._clear_watchers = clear_watchers
         # Squash trivial wrapper: expose provided callable directly (method-to-attribute assignment)
         self.get_client = get_client
-
-    def get_cached_status(self, path: Path) -> Collector[GitstatusdData]:
-        """Get cached gitstatusd data from the listener's signal."""
-        client = self._get_client(path)
-        if not client:
-            return Collector()
-        return cast(Collector[GitstatusdData], client.status())
 
     def is_running(self, path: Path) -> bool:
         client = self._get_client(path)

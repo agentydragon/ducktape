@@ -283,15 +283,6 @@ class Collector[T](BaseModel):
         """
         return self.error(str(exc))
 
-    @property
-    def is_healthy(self) -> bool:
-        """True if most recent event was success (or no errors ever)."""
-        if self.last_error is None:
-            return True
-        if self.last_ok is None:
-            return False
-        return self.last_ok.at > self.last_error.at
-
 
 # Domain data types
 class GitstatusdData(BaseModel):
@@ -553,11 +544,6 @@ class TeleportDoesNotExist(BaseModel):
 TeleportResult = Annotated[TeleportCdThere | TeleportDoesNotExist, Field(discriminator="type")]
 
 
-class StreamEventType(StrEnum):
-    PROGRESS = "progress"
-    HOOK_OUTPUT = "hook_output"
-
-
 class ProgressOperation(StrEnum):
     WORKTREE_CREATE = "worktree_create"
 
@@ -646,12 +632,6 @@ def parse_request(data: str) -> Request:
         raise ValueError(f"Invalid JSON (parse error): {e}") from e
     except ValidationError as e:
         raise ValueError(f"Invalid JSON-RPC request schema: {e}") from e
-
-
-class NoParams(BaseModel):
-    """Explicit empty params schema for methods without parameters."""
-
-    model_config = {"extra": "forbid"}
 
 
 # Method registry for type safety

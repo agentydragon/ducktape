@@ -28,15 +28,7 @@ class GitError(Exception):
     pass
 
 
-class GitTimeoutError(GitError):
-    pass
-
-
 class NoSuchRefError(GitError):
-    pass
-
-
-class NoSuchBranchError(GitError):
     pass
 
 
@@ -127,13 +119,6 @@ class GitManager:
             date=datetime.fromtimestamp(commit.commit_time, UTC).isoformat(),
         )
 
-    def verify_ref_exists(self, ref: str) -> str:
-        try:
-            resolved = self._main_repo.resolve_refish(ref)
-            return str(resolved[0].id)
-        except KeyError as e:
-            raise NoSuchRefError(f"Reference does not exist: {ref}") from e
-
     # Worktree operations
     def list_worktrees(self) -> list[WorktreeInfo]:
         """List all worktrees using pygit2 API."""
@@ -204,9 +189,3 @@ class GitManager:
             raise WorktreeDeleteError(
                 f"Failed to remove worktree at {path}: {e.stderr.decode(errors='replace').strip()}"
             ) from e
-
-    def verify_branch_exists(self, branch: str) -> str:
-        try:
-            return self.verify_ref_exists(f"refs/heads/{branch}")
-        except NoSuchRefError as e:
-            raise NoSuchBranchError(f"Branch {branch} does not exist") from e

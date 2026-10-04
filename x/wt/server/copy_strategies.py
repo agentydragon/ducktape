@@ -4,7 +4,6 @@ import shutil
 import subprocess
 import tempfile
 from abc import ABC, abstractmethod
-from enum import StrEnum
 from pathlib import Path
 
 from x.wt.shared.configuration import CowMethod
@@ -23,13 +22,6 @@ def _get_copyable_entries(src: Path) -> list[Path]:
     return [child for child in src.iterdir() if child.name not in EXCLUDE_NAMES]
 
 
-class StrategyType(StrEnum):
-    """Copy strategy types."""
-
-    REFLINK = "reflink"
-    RSYNC = "rsync"
-
-
 class CopyStrategy(ABC):
     @abstractmethod
     def copy(self, src: Path, dst: Path) -> None:
@@ -38,11 +30,6 @@ class CopyStrategy(ABC):
     @property
     @abstractmethod
     def method_name(self) -> str:
-        pass
-
-    @property
-    @abstractmethod
-    def strategy_type(self) -> StrategyType:
         pass
 
 
@@ -56,10 +43,6 @@ class ReflinkCopyStrategy(CopyStrategy):
     def method_name(self) -> str:
         return "CoW reflink"
 
-    @property
-    def strategy_type(self) -> StrategyType:
-        return StrategyType.REFLINK
-
 
 class RsyncCopyStrategy(CopyStrategy):
     def copy(self, src: Path, dst: Path) -> None:
@@ -69,10 +52,6 @@ class RsyncCopyStrategy(CopyStrategy):
     @property
     def method_name(self) -> str:
         return "rsync copy"
-
-    @property
-    def strategy_type(self) -> StrategyType:
-        return StrategyType.RSYNC
 
 
 def _test_reflink_support() -> bool:

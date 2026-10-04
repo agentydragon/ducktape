@@ -19,7 +19,6 @@ The join from (worktree → branch) + (branch → PR) happens at query time in s
 
 from collections.abc import Callable, Iterable
 from pathlib import Path
-from typing import cast
 
 from reaktiv import Computed, Signal
 
@@ -79,10 +78,6 @@ class DaemonStore:
         return self._gitstatusd_computed()
 
     # Config accessors
-
-    def gitstatusd_config(self) -> GitstatusdConfig:
-        """Get current gitstatusd configuration."""
-        return cast(GitstatusdConfig, self._gitstatusd_config())
 
     def set_gitstatusd_config(self, config: GitstatusdConfig) -> None:
         """Set gitstatusd configuration."""

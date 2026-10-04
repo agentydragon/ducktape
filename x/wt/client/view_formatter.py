@@ -304,9 +304,3 @@ class ViewFormatter:
                 click.echo(f"{icon} Status: This PR {message}")
             else:
                 click.echo(f"Status: {status_text}")
-
-    def render_worktree_removal_confirmation(self, name: str, worktree_path: Path) -> None:
-        click.echo(f"⚠️  About to permanently remove worktree '{name}' at {worktree_path}")
-
-    def render_worktree_removal_success(self, name: str) -> None:
-        click.echo(f"✅ Successfully removed worktree '{name}'")

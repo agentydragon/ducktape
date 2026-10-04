@@ -10,19 +10,15 @@ import shutil
 from collections.abc import Awaitable, Callable
 from pathlib import Path
 
-import psutil
 import pygit2
 
 from x.wt.server.copy_strategies import get_copy_strategy
 from x.wt.server.git_manager import GitManager
 from x.wt.server.github_client import GitHubInterface
-from x.wt.server.worktree_ids import wtid_to_path
 from x.wt.shared.configuration import Configuration
 from x.wt.shared.error_handling import ErrorContext, validate_worktree_name
 
 # PR types are referenced by protocol layer; not needed here directly
-from x.wt.shared.models import ProcessInfo
-from x.wt.shared.protocol import WorktreeID
 
 logger = logging.getLogger(__name__)
 
@@ -71,9 +67,6 @@ class WorktreeService:
             script = config.post_creation_script
             if not script.exists() or not script.is_file():
                 raise FileNotFoundError(f"Post-creation script {script} is not a file")
-
-    def _wtid_to_path(self, config: Configuration, wtid: WorktreeID) -> Path:
-        return wtid_to_path(config, wtid)
 
     def create_worktree(
         self, config: Configuration, name: str, source_worktree: Path | None = None, source_branch: str | None = None
@@ -250,23 +243,3 @@ class WorktreeService:
             "error": None,
             "streamed": True,
         }
-
-    def _get_processes_in_directory(self, directory: Path) -> list:
-        """Get processes running in a directory.
-
-        Note: O(size of process table) due to psutil.process_iter and open_files scanning.
-        """
-        procs = []
-        for proc in psutil.process_iter(["pid", "name", "cwd"]):
-            try:
-                cwd = proc.info.get("cwd")
-                if cwd and Path(cwd).is_relative_to(directory):
-                    procs.append(ProcessInfo(pid=proc.pid, name=proc.name()))
-                    continue
-                for fl in proc.open_files():
-                    if fl.path and Path(fl.path).is_relative_to(directory):
-                        procs.append(ProcessInfo(pid=proc.pid, name=proc.name()))
-                        break
-            except psutil.NoSuchProcess, psutil.AccessDenied:
-                continue
-        return procs

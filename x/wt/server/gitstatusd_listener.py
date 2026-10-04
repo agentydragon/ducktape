@@ -19,10 +19,8 @@ import shutil
 import subprocess
 import uuid
 from dataclasses import dataclass
-from datetime import datetime
 from enum import StrEnum
 from pathlib import Path
-from typing import Literal, Self
 
 from reaktiv import Signal
 
@@ -122,91 +120,12 @@ class GitStatusdResponse:
     commit_message_summary: str | None = None
 
     @property
-    def has_changes(self) -> bool:
-        return bool(self.is_git_repository and (self.staged_changes or self.unstaged_changes or self.untracked_files))
-
-    @property
     def has_dirty_files(self) -> bool:
         return bool(self.is_git_repository and (self.staged_changes or self.unstaged_changes))
 
     @property
     def has_untracked_files(self) -> bool:
         return bool(self.is_git_repository and self.untracked_files)
-
-    @property
-    def is_ahead_of_upstream(self) -> bool:
-        """True if local branch is ahead of upstream."""
-        return bool(self.commits_ahead_upstream)
-
-    @property
-    def is_behind_upstream(self) -> bool:
-        """True if local branch is behind upstream."""
-        return bool(self.commits_behind_upstream)
-
-
-@dataclass(frozen=True)
-class GitstatusdCountLimits:
-    """Configured count limits used when spawning gitstatusd."""
-
-    staged: int
-    unstaged: int
-    conflicted: int
-    untracked: int
-
-    def limit_hit(self, value: int | None, kind: Literal["staged", "unstaged", "conflicted", "untracked"]) -> bool:
-        limits = {
-            "staged": self.staged,
-            "unstaged": self.unstaged,
-            "conflicted": self.conflicted,
-            "untracked": self.untracked,
-        }
-        limit = limits[kind]
-        return limit >= 0 and value is not None and value >= limit
-
-
-@dataclass(frozen=True)
-class GitstatusWorkingSummary:
-    """Snapshot of staged/unstaged/untracked counts surfaced to callers."""
-
-    staged_changes: int | None
-    unstaged_changes: int | None
-    conflicted_changes: int | None
-    untracked_files: int | None
-    staged_limit_hit: bool
-    unstaged_limit_hit: bool
-    untracked_limit_hit: bool
-    last_updated_at: datetime | None
-    has_cache: bool
-    last_error: str | None
-
-    @property
-    def dirty_lower_bound(self) -> int | None:
-        if self.staged_changes is None or self.unstaged_changes is None:
-            return None
-        return self.staged_changes + self.unstaged_changes
-
-    @property
-    def dirty_limit_hit(self) -> bool:
-        return self.staged_limit_hit or self.unstaged_limit_hit
-
-    @property
-    def untracked_lower_bound(self) -> int | None:
-        return self.untracked_files
-
-    @classmethod
-    def empty(cls, *, last_error: str | None = None) -> Self:
-        return cls(
-            staged_changes=None,
-            unstaged_changes=None,
-            conflicted_changes=None,
-            untracked_files=None,
-            staged_limit_hit=False,
-            unstaged_limit_hit=False,
-            untracked_limit_hit=False,
-            last_updated_at=None,
-            has_cache=False,
-            last_error=last_error,
-        )
 
 
 SHA_HEX_LEN = 40
@@ -307,17 +226,6 @@ class GitStatusdProtocol:
             raise
         except Exception as e:
             raise GitStatusdParseError(f"Unexpected error parsing gitstatusd response: {e}") from e
-
-    @staticmethod
-    def _safe_get_string(fields: list[str], index: int) -> str:
-        """Get required string field with validation."""
-        try:
-            value = fields[index]
-            if not value:
-                raise GitStatusdValidationError(f"Required field {index} is empty")
-            return value
-        except IndexError:
-            raise GitStatusdValidationError(f"Missing required field {index}") from None
 
     @staticmethod
     def _safe_get_optional_string(fields: list[str], index: int) -> str | None:
@@ -430,7 +338,6 @@ class GitstatusdListener:
         self.config = config
         self.git_manager = git_manager
         self.process: asyncio.subprocess.Process | None = None
-        self._count_limits = GitstatusdCountLimits(staged=-1, unstaged=-1, conflicted=-1, untracked=-1)
         self._status_updating: bool = False
 
         # Own our reactive state - register with store

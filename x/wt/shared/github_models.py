@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import datetime
 from enum import StrEnum
-from typing import Any, Protocol, runtime_checkable
+from typing import Protocol, runtime_checkable
 
 from pydantic import BaseModel, Field
 
@@ -18,14 +18,6 @@ class PRStatus(StrEnum):
     OPEN_MERGEABLE = "OPEN_MERGEABLE"
     OPEN_CONFLICTING = "OPEN_CONFLICTING"
     OPEN_UNKNOWN = "OPEN_UNKNOWN"
-
-    @property
-    def is_merged(self) -> bool:
-        return self == PRStatus.MERGED
-
-    @property
-    def is_open(self) -> bool:
-        return self.name.startswith("OPEN_")
 
     @property
     def is_closed(self) -> bool:
@@ -50,22 +42,6 @@ class PRState(StrEnum):
     OPEN = "open"
     CLOSED = "closed"
     MERGED = "merged"
-
-    @property
-    def is_merged(self) -> bool:
-        return self == PRState.MERGED
-
-
-class PRMergeability(StrEnum):
-    CONFLICTING = "CONFLICTING"
-    UNKNOWN = "UNKNOWN"
-
-
-class PullRequestSearch(BaseModel):
-    number: int
-    title: str
-    state: PRState
-    url: str
 
 
 class PullRequestList(BaseModel):
@@ -113,44 +89,6 @@ class GitHubPRResponse(BaseModel):
         )
 
 
-class PRInfoRepr(BaseModel):
-    branch: str
-    pr_data: PRData | None = None
-    gh_error: str | None = None
-
-
-def coerce_prdata(src: Any) -> PRData:
-    if isinstance(src, PRData):
-        return src
-    if isinstance(src, GitHubPRResponse):
-        return PRData(
-            pr_number=src.number,
-            pr_state=PRState(src.state),
-            draft=src.draft,
-            mergeable=src.mergeable,
-            merged_at=src.merged_at,
-            additions=src.additions,
-            deletions=src.deletions,
-        )
-    if isinstance(src, dict):
-        num = src["pr_number"] if "pr_number" in src else src["number"]
-        st = src.get("pr_state")
-        raw_state = st if st is not None else src.get("state")
-        if raw_state is None:
-            raise KeyError("state")
-        state = raw_state if isinstance(raw_state, PRState) else PRState(str(raw_state))
-        return PRData(
-            pr_number=int(num),
-            pr_state=state,
-            draft=bool(src.get("draft", False)),
-            mergeable=src.get("mergeable"),
-            merged_at=src.get("merged_at"),
-            additions=src.get("additions"),
-            deletions=src.get("deletions"),
-        )
-    raise TypeError("Unsupported PR data type")
-
-
 @runtime_checkable
 class HasBasicPR(Protocol):  # minimal protocol for PyGithub-like PR (read-only properties OK)
     @property
@@ -184,6 +122,3 @@ class PRInfo:
     pr_data: PRData | None = None
     github_pr: HasBasicPR | None = None  # runtime object, not serialized
     gh_error: str | None = None
-
-    def to_repr(self) -> PRInfoRepr:
-        return PRInfoRepr(branch=self.branch, pr_data=self.pr_data, gh_error=self.gh_error)

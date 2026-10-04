@@ -21,7 +21,6 @@ import time
 import uuid
 from datetime import datetime
 from pathlib import Path
-from typing import Any
 
 from x.wt.server.git_manager import GitManager
 from x.wt.server.git_refs_watcher import GitRefsWatcher
@@ -37,7 +36,6 @@ from x.wt.server.handlers import (
     status_handler,  # noqa: F401
     worktree_handler,  # noqa: F401
 )
-from x.wt.server.repo_status import RepoStatus
 from x.wt.server.rpc import ServiceDependencies, rpc
 from x.wt.server.services import DiscoveryService, GitstatusdService, WorktreeIndexService, scan_worktrees
 from x.wt.server.stores import DaemonStore
@@ -52,8 +50,6 @@ from x.wt.shared.protocol import (
     ErrorResponse,
     GitstatusdAvailable,
     GitstatusdUnavailable,
-    PingResult,
-    Request,
     Response,
     WorktreeID,
     create_error_response,
@@ -147,8 +143,9 @@ class WtDaemon:
         # Centralized GitHub watcher (replaces per-worktree PRService)
         self.github_watcher: GitHubWatcher | None = None
         self._state_lock = asyncio.Lock()
+        # Strong reference so the signal-handler-created stop task is not garbage-collected.
+        self._shutdown_task: asyncio.Task[None] | None = None
         self.git_manager = GitManager(config=self.config)
-        self.repo_status = RepoStatus(self.git_manager, self.config)
         self.worktree_service = WorktreeService(self.git_manager, self.github_interface)
         # Centralized git refs watcher for cached ahead/behind (created here, started in start())
         self.git_refs_watcher = GitRefsWatcher(store=self.store, git_manager=self.git_manager, config=self.config)
@@ -402,29 +399,12 @@ class WtDaemon:
             writer.close()
             await writer.wait_closed()
 
-    def _create_success_response(self, result: Any, request_id: uuid.UUID) -> Response:
-        """Create a successful JSON-RPC response."""
-        return Response(result=result, id=request_id)
-
     async def _send_response(self, writer: asyncio.StreamWriter, response: Response | ErrorResponse) -> None:
         """Send a JSON-RPC response to the client."""
         response_data = response.model_dump_json().encode()
         writer.write(response_data)
         writer.write(b"\n")
         await writer.drain()
-
-    async def _handle_ping_request(self, request: Request, start_time: datetime) -> Response:
-        """Handle ping JSON-RPC method."""
-        result = PingResult(
-            daemon_pid=os.getpid(), started_at=start_time, discovered_worktrees=list(self.known_worktrees.keys())
-        )
-        return self._create_success_response(result, request.id)
-
-    async def _handle_shutdown_request(self, request: Request, start_time: datetime | None = None) -> Response:
-        """Handle shutdown JSON-RPC method."""
-        logger.info("Received shutdown request")
-        self._shutdown_task = asyncio.create_task(self.stop())
-        return self._create_success_response("shutting down", request.id)
 
     async def _ensure_git_watcher(self, worktree_info: DiscoveredWorktree) -> None:
         if worktree_info.wtid in self.git_watchers:

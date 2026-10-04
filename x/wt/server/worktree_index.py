@@ -33,9 +33,6 @@ class WorktreeIndex:
             by_name.setdefault(MAIN_WORKTREE_DISPLAY_NAME, main)
         return cls(by_path=by_path, by_name=by_name, main=main)
 
-    def get_by_path(self, p: Path) -> DiscoveredWorktree | None:
-        return self.by_path.get(p)
-
     def get_by_name(self, name: str) -> DiscoveredWorktree | None:
         return self.by_name.get(name)
 

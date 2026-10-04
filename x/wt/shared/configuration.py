@@ -84,16 +84,6 @@ class Configuration:
         return self.wt_dir / "daemon.pid"
 
     @property
-    def operations_log_file(self) -> Path:
-        """Path to operations log file."""
-        return self.wt_dir / "operations.log"
-
-    @property
-    def pr_cache_file(self) -> Path:
-        """Path to PR cache file."""
-        return self.wt_dir / "pr_cache.json"
-
-    @property
     def daemon_log_file(self) -> Path:
         """Path to daemon log file."""
         return self.wt_dir / "daemon.log"
