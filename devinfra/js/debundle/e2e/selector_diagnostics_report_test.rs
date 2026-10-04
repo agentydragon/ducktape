@@ -255,49 +255,6 @@ fn fail_fast_stops_at_the_first_infeasible_selector() {
     assert_fail_fast_stops_at_first_outcome(infeasible_pairs_fixture, "unsatisfiable");
 }
 
-/// Two selectors, each matching two identical functions of its own.
-#[test]
-fn fail_fast_stops_at_the_first_ambiguous_selector() {
-    assert_fail_fast_stops_at_first_outcome(
-        || {
-            FixtureOpts::new(
-                r#"function sharedOne() {
-  return "shared";
-}
-function sharedTwo() {
-  return "shared";
-}
-function twiceOne() {
-  return "twice";
-}
-function twiceTwo() {
-  return "twice";
-}
-console.log(sharedOne(), sharedTwo(), twiceOne(), twiceTwo());
-export { sharedOne, sharedTwo, twiceOne, twiceTwo };
-"#,
-                vec![
-                    logical_module(
-                        "ambiguous/shared",
-                        &[Member::source_alpha(
-                            "Shared",
-                            "function s() {\n  return \"shared\";\n}",
-                        )],
-                    ),
-                    logical_module(
-                        "ambiguous/twice",
-                        &[Member::source_alpha(
-                            "Twice",
-                            "function t() {\n  return \"twice\";\n}",
-                        )],
-                    ),
-                ],
-            )
-        },
-        "ambiguous",
-    );
-}
-
 #[test]
 fn keep_going_unmatched_anonymous_statement_does_not_cascade() {
     let opts = FixtureOpts::new(

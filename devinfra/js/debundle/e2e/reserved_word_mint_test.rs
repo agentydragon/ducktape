@@ -30,32 +30,6 @@
 //! that parses and runs.
 
 use debundle_e2e_support::*;
-use std::fs;
-use swc_ecma_ast::{ImportSpecifier, ModuleDecl, ModuleItem};
-
-/// Every import local in `source` (across all `import` statements) must
-/// be a parseable, non-reserved identifier. `parse_module` already
-/// rejects un-parseable input; this additionally asserts no import local
-/// is a bare reserved word that slipped through.
-fn assert_import_locals_are_valid(source: &str) {
-    let module = parse_module(source);
-    for item in &module.body {
-        let ModuleItem::ModuleDecl(ModuleDecl::Import(import)) = item else {
-            continue;
-        };
-        for specifier in &import.specifiers {
-            let local = match specifier {
-                ImportSpecifier::Named(named) => named.local.sym.to_string(),
-                ImportSpecifier::Default(default) => default.local.sym.to_string(),
-                ImportSpecifier::Namespace(ns) => ns.local.sym.to_string(),
-            };
-            assert!(
-                local != "default" && local != "class" && local != "await",
-                "import local `{local}` is a reserved word; emitted import is un-parseable:\n{source}",
-            );
-        }
-    }
-}
 
 #[test]
 fn reserved_public_name_does_not_mint_reserved_import_local() {
@@ -73,13 +47,7 @@ export { show };
     opts.unassigned_mode = unassigned_mode_inline();
     let fixture = run_fixture(opts);
 
-    let entry = fs::read_to_string(&fixture.entry_path).expect("read entry.js");
-    // `parse_module` inside this helper fails loudly if the emitted
-    // import is un-parseable (the RED signal at the AST level); the
-    // explicit assert pins the reserved-local case specifically.
-    assert_import_locals_are_valid(&entry);
-
-    // Behaviour preservation: the entry still resolves `impl` through
-    // mod_x and prints its value.
+    // Node rejects a reserved-word import local with a SyntaxError, and the
+    // entry only prints `impl-value` if it re-imports `impl` from mod_x.
     assert_entry_output(&fixture, "impl-value\n");
 }

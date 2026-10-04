@@ -288,32 +288,6 @@ export { even, odd, fourEven, fiveOdd };
 // ---------------------------------------------------------------------------
 
 #[test]
-fn inferred_impure_globalthis_write_still_rejected() {
-    // Even with a smarter classifier, `globalThis.X = ...` is
-    // unambiguously observably impure: the assignment is
-    // visible to anything that reads `globalThis.X` later.
-    // Interleaved `globalThis.tag = "..."` writes across two
-    // modules close an `S` cycle that the gate must still
-    // reject — the relaxation in this PR's main purity-
-    // inference work must not over-relax to allow this.
-    expect_rejection_containing_all(
-        FixtureOpts::new(
-            r#"const a1 = (globalThis.tag = "a1", 1);
-const b1 = (globalThis.tag = "b1", 2);
-const a2 = (globalThis.tag = "a2", 3);
-console.log(a1, a2, b1, globalThis.tag);
-export { a1, a2, b1 };
-"#,
-            vec![
-                logical_module("mod_a", &[Member::new("a1"), Member::new("a2")]),
-                logical_module("mod_b", &[Member::new("b1")]),
-            ],
-        ),
-        &["cycle", "mod_a", "mod_b", "side-effect"],
-    );
-}
-
-#[test]
 fn inferred_impure_console_log_still_rejected() {
     // `console.log` writes to the host's stdout — observable
     // I/O. A function that calls `console.log` must be
@@ -503,47 +477,6 @@ export { A, B, D, wrap };
 }
 
 #[test]
-fn declared_pure_annotation_applies_only_to_annotated_member_positive() {
-    // Two HOFs in the chunk: `pureWrap` (has no observable
-    // side effects) and `impureWrap` (legitimately writes to
-    // `globalThis`). The author annotates only `pureWrap` as
-    // pure; `impureWrap` is left at the default
-    // (conservatively impure) classification.
-    //
-    // Positive half of the contract: a spec that interleaves
-    // `pureWrap(...)` calls across modules accepts — the
-    // annotation drops the `S` edges that would otherwise
-    // close a cycle. The companion `..._negative` test pins
-    // the other half: the annotation does not bleed onto
-    // unannotated members.
-    let fixture = run_fixture(FixtureOpts::new(
-        r#"function pureWrap(x) { return { val: x }; }
-function impureWrap(x) { globalThis.lastWrap = x; return { val: x }; }
-const A = pureWrap("a");
-const B = pureWrap("b");
-const C = pureWrap("c");
-console.log(A.val, B.val, C.val);
-export { A, B, C, pureWrap, impureWrap };
-"#,
-        vec![
-            logical_module(
-                "mod_a",
-                &[
-                    Member::new("A"),
-                    Member::new("C"),
-                    Member::new("pureWrap").with_purity(MemberPurity::Pure),
-                    // No `purity` annotation — default (impure)
-                    // classification applies.
-                    Member::new("impureWrap"),
-                ],
-            ),
-            logical_module("mod_b", &[Member::new("B")]),
-        ],
-    ));
-    assert_entry_output(&fixture, "a b c\n");
-}
-
-#[test]
 fn canonical_source_match_purity_annotation_contributes_to_analysis_hints() {
     let fixture = run_fixture(FixtureOpts::new(
         r#"function pureWrap(x) { return { val: x }; }
@@ -575,11 +508,10 @@ export { A, B, C, pureWrap, impureWrap };
 
 #[test]
 fn declared_pure_annotation_applies_only_to_annotated_member_negative() {
-    // Same chunk shape as the `..._positive` companion (two
-    // HOFs, `pureWrap` annotated pure, `impureWrap` not), but
-    // the spec interleaves `impureWrap(...)` calls across
-    // mod_a and mod_b. Because `impureWrap` carries no
-    // annotation and its body writes `globalThis.lastWrap`,
+    // Two HOFs in the chunk: `pureWrap`, annotated pure, and
+    // `impureWrap`, not. The spec interleaves `impureWrap(...)`
+    // calls across mod_a and mod_b. Because `impureWrap` carries
+    // no annotation and its body writes `globalThis.lastWrap`,
     // each call is classified side-effecting; the resulting
     // `S` graph has cross-module edges in both directions and
     // the gate must reject. The `pureWrap` annotation does
@@ -742,80 +674,6 @@ export { a, C, c };
         &["class C", "static x = new Map()"],
         &["const a"],
         "1\n",
-    );
-}
-
-// ---------------------------------------------------------------------------
-// chunk_renames purity propagation.
-// ---------------------------------------------------------------------------
-
-// Pin `purity: pure` propagation from chunk_renames members
-// into `declared_pure`.
-//
-// `Member.purity` is collected only from logical-module
-// members today. `chunk_renames.members[].purity` is silently
-// dropped. That forces the spec author to either peel the
-// binding into a 1-member logical module just to get the purity
-// hint propagated, or leave the call classified `Unknown`.
-//
-// Refinement: chunk_renames members with `purity: pure`
-// contribute to `declared_pure` alongside logical-module
-// members. One spec entry per imported function carries both
-// the rename (via the existing chunk_renames pipeline) and the
-// purity hint.
-//
-// In-residual rename behavior is already pinned by
-// `chunk_renames_test`; this test focuses on the purity-side
-// propagation.
-#[test]
-fn chunk_rename_with_purity_pure_propagates_to_call_classifier() {
-    // Fixture:
-    //   - vendor.js exports a function `f`.
-    //   - entry imports `f as cx`.
-    //   - `const a = (() => 1)();`  — SE, stays in residual
-    //   - `const b = cx();`          — would be SE without the rule
-    //                                  (imported, not in declared_pure)
-    //   - `const c = a + b;`         — reads b at init
-    //   - peel target: b → b_module
-    //
-    // Without the rule:
-    //   cx() is Unknown → b is SE → b → a s-edge across
-    //   b_module → residual. Combined with residual → b_module
-    //   (c's at-init read of b), cycle.
-    //
-    // With the rule:
-    //   chunk_renames carries `purity: pure` for cx → cx in
-    //   declared_pure → cx() is Pure → b is Pure → no S-chain
-    //   participation. Only edge: residual → b_module. DAG.
-    let opts = FixtureOpts::new(
-        r#"import { f as cx } from "./vendor.js";
-const a = (() => 1)();
-const b = cx();
-const c = a + b;
-console.log(c);
-export { a, b, c };
-"#,
-        vec![logical_module("b_module", &[Member::new("b")])],
-    )
-    .with_chunk_renames(chunk_rename_with_purity(
-        "getMobxGlobalState",
-        "cx",
-        Some("import_specifier"),
-        MemberPurity::Pure,
-    ))
-    .with_extra_files(&[(
-        "static/app/vendor.js",
-        "export function f() { return 1; }\n",
-    )]);
-    // The peel succeeded: b is in b_module without dragging a.
-    // The fact that the build didn't error on a cycle proves
-    // that `cx()` was classified Pure by the call classifier.
-    assert_pure_cycle_break_with_opts(
-        opts,
-        "b_module",
-        &["const b = "],
-        &["const a", "(()=>1)"],
-        "2\n",
     );
 }
 

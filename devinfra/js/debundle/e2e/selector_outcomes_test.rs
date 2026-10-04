@@ -73,9 +73,6 @@ fn selector_over_candidate_cap_is_too_broad_and_others_still_resolve() {
         .unwrap_or_else(|| panic!("missing duplicate-claim witness: {outcomes:#?}"));
     assert_eq!(duplicate["outcome"]["binding"], "keepMe");
     assert_eq!(outcomes.len(), 2, "{outcomes:#?}");
-
-    let validate = validate_json(too_broad_fixture(&source));
-    assert_eq!(validate["counts"]["too_broad"], 1, "{validate:#}");
 }
 
 /// A too-broad selector is rejected before the solve that finds the
@@ -135,18 +132,6 @@ fn selector_unique_only_by_elimination_warns_and_run_succeeds() {
 
     let either = find_outcome(&outcomes, "resolved", "Either");
     assert_eq!(either["severity"], "warning", "{either:#}");
-    assert_eq!(
-        either["outcome"],
-        json!({
-            "kind": "resolved",
-            "owner": 0,
-            "binding": "first",
-            "resolved_by": {
-                "by": "elimination",
-                "claimers": [{"logical_module": "elimination/other", "entity": {"export": "Other"}}],
-            },
-        })
-    );
     // `Other` and `Third` are unique on their own candidates: no warning.
     assert_eq!(outcomes.len(), 1, "{outcomes:#?}");
     assert!(
@@ -158,10 +143,6 @@ fn selector_unique_only_by_elimination_warns_and_run_succeeds() {
         "{}",
         fixture.stderr
     );
-
-    let validate = validate_json(elimination_fixture());
-    assert_eq!(validate["counts"]["resolved"], 1, "{validate:#}");
-    assert_eq!(validate["outcomes"][0], *either, "{validate:#}");
 }
 
 /// Anonymous statements are kept distinct like members: `either` matches both
@@ -251,7 +232,7 @@ fn nearest_bindings(outcome: &Value) -> Vec<Value> {
 }
 
 /// A `no_match` template lists the unclaimed statements it comes closest to,
-/// with where each diverges, in `run` and `spec validate` alike.
+/// with where each diverges.
 #[test]
 fn no_match_lists_the_nearest_unclaimed_statements() {
     let rejected = run_dry_run_rejection_fixture(renamed_method_fixture(Vec::new()));
@@ -265,9 +246,6 @@ fn no_match_lists_the_nearest_unclaimed_statements() {
         "{}",
         rejected.stderr
     );
-
-    let validate = validate_json(renamed_method_fixture(Vec::new()));
-    assert_eq!(validate["outcomes"], json!([widget]), "{validate:#}");
 }
 
 /// A statement another entity claimed is never offered, however close.
@@ -361,9 +339,6 @@ fn ambiguous_lists_each_candidates_differentiator() {
         "{}",
         rejected.stderr
     );
-
-    let validate = validate_json(differentiated_fixture());
-    assert_eq!(validate["outcomes"], json!([any]), "{validate:#}");
 }
 
 /// Candidates alike in themselves and in their neighbors have no

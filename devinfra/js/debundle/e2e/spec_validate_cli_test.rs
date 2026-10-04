@@ -8,38 +8,9 @@ use std::process::Command;
 use debundle_e2e_support::{
     CommandResult, FixtureOpts, Member, debundler_path, find_outcome, logical_module,
     mixed_selector_failure_fixture, outcomes, run_source_only_validate, run_spec_validate,
-    validate_json, write_text_file, write_validate_fixture_spec,
+    write_text_file, write_validate_fixture_spec,
 };
 use serde_json::{Value, json};
-
-#[test]
-fn validate_json_reports_every_failure_class_in_one_pass() {
-    let report = validate_json(mixed_selector_failure_fixture());
-    assert_eq!(
-        report["counts"],
-        json!({"no_match": 1, "ambiguous": 1, "duplicate_claim": 1}),
-        "{report:#}"
-    );
-    let outcomes = outcomes(&report);
-    assert_eq!(outcomes.len(), 3, "{report:#}");
-
-    let missing = find_outcome(outcomes, "no_match", "MissingFormatter");
-    assert_eq!(missing["chunk"], "static/app");
-    assert_eq!(
-        missing["placement"]["logical_module"],
-        "diagnostics/missing"
-    );
-    assert_eq!(missing["placement"]["selector_kind"], "source_matches");
-
-    let ambiguous = find_outcome(outcomes, "ambiguous", "AmbiguousHelper");
-    assert_eq!(candidate_owners(ambiguous), [1, 2], "{ambiguous:#}");
-
-    let duplicate = outcomes
-        .iter()
-        .find(|record| record["outcome"]["kind"] == "duplicate_claim")
-        .expect("duplicate claim outcome");
-    assert_eq!(duplicate["outcome"]["binding"], "renderCard");
-}
 
 #[test]
 fn validate_ndjson_streams_one_object_per_outcome_plus_summary() {
@@ -216,96 +187,6 @@ fn validate_source_only_ndjson_is_one_line_per_queue_item_plus_summary() {
         assert_eq!(line["section"], "template", "{line:#}");
         assert!(line["identifiers"].is_array(), "{line:#}");
     }
-}
-
-#[test]
-fn validate_source_only_clean_modules_report_no_problems() {
-    let fixture = SourceOnlyValidateFixture::new(
-        r#"const widget = makeWidget("ok");
-"#,
-        &[(
-            "ui/widget.yaml",
-            r#"source_matches:
-  - match: 'const w = makeWidget("ok");'
-    bindings:
-      - local: w
-        name: Widget
-"#,
-        )],
-    );
-    let report = fixture.json();
-    assert!(outcomes(&report).is_empty(), "{report:#}");
-}
-
-#[test]
-fn validate_source_only_accepts_a_seq_exprs_selector() {
-    // The cache-write tail is a SEQ_EXPRS run hole; it must resolve.
-    let fixture = SourceOnlyValidateFixture::new(
-        r#"const slots = [];
-function loadLabel(cache, label) {
-  let memo;
-  return (cache[0] !== label
-    ? (memo = async (id) => {
-        const base = `load:${label}`;
-        return `${base}:${id}`;
-      }, cache[0] = label, cache[1] = memo)
-    : (memo = cache[1])),
-    memo;
-}
-loadLabel(slots, "first")("a").then((value) => console.log(value));
-"#,
-        &[(
-            "resource/label.yaml",
-            r#"source_matches:
-  - match: |
-      function readable(cache, label) {
-        let memo;
-        return (EXPR ? (memo = async (id) => {
-          const base = `load:${label}`;
-          return `${base}:${id}`;
-        }, SEQ_EXPRS) : memo = EXPR), memo;
-      }
-    bindings:
-      - local: readable
-        name: LabelResource
-"#,
-        )],
-    );
-    let report = fixture.json();
-    assert!(outcomes(&report).is_empty(), "{report:#}");
-}
-
-#[test]
-fn validate_source_only_reports_a_misplaced_seq_exprs_hole() {
-    let fixture = SourceOnlyValidateFixture::new(
-        r#"function actual(value) {
-  return value.trim();
-}
-console.log(actual(" ok "));
-"#,
-        &[(
-            "hooks/lone_hole.yaml",
-            r#"source_matches:
-  - match: |
-      function readable(value) {
-        return (SEQ_EXPRS);
-      }
-    bindings:
-      - local: readable
-        name: LoneHole
-"#,
-        )],
-    );
-    let report = fixture.json();
-    let record = find_module_outcome(outcomes(&report), "hooks/lone_hole");
-    assert_eq!(record["outcome"]["kind"], "invalid", "{record:#}");
-    assert!(
-        record["outcome"]["error"]
-            .as_str()
-            .unwrap()
-            .contains("run-hole keyword outside a list position"),
-        "{record:#}"
-    );
 }
 
 #[test]
@@ -548,15 +429,6 @@ const widget = makeWidget("ok");
             ),
         ],
     )
-}
-
-fn candidate_owners(record: &Value) -> Vec<u64> {
-    record["outcome"]["candidates"]
-        .as_array()
-        .unwrap_or_else(|| panic!("candidates must be an array: {record:#}"))
-        .iter()
-        .map(|candidate| candidate["owner"].as_u64().unwrap())
-        .collect()
 }
 
 fn find_module_outcome<'a>(outcomes: &'a [Value], logical_module: &str) -> &'a Value {

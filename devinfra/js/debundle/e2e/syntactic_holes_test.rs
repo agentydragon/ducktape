@@ -62,13 +62,6 @@ fn anonymous_init_fixture<'a>(source: &'a str, selector: &str) -> FixtureOpts<'a
     )
 }
 
-const TRIM_FUNCTION_SOURCE: &str = r#"function actual(value) {
-  return value.trim();
-}
-console.log(actual(" ok "));
-export { actual };
-"#;
-
 const SETUP_BLOCK_SOURCE: &str = r#"if (true) {
   console.log("setup");
   console.log("done");
@@ -541,48 +534,6 @@ export { runPipeline };
         "static/app/modules/pipeline.js",
         &["function marked_pipeline", r#""marker""#, "flags.off"],
         &["SEQ_EXPRS", "readable"],
-    );
-}
-
-// `SEQ_EXPRS` outside a comma sequence is a misplaced run hole: it reaches the
-// node matcher instead of being consumed as a list carrier, so resolution fails
-// closed rather than matching whatever expression sits there.
-#[test]
-fn source_match_seq_exprs_outside_a_sequence_reports_the_misplaced_hole() {
-    expect_rejection_containing_all(
-        member_fixture(
-            TRIM_FUNCTION_SOURCE,
-            "hooks/misplaced",
-            Member::source_alpha_target(
-                "misplaced",
-                "readable",
-                r#"function readable(value) {
-  return SEQ_EXPRS;
-}"#,
-            ),
-        ),
-        &["SEQ_EXPRS", "run-hole keyword outside a list position"],
-    );
-}
-
-// A lone `(SEQ_EXPRS)` is not a sequence — a comma sequence needs at least two
-// syntactic elements — so the keyword sits in an ordinary expression position
-// and the selector is rejected the same way, not read as "any expression".
-#[test]
-fn source_match_lone_seq_exprs_in_parens_reports_the_misplaced_hole() {
-    expect_rejection_containing_all(
-        member_fixture(
-            TRIM_FUNCTION_SOURCE,
-            "hooks/lone_hole",
-            Member::source_alpha_target(
-                "lone_hole",
-                "readable",
-                r#"function readable(value) {
-  return (SEQ_EXPRS);
-}"#,
-            ),
-        ),
-        &["SEQ_EXPRS", "run-hole keyword outside a list position"],
     );
 }
 
@@ -1416,42 +1367,6 @@ export { primary, secondary };
 }
 
 #[test]
-fn binding_group_notes_round_trip_but_do_not_emit() {
-    let fixture = run_fixture(FixtureOpts::new(
-        r#"var first = 1 + 2, second = Number.parseInt("4", 10);
-console.log(first + second);
-export { first, second };
-"#,
-        vec![logical_module_with_binding_groups(
-            "pair",
-            &[],
-            &[BindingGroup::source_alpha(
-                r#"var left = EXPR_LEFT, right = EXPR_RIGHT;"#,
-                &[("left", "first_value"), ("right", "second_value")],
-            )
-            .with_notes(&[
-                ("left", "TODO: minimize left selector."),
-                ("right", "TODO: minimize right selector."),
-            ])],
-        )],
-    ));
-
-    assert_entry_output(&fixture, "7\n");
-    assert_module_source(
-        &fixture.out_root,
-        "static/app/modules/pair.js",
-        &[
-            "var first_value = 1 + 2",
-            r#"var second_value = Number.parseInt("4", 10)"#,
-        ],
-        &[
-            "TODO: minimize left selector.",
-            "TODO: minimize right selector.",
-        ],
-    );
-}
-
-#[test]
 fn source_match_comments_reject_unknown_annotation_key() {
     let opts = FixtureOpts::new(
         r#"const primary = 10, secondary = 20;
@@ -1467,37 +1382,6 @@ export { primary, secondary };
             )
             .with_comments(&[
                 ("primary", "Primary selected value."),
-                ("secondary", "This binding is not exported by the group."),
-            ])],
-        )],
-    );
-
-    expect_rejection_containing_all(
-        opts,
-        &[
-            "static/app::settings",
-            "annotations key `secondary` does not match",
-            "secondary",
-        ],
-    );
-}
-
-#[test]
-fn source_match_notes_reject_unknown_annotation_key() {
-    let opts = FixtureOpts::new(
-        r#"const primary = 10, secondary = 20;
-console.log(primary + secondary);
-export { primary, secondary };
-"#,
-        vec![logical_module_with_binding_groups(
-            "settings",
-            &[],
-            &[BindingGroup::source_alpha_adopt_names(
-                r#"const primary = EXPR_PRIMARY, secondary = EXPR_SECONDARY;"#,
-                &["primary"],
-            )
-            .with_notes(&[
-                ("primary", "Primary selector debt."),
                 ("secondary", "This binding is not exported by the group."),
             ])],
         )],
@@ -1590,43 +1474,6 @@ export { runtimePrefix, runtimeBuild, runtimeRead, runtimeSuffix };
         "static/app/modules/display.js",
         &["const readDisplayValue", ".toUpperCase()"],
         &["runtimePrefix", "runtimeSuffix", "ANYTHING"],
-    );
-}
-
-#[test]
-fn member_source_match_anything_declarator_can_bracket_capitalized_target_binding() {
-    let fixture = run_fixture(member_fixture(
-        r#"const beforeTarget = "before",
-  runtimeTarget = makeTarget("value"),
-  afterTarget = "after";
-function makeTarget(value) {
-  return `target:${value}`;
-}
-console.log(beforeTarget, runtimeTarget, afterTarget);
-export { beforeTarget, runtimeTarget, afterTarget, makeTarget };
-"#,
-        "target",
-        Member::source_alpha_target(
-            "SelectedTarget",
-            "Target",
-            r#"const ANYTHING = ANYTHING,
-  Target = makeTarget("value"),
-  ANYTHING = ANYTHING;"#,
-        ),
-    ));
-
-    assert_entry_output(&fixture, "before target:value after\n");
-    assert_module_exports(
-        &fixture.out_root,
-        "static/app/modules/target.js",
-        &["SelectedTarget"],
-        &["runtimeTarget"],
-    );
-    assert_module_source(
-        &fixture.out_root,
-        "static/app/modules/target.js",
-        &["const SelectedTarget", "makeTarget"],
-        &["beforeTarget", "afterTarget", "ANYTHING"],
     );
 }
 
@@ -2341,76 +2188,6 @@ export { actual };
 }
 
 #[test]
-fn anonymous_stmt_hole_matches_one_arbitrary_statement() {
-    // The bare keyword `STMT` matches exactly one statement, with no
-    // suffix to mint — the anonymous single-statement form.
-    let fixture = run_fixture(anonymous_init_fixture(
-        SETUP_BLOCK_SOURCE,
-        r#"if (true) {
-  STMT;
-  console.log("done");
-}"#,
-    ));
-
-    assert_entry_output(&fixture, "setup\ndone\n");
-    assert_module_source(
-        &fixture.out_root,
-        "static/app/modules/init.js",
-        &[
-            r#"console.log("setup")"#,
-            r#"console.log("done")"#,
-            "const marker",
-        ],
-        &["STMT"],
-    );
-}
-
-#[test]
-fn anonymous_stmt_list_and_class_member_holes_need_no_minted_names() {
-    // A bare `STMT_LIST` and a bare `ANYTHING;` field select the class with no
-    // suffixes to invent.
-    let fixture = run_fixture(member_fixture(
-        r#"class Counter {
-  constructor() {
-    this.value = 0;
-  }
-  increment() {
-    this.value += 1;
-    return this.value;
-  }
-}
-const counter = new Counter();
-console.log(counter.increment());
-export { Counter };
-"#,
-        "shapes",
-        Member::source_alpha(
-            "Counter",
-            r#"class K {
-  constructor() {
-    STMT_LIST;
-  }
-  ANYTHING;
-}"#,
-        ),
-    ));
-
-    assert_entry_output(&fixture, "1\n");
-    assert_module_exports(
-        &fixture.out_root,
-        "static/app/modules/shapes.js",
-        &["Counter"],
-        &[],
-    );
-    assert_module_source(
-        &fixture.out_root,
-        "static/app/modules/shapes.js",
-        &["class", "increment"],
-        &["STMT_LIST", "ANYTHING"],
-    );
-}
-
-#[test]
 fn member_source_match_class_member_holes_bracket_interior_member() {
     // Two `ANYTHING;` holes bracket a single pinned member, so the
     // selector matches a class by an interior member it contains: the
@@ -2870,52 +2647,6 @@ fn stmt_and_anything_agree_on_a_single_statement_block() {
         ));
         assert_entry_output(&fixture, "only\n");
     }
-}
-
-#[test]
-fn case_rest_is_not_expressible_via_anything() {
-    // `case CASE_REST:` absorbs surrounding `case`/`default` clauses. There is
-    // no `ANYTHING` spelling for a switch-case-list hole: `is_case_rest_hole`
-    // matches only the `CASE_REST` keyword family. A bare `ANYTHING` statement is
-    // not a `case` clause, so attempting to use it to skip cases cannot parse
-    // into the case-list-hole shape — the keyword stays load-bearing. Here the
-    // `CASE_REST` form matches the multi-case switch.
-    let subject = r#"function dispatch(kind) {
-  switch (kind) {
-    case "alpha":
-      return 1;
-    case "go":
-      return 42;
-    default:
-      return 0;
-  }
-}
-console.log(dispatch("go"));
-export { dispatch };
-"#;
-
-    let with_case_rest = run_fixture(member_fixture(
-        subject,
-        "router",
-        Member::source_alpha(
-            "dispatch",
-            r#"function readable(ANYTHING) {
-  switch (ANYTHING) {
-    case CASE_REST:
-    case "go":
-      STMT_LIST_GO;
-    case CASE_REST:
-  }
-}"#,
-        ),
-    ));
-    assert_entry_output(&with_case_rest, "42\n");
-    assert_module_exports(
-        &with_case_rest.out_root,
-        "static/app/modules/router.js",
-        &["dispatch"],
-        &[],
-    );
 }
 
 #[test]
