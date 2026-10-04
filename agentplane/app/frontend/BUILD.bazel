@@ -944,6 +944,19 @@ ts_library(
 
 # The JSON and plain-text adapters reuse the shared CodeMirror payload widget.
 ts_library(
+    name = "inline_code_test",
+    testonly = True,
+    srcs = ["inline_code.test.tsx"],
+    tsconfig = TSCONFIG,
+    deps = [
+        ":actions_testing",
+        ":code_block",
+        "//:node_modules/@types/react",
+        "//:node_modules/vitest",
+    ],
+)
+
+ts_library(
     name = "json_view",
     srcs = ["json_view.tsx"],
     tsconfig = TSCONFIG,
@@ -1106,6 +1119,7 @@ vitest_bin.vitest_test(
         ":client_test",
         ":connections_test",
         ":consent_test",
+        ":inline_code_test",
         "//agentplane/app/frontend/threads:command_calls_test",
         "//agentplane/app/frontend/threads:history_rows_test",
         ":json_view_test",

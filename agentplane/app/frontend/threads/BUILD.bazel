@@ -218,6 +218,7 @@ ts_library(
         "//:node_modules/@types/react",
         "//:node_modules/react",
         "//agentplane/app/frontend:clamped_block",
+        "//agentplane/app/frontend:code_block",
         "//agentplane/app/frontend:command_view",
         "//agentplane/app/frontend:json_view",
         "//agentplane/app/frontend:markdown",

@@ -3,6 +3,7 @@ import { ItemKind, RecoveryDisposition } from "../../../protocol/event_pb";
 import { type JSX, type ReactNode, useLayoutEffect, useRef, useState } from "react";
 
 import { ClampedBlock } from "../clamped_block";
+import { InlineCode } from "../code_block";
 import { COMMAND_MAX_HEIGHT_REM, CommandCallView, OutputBlock } from "../command_view";
 import { HighlightedText } from "../json_view";
 import { Markdown } from "../markdown";
@@ -453,8 +454,10 @@ function ToolCard({
                   <Text component="span" c="dimmed">
                     {args.error ? "Preview unavailable" : "Loading preview…"}
                   </Text>
+                ) : call && !call.description ? (
+                  <InlineCode text={call.summary} />
                 ) : (
-                  <Text component="span" ff={call?.description ? undefined : "monospace"}>
+                  <Text component="span" ff={call ? undefined : "monospace"}>
                     {call?.summary ?? oneLine(argumentsBody)}
                   </Text>
                 ))

@@ -1184,9 +1184,17 @@ describe("tool call rows", () => {
     expect(container.textContent).not.toContain("test-output");
   });
 
-  it("folds a Bash call with no description to its command on one line", async () => {
-    const container = await renderTool("Bash", { command: COMMAND });
-    expect(lineOf(container)).toBe("docker ps --all --format '{{.Names}}'");
+  it("folds a Bash call with no description to its command on one line, as highlighted shell", async () => {
+    const container = await renderTool("Bash", { command: `set -e\n${COMMAND}` });
+    expect(lineOf(container)).toBe("set -e docker ps --all --format '{{.Names}}'");
+    expect(
+      container.querySelector(".agentplane-step-preview .agentplane-code-inline .agentplane-tok-keyword")?.textContent
+    ).toBe("set");
+  });
+
+  it("does not highlight what the model wrote to say what a command is for", async () => {
+    const container = await renderTool("Bash", { command: COMMAND, description: "List every container" });
+    expect(container.querySelector(".agentplane-code-inline")).toBeNull();
   });
 
   it("folds Codex's command to the script it ran, without the shell that ran it", async () => {

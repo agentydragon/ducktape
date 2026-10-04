@@ -64,5 +64,6 @@ a field a harness adds sends every such call to the JSON view while the tests st
 The shared CodeMirror viewer now marks bidi controls, zero-width/default-ignorable characters,
 control characters, and Unicode line separators in code-shaped Action arguments, shell commands,
 results, and fenced Markdown. It keeps the source text intact and distinguishes bidi/control markers
-from quieter formatting markers. Ordinary Action titles and descriptions still render as plain text;
-decide whether they also need inline markers or an approval-card warning.
+from quieter formatting markers. Ordinary Action titles and descriptions still render as plain text, and so do a
+thread tool call's one-line summaries other than a shell command's (the model's description, a
+tool's JSON); decide whether they also need inline markers or an approval-card warning.
