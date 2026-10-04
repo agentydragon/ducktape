@@ -14,7 +14,7 @@ Located in `testing/fixtures/testdata/specimens/`:
 
 - **test-fixtures/train1** (TRAIN split)
   - Files: add.py, subtract.py, multiply.py, divide.py
-  - Issues: 5 TPs (tp-001 through tp-005), 1 FP (fp-001)
+  - Issues: 6 TPs (tp-001 through tp-006), 1 FP (fp-001)
   - Use for: Multi-file tests, duplication detection, RLS train split
 
 - **test-fixtures/valid1** (VALID split)
@@ -34,10 +34,9 @@ Located in `testing/fixtures/testdata/specimens/`:
 
 ## High-value fixtures (testing/fixtures/)
 
-- **Scopes** (scopes.py): `subtract_file_scope`, `add_py_scope`, `multiply_py_scope`, `divide_py_scope`,
-  `example_module_py_scope`, `calculator_py_scope`, `all_files_scope`.
-- **Ground truth** (ground_truth.py): `example_subtract_orm` (1 TP occurrence), `example_multi_tp_orm` (multi-TP), `test_snapshot`, `test_validation_snapshot`, `tp_occurrence_single`, `fp_id`, `fp_occurrence_id`.
-- **Runs** (runs.py): `make_critic_run`, `make_grader_run`, `make_grader_run_with_credit`.
+- **Scopes** (scopes.py): `subtract_file_example`, `all_files_scope`.
+- **Ground truth** (ground_truth.py): `example_subtract_orm` (1 TP occurrence), `example_multi_tp_orm` (multi-TP), `tp_occurrence_single`, `fp_id`, `fp_occurrence_id`.
+- **Runs** (runs.py): `make_fake_critic_run`, `make_fake_grader_run`, `make_fake_grader_run_with_credit`; snapshot fixtures `test_snapshot`, `test_validation_snapshot`.
 - **E2E** (e2e_container.py): `e2e_stack` for Docker-based integration tests with full stack.
 - **Database** (db.py): `synced_db`, `synced_test_session` for DB fixtures.
 

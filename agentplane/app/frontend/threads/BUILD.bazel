@@ -141,6 +141,7 @@ ts_library(
         "//agentplane/app/frontend:client",
         "//agentplane/app/frontend:stream_status",
         "//agentplane/app/frontend:test_model_catalog",
+        "//agentplane/app/frontend:thread_status_palette",
         "//agentplane/app/frontend:topbar",
         "//agentplane/protocol:command_pb",
         "//agentplane/protocol:event_log_pb",
@@ -178,7 +179,10 @@ ts_library(
     name = "command_calls",
     srcs = ["command_calls.ts"],
     tsconfig = TSCONFIG,
-    deps = ["//:node_modules/zod"],
+    deps = [
+        "//:node_modules/zod",
+        "//agentplane/app/frontend:parsed_json",
+    ],
 )
 
 ts_library(

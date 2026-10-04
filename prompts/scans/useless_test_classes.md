@@ -197,16 +197,8 @@ async def test_habitify_client_get_habit(client, mock_async_response, patch_clie
 
 Common locations:
 
-- `*/tests/test_*.py`
-- `*/tests/**/test_*.py`
-
-Priority files (based on search):
-
-- `llm/mcp/habitify/habitify_mcp_server/tests/test_habitify_client.py`
-- `claude/claude_hooks/tests/test_autofixer.py`
-- `claude/claude_hooks/tests/test_protocol_actions.py`
-- `wt/tests/*/test_*.py` (multiple files)
-- `llm/ducktape_llm_common/tests/*/test_*.py` (multiple files)
+- `**/test_*.py`
+- `**/*_test.py`
 
 ## False Positives (Classes That ARE Valuable)
 

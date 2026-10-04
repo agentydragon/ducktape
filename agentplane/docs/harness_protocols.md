@@ -34,7 +34,7 @@ own consumer login, OAuth refresh, credential delivery, or model routing.
 
 The recording proxy records only request/response bodies and response chunks. The scripted tests
 stand in for the endpoint with a loopback server the test drives request by request
-([`../harness_tests/scripted_upstream.py`](../harness_tests/scripted_upstream.py)), so the native
+([`../harness_tests/model_endpoint.py`](../harness_tests/model_endpoint.py)), so the native
 driver is exercised without paid inference.
 
 ## Claude Code

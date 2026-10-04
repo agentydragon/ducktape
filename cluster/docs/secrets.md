@@ -68,7 +68,7 @@ spec:
       name: sops-age-cluster-secrets
 ```
 
-Enforced at PR time by the `test_sops_decryption` validation check.
+Enforced at PR time by `test_sops_secrets_have_decryption_block` in `//cluster/validation:test_cluster_integration`.
 
 ## Rotating Credentials
 
@@ -114,7 +114,7 @@ the ciphertext literally. Unlike the loud failure above, this emits no error.
 **Fix**: add the `decryption` block (see
 [Adding New SOPS Secrets](#adding-new-sops-secrets)). Incident history and
 detail: <lessons_learned/2026_07_04_flux_sops_ciphertext_applied_literally.md>.
-Enforced at PR time by `test_sops_decryption`.
+Enforced at PR time by `test_sops_secrets_have_decryption_block`.
 
 ### OpenTofu State Lost
 
@@ -210,11 +210,3 @@ otherwise, reach mesh services by direct `10.42.x.y` addresses.
 1. Commit the new `.crt` and `.sops.key` files
 2. Deploy (nixos-rebuild, ansible, or push for Flux)
 3. Restart nebula: `sudo systemctl restart nebula`
-
-## Validation
-
-Pre-commit validates SOPS files can be decrypted:
-
-```bash
-pre-commit run --all-files
-```

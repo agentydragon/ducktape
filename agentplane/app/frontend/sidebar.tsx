@@ -195,7 +195,7 @@ function ThreadRow({
   const label = thread.name ?? thread.session_id;
   const readonly = sandbox === null;
   const status = threadStatusFromSnapshot(thread, sandbox ?? undefined, fresh);
-  const harnessRunning = status.color === "green";
+  const harnessRunning = status.kind === "running" || status.kind === "idle";
   const className = [
     "agentplane-sidebar-row",
     current ? "current" : "",
@@ -218,7 +218,7 @@ function ThreadRow({
         }
       }}
     >
-      <ThreadStatusDot color={status.color} label={status.label} pulse={status.pulse} size="small" />
+      <ThreadStatusDot kind={status.kind} label={status.label} size="small" />
       <span className="agentplane-sidebar-row-name">{label}</span>
       <Tooltip
         label={thread.archived ? "Unarchive" : harnessRunning ? "Stop the harness before archiving" : "Archive"}

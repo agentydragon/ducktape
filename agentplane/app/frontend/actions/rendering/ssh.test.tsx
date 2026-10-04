@@ -98,6 +98,17 @@ describe("ssh exec result", () => {
     expect(container.textContent).toContain("Show less");
   });
 
+  it("says how many lines a clipped stream has", async () => {
+    vi.spyOn(HTMLElement.prototype, "offsetHeight", "get").mockReturnValue(10_000);
+    const lines = Array.from({ length: 45 }, (_, index) => `test-line-${index + 1}`);
+    const container = await drawn(
+      renderResultPreview(execResultPreview, { ...VALUE, stdout: `${lines.join("\n")}\n` })
+    );
+    expect([...container.querySelectorAll("button")].map((button) => button.textContent)).toContain(
+      "Show all 45 lines"
+    );
+  });
+
   it("says when the command wrote nothing", async () => {
     const container = await drawn(renderResultPreview(execResultPreview, { ...VALUE, stdout: "" }));
     expect(streams(container)).toEqual([]);

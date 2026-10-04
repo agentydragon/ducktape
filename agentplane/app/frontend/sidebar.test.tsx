@@ -175,7 +175,7 @@ it("applies pushed renames and Sandbox state without marking a suspended harness
   });
   const sandboxes = { "test-sandbox": sandbox("test-sandbox") };
   const { stream } = await render([running], sandboxes, { initialPath: "/threads/t-1" });
-  expect(container.querySelectorAll(".agentplane-thread-status-dot[style*='green-6']")).toHaveLength(1);
+  expect(container.querySelectorAll(".agentplane-thread-status-dot[data-status='idle']")).toHaveLength(1);
 
   const renamed = { ...running, name: "Renamed in another replica" };
   await pushSnapshot(
@@ -188,7 +188,7 @@ it("applies pushed renames and Sandbox state without marking a suspended harness
   expect(container.textContent).not.toContain("Before rename");
   expect(row(renamed.name).className).toContain("current");
   expect(container.querySelector(".agentplane-sidebar-state-icon.suspended")).not.toBeNull();
-  expect(container.querySelectorAll(".agentplane-thread-status-dot[style*='green-6']")).toHaveLength(0);
+  expect(container.querySelectorAll(".agentplane-thread-status-dot[data-status='idle']")).toHaveLength(0);
   expect(container.textContent).toContain("test-threadless");
   expect(container.textContent).toContain("0 threads");
   expect(fetchMock).not.toHaveBeenCalled();
@@ -208,14 +208,15 @@ it("does not show a running dot for an archived thread or an ended/failed runner
     active_turn_id: "turn-1",
   });
   const box = sandbox("test-sandbox");
-  expect(threadStatusFromSnapshot(running, box, true)).toMatchObject({ color: "green", pulse: true });
-  expect(threadStatusFromSnapshot({ ...running, feed_status: "ended" }, box, true).color).toBe("gray");
-  expect(threadStatusFromSnapshot({ ...running, feed_status: "failed" }, box, true).color).toBe("red");
-  expect(threadStatusFromSnapshot({ ...running, archived: true }, box, true).color).toBe("gray");
-  expect(threadStatusFromSnapshot(running, box, false).color).toBe("gray");
+  expect(threadStatusFromSnapshot(running, box, true).kind).toBe("running");
+  expect(threadStatusFromSnapshot({ ...running, active_turn_id: null }, box, true).kind).toBe("idle");
+  expect(threadStatusFromSnapshot({ ...running, feed_status: "ended" }, box, true).kind).toBe("inactive");
+  expect(threadStatusFromSnapshot({ ...running, feed_status: "failed" }, box, true).kind).toBe("failed");
+  expect(threadStatusFromSnapshot({ ...running, archived: true }, box, true).kind).toBe("inactive");
+  expect(threadStatusFromSnapshot(running, box, false).kind).toBe("inactive");
 });
 
-it("uses the shared pulsing status dot when a fresh sidebar thread has an active turn", async () => {
+it("shows chevrons in the shared status indicator when a fresh sidebar thread has an active turn", async () => {
   const active = thread({
     id: "t-1",
     sandbox: "test-sandbox",
@@ -226,13 +227,14 @@ it("uses the shared pulsing status dot when a fresh sidebar thread has an active
   });
   const { stream } = await render([active], { "test-sandbox": sandbox("test-sandbox") });
   const dot = container.querySelector('.agentplane-thread-status-dot[aria-label^="Turn running"]');
-  expect(dot?.classList.contains("agentplane-thread-status-dot-pulsing")).toBe(true);
+  expect(dot?.getAttribute("data-status")).toBe("running");
+  expect(dot?.querySelector("svg")).not.toBeNull();
 
   const stale = snapshot([active], { "test-sandbox": sandbox("test-sandbox") });
   stale.watch.fresh = false;
   await pushSnapshot(stream, stale);
   const staleDot = container.querySelector('.agentplane-thread-status-dot[aria-label="No live harness confirmed"]');
-  expect(staleDot?.classList.contains("agentplane-thread-status-dot-pulsing")).toBe(false);
+  expect(staleDot?.getAttribute("data-status")).toBe("inactive");
 });
 
 it("keeps retained rows but withdraws live indicators when any update source is unavailable", async () => {
@@ -251,30 +253,30 @@ it("keeps retained rows but withdraws live indicators when any update source is 
   // A drop shorter than the grace is a blip, and changes nothing on screen.
   await act(async () => stream.dispatchEvent(new Event("error")));
   expect(container.querySelector("[data-connection]")).toBeNull();
-  expect(container.querySelectorAll(".agentplane-thread-status-dot[style*='green-6']")).toHaveLength(1);
+  expect(container.querySelectorAll(".agentplane-thread-status-dot[data-status='idle']")).toHaveLength(1);
   await act(async () => vi.advanceTimersByTime(DEGRADED_AFTER_MS));
   expect(container.querySelector('[data-connection="degraded"]')?.getAttribute("aria-label")).toBe(
     "Threads: reconnecting since 17:21:04 · attempt 1"
   );
   expect(container.textContent).toContain("Retained thread");
-  expect(container.querySelectorAll(".agentplane-thread-status-dot[style*='green-6']")).toHaveLength(0);
+  expect(container.querySelectorAll(".agentplane-thread-status-dot[data-status='idle']")).toHaveLength(0);
 
   await pushSnapshot(stream, { ...snapshot(threads, sandboxes), updates_connected: false });
   expect(container.querySelector("[data-connection]")).toBeNull();
   expect(container.textContent).toContain("Thread updates disconnected");
-  expect(container.querySelectorAll(".agentplane-thread-status-dot[style*='green-6']")).toHaveLength(0);
+  expect(container.querySelectorAll(".agentplane-thread-status-dot[data-status='idle']")).toHaveLength(0);
 
   const stale = snapshot(threads, sandboxes);
   stale.watch.fresh = false;
   await pushSnapshot(stream, stale);
   expect(container.textContent).toContain("watch has stopped moving");
   expect(container.textContent).not.toContain("Thread updates disconnected");
-  expect(container.querySelectorAll(".agentplane-thread-status-dot[style*='green-6']")).toHaveLength(0);
+  expect(container.querySelectorAll(".agentplane-thread-status-dot[data-status='idle']")).toHaveLength(0);
 
   await pushSnapshot(stream, snapshot([{ ...threads[0], name: "Current thread" }], sandboxes));
   expect(container.textContent).not.toContain("Retained thread");
   expect(container.textContent).not.toContain("watch has stopped moving");
-  expect(container.querySelectorAll(".agentplane-thread-status-dot[style*='green-6']")).toHaveLength(1);
+  expect(container.querySelectorAll(".agentplane-thread-status-dot[data-status='idle']")).toHaveLength(1);
 });
 
 it("groups threads by sandbox, showing each group's state, name and visible thread count", async () => {
@@ -391,6 +393,25 @@ it("hides archived threads until the switch is toggled, and archives a thread fr
   );
   expect(archiveCall).toBeDefined();
   expect((archiveCall?.[0] as Request).method).toBe("POST");
+});
+
+it.each([null, "turn-1"])("blocks archiving a live harness, idle or mid-turn (active turn %s)", async (turn) => {
+  await render(
+    [
+      thread({
+        id: "t-1",
+        sandbox: "demo",
+        session_id: "s-1",
+        name: "Live thread",
+        harness_state: "HARNESS_STATE_RUNNING",
+        active_turn_id: turn,
+      }),
+    ],
+    { demo: sandbox("demo") }
+  );
+  const archiveButton = container.querySelector('button[aria-label="Stop harness before archiving Live thread"]');
+  if (!(archiveButton instanceof HTMLButtonElement)) throw new Error("missing archive button");
+  expect(archiveButton.disabled).toBe(true);
 });
 
 it("keeps the last snapshot when archiving fails and reports the error", async () => {

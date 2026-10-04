@@ -1,19 +1,28 @@
 import { Button, UnstyledButton } from "@mantine/core";
 import { type JSX, type ReactNode, useLayoutEffect, useRef, useState } from "react";
 
+/** How many lines `text` has, a final newline ending its last line rather than starting another. */
+export function lineCount(text: string): number {
+  return text.replace(/\n$/, "").split("\n").length;
+}
+
 /** Content capped at `maxHeightRem`, whose clipped bottom is itself the control that shows the rest.
  * Clipped, not sliced: the hidden part stays in the DOM, so selecting and copying still reach all
  * of it.
+ *
+ * `lines`, when the content is text, says how much the clipped bottom holds: "Show all 32 lines".
  *
  * `expansion` is a controlled `[expanded, setExpanded]` pair, which is what `useRetainedDisclosure`
  * returns, for a caller whose rows leave the DOM and must come back as the reader left them. Without
  * it the block remembers for as long as it stays mounted. */
 export function ClampedBlock({
   maxHeightRem,
+  lines,
   expansion,
   children,
 }: {
   maxHeightRem: number;
+  lines?: number;
   expansion?: readonly [boolean, (expanded: boolean) => void];
   children: ReactNode;
 }): JSX.Element {
@@ -64,7 +73,7 @@ export function ClampedBlock({
               fontSize: "var(--mantine-font-size-xs)",
             }}
           >
-            Show all
+            {lines !== undefined && lines > 1 ? `Show all ${lines} lines` : "Show all"}
           </UnstyledButton>
         )}
       </div>

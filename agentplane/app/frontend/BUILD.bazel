@@ -31,9 +31,16 @@ ts_library(
 )
 
 ts_library(
+    name = "thread_status_palette",
+    srcs = ["thread_status_palette.ts"],
+    tsconfig = TSCONFIG,
+)
+
+ts_library(
     name = "tab_metadata",
     srcs = ["tab_metadata.ts"],
     tsconfig = TSCONFIG,
+    deps = [":thread_status_palette"],
 )
 
 ts_library(
@@ -51,7 +58,10 @@ ts_library(
     name = "thread_tab",
     srcs = ["thread_favicon.ts"],
     tsconfig = TSCONFIG,
-    deps = [":tab_metadata"],
+    deps = [
+        ":tab_metadata",
+        ":thread_status_palette",
+    ],
 )
 
 ts_library(
@@ -289,11 +299,18 @@ ts_library(
 )
 
 ts_library(
+    name = "parsed_json",
+    srcs = ["parsed_json.ts"],
+    tsconfig = TSCONFIG,
+)
+
+ts_library(
     name = "actions_call_tool_result",
     srcs = ["actions/call_tool_result.tsx"],
     tsconfig = TSCONFIG,
     deps = [
         ":json_view",
+        ":parsed_json",
         "//:node_modules/@mantine/core",
         "//:node_modules/@types/react",
         "//:node_modules/react",
@@ -686,6 +703,7 @@ ts_library(
     tsconfig = TSCONFIG,
     deps = [
         ":thread_status_dot_css",
+        ":thread_status_palette",
         "//:node_modules/@mantine/core",
         "//:node_modules/@types/react",
         "//:node_modules/react",

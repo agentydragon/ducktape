@@ -24,8 +24,4 @@ describe("tanaPreviews", () => {
     expect(renderPreview(tanaPreviews.move_node, { nodeId: "node" }, "detailed")).toBeNull();
     expect(renderPreview(tanaPreviews.edit_node, { nodeId: "node" }, "detailed")).toBeNull();
   });
-
-  it("leaves unimplemented Tana tools unregistered", () => {
-    expect("tag" in tanaPreviews).toBe(false);
-  });
 });

@@ -83,7 +83,7 @@ Other gitattributes consumed by pre-commit checks:
 
 ## CI
 
-- **GitHub Actions + `bbr`**: `bazel {build,test} //...` via `bbr` (remote Bazel on BuildBuddy RBE, includes lint)
+- **GitHub Actions + `bb remote`**: `bazel {build,test}` on a BuildBuddy remote runner with RBE, including lint — over the bazel-diff affected targets on PRs, `//...` on pushes and graph-wide changes
 - **GitHub Actions (non-Bazel)**: ansible-lint, nix, pre-commit, artifact publishing (wheels, container images)
 
 See `.github/workflows/`.

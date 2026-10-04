@@ -20,9 +20,10 @@ ServiceAccounts such as `claude-ai` are defined in
 `agentplane-staging.k8s.yaml`; a new set, or a binding for a ServiceAccount, is a PR to
 that Python module (regenerate with `bb run //cluster/cdk8s:generate_manifests`). Bindings
 for Sandbox subjects are written by the integration app when it creates the Sandbox and
-are never checked in. `//cluster/validation:test_agentplane_action_policies` parses every
-set and binding with the Action Service's own models, so a spec the service would refuse
-fails CI instead of reporting `Ready=False` on the cluster.
+are never checked in. The generator parses every set and binding with the Action
+Service's own models, so a spec the service would refuse fails generation (and CI's
+`//cluster/cdk8s:test_generate_manifests`) instead of reporting `Ready=False` on the
+cluster.
 
 ## Browser notifications
 

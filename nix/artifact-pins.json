@@ -9,8 +9,8 @@
       "sha256": "32GiCcxF7P+QWbsE4BzB28K5ihKHFcraKipUu03rpIU="
     },
     "bbapi": {
-      "url": "https://github.com/agentydragon/ducktape/releases/download/bbapi-f69fc48a0062/bbapi",
-      "sha256": "9p/EigBiffsyUe/ujkK6qdFdAHWOY+KnaSrdYgD5pHM="
+      "url": "https://github.com/agentydragon/ducktape/releases/download/bbapi-7abb3f5ac796/bbapi",
+      "sha256": "ers/WseWBNLqK/oRKPTCOXGvfr3xRdcUlqjvDAXB8cY="
     },
     "claude-statusline": {
       "url": "https://github.com/agentydragon/ducktape/releases/download/claude-statusline-eccc702d7a6c/claude_statusline-0.1.0-py3-none-any.whl",
@@ -73,8 +73,8 @@
       "sha256": "/ZWzyXZkg0HNtNYcX85JXHd1zumDUN4LA+OQjz1TSO8="
     },
     "skill-buildbuddy_api": {
-      "url": "https://github.com/agentydragon/ducktape/releases/download/skill-buildbuddy_api-654bb1d87339/buildbuddy_api.skill",
-      "sha256": "ZUux2HM55Cyx66SlyXeUPyewWFh5t+MuxhHzfIZFv8I="
+      "url": "https://github.com/agentydragon/ducktape/releases/download/skill-buildbuddy_api-1357022f9977/buildbuddy_api.skill",
+      "sha256": "E1cCL5l3grY+DmBRv13hPzshRSDUmDxICh0fD4XV6Os="
     },
     "skill-cihealth": {
       "url": "https://github.com/agentydragon/ducktape/releases/download/skill-cihealth-eea28084d226/cihealth.skill",

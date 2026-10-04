@@ -13,18 +13,6 @@ py_library(
 )
 
 py_library(
-    name = "kubernetes",
-    srcs = ["kubernetes.py"],
-    deps = [
-        ":decision",
-        "//haku/console:tool_call_actor",
-        "//haku/console/grants:principal",
-        "//haku/console/grants/kubernetes:authorization_service",
-        "//haku/console/grants/kubernetes:kubectl_passthrough_policy",
-    ],
-)
-
-py_library(
     name = "registry",
     srcs = ["registry.py"],
     visibility = [
@@ -33,10 +21,8 @@ py_library(
     ],
     deps = [
         ":decision",
-        ":kubernetes",
         "//haku/console:mcp_config",
         "//haku/console:tool_call_actor",
-        "//haku/console/grants/kubernetes:authorization_service",
         "@pypi//fastmcp_slim",
         "@pypi//jsonschema",
         "@pypi//referencing",

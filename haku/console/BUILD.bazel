@@ -355,17 +355,6 @@ py_library(
     ],
 )
 
-py_test(
-    name = "test_export_schema",
-    srcs = ["test_export_schema.py"],
-    deps = [
-        ":conftest",
-        ":export_schema",
-        "//:conftest",
-        "@pypi//pytest_bazel",
-    ],
-)
-
 # Prints the OpenAPI schema; the frontend's js_openapi_schema runs it to generate types.
 py_binary(
     name = "export_schema_bin",
