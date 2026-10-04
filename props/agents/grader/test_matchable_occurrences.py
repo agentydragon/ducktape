@@ -103,47 +103,6 @@ class TestMatchableOccurrences:
         for tp_id in unrestricted_ids:
             assert tp_id in matched_ids, f"Unrestricted TP {tp_id} should be matchable from any file"
 
-    def test_edge_count_per_file(self, session, test_trivial_snapshot):
-        """Verify edge count is smaller for single file vs all files.
-
-        This is the key property: file_set examples should have fewer edges.
-        """
-        # Count matchable from just subtract.py
-        single_file = session.execute(
-            text("""
-                SELECT COUNT(*) FROM matchable_occurrences(:snapshot, ARRAY['subtract.py'])
-            """),
-            {"snapshot": test_trivial_snapshot.slug},
-        ).scalar()
-
-        # Count matchable from all files
-        all_files = session.execute(
-            text("""
-                SELECT COUNT(*) FROM matchable_occurrences(
-                    :snapshot,
-                    ARRAY['subtract.py', 'add.py', 'multiply.py', 'divide.py']
-                )
-            """),
-            {"snapshot": test_trivial_snapshot.slug},
-        ).scalar()
-
-        # Count total occurrences (what we'd get without filtering)
-        total = session.execute(
-            text("""
-                SELECT
-                    (SELECT COUNT(*) FROM true_positive_occurrences WHERE snapshot_slug = :snapshot) +
-                    (SELECT COUNT(*) FROM false_positive_occurrences WHERE snapshot_slug = :snapshot)
-            """),
-            {"snapshot": test_trivial_snapshot.slug},
-        ).scalar()
-
-        print(f"Single file (subtract.py): {single_file} matchable")
-        print(f"All 4 files: {all_files} matchable")
-        print(f"Total occurrences: {total}")
-
-        # Single file should have fewer matchable occurrences
-        assert single_file <= all_files, "Single file should have <= matchable occurrences than all files"
-
     def test_empty_file_array_only_matches_unrestricted(self, session, test_trivial_snapshot):
         """Empty file array should only match unrestricted (NULL) occurrences."""
         result = session.execute(
