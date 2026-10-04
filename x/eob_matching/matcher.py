@@ -78,10 +78,6 @@ class MatchingState:
         )
 
 
-class DPTimeoutError(Exception):
-    """DP exceeded time limit."""
-
-
 def dp_find_solution(items: list[EOB], target_cents: int, time_limit: float = DP_TIME_LIMIT_SECS) -> list[EOB] | None:
     """Find one subset of items summing to target_cents via 0-1 knapsack DP.
 
