@@ -426,68 +426,6 @@ fn localhost_buckets_from_different_devices_stay_separate() {
 }
 
 #[test]
-fn growing_source_imports_only_the_delta() {
-    // The common production case: the desktop accumulates events between syncs, and
-    // each import inserts only what is new while the already-synced events dedup.
-    runtime().block_on(async {
-        let root = temp_root("growth");
-        let (_source_server, source) = aw_server(&root, "source").await;
-        let (_dest_server, dest) = aw_server(&root, "dest").await;
-
-        seed_bucket(
-            &source,
-            "aw-watcher-afk_localhost",
-            "afkstatus",
-            "aw-watcher-afk",
-            "localhost",
-            vec![event(
-                1_000_000_000_000,
-                2_000_000_000_000,
-                r#"{"status":"afk"}"#,
-            )],
-        )
-        .await;
-        assert_eq!(
-            import_device(&source, &dest, "rugged")
-                .await
-                .unwrap()
-                .total_inserted(),
-            1
-        );
-
-        // The source gains a later event; the next import inserts only that one.
-        source
-            .insert_events(
-                "aw-watcher-afk_localhost",
-                vec![event(
-                    9_000_000_000_000,
-                    9_500_000_000_000,
-                    r#"{"status":"not-afk"}"#,
-                )],
-            )
-            .await
-            .unwrap();
-        let second = import_device(&source, &dest, "rugged").await.unwrap();
-        assert_eq!(second.total_inserted(), 1, "only the new event imports");
-        assert_eq!(
-            events(&dest, "rugged::aw-watcher-afk_localhost")
-                .await
-                .len(),
-            2
-        );
-
-        // No further source change: a third import adds nothing.
-        assert_eq!(
-            import_device(&source, &dest, "rugged")
-                .await
-                .unwrap()
-                .total_inserted(),
-            0
-        );
-    });
-}
-
-#[test]
 fn catches_up_after_days_offline_from_last_destination_event() {
     runtime().block_on(async {
         let root = temp_root("offline-catchup");

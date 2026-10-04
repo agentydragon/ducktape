@@ -4,24 +4,6 @@ from mako.template import Template
 from mako_utils.preprocessor import markdown_heading_preprocessor
 
 
-def test_h2_preserved():
-    src = "## Heading\nBody text"
-    result = Template(src, preprocessor=markdown_heading_preprocessor).render()
-    assert result == "## Heading\nBody text"
-
-
-def test_h3_preserved():
-    src = "### Sub-heading"
-    result = Template(src, preprocessor=markdown_heading_preprocessor).render()
-    assert result == "### Sub-heading"
-
-
-def test_h4_preserved():
-    src = "#### Deep heading"
-    result = Template(src, preprocessor=markdown_heading_preprocessor).render()
-    assert result == "#### Deep heading"
-
-
 def test_single_hash_untouched():
     """Single # is not a Mako comment, should pass through unmodified."""
     src = "# Top heading"

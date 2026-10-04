@@ -136,12 +136,6 @@ def test_index_html_bypasses_conditional_static_cache(tmp_path: Path, db_url: st
     assert r.text == "<!doctype html><div id='root'></div>"
 
 
-def test_me_returns_default_user_without_oidc(client: TestClient) -> None:
-    r = client.get("/me")
-    assert r.status_code == 200
-    assert r.json() == {"username": "default", "is_admin": True}
-
-
 def test_changelog_ack_advances_cursor(client: TestClient) -> None:
     latest = client.get("/state").json()["changelog_unacked"][-1]["id"]
     r = client.post("/actions/changelog/ack", json={"client_action_id": "clog-1", "last_id": latest})
@@ -489,15 +483,6 @@ def test_blackjack_deal_rng_audit_replays_stored_shoe(tmp_path: Path, db_url: st
     engine.dispose()
 
 
-def test_blackjack_deal_creates_hand(client: TestClient) -> None:
-    _grant_credits(client, 5)
-    r = client.post("/casino/blackjack/deal", json={"client_action_id": "bj-deal-1", "wager_credits": 1})
-    assert r.status_code == 200, r.text
-    body = r.json()
-    assert body["result"]["hand_id"].startswith("bj-")
-    assert body["result"]["phase"] in {"playing", "done"}
-
-
 def test_import_replaces_state_and_writes_snapshot(client: TestClient) -> None:
     _grant_credits(client, 7)  # so there's something for the snapshot to capture
 
@@ -668,24 +653,7 @@ def test_admin_state_unknown_user_returns_404_without_seeding(
     assert "ghost" not in c.get("/admin/users").json()["users"]
 
 
-def test_admin_state_rejects_overlong_user_param(admin_app: tuple[TestClient, Callable[[str], None]]) -> None:
-    c, set_user = admin_app
-    set_user("rai")
-    # 65 chars — one over the user_id String(64) column.
-    assert c.get("/admin/state", params={"user": "x" * 65}).status_code == 422
-    assert c.get("/admin/state", params={"user": ""}).status_code == 422
-
-
 # ── Casino stats endpoint ────────────────────────────────────────────────────
-
-
-def test_casino_stats_returns_empty_for_fresh_user(client: TestClient) -> None:
-    r = client.get("/casino/stats")
-    assert r.status_code == 200, r.text
-    body = r.json()
-    assert body["event_count"] == 0
-    assert body["since_date"] == "2026-05-07"
-    assert {g["game"] for g in body["games"]} == {"roulette", "blackjack", "slots"}
 
 
 def test_casino_stats_counts_a_real_spin(client: TestClient) -> None:

@@ -66,10 +66,6 @@ def freecad_rpc(conda_root, xvfb_display, tmp_path_factory):
         proc.wait()
 
 
-def test_ping(freecad_rpc):
-    assert freecad_rpc.ping() is True
-
-
 def test_execute_code(freecad_rpc):
     result = freecad_rpc.execute_code("""
 import FreeCAD

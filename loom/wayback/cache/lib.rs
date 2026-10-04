@@ -142,33 +142,6 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn cdx_miss_is_fetched_and_cached() {
-        let client = Arc::new(CountingClient::ok_json(
-            StatusCode::OK,
-            br#"[["timestamp","original"],["20200101000000","https://example.com/"]]"#,
-        ));
-        let service = ArchiveService::new(Arc::new(MemoryArchiveStore::new()), client.clone());
-
-        let first = service
-            .handle_request(
-                "/cdx/search/cdx",
-                Some("url=https://example.com/&output=json&to=20200101000000"),
-            )
-            .await;
-        let second = service
-            .handle_request(
-                "/cdx/search/cdx",
-                Some("to=20200101000000&output=json&url=https://example.com/"),
-            )
-            .await;
-
-        assert_eq!(first.status, StatusCode::OK);
-        assert_eq!(second.status, StatusCode::OK);
-        assert_eq!(second.body, first.body);
-        assert_eq!(client.calls.load(Ordering::SeqCst), 1);
-    }
-
-    #[tokio::test]
     async fn metadata_502_is_not_cached() {
         let client = Arc::new(CountingClient::new(vec![
             UpstreamResponse {

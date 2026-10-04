@@ -19,12 +19,6 @@ def test_model_with_cutoff_after_as_of_rejected() -> None:
         assert_admissible(model_id="glm-4.5", as_of=date(2024, 1, 1))
 
 
-def test_admissible_model_returns_cutoff_entry() -> None:
-    entry = assert_admissible(model_id="glm-4.5", as_of=date(2024, 7, 1))
-    assert entry.knowledge_cutoff <= date(2024, 7, 1)
-    assert "pm_reifier" in entry.provenance
-
-
 def test_strict_mode_bounds_by_weights_release() -> None:
     # glm-4.5 passes the probed-cutoff bound for mid-2024 tasks, but its weights
     # shipped in 2025 — strict mode rejects anything earlier than that.

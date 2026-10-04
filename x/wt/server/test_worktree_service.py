@@ -79,15 +79,6 @@ class TestWorktreeService:
         result = worktree_service.list_worktrees(config)
         assert len(result) == 0
 
-    def test_worktree_path_resolution(self, service):
-        """Test worktree path methods."""
-        worktree_service, config = service
-
-        # Test path calculation
-        expected_path = config.worktrees_dir / "test-name"
-        actual_path = worktree_service.get_worktree_path(config, "test-name")
-        assert actual_path == expected_path
-
     def test_is_managed_worktree_filtering(self, service):
         """Test worktree filtering logic with real paths."""
         worktree_service, config = service

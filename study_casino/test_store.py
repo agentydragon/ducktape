@@ -468,6 +468,8 @@ def test_casino_stats_empty_for_fresh_user(store: SqlStore) -> None:
         for bucket in game.buckets:
             assert bucket.count == 0
             assert bucket.rtp is None
+        # `blackjack` detail is populated only on the blackjack game entry.
+        assert (game.blackjack is not None) == (game.game == "blackjack")
 
 
 def _seed_blackjack_events(store: SqlStore, fixtures: list[tuple[str, int, int, dict[str, object]]]) -> None:
@@ -578,16 +580,6 @@ def test_casino_stats_blackjack_by_doubled_separates_doubled_from_baseline(store
     assert by_doubled["not_doubled"].wagered == 2
     assert by_doubled["not_doubled"].returned == 2
     assert by_doubled["not_doubled"].ev_per_credit == pytest.approx(0.0)
-
-
-def test_casino_stats_blackjack_field_unset_for_other_games(store: SqlStore) -> None:
-    """`blackjack` is populated only on the blackjack game entry, not roulette/slots."""
-    result = store.casino_stats(_U)
-    for game in result.games:
-        if game.game == "blackjack":
-            assert game.blackjack is not None
-        else:
-            assert game.blackjack is None
 
 
 if __name__ == "__main__":

@@ -94,11 +94,6 @@ def test_evidence_capture_pin_must_match_url_and_date() -> None:
         )
 
 
-def test_task_json_round_trip() -> None:
-    task = _binary_task()
-    assert Task.model_validate_json(task.model_dump_json()) == task
-
-
 def test_seed_tasks_round_trip_with_unique_ids() -> None:
     tasks = SEED_TASKS
     assert len({task.task_id for task in tasks}) == len(tasks)

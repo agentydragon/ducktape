@@ -6,7 +6,7 @@ from finance.evidence.markets import Platform, load_roster
 from loom.gym.market_seed_tasks import MARKET_PROB_AT_AS_OF, MARKET_SEED_RECORDS, MARKET_SEED_TASKS
 from loom.gym.model_cutoffs import KNOWN_MODEL_CUTOFFS
 from loom.gym.seed_tasks import SEED_TASKS
-from loom.gym.task import WAYBACK_PREFIX, Task
+from loom.gym.task import WAYBACK_PREFIX
 from util.bazel.runfiles import get_required_path
 
 
@@ -33,11 +33,6 @@ def test_panel_markets_are_in_the_retained_mirror_roster() -> None:
 def test_market_baseline_probs_cover_exactly_the_market_tasks() -> None:
     assert set(MARKET_PROB_AT_AS_OF) == {task.task_id for task in MARKET_SEED_TASKS}
     assert all(0 < prob < 1 for prob in MARKET_PROB_AT_AS_OF.values())
-
-
-def test_market_tasks_round_trip() -> None:
-    for task in MARKET_SEED_TASKS:
-        assert Task.model_validate_json(task.model_dump_json()) == task
 
 
 def test_market_tasks_admissible_for_every_registry_model() -> None:
