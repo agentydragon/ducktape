@@ -168,7 +168,6 @@ py_test(
         ":conftest",
         ":deterministic",
         ":exogenous",
-        ":gbm",
         ":level_series_groups",
         ":series",
         ":series_model",

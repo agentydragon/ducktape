@@ -219,10 +219,8 @@ py_test(
     deps = [
         ":conftest",
         ":holdings",
-        ":metrics",
         ":scenarios",
         ":service",
-        ":simulation",
         ":testing",
         ":wire",
         "//:conftest",
@@ -239,7 +237,6 @@ py_test(
         "//finance/augur/policy:funding",
         "//finance/augur/sim:ids",
         "//finance/augur/sim:market_path",
-        "//finance/augur/sim:quantiles",
         "//finance/augur/sim:schedule",
         "//finance/augur/sim:tlh",
         "//finance/augur/x/models:independent",

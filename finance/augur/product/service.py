@@ -256,6 +256,7 @@ class ProductService:
     def _simulate_product_summary(
         self, scenario_key: ScenarioKey, seeds: tuple[int, ...], *, metric: str, percentiles: tuple[float, ...] | None
     ) -> ProductMetricFanSummary | ProductTerminalSummary:
+        """Reduces the metric arrays alone; selected-rollout detail (`project_product_rollout`) is never built."""
         situation, worlds = self._worlds(scenario_key, seeds)
         metric_name = _quanta_metric(metric)
         arrays = simulate_product_metrics(

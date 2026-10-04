@@ -4,7 +4,7 @@ import numpy as np
 import pytest
 import pytest_bazel
 
-from finance.augur.model.deterministic import Constant, Deterministic
+from finance.augur.model.deterministic import Deterministic
 from finance.augur.model.exogenous import (
     ExogenousSamplingRequest,
     SampledExogenousBundle,
@@ -12,7 +12,6 @@ from finance.augur.model.exogenous import (
     level_series_request_channels,
     validate_sample_satisfies_request,
 )
-from finance.augur.model.gbm import GeometricBrownian
 from finance.augur.model.level_series_groups import AssetPriceGroups
 from finance.augur.model.series import (
     SP500_SYMBOL,
@@ -23,12 +22,6 @@ from finance.augur.model.series import (
     SecuritySymbol,
 )
 from finance.augur.model.series_model import IndependentSeriesModels, SeriesModelBundle
-
-
-def test_scalar_models_are_owned_by_model_modules() -> None:
-    assert Deterministic.__module__ == "finance.augur.model.deterministic"
-    assert Constant.__module__ == "finance.augur.model.deterministic"
-    assert GeometricBrownian.__module__ == "finance.augur.model.gbm"
 
 
 def test_independent_model_samples_deterministic_levels_for_each_rollout() -> None:

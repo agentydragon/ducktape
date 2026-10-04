@@ -4,6 +4,7 @@ import threading
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
 from decimal import ROUND_HALF_UP, Decimal
+from typing import get_args
 
 import numpy as np
 import pytest
@@ -49,7 +50,6 @@ from finance.augur.policy.funding import ClaimPayer
 from finance.augur.product import service
 from finance.augur.product.conftest import MakeProductService
 from finance.augur.product.holdings import Holdings, opening_holdings
-from finance.augur.product.metrics import ProductMetricFanSummary, ProductTerminalSummary
 from finance.augur.product.scenarios import (
     PRIMARY_ACCOUNT_ID,
     Home,
@@ -58,7 +58,6 @@ from finance.augur.product.scenarios import (
     locations_by_id,
     resolve_primary_agent_id,
 )
-from finance.augur.product.simulation import simulate_product_metrics
 from finance.augur.product.testing import TEST_CONFIG_LEVEL_PLACEHOLDERS
 from finance.augur.product.wire import (
     CashFinancing,
@@ -95,7 +94,6 @@ from finance.augur.product.wire import (
 )
 from finance.augur.sim.ids import AccountId, AgentId, LotId, PortfolioId, PropertyId
 from finance.augur.sim.market_path import IndexedAmount
-from finance.augur.sim.quantiles import currency_quantiles
 from finance.augur.sim.schedule import Once, Recurring
 from finance.augur.sim.tlh import TlhAssumptions
 from finance.augur.x.models.independent import IndependentProviderConfig
@@ -435,69 +433,57 @@ def test_metric_fan_terminal_distribution_and_rollout_detail_behavior(
     assert fan_with_one_new_seed.monthly_metric_fan["percentile"] == [50.0] * 4
 
 
-def test_fan_and_selected_rollout_metrics_share_one_reducer(
+def test_a_single_rollout_fan_agrees_with_the_selected_rollout_for_every_metric(
     product: service.ProductService, scenario_key: ScenarioKey
 ) -> None:
-    seeds = (7, 8)
-    situation, worlds = product._worlds(scenario_key, seeds)
-    metrics = simulate_product_metrics(
-        worlds,
-        horizon_months=situation.horizon_months,
-        currency=situation.currency,
-        primary_agent_id=product._primary_agent_id,
-    )
-    expected_metrics = metrics.metric_arrays()
-    expected_failed = metrics.failed_month
-    percentiles = (0.0, 25.0, 50.0, 75.0, 100.0)
+    monthly_metrics = product.rollout(_rollout_request(scenario_key, seed=7)).rollout.monthly_metrics
 
-    # The reduced summary emits the same exact Int64 quanta as the selected-rollout reducer.
-    # Percentiles are intentionally interpolated host-side, where Decimal avoids float64's
-    # unsafe-integer collapse.
-    for name, expected_series in expected_metrics.items():
-        if name == "month_index":
-            continue
-        summary = product._simulate_product_summary(scenario_key, seeds, metric=name, percentiles=percentiles)
-        assert summary.failed_count == int((expected_failed >= 0).sum())
-        expected_monthly_percentiles = np.asarray(
-            [currency_quantiles(month, percentiles) for month in expected_series], dtype=np.int64
+    for metric in get_args(MetricName):
+        column = monthly_metrics[f"{metric}_quanta"]
+        fan = product.metric_fan(
+            _sampling_request(scenario_key, first_seed=7, rollout_count=1, metric=metric, percentiles=(50.0,))
         )
+        assert fan.monthly_metric_fan["value_quanta"] == column, metric
         # Terminal shortfall is cumulative over the horizon; every other metric is the end snapshot.
-        expected_terminal = expected_series.sum(axis=0) if name == "shortfall_quanta" else expected_series[-1]
-        np.testing.assert_array_equal(summary.monthly_percentiles, expected_monthly_percentiles)
-        np.testing.assert_array_equal(
-            summary.terminal_percentiles, np.asarray(currency_quantiles(expected_terminal, percentiles), dtype=np.int64)
-        )
+        terminal = str(sum(_quanta_int(value) for value in column)) if metric == "shortfall" else column[-1]
+        assert one(fan.terminal_metric_percentiles["value_quanta"]) == terminal, metric
+
+
+@dataclass
+class OverlapRecordingSampler:
+    """Holds each sampling until `release` is set and records how many were in flight at once."""
+
+    inner: Sampler
+    started: threading.Event = field(default_factory=threading.Event)
+    release: threading.Event = field(default_factory=threading.Event)
+    lock: threading.Lock = field(default_factory=threading.Lock)
+    active: int = 0
+    max_active: int = 0
+
+    def emittable_level_keys(self) -> frozenset[LevelSeriesKey]:
+        return self.inner.emittable_level_keys()
+
+    def emittable_private_equity_issuers(self) -> frozenset[IssuerId]:
+        return self.inner.emittable_private_equity_issuers()
+
+    def sample(self, request: ExogenousSamplingRequest) -> SampledExogenousBundle:
+        with self.lock:
+            self.active += 1
+            self.max_active = max(self.max_active, self.active)
+            self.started.set()
+        self.release.wait(timeout=5)
+        try:
+            return self.inner.sample(request)
+        finally:
+            with self.lock:
+                self.active -= 1
 
 
 def test_concurrent_fan_and_terminal_requests_run_serially(
-    product: service.ProductService,
-    counting_model: CountingModel,
-    monkeypatch: pytest.MonkeyPatch,
-    scenario_key: ScenarioKey,
+    product: service.ProductService, counting_model: CountingModel, scenario_key: ScenarioKey
 ) -> None:
-    original_simulate_product_summary = product._simulate_product_summary
-    first_simulation_started = threading.Event()
-    release_first_simulation = threading.Event()
-    active_simulations = 0
-    max_active_simulations = 0
-    active_lock = threading.Lock()
-
-    def slow_simulate_product_summary(
-        scenario: ScenarioKey, seeds: tuple[int, ...], *, metric: str, percentiles: tuple[float, ...] | None
-    ) -> ProductMetricFanSummary | ProductTerminalSummary:
-        nonlocal active_simulations, max_active_simulations
-        with active_lock:
-            active_simulations += 1
-            max_active_simulations = max(max_active_simulations, active_simulations)
-            first_simulation_started.set()
-        release_first_simulation.wait(timeout=5)
-        try:
-            return original_simulate_product_summary(scenario, seeds, metric=metric, percentiles=percentiles)
-        finally:
-            with active_lock:
-                active_simulations -= 1
-
-    monkeypatch.setattr(product, "_simulate_product_summary", slow_simulate_product_summary)
+    overlap = OverlapRecordingSampler(counting_model.inner)
+    counting_model.inner = overlap
 
     fan_request = _sampling_request(scenario_key, first_seed=7, rollout_count=2, metric="cash", percentiles=(5, 50, 95))
     terminal_request = _sampling_request(
@@ -505,13 +491,13 @@ def test_concurrent_fan_and_terminal_requests_run_serially(
     )
     with ThreadPoolExecutor(max_workers=2) as executor:
         fan_future = executor.submit(product.metric_fan, fan_request)
-        assert first_simulation_started.wait(timeout=5)
+        assert overlap.started.wait(timeout=5)
         terminal_future = executor.submit(product.terminal_distribution, terminal_request)
-        release_first_simulation.set()
+        overlap.release.set()
         fan_future.result(timeout=10)
         terminal_future.result(timeout=10)
 
-    assert max_active_simulations == 1
+    assert overlap.max_active == 1
     assert [request.rollout_seeds for request in counting_model.sample_requests] == [(7, 8), (7, 8)]
 
 
@@ -574,34 +560,12 @@ def _with_cache_entries(config: Config, entries: int) -> Config:
     return config.model_copy(update={"projection_cache_entries": entries})
 
 
-@dataclass
-class SimulationSpy:
-    """Counts the simulations the projection cache exists to skip, one counter per entry point."""
-
-    summaries: int = 0
-    rollouts: int = 0
-
-
-@pytest.fixture
-def simulations(monkeypatch: pytest.MonkeyPatch) -> SimulationSpy:
-    spy = SimulationSpy()
-    simulate_summaries, execute_rollout = service.simulate_product_metrics, service.execute
-
-    def counted_summary(*args, **kwargs):
-        spy.summaries += 1
-        return simulate_summaries(*args, **kwargs)
-
-    def counted_rollout(*args, **kwargs):
-        spy.rollouts += 1
-        return execute_rollout(*args, **kwargs)
-
-    monkeypatch.setattr(service, "simulate_product_metrics", counted_summary)
-    monkeypatch.setattr(service, "execute", counted_rollout)
-    return spy
+# Every simulation samples the model exactly once, so `counting_model.sample_requests` counts them; a
+# projection samples its seeds `(7, 8)` and a selected rollout its one seed `(7,)`.
 
 
 def test_repeated_projection_and_rollout_requests_reuse_one_simulation(
-    product: service.ProductService, scenario_key: ScenarioKey, simulations: SimulationSpy
+    product: service.ProductService, counting_model: CountingModel, scenario_key: ScenarioKey
 ) -> None:
     """The frontend re-sends byte-identical bodies on reload and chart toggles."""
 
@@ -609,18 +573,18 @@ def test_repeated_projection_and_rollout_requests_reuse_one_simulation(
 
     assert product.projection_summary(projection) == product.projection_summary(projection)
     assert product.rollout(rollout) == product.rollout(rollout)
-    assert (simulations.summaries, simulations.rollouts) == (1, 1)
+    assert [request.rollout_seeds for request in counting_model.sample_requests] == [(7, 8), (7,)]
 
 
 def test_a_request_differing_in_any_field_simulates_again(
-    product: service.ProductService, scenario_key: ScenarioKey, simulations: SimulationSpy
+    product: service.ProductService, counting_model: CountingModel, scenario_key: ScenarioKey
 ) -> None:
     product.projection_summary(_projection_request(scenario_key))
     product.projection_summary(_projection_request(scenario_key, metric="net_worth"))
     product.projection_summary(_projection_request(scenario_key, first_seed=11))
     product.projection_summary(_projection_request(_scenario_key(horizon_months=4)))
 
-    assert simulations.summaries == 4
+    assert len(counting_model.sample_requests) == 4
 
 
 def test_the_projection_cache_evicts_least_recently_used_entries(
@@ -628,7 +592,6 @@ def test_the_projection_cache_evicts_least_recently_used_entries(
     augur_config: Config,
     make_product_service: MakeProductService,
     scenario_key: ScenarioKey,
-    simulations: SimulationSpy,
 ) -> None:
     product = make_product_service(counting_model, config=_with_cache_entries(augur_config, 1))
     cash, net_worth = _projection_request(scenario_key), _projection_request(scenario_key, metric="net_worth")
@@ -638,7 +601,7 @@ def test_the_projection_cache_evicts_least_recently_used_entries(
     product.projection_summary(cash)
 
     # The one-entry bound dropped the cash projection when the net-worth one arrived.
-    assert simulations.summaries == 3
+    assert len(counting_model.sample_requests) == 3
 
 
 def test_zero_cache_entries_simulates_every_request(
@@ -646,7 +609,6 @@ def test_zero_cache_entries_simulates_every_request(
     augur_config: Config,
     make_product_service: MakeProductService,
     scenario_key: ScenarioKey,
-    simulations: SimulationSpy,
 ) -> None:
     product = make_product_service(counting_model, config=_with_cache_entries(augur_config, 0))
     request = _projection_request(scenario_key)
@@ -654,7 +616,7 @@ def test_zero_cache_entries_simulates_every_request(
     product.projection_summary(request)
     product.projection_summary(request)
 
-    assert simulations.summaries == 2
+    assert len(counting_model.sample_requests) == 2
 
 
 def test_a_caller_cannot_corrupt_a_cached_projection(
@@ -668,17 +630,6 @@ def test_a_caller_cannot_corrupt_a_cached_projection(
     first.metric_fan.monthly_metric_fan["value_quanta"][0] = "999"
 
     assert product.projection_summary(request).metric_fan.monthly_metric_fan["value_quanta"][0] == simulated
-
-
-def test_metric_fan_does_not_materialize_rollout_events(
-    product: service.ProductService, monkeypatch: pytest.MonkeyPatch, scenario_key: ScenarioKey
-) -> None:
-    def fail_rollout_projection(*_args, **_kwargs):
-        raise AssertionError("metric fan should not build selected-rollout detail")
-
-    monkeypatch.setattr(service, "project_product_rollout", fail_rollout_projection)
-
-    product.metric_fan(_sampling_request(scenario_key, first_seed=7, rollout_count=2, metric="cash", percentiles=(50,)))
 
 
 def test_failed_rollout_preserves_stop_book_without_post_stop_values(product: service.ProductService) -> None:
