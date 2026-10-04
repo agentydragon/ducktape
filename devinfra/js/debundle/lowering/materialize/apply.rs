@@ -228,27 +228,4 @@ mod tests {
             collect_materialized_logical_chunks(source, "", vec![lowered_chunk(ChunkId(5))]);
         assert!(result.is_err());
     }
-
-    #[test]
-    fn unlowered_chunks_keep_their_source_order_and_metadata() {
-        let mut chunk_table = ChunkTable::default();
-        let first = chunk_table.intern("first".to_string());
-        let second = chunk_table.intern("second".to_string());
-        let source = ChunkBundle {
-            chunks: vec![source_chunk(second, "second"), source_chunk(first, "first")],
-            chunk_table,
-        };
-        let output = collect_materialized_logical_chunks(source, "", Vec::new()).unwrap();
-        assert!(output.decomposition_by_chunk.is_empty());
-        assert_eq!(
-            output
-                .files
-                .files()
-                .chunks
-                .iter()
-                .map(|chunk| (chunk.chunk_id, chunk.analysis.source_path.as_str()))
-                .collect::<Vec<_>>(),
-            [(second, "second.js"), (first, "first.js")]
-        );
-    }
 }

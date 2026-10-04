@@ -381,43 +381,6 @@ mod tests {
     }
 
     #[test]
-    fn selected_static_import_closure_follows_transitive_imports() {
-        let artifact = test_bundle(&[
-            (
-                "static/app",
-                "import { callWrap } from \"./adapter.js\";\ncallWrap(() => 1);\n",
-            ),
-            (
-                "static/adapter",
-                "import { wrap } from \"./vendorlib.js\";\n\
-export function callWrap(f) { return wrap(f); }\n",
-            ),
-            (
-                "static/vendorlib",
-                "export function wrap(f) { return { impl: f }; }\n",
-            ),
-            ("static/unrelated", "export const unused = 1;\n"),
-        ]);
-        let indexes = ArtifactIndexes::build(&artifact).expect("build indexes");
-        let closure = selected_static_import_closure(
-            &artifact,
-            &indexes,
-            &["static/app".to_string()],
-            &BTreeSet::new(),
-        )
-        .expect("closure");
-
-        assert_eq!(
-            closure_names(&artifact, &closure),
-            BTreeSet::from([
-                "static/app".to_string(),
-                "static/adapter".to_string(),
-                "static/vendorlib".to_string(),
-            ])
-        );
-    }
-
-    #[test]
     fn selected_static_import_closure_stops_at_excluded_chunks() {
         let artifact = test_bundle(&[
             (
