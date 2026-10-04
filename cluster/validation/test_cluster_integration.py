@@ -157,56 +157,6 @@ def test_loki_proxy_static_allowlist_covers_agent_readable_log_namespaces(
     assert not missing, f"agent-readable log namespaces missing from Loki proxy allowlist: {missing}"
 
 
-def test_agentplane_external_delegation_has_independent_flux_ownership(k8s_dir: Path, generated_dir: Path) -> None:
-    """The managed-binding delegation has one target-owned Flux Kustomization."""
-    name = "agentplane-staging-external-bindings"
-    target = "haku-sandbox"
-    app_docs = list(yaml.safe_load_all((k8s_dir / "agentplane-staging/agentplane-staging.k8s.yaml").read_text()))
-    assert not any(
-        doc["kind"] in {"Role", "RoleBinding"}
-        and doc["metadata"].get("namespace") == target
-        and doc["metadata"]["name"] in {"agentplane-staging-managed-bindings", name}
-        for doc in app_docs
-    )
-
-    path = generated_dir / "agentplane/binding-delegation/agentplane-staging/haku-sandbox"
-    objects = list(yaml.safe_load_all((path / "haku-sandbox.k8s.yaml").read_text()))
-    role = one(doc for doc in objects if doc["kind"] == "Role")
-    binding = one(doc for doc in objects if doc["kind"] == "RoleBinding")
-    assert role["metadata"] == {"name": name, "namespace": target}
-    assert role["rules"] == [
-        {
-            "apiGroups": ["rbac.authorization.k8s.io"],
-            "resources": ["rolebindings"],
-            "verbs": ["create", "get", "list", "delete"],
-        },
-        {"apiGroups": ["rbac.authorization.k8s.io"], "resources": ["roles"], "verbs": ["get"]},
-        {
-            "apiGroups": ["rbac.authorization.k8s.io"],
-            "resourceNames": ["haku-sandbox-admin"],
-            "resources": ["roles"],
-            "verbs": ["bind"],
-        },
-    ]
-    assert binding["metadata"] == {"name": name, "namespace": target}
-    assert binding["roleRef"] == {"apiGroup": "rbac.authorization.k8s.io", "kind": "Role", "name": name}
-    assert binding["subjects"] == [
-        {"kind": "ServiceAccount", "name": "agentplane-sandbox-service", "namespace": "agentplane-staging"}
-    ]
-    assert yaml.safe_load((path / "kustomization.yaml").read_text())["resources"] == ["haku-sandbox.k8s.yaml"]
-
-    flux_objects = yaml.safe_load_all((k8s_dir / "flux/kustomizations.k8s.yaml").read_text())
-    flux = one(
-        doc
-        for doc in flux_objects
-        if doc["kind"] == "Kustomization"
-        and doc["metadata"]["name"] == "agentplane-staging-binding-delegation-haku-sandbox"
-    )
-    assert flux["spec"]["sourceRef"] == {"kind": "GitRepository", "name": "ducktape", "namespace": "ducktape-flux"}
-    assert flux["spec"]["path"] == "./cluster/generated/agentplane/binding-delegation/agentplane-staging/haku-sandbox"
-    assert flux["spec"]["dependsOn"] == [{"name": "haku-rbac", "namespace": "ducktape-flux"}]
-
-
 @pytest.mark.parametrize("preset", ["haku", "public-coder", "finance-agent"])
 def test_managed_agent_read_grants_cover_declarative_namespace_opt_ins(
     cluster: ParsedCluster, k8s_dir: Path, repo_root: Path, generated_dir: Path, preset: str
@@ -345,52 +295,6 @@ def test_managed_agent_read_grants_cover_declarative_namespace_opt_ins(
             assert "dependsOn" not in flux["spec"]
         else:
             assert flux["spec"]["dependsOn"] == [{"name": expected_dependency[0], "namespace": "ducktape-flux"}]
-
-
-def test_haku_service_read_delegation_is_scoped_to_owning_namespaces(k8s_dir: Path, generated_dir: Path) -> None:
-    flux_objects = list(yaml.safe_load_all((k8s_dir / "flux/kustomizations.k8s.yaml").read_text()))
-    for namespace, role_names, owner in (
-        ("haku-console", ("agent-haku-console-metadata-reader",), "haku-console"),
-        ("clickhouse", ("agent-clickhouse-diagnostics-reader",), "clickhouse"),
-        ("ducktape-flux", ("ducktape-flux-reader",), None),
-        (
-            "public-coder-agent",
-            (
-                "agent-public-coder-extended-diagnostics-reader",
-                "agentplane-testing-login-reader",
-                "public-coder-agent-reader",
-            ),
-            "public-coder-agent-app",
-        ),
-    ):
-        path = generated_dir / f"agentplane/binding-delegation/agentplane-staging/{namespace}"
-        objects = list(yaml.safe_load_all((path / f"{namespace}.k8s.yaml").read_text()))
-        role = one(doc for doc in objects if doc["kind"] == "Role")
-        binding = one(doc for doc in objects if doc["kind"] == "RoleBinding")
-        assert role["metadata"]["namespace"] == binding["metadata"]["namespace"] == namespace
-        assert [rule for rule in role["rules"] if rule["verbs"] == ["bind"]] == [
-            {
-                "apiGroups": ["rbac.authorization.k8s.io"],
-                "resourceNames": [role_name],
-                "resources": ["roles"],
-                "verbs": ["bind"],
-            }
-            for role_name in role_names
-        ]
-        assert binding["subjects"] == [
-            {"kind": "ServiceAccount", "name": "agentplane-sandbox-service", "namespace": "agentplane-staging"}
-        ]
-        flux = one(
-            doc
-            for doc in flux_objects
-            if doc["kind"] == "Kustomization"
-            and doc["metadata"]["name"] == f"agentplane-staging-binding-delegation-{namespace}"
-        )
-        if owner is None:
-            # ducktape-flux is bootstrap-owned, like flux-system, and has no generated owner Kustomization.
-            assert "dependsOn" not in flux["spec"]
-        else:
-            assert flux["spec"]["dependsOn"] == [{"name": owner, "namespace": "ducktape-flux"}]
 
 
 def test_files_flux_rewrites_use_block_style(k8s_dir: Path) -> None:

@@ -22,6 +22,7 @@ OUTPUT_DIR = f"{GENERATED_ROOT}/headlamp"
 URL = f"http://{NAME}.{NAMESPACE}.svc.cluster.local:80"
 
 
+# Field contract: https://github.com/kubernetes-sigs/headlamp/blob/main/docs/installation/in-cluster/index.md#plugin-configuration-format
 class _HeadlampPlugin(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
