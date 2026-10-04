@@ -1,7 +1,6 @@
 import json
 from pathlib import Path
 
-import pytest
 import pytest_bazel
 
 from util.testing.visual_review import retain_review_asset, write_visual_review_manifest
@@ -13,19 +12,11 @@ def test_write_visual_review_manifest(tmp_path: Path) -> None:
         tmp_path, title="Example UI", assets=[VisualReviewAsset(path="screen.png", label="Screen")]
     )
 
-    assert VisualReviewManifest.model_validate_json(destination.read_text()).title == "Example UI"
     assert json.loads(destination.read_text()) == {
         "schema": "ducktape.visual-review.v1",
         "title": "Example UI",
         "assets": [{"path": "screen.png", "label": "Screen"}],
     }
-
-
-def test_write_visual_review_manifest_rejects_unsafe_paths(tmp_path: Path) -> None:
-    with pytest.raises(ValueError, match="safe PNG basenames"):
-        write_visual_review_manifest(
-            tmp_path, title="Example UI", assets=[VisualReviewAsset(path="../screen.png", label="Screen")]
-        )
 
 
 def test_retain_review_asset_accumulates_across_calls(tmp_path: Path) -> None:

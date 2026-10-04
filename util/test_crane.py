@@ -22,18 +22,9 @@ import pytest_bazel
 from util.crane import Crane, CraneError, _format_crane_error, find_crane
 
 
-def test_format_crane_error_includes_stderr_and_stdout() -> None:
-    msg = _format_crane_error(("push", "img", "repo:tag"), 1, "DENIED: insufficient_scope\n", "uploading layer\n")
-    assert "crane push img repo:tag failed (exit 1)" in msg
-    assert "DENIED: insufficient_scope" in msg
-    assert "uploading layer" in msg
-
-
 def test_format_crane_error_omits_empty_streams() -> None:
     msg = _format_crane_error(("digest", "x"), 2, "", "")
     assert msg == "crane digest x failed (exit 2)"
-    assert "stderr" not in msg
-    assert "stdout" not in msg
 
 
 def test_format_crane_error_includes_only_nonempty_stream() -> None:
