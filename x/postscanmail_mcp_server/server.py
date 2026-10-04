@@ -34,7 +34,6 @@ from pydantic import BaseModel, Field
 logger = logging.getLogger(__name__)
 
 BASE_URL = "https://api.postscanmail.com/api/account-docs/v2"
-DOCS = "https://github.com/PostScanMail/api-docs"
 SortOrder = Literal["asc", "desc"]
 AutomationName = Literal["auto_scan", "auto_shred", "auto_discard"]
 ActionKind = Literal["open", "discard", "rescan", "shred"]
