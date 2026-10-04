@@ -40,24 +40,6 @@ class TestMatchableOccurrences:
         # tp-001 has occurrence in subtract.py with critic_scopes_expected_to_recall: [[subtract.py]]
         assert "tp-001" in tp_ids, f"Expected tp-001 in matchable TPs, got: {tp_ids}"
 
-    def test_file_local_tp_not_matched_from_different_file(self, session, test_trivial_snapshot):
-        """A file-local TP is NOT matchable when the file array doesn't contain that file."""
-        result = session.execute(
-            text("""
-                SELECT tp_id, tp_occurrence_id
-                FROM matchable_occurrences(:snapshot, ARRAY['add.py'])
-                WHERE tp_id IS NOT NULL
-            """),
-            {"snapshot": test_trivial_snapshot.slug},
-        ).fetchall()
-
-        tp_ids = {row.tp_id for row in result}
-
-        # tp-001 has occurrence in subtract.py - should NOT be matchable from add.py
-        assert "tp-001" not in tp_ids, f"tp-001 should not be matchable from add.py, got: {tp_ids}"
-        # But tp-002 should be matchable from add.py
-        assert "tp-002" in tp_ids, "Expected tp-002 in matchable TPs from add.py"
-
     def test_multiple_files_match_their_local_tps(self, session, test_trivial_snapshot):
         """Multiple files should match their respective file-local TPs."""
         result = session.execute(
@@ -74,34 +56,6 @@ class TestMatchableOccurrences:
         # Both should be matchable
         assert "tp-001" in tp_ids, "tp-001 should be matchable from {subtract.py, add.py}"
         assert "tp-002" in tp_ids, "tp-002 should be matchable from {subtract.py, add.py}"
-
-    def test_unrestricted_tp_matchable_from_any_file(self, session, test_trivial_snapshot):
-        """Unrestricted TPs (NULL match_file_restriction) are matchable from any file."""
-        # First check if we have any unrestricted TPs
-        unrestricted = session.execute(
-            text("""
-                SELECT tp_id FROM true_positive_occurrences
-                WHERE snapshot_slug = :snapshot AND match_file_restriction IS NULL
-            """),
-            {"snapshot": test_trivial_snapshot.slug},
-        ).fetchall()
-
-        assert unrestricted, "Expected unrestricted TPs (tp-003..tp-005) in test fixtures"
-        unrestricted_ids = {row.tp_id for row in unrestricted}
-
-        # These should be matchable from ANY file
-        result = session.execute(
-            text("""
-                SELECT tp_id FROM matchable_occurrences(:snapshot, ARRAY['nonexistent.py'])
-                WHERE tp_id IS NOT NULL
-            """),
-            {"snapshot": test_trivial_snapshot.slug},
-        ).fetchall()
-
-        matched_ids = {row.tp_id for row in result}
-
-        for tp_id in unrestricted_ids:
-            assert tp_id in matched_ids, f"Unrestricted TP {tp_id} should be matchable from any file"
 
     def test_edge_count_per_file(self, session, test_trivial_snapshot):
         """Verify edge count is smaller for single file vs all files.

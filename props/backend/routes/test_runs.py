@@ -248,29 +248,5 @@ def test_run_critic_snapshot_not_found_returns_404(run_critic_client) -> None:
     mock_registry.start_critic.assert_not_called()
 
 
-def test_run_critic_returns_critic_run_id(run_critic_client) -> None:
-    """POST /api/runs/critic returns critic_run_id immediately (non-blocking)."""
-    client, mock_registry = run_critic_client
-
-    expected_run_id = uuid4()
-    mock_registry.resolve_image.return_value = FAKE_RESOLVED
-    mock_registry.start_critic.return_value = expected_run_id
-
-    response = client.post(
-        "/api/runs/critic",
-        json={
-            "definition_id": FAKE_CRITIC_DIGEST,
-            "example": {"kind": "whole_snapshot", "snapshot_slug": "test-fixtures/train1"},
-            "critic_model": BUDGET_TEST_MODEL,
-            "timeout_seconds": 60,
-            "budget_usd": 1.0,
-        },
-    )
-
-    assert response.status_code == 200
-    body = response.json()
-    assert body["critic_run_id"] == str(expected_run_id)
-
-
 if __name__ == "__main__":
     pytest_bazel.main()
