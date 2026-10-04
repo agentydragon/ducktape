@@ -57,6 +57,7 @@ import {
 import { ChronologicalDebugProvider, useOpenChronologicalDebug } from "./chronological_debug";
 import { ThreadTitle } from "./thread_title";
 import { ThreadStatusDot } from "../thread_status_dot";
+import { isMoving, THREAD_STATUS_MARKS } from "../status_mark";
 import { snapshotFresh, threadStatusFromSnapshot } from "../thread_status";
 import { sandboxReady, sandboxSummary } from "../sandbox_status";
 import { TopbarActions, TopbarTitle } from "../topbar";
@@ -698,7 +699,7 @@ function ProjectedSessionBody({
     snapshotFresh(threadsLive)
   );
   const pulseEpoch = useRef<ThreadFaviconPulseEpoch>({ current: null });
-  if (status.kind === "running") pulseEpoch.current.current ??= Date.now();
+  if (isMoving(THREAD_STATUS_MARKS[status.kind])) pulseEpoch.current.current ??= Date.now();
   else pulseEpoch.current.current = null;
   useEffect(() => onStatusLabelChange(status.tabLabel), [onStatusLabelChange, status.tabLabel]);
   useEffect(() => installThreadFavicon(status, pulseEpoch.current), [status.kind]);

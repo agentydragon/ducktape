@@ -268,14 +268,13 @@ RUNNING state alone does not make a suspended or deleted Sandbox look live. The 
 the feed's active turn so the sidebar and open-thread composer can use the same status-dot
 component. These are operational snapshots, not replacements for a Thread's runner Event prefix.
 
-The status indicators and the browser-tab favicon share one palette and run cycle
-(`frontend/thread_status_palette.ts`): two green chevrons moving left to right are a running
-turn, a steady light blue dot is a live harness waiting for input, a red dot is a failed runner
-feed, and a gray dot is anything not live, including a suspended Sandbox.
-Archiving checks the runner's live session state when an existing Pod's identity and readiness can be
-verified, and refuses while that Thread's harness is running; stop the harness first. An existing Pod
-whose status cannot be verified also blocks archiving. A missing Sandbox or absent Pod has no live
-runner to query.
+Every status indicator is drawn from one table, `frontend/status_mark.ts`, which decides the shape and
+color of each thread and Sandbox status; the in-page glyph (`mark_glyph.tsx`) and the browser-tab
+favicon (`thread_favicon.ts`) only render what it says. A thread shows two green chevrons moving
+left to right while a turn runs, a steady light blue dot when its harness is live and waiting, a red
+dot when its runner feed failed, and a gray dot when nothing is live. A Sandbox shows a light blue
+play icon when its Pod is ready, a yellow clock while it comes up, a gray pause when suspended, a
+red cross when failed, and a gray cross once deleted or ended.
 
 ## Shutdown
 

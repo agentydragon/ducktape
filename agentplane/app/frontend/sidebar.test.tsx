@@ -187,7 +187,7 @@ it("applies pushed renames and Sandbox state without marking a suspended harness
   );
   expect(container.textContent).not.toContain("Before rename");
   expect(row(renamed.name).className).toContain("current");
-  expect(container.querySelector(".agentplane-sidebar-state-icon.suspended")).not.toBeNull();
+  expect(container.querySelector(".agentplane-sidebar-state-icon[data-status='suspended']")).not.toBeNull();
   expect(container.querySelectorAll(".agentplane-thread-status-dot[data-status='idle']")).toHaveLength(0);
   expect(container.textContent).toContain("test-threadless");
   expect(container.textContent).toContain("0 threads");
@@ -320,11 +320,23 @@ it("opens retained Thread history even when its Sandbox is gone", async () => {
   expect(location()).toBe("/threads/t-1");
 });
 
+it.each([
+  ["a running Pod", {}, "ready"],
+  ["a suspended Sandbox", { operating_mode: "Suspended", pod: null }, "suspended"],
+  ["a Sandbox whose grants are still applying", { kubernetes_grants_ready: false }, "pending"],
+  ["a Sandbox with a grant error", { kubernetes_grant_error: "test grant failure" }, "failed"],
+  ["a Sandbox being deleted", { deleting: true }, "gone"],
+] as const)("marks a group's Sandbox by its status: %s", async (_name, overrides, status) => {
+  const box = sandbox("test-marked", overrides);
+  await render([], { [box.name]: box });
+  expect(container.querySelector(`.agentplane-sidebar-state-icon[data-status='${status}']`)).not.toBeNull();
+});
+
 it("opens the details of a provisioning Sandbox with no Threads", async () => {
   const pending = sandbox("test-provisioning", { pod: null });
   await render([], { [pending.name]: pending });
   expect(container.textContent).toContain("0 threads");
-  expect(container.querySelector(".agentplane-sidebar-state-icon.pending")).not.toBeNull();
+  expect(container.querySelector(".agentplane-sidebar-state-icon[data-status='pending']")).not.toBeNull();
   const link = container.querySelector('a[href="/sandboxes/test-provisioning"]');
   if (!(link instanceof HTMLAnchorElement)) throw new Error("missing provisioning Sandbox link");
   await act(async () => link.click());

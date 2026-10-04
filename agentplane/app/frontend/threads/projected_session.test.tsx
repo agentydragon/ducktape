@@ -20,7 +20,7 @@ import { pruneCommandErrors } from "./thread_commands";
 import { EntityCard } from "./thread_cards";
 import { RetainedDisclosureProvider } from "./retained_disclosures";
 import { DEGRADED_AFTER_MS, STALE_AFTER_MS } from "../stream_status";
-import { THREAD_STATUS_COLORS } from "../thread_status_palette";
+import { THREAD_STATUS_MARKS } from "../status_mark";
 import { testItem } from "./thread_entity_fixture";
 import {
   ThreadSyncContext,
@@ -482,11 +482,11 @@ it("shows moving green chevrons in the status dot and the favicon while a turn i
   expect(firstFrame).toContain('fill="none"');
   expect(firstFrame).not.toContain("<rect");
   expect(firstFrame).not.toContain("<circle");
-  expect(firstFrame).toContain(`stroke="${THREAD_STATUS_COLORS.running}"`);
+  expect(firstFrame).toContain(`stroke="${THREAD_STATUS_MARKS.running.color}"`);
   await act(async () => {
     vi.advanceTimersByTime(300);
   });
-  expect(faviconSvg()).toContain(`stroke="${THREAD_STATUS_COLORS.running}"`);
+  expect(faviconSvg()).toContain(`stroke="${THREAD_STATUS_MARKS.running.color}"`);
   expect(faviconSvg()).not.toBe(firstFrame);
 });
 
@@ -496,7 +496,7 @@ it("shows an idle thread as a steady dot in the idle color, in the favicon too",
   const dot = (await render()).querySelector(".agentplane-thread-status-dot");
   expect(dot?.getAttribute("data-status")).toBe("idle");
   expect(dot?.querySelector("svg")).toBeNull();
-  const idleDot = `fill="${THREAD_STATUS_COLORS.idle}" stroke="#102a43"`;
+  const idleDot = `fill="${THREAD_STATUS_MARKS.idle.color}" stroke="#102a43"`;
   expect(faviconSvg()).toContain(idleDot);
   // Long enough for a running turn's favicon to have moved.
   await act(async () => {
