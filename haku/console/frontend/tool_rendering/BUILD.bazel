@@ -1,5 +1,5 @@
 load("//devinfra/js:ts_library.bzl", "ts_library")
-load("//devinfra/js:vitest.bzl", "vitest_specs")
+load("//devinfra/js:vitest.bzl", "vitest_subsuite")
 
 package(default_visibility = ["//visibility:public"])
 
@@ -228,20 +228,23 @@ ts_library(
     ],
 )
 
-vitest_specs(
-    name = "specs",
+vitest_subsuite(
+    name = "vitest_test",
+    base = "//haku/console/frontend:vitest_test",
     specs = [
         ":actions_test",
         ":call_entry_test",
         ":index_test",
         ":result_entry_test",
         ":vocabulary_test",
-        "//haku/console/frontend/tool_rendering/gmail:specs",
-        "//haku/console/frontend/tool_rendering/google_calendar:specs",
-        "//haku/console/frontend/tool_rendering/grants:specs",
-        "//haku/console/frontend/tool_rendering/grocy:specs",
-        "//haku/console/frontend/tool_rendering/haku_routine:specs",
-        "//haku/console/frontend/tool_rendering/kubectl:specs",
-        "//haku/console/frontend/tool_rendering/tana:specs",
+    ],
+    suites = [
+        "//haku/console/frontend/tool_rendering/gmail:vitest_test",
+        "//haku/console/frontend/tool_rendering/google_calendar:vitest_test",
+        "//haku/console/frontend/tool_rendering/grants:vitest_test",
+        "//haku/console/frontend/tool_rendering/grocy:vitest_test",
+        "//haku/console/frontend/tool_rendering/haku_routine:vitest_test",
+        "//haku/console/frontend/tool_rendering/kubectl:vitest_test",
+        "//haku/console/frontend/tool_rendering/tana:vitest_test",
     ],
 )

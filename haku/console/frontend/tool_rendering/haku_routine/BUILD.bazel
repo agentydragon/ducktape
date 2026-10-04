@@ -1,5 +1,5 @@
 load("//devinfra/js:ts_library.bzl", "ts_library")
-load("//devinfra/js:vitest.bzl", "vitest_specs")
+load("//devinfra/js:vitest.bzl", "vitest_subsuite")
 load("//haku/console/frontend/tool_rendering/screenshot:screenshot_test.bzl", "preview_screenshots")
 
 package(default_visibility = ["//visibility:public"])
@@ -75,8 +75,9 @@ preview_screenshots(
     ],
 )
 
-vitest_specs(
-    name = "specs",
+vitest_subsuite(
+    name = "vitest_test",
+    base = "//haku/console/frontend:vitest_test",
     specs = [
         ":requests_test",
     ],

@@ -1,6 +1,6 @@
 load("@aspect_rules_js//js:defs.bzl", "js_library")
 load("//devinfra/js:ts_library.bzl", "ts_library")
-load("//devinfra/js:vitest.bzl", "vitest_specs")
+load("//devinfra/js:vitest.bzl", "vitest_subsuite")
 
 package(default_visibility = ["//agentplane/app:__subpackages__"])
 
@@ -401,8 +401,9 @@ ts_library(
     ],
 )
 
-vitest_specs(
-    name = "specs",
+vitest_subsuite(
+    name = "vitest_test",
+    base = "//agentplane/app/frontend:vitest_test",
     specs = [
         ":command_calls_test",
         ":history_rows_test",

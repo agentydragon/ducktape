@@ -1308,7 +1308,11 @@ ts_library(
 
 vitest_suite(
     name = "vitest_test",
-    data = ["//:node_modules/@haku/console-bridge"],
+    data = [
+        "//:node_modules/@haku/console-bridge",
+        # @mantine/hooks imports it without declaring it, so Node finds it only at the workspace root.
+        "//:node_modules/react-dom",
+    ],
     environment = "jsdom",  # DOMPurify (in markdown.ts) needs a DOM
     specs = [
         ":approval_state_test",
@@ -1334,6 +1338,6 @@ vitest_suite(
         ":time_test",
         ":tool_call_decision_test",
         ":tool_calls_page_test",
-        "//haku/console/frontend/tool_rendering:specs",
     ],
+    suites = ["//haku/console/frontend/tool_rendering:vitest_test"],
 )

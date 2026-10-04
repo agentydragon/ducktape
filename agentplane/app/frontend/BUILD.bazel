@@ -1173,8 +1173,8 @@ vitest_suite(
         ":stream_status_test",
         ":tab_metadata_test",
         ":thread_groups_test",
-        "//agentplane/app/frontend/threads:specs",
     ],
+    suites = ["//agentplane/app/frontend/threads:vitest_test"],
 )
 
 # Visual render-health tests: the app mounted by visual/harness.tsx on canned inventory and runner
