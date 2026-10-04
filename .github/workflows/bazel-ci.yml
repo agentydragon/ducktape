@@ -78,7 +78,8 @@ jobs:
         name: "Check out source (a failure here means the source was unavailable; no tests or build ran)"
         with:
           ref: ${{ inputs.source_commit || github.sha }}
-          fetch-depth: 0
+          # verify-source reads both parents of the synthetic PR merge commit.
+          fetch-depth: 2
           allow-unsafe-pr-checkout: ${{ inputs.allow_unsafe_pr_checkout }}
 
       # Proves the checkout is the requested commit and that the PR head is its second
