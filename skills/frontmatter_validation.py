@@ -35,10 +35,6 @@ def parse_frontmatter_text(text: str) -> Mapping[str, object]:
     return data
 
 
-def parse_frontmatter(skill_path: Path) -> Mapping[str, object]:
-    return parse_frontmatter_text(skill_path.read_text())
-
-
 def validate_skill_frontmatter_text(text: str, source: str = "SKILL.md") -> None:
     frontmatter = parse_frontmatter_text(text)
     _required_string(frontmatter, "name", source)
