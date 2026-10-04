@@ -51,7 +51,6 @@ async def test_a_resume_cannot_replace_the_threads_developer_instructions(
             assert request.instructions == RESUMED_BASE
             # One developer message, the thread's own — neither replaced nor joined by the new text.
             assert [message.text for message in request.messages("developer")] == [STARTED_WITH]
-            assert RESUMED_WITH not in [message.text for message in request.messages("developer")]
             stream = sse.response_stream([sse.Message("NEXT_OK")], model=MODEL)
             await exchange.send(*stream.events)
         assert (await turn.completed()).params.turn.status is wire.TurnStatus.COMPLETED

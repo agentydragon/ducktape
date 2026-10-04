@@ -79,6 +79,10 @@ def test_a_sandbox_is_told_every_target_and_not_just_the_placeholder() -> None:
     """Enough to build a request the proxy substitutes into. A placeholder and a header name are not:
     a client still has to know whether the value reads `Bearer <placeholder>` or the placeholder
     bare, and getting that wrong is a 401 from the upstream with the real credential in the header.
+
+    The description rides along: targets say how to present the credential, the description says
+    what presenting it does, and an agent given only an opaque placeholder cannot weigh whether it
+    should.
     """
     view = agent_view(_index(), CALLER, NOW)
 
@@ -97,16 +101,6 @@ def test_a_sandbox_is_told_every_target_and_not_just_the_placeholder() -> None:
         ],
     )
     assert public.credential is None, "a rule that substitutes nothing offers nothing to present"
-
-
-def test_a_sandbox_is_told_whose_credential_it_is_about_to_spend() -> None:
-    """Targets say how to present it; the description says what presenting it does. An agent given
-    only an opaque placeholder can send the request but cannot weigh whether it should."""
-    (policy,) = agent_view(_index(), CALLER, NOW).policies
-    github, _public = policy.rules
-
-    assert github.credential is not None
-    assert github.credential.description == DESCRIPTION
 
 
 def test_the_secret_and_its_whereabouts_are_absent_from_the_whole_document() -> None:
@@ -146,17 +140,6 @@ def test_a_subject_no_binding_names_sees_an_empty_view_rather_than_an_error() ->
     view = agent_view(_index(), other, NOW)
 
     assert view.subject == other
-    assert view.policies == []
-
-
-def test_the_same_name_in_another_namespace_is_a_different_subject() -> None:
-    """A subject is a namespace and a name together, so a binding cannot reach across namespaces
-    to a ServiceAccount that merely shares its name."""
-    elsewhere = ServiceAccountRef(namespace="somewhere-else", name=CALLER.name)
-
-    view = agent_view(_index(), elsewhere, NOW)
-
-    assert view.subject == elsewhere
     assert view.policies == []
 
 

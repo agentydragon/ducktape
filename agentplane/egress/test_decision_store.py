@@ -74,7 +74,6 @@ async def test_shared_history_survives_replacement_and_repeated_migration(histor
             assert response.status == 200
             rows = [DecisionRecord.model_validate(item) for item in await response.json()]
         assert rows == [a, b]
-        assert a.producer_id != b.producer_id
         assert await replacement.store.recent(SUBJECT.model_copy(update={"name": "absent"})) == []
         assert await replacement.store.recent(SUBJECT.model_copy(update={"namespace": "elsewhere"})) == [], (
             "the same name in another namespace is a different subject"

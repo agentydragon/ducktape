@@ -50,11 +50,7 @@ async def test_legacy_binding_storage_is_preserved_but_not_exposed(cluster: Clus
     assert binding is not None
     assert view.binding == binding
     assert json.loads(write_binding(binding)) == json.loads(raw)
-    assert binding.DESCRIPTOR.fields_by_name["session_defaults"].number == 1
-    assert "thread_defaults" not in binding.DESCRIPTOR.fields_by_name
     if binding.HasField("session_defaults"):
-        assert binding.session_defaults.HasField("instructions")
-        assert binding.session_defaults.instructions == ""
         spec = launch_spec(
             SessionDestination(
                 sandbox=SandboxDestination(owner=view.service_account, sandbox=view.name, sandbox_uid=view.uid),

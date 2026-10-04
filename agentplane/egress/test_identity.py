@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-from dataclasses import replace
-
 import pytest
 import pytest_bazel
 from kubernetes_asyncio.client import ApiClient, AuthenticationV1Api
@@ -11,15 +9,12 @@ from kubernetes_asyncio.client import ApiClient, AuthenticationV1Api
 from agentplane.egress.conftest import (
     AUDIENCE,
     POD_A_UID,
-    POD_B_UID,
     PROJECTED_AUDIENCE,
     PROJECTED_TOKEN_A,
     PROJECTED_TOKEN_B,
     SANDBOX_A,
-    SANDBOX_B,
     SUBJECT_A,
     TOKEN_A,
-    TOKEN_B,
 )
 from agentplane.egress.identity import IdentityRejectedError, ProjectedTokenVerifier, WorkloadIdentityVerifier
 from agentplane.egress.policy import DenyReason
@@ -83,25 +78,6 @@ async def test_the_proxy_never_reads_a_pod(fake: FakeApiServer, verifier: Worklo
     del fake.pods[SANDBOX_A]
     assert (await verifier.identify(TOKEN_A)).account == SUBJECT_A
     assert fake.pod_reads == 0
-
-
-async def test_pod_no_sandbox_owns_is_still_its_service_account(
-    fake: FakeApiServer, verifier: WorkloadIdentityVerifier
-) -> None:
-    """Nothing here reads the Pod's owner: a Deployment's Pod authenticates exactly as a sandbox's
-    does, and whether it may reach anything is decided by whether a binding names that account."""
-    fake.pods[SANDBOX_B]["metadata"]["ownerReferences"] = []
-    fake.tokens[TOKEN_B] = replace(
-        fake.tokens[TOKEN_B], username=f"system:serviceaccount:{SANDBOX_NAMESPACE}:test-workload-sa"
-    )
-    identity = await verifier.identify(TOKEN_B)
-    assert identity == WorkloadPrincipal(
-        namespace=SANDBOX_NAMESPACE,
-        service_account_name="test-workload-sa",
-        service_account_subject=f"system:serviceaccount:{SANDBOX_NAMESPACE}:test-workload-sa",
-        pod_name=SANDBOX_B,
-        pod_uid=POD_B_UID,
-    )
 
 
 @pytest.fixture

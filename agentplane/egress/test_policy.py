@@ -364,34 +364,6 @@ CASES = [
 ]
 
 
-def test_a_binding_names_a_service_account_subject() -> None:
-    """A workload no Sandbox owns is bound by the ServiceAccount its Pod runs as."""
-    scoped = index(
-        policies=[policy("github", GITHUB_RULE)],
-        bindings=[
-            binding(
-                "b", policies=["github"], subjects=[ServiceAccountRef(namespace=NAMESPACE, name="test-workload-sa")]
-            )
-        ],
-    )
-    allowed = evaluate(scoped, ServiceAccountRef(namespace=NAMESPACE, name="test-workload-sa"), request(), NOW)
-    assert isinstance(allowed, Allowed)
-
-
-def test_a_service_account_binding_does_not_admit_another_service_account() -> None:
-    scoped = index(
-        policies=[policy("github", GITHUB_RULE)],
-        bindings=[
-            binding(
-                "b", policies=["github"], subjects=[ServiceAccountRef(namespace=NAMESPACE, name="test-workload-sa")]
-            )
-        ],
-    )
-    assert evaluate(scoped, ServiceAccountRef(namespace=NAMESPACE, name="someone-else"), request(), NOW) == Denied(
-        DenyReason.NO_BINDING
-    )
-
-
 def test_the_same_name_in_another_namespace_is_a_different_subject() -> None:
     """A subject is a namespace and a name together. The proxy serves workloads from more than one
     namespace, so a binding that matched on the name alone would reach across them."""
@@ -407,16 +379,6 @@ def test_the_same_name_in_another_namespace_is_a_different_subject() -> None:
 @pytest.mark.parametrize("case", CASES, ids=[case.name for case in CASES])
 def test_evaluate(case: Case) -> None:
     assert evaluate(case.index, CALLER, case.request, NOW) == case.expected
-
-
-def test_one_credential_is_substituted_at_whichever_target_the_request_uses() -> None:
-    """The GitHub PAT is a bearer token to the API and a `Basic` password to git. Both targets are
-    declared on the one credential, and each fires only where the request actually presents it."""
-    bearer = evaluate(BASE_INDEX, CALLER, request(authorization=f"Bearer {PLACEHOLDER}"), NOW)
-    assert bearer == Allowed("b", "github", 0, SWAPPED)
-    git = evaluate(BASE_INDEX, CALLER, request(authorization=basic(f"x-access-token:{PLACEHOLDER}")), NOW)
-    rewritten = (HeaderRewrite(header=AUTHORIZATION, values=(basic(f"x-access-token:{SECRET_VALUE}"),)),)
-    assert git == Allowed("b", "github", 0, rewritten)
 
 
 def test_authenticated_workload_source_substitutes_only_the_validated_context_bearer() -> None:

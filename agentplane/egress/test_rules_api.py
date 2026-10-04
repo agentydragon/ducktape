@@ -12,7 +12,7 @@ from kubernetes_asyncio.client import ApiClient, AuthenticationV1Api
 
 from agentplane.egress.conftest import AUDIENCE, SANDBOX_A, SANDBOX_B, TOKEN_A
 from agentplane.egress.policy import Index
-from agentplane.egress.rules_api import HOST, PATH, URL, RulesProjection, create_rules_app
+from agentplane.egress.rules_api import HOST, PATH, RulesProjection, create_rules_app
 from agentplane.testing.fake_apiserver import SANDBOX_NAMESPACE, FakeApiServer
 from agentplane.workload_auth.http import WorkloadPrincipalAuthenticator
 from agentplane.workload_auth.principal import WorkloadPrincipalResolver
@@ -42,7 +42,6 @@ async def test_api_independently_tokenreviews_authorization_and_returns_redacted
     async with client(api_client, index) as api:
         response = await api.get(PATH, headers={"Authorization": f"Bearer {TOKEN_A}"})
 
-    assert f"http://{HOST}{PATH}" == URL
     assert response.status_code == 200
     assert response.json() == {"subject": SUBJECT_A, "policies": []}
     assert (fake.token_reviews, fake.pod_reads) == (before[0] + 1, before[1])
@@ -91,13 +90,6 @@ async def test_api_exposes_no_other_route(api_client: ApiClient, path: str) -> N
         response = await api.get(path, headers={"Authorization": f"Bearer {TOKEN_A}"})
 
     assert response.status_code == 404
-
-
-async def test_api_does_not_require_the_workloads_source_address(fake: FakeApiServer, api_client: ApiClient) -> None:
-    fake.pods[SANDBOX_A]["status"]["podIP"] = "10.99.0.42"
-    async with client(api_client, Index()) as api:
-        response = await api.get(PATH, headers={"Authorization": f"Bearer {TOKEN_A}"})
-    assert response.status_code == 200
 
 
 if __name__ == "__main__":

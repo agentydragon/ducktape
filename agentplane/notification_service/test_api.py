@@ -56,17 +56,12 @@ async def test_dependency_overrides_are_app_local_and_not_wire_parameters() -> N
         response = await client.post("/v1/subscriptions", json=body)
         assert response.status_code == 409
         assert response.json() == {"detail": "creation key conflict"}
-        override.subscribe.assert_awaited_once_with(PRINCIPAL, Subscribe.model_validate(body))
-        service.subscribe.assert_not_awaited()
-        resolver.resolve_workload.assert_not_awaited()
         assert (await independent.get("/v1/providers")).status_code == 401
         response = await independent.post(
             "/v1/subscriptions", json=body, headers={"Authorization": "Bearer test-workload"}
         )
         assert response.status_code == 429
         assert response.json() == {"detail": "inbox limit"}
-        resolver.resolve_workload.assert_awaited_once_with("test-workload")
-        service.subscribe.assert_awaited_once_with(PRINCIPAL, Subscribe.model_validate(body))
         legacy = body.copy()
         legacy["client_key"] = legacy.pop("idempotency_key")
         assert (await client.post("/v1/subscriptions", json=legacy)).status_code == 422

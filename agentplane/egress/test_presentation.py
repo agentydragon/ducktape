@@ -184,12 +184,10 @@ def test_json_replacement_is_exact_field_only_and_json_escaped() -> None:
     assert "@bot:test" not in repr(presentation)
 
 
-@pytest.mark.parametrize("value", [None, True, 12, [], {}, "prefix-", "-suffix"])
+@pytest.mark.parametrize(
+    "value", [None, 12, f"prefix-{JSON_CREDENTIAL.placeholder}", f"{JSON_CREDENTIAL.placeholder}-suffix"]
+)
 def test_json_substrings_and_nonstring_values_are_not_presentations(value: object) -> None:
-    if isinstance(value, str) and value == "prefix-":
-        value += JSON_CREDENTIAL.placeholder
-    elif isinstance(value, str) and value == "-suffix":
-        value = JSON_CREDENTIAL.placeholder + value
     assert present(JSON_CREDENTIAL, JSON_HEADERS, {"password": value}) is None
     assert present(JSON_CREDENTIAL, JSON_HEADERS, {"nested": {"password": JSON_CREDENTIAL.placeholder}}) is None
 

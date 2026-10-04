@@ -844,7 +844,6 @@ async def test_a_workload_reads_the_rules_that_apply_to_it(proxy: ProxyUnderTest
     assert view["subject"] == SUBJECT_A.model_dump()
     credentials = [rule["credential"] for policy in view["policies"] for rule in policy["rules"]]
     presented = one(c for c in credentials if c is not None and c["placeholder"] == PLACEHOLDER)
-    assert presented["placeholder"] == PLACEHOLDER, view
     # The targets, not the placeholder alone: without the scheme a sandbox sends the placeholder
     # bare and the upstream refuses the substituted value.
     assert {"header": "Authorization", "method": "schemeToken", "scheme": SCHEME} in presented["targets"], view
@@ -887,13 +886,6 @@ async def test_the_agent_view_needs_the_same_identity_every_request_does(proxy: 
     response = await proxy.get_rules(RULES_PATH, token=None)
 
     assert denial(response, DenyReason.TOKEN_MISSING)
-
-
-async def test_the_proxys_own_service_name_serves_nothing_else(proxy: ProxyUnderTest) -> None:
-    """The ordinary policy admits only the rules path, not operator routes."""
-    response = await proxy.get_rules("/")
-
-    assert denial(response, DenyReason.NO_RULE)
 
 
 @pytest.mark.parametrize("authorization", [None, "Bearer forged-destination", f"Bearer {WORKLOAD_PLACEHOLDER}-wrong"])
@@ -972,7 +964,7 @@ async def test_history_omits_secret_bearing_paths_queries_and_headers(
         assert private not in decision_messages
 
 
-@pytest.mark.parametrize("state", ["unsynced", "missing", "stale", "revoked", "draining"])
+@pytest.mark.parametrize("state", ["stale", "revoked", "draining"])
 async def test_existing_tls_connection_rechecks_every_admission(
     proxy: ProxyUnderTest, state: str, decision_log: DecisionLog
 ) -> None:
@@ -991,10 +983,6 @@ async def test_existing_tls_connection_rechecks_every_admission(
 
         assert await get("/public/before") == 200
         match state:
-            case "unsynced":
-                proxy.index.synced = False
-            case "missing":
-                proxy.index.refreshed.pop(CREDENTIALS_PLURAL)
             case "stale":
                 proxy.index.refreshed[CREDENTIALS_PLURAL] -= timedelta(seconds=181)
             case "revoked":

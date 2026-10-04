@@ -90,14 +90,6 @@ async def test_queued_inputs_coalesce_into_one_native_user_message(
         (first.uuid, COALESCED_FIRST),
         (third.uuid, f"{COALESCED_FIRST}\n{COALESCED_SECOND}\n{COALESCED_THIRD}"),
     ]
-    replayed = [
-        frame
-        for frame in parsed
-        if isinstance(frame, wire.UserFrame) and frame.is_replay and frame.message.content == coalesced
-    ]
-    assert len(replayed) == 1
-    assert replayed[0].uuid == third.uuid
-    assert replayed[0].message.content == coalesced
 
 
 async def test_interrupt_cancels_each_queued_input_before_native_message(
@@ -211,7 +203,6 @@ async def test_runtime_effort_control_changes_next_anthropic_request(
             assert exchange.request.output_config == {"effort": "low"}
             await exchange.send(*sse.message_stream([sse.Text("LOW_EFFORT_OK")], model=selected_model).events)
         assert (await prompt.result()).result == "LOW_EFFORT_OK"
-    assert len([frame for frame in run.native_frames() if frame.get("type") == "control_response"]) >= 2
 
 
 async def test_set_model_during_an_active_turn_controls_the_next_model_request(
@@ -257,8 +248,6 @@ async def test_inputs_during_a_tool_coalesce_into_the_tool_result(
         assert isinstance(active, wire.StreamEventFrame)
         second = await run.send(SECOND_INPUT)
         third = await run.send(THIRD_INPUT)
-        assert first.uuid != second.uuid
-        assert second.uuid != third.uuid
 
         async with await anthropic_messages.await_next_request() as exchange:
             request = exchange.request

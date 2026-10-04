@@ -18,7 +18,6 @@ from agentplane.workload_auth.principal import WorkloadPrincipal
 
 HOST = "agentplane-egress.agentplane-staging.svc.cluster.local"
 PATH = "/v1/rules"
-URL = f"http://{HOST}{PATH}"
 
 
 class RulesProjection:

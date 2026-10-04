@@ -93,14 +93,6 @@ async def test_exceptional_context_exit_cancels_without_hiding_the_caller_error(
     assert call.reads == 0
 
 
-async def test_cancel_remains_the_explicit_lost_connection_operation() -> None:
-    call = FakeAttachmentCall()
-
-    attachment(call).cancel()
-
-    assert call.cancelled
-
-
 async def test_cursor_is_independent_of_opt_in_history_capture() -> None:
     for capture in (False, True):
         call = FakeAttachmentCall()

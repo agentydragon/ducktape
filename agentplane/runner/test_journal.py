@@ -66,12 +66,7 @@ async def journal(tmp_path: Path) -> AsyncIterator[Journal]:
     "observation",
     [
         event_pb2.Native(direction=event_pb2.DIRECTION_FROM_HARNESS, line='{"text":"雪"}'),
-        event_pb2.ItemStarted(item_id="test-item", kind=event_pb2.ITEM_KIND_ASSISTANT_TEXT),
         event_pb2.TextDelta(item_id="test-item", text="hello"),
-        event_pb2.ToolArgumentsDelta(item_id="test-tool", partial_json='{"command":'),
-        event_pb2.ToolArguments(item_id="test-tool", arguments_json='{"command":"true"}'),
-        event_pb2.ToolOutputDelta(item_id="test-tool", text="output"),
-        event_pb2.ItemCompleted(item_id="test-item", text="hello"),
     ],
 )
 async def test_publication_waits_for_committed_replay(

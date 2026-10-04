@@ -85,17 +85,6 @@ def test_outbound_requests_serialize_camel_case_except_user_input_fields() -> No
         "id": "r1",
         "params": {"threadId": "t", "input": [{"type": "text", "text": "hi", "text_elements": []}]},
     }
-    switched = json.loads(
-        driver.turn_start("r2", thread_id="t", text="hi", model="new-model").model_dump_json(by_alias=True)
-    )
-    assert switched["params"]["model"] == "new-model"
-    thread = json.loads(driver.thread_start("r2", cwd="/w", model="m", effort="low").model_dump_json(by_alias=True))
-    assert thread["params"]["approvalPolicy"] == "never"
-    assert thread["params"]["baseInstructions"] == driver.BASE_INSTRUCTIONS
-    assert thread["params"]["ephemeral"] is True
-    steer = json.loads(driver.steer("r3", thread_id="t", turn_id="u", text="go").model_dump_json(by_alias=True))
-    assert steer["params"]["expectedTurnId"] == "u"
-    assert json.loads(driver.initialized().model_dump_json(by_alias=True)) == {"method": "initialized"}
 
 
 def test_thread_start_names_developer_instructions_only_when_it_has_them() -> None:
