@@ -71,3 +71,11 @@ row and body again. Consider persisting them in IndexedDB, keyed by thread, proj
 generation, so a reload only catches up from the saved log position. It needs a size budget with eviction,
 invalidation when the epoch changes, and a decision on whether the proxy's per-user authorization allows
 keeping thread content at rest in the browser.
+
+## Bound reading thread bodies ahead by size
+
+A window reads the bodies of every row it holds (`PayloadShape.readAhead` in `threads/thread_store.tsx`), but a
+payload reference carries `chunk_count` and no byte size, so the only bound on a read ahead is 20 bodies per
+read. A large tool output is read, and kept in memory with its thread's retained window, whether or not it is
+ever opened. Consider putting `content_bytes`, which the payload manifest already stores, on the reference so the
+client can leave bodies past a size to be read when shown, and a memory budget across the retained threads.
