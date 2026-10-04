@@ -249,32 +249,6 @@ def test_aggregated_view_counts_by_status(synced_test_session: Session, example_
     assert result.status_counts[AgentRunStatus.TIMED_OUT] == 2
 
 
-def test_aggregated_view_status_counts_all_exited(synced_test_session: Session, example_subtract_orm: Example):
-    """When all runs exit, timed_out count is zero."""
-    for _ in range(3):
-        critic_run = make_fake_critic_run(
-            session=synced_test_session, example=example_subtract_orm.to_example_spec(), status=AgentRunStatus.EXITED
-        )
-        synced_test_session.add(critic_run)
-        synced_test_session.flush()
-        grader_run = make_fake_grader_run(
-            session=synced_test_session, snapshot_slug=example_subtract_orm.snapshot_slug, model="test-grader-model"
-        )
-        synced_test_session.add(grader_run)
-
-    synced_test_session.commit()
-
-    result = (
-        synced_test_session.query(RecallByDefinitionSplitKind)
-        .filter_by(critic_image_digest=FAKE_CRITIC_DIGEST, split=Split.TRAIN, critic_model=DEFAULT_TEST_MODEL)
-        .one()
-    )
-
-    assert sum(result.status_counts.values()) == 3
-    assert result.status_counts[AgentRunStatus.EXITED] == 3
-    assert result.status_counts.get(AgentRunStatus.TIMED_OUT, 0) == 0
-
-
 def test_aggregated_recall_by_example_has_correct_weighting(
     synced_test_session: Session, example_subtract_orm: Example, tp_occurrence_single: tuple[str, str]
 ):

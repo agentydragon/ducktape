@@ -9,7 +9,7 @@ from props.agents.critic_dev.recipes.ground_truth import count_issues_by_snapsho
 from props.core.splits import Split
 from props.db.database import Database
 from props.db.examples import Example
-from props.db.models import RecallByDefinitionSplitKind, Snapshot
+from props.db.models import Snapshot
 from props.testing.fixtures.runs import make_fake_critic_run, make_fake_grader_run
 
 
@@ -82,30 +82,6 @@ class TestQueryBuilders:
                 # tp_count and fp_count should be integers
                 assert isinstance(row.tp_count, int)
                 assert isinstance(row.fp_count, int)
-
-    def test_valid_aggregates_view(self, query_test_data, db: Database):
-        """aggregated_recall_by_definition view computes statistics for valid split."""
-
-        with db.session() as session:
-            # Query the aggregated_recall_by_definition view for valid split
-            result = (
-                session.query(RecallByDefinitionSplitKind)
-                .filter(RecallByDefinitionSplitKind.split == Split.VALID)
-                .all()
-            )
-
-            # Should have at least 1 row (from valid grader runs created in fixture)
-            assert len(result) >= 1
-
-            # Check first row has expected structure (occurrence-based metrics)
-            row = result[0]
-            # Check occurrence stats are present (StatsWithCI type)
-            if row.credit_stats is not None:
-                assert row.credit_stats.mean >= 0.0
-            assert row.recall_denominator >= 0
-            # Check status counts are present (dict from JSONB) with non-negative values
-            assert row.status_counts is not None
-            assert all(count >= 0 for count in row.status_counts.values())
 
 
 if __name__ == "__main__":

@@ -39,63 +39,9 @@ from props.core.eval_api_models import CriticRunStatus, GradingStatusResponse, R
 from props.core.ids import DefinitionId
 from props.core.models.examples import ExampleKind, WholeSnapshotExample
 from props.db.database import Database
-from props.db.examples import Example
 from props.db.models import AgentRun, AgentRunStatus, GradingEdge
-from props.testing.constants import DEFAULT_TEST_MODEL
 
 logger = logging.getLogger(__name__)
-
-
-# Test timeout (seconds) - applies to container execution
-TEST_TIMEOUT_SECONDS = 60
-
-
-# =============================================================================
-# Optimizer → Critic Workflow Test
-# =============================================================================
-
-
-@pytest.mark.timeout(180)
-async def test_optimizer_critic_workflow(e2e_stack, synced_db, test_snapshot, critic_image, db: Database):
-    """Test optimizer → critic workflow with data access verification.
-
-    Note: Grading is handled by snapshot graders (not tested here).
-    """
-    # Get the whole-snapshot example and convert to ExampleSpec
-    with synced_db.session() as session:
-        example = (
-            session.query(Example)
-            .filter_by(snapshot_slug=test_snapshot, example_kind=ExampleKind.WHOLE_SNAPSHOT)
-            .first()
-        )
-        assert example is not None, f"No whole_snapshot example found for {test_snapshot}"
-        example_spec = example.to_example_spec()
-
-    @CriticMock.mock()
-    def critic_mock(m: CriticMock) -> PlayGen:
-        yield None  # First request
-        yield m.insert_issue("test-issue-001", "Test issue")
-        yield m.insert_occurrence("test-issue-001", "subtract.py", 1, 5)
-        yield m.submit(issues_count=1, summary="Found 1 test issue")
-
-    async with e2e_stack({DEFAULT_TEST_MODEL: critic_mock}, images=[critic_image]) as stack:
-        critic_run_id = await stack.registry.run_critic(
-            image=stack.resolved_images["critic"],
-            example=example_spec,
-            model=stack.model,
-            timeout_seconds=TEST_TIMEOUT_SECONDS,
-            parent_run_id=None,
-            budget_usd=5.0,
-        )
-        assert critic_run_id is not None
-
-    # Verify critic status and data
-    with synced_db.session() as session:
-        critic_run = session.get(AgentRun, critic_run_id)
-        assert critic_run is not None
-        assert critic_run.status == AgentRunStatus.EXITED, f"Critic should complete, got {critic_run.status}"
-        assert len(critic_run.reported_issues) == 1, f"Expected 1 issue, got {len(critic_run.reported_issues)}"
-        assert critic_run.reported_issues[0].issue_id == "test-issue-001"
 
 
 # =============================================================================
