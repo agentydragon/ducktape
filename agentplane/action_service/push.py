@@ -173,22 +173,21 @@ class ActionPushNotifier:
         while True:
             updates = ActionUpdates(self._database_url)
             try:
-                await updates.listener.start()
-                with updates.subscribe_all() as changed:
-                    while True:
-                        changed.clear()
-                        updates.check_available()
-                        if await self.reconcile():
-                            continue
-                        try:
-                            async with asyncio.timeout(30):
-                                await changed.wait()
-                        except TimeoutError:
-                            pass  # Background delivery retry/recovery only; the UI never polls.
+                async with updates.listener.connection():
+                    with updates.subscribe_all() as subscription:
+                        changed = subscription.changed
+                        while True:
+                            changed.clear()
+                            subscription.check_available()
+                            if await self.reconcile():
+                                continue
+                            try:
+                                async with asyncio.timeout(30):
+                                    await changed.wait()
+                            except TimeoutError:
+                                pass  # Background delivery retry/recovery only; the UI never polls.
             except Exception:
                 logger.warning("push reconciliation unavailable; retrying without logging payloads")
-            finally:
-                await updates.listener.close()
             await asyncio.sleep(5)
 
     async def reconcile(self) -> bool:

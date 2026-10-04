@@ -1088,7 +1088,6 @@ async def replicas(
 ) -> AsyncIterator[Replicas]:
     replica_engine = connect(db_url)
     replica_updates = DatabaseUpdates(replica_engine.url)
-    await replica_updates.start()
     survivor_runners = SandboxSessions(live_index, sandbox_endpoint.client())
     survivor_event_logs = EventLogStore(replica_engine)
     owner_ingester = Ingester(runners=local_runners, event_logs=event_logs, ingestion=ingestion)
@@ -1109,22 +1108,24 @@ async def replicas(
         ingester=survivor_ingester,
         thread_changes=replica_updates.changes[Channel.THREADS],
     )
-    await owner_ingester.start()
-    await owner_ingester.reconcile()
     try:
-        yield Replicas(
-            owner,
-            owner_ingester,
-            survivor,
-            survivor_ingester,
-            survivor_event_logs,
-            replica_updates.changes[Channel.THREADS],
-        )
+        async with replica_updates.listener.listen():
+            await owner_ingester.start()
+            await owner_ingester.reconcile()
+            try:
+                yield Replicas(
+                    owner,
+                    owner_ingester,
+                    survivor,
+                    survivor_ingester,
+                    survivor_event_logs,
+                    replica_updates.changes[Channel.THREADS],
+                )
+            finally:
+                await owner_ingester.close()
+                await survivor_ingester.close()
+                await survivor_runners.close()
     finally:
-        await owner_ingester.close()
-        await survivor_ingester.close()
-        await survivor_runners.close()
-        await replica_updates.close()
         await replica_engine.dispose()
 
 
@@ -1187,90 +1188,91 @@ async def test_semantic_feed_failure_survives_replica_reconcile(
     replica_engine = connect(db_url)
     replica_store, replica_event_logs = ThreadStore(replica_engine), EventLogStore(replica_engine)
     replica_updates = DatabaseUpdates(replica_engine.url)
-    await replica_updates.start()
     try:
-        attachment = await client.attach(SESSION, spec=spec)
-        try:
-            await attachment.detach()
-            await attachment.drain_until_end()
-            assert attachment.seen
-            attachment.seen[-1].event.at.seconds += 1
-            thread = await event_logs.open(SANDBOX, SESSION, spec)
-            lease = await ingestion.acquire(SANDBOX, timedelta(minutes=1))
-            assert lease is not None
-            await ingestion.record(thread, attachment.seen, lease=lease)
-            await Feed(
-                session_id=SESSION,
-                client=local_runners.client(SANDBOX),
-                event_logs=event_logs,
-                ingestion=ingestion,
-                lease=lease,
-            ).run()
-            failed = await replica_event_logs.feed_state(thread)
-            assert failed is not None
-            assert failed.end == FeedError(f"conflicting runner entry at cursor {attachment.seen[-1].cursor}")
-            async with replica_store._sessions() as session:
-                checkpoint = await session.get(ThreadCheckpoint, thread)
-                assert checkpoint is not None
-                view = await session.get(ThreadEntity, (thread, checkpoint.projection_epoch, "view_state", "current"))
-                assert view is not None
-                operational = ThreadOperationalState.model_validate(view.state["operational"])
-            assert operational.feed_error is not None
-            assert operational.feed_error.cursor == str(attachment.seen[-1].cursor)
-            await ingestion.release(lease)
-        finally:
-            attachment.cancel()
+        async with replica_updates.listener.listen():
+            attachment = await client.attach(SESSION, spec=spec)
+            try:
+                await attachment.detach()
+                await attachment.drain_until_end()
+                assert attachment.seen
+                attachment.seen[-1].event.at.seconds += 1
+                thread = await event_logs.open(SANDBOX, SESSION, spec)
+                lease = await ingestion.acquire(SANDBOX, timedelta(minutes=1))
+                assert lease is not None
+                await ingestion.record(thread, attachment.seen, lease=lease)
+                await Feed(
+                    session_id=SESSION,
+                    client=local_runners.client(SANDBOX),
+                    event_logs=event_logs,
+                    ingestion=ingestion,
+                    lease=lease,
+                ).run()
+                failed = await replica_event_logs.feed_state(thread)
+                assert failed is not None
+                assert failed.end == FeedError(f"conflicting runner entry at cursor {attachment.seen[-1].cursor}")
+                async with replica_store._sessions() as session:
+                    checkpoint = await session.get(ThreadCheckpoint, thread)
+                    assert checkpoint is not None
+                    view = await session.get(
+                        ThreadEntity, (thread, checkpoint.projection_epoch, "view_state", "current")
+                    )
+                    assert view is not None
+                    operational = ThreadOperationalState.model_validate(view.state["operational"])
+                assert operational.feed_error is not None
+                assert operational.feed_error.cursor == str(attachment.seen[-1].cursor)
+                await ingestion.release(lease)
+            finally:
+                attachment.cancel()
 
-        survivor_ingester = Ingester(
-            runners=local_runners, event_logs=replica_event_logs, ingestion=Ingestion(replica_engine)
-        )
-        survivor = RunnerBridge(
-            runners=local_runners,
-            event_logs=replica_event_logs,
-            content=ContentStore(replica_engine),
-            ingester=survivor_ingester,
-            thread_changes=replica_updates.changes[Channel.THREADS],
-        )
-        try:
-            await survivor_ingester.start()
-            await survivor_ingester.reconcile()
-            assert not survivor_ingester._feeds
-            assert await replica_event_logs.feed_state(thread) == failed
+            survivor_ingester = Ingester(
+                runners=local_runners, event_logs=replica_event_logs, ingestion=Ingestion(replica_engine)
+            )
+            survivor = RunnerBridge(
+                runners=local_runners,
+                event_logs=replica_event_logs,
+                content=ContentStore(replica_engine),
+                ingester=survivor_ingester,
+                thread_changes=replica_updates.changes[Channel.THREADS],
+            )
+            try:
+                await survivor_ingester.start()
+                await survivor_ingester.reconcile()
+                assert not survivor_ingester._feeds
+                assert await replica_event_logs.feed_state(thread) == failed
 
-            dispatched = False
+                dispatched = False
 
-            async def reject_dispatch(*_args: object, **_kwargs: object) -> None:
-                nonlocal dispatched
-                dispatched = True
+                async def reject_dispatch(*_args: object, **_kwargs: object) -> None:
+                    nonlocal dispatched
+                    dispatched = True
 
-            monkeypatch.setattr(survivor, "_command", reject_dispatch)
-            with pytest.raises(RunnerError, match="runner history is rejected"):
-                await survivor.command(
-                    thread,
-                    command_pb2.Command(
-                        command_id="must-not-reach-rejected-runner",
-                        submit_input=command_pb2.SubmitInput(text="must not dispatch"),
-                    ),
-                )
-            assert not dispatched
+                monkeypatch.setattr(survivor, "_command", reject_dispatch)
+                with pytest.raises(RunnerError, match="runner history is rejected"):
+                    await survivor.command(
+                        thread,
+                        command_pb2.Command(
+                            command_id="must-not-reach-rejected-runner",
+                            submit_input=command_pb2.SubmitInput(text="must not dispatch"),
+                        ),
+                    )
+                assert not dispatched
 
-            reattached = False
+                reattached = False
 
-            async def reject_attach(*_args: object, **_kwargs: object) -> None:
-                nonlocal reattached
-                reattached = True
-                raise AssertionError("a rejected feed must refuse reopen before native attach")
+                async def reject_attach(*_args: object, **_kwargs: object) -> None:
+                    nonlocal reattached
+                    reattached = True
+                    raise AssertionError("a rejected feed must refuse reopen before native attach")
 
-            # Patched on the class, not the bridge: the survivor's discovery loop keeps listing the
-            # runner's sessions meanwhile, and it must not reattach the rejected one either.
-            monkeypatch.setattr(RunnerClient, "attach", reject_attach)
-            with pytest.raises(RunnerError, match="runner history is rejected"):
-                await survivor.open_session(SANDBOX, SESSION, spec)
-            assert not reattached
-        finally:
-            await survivor_ingester.close()
+                # Patched on the class, not the bridge: the survivor's discovery loop keeps listing the
+                # runner's sessions meanwhile, and it must not reattach the rejected one either.
+                monkeypatch.setattr(RunnerClient, "attach", reject_attach)
+                with pytest.raises(RunnerError, match="runner history is rejected"):
+                    await survivor.open_session(SANDBOX, SESSION, spec)
+                assert not reattached
+            finally:
+                await survivor_ingester.close()
     finally:
-        await replica_updates.close()
         await replica_engine.dispose()
         await client.close()
 

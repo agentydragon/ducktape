@@ -14,10 +14,7 @@ py_library(
         "//ssh_keys:rugged-host-ed25519.pub",
         "//ssh_keys:wyrm2-host-ed25519.pub",
     ],
-    visibility = [
-        "//cluster/cdk8s:__subpackages__",
-        "//cluster/validation:__pkg__",
-    ],
+    visibility = ["//cluster/cdk8s:__subpackages__"],
     deps = [
         "//cluster/cdk8s:manifest_roots",
         "//cluster/cdk8s:service_ref",
@@ -31,10 +28,7 @@ py_library(
 py_library(
     name = "backend",
     srcs = ["backend.py"],
-    visibility = [
-        "//cluster/cdk8s:__subpackages__",
-        "//cluster/validation:__pkg__",
-    ],
+    visibility = ["//cluster/cdk8s:__subpackages__"],
     deps = [
         ":config",
         "//cluster/cdk8s:cilium",
@@ -59,10 +53,7 @@ py_library(
 py_library(
     name = "sshpiper",
     srcs = ["sshpiper.py"],
-    visibility = [
-        "//cluster/cdk8s:__subpackages__",
-        "//cluster/validation:__pkg__",
-    ],
+    visibility = ["//cluster/cdk8s:__subpackages__"],
     deps = [
         ":config",
         "//third_party/sshpiper:pipe",

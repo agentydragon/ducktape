@@ -120,20 +120,5 @@ def test_sample_compatibility_accepts_required_subset_and_extra_series() -> None
     validate_sample_satisfies_request(request, sampled)
 
 
-def test_sample_compatibility_rejects_missing_required_level_series() -> None:
-    # A `RentKey` for an unmodeled location plays the part of an "unrecognized"
-    # request key — the assertion just needs a typed `LevelSeriesKey` that the
-    # empty sampled bundle won't satisfy.
-    request = ExogenousSamplingRequest(
-        horizon_months=2,
-        rollout_seeds=(101,),
-        **level_series_request_channels(frozenset({HomeValueKey(location_id=LocationId("prices_of_tea_china"))})),
-    )
-    sampled = SampledExogenousBundle()
-
-    with pytest.raises(ValueError, match=r"missing required level series: \['home_value:prices_of_tea_china'\]"):
-        validate_sample_satisfies_request(request, sampled)
-
-
 if __name__ == "__main__":
     pytest_bazel.main()

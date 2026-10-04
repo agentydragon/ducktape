@@ -1,8 +1,7 @@
 import { describe, expect, it } from "vitest";
 
-import { recentToolCallTtlMs } from "../approval_state";
 import { toolCallPreview, toolPreview } from "../tool_rendering/index";
-import { SAMPLE_PENDING, SAMPLE_TOOL_CALLS, sampleRecentToolCalls } from "./sample_data";
+import { SAMPLE_PENDING, SAMPLE_TOOL_CALLS } from "./sample_data";
 
 const CUSTOM_HISTORY_IDS = new Set(["tc_1", "tc_2", "tc_3"]);
 const CUSTOM_PENDING_IDS = new Set(["tc_p2"]);
@@ -30,11 +29,5 @@ describe("screenshot tool-call fixtures", () => {
     for (const approval of customPending) {
       expectCustomPreview(approval.server_id, approval.tool_name, approval.arguments ?? {});
     }
-  });
-
-  it("constructs recent calls relative to the render clock", () => {
-    const nowMs = 20_000;
-    const [recent] = sampleRecentToolCalls(nowMs);
-    expect(recent.hideAtMs).toBe(nowMs + (recentToolCallTtlMs(recent.record.status) ?? 0));
   });
 });

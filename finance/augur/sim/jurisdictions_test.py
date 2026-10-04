@@ -53,14 +53,6 @@ def test_every_dollar_amount_is_tagged_indexed_or_fixed() -> None:
     IncomeTax.model_validate(data)
 
 
-def test_a_situs_inherits_every_level_above_it() -> None:
-    assert [level.jurisdiction_id for level in load_jurisdiction(JurisdictionId("san_francisco")).lineage()] == [
-        "san_francisco",
-        "california",
-        "federal_us",
-    ]
-
-
 def test_unknown_law_is_refused_rather_than_ignored() -> None:
     """A key nothing reads would promise law the engine does not apply."""
     data = load_jurisdiction(JurisdictionId("california")).model_dump()

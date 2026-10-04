@@ -13,11 +13,8 @@ from agentplane.app.main import AppSettingsConfig
 from agentplane.app.presets import SandboxPreset, ThreadPreset
 from agentplane.runner.harness import Harness
 from agentplane.sandbox_service.kubernetes_grants import KubernetesGrant
-from cluster.cdk8s.model_rosters import OLLAMA_OPENAI_ROUTES, Route
+from cluster.cdk8s.model_rosters import Route
 from cluster.cdk8s.model_selections import HarnessRoutes
-
-# Transitional export for the live acceptance test until the visibility PR lands.
-OLLAMA_MODELS = [route.id for route in OLLAMA_OPENAI_ROUTES]
 
 _THREAD_PRESET_PUBLIC_CODER_CODEX = "public-coder-codex"
 _THREAD_PRESET_HAKU_CLAUDE = "haku-claude"

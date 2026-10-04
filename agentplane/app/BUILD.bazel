@@ -1185,7 +1185,7 @@ py_library(
     srcs = ["database_updates.py"],
     deps = [
         ":changes",
-        "@pypi//asyncpg",
+        "//agentplane/postgres:listener",
         "@pypi//sqlalchemy",
     ],
 )

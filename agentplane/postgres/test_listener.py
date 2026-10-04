@@ -1,6 +1,7 @@
 """Shared LISTEN lifecycle against real PostgreSQL, independent of service schemas."""
 
 import asyncio
+from collections.abc import Callable
 from typing import Any
 from unittest.mock import patch
 from uuid import uuid4
@@ -27,9 +28,9 @@ async def listener(postgres_container: PostgresContainer, changed: asyncio.Event
     )
     return PostgresListener(
         url,
-        channel="listener_test",
+        channels=("listener_test_first", "listener_test_second"),
         application_name=f"listener-test-{uuid4().hex}",
-        notified=lambda payload: changed.set(),
+        notified=lambda channel, payload: changed.set(),
         invalidated=changed.set,
     )
 
@@ -68,7 +69,7 @@ async def test_reconnect_invalidates_without_a_new_notification_and_logs_safe_di
     async with listener.listen():
         assert changed.is_set()
         changed.clear()
-        start = listener.start
+        connect = listener._connect
         attempts = 0
 
         async def reconnect() -> None:
@@ -76,11 +77,11 @@ async def test_reconnect_invalidates_without_a_new_notification_and_logs_safe_di
             attempts += 1
             if attempts == 1:
                 raise asyncpg.CannotConnectNowError("secret-bearing connection details")
-            await start()
+            await connect()
 
         assert listener._connection is not None
         old_connection = listener._connection
-        with patch.object(listener, "start", side_effect=reconnect):
+        with patch.object(listener, "_connect", side_effect=reconnect):
             old_connection.terminate()
             async with asyncio.timeout(10):
                 await changed.wait()
@@ -103,7 +104,7 @@ async def test_reconnect_invalidates_without_a_new_notification_and_logs_safe_di
 async def test_nontransient_reconnect_errors_escape_scope(listener: PostgresListener, error: Exception) -> None:
     with pytest.RaisesGroup(pytest.RaisesExc(type(error))):
         async with listener.listen():
-            with patch.object(listener, "start", side_effect=error):
+            with patch.object(listener, "_connect", side_effect=error):
                 assert listener._connection is not None
                 listener._connection.terminate()
                 async with asyncio.timeout(10):
@@ -114,23 +115,39 @@ async def test_nontransient_reconnect_errors_escape_scope(listener: PostgresList
 async def test_duplicate_start_does_not_close_active_listener(listener: PostgresListener) -> None:
     async with listener.listen():
         with pytest.raises(RuntimeError, match="already started"):
-            await listener.start()
+            async with listener.connection():
+                pytest.fail("duplicate connection was accepted")
         with pytest.raises(RuntimeError, match="already started"):
             async with listener.listen():
                 pytest.fail("duplicate scope was accepted")
         assert listener.connected
+        assert listener._connection is not None
+        listener._connection.terminate()
+        async with asyncio.timeout(10):
+            await listener.wait_until_disconnected()
+        # Ownership includes the reconnect gap, even when there is no healthy connection.
+        with pytest.raises(RuntimeError, match="already started"):
+            async with listener.connection():
+                pytest.fail("a second owner entered during recovery")
 
 
 @pytest.mark.parametrize("error", [ValueError("registration failed"), asyncio.CancelledError()])
 async def test_failed_listen_registration_closes_connection(listener: PostgresListener, error: BaseException) -> None:
-    # Inject failure after a real connection is established, at the awaited LISTEN registration.
-    async def fail(connection: asyncpg.Connection[Any], channel: str, callback: object) -> None:
-        connections.append(connection)
-        raise error
-
+    # The second registration fails after a real connection is already listening on the first.
+    add_listener = asyncpg.Connection.add_listener
     connections: list[asyncpg.Connection[Any]] = []
+
+    async def fail(
+        connection: asyncpg.Connection[Any], channel: str, callback: Callable[[object, int, str, object], None]
+    ) -> None:
+        assert not listener.connected
+        if channel == "listener_test_second":
+            connections.append(connection)
+            raise error
+        await add_listener(connection, channel, callback)
+
     with patch.object(asyncpg.Connection, "add_listener", new=fail), pytest.raises(type(error)):
-        async with listener.listen():
+        async with listener.connection():
             pytest.fail("failed registration entered the scope")
     assert len(connections) == 1
     assert connections[0].is_closed()

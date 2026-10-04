@@ -17,7 +17,7 @@ cdk8s_import(
     crd = "@flux_kustomization_crd//file",
     module_name = "flux_kustomize",
     module_path = "io/fluxcd/toolkit/kustomize",
-    visibility = ["//visibility:public"],
+    visibility = ["//cluster/cdk8s:__subpackages__"],
 )
 
 cdk8s_import(
@@ -25,7 +25,7 @@ cdk8s_import(
     crd = "@flux_helmrelease_crd//file",
     module_name = "flux_helm",
     module_path = "io/fluxcd/toolkit/helm",
-    visibility = ["//visibility:public"],
+    visibility = ["//cluster/cdk8s:__subpackages__"],
 )
 
 cdk8s_import(
@@ -33,7 +33,7 @@ cdk8s_import(
     crd = "@flux_helmrepository_crd//file",
     module_name = "flux_source",
     module_path = "io/fluxcd/toolkit/source",
-    visibility = ["//visibility:public"],
+    visibility = ["//cluster/cdk8s:__subpackages__"],
 )
 
 cdk8s_import(
@@ -41,7 +41,7 @@ cdk8s_import(
     crd = "@flux_imagerepository_crd//file",
     module_name = "flux_imagerepository_crds",
     module_path = "io/fluxcd/toolkit/image",
-    visibility = ["//visibility:public"],
+    visibility = ["//cluster/cdk8s:__subpackages__"],
 )
 
 cdk8s_import(
@@ -49,7 +49,7 @@ cdk8s_import(
     crd = "@flux_imagepolicy_crd//file",
     module_name = "flux_imagepolicy_crds",
     module_path = "io/fluxcd/toolkit/image",
-    visibility = ["//visibility:public"],
+    visibility = ["//cluster/cdk8s:__subpackages__"],
 )
 
 cdk8s_import(
@@ -57,7 +57,7 @@ cdk8s_import(
     crd = "@flux_gitrepository_crd//file",
     module_name = "flux_gitrepository_crds",
     module_path = "io/fluxcd/toolkit/source",
-    visibility = ["//visibility:public"],
+    visibility = ["//cluster/cdk8s:__subpackages__"],
 )
 
 cdk8s_import(
@@ -65,7 +65,7 @@ cdk8s_import(
     crd = "@flux_imageupdateautomation_crd//file",
     module_name = "flux_imageupdateautomation_crds",
     module_path = "io/fluxcd/toolkit/image",
-    visibility = ["//visibility:public"],
+    visibility = ["//cluster/cdk8s:__subpackages__"],
 )
 
 cdk8s_import(
@@ -73,7 +73,7 @@ cdk8s_import(
     crd = "@flux_receiver_crd//file",
     module_name = "flux_receiver_crds",
     module_path = "io/fluxcd/toolkit/notification",
-    visibility = ["//visibility:public"],
+    visibility = ["//cluster/cdk8s:__subpackages__"],
 )
 
 cdk8s_import(
@@ -81,7 +81,7 @@ cdk8s_import(
     crd = "@flux_provider_crd//file",
     module_name = "flux_provider_crds",
     module_path = "io/fluxcd/toolkit/notification",
-    visibility = ["//visibility:public"],
+    visibility = ["//cluster/cdk8s:__subpackages__"],
 )
 
 cdk8s_import(
@@ -89,7 +89,7 @@ cdk8s_import(
     crd = "@flux_alert_crd//file",
     module_name = "flux_alert_crds",
     module_path = "io/fluxcd/toolkit/notification",
-    visibility = ["//visibility:public"],
+    visibility = ["//cluster/cdk8s:__subpackages__"],
 )
 
 py_library(

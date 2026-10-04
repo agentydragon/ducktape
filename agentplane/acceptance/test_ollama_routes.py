@@ -11,22 +11,19 @@ import pytest
 import pytest_bazel
 
 from agentplane.acceptance.agent import Agent
+from agentplane.acceptance.ollama_catalog import ollama_cases
 from agentplane.app.client import Client
 from agentplane.app.sandbox_models import SandboxView
 from agentplane.protocol import event_pb2
 from agentplane.runner import protocol_pb2
 from agentplane.runner.harness import Harness
-from cluster.cdk8s.agentplane.app_settings import OLLAMA_MODELS
+from util.bazel.runfiles import get_required_path
 from util.testing.undeclared_outputs import undeclared_outputs_dir
 
 # gazelle:include_dep @pypi//protobuf
 
 Sandboxes = Callable[..., Awaitable[SandboxView]]
-CASES = [
-    (harness, route)
-    for route in sorted(OLLAMA_MODELS, key=lambda route: not route.endswith("-128k"))
-    for harness in (protocol_pb2.HARNESS_CLAUDE, protocol_pb2.HARNESS_CODEX)
-]
+CASES = ollama_cases(get_required_path("ducktape/cluster/generated/agentplane-testing/agentplane-testing.k8s.yaml"))
 
 
 def _id(case: tuple[protocol_pb2.Harness, str]) -> str:

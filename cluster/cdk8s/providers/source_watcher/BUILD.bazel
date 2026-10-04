@@ -12,5 +12,5 @@ cdk8s_import(
     crd_version = "v1beta1",
     module_name = "source_watcher_crds",
     module_path = "io/fluxcd/extensions/source",
-    visibility = ["//visibility:public"],
+    visibility = ["//cluster/cdk8s:__subpackages__"],
 )

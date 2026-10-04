@@ -420,7 +420,7 @@ async def live_threads(index: Index, store: Store, updates: Updates, shutdown: S
         return ThreadsSnapshot(
             sandboxes=index.sandbox_views(),
             threads=await store.list_threads(include_archived=True),
-            updates_connected=updates.connected,
+            updates_connected=updates.listener.connected,
             watch=_health(index),
         )
 

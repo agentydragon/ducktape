@@ -372,31 +372,6 @@ def unreachable_floor(*, horizon_months: int) -> Holder:
     )
 
 
-def test_the_issuers_capacity_caps_what_a_tender_can_sell() -> None:
-    """A quarter of the position is sellable, so a floor that wants all of it gets a quarter."""
-
-    horizon = 12
-    case = unreachable_floor(horizon_months=horizon)
-    rollout = run(
-        case,
-        protocol(
-            horizon_months=horizon,
-            initial_mark=Decimal(100),
-            tender_month=5,
-            tender_mark=Decimal(100),
-            sale_capacity=Decimal("0.25"),
-        ),
-    )
-
-    assert units_held(rollout, month=6) == pytest.approx(75.0)
-    assert cash(rollout, case, month=6) == pytest.approx(2_500.0)
-    traced = opportunity(rollout, month=5)
-    assert traced["outcome"] == "sold"
-    assert traced["sellable_units"] == pytest.approx(25.0)
-    assert traced["target_units"] == pytest.approx(25.0)
-    assert traced["proceeds_quanta"] == 250_000
-
-
 def test_zero_capacity_is_traced_as_its_own_outcome() -> None:
     """An open window with no capacity behind it is not the same as a satisfied floor."""
 

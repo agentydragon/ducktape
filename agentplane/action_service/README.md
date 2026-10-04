@@ -168,8 +168,10 @@ PostgreSQL `NOTIFY` in the same transaction. Each `updates.ActionUpdates` owns o
 listener connection and coalesces wakeups per waiting request: the API holds one per service
 instance, and `push.ActionPushNotifier` opens a second when `web_push` is configured. It
 subscribes before rechecking durable state and releases registrations on every exit path. A lost
-listener fails bounded waits explicitly until the listener is restarted; it never falls back to
-timed queries. The consumer owns listener startup/shutdown, separate from the dispatch coordinator.
+listener fails existing bounded waits even if they resume after reconnection: each subscription
+is fenced to its connection generation, including across awaited receipt reads. New waits can
+subscribe after recovery; immediate reads do not require the listener. There is no timed-query
+fallback. Consumers use scoped listener ownership, separate from the dispatch coordinator.
 
 ### Trusted read-only services
 

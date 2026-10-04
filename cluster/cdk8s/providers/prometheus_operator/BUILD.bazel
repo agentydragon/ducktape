@@ -11,7 +11,7 @@ cdk8s_import(
     crd = "@prometheus_operator_servicemonitor_crd//file",
     module_name = "prometheus_operator_crds",
     module_path = "com/coreos/monitoring",
-    visibility = ["//visibility:public"],
+    visibility = ["//cluster/cdk8s:__subpackages__"],
 )
 
 cdk8s_import(
@@ -19,7 +19,7 @@ cdk8s_import(
     crd = "@prometheus_operator_podmonitor_crd//file",
     module_name = "prometheus_operator_podmonitor_crds",
     module_path = "com/coreos/monitoring",
-    visibility = ["//visibility:public"],
+    visibility = ["//cluster/cdk8s:__subpackages__"],
 )
 
 cdk8s_import(
@@ -27,7 +27,7 @@ cdk8s_import(
     crd = "@prometheus_operator_prometheusrule_crd//file",
     module_name = "prometheus_operator_prometheusrule_crds",
     module_path = "com/coreos/monitoring",
-    visibility = ["//visibility:public"],
+    visibility = ["//cluster/cdk8s:__subpackages__"],
 )
 
 py_library(

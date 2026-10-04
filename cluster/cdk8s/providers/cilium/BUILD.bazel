@@ -11,7 +11,7 @@ cdk8s_import(
     crd = "@cilium_networkpolicy_crd//file",
     module_name = "cilium_crds",
     module_path = "io/cilium",
-    visibility = ["//visibility:public"],
+    visibility = ["//cluster/cdk8s:__subpackages__"],
 )
 
 # A separate Python package: the generated struct names differ from the namespaced policy's.
@@ -20,7 +20,7 @@ cdk8s_import(
     crd = "@cilium_clusterwide_networkpolicy_crd//file",
     module_name = "cilium_clusterwide_crds",
     module_path = "io/cilium",
-    visibility = ["//visibility:public"],
+    visibility = ["//cluster/cdk8s:__subpackages__"],
 )
 
 cdk8s_import(
@@ -28,7 +28,7 @@ cdk8s_import(
     crd = "@cilium_envoyconfig_crd//file",
     module_name = "cilium_envoyconfig_crds",
     module_path = "io/cilium",
-    visibility = ["//visibility:public"],
+    visibility = ["//cluster/cdk8s:__subpackages__"],
 )
 
 py_library(

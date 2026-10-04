@@ -77,13 +77,13 @@ async def test_listener_reconnect_wakes_every_channel_for_writes_during_the_gap(
                 )
             # Wait on the termination callback itself, rather than an untagged Changes wakeup:
             # a previous database notification can arrive after the subscription starts.
-            await asyncio.wait_for(database_updates.wait_until_disconnected(), timeout=5)
-            assert not database_updates.connected
+            await asyncio.wait_for(database_updates.listener.wait_until_disconnected(), timeout=5)
+            assert not database_updates.listener.connected
             changed.clear()
             sessions_changed.clear()
             await ingestion.record(thread, [event_entry(1, harness_lost=event_pb2.HarnessLost())], lease=lease)
             await asyncio.wait_for(changed.wait(), timeout=5)
-            assert database_updates.connected
+            assert database_updates.listener.connected
             assert [entry.cursor for entry in await replica.event_logs.events(thread, limit=10)] == [1]
             # Nothing announced a session change: only the reconnect itself wakes that channel's readers.
             await asyncio.wait_for(sessions_changed.wait(), timeout=5)
@@ -91,6 +91,12 @@ async def test_listener_reconnect_wakes_every_channel_for_writes_during_the_gap(
             changed.clear()
             await store.rename(thread, "after reconnect")
             await asyncio.wait_for(changed.wait(), timeout=5)
+            changed.clear()
+            sessions_changed.clear()
+            async with engine.begin() as connection:
+                await connection.execute(text("SELECT pg_notify(:channel, '')"), {"channel": Channel.OPERATOR_SESSIONS})
+            await asyncio.wait_for(sessions_changed.wait(), timeout=5)
+            assert not changed.is_set()
     finally:
         await engine.dispose()
 

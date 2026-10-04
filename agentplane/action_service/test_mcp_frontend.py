@@ -61,7 +61,7 @@ from agentplane.action_service.sandbox.binding import SandboxExecutorBinding
 from agentplane.action_service.sandbox.models import ExecResult
 from agentplane.action_service.service import ActionService
 from agentplane.action_service.test_fixtures.callers import in_sync_index
-from agentplane.action_service.updates import ActionUpdates
+from agentplane.action_service.updates import ActionSubscription, ActionUpdates
 from agentplane.subjects import ServiceAccountRef
 from agentplane.workload_auth.principal import (
     POD_NAME_CLAIM,
@@ -742,7 +742,7 @@ def _observed_subscriptions(frontend: Frontend, monkeypatch: pytest.MonkeyPatch)
     subscribe = frontend.updates.subscribe
 
     @contextmanager
-    def observed_subscription(request_id: UUID) -> Iterator[asyncio.Event]:
+    def observed_subscription(request_id: UUID) -> Iterator[ActionSubscription]:
         with subscribe(request_id) as changed:
             signals.registered.set()
             try:

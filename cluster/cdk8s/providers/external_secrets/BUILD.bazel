@@ -19,7 +19,7 @@ cdk8s_import(
     jsii_module_path = "io/external-secrets",
     module_name = "external_secrets_crds",
     module_path = "io/external_secrets",
-    visibility = ["//visibility:public"],
+    visibility = ["//cluster/cdk8s:__subpackages__"],
 )
 
 # App-local ClusterSecretStore bindings use a separate Python package to avoid collisions.
@@ -35,7 +35,7 @@ cdk8s_import(
     jsii_module_path = "io/external-secrets",
     module_name = "external_secret_store_crds",
     module_path = "io/external_secrets",
-    visibility = ["//visibility:public"],
+    visibility = ["//cluster/cdk8s:__subpackages__"],
 )
 
 cdk8s_import(
@@ -45,7 +45,7 @@ cdk8s_import(
     jsii_module_path = "io/external-secrets/generators",
     module_name = "eso_password_generator_crds",
     module_path = "io/external_secrets/generators",
-    visibility = ["//visibility:public"],
+    visibility = ["//cluster/cdk8s:__subpackages__"],
 )
 
 # Same KeeperSecurity omission as clustersecretstore.
@@ -58,7 +58,7 @@ cdk8s_import(
     jsii_module_path = "io/external-secrets",
     module_name = "external_secrets_secretstore_crds",
     module_path = "io/external_secrets",
-    visibility = ["//visibility:public"],
+    visibility = ["//cluster/cdk8s:__subpackages__"],
 )
 
 # The bundle also lists v1beta1, no longer served.
@@ -70,7 +70,7 @@ cdk8s_import(
     jsii_module_path = "io/external-secrets",
     module_name = "external_secrets_clusterexternalsecret_crds",
     module_path = "io/external_secrets",
-    visibility = ["//visibility:public"],
+    visibility = ["//cluster/cdk8s:__subpackages__"],
 )
 
 py_library(

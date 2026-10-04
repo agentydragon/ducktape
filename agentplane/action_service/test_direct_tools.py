@@ -234,12 +234,8 @@ async def direct(
 
     @asynccontextmanager
     async def lifespan(app: Starlette) -> AsyncIterator[None]:
-        await updates.listener.start()
-        try:
-            async with mcp_app.lifespan(mcp_app):
-                yield
-        finally:
-            await updates.listener.close()
+        async with updates.listener.connection(), mcp_app.lifespan(mcp_app):
+            yield
 
     app = Starlette(routes=[Route("/mcp", TransportDisconnects(mcp_app))], lifespan=lifespan)
     try:

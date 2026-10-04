@@ -5,6 +5,13 @@ how to regenerate: `cluster/AGENTS.md` § Generated manifests.
 
 ## Boundaries
 
+- **Generation code is not an application library.** Keep model rosters, config builders,
+  and generated CRD bindings visible only to their cdk8s consumers. External tools and
+  acceptance tests read generated artifacts or deployed APIs, not generator internals.
+  Existing narrow visibility grants for cluster validation are explicit test seams, not
+  precedent for runtime imports; public data targets and the synthesis CLI are separate
+  from Python implementation visibility.
+
 - **The vocabulary is Kubernetes, cdk8s, Flux and Kustomize objects, plus plain Python
   values.** Nothing here introduces a concept those do not have: no marker annotation,
   no "provides" declaration, no registry, no convention a reader must learn on top of the

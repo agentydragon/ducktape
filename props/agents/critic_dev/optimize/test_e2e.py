@@ -39,7 +39,7 @@ from props.core.eval_api_models import CriticRunStatus, GradingStatusResponse, R
 from props.core.ids import DefinitionId
 from props.core.models.examples import ExampleKind, WholeSnapshotExample
 from props.db.database import Database
-from props.db.models import AgentRun, AgentRunStatus, GradingEdge
+from props.db.models import AgentRun, AgentRunStatus
 
 logger = logging.getLogger(__name__)
 
@@ -190,19 +190,8 @@ async def test_optimizer_orchestrates_critic(
                     .all()
                 )
                 assert len(critic_runs) >= 1, "Expected at least one critic run spawned by optimizer"
-
-                # Collect IDs while session is open to avoid DetachedInstanceError
-                critic_run_ids = [cr.agent_run_id for cr in critic_runs]
                 for cr in critic_runs:
                     assert cr.status == AgentRunStatus.EXITED, f"Critic run {cr.agent_run_id} should be COMPLETED"
-
-            # Verify grading edges were created (drift resolved)
-            with synced_db.session() as session:
-                for crid in critic_run_ids:
-                    edges = session.query(GradingEdge).filter_by(critique_run_id=crid).all()
-                    logger.info(f"Critic {crid} has {len(edges)} grading edges")
-                    # The critic mock creates 1 issue, and fill_remaining creates edges for each GT occurrence
-                    assert len(edges) >= 0, "Grading edges should be created"
 
 
 if __name__ == "__main__":

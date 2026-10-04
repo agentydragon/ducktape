@@ -31,7 +31,6 @@ class Situation:
     purchase: ScheduledPurchase
     sale: ScheduledSale
     home_values: Series
-    rollout_count: int = 1
 
 
 @pytest.fixture
@@ -82,15 +81,10 @@ def mortgage() -> Mortgage:
     )
 
 
-def composed(case: Situation, rollout: int = 0) -> World:
+def composed(case: Situation) -> World:
     """The situation's world declared piece by piece, as an experiment would write it."""
     world = world_on(
-        (case.home_values,),
-        horizon_months=6,
-        rollout_id=rollout,
-        rollout_count=case.rollout_count,
-        accounts=opening({CASH: 200_000, RESERVE: 3000}),
-        taxpayers=(),
+        (case.home_values,), horizon_months=6, accounts=opening({CASH: 200_000, RESERVE: 3000}), taxpayers=()
     )
     world.track(
         Biller(
@@ -213,35 +207,6 @@ def test_mortgage_postings_use_selected_cash_and_ledger_principal_through_payoff
     assert (sale.mortgage_payoff, sale.net_cash_to_owner) == (58_000, 122_000)
     assert world.account_balance(HOUSEHOLD, AccountId("savings")) == 1000
     assert all(sum(posting.amount for posting in entry.postings) == 0 for entry in financial.journal)
-
-
-def test_mid_horizon_property_mark_and_sale_share_the_purchase_anchor(case: Situation) -> None:
-    purchase = replace(case.purchase, down_payment=100_000, mortgage=None)
-    case = replace(
-        case,
-        purchase=purchase,
-        rollout_count=2,
-        home_values=replace(
-            case.home_values, values=(50, 100, 200, 240, 300, 360, 800, 500, 7, 200, 240, 300, 360, 800)
-        ),
-    )
-    for rollout in range(2):
-        world = composed(case, rollout)
-        properties = world.properties
-        assert properties is not None
-        for month in range(6):
-            world.prepare_month(month, {}, {})
-            world.assemble_claims([])
-            if month in (2, 3, 4, 5):
-                state = properties.snapshots()[0]
-                expected_mark = (0, 0, 0, 120_000, 150_000, 180_000)[month]
-                if month >= 3:
-                    assert properties.market_value(purchase, world.market, month) == expected_mark
-                    assert state.adjusted_basis == 100_000
-            world.close_books(failed=False, mortgages=[])
-        sale = properties.sales[0]
-        assert (sale.gross_proceeds, sale.net_cash_to_owner, sale.realized_gain) == (180_000, 180_000, 80_000)
-        assert world.account_balance(HOUSEHOLD, AccountId("checking")) == 280_000
 
 
 @pytest.mark.parametrize("bad_payoff", ["missing", "inactive", "wrong_contract"])

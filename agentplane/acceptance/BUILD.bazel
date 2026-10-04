@@ -169,6 +169,7 @@ py_test(
     name = "test_ollama_routes",
     timeout = "eternal",
     srcs = ["test_ollama_routes.py"],
+    data = ["//cluster:agentplane_testing_manifest"],
     env_inherit = [
         "HOME",
         "KUBECONFIG",
@@ -182,13 +183,14 @@ py_test(
     deps = [
         ":agent",
         ":conftest",
+        ":ollama_catalog",
         "//:conftest",
         "//agentplane/app:client",
         "//agentplane/app:sandbox_models",
         "//agentplane/protocol:event_pb2",
         "//agentplane/runner:harness",
         "//agentplane/runner:protocol_pb2",
-        "//cluster/cdk8s/agentplane:app_settings",
+        "//util/bazel:runfiles",
         "//util/testing:undeclared_outputs",
         "@pypi//protobuf",
         "@pypi//pytest",
@@ -354,5 +356,34 @@ py_test(
         "@pypi//protobuf",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
+    ],
+)
+
+py_library(
+    name = "ollama_catalog",
+    srcs = ["ollama_catalog.py"],
+    deps = [
+        "//agentplane/app:api",
+        "//agentplane/runner:harness",
+        "//agentplane/runner:protocol_pb2",
+        "@pypi//protobuf",
+        "@pypi//pyyaml",
+    ],
+)
+
+py_test(
+    name = "test_ollama_catalog",
+    srcs = ["test_ollama_catalog.py"],
+    data = ["//cluster:agentplane_testing_manifest"],
+    deps = [
+        ":conftest",
+        ":ollama_catalog",
+        "//:conftest",
+        "//agentplane/runner:protocol_pb2",
+        "//util/bazel:runfiles",
+        "@pypi//protobuf",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+        "@pypi//pyyaml",
     ],
 )

@@ -15,7 +15,7 @@ cdk8s_import(
     jsii_module_path = "io/cert-manager",
     module_name = "cert_manager_crds",
     module_path = "io/cert_manager",
-    visibility = ["//visibility:public"],
+    visibility = ["//cluster/cdk8s:__subpackages__"],
 )
 
 cdk8s_import(
@@ -24,7 +24,7 @@ cdk8s_import(
     jsii_module_path = "io/cert-manager/trust",
     module_name = "trust_manager_crds",
     module_path = "io/cert_manager/trust",
-    visibility = ["//visibility:public"],
+    visibility = ["//cluster/cdk8s:__subpackages__"],
 )
 
 cdk8s_import(
@@ -33,7 +33,7 @@ cdk8s_import(
     jsii_module_path = "io/cert-manager",
     module_name = "cert_manager_clusterissuer_crds",
     module_path = "io/cert_manager",
-    visibility = ["//visibility:public"],
+    visibility = ["//cluster/cdk8s:__subpackages__"],
 )
 
 cdk8s_import(
@@ -42,7 +42,7 @@ cdk8s_import(
     jsii_module_path = "io/cert-manager",
     module_name = "cert_manager_issuer_crds",
     module_path = "io/cert_manager",
-    visibility = ["//visibility:public"],
+    visibility = ["//cluster/cdk8s:__subpackages__"],
 )
 
 py_library(

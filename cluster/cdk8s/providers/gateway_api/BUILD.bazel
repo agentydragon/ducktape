@@ -11,7 +11,7 @@ cdk8s_import(
     crd = "@gateway_api_httproute_crd//file",
     module_name = "gateway_api_crds",
     module_path = "io/k8s/networking/gateway",
-    visibility = ["//visibility:public"],
+    visibility = ["//cluster/cdk8s:__subpackages__"],
 )
 
 cdk8s_import(
@@ -19,7 +19,7 @@ cdk8s_import(
     crd = "@gateway_api_gateway_crd//file",
     module_name = "gateway_api_gateway_crds",
     module_path = "io/k8s/networking/gateway",
-    visibility = ["//visibility:public"],
+    visibility = ["//cluster/cdk8s:__subpackages__"],
 )
 
 cdk8s_import(
@@ -27,7 +27,7 @@ cdk8s_import(
     crd = "@gateway_api_tlsroute_crd//file",
     module_name = "gateway_api_tlsroute_crds",
     module_path = "io/k8s/networking/gateway",
-    visibility = ["//visibility:public"],
+    visibility = ["//cluster/cdk8s:__subpackages__"],
 )
 
 py_library(

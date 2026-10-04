@@ -333,19 +333,20 @@ async def _serve(
                 )
             if frontend_directory is not None:
                 app.mount("/", StaticFiles(directory=frontend_directory, html=True), name="test-frontend")
-            await database_updates.start()
-            await ingester.start()
             try:
-                with socket.socket() as listener:
-                    listener.bind(("127.0.0.1", 0))
-                    url = f"http://127.0.0.1:{listener.getsockname()[1]}"
-                    await ReadyServer(uvicorn.Config(app, log_level="warning"), connection, url).serve(
-                        sockets=[listener]
-                    )
+                async with database_updates.listener.listen():
+                    await ingester.start()
+                    try:
+                        with socket.socket() as listener:
+                            listener.bind(("127.0.0.1", 0))
+                            url = f"http://127.0.0.1:{listener.getsockname()[1]}"
+                            await ReadyServer(uvicorn.Config(app, log_level="warning"), connection, url).serve(
+                                sockets=[listener]
+                            )
+                    finally:
+                        await ingester.close()
+                        await runners.close()
             finally:
-                await ingester.close()
-                await runners.close()
-                await database_updates.close()
                 await engine.dispose()
                 await core.close()
 

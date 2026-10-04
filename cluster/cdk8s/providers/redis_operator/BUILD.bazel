@@ -12,7 +12,7 @@ cdk8s_import(
     module_name = "redis_operator_redisreplication_crds",
     module_path = "in/opstreelabs/redis/redis",
     python_module_path = "in_/opstreelabs/redis/redis",
-    visibility = ["//visibility:public"],
+    visibility = ["//cluster/cdk8s:__subpackages__"],
 )
 
 py_library(

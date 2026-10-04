@@ -10,7 +10,7 @@ cdk8s_import(
     crd = "@kyverno_clusterpolicy_crd//file",
     module_name = "kyverno_clusterpolicy_crds",
     module_path = "io/kyverno",
-    visibility = ["//visibility:public"],
+    visibility = ["//cluster/cdk8s:__subpackages__"],
 )
 
 cdk8s_import(
@@ -18,7 +18,7 @@ cdk8s_import(
     crd = "@kyverno_cleanuppolicy_crd//file",
     module_name = "kyverno_cleanuppolicy_crds",
     module_path = "io/kyverno",
-    visibility = ["//visibility:public"],
+    visibility = ["//cluster/cdk8s:__subpackages__"],
 )
 
 py_library(

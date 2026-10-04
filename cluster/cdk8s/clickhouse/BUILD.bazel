@@ -27,10 +27,7 @@ py_library(
     name = "schema",
     srcs = ["schema.py"],
     data = ["schema.sql"],
-    visibility = [
-        "//cluster/cdk8s:__pkg__",
-        "//cluster/validation:__pkg__",
-    ],
+    visibility = ["//cluster/cdk8s:__pkg__"],
     deps = [
         ":client",
         "//cluster/cdk8s:fleet_rules",

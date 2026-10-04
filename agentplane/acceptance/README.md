@@ -132,8 +132,9 @@ Run the other live scenarios by their explicit targets: `:test_launch_presets`,
 `:test_instructions`, `:test_mcp`, and `:test_thread_latency`.
 
 `//agentplane/acceptance:test_ollama_routes` exercises every configured Ollama chat
-route (sourced from `cluster/cdk8s/model_rosters.py`'s `OLLAMA_CHAT_MODELS`) on both
-harnesses, with the 128k cases first. Each cell creates a Sandbox,
+route offered by the committed testing app ConfigMap, on each harness that offers it,
+with the 128k cases first. Collection reads the generated manifest, not cdk8s Python;
+each case still checks that the live app offers the route before opening a session. Each cell creates a Sandbox,
 opens a real session, and requires recorded shell-tool output. It has an absolute
 300-second turn limit; a backend that never completes still leaves an interrupted
 turn rather than a model verdict. To run just one cell, set `OLLAMA_SMOKE_CASE` to

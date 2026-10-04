@@ -13,3 +13,10 @@ filegroup(
         "//cluster/validation:__pkg__",
     ],
 )
+
+# Diagnostics read the deployed configuration format, not the cdk8s implementation.
+filegroup(
+    name = "proxy_manifest",
+    srcs = ["app.k8s.yaml"],
+    visibility = ["//cluster/debug/litellm_probe:__pkg__"],
+)

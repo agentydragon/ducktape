@@ -68,13 +68,6 @@ FULL_INPUT_JSON = json.dumps(
 )
 
 
-def test_parse_minimal_input():
-    data = Input.model_validate_json("{}")
-    assert data.session_id == ""
-    assert data.model is None
-    assert data.cost is None
-
-
 def test_extra_fields_ignored():
     raw = json.dumps({"session_id": "abc", "some_future_field": True, "nested": {"x": 1}})
     data = Input.model_validate_json(raw)

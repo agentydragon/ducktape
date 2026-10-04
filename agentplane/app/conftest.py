@@ -147,11 +147,8 @@ def ingestion(engine: AsyncEngine) -> Ingestion:
 @pytest.fixture
 async def database_updates(engine: AsyncEngine) -> AsyncIterator[DatabaseUpdates]:
     updates = DatabaseUpdates(engine.url)
-    await updates.start()
-    try:
+    async with updates.listener.listen():
         yield updates
-    finally:
-        await updates.close()
 
 
 @dataclass(frozen=True)

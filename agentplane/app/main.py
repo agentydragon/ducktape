@@ -286,7 +286,6 @@ async def async_main(settings: Settings) -> None:
         )
         engine = connect(settings.database_url)
         database_updates = DatabaseUpdates(engine.url)
-        await database_updates.start()
         store = ThreadStore(engine)
         event_logs = EventLogStore(engine)
         content = ContentStore(engine)
@@ -378,12 +377,14 @@ async def serve_then_close(
     timeout bounds the requests and streams still open, and the ingester's lease release and closing the
     runner connections and the database have the rest of the Pod's grace period to themselves."""
     try:
-        await ingester.start()
-        await server.serve()
+        async with database_updates.listener.listen():
+            try:
+                await ingester.start()
+                await server.serve()
+            finally:
+                await ingester.close()
+                await runners.close()
     finally:
-        await ingester.close()
-        await runners.close()
-        await database_updates.close()
         await engine.dispose()
 
 

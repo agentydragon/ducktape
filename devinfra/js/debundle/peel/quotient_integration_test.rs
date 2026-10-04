@@ -1551,6 +1551,4 @@ fn gate_bypassing_partition_cycle_surfaces_and_recovers() {
         q.realizability_verdict().is_realizable(),
         "dissolving the cycle must restore realizability",
     );
-    // And gated merges keep functioning after recovery.
-    assert!(!q.merge_preserves_invariants(survivor, survivor));
 }

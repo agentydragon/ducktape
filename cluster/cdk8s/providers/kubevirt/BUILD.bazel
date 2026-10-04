@@ -13,7 +13,7 @@ cdk8s_import(
     crd_version = "v1",
     module_name = "kubevirt_kubevirt_crds",
     module_path = "io/kubevirt",
-    visibility = ["//visibility:public"],
+    visibility = ["//cluster/cdk8s:__subpackages__"],
 )
 
 cdk8s_import(
@@ -23,7 +23,7 @@ cdk8s_import(
     crd_version = "v1beta1",
     module_name = "kubevirt_cdi_crds",
     module_path = "io/kubevirt/cdi",
-    visibility = ["//visibility:public"],
+    visibility = ["//cluster/cdk8s:__subpackages__"],
 )
 
 cdk8s_import(
@@ -35,7 +35,7 @@ cdk8s_import(
     crd_wrap_kind = "VirtualMachine",
     module_name = "kubevirt_virtualmachine_crds",
     module_path = "io/kubevirt",
-    visibility = ["//visibility:public"],
+    visibility = ["//cluster/cdk8s:__subpackages__"],
 )
 
 cdk8s_import(
@@ -46,7 +46,7 @@ cdk8s_import(
     crd_version = "v1beta1",
     module_name = "kubevirt_storageprofile_crds",
     module_path = "io/kubevirt/cdi",
-    visibility = ["//visibility:public"],
+    visibility = ["//cluster/cdk8s:__subpackages__"],
 )
 
 py_library(

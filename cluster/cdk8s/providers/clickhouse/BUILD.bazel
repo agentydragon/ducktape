@@ -8,7 +8,7 @@ cdk8s_import(
     crd = "@clickhouse_installation_crd//file",
     module_name = "clickhouse_installation_crds",
     module_path = "com/altinity/clickhouse",
-    visibility = ["//visibility:public"],
+    visibility = ["//cluster/cdk8s:__subpackages__"],
 )
 
 cdk8s_import(
@@ -17,5 +17,5 @@ cdk8s_import(
     jsii_module_path = "com/altinity/clickhouse-keeper",
     module_name = "clickhouse_keeper_installation_crds",
     module_path = "com/altinity/clickhouse_keeper",
-    visibility = ["//visibility:public"],
+    visibility = ["//cluster/cdk8s:__subpackages__"],
 )

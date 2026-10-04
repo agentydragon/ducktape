@@ -88,14 +88,6 @@ pub fn install_all_shims(
     Ok(())
 }
 
-pub fn expected_shim_names(git: &GitShimConfig) -> Vec<&'static str> {
-    let mut names = BASE_SHIM_NAMES.to_vec();
-    if git_shim_enabled(git) {
-        names.push("git");
-    }
-    names
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -156,17 +148,24 @@ mod tests {
     }
 
     #[test]
-    fn expected_names_include_git_only_when_enabled() {
-        assert_eq!(
-            expected_shim_names(&GitShimConfig::default()),
-            vec!["bazelisk", "bazel", "bb", "bbr"]
-        );
-        assert_eq!(
-            expected_shim_names(&GitShimConfig {
+    fn any_single_block_switch_installs_git_shim() {
+        for git in [
+            GitShimConfig {
                 block_add_all: true,
                 ..Default::default()
-            }),
-            vec!["bazelisk", "bazel", "bb", "bbr", "git"]
-        );
+            },
+            GitShimConfig {
+                block_stash: true,
+                ..Default::default()
+            },
+            GitShimConfig {
+                block_amend: true,
+                ..Default::default()
+            },
+        ] {
+            let tmp = tempfile::tempdir().unwrap();
+            install_all_shims(tmp.path(), "s1", &git).unwrap();
+            assert!(tmp.path().join("git").exists(), "{git:?}");
+        }
     }
 }

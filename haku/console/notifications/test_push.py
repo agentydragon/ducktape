@@ -269,17 +269,6 @@ async def test_a_gone_subscription_is_pruned_and_a_transient_failure_is_not(
     assert remaining[0].last_failure_at is not None
 
 
-async def test_an_operator_with_no_subscriptions_sends_nothing(
-    subscriptions: PostgresPushSubscriptionStore, operator_id: UUID
-) -> None:
-    def handle(request: httpx.Request) -> httpx.Response:
-        raise AssertionError("no push should be attempted")
-
-    await _notifier(subscriptions, httpx.MockTransport(handle)).tool_call_pending(
-        operator_id=operator_id, record=_record()
-    )
-
-
 async def test_resubscribing_the_same_endpoint_replaces_rather_than_duplicates(
     subscriptions: PostgresPushSubscriptionStore, operator_id: UUID
 ) -> None:

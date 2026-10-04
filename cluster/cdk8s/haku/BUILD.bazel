@@ -11,7 +11,6 @@ py_library(
         "//cluster/cdk8s:__pkg__",
         "//cluster/cdk8s/clickhouse:__pkg__",
         "//cluster/cdk8s/haku:__pkg__",
-        "//cluster/validation:__pkg__",
     ],
 )
 
@@ -94,10 +93,7 @@ py_library(
 py_library(
     name = "charts",
     srcs = ["charts.py"],
-    visibility = [
-        "//cluster/cdk8s:__pkg__",
-        "//cluster/validation:__pkg__",
-    ],
+    visibility = ["//cluster/cdk8s:__pkg__"],
     deps = [
         ":console",
         ":database",

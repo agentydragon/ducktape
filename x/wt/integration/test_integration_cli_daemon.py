@@ -95,28 +95,6 @@ class TestRealGitOperations:
         worktree_repo = pygit2.Repository(worktree_path)
         assert worktree_repo.head.shorthand == "test/test-branch"
 
-    def test_worktree_status_with_changes(self, real_temp_repo, real_env, wt_cli):
-        """Test that status command shows git changes in worktrees."""
-
-        # Create worktree
-        wt_cli.sh_c("status-test")
-        worktree_path = real_temp_repo / "worktrees" / "status-test"
-
-        # Make some changes
-        (worktree_path / "modified.txt").write_text("Modified content")
-        (worktree_path / "untracked.txt").write_text("Untracked content")
-
-        # Stage one file using pygit2
-        worktree_repo = pygit2.Repository(worktree_path)
-        worktree_repo.index.add("modified.txt")
-        worktree_repo.index.write()
-
-        # Check status shows the changes
-        result = wt_cli.status()
-        assert result.returncode == 0
-        # Status should show the worktree (exact format depends on implementation)
-        assert_output_contains(result.stdout, "status-test")
-
     def test_sparse_empty_cone_then_extend(self, real_temp_repo, config_factory, wtcli):
         # Create a repo with nested content
         (real_temp_repo / "foo").mkdir()

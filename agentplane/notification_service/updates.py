@@ -23,7 +23,7 @@ class Wakeups:
         self._waiters: set[asyncio.Event] = set()
         self.listener = PostgresListener(
             url,
-            channel=CHANNEL,
+            channels=(CHANNEL,),
             application_name="agentplane-notification-wakeups",
             notified=self._notified,
             invalidated=self._wake,
@@ -42,5 +42,5 @@ class Wakeups:
         for changed in self._waiters:
             changed.set()
 
-    def _notified(self, _payload: object) -> None:
+    def _notified(self, _channel: str, _payload: object) -> None:
         self._wake()

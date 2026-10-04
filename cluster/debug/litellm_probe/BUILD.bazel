@@ -1,11 +1,11 @@
 load("@rules_python//python:defs.bzl", "py_library")
-load("//devinfra/python:defs.bzl", "py_binary")
+load("//devinfra/python:defs.bzl", "py_binary", "py_test")
 
 py_library(
     name = "probe_models",
     srcs = ["probe_models.py"],
+    data = ["//cluster/k8s/litellm/app:proxy_manifest"],
     deps = [
-        "//cluster/cdk8s/litellm:config",
         "//util/bazel:runfiles",
         "@pypi//httpx",
         "@pypi//jinja2",
@@ -19,4 +19,15 @@ py_binary(
     data = ["report.html.j2"],
     main_module = "cluster.debug.litellm_probe.probe_models",
     deps = [":probe_models"],
+)
+
+py_test(
+    name = "test_probe_models",
+    srcs = ["test_probe_models.py"],
+    deps = [
+        ":probe_models",
+        "//:conftest",
+        "@pypi//pytest_bazel",
+        "@pypi//pyyaml",
+    ],
 )

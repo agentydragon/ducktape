@@ -9,7 +9,7 @@ cdk8s_import(
     crd = "@tofu_controller_terraform_crd//file",
     module_name = "tofu_controller",
     module_path = "io/fluxcd/contrib/infra",
-    visibility = ["//visibility:public"],
+    visibility = ["//cluster/cdk8s:__subpackages__"],
 )
 
 py_library(

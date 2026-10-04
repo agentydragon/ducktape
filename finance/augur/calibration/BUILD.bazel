@@ -192,7 +192,6 @@ py_test(
         "//:conftest",
         "//finance/augur:conftest",
         "//finance/augur/model:exogenous",
-        "//finance/augur/model:private_equity_bundle",
         "//finance/augur/model:series",
         "//finance/augur/model:testing",
         "//finance/evidence:markets",

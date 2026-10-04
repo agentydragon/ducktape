@@ -10,5 +10,5 @@ cdk8s_import(
     crd_version = "v1",
     module_name = "external_snapshotter_volumesnapshotclass_crds",
     module_path = "io/k8s/storage/snapshot",
-    visibility = ["//visibility:public"],
+    visibility = ["//cluster/cdk8s:__subpackages__"],
 )

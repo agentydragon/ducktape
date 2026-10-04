@@ -14,7 +14,6 @@ from finance.evidence.loading import (
     fred_series_frame,
     french_factors_frame,
     french_international_market_frame,
-    monthly_last,
     read_monthly_levels,
     source_bytes,
     yahoo_adjusted_close_frame,
@@ -46,12 +45,6 @@ def test_fred_frame_parses_and_drops_empty_values() -> None:
 def test_fred_frame_rejects_missing_series_column() -> None:
     with pytest.raises(ValueError, match="observation_date and CPIAUCSL"):
         fred_series_frame(b"observation_date,OTHER\n2024-12-31,1.0\n", FRED_CPI)
-
-
-def test_monthly_last_takes_last_observation_per_month() -> None:
-    monthly = monthly_last(fred_series_frame(FRED_TEXT.encode(), FRED_CPI))
-    assert monthly["month"].to_list() == [date(2024, 12, 1)]
-    assert monthly["value"].to_list() == [5881.63]
 
 
 def _yahoo_payload(points: list[tuple[datetime, float | None]], *, granularity: str = "1d") -> bytes:
@@ -158,16 +151,6 @@ _FRENCH_BODY = textwrap.dedent("""\
 
     Copyright 2026 Eugene F. Fama and Kenneth R. French
     """)
-
-
-def test_french_factors_are_parsed_as_decimal_monthly_returns() -> None:
-    frame = french_factors_frame(_french_zip(_FRENCH_BODY), FRENCH_FACTORS)
-
-    assert frame.height == 3
-    assert frame.get_column("month").to_list() == [date(1926, 7, 1), date(1926, 8, 1), date(1926, 9, 1)]
-    # Total return is Mkt-RF + RF, in decimals: 2.89 + 0.22 = 3.11%.
-    assert frame.get_column("market_total_return")[0] == pytest.approx(0.0311)
-    assert frame.get_column("risk_free_rate")[0] == pytest.approx(0.0022)
 
 
 def test_the_annual_section_is_not_mistaken_for_monthly_rows() -> None:

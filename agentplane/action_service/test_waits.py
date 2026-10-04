@@ -76,55 +76,60 @@ async def waiting(engine: AsyncEngine, db_url: str, echo_catalog: ActionCatalog)
         vote=None,
     )
     updates = ActionUpdates(db_url)
-    await updates.listener.start()
-    try:
+    async with updates.listener.listen():
         yield Waiting(writer, reader, updates, ActionWaiter(reader, updates, max_wait_seconds=30), request)
-    finally:
-        await updates.listener.close()
 
 
 async def test_all_subscribers_receive_cross_replica_commit(waiting: Waiting, db_url: str) -> None:
     second = ActionUpdates(db_url)
-    await second.listener.start()
-    try:
+    async with second.listener.connection():
         with waiting.updates.subscribe_all() as first, second.subscribe_all() as other:
             await decide(waiting, Verdict.DENY)
             async with asyncio.timeout(10):
-                await asyncio.gather(first.wait(), other.wait())
+                await asyncio.gather(first.changed.wait(), other.changed.wait())
             assert (await waiting.service.get(waiting.request.id, CALLER)).state is ActionState.DENIED
         assert not second._all_subscribers
-    finally:
-        await second.listener.close()
 
 
 async def test_all_subscribers_wake_on_channel_loss(waiting: Waiting) -> None:
-    with waiting.updates.subscribe_all() as changed:
-        await waiting.updates.listener.close()
-        assert changed.is_set()
+    with waiting.updates.subscribe_all() as subscription:
+        assert waiting.updates.listener._connection is not None
+        waiting.updates.listener._connection.terminate()
+        async with asyncio.timeout(10):
+            await waiting.updates.listener.wait_until_disconnected()
+        assert subscription.changed.is_set()
         with pytest.raises(UpdatesUnavailableError):
-            waiting.updates.check_available()
+            subscription.check_available()
 
 
-async def test_listener_recovers_after_connection_loss(waiting: Waiting, monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_listener_recovers_but_old_subscriptions_stay_unavailable(
+    waiting: Waiting, monkeypatch: pytest.MonkeyPatch
+) -> None:
     restarted = asyncio.Event()
-    start = waiting.updates.listener.start
+    connect = waiting.updates.listener._connect
 
-    async def observed_start() -> None:
-        await start()
+    async def observed_connect() -> None:
+        await connect()
         restarted.set()
 
-    monkeypatch.setattr(waiting.updates.listener, "start", observed_start)
-    await waiting.updates.listener.close()
-    async with waiting.updates.listener.listen():
-        restarted.clear()
+    monkeypatch.setattr(waiting.updates.listener, "_connect", observed_connect)
+    with (
+        waiting.updates.subscribe_all() as all_updates,
+        waiting.updates.subscribe(waiting.request.id) as request_updates,
+    ):
         assert waiting.updates.listener._connection is not None
         waiting.updates.listener._connection.terminate()
         async with asyncio.timeout(10):
             await restarted.wait()
-        with waiting.updates.subscribe_all() as changed:
+        assert waiting.updates.listener.connected
+        for subscription in (all_updates, request_updates):
+            with pytest.raises(UpdatesUnavailableError):
+                subscription.check_available()
+        with waiting.updates.subscribe_all() as fresh:
+            fresh.check_available()
             await decide(waiting, Verdict.DENY)
             async with asyncio.timeout(10):
-                await changed.wait()
+                await fresh.changed.wait()
 
 
 async def subscribed(waiting: Waiting) -> None:
@@ -239,6 +244,54 @@ async def test_listener_loss_fails_wait_but_immediate_read_recovers(waiting: Wai
         assert (await waiting.waiter.get(waiting.request.id, CALLER, WaitOptions())).id == waiting.request.id
 
 
+@pytest.mark.parametrize("held_read", [2, 3], ids=["subscribed-read", "timeout-read"])
+async def test_wait_held_across_reconnection_fails_even_with_a_terminal_receipt(
+    waiting: Waiting, db_url: str, monkeypatch: pytest.MonkeyPatch, held_read: int
+) -> None:
+    updates = ActionUpdates(db_url)
+    waiter = ActionWaiter(waiting.service, updates, max_wait_seconds=30)
+    reading, release, reconnected = asyncio.Event(), asyncio.Event(), asyncio.Event()
+    get = waiting.service.get
+    reads = 0
+
+    async def held_get(request_id: UUID, principal: ReadPrincipal) -> ActionRequestView:
+        nonlocal reads
+        reads += 1
+        if reads == held_read:
+            reading.set()
+            await release.wait()
+        return await get(request_id, principal)
+
+    invalidated = updates.listener._invalidated
+
+    def observe_connection() -> None:
+        invalidated()
+        if updates.listener.connected:
+            reconnected.set()
+
+    monkeypatch.setattr(waiting.service, "get", held_get)
+    monkeypatch.setattr(updates.listener, "_invalidated", observe_connection)
+    async with asyncio.timeout(10), updates.listener.listen():
+        reconnected.clear()
+        task = asyncio.create_task(waiter.get(waiting.request.id, CALLER, WaitOptions(wait_seconds=0.001)))
+        try:
+            await reading.wait()
+            assert updates.listener._connection is not None
+            updates.listener._connection.terminate()
+            await reconnected.wait()
+            # The observer only resumes after the new connection is healthy. Neither a transient
+            # availability flag nor a reconnect delay can preserve this wait's loss contract.
+            await decide(waiting, Verdict.DENY)
+            release.set()
+            with pytest.raises(UpdatesUnavailableError, match="wait_seconds=0"):
+                await task
+            assert not updates._subscribers
+            assert (await waiter.get(waiting.request.id, CALLER, WaitOptions())).state is ActionState.DENIED
+        finally:
+            task.cancel()
+            await asyncio.gather(task, return_exceptions=True)
+
+
 async def test_other_caller_cannot_subscribe(waiting: Waiting) -> None:
     with pytest.raises(ActionNotFoundError):
         await waiting.waiter.get(waiting.request.id, OTHER, WaitOptions(wait_seconds=10))
@@ -251,15 +304,18 @@ async def test_rollback_and_duplicate_invalidations_keep_durable_state_authorita
     async with asyncio.timeout(10):
         # A barrier notification on the same channel establishes delivery order without sleeps.
         barrier = uuid4()
-        with waiting.updates.subscribe(waiting.request.id) as changed, waiting.updates.subscribe(barrier) as delivered:
+        with (
+            waiting.updates.subscribe(waiting.request.id) as request_updates,
+            waiting.updates.subscribe(barrier) as delivered,
+        ):
             async with engine.connect() as connection:
                 transaction = await connection.begin()
                 await connection.execute(select(func.pg_notify(CHANNEL, str(waiting.request.id))))
                 await transaction.rollback()
                 await connection.execute(select(func.pg_notify(CHANNEL, str(barrier))))
                 await connection.commit()
-            await delivered.wait()
-            assert not changed.is_set()
+            await delivered.changed.wait()
+            assert not request_updates.changed.is_set()
         task = asyncio.create_task(waiting.waiter.get(waiting.request.id, CALLER, WaitOptions(wait_seconds=10)))
         await subscribed(waiting)
         async with engine.begin() as connection:

@@ -1244,7 +1244,6 @@ ts_library(
     isolated_typecheck = True,
     tsconfig = TSCONFIG,
     deps = [
-        ":approval_state",
         ":screenshot_harness_lib",
         "//:node_modules/vitest",
         "//haku/console/frontend/tool_rendering",

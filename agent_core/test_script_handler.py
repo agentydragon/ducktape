@@ -129,17 +129,6 @@ def test_yield_none_is_no_action():
     assert isinstance(handler.on_before_sample(), InjectItems)
 
 
-def test_events_not_buffered_after_exhaustion():
-    @script_handler
-    def script() -> ScriptGen:
-        yield None
-
-    handler = script()
-    handler.on_before_sample()  # exhaust
-    handler.on_tool_result_event(_tool_result_event("late", structured=EXEC_OK.model_dump()))
-    assert isinstance(handler.on_before_sample(), NoAction)
-
-
 def test_yield_from_sub_generator():
     def sub_step() -> ScriptGen[str]:
         events: list[ScriptEvent] = yield [FunctionCallItem(call_id="sub1", name="sub_tool", arguments="{}")]

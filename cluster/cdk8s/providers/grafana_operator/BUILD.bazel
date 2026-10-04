@@ -12,7 +12,7 @@ cdk8s_import(
     crd = "@grafana_grafana_crd//file",
     module_name = "grafana_grafana_crds",
     module_path = "org/integreatly/grafana",
-    visibility = ["//visibility:public"],
+    visibility = ["//cluster/cdk8s:__subpackages__"],
 )
 
 cdk8s_import(
@@ -20,7 +20,7 @@ cdk8s_import(
     crd = "@grafana_grafanadashboard_crd//file",
     module_name = "grafana_grafanadashboard_crds",
     module_path = "org/integreatly/grafana",
-    visibility = ["//visibility:public"],
+    visibility = ["//cluster/cdk8s:__subpackages__"],
 )
 
 cdk8s_import(
@@ -28,7 +28,7 @@ cdk8s_import(
     crd = "@grafana_grafanadatasource_crd//file",
     module_name = "grafana_grafanadatasource_crds",
     module_path = "org/integreatly/grafana",
-    visibility = ["//visibility:public"],
+    visibility = ["//cluster/cdk8s:__subpackages__"],
 )
 
 cdk8s_import(
@@ -36,7 +36,7 @@ cdk8s_import(
     crd = "@grafana_grafanaserviceaccount_crd//file",
     module_name = "grafana_grafanaserviceaccount_crds",
     module_path = "org/integreatly/grafana",
-    visibility = ["//visibility:public"],
+    visibility = ["//cluster/cdk8s:__subpackages__"],
 )
 
 # Named grafana_operator_grafana, not grafana: cdk8s_import above already claims the

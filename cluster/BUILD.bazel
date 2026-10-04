@@ -11,6 +11,13 @@ exports_files(
     visibility = ["//cluster:__subpackages__"],
 )
 
+# Live acceptance enumerates the committed app catalog without importing its generator.
+filegroup(
+    name = "agentplane_testing_manifest",
+    srcs = ["generated/agentplane-testing/agentplane-testing.k8s.yaml"],
+    visibility = ["//agentplane/acceptance:__pkg__"],
+)
+
 # Just the central ClusterPolicy manifests, so a per-policy test is not
 # invalidated by every unrelated manifest in the cluster (same reasoning as the
 # contract filegroups in //cluster/k8s). The retired Haku zone injector lives with its

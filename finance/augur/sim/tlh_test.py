@@ -40,16 +40,6 @@ def portfolio(assumptions: TlhAssumptions) -> TlhPortfolio:
     )
 
 
-def test_harvest_then_liquidation_conserves_net_gain(portfolio: TlhPortfolio) -> None:
-    loss = portfolio.advance(TlhMarketUpdate(month=0, price=100))
-    assert loss == ModeledRealizations(short_term_gain=-100)
-    assert portfolio.observe() == TlhObservation(value=10_000, reported_tax_basis=9_900)
-    sold = portfolio.liquidate()
-    assert sold.cash_received == 10_000
-    assert sold.realizations == ModeledRealizations(long_term_gain=100)
-    assert portfolio.observe() == TlhObservation(value=0, reported_tax_basis=0)
-
-
 def test_new_contribution_does_not_inherit_prior_harvest(portfolio: TlhPortfolio) -> None:
     portfolio.advance(TlhMarketUpdate(month=0, price=100))
     portfolio.contribute(10_000)

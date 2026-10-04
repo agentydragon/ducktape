@@ -222,11 +222,7 @@ def _check_shape(matrix: np.ndarray, request: ExogenousSamplingRequest) -> None:
 
 
 def check_two_constructions(paths: MarketPaths) -> None:
-    """Products built on one `MarketPaths` share its market series and leave it untouched.
-
-    Callers patch their market source to fail when called, so this also checks that product
-    construction never reloads or resamples markets.
-    """
+    """Products built on one `MarketPaths` share its market series and leave it untouched."""
 
     assert paths.equity_total_return_index is not None
     inputs = [

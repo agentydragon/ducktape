@@ -9,7 +9,7 @@ cdk8s_import(
     crd = "@keda_scaledjob_crd//file",
     module_name = "keda_scaledjob_crds",
     module_path = "sh/keda",
-    visibility = ["//visibility:public"],
+    visibility = ["//cluster/cdk8s:__subpackages__"],
 )
 
 cdk8s_import(
@@ -17,5 +17,5 @@ cdk8s_import(
     crd = "@keda_triggerauthentication_crd//file",
     module_name = "keda_triggerauthentication_crds",
     module_path = "sh/keda",
-    visibility = ["//visibility:public"],
+    visibility = ["//cluster/cdk8s:__subpackages__"],
 )

@@ -18,7 +18,6 @@ import yaml
 from jinja2 import Environment, FileSystemLoader, select_autoescape
 from pydantic import BaseModel, ConfigDict
 
-from cluster.cdk8s.litellm.config import main_proxy_config
 from util.bazel.runfiles import get_required_path
 
 DEFAULT_BASE_URL = "https://litellm.allegedly.works"
@@ -274,7 +273,10 @@ def _parse_args() -> argparse.Namespace:
         "--api-key-env", default="LITELLM_API_KEY", help="Environment variable containing the LiteLLM API key."
     )
     parser.add_argument(
-        "--config", type=Path, default=None, help="LiteLLM proxy config YAML. Defaults to the committed roster."
+        "--config",
+        type=Path,
+        default=None,
+        help="LiteLLM proxy config YAML. Defaults to the committed proxy ConfigMap.",
     )
     parser.add_argument(
         "--backend",
@@ -345,7 +347,18 @@ def _parse_args() -> argparse.Namespace:
 
 
 def _load_model_probes(config_path: Path | None) -> list[ModelProbe]:
-    config = yaml.safe_load(config_path.read_text()) if config_path is not None else main_proxy_config()
+    if config_path is None:
+        manifest = get_required_path("ducktape/cluster/k8s/litellm/app/app.k8s.yaml")
+        [config_map] = [
+            resource
+            for resource in yaml.safe_load_all(manifest.read_text())
+            if resource["kind"] == "ConfigMap"
+            and resource["metadata"]["namespace"] == "litellm"
+            and resource["metadata"]["name"] == "config"
+        ]
+        config = yaml.safe_load(config_map["data"]["config.yaml"])
+    else:
+        config = yaml.safe_load(config_path.read_text())
     probes: list[ModelProbe] = []
     for entry in config["model_list"]:
         model_info = entry.get("model_info") or {}

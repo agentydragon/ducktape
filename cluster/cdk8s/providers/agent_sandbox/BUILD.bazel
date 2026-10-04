@@ -17,7 +17,7 @@ cdk8s_import(
     jsii_module_path = "io/x-k8s/agents/extensions",
     module_name = "agent_sandbox_sandboxtemplate_crds",
     module_path = "io/x_k8s/agents/extensions",
-    visibility = ["//visibility:public"],
+    visibility = ["//cluster/cdk8s:__subpackages__"],
 )
 
 # Pinned to v1beta1 for the same reason as SandboxTemplate.
@@ -29,7 +29,7 @@ cdk8s_import(
     jsii_module_path = "io/x-k8s/agents/extensions",
     module_name = "agent_sandbox_sandboxwarmpool_crds",
     module_path = "io/x_k8s/agents/extensions",
-    visibility = ["//visibility:public"],
+    visibility = ["//cluster/cdk8s:__subpackages__"],
 )
 
 py_library(

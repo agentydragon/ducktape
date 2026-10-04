@@ -77,12 +77,10 @@ py_library(
     name = "model_rosters",
     srcs = ["model_rosters.py"],
     visibility = [
-        "//agentplane/acceptance:__pkg__",
         "//cluster/cdk8s/agentplane:__pkg__",
         "//cluster/cdk8s/gatus:__pkg__",
         "//cluster/cdk8s/litellm:__pkg__",
         "//cluster/cdk8s/parked:__pkg__",
-        "//haku/x/dispatch/deploy/litellm:__pkg__",
     ],
 )
 
@@ -951,10 +949,7 @@ py_library(
 py_library(
     name = "aiquota",
     srcs = ["aiquota.py"],
-    visibility = [
-        "//cluster/cdk8s/agentplane:__pkg__",
-        "//cluster/validation:__pkg__",
-    ],
+    visibility = ["//cluster/cdk8s/agentplane:__pkg__"],
     deps = [
         ":artifact_generators",
         ":fleet_rules",
@@ -989,10 +984,7 @@ py_library(
 py_library(
     name = "egress_fences",
     srcs = ["egress_fences.py"],
-    visibility = [
-        "//cluster/cdk8s:__subpackages__",
-        "//cluster/validation:__pkg__",
-    ],
+    visibility = ["//cluster/cdk8s:__subpackages__"],
     deps = [
         ":cilium",
         "//cluster/cdk8s/providers/cilium:ciliumnetworkpolicy",
@@ -1589,10 +1581,7 @@ py_library(
         "//ssh_keys:rugged-host-ed25519.pub",
         "//ssh_keys:wyrm2-host-ed25519.pub",
     ],
-    visibility = [
-        "//cluster/cdk8s:__subpackages__",
-        "//cluster/validation:__pkg__",
-    ],
+    visibility = ["//cluster/cdk8s:__subpackages__"],
     deps = [
         ":agent_machine_access",
         ":agent_namespace_rbac",
@@ -1848,7 +1837,6 @@ py_binary(
     data = ["@nodejs_linux_amd64//:bin/node"],
     env = {"JSII_NODE": "$(rootpath @nodejs_linux_amd64//:bin/node)"},
     main_module = "cluster.cdk8s.generate_manifests",
-    visibility = ["//visibility:public"],
     deps = [":generate_manifests_lib"],
 )
 
@@ -1925,7 +1913,7 @@ py_library(
 py_library(
     name = "agent_access_profiles",
     srcs = ["agent_access_profiles.py"],
-    visibility = ["//cluster:__subpackages__"],
+    visibility = ["//cluster/cdk8s:__subpackages__"],
     deps = [
         ":namespace_access",
         "//agentplane/sandbox_service:kubernetes_grants",

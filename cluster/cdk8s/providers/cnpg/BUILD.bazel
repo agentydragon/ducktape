@@ -12,7 +12,7 @@ cdk8s_import(
     crd = "@cnpg_cluster_crd//file",
     module_name = "cnpg_cluster_crds",
     module_path = "io/cnpg/postgresql",
-    visibility = ["//visibility:public"],
+    visibility = ["//cluster/cdk8s:__subpackages__"],
 )
 
 cdk8s_import(
@@ -20,7 +20,7 @@ cdk8s_import(
     crd = "@cnpg_database_crd//file",
     module_name = "cnpg_database_crds",
     module_path = "io/cnpg/postgresql",
-    visibility = ["//visibility:public"],
+    visibility = ["//cluster/cdk8s:__subpackages__"],
 )
 
 cdk8s_import(
@@ -28,7 +28,7 @@ cdk8s_import(
     crd = "@cnpg_scheduledbackup_crd//file",
     module_name = "cnpg_scheduledbackup_crds",
     module_path = "io/cnpg/postgresql",
-    visibility = ["//visibility:public"],
+    visibility = ["//cluster/cdk8s:__subpackages__"],
 )
 
 cdk8s_import(
@@ -36,7 +36,7 @@ cdk8s_import(
     crd = "@barman_cloud_objectstore_crd//file",
     module_name = "barman_cloud_objectstore_crds",
     module_path = "io/cnpg/barmancloud",
-    visibility = ["//visibility:public"],
+    visibility = ["//cluster/cdk8s:__subpackages__"],
 )
 
 py_library(

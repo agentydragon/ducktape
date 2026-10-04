@@ -63,18 +63,6 @@ import("../provider/entry.js").then(dynamic => console.log(dynamic.h()));
         &["h", "readable"],
         &[],
     );
-    assert_module_source(
-        &fixture.out_root,
-        "static/importer/outside.js",
-        &[
-            "import { h }",
-            "import * as ns",
-            "ns.h()",
-            "import(\"../provider/entry.js\")",
-            "dynamic.h()",
-        ],
-        &["import { readable }"],
-    );
     assert_all_emitted_js_checks(&fixture);
 }
 

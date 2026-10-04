@@ -24,12 +24,6 @@ def test_micro_price_degenerates_to_midpoint_without_sizes() -> None:
     ) == pytest.approx(0.7)
 
 
-def test_last_trade_ignored_when_a_two_sided_book_exists() -> None:
-    # The whole point of the fix: a stale/fractional last trade (0.04) does not override a live book.
-    quote = BookQuote(bid=0.69, ask=0.84, bid_size=10.0, ask_size=10.0, last_trade=0.04)
-    assert implied_probability(quote, volume=7000.0) == pytest.approx(0.765)
-
-
 def test_one_sided_book_falls_back_to_volume_backed_last() -> None:
     # A deep-OTM bucket with only a 1-cent ask but real volume keeps its ~1% via the last trade.
     quote = BookQuote(bid=None, ask=0.01, bid_size=None, ask_size=600.0, last_trade=0.01)

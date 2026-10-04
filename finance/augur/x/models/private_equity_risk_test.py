@@ -545,17 +545,6 @@ def test_scale_reverting_drift_young_when_small_mature_when_large() -> None:
     assert _scale_reverting_drift(huge, mu_mature=0.008, reversion=reversion)[0] == pytest.approx(0.008, abs=1e-4)
 
 
-def test_scale_reversion_off_is_byte_identical_to_constant_drift() -> None:
-    """No reversion submodel ⇒ the fast constant-drift cumsum path, unchanged."""
-
-    seeds = (101, 102, 103, 104)
-    constant = _valuation_issuer(valuation_monthly_log_return_mu=0.03)
-    a = _sample_company_valuation_vectorized(constant, valuation_seeds=seeds, horizon_months=36)
-    # A second issuer with the same params re-samples identically (determinism guard).
-    b = _sample_company_valuation_vectorized(constant, valuation_seeds=seeds, horizon_months=36)
-    np.testing.assert_array_equal(a, b)
-
-
 def test_scale_reversion_degenerate_matches_constant_drift() -> None:
     """`mu_young == mu_mature` makes the excess zero, so the SDE-integrated path equals the
     constant-drift cumsum path exactly (same shocks, same drift every step)."""

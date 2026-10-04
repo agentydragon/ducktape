@@ -67,17 +67,21 @@ class ActionWaiter:
         initial = await self._service.get(request_id, principal)
         if satisfied(initial, options.wait_until):
             return initial
-        with self._updates.subscribe(request_id) as changed:
+        with self._updates.subscribe(request_id) as subscription:
+            changed = subscription.changed
             deadline = asyncio.get_running_loop().time() + options.wait_seconds
             while True:
                 changed.clear()
-                self._updates.check_available()
+                subscription.check_available()
                 view = await self._service.get(request_id, principal)
+                subscription.check_available()
                 if satisfied(view, options.wait_until):
                     return view
                 try:
                     async with asyncio.timeout_at(deadline):
                         await changed.wait()
                 except TimeoutError:
-                    self._updates.check_available()
-                    return await self._service.get(request_id, principal)
+                    subscription.check_available()
+                    view = await self._service.get(request_id, principal)
+                    subscription.check_available()
+                    return view

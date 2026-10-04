@@ -25,50 +25,58 @@ class UpdatesUnavailableError(Exception):
     """The caller can recover its receipt with an immediate read, without resubmission."""
 
 
+class ActionSubscription:
+    """A wakeup and an immutable connection generation: loss cannot be erased by recovery."""
+
+    def __init__(self, listener: PostgresListener) -> None:
+        self.changed = asyncio.Event()
+        self._listener = listener
+        self._generation = listener.generation
+        self.check_available()
+
+    def check_available(self) -> None:
+        if not self._listener.connected or self._listener.generation != self._generation:
+            raise UpdatesUnavailableError(
+                "Action update channel unavailable; read the existing request with wait_seconds=0. "
+                "Do not submit a new idempotency key."
+            )
+
+
 class ActionUpdates:
     def __init__(self, database_url: str) -> None:
         self._subscribers: dict[UUID, set[asyncio.Event]] = {}
         self._all_subscribers: set[asyncio.Event] = set()
         self.listener = PostgresListener(
             make_url(database_url),
-            channel=CHANNEL,
+            channels=(CHANNEL,),
             application_name="agentplane-action-updates",
             notified=self._notified,
             invalidated=self._wake_all,
         )
 
-    def check_available(self) -> None:
-        if not self.listener.connected:
-            raise UpdatesUnavailableError(
-                "Action update channel unavailable; read the existing request with wait_seconds=0. "
-                "Do not submit a new idempotency key."
-            )
-
     @contextmanager
-    def subscribe(self, request_id: UUID) -> Iterator[asyncio.Event]:
-        self.check_available()
-        changed = asyncio.Event()
+    def subscribe(self, request_id: UUID) -> Iterator[ActionSubscription]:
+        subscription = ActionSubscription(self.listener)
         subscribers = self._subscribers.setdefault(request_id, set())
-        subscribers.add(changed)
+        subscribers.add(subscription.changed)
         try:
-            yield changed
+            yield subscription
         finally:
-            subscribers.remove(changed)
+            subscribers.remove(subscription.changed)
             if not subscribers:
                 del self._subscribers[request_id]
 
     @contextmanager
-    def subscribe_all(self) -> Iterator[asyncio.Event]:
+    def subscribe_all(self) -> Iterator[ActionSubscription]:
         """Subscribe to every committed Action event for server-push consumers."""
-        self.check_available()
-        changed = asyncio.Event()
-        self._all_subscribers.add(changed)
+        subscription = ActionSubscription(self.listener)
+        self._all_subscribers.add(subscription.changed)
         try:
-            yield changed
+            yield subscription
         finally:
-            self._all_subscribers.discard(changed)
+            self._all_subscribers.discard(subscription.changed)
 
-    def _notified(self, payload: object) -> None:
+    def _notified(self, _channel: str, payload: object) -> None:
         for changed in self._all_subscribers:
             changed.set()
         try:

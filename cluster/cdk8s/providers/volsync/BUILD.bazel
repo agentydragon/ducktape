@@ -9,7 +9,7 @@ cdk8s_import(
     crd = "@volsync_replicationdestination_crd//file",
     module_name = "volsync_replicationdestination_crds",
     module_path = "backube/volsync",
-    visibility = ["//visibility:public"],
+    visibility = ["//cluster/cdk8s:__subpackages__"],
 )
 
 cdk8s_import(
@@ -17,7 +17,7 @@ cdk8s_import(
     crd = "@volsync_replicationsource_crd//file",
     module_name = "volsync_replicationsource_crds",
     module_path = "backube/volsync",
-    visibility = ["//visibility:public"],
+    visibility = ["//cluster/cdk8s:__subpackages__"],
 )
 
 py_library(

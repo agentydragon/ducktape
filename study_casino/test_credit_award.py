@@ -36,7 +36,6 @@ def test_millis_rounding_has_no_drift_at_minute_boundary() -> None:
     # 61 s → 1.01667 credits → 1017 millis; 59 s → 0.98333 → 983. Sum exact.
     assert millis_from_credits(base_session_credits(61)) == 1017
     assert millis_from_credits(base_session_credits(59)) == 983
-    assert 1017 + 983 == 2000
 
 
 def test_whole_minutes_stay_exact() -> None:

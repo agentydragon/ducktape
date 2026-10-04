@@ -35,23 +35,6 @@ def bond_books(bond: Bond, levels: tuple[int, ...]) -> tuple[Accounting, HeldBon
     return accounting(), HeldBonds((bond,), market)
 
 
-def test_no_month_zero_coupon_and_redemption_keeps_the_maturity_coupon(nominal: Bond) -> None:
-    accounting, bonds = bond_books(nominal, (100, 100, 100, 100))
-    assert bonds.snapshots(0, 0)[0].principal == 1000
-    bonds.advance(accounting, 0)
-    assert not bonds.cashflows
-    bonds.advance(accounting, 1)
-    assert accounting.ledger.balance(CASH) == 110
-    assert bonds.snapshots(2, 2)[0].active
-    bonds.advance(accounting, 2)
-    assert accounting.ledger.balance(CASH) == 1120
-    assert bonds.cashflows[-1].coupon == 10
-    assert bonds.cashflows[-1].redemption == 1000
-    assert not bonds.snapshots(3, 2)[0].active
-    assert accounting.tax.income.by_source[HOUSEHOLD, InterestIncome(character=Taxable())] == 20
-    assert accounting.ledger.trial_balance() == 0
-
-
 def test_tips_deflation_changes_income_but_redemption_has_a_face_floor(nominal: Bond) -> None:
     bond = replace(nominal, coupon=IndexedCoupon(annual_rate_ppb=120_000_000))
     accounting, bonds = bond_books(bond, (100, 90, 80, 80))

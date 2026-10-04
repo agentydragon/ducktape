@@ -261,9 +261,7 @@ py_test(
     deps = [
         ":output",
         ":post_tool_use",
-        ":pre_tool_use",
         ":session_start",
-        ":worktree_create",
         "//:conftest",
         "//devinfra/claude:conftest",
         "@pypi//pytest",

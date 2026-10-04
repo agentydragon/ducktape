@@ -151,6 +151,12 @@ def sigterm_is_survivable() -> Iterator[None]:
 
 
 @pytest.fixture
+def database_updates(engine: AsyncEngine) -> DatabaseUpdates:
+    # Unlike the route-only fixtures, this test runs the production owner of the listener scope.
+    return DatabaseUpdates(engine.url)
+
+
+@pytest.fixture
 async def database(db_url: str) -> AsyncIterator[AsyncEngine]:
     """The database as another replica sees it: the lease table, and who is connected."""
     engine = create_async_engine(db_url)

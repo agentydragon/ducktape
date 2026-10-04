@@ -16,7 +16,7 @@ cdk8s_import(
     crd = "@seaweed_adminscript_crd//file",
     module_name = "seaweed_adminscript_crds",
     module_path = "com/seaweedfs/seaweed",
-    visibility = ["//visibility:public"],
+    visibility = ["//cluster/cdk8s:__subpackages__"],
 )
 
 cdk8s_import(
@@ -24,7 +24,7 @@ cdk8s_import(
     crd = "@seaweed_bucket_crd//file",
     module_name = "seaweed_bucket_crds",
     module_path = "com/seaweedfs/seaweed",
-    visibility = ["//visibility:public"],
+    visibility = ["//cluster/cdk8s:__subpackages__"],
 )
 
 cdk8s_import(
@@ -32,7 +32,7 @@ cdk8s_import(
     crd = "@seaweed_resourcereferencegrant_crd//file",
     module_name = "seaweed_resourcereferencegrant_crds",
     module_path = "com/seaweedfs/seaweed",
-    visibility = ["//visibility:public"],
+    visibility = ["//cluster/cdk8s:__subpackages__"],
 )
 
 cdk8s_import(
@@ -40,7 +40,7 @@ cdk8s_import(
     crd = "@seaweed_s3credentials_crd//file",
     module_name = "seaweed_s3credentials_crds",
     module_path = "com/seaweedfs/seaweed",
-    visibility = ["//visibility:public"],
+    visibility = ["//cluster/cdk8s:__subpackages__"],
 )
 
 cdk8s_import(
@@ -48,7 +48,7 @@ cdk8s_import(
     crd = "@seaweed_s3identity_crd//file",
     module_name = "seaweed_s3identity_crds",
     module_path = "com/seaweedfs/seaweed",
-    visibility = ["//visibility:public"],
+    visibility = ["//cluster/cdk8s:__subpackages__"],
 )
 
 cdk8s_import(
@@ -56,7 +56,7 @@ cdk8s_import(
     crd = "@seaweed_s3policy_crd//file",
     module_name = "seaweed_s3policy_crds",
     module_path = "com/seaweedfs/seaweed",
-    visibility = ["//visibility:public"],
+    visibility = ["//cluster/cdk8s:__subpackages__"],
 )
 
 cdk8s_import(
@@ -64,7 +64,7 @@ cdk8s_import(
     crd = "@seaweed_s3policybinding_crd//file",
     module_name = "seaweed_s3policybinding_crds",
     module_path = "com/seaweedfs/seaweed",
-    visibility = ["//visibility:public"],
+    visibility = ["//cluster/cdk8s:__subpackages__"],
 )
 
 cdk8s_import(
@@ -72,7 +72,7 @@ cdk8s_import(
     crd = "@seaweed_seaweed_crd//file",
     module_name = "seaweed_seaweed_crds",
     module_path = "com/seaweedfs/seaweed",
-    visibility = ["//visibility:public"],
+    visibility = ["//cluster/cdk8s:__subpackages__"],
 )
 
 # Not `bucket`: the `cdk8s_import` above holds that name.
