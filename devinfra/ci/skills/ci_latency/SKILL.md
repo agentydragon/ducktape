@@ -254,10 +254,11 @@ covering queue/runtime arithmetic and CodeQL contention. Package and tests are u
 
 `agentydragon/ducktape`'s canonical [`ci-latency-history` branch](https://github.com/agentydragon/ducktape/tree/ci-latency-history)
 holds the latest reviewed report and its evidence. Its root contains `README.md`,
-`report.md`, `evidence.json`, `manifest.json`, a standalone `index.html`, and
-optionally `attribution.json`. The README provides durable navigation; the HTML
-renders the current report. Keep exactly one snapshot at the root, with no dated
-run directories or generated archive index. Git commit history preserves earlier
+`evidence.json`, `manifest.json`, a standalone `index.html`, and optionally
+`attribution.json`. The README provides durable navigation; `index.html` is the
+only published report. Keep authoring Markdown outside the history branch as the
+publisher input; do not commit a duplicate `report.md`. Keep exactly one snapshot
+at the root, with no dated run directories or generated archive index. Git commit history preserves earlier
 snapshots. Each new report replaces only the snapshot files; preserve the README
 and any unrelated files. If a new run has no attribution, remove the old
 `attribution.json` so it cannot be mistaken for current evidence. The history
@@ -284,8 +285,8 @@ python3 "$SKILL/publish.py" --source "$DEVEL_SHA" \
 `publish.py` only packages an **already written and reviewed** report and a safe
 HTML rendering of its text; it does not investigate CI, rank fixes, or validate
 conclusions. Review the narrative before publishing. The publisher replaces only
-the root snapshot files and leaves `README.md` and unrelated files intact. Do not
-mistake successful script execution for completion of the skill. Open a PR
+the root snapshot files, removes any leftover `report.md`, and leaves `README.md`
+and unrelated files intact. Do not mistake successful script execution for completion of the skill. Open a PR
 targeting the canonical `ci-latency-history` branch. Before submitting, fetch the
 branch again and confirm the PR includes its latest tip. If another run landed
 first, compare the observation windows and do not let an older run replace a
@@ -336,7 +337,7 @@ Reviewed JSON input example (one resource at a time):
 Use actual full SHA in place of the illustrative source field. Run
 `python3 scripts/attribution.py reviewed.json attribution.json`; inspect that
 sum of attributed seconds equals measured seconds. Include invocation/job URLs,
-selection and timing methodology in `report.md`. A runner step measures runner
+selection and timing methodology in the published HTML report. A runner step measures runner
 occupancy; an RBE action measures remote worker execution. **Never add these two
 resources**, or sum overlapping test wall times and call that feedback latency.
 Do not allocate an entire job to tests when provisioning, analysis, download,

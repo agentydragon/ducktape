@@ -49,7 +49,7 @@ def test_html_escapes():
     assert "<script>" not in publish.render("<script>")
 
 
-def test_publish_replaces_root_snapshot_and_removes_stale_attribution(tmp_path, monkeypatch):
+def test_publish_replaces_root_snapshot_and_removes_obsolete_artifacts(tmp_path, monkeypatch):
     history = tmp_path / "history"
     history.mkdir()
     (history / "README.md").write_text("Navigation stays at the root.\n")
@@ -84,7 +84,7 @@ def test_publish_replaces_root_snapshot_and_removes_stale_attribution(tmp_path, 
 
     publish.main()
 
-    assert (history / "report.md").read_text() == report.read_text()
+    assert not (history / "report.md").exists()
     assert json.loads((history / "evidence.json").read_text()) == {"jobs": 3}
     manifest = json.loads((history / "manifest.json").read_text())
     assert manifest["source_devel_commit"] == "a" * 40

@@ -29,7 +29,7 @@ def main():
     parser.add_argument("--source", required=True, help="Full SHA of inspected devel commit")
     parser.add_argument("--window-start", required=True, help="UTC ISO-8601")
     parser.add_argument("--window-end", required=True, help="UTC ISO-8601")
-    parser.add_argument("--report", required=True, type=Path)
+    parser.add_argument("--report", required=True, type=Path, help="Reviewed report input, rendered only to index.html")
     parser.add_argument("--evidence", required=True, type=Path)
     parser.add_argument("--attribution", type=Path)
     parser.add_argument("--out", required=True, type=Path, help="History branch worktree root")
@@ -52,7 +52,7 @@ def main():
     attribution = json.loads(args.attribution.read_text()) if args.attribution else None
     report = args.report.read_text()
     args.out.mkdir(parents=True, exist_ok=True)
-    (args.out / "report.md").write_text(report)
+    (args.out / "report.md").unlink(missing_ok=True)
     (args.out / "evidence.json").write_text(json.dumps(evidence, indent=2) + "\n")
     if attribution is not None:
         (args.out / "attribution.json").write_text(json.dumps(attribution, indent=2) + "\n")
