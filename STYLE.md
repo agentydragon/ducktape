@@ -362,12 +362,18 @@ re-assemble a bundle at runtime. Per-client details (`pygit2` ignores
   runner with an implementation of the platform APIs the code depends on. Mock only
   test-specific behavior or genuine external boundaries; do not reimplement the
   platform piecemeal inside a spec.
-- **Test externally meaningful behavior, not implementation text**: assert observable
-  behavior, public API contracts, schemas, and durable invariants — never inspect
-  implementation source text, count or forbid source fragments, or pin method identity.
-  Negative coding guidance belongs in this file, a header comment, or a lint rule when
-  genuinely enforceable; source-pattern tests are brittle and not a substitute for
-  design.
+- **Test externally meaningful behavior, not implementation text or structure**: assert
+  observable behavior, public API contracts, schemas, and durable invariants — never inspect
+  implementation source text, count or forbid source fragments, or pin method identity, and
+  never test code style or structure: the presence or absence of a decorator, global, base
+  class, import, signature or pattern, or that a fixed design flaw stays fixed. A flaw is
+  prevented by the design (types, ownership, visibility), a lint rule, or a comment at the
+  declaration; negative coding guidance belongs in this file, a header comment, or a lint
+  rule when genuinely enforceable. A structural test stays only where the structure is
+  itself an observable contract (a published schema, a public API surface), where it is the
+  only way to hold a security boundary, or where it exercises an analyzer whose job is
+  detecting the pattern; a refactor adds no tests pinning its new architecture, though a
+  rare high-level check such as "importing `x` does not import expensive `y`" may stay.
 - **No pure change-detector tests**: every expectation encodes a durable rule, not the
   artifact's current state. Copying a checked-in file's values, shape, or roster into
   assertions is not coverage — an intentional edit changes the test in lockstep, so it
