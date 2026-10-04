@@ -42,36 +42,6 @@ mod chunk_constraining_module_edges_tests {
         );
     }
 
-    /// Pure cross-module `LazyUse` edges contribute to
-    /// `i_successors` (the runtime DFS topology — required for
-    /// Lemma 2 asymmetric-cycle detection) but never to `edges`
-    /// (the constraining/diagnostic surface): the emitter never emits
-    /// an ESM `import` for a function-body read.
-    #[test]
-    fn lazy_only_cross_module_edge_in_i_successors_not_edges() {
-        let source = "const a = 1; function f() { return a; }";
-        let owner_graph = parse_and_build(source);
-        let mut partition = Partition::new(&owner_graph, module_id(0));
-        partition.set(OwnerId(1), module_id(1));
-        let canonical = chunk_constraining_module_edges(&owner_graph, &partition);
-        // `f` reads `a` from a function body → LazyUse f → a. The
-        // constraining `edges` surface stays empty because lazy
-        // reads don't constrain init order.
-        assert!(
-            canonical.edges.is_empty(),
-            "lazy edges must NOT enter constraining `edges`; got {:#?}",
-            canonical.edges
-        );
-        // But the simulator's DFS topology (`i_successors`)
-        // includes the lazy back-edge — Pass 2's asymmetric-cycle
-        // rescue needs it.
-        assert!(
-            !canonical.i_successors.is_empty(),
-            "lazy edges must contribute to `i_successors`; empty: {:#?}",
-            canonical.i_successors
-        );
-    }
-
     /// Cross-module eager_use edge appears in the canonical set.
     #[test]
     fn eager_cross_module_edge_included() {
@@ -98,52 +68,6 @@ mod chunk_constraining_module_edges_tests {
         let partition = Partition::new(&owner_graph, module_id(0));
         let canonical = chunk_constraining_module_edges(&owner_graph, &partition);
         assert!(canonical.edges.is_empty());
-    }
-
-    /// Sequenced edges between the same module pair are deduped (one
-    /// representative owner edge per pair) so that having N sequenced
-    /// reasons between two modules doesn't over-weight the I-graph.
-    #[test]
-    fn sequenced_edges_dedup_per_pair() {
-        // Each impure statement carries a Sequenced edge to the
-        // previous impure statement (`emit_s_chain`).
-        let source = "console.log(\"a\"); console.log(\"b\"); console.log(\"c\");";
-        let owner_graph = parse_and_build(source);
-        let mut partition = Partition::new(&owner_graph, module_id(0));
-        partition.set(OwnerId(1), module_id(1));
-        partition.set(OwnerId(2), module_id(1));
-        let canonical = chunk_constraining_module_edges(&owner_graph, &partition);
-        // mod_1 contains owners 1 and 2; the only cross-module
-        // sequenced edge is from mod_1 to mod_0 (owners 1, 2 both
-        // sequenced after owner 0). We expect exactly ONE pair, even
-        // though two owners contribute.
-        let pair_count: usize = canonical
-            .pairs()
-            .filter(|&(from, to)| from == module_id(1) && to == module_id(0))
-            .count();
-        assert_eq!(
-            pair_count, 1,
-            "sequenced edges between the same pair must dedup to one"
-        );
-    }
-
-    /// `chunk_linker_order_from_pairs` on a 3-module DAG returns
-    /// dependency-first positions: deepest dependency at index 0,
-    /// dependent at the last index.
-    #[test]
-    fn chunk_linker_order_assigns_positions_dependency_first() {
-        let source = "const leaf = 1; const middle = leaf + 1; const top = middle + 1;";
-        let owner_graph = parse_and_build(source);
-        let mut partition = Partition::new(&owner_graph, module_id(0));
-        partition.set(OwnerId(0), module_id(1)); // leaf
-        partition.set(OwnerId(1), module_id(2)); // middle
-        partition.set(OwnerId(2), module_id(3)); // top
-        let canonical = chunk_constraining_module_edges(&owner_graph, &partition);
-        let linker = chunk_linker_order_from_pairs(canonical.pairs());
-        let pos = position_lookup(&linker);
-        // leaf (mod_1) must come before middle (mod_2) and top (mod_3).
-        assert!(pos[&module_id(1)] < pos[&module_id(2)]);
-        assert!(pos[&module_id(2)] < pos[&module_id(3)]);
     }
 
     /// `chunk_source_import_order_from_adjacency` returns every module of

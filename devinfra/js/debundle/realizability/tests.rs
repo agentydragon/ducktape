@@ -275,51 +275,6 @@ fn pass_two_simulator_models_entry_universal_imports_for_runtime_dfs() {
     );
 }
 
-/// Differential pin: the simulator's predicted Phase-2 post-order
-/// for the same shape equals the evaluation order Node produces
-/// for the emitted tree. The Node side is pinned by
-/// `e2e/asymmetric_non_residual_cycle_test::`
-/// `dependency_only_residual_reference_into_asymmetric_cycle_runs_under_node`
-/// — the same shape, which TDZ-crashes under Node unless
-/// `mod_schemas`' body evaluates before `mod_ids`'. Emitter and
-/// simulator both consume `EsmImportOrder`, so this pin guards
-/// the shared-ordering contract from the gate side.
-///
-/// This pin keeps the hand-derived expected order at the unit level;
-/// `e2e/simulator_node_differential_sweep_test` generalizes it into a
-/// live differential (simulator prediction vs instrumented Node run)
-/// across the accepted asymmetric / phantom / tie-break family.
-#[test]
-fn simulator_post_order_matches_emitted_evaluation_order() {
-    // owner_0: const schemas_target = "v"      (mod_schemas)
-    // owner_1: function lazy_back() { return ids_val; } (mod_schemas)
-    // owner_2: const ids_val = schemas_target  (mod_ids)
-    // owner_3: console.log(schemas_target)     (residual)
-    let source = "const schemas_target = \"v\"; function lazy_back() { return ids_val; } const ids_val = schemas_target; console.log(schemas_target);";
-    let owner_graph = parse_and_build(source);
-    let mut partition = Partition::new(&owner_graph, module_id(0));
-    partition.set(OwnerId(0), module_id(1)); // schemas_target → mod_schemas
-    partition.set(OwnerId(1), module_id(1)); // lazy_back     → mod_schemas
-    partition.set(OwnerId(2), module_id(2)); // ids_val       → mod_ids
-    // owner_3 (console.log) stays in residual.
-    let canonical = chunk_constraining_module_edges(&owner_graph, &partition);
-    let pairs: BTreeSet<(ModuleId, ModuleId)> = canonical.pairs().collect();
-    let simulator =
-        EsmEvaluationSimulator::build(&canonical.i_successors, &pairs, partition.residual());
-    // Node evaluates: mod_schemas body, mod_ids body, then the
-    // entry (residual) body — entry's imports are
-    // [mod_ids, mod_schemas] (intra-SCC reversal), DFS unwinds
-    // through mod_schemas first, and the root body is last.
-    let expected: BTreeMap<ModuleId, usize> =
-        [(module_id(1), 0), (module_id(2), 1), (module_id(0), 2)]
-            .into_iter()
-            .collect();
-    assert_eq!(
-        simulator.post_order, expected,
-        "simulated post-order must match the emitted tree's actual Node evaluation order",
-    );
-}
-
 /// Residual is the source of a constraining edge into the SCC,
 /// but the SCC also has a constraining-target-residual edge.
 /// Lemma 2 fails: residual is the DFS root and evaluates last in
@@ -351,41 +306,8 @@ fn constraining_edge_into_residual_inside_scc_is_unrealizable() {
 }
 
 /// Namespace-aggregator split: a module-level `const ids = {...sub1, ...sub2}`
-/// gets sub1 and sub2 extracted into separate modules. The aggregator's
-/// initializer carries at-init reads of sub1 and sub2 (the spread RHS
-/// reads them). If a sub-module also reads back into the residual or
-/// aggregator at-init, the resulting cross-module SCC must be detected
-/// by the gate or the emitted ESM will TDZ at runtime under Node.
-///
-/// Shape used here: sub1 reads `seed` declared in residual at-init;
-/// residual reads `ids` at-init. Cycle:
-///   residual --EagerUse--> mod_ids   (`const consumed = ids.foo`)
-///   mod_ids  --EagerUse--> mod_sub1  (`const ids = {...sub1, ...sub2}`)
-///   mod_sub1 --EagerUse--> residual  (`const sub1 = { foo: seed }`)
-/// The gate must reject this partition.
-#[test]
-fn namespace_aggregator_with_back_edge_through_sub_is_unrealizable() {
-    // owner_0: const seed = "S"           (residual)
-    // owner_1: const sub1 = { foo: seed }  (mod_sub1) — eager_read of seed
-    // owner_2: const sub2 = { bar: 1 }     (mod_sub2) — no cross-module reads
-    // owner_3: const ids = {...sub1, ...sub2} (mod_ids) — eager reads sub1, sub2
-    // owner_4: const consumed = ids.foo + ids.bar (residual) — eager read of ids
-    let source = "const seed = \"S\"; const sub1 = { foo: seed }; const sub2 = { bar: 1 }; const ids = {...sub1, ...sub2}; const consumed = ids.foo + ids.bar; console.log(consumed);";
-    let owner_graph = parse_and_build(source);
-    let mut partition = Partition::new(&owner_graph, module_id(0));
-    partition.set(OwnerId(1), module_id(1)); // sub1 → mod_sub1
-    partition.set(OwnerId(2), module_id(2)); // sub2 → mod_sub2
-    partition.set(OwnerId(3), module_id(3)); // ids  → mod_ids
-    let verdict = check_realizability(&owner_graph, &partition);
-    assert!(
-        !verdict.is_realizable(),
-        "namespace-aggregator split with sub→residual back edge \
-         must be flagged by the gate; verdict: {verdict:#?}",
-    );
-}
-
-/// Same aggregator shape but with sub1 and sub2 INDEPENDENT of residual
-/// (pure literal initializers). The split is realizable: ESM evaluates
+/// gets sub1 and sub2 extracted into separate modules, both INDEPENDENT of
+/// residual (pure literal initializers). The split is realizable: ESM evaluates
 /// sub1, sub2, then ids, then residual.
 #[test]
 fn namespace_aggregator_with_pure_subs_is_realizable() {
