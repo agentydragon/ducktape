@@ -145,3 +145,13 @@ provides `pr-visuals-announce` for check-run updates and `pr-visuals-publish`
 for trusted publication. The wheel bundles the publisher's small internal
 source dependencies and HTML templates; Python runtime dependencies are listed
 in wheel metadata.
+
+Both workflow jobs install `.#pr-visuals` from trusted `devel`. This Nix package
+provides the wheel's Python dependencies and the publisher's `bbapi` executable;
+the public Attic cache carries its closure. Each job logs the wheel URL and hash
+from `nix/artifact-pins.json` before running the installed command.
+
+Source changes go through the content-addressed GitHub release pipeline, then
+`sync-pins` updates the wheel pin. `flake.lock` pins the Nix dependency set. The
+Nix wheel CI gate substitutes the PR-built wheel for the release pin and checks
+imports and both installed entrypoints without relying on the checkout.

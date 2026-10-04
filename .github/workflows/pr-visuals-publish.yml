@@ -38,20 +38,17 @@ jobs:
          github.event.workflow_run.head_repository.owner.login == 'agentydragon-agent')
       )
     runs-on: ubuntu-latest
-    env:
-      BUILDBUDDY_API_KEY: ${{ secrets.BUILDBUDDY_API_KEY }}
     steps:
       - uses: actions/checkout@v7
         with:
           ref: devel
 
+      - name: Record visual publisher artifact
+        run: jq -e '.pins["pr-visuals"]' nix/artifact-pins.json
+
       - uses: ./.github/actions/setup-nix-devtools
         with:
-          package: citools
-
-      - uses: ./.github/actions/setup-ci-secrets
-        with:
-          sops_age_key: ${{ secrets.SOPS_AGE_KEY }}
+          package: pr-visuals
 
       - name: Announce visual review
         env:
@@ -59,7 +56,7 @@ jobs:
           # The commit the run was triggered on, which never moves (see `publish`).
           HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
         run: |
-          bb run //devinfra/pr_visuals:check_run_bin -- \
+          pr-visuals-announce \
             --repository "$GITHUB_REPOSITORY" \
             --sha "$HEAD_SHA" \
             --status in_progress \
@@ -88,19 +85,18 @@ jobs:
     env:
       BUILDBUDDY_API_KEY: ${{ secrets.BUILDBUDDY_API_KEY }}
     steps:
-      # This privileged workflow always executes the trusted default-branch implementation.
+      # Install the release pinned by trusted devel, never the PR's implementation.
       # PR-controlled code produced the PNGs, but never receives S3 credentials.
       - uses: actions/checkout@v7
         with:
           ref: devel
 
+      - name: Record visual publisher artifact
+        run: jq -e '.pins["pr-visuals"]' nix/artifact-pins.json
+
       - uses: ./.github/actions/setup-nix-devtools
         with:
-          package: citools
-
-      - uses: ./.github/actions/setup-ci-secrets
-        with:
-          sops_age_key: ${{ secrets.SOPS_AGE_KEY }}
+          package: pr-visuals
 
       - name: Publish visual review
         id: visuals
@@ -134,4 +130,4 @@ jobs:
             args+=(--pull-request-head "$PR_HEAD_REF")
             args+=(--check-external-id "pr-visual-review:${{ github.event.workflow_run.id }}")
           fi
-          bb run //devinfra/pr_visuals:publisher_bin -- "${args[@]}"
+          pr-visuals-publish "${args[@]}"

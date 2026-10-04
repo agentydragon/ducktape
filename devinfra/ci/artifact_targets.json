@@ -157,7 +157,7 @@
     },
     "pr-visuals": {
       "tests": "//devinfra/pr_visuals/...",
-      "nixPackage": false
+      "nixPackage": true
     }
   }
 }
