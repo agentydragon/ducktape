@@ -26,16 +26,14 @@ def add_project_root_to_env(env: dict) -> None:
     return
 
 
-def run_cli_command(args, cwd=None, env=None, timeout: timedelta = timedelta(seconds=60.0), stdin=None):
+def run_cli_command(args, cwd=None, env=None, timeout: timedelta = timedelta(seconds=60.0)):
     """Run the actual CLI command as subprocess."""
     cmd = [_get_wt_cli_path(), *args]
     if env is None:
         env = os.environ.copy()
     add_project_root_to_env(env)
     seconds = timeout.total_seconds()
-    return subprocess.run(
-        cmd, capture_output=True, text=True, cwd=cwd, env=env, timeout=seconds, check=False, stdin=stdin
-    )
+    return subprocess.run(cmd, capture_output=True, text=True, cwd=cwd, env=env, timeout=seconds, check=False)
 
 
 def run_cli_sh_command(args, env, timeout: timedelta = timedelta(seconds=60.0)):
