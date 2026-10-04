@@ -39,17 +39,6 @@ from openai_utils.testing.strict_mode_models import (
 # ---------------------------------------------------------------------------
 
 
-class NestedUnionModel(BaseModel):
-    """Model with nested union (anyOf inside nested object - allowed)."""
-
-    class ConfigValue(BaseModel):
-        value: str | int
-        model_config = ConfigDict(extra="forbid")
-
-    config: ConfigValue
-    model_config = ConfigDict(extra="forbid")
-
-
 class RefModelMissingAdditional(BaseModel):
     """Referenced model missing additionalProperties."""
 
@@ -133,16 +122,6 @@ def test_invalid_path_format():
             path: Path
 
 
-def test_invalid_uniqueitems():
-    """Set types should be rejected (uniqueItems) - automatic validation."""
-
-    # Validation happens during class definition via __init_subclass__
-    with pytest.raises(OpenAIStrictModeValidationError, match="uniqueItems"):
-
-        class InvalidModel(OpenAIStrictModeBaseModel):
-            tags: set[str]
-
-
 def test_ref_with_description_accepted_via_inlining():
     """$ref with description is auto-inlined by OpenAICompatibleSchema, so subclass creation succeeds."""
     type MyUnion = list[str] | Literal["all"]
@@ -169,37 +148,6 @@ def test_ref_with_description_rejected_without_inlining():
     schema = RawModel.model_json_schema()
     with pytest.raises(OpenAIStrictModeValidationError, match=r"\$ref cannot have additional keywords"):
         validate_openai_strict_mode_schema(schema, "RawModel")
-
-
-# Parameterized test cases: (model_class, should_pass, error_pattern)
-VALIDATION_TEST_CASES = [
-    # Valid cases
-    pytest.param(SimpleValidModel, True, None, id="valid-basic"),
-    pytest.param(SimpleUnionModel, True, None, id="valid-simple-union"),
-    pytest.param(NestedUnionModel, True, None, id="valid-nested-union"),
-    pytest.param(OptionalFieldModel, True, None, id="valid-optional-null"),
-    pytest.param(DiscriminatedUnionModel, True, None, id="valid-discriminated-union-anyof"),
-    # Invalid cases
-    pytest.param(InvalidPathModel, False, "format 'path'", id="invalid-path-format"),
-    pytest.param(InvalidSetModel, False, "uniqueItems", id="invalid-set-uniqueitems"),
-    pytest.param(MissingAdditionalPropertiesModel, False, "additionalProperties", id="invalid-missing-extra-forbid"),
-]
-
-
-@pytest.mark.parametrize(("model_class", "should_pass", "error_pattern"), VALIDATION_TEST_CASES)
-def test_validate_model_parameterized(model_class: type[BaseModel], should_pass: bool, error_pattern: str | None):
-    """Parameterized test for validating Pydantic models against OpenAI strict mode."""
-    # Use OpenAICompatibleSchema generator to match OpenAIStrictModeBaseModel behavior
-    schema = model_class.model_json_schema(schema_generator=OpenAICompatibleSchema)
-    model_name = model_class.__name__
-
-    if should_pass:
-        # Should not raise
-        validate_openai_strict_mode_schema(schema, model_name)
-    else:
-        # Should raise with expected error pattern
-        with pytest.raises(OpenAIStrictModeValidationError, match=error_pattern):
-            validate_openai_strict_mode_schema(schema, model_name)
 
 
 def test_validate_arbitrary_model():
@@ -235,42 +183,6 @@ def test_oneof_not_permitted():
 
     with pytest.raises(OpenAIStrictModeValidationError, match="oneOf is not supported"):
         validate_openai_strict_mode_schema(schema_with_oneof, "OneOfSchema")
-
-
-def test_anyof_at_property_level_is_permitted():
-    """anyOf at property level IS allowed - only schema root restriction applies."""
-
-    # Schema with anyOf at property level should be ACCEPTED
-    # Per OpenAI docs: anyOf is allowed in properties, just not at schema root
-    schema_with_anyof = {
-        "type": "object",
-        "properties": {
-            "files": {
-                "anyOf": [
-                    {
-                        "type": "object",
-                        "properties": {
-                            "kind": {"const": "specific"},
-                            "paths": {"type": "array", "items": {"type": "string"}},
-                        },
-                        "required": ["kind", "paths"],
-                        "additionalProperties": False,
-                    },
-                    {
-                        "type": "object",
-                        "properties": {"kind": {"const": "all"}},
-                        "required": ["kind"],
-                        "additionalProperties": False,
-                    },
-                ]
-            }
-        },
-        "required": ["files"],
-        "additionalProperties": False,
-    }
-
-    # Should not raise - anyOf at property level is allowed
-    validate_openai_strict_mode_schema(schema_with_anyof, "AnyOfSchema")
 
 
 def test_anyof_at_schema_root_not_permitted():

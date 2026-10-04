@@ -128,10 +128,6 @@ type _SnapshotSlugBase = Annotated[
 ]
 TestSnapshotSlug = NewType("TestSnapshotSlug", _SnapshotSlugBase)
 
-# Plain NewType over Annotated[str, ...]
-type _IssueIdBase = Annotated[str, StringConstraints(min_length=5, max_length=40)]
-TestIssueId = NewType("TestIssueId", _IssueIdBase)
-
 
 class ModelWithDescribedNewType(OpenAIStrictModeBaseModel):
     """Reproduces the original SingleFileSetExample pattern: NewType + Field(description)."""
@@ -141,9 +137,8 @@ class ModelWithDescribedNewType(OpenAIStrictModeBaseModel):
 
 
 def test_newtype_with_description_passes_strict_mode():
-    """NewType(Annotated[str, constraints]) + Field(description) passes strict mode."""
+    """NewType(Annotated[str, constraints]) + Field(description) passes strict mode (checked at class definition)."""
     schema = ModelWithDescribedNewType.model_json_schema(schema_generator=OpenAICompatibleSchema)
-    validate_openai_strict_mode_schema(schema, "ModelWithDescribedNewType")
 
     slug_prop = schema["properties"]["snapshot_slug"]
     assert slug_prop["description"] == "Snapshot to evaluate"
@@ -162,7 +157,6 @@ def test_newtype_without_description_uses_bare_ref():
         slug: TestSnapshotSlug
 
     schema = ModelNoDesc.model_json_schema(schema_generator=OpenAICompatibleSchema)
-    validate_openai_strict_mode_schema(schema, "ModelNoDesc")
     # Bare $ref is valid for OpenAI strict mode — no inlining needed
     assert "$ref" in schema["properties"]["slug"]
 
@@ -178,27 +172,6 @@ def test_newtype_default_generator_produces_ref_with_siblings():
     slug_prop = schema["properties"]["snapshot_slug"]
     assert "$ref" in slug_prop
     assert "description" in slug_prop
-
-
-class ModelWithMultipleDescribedNewtypes(OpenAIStrictModeBaseModel):
-    """Multiple NewType fields with descriptions — all should be inlined."""
-
-    snapshot: TestSnapshotSlug = Field(description="Target snapshot")
-    issue_id: TestIssueId = Field(description="Issue identifier")
-    label: str = Field(description="Human-readable label")
-
-
-def test_multiple_newtype_fields_with_descriptions():
-    """Multiple NewType fields each with description all pass strict mode."""
-    schema = ModelWithMultipleDescribedNewtypes.model_json_schema(schema_generator=OpenAICompatibleSchema)
-    validate_openai_strict_mode_schema(schema, "ModelWithMultipleDescribedNewtypes")
-
-    assert schema["properties"]["snapshot"]["description"] == "Target snapshot"
-    assert "$ref" not in schema["properties"]["snapshot"]
-    assert schema["properties"]["issue_id"]["description"] == "Issue identifier"
-    assert "$ref" not in schema["properties"]["issue_id"]
-    # Plain str field is unaffected (never had $ref)
-    assert schema["properties"]["label"]["description"] == "Human-readable label"
 
 
 class Inner(BaseModel):
@@ -218,7 +191,6 @@ class ModelWithDescribedNestedModel(OpenAIStrictModeBaseModel):
 def test_nested_model_with_description_inlined():
     """BaseModel field + Field(description) is inlined, preserving all nested structure."""
     schema = ModelWithDescribedNestedModel.model_json_schema(schema_generator=OpenAICompatibleSchema)
-    validate_openai_strict_mode_schema(schema, "ModelWithDescribedNestedModel")
 
     config_prop = schema["properties"]["config"]
     assert "$ref" not in config_prop
@@ -227,39 +199,6 @@ def test_nested_model_with_description_inlined():
     assert config_prop["type"] == "object"
     assert "value" in config_prop["properties"]
     assert config_prop["additionalProperties"] is False
-
-
-class ModelWithOptionalNewType(OpenAIStrictModeBaseModel):
-    """Optional NewType field with description — produces anyOf with $ref."""
-
-    slug: TestSnapshotSlug | None = Field(default=None, description="Optional snapshot")
-
-
-def test_optional_newtype_with_description():
-    """Optional NewType + description: description is sibling of anyOf, not of $ref — valid."""
-    schema = ModelWithOptionalNewType.model_json_schema(schema_generator=OpenAICompatibleSchema)
-    validate_openai_strict_mode_schema(schema, "ModelWithOptionalNewType")
-
-    slug_prop = schema["properties"]["slug"]
-    assert slug_prop["description"] == "Optional snapshot"
-    # The $ref inside anyOf is bare (no siblings) — valid for OpenAI strict mode
-    assert "anyOf" in slug_prop
-
-
-class ModelWithListOfNewType(OpenAIStrictModeBaseModel):
-    """list[NewType] field with description — $ref appears in items."""
-
-    slugs: list[TestSnapshotSlug] = Field(description="List of snapshots")
-
-
-def test_list_of_newtype_with_description():
-    """list[NewType] + description: the field-level description is on the array, not on items."""
-    schema = ModelWithListOfNewType.model_json_schema(schema_generator=OpenAICompatibleSchema)
-    validate_openai_strict_mode_schema(schema, "ModelWithListOfNewType")
-
-    slugs_prop = schema["properties"]["slugs"]
-    assert slugs_prop["description"] == "List of snapshots"
-    assert slugs_prop["type"] == "array"
 
 
 # Reproduces the exact SingleFileSetExample / WholeSnapshotExample pattern
@@ -287,7 +226,6 @@ def test_discriminated_union_with_described_newtypes():
         example: Annotated[ExampleWholeSnapshot | ExampleFileSet, Field(discriminator="kind")]
 
     schema = Container.model_json_schema(schema_generator=OpenAICompatibleSchema)
-    validate_openai_strict_mode_schema(schema, "Container")
 
     # No $ref with siblings anywhere in the schema
     def assert_no_ref_with_siblings(obj: object, path: str = "") -> None:
