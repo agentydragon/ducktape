@@ -777,35 +777,27 @@ if (
   scenario.startsWith("SessionToolResult") ||
   scenario.startsWith("SessionSubagent")
 ) {
-  let attempts = 0;
+  // A toggle that never mounts fails the scene on its readySelectors, which only exist inside the expanded tool run.
   const expandFixtureDetails = (): void => {
     const toggle = document.querySelector<HTMLButtonElement>("[data-tool-run-toggle]");
-    if (toggle !== null) {
-      toggle.click();
-      const toolRun = toggle.closest<HTMLElement>('[data-fold-kind="tool-run"]');
-      if (toolRun !== null) scrollTranscriptElementIntoView(toolRun);
-      return;
-    }
-    attempts += 1;
-    if (attempts >= 300) throw new Error("Visual fixture tool disclosure did not mount");
-    window.setTimeout(expandFixtureDetails, 20);
+    if (toggle === null) return;
+    toolDetailsObserver.disconnect();
+    toggle.click();
+    const toolRun = toggle.closest<HTMLElement>('[data-fold-kind="tool-run"]');
+    if (toolRun !== null) scrollTranscriptElementIntoView(toolRun);
   };
-  window.setTimeout(expandFixtureDetails, 0);
+  const toolDetailsObserver = new MutationObserver(expandFixtureDetails);
+  toolDetailsObserver.observe(root, { childList: true, subtree: true, attributes: true });
+  expandFixtureDetails();
 }
 
 if (scenario.startsWith("SessionCompletedActivity")) {
-  let attempts = 0;
   let expanded = false;
   const verifyActivitySummary = (): void => {
     const details = [...document.querySelectorAll<HTMLDetailsElement>('[data-fold-kind="activity"]')].find(
       (candidate) => candidate.querySelector("summary")?.getAttribute("title") === longCommandActivityTitle
     );
-    if (details === undefined) {
-      attempts += 1;
-      if (attempts >= 300) throw new Error("Completed activity fixture did not mount");
-      window.setTimeout(verifyActivitySummary, 20);
-      return;
-    }
+    if (details === undefined) return;
     if (!expanded) {
       const closedHeight = details.getBoundingClientRect().height;
       root.dataset.completedActivityClosedHeight = String(closedHeight);
@@ -835,22 +827,17 @@ if (scenario.startsWith("SessionCompletedActivity")) {
   };
   const activityObserver = new MutationObserver(verifyActivitySummary);
   activityObserver.observe(root, { childList: true, subtree: true, attributes: true });
-  window.setTimeout(verifyActivitySummary, 0);
+  verifyActivitySummary();
 }
 
 if (scenario.startsWith("SessionMarkdown")) {
-  let attempts = 0;
   const verifyMarkdownSanitization = (): void => {
     const userMarkdown = document.querySelector<HTMLElement>('[data-message-role="user"] .agentplane-markdown');
     const assistantMarkdown = document.querySelector<HTMLElement>(
       '[data-message-role="assistant"] .agentplane-markdown'
     );
-    if (userMarkdown === null || assistantMarkdown === null) {
-      attempts += 1;
-      if (attempts >= 300) throw new Error("Markdown fixture messages did not mount");
-      window.setTimeout(verifyMarkdownSanitization, 20);
-      return;
-    }
+    if (userMarkdown === null || assistantMarkdown === null) return;
+    markdownObserver.disconnect();
 
     const markdownRoots = [userMarkdown, assistantMarkdown];
     const unsafeElement = markdownRoots.some((markdown) => markdown.querySelector("script, img, [onclick], [onerror]"));
@@ -863,7 +850,9 @@ if (scenario.startsWith("SessionMarkdown")) {
 
     root.dataset.markdownSanitized = "true";
   };
-  window.setTimeout(verifyMarkdownSanitization, 0);
+  const markdownObserver = new MutationObserver(verifyMarkdownSanitization);
+  markdownObserver.observe(root, { childList: true, subtree: true, attributes: true });
+  verifyMarkdownSanitization();
 }
 
 if (scenario.startsWith("SessionNarrationVisibility")) {
@@ -877,66 +866,44 @@ if (scenario.startsWith("SessionNarrationVisibility")) {
   };
   const narrationObserver = new MutationObserver(markNarrationVisible);
   narrationObserver.observe(root, { childList: true, subtree: true, attributes: true });
-  window.setTimeout(markNarrationVisible, 0);
+  markNarrationVisible();
 }
 
 if (scenario.startsWith("SessionLatestFirst")) {
-  let phase: "tail" | "prepended" = "tail";
-  let attempts = 0;
+  let prepending = false;
   let thinkingDetails: HTMLDetailsElement | null = null;
   let thinkingTop = 0;
-  let prependTimeout = 0;
   const failAnchorScenario = (message: string): never => {
     root.dataset.historyAnchorReady = "true";
     root.dataset.historyAnchorError = message;
     throw new Error(message);
   };
+  const stopWatchingTail = (): void => {
+    tailObserver.disconnect();
+    document.removeEventListener("scroll", verifyNewestFirstHistory, true);
+  };
   const verifyNewestFirstHistory = (): void => {
-    if (phase === "prepended") return;
     const viewport = document.querySelector<HTMLDivElement>(
       '[aria-label="Session transcript"] .mantine-ScrollArea-viewport'
     );
     const latestCard = document.querySelector<HTMLElement>('[data-history-sequences~="17"]');
-    if (viewport === null || latestCard === null || viewport.scrollHeight <= viewport.clientHeight) {
-      attempts += 1;
-      if (attempts >= 300) {
-        if (scenario === "SessionLatestFirstAnchor")
-          failAnchorScenario("The transcript did not reach its initial tail");
-        else throw new Error("The newest-first transcript did not reach its initial tail");
-        return;
-      }
-      window.setTimeout(verifyNewestFirstHistory, 20);
-      return;
-    }
+    if (viewport === null || latestCard === null || viewport.scrollHeight <= viewport.clientHeight) return;
     const viewportRect = viewport.getBoundingClientRect();
     const latestRect = latestCard.getBoundingClientRect();
     // The latest message can have bottom spacing or an event strip after it.
     // Assert the scroll position and message visibility, not a card-edge coincidence.
     const atTail = Math.abs(viewport.scrollHeight - viewport.scrollTop - viewport.clientHeight) <= 1;
     const latestVisible = latestRect.bottom > viewportRect.top && latestRect.top < viewportRect.bottom;
-    if (!atTail || !latestVisible) {
-      attempts += 1;
-      if (attempts >= 300) {
-        if (scenario === "SessionLatestFirstAnchor") failAnchorScenario("The newest event is not at the initial tail");
-        else throw new Error("The newest event is not visible at the initial transcript tail");
-        return;
-      }
-      window.setTimeout(verifyNewestFirstHistory, 20);
+    if (!atTail || !latestVisible) return;
+    root.dataset.latestTailReady = "true";
+    if (scenario !== "SessionLatestFirstAnchor") {
+      stopWatchingTail();
       return;
     }
-    root.dataset.latestTailReady = "true";
-    if (scenario !== "SessionLatestFirstAnchor") return;
 
     const details = document.querySelector<HTMLDetailsElement>('details[aria-label="Thinking"]');
-    if (details === null) {
-      attempts += 1;
-      if (attempts >= 300) {
-        failAnchorScenario("The native thinking disclosure did not mount");
-        return;
-      }
-      window.setTimeout(verifyNewestFirstHistory, 20);
-      return;
-    }
+    if (details === null) return;
+    stopWatchingTail();
     const detailsRect = details.getBoundingClientRect();
     viewport.scrollTop += detailsRect.top - viewportRect.top - 100;
     viewport.dispatchEvent(new Event("scroll"));
@@ -951,19 +918,19 @@ if (scenario.startsWith("SessionLatestFirst")) {
         failAnchorScenario("The older-history control is missing at the initial tail");
         return;
       }
-      phase = "prepended";
+      prepending = true;
       loadOlder.click();
-      prependTimeout = window.setTimeout(() => {
-        failAnchorScenario("The older page did not prepend sequence 1 within 5 seconds");
-      }, 5000);
-      window.requestAnimationFrame(verifyNewestFirstHistory);
     });
   };
-  window.setTimeout(verifyNewestFirstHistory, 0);
+  // Scrolling to the tail fires `scroll`, not a DOM mutation, and the tail is part of what is awaited.
+  const tailObserver = new MutationObserver(verifyNewestFirstHistory);
+  tailObserver.observe(root, { childList: true, subtree: true, attributes: true });
+  document.addEventListener("scroll", verifyNewestFirstHistory, true);
+  verifyNewestFirstHistory();
 
   if (scenario === "SessionLatestFirstAnchor") {
     const observer = new MutationObserver(() => {
-      if (phase !== "prepended" || !document.querySelector('[data-history-sequences~="1"]')) return;
+      if (!prepending || !document.querySelector('[data-history-sequences~="1"]')) return;
       window.requestAnimationFrame(() => {
         const viewport = document.querySelector<HTMLDivElement>(
           '[aria-label="Session transcript"] .mantine-ScrollArea-viewport'
@@ -973,22 +940,18 @@ if (scenario.startsWith("SessionLatestFirst")) {
           candidate.textContent?.includes("Load older events")
         );
         if (viewport === null || details === null || details !== thinkingDetails || !details.open) {
-          window.clearTimeout(prependTimeout);
           failAnchorScenario("Prepending older history replaced or closed the open thinking disclosure");
           return;
         }
         if (button !== undefined) {
-          window.clearTimeout(prependTimeout);
           failAnchorScenario("The exhausted older-history cursor left the load control enabled");
           return;
         }
         const displacement = Math.abs(details.getBoundingClientRect().top - thinkingTop);
         if (displacement > 1.5) {
-          window.clearTimeout(prependTimeout);
           failAnchorScenario(`Prepending older history moved the visible anchor by ${displacement.toFixed(1)}px`);
           return;
         }
-        window.clearTimeout(prependTimeout);
         root.dataset.historyAnchorReady = "true";
         observer.disconnect();
       });
