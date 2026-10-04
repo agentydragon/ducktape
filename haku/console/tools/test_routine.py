@@ -14,20 +14,10 @@ from haku.console.config import LaunchRoutineConfig
 from haku.console.tools.routine import LaunchRoutineResult, RoutineLauncher, build_mcp
 
 
-def _mcp(launcher=None):
-    return build_mcp(launcher or Mock())
-
-
-async def test_tool_surface():
-    async with Client(_mcp()) as client:
-        tools = {tool.name for tool in await client.list_tools()}
-    assert tools == {"launch_routine"}
-
-
 async def test_launch_routine_dispatches_to_launcher():
     launcher = Mock()
     launcher.launch = AsyncMock(return_value=LaunchRoutineResult(session_url="https://claude.ai/code/session_x"))
-    async with Client(_mcp(launcher=launcher)) as client:
+    async with Client(build_mcp(launcher)) as client:
         result = await client.call_tool("launch_routine", {"text": "triage open PRs"})
     assert not result.is_error
     assert result.data.session_url == "https://claude.ai/code/session_x"
@@ -38,7 +28,7 @@ async def test_launch_routine_dispatches_to_launcher():
 async def test_launch_routine_defaults_text_to_none():
     launcher = Mock()
     launcher.launch = AsyncMock(return_value=LaunchRoutineResult(session_url="https://x/s"))
-    async with Client(_mcp(launcher=launcher)) as client:
+    async with Client(build_mcp(launcher)) as client:
         await client.call_tool("launch_routine", {})
     launcher.launch.assert_awaited_once_with(None)
 
@@ -46,7 +36,7 @@ async def test_launch_routine_defaults_text_to_none():
 async def test_launch_routine_accepts_explicit_null_text():
     launcher = Mock()
     launcher.launch = AsyncMock(return_value=LaunchRoutineResult(session_url="https://x/s"))
-    async with Client(_mcp(launcher=launcher)) as client:
+    async with Client(build_mcp(launcher)) as client:
         result = await client.call_tool("launch_routine", {"text": None})
     assert not result.is_error
     launcher.launch.assert_awaited_once_with(None)

@@ -35,15 +35,14 @@ class MigrationSettings(BaseSettings):
     database_url: SecretStr
 
 
-def run_migrations_for_connection(conn: Any, revision: str = "head") -> None:
+def run_migrations_for_connection(conn: Any) -> None:
     conn.execute(text("SELECT pg_advisory_xact_lock(:key)"), {"key": _MIGRATION_LOCK_KEY})
     cfg = AlembicConfig()
     cfg.set_main_option("script_location", str(_MIGRATIONS_DIR))
     cfg.attributes["connection"] = conn
     cfg.attributes["target_metadata"] = metadata
-    alembic_command.upgrade(cfg, revision)
-    if revision == "head":
-        verify_schema_for_connection(conn)
+    alembic_command.upgrade(cfg, "head")
+    verify_schema_for_connection(conn)
 
 
 def verify_schema_for_connection(conn: Any) -> None:
@@ -65,12 +64,12 @@ def sync_database_url(database_url: str) -> str:
     return make_url(database_url).set(drivername="postgresql+psycopg").render_as_string(hide_password=False)
 
 
-def apply_migrations(database_url: str, revision: str = "head") -> None:
-    """Upgrade the haku-console database to ``revision`` under the release Job's lock."""
+def apply_migrations(database_url: str) -> None:
+    """Upgrade the haku-console database to head under the release Job's lock."""
     engine = create_engine(sync_database_url(database_url))
     try:
         with engine.begin() as conn:
-            run_migrations_for_connection(conn, revision)
+            run_migrations_for_connection(conn)
     finally:
         engine.dispose()
 

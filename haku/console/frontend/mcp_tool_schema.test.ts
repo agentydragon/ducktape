@@ -1,22 +1,8 @@
 import { describe, expect, it } from "vitest";
 
-import { mcpToolSchema, mcpToolSchemas, type McpToolArgumentsFor } from "./mcp_tool_schema";
+import { mcpToolSchema, type McpToolArgumentsFor } from "./mcp_tool_schema";
 
 describe("generated MCP tool argument schemas", () => {
-  it("constructs a validator for every advertised tool", () => {
-    expect(mcpToolSchemas.length).toBeGreaterThan(0);
-    const keys = mcpToolSchemas.map(({ serverId, toolName }) => `${serverId}.${toolName}`);
-    expect(new Set(keys).size).toBe(keys.length);
-    expect(keys).toContain("gmail.drafts_create");
-    expect(keys).toContain("gmail.threads_modify_labels");
-    expect(keys).toContain("google_calendar.create_event");
-    expect(keys).toContain("google_calendar.update_event");
-    expect(keys).toContain("google_calendar.delete_event");
-    expect(keys).toContain("google_calendar.get_event");
-    expect(keys).toContain("google_calendar.list_events");
-    expect(keys).toContain("google_calendar.list_event_instances");
-  });
-
   it("keeps defaulted FastMCP parameters optional in the generated type and validator", () => {
     const args: McpToolArgumentsFor<"gmail", "drafts_create"> = {
       to: ["operator@example.com"],

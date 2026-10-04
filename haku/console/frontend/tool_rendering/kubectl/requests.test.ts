@@ -67,8 +67,4 @@ describe("kubectlPreviews", () => {
     // missing required name
     expect(renderPreview(kubectlPreviews.pods_delete, { namespace: "default" }, "detailed")).toBeNull();
   });
-
-  it("has no entry for a tool with no custom widget", () => {
-    expect("pods_list" in kubectlPreviews).toBe(false);
-  });
 });

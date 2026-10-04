@@ -250,7 +250,6 @@ py_test(
     deps = [
         ":approval",
         ":catalog_reconciler",
-        ":guidance",
         ":reflection_cache",
         ":server",
         ":tool_call_service",

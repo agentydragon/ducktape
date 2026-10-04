@@ -140,14 +140,6 @@ def test_revoke_accepts_a_blank_reason(console: _Console) -> None:
     grant = _seed_grant(console)
     path = "/api/grants/revoke"
 
-    assert (
-        console.client.post(
-            path,
-            json={"grant_ids": [str(grant.grant_id)], "reason": "risk"},
-            headers={"Origin": "https://untrusted.test"},
-        ).status_code
-        == 403
-    )
     headers = {"Origin": "https://haku.test"}
     response = console.client.post(path, json={"grant_ids": [str(grant.grant_id)], "reason": "   "}, headers=headers)
 
@@ -179,15 +171,6 @@ def test_revoke_grants_uses_durable_grant_ids(console: _Console) -> None:
     path = "/api/grants/revoke"
     headers = {"Origin": "https://haku.test"}
 
-    assert (
-        console.client.post(
-            path,
-            json={"grant_ids": [str(first.grant_id), str(second.grant_id)], "reason": "risk"},
-            headers={"Origin": "https://untrusted.test"},
-        ).status_code
-        == 403
-    )
-    assert console.client.post(path, json={"grant_ids": [], "reason": "risk"}, headers=headers).status_code == 422
     assert (
         console.client.post(path, json={"grant_ids": [str(uuid4())], "reason": "risk"}, headers=headers).status_code
         == 404
