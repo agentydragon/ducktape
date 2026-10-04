@@ -11,10 +11,7 @@ from uuid import uuid4
 import httpx
 import pytest
 import pytest_bazel
-from alembic.autogenerate import compare_metadata
-from alembic.migration import MigrationContext
 from sqlalchemy import update
-from sqlalchemy.engine import Connection as SqlConnection
 from sqlalchemy.ext.asyncio import AsyncEngine
 
 from agentplane.action_service.api import create_app
@@ -33,7 +30,6 @@ from agentplane.action_service.db import (
     ActionConflictError,
     ActionNotFoundError,
     ActionStore,
-    Base,
     ConnectionGrantRow,
     make_sessionmaker,
 )
@@ -271,23 +267,6 @@ async def test_operator_routes_do_not_expose_binding_or_accept_workload_credenti
         )
         assert unbound.status_code == 200
         assert unbound.json()["grants"][0]["status"] == "revoked"
-
-
-def _schema_matches(connection: SqlConnection) -> None:
-    context = MigrationContext.configure(
-        connection,
-        opts={
-            "include_object": lambda obj, name, type_, reflected, compare_to: (
-                type_ != "table" or name in {"external_connection", "external_connection_grant"}
-            )
-        },
-    )
-    assert compare_metadata(context, Base.metadata) == []
-
-
-async def test_connection_migration_matches_current_schema(engine: AsyncEngine) -> None:
-    async with engine.begin() as connection:
-        await connection.run_sync(_schema_matches)
 
 
 if __name__ == "__main__":

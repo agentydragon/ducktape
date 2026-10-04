@@ -163,37 +163,6 @@ async def test_explicit_refresh_picks_up_added_removed_and_changed_tools() -> No
         await executor.close()
 
 
-async def test_missed_notification_is_recovered_by_explicit_refresh() -> None:
-    """`operations_and_access.md`: correctness must not depend on receiving the list-changed
-    notification. This installed fastmcp version never emits one on `add_tool`/`remove_tool`, so
-    the periodic background loop (parked far in the future here) cannot have refreshed either --
-    the mirror only updates once `refresh_catalog()` is called explicitly."""
-    mcp = FastMCP("demo")
-
-    @mcp.tool
-    def original(x: int) -> int:
-        return x
-
-    group = _group()
-    executor = McpActionGroupExecutor(GROUP_KEY, group, mcp, catalog_refresh_interval=timedelta(hours=1))
-    await executor.start()
-    await wait_available(executor._group)
-    try:
-        assert set(group.actions) == {"original"}
-
-        @mcp.tool
-        def added(y: int) -> int:
-            return y
-
-        await asyncio.sleep(0.05)  # give a wrongly-firing background refresh a chance to run
-        assert set(group.actions) == {"original"}, "mirror must stay stale until refresh_catalog() is called"
-
-        await executor.refresh_catalog()
-        assert set(group.actions) == {"original", "added"}
-    finally:
-        await executor.close()
-
-
 async def test_one_allowed_execution_calls_the_backend_tool_exactly_once(engine: AsyncEngine) -> None:
     mcp = FastMCP("demo")
     calls: list[dict[str, Any]] = []

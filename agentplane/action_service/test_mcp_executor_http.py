@@ -1,7 +1,8 @@
 """Pinned FastMCP/MCP client against a deterministic streamable-HTTP peer on a real socket.
 
-Both JSON and finite SSE replies exercise the production from_group transport selection. The
-peer records whole JSON-RPC payloads, and can fail after accepting a call without relying on timing.
+The peer replies in JSON; the tests that read a success reply back also run against finite SSE
+replies (`REPLY_ENCODINGS`), since the reply encoding only matters there. The peer records whole
+JSON-RPC payloads, and can fail after accepting a call without relying on timing.
 """
 
 from __future__ import annotations
@@ -148,9 +149,18 @@ class FakeMcpServer:
         return [post for post in self.posts if post["method"] == "tools/call"]
 
 
-@pytest.fixture(params=[False, True], ids=["json", "sse"])
-def fake_server(request: pytest.FixtureRequest) -> FakeMcpServer:
-    return FakeMcpServer(sse=request.param)
+@pytest.fixture
+def sse() -> bool:
+    return False
+
+
+# Directly parametrizing `sse` overrides the fixture for the whole fixture chain of the test.
+REPLY_ENCODINGS = pytest.mark.parametrize("sse", [False, True], ids=["json", "sse"])
+
+
+@pytest.fixture
+def fake_server(sse: bool) -> FakeMcpServer:
+    return FakeMcpServer(sse=sse)
 
 
 def mcp_binding(group: ActionGroup) -> McpExecutorBinding:
@@ -222,6 +232,7 @@ def execution_request() -> ExecutionRequest:
     )
 
 
+@REPLY_ENCODINGS
 async def test_http_session_discovery_call_and_shutdown(
     execution_lease: ExecutionLease,
     http_group: ActionGroup,
@@ -334,6 +345,7 @@ async def test_http_list_failure_refuses_dispatch(
     assert fake_server.calls == []
 
 
+@REPLY_ENCODINGS
 async def test_http_tool_error_output_is_a_successful_result(
     execution_lease: ExecutionLease,
     executor: McpActionGroupExecutor,
@@ -621,6 +633,7 @@ async def test_main_oauth_serves_during_backend_outage_and_recovers(
         await async_main(settings)
 
 
+@REPLY_ENCODINGS
 @pytest.mark.parametrize("outcome", ["success", "tool_error", "unknown", "schema_mismatch", "invalid_schema"])
 async def test_production_http_composition_one_execution_no_replay(
     db_url: str, engine: AsyncEngine, http_group: ActionGroup, fake_server: FakeMcpServer, outcome: str

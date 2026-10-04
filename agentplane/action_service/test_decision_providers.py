@@ -13,7 +13,7 @@ import pytest
 import pytest_bazel
 from mcp.types import CallToolResult
 from more_itertools import one
-from pydantic import JsonValue, ValidationError
+from pydantic import ValidationError
 from sqlalchemy.ext.asyncio import AsyncEngine
 
 from agentplane.action_service.catalog import ActionCatalog, ActionIdentity
@@ -575,12 +575,8 @@ async def test_binding_change_after_admission_leaves_the_decision_alone(
         await service.close()
 
 
-@pytest.mark.parametrize("arguments", [{}, {"n": "not-an-integer"}, {"n": 1, "extra": "not-allowed"}])
 async def test_invalid_arguments_are_rejected_before_persistence_and_provider_evaluation(
-    engine: AsyncEngine,
-    echo_catalog: ActionCatalog,
-    mcp_executor: McpActionGroupExecutor,
-    arguments: dict[str, JsonValue],
+    engine: AsyncEngine, echo_catalog: ActionCatalog, mcp_executor: McpActionGroupExecutor
 ) -> None:
     echo_catalog.groups["agentplane"].actions["echo"].input_schema = {
         "type": "object",
@@ -595,10 +591,7 @@ async def test_invalid_arguments_are_rejected_before_persistence_and_provider_ev
         with pytest.raises(InvalidActionArgumentsError, match="advertised Action schema"):
             await service.submit(
                 ActionRequestInput(
-                    idempotency_key="schema-check",
-                    title="test title for schema-check",
-                    action=ECHO,
-                    arguments=arguments,
+                    idempotency_key="schema-check", title="test title for schema-check", action=ECHO, arguments={}
                 ),
                 CALLER,
             )

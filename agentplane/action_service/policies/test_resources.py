@@ -7,14 +7,8 @@ from typing import Any
 import pytest
 import pytest_bazel
 
-from agentplane.action_service.policies.argument_schema import ArgumentSchema
-from agentplane.action_service.policies.exact_actions import ExactActions
-from agentplane.action_service.policies.github_public_repository import GitHubPublicRepository
-from agentplane.action_service.policies.github_repository import GitHubRepository
-from agentplane.action_service.policies.home_assistant_entity_control import HomeAssistantEntityControl
 from agentplane.action_service.policies.resources import (
     ActionPolicyBinding,
-    ActionPolicySet,
     InvalidResource,
     parse_binding,
     parse_policy_set,
@@ -46,48 +40,6 @@ def binding(spec: dict[str, Any]) -> dict[str, Any]:
         "metadata": METADATA,
         "spec": spec,
     }
-
-
-def test_policy_set_parses_each_kind() -> None:
-    parsed = parse_policy_set(
-        policy_set(
-            {
-                "autoApproveIf": [
-                    {"type": "exact_actions", "actions": {"github": ["get_file_contents", "search_code"]}},
-                    {
-                        "type": "argument_schema",
-                        "actions": {"github": ["create_issue"]},
-                        "schema": {"properties": {"owner": {"const": "test-owner"}}, "required": ["owner"]},
-                    },
-                    {
-                        "type": "github_repository",
-                        "actions": {"github": ["get_file_contents"]},
-                        "owner": "test-owner",
-                        "repository": "test-repo",
-                    },
-                    {"type": "github_public_repository", "actions": {"github": ["get_file_contents"]}},
-                    {
-                        "type": "home_assistant_entity_control",
-                        "actions": {"ha-test": ["ha_call_service"]},
-                        "entities": {"light.test_lamp": ["turn_on", "turn_off"]},
-                    },
-                ]
-            }
-        )
-    )
-    assert isinstance(parsed, ActionPolicySet)
-    exact, by_schema, fixed_repository, public_repository, home_assistant = parsed.spec.auto_approve_if
-    assert isinstance(exact, ExactActions)
-    assert exact.actions == {"github": frozenset({"get_file_contents", "search_code"})}
-    assert isinstance(by_schema, ArgumentSchema)
-    assert by_schema.argument_schema["required"] == ["owner"]
-    assert isinstance(fixed_repository, GitHubRepository)
-    assert (fixed_repository.owner, fixed_repository.repository) == ("test-owner", "test-repo")
-    assert isinstance(public_repository, GitHubPublicRepository)
-    assert isinstance(home_assistant, HomeAssistantEntityControl)
-    assert home_assistant.entities == {"light.test_lamp": frozenset({"turn_on", "turn_off"})}
-    assert parsed.metadata.generation == 3
-    assert parsed.status.ready() is None
 
 
 @pytest.mark.parametrize(

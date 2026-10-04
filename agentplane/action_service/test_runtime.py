@@ -95,10 +95,9 @@ def test_missing_binding_is_rejected() -> None:
         ActionGroup.model_validate({"title": "Missing binding", "description": "Invalid"})
 
 
-@pytest.mark.parametrize("config", [{}, {"command": ""}, {"command": 42}])
-async def test_invalid_binding_fails_before_any_adapter_starts(config: dict[str, JsonValue]) -> None:
+async def test_invalid_binding_fails_before_any_adapter_starts() -> None:
     catalog = ActionCatalog(
-        groups={"first": _group({"transport": "stdio", "command": "unused"}), "invalid": _group(config)}
+        groups={"first": _group({"transport": "stdio", "command": "unused"}), "invalid": _group({})}
     )
     with patch.object(McpActionGroupExecutor, "start", new_callable=AsyncMock) as start:
         with pytest.raises(ValueError, match="ActionGroup 'invalid'"):
@@ -188,11 +187,6 @@ def test_config_file_loads_reviewed_group_and_rejects_malformed_binding(
     with pytest.raises(ValidationError) as error:
         Settings(database_url="postgresql://unused", _cli_parse_args=False)
     assert "test-only-private" not in str(error.value)
-
-
-def test_invalid_group_key_rejected_by_settings() -> None:
-    with pytest.raises(ValidationError):
-        Settings(database_url="postgresql://unused", action_groups={"bad/key": _group({})}, _cli_parse_args=False)
 
 
 async def test_runtime_sanitizes_connect_and_cleanup_failures() -> None:

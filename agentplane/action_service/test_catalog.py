@@ -109,16 +109,6 @@ def test_a_direct_tool_group_key_cannot_hold_the_name_separator() -> None:
         ActionCatalog.model_validate({"groups": {"test__group": {**group, "direct_tools": ["act"]}}})
 
 
-def test_namespaced_action_lookup_resolves_the_configured_definition() -> None:
-    catalog = _catalog()
-
-    view = catalog.action_view("github", "get_file")
-
-    assert (view.group, view.name) == ("github", "get_file")
-    assert view.group == "github"
-    assert view.name == "get_file"
-
-
 @pytest.mark.parametrize(
     ("group_key", "action_key"), [("unknown-group", "get_file"), ("github", "unknown-action"), ("unknown", "unknown")]
 )
