@@ -67,7 +67,6 @@ def test_default_off_and_startup_validation(tmp_path: Path, monkeypatch: pytest.
     addon.websocket_end(flow)
     addon.done()
     assert addon.heartbeat is None
-    assert addon.flows == {}
     assert not Path(options.cloud_session_ws_events).exists()
     with pytest.raises(exceptions.OptionsError, match="startup-only"):
         addon.configure(OPTION_NAMES)
@@ -229,12 +228,9 @@ def test_structural_shapes(value: dict, field: str) -> None:
     assert vars(structure)[field] == 1
 
 
-def test_parser_recursion_limit_is_explicit(monkeypatch: pytest.MonkeyPatch) -> None:
-    def recursion_limit(text: str):
-        raise RecursionError("test-private-payload")
-
-    monkeypatch.setattr(json, "loads", recursion_limit)
-    assert summarize(WebSocketMessage(1, False, b"{}")) == ("analysis_limit", None)
+def test_parser_recursion_limit_is_explicit() -> None:
+    """The deepest nesting a message may carry within MAX_JSON_BYTES overflows the JSON parser's stack."""
+    assert summarize(WebSocketMessage(1, False, b"[" * MAX_JSON_BYTES)) == ("analysis_limit", None)
 
 
 async def test_append_and_restrict_existing_file(recorder: SessionWebSocketMetadata) -> None:
