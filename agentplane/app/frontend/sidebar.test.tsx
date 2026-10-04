@@ -331,6 +331,19 @@ it("renders only a suspended Sandbox's name in its icon's gray, not the link blu
   expect(link("test-running").style.color).toBe("");
 });
 
+it("dims only the rows of threads whose harness is stopped", async () => {
+  const live = { sandbox: "test-sandbox", feed_status: "active" } as const;
+  await render(
+    [
+      thread({ ...live, id: "t-1", session_id: "s-1", name: "Idle thread", harness_state: "HARNESS_STATE_RUNNING" }),
+      thread({ ...live, id: "t-2", session_id: "s-2", name: "Stopped thread", harness_state: "HARNESS_STATE_STOPPED" }),
+    ],
+    { "test-sandbox": sandbox("test-sandbox") }
+  );
+  expect(row("Stopped thread").className).toContain("stopped");
+  expect(row("Idle thread").className).not.toContain("stopped");
+});
+
 it("opens the details of a provisioning Sandbox with no Threads", async () => {
   const pending = sandbox("test-provisioning", { pod: null });
   await render([], { [pending.name]: pending });

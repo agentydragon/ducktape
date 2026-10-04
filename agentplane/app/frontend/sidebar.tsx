@@ -194,6 +194,7 @@ function ThreadRow({
     current ? "current" : "",
     readonly ? "readonly" : "",
     thread.archived ? "archived" : "",
+    status.kind === "stopped" ? "stopped" : "",
   ]
     .filter(Boolean)
     .join(" ");

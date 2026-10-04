@@ -151,6 +151,11 @@
   background: var(--mantine-color-default-hover);
 }
 
+/* Before `.current`, so a selected stopped thread still shows the selection. */
+.agentplane-sidebar-row.stopped {
+  color: var(--mantine-color-dimmed);
+}
+
 .agentplane-sidebar-row.current {
   background: var(--mantine-primary-color-light);
   color: var(--mantine-primary-color-filled);
