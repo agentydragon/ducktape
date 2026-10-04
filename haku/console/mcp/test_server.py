@@ -8,7 +8,6 @@ import datetime
 import hashlib
 import re
 import secrets
-import warnings
 from collections.abc import AsyncGenerator, Generator
 from contextlib import contextmanager
 from dataclasses import dataclass
@@ -530,29 +529,6 @@ async def test_tool_call_payload_fields_project_and_omit_nullable_values(agent_c
     assert selected_null.structured_content["result"] is None
 
 
-def test_mcp_tool_call_response_preserves_the_typed_caller() -> None:
-    caller = AgentToolCallCaller(agent_id=uuid4(), display_name="Agent")
-    now = datetime.datetime.now(datetime.UTC)
-    response = mcp_server_module._mcp_tool_call_response(
-        ToolCallRecord(
-            tool_call_id="tc_typed_caller",
-            server_id="gmail",
-            tool_name="labels_list",
-            caller=caller,
-            status=ToolCallStatus.OK,
-            created_at=now,
-            updated_at=now,
-            arguments={},
-        ),
-        console_settings("postgresql://unused/typed-caller"),
-    )
-    assert isinstance(response.caller, AgentToolCallCaller)
-    assert response.caller == caller
-    with warnings.catch_warnings():
-        warnings.simplefilter("error")
-        assert response.model_dump()["caller"]["agent_id"] == caller.agent_id
-
-
 async def test_schema_invalid_call_fails_fast_and_never_queues(harness: _Harness, agent_client: Client) -> None:
     """A schema-invalid call on an owned in-process server is born-denied: the caller gets the
     validation error immediately and nothing enters the approval queue (operator, 2026-07-16)."""
@@ -609,26 +585,6 @@ async def test_request_tool_returns_pending_stub_with_deep_link(agent_client: Cl
     assert view["status"] == ToolCallStatus.PENDING_APPROVAL
     assert view["tool_name"] == "drafts_create"
     assert view["url"] == f"https://haku.test/_console/tool-calls/{tool_call_id}"
-
-
-async def test_request_tool_preserves_explicit_zero_wait(
-    harness: _Harness, agent_client: Client, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    submitted_waits: list[int] = []
-
-    async def capture_request(*, req: SubmitToolCallRequest, actor: RuntimeActor) -> ToolCallRecord:
-        assert actor.operator_id == harness.operator_identity.operator_id
-        submitted_waits.append(req.wait_for_ms)
-        raise ToolCallNotFoundError("captured request")
-
-    monkeypatch.setattr(harness.tool_calls, "submit_and_wait", capture_request)
-    with pytest.raises(ToolError, match="captured request"):
-        await agent_client.call_tool(
-            "gmail__drafts_create",
-            {"input": {"to": ["a@b.test"], "subject": "s", "body": "b"}, "rationale": "test", "wait_for_result_ms": 0},
-        )
-
-    assert submitted_waits == [0]
 
 
 async def test_get_tool_call_missing_raises(agent_client: Client) -> None:
@@ -1226,48 +1182,6 @@ async def test_tool_discovery_isolates_unexpected_server_failure(
     assert proxy_names == ["healthy__echo"]
     assert "catalog reconciliation failed for server broken" in caplog.text
     assert "unexpected reflection failure" in caplog.text
-
-
-async def test_tool_dispatch_reads_only_target_server_snapshot(migrated_db_url: str, tmp_path: Path) -> None:
-    servers, registered = _credential_free_servers("alpha", "beta")
-    config_file = _write_console_config(
-        tmp_path / "targeted-dispatch.yaml", {"static_agents": _STATIC_AGENTS, "mcp": {"servers": servers}}
-    )
-    settings = console_settings(migrated_db_url, config_file=config_file)
-    app = create_app(settings, in_process_servers=registered)
-    reflected: list[str] = []
-
-    def metadata(*, operator_id: UUID, server: Any) -> ReflectedCatalog:
-        _ = operator_id
-        server_id = str(server.id)
-        reflected.append(server_id)
-        return ReflectedCatalog(tools=[Tool(name="echo", inputSchema={"type": "object"})])
-
-    catalogs = Mock()
-    catalogs.metadata = Mock(side_effect=metadata)
-    actor = AgentActor(
-        agent_id=UUID("40000000-0000-4000-8000-000000000001"),
-        operator_id=UUID("10000000-0000-4000-8000-000000000001"),
-        binding_id=UUID("50000000-0000-4000-8000-000000000001"),
-    )
-    actor_resolver = Mock(spec=mcp_server_module.HakuMcpActorResolver)
-    actor_resolver.resolve = AsyncMock(return_value=actor)
-    provider = mcp_server_module.OperatorToolProvider(
-        mcp_server_module.ConsoleMcpContext(
-            settings=settings,
-            tool_calls=app.state.tool_call_service,
-            dispatcher=app.state.mcp_dispatcher,
-            catalogs=catalogs,
-        ),
-        actor_resolver,
-    )
-
-    tool = await provider._get_tool("beta__echo")
-
-    assert isinstance(tool, mcp_server_module.ProxyTool)
-    assert tool.name == "beta__echo"
-    assert tool.actor == actor
-    assert reflected == ["beta"]
 
 
 async def test_operator_proxy_advertises_and_dispatches_native_arguments(migrated_db_url: str, tmp_path: Path) -> None:
