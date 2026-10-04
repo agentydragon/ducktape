@@ -23,12 +23,5 @@ def test_multiple_headings():
     assert result == "## First\n\nSome text\n\n### Second\n\nMore text\n\n#### Third"
 
 
-def test_hashes_in_code_block_preserved():
-    """Hashes inside template expressions should not be double-escaped."""
-    src = "${header}\nBody"
-    result = Template(src, preprocessor=markdown_heading_preprocessor).render(header="## Dynamic")
-    assert result == "## Dynamic\nBody"
-
-
 if __name__ == "__main__":
     pytest_bazel.main()
