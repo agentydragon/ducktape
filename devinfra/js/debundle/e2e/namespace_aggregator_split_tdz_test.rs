@@ -82,8 +82,7 @@ fn opts_for_fixture() -> FixtureOpts<'static> {
 
 /// The gate rejects the split (the fixture runner asserts the non-zero exit)
 /// and the diagnostic does binding-pair blame, not just module-list
-/// rendering. The
-/// `render_cycle_summary` must name the implicated bindings as
+/// rendering. The `render_cycle_summary` must name the implicated bindings as
 /// `from_binding (from_module) --kind--> to_binding (to_module)`
 /// rows with the `at-init` edge kind so spec authors can act
 /// directly: "move {X, Y} into one module."

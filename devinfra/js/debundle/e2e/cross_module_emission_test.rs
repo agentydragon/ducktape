@@ -505,6 +505,8 @@ export { existingHelper };
     );
 }
 
+/// The name pins' duplicate claim is found while requests are built, before
+/// any selector is matched, so fail-fast stops there.
 #[test]
 fn fail_fast_dry_run_stops_at_the_duplicate_claim_found_while_building_requests() {
     let line =
