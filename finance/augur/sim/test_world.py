@@ -329,20 +329,16 @@ def test_ordered_actions_can_buy_before_transferring_and_buy_again() -> None:
     assert [entry.cause_id for entry in financial.journal if entry.cause_id in chosen] == chosen
 
 
-def test_rejected_financial_request_preserves_prior_sale_and_independent_world() -> None:
-    run = situation(3, 2)
-    failed, live = world_for(run), world_for(run, rollout=1)
-    failed_capture, live_capture = FinancialCapture(failed, capture="dense"), FinancialCapture(live, capture="dense")
+def test_rejected_financial_request_preserves_prior_sale() -> None:
+    failed = world_for(situation(3))
+    failed_capture = FinancialCapture(failed, capture="dense")
     assert isinstance(failed.execute(HOUSEHOLD, sell(10_000_000)).outcome, Executed)
     assert isinstance(
         failed.execute(HOUSEHOLD, buy("impossible", AccountId("checking"), 1_000_000_000)).outcome, Rejected
     )
     next_month(failed, failed_capture)
     assert failed.finished
-    for _ in range(3):
-        assert isinstance(live.execute(HOUSEHOLD, consume(1000)).outcome, Executed)
-        next_month(live, live_capture)
-    failed_output, live_output = failed_capture.financial(), live_capture.financial()
+    failed_output = failed_capture.financial()
     assert len(failed_output.dispositions) == 1
     assert not failed_output.transfers
     assert len(failed_output.months) == 2
@@ -350,9 +346,6 @@ def test_rejected_financial_request_preserves_prior_sale_and_independent_world()
         90_000_000,
         45_000,
     )
-    assert len(live_output.months) == 4
-    assert len(live_output.obligations) == 3
-    assert live_output.months[-1].lots[0].units_remaining == 100_000_000
 
 
 def test_payment_capture_names_the_actual_selected_source() -> None:

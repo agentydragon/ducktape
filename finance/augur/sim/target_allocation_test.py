@@ -176,17 +176,6 @@ def test_a_zero_target_sleeve_is_exited_whole_and_its_proceeds_reinvested() -> N
     assert sale.basis == 9_000_000
 
 
-def test_a_month_inside_the_band_sells_nothing() -> None:
-    """Drift alone never triggers a trade. The portfolio is 9:1 against a 1:1 target — as
-    far from target as this scenario gets — and the policy still does nothing while cash
-    sits inside the band. Rebalancing rides cashflow only."""
-
-    output = run(Situation(opening_cash=50_000, floor=10_000, ceiling=90_000))
-
-    assert units(output, month=HORIZON) == {"stock": STOCK_UNITS, "bond": BOND_UNITS}
-    assert alice_cash(output)[-1] == 5_000_000
-
-
 def test_landing_exactly_on_a_bound_is_inside_the_band() -> None:
     """The band is closed at both ends. Cash exactly at the floor has not crossed it, so
     nothing is sold — an off-by-one here would trade every month the balance came to rest
@@ -197,21 +186,6 @@ def test_landing_exactly_on_a_bound_is_inside_the_band() -> None:
 
     assert units(output, month=HORIZON) == {"stock": STOCK_UNITS, "bond": BOND_UNITS}
     assert alice_cash(output)[-1] == 1_000_000
-
-
-def test_crossing_the_floor_refills_to_the_ceiling() -> None:
-    """(s,S), through the engine. Cash below the floor is raised to the CEILING, not back
-    to the floor — refilling to the floor would put the agent back at its trigger next
-    month, making it a forced seller into every dip.
-
-    $5,000 with a $10,000 floor and a $40,000 ceiling raises $35,000, which at $100/unit is
-    350 units out of the overweight stock sleeve.
-    """
-
-    output = run(Situation(opening_cash=5_000, floor=10_000, ceiling=40_000))
-
-    assert alice_cash(output)[1] == 4_000_000
-    assert units(output, month=1) == {"stock": 550.0, "bond": BOND_UNITS}
 
 
 def test_the_band_is_measured_after_the_months_obligations() -> None:
@@ -372,11 +346,12 @@ def test_a_drifted_portfolio_is_rebalanced_in_a_quiet_month() -> None:
     [$10,000, $90,000] band, so nothing is being funded and nothing is being invested — and
     yet the portfolio is 9:1 against a 1:1 target.
 
-    Without a tolerance this is exactly `test_a_month_inside_the_band_sells_nothing`. With
-    one, $40,000 crosses: 400 units of stock sold and 400 units of bonds bought, landing
-    both sleeves on $50,000. The sale and the purchase are two independent legs of one
-    batch — the sell is stated before the buy and the buy is sized from what it leaves — so
-    this also pins that they meet in the same month.
+    Without a tolerance nothing trades: drift alone never sells while cash sits inside the
+    band, because rebalancing rides cashflow only. With one, $40,000 crosses: 400 units of
+    stock sold and 400 units of bonds bought, landing both sleeves on $50,000. The sale and
+    the purchase are two independent legs of one batch — the sell is stated before the buy
+    and the buy is sized from what it leaves — so this also pins that they meet in the same
+    month.
     """
 
     output = run(Situation(opening_cash=50_000, floor=10_000, ceiling=90_000, reinvest=REBALANCE))

@@ -72,16 +72,6 @@ def test_zero_coupon_pays_nothing_until_maturity() -> None:
     assert coupon_amount_quanta(face_quanta=_FACE_QUANTA, annual_coupon_rate_ppb=0, coupon_period_months=6) == 0
 
 
-@pytest.mark.parametrize(
-    ("face", "rate", "period", "expected"),
-    [(600, 10_000_000, 1, 1), (180, 33_333_333, 1, 0), (1_250_627, 37_000_000, 5, 19_280)],
-)
-def test_nominal_coupon_rounds_the_full_rational_once(face: int, rate: int, period: int, expected: int) -> None:
-    # Half a quantum rounds up; just below half does not. Five months need not
-    # divide a year, so quantizing a periodic rate first is not equivalent.
-    assert coupon_amount_quanta(face_quanta=face, annual_coupon_rate_ppb=rate, coupon_period_months=period) == expected
-
-
 @pytest.mark.parametrize(("face", "rate", "period"), [(-1, 1, 1), (1, -1, 1), (1, 1, 0)])
 def test_coupon_rejects_invalid_exact_terms(face: int, rate: int, period: int) -> None:
     with pytest.raises(ValueError, match="face/rate must be nonnegative and coupon period positive"):

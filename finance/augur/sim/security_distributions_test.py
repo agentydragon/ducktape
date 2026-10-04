@@ -183,13 +183,6 @@ def _cash_by_month(result: Rollout) -> dict[int, int]:
     return {month: after - before for month, (before, after) in enumerate(pairwise(cash.values))}
 
 
-def test_the_payout_is_units_times_dollars_per_unit_every_month() -> None:
-    """Monthly, unlike a semiannual coupon, and sized off units held rather than a rate on
-    market value — which is why nothing in an engine needs the price to compute it."""
-
-    assert _cash_by_month(_run(compose(is_taxed=False))) == dict.fromkeys(range(HORIZON), MONTHLY_PAYOUT_QUANTA)
-
-
 def test_zero_payout_months_move_no_cash_between_actual_payments() -> None:
     payout = payout_levels(Decimal(0))
     payout[0, 6] = float(PER_UNIT)

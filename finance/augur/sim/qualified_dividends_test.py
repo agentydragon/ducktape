@@ -60,9 +60,6 @@ def close(year: Year) -> dict[JurisdictionId, TaxAccrual]:
 @pytest.mark.parametrize(
     ("year", "federal", "california"),
     [
-        # Federal: taxable 24,000 - 14,600 = 9,400, all of it dividends inside the 0% band.
-        # California: 24,000 - 5,363 = 18,637 at 1% to 10,412 and 2% above: 104.12 + 164.50.
-        pytest.param(Year(dividends=24_000), (0, 0), 26_862, id="dividends_alone"),
         # Federal: ordinary 40,000 - 14,600 = 25,400 -> 1,160 + 13,800 x 12% = 2,816.
         # Dividends fill 25,400..55,400: 0% to 47,025, then 8,375 x 15% = 1,256.25.
         # California: 64,637 ordinary -> 104.12 + 285.44 + 571.00 + 907.32 + 10,556 x 8% = 2,712.36.

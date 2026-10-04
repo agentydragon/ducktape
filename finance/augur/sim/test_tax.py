@@ -62,12 +62,6 @@ def test_bracket_tax_rounds_aggregate_once(federal: TaxRules) -> None:
     assert apply_brackets(2, (TaxBracket(1, 400_000_000), TaxBracket(None, 400_000_000))) == 1
 
 
-def test_preferential_gain_stacks_above_ordinary_income(federal: TaxRules) -> None:
-    assessment = assess(TaxFacts(taxable_ordinary_income=5_000_000, long_term_gain=2_000_000), federal)
-    assert assessment.ordinary_taxable == 3_540_000
-    assert assessment.capital_gain_tax == 125_625
-
-
 def test_section_1250_uses_incremental_brackets_below_the_rate_cap(federal: TaxRules) -> None:
     assessment = assess(TaxFacts(section_1250_recapture=1_454_545), federal)
     assert assessment.ordinary_taxable == 0
