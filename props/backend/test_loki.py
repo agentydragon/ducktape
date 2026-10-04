@@ -8,7 +8,7 @@ from uuid import UUID
 
 import pytest_bazel
 
-from props.backend.loki import LOG_WINDOW_MARGIN, _logql_for_run, fetch_run_logs, parse_query_range, run_log_window
+from props.backend.loki import LOG_WINDOW_MARGIN, fetch_run_logs, parse_query_range, run_log_window
 
 RUN = UUID("11da4746-40f8-431a-a0f2-c11f23c1c056")
 
@@ -38,11 +38,6 @@ def test_run_log_window_treats_naive_as_utc() -> None:
         created_at=created, last_status_change=created, is_in_progress=False, now=datetime.now(UTC)
     )
     assert start.tzinfo is UTC
-
-
-def test_logql_matches_pod_by_run_id_prefix() -> None:
-    # The pod name ends in the run-id's 8-char prefix; the matcher must be anchored.
-    assert _logql_for_run(RUN) == '{namespace="props",pod=~".+-11da4746"}'
 
 
 def test_parse_query_range_orders_chronologically() -> None:

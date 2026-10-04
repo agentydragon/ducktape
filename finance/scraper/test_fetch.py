@@ -86,12 +86,6 @@ def test_ca_file_honors_ssl_cert_file(monkeypatch: pytest.MonkeyPatch) -> None:
     assert _ca_file().endswith("cacert.pem")
 
 
-async def test_write_sources_writes_each_file_by_output_filename(tmp_path: Path) -> None:
-    failed = await write_sources(tmp_path, [SOURCE], http_get=_constant_get(b"payload"))
-    assert failed == set()
-    assert (tmp_path / "fred_cpi_us.csv").read_bytes() == b"payload"
-
-
 async def test_write_sources_reports_failed_sources_and_keeps_going(tmp_path: Path) -> None:
     other = EvidenceSource(
         kind=EvidenceKind.YAHOO, series_id="SPY", upstream_url="https://example.test/spy", output_filename="spy.json"

@@ -190,7 +190,6 @@ py_test(
         "//finance/augur:conftest",
         "//finance/augur/sim/testing:funded_bill",
         "//finance/augur/sim/testing:session",
-        "@pypi//pydantic",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],
@@ -1586,7 +1585,6 @@ py_test(
         "//finance/augur/sim/testing:series",
         "//finance/augur/sim/testing:session",
         "@pypi//numpy",
-        "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],
 )
@@ -1878,7 +1876,6 @@ py_test(
         ":income",
         "//:conftest",
         "//finance/augur:conftest",
-        "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],
 )

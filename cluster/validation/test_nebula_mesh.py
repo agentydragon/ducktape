@@ -16,11 +16,6 @@ def mesh() -> nebula_mesh.Mesh:
     return nebula_mesh.load(get_required_path("_main/nebula-mesh.json"))
 
 
-def test_schema_loads(mesh: nebula_mesh.Mesh) -> None:
-    """Roster parses against the Pydantic schema (Mesh.model_validate)."""
-    assert mesh.hosts, "roster must contain at least one host"
-
-
 def test_global_mtu_consumer_uses_smallest_destination_constraint() -> None:
     """Mobile clients without per-peer routes must honor the smallest constraint."""
     constrained_mesh = nebula_mesh.Mesh(

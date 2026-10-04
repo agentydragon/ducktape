@@ -33,37 +33,6 @@ class MCPResponsesFactory(ResponsesFactory):
         args = arguments.model_dump(mode="json") if isinstance(arguments, BaseModel) else arguments
         return self.tool_call(build_mcp_function(server, tool), args, call_id)
 
-    def docker_exec(
-        self,
-        cmd: list[str],
-        *,
-        timeout_ms: int = 30000,
-        cwd: str | None = None,
-        env: list[str] | None = None,
-        user: str | None = None,
-        tool_name: str = "exec",
-    ) -> FunctionCallItem:
-        """Create docker exec tool call with sensible defaults."""
-        args: dict[str, Any] = {"cmd": cmd, "timeout_ms": timeout_ms}
-        if cwd is not None:
-            args["cwd"] = cwd
-        if env is not None:
-            args["env"] = env
-        if user is not None:
-            args["user"] = user
-        return self.mcp_tool_call(ContainerExecServer.DOCKER_MOUNT_PREFIX, tool_name, args)
-
-    def mounted_tool_call[S: FastMCP](
-        self, mounted: Mounted[S], tool: Tool, arguments: dict[str, Any] | BaseModel, call_id: str | None = None
-    ) -> FunctionCallItem:
-        """Create tool call from Mounted server + tool attribute.
-
-        Preferred over mcp_tool_call when you have a Mounted wrapper, as it
-        derives the fully-qualified tool name from the Tool attribute.
-        """
-        args = arguments.model_dump(mode="json") if isinstance(arguments, BaseModel) else arguments
-        return self.tool_call(mounted.tool_name(tool), args, call_id)
-
 
 class MCPDecoratorMock(DecoratorMock):
     """DecoratorMock with MCP-aware convenience methods.

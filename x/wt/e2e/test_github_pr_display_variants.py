@@ -1,4 +1,4 @@
-"""E2E: real daemon/client + shadowed PyGithub; PR variants: open(can merge), merged, closed, no PR."""
+"""E2E: real daemon/client with WT_TEST_MODE PR fixtures; PR variants: open(can merge), merged, closed, no PR."""
 
 from __future__ import annotations
 
@@ -17,84 +17,6 @@ import pytest_bazel
 
 from x.wt.shared.fixtures import PRFixtureEntry
 from x.wt.shared.github_models import PRState
-
-
-def _write_shadow_github(mock_root: Path, variant: str):
-    mock_pkg = mock_root / "github"
-    mock_pkg.mkdir(parents=True, exist_ok=True)
-    if variant == "open_mergeable":
-        body = """
-from datetime import timedelta, datetime
-from types import SimpleNamespace
-class Github:
-    def __init__(self, *args, **kwargs):
-        pass
-    def get_repo(self, full_name):
-        def get_pull(number):
-            return SimpleNamespace(number=123, state="open", draft=False, mergeable=True, merged_at=None, additions=10, deletions=2)
-        return SimpleNamespace(get_pull=get_pull)
-    def search_issues(self, q):
-        return [SimpleNamespace(number=123)]
-"""
-    elif variant == "merged":
-        body = """
-from types import SimpleNamespace
-import datetime
-class Github:
-    def __init__(self, *args, **kwargs):
-        pass
-    def get_repo(self, full_name):
-        def get_pull(number):
-            return SimpleNamespace(
-                number=456,
-                state="closed",
-                draft=False,
-                mergeable=True,
-                merged_at=datetime.datetime.now(),
-                additions=3,
-                deletions=1,
-            )
-        return SimpleNamespace(get_pull=get_pull)
-    def search_issues(self, q):
-        return [SimpleNamespace(number=456)]
-"""
-    elif variant == "closed":
-        body = """
-from types import SimpleNamespace
-class Github:
-    def __init__(self, *args, **kwargs):
-        pass
-    def get_repo(self, full_name):
-        def get_pull(number):
-            return SimpleNamespace(
-                number=789,
-                state="closed",
-                draft=False,
-                mergeable=False,
-                merged_at=None,
-                additions=4,
-                deletions=4,
-            )
-        return SimpleNamespace(get_pull=get_pull)
-    def search_issues(self, q):
-        return [SimpleNamespace(number=789)]
-"""
-    elif variant == "none":
-        body = """
-from types import SimpleNamespace
-from datetime import timedelta, datetime
-import pytest_bazel
-class Github:
-    def __init__(self, *args, **kwargs):
-        pass
-    def get_repo(self, full_name):
-        return SimpleNamespace()
-    def search_issues(self, q):
-        return []
-"""
-    else:
-        raise ValueError("unknown variant")
-    (mock_pkg / "__init__.py").write_text(body)
 
 
 def _rpc_json(sock_path: str | os.PathLike, method: str, params: dict[str, Any]) -> dict[str, Any]:

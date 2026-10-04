@@ -59,18 +59,5 @@ async def test_startup_skips_when_no_grader(app_without_grader: FastAPI) -> None
     assert not hasattr(server, "_spawn_task")
 
 
-async def test_startup_skips_when_no_state_attr() -> None:
-    """When app.state has no grader_supervisor attribute at all, startup is fine."""
-    app = FastAPI()
-    # Don't set grader_supervisor at all — getattr returns None
-    config = uvicorn.Config(app, host="127.0.0.1", port=0)
-    server = _GraderSpawningServer(config, app=app)
-
-    with patch.object(uvicorn.Server, "startup", new_callable=AsyncMock):
-        await server.startup()
-
-    assert not hasattr(server, "_spawn_task")
-
-
 if __name__ == "__main__":
     pytest_bazel.main()

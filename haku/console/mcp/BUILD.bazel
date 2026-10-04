@@ -265,7 +265,6 @@ py_test(
         "//util/testing:mock_oidc",
         "//x/google_mcp_server:gmail",
         "//x/google_mcp_server:google_calendar",
-        "//x/google_mcp_server:google_calendar_client",
         "@ducktape_haku//haku/console:tool_calls",
         "@pypi//fastmcp_slim",
         "@pypi//httpx",

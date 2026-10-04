@@ -27,7 +27,6 @@ py_test(
         ":run_eval",
         ":schemas",
         "//:conftest",
-        "@pypi//pyhamcrest",
         "@pypi//pytest",
         "@pypi//pytest_asyncio",  # keep
         "@pypi//pytest_bazel",

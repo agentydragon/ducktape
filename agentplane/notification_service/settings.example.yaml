@@ -1,0 +1,9 @@
+# Set AGENTPLANE_NOTIFICATIONS_CONFIG_FILE to this mounted YAML file.
+# Database URL is supplied via AGENTPLANE_NOTIFICATIONS_DATABASE_URL, not committed here.
+namespace: agentplane-staging
+actions:
+  url: http://agentplane-actions.agentplane-staging.svc.cluster.local:8080
+  token_file: /var/run/secrets/notifications/actions
+sandbox_service:
+  target: agentplane-sandbox-service.agentplane-staging.svc.cluster.local:8080
+  token_file: /var/run/secrets/notifications/sandboxes

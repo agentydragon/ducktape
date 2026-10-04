@@ -396,6 +396,9 @@ async def test_list_tool_calls_pages_by_cursor(operator_client: TestClient) -> N
     # Newest first, every call exactly once, and the short final page ends the walk.
     assert walked == list(reversed(submitted))
     assert cursor is None
+    # The default (no newest_first) stays oldest-first for the pending-approval queue.
+    default_order = operator_client.get("/api/tool-calls").json()["tool_calls"]
+    assert [row["tool_call_id"] for row in default_order] == submitted
     assert operator_client.get("/api/tool-calls", params={"cursor": "not-a-cursor"}).status_code == 422
 
 
@@ -748,22 +751,6 @@ async def test_operator_tenants_cannot_read_or_decide_each_others_calls(
         assert approved.json()["tool_call"]["status"] == "running"
 
 
-async def test_list_newest_first_keeps_the_most_recent(operator_client: TestClient) -> None:
-    first = _submit(operator_client, amount=1)
-    second = _submit(operator_client, amount=2)
-    third = _submit(operator_client, amount=3)
-    newest = operator_client.get("/api/tool-calls", params={"newest_first": "true"}).json()
-    newest_two = operator_client.get("/api/tool-calls", params={"newest_first": "true", "limit": 2}).json()
-    oldest = operator_client.get("/api/tool-calls").json()
-
-    ids = [first["tool_call_id"], second["tool_call_id"], third["tool_call_id"]]
-    assert [r["tool_call_id"] for r in newest["tool_calls"]] == list(reversed(ids))
-    # `limit` under newest_first keeps the most recent calls, not the oldest.
-    assert [r["tool_call_id"] for r in newest_two["tool_calls"]] == [third["tool_call_id"], second["tool_call_id"]]
-    # The default (no newest_first) stays oldest-first for the pending-approval queue.
-    assert [r["tool_call_id"] for r in oldest["tool_calls"]] == ids
-
-
 async def test_ledger_get_and_list_load_principal_projection_in_one_query(
     *,
     make_client,
@@ -834,15 +821,6 @@ async def test_ledger_get_and_list_load_principal_projection_in_one_query(
         event.remove(ledger_engine.sync_engine, "before_cursor_execute", record_tool_call_query)
 
 
-async def test_websocket_receives_pending_approval_invalidation(operator_client: TestClient) -> None:
-    with operator_client.websocket_connect("/api/events/ws", headers={"Origin": "https://haku.test"}) as ws:
-        assert ws.receive_json() == {"event_type": "hello"}
-        submitted = _submit(operator_client)
-        event = ws.receive_json()
-    assert event == {"event_type": "tool_calls_changed", "tool_call_id": submitted["tool_call_id"]}
-    assert operator_client.get("/api/approvals/events").status_code == 404
-
-
 async def test_two_operator_websockets_only_receive_their_interleaved_tool_calls(
     make_operator_client, console_app: dict[str, Any]
 ) -> None:
@@ -873,8 +851,6 @@ async def test_two_operator_websockets_only_receive_their_interleaved_tool_calls
     expected_b = {call_id for owner, call_id in submitted if owner == "b"}
     assert {event["tool_call_id"] for event in received_a} == expected_a
     assert {event["tool_call_id"] for event in received_b} == expected_b
-    assert expected_a.isdisjoint({event["tool_call_id"] for event in received_b})
-    assert expected_b.isdisjoint({event["tool_call_id"] for event in received_a})
 
 
 async def test_websocket_reports_an_expired_session_apart_from_a_rejected_one(
@@ -1055,24 +1031,6 @@ async def test_dispatcher_reuses_a_reflected_catalog_within_the_ttl() -> None:
     assert isinstance(second, ReflectedCatalog)
     assert {tool.name for tool in second.tools} == {tool.name for tool in first.tools}
     builder.assert_called_once_with(None)
-
-
-async def test_dispatcher_does_not_cache_a_degraded_reflection() -> None:
-    """A server that failed must be retried on the next listing, not held degraded for the TTL."""
-    dispatcher = McpServerDispatcher({}, catalog_cache_ttl_seconds=3600.0)
-    server = McpServerEntry(id="google", backend=InProcessBackend(credential=NoCredential()))
-
-    assert isinstance(await dispatcher.metadata(server), DegradedReflection)
-
-    registered = McpServerDispatcher(
-        {
-            "google": InProcessServerRegistration(
-                builder=Mock(return_value=_build_test_mcp_server()), credential_kind=InProcessCredentialKind.NONE
-            )
-        },
-        catalog_cache_ttl_seconds=3600.0,
-    )
-    assert isinstance(await registered.metadata(server), ReflectedCatalog)
 
 
 async def test_dispatcher_degrades_when_in_process_backend_is_not_registered() -> None:

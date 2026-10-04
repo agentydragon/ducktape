@@ -57,7 +57,7 @@ import {
 } from "./thread_commands";
 import { ChronologicalDebugProvider, useOpenChronologicalDebug } from "./chronological_debug";
 import { ThreadTitle } from "./thread_title";
-import { ThreadStatusDot } from "../thread_status_dot";
+import { ThreadStatusIndicator } from "../thread_status_indicator";
 import { snapshotFresh, threadStatusFromSnapshot } from "../thread_status";
 import { sandboxReady, sandboxSummary } from "../sandbox_status";
 import { TopbarActions, TopbarTitle } from "../topbar";
@@ -1145,7 +1145,7 @@ export function ProjectedSession({
     <ChronologicalDebugProvider key={threadId} threadId={threadId}>
       <TopbarTitle>
         <Group gap="xs" wrap="nowrap" style={{ minWidth: 0 }}>
-          {thread && <ThreadStatusDot kind={topbarStatus.kind} label={topbarStatus.label} />}
+          {thread && <ThreadStatusIndicator kind={topbarStatus.kind} label={topbarStatus.label} />}
           <Box style={{ flex: 1, minWidth: 0 }}>
             <ThreadTitle threadId={threadId} thread={thread} onRenamed={setThread} onError={setError} />
           </Box>

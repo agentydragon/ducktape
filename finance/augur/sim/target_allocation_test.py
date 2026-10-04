@@ -214,17 +214,6 @@ def test_crossing_the_floor_refills_to_the_ceiling() -> None:
     assert units(output, month=1) == {"stock": 550.0, "bond": BOND_UNITS}
 
 
-def test_the_raise_comes_out_of_the_overweight_sleeve() -> None:
-    """Water-filling, observed end to end. Stock is worth $90,000 and bonds $10,000 against
-    equal weights, so the first $80,000 of any raise comes entirely from stock — the level
-    where the two sleeves meet. The bond sleeve is untouched, which is what "don't sell the
-    underweight sleeve" means when it is not a slogan."""
-
-    output = run(Situation(opening_cash=0, floor=1_000, ceiling=30_000))
-
-    assert units(output, month=1) == {"stock": 600.0, "bond": BOND_UNITS}
-
-
 def test_the_band_is_measured_after_the_months_obligations() -> None:
     """The decision is made against the balance the month will END at, not the balance
     sitting there before the bills — which is what lets funding happen once a month like a

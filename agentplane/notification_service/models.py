@@ -11,7 +11,7 @@ class Model(BaseModel):
     model_config = ConfigDict(extra="forbid", from_attributes=True, hide_input_in_errors=True)
 
 
-class ProviderView(Model):
+class SourceView(Model):
     subscription_schema: dict[str, JsonValue] = Field(
         description="Provider-defined JSON Schema for subscription creation."
     )

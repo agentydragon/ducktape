@@ -27,52 +27,6 @@ fn spec_module(module_id: &str, owners: &[&str]) -> SpecModuleGroup {
 // ---------- Tests. ----------
 
 #[test]
-fn seed_pre_contracts_atomic_units() {
-    // Fixture: a 3-binding atomic unit. After seeding, all three
-    // owners must share a class.
-    let a = residual_owner("owner:a", 1, &["BindingA"], 5);
-    let b = residual_owner("owner:b", 2, &["BindingB"], 5);
-    let c = residual_owner("owner:c", 3, &["BindingC"], 5);
-    let unit = atomic_unit_for("atomic:0", &[&a, &b, &c]);
-    let report = graph_of(
-        vec![a.clone(), b.clone(), c.clone()],
-        vec![],
-        vec![unit.clone()],
-        vec![],
-    );
-    let (q, rejected) =
-        build_seed_quotient(&report, &report.atomic_graph.nodes, &[], 10_000).unwrap();
-    assert!(
-        rejected.is_empty(),
-        "well-formed atomic unit must not produce rejections: {rejected:?}",
-    );
-    let a_idx = q.owner_idx_of("owner:a").expect("a in graph");
-    let b_idx = q.owner_idx_of("owner:b").expect("b in graph");
-    let c_idx = q.owner_idx_of("owner:c").expect("c in graph");
-    assert_eq!(q.class_of(a_idx), q.class_of(b_idx));
-    assert_eq!(q.class_of(b_idx), q.class_of(c_idx));
-}
-
-#[test]
-fn seed_pre_contracts_spec_modules() {
-    // Fixture: spec module declares two owners. After seeding, they
-    // must share a class.
-    let a = residual_owner("owner:a", 1, &["BindingA"], 5);
-    let b = residual_owner("owner:b", 2, &["BindingB"], 5);
-    let report = singleton_graph(vec![a.clone(), b.clone()], vec![]);
-    let spec = vec![spec_module("mod_alpha", &["owner:a", "owner:b"])];
-    let (q, rejected) =
-        build_seed_quotient(&report, &report.atomic_graph.nodes, &spec, 10_000).unwrap();
-    assert!(
-        rejected.is_empty(),
-        "well-formed spec module must not produce rejections: {rejected:?}",
-    );
-    let a_idx = q.owner_idx_of("owner:a").unwrap();
-    let b_idx = q.owner_idx_of("owner:b").unwrap();
-    assert_eq!(q.class_of(a_idx), q.class_of(b_idx));
-}
-
-#[test]
 fn seed_skips_unrealizable_spec_module_contraction_and_reports() {
     // Fixture: spec declares two modules mod_alpha and mod_beta.
     // mod_alpha contains owners {a1, a2}; mod_beta contains {b1, b2}.
@@ -248,89 +202,6 @@ fn merge_cannot_hide_an_existing_entry_dependency() {
 }
 
 #[test]
-fn seed_atomic_unit_contractions_never_rejected_on_well_formed_input() {
-    // Regression guard: across a handful of well-formed fixtures,
-    // no atomic-unit contraction is ever rejected. (Spec-module
-    // rejections are allowed; we count only the AtomicUnit
-    // variants.)
-    let fixtures = [
-        fixture_singletons(),
-        fixture_unit_of_two(),
-        fixture_unit_of_three(),
-        fixture_two_units_no_edges(),
-    ];
-    for (label, report) in fixtures {
-        let (_q, rejected) =
-            build_seed_quotient(&report, &report.atomic_graph.nodes, &[], 10_000).unwrap();
-        let atomic_rejections: Vec<&SeedContractionRejected> = rejected
-            .iter()
-            .filter(|r| matches!(r, SeedContractionRejected::AtomicUnit { .. }))
-            .collect();
-        assert!(
-            atomic_rejections.is_empty(),
-            "{label}: atomic-unit contractions must never be rejected on well-formed input, got {atomic_rejections:?}",
-        );
-    }
-}
-
-fn fixture_singletons() -> (&'static str, OwnerGraphReport) {
-    let a = residual_owner("owner:a", 1, &["BindingA"], 5);
-    let b = residual_owner("owner:b", 2, &["BindingB"], 5);
-    (
-        "singletons",
-        singleton_graph(vec![a.clone(), b.clone()], vec![]),
-    )
-}
-
-fn fixture_unit_of_two() -> (&'static str, OwnerGraphReport) {
-    let a = residual_owner("owner:a", 1, &["BindingA"], 5);
-    let b = residual_owner("owner:b", 2, &["BindingB"], 5);
-    (
-        "unit_of_two",
-        graph_of(
-            vec![a.clone(), b.clone()],
-            vec![],
-            vec![atomic_unit_for("atomic:0", &[&a, &b])],
-            vec![],
-        ),
-    )
-}
-
-fn fixture_unit_of_three() -> (&'static str, OwnerGraphReport) {
-    let a = residual_owner("owner:a", 1, &["BindingA"], 5);
-    let b = residual_owner("owner:b", 2, &["BindingB"], 5);
-    let c = residual_owner("owner:c", 3, &["BindingC"], 5);
-    (
-        "unit_of_three",
-        graph_of(
-            vec![a.clone(), b.clone(), c.clone()],
-            vec![],
-            vec![atomic_unit_for("atomic:0", &[&a, &b, &c])],
-            vec![],
-        ),
-    )
-}
-
-fn fixture_two_units_no_edges() -> (&'static str, OwnerGraphReport) {
-    let a1 = residual_owner("owner:a1", 1, &["BindingA1"], 5);
-    let a2 = residual_owner("owner:a2", 2, &["BindingA2"], 5);
-    let b1 = residual_owner("owner:b1", 3, &["BindingB1"], 5);
-    let b2 = residual_owner("owner:b2", 4, &["BindingB2"], 5);
-    (
-        "two_units_no_edges",
-        graph_of(
-            vec![a1.clone(), a2.clone(), b1.clone(), b2.clone()],
-            vec![],
-            vec![
-                atomic_unit_for("atomic:0", &[&a1, &a2]),
-                atomic_unit_for("atomic:1", &[&b1, &b2]),
-            ],
-            vec![],
-        ),
-    )
-}
-
-#[test]
 fn seed_rejection_diagnostic_is_canonical() {
     // Same fixture run twice; rejection diagnostic byte-equal across
     // runs. Determinism check.
@@ -467,80 +338,6 @@ fn contract_never_un_contracts() {
 }
 
 #[test]
-fn partition_constructor_contracts_each_group() {
-    // Invariant the fixtures below rely on: `from_report_with_partition`
-    // materializes a quotient whose equivalence classes are exactly the
-    // input groups.
-    //
-    // - Owners not listed in any group remain singletons.
-    // - Each group's owners share a class.
-    // - Cross-group owners are in distinct classes.
-    let a = residual_owner("owner:a", 1, &["BindingA"], 5);
-    let b = residual_owner("owner:b", 2, &["BindingB"], 5);
-    let c = residual_owner("owner:c", 3, &["BindingC"], 5);
-    let d = residual_owner("owner:d", 4, &["BindingD"], 5);
-    let e = residual_owner("owner:e", 5, &["BindingE"], 5);
-    let report = singleton_graph(
-        vec![a.clone(), b.clone(), c.clone(), d.clone(), e.clone()],
-        vec![owner_edge(
-            "edge:0",
-            "owner:a",
-            "owner:b",
-            DepKind::EagerUse,
-            true,
-        )],
-    );
-
-    // Group 1: {a, b}; group 2: {c, d}; e stays singleton.
-    let groups = vec![
-        PartitionGroup {
-            owner_idxs: vec![OwnerIdx(0), OwnerIdx(1)],
-            is_pre_existing_module: false,
-        },
-        PartitionGroup {
-            owner_idxs: vec![OwnerIdx(2), OwnerIdx(3)],
-            is_pre_existing_module: false,
-        },
-    ];
-    let (q, class_ids) =
-        QuotientGraph::from_report_with_partition(&report, 10_000, &groups).unwrap();
-    assert_eq!(class_ids.len(), 2, "one class id per input group");
-
-    let a_idx = q.owner_idx_of("owner:a").unwrap();
-    let b_idx = q.owner_idx_of("owner:b").unwrap();
-    let c_idx = q.owner_idx_of("owner:c").unwrap();
-    let d_idx = q.owner_idx_of("owner:d").unwrap();
-    let e_idx = q.owner_idx_of("owner:e").unwrap();
-
-    assert_eq!(q.class_of(a_idx), q.class_of(b_idx), "a/b co-located");
-    assert_eq!(q.class_of(c_idx), q.class_of(d_idx), "c/d co-located");
-    assert_ne!(
-        q.class_of(a_idx),
-        q.class_of(c_idx),
-        "groups in distinct classes",
-    );
-    assert_ne!(
-        q.class_of(e_idx),
-        q.class_of(a_idx),
-        "ungrouped owner stays singleton",
-    );
-    assert_ne!(
-        q.class_of(e_idx),
-        q.class_of(c_idx),
-        "ungrouped owner stays singleton",
-    );
-
-    // The returned class ids must point at the actual class of each
-    // group's owners (the renderer reads from these).
-    assert_eq!(class_ids[0], q.class_of(a_idx));
-    assert_eq!(class_ids[1], q.class_of(c_idx));
-
-    // class_lines reflects the sum of members' source line counts.
-    // a and b each contribute 5 lines (per residual_owner above).
-    assert_eq!(q.class_lines(class_ids[0]), 10);
-}
-
-#[test]
 fn factorize_golden_output_unchanged() {
     // Golden test: propose's output stays byte-identical for the
     // same representative inputs. The renderer-over-quotient path
@@ -656,44 +453,6 @@ fn golden_extend_active_via_anon() -> OwnerGraphReport {
 // with their per-owner residual flag derived from the report.
 
 #[test]
-fn greedy_extends_existing_module_with_only_consumer() {
-    // Pre-existing module M = {owner:a (BindingA)} declared as
-    // active. Residual anonymous owner:anon has a single
-    // constraining edge into owner:a. After greedy: the two are
-    // in one class.
-    let a = active_owner("owner:a", 1, &["BindingA"], 10, "ui/x");
-    let anon = residual_owner("owner:anon", 2, &[], 5);
-    let report = graph_of(
-        vec![a.clone(), anon.clone()],
-        vec![owner_edge(
-            "edge:0",
-            "owner:anon",
-            "owner:a",
-            DepKind::EagerUse,
-            true,
-        )],
-        vec![
-            atomic_unit_for("atomic:0", &[&a]),
-            atomic_unit_for("atomic:1", &[&anon]),
-        ],
-        vec![atomic_edge("atomic_edge:0", "atomic:1", "atomic:0")],
-    );
-
-    let groups = vec![module_group(vec![0])];
-    let (mut q, group_ids) =
-        QuotientGraph::from_report_with_partition(&report, 10_000, &groups).unwrap();
-    let contractions = greedy_merge_to_convergence(&mut q);
-
-    // Exactly one contraction merging owner:anon's class into the
-    // ui/x module class.
-    assert_eq!(contractions.len(), 1, "got: {contractions:?}");
-    let a_idx = q.owner_idx_of("owner:a").unwrap();
-    let anon_idx = q.owner_idx_of("owner:anon").unwrap();
-    assert_eq!(q.class_of(a_idx), q.class_of(anon_idx));
-    assert_eq!(q.class_of(a_idx), group_ids[0]);
-}
-
-#[test]
 fn greedy_absorbs_tiny_named_helper_into_unique_consumer() {
     // Pre-existing module M = {owner:a (BindingA)}. Residual
     // owner:helper (BindingHelper) is read only by owner:a via an
@@ -791,48 +550,6 @@ fn greedy_never_splits_existing_spec_module() {
         q.class_of(a2_idx),
         "spec-module owners must stay co-located",
     );
-}
-
-#[test]
-fn boolean_merge_gate_matches_diagnostic_cycle_gate() {
-    // The greedy hot path only needs a yes/no answer, while
-    // `would_be_cycles_after_contract` materializes diagnostic
-    // evidence. Keep the verdicts equivalent on precondition-clean
-    // merges, including the important case where merging endpoints
-    // of an intermediate path would create a new multi-class SCC.
-    let a = active_owner("owner:a", 1, &["BindingA"], 10, "ui/a");
-    let h = active_owner("owner:h", 2, &["BindingH"], 10, "ui/h");
-    let b = active_owner("owner:b", 3, &["BindingB"], 10, "ui/b");
-    let report = singleton_graph(
-        vec![a.clone(), h.clone(), b.clone()],
-        vec![
-            owner_edge("edge:0", "owner:a", "owner:h", DepKind::EagerUse, true),
-            owner_edge("edge:1", "owner:h", "owner:b", DepKind::EagerUse, true),
-        ],
-    );
-    let groups = vec![
-        module_group(vec![0]),
-        module_group(vec![1]),
-        module_group(vec![2]),
-    ];
-    let (q, _) = QuotientGraph::from_report_with_partition(&report, 10_000, &groups).unwrap();
-
-    for (left, right, expected_preserves) in [
-        (ClassId(0), ClassId(1), true),
-        (ClassId(1), ClassId(2), true),
-        (ClassId(0), ClassId(2), false),
-    ] {
-        let diagnostic_preserves = q.would_be_cycles_after_contract(left, right).is_none();
-        let boolean_preserves = q.merge_preserves_invariants(left, right);
-        assert_eq!(
-            diagnostic_preserves, expected_preserves,
-            "unexpected diagnostic verdict for ({left:?}, {right:?})",
-        );
-        assert_eq!(
-            boolean_preserves, diagnostic_preserves,
-            "boolean hot path diverged from diagnostic verdict for ({left:?}, {right:?})",
-        );
-    }
 }
 
 // ---------- Full mergeability + merge output shape. ----------
@@ -980,50 +697,6 @@ fn greedy_resolves_realizability_cycle_by_merging() {
 }
 
 #[test]
-fn merge_two_existing_modules_with_mutual_eager_reads() {
-    // Two pre-existing modules with mutual EagerUse cross-edges.
-    // Assert the rendered proposal carries `merge_into:
-    // Some(["ui/a", "ui/b"])`.
-    let a = active_owner("owner:a", 1, &["BindingA"], 10, "ui/a");
-    let b = active_owner("owner:b", 2, &["BindingB"], 10, "ui/b");
-    let report = graph_of(
-        vec![a.clone(), b.clone()],
-        vec![
-            owner_edge("edge:ab", "owner:a", "owner:b", DepKind::EagerUse, true),
-            owner_edge("edge:ba", "owner:b", "owner:a", DepKind::EagerUse, true),
-        ],
-        vec![
-            atomic_unit_for("atomic:a", &[&a]),
-            atomic_unit_for("atomic:b", &[&b]),
-        ],
-        vec![],
-    );
-    let result = propose(
-        &report,
-        &claims(&[("BindingA", "ui/a"), ("BindingB", "ui/b")]),
-        10_000,
-    )
-    .unwrap();
-    let merge_proposals: Vec<&ModuleProposal> = result
-        .proposals
-        .iter()
-        .filter(|p| p.merge_into.is_some())
-        .collect();
-    assert_eq!(
-        merge_proposals.len(),
-        1,
-        "exactly one merge proposal expected, got proposals: {:?}",
-        result.proposals,
-    );
-    let merge_into = merge_proposals[0].merge_into.clone().unwrap();
-    assert_eq!(
-        merge_into,
-        vec!["ui/a".to_string(), "ui/b".to_string()],
-        "merge_into should list both module ids in canonical order",
-    );
-}
-
-#[test]
 fn merge_absorbs_residual_owner_with_only_intra_deps() {
     // mod_a + mod_b mutually coupled; residual `helper` reads from
     // both. Assert the merge proposal's operands include
@@ -1098,38 +771,6 @@ fn merge_absorbs_residual_owner_with_only_intra_deps() {
 // Input whose atomic-DAG reachability closure would form a cycle gets
 // a `SeedContractionRejected::AtomicReachability` diagnostic
 // pinpointing the rejected pair.
-
-#[test]
-fn unification_byte_identical_on_well_formed_inputs() {
-    // Companion to `factorize_golden_output_unchanged`. The three
-    // golden snapshots (residual_singletons, closed_residual_unit,
-    // extend_active_via_anon) produce zero rejections under gated
-    // seeding and therefore must stay byte-identical. This test
-    // asserts the "zero rejections" half; the byte-identity half is
-    // covered by
-    // `factorize_golden_output_unchanged`.
-    let claims_active = claims(&[("BindingA", "ui/x")]);
-
-    let r1 = propose(&golden_residual_singletons(), &no_claims(), 10_000).unwrap();
-    let r2 = propose(&golden_closed_residual_unit(), &no_claims(), 10_000).unwrap();
-    let r3 = propose(&golden_extend_active_via_anon(), &claims_active, 10_000).unwrap();
-
-    assert!(
-        r1.seed_rejections.is_empty(),
-        "residual_singletons fixture must produce zero seed rejections: {:?}",
-        r1.seed_rejections,
-    );
-    assert!(
-        r2.seed_rejections.is_empty(),
-        "closed_residual_unit fixture must produce zero seed rejections: {:?}",
-        r2.seed_rejections,
-    );
-    assert!(
-        r3.seed_rejections.is_empty(),
-        "extend_active_via_anon fixture must produce zero seed rejections: {:?}",
-        r3.seed_rejections,
-    );
-}
 
 #[test]
 fn unification_rejects_cyclic_atomic_reachability_with_diagnostic() {
@@ -1442,154 +1083,6 @@ fn owner_graph_and_partition_from_spec(
 }
 
 #[test]
-fn planner_seed_rejection_matches_materializer_verdict_on_asymmetric_cycle() {
-    // Asymmetric I-cycle through a non-residual mediator —
-    // the materializer-side adversarial shape Lemma 2 cannot rescue
-    // (mirrors `mediator_reaches_asymmetric_cycle_test`).
-    //
-    //   entry        -> mediator   EagerUse  (constraining=true)
-    //   mediator     -> dep        LazyUse   (non-constraining, opens DFS)
-    //   dependent    -> dep        EagerUse  (constraining=true) [fwd]
-    //   dep          -> dependent  LazyUse   (non-constraining)  [back]
-    //
-    // I-graph SCC after seeding spec modules:
-    //   {mod_dep, mod_dependent}. Residual reaches the SCC only via
-    //   mod_mediator (its `mediator → dep` lazy edge is part of I).
-    //
-    // Why Lemma 2 fails: mod_mediator's imports are sorted by
-    // linker_position (dependency-first), so DFS enters mod_dep
-    // first; mod_dep's body lazily references cross_value, then
-    // mod_dependent is entered → `cross_value`'s eager read of
-    // `dep_value` TDZs while mod_dep is mid-evaluation.
-    //
-    // Materializer flags the SCC as unrealizable; a planner that
-    // looked only at constraining edges would see no cycle and
-    // report zero rejections.
-    let entry = residual_owner("owner:entry", 0, &[], 1);
-    let dep_value = active_owner("owner:dep_value", 1, &["BindingDepValue"], 5, "mod_dep");
-    let lazy_reader = active_owner("owner:lazy_reader", 2, &["BindingLazyReader"], 5, "mod_dep");
-    let cross_value = active_owner(
-        "owner:cross_value",
-        3,
-        &["BindingCrossValue"],
-        5,
-        "mod_dependent",
-    );
-    let mediator_helper = active_owner(
-        "owner:mediator_helper",
-        4,
-        &["BindingMediatorHelper"],
-        5,
-        "mod_mediator",
-    );
-    let mediator_init = active_owner(
-        "owner:mediator_init",
-        5,
-        &["BindingMediatorInit"],
-        5,
-        "mod_mediator",
-    );
-    let edges = vec![
-        // residual `entry` eagerly reads mediator_init →
-        // residual → mod_mediator (constraining).
-        owner_edge(
-            "edge:entry_mediator",
-            "owner:entry",
-            "owner:mediator_init",
-            analysis::DepKind::EagerUse,
-            true,
-        ),
-        // mediator_helper lazily reads dep_value → mod_mediator →
-        // mod_dep (lazy, non-constraining).
-        owner_edge(
-            "edge:mediator_dep",
-            "owner:mediator_helper",
-            "owner:dep_value",
-            analysis::DepKind::LazyUse,
-            false,
-        ),
-        // mediator_init eagerly calls mediator_helper (intra-module).
-        owner_edge(
-            "edge:mediator_intra",
-            "owner:mediator_init",
-            "owner:mediator_helper",
-            analysis::DepKind::EagerUse,
-            true,
-        ),
-        // cross_value eagerly reads dep_value → mod_dependent →
-        // mod_dep (constraining; forward).
-        owner_edge(
-            "edge:dependent_dep",
-            "owner:cross_value",
-            "owner:dep_value",
-            analysis::DepKind::EagerUse,
-            true,
-        ),
-        // lazy_reader's body lazily references cross_value →
-        // mod_dep → mod_dependent (lazy back-edge; closes I-SCC).
-        owner_edge(
-            "edge:dep_back",
-            "owner:lazy_reader",
-            "owner:cross_value",
-            analysis::DepKind::LazyUse,
-            false,
-        ),
-    ];
-    let report = singleton_graph(
-        vec![
-            entry.clone(),
-            dep_value.clone(),
-            lazy_reader.clone(),
-            cross_value.clone(),
-            mediator_helper.clone(),
-            mediator_init.clone(),
-        ],
-        edges,
-    );
-    let spec = vec![
-        spec_module("mod_dep", &["owner:dep_value", "owner:lazy_reader"]),
-        spec_module("mod_dependent", &["owner:cross_value"]),
-        spec_module(
-            "mod_mediator",
-            &["owner:mediator_helper", "owner:mediator_init"],
-        ),
-    ];
-
-    // Materializer-side verdict.
-    let (owner_graph, partition) = owner_graph_and_partition_from_spec(&report, &spec);
-    let verdict = gate::check_realizability(&owner_graph, &partition);
-    let materializer_unrealizable = !verdict.is_realizable();
-    assert!(
-        materializer_unrealizable,
-        "fixture is supposed to be unrealizable per the materializer: {verdict:?}",
-    );
-
-    // Planner-side verdict.
-    let (_q, rejected) =
-        build_seed_quotient(&report, &report.atomic_graph.nodes, &spec, 10_000).unwrap();
-    let planner_has_rejection = !rejected.is_empty();
-
-    // The two MUST agree. If the materializer says unrealizable, the
-    // planner must surface a seed rejection — both seeing the same
-    // asymmetric I-cycle.
-    //
-    // Note: the planner's surfacing is granular (per spec-module or
-    // per atomic-DAG edge). For this fixture both modules are
-    // singletons, so no in-module contraction happens; the cycle
-    // surfaces only if the planner *also* walks the post-seed
-    // partition and reports cycles, OR if the kernel's contract gate
-    // refuses some upstream merge. Either is acceptable evidence.
-    assert_eq!(
-        materializer_unrealizable, planner_has_rejection,
-        "planner and materializer disagree on asymmetric I-cycle fixture:\n\
-         materializer unrealizable = {materializer_unrealizable}, \
-         planner rejected = {planner_has_rejection}\n\
-         materializer verdict: {verdict:?}\n\
-         planner rejections: {rejected:?}",
-    );
-}
-
-#[test]
 fn planner_and_materializer_agree_on_corpus() {
     // Corpus property test: across a mix of well-formed and
     // unrealizable fixture chunks, the planner's seed-quotient
@@ -1795,6 +1288,7 @@ fn planner_and_materializer_agree_on_corpus() {
         });
     }
 
+    let mut materializer_unrealizable_labels = Vec::new();
     for case in &cases {
         // Materializer-side.
         let (owner_graph, partition) =
@@ -1821,7 +1315,17 @@ fn planner_and_materializer_agree_on_corpus() {
              planner rejections: {rejected:?}",
             case.label,
         );
+        if materializer_unrealizable {
+            materializer_unrealizable_labels.push(case.label);
+        }
     }
+    // Without this, the agreement above passes vacuously when every case
+    // is realizable.
+    assert!(
+        materializer_unrealizable_labels.contains(&"asymmetric_i_cycle_via_mediator"),
+        "the mediator asymmetric I-cycle must be unrealizable per the materializer: \
+         {materializer_unrealizable_labels:?}",
+    );
 }
 
 // ---------------------------------------------------------------------

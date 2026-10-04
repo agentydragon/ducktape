@@ -941,7 +941,7 @@ export const SCENARIOS: Record<string, Scenario> = {
       '[data-thread-anchor="16"]',
       '.agentplane-user-bubble[data-message-phase="failed"]',
       '.agentplane-user-bubble[data-message-phase="noop"]',
-      '.agentplane-thread-status-dot[data-status="running"]',
+      '.agentplane-thread-status-indicator[data-status="running"]',
     ],
     captureViewport: true,
   },

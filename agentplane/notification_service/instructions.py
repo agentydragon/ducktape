@@ -73,6 +73,6 @@ No notification-triggered harness/sandbox startup or wake-up is available. Do no
 after the harness or sandbox stops. If subscription creation fails or subscription/delivery errors are
 reported, do not assume monitoring is active: use a bounded status check or explain the limitation.
 Inspect GET {url}/v1/subscriptions/SUBSCRIPTION_ID for source errors and inbox.delivery_error on reads.
-Subscriptions expire unless renewed. GET {url}/v1/providers and the OpenAPI schema describe provider
+Subscriptions expire unless renewed. GET {url}/v1/sources and the OpenAPI schema describe provider
 inputs and subscription management; consult the service documentation for retention and quotas.
 """

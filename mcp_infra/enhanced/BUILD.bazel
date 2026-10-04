@@ -73,7 +73,6 @@ py_test(
         "//:conftest",
         "//mcp_infra:conftest",
         "//openai_utils:pydantic_strict_mode",
-        "@pypi//fastmcp_slim",
         "@pypi//pydantic",
         "@pypi//pytest",
         "@pypi//pytest_bazel",

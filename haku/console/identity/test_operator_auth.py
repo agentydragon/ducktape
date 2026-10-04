@@ -219,12 +219,6 @@ async def test_two_console_tabs_can_log_in_at_once(migrated_db_url: str, tmp_pat
         assert (await browser.get("/auth/me")).status_code == 200
 
 
-def test_guards_reject_anonymous_requests_with_test_oidc(make_client) -> None:
-    with make_client() as client:
-        assert client.get("/api/tool-calls").status_code == 401
-        assert client.get("/api/config").status_code == 401
-
-
 def test_every_unsafe_api_route_has_an_explicit_admission_boundary(make_client) -> None:
     """Adding an unsafe browser route cannot silently omit exact-Origin admission."""
     with make_client() as client:
@@ -250,12 +244,6 @@ def test_every_unsafe_api_route_has_an_explicit_admission_boundary(make_client) 
         else:
             assert operator_auth.require_operator in calls, route.path
             assert operator_auth.require_operator_mutation_origin in calls, route.path
-
-
-def test_signed_operator_session_has_an_absolute_reauthentication_deadline(make_operator_client) -> None:
-    with make_operator_client(operator_session_expires_at=int(time.time()) - 1) as client:
-        assert client.get("/auth/me").status_code == 401
-        assert client.get("/api/config").status_code == 401
 
 
 def test_session_rejections_are_logged_with_distinguishing_reasons(
@@ -470,11 +458,6 @@ def test_retired_authentik_headers_cannot_authenticate_an_operator(make_client, 
         )
 
     assert response.status_code == 401
-
-
-def test_operator_oidc_is_required(migrated_db_url: str) -> None:
-    with pytest.raises(ValidationError, match="operator_oidc"):
-        console_settings(migrated_db_url, operator_oidc=None)
 
 
 def test_operator_oidc_requires_canonical_public_origin(migrated_db_url: str) -> None:

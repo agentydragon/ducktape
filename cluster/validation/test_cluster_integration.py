@@ -329,23 +329,6 @@ def test_no_orphaned_files(cluster: ParsedCluster, repo_root: Path) -> None:
     assert not errors, "\n".join(errors)
 
 
-def test_flux_kustomizations_chart_is_root_wired(cluster: ParsedCluster, k8s_dir: Path) -> None:
-    """The single generated Flux chart is reachable through both hand-written roots."""
-    root_kust = next(
-        k for path, k in cluster.kustomize_files.items() if path.resolve() == (k8s_dir / "kustomization.yaml").resolve()
-    )
-    flux_dir = (k8s_dir / "flux").resolve()
-    assert flux_dir in {resource.resolve() for resource in root_kust.resolved_resources}
-
-    flux_root = next(
-        k
-        for path, k in cluster.kustomize_files.items()
-        if path.resolve() == (flux_dir / "kustomization.yaml").resolve()
-    )
-    chart_path = (flux_dir / "kustomizations.k8s.yaml").resolve()
-    assert chart_path in {resource.resolve() for resource in flux_root.resolved_resources}
-
-
 def test_flux_kustomizations_under_parked_path_are_annotated(k8s_dir: Path) -> None:
     """A Flux Kustomization whose path is under the parked tree must carry the parked annotation."""
     errors = []

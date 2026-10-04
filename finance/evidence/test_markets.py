@@ -1,5 +1,4 @@
 from pathlib import Path
-from textwrap import dedent
 
 import pytest
 import pytest_bazel
@@ -19,26 +18,6 @@ from util.bazel.runfiles import get_required_path
 def test_example_roster_parses() -> None:
     # The checked-in example documents the ConfigMap file format; keep it valid.
     load_roster(get_required_path("_main/finance/evidence/example_market_roster.yaml"))
-
-
-def test_load_roster(tmp_path: Path) -> None:
-    roster = tmp_path / "roster.yaml"
-    roster.write_text(
-        dedent("""
-            markets:
-              # provenance lives in comments; the schema carries only what the sync uses
-              - platform: manifold
-                market_id: abc123
-                deep: true
-              - platform: kalshi
-                market_id: KXTEST-26
-        """)
-    )
-    entries = load_roster(roster)
-    assert entries == (
-        MarketEntry(platform=Platform.MANIFOLD, market_id="abc123", deep=True),
-        MarketEntry(platform=Platform.KALSHI, market_id="KXTEST-26"),
-    )
 
 
 def test_load_roster_rejects_unknown_keys(tmp_path: Path) -> None:

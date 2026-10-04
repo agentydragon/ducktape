@@ -245,7 +245,7 @@ def _egress_policies(scope: Construct, *, namespace: str) -> None:
                 ],
                 paths=[
                     "/openapi.json",
-                    "/v1/providers",
+                    "/v1/sources",
                     "/v1/subscriptions",
                     "/v1/subscriptions/**",
                     "/v1/inboxes",

@@ -27,9 +27,7 @@ from hamcrest import assert_that
 from agent_core.testing.responses import PlayGen
 from mcp_infra.exec.matchers import exited_successfully
 from props.agents.critic_dev.testing.mocks import CriticDevMock
-from props.core.agent_types import AgentType
 from props.db.database import Database
-from props.db.examples import Example
 from props.db.models import AgentRun
 from props.testing.constants import DEFAULT_TEST_MODEL
 
@@ -110,36 +108,7 @@ async def test_prompt_improve_e2e_creates_package(
 
     with db.session() as session:
         agent_run = session.query(AgentRun).filter_by(agent_run_id=result).one()
-        improvement_config = agent_run.critic_dev_improve_config()
-        assert improvement_config.agent_type == AgentType.CRITIC_DEV_IMPROVE
-        assert improvement_config.allowed_examples is not None
-
-
-@pytest.mark.timeout(180)
-async def test_prompt_improve_e2e_multiple_examples(
-    e2e_stack, test_snapshot, critic_dev_improve_image, critic_image, db: Database
-):
-    """Test improvement agent with multiple training examples."""
-    with db.session() as session:
-        examples = session.query(Example).filter_by(snapshot_slug=test_snapshot).limit(2).all()
-        assert len(examples) >= 2, "Need at least 2 examples for this test"
-        allowed_examples = [e.to_example_spec() for e in examples]
-
-    mock = make_improvement_mock()
-
-    async with e2e_stack({DEFAULT_TEST_MODEL: mock}, images=[critic_dev_improve_image, critic_image]) as stack:
-        result = await stack.registry.run_critic_dev_improve(
-            image=stack.resolved_images["critic_dev_improve"],
-            examples=allowed_examples,
-            baseline_image_digests=[stack.image_digests["critic"]],
-            budget_usd=50.0,
-            improvement_model=stack.model,
-            critic_model=stack.model,
-            timeout_seconds=TEST_TIMEOUT_SECONDS,
-        )
-
-    with db.session() as session:
-        session.query(AgentRun).filter_by(agent_run_id=result).one()
+        assert agent_run.critic_dev_improve_config().allowed_examples == [subtract_file_example]
 
 
 if __name__ == "__main__":

@@ -60,12 +60,13 @@ async def test_flat_model_infers_types_and_emits_schema():
 async def test_flat_model_invocation_accepts_flat_kwargs():
     m = EnhancedFastMCP("decorator_call")
 
-    @m.flat_model()
+    # name= overrides the function name
+    @m.flat_model(name="echo_renamed")
     async def echo(input: InModel) -> OutModel:
         return OutModel(ok=input.a > 0, note=input.b)
 
     async with Client(m) as client:
-        res = await client.call_tool("echo", {"a": 3, "b": "hi"})
+        res = await client.call_tool("echo_renamed", {"a": 3, "b": "hi"})
 
     assert res.structured_content == {"ok": True, "note": "hi"}
 

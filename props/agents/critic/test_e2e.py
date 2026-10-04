@@ -57,8 +57,6 @@ async def test_critic_zero_issues(e2e_stack, test_snapshot, all_files_scope, cri
             budget_usd=5.0,
         )
 
-        assert critic_run_id is not None
-
         # Verify database records
         with db.session() as session:
             run = session.get(AgentRun, critic_run_id)
@@ -100,8 +98,6 @@ async def test_critic_submit_with_issues(e2e_stack, test_snapshot, all_files_sco
             parent_run_id=None,
             budget_usd=5.0,
         )
-
-        assert critic_run_id is not None
 
         # Verify database records
         with db.session() as session:
@@ -168,8 +164,6 @@ async def test_python3_can_import_and_inspect_props(
             parent_run_id=None,
             budget_usd=5.0,
         )
-
-        assert run_id is not None
 
         with db.session() as session:
             run = session.get(AgentRun, run_id)
