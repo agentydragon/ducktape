@@ -736,8 +736,6 @@ function VirtualizedHistory({
   );
 }
 
-type Operational = Extract<ThreadEntity["state"], { operational: unknown }>["operational"];
-
 function ProjectedSessionBody({
   threadId,
   entities,

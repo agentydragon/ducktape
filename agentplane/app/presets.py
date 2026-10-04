@@ -11,7 +11,6 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from agentplane.app.sandbox_models import SessionDefaults
 from agentplane.runner.harness import Harness
-from agentplane.sandbox_service.instructions import combine_instructions
 
 
 class ThreadPreset(BaseModel):
@@ -66,9 +65,6 @@ class PresetCatalog(BaseModel):
 
     sandboxes: dict[str, SandboxPreset] = Field(default_factory=dict)
     threads: dict[str, ThreadPreset] = Field(default_factory=dict)
-    agent_instructions: str = Field(
-        default="", description="Operational instructions prepended to every Agentplane-launched session."
-    )
 
     @model_validator(mode="after")
     def _references_exist(self) -> PresetCatalog:
@@ -93,7 +89,3 @@ class PresetCatalog(BaseModel):
             )
             for name, preset in self.sandboxes.items()
         ]
-
-    def instructions_for(self, task_instructions: str) -> str:
-        """Combine platform operation guidance with the caller's task-specific instructions."""
-        return combine_instructions(self.agent_instructions, task_instructions)

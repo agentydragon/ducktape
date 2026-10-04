@@ -118,7 +118,6 @@ TEST_PRESETS = PresetCatalog(
             instructions="preset instructions",
         )
     },
-    agent_instructions="shared agent instructions",
 )
 
 

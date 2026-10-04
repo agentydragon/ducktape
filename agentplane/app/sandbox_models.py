@@ -76,16 +76,6 @@ class SessionDefaults(BaseModel):
         """Replace only fields explicitly present in this object, including an explicit empty string."""
         return base.model_copy(update=self.model_dump(exclude_none=True))
 
-    def proto_json(self, session_id: str) -> dict[str, object]:
-        values = self.model_dump(exclude_none=True, exclude={"setup_script"})
-        if cwd := values.get("cwd"):
-            values["cwd"] = str(cwd).replace("{session_id}", session_id)
-        if harness := values.pop("harness", None):
-            values["harness"] = str(harness)
-        if "reasoning_effort" in values:
-            values["reasoningEffort"] = values.pop("reasoning_effort")
-        return values
-
 
 class SandboxBinding(BaseModel):
     """The exact reusable session defaults and bootstrap the Sandbox was created with."""

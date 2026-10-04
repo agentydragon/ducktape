@@ -74,13 +74,6 @@ def test_sandbox_binding_keeps_the_selected_values_when_the_catalog_changes(pres
         "instructions": "",
         "setup_script": "",
     }
-    assert binding.session_defaults.proto_json("thread-7") == {
-        "harness": "HARNESS_CODEX",
-        "model": "preset-model",
-        "cwd": "/state/workspaces/thread-7",
-        "reasoningEffort": "medium",
-        "instructions": "",
-    }
 
 
 if __name__ == "__main__":
