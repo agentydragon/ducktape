@@ -3,6 +3,8 @@
 // for the thread to draw as a command; any call that does not parse is drawn as its JSON.
 import { z } from "zod";
 
+import { parsedJson } from "../parsed_json";
+
 /** A shell command call, as the thread shows it. */
 export interface CommandCall {
   /** What to call the tool. */
@@ -77,15 +79,6 @@ export function parseCommandCall(toolName: string, argumentsJson: string): Comma
     }
     default:
       return null;
-  }
-}
-
-function parsedJson(text: string): unknown {
-  try {
-    return JSON.parse(text);
-  } catch (error) {
-    if (error instanceof SyntaxError) return undefined;
-    throw error;
   }
 }
 
