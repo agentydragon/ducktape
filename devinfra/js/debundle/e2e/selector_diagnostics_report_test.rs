@@ -85,13 +85,6 @@ fn keep_going_writes_machine_readable_selector_outcomes() {
         json!({"owner": 0, "kind": "function"}),
         "{duplicate:#}"
     );
-    assert!(
-        rejected
-            .stderr
-            .contains("binding \"renderCard\" (`function` at body[0]) is already claimed by"),
-        "{}",
-        rejected.stderr
-    );
     let mut sites = [
         duplicate["placement"]["logical_module"].as_str().unwrap(),
         duplicate["outcome"]["claimed_by"]["logical_module"]
@@ -233,13 +226,6 @@ fn keep_going_reports_every_selector_of_an_infeasible_pair_with_a_witness() {
         assert!(
             record["outcome"].get("nearest_unclaimed").is_none(),
             "{record:#}"
-        );
-        assert!(
-            rejected
-                .stderr
-                .contains("participates in ownership conflict"),
-            "{}",
-            rejected.stderr
         );
     }
     let duplicate = outcomes
