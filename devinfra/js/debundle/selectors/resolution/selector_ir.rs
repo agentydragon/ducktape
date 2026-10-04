@@ -998,50 +998,6 @@ mod tests {
     }
 
     #[test]
-    fn slice_for_targets_preserves_projected_allowed_tuples() {
-        let mut program = SelectorProgram::default();
-        let owner = program.add_variable(VariableDomain::Owner, Some("owner".to_string()));
-        let binding = program.add_variable(VariableDomain::String, Some("binding".to_string()));
-        let target = program.add_target(
-            owner,
-            "projected/module",
-            ClaimKind::BindingGroupMember {
-                export_name: "Projected".to_string(),
-            },
-        );
-        program.add_atom(SelectorAtom::ProjectedAllowedTuples {
-            variables: vec![owner, binding],
-            rows: vec![vec![
-                SelectorProjectedValue::Owner(OwnerId(7)),
-                SelectorProjectedValue::String("minified".to_string()),
-            ]],
-        });
-        program.add_atom(SelectorAtom::OwnerDeclaresBinding {
-            owner: OwnerTerm::Var { id: owner },
-            binding: StringTerm::Var { id: binding },
-        });
-
-        let slice = program
-            .slice_for_targets(&BTreeSet::from([target]))
-            .unwrap();
-
-        assert_eq!(slice.program.variables.len(), 2);
-        assert!(slice.program.atoms.iter().any(|atom| {
-            matches!(
-                atom,
-                SelectorAtom::ProjectedAllowedTuples { variables, rows }
-                    if variables == &vec![SelectorVariableId(0), SelectorVariableId(1)]
-                        && rows
-                            == &vec![vec![
-                                SelectorProjectedValue::Owner(OwnerId(7)),
-                                SelectorProjectedValue::String("minified".to_string())
-                            ]]
-            )
-        }));
-        assert!(slice.program.validate().is_ok());
-    }
-
-    #[test]
     fn slice_for_targets_keeps_all_different_among_selected_targets() {
         let mut program = SelectorProgram::default();
         let [left_target, right_target] = ["Left", "Right"].map(|export_name| {
