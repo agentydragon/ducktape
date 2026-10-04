@@ -184,8 +184,8 @@ py_test(
     srcs = ["test_wheel.py"],
     data = [":wheel"],
     deps = [
-        ":publisher",
         "//:conftest",
+        "//devinfra/pr_visuals:publisher",
         "//util/bazel:runfiles",
         "@pypi//pytest_bazel",
     ],
