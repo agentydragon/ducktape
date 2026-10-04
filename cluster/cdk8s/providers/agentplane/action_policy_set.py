@@ -23,7 +23,8 @@ class AutoApproveIf:
     (an Action name allowlist), `github_repository` (a fixed owner/repository), and
     `github_public_repository` (a live, unauthenticated visibility check in place of a fixed
     owner/repository). The schema also defines `argument_schema` (also requires the arguments to
-    satisfy a JSON Schema) -- add a factory the day this repo builds it.
+    satisfy a JSON Schema) and `home_assistant_entity_control` (a Home Assistant service call
+    confined to configured entities and services) -- add a factory the day this repo builds one.
 
     """
 

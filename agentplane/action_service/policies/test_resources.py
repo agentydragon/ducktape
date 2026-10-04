@@ -11,6 +11,7 @@ from agentplane.action_service.policies.argument_schema import ArgumentSchema
 from agentplane.action_service.policies.exact_actions import ExactActions
 from agentplane.action_service.policies.github_public_repository import GitHubPublicRepository
 from agentplane.action_service.policies.github_repository import GitHubRepository
+from agentplane.action_service.policies.home_assistant_entity_control import HomeAssistantEntityControl
 from agentplane.action_service.policies.resources import (
     ActionPolicyBinding,
     ActionPolicySet,
@@ -65,12 +66,17 @@ def test_policy_set_parses_each_kind() -> None:
                         "repository": "test-repo",
                     },
                     {"type": "github_public_repository", "actions": {"github": ["get_file_contents"]}},
+                    {
+                        "type": "home_assistant_entity_control",
+                        "actions": {"ha-test": ["ha_call_service"]},
+                        "entities": {"light.test_lamp": ["turn_on", "turn_off"]},
+                    },
                 ]
             }
         )
     )
     assert isinstance(parsed, ActionPolicySet)
-    exact, by_schema, fixed_repository, public_repository = parsed.spec.auto_approve_if
+    exact, by_schema, fixed_repository, public_repository, home_assistant = parsed.spec.auto_approve_if
     assert isinstance(exact, ExactActions)
     assert exact.actions == {"github": frozenset({"get_file_contents", "search_code"})}
     assert isinstance(by_schema, ArgumentSchema)
@@ -78,6 +84,8 @@ def test_policy_set_parses_each_kind() -> None:
     assert isinstance(fixed_repository, GitHubRepository)
     assert (fixed_repository.owner, fixed_repository.repository) == ("test-owner", "test-repo")
     assert isinstance(public_repository, GitHubPublicRepository)
+    assert isinstance(home_assistant, HomeAssistantEntityControl)
+    assert home_assistant.entities == {"light.test_lamp": frozenset({"turn_on", "turn_off"})}
     assert parsed.metadata.generation == 3
     assert parsed.status.ready() is None
 
@@ -98,6 +106,10 @@ def test_policy_set_parses_each_kind() -> None:
         (
             {"autoApproveIf": [{"type": "github_public_repository", "actions": {"github": ["x"]}, "owner": "o"}]},
             "owner",
+        ),
+        (
+            {"autoApproveIf": [{"type": "home_assistant_entity_control", "actions": {"ha-test": ["ha_call_service"]}}]},
+            "entities",
         ),
         ({"autoApproveIf": [{"type": "exact_actions", "actions": {"github": ["Not-A-Key"]}}]}, "actions"),
         ({"rules": []}, "rules"),

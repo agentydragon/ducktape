@@ -43,6 +43,7 @@ py_library(
         ":exact_actions",
         ":github_public_repository",
         ":github_repository",
+        ":home_assistant_entity_control",
         ":kind",
         "//agentplane/action_service:catalog",
         "//agentplane/action_service/github_policy:visibility",
@@ -123,6 +124,7 @@ py_test(
         ":exact_actions",
         ":github_public_repository",
         ":github_repository",
+        ":home_assistant_entity_control",
         ":resources",
         "//:conftest",
         "//agentplane:subjects",
@@ -188,6 +190,31 @@ py_test(
         "//agentplane/action_service:conftest",
         "//agentplane/action_service:models",
         "//agentplane/action_service/github_policy:visibility",
+        "@pypi//pydantic",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_library(
+    name = "home_assistant_entity_control",
+    srcs = ["home_assistant_entity_control.py"],
+    deps = [
+        ":kind",
+        "//agentplane/action_service:catalog",
+        "//agentplane/action_service:models",
+        "@pypi//pydantic",
+    ],
+)
+
+py_test(
+    name = "test_home_assistant_entity_control",
+    srcs = ["test_home_assistant_entity_control.py"],
+    deps = [
+        ":home_assistant_entity_control",
+        ":kind",
+        "//:conftest",
+        "//agentplane/action_service:conftest",
         "@pypi//pydantic",
         "@pypi//pytest",
         "@pypi//pytest_bazel",

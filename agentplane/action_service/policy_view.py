@@ -24,6 +24,7 @@ from agentplane.action_service.policies.argument_schema import ArgumentSchema
 from agentplane.action_service.policies.exact_actions import ExactActions
 from agentplane.action_service.policies.github_public_repository import GitHubPublicRepository
 from agentplane.action_service.policies.github_repository import GitHubRepository
+from agentplane.action_service.policies.home_assistant_entity_control import HomeAssistantEntityControl
 from agentplane.action_service.policies.registry import Policy
 from agentplane.action_service.policies.resources import (
     ActionPolicyBinding,
@@ -85,8 +86,20 @@ class GitHubPublicRepositoryView(_View):
     actions: dict[str, list[str]] = Field(description="Action names by ActionGroup key, sorted.")
 
 
+class HomeAssistantEntityControlView(_View):
+    type: Literal[PolicyKind.HOME_ASSISTANT_ENTITY_CONTROL]
+    actions: dict[str, list[str]] = Field(description="Action names by ActionGroup key, sorted.")
+    entities: dict[str, list[str]] = Field(
+        description="The Home Assistant entity ids a call may target, each with the services it may use, sorted."
+    )
+
+
 PolicyView = Annotated[
-    ExactActionsView | ArgumentSchemaView | GitHubRepositoryView | GitHubPublicRepositoryView,
+    ExactActionsView
+    | ArgumentSchemaView
+    | GitHubRepositoryView
+    | GitHubPublicRepositoryView
+    | HomeAssistantEntityControlView,
     Field(discriminator="type"),
 ]
 
@@ -164,9 +177,7 @@ class SubjectActionPolicyView(_EffectivePolicy):
     )
 
 
-def _policy_view(
-    policy: Policy,
-) -> ExactActionsView | ArgumentSchemaView | GitHubRepositoryView | GitHubPublicRepositoryView:
+def _policy_view(policy: Policy) -> PolicyView:
     actions = {group: sorted(names) for group, names in sorted(policy.actions.items())}
     match policy:
         case ExactActions():
@@ -179,6 +190,12 @@ def _policy_view(
             )
         case GitHubPublicRepository():
             return GitHubPublicRepositoryView(type=PolicyKind.GITHUB_PUBLIC_REPOSITORY, actions=actions)
+        case HomeAssistantEntityControl(entities=entities):
+            return HomeAssistantEntityControlView(
+                type=PolicyKind.HOME_ASSISTANT_ENTITY_CONTROL,
+                actions=actions,
+                entities={entity_id: sorted(services) for entity_id, services in sorted(entities.items())},
+            )
 
 
 def _effective(bindings: tuple[ResolvedBinding, ...]) -> list[EffectivePolicyView]:
