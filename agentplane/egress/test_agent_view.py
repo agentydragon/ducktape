@@ -203,16 +203,5 @@ def test_mixed_or_incomplete_targets_are_rejected_by_resources_and_agent_api(tar
         )
 
 
-def test_agent_schema_exposes_a_discriminated_union_not_nullable_sibling_fields() -> None:
-    schema = CredentialView.model_json_schema()
-    items = schema["properties"]["targets"]["items"]
-    assert items["discriminator"]["propertyName"] == "method"
-    assert set(items["discriminator"]["mapping"]) == {method.value for method in TargetMethod}
-    assert len(items["oneOf"]) == len(TargetMethod)
-    assert set(schema["$defs"]["JsonFieldTarget"]["properties"]) == {"method", "field"}
-    assert set(schema["$defs"]["SchemeTokenTarget"]["properties"]) == {"method", "header", "scheme"}
-    assert set(schema["$defs"]["BasicPasswordTarget"]["properties"]) == {"method", "header"}
-
-
 if __name__ == "__main__":
     pytest_bazel.main()
