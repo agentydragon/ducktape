@@ -334,10 +334,12 @@ rec {
         doInstallCheck = true;
         installCheckPhase = ''
           runHook preInstallCheck
-          cd "$(mktemp -d)"
-          unset PYTHONPATH
-          "$out/bin/pr-visuals-announce" --help
-          "$out/bin/pr-visuals-publish" --help
+          (
+            cd "$(mktemp -d)"
+            unset PYTHONPATH
+            "$out/bin/pr-visuals-announce" --help
+            "$out/bin/pr-visuals-publish" --help
+          )
           runHook postInstallCheck
         '';
       });
