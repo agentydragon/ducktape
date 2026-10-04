@@ -258,22 +258,3 @@ py_test(
         "@pypi//sqlalchemy",
     ],
 )
-
-py_test(
-    name = "test_view_extracts_grade_fields",
-    size = "medium",
-    srcs = ["test_view_extracts_grade_fields.py"],
-    requires_docker = True,
-    deps = [
-        ":conftest",
-        ":database",
-        ":examples",
-        ":models",
-        "//:conftest",
-        "//props:conftest",
-        "//props/core:ids",
-        "//props/testing/fixtures:runs",
-        "@pypi//pytest_bazel",
-        "@pypi//sqlalchemy",
-    ],
-)

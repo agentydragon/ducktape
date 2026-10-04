@@ -97,7 +97,7 @@ def test_whole_snapshot_includes_all_occurrences(synced_test_session: Session, t
 def test_graded_run_gets_actual_credit(
     synced_test_session: Session, example_subtract_orm: Example, tp_occurrence_single: tuple[str, str]
 ):
-    """Runs with grading edges get the actual credit from those edges."""
+    """Runs with grading edges get the actual credit from those edges, on the edge's own (tp, occurrence)."""
     critic_run = make_fake_critic_run(
         session=synced_test_session,
         example=example_subtract_orm.to_example_spec(),
@@ -136,13 +136,15 @@ def test_graded_run_gets_actual_credit(
     synced_test_session.add(edge)
     synced_test_session.commit()
 
-    result = synced_test_session.execute(
-        text("SELECT found_credit FROM tp_occurrence_credits WHERE critic_run_id = :run_id"),
-        {"run_id": str(critic_run.agent_run_id)},
-    ).fetchone()
+    found_credit = synced_test_session.execute(
+        text("""
+            SELECT found_credit FROM tp_occurrence_credits
+            WHERE critic_run_id = :run_id AND tp_id = :tp_id AND occurrence_id = :occ_id
+        """),
+        {"run_id": str(critic_run.agent_run_id), "tp_id": tp_id, "occ_id": occ_id},
+    ).scalar_one()
 
-    assert result is not None
-    assert result.found_credit == 0.8
+    assert found_credit == 0.8
 
 
 def test_multiple_occurrences_with_or_logic(synced_test_session: Session, example_multi_tp_orm: Example):
