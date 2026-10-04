@@ -11,7 +11,7 @@ py_test(
     name = "test_cluster",
     srcs = ["test_cluster.py"],
     deps = [
-        ":cluster",
+        ":flux",
         "@pypi//pytest_bazel",
     ],
 )
