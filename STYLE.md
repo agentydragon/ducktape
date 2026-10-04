@@ -74,6 +74,15 @@ bug.
 - **Every field needs a reader**: a set-but-never-read field is dead payload. Authoring
   provenance goes in inert `#` comments next to the data, not schema fields (`note:`);
   delete write-only fields that survived refactors.
+- **No dead code**: delete what no live path can call, in the change that orphans it. Live
+  means reachable from something that ships or runs — a Bazel binary, an OCI image
+  entrypoint, a workflow, a generator whose output is deployed, an API a dependent repo
+  imports — and callable along that path: code a live module only imports, registers but
+  never invokes, or reaches through a branch nothing takes is dead. A test calling it does
+  not make it live; test support (`testing/` umbrellas, fixtures, harnesses) is live for the
+  tests that use it. Exceptions: code staged for a caller that lands next, naming that
+  caller at its declaration (deleted if the change is abandoned), and spikes under `x/` that
+  are dead on purpose. A removal that cannot land atomically is a tombstone (§ Tombstones).
 - **No redundant derived fields**: don't return a collection plus a trivially computable
   function of it (a list and its `len()`) — storing or returning `x` alongside
   `trivial_function(x)` invites drift and leaves open which layer of the stack adds the
