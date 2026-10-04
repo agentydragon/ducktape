@@ -10,7 +10,6 @@ import time
 import traceback
 from collections import defaultdict
 from datetime import datetime, timedelta
-from enum import StrEnum
 from pathlib import Path
 from typing import Any
 
@@ -18,14 +17,6 @@ import pandas as pd
 import requests
 from jinja2 import Template
 from pydantic import BaseModel, ConfigDict, Field, field_validator
-
-
-class ClinicalSignificance(StrEnum):
-    PATHOGENIC = "pathogenic"
-    LIKELY_PATHOGENIC = "likely_pathogenic"
-    UNCERTAIN = "uncertain_significance"
-    LIKELY_BENIGN = "likely_benign"
-    BENIGN = "benign"
 
 
 class Variant(BaseModel):
@@ -352,138 +343,6 @@ class GenomicAnalyzer:
             # Adaptive rate limiting
             if i + batch_size < len(uncached_rsids):
                 time.sleep(0.2)
-
-        return results
-
-    def batch_query_clinvar(self, rsids: list[str], batch_size: int = 200) -> dict[str, ClinVarData]:
-        """Batch query ClinVar for clinical significance"""
-        print(f"🔄 Batch querying ClinVar for {len(rsids)} variants...")
-
-        results = {}
-        uncached_rsids = []
-
-        # Check cache
-        for rsid in rsids:
-            cached = self.get_cached(rsid, "clinvar")
-            if cached:
-                results[rsid] = cached
-            else:
-                uncached_rsids.append(rsid)
-
-        if not uncached_rsids:
-            print(f"  All {len(results)} variants cached")
-            return results
-
-        # Batch query via E-utilities
-        for i in range(0, len(uncached_rsids), batch_size):
-            batch = uncached_rsids[i : i + batch_size]
-
-            try:
-                # Search ClinVar
-                base = "https://eutils.ncbi.nlm.nih.gov/entrez/eutils"
-
-                # Build query
-                query = " OR ".join([f"{rsid}[Variant ID]" for rsid in batch])
-
-                search_params: dict[str, str | int] = {
-                    "db": "clinvar",
-                    "term": query,
-                    "retmax": batch_size,
-                    "retmode": "json",
-                }
-
-                search_resp = requests.get(f"{base}/esearch.fcgi", params=search_params, timeout=30)
-
-                if search_resp.status_code == 200:
-                    search_data = search_resp.json()
-                    id_list = search_data.get("esearchresult", {}).get("idlist", [])
-
-                    if id_list:
-                        # Fetch summaries
-                        summary_params = {"db": "clinvar", "id": ",".join(id_list), "retmode": "json"}
-
-                        summary_resp = requests.get(f"{base}/esummary.fcgi", params=summary_params, timeout=30)
-
-                        if summary_resp.status_code == 200:
-                            summary_data = summary_resp.json()
-
-                            # Process results
-                            for uid, record in summary_data.get("result", {}).items():
-                                if uid != "uids" and "title" in record:
-                                    # Extract rsID from title
-                                    title = record["title"]
-                                    if "rs" in title:
-                                        rsid_match = title.split("rs")[1].split(" ")[0].split(":")[0]
-                                        rsid = f"rs{rsid_match}"
-
-                                        if rsid in batch:
-                                            results[rsid] = record
-                                            self.set_cached(rsid, "clinvar", record)
-
-                            print(f"  Batch {i // batch_size + 1}: Found {len(id_list)} ClinVar entries")
-
-            except Exception as e:
-                error = f"ClinVar batch error: {e!s}"
-                print(f"  ❌ {error}")
-                self.errors.append({"error": error, "traceback": traceback.format_exc()})
-
-            time.sleep(0.3)  # NCBI rate limit
-
-        return results
-
-    def batch_query_ensembl(self, rsids: list[str], batch_size: int = 200) -> dict[str, dict]:
-        """Batch query Ensembl VEP"""
-        print(f"🔄 Batch querying Ensembl VEP for {len(rsids)} variants...")
-
-        results = {}
-        uncached_rsids = []
-
-        # Check cache
-        for rsid in rsids:
-            cached = self.get_cached(rsid, "ensembl")
-            if cached:
-                results[rsid] = cached
-            else:
-                uncached_rsids.append(rsid)
-
-        if not uncached_rsids:
-            print(f"  All {len(results)} variants cached")
-            return results
-
-        # Batch query
-        for i in range(0, len(uncached_rsids), batch_size):
-            batch = uncached_rsids[i : i + batch_size]
-
-            try:
-                url = "https://rest.ensembl.org/vep/human/id"
-                headers = {"Content-Type": "application/json", "Accept": "application/json"}
-
-                # Format for VEP
-                data = {"ids": batch}
-
-                response = requests.post(url, headers=headers, json=data, timeout=30)
-
-                if response.status_code == 200:
-                    vep_results = response.json()
-
-                    for result in vep_results:
-                        if "id" in result:
-                            rsid = result["id"]
-                            results[rsid] = result
-                            self.set_cached(rsid, "ensembl", result)
-
-                    print(f"  Batch {i // batch_size + 1}: Processed {len(vep_results)} variants")
-                else:
-                    error = f"Ensembl VEP error: {response.status_code}"
-                    print(f"  ❌ {error}")
-                    self.errors.append(error)
-
-            except Exception as e:
-                error = f"Ensembl batch error: {e!s}"
-                print(f"  ❌ {error}")
-                self.errors.append({"error": error, "traceback": traceback.format_exc()})
-
-            time.sleep(0.5)
 
         return results
 
@@ -847,37 +706,6 @@ def main(argv: list[str] | None = None):
     print("📄 Final report: genome_analysis_report.html")
 
     return findings
-
-
-def generate_final_html_report(df, findings: AnalysisFindings, output_path: str | Path = "genome_analysis_report.html"):
-    """Generate final comprehensive HTML report using Jinja2"""
-    template_path = Path(__file__).parent / "report_template.html.j2"
-    with template_path.open() as f:
-        template = Template(f.read())
-
-    # Sort variants for display
-    pathogenic_sorted = sorted(findings.pathogenic, key=lambda x: x.significance)
-    rare_sorted = sorted(findings.rare_variants, key=lambda x: x.frequency)[:100]
-    high_impact_sorted = sorted(findings.high_impact, key=lambda x: x.cadd_phred, reverse=True)[:100]
-
-    html = template.render(
-        is_progress=False,
-        date=datetime.now().strftime("%Y-%m-%d %H:%M"),
-        total_variants=f"{len(df):,}",
-        pathogenic_count=len(findings.pathogenic),
-        rare_count=len(findings.rare_variants),
-        high_impact_count=len(findings.high_impact),
-        drug_count=len(findings.drug_response),
-        pathogenic_variants=pathogenic_sorted,
-        rare_variants=rare_sorted,
-        high_impact_variants=high_impact_sorted,
-    )
-
-    output_path = Path(output_path)
-    with output_path.open("w") as f:
-        f.write(html)
-
-    print(f"✅ Final report saved to: {output_path}")
 
 
 def generate_html_report(
