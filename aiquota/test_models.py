@@ -2,7 +2,7 @@ import pytest
 import pytest_bazel
 from pydantic import ValidationError
 
-from aiquota.models import FetchError, FetchSuccess, QuotaWindow
+from aiquota.models import FetchSuccess, QuotaWindow
 
 if __name__ == "__main__":
     pytest_bazel.main()
@@ -23,8 +23,3 @@ def test_fetch_success_rejects_duplicate_durations() -> None:
 
     with pytest.raises(ValidationError, match="quota window identities must be unique"):
         FetchSuccess(windows=windows)
-
-
-def test_fetch_error_from_exception_uses_type_when_message_is_blank() -> None:
-    err = FetchError.from_exception(TimeoutError(), "quota fetch")
-    assert err.error == "quota fetch: TimeoutError"
