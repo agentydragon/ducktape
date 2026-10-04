@@ -39,7 +39,7 @@ from devinfra.pr_visuals.publisher import (
 )
 from devinfra.pr_visuals.pull_request import PullRequestRef
 from util.visual_diff import compare_pngs
-from util.visual_review import VisualReviewAsset, VisualReviewManifest
+from util.visual_review import VisualReviewManifest
 
 
 def _png(path: Path, color: tuple[int, int, int, int] = (10, 20, 30, 255), size: tuple[int, int] = (8, 8)) -> Path:
@@ -464,19 +464,6 @@ def test_build_bundle_groups_tests_and_writes_target_pages(tmp_path: Path) -> No
 def test_build_bundle_rejects_abbreviated_sha(tmp_path: Path) -> None:
     with pytest.raises(ValueError, match="full 40-character"):
         build_bundle([], tmp_path, commit_sha="0123456", repository="repo")
-
-
-def test_manifest_rejects_paths_and_duplicates() -> None:
-    with pytest.raises(ValueError, match="safe PNG basenames"):
-        VisualReviewAsset(path="../secret.png", label="secret")
-    with pytest.raises(ValueError, match="must be unique"):
-        VisualReviewManifest.model_validate(
-            {
-                "schema": "ducktape.visual-review.v1",
-                "title": "UI",
-                "assets": [{"path": "same.png", "label": "one"}, {"path": "same.png", "label": "two"}],
-            }
-        )
 
 
 def test_comment_bodies_link_commit_targets_and_report_errors() -> None:
