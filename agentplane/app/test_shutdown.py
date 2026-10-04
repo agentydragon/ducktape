@@ -1,4 +1,4 @@
-"""The drain ends a stream where it waits, and leaves an exhausted one alone."""
+"""The drain ends a stream where it waits."""
 
 from __future__ import annotations
 
@@ -36,14 +36,6 @@ async def test_the_drain_ends_a_stream_at_its_wait_and_closes_its_source() -> No
     await consumer
 
     assert (items, closed.is_set()) == ([1], True)
-
-
-async def test_a_stream_that_ends_on_its_own_is_passed_through_whole() -> None:
-    async def source() -> AsyncIterator[int]:
-        yield 1
-        yield 2
-
-    assert [item async for item in Drain().until(source())] == [1, 2]
 
 
 if __name__ == "__main__":

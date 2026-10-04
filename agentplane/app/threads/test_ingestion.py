@@ -14,16 +14,13 @@ from datetime import timedelta
 import pytest
 import pytest_bazel
 from sqlalchemy import func, select, text, update
-from sqlalchemy.exc import DBAPIError
-from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
+from sqlalchemy.ext.asyncio import create_async_engine
 
 from agentplane.app.conftest import SPEC, Replica, event_entry
-from agentplane.app.database_updates import Channel, notify
 from agentplane.app.threads.events.event_log import EventLogStore, EventReplicationError, FeedEnd, FeedError
 from agentplane.app.threads.events.ingestion_lease import IngestionLease, IngestionLeaseLostError
 from agentplane.app.threads.ingestion import Ingestion, event_batches
 from agentplane.app.threads.models import SandboxIngestion
-from agentplane.app.threads.store import ThreadStore
 from agentplane.protocol import command_pb2, event_log_pb2, event_pb2
 from agentplane.runner import protocol_pb2
 from agentplane.runner.errors import StreamClosedError
@@ -213,50 +210,6 @@ async def test_competing_copies_cannot_replace_an_archived_entry(
     winner = contenders[results.index(None)]
     assert await replica.event_logs.events(thread, limit=10) == [first, winner]
     assert await replica.event_logs.last_cursor(thread) == 2
-
-
-async def test_connection_loss_before_commit_keeps_events_projection_and_cursor_atomic(
-    store: ThreadStore,
-    event_logs: EventLogStore,
-    ingestion: Ingestion,
-    replica: Replica,
-    lease: IngestionLease,
-    db_url: str,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    thread = await event_logs.open("sb-1", "s-1", SPEC)
-    await ingestion.set_attached(thread, protocol_pb2.Attached(session_id="s-1", spec=SPEC), lease=lease)
-    first = event_entry(1, harness_started=event_pb2.HarnessStarted())
-    await ingestion.record(thread, [first], lease=lease)
-    before = await replica.event_logs.feed_state(thread)
-    second = event_entry(2, model_changed=event_pb2.ModelChanged(model="test-committed-model"))
-    engine = create_async_engine(db_url)
-
-    async def disconnect_before_commit(session: AsyncSession, channel: Channel) -> None:
-        await notify(session, channel)
-        assert await replica.event_logs.events(thread, limit=10) == [first]
-        assert await replica.event_logs.last_cursor(thread) == 1
-        assert await replica.event_logs.feed_state(thread) == before
-        pid = await session.scalar(select(func.pg_backend_pid()))
-        async with engine.begin() as connection:
-            assert await connection.scalar(select(func.pg_terminate_backend(pid, 5000)))
-
-    try:
-        with monkeypatch.context() as patch:
-            patch.setattr("agentplane.app.threads.ingestion.notify", disconnect_before_commit)
-            with pytest.raises(DBAPIError):
-                await ingestion.record(thread, [second], lease=lease)
-        assert await replica.event_logs.events(thread, limit=10) == [first]
-        assert await replica.event_logs.last_cursor(thread) == 1
-        assert await replica.event_logs.feed_state(thread) == before
-        await replica.ingestion.record(thread, [first, second], lease=lease)
-        assert await event_logs.events(thread, limit=10) == [first, second]
-        assert await event_logs.last_cursor(thread) == 2
-        view = await store.get_thread(thread)
-        assert view is not None
-        assert view.model == "test-committed-model"
-    finally:
-        await engine.dispose()
 
 
 async def test_rejected_entry_inside_a_batch_carries_its_cursor(

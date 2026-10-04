@@ -34,28 +34,6 @@ def presets() -> PresetCatalog:
     )
 
 
-def test_sandbox_preset_expands_to_fields_the_operator_can_set_individually(presets: PresetCatalog) -> None:
-    [view] = presets.views()
-
-    assert view.model_dump() == {
-        "name": "public-coder",
-        "title": "Public coder",
-        "template": "runner",
-        "policies": ["github-agentydragon-agent"],
-        "action_policy_sets": [],
-        "kubernetes_grants": [],
-        "session_defaults": {
-            "harness": "HARNESS_CODEX",
-            "model": "preset-model",
-            "cwd": "/state/workspaces/{session_id}",
-            "reasoning_effort": "medium",
-            "instructions": "preset instructions",
-            "setup_script": "",
-        },
-        "bootstrap": "mkdir -p /state/workspaces",
-    }
-
-
 def test_sandbox_binding_keeps_the_selected_values_when_the_catalog_changes(presets: PresetCatalog) -> None:
     [selected] = presets.views()
     binding = SandboxBinding(

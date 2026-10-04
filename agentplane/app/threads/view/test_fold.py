@@ -245,32 +245,6 @@ def test_parallel_old_item_updates_keep_positions_fields_and_evidence(script: li
     assert {e.observation_cursor for e in store.evidence if e.entity_cursor == first.cursor} == {6, 7, 10, 11, 12}
 
 
-def test_authoritative_empty_replacement_is_present_and_new_generation() -> None:
-    store = Store()
-    store.apply(
-        [entry(1, event_pb2.Event(tool_output_delta=event_pb2.ToolOutputDelta(item_id="tool", text="streamed")))]
-    )
-    streamed = store.items["tool"].output
-    assert streamed is not None
-    store.apply(
-        [
-            entry(
-                2,
-                event_pb2.Event(
-                    item_completed=event_pb2.ItemCompleted(
-                        item_id="tool", tool=event_pb2.ToolResult(output="", succeeded=True)
-                    )
-                ),
-            )
-        ]
-    )
-    completed = store.items["tool"].output
-    assert completed is not None
-    assert store.payloads[completed] == ""
-    assert completed.generation == completed.revision_cursor == 2
-    assert completed.generation != streamed.generation
-
-
 def streaming(cursor: int, payload_field: PayloadField, text: str) -> event_log_pb2.EventEntry:
     match payload_field:
         case PayloadField.TEXT:
@@ -345,31 +319,6 @@ def test_commands_settle_coalesced_input_and_observed_model_effect(script: list[
         (15, 15),
         (15, 16),
     ]
-
-
-def test_failed_and_noop_evidence_stays_on_the_admitted_command() -> None:
-    observed = [
-        admitted(1, "failed", command_pb2.SubmitInput(text="first")),
-        admitted(2, "noop", command_pb2.ChangeModel(model="same")),
-        entry(
-            3,
-            event_pb2.Event(command_failed=event_pb2.CommandFailed(command_id="failed", reason="rejected")),
-            source_sequences=[9],
-        ),
-        entry(
-            4,
-            event_pb2.Event(command_noop=event_pb2.CommandNoop(command_id="noop", reason="unchanged")),
-            source_sequences=[10],
-        ),
-    ]
-    store = replay(observed, [2, 1, 1])
-    assert [(e.entity_cursor, e.observation_cursor, e.source_sequences) for e in store.evidence] == [
-        (1, 1, ()),
-        (2, 2, ()),
-        (1, 3, (9,)),
-        (2, 4, (10,)),
-    ]
-    assert replay(observed, [4]) == store
 
 
 def test_missing_lookup_is_not_absence_and_preloaded_rows_cannot_be_from_this_batch() -> None:

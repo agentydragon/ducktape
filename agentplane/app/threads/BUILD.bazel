@@ -41,10 +41,8 @@ py_test(
     deps = [
         ":ingestion",
         ":models",
-        ":store",
         "//:conftest",
         "//agentplane/app:conftest",
-        "//agentplane/app:database_updates",
         "//agentplane/app/threads/events:event_log",
         "//agentplane/app/threads/events:ingestion_lease",
         "//agentplane/protocol:command_pb2",
