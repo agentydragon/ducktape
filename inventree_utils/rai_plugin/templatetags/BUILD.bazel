@@ -14,7 +14,6 @@ py_test(
     srcs = ["test_custom_tags.py"],
     deps = [
         ":custom_tags",
-        "@pypi//django",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],

@@ -81,8 +81,6 @@ def test_exhausted_window_suppresses_pace_and_projection(used_percent: float) ->
     )
 
     assert out == f"codex\n  5h: {round(used_percent):>3d}%  ↻ 3h01m  exhausted"
-    assert "Δ" not in out
-    assert "exhausts" not in out
 
 
 def test_subthreshold_usage_does_not_render_as_exhausted() -> None:

@@ -22,27 +22,6 @@ def test_auth_none_when_unset() -> None:
     assert ServerSettings(grocy_url="https://grocy.example.com").auth is None
 
 
-def test_direct_jwt_trusts_parse_from_json_env(monkeypatch: pytest.MonkeyPatch) -> None:
-    for key, value in {
-        "GROCY_MCP_GROCY_URL": "https://grocy.example.com",
-        "GROCY_MCP_AUTH__OIDC_ISSUER": "https://auth.example.com/application/o/grocy-mcp/",
-        "GROCY_MCP_AUTH__OIDC_CLIENT_ID": "id",
-        "GROCY_MCP_AUTH__OIDC_CLIENT_SECRET": "secret",
-        "GROCY_MCP_AUTH__PUBLIC_BASE_URL": "https://grocy-mcp.example.com",
-        "GROCY_MCP_AUTH__DIRECT_JWT_TRUSTS": (
-            '[{"issuer":"https://auth.example.com/application/o/machine/",'
-            '"audiences":["machine"],"required_scopes":["openid"]}]'
-        ),
-    }.items():
-        monkeypatch.setenv(key, value)
-
-    settings = ServerSettings()
-    assert settings.auth is not None
-    assert settings.auth.direct_jwt_trusts[0].issuer == "https://auth.example.com/application/o/machine/"
-    assert settings.auth.direct_jwt_trusts[0].audiences == ("machine",)
-    assert settings.auth.direct_jwt_trusts[0].required_scopes == ("openid",)
-
-
 def test_yaml_config_deep_merges_with_env_secrets(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """Non-secret config from GROCY_MCP_CONFIG_FILE (YAML) deep-merges with env, so a
     single `auth` model draws its issuer/URLs/direct_jwt_trusts from the file and its

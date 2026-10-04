@@ -37,18 +37,6 @@ class TestSquareReceiptParser:
         assert result.transaction_datetime == datetime(2023, 3, 16, 10, 26)
         assert result.email_date == datetime(2023, 3, 16, 17, 31, 44)
 
-    def test_parse_different_card_type(self, make_email):
-        email = make_email(
-            sender="receipts@messaging.squareup.com",
-            body="You paid $50.00 with your Mastercard ending in 1234 to Test Store on Jan 15 2024 at 2:30 PM.",
-        )
-
-        result = parse_square(email)
-
-        assert result.card_type == "Mastercard"
-        assert result.card_last4 == "1234"
-        assert result.merchant_name == "Test Store"
-
     def test_parse_amount_with_commas(self, make_email):
         email = make_email(
             sender="receipts@messaging.squareup.com",

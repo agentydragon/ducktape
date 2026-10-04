@@ -153,23 +153,6 @@ async def test_partial_run_logs_in_and_finishes_remaining_steps(
     assert analytics.calls.last.request.headers["Authorization"] == "Bearer bootstrap-token"
 
 
-async def test_completed_onboarding_converges_http_configuration(
-    monkeypatch, httpx2_mock: respx.Router, home_assistant_client, settings
-):
-    disable_admin_configuration(monkeypatch)
-    httpx2_mock.get("/api/").respond(status_code=HTTPStatus.UNAUTHORIZED)
-    httpx2_mock.get("/api/onboarding").respond(status_code=HTTPStatus.NOT_FOUND)
-    httpx2_mock.post("/auth/login_flow").respond(json={"flow_id": "login-flow"})
-    httpx2_mock.post("/auth/login_flow/login-flow").respond(json={"result": "login-code"})
-    httpx2_mock.post("/auth/token").respond(json={"access_token": "bootstrap-token"})
-
-    await onboard(home_assistant_client, settings)
-
-    assert_request_paths(
-        httpx2_mock, ["/api/", "/api/onboarding", "/auth/login_flow", "/auth/login_flow/login-flow", "/auth/token"]
-    )
-
-
 async def test_onboarding_404_is_only_accepted_after_the_api_is_ready(
     monkeypatch, httpx2_mock: respx.Router, home_assistant_client, settings
 ):

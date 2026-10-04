@@ -149,7 +149,6 @@ py_test(
         ":anthropic",
         ":conftest",
         "//:conftest",
-        "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],
 )

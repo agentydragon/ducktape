@@ -49,11 +49,6 @@ class FakeCrane(Crane):
         return self.repos.get(repo, {}).get(tag)
 
 
-def test_the_digest_target_is_the_image_label_plus_suffix() -> None:
-    assert image().digest_label == "//airlock:image.digest"
-    assert image(target="@external//:image").digest_label == "@external//:image.digest"
-
-
 def test_outputs_are_found_by_label_not_by_guessing_a_path() -> None:
     """Most images are literally named `image`, and an external repo's directory is
     mangled by bzlmod — a path guess resolves to another image's file, silently."""

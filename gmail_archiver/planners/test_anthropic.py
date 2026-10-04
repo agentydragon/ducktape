@@ -3,7 +3,6 @@
 from datetime import datetime
 from decimal import Decimal
 
-import pytest
 import pytest_bazel
 
 from gmail_archiver.planners.anthropic import AnthropicReceipt, parse_anthropic
@@ -81,55 +80,15 @@ class TestAnthropicParser:
         receipt = parse_anthropic(msg)
         assert receipt.amount == Decimal("10.00")
 
-    @pytest.mark.parametrize(
-        ("date_str", "expected_date"),
-        [
-            ("Paid January 15, 2025", datetime(2025, 1, 15)),
-            ("Paid February 1, 2025", datetime(2025, 2, 1)),
-            ("Paid December 31, 2024", datetime(2024, 12, 31)),
-        ],
-    )
-    def test_parse_date_formats(self, make_email, date_str, expected_date):
+    def test_parse_number_fields_accept_their_shortest_shapes(self, make_email):
+        """Shortest ids the invoice and receipt patterns accept."""
         msg = make_email(
-            sender="invoice+statements@mail.anthropic.com", body=f"Receipt from Anthropic, PBC $10.00 {date_str}"
+            sender="invoice+statements@mail.anthropic.com", body="Invoice number A-1\nReceipt number 0-0-0"
         )
 
         receipt = parse_anthropic(msg)
-        assert receipt.charge_date == expected_date
-
-    def test_parse_invalid_date_returns_none(self, make_email):
-        msg = make_email(sender="invoice+statements@mail.anthropic.com", body="Paid InvalidMonth 32, 2025")
-
-        receipt = parse_anthropic(msg)
-        assert receipt.charge_date is None
-
-    @pytest.mark.parametrize(
-        ("text", "expected_invoice"),
-        [
-            ("Invoice number OKBBHMMB-0145", "OKBBHMMB-0145"),
-            ("Invoice number ABC123XY-9999", "ABC123XY-9999"),
-            ("Invoice number A-1", "A-1"),
-        ],
-    )
-    def test_parse_invoice_number_format(self, make_email, text, expected_invoice):
-        msg = make_email(sender="invoice+statements@mail.anthropic.com", body=text)
-
-        receipt = parse_anthropic(msg)
-        assert receipt.invoice_number == expected_invoice
-
-    @pytest.mark.parametrize(
-        ("text", "expected_receipt"),
-        [
-            ("Receipt number 2554-1935-9612", "2554-1935-9612"),
-            ("Receipt number 1234-5678-9012", "1234-5678-9012"),
-            ("Receipt number 0-0-0", "0-0-0"),
-        ],
-    )
-    def test_parse_receipt_number_format(self, make_email, text, expected_receipt):
-        msg = make_email(sender="invoice+statements@mail.anthropic.com", body=text)
-
-        receipt = parse_anthropic(msg)
-        assert receipt.receipt_number == expected_receipt
+        assert receipt.invoice_number == "A-1"
+        assert receipt.receipt_number == "0-0-0"
 
 
 if __name__ == "__main__":

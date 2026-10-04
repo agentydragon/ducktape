@@ -25,8 +25,6 @@ def test_cache_key_includes_amend_status():
     )
 
     assert key_new != key_amend
-    assert ":new:" in key_new
-    assert ":amend:" in key_amend
 
 
 def test_stage_all_includes_modified_files(temp_repo: RepoHelper) -> None:

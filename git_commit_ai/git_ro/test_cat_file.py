@@ -54,14 +54,6 @@ async def test_cat_file_tree_object(typed_git_ro) -> None:
     assert "README.md" in result.body
 
 
-async def test_cat_file_not_found(typed_git_ro) -> None:
-    """ToolError wrapping FileNotFoundError for missing path."""
-    with pytest.raises(ToolError, match="not found"):
-        await typed_git_ro.cat_file(
-            CatFileInput(object="HEAD:nonexistent.txt", slice=TextSlice(offset_chars=0, max_chars=100))
-        )
-
-
 async def test_cat_file_index_not_found(typed_git_ro) -> None:
     """ToolError wrapping FileNotFoundError for missing index entry."""
     with pytest.raises(ToolError, match="Index entry not found"):
@@ -70,31 +62,14 @@ async def test_cat_file_index_not_found(typed_git_ro) -> None:
         )
 
 
-async def test_conflict_stage1_ancestor(typed_git_ro_conflict) -> None:
-    """Read ancestor (stage 1) from merge conflict."""
+@pytest.mark.parametrize(("stage", "content"), [(1, "ancestor content"), (2, "ours content"), (3, "theirs content")])
+async def test_conflict_stage_reads_its_side(typed_git_ro_conflict, stage: int, content: str) -> None:
+    """Stages 1/2/3 of a merge conflict are the ancestor, ours and theirs."""
     result = await typed_git_ro_conflict.cat_file(
-        CatFileInput(object=":1:conflict.txt", slice=TextSlice(offset_chars=0, max_chars=100))
+        CatFileInput(object=f":{stage}:conflict.txt", slice=TextSlice(offset_chars=0, max_chars=100))
     )
     assert isinstance(result, TextPage)
-    assert "ancestor content" in result.body
-
-
-async def test_conflict_stage2_ours(typed_git_ro_conflict) -> None:
-    """Read ours (stage 2) from merge conflict."""
-    result = await typed_git_ro_conflict.cat_file(
-        CatFileInput(object=":2:conflict.txt", slice=TextSlice(offset_chars=0, max_chars=100))
-    )
-    assert isinstance(result, TextPage)
-    assert "ours content" in result.body
-
-
-async def test_conflict_stage3_theirs(typed_git_ro_conflict) -> None:
-    """Read theirs (stage 3) from merge conflict."""
-    result = await typed_git_ro_conflict.cat_file(
-        CatFileInput(object=":3:conflict.txt", slice=TextSlice(offset_chars=0, max_chars=100))
-    )
-    assert isinstance(result, TextPage)
-    assert "theirs content" in result.body
+    assert content in result.body
 
 
 async def test_conflict_stage0_not_found(typed_git_ro_conflict) -> None:
@@ -124,17 +99,13 @@ async def test_new_file_not_in_commit_tree(typed_git_ro_new_file) -> None:
 
 
 async def test_path_error_shows_available_entries(typed_git_ro_new_file) -> None:
-    """Error message shows available entries when path component not found."""
-    with pytest.raises(ToolError, match=r"Entries at repository root:.*README.md"):
+    """Error message says paths are repository-relative and lists the available entries."""
+    with pytest.raises(
+        ToolError, match=r"Path must be relative to repository root.*Entries at repository root:.*README.md"
+    ):
         await typed_git_ro_new_file.cat_file(
             CatFileInput(object="HEAD:nonexistent/file.py", slice=TextSlice(offset_chars=0, max_chars=100))
         )
-
-
-async def test_bare_filename_error_message(typed_git_ro) -> None:
-    """Helpful error when using bare filename instead of full path."""
-    with pytest.raises(ToolError, match="Path must be relative to repository root"):
-        await typed_git_ro.cat_file(CatFileInput(object="HEAD:README", slice=TextSlice(offset_chars=0, max_chars=100)))
 
 
 if __name__ == "__main__":

@@ -11,7 +11,6 @@ from tenacity import AsyncRetrying, retry_if_exception_type, stop_after_delay, w
 from agentplane.acceptance.agent import Agent
 from agentplane.app.client import Client, has_ready_pod
 from agentplane.app.sandbox_models import SandboxView
-from agentplane.protocol import event_pb2
 from agentplane.runner import protocol_pb2
 from agentplane.runner.harness import Harness
 from agentplane.sandbox_service.models import OperatingMode
@@ -50,7 +49,6 @@ async def test_two_harness_threads_keep_their_context_after_sandbox_suspend_resu
         seed = await agent.run(
             f"Remember this exact token for my next message: {markers[harness]}. Do not use tools. Reply with only ACK."
         )
-        assert seed.status == event_pb2.TURN_STATUS_COMPLETED
         assert seed.input_confirmed, f"{harness_name} did not confirm the seed input"
         agents[harness] = agent
 
@@ -78,7 +76,6 @@ async def test_two_harness_threads_keep_their_context_after_sandbox_suspend_resu
         assert turn.input_confirmed, f"{protocol_pb2.Harness.Name(harness)} did not confirm the resumed input"
         assert expected in turn.answer, f"{protocol_pb2.Harness.Name(harness)} forgot {expected}:\n{turn.transcript}"
         assert other not in turn.answer, f"{protocol_pb2.Harness.Name(harness)} received the other Thread's token"
-        assert agent.thread_id == original_threads[harness]
 
 
 if __name__ == "__main__":

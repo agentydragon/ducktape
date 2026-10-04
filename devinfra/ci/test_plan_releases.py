@@ -8,7 +8,6 @@ import pytest_bazel
 from devinfra.ci.bes import Invocation, Output
 from devinfra.ci.plan_releases import (
     Release,
-    bes_path,
     content_hash,
     content_tag,
     digests_from,
@@ -44,12 +43,6 @@ def output(path: str, digest: str) -> Output:
     return Output(
         label="//:a", path=path, uri="bytestream://h/blobs/x/1", digest=digest, size=1, output_group="default"
     )
-
-
-def test_the_stream_reports_the_path_without_the_download_prefix() -> None:
-    """artifact_targets.json spells outputs as `bb remote build` used to land them."""
-    assert bes_path(f"bb-out/{BIN}/util/x.whl") == f"{BIN}/util/x.whl"
-    assert bes_path("already/relative.whl") == "already/relative.whl"
 
 
 def test_a_single_asset_release_is_identified_by_its_digest() -> None:

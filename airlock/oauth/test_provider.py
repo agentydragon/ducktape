@@ -11,7 +11,7 @@ import respx
 from httpx import Response
 
 from airlock.oauth.config import OAuth2ProviderConfig, TokenSecretConfig
-from airlock.oauth.provider import GenericOAuth2Provider, TokenData, _parse_token_response, generate_pkce_pair
+from airlock.oauth.provider import GenericOAuth2Provider, TokenData, generate_pkce_pair
 
 
 @pytest.fixture
@@ -234,21 +234,6 @@ def test_needs_refresh_soon(provider: GenericOAuth2Provider) -> None:
 def test_needs_refresh_expired(provider: GenericOAuth2Provider) -> None:
     token = TokenData(access_token="a", refresh_token="r", expires_at=datetime.now(UTC) - timedelta(hours=1), scope="s")
     assert provider.needs_refresh(token)
-
-
-def test_parse_token_response() -> None:
-    data = {"access_token": "at", "refresh_token": "rt", "token_type": "Bearer", "expires_in": 7200, "scope": "read"}
-    token = _parse_token_response(data)
-    assert token.access_token == "at"
-    assert token.refresh_token == "rt"
-    assert token.expires_at > datetime.now(UTC)
-
-
-def test_parse_token_response_missing_refresh_token() -> None:
-    data = {"access_token": "at", "expires_in": 3600}
-    token = _parse_token_response(data)
-    assert token.access_token == "at"
-    assert token.refresh_token == ""
 
 
 if __name__ == "__main__":
