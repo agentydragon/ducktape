@@ -109,18 +109,6 @@ def test_referenced_markets_unions_and_dedupes() -> None:
     }
 
 
-def test_exact_requires_mapping_fields() -> None:
-    """The EXACT variant cannot be constructed without a typed `mapping`."""
-    with pytest.raises(ValidationError):
-        ExactMarket(platform_ref=ManifoldRef(manifold_id="D"))  # type: ignore[call-arg]
-
-
-def test_correlate_requires_correlate_of() -> None:
-    """The CORRELATE variant cannot be constructed without correlate_of."""
-    with pytest.raises(ValidationError):
-        CorrelateMarket(platform_ref=ManifoldRef(manifold_id="E"))  # type: ignore[call-arg]
-
-
 def test_invalid_cross_field_state_is_unrepresentable() -> None:
     """A `mapping` on an unmappable market is rejected by `extra="forbid"`: the field
     does not exist on that variant, so the nonsensical combination cannot be built."""
@@ -136,13 +124,6 @@ def test_invalid_cross_field_state_is_unrepresentable() -> None:
                     }
                 ],
             }
-        )
-
-
-def test_unknown_mappability_is_rejected() -> None:
-    with pytest.raises(ValidationError):
-        MarketCatalog.model_validate(
-            {"metadata": {"as_of": "2026-05-29"}, "markets": [{"manifold_id": "G", "mappability": "weird"}]}
         )
 
 

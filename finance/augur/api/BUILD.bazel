@@ -122,14 +122,11 @@ py_test(
         ":finance",
         ":portfolio",
         ":portfolio_source_config",
-        ":wire",
         "//:conftest",
         "//finance/augur:conftest",
         "//finance/augur/model:series",
         "//finance/augur/sim:ids",
         "//finance/augur/sim:income",
-        "//finance/augur/x/models:independent",
-        "//finance/augur/x/models:private_equity_risk",
         "//finance/augur/x/models:provider_config",
         "//finance/augur/x/models:state_space",
         "//finance/augur/x/models:trained_private_equity",
@@ -227,7 +224,6 @@ py_test(
         "//:conftest",
         "//finance/augur:conftest",
         "//finance/augur/sim:ids",
-        "@pypi//more_itertools",
         "@pypi//pydantic",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
@@ -473,19 +469,6 @@ py_binary(
     deps = [":export_schema"],
 )
 
-py_test(
-    name = "export_schema_test",
-    size = "medium",
-    srcs = ["test_export_schema.py"],
-    # Source follows the test_<module>.py convention while the target keeps the
-    # conventional <name>_test label, so the inferred main wouldn't match srcs.
-    main = "test_export_schema.py",
-    deps = [
-        ":export_schema",
-        "@pypi//pytest_bazel",
-    ],
-)
-
 filegroup(
     name = "public_fixture_config",
     srcs = ["testdata/config.yaml"],
@@ -503,17 +486,4 @@ filegroup(
 filegroup(
     name = "public_fixture_calibration_catalog",
     srcs = ["//finance/augur/calibration:example_openai_catalog"],
-)
-
-py_test(
-    name = "test_export_schema",
-    size = "medium",
-    srcs = ["test_export_schema.py"],
-    deps = [
-        ":conftest",
-        ":export_schema",
-        "//:conftest",
-        "//finance/augur:conftest",
-        "@pypi//pytest_bazel",
-    ],
 )

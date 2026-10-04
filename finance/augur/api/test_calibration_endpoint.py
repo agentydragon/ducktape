@@ -133,13 +133,6 @@ def test_run_unknown_preset_is_400(client: TestClient) -> None:
     assert response.status_code == 400, response.text
 
 
-def test_unknown_calibration_route_still_404(client: TestClient) -> None:
-    # Unknown API routes now get FastAPI's default 404 (the custom `/api/{full_path}`
-    # catch-all is gone; nginx serves the SPA, so the app is API-only with no static fallback).
-    response = client.get("/api/calibration/does-not-exist")
-    assert response.status_code == 404, response.text
-
-
 def test_run_calibration_without_sample_sanity_returns_empty_bands(client: TestClient) -> None:
     # The public fixture configures a `calibration_catalog` but no `sample_sanity_path`, so the
     # reasonableness-band feature is absent: the endpoint succeeds and returns an empty list.

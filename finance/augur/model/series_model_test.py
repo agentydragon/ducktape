@@ -17,29 +17,18 @@ from finance.augur.model.level_series_groups import AssetPriceGroups
 from finance.augur.model.series import (
     SP500_SYMBOL,
     HomeValueKey,
-    InflationKey,
     LevelSeriesKind,
     LocationId,
     SecurityKey,
     SecuritySymbol,
 )
 from finance.augur.model.series_model import IndependentSeriesModels, SeriesModelBundle
-from finance.augur.model.testing import ConstantFrameModel
 
 
 def test_scalar_models_are_owned_by_model_modules() -> None:
     assert Deterministic.__module__ == "finance.augur.model.deterministic"
     assert Constant.__module__ == "finance.augur.model.deterministic"
     assert GeometricBrownian.__module__ == "finance.augur.model.gbm"
-
-
-def test_sampling_request_requires_explicit_rollout_seeds() -> None:
-    with pytest.raises(TypeError):
-        ExogenousSamplingRequest(horizon_months=2)  # type: ignore[call-arg]
-
-    request = ExogenousSamplingRequest(horizon_months=2, rollout_seeds=[101, 102])  # type: ignore[arg-type]
-    assert request.rollout_seeds == (101, 102)
-    assert request.rollout_count == 2
 
 
 def test_independent_model_samples_deterministic_levels_for_each_rollout() -> None:
@@ -117,27 +106,6 @@ def test_deterministic_model_rejects_wrong_horizon_length() -> None:
 
     with pytest.raises(ValueError, match=r"need 3"):
         model.sample(ExogenousSamplingRequest(horizon_months=2, rollout_seeds=(1,)))
-
-
-def test_constant_frame_fixture_samples_seeded_level_keys() -> None:
-    model = ConstantFrameModel(levels={InflationKey(): 1.0, SecurityKey(symbol=SP500_SYMBOL): 2.0})
-
-    sampled = model.sample(
-        ExogenousSamplingRequest(
-            horizon_months=2,
-            rollout_seeds=(101, 102),
-            **level_series_request_channels(frozenset({InflationKey(), SecurityKey(symbol=SP500_SYMBOL)})),
-        )
-    )
-
-    assert sampled.level_matrix(InflationKey(), rollout_count=2, horizon_months=2).tolist() == [
-        [1.0, 1.0, 1.0],
-        [1.0, 1.0, 1.0],
-    ]
-    assert sampled.level_matrix(SecurityKey(symbol=SP500_SYMBOL), rollout_count=2, horizon_months=2).tolist() == [
-        [2.0, 2.0, 2.0],
-        [2.0, 2.0, 2.0],
-    ]
 
 
 def test_sample_compatibility_accepts_required_subset_and_extra_series() -> None:

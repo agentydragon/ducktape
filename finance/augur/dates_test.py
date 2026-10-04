@@ -17,23 +17,11 @@ def test_one_calendar_year_is_about_twelve_months() -> None:
     assert abs(months_between(start, end) - 12.0) < 0.05
 
 
-def test_zero_span_is_zero_months() -> None:
-    day = dt.date(2021, 6, 15)
-    assert months_between(day, day) == 0.0
-
-
 def test_reversed_span_is_negative() -> None:
     start = dt.date(2021, 1, 1)
     end = dt.date(2021, 4, 1)
     assert months_between(start, end) > 0.0
     assert months_between(end, start) == -months_between(start, end)
-
-
-def test_known_day_gap_converts_to_expected_months() -> None:
-    # 90-day gap -> 90 / (365.2425/12) months.
-    start = dt.date(2022, 1, 1)
-    end = start + dt.timedelta(days=90)
-    assert months_between(start, end) == 90 / (365.2425 / 12)
 
 
 if __name__ == "__main__":

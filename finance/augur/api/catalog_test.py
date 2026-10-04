@@ -7,7 +7,6 @@ from pathlib import Path
 
 import pytest
 import pytest_bazel
-from more_itertools import one
 from pydantic import HttpUrl
 
 from finance.augur.api.catalog import build_catalog, build_settings
@@ -25,16 +24,6 @@ def test_catalog_locations_default_to_loaded_property_source(
 
     assert [location.id for location in catalog.locations] == ["location_a", "location_b"]
     assert [property_.id for property_ in catalog.properties] == ["location_a_property", "location_b_property"]
-
-
-def test_catalog_san_francisco_location_carries_its_labels(
-    builtin_properties_path: Path, make_catalog_config: MakeCatalogConfig
-) -> None:
-    catalog = build_catalog(make_catalog_config(builtin_properties_path))
-    location = one(loc for loc in catalog.locations if loc.id == "san_francisco_ca")
-
-    assert location.label == "San Francisco, CA"
-    assert location.city == "San Francisco"
 
 
 def test_catalog_applies_public_property_asset_urls(

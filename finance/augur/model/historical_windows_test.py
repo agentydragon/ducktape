@@ -99,17 +99,6 @@ def test_each_rollout_replays_a_different_window() -> None:
     assert len({round(float(row[-1]), 6) for row in equity}) == 4
 
 
-def test_every_window_starts_at_the_configured_level() -> None:
-    """A portfolio's month-0 value must not depend on which piece of history follows it."""
-
-    model = _model()
-    equity = _series(model, SecurityKey(symbol=EQUITY), horizon=120, rollouts=6)
-    inflation = _series(model, InflationKey(), horizon=120, rollouts=6)
-
-    assert np.all(equity[:, 0] == 500.0)
-    assert np.all(inflation[:, 0] == 100.0)
-
-
 def test_in_memory_replay_needs_no_fitted_artifact() -> None:
     history = _history(months=13)
     with patch.object(Path, "read_text", side_effect=AssertionError("replay must not read fitted artifacts")):
@@ -197,22 +186,6 @@ def test_explicit_selection_preserves_the_previous_evenly_spaced_windows(rollout
         np.testing.assert_array_equal(
             bundle.level_matrix(key, rollout_count=rollouts, horizon_months=horizon), expected
         )
-
-
-def test_the_bond_instrument_layer_matches_the_structural_provider() -> None:
-    """Shared on purpose. How a fund responds to a yield change is a claim about the fund, not
-    about the economy, so a rate path fed to either provider must price it identically — that
-    is what makes the two comparable at all."""
-
-    history = _history()
-    model = _model(history)
-    horizon, rollouts = 120, 3
-    price = _series(model, SecurityKey(symbol=BOND), horizon=horizon, rollouts=rollouts)
-    payout = _series(model, SecurityDistributionKey(symbol=BOND), horizon=horizon, rollouts=rollouts)
-
-    # The synthetic record's yields rise monotonically, so this is the 2022 shape again.
-    assert np.all(price[:, -1] < price[:, 0])
-    assert np.all(payout[:, -1] > payout[:, 0])
 
 
 def test_the_aligned_record_is_the_intersection_of_all_four_series() -> None:

@@ -130,11 +130,8 @@ distribution, and **none of them were in #3698's list**:
 
 At 42.4s against a 60s budget, `test_target_allocation_e2e` has 1.4x of headroom — tighter than
 anything the original investigation flagged. (It grew a case in #3868, which is part of why.)
-These four are sized here too.
-
-`api:test_export_schema` is worth calling out separately: #3698 sized `api:export_schema_test`,
-and there are **two py_test targets on the same `test_export_schema.py` source**. It sized one of
-the pair and missed the twin, which is the one that actually measures slow.
+These four are sized here too. (`api:test_export_schema` has since been deleted, together with its
+`api:export_schema_test` twin: the frontend build already runs the schema exporter.)
 
 ## Why the usual bisect recipe was unavailable
 

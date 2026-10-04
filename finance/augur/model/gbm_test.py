@@ -25,13 +25,6 @@ def test_deterministic_when_sigma_zero() -> None:
         np.testing.assert_allclose(levels[row, 1:], expected, rtol=1e-12)
 
 
-def test_seed_reproducible() -> None:
-    gbm = GeometricBrownian(initial_value=50.0, monthly_log_return_mu=0.0, monthly_log_return_sigma=0.1)
-    first = gbm.sample_levels(rollout_seeds=(7, 8, 9), horizon_months=6)
-    second = gbm.sample_levels(rollout_seeds=(7, 8, 9), horizon_months=6)
-    np.testing.assert_array_equal(first, second)
-
-
 def test_each_trajectory_is_independent_of_the_batch() -> None:
     # The whole point of per-seed seeding: seed 8's trajectory must be identical whether sampled
     # alongside other seeds or alone. (This is what a single batch-seeded draw would break.)

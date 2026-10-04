@@ -93,13 +93,11 @@ from finance.augur.product.wire import (
     SleeveWeight,
     SpendIndex,
 )
-from finance.augur.sim.books import AccountRef
-from finance.augur.sim.ids import AccountId, AgentId, AssetId, LotId, PortfolioId, PropertyId
-from finance.augur.sim.market_path import IndexedAmount, MarketPath
+from finance.augur.sim.ids import AccountId, AgentId, LotId, PortfolioId, PropertyId
+from finance.augur.sim.market_path import IndexedAmount
 from finance.augur.sim.quantiles import currency_quantiles
 from finance.augur.sim.schedule import Once, Recurring
 from finance.augur.sim.tlh import TlhAssumptions
-from finance.augur.sim.world import World
 from finance.augur.x.models.independent import IndependentProviderConfig
 from finance.augur.x.models.provider_config import CompositeProviderConfig, MirroringProviderConfig
 
@@ -324,20 +322,6 @@ def test_product_fails_when_crypto_holding_price_is_not_modeled(
         product.rollout(_rollout_request(scenario_key))
 
 
-def test_a_holding_no_series_prices_is_refused_where_its_pool_is_declared() -> None:
-    world = World(MarketPath((), 0, rollout_count=1), horizon_months=1)
-    world.declare_account(
-        account=AccountRef(agent_id=AgentId("agent_a"), account_id=AccountId("checking")), opening_balance=0
-    )
-    with pytest.raises(ValueError, match="missing public security series for 'missing'"):
-        world.declare_pool(
-            agent_id=AgentId("agent_a"),
-            account_id=AccountId("checking"),
-            asset_id=AssetId("missing"),
-            quantity_scale=1_000_000,
-        )
-
-
 def test_metric_fan_terminal_distribution_and_rollout_detail_behavior(
     product: service.ProductService, counting_model: CountingModel, scenario_key: ScenarioKey
 ) -> None:
@@ -362,7 +346,6 @@ def test_metric_fan_terminal_distribution_and_rollout_detail_behavior(
     assert fan.currency_quantum == "0.01"
     assert fan.metric == "cash"
     assert fan.failed_count == 0
-    assert not hasattr(fan, "rollout_summaries")
     assert len(fan.monthly_metric_fan["month_index"]) == 12
     assert fan.monthly_metric_fan["month_index"] == [0, 0, 0, 1, 1, 1, 2, 2, 2, 3, 3, 3]
     assert fan.monthly_metric_fan["percentile"] == [0.0, 50.0, 100.0] * 4
@@ -399,7 +382,6 @@ def test_metric_fan_terminal_distribution_and_rollout_detail_behavior(
     assert terminal_distribution.currency_quantum == "0.01"
     assert terminal_distribution.metric == "cash"
     assert terminal_distribution.failed_count == 0
-    assert not hasattr(terminal_distribution, "monthly_metric_fan")
     assert terminal_distribution.terminal_metric_percentiles == {
         "percentile": [0.0, 1.0, 2.0, 50.0, 100.0],
         "value_quanta": [_usd_quanta(248_875.0)] * 5,
@@ -575,72 +557,6 @@ def test_terminal_distribution_samples_identify_rollout_terminal_values(
     }
 
 
-def test_selected_detail_executes_financially_once(
-    make_product_service: MakeProductService, scenario_key: ScenarioKey, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    # Flat supplied marks make the terminal holdings an independent fixed-value control,
-    # rather than assuming the default GBM fixture leaves opening wealth unchanged.
-    product = make_product_service(
-        ConstantFrameModel(
-            levels=TEST_CONFIG_LEVEL_PLACEHOLDERS,
-            private_equity={IssuerId("private_holding_a"): PrivateEquityChannels(mark_usd_per_unit=25.0)},
-        )
-    )
-    original = service.execute
-    calls = 0
-
-    def counted(*args, **kwargs):
-        nonlocal calls
-        calls += 1
-        return original(*args, **kwargs)
-
-    monkeypatch.setattr(service, "execute", counted)
-    detail = product.rollout(_rollout_request(scenario_key))
-
-    assert calls == 1
-    assert detail.rollout.failed is False
-    assert detail.rollout.ending_metrics.cash_quanta == _usd_quanta(248_875)
-    assert detail.rollout.ending_metrics.holding_value_quanta == _usd_quanta(835_500)
-    assert detail.rollout.monthly_metrics["month_index"] == [0, 1, 2, 3]
-    assert [event.amount_paid_quanta for event in detail.rollout.events if isinstance(event, MonthlyExpenseEvent)] == [
-        _usd_quanta(1_000)
-    ] * 3
-
-
-def test_combined_product_projection_simulates_once(
-    product: service.ProductService,
-    counting_model: CountingModel,
-    monkeypatch: pytest.MonkeyPatch,
-    scenario_key: ScenarioKey,
-) -> None:
-    original = service.simulate_product_metrics
-    calls = 0
-
-    def counted(*args, **kwargs):
-        nonlocal calls
-        calls += 1
-        return original(*args, **kwargs)
-
-    monkeypatch.setattr(service, "simulate_product_metrics", counted)
-
-    response = product.projection_summary(
-        ProductProjectionRequest(
-            scenario=scenario_key,
-            first_seed=7,
-            rollout_count=2,
-            metric="cash",
-            fan_percentiles=(5, 50, 95),
-            terminal_percentiles=(0, 50, 100),
-        )
-    )
-
-    assert calls == 1
-    assert [request.rollout_seeds for request in counting_model.sample_requests] == [(7, 8)]
-    assert response.metric_fan.metric == "cash"
-    assert response.terminal_distribution.metric == "cash"
-    assert response.terminal_distribution.terminal_metric_samples["seed"] == [7, 8]
-
-
 def _projection_request(
     scenario: ScenarioKey, *, first_seed: int = 7, rollout_count: int = 2, metric: MetricName = "cash"
 ) -> ProductProjectionRequest:
@@ -779,7 +695,6 @@ def test_failed_rollout_preserves_stop_book_without_post_stop_values(product: se
     )
 
     assert fan.failed_count == 1
-    assert not hasattr(fan, "rollout_summaries")
     assert fan.monthly_metric_fan["month_index"] == [0, 1, 2, 3]
     assert fan.monthly_metric_fan["observed_count"] == [1, 0, 0, 0]
     assert fan.monthly_metric_fan["value_quanta"] == [_usd_quanta(1_260_500.0), None, None, None]

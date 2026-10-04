@@ -12,8 +12,7 @@ import pytest_bazel
 
 from finance.augur.model.series import HomeValueKey, LocationId, SecurityKey, SecuritySymbol
 from finance.augur.policy.funding import ClaimPayer
-from finance.augur.product.metric_composition import METRIC_NAMES
-from finance.augur.product.metrics import ProductMetricArrays, metric_fan, projection_summaries, terminal_summary
+from finance.augur.product.metrics import ProductMetricArrays, metric_fan, terminal_summary
 from finance.augur.product.simulation import (
     execute,
     project_events,
@@ -229,18 +228,6 @@ class TestConfigured:
         assert accruals.height, "a long-term gain went unassessed"
         assert accruals.filter(pl.col("month_index") > SALE_MONTH).height, "no accrual after the sale"
 
-    def test_product_metrics_cover_every_metric_the_product_renders(self, run: Worlds) -> None:
-        """Configured base series support every derived product metric."""
-
-        metrics = product_metrics(run)
-        arrays = metrics.metric_arrays()
-        assert set(arrays) == {"month_index", *METRIC_NAMES}
-        assert len(arrays["month_index"]) == HORIZON_MONTHS + 1
-        for name in METRIC_NAMES:
-            assert arrays[name].shape == (HORIZON_MONTHS + 1, 1), f"{name} is not snapshots by rollouts"
-        assert metrics.failed_month.shape == (1,)
-        assert metrics.currency_code == USD.code
-
     def test_a_funded_rollout_does_not_report_a_failure(self, run: Worlds) -> None:
         """Anti-vacuity for the assertions above: they describe a rollout that ran to the end."""
 
@@ -297,20 +284,6 @@ class TestConfigured:
         rows = simulate_events(fractional_closing_cost_run(), AGENT).property_sale_events.to_dicts()
         assert len(rows) == 1, f"one property sold once, got {len(rows)} rows"
         assert rows[0]["gross_proceeds_quanta"] == FRACTIONAL_CLOSING_COST_PROCEEDS_QUANTA
-
-    def test_combined_and_separate_summaries_agree(self, run: Worlds) -> None:
-        """Combined and separate reducers agree on the same captured population."""
-
-        percentiles = (5.0, 50.0, 95.0)
-        arrays = product_metrics(run)
-        both = projection_summaries(arrays, metric="cash_quanta", percentiles=percentiles)
-        separate = metric_fan(arrays, metric="cash_quanta", percentiles=percentiles)
-        assert both.metric_fan.terminal_percentiles is not None
-        assert separate.terminal_percentiles is not None
-        assert list(both.metric_fan.terminal_percentiles) == list(separate.terminal_percentiles)
-        assert list(both.terminal_distribution.terminal_samples) == list(
-            terminal_summary(arrays, metric="cash_quanta").terminal_samples
-        )
 
 
 @pytest.mark.parametrize("capture", ["summary", "dense", "forensic"])

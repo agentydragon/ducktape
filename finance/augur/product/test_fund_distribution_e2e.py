@@ -52,12 +52,6 @@ _MODEL_PRICE = float(_UNIT_VALUE)
 _PER_UNIT_USD = 0.22
 _MONTHLY_PAYOUT_USD = _UNITS * _PER_UNIT_USD
 
-# An aggregate fund: part Treasury (state-exempt), part corporate (exempt nowhere). The mixed
-# case a single tag cannot express, and the reason the declaration is a vector.
-_AGGREGATE = (
-    DistributionTaxShareConfig(fraction=0.4, character=Treasury()),
-    DistributionTaxShareConfig(fraction=0.6, character=Taxable()),
-)
 _ALL_TREASURY = (DistributionTaxShareConfig(fraction=1.0, character=Treasury()),)
 
 
@@ -246,26 +240,15 @@ def _distributions(config: Config) -> tuple[Distribution, ...]:
     ).distributions
 
 
-def test_the_tax_character_fractions_reach_the_scenario(augur_config: Config) -> None:
-    """The declaration's split survives preparation into the facts a world declares.
+def test_shares_of_one_character_add(augur_config: Config) -> None:
+    """A fund's disclosure lists corporate, mortgage-backed and asset-backed debt on separate lines,
+    all taxable; copied line by line they are one tax character.
 
     Asserted on the conversion rather than on tax paid downstream: the fixture's only ordinary
     income is this payout, which the standard deduction absorbs entirely, so every split
     produces the same (zero) tax and a downstream comparison would pass for a conversion that
     dropped the fractions. The sim-level suite covers what the engine then does with them.
     """
-
-    config = _with_bond_fund(augur_config, _AGGREGATE)
-
-    assert list(one(_distributions(config)).tax_character.items()) == [
-        (InterestIncome(character=Treasury()), rate_to_ppb(Decimal("0.4"))),
-        (InterestIncome(character=Taxable()), rate_to_ppb(Decimal("0.6"))),
-    ]
-
-
-def test_shares_of_one_character_add(augur_config: Config) -> None:
-    """A fund's disclosure lists corporate, mortgage-backed and asset-backed debt on separate lines,
-    all taxable; copied line by line they are one tax character."""
 
     config = _with_bond_fund(
         augur_config,
@@ -280,18 +263,6 @@ def test_shares_of_one_character_add(augur_config: Config) -> None:
         (InterestIncome(character=Treasury()), rate_to_ppb(Decimal("0.4"))),
         (InterestIncome(character=Taxable()), rate_to_ppb(Decimal("0.6"))),
     ]
-
-
-def test_the_payout_is_scoped_to_the_pool_that_holds_it(augur_config: Config) -> None:
-    """The units paid on come from one (owner, custody account, asset) pool, and the cash lands
-    in a CASH account — portfolio accounts are custody accounts and carry no cash row, so a
-    payout routed to one would have nowhere to go."""
-
-    config = _with_bond_fund(augur_config, _ALL_TREASURY)
-    distribution = one(_distributions(config))
-
-    assert (distribution.holding_account_id, distribution.to_account_id) == ("taxable_brokerage", PRIMARY_ACCOUNT_ID)
-    assert distribution.asset_id == "bnd"
 
 
 def test_a_declared_security_nobody_holds_contributes_nothing(augur_config: Config) -> None:

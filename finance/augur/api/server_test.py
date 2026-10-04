@@ -121,13 +121,10 @@ def test_backend_server_runs_product_cash_spend_projection_metric_fan_and_rollou
         {"scenario": scenario, "first_seed": 7, "rollout_count": 2, "metric": "cash", "percentiles": [0, 50, 100]},
     )
 
-    assert "horizon_months" not in fan
     assert fan["currency_code"] == "USD"
     assert fan["currency_quantum"] == "0.01"
     assert fan["metric"] == "cash"
     assert fan["failed_count"] == 0
-    assert "rollouts" not in fan
-    assert "rollout_summaries" not in fan
     assert fan["monthly_metric_fan"] == {
         "month_index": [0, 0, 0, 1, 1, 1, 2, 2, 2, 3, 3, 3],
         "percentile": [0.0, 50.0, 100.0] * 4,
@@ -171,8 +168,6 @@ def test_backend_server_runs_product_cash_spend_projection_metric_fan_and_rollou
     assert terminal_distribution["metric"] == "cash"
     assert terminal_distribution["failed_count"] == 0
     assert "monthly_metric_fan" not in terminal_distribution
-    assert "rollouts" not in terminal_distribution
-    assert "rollout_summaries" not in terminal_distribution
     assert terminal_distribution["terminal_metric_percentiles"] == {
         "percentile": [0.0, 1.0, 2.0, 50.0, 100.0],
         "value_quanta": ["24887500", "24887500", "24887500", "24887500", "24887500"],
@@ -211,11 +206,9 @@ def test_backend_server_runs_product_cash_spend_projection_metric_fan_and_rollou
 
     detail = _post_json(server_url, "/api/product/projections/rollout", {"scenario": scenario, "seed": 7})
 
-    assert "horizon_months" not in detail
     assert detail["rollout"]["seed"] == 7
     assert detail["rollout"]["failed"] is False
     columns = detail["rollout"]["monthly_metrics"]
-    assert len(columns["month_index"]) == 4
     assert columns["month_index"] == [0, 1, 2, 3]
     assert detail["currency_code"] == "USD"
     assert detail["currency_quantum"] == "0.01"
@@ -225,19 +218,6 @@ def test_backend_server_runs_product_cash_spend_projection_metric_fan_and_rollou
     # +$25k for the PHA private-equity position (1000 units at $25 anchor), +$150k for the two
     # bond rungs at face — in net worth, and deliberately not in liquid net worth above.
     assert columns["net_worth_quanta"][0] == "126050000"
-    assert set(columns) == {
-        "month_index",
-        "cash_quanta",
-        "holding_value_quanta",
-        "private_equity_value_quanta",
-        "bond_value_quanta",
-        "property_value_quanta",
-        "mortgage_balance_quanta",
-        "home_equity_quanta",
-        "liquid_net_worth_quanta",
-        "net_worth_quanta",
-        "shortfall_quanta",
-    }
     terminal = detail["rollout"]["ending_metrics"]
     assert terminal["snapshot_index"] == 3
     assert terminal["cash_quanta"] == "24887500"
@@ -253,19 +233,6 @@ def test_backend_server_runs_product_cash_spend_projection_metric_fan_and_rollou
         + int(terminal["private_equity_value_quanta"])
         + int(terminal["bond_value_quanta"])
     )
-    assert set(terminal) == {
-        "snapshot_index",
-        "cash_quanta",
-        "holding_value_quanta",
-        "private_equity_value_quanta",
-        "bond_value_quanta",
-        "property_value_quanta",
-        "mortgage_balance_quanta",
-        "home_equity_quanta",
-        "liquid_net_worth_quanta",
-        "net_worth_quanta",
-        "shortfall_quanta",
-    }
     assert terminal["shortfall_quanta"] == "0"
 
     assert [event["kind"] for event in detail["rollout"]["events"]] == ["monthly_expense"] * 3

@@ -46,7 +46,7 @@ MakeClient = Callable[[dict[str, Any]], TestClient]
 
 @pytest.fixture
 def fixture_locations() -> tuple[LocationConfig, ...]:
-    """The two synthetic fixture locations plus San Francisco, for the catalog-builder tests."""
+    """The two synthetic fixture locations, for the catalog-builder tests."""
     return (
         LocationConfig(
             location_id=LocationId("location_a"),
@@ -63,14 +63,6 @@ def fixture_locations() -> tuple[LocationConfig, ...]:
             state="Fixture",
             situs=JurisdictionId("san_francisco"),
             notes=("Synthetic public fixture location.",),
-        ),
-        LocationConfig(
-            location_id=LocationId("san_francisco_ca"),
-            label="San Francisco, CA",
-            city="San Francisco",
-            state="CA",
-            situs=JurisdictionId("san_francisco"),
-            notes=("San Francisco fixture.",),
         ),
     )
 
@@ -205,35 +197,6 @@ def properties_path(tmp_path: Path) -> Path:
                     "sqft": 1250,
                     "year_built": 2000,
                 },
-            ]
-        ),
-        encoding="utf-8",
-    )
-    return path
-
-
-@pytest.fixture
-def builtin_properties_path(tmp_path: Path) -> Path:
-    """A single San-Francisco property shortlist written to a temp JSON file."""
-    path = tmp_path / "properties.json"
-    path.write_text(
-        json.dumps(
-            [
-                {
-                    "id": "sf_property",
-                    "source_catalog_id": "public_fixture",
-                    "source_property_id": "sf-property",
-                    "location_id": "san_francisco_ca",
-                    "address": "SF Property",
-                    "neighborhood": "San Francisco",
-                    "type": "Fixture",
-                    "price": 900000,
-                    "rent_estimate": 4200,
-                    "beds": 3,
-                    "baths": 2,
-                    "sqft": 1400,
-                    "year_built": 2000,
-                }
             ]
         ),
         encoding="utf-8",

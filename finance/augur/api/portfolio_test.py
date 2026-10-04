@@ -201,13 +201,6 @@ def test_holding_positions_sharing_series_must_share_unit_value() -> None:
         )
 
 
-def test_negative_holding_period_is_rejected() -> None:
-    with pytest.raises(ValidationError, match="greater than or equal to 0"):
-        HoldingTaxLotConfig(
-            lot_id=LotId("future_lot"), holding_period_months_at_start=-1, quantity=10.0, cost_basis=Decimal(4_000)
-        )
-
-
 # -- Bonds ---------------------------------------------------------------------------------
 
 

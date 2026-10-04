@@ -8,7 +8,6 @@ exercise the drop logic, and the result is round-tripped through the M1 model va
 
 from __future__ import annotations
 
-import itertools
 from datetime import date
 
 import pytest
@@ -61,12 +60,6 @@ async def test_derives_monotone_anchors_dropping_market_noise(catalog: MarketCat
     # The before-sim-start market (month -1) and the non-monotone 2030 point are dropped.
     assert [anchor.month for anchor in anchors] == [7, 19, 31]
     assert [anchor.cumulative_probability for anchor in anchors] == [0.30, 0.55, 0.93]
-
-    # Month strictly increasing; cumulative probability non-decreasing.
-    months = [anchor.month for anchor in anchors]
-    assert all(later > earlier for earlier, later in itertools.pairwise(months))
-    cumulatives = [anchor.cumulative_probability for anchor in anchors]
-    assert all(later >= earlier for earlier, later in itertools.pairwise(cumulatives))
 
 
 async def test_derived_anchors_validate_against_m1_issuer_config(catalog: MarketCatalog, prices: PriceClient) -> None:

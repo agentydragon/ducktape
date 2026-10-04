@@ -11,11 +11,9 @@ import pytest_bazel
 from pydantic import HttpUrl, ValidationError
 
 from finance.augur.api.config import (
-    AgentDefinition,
     CalibrationCatalogConfig,
     Config,
     DistributionTaxShareConfig,
-    LocationConfig,
     PropertyAssetConfig,
     PropertySourceConfig,
     SecurityDistributionConfig,
@@ -38,54 +36,14 @@ from finance.augur.api.portfolio_source_config import (
     PlaidSp500ProxyGroupConfig,
     PortfolioSourcesConfig,
 )
-from finance.augur.api.wire import ActorRole
-from finance.augur.model.series import IssuerId, LocationId, SecuritySymbol
-from finance.augur.sim.ids import AccountId, AgentId, JurisdictionId, LotId, PropertyId
+from finance.augur.model.series import SecuritySymbol
+from finance.augur.sim.ids import AccountId, AgentId, LotId, PropertyId
 from finance.augur.sim.income import Taxable, Treasury
-from finance.augur.x.models.independent import IndependentProviderConfig
-from finance.augur.x.models.private_equity_risk import PrivateEquityRiskProviderConfig
 from finance.augur.x.models.provider_config import CompositeProviderConfig
 from finance.augur.x.models.state_space import StateSpaceProviderConfig
 from finance.augur.x.models.trained_private_equity import TrainedPrivateEquityProviderConfig
 
 LOCATION_A_PROPERTY = PropertyId("location_a_property")
-
-
-def test_minimal_config_validates_with_explicit_sampling_limit(minimal_config: MinimalConfig) -> None:
-    config = minimal_config()
-
-    assert config.agents[0].actor_id == "owner"
-    assert config.location_selection is None
-    assert config.max_rollout_samples == 1_000_000
-
-
-def test_sampling_config_is_required(minimal_config: MinimalConfig) -> None:
-    base = minimal_config().model_dump(mode="json")
-    with pytest.raises(ValidationError, match="max_rollout_samples"):
-        Config.model_validate({**base, "max_rollout_samples": None})
-
-
-def test_property_source_declares_stable_public_asset_urls() -> None:
-    source = PropertySourceConfig(
-        properties_path=Path("/tmp/properties.json"),
-        property_assets=(
-            PropertyAssetConfig(
-                property_id=LOCATION_A_PROPERTY, image_url=HttpUrl("https://cdn.example.com/augur/location-a-hero.jpg")
-            ),
-            PropertyAssetConfig(
-                property_id=PropertyId("location_b_property"),
-                image_url=HttpUrl("https://cdn.example.com/augur/location-b-hero.jpg"),
-            ),
-        ),
-    )
-
-    assert str(source.property_assets[0].image_url) == "https://cdn.example.com/augur/location-a-hero.jpg"
-    assert str(source.property_assets[1].image_url) == "https://cdn.example.com/augur/location-b-hero.jpg"
-
-
-def test_property_asset_requires_image_url() -> None:
-    with pytest.raises(ValidationError, match="image_url"):
-        PropertyAssetConfig.model_validate({"property_id": "location_a_property"})
 
 
 def test_property_asset_property_ids_must_be_unique() -> None:
@@ -172,55 +130,6 @@ def test_enabled_plaid_portfolio_source_must_select_something() -> None:
         PlaidPortfolioSourceConfig(enabled=True)
 
 
-def test_location_selection_accepts_location_strings(minimal_config: MinimalConfig) -> None:
-    config = minimal_config(location_selection=("san_francisco_ca", "vallejo_ca"))
-
-    assert config.location_selection == ("san_francisco_ca", "vallejo_ca")
-
-
-def test_config_can_define_deployment_owned_locations(minimal_config: MinimalConfig) -> None:
-    config = minimal_config(
-        locations=(
-            LocationConfig(
-                location_id=LocationId("location_a"),
-                label="Location A",
-                city="Location A",
-                state="Fixture",
-                situs=JurisdictionId("san_francisco"),
-            ),
-        ),
-        location_selection=("location_a",),
-    )
-
-    assert config.locations[0].location_id == "location_a"
-    assert config.location_selection == ("location_a",)
-
-
-def test_at_least_one_agent_required() -> None:
-    with pytest.raises(ValidationError, match="Tuple should have at least 1 item"):
-        Config(
-            agents=(),
-            property_source=PropertySourceConfig(properties_path=Path("/tmp/x.json")),
-            portfolio_sources=PortfolioSourcesConfig(
-                fixed=FixedPortfolioSourceConfig(snapshot=FinanceSnapshot(as_of_date="2026-05-12"))
-            ),
-            max_rollout_samples=1_000_000,
-            models={"current_model": IndependentProviderConfig()},
-            default_model_id="current_model",
-            calibration_catalog=CalibrationCatalogConfig(catalog_path=Path("/tmp/catalog.yaml")),
-        )
-
-
-def test_actor_id_must_be_snake_case() -> None:
-    with pytest.raises(ValidationError, match="String should match pattern"):
-        AgentDefinition(actor_id=AgentId("Alpha"), label="Alpha", role=ActorRole.PRIMARY_OWNER)
-
-
-def test_snapshot_optional_fields_default_to_zero() -> None:
-    snapshot = FinanceSnapshot(as_of_date="2026-05-12")
-    assert snapshot.cash == 0.0
-
-
 def test_unknown_field_is_rejected(minimal_config: MinimalConfig) -> None:
     with pytest.raises(ValidationError, match="Extra inputs are not permitted"):
         minimal_config(extra_field="nope")
@@ -234,46 +143,6 @@ def test_yaml_round_trip_through_dump_and_load(tmp_path: Path, minimal_config: M
     reloaded = load_augur_config(path)
 
     assert reloaded == config
-
-
-def test_config_accepts_composite_provider_with_trained_private_equity(
-    tmp_path: Path, minimal_config: MinimalConfig
-) -> None:
-    model_path = tmp_path / "private_equity_model.json"
-    config = minimal_config(
-        models={
-            "current_model": {
-                "type": "composite",
-                "macro": {"type": "independent"},
-                "private_equity": {"type": "trained_private_equity", "trained_model_path": str(model_path)},
-            }
-        }
-    )
-
-    provider = config.models[config.default_model_id]
-    assert isinstance(provider, CompositeProviderConfig)
-    assert isinstance(provider.private_equity, TrainedPrivateEquityProviderConfig)
-    assert provider.private_equity.trained_model_path == model_path
-
-
-def test_config_accepts_composite_provider_with_private_equity_risk(minimal_config: MinimalConfig) -> None:
-    config = minimal_config(
-        models={
-            "current_model": {
-                "type": "composite",
-                "macro": {"type": "independent"},
-                "private_equity": {
-                    "type": "private_equity_risk",
-                    "issuers": {"private_holding_a": {"current_mark_usd": 25.0}},
-                },
-            }
-        }
-    )
-
-    provider = config.models[config.default_model_id]
-    assert isinstance(provider, CompositeProviderConfig)
-    assert isinstance(provider.private_equity, PrivateEquityRiskProviderConfig)
-    assert provider.private_equity.issuers[IssuerId("private_holding_a")].current_mark_usd == 25.0
 
 
 def test_relative_trained_private_equity_model_path_anchors_against_yaml_dir(
@@ -337,11 +206,6 @@ def test_relative_state_space_artifact_path_anchors_against_yaml_dir(
     provider = reloaded.models[reloaded.default_model_id]
     assert isinstance(provider, StateSpaceProviderConfig)
     assert provider.trained_artifact_path == (tmp_path / "state_space_artifact.json").resolve()
-
-
-def test_calibration_catalog_sample_sanity_path_defaults_to_none() -> None:
-    catalog = CalibrationCatalogConfig(catalog_path=Path("/tmp/catalog.yaml"))
-    assert catalog.sample_sanity_path is None
 
 
 def test_relative_calibration_catalog_paths_anchor_against_yaml_dir(

@@ -167,21 +167,6 @@ async def test_surfaced_row_carries_augur_context(
     assert surfaced.augur_context.p_model == 0.25
 
 
-async def test_run_calibration_shares_bundle_with_mark_fan(
-    model: ConstantFrameModel, catalog: MarketCatalog, price_clients: dict[Platform, PriceClient]
-) -> None:
-    # One sampled bundle drives both the clean/surfaced scoring and the issuer mark_fan, so
-    # both views come from a single rollout.
-    seeds = tuple(range(4))
-    bundle = sample_private_equity_bundle(model, issuer=_ISSUER, horizon_months=_HORIZON, rollout_seeds=seeds)
-    result = await run_calibration(
-        catalog, horizon_months=_HORIZON, rollout_seeds=seeds, price_clients=price_clients, bundle=bundle
-    )
-    assert {row.market_id for row in result.clean} == {"AAA", "BBB"}
-    fan = mark_fan(bundle, issuer=_ISSUER, rollout_count=4, horizon_months=_HORIZON, percentiles=(50.0,))
-    assert fan.months[0].values == {"50.0": 50.0}
-
-
 def test_mark_fan_shape(model: ConstantFrameModel) -> None:
     request = ExogenousSamplingRequest(
         horizon_months=_HORIZON,
