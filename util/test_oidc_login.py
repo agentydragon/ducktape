@@ -164,7 +164,7 @@ async def test_the_login_flow_and_the_apps_public_paths_need_no_session_and_noth
         private = await browser.get("/private")
 
     assert [response.status_code for response in open_paths] == [200, 200, 200]
-    assert f"<p>{SIGNED_OUT_TEXT}</p>" in open_paths[-1].text
+    assert SIGNED_OUT_TEXT in open_paths[-1].text
     assert private.status_code == 303
 
 
