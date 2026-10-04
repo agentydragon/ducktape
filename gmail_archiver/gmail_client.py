@@ -6,7 +6,6 @@ import logging
 import re
 import sys
 import time
-from collections.abc import Callable
 from datetime import UTC, datetime
 from itertools import batched
 from pathlib import Path
@@ -14,7 +13,7 @@ from typing import TypeGuard
 
 from googleapiclient.errors import HttpError
 
-from gmail_api.labels import GmailLabel, SystemLabel, resolve_label_id
+from gmail_api.labels import GmailLabel
 from gmail_api.service import build_gmail_service
 from gmail_archiver.gmail_api_models import (
     CreateFilterRequest,
@@ -90,9 +89,9 @@ class GmailClient:
     """Wrapper around Gmail API for email archival operations.
 
     TODO: Add a `modify_labels_batch` method that uses batchModify for bulk label
-    operations (add/remove multiple labels at once). The existing `add_labels_batch`
-    only handles adding a single label. Ad-hoc scripts currently loop through messages
-    individually which is slow - batchModify can process up to 1000 messages per call.
+    operations (add/remove multiple labels at once). Callers currently call batchModify
+    on `service` directly, and ad-hoc scripts loop through messages individually, which
+    is slow - batchModify can process up to 1000 messages per call.
     """
 
     def __init__(self, token_file: Path):
@@ -102,20 +101,6 @@ class GmailClient:
 
     def _build_service(self):
         return build_gmail_service(self.token_file)
-
-    def list_messages_by_labels(self, label_names: list[str], max_results: int | None = None) -> list[str]:
-        """List message IDs with all given labels (AND operation)."""
-        # Resolve all label names to IDs
-        self._refresh_label_cache_if_needed()
-        assert self._label_cache is not None  # _refresh_label_cache_if_needed ensures this
-        label_ids = []
-        for name in label_names:
-            try:
-                label_ids.append(resolve_label_id(name, self._label_cache))
-            except ValueError:
-                return []  # Label doesn't exist
-
-        return self._list_messages({"labelIds": label_ids}, max_results)
 
     def list_messages_by_query(self, query: str, max_results: int | None = None) -> list[str]:
         return self._list_messages({"q": query}, max_results)
@@ -180,47 +165,6 @@ class GmailClient:
 
         if all_errors:
             print(f"Warning: Failed to fetch metadata for {len(all_errors)} messages", file=sys.stderr)
-
-        return results
-
-    def get_messages_minimal_batch(self, message_ids: list[str], batch_size: int = 100) -> list[GmailMessageMinimal]:
-        """Fetch minimal message metadata (id, labels, snippet, date) using batch requests.
-
-        This is more efficient than fetching full messages when you only need label info.
-        Returns GmailMessageMinimal (no raw bytes - for that use get_messages_batch).
-        """
-        results = []
-        all_errors = []
-
-        def create_callback(results_list, errors_list):
-            def callback(request_id, response, exception):
-                if exception:
-                    errors_list.append((request_id, str(exception)))
-                    return
-                try:
-                    results_list.append(GmailMessageMinimal.model_validate(response))
-                except Exception as e:
-                    errors_list.append((request_id, str(e)))
-
-            return callback
-
-        for batch in batched(message_ids, batch_size, strict=False):
-            batch_results: list[GmailMessageMinimal] = []
-            batch_errors: list[tuple[str, str]] = []
-
-            batch_request = self.service.new_batch_http_request()
-            for msg_id in batch:
-                batch_request.add(
-                    self.service.users().messages().get(userId="me", id=msg_id, format="minimal"),
-                    callback=create_callback(batch_results, batch_errors),
-                )
-
-            batch_request.execute()
-            results.extend(batch_results)
-            all_errors.extend(batch_errors)
-
-        if all_errors:
-            print(f"Warning: Failed to fetch {len(all_errors)} messages", file=sys.stderr)
 
         return results
 
@@ -417,74 +361,6 @@ class GmailClient:
                 print(suffix, file=sys.stderr)
 
         return emails
-
-    def get_message(self, message_id: str) -> Email:
-        response = self.service.users().messages().get(userId="me", id=message_id, format="raw").execute()
-        raw_bytes = base64.urlsafe_b64decode(response["raw"])
-        metadata = GmailMessageMinimal.model_validate(response)
-        return Email.from_gmail_response(raw_bytes, metadata)
-
-    def add_label(self, message_id: str, label_name: str) -> None:
-        label_id = self.get_or_create_label(label_name)
-
-        self.service.users().messages().modify(userId="me", id=message_id, body={"addLabelIds": [label_id]}).execute()
-
-    def add_labels_batch(
-        self,
-        message_ids: list[str],
-        label_name: str,
-        batch_size: int = 1000,
-        progress_callback: Callable[[int], None] | None = None,
-        *,
-        archive: bool = False,
-    ) -> tuple[list[str], list[tuple[str, str]]]:
-        """Add label to multiple messages. Returns (successful_ids, failed_ids_with_errors)."""
-        label_id = self.get_or_create_label(label_name)
-
-        successful: list[str] = []
-        failed: list[tuple[str, str]] = []
-
-        # Process in batches
-        for batch in batched(message_ids, batch_size, strict=False):
-            try:
-                body = {"ids": list(batch), "addLabelIds": [label_id]}
-                if archive:
-                    body["removeLabelIds"] = [SystemLabel.INBOX]
-
-                self.service.users().messages().batchModify(userId="me", body=body).execute()
-                successful.extend(batch)
-                if progress_callback:
-                    progress_callback(len(batch))
-            except Exception:
-                # Batch failed, retry individually to identify failures
-                for msg_id in batch:
-                    try:
-                        body = {"addLabelIds": [label_id]}
-                        if archive:
-                            body["removeLabelIds"] = [SystemLabel.INBOX]
-                        self.service.users().messages().modify(userId="me", id=msg_id, body=body).execute()
-                        successful.append(msg_id)
-                        if progress_callback:
-                            progress_callback(1)
-                    except Exception as individual_error:
-                        failed.append((msg_id, str(individual_error)))
-                        if progress_callback:
-                            progress_callback(1)
-
-        return successful, failed
-
-    def remove_label(self, message_id: str, label_name: str) -> None:
-        if not (label_id := self.get_label_id(label_name)):
-            return
-
-        self.service.users().messages().modify(
-            userId="me", id=message_id, body={"removeLabelIds": [label_id]}
-        ).execute()
-
-    def remove_from_inbox(self, message_id: str) -> None:
-        self.service.users().messages().modify(
-            userId="me", id=message_id, body={"removeLabelIds": [SystemLabel.INBOX]}
-        ).execute()
 
     def get_label_id(self, label_name: str) -> str | None:
         self._refresh_label_cache_if_needed()

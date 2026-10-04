@@ -6,57 +6,11 @@ Compatible with gmail-yaml-filters format (https://github.com/mesozoic/gmail-yam
 from __future__ import annotations
 
 import builtins
-from enum import StrEnum
 from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field
 
 StringList = list[str]
-
-
-class ConditionKey(StrEnum):
-    FROM = "from"
-    TO = "to"
-    SUBJECT = "subject"
-    HAS = "has"
-    MATCH = "match"
-    DOES_NOT_HAVE = "does_not_have"
-    MISSING = "missing"
-    NO_MATCH = "no_match"
-    # Search operators (converted to hasTheWord/doesNotHaveTheWord)
-    BCC = "bcc"
-    CC = "cc"
-    LIST = "list"
-    LABELED = "labeled"
-    IS = "is"
-    CATEGORY = "category"
-    DELIVEREDTO = "deliveredto"
-    FILENAME = "filename"
-    LARGER = "larger"
-    SMALLER = "smaller"
-    SIZE = "size"
-    RFC822MSGID = "rfc822msgid"
-    AFTER = "after"
-    BEFORE = "before"
-    NEWER_THAN = "newer_than"
-    OLDER_THAN = "older_than"
-    IN = "in"
-
-
-class ActionKey(StrEnum):
-    LABEL = "label"
-    IMPORTANT = "important"
-    MARK_AS_IMPORTANT = "mark_as_important"
-    NOT_IMPORTANT = "not_important"
-    NEVER_MARK_AS_IMPORTANT = "never_mark_as_important"
-    ARCHIVE = "archive"
-    READ = "read"
-    MARK_AS_READ = "mark_as_read"
-    STAR = "star"
-    TRASH = "trash"
-    DELETE = "delete"
-    NOT_SPAM = "not_spam"
-    FORWARD = "forward"
 
 
 class CompoundCondition(BaseModel):

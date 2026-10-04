@@ -28,18 +28,6 @@ class GmailInbox:
         self._metadata_cache: dict[str, GmailMessageWithHeaders] = {}
         self.show_progress = show_progress
 
-    def fetch_message(self, message_id: str) -> Email:
-        """Fetch a single full email (with raw bytes)."""
-        if message_id in self._full_cache:
-            return self._full_cache[message_id]
-
-        # TODO: Add disk cache support
-
-        message = self.client.get_message(message_id)
-        self._full_cache[message_id] = message
-
-        return message
-
     def fetch_messages(self, query: str, batch_size: int = 50) -> list[Email]:
         """Fetch full emails matching query (with raw bytes for body parsing)."""
         if self.show_progress:
@@ -96,18 +84,6 @@ class GmailInbox:
                 # For now, just skip - the planner should have it from metadata cache
                 pass
         return result
-
-    def get_message(self, message_id: str) -> Email | GmailMessageWithHeaders:
-        """Get message from cache for display.
-
-        Returns from whichever cache has it (full or metadata).
-        Raises KeyError if not found.
-        """
-        if message_id in self._full_cache:
-            return self._full_cache[message_id]
-        if message_id in self._metadata_cache:
-            return self._metadata_cache[message_id]
-        raise KeyError(f"Message {message_id} not found in inbox cache")
 
     def ensure_metadata_cached(self, message_ids: Iterable[str], batch_size: int = 50) -> None:
         uncached_ids = [mid for mid in message_ids if mid not in self._metadata_cache]

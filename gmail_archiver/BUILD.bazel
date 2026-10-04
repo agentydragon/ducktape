@@ -73,10 +73,8 @@ py_library(
     visibility = ["//:__subpackages__"],
     deps = [
         ":gmail_api_models",
-        ":gmail_yaml_filters_models",
         ":inbox",
         ":plan",
-        "//gmail_api:labels",
     ],
 )
 

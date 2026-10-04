@@ -1,10 +1,8 @@
 """Email template recognizer and structured data extractor using OpenAI API."""
 
-import asyncio
 import json
 import logging
 import os
-from collections.abc import Sequence
 from datetime import datetime
 from pathlib import Path
 from typing import Annotated, Literal
@@ -169,18 +167,3 @@ CONFIDENCE GUIDELINES:
         self.cache.set(email.id, classification)
 
         return classification
-
-    async def extract_batch(
-        self, emails: Sequence[Email], *, use_cache: bool = True, max_concurrent: int = 10
-    ) -> list[tuple[str, EmailTemplateExtraction]]:
-        semaphore = asyncio.Semaphore(max_concurrent)
-
-        async def extract_with_limit(email: Email) -> tuple[str, EmailTemplateExtraction]:
-            async with semaphore:
-                extraction = await self.extract(email, use_cache=use_cache)
-                return (email.id, extraction)
-
-        results: list[tuple[str, EmailTemplateExtraction]] = list(
-            await asyncio.gather(*[extract_with_limit(email) for email in emails])
-        )
-        return results
