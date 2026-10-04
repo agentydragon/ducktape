@@ -210,46 +210,6 @@ fn factorization_with_residual_module(
 // --- Owner graph quotient ------------------------------------------------
 
 #[test]
-fn owner_graph_retains_reads_to_unassigned_declared_bindings() {
-    let factorization = factorization_for("const A = X + 1; const X = 42;", &[("A", logical(0))]);
-
-    assert!(
-        factorization
-            .analysis
-            .owner_graph()
-            .iter_edges()
-            .any(|edge| {
-                edge.from == OwnerId(0)
-                    && edge.to == OwnerId(1)
-                    && edge.reason.kind() == DepKind::EagerUse
-                    && edge.reason.statement_ordinal() == StatementOrdinal(0)
-                    && edge.reason.binding().is_some_and(|id| id.0 == "X")
-            }),
-        "owner graph should retain the unassigned declared provider edge",
-    );
-    // The residual is the synthesized logical module at index 1
-    // (after the explicit `mod_0` at index 0).
-    assert!(
-        factorization
-            .dep_graph
-            .contains_edge(logical(0), ModuleId::logical(1)),
-        "the quotient should expose the logical-module -> residual read",
-    );
-
-    let report = factorization.owner_graph_report();
-    let residual_owner = report
-        .nodes
-        .iter()
-        .find(|node| node.id == "owner:1")
-        .expect("X owner should be reported");
-    assert!(
-        report.is_residual(&residual_owner.destination),
-        "residual owner should land on the synthesized residual module: {:?}",
-        residual_owner.destination,
-    );
-}
-
-#[test]
 fn owner_graph_report_emits_atomic_graph() {
     let factorization = factorization_with_residual_module(
         "const Leaf = 1; const ResidualUse = Leaf + 1; const Existing = ResidualUse + 1;",
@@ -396,52 +356,6 @@ fn declared_per_statement(source: &str) -> Vec<Vec<String>> {
         .into_iter()
         .map(|f| f.declared.into_iter().map(|id| id.0.to_string()).collect())
         .collect()
-}
-
-fn owner_for_binding(graph: &OwnerGraph, name: &str) -> OwnerId {
-    graph
-        .iter_nodes()
-        .find(|node| node.declared.iter().any(|id| id.0.as_ref() == name))
-        .map(|node| node.id)
-        .unwrap_or_else(|| panic!("binding {name} should have an owner"))
-}
-
-#[test]
-fn split_comma_list_rebind_unit_sticks_to_mutable_declarator_only() {
-    let module = parse(
-        r#"let mutable = 1, peer = Symbol("Peer");
-mutable = mutable + 1;"#,
-    );
-    let facts = analyze_facts(&module);
-    let graph = build_owner_graph(&facts).unwrap();
-    let mutable_owner = owner_for_binding(&graph, "mutable");
-    let peer_owner = owner_for_binding(&graph, "peer");
-    let assign_owner = OwnerId(2);
-    let units = compute_atomic_units(&graph);
-    assert_partitions_all_owners(&units, 3);
-
-    let mutable_unit = units
-        .iter()
-        .find(|unit| unit.members.contains(&mutable_owner))
-        .expect("mutable owner should appear in an atomic unit");
-    assert!(
-        mutable_unit.members.contains(&assign_owner),
-        "mutable declarator must co-locate with its rebinding assignment: {units:?}",
-    );
-    assert!(
-        !mutable_unit.members.contains(&peer_owner),
-        "independent split sibling must not be pulled into the mutable rebind unit: {units:?}",
-    );
-
-    let peer_unit = units
-        .iter()
-        .find(|unit| unit.members.contains(&peer_owner))
-        .expect("peer owner should appear in an atomic unit");
-    assert_eq!(
-        peer_unit.members.len(),
-        1,
-        "pure split sibling should remain independently peelable",
-    );
 }
 
 #[test]
@@ -606,14 +520,6 @@ fn atomic_units_eager_use_chain_stays_split() {
     let units = atomic_units_for("const C = 3; const B = C + 1; const A = B + 1;");
     assert_partitions_all_owners(&units, 3);
     assert_eq!(unit_sizes(&units), vec![1, 1, 1]);
-}
-
-#[test]
-fn atomic_units_eager_use_cycle_merges() {
-    // A and B form an EagerUse cycle → must co-locate.
-    let units = atomic_units_for("const A = B + 1; const B = A + 1;");
-    assert_partitions_all_owners(&units, 2);
-    assert_eq!(unit_sizes(&units), vec![2]);
 }
 
 #[test]

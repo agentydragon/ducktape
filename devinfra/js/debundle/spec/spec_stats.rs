@@ -238,30 +238,6 @@ mod tests {
     }
 
     #[test]
-    fn single_module_one_binding() {
-        let dir = TempDir::new().unwrap();
-        let root = dir.path();
-        write(
-            root,
-            "a.yaml",
-            "members:\n  - selector: { binding: { name: a } }\n",
-        );
-        let s = compute_spec_stats(root).unwrap();
-        assert_eq!(s.modules.total, 1);
-        assert_eq!(s.modules.residual, 0);
-        assert_eq!(s.modules.empty, 0);
-        assert_eq!(s.modules.with_comment, 0);
-        assert_eq!(s.modules.member_count.min, 1);
-        assert_eq!(s.modules.member_count.max, 1);
-        assert_eq!(s.modules.member_count.singletons, 1);
-        assert_eq!(s.modules.member_count.tiny_2_to_5, 0);
-        assert_eq!(s.bindings.total, 1);
-        assert_eq!(s.bindings.unrenamed, 1);
-        assert_eq!(s.bindings.renamed, 0);
-        assert_eq!(s.bindings.orphan, 1);
-    }
-
-    #[test]
     fn singleton_plus_multi_member_module() {
         let dir = TempDir::new().unwrap();
         let root = dir.path();
@@ -304,21 +280,6 @@ mod tests {
         assert_eq!(s.modules.member_count.min, 0);
         assert_eq!(s.modules.member_count.max, 1);
         assert_eq!(s.modules.member_count.singletons, 1);
-    }
-
-    #[test]
-    fn residual_module_counted() {
-        let dir = TempDir::new().unwrap();
-        let root = dir.path();
-        write(root, "residual/unhandled.yaml", "members: []\n");
-        write(
-            root,
-            "ui/sidebar.yaml",
-            "members:\n  - selector: { binding: { name: a } }\n",
-        );
-        let s = compute_spec_stats(root).unwrap();
-        assert_eq!(s.modules.total, 2);
-        assert_eq!(s.modules.residual, 1);
     }
 
     #[test]

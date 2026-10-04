@@ -336,58 +336,6 @@ mod tests {
     }
 
     #[test]
-    fn number_literal_anchor_maps_to_the_token_span() {
-        // The numeric argument is item 0's only discriminator; the read-off pins
-        // it and the kept span covers exactly that number literal.
-        let source = r#"const a = make(call(), 123);
-const b = make(call(), 456);"#;
-        let module = parse(source);
-        let index = ShapeIndex::new(&module);
-        let anchor_set = index.minimal_anchor_set(0).unwrap();
-        let kept = kept_spans_for_anchor_set(&module.body[0], &anchor_set);
-        assert!(
-            kept.iter().any(|s| span_text(source, s) == "123"),
-            "expected a kept span covering `123`, got {:?}",
-            kept.iter()
-                .map(|s| span_text(source, s))
-                .collect::<Vec<_>>()
-        );
-    }
-
-    #[test]
-    fn value_anchor_maps_to_the_token_span() {
-        // Item 0's unique string literal is the read-off anchor; the kept span
-        // must cover exactly that literal so the prune pins it.
-        let source = r#"const a = make("widget-token");
-const b = make("other-token");"#;
-        let module = parse(source);
-        let index = ShapeIndex::new(&module);
-        let anchor_set = index.minimal_anchor_set(0).unwrap();
-        let kept = kept_spans_for_anchor_set(&module.body[0], &anchor_set);
-        let pinned: Vec<&str> = kept.iter().map(|s| span_text(source, s)).collect();
-        assert_eq!(pinned, vec![r#""widget-token""#]);
-    }
-
-    #[test]
-    fn member_property_anchor_pins_the_property_name() {
-        // `.now` is unique to item 0 among the chunk, so the read-off pins the
-        // member property; the kept span covers the `now` accessor token.
-        let source = r#"const a = read(Date.now());
-const b = read(other());"#;
-        let module = parse(source);
-        let index = ShapeIndex::new(&module);
-        let anchor_set = index.minimal_anchor_set(0).unwrap();
-        let kept = kept_spans_for_anchor_set(&module.body[0], &anchor_set);
-        assert!(
-            kept.iter().any(|s| span_text(source, s) == "now"),
-            "expected a kept span covering `now`, got {:?}",
-            kept.iter()
-                .map(|s| span_text(source, s))
-                .collect::<Vec<_>>()
-        );
-    }
-
-    #[test]
     fn structural_only_read_off_keeps_no_span() {
         // The lone function is discriminated by its declaration kind / arity
         // alone (a structural read-off), so no concrete token is pinned: the

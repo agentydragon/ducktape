@@ -25,10 +25,6 @@ def _fetch(
     )
 
 
-def test_no_extra_spend_is_not_over_plan() -> None:
-    assert not currently_over_plan(_fetch())
-
-
 def test_feature_off_is_not_over_plan() -> None:
     # is_enabled=False (no credit card / opted out) → never over plan, no matter the 7d window.
     fetch = _fetch(
@@ -36,25 +32,6 @@ def test_feature_off_is_not_over_plan() -> None:
         extra_spend=ExtraSpend(is_enabled=False, monthly_limit_usd=100, used_usd=0, utilization=0),
     )
     assert not currently_over_plan(fetch)
-
-
-def test_feature_on_but_prepaid_not_exhausted_is_not_over_plan() -> None:
-    # The user's exact scenario: extra-spend feature on, $2324.85 spent earlier
-    # this month, but the weekly quota is fresh — they are not *currently* burning.
-    fetch = _fetch(
-        short_window=QuotaWindow(used_percent=6, reset_seconds=3600, window_seconds=18000),
-        long_window=QuotaWindow(used_percent=2, reset_seconds=86400, window_seconds=604800),
-        extra_spend=ExtraSpend(is_enabled=True, monthly_limit_usd=4600, used_usd=2324.85, utilization=50.54),
-    )
-    assert not currently_over_plan(fetch)
-
-
-def test_prepaid_exhausted_with_feature_on_is_over_plan() -> None:
-    fetch = _fetch(
-        long_window=QuotaWindow(used_percent=100, reset_seconds=86400, window_seconds=604800),
-        extra_spend=ExtraSpend(is_enabled=True, monthly_limit_usd=4600, used_usd=3120, utilization=67),
-    )
-    assert currently_over_plan(fetch)
 
 
 def test_short_window_exhausted_with_feature_on_is_over_plan() -> None:

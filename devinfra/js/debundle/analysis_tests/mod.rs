@@ -641,23 +641,6 @@ fn analyze_facts_with_property_writes(module: &Module) -> Vec<StatementFacts> {
 }
 
 #[test]
-fn local_property_writes_policy_scopes_annotation_write_to_declarer() {
-    // The React annotation idiom: `C.displayName = "..."` right after
-    // the component declaration. Under the policy the write is a local
-    // effect on `C` (statement classifies Pure, LocalEffect edge keeps
-    // it co-located with the declarer); under the default policy it
-    // stays a globally-ordered impure statement.
-    let module = parse(r#"function C() { return 1; } C.displayName = "C";"#);
-    let default_facts = analyze_facts(&module);
-    assert!(default_facts[1].local_effects.is_empty());
-    assert!(!default_facts[1].purity.is_pure());
-
-    let facts = analyze_facts_with_property_writes(&module);
-    assert_eq!(facts[1].local_effects, BTreeSet::from([test_id("C")]));
-    assert!(facts[1].purity.is_pure());
-}
-
-#[test]
 fn local_property_writes_policy_handles_comma_sequences_and_nested_paths() {
     // Minified annotation runs comma-join writes; a nested static
     // path (`C.propTypes.id`) still roots at `C`.

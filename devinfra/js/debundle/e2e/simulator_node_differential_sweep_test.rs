@@ -13,12 +13,6 @@
 //! untouched), and compares the observed completion order against
 //! `gate::simulated_evaluation_post_order` on the same owner graph
 //! and partition.
-//!
-//! Generalizes the single-shape unit pin
-//! `realizability::tests::simulator_post_order_matches_emitted_evaluation_order`
-//! (an asymmetric cycle) into a sweep; that pin keeps the
-//! hand-derived expected order at the unit level, this sweep pins the
-//! simulator against the live Node runtime across the family.
 
 use std::collections::BTreeMap;
 

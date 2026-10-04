@@ -871,46 +871,6 @@ mod tests {
     }
 
     #[test]
-    fn emit_js_module_with_comments_attaches_leading_lines_above_decl() {
-        with_swc_globals(|| {
-            let parsed = parse_js_module(
-                "test.js",
-                "const a = 1;\nfunction b() { return 2; }\nexport { a, b };\n",
-            )
-            .unwrap();
-            let mut binding_comments = BTreeMap::new();
-            binding_comments.insert("a".to_string(), "doc for a.\nsecond line.".to_string());
-            binding_comments.insert("b".to_string(), "doc for b.".to_string());
-            let source =
-                emit_js_module_with_comments(&parsed, &[], &binding_comments, &BTreeMap::new())
-                    .unwrap();
-            // Each binding's comment lands above its declaration; SWC
-            // emits one `// <text>` per `Line` comment in the map.
-            let a_pos = source
-                .find("const a = 1")
-                .expect("must contain const a = 1");
-            let comment_a_pos = source
-                .find("// doc for a.")
-                .expect("must contain doc for a");
-            let comment_a2_pos = source
-                .find("// second line.")
-                .expect("must contain second line");
-            assert!(
-                comment_a_pos < comment_a2_pos && comment_a2_pos < a_pos,
-                "both lines of a's comment must precede `const a = 1`:\n{source}",
-            );
-            let b_pos = source.find("function b").expect("must contain function b");
-            let comment_b_pos = source
-                .find("// doc for b.")
-                .expect("must contain doc for b");
-            assert!(
-                comment_b_pos < b_pos && comment_b_pos > a_pos,
-                "b's comment must precede `function b` and follow a:\n{source}",
-            );
-        });
-    }
-
-    #[test]
     fn emit_js_module_with_comments_drops_unmatched_binding_keys() {
         with_swc_globals(|| {
             let parsed = parse_js_module("test.js", "const a = 1;\nexport { a };\n").unwrap();

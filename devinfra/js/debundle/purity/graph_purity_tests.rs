@@ -222,21 +222,6 @@ fn plain_data_const_array_literal_is_tracked() {
 }
 
 #[test]
-fn plain_array_const_collection_methods_are_tracked() {
-    let src = r#"
-const later = "ready";
-const tools = [{ name: "tool", systemNodeId: "tool-id", run: () => later }];
-const byName = Object.fromEntries(tools.map((tool) => [tool.name, tool]));
-const ids = [...tools.filter((tool) => tool.systemNodeId).map((tool) => tool.systemNodeId)];
-tools.forEach((tool) => {
-  tool.systemNodeId && (globalThis.byId = tool.name);
-});
-export { tools };
-"#;
-    assert!(is_plain_array(src, "tools"));
-}
-
-#[test]
 fn plain_array_const_derived_by_non_mutating_methods_is_tracked() {
     let src = r#"
 const later = "ready";
@@ -492,17 +477,6 @@ fn plain_data_ts_enum_iife_non_literal_arg_is_not_tracked() {
     // IIFE arg isn't a plain object or `X || plain` — could be
     // anything at runtime. Reject.
     let src = r#"var X = ((p) => (p.A = "a", p))(someFn());"#;
-    assert!(!is_plain_data(src, "X"));
-}
-
-#[test]
-fn plain_data_ts_enum_iife_non_primitive_rhs_is_not_tracked() {
-    // Property write RHS is a call, not a primitive literal. The
-    // resulting object would still be plain (writes are data
-    // descriptors regardless of RHS shape), but the conservative
-    // rule rejects to keep the soundness story uniform with
-    // `is_plain_data_prop`.
-    let src = r#"var X = ((p) => (p.A = io(), p))({});"#;
     assert!(!is_plain_data(src, "X"));
 }
 

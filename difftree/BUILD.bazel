@@ -157,12 +157,10 @@ py_test(
     name = "test_tree",
     srcs = ["test_tree.py"],
     deps = [
-        ":config",
         ":conftest",
         ":parser",
         ":tree",
         "//:conftest",
-        "@pypi//pyhamcrest",
         "@pypi//pytest_bazel",
     ],
 )

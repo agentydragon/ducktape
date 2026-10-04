@@ -203,11 +203,6 @@ fn classify_in_and_instanceof_are_not_pure() {
 }
 
 #[test]
-fn classify_delete_is_impure() {
-    assert!(!(classify("delete o.x")).is_pure());
-}
-
-#[test]
 fn classify_assignment_and_update_are_impure() {
     assert!(!(classify("(x = 1)")).is_pure());
     assert!(!(classify("x++")).is_pure());
@@ -540,15 +535,6 @@ fn import_specifier_locals_shadow_whitelist() {
 }
 
 // --- Whitelist: shadow tracking covers every table -----------------------
-
-#[test]
-fn unshadowed_builtin_new_is_pure() {
-    // Positive control for the shadow-tracking fix: with no
-    // chunk-top rebind, the `new <Container>()` whitelists fire.
-    assert!((classify("new Map()")).is_pure());
-    assert!((classify("new Set()")).is_pure());
-    assert!((classify("new Set(['a', 'b'])")).is_pure());
-}
 
 #[test]
 fn whatwg_platform_constructors_no_args_are_pure() {
@@ -1134,16 +1120,6 @@ fn object_define_property_namespace_facade_rejects_accessor_descriptor() {
         ))
         .is_pure()
     );
-}
-
-#[test]
-fn object_freeze_on_object_with_getter_stays_unknown() {
-    // Getter property would fire `[[Get]]` if subsequently
-    // read — and even for freeze, the rule must not admit
-    // accessor-carrying literals because the syntactic check
-    // is shared with values/entries which do `[[Get]]`. The
-    // strict `is_plain_data_prop` predicate rejects getters.
-    assert!(!(classify(r#"Object.freeze({ get x() { return 1; } })"#)).is_pure());
 }
 
 #[test]

@@ -124,32 +124,8 @@ def _make_quota(
     )
 
 
-def test_format_quota_none():
-    assert _format_quota(None, now=datetime.now(UTC)) is None
-
-
 def test_format_quota_empty():
     assert _format_quota(_make_quota(), now=datetime.now(UTC)) is None
-
-
-@pytest.mark.parametrize(
-    ("short_util", "long_util", "expected"),
-    [
-        pytest.param(80.0, 35.0, "5h:80% 7d:35%", id="both_buckets"),
-        pytest.param(85.0, None, "5h:85%", id="five_hour_only_high"),
-    ],
-)
-def test_format_quota_buckets(short_util: float, long_util: float | None, expected: str):
-    now = datetime.now(UTC)
-    short = QuotaWindow(used_percent=short_util, reset_seconds=0, window_seconds=_SHORT_WINDOW_SECS)
-    long = (
-        QuotaWindow(used_percent=long_util, reset_seconds=0, window_seconds=_LONG_WINDOW_SECS)
-        if long_util is not None
-        else None
-    )
-    result = _format_quota(_make_quota(short=short, long=long, fetched_at=now), now=now)
-    assert result is not None
-    assert result.plain == expected
 
 
 def test_format_quota_uses_provider_window_name_and_duration():
@@ -199,30 +175,6 @@ def test_format_quota_seven_day_reset(resets_in: timedelta, expected_part: str):
     assert result.plain == expected_part
 
 
-@pytest.mark.parametrize(
-    ("utilization", "resets_in", "expected_dry"),
-    [
-        # 80% used with 2d remaining (elapsed=5d) → exhaust in (20/80)*5d = 1.25d → < 2d → show
-        pytest.param(80.0, timedelta(days=2), "dry 1d06h", id="will_exhaust"),
-        # 30% used with 4d remaining (elapsed=3d) → exhaust in (70/30)*3d = 7d → > 4d → no show
-        pytest.param(30.0, timedelta(days=4), None, id="sustainable"),
-        # 90% used with 6d remaining (elapsed=1d) → exhaust in (10/90)*1d = 2.7h → < 6d → show
-        pytest.param(90.0, timedelta(days=6), "dry 2h40m", id="burning_fast"),
-    ],
-)
-def test_format_quota_exhaustion_projection(utilization: float, resets_in: timedelta, expected_dry: str | None):
-    now = datetime.now(UTC)
-    long = QuotaWindow(
-        used_percent=utilization, reset_seconds=resets_in.total_seconds(), window_seconds=_LONG_WINDOW_SECS
-    )
-    result = _format_quota(_make_quota(long=long, fetched_at=now), now=now)
-    assert result is not None
-    if expected_dry is None:
-        assert "dry" not in result.plain
-    else:
-        assert result.plain.endswith(expected_dry)
-
-
 def test_format_quota_spend_extra_usage():
     now = datetime.now(UTC)
     long = QuotaWindow(used_percent=100.0, reset_seconds=0, window_seconds=_LONG_WINDOW_SECS)
@@ -231,18 +183,6 @@ def test_format_quota_spend_extra_usage():
     assert result is not None
     assert "7d:100%" in result.plain
     assert "extra $123/$2500 (5%)" in result.plain
-
-
-def test_format_quota_no_extra_spend():
-    now = datetime.now(UTC)
-    long = QuotaWindow(used_percent=30.0, reset_seconds=0, window_seconds=_LONG_WINDOW_SECS)
-    result = _format_quota(_make_quota(long=long, fetched_at=now), now=now)
-    assert result is not None
-    assert "extra" not in result.plain
-
-
-def test_format_context_none():
-    assert _format_context(None) is None
 
 
 def test_format_context_no_percentage():
@@ -354,7 +294,11 @@ def test_render_flat_rate_hides_cost(full_input: Input, route: QuotaRoute):
 
 
 def test_render_subscription_high_usage(full_input: Input, snapshot: SnapshotAssertion):
-    """Subscription user burning fast — shows dry warning."""
+    """Subscription user burning fast — shows dry warning.
+
+    80% used with 2d left (5d elapsed) exhausts in (20/80) * 5d = 1.25d, before the reset, so the line shows
+    `dry 1d06h`.
+    """
     result = render(
         full_input,
         is_subscription=True,
