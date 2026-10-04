@@ -11,7 +11,6 @@ import pytest_bazel
 from x.ember.matrix_client import MatrixClient
 
 
-@pytest.mark.asyncio
 async def test_matrix_client_async_context_manager_invokes_start_and_close():
     client = MatrixClient.__new__(MatrixClient)
     start_mock = AsyncMock()
@@ -37,7 +36,6 @@ class FakeAsyncClient:
         self.closed = True
 
 
-@pytest.mark.asyncio
 async def test_matrix_client_send_text_message(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     fake_client = FakeAsyncClient()
 

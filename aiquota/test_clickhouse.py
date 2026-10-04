@@ -4,7 +4,6 @@ import json
 from datetime import UTC, date, datetime, timedelta
 
 import httpx
-import pytest
 import pytest_bazel
 
 from aiquota.api import (
@@ -31,8 +30,6 @@ from aiquota.models import (
 
 if __name__ == "__main__":
     pytest_bazel.main()
-
-pytestmark = pytest.mark.asyncio
 
 
 def _snapshot() -> QuotaSnapshot:

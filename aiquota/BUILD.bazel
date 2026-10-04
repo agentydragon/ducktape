@@ -286,7 +286,6 @@ py_test(
         ":models",
         "//:conftest",
         "@pypi//httpx",
-        "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],
 )

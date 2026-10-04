@@ -60,7 +60,6 @@ class TestWorktreeService:
         assert path == worktree_path
         assert exists is True
 
-    @pytest.mark.asyncio
     async def test_worktree_removal(self, service):
         """Test removing a worktree."""
         worktree_service, config = service
@@ -105,7 +104,6 @@ class TestWorktreeService:
         inside_path = config.worktrees_dir / "valid-worktree"
         assert worktree_service._is_managed_worktree(inside_path, config)
 
-    @pytest.mark.asyncio
     async def test_post_creation_script_execution(self, repo_factory, config_factory, mock_factory, service_builder):
         """Test post-creation script runner executes and passes expected args."""
         repo_path = repo_factory.create_repo()

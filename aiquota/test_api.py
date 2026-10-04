@@ -14,8 +14,6 @@ from aiquota.models import AllQuotas, FetchSuccess, ProviderFetch, ProviderQuota
 if __name__ == "__main__":
     pytest_bazel.main()
 
-pytestmark = pytest.mark.asyncio
-
 
 class FakeFetcher:
     def __init__(self) -> None:

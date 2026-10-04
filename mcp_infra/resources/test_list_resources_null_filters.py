@@ -6,7 +6,6 @@ null/None values and list all resources when filters are not provided.
 
 from __future__ import annotations
 
-import pytest
 import pytest_bazel
 from hamcrest import assert_that, contains_inanyorder, has_length
 
@@ -27,7 +26,6 @@ def _make_origin_with_resource() -> EnhancedFastMCP:
     return origin
 
 
-@pytest.mark.asyncio
 async def test_list_resources_with_null_server_filter(compositor, typed_resources_client):
     """Test that server=None lists resources from all servers."""
     origin = _make_origin_with_resource()
@@ -48,7 +46,6 @@ async def test_list_resources_with_null_server_filter(compositor, typed_resource
     assert str(origin_resources[0].resource.uri) == "resource://foo/bar"
 
 
-@pytest.mark.asyncio
 async def test_list_resources_filters_by_server_when_provided(compositor, typed_resources_client):
     """Test that server filter works when a specific server name is provided."""
     origin = _make_origin_with_resource()
@@ -72,7 +69,6 @@ async def test_list_resources_filters_by_server_when_provided(compositor, typed_
     assert_that(result_other.resources, has_length(0))
 
 
-@pytest.mark.asyncio
 async def test_list_resources_with_uri_prefix_filter(compositor, typed_resources_client):
     """Test that uri_prefix filter works correctly."""
 

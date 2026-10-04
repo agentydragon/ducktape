@@ -113,7 +113,6 @@ py_test(
         "//haku/console/mcp:tool_call_service",
         "//haku/grants:authorization",
         "@ducktape_haku//haku/console:tool_calls",
-        "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],
 )

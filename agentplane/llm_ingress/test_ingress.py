@@ -144,7 +144,6 @@ def verified_metadata(request: BackendRequest) -> dict[str, str]:
     return cast(dict[str, str], json.loads(request.headers["x-litellm-spend-logs-metadata"]))
 
 
-@pytest.mark.asyncio
 async def test_two_workloads_share_one_backend_key_and_keep_distinct_verified_metadata(
     caplog: pytest.LogCaptureFixture,
 ) -> None:
@@ -198,7 +197,6 @@ async def test_two_workloads_share_one_backend_key_and_keep_distinct_verified_me
     assert LITELLM_KEY not in transcript
 
 
-@pytest.mark.asyncio
 async def test_anthropic_status_error_body_and_request_shape_pass_unchanged() -> None:
     body = b'{"model":"anthropic-api/ant-messages/claude-haiku-4-5-20251001","max_tokens":32,"messages":[]}'
     async with fake_apiserver() as kubernetes, fake_litellm() as backend:
@@ -214,7 +212,6 @@ async def test_anthropic_status_error_body_and_request_shape_pass_unchanged() ->
     assert backend.requests[0].headers["authorization"] == f"Bearer {LITELLM_KEY}"
 
 
-@pytest.mark.asyncio
 async def test_missing_malformed_unknown_and_wrong_audience_bearers_fail_before_backend(
     caplog: pytest.LogCaptureFixture,
 ) -> None:

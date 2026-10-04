@@ -48,7 +48,6 @@ def status_deps(repo_factory, config_factory) -> ServiceDependencies:
     )
 
 
-@pytest.mark.asyncio
 async def test_get_status_returns_error_on_git_failure(status_deps: ServiceDependencies):
     """When git_manager.get_repo raises, the worktree should return StatusResultError."""
     status_deps.git_manager.get_repo.side_effect = pygit2.GitError("repository not found")  # type: ignore[attr-defined]
@@ -61,7 +60,6 @@ async def test_get_status_returns_error_on_git_failure(status_deps: ServiceDepen
     assert "repository not found" in item.result.error
 
 
-@pytest.mark.asyncio
 async def test_get_status_returns_ok_on_success(status_deps: ServiceDependencies):
     """When git operations succeed, the worktree should return StatusResultOk."""
     mock_repo = Mock()

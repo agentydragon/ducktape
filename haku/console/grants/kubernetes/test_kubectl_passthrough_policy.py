@@ -6,7 +6,6 @@ from pathlib import Path
 from unittest.mock import AsyncMock
 from uuid import UUID
 
-import pytest
 import pytest_bazel
 
 from haku.console.conftest import console_settings, write_config
@@ -139,7 +138,6 @@ def test_map_unknown_tool() -> None:
     assert map_kubectl_passthrough_request("unknown_tool", {}) is None
 
 
-@pytest.mark.asyncio
 async def test_kubectl_passthrough_suppression_when_fully_covered(tmp_path: Path) -> None:
     repository = _repository(ToolCallStatus.DENIED)
     service = _service(
@@ -155,7 +153,6 @@ async def test_kubectl_passthrough_suppression_when_fully_covered(tmp_path: Path
     assert "Use your direct Haku Kubernetes proxy" in kwargs["auto_denial_reason"]
 
 
-@pytest.mark.asyncio
 async def test_kubectl_passthrough_falls_through_when_denied(tmp_path: Path) -> None:
     repository = _repository(ToolCallStatus.PENDING_APPROVAL)
     service = _service(
