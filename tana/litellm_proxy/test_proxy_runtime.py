@@ -1,6 +1,5 @@
 """Runtime smoke tests for the LiteLLM proxy entrypoint closure."""
 
-import importlib
 import os
 import shutil
 import subprocess
@@ -16,11 +15,6 @@ from litellm.types.utils import GenericStreamingChunk
 
 from tana.litellm_proxy.provider import TanaChatResult, TanaLiteLLM
 from util.bazel.runfiles import get_required_path
-
-
-def test_litellm_proxy_server_imports() -> None:
-    importlib.import_module("litellm.proxy.proxy_cli")
-    importlib.import_module("litellm.proxy.proxy_server")
 
 
 def test_litellm_proxy_binary_imports_server(tmp_path: Path) -> None:
