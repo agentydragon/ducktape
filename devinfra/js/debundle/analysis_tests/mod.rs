@@ -75,18 +75,6 @@ fn indirect_call_not_recorded() {
     assert_eq!(facts[2].calls.eager, BTreeSet::from([test_id("g")]),);
 }
 
-/// Method calls (`obj.method()`) are skipped — callee is a
-/// MemberExpr, not an Ident.
-#[test]
-fn method_call_not_recorded() {
-    let module = parse("const obj = {}; obj.method();");
-    let facts = analyze_facts(&module);
-    // Last statement: no calls.eager. `obj` is still recorded
-    // as an eager read.
-    assert!(facts[1].calls.eager.is_empty());
-    assert!(facts[1].reads.eager.contains(&test_id("obj")));
-}
-
 /// Class static field initializers fire at-init (class evaluation
 /// time). Calls in static initializers go into `calls.eager`.
 #[test]

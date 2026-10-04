@@ -985,9 +985,6 @@ rust_test(
     name = "cli_test",
     crate = ":cli",
     edition = "2024",
-    deps = [
-        ":spec_tree",
-    ],
 )
 
 # Shared selector-program IR: the data boundary between selector lowering and

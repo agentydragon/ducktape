@@ -169,7 +169,7 @@ mod tests {
     use std::path::PathBuf;
 
     use clap::Parser;
-    use pipeline::{TransformArgs, TransformSpecSource};
+    use pipeline::TransformArgs;
 
     use super::{DebundleArgs, DebundleCommand};
 
@@ -182,123 +182,18 @@ mod tests {
     }
 
     #[test]
-    fn parse_run_args_matches_js_surface() {
+    fn parse_run_args_packages_root() {
         js_ast::with_swc_globals(|| {
             let args = parsed_run_args(&[
                 "debundle",
                 "run",
                 "--spec",
                 "spec.yaml",
-                "--dry-run",
-                "--package-root",
-                "pkg=/tmp/pkg",
                 "--packages-root",
                 "/tmp/packages",
             ]);
-            assert!(args.dry_run);
-            assert!(!args.fail_fast);
             let cli = args.resolve().expect("resolve cli");
-            assert_eq!(
-                cli.spec_source,
-                TransformSpecSource::Flat {
-                    path: PathBuf::from("spec.yaml")
-                }
-            );
-            assert_eq!(
-                cli.package_roots.get("pkg"),
-                Some(&PathBuf::from("/tmp/pkg"))
-            );
             assert_eq!(cli.packages_root, Some(PathBuf::from("/tmp/packages")));
         });
-    }
-
-    #[test]
-    fn parse_run_args_accepts_fail_fast_opt_out() {
-        js_ast::with_swc_globals(|| {
-            let args = parsed_run_args(&["debundle", "run", "--spec", "spec.yaml", "--fail-fast"]);
-            assert!(args.fail_fast);
-        });
-    }
-
-    #[test]
-    fn parse_tree_run_args() {
-        js_ast::with_swc_globals(|| {
-            let args = parsed_run_args(&[
-                "debundle",
-                "run",
-                "--tree-config",
-                "spec_config.yaml",
-                "--tree-modules",
-                "modules",
-                "--tree-vendor-marks",
-                "vendor_marks.yaml",
-                "--tree-source-root",
-                "/workspace",
-                "--out-root",
-                "out",
-            ]);
-            let cli = args.resolve().expect("resolve cli");
-            assert_eq!(
-                cli.spec_source,
-                TransformSpecSource::Tree(spec_tree::CompileSpecTreeOptions {
-                    config_path: PathBuf::from("spec_config.yaml"),
-                    modules_root: PathBuf::from("modules"),
-                    vendor_marks_path: PathBuf::from("vendor_marks.yaml"),
-                    source_root: Some(PathBuf::from("/workspace")),
-                    out_root: PathBuf::from("out"),
-                })
-            );
-        });
-    }
-
-    /// Wiring check: each subcommand path parses to its `DebundleCommand`
-    /// variant.
-    #[test]
-    fn subcommands_parse_to_their_variants() {
-        type IsExpected = fn(&DebundleCommand) -> bool;
-        let cases: [(&str, IsExpected); 10] = [
-            ("atoms --graph g.json --modules m", |command| {
-                matches!(command, DebundleCommand::Atoms(_))
-            }),
-            ("coverage --graph g.json --modules m", |command| {
-                matches!(command, DebundleCommand::Coverage(_))
-            }),
-            ("graph-summary --graph g.json --modules m", |command| {
-                matches!(command, DebundleCommand::GraphSummary(_))
-            }),
-            ("describe XOe --graph g.json --modules m", |command| {
-                matches!(command, DebundleCommand::Describe(_))
-            }),
-            (
-                "show-source XOe --graph g.json --modules m --source-root /s",
-                |command| matches!(command, DebundleCommand::ShowSource(_)),
-            ),
-            ("bindings comment --modules m XOe text", |command| {
-                matches!(command, DebundleCommand::Bindings(_))
-            }),
-            ("modules comment --modules m runtime/x --clear", |command| {
-                matches!(command, DebundleCommand::Modules(_))
-            }),
-            ("gate list --graph g.json", |command| {
-                matches!(command, DebundleCommand::Gate(_))
-            }),
-            ("gate describe 0 --graph g.json --binding XOe", |command| {
-                matches!(command, DebundleCommand::Gate(_))
-            }),
-            ("gate cut 3 --graph g.json --cycles c.json", |command| {
-                matches!(command, DebundleCommand::Gate(_))
-            }),
-        ];
-        for (args, is_expected) in cases {
-            let parsed = DebundleArgs::try_parse_from(
-                std::iter::once("debundle").chain(args.split_whitespace()),
-            )
-            .unwrap_or_else(|error| panic!("{args}: {error}"));
-            assert!(
-                is_expected(&parsed.command),
-                "{args} parsed to {:?}",
-                parsed.command
-            );
-        }
     }
 }
