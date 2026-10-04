@@ -1416,6 +1416,26 @@ function shellCallRows(threadId: string): Record<string, unknown>[] {
   return rows.map((row) => (row.entity_kind === "view_state" ? { ...row, thread_id: threadId } : row));
 }
 
+/** Two reasoning steps with no neighbouring tool call, so each stands alone, both unfinished: one in
+ * the turn the harness is running, which is streaming, and one in an earlier turn that ended without
+ * finishing it, which is incomplete. */
+function unfinishedReasoningRows(threadId: string): Record<string, unknown>[] {
+  const rows = [
+    viewState(30, "turn-visual"),
+    item(10, "r-stalled", ItemKind.REASONING, "A step its turn ended without finishing.", {
+      threadId,
+      complete: false,
+      turn: "turn-earlier",
+    }),
+    item(20, "m-1", ItemKind.ASSISTANT_TEXT, "Between the two steps.", { threadId, turn: "turn-earlier" }),
+    item(30, "r-running", ItemKind.REASONING, "A step the running turn is still working through.", {
+      threadId,
+      complete: false,
+    }),
+  ];
+  return rows.map((row) => (row.entity_kind === "view_state" ? { ...row, thread_id: threadId } : row));
+}
+
 function recoveryRows(threadId: string): Record<string, unknown>[] {
   const rows =
     scenario.recovery === "tools"
@@ -1497,6 +1517,7 @@ function threadEntityRows(threadId: string): Record<string, unknown>[] {
   if (scenario.threadSetup) return setupRows(threadId);
   if (scenario.markdownCodeFence) return codeFenceRows(threadId);
   if (scenario.streamingInterleaved) return streamingInterleavedRows(threadId);
+  if (scenario.unfinishedReasoning) return unfinishedReasoningRows(threadId);
   if (scenario.standaloneReasoning) return standaloneReasoningRows(threadId, scenario.longReasoningPreview ?? false);
   if (threadId === THREADS[2].id || scenario.pendingCommands) return statesRows(threadId);
   return standardRows(threadId, scenario.longReasoningPreview ?? false);

@@ -23,7 +23,7 @@ Proposed execution order for the Thread correctness/UI track:
   the current model-path availability failure (`EGRESS_IDENTITY_AVAILABILITY`). Keep one
   runner-owned command queue; no app outbox or combined-start expansion in this batch.
 - **P1, current batch:** end-to-end LLM error evidence (`LLM_ERROR_SURFACE`). Compact activity
-  mocks (`THREAD_ACTIVITY_MOCKS`) and native resume/recovery remain on the board but are excluded
+  work (`THREAD_ACTIVITY_DENSITY`) and native resume/recovery remain on the board but are excluded
   from this dispatch batch.
 - **P0, hosted Haku blocker, pending deployment acceptance:** verify per-Thread setup and
   working directories for Haku and Finance (`THREAD_WORKSPACE_BOOTSTRAP`,
@@ -109,8 +109,7 @@ flowchart TB
     THREAD_DEPLOYED_ACCEPTANCE["P0 remaining acceptance<br/>deployed commands/events cutover<br/>real Claude and Codex via devbox"]:::active
     EGRESS_IDENTITY_AVAILABILITY["P0 observed availability failure<br/>egress authentication ApiException / 502<br/>trace Kubernetes, ingress, LiteLLM hops"]:::active
     LLM_ERROR_SURFACE["P1 correctness<br/>native LLM errors through protocol and UI<br/>partial output, retries, terminal failure"]:::future
-    THREAD_ACTIVITY_MOCKS["P1 UI design<br/>mock compact tool/reasoning activity<br/>one-line calls with individual expansion"]:::future
-    THREAD_ACTIVITY_DENSITY["Planned UI after mock review<br/>compact activity with per-item disclosure<br/>preserve status, ordering, and Raw evidence"]:::future
+    THREAD_ACTIVITY_DENSITY["Remaining compact-activity work<br/>folded-row fetch cost<br/>scroll stability of rows that grow"]:::future
     THREAD_WORKSPACE_BOOTSTRAP["P0 deployment acceptance<br/>per-Thread setup in cwd<br/>Haku and Finance repos; #8695"]:::active
     CLUSTER_BROWSER_ACCEPTANCE["P2 deployed browser acceptance<br/>in-cluster frontend button clicks<br/>screenshots and behavioral assertions"]:::future
     NATIVE_SUBAGENT_THREADS["Unranked candidate<br/>enable and adopt native subagents<br/>as linked Agentplane Threads"]:::future
@@ -136,7 +135,6 @@ flowchart TB
     HARNESS_CONFIG_ISOLATION -. prerequisite .-> HARNESS_PLUGINS
     HARNESS_CONFIG_ISOLATION -. prerequisite .-> HARNESS_PROMPT_SUGGESTIONS
     HARNESS_CONFIG_ISOLATION -. prerequisite .-> DT
-    THREAD_ACTIVITY_MOCKS --> THREAD_ACTIVITY_DENSITY
     THREAD_EVENT_CONTINUITY --> THREAD_SUCCESSOR_DELIVERY
     CLAUDE_RECOVERY -. native continuation evidence .-> THREAD_SUCCESSOR_DELIVERY
     CODEX_RECOVERY -. native continuation evidence .-> THREAD_SUCCESSOR_DELIVERY
@@ -436,34 +434,20 @@ views, including reload and a later successful input; controlled-source browser 
 not native harness evidence. Any future retry control must explicitly distinguish same-command
 delivery retry from requesting a new model turn; do not silently resend the original input.
 
-### `THREAD_ACTIVITY_MOCKS` — design compact tool and reasoning activity
+### `THREAD_ACTIVITY_DENSITY` — finish the compact activity design
 
-**P1, mocks before implementation:** long tool/reasoning runs require too much scrolling.
-The current run disclosure expands into full tool cards; grouping alone does not give
-each tool its own compact disclosure. Mock default one-line tool summaries with individual
-click-to-expand details, and compact reasoning steps, before choosing the final layout.
-Compare a compact per-item list with a grouped run that expands into those same compact
-rows; keep assistant answers and user messages readable in their actual order.
+Tool calls and reasoning steps are one line each, opening to their content, with failure and
+in-progress shown on the title and the shell tools drawn as commands. Two things remain.
 
-Collapsed reasoning should preview the available summary text on one line, showing
-as much as fits with ellipsis for overflow; expanding reveals the full text. Cover
-short, long, absent, and streaming summaries at narrow and wide viewport sizes.
+**Fetch cost of folded rows.** A folded run mounts none of its rows, but opening one mounts
+every step, and each tool row reads its whole arguments (`PayloadShape.want` fetches whole bodies)
+to draw a one-line summary. Measure opening a run of about a hundred calls with large arguments
+(a browser test counting `/sync/chunks` bytes); if it matters, give the folded summary a bounded
+source, such as a preview the thread projection computes, so a folded row never fetches.
 
-Include many mixed steps, long tool names/arguments/output, running and failed calls,
-an expanded call while others stream, narrow screens, and normal/Raw views. Summaries
-must not imply success or invent unavailable reasoning. Review the mocks with the operator
-before changing production presentation; this task does not settle the layout.
-
-### `THREAD_ACTIVITY_DENSITY` — implement the reviewed compact activity design
-
-Implement the selected mocks with individually expandable tools, keyboard-accessible
-disclosures, visible running/failure state, and stable expansion/scroll behavior while
-Events arrive. Preserve timeline order and Raw evidence. Add behavioral and visual
-coverage of the reviewed cases, including reload and reconnect.
-
-A folded run mounts none of its rows, and a tool row reads its arguments for its one-line
-summary and its output only once opened; compact rows keep that loading and explicitly
-distinguish unloaded, streaming, empty, and unavailable details.
+**Scroll stability of rows that grow.** Expanding a call, or its output's clamp, while Events
+arrive must leave the reader's place alone. The history's anchoring is covered for rows
+generally; add browser coverage for a row that resizes on its own click.
 
 ### `THREAD_WORKSPACE_BOOTSTRAP` — make Thread cwd and bootstrap ownership coherent
 

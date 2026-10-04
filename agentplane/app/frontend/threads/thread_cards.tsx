@@ -205,12 +205,18 @@ function LazyBody({ label, ...body }: { label: string; reference: PayloadRef; fo
 
 function ReasoningPreview({
   reference,
+  mark,
+  status,
   open,
   overflows,
   setOpen,
   onOverflowChange,
 }: {
   reference: PayloadRef;
+  /** How the step stands, shown on its title while it is folded. */
+  mark: StepMark | undefined;
+  /** The same, as badges, once it is open. */
+  status: ReactNode;
   open: boolean;
   overflows: boolean;
   setOpen: (open: boolean) => void;
@@ -263,9 +269,12 @@ function ReasoningPreview({
     return () => observer.disconnect();
   }, [body, onOverflowChange]);
 
+  const expandable = overflows && body !== null && body.trim().length > 0;
   return (
     <StepLine
       title="Reasoning"
+      mark={open && expandable ? undefined : mark}
+      trailing={open && expandable ? status : undefined}
       preview={
         body === null ? (
           <Text component="span" c="dimmed">
@@ -283,7 +292,7 @@ function ReasoningPreview({
           </button>
         )
       }
-      expandable={overflows && body !== null && body.trim().length > 0}
+      expandable={expandable}
       open={open}
       onOpenChange={setOpen}
     >
@@ -549,6 +558,14 @@ export function EntityCard({
     return <ToolCard threadId={threadId} entity={entity} state={entity.state} live={live} discardedId={discardedId} />;
   }
   const reasoning = entity.state.kind === ItemKind.REASONING;
+  // A reasoning step that is still unfinished shows it on its title, as a tool call does; only a
+  // recovery, which the title has no mark for, still takes a row of badges above it.
+  const reasoningMark: StepMark | undefined =
+    reasoning && entity.state.completion === null && entity.state.recovery === null
+      ? live
+        ? "streaming"
+        : "incomplete"
+      : undefined;
   const streamingText =
     entity.state.kind === ItemKind.ASSISTANT_TEXT &&
     entity.state.completion === null &&
@@ -556,7 +573,7 @@ export function EntityCard({
     live;
   const body = (
     <>
-      {(entity.state.completion === null && !streamingText) || entity.state.recovery !== null ? (
+      {(!reasoning && entity.state.completion === null && !streamingText) || entity.state.recovery !== null ? (
         <Group justify="space-between" mb="xs" wrap="nowrap">
           <Group gap="xs">
             <ItemStatus items={[entity]} live={live} />
@@ -572,6 +589,8 @@ export function EntityCard({
           discardedId === null ? (
             <ReasoningPreview
               reference={entity.textRef}
+              mark={reasoningMark}
+              status={<ItemStatus items={[entity]} live={live} />}
               open={reasoningOpen}
               overflows={reasoningOverflows}
               setOpen={setReasoningOpen}
@@ -687,7 +706,8 @@ export function CollapsibleCard({
 }): JSX.Element {
   return (
     <Paper
-      p={open ? "sm" : "xs"}
+      // A folded step line is one line, so it needs little more than the line.
+      p={open ? "sm" : stableInlineSize ? 3 : "xs"}
       withBorder={open && !stableInlineSize}
       style={{
         position: "relative",

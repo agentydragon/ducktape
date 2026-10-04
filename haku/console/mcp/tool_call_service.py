@@ -18,7 +18,6 @@ from typing import Any, Protocol
 from uuid import UUID
 
 from haku.console.auto_approval.registry import AutoApprovalPolicyRegistry, PolicyDenial, auto_approve_tool_call
-from haku.console.grants.kubernetes.authorization_service import KubernetesAuthorizationService
 from haku.console.grants.principal import RequestPrincipal
 from haku.console.mcp.execution import (
     AgentMcpExecutionCaller,
@@ -215,7 +214,6 @@ class ToolCallApplicationService:
         executor: ToolExecutor,
         in_process_servers: InProcessServers,
         approval_notifier: PendingApprovalNotifier,
-        kubernetes_authorization: KubernetesAuthorizationService | None = None,
     ) -> None:
         self._settings = settings
         self._repository = repository
@@ -223,10 +221,7 @@ class ToolCallApplicationService:
         self._approval_notifier = approval_notifier
         self._executor = executor
         self._in_process_servers = in_process_servers
-        self._kubernetes_authorization = kubernetes_authorization
-        self._auto_approval_policies = AutoApprovalPolicyRegistry(
-            settings, kubernetes_authorization=self._kubernetes_authorization
-        )
+        self._auto_approval_policies = AutoApprovalPolicyRegistry(settings)
         # In-flight background execution tasks dispatched by `decide`. Held so they aren't GC'd
         # mid-run, and drained/cancelled at shutdown (`aclose`).
         self._execution_tasks: set[asyncio.Task[ToolCallRecord]] = set()

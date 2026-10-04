@@ -299,11 +299,18 @@ ts_library(
 )
 
 ts_library(
+    name = "parsed_json",
+    srcs = ["parsed_json.ts"],
+    tsconfig = TSCONFIG,
+)
+
+ts_library(
     name = "actions_call_tool_result",
     srcs = ["actions/call_tool_result.tsx"],
     tsconfig = TSCONFIG,
     deps = [
         ":json_view",
+        ":parsed_json",
         "//:node_modules/@mantine/core",
         "//:node_modules/@types/react",
         "//:node_modules/react",

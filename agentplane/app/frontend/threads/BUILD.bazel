@@ -179,7 +179,10 @@ ts_library(
     name = "command_calls",
     srcs = ["command_calls.ts"],
     tsconfig = TSCONFIG,
-    deps = ["//:node_modules/zod"],
+    deps = [
+        "//:node_modules/zod",
+        "//agentplane/app/frontend:parsed_json",
+    ],
 )
 
 ts_library(

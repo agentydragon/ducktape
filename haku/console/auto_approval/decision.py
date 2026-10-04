@@ -1,7 +1,7 @@
 """The decision vocabulary every auto-approval policy evaluator returns.
 
 Kept separate from `registry.py` (the registry/dispatch) so per-policy-kind evaluator modules
-(`github.py`, `gmail.py`, `kubernetes.py`) can construct decisions without importing back from the
+(`github.py`, `gmail.py`) can construct decisions without importing back from the
 module that imports them.
 """
 

@@ -93,6 +93,8 @@ export interface Scenario extends ScenarioOptions {
    * `EntityCard` renders it directly -- the standalone case, distinct from `openReasoning`'s
    * reasoning-nested-inside-a-run-card one. */
   standaloneReasoning?: boolean;
+  /** An unfinished reasoning step in the running turn and another its turn left unfinished. */
+  unfinishedReasoning?: boolean;
   /** Give reasoning enough Markdown to exercise a clipped inline preview and disclosure. */
   longReasoningPreview?: boolean;
   pendingCommands?: "mixed" | "controls" | "outcomes";
@@ -789,6 +791,26 @@ export const SCENARIOS: Record<string, Scenario> = {
     standaloneReasoning: true,
     longReasoningPreview: true,
     readySelectors: ['[data-thread-anchor="20"] details.agentplane-step-details'],
+  },
+  // Unfinished reasoning marked on its title: blue and breathing while its turn runs (the animation
+  // is frozen here, so the class is what says it is live), blue and still once its turn has ended.
+  session_unfinished_reasoning: {
+    element: "#app",
+    route: SESSION_ROUTE,
+    viewport: { width: 1200, height: 500 },
+    outputName: "session-unfinished-reasoning",
+    unfinishedReasoning: true,
+    readySelectors: [".agentplane-step-title--streaming"],
+    captureViewport: true,
+  },
+  session_unfinished_reasoning_phone: {
+    element: "#app",
+    route: SESSION_ROUTE,
+    viewport: PHONE,
+    outputName: "session-unfinished-reasoning-phone",
+    unfinishedReasoning: true,
+    readySelectors: [".agentplane-step-title--streaming"],
+    captureViewport: true,
   },
   // The same standalone reasoning step, opened: now it gets the card chrome (padding, border) the
   // collapsed row above deliberately lacks.

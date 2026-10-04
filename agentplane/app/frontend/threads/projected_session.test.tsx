@@ -1186,6 +1186,51 @@ function renderTool(toolName: string, args: unknown, output = "test-output"): Pr
 const lineOf = (container: HTMLElement): string | undefined =>
   container.querySelector(".agentplane-step-preview")?.textContent ?? undefined;
 
+describe("reasoning step marks", () => {
+  const reasoningStep = (state: Partial<Extract<ThreadEntity["state"], { kind: number }>>): ThreadEntity =>
+    entity(
+      "item",
+      {
+        kind: ItemKind.REASONING,
+        tool_name: "",
+        completion: null,
+        tool_succeeded: null,
+        recovery: null,
+        recovery_reason: "",
+        ...state,
+      },
+      { textRef: reference("test-reasoning", "text") }
+    );
+  const bodies = { "test-reasoning:text": "Weighing the next step." };
+
+  it.each([
+    [true, "Streaming", true],
+    [false, "Incomplete", false],
+  ])(
+    "marks an unfinished step (live: %s) by its title, with no badge row above the line",
+    async (live, label, breathes) => {
+      const container = await renderCard(reasoningStep({}), bodies, live);
+      const title = container.querySelector(".agentplane-step-title")!;
+      expect(title.textContent).toBe("Reasoning");
+      expect(title.getAttribute("style")).toContain("blue");
+      expect(title.getAttribute("title")).toBe(label);
+      expect(title.classList.contains("agentplane-step-title--streaming")).toBe(breathes);
+      expect(container.querySelector(`[aria-label="${label}"]`)).toBeNull();
+    }
+  );
+
+  it("leaves a finished step in the dimmed title", async () => {
+    const container = await renderCard(reasoningStep({ completion: "text" }), bodies);
+    expect(container.querySelector(".agentplane-step-title")?.getAttribute("style")).not.toContain("blue");
+  });
+
+  it("leaves an interrupted step to its own badges, which the title has no mark for", async () => {
+    const container = await renderCard(reasoningStep({ recovery: RecoveryDisposition.RETAINED }), bodies);
+    expect(container.querySelector('[aria-label="Interrupted"]')).not.toBeNull();
+    expect(container.querySelector(".agentplane-step-title")?.getAttribute("style")).not.toContain("blue");
+  });
+});
+
 describe("tool call rows", () => {
   const COMMAND = "docker ps --all\n  --format '{{.Names}}'";
 

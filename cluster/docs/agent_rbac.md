@@ -225,6 +225,14 @@ The logical profiles are distinct from the transport identities:
 | `agentplane-staging/claude-ai` ServiceAccount  | Separate legacy OAuth/Actions account: broad cluster diagnostics, labeled namespace readers, Coinbase read, and testing acceptance-token minting |
 | `agentplane-staging/haku-agent` ServiceAccount | Separate Actions account: testing acceptance-token minting, not the managed Haku preset                                                          |
 
+**Intended relationship between the Haku and finance-agent presets.** Haku is the executive
+agent that directs the finance agent (Rai's finances are the finance agent's, and Haku
+orchestrates over it), so the finance preset is meant to hold a **weaker subset** of Haku's
+privileges, not a peer set. What is deliberately different is the identity: the finance agent has
+its own Forgejo user, which owns `finance-agent/finance-agent` with Haku as a write collaborator
+(`tf/gitops/finance-agent`). Any permission the finance preset has that Haku lacks is a gap to
+close or a named exception, not a design choice. Open work: [`haku/TODO.md`](../../haku/TODO.md).
+
 Static and managed Haku, plus managed finance, explicitly receive **`get` on
 `agentplane-staging/coinbase-api-credentials`**. Public coder does not. Tests name
 that scope, resource, verb, and object literally, not by a Role whose rules could

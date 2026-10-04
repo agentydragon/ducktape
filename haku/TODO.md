@@ -125,6 +125,16 @@ doctrine change, not just a config line.
 
 ## Wiring / hardening
 
+- **Pin the finance agent's permissions as a subset of Haku's, then close the BuildBuddy gap.**
+  Intent is in `cluster/docs/agent_rbac.md` (Haku directs the finance agent; the finance preset is a
+  weaker subset with its own Forgejo identity). Kubernetes already holds at resolved-permission level
+  (`test_agent_permission_superset_and_finance_parity`; adding `assert not uncovered(finance, haku)`
+  there states it directly). Still to cover: the two presets' egress policies and action policy sets,
+  compared by what they allow rather than by name. Known divergence: the finance preset has the
+  `buildbuddy` egress policy and Haku does not; give it to Haku or drop it from finance. Also decide
+  whether the finance preset's GitHub read action sets (public repos, `ducktape`, its fork,
+  `gaffer-private`) stay, since both presets already hold the `github-agentydragon-agent` PAT policy.
+
 - **Verify the JWT mint** — confirm the `authentik-jwt-rotation` CronJob produces
   `secrets/haku-k8s-jwt.yaml` (the `client_credentials`-as-`haku-k8s` flow with
   `expected_group: haku`). The web home's whole kubectl path depends on it.

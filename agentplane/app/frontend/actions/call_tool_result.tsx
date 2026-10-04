@@ -3,6 +3,7 @@ import { type JSX, useMemo } from "react";
 import { z } from "zod";
 
 import { HighlightedText, JsonView, looksLikeJson } from "../json_view";
+import { parsedJson } from "../parsed_json";
 
 /** One block of a `CallToolResult`'s `content`, in the MCP wire shape of the kinds this view
  * draws. `unrecognized` holds any other block as stored: audio, a binary resource, an image whose
@@ -178,15 +179,6 @@ function restates(text: string, value: unknown): boolean {
   if (typeof value === "string" && text === value) return true;
   const parsed = parsedJson(text);
   return parsed !== undefined && canonicalJson(parsed) === canonicalJson(value);
-}
-
-function parsedJson(text: string): unknown {
-  try {
-    return JSON.parse(text);
-  } catch (error) {
-    if (error instanceof SyntaxError) return undefined;
-    throw error;
-  }
 }
 
 /** JSON with every object's keys sorted, so two serializations of one value compare equal. */

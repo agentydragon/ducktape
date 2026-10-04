@@ -315,7 +315,6 @@ def create_app(
         executor=dispatcher,
         in_process_servers=in_process_servers,
         approval_notifier=approval_notifier,
-        kubernetes_authorization=kubernetes_authorization,
     )
 
     # The agent-facing MCP endpoint is separately switchable from the approval ledger and
