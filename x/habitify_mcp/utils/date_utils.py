@@ -70,19 +70,6 @@ def _format_with_template[T](
     return formatter(normalized_date)
 
 
-def format_date_yyyy_mm_dd(date: str | datetime.date | datetime.datetime | None = None) -> str:
-    """
-    Format a date as YYYY-MM-DD.
-
-    Args:
-        date: Date to format (default: current date)
-
-    Returns:
-        Date in YYYY-MM-DD format
-    """
-    return _format_with_template(date, lambda d: d.strftime("%Y-%m-%d"))
-
-
 def format_date_for_api(date: str | datetime.date | datetime.datetime | None = None) -> str:
     """
     Format a date for the Habitify API (ISO format with timezone).
@@ -111,33 +98,3 @@ def format_date_for_api(date: str | datetime.date | datetime.datetime | None = N
 
     # Use the common formatter for other cases
     return _format_with_template(date, lambda d: d.strftime("%Y-%m-%dT%H:%M:%S+00:00"))
-
-
-def format_date_human(date: str | datetime.date | datetime.datetime | None = None) -> str:
-    """
-    Get a human-readable date format.
-
-    Args:
-        date: Date to format
-
-    Returns:
-        Human-readable date (e.g., "Jan 15, 2023")
-    """
-    return _format_with_template(date, lambda d: d.strftime("%b %d, %Y"))
-
-
-def validate_date_format(date_str: str) -> bool:
-    """
-    Validate that a date string has a recognized format.
-
-    Args:
-        date_str: Date string to validate
-
-    Returns:
-        True if the date has a valid format, False otherwise
-    """
-    try:
-        parse_date(date_str)
-        return True
-    except ValueError:
-        return False

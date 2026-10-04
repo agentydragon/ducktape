@@ -7,7 +7,7 @@ as documented in the reference YAML files.
 
 from datetime import UTC, datetime
 from enum import StrEnum
-from typing import Annotated, Any
+from typing import Annotated
 
 from pydantic import BaseModel, BeforeValidator, PlainSerializer
 
@@ -199,16 +199,3 @@ class LogResult(BaseModel):
     date: HabitifyDatetime
     note: str | None = None
     value: float | None = None
-
-
-class UpdateResult(BaseModel):
-    """Result for updateHabit tool."""
-
-    habit: Habit
-    changes: dict[str, Any]
-
-
-class DeleteResult(BaseModel):
-    """Result for deleteHabit tool."""
-
-    deleted: bool = True
