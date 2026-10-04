@@ -57,6 +57,13 @@ def _migrate_from_0015(db_url: str, column_type: str, stored: list[str]) -> list
     thread = uuid.uuid4()
     try:
         with engine.begin() as connection:
+            # `0017` drops this index, so a database at `0015` still has it.
+            connection.execute(
+                text(
+                    "CREATE INDEX ix_thread_entity_scope_segment_cursor ON thread_entity (thread_id, projection_epoch, cursor) "
+                    "WHERE entity_kind IN ('item', 'confirmed_input', 'lifecycle')"
+                )
+            )
             connection.execute(
                 text(
                     f'ALTER TABLE thread_payload_chunk ALTER COLUMN "text" TYPE {column_type} USING "text"::{column_type}'

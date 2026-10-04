@@ -131,13 +131,6 @@ class ThreadEntity(Base):
             "entity_id",
             postgresql_where=text("pending"),
         ),
-        Index(
-            "ix_thread_entity_scope_segment_cursor",
-            "thread_id",
-            "projection_epoch",
-            "cursor",
-            postgresql_where=text("entity_kind IN ('item', 'confirmed_input', 'lifecycle')"),
-        ),
         Index("ix_thread_entity_scope_entity_index", "thread_id", "projection_epoch", "entity_index", unique=True),
     )
 
