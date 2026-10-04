@@ -505,6 +505,19 @@ In tests, assert **ordering, not elapsed time**. `assert(Date.now() - started >=
 `DISABLE_ANIMATIONS_CSS` pins animations with `animation-play-state: paused`, and a paused
 animation's `finished` never settles, so awaiting it hangs rather than capturing.
 
+### Visual test fixtures
+
+**Name what a render shows after the state it exercises.** A scenario's PNG is read by a
+reviewer who has the image and not the fixture, so each entity it puts on screen to show a state
+is named for that state — `Idle thread`, `Suspended thread`, `Read-only thread` — never a
+realistic-looking placeholder (`List the repository files`, `s-0`) that sends the reader into
+the fixture to learn which icon or color belongs to which state.
+
+- **Where the label is a fallback** (an unnamed entity shown by its id), the id carries the
+  state: `unnamed-stopped-thread`.
+- **A scenario that changes an entity's state changes its name too**, everywhere the entity
+  renders, so a title never contradicts the status beside it.
+
 ## Documentation
 
 **Remove**: docstrings/comments that restate the name, signature, or next line; Args/

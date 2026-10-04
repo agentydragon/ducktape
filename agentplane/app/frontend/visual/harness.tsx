@@ -421,10 +421,15 @@ const SPEC: SessionSpec = create(SessionSpecSchema, {
 
 const SESSIONS: SessionSummary[] = [
   create(SessionSummarySchema, { sessionId: "s-1", spec: SPEC, lastCursor: 14n, harnessState: HarnessState.RUNNING }),
-  create(SessionSummarySchema, { sessionId: "s-0", spec: SPEC, lastCursor: 31n, harnessState: HarnessState.STOPPED }),
+  create(SessionSummarySchema, {
+    sessionId: "unnamed-stopped-thread",
+    spec: SPEC,
+    lastCursor: 31n,
+    harnessState: HarnessState.STOPPED,
+  }),
 ];
 
-/** The store's copy of the sessions: s-1 named, s-0 not, so both renderings are on the page. */
+/** The store's copy of the sessions: s-1 named, the stopped one not, so both renderings are on the page. */
 const THREADS: ThreadView[] = [
   {
     id: "5f1c4a2e-0000-4000-8000-000000000001",
@@ -434,7 +439,7 @@ const THREADS: ThreadView[] = [
     model: "harness-claude-model",
     cwd: "/state/work",
     created_at: ago(HOUR),
-    name: "List the repository files",
+    name: "Idle thread",
     archived: false,
     last_cursor: 14,
     last_event_at: ago(60_000),
@@ -444,7 +449,7 @@ const THREADS: ThreadView[] = [
   {
     id: "5f1c4a2e-0000-4000-8000-000000000000",
     sandbox: "demo-a1b2",
-    session_id: "s-0",
+    session_id: "unnamed-stopped-thread",
     harness: "HARNESS_CLAUDE",
     model: "harness-claude-model",
     cwd: "/state/work",
@@ -465,7 +470,7 @@ const THREADS: ThreadView[] = [
     model: "harness-claude-model",
     cwd: "/state/work",
     created_at: ago(30 * 60_000),
-    name: "Clean up the stale branch",
+    name: "Running thread",
     archived: false,
     last_cursor: 23,
     last_event_at: ago(10_000),
@@ -490,7 +495,7 @@ const THREADS_WITH_SANDBOXES: ThreadView[] = [
     model: "harness-codex-model",
     cwd: "/state/work",
     created_at: ago(5 * 60_000),
-    name: "Watch the image build",
+    name: "Pending thread",
     archived: false,
     last_cursor: 2,
     last_event_at: ago(5 * 60_000),
@@ -504,7 +509,7 @@ const THREADS_WITH_SANDBOXES: ThreadView[] = [
     model: "harness-claude-model",
     cwd: "/state/work",
     created_at: ago(47 * HOUR),
-    name: "Investigate flaky CI",
+    name: "Suspended thread",
     archived: false,
     last_cursor: 9,
     last_event_at: ago(46 * HOUR),
@@ -518,7 +523,7 @@ const THREADS_WITH_SANDBOXES: ThreadView[] = [
     model: "harness-claude-model",
     cwd: "/state/work",
     created_at: ago(72 * HOUR),
-    name: "Why did the migration hang",
+    name: "Read-only thread",
     archived: false,
     last_cursor: 18,
     last_event_at: ago(70 * HOUR),
@@ -532,13 +537,26 @@ const THREADS_WITH_SANDBOXES: ThreadView[] = [
     model: "harness-claude-model",
     cwd: "/state/work",
     created_at: ago(96 * HOUR),
-    name: "Old flaky-test spike",
+    name: "Archived thread",
     archived: true,
     last_cursor: 3,
     last_event_at: ago(95 * HOUR),
     harness_state: "HARNESS_STATE_STOPPED",
   },
 ];
+
+/** The `endedAttachment` scenario: the states thread's runner feed has ended and its harness is down. */
+function withEndedAttachment(thread: ThreadView): ThreadView {
+  return thread.session_id === "s-2"
+    ? {
+        ...thread,
+        name: "Ended thread",
+        feed_status: "ended",
+        harness_state: "HARNESS_STATE_STOPPED",
+        active_turn_id: null,
+      }
+    : thread;
+}
 
 // A 32x32 checkerboard, 95 bytes: a real image, small enough to inline.
 const DIAGRAM_PNG =
@@ -1837,7 +1855,14 @@ routes.push(
           (!query.has("session_id") || thread.session_id === query.get("session_id"))
       ),
   ],
-  ["GET", /^\/threads\/([0-9a-f-]+)$/, (match) => THREADS_WITH_SANDBOXES.find((thread) => thread.id === match[1])]
+  [
+    "GET",
+    /^\/threads\/([0-9a-f-]+)$/,
+    (match) => {
+      const thread = THREADS_WITH_SANDBOXES.find((candidate) => candidate.id === match[1]);
+      return thread && scenario.endedAttachment ? withEndedAttachment(thread) : thread;
+    },
+  ]
 );
 
 /** Encode the database-facing Electric row, including PostgreSQL JSONB and bool columns. */
@@ -2123,13 +2148,7 @@ class HarnessEventSource extends EventTarget {
     if (url.pathname === "/live/threads") {
       const snapshot: ThreadsSnapshot = {
         sandboxes: SANDBOXES,
-        threads: scenario.endedAttachment
-          ? THREADS_WITH_SANDBOXES.map((thread) =>
-              thread.session_id === "s-2"
-                ? { ...thread, feed_status: "ended", harness_state: "HARNESS_STATE_STOPPED", active_turn_id: null }
-                : thread
-            )
-          : THREADS_WITH_SANDBOXES,
+        threads: scenario.endedAttachment ? THREADS_WITH_SANDBOXES.map(withEndedAttachment) : THREADS_WITH_SANDBOXES,
         updates_connected: scenario.sidebarSource !== "database-disconnected",
         watch: watch(),
       };
