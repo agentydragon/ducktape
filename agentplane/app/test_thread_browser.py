@@ -91,6 +91,9 @@ async def page(
                     await history_probe.write_results(
                         opened, undeclared_outputs_dir() / f"{request.node.name}-history-probe.json"
                     )
+                    await history_trace.write(
+                        opened, undeclared_outputs_dir() / f"{request.node.name}-history-trace.jsonl"
+                    )
                     await context.tracing.stop(path=undeclared_outputs_dir() / f"{request.node.name}-trace.zip")
         finally:
             await browser.close()
@@ -1277,7 +1280,7 @@ async def holding_still(page: Page, line: Locator, *, rest_first: bool = True) -
         async with asyncio.timeout(30):
             watch = await line.evaluate_handle(
                 """(element, restFirst) => new Promise(resolve => {
-                    const area = element.closest('[aria-label="Thread history"]');
+                    const area = document.querySelector('[aria-label="Thread history"]');
                     const state = { drift: 0, detached: false, stopped: false };
                     const sample = start => {
                         if (state.stopped) return;
@@ -1307,7 +1310,9 @@ async def holding_still(page: Page, line: Locator, *, rest_first: bool = True) -
         )
     finally:
         await watch.dispose()
-    assert not outcome["detached"], f"{line} left the page"
+    assert not outcome["detached"], (
+        f"{line} left the page; the history's last events:\n{await history_trace.recent(page, 60)}"
+    )
     assert outcome["drift"] <= 2, (
         f"{line} moved {outcome['drift']}px from where it was clicked; the history's last events:\n"
         f"{await history_trace.recent(page, 60)}"

@@ -4,12 +4,17 @@ Playwright page as typed events.
 `HistoryEvent` there and the models here are one contract: an event kind or field added on either
 side fails the parse of the other, loudly, rather than being dropped from a failure's dump."""
 
+import asyncio
+import logging
 from collections.abc import Sequence
+from pathlib import Path
 from typing import Annotated, Literal
 
-from playwright.async_api import Page
+from playwright.async_api import Error as PlaywrightError, Page
 from pydantic import BaseModel, ConfigDict, Field, TypeAdapter
 from pydantic.alias_generators import to_camel
+
+logger = logging.getLogger(__name__)
 
 
 class _Recorded(BaseModel):
@@ -136,3 +141,13 @@ def as_json_lines(recorded: Sequence[TimedHistoryEvent]) -> str:
 async def recent(page: Page, count: int) -> str:
     """The last `count` recorded events, for a failure's message."""
     return as_json_lines((await events(page))[-count:])
+
+
+async def write(page: Page, path: Path) -> None:
+    """Everything the page recorded, as JSON lines, for a failure that left no message to carry it."""
+    try:
+        recorded = await events(page)
+    except PlaywrightError:
+        logger.warning("the history's recorder could not be read from the page", exc_info=True)
+        return
+    await asyncio.to_thread(path.write_text, as_json_lines(recorded))
