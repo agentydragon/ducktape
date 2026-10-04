@@ -24,6 +24,12 @@ def resource_rule() -> Rule:
     return Rule(verbs={"get"}, api_groups={""}, resources={"pods"})
 
 
+def test_rule_rejects_kubernetes_wire_names_inside_the_domain() -> None:
+    # Empty `resource_names` means all names, so a silently dropped `resourceNames` would widen the rule.
+    with pytest.raises(ValidationError, match="resourceNames"):
+        Rule.model_validate({"api_groups": [""], "resources": ["pods"], "verbs": ["get"], "resourceNames": ["pod-a"]})
+
+
 def test_rule_models_rbac_collections_as_sets_and_serializes_stably() -> None:
     rule = Rule(api_groups={"apps", ""}, resources={"pods", "deployments"}, verbs={"list", "get"})
 
