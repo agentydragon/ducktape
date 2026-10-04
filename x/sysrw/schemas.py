@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Annotated, Any, Literal
+from typing import Annotated, Literal
 
 from anthropic.types.tool_param import ToolParam
 from openai.types.chat import ChatCompletion, CompletionCreateParams as ChatCompletionCreateParams
@@ -14,15 +14,6 @@ from x.sysrw.anthropic.types import Message as AnthropicMessage, TextBlock
 # ------------------------
 # Crush (OpenAI Responses)
 # ------------------------
-
-
-class ToolFunction(BaseModel):
-    type: Literal["function"] = "function"
-    name: str
-    description: str | None = None
-    # Responses uses input_schema; Chat uses parameters
-    input_schema: dict[str, Any] | None = None
-    strict: bool | None = None
 
 
 class CrushWirelogMeta(BaseModel):

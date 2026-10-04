@@ -29,14 +29,6 @@ def _join_texts(texts: list[str]) -> str:
     return "\n".join(t for t in texts if t)
 
 
-def _extract_text_from_content(content: str | list[AnthropicContentBlock]) -> str:
-    """Extract text from Anthropic message content."""
-    if isinstance(content, str):
-        return content
-    texts = [block.text for block in content if isinstance(block, AnthropicTextBlock)]
-    return _join_texts(texts)
-
-
 def _handle_assistant_blocks(
     blocks: list[AnthropicContentBlock],
 ) -> tuple[str | None, list[ChatCompletionMessageToolCallParam]]:

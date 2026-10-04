@@ -46,7 +46,6 @@ from x.sysrw.extract_common import (
 )
 
 ROOT = Path(__file__).parent
-DEFAULT_CRUSH_DIR = Path.home() / "code" / "crush"
 DEFAULT_WIRE_LOG = (
     Path(os.environ.get("CRUSH_WIRE_LOG", ""))
     if os.environ.get("CRUSH_WIRE_LOG")
