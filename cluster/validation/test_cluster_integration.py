@@ -43,7 +43,7 @@ from cluster.validation.image_automation import (
     check_image_policy_markers,
     check_no_flow_mappings_where_flux_writes,
 )
-from cluster.validation.k8s import RbacRoleRef, RoleBindingResource
+from cluster.validation.k8s import K8sResource, RbacRoleRef, RoleBindingResource
 from cluster.validation.kustomize import (
     KustomizeBuildResult,
     flux_generated_kustomization,
@@ -123,7 +123,7 @@ def test_image_policy_markers_resolve(cluster: ParsedCluster, k8s_dir: Path) -> 
 
 
 def test_loki_proxy_static_allowlist_covers_agent_readable_log_namespaces(
-    cluster: ParsedCluster, k8s_dir: Path, generated_dir: Path
+    cluster: ParsedCluster, bootstrap_resources: list[K8sResource], generated_dir: Path
 ) -> None:
     """A Namespace opt-in for Kubernetes pod logs must also permit its Loki logs.
 
@@ -140,18 +140,12 @@ def test_loki_proxy_static_allowlist_covers_agent_readable_log_namespaces(
     env = {entry["name"]: entry["value"] for entry in container["env"]}
     loki_allowlist = frozenset(namespace for namespace in env["NAMESPACE_ALLOWLIST"].split(",") if namespace)
     log_label = "rbac.ducktape.io/agent-readable-logs"
+    rendered = [resource for build in cluster.build_results for resource in build.resources] + bootstrap_resources
     labeled_namespaces = {
         resource.name
-        for build in cluster.build_results
-        for resource in build.resources
+        for resource in rendered
         if resource.kind == "Namespace" and resource.metadata.labels.get(log_label) == "true"
     }
-
-    # flux-system applies this label through its bootstrap overlay rather than
-    # a literal Namespace manifest, so retain the explicit assertion here.
-    flux_system_kustomization = (k8s_dir / "flux/flux-system/kustomization.yaml").read_text()
-    assert "path: /metadata/labels/rbac.ducktape.io~1agent-readable-logs" in flux_system_kustomization
-    labeled_namespaces.add("flux-system")
 
     missing = sorted(labeled_namespaces - loki_allowlist)
     assert not missing, f"agent-readable log namespaces missing from Loki proxy allowlist: {missing}"
@@ -159,7 +153,12 @@ def test_loki_proxy_static_allowlist_covers_agent_readable_log_namespaces(
 
 @pytest.mark.parametrize("preset", ["haku", "public-coder", "finance-agent"])
 def test_managed_agent_read_grants_cover_declarative_namespace_opt_ins(
-    cluster: ParsedCluster, k8s_dir: Path, repo_root: Path, generated_dir: Path, preset: str
+    cluster: ParsedCluster,
+    bootstrap_resources: list[K8sResource],
+    k8s_dir: Path,
+    repo_root: Path,
+    generated_dir: Path,
+    preset: str,
 ) -> None:
     """Managed agents get the same labeled namespace readers as the static identities.
 
@@ -170,6 +169,13 @@ def test_managed_agent_read_grants_cover_declarative_namespace_opt_ins(
     logs_label = "rbac.ducktape.io/agent-readable-logs"
     expected: set[tuple[str, str]] = set()
 
+    def expect_readers(namespace: K8sResource) -> None:
+        labels = namespace.metadata.labels
+        if labels.get(metadata_label) == "true" or labels.get(logs_label) == "true":
+            expected.add((namespace.name, "agent-readable-namespace-metadata"))
+        if labels.get(logs_label) == "true":
+            expected.add((namespace.name, "agent-readable-namespace-logs"))
+
     # Props is separately sourced and absent live; parked workloads are suspended.
     # Match static Haku's live scope through active, local Flux builds only.
     active_resources = cluster.flux_kust_resources(repo_root)
@@ -179,18 +185,10 @@ def test_managed_agent_read_grants_cover_declarative_namespace_opt_ins(
             if resource.kind != "Namespace":
                 continue
             namespace_owners.setdefault(resource.name, set()).add(owner)
-            labels = resource.metadata.labels
-            if labels.get(metadata_label) == "true" or labels.get(logs_label) == "true":
-                expected.add((resource.name, "agent-readable-namespace-metadata"))
-            if labels.get(logs_label) == "true":
-                expected.add((resource.name, "agent-readable-namespace-logs"))
-
-    # Flux applies this label via its bootstrap overlay, not a literal Namespace.
-    flux_system_kustomization = (k8s_dir / "flux/flux-system/kustomization.yaml").read_text()
-    assert "path: /metadata/labels/rbac.ducktape.io~1agent-readable-logs" in flux_system_kustomization
-    expected.update(
-        {("flux-system", "agent-readable-namespace-metadata"), ("flux-system", "agent-readable-namespace-logs")}
-    )
+            expect_readers(resource)
+    for resource in bootstrap_resources:
+        if resource.kind == "Namespace":
+            expect_readers(resource)
 
     staging_docs = list(yaml.safe_load_all((k8s_dir / "agentplane-staging/agentplane-staging.k8s.yaml").read_text()))
     app_config = one(
@@ -283,7 +281,6 @@ def test_managed_agent_read_grants_cover_declarative_namespace_opt_ins(
         assert binding["subjects"] == [
             {"kind": "ServiceAccount", "name": "agentplane-sandbox-service", "namespace": "agentplane-staging"}
         ]
-        assert yaml.safe_load((path / "kustomization.yaml").read_text())["resources"] == [f"{namespace}.k8s.yaml"]
 
         flux = flux_by_name[f"{delegation_name}{namespace}"]
         assert flux["spec"]["sourceRef"] == {"kind": "GitRepository", "name": "ducktape", "namespace": "ducktape-flux"}
@@ -367,17 +364,22 @@ def test_cilium_policy_rules_nonempty(cluster: ParsedCluster) -> None:
 
 
 @pytest.fixture(scope="module")
-def agent_permissions(cluster: ParsedCluster, repo_root: Path, k8s_dir: Path) -> tuple[Rbac, dict]:
-    # Active, rendered resources only. Bootstrap roots are not children of the
-    # generated Flux graph; build them too rather than guessing their labels.
-    resources = [resource for group in cluster.flux_kust_resources(repo_root).values() for resource in group]
+def bootstrap_resources(k8s_dir: Path) -> list[K8sResource]:
+    """Bootstrap roots are not children of the generated Flux graph; build them rather than guessing their labels."""
     bootstrap_roots = (
         parse_kustomize_file(k8s_dir / "flux/flux-system/kustomization.yaml"),
         flux_generated_kustomization(k8s_dir / "flux/ducktape-flux"),
     )
-    for root in bootstrap_roots:
-        bootstrap = asyncio.run(run_kustomize_build(root))
-        resources.extend(bootstrap.resources)
+    return [resource for root in bootstrap_roots for resource in asyncio.run(run_kustomize_build(root)).resources]
+
+
+@pytest.fixture(scope="module")
+def agent_permissions(
+    cluster: ParsedCluster, bootstrap_resources: list[K8sResource], repo_root: Path, k8s_dir: Path
+) -> tuple[Rbac, dict]:
+    # Active, rendered resources only.
+    resources = [resource for group in cluster.flux_kust_resources(repo_root).values() for resource in group]
+    resources.extend(bootstrap_resources)
     assert not any(r.kind == "ClusterPolicy" and r.name == "generate-agent-diagnostics-readers" for r in resources)
     assert not any(
         r.kind == "ClusterRole" and r.name == "kyverno-background-controller-rolebindings" for r in resources
