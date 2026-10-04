@@ -379,6 +379,20 @@ re-assemble a bundle at runtime. Per-client details (`pygit2` ignores
   only way to hold a security boundary, or where it exercises an analyzer whose job is
   detecting the pattern; a refactor adds no tests pinning its new architecture, though a
   rare high-level check such as "importing `x` does not import expensive `y`" may stay.
+- **Assert structured results, not wording**: tests rarely assert exact human-readable
+  text — prompt or instruction text, UI copy, labels, error, log and CLI messages. Assert
+  what the text stands for: an error type or code, an enum, a state, a structured field,
+  which item rendered, that a part was included. A test that exists only to show a prompt
+  tells the agent to do X is cut: the intent goes in a comment on the prompt template or in
+  the README. A `match=` that lint requires (a bare `ValueError`, `OSError` or `Exception`)
+  stays; never narrow the class or silence the rule to drop it. Text is asserted only where:
+  - a program parses the string;
+  - an outside protocol holds it (OAuth, MCP, HTTP);
+  - it is legal or safety text;
+  - a replayed or live model verifies the prompt end to end;
+  - the test is that a log entry was emitted: it may match a text marker, though a
+    structured field is preferred where that does not make production code much heavier;
+  - a UI-driven test checks a narrow snippet of copy the user sees.
 - **No pure change-detector tests**: every expectation encodes a durable rule, not the
   artifact's current state. Copying a checked-in file's values, shape, or roster into
   assertions is not coverage — an intentional edit changes the test in lockstep, so it
