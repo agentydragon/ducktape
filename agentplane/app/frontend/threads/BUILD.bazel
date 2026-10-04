@@ -156,7 +156,6 @@ agentplane_vitest_test(
         ":local_commands",
         ":projected_session",
         ":retained_disclosures",
-        ":thread_commands",
         ":thread_entity_fixture",
         ":thread_state_fixture",
         ":thread_sync",
@@ -290,6 +289,17 @@ ts_library(
         "//:node_modules/react",
         "//agentplane/app/frontend:client",
         "//agentplane/protocol:command_pb",
+    ],
+)
+
+agentplane_vitest_test(
+    name = "thread_commands_test",
+    srcs = ["thread_commands.test.ts"],
+    deps = [
+        ":thread_commands",
+        # Run-time only: the @mantine/core that thread_commands imports loads it.
+        "//:node_modules/react-dom",
+        "//:node_modules/vitest",
     ],
 )
 

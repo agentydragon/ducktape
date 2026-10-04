@@ -17,7 +17,6 @@ import { ThreadsLiveProvider } from "../live";
 import { LocalCommands } from "./local_commands";
 import { STREAMING_CURSOR } from "../markdown";
 import { HistoryRowView, ProjectedSession } from "./projected_session";
-import { pruneCommandErrors } from "./thread_commands";
 import { RetainedDisclosureProvider } from "./retained_disclosures";
 import { DEGRADED_AFTER_MS, STALE_AFTER_MS } from "../stream_status";
 import { THREAD_STATUS_MARKS } from "../status_mark";
@@ -241,16 +240,6 @@ async function openMenuItem(container: HTMLDivElement, text: string): Promise<HT
 function sentOperations(): unknown[] {
   return vi.mocked(command).mock.calls.map(([, value]) => value.operation);
 }
-
-it("drops request errors after their local commands are dismissed", () => {
-  const errors = new Map([
-    ["dismissed", "connection lost"],
-    ["pending", "request timed out"],
-  ]);
-
-  expect(pruneCommandErrors(errors, new Set(["pending"]))).toEqual(new Map([["pending", "request timed out"]]));
-  expect(pruneCommandErrors(errors, new Set(errors.keys()))).toEqual(errors);
-});
 
 it.each<KeyboardEventInit>([{ ctrlKey: true }, { metaKey: true }, { shiftKey: true }])(
   "inserts a newline at the caret on Enter with %o, without sending",
