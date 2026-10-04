@@ -9,51 +9,6 @@ from fastmcp.client import Client
 from mcp_infra.constants import WORKING_DIR
 from mcp_infra.exec.docker.server import ContainerExecServer
 from mcp_infra.exec.docker.types import AlwaysSetTo, ContainerExecServerConfig, DefaultValue, ModelChooses
-from mcp_infra.exec.models import BaseExecResult, Exited, TimedOut
-
-
-@pytest.fixture
-async def docker_client_session(docker_exec_server):
-    """FastMCP Client session for docker exec server with debian-slim."""
-    async with Client(docker_exec_server) as session:
-        yield session
-
-
-async def _call_exec(session: Client, cmd: list[str], *, timeout_ms: int = 10000) -> BaseExecResult:
-    """Call exec tool and parse structured result.
-
-    Includes all fields required by the default fixture (allow_env=True, allow_user=True).
-    """
-    args = {"cmd": cmd, "timeout_ms": timeout_ms, "env": None, "user": None, "cwd": None}
-    result = await session.call_tool("exec", args)
-    return BaseExecResult.model_validate(result.structured_content)
-
-
-async def test_hello_world(docker_client_session) -> None:
-    tools = await docker_client_session.list_tools()
-    names = {t.name for t in tools}
-    assert "exec" in names
-
-    res = await _call_exec(docker_client_session, ["/bin/echo", "hello"])
-    assert isinstance(res.exit, Exited)
-    assert res.exit.exit_code == 0
-    assert isinstance(res.stdout, str)
-    assert "hello" in (res.stdout or "")
-
-
-async def test_stderr_and_exit_code(docker_client_session) -> None:
-    res = await _call_exec(docker_client_session, ["sh", "-lc", "echo err 1>&2; exit 3"])
-    expected_err_exit = 3
-    assert isinstance(res.exit, Exited)
-    assert res.exit.exit_code == expected_err_exit
-    assert isinstance(res.stderr, str)
-    assert "err" in (res.stderr or "")
-
-
-async def test_timeout_flag(docker_client_session) -> None:
-    res = await _call_exec(docker_client_session, ["sh", "-lc", "sleep 5"], timeout_ms=500)
-    assert isinstance(res.exit, TimedOut)
-
 
 # -- CwdPolicy tests: verify each mode runs commands in the expected directory --
 

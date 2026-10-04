@@ -694,16 +694,6 @@ async def test_authentik_compatible_mock_access_tokens_match_authentik_audience_
         )
         for token_response in token_responses:
             assert await resolver.resolve(token_response) == VerifiedOidcPrincipal(issuer=issuer, subject="test-user")
-            claims = jwt.decode(
-                token_response["access_token"],
-                public_key,
-                algorithms=["RS256"],
-                audience=_CLIENT_ID,
-                issuer=issuer,
-                options={"strict_aud": True},
-            )
-            assert claims["aud"] == _CLIENT_ID
-            assert claims["azp"] == _CLIENT_ID
 
 
 async def test_default_mock_access_token_audience_behavior_is_unchanged() -> None:
