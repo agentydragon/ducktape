@@ -390,6 +390,9 @@ function ToolCard({
           ? "streaming"
           : "incomplete"
         : undefined;
+  // TODO: only if folded lines ever need optimizing. Opening a run reads every call's whole arguments to
+  // draw its one-line summary (`PayloadShape.want` fetches whole bodies); a bounded summary computed in
+  // the thread projection would spare a folded row the fetch.
   return (
     <OptionalPayload reference={entity.argumentsRef}>
       {(args) => {

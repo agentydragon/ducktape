@@ -109,7 +109,7 @@ flowchart TB
     THREAD_DEPLOYED_ACCEPTANCE["P0 remaining acceptance<br/>deployed commands/events cutover<br/>real Claude and Codex via devbox"]:::active
     EGRESS_IDENTITY_AVAILABILITY["P0 observed availability failure<br/>egress authentication ApiException / 502<br/>trace Kubernetes, ingress, LiteLLM hops"]:::active
     LLM_ERROR_SURFACE["P1 correctness<br/>native LLM errors through protocol and UI<br/>partial output, retries, terminal failure"]:::future
-    THREAD_ACTIVITY_DENSITY["Remaining compact-activity work<br/>folded-row fetch cost<br/>scroll stability of rows that grow"]:::future
+    THREAD_ACTIVITY_DENSITY["Remaining compact-activity work<br/>scroll stability of rows that grow"]:::future
     THREAD_WORKSPACE_BOOTSTRAP["P0 deployment acceptance<br/>per-Thread setup in cwd<br/>Haku and Finance repos; #8695"]:::active
     CLUSTER_BROWSER_ACCEPTANCE["P2 deployed browser acceptance<br/>in-cluster frontend button clicks<br/>screenshots and behavioral assertions"]:::future
     NATIVE_SUBAGENT_THREADS["Unranked candidate<br/>enable and adopt native subagents<br/>as linked Agentplane Threads"]:::future
@@ -437,13 +437,7 @@ delivery retry from requesting a new model turn; do not silently resend the orig
 ### `THREAD_ACTIVITY_DENSITY` — finish the compact activity design
 
 Tool calls and reasoning steps are one line each, opening to their content, with failure and
-in-progress shown on the title and the shell tools drawn as commands. Two things remain.
-
-**Fetch cost of folded rows.** A folded run mounts none of its rows, but opening one mounts
-every step, and each tool row reads its whole arguments (`PayloadShape.want` fetches whole bodies)
-to draw a one-line summary. Measure opening a run of about a hundred calls with large arguments
-(a browser test counting `/sync/chunks` bytes); if it matters, give the folded summary a bounded
-source, such as a preview the thread projection computes, so a folded row never fetches.
+in-progress shown on the title and the shell tools drawn as commands. One thing remains.
 
 **Scroll stability of rows that grow.** Expanding a call, or its output's clamp, while Events
 arrive must leave the reader's place alone. The history's anchoring is covered for rows
