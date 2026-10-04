@@ -33,6 +33,16 @@ to run an Action only if a policy decides it, and to be told the refusal instead
 a human. `ActionService.submit_decided` already refuses that way for direct tools, before anything
 is persisted.
 
+## Refuse an Action the caller's own permissions already cover
+
+Haku Console had an auto-approval policy that auto-denied a Kubernetes passthrough call when the
+caller's own Kubernetes SubjectAccessReview identity already allowed it, with a message to use the
+direct path instead of the operator's broader credential; a call it could not map, or whose
+evaluation failed, went to manual review (`haku/console/auto_approval/kubernetes.py` and
+`haku/console/grants/kubernetes/kubectl_passthrough_policy.py`, removed in #8877). Action Service
+holds such a call for a human even when the calling ServiceAccount could do the same thing itself.
+Consider a policy of that kind for Actions that run with the operator's credential.
+
 ## Direct tools per Connection
 
 Every external Connection sees the same configured `direct_tools`, narrowed only by its
