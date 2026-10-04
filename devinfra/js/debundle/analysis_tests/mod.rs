@@ -208,7 +208,7 @@ fn first_order_lazy_rebind_keeps_pre_await_in_async_body() {
 /// finished — it doesn't fire synchronously when the function is
 /// invoked, so it must not appear in `rebinds.first_order_lazy`.
 /// The coarse `rebinds.lazy` still records it (it IS lazy from the
-/// chunk's top-level POV). See `at_init_promotion_post_await_test`.
+/// chunk's top-level POV).
 #[test]
 fn first_order_lazy_rebind_skips_after_await_in_async_body() {
     let module = parse(
