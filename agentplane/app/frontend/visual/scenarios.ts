@@ -112,7 +112,7 @@ export interface Scenario extends ScenarioOptions {
 const PHONE = { width: 412, height: 915, deviceScaleFactor: 2.625 };
 
 const CONSENT_ROUTE = "/connection-enrollments/test-only-opaque-handle";
-const SANDBOX_ROUTE = "/sandboxes/demo-a1b2";
+const SANDBOX_ROUTE = "/sandboxes/ready-sandbox";
 const SESSION_ROUTE = "/threads/5f1c4a2e-0000-4000-8000-000000000001";
 // A standalone failed tool call, a run whose reasoning is still streaming beside a tool call, and
 // queued commands -- statuses the main `session` fixture doesn't produce on its own. Both runs
@@ -578,13 +578,13 @@ export const SCENARIOS: Record<string, Scenario> = {
   // still folded, shows the row the button starts as.
   sandbox_egress: {
     element: "#app",
-    route: `${SANDBOX_ROUTE}?tab=egress&rules=demo-a1b2-github-public`,
+    route: `${SANDBOX_ROUTE}?tab=egress&rules=ready-sandbox-github-public`,
     viewport: { width: 1200, height: 900 },
     outputName: "sandbox-egress",
   },
   sandbox_egress_phone: {
     element: "#app",
-    route: `${SANDBOX_ROUTE}?tab=egress&rules=demo-a1b2-github-public`,
+    route: `${SANDBOX_ROUTE}?tab=egress&rules=ready-sandbox-github-public`,
     viewport: PHONE,
     outputName: "sandbox-egress-phone",
   },

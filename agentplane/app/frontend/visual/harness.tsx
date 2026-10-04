@@ -55,12 +55,12 @@ function ago(ms: number): string {
 
 const SANDBOXES: SandboxView[] = [
   {
-    name: "demo-a1b2",
+    name: "ready-sandbox",
     uid: "0f9c1d2e-0000-4000-8000-00000000a1b2",
     namespace: "agentplane-visual",
     created_at: ago(3 * HOUR),
     operating_mode: "Running",
-    service_account: { namespace: "agentplane-visual", name: "demo-a1b2" },
+    service_account: { namespace: "agentplane-visual", name: "ready-sandbox" },
     status: { conditions: [{ type: "Ready", status: "True", reason: "PodReady", lastTransitionTime: ago(HOUR) }] },
     kubernetes_grants: [
       {
@@ -77,7 +77,7 @@ const SANDBOXES: SandboxView[] = [
     launch_grants_pending: false,
     deleting: false,
     pod: {
-      name: "demo-a1b2",
+      name: "ready-sandbox",
       namespace: "agentplane-visual",
       uid: "visual-pod-a1b2",
       deleting: false,
@@ -85,7 +85,7 @@ const SANDBOXES: SandboxView[] = [
         {
           api_version: "agents.x-k8s.io/v1beta1",
           kind: "Sandbox",
-          name: "demo-a1b2",
+          name: "ready-sandbox",
           uid: "0f9c1d2e-0000-4000-8000-00000000a1b2",
           controller: true,
         },
@@ -107,12 +107,12 @@ const SANDBOXES: SandboxView[] = [
     },
   },
   {
-    name: "codex-c3d4",
+    name: "pending-sandbox",
     uid: "0f9c1d2e-0000-4000-8000-00000000c3d4",
     namespace: "agentplane-visual",
     created_at: ago(2 * 60_000),
     operating_mode: "Running",
-    service_account: { namespace: "agentplane-visual", name: "codex-c3d4" },
+    service_account: { namespace: "agentplane-visual", name: "pending-sandbox" },
     status: { conditions: [{ type: "Ready", status: "False", reason: "PodPending" }] },
     kubernetes_grants: [],
     kubernetes_grants_ready: true,
@@ -120,7 +120,7 @@ const SANDBOXES: SandboxView[] = [
     launch_grants_pending: false,
     deleting: false,
     pod: {
-      name: "codex-c3d4",
+      name: "pending-sandbox",
       namespace: "agentplane-visual",
       uid: "visual-pod-c3d4",
       deleting: false,
@@ -128,7 +128,7 @@ const SANDBOXES: SandboxView[] = [
         {
           api_version: "agents.x-k8s.io/v1beta1",
           kind: "Sandbox",
-          name: "codex-c3d4",
+          name: "pending-sandbox",
           uid: "0f9c1d2e-0000-4000-8000-00000000c3d4",
           controller: true,
         },
@@ -154,12 +154,12 @@ const SANDBOXES: SandboxView[] = [
     },
   },
   {
-    name: "old-e5f6",
+    name: "suspended-sandbox",
     uid: "0f9c1d2e-0000-4000-8000-00000000e5f6",
     namespace: "agentplane-visual",
     created_at: ago(48 * HOUR),
     operating_mode: "Suspended",
-    service_account: { namespace: "agentplane-visual", name: "old-e5f6" },
+    service_account: { namespace: "agentplane-visual", name: "suspended-sandbox" },
     status: { conditions: [{ type: "Ready", status: "False", reason: "Suspended" }] },
     kubernetes_grants: [],
     kubernetes_grants_ready: true,
@@ -232,17 +232,17 @@ const POLICIES: PolicyView[] = [
 /** One seed binding from git, which only git removes; one the app granted at launch, now expired. */
 const BINDINGS: BindingView[] = [
   {
-    name: "demo-a1b2-7q4xk",
+    name: "ready-sandbox-7q4xk",
     from_git: false,
-    subjects: [{ namespace: "agentplane-visual", name: "demo-a1b2" }],
+    subjects: [{ namespace: "agentplane-visual", name: "ready-sandbox" }],
     expires_at: ago(2 * HOUR),
     policies: [POLICIES[1]],
     missing_policies: [],
   },
   {
-    name: "demo-a1b2-github-public",
+    name: "ready-sandbox-github-public",
     from_git: true,
-    subjects: [{ namespace: "agentplane-visual", name: "demo-a1b2" }],
+    subjects: [{ namespace: "agentplane-visual", name: "ready-sandbox" }],
     expires_at: null,
     policies: [POLICIES[0]],
     missing_policies: [],
@@ -250,7 +250,7 @@ const BINDINGS: BindingView[] = [
 ];
 
 /**
- * What the Action Service auto-decides for demo-a1b2: the binding the app wrote at launch, one the
+ * What the Action Service auto-decides for ready-sandbox: the binding the app wrote at launch, one the
  * operator added for the afternoon, and every state a set can be in -- parsed and judged, edited
  * since it was judged, refused, and missing.
  */
@@ -258,7 +258,7 @@ const ACTION_POLICY: ActionPolicyView = {
   synced: true,
   bindings: [
     {
-      name: "demo-a1b2-k2m9x",
+      name: "ready-sandbox-k2m9x",
       provenance: "app",
       expires_at: null,
       ready: { status: "True", reason: "Valid", message: "spec accepted", observed_generation: 1 },
@@ -280,7 +280,7 @@ const ACTION_POLICY: ActionPolicyView = {
       missing_policy_sets: [],
     },
     {
-      name: "demo-a1b2-push-afternoon",
+      name: "ready-sandbox-push-afternoon",
       provenance: "operator",
       expires_at: new Date(NOW + 3 * HOUR).toISOString(),
       ready: null,
@@ -308,13 +308,13 @@ const ACTION_POLICY: ActionPolicyView = {
   ],
   auto_approve_if: [
     {
-      binding: "demo-a1b2-k2m9x",
+      binding: "ready-sandbox-k2m9x",
       policy_set: "public-coder",
       index: 0,
       policy: { type: "exact_actions", actions: { github: ["get_file_contents", "list_commits", "search_code"] } },
     },
     {
-      binding: "demo-a1b2-k2m9x",
+      binding: "ready-sandbox-k2m9x",
       policy_set: "public-coder",
       index: 1,
       policy: {
@@ -327,13 +327,13 @@ const ACTION_POLICY: ActionPolicyView = {
       },
     },
     {
-      binding: "demo-a1b2-k2m9x",
+      binding: "ready-sandbox-k2m9x",
       policy_set: "harness-reviews",
       index: 0,
       policy: { type: "exact_actions", actions: { github: ["pull_request_read", "list_pull_requests"] } },
     },
     {
-      binding: "demo-a1b2-push-afternoon",
+      binding: "ready-sandbox-push-afternoon",
       policy_set: "harness-push",
       index: 0,
       policy: {
@@ -355,7 +355,7 @@ const DECISIONS: Decision[] = [
     outcome: "allow",
     address: "140.82.116.5",
     reason: null,
-    binding: "demo-a1b2-github-public",
+    binding: "ready-sandbox-github-public",
     policy: "github-public",
     rule: 0,
     substituted: false,
@@ -369,7 +369,7 @@ const DECISIONS: Decision[] = [
     outcome: "allow",
     address: "140.82.116.5",
     reason: null,
-    binding: "demo-a1b2-github-public",
+    binding: "ready-sandbox-github-public",
     policy: "github-public",
     rule: 0,
     substituted: true,
@@ -433,7 +433,7 @@ const SESSIONS: SessionSummary[] = [
 const THREADS: ThreadView[] = [
   {
     id: "5f1c4a2e-0000-4000-8000-000000000001",
-    sandbox: "demo-a1b2",
+    sandbox: "ready-sandbox",
     session_id: "s-1",
     harness: "HARNESS_CLAUDE",
     model: "harness-claude-model",
@@ -448,7 +448,7 @@ const THREADS: ThreadView[] = [
   },
   {
     id: "5f1c4a2e-0000-4000-8000-000000000000",
-    sandbox: "demo-a1b2",
+    sandbox: "ready-sandbox",
     session_id: "unnamed-stopped-thread",
     harness: "HARNESS_CLAUDE",
     model: "harness-claude-model",
@@ -464,7 +464,7 @@ const THREADS: ThreadView[] = [
   },
   {
     id: "5f1c4a2e-0000-4000-8000-000000000002",
-    sandbox: "demo-a1b2",
+    sandbox: "ready-sandbox",
     session_id: "s-2",
     harness: "HARNESS_CLAUDE",
     model: "harness-claude-model",
@@ -482,14 +482,14 @@ const THREADS: ThreadView[] = [
 
 /**
  * The sidebar's cross-sandbox fixture: the three THREADS above
- * (all `demo-a1b2`), one each for the pending and suspended sandboxes, one archived, and one whose
+ * (all `ready-sandbox`), one each for the pending and suspended sandboxes, one archived, and one whose
  * `sandbox` names no live SandboxView at all -- the struck-through, read-only group.
  */
 const THREADS_WITH_SANDBOXES: ThreadView[] = [
   ...THREADS,
   {
     id: "5f1c4a2e-0000-4000-8000-000000000003",
-    sandbox: "codex-c3d4",
+    sandbox: "pending-sandbox",
     session_id: "s-3",
     harness: "HARNESS_CODEX",
     model: "harness-codex-model",
@@ -503,7 +503,7 @@ const THREADS_WITH_SANDBOXES: ThreadView[] = [
   },
   {
     id: "5f1c4a2e-0000-4000-8000-000000000004",
-    sandbox: "old-e5f6",
+    sandbox: "suspended-sandbox",
     session_id: "s-4",
     harness: "HARNESS_CLAUDE",
     model: "harness-claude-model",
@@ -517,7 +517,7 @@ const THREADS_WITH_SANDBOXES: ThreadView[] = [
   },
   {
     id: "5f1c4a2e-0000-4000-8000-000000000005",
-    sandbox: "old-debug-3f9c",
+    sandbox: "deleted-sandbox",
     session_id: "s-5",
     harness: "HARNESS_CLAUDE",
     model: "harness-claude-model",
@@ -531,7 +531,7 @@ const THREADS_WITH_SANDBOXES: ThreadView[] = [
   },
   {
     id: "5f1c4a2e-0000-4000-8000-000000000006",
-    sandbox: "demo-a1b2",
+    sandbox: "ready-sandbox",
     session_id: "s-6",
     harness: "HARNESS_CLAUDE",
     model: "harness-claude-model",
@@ -629,7 +629,7 @@ const ACTIONS: ActionRequestView[] = [
     title: "restart the test backup service",
     description: "Its last run stopped on a stale lock, which a restart clears.",
     idempotency_key: "visual-ssh-pending",
-    caller: { namespace: "agentplane-visual", name: "demo-a1b2" },
+    caller: { namespace: "agentplane-visual", name: "ready-sandbox" },
     state: "decision_pending",
     version: 1,
     created_at: ago(2 * 60_000),
@@ -648,7 +648,7 @@ const ACTIONS: ActionRequestView[] = [
     title: "list the test backup archive",
     description: null,
     idempotency_key: "visual-ssh-completed",
-    caller: { namespace: "agentplane-visual", name: "demo-a1b2" },
+    caller: { namespace: "agentplane-visual", name: "ready-sandbox" },
     state: "succeeded",
     version: 4,
     created_at: ago(5 * 60_000),
@@ -764,7 +764,7 @@ const ACTIONS: ActionRequestView[] = [
     title: "search ducktape for auto_allow",
     description: null,
     idempotency_key: "visual-auto-approved",
-    caller: { namespace: "agentplane-visual", name: "demo-a1b2" },
+    caller: { namespace: "agentplane-visual", name: "ready-sandbox" },
     state: "succeeded",
     version: 3,
     created_at: ago(15 * 60_000),
@@ -778,7 +778,7 @@ const ACTIONS: ActionRequestView[] = [
       idempotency_key: "visual-policy-allow",
       decided_at: ago(14 * 60_000),
       policy_evidence: {
-        bindings: [{ namespace: "agentplane-visual", name: "demo-a1b2-github-public", resource_version: "12345" }],
+        bindings: [{ namespace: "agentplane-visual", name: "ready-sandbox-github-public", resource_version: "12345" }],
         policy_sets: [{ namespace: "agentplane-visual", name: "fixture_auto_allow", generation: 1 }],
         matched: {
           namespace: "agentplane-visual",
@@ -808,7 +808,7 @@ const ACTIONS: ActionRequestView[] = [
     title: "read the missing test note",
     description: null,
     idempotency_key: "visual-tool-error",
-    caller: { namespace: "agentplane-visual", name: "demo-a1b2" },
+    caller: { namespace: "agentplane-visual", name: "ready-sandbox" },
     state: "succeeded",
     version: 4,
     created_at: ago(10 * 60_000),
