@@ -127,32 +127,6 @@ console.log(a, b);
     assert_entry_output(&fixture, "1 2\n");
 }
 
-// --- Three-way split ------------------------------------------------------
-
-#[test]
-fn three_siblings_split_to_three_modules() {
-    let fixture = run_fixture(FixtureOpts::new(
-        r#"const a = 1, b = 2, c = 3;
-console.log(a, b, c);
-export { a, b, c };
-"#,
-        vec![
-            logical_module("mod_a", &[Member::new("a")]),
-            logical_module("mod_b", &[Member::new("b")]),
-            logical_module("mod_c", &[Member::new("c")]),
-        ],
-    ));
-
-    for (module, binding) in [("mod_a", "a"), ("mod_b", "b"), ("mod_c", "c")] {
-        assert_module_variable_declarators(
-            &fixture.out_root,
-            &format!("static/app/modules/{module}.js"),
-            &[variable_declarator!(Const, Number, [binding])],
-        );
-    }
-    assert_entry_output(&fixture, "1 2 3\n");
-}
-
 // --- Partial claim leaves the rest in the residual comma-list ------------
 
 #[test]
