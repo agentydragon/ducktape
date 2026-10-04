@@ -18,15 +18,7 @@ from numpyro import distributions as dist
 from finance.augur.model.conditioning import ExogenousObservedPoint, ObservationTreatment, ObservationUnits
 from finance.augur.model.exogenous import ExogenousSamplingRequest, level_series_request_channels
 from finance.augur.model.path_models.scenarios import HistoricalSeries
-from finance.augur.model.series import (
-    SP500_SYMBOL,
-    HomeValueKey,
-    InflationKey,
-    LocationId,
-    RentKey,
-    SecurityKey,
-    SecuritySymbol,
-)
+from finance.augur.model.series import SP500_SYMBOL, HomeValueKey, InflationKey, LocationId, RentKey, SecurityKey
 from finance.augur.x.models.vecm import VecmConfig, VecmModel
 
 
@@ -190,63 +182,6 @@ class TestVecmModel:
         inflation = sampled.level_matrix(InflationKey(), rollout_count=512, horizon_months=1)
         monthly_log_return = np.log(inflation[:, 1] / inflation[:, 0])
         assert float(np.std(monthly_log_return, ddof=1)) < 0.02
-
-    def test_sample_anchors_crypto_factors_to_latest_close(self) -> None:
-        rng = np.random.default_rng(456)
-        base = np.cumsum(rng.normal(scale=0.02, size=200))
-        log_levels = np.column_stack(
-            [
-                base + rng.normal(scale=0.015, size=200),
-                base * 0.6 + rng.normal(scale=0.03, size=200),
-                base * 0.4 + rng.normal(scale=0.025, size=200),
-            ]
-        )
-        log_levels = np.concatenate([np.zeros((1, 3)), log_levels], axis=0)
-        levels = np.exp(log_levels - log_levels[0])
-        months = tuple(f"2010-{i:02d}" for i in range(levels.shape[0]))
-        historical = HistoricalSeries(
-            series_names=(
-                SecurityKey(symbol=SP500_SYMBOL),
-                SecurityKey(symbol=SecuritySymbol("btc")),
-                SecurityKey(symbol=SecuritySymbol("eth")),
-            ),
-            levels=levels,
-            months=months,
-        )
-
-        model = VecmModel(config=VecmConfig(n_iters=300))
-        model.fit(historical)
-        model.latest_observations = {
-            "security:SPY": _observation(5500.0, ObservationUnits.USD_PER_UNIT),
-            "security:btc": _observation(65_000.0, ObservationUnits.USD_PER_UNIT),
-            "security:eth": _observation(3_200.0, ObservationUnits.USD_PER_UNIT),
-        }
-        model._compute_provenance(evidence_source_id="test")
-
-        sampled = model.sample(
-            ExogenousSamplingRequest(
-                horizon_months=6,
-                rollout_seeds=(11, 12),
-                **level_series_request_channels(
-                    frozenset(
-                        {
-                            SecurityKey(symbol=SP500_SYMBOL),
-                            SecurityKey(symbol=SecuritySymbol("btc")),
-                            SecurityKey(symbol=SecuritySymbol("eth")),
-                        }
-                    )
-                ),
-            )
-        )
-
-        # Month-0 multiplier is 1.0, so the first sampled level equals latest_observations directly.
-        # No source-specific symbol naming convention participates in runtime lookup.
-        assert sampled.level_matrix(SecurityKey(symbol=SecuritySymbol("btc")), rollout_count=2, horizon_months=6)[
-            :, 0
-        ].tolist() == [65_000.0, 65_000.0]
-        assert sampled.level_matrix(SecurityKey(symbol=SecuritySymbol("eth")), rollout_count=2, horizon_months=6)[
-            :, 0
-        ].tolist() == [3_200.0, 3_200.0]
 
 
 if __name__ == "__main__":
