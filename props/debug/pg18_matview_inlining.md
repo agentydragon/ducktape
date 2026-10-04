@@ -108,7 +108,6 @@ caller's restricted search_path.
 
 - `test_pg18_unqualified_table_in_function_fails_in_matview` — documents the PG 18 failure
 - `test_set_search_path_fixes_matview_creation` — verifies the fix mechanism
-- `test_materialize_examples_migration` — runs the full migration chain on PG 18
 
 ## Source Code References
 

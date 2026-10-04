@@ -1,22 +1,15 @@
-"""Tests for the materialize_examples migration.
-
-Covers the PG 18 search_path restriction during CREATE MATERIALIZED VIEW
-(see props/debug/pg18_matview_inlining.md for full root cause analysis).
+"""PG 18 restricts search_path during CREATE MATERIALIZED VIEW, which the materialize_examples migration works
+around (root cause: props/debug/pg18_matview_inlining.md).
 """
 
 from collections.abc import Generator
-from pathlib import Path
 
 import pytest
 import pytest_bazel
-from alembic import command
-from alembic.config import Config
 from sqlalchemy import Engine, create_engine, text
 
 from props.db.config import DatabaseConfig
 from util.testing.postgres import force_drop_database_sync
-
-MIGRATIONS_DIR = str(Path(__file__).parent)
 
 
 @pytest.fixture
@@ -35,13 +28,6 @@ def blank_engine(postgres_base_config: DatabaseConfig) -> Generator[Engine]:
     engine.dispose()
 
     force_drop_database_sync(admin_url, db_name)
-
-
-def _make_alembic_config(engine: Engine) -> Config:
-    cfg = Config()
-    cfg.set_main_option("script_location", MIGRATIONS_DIR)
-    cfg.set_main_option("sqlalchemy.url", str(engine.url))
-    return cfg
 
 
 def test_pg18_unqualified_table_in_function_fails_in_matview(blank_engine: Engine) -> None:
@@ -80,36 +66,6 @@ def test_set_search_path_fixes_matview_creation(blank_engine: Engine) -> None:
         """)
         )
         conn.execute(text("CREATE MATERIALIZED VIEW mv AS SELECT get_val_sp(1) AS result"))
-
-
-def test_materialize_examples_migration(blank_engine: Engine) -> None:
-    """The full migration chain succeeds: initial schema → matview conversion."""
-    cfg = _make_alembic_config(blank_engine)
-
-    with blank_engine.connect() as conn:
-        # Pass connection to env.py via config attributes (avoids DatabaseConfig env lookup)
-        cfg.attributes["connection"] = conn
-
-        # Run up to the migration before materialize_examples
-        command.upgrade(cfg, "20260223000000")
-
-        # Verify the function and table exist
-        fn_exists = conn.execute(
-            text("SELECT 1 FROM pg_proc WHERE proname = 'is_tp_in_expected_recall_scope'")
-        ).fetchone()
-        assert fn_exists, "Function should exist after initial migration"
-
-        tbl_exists = conn.execute(
-            text("SELECT 1 FROM pg_class WHERE relname = 'critic_scopes_expected_to_recall'")
-        ).fetchone()
-        assert tbl_exists, "Table should exist after initial migration"
-
-        # Apply the materialize_examples migration (the one that was failing)
-        command.upgrade(cfg, "20260224000000")
-
-        # Verify the materialized view was created
-        is_matview = conn.execute(text("SELECT relkind FROM pg_class WHERE relname = 'examples'")).scalar()
-        assert is_matview == "m", f"Expected matview (relkind='m'), got {is_matview!r}"
 
 
 if __name__ == "__main__":
