@@ -179,7 +179,6 @@ async def test_client_maps_message_envelopes_without_prompt_collapsing() -> None
 
     assert result.text == "ok"
     body = seen_bodies[0]
-    assert "prompt" not in body["args"]
     assert body == {
         "isStreaming": False,
         "args": {
@@ -445,8 +444,6 @@ async def test_client_maps_anthropic_tool_transcript_to_tana_messages() -> None:
             ],
         },
     ]
-    assert "tool_use" not in json.dumps(seen_bodies[0])
-    assert "tool_result" not in json.dumps(seen_bodies[0])
 
 
 def test_client_streams_text_chunks_from_llm_proxy() -> None:
@@ -559,9 +556,6 @@ def test_client_streams_tool_calls_from_llm_proxy_next() -> None:
         "content": "You are Claude Code.",
         "providerOptions": {"anthropic": {"cacheControl": {"type": "ephemeral"}}},
     }
-    assert seen_bodies[0]["args"]["messages"][0]["providerOptions"] == {
-        "anthropic": {"cacheControl": {"type": "ephemeral"}}
-    }
     assert "cache_control" not in json.dumps(seen_bodies[0])
     assert seen_bodies[0]["dynamicTools"][0]["runtime"] == "client"
 
@@ -602,53 +596,38 @@ def test_client_streams_zero_arg_tool_call_from_llm_proxy_next() -> None:
     assert chunks[-1]["finish_reason"] == "tool_calls"
 
 
-async def test_anthropic_messages_stream_has_single_merged_tool_block(isolated_litellm_provider) -> None:
-    def handler(request: httpx.Request) -> httpx.Response:
-        if request.url.host == "securetoken.googleapis.com":
-            return httpx.Response(
-                200, json={"id_token": "id-token-1", "refresh_token": "refresh-2", "expires_in": "3600"}
-            )
-        assert request.url == "https://app.tana.inc/functions/llmProxyNext"
-        return httpx.Response(
-            200,
-            headers={"content-type": "text/event-stream"},
-            content=(
-                b'data: {"type":"tool-input-available","toolCallId":"call-1",'
-                b'"toolName":"echo_tool","input":{}}\n'
-                b'data: {"type":"tool-input-available","toolCallId":"call-1",'
-                b'"toolName":"echo_tool","input":{"value":"hi"}}\n'
-                b'data: {"type":"finish","messageMetadata":{"finishReason":"stop",'
-                b'"usage":{"inputTokens":4,"outputTokens":5}}}\n'
-            ),
-        )
+_ECHO_TOOL_INPUT_SSE = (
+    b'data: {"type":"tool-input-available","toolCallId":"call-1",'
+    b'"toolName":"echo_tool","input":{}}\n'
+    b'data: {"type":"tool-input-available","toolCallId":"call-1",'
+    b'"toolName":"echo_tool","input":{"value":"hi"}}\n'
+)
+_FINISH_SSE = (
+    b'data: {"type":"finish","messageMetadata":{"finishReason":"stop","usage":{"inputTokens":4,"outputTokens":5}}}\n'
+)
 
-    async def collect_events() -> list[dict[str, Any]]:
-        async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as http:
-            client = TanaProxyClient(TanaProxyConfig(refresh_token="refresh-1"), http_client=http)
-            register_litellm_provider(_handler_with_test_client(client))
-            stream = await litellm.anthropic.messages.acreate(
-                model="tana/claude-test",
-                api_key="refresh-1",
-                max_tokens=64,
-                stream=True,
-                messages=[{"role": "user", "content": "call echo_tool"}],
-                tools=[
-                    {
-                        "name": "echo_tool",
-                        "description": "Echo a value.",
-                        "input_schema": {
-                            "type": "object",
-                            "properties": {"value": {"type": "string"}},
-                            "required": ["value"],
-                        },
-                    }
-                ],
-            )
-            raw_events = [event async for event in cast(AsyncIterator[Any], stream)]
-            return [_decode_anthropic_sse_event(event) for event in raw_events]
 
-    events = await collect_events()
+async def _anthropic_echo_tool_stream_events(client: Any) -> list[dict[str, Any]]:
+    register_litellm_provider(_handler_with_test_client(client))
+    stream = await litellm.anthropic.messages.acreate(
+        model="tana/claude-test",
+        api_key="refresh-1",
+        max_tokens=64,
+        stream=True,
+        messages=[{"role": "user", "content": "call echo_tool"}],
+        tools=[
+            {
+                "name": "echo_tool",
+                "description": "Echo a value.",
+                "input_schema": {"type": "object", "properties": {"value": {"type": "string"}}, "required": ["value"]},
+            }
+        ],
+    )
+    raw_events = [event async for event in cast(AsyncIterator[Any], stream)]
+    return [_decode_anthropic_sse_event(event) for event in raw_events]
 
+
+def _assert_single_merged_echo_tool_block(events: list[dict[str, Any]]) -> None:
     started_blocks: set[int] = set()
     stopped_blocks: set[int] = set()
     for event in events:
@@ -683,83 +662,29 @@ async def test_anthropic_messages_stream_has_single_merged_tool_block(isolated_l
     assert message_deltas[-1]["delta"]["stop_reason"] == "tool_use"
 
 
-async def test_anthropic_messages_stream_finishes_eof_tool_call_without_orphan_delta(isolated_litellm_provider) -> None:
+@pytest.mark.parametrize(
+    "sse_body",
+    [
+        pytest.param(_ECHO_TOOL_INPUT_SSE + _FINISH_SSE, id="finish_event"),
+        pytest.param(_ECHO_TOOL_INPUT_SSE, id="eof_flush_without_finish_event"),
+    ],
+)
+async def test_anthropic_messages_stream_has_single_merged_tool_block(
+    isolated_litellm_provider, sse_body: bytes
+) -> None:
     def handler(request: httpx.Request) -> httpx.Response:
         if request.url.host == "securetoken.googleapis.com":
             return httpx.Response(
                 200, json={"id_token": "id-token-1", "refresh_token": "refresh-2", "expires_in": "3600"}
             )
         assert request.url == "https://app.tana.inc/functions/llmProxyNext"
-        return httpx.Response(
-            200,
-            headers={"content-type": "text/event-stream"},
-            content=(
-                b'data: {"type":"tool-input-available","toolCallId":"call-1",'
-                b'"toolName":"echo_tool","input":{}}\n'
-                b'data: {"type":"tool-input-available","toolCallId":"call-1",'
-                b'"toolName":"echo_tool","input":{"value":"hi"}}\n'
-            ),
-        )
+        return httpx.Response(200, headers={"content-type": "text/event-stream"}, content=sse_body)
 
-    async def collect_events() -> list[dict[str, Any]]:
-        async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as http:
-            client = TanaProxyClient(TanaProxyConfig(refresh_token="refresh-1"), http_client=http)
-            register_litellm_provider(_handler_with_test_client(client))
-            stream = await litellm.anthropic.messages.acreate(
-                model="tana/claude-test",
-                api_key="refresh-1",
-                max_tokens=64,
-                stream=True,
-                messages=[{"role": "user", "content": "call echo_tool"}],
-                tools=[
-                    {
-                        "name": "echo_tool",
-                        "description": "Echo a value.",
-                        "input_schema": {
-                            "type": "object",
-                            "properties": {"value": {"type": "string"}},
-                            "required": ["value"],
-                        },
-                    }
-                ],
-            )
-            raw_events = [event async for event in cast(AsyncIterator[Any], stream)]
-            return [_decode_anthropic_sse_event(event) for event in raw_events]
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as http:
+        client = TanaProxyClient(TanaProxyConfig(refresh_token="refresh-1"), http_client=http)
+        events = await _anthropic_echo_tool_stream_events(client)
 
-    events = await collect_events()
-
-    started_blocks: set[int] = set()
-    stopped_blocks: set[int] = set()
-    for event in events:
-        event_type = event.get("type")
-        index = event.get("index")
-        if event_type == "content_block_start":
-            assert isinstance(index, int)
-            started_blocks.add(index)
-        if event_type == "content_block_delta":
-            assert isinstance(index, int)
-            assert index in started_blocks
-            assert index not in stopped_blocks
-        if event_type == "content_block_stop":
-            assert isinstance(index, int)
-            stopped_blocks.add(index)
-
-    tool_starts = [
-        event
-        for event in events
-        if event.get("type") == "content_block_start" and event.get("content_block", {}).get("type") == "tool_use"
-    ]
-    tool_deltas = [
-        event
-        for event in events
-        if event.get("type") == "content_block_delta" and event.get("delta", {}).get("type") == "input_json_delta"
-    ]
-    message_deltas = [event for event in events if event.get("type") == "message_delta"]
-    assert len(tool_starts) == 1
-    assert tool_starts[0]["content_block"] == {"type": "tool_use", "id": "call-1", "name": "echo_tool", "input": {}}
-    assert len(tool_deltas) == 1
-    assert json.loads(tool_deltas[0]["delta"]["partial_json"]) == {"value": "hi"}
-    assert message_deltas[-1]["delta"]["stop_reason"] == "tool_use"
+    _assert_single_merged_echo_tool_block(events)
 
 
 async def test_anthropic_messages_stream_ignores_empty_chunk_after_tool_finish(isolated_litellm_provider) -> None:
@@ -806,69 +731,14 @@ async def test_anthropic_messages_stream_ignores_empty_chunk_after_tool_finish(i
                 text="", tool_use=None, is_finished=False, finish_reason="", usage=None, index=0
             )
 
-    async def collect_events() -> list[dict[str, Any]]:
-        register_litellm_provider(_handler_with_test_client(FakeClient()))
-        stream = await litellm.anthropic.messages.acreate(
-            model="tana/claude-test",
-            api_key="refresh-1",
-            max_tokens=64,
-            stream=True,
-            messages=[{"role": "user", "content": "call echo_tool"}],
-            tools=[
-                {
-                    "name": "echo_tool",
-                    "description": "Echo a value.",
-                    "input_schema": {
-                        "type": "object",
-                        "properties": {"value": {"type": "string"}},
-                        "required": ["value"],
-                    },
-                }
-            ],
-        )
-        raw_events = [event async for event in cast(AsyncIterator[Any], stream)]
-        return [_decode_anthropic_sse_event(event) for event in raw_events]
+    events = await _anthropic_echo_tool_stream_events(FakeClient())
 
-    events = await collect_events()
-
-    started_blocks: set[int] = set()
-    stopped_blocks: set[int] = set()
-    for event in events:
-        event_type = event.get("type")
-        index = event.get("index")
-        if event_type == "content_block_start":
-            assert isinstance(index, int)
-            started_blocks.add(index)
-        if event_type == "content_block_delta":
-            assert isinstance(index, int)
-            assert index in started_blocks
-            assert index not in stopped_blocks
-        if event_type == "content_block_stop":
-            assert isinstance(index, int)
-            stopped_blocks.add(index)
-
-    tool_starts = [
-        event
-        for event in events
-        if event.get("type") == "content_block_start" and event.get("content_block", {}).get("type") == "tool_use"
-    ]
-    tool_deltas = [
-        event
-        for event in events
-        if event.get("type") == "content_block_delta" and event.get("delta", {}).get("type") == "input_json_delta"
-    ]
-    text_deltas = [
+    _assert_single_merged_echo_tool_block(events)
+    assert [
         event
         for event in events
         if event.get("type") == "content_block_delta" and event.get("delta", {}).get("type") == "text_delta"
-    ]
-    message_deltas = [event for event in events if event.get("type") == "message_delta"]
-    assert len(tool_starts) == 1
-    assert tool_starts[0]["content_block"] == {"type": "tool_use", "id": "call-1", "name": "echo_tool", "input": {}}
-    assert len(tool_deltas) == 1
-    assert json.loads(tool_deltas[0]["delta"]["partial_json"]) == {"value": "hi"}
-    assert text_deltas == []
-    assert message_deltas[-1]["delta"]["stop_reason"] == "tool_use"
+    ] == []
 
 
 def _decode_anthropic_sse_event(event: Any) -> dict[str, Any]:
