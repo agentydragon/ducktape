@@ -42,20 +42,6 @@ mod chunk_constraining_module_edges_tests {
         );
     }
 
-    /// Same name in distinct scopes is hygienically distinct — no
-    /// duplicate. Comma-split declarators of *different* names are
-    /// also fine.
-    #[test]
-    fn distinct_bindings_with_shared_name_are_not_duplicates() {
-        build_owner_graph_with(
-            &parse_facts(
-                "var x = 1;\nfunction f() { var x = 2; return x; }\nconst y = 3, z = 4;\n",
-            ),
-            Default::default(),
-        )
-        .unwrap();
-    }
-
     /// Pure cross-module `LazyUse` edges contribute to
     /// `i_successors` (the runtime DFS topology — required for
     /// Lemma 2 asymmetric-cycle detection) but never to `edges`

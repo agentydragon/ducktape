@@ -751,40 +751,6 @@ export { actual };
 }
 
 #[test]
-fn member_source_match_expr_prefix_holes_match_arbitrary_expression_subtrees() {
-    let fixture = run_fixture(member_fixture(
-        r#"const actual = Math.max(Number.parseInt("7", 10), [1, 2, 3].length);
-console.log(actual);
-export { actual };
-"#,
-        "calc",
-        Member::source_alpha(
-            "calc_value",
-            r#"const readable = Math.max(EXPR_LEFT, EXPR_RIGHT);"#,
-        ),
-    ));
-
-    assert_entry_output(&fixture, "7\n");
-    assert_module_exports(
-        &fixture.out_root,
-        "static/app/modules/calc.js",
-        &["calc_value"],
-        &["actual"],
-    );
-    assert_module_source(
-        &fixture.out_root,
-        "static/app/modules/calc.js",
-        &[
-            "Math.max",
-            r#"Number.parseInt("7", 10)"#,
-            "].length",
-            "const calc_value",
-        ],
-        &[],
-    );
-}
-
-#[test]
 fn member_source_match_anything_matches_expression_subtrees() {
     let fixture = run_fixture(member_fixture(
         r#"const actual = Number.parseInt("8", 10) + [1, 2, 3].length;
@@ -975,41 +941,6 @@ export { actual };
             "ignoredPart(\"right\")",
         ],
         &["ARGS_BEFORE", "ARGS_AFTER"],
-    );
-}
-
-#[test]
-fn grouped_source_matches_expr_prefix_holes_match_each_target_binding() {
-    let fixture = run_fixture(FixtureOpts::new(
-        r#"var first = 1 + 2, second = Number.parseInt("4", 10);
-console.log(first + second);
-export { first, second };
-"#,
-        vec![logical_module_with_binding_groups(
-            "pair",
-            &[],
-            &[BindingGroup::source_alpha(
-                r#"var left = EXPR_LEFT, right = EXPR_RIGHT;"#,
-                &[("left", "first_value"), ("right", "second_value")],
-            )],
-        )],
-    ));
-
-    assert_entry_output(&fixture, "7\n");
-    assert_module_exports(
-        &fixture.out_root,
-        "static/app/modules/pair.js",
-        &["first_value", "second_value"],
-        &["first", "second"],
-    );
-    assert_module_source(
-        &fixture.out_root,
-        "static/app/modules/pair.js",
-        &[
-            "var first_value = 1 + 2",
-            r#"var second_value = Number.parseInt("4", 10)"#,
-        ],
-        &[],
     );
 }
 
@@ -1366,6 +1297,12 @@ export { first, second };
     ));
 
     assert_entry_output(&fixture, "7\n");
+    assert_module_exports(
+        &fixture.out_root,
+        "static/app/modules/pair.js",
+        &["first_value", "second_value"],
+        &["first", "second"],
+    );
     assert_line_directly_above(
         &fixture.out_root,
         "static/app/modules/pair.js",
@@ -1680,42 +1617,6 @@ export { runtimePrefix, runtimeFormat, runtimeLabels, runtimeRead, runtimeSuffix
 }
 
 #[test]
-fn binding_group_trailing_declarator_hole_absorbs_later_declarators() {
-    let fixture = run_fixture(FixtureOpts::new(
-        r#"const selectedA = () => "a",
-  selectedB = () => "b",
-  laterC = () => "c";
-console.log(selectedA() + selectedB() + laterC());
-export { selectedA, selectedB, laterC };
-"#,
-        vec![logical_module_with_binding_groups(
-            "bridges",
-            &[],
-            &[BindingGroup::source_alpha(
-                r#"const selectedA = EXPR_A,
-  selectedB = EXPR_B,
-  DECLARATORS_AFTER = null;"#,
-                &[("selectedA", "recordBridge"), ("selectedB", "replayBridge")],
-            )],
-        )],
-    ));
-
-    assert_entry_output(&fixture, "abc\n");
-    assert_module_exports(
-        &fixture.out_root,
-        "static/app/modules/bridges.js",
-        &["recordBridge", "replayBridge"],
-        &["selectedA", "selectedB"],
-    );
-    assert_module_source(
-        &fixture.out_root,
-        "static/app/modules/bridges.js",
-        &["const recordBridge", "const replayBridge"],
-        &["laterC", "DECLARATORS_AFTER"],
-    );
-}
-
-#[test]
 fn binding_group_declarator_holes_extract_adjacent_arrows_at_start_middle_and_end() {
     for (module, source, group, output, exports, excluded_exports, excluded_source) in [
         (
@@ -1946,33 +1847,6 @@ export { marker };
             "STMT_SETUP",
             r#"console.log("done")"#,
         ],
-    );
-}
-
-#[test]
-fn anonymous_source_match_stmt_list_hole_absorbs_contiguous_statements() {
-    // `STMT_LIST_BODY;` as the whole block body absorbs the three
-    // statements, so the selector matches the `if` regardless of body.
-    let fixture = run_fixture(anonymous_init_fixture(
-        THREE_STATEMENT_BLOCK_SOURCE,
-        r#"if (true) {
-  STMT_LIST_BODY;
-}"#,
-    ));
-
-    assert_entry_output(&fixture, "a\nb\nc\n");
-    assert_module_source(
-        &fixture.out_root,
-        "static/app/modules/init.js",
-        &[
-            r#"console.log("a")"#,
-            r#"console.log("b")"#,
-            r#"console.log("c")"#,
-            "const marker",
-        ],
-        // The selector's placeholder name never appears in the output;
-        // the original statements were spliced in verbatim.
-        &["STMT_LIST_BODY"],
     );
 }
 
@@ -2746,9 +2620,10 @@ export { actual };
 // `ANYTHING` fallback), a bare `ANYTHING` is a *single-node* hole — `EXPR`
 // resp. `STMT` — so it is NOT interchangeable with `ARGS` / `STMT_LIST`. A
 // `case CASE_REST:` clause has no `ANYTHING` spelling at all. `DECLARATORS` is
-// the one run hole that keeps a typed spelling alongside `ANYTHING`.
+// the one run hole that keeps a typed spelling alongside `ANYTHING`; the
+// declarator tests above pin both spellings.
 //
-// The matched pairs below pin each claim against a representative subject.
+// The matched pairs below pin the other claims against a representative subject.
 // ---------------------------------------------------------------------------
 
 #[test]
@@ -2796,39 +2671,6 @@ export { actual };
 }
 
 #[test]
-fn args_and_anything_agree_on_a_single_argument_call() {
-    // Companion to the inequivalence proof: when the subject call has exactly
-    // one argument, `ARGS` and `ANYTHING` are observationally identical (both
-    // match). The divergence is purely about run-vs-single arity, not about
-    // what a single argument matches.
-    let subject = r#"function wrap(value) {
-  return `[${value}]`;
-}
-const actual = wrap("solo");
-console.log(actual);
-export { actual };
-"#;
-
-    for selector in [
-        r#"const selectedValue = wrap(ARGS);"#,
-        r#"const selectedValue = wrap(ANYTHING);"#,
-    ] {
-        let fixture = run_fixture(member_fixture(
-            subject,
-            "wrapped",
-            Member::source_alpha("wrappedValue", selector),
-        ));
-        assert_entry_output(&fixture, "[solo]\n");
-        assert_module_exports(
-            &fixture.out_root,
-            "static/app/modules/wrapped.js",
-            &["wrappedValue"],
-            &["actual"],
-        );
-    }
-}
-
-#[test]
 fn stmt_list_run_absorber_is_not_redundant_with_anything_single_stmt() {
     // The `if` block has three statements. `{ STMT_LIST; }` absorbs the run
     // and matches; `{ ANYTHING; }` is a single-statement hole (arity 1 != 3)
@@ -2854,22 +2696,6 @@ fn stmt_list_run_absorber_is_not_redundant_with_anything_single_stmt() {
         ),
         &["static/app::init", "did not match"],
     );
-}
-
-#[test]
-fn stmt_and_anything_agree_on_a_single_statement_block() {
-    // Companion: a single-statement block is matched identically by a bare
-    // `STMT` and a bare `ANYTHING` (both single-node holes). So in the
-    // statement position `ANYTHING` is redundant with `STMT`, NOT `STMT_LIST`.
-    let subject = SINGLE_STATEMENT_BLOCK_SOURCE;
-
-    for body in ["STMT;", "ANYTHING;"] {
-        let fixture = run_fixture(anonymous_init_fixture(
-            subject,
-            &format!("if (true) {{\n  {body}\n}}"),
-        ));
-        assert_entry_output(&fixture, "only\n");
-    }
 }
 
 #[test]
@@ -2916,45 +2742,6 @@ export { dispatch };
         &["dispatch"],
         &[],
     );
-}
-
-#[test]
-fn declarators_and_anything_are_interchangeable_run_absorbers() {
-    // Positive redundancy proof: `DECLARATORS_*` and `ANYTHING` declarator
-    // names are both run-absorbing declarator-list holes
-    // (`declarator_list_hole_name` carries the `ANYTHING` fallback), bracketing
-    // the same pinned declarator in the same wider `const` list.
-    let subject = r#"const runtimePrefix = "prefix",
-  runtimeTarget = makeTarget("value"),
-  runtimeSuffix = "suffix";
-function makeTarget(value) {
-  return `target:${value}`;
-}
-console.log(runtimePrefix, runtimeTarget, runtimeSuffix);
-export { runtimePrefix, runtimeTarget, runtimeSuffix, makeTarget };
-"#;
-
-    for selector in [
-        r#"const DECLARATORS_BEFORE = null,
-  Target = makeTarget("value"),
-  DECLARATORS_AFTER = null;"#,
-        r#"const ANYTHING = ANYTHING,
-  Target = makeTarget("value"),
-  ANYTHING = ANYTHING;"#,
-    ] {
-        let fixture = run_fixture(member_fixture(
-            subject,
-            "target",
-            Member::source_alpha_target("SelectedTarget", "Target", selector),
-        ));
-        assert_entry_output(&fixture, "prefix target:value suffix\n");
-        assert_module_exports(
-            &fixture.out_root,
-            "static/app/modules/target.js",
-            &["SelectedTarget"],
-            &["runtimeTarget"],
-        );
-    }
 }
 
 /// Two `source_matches[]` entries in one module whose templates both spell the

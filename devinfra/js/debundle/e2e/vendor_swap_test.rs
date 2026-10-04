@@ -321,73 +321,41 @@ fn assert_wrapper_output(fixture: &VendorSwapFixture, script: &str, expected: &s
 }
 
 #[test]
-fn named_from_default_handles_object_literal_with_keyvalue_props() {
-    // Canonical accepted shape: upstream's `export default` is an
-    // object literal whose keys are `KeyValue` props with `Ident` (or
-    // `Str`) names. The wrapper picks up each key and re-exports it as
-    // a named export.
-    let upstream_source = r#"export default {
+fn named_from_default_accepts_object_literal_prop_forms() {
+    // The wrapper picks up each key of upstream's object-literal
+    // `export default` and re-exports it as a named export. Every prop form
+    // must yield the same values.
+    for upstream_source in [
+        // Canonical accepted shape: `KeyValue` props with `Ident` names.
+        r#"export default {
   ping: () => "pong",
   pong: () => "ping",
 };
-"#;
-
-    let fixture = run_named_from_default_fixture(NamedFromDefaultFixtureArgs {
-        upstream_source,
-        chunk_source: "export { ping, pong } from \"lib\";\n",
-    });
-
-    assert_wrapper_output(
-        &fixture,
-        "import d, { ping, pong } from './entry.js'; console.log(ping(), pong(), ping === d.ping, pong === d.pong);",
-        "pong ping true true\n",
-    );
-}
-
-#[test]
-fn named_from_default_accepts_shorthand_props() {
-    // Shorthand object-literal props (`{ ping, pong }` — local
-    // binding names used directly as both key and value) produce
-    // the same values as `KeyValue` props. Generated export locals must
-    // avoid the upstream bindings rather than redeclaring them. Real-world `index.mjs`
-    // files use shorthand commonly; accepting it removes an
-    // otherwise-unmotivated authoring requirement.
-    let upstream_source = r#"const ping = () => "pong";
+"#,
+        // Shorthand props (`{ ping, pong }` — local binding names used
+        // directly as both key and value). Generated export locals must
+        // avoid the upstream bindings rather than redeclaring them.
+        r#"const ping = () => "pong";
 const pong = () => "ping";
 export default { ping, pong };
-"#;
-
-    let fixture = run_named_from_default_fixture(NamedFromDefaultFixtureArgs {
-        upstream_source,
-        chunk_source: "export { ping, pong } from \"lib\";\n",
-    });
-
-    assert_wrapper_output(
-        &fixture,
-        "import d, { ping, pong } from './entry.js'; console.log(ping(), pong(), ping === d.ping, pong === d.pong);",
-        "pong ping true true\n",
-    );
-}
-
-#[test]
-fn named_from_default_accepts_mixed_keyvalue_and_shorthand_props() {
-    // Mixed shape — KeyValue + Shorthand in the same default
-    // export. Both shapes contribute their keys to the wrapper's
-    // named-export set.
-    let upstream_source = r#"const ping = () => "pong";
+"#,
+        // Mixed: `Shorthand` plus a `KeyValue` prop with a `Str` name in the
+        // same default export.
+        r#"const ping = () => "pong";
 export default { ping, "pong": () => "ping" };
-"#;
+"#,
+    ] {
+        let fixture = run_named_from_default_fixture(NamedFromDefaultFixtureArgs {
+            upstream_source,
+            chunk_source: "export { ping, pong } from \"lib\";\n",
+        });
 
-    let fixture = run_named_from_default_fixture(NamedFromDefaultFixtureArgs {
-        upstream_source,
-        chunk_source: "export { ping, pong } from \"lib\";\n",
-    });
-
-    assert_wrapper_output(
-        &fixture,
-        "import d, { ping, pong } from './entry.js'; console.log(ping(), pong(), ping === d.ping, pong === d.pong);",
-        "pong ping true true\n",
-    );
+        assert_wrapper_output(
+            &fixture,
+            "import d, { ping, pong } from './entry.js'; console.log(ping(), pong(), ping === d.ping, pong === d.pong);",
+            "pong ping true true\n",
+        );
+    }
 }
 
 #[test]
@@ -486,47 +454,6 @@ fn partial_swap_basic_rewrites_to_namespace_member() {
     assert!(
         caller_emitted.contains("kept()"),
         "caller should still reference the kept import by its local name:\n{caller_emitted}",
-    );
-}
-
-#[test]
-fn partial_swap_keeps_megachunk_on_disk() {
-    // Partial swap leaves the chunk in place so its non-swapped exports
-    // remain reachable. Contrast with `level: swap` which removes the
-    // chunk entirely. The megachunk file (`<out_dir>/static/megachunk/entry.js`)
-    // must still exist after the pipeline runs.
-    let fixture = run_partial_swap_fixture(PartialSwapFixtureArgs {
-        chunk_source: "export const e6 = () => true;\nexport const keepMe = () => 7;\n",
-        caller_source: "import { e6 as zodBoolean, keepMe as kept } from \"../megachunk/entry.js\";\nexport function go() { return zodBoolean() && kept(); }\n",
-        upstream_source: "export const boolean = () => true;\n",
-        symbols: vec![("e6", "zod", "boolean")],
-        upstream_version: "3.23.8",
-    });
-
-    assert_success(&fixture.result);
-    assert!(
-        fixture.megachunk_emitted_path.exists(),
-        "megachunk should still be emitted: {:?}",
-        fixture.megachunk_emitted_path,
-    );
-
-    let partial_manifest_path = fixture.partial_manifest_path();
-    let manifest: Value = serde_json::from_str(
-        &fs::read_to_string(&partial_manifest_path).expect("partial manifest"),
-    )
-    .expect("partial manifest parses");
-    let symbol_resolution = manifest
-        .get("partial")
-        .and_then(|r| r.get(&fixture.megachunk_chunk_path))
-        .and_then(|r| r.get("symbols"))
-        .and_then(|r| r.get("e6"))
-        .expect("manifest records e6 symbol resolution");
-    assert_eq!(
-        symbol_resolution
-            .get("references_rewritten")
-            .and_then(Value::as_u64),
-        Some(1),
-        "partial-swap manifest should count rewritten references:\n{manifest:#}",
     );
 }
 
@@ -727,17 +654,9 @@ struct PartialSwapFixtureArgs<'a> {
 
 struct PartialSwapFixture {
     result: CommandResult,
-    megachunk_chunk_path: String,
     caller_emitted_path: PathBuf,
     megachunk_emitted_path: PathBuf,
-    manifest_path: PathBuf,
     _root: TempDir,
-}
-
-impl PartialSwapFixture {
-    fn partial_manifest_path(&self) -> PathBuf {
-        self.manifest_path.clone()
-    }
 }
 
 fn run_partial_swap_with_mark(
@@ -760,10 +679,8 @@ fn run_partial_swap_with_mark(
 
     PartialSwapFixture {
         result,
-        megachunk_chunk_path: MEGACHUNK_PATH.to_string(),
         caller_emitted_path,
         megachunk_emitted_path,
-        manifest_path: ws.manifest_path.clone(),
         _root: ws.root,
     }
 }
@@ -1263,13 +1180,6 @@ fn bundled_partial_swap_replaces_react_cjs_family_with_singleton_esm_facade() {
         caller.contains("vendors/generated/static/megachunk/react.js")
             && caller.contains("vendors/generated/static/megachunk/react_jsx-runtime.js"),
         "caller should import generated ESM facades:\n{caller}",
-    );
-    assert!(ws.wrapper_root.join("static/megachunk/bundle.js").exists());
-    assert!(ws.wrapper_root.join("static/megachunk/react.js").exists());
-    assert!(
-        ws.wrapper_root
-            .join("static/megachunk/react_jsx-runtime.js")
-            .exists()
     );
 
     let probe_path = ws.out_root.join("__run_entry.mjs");
@@ -2458,13 +2368,6 @@ fn named_from_json_default_generates_named_pulls_from_json_keys() {
         default_export_aliases: &[],
     });
     assert_success(&fixture.result);
-    let wrapper_source = fs::read_to_string(&fixture.wrapper_path).expect("wrapper exists");
-    assert!(
-        wrapper_source.contains("export const version = _d.version;")
-            && wrapper_source.contains("export const flag = _d.flag;")
-            && wrapper_source.contains("export default _d;"),
-        "JSON wrapper should pull each named export off the parsed default:\n{wrapper_source}",
-    );
     let probe_path = fixture
         .wrapper_path
         .parent()

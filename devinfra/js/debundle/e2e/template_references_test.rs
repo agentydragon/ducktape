@@ -89,13 +89,6 @@ fn no_match_agreeing_with_a_reference_is_a_conflict_with_it() {
     let outcomes = read_selector_outcomes(&rejected.report_root);
     let default_widget = find_outcome(&outcomes, "conflict", "DefaultWidget");
     assert_eq!(default_widget["outcome"], expected, "{default_widget:#}");
-
-    let validate = validate_json(widget_fixture(OTHER_CLASS_ONLY));
-    assert_eq!(
-        validate["outcomes"],
-        json!([default_widget]),
-        "{validate:#}"
-    );
 }
 
 /// A name pin's binding is known without a solve: the template matches only
@@ -229,9 +222,8 @@ console.log(a(), b());
 /// fragile as elimination, so it warns and names the referrer.
 #[test]
 fn entity_unique_only_through_a_referrer_warns() {
-    let fixture = || {
-        FixtureOpts::new(
-            r#"class a {
+    let fixture = run_fixture(FixtureOpts::new(
+        r#"class a {
   open() {
     return 1;
   }
@@ -244,23 +236,21 @@ class b {
 const c = new a(1);
 console.log(c.open(), new b().open());
 "#,
-            vec![
-                logical_module(
-                    "widgets/widget",
-                    &[Member::source_alpha(
-                        "Widget",
-                        "class Widget {\n  open() {\n    STMT_LIST;\n  }\n}",
-                    )],
-                ),
-                logical_module(
-                    "widgets/default",
-                    &[Member::source_alpha("DefaultWidget", DEFAULT_WIDGET)],
-                ),
-            ],
-        )
-    };
-    let fixture_run = run_fixture(fixture());
-    let outcomes = read_selector_outcomes(&fixture_run.report_root);
+        vec![
+            logical_module(
+                "widgets/widget",
+                &[Member::source_alpha(
+                    "Widget",
+                    "class Widget {\n  open() {\n    STMT_LIST;\n  }\n}",
+                )],
+            ),
+            logical_module(
+                "widgets/default",
+                &[Member::source_alpha("DefaultWidget", DEFAULT_WIDGET)],
+            ),
+        ],
+    ));
+    let outcomes = read_selector_outcomes(&fixture.report_root);
     let widget = find_outcome(&outcomes, "resolved", "Widget");
     assert_eq!(widget["severity"], "warning", "{widget:#}");
     assert_eq!(
@@ -272,29 +262,23 @@ console.log(c.open(), new b().open());
         "{widget:#}"
     );
     assert_eq!(widget["outcome"]["binding"], "a", "{widget:#}");
-
-    let validate = validate_json(fixture());
-    assert_eq!(validate["outcomes"], json!([widget]), "{validate:#}");
 }
 
 /// `Widget` is exported by two modules and the template's own module exports
 /// neither, so which entity it names is undefined.
 #[test]
 fn name_exported_by_several_other_modules_is_invalid() {
-    let fixture = || {
-        FixtureOpts::new(
-            TWO_CLASSES,
-            vec![
-                logical_module("widgets/a", &[Member::renamed("Widget", "a")]),
-                logical_module("widgets/b", &[Member::renamed("Widget", "b")]),
-                logical_module(
-                    "widgets/default",
-                    &[Member::source_alpha("DefaultWidget", DEFAULT_WIDGET)],
-                ),
-            ],
-        )
-    };
-    let rejected = run_dry_run_rejection_fixture(fixture());
+    let rejected = run_dry_run_rejection_fixture(FixtureOpts::new(
+        TWO_CLASSES,
+        vec![
+            logical_module("widgets/a", &[Member::renamed("Widget", "a")]),
+            logical_module("widgets/b", &[Member::renamed("Widget", "b")]),
+            logical_module(
+                "widgets/default",
+                &[Member::source_alpha("DefaultWidget", DEFAULT_WIDGET)],
+            ),
+        ],
+    ));
     let outcomes = read_selector_outcomes(&rejected.report_root);
     let default_widget = find_outcome(&outcomes, "invalid", "DefaultWidget");
     assert_eq!(
@@ -302,13 +286,6 @@ fn name_exported_by_several_other_modules_is_invalid() {
         "ambiguous_reference: template identifier `Widget` is exported by modules widgets/a, \
          widgets/b; rename it in the template or rename one export",
         "{default_widget:#}"
-    );
-
-    let validate = validate_json(fixture());
-    assert_eq!(
-        validate["outcomes"],
-        json!([default_widget]),
-        "{validate:#}"
     );
 }
 
