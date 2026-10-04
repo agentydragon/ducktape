@@ -108,12 +108,8 @@ afterEach(async () => {
   vi.resetAllMocks();
 });
 
-it("recovers an initial session-list network failure without a refresh control", async () => {
-  vi.useFakeTimers();
-  vi.mocked(listSessions)
-    .mockRejectedValueOnce(new TypeError("temporary network failure"))
-    .mockResolvedValueOnce({ data: [session], next_cursor: null, resume_token: null });
-  vi.mocked(listSessionEvents).mockResolvedValue({ data: [], has_more: false, first_id: null, last_id: null });
+// Returns the container so the calling test keeps it narrowed to non-null.
+async function renderViewer(): Promise<HTMLDivElement> {
   container = document.createElement("div");
   document.body.append(container);
   root = createRoot(container);
@@ -124,6 +120,29 @@ it("recovers an initial session-list network failure without a refresh control",
       </MantineProvider>
     )
   );
+  return container;
+}
+
+function mockWatchStream() {
+  const stream = new EventTarget() as EventTarget & {
+    close: () => void;
+    onopen: (() => void) | null;
+    onerror: (() => void) | null;
+  };
+  stream.close = vi.fn();
+  stream.onopen = null;
+  stream.onerror = null;
+  vi.mocked(watchSessions).mockReturnValue(stream as unknown as EventSource);
+  return stream;
+}
+
+it("recovers an initial session-list network failure without a refresh control", async () => {
+  vi.useFakeTimers();
+  vi.mocked(listSessions)
+    .mockRejectedValueOnce(new TypeError("temporary network failure"))
+    .mockResolvedValueOnce({ data: [session], next_cursor: null, resume_token: null });
+  vi.mocked(listSessionEvents).mockResolvedValue({ data: [], has_more: false, first_id: null, last_id: null });
+  container = await renderViewer();
   await act(async () => vi.advanceTimersByTimeAsync(500));
   expect(listSessions).toHaveBeenCalledTimes(2);
   expect(container.textContent).toContain(session.title);
@@ -144,16 +163,7 @@ it("keeps the selected session when the session list is hidden and shown", async
     first_id: null,
     last_id: null,
   });
-  container = document.createElement("div");
-  document.body.append(container);
-  root = createRoot(container);
-  await act(async () =>
-    root?.render(
-      <MantineProvider env="test">
-        <SessionViewer />
-      </MantineProvider>
-    )
-  );
+  container = await renderViewer();
   await vi.waitFor(() => expect(container?.querySelector("#session-sidebar")).not.toBeNull());
 
   const secondRow = await vi.waitFor(() => {
@@ -190,16 +200,7 @@ it("shows signed narration as prose while ordinary thinking remains collapsed", 
     first_id: narrationSessionEvents[0]?.event_id ?? null,
     last_id: narrationSessionEvents.at(-1)?.event_id ?? null,
   });
-  container = document.createElement("div");
-  document.body.append(container);
-  root = createRoot(container);
-  await act(async () =>
-    root?.render(
-      <MantineProvider env="test">
-        <SessionViewer />
-      </MantineProvider>
-    )
-  );
+  container = await renderViewer();
 
   await vi.waitFor(() => expect(container?.querySelector('[data-fold-kind="narration"]')).not.toBeNull());
   const narration = container.querySelector<HTMLElement>('[data-fold-kind="narration"]')!;
@@ -227,16 +228,7 @@ it("clamps pointer and keyboard resizing and restores the width after collapsing
     first_id: null,
     last_id: null,
   });
-  container = document.createElement("div");
-  document.body.append(container);
-  root = createRoot(container);
-  await act(async () =>
-    root?.render(
-      <MantineProvider env="test">
-        <SessionViewer />
-      </MantineProvider>
-    )
-  );
+  container = await renderViewer();
   await vi.waitFor(() => expect(container?.querySelector('[role="separator"]')).not.toBeNull());
 
   const layout = container.querySelector<HTMLElement>("[data-session-viewer-layout]")!;
@@ -302,16 +294,7 @@ it("opens the mobile session drawer and keeps the chosen session after it closes
     first_id: null,
     last_id: null,
   });
-  container = document.createElement("div");
-  document.body.append(container);
-  root = createRoot(container);
-  await act(async () =>
-    root?.render(
-      <MantineProvider env="test">
-        <SessionViewer />
-      </MantineProvider>
-    )
-  );
+  container = await renderViewer();
   await vi.waitFor(() =>
     expect(container?.querySelector('button[aria-controls="session-sidebar-mobile"]')).not.toBeNull()
   );
@@ -362,16 +345,7 @@ it("renders message Markdown and preserves the exact source in the raw event str
     first_id: userEvent.event_id,
     last_id: assistantEventWithMarkdown.event_id,
   });
-  container = document.createElement("div");
-  document.body.append(container);
-  root = createRoot(container);
-  await act(async () =>
-    root?.render(
-      <MantineProvider env="test">
-        <SessionViewer />
-      </MantineProvider>
-    )
-  );
+  container = await renderViewer();
 
   await vi.waitFor(() => expect(container?.querySelectorAll('[data-fold-kind="message"]')).toHaveLength(2));
   const userArticle = container.querySelector<HTMLElement>('[data-message-role="user"]')!;
@@ -397,15 +371,7 @@ it("renders message Markdown and preserves the exact source in the raw event str
 });
 
 it("applies committed session and transcript changes without restarting the watch", async () => {
-  const stream = new EventTarget() as EventTarget & {
-    close: () => void;
-    onopen: (() => void) | null;
-    onerror: (() => void) | null;
-  };
-  stream.close = vi.fn();
-  stream.onopen = null;
-  stream.onerror = null;
-  vi.mocked(watchSessions).mockReturnValue(stream as unknown as EventSource);
+  const stream = mockWatchStream();
   vi.mocked(listSessions).mockResolvedValue({ data: [session], next_cursor: null, resume_token: "watch-1" });
   vi.mocked(getSession).mockResolvedValue({ session: { ...session, title: "Renamed live session", status: "paused" } });
   const refreshedToolCall = {
@@ -428,16 +394,7 @@ it("applies committed session and transcript changes without restarting the watc
     )
     .mockResolvedValueOnce({ data: [second], has_more: false, first_id: "event-3", last_id: "event-3" });
 
-  container = document.createElement("div");
-  document.body.append(container);
-  root = createRoot(container);
-  await act(async () =>
-    root?.render(
-      <MantineProvider env="test">
-        <SessionViewer />
-      </MantineProvider>
-    )
-  );
+  container = await renderViewer();
   await vi.waitFor(() => expect(container?.querySelectorAll('[data-fold-kind="message"]')).toHaveLength(1));
   const article = container.querySelector('[data-fold-kind="message"]')!;
   const list = container.querySelector('[aria-label="Session list"] button')!;
@@ -492,15 +449,7 @@ it("updates an older loaded session into and out of the active filter across a s
   const olderActive = { ...olderArchived, title: "Renamed older session from live feed", status: "active" };
   const olderPaused = { ...olderActive, status: "paused" };
   const newSession = { ...session, id: "session-new", title: "Brand new session from live feed", status: "active" };
-  const stream = new EventTarget() as EventTarget & {
-    close: () => void;
-    onopen: (() => void) | null;
-    onerror: (() => void) | null;
-  };
-  stream.close = vi.fn();
-  stream.onopen = null;
-  stream.onerror = null;
-  vi.mocked(watchSessions).mockReturnValue(stream as unknown as EventSource);
+  const stream = mockWatchStream();
   let finishActiveFilter: ((page: Awaited<ReturnType<typeof listSessions>>) => void) | undefined;
   vi.mocked(listSessions).mockImplementation((statuses, cursor) => {
     if (cursor !== undefined) {
@@ -519,16 +468,7 @@ it("updates an older loaded session into and out of the active filter across a s
     .mockResolvedValueOnce({ session: olderPaused })
     .mockResolvedValueOnce({ session: newSession });
 
-  container = document.createElement("div");
-  document.body.append(container);
-  root = createRoot(container);
-  await act(async () =>
-    root?.render(
-      <MantineProvider env="test">
-        <SessionViewer />
-      </MantineProvider>
-    )
-  );
+  container = await renderViewer();
   await vi.waitFor(() => expect(container?.textContent).toContain(session.title));
   const loadMore = [...container.querySelectorAll<HTMLButtonElement>("button")].find((button) =>
     button.textContent?.includes("Load more sessions")
@@ -588,15 +528,7 @@ it("updates an older loaded session into and out of the active filter across a s
 
 it("coalesces a burst of selected-session changes without abandoning an in-flight catch-up", async () => {
   const third = assistantEvent(4);
-  const stream = new EventTarget() as EventTarget & {
-    close: () => void;
-    onopen: (() => void) | null;
-    onerror: (() => void) | null;
-  };
-  stream.close = vi.fn();
-  stream.onopen = null;
-  stream.onerror = null;
-  vi.mocked(watchSessions).mockReturnValue(stream as unknown as EventSource);
+  const stream = mockWatchStream();
   vi.mocked(listSessions).mockResolvedValue({ data: [session], next_cursor: null, resume_token: "watch-1" });
   vi.mocked(getSession).mockResolvedValue({ session });
   let finishFirstCatchup: ((page: Awaited<ReturnType<typeof listSessionEvents>>) => void) | undefined;
@@ -624,16 +556,7 @@ it("coalesces a burst of selected-session changes without abandoning an in-fligh
     return Promise.resolve({ data: [third], has_more: false, first_id: third.event_id, last_id: third.event_id });
   });
 
-  container = document.createElement("div");
-  document.body.append(container);
-  root = createRoot(container);
-  await act(async () =>
-    root?.render(
-      <MantineProvider env="test">
-        <SessionViewer />
-      </MantineProvider>
-    )
-  );
+  container = await renderViewer();
   await vi.waitFor(() => expect(container?.textContent).toContain("First message"));
   const changedFrame = (): MessageEvent =>
     new MessageEvent("changed", { data: JSON.stringify({ session_ids: [session.id] }) });
@@ -652,15 +575,7 @@ it("coalesces a burst of selected-session changes without abandoning an in-fligh
 });
 
 it("aborts per-session live detail reads when the viewer unmounts", async () => {
-  const stream = new EventTarget() as EventTarget & {
-    close: () => void;
-    onopen: (() => void) | null;
-    onerror: (() => void) | null;
-  };
-  stream.close = vi.fn();
-  stream.onopen = null;
-  stream.onerror = null;
-  vi.mocked(watchSessions).mockReturnValue(stream as unknown as EventSource);
+  const stream = mockWatchStream();
   vi.mocked(listSessions).mockResolvedValue({ data: [session], next_cursor: null, resume_token: "watch-1" });
   vi.mocked(listSessionEvents).mockResolvedValue({ data: [], has_more: false, first_id: null, last_id: null });
   let detailSignal: AbortSignal | undefined;
@@ -668,16 +583,7 @@ it("aborts per-session live detail reads when the viewer unmounts", async () => 
     detailSignal = signal;
     return new Promise(() => {});
   });
-  container = document.createElement("div");
-  document.body.append(container);
-  root = createRoot(container);
-  await act(async () =>
-    root?.render(
-      <MantineProvider env="test">
-        <SessionViewer />
-      </MantineProvider>
-    )
-  );
+  container = await renderViewer();
   await vi.waitFor(() => expect(watchSessions).toHaveBeenCalledTimes(1));
   await act(async () =>
     stream.dispatchEvent(new MessageEvent("changed", { data: JSON.stringify({ session_ids: [session.id] }) }))
@@ -726,16 +632,7 @@ it("loads newest events first, prepends older pages without duplication, and fol
       last_id: first.event_id,
     });
 
-  container = document.createElement("div");
-  document.body.append(container);
-  root = createRoot(container);
-  await act(async () =>
-    root?.render(
-      <MantineProvider env="test">
-        <SessionViewer />
-      </MantineProvider>
-    )
-  );
+  container = await renderViewer();
   await vi.waitFor(() => expect(container?.textContent).toContain("Latest message"));
   expect(vi.mocked(listSessionEvents).mock.calls[0]?.slice(0, 3)).toEqual([session.id, undefined, "desc"]);
   expect(container.querySelectorAll('[data-fold-kind="message"]')).toHaveLength(1);
@@ -771,15 +668,7 @@ it("loads newest events first, prepends older pages without duplication, and fol
 
 it("catches up every page after a reconnect without dropping the selected older session or moving an older reader", async () => {
   const olderSession = { ...session, id: "session-older", title: "Session from an older list page" };
-  const stream = new EventTarget() as EventTarget & {
-    close: () => void;
-    onopen: (() => void) | null;
-    onerror: (() => void) | null;
-  };
-  stream.close = vi.fn();
-  stream.onopen = null;
-  stream.onerror = null;
-  vi.mocked(watchSessions).mockReturnValue(stream as unknown as EventSource);
+  const stream = mockWatchStream();
   vi.mocked(getSession).mockImplementation(async (sessionId) => ({
     session: sessionId === olderSession.id ? olderSession : session,
   }));
@@ -795,16 +684,7 @@ it("catches up every page after a reconnect without dropping the selected older 
     .mockResolvedValueOnce({ ...eventRange(1101, 1200, false), has_more: true })
     .mockResolvedValueOnce({ ...eventRange(1201, 1250, false), has_more: false });
 
-  container = document.createElement("div");
-  document.body.append(container);
-  root = createRoot(container);
-  await act(async () =>
-    root?.render(
-      <MantineProvider env="test">
-        <SessionViewer />
-      </MantineProvider>
-    )
-  );
+  container = await renderViewer();
   await vi.waitFor(() => expect(container?.textContent).toContain("Message 1"));
   const loadMoreSessions = [...container.querySelectorAll<HTMLButtonElement>("button")].find((button) =>
     button.textContent?.includes("Load more sessions")
@@ -874,16 +754,7 @@ it("keeps older-page pagination available when the newest loaded page contains o
     })
     .mockResolvedValueOnce({ data: [first], has_more: false, first_id: first.event_id, last_id: first.event_id });
 
-  container = document.createElement("div");
-  document.body.append(container);
-  root = createRoot(container);
-  await act(async () =>
-    root?.render(
-      <MantineProvider env="test">
-        <SessionViewer />
-      </MantineProvider>
-    )
-  );
+  container = await renderViewer();
   await vi.waitFor(() => expect(container?.querySelectorAll("[data-event-strip]")).toHaveLength(1));
   expect(container.querySelectorAll("[data-event-dot]")).toHaveLength(1);
   expect(container.querySelector("[data-event-json]")).toBeNull();
@@ -905,16 +776,7 @@ it("keeps suppressed events inspectable without expanding JSON or hook noise by 
     first_id: noisySessionEvents[0]!.event_id,
     last_id: noisySessionEvents.at(-1)!.event_id,
   });
-  container = document.createElement("div");
-  document.body.append(container);
-  root = createRoot(container);
-  await act(async () =>
-    root?.render(
-      <MantineProvider env="test">
-        <SessionViewer />
-      </MantineProvider>
-    )
-  );
+  container = await renderViewer();
   await vi.waitFor(() => expect(container?.querySelector('[data-message-role="assistant"]')).not.toBeNull());
   expect(container.querySelector("[data-event-json]")).toBeNull();
   expect(container.textContent).not.toContain("fixture-check: verified sample rule");
@@ -979,16 +841,7 @@ it("keeps an open tool disclosure when older history extends its activity group"
       first_id: olderTool.event_id,
       last_id: olderTool.event_id,
     });
-  container = document.createElement("div");
-  document.body.append(container);
-  root = createRoot(container);
-  await act(async () =>
-    root?.render(
-      <MantineProvider env="test">
-        <SessionViewer />
-      </MantineProvider>
-    )
-  );
+  container = await renderViewer();
   await vi.waitFor(() => expect(container?.querySelector("[data-tool-run-toggle]")).not.toBeNull());
   await act(async () => container?.querySelector<HTMLButtonElement>("[data-tool-run-toggle]")!.click());
   const loadOlder = [...container.querySelectorAll<HTMLButtonElement>("button")].find((button) =>
@@ -1020,16 +873,7 @@ it("toggles activity from header labels and status badges without collapsing on 
     first_id: "another-tool",
     last_id: "event-1",
   });
-  container = document.createElement("div");
-  document.body.append(container);
-  root = createRoot(container);
-  await act(async () =>
-    root?.render(
-      <MantineProvider env="test">
-        <SessionViewer />
-      </MantineProvider>
-    )
-  );
+  container = await renderViewer();
   const group = await vi.waitFor(() => {
     const button = container!.querySelector<HTMLButtonElement>("[data-tool-group-toggle]");
     expect(button).not.toBeNull();
