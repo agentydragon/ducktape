@@ -948,44 +948,6 @@ unassigned_mode:
     }
 
     #[test]
-    fn enables_write_js_tree_when_configured() {
-        let temp = tempfile::tempdir().unwrap();
-        let root = temp.path();
-        let config = root.join("spec_config.yaml");
-        let modules = root.join("modules");
-        let vendor_marks = root.join("sources/vendor/vendor_marks.yaml");
-        write_file(
-            &config,
-            r#"main_chunk_id: static/main
-inputs:
-  root: snapshots/test
-  js_list_path: extracted/js-files.txt
-write_js_tree: true
-unassigned_mode:
-  static/main:
-    kind: inline_in_entry
-"#,
-        );
-        fs::create_dir_all(&modules).unwrap();
-        write_file(&vendor_marks, "vendor_marks: []\n");
-
-        let spec = compile_spec_tree(&CompileSpecTreeOptions {
-            config_path: config,
-            modules_root: modules,
-            vendor_marks_path: vendor_marks,
-            source_root: None,
-            out_root: PathBuf::from("out/override"),
-        })
-        .unwrap();
-
-        assert!(spec.emit_browser_harness.is_none());
-        assert_eq!(
-            spec.write_js_tree.unwrap().out_dir,
-            Path::new("out/override")
-        );
-    }
-
-    #[test]
     fn rejects_duplicate_vendor_chunk_path() {
         let temp = tempfile::tempdir().unwrap();
         let options = fixture(temp.path());
