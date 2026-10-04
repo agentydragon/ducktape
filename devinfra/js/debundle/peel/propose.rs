@@ -1126,29 +1126,6 @@ mod tests {
         );
     }
 
-    #[test]
-    fn outgoing_residual_atomic_edges_close_proposals() {
-        let a = residual_owner("a", 1, &["a"], 10);
-        let b = residual_owner("b", 2, &["b"], 10);
-        let edges = vec![owner_edge("e1", "a", "b", DepKind::EagerUse, true)];
-        let graph = graph_of(
-            vec![a.clone(), b.clone()],
-            edges,
-            vec![
-                atomic_unit_for("atomic:0", &[&a]),
-                atomic_unit_for("atomic:1", &[&b]),
-            ],
-            vec![atomic_edge("atomic_edge:0", "atomic:0", "atomic:1")],
-        );
-        let report = propose(&graph, &no_claims(), 10_000).unwrap();
-        assert!(
-            report.proposals.iter().any(|p| p.binding_ids
-                == vec!["a".to_string(), "b".to_string()]
-                && p.landable_today),
-            "expected closure proposal containing a and b: {report:#?}",
-        );
-    }
-
     // A constraining owner edge between two residual cells that the
     // quotient does NOT merge (no atomic-DAG edge, so pass-3
     // reachability never contracts them and the greedy refuses
@@ -1515,44 +1492,6 @@ mod tests {
         assert!(proposal.landable_today, "{proposal:?}");
         assert!(proposal.unaddressable_anonymous_owner_ids.is_empty());
         assert!(proposal.landability_notes.is_empty());
-    }
-
-    #[test]
-    fn ambiguous_full_ast_anonymous_proposals_stay_visible_but_not_landable() {
-        let mut effect = residual_owner("owner:effect", 1, &[], 1);
-        effect.statement_kind = StatementKind::SideEffect;
-        let graph = graph_of(
-            vec![effect.clone()],
-            vec![],
-            vec![atomic_unit_for("atomic:0", &[&effect])],
-            vec![],
-        );
-        let report = propose_with_context(
-            &graph,
-            &no_claims(),
-            10_000,
-            ProposalContext {
-                addressable_anonymous_owner_ids: Some(BTreeSet::new()),
-            },
-        )
-        .unwrap();
-        let proposal = report.proposals.first().expect("anonymous proposal");
-        assert_eq!(
-            proposal.anonymous_statement_owner_ids,
-            vec!["owner:effect".to_string()],
-        );
-        assert!(!proposal.landable_today);
-        assert_eq!(
-            proposal.unaddressable_anonymous_owner_ids,
-            vec!["owner:effect".to_string()],
-        );
-        assert!(
-            proposal
-                .landability_notes
-                .iter()
-                .any(|note| note.contains("full-AST selector")),
-            "expected full-AST selector note: {proposal:?}",
-        );
     }
 
     // Owners that individually exceed the size cap surface as

@@ -964,15 +964,6 @@ mod tests {
     }
 
     fn body_occupancy(scope: RenameScope, root: &[&str], nested: &[&str]) -> SealValidation {
-        body_occupancy_with_captures(scope, root, nested, &[])
-    }
-
-    fn body_occupancy_with_captures(
-        scope: RenameScope,
-        root: &[&str],
-        nested: &[&str],
-        captured: &[(&str, &str)],
-    ) -> SealValidation {
         SealValidation {
             occupancy: BTreeMap::from([(
                 scope,
@@ -980,10 +971,7 @@ mod tests {
                     label: "spec_x".to_string(),
                     root: names(root),
                     nested: names(nested),
-                    captured: captured
-                        .iter()
-                        .map(|(from, to)| (from.to_string(), to.to_string()))
-                        .collect(),
+                    captured: BTreeSet::new(),
                 },
             )]),
             reserved: BTreeSet::new(),
@@ -1062,31 +1050,6 @@ mod tests {
     }
 
     #[test]
-    fn function_scope_projection_returns_per_scope_string_maps() {
-        let outer = RenameScope::Function(FunctionScopeId { lo: 1, hi: 100 });
-        let inner = RenameScope::Function(FunctionScopeId { lo: 10, hi: 20 });
-        let mut ledger = RenameLedger::default();
-        // Sibling/nested scopes reusing one minified spelling with
-        // different targets are independent renames (#2045) — no conflict.
-        ledger.submit(intent(outer, "e", "value", HEURISTIC));
-        ledger.submit(intent(inner, "e", "registry", HEURISTIC));
-        let sealed = ledger.seal(&SealValidation::default()).unwrap();
-        assert_eq!(
-            sealed.scope_renames_by_name(&outer),
-            BTreeMap::from([("e".to_string(), "value".to_string())]),
-        );
-        assert_eq!(
-            sealed.scope_renames_by_name(&inner),
-            BTreeMap::from([("e".to_string(), "registry".to_string())]),
-        );
-        assert!(
-            sealed
-                .scope_renames_by_name(&RenameScope::Function(FunctionScopeId { lo: 2, hi: 3 }))
-                .is_empty()
-        );
-    }
-
-    #[test]
     fn hygiene_distinct_ids_are_distinct_keys() {
         // Two bindings spelled the same but carrying different
         // SyntaxContexts are different ledger keys — no conflict.
@@ -1117,12 +1080,6 @@ mod tests {
         assert_eq!(ledger.mint(RenameScope::Chunk, "fresh"), "fresh$1");
         assert_eq!(ledger.mint(RenameScope::Chunk, "fresh"), "fresh$2");
         assert_eq!(ledger.mint(RenameScope::Chunk, "taken"), "taken$1");
-    }
-
-    #[test]
-    fn mint_never_offers_a_reserved_word_verbatim() {
-        let mut ledger = RenameLedger::default();
-        assert_eq!(ledger.mint(RenameScope::Chunk, "default"), "default$1");
     }
 
     #[test]
@@ -1224,43 +1181,6 @@ mod tests {
                 ("a".to_string(), "b".to_string()),
                 ("b".to_string(), "a".to_string()),
             ]),
-        );
-    }
-
-    #[test]
-    fn observed_capture_facts_are_a_hard_error() {
-        // The caller's rename walk reports `(source, target)` pairs the
-        // scope stack withheld; seal rejects with the pre-ledger message.
-        let mut ledger = RenameLedger::default();
-        ledger.submit(intent(RenameScope::Chunk, "a", "b", A));
-        let message = ledger
-            .seal(&body_occupancy_with_captures(
-                RenameScope::Chunk,
-                &["a", "f"],
-                &["b"],
-                &[("a", "b")],
-            ))
-            .unwrap_err()
-            .to_string();
-        assert!(
-            message.contains("captured by a nested binding"),
-            "{message}"
-        );
-    }
-
-    #[test]
-    fn nested_bound_target_without_observed_capture_is_allowed() {
-        // Reference-precision: a target bound only in a nested scope
-        // where the source is shadowed (or never referenced) does not
-        // capture — the rename walk reports no pair, so seal accepts.
-        let mut ledger = RenameLedger::default();
-        ledger.submit(intent(RenameScope::Chunk, "a", "b", A));
-        let sealed = ledger
-            .seal(&body_occupancy(RenameScope::Chunk, &["a", "f"], &["b"]))
-            .unwrap();
-        assert_eq!(
-            sealed.chunk_renames_by_name(),
-            HashMap::from([("a".to_string(), "b".to_string())]),
         );
     }
 

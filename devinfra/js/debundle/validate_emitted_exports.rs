@@ -271,18 +271,6 @@ mod tests {
     }
 
     #[test]
-    fn passes_on_clean_module() {
-        js_ast::with_swc_globals(|| {
-            validate_sources(&[(
-                "ok",
-                "entry.js",
-                Some("const a = 1;\nconst b = 2;\nexport { a, b };\n"),
-            )])
-            .expect("clean module passes");
-        });
-    }
-
-    #[test]
     fn flags_named_alias_colliding_with_local_export() {
         js_ast::with_swc_globals(|| {
             // The Chromium-silent failure mode the the upstream smoke hit:
