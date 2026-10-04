@@ -3,6 +3,10 @@ load("@aspect_rules_js//npm:defs.bzl", "npm_package")
 
 package(default_visibility = ["//visibility:public"])
 
+# The spec for client.ts, run by //haku/console/frontend:bridge_client_test in the root module:
+# this module has no node toolchain of its own (see MODULE.bazel).
+exports_files(["client.test.ts"])
+
 # The shared source: wire types + client helpers, plus the package.json that names the
 # package and maps its `exports`. Shipped as TypeScript source — both consumers bundle TS
 # (esbuild / vite) and typecheck under `moduleResolution: bundler`, so no compile step.

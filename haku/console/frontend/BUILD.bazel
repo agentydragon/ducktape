@@ -1,6 +1,7 @@
 load("@aspect_rules_esbuild//esbuild:defs.bzl", "esbuild")
 load("@aspect_rules_js//js:defs.bzl", "js_binary", "js_run_binary", "js_test")
 load("@aspect_rules_ts//ts:defs.bzl", "ts_config")
+load("@bazel_skylib//rules:copy_file.bzl", "copy_file")
 load("@npm_ducktape//:@tailwindcss/cli/package_json.bzl", tailwindcss_bin = "bin")
 load("//devinfra/js:json_schema.bzl", "js_json_schema")
 load("//devinfra/js:openapi.bzl", "js_openapi_schema")
@@ -1081,6 +1082,14 @@ haku_vitest_test(
         ":bridge",
         "//:node_modules/vitest",
     ],
+)
+
+# The spec lives in the shared module beside client.ts. That module is a nested Bazel module with
+# no node toolchain, so its spec is compiled and run here, where vitest is available.
+copy_file(
+    name = "bridge_client_spec",
+    src = "@ducktape_haku//bridge_protocol:client.test.ts",
+    out = "bridge_client.test.ts",
 )
 
 haku_vitest_test(
