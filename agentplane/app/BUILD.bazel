@@ -927,6 +927,7 @@ py_test(
         ":database",
         "//:conftest",
         "//agentplane/app/testing:electric_service",
+        "//agentplane/app/testing:history_probe",
         "//agentplane/app/testing:http2_proxy",
         "//agentplane/app/testing:replication_process",
         "//agentplane/app/testing:replication_source",

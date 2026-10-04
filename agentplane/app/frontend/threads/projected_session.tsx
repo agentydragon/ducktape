@@ -56,6 +56,7 @@ import {
   useProjectedCommands,
 } from "./thread_commands";
 import { ChronologicalDebugProvider, useOpenChronologicalDebug } from "./chronological_debug";
+import { HistoryTrace, LayoutSettle, type FollowReason } from "./history_trace";
 import { ThreadTitle } from "./thread_title";
 import { ThreadStatusIndicator } from "../thread_status_indicator";
 import { snapshotFresh, threadStatusFromSnapshot } from "../thread_status";
@@ -226,13 +227,8 @@ export function HistoryRowView({
 // there) rather than an assumption pinned to today's chrome height.
 const loadOlderWithin = (element: HTMLDivElement): number => element.clientHeight;
 
-// Traces VirtualizedHistory's scroll-anchor bookkeeping to the console: off by default (this ran
-// hot enough, once, to matter) -- flip on with localStorage.setItem("agentplane:debugScroll", "1")
-// when chasing a reader-position bug, then reload.
-const SCROLL_DEBUG = typeof window !== "undefined" && window.localStorage?.getItem("agentplane:debugScroll") === "1";
-function scrollDebug(...args: unknown[]): void {
-  if (SCROLL_DEBUG) console.debug("[scroll-anchor]", ...args);
-}
+// What the virtualizer lays an unmeasured row out with, until it is mounted and read.
+const ESTIMATED_ROW_HEIGHT = 180;
 
 function VirtualizedHistory({
   threadId,
@@ -257,6 +253,11 @@ function VirtualizedHistory({
   // Whether the end of the history is on screen, so the reader can see it is not following it.
   const [endVisible, setEndVisible] = useState(true);
   const atBottom = useRef(true);
+  const [trace] = useState(() => new HistoryTrace());
+  const layoutSettle = useRef<LayoutSettle | null>(null);
+  const lastTotalSize = useRef(0);
+  // Each row's last measured height, to tell a row's first reading from a resize of it.
+  const measuredHeights = useRef(new Map<string, number>());
   const previousScrollTop = useRef(0);
   // Every bottom the viewport has had since the last scroll event or content resize was handled.
   // A return to the bottom lands on whichever one was current when it ran; a card can grow in
@@ -298,6 +299,7 @@ function VirtualizedHistory({
     restorationFrame.current = null;
     restorationSize.current = null;
     restoringAnchor.current = null;
+    publishMode();
   };
   const recordBottom = (element: HTMLDivElement) => {
     const bottom = element.scrollHeight - element.clientHeight;
@@ -307,13 +309,26 @@ function VirtualizedHistory({
   // measure shorter than estimated, that offset lies past the end and the browser clamps it: the
   // restoration's own scroll lands on the bottom, which is not the reader returning there.
   const restoringScroll = () => restorationFrame.current !== null;
+  // What tests and a reader-position investigation read of the history's state, from the region.
+  const publishMode = () => {
+    const element = viewport.current;
+    if (element)
+      element.dataset.scrollMode = atBottom.current ? "following" : restoringScroll() ? "restoring" : "reading";
+  };
+  const setFollowing = (following: boolean, reason: FollowReason) => {
+    if (atBottom.current === following) return;
+    atBottom.current = following;
+    trace.record({ kind: "follow", following, reason });
+    publishMode();
+  };
+  const layoutChanged = () => layoutSettle.current?.changed();
   const followPreviousBottom = (element: HTMLDivElement) => {
     // A programmatic return to the old bottom can be delivered after a card grows. Preserve
     // it before restoring a stale reader anchor, while an explicit user gesture owns its scroll,
     // as does a restoration still settling.
     if (captureNextScroll.current || restoringScroll() || element.scrollTop === clickedAt.current) return false;
     if (!recentBottoms.current.some((bottom) => Math.abs(element.scrollTop - bottom) <= 2)) return false;
-    atBottom.current = true;
+    setFollowing(true, "returned-to-previous-bottom");
     cancelRestoration();
     element.scrollTop = element.scrollHeight;
     return true;
@@ -331,11 +346,34 @@ function VirtualizedHistory({
   const virtualizer = useVirtualizer({
     count: rows.length,
     getScrollElement: () => viewport.current,
-    estimateSize: () => 180,
+    estimateSize: () => ESTIMATED_ROW_HEIGHT,
     getItemKey: (index) => rowKey(rows[index]),
-    measureElement: (element) => element.getBoundingClientRect().height,
+    measureElement: (element) => {
+      const measured = element.getBoundingClientRect().height;
+      const row = rows[Number(element.getAttribute("data-index"))];
+      if (row) {
+        const key = rowKey(row);
+        const previous = measuredHeights.current.get(key);
+        if (previous === undefined || Math.abs(previous - measured) >= 1) {
+          trace.record({
+            kind: "measure",
+            key,
+            estimate: previous ?? ESTIMATED_ROW_HEIGHT,
+            measured,
+            first: previous === undefined,
+          });
+          measuredHeights.current.set(key, measured);
+        }
+      }
+      return measured;
+    },
     overscan: 5 + pageOverscan,
     onChange: (instance, sync) => {
+      const total = instance.getTotalSize();
+      if (total !== lastTotalSize.current) {
+        lastTotalSize.current = total;
+        layoutChanged();
+      }
       // A card can resize before virtual-core applies its measured transform. Wait for
       // that measurement rather than guessing how many animation frames it requires.
       if (viewport.current && followPreviousBottom(viewport.current)) return;
@@ -390,14 +428,14 @@ function VirtualizedHistory({
       : undefined;
     if (first && firstRow) {
       readingAnchor.current = { key: rowKey(firstRow), offset: first.getBoundingClientRect().top - viewportTop };
-      scrollDebug("captureReadingAnchor", readingAnchor.current);
+      trace.record({ kind: "anchor", ...readingAnchor.current });
     }
   };
   const restoreAnchor = (anchor: { key: string; offset: number }, awaitMeasurement = false) => {
     const index = anchorIndex(anchor.key);
-    scrollDebug("restoreAnchor called", anchor, "index", index, "awaitMeasurement", awaitMeasurement);
     if (index < 0) return;
     cancelRestoration();
+    layoutChanged();
     restoringAnchor.current = anchor.key;
     const correctFromDom = (): number | null => {
       const element = viewport.current;
@@ -409,7 +447,7 @@ function VirtualizedHistory({
       return correction;
     };
     const correction = correctFromDom();
-    scrollDebug("restoreAnchor correction", correction);
+    trace.record({ kind: "restore", key: anchor.key, correction });
     if (correction === null) virtualizer.scrollToIndex(index, { align: "start" });
     // Waiting for measurement assumes the row is mounted and in place. One scrolled to by its
     // estimate needs the frames, whose pending state keeps a clamped scroll from reading as the bottom.
@@ -422,12 +460,32 @@ function VirtualizedHistory({
       restorationFrame.current = requestAnimationFrame(() => {
         if (restoringAnchor.current === anchor.key) restoringAnchor.current = null;
         restorationFrame.current = null;
+        publishMode();
       });
     });
+    publishMode();
   };
   useLayoutEffect(() => {
     const element = viewport.current;
+    if (!element) return;
+    const settle = new LayoutSettle(restoringScroll, (settled) => {
+      element.dataset.layoutSettled = String(settled);
+      trace.record({ kind: "settled", settled });
+    });
+    layoutSettle.current = settle;
+    element.dataset.layoutSettled = "false";
+    publishMode();
+    window.agentplaneHistoryTrace = () => trace.events();
+    return () => {
+      settle.dispose();
+      layoutSettle.current = null;
+      delete window.agentplaneHistoryTrace;
+    };
+  }, [trace]);
+  useLayoutEffect(() => {
+    const element = viewport.current;
     const firstKey = rows[0] ? rowKey(rows[0]) : null;
+    if (rows.length !== previousCount.current) layoutChanged();
     if (element && atBottom.current && rows.length > previousCount.current) element.scrollTop = element.scrollHeight;
     if (
       element &&
@@ -442,7 +500,7 @@ function VirtualizedHistory({
         // effect below, once this commit lands) before restoreAnchor ever runs for it -- rather
         // than letting restoreAnchor guess via estimateSize now and chase a correction once the
         // real heights are known.
-        scrollDebug("page prepended, widening overscan by", added);
+        trace.record({ kind: "prepend", added });
         setPageOverscan((current) => Math.max(current, added));
         setPagePrepended((current) => current + 1);
       } else {
@@ -476,10 +534,13 @@ function VirtualizedHistory({
     if (!element || !content) return;
     recordBottom(element);
     const observer = new ResizeObserver(() => {
+      layoutChanged();
       // A scrollbar drag or programmatic equivalent can reach the old bottom in the same task
       // that grows the last card, before the browser dispatches its scroll event. Preserve that
       // user choice across the resize without interpreting arbitrary layout movement as intent.
-      if (followPreviousBottom(element) || atBottom.current) element.scrollTop = element.scrollHeight;
+      const pinned = followPreviousBottom(element) || atBottom.current;
+      trace.record({ kind: "resize", scrollTop: element.scrollTop, scrollHeight: element.scrollHeight, pinned });
+      if (pinned) element.scrollTop = element.scrollHeight;
       // Content can resize while a wheel, touch, or key scroll is still settling. Its
       // measured rows do not describe the reader's final position yet; scrollend will
       // capture that position before a later resize restoration is eligible.
@@ -515,7 +576,7 @@ function VirtualizedHistory({
   const jumpToLatest = () => {
     const element = viewport.current;
     if (!element) return;
-    atBottom.current = true;
+    setFollowing(true, "jump-to-latest");
     clickedAt.current = null;
     cancelRestoration();
     element.scrollTop = element.scrollHeight;
@@ -526,13 +587,11 @@ function VirtualizedHistory({
     const element = viewport.current;
     if (!element) return;
     const onScrollEnd = () => {
-      scrollDebug(
-        "onScrollEnd",
-        "restoringAnchor",
-        restoringAnchor.current,
-        "captureNextScroll",
-        captureNextScroll.current
-      );
+      trace.record({
+        kind: "scrollend",
+        restoring: restoringAnchor.current !== null,
+        capturing: captureNextScroll.current,
+      });
       if (restoringAnchor.current !== null || !captureNextScroll.current) return;
       captureReadingAnchor(element);
       captureNextScroll.current = false;
@@ -557,7 +616,7 @@ function VirtualizedHistory({
           (event.deltaY > 0 && element.scrollTop < element.scrollHeight - element.clientHeight);
         if (canScroll) {
           expectUserScroll();
-          if (event.deltaY < 0) atBottom.current = false;
+          if (event.deltaY < 0) setFollowing(false, "wheel-up");
         } else if (!scrolledSinceInput.current) {
           captureNextScroll.current = false;
         }
@@ -565,7 +624,7 @@ function VirtualizedHistory({
       onKeyDown={(event) => {
         cancelRestoration();
         if (["ArrowUp", "ArrowDown", "PageUp", "PageDown", "Home", "End", " "].includes(event.key)) expectUserScroll();
-        if (["ArrowUp", "PageUp", "Home"].includes(event.key)) atBottom.current = false;
+        if (["ArrowUp", "PageUp", "Home"].includes(event.key)) setFollowing(false, "key-up");
       }}
       onKeyUp={() => {
         if (!scrolledSinceInput.current) captureNextScroll.current = false;
@@ -590,7 +649,7 @@ function VirtualizedHistory({
       onTouchMove={(event) => {
         const next = event.touches[0]?.clientY;
         expectUserScroll();
-        if (next !== undefined && touchY.current !== null && next > touchY.current) atBottom.current = false;
+        if (next !== undefined && touchY.current !== null && next > touchY.current) setFollowing(false, "touch-up");
         touchY.current = next ?? null;
       }}
       onTouchEnd={() => {
@@ -605,27 +664,23 @@ function VirtualizedHistory({
         const element = event.currentTarget;
         if (!(event.target instanceof Element) || !event.target.closest("summary, [aria-expanded]")) return;
         if (element.scrollHeight > element.clientHeight) {
-          atBottom.current = false;
+          setFollowing(false, "disclosure-click");
           clickedAt.current = element.scrollTop;
         }
         captureReadingAnchor(element);
+        trace.record({
+          kind: "click",
+          scrollTop: element.scrollTop,
+          scrollHeight: element.scrollHeight,
+          clientHeight: element.clientHeight,
+        });
       }}
       onScroll={(event) => {
         const element = event.currentTarget;
         if (element.scrollTop !== clickedAt.current) clickedAt.current = null;
         const followed = followPreviousBottom(element);
         recentBottoms.current = [element.scrollHeight - element.clientHeight];
-        scrollDebug(
-          "onScroll",
-          "scrollTop",
-          element.scrollTop,
-          "followed",
-          followed,
-          "restoringAnchor",
-          restoringAnchor.current,
-          "captureNextScroll",
-          captureNextScroll.current
-        );
+        trace.record({ kind: "scroll", scrollTop: element.scrollTop, scrollHeight: element.scrollHeight, followed });
         if (followed) {
           previousScrollTop.current = element.scrollTop;
           return;
@@ -634,9 +689,9 @@ function VirtualizedHistory({
         const movedDown = element.scrollTop > previousScrollTop.current;
         const nearBottom = element.scrollHeight - element.scrollTop - element.clientHeight < 24;
         if (movedUp) {
-          atBottom.current = false;
+          setFollowing(false, "scrolled-up");
         } else if (!restoringScroll() && nearBottom && (atBottom.current || movedDown)) {
-          atBottom.current = true;
+          setFollowing(true, "scrolled-to-bottom");
           cancelRestoration();
         }
         previousScrollTop.current = element.scrollTop;
@@ -650,7 +705,7 @@ function VirtualizedHistory({
         // where they were reading before, not where this gesture has since taken them.
         captureReadingAnchor(element);
         if (element.scrollTop < loadOlderWithin(element)) {
-          scrollDebug("calling loadOlder from onScroll");
+          trace.record({ kind: "load-older" });
           history.loadOlder();
         }
       }}

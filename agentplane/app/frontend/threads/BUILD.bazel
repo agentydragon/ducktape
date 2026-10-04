@@ -23,6 +23,23 @@ ts_library(
 )
 
 ts_library(
+    name = "history_trace",
+    srcs = ["history_trace.ts"],
+    tsconfig = TSCONFIG,
+)
+
+ts_library(
+    name = "history_trace_test",
+    testonly = True,
+    srcs = ["history_trace.test.ts"],
+    tsconfig = TSCONFIG,
+    deps = [
+        ":history_trace",
+        "//:node_modules/vitest",
+    ],
+)
+
+ts_library(
     name = "history_rows",
     srcs = ["history_rows.ts"],
     tsconfig = TSCONFIG,
@@ -84,6 +101,7 @@ ts_library(
     deps = [
         ":chronological_debug",
         ":history_rows",
+        ":history_trace",
         ":projected_session_css",
         ":retained_disclosures",
         ":thread_cards",

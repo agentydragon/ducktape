@@ -12,7 +12,7 @@ from contextlib import asynccontextmanager, suppress
 from dataclasses import dataclass
 from datetime import timedelta
 from pathlib import Path
-from typing import cast
+from typing import Any, cast
 from urllib.parse import parse_qs, urlsplit
 from uuid import UUID
 
@@ -32,6 +32,7 @@ from playwright.async_api import (
 from sqlalchemy import select, update
 
 from agentplane.app.database import connect
+from agentplane.app.testing import history_probe
 from agentplane.app.testing.electric_service import ElectricService, electric_service
 from agentplane.app.testing.http2_proxy import BrowserCertificate, Ingress, browser_certificate, http2_proxy
 from agentplane.app.testing.replication_process import AppProcess, app_process
@@ -77,14 +78,19 @@ async def page(
         )
         try:
             async with await browser.new_context(viewport={"width": 1280, "height": 900}) as context:
+                await context.add_init_script(path=history_probe.script_path())
                 await context.tracing.start(screenshots=True, snapshots=True, sources=True)
                 opened = await context.new_page()
+                await history_probe.throttle_cpu(context, opened)
                 errors: list[str] = []
                 opened.on("pageerror", lambda error: errors.append(str(error)))
                 try:
                     yield opened
                     assert not errors, errors
                 finally:
+                    await history_probe.write_results(
+                        opened, undeclared_outputs_dir() / f"{request.node.name}-history-probe.json"
+                    )
                     await context.tracing.stop(path=undeclared_outputs_dir() / f"{request.node.name}-trace.zip")
         finally:
             await browser.close()
@@ -1231,25 +1237,38 @@ async def read_at(page: Page, target: Locator, fraction: float) -> None:
 
 
 @asynccontextmanager
-async def holding_still(page: Page, line: Locator) -> AsyncIterator[None]:
+async def holding_still(page: Page, line: Locator, *, rest_first: bool = True) -> AsyncIterator[None]:
     """Fails unless `line` stays where it is on screen, in every frame painted from here until the
     block's layout has settled: the reader's place is what they just clicked, and the history's
-    scrolling may not carry it away."""
-    watch = await line.evaluate_handle(
-        """element => {
-            const start = element.getBoundingClientRect().top;
-            const state = { start, drift: 0, detached: false, stopped: false };
-            const sample = () => {
-                if (state.stopped) return;
-                if (element.isConnected) {
-                    state.drift = Math.max(state.drift, Math.abs(element.getBoundingClientRect().top - start));
-                } else state.detached = true;
-                requestAnimationFrame(sample);
-            };
-            requestAnimationFrame(sample);
-            return state;
-        }"""
-    )
+    scrolling may not carry it away. "Where it is" is where it is once the history says its layout
+    has come to rest (`data-layout-settled`): it keeps measuring rows, and moving the ones it has
+    laid out, for a while after it loads, and that shift is not the click's. `rest_first=False` for
+    a layout that keeps changing by design, such as output streaming in below the line."""
+    try:
+        async with asyncio.timeout(30):
+            watch = await line.evaluate_handle(
+                """(element, restFirst) => new Promise(resolve => {
+                    const area = element.closest('[aria-label="Thread history"]');
+                    const state = { drift: 0, detached: false, stopped: false };
+                    const sample = start => {
+                        if (state.stopped) return;
+                        if (element.isConnected) {
+                            state.drift = Math.max(state.drift, Math.abs(element.getBoundingClientRect().top - start));
+                        } else state.detached = true;
+                        requestAnimationFrame(() => sample(start));
+                    };
+                    const begin = () => requestAnimationFrame(() => {
+                        if (restFirst && area.dataset.layoutSettled !== "true") return begin();
+                        sample(element.getBoundingClientRect().top);
+                        resolve(state);
+                    });
+                    begin();
+                })""",
+                rest_first,
+            )
+    except TimeoutError:
+        trace = format_history_trace((await history_trace(page))[-40:])
+        raise AssertionError(f"{line} never came to rest; the history's last events:\n{trace}") from None
     try:
         yield
         await frames(page)
@@ -1321,14 +1340,14 @@ async def test_opening_a_call_while_output_streams_in_leaves_the_clicked_line_wh
     call, card = tool_call_in(run, "a")
     show_all = call.get_by_role("button", name="Show all 60 lines")
     async with output_streaming_in(thread_browser) as delivered:
-        async with holding_still(page, run):
+        async with holding_still(page, run, rest_first=False):
             await run.locator("summary").first.click()
             await expect(call).to_be_visible()
-        async with holding_still(page, card):
+        async with holding_still(page, card, rest_first=False):
             await call.locator("summary").first.click()
             await expect(show_all).to_be_visible()
         await read_at(page, show_all, 0.3)
-        async with holding_still(page, call.get_by_text("Output", exact=True)):
+        async with holding_still(page, call.get_by_text("Output", exact=True), rest_first=False):
             await show_all.click()
             await expect(call.get_by_role("button", name="Show less")).to_be_visible()
     assert len(delivered) >= 3, "the tail's output was not arriving while the call was opened"
@@ -1416,6 +1435,17 @@ async def wheel_and_capture_anchor_at_scrollend(page: Page, area: Locator, delta
         anchor = cast("dict[str, str | float]", await gesture.evaluate("gesture => gesture.anchor"))
     await gesture.dispose()
     return anchor
+
+
+async def history_trace(page: Page, since: float = 0.0) -> list[dict[str, Any]]:
+    """The history's flight recorder (history_trace.ts): its scroll and layout decisions since
+    `since`, a `performance.now()` reading, as `{"at", "event"}` records."""
+    events = await page.evaluate("() => window.agentplaneHistoryTrace?.() ?? []")
+    return [entry for entry in events if entry["at"] >= since]
+
+
+def format_history_trace(events: list[dict[str, Any]]) -> str:
+    return "\n".join(f"{entry['at']:9.1f} {json.dumps(entry['event'])}" for entry in events)
 
 
 async def expect_reading_anchor(page: Page, anchor: dict[str, str | float]) -> None:
