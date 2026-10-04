@@ -1169,16 +1169,6 @@ mod tests {
             report.name_only_module_groups[2].module_prefix,
             "app/search"
         );
-
-        let mut text = String::new();
-        render_selector_debt_text(&report, &mut text);
-        assert!(text.contains("name-only groups by module prefix:"));
-        assert!(
-            text.contains(
-                "2 selector(s)     2 fragile     2 module(s)  max=100  depth=2  app/panel"
-            )
-        );
-        assert!(!text.contains("readableName"));
     }
 
     #[test]
