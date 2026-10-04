@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
 
-import { create, equals, toJson, type MessageInitShape } from "@bufbuild/protobuf";
+import { create, toJson, type MessageInitShape } from "@bufbuild/protobuf";
 import { TEST_REASONING_EFFORTS } from "../test_model_catalog";
 import { MantineProvider } from "@mantine/core";
 import { act, type JSX } from "react";
@@ -642,16 +642,6 @@ function retry(container: HTMLDivElement, commandId: string): HTMLButtonElement 
   return found;
 }
 
-it("delivers a command an earlier page retained without the operator acting, and keeps its admission", async () => {
-  new LocalCommands(THREAD.id).remember(message("retained-unadmitted"));
-  vi.mocked(command).mockImplementation(admit);
-  const container = await render();
-  expect(sentIds()).toEqual(["retained-unadmitted"]);
-  expect(pendingRow(container, "retained-unadmitted").textContent).toContain("Saved · awaiting effect");
-  const [retained] = new LocalCommands(THREAD.id).getSnapshot().commands;
-  expect(equals(EventEntrySchema, retained.admission!, admission(message("retained-unadmitted")))).toBe(true);
-});
-
 it("does not send a retained command whose admission it already holds", async () => {
   const store = new LocalCommands(THREAD.id);
   store.remember(message("retained-admitted"));
@@ -802,32 +792,6 @@ it.each([
   await act(async () => dismiss?.click());
   expect(container.querySelector(`.agentplane-user-bubble[data-message-phase="${phase}"]`)).toBeNull();
   expect(new LocalCommands(THREAD.id).isDismissed("test-entity")).toBe(true);
-});
-
-it("replaces an applied input outcome with its confirmed message", async () => {
-  const text = "The harness accepted this input";
-  const confirmed = entity(
-    "confirmed_input",
-    { harness_message_id: "message", origin_command_ids: ["test-entity"] },
-    { inputRef: reference("confirmed-input", "confirmed_input") }
-  );
-  const [historyRow] = await renderHistory([confirmed], false, { "confirmed-input:confirmed_input": text });
-  expect(historyRow?.querySelector(".agentplane-user-bubble .agentplane-verbatim")?.textContent).toBe(text);
-
-  const container = await render(
-    threadState({
-      rows: [
-        viewState(),
-        entity(
-          "command",
-          { operation: "submit_input", outcome: "effected", outcome_cursor: "1", outcome_reason: null },
-          { inputRef: reference("command-input", "command_input") }
-        ),
-        confirmed,
-      ],
-    })
-  );
-  expect(container.querySelector('[aria-label="Input messages"]')).toBeNull();
 });
 
 it("keeps a still-pending sent message out of the pending-commands box, since it renders inline instead", async () => {

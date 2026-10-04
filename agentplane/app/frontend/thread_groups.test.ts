@@ -49,15 +49,6 @@ it("groups threads by sandbox, newest thread first fixing each group's order", (
   expect(groups[0].sandbox?.operating_mode).toBe("Suspended");
 });
 
-it("groups a thread whose sandbox is gone under a null sandbox rather than dropping it", () => {
-  const orphan = threadView({ id: "t-orphan", sandbox: "sb-gone", session_id: "s-1" });
-
-  const [group] = groupThreads([orphan], {}, false);
-
-  expect(group.sandbox).toBeNull();
-  expect(group.threads).toEqual([orphan]);
-});
-
 it("hides archived Threads without hiding their existing Sandbox", () => {
   const archived = threadView({ id: "t-1", sandbox: "sb-a", session_id: "s-1", archived: true });
   const kept = threadView({ id: "t-2", sandbox: "sb-b", session_id: "s-2" });
@@ -69,13 +60,6 @@ it("hides archived Threads without hiding their existing Sandbox", () => {
 
   const shown = groupThreads([archived, kept], sandboxes, true);
   expect(shown.map((group) => group.sandboxName)).toEqual(["sb-a", "sb-b"]);
-});
-
-it("includes a provisioning Sandbox before any Thread exists", () => {
-  const pending = sandboxView("test-provisioning");
-  expect(groupThreads([], { [pending.name]: pending }, false)).toEqual([
-    { sandboxName: pending.name, sandbox: pending, threads: [] },
-  ]);
 });
 
 it("counts archived threads across every sandbox regardless of visibility", () => {

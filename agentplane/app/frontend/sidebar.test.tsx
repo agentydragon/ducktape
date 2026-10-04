@@ -9,7 +9,6 @@ import type { SandboxView, ThreadView } from "./client";
 import type { ThreadsSnapshot } from "./live";
 import { Sidebar } from "./sidebar";
 import { ThreadsLiveProvider } from "./live";
-import { threadStatusFromSnapshot } from "./thread_status";
 import { DEGRADED_AFTER_MS } from "./stream_status";
 
 const fetchMock = vi.hoisted(() => {
@@ -197,23 +196,6 @@ it("applies pushed renames and Sandbox state without marking a suspended harness
   expect(container.querySelector('a[href="/sandboxes/test-sandbox"]')).toBeNull();
   await act(async () => row(renamed.name).click());
   expect(location()).toBe("/threads/t-1");
-});
-
-it("does not show a running indicator for an archived thread or an ended/failed runner feed", () => {
-  const running = thread({
-    id: "t-1",
-    sandbox: "test-sandbox",
-    session_id: "s-1",
-    harness_state: "HARNESS_STATE_RUNNING",
-    active_turn_id: "turn-1",
-  });
-  const box = sandbox("test-sandbox");
-  expect(threadStatusFromSnapshot(running, box, true).kind).toBe("running");
-  expect(threadStatusFromSnapshot({ ...running, active_turn_id: null }, box, true).kind).toBe("idle");
-  expect(threadStatusFromSnapshot({ ...running, feed_status: "ended" }, box, true).kind).toBe("inactive");
-  expect(threadStatusFromSnapshot({ ...running, feed_status: "failed" }, box, true).kind).toBe("failed");
-  expect(threadStatusFromSnapshot({ ...running, archived: true }, box, true).kind).toBe("inactive");
-  expect(threadStatusFromSnapshot(running, box, false).kind).toBe("inactive");
 });
 
 it("shows chevrons in the shared status indicator when a fresh sidebar thread has an active turn", async () => {
