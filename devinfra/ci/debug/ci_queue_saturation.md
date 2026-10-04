@@ -1,246 +1,135 @@
-# Current CI latency analysis
+# CI feedback and cost — 4 October 2026
 
-Measured **2026-09-09, 20:00–21:15 UTC**; API sweep 21:13:18–21:16:00 UTC.
-Source inspected: `b5d4e6f918b0d18bb65a48c94601a1fa5dc56f01`.
-This is the maintained report. Refresh it using the
-[ci_latency skill](../skills/ci_latency/SKILL.md) and its packaged scripts.
-[Machine-readable evidence](ci_latency_evidence.json) contains the aggregates,
-job URLs, contention timeline and current-head check counts.
+Inspected devel: `8b1c35555d93acd6afce5718c1002ce14960d85f`.
+PR creation cohort: 1 October 00:00 through 4 October 21:15 UTC.
+Busy-period Actions window: 4 October 19:45–21:15 UTC; API sweep 21:20:29–21:22:32 UTC.
+The PR cohort sweep ran 21:22:01–21:22:34 UTC; job/profile and diagnostic reads followed, through approximately 21:33 UTC. All durations below are seconds unless marked otherwise.
 
 ## Finding
 
-**GitHub runner contention is a material cause of slow PR feedback. CodeQL is the
-largest measured consumer and is occupying slots while Bazel CI waits.** There is
-also a separate Bazel execution tail; removing runner contention would not eliminate
-all slow results.
+**Optimize the Bazel path and failure recovery before buying GitHub runner capacity.** Among 65 passing sampled heads, all four required checks finished after a median **227s (3m47s)** and p90 **494s (8m14s)** from first workflow creation. Bazel was last on 52 heads, pre-commit on eight, and wheel/import validation on five. This is a workflow-to-required-check proxy, **not measured push-to-auto-merge eligibility**.
 
-At **20:44 UTC**, 20 jobs occupied GitHub runners, **12 were CodeQL**, and these two
-independent Bazel jobs were waiting:
+The September report's CodeQL contention diagnosis does not describe this window. CodeQL contributed zero occupied runner time; default setup now reports `not-configured`, and checked-in advanced setup runs nightly/on demand with two matrix jobs at a time. Recent assigned Bazel jobs waited a median 2s, p90 20s; an older sampled cdk8s PR still waited 304s, so contention has not disappeared. The major measured runner consumer is now **visual publication: 264.4 runner-minutes, 28.0%**. It is not a required gate, and reducing its cost is not a proven proportional latency improvement.
 
-- [run 34402669951](https://github.com/agentydragon/ducktape/actions/runs/34402669951/job/102638082623)
-- [run 34402670004](https://github.com/agentydragon/ducktape/actions/runs/34402670004/job/102638083065)
+Two distinct slow paths matter. Manifest validation consumed 62–73s on the critical path of two inspected invocations. The multi-day extremes instead include failed attempts, 21–27 minutes before rerun, and remote-runner retries. Those delays must not be described as ordinary test runtime or GitHub queueing.
 
-The second waited **177 seconds**, then passed in **89 seconds**. Another
-[Bazel job](https://github.com/agentydragon/ducktape/actions/runs/34403608775/job/102641166641)
-waited **298 seconds**, then passed in **89 seconds**. Later starts in the snapshot
-waited **525** and **503 seconds**; their execution was still unfinished when sampled.
+## Current gates and measurement limits
 
-Observed completed-job overlap peaks at **20**, with 23 one-minute samples at 20.
-That matches GitHub's published Free standard-runner limit, but the account's plan
-and any custom limit were **not exposed** by the queried account metadata. This is
-evidence of a saturated effective pool, not proof of the subscription tier or of a
-scheduler policy that favors CodeQL. GitHub Status reported all systems operational
-with no active incidents during diagnosis.
+The live devel ruleset requires `Gazelle diff`, `Build artifacts + imports check`, `Pre-commit checks`, and `bazel-ci / Test & Build`. Required reviews are zero; code-owner approval, last-push approval, and thread resolution are not required; strict up-to-date checking is off. Auto-merge is allowed repository-wide, but enabling it per PR, draft state, conflicts, and GitHub's mergeability calculation remain separate. No deployment or merge-queue rule appeared in the returned rules. The legacy protection endpoint returned 404; the ruleset endpoint supplied these requirements.
 
-## Where the runner time goes
+Ordinary PR workflows run independently. Trusted forks add resolve/trust work before Bazel and wheel checks, and bridge the reusable wheel workflow's prefixed result back to the exact required context. Untrusted fork environment approval can add another gate; this sample does not establish that path's latency. Synthetic merge commits are tested, while checks are associated with the PR head. The head SHA and inspected test source SHA are consequently different identities.
 
-This is a bounded busy-period sample: 457 runs created in the window, plus five
-older unfinished runs discovered separately; 1,024 job records across all attempts.
-Skipped/unassigned jobs are excluded from timing. Completed assigned jobs occupy
-**1,057.7 runner-minutes** inside the 75-minute window, a lower-bound average of
-**14.1 runners**. Still-running jobs and completed pre-window-created runs missing
-from discovery make this a lower bound, not a complete account utilization census.
+The start proxy is the earliest `created_at` among `pull_request`/`pull_request_target` runs whose `head_sha` equals the sampled head. It is not commit author time, PR update time, or PR creation time. The stop is the maximum `completed_at` of the selected latest actual attempt of each required context. Parallel skipped fork placeholders are excluded when an actual result exists. Reruns remain attached to the same head. The separate first-terminal column selects each context's earliest terminal actual attempt: cancellation is terminal but is not a red/green verdict.
 
-| Workload                          | Completed occupied minutes | Share | Assigned job queue p50 / p90 | Completed runtime p50 / p90 |
-| --------------------------------- | -------------------------: | ----: | ---------------------------: | --------------------------: |
-| CodeQL                            |                      492.4 | 46.6% |                   58s / 635s |                 137s / 476s |
-| CI, including publishing children |                      166.3 | 15.7% |                   67s / 374s |                  89s / 503s |
-| Pre-commit                        |                      135.7 | 12.8% |                   32s / 351s |                 148s / 207s |
-| PR visual publication             |                       79.0 |  7.5% |                   18s / 496s |                 115s / 189s |
-| Nix wheel check                   |                       72.3 |  6.8% |                   69s / 308s |                 129s / 149s |
-| Gazelle diff                      |                       29.2 |  2.8% |                   10s / 382s |                   36s / 40s |
-| Other workflows                   |                       82.8 |  7.8% |                 See evidence |                See evidence |
+Checks' recorded completion is not their first API availability. Exact push timestamps, historical mergeability/draft transitions, first availability, webhook delivery and harness receipt were not collected. **Commit-to-auto-merge-readiness and agent-feedback p50/p90 are unavailable (n=0), for every class.** Passing checks are only the CI part of readiness. For example, PR #8934's gates finished at 08:29:44, but it merged at 09:12:34; the 42m50s gap is unallocated policy/operator time, not measured CI delay.
 
-Do not read the aggregate CI runtime as Bazel duration: release planners and publishing
-children are in that group. The 37 completed jobs named `Test & Build`, including
-trusted-fork CI, have median **201s**, nearest-rank p90 **536s**, maximum **897s**.
+## PR classes
 
-The onset is visible within the sample. For jobs created **20:00–20:40**, pre-commit,
-Gazelle and CodeQL all had queue p90 **3s**. Across the full window their queue p90s
-rose to **351s**, **382s**, and **635s**, while short Gazelle execution stayed around
-36 seconds. This supports burst contention rather than a universal slowdown in the
-underlying tools. It is not a matched historical baseline.
+403 PRs were created in the cohort. Select 18 evenly spaced PR numbers within each UTC creation day, including endpoints: 72 heads total. This balances days rather than weighting by daily volume and is not a random population estimate. Capture the latest head at collection, then fetch its paginated checks and Actions runs; old superseded heads are not part of this cohort. The separate busy-period census includes superseded/cancelled runs. There were 384 exact-head PR workflow runs across the 72 heads; a run or rerun is not another PR.
 
-## CodeQL hypothesis: supported
+Class precedence: only Markdown/text/docs paths; otherwise any `cluster/cdk8s/`; then other `cluster/` or `tf/`; then `devinfra/` or `.github/`; then frontend/UI paths; then other code/config. Mixed changes belong to the first matching class. This is a descriptive path classification, not proof of actual test triggers. Median paths/changed lines respectively: docs 2/110, cdk8s 9/119, other cluster 3/38, devinfra 6/328, frontend 6/52, other 5/112.
 
-CodeQL is **GitHub default setup**, generated as
-`dynamic/github-code-scanning/codeql`, not a checked-in workflow. Runs are displayed
-as `PR #...` and `Push on devel`, so searches for workflow name `CodeQL` alone miss
-most of the load. The settings API reports standard runners, the default query suite
-and a weekly schedule; observed PR/push scans are additional to that schedule.
+| Class                     | Heads / passing | Failed / cancelled / unfinished | First gate-set terminal p50 / p90 (n) | Passing gate-set p50 / p90 (n) | Completed runner-minutes |
+| ------------------------- | --------------: | ------------------------------: | ------------------------------------: | -----------------------------: | -----------------------: |
+| Docs only                 |           7 / 6 |                       1 / 0 / 0 |                         149 / 316 (7) |                  146 / 316 (6) |                     50.0 |
+| cdk8s                     |         16 / 14 |                       1 / 1 / 0 |                        236 / 419 (16) |                 236 / 419 (14) |                    174.7 |
+| Other cluster / Terraform |           2 / 2 |                       0 / 0 / 0 |                         138 / 242 (2) |                  138 / 242 (2) |                     41.9 |
+| Devinfra / CI             |         29 / 27 |                       1 / 0 / 1 |                        217 / 494 (28) |                 217 / 544 (27) |                    272.4 |
+| Frontend / UI             |          10 / 9 |                       1 / 0 / 0 |                        319 / 451 (10) |                 319 / 3113 (9) |                    122.2 |
+| Other code / config       |           8 / 7 |                       1 / 0 / 0 |                         222 / 381 (8) |                  222 / 289 (7) |                     64.7 |
 
-There are **45 CodeQL runs created in the window**. Each normal scan fans out to six
-analysis jobs: Actions, C/C++, Go, JavaScript/TypeScript, Python and Rust. API settings
-also list JavaScript and TypeScript aliases; these are not eight observed matrix jobs.
-Completed jobs account for:
+Nearest-rank percentiles; the frontend passing p90 is its maximum because n=9. Across all 71 terminal heads, first gate-set terminal p50/p90 is 228/426. There are 65 passing, five failing, one cancelled and one unfinished head. Failures/cancellations are not counted as successful feedback. Per-class runner cost sums assigned completed jobs, all attempts, in the exact-head PR workflows; it excludes visual `workflow_run` children and is not total repository cost. Parallel job seconds are occupancy, not elapsed feedback time.
 
-| Language              | Completed jobs | Runner-minutes |
-| --------------------- | -------------: | -------------: |
-| Rust                  |             26 |          193.9 |
-| Python                |             26 |          112.6 |
-| Go                    |             29 |           77.8 |
-| JavaScript/TypeScript |             29 |           48.5 |
-| C/C++                 |             28 |           32.7 |
-| Actions               |             29 |           27.0 |
+There are 26 fork heads (24 passing; proxy p50/p90 256/448) and 46 same-repository heads (41 passing; 223/499). These are different workload mixes, not a measured fork penalty. No matched pre-cdk8s cohort was collected; two current other-cluster heads cannot establish cdk8s's causal effect. Cold/warm state is observable only for inspected cases, not a cohort-wide stratum.
 
-Rust and Python contribute **62.2% of completed CodeQL runtime**. The `Perform CodeQL
-Analysis` step accounts for **361.5 minutes** across 167 completed jobs, versus
-66.1 minutes initializing CodeQL. This is substantive scanner work, not predominantly
-checkout overhead. A representative
-[Rust job](https://github.com/agentydragon/ducktape/actions/runs/34398566101/job/102624442274)
-ran 377 seconds and its log shows query execution and result interpretation.
+## Representative timelines
 
-Default setup does not provide a repository YAML concurrency knob to edit. A proposal
-to change matrix parallelism must include the switch to advanced setup and preservation
-of scan coverage. `max-parallel: 2` alone caps one run, **not** concurrent runs across PRs.
+### Docs: #8934, 146s to required checks
 
-## Required feedback versus all visible checks
+Head `5f656f7d77cc6ffbb8d195225021a7b999476cd8`; one Markdown file, nine changed lines. [Artifact/import job](https://github.com/agentydragon/ducktape/actions/runs/37188968120/job/111396935702), [Bazel job](https://github.com/agentydragon/ducktape/actions/runs/37188968316/job/111396936715).
 
-The current devel ruleset requires only **`Pre-commit checks`** and
-**`bazel-ci / Test & Build`**. CodeQL is not a required status check in that ruleset.
-The legacy branch-protection endpoint returns 404; querying
-`repos/agentydragon/ducktape/rules/branches/devel` reveals the actual requirements.
+First workflow 08:27:18; wheel runner starts 08:27:20. Its chain is checkout 38s → Attic/tool setup 19s → generated command-policy check 26s → artifact build 18s → assembly 1s → Nix/import validation 36s → completion 08:29:44, with about 6s of setup/finalization outside named steps. In parallel, Bazel ends 08:28:51 after selecting **zero affected targets**, pre-commit ends 08:29:12, Gazelle ends 08:28:01. Removing only Bazel's no-op work saves runner time but no readiness time in this case.
 
-The open-PR sweep found **92 PRs**. Among their latest head checks, 4/87 pre-commit
-checks and 8/76 Bazel checks were unfinished. Each CodeQL language had 9–10 unfinished
-checks. These counts are checks, not disjoint PR counts; some heads have missing
-checks or older/different workflow names. They do not establish that every other PR
-is mergeable. Head-check collection was paginated, including beyond the first page.
+### Typical trusted PR: #8988, 242s to required checks
 
-A UI waiting for every visible check includes CodeQL and visual publication even after
-the two required checks finish. Track both outcomes. Exact latest-push-to-terminal
-latency is not reconstructed here: head SHA/check creation is insufficient to recover
-every push timestamp, rerun and synthetic-merge association. Future collection should
-persist those events rather than use PR `updated_at` as a push clock.
+Head `c4a8d75b01db9d5aab27a3c4969b4ca68b4696f7`; notification-service changes, including Settings. [Job](https://github.com/agentydragon/ducktape/actions/runs/37234070046/job/111529636735), [test invocation](https://app.buildbuddy.io/invocation/f414daad-8fdc-5484-94ea-d61b22ba50e9).
 
-## Separate Bazel execution tail
+20:57:00 workflow → 20:57:15 Bazel job created (15s resolve/trust/orchestration) → 20:57:27 assigned start (12s) → 23s checkout and 19s Nix setup → 20:58:11 remote step → 21:00:59 step end → 21:01:02 job terminal. Other gates finished at 20:57:31 (Gazelle), 20:59:21 (wheel bridge), and 20:59:33 (pre-commit). The 168s remote step contains remote allocation/setup, graph selection, a 104.406s test invocation and 1.292s build invocation; the remaining roughly 62s is not all allocation time. Log streaming begins 30s after “waiting,” but embedded remote timestamps show repo synchronization already underway after about 7s. Batched log delivery precludes using GitHub log line times as exact remote phase boundaries.
 
-[Bazel job 102629094609](https://github.com/agentydragon/ducktape/actions/runs/34399958227/job/102629094609)
-waited only **4s** for GitHub, then ran **897s** and failed. Its log records:
+The runner reports an existing repo, prior-run probe data, and uptime about 2470s: evidence of a reused outer workspace. It still prints a Bazel server startup. That does not prove analysis-cache reuse. The selected set was 65 affected targets. The 73.15s action critical path is dominated by `//cluster/cdk8s:test_generate_manifests` at 72.50s; 96.90% of that action's remote breakdown is process execution and 0.08% queueing. Changing settings can legitimately require manifest regeneration; an arbitrary path skip would remove coverage.
 
-- `Waiting for available remote runner...` at 20:16:22, followed by streamed Bazel
-  startup output at 20:17:04. This ~42s interval includes remote startup/log delivery;
-  it is not a precise RBE scheduling measurement.
-- [Inner test invocation 845daf8b-5d45-5adf-bfed-7bc91aced902](https://app.buildbuddy.io/invocation/845daf8b-5d45-5adf-bfed-7bc91aced902):
-  **804.123s elapsed**, **362.15s critical path**.
-- The critical path includes **356.52s** in
-  `//haku/console/channels/matrix:test_fullstack_e2e`. Its remote breakdown attributes
-  99.24% to process execution and 0.02% to queueing. This path is test work, not remote
-  action starvation.
-- `//props/db/sync:test_example_generation` times out at **60.3s**. 227 tests executed;
-  the final summary reports 495 passed and one failed. Diagnose this timeout separately;
-  it is not evidence for increasing the timeout.
-- Invocation cache statistics: 6,601 action-cache hits / 3,084 misses and **27.8 GB
-  transferred downloads**. These API counters and the Bazel console's process/cache
-  counts have different scopes; do not combine them into one hit-rate calculation.
+### cdk8s queue counterexample: #8762, 533s
 
-This single slow invocation disproves the old blanket claim that Bazel is uniformly
-fast. It does not establish a fleet-wide cache or analysis regression. Fetch profiles
-and target history if optimizing this lane; configured-target counts alone do not prove
-analysis-cache eviction.
+Head `ecddcb9eef9a415cdd3f18c8a55b5fb71b94b167`; four files, 37 changed lines. [Job](https://github.com/agentydragon/ducktape/actions/runs/37033455215/job/110925757604).
 
-## Ranked proposals
+16:22:11 first workflow → 16:27:15 runner start → 16:31:04 Bazel completion. Job metadata gives 304s creation-to-assigned-start and 229s runtime. The runner reuses an existing repo, selects 31 affected targets, tests in 116.482s with an 84.38s critical path, and builds in 1.284s. Other required gates finish earlier. This is a real older queue tail; an account-wide occupancy census for that time was not collected, so its resource cause is unassigned.
 
-1. **Control CodeQL burst demand.** Move default setup to declarative advanced setup
-   if custom scheduling is desired. Preserve per-language coverage and SARIF publishing;
-   cancel superseded scans per PR, then measure a modest per-run matrix cap. If that
-   still leaves many concurrent PR scans, use a dedicated runner pool or an explicit
-   scan scheduling policy. A shared concurrency group can coalesce away pending PR
-   scans, so it is not a coverage-preserving global semaphore. Restricting PR scans or
-   moving them to scheduled/devel scans trades away pre-merge security feedback and
-   needs a deliberate policy decision. No scan settings were changed in this analysis.
-2. **Cancel superseded pre-commit work per PR.** Unlike Gazelle and Bazel, the current
-   pre-commit workflow has no concurrency group. Also reduce its fixed setup cost:
-   median Nix setup is 62s versus 37s actually running pre-commit. This is the second
-   largest independent non-CodeQL workload. Keep one authoritative check for the latest head.
-3. **Reduce the visual workflow's fixed cost.** It starts separate announce/publish
-   jobs from CI events, including completion/cancellation paths. The announcement uses
-   Nix and `bb run` to post check metadata. Evaluate a lightweight trusted entrypoint,
-   while preserving terminal-check handling. This lane consumes 7.5% of measured time.
-4. **Profile the actual slow Bazel tests and cold work.** Begin with the Matrix test,
-   the separate props timeout, and this invocation's profile. GitHub capacity cannot
-   shorten an already-running six-minute test. Preserve full sweep and RBE semantics.
-5. **Consider more/isolated GitHub capacity after measuring demand.** Twenty observed
-   slots is an effective ceiling in this sample, not a verified billing entitlement.
-   Compare queue and required-check feedback before/after any capacity or scheduling
-   change under similar PR arrival rates. Do not promise a proportional speedup.
+### Recovery tails: #8666 and #8823
 
-The 2026-08-26 report's principal recommendation—dynamic publish matrices—is already
-implemented in `plan_releases.py`, `plan_image_pushes.py`, and their called workflows.
-Publishing uses separate concurrency policies that let in-flight releases finish.
-The former “95 jobs per merge,” “99% no-op,” “Bazel is fast” and pricing conclusions
-are superseded; they are not current measurements. Git history retains the old report.
+[PR #8666](https://github.com/agentydragon/ducktape/pull/8666), head `9f1865e95cbcd29b89f9491ec5c28ca78c09bbe6`: first workflow 21:27:08 → first Bazel attempt 21:27:14–21:33:26, failing with `//agentplane/app:test_thread_browser` timeout at 301.5s → no active Bazel job for 26m53s before the next job is created at 22:00:19 → four-second assignment → rerun 22:00:23–22:19:01. The [rerun job](https://github.com/agentydragon/ducktape/actions/runs/36928767723/job/110604499033) records three remote-runner retries: two “stream closed with task still claimed,” one finalization stream cancellation. Its final successful test/build take 288.298/33.165s; their critical paths are only 23.03/7.12s. Do not call the entire 3113s a slow browser test. The actor/reason for the rerun gap and root cause of remote failures remain unknown. The browser target already has a larger-than-small size; raising timeout is not a diagnosis.
 
-## Proposed Mimir observability
+[PR #8823](https://github.com/agentydragon/ducktape/pull/8823), head `e55b47f0df1686c2138696dc3388c4a2055d0454`: 00:59:09 first workflow → [first Bazel attempt](https://github.com/agentydragon/ducktape/actions/runs/37084302778/job/111091291794) 00:59:13–01:03:43 fails fetching a PostgreSQL blob from `mirror.gcr.io` with HTTP 404 → 20m34s before the rerun job is created → two-second assignment → [rerun](https://github.com/agentydragon/ducktape/actions/runs/37084302778/job/111096201284) 01:24:19–01:26:35 succeeds. The rerun selected 208 targets; test/build took 41.085/1.751s. This tail is predominantly failure recovery, not runner saturation. Current MODULE.bazel still pulls PostgreSQL through that mirror; a current failure rate was not measured. The separate Electric image repair has already landed and is not a new recommendation.
 
-Repository configuration currently owns GitHub **API quota** exporters under
-`cluster/cdk8s/github_exporter`; no Actions queue collector was found there. This was a
-source inspection, not a live Mimir series census. Keep quota and runner capacity
-separate. Proposed owner: a dedicated Actions observer under `cluster/exporters`,
-GitOps-managed, scraped by ServiceMonitor → Alloy → existing Mimir remote write.
-Use an Actions/Checks/Pull requests read-only GitHub App installation and a persisted
-collection cursor, separate from the personal GraphQL bucket.
+### Full devel sweep: contextual cost, outside PR distributions
 
-| Proposed metric                                          | Type / definition                                                                                                         | Bounded labels                                |
-| -------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------- |
-| `github_actions_jobs`                                    | Gauge, outstanding jobs by state; separate queued, in-progress, waiting                                                   | repo, workflow, job_class, state, runner_pool |
-| `github_actions_oldest_queued_seconds`                   | Gauge, maximum queued age; include unassigned jobs                                                                        | repo, workflow, runner_pool                   |
-| `github_actions_job_queue_seconds`                       | Histogram, job creation → assigned start, once per job attempt; name this observed scheduling delay, separate known gates | repo, workflow, job_class, runner_pool        |
-| `github_actions_job_run_seconds`                         | Histogram, assigned start → completion, once per attempt                                                                  | repo, workflow, job_class, conclusion         |
-| `github_actions_runner_busy_seconds_total`               | Counter, integrated assigned intervals; supports workload shares                                                          | repo, workflow, runner_pool                   |
-| `github_actions_pr_feedback_seconds`                     | Histogram, observed head push → required-gate verdict and → all-checks-terminal as separate scopes                        | repo, scope, outcome                          |
-| `github_actions_pr_heads_waiting`                        | Gauge, latest heads awaiting checks, with missing checks counted separately                                               | repo, scope, state                            |
-| `github_actions_superseded_jobs_total`                   | Counter, cancelled superseded attempts, with occupied time tracked separately                                             | repo, workflow                                |
-| `github_actions_observer_last_success_timestamp_seconds` | Gauge; alert on stale data independently of scrape health                                                                 | repo                                          |
-| `github_actions_observer_api_requests_total`             | Counter, API usage/errors; emit rate remaining/reset gauges too                                                           | route_class, status_class                     |
-| `buildbuddy_ci_phase_seconds`                            | Histogram from linked invocations/profiles: runner startup, analysis, critical path, remote queue/process                 | repo, phase                                   |
+Source `24723bc2cc6973aff53b6d7cc3b5e34bafbb8562`; [job](https://github.com/agentydragon/ducktape/actions/runs/37234644251/job/111531217946), [test invocation](https://app.buildbuddy.io/invocation/4a338b20-ca0e-5aee-aae4-c170a989fe0e).
 
-Use stable workflow paths and normalized job classes (`codeql_rust`, `bazel_test_build`,
-`pre_commit`), not `PR #123`, SHA, run/job ID, target label or runner instance as labels.
-Keep IDs/SHAs in durable event storage or logs for drill-down. Deduplicate webhooks by
-job ID/attempt and feedback by head SHA; do not re-observe a finished job on every poll.
-A cancelled old head is superseded, not a successful verdict for its replacement.
-Ruleset/App identity defines required checks; classify missing or ambiguous checks
-explicitly. Detect stale job records before treating them as occupied runners.
+21:05:13 workflow → 21:05:14 job created → 21:06:16 assigned → 21:06:51 remote step → 21:08:10 first streamed log → 21:14:05 completion. Runtime 469s. Test/build invocations take 279.391/33.532s. Probe data shows no previous run record and only about 56s uptime before test, plus Bazel startup: evidence of a newly booted observed environment, not proof that eligible reuse failed. Remote VM queue, restore/boot and repo setup cannot be fully separated. The test's 66.49s critical path includes 62.14s manifest validation (97.44% process execution for that action). More RBE slots would not materially shorten that serial test action.
 
-Prefer `workflow_job` / `workflow_run` / PR event ingestion with REST reconciliation
-and a 60–120s freshness target; a polling prototype should revisit active runs plus a
-small recent overlap, cache finished jobs, and budget API calls. One full diagnostic
-sweep here needed hundreds of job/check requests; do not repeat it every minute.
-An observer inside GitHub Actions would itself wait for the resource being monitored.
+### Profile phase and remote-compute accounting
 
-Initial warning candidates, to tune after a baseline:
+| Measurement                                     | Scoped PR #8988 | Full devel sweep |
+| ----------------------------------------------- | --------------: | ---------------: |
+| Invocation elapsed wall time                    |         104.406 |          279.391 |
+| Profile `buildTargets` wall span                |          94.415 |          269.353 |
+| Nested `runAnalysisAndExecutionPhase` wall span |          94.068 |          256.396 |
+| Remote process execution, summed worker-seconds |         861.441 |          945.949 |
+| Union of remote process intervals, wall-seconds |          71.481 |          120.317 |
+| Profile remote process spans                    |              23 |               36 |
+| Action critical-path wall time                  |           73.15 |            66.49 |
 
-- Oldest queued required job >300s for 5m, with fresh observer data.
-- Queue p90 >180s over 30m, only with enough started-job observations; pair this with
-  the oldest-age gauge because unfinished queues do not appear in a histogram.
-- Required heads waiting >15m, split missing/running/queued states.
-- Observer stale >5m, even when the metrics endpoint still returns HTTP 200.
-- CodeQL runner share above 40% **and** Bazel queue age elevated: diagnostic dashboard
-  correlation, not an alert that security scanning by itself is an incident.
+Nested spans are not additive. These profiles do not expose a clean standalone analysis-to-execution root boundary: analysis and actions overlap. Do not subtract critical-path duration from elapsed time and call the remainder analysis. The process worker-seconds sum execution metadata process intervals and matching profile `Remote execution process wall time` spans; concurrent actions count separately. They exclude action queue, transfer and remote-runner preparation and do not represent CPU-seconds or billing units. The devel invocation's aggregate uncached-execution counter is 900.612s, 45.337s below the detailed 945.949s sum; these scopes disagree, so the detailed timestamp sum is reported explicitly rather than silently substituted. These two invocations do not establish a class-wide remote cost distribution. The broad sweep also contains a 76.838s rules_rust crate-extension span and 35.992s rules_distroless apt-extension span. Repository-fetching intervals have a 183.400s union and module-processing intervals a 115.785s union; these overlap analysis and action work and must not be added. Manifest validation starts at profile t=216.170s in the sweep versus t=30.566s in the scoped PR. This identifies pre-test repository/graph work, without proving a cache regression or licensing removal of the full devel sweep.
 
-## Reproduction and limits
+## GitHub runner demand
 
-Run the skill's `collect.sh`, `evidence.sh` and `inspect.sh`; arguments for this sample:
+658 workflows were created in the 90-minute window. Active-run discovery added 31 records, including stale and post-window runs, for 689 runs / 1432 job records across attempts. Timing filters use job creation in-window; occupancy clips assigned completed jobs to the window. Stale unfinished run records are not occupied runners. None of the collected job records was queued at its read time; 12 were in progress, mostly created after the window, including one unassigned visual status placeholder. The sweep is not atomic. It cannot give a current queue-age distribution.
 
-```bash
-bash scripts/collect.sh agentydragon/ducktape \
-  2026-09-09T20:00:00Z 2026-09-09T21:15:00Z /tmp/ci_latency-new
-bash scripts/evidence.sh /tmp/ci_latency-new > /tmp/ci_latency-new/evidence.json
-bash scripts/inspect.sh agentydragon/ducktape 102629094609 \
-  845daf8b-5d45-5adf-bfed-7bc91aced902 /tmp/ci_latency-new/inspect
-```
+Completed-job occupancy is **943.25 runner-minutes**, average 10.48 runners, peak 20. Five one-minute samples have 20 occupied runners, only two with a queued Bazel job. Missing completed jobs whose runs began before the window and unfinished jobs make this a lower bound, not account-wide utilization. Other repositories and account entitlement were not queried; no plan or scheduler-priority conclusion follows.
 
-A refresh should choose a new current window, not reuse these timestamps. The original
-raw sweep is local at `/tmp/ci-latency-20260909`; aggregates and a small captured test
-fixture are committed. Requerying historical runs can change conclusions for jobs
-unfinished during this sweep. Timing percentiles exclude unassigned/unfinished samples;
-creation-to-start can include gates, so the strongest starvation evidence is overlapping
-assigned jobs while independent Bazel jobs queue. No account-wide competing-repository
-census or controlled mitigation experiment was performed.
+| Workflow family                 | Occupied runner-minutes | Share | Assigned queue p50/p90 (n) | Completed runtime p50/p90 (n) |
+| ------------------------------- | ----------------------: | ----: | -------------------------: | ----------------------------: |
+| Visual publication              |                   264.4 | 28.0% |                  2/7 (175) |                 102/129 (175) |
+| Trusted fork CI, all child jobs |                   217.4 | 23.0% |                  2/7 (158) |                  15/213 (158) |
+| CI including push publishers    |                   157.1 | 16.7% |                  2/21 (79) |                   82/318 (79) |
+| Pre-commit                      |                   146.4 | 15.5% |                  2/12 (61) |                  140/210 (61) |
+| Nix Attic push                  |                    43.9 |  4.6% |                   2/6 (18) |                  118/185 (18) |
+| Gazelle                         |                    34.6 |  3.7% |                  2/12 (60) |                    36/39 (60) |
+| Standalone wheel/import         |                    33.7 |  3.6% |                   2/7 (19) |                  119/130 (19) |
 
-Reference semantics, checked during this analysis:
-[GitHub concurrency limits](https://docs.github.com/en/actions/reference/limits),
-[concurrency groups](https://docs.github.com/en/actions/concepts/workflows-and-actions/concurrency),
-[CodeQL setup types](https://docs.github.com/en/code-security/concepts/code-scanning/setup-types),
-[CodeQL analysis duration](https://docs.github.com/en/code-security/reference/code-scanning/troubleshoot-analysis-errors/analysis-takes-too-long).
+Specifically `Test & Build`: 54 assigned completed jobs, queue 2/20, runtime 213/398; 30 success, ten failure, fourteen cancelled. Runtime percentiles here include completed failures and cancellations, not only green jobs. Required-check job queue p90 across the multi-day path classes ranges from 3s (frontend) to 98s (other code); it was not universally near zero throughout the cohort.
+
+Visual jobs consume 100.5 runner-minutes in publication and 86.2 in announcement steps, plus setup. They fire for CI/trusted-fork in-progress/completed events even without visual manifests. This is source-supported avoidable-cost potential, not a measured claim that all 264.4 minutes were unnecessary. Pre-commit's recurring setup includes median 37s Nix, 21s Bazel, versus 40s actual hooks. Parallel step totals are never added to feedback latency.
+
+## Agent-visible feedback
+
+Job/run starts and completed results have retrospective API timestamps. Logs and both selected BuildBuddy profiles were accessible during this investigation, but their **first** accessibility was not observed. No availability percentile can be inferred from those timestamps. GitHub metadata is second-resolution; embedded logs/profile clocks offer finer resolution but clock skew was not independently measured. Batched remote log delivery is visible, so log presentation time is not process time.
+
+The notification service durably accepts signed webhooks before asynchronous subscription matching. Default CI subscriptions cover completed `check_run` and `status`; installation, repository/fork access and healthy delivery determine coverage. Inbox entries expose cursors/payloads, not acceptance/matching timestamps, and the subscription does not automatically wake a stopped harness. No inbox or raw webhook payload was accessed or published. A minimal future trace for notification latency is a bounded observer recording head change, first check/log accessibility, receipt, inbox insertion and consumer read separately; do this only if agent delivery is the decision under investigation. It is not prerequisite to the optimizations below.
+
+## Ranked interventions
+
+1. **Reduce fixed work for provably unaffected PRs across all required gates.** Medium effort, medium coverage risk, high confidence in the measured overhead; savings are candidate **0–90s elapsed** on docs/small-config PRs, depending on the last remaining gate. Keep authoritative successful checks and exact-head trust. Use dependency-backed selection for wheel/import and Bazel and preserve policy validation for changes that affect generated policies. Do not merely skip whole workflows and leave required checks missing. PR #8934 proves that optimizing only Bazel cannot move its result; compare the maximum of all four gates on matched docs heads. Falsification: required work remains selected or another gate becomes equally slow.
+2. **Profile and reduce manifest validation's serial runtime.** Medium effort/risk, high confidence that it is on the observed path, uncertain savings: a candidate **10–40s** for heads selecting this test, bounded above by its 62–73s action duration. Preserve complete generated-file coverage and exact output comparison. Use a real profiler to separate synthesis, JSII startup, imports, YAML parsing and repeated tree reads before changing code. A module-scoped fixture already generates once; do not propose that as a new optimization. The dependency path includes service runtime/frontend inputs; separate config types from runtime only where dependency evidence proves that work is unnecessary. Validate matched affected sets and inspect replacement critical paths; another parallel test may erase the elapsed win.
+3. **Address failure recovery as a separate tail project.** High observed impact, uncertain recurrence/root cause; medium-to-high effort. The demonstrated recoverable delays are **minutes to tens of minutes** per affected head, not typical savings. Diagnose the browser timeout from its trace and container fetch failures from exact target history; preserve coverage and do not increase timeouts without progress evidence. Remote retry errors need linked runner/execution records, not an assumption about VM saturation. Assess fresh failure rates before prioritizing a retry policy; automatic reruns can conceal deterministic failures and spend more compute. Compare failure-to-actionable-diagnostic and failure-to-next-attempt separately from successful-runtime distributions.
+4. **Make visual announcements and no-artifact publication cheap.** Low-to-medium effort, low coverage risk if terminal statuses and fork trust are preserved. Candidate **0–90s runner occupancy per invocation**; immediate auto-merge savings could be zero in this low-queue window. Avoid the full Bazel/tool launch for a metadata-only announcement, and query actual invocation outputs before heavyweight publish setup. Do not guess visual selection from path globs. Both jobs also call `setup-ci-secrets` although their used credentials are supplied directly; review removing that redundant SOPS setup. Validate with no-visual, cached-visual, cancelled, and real-artifact cases, checking status lifecycle as well as occupancy. The observed 264.4 minutes is an upper bound on this workflow's total cost, not promised savings.
+5. **Use existing runner probes/profiles before changing capacity or cache namespace.** Low investigation effort, medium operational risk for changes, uncertain elapsed savings **0–60s** of fixed preparation on affected runs. The reused workspace and newly booted sweep are different workloads; inspect matched PR classes and current probe artifacts before blaming analysis-cache eviction. Keep RBE and caching enabled. More GitHub capacity cannot remove a serial manifest action or a 21-minute rerun gap; revisit only when independent queued work repeatedly coincides with saturated occupancy.
+
+September's recommendations to move CodeQL away from PR default setup and cancel superseded pre-commit work are already implemented. Keep them out of the new action list. The measured CodeQL share fell from 46.6% to zero in these two different windows, but workload mix, observation length and policy changed; this is not a controlled before/after speedup estimate. No workflow, scan setting, concurrency setting or dependency was changed in this analysis. Shapley attribution was not collected; worker execution and runner occupancy are kept separate.
+
+## Evidence, reproduction and history handoff
+
+[Machine-readable evidence](ci_latency_evidence.json) contains the packaged `evidence.sh` result, safe per-head derived timings/classes, policy summary and profile analysis. Full API payloads, logs, traces, identities and inbox contents are not history artifacts. Local raw snapshots are `/tmp/ci-latency-20261004-short`, `/tmp/ci-latency-20261004-sample`, `/tmp/ci-latency-20261004-cases`; local collection/analysis scripts are `/tmp/ci_latency_{sample,sample_jobs,analyze,extra,jobstats}.py`.
+
+Reproduce the short snapshot from the pinned source's `devinfra/ci/skills/ci_latency/scripts/collect.sh` with repository `agentydragon/ducktape`, start `2026-10-04T19:45:00Z`, end `2026-10-04T21:15:00Z`, then `evidence.sh`. For the cohort, page PRs sorted by creation until before October 1. Within each day sort PR numbers, choose indices `round(i*(N-1)/17)` for i=0..17, capture heads and changed files, page exact-head checks with `filter=all`, list exact-head PR workflow runs, and page jobs with `filter=all`. Rereads may change currently unfinished results. The safe per-head table supports the published percentile arithmetic.
+
+The earlier fork history entry has source `b5d4e6f918b0d18bb65a48c94601a1fa5dc56f01`, measurement window September 9 20:00–21:15, and packaging date October 4. It is historical evidence, not a new cdk8s comparison. The upstream `ci-latency-history` ref now points to `a7005278e12bd9a4d51a4fd615a5c39caa527ab9`, an empty-tree root commit; the fork points to independent root `6e940e419489cd482be7499dbed3adca4cca0bf2` containing that earlier entry. The intended ancestry-preserving migration is not present. This report updates the maintained summary on devel through a normal source PR. Neither history is reset or force-pushed, and no new fork entry is published. Resolve the canonical ancestry through the authorized repository process before appending to the separate history branch. The local HTML artifact is not a deployed Pages site.
