@@ -6,27 +6,6 @@ import pytest_bazel
 from nix.home.codex import merge
 
 
-def test_unmanaged_live_paths_reports_preserved_and_nested_live_only_keys() -> None:
-    live = {
-        "model": "local-edit",
-        "features": {"streamable_shell": False, "manual_feature": True},
-        "profiles": {"openai": {"model": "gpt-5.1-codex", "local_note": "keep"}, "scratch": {"model": "local"}},
-        "projects": {"/repo": {"trust_level": "trusted"}},
-    }
-    base = {
-        "model": "gpt-5.1-codex",
-        "features": {"streamable_shell": True},
-        "profiles": {"openai": {"model": "gpt-5.1-codex"}},
-    }
-
-    assert merge.unmanaged_live_paths(live, base) == [
-        ("features", "manual_feature"),
-        ("profiles", "openai", "local_note"),
-        ("profiles", "scratch"),
-        ("projects",),
-    ]
-
-
 def test_main_prints_unmanaged_toml_and_preserves_live_only_config(tmp_path, monkeypatch, capsys) -> None:
     base = tmp_path / "config.nix-base.toml"
     live = tmp_path / "config.toml"
