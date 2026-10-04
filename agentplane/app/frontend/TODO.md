@@ -62,3 +62,12 @@ control characters, and Unicode line separators in code-shaped Action arguments,
 results, and fenced Markdown. It keeps the source text intact and distinguishes bidi/control markers
 from quieter formatting markers. Ordinary Action titles and descriptions still render as plain text;
 decide whether they also need inline markers or an approval-card warning.
+
+## Durable local storage for thread windows
+
+`RetainedThreads` (`threads/thread_store.tsx`) keeps the last few left threads' rows, complete bodies and log
+positions in memory, so it covers switching threads but not a reload or a second tab, which still read every
+row and body again. Consider persisting them in IndexedDB, keyed by thread, projection epoch, owner and
+generation, so a reload only catches up from the saved log position. It needs a size budget with eviction,
+invalidation when the epoch changes, and a decision on whether the proxy's per-user authorization allows
+keeping thread content at rest in the browser.
