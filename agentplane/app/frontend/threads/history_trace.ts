@@ -26,8 +26,9 @@ export type HistoryEvent =
   | { kind: "restore"; key: string; correction: number | null }
   | { kind: "prepend"; added: number }
   | { kind: "load-older" }
-  /** A row's height was read. `estimate` is what the virtualizer laid it out with before. */
-  | { kind: "measure"; key: string; estimate: number; measured: number; first: boolean }
+  /** A row's height was read. `estimate` is what the virtualizer laid it out with before: a
+   * remembered reading of an earlier visit if `remembered`, else a flat guess. */
+  | { kind: "measure"; key: string; estimate: number; measured: number; first: boolean; remembered: boolean }
   | { kind: "settled"; settled: boolean };
 
 export interface TimedHistoryEvent {
@@ -38,26 +39,45 @@ export interface TimedHistoryEvent {
 
 declare global {
   interface Window {
-    /** The live history's recent events, oldest first; absent while no history is mounted. */
+    /** The recent events of the history on screen, oldest first; absent while none is mounted. */
     agentplaneHistoryTrace?: () => readonly TimedHistoryEvent[];
+    /** `measured - estimate`, in pixels, for each row's first reading since the page loaded. */
+    agentplaneHistoryEstimateErrors?: () => readonly EstimateError[];
   }
 }
 
 /** Long enough for every scroll event of a few seconds of gesture plus a thread opening. */
 const CAPACITY = 2000;
+const ERROR_CAPACITY = 20_000;
+
+export interface EstimateError {
+  error: number;
+  remembered: boolean;
+}
 
 export class HistoryTrace {
   readonly #events: TimedHistoryEvent[] = [];
+  readonly #estimateErrors: EstimateError[] = [];
 
   record(event: HistoryEvent): void {
     this.#events.push({ at: performance.now(), event });
     if (this.#events.length > CAPACITY) this.#events.shift();
+    if (event.kind === "measure" && event.first && this.#estimateErrors.length < ERROR_CAPACITY) {
+      this.#estimateErrors.push({ error: event.measured - event.estimate, remembered: event.remembered });
+    }
   }
 
   events(): readonly TimedHistoryEvent[] {
     return this.#events;
   }
+
+  estimateErrors(): readonly EstimateError[] {
+    return this.#estimateErrors;
+  }
 }
+
+/** One for the page: it outlives the history component, so it spans a switch between threads. */
+export const historyTrace: HistoryTrace = new HistoryTrace();
 
 /** A layout counts as at rest once this many frames pass without it changing. */
 const QUIET_FRAMES = 5;

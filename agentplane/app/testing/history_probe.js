@@ -155,7 +155,33 @@
   };
   requestAnimationFrame(frame);
 
-  const summary = (withEvents) => ({ ...probe, events: withEvents ? probe.events : probe.events.length });
+  // How far off the virtualizer's layout of each row was before the row was first read, in
+  // pixels: for rows it laid out from a remembered earlier reading and for rows it only guessed.
+  const errorStats = (all) => {
+    const errors = all.map((entry) => Math.abs(entry.error)).sort((a, b) => a - b);
+    const at = (fraction) => errors[Math.min(errors.length - 1, Math.floor(errors.length * fraction))] ?? 0;
+    return {
+      rows: errors.length,
+      meanAbs: errors.length ? errors.reduce((sum, error) => sum + error, 0) / errors.length : 0,
+      p50: at(0.5),
+      p90: at(0.9),
+      p99: at(0.99),
+      over50: errors.filter((error) => error > 50).length,
+    };
+  };
+  const estimateErrors = () => {
+    const all = window.agentplaneHistoryEstimateErrors?.() ?? [];
+    return {
+      guessed: errorStats(all.filter((entry) => !entry.remembered)),
+      remembered: errorStats(all.filter((entry) => entry.remembered)),
+    };
+  };
+
+  const summary = (withEvents) => ({
+    ...probe,
+    events: withEvents ? probe.events : probe.events.length,
+    estimateErrors: estimateErrors(),
+  });
 
   // A reload ends this page's probe; keep what it saw for whoever reads the tab's results.
   addEventListener("pagehide", () => {
