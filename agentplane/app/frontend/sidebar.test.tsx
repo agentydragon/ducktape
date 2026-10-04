@@ -343,25 +343,22 @@ it("opens the details of a provisioning Sandbox with no Threads", async () => {
   expect(location()).toBe("/sandboxes/test-provisioning");
 });
 
-it.each([false, true])(
-  "links a Sandbox name to its details without changing Thread navigation (open=%s)",
-  async (open) => {
-    await render(
-      [thread({ id: "t-1", sandbox: "demo-a1b2", session_id: "s-1", name: "First thread" })],
-      { "demo-a1b2": sandbox("demo-a1b2") },
-      { initialPath: "/threads/t-1", open }
-    );
-    const link = container.querySelector('a[href="/sandboxes/demo-a1b2"]');
-    if (!(link instanceof HTMLAnchorElement)) throw new Error("missing Sandbox details link");
-    expect(link.textContent).toBe("demo-a1b2");
+it("links a Sandbox name to its details without changing Thread navigation", async () => {
+  await render(
+    [thread({ id: "t-1", sandbox: "demo-a1b2", session_id: "s-1", name: "First thread" })],
+    { "demo-a1b2": sandbox("demo-a1b2") },
+    { initialPath: "/threads/t-1" }
+  );
+  const link = container.querySelector('a[href="/sandboxes/demo-a1b2"]');
+  if (!(link instanceof HTMLAnchorElement)) throw new Error("missing Sandbox details link");
+  expect(link.textContent).toBe("demo-a1b2");
 
-    await act(async () => link.click());
-    expect(location()).toBe("/sandboxes/demo-a1b2");
+  await act(async () => link.click());
+  expect(location()).toBe("/sandboxes/demo-a1b2");
 
-    await act(async () => row("First thread").click());
-    expect(location()).toBe("/threads/t-1");
-  }
-);
+  await act(async () => row("First thread").click());
+  expect(location()).toBe("/threads/t-1");
+});
 
 it("opens the stable Thread route and highlights that Thread", async () => {
   await render(

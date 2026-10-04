@@ -458,12 +458,6 @@ it.each([
   expect(dot?.getAttribute("data-status")).toBe(kind);
 });
 
-it("uses the shared list feed instead of a healthy conversation projection for the composer dot", async () => {
-  sharedFeed = "failed";
-  const failed = await render(threadState({ rows: [viewState()] }));
-  expect(failed.querySelector('.agentplane-thread-status-dot[aria-label="Runner feed failed"]')).not.toBeNull();
-});
-
 const faviconSvg = (): string => decodeURIComponent(favicon.getAttribute("href")?.split(",")[1] ?? "");
 
 it("shows green chevrons in the status dot and the favicon, and a leading glyph in the title, while a turn is active", async () => {

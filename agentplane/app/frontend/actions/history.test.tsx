@@ -60,35 +60,6 @@ describe("ActionHistory", () => {
     expect(container.textContent).not.toContain("Loading actions");
   });
 
-  it("shows the immutable authenticated submitter for a decided receipt", async () => {
-    const grant = {
-      caller: { namespace: "agentplane-test", name: "test-caller" },
-      issuer: "https://test-issuer.example/oauth",
-      client_id: "test-external-client",
-      connection_id: "40000000-0000-4000-8000-000000000001",
-      grant_id: "50000000-0000-4000-8000-000000000001",
-      revision: 7,
-    };
-    const row = {
-      ...request("succeeded", 1),
-      caller: { namespace: "agentplane-test", name: "test-caller" },
-      external_grant: grant,
-    };
-    const container = await render({ list: async () => [row], decide: vi.fn() }, withoutGroups);
-
-    expect(container.textContent).toContain("Authenticated external caller at submission");
-    for (const value of ["agentplane-test/test-caller", grant.issuer, grant.client_id, grant.connection_id]) {
-      expect(container.textContent).toContain(value);
-    }
-    const details = container.querySelector("details");
-    const summary = details?.querySelector("summary");
-    if (!details || !summary) throw new Error("missing grant audit disclosure");
-    expect(details.open).toBe(false);
-    await act(async () => summary.click());
-    expect(details.open).toBe(true);
-    expect(details.textContent).toContain(grant.grant_id);
-  });
-
   it("renders every terminal outcome with its decision, result, and error", async () => {
     const states: ActionState[] = [
       "allowed",

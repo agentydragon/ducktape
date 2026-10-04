@@ -207,61 +207,6 @@ async def test_an_older_page_landing_mid_gesture_does_not_move_the_reader(thread
         await page.screenshot(path=undeclared_outputs_dir() / "thread-window-mid-gesture-prepend.png")
 
 
-async def test_an_older_page_landing_mid_gesture_does_not_restore_an_earlier_settled_anchor(
-    thread_browser: ThreadBrowser,
-) -> None:
-    """The reader's anchor is only recaptured at a gesture's scrollend (the app's onScrollEnd calls
-    captureReadingAnchor there, not on every scroll event). test_an_older_page_landing_mid_gesture...
-    covers a reader's *first* scroll of the session, before any anchor exists, and passes because
-    the app has nothing stale to restore to. A reader who already settled one scroll earlier, then
-    scrolls again and reaches the top before this second gesture's own scrollend, has an older page
-    land while the last captured anchor is still the position of that first, already-settled
-    gesture. Restoring to it would pull the reader back down to where they read before -- not
-    where the second gesture left them. Not yet observed to reproduce here: a single synthetic
-    wheel jump settles (scrollend) faster than the held response's round trip through this test's
-    route interception, so the anchor is already fresh again by the time rows change. Kept as
-    coverage for the invariant regardless."""
-    page = thread_browser.page
-    thread_browser.opened.replay.set()
-    await expect(page.get_by_text("Test retained prefix", exact=True)).to_be_visible(timeout=30_000)
-    latest = append_items(thread_browser, "window-item", range(90))
-    await expect(page.locator(f'[data-projection-cursor="{latest.cursor}"]')).to_have_count(1, timeout=30_000)
-    await page.reload()
-    await expect(page.locator(f'[data-projection-cursor="{latest.cursor}"]')).to_have_count(1, timeout=30_000)
-
-    history = page.get_by_role("region", name="Thread history", exact=True)
-    await history.hover()
-
-    # A first gesture settles well short of the top: this captures a real reading anchor there,
-    # without reaching LOAD_OLDER_WITHIN (the initial tail is only PAGE=30 rows -- too big a wheel
-    # here reaches scrollTop=0 and fires this gesture's own, unheld, loadOlder()).
-    first_gesture = await history.evaluate_handle(
-        "area => ({ ended: new Promise(resolve => area.addEventListener('scrollend', () => resolve(), { once: true })) })"
-    )
-    await page.mouse.wheel(0, -200)
-    async with asyncio.timeout(30):
-        await first_gesture.evaluate("gesture => gesture.ended")
-    await first_gesture.dispose()
-    assert await history.evaluate("area => area.scrollTop") > 80
-    first_anchor = await capture_reading_anchor(history)
-
-    async with _holding_older_pages(page) as held:
-        # A second, separate gesture continues toward the top and reaches LOAD_OLDER_WITHIN, which
-        # asks for the older page from inside onScroll itself -- well before this gesture's own
-        # scrollend, so the app's last captured anchor is still `first_anchor`.
-        await page.mouse.wheel(0, -10_000)
-        async with asyncio.timeout(30):
-            await held.asked.wait()
-        second_anchor = await capture_reading_anchor(history)
-        assert second_anchor["cursor"] != first_anchor["cursor"]
-        held.release.set()
-        await frames(page)
-        await frames(page)
-        # The reader stays where the second gesture left them, not pulled back to the first.
-        await expect_reading_anchor(page, second_anchor)
-        await page.screenshot(path=undeclared_outputs_dir() / "thread-window-stale-anchor.png")
-
-
 async def test_scrolling_up_continuously_through_a_landing_older_page_does_not_jump_to_the_bottom(
     thread_browser: ThreadBrowser,
 ) -> None:

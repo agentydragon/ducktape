@@ -55,41 +55,21 @@ describe("Markdown", () => {
     expect(paragraph?.textContent).toBe("The answer is still being written.");
   });
 
-  it("uses the CodeMirror language extension for a registered fenced block", async () => {
-    const rendered = await render("```python\nimport os\n```");
+  // A registered grammar (python), a language with none (elixir) that must not throw, and a bare
+  // fence whose angle brackets must stay text.
+  it.each([
+    ["a registered language", "```python\nimport os\n```", "import os\n"],
+    ["an unrecognized language", '```elixir\nIO.puts("hi")\n```', 'IO.puts("hi")\n'],
+    ["no language", "```\n<not a real tag>\n```", "<not a real tag>\n"],
+  ])("shows a fenced block's text verbatim in the code widget for %s", async (_case, source, text) => {
+    const code = (await render(source)).querySelector(".agentplane-code-block");
 
-    const code = rendered.querySelector(".agentplane-code-block");
-    expect(code).not.toBeNull();
     expect(code?.querySelector(".cm-editor")).not.toBeNull();
     expect(
       Array.from(code?.querySelectorAll(".cm-line") ?? [])
         .map((line) => line.textContent)
         .join("\n")
-    ).toBe("import os\n");
-  });
-
-  it("falls back to plain, unhighlighted code for an unrecognized language, without throwing", async () => {
-    const rendered = await render('```elixir\nIO.puts("hi")\n```');
-
-    const code = rendered.querySelector(".agentplane-code-block");
-    expect(code?.querySelector(".cm-editor")).not.toBeNull();
-    expect(
-      Array.from(code?.querySelectorAll(".cm-line") ?? [])
-        .map((line) => line.textContent)
-        .join("\n")
-    ).toBe('IO.puts("hi")\n');
-  });
-
-  it("falls back to plain, unhighlighted code for a fence with no language", async () => {
-    const rendered = await render("```\n<not a real tag>\n```");
-
-    const code = rendered.querySelector(".agentplane-code-block");
-    expect(code?.querySelector(".cm-editor")).not.toBeNull();
-    expect(
-      Array.from(code?.querySelectorAll(".cm-line") ?? [])
-        .map((line) => line.textContent)
-        .join("\n")
-    ).toBe("<not a real tag>\n");
+    ).toBe(text);
   });
 
   it("keeps Markdown tables in a horizontally scrollable wrapper", async () => {
