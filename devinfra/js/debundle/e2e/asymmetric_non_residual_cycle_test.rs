@@ -16,8 +16,7 @@ use debundle_e2e_support::*;
 // constraining edge's TARGET (the dependency), never the source (the
 // dependent), is accepted and runs under Node.
 //
-// Shape (unit-level twin:
-// `realizability::tests::pass_two_simulator_models_entry_universal_imports_for_runtime_dfs`):
+// Shape:
 //
 // - `mod_schemas` owns `schemas_target` (eager-read target) and
 //   `lazy_back` (lazy back-edge into `mod_ids`).

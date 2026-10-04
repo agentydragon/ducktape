@@ -147,134 +147,6 @@ fn pure_lazy_cycle_is_realizable() {
     );
 }
 
-/// Asymmetric I-cycle `{mod_dep, mod_dependent}` with eager
-/// `mod_dependent → mod_dep` and lazy `mod_dep → mod_dependent`.
-/// Residual (`module_id(0)`) at-init-reads both, so residual has
-/// I-edges into the SCC and Lemma 2 rescues — the simulator's
-/// post-order puts mod_dep's body before mod_dependent's body.
-/// Verdict must be empty.
-#[test]
-fn lemma_two_rescues_asymmetric_cycle_when_residual_imports_scc() {
-    // owner_0 (residual): const a = 1; (also reads b, lazy_reader at-init via console.log)
-    // owner_1 (mod_dep): const dep_value = "alpha"
-    // owner_2 (mod_dep): function lazy_reader() { return cross_value; }
-    // owner_3 (mod_dependent): const cross_value = dep_value + "-beta"
-    // owner_4 (residual): console.log reads dep_value, cross_value, lazy_reader at-init
-    let source = "const dep_value = \"alpha\"; const cross_value = dep_value + \"-beta\"; function lazy_reader() { return cross_value; } console.log(dep_value, cross_value, lazy_reader());";
-    let owner_graph = parse_and_build(source);
-    let mut partition = Partition::new(&owner_graph, module_id(0));
-    // dep_value (owner 0) → mod_dep, cross_value (owner 1) →
-    // mod_dependent, lazy_reader (owner 2) → mod_dep,
-    // console.log (owner 3) stays in residual (= module_id(0)).
-    partition.set(OwnerId(0), module_id(1));
-    partition.set(OwnerId(1), module_id(2));
-    partition.set(OwnerId(2), module_id(1));
-    let verdict = check_realizability(&owner_graph, &partition);
-    assert!(
-        verdict.is_realizable(),
-        "Lemma 2 should rescue this shape; verdict: {verdict:#?}",
-    );
-}
-
-/// Same SCC shape but residual's own statements have NO direct
-/// I-edge into the SCC — they reach it only through
-/// `mod_mediator`. Still realizable: the emitted entry imports
-/// EVERY logical module (not just the ones residual's statements
-/// reference), in Lemma 2's source-import order, so ESM DFS
-/// enters the SCC at `mod_dependent` (the dependent) before the
-/// mediator's dependency-first imports could reach it at
-/// `mod_dep`. The simulator's universal residual fan-out models
-/// this; the matching Node-anchored pin is
-/// `e2e/mediator_reaches_asymmetric_cycle_test` (the emitted
-/// output runs cleanly and prints the mediator-derived value).
-///
-/// Simulated post-order: `mod_dep` → `mod_dependent` →
-/// `mod_mediator` → residual; the constraining pair
-/// `(mod_dependent → mod_dep)` is satisfied.
-#[test]
-fn mediator_only_entrant_into_asymmetric_cycle_is_rescued_by_entry_imports() {
-    // owner_0: const dep_value = "alpha"
-    // owner_1: const cross_value = dep_value + "-beta"
-    // owner_2: function lazy_reader() { return cross_value; }
-    // owner_3: function mediator_helper() { return dep_value + lazy_reader(); }
-    // owner_4: const mediator_init = mediator_helper(); (at-init promotes
-    //          to a constraining edge into the dep_value owner —
-    //          mediator → mod_dep eager)
-    // owner_5: console.log(mediator_init); (residual at-init)
-    let source = "const dep_value = \"alpha\"; const cross_value = dep_value + \"-beta\"; function lazy_reader() { return cross_value; } function mediator_helper() { return dep_value + lazy_reader(); } const mediator_init = mediator_helper(); console.log(mediator_init);";
-    let owner_graph = parse_and_build(source);
-    let mut partition = Partition::new(&owner_graph, module_id(0));
-    partition.set(OwnerId(0), module_id(1)); // dep_value → mod_dep
-    partition.set(OwnerId(1), module_id(2)); // cross_value → mod_dependent
-    partition.set(OwnerId(2), module_id(1)); // lazy_reader → mod_dep
-    partition.set(OwnerId(3), module_id(3)); // mediator_helper → mod_mediator
-    partition.set(OwnerId(4), module_id(3)); // mediator_init → mod_mediator
-    // owner_5 (console.log) stays in residual.
-    let verdict = check_realizability(&owner_graph, &partition);
-    assert!(
-        verdict.is_realizable(),
-        "entry's universal per-plan imports DFS into the SCC at the \
-         dependent first (Lemma 2); the mediator path never wins. \
-         verdict: {verdict:#?}",
-    );
-}
-
-/// Asymmetric I-cycle where residual's own statements reach the
-/// SCC only via the constraining edge's **target** (the
-/// dependency), not the source (the dependent).
-///
-/// Shape:
-///   - `mod_schemas` owns `schemas_target` (the eager-read target)
-///     and `lazy_back` (whose body lazily references `ids_val`).
-///   - `mod_ids` owns `ids_val`, whose initializer eager-reads
-///     `schemas_target` from `mod_schemas`.
-///   - residual reads ONLY `schemas_target` — no direct
-///     reference to `ids_val`.
-///
-/// I-graph cross-module edges:
-///   - `mod_ids → mod_schemas` `EagerUse(schemas_target)` (forward, constraining)
-///   - `mod_schemas → mod_ids` `LazyUse(ids_val)` (back, non-constraining)
-///   - `residual → mod_schemas` `EagerUse(schemas_target)` (constraining)
-///
-/// I-graph SCC: `{mod_ids, mod_schemas}`. Residual is NOT in the
-/// SCC; residual's statements only reference `mod_schemas`.
-///
-/// A simulator that fanned residual out only to the modules its
-/// statements reference would enter the SCC at `mod_schemas`,
-/// follow the emitted lazy-read import back to `mod_ids`, and flag
-/// `post_order[mod_schemas] > post_order[mod_ids]` as TDZ. The
-/// emitted entry imports every plan — `mod_ids` included — in
-/// Lemma 2's source-import order, which puts the dependent
-/// `mod_ids` first; the runtime DFS unwinds through `mod_schemas`
-/// and evaluates it before `mod_ids`. The simulator models the
-/// entry's universal imports and accepts.
-#[test]
-fn pass_two_simulator_models_entry_universal_imports_for_runtime_dfs() {
-    // owner_0: const schemas_target = "v"     (mod_schemas)
-    // owner_1: function lazy_back() { return ids_val; }
-    //                                         (mod_schemas; lazy_use ids_val)
-    // owner_2: const ids_val = schemas_target (mod_ids; eager_use
-    //          schemas_target — a PURE initializer, so no
-    //          sequenced edges hand residual an incidental
-    //          direct edge to mod_ids)
-    // owner_3: console.log(schemas_target);   (residual; eager_use schemas_target)
-    let source = "const schemas_target = \"v\"; function lazy_back() { return ids_val; } const ids_val = schemas_target; console.log(schemas_target);";
-    let owner_graph = parse_and_build(source);
-    let mut partition = Partition::new(&owner_graph, module_id(0));
-    partition.set(OwnerId(0), module_id(1)); // schemas_target → mod_schemas
-    partition.set(OwnerId(1), module_id(1)); // lazy_back     → mod_schemas
-    partition.set(OwnerId(2), module_id(2)); // ids_val       → mod_ids
-    // owner_3 (console.log) stays in residual.
-    let verdict = check_realizability(&owner_graph, &partition);
-    assert!(
-        verdict.is_realizable(),
-        "asymmetric cycle must accept: entry imports \
-         every plan in Lemma 2's source-import order, so the runtime \
-         DFS enters the SCC at mod_ids (the dependent) and evaluates \
-         mod_schemas first. verdict: {verdict:#?}",
-    );
-}
-
 /// Residual is the source of a constraining edge into the SCC,
 /// but the SCC also has a constraining-target-residual edge.
 /// Lemma 2 fails: residual is the DFS root and evaluates last in
@@ -884,8 +756,8 @@ fn ladder_tier2_accepts_pure_lazy_cycle_move() {
 
 #[test]
 fn ladder_tier3_accepts_lemma_two_rescued_move() {
-    // The `lemma_two_rescues_asymmetric_cycle...` shape reached via a
-    // speculative move: dep_value + lazy_reader sit in mod 1; moving
+    // The asymmetric cycle of `e2e/lemma_two_rescued_asymmetric_cycle_test`
+    // reached via a speculative move: dep_value + lazy_reader sit in mod 1; moving
     // cross_value to mod 2 closes the asymmetric I-SCC {1, 2} with a
     // constraining pair, so the ladder must run the simulator — which
     // rescues (Lemma 2).
