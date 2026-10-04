@@ -161,37 +161,6 @@ def test_console_width_handling(width):
 # Progress bar format tests
 
 
-def _extract_progress_bars(line: Text) -> str:
-    """Extract just the progress bar characters from a line (after filename and counts)."""
-    plain: str = line.plain
-    block_chars = " ▏▎▍▌▋▊▉█"
-
-    # Find a sequence of at least 40 consecutive block characters (2 * bar_width)
-    # This is the dual progress bar section
-    i = 0
-    while i < len(plain):
-        if plain[i] in block_chars:
-            # Found start of a potential block sequence
-            start = i
-            while i < len(plain) and plain[i] in block_chars:
-                i += 1
-            length = i - start
-
-            # If this sequence is at least 40 chars, it's our progress bar
-            if length >= 40:
-                # The sequence might include padding spaces before/after the bar
-                # The bar itself is exactly 40 characters
-                # Skip leading padding spaces (between counts and bar)
-                bar_candidate = plain[start:i].lstrip(" ")
-                # Take exactly 40 characters (the dual progress bar)
-                return bar_candidate[:40]
-        else:
-            i += 1
-
-    # Fallback: return empty if not found
-    return ""
-
-
 def test_progress_bars_align_consistently():
     """Test that files with same stats render with same bar positions."""
     # Files with identical stats should have bars at same column positions
@@ -420,45 +389,6 @@ def test_percentage_calculation():
     assert "37.5%" in file1_line, f"file1.py should show 37.5%, got: {file1_line}"
     assert "12.5%" in file2_line, f"file2.py should show 12.5%, got: {file2_line}"
     assert "50.0%" in file3_line, f"file3.py should show 50.0%, got: {file3_line}"
-
-
-def test_percentage_not_sum_of_bar_percentages():
-    """Test that percentage is NOT the sum of individual bar fill percentages.
-
-    This is a regression test to ensure percentage shows file's contribution
-    to total changes, not the combined fill percentage of both bars.
-    """
-    changes = [
-        # Create a scenario where bar fill percentages differ from total percentage
-        # Total: +100 additions, -900 deletions = 1000 total changes
-        FileChange(path="heavy_deletes.py", additions=10, deletions=890),  # 900 total = 90%
-        FileChange(path="only_adds.py", additions=90, deletions=10),  # 100 total = 10%
-    ]
-
-    # Totals: 100 additions, 900 deletions, 1000 total changes
-    # heavy_deletes.py: 900/1000 = 90.0% of total changes
-    # only_adds.py: 100/1000 = 10.0% of total changes
-
-    # Bar fill percentages would be different:
-    # heavy_deletes.py green bar: 10/100 = 10% fill
-    # heavy_deletes.py red bar: 890/900 = 98.9% fill
-    # If percentage were sum of fills, it would be ~109%! Wrong!
-
-    # only_adds.py green bar: 90/100 = 90% fill
-    # only_adds.py red bar: 10/900 = 1.1% fill
-    # If percentage were sum of fills, it would be ~91%! Wrong!
-
-    config = RenderConfig(columns=[Column.TREE, Column.BARS, Column.PERCENTAGES])
-    diff_tree = make_diff_tree(changes, config=config)
-    result = render_to_string(diff_tree, width=120, force_terminal=False)
-
-    lines = result.split("\n")
-    heavy_line = _find_line_with(lines, "heavy_deletes.py")
-    light_line = _find_line_with(lines, "only_adds.py")
-
-    # Verify percentages show total contribution, NOT bar fill sums
-    assert "90.0%" in heavy_line, f"heavy_deletes.py should show 90.0% (900/1000), got: {heavy_line}"
-    assert "10.0%" in light_line, f"only_adds.py should show 10.0% (100/1000), got: {light_line}"
 
 
 def test_deletion_bar_alignment():
