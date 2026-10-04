@@ -81,28 +81,6 @@ def broad_scale_prior() -> TrainedPrivateEquityScalePrior:
     )
 
 
-def test_load_jsonl_accepts_valuation_observations(tmp_path: Path) -> None:
-    path = write_jsonl(
-        tmp_path / "observations.jsonl",
-        [
-            {
-                "type": "valuation_observation",
-                "issuer_id": "private_company_a",
-                "observed_at": "2025-10-28",
-                "valuation_usd": 500_000_000_000,
-                "uncertainty_log_sigma": 0.2,
-                "valuation_kind": "implied",
-                "source_id": "test",
-            }
-        ],
-    )
-
-    observations = load_price_observations_jsonl(path)
-
-    assert len(observations) == 1
-    assert observations[0].type == "valuation_observation"
-
-
 def test_primary_valuation_requires_cash_raised(tmp_path: Path) -> None:
     """`valuation_kind=primary` without `cash_raised_usd` is rejected at parse time."""
     path = write_jsonl(

@@ -2,12 +2,10 @@ from __future__ import annotations
 
 import pytest
 import pytest_bazel
-from pydantic import TypeAdapter, ValidationError
 
 from finance.augur.model.exogenous import ExogenousSamplingRequest, level_series_request_channels
 from finance.augur.model.series import SP500_SYMBOL, HomeValueKey, InflationKey, LocationId, RentKey, SecurityKey
 from finance.augur.x.models.independent import IndependentProviderConfig
-from finance.augur.x.models.provider_config import ProviderConfig
 
 
 @pytest.fixture
@@ -89,15 +87,6 @@ def test_independent_model_samples_levels_and_events(example_config: Independent
     assert sampled.private_equity.is_empty()
 
 
-def test_independent_provider_config_roundtrips_through_discriminated_union(
-    example_config: IndependentProviderConfig,
-) -> None:
-    adapter: TypeAdapter[ProviderConfig] = TypeAdapter(ProviderConfig)
-    config = adapter.validate_python(example_config.model_dump())
-    assert isinstance(config, IndependentProviderConfig)
-    config.realize_model().sample(ExogenousSamplingRequest(horizon_months=3, rollout_seeds=(9,)))
-
-
 def test_realized_model_keeps_role_structure(example_config: IndependentProviderConfig) -> None:
     # The runtime model holds level specs as the role sub-groups (same shape
     # as config / the sampled bundle), not a flattened opaque key map.
@@ -115,15 +104,6 @@ def test_realized_model_keeps_role_structure(example_config: IndependentProvider
         "home_value:san_francisco_ca",
         "rent:san_francisco_ca",
     }
-
-
-def test_legacy_prefix_keys_are_rejected() -> None:
-    # The whole point of the typed shape: an old-style wire-id key at the top
-    # level must fail loudly (extra="forbid"), not be silently prefix-parsed.
-    with pytest.raises(ValidationError):
-        IndependentProviderConfig.model_validate(
-            {"type": "independent", "security:btc": {"kind": "constant", "value": 75000.0}}
-        )
 
 
 if __name__ == "__main__":

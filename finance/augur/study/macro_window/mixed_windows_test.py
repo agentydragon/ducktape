@@ -15,7 +15,7 @@ import asyncio
 import numpy as np
 import pytest_bazel
 
-from finance.augur.study.macro_window.holdout import HORIZONS, describe, long_record_state_path
+from finance.augur.study.macro_window.holdout import describe, long_record_state_path
 from finance.augur.study.macro_window.mixed_windows import (
     FRED_WINDOW_START,
     EquationWindows,
@@ -25,13 +25,12 @@ from finance.augur.study.macro_window.mixed_windows import (
 
 
 def test_the_mixed_fit_is_scored_beside_both_single_windows() -> None:
-    """Report all three arms, and pin what the comparison needs in order to mean anything.
+    """Report all three arms, and pin what the mixed fit needs in order for the comparison to mean anything.
 
-    Same origins across arms is the requirement — the arms differ in training span by
-    construction, so if they also differed in WHICH months they were scored on, a gap between
-    them could just be a gap between two stretches of history. Finiteness is the other: rows
-    estimated on different spans have no guarantee of composing into a stationary transition, and
-    a non-stationary one makes the 10-year covariance overflow rather than fail.
+    Rows estimated on different spans have no guarantee of composing into a stationary
+    transition, and a non-stationary one makes the 10-year covariance overflow rather than fail,
+    so the scores must be finite. Equal origins across arms is `score_arms`' own guarantee, which
+    `holdout_test.py` pins.
     """
 
     path = asyncio.run(long_record_state_path())
@@ -49,10 +48,6 @@ def test_the_mixed_fit_is_scored_beside_both_single_windows() -> None:
     print(f"mixed spectral radius {mixed.spectral_radius:.4f}")
     assert mixed.spectral_radius < 1.0, f"mixed windows composed a non-stationary VAR ({mixed.spectral_radius})"
 
-    assert len({score.arm for score in scores}) == 3
-    for horizon in HORIZONS:
-        at_horizon = [score for score in scores if score.horizon == horizon]
-        assert len({score.origins for score in at_horizon}) == 1, f"arms disagree on origins at {horizon=}"
     for score in scores:
         assert np.isfinite(score.mean_log_density), f"{score.arm} at {score.horizon} scored non-finite"
         assert all(np.isfinite(value) for value in score.mean_crps.values())

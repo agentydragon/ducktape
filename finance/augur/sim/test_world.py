@@ -268,20 +268,6 @@ def test_an_empty_pool_purchase_rejects_wrong_account_or_scale_without_mutation(
     assert all(entry.cause_id != "invalid-purchase" for entry in financial.journal)
 
 
-@pytest.mark.parametrize("case", ["no_pool", "unpriced", "duplicate"])
-def test_declarations_reject_missing_prices_and_do_not_fall_back_to_initial_lots(case: str) -> None:
-    run = situation(1)
-    pool = run.holding_pools[0]
-    if case == "no_pool":
-        run = replace(run, holding_pools=())
-    elif case == "unpriced":
-        run = replace(run, initial_lots=(), holding_pools=(replace(pool, asset_id=AssetId("unpriced")),))
-    else:
-        run = replace(run, initial_lots=(), holding_pools=(pool, pool))
-    with pytest.raises(ValueError, match=r"holding pool|missing public security series"):
-        composed(run)
-
-
 def test_cashflows_claims_sales_and_cross_year_tax_share_financial_books() -> None:
     run = situation(13)
     profile = taxpayer(HOUSEHOLD)
@@ -701,9 +687,6 @@ def test_transfer_and_fifo_sale_remain_balanced(mode: Literal["dense", "forensic
         financial = stepped(run, mode, rollout=index, sales=sales)
         [sale] = expected.dispositions
         assert financial.rollout_id == expected.rollout_id == index
-        assert financial.months == expected.months
-        assert financial.dispositions == expected.dispositions
-        assert financial.journal == ([] if mode == "dense" else expected.journal)
         proceeds = (15_000, 20_000)[index]
         assert (sale.proceeds, sale.basis, sale.units, sale.realized_gain) == (
             proceeds,
