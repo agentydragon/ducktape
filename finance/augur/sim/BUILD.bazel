@@ -1605,7 +1605,6 @@ py_test(
     srcs = ["test_invocation.py"],
     deps = [
         ":actions",
-        ":bills",
         ":books",
         ":ids",
         ":income",
@@ -1613,7 +1612,6 @@ py_test(
         ":money",
         ":observations",
         ":results",
-        ":schedule",
         ":session",
         ":world",
         "//:conftest",
