@@ -1,10 +1,10 @@
 load("@aspect_rules_esbuild//esbuild:defs.bzl", "esbuild")
 load("@aspect_rules_js//js:defs.bzl", "js_library", "js_test")
 load("@aspect_rules_ts//ts:defs.bzl", "ts_config")
-load("@npm_ducktape//:vitest/package_json.bzl", vitest_bin = "bin")
 load("//devinfra/js:openapi.bzl", "js_openapi_schema")
 load("//devinfra/js:spa_bundle.bzl", "spa_bundle")
 load("//devinfra/js:ts_library.bzl", "ts_library")
+load("//devinfra/js:vitest.bzl", "vitest_suite")
 
 package(default_visibility = ["//visibility:public"])
 
@@ -187,15 +187,12 @@ ts_library(
     ],
 )
 
-vitest_bin.vitest_test(
+vitest_suite(
     name = "vitest_test",
-    args = ["run"],
-    chdir = package_name(),
-    data = [
-        "vitest.config.mts",
+    environment = "node",
+    specs = [
         ":format_test",
         ":quotas_test",
-        "//:node_modules/vitest",
     ],
 )
 

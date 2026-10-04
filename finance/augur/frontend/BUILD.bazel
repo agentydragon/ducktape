@@ -1,17 +1,17 @@
 load("@aspect_bazel_lib//lib:copy_to_directory.bzl", "copy_to_directory")
 load("@aspect_rules_esbuild//esbuild:defs.bzl", "esbuild")
 load("@aspect_rules_js//js:defs.bzl", "js_run_binary")
-load("@aspect_rules_ts//ts:defs.bzl", "ts_config", "ts_project")
+load("@aspect_rules_ts//ts:defs.bzl", "ts_config")
 load("@bazel_skylib//rules:build_test.bzl", "build_test")
 load("@bazel_skylib//rules:copy_file.bzl", "copy_file")
 load("@bazel_skylib//rules:diff_test.bzl", "diff_test")
 load("@npm_ducktape//:@tailwindcss/cli/package_json.bzl", tailwindcss_bin = "bin")
 load("@npm_ducktape//:eslint/package_json.bzl", eslint_bin = "bin")
-load("@npm_ducktape//:vitest/package_json.bzl", vitest_bin = "bin")
 load("@rules_oci//oci:defs.bzl", "oci_image", "oci_load")
 load("@rules_pkg//pkg:tar.bzl", "pkg_tar")
 load("@rules_python//python:defs.bzl", "py_library")
 load("//devinfra/js:ts_library.bzl", "ts_library")
+load("//devinfra/js:vitest.bzl", "vitest_suite")
 load("//devinfra/python:defs.bzl", "py_binary")
 
 package(default_visibility = ["//visibility:public"])
@@ -623,7 +623,7 @@ filegroup(
 # One ts_library per spec, so each declares what it imports and is type-checked as it compiles;
 # vitest then runs the emitted `.test.js`.
 ts_library(
-    name = "sanity_bands_test_lib",
+    name = "sanity_bands_test",
     srcs = ["sanity_bands.test.ts"],
     tsconfig = TSCONFIG,
     deps = [
@@ -633,7 +633,7 @@ ts_library(
 )
 
 ts_library(
-    name = "budget_adjustments_test_lib",
+    name = "budget_adjustments_test",
     srcs = ["budget_adjustments.test.ts"],
     tsconfig = TSCONFIG,
     deps = [
@@ -643,7 +643,7 @@ ts_library(
 )
 
 ts_library(
-    name = "input_helpers_test_lib",
+    name = "input_helpers_test",
     srcs = ["input_helpers.test.ts"],
     tsconfig = TSCONFIG,
     deps = [
@@ -653,7 +653,7 @@ ts_library(
 )
 
 ts_library(
-    name = "format_test_lib",
+    name = "format_test",
     srcs = ["format.test.ts"],
     tsconfig = TSCONFIG,
     deps = [
@@ -663,7 +663,7 @@ ts_library(
 )
 
 ts_library(
-    name = "data_helpers_test_lib",
+    name = "data_helpers_test",
     srcs = ["data_helpers.test.ts"],
     tsconfig = TSCONFIG,
     deps = [
@@ -674,7 +674,7 @@ ts_library(
 )
 
 ts_library(
-    name = "url_state_test_lib",
+    name = "url_state_test",
     srcs = ["url_state.test.ts"],
     tsconfig = TSCONFIG,
     deps = [
@@ -684,7 +684,7 @@ ts_library(
 )
 
 ts_library(
-    name = "product_test_lib",
+    name = "product_test",
     srcs = ["product.test.tsx"],
     tsconfig = TSCONFIG,
     deps = [
@@ -698,107 +698,18 @@ ts_library(
     ],
 )
 
-# vitest loads this config itself, so it stays an `.mts` in the runfiles rather than being compiled
-# away; no_emit type-checks it anyway, through the generated :vitest_config_typecheck_test.
-ts_project(
-    name = "vitest_config",
-    srcs = ["vitest.config.mts"],
-    extends = ":tsconfig",
-    no_emit = True,
-    resolve_json_module = True,
-    tsconfig = {
-        "exclude": [],
-        "include": [],
-    },
-    deps = ["//:node_modules/vitest"],
-)
-
-vitest_bin.vitest_test(
-    name = "sanity_bands_test",
-    args = ["run"],
-    chdir = package_name(),
-    data = [
-        "vitest.config.mts",
-        ":sanity_bands_test_lib",
-        "//:node_modules/vitest",
-    ],
-)
-
-vitest_bin.vitest_test(
-    name = "budget_adjustments_test",
-    args = ["run"],
-    chdir = package_name(),
-    data = [
-        "vitest.config.mts",
-        ":budget_adjustments_test_lib",
-        "//:node_modules/vitest",
-    ],
-)
-
-vitest_bin.vitest_test(
-    name = "input_helpers_test",
-    args = ["run"],
-    chdir = package_name(),
-    data = [
-        "vitest.config.mts",
-        ":input_helpers_test_lib",
-        "//:node_modules/vitest",
-    ],
-)
-
-vitest_bin.vitest_test(
-    name = "format_test",
-    args = [
-        "run",
-        "format.test.js",
-    ],
-    chdir = package_name(),
-    data = [
-        "vitest.config.mts",
-        ":format_test_lib",
-        "//:node_modules/vitest",
-    ],
-)
-
-vitest_bin.vitest_test(
-    name = "data_helpers_test",
-    args = [
-        "run",
-        "data_helpers.test.js",
-    ],
-    chdir = package_name(),
-    data = [
-        "vitest.config.mts",
-        ":data_helpers_test_lib",
-        "//:node_modules/vitest",
-    ],
-)
-
-vitest_bin.vitest_test(
-    name = "url_state_test",
-    args = [
-        "run",
-        "url_state.test.js",
-    ],
-    chdir = package_name(),
-    data = [
-        "vitest.config.mts",
-        ":url_state_test_lib",
-        "//:node_modules/vitest",
-    ],
-)
-
-vitest_bin.vitest_test(
-    name = "product_test",
-    args = [
-        "run",
-        "product.test.js",
-    ],
-    chdir = package_name(),
-    data = [
-        "vitest.config.mts",
-        ":product_test_lib",
-        "//:node_modules/happy-dom",
-        "//:node_modules/vitest",
+vitest_suite(
+    name = "vitest_test",
+    # product.test.tsx opts into a DOM with `// @vitest-environment happy-dom`.
+    data = ["//:node_modules/happy-dom"],
+    environment = "node",
+    specs = [
+        ":budget_adjustments_test",
+        ":data_helpers_test",
+        ":format_test",
+        ":input_helpers_test",
+        ":product_test",
+        ":sanity_bands_test",
+        ":url_state_test",
     ],
 )

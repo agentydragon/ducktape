@@ -301,7 +301,11 @@ ts_library(
 It wraps `ts_project`: the type check is the build step, and a module's dependencies are
 what it declares. Bundlers (`spa_bundle`, `esbuild`) take the emitted `.js` (entry point
 `main.js`, not `main.tsx`); vitest runs the emitted `.test.js`, so every spec is its own
-`ts_library` and `vitest.config.ts` includes `["**/*.test.js"]`.
+`ts_library`, named after the spec file (`sidebar.test.tsx` → `:sidebar_test`), and a
+package's `vitest_suite` (`//devinfra/js:vitest.bzl`) lists them and generates the vitest
+config. It fails the package's load for a spec file with no listed library; a subpackage's
+specs reach it through that subpackage's `vitest_specs` group. Never a hand-written
+`vitest.config.*`.
 
 **Never `js_library` for `.ts`/`.tsx`, and never a whole-project `tsc_test`** — files
 fall through the second hand-maintained list and end up checked by nothing, silently.

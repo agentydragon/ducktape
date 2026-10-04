@@ -1,10 +1,10 @@
 load("@aspect_rules_esbuild//esbuild:defs.bzl", "esbuild")
 load("@aspect_rules_js//js:defs.bzl", "js_library")
 load("@aspect_rules_ts//ts:defs.bzl", "ts_config")
-load("@npm_ducktape//:vitest/package_json.bzl", vitest_bin = "bin")
 load("//devinfra/js:openapi.bzl", "js_openapi_schema")
 load("//devinfra/js:spa_bundle.bzl", "spa_bundle")
 load("//devinfra/js:ts_library.bzl", "ts_library")
+load("//devinfra/js:vitest.bzl", "vitest_suite")
 load("//util/testing/frontend_visual:visual_test.bzl", "visual_test")
 
 package(default_visibility = ["//devinfra/claude/session_export:__pkg__"])
@@ -292,12 +292,12 @@ ts_library(
     ],
 )
 
-vitest_bin.vitest_test(
+vitest_suite(
     name = "vitest_test",
-    args = ["run"],
-    chdir = package_name(),
-    data = [
-        "vitest.config.mts",
+    # Specs that need a DOM opt in with `// @vitest-environment happy-dom`.
+    data = ["//:node_modules/happy-dom"],
+    environment = "node",
+    specs = [
         ":api_test",
         ":event_timeline_test",
         ":narration_test",
@@ -305,8 +305,6 @@ vitest_bin.vitest_test(
         ":tool_groups_test",
         ":transcript_test",
         ":viewer_test",
-        "//:node_modules/happy-dom",
-        "//:node_modules/vitest",
     ],
 )
 

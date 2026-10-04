@@ -1,10 +1,10 @@
 load("@aspect_rules_esbuild//esbuild:defs.bzl", "esbuild")
 load("@aspect_rules_js//js:defs.bzl", "js_library", "js_test")
 load("@aspect_rules_ts//ts:defs.bzl", "ts_config")
-load("@npm_ducktape//:vitest/package_json.bzl", vitest_bin = "bin")
 load("//devinfra/js:openapi.bzl", "js_openapi_schema")
 load("//devinfra/js:spa_bundle.bzl", "spa_bundle")
 load("//devinfra/js:ts_library.bzl", "ts_library")
+load("//devinfra/js:vitest.bzl", "vitest_suite")
 load("//util/testing/frontend_visual:visual_test.bzl", "visual_test")
 
 package(default_visibility = ["//agentplane/app:__subpackages__"])
@@ -375,7 +375,7 @@ ts_library(
 )
 
 ts_library(
-    name = "actions_rendering_test",
+    name = "actions_rendering_index_test",
     testonly = True,
     srcs = ["actions/rendering/index.test.tsx"],
     tsconfig = TSCONFIG,
@@ -478,7 +478,7 @@ ts_library(
 )
 
 ts_library(
-    name = "mcp_servers_test",
+    name = "settings_mcp_servers_test",
     testonly = True,
     srcs = ["settings/mcp_servers.test.tsx"],
     tsconfig = TSCONFIG,
@@ -518,7 +518,7 @@ ts_library(
 )
 
 ts_library(
-    name = "connections_test",
+    name = "settings_connections_test",
     testonly = True,
     srcs = ["settings/connections.test.tsx"],
     tsconfig = TSCONFIG,
@@ -1139,49 +1139,41 @@ ts_library(
     ],
 )
 
-vitest_bin.vitest_test(
+vitest_suite(
     name = "vitest_test",
-    args = ["run"],
-    chdir = package_name(),
+    # Specs that need a DOM select one with an `// @vitest-environment` pragma: happy-dom, or
+    # jsdom for code_block.test.ts and markdown.test.tsx.
     data = [
-        "test_setup.ts",
-        "vitest.config.mts",
-        ":actions_policy_test",
-        ":actions_rendering_ssh_test",
-        ":actions_rendering_test",
-        ":actions_history_test",
-        ":actions_requests_test",
+        "//:node_modules/happy-dom",
+        "//:node_modules/jsdom",
+    ],
+    environment = "node",
+    setup_files = ["test_setup.ts"],
+    specs = [
         ":actions_call_tool_result_test",
+        ":actions_history_test",
+        ":actions_policy_test",
+        ":actions_rendering_index_test",
+        ":actions_rendering_ssh_test",
+        ":actions_requests_test",
         ":clamped_block_test",
         ":client_test",
-        ":connections_test",
+        ":code_block_test",
         ":consent_test",
         ":inline_code_test",
-        "//agentplane/app/frontend/threads:command_calls_test",
-        "//agentplane/app/frontend/threads:history_rows_test",
-        "//agentplane/app/frontend/threads:history_sizes_test",
-        "//agentplane/app/frontend/threads:history_trace_test",
         ":json_view_test",
         ":live_stream_test",
-        "//agentplane/app/frontend/threads:local_commands_test",
         ":markdown_test",
-        ":mcp_servers_test",
-        ":tab_metadata_test",
-        "//agentplane/app/frontend/threads:projected_session_test",
-        ":push_test",
-        "//agentplane/app/frontend/threads:retained_disclosures_test",
         ":sandbox_page_test",
         ":sandboxes_test",
+        ":settings_connections_test",
+        ":settings_mcp_servers_test",
+        ":settings_push_test",
         ":sidebar_test",
         ":stream_status_test",
-        ":code_block_test",
+        ":tab_metadata_test",
         ":thread_groups_test",
-        "//agentplane/app/frontend/threads:thread_store_test",
-        "//agentplane/app/frontend/threads:thread_title_test",
-        "//:node_modules/happy-dom",
-        # code_block.test.ts runs in jsdom; see the note there.
-        "//:node_modules/jsdom",
-        "//:node_modules/vitest",
+        "//agentplane/app/frontend/threads:specs",
     ],
 )
 
@@ -1284,7 +1276,7 @@ js_test(
 )
 
 ts_library(
-    name = "push_test",
+    name = "settings_push_test",
     testonly = True,
     srcs = ["settings/push.test.tsx"],
     tsconfig = TSCONFIG,

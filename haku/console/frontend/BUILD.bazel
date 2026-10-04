@@ -1,12 +1,12 @@
 load("@aspect_rules_esbuild//esbuild:defs.bzl", "esbuild")
 load("@aspect_rules_js//js:defs.bzl", "js_binary", "js_run_binary", "js_test")
-load("@aspect_rules_ts//ts:defs.bzl", "ts_config", "ts_project")
+load("@aspect_rules_ts//ts:defs.bzl", "ts_config")
 load("@npm_ducktape//:@tailwindcss/cli/package_json.bzl", tailwindcss_bin = "bin")
-load("@npm_ducktape//:vitest/package_json.bzl", vitest_bin = "bin")
 load("//devinfra/js:json_schema.bzl", "js_json_schema")
 load("//devinfra/js:openapi.bzl", "js_openapi_schema")
 load("//devinfra/js:spa_bundle.bzl", "spa_bundle")
 load("//devinfra/js:ts_library.bzl", "ts_library")
+load("//devinfra/js:vitest.bzl", "vitest_suite")
 load("//util:data_uri.bzl", "data_uri_module")
 
 package(default_visibility = ["//visibility:public"])
@@ -1051,7 +1051,7 @@ js_test(
 # One ts_library per spec, exactly as under tool_rendering/: each spec declares what it imports,
 # is type-checked against those deps' declarations as it compiles, and hands vitest the emitted
 # `.test.js`. There is no separate whole-project type-check target to keep the file list in step
-# with — a spec that is not wired here simply does not exist to Bazel.
+# with; `vitest_suite` below fails the package's load for a spec file it does not list.
 
 ts_library(
     name = "approval_state_test",
@@ -1077,7 +1077,7 @@ ts_library(
 )
 
 ts_library(
-    name = "bridge_test_lib",
+    name = "bridge_test",
     srcs = ["bridge.test.ts"],
     isolated_typecheck = True,
     tsconfig = TSCONFIG,
@@ -1239,7 +1239,7 @@ ts_library(
 )
 
 ts_library(
-    name = "sample_data_test",
+    name = "screenshots_sample_data_test",
     srcs = ["screenshots/sample_data.test.ts"],
     isolated_typecheck = True,
     tsconfig = TSCONFIG,
@@ -1306,33 +1306,14 @@ ts_library(
     ],
 )
 
-# vitest loads this config itself, so it must stay an `.mts` file in the runfiles rather than be
-# compiled to one. `no_emit` type-checks it anyway, through the generated
-# :vitest_config_typecheck_test.
-ts_project(
-    name = "vitest_config",
-    srcs = ["vitest.config.mts"],
-    extends = ":tsconfig",
-    no_emit = True,
-    resolve_json_module = True,
-    tsconfig = {
-        # no_emit means no declarations, and tsc rejects isolatedDeclarations without them.
-        "compilerOptions": {"isolatedDeclarations": False},
-        "exclude": [],
-        "include": [],
-    },
-    deps = ["//:node_modules/vitest"],
-)
-
-vitest_bin.vitest_test(
+vitest_suite(
     name = "vitest_test",
-    args = ["run"],
-    chdir = package_name(),
-    data = [
-        "vitest.config.mts",
+    data = ["//:node_modules/@haku/console-bridge"],
+    environment = "jsdom",  # DOMPurify (in markdown.ts) needs a DOM
+    specs = [
         ":approval_state_test",
         ":bridge_client_test",
-        ":bridge_test_lib",
+        ":bridge_test",
         ":calendar_client_test",
         ":client_test",
         ":code_block_test",
@@ -1344,8 +1325,8 @@ vitest_bin.vitest_test(
         ":open_external_test",
         ":operator_login_test",
         ":routing_test",
-        ":sample_data_test",
         ":screenshot_capture_test",
+        ":screenshots_sample_data_test",
         ":settings_panel_test",
         ":shell_chrome_test",
         ":sw_test",
@@ -1353,24 +1334,6 @@ vitest_bin.vitest_test(
         ":time_test",
         ":tool_call_decision_test",
         ":tool_calls_page_test",
-        "//:node_modules/@haku/console-bridge",
-        "//:node_modules/vitest",
-        "//haku/console/frontend/tool_rendering:actions_test",
-        "//haku/console/frontend/tool_rendering:call_entry_test",
-        "//haku/console/frontend/tool_rendering:index_test",
-        "//haku/console/frontend/tool_rendering:result_entry_test",
-        "//haku/console/frontend/tool_rendering:variant_test",
-        "//haku/console/frontend/tool_rendering/gmail:requests_test",
-        "//haku/console/frontend/tool_rendering/gmail:responses_test",
-        "//haku/console/frontend/tool_rendering/google_calendar:calls_test",
-        "//haku/console/frontend/tool_rendering/google_calendar:requests_test",
-        "//haku/console/frontend/tool_rendering/google_calendar:responses_test",
-        "//haku/console/frontend/tool_rendering/grants:requests_test",
-        "//haku/console/frontend/tool_rendering/grants:responses_test",
-        "//haku/console/frontend/tool_rendering/grocy:requests_test",
-        "//haku/console/frontend/tool_rendering/grocy:responses_test",
-        "//haku/console/frontend/tool_rendering/haku_routine:requests_test",
-        "//haku/console/frontend/tool_rendering/kubectl:requests_test",
-        "//haku/console/frontend/tool_rendering/tana:requests_test",
+        "//haku/console/frontend/tool_rendering:specs",
     ],
 )

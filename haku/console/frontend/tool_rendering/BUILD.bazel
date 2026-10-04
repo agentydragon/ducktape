@@ -1,4 +1,5 @@
 load("//devinfra/js:ts_library.bzl", "ts_library")
+load("//devinfra/js:vitest.bzl", "vitest_specs")
 
 package(default_visibility = ["//visibility:public"])
 
@@ -217,12 +218,30 @@ ts_library(
 )
 
 ts_library(
-    name = "variant_test",
+    name = "vocabulary_test",
     srcs = ["vocabulary.test.ts"],
     isolated_typecheck = True,
     tsconfig = TSCONFIG,
     deps = [
         ":variant",
         "//:node_modules/vitest",
+    ],
+)
+
+vitest_specs(
+    name = "specs",
+    specs = [
+        ":actions_test",
+        ":call_entry_test",
+        ":index_test",
+        ":result_entry_test",
+        ":vocabulary_test",
+        "//haku/console/frontend/tool_rendering/gmail:specs",
+        "//haku/console/frontend/tool_rendering/google_calendar:specs",
+        "//haku/console/frontend/tool_rendering/grants:specs",
+        "//haku/console/frontend/tool_rendering/grocy:specs",
+        "//haku/console/frontend/tool_rendering/haku_routine:specs",
+        "//haku/console/frontend/tool_rendering/kubectl:specs",
+        "//haku/console/frontend/tool_rendering/tana:specs",
     ],
 )
