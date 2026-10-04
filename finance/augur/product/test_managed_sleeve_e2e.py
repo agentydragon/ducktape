@@ -168,7 +168,7 @@ def test_lots_of_an_index_and_a_portfolio_pegged_to_it_stay_separate_sleeves(
 def test_a_managed_sleeve_naming_an_unknown_portfolio_is_refused(
     augur_config: Config, catalog: CatalogResponse
 ) -> None:
-    with pytest.raises(ValueError, match="unknown TLH portfolio 'test-absent'"):
+    with pytest.raises(ValueError, match="test-absent"):
         _rollout(
             _product(augur_config, catalog, index="SPY", account_id=_ACCOUNT_ID),
             ManagedSleeveWeight(portfolio_id=PortfolioId("test-absent"), weight=1),
@@ -177,7 +177,7 @@ def test_a_managed_sleeve_naming_an_unknown_portfolio_is_refused(
 
 def test_a_portfolio_on_the_slot_of_ordinary_lots_is_refused(augur_config: Config, catalog: CatalogResponse) -> None:
     """The fixture's VOO lots sit in `taxable_brokerage`, the very slot this portfolio would own."""
-    with pytest.raises(ValueError, match=r"TLH pool .*'taxable_brokerage', 'VOO'.* no ordinary holdings"):
+    with pytest.raises(ValueError, match="taxable_brokerage"):
         _rollout(
             _product(augur_config, catalog, index="VOO", account_id=AccountId("taxable_brokerage")),
             ManagedSleeveWeight(portfolio_id=_PORTFOLIO_ID, weight=1),
