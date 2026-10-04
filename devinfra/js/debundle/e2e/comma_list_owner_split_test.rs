@@ -38,94 +38,50 @@ macro_rules! variable_declarator {
 // --- Two-way split across kinds ------------------------------------------
 
 #[test]
-fn const_two_siblings_split_to_two_modules() {
-    let fixture = run_fixture(FixtureOpts::new(
-        r#"const a = 1, b = 2;
+fn two_siblings_split_to_two_modules_keeping_the_declaration_kind() {
+    for (keyword, kind) in [
+        ("const", VariableDeclarationKind::Const),
+        ("let", VariableDeclarationKind::Let),
+        ("var", VariableDeclarationKind::Var),
+    ] {
+        let source = format!(
+            r#"{keyword} a = 1, b = 2;
 console.log(a, b);
-export { a, b };
-"#,
-        vec![
-            logical_module("mod_a", &[Member::new("a")]),
-            logical_module("mod_b", &[Member::new("b")]),
-        ],
-    ));
+export {{ a, b }};
+"#
+        );
+        let fixture = run_fixture(FixtureOpts::new(
+            &source,
+            vec![
+                logical_module("mod_a", &[Member::new("a")]),
+                logical_module("mod_b", &[Member::new("b")]),
+            ],
+        ));
 
-    assert_module_variable_declarators(
-        &fixture.out_root,
-        "static/app/modules/mod_a.js",
-        &[variable_declarator!(Const, Number, ["a"])],
-    );
-    assert_module_variable_declarators(
-        &fixture.out_root,
-        "static/app/modules/mod_b.js",
-        &[variable_declarator!(Const, Number, ["b"])],
-    );
-
-    assert_module_exports(
-        &fixture.out_root,
-        "static/app/modules/mod_a.js",
-        &["a"],
-        &["b"],
-    );
-    assert_module_exports(
-        &fixture.out_root,
-        "static/app/modules/mod_b.js",
-        &["b"],
-        &["a"],
-    );
-    assert_entry_output(&fixture, "1 2\n");
-}
-
-#[test]
-fn let_two_siblings_split_to_two_modules() {
-    let fixture = run_fixture(FixtureOpts::new(
-        r#"let a = 1, b = 2;
-console.log(a, b);
-export { a, b };
-"#,
-        vec![
-            logical_module("mod_a", &[Member::new("a")]),
-            logical_module("mod_b", &[Member::new("b")]),
-        ],
-    ));
-
-    assert_module_variable_declarators(
-        &fixture.out_root,
-        "static/app/modules/mod_a.js",
-        &[variable_declarator!(Let, Number, ["a"])],
-    );
-    assert_module_variable_declarators(
-        &fixture.out_root,
-        "static/app/modules/mod_b.js",
-        &[variable_declarator!(Let, Number, ["b"])],
-    );
-    assert_entry_output(&fixture, "1 2\n");
-}
-
-#[test]
-fn var_two_siblings_split_to_two_modules() {
-    let fixture = run_fixture(FixtureOpts::new(
-        r#"var a = 1, b = 2;
-console.log(a, b);
-export { a, b };
-"#,
-        vec![
-            logical_module("mod_a", &[Member::new("a")]),
-            logical_module("mod_b", &[Member::new("b")]),
-        ],
-    ));
-
-    assert_module_variable_declarators(
-        &fixture.out_root,
-        "static/app/modules/mod_a.js",
-        &[variable_declarator!(Var, Number, ["a"])],
-    );
-    assert_module_variable_declarators(
-        &fixture.out_root,
-        "static/app/modules/mod_b.js",
-        &[variable_declarator!(Var, Number, ["b"])],
-    );
-    assert_entry_output(&fixture, "1 2\n");
+        assert_module_variable_declarators(
+            &fixture.out_root,
+            "static/app/modules/mod_a.js",
+            &[(kind, &["a"], VariableInitializerKind::Number)],
+        );
+        assert_module_variable_declarators(
+            &fixture.out_root,
+            "static/app/modules/mod_b.js",
+            &[(kind, &["b"], VariableInitializerKind::Number)],
+        );
+        assert_module_exports(
+            &fixture.out_root,
+            "static/app/modules/mod_a.js",
+            &["a"],
+            &["b"],
+        );
+        assert_module_exports(
+            &fixture.out_root,
+            "static/app/modules/mod_b.js",
+            &["b"],
+            &["a"],
+        );
+        assert_entry_output(&fixture, "1 2\n");
+    }
 }
 
 // --- export const comma-list ---------------------------------------------

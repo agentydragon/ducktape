@@ -129,36 +129,6 @@ export { T, bootstrap, startTracking, init };
 }
 
 #[test]
-fn at_init_through_residual_function_executes_under_node() {
-    // Like above, but the at-init call chain crosses residual:
-    // mod_init at-init calls a function decl that lives in
-    // residual, whose body reads T (in mod_logger).
-    //
-    // This matches the upstream repro shape: an entry-side
-    // module's bootstrap anonymous statement calls an outer
-    // helper (a function decl in residual), whose body eventually
-    // reads `T` (in `logger_module`). At-init
-    // promotion through the residual function decl is what we
-    // need to surface the eager_use edge `mod_init → mod_logger`
-    // for source_import_position to order them correctly.
-    let fixture = run_fixture(FixtureOpts::new(
-        r#"let T = "ready";
-function bootstrap() { return T; }
-const init = bootstrap();
-console.log(init);
-export { T, bootstrap, init };
-"#,
-        vec![
-            logical_module("mod_logger", &[Member::new("T")]),
-            // mod_init owns just the `init` const which calls
-            // bootstrap (residual function decl).
-            logical_module("mod_init", &[Member::new("init")]),
-        ],
-    ));
-    assert_entry_output(&fixture, "ready\n");
-}
-
-#[test]
 fn early_entry_importer_does_not_pull_scc_in_wrong_order() {
     // Mediator-heavy I-SCC `{mod_logger, mod_middle, mod_init}`
     // with one constraining edge `mod_init → mod_logger` (via

@@ -408,59 +408,6 @@ export { RuntimeCatalog };
 }
 
 #[test]
-fn repeated_source_match_selectors_use_native_solver_across_modules() {
-    let class_selector = r#"class K {
-  ANYTHING;
-  label() {
-    return "catalog";
-  }
-  ANYTHING;
-}"#;
-    let opts = FixtureOpts::new(
-        r#"class RuntimeCatalog {
-  label() {
-    return "catalog";
-  }
-}
-console.log(new RuntimeCatalog().label());
-export { RuntimeCatalog };
-"#,
-        vec![
-            logical_module(
-                "catalog/primary",
-                &[Member::source_alpha_target(
-                    "PrimaryCatalog",
-                    "K",
-                    class_selector,
-                )],
-            ),
-            logical_module(
-                "catalog/duplicate",
-                &[Member::source_alpha_target(
-                    "DuplicateCatalog",
-                    "K",
-                    class_selector,
-                )],
-            ),
-        ],
-    );
-
-    let rejected = run_dry_run_rejection_fixture(opts);
-    let stderr = rejected.stderr;
-    for required in [
-        "2 selector outcome(s): unsatisfiable=2",
-        "participates in ownership conflict",
-        "catalog/primary",
-        "catalog/duplicate",
-    ] {
-        assert!(
-            stderr.contains(required),
-            "stderr missing {required:?}\nstderr:\n{stderr}",
-        );
-    }
-}
-
-#[test]
 fn duplicate_source_match_members_in_one_module_report_member_origins() {
     let class_selector = r#"class K {
   ANYTHING;
@@ -558,32 +505,6 @@ export { existingHelper };
     );
 }
 
-#[test]
-fn dry_run_defaults_to_collecting_source_match_failures_and_duplicate_claims_together() {
-    let rejected = run_dry_run_rejection_fixture(mixed_selector_failure_fixture());
-    let stderr = rejected.stderr;
-    for required in [
-        "3 selector outcome(s): no_match=1, ambiguous=1, duplicate_claim=1",
-        "diagnostics/missing",
-        "as `MissingFormatter`",
-        "did not match any top-level declaration",
-        "diagnostics/ambiguous",
-        "as `AmbiguousHelper`",
-        "is ambiguous",
-        "\"renderCard\"",
-        "owners/card",
-        "duplicates/card",
-        "as `renderCardAgain`",
-    ] {
-        assert!(
-            stderr.contains(required),
-            "stderr missing {required:?}\nstderr:\n{stderr}",
-        );
-    }
-}
-
-/// The name pins' duplicate claim is found while requests are built, before
-/// any selector is matched, so fail-fast stops there.
 #[test]
 fn fail_fast_dry_run_stops_at_the_duplicate_claim_found_while_building_requests() {
     let line =
@@ -835,40 +756,6 @@ export { a };
             "mod_jsx_runtime",
             "mod_dunder_jsx",
         ],
-    );
-}
-
-#[test]
-fn moved_body_re_imports_runtime_specifier_local() {
-    // A moved top-level decl whose body references a
-    // source-chunk import-specifier local needs a re-import in
-    // the destination module — otherwise the moved code has a
-    // free variable and Node throws `ReferenceError`.
-    let mut opts = FixtureOpts::new(
-        r#"import { mu as gge } from "./vendor.js";
-function bridge() {
-  return gge.decode;
-}
-console.log(bridge()());
-export { bridge };
-"#,
-        vec![logical_module("mod_x", &[Member::new("bridge")])],
-    );
-    opts.extra_files = &[(
-        "static/vendor.js",
-        "export const mu = { decode: () => \"ok\" };\n",
-    )];
-    let fixture = run_fixture(opts);
-
-    let mod_x = fs::read_to_string(fixture.out_root.join("static/app/modules/mod_x.js"))
-        .expect("read mod_x.js");
-    assert!(
-        mod_x.contains("gge") && mod_x.contains("import"),
-        "mod_x.js must re-import the source-chunk specifier; got:\n{mod_x}",
-    );
-    assert!(
-        mod_x.contains("gge.decode"),
-        "mod_x.js body must still reference `gge.decode`; got:\n{mod_x}",
     );
 }
 

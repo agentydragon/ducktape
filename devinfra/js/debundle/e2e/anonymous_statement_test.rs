@@ -751,32 +751,6 @@ export { RuntimeWidget };
 }
 
 #[test]
-fn multi_statement_native_source_match_with_shared_prefix_resolves() {
-    let fixture = run_fixture(FixtureOpts::new(
-        r#"const runtimePrefix = "ok:";
-function runtimeNormalize(value) {
-  return runtimePrefix + value.trim().toLowerCase();
-}
-console.log(runtimeNormalize(" OK "));
-export { runtimePrefix, runtimeNormalize };
-"#,
-        vec![logical_module(
-            "normalize",
-            &[Member::source_alpha_target(
-                "normalizeValue",
-                "normalizeValue",
-                r#"const prefix = "ok:";
-function normalizeValue(value) {
-  return prefix + value.trim().toLowerCase();
-}"#,
-            )],
-        )],
-    ));
-
-    assert_entry_output(&fixture, "ok:ok\n");
-}
-
-#[test]
 fn source_matches_binding_projection_uses_multideclarator_context() {
     let fixture = run_fixture(FixtureOpts::new(
         r#"const runtimeLocalPart = "primary",

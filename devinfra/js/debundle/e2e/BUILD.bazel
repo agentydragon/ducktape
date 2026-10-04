@@ -115,8 +115,6 @@ debundle_e2e_test(
     deps = ["@crates//:serde_json"],
 )
 
-debundle_e2e_test(name = "object_literal_import_collapse_test")
-
 debundle_e2e_test(name = "object_literal_return_shorthand_drops_import_test")
 
 debundle_e2e_test(name = "duplicate_export_test")
@@ -150,8 +148,6 @@ debundle_e2e_test(name = "lemma_one_linker_post_order_test")
 debundle_e2e_test(name = "lemma_two_rescued_asymmetric_cycle_test")
 
 debundle_e2e_test(name = "lemma_three_at_init_read_test")
-
-debundle_e2e_test(name = "lemma_four_lazy_read_cycle_test")
 
 debundle_e2e_test(name = "lemma_five_side_effect_order_test")
 

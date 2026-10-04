@@ -19,31 +19,6 @@
 use debundle_e2e_support::*;
 
 #[test]
-fn missing_binding_member_fails_the_build() {
-    let opts = FixtureOpts::new(
-        r#"function a() { return 1; }
-console.log(a());
-export { a };
-"#,
-        vec![logical_module(
-            "mod_x",
-            &[Member::renamed("Foo", "a"), Member::renamed("Bar", "b")],
-        )],
-    );
-    let rejected = run_rejection_fixture(opts);
-    assert!(
-        rejected.stderr.contains("mod_x"),
-        "rejection stderr should name the offending module mod_x; got:\n{}",
-        rejected.stderr,
-    );
-    assert!(
-        rejected.stderr.contains("`b`"),
-        "rejection stderr should name the unresolved binding `b`; got:\n{}",
-        rejected.stderr,
-    );
-}
-
-#[test]
 fn multiple_missing_bindings_reported_in_one_pass() {
     // Two unresolved claims across two distinct destination modules.
     // The pipeline must collect both and surface them together

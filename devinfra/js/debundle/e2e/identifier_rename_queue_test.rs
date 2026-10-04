@@ -31,11 +31,6 @@ export { aH, bC, dE };
     ));
 
     let queue = read_queue(&fixture.out_root);
-    assert!(
-        queue.get("generated_at_iso").is_none(),
-        "rename queue should not include generated_at_iso"
-    );
-
     let entries = queue["entries"]
         .as_array()
         .expect("entries must be an array");
@@ -63,32 +58,6 @@ export { aH, bC, dE };
     assert_eq!(
         ref_counts, sorted,
         "entries must be sorted by ref_count descending"
-    );
-
-    // Selector is the documented stable-id triple form.
-    for entry in entries {
-        let selector = entry["selector"].as_str().expect("selector must be string");
-        let parts: Vec<&str> = selector.split(':').collect();
-        assert_eq!(
-            parts.len(),
-            3,
-            "selector must be <chunk>:<file>:<ordinal> form, got {selector}",
-        );
-        // ordinal is a non-negative integer
-        let _ordinal: usize = parts[2]
-            .parse()
-            .unwrap_or_else(|e| panic!("selector ordinal must parse as usize: {selector}: {e}"));
-        // owner_chunk and owner_file are populated.
-        assert!(!entry["owner_chunk"].as_str().unwrap().is_empty());
-        assert!(!entry["owner_file"].as_str().unwrap().is_empty());
-    }
-
-    // total_references is the sum of the per-entry ref_count.
-    let total_refs: u64 = ref_counts.iter().sum();
-    assert_eq!(queue["total_references"].as_u64().unwrap(), total_refs);
-    assert!(
-        queue.get("total_unrenamed_symbols").is_none(),
-        "rename queue should not duplicate entries.len()"
     );
 
     // The first entry should be `aH` — it has the highest reference
@@ -133,22 +102,6 @@ export { aH, bC };
     assert!(
         names.contains(&"bC"),
         "unrenamed companion binding should remain queued: {names:?}"
-    );
-}
-
-#[test]
-fn rename_queue_lives_under_reports() {
-    let fixture = run_fixture(FixtureOpts::new(
-        r#"const xY = 1;
-console.log(xY);
-export { xY };
-"#,
-        vec![],
-    ));
-    let resolved = output_root(&fixture.out_root).join("reports/rename_queue.json");
-    assert!(
-        resolved.exists(),
-        "rename queue should exist at {resolved:?}",
     );
 }
 

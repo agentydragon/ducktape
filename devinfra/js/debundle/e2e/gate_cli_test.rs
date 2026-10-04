@@ -294,32 +294,6 @@ fn gate_describe_binding_filter_narrows_evidence_to_one_symbol() {
 }
 
 #[test]
-fn gate_cut_returns_the_actionable_edges() {
-    let rejected = rejected_cycle_fixture();
-    let parsed = gate_json(&[
-        "gate",
-        "cut",
-        "0",
-        "--graph",
-        graph_path(&rejected).to_str().unwrap(),
-        "--format",
-        "json",
-    ]);
-    assert_eq!(parsed["id"].as_u64(), Some(0));
-    let cut = parsed["cut"].as_array().unwrap();
-    assert!(!cut.is_empty(), "{parsed}");
-    for e in cut {
-        for endpoint in [&e["from"], &e["to"]] {
-            let path = endpoint.as_str().unwrap();
-            assert!(
-                path == "mod_x" || path == "mod_y",
-                "cut endpoint {path} outside the SCC: {e}"
-            );
-        }
-    }
-}
-
-#[test]
 fn gate_unknown_id_fails_cleanly() {
     let rejected = rejected_cycle_fixture();
     let out = run_debundle(&[

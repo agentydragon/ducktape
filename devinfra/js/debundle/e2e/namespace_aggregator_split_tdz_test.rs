@@ -80,24 +80,9 @@ fn opts_for_fixture() -> FixtureOpts<'static> {
     opts
 }
 
-#[test]
-fn namespace_aggregator_split_rejects_tdz_cycle() {
-    // Cycle:
-    //   residual → ids/index   (eager: `ids.foo`)
-    //   ids/index → ids/sub1   (eager: `...sub1`)
-    //   ids/sub1 → residual    (eager: `helperFromResidual`)
-    //
-    // The gate must see every leg as constraining. If the aggregator
-    // leg is dropped (TDZ hole), the gate green-lights a spec whose
-    // emitted JS throws under Node.
-    expect_rejection(
-        opts_for_fixture(),
-        &["unrealizable", "cycle", "tdz", "cannot access"],
-    );
-}
-
-/// Stricter sibling of the test above: assert the diagnostic does
-/// binding-pair blame, not just module-list rendering. The
+/// The gate rejects the split (the fixture runner asserts the non-zero exit)
+/// and the diagnostic does binding-pair blame, not just module-list
+/// rendering. The
 /// `render_cycle_summary` must name the implicated bindings as
 /// `from_binding (from_module) --kind--> to_binding (to_module)`
 /// rows with the `at-init` edge kind so spec authors can act

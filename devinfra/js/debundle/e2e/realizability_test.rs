@@ -202,9 +202,6 @@ console.log(trigger);
     }
 }
 
-// The mutual lazy-only cycle acceptance (Lemma 4's named pin) lives
-// in `lemma_four_lazy_read_cycle_test`.
-
 #[test]
 fn owner_graph_report_is_written_for_successful_specs() {
     let fixture = run_fixture(FixtureOpts::new(

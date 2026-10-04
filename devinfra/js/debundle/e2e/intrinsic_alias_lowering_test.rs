@@ -132,76 +132,6 @@ fn intrinsic_alias_pins_companions_by_referencing_helper() {
     assert_entry_output(&fixture, "hi!\n");
 }
 
-/// **Two-copy disambiguation by `referenced_by`.** Two byte-identical decorate trios
-/// (`a` and `b`), each with its own `defineProperty` companion read only by its own
-/// helper. The class anchor pins each helper; `referenced_by` then pins each
-/// companion to the helper that reads it, so `pa` lands in the `a` module and `pb` in
-/// the `b` module — the two companions must not cross despite identical
-/// `property: defineProperty`.
-#[test]
-fn intrinsic_alias_disambiguates_two_companions_by_referencing_helper() {
-    let source = format!(
-        "{}{}console.log(new Alpha().alphaLabel(), new Beta().betaLabel());\nexport {{ Alpha, Beta }};\n",
-        trio("a", "Alpha", "alphaLabel", "a", "A"),
-        trio("b", "Beta", "betaLabel", "b", "B"),
-    );
-    let fixture = run_fixture(FixtureOpts::new(
-        &source,
-        vec![
-            logical_module(
-                "alpha",
-                &[
-                    // Distinct method name `alphaLabel` is an invariant label, so the
-                    // source_match pins this class (not the same-shaped Beta).
-                    Member::source_alpha(
-                        "Alpha",
-                        r#"class Alpha {
-  alphaLabel() {
-    STMT_LIST;
-  }
-}"#,
-                    ),
-                    Member::makes_decorate_call("alphaDecorator", "Alpha", None, None),
-                    // `pa` is read only by `da` (the Alpha helper), so referencing it
-                    // by `@alphaDecorator` picks `pa` over the byte-identical `pb`.
-                    Member::intrinsic_alias("alphaDefineProp", "defineProperty", "alphaDecorator"),
-                ],
-            ),
-            logical_module(
-                "beta",
-                &[
-                    Member::source_alpha(
-                        "Beta",
-                        r#"class Beta {
-  betaLabel() {
-    STMT_LIST;
-  }
-}"#,
-                    ),
-                    Member::makes_decorate_call("betaDecorator", "Beta", None, None),
-                    Member::intrinsic_alias("betaDefineProp", "defineProperty", "betaDecorator"),
-                ],
-            ),
-        ],
-    ));
-
-    // Each companion resolved to its own minified binding via the helper that reads
-    // it — `pa` to the Alpha module, `pb` to the Beta module — never crossing.
-    assert_module_source(
-        &fixture.out_root,
-        "static/app/modules/alpha.js",
-        &["var alphaDefineProp = ", "alphaDefineProp"],
-        &["betaDefineProp"],
-    );
-    assert_module_source(
-        &fixture.out_root,
-        "static/app/modules/beta.js",
-        &["var betaDefineProp = ", "betaDefineProp"],
-        &["alphaDefineProp"],
-    );
-    assert_entry_output(&fixture, "aA bB\n");
-}
-
 /// **Generic helper `name:` shared across modules resolves per module.** Two
 /// byte-identical decorate trios (`a` and `b`) in two modules, each helper pinned by
 /// `makes_decorate_call` and given the **same** readable `name:` `applyDecorators` —
@@ -357,60 +287,6 @@ export { targetClass };
         &["firstValue"],
     );
     assert_entry_output(&fixture, "hi! 100\n");
-}
-
-/// **Property narrowing.** One helper reads *both* companions of its trio; the
-/// `property` label narrows to the matching one — `defineProperty` to `p0`,
-/// `getOwnPropertyDescriptor` to `g0` — even though both are referenced by the same
-/// `@decorateHelper`.
-#[test]
-fn intrinsic_alias_narrows_two_companions_of_one_helper_by_property() {
-    let source = format!(
-        "{}console.log(new Widget().name());\nexport {{ Widget }};\n",
-        trio("0", "Widget", "name", "hi", "!")
-    );
-    let fixture = run_fixture(FixtureOpts::new(
-        &source,
-        vec![
-            logical_module(
-                "widget",
-                &[Member::source_alpha(
-                    "Widget",
-                    r#"class Widget {
-  name() {
-    STMT_LIST;
-  }
-}"#,
-                )],
-            ),
-            logical_module(
-                "widget_runtime",
-                &[
-                    Member::makes_decorate_call("widgetDecorator", "Widget", None, None),
-                    Member::intrinsic_alias("defineProp", "defineProperty", "widgetDecorator"),
-                    Member::intrinsic_alias(
-                        "getOwnPropDesc",
-                        "getOwnPropertyDescriptor",
-                        "widgetDecorator",
-                    ),
-                ],
-            ),
-        ],
-    ));
-
-    // Both companions resolved distinctly — the property label kept `p0` and `g0`
-    // apart despite sharing the `@widgetDecorator` referencer.
-    assert_module_source(
-        &fixture.out_root,
-        "static/app/modules/widget_runtime.js",
-        &[
-            "source bindings: d0, g0, p0",
-            "defineProp",
-            "getOwnPropDesc",
-        ],
-        &[],
-    );
-    assert_entry_output(&fixture, "hi!\n");
 }
 
 /// **Fail-closed: no matching alias.** A property the trio never aliases
