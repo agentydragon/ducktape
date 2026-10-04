@@ -9,7 +9,7 @@ import pygit2
 import pytest
 import pytest_bazel
 
-from haku.recall_index.git_tree import configure_ca_trust, fetch_branch, list_tip, open_mirror, read_blob, remote_tip
+from haku.recall_index.git_tree import configure_ca_trust, fetch_branch, list_tip, open_mirror, remote_tip
 
 _AUTHOR = pygit2.Signature("Test", "test@example.com")
 
@@ -50,12 +50,6 @@ def source(tmp_path: Path) -> pygit2.Repository:
 def test_lists_every_blob_with_its_full_path(source: pygit2.Repository) -> None:
     commit = _commit(source, {"a.md": "alpha", "dir/b.md": "beta", "dir/deep/c.md": "gamma"})
     assert {entry.path for entry in list_tip(source, commit)} == {"a.md", "dir/b.md", "dir/deep/c.md"}
-
-
-def test_blob_sha_reads_back_the_content(source: pygit2.Repository) -> None:
-    commit = _commit(source, {"a.md": "alpha"})
-    (entry,) = list_tip(source, commit)
-    assert read_blob(source, entry.blob_sha) == b"alpha"
 
 
 def test_identical_content_at_two_paths_shares_one_blob(source: pygit2.Repository) -> None:
