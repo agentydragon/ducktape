@@ -84,6 +84,11 @@
       "target": "//agentplane/runner:runner_wheel",
       "output": "bb-out/bazel-out/k8-fastbuild/bin/agentplane/runner/agentplane_runner-0.1.0-py3-none-linux_x86_64.whl",
       "release": "agentplane-runner"
+    },
+    "pr-visuals": {
+      "target": "//devinfra/pr_visuals:wheel",
+      "output": "bb-out/bazel-out/k8-fastbuild/bin/devinfra/pr_visuals/pr_visuals-0.1.0-py3-none-any.whl",
+      "release": "pr-visuals"
     }
   },
   "releases": {
@@ -148,6 +153,10 @@
     },
     "agentplane-runner": {
       "tests": "//agentplane/runner/...",
+      "nixPackage": false
+    },
+    "pr-visuals": {
+      "tests": "//devinfra/pr_visuals/...",
       "nixPackage": false
     }
   }

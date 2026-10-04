@@ -137,3 +137,11 @@ Nothing is deleted: commit bundles are immutable and pointer files only ever
 advance. The bucket grows with devel history; garbage-collecting bundles that
 no pointer or open PR references is future work
 (<plans/generic_pr_visual_reviews.md>).
+
+## Released commands
+
+The `//devinfra/pr_visuals:wheel` target builds the `pr-visuals` wheel. It
+provides `pr-visuals-announce` for check-run updates and `pr-visuals-publish`
+for trusted publication. The wheel bundles the publisher's small internal
+source dependencies and HTML templates; Python runtime dependencies are listed
+in wheel metadata.
