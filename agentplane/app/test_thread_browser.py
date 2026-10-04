@@ -1370,6 +1370,16 @@ async def test_a_reader_away_from_the_end_of_a_live_thread_can_jump_back_to_it(
     await expect_history_bottom(page)
 
 
+_SAMPLE_READING_ANCHOR = """area => {
+    const top = area.getBoundingClientRect().top;
+    const row = [...area.querySelectorAll('[data-thread-anchor]')].find(
+        candidate => candidate.getBoundingClientRect().bottom > top
+    );
+    const rowTop = row.getBoundingClientRect().top;
+    return { cursor: row.dataset.threadAnchor, top: rowTop, offset: rowTop - top };
+}"""
+
+
 async def capture_reading_anchor(area: Locator) -> dict[str, str | float]:
     """The first row whose bottom is below the viewport top, and its position -- the reader's
     place, sampled once two consecutive frames agree so a pending re-measure right after a
@@ -1377,15 +1387,9 @@ async def capture_reading_anchor(area: Locator) -> dict[str, str | float]:
     return cast(
         "dict[str, str | float]",
         await area.evaluate(
-            """area => new Promise(resolve => {
-            const sample = () => {
-                const top = area.getBoundingClientRect().top;
-                const row = [...area.querySelectorAll('[data-thread-anchor]')].find(
-                    candidate => candidate.getBoundingClientRect().bottom > top
-                );
-                const rowTop = row.getBoundingClientRect().top;
-                return { cursor: row.dataset.threadAnchor, top: rowTop, offset: rowTop - top };
-            };
+            "area => new Promise(resolve => { const sample = () => ("
+            + _SAMPLE_READING_ANCHOR
+            + """)(area);
             const settle = previous => requestAnimationFrame(() => {
                 const current = sample();
                 if (current.cursor === previous.cursor && current.top === previous.top) resolve(current);
@@ -1395,6 +1399,23 @@ async def capture_reading_anchor(area: Locator) -> dict[str, str | float]:
         })"""
         ),
     )
+
+
+async def wheel_and_capture_anchor_at_scrollend(page: Page, area: Locator, delta_y: float) -> dict[str, str | float]:
+    """Wheel `area` and return the reader's place as the gesture's scrollend event sees it -- the
+    instant the app adopts it. capture_reading_anchor samples frames later, which is too late when
+    older pages land right after the scrollend: it can catch the position part-way through the
+    scroll restorations they trigger, not the one the reader left."""
+    gesture = await area.evaluate_handle(
+        "area => ({ anchor: new Promise(resolve => area.addEventListener('scrollend', () => resolve(("
+        + _SAMPLE_READING_ANCHOR
+        + ")(area)), { once: true })) })"
+    )
+    await page.mouse.wheel(0, delta_y)
+    async with asyncio.timeout(30):
+        anchor = cast("dict[str, str | float]", await gesture.evaluate("gesture => gesture.anchor"))
+    await gesture.dispose()
+    return anchor
 
 
 async def expect_reading_anchor(page: Page, anchor: dict[str, str | float]) -> None:

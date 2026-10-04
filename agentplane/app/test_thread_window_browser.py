@@ -16,6 +16,7 @@ from agentplane.app.test_thread_browser import (
     db_url,
     expect_reading_anchor,
     frames,
+    wheel_and_capture_anchor_at_scrollend,
 )
 from agentplane.protocol import event_log_pb2, event_pb2
 from util.testing.undeclared_outputs import undeclared_outputs_dir
@@ -333,14 +334,7 @@ async def test_repeated_pagination_through_wildly_uneven_row_heights_keeps_the_r
 
     for cycle in range(6):
         console.clear()
-        gesture = await history.evaluate_handle(
-            "area => ({ ended: new Promise(resolve => area.addEventListener('scrollend', () => resolve(), { once: true })) })"
-        )
-        await page.mouse.wheel(0, -20_000)
-        async with asyncio.timeout(30):
-            await gesture.evaluate("gesture => gesture.ended")
-        await gesture.dispose()
-        anchor = await capture_reading_anchor(history)
+        anchor = await wheel_and_capture_anchor_at_scrollend(page, history, -20_000)
         await expect(loading).to_have_count(0, timeout=30_000)
         await frames(page)
         await frames(page)
