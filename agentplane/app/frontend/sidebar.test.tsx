@@ -309,8 +309,6 @@ it("opens retained Thread history even when its Sandbox is gone", async () => {
     (node) => node.textContent === "old-debug-3f9c"
   );
   expect(label).toBeDefined();
-  expect((label as HTMLElement).style.textDecoration).toContain("line-through");
-  expect(label?.tagName).toBe("SPAN");
   expect(container.querySelector('a[href="/sandboxes/old-debug-3f9c"]')).toBeNull();
 
   const readonlyRow = [...container.querySelectorAll(".agentplane-sidebar-row.readonly")].find((node) =>

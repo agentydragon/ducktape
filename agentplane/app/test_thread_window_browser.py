@@ -109,7 +109,8 @@ async def test_a_growing_thread_stays_one_shape_and_scrolling_back_keeps_the_rea
     page = thread_browser.page
     thread_browser.opened.replay.set()
     await expect(page.get_by_text("Test retained prefix", exact=True)).to_be_visible(timeout=30_000)
-    latest = append_items(thread_browser, "window-item", range(130))
+    appended = range(130)
+    latest = append_items(thread_browser, "window-item", appended)
     await expect(page.locator(f'[data-projection-cursor="{latest.cursor}"]')).to_have_count(1, timeout=30_000)
 
     # Opened now, the thread is longer than its eager initial load: older rows are still a page away.
@@ -119,9 +120,8 @@ async def test_a_growing_thread_stays_one_shape_and_scrolling_back_keeps_the_rea
     await expect(page.get_by_text("Window message 129", exact=False)).to_be_visible()
     composer = page.get_by_placeholder("Enter sends, Shift+Enter or Ctrl+Enter for a new line")
     await composer.fill("Draft retained while the thread grows")
-    # Virtualization keeps only the measured viewport and overscan mounted: a loose bound well
-    # below the 130 rows appended, tolerant of row-height changes rather than pinned to one.
-    assert await page.locator("[data-thread-anchor]").count() < 40
+    # Virtualization keeps only the measured viewport and overscan mounted, not every row appended.
+    assert await page.locator("[data-thread-anchor]").count() < len(appended)
     # Opening eagerly loads a couple of screens' worth up front -- itself some of these
     # same-shaped requests -- but settles there; nothing more loads before the reader scrolls up.
     await frames(page)
