@@ -1092,6 +1092,7 @@ py_library(
         "//agentplane/action_service/policies:exact_actions",
         "//agentplane/action_service/policies:github_public_repository",
         "//agentplane/action_service/policies:github_repository",
+        "//agentplane/action_service/policies:home_assistant_entity_control",
         "//agentplane/action_service/policies:registry",
         "//agentplane/action_service/policies:resources",
         "@pypi//pydantic",

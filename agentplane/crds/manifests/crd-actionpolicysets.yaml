@@ -53,9 +53,16 @@ spec:
                           `argument_schema` also requires the arguments to satisfy `schema`;
                           `github_repository` requires a GitHub MCP call to target
                           `owner`/`repository`; `github_public_repository` requires it to
-                          target a repository an unauthenticated GitHub lookup confirms public.
+                          target a repository an unauthenticated GitHub lookup confirms public;
+                          `home_assistant_entity_control` requires a Home Assistant service call to
+                          target exactly one of `entities` with a service listed for it.
                         type: string
-                        enum: [exact_actions, argument_schema, github_repository, github_public_repository]
+                        enum:
+                          - exact_actions
+                          - argument_schema
+                          - github_repository
+                          - github_public_repository
+                          - home_assistant_entity_control
                       actions:
                         description: Action names by ActionGroup key; the policy matches only these.
                         type: object
@@ -80,6 +87,18 @@ spec:
                         description: The GitHub repository name.
                         type: string
                         minLength: 1
+                      entities:
+                        description: >-
+                          Home Assistant entity ids, each with the services a call may use on it;
+                          nothing else is matched.
+                        type: object
+                        minProperties: 1
+                        additionalProperties:
+                          type: array
+                          minItems: 1
+                          items:
+                            type: string
+                            minLength: 1
                     # The discriminated union. A structural schema declares every field once, above,
                     # and lets a `oneOf` branch carry only value validations, so each branch pins
                     # `type` and says which of the declared fields that kind requires and forbids.
@@ -92,6 +111,7 @@ spec:
                             - required: [schema]
                             - required: [owner]
                             - required: [repository]
+                            - required: [entities]
                       - properties:
                           type:
                             enum: [argument_schema]
@@ -100,15 +120,28 @@ spec:
                           anyOf:
                             - required: [owner]
                             - required: [repository]
+                            - required: [entities]
                       - properties:
                           type:
                             enum: [github_repository]
                         required: [owner, repository]
                         not:
-                          required: [schema]
+                          anyOf:
+                            - required: [schema]
+                            - required: [entities]
                       - properties:
                           type:
                             enum: [github_public_repository]
+                        not:
+                          anyOf:
+                            - required: [schema]
+                            - required: [owner]
+                            - required: [repository]
+                            - required: [entities]
+                      - properties:
+                          type:
+                            enum: [home_assistant_entity_control]
+                        required: [entities]
                         not:
                           anyOf:
                             - required: [schema]
