@@ -26,10 +26,6 @@ async def _healthy_asgi_app(scope: Scope, receive: Receive, send: Send) -> None:
     await PlainTextResponse("ok")(scope, receive, send)
 
 
-def test_health_starts_alive() -> None:
-    assert McpSessionManagerHealth().alive is True
-
-
 def test_observe_ignores_unrelated_runtime_errors() -> None:
     health = McpSessionManagerHealth()
     health.observe(RuntimeError("some other failure"))

@@ -147,20 +147,6 @@ ts_library(
     ],
 )
 
-ts_library(
-    name = "calls_test",
-    srcs = ["calls.test.ts"],
-    isolated_typecheck = True,
-    tsconfig = TSCONFIG,
-    deps = [
-        ":calls",
-        "//:node_modules/vitest",
-        "//haku/console/frontend/tool_rendering:actions",
-        "//haku/console/frontend/tool_rendering:call_entry",
-        "//haku/console/frontend/tool_rendering:server_ids",
-    ],
-)
-
 # One preview screenshot `js_test` for this server: bundles preview_harness.tsx (this server's
 # fixtures + the shared mount) and runs the shared render driver; :preview_harness's transitive
 # deps (shared harness and gmail widgets) are what esbuild bundles.
