@@ -54,6 +54,7 @@
   min-width: 0;
   align-items: baseline;
   gap: var(--mantine-spacing-xs);
+  line-height: 1.4;
 }
 
 .agentplane-step-details,

@@ -714,7 +714,7 @@ export function CollapsibleCard({
   return (
     <Paper
       // A folded step line is one line, so it needs little more than the line.
-      p={open ? "sm" : stableInlineSize ? 3 : "xs"}
+      p={open ? "sm" : stableInlineSize ? 2 : "xs"}
       withBorder={open && !stableInlineSize}
       style={{
         position: "relative",
