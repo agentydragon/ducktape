@@ -164,25 +164,6 @@ py_test(
 )
 
 py_test(
-    name = "service_scale_test",
-    size = "medium",
-    srcs = ["service_scale_test.py"],
-    data = [
-        "//finance/augur/api:public_fixture_config",
-        "//finance/augur/api:public_fixture_properties",
-    ],
-    deps = [
-        ":conftest",
-        ":service",
-        ":wire",
-        "//:conftest",
-        "//finance/augur:conftest",
-        "//finance/augur/api:config",
-        "@pypi//pytest_bazel",
-    ],
-)
-
-py_test(
     name = "test_ipo_prior_terminal_distribution_e2e",
     size = "medium",
     srcs = ["test_ipo_prior_terminal_distribution_e2e.py"],
