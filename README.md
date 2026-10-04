@@ -2,7 +2,7 @@
 
 This dedicated branch holds the latest reviewed CI latency snapshot:
 
-- [Report](report.md) and [standalone HTML view](index.html)
+- [Report (standalone HTML)](index.html)
 - [Supporting evidence](evidence.json)
 - [Inspected source commit and observation window](manifest.json)
 - Optional `attribution.json` when cost attribution was collected
