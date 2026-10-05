@@ -11,7 +11,7 @@ preference and should be argued as one. The deployed design, and where it falls 
 | --- | ----------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------- |
 | C1  | The thread fold is **materialized in Postgres**. Implementations differ in how a browser learns about it, not in whether it exists. | Owner, 2026-09-22                                  |
 | C2  | Every read is **authorized by the app**, and no browser reaches a sync engine directly.                                             | `electric.py`; the proxy exists for this           |
-| C3  | Deployed state is **disposable** — a schema or epoch change resets staging and testing rather than migrating.                       | <../../AGENTS.md> § Refactoring                    |
+| C3  | Deployed state is **disposable** — a schema or epoch change resets staging and testing rather than migrating.                       | <../AGENTS.md> § Deployed state is disposable      |
 | C4  | The runner event log is the source of truth; the fold is derived and rebuildable under a new `projection_epoch`.                    | [Thread view synchronization](thread_view_sync.md) |
 
 **C2 is about auth, not about who picks the window.** A client asking for rows 50–150 of a thread it
