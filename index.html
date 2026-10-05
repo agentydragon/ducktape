@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="color-scheme" content="light"><title>Expanded baseline — CI performance · Ducktape · October 2026</title><meta name="description" content="Reviewed CI latency evidence, recommendations and linked case timelines for Ducktape, October 2026."><style>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="color-scheme" content="light"><title>Container spike — CI performance · Ducktape · October 2026</title><meta name="description" content="Reviewed CI latency evidence, recommendations and linked case timelines for Ducktape, October 2026."><style>
 :root{--ink:#192b36;--muted:#536976;--paper:#f5f6f3;--line:#dce3e2;--white:#fff;--teal:#167b73;--teal-pale:#e8f4f0;--navy:#203f52;--orange:#bb5e32;--orange-pale:#fff1e7;--blue:#729caf;--muted-bar:#c8d3d4;--radius:16px}
 *{box-sizing:border-box}html{scroll-behavior:smooth;scroll-padding-top:90px}body{margin:0;background:var(--paper);color:var(--ink);font:16px/1.6 system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}a{color:#126d68;text-underline-offset:3px;text-decoration-thickness:1px}a:hover{text-decoration-thickness:2px}a:focus-visible,summary:focus-visible{outline:3px solid #d18324;outline-offset:5px;border-radius:3px}.skip{position:absolute;left:20px;top:-80px;background:#fff;padding:12px;z-index:5}.skip:focus{top:10px}.sr-only{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0,0,0,0)}
 header{background:rgba(245,246,243,.97);border-bottom:1px solid var(--line);position:sticky;top:0;z-index:3}.nav{max-width:1180px;margin:auto;display:flex;align-items:center;justify-content:space-between;gap:24px;padding:15px 26px}.brand{font-weight:750;letter-spacing:.025em;font-size:13px;color:var(--navy);white-space:nowrap}.navlinks{display:flex;gap:24px;font-size:13px;overflow:auto;white-space:nowrap}.navlinks a{color:var(--ink);text-decoration:none}.navlinks a:hover{text-decoration:underline}main{max-width:1180px;margin:auto;padding:44px 26px 64px}.eyebrow{color:var(--teal);font-size:12px;font-weight:800;letter-spacing:.12em;text-transform:uppercase;margin:0 0 12px}h1{font-size:clamp(32px,4.2vw,50px);line-height:1.12;letter-spacing:-.035em;max-width:850px;margin:0 0 18px}h2{font-size:27px;line-height:1.2;letter-spacing:-.025em;margin:0 0 10px}h3{font-size:18px;line-height:1.35;margin:0 0 10px}p{margin:0 0 16px}.lead{font-size:18px;color:var(--muted);max-width:910px;line-height:1.65}.lead strong{color:var(--ink)}.meta-line{display:flex;gap:10px;flex-wrap:wrap;margin:22px 0}.chip{background:#e7edeb;padding:6px 12px;border-radius:100px;color:var(--muted);font-size:12px;font-weight:650}.metrics{display:grid;grid-template-columns:repeat(3,1fr);gap:1px;border-radius:var(--radius);overflow:hidden;background:#466170;margin-top:25px}.metric{background:var(--navy);color:white;padding:24px 26px}.metric .value{font-size:39px;font-weight:730;letter-spacing:-.04em;line-height:1.15;margin:4px 0 8px;font-variant-numeric:tabular-nums}.metric .label{font-size:14px;color:#e2eeee}.metric small{display:block;color:#bdcfd6;font-size:12px;margin-top:7px}.clock-note{font-size:13px;color:var(--muted);padding:14px 2px 0;max-width:1020px}.clock-note strong{color:var(--ink)}section{margin-top:45px;scroll-margin-top:90px}.section-lead{color:var(--muted);max-width:860px;margin-bottom:20px}.grid2{display:grid;grid-template-columns:1.1fr 1fr;gap:20px}.card{background:white;border:1px solid var(--line);border-radius:var(--radius);padding:26px}.card h3{margin-bottom:7px}.subtle{font-size:13px;color:var(--muted)}.caption{font-size:13px;color:var(--muted);margin-top:18px}.bar-chart{margin-top:24px}.bar-row{display:grid;grid-template-columns:155px 1fr 62px;gap:12px;align-items:center;margin:15px 0}.bar-label{font-size:13px;line-height:1.35}.bar-label span{display:block;color:var(--muted);font-size:11px;margin-top:3px}.bar-track{height:14px;background:#edf2ef;border-radius:3px}.bar-fill{height:100%;background:var(--teal);border-radius:3px}.bar-row strong{font-size:13px;text-align:right;font-variant-numeric:tabular-nums}.axis{font-size:11px;color:var(--muted);display:flex;justify-content:space-between;margin-left:167px;margin-right:74px;border-top:1px solid var(--line);padding-top:6px}.cost-total{display:flex;align-items:baseline;gap:9px;margin:24px 0 14px}.cost-total strong{font-size:35px;letter-spacing:-.04em;line-height:1.2}.cost-total span{color:var(--muted);font-size:13px}.stack{display:flex;height:27px;border-radius:5px;overflow:hidden;gap:2px}.cost-legend{list-style:none;padding:0;margin:19px 0}.cost-legend li{display:grid;grid-template-columns:10px 1fr auto;gap:9px;align-items:center;margin:11px 0;font-size:12px}.swatch{width:9px;height:9px;border-radius:2px}.cost-legend strong{font-variant-numeric:tabular-nums}.cost-legend small{font-size:11px;color:var(--muted);font-weight:400}.callout{padding:14px 16px;background:var(--teal-pale);border-radius:9px;font-size:13px;line-height:1.55}.callout.warm{background:var(--orange-pale)}.callout p:last-child{margin-bottom:0}.recommendations{display:grid;grid-template-columns:repeat(3,1fr);gap:18px}.recommendation{display:flex;flex-direction:column}.number{color:var(--teal);font-weight:800;font-size:12px;letter-spacing:.1em;margin-bottom:13px}.recommendation p{font-size:14px;color:var(--muted)}.impact{border-top:1px solid var(--line);padding-top:13px;margin-top:auto;font-size:12px;color:var(--muted)}.impact strong{display:block;color:var(--ink);font-size:17px;margin-bottom:3px}.test{font-size:12px!important;margin-top:12px!important;margin-bottom:0!important}.table-wrap{overflow-x:auto;border:1px solid var(--line);border-radius:12px;background:white}table{border-collapse:collapse;width:100%;font-size:13px;min-width:720px;text-align:left}th,td{padding:13px 16px;border-bottom:1px solid #e7ecea;vertical-align:top}thead th{background:#eaf0ed;color:var(--muted);font-size:11px;letter-spacing:.035em;text-transform:uppercase;font-weight:750}tbody th{font-weight:650}tbody tr:last-child>*{border-bottom:0}td{font-variant-numeric:tabular-nums}.table-note{font-size:12px;color:var(--muted);margin-top:10px}.table-note strong{color:var(--ink)}.cases{display:grid;gap:16px}.case{display:grid;grid-template-columns:210px 1fr;gap:30px}.case-meta .total{font-size:28px;letter-spacing:-.035em;font-weight:750;margin:9px 0 3px}.case-meta p{font-size:12px;color:var(--muted);margin-bottom:8px}.case-body p{font-size:14px}.timeline{display:flex;gap:3px;height:23px;overflow:hidden;border-radius:5px;margin:14px 0 12px}.legend-inline{display:flex;gap:13px 20px;flex-wrap:wrap;font-size:12px;color:var(--muted);margin-bottom:14px}.legend-inline span{display:flex;align-items:center;gap:7px}.legend-inline b{color:var(--ink)}.case-links{display:flex;gap:18px;flex-wrap:wrap;font-size:12px}.small-list{padding-left:19px;font-size:14px}.small-list li{margin:7px 0}.appendix{border:1px solid var(--line);border-radius:12px;background:white;margin:12px 0;overflow:hidden}.appendix summary{padding:18px 22px;cursor:pointer;font-size:15px;font-weight:650;display:list-item;list-style-position:inside}.appendix summary::marker{color:var(--teal)}.appendix[open] summary{border-bottom:1px solid var(--line);background:#f0f5f2}.detail-body{padding:22px;font-size:14px}.detail-body h3{margin-top:24px}.detail-body h3:first-child{margin-top:0}.detail-body .table-wrap{margin:16px 0}.detail-body table{font-size:12px;min-width:630px}.detail-body ul{padding-left:20px}.detail-body li{margin:7px 0}code{background:#eaf0ee;padding:2px 4px;border-radius:4px;font-size:.88em;overflow-wrap:anywhere}pre{background:#edf2ef;border-radius:8px;padding:16px;overflow:auto;font-size:12px}pre code{padding:0;background:none}.source-footer{border-top:1px solid var(--line);margin-top:40px;padding-top:22px;display:flex;justify-content:space-between;gap:20px;flex-wrap:wrap;color:var(--muted);font-size:12px}.source-footer p{max-width:720px;margin:0}.source-links{display:flex;gap:18px;align-items:flex-start}.muted{color:var(--muted)}
@@ -9,12 +9,282 @@ header{background:rgba(245,246,243,.97);border-bottom:1px solid var(--line);posi
 @media print{header,.skip{display:none}body{background:white;font-size:11px}main{max-width:none;padding:0}.card,.metrics,.appendix{break-inside:avoid}details>*{display:block!important}.grid2{grid-template-columns:1fr 1fr}.recommendations{grid-template-columns:repeat(3,1fr)}a{color:inherit}section{margin-top:24px}.table-wrap{overflow:visible}table{min-width:0!important}.metric{print-color-adjust:exact}.stack,.bar-fill,.timeline{print-color-adjust:exact}}
 </style></head><body>
 <a class="skip" href="#main">Skip to report</a>
-<header><nav class="nav" aria-label="Report sections"><div class="brand">DUCKTAPE / CI PERFORMANCE</div><div class="navlinks"><a href="#early-effects">Early effects</a><a href="#critical-path">Experiments</a><a href="#implementation">Implementation</a><a href="#findings">Baseline</a><a href="#recommendations">Landed changes</a><a href="#cases">Case evidence</a><a href="#methods">Methods &amp; limits</a></div></nav></header>
+<header><nav class="nav" aria-label="Report sections"><div class="brand">DUCKTAPE / CI PERFORMANCE</div><div class="navlinks"><a href="#container-spike">Container spike</a><a href="#early-effects">Early effects</a><a href="#critical-path">Experiments</a><a href="#implementation">Implementation</a><a href="#findings">Baseline</a><a href="#recommendations">Landed changes</a><a href="#cases">Case evidence</a><a href="#methods">Methods &amp; limits</a></div></nav></header>
 <main id="main">
-<div class="eyebrow">Expanded comparison · 5 October 2026 UTC</div>
-<h1>More history.<br>No clear whole-PR speedup yet.</h1>
-<p class="lead"><strong>The comparable baseline now covers 185 PRs, not just the immediately preceding 28.</strong> Raw median feedback improved by 27 seconds, but the uncertainty still includes no improvement. Matching the broad workload mix removes that apparent overall gain. Checkout is reliably faster; frontend feedback remains promising. Keep the landed changes, without claiming a general PR speedup.</p>
-<div class="meta-line"><span class="chip">262 earlier heads / 185 PRs</span><span class="chip">60 later heads / 54 PRs</span><span class="chip">Baseline bounded by CI semantics</span></div>
+<div class="eyebrow">Container experiment · 5 October 2026 UTC</div>
+<h1>Prepared container works.<br>It makes this job slower.</h1>
+<p class="lead"><strong>Keep pre-commit on its current GitHub runner path.</strong> Three successful trials per variant took a median 60s with Nix setup and 102s with our prepared container. Pulling and initializing the 1.53 GB image outweighed the saved installation work. Shrink the shared tool environment before revisiting this approach.</p>
+<div class="meta-line"><span class="chip">3 baseline + 3 container trials passed</span><span class="chip">Same source and requested hooks</span><span class="chip">Production workflow unchanged</span></div>
+<section id="container-spike">
+        <div class="eyebrow">
+          New experiment / 5 October · GitHub Free hosted runners
+        </div>
+        <h2>Keep the current execution path; shrink the environment first.</h2>
+        <p class="section-lead">
+          All three baseline and three corrected container jobs passed on
+          identical source and the same YAML/Nix workload. The prepared
+          container was slower in every trial. The required pre-commit workflow
+          was not changed.
+        </p>
+        <div class="grid2">
+          <article class="card">
+            <h3>60s baseline → 102s container</h3>
+            <p>
+              Median assigned-job duration, including setup, checkout, hooks and
+              cleanup. <strong>42 seconds slower (+70%)</strong> in this small
+              comparison.
+            </p>
+            <div
+              class="bar-chart"
+              role="img"
+              aria-label="Median job time: existing Nix setup 60 seconds; prepared container 102 seconds."
+            >
+              <div class="bar-row">
+                <div class="bar-label">Existing Nix setup</div>
+                <div class="bar-track">
+                  <div class="bar-fill" style="width: 58.8%"></div>
+                </div>
+                <strong>60s</strong>
+              </div>
+              <div class="bar-row">
+                <div class="bar-label">Prepared container</div>
+                <div class="bar-track">
+                  <div
+                    class="bar-fill"
+                    style="width: 100%; background: var(--orange)"
+                  ></div>
+                </div>
+                <strong>102s</strong>
+              </div>
+            </div>
+            <p class="caption">
+              Fresh hosted runner for each job. Preparation, image publication,
+              and runner-assignment waits are excluded. This is not whole-PR
+              feedback or a population speed estimate.
+            </p>
+          </article>
+          <article class="card">
+            <h3>Image startup replaces setup with more work.</h3>
+            <p>
+              The image transfers
+              <strong>1.53 GB compressed across 99 layers</strong>; the shared
+              tool closure is 4.63 GB unpacked. The first two successful
+              containers spent 84s and 88s initializing before checkout.
+            </p>
+            <p>
+              The initial trial exposed Git's mounted-workspace ownership check.
+              Trusting only <code>GITHUB_WORKSPACE</code> resolved it; the
+              corrected trials passed. The image carries the exact Nix closure
+              used by the devshell.
+            </p>
+            <div class="callout warm">
+              <strong>Recommendation:</strong> do not roll out this full-size
+              image. First validate a command-only rustfmt package: the unused
+              Cargo wrappers retain about 0.7 GiB of extra dependencies. The
+              unchanged formatter still needs its Rust compiler and LLVM
+              runtime.
+            </div>
+          </article>
+        </div>
+        <details class="appendix">
+          <summary>Six successful trials, reproduction, and limits</summary>
+          <div class="detail-body">
+            <div class="table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Job / evidence</th>
+                    <th>Total</th>
+                    <th>Nix setup / container init</th>
+                    <th>Hook step</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr>
+                    <th scope="row">
+                      <a
+                        href="https://github.com/agentydragon/ducktape/actions/runs/37288152412/job/111692162818"
+                        >Baseline trial 1</a
+                      >
+                    </th>
+                    <td>66s</td>
+                    <td>46.0s</td>
+                    <td>6.0s</td>
+                  </tr>
+                  <tr>
+                    <th scope="row">
+                      <a
+                        href="https://github.com/agentydragon/ducktape/actions/runs/37288152412/job/111692162784"
+                        >Baseline trial 2</a
+                      >
+                    </th>
+                    <td>60s</td>
+                    <td>42.0s</td>
+                    <td>6.0s</td>
+                  </tr>
+                  <tr>
+                    <th scope="row">
+                      <a
+                        href="https://github.com/agentydragon/ducktape/actions/runs/37288152412/job/111692162849"
+                        >Baseline trial 3</a
+                      >
+                    </th>
+                    <td>60s</td>
+                    <td>43.0s</td>
+                    <td>6.0s</td>
+                  </tr>
+                  <tr>
+                    <th scope="row">
+                      <a
+                        href="https://github.com/agentydragon/ducktape/actions/runs/37288152412/job/111692162900"
+                        >Container candidate trial 1</a
+                      >
+                    </th>
+                    <td>110s</td>
+                    <td>88.0s</td>
+                    <td>7.0s</td>
+                  </tr>
+                  <tr>
+                    <th scope="row">
+                      <a
+                        href="https://github.com/agentydragon/ducktape/actions/runs/37288152412/job/111692162817"
+                        >Container candidate trial 2</a
+                      >
+                    </th>
+                    <td>102s</td>
+                    <td>84.0s</td>
+                    <td>3.0s</td>
+                  </tr>
+                  <tr>
+                    <th scope="row">
+                      <a
+                        href="https://github.com/agentydragon/ducktape/actions/runs/37288152412/job/111692162879"
+                        >Container candidate trial 3</a
+                      >
+                    </th>
+                    <td>96s</td>
+                    <td>80.0s</td>
+                    <td>3.0s</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+            <p>
+              Three trials per variant, source <code>bdf3d49a8206</code>; files:
+              pre-commit config, pre-commit workflow, and Nix devtools. The same
+              Galaxy role-install commands ran. Not every hook type was
+              exercised.
+            </p>
+            <p>
+              The candidate lacks zstd on PATH, so its Galaxy cache missed while
+              the baseline restored a 7.6 KB cache. Candidate cache saves were
+              refused by the configured cache budget. That difference must be
+              corrected before a broader cache comparison; image initialization
+              alone already exceeded each baseline's total runtime.
+            </p>
+            <p>
+              The spike evaluates the source's desired closure and compares it
+              with an embedded image marker. A temporary addition to the tool
+              list changed the closure identity. Production still needs a fast
+              policy for selecting or building a matching image when a PR
+              changes tooling. No such rollout was implemented.
+            </p>
+            <p>
+              <a
+                href="https://github.com/agentydragon/ducktape/actions/runs/37288152412"
+                >Successful comparison</a
+              >
+              ·
+              <a
+                href="https://github.com/agentydragon/ducktape/actions/runs/37287350413"
+                >Initial build and failed Git-trust attempt</a
+              >
+              ·
+              <a
+                href="https://github.com/agentydragon/ducktape/tree/spike/precommit-container/devinfra/ci/x/precommit_container"
+                >Reproduction recipe</a
+              >
+              · <a href="evidence.json">Structured evidence</a>
+            </p>
+          </div>
+        </details>
+        <details class="appendix">
+          <summary>
+            Four further CI changes landed: boundaries for the next analysis
+          </summary>
+          <div class="detail-body">
+            <div class="table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>PR</th>
+                    <th>Change</th>
+                    <th>Merged 5 October</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr>
+                    <th scope="row">
+                      <a
+                        href="https://github.com/agentydragon/ducktape/pull/9157"
+                        >#9157</a
+                      >
+                    </th>
+                    <td>Remove unused Bazel setup from pre-commit</td>
+                    <td>07:03:21 UTC</td>
+                  </tr>
+                  <tr>
+                    <th scope="row">
+                      <a
+                        href="https://github.com/agentydragon/ducktape/pull/9164"
+                        >#9164</a
+                      >
+                    </th>
+                    <td>Install the pinned bb binary without Nix bootstrap</td>
+                    <td>07:19:29 UTC</td>
+                  </tr>
+                  <tr>
+                    <th scope="row">
+                      <a
+                        href="https://github.com/agentydragon/ducktape/pull/9180"
+                        >#9180</a
+                      >
+                    </th>
+                    <td>
+                      Assemble the outer BuildBuddy runner image
+                      deterministically with Nix
+                    </td>
+                    <td>08:19:09 UTC</td>
+                  </tr>
+                  <tr>
+                    <th scope="row">
+                      <a
+                        href="https://github.com/agentydragon/ducktape/pull/9194"
+                        >#9194</a
+                      >
+                    </th>
+                    <td>
+                      Supply all pre-commit hooks through Nix; remove hook-cache
+                      transfers
+                    </td>
+                    <td>08:46:49 UTC</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+            <p>
+              All four passed required checks. The Nix runner image was
+              published, exercised on BuildBuddy, and pinned after merge. #9170
+              was closed as superseded by #9180. The earlier population
+              comparison below predates these changes; collect a new comparable
+              post-rollout cohort before attributing whole-PR savings. Exact
+              merge SHAs are in <code>setup_optimization_followup</code> in the
+              evidence JSON.
+            </p>
+          </div>
+        </details>
+      </section>
+
 <section id="early-effects"><h2>What the larger comparison tells us</h2><p class="section-lead">Earlier: October 1–4, after live-base verification landed and before the optimization rollouts. Later: October 5, 02:23–05:25 UTC, after browser sharding and keep-warm, before the pytest-aspect rollout. The later cohort stays fixed. The expanded comparison spans the full optimization bundle; the old immediate baseline already contained the earlier checkout/manifest changes.</p>
 <p>Clock: first observed CI workflow creation for a head → earliest passing completion of all four common required checks. This is a same-repository CI feedback proxy, conditional on eventually passing; it does not measure exact push-to-auto-merge readiness. Negative differences mean faster after rollout.</p>
 <div class="table-wrap" tabindex="0" role="region" aria-label="Expanded whole-PR comparison"><table><thead><tr><th>Comparison</th><th>Earlier → later heads (PRs)</th><th>Median before → after</th><th>Difference; approximate 95% interval</th></tr></thead><tbody>

@@ -2,7 +2,7 @@
   "source_devel_commit": "d44921d55c759da6c3f1d32ebc2c265077791c9b",
   "window_start_utc": "2026-10-01T00:00:00Z",
   "window_end_utc": "2026-10-05T05:35:31Z",
-  "published_at_utc": "2026-10-05T06:24:07.350759+00:00",
+  "published_at_utc": "2026-10-05T09:16:31.588713+00:00",
   "attribution": "not collected",
   "implementation_followup_at_utc": "2026-10-05T01:01:01.119432+00:00",
   "critical_path_followup": {
@@ -33,5 +33,11 @@
       "2026-10-05T02:23:00Z",
       "2026-10-05T05:25:00Z"
     ]
+  },
+  "github_container_spike": {
+    "recorded_at_utc": "2026-10-05T09:16:31.588713+00:00",
+    "source_commit": "bdf3d49a82068ab9c32d5e89d818401170c62086",
+    "run_url": "https://github.com/agentydragon/ducktape/actions/runs/37288152412",
+    "kind": "Focused prepared-container comparison; preceding population cohorts retained as earlier evidence."
   }
 }
