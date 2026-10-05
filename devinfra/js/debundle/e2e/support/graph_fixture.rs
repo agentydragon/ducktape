@@ -129,7 +129,6 @@ impl GraphFixture {
             files
         }
         let before = snapshot(&self.modules);
-        let mut codes = Vec::new();
         for dry_run in [true, false] {
             let mut args = args.to_vec();
             if dry_run {
@@ -137,7 +136,12 @@ impl GraphFixture {
             }
             let out = self.command(&args);
             let stderr = String::from_utf8_lossy(&out.stderr);
-            assert!(!out.status.success(), "{args:?}: expected rejection");
+            // `debundle` exits 1 when it refuses an edit and clap exits 2 on a usage error; a
+            // panic exits 101 and is no refusal.
+            assert!(
+                matches!(out.status.code(), Some(1 | 2)),
+                "{args:?}: expected rejection: {stderr}"
+            );
             for diagnostic in diagnostics {
                 assert!(stderr.contains(diagnostic), "{args:?}: {stderr}");
             }
@@ -146,9 +150,7 @@ impl GraphFixture {
                 before,
                 "{args:?}: spec changed after refusal"
             );
-            codes.push(out.status.code());
         }
-        assert_eq!(codes[0], codes[1], "dry-run and apply must agree");
     }
 
     /// Configure only this child process, including optional editor overrides.

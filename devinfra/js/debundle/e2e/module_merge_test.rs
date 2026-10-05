@@ -165,30 +165,31 @@ fn merge_preserves_anonymous_only_modules_and_runtime_order() {
 
 #[test]
 fn merge_rejects_document_conflicts_before_writing_in_both_modes() {
-    for (target, first, second, diagnostic) in [
+    // The refusal names the clashing name and the source file whose claims clash.
+    for (target, first, second, diagnostics) in [
         (
             "members: [{selector: {binding: {name: a}}}]",
             "members: [{name: Clash, selector: {binding: {name: b}}}]",
             "members: [{name: Clash, selector: {binding: {name: c}}}]",
-            "duplicate member name \"Clash\"",
+            ["Clash", "second.yaml"],
         ),
         (
-            "members: [{selector: {binding: {name: a}}}]",
-            "members: [{selector: {binding: {name: a}}}]",
+            "members: [{selector: {binding: {name: shared_binding}}}]",
+            "members: [{selector: {binding: {name: shared_binding}}}]",
             "members: []",
-            "duplicate member name \"a\"",
+            ["shared_binding", "first.yaml"],
         ),
         (
             "members: [{name: Widget, selector: {binding: {name: a}}}]",
             "source_matches: [{match: 'const b = 2;', bindings: [{local: b, name: Widget}]}]",
             "members: []",
-            "duplicate member name \"Widget\"",
+            ["Widget", "first.yaml"],
         ),
         (
-            "members: [{selector: {binding: {name: a}}}]\nannotations: {a: {note: first}}",
-            "members: [{selector: {binding: {name: b}}}]\nannotations: {a: {note: second}}",
+            "members: [{selector: {binding: {name: annotated}}}]\nannotations: {annotated: {note: first}}",
+            "members: [{selector: {binding: {name: b}}}]\nannotations: {annotated: {note: second}}",
             "members: []",
-            "conflicting annotation",
+            ["annotated", "first.yaml"],
         ),
     ] {
         let fixture = GraphFixture::new(
@@ -213,7 +214,7 @@ fn merge_rejects_document_conflicts_before_writing_in_both_modes() {
             if no_verify {
                 args.push("--no-verify");
             }
-            fixture.assert_rejected_unchanged(&args, &[diagnostic]);
+            fixture.assert_rejected_unchanged(&args, &diagnostics);
         }
     }
 }
