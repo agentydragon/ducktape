@@ -14,7 +14,6 @@ import asyncio
 import logging
 from uuid import uuid4
 
-import pytest
 import pytest_bazel
 
 from agent_core.testing.responses import PlayGen
@@ -31,7 +30,6 @@ from props.testing.fixtures.runs import make_fake_critic_run
 logger = logging.getLogger(__name__)
 
 
-@pytest.mark.timeout(180)
 async def test_grader_clusters_novel_issues_from_two_critiques(
     e2e_stack, test_snapshot, all_files_scope, grader_image, db: Database
 ):

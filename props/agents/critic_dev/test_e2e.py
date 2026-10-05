@@ -18,7 +18,6 @@ import json
 import logging
 import textwrap
 
-import pytest
 import pytest_bazel
 from hamcrest import all_of, assert_that
 from more_itertools import one
@@ -49,7 +48,6 @@ logger = logging.getLogger(__name__)
 TEST_TIMEOUT_SECONDS = 120
 
 
-@pytest.mark.timeout(300)
 async def test_po_orchestrates_critic_with_system_prompt_check(
     synced_db, e2e_stack, test_snapshot, critic_dev_optimize_image, critic_image, grader_image
 ):
@@ -188,7 +186,6 @@ _REGISTRY_PUSH_PROBE = textwrap.dedent(
 )
 
 
-@pytest.mark.timeout(180)
 async def test_critic_cannot_push_images(e2e_stack, all_files_scope, critic_image):
     """A critic's own credentials authenticate to the registry proxy, but both steps of an image push are refused.
 

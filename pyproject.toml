@@ -254,7 +254,6 @@ dependencies = [
     "hypothesis>=6.0",
     "pytest>=9.1.1",
     "pytest-asyncio>=1.4.0",
-    "pytest-timeout>=2.3",
     "pytest-bazel>=0.1.6",
     "pytest-httpx2>=1.0.0",
     "testcontainers[postgres]>=4.14.1",
