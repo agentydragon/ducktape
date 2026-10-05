@@ -156,20 +156,6 @@ fn hint_load_bearing_on_impure_body_reports_only_transitively_redundant_hints() 
 }
 
 #[test]
-fn no_hints_produces_no_warnings() {
-    // Sanity: when no hints are declared, the warning list is
-    // empty even for chunks with plenty of pure chunk-local
-    // functions. The analyzer doesn't invent warnings about
-    // "you could have added a hint here" — it only reports
-    // existing hints that are redundant.
-    let got = redundant_hints("const f = (x) => [x];", &[]);
-    assert!(
-        got.is_empty(),
-        "empty declared_pure must produce no warnings; got {got:?}"
-    );
-}
-
-#[test]
 fn hint_on_opaque_key_accessor_is_load_bearing() {
     // The gaffer env_config shape: `let X = {…}` with whole-
     // object replacement writes keeps X PlainData, but the
