@@ -351,19 +351,9 @@ export { x, y };
             logical_module("mod_y", &[Member::new("y")]),
         ],
     );
-    expect_rejection_containing_all(
-        opts,
-        &[
-            "destructure",
-            "mod_x",
-            "mod_y",
-            // Both names in the offending pattern surface in the
-            // error so the spec author can find the conflicting
-            // pair without re-reading source.
-            "x",
-            "y",
-        ],
-    );
+    // The error names both claiming modules, so the spec author can find the
+    // conflicting pair without re-reading source.
+    expect_rejection_containing_all(opts, &["destructure", "mod_x", "mod_y"]);
 }
 
 #[test]
