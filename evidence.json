@@ -8053,7 +8053,7 @@
       "savings_qualification": "About60s component-based bound including proposed setup gate; hook process overhead remains. No end-to-end A/B benchmark."
     },
     "report_validation": {
-      "invocation": "cccbce4b-ac92-4406-9fba-b55b74855b47",
+      "invocation": "4c2a0eb3-32e4-4831-b57e-cfdcdabcc479",
       "target": "//devinfra/ci/report_preview:preview",
       "viewports": [
         {
@@ -8065,8 +8065,8 @@
           "height": 844
         }
       ],
-      "result": "Passed; desktop and mobile screenshots inspected; no horizontal overflow, internal anchor targets valid, methods disclosure opens",
-      "report_sha256": "4fc848b3777b47083cbc6ba41697e8e7bee4c324115f077ff4b720f3ab11b296"
+      "result": "Passed; desktop and mobile first viewport and implementation screenshots inspected; no horizontal overflow, internal anchor targets valid, methods disclosure opens",
+      "report_sha256": "7d01f90f3d3795db12e7489658dd1a9cd2b598cbc03c60481349e786a4357217"
     },
     "browser_analysis": {
       "fresh_profiles": [
@@ -8364,6 +8364,72 @@
           ]
         }
       ]
+    },
+    "implementation": {
+      "browser_shards": {
+        "pr": 9067,
+        "head": "ae627a32ed816d968dc263a5d1a97f666645e24f",
+        "state": "merged",
+        "required_checks": "passed",
+        "mergeable": true,
+        "ci_invocation": "f258f946-0615-5492-815e-f2fa59a119fc",
+        "remote_test_actions": 8,
+        "test_cases": 41,
+        "failures": 0,
+        "skips": 0,
+        "target_seconds": 141.9,
+        "fresh_tests": true,
+        "visual_review": "neutral; no visual-review.json exposed",
+        "merged_at": "2026-10-05T02:07:25Z",
+        "merge_commit_sha": "efb016f5fe9a07336bfd53d2af868f85590e9914"
+      },
+      "bazel_server_reuse": {
+        "pr": 9069,
+        "head": "d5b651ed806f9c517f88e5da177b812ca6efac05",
+        "required_checks": "passed",
+        "observed_server_pid_before_and_after": 4407,
+        "same_boot_and_server_start": true,
+        "bazel_job_seconds": 376,
+        "comparison_limit": "Full-sweep runtime is not comparable to earlier seven-target warm spike",
+        "state": "open"
+      },
+      "recorded_at_utc": "2026-10-05T02:16:11.072317+00:00",
+      "precommit": {
+        "source_pr": 9070,
+        "source_head": "a6f646642be4a352735c6cbe4683837c8d81d6b7",
+        "source_state": "open",
+        "source_required_checks": "passed",
+        "release": {
+          "source_commit": "a6f646642be4a352735c6cbe4683837c8d81d6b7",
+          "source_pr": 9070,
+          "unstamped_invocation": "a86145a6-ceb6-4425-8b52-a4ec005e4d34",
+          "unstamped_sha256": "9b55f4c4bd6e18156a7d8560d55656a778ef0e1b110019640d770d1127858c55",
+          "tag": "ducktape-git-hooks-9b55f4c4bd6e",
+          "stamped_invocation": "681b8f2e-6aba-4498-9abb-d9fb2d3c1ba8",
+          "asset_sha256": "9b55f4c4bd6e18156a7d8560d55656a778ef0e1b110019640d770d1127858c55",
+          "asset_sha256_base64": "m1X0xL1uGBVqfYVg1VZWp3jvDhsRABlkDXcNESeFjFU=",
+          "url": "https://github.com/agentydragon/ducktape/releases/download/ducktape-git-hooks-9b55f4c4bd6e/ducktape_git_hooks-0.1.0-py3-none-any.whl"
+        },
+        "nix_package_build_and_imports": "passed",
+        "installed_cli_smokes": "marked test file and explicit empty batch passed",
+        "real_precommit_excluded_batch": {
+          "command": "DUCKTAPE_PRECOMMIT_EXPLICIT_SELECTION=1 pre-commit run ducktape-pytest-main-check --files devinfra/claude/web_env/live-dpkg-versions.txt --verbose",
+          "package": "newly published package first on PATH",
+          "result": "passed",
+          "hook_seconds": 0.15
+        },
+        "activation": "Source PR alone does not change CI; dependent workflow pin activates the published hook.",
+        "workflow_pr": 9073,
+        "workflow_head": "e0c88e19e22a52452159c31409b56fc383cd72cf",
+        "workflow_base_pr": 9070,
+        "workflow_state": "open",
+        "workflow_required_checks": "passed: Bazel CI, artifact/imports, pre-commit and Gazelle",
+        "ordinary_pinned_consumer": "nix build .#precommit without artifact overrides passed; installed pinned hook passed marked-file and explicit-empty-batch checks",
+        "workflow_precommit_job": 111589397741,
+        "workflow_precommit_acceptance": "System Python preflight, setup-bazel and pre-commit passed; changed unmarked selector retained conservative setup as expected.",
+        "workflow_cache_note": "Cache-save log reported read-only GitHub cache budget; job succeeded. Do not infer cache-write success from a passing check."
+      },
+      "status_checked_at_utc": "2026-10-05T02:20:45.872845+00:00"
     }
   }
 }
