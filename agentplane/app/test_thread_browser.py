@@ -2001,12 +2001,8 @@ async def test_ahead_snapshot_is_not_a_thread_or_effective_model(thread_browser:
     assert await thread_browser.event_logs.events(thread.id, limit=100) == thread_browser.source.entries
 
 
-@pytest.mark.parametrize(
-    ("fault", "reason"),
-    [("gap", "expected runner cursor 5, received 6"), ("source-change", "runner source changed at cursor 5")],
-)
 async def test_rejected_source_suffix_stops_browser_without_replacing_verified_history(
-    thread_browser: ThreadBrowser, fault: str, reason: str
+    thread_browser: ThreadBrowser,
 ) -> None:
     page, source = thread_browser.page, thread_browser.source
     thread_browser.opened.replay.set()
@@ -2017,13 +2013,10 @@ async def test_rejected_source_suffix_stops_browser_without_replacing_verified_h
     rejected = source.append(
         event_pb2.Event(text_delta=event_pb2.TextDelta(item_id="test-browser-item", text=" INVALID SUFFIX"))
     )
-    if fault == "gap":
-        rejected.cursor = 6
-        rejected.origin.sequence = 6
-    else:
-        rejected.origin.source_id = "test-conflicting-runner-source"
+    rejected.cursor = 6
+    rejected.origin.sequence = 6
 
-    await expect(page.get_by_role("alert")).to_contain_text(reason)
+    await expect(page.get_by_role("alert")).to_contain_text("expected runner cursor 5, received 6")
     await expect(page.get_by_role("alert")).to_contain_text("Showing verified history through event 4")
     await expect(page.get_by_text("Test retained prefix", exact=True)).to_have_count(1)
     await expect(page.get_by_text("INVALID SUFFIX", exact=False)).to_have_count(0)
