@@ -9,7 +9,7 @@ import pytest_bazel
 from cluster.cdk8s.agentplane import testing
 
 
-def test_every_secret_an_egress_credential_reads_is_copied_in(
+def test_credentials_namespace_holds_exactly_the_secrets_egress_credentials_read(
     agentplane_manifests: dict[str, list[dict[str, Any]]],
 ) -> None:
     objects = agentplane_manifests[testing.ENV.namespace]
@@ -24,7 +24,7 @@ def test_every_secret_an_egress_credential_reads_is_copied_in(
         if obj["kind"] == "ExternalSecret" and obj["metadata"]["namespace"] == testing.ENV.egress.credentials_namespace
     }
     assert read
-    assert read <= copied
+    assert read == copied
 
 
 if __name__ == "__main__":
