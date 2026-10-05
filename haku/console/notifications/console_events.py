@@ -75,6 +75,7 @@ class ConsoleEventHub:
     _PUBLISH_TIMEOUT_SECONDS: ClassVar[float] = 5
     _SOCKET_TIMEOUT_SECONDS: ClassVar[float] = 2
     _SESSION_REVALIDATION_SECONDS: ClassVar[float] = 30
+    _RECONNECT_DELAY_SECONDS: ClassVar[float] = 1
 
     def __init__(self, database_url: str, *, operator_identity_store: PostgresOperatorIdentityStore) -> None:
         self._connections: dict[WebSocket, UUID] = {}
@@ -309,7 +310,7 @@ class ConsoleEventHub:
             # missed. Force reconnect + REST sync; attempts during the outage are rejected above.
             await self._close_connections(code=1012, reason="console event relay reconnecting")
             self._wake_all_tool_call_waiters()
-            await asyncio.sleep(1)
+            await asyncio.sleep(self._RECONNECT_DELAY_SECONDS)
 
 
 @router.websocket("/api/events/ws")

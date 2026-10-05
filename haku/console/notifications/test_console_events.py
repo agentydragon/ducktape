@@ -155,16 +155,19 @@ async def test_successful_relisten_wakes_waiter_registered_during_reconnect_gap(
 ) -> None:
     first = ListenConnection(end_notifications=True)
     second = ListenConnection(end_notifications=False)
-    connect = AsyncMock(side_effect=[first, second])
+    connections = iter([first, second])
     reconnect_gap = asyncio.Event()
     resume_reconnect = asyncio.Event()
 
-    async def pause_in_reconnect_gap(_: float) -> None:
-        reconnect_gap.set()
-        await resume_reconnect.wait()
+    async def connect(*_args: object, **_kwargs: object) -> ListenConnection:
+        connection = next(connections)
+        if connection is second:
+            reconnect_gap.set()
+            await resume_reconnect.wait()
+        return connection
 
     monkeypatch.setattr(console_events.asyncpg, "connect", connect)
-    monkeypatch.setattr(console_events.asyncio, "sleep", pause_in_reconnect_gap)
+    monkeypatch.setattr(ConsoleEventHub, "_RECONNECT_DELAY_SECONDS", 0)
     hub = ConsoleEventHub("postgresql+psycopg://unused.invalid/db", operator_identity_store=_identity_store())
     listen_task = asyncio.create_task(hub._listen_loop())
     try:
