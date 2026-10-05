@@ -6,16 +6,20 @@ import {
   assertNoPageErrors,
   prepareDeterministicPage,
   screenshotElement,
+  waitForSelectorUnlessPageError,
 } from "./capture.mjs";
 
 function fakePage() {
   const calls = [];
-  const listeners = new Map();
+  // Only "pageerror" is ever subscribed to, so the listeners are not keyed by event.
+  const pageErrorListeners = new Set();
   return {
     calls,
-    /** Deliver `error` to whatever `prepareDeterministicPage` registered for "pageerror". */
-    emitPageError: (error) => listeners.get("pageerror")(error),
-    on: (event, listener) => listeners.set(event, listener),
+    /** Deliver `error` to every "pageerror" listener, in registration order. */
+    emitPageError: (error) => pageErrorListeners.forEach((listener) => listener(error)),
+    pageErrorListenerCount: () => pageErrorListeners.size,
+    on: (_event, listener) => pageErrorListeners.add(listener),
+    off: (_event, listener) => pageErrorListeners.delete(listener),
     evaluateOnNewDocument: async (script) => calls.push(["evaluateOnNewDocument", script]),
     setViewport: async (viewport) => calls.push(["setViewport", viewport]),
     emulateMediaFeatures: async (features) => calls.push(["emulateMediaFeatures", features]),
@@ -54,6 +58,47 @@ function fakePage() {
   page.emitPageError(new Error("ReferenceError: thing is not defined"));
   assert.throws(() => assertNoPageErrors(page, { context: "scene foo" }), /scene foo: uncaught page errors/);
   assert.throws(() => assertNoPageErrors(page), /thing is not defined/);
+}
+
+{
+  // An error thrown before the wait began fails it without waiting at all.
+  const page = fakePage();
+  page.waitForSelector = async () => assert.fail("must not wait on a page that already threw");
+  await prepareDeterministicPage(page, { viewport: { width: 1, height: 1 }, colorScheme: "light" });
+  page.emitPageError(new Error("thrown while loading"));
+  await assert.rejects(
+    () => waitForSelectorUnlessPageError(page, "#ready", { context: "scene foo" }),
+    /scene foo: uncaught page errors:[\s\S]*thrown while loading/
+  );
+}
+
+{
+  // An error thrown during the wait fails it, though the wait's own timeout error comes after.
+  const page = fakePage();
+  let timeOutWait;
+  page.waitForSelector = () => new Promise((_, reject) => (timeOutWait = reject));
+  await prepareDeterministicPage(page, { viewport: { width: 1, height: 1 }, colorScheme: "light" });
+  const waiting = waitForSelectorUnlessPageError(page, "#ready", { context: "scene foo" });
+  page.emitPageError(new Error("thrown while waiting"));
+  timeOutWait(new Error("Waiting for selector `#ready` failed"));
+  await assert.rejects(waiting, /scene foo: uncaught page errors:[\s\S]*thrown while waiting/);
+  assert.equal(page.pageErrorListenerCount(), 1, "only the collector is left listening");
+}
+
+{
+  // On a page that threw nothing, the wait's result and its own timeout error come through.
+  const page = fakePage();
+  await prepareDeterministicPage(page, { viewport: { width: 1, height: 1 }, colorScheme: "light" });
+  page.waitForSelector = async (selector, { timeout }) => ({ selector, timeout });
+  assert.deepEqual(await waitForSelectorUnlessPageError(page, "#ready", { timeout: 7 }), {
+    selector: "#ready",
+    timeout: 7,
+  });
+  page.waitForSelector = async () => {
+    throw new Error("Waiting for selector `#ready` failed");
+  };
+  await assert.rejects(() => waitForSelectorUnlessPageError(page, "#ready"), /Waiting for selector `#ready` failed/);
+  assert.equal(page.pageErrorListenerCount(), 1, "only the collector is left listening");
 }
 
 {
