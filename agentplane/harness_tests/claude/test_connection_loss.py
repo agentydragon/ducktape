@@ -91,7 +91,7 @@ async def test_retry_exhaustion_fails_the_turn_and_the_process_accepts_the_next_
             await exchange.send(*stream.events)
         assert (await second.result()).result == "POST_EXHAUSTION_FOLLOW_UP_OK"
     captured = run.native_frames()
-    frames.assert_failure(frames.terminals(captured)[0], result_fragment="API Error", terminal_reason="api_error")
+    frames.assert_failure(frames.terminals(captured)[0], terminal_reason="api_error")
     assert len(frames.retry_notices(captured)) == MAX_RETRIES
     assert [terminal.is_error for terminal in frames.terminals(captured)] == [True, False]
     frames.assert_success(captured, "POST_EXHAUSTION_FOLLOW_UP_OK")

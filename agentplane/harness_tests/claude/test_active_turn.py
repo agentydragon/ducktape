@@ -301,7 +301,7 @@ async def test_interrupt_aborts_the_in_flight_model_call(
             assert (await prompt.result()).is_error is True
             assert run.running
     captured = run.native_frames()
-    frames.assert_failure(frames.terminals(captured)[-1], result_fragment="", terminal_reason="aborted_streaming")
+    frames.assert_failure(frames.terminals(captured)[-1], terminal_reason="aborted_streaming")
     assert not frames.tool_uses(captured)
 
 
