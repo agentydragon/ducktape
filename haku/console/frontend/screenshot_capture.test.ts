@@ -1,9 +1,9 @@
-// @vitest-environment jsdom
+// @vitest-environment happy-dom
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { ScreenshotSession } from "./screenshot_capture";
 
-// jsdom has no getDisplayMedia / real video decoding; each test stubs what it needs and
+// The DOM has no getDisplayMedia / real video decoding; each test stubs what it needs and
 // restores afterward.
 afterEach(() => vi.restoreAllMocks());
 
@@ -19,7 +19,8 @@ function fakeTrack() {
 }
 
 function stubGetDisplayMedia(track: ReturnType<typeof fakeTrack>) {
-  const stream = { getVideoTracks: () => [track], getTracks: () => [track] } as unknown as MediaStream;
+  // happy-dom's `srcObject` setter accepts only a real MediaStream.
+  const stream = Object.assign(new MediaStream(), { getVideoTracks: () => [track], getTracks: () => [track] });
   const getDisplayMedia = vi.fn().mockResolvedValue(stream);
   vi.stubGlobal("navigator", { ...navigator, mediaDevices: { getDisplayMedia } });
   vi.spyOn(HTMLVideoElement.prototype, "play").mockResolvedValue(undefined);
@@ -63,7 +64,7 @@ describe("ScreenshotSession.start", () => {
   });
 
   it("resolves ok:false when the browser has no getDisplayMedia API", async () => {
-    // jsdom's own default for navigator.mediaDevices varies by version — force absence rather
+    // The environment's own default for navigator.mediaDevices varies — force absence rather
     // than relying on the ambient default, matching geolocation.test.ts's explicit-stub pattern.
     vi.stubGlobal("navigator", { ...navigator, mediaDevices: undefined });
     const session = new ScreenshotSession(() => {});
@@ -124,7 +125,7 @@ describe("ScreenshotSession.captureFrame", () => {
     stubGetDisplayMedia(fakeTrack());
     const session = new ScreenshotSession(() => {});
     await session.start();
-    // jsdom's default videoWidth/videoHeight are 0 — captureFrame must not divide by them.
+    // The default videoWidth/videoHeight are 0 — captureFrame must not divide by them.
 
     expect(session.captureFrame(new DOMRect(0, 0, 100, 100))).toBeNull();
   });

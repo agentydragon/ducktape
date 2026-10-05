@@ -1,7 +1,12 @@
 // @vitest-environment jsdom
-// jsdom rather than this package's usual happy-dom: DOMPurify.sanitize (in `Markdown`) strips the
-// tag off the first top-level node of what it sanitizes under happy-dom -- see the note in
-// code_block.test.ts -- and every case here starts with a different element (h1, pre, ...).
+// jsdom rather than the usual happy-dom: DOMPurify >= 3.4.8 reads a node's name through the `nodeName`
+// getter of `Node.prototype`, which happy-dom answers with "" for every element, so `Markdown`'s
+// sanitize drops the outer tag of what it sanitizes (a `<table>` loses its wrapper) -- and every case
+// here starts with a different element (h1, pre, ...).
+// CLEANUP(added 2026-10-05): Move to happy-dom once its `Node.prototype` `nodeName` getter returns the
+//   element's name (`Object.getOwnPropertyDescriptor(Node.prototype, "nodeName").get.call(
+//   document.createElement("table"))` is "TABLE"), then drop jsdom from `package.json` and from this
+//   package's `vitest_config`.
 import { MantineProvider } from "@mantine/core";
 import { act } from "react";
 import { createRoot } from "react-dom/client";

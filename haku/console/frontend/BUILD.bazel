@@ -1295,12 +1295,14 @@ haku_vitest_test(
 
 vitest_config(
     name = "vitest_config",
+    # Specs that need a DOM select one with an `// @vitest-environment` pragma.
     data = [
         "//:node_modules/@haku/console-bridge",
+        "//:node_modules/happy-dom",
         # @mantine/hooks imports it without declaring it, so Node finds it only at the workspace root.
         "//:node_modules/react-dom",
     ],
-    environment = "jsdom",  # DOMPurify (in markdown.ts) needs a DOM
+    environment = "node",
 )
 
 check_vitest_specs()
