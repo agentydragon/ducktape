@@ -1,4 +1,4 @@
-# third_party: external dependency overlays and MODULE.bazel fragments
+# third_party: external dependency overlays
 
 exports_files([
     "go.mod",
