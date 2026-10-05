@@ -392,6 +392,8 @@ it("disables shutdown while the harness is not running", async () => {
 it.each([
   [{ feed_status: "failed" }, "Runner feed failed", "failed"],
   [{ feed_status: "ended" }, "Runner feed ended", "inactive"],
+  // Where a harness shutdown settles: its feed has ended and the harness is down.
+  [{ feed_status: "ended", harness_state: "HARNESS_STATE_STOPPED" }, "Harness not running", "stopped"],
   [{ harness_state: "HARNESS_STATE_STOPPED" }, "Harness not running", "stopped"],
   [{ active_turn_id: "turn-1" }, "Turn running · Runner feed active · harness running", "running"],
   [{}, "Runner feed active · harness running", "idle"],

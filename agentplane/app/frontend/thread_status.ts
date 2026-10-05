@@ -18,8 +18,12 @@ export function threadStatusFromSnapshot(
   if (!sandboxReady(sandbox)) return { kind: "inactive", label: "Sandbox unavailable", tabLabel: "Unavailable" };
   if (thread.feed_status === "failed")
     return { kind: "failed", label: "Runner feed failed", tabLabel: "Runner failed" };
-  if (thread.feed_status === "ended") return { kind: "inactive", label: "Runner feed ended", tabLabel: "Ended" };
-  if (thread.feed_status !== "active")
+  // A stopped harness is down whether its feed is still attached or has ended: a stopped session has no
+  // live entries, so a feed attached to it ends at once, and a shutdown settles there.
+  const harnessStopped = thread.harness_state === "HARNESS_STATE_STOPPED";
+  if (thread.feed_status === "ended" && !harnessStopped)
+    return { kind: "inactive", label: "Runner feed ended", tabLabel: "Ended" };
+  if (thread.feed_status !== "active" && thread.feed_status !== "ended")
     return { kind: "inactive", label: "No live harness confirmed", tabLabel: "Starting" };
   if (thread.harness_state !== "HARNESS_STATE_RUNNING")
     return { kind: "stopped", label: "Harness not running", tabLabel: "Stopped" };
