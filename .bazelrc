@@ -63,8 +63,7 @@ common --lockfile_mode=off
 # Lint + typecheck enabled by default on all builds.
 # Combines lint (ruff, ESLint), typecheck (mypy), and Rust checks (clippy, rustfmt).
 # Use Python 3.14 for mypy to parse Python 3.14 syntax (e.g., homeassistant).
-# --config=nolint skips mypy, clippy and rustfmt; ruff also needs --norun_validations
-# (see build:nolint below and devinfra/docs/linting.md).
+# --config=nolint skips ruff, ESLint, mypy, clippy and rustfmt (see build:nolint below).
 build --@rules_python//python/config_settings:python_version=3.14
 build --aspects=//devinfra/lint:linters.bzl%ruff,//devinfra/lint:linters.bzl%mypy_aspect,//devinfra/lint:linters.bzl%eslint,@rules_rust//rust:defs.bzl%rust_clippy_aspect,@rules_rust//rust:defs.bzl%rustfmt_aspect
 build --output_groups=+rules_lint_report,+mypy,+clippy_checks,+rustfmt_checks
@@ -73,17 +72,17 @@ build --output_groups=+rules_lint_report,+mypy,+clippy_checks,+rustfmt_checks
 # linter's exit code in an `.exit_code` output file. This puts the rules_lint aspects
 # on equal footing with mypy/clippy/rustfmt (whose aspect actions already fail the
 # build directly): code that doesn't lint clean no longer bazel-builds.
-# --config=nolint does not bypass this for ruff: its action is a validation action,
-# which --output_groups cannot remove; only --norun_validations stops it.
+# --config=nolint still bypasses it (see build:nolint below).
 build --@aspect_rules_lint//lint:fail_on_violation
 
-# Skip mypy, clippy and rustfmt by removing their output groups. Ruff is not skipped:
-# aspect_rules_lint attaches the ruff and ESLint actions as validation actions (the
-# `_validation` output group), which --output_groups cannot remove; --norun_validations
-# stops them, along with every other validation action. The pinned aspect_rules_lint
-# defines no rules_lint_report output group, so removing it has no effect.
-# Details: devinfra/docs/linting.md.
+# Skip lint and typecheck. mypy, clippy and rustfmt are ordinary output groups, so
+# removing them stops those actions. Ruff and ESLint run as validation actions (the
+# `_validation` output group), which --output_groups cannot drop; --norun_validations
+# skips them, and also every other rule's validation actions. The pinned
+# aspect_rules_lint defines no rules_lint_report output group, so removing it has no
+# effect. Details: devinfra/docs/linting.md.
 build:nolint --output_groups=-rules_lint_report,-mypy,-clippy_checks,-rustfmt_checks
+build:nolint --norun_validations
 
 # Remote Build Execution (BuildBuddy). Kept in an importable fragment so the
 # NixOS integration fixture exercises the exact workspace policy.
