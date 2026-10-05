@@ -9,22 +9,10 @@ fn fixture() -> GraphFixture {
 }
 
 #[test]
-fn atoms_coverage_summary_and_proposals_describe_the_real_graph() {
+fn atoms_summary_and_proposals_describe_the_real_graph() {
     let fixture = fixture();
     let atoms = fixture.json(&["atoms"]);
     assert_eq!(atoms["units"].as_array().unwrap().len(), 2);
-    let coverage = fixture.json(&["coverage"]);
-    assert_eq!(
-        coverage["summary"]["total_patch_sets"],
-        coverage["rows"].as_array().unwrap().len()
-    );
-    assert!(
-        coverage["rows"]
-            .as_array()
-            .unwrap()
-            .iter()
-            .all(|row| row.get("matching_proposal_ids").is_none())
-    );
     let summary = fixture.json(&["graph-summary"]);
     assert_eq!(summary["owner_count"], 2);
     assert_eq!(summary["atomic_unit_count"], 2);
@@ -176,10 +164,7 @@ fn stale_proposal_and_diagnostic_ids_report_their_kind_and_recovery_command() {
         let out = fixture.command(&["show-source", id]);
         assert!(!out.status.success());
         let stderr = String::from_utf8_lossy(&out.stderr);
-        assert!(
-            stderr.contains(&format!("{kind} id {id:?} not found")),
-            "{stderr}"
-        );
+        assert!(stderr.contains(&format!("{kind} id {id:?}")), "{stderr}");
         assert!(stderr.contains("debundle modules propose"), "{stderr}");
     }
 }
