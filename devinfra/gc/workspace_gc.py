@@ -213,7 +213,7 @@ def render_worktrees(items: list[Classification], *, include_kept: bool) -> str:
             _activity(item),
             _short(item.worktree.path),
             item.worktree.branch or "(detached)",
-            item.reason,
+            worktree_gc.describe_reason(item),
         ]
         for item in visible
     ]
@@ -241,7 +241,7 @@ def _branch_status(item: BranchClassification) -> str:
 
 def render_branches(items: list[BranchClassification], *, include_kept: bool) -> str:
     visible = items if include_kept else [item for item in items if not isinstance(item, RetainedBranch)]
-    rows = [[_branch_status(item), item.branch.name, item.reason] for item in visible]
+    rows = [[_branch_status(item), item.branch.name, branch_gc.describe_reason(item)] for item in visible]
     counts = {
         "prunable": sum(isinstance(item, PrunableBranch) for item in items),
         "kept": sum(isinstance(item, RetainedBranch) for item in items),

@@ -19,6 +19,7 @@ including read-only files (pygit2's `Worktree.prune()` does neither by default).
 
 from __future__ import annotations
 
+import enum
 import logging
 import os
 from collections.abc import Iterable, Mapping
@@ -34,28 +35,81 @@ from devinfra.gc.pull_request import PrInfo, PrState, pr_phrase
 logger = logging.getLogger(__name__)
 
 
+class PrunableWorktreeReason(enum.StrEnum):
+    DIRECTORY_MISSING = enum.auto()
+    PR_LANDED = enum.auto()  # the branch's PR is merged or closed
+    CONTENT_IN_MAIN = enum.auto()
+    PATCHES_IN_MAIN = enum.auto()
+
+
+class RetainedWorktreeReason(enum.StrEnum):
+    MAIN_CHECKOUT = enum.auto()
+    INVOKING_WORKTREE = enum.auto()
+    LIVE_PROCESS = enum.auto()
+    UNCOMMITTED_CHANGES = enum.auto()
+    OPEN_PR = enum.auto()
+
+
+class ReviewWorktreeReason(enum.StrEnum):
+    DETACHED_HEAD = enum.auto()
+    UNMERGED = enum.auto()
+
+
 @dataclass(frozen=True, slots=True)
 class PrunableWorktree:
     worktree: Worktree
-    reason: str
+    reason: PrunableWorktreeReason
     last_activity: datetime | None
+    main: str  # the ref the verdict was judged against, e.g. `origin/devel`
+    pr: PrInfo | None = None  # set for PR_LANDED
 
 
 @dataclass(frozen=True, slots=True)
 class RetainedWorktree:
     worktree: Worktree
-    reason: str
+    reason: RetainedWorktreeReason
     last_activity: datetime | None
+    pr: PrInfo | None = None  # set for OPEN_PR; for UNCOMMITTED_CHANGES when the branch has a PR
+    pid: int | None = None  # set for LIVE_PROCESS: one process working in the tree
 
 
 @dataclass(frozen=True, slots=True)
 class ReviewWorktree:
     worktree: Worktree
-    reason: str
+    reason: ReviewWorktreeReason
     last_activity: datetime | None
+    main: str  # the ref the verdict was judged against, e.g. `origin/devel`
 
 
 type Classification = PrunableWorktree | RetainedWorktree | ReviewWorktree
+
+
+def describe_reason(item: Classification) -> str:
+    match item:
+        case PrunableWorktree(reason=PrunableWorktreeReason.DIRECTORY_MISSING):
+            return "worktree directory is missing"
+        case PrunableWorktree(reason=PrunableWorktreeReason.PR_LANDED, pr=PrInfo() as pr):
+            return pr_phrase(pr)
+        case PrunableWorktree(reason=PrunableWorktreeReason.CONTENT_IN_MAIN, main=main):
+            return f"changes already in {main}"
+        case PrunableWorktree(reason=PrunableWorktreeReason.PATCHES_IN_MAIN, main=main):
+            return f"every commit has an equivalent already on {main}"
+        case RetainedWorktree(reason=RetainedWorktreeReason.MAIN_CHECKOUT):
+            return "main checkout"
+        case RetainedWorktree(reason=RetainedWorktreeReason.INVOKING_WORKTREE):
+            return "the invoking worktree"
+        case RetainedWorktree(reason=RetainedWorktreeReason.LIVE_PROCESS, pid=int() as pid):
+            return f"a process is working in it (pid {pid})"
+        case RetainedWorktree(reason=RetainedWorktreeReason.UNCOMMITTED_CHANGES, pr=pr):
+            return "uncommitted changes" + (f" ({pr_phrase(pr)})" if pr is not None else "")
+        case RetainedWorktree(reason=RetainedWorktreeReason.OPEN_PR, pr=PrInfo() as pr):
+            return pr_phrase(pr)
+        case ReviewWorktree(reason=ReviewWorktreeReason.DETACHED_HEAD, main=main):
+            return f"detached HEAD with commits not in {main}"
+        case ReviewWorktree(reason=ReviewWorktreeReason.UNMERGED, main=main):
+            return f"commits not in {main} and no merged PR"
+        case _:
+            raise ValueError(f"{item=} lacks the data its reason cites")
 
 
 def _dirty(status: Mapping[str, int]) -> bool:
@@ -144,48 +198,48 @@ def classify_worktree(
         # `git worktree list` still reports an entry whose directory was deleted out from
         # under it (or whose gitdir link rotted) — nothing to check, and `git worktree
         # remove` cleans up the administrative files fine even though the directory is gone.
-        return PrunableWorktree(worktree, "worktree directory is missing", None)
+        return PrunableWorktree(worktree, PrunableWorktreeReason.DIRECTORY_MISSING, None, main)
     logger.info("Scanning worktree %s: reading Git status", path)
     status = _status(pg)
     logger.info("Scanning worktree %s: Git status complete (%d entries)", path, len(status))
     activity = _last_activity(pg, path, status)
 
-    def keep(reason: str) -> RetainedWorktree:
-        return RetainedWorktree(worktree, reason, activity)
+    def keep(reason: RetainedWorktreeReason, *, pr: PrInfo | None = None, pid: int | None = None) -> RetainedWorktree:
+        return RetainedWorktree(worktree, reason, activity, pr=pr, pid=pid)
 
-    def prune(reason: str) -> PrunableWorktree:
-        return PrunableWorktree(worktree, reason, activity)
+    def prune(reason: PrunableWorktreeReason, *, pr: PrInfo | None = None) -> PrunableWorktree:
+        return PrunableWorktree(worktree, reason, activity, main, pr=pr)
 
-    def review(reason: str) -> ReviewWorktree:
-        return ReviewWorktree(worktree, reason, activity)
+    def review(reason: ReviewWorktreeReason) -> ReviewWorktree:
+        return ReviewWorktree(worktree, reason, activity, main)
 
     if path == main_path:
-        return keep("main checkout")
+        return keep(RetainedWorktreeReason.MAIN_CHECKOUT)
     if active_path is not None and path == active_path:
-        return keep("the invoking worktree")
+        return keep(RetainedWorktreeReason.INVOKING_WORKTREE)
     if live_pids:
-        return keep(f"a process is working in it (pid {live_pids[0]})")
+        return keep(RetainedWorktreeReason.LIVE_PROCESS, pid=live_pids[0])
     pr = pr_states.get(worktree.branch) if worktree.branch else None
     if _dirty(status):
         # Uncommitted work is never auto-pruned, but surface the branch's PR so a dirty
         # tree whose PR already merged reads as stale scratch, not live work.
-        return keep("uncommitted changes" + (f" ({pr_phrase(pr)})" if pr is not None else ""))
+        return keep(RetainedWorktreeReason.UNCOMMITTED_CHANGES, pr=pr)
     if pr is not None and pr.state is PrState.OPEN:
-        return keep(pr_phrase(pr))
+        return keep(RetainedWorktreeReason.OPEN_PR, pr=pr)
     if pr is not None and pr.state in (PrState.MERGED, PrState.CLOSED):
         # Removing a worktree never touches its branch, so this is safe regardless of
         # whether the branch has advanced past the PR's head — an advanced branch is
         # caught separately by branch_gc, which does have to care (deleting a branch ref
         # is destructive).
-        return prune(pr_phrase(pr))
+        return prune(PrunableWorktreeReason.PR_LANDED, pr=pr)
     if content_in_main(pg, pg.head.peel(pygit2.Commit).id, main):
-        return prune(f"changes already in {main}")
+        return prune(PrunableWorktreeReason.CONTENT_IN_MAIN)
     # As in `branch_gc`: the shell-out only runs once the in-process test has already failed.
     if patches_landed_in_main(path, "HEAD", main):
-        return prune(f"every commit has an equivalent already on {main}")
+        return prune(PrunableWorktreeReason.PATCHES_IN_MAIN)
     if worktree.branch is None:
-        return review(f"detached HEAD with commits not in {main}")
-    return review(f"commits not in {main} and no merged PR")
+        return review(ReviewWorktreeReason.DETACHED_HEAD)
+    return review(ReviewWorktreeReason.UNMERGED)
 
 
 @dataclass(frozen=True, slots=True)
