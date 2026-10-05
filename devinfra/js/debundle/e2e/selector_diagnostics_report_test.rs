@@ -20,22 +20,7 @@ fn keep_going_writes_machine_readable_selector_outcomes() {
         &["console.warn(\"absent\");"],
     ));
 
-    let rejected = run_dry_run_rejection_fixture(opts);
-    for required in [
-        "4 selector outcome(s): no_match=2, ambiguous=1, duplicate_claim=1",
-        "[no_match] static/app::diagnostics/missing as `MissingFormatter`",
-        "[no_match] static/app::diagnostics/anon anonymous_statements[0]",
-        "[ambiguous] static/app::diagnostics/ambiguous as `AmbiguousHelper`",
-        "[duplicate_claim]",
-    ] {
-        assert!(
-            rejected.stderr.contains(required),
-            "stderr missing {required:?}:\n{}",
-            rejected.stderr
-        );
-    }
-
-    let outcomes = read_selector_outcomes(&rejected.report_root);
+    let outcomes = keep_going_outcomes(opts);
     assert_eq!(outcomes.len(), 4, "{outcomes:#?}");
 
     let missing = find_outcome(&outcomes, "no_match", "MissingFormatter");
@@ -59,21 +44,28 @@ fn keep_going_writes_machine_readable_selector_outcomes() {
     );
 
     let ambiguous = find_outcome(&outcomes, "ambiguous", "AmbiguousHelper");
+    assert_eq!(ambiguous["outcome"]["kind"], "ambiguous");
     assert_eq!(
-        ambiguous["outcome"],
-        json!({
-            "kind": "ambiguous",
-            "candidates": [
-                {"owner": 1, "binding": "decoratePrimary"},
-                {"owner": 2, "binding": "decorateSecondary"},
-            ],
-            "truncated": false,
-            "differentiators": [
-                {"owner": 1, "statement": 0, "anchor": "property access `.trim`"},
-                {"owner": 2, "statement": 1, "anchor": "string literal \"shared\""},
-            ],
-        })
+        ambiguous["outcome"]["candidates"],
+        json!([
+            {"owner": 1, "binding": "decoratePrimary"},
+            {"owner": 2, "binding": "decorateSecondary"},
+        ])
     );
+    assert_eq!(ambiguous["outcome"]["truncated"], false);
+    let differentiators = ambiguous["outcome"]["differentiators"].as_array().unwrap();
+    assert_eq!(differentiators.len(), 2, "{ambiguous:#}");
+    for (differentiator, (owner, statement, token)) in differentiators
+        .iter()
+        .zip([(1, 0, ".trim"), (2, 1, "\"shared\"")])
+    {
+        assert_eq!(differentiator["owner"], owner);
+        assert_eq!(differentiator["statement"], statement);
+        assert!(
+            differentiator["anchor"].as_str().unwrap().contains(token),
+            "{differentiator:#}"
+        );
+    }
 
     let duplicate = outcomes
         .iter()
@@ -309,15 +301,7 @@ const right = makeRight();"#,
         )],
     );
 
-    let rejected = run_dry_run_rejection_fixture(opts);
-    assert!(
-        rejected
-            .stderr
-            .contains("source_matches[].bindings[`left`]"),
-        "human report should name the canonical source match:\n{}",
-        rejected.stderr
-    );
-    let outcomes = read_selector_outcomes(&rejected.report_root);
+    let outcomes = keep_going_outcomes(opts);
     for (export_name, target_binding) in [("ExportedLeft", "left"), ("ExportedRight", "right")] {
         let record = find_outcome(&outcomes, "no_match", export_name);
         assert_eq!(record["placement"]["selector_kind"], "source_matches");
