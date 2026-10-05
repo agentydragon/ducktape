@@ -1057,6 +1057,18 @@ mod tests {
     }
 
     #[test]
+    fn items_differing_only_in_identifier_names_cannot_be_singled_out() {
+        // Identifier references wildcard in the skeleton (alpha-equivalence), so
+        // these items share every feature and the read-off reports "could not
+        // minimize" rather than an anchor the alpha-equivalent matcher would not
+        // honor. The init identifier sits at the deepest skeleton level.
+        let module = parse("const a = foo;\nconst b = bar;");
+        let index = ShapeIndex::new(&module);
+        assert!(index.minimal_anchor_set(0).is_none());
+        assert!(index.minimal_anchor_set(1).is_none());
+    }
+
+    #[test]
     fn volatile_tail_splits_off_a_generated_suffix() {
         assert_eq!(volatile_tail("chunk-a1b2c3"), Some(("chunk-", "a1b2c3")));
         assert_eq!(volatile_tail("main.4f3a2b"), Some(("main.", "4f3a2b")));
