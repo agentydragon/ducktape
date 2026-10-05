@@ -298,8 +298,8 @@ def _get_param(cut: CutSetting, param: CutParam) -> float:
     raise ValueError(f"Unknown param: {param!r}")  # unreachable with enum
 
 
-def _auto_subtitle(config: GridConfig) -> str:
-    """Build a subtitle listing the parameters constant across all cells."""
+def _constant_params(config: GridConfig) -> list[CutParam]:
+    """The subtitle parameters no axis varies, in subtitle order."""
     varied: set[CutParam] = {config.x.param, config.y.param}
     if config.cols is not None:
         varied.add(config.cols.param)
@@ -310,18 +310,25 @@ def _auto_subtitle(config: GridConfig) -> str:
     if CutParam.POWER_MIN_PCT in varied or CutParam.POWER_MAX_PCT in varied:
         varied.add(CutParam.POWER_PCT)
 
+    return [
+        param
+        for param in [
+            CutParam.Z_OFFSET_MM,
+            CutParam.SPEED_MM_S,
+            CutParam.KERF_MM,
+            CutParam.Z_PER_PASS_MM,
+            CutParam.NUM_PASSES,
+            CutParam.POWER_PCT,
+        ]
+        if param not in varied
+    ]
+
+
+def _auto_subtitle(config: GridConfig) -> str:
+    """Build a subtitle listing the parameters constant across all cells."""
     base = config.cut.to_cut_setting(0, "")
     parts: list[str] = []
-    for param in [
-        CutParam.Z_OFFSET_MM,
-        CutParam.SPEED_MM_S,
-        CutParam.KERF_MM,
-        CutParam.Z_PER_PASS_MM,
-        CutParam.NUM_PASSES,
-        CutParam.POWER_PCT,
-    ]:
-        if param in varied:
-            continue
+    for param in _constant_params(config):
         v = _get_param(base, param)
         if param == CutParam.NUM_PASSES and v == 1:
             continue
