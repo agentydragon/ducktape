@@ -166,6 +166,7 @@ py_test(
         "//:conftest",
         "//util:playwright",
         "@pypi//playwright",
+        "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],
 )
@@ -316,6 +317,7 @@ py_test(
         "//:conftest",
         "//util:playwright",
         "//util:visual_review",
+        "@pypi//matplotlib",
         "@pypi//pillow",
         "@pypi//playwright",
         "@pypi//pytest",

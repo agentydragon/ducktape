@@ -1,0 +1,29 @@
+{
+  "main_page": {
+    "element": "#app",
+    "viewport": { "width": 1200, "height": 1400 },
+    "readySelectors": ["[data-testid=\"sync-banner-offline\"]"]
+  },
+  "streak_rest": {
+    "element": "#app",
+    "viewport": { "width": 1200, "height": 1400 },
+    "readySelectors": ["[data-testid=\"sync-banner-offline\"]"]
+  },
+  "active_bonus_countdown": {
+    "element": "#app",
+    "viewport": { "width": 1200, "height": 1400 },
+    "readySelectors": ["[data-testid=\"sync-banner-offline\"]"]
+  },
+  "active_bonus_unlocked": {
+    "element": "#app",
+    "viewport": { "width": 1200, "height": 1400 },
+    "readySelectors": ["[data-testid=\"sync-banner-offline\"]"]
+  },
+  "changelog": {
+    "element": "#app",
+    "viewport": { "width": 1200, "height": 900 }
+  },
+  "session_award": {
+    "element": "#shot"
+  }
+}

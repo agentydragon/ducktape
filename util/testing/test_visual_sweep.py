@@ -1,11 +1,14 @@
 import io
 import json
+import shutil
 import struct
 import textwrap
+from dataclasses import replace
 from pathlib import Path
 
 import pytest
 import pytest_bazel
+from matplotlib import get_data_path
 from PIL import Image
 from playwright.async_api import (
     Playwright,
@@ -21,13 +24,17 @@ from util.visual_review import VisualReviewManifest
 
 pytest_plugins = ("util.playwright", "pytester")
 
-# What each scene of the test harness page shows, by `?page=` name. The scenes that fail do so in
-# the way their name says; `index.html` and this file are all the harness there is.
+# What each scene of the test harness page shows, by `?page=` name (or `?scene=`, for a scenario that
+# names its own query). The scenes that fail do so in the way their name says; `index.html` and this
+# file are all the harness there is.
 _HARNESS_JS = """
-const scene = new URLSearchParams(location.search).get("page");
+const params = new URLSearchParams(location.search);
+const scene = params.get("page") ?? params.get("scene");
 const app = document.getElementById("app");
 const shot = '<div id="shot"><div id="target"></div></div>';
 if (scene === "plain") app.innerHTML = shot;
+if (scene === "typeset") app.innerHTML = shot + '<span class="typeset">A</span>';
+if (scene === "typeset_late") setTimeout(() => { app.innerHTML = shot + '<span class="typeset">A</span>'; }, 1000);
 if (scene === "late") setTimeout(() => { app.innerHTML = shot + '<p class="arrived"></p>'; }, 100);
 if (scene === "throws") { app.innerHTML = shot; setTimeout(() => { throw new Error("scene exploded"); }); }
 if (scene === "escapes") app.innerHTML = shot + '<img src="http://fenced.test/x.png">';
@@ -49,6 +56,8 @@ _INDEX_HTML = textwrap.dedent(
     <!doctype html>
     <style>
       @font-face { font-family: "Declared Sans"; src: url("./missing.woff2"); }
+      @font-face { font-family: "Loaded Sans"; src: url("./loaded.ttf"); }
+      .typeset { font-family: "Loaded Sans", sans-serif; }
       body { margin: 0; background: Canvas; color: CanvasText; color-scheme: light dark; }
       #shot { width: 100px; height: 40px; margin: 60px; }
       #target { width: 100px; height: 40px; background: #3366cc; }
@@ -68,11 +77,14 @@ def config(tmp_path: Path) -> SweepConfig:
     harness.mkdir()
     (harness / "index.html").write_text(_INDEX_HTML)
     (harness / "harness.js").write_text(_HARNESS_JS)
+    # Any real font file will do; matplotlib ships one.
+    shutil.copy(Path(get_data_path()) / "fonts" / "ttf" / "DejaVuSans.ttf", harness / "loaded.ttf")
     return SweepConfig(
         harness_path=harness / "harness.js",
         scenarios_path=tmp_path / "scenarios.json",
         title="Test sweep",
         expected_font_family=None,
+        output_suffix="-actual",
     )
 
 
@@ -121,6 +133,32 @@ async def test_a_scenario_publishes_its_png_and_manifest_entry(
         ("renamed-actual.png", "renamed"),
         ("plain-actual.png", "plain"),
     ]
+
+
+async def test_a_scenario_can_name_its_harness_query_and_its_manifest_label(
+    playwright: Playwright, config: SweepConfig, tmp_path: Path
+) -> None:
+    # Neither the scenario name nor `?page=` is a scene of the harness: only `?scene=plain` mounts one.
+    await capture_scenario(
+        playwright,
+        "plain_wide",
+        Scenario(element="#shot", query={"scene": "plain"}, label="plain · wide"),
+        config=config,
+        output_dir=tmp_path,
+        timeout_ms=1000,
+    )
+
+    assert [(asset.path, asset.label) for asset in _manifest(tmp_path).assets] == [
+        ("plain_wide-actual.png", "plain · wide")
+    ]
+
+
+async def test_a_lane_can_publish_bare_png_names(playwright: Playwright, config: SweepConfig, tmp_path: Path) -> None:
+    await capture_scenario(
+        playwright, "plain", Scenario(element="#shot"), config=replace(config, output_suffix=""), output_dir=tmp_path
+    )
+
+    assert [asset.path for asset in _manifest(tmp_path).assets] == list(_published(tmp_path)) == ["plain.png"]
 
 
 async def test_the_color_scheme_reaches_the_page(playwright: Playwright, config: SweepConfig, tmp_path: Path) -> None:
@@ -210,18 +248,58 @@ async def test_an_unhealthy_scenario_fails_by_name_and_publishes_nothing(
     assert _nothing_published(tmp_path)
 
 
-async def test_a_declared_font_that_did_not_load_fails_the_scenario(
+async def test_a_named_font_that_loaded_passes_and_is_published(
     playwright: Playwright, config: SweepConfig, tmp_path: Path
 ) -> None:
-    declared = SweepConfig(
-        harness_path=config.harness_path,
-        scenarios_path=config.scenarios_path,
-        title=config.title,
-        expected_font_family="Declared Sans",
+    await capture_scenario(
+        playwright,
+        "typeset",
+        Scenario(element="#shot"),
+        config=replace(config, expected_font_family="Loaded Sans"),
+        output_dir=tmp_path,
     )
 
-    with pytest.raises(AssertionError, match="plain: Declared Sans font did not load"):
-        await capture_scenario(playwright, "plain", Scenario(element="#shot"), config=declared, output_dir=tmp_path)
+    assert list(_published(tmp_path)) == ["typeset-actual.png"]
+
+
+async def test_a_font_is_asserted_of_the_mounted_scene_not_the_page_at_network_idle(
+    playwright: Playwright, config: SweepConfig, tmp_path: Path
+) -> None:
+    # The scene mounts after the 500ms of quiet that ends the navigation, and a face loads only once
+    # text uses it: asked at network idle, the font would be declared and not yet loaded.
+    await capture_scenario(
+        playwright,
+        "typeset_late",
+        Scenario(element="#shot", ready_selectors=[".typeset"]),
+        config=replace(config, expected_font_family="Loaded Sans"),
+        output_dir=tmp_path,
+    )
+
+    assert list(_published(tmp_path)) == ["typeset_late-actual.png"]
+
+
+@pytest.mark.parametrize(
+    ("page_name", "family", "status"),
+    [
+        pytest.param("plain", "Declared Sans", "unloaded", id="declared but never loaded"),
+        # `document.fonts.check` alone is true for a family nothing declares: a stylesheet that never
+        # arrived, or a misspelled family, would pass it and render in the fallback font.
+        pytest.param("typeset", "Loaded Snas", "undeclared", id="declared by nothing"),
+    ],
+)
+async def test_a_named_font_that_did_not_load_fails_the_scenario(
+    playwright: Playwright, config: SweepConfig, tmp_path: Path, page_name: str, family: str, status: str
+) -> None:
+    with pytest.raises(AssertionError, match=rf"{page_name}: {family} font did not load \({status}\)"):
+        await capture_scenario(
+            playwright,
+            page_name,
+            Scenario(element="#shot"),
+            config=replace(config, expected_font_family=family),
+            output_dir=tmp_path,
+        )
+
+    assert _nothing_published(tmp_path)
 
 
 def _sweep(
@@ -255,6 +333,20 @@ def test_an_empty_scenario_table_is_an_error_not_a_skip(
 
     assert result.ret != pytest.ExitCode.OK
     result.stdout.fnmatch_lines(["*the scenario table is empty*"])
+
+
+def test_the_expected_font_family_the_macro_sets_gates_every_scenario(
+    pytester: pytest.Pytester, monkeypatch: pytest.MonkeyPatch, config: SweepConfig
+) -> None:
+    out = _sweep(pytester, monkeypatch, config, {"typeset": {"element": "#shot"}, "plain": {"element": "#shot"}})
+    monkeypatch.setenv("EXPECTED_FONT_FAMILY", "Loaded Sans")
+
+    result = pytester.runpytest(visual_sweep.__file__)
+
+    # `plain` never sets type in the family, so for it the font is declared and not loaded.
+    result.assert_outcomes(passed=1, failed=1)
+    result.stdout.fnmatch_lines(["*plain: Loaded Sans font did not load (unloaded)*"])
+    assert list(_published(out)) == ["typeset-actual.png"]
 
 
 def test_one_broken_scenario_does_not_hide_the_rest(
@@ -302,6 +394,17 @@ def test_the_environment_switches_the_viewport_capture_to_devtools(
     capture = Image.open(io.BytesIO(_published(out)["framed-actual.png"])).convert("RGB")
     assert capture.size == (618, 1373)
     assert (set(capture.crop((0, 1372, 618, 1373)).getdata()) == {(255, 255, 255)}) is last_row_is_white
+
+
+def test_the_output_suffix_comes_from_the_environment(
+    pytester: pytest.Pytester, monkeypatch: pytest.MonkeyPatch, config: SweepConfig
+) -> None:
+    out = _sweep(pytester, monkeypatch, config, {"plain": {"element": "#shot"}})
+    monkeypatch.setenv("OUTPUT_SUFFIX", "")
+
+    pytester.runpytest(visual_sweep.__file__).assert_outcomes(passed=1)
+
+    assert list(_published(out)) == ["plain.png"]
 
 
 if __name__ == "__main__":

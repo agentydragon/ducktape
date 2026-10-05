@@ -11,7 +11,7 @@ import httpx
 import litellm
 import pytest
 import pytest_bazel
-from litellm.types.utils import ChatCompletionMessageToolCall, Choices, GenericStreamingChunk, Usage
+from litellm.types.utils import ChatCompletionMessageToolCall, Choices, GenericStreamingChunk, ModelResponse, Usage
 
 from tana.litellm_proxy.provider import (
     TanaChatResult,
@@ -738,6 +738,39 @@ async def test_anthropic_messages_stream_ignores_empty_chunk_after_tool_finish(i
         for event in events
         if event.get("type") == "content_block_delta" and event.get("delta", {}).get("type") == "text_delta"
     ] == []
+
+
+async def test_astreaming_emits_nothing_after_the_terminal_chunk() -> None:
+    class FakeClient(_NoStreamingClient):
+        async def astream_completion(
+            self,
+            model: str,
+            messages: Sequence[Mapping[str, Any]],
+            optional_params: Mapping[str, Any] | None = None,
+            *,
+            refresh_token: str | None = None,
+        ) -> AsyncIterator[GenericStreamingChunk]:
+            yield GenericStreamingChunk(text="before", is_finished=False, finish_reason="", usage=None, index=0)
+            yield GenericStreamingChunk(text="", is_finished=True, finish_reason="stop", usage=None, index=0)
+            yield GenericStreamingChunk(text="after", is_finished=False, finish_reason="", usage=None, index=0)
+
+    chunks = [
+        chunk
+        async for chunk in _handler_with_test_client(FakeClient()).astreaming(
+            model="claude-test",
+            messages=[{"role": "user", "content": "hi"}],
+            api_base="",
+            custom_prompt_dict={},
+            model_response=ModelResponse(),
+            print_verbose=print,
+            encoding=None,
+            api_key="refresh-1",
+            logging_obj=None,
+            optional_params={},
+        )
+    ]
+
+    assert [chunk["text"] for chunk in chunks] == ["before", ""]
 
 
 def _decode_anthropic_sse_event(event: Any) -> dict[str, Any]:

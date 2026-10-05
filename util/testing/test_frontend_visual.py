@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import pytest
 import pytest_bazel
 from playwright.async_api import Page, Playwright
 
@@ -10,6 +11,12 @@ from util.testing.frontend_visual import deterministic_browser_context
 # gazelle:include_dep //util:playwright
 
 pytest_plugins = ("util.playwright",)
+
+
+@pytest.fixture
+def los_angeles_process_timezone(monkeypatch: pytest.MonkeyPatch) -> None:
+    # Before `playwright` starts the driver, whose environment the browser inherits.
+    monkeypatch.setenv("TZ", "America/Los_Angeles")
 
 
 async def _platform_families(page: Page, selector: str) -> list[str]:
@@ -56,6 +63,20 @@ async def test_generic_families_are_browser_pinned(playwright: Playwright) -> No
         ):
             families = await _platform_families(page, selector)
             assert family in families, f"{selector} used {families}, expected {family}"
+
+
+@pytest.mark.usefixtures("los_angeles_process_timezone")
+async def test_the_page_timezone_is_utc_whatever_the_process_timezone(playwright: Playwright) -> None:
+    async with await deterministic_browser_context(
+        playwright, viewport={"width": 800, "height": 600}, frozen_now_ms=0
+    ) as context:
+        page = await context.new_page()
+        # July, when Los Angeles is 420 minutes behind UTC.
+        timezone = await page.evaluate(
+            "[Intl.DateTimeFormat().resolvedOptions().timeZone, new Date(2025, 6, 1).getTimezoneOffset()]"
+        )
+
+    assert timezone == ["UTC", 0]
 
 
 if __name__ == "__main__":

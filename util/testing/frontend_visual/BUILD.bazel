@@ -70,6 +70,14 @@ js_library(
     ],
 )
 
+chromium_js_test(
+    name = "visual_test_lib_test",
+    data = [":visual_test_lib"],
+    entry_point = "visual-test-lib.test.mjs",
+    no_copy_to_bin = [":visual_test_lib"],
+    tags = ["visual"],
+)
+
 js_library(
     name = "visual_review_manifest",
     srcs = ["visual-review-manifest.mjs"],

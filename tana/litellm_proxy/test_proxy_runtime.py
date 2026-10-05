@@ -106,6 +106,9 @@ async def test_litellm_proxy_config_registers_custom_provider_before_router_buil
         router, _, _ = await ProxyConfig().load_config(router=None, config_file_path=str(config_path))
 
         assert router is not None
+        # The config loader's own `custom_llm_setup` registers only the provider lists; the handler module's
+        # import-time registration is what puts the provider in `model_list_set`, which `get_llm_provider` reads.
+        assert "tana" in litellm.model_list_set
         monkeypatch.setattr(TanaLiteLLM, "_make_client", lambda _self, _config: FakeClient())
         response = await router.acompletion(model="gpt-4o-mini", messages=[{"role": "user", "content": "hi"}])
 
