@@ -180,16 +180,19 @@ def test_generate_xml_round_trips():
     assert root.tag == "LightBurnProject"
 
 
-def test_generate_with_cell_text():
+def _text_count(cell_text: CellContent) -> int:
     cfg = GridConfig(
         x=AxisConfig(param=CutParam.POWER_PCT, values=[10.0, 20.0]),
         y=AxisConfig(param=CutParam.SPEED_MM_S, values=[50.0]),
-        labels=LabelsConfig(cell_text=CellContent.VALUES_WITH_UNITS),
+        labels=LabelsConfig(cell_text=cell_text),
     )
-    project = generate(cfg)
-    texts = [s for s in project.shapes if isinstance(s, TextShape)]
-    # Should have in-cell texts (2 per cell x 2 cells = 4) plus axis labels
-    assert len(texts) >= 4
+    return sum(isinstance(s, TextShape) for s in generate(cfg).shapes)
+
+
+@pytest.mark.parametrize("cell_text", [CellContent.VALUES, CellContent.VALUES_WITH_UNITS])
+def test_generate_with_cell_text(cell_text: CellContent):
+    """Each of the 2 cells carries two in-cell lines (its x and y value) on top of the axis labels."""
+    assert _text_count(cell_text) - _text_count(CellContent.NOTHING) == 2 * 2
 
 
 def test_generate_no_labels():
