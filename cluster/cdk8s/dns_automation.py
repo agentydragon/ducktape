@@ -51,6 +51,7 @@ def chart(app: App) -> Chart:
         "terraform",
         name="dns-records",
         variables=DnsRecordsVars(route53_zone_id="Z02901943N8ZFQFOD9P5I"),
+        interval="2h",
         env_from=[terraform.secret_env_from(_CREDENTIALS_SECRET)],
     )
     return chart

@@ -151,7 +151,7 @@ CP membership is the per-host `role` in `nebula-mesh.json` (leave `lighthouse`/`
 `cert_groups` alone): the Talos machine type in `ovh-nodes.tf`, the etcd metrics scrape
 EndpointSlice (`cluster/generated/platform-monitoring/platform-monitoring.k8s.yaml`, or
 `ControlPlaneLeasePutLatency` alerts point nowhere) and the `api.allegedly.works` A records
-(`tf/gitops/dns-records`) are all derived from it — `bb run //cluster/cdk8s:generate_manifests`
+(`cluster/generated/external-dns-records/`) are all derived from it — `bb run //cluster/cdk8s:generate_manifests`
 after the edit. Any control-plane add/remove also updates in the same change:
 
 - `cluster/terraform/main/infrastructure.tf` — `primary_controlplane_ip` + the

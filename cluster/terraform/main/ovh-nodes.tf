@@ -458,9 +458,8 @@ locals {
   # `node.cloudprovider.kubernetes.io/uninitialized:NoSchedule` taint at first
   # registration, which is the CCM's input signal. Without it, the CCM short-circuits
   # ("is kubelet has args: --cloud-provider=external on the node?" in its log) and
-  # Node.spec.providerID + status.addresses[ExternalIP] stay empty — which is why
-  # tf/gitops/dns-records hard-codes IPs by hand. See cluster/docs/plan.md
-  # "Autopopulate tf/gitops/dns-records IP lists" for the motivating goal.
+  # Node.spec.providerID + status.addresses[ExternalIP] stay empty. Public DNS
+  # currently derives its targets from nebula-mesh.json instead of Node status.
   #
   # Kept Kimsufi-only deliberately: Proxmox nodes share `common_machine_base.kubelet`
   # but their `region=proxmox` doesn't match the CCM transformation's `region=hil`

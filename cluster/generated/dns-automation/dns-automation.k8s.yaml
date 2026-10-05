@@ -44,7 +44,7 @@ spec:
         conn_str    = "postgres://tfstate@tofu-state-db-ovh-rw.tofu-state.svc:5432/tfstate?sslmode=disable"
         schema_name = "dns_records"
       }
-  interval: 15m
+  interval: 2h
   path: ./tf/gitops/dns-records
   refreshBeforeApply: true
   runnerPodTemplate:

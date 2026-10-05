@@ -17,9 +17,9 @@ The mesh host roster is a single JSON file at the repo root,
   certificate material for every tofu-managed entry
 - `cluster/cdk8s/generate_manifests.py` — renders the etcd metrics scrape
   targets (`cluster/generated/platform-monitoring/platform-monitoring.k8s.yaml`, every
-  control plane's Nebula IP) and the dns-records Terraform CR's `public_nodes` var
-  (every public k8s node, for the Route 53 records); regenerate after any roster
-  edit, CI fails on drift
+  control plane's Nebula IP), the Gateway's ExternalDNS target annotation, and
+  the static `DNSEndpoint` public and API IPs; regenerate after any roster edit,
+  CI fails on drift
 - `ansible/roles/nebula` — renders Atlas's config and peer MTU routes
 - `cluster/scripts/render_mobile_nebula_config.py` — mobile client config
 
@@ -78,8 +78,8 @@ any TF apply.
    under the same name in `local.kimsufi_server_provisioning` in
    `cluster/terraform/main/ovh-nodes.tf`; the Terraform-managed Nebula host set
    is derived from that inventory.
-4. `bb run //cluster/cdk8s:generate_manifests` — the etcd scrape targets and
-   the dns-records node export follow the roster.
+4. `bb run //cluster/cdk8s:generate_manifests` — the etcd scrape targets,
+   Gateway target annotation, and static DNS records follow the roster.
 5. Generate and persist `secrets/nebula/<host>.crt` and
    `secrets/nebula/<host>.sops.key` with the exact FQDN, Nebula IP, and groups
    from the new roster entry; see <secrets.md> "Generating a new cert".
