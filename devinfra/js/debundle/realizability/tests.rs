@@ -860,52 +860,6 @@ fn partition_with(owner_graph: &OwnerGraph, assignments: &[(usize, usize)]) -> P
     partition
 }
 
-/// Fallback-promoted edges (`callee_owner == from`, emitted for an
-/// at-init call the analysis cannot resolve) drop out of the gate view
-/// when the caller is in residual. Moving such an edge's target into a
-/// module that reads residual must not add a residual -> module
-/// constraining edge: the gate accepts the move, the overlay must too.
-#[test]
-fn move_overlay_adds_no_edge_for_residual_fallback_edge_when_target_moves() {
-    // Owners: 0 a, 1 read_a, 2 g, 3 r, 4 m. `r = g()` is unresolvable
-    // (alias), so r -> a is a fallback-promoted edge from residual;
-    // m (module 1) reads r (residual).
-    let owner_graph = parse_and_build(
-        "const a = 1; function read_a() { return a; } const g = read_a; const r = g(); const m = r + 1;",
-    );
-    let index =
-        RealizabilityIndex::from_partition(&owner_graph, partition_with(&owner_graph, &[(4, 1)]));
-    assert_move_agrees_across_paths(
-        &index,
-        &owner_graph,
-        &[OwnerId(0), OwnerId(1)],
-        module_id(1),
-    );
-}
-
-/// Same rule, other direction: moving the *caller* of a residual
-/// fallback edge out of residual must not remove a residual -> target
-/// quotient edge the gate never had, since the removal would cancel a
-/// real edge on the same module pair (here the lazy `api -> a` read)
-/// and hide the TDZ cycle the move closes.
-#[test]
-fn move_overlay_removes_no_edge_for_residual_fallback_edge_when_caller_moves() {
-    // Owners: 0 a, 1 api, 2 r, 3 m. `r = api.read()` is unresolvable
-    // (member call), so r -> a is a fallback-promoted edge from
-    // residual; api (residual) reads a (module 1) lazily.
-    let owner_graph = parse_and_build(
-        "const a = 1; const api = { read: () => a }; const r = api.read(); const m = r + 1;",
-    );
-    let index =
-        RealizabilityIndex::from_partition(&owner_graph, partition_with(&owner_graph, &[(0, 1)]));
-    assert_move_agrees_across_paths(
-        &index,
-        &owner_graph,
-        &[OwnerId(2), OwnerId(3)],
-        module_id(1),
-    );
-}
-
 /// Every single- and pair-owner move from every assignment of the
 /// owners to three modules (module 0 is residual; the targets include
 /// a fresh module) must agree across the overlay, the committed path
@@ -915,10 +869,21 @@ fn move_overlay_removes_no_edge_for_residual_fallback_edge_when_caller_moves() {
 #[test]
 fn move_overlay_matches_committed_and_pure_on_promoted_edge_graphs() {
     let sources = [
+        // `r = g()` is unresolvable (`g` aliases `read_a`), so `r -> a` is a
+        // fallback-promoted edge from residual, and `m` reads `r`. Moving the
+        // target `a` into a module that reads residual must not make the
+        // overlay add a residual -> module constraining edge: the gate
+        // accepts that move.
         (
             "const a = 1; function read_a() { return a; } const g = read_a; const r = g(); const m = r + 1;",
             true,
         ),
+        // `r = api.read()` is a member call, so `r -> a` is a fallback-promoted
+        // edge from residual, and `api` reads `a` lazily. Moving the caller
+        // `r` out of residual must not make the overlay remove a residual ->
+        // `a` edge the gate never had: the removal would cancel the real lazy
+        // `api -> a` edge on that module pair and hide the TDZ cycle the move
+        // closes.
         (
             "const a = 1; const api = { read: () => a }; const r = api.read(); const m = r + 1;",
             true,
