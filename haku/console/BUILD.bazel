@@ -499,7 +499,6 @@ py_test(
         ":conftest",
         ":database_migrate",
         "//:conftest",
-        "@pypi//pydantic",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],
