@@ -1185,6 +1185,16 @@ haku_vitest_test(
 )
 
 haku_vitest_test(
+    name = "mcp_result_test",
+    srcs = ["mcp_result.test.ts"],
+    isolated_typecheck = True,
+    deps = [
+        ":mcp_result",
+        "//:node_modules/vitest",
+    ],
+)
+
+haku_vitest_test(
     name = "mcp_tool_result_schema_test",
     srcs = ["mcp_tool_result_schema.test.ts"],
     isolated_typecheck = True,
