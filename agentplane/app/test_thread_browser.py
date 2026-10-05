@@ -9,10 +9,7 @@ import json
 import re
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager, suppress
-from dataclasses import dataclass
 from datetime import timedelta
-from pathlib import Path
-from typing import cast
 from urllib.parse import parse_qs, urlsplit
 from uuid import UUID
 
@@ -26,17 +23,23 @@ from playwright.async_api import (
     Request,
     Route,
     TimeoutError as PlaywrightTimeoutError,
-    async_playwright,
     expect,
 )
 from sqlalchemy import select, update
 
 from agentplane.app.database import connect
-from agentplane.app.testing import history_probe, history_trace
+from agentplane.app.testing import history_trace
 from agentplane.app.testing.electric_service import ElectricService, electric_service
-from agentplane.app.testing.http2_proxy import BrowserCertificate, Ingress, browser_certificate, http2_proxy
-from agentplane.app.testing.replication_process import AppProcess, app_process
-from agentplane.app.testing.replication_source import SANDBOX, SESSION, Opened, ReplicationSource
+from agentplane.app.testing.http2_proxy import BrowserCertificate, http2_proxy
+from agentplane.app.testing.replication_process import app_process
+from agentplane.app.testing.replication_source import SANDBOX, SESSION, ReplicationSource
+from agentplane.app.testing.thread_browser import (
+    ThreadBrowser,
+    append_items,
+    capture_reading_anchor,
+    expect_reading_anchor,
+    frames,
+)
 from agentplane.app.threads.events.event_log import EventLogStore
 from agentplane.app.threads.ingestion import Ingestion
 from agentplane.app.threads.models import (
@@ -53,127 +56,16 @@ from agentplane.app.threads.view.content import ContentStore
 from agentplane.app.threads.view.views import ThreadFeedErrorState, ThreadOperationalState, ThreadViewState
 from agentplane.protocol import command_pb2, event_log_pb2, event_pb2
 from util.bazel.runfiles import get_required_path
-from util.testing.frontend_visual import CONTAINER_BASE_BROWSER_ARGS, chromium_executable
 from util.testing.undeclared_outputs import undeclared_outputs_dir
 
 # gazelle:include_dep @pypi//protobuf
 
-
-@pytest.fixture
-def certificate(tmp_path: Path) -> BrowserCertificate:
-    return browser_certificate(tmp_path / "tls")
-
-
-@pytest.fixture
-async def page(
-    request: pytest.FixtureRequest, certificate: BrowserCertificate, monkeypatch: pytest.MonkeyPatch
-) -> AsyncIterator[Page]:
-    # Route.fetch runs in Playwright's Node driver, outside Chromium's SPKI trust setting.
-    monkeypatch.setenv("NODE_EXTRA_CA_CERTS", str(certificate.directory / "certificate.pem"))
-    async with async_playwright() as playwright:
-        browser = await playwright.chromium.launch(
-            headless=True,
-            executable_path=chromium_executable(),
-            args=[*CONTAINER_BASE_BROWSER_ARGS, f"--ignore-certificate-errors-spki-list={certificate.spki}"],
-        )
-        try:
-            async with await browser.new_context(viewport={"width": 1280, "height": 900}) as context:
-                await context.add_init_script(path=history_probe.script_path())
-                await context.tracing.start(screenshots=True, snapshots=True, sources=True)
-                opened = await context.new_page()
-                await history_probe.throttle_cpu(context, opened)
-                errors: list[str] = []
-                opened.on("pageerror", lambda error: errors.append(str(error)))
-                try:
-                    yield opened
-                    assert not errors, errors
-                finally:
-                    await history_probe.write_results(
-                        opened, undeclared_outputs_dir() / f"{request.node.name}-history-probe.json"
-                    )
-                    await history_trace.write(
-                        opened, undeclared_outputs_dir() / f"{request.node.name}-history-trace.jsonl"
-                    )
-                    await context.tracing.stop(path=undeclared_outputs_dir() / f"{request.node.name}-trace.zip")
-        finally:
-            await browser.close()
-
-
-@dataclass
-class ThreadBrowser:
-    page: Page
-    source: ReplicationSource
-    store: ThreadStore
-    event_logs: EventLogStore
-    content: ContentStore
-    opened: Opened
-    app: AppProcess
-    ingress: Ingress
-
-
-@pytest.fixture
-async def electric() -> AsyncIterator[ElectricService]:
-    async with electric_service() as service:
-        yield service
+pytest_plugins = ("agentplane.app.testing.thread_browser",)
 
 
 @pytest.fixture
 async def db_url(electric: ElectricService) -> str:
     return electric.database_url
-
-
-@pytest.fixture
-def replay_after() -> int | None:
-    return None
-
-
-@pytest.fixture
-def thread_source() -> ReplicationSource:
-    source = ReplicationSource()
-    source.attached.active_turn_id = "test-browser-turn"
-    source.append(event_pb2.Event(harness_started=event_pb2.HarnessStarted(pid=123)))
-    source.append(
-        event_pb2.Event(
-            turn_started=event_pb2.TurnStarted(turn_id="test-browser-turn", model=source.attached.spec.model)
-        )
-    )
-    source.append(
-        event_pb2.Event(
-            item_started=event_pb2.ItemStarted(item_id="test-browser-item", kind=event_pb2.ITEM_KIND_ASSISTANT_TEXT)
-        )
-    )
-    source.append(
-        event_pb2.Event(text_delta=event_pb2.TextDelta(item_id="test-browser-item", text="Test retained prefix"))
-    )
-    return source
-
-
-@pytest.fixture
-async def thread_browser(
-    page: Page,
-    db_url: str,
-    store: ThreadStore,
-    event_logs: EventLogStore,
-    content: ContentStore,
-    thread_source: ReplicationSource,
-    replay_after: int | None,
-    electric: ElectricService,
-    certificate: BrowserCertificate,
-) -> AsyncIterator[ThreadBrowser]:
-    source = thread_source
-    thread_id = await event_logs.open(SANDBOX, SESSION, source.attached.spec)
-    directory = get_required_path("_main/agentplane/app/frontend/dist/index.html").parent
-    async with (
-        source.serve() as runner_port,
-        app_process(
-            db_url, runner_port, frontend_directory=directory, replay_after=replay_after, electric_url=electric.url
-        ) as app,
-        http2_proxy(app.url, certificate) as ingress,
-    ):
-        async with asyncio.timeout(30):
-            opened = await source.opened.get()
-            await page.goto(f"{ingress.url}/#/threads/{thread_id}")
-        yield ThreadBrowser(page, source, store, event_logs, content, opened, app, ingress)
 
 
 async def test_archived_thread_page_survives_deleted_sandbox_and_reload(
@@ -1121,33 +1013,6 @@ async def test_small_upward_scroll_stays_detached_when_tail_streams(thread_brows
     await gesture.dispose()
 
 
-def append_items(thread_browser: ThreadBrowser, prefix: str, numbers: range) -> event_log_pb2.EventEntry:
-    """One finished assistant message per number, of varying height; the entry of the last."""
-    latest = None
-    for number in numbers:
-        item_id = f"{prefix}-{number:03d}"
-        thread_browser.source.append(
-            event_pb2.Event(
-                item_started=event_pb2.ItemStarted(item_id=item_id, kind=event_pb2.ITEM_KIND_ASSISTANT_TEXT)
-            )
-        )
-        latest = thread_browser.source.append(
-            event_pb2.Event(
-                item_completed=event_pb2.ItemCompleted(
-                    item_id=item_id,
-                    text=f"Window message {number:03d}: " + "measured variable-height text " * (number % 4 + 1),
-                )
-            )
-        )
-    assert latest is not None
-    return latest
-
-
-async def frames(page: Page) -> None:
-    """Waits for the paint after the next layout, and any effect or observer it runs."""
-    await page.evaluate("() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))")
-
-
 def append_tool_call(thread_browser: ThreadBrowser, name: str) -> event_log_pb2.EventEntry:
     """A finished `Bash` call whose command and output are each taller than their clamps."""
     item_id = f"resize-tool-{name}"
@@ -1458,91 +1323,6 @@ async def test_a_reader_away_from_the_end_of_a_live_thread_can_jump_back_to_it(
     latest = append_items(thread_browser, "following-again", range(3, 6))
     await expect_projected_cursor(page, latest.cursor)
     await expect_history_bottom(page)
-
-
-_SAMPLE_READING_ANCHOR = """area => {
-    const top = area.getBoundingClientRect().top;
-    const row = [...area.querySelectorAll('[data-thread-anchor]')].find(
-        candidate => candidate.getBoundingClientRect().bottom > top
-    );
-    const rowTop = row.getBoundingClientRect().top;
-    return { cursor: row.dataset.threadAnchor, top: rowTop, offset: rowTop - top };
-}"""
-
-
-async def capture_reading_anchor(area: Locator) -> dict[str, str | float]:
-    """The first row whose bottom is below the viewport top, and its position -- the reader's
-    place, sampled once two consecutive frames agree so a pending re-measure right after a
-    just-ended gesture cannot register as a false position."""
-    return cast(
-        "dict[str, str | float]",
-        await area.evaluate(
-            "area => new Promise(resolve => { const sample = () => ("
-            + _SAMPLE_READING_ANCHOR
-            + """)(area);
-            const settle = previous => requestAnimationFrame(() => {
-                const current = sample();
-                if (current.cursor === previous.cursor && current.top === previous.top) resolve(current);
-                else settle(current);
-            });
-            requestAnimationFrame(() => settle(sample()));
-        })"""
-        ),
-    )
-
-
-async def wheel_and_capture_anchor_at_scrollend(page: Page, area: Locator, delta_y: float) -> dict[str, str | float]:
-    """Wheel `area` and return the reader's place as the gesture's scrollend event sees it -- the
-    instant the app adopts it. capture_reading_anchor samples frames later, which is too late when
-    older pages land right after the scrollend: it can catch the position part-way through the
-    scroll restorations they trigger, not the one the reader left."""
-    gesture = await area.evaluate_handle(
-        "area => ({ anchor: new Promise(resolve => area.addEventListener('scrollend', () => resolve(("
-        + _SAMPLE_READING_ANCHOR
-        + ")(area)), { once: true })) })"
-    )
-    await page.mouse.wheel(0, delta_y)
-    async with asyncio.timeout(30):
-        anchor = cast("dict[str, str | float]", await gesture.evaluate("gesture => gesture.anchor"))
-    await gesture.dispose()
-    return anchor
-
-
-async def expect_reading_anchor(page: Page, anchor: dict[str, str | float]) -> None:
-    try:
-        await page.wait_for_function(
-            """anchor => {
-            const area = document.querySelector('[aria-label="Thread history"]');
-            const item = area.querySelector(`[data-thread-anchor="${anchor.cursor}"]`);
-            return item !== null && Math.abs(
-                item.getBoundingClientRect().top - area.getBoundingClientRect().top - anchor.offset
-            ) <= 2;
-        }""",
-            arg=anchor,
-        )
-    except PlaywrightTimeoutError:
-        geometry = await page.evaluate(
-            """expected => {
-                const area = document.querySelector('[aria-label="Thread history"]');
-                const top = area.getBoundingClientRect().top;
-                return {
-                    expected,
-                    scrollTop: area.scrollTop,
-                    scrollHeight: area.scrollHeight,
-                    viewportHeight: area.clientHeight,
-                    viewportWidth: area.clientWidth,
-                    rows: [...area.querySelectorAll('[data-thread-anchor]')].map(item => ({
-                        cursor: item.dataset.threadAnchor,
-                        offset: item.getBoundingClientRect().top - top,
-                        height: item.getBoundingClientRect().height,
-                    })),
-                };
-            }""",
-            anchor,
-        )
-        thread_id = urlsplit(page.url).fragment.split("/")[-1]
-        (undeclared_outputs_dir() / f"reading-anchor-{thread_id}.json").write_text(json.dumps(geometry, indent=2))
-        raise
 
 
 async def expect_projected_cursor(page: Page, cursor: int) -> None:

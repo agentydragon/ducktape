@@ -110,3 +110,27 @@ py_library(
         "@pypi//pydantic",
     ],
 )
+
+py_library(
+    name = "thread_browser",
+    srcs = ["thread_browser.py"],
+    deps = [
+        ":electric_service",
+        ":history_probe",
+        ":history_trace",
+        ":http2_proxy",
+        ":replication_process",
+        ":replication_source",
+        "//agentplane/app/threads:store",
+        "//agentplane/app/threads/events:event_log",
+        "//agentplane/app/threads/view:content",
+        "//agentplane/protocol:event_log_pb2",
+        "//agentplane/protocol:event_pb2",
+        "//util/bazel:runfiles",
+        "//util/testing:frontend_visual",
+        "//util/testing:undeclared_outputs",
+        "@pypi//playwright",
+        "@pypi//protobuf",
+        "@pypi//pytest",
+    ],
+)

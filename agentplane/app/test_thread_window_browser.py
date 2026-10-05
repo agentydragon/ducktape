@@ -6,26 +6,31 @@ from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
 from urllib.parse import parse_qs, urlsplit
 
+import pytest
 import pytest_bazel
 from playwright.async_api import Page, Request, Route, TimeoutError as PlaywrightTimeoutError, expect
 
-from agentplane.app.test_thread_browser import (
+from agentplane.app.testing import history_trace
+from agentplane.app.testing.electric_service import ElectricService
+from agentplane.app.testing.thread_browser import (
     ThreadBrowser,
     append_items,
     capture_reading_anchor,
-    db_url,
     expect_reading_anchor,
     frames,
     wheel_and_capture_anchor_at_scrollend,
 )
-from agentplane.app.testing import history_trace
 from agentplane.protocol import event_log_pb2, event_pb2
 from util.testing.undeclared_outputs import undeclared_outputs_dir
 
 # gazelle:include_dep @pypi//protobuf
 
-pytest_plugins = ("agentplane.app.test_thread_browser",)
-__all__ = ["db_url"]
+pytest_plugins = ("agentplane.app.testing.thread_browser",)
+
+
+@pytest.fixture
+async def db_url(electric: ElectricService) -> str:
+    return electric.database_url
 
 
 def _append_uneven_items(thread_browser: ThreadBrowser, prefix: str, numbers: range) -> event_log_pb2.EventEntry:
