@@ -219,9 +219,6 @@ class McpLinkageAuthority:
                 if flow.server_id not in configured:
                     await db.delete(flow)
 
-    def servers(self) -> dict[str, McpOAuthServer]:
-        return dict(self._servers)
-
     def subscribe_changes(self, server_id: str) -> asyncio.Event:
         self._server(server_id)
         changed = asyncio.Event()

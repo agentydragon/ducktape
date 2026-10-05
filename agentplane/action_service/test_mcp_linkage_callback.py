@@ -1,8 +1,7 @@
 """Backend OAuth linkage callbacks against migrated PostgreSQL."""
 
 from collections.abc import AsyncIterator
-from types import SimpleNamespace
-from unittest.mock import AsyncMock, Mock
+from unittest.mock import Mock
 from urllib.parse import parse_qs, urlsplit
 
 import httpx
@@ -33,7 +32,13 @@ from agentplane.workload_auth.principal import WorkloadPrincipalResolver
 
 
 @pytest.fixture
-async def linkage(engine: AsyncEngine) -> AsyncIterator[McpLinkageAuthority]:
+def cimd_advertised() -> bool:
+    """Whether the authorization server behind the CIMD-using MCP servers advertises CIMD support."""
+    return True
+
+
+@pytest.fixture
+async def linkage(engine: AsyncEngine, cimd_advertised: bool) -> AsyncIterator[McpLinkageAuthority]:
     cimd_client_id = "https://test-actions.example/oauth/client-metadata.json"
 
     def provider(request: httpx2.Request) -> httpx2.Response:
@@ -49,9 +54,30 @@ async def linkage(engine: AsyncEngine) -> AsyncIterator[McpLinkageAuthority]:
             if form.get("code") == ["test-cimd-code"]:
                 assert form["client_id"] == [cimd_client_id]
                 assert "client_secret" not in form
+                # Expires inside the authority's refresh skew, so the next token lookup refreshes it.
+                return httpx2.Response(
+                    200,
+                    json={
+                        "access_token": "test-cimd-access-token",
+                        "refresh_token": "test-cimd-refresh-token",
+                        "expires_in": 30,
+                    },
+                )
             if form.get("code") == ["test-bad-code"]:
                 return httpx2.Response(200, json={"error": "bad_verification_code"})
             return httpx2.Response(200, json={"access_token": "test-access-token", "expires_in": 3600})
+        if request.url.host in {"test-cimd.example", "test-cimd-other.example"} and request.url.path == (
+            "/.well-known/oauth-authorization-server"
+        ):
+            return httpx2.Response(
+                200,
+                json={
+                    "issuer": "https://test-idp.example",
+                    "authorization_endpoint": "https://test-idp.example/authorize",
+                    "token_endpoint": "https://test-idp.example/token",
+                    "client_id_metadata_document_supported": cimd_advertised,
+                },
+            )
         return httpx2.Response(404)
 
     server = McpOAuthServer(
@@ -163,15 +189,8 @@ async def test_cimd_document_is_public_and_matches_the_configured_client(callbac
 
 
 async def test_shared_cimd_is_used_for_authorization_and_token_exchange(
-    linkage: McpLinkageAuthority, callback_client: httpx.AsyncClient, monkeypatch: pytest.MonkeyPatch
+    linkage: McpLinkageAuthority, callback_client: httpx.AsyncClient
 ) -> None:
-    monkeypatch.setattr(
-        linkage,
-        "_discover",
-        AsyncMock(
-            return_value=("https://test-idp.example/authorize", "https://test-idp.example/token", None, [], True)
-        ),
-    )
     started = await linkage.start(
         "test-cimd", McpLinkageStart(), OperatorPrincipal(issuer="test-issuer", subject="test-operator")
     )
@@ -186,54 +205,15 @@ async def test_shared_cimd_is_used_for_authorization_and_token_exchange(
         "/v1/mcp-linkage/callback", params={"state": query["state"][0], "code": "test-cimd-code"}
     )
     assert response.status_code == 200, response.text
-    refreshed = await linkage._refresh(
-        linkage.servers()["test-cimd"], "test-refresh-token", [], "https://test-idp.example/token", None
-    )
-    assert refreshed["access_token"] == "test-refreshed-access-token"
+    assert await linkage.access_token_for_execution("test-cimd") == "test-refreshed-access-token"
 
 
-async def test_cimd_link_requires_discovery_support(
-    linkage: McpLinkageAuthority, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    monkeypatch.setattr(
-        linkage,
-        "_discover",
-        AsyncMock(
-            return_value=("https://test-idp.example/authorize", "https://test-idp.example/token", None, [], False)
-        ),
-    )
+@pytest.mark.parametrize("cimd_advertised", [False])
+async def test_cimd_link_requires_discovery_support(linkage: McpLinkageAuthority) -> None:
     with pytest.raises(McpLinkageConflictError, match="does not advertise Client ID Metadata Document support"):
         await linkage.start(
             "test-cimd", McpLinkageStart(), OperatorPrincipal(issuer="test-issuer", subject="test-operator")
         )
-
-
-async def test_oauth_discovery_reports_cimd_support(
-    linkage: McpLinkageAuthority, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    monkeypatch.setattr(
-        "agentplane.action_service.mcp_linkage.build_protected_resource_metadata_discovery_urls", lambda *_args: []
-    )
-    monkeypatch.setattr(
-        "agentplane.action_service.mcp_linkage.build_oauth_authorization_server_metadata_discovery_urls",
-        lambda *_args: ["https://test-idp.example/.well-known/oauth-authorization-server"],
-    )
-    monkeypatch.setattr(
-        "agentplane.action_service.mcp_linkage.handle_auth_metadata_response",
-        AsyncMock(
-            return_value=(
-                True,
-                SimpleNamespace(
-                    authorization_endpoint="https://test-idp.example/authorize",
-                    token_endpoint="https://test-idp.example/token",
-                    client_id_metadata_document_supported=True,
-                ),
-            )
-        ),
-    )
-    server = linkage.servers()["test-cimd"].model_copy(update={"scopes": ["openid"]})
-    discovered = await linkage._discover(server)
-    assert discovered[-1] is True
 
 
 if __name__ == "__main__":
