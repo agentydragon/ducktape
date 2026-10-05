@@ -702,7 +702,7 @@ def generate_manifests(root: Path) -> None:
     dns_automation_artifact = artifact("dns-automation", dns_automation.OUTPUT_DIR)
     dns_automation.dns_automation(
         flux_chart,
-        write_directory(root, dns_automation_artifact, functools.partial(dns_automation.chart, mesh=mesh)),
+        write_directory(root, dns_automation_artifact, dns_automation.chart),
         tofu_controller_kustomization,
         external_secrets_operator_kustomization,
     )

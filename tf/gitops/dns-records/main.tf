@@ -1,8 +1,6 @@
-# Route 53 DNS for allegedly.works — zone records and domain delegation.
+# Route 53 domain delegation for allegedly.works; DNS records are ExternalDNS-owned.
 #
 # All DNS is served by AWS Route 53. No in-cluster DNS authority.
-# var.public_nodes is the mesh roster's projection, set on the generated Terraform CR
-# (cluster/generated/dns-automation/dns-automation.k8s.yaml) from the repo-root nebula-mesh.json.
 
 terraform {
   required_version = ">= 1.0"
@@ -17,13 +15,6 @@ terraform {
 
 locals {
   domain = "allegedly.works"
-
-  # Every public node runs the Gateway (Cilium Envoy on the host network).
-  public_gateway_ips = [for node in values(var.public_nodes) : node.public_ip]
-
-  # Kubernetes API endpoints — every control-plane node. The apiserver listens on
-  # the host directly on :6443, independent of Cilium gateway/L2-announce state.
-  kube_api_ips = [for node in values(var.public_nodes) : node.public_ip if node.role == "control-plane"]
 }
 
 provider "aws" {
@@ -35,125 +26,65 @@ data "aws_route53_zone" "zone" {
   zone_id = var.route53_zone_id
 }
 
-import {
-  to = aws_route53_record.wildcard
-  id = "Z02901943N8ZFQFOD9P5I_*.allegedly.works_A"
-}
-
-import {
-  to = aws_route53_record.apex
-  id = "Z02901943N8ZFQFOD9P5I_allegedly.works_A"
-}
-
-# Wildcard A record — all subdomains resolve to public Kubernetes nodes.
-resource "aws_route53_record" "wildcard" {
-  #checkov:skip=CKV2_AWS_23:A records point to external public gateway nodes, not AWS resources
-  zone_id         = var.route53_zone_id
-  name            = "*.${local.domain}"
-  type            = "A"
-  ttl             = 300
-  records         = local.public_gateway_ips
-  allow_overwrite = true
-}
-
-# Apex A record
-resource "aws_route53_record" "apex" {
-  #checkov:skip=CKV2_AWS_23:A records point to external public gateway nodes, not AWS resources
-  zone_id         = var.route53_zone_id
-  name            = local.domain
-  type            = "A"
-  ttl             = 300
-  records         = local.public_gateway_ips
-  allow_overwrite = true
-}
-
-# --- Inbound mail (the Haku mailbox, haku/mailbox/) ---------------------------
-#
-# mx.allegedly.works is already covered by the wildcard, but MX targets should
-# not depend on wildcard semantics — keep an explicit A record on the same
-# public-gateway roster. The haku-mailbox `smtp-ingress` DaemonSet binds port 25 on
-# every node and forwards the sending MTA's address to Stalwart with PROXY
-# protocol (cluster/cdk8s/haku/mailbox.py).
-resource "aws_route53_record" "mx_host" {
-  #checkov:skip=CKV2_AWS_23:A records point to external public gateway nodes, not AWS resources
-  zone_id         = var.route53_zone_id
-  name            = "mx.${local.domain}"
-  type            = "A"
-  ttl             = 300
-  records         = local.public_gateway_ips
-  allow_overwrite = true
-}
-
-resource "aws_route53_record" "apex_mx" {
-  zone_id         = var.route53_zone_id
-  name            = local.domain
-  type            = "MX"
-  ttl             = 300
-  records         = ["10 mx.${local.domain}"]
-  allow_overwrite = true
-}
-
-# The domain receives mail but sends none: publish SPF -all + DMARC reject so
-# nobody can spoof @allegedly.works senders. Revisit both if Haku ever gets an
-# outbound-mail path on this domain.
-resource "aws_route53_record" "apex_spf" {
-  zone_id         = var.route53_zone_id
-  name            = local.domain
-  type            = "TXT"
-  ttl             = 300
-  records         = ["v=spf1 -all"]
-  allow_overwrite = true
-}
-
-resource "aws_route53_record" "dmarc" {
-  zone_id         = var.route53_zone_id
-  name            = "_dmarc.${local.domain}"
-  type            = "TXT"
-  ttl             = 300
-  records         = ["v=DMARC1; p=reject; adkim=s; aspf=s"]
-  allow_overwrite = true
-}
-
-# Kubernetes API A record. This intentionally overrides the wildcard record
-# because kubeconfigs connect to api.allegedly.works:6443.
-resource "aws_route53_record" "api" {
-  #checkov:skip=CKV2_AWS_23:A records point to external Kubernetes API nodes, not AWS resources
-  zone_id         = var.route53_zone_id
-  name            = "api.${local.domain}"
-  type            = "A"
-  ttl             = 60
-  records         = local.kube_api_ips
-  allow_overwrite = true
-}
-
-# ExternalDNS v0.22.0 maps its `external-dns-%{record_type}.` TXT prefix and
-# `wildcard` replacement to these seven names. The TXT registry recognizes an
-# existing record by its heritage and owner labels; the resource label is optional.
-# Keep these markers Terraform-owned while ExternalDNS is dry-run. The later
-# ownership handoff must forget both these markers and the seven records above
-# without destroying any Route 53 record sets.
-locals {
-  external_dns_ownership_txt_names = {
-    wildcard_a = "external-dns-a.wildcard.${local.domain}"
-    apex_a     = "external-dns-a.${local.domain}"
-    mx_a       = "external-dns-a.mx.${local.domain}"
-    api_a      = "external-dns-a.api.${local.domain}"
-    apex_mx    = "external-dns-mx.${local.domain}"
-    apex_txt   = "external-dns-txt.${local.domain}"
-    dmarc_txt  = "external-dns-txt._dmarc.${local.domain}"
+# ExternalDNS owns these seven record sets and their TXT registry markers after
+# the previous adoption stage. Forget every address without deleting Route 53
+# records. CLEANUP(added 2026-10-05): Remove these blocks only after the
+# dns-records state has applied the handoff. Domain registration stays in Terraform.
+removed {
+  from = aws_route53_record.wildcard
+  lifecycle {
+    destroy = false
   }
 }
 
-resource "aws_route53_record" "external_dns_ownership" {
-  #checkov:skip=CKV2_AWS_23:TXT ownership metadata has no AWS alias target
-  for_each = local.external_dns_ownership_txt_names
+removed {
+  from = aws_route53_record.apex
+  lifecycle {
+    destroy = false
+  }
+}
 
-  zone_id         = var.route53_zone_id
-  name            = each.value
-  type            = "TXT"
-  ttl             = 300
-  records         = ["heritage=external-dns,external-dns/owner=ducktape-allegedly-works"]
-  allow_overwrite = false
+removed {
+  from = aws_route53_record.mx_host
+  lifecycle {
+    destroy = false
+  }
+}
+
+removed {
+  from = aws_route53_record.apex_mx
+  lifecycle {
+    destroy = false
+  }
+}
+
+removed {
+  from = aws_route53_record.apex_spf
+  lifecycle {
+    destroy = false
+  }
+}
+
+removed {
+  from = aws_route53_record.dmarc
+  lifecycle {
+    destroy = false
+  }
+}
+
+removed {
+  from = aws_route53_record.api
+  lifecycle {
+    destroy = false
+  }
+}
+
+# A resource address covers all seven for_each marker instances.
+removed {
+  from = aws_route53_record.external_dns_ownership
+  lifecycle {
+    destroy = false
+  }
 }
 
 # Domain registration — delegate to Route 53 nameservers

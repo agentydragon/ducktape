@@ -1,5 +1,4 @@
-"""Route 53 records for allegedly.works (tf/gitops/dns-records), and the flux-system
-copy of the Route 53 credential its Terraform runner reads."""
+"""Route 53 domain delegation and the flux-system credential its Terraform runner reads."""
 
 from __future__ import annotations
 
@@ -13,19 +12,11 @@ from cluster.cdk8s import external_creds, terraform
 from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on_many
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
 from cluster.cdk8s.providers.external_secrets.external_secret import ExternalSecret, remote_data
-from cluster.scripts import nebula_mesh
 
 OUTPUT_DIR = f"{GENERATED_ROOT}/dns-automation"
 _NAMESPACE = "flux-system"
 _CREDENTIALS_SECRET = "aws-route53-credentials"
 _CREDENTIALS_SOURCE = "aws-route53-dns-automation-credentials"
-
-
-class PublicNode(BaseModel):
-    model_config = ConfigDict(frozen=True, extra="forbid")
-
-    public_ip: str
-    role: str
 
 
 class DnsRecordsVars(BaseModel):
@@ -34,11 +25,10 @@ class DnsRecordsVars(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
 
     route53_zone_id: str
-    public_nodes: dict[str, PublicNode]
 
 
-def chart(app: App, mesh: nebula_mesh.Mesh) -> Chart:
-    """Route 53 records for allegedly.works (tf/gitops/dns-records)."""
+def chart(app: App) -> Chart:
+    """Route 53 domain delegation for allegedly.works (tf/gitops/dns-records)."""
     chart = Chart(app, "dns-records", disable_resource_name_hashes=True)
     # Consumer-owned identity for reading approved canonical credentials.
     k8s.KubeServiceAccount(
@@ -60,17 +50,7 @@ def chart(app: App, mesh: nebula_mesh.Mesh) -> Chart:
         chart,
         "terraform",
         name="dns-records",
-        variables=DnsRecordsVars(
-            route53_zone_id="Z02901943N8ZFQFOD9P5I",
-            # Inline rather than a ConfigMap read through varsFrom: tofu-controller writes
-            # spec.vars structurally into the runner's tfvars (a varsFrom value arrives as one
-            # string) and reconciles a spec change at once, while a referenced ConfigMap is
-            # never watched and waits for the interval.
-            public_nodes={
-                name: PublicNode.model_validate(host, from_attributes=True)
-                for name, host in sorted(mesh.public_kubernetes_nodes().items())
-            },
-        ),
+        variables=DnsRecordsVars(route53_zone_id="Z02901943N8ZFQFOD9P5I"),
         env_from=[terraform.secret_env_from(_CREDENTIALS_SECRET)],
     )
     return chart
