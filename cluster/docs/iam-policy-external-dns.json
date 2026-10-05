@@ -4,11 +4,7 @@
     {
       "Sid": "ManageAllegedlyWorksRecords",
       "Effect": "Allow",
-      "Action": [
-        "route53:ChangeResourceRecordSets",
-        "route53:GetHostedZone",
-        "route53:ListResourceRecordSets"
-      ],
+      "Action": ["route53:ChangeResourceRecordSets", "route53:GetHostedZone", "route53:ListResourceRecordSets"],
       "Resource": "arn:aws:route53:::hostedzone/Z02901943N8ZFQFOD9P5I"
     },
     {
