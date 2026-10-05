@@ -1,9 +1,0 @@
-# Frontend build tooling
-# Vite binary from root workspace
-
-load("@npm_ducktape//:vite/package_json.bzl", vite_bin = "bin")
-
-package(default_visibility = ["//visibility:public"])
-
-# Vite binary for frontend builds
-vite_bin.vite_binary(name = "vite")

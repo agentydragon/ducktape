@@ -600,7 +600,6 @@ npm.npm_translate_lock(
         "eslint": ["eslint=./bin/eslint.js"],
         "json-schema-to-typescript": ["json2ts=./dist/src/cli.js"],
         "prettier": ["prettier=./bin/prettier.cjs"],
-        "vite": ["vite=./bin/vite.js"],
         "http-server": ["http-server=./bin/http-server"],
     },
     # Track package.json and workspace files for auto-update
