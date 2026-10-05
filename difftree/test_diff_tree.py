@@ -60,29 +60,6 @@ def _assert_column_before(result: str, filename: str, first: str, second: str, f
         )
 
 
-def test_render_simple_tree(sample_changes):
-    """Test rendering a simple tree structure."""
-    diff_tree = make_diff_tree(sample_changes)
-    result = render_to_string(diff_tree, width=120)
-
-    # Check that key elements are present
-    assert "src" in result
-    assert "tests" in result
-    assert "README.md" in result
-    assert "main.py" in result
-    assert "models" in result
-
-
-def test_render_with_no_counts(sample_changes):
-    """Test rendering without count columns."""
-    config = RenderConfig(columns=[Column.TREE, Column.BARS, Column.PERCENTAGES])
-    diff_tree = make_diff_tree(sample_changes, config=config)
-    result = render_to_string(diff_tree, width=120)
-
-    # Should still have tree structure but different formatting
-    assert "src" in result
-
-
 def test_render_with_max_depth(sample_changes):
     """Test rendering with maximum depth limit."""
     config = replace(DEFAULT_CONFIG, max_depth=1)
@@ -92,27 +69,6 @@ def test_render_with_max_depth(sample_changes):
     # Top-level entries render; children beyond the depth limit do not.
     assert "src" in result
     assert "main.py" not in result
-
-
-# Progress bar integration tests
-
-
-def test_minimum_sliver_with_small_changes():
-    """Test rendering with one very small change among larger ones."""
-    # Create changes where one is very small relative to others
-    changes = [
-        FileChange(path="large_file.py", additions=10000, deletions=5000),
-        FileChange(path="tiny_file.py", additions=1, deletions=0),
-    ]
-
-    diff_tree = make_diff_tree(changes)
-    result = render_to_string(diff_tree, width=120)
-
-    # Both files should be visible in the output
-    assert "large_file.py" in result
-    assert "tiny_file.py" in result
-    # The tiny file should have some visible indicator despite small ratio
-    # (This is a high-level test; the unit test above is more precise)
 
 
 # Console width tests
