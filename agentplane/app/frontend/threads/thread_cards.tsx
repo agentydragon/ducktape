@@ -462,9 +462,7 @@ function ToolCard({
                 Discarded context does not undo tool side effects or change its recorded execution outcome.
               </Text>
               <Group justify="space-between" wrap="nowrap">
-                <Group gap="xs">
-                  <ItemStatus items={[entity]} live={live} />
-                </Group>
+                <Group gap="xs">{itemStatus([entity], live)}</Group>
                 <Group gap="xs" wrap="nowrap">
                   {rawSwitch}
                   <EvidenceToggle entity={entity} />
@@ -494,7 +492,7 @@ function ToolCard({
                   </Text>
                 ))
               }
-              trailing={<ItemStatus items={[entity]} live={live} titleMarked={!opened} />}
+              trailing={itemStatus([entity], live, !opened)}
               aside={
                 args?.error && (
                   <button className="agentplane-step-retry" onClick={args.retry} type="button">
@@ -595,14 +593,16 @@ export function EntityCard({
     entity.state.completion === null &&
     entity.state.recovery === null &&
     live;
+  const status = itemStatus([entity], live);
   const body = (
     <>
       <EvidenceToggle entity={entity} />
-      {((!reasoning && entity.state.completion === null && !streamingText) || entity.state.recovery !== null) && (
-        <Group gap="xs" mb="xs">
-          <ItemStatus items={[entity]} live={live} />
-        </Group>
-      )}
+      {status &&
+        ((!reasoning && entity.state.completion === null && !streamingText) || entity.state.recovery !== null) && (
+          <Group gap="xs" mb="xs">
+            {status}
+          </Group>
+        )}
       <RecoveryNotes state={entity.state} tool={false} />
       {reasoning ? (
         entity.textRef ? (
@@ -610,7 +610,7 @@ export function EntityCard({
             <ReasoningPreview
               reference={entity.textRef}
               mark={reasoningMark}
-              status={<ItemStatus items={[entity]} live={live} />}
+              status={status}
               open={reasoningOpen}
               overflows={reasoningOverflows}
               setOpen={setReasoningOpen}
@@ -652,60 +652,51 @@ export function EntityCard({
   return <Box className="agentplane-evidence-owner">{body}</Box>;
 }
 
-/** Whether any of `items` is unfinished -- streaming while `live`, otherwise never completed in
- * the retained history -- and whether any tool call among them failed. */
-export function ItemStatus({
-  items,
-  live,
-  titleMarked = false,
-}: {
-  items: ThreadEntity[];
-  live: boolean;
-  /** Leave out the Failed and Streaming/Incomplete badges, for a line whose title shows them. */
-  titleMarked?: boolean;
-}): JSX.Element {
+interface StatusBadge {
+  label: string;
+  color?: MantineColor;
+}
+
+/** A badge says how items differ from the ordinary case -- ran to completion, still in the model's
+ * context, no failure -- which wears none. */
+function statusBadges(items: ThreadEntity[], live: boolean, titleMarked: boolean): StatusBadge[] {
   const states = items.flatMap((item) => ("kind" in item.state ? [item.state] : []));
-  const unfinished = states.some((state) => state.completion === null && state.recovery === null);
-  const interrupted = states.some((state) => state.completion === null && state.recovery !== null);
-  const recoveries = [...new Set(states.flatMap((state) => (state.recovery === null ? [] : [state.recovery])))];
-  return (
+  const badges: StatusBadge[] = [
+    ...(!titleMarked && states.some((state) => state.completion === null && state.recovery === null)
+      ? [{ label: live ? "Streaming" : "Incomplete" }]
+      : []),
+    ...(states.some((state) => state.completion === null && state.recovery !== null) ? [{ label: "Interrupted" }] : []),
+    ...states.flatMap((state) => (state.recovery === null ? [] : (recoveryBadge(state.recovery) ?? []))),
+    ...(!titleMarked && states.some((state) => state.tool_succeeded === false)
+      ? [{ label: "Failed", color: "red" }]
+      : []),
+  ];
+  return [...new Map(badges.map((badge) => [badge.label, badge])).values()];
+}
+
+/** The badges for `items`, or `null` when none is out of the ordinary, so the caller can leave out
+ * the row or gap it would hold them in. Unfinished items are streaming while `live`, otherwise
+ * never completed in the retained history.
+ *
+ * `titleMarked` leaves out the Failed and Streaming/Incomplete badges, for a line whose title shows them. */
+export function itemStatus(items: ThreadEntity[], live: boolean, titleMarked = false): JSX.Element | null {
+  const badges = statusBadges(items, live, titleMarked);
+  return badges.length === 0 ? null : (
     <>
-      {!titleMarked && unfinished && (
-        <Badge role="img" aria-label={live ? "Streaming" : "Incomplete"}>
-          {live ? "Streaming" : "Incomplete"}
+      {badges.map(({ label, color }) => (
+        <Badge key={label} color={color} role="img" aria-label={label}>
+          {label}
         </Badge>
-      )}
-      {interrupted && (
-        <Badge role="img" aria-label="Interrupted">
-          Interrupted
-        </Badge>
-      )}
-      {recoveries.map((recovery) => {
-        const { label, color } = recoveryPresentation(recovery);
-        return (
-          <Badge key={recovery} color={color} role="img" aria-label={label}>
-            {label}
-          </Badge>
-        );
-      })}
-      {states.some((state) => state.recovery !== null && state.tool_succeeded === true) && (
-        <Badge color="green" role="img" aria-label="Succeeded">
-          Succeeded
-        </Badge>
-      )}
-      {!titleMarked && states.some((state) => state.tool_succeeded === false) && (
-        <Badge color="red" role="img" aria-label="Failed">
-          Failed
-        </Badge>
-      )}
+      ))}
     </>
   );
 }
 
-function recoveryPresentation(recovery: number): { label: string; color: string } {
+/** `RETAINED` is what a recovery ordinarily leaves, so it has no badge. */
+function recoveryBadge(recovery: number): StatusBadge | null {
   switch (recovery) {
     case RecoveryDisposition.RETAINED:
-      return { label: "Retained in context", color: "gray" };
+      return null;
     case RecoveryDisposition.ABSENT:
       return { label: "Not retained in context", color: "gray" };
     case RecoveryDisposition.REVISED:

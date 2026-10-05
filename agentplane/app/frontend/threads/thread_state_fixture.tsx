@@ -146,6 +146,11 @@ export function serving(
   };
 }
 
+/** The status badges within `container`, by label. */
+export function badgeLabels(container: Element): string[] {
+  return [...container.querySelectorAll(".mantine-Badge-root")].map((badge) => badge.getAttribute("aria-label") ?? "");
+}
+
 export async function toggle(summary: Element): Promise<void> {
   const details = summary.parentElement as HTMLDetailsElement;
   await act(async () => {

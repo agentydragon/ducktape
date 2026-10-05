@@ -44,7 +44,7 @@ import {
 import { LiveStatus, useRequiredSandboxesLive, useRequiredThreadsLive } from "../live";
 import { StaleNotice, useOptionalStreamStatus, type StreamStatus } from "../stream_status";
 import { RetainedDisclosure, RetainedDisclosureProvider, useRetainedDisclosure } from "./retained_disclosures";
-import { CollapsibleCard, EntityCard, ItemStatus, pendingSentMessage } from "./thread_cards";
+import { CollapsibleCard, EntityCard, itemStatus, pendingSentMessage } from "./thread_cards";
 import {
   PendingInputMessages,
   ProjectedCommandRows,
@@ -118,7 +118,7 @@ function RunView({
           <Text size="xs" c="dimmed">
             {summarizeRun(entities)}
           </Text>
-          <ItemStatus items={entities} live={entities.some(live)} />
+          {itemStatus(entities, entities.some(live))}
         </Flex>
       }
       threadId={threadId}
