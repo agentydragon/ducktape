@@ -20,7 +20,7 @@ use debundle_e2e_support::*;
 /// bundle printed `SZD` instead of the original `SDZ`.
 #[test]
 fn impure_export_default_expr_restores_s_chain_ordering() {
-    expect_rejection(
+    expect_sequenced_cycle_rejection(
         FixtureOpts::new(
             r#"const init = (globalThis.seq = "S", "i");
 export default (globalThis.seq = globalThis.seq + "D");
@@ -34,7 +34,7 @@ export { init, after };
             ],
         )
         .with_unassigned_mode(unassigned_mode_inline()),
-        &["cycle", "unrealizable"],
+        &["mod_z"],
     );
 }
 
@@ -42,7 +42,7 @@ export { init, after };
 /// static block.
 #[test]
 fn export_default_class_with_static_block_restores_s_chain_ordering() {
-    expect_rejection(
+    expect_sequenced_cycle_rejection(
         FixtureOpts::new(
             r#"const init = (globalThis.seq = "S", "i");
 export default class Boot {
@@ -60,7 +60,7 @@ export { init, after };
             ],
         )
         .with_unassigned_mode(unassigned_mode_inline()),
-        &["cycle", "unrealizable"],
+        &["mod_z"],
     );
 }
 
