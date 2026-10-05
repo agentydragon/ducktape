@@ -155,13 +155,6 @@ async def test_optimize_prompts_two_iterations_async(
     # Ensure logging is initialized for optimizer
     optimizer.DualOutputLogging.setup_logging(verbose=False)
 
-    # Disable plotting by stubbing tracker.generate_report
-    orig_generate_report = optimizer.ScoreEvolutionTracker.generate_report
-
-    def _no_plot(self, _run_dir, _log_path):
-        return "report"
-
-    monkeypatch.setattr(optimizer.ScoreEvolutionTracker, "generate_report", _no_plot)
     monkeypatch.setenv("DUCK_ALLOW_UNSANDBOXED", "1")
 
     # Create a fake docker client (won't be used since we're mocking create_runner)
@@ -216,9 +209,6 @@ async def test_optimize_prompts_two_iterations_async(
     assert prompts[0].strip()
     assert isinstance(prompts[1], str)
     assert prompts[1].strip()
-
-    # Restore original method
-    monkeypatch.setattr(optimizer.ScoreEvolutionTracker, "generate_report", orig_generate_report)
 
 
 if __name__ == "__main__":
