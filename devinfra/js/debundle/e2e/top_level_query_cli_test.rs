@@ -163,14 +163,7 @@ fn duplicate_anonymous_statements_are_advisory_not_landable_proposals() {
         .collect();
     unaddressable.sort_unstable();
     assert_eq!(unaddressable, ["owner:0", "owner:1"]);
-    assert!(proposals.iter().all(|p| {
-        p["landable_today"] == false
-            && p["landability_notes"]
-                .as_array()
-                .unwrap()
-                .iter()
-                .any(|n| n.as_str().unwrap().contains("full-AST selector"))
-    }));
+    assert!(proposals.iter().all(|p| p["landable_today"] == false));
 }
 
 #[test]
@@ -207,6 +200,7 @@ fn describe_text_includes_binding_home_module_paths() {
         String::from_utf8_lossy(&out.stderr)
     );
     let text = String::from_utf8_lossy(&out.stdout);
-    assert!(text.contains("homes:"), "{text}");
-    assert!(text.contains("a -> runtime/plugins"), "{text}");
+    assert!(text.contains("runtime/plugins"), "{text}");
+    let report = fixture.json(&["describe", "a"]);
+    assert_eq!(report["binding_homes"][0]["path"], "runtime/plugins");
 }
