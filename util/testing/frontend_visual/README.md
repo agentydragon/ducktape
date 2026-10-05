@@ -1,9 +1,9 @@
 # frontend_visual
 
 Shared Puppeteer/Playwright infrastructure for visual render-health tests (see
-`visual-test-lib.mjs` for the JS/Puppeteer path used by `study_casino/frontend`,
-`props/frontend` and `agentplane/app/frontend`, and `frontend_visual.py` for the
-Python/Playwright path used by `study_casino`, `finance/augur` and `airlock/frontend`).
+`visual-test-lib.mjs` for the JS/Puppeteer path used by `props/frontend` and
+`agentplane/app/frontend`, and `frontend_visual.py` for the Python/Playwright path used by
+`study_casino`, `study_casino/frontend`, `finance/augur` and `airlock/frontend`).
 Browser tests are moving to the Python path, lane by lane — see [The Python sweep](#the-python-sweep).
 `capture.mjs` holds the lower-level page-prep/capture
 primitives (`prepareDeterministicPage`, `screenshotElement`, `waitForStable`) that
@@ -30,8 +30,7 @@ rendered PNG for PR visual review instead — see
 where it wants its scenario list to live.
 
 - **`main(name, options)`** — one `js_test` per scenario, each with its own entry-point `.mjs`.
-  Scenario names are then in BUILD as well as in the harness. `study_casino/frontend` works this
-  way.
+  Scenario names are then in BUILD as well as in the harness. No package works this way now.
 - **`runScenarios(table, {title})`** — one `js_test` over a whole table, split with `shard_count`.
   The list lives only in the table; BUILD carries a shard count, which needs no edit when the
   table grows. One browser serves every scenario in a shard, and a failure is recorded and the
@@ -74,6 +73,12 @@ selectors, the request fence, the fetch ledger, zero uncaught page errors — wi
   scenario. `--test_filter` is pytest's `-k`: a case-insensitive match that also sees the file name.
   Shards deal scenarios out by position, filter first (`util/testing/sharding.py`), and a filter that
   matches nothing fails.
+- **A named font must be declared as well as loaded.** With `fonts` and `font_family`, each scenario
+  asserts that an `@font-face` declares the family and that it loaded. `document.fonts.check` alone
+  (the Puppeteer sweep's assertion) is true for a family nothing declares, so a stylesheet that never
+  arrived passes it and the page renders in the fallback font. The assertion is made of the mounted,
+  painted scene: a face loads only once laid-out text uses it, which on a loaded worker is after
+  the navigation's network idle.
 - **A fresh browser per scenario**, not one per shard. Launch and close cost about 0.1s on the RBE
   worker, and what one scenario renders cannot then depend on the scenarios that ran before it.
 - **An element is captured to the nearest pixel**, as Puppeteer does, not outward as Playwright's own
@@ -120,7 +125,7 @@ owns that mapping; visual harnesses must not inject a blanket `font-family` rule
 
 An application that intentionally uses a named font owns its font asset and `@font-face` rule.
 Fetch a pinned external asset through Bazel when practical, bundle it with the application, and
-pass the asset plus `font_family` to `visual_test` when using the shared macro. This keeps named
+pass the asset plus `font_family` to `visual_test` or `py_visual_test` when using the shared macro. This keeps named
 typography in the product's normal CSS while keeping generic-family determinism independent of
 the page cascade.
 

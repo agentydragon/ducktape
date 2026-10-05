@@ -131,7 +131,7 @@ def _seed_fixture_state(origin: str) -> None:
     )
     _post(origin, "/actions/convert", {"client_action_id": "visual-seed-convert", "amount": 100})
     # Ack the changelog so the "what's new" modal doesn't cover every view;
-    # the modal has its own harness-based visual test (frontend:visual_changelog).
+    # the modal has its own harness-based visual test (//study_casino/frontend:visual, scenario `changelog`).
     _post(
         origin, "/actions/changelog/ack", {"client_action_id": "visual-seed-changelog", "last_id": LATEST_CHANGELOG_ID}
     )

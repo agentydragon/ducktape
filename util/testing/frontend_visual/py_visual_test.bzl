@@ -39,8 +39,9 @@ def py_visual_test(
       assets: everything else the harness page pulls over `file://`: its `index.html`, any
         stylesheet, the bundle rule itself.
       fonts: optional app-owned font filegroup the harness serves alongside its assets.
-      font_family: optional named family asserted against what actually rendered. Required with
-        `fonts`, so a custom font asset cannot be staged without declaring its purpose.
+      font_family: optional named family, which the harness's stylesheet must declare with an
+        `@font-face` and which must have loaded. Required with `fonts`, so a custom font asset
+        cannot be staged without declaring its purpose.
       env: extra environment for the sweep.
       tags: extra tags; `visual` is always added.
       **kwargs: passed to `py_test` -- `size` and `shard_count` in practice.
