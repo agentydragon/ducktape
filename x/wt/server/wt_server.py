@@ -140,6 +140,9 @@ class WtDaemon:
         # Centralized GitHub watcher (replaces per-worktree PRService)
         self.github_watcher: GitHubWatcher | None = None
         self._state_lock = asyncio.Lock()
+        # A worktree enters `gitstatusd_clients` only once its process is up, so concurrent starts for one worktree
+        # (discovery and registration of a new one) would each spawn a process and orphan all but the last.
+        self._gitstatusd_start_lock = asyncio.Lock()
         # Strong reference so the signal-handler-created stop task is not garbage-collected.
         self._shutdown_task: asyncio.Task[None] | None = None
         self.git_manager = GitManager(config=self.config)
@@ -233,29 +236,30 @@ class WtDaemon:
             logger.error("Cannot start gitstatusd for %s: %s", worktree_info.name, error)
             return
 
-        if worktree_info.wtid in self.gitstatusd_clients:
-            # Ensure watcher exists
-            if worktree_info.wtid not in self.git_watchers:
-                await self._ensure_git_watcher(worktree_info)
-            return
+        async with self._gitstatusd_start_lock:
+            if worktree_info.wtid in self.gitstatusd_clients:
+                # Ensure watcher exists
+                if worktree_info.wtid not in self.git_watchers:
+                    await self._ensure_git_watcher(worktree_info)
+                return
 
-        # Create listener - it owns its signal, no callbacks needed
-        gs_client = GitstatusdListener(worktree_info.path, self.config, self.git_manager)
-        await gs_client.start()
-        # Register the listener's signal with the store
-        self.store.register_gitstatusd(worktree_info.path, gs_client.status)
-        # Kick an initial nonblocking refresh; watcher/poll keeps it fresh
-        self._initial_status_task = asyncio.create_task(gs_client.update_working_status())
-        self.gitstatusd_clients[worktree_info.wtid] = gs_client
+            # Create listener - it owns its signal, no callbacks needed
+            gs_client = GitstatusdListener(worktree_info.path, self.config, self.git_manager)
+            await gs_client.start()
+            # Register the listener's signal with the store
+            self.store.register_gitstatusd(worktree_info.path, gs_client.status)
+            # Kick an initial nonblocking refresh; watcher/poll keeps it fresh
+            self._initial_status_task = asyncio.create_task(gs_client.update_working_status())
+            self.gitstatusd_clients[worktree_info.wtid] = gs_client
 
-        # Start .git watcher to drive status updates
-        await self._ensure_git_watcher(worktree_info)
+            # Start .git watcher to drive status updates
+            await self._ensure_git_watcher(worktree_info)
 
-        # GitHubWatcher sees the new branch via store.active_branches
-        if self.github_watcher:
-            self.github_watcher.trigger_refresh()
+            # GitHubWatcher sees the new branch via store.active_branches
+            if self.github_watcher:
+                self.github_watcher.trigger_refresh()
 
-        logger.info("Started gitstatusd for worktree %s", worktree_info.name)
+            logger.info("Started gitstatusd for worktree %s", worktree_info.name)
 
     async def _stop_gitstatusd_for_worktree(self, worktree_info: DiscoveredWorktree) -> None:
         """Stop gitstatusd for a worktree."""
