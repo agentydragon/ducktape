@@ -287,7 +287,7 @@ function formatCreditBalance(raw: string | null | undefined): string {
   if (raw == null) return "available";
   const amount = Number(raw);
   if (!Number.isFinite(amount)) return "available";
-  return `${new Intl.NumberFormat(undefined, { maximumFractionDigits: 4 }).format(amount)} credits left`;
+  return `${new Intl.NumberFormat(undefined, { maximumFractionDigits: 0 }).format(amount)} credits left`;
 }
 
 /** Peak hours cost a multiple per token, so they belong beside the quota they drain. */

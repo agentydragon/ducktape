@@ -2,7 +2,7 @@
 
 from dataclasses import dataclass
 from datetime import UTC, datetime, tzinfo
-from decimal import Decimal, InvalidOperation
+from decimal import ROUND_HALF_UP, Decimal, InvalidOperation
 
 from aiquota.models import AllQuotas, ExtraSpend, FetchSuccess, PaidCredits, QuotaWindow, SuccessfulProviderFetch
 from aiquota.pace import compute_pace, is_exhausted
@@ -216,7 +216,7 @@ def _format_paid_credits(credits: PaidCredits | None, active: bool) -> str | Non
             return "credits available"
         if not amount.is_finite():
             return "credits available"
-        balance = f"{amount:,.4f}".rstrip("0").rstrip(".") + " credits left"
+        balance = f"{amount.quantize(Decimal(1), rounding=ROUND_HALF_UP):,} credits left"
     return f"⚡ using paid credits · {balance}" if active else balance
 
 

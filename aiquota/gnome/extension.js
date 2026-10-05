@@ -254,7 +254,7 @@ function formatPaidCredits(credits, active) {
   else if (credits.balance != null) {
     const parsed = Number(credits.balance);
     if (Number.isFinite(parsed))
-      amount = `${new Intl.NumberFormat(undefined, { maximumFractionDigits: 4 }).format(parsed)} left`;
+      amount = `${new Intl.NumberFormat(undefined, { maximumFractionDigits: 0 }).format(parsed)} left`;
   }
   return `${active ? "⚡ using paid credits" : "paid credits"} · ${amount}`;
 }
