@@ -3,8 +3,7 @@
  * Python side (util/testing/frontend_visual.py, Playwright): both read the
  * same chromium-flags.json and frozen-clock.js, and both resolve the hermetic
  * browser from CHROMIUM_HEADLESS_SHELL (the Bazel-wired rootpath of the
- * @chrome_headless_shell//:executable binary), falling back to the ambient
- * PLAYWRIGHT_BROWSERS_PATH for a local `bazel run`.
+ * @chrome_headless_shell//:executable binary).
  */
 
 import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
@@ -54,15 +53,17 @@ export const DISABLE_ANIMATIONS_CSS = `
 }
 `;
 
-/** Launch headless Chromium with the container-safe base flags plus `args`. */
+/**
+ * Launch headless Chromium with the container-safe base flags plus `args`. Every Bazel target that
+ * runs this sets CHROMIUM_HEADLESS_SHELL; with it unset, Puppeteer resolves its own browser.
+ */
 export async function launchBrowser({ args = [], headless = true, userDataDir } = {}) {
   const launchOptions = { args: [...CONTAINER_BASE_ARGS, ...args], headless };
   if (userDataDir) {
     launchOptions.userDataDir = userDataDir;
   }
-  const executablePath = resolveChromiumExecutable();
-  if (executablePath) {
-    launchOptions.executablePath = executablePath;
+  if (process.env.CHROMIUM_HEADLESS_SHELL) {
+    launchOptions.executablePath = resolve(process.env.CHROMIUM_HEADLESS_SHELL);
   }
   return puppeteer.launch(launchOptions);
 }
@@ -73,11 +74,4 @@ export async function launchDeterministicBrowser({ args = [], userDataDir } = {}
   mkdirSync(join(profile, "Default"), { recursive: true });
   writeFileSync(join(profile, "Default", "Preferences"), JSON.stringify(FONT_PREFERENCES));
   return launchBrowser({ args: [...DETERMINISTIC_EXTRA_ARGS, ...args], userDataDir: profile });
-}
-
-export function resolveChromiumExecutable() {
-  const executable =
-    process.env.CHROMIUM_HEADLESS_SHELL ||
-    (process.env.PLAYWRIGHT_BROWSERS_PATH ? join(process.env.PLAYWRIGHT_BROWSERS_PATH, "chromium") : null);
-  return executable ? resolve(executable) : null;
 }
