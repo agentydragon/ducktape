@@ -9,6 +9,7 @@ load("//devinfra/js:spa_bundle.bzl", "spa_bundle")
 load("//devinfra/js:ts_library.bzl", "ts_library")
 load("//devinfra/js:vitest.bzl", "check_vitest_specs", "vitest_config")
 load("//util:data_uri.bzl", "data_uri_module")
+load("//util/testing/frontend_visual:visual_test.bzl", "chromium_js_test")
 load(":vitest.bzl", "haku_vitest_test")
 
 package(default_visibility = ["//visibility:public"])
@@ -1014,7 +1015,7 @@ filegroup(
     srcs = ["screenshots/dist/harness.js"],
 )
 
-js_test(
+chromium_js_test(
     name = "screenshots",
     size = "medium",
     data = [
@@ -1025,14 +1026,12 @@ js_test(
         "//util/testing/frontend_visual:launcher",
         "//util/testing/frontend_visual:sharding",
         "//util/testing/frontend_visual:visual_review_manifest",
-        "@chrome_headless_shell//:executable",
     ],
     entry_point = "screenshots/render.mjs",
     env = {
         "HARNESS_JS": "$(rootpath :screenshot_harness_js)",
         "MOCK_HAKU_UI": "$(rootpath screenshots/mock_haku_ui.html)",
         "STYLES_CSS": "$(rootpath :styles_css)",
-        "CHROMIUM_HEADLESS_SHELL": "$(rootpath @chrome_headless_shell//:executable)",
     },
     no_copy_to_bin = [
         ":screenshot_harness_js",
@@ -1040,7 +1039,6 @@ js_test(
         "//util/testing/frontend_visual:launcher",
         "//util/testing/frontend_visual:sharding",
         "//util/testing/frontend_visual:visual_review_manifest",
-        "@chrome_headless_shell//:executable",
     ],
     shard_count = 4,
     tags = ["visual"],
