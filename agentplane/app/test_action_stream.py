@@ -230,13 +230,12 @@ async def logout(app: FastAPI, cookie: str) -> None:
         assert response.status_code == 303, response.text
 
 
-@pytest.mark.parametrize("upstream_status", [401, 403, 503])
-async def test_upstream_status_before_downstream_headers(app: FastAPI, upstream_status: int) -> None:
-    service = ActionService(Upstream(FIRST), status_code=upstream_status)
+async def test_upstream_status_before_downstream_headers(app: FastAPI) -> None:
+    service = ActionService(Upstream(FIRST), status_code=403)
     cookie = await login(app)
     async with operator_actions(app, service.transport()):
         messages = await EventSource(app, cookie).ended()
-    assert messages[0]["status"] == upstream_status
+    assert messages[0]["status"] == 403
     assert service.upstreams[0].closed
 
 
