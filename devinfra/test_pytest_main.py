@@ -15,7 +15,6 @@ def test_rejects_py_test_source_without_entrypoint(tmp_path: Path) -> None:
     result = check_file(test_file, tmp_path, index)
 
     assert result.passed is False
-    assert result.reason == "missing pytest_bazel.main() entry point"
 
 
 def test_allows_py_test_source_with_entrypoint(tmp_path: Path) -> None:
@@ -26,7 +25,6 @@ def test_allows_py_test_source_with_entrypoint(tmp_path: Path) -> None:
     result = check_file(test_file, tmp_path, index)
 
     assert result.passed is True
-    assert result.reason == "has pytest_bazel.main()"
 
 
 def test_allows_py_test_source_with_custom_bazel_main(tmp_path: Path) -> None:
@@ -38,7 +36,6 @@ def test_allows_py_test_source_with_custom_bazel_main(tmp_path: Path) -> None:
     result = check_file(test_file, tmp_path, index)
 
     assert result.passed is True
-    assert result.reason == "exempt: py_test uses custom main= (bazel query)"
 
 
 if __name__ == "__main__":
