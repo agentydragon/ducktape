@@ -57,12 +57,12 @@ def client(augur_config: Config) -> Iterator[TestClient]:
         yield test_client
 
 
-def test_calibration_info_endpoint(client: TestClient) -> None:
+def test_calibration_info_endpoint(client: TestClient, augur_config: Config) -> None:
     response = client.get("/api/calibration")
     assert response.status_code == 200, response.text
     calibration = response.json()
     assert calibration["issuers"] == ["openai"]
-    assert calibration["label"] == "OpenAI (example Manifold catalog)"
+    assert calibration["label"] == augur_config.calibration_catalog.label
 
 
 def test_run_calibration(client: TestClient) -> None:
