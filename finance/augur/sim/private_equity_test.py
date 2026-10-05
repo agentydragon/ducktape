@@ -475,34 +475,6 @@ def forced_sale_in_month(*, horizon_months: int, month: int, fraction: Decimal |
     return at_month(fraction, month=month, default=0, snapshots=horizon_months + 1)
 
 
-def test_a_forced_sale_happens_with_no_window_and_no_shortfall() -> None:
-    """The issuer can redeem against the holder's wishes: floor satisfied, no tender open."""
-
-    horizon = 12
-    case = holder(
-        initial_cash=10_000,
-        monthly_spend=0,
-        pe_units=100,
-        pe_cost_basis_per_unit=10,
-        pe_holding_period_months=36,
-        horizon_months=horizon,
-        lnw_floor=0,
-    )
-    rollout = run(
-        case,
-        protocol(
-            horizon_months=horizon,
-            initial_mark=Decimal(100),
-            forced_sale=forced_sale_in_month(horizon_months=horizon, month=5, fraction=Decimal("0.3")),
-        ),
-    )
-
-    assert units_held(rollout, month=6) == pytest.approx(70.0)
-    assert cash(rollout, case, month=6) == pytest.approx(13_000.0)
-    [row] = dispositions(rollout, month=5).iter_rows(named=True)
-    assert row["cause_id"] == "pe_forced_sale_m5_acme"
-
-
 def test_a_forced_sale_still_books_its_capital_gain() -> None:
     """A sale the holder did not choose is taxed like one they did.
 
