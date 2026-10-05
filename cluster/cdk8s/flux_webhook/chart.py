@@ -59,8 +59,8 @@ _NTFY_HEADERS = {
 
 
 def _headers_yaml(headers: dict[str, str]) -> str:
-    """A Provider Secret's `headers` key is read as a YAML map. A JSON string is a double-quoted
-    YAML scalar, so each value stays one scalar whatever the template renders into it."""
+    """A Provider Secret's `headers` key is read as a YAML map. Each template source is JSON-quoted,
+    a double-quoted YAML scalar; values ESO substitutes into it afterwards are not escaped."""
     return "".join(f"{name}: {json.dumps(value)}\n" for name, value in headers.items())
 
 
