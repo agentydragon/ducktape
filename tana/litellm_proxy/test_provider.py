@@ -11,7 +11,7 @@ import httpx
 import litellm
 import pytest
 import pytest_bazel
-from litellm.types.utils import ChatCompletionMessageToolCall, Choices, GenericStreamingChunk, ModelResponse, Usage
+from litellm.types.utils import ChatCompletionMessageToolCall, Choices, GenericStreamingChunk, Usage
 
 from tana.litellm_proxy.provider import (
     TanaChatResult,
@@ -950,50 +950,6 @@ def test_litellm_routes_streaming_to_custom_provider() -> None:
     assert chunks[-1].choices[0].finish_reason == "stop"
 
 
-async def test_litellm_handler_astreaming_yields_chunks() -> None:
-    class FakeClient(_NoStreamingClient):
-        async def chat_completion(
-            self, model: str, messages: Sequence[Mapping[str, Any]], optional_params: Mapping[str, Any] | None = None
-        ) -> TanaChatResult:
-            raise AssertionError("async streaming test should not call non-streaming chat_completion")
-
-        async def astream_completion(
-            self,
-            model: str,
-            messages: Sequence[Mapping[str, Any]],
-            optional_params: Mapping[str, Any] | None = None,
-            *,
-            refresh_token: str | None = None,
-        ) -> AsyncIterator[GenericStreamingChunk]:
-            assert model == "claude-test"
-            assert messages == [{"role": "user", "content": "hi"}]
-            assert optional_params == {"stream": True}
-            yield GenericStreamingChunk(text="async-pong", is_finished=False, finish_reason="", usage=None, index=0)
-            yield GenericStreamingChunk(text="", is_finished=True, finish_reason="stop", usage=None, index=0)
-
-    async def collect_chunks() -> list[GenericStreamingChunk]:
-        handler = _handler_with_test_client(FakeClient())
-        stream = handler.astreaming(
-            model="claude-test",
-            messages=[{"role": "user", "content": "hi"}],
-            api_base="",
-            custom_prompt_dict={},
-            model_response=cast(ModelResponse, None),
-            print_verbose=lambda *args, **kwargs: None,
-            encoding=None,
-            api_key="refresh-1",
-            logging_obj=None,
-            optional_params={"stream": True},
-        )
-        return [chunk async for chunk in stream]
-
-    chunks = await collect_chunks()
-
-    assert chunks[0]["text"] == "async-pong"
-    assert chunks[-1]["is_finished"] is True
-    assert chunks[-1]["finish_reason"] == "stop"
-
-
 async def test_litellm_routes_async_streaming_to_custom_provider() -> None:
     class FakeClient(_NoStreamingClient):
         async def chat_completion(
@@ -1015,19 +971,25 @@ async def test_litellm_routes_async_streaming_to_custom_provider() -> None:
             yield GenericStreamingChunk(
                 text="async-route-pong", is_finished=False, finish_reason="", usage=None, index=0
             )
-            yield GenericStreamingChunk(text="", is_finished=True, finish_reason="stop", usage=None, index=0)
+            # Not "stop": LiteLLM reports "stop" on its own when the provider's terminal chunk never arrives.
+            yield GenericStreamingChunk(text="", is_finished=True, finish_reason="length", usage=None, index=0)
 
     async def collect_chunks() -> list[Any]:
         register_litellm_provider(_handler_with_test_client(FakeClient()))
+        # An empty api_base must behave as unset, not as a Functions base URL override.
         stream = await litellm.acompletion(
-            model="tana/claude-test", messages=[{"role": "user", "content": "hi"}], api_key="refresh-1", stream=True
+            model="tana/claude-test",
+            messages=[{"role": "user", "content": "hi"}],
+            api_key="refresh-1",
+            api_base="",
+            stream=True,
         )
         return [chunk async for chunk in stream]
 
     chunks = await collect_chunks()
 
     assert chunks[0].choices[0].delta.content == "async-route-pong"
-    assert chunks[-1].choices[0].finish_reason == "stop"
+    assert chunks[-1].choices[0].finish_reason == "length"
 
 
 def test_registers_tana_as_litellm_custom_provider() -> None:
