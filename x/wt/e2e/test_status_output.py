@@ -58,6 +58,8 @@ def test_status_lists_multiple_worktrees(real_temp_repo, wt_cli):
         raise AssertionError(
             f"Status did not reach clean/running with hex commit for both worktrees.\nLast output:\n{last['out']}"
         )
+    main_name = Path(real_temp_repo).name
+    assert main_name in extract_status_rows(last["out"]), f"No row for {main_name=}.\nLast output:\n{last['out']}"
 
 
 if __name__ == "__main__":
