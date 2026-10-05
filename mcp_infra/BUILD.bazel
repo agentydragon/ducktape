@@ -36,11 +36,8 @@ py_test(
         ":persistence",
         # Root conftest enables pytest-asyncio auto mode (STRICT otherwise -> async tests skipped).
         "//:conftest",
-        "//util/testing:postgres_fixtures",
         "@pypi//py_key_value_aio",
-        "@pypi//pytest",
         "@pypi//pytest_bazel",
-        "@pypi//testcontainers",
         ":conftest",
     ],
 )
@@ -208,7 +205,9 @@ py_library(
         "//agent_core/testing:fixtures",
         "//agent_core/testing/mcp:fixtures",
         "//mcp_infra/testing:fixtures",
+        "//util/testing:postgres_fixtures",
         "@pypi//pytest",
+        "@pypi//testcontainers",
     ],
 )
 
