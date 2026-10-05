@@ -41,7 +41,7 @@ import {
   summarizeSetup,
   type HistoryRow,
 } from "./history_rows";
-import { liveSandboxesUrl, LiveStatus, useLive, useRequiredThreadsLive, type SandboxesSnapshot } from "../live";
+import { LiveStatus, useRequiredSandboxesLive, useRequiredThreadsLive } from "../live";
 import { StaleNotice, useOptionalStreamStatus, type StreamStatus } from "../stream_status";
 import { RetainedDisclosure, RetainedDisclosureProvider, useRetainedDisclosure } from "./retained_disclosures";
 import { CollapsibleCard, EntityCard, ItemStatus, pendingSentMessage } from "./thread_cards";
@@ -1211,7 +1211,7 @@ export function ProjectedSession({
     snapshotFresh(threadsLive)
   );
   const [error, setError] = useState<string | null>(null);
-  const environment = useLive<SandboxesSnapshot>(liveSandboxesUrl(), "Sandboxes");
+  const environment = useRequiredSandboxesLive();
   const inventoryFresh = environment.stream.standing === "current" && environment.health?.fresh === true;
   const sandbox = environment.snapshot?.sandboxes.find((candidate) => candidate.name === thread?.sandbox);
   const notice = thread && environment.snapshot && sandboxNotice(sandbox, inventoryFresh);
