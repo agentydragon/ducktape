@@ -11,13 +11,15 @@ harness scenes, a bespoke driver for anything else.
 
 from __future__ import annotations
 
+import asyncio
 import base64
 import math
 import re
-from collections.abc import Callable
+from collections.abc import Awaitable, Callable
 
 from playwright.async_api import (
     CDPSession,
+    Error as PlaywrightError,
     FloatRect,
     Page,
     Request,
@@ -120,11 +122,35 @@ class PageErrors:
 
     def __init__(self, page: Page) -> None:
         self._errors: list[str] = []
-        page.on("pageerror", lambda error: self._errors.append(error.stack or str(error)))
+        self._thrown = asyncio.Event()
+        page.on("pageerror", self._record)
+
+    def _record(self, error: PlaywrightError) -> None:
+        self._errors.append(error.stack or str(error))
+        self._thrown.set()
 
     def assert_none(self, *, context: str) -> None:
         if self._errors:
             raise AssertionError(f"{context}: uncaught page errors:\n  " + "\n  ".join(self._errors))
+
+    async def wait_for[T](self, waiting: Awaitable[T], *, context: str) -> T:
+        """Await `waiting`, failing with the page's uncaught errors the moment it throws.
+
+        A scene whose page threw usually never reaches the state its selector waits for, so a plain
+        wait runs out `WAIT_TIMEOUT_MS` and reports only the selector, never the error that explains
+        it. An error thrown before the wait began fails it at once. A wait that loses the race is
+        cancelled.
+        """
+        task = asyncio.ensure_future(waiting)
+        thrown = asyncio.ensure_future(self._thrown.wait())
+        try:
+            await asyncio.wait({task, thrown}, return_when=asyncio.FIRST_COMPLETED)
+            if not task.done():
+                self.assert_none(context=context)
+            return task.result()
+        finally:
+            task.cancel()
+            thrown.cancel()
 
 
 class RequestFence:

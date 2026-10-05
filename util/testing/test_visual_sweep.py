@@ -239,6 +239,12 @@ async def test_hover_and_tap_are_in_the_capture(playwright: Playwright, config: 
             id="an uncaught page error",
         ),
         pytest.param(
+            "throws",
+            Scenario(element="#shot", ready_selectors=[".never-arrives"]),
+            (AssertionError, r"uncaught page errors:\n\s+Error: scene exploded"),
+            id="an uncaught page error while a ready selector never appears",
+        ),
+        pytest.param(
             "escapes",
             Scenario(element="#shot"),
             (AssertionError, r"requests escaped the harness:\n\s+image http://fenced.test/x.png"),
