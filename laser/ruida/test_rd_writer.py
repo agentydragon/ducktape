@@ -28,21 +28,8 @@ def test_scramble_known_values():
 
 def test_encode_number_100mm():
     """100 mm encodes to 100000 µm as 5 bytes of 7-bit big-endian."""
-    result = encode_number(100.0)
-    # 100000 = 0x186A0
-    # In 7-bit groups (from MSB): 00, 03, 00, 54, 20
-    # 0x186A0 = 0b11000011010100000
-    # Split into 7-bit groups from LSB:
-    #   0100000 = 0x20 (32)
-    #   1010100 = 0x54 (84) -- wait, let me recompute
-    # 100000 in binary: 11000011010100000
-    # That's 17 bits. In 7-bit chunks from LSB:
-    #   bits 0-6:  0100000 = 32 = 0x20
-    #   bits 7-13: 0001101 = 13 = 0x0D
-    #   bits 14-20: 110 = 6 = 0x06
-    # So 5 bytes big-endian: [0, 0, 6, 13, 32]
-    assert result == bytes([0, 0, 6, 13, 32])
-    assert len(result) == 5
+    # 100000 = 6 * 128**2 + 13 * 128 + 32, zero-padded to 5 bytes
+    assert encode_number(100.0) == bytes([0, 0, 6, 13, 32])
 
 
 def test_encode_number_zero():
