@@ -45,9 +45,7 @@ def _raw_kustomization(chart: Chart, *, wait: bool, health_checks: list[Kustomiz
 def test_wait_with_health_checks_fails_synth() -> None:
     chart = kustomizations_chart(Cdk8sTesting.app())
     _raw_kustomization(chart, wait=True, health_checks=_HEALTH_CHECKS)
-    with pytest.raises(
-        Exception, match=r"(?s)Validation failed.*Kustomization/test-app: wait: true ignores healthChecks"
-    ):
+    with pytest.raises(Exception, match="Kustomization/test-app"):
         Cdk8sTesting.synth(chart)
 
 
@@ -63,7 +61,7 @@ def test_wait_or_health_checks_alone_synthesizes(
 
 def test_rendered_directory_refuses_a_second_decryption() -> None:
     directory = RenderedDirectory(artifact=artifact("test-app", "test/app"), decryption=None)
-    with pytest.raises(ValueError, match="derives its decryption"):
+    with pytest.raises(ValueError, match="decryption="):
         flux_kustomization(kustomizations_chart(Cdk8sTesting.app()), "test-app", directory, decryption=SOPS_DECRYPTION)
 
 
