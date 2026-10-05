@@ -15,14 +15,6 @@ let
   };
   buildBuddyRunnerTools = builtins.attrValues buildBuddyRunnerPackages;
 
-  # The pre-commit hook invokes only `rustfmt`; copying the binary drops the
-  # unused cargo-fmt wrappers and their Cargo runtime closure.
-  rustfmtCommand = pkgs.runCommand "rustfmt-command-${pkgs.rustfmt.version}" { } ''
-    mkdir -p "$out/bin"
-    cp -- ${pkgs.rustfmt}/bin/rustfmt "$out/bin/rustfmt"
-    chmod 0555 "$out/bin/rustfmt"
-  '';
-
   # All hooks in .pre-commit-config.yaml use this shared Nix tool environment.
   preCommitPackages = [
     buildBuddyRunnerPackages.bb
@@ -43,7 +35,11 @@ let
     pkgs.kubeconform
     pkgs.tflint
     pkgs.checkov
-    rustfmtCommand
+    # TODO: Consider a rustfmt-only package here, preserving cargo-fmt in
+    # developer shells. Deferred: the container spike did not show enough
+    # setup-time benefit to justify the extra packaging complexity.
+    # Evidence and prototype: https://github.com/agentydragon/ducktape/pull/9220
+    pkgs.rustfmt
     pkgs.ansible
   ];
 
@@ -105,8 +101,6 @@ let
     pkgs.sops
     pkgs.ssh-to-age
     buildBuddyRunnerPackages.bazelDiff
-    # Developer shells also provide cargo-fmt and the other Rustfmt commands.
-    pkgs.rustfmt
   ];
   # Rust claude-hook is the active hook/shim implementation. The statusline
   # remains Python and is exposed separately as `claude-statusline`.
