@@ -1,10 +1,13 @@
 load("@rules_tf//tf:def.bzl", "tf_module", "tf_providers_versions")
 
+exports_files(["variables.tf"])
+
 tf_providers_versions(
     name = "providers",
     providers = {
         "forgejo": "svalabs/forgejo:~>1.5",
         "kubernetes": "hashicorp/kubernetes:~>3.0",
+        "restapi": "mastercard/restapi:~>2.0",
     },
     tf_version = "1.12.6",
 )
@@ -14,6 +17,7 @@ tf_module(
     providers = [
         "forgejo",
         "kubernetes",
+        "restapi",
     ],
     providers_versions = ":providers",
 )

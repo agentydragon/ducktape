@@ -74,6 +74,17 @@ TEST_MODELS = ModelCatalog(
 )
 
 
+CODEX_ONLY = ModelCatalog(
+    models=[option for option in TEST_MODELS.models if option.model == "test-codex-model"],
+    harnesses={Harness.CLAUDE: [], Harness.CODEX: ["test-codex-model"]},
+)
+
+
+@pytest.fixture(params=[TEST_MODELS])
+def model_catalog(request: pytest.FixtureRequest) -> ModelCatalog:
+    return cast(ModelCatalog, request.param)
+
+
 @pytest.mark.parametrize("upstream_status", [None, 403])
 def test_upstream_http_error_preserves_request_without_secrets(upstream_status: int | None) -> None:
     request = httpx.Request(
@@ -136,6 +147,7 @@ async def electric(
 
 @pytest.fixture
 def client(
+    model_catalog: ModelCatalog,
     inventory: SandboxServiceClient,
     bridge: RunnerBridge,
     store: ThreadStore,
@@ -180,7 +192,7 @@ def client(
         inventory,
         bridge,
         store,
-        TEST_MODELS,
+        model_catalog,
         egress,
         decisions,
         live_index,
@@ -524,9 +536,11 @@ def test_bound_thread_forwards_overrides_without_app_bootstrap_or_default_assemb
     assert setup_scripts == [None, ""]
 
 
+@pytest.mark.parametrize("model_catalog", [CODEX_ONLY], indirect=True)
 def test_thread_resume_for_regular_sandbox_reaches_the_bridge(
     client: TestClient, bridge: RunnerBridge, store: ThreadStore, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    assert client.get("/models").json()["harnesses"]["HARNESS_CLAUDE"] == []
     thread_id = UUID("be4017d0-8994-4a36-b58c-5e6e264d0119")
 
     async def get_thread(_thread_id: UUID) -> Any:
@@ -546,6 +560,7 @@ def test_thread_resume_for_regular_sandbox_reaches_the_bridge(
     assert calls == [(thread_id, Harness.CLAUDE.value, "/w")]
 
 
+@pytest.mark.parametrize("model_catalog", [CODEX_ONLY], indirect=True)
 def test_direct_session_launch_leaves_platform_instructions_to_service(
     client: TestClient, bridge: RunnerBridge, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -978,7 +993,7 @@ async def test_command_reconciliation_recovers_saved_outcomes_after_a_lost_reply
         inventory,
         bridge,
         store,
-        TEST_MODELS,
+        CODEX_ONLY,
         egress,
         decisions,
         live_index,

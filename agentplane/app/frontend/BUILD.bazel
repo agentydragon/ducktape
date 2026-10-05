@@ -29,6 +29,7 @@ ts_library(
     testonly = True,
     srcs = ["test_model_catalog.ts"],
     tsconfig = TSCONFIG,
+    deps = [":client"],
 )
 
 ts_library(

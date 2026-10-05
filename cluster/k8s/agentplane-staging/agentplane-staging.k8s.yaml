@@ -2853,102 +2853,6 @@ data:
   config.yaml: |
     models:
       models:
-        - model: anthropic-max20/ant-messages/claude-opus-5
-          display_name: Opus 5
-          reasoning_efforts:
-            - low
-            - medium
-            - high
-            - max
-        - model: anthropic-max20/ant-messages/claude-sonnet-5
-          display_name: Sonnet 5
-          reasoning_efforts:
-            - low
-            - medium
-            - high
-            - max
-        - model: anthropic-max20/ant-messages/claude-fable-5
-          display_name: Fable 5
-          reasoning_efforts:
-            - low
-            - medium
-            - high
-            - max
-        - model: anthropic-max20/ant-messages/claude-haiku-4-5-20251001
-          display_name: Haiku 4.5
-          reasoning_efforts:
-            - low
-            - medium
-            - high
-            - max
-        - model: antigravity/ant-messages/claude-opus-4-6-thinking
-          display_name: Claude Opus 4.6 (Thinking)
-          reasoning_efforts:
-            - low
-            - medium
-            - high
-            - max
-        - model: antigravity/ant-messages/claude-sonnet-4-6
-          display_name: Claude Sonnet 4.6 (Thinking)
-          reasoning_efforts:
-            - low
-            - medium
-            - high
-            - max
-        - model: antigravity/ant-messages/gemini-3.6-flash-high
-          display_name: Gemini 3.6 Flash
-          reasoning_efforts: []
-        - model: antigravity/ant-messages/gemini-3.7-flash-high
-          display_name: Gemini 3.7 Flash
-          reasoning_efforts: []
-        - model: antigravity/ant-messages/gemini-3.8-flash-high
-          display_name: Gemini 3.8 Flash
-          reasoning_efforts: []
-        - model: antigravity/ant-messages/gemini-3-flash
-          display_name: Gemini 3 Flash
-          reasoning_efforts: []
-        - model: antigravity/ant-messages/gemini-3.1-flash-image
-          display_name: Gemini 3.1 Flash Image
-          reasoning_efforts: []
-        - model: antigravity/ant-messages/gemini-pro-agent
-          display_name: Gemini 3.1 Pro (High)
-          reasoning_efforts: []
-        - model: antigravity/ant-messages/gemini-3.1-pro-low
-          display_name: Gemini 3.1 Pro (Low)
-          reasoning_efforts: []
-        - model: antigravity/ant-messages/gpt-oss-120b-medium
-          display_name: GPT-OSS 120B (Medium)
-          reasoning_efforts: []
-        - model: antigravity/ant-messages/gemini-3.1-flash-lite
-          display_name: Gemini 3.1 Flash Lite
-          reasoning_efforts: []
-        - model: antigravity/ant-messages/gemini-3.5-flash-lite
-          display_name: Gemini 3.5 Flash Lite
-          reasoning_efforts: []
-        - model: ollama/oai-chat/qwen3.8-flash-next-iq4xs-128k
-          display_name: Qwen3.8 Flash Next IQ4_XS (128K)
-          reasoning_efforts: []
-        - model: ollama/oai-chat/qwen3.8-flash-next-iq4xs-256k
-          display_name: Qwen3.8 Flash Next IQ4_XS (256K)
-          reasoning_efforts: []
-        - model: ollama/oai-chat/gpt-oss-20b-128k
-          display_name: GPT-OSS 20B (128K)
-          reasoning_efforts: []
-        - model: ollama/oai-chat/gpt-oss-20b-256k
-          display_name: GPT-OSS 20B (256K)
-          reasoning_efforts: []
-        - model: ollama/oai-chat/gpt-oss-20b-512k
-          display_name: GPT-OSS 20B (512K)
-          reasoning_efforts: []
-        - model: ollama/oai-chat/gpt-oss-20b-1m
-          display_name: GPT-OSS 20B (1M)
-          reasoning_efforts: []
-        - model: ollama/oai-chat/gpt-oss-120b-128k
-          display_name: GPT-OSS 120B (128K)
-          reasoning_efforts: []
-        - model: ollama/oai-chat/gemma4-31b-it-q8_0-128k
-          display_name: Gemma 4 31B (128K)
-          reasoning_efforts: []
         - model: chatgpt/oai-responses/gpt-6-astra
           display_name: GPT-6 Astra
           reasoning_efforts:
@@ -2973,32 +2877,32 @@ data:
             - medium
             - high
             - xhigh
+        - model: ollama/oai-chat/qwen3.8-flash-next-iq4xs-128k
+          display_name: Qwen3.8 Flash Next IQ4_XS (128K)
+          reasoning_efforts: []
+        - model: ollama/oai-chat/qwen3.8-flash-next-iq4xs-256k
+          display_name: Qwen3.8 Flash Next IQ4_XS (256K)
+          reasoning_efforts: []
+        - model: ollama/oai-chat/gpt-oss-20b-128k
+          display_name: GPT-OSS 20B (128K)
+          reasoning_efforts: []
+        - model: ollama/oai-chat/gpt-oss-20b-256k
+          display_name: GPT-OSS 20B (256K)
+          reasoning_efforts: []
+        - model: ollama/oai-chat/gpt-oss-20b-512k
+          display_name: GPT-OSS 20B (512K)
+          reasoning_efforts: []
+        - model: ollama/oai-chat/gpt-oss-20b-1m
+          display_name: GPT-OSS 20B (1M)
+          reasoning_efforts: []
+        - model: ollama/oai-chat/gpt-oss-120b-128k
+          display_name: GPT-OSS 120B (128K)
+          reasoning_efforts: []
+        - model: ollama/oai-chat/gemma4-31b-it-q8_0-128k
+          display_name: Gemma 4 31B (128K)
+          reasoning_efforts: []
       harnesses:
-        HARNESS_CLAUDE:
-          - anthropic-max20/ant-messages/claude-opus-5
-          - anthropic-max20/ant-messages/claude-sonnet-5
-          - anthropic-max20/ant-messages/claude-fable-5
-          - anthropic-max20/ant-messages/claude-haiku-4-5-20251001
-          - antigravity/ant-messages/claude-opus-4-6-thinking
-          - antigravity/ant-messages/claude-sonnet-4-6
-          - antigravity/ant-messages/gemini-3.6-flash-high
-          - antigravity/ant-messages/gemini-3.7-flash-high
-          - antigravity/ant-messages/gemini-3.8-flash-high
-          - antigravity/ant-messages/gemini-3-flash
-          - antigravity/ant-messages/gemini-3.1-flash-image
-          - antigravity/ant-messages/gemini-pro-agent
-          - antigravity/ant-messages/gemini-3.1-pro-low
-          - antigravity/ant-messages/gpt-oss-120b-medium
-          - antigravity/ant-messages/gemini-3.1-flash-lite
-          - antigravity/ant-messages/gemini-3.5-flash-lite
-          - ollama/oai-chat/qwen3.8-flash-next-iq4xs-128k
-          - ollama/oai-chat/qwen3.8-flash-next-iq4xs-256k
-          - ollama/oai-chat/gpt-oss-20b-128k
-          - ollama/oai-chat/gpt-oss-20b-256k
-          - ollama/oai-chat/gpt-oss-20b-512k
-          - ollama/oai-chat/gpt-oss-20b-1m
-          - ollama/oai-chat/gpt-oss-120b-128k
-          - ollama/oai-chat/gemma4-31b-it-q8_0-128k
+        HARNESS_CLAUDE: []
         HARNESS_CODEX:
           - chatgpt/oai-responses/gpt-6-astra
           - chatgpt/oai-responses/gpt-6-luna
@@ -3039,17 +2943,6 @@ data:
           branch with the substituted PAT. Never push directly to the upstream repository. Check the
           diff for personal data before pushing; public ducktape must contain only generic tooling and
           public-safe instructions.
-      haku-claude:
-        title: Haku
-        harness: HARNESS_CLAUDE
-        model: anthropic-max20/ant-messages/claude-sonnet-5
-        cwd: /state/workspaces/{session_id}/haku-state
-        reasoning_effort: medium
-        instructions: "You are Haku, the operator's tireless background executive assistant. Your current directory is your haku-state checkout: your durable home for memory, notes, and other agent state. The ducktape checkout is at ../ducktape. Make changes in the checkout of the repository that owns them; never copy another repository into haku-state. Commit and push every persistent change to the owning repository's upstream or authorized fork as you go. A new Thread starts from fresh checkouts. Git auth is already in place. haku-state also holds who you are: read AGENTS.md, SOUL.md and MEMORY.md at its root, then your run procedure at memory/procedures/run.md. Read those, then execute the run procedure end to end."
-        setup_script: |
-          #!/bin/sh
-          git clone --depth 1 --branch main --single-branch http://haku:agentplane-credential-forgejo-haku@forgejo-http.forgejo.svc.cluster.local:3000/haku/haku-state.git .
-          git clone --depth 1 --branch devel --single-branch https://github.com/agentydragon/ducktape.git ../ducktape
       finance-agent-codex:
         title: Finance agent / Codex
         harness: HARNESS_CODEX
@@ -3246,99 +3139,6 @@ data:
           if [ ! -f "$marker" ]; then
             printf '%s\n' 'public-coder workspace initialized' > "$marker"
           fi
-      haku:
-        title: Haku
-        template: agentplane-runner
-        policies:
-          - basic
-          - forgejo-haku
-          - packages
-          - google-readonly
-          - grocy-sf-readonly
-          - home-assistant-readonly
-          - activitywatch-read
-          - aiquota-read
-          - coinbase
-          - haku-mailbox
-          - plaid-pgweb
-          - github-clone
-          - github-agentydragon-agent
-          - github-actions-logs
-          - agentplane-testing
-        action_policy_sets:
-          - github-identity-reads
-          - ssh-reads
-          - ducktape-pr-failed-jobs
-        kubernetes_grants:
-          - agentplane-staging-metadata
-          - agentplane-staging-logs
-          - activitywatch-metadata
-          - activitywatch-logs
-          - agent-sandbox-system-metadata
-          - agentplane-index-metadata
-          - agentplane-index-logs
-          - agentplane-testing-metadata
-          - agentplane-testing-logs
-          - airlock-metadata
-          - airlock-logs
-          - authentik-metadata
-          - authentik-logs
-          - cert-manager-metadata
-          - cert-manager-logs
-          - cli-proxy-api-metadata
-          - cli-proxy-api-logs
-          - clickhouse-metadata
-          - clickhouse-logs
-          - cnpg-system-metadata
-          - cnpg-system-logs
-          - flux-system-metadata
-          - flux-system-logs
-          - gatus-metadata
-          - gatus-logs
-          - grocy-sf-metadata
-          - grocy-sf-logs
-          - grocy-vallejo-metadata
-          - grocy-vallejo-logs
-          - haku-ci-metadata
-          - haku-ci-logs
-          - litellm-metadata
-          - litellm-logs
-          - local-path-storage-metadata
-          - local-path-storage-logs
-          - loki-metadata
-          - loki-logs
-          - monitoring-metadata
-          - monitoring-logs
-          - nix-cache-metadata
-          - node-feature-discovery-metadata
-          - node-feature-discovery-logs
-          - nvidia-device-plugin-metadata
-          - nvidia-device-plugin-logs
-          - oci-cache-metadata
-          - oci-cache-logs
-          - openebs-metadata
-          - openebs-logs
-          - plaid-mcp-metadata
-          - plaid-mcp-logs
-          - proxmox-proxy-metadata
-          - proxmox-proxy-logs
-          - public-coder-agent-metadata
-          - study-casino-metadata
-          - study-casino-logs
-          - tana-mcp-metadata
-          - tana-mcp-logs
-          - vm-images-publisher-metadata
-          - haku-console-metadata
-          - clickhouse-diagnostics
-          - ducktape-flux-read
-          - public-coder-volsync-status
-          - public-coder-agent-reader
-          - agentplane-testing-operator
-          - agentplane-testing-login
-          - cluster-diagnostics
-          - haku-sandbox-write
-          - coinbase-credentials
-        thread_preset: haku-claude
       finance-agent:
         title: Finance agent
         template: agentplane-runner

@@ -58,7 +58,7 @@ def test_committed_app_config_supplies_smoke_cases() -> None:
     path = get_required_path("ducktape/cluster/generated/agentplane-testing/agentplane-testing.k8s.yaml")
     cases = ollama_cases(path)
     assert len(cases) == len(set(cases))
-    assert {harness for harness, _ in cases} == {protocol_pb2.HARNESS_CLAUDE, protocol_pb2.HARNESS_CODEX}
+    assert {harness for harness, _ in cases} == {protocol_pb2.HARNESS_CODEX}
 
 
 if __name__ == "__main__":

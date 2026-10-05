@@ -197,6 +197,15 @@ def test_private_rule_and_uncertain_purchases():
     uncertain = view([row("2026-01-31", 12, pfc_primary=None, pfc_detailed=None)])
     assert uncertain.available_minor_units == 8_800
     assert uncertain.review_minor_units == 1_200
+    assert uncertain.review_transaction_count == 1
+    two_uncertain = view(
+        [
+            row("2026-01-31", 12, pfc_primary=None, pfc_detailed=None),
+            row("2026-01-31", 3, pfc_primary=None, pfc_detailed=None),
+        ]
+    )
+    assert two_uncertain.review_minor_units == 1_500
+    assert two_uncertain.review_transaction_count == 2
     with pytest.raises(ValidationError):
         Rule.model_validate(
             {"condition": {"type": "name_prefix", "field": "pfc_primary", "prefix": "SHOPPING"}, "kind": "excluded"}

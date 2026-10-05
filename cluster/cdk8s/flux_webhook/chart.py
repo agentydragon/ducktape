@@ -33,6 +33,8 @@ from cluster.cdk8s.service_ref import Pods, Port, ServiceRef
 
 NAME = "flux-webhook"
 NAMESPACE = "flux-system"
+# The public host of the Receivers: Forgejo refuses private addresses, so its webhooks cannot use the in-cluster Service.
+WEBHOOK_HOST = "flux-webhook.allegedly.works"
 OUTPUT_DIR = f"{GENERATED_ROOT}/flux-webhook"
 _NTFY_WEBHOOK = "ntfy-webhook"
 # notification-controller's receiver Service, from the Flux install (gotk-components.yaml).
@@ -133,7 +135,7 @@ def chart(app: App) -> Chart:
         chart,
         "route",
         metadata=ApiObjectMetadata(name=NAME, namespace=NAMESPACE),
-        hostnames=["flux-webhook.allegedly.works"],
+        hostnames=[WEBHOOK_HOST],
         backend=_RECEIVER,
         hsts=False,
         listener=None,

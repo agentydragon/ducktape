@@ -117,6 +117,7 @@ class AllowanceView(BaseModel):
     posted_minor_units: int
     pending_minor_units: int
     review_minor_units: int
+    review_transaction_count: int
     unmatched_refunds_minor_units: int
     windows_minor_units: Windows | None = Field(
         description="Spend after the configured start date in each reporting window; null when unavailable."
@@ -229,6 +230,7 @@ def calculate(
         posted_minor_units=posted,
         pending_minor_units=pending,
         review_minor_units=review,
+        review_transaction_count=sum(1 for p in included if p.needs_review and p.minor_units > 0),
         unmatched_refunds_minor_units=unmatched,
         windows_minor_units=windows,
         trailing_7_daily_minor_units=daily,

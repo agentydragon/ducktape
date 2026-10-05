@@ -184,6 +184,9 @@ tf.download(
         "ovh": "ovh/ovh:2.19.0",
         "proxmox": "bpg/proxmox:0.113.1",
         "random": "hashicorp/random:3.9.1",
+        # Receives the ducktape-ci password (tf/gitops/forgejo-images), which Forgejo's own
+        # provider has no resource to use for a user-level webhook.
+        "restapi": "mastercard/restapi:2.0.1",
         "sops": "carlpett/sops:1.4.1",
         "talos": "siderolabs/talos:0.11.0",
         "tls": "hashicorp/tls:4.4.1",

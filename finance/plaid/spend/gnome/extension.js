@@ -68,7 +68,9 @@ function cardAlert(card) {
     case "exceeded":
       return "Limit exceeded";
     case "unavailable":
-      return "Alert state unavailable";
+      return !card.statement_available && card.cycle_start
+        ? "First statement not yet reported"
+        : "Alert state unavailable";
     case "normal":
     default:
       return "No alert";
@@ -82,6 +84,8 @@ function totalLabel(view) {
     (card) => card.spend_minor_units != null && Number.isFinite(Number(card.spend_minor_units))
   );
   if (cards.length === 1) return formatMoney(cards[0].spend_minor_units, cards[0].currency);
+  // Do not add a provisional since-first-transaction total to statement-cycle totals.
+  if (cards.some((card) => !card.statement_available)) return `${cards.length} cards`;
 
   const currencies = new Set(available.map((card) => (card.currency || "USD").toUpperCase()));
   if (available.length > 0 && currencies.size === 1) {
@@ -332,7 +336,9 @@ const PlaidSpendIndicator = GObject.registerClass(
         const limit =
           card.limit_minor_units == null ? "no limit set" : formatMoney(card.limit_minor_units, card.currency);
         const percent = card.spend_percent == null ? "" : ` · ${Number(card.spend_percent).toFixed(1)}%`;
-        this._addReadOnly(`Spend: ${spend} / ${limit}${percent}`);
+        this._addReadOnly(
+          card.statement_available ? `Spend: ${spend} / ${limit}${percent}` : `Recorded spend: ${spend}`
+        );
 
         if (card.posted_minor_units != null || card.pending_minor_units != null) {
           const posted = card.posted_minor_units == null ? "—" : formatMoney(card.posted_minor_units, card.currency);
@@ -340,7 +346,11 @@ const PlaidSpendIndicator = GObject.registerClass(
           this._addReadOnly(`Posted: ${posted} · Pending: ${pending}`);
         }
 
-        const cycle = card.cycle_start ? `Cycle starts ${card.cycle_start}` : "Statement cycle unavailable";
+        const cycle = card.statement_available
+          ? `Cycle starts ${card.cycle_start}`
+          : card.cycle_start
+            ? `Since first recorded transaction ${card.cycle_start} · statement date unavailable`
+            : "Statement cycle unavailable";
         this._addReadOnly(cycle);
         this._addReadOnly(cardAlert(card));
         this._addReadOnly(`Last synced ${formatTimestamp(card.last_synced_at)}`);

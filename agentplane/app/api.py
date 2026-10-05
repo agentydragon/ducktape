@@ -130,6 +130,8 @@ class ModelCatalog(BaseModel):
 
     `models` holds each model's metadata once; `harnesses` references it by `model` id, so a
     model two harnesses both accept (e.g. a local Ollama route) names its display name only once.
+    An empty harness list pauses its launch-form offerings, not its existing sessions
+    or the low-level Sandbox Service/runner API.
     """
 
     model_config = ConfigDict(extra="forbid")
@@ -962,8 +964,8 @@ def create_app(
 ) -> FastAPI:
     """The whole HTTP surface, guarded. Each of `oidc` and `reviewer` enables one way to authenticate,
     and an app given neither answers 401 to everything but /healthz."""
-    if set(catalog.harnesses) != set(Harness) or not all(catalog.harnesses.values()):
-        raise ValueError(f"the model catalog needs a non-empty list for every harness: {catalog=}")
+    if set(catalog.harnesses) != set(Harness) or not any(catalog.harnesses.values()):
+        raise ValueError(f"the model catalog needs every harness key and at least one offered model: {catalog=}")
     configured_presets = presets or PresetCatalog()
     configured_grants = kubernetes_grants or {}
     grant_views(configured_grants)  # validate catalog keys before serving requests

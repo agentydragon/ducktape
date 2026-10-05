@@ -16,7 +16,7 @@ import {
 } from "@mantine/core";
 // Per-icon subpaths, never the barrel: see tabler_icons.d.ts.
 import IconDotsVertical from "@tabler/icons-react/dist/esm/icons/IconDotsVertical.mjs";
-import { type JSX, useEffect, useEffectEvent, useState } from "react";
+import { type JSX, useEffect, useEffectEvent, useMemo, useState } from "react";
 import { useSearchParams } from "react-router";
 
 import { fromJson, type JsonValue } from "@bufbuild/protobuf";
@@ -27,10 +27,11 @@ import {
   findThread,
   listSessions,
   modelsForHarness,
+  harnessOptions,
   openSession,
   RunnerUnavailableError,
   type Harness,
-  type ModelOption,
+  type ModelCatalog,
   type SandboxView,
   type ThreadView,
 } from "./client";
@@ -54,11 +55,6 @@ import { SANDBOX_STATUS_MARKS } from "./status_mark";
 import { StaleNotice } from "./stream_status";
 import { TopbarTitle } from "./topbar";
 import { HarnessState, SessionSpecSchema, SetupState, type SessionSummary } from "../../runner/protocol_pb";
-
-const HARNESSES: { value: Harness; label: string }[] = [
-  { value: "HARNESS_CLAUDE", label: "Claude" },
-  { value: "HARNESS_CODEX", label: "Codex" },
-];
 
 function setupLabel(state: SetupState): string {
   switch (state) {
@@ -272,9 +268,10 @@ export function SandboxPage({
   const [cwdTemplate, setCwdTemplate] = useState("/state/workspaces/{session_id}");
   const [setupScript, setSetupScript] = useState("");
   const [defaultsLabel, setDefaultsLabel] = useState<string | null>(null);
-  // The app's catalog of what this sandbox's Harness may run; the thread carries the choice.
+  // Launch-form offerings; existing threads retain their harness and model.
   const [harness, setHarness] = useState<Harness>("HARNESS_CLAUDE");
-  const [models, setModels] = useState<ModelOption[]>([]);
+  const [modelCatalog, setModelCatalog] = useState<ModelCatalog | null>(null);
+  const models = useMemo(() => (modelCatalog ? modelsForHarness(modelCatalog, harness) : []), [modelCatalog, harness]);
   const [model, setModel] = useState<string | null>(null);
   const [confirmingDelete, setConfirmingDelete] = useState(false);
   const [includeArchived, setIncludeArchived] = useState(false);
@@ -342,13 +339,21 @@ export function SandboxPage({
         setError(displayableError(failure));
         return;
       }
-      const offered = data ? modelsForHarness(data, harness) : [];
-      setModels(offered);
-      setModel((current) =>
-        current && offered.some((option) => option.model === current) ? current : (offered[0]?.model ?? null)
-      );
+      if (data) setModelCatalog(data);
     })();
-  }, [harness]);
+  }, []);
+
+  useEffect(() => {
+    const offered = harnessOptions(modelCatalog).filter((option) => !option.disabled);
+    if (offered.length && !offered.some((option) => option.value === harness)) {
+      setHarness(offered[0].value);
+    }
+    if (modelCatalog) {
+      setModel((current) =>
+        current && models.some((option) => option.model === current) ? current : (models[0]?.model ?? null)
+      );
+    }
+  }, [modelCatalog, harness, models]);
 
   useEffect(() => {
     const option = models.find((entry) => entry.model === model);
@@ -537,7 +542,7 @@ export function SandboxPage({
             <Group align="flex-end">
               <Select
                 label="Harness"
-                data={HARNESSES}
+                data={harnessOptions(modelCatalog)}
                 value={harness}
                 onChange={(value) => value && setHarness(value as Harness)}
               />

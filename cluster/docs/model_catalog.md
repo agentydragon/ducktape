@@ -93,3 +93,23 @@ unknown-metadata behavior. Nix JSON has its own artifact parity test because its
 lane tests reject unserved allowances and unauthorized fallbacks. Do not duplicate
 these checks with a second handwritten inventory or tests that repeat renderer field
 assignments.
+
+## Parked Agentplane Claude offerings
+
+During the [model-roster audit](https://github.com/agentydragon/ducktape/issues/9121),
+Agentplane staging and testing offer only Codex in new-session launch forms. An empty
+Claude list in the app model catalogue disables that harness in those forms; a new
+session defaults to an available harness. Staging
+also omits the Haku Claude thread/sandbox presets; their renderer and setup script remain.
+
+This is an offering pause, not a runtime prohibition: existing Claude sessions can
+still resume, receive commands, and show history. Explicit low-level session launches,
+the native Claude adapter, credentials, and shared Anthropic/LiteLLM ingress remain.
+Direct local clients and Claude Code Web are unaffected.
+
+To restore the offerings, repopulate `STAGING_APP_MODELS.claude` and
+`TESTING_APP_MODELS.claude` in `cluster/cdk8s/model_selections.py`. To restore Haku's
+preset, also pass `haku_preset_model` in `staging_config.py` and restore its preset
+policy and managed-grant assignments. Resolve the tracked client-budget/metadata questions before doing
+so; regenerate manifests and check both launch forms. No session or volume migration
+is part of either pause or restoration.
