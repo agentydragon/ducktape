@@ -1231,17 +1231,6 @@ haku_vitest_test(
 )
 
 haku_vitest_test(
-    name = "sample_data_test",
-    srcs = ["screenshots/sample_data.test.ts"],
-    isolated_typecheck = True,
-    deps = [
-        ":screenshot_harness_lib",
-        "//:node_modules/vitest",
-        "//haku/console/frontend/tool_rendering",
-    ],
-)
-
-haku_vitest_test(
     name = "settings_panel_test",
     srcs = ["settings_panel.test.ts"],
     isolated_typecheck = True,
