@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 from collections.abc import Mapping
 from typing import TYPE_CHECKING
 from uuid import uuid4
@@ -37,6 +38,8 @@ from agentplane.runner.recovery import compare_item, observed_items, unknown_ite
 
 if TYPE_CHECKING:
     from agentplane.runner.session import Frame, Session
+
+logger = logging.getLogger(__name__)
 
 
 class ClaudeAdapter(HarnessAdapter):
@@ -142,7 +145,10 @@ class ClaudeAdapter(HarnessAdapter):
             try:
                 frame = wire.parse_frame(json.loads(native.line))
             except ValueError:
-                continue  # `Session._receive` logged this line when it arrived.
+                # TODO: a frame we cannot read may be the one that answered a thinking block, so this
+                # turn's thinking can wrongly come out absent; report it unknown instead.
+                logger.warning("turn %s: cannot parse a native line: %r", turn_id, native.line[:200], exc_info=True)
+                continue
             if isinstance(frame, wire.AssistantFrame):
                 messages.append((frame.message.id, frame.message.content))
         return answered_message_ids(messages)
