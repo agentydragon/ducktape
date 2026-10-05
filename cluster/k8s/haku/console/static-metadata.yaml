@@ -9,4 +9,4 @@ metadata:
   name: static-metadata
   namespace: haku-console
 data:
-  image-tag: devel-20261004092115-03d2e69 # {"$imagepolicy": "flux-system:haku-console-static:tag"}
+  image-tag: devel-20261005104201-0c56c93 # {"$imagepolicy": "flux-system:haku-console-static:tag"}

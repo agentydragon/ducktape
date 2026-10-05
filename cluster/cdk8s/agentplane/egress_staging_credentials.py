@@ -21,6 +21,7 @@ from cluster.cdk8s import cilium
 from cluster.cdk8s.agentplane.app_settings import (
     ACTIVITYWATCH_READ_POLICY,
     AIQUOTA_READ_POLICY,
+    FINANCE_AIQUOTA_HISTORY_POLICY,
     FORGEJO_FINANCE_AGENT_POLICY,
     FORGEJO_HAKU_POLICY,
     GOOGLE_READONLY_POLICY,
@@ -37,7 +38,8 @@ from cluster.cdk8s.agentplane.egress_credentials import (
     credential_external_secret,
     inference_credentials,
 )
-from cluster.cdk8s.aiquota import AGENTPLANE_STAGING_BEARER
+from cluster.cdk8s.aiquota import AGENTPLANE_STAGING_BEARER, SERVICE as AIQUOTA_SERVICE
+from cluster.cdk8s.clickhouse import client as clickhouse
 from cluster.cdk8s.external_secrets.single_secret_store import single_secret_store
 from cluster.cdk8s.home_assistant.app import AGENTPLANE_READER_TOKEN
 from cluster.cdk8s.plaid_mcp import pgweb as plaid_pgweb
@@ -75,6 +77,7 @@ def add_staging_egress_credentials(scope: Construct, *, namespace: str, credenti
     _home_assistant_readonly(construct, reader=reader, namespace=namespace, credentials_namespace=credentials_namespace)
     _activitywatch_read(construct, reader=reader, namespace=namespace, credentials_namespace=credentials_namespace)
     _aiquota_read(construct, namespace=namespace)
+    _finance_aiquota_history(construct, reader=reader, namespace=namespace, credentials_namespace=credentials_namespace)
     _haku_mailbox(construct, reader=reader, namespace=namespace, credentials_namespace=credentials_namespace)
     _buildbuddy(construct, namespace=namespace, credentials_namespace=credentials_namespace)
     _plaid_pgweb(construct, reader=reader, namespace=namespace, credentials_namespace=credentials_namespace)
@@ -479,8 +482,76 @@ def _aiquota_read(scope: Construct, *, namespace: str) -> None:
                 methods=[EgressPolicySpecRulesMethods.GET],
                 paths=["/v1/**"],
                 credential_ref=EgressPolicySpecRulesCredentialRef(name="aiquota-read"),
+            ),
+            # The public Gateway returned 502 from the sandbox; use the same read
+            # bearer over the cluster Service rather than widening API authority.
+            EgressPolicySpecRules(
+                hosts=[AIQUOTA_SERVICE.fqdn],
+                cluster_internal=True,
+                methods=[EgressPolicySpecRulesMethods.GET],
+                paths=["/v1/quotas", "/v1/providers/*/raw"],
+                credential_ref=EgressPolicySpecRulesCredentialRef(name="aiquota-read"),
+            ),
+        ],
+    )
+
+
+def _finance_aiquota_history(
+    scope: Construct, *, reader: ServiceAccount, namespace: str, credentials_namespace: str
+) -> None:
+    name = clickhouse.FINANCE_AGENT_CREDENTIALS
+    credential_external_secret(
+        scope,
+        namespace=credentials_namespace,
+        target=name,
+        source=name,
+        key=clickhouse.PASSWORD_KEY,
+        store=single_secret_store(
+            scope,
+            "agentplane-staging-finance-clickhouse",
+            reader=reader,
+            source_namespace=clickhouse.NAMESPACE,
+            source_secret=name,
+            consumer_namespace=credentials_namespace,
+        ),
+    )
+    EgressCredential(
+        scope,
+        "egresscredential-finance-aiquota-history",
+        metadata=ApiObjectMetadata(name=name, namespace=namespace),
+        description="Finance-only typed AIQuota ClickHouse reader; HTTP Basic password for finance_agent_aiquota.",
+        source=Source.secret_ref(name=name, key=clickhouse.PASSWORD_KEY),
+        targets=[
+            EgressCredentialSpecTargets(header="Authorization", method=EgressCredentialSpecTargetsMethod.BASIC_PASSWORD)
+        ],
+    )
+    EgressPolicy(
+        scope,
+        "egresspolicy-finance-aiquota-history",
+        metadata=ApiObjectMetadata(name=FINANCE_AIQUOTA_HISTORY_POLICY, namespace=namespace),
+        rules=[
+            EgressPolicySpecRules(
+                hosts=[clickhouse.HTTP.fqdn],
+                cluster_internal=True,
+                methods=[EgressPolicySpecRulesMethods.GET],
+                paths=["/"],
+                credential_ref=EgressPolicySpecRulesCredentialRef(name=name),
             )
         ],
+    )
+    NetworkPolicy(
+        scope,
+        "networkpolicy-egress-to-finance-clickhouse",
+        metadata=ApiObjectMetadata(name="agentplane-egress-to-finance-clickhouse", namespace=namespace),
+        endpoint_selector=cilium.AGENTPLANE_STAGING_PROXY.selector,
+        egress=[clickhouse.HTTP.egress()],
+    )
+    NetworkPolicy(
+        scope,
+        "networkpolicy-egress-to-aiquota",
+        metadata=ApiObjectMetadata(name="agentplane-egress-to-aiquota", namespace=namespace),
+        endpoint_selector=cilium.AGENTPLANE_STAGING_PROXY.selector,
+        egress=[AIQUOTA_SERVICE.egress()],
     )
 
 

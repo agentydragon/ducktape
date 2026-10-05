@@ -117,6 +117,13 @@ historical credit rows above remain available for analytics, but their detail
 list may be capped or omitted and is not used as the live count or assumed to
 be a complete expiry list.
 
+The same usage response can include a separate `credits` balance for paid
+usage beyond the included quota. AIQuota shows that balance in provider credits
+(not dollars) on the browser board, CLI, and GNOME popup. An exhausted Codex
+window with a positive balance is marked as using paid credits; the balance is
+the provider's latest reading, not a per-request charge ledger. Earned resets
+remain separate from this balance.
+
 Raw response rows retain one year; typed quota observations retain five years.
 ClickHouse inserts use `JSONEachRow` over its internal HTTP endpoint with
 asynchronous inserts enabled, so small periodic batches are combined before

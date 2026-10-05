@@ -527,16 +527,8 @@ def generate_manifests(root: Path) -> None:
     claude_rbac_kustomization = agent_rbac_base.claude_rbac(
         flux_chart, write_directory(root, claude_rbac_artifact, agent_rbac_base.chart), kyverno_policies_kustomization
     )
-    clickhouse_artifact = artifact("clickhouse", clickhouse_installation.OUTPUT_DIR)
     vpa_artifact = artifact("vpa", vpa.OUTPUT_DIR)
     vpa.vpa(flux_chart, write_directory(root, vpa_artifact, vpa.chart), kyverno_kustomization)
-    clickhouse_kustomization = clickhouse_installation.clickhouse(
-        flux_chart,
-        write_directory(
-            root, clickhouse_artifact, *clickhouse_installation.CHARTS, siblings=clickhouse_installation.SOPS_FILES
-        ),
-        clickhouse_operator_kustomization,
-    )
     dcgm_exporter_artifact = artifact("dcgm-exporter", dcgm_exporter_exporter.OUTPUT_DIR)
     dcgm_exporter_exporter.dcgm_exporter(
         flux_chart,
@@ -566,6 +558,15 @@ def generate_manifests(root: Path) -> None:
         write_directory(root, external_secrets_operator_artifact, external_secrets_operator.chart),
         external_secrets_crds_kustomization,
         cert_manager_kustomization,
+    )
+    clickhouse_artifact = artifact("clickhouse", clickhouse_installation.OUTPUT_DIR)
+    clickhouse_kustomization = clickhouse_installation.clickhouse(
+        flux_chart,
+        write_directory(
+            root, clickhouse_artifact, *clickhouse_installation.CHARTS, siblings=clickhouse_installation.SOPS_FILES
+        ),
+        clickhouse_operator_kustomization,
+        external_secrets_operator_kustomization,
     )
     budget_namespace_artifact = artifact("budget-namespace", forgejo_budget_namespace.OUTPUT_DIR)
     forgejo_budget_namespace.budget_namespace(

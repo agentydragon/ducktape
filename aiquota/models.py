@@ -32,6 +32,13 @@ class ExtraSpend(BaseModel):
     utilization: float
 
 
+class PaidCredits(BaseModel):
+    """Codex usage credits, separate from earned rate-limit resets."""
+
+    balance: str | None = None
+    unlimited: bool = False
+
+
 class FetchSuccess(BaseModel):
     """Payload from a quota fetch that returned without error.
 
@@ -43,6 +50,7 @@ class FetchSuccess(BaseModel):
     kind: Literal["success"] = "success"
     windows: list[QuotaWindow] = Field(default_factory=list)
     extra_spend: ExtraSpend | None = None
+    paid_credits: PaidCredits | None = None
     # Earned Codex rate-limit resets. None means the provider did not publish a
     # count; 0 is an authoritative "none available" response.
     available_reset_credits: int | None = Field(default=None, ge=0)

@@ -25,8 +25,8 @@
       "sha256": "sUCpRgIqI77dQwEhQBN9eE8k0CQhZdDW0FSoQfCH2ZI="
     },
     "ducktape": {
-      "url": "https://github.com/agentydragon/ducktape/releases/download/ducktape-dca3417fc2a7/ducktape-0.1.0-py3-none-any.whl",
-      "sha256": "3KNBf8KneAFvlqbHbnOd/UGLo6Lsd1lFewtwFKGtojs="
+      "url": "https://github.com/agentydragon/ducktape/releases/download/ducktape-e39e7f91f3d1/ducktape-0.1.0-py3-none-any.whl",
+      "sha256": "455/kfPRJX6GOtuQsSyAPOMZRZGrDPd6zdcAP48zLTg="
     },
     "gterm-theme": {
       "url": "https://github.com/agentydragon/ducktape/releases/download/gterm-theme-aef3119efae0/gterm_theme-0.1.0-py3-none-any.whl",
@@ -37,16 +37,16 @@
       "sha256": "2JYYS2keNT9y+32cEr3d22qymLZSxwg8sI2aox4YtQs="
     },
     "aiquota-extension": {
-      "url": "https://github.com/agentydragon/ducktape/releases/download/aiquota-2e3907f1944a/aiquota.zip",
-      "sha256": "UVmFytgin2i+9Nj12lC3t6L9WrjmqXYNQZ4dRD0eyEo="
+      "url": "https://github.com/agentydragon/ducktape/releases/download/aiquota-3a8cbe7734d5/aiquota.zip",
+      "sha256": "K267VGIm2hFvw4fMY1BoXA2Qg77bQmIMwdQ0P24pDTU="
     },
     "aiquota": {
-      "url": "https://github.com/agentydragon/ducktape/releases/download/aiquota-2e3907f1944a/aiquota-0.1.0-py3-none-any.whl",
-      "sha256": "QEkhch/PGM7nW1BsP5K8MYMdT0FlzOXLRSiBYeZdZaw="
+      "url": "https://github.com/agentydragon/ducktape/releases/download/aiquota-3a8cbe7734d5/aiquota-0.1.0-py3-none-any.whl",
+      "sha256": "lj1e2F6EjCYEco4L9O1sTUo+AEp/x/uLZ4cCTrEcl3Y="
     },
     "debundle": {
-      "url": "https://github.com/agentydragon/ducktape/releases/download/debundle-9b00e69127fb/debundle",
-      "sha256": "mwDmkSf7CH1vx+PI3SqMexFxiUulA9afaa05Iu0719U="
+      "url": "https://github.com/agentydragon/ducktape/releases/download/debundle-db648f98b52b/debundle",
+      "sha256": "22SPmLUrtnnzovw1sTWxnuF00BaPezkm2MQq3HMjV4s="
     },
     "skill-cluster_health": {
       "url": "https://github.com/agentydragon/ducktape/releases/download/skill-cluster_health-dd6165877050/cluster_health.skill",

@@ -167,50 +167,6 @@ hil-ovh`) and apply the same `nodePathMap` entry to any matching node.
       itself should decrypt the new token and inject it into the local environment so
       Claude Code sessions work immediately without waiting for the git push + re-source
       cycle.
-- [ ] Autopopulate `tf/gitops/dns-records` IP lists from cluster state instead of a
-      hand-edited literal. After every `talos-* → ovh-ns*` rename the comments rot
-      (none of those rename commits touched the DNS TF) and IPs of nodes whose Cilium
-      L2 announce is stale stay in the `*.allegedly.works` round-robin until a human
-      notices — most recently the augur oauth2-proxy crash-looped on OIDC discovery
-      against `auth.allegedly.works` because DNS resolved to a dead IP ~2/5 of the
-      time (PR fixing the immediate bleeding: ducktape#1820).
-
-  Survey of where the public IPs actually live today:
-
-  - **OVH cluster TF**: `cluster/terraform/main/ovh-nodes.tf:335-337` already rolls
-    `data.ovh_dedicated_server.kimsufi[*].ip` into `local.kimsufi_public_ips`.
-    This is the canonical, live source of truth and would expose as one output.
-  - **Kubernetes Node objects**: NOT currently usable. Checked
-    `kubectl get node ovh-ns102453 -o json` — `status.addresses` has only
-    `InternalIP=10.42.0.15` (Nebula) and hostname; no `ExternalIP`, no public-IP
-    annotation, `spec.providerID` empty. The talos-CCM is _installed_ (Flux
-    `cdk8s/talos_cloud_controller_manager.py`, configured with
-    `publicIPDiscovery: true` for `topology.kubernetes.io/region=hil`) but
-    switched off: its log says `is kubelet has args: --cloud-provider=external on the node?`
-    — the Talos kubelet isn't started with that flag, so it never
-    applies the `node.cloudprovider.kubernetes.io/uninitialized` taint, so the
-    CCM's `cloud-node` controller short-circuits without populating addresses.
-  - **`CiliumLoadBalancerIPPool`**: not applicable to the current hostNetwork
-    Gateway. It would become relevant only if we switch to Service exposure
-    backed by provider-routed/floating VIPs plus BGP/L2 advertisement.
-
-  Two paths, mostly orthogonal:
-
-  1. **Fix the data gap at the right layer**: add
-     `machine.kubelet.extraArgs.cloud-provider: external` to the Talos machine
-     config for every Kimsufi node. Existing CCM then populates `ExternalIP` +
-     `providerID`. The DNS TF (and `kubectl get nodes -o wide`, and anything
-     else that asks the cluster for node addresses) just works. Needs a
-     per-node config patch + reboot; check kube-vip / Cilium
-     tolerate the temporary uninitialized taint at startup.
-  2. **Wire DNS TF to cluster TF state**: add a
-     `terraform_remote_state` data source for the cluster TF root and pull
-     `local.kimsufi_public_ips`. Lower blast radius (TF-only), no node restart,
-     but only fixes DNS — leaves Node objects still missing ExternalIP for
-     everyone else.
-
-  (1) is the right architectural answer; (2) is the right next-PR answer.
-
 - [ ] Decouple wyrm2 from tofu: `module.wyrm2` in the same TF root as the cluster means
       any `tofu apply` risks rebooting wyrm2 (the machine running tofu). The `--exclude`
       flag is a workaround but error-prone. Options: separate TF root for wyrm2, or manage

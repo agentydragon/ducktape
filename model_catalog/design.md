@@ -367,9 +367,8 @@ selected tag's baked settings instead.
 GPT-OSS 20B's larger gateway variants still use the base tag, with no baked alias;
 only the native wire applies their requested context. Those route names do **not**
 establish equivalent effective allocations across wires. Creating aliases or
-retiring routes needs a separate behavior decision. Likewise,
-the legacy projection from requested `num_ctx` into `Model.context_window` remains
-pending the publication cleanup; the source declarations make no capacity claim.
+retiring routes needs a separate behavior decision. Requested `num_ctx` is no longer
+projected into `Model.context_window`; Ollama capacity metadata stays unset.
 
 ## 3. Consumer inventory and side effects
 

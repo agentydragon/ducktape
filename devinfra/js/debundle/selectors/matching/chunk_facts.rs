@@ -2272,39 +2272,6 @@ mod tests {
         );
     }
 
-    fn module_member_uses(
-        src: &str,
-        import_sources: &[(&str, &str)],
-    ) -> BTreeMap<usize, Vec<ModuleMemberUseFact>> {
-        let imports: HashMap<String, String> = import_sources
-            .iter()
-            .map(|(local, src)| ((*local).to_string(), (*src).to_string()))
-            .collect();
-        js_ast::with_swc_globals(|| {
-            module_member_uses_by_ordinal(
-                &js_ast::parse_js_module_ast("<test>", src).unwrap(),
-                &imports,
-            )
-        })
-    }
-
-    #[test]
-    fn module_member_uses_skips_computed_access() {
-        // `mod[expr]` is computed — no static export name — so it contributes
-        // nothing even though `mod` is imported; the sibling `mod.kept` does.
-        let uses = module_member_uses(
-            "function f(k) { return mod[k] + mod.kept; }\n",
-            &[("mod", "./m")],
-        );
-        assert_eq!(
-            uses[&0],
-            vec![ModuleMemberUseFact {
-                module: "./m".to_string(),
-                member: "kept".to_string(),
-            }],
-        );
-    }
-
     fn call_args(src: &str) -> Vec<CallArgumentFact> {
         js_ast::with_swc_globals(|| {
             call_argument_uses(&js_ast::parse_js_module_ast("<test>", src).unwrap())

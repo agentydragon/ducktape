@@ -120,8 +120,8 @@ def test_the_fleet_is_read_as_records_out_of_the_runner_s_own_progress() -> None
     stdout = (
         "Waiting for available remote runner...\n"
         "\x1b[90m2026-09-12 15:28:14.665 UTC \x1b[mSyncing existing repo...\n"
-        '\x1b[m{"type":"RULE","rule":{"name":"//aiquota/frontend:screenshots","ruleClass":"js_test"}}\n'
-        '{"type":"RULE","rule":{"name":"//props/frontend:visual","ruleClass":"js_test"}}\n'
+        '\x1b[m{"type":"RULE","rule":{"name":"//aiquota/frontend:screenshots","ruleClass":"py_test"}}\n'
+        '{"type":"RULE","rule":{"name":"//props/frontend:visual","ruleClass":"py_test"}}\n'
         "\x1b[32mINFO: \x1b[mElapsed time: 2.2s\n"
         "Remote run completed at 2026-09-12 15:28:20 UTC\n"
     )
@@ -139,7 +139,7 @@ def test_a_source_file_in_the_query_output_is_not_a_target_to_run() -> None:
     """Only rule records name something runnable; other record types are not the fleet."""
     stdout = (
         '{"type":"SOURCE_FILE","sourceFile":{"name":"//props/frontend:harness.mjs"}}\n'
-        '{"type":"RULE","rule":{"name":"//props/frontend:visual","ruleClass":"js_test"}}\n'
+        '{"type":"RULE","rule":{"name":"//props/frontend:visual","ruleClass":"py_test"}}\n'
     )
 
     def fake_run(command: list[str | Path], **_kwargs: object) -> subprocess.CompletedProcess[str]:

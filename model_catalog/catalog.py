@@ -539,9 +539,6 @@ def _ollama_routes(variant: ollama.ChatVariant) -> OllamaRoutes:
     model = Model(
         id=f"{variant.model.tag.removesuffix(':latest').replace(':', '-')}-{suffix.lower()}",
         display_name=f"{variant.model.display_name} ({suffix})",
-        # Legacy publication metadata, preserved here until the separate limits cleanup.
-        # num_ctx is a requested allocation, not evidence of provider capacity.
-        context_window=context,
     )
     return OllamaRoutes(
         openai=Route(model, OLLAMA_OPENAI, upstream_model=variant.tag),

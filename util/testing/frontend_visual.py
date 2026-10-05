@@ -1,13 +1,10 @@
 """Shared helpers for Python Playwright visual render-health tests.
 
-The Chromium flag set, the frozen-clock init script and the animation-pinning CSS are single-sourced
-with the JS Puppeteer launcher (`frontend_visual/launcher.mjs`): both read
+The Chromium flag set, the frozen-clock init script and the animation-pinning CSS are read from
 `util/testing/chromium-flags.json`, `util/testing/frozen-clock.js` and
-`util/testing/disable-animations.css` (kept at
-this level — a data file under `frontend_visual/` would shadow this module as
-a namespace package), and both drive the hermetic `@chrome_headless_shell` browser. This
-module finds its binary in the runfiles, where `browser_launcher_assets` puts it; the JS launcher
-is handed the path in `CHROMIUM_HEADLESS_SHELL`.
+`util/testing/disable-animations.css` (kept at this level — a data file under `frontend_visual/`
+would shadow this module as a namespace package). The browser is the hermetic `@chrome_headless_shell`,
+found in the runfiles, where `browser_launcher_assets` puts it.
 """
 
 from __future__ import annotations
@@ -26,8 +23,7 @@ if TYPE_CHECKING:
 
 
 _FLAGS = json.loads(get_required_path(own_repo_rlocation("util/testing/chromium-flags.json")).read_text())
-# Chromium reads generic-family choices from the profile, not from page CSS. Keep this shared with
-# the Puppeteer launcher so the two visual-test stacks exercise the same browser configuration.
+# Chromium reads generic-family choices from the profile, not from page CSS.
 _FONT_PREFERENCES = json.loads(
     get_required_path(own_repo_rlocation("util/testing/chromium-font-preferences.json")).read_text()
 )
@@ -36,14 +32,18 @@ CONTAINER_BASE_BROWSER_ARGS: list[str] = _FLAGS["containerBase"]
 # Container base plus font/raster/compositing/animation pinning for stable renders.
 DETERMINISTIC_BROWSER_ARGS: list[str] = CONTAINER_BASE_BROWSER_ARGS + _FLAGS["deterministicExtra"]
 # Hard-pins every animation and transition to its first frame, for a page that inlines its own
-# `<style>`. Why `reduced_motion="reduce"` is not enough, and why it must be in the page before the
-# animated element mounts: the `DISABLE_ANIMATIONS_CSS` comment in `frontend_visual/launcher.mjs`.
+# `<style>`. `reduced_motion="reduce"` is not enough: it only helps component CSS that checks that
+# media feature, and some does not (Mantine's `Indicator processing` ping is an unconditional
+# `animation: … 1000ms linear infinite`). An animation like that keeps running on the compositor's own
+# clock whatever the frozen `Date`, so the frame captured depends on scheduling jitter. It must be in
+# the page before the animated element mounts: `animation-play-state: paused` pins an animation to its
+# start frame only when it is in effect at creation; applied later it freezes whatever frame the
+# animation had reached by then.
 DISABLE_ANIMATIONS_CSS = get_required_path(own_repo_rlocation("util/testing/disable-animations.css")).read_text()
 
 
 # The instant the scenario sweep freezes page clocks to, so date-relative text renders the same on
-# every run. 2025-02-01T12:00:00Z, as FROZEN_NOW_MS in frontend_visual/launcher.mjs, which the
-# Puppeteer sweeps use until their lanes move over.
+# every run. 2025-02-01T12:00:00Z.
 FROZEN_NOW_MS = 1_738_411_200_000
 
 

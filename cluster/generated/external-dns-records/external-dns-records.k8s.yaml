@@ -41,9 +41,9 @@ spec:
       recordTTL: 300
       recordType: TXT
       targets:
-        - v=spf1 -all
+        - '"v=spf1 -all"'
     - dnsName: _dmarc.allegedly.works
       recordTTL: 300
       recordType: TXT
       targets:
-        - v=DMARC1; p=reject; adkim=s; aspf=s
+        - '"v=DMARC1; p=reject; adkim=s; aspf=s"'

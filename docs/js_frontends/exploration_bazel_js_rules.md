@@ -133,12 +133,12 @@ npm.npm_translate_lock(
 
 The ducktape repository currently uses aspect_rules_js for:
 
-- **Props frontend** (React + Mantine): esbuild, TypeScript checks, Puppeteer visual harness
+- **Props frontend** (React + Mantine): esbuild, TypeScript checks, Playwright visual sweep
 - **Airlock frontend** (React + Mantine): esbuild, TypeScript checks, browser visual tests
 - **study_casino frontend** (React): browser frontend
 - **rspcache admin_ui** (React): Vite build
 
-Bundling and dev servers work across these projects. Props uses its Puppeteer harness; the Playwright module-identity issue (#1) remains relevant for projects that use Playwright.
+Bundling and dev servers work across these projects. Props renders its visual harness with the Python Playwright sweep; the Playwright module-identity issue (#1) remains relevant for projects that run Playwright from JS.
 
 ---
 
@@ -387,7 +387,7 @@ Given the current architecture (4 React frontends):
 - **TypeScript:** `aspect_rules_ts` (ts_project rule)
 - **Bundling:** Bazel-managed Vite or esbuild, selected per frontend
 - **Linting:** `aspect_rules_lint` with ESLint + Prettier aspects
-- **Browser binary:** a pinned Chrome for Testing headless shell (`@chrome_headless_shell` in `MODULE.bazel`) for the Puppeteer and Playwright tests
+- **Browser binary:** a pinned Chrome for Testing headless shell (`@chrome_headless_shell` in `MODULE.bazel`) for the Playwright tests
 - **Framework tooling:** Let the selected bundler and framework tools handle framework-specific requirements
 
 ### For Your Specific Issues

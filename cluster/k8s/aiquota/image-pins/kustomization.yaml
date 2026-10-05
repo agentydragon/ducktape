@@ -2,4 +2,4 @@ apiVersion: kustomize.config.k8s.io/v1alpha1
 kind: Component
 images:
   - name: git.allegedly.works/ducktape-ci/aiquota-api
-    newTag: devel-20260930002626-19e7524 # {"$imagepolicy": "flux-system:aiquota-api:tag"}
+    newTag: devel-20261005104134-0c56c93 # {"$imagepolicy": "flux-system:aiquota-api:tag"}

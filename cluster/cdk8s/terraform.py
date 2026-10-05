@@ -125,6 +125,7 @@ def gitops_terraform(
     *,
     name: str,
     variables: BaseModel | None,
+    interval: str = "15m",
     depends_on: Sequence[Terraform] = (),
     env: Sequence[TerraformV1Alpha2SpecRunnerPodTemplateSpecEnv] = (),
     env_from: Sequence[TerraformV1Alpha2SpecRunnerPodTemplateSpecEnvFrom] = (),
@@ -138,6 +139,8 @@ def gitops_terraform(
     `variables` models the module's variables.tf (None: set none); each field is written
     structurally into the runner's tfvars, so a nested map arrives as a Terraform
     map/object, not a string.
+
+    `interval` controls periodic drift checks; the default is 15 minutes.
 
     `store_readable_plan=HUMAN` writes each plan's diff to the `tfplan-default-<name>`
     ConfigMap, readable by anyone who can read ConfigMaps in flux-system. Enable it only
@@ -155,7 +158,7 @@ def gitops_terraform(
             namespace=flux.NAMESPACE,
         ),
         path=f"./{ducktape_flux.TF_GITOPS_ROOT}/{name}",
-        interval="15m",
+        interval=interval,
         approve_plan="auto",
         store_readable_plan=store_readable_plan,
         vars=None

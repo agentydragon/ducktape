@@ -9,7 +9,6 @@
     "esbuild": "^0.28.0",
     "esbuild-plugin-tailwindcss": "^2.0.3",
     "openapi-typescript": "^7.10.1",
-    "puppeteer": "^25.0.0",
     "tailwindcss": "^4.3.3",
     "typescript": "^5.9.0"
   },
@@ -26,10 +25,5 @@
     "openapi-fetch": "^0.17.0",
     "react": "^19.0.0",
     "react-dom": "^19.0.0"
-  },
-  "pnpm": {
-    "onlyBuiltDependencies": [
-      "puppeteer"
-    ]
   }
 }

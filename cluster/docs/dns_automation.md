@@ -1,7 +1,9 @@
 # DNS
 
-DNS for `allegedly.works` is served by AWS Route 53. ExternalDNS manages the
-record sets; Terraform still owns domain registration and Route 53 delegation.
+DNS for `allegedly.works` is served by AWS Route 53. ExternalDNS manages public
+application and static records; cert-manager manages ACME challenge TXT records.
+Terraform still owns domain registration and Route 53 nameserver delegation,
+with a two-hour drift-check interval.
 
 ExternalDNS runs in the `external-dns` namespace. It reads accepted HTTPRoutes attached to
 `gateway-system/cluster-gateway` and the `external-dns/static-records`
@@ -18,8 +20,8 @@ record deletion needs a separately reviewed policy change or cleanup.
 ExternalDNS uses the dedicated IAM user `cluster-external-dns` with record
 permissions limited to this hosted zone. Its key is stored in a separate SOPS
 Secret and is not shared with Terraform's registrar-capable credential. The
-record and marker addresses are removed from Terraform state with `removed`
-blocks and `destroy = false`; the registered domain stays in Terraform.
+original record and marker addresses were removed from Terraform state with
+`removed` blocks and `destroy = false`; the registered domain stays in Terraform.
 
 The seven existing record sets have ExternalDNS TXT registry markers. These use
 `heritage=external-dns,external-dns/owner=ducktape-allegedly-works`; ExternalDNS
@@ -30,30 +32,25 @@ recognizes the owner without a resource label. The marker names use the configur
 
 ```text
 AWS Route 53 hosted zone (Z02901943N8ZFQFOD9P5I)
-├── *.allegedly.works  A  → OVH gateway node IPs (wildcard)
-├── allegedly.works    A  → OVH gateway node IPs (apex)
-└── _acme-challenge.*  TXT  (managed by cert-manager for ACME DNS-01)
-
-ExternalDNS manages A records.
-cert-manager Route 53 solver manages ACME challenge TXT records.
+├── HTTPRoute hostnames       A    → Gateway public target IPs (ExternalDNS)
+├── wildcard, mx, api        A    → roster public/control-plane IPs (ExternalDNS)
+├── allegedly.works          MX   → mx.allegedly.works (ExternalDNS)
+├── allegedly.works, _dmarc  TXT  → SPF/DMARC (ExternalDNS)
+└── _acme-challenge.*        TXT  → ACME DNS-01 (cert-manager)
 ```
 
-## Records
-
-| Record   | FQDN                 | IPs                  | TTL |
-| -------- | -------------------- | -------------------- | --- |
-| wildcard | `*.allegedly.works.` | OVH gateway node IPs | 300 |
-| apex     | `allegedly.works.`   | OVH gateway node IPs | 300 |
-
-The gateway and API node IPs in `generated/external-dns-records/` are rendered
-from `nebula-mesh.json` (<mesh_membership.md>). The apex A target comes from the
-Gateway's target annotation.
+The Gateway annotation and the static gateway and API IPs in
+`generated/external-dns-records/` are rendered from `nebula-mesh.json`
+(<mesh_membership.md>). The apex A record comes from its accepted HTTPRoute and
+uses the Gateway's target annotation. Static records use a 300-second TTL except
+for the API A record, which uses 60 seconds. Route 53 requires literal double quotes
+around TXT values in the `DNSEndpoint` targets, including SPF and DMARC.
 
 ## Key Files
 
 | File                                                      | Purpose                                                                   |
 | --------------------------------------------------------- | ------------------------------------------------------------------------- |
-| `tf/gitops/dns-records/main.tf`                           | Domain delegation and record state handoff                                |
+| `tf/gitops/dns-records/main.tf`                           | Domain registration, delegation, and record state handoff                 |
 | `generated/dns-automation/dns-automation.k8s.yaml`        | tofu-controller Terraform resource (generated, `cdk8s/dns_automation.py`) |
 | `k8s/external-creds/aws-route53-dns-automation.sops.yaml` | Canonical AWS IAM Secret for DNS automation (SOPS)                        |
 | `k8s/external-creds/aws-route53-external-dns.sops.yaml`   | Dedicated ExternalDNS IAM key (SOPS)                                      |

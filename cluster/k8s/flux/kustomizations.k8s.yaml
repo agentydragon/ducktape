@@ -885,41 +885,6 @@ spec:
 apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
 metadata:
-  name: clickhouse
-  namespace: ducktape-flux
-spec:
-  decryption:
-    provider: sops
-    secretRef:
-      name: sops-age-cluster-secrets
-  dependsOn:
-    - name: clickhouse-operator
-      namespace: ducktape-flux
-  healthCheckExprs:
-    - apiVersion: clickhouse-keeper.altinity.com/v1
-      current: status.status == 'Completed'
-      failed: status.status == 'Aborted'
-      inProgress: status.status != 'Completed' && status.status != 'Aborted'
-      kind: ClickHouseKeeperInstallation
-    - apiVersion: clickhouse.altinity.com/v1
-      current: status.status == 'Completed'
-      failed: status.status == 'Aborted'
-      inProgress: status.status != 'Completed' && status.status != 'Aborted'
-      kind: ClickHouseInstallation
-  interval: 10m
-  path: ./cluster/k8s/clickhouse/cluster
-  prune: true
-  retryInterval: 1m
-  sourceRef:
-    kind: ExternalArtifact
-    name: clickhouse
-    namespace: ducktape-flux
-  timeout: 20m
-  wait: true
----
-apiVersion: kustomize.toolkit.fluxcd.io/v1
-kind: Kustomization
-metadata:
   name: dcgm-exporter
   namespace: ducktape-flux
 spec:
@@ -999,6 +964,43 @@ spec:
     name: external-secrets-operator
     namespace: ducktape-flux
   timeout: 5m0s
+  wait: true
+---
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: clickhouse
+  namespace: ducktape-flux
+spec:
+  decryption:
+    provider: sops
+    secretRef:
+      name: sops-age-cluster-secrets
+  dependsOn:
+    - name: clickhouse-operator
+      namespace: ducktape-flux
+    - name: external-secrets-operator
+      namespace: ducktape-flux
+  healthCheckExprs:
+    - apiVersion: clickhouse-keeper.altinity.com/v1
+      current: status.status == 'Completed'
+      failed: status.status == 'Aborted'
+      inProgress: status.status != 'Completed' && status.status != 'Aborted'
+      kind: ClickHouseKeeperInstallation
+    - apiVersion: clickhouse.altinity.com/v1
+      current: status.status == 'Completed'
+      failed: status.status == 'Aborted'
+      inProgress: status.status != 'Completed' && status.status != 'Aborted'
+      kind: ClickHouseInstallation
+  interval: 10m
+  path: ./cluster/k8s/clickhouse/cluster
+  prune: true
+  retryInterval: 1m
+  sourceRef:
+    kind: ExternalArtifact
+    name: clickhouse
+    namespace: ducktape-flux
+  timeout: 20m
   wait: true
 ---
 apiVersion: kustomize.toolkit.fluxcd.io/v1

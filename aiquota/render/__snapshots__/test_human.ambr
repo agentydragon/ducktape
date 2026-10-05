@@ -66,6 +66,12 @@
     7d:  40%  ↻ 4d21h  Δ+10%  exhausts ~1d18h before reset
   '''
 # ---
+# name: test_renders_shared_fixture[paid_credits]
+  '''
+  codex · 0 banked resets  ⚡ using paid credits · 2,746 credits left
+    5h: 100% ↻ 1h30m  7d:  38% ↻ 3d14h
+  '''
+# ---
 # name: test_renders_shared_fixture[stale_fallback]
   '''
   claude  last refresh failed 2m ago: HTTP 503 Service Unavailable  (stale 1d0h)

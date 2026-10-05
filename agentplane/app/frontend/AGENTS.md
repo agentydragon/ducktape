@@ -31,7 +31,7 @@ A row needs an `element`, a `route` and a `viewport`; `outputName`, `readySelect
 (`util/testing/visual_scenarios.py`) and the harness the route and the fixture switches (`Scenario`
 in `harness/scenario.ts`). JSON has no shared constants, so every phone row spells out a Pixel 6's
 CSS viewport (`{ "width": 412, "height": 915, "deviceScaleFactor": 2.625 }`). `readySelectors` are
-Playwright selectors (`:text("...")`, not Puppeteer's `::-p-text(...)`). Heights are deliberate: a
+Playwright selectors (`:text("...")`). Heights are deliberate: a
 thread's history follows its bottom, so a row's viewport must be tall enough to keep the card under
 test, and the input above it, in frame.
 

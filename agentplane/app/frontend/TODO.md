@@ -36,6 +36,10 @@ a field a harness adds sends every such call to the JSON view while the tests st
   alongside a sticky summary: draw a continuous vertical rail down the open block's left edge, clickable anywhere
   along its length to collapse -- reachable from wherever the reader has scrolled to, without depending on any
   one row staying pinned.
+- **Fold adjacent reasoning items inside mixed tool/reasoning runs**: `historyRows` groups consecutive tool calls and
+  reasoning items together, and opening a run currently shows each item separately. When reasoning items are
+  adjacent within a mixed run, fold each consecutive reasoning group into a nested disclosure whose collapsed line
+  joins their text and whose expanded body shows the original individual items in order.
 - **Consider squashing the "observation" naming layer**: not remembered as a deliberate design choice. `Event`
   (`protocol/event.proto`)'s payload is a `oneof` field literally named `observation`; that name then propagated
   outward into `runner/observation.py`'s `Observation` type, the archive/API layer

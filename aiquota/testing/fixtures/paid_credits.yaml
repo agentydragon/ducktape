@@ -1,0 +1,8 @@
+codex:
+  short: { usedPercent: 100, resetSeconds: 5400, windowSeconds: 18000 }
+  long: { usedPercent: 38, resetSeconds: 310000, windowSeconds: 604800 }
+  paidCredits: { balance: "2745.7597130000", unlimited: false }
+  paidCreditsActive: true
+  availableResetCredits: 0
+  lastFetch: 1
+  error: null

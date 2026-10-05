@@ -75,7 +75,7 @@ Sketch to design out later (a real mechanism-design + security effort, not built
   receive-only) with a server-enforced recipient allowlist (`To: <operator>` only)
   has a blast radius of "can email the operator" — safe as standing capability.
   Needs deliverability work first: update the apex SPF `-all` / DMARC `reject`
-  records in `tf/gitops/dns-records/`, OVH rDNS for the gateway IPs, and Gmail may
+  records in `cluster/cdk8s/external_dns.py`, OVH rDNS for the gateway IPs, and Gmail may
   still junk a fresh sender for a while.
 - **Transparency by construction.** Every elevated action is logged and surfaced (what
   it did, under which grant, why), so the operator-facing surface is also the

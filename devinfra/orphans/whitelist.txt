@@ -21,7 +21,6 @@ MODULE.bazel
 .npmrc
 .prettierignore
 .markdownlint*
-.puppeteerrc*
 
 # Root-level CI and tool config files (yaml — not blanket *.yaml)
 .pre-commit-config.yaml

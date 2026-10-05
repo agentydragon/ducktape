@@ -297,7 +297,7 @@ def write_json(path: Path, value: Any) -> None:
 
 
 def chromium_executable() -> str | None:
-    return os.environ.get("CHROMIUM_HEADLESS_SHELL") or os.environ.get("PUPPETEER_EXECUTABLE_PATH") or None
+    return os.environ.get("CHROMIUM_HEADLESS_SHELL") or None
 
 
 def format_json(value: Any) -> str:

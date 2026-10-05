@@ -109,13 +109,13 @@ def records_chart(app: App, mesh: nebula_mesh.Mesh) -> Chart:
                     dns_name="allegedly.works", record_type="MX", record_ttl=300, targets=["10 mx.allegedly.works"]
                 ),
                 DnsEndpointSpecEndpoints(
-                    dns_name="allegedly.works", record_type="TXT", record_ttl=300, targets=["v=spf1 -all"]
+                    dns_name="allegedly.works", record_type="TXT", record_ttl=300, targets=['"v=spf1 -all"']
                 ),
                 DnsEndpointSpecEndpoints(
                     dns_name="_dmarc.allegedly.works",
                     record_type="TXT",
                     record_ttl=300,
-                    targets=["v=DMARC1; p=reject; adkim=s; aspf=s"],
+                    targets=['"v=DMARC1; p=reject; adkim=s; aspf=s"'],
                 ),
             ]
         ),

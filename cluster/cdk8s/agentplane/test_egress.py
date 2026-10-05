@@ -18,6 +18,7 @@ from cluster.cdk8s.agentplane.app_settings import (
     AIQUOTA_READ_POLICY,
     BASIC_POLICY,
     COINBASE_POLICY,
+    FINANCE_AIQUOTA_HISTORY_POLICY,
     FORGEJO_FINANCE_AGENT_POLICY,
     FORGEJO_HAKU_POLICY,
     GITHUB_AGENTYDRAGON_AGENT_POLICY,
@@ -31,6 +32,7 @@ from cluster.cdk8s.agentplane.app_settings import (
 )
 from cluster.cdk8s.agentplane.conftest import NAMESPACES
 from cluster.cdk8s.agentplane.egress import KUBERNETES_AUDIENCE, KUBERNETES_CREDENTIAL, KUBERNETES_HOST
+from cluster.cdk8s.clickhouse import client
 
 # What a workload token may reach on the Actions service: the MCP endpoint, its schema and
 # the action-group/request API. The operator API (/v1/operator/*) and the OAuth endpoints
@@ -169,6 +171,7 @@ def test_testing_github_policy_has_its_credential_and_no_real_account_credential
             ACTIVITYWATCH_READ_POLICY,
             AGENTPLANE_TESTING_POLICY,
             AIQUOTA_READ_POLICY,
+            FINANCE_AIQUOTA_HISTORY_POLICY,
             HAKU_MAILBOX_POLICY,
             PLAID_PGWEB_POLICY,
         }
@@ -332,3 +335,37 @@ def test_inference_is_granted_separately_from_platform_operations(
 
 if __name__ == "__main__":
     pytest_bazel.main()
+
+
+def test_finance_aiquota_history_is_read_only_and_finance_only(
+    agentplane_manifests: dict[str, list[dict[str, Any]]],
+) -> None:
+    docs = agentplane_manifests[staging.ENV.namespace]
+    config = yaml.safe_load(_by_name(docs, "ConfigMap", "agentplane-app-config")["data"]["config.yaml"])
+    assert FINANCE_AIQUOTA_HISTORY_POLICY in config["sandbox_presets"]["finance-agent"]["policies"]
+    for name in ("public-coder", "haku"):
+        if name in config["sandbox_presets"]:
+            assert FINANCE_AIQUOTA_HISTORY_POLICY not in config["sandbox_presets"][name]["policies"]
+    policy = _by_name(docs, "EgressPolicy", FINANCE_AIQUOTA_HISTORY_POLICY)
+    assert policy["spec"]["rules"] == [
+        {
+            "hosts": [client.HTTP.fqdn],
+            "clusterInternal": True,
+            "methods": ["GET"],
+            "paths": ["/"],
+            "credentialRef": {"name": client.FINANCE_AGENT_CREDENTIALS},
+        }
+    ]
+    credential = _by_name(docs, "EgressCredential", client.FINANCE_AGENT_CREDENTIALS)
+    assert credential["spec"]["source"] == {
+        "secretRef": {"name": client.FINANCE_AGENT_CREDENTIALS, "key": client.PASSWORD_KEY}
+    }
+    assert credential["spec"]["targets"] == [{"header": "Authorization", "method": "basicPassword"}]
+    quota = _by_name(docs, "EgressPolicy", AIQUOTA_READ_POLICY)
+    assert any(
+        rule.get("clusterInternal")
+        and rule.get("hosts") == ["aiquota-api.cli-proxy-api.svc.cluster.local"]
+        and rule["methods"] == ["GET"]
+        and rule["paths"] == ["/v1/quotas", "/v1/providers/*/raw"]
+        for rule in quota["spec"]["rules"]
+    )

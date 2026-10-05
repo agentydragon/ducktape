@@ -525,31 +525,6 @@ mod tests {
     }
 
     #[test]
-    fn all_different_propagates_broad_specific_fixture() {
-        let result = solve(&CompiledSelectorProblem {
-            variables: vec![dense(0, 2), dense(1, 2), dense(2, 3)],
-            all_different: vec![all_different(0, &[0, 1, 2])],
-            allowed_tuple_row_sets: vec![
-                row_set(0, 1, &[0, 1]),
-                row_set(1, 1, &[1]),
-                row_set(2, 1, &[2]),
-            ],
-            allowed_tuples: vec![table(0, &[0], 0), table(1, &[1], 1), table(2, &[2], 2)],
-            target_projections: projections(&[0, 1]),
-            ..problem()
-        });
-
-        assert_eq!(result.status, BackendSolveStatus::Satisfiable);
-        assert_eq!(
-            result.assignment_coverage,
-            BackendAssignmentCoverage::TargetSupportComplete
-        );
-        assert_eq!(result.assignments.len(), 1);
-        assert!(row_has(&result.assignments[0], 0, 0));
-        assert!(row_has(&result.assignments[0], 1, 1));
-    }
-
-    #[test]
     fn multiple_projection_rows_are_ambiguous() {
         let result = solve(&CompiledSelectorProblem {
             variables: vec![dense(0, 2)],

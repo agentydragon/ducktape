@@ -3005,6 +3005,18 @@ data:
           Do not use direct database credentials or bypass the egress proxy. Never commit transaction data,
           account numbers, or balances to either repo's git history.
 
+          The finance preset reads live AIQuota via GET on the internal `aiquota-api` Service
+          (`aiquota-api.cli-proxy-api.svc.cluster.local:8080/v1/quotas`), using the
+          `agentplane-credential-aiquota-read` Bearer placeholder; the public hostname may be
+          unavailable even when the Service is healthy. For historical typed quota/spend
+          observations, query ClickHouse's HTTP endpoint at
+          `clickhouse.clickhouse.svc.cluster.local:8123/` with GET and URL-encoded `query=`,
+          HTTP Basic username `finance_agent_aiquota` and password placeholder
+          `agentplane-credential-clickhouse-finance-agent-credentials`. This role is restricted
+          to SELECT on `aiquota.aiquota_windows`; it cannot read raw provider bodies or other
+          tenants. Check current egress rules before either request; no auth token or raw
+          provider payload belongs in a public repo.
+
           This is analysis and tooling work only. Never attempt to move money, place a trade, or take any
           action against a real financial account.
 
@@ -3146,7 +3158,9 @@ data:
           - basic
           - packages
           - aiquota-read
+          - finance-aiquota-history
           - coinbase
+          - finance-aiquota-history
           - forgejo-finance-agent
           - plaid-pgweb
           - github-agentydragon-agent
@@ -7633,6 +7647,160 @@ spec:
         - /v1/**
       credentialRef:
         name: aiquota-read
+    - hosts:
+        - aiquota-api.cli-proxy-api.svc.cluster.local
+      methods:
+        - GET
+      paths:
+        - /v1/quotas
+        - /v1/providers/*/raw
+      clusterInternal: true
+      credentialRef:
+        name: aiquota-read
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: agentplane-staging-finance-clickhouse-reader
+  namespace: clickhouse
+rules:
+  - apiGroups:
+      - ""
+    resourceNames:
+      - clickhouse-finance-agent-credentials
+    resources:
+      - secrets
+    verbs:
+      - get
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: agentplane-staging-finance-clickhouse-reader
+  namespace: clickhouse
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: agentplane-staging-finance-clickhouse-reader
+subjects:
+  - apiGroup: ""
+    kind: ServiceAccount
+    name: external-creds-reader
+    namespace: agentplane-staging-egress-credentials
+---
+apiVersion: external-secrets.io/v1
+kind: ClusterSecretStore
+metadata:
+  name: kubernetes-agentplane-staging-finance-clickhouse-secret-store
+spec:
+  conditions:
+    - namespaces:
+        - agentplane-staging-egress-credentials
+  provider:
+    kubernetes:
+      auth:
+        serviceAccount:
+          name: external-creds-reader
+      remoteNamespace: clickhouse
+      server:
+        caProvider:
+          key: ca.crt
+          name: kube-root-ca.crt
+          namespace: default
+          type: ConfigMap
+---
+apiVersion: external-secrets.io/v1
+kind: ExternalSecret
+metadata:
+  name: clickhouse-finance-agent-credentials
+  namespace: agentplane-staging-egress-credentials
+spec:
+  data:
+    - remoteRef:
+        key: clickhouse-finance-agent-credentials
+        property: password
+      secretKey: password
+  refreshInterval: 1h
+  secretStoreRef:
+    kind: ClusterSecretStore
+    name: kubernetes-agentplane-staging-finance-clickhouse-secret-store
+  target:
+    creationPolicy: Owner
+    deletionPolicy: Retain
+    name: clickhouse-finance-agent-credentials
+---
+apiVersion: agentplane.allegedly.works/v1alpha1
+kind: EgressCredential
+metadata:
+  name: clickhouse-finance-agent-credentials
+  namespace: agentplane-staging
+spec:
+  description: Finance-only typed AIQuota ClickHouse reader; HTTP Basic password for finance_agent_aiquota.
+  source:
+    secretRef:
+      name: clickhouse-finance-agent-credentials
+      key: password
+  targets:
+    - header: Authorization
+      method: basicPassword
+---
+apiVersion: agentplane.allegedly.works/v1alpha1
+kind: EgressPolicy
+metadata:
+  name: finance-aiquota-history
+  namespace: agentplane-staging
+spec:
+  rules:
+    - hosts:
+        - clickhouse.clickhouse.svc.cluster.local
+      methods:
+        - GET
+      paths:
+        - /
+      clusterInternal: true
+      credentialRef:
+        name: clickhouse-finance-agent-credentials
+---
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: agentplane-egress-to-finance-clickhouse
+  namespace: agentplane-staging
+spec:
+  egress:
+    - toEndpoints:
+        - matchLabels:
+            clickhouse.altinity.com/app: chop
+            clickhouse.altinity.com/chi: clickhouse
+            clickhouse.altinity.com/namespace: clickhouse
+            clickhouse.altinity.com/ready: "yes"
+            k8s:io.kubernetes.pod.namespace: clickhouse
+      toPorts:
+        - ports:
+            - port: "8123"
+              protocol: TCP
+  endpointSelector:
+    matchLabels:
+      app.kubernetes.io/name: agentplane-egress
+---
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: agentplane-egress-to-aiquota
+  namespace: agentplane-staging
+spec:
+  egress:
+    - toEndpoints:
+        - matchLabels:
+            app.kubernetes.io/name: aiquota
+            k8s:io.kubernetes.pod.namespace: cli-proxy-api
+      toPorts:
+        - ports:
+            - port: "8080"
+              protocol: TCP
+  endpointSelector:
+    matchLabels:
+      app.kubernetes.io/name: agentplane-egress
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: Role

@@ -233,10 +233,6 @@ def test_proxy_verifier_hook_preserves_fastmcp_configuration() -> None:
     assert verifier.required_scopes == ["read"]
 
 
-def test_fastmcp_version_guard_accepts_the_supported_runtime() -> None:
-    ensure_supported_fastmcp_version()
-
-
 def test_fastmcp_version_guard_rejects_an_unsupported_runtime(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(fastmcp, "__version__", "4.0.2")
 

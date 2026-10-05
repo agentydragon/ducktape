@@ -98,11 +98,12 @@ function formatAge(seconds) {
 // last successful snapshot (windows + extraSpend + reset credits) when the latest call
 // returned nothing usable. `staleAge` is null when no fallback was needed.
 function effectiveState(state) {
-  if (state.windows.length > 0 || state.availableResetCredits != null) {
+  if (state.windows.length > 0 || state.availableResetCredits != null || state.paidCredits != null) {
     const staleAge = state.error && state.lastFetch != null ? Math.max(0, (Date.now() - state.lastFetch) / 1000) : null;
     return {
       windows: state.windows,
       extraSpend: state.extraSpend,
+      paidCredits: state.paidCredits,
       availableResetCredits: state.availableResetCredits,
       availableResetCreditExpiries: state.availableResetCreditExpiries,
       staleAge,
@@ -113,6 +114,7 @@ function effectiveState(state) {
     return {
       windows: [],
       extraSpend: null,
+      paidCredits: null,
       availableResetCredits: null,
       availableResetCreditExpiries: [],
       staleAge: null,
@@ -122,6 +124,7 @@ function effectiveState(state) {
   return {
     windows: snap.windows,
     extraSpend: snap.extraSpend,
+    paidCredits: snap.paidCredits,
     availableResetCredits: snap.availableResetCredits,
     availableResetCreditExpiries: snap.availableResetCreditExpiries,
     staleAge: ageSeconds,
@@ -244,6 +247,18 @@ function formatBankedResets(count, expiries) {
   return knownExpiries.length ? `${label} · known expiries: ${knownExpiries.join(", ")}` : label;
 }
 
+function formatPaidCredits(credits, active) {
+  if (!credits) return null;
+  let amount = "available";
+  if (credits.unlimited) amount = "unlimited";
+  else if (credits.balance != null) {
+    const parsed = Number(credits.balance);
+    if (Number.isFinite(parsed))
+      amount = `${new Intl.NumberFormat(undefined, { maximumFractionDigits: 0 }).format(parsed)} left`;
+  }
+  return `${active ? "⚡ using paid credits" : "paid credits"} · ${amount}`;
+}
+
 // Peak-burn formatting. The policy (is it peak, which windows are next) is
 // decided in aiquota/peak_windows.py and delivered as state.burn; this only
 // formats it. Instants arrive absolute and are shown in the viewer's local
@@ -301,10 +316,12 @@ function emptyProviderState() {
     lastCheck: null,
     error: null,
     extraSpend: null,
+    paidCredits: null,
     availableResetCredits: null,
     availableResetCreditExpiries: [],
     currentlyOverPlan: false,
     extraStatus: "none",
+    paidCreditsActive: false,
     // Peak-burn schedule from the Python view model; null when the provider has none.
     burn: null,
     // Last successful fetch — populated when the most recent attempt failed
@@ -394,6 +411,7 @@ const QuotaIndicator = GObject.registerClass(
         return {
           windows: [snap.short, snap.long].filter((window) => window != null),
           extraSpend: snap.extraSpend ?? null,
+          paidCredits: snap.paidCredits ?? null,
           availableResetCredits: snap.availableResetCredits ?? null,
           availableResetCreditExpiries: snap.availableResetCreditExpiries ?? [],
           fetchedAt,
@@ -408,10 +426,12 @@ const QuotaIndicator = GObject.registerClass(
           lastCheck,
           error: node?.error ?? null,
           extraSpend: node?.extraSpend ?? null,
+          paidCredits: node?.paidCredits ?? null,
           availableResetCredits: node?.availableResetCredits ?? null,
           availableResetCreditExpiries: node?.availableResetCreditExpiries ?? [],
           currentlyOverPlan: node?.currentlyOverPlan === true,
           extraStatus: node?.extraStatus ?? "none",
+          paidCreditsActive: node?.paidCreditsActive === true,
           burn: node?.burn ?? null,
           lastSuccess: loadLastSuccess(node?.lastSuccess),
         };
@@ -507,12 +527,14 @@ const QuotaIndicator = GObject.registerClass(
       for (const p of this._providers) {
         p.header = new PopupMenu.PopupSeparatorMenuItem(p.label);
         const { windows } = effectiveState(p.state);
-        const rowCount = p.state.currentlyOverPlan ? 1 : Math.max(1, windows.length);
+        const rowCount = p.state.currentlyOverPlan || p.state.paidCreditsActive ? 1 : Math.max(1, windows.length);
         p.windowRows = Array.from({ length: rowCount }, () => this._makeQuotaRow("quota"));
+        p.creditRow = this._makeTextRow();
         // Separate from windowRows so window indexing is unaffected; hidden
         // outright for providers with no published schedule.
         p.burnRow = this._makeTextRow();
         this.menu.addMenuItem(p.header);
+        this.menu.addMenuItem(p.creditRow);
         this.menu.addMenuItem(p.burnRow);
         for (const row of p.windowRows) this.menu.addMenuItem(row);
         p.header.label.add_style_class_name("quota-popup-header");
@@ -656,6 +678,7 @@ const QuotaIndicator = GObject.registerClass(
           .map((window) => this._mapWindow(window))
           .filter((window) => window.display),
         extraSpend: this._mapExtraSpend(snap.result.extra_spend),
+        paidCredits: snap.result.paid_credits ?? null,
         availableResetCredits: snap.result.available_reset_credits ?? null,
         availableResetCreditExpiries: snap.result.available_reset_credit_expiries ?? [],
         fetchedAt: snap.fetched_at ? new Date(snap.fetched_at).getTime() : null,
@@ -690,11 +713,13 @@ const QuotaIndicator = GObject.registerClass(
           lastCheck,
           error: isSuccess ? null : (result.error ?? null),
           extraSpend: isSuccess ? this._mapExtraSpend(result.extra_spend) : null,
+          paidCredits: isSuccess ? (result.paid_credits ?? null) : null,
           availableResetCredits: isSuccess ? (result.available_reset_credits ?? null) : null,
           availableResetCreditExpiries: isSuccess ? (result.available_reset_credit_expiries ?? []) : [],
           // Derived policy bits from the Python view model — single source of truth.
           currentlyOverPlan: pq.currently_over_plan === true,
           extraStatus: pq.extra_status ?? "none",
+          paidCreditsActive: pq.paid_credits_active === true,
           burn: pq.burn ?? null,
           lastSuccess,
         };
@@ -761,7 +786,7 @@ const QuotaIndicator = GObject.registerClass(
           isShort: window.windowSeconds < longestDuration,
         })
       );
-      const overPlan = state.currentlyOverPlan === true;
+      const overPlan = state.currentlyOverPlan === true || state.paidCreditsActive === true;
       const stale = staleAge != null || isStaleFetch(state.lastFetch);
       const tint = overPlan ? "hot" : stale ? "stale" : exhaustedWindows.length > 0 ? "hot" : bindingTint(tints);
       this._setTint(icon, paceLabel, tint);
@@ -776,7 +801,9 @@ const QuotaIndicator = GObject.registerClass(
       // A peak window costs a multiple per token, so it belongs in the panel
       // where it is visible without opening the popup.
       const burning = state.burn?.in_peak === true ? "🔥" : "";
-      if (overPlan) {
+      if (state.paidCreditsActive === true) {
+        paceLabel.set_text(`credits ⚡${burning}`);
+      } else if (overPlan) {
         paceLabel.set_text(`${formatCompactDollars(state.extraSpend.used_usd)} ⚡${burning}`);
       } else if (exhaustedWindows.length > 0) {
         // Multiple exhausted windows keep the provider blocked until the last reset.
@@ -790,10 +817,12 @@ const QuotaIndicator = GObject.registerClass(
     _renderPopup() {
       for (const p of this._providers) {
         this._renderProviderHeader(p.header, p.label, p.state);
+        this._renderCreditRow(p.creditRow, p.state);
         this._renderBurnRow(p.burnRow, p.state.burn);
-        if (p.state.currentlyOverPlan === true) {
+        if (p.state.currentlyOverPlan === true || p.state.paidCreditsActive === true) {
           const { windows } = effectiveState(p.state);
           this._renderExtraActiveRow(p.windowRows[0], windows);
+          p.windowRows.slice(1).forEach((row) => (row.visible = false));
         } else {
           const { windows, staleAge } = effectiveState(p.state);
           const longestDuration = Math.max(...windows.map((window) => window.windowSeconds));
@@ -801,6 +830,7 @@ const QuotaIndicator = GObject.registerClass(
           windows.forEach((window, index) =>
             this._renderPopupRow(p.windowRows[index], window, staleAge, window.windowSeconds < longestDuration)
           );
+          p.windowRows.forEach((row, index) => (row.visible = index < Math.max(1, windows.length)));
         }
       }
     }
@@ -826,6 +856,16 @@ const QuotaIndicator = GObject.registerClass(
       if (extraStr) parts.push(extraStr);
       if (!state.error) parts.push(formatFreshness(state.lastFetch));
       item.label.set_text(parts.join(" · "));
+    }
+
+    _renderCreditRow(item, state) {
+      const { paidCredits } = effectiveState(state);
+      const text = formatPaidCredits(paidCredits, state.paidCreditsActive);
+      item.visible = text != null;
+      if (text == null) return;
+      item._summaryLabel.set_text(text);
+      if (state.paidCreditsActive) item._summaryLabel.add_style_class_name("quota-credit-active");
+      else item._summaryLabel.remove_style_class_name("quota-credit-active");
     }
 
     _renderBurnRow(item, burn) {

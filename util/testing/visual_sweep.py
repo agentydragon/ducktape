@@ -20,10 +20,10 @@ Selection is pytest's, which is what Bazel drives: `--test_filter=<scenario>` is
 name is its test id), and `shard_count` is `util.testing.sharding`, filter first, then shard.
 A scenario that fails fails its own test and the sweep goes on, so one run enumerates every broken scene.
 
-Deviation from the Puppeteer sweep: each scenario gets a fresh browser (about 0.1s on the RBE worker,
-against ~10s of rendering per shard) rather than a page of one shared per shard. Viewport, device scale
-factor, touch and colour scheme are then context options as Playwright intends, and what one scenario
-renders cannot depend on which others ran before it or on which shard it landed.
+Each scenario gets a fresh browser (about 0.1s on the RBE worker, against ~10s of rendering per shard),
+not a page of one shared per shard. Viewport, device scale factor, touch and colour scheme are then
+context options as Playwright intends, and what one scenario renders cannot depend on which others ran
+before it or on which shard it landed.
 """
 
 from __future__ import annotations

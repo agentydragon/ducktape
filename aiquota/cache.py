@@ -102,7 +102,9 @@ def _assemble(name: str, output: ProviderFetch, prior: ProviderQuota | None) -> 
     """Wrap a provider fetch, retaining the last substantive quota snapshot."""
     success: SuccessfulProviderFetch | None = None
     if isinstance(output.result, FetchSuccess) and (
-        output.result.windows or output.result.available_reset_credits is not None
+        output.result.windows
+        or output.result.available_reset_credits is not None
+        or output.result.paid_credits is not None
     ):
         success = SuccessfulProviderFetch(fetched_at=output.fetched_at, result=output.result)
     return ProviderQuota(

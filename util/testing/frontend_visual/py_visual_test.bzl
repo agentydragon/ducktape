@@ -1,6 +1,6 @@
 """How a package declares its Playwright visual-render sweep.
 
-One `py_visual_test` per frontend, the Python counterpart of `visual_test`. The package contributes
+One `py_visual_test` per frontend. The package contributes
 its harness page and a `scenarios.json`; the sweep (`//util/testing:visual_sweep`) is the test, so
 there is no Python in the package. The macro carries what no caller should have to know: the
 environment the sweep reads, and the `visual` tag that lets the weekly determinism sweep and the PR
@@ -66,9 +66,9 @@ def py_visual_test(
       served_documents: URL prefix to the HTML file the request fence answers a request under it with,
         for a shell that frames another origin (the harness mocks that origin's document). Any other
         request still fails the scenario.
-      devtools_viewport: emulate and capture each viewport over the DevTools protocol the way the
-        Puppeteer sweep did (`DevtoolsViewport`), so a lane ported from it keeps its images
-        byte-identical at a device scale factor where Playwright's own viewport differs.
+      devtools_viewport: emulate and capture each viewport over the DevTools protocol
+        (`DevtoolsViewport`), so a lane keeps its published images byte-identical at a device scale
+        factor where Playwright's own viewport differs.
       env: extra environment for the sweep.
       tags: extra tags; `visual` is always added.
       **kwargs: passed to `py_test` -- `size` and `shard_count` in practice.

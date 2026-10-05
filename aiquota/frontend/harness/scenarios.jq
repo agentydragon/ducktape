@@ -20,5 +20,6 @@ keys_unsorted as $scenes
     | $scenes[] as $scene
     | shot("\($scene)-\($theme)"; $scene; $theme; 1200; "\($scene) · \($theme)")
   ]
-  + [shot("hot-narrow"; "hot"; "dark"; 420; "hot · dark · narrow")]
+  + [shot("hot-narrow"; "hot"; "dark"; 420; "hot · dark · narrow"),
+     shot("paid_credits-narrow"; "paid_credits"; "dark"; 420; "paid credits · dark · narrow")]
 | from_entries
