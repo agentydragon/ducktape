@@ -11,6 +11,7 @@
 # gazelle:exclude devinfra/debug/agent_fleet
 # gazelle:exclude debug/atlas
 # gazelle:exclude debug/kernel_6_18_amd_kvm_stall
+# gazelle:exclude cluster/debug/optiplex_nvme_thermal
 # gazelle:exclude cluster/debug/sqlite_storage_bench
 # gazelle:exclude nix/debug/wyrm2
 # gazelle:exclude nix/nixos
