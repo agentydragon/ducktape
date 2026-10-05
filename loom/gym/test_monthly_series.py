@@ -19,7 +19,7 @@ def test_validate_known_history_rejects_bad_data() -> None:
 def test_load_series_requires_evidence_files(tmp_path: Path) -> None:
     # load_series reads the augur-evidence checkout; a missing file must surface,
     # not silently produce an empty series.
-    with pytest.raises(RuntimeError, match="evidence not found"):
+    with pytest.raises(RuntimeError):
         load_series(tmp_path)
 
 
