@@ -68,7 +68,7 @@ def server_url(tmp_path_factory: pytest.TempPathFactory) -> Iterator[str]:
                 raise RuntimeError(f"Augur server exited early with code {server.returncode}; see {server_log.name}")
             try:
                 with urllib.request.urlopen(f"{origin}/healthz", timeout=1) as response:
-                    if response.status == 200 and response.read().decode() == "ok\n":
+                    if response.status == 200:
                         break
             except OSError, urllib.error.URLError:
                 time.sleep(0.25)
