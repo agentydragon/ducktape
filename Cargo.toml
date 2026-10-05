@@ -32,7 +32,6 @@ roaring = "^0.11.5"
 # debundle: derive enum -> wire-string (snake_case) so kind spellings aren't hand-rolled
 strum = { version = "^0.28.0", features = ["derive"] }
 #tokio = { version = "*", features = ["full", "time"] }
-warp = "^0.4.3"
 futures = "^0.3.34"
 rusty-money = "^0.5.0"
 serde_yaml = "^0.9.34"
@@ -43,7 +42,6 @@ shellexpand = "^3.1.2"
 async-trait = "^0.1.92"
 rust_decimal_macros = "^1.40.0"
 term-table = "^1.4.0"
-uuid = { version="^1.26.1", features=["v4"] }
 shlex = "^2.0.1"
 glob = "^0.3.4"
 csv = "^1.4.0"
@@ -84,7 +82,6 @@ swc_ecma_utils = "^35.0.2"
 swc_ecma_visit = "^29.0.0"
 relative-path = "^2.0.1"
 lol_html = "^3.0.1"
-humantime = "^2.4.0"
 rayon = "^1.12.0"
 regex = "^1.13.1"
 # debundle property-based test suites (test-only consumer; single
