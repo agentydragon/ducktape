@@ -92,3 +92,16 @@ py_test(
         "@pypi//typer_slim",
     ],
 )
+
+py_test(
+    name = "test_view_formatter",
+    srcs = ["test_view_formatter.py"],
+    deps = [
+        ":conftest",
+        ":view_formatter",
+        "//:conftest",
+        "//x/wt/shared:protocol",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)

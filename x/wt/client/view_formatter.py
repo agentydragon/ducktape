@@ -234,8 +234,9 @@ class ViewFormatter:
                 ]
             )
 
-        # Render table with no headers, no grid lines, just clean aligned columns
-        click.echo(tabulate(table_data, tablefmt="plain"))
+        # Render table with no headers, no grid lines, just clean aligned columns.
+        # Names and hashes are identifiers, so they print verbatim: numeric parsing turns `562161e0` into `562161`.
+        click.echo(tabulate(table_data, tablefmt="plain", disable_numparse=True))
 
         # Aggregate and show errors below the table to avoid widening columns
         error_lines = []
