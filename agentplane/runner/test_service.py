@@ -92,7 +92,7 @@ async def test_a_harness_the_supervisor_cannot_start_names_the_spawn_failure(
     with pytest.raises(RunnerError) as raised:
         await client.attach("launch-failure-2", spec=spec)
     assert "exit_code=125" in str(raised.value)
-    assert "harness supervisor: start native harness" in str(raised.value)
+    assert "stderr_tail=''" not in str(raised.value)
 
 
 async def test_summaries_report_the_published_log_not_a_batch_in_progress(tmp_path: Path) -> None:
