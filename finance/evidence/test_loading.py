@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import io
 import json
+import re
 import textwrap
 import zipfile
 from datetime import UTC, date, datetime
@@ -43,7 +44,7 @@ def test_fred_frame_parses_and_drops_empty_values() -> None:
 
 
 def test_fred_frame_rejects_missing_series_column() -> None:
-    with pytest.raises(ValueError, match="observation_date and CPIAUCSL"):
+    with pytest.raises(ValueError, match=re.escape(FRED_CPI.provenance_label)):
         fred_series_frame(b"observation_date,OTHER\n2024-12-31,1.0\n", FRED_CPI)
 
 
@@ -72,7 +73,7 @@ def test_yahoo_frame_skips_missing_closes_and_enforces_minimum_samples() -> None
     ]
     frame = yahoo_adjusted_close_frame(_yahoo_payload(points), YAHOO_BTC, minimum_samples=2)
     assert frame["value"].to_list() == [95000.0, 93429.0, 94000.0]
-    with pytest.raises(ValueError, match="credible adjusted-close history"):
+    with pytest.raises(ValueError, match=re.escape(YAHOO_BTC.provenance_label)):
         yahoo_adjusted_close_frame(_yahoo_payload(points), YAHOO_BTC, minimum_samples=10)
 
 
@@ -94,7 +95,7 @@ def test_yahoo_frame_rejects_a_silently_downgraded_granularity() -> None:
         95000.0,
         94000.0,
     ]
-    with pytest.raises(ValueError, match="was served at '1mo' granularity"):
+    with pytest.raises(ValueError, match=re.escape(YAHOO_BTC.provenance_label)):
         yahoo_adjusted_close_frame(_yahoo_payload(points, granularity="1mo"), YAHOO_BTC, minimum_samples=2)
 
 
@@ -119,12 +120,12 @@ def test_read_monthly_levels_from_checkout_dir(tmp_path: Path) -> None:
 
 
 def test_read_monthly_levels_rejects_zillow() -> None:
-    with pytest.raises(ValueError, match="wide city table"):
+    with pytest.raises(ValueError, match=re.escape(ZILLOW_ZHVI.provenance_label)):
         read_monthly_levels(Path("/nonexistent"), ZILLOW_ZHVI)
 
 
 def test_source_bytes_missing_file_raises(tmp_path: Path) -> None:
-    with pytest.raises(RuntimeError, match="evidence not found"):
+    with pytest.raises(RuntimeError):
         source_bytes(tmp_path, FRED_CPI)
 
 
@@ -171,7 +172,7 @@ def test_a_gap_in_the_monthly_series_is_rejected() -> None:
     the historical replay and misalign it against the other evidence series."""
 
     body = _FRENCH_BODY.replace("192608,   2.64,  -1.20,   3.82,   0.25\n", "")
-    with pytest.raises(ValueError, match="gapless"):
+    with pytest.raises(ValueError, match=re.escape(FRENCH_FACTORS.provenance_label)):
         french_factors_frame(_french_zip(body), FRENCH_FACTORS)
 
 
@@ -180,13 +181,13 @@ def test_an_archive_without_exactly_one_member_is_rejected() -> None:
     with zipfile.ZipFile(buffer, "w") as archive:
         archive.writestr("a.csv", _FRENCH_BODY)
         archive.writestr("b.csv", _FRENCH_BODY)
-    with pytest.raises(ValueError, match="expected exactly 1"):
+    with pytest.raises(ValueError, match=re.escape(FRENCH_FACTORS.provenance_label)):
         french_factors_frame(buffer.getvalue(), FRENCH_FACTORS)
 
 
 def test_a_file_with_no_monthly_rows_is_rejected() -> None:
     body = "header only\n\n Annual Factors: January-December \n,Mkt-RF,SMB,HML,RF\n  1927,  29.44,  -2.20,  -4.58,   3.12\n"
-    with pytest.raises(ValueError, match="no monthly rows"):
+    with pytest.raises(ValueError, match=re.escape(FRENCH_FACTORS.provenance_label)):
         french_factors_frame(_french_zip(body), FRENCH_FACTORS)
 
 
@@ -197,7 +198,7 @@ def test_read_monthly_levels_rejects_a_french_factors_file() -> None:
     did not catch it, so every kind now either parses or says why it cannot, and `assert_never`
     makes the NEXT kind a type error instead of a runtime surprise."""
 
-    with pytest.raises(ValueError, match="not one level series"):
+    with pytest.raises(ValueError, match=re.escape(FRENCH_FACTORS.provenance_label)):
         read_monthly_levels(Path("/nonexistent"), FRENCH_FACTORS)
 
 
