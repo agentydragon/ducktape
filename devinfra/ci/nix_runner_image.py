@@ -33,21 +33,6 @@ def manifest_digest(layout: Path) -> str:
     return "sha256:" + hashlib.sha256(manifest).hexdigest()
 
 
-def archive_to_oci(archive: str, destination: Path) -> str:
-    command(
-        "skopeo",
-        "copy",
-        "--insecure-policy",
-        "--format",
-        "oci",
-        "--dest-compress-format",
-        "gzip",
-        f"docker-archive:{archive}",
-        f"oci:{destination}:runner",
-    )
-    return manifest_digest(destination)
-
-
 def verify_runtime_config(base_archive: str, layout: Path) -> None:
     base = json.loads(command("skopeo", "inspect", "--config", f"docker-archive:{base_archive}"))
     candidate = json.loads(command("skopeo", "inspect", "--config", f"oci:{layout}:runner"))
@@ -80,13 +65,32 @@ def build(root: Path, work: Path, *, check_reproducible: bool) -> dict[str, str]
     image_drv = derivation(base_path)
     print(f"Assembling {image_drv}", flush=True)
     args = ["nix", "build", "--impure", IMAGE_ATTR, "--out-link", str(work / "image"), "--print-out-paths"]
-    archive = command(*args, env=image_environment(base_path))
-    digest = archive_to_oci(archive, work / "oci")
-    verify_runtime_config(base_path, work / "oci")
+    layout = Path(command(*args, env=image_environment(base_path)))
+    archive = command(
+        "nix",
+        "build",
+        "--impure",
+        f"{IMAGE_ATTR}.archive",
+        "--out-link",
+        str(work / "archive"),
+        "--print-out-paths",
+        env=image_environment(base_path),
+    )
+    digest = manifest_digest(layout)
+    verify_runtime_config(base_path, layout)
     if check_reproducible:
         # Force image assembly again, rather than accepting the first cached output.
+        command(
+            "nix",
+            "build",
+            "--impure",
+            f"{IMAGE_ATTR}.archive",
+            "--no-link",
+            "--rebuild",
+            env=image_environment(base_path),
+        )
         command(*args, "--rebuild", env=image_environment(base_path))
-        repeated_digest = archive_to_oci(archive, work / "oci-repeat")
+        repeated_digest = manifest_digest(layout)
         if repeated_digest != digest:
             raise ValueError(f"image assembly is not reproducible: {digest} != {repeated_digest}")
         print(f"Repeated image assembly produced {digest}")
@@ -95,7 +99,7 @@ def build(root: Path, work: Path, *, check_reproducible: bool) -> dict[str, str]
         "base_path": base_path,
         "derivation": image_drv,
         "archive": archive,
-        "layout": str(work / "oci"),
+        "layout": str(layout),
         "digest": digest,
     }
     (work / "state.json").write_text(json.dumps(state, indent=2) + "\n")

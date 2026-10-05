@@ -25,7 +25,7 @@ let
     done
   '';
 
-  image = pkgs.dockerTools.buildLayeredImage {
+  archive = pkgs.dockerTools.buildLayeredImage {
     name = "buildbuddy-remote-runner";
     tag = "latest";
     fromImage = baseImageArchive;
@@ -60,4 +60,14 @@ if baseImageArchive == null then
     exit 1
   ''
 else
-  image
+  # Include OCI serialization and its tooling in the derivation used by the
+  # stale-pin check, not just the intermediate Docker archive.
+  pkgs.runCommand "buildbuddy-remote-runner-oci"
+    {
+      nativeBuildInputs = [ pkgs.skopeo ];
+      passthru = { inherit archive; };
+    }
+    ''
+      skopeo --tmpdir "$TMPDIR" copy --insecure-policy --format oci --dest-compress-format gzip \
+        docker-archive:${archive} oci:$out:runner
+    ''
