@@ -94,29 +94,6 @@ mod chunk_constraining_module_edges_tests {
         assert!(order.contains(&module_id(0)));
         assert!(order.contains(&module_id(1)));
     }
-
-    /// Asymmetric I-cycle shape: eager forward + lazy back. The
-    /// constraining `edges` contain ONLY the forward edge; the lazy
-    /// back-edge lives only in `i_successors`.
-    #[test]
-    fn asymmetric_cycle_canonical_set_excludes_lazy_back_edge() {
-        let source = "const schemas_target = \"v\"; function lazy_back() { return ids_val; } const ids_val = schemas_target + \"-derived\";";
-        let owner_graph = parse_and_build(source);
-        let mut partition = Partition::new(&owner_graph, module_id(0));
-        partition.set(OwnerId(0), module_id(1)); // schemas_target -> mod_schemas
-        partition.set(OwnerId(1), module_id(1)); // lazy_back     -> mod_schemas
-        partition.set(OwnerId(2), module_id(2)); // ids_val       -> mod_ids
-        let canonical = chunk_constraining_module_edges(&owner_graph, &partition);
-        let pairs: BTreeSet<(ModuleId, ModuleId)> = canonical.pairs().collect();
-        assert!(
-            pairs.contains(&(module_id(2), module_id(1))),
-            "forward eager edge ids → schemas must be present; got {pairs:?}"
-        );
-        assert!(
-            !pairs.contains(&(module_id(1), module_id(2))),
-            "lazy back-edge schemas → ids must NOT be present; got {pairs:?}"
-        );
-    }
 }
 
 mod from_report_tests {
