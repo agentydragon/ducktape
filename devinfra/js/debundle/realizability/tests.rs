@@ -323,39 +323,68 @@ fn move_overlay_matches_applied_verdict_on_cycle_rebind_and_chain_moves() {
     }
 }
 
-/// Each committed move leaves the index's verdict equal to the pure
-/// from-scratch verdict on the same partition. The last move rejoins
-/// the `a`/`b` cycle's two modules, removing edges internal to a
-/// multi-module SCC.
+/// After each committed move the index's verdict equals the pure
+/// from-scratch verdict on the same partition, has the stated shape, and its
+/// touching verdict for the target module is the full verdict filtered to it.
 #[test]
-fn incremental_index_matches_pure_verdict_through_sequential_moves() {
-    let source = "const a = b + 1; const b = a + 1; function c() { return a; }";
-    let owner_graph = parse_and_build(source);
-
-    let baseline = Partition::new(&owner_graph, module_id(0));
-    let mut explicit = baseline.clone();
-    let mut index = RealizabilityIndex::from_partition(&owner_graph, baseline);
-
-    assert_eq!(
-        normalize_verdict(index.verdict()),
-        normalize_verdict(check_realizability(&owner_graph, &explicit)),
-    );
-
-    for (owner, to, realizable) in [(1, 1, false), (2, 2, false), (1, 0, true)] {
-        index.apply(
-            &owner_graph,
-            PartitionDelta::MoveOwners {
-                owners: vec![OwnerId(owner)],
-                to: module_id(to),
-            },
-        );
-        explicit.set(OwnerId(owner), module_id(to));
+fn incremental_index_matches_pure_verdict_after_each_committed_move() {
+    // Per row: (label, source, moves), each move being (owner, target module,
+    // realizable, unrealizable SCCs, cross rebinds).
+    let rows = [
+        // The last move rejoins the `a`/`b` cycle's two modules, removing
+        // edges internal to a multi-module SCC.
+        (
+            "sequential moves",
+            "const a = b + 1; const b = a + 1; function c() { return a; }",
+            vec![(1, 1, false, 1, 0), (2, 2, false, 1, 0), (1, 0, true, 0, 0)],
+        ),
+        // Rebinds are direct violations, not SCC edges.
+        (
+            "cross rebind",
+            "let a = 0; function b() { a = 1; }",
+            vec![(1, 1, false, 0, 1)],
+        ),
+    ];
+    for (label, source, moves) in rows {
+        let owner_graph = parse_and_build(source);
+        let baseline = Partition::new(&owner_graph, module_id(0));
+        let mut explicit = baseline.clone();
+        let mut index = RealizabilityIndex::from_partition(&owner_graph, baseline);
         assert_eq!(
             normalize_verdict(index.verdict()),
             normalize_verdict(check_realizability(&owner_graph, &explicit)),
-            "after moving owner {owner} to module {to}",
+            "{label}: before any move",
         );
-        assert_eq!(index.verdict().is_realizable(), realizable);
+        for (owner, to, realizable, sccs, rebinds) in moves {
+            index.apply(
+                &owner_graph,
+                PartitionDelta::MoveOwners {
+                    owners: vec![OwnerId(owner)],
+                    to: module_id(to),
+                },
+            );
+            explicit.set(OwnerId(owner), module_id(to));
+            let verdict = index.verdict();
+            assert_eq!(
+                normalize_verdict(verdict.clone()),
+                normalize_verdict(check_realizability(&owner_graph, &explicit)),
+                "{label}: after moving owner {owner} to module {to}",
+            );
+            assert_eq!(
+                (
+                    verdict.is_realizable(),
+                    verdict.unrealizable_sccs.len(),
+                    verdict.cross_rebinds.len(),
+                ),
+                (realizable, sccs, rebinds),
+                "{label}: after moving owner {owner} to module {to}: {verdict:#?}",
+            );
+            assert_eq!(
+                normalize_verdict(index.verdict_touching(module_id(to))),
+                normalize_verdict(filter_verdict_touching(&verdict, module_id(to))),
+                "{label}: touching verdict after moving owner {owner} to module {to}",
+            );
+        }
     }
 }
 
@@ -409,39 +438,6 @@ fn empty_delta_overlay_scc_containing_is_the_base_scc() {
         view.scc_containing(module_id(4)),
         BTreeSet::from([module_id(4)]),
         "4 is reachable from the cycle but cannot reach it",
-    );
-}
-
-#[test]
-fn incremental_index_reports_cross_rebinds_without_scc_edges() {
-    let source = "let a = 0; function b() { a = 1; }";
-    let owner_graph = parse_and_build(source);
-    let baseline = Partition::new(&owner_graph, module_id(0));
-    let mut explicit = baseline.clone();
-    let mut index = RealizabilityIndex::from_partition(&owner_graph, baseline);
-
-    index.apply(
-        &owner_graph,
-        PartitionDelta::MoveOwners {
-            owners: vec![OwnerId(1)],
-            to: module_id(1),
-        },
-    );
-    explicit.set(OwnerId(1), module_id(1));
-
-    let verdict = index.verdict();
-    assert_eq!(
-        normalize_verdict(verdict.clone()),
-        normalize_verdict(check_realizability(&owner_graph, &explicit)),
-    );
-    assert!(
-        verdict.unrealizable_sccs.is_empty(),
-        "rebinds are direct violations, not SCC edges: {verdict:#?}",
-    );
-    assert_eq!(verdict.cross_rebinds.len(), 1);
-    assert_eq!(
-        normalize_verdict(index.verdict_touching(module_id(1))),
-        normalize_verdict(verdict),
     );
 }
 
