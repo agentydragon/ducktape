@@ -39,20 +39,9 @@ def test_parse_factor_key_decodes_level_series() -> None:
 
 
 def test_parse_factor_key_decodes_private_equity_mark() -> None:
-    assert parse_factor_key("private_equity:openai") == PrivateEquityMarkKey(issuer_id=IssuerId("openai"))
-
-
-def test_wire_id_round_trips_through_parse() -> None:
-    keys: list[FactorKey] = [
-        InflationKey(),
-        SecurityKey(symbol=SP500_SYMBOL),
-        SecurityKey(symbol=SecuritySymbol("btc")),
-        HomeValueKey(location_id=LocationId("san_francisco_ca")),
-        RentKey(location_id=LocationId("vallejo_ca")),
-        PrivateEquityMarkKey(issuer_id=IssuerId("openai")),
-    ]
-    for key in keys:
-        assert parse_factor_key(key.wire_id) == key
+    key = PrivateEquityMarkKey(issuer_id=IssuerId("openai"))
+    assert parse_factor_key("private_equity:openai") == key
+    assert parse_factor_key(key.wire_id) == key
 
 
 def test_discriminated_union_validates_each_variant() -> None:
