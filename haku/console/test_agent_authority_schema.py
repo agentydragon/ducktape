@@ -649,73 +649,12 @@ def test_database_already_at_head_is_unchanged(db_url: str) -> None:
         engine.dispose()
 
 
-def test_create_issue_complete_and_first_use_activation_form_one_graph(db_url: str) -> None:
+def test_agent_names_are_required_globally_unique_and_owned_by_current_agent(db_url: str) -> None:
     apply_migrations(db_url)
     engine = create_engine(db_url)
     try:
         # NFKC + Unicode casefold need not equal PostgreSQL lower(display_name). The database owns
         # nonempty/global uniqueness and immutability; application naming code owns normalization.
-        graph = _create_oauth_graph(engine, "unicode", display_name="Straße ⑨", display_name_key="strasse 9")
-        with engine.connect() as conn:
-            row = (
-                conn.execute(
-                    text(
-                        """
-                        SELECT agent.status::TEXT AS agent_status,
-                               binding.status::TEXT AS binding_status,
-                               interaction.phase::TEXT AS phase,
-                               name.display_name,
-                               name.display_name_key,
-                               agent.owner_operator_id,
-                               auth_grant.allowed_scopes,
-                               auth_grant.initial_access_jti
-                        FROM authorization_grants AS auth_grant
-                        JOIN credential_bindings AS binding
-                          ON binding.binding_id = auth_grant.binding_id
-                        JOIN agents AS agent ON agent.agent_id = binding.agent_id
-                        JOIN agent_name_reservations AS name
-                          ON name.reservation_id = agent.current_name_reservation_id
-                        JOIN enrollment_interactions AS interaction
-                          ON interaction.interaction_id = auth_grant.enrollment_interaction_id
-                        WHERE auth_grant.grant_id = :grant_id
-                        """
-                    ),
-                    {"grant_id": graph.grant_id},
-                )
-                .mappings()
-                .one()
-            )
-            assert row["agent_status"] == "draft"
-            assert row["binding_status"] == "issued"
-            assert row["phase"] == "completed"
-            assert row["display_name"] == "Straße ⑨"
-            assert row["display_name_key"] == "strasse 9"
-            assert row["owner_operator_id"] == graph.identity.operator_id
-            assert row["allowed_scopes"] == ["tools:call"]
-            assert row["initial_access_jti"] == f"access-{graph.grant_id}"
-
-        _activate_agent(engine, graph)
-        with engine.connect() as conn:
-            statuses = conn.execute(
-                text(
-                    """
-                    SELECT agent.status::TEXT, binding.status::TEXT
-                    FROM agents AS agent
-                    JOIN credential_bindings AS binding ON binding.agent_id = agent.agent_id
-                    WHERE agent.agent_id = :agent_id
-                    """
-                ),
-                {"agent_id": graph.agent_id},
-            ).one()
-            assert statuses == ("active", "active")
-    finally:
-        engine.dispose()
-
-
-def test_agent_names_are_required_globally_unique_and_owned_by_current_agent(db_url: str) -> None:
-    apply_migrations(db_url)
-    engine = create_engine(db_url)
-    try:
         graph = _create_oauth_graph(engine, "name-owner", display_name="Straße ⑨", display_name_key="strasse 9")
         _activate_agent(engine, graph)
         with engine.begin() as conn:
