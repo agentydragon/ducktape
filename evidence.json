@@ -7510,5 +7510,111 @@
       "result": "PASSED on RBE; stack file present before teardown.",
       "limits": "Demonstrates early stack and case capture; does not reproduce the historical browser hang, force a Bazel timeout, or preserve browser HAR."
     }
+  },
+  "implementation_followup": {
+    "recorded_at_utc": "2026-10-05T01:01:01.119432+00:00",
+    "kind": "Implementation and acceptance annotation; original measurement window unchanged",
+    "changes": [
+      {
+        "pr": 9018,
+        "title": "Parse generated YAML once",
+        "merged_at_utc": "2026-10-04T23:15:51Z",
+        "merge_commit_sha": "3f23a0f6e0c9bde9509bcc0cdf0d047002d99ad3",
+        "url": "https://github.com/agentydragon/ducktape/pull/9018"
+      },
+      {
+        "pr": 9020,
+        "title": "Limit CI checkout history to merge parents",
+        "merged_at_utc": "2026-10-04T23:22:18Z",
+        "merge_commit_sha": "ea83003cc09bda39d622fd26c9c3b4b0b2fa1a51",
+        "url": "https://github.com/agentydragon/ducktape/pull/9020"
+      },
+      {
+        "pr": 9023,
+        "title": "Skip unrelated Ansible Galaxy setup",
+        "merged_at_utc": "2026-10-04T23:29:58Z",
+        "merge_commit_sha": "255b7b4bda1037f54d2424252dcdd0d87344a2c3",
+        "url": "https://github.com/agentydragon/ducktape/pull/9023"
+      },
+      {
+        "pr": 9024,
+        "title": "Package trusted visual CLI",
+        "merged_at_utc": "2026-10-04T23:49:18Z",
+        "merge_commit_sha": "9423db7a69d8f70f846a13425980e5a9434a02aa",
+        "url": "https://github.com/agentydragon/ducktape/pull/9024"
+      },
+      {
+        "pr": 9025,
+        "title": "Use released Nix visual CLI in both jobs",
+        "merged_at_utc": "2026-10-05T00:11:11Z",
+        "merge_commit_sha": "534fb63c2883e85acdcb2a9a0cc6d840a4cad193",
+        "url": "https://github.com/agentydragon/ducktape/pull/9025"
+      }
+    ],
+    "visual_package": {
+      "release_tag": "pr-visuals-10a1bd57a2b7",
+      "sha256": "10a1bd57a2b78438d26e361423fe49ede33111c6738fcf2519f0d3a39866d884",
+      "pin_commit": "56cc2b76",
+      "installed_nix_output": "/nix/store/bzr28vkdqww6k1lgc1x09nqa0z28ydyc-pr-visuals-latest",
+      "live_cache": "https://cache.allegedly.works/public"
+    },
+    "acceptance": {
+      "manifest_test": {
+        "invocation": "69f11f57-9f8b-57b3-a256-9bf61ac21fa5",
+        "tests_passed": 8,
+        "target_seconds": 11.3,
+        "limit": "Not comparable to earlier instrumented spike as a controlled performance pair"
+      },
+      "galaxy_skip_job": 111562113573,
+      "announcement_jobs": [
+        {
+          "id": 111572929245,
+          "run_id": 37249123051,
+          "job_seconds": 30,
+          "setup_seconds": 19
+        },
+        {
+          "id": 111573000662,
+          "run_id": 37249147324,
+          "job_seconds": 33,
+          "setup_seconds": 22
+        }
+      ],
+      "publication_job": {
+        "id": 111572663160,
+        "run_id": 37249031358,
+        "conclusion": "success",
+        "job_seconds": 123
+      },
+      "limit": "Functional and selected live acceptance; no matched post-change cohort or measured savings"
+    },
+    "next_analysis": {
+      "operator_intent": "Rerun in a couple of days; no scheduled run created",
+      "all_interventions_merged_after_utc": "2026-10-05T00:11:11Z",
+      "classify_by": "Actual tested source and workflow revision, not merge time alone",
+      "compare": [
+        "PR class and trust path with sample counts",
+        "required-gate feedback p50/p90 and last gate",
+        "failures, reruns and superseded heads",
+        "checkout and Galaxy step durations",
+        "manifest test selection and cache state",
+        "announcement and publication runner-minutes by artifact/outcome class"
+      ],
+      "confounders": [
+        "rollout and cold-cache bootstrap",
+        "intervening source/workflow changes",
+        "different target selection",
+        "workload mix",
+        "cache state"
+      ],
+      "unimplemented": [
+        "pre-timeout browser diagnostics (isolated spike only)",
+        "reuse exact-source per-target CI verdicts for release gates",
+        "trusted no-artifact preflight"
+      ],
+      "superseded": [
+        "separate direct-API announcement implementation; one published package chosen instead"
+      ]
+    }
   }
 }
