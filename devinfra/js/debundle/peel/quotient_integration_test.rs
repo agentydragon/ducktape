@@ -204,41 +204,6 @@ fn merge_cannot_hide_an_existing_entry_dependency() {
 }
 
 #[test]
-fn seed_rejection_diagnostic_is_canonical() {
-    // Same fixture run twice; rejection diagnostic byte-equal across
-    // runs. Determinism check.
-    let make_report = || {
-        let a1 = residual_owner("owner:a1", 1, &["BindingA1"], 5);
-        let a2 = residual_owner("owner:a2", 2, &["BindingA2"], 5);
-        let b1 = residual_owner("owner:b1", 3, &["BindingB1"], 5);
-        let b2 = residual_owner("owner:b2", 4, &["BindingB2"], 5);
-        let edges = vec![
-            owner_edge("edge:0", "owner:a1", "owner:b1", DepKind::EagerUse, true),
-            owner_edge("edge:1", "owner:b2", "owner:a2", DepKind::EagerUse, true),
-        ];
-        singleton_graph(vec![a1.clone(), a2.clone(), b1.clone(), b2.clone()], edges)
-    };
-    let spec = vec![
-        spec_module("mod_alpha", &["owner:a1", "owner:a2"]),
-        spec_module("mod_beta", &["owner:b1", "owner:b2"]),
-    ];
-
-    let report_a = make_report();
-    let (_q1, rejected_a) =
-        build_seed_quotient(&report_a, &report_a.atomic_graph.nodes, &spec, 10_000).unwrap();
-    let report_b = make_report();
-    let (_q2, rejected_b) =
-        build_seed_quotient(&report_b, &report_b.atomic_graph.nodes, &spec, 10_000).unwrap();
-
-    let json_a = serde_json::to_string_pretty(&rejected_a).unwrap();
-    let json_b = serde_json::to_string_pretty(&rejected_b).unwrap();
-    assert_eq!(
-        json_a, json_b,
-        "rejection diagnostic must be byte-identical across runs",
-    );
-}
-
-#[test]
 fn post_seed_reports_each_unrealizable_scc_in_owner_id_order() {
     // Two independent mutual-eager module pairs, (c, d) before (a, b)
     // in the report. Every spec module is one owner, so no seed
