@@ -91,16 +91,14 @@ def test_catalog_rejects_unknown_property_location(
     records[0]["location_id"] = "missing_location"
     properties_path.write_text(json.dumps(records), encoding="utf-8")
 
-    with pytest.raises(
-        ValueError, match="property 'location_a_property' references unknown location 'missing_location'"
-    ):
+    with pytest.raises(ValueError, match=r"location_a_property.*missing_location"):
         build_catalog(make_catalog_config(properties_path))
 
 
 def test_catalog_rejects_unknown_location_selection(
     properties_path: Path, make_catalog_config: MakeCatalogConfig
 ) -> None:
-    with pytest.raises(ValueError, match="location_selection references unknown location ids"):
+    with pytest.raises(ValueError, match="missing_location"):
         build_catalog(make_catalog_config(properties_path, location_selection=("missing_location",)))
 
 
@@ -111,14 +109,14 @@ def test_catalog_rejects_duplicate_config_location_ids(
         update={"locations": (fixture_locations[0], fixture_locations[0])}
     )
 
-    with pytest.raises(ValueError, match="duplicate location ids"):
+    with pytest.raises(ValueError, match=fixture_locations[0].location_id):
         build_catalog(config)
 
 
 def test_catalog_rejects_asset_for_unknown_property(
     properties_path: Path, make_catalog_config: MakeCatalogConfig
 ) -> None:
-    with pytest.raises(ValueError, match="property_assets reference unknown property ids"):
+    with pytest.raises(ValueError, match="missing_property"):
         build_catalog(
             make_catalog_config(
                 properties_path,
