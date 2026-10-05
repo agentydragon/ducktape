@@ -487,11 +487,14 @@ def _ollama_routes(variant: ollama.ChatVariant, *, openai_reasoning_efforts: tup
     )
 
 
-# Qwen3.8's chat template (cluster/cdk8s/ollama/qwen38-chat-template.jinja) accepts
-# xhigh (its default), medium and low, and rejects any other value; it treats `high` as
-# an alias of xhigh, so that is not a separate level. Declared on the OpenAI-compatible
-# wire only: on the native wire LiteLLM's mapper fails on the reasoning object Codex sends.
-_QWEN_EFFORTS = ("low", "medium", "xhigh")
+# The efforts a client can ask Ollama for that Qwen3.8's chat template
+# (cluster/cdk8s/ollama/qwen38-chat-template.jinja) accepts. The template takes xhigh (its
+# default), medium and low, and treats `high` as xhigh. Ollama rewrites a requested `xhigh`
+# to `max` unless the model has thinking metadata, which a GGUF registered through
+# /api/create lacks, and the template rejects `max`: `high` is how a client asks for
+# Qwen's xhigh. Declared on the OpenAI-compatible wire only: on the native wire LiteLLM's
+# mapper fails on the reasoning object Codex sends.
+_QWEN_EFFORTS = ("low", "medium", "high")
 
 OLLAMA_QWEN_IQ4XS_128K = _ollama_routes(ollama.QWEN_IQ4XS_128K, openai_reasoning_efforts=_QWEN_EFFORTS)
 OLLAMA_QWEN_IQ4XS_256K = _ollama_routes(ollama.QWEN_IQ4XS_256K, openai_reasoning_efforts=_QWEN_EFFORTS)
