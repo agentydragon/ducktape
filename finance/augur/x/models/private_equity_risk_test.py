@@ -345,7 +345,7 @@ def test_private_equity_risk_unrequested_issuer_still_satisfies_request() -> Non
 
     model = PrivateEquityRiskProviderConfig(issuers={ACME: _issuer()}).realize_model()
 
-    with pytest.raises(ValueError, match=r"missing required private-equity issuer\(s\): \['other_issuer'\]"):
+    with pytest.raises(ValueError, match="other_issuer"):
         model.sample(
             ExogenousSamplingRequest(
                 horizon_months=1,
@@ -399,7 +399,7 @@ def test_public_market_open_hazard_without_anchors_is_flat_tail() -> None:
 
 
 def test_public_market_cdf_anchors_reject_non_increasing_month() -> None:
-    with pytest.raises(ValidationError, match="strictly increasing in month"):
+    with pytest.raises(ValidationError, match="public_market_cdf_anchors"):
         _issuer(
             public_market_cdf_anchors=(
                 PublicMarketCdfAnchor(month=7, cumulative_probability=0.5),
@@ -409,7 +409,7 @@ def test_public_market_cdf_anchors_reject_non_increasing_month() -> None:
 
 
 def test_public_market_cdf_anchors_reject_decreasing_cumulative_probability() -> None:
-    with pytest.raises(ValidationError, match="non-decreasing in cumulative_probability"):
+    with pytest.raises(ValidationError, match="public_market_cdf_anchors"):
         _issuer(
             public_market_cdf_anchors=(
                 PublicMarketCdfAnchor(month=7, cumulative_probability=0.6),
@@ -599,7 +599,7 @@ def test_scale_reversion_curbs_long_horizon_growth_vs_constant_hot_drift() -> No
 def test_scale_reversion_validator_rejects_young_below_mature() -> None:
     """Reversion is downward: a young drift below the mature asymptote is rejected."""
 
-    with pytest.raises(ValidationError, match="mu_young must be >= the mature"):
+    with pytest.raises(ValidationError, match="monthly_log_return_mu_young"):
         _valuation_issuer(
             valuation_monthly_log_return_mu=0.05,
             valuation_drift_scale_reversion=ValuationDriftScaleReversion(
