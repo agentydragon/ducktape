@@ -144,14 +144,20 @@ class Situation:
     cpi: tuple[int, ...] | None = None
 
 
-@pytest.fixture(
-    params=[FixedNominalLaw(), CpiIndexedLaw(start_year=2024, law_year_to_start=Fraction(1))],
+@pytest.fixture
+def indexation() -> TaxIndexation:
+    """The tables' law-year amounts in nominal dollars; `under_both_indexations` overrides it."""
+    return FixedNominalLaw()
+
+
+# A flat CPI from a start in the tables' law year indexes by exactly 1, so the CPI-indexed law must
+# reproduce the nominal figures. The cases that opt in reach every amount the tables index (ordinary
+# brackets, standard deduction, long-term gain brackets) and a January true-up.
+under_both_indexations = pytest.mark.parametrize(
+    "indexation",
+    [FixedNominalLaw(), CpiIndexedLaw(start_year=2024, law_year_to_start=Fraction(1))],
     ids=["fixed_nominal", "cpi_indexed_flat"],
 )
-def indexation(request: pytest.FixtureRequest) -> TaxIndexation:
-    """Every case holds under both: a flat CPI from a start in the tables' law year indexes by exactly 1."""
-    chosen: TaxIndexation = request.param
-    return chosen
 
 
 def compose(case: Situation, indexation: TaxIndexation) -> World:
@@ -316,6 +322,7 @@ def test_year_end_tax_accrual_federal_and_california_single_filer(indexation: Ta
     assert ordinary_income(rollout, 12) == 0.0
 
 
+@under_both_indexations
 def test_year_end_tax_includes_long_term_capital_gain_under_federal_ltcg_schedule(indexation: TaxIndexation) -> None:
     """L8 — Alice gets $50k W-2 wages, plus sells a long-held VTI
     lot (24 months pre-horizon) for a $20k gain at month 6.
@@ -360,6 +367,7 @@ def test_year_end_tax_includes_long_term_capital_gain_under_federal_ltcg_schedul
     assert usd(gain.long_term_gain) == pytest.approx(20_000.0, abs=0.02)
 
 
+@under_both_indexations
 def test_niit_taxes_the_magi_excess_but_not_muni_interest_and_settles_in_the_true_up(indexation: TaxIndexation) -> None:
     """$180,000 wages, $30,000 corporate interest and $48,000 California muni interest.
 
