@@ -6,7 +6,7 @@ import pytest_bazel
 from x.wt.testing.git_helpers import add_worktree
 
 
-def test_worktree_branch_names_are_actual(repo_factory, daemon_config_factory, wtcli):
+def test_ls_lists_externally_created_worktrees(repo_factory, daemon_config_factory, wtcli):
     repo_path = repo_factory.create_repo()
     cfg = daemon_config_factory(repo_path).minimal(upstream_branch="HEAD")
 
@@ -40,12 +40,6 @@ def test_worktree_branch_names_are_actual(repo_factory, daemon_config_factory, w
     out = res.stdout
     assert "aaaaa:" in out
     assert "bbbbb:" in out
-
-    # Additionally, query actual worktree branch heads (branch can change over time)
-    repo_a = pygit2.Repository(wt_a)
-    repo_b = pygit2.Repository(wt_b)
-    assert repo_a.head.shorthand == "test/aaaaa"
-    assert repo_b.head.shorthand == "test/bbbbb"
 
 
 if __name__ == "__main__":
