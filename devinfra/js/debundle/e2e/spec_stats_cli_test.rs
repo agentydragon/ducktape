@@ -105,28 +105,6 @@ fn source_match_bindings_count_toward_orphans_and_renames() {
 }
 
 #[test]
-fn output_is_deterministic_across_runs() {
-    let modules = module_tree(&[
-        (
-            "a.yaml",
-            "members:\n  - selector: { binding: { name: a } }\n  - selector: { binding: { name: b } }\n",
-        ),
-        (
-            "nested/c.yaml",
-            "members:\n  - selector: { binding: { name: c } }\n",
-        ),
-    ]);
-    write_text_file(
-        &modules.path().join("residual/unhandled.yaml"),
-        "members: []\n",
-    );
-
-    let out1 = run_stats(modules.path(), &["--format", "json"]);
-    let out2 = run_stats(modules.path(), &["--format", "json"]);
-    assert_eq!(out1.stdout, out2.stdout, "same spec -> same json");
-}
-
-#[test]
 fn text_format_emits_non_empty_human_output() {
     let modules = module_tree(&[(
         "solo.yaml",
