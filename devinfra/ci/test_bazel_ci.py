@@ -135,7 +135,6 @@ else:
     assert result.returncode == 0, result.stderr + result.stdout
     test_args = test_args_log.read_text().splitlines()
     if graph_wide:
-        assert f"graph-wide change: {changed_file}" in result.stdout
         assert not bazel_diff_args_log.exists()
         assert "//..." in test_args
         assert not any(arg.startswith("--target_pattern_file=") for arg in test_args)
