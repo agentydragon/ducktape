@@ -1135,45 +1135,6 @@ async def frame_lines(frames: AsyncIterator[bytes]) -> AsyncIterator[str]:
             yield line
 
 
-async def test_ingestion_reconnect_checks_the_archived_boundary_entry(
-    runner: RunnerHandle,
-    local_runners: SandboxSessions,
-    event_logs: EventLogStore,
-    ingestion: Ingestion,
-    spec: protocol_pb2.SessionSpec,
-) -> None:
-    client = RunnerClient(runner.target, capture_history=True)
-    try:
-        attachment = await client.attach(SESSION, spec=spec)
-        try:
-            await attachment.detach()
-            await attachment.drain_until_end()
-            assert attachment.seen
-            # A different fact under the same final cursor must be detected even before
-            # the runner produces any further Events.
-            attachment.seen[-1].event.at.seconds += 1
-            thread = await event_logs.open(SANDBOX, SESSION, spec)
-            lease = await ingestion.acquire(SANDBOX, timedelta(minutes=1))
-            assert lease is not None
-            await ingestion.record(thread, attachment.seen, lease=lease)
-            async with asyncio.timeout(10):
-                await Feed(
-                    session_id=SESSION,
-                    client=local_runners.client(SANDBOX),
-                    event_logs=event_logs,
-                    ingestion=ingestion,
-                    lease=lease,
-                ).run()
-            snapshot = await event_logs.feed_state(thread)
-            assert snapshot is not None
-            assert snapshot.end == FeedError(f"conflicting runner entry at cursor {attachment.seen[-1].cursor}")
-            assert await event_logs.events(thread, limit=len(attachment.seen) + 1) == attachment.seen
-        finally:
-            attachment.cancel()
-    finally:
-        await client.close()
-
-
 async def test_semantic_feed_failure_survives_replica_reconcile(
     runner: RunnerHandle,
     local_runners: SandboxSessions,
@@ -1200,16 +1161,18 @@ async def test_semantic_feed_failure_survives_replica_reconcile(
                 lease = await ingestion.acquire(SANDBOX, timedelta(minutes=1))
                 assert lease is not None
                 await ingestion.record(thread, attachment.seen, lease=lease)
-                await Feed(
-                    session_id=SESSION,
-                    client=local_runners.client(SANDBOX),
-                    event_logs=event_logs,
-                    ingestion=ingestion,
-                    lease=lease,
-                ).run()
+                async with asyncio.timeout(10):
+                    await Feed(
+                        session_id=SESSION,
+                        client=local_runners.client(SANDBOX),
+                        event_logs=event_logs,
+                        ingestion=ingestion,
+                        lease=lease,
+                    ).run()
                 failed = await replica_event_logs.feed_state(thread)
                 assert failed is not None
                 assert failed.end == FeedError(f"conflicting runner entry at cursor {attachment.seen[-1].cursor}")
+                assert await event_logs.events(thread, limit=len(attachment.seen) + 1) == attachment.seen
                 async with replica_store._sessions() as session:
                     checkpoint = await session.get(ThreadCheckpoint, thread)
                     assert checkpoint is not None
