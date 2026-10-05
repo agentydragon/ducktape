@@ -19,14 +19,12 @@ shell override for the Gazelle manifest update:
 
 ```bash
 bb run //devinfra:gazelle_python_manifest.update \
-  --config=nolint --norun_validations --shell_executable="$(command -v bash)"
+  --config=nolint --shell_executable="$(command -v bash)"
 ```
 
-`--norun_validations` is what avoids the ruff lint aspect in a sandbox that lacks
-coreutils: ruff still runs under `--config=nolint` alone, which drops mypy, clippy
-and rustfmt. The pair is for this manifest update path, not a general validation
-shortcut, because `--norun_validations` turns off every validation action
-(<linting.md#bazel-aspect-configs>).
+`--config=nolint` avoids the ruff lint aspect in a sandbox that lacks coreutils; it is
+for this manifest update path, not a general validation shortcut
+(<linting.md#skipping-lint>).
 
 ## Rust Crates
 

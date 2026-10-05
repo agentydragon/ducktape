@@ -62,34 +62,29 @@ Defined in `.bazelrc`. Lint runs by default on every `bazel build`.
 # Lint runs by default (ruff + eslint + mypy + clippy + rustfmt):
 bazel build //...
 
-# Skip mypy, clippy and rustfmt (ruff still runs):
+# Skip all of it:
 bazel build --config=nolint //...
-
-# Also skip ruff, and every other validation action:
-bazel build --config=nolint --norun_validations //...
 ```
-
-**Deviation:** `--config=nolint` is not a switch for all lint. `build:nolint` removes the
-`mypy`, `clippy_checks` and `rustfmt_checks` output groups, which are ordinary output groups,
-so those aspect actions are not requested. aspect_rules_lint attaches the ruff and ESLint
-actions as validation actions (the `_validation` output group), which `--output_groups`
-cannot remove. Under `--config=nolint`:
-
-- Ruff still runs, and with `--@aspect_rules_lint//lint:fail_on_violation` (set in
-  `.bazelrc`) a ruff finding still fails the build. ESLint is attached the same way in the
-  aspect source (not run under `nolint`).
-- `--norun_validations` stops ruff. It turns off every validation action of every rule, not
-  only lint, so use it only where that is wanted (as in <lockfiles.md>).
-- `--norun_validations` alone does not skip mypy.
-- `build:nolint` also removes `rules_lint_report`, which `.bazelrc` requests by default;
-  the pinned aspect_rules_lint defines no output group of that name, so naming it has no
-  effect.
 
 Aspect definitions in `devinfra/lint/linters.bzl`:
 
 - `ruff` - Python linting via `@multitool//tools/ruff`
 - `mypy_aspect` - Type checking via `//devinfra/lint:mypy_cli`
 - `eslint` - JS/TS linting via `//devinfra/lint:eslint`
+
+### Skipping lint
+
+`--config=nolint` skips ruff, ESLint, mypy, clippy and rustfmt. `build:nolint` removes the
+`mypy`, `clippy_checks` and `rustfmt_checks` output groups, which stops those aspect
+actions. aspect_rules_lint attaches the ruff and ESLint actions as validation actions (the
+`_validation` output group), which `--output_groups` cannot remove, so `build:nolint` also
+sets `--norun_validations`.
+
+`--norun_validations` turns off every validation action of every rule, not only lint. Use
+`--config=nolint` only where that is wanted (as in <lockfiles.md>).
+
+`.bazelrc` also names `rules_lint_report` in its output-group lists; the pinned
+aspect_rules_lint defines no output group of that name, so naming it has no effect.
 
 ## GitHub CI Workflows
 
