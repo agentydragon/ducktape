@@ -42,3 +42,9 @@
   top: 4px;
   right: 4px;
 }
+
+/* Floated, not flexed, to the summary's right edge: the label stays inline beside the disclosure
+   marker. */
+.agentplane-evidence-frames-debug {
+  float: right;
+}

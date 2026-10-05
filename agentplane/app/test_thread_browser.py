@@ -522,6 +522,12 @@ async def test_projected_browser_streams_runner_events_and_loads_evidence_lazily
                 await click_evidence(first_card)
                 frame_summary = first_card.locator("summary", has_text=f"Observation {observed.cursor} raw frames")
                 await expect(frame_summary).to_be_visible()
+                # The label shares the disclosure marker's line instead of starting below it.
+                summary_box = await frame_summary.bounding_box()
+                label_box = await frame_summary.locator("span").first.bounding_box()
+                assert summary_box is not None
+                assert label_box is not None
+                assert summary_box["height"] < 1.5 * label_box["height"]
                 assert not any("/frames?" in url for url in requests)
                 await frame_summary.click()
                 frame = first_card.locator(".agentplane-code-block")
