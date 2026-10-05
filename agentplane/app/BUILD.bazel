@@ -921,7 +921,7 @@ py_test(
     ],
     env = {"CHROMIUM_HEADLESS_SHELL": "$(rootpath @playwright_browsers//:chromium-headless-shell)"},
     requires_docker = True,
-    shard_count = 4,
+    shard_count = 8,
     deps = [
         ":conftest",
         ":database",
