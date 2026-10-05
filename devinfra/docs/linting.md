@@ -62,9 +62,28 @@ Defined in `.bazelrc`. Lint runs by default on every `bazel build`.
 # Lint runs by default (ruff + eslint + mypy + clippy + rustfmt):
 bazel build //...
 
-# Skip lint for faster iterative builds:
+# Skip mypy, clippy and rustfmt (ruff still runs):
 bazel build --config=nolint //...
+
+# Also skip ruff, and every other validation action:
+bazel build --config=nolint --norun_validations //...
 ```
+
+**Deviation:** `--config=nolint` is not a switch for all lint. `build:nolint` removes the
+`mypy`, `clippy_checks` and `rustfmt_checks` output groups, which are ordinary output groups,
+so those aspect actions are not requested. aspect_rules_lint attaches the ruff and ESLint
+actions as validation actions (the `_validation` output group), which `--output_groups`
+cannot remove. Under `--config=nolint`:
+
+- Ruff still runs, and with `--@aspect_rules_lint//lint:fail_on_violation` (set in
+  `.bazelrc`) a ruff finding still fails the build. ESLint is attached the same way in the
+  aspect source (not run under `nolint`).
+- `--norun_validations` stops ruff. It turns off every validation action of every rule, not
+  only lint, so use it only where that is wanted (as in <lockfiles.md>).
+- `--norun_validations` alone does not skip mypy.
+- `build:nolint` also removes `rules_lint_report`, which `.bazelrc` requests by default;
+  the pinned aspect_rules_lint defines no output group of that name, so naming it has no
+  effect.
 
 Aspect definitions in `devinfra/lint/linters.bzl`:
 
