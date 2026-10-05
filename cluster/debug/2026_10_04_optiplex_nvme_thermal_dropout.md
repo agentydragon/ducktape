@@ -22,10 +22,14 @@ Times are UTC on 2026-10-04 unless noted. Metrics are from Mimir (`node_exporter
   sensors and 97.85 °C on the hottest one (23:15–23:16). The drive reports a warning threshold
   of 83.85 °C and a critical threshold of 84.85 °C. CPU package temperature stayed at or below
   73 °C throughout.
-- **23:06:38 onward:** the kubelet mounted volumes for `haku-state-tf-runner`,
-  `budget-ledger-tf-runner` and `cpap-data-tf-runner`; the `flux-system` `*-tf-runner` pods
-  present at 05:55 were created at about 23:15. The runner pods carry no node selector, so
-  they can land here.
+- **Pod history on the node** (`kube_pod_info`, which keeps deleted pods): Tofu runner pods
+  (`flux-system/*-tf-runner`, created per reconcile by tofu-controller) arrived in waves:
+  22:42 (10 pods; the 22:43 52 MB/s write burst), 22:53 (`haku-state-tf-runner`; the 22:54
+  20 MB/s burst and 65 °C bump), 23:07 (4 pods), then about nine new pods in each of the minutes
+  23:12, 23:13 and 23:14 and again at 23:16. The same runners came back repeatedly:
+  `dns-records-tf-runner` appears in five incarnations between 22:42 and 23:16. Up to nine pods
+  sat in `ContainerCreating` at once. The runner pods carry no node selector, so they can land
+  here.
 - **23:11–23:16 disk I/O on `nvme0n1`** (`node_exporter`, against a baseline of about
   0.14 MB/s, under 2 % utilisation and 2 ms per write): writes rose to 26–35 MB/s and 290–460
   write IOPS, device utilisation 63 % → 92 %, average write latency 0.1 s (23:11) → 3 s (23:13)
@@ -35,12 +39,15 @@ Times are UTC on 2026-10-04 unless noted. Metrics are from Mimir (`node_exporter
 - **Earlier bursts the same evening:** at 22:43 writes peaked at 52 MB/s (temperature barely
   moved, 58 °C), and at 22:54 at 20 MB/s with 0.58 s write latency and a temperature bump to
   65 °C that settled back to 58 °C within three minutes.
-- **Who wrote (cAdvisor, `container_fs_writes_bytes_total`):** at 23:11:30–23:13:30 the
-  `/kubepods/besteffort` cgroup wrote 35–38 MB/s, which accounts for the burst. No individual pod
-  series shows more than about 0.2 MB/s before 23:17, when the `dns-records-tf-runner` (24 MB/s),
-  `litellm-keys-tf-runner` (5 MB/s) and other runner pods first appear. Every pod still on the node
-  is `Burstable`; the runner pods are gone from the API, so their QoS class cannot be read, and
-  best-effort is inferred from the cgroup.
+- **Who wrote (cAdvisor `container_fs_writes_bytes_total`):** the `/kubepods/besteffort` cgroup
+  wrote 35–38 MB/s at 23:11:30–23:13:30, which accounts for the burst. Per pod, increase over the
+  10 minutes to 23:17:30, counting only from each pod's first sample (so a lower bound):
+  `dns-records-tf-runner` 3.1 GB, `litellm-keys-tf-runner` 0.68 GB,
+  `github-secrets-sync-tf-runner` 44 MB, `flux-webhook-token-tf-runner` 26 MB,
+  `forgejo-images-tf-runner` 22 MB; everything else on the node, including Home Assistant, the
+  CPAP gateway VM (about 0.1 MB/s steady) and `alloy` (0.15 MB/s), was below 0.2 MB/s. CPU in the
+  same window was spread across `alloy`, `github-secrets-sync-tf-runner`, Cilium and the CPAP VM;
+  no single workload was CPU-bound.
 - **23:16:30:** the NVMe `hwmon` series stops and never returns. The CPU series continues.
 - **23:17:28 onward:** kubelet events `MountVolume.SetUp failed … input/output error`.
 - **23:46:30:** node marked `Unknown`/`NotReady`.
@@ -89,9 +96,9 @@ reconciled here.
 
 ## What is not known
 
-- Which pods wrote the 23:11–23:16 burst. The best-effort cgroup did it and the Tofu runner pods
-  are the likely members, but their per-pod series only begin at 23:17 and the pods are gone, so
-  this is inferred. The 22:43 and 22:54 bursts had no per-pod attribution at all.
+- Why the runner pods were recreated repeatedly (five incarnations of `dns-records-tf-runner`
+  in 35 minutes), and what inside them wrote gigabytes. Repeated `tofu init` provider downloads
+  into the pod's scratch volume fit the numbers but were not observed.
 - Why 30 MB/s was enough to reach 97 °C, and why write latency reached seconds. Both fit a
   drive that was thermally throttling and then stalling, but that is not shown. A 256 GB OEM
   drive with no heatsink in an enclosed micro chassis is a candidate; its SMART data (media
