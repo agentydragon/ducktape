@@ -22,8 +22,8 @@ js_library(
 
 # Page-level primitives shared by every visual-test consumer: prepare an already-launched page
 # (freeze clock, viewport, media emulation) and capture an element screenshot from it. Loading
-# content and orchestrating multiple shots stays caller-owned (visual_test_lib, and haku console's
-# own multi-scene renderers) — see capture.mjs's docstring for why that isn't abstracted here too.
+# content and orchestrating multiple shots stays caller-owned (haku console's multi-scene
+# renderer) — see capture.mjs's docstring for why that isn't abstracted here too.
 js_library(
     name = "capture",
     srcs = ["capture.mjs"],
@@ -50,32 +50,6 @@ js_library(
     name = "sharding",
     srcs = ["sharding.mjs"],
     visibility = ["//visibility:public"],
-)
-
-# Puppeteer-based visual render-health test runner.
-js_library(
-    name = "visual_test_lib",
-    srcs = [
-        # Types for the .mjs beside it, so a TypeScript scenario table is checked against what the
-        # sweep reads. `.d.mts` because TypeScript pairs it with the `.mjs`, not a `.js`.
-        "visual-test-lib.d.mts",
-        "visual-test-lib.mjs",
-    ],
-    visibility = ["//visibility:public"],
-    deps = [
-        ":capture",
-        ":launcher",
-        ":sharding",
-        ":visual_review_manifest",
-    ],
-)
-
-chromium_js_test(
-    name = "visual_test_lib_test",
-    data = [":visual_test_lib"],
-    entry_point = "visual-test-lib.test.mjs",
-    no_copy_to_bin = [":visual_test_lib"],
-    tags = ["visual"],
 )
 
 js_library(
