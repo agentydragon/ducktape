@@ -289,6 +289,17 @@ export { targetClass };
     assert_entry_output(&fixture, "hi! 100\n");
 }
 
+/// Runs `opts` and asserts the intrinsic-alias member `export` of `decorate_runtime` is rejected as `kind`.
+fn expect_intrinsic_alias_outcome(opts: FixtureOpts<'_>, kind: &str, export: &str) {
+    let outcomes = run_rejection_fixture(opts).selector_outcomes();
+    let alias = find_outcome(&outcomes, kind, export);
+    assert_eq!(alias["placement"]["logical_module"], "decorate_runtime");
+    assert_eq!(
+        alias["placement"]["selector_kind"],
+        "members.intrinsic_alias"
+    );
+}
+
 /// **Fail-closed: no matching alias.** A property the trio never aliases
 /// (`getPrototypeOf`) resolves to nothing — the relation picks out zero owners, so
 /// the spec is rejected rather than guessing.
@@ -298,7 +309,7 @@ fn intrinsic_alias_fails_closed_when_no_alias_matches() {
         "{}console.log(new C().greet());\nexport {{ C }};\n",
         trio("0", "C", "greet", "hi", "!")
     );
-    expect_rejection(
+    expect_intrinsic_alias_outcome(
         FixtureOpts::new(
             &source,
             vec![
@@ -328,11 +339,8 @@ fn intrinsic_alias_fails_closed_when_no_alias_matches() {
                 ),
             ],
         ),
-        &[
-            "global selector solver found no match",
-            "decorateClassMember",
-            "MakesDecorateCall",
-        ],
+        "unsatisfiable",
+        "absent",
     );
 }
 
@@ -417,7 +425,7 @@ d0([tag0], C.prototype, "greet", 1);
 console.log(new C().greet());
 export { C };
 "#;
-    expect_rejection(
+    expect_intrinsic_alias_outcome(
         FixtureOpts::new(
             source,
             vec![
@@ -452,11 +460,8 @@ export { C };
                 ),
             ],
         ),
-        &[
-            "global selector solver found no match",
-            "decorateClassMember",
-            "MakesDecorateCall",
-        ],
+        "ambiguous",
+        "ambiguous",
     );
 }
 
@@ -489,7 +494,7 @@ d0([tag0], C.prototype, "greet", 1);
 console.log(new C().greet());
 export { C };
 "#;
-    expect_rejection(
+    expect_intrinsic_alias_outcome(
         FixtureOpts::new(
             source,
             vec![
@@ -522,10 +527,7 @@ export { C };
                 ),
             ],
         ),
-        &[
-            "global selector solver found no match",
-            "decorateClassMember",
-            "MakesDecorateCall",
-        ],
+        "unsatisfiable",
+        "defineProp",
     );
 }
