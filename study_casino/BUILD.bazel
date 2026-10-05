@@ -337,10 +337,10 @@ py_test(
     srcs = ["test_e2e_browser.py"],
     data = [
         "//study_casino/frontend:bundle",
-        "@playwright_browsers//:chromium-headless-shell",
+        "@chrome_headless_shell//:executable",
     ],
     env = {
-        "CHROMIUM_HEADLESS_SHELL": "$(rootpath @playwright_browsers//:chromium-headless-shell)",
+        "CHROMIUM_HEADLESS_SHELL": "$(rootpath @chrome_headless_shell//:executable)",
     },
     requires_docker = True,
     deps = [
@@ -365,10 +365,10 @@ py_test(
     srcs = ["visual_test.py"],
     data = [
         "//study_casino/frontend:bundle",
-        "@playwright_browsers//:chromium-headless-shell",
+        "@chrome_headless_shell//:executable",
     ],
     env = {
-        "CHROMIUM_HEADLESS_SHELL": "$(rootpath @playwright_browsers//:chromium-headless-shell)",
+        "CHROMIUM_HEADLESS_SHELL": "$(rootpath @chrome_headless_shell//:executable)",
     },
     requires_docker = True,
     tags = ["visual"],

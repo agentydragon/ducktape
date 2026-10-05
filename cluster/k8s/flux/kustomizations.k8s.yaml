@@ -3810,7 +3810,7 @@ apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
 metadata:
   annotations:
-    description: KubeVirt build/test devbox for public-coder-agent (Bazel/BuildBuddy/direnv), with an ephemeral containerDisk root and automatic restart after staged VM image changes apart from the sshd host key and SSH access through ../sshpiper.
+    description: "Paused Public Coder devbox: VM halted and image restart controller removed; the separately declared Bazel cache PVC and SSH identity are retained."
   name: public-coder-agent-devbox
   namespace: ducktape-flux
 spec:
@@ -3818,6 +3818,7 @@ spec:
     provider: sops
     secretRef:
       name: sops-age-cluster-secrets
+  deletionPolicy: Orphan
   dependsOn:
     - name: kubevirt
       namespace: ducktape-flux
@@ -3832,7 +3833,7 @@ spec:
     name: public-coder-agent-devbox
     namespace: ducktape-flux
   timeout: 30m
-  wait: true
+  wait: false
 ---
 apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization

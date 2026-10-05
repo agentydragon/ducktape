@@ -297,12 +297,7 @@ def write_json(path: Path, value: Any) -> None:
 
 
 def chromium_executable() -> str | None:
-    root = os.environ.get("CHROMIUM_HEADLESS_SHELL") or os.environ.get("PUPPETEER_EXECUTABLE_PATH")
-    if not root:
-        return None
-    path = Path(root)
-    candidate = path / "chrome-linux" / "headless_shell"
-    return str(candidate if candidate.exists() else path)
+    return os.environ.get("CHROMIUM_HEADLESS_SHELL") or os.environ.get("PUPPETEER_EXECUTABLE_PATH") or None
 
 
 def format_json(value: Any) -> str:

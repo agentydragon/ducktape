@@ -313,7 +313,7 @@ def _deployment(scope: Construct, config_map: k8s.KubeConfigMap, aiquota_bearer:
         "deployment",
         metadata=k8s.ObjectMeta(name=PROXY.name, namespace=NAMESPACE, labels=PROXY.pods.selector),
         spec=k8s.DeploymentSpec(
-            replicas=1,
+            replicas=0,  # Public Coder is paused; keep its storage and configuration for resuming.
             selector=k8s.LabelSelector(match_labels=PROXY.pods.selector),
             template=k8s.PodTemplateSpec(
                 metadata=k8s.ObjectMeta(labels=PROXY.pods.selector),

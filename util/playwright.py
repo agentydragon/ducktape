@@ -1,7 +1,7 @@
 """Shared async Playwright pytest fixtures for e2e tests.
 
 Provides per-test `playwright`, `browser` and `page` fixtures on
-`playwright.async_api`. Uses hermetic Chromium from @playwright_browsers when
+`playwright.async_api`. Uses hermetic Chromium from @chrome_headless_shell when
 CHROMIUM_HEADLESS_SHELL is set (Bazel), falling back to Playwright's default
 browser resolution. The browser launches with the shared container-safe flags
 (needed on RBE, where there is no user namespace and /dev/shm is tiny); visual

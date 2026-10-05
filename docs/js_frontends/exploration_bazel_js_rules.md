@@ -387,7 +387,7 @@ Given the current architecture (4 React frontends):
 - **TypeScript:** `aspect_rules_ts` (ts_project rule)
 - **Bundling:** Bazel-managed Vite or esbuild, selected per frontend
 - **Linting:** `aspect_rules_lint` with ESLint + Prettier aspects
-- **Browser binaries:** `rules_playwright` for playwright tests
+- **Browser binary:** a pinned Chrome for Testing headless shell (`@chrome_headless_shell` in `MODULE.bazel`) for the Puppeteer and Playwright tests
 - **Framework tooling:** Let the selected bundler and framework tools handle framework-specific requirements
 
 ### For Your Specific Issues

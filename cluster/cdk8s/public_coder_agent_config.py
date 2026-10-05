@@ -524,7 +524,7 @@ def _deployment(scope: Construct) -> None:
         spec=k8s.DeploymentSpec(
             # Keep the replica count GitOps-owned; the worker-local state claim is selected by the
             # affinity and PVC declarations below.
-            replicas=1,
+            replicas=0,  # Public Coder is paused; keep its storage and configuration for resuming.
             strategy=k8s.DeploymentStrategy(type="Recreate"),
             selector=k8s.LabelSelector(match_labels=_SERVICE.pods.selector),
             template=k8s.PodTemplateSpec(

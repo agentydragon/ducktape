@@ -556,16 +556,6 @@ bazel_dep(name = "aspect_rules_js", version = "3.4.1")
 bazel_dep(name = "aspect_rules_ts", version = "3.10.1")
 bazel_dep(name = "rules_nodejs", version = "6.7.5")
 
-# Browser testing (provides hermetic Chromium for Puppeteer/Playwright tests)
-bazel_dep(name = "rules_playwright", version = "0.5.3", dev_dependency = True)
-
-playwright = use_extension("@rules_playwright//playwright:extensions.bzl", "playwright", dev_dependency = True)
-playwright.repo(
-    # Use Playwright 1.50.x for Chromium compatibility with Puppeteer 23.x
-    playwright_version = "1.50.1",
-)
-use_repo(playwright, playwright_browsers = "playwright")
-
 # Node.js toolchain
 node = use_extension("@rules_nodejs//nodejs:extensions.bzl", "node")
 node.toolchain(node_version = "22.22.2")  # LTS 'Jod'
@@ -623,8 +613,8 @@ npm.npm_translate_lock(
         "unrs-resolver",
         # Postinstall downloads Chromium (~280MB) which fails in sandboxed builds.
         # .puppeteerrc.cjs (skipDownload: true) isn't visible inside the lifecycle
-        # hook sandbox. Browsers are provided hermetically via rules_playwright
-        # (@playwright_browsers//:chromium-headless-shell) and CHROMIUM_HEADLESS_SHELL.
+        # hook sandbox. The browser is provided hermetically by @chrome_headless_shell
+        # (below) and handed to Puppeteer through CHROMIUM_HEADLESS_SHELL.
         "puppeteer",
     ],
     npmrc = "//:.npmrc",
@@ -920,6 +910,37 @@ filegroup(
     sha256 = "9e4c4a25b88d9c93ce0ee4f64fba23fc55949f66d9ecb79e419c541b64b80997",
     strip_prefix = "package/vendor/x86_64-unknown-linux-musl",
     urls = ["https://registry.npmjs.org/@openai/codex/-/codex-0.152.0-linux-x64.tgz"],
+)
+
+# The one browser every Puppeteer (JS) and Playwright (Python) test drives: Chrome for Testing's
+# headless shell. `:executable` is a single-file target, so `$(rootpath ...)` of it is the path
+# tests receive as CHROMIUM_HEADLESS_SHELL; the rest of the archive (libs, .pak, icudtl.dat, ...)
+# rides along as its runfiles, because the executable loads those from its own directory.
+# Pinned to the `chromium-headless-shell` browserVersion in Playwright 1.62.0's browsers.json, the
+# Chromium that Playwright release is tested against; keep in step with `playwright==1.62.0` in
+# pyproject.toml. To bump: read browserVersion for `chromium-headless-shell` from
+# https://unpkg.com/playwright-core@<playwright version>/browsers.json, then take the sha256 of
+# https://storage.googleapis.com/chrome-for-testing-public/<browserVersion>/linux64/chrome-headless-shell-linux64.zip
+http_archive(
+    name = "chrome_headless_shell",
+    build_file_content = """
+filegroup(
+    name = "executable",
+    srcs = ["chrome-headless-shell"],
+    data = glob(
+        ["**"],
+        exclude = [
+            "BUILD.bazel",
+            "REPO.bazel",
+        ],
+    ),
+    visibility = ["//visibility:public"],
+)
+""",
+    dev_dependency = True,
+    sha256 = "3cfc2bd00d1bafcf8a68dc74c9c92bb7150ddc8d26ade948a776316e1cec4f14",
+    strip_prefix = "chrome-headless-shell-linux64",
+    urls = ["https://storage.googleapis.com/chrome-for-testing-public/151.0.7922.34/linux64/chrome-headless-shell-linux64.zip"],
 )
 
 # Flux CRD pins follow the controller versions in cluster/k8s/flux/flux-system/gotk-components.yaml.

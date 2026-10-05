@@ -12,6 +12,11 @@ primitives (`prepareDeterministicPage`, `screenshotElement`, `waitForStable`) th
 library, not a `main()`, so each caller keeps owning content-loading,
 orchestration, and its own exit code.
 
+Both stacks drive one browser: the Chrome for Testing headless shell `@chrome_headless_shell`
+(MODULE.bazel), which Bazel hands to tests as `CHROMIUM_HEADLESS_SHELL`, the path of its executable.
+Its version is pinned to the Chromium of the `playwright==1.62.0` driver in `pyproject.toml`;
+MODULE.bazel says how to bump the two together.
+
 There are no checked-in pixel baselines: these tests gate render health (the
 harness loads, the scenario mounts, zero uncaught page errors) and publish the
 rendered PNG for PR visual review instead — see

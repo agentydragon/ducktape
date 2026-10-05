@@ -56,19 +56,19 @@ def preview_screenshots(name, entry, deps, visibility = None):
             "//util/testing/frontend_visual:capture",
             "//util/testing/frontend_visual:launcher",
             "//util/testing/frontend_visual:visual_review_manifest",
-            "@playwright_browsers//:chromium-headless-shell",
+            "@chrome_headless_shell//:executable",
         ],
         env = {
             "HARNESS_JS": "$(rootpath :%s_bundle)" % name,
             "STYLES_CSS": "$(rootpath //haku/console/frontend:styles_css)",
-            "CHROMIUM_HEADLESS_SHELL": "$(rootpath @playwright_browsers//:chromium-headless-shell)",
+            "CHROMIUM_HEADLESS_SHELL": "$(rootpath @chrome_headless_shell//:executable)",
         },
         no_copy_to_bin = [
             ":%s_bundle" % name,
             "//util/testing/frontend_visual:capture",
             "//util/testing/frontend_visual:launcher",
             "//util/testing/frontend_visual:visual_review_manifest",
-            "@playwright_browsers//:chromium-headless-shell",
+            "@chrome_headless_shell//:executable",
         ],
         visibility = visibility,
     )

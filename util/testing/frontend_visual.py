@@ -5,7 +5,7 @@ the JS Puppeteer launcher (`frontend_visual/launcher.mjs`): both read
 `util/testing/chromium-flags.json` and `util/testing/frozen-clock.js` (kept at
 this level — a data file under `frontend_visual/` would shadow this module as
 a namespace package), and both resolve the hermetic browser from
-`CHROMIUM_HEADLESS_SHELL`.
+`CHROMIUM_HEADLESS_SHELL`, the path of the `@chrome_headless_shell//:executable` binary.
 """
 
 from __future__ import annotations
@@ -35,10 +35,9 @@ DETERMINISTIC_BROWSER_ARGS: list[str] = CONTAINER_BASE_BROWSER_ARGS + _FLAGS["de
 
 
 def chromium_executable() -> str | None:
-    """The hermetic headless-shell path from `CHROMIUM_HEADLESS_SHELL`, or None
+    """The hermetic headless-shell executable from `CHROMIUM_HEADLESS_SHELL`, or None
     to fall back to Playwright's own browser resolution (local runs)."""
-    chromium_root = os.environ.get("CHROMIUM_HEADLESS_SHELL", "")
-    return str(Path(chromium_root) / "chrome-linux" / "headless_shell") if chromium_root else None
+    return os.environ.get("CHROMIUM_HEADLESS_SHELL") or None
 
 
 def _font_pinned_user_data_dir() -> Path:

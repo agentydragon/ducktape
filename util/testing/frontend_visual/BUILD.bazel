@@ -40,15 +40,15 @@ js_test(
     name = "font_environment_test",
     data = [
         ":launcher",
-        "@playwright_browsers//:chromium-headless-shell",
+        "@chrome_headless_shell//:executable",
     ],
     entry_point = "font_environment.test.mjs",
     env = {
-        "CHROMIUM_HEADLESS_SHELL": "$(rootpath @playwright_browsers//:chromium-headless-shell)",
+        "CHROMIUM_HEADLESS_SHELL": "$(rootpath @chrome_headless_shell//:executable)",
     },
     no_copy_to_bin = [
         ":launcher",
-        "@playwright_browsers//:chromium-headless-shell",
+        "@chrome_headless_shell//:executable",
     ],
     tags = ["visual"],
 )

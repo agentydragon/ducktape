@@ -239,7 +239,7 @@ const outDir = outputDir();
 mkdirSync(outDir, { recursive: true });
 
 // Chromium comes from the BUILD-wired CHROMIUM_HEADLESS_SHELL (hermetic
-// @playwright_browsers build under RBE) or the ambient Playwright browser for
+// @chrome_headless_shell build under RBE) or the ambient Playwright browser for
 // a local `bazel run` — both resolved inside launchDeterministicBrowser. The deterministic flag
 // bundle (font hinting/subpixel positioning, LCD text, Skia runtime opts, swiftshader, …) pins
 // general rasterization, matching the same launcher every other visual-test consumer uses. This

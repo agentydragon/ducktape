@@ -87,7 +87,7 @@ const outDir = outputDir();
 mkdirSync(outDir, { recursive: true });
 
 // Chromium comes from the BUILD-wired CHROMIUM_HEADLESS_SHELL (hermetic
-// @playwright_browsers build under RBE) or the ambient Playwright browser for
+// @chrome_headless_shell build under RBE) or the ambient Playwright browser for
 // a local `bazel run` — both resolved inside launchDeterministicBrowser, matching the same
 // launcher every other visual-test consumer uses. See
 // ../../../../../util/testing/frontend_visual/README.md for how to verify a scene is

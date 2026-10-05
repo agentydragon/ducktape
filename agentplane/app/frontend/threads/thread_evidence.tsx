@@ -99,11 +99,14 @@ function EvidenceFrames(props: { threadId: string; entity: ThreadEntity; observa
     <RetainedDisclosure
       id={id}
       summary={
-        // A `<span>`, not a `Group`'s default `<div>`: `<summary>` only allows phrasing content.
-        <Group component="span" justify="space-between" wrap="nowrap" gap="xs">
+        // Inline content, not a `Group`: a block-level child of `<summary>` (a flex container
+        // included) starts on the line below the disclosure marker.
+        <>
           <span>Observation {props.observationCursor} raw frames</span>
-          <ChronologicalDebugIcon observationCursor={props.observationCursor} />
-        </Group>
+          <span className="agentplane-evidence-frames-debug">
+            <ChronologicalDebugIcon observationCursor={props.observationCursor} />
+          </span>
+        </>
       }
     >
       <EvidenceFramesPage key={id} {...props} />
