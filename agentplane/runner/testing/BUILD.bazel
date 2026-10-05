@@ -75,3 +75,8 @@ py_library(
         "@pypi//protobuf",
     ],
 )
+
+py_library(
+    name = "codex_rollout",
+    srcs = ["codex_rollout.py"],
+)

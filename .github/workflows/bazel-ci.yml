@@ -92,9 +92,13 @@ jobs:
           SOURCE_COMMIT: ${{ inputs.source_commit }}
         run: python3 devinfra/ci/pr_mergeability.py verify-source
 
-      - uses: ./.github/actions/setup-nix-devtools
-        with:
-          package: citools
+      # The launcher helpers use stdlib Python; only bb needs installing here.
+      # Use the same artifact and checksum as the Nix package.
+      - name: Install pinned BuildBuddy CLI
+        run: |
+          python3 devinfra/ci/install_bb.py --pins nix/artifact-pins.json \
+            --destination "$RUNNER_TEMP/buildbuddy-cli/bin/bb"
+          echo "$RUNNER_TEMP/buildbuddy-cli/bin" >> "$GITHUB_PATH"
 
       # Combined test + build in one bb-remote `--script` invocation:
       # - Saves one Firecracker VM allocation per CI run.

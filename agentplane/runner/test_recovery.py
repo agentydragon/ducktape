@@ -10,6 +10,7 @@ from agentplane.protocol import event_pb2
 from agentplane.runner import claude_history, codex_history
 from agentplane.runner.journal import Journal
 from agentplane.runner.recovery import ObservedItem, compare_item, observed_items
+from agentplane.runner.testing import codex_rollout
 
 # gazelle:include_dep @pypi//protobuf
 
@@ -32,6 +33,27 @@ def test_codex_pending_call_uses_model_normalization_not_execution_success(tmp_p
     assert decision.replacement.output == "aborted"
     assert not recovered["tool"].completed
     assert compare_item(observed["text"], recovered.get("text")).disposition == event_pb2.RECOVERY_DISPOSITION_ABSENT
+
+
+@pytest.mark.parametrize(
+    ("observed_text", "disposition"),
+    [("first thought", event_pb2.RECOVERY_DISPOSITION_RETAINED), ("first", event_pb2.RECOVERY_DISPOSITION_REVISED)],
+)
+def test_codex_reasoning_is_recovered_from_its_saved_record_by_id(
+    tmp_path: Path, observed_text: str, disposition: event_pb2.RecoveryDisposition
+) -> None:
+    codex_rollout.write_rollout(tmp_path, codex_rollout.ROLLOUT)
+    saved, unsaved = codex_rollout.FIRST_REASONING_ID, "rs_not_in_rollout"
+    observed = {
+        saved: ObservedItem(saved, event_pb2.ITEM_KIND_REASONING, text=observed_text, completed=True),
+        unsaved: ObservedItem(unsaved, event_pb2.ITEM_KIND_REASONING, text="unsaved thought", completed=True),
+    }
+    recovered = codex_history.read_history(tmp_path, codex_rollout.THREAD_ID, observed)
+    assert recovered is not None
+    assert set(recovered) == {saved}
+    assert recovered[saved].text == "first thought"
+    assert compare_item(observed[saved], recovered[saved]).disposition == disposition
+    assert compare_item(observed[unsaved], recovered.get(unsaved)).disposition == event_pb2.RECOVERY_DISPOSITION_ABSENT
 
 
 @pytest.mark.parametrize(

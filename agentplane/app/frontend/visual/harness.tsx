@@ -1454,7 +1454,28 @@ function unfinishedReasoningRows(threadId: string): Record<string, unknown>[] {
   return rows.map((row) => (row.entity_kind === "view_state" ? { ...row, thread_id: threadId } : row));
 }
 
+/** What a recovery leaves on most of a finished turn: every item retained and finished, none badged. */
+function quietRecoveryRows(threadId: string): Record<string, unknown>[] {
+  const retained = { threadId, recovery: RecoveryDisposition.RETAINED };
+  const retainedTool = (cursor: number, id: string) =>
+    item(cursor, id, ItemKind.TOOL_CALL, null, {
+      ...retained,
+      tool: "Retained tool",
+      arguments: '{"outcome":"succeeded","context":"retained"}',
+      output: "Succeeded and retained: no badge",
+    });
+  return [
+    { ...viewState(50, null), thread_id: threadId },
+    retainedTool(10, "retained-tool-1"),
+    item(20, "retained-reasoning-in-run", ItemKind.REASONING, "Retained reasoning in a run: no badge", retained),
+    retainedTool(30, "retained-tool-2"),
+    item(40, "retained-text", ItemKind.ASSISTANT_TEXT, "Retained assistant text: no badge row above it", retained),
+    item(50, "retained-reasoning-alone", ItemKind.REASONING, "Retained reasoning on its own: no badge", retained),
+  ];
+}
+
 function recoveryRows(threadId: string): Record<string, unknown>[] {
+  if (scenario.recovery === "quiet") return quietRecoveryRows(threadId);
   const rows =
     scenario.recovery === "tools"
       ? [
@@ -1468,13 +1489,13 @@ function recoveryRows(threadId: string): Record<string, unknown>[] {
           item(20, "discarded-tool", ItemKind.TOOL_CALL, null, {
             threadId,
             tool: "Bash",
-            output: "Created report.txt",
+            output: "Succeeded, then discarded from context",
             recovery: RecoveryDisposition.ABSENT,
           }),
           item(30, "failed-tool", ItemKind.TOOL_CALL, null, {
             threadId,
-            tool: "Read",
-            output: "Permission denied",
+            tool: "Retained tool",
+            output: "Failed, still in context",
             failed: true,
             recovery: RecoveryDisposition.RETAINED,
           }),
@@ -1487,17 +1508,11 @@ function recoveryRows(threadId: string): Record<string, unknown>[] {
           }),
         ]
       : [
-          item(
-            10,
-            "retained-text",
-            ItemKind.ASSISTANT_TEXT,
-            "The sound was delicate, almost sweet. The seam widened.",
-            {
-              threadId,
-              complete: false,
-              recovery: RecoveryDisposition.RETAINED,
-            }
-          ),
+          item(10, "retained-text", ItemKind.ASSISTANT_TEXT, "Retained text, interrupted mid-reply", {
+            threadId,
+            complete: false,
+            recovery: RecoveryDisposition.RETAINED,
+          }),
           item(20, "discarded-text", ItemKind.ASSISTANT_TEXT, "Remember the name in the margin", {
             threadId,
             complete: false,

@@ -426,7 +426,6 @@ py_test(
         "//finance/augur/policy:funding",
         "//finance/augur/sim:actions",
         "//finance/augur/sim:books",
-        "//finance/augur/sim:events",
         "//finance/augur/sim:fixed_point",
         "//finance/augur/sim:ids",
         "//finance/augur/sim:income",
