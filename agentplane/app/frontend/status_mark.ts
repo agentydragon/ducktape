@@ -65,9 +65,9 @@ export const THREAD_STATUS_MARKS: Record<ThreadStatusKind, ThreadStatusMark> = {
   idle: { icon: StatusDot, color: BLUE, favicon: "dot", glyph: "●" },
   stopped: { icon: IconPower, color: GRAY, favicon: "power", glyph: "⏻" },
   failed: { icon: StatusDot, color: RED, favicon: "dot", glyph: "×" },
-  // A box with drawer lines reads as an archive box at tab-title size, where a plain square reads as a
-  // missing-glyph box.
-  archived: { icon: IconArchive, color: GRAY, favicon: "archive", glyph: "▤" },
+  // An arrow onto a bar reads as filing away at tab-title size; box shapes read as a missing-glyph box
+  // there.
+  archived: { icon: IconArchive, color: GRAY, favicon: "archive", glyph: "↧" },
   inactive: { icon: StatusDot, color: GRAY, favicon: "dot", glyph: "○" },
 };
 
