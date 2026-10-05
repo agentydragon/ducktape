@@ -818,12 +818,13 @@ mod tests {
                 KEEP_GOING_RUN,
             )
             .expect_err("non-empty output directories should be rejected, not replaced");
-            assert!(
-                err.to_string().contains("Output directory is not empty"),
-                "unexpected error: {err:#}"
-            );
             assert!(js_out.join("stale.txt").exists());
             assert!(harness_out.join("stale.txt").exists());
+            // Refused before any write: a later failure would leave `app/` or `reports/` behind.
+            for out_dir in [&js_out, &harness_out] {
+                assert!(!out_dir.join("app").exists(), "{err:#}");
+                assert!(!out_dir.join("reports").exists(), "{err:#}");
+            }
             Ok(())
         })
     }
