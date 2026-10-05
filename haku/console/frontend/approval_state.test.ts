@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  approvalDisplayFields,
   approvalQueueItems,
   geolocationApprovalQueueId,
   makeRecentToolCall,
@@ -132,5 +133,12 @@ describe("approval queue state", () => {
       progressPercent: 0,
       remainingSeconds: 0,
     });
+  });
+});
+
+describe("approvalDisplayFields", () => {
+  it("attributes a call to the agent that made it, or to the operator", () => {
+    expect(approvalDisplayFields(pendingApproval()).callerDisplayName).toBe("Haku agent");
+    expect(approvalDisplayFields(pendingApproval({ caller: { kind: "operator" } })).callerDisplayName).toBe("Operator");
   });
 });
