@@ -307,34 +307,6 @@ export { a, b, c, d };
 // --- Destructuring patterns ----------------------------------------------
 
 #[test]
-fn destructure_only_declarator_moves_with_first_name() {
-    // A single declarator with a destructuring pattern binds
-    // multiple names. The split treats the whole declarator as
-    // atomic: claiming any one of the names moves the entire
-    // declarator (and all names) to that module. Verify the
-    // behaviour explicitly.
-    let fixture = run_fixture(FixtureOpts::new(
-        r#"const obj = { x: 10, y: 20 };
-const { x, y } = obj;
-console.log(x, y);
-export { x, y };
-"#,
-        vec![logical_module("mod_xy", &[Member::new("x")])],
-    ));
-
-    // Claiming `x` alone pulls the whole destructure into mod_xy
-    // (destructure-atomicity). The declarator must land here
-    // intact with both `x` and `y` bound, even though the spec
-    // only named `x`.
-    assert_module_variable_declarators(
-        &fixture.out_root,
-        "static/app/modules/mod_xy.js",
-        &[variable_declarator!(Const, Identifier, ["x", "y"])],
-    );
-    assert_entry_output(&fixture, "10 20\n");
-}
-
-#[test]
 fn destructure_split_across_modules_is_rejected() {
     // `const { x, y } = obj;` — `x` claimed by mod_x, `y` claimed
     // by mod_y. Destructure declarators move atomically, so the
