@@ -767,11 +767,11 @@ async def test_sidebar_receives_rename_and_archive_from_another_app_replica(thre
     await expect(sidebar.get_by_text("Test rename from another replica", exact=True)).to_be_visible()
     await expect(sidebar.get_by_text(SESSION, exact=True)).to_have_count(0)
     await thread_browser.store.archive(thread.id)
-    await expect(sidebar.get_by_text("Test rename from another replica", exact=True)).to_have_count(0)
-    archived_switch = page.get_by_role("switch", name="Show archived threads", exact=True)
-    await archived_switch.press("Space")
-    await expect(archived_switch).to_be_checked()
-    await expect(sidebar.get_by_text("Test rename from another replica", exact=True)).to_be_visible()
+    # The thread is open, so the sidebar keeps its row, now offering to unarchive it, though the archived
+    # switch is off.
+    unarchive = sidebar.get_by_role("button", name="Unarchive Test rename from another replica", exact=True)
+    await expect(unarchive).to_be_visible()
+    await expect(page.get_by_role("switch", name="Show archived threads", exact=True)).not_to_be_checked()
     await expect(page).to_have_url(f"{thread_browser.ingress.url}/#/threads/{thread.id}")
     await page.screenshot(path=undeclared_outputs_dir() / "sidebar-replica-updates.png")
 
