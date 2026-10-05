@@ -541,7 +541,7 @@ it.each<[string, Inventory, { fresh?: boolean; droppedFor?: number }, string | n
   const container = await render();
   await act(async () => vi.advanceTimersByTime(droppedFor ?? 0));
   const texts = (role: string) => [...container.querySelectorAll(`[role="${role}"]`)].map((node) => node.textContent);
-  expect(texts("status")).toEqual(status === null ? [] : [expect.stringContaining(status)]);
+  expect(texts("status")).toEqual(status === null ? [] : [matching(status)]);
   expect(texts("alert")).toEqual(alert === null ? [] : [matching(alert)]);
 });
 

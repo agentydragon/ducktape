@@ -83,10 +83,9 @@ describe("buildEventTimeline", () => {
     const hookOnly = [event("9007199254740993"), event("9007199254740992")];
     const hookTimeline = buildEventTimeline([], hookOnly);
     expect(hookTimeline).toHaveLength(1);
-    expect(isStrip(hookTimeline[0]!)).toBe(true);
-    if (isStrip(hookTimeline[0]!)) {
-      expect(sequences(hookTimeline[0]!.events)).toEqual(["9007199254740992", "9007199254740993"]);
-    }
+    const [strip] = hookTimeline;
+    if (!isStrip(strip!)) throw new Error("A hook-only page is one strip");
+    expect(sequences(strip.events)).toEqual(["9007199254740992", "9007199254740993"]);
 
     expect(buildEventTimeline([], [])).toEqual([]);
     expect(buildEventTimeline([item("eventless", [])], [])).toEqual([item("eventless", [])]);
