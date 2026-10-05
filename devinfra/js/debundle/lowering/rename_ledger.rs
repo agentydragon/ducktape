@@ -1052,21 +1052,25 @@ mod tests {
 
     #[test]
     fn hygiene_distinct_ids_are_distinct_keys() {
-        // Two bindings spelled the same but carrying different
-        // SyntaxContexts are different ledger keys — no conflict.
-        let other_ctxt = (Atom::from("a"), SyntaxContext::from_u32(7));
+        // Same sym, same scope, same priority, different targets: only the
+        // SyntaxContext keeps these two from being a conflict.
+        let scope = RenameScope::Module(ModuleId::logical(0));
+        let shadowing = (Atom::from("a"), SyntaxContext::from_u32(7));
         let mut ledger = RenameLedger::default();
-        ledger.submit(intent(RenameScope::Chunk, "a", "first", A));
+        ledger.submit(intent(scope, "a", "first", A));
         ledger.submit(RenameIntent {
-            scope: RenameScope::Module(ModuleId::logical(0)),
-            from: other_ctxt.clone(),
+            scope,
+            from: shadowing.clone(),
             to: Atom::from("second"),
             origin: B,
         });
         let sealed = ledger.seal(&SealValidation::default()).unwrap();
         assert_eq!(
-            sealed.scope_renames(&RenameScope::Module(ModuleId::logical(0))),
-            Some(BTreeMap::from([(other_ctxt, Atom::from("second"))])),
+            sealed.scope_renames(&scope),
+            Some(BTreeMap::from([
+                (id("a"), Atom::from("first")),
+                (shadowing, Atom::from("second")),
+            ])),
         );
     }
 
