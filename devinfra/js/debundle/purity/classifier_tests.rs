@@ -24,10 +24,14 @@ fn classify(src: &str) -> Purity {
     )
 }
 
-/// Run the classifier against `src` after computing the
-/// chunk-top-level shadowed-globals set from a wrapping
-/// module. Lets tests check the shadowing fallback.
-fn classify_with_module(prefix: &str, expr_src: &str) -> Purity {
+/// Parse `{prefix}\nconst _ = {expr_src};` and hand `classify` the chunk-top item
+/// views, the shadowed-globals set of the whole module and the last const's
+/// initializer.
+fn classify_last_const(
+    prefix: &str,
+    expr_src: &str,
+    classify: impl FnOnce(&[TopLevelItemView<'_>], &BTreeSet<&'static str>, &Expr) -> Purity,
+) -> Purity {
     let module = parse(&format!("{prefix}\nconst _ = {expr_src};"));
     let body = top_level_item_views(&module.body);
     let shadowed = compute_shadowed_globals(&body);
@@ -36,53 +40,65 @@ fn classify_with_module(prefix: &str, expr_src: &str) -> Purity {
         other => panic!("expected last stmt to be `const _ = …;`, got {other:?}"),
     };
     let init = var.decls[0].init.as_deref().expect("init expected");
-    classify_expr_purity(
-        init,
-        &shadowed,
-        &BTreeSet::new(),
-        &BTreeSet::new(),
-        &ChunkCodeGraph::default(),
-    )
+    classify(&body, &shadowed, init)
+}
+
+/// Like [`classify_last_const`], classifying against the `ChunkCodeGraph` that
+/// `build` makes from the module's chunk-top facts.
+fn classify_with_graph(
+    prefix: &str,
+    expr_src: &str,
+    build: impl FnOnce(&[TopLevelItemView<'_>], &BTreeSet<&'static str>) -> ChunkCodeGraph,
+) -> Purity {
+    classify_last_const(prefix, expr_src, |body, shadowed, init| {
+        let graph = build(body, shadowed);
+        classify_expr_purity(init, shadowed, &BTreeSet::new(), &BTreeSet::new(), &graph)
+    })
+}
+
+fn string_set(items: &[&str]) -> BTreeSet<String> {
+    items.iter().map(|s| (*s).to_string()).collect()
+}
+
+/// Run the classifier against `src` after computing the
+/// chunk-top-level shadowed-globals set from a wrapping
+/// module. Lets tests check the shadowing fallback.
+fn classify_with_module(prefix: &str, expr_src: &str) -> Purity {
+    classify_last_const(prefix, expr_src, |_, shadowed, init| {
+        classify_expr_purity(
+            init,
+            shadowed,
+            &BTreeSet::new(),
+            &BTreeSet::new(),
+            &ChunkCodeGraph::default(),
+        )
+    })
 }
 
 /// Run the classifier against `src` with both shadowing and an
 /// explicit declared-pure binding set.
 fn classify_with_declared_pure(prefix: &str, expr_src: &str, declared: &[&str]) -> Purity {
-    let module = parse(&format!("{prefix}\nconst _ = {expr_src};"));
-    let body = top_level_item_views(&module.body);
-    let shadowed = compute_shadowed_globals(&body);
-    let declared_pure: BTreeSet<String> = declared.iter().map(|s| (*s).to_string()).collect();
-    let var = match module.body.last().expect("non-empty body") {
-        ModuleItem::Stmt(Stmt::Decl(Decl::Var(var))) => var,
-        other => panic!("expected last stmt to be `const _ = …;`, got {other:?}"),
-    };
-    let init = var.decls[0].init.as_deref().expect("init expected");
-    classify_expr_purity(
-        init,
-        &shadowed,
-        &BTreeSet::new(),
-        &declared_pure,
-        &ChunkCodeGraph::default(),
-    )
+    let declared_pure = string_set(declared);
+    classify_last_const(prefix, expr_src, |_, shadowed, init| {
+        classify_expr_purity(
+            init,
+            shadowed,
+            &BTreeSet::new(),
+            &declared_pure,
+            &ChunkCodeGraph::default(),
+        )
+    })
 }
 
 fn classify_with_declared_pure_new(prefix: &str, expr_src: &str, declared: &[&str]) -> Purity {
-    let module = parse(&format!("{prefix}\nconst _ = {expr_src};"));
-    let body = top_level_item_views(&module.body);
-    let shadowed = compute_shadowed_globals(&body);
-    let declared_pure_new: BTreeSet<String> = declared.iter().map(|s| (*s).to_string()).collect();
-    let graph = ChunkCodeGraph::build_with_declared_pure_new(
-        &body,
-        &shadowed,
-        &BTreeSet::new(),
-        &declared_pure_new,
-    );
-    let var = match module.body.last().expect("non-empty body") {
-        ModuleItem::Stmt(Stmt::Decl(Decl::Var(var))) => var,
-        other => panic!("expected last stmt to be `const _ = …;`, got {other:?}"),
-    };
-    let init = var.decls[0].init.as_deref().expect("init expected");
-    classify_expr_purity(init, &shadowed, &BTreeSet::new(), &BTreeSet::new(), &graph)
+    classify_with_graph(prefix, expr_src, |body, shadowed| {
+        ChunkCodeGraph::build_with_declared_pure_new(
+            body,
+            shadowed,
+            &BTreeSet::new(),
+            &string_set(declared),
+        )
+    })
 }
 
 fn classify_with_declared_pure_members(
@@ -91,52 +107,34 @@ fn classify_with_declared_pure_members(
     binding: &str,
     props: &[&str],
 ) -> Purity {
-    let module = parse(&format!("{prefix}\nconst _ = {expr_src};"));
-    let body = top_level_item_views(&module.body);
-    let shadowed = compute_shadowed_globals(&body);
-    let declared_pure_members: BTreeMap<String, BTreeSet<String>> = BTreeMap::from([(
-        binding.to_string(),
-        props.iter().map(|s| (*s).to_string()).collect(),
-    )]);
-    let graph = ChunkCodeGraph::build_full(
-        &body,
-        &shadowed,
-        &BTreeSet::new(),
-        &BTreeSet::new(),
-        &declared_pure_members,
-        &BTreeMap::new(),
-        &BTreeSet::new(),
-    );
-    let var = match module.body.last().expect("non-empty body") {
-        ModuleItem::Stmt(Stmt::Decl(Decl::Var(var))) => var,
-        other => panic!("expected last stmt to be `const _ = …;`, got {other:?}"),
-    };
-    let init = var.decls[0].init.as_deref().expect("init expected");
-    classify_expr_purity(init, &shadowed, &BTreeSet::new(), &BTreeSet::new(), &graph)
+    let declared_pure_members = BTreeMap::from([(binding.to_string(), string_set(props))]);
+    classify_with_graph(prefix, expr_src, |body, shadowed| {
+        ChunkCodeGraph::build_full(
+            body,
+            shadowed,
+            &BTreeSet::new(),
+            &BTreeSet::new(),
+            &declared_pure_members,
+            &BTreeMap::new(),
+            &BTreeSet::new(),
+        )
+    })
 }
 
 /// Classify `expr_src` (appearing after `prefix` at chunk top) with
 /// `fluent` as the author-asserted fluent root bindings.
 fn classify_with_fluent_bindings(prefix: &str, expr_src: &str, fluent: &[&str]) -> Purity {
-    let module = parse(&format!("{prefix}\nconst _ = {expr_src};"));
-    let body = top_level_item_views(&module.body);
-    let shadowed = compute_shadowed_globals(&body);
-    let fluent_bindings: BTreeSet<String> = fluent.iter().map(|s| (*s).to_string()).collect();
-    let graph = ChunkCodeGraph::build_full(
-        &body,
-        &shadowed,
-        &BTreeSet::new(),
-        &BTreeSet::new(),
-        &BTreeMap::new(),
-        &BTreeMap::new(),
-        &fluent_bindings,
-    );
-    let var = match module.body.last().expect("non-empty body") {
-        ModuleItem::Stmt(Stmt::Decl(Decl::Var(var))) => var,
-        other => panic!("expected last stmt to be `const _ = …;`, got {other:?}"),
-    };
-    let init = var.decls[0].init.as_deref().expect("init expected");
-    classify_expr_purity(init, &shadowed, &BTreeSet::new(), &BTreeSet::new(), &graph)
+    classify_with_graph(prefix, expr_src, |body, shadowed| {
+        ChunkCodeGraph::build_full(
+            body,
+            shadowed,
+            &BTreeSet::new(),
+            &BTreeSet::new(),
+            &BTreeMap::new(),
+            &BTreeMap::new(),
+            &string_set(fluent),
+        )
+    })
 }
 
 #[test]
@@ -1008,27 +1006,24 @@ fn fluent_root_body_local_shadow_defeats_trust() {
     // A body-local binding of the same name is a different value
     // than the annotated import — the trust contract doesn't cover
     // it (same rule as every other author-trust arm).
-    let module = parse(r#"import { e4 as k } from "vendor";"#);
-    let body = top_level_item_views(&module.body);
-    let shadowed = compute_shadowed_globals(&body);
-    let graph = ChunkCodeGraph::build_full(
-        &body,
-        &shadowed,
-        &BTreeSet::new(),
-        &BTreeSet::new(),
-        &BTreeMap::new(),
-        &BTreeMap::new(),
-        &BTreeSet::from(["k".to_string()]),
-    );
-    let shadowing_call = parse(r#"const _ = k.object({ a: 1 });"#);
-    let ModuleItem::Stmt(Stmt::Decl(Decl::Var(var))) = &shadowing_call.body[0] else {
-        panic!("expected var decl");
-    };
-    let init = var.decls[0].init.as_deref().expect("init expected");
     let local_shadowed = BTreeSet::from(["k".to_string()]);
-    assert!(
-        !classify_expr_purity(init, &shadowed, &local_shadowed, &BTreeSet::new(), &graph).is_pure()
+    let purity = classify_last_const(
+        r#"import { e4 as k } from "vendor";"#,
+        "k.object({ a: 1 })",
+        |body, shadowed, init| {
+            let graph = ChunkCodeGraph::build_full(
+                body,
+                shadowed,
+                &BTreeSet::new(),
+                &BTreeSet::new(),
+                &BTreeMap::new(),
+                &BTreeMap::new(),
+                &string_set(&["k"]),
+            );
+            classify_expr_purity(init, shadowed, &local_shadowed, &BTreeSet::new(), &graph)
+        },
     );
+    assert!(!purity.is_pure());
 }
 
 #[test]
@@ -1160,18 +1155,7 @@ fn object_keys_on_plain_data_binding_classifies_pure() {
     // accessor-free by `collect_plain_data_bindings` /
     // `PlainDataWriteScanner` invariants. Same admission as
     // a fresh literal.
-    let module = parse("const plain = { a: 1 }; const _ = Object.keys(plain);");
-    let body = top_level_item_views(&module.body);
-    let shadowed = compute_shadowed_globals(&body);
-    let graph = ChunkCodeGraph::build(&body, &shadowed, &BTreeSet::new());
-    let var = match module.body.last().expect("non-empty body") {
-        ModuleItem::Stmt(Stmt::Decl(Decl::Var(var))) => var,
-        other => panic!("expected `const _ = …;`, got {other:?}"),
-    };
-    let init = var.decls[0].init.as_deref().expect("init expected");
-    assert!(
-        classify_expr_purity(init, &shadowed, &BTreeSet::new(), &BTreeSet::new(), &graph).is_pure()
-    );
+    assert!(classify_built("const plain = { a: 1 };", "Object.keys(plain)").is_pure());
 }
 
 #[test]
@@ -1214,16 +1198,9 @@ fn object_calls_shadowed_receiver_stays_unknown() {
 /// wrapping `prefix` module, so chunk-top binding facts — including the
 /// primitive-`const` set — are populated.
 fn classify_built(prefix: &str, expr_src: &str) -> Purity {
-    let module = parse(&format!("{prefix}\nconst _ = {expr_src};"));
-    let body = top_level_item_views(&module.body);
-    let shadowed = compute_shadowed_globals(&body);
-    let graph = ChunkCodeGraph::build(&body, &shadowed, &BTreeSet::new());
-    let var = match module.body.last().expect("non-empty body") {
-        ModuleItem::Stmt(Stmt::Decl(Decl::Var(var))) => var,
-        other => panic!("expected last stmt to be `const _ = …;`, got {other:?}"),
-    };
-    let init = var.decls[0].init.as_deref().expect("init expected");
-    classify_expr_purity(init, &shadowed, &BTreeSet::new(), &BTreeSet::new(), &graph)
+    classify_with_graph(prefix, expr_src, |body, shadowed| {
+        ChunkCodeGraph::build(body, shadowed, &BTreeSet::new())
+    })
 }
 
 #[test]
@@ -1265,28 +1242,21 @@ fn classify_with_imported_purities(
     expr_src: &str,
     imports: &[(&str, Purity)],
 ) -> Purity {
-    let module = parse(&format!("{prefix}\nconst _ = {expr_src};"));
-    let body = top_level_item_views(&module.body);
-    let shadowed = compute_shadowed_globals(&body);
     let imported_purities: BTreeMap<String, Purity> = imports
         .iter()
         .map(|(name, purity)| ((*name).to_string(), purity.clone()))
         .collect();
-    let graph = ChunkCodeGraph::build_full(
-        &body,
-        &shadowed,
-        &BTreeSet::new(),
-        &BTreeSet::new(),
-        &BTreeMap::new(),
-        &imported_purities,
-        &BTreeSet::new(),
-    );
-    let var = match module.body.last().expect("non-empty body") {
-        ModuleItem::Stmt(Stmt::Decl(Decl::Var(var))) => var,
-        other => panic!("expected last stmt to be `const _ = …;`, got {other:?}"),
-    };
-    let init = var.decls[0].init.as_deref().expect("init expected");
-    classify_expr_purity(init, &shadowed, &BTreeSet::new(), &BTreeSet::new(), &graph)
+    classify_with_graph(prefix, expr_src, |body, shadowed| {
+        ChunkCodeGraph::build_full(
+            body,
+            shadowed,
+            &BTreeSet::new(),
+            &BTreeSet::new(),
+            &BTreeMap::new(),
+            &imported_purities,
+            &BTreeSet::new(),
+        )
+    })
 }
 
 fn impure_verdict() -> Purity {
