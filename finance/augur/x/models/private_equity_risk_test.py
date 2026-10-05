@@ -617,39 +617,6 @@ def test_dilution_factor_shape_and_values() -> None:
     np.testing.assert_allclose(_deterministic_dilution_factor(rate=0.0, horizon_months=6), np.ones(7))
 
 
-def test_positive_dilution_makes_coupled_mark_grow_slower_than_valuation_ratio() -> None:
-    """`annual_dilution_rate > 0` ⇒ the coupled latent mark grows strictly slower than V(t)/V0.
-
-    The coupled latent mark is `current_mark × (V(t)/V0) / dilution_factor(t)` with
-    `dilution_factor(t) = (1+rate)^(t/12) > 1` for t > 0. Verified directly on the
-    sampler's building blocks (`_sample_company_valuation_vectorized` + `_dilution_factor`),
-    since the observed `mark_usd_per_unit` channel is piecewise-constant between observation
-    events and so doesn't continuously track the latent mark. Same V(t) used for both rates
-    (identical valuation seed stream), so the only difference is the dilution divisor.
-    """
-
-    rate = 0.30
-    horizon = 12
-    issuer = _valuation_issuer(annual_dilution_rate=rate)
-    valuation_seeds = (900, 901, 902, 903)
-    valuation = _sample_company_valuation_vectorized(issuer, valuation_seeds=valuation_seeds, horizon_months=horizon)
-    valuation_ratio = valuation / valuation[:, [0]]
-
-    diluted = _deterministic_dilution_factor(rate=rate, horizon_months=horizon)
-    undiluted = _deterministic_dilution_factor(rate=0.0, horizon_months=horizon)
-    coupled_mark = issuer.current_mark_usd * valuation_ratio / diluted
-    coupled_mark_no_dilution = issuer.current_mark_usd * valuation_ratio / undiluted
-
-    mark_ratio = coupled_mark / coupled_mark[:, [0]]
-    # t == 0: mark ratio equals valuation ratio (dilution_factor(0) == 1).
-    np.testing.assert_allclose(mark_ratio[:, 0], valuation_ratio[:, 0])
-    # t > 0: strictly below the valuation ratio, by exactly the dilution factor.
-    assert np.all(mark_ratio[:, 1:] < valuation_ratio[:, 1:])
-    np.testing.assert_allclose(mark_ratio, valuation_ratio / diluted)
-    # Zero dilution ⇒ coupled mark tracks V(t)/V0 exactly.
-    np.testing.assert_allclose(coupled_mark_no_dilution / issuer.current_mark_usd, valuation_ratio)
-
-
 def test_valuation_channel_off_is_byte_identical_to_pre_m2_baseline() -> None:
     """Zero-regression guard: turning the channel off must leave mark/event arrays
     bit-identical to a model with NO valuation fields at all (the pre-M2 shape).

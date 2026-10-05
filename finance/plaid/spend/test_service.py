@@ -18,7 +18,7 @@ from testcontainers.postgres import PostgresContainer
 from finance.plaid.db.link_store import PlaidLinkStorage
 from finance.plaid.spend.allowance import AllowancePolicy, CategoryExact, Kind, Rule, Status
 from finance.plaid.spend.app import _event_stream
-from finance.plaid.spend.models import CardConfig, SpendConfiguration
+from finance.plaid.spend.models import AlertState, CardConfig, SpendConfiguration
 from finance.plaid.spend.service import SpendService
 from util.testing.postgres import create_database_async, force_drop_database
 from util.testing.postgres_fixtures import postgres_container  # noqa: F401
@@ -168,6 +168,49 @@ async def test_read_view_uses_statement_cycle_and_normalizes_transactions(
     assert late_card.posted_minor_units == 3_134
     assert late_card.pending_minor_units == 750
     assert late_card.spend_minor_units == 3_884
+
+
+async def test_card_without_statement_reports_observed_spend_not_a_statement_cycle(
+    connection: asyncpg.Connection, postgres_url: str
+) -> None:
+    today = datetime.now(UTC).date()
+    start = today - timedelta(days=32)
+    await add_link(connection, "item-new", synced=datetime.now(UTC))
+    for account_id in ("card-first", "card-empty"):
+        await add_account(connection, account_id, "item-new", type="credit")
+    await add_transaction(connection, "card-first", "item-new", "first", start, 10.0)
+    await add_transaction(connection, "card-first", "item-new", "pending", today, 15.0, pending=True)
+    await add_transaction(connection, "card-first", "item-new", "posted", today, 17.0, pending_transaction_id="pending")
+    await add_transaction(connection, "card-first", "item-new", "new", today, 12.0)
+    await add_transaction(
+        connection, "card-first", "item-new", "repayment", today, 30.0, category="LOAN_PAYMENTS_CREDIT_CARD_PAYMENT"
+    )
+    service = SpendService(
+        postgres_url,
+        SpendConfiguration(
+            cards=[
+                CardConfig(account_id=aid, label=aid, limit_minor_units=10_000, enabled=True)
+                for aid in ("card-first", "card-empty")
+            ]
+        ),
+        dashboard_url="https://spend.example.test",
+    )
+    await service.start()
+    try:
+        view = await service.read_view()
+    finally:
+        await service.close()
+    cards = {card.account_id: card for card in view.cards}
+    first, empty = cards["card-first"], cards["card-empty"]
+    assert first.cycle_start == start  # first observed transaction, not a statement boundary
+    assert first.statement_available is False
+    assert first.posted_minor_units == 3_900
+    assert first.pending_minor_units == 0  # superseded by posted
+    assert first.spend_minor_units == 3_900
+    assert first.spend_percent is None
+    assert first.alert_state == AlertState.UNAVAILABLE
+    assert empty.cycle_start is None
+    assert empty.spend_minor_units is None
 
 
 async def test_allowance_account_coverage_and_freshness_gate(connection: asyncpg.Connection, postgres_url: str) -> None:

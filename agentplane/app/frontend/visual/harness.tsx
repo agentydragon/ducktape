@@ -458,7 +458,6 @@ const THREADS: ThreadView[] = [
     last_cursor: 31,
     last_event_at: ago(90 * 60_000),
     harness_state: "HARNESS_STATE_STOPPED",
-    // The state a shutdown leaves: the runner feed still attached, the harness down.
     feed_status: "active",
   },
   {
@@ -544,12 +543,12 @@ const THREADS_WITH_SANDBOXES: ThreadView[] = [
   },
 ];
 
-/** The `endedAttachment` scenario: the states thread's runner feed has ended and its harness is down. */
+/** The `endedAttachment` scenario: the states thread's harness was shut down, and the runner feed has ended. */
 function withEndedAttachment(thread: ThreadView): ThreadView {
   return thread.session_id === "s-2"
     ? {
         ...thread,
-        name: "Ended thread",
+        name: "Shut-down thread",
         feed_status: "ended",
         harness_state: "HARNESS_STATE_STOPPED",
         active_turn_id: null,
@@ -1730,7 +1729,7 @@ routes.push(
         },
       ],
       harnesses: {
-        HARNESS_CLAUDE: ["harness-claude-model", "next-model"],
+        HARNESS_CLAUDE: scenario.claudePaused ? [] : ["harness-claude-model", "next-model"],
         HARNESS_CODEX: ["harness-codex-model"],
       },
     }),
@@ -2485,3 +2484,14 @@ createRoot(container).render(
     <App />
   </ThemeProvider>
 );
+
+if (scenario.claudePaused) {
+  const openHarness = new MutationObserver(() => {
+    const label = [...document.querySelectorAll("label")].find((node) => node.textContent === "Harness");
+    const control = label?.control;
+    if (!(control instanceof HTMLInputElement) || control.value !== "Codex") return;
+    openHarness.disconnect();
+    control.click();
+  });
+  openHarness.observe(document, { childList: true, subtree: true, attributes: true });
+}

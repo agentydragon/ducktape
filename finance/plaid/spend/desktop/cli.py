@@ -148,8 +148,10 @@ def _print_view(view: SpendView, status: str, last_error: str) -> None:
     for card in cards:
         currency = card.currency
         print(f"\n{_card_title(card)}")
-        if card.cycle_start:
+        if card.cycle_start and card.statement_available:
             print(f"  Statement cycle starts: {card.cycle_start.isoformat()}")
+        elif card.cycle_start:
+            print(f"  Since first recorded transaction: {card.cycle_start.isoformat()} (statement date unavailable)")
         else:
             print("  Statement cycle: unavailable")
 
@@ -157,7 +159,7 @@ def _print_view(view: SpendView, status: str, last_error: str) -> None:
         limit = "no limit set" if card.limit_minor_units is None else _format_money(card.limit_minor_units, currency)
         percent = card.spend_percent
         percent_text = f" · {percent:.1f}%" if isinstance(percent, int | float) else ""
-        print(f"  Spend: {spend} / {limit}{percent_text}")
+        print(f"  Spend: {spend} / {limit}{percent_text}" if card.statement_available else f"  Recorded spend: {spend}")
 
         posted = card.posted_minor_units
         pending = card.pending_minor_units

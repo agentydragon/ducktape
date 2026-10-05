@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
 import { MantineProvider } from "@mantine/core";
-import { TEST_REASONING_EFFORTS } from "./test_model_catalog";
+import { TEST_REASONING_EFFORTS, testModelCatalog } from "./test_model_catalog";
 import { act } from "react";
 import { createRoot } from "react-dom/client";
 import { MemoryRouter } from "react-router";
@@ -71,16 +71,10 @@ async function render(
   vi.spyOn(api, "GET").mockImplementation(async (path) => {
     const data =
       path === "/models"
-        ? {
-            models: [
-              { model: "test-claude", display_name: "Test Claude", reasoning_efforts: TEST_REASONING_EFFORTS },
-              ...codexModels,
-            ],
-            harnesses: {
-              HARNESS_CLAUDE: ["test-claude"],
-              HARNESS_CODEX: codexModels.map((option) => option.model),
-            },
-          }
+        ? testModelCatalog(
+            [{ model: "test-claude", display_name: "Test Claude", reasoning_efforts: TEST_REASONING_EFFORTS }],
+            codexModels
+          )
         : path === "/presets"
           ? [preset]
           : path === "/sandboxes/templates"
@@ -228,14 +222,15 @@ it("lets an operator replace the preset template before creating the sandbox", a
   );
 });
 
-it("clears an unavailable preset model and disables a harness with no offered models", async () => {
+it("replaces an unavailable preset harness and disables its option", async () => {
   const { container } = await render([]);
-  expect(input(container, "Model").value).toBe("");
-  expect(input(container, "Model").disabled).toBe(true);
-  expect(input(container, "Model").placeholder).toBe("No models available");
-  await choose(container, "Harness", "Claude");
-  expect(input(container, "Model").disabled).toBe(false);
+  expect(input(container, "Harness").value).toBe("Claude");
   expect(input(container, "Model").value).toBe("Test Claude");
+  await act(async () => input(container, "Harness").click());
+  const codex = options(container, "Harness").find((option) => option.textContent === "Codex (no models offered)");
+  expect(codex?.hasAttribute("data-combobox-disabled")).toBe(true);
+  await act(async () => codex!.click());
+  expect(input(container, "Harness").value).toBe("Claude");
 });
 
 it("keeps the creation form and reports rejection without navigating", async () => {

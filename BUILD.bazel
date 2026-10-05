@@ -259,7 +259,6 @@ py_wheel(
     entry_points = {
         "console_scripts": [
             "ducktape-precommit = devinfra.precommit.git_hook:main_pre_commit",
-            "ducktape-pytest-main-check = devinfra.precommit.git_hook:main_pytest_main_check",
             "ducktape-prepare-commit-msg = devinfra.precommit.git_hook:main_prepare_commit_msg",
             "ducktape-enforce-bazel-tests = devinfra.precommit.git_hook:main_enforce_bazel_tests",
         ],

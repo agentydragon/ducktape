@@ -12,7 +12,6 @@ from pydantic import HttpUrl, ValidationError
 
 from finance.augur.api.config import (
     CalibrationCatalogConfig,
-    Config,
     DistributionTaxShareConfig,
     PropertyAssetConfig,
     PropertySourceConfig,
@@ -45,6 +44,49 @@ from finance.augur.x.models.trained_private_equity import TrainedPrivateEquityPr
 
 LOCATION_A_PROPERTY = PropertyId("location_a_property")
 
+TAX_LOT_PORTFOLIO_SOURCES = PortfolioSourcesConfig(
+    fixed=FixedPortfolioSourceConfig(
+        snapshot=FinanceSnapshot(as_of_date="2026-05-12"),
+        portfolio=PortfolioConfig(
+            accounts=(
+                PortfolioAccountConfig(account_id=AccountId("taxable_brokerage"), owner_agent_id=AgentId("owner")),
+            ),
+            holdings=(
+                SecurityHoldingConfig(
+                    position_id="voo_position",
+                    account_id=AccountId("taxable_brokerage"),
+                    symbol=SecuritySymbol("VOO"),
+                    security_kind=HoldingKind.ETF,
+                    unit_value=Decimal(500),
+                    lots=(
+                        HoldingTaxLotConfig(
+                            lot_id=LotId("voo_2024_05_12"),
+                            holding_period_months_at_start=24,
+                            quantity=100,
+                            cost_basis=Decimal(30_000),
+                        ),
+                    ),
+                ),
+            ),
+        ),
+    )
+)
+
+PLAID_PORTFOLIO_SOURCES = PortfolioSourcesConfig(
+    plaid=PlaidPortfolioSourceConfig(
+        enabled=True,
+        cash=PlaidCashSourceConfig(plaid_account_ids=("checking-account",)),
+        sp500_proxy_groups=(
+            PlaidSp500ProxyGroupConfig(
+                position_id="wealthfront_sp500",
+                portfolio_account_id=AccountId("wealthfront_taxable"),
+                owner_agent_id=AgentId("owner"),
+                plaid_account_ids=("wealthfront-plaid-account",),
+            ),
+        ),
+    )
+)
+
 
 def test_property_asset_property_ids_must_be_unique() -> None:
     with pytest.raises(ValidationError):
@@ -61,70 +103,6 @@ def test_property_asset_property_ids_must_be_unique() -> None:
         )
 
 
-def test_config_carries_tax_lot_accurate_portfolio_schema(minimal_config: MinimalConfig) -> None:
-    config = minimal_config(
-        portfolio_sources=PortfolioSourcesConfig(
-            fixed=FixedPortfolioSourceConfig(
-                snapshot=FinanceSnapshot(as_of_date="2026-05-12"),
-                portfolio=PortfolioConfig(
-                    accounts=(
-                        PortfolioAccountConfig(
-                            account_id=AccountId("taxable_brokerage"), owner_agent_id=AgentId("owner")
-                        ),
-                    ),
-                    holdings=(
-                        SecurityHoldingConfig(
-                            position_id="voo_position",
-                            account_id=AccountId("taxable_brokerage"),
-                            symbol=SecuritySymbol("VOO"),
-                            security_kind=HoldingKind.ETF,
-                            unit_value=Decimal(500),
-                            lots=(
-                                HoldingTaxLotConfig(
-                                    lot_id=LotId("voo_2024_05_12"),
-                                    holding_period_months_at_start=24,
-                                    quantity=100,
-                                    cost_basis=Decimal(30_000),
-                                ),
-                            ),
-                        ),
-                    ),
-                ),
-            )
-        )
-    )
-
-    reloaded = Config.model_validate_json(config.model_dump_json(exclude_computed_fields=True))
-
-    fixed = reloaded.portfolio_sources.fixed
-    assert fixed.portfolio.holdings[0].lots[0].holding_period_months_at_start == 24
-
-
-def test_config_carries_optional_plaid_portfolio_source(minimal_config: MinimalConfig) -> None:
-    config = minimal_config(
-        portfolio_sources=PortfolioSourcesConfig(
-            plaid=PlaidPortfolioSourceConfig(
-                enabled=True,
-                cash=PlaidCashSourceConfig(plaid_account_ids=("checking-account",)),
-                sp500_proxy_groups=(
-                    PlaidSp500ProxyGroupConfig(
-                        position_id="wealthfront_sp500",
-                        portfolio_account_id=AccountId("wealthfront_taxable"),
-                        owner_agent_id=AgentId("owner"),
-                        plaid_account_ids=("wealthfront-plaid-account",),
-                    ),
-                ),
-            )
-        )
-    )
-
-    reloaded = Config.model_validate_json(config.model_dump_json(exclude_computed_fields=True))
-
-    assert reloaded.portfolio_sources.plaid.enabled is True
-    assert reloaded.portfolio_sources.plaid.cash.plaid_account_ids == ("checking-account",)
-    assert reloaded.portfolio_sources.plaid.sp500_proxy_groups[0].portfolio_account_id == "wealthfront_taxable"
-
-
 def test_enabled_plaid_portfolio_source_must_select_something() -> None:
     with pytest.raises(ValidationError):
         PlaidPortfolioSourceConfig(enabled=True)
@@ -139,8 +117,15 @@ def test_unknown_field_is_rejected(minimal_config: MinimalConfig) -> None:
     ]
 
 
-def test_yaml_round_trip_through_dump_and_load(tmp_path: Path, minimal_config: MinimalConfig) -> None:
-    config = minimal_config(location_selection=("san_francisco_ca",))
+@pytest.mark.parametrize(
+    "portfolio_sources",
+    [None, TAX_LOT_PORTFOLIO_SOURCES, PLAID_PORTFOLIO_SOURCES],
+    ids=["snapshot", "tax_lots", "plaid"],
+)
+def test_yaml_round_trip_through_dump_and_load(
+    tmp_path: Path, minimal_config: MinimalConfig, portfolio_sources: PortfolioSourcesConfig | None
+) -> None:
+    config = minimal_config(location_selection=("san_francisco_ca",), portfolio_sources=portfolio_sources)
 
     path = tmp_path / "config.yaml"
     path.write_text(dump_augur_config_yaml(config), encoding="utf-8")

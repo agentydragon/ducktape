@@ -61,12 +61,12 @@ build --nolegacy_external_runfiles
 common --lockfile_mode=off
 
 # Lint + typecheck enabled by default on all builds.
-# Combines lint (ruff, ESLint), typecheck (mypy), and Rust checks (clippy, rustfmt).
+# Combines lint (ruff, ESLint, pytest-main), typecheck (mypy), and Rust checks (clippy, rustfmt).
 # Use Python 3.14 for mypy to parse Python 3.14 syntax (e.g., homeassistant).
-# --config=nolint skips ruff, ESLint, mypy, clippy and rustfmt (see build:nolint below).
+# --config=nolint skips ruff, ESLint, mypy, pytest-main, clippy and rustfmt (see build:nolint below).
 build --@rules_python//python/config_settings:python_version=3.14
-build --aspects=//devinfra/lint:linters.bzl%ruff,//devinfra/lint:linters.bzl%mypy_aspect,//devinfra/lint:linters.bzl%eslint,@rules_rust//rust:defs.bzl%rust_clippy_aspect,@rules_rust//rust:defs.bzl%rustfmt_aspect
-build --output_groups=+rules_lint_report,+mypy,+clippy_checks,+rustfmt_checks
+build --aspects=//devinfra/lint:linters.bzl%ruff,//devinfra/lint:linters.bzl%mypy_aspect,//devinfra/lint:linters.bzl%eslint,//devinfra/lint:pytest_main.bzl%pytest_main_aspect,@rules_rust//rust:defs.bzl%rust_clippy_aspect,@rules_rust//rust:defs.bzl%rustfmt_aspect
+build --output_groups=+rules_lint_report,+mypy,+pytest_main_checks,+clippy_checks,+rustfmt_checks
 
 # Make ruff + ESLint findings fail the build, so code that doesn't lint clean no longer
 # bazel-builds, as with mypy/clippy/rustfmt.
@@ -76,7 +76,7 @@ build --@aspect_rules_lint//lint:fail_on_violation
 # Skip lint and typecheck. Ruff and ESLint run as validation actions, which
 # --output_groups cannot drop; --norun_validations skips them, and also every other
 # rule's validation actions.
-build:nolint --output_groups=-rules_lint_report,-mypy,-clippy_checks,-rustfmt_checks
+build:nolint --output_groups=-rules_lint_report,-mypy,-pytest_main_checks,-clippy_checks,-rustfmt_checks
 build:nolint --norun_validations
 
 # Remote Build Execution (BuildBuddy). Kept in an importable fragment so the

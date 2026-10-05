@@ -45,6 +45,7 @@ def sample_allowance(status: Status = Status.ACTIVE) -> AllowanceView:
         posted_minor_units=900 if active else 0,
         pending_minor_units=300 if active else 0,
         review_minor_units=0,
+        review_transaction_count=0,
         unmatched_refunds_minor_units=0,
         windows_minor_units=Windows(
             current_credit_cycle_minor_units=1200,

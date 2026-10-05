@@ -16,9 +16,10 @@ import { RunningChevrons, StatusDot } from "./custom_mark_icons";
 
 /**
  * `running`: a turn is in flight. `idle`: the harness is live and waiting for input. `stopped`: the
- * runner feed is attached but the harness is down (shut down or lost). `failed`: the runner feed
- * failed. `archived`: the thread was archived, whatever its retained history says. `inactive`: nothing
- * else live to show (Sandbox suspended or gone, feed ended, or not confirmed).
+ * harness is down (shut down or lost), whether its runner feed is still attached or has ended.
+ * `failed`: the runner feed failed. `archived`: the thread was archived, whatever its retained history
+ * says. `inactive`: nothing else live to show (Sandbox suspended or gone, the feed ended with the
+ * harness not known to be down, or not confirmed).
  */
 export type ThreadStatusKind = "running" | "idle" | "stopped" | "failed" | "archived" | "inactive";
 

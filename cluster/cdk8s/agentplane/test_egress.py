@@ -176,6 +176,20 @@ def test_testing_github_policy_has_its_credential_and_no_real_account_credential
     )
 
 
+@pytest.mark.parametrize("namespace", NAMESPACES)
+def test_claude_pause_omits_launch_offerings_but_keeps_ingress(
+    namespace: str, agentplane_manifests: dict[str, list[dict[str, Any]]]
+) -> None:
+    docs = agentplane_manifests[namespace]
+    config = yaml.safe_load(_by_name(docs, "ConfigMap", "agentplane-app-config")["data"]["config.yaml"])
+    assert config["models"]["harnesses"]["HARNESS_CLAUDE"] == []
+    assert config["models"]["harnesses"]["HARNESS_CODEX"]
+    assert all(preset["harness"] == "HARNESS_CODEX" for preset in config["thread_presets"].values())
+    assert "haku" not in config["sandbox_presets"]
+    # Existing sessions retain the Anthropic ingress endpoint and proxy policy.
+    assert any(doc["kind"] == "Service" and doc["metadata"]["name"] == "agentplane-llm-ingress" for doc in docs)
+
+
 @pytest.mark.parametrize("preset", ["public-coder", "finance-agent"])
 def test_public_diagnostics_share_haku_reads_but_not_privileged_grants(
     preset: str, agentplane_manifests: dict[str, list[dict[str, Any]]]
@@ -190,15 +204,7 @@ def test_public_diagnostics_share_haku_reads_but_not_privileged_grants(
     assert COINBASE_POLICY not in _by_name(docs, "EgressBinding", "haku-agent")["spec"]["policies"]
     assert set(selected) == set(config["sandbox_presets"]["public-coder"]["kubernetes_grants"]) | credential_grants
     assert len(selected) == len(set(selected))
-    haku = config["sandbox_presets"]["haku"]["kubernetes_grants"]
-    assert len(haku) == len(set(haku))
-    assert (
-        set(haku) - set(selected)
-        == {"cluster-diagnostics", "haku-sandbox-write", "coinbase-credentials"} - credential_grants
-    )
-    assert set(selected) - set(haku) == {"public-coder-node-read", "public-coder-cluster-metadata-read"} | (
-        {"spend-private-config"} if preset == "finance-agent" else set()
-    )
+    assert not {"cluster-diagnostics", "haku-sandbox-write"} & set(selected)
     assert {
         "agentplane-staging-metadata",
         "agentplane-staging-logs",

@@ -2253,15 +2253,14 @@ data:
   config.yaml: |
     models:
       models:
-        - model: anthropic-api/ant-messages/claude-haiku-4-5-20251001
-          display_name: Haiku 4.5
-          reasoning_efforts: []
-        - model: antigravity/ant-messages/gemini-3.1-flash-lite
-          display_name: Gemini 3.1 Flash Lite
-          reasoning_efforts: []
-        - model: antigravity/ant-messages/gemini-3.5-flash-lite
-          display_name: Gemini 3.5 Flash Lite
-          reasoning_efforts: []
+        - model: chatgpt/oai-responses/gpt-6-luna
+          display_name: GPT-6 Luna
+          reasoning_efforts:
+            - minimal
+            - low
+            - medium
+            - high
+            - xhigh
         - model: ollama/oai-chat/qwen3.8-flash-next-iq4xs-128k
           display_name: Qwen3.8 Flash Next IQ4_XS (128K)
           reasoning_efforts: []
@@ -2286,27 +2285,8 @@ data:
         - model: ollama/oai-chat/gemma4-31b-it-q8_0-128k
           display_name: Gemma 4 31B (128K)
           reasoning_efforts: []
-        - model: chatgpt/oai-responses/gpt-6-luna
-          display_name: GPT-6 Luna
-          reasoning_efforts:
-            - minimal
-            - low
-            - medium
-            - high
-            - xhigh
       harnesses:
-        HARNESS_CLAUDE:
-          - anthropic-api/ant-messages/claude-haiku-4-5-20251001
-          - antigravity/ant-messages/gemini-3.1-flash-lite
-          - antigravity/ant-messages/gemini-3.5-flash-lite
-          - ollama/oai-chat/qwen3.8-flash-next-iq4xs-128k
-          - ollama/oai-chat/qwen3.8-flash-next-iq4xs-256k
-          - ollama/oai-chat/gpt-oss-20b-128k
-          - ollama/oai-chat/gpt-oss-20b-256k
-          - ollama/oai-chat/gpt-oss-20b-512k
-          - ollama/oai-chat/gpt-oss-20b-1m
-          - ollama/oai-chat/gpt-oss-120b-128k
-          - ollama/oai-chat/gemma4-31b-it-q8_0-128k
+        HARNESS_CLAUDE: []
         HARNESS_CODEX:
           - chatgpt/oai-responses/gpt-6-luna
           - ollama/oai-chat/qwen3.8-flash-next-iq4xs-128k

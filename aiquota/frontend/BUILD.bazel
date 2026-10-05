@@ -1,10 +1,11 @@
 load("@aspect_rules_esbuild//esbuild:defs.bzl", "esbuild")
-load("@aspect_rules_js//js:defs.bzl", "js_library", "js_test")
+load("@aspect_rules_js//js:defs.bzl", "js_library")
 load("@aspect_rules_ts//ts:defs.bzl", "ts_config")
 load("//devinfra/js:openapi.bzl", "js_openapi_schema")
 load("//devinfra/js:spa_bundle.bzl", "spa_bundle")
 load("//devinfra/js:ts_library.bzl", "ts_library")
 load("//devinfra/js:vitest.bzl", "check_vitest_specs", "vitest_config")
+load("//util/testing/frontend_visual:visual_test.bzl", "chromium_js_test")
 load(":vitest.bzl", "aiquota_vitest_test")
 
 package(default_visibility = ["//visibility:public"])
@@ -251,10 +252,9 @@ SCREENSHOT_DATA = [
     "//util/testing/frontend_visual:capture",
     "//util/testing/frontend_visual:launcher",
     "//util/testing/frontend_visual:visual_review_manifest",
-    "@chrome_headless_shell//:executable",
 ]
 
-js_test(
+chromium_js_test(
     name = "screenshots",
     # medium: 13 shots in one process, measured 28.5s.
     size = "medium",
@@ -262,7 +262,6 @@ js_test(
     entry_point = "screenshots/render.mjs",
     env = {
         "SCENES_JSON": "$(rootpath :scenes_json)",
-        "CHROMIUM_HEADLESS_SHELL": "$(rootpath @chrome_headless_shell//:executable)",
         # Peak-burn hours and credit expiries render in the viewer's zone, which is the point
         # of surfacing them; pin one so the renders do not depend on the worker's.
         "TZ": "UTC",

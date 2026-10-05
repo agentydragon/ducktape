@@ -37,6 +37,15 @@ spec:
     kind: GitRepository
     name: ducktape
     namespace: ducktape-flux
+  vars:
+    - name: webhook_host
+      value: flux-webhook.allegedly.works
+    - name: receiver_name
+      value: receiver
+    - name: receiver_namespace
+      value: forgejo-images
+    - name: webhook_token_secret
+      value: webhook-token
 ---
 apiVersion: external-secrets.io/v1
 kind: ExternalSecret
@@ -56,3 +65,341 @@ spec:
     template:
       mergePolicy: Merge
       type: kubernetes.io/dockerconfigjson
+---
+apiVersion: generators.external-secrets.io/v1alpha1
+kind: Password
+metadata:
+  name: webhook-token
+  namespace: forgejo-images
+spec:
+  allowRepeat: true
+  digits: 12
+  length: 48
+  noUpper: false
+  symbols: 0
+---
+apiVersion: external-secrets.io/v1
+kind: ExternalSecret
+metadata:
+  name: webhook-token
+  namespace: forgejo-images
+spec:
+  dataFrom:
+    - sourceRef:
+        generatorRef:
+          apiVersion: generators.external-secrets.io/v1alpha1
+          kind: Password
+          name: webhook-token
+  refreshPolicy: CreatedOnce
+  target:
+    name: webhook-token
+    template:
+      data:
+        token: "{{ .password }}"
+      type: Opaque
+---
+apiVersion: notification.toolkit.fluxcd.io/v1
+kind: Receiver
+metadata:
+  name: receiver
+  namespace: forgejo-images
+spec:
+  resourceFilter: req.action == 'created' && req.package.type == 'container'
+  resources:
+    - apiVersion: image.toolkit.fluxcd.io/v1
+      filter: req.package.name == 'agentplane-action-service'
+      kind: ImageRepository
+      name: agentplane-action-service
+      namespace: flux-system
+    - apiVersion: image.toolkit.fluxcd.io/v1
+      filter: req.package.name == 'agentplane-action-service-migrate'
+      kind: ImageRepository
+      name: agentplane-action-service-migrate
+      namespace: flux-system
+    - apiVersion: image.toolkit.fluxcd.io/v1
+      filter: req.package.name == 'agentplane-app'
+      kind: ImageRepository
+      name: agentplane-app
+      namespace: flux-system
+    - apiVersion: image.toolkit.fluxcd.io/v1
+      filter: req.package.name == 'agentplane-app-migrate'
+      kind: ImageRepository
+      name: agentplane-app-migrate
+      namespace: flux-system
+    - apiVersion: image.toolkit.fluxcd.io/v1
+      filter: req.package.name == 'agentplane-egress'
+      kind: ImageRepository
+      name: agentplane-egress
+      namespace: flux-system
+    - apiVersion: image.toolkit.fluxcd.io/v1
+      filter: req.package.name == 'agentplane-egress-migrate'
+      kind: ImageRepository
+      name: agentplane-egress-migrate
+      namespace: flux-system
+    - apiVersion: image.toolkit.fluxcd.io/v1
+      filter: req.package.name == 'agentplane-egress-sidecar'
+      kind: ImageRepository
+      name: agentplane-egress-sidecar
+      namespace: flux-system
+    - apiVersion: image.toolkit.fluxcd.io/v1
+      filter: req.package.name == 'agentplane-index'
+      kind: ImageRepository
+      name: agentplane-index
+      namespace: flux-system
+    - apiVersion: image.toolkit.fluxcd.io/v1
+      filter: req.package.name == 'agentplane-llm-ingress'
+      kind: ImageRepository
+      name: agentplane-llm-ingress
+      namespace: flux-system
+    - apiVersion: image.toolkit.fluxcd.io/v1
+      filter: req.package.name == 'agentplane-notification-service'
+      kind: ImageRepository
+      name: agentplane-notification-service
+      namespace: flux-system
+    - apiVersion: image.toolkit.fluxcd.io/v1
+      filter: req.package.name == 'agentplane-notification-service-migrate'
+      kind: ImageRepository
+      name: agentplane-notification-service-migrate
+      namespace: flux-system
+    - apiVersion: image.toolkit.fluxcd.io/v1
+      filter: req.package.name == 'agentplane-oauth-fixture'
+      kind: ImageRepository
+      name: agentplane-oauth-fixture
+      namespace: flux-system
+    - apiVersion: image.toolkit.fluxcd.io/v1
+      filter: req.package.name == 'agentplane-runner'
+      kind: ImageRepository
+      name: agentplane-runner
+      namespace: flux-system
+    - apiVersion: image.toolkit.fluxcd.io/v1
+      filter: req.package.name == 'agentplane-sandbox'
+      kind: ImageRepository
+      name: agentplane-sandbox
+      namespace: flux-system
+    - apiVersion: image.toolkit.fluxcd.io/v1
+      filter: req.package.name == 'agentplane-sandbox-build'
+      kind: ImageRepository
+      name: agentplane-sandbox-build
+      namespace: flux-system
+    - apiVersion: image.toolkit.fluxcd.io/v1
+      filter: req.package.name == 'agentplane-sandbox-service'
+      kind: ImageRepository
+      name: agentplane-sandbox-service
+      namespace: flux-system
+    - apiVersion: image.toolkit.fluxcd.io/v1
+      filter: req.package.name == 'aiquota-api'
+      kind: ImageRepository
+      name: aiquota-api
+      namespace: flux-system
+    - apiVersion: image.toolkit.fluxcd.io/v1
+      filter: req.package.name == 'airlock'
+      kind: ImageRepository
+      name: airlock
+      namespace: flux-system
+    - apiVersion: image.toolkit.fluxcd.io/v1
+      filter: req.package.name == 'attic-jwt-rotation'
+      kind: ImageRepository
+      name: attic-jwt-rotation
+      namespace: flux-system
+    - apiVersion: image.toolkit.fluxcd.io/v1
+      filter: req.package.name == 'authentik-jwt-rotation'
+      kind: ImageRepository
+      name: authentik-jwt-rotation
+      namespace: flux-system
+    - apiVersion: image.toolkit.fluxcd.io/v1
+      filter: req.package.name == 'aw-server'
+      kind: ImageRepository
+      name: aw-server
+      namespace: flux-system
+    - apiVersion: image.toolkit.fluxcd.io/v1
+      filter: req.package.name == 'claude-session-sync'
+      kind: ImageRepository
+      name: claude-session-sync
+      namespace: flux-system
+    - apiVersion: image.toolkit.fluxcd.io/v1
+      filter: req.package.name == 'cli-proxy-api'
+      kind: ImageRepository
+      name: cli-proxy-api
+      namespace: flux-system
+    - apiVersion: image.toolkit.fluxcd.io/v1
+      filter: req.package.name == 'cpap-gateway'
+      kind: ImageRepository
+      name: cpap-gateway
+      namespace: flux-system
+    - apiVersion: image.toolkit.fluxcd.io/v1
+      filter: req.package.name == 'cpap-sync'
+      kind: ImageRepository
+      name: cpap-sync
+      namespace: flux-system
+    - apiVersion: image.toolkit.fluxcd.io/v1
+      filter: req.package.name == 'forgejo-token-rotation'
+      kind: ImageRepository
+      name: forgejo-token-rotation
+      namespace: flux-system
+    - apiVersion: image.toolkit.fluxcd.io/v1
+      filter: req.package.name == 'github-api-proxy'
+      kind: ImageRepository
+      name: github-api-proxy
+      namespace: flux-system
+    - apiVersion: image.toolkit.fluxcd.io/v1
+      filter: req.package.name == 'github-graphql-rate-exporter'
+      kind: ImageRepository
+      name: github-graphql-rate-exporter
+      namespace: flux-system
+    - apiVersion: image.toolkit.fluxcd.io/v1
+      filter: req.package.name == 'google-mcp'
+      kind: ImageRepository
+      name: google-mcp
+      namespace: flux-system
+    - apiVersion: image.toolkit.fluxcd.io/v1
+      filter: req.package.name == 'grocy-mcp'
+      kind: ImageRepository
+      name: grocy-mcp-oidc-server
+      namespace: flux-system
+    - apiVersion: image.toolkit.fluxcd.io/v1
+      filter: req.package.name == 'grocy-user-perms-provisioner'
+      kind: ImageRepository
+      name: grocy-user-perms-provisioner
+      namespace: flux-system
+    - apiVersion: image.toolkit.fluxcd.io/v1
+      filter: req.package.name == 'haku-console'
+      kind: ImageRepository
+      name: haku-console
+      namespace: flux-system
+    - apiVersion: image.toolkit.fluxcd.io/v1
+      filter: req.package.name == 'haku-console-static'
+      kind: ImageRepository
+      name: haku-console-static
+      namespace: flux-system
+    - apiVersion: image.toolkit.fluxcd.io/v1
+      filter: req.package.name == 'haku-kube-api-proxy'
+      kind: ImageRepository
+      name: haku-kube-api-proxy
+      namespace: flux-system
+    - apiVersion: image.toolkit.fluxcd.io/v1
+      filter: req.package.name == 'homeassistant-component-installer'
+      kind: ImageRepository
+      name: homeassistant-component-installer
+      namespace: flux-system
+    - apiVersion: image.toolkit.fluxcd.io/v1
+      filter: req.package.name == 'homeassistant-onboarding'
+      kind: ImageRepository
+      name: homeassistant-onboarding
+      namespace: flux-system
+    - apiVersion: image.toolkit.fluxcd.io/v1
+      filter: req.package.name == 'homeassistant-token-provisioner'
+      kind: ImageRepository
+      name: homeassistant-token-provisioner
+      namespace: flux-system
+    - apiVersion: image.toolkit.fluxcd.io/v1
+      filter: req.package.name == 'iron-proxy'
+      kind: ImageRepository
+      name: iron-proxy
+      namespace: flux-system
+    - apiVersion: image.toolkit.fluxcd.io/v1
+      filter: req.package.name == 'loki-read-proxy'
+      kind: ImageRepository
+      name: loki-read-proxy
+      namespace: flux-system
+    - apiVersion: image.toolkit.fluxcd.io/v1
+      filter: req.package.name == 'matrix-user-provisioner'
+      kind: ImageRepository
+      name: matrix-user-provisioner
+      namespace: flux-system
+    - apiVersion: image.toolkit.fluxcd.io/v1
+      filter: req.package.name == 'mcp-oauth-facade'
+      kind: ImageRepository
+      name: mcp-oauth-facade
+      namespace: flux-system
+    - apiVersion: image.toolkit.fluxcd.io/v1
+      filter: req.package.name == 'osm-mcp'
+      kind: ImageRepository
+      name: osm-mcp
+      namespace: flux-system
+    - apiVersion: image.toolkit.fluxcd.io/v1
+      filter: req.package.name == 'plaid-mcp-server'
+      kind: ImageRepository
+      name: plaid-mcp-server
+      namespace: flux-system
+    - apiVersion: image.toolkit.fluxcd.io/v1
+      filter: req.package.name == 'plaid-mcp-sync'
+      kind: ImageRepository
+      name: plaid-mcp-sync
+      namespace: flux-system
+    - apiVersion: image.toolkit.fluxcd.io/v1
+      filter: req.package.name == 'plaid-spend'
+      kind: ImageRepository
+      name: plaid-spend
+      namespace: flux-system
+    - apiVersion: image.toolkit.fluxcd.io/v1
+      filter: req.package.name == 'props-backend'
+      kind: ImageRepository
+      name: props-backend
+      namespace: flux-system
+    - apiVersion: image.toolkit.fluxcd.io/v1
+      filter: req.package.name == 'props-llm-proxy'
+      kind: ImageRepository
+      name: props-llm-proxy
+      namespace: flux-system
+    - apiVersion: image.toolkit.fluxcd.io/v1
+      filter: req.package.name == 'props-registry-proxy'
+      kind: ImageRepository
+      name: props-registry-proxy
+      namespace: flux-system
+    - apiVersion: image.toolkit.fluxcd.io/v1
+      filter: req.package.name == 'public-coder-agent'
+      kind: ImageRepository
+      name: public-coder-agent
+      namespace: flux-system
+    - apiVersion: image.toolkit.fluxcd.io/v1
+      filter: req.package.name == 'public-coder-devbox'
+      kind: ImageRepository
+      name: public-coder-devbox
+      namespace: flux-system
+    - apiVersion: image.toolkit.fluxcd.io/v1
+      filter: req.package.name == 'rtl-tcp'
+      kind: ImageRepository
+      name: rtl-tcp
+      namespace: flux-system
+    - apiVersion: image.toolkit.fluxcd.io/v1
+      filter: req.package.name == 'ssh-mcp'
+      kind: ImageRepository
+      name: ssh-mcp
+      namespace: flux-system
+    - apiVersion: image.toolkit.fluxcd.io/v1
+      filter: req.package.name == 'stalwart'
+      kind: ImageRepository
+      name: stalwart
+      namespace: flux-system
+    - apiVersion: image.toolkit.fluxcd.io/v1
+      filter: req.package.name == 'study-casino'
+      kind: ImageRepository
+      name: study-casino
+      namespace: flux-system
+    - apiVersion: image.toolkit.fluxcd.io/v1
+      filter: req.package.name == 'tana-firebase-resigner'
+      kind: ImageRepository
+      name: tana-firebase-resigner
+      namespace: flux-system
+    - apiVersion: image.toolkit.fluxcd.io/v1
+      filter: req.package.name == 'tana-litellm-proxy'
+      kind: ImageRepository
+      name: tana-litellm-proxy
+      namespace: flux-system
+    - apiVersion: image.toolkit.fluxcd.io/v1
+      filter: req.package.name == 'tana-desktop'
+      kind: ImageRepository
+      name: tana-mcp
+      namespace: flux-system
+    - apiVersion: image.toolkit.fluxcd.io/v1
+      filter: req.package.name == 'vm-image-restart'
+      kind: ImageRepository
+      name: vm-image-restart
+      namespace: flux-system
+    - apiVersion: image.toolkit.fluxcd.io/v1
+      kind: ImageUpdateAutomation
+      name: all-images
+      namespace: flux-system
+  secretRef:
+    name: webhook-token
+  type: generic

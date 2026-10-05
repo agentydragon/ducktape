@@ -10,5 +10,9 @@ terraform {
       source  = "hashicorp/kubernetes"
       version = "~> 3.0"
     }
+    restapi = {
+      source  = "mastercard/restapi"
+      version = "~> 2.0"
+    }
   }
 }

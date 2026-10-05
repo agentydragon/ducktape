@@ -12,6 +12,7 @@ from cluster.cdk8s.image_automation import ImageUpdatePush
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT, HAND_WRITTEN_ROOT
 
 OUTPUT_DIR = f"{GENERATED_ROOT}/flux-image-automation-ghcr"
+AUTOMATION_NAME = "all-images"
 
 
 def automation_chart(app: App) -> Chart:
@@ -19,7 +20,7 @@ def automation_chart(app: App) -> Chart:
     ImageUpdatePush(
         chart,
         "image-update-push",
-        name="all-images",
+        name=AUTOMATION_NAME,
         source_name="ducktape-write",
         source_description="Authenticated ducktape checkout for image automation pushes. The root flux-system "
         "GitRepository stays anonymous so Terraform can cold-bootstrap Flux before this SOPS-managed GitHub "

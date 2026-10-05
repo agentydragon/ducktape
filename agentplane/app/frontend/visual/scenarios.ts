@@ -12,6 +12,8 @@ import type { ScenarioOptions, Viewport } from "../../../../util/testing/fronten
  * fails to compile instead of silently doing nothing; `element` stays required from there.
  */
 export interface Scenario extends ScenarioOptions {
+  /** Offer Codex only while retaining existing Claude threads. */
+  claudePaused?: boolean;
   /** The app's hash route. The harness sets it before mounting, so App's router picks the view. */
   route: string;
   /** Required here, unlike the library's default, because every row states the size it needs. */
@@ -60,7 +62,7 @@ export interface Scenario extends ScenarioOptions {
    * `reconnecting` fails every live read of the thread's rows once they have loaded, which
    * Electric's client retries. */
   sessionReplay?: "catching-up" | "unavailable" | "reconnecting";
-  /** The runner feed ended while the Sandbox remains available, so the Thread can resume it. */
+  /** The harness was shut down and its runner feed ended while the Sandbox remains available, so the Thread can resume it. */
   endedAttachment?: boolean;
   /** Assistant output precedes coalesced queued input, then model/interrupt effects. */
   interleavedEvents?: boolean;
@@ -360,6 +362,13 @@ export const SCENARIOS: Record<string, Scenario> = {
     readySelectors: ['[role="alert"]'],
   },
 
+  sandboxes_claude_paused: {
+    element: "#app",
+    route: "/sandboxes?preset=public-coder",
+    viewport: { width: 1200, height: 900 },
+    claudePaused: true,
+    readySelectors: ['[role="option"][data-combobox-disabled]'],
+  },
   sandboxes: { element: "#app", route: "/sandboxes", viewport: { width: 1200, height: 900 } },
   sandboxes_phone: { element: "#app", route: "/sandboxes", viewport: PHONE, outputName: "sandboxes-phone" },
   sandboxes_stale: {
@@ -563,6 +572,13 @@ export const SCENARIOS: Record<string, Scenario> = {
     preselectReconnect: true,
   },
 
+  sandbox_claude_paused: {
+    element: "#app",
+    route: SANDBOX_ROUTE,
+    viewport: { width: 1200, height: 900 },
+    claudePaused: true,
+    readySelectors: ['[role="option"][data-combobox-disabled]'],
+  },
   sandbox: { element: "#app", route: SANDBOX_ROUTE, viewport: { width: 1200, height: 900 } },
   sandbox_phone: { element: "#app", route: SANDBOX_ROUTE, viewport: PHONE, outputName: "sandbox-phone" },
   sandbox_status: {
@@ -1002,7 +1018,7 @@ export const SCENARIOS: Record<string, Scenario> = {
     route: SESSION_STATES_ROUTE,
     viewport: { width: 1200, height: 900 },
     endedAttachment: true,
-    readySelectors: ['[aria-label="Runner feed ended"]', '[aria-label="Resume harness"]'],
+    readySelectors: ['[aria-label="Harness not running"]', '[aria-label="Resume harness"]'],
     captureViewport: true,
   },
   session_pending: {
