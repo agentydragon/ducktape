@@ -14,7 +14,6 @@ exclude: |
     devinfra/claude/web_env/live-dpkg-versions\.txt|
 
     # Test data
-    x/claude_hooks/testdata/.*\.md|
     tana/testdata/.*|
 
     # Generated content
@@ -274,40 +273,12 @@ repos:
         files: ^cluster/(k8s|generated|parked)/.*\.(yaml|yml)$
         exclude: |
           (?x)^(
-            cluster/k8s/flux-system/gotk-components\.yaml|
             # kustomize config files (kustomize.config.k8s.io/v1beta1) — not K8s resources
             cluster/(k8s|generated|parked)/.*/kustomization\.yaml|
-            # RedisReplication CRD schema in datreeio catalog is outdated (missing spec.sentinel)
-            cluster/(k8s|generated)/.*/valkey-instance\.yaml|
-            # Seaweed v1 CRD schema in datreeio catalog is outdated (missing spec.s3,
-            # spec.master.defaultReplication, spec.volume.storageClassName — all
-            # present in operator v1.0.19's live CRD)
-            cluster/k8s/seaweedfs/cluster/seaweed\.yaml|
             # Authentik blueprints are not K8s manifests, skip validation
             cluster/k8s/authentik/app/blueprints/.*|
-            # Application config files, not K8s manifests
-            cluster/k8s/agents/airlock/config\.yaml|
-            cluster/k8s/agents/plaid-mcp/app/items\.yaml|
-            cluster/k8s/agents/grocy-mcp/envoy\.yaml|
-            cluster/k8s/agents/homeassistant-proxy/config\.yaml|
-            # OpenShell policy mounted via configMapGenerator, not a K8s manifest
-            cluster/k8s/agents/openshell/openclaw/policy\.yaml|
-            # iron-proxy config mounted via configMapGenerator, not a K8s manifest
-            cluster/k8s/agents/public-coder-agent/proxy/codex-runner-iron\.yaml|
-            cluster/k8s/litellm/app/(chatgpt-)?proxy-config\.yaml|
-            cluster/k8s/litellm/tana/proxy-config\.yaml|
-            haku/x/dispatch/deploy/workers-litellm-config\.yaml|
-            # dispatcher Job template with ${...} placeholders, mounted via configMapGenerator
-            haku/x/dispatch/deploy/job-template\.yaml|
-            haku/x/dispatch/deploy/zones\.yaml|
-            # Helm values files consumed via configMapGenerator, not K8s manifests
-            cluster/(k8s|generated)/.*/ccm-values\.yaml|
             # Authelia configuration files consumed via configMapGenerator, not K8s manifests
-            cluster/parked/authelia/(configuration|users)\.yml|
-            # rotate.py token list, mounted via configMapGenerator, not a K8s manifest
-            cluster/k8s/nix-cache/rotators\.yaml|
-            # APT manifests for Bazel rules_distroless, not K8s manifests
-            cluster/k8s/agents/attic-jwt-rotation/trixie_attic_rotation\.yaml|
+            cluster/parked/authelia/(configuration|users)\.yml
           )$
         types: [yaml]
 
