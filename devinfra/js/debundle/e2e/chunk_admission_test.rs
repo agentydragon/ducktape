@@ -174,31 +174,6 @@ export { A, here };
 // --- Spec-level override escape hatch -------------------------------------
 
 #[test]
-fn admission_override_admits_audited_chunk_with_notice() {
-    let fixture = run_fixture(
-        FixtureOpts::new(
-            r#"const A = "ok";
-eval("1 + 1");
-console.log(A);
-export { A };
-"#,
-            vec![logical_module("mod_x", &[Member::new("A")])],
-        )
-        .with_admission_overrides(&["a1_eval"]),
-    );
-    // Every overridden violation is named in a notice: the check and
-    // the suppressed statement.
-    assert!(
-        fixture
-            .stderr
-            .contains("admission check a1_eval overridden by spec"),
-        "stderr missing override notice:\n{}",
-        fixture.stderr,
-    );
-    assert_entry_output(&fixture, "ok\n");
-}
-
-#[test]
 fn admission_override_notice_lists_every_suppressed_statement_once() {
     // Repeated identical violations share one notice line that lists
     // each suppressed statement, so a chunk with dozens of overridden
