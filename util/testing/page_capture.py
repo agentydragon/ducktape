@@ -6,7 +6,7 @@ left here is what a page records or waits for, and each recorder is a value the 
 asserting on a page nobody instrumented cannot be written.
 
 Loading content and orchestrating several shots stay with the caller: `visual_sweep` for a table of
-`file://` harness scenes, a bespoke driver for anything else.
+harness scenes, a bespoke driver for anything else.
 """
 
 from __future__ import annotations
