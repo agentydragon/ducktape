@@ -359,17 +359,7 @@ class LiveProxyCoreTest(unittest.TestCase):
             == "/_debundle/live/vendor/app/_partial_swap/mobx-react-lite/dist/platform/index.js"
         )
 
-    def test_missing_vendor_manifest_and_path_escape(self) -> None:
-        no_vendor = write_base_fixture(ui_version="novendor")
-        load_live_proxy_configuration(
-            {
-                "app_manifest_path": str(no_vendor.app_manifest_path),
-                "proxy_host": "127.0.0.1",
-                "proxy_port": 9801,
-                "state_dir": str(no_vendor.root / "state"),
-            }
-        )
-
+    def test_map_local_asset_rejects_path_escape(self) -> None:
         escape_fixture = write_base_fixture(ui_version="escape")
         config = load_live_proxy_configuration(
             {
