@@ -7,6 +7,10 @@ connection at a named SSE packet. It is a discovery tool for provider behavior. 
 launch flags come from <../native/README.md>; the behavioral contract lives in the scripted tests
 in <../harness_tests/README.md>, whose scripts are written and repaired by reading these logs.
 
+The [historical harness model-metadata audit](../../model_catalog/debug/harness_model_metadata.md)
+records cross-layer Claude/Codex and LiteLLM findings from these probes. Its versioned
+observations are investigation evidence, not the current Agentplane configuration contract.
+
 ```sh
 bazel run //agentplane/capture:live_capture -- \
   --provider codex --scenario shell --binary /path/to/codex \

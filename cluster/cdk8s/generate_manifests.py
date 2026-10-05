@@ -584,7 +584,11 @@ def generate_manifests(root: Path) -> None:
         external_secrets_operator_kustomization,
     )
     gateway_artifact = artifact("gateway", gateway.OUTPUT_DIR)
-    gateway.gateway(flux_chart, write_directory(root, gateway_artifact, gateway.chart), kyverno_kustomization)
+    gateway.gateway(
+        flux_chart,
+        write_directory(root, gateway_artifact, functools.partial(gateway.chart, mesh=mesh)),
+        kyverno_kustomization,
+    )
     tofu_controller_artifact = artifact("tofu-controller", tofu_controller_release.OUTPUT_DIR)
     tofu_controller_kustomization = tofu_controller_release.tofu_controller(
         flux_chart,

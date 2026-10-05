@@ -3,7 +3,8 @@
 Shared Puppeteer/Playwright infrastructure for visual render-health tests (see
 `visual-test-lib.mjs` for the JS/Puppeteer path used by `study_casino/frontend`,
 `props/frontend` and `agentplane/app/frontend`, and `frontend_visual.py` for the
-Python/Playwright path used by `study_casino`, `finance/augur` and `airlock/frontend`).
+Python/Playwright path used by `study_casino`, `finance/augur`, `airlock/frontend` and
+`devinfra/claude/session_export/frontend`).
 Browser tests are moving to the Python path, lane by lane — see [The Python sweep](#the-python-sweep).
 `capture.mjs` holds the lower-level page-prep/capture
 primitives (`prepareDeterministicPage`, `screenshotElement`, `waitForStable`) that
@@ -69,7 +70,11 @@ selectors, the request fence, the fetch ledger, zero uncaught page errors — wi
   (`import SCENARIOS from "./scenarios.json"`) and the sweep reads it, so no scenario is listed twice;
   fields only the harness reads sit in the same object. The sweep's fields are in
   `util/testing/visual_scenarios.py`; `viewport` also takes `deviceScaleFactor` and `hasTouch`, and a
-  scenario can name a `hover` or `tap` selector.
+  scenario can name a `hover` or `tap` selector. The harness is loaded at `?page=<scenario>`; a
+  scenario's `query` replaces that query string, for a harness keyed otherwise or one scene shown in
+  several scenarios. `label` is the caption in PR visual review (the output name if unset), and the
+  PNG is `<outputName>-actual.png` unless the macro's `output_suffix` says otherwise. A table whose
+  rows derive from data the harness already consumes is generated from it at build time, not copied.
 - **A scenario is a pytest test**, `test_scenario[<name>]`, so Bazel's test report has one case per
   scenario. `--test_filter` is pytest's `-k`: a case-insensitive match that also sees the file name.
   Shards deal scenarios out by position, filter first (`util/testing/sharding.py`), and a filter that

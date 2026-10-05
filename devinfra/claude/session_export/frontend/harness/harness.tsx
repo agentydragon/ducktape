@@ -1031,9 +1031,20 @@ if (scenario.startsWith("SessionNoisySidebar")) {
         toggle?.click();
         return;
       }
-      if (document.body.querySelector("#session-sidebar-mobile") === null) return;
-      root.dataset.sidebarReady = "mobile-open";
+      const drawer = document.body.querySelector<HTMLElement>(".mantine-Drawer-root");
+      if (drawer?.querySelector("#session-sidebar-mobile") == null) return;
       sidebarObserver.disconnect();
+      // The drawer slides in over a CSS transition that starts a frame after it mounts. It is the open
+      // scene only once that has finished: fully opaque, with nothing in flight.
+      const markOpenOnceArrived = (): void => {
+        const content = drawer.querySelector<HTMLElement>(".mantine-Drawer-content")!;
+        if (getComputedStyle(content).opacity === "1" && drawer.getAnimations({ subtree: true }).length === 0) {
+          root.dataset.sidebarReady = "mobile-open";
+        } else {
+          requestAnimationFrame(markOpenOnceArrived);
+        }
+      };
+      markOpenOnceArrived();
       return;
     }
 

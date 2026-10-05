@@ -63,6 +63,7 @@ py_test(
     srcs = ["test_allowance.py"],
     deps = [
         ":allowance",
+        ":conftest",
         ":models",
         "//:conftest",
         "@pypi//pydantic",
@@ -76,6 +77,7 @@ py_test(
     srcs = ["test_ui.py"],
     deps = [
         ":app",
+        ":conftest",
         "//:conftest",
         "@pypi//pytest_bazel",
     ],
@@ -89,18 +91,17 @@ py_test(
     deps = [
         ":allowance",
         ":app",
+        ":conftest",
         ":models",
         ":service",
         "//:conftest",
         "//finance/plaid/db:link_store",
         "//util/testing:postgres",
-        "//util/testing:postgres_fixtures",
         "@pypi//asyncpg",
         "@pypi//pytest",
         "@pypi//pytest_asyncio",
         "@pypi//pytest_bazel",
         "@pypi//sqlalchemy",
-        "@pypi//testcontainers",
     ],
 )
 
@@ -138,4 +139,16 @@ oci_load(
     name = "server_load",
     image = ":server_image",
     repo_tags = ["plaid-spend:latest"],
+)
+
+py_library(
+    name = "conftest",
+    testonly = True,
+    srcs = ["conftest.py"],
+    visibility = ["//finance/plaid/spend:__subpackages__"],
+    deps = [
+        "//util/testing:postgres_fixtures",
+        "@pypi//pytest",
+        "@pypi//testcontainers",
+    ],
 )

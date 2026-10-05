@@ -4,10 +4,10 @@
 //! With `--fail-fast` the first of them stops the run.
 
 use debundle_e2e_support::{
-    BindingGroup, FixtureOpts, Member, assert_fail_fast_stops_at_first_outcome, find_outcome,
-    logical_module, logical_module_with_anon, logical_module_with_anon_alpha,
-    logical_module_with_binding_groups, mixed_selector_failure_fixture, read_selector_outcomes,
-    run_dry_run_rejection_fixture,
+    BindingGroup, FixtureOpts, Member, assert_fail_fast_stops_at_first_outcome,
+    assert_stderr_lists_every_outcome, find_outcome, logical_module, logical_module_with_anon,
+    logical_module_with_anon_alpha, logical_module_with_binding_groups,
+    mixed_selector_failure_fixture, read_selector_outcomes, run_dry_run_rejection_fixture,
 };
 use serde_json::{Value, json};
 
@@ -20,8 +20,10 @@ fn keep_going_writes_machine_readable_selector_outcomes() {
         &["console.warn(\"absent\");"],
     ));
 
-    let outcomes = keep_going_outcomes(opts);
+    let rejected = run_dry_run_rejection_fixture(opts);
+    let outcomes = read_selector_outcomes(&rejected.report_root);
     assert_eq!(outcomes.len(), 4, "{outcomes:#?}");
+    assert_stderr_lists_every_outcome(&rejected.stderr, &outcomes);
 
     let missing = find_outcome(&outcomes, "no_match", "MissingFormatter");
     assert_eq!(missing["chunk"], "static/app");

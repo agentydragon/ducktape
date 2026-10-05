@@ -18,10 +18,22 @@ See [the dependency rule](docs/service_boundaries.md) and [Sandbox Service plan]
 - Acceptance for an extracted backend path must exercise it with the integration app unavailable.
   Do not add another command queue, event authority, or credential issuer as an incidental refactor.
 
+## Deployed state is disposable
+
+Agentplane has no production tier, only staging and testing, so its deployed state is disposable.
+This holds for agentplane only: another component's deployed state is not disposable unless its
+own `AGENTS.md` says so. A schema, CRD or wire change does not have to keep existing rows, custom
+resources or messages readable: change the shape, and delete and recreate whatever no longer
+parses. Do not write a migration, a tolerant reader, or a compatibility field to carry old data
+forward, and do not stage a rollout to avoid a window where the two disagree. The schema change
+itself is still a new migration, and the migrate step fails the rollout when the schema differs
+from the models. The limits in the root [`AGENTS.md`](../AGENTS.md) § Refactoring
+(person-authored data, roll-safety) still bind.
+
 ## Preserve staging data during the Sandbox Service extraction
 
-For this extraction, data-preserving migration is the default despite the repository's general
-staging-disposability guidance. Inventory existing state, retain identities/history and runner
+For this extraction, data-preserving migration is the default despite the disposable-state rule
+above. Inventory existing state, retain identities/history and runner
 storage where feasible, and validate backup/restore and the cutover before changing staging.
 Do not drop/recreate staging databases, sandboxes, volumes, or session state as a shortcut. If
 preservation cannot be achieved, explain the exact loss/disruption and obtain operator approval

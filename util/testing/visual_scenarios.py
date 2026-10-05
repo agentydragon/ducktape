@@ -44,6 +44,14 @@ class Scenario(_TableModel):
     output_name: str | None = Field(
         default=None, description="Filename stem of the published PNG; the scenario name if unset."
     )
+    label: str | None = Field(default=None, description="Caption in PR visual review; the output name if unset.")
+    query: dict[str, str] | None = Field(
+        default=None,
+        description=(
+            "The harness URL's query string, replacing `?page=<scenario name>`: for a harness that names its "
+            "parameter otherwise, or that mounts one scene for several scenarios."
+        ),
+    )
     # A Literal because Playwright's `color_scheme` option dictates it.
     color_scheme: Literal["light", "dark"] = Field(
         default="light", description="The `prefers-color-scheme` media feature."
@@ -74,4 +82,5 @@ class ScenarioTable(RootModel[dict[str, Scenario]]):
 
 
 def load_scenarios(path: Path) -> dict[str, Scenario]:
-    return ScenarioTable.model_validate_json(path.read_text()).root
+    # Bytes: JSON is UTF-8, and a generated table's labels need not be ASCII.
+    return ScenarioTable.model_validate_json(path.read_bytes()).root

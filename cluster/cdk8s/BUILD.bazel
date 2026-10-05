@@ -575,6 +575,7 @@ py_library(
         "//cluster/cdk8s/providers/gateway_api:http_route",
         "//cluster/cdk8s/providers/gateway_api:httproute",
         "//cluster/cdk8s/providers/gateway_api:listener",
+        "//cluster/scripts:nebula_mesh",
         "@pypi//cdk8s",
         "@pypi//constructs",
     ],
