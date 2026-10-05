@@ -17,7 +17,7 @@ use debundle_e2e_support::*;
 /// runtime.
 #[test]
 fn aliased_at_init_call_closing_cross_module_cycle_is_rejected() {
-    expect_rejection(
+    expect_cycle_rejection(
         FixtureOpts::new(
             r#"const A = 1;
 const B = A + 1;
@@ -40,7 +40,7 @@ export { A, B, g, r, readB };
                 logical_module("mod_b", &[Member::new("B")]),
             ],
         ),
-        &["cycle", "unrealizable"],
+        &["mod_a", "mod_b"],
     );
 }
 
@@ -48,7 +48,7 @@ export { A, B, g, r, readB };
 /// — the callee is a member expression, not a bare identifier.
 #[test]
 fn object_literal_method_at_init_call_closing_cycle_is_rejected() {
-    expect_rejection(
+    expect_cycle_rejection(
         FixtureOpts::new(
             r#"const A = 1;
 const B = A + 1;
@@ -65,7 +65,7 @@ export { A, B, api, r };
                 logical_module("mod_b", &[Member::new("B")]),
             ],
         ),
-        &["cycle", "unrealizable"],
+        &["mod_a", "mod_b"],
     );
 }
 
