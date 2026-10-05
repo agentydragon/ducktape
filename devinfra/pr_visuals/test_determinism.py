@@ -1,5 +1,6 @@
 import json
 import subprocess
+from datetime import timedelta
 from pathlib import Path
 from uuid import UUID
 
@@ -7,8 +8,10 @@ import pytest
 import pytest_bazel
 
 from devinfra.pr_visuals.determinism import (
+    Findings,
     Observation,
     Render,
+    analyze,
     observe,
     observe_targets,
     report,
@@ -42,7 +45,7 @@ def test_a_render_with_one_digest_across_runs_is_reproducible() -> None:
     assert observations == {
         Render("//ui:visual", "list.png"): Observation(by_digest={"bytestream://same": ["run-1", "run-2", "run-3"]})
     }
-    assert "reproduced identically" in report(observations, ["run-1", "run-2", "run-3"], {})
+    assert analyze(observations, runs=3) == Findings(drifted=[], missing=[])
 
 
 def test_a_render_that_drifts_in_one_run_of_three_is_caught() -> None:
@@ -56,10 +59,14 @@ def test_a_render_that_drifts_in_one_run_of_three_is_caught() -> None:
         ),
     )
 
-    summary = report(observations, ["run-1", "run-2", "run-3"], {})
-    assert "1 render(s) not reproducible" in summary
-    assert "2/3 run(s), first `run-1`" in summary
-    assert "1/3 run(s), first `run-3`" in summary
+    drifted = Render("//ui:visual", "list.png")
+    assert analyze(observations, runs=3) == Findings(drifted=[drifted], missing=[])
+    # Which run produced which bytes: the reader downloads one of each and diffs them.
+    assert observations[drifted].by_digest == {
+        "bytestream://same": ["run-1", "run-2"],
+        "bytestream://drifted": ["run-3"],
+    }
+    assert "list.png" in report(observations, ["run-1", "run-2", "run-3"], {})
 
 
 def test_a_render_missing_from_some_runs_is_its_own_finding() -> None:
@@ -70,9 +77,10 @@ def test_a_render_missing_from_some_runs_is_its_own_finding() -> None:
         run=_listing({"run-1": [_png("//ui:visual", "flaky.png", "bytestream://a")], "run-2": []}),
     )
 
-    summary = report(observations, ["run-1", "run-2"], {})
-    assert "not published by every run" in summary
-    assert "present in 1/2" in summary
+    flaky = Render("//ui:visual", "flaky.png")
+    assert analyze(observations, runs=2) == Findings(drifted=[], missing=[flaky])
+    assert observations[flaky].runs_present == 1
+    assert "flaky.png" in report(observations, ["run-1", "run-2"], {})
 
 
 def test_non_png_outputs_are_not_renders() -> None:
@@ -178,8 +186,7 @@ def test_durations_come_from_buildbuddy_as_wall_time_not_summed_shards() -> None
     targets = observe_targets(["run-1"], ["//ui:visual"], bbapi=Path("bbapi"), run=fake_run)
 
     assert [test_run.summary.shard_count for test_run in targets["//ui:visual"]] == [4]
-    summary = report({}, ["run-1"], targets)
-    assert "| `//ui:visual` | 4 | 11.1s | 11.1s | PASSED |" in summary
+    assert [test_run.summary.wall_time for test_run in targets["//ui:visual"]] == [timedelta(seconds=11.1)]
 
 
 def test_a_target_the_bulk_listing_truncated_is_still_timed() -> None:

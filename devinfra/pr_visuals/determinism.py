@@ -158,14 +158,16 @@ def observe_targets(
     return dict(by_label)
 
 
-def report(observations: dict[Render, Observation], invocations: list[str], targets: dict[str, list[TestRun]]) -> str:
-    """A markdown report: what drifted, what went missing, and what each target cost.
+@dataclass(frozen=True)
+class Findings:
+    """The renders that fail a sweep; both the report and the exit code are derived from them."""
 
-    Every render stays in BuildBuddy as the run's undeclared test outputs, so the report
-    names the invocations rather than copying pixels anywhere: that is both where the PNGs
-    already are and the only place a reader can get the two differing versions to compare.
-    """
-    runs = len(invocations)
+    drifted: list[Render]
+    missing: list[Render]
+
+
+def analyze(observations: dict[Render, Observation], *, runs: int) -> Findings:
+    """Renders whose bytes differ between runs, and renders some of the `runs` did not publish."""
     drifted = sorted(
         (render for render, seen in observations.items() if len(seen.by_digest) > 1),
         key=lambda render: (render.target, render.asset),
@@ -176,17 +178,29 @@ def report(observations: dict[Render, Observation], invocations: list[str], targ
         (render for render, seen in observations.items() if seen.runs_present < runs),
         key=lambda render: (render.target, render.asset),
     )
+    return Findings(drifted=drifted, missing=missing)
+
+
+def report(observations: dict[Render, Observation], invocations: list[str], targets: dict[str, list[TestRun]]) -> str:
+    """A markdown report: what drifted, what went missing, and what each target cost.
+
+    Every render stays in BuildBuddy as the run's undeclared test outputs, so the report
+    names the invocations rather than copying pixels anywhere: that is both where the PNGs
+    already are and the only place a reader can get the two differing versions to compare.
+    """
+    runs = len(invocations)
+    findings = analyze(observations, runs=runs)
 
     lines = [f"# Visual determinism over {runs} runs", ""]
     lines += ["Every run's renders are that invocation's undeclared test outputs:", ""]
     lines += [f"{index + 1}. `{invocation}`" for index, invocation in enumerate(invocations)]
     lines += ["", "```bash", "bbapi artifact download <invocation> '*.png' --all", "```", ""]
 
-    if not drifted and not missing:
+    if not findings.drifted and not findings.missing:
         lines.append(f"All {len(observations)} renders reproduced identically in every run.")
-    if drifted:
-        lines += [f"## {len(drifted)} render(s) not reproducible", ""]
-        for render in drifted:
+    if findings.drifted:
+        lines += [f"## {len(findings.drifted)} render(s) not reproducible", ""]
+        for render in findings.drifted:
             lines.append(f"- `{render.target}` — `{render.asset}`")
             # Which run produced which bytes: the reader downloads one of each and diffs.
             lines += [
@@ -194,11 +208,11 @@ def report(observations: dict[Render, Observation], invocations: list[str], targ
                 for produced_by in sorted(observations[render].by_digest.values(), key=len, reverse=True)
             ]
         lines.append("")
-    if missing:
-        lines += [f"## {len(missing)} render(s) not published by every run", ""]
+    if findings.missing:
+        lines += [f"## {len(findings.missing)} render(s) not published by every run", ""]
         lines += [
             f"- `{render.target}` — `{render.asset}`: present in {observations[render].runs_present}/{runs}"
-            for render in missing
+            for render in findings.missing
         ]
         lines.append("")
 
@@ -250,7 +264,8 @@ def main() -> None:
         args.summary.write_text(summary)
 
     # Exit code is the signal a scheduled run reports on; the markdown says which renders.
-    if any(len(seen.by_digest) > 1 or seen.runs_present < args.runs for seen in observations.values()):
+    findings = analyze(observations, runs=args.runs)
+    if findings.drifted or findings.missing:
         raise SystemExit(1)
 
 
