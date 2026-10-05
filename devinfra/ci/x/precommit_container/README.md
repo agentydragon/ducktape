@@ -50,3 +50,16 @@ normalization; no other references are removed.
 Results and timing evidence belong in the latest HTML report on the dedicated
 [`ci-latency-history`](https://github.com/agentydragon/ducktape/tree/ci-latency-history)
 branch. This branch is an experiment, not a production rollout proposal.
+
+The runtime trim was compared with the original formatter on all 482 tracked
+Rust files using `--emit stdout`; stdout, stderr and exit status matched for
+every file. A malformed-input check also matched. Compiler-internal crash
+diagnostics can differ because their embedded source paths are normalized.
+This is not proof for every formatter option or failure mode.
+
+The workflow now reuses the published runtime-trim digest for a later batch of
+three fresh runners. This checks for a registry warming effect without changing
+the image or requested hook workload. The original full image had already been
+pulled six times across two batches; their median initialization times were
+83s and 84s. Download and extraction overlap, so log measurements after the
+last download are only a remaining processing tail, not total extraction time.

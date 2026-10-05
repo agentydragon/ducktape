@@ -40,6 +40,8 @@ jobs:
         id: build-image
         env:
           IMAGE: ghcr.io/${{ github.repository_owner }}/precommit-spike
+          # Repeat the exact published image to observe later fresh-runner pulls.
+          SPIKE_IMAGE: ghcr.io/agentydragon/precommit-spike@sha256:a681a02795f8f5ce9364a9549d3e41edec8446397c2c8c6370ffa93fe91c6c79
         run: bash devinfra/ci/x/precommit_container/build.sh
 
       - name: Publish the focused closure for a steady-state Nix comparison
