@@ -558,13 +558,14 @@ export function EntityCard({
       );
     }
     return (
-      <Alert color="red" title={label} role="alert" className="agentplane-evidence-owner">
+      <Alert color="red" role="alert" className="agentplane-evidence-owner">
         <EvidenceToggle entity={entity} style={{ top: 8, right: 8 }} />
-        {diagnostic && (
-          <Text size="sm" style={wrapped}>
-            {diagnostic}
+        <Text size="sm" style={wrapped}>
+          <Text span fw={700} c="var(--alert-color)">
+            {label}
           </Text>
-        )}
+          {diagnostic && ` ${diagnostic}`}
+        </Text>
         <EvidencePanel threadId={threadId} entity={entity} />
       </Alert>
     );

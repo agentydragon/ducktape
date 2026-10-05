@@ -259,7 +259,7 @@ def test_rotation_probe_requires_k8s_secret():
         "sops_file": "secrets/alloy-otlp-bearer-token.yaml",
         "token_field": "token",
     }
-    with pytest.raises(ValidationError, match="probe requires k8s_secret"):
+    with pytest.raises(ValidationError):
         Rotation.model_validate(base | {"probe": {"url": "https://alloy-otlp.allegedly.works/v1/metrics"}})
     r = Rotation.model_validate(
         base

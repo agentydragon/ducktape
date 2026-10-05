@@ -6,9 +6,13 @@ from typing import Any
 
 import yaml
 
+from util.bazel.runfiles import get_required_path
 from x.wt.shared.config_file import ConfigFile
 from x.wt.shared.configuration import Configuration
 from x.wt.testing.data import WATCHER_DEBOUNCE_SECS, ConfigPresets, TestData
+
+# Apparent repo name of the `gitstatusd` http_archive in MODULE.bazel.
+_GITSTATUSD_RLOCATION = "gitstatusd/gitstatusd-linux-x86_64"
 
 
 class ConfigFactory:
@@ -47,7 +51,8 @@ class ConfigFactory:
             "cache_refresh_age": 300,
             "hidden_worktree_patterns": [],
             "cow_method": "copy",
-            "gitstatusd_path": None,  # Will be filled by tests that need it
+            # The daemon subprocess re-reads this from config.yaml, so it needs no runfiles access of its own.
+            "gitstatusd_path": str(get_required_path(_GITSTATUSD_RLOCATION)),
             "post_creation_script": None,
             "git_watcher_debounce_delay": WATCHER_DEBOUNCE_SECS,
             # Keep daemon startup bounded well under per-test subprocess timeouts

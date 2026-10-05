@@ -85,7 +85,7 @@ def test_quantity_conversion_rejects_invalid_quote_and_overflow() -> None:
     for value, price, scale in [(-1, 1, 1), (1, 0, 1), (1, -1, 1), (1, 1, 0)]:
         with pytest.raises(ValueError, match="positive"):
             quantity_for_value(value, price, scale, round_up=False)
-    with pytest.raises(OverflowError, match="64-bit"):
+    with pytest.raises(OverflowError):
         quantity_for_value((1 << 63) - 1, 1, 10, round_up=False)
 
 

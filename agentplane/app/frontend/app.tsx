@@ -9,7 +9,7 @@ import { ActionAffordance } from "./actions/affordance";
 import { ActionHistory } from "./actions/history";
 import { ConnectionConsent } from "./consent";
 import { SandboxPage } from "./sandbox_page";
-import { ThreadsLiveProvider } from "./live";
+import { SandboxesLiveProvider, ThreadsLiveProvider } from "./live";
 import { SandboxList } from "./sandboxes";
 import { ProjectedSession } from "./threads/projected_session";
 import { Settings, type SettingsTab } from "./settings/dialog";
@@ -131,6 +131,18 @@ function AppRoutes(): JSX.Element {
     [titleNode, actionsNode]
   );
   const fullBleed = threadRoute !== null;
+  const routes = (
+    <Routes>
+      <Route path="/" element={<ThreadsLanding />} />
+      <Route path="/sandboxes" element={<SandboxListRoute />} />
+      <Route path="/actions" element={<ActionsPage />} />
+      <Route path="/actions/:requestId" element={<ActionRequests />} />
+      <Route path="/connection-enrollments/:handle" element={<ConsentRoute />} />
+      <Route path="/sandboxes/:name" element={<SandboxRoute />} />
+      <Route path="/threads/:threadId" element={<ThreadRoute settingsOpen={settingsTab !== null} />} />
+      <Route path="*" element={<ThreadsLanding />} />
+    </Routes>
+  );
   return (
     <div className="agentplane-shell">
       <Sidebar
@@ -150,16 +162,7 @@ function AppRoutes(): JSX.Element {
         <div className={`agentplane-shell-main-content${fullBleed ? " agentplane-shell-fullbleed" : ""}`}>
           <TopbarContext.Provider value={topbarSlots}>
             <ActionAffordance>
-              <Routes>
-                <Route path="/" element={<ThreadsLanding />} />
-                <Route path="/sandboxes" element={<SandboxListRoute />} />
-                <Route path="/actions" element={<ActionsPage />} />
-                <Route path="/actions/:requestId" element={<ActionRequests />} />
-                <Route path="/connection-enrollments/:handle" element={<ConsentRoute />} />
-                <Route path="/sandboxes/:name" element={<SandboxRoute />} />
-                <Route path="/threads/:threadId" element={<ThreadRoute settingsOpen={settingsTab !== null} />} />
-                <Route path="*" element={<ThreadsLanding />} />
-              </Routes>
+              {threadRoute !== null ? <SandboxesLiveProvider>{routes}</SandboxesLiveProvider> : routes}
             </ActionAffordance>
           </TopbarContext.Provider>
         </div>

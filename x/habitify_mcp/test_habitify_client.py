@@ -51,7 +51,7 @@ async def test_get_habit_not_found(client, mock_async_response, patch_client_met
             await client.get_habit("invalid-id-that-does-not-exist")
 
         mock_get.assert_called_once_with("/habits/invalid-id-that-does-not-exist")
-        assert "habit does not exist" in str(excinfo.value).lower()
+        assert excinfo.value.status_code == 500
 
 
 async def test_get_areas(client, mock_async_response, patch_client_method):
@@ -127,7 +127,7 @@ async def test_check_habit_status_invalid_date(client, mock_async_response, patc
             await client.check_habit_status("-Lo9NTLRX3aCxg-PjN25", date="2020-01-01")
 
         mock_get.assert_called_once()
-        assert "date format" in str(excinfo.value).lower()
+        assert excinfo.value.status_code == 500
 
 
 async def test_set_habit_status(client, mock_async_response, patch_client_method):

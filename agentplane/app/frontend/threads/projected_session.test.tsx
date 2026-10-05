@@ -13,7 +13,7 @@ import { ItemKind, RecoveryDisposition } from "../../../protocol/event_pb";
 import type * as ClientModule from "../client";
 import { command, getThread, models, resumeThread, type SandboxView, type ThreadView } from "../client";
 import { historyRows, rowKey } from "./history_rows";
-import { ThreadsLiveProvider } from "../live";
+import { SandboxesLiveProvider, ThreadsLiveProvider } from "../live";
 import { LocalCommands } from "./local_commands";
 import { STREAMING_CURSOR } from "../markdown";
 import { HistoryRowView, ProjectedSession } from "./projected_session";
@@ -82,6 +82,7 @@ let inventoryFresh = true;
 let inventoryDrops = false;
 let sharedFeed: "active" | "ended" | "failed" = "active";
 let sharedThread: Partial<ThreadView> = {};
+let eventSourceUrls: string[] = [];
 
 beforeEach(() => {
   document.title = "Agentplane";
@@ -96,6 +97,7 @@ beforeEach(() => {
   inventoryDrops = false;
   sharedFeed = "active";
   sharedThread = {};
+  eventSourceUrls = [];
   vi.mocked(getThread).mockResolvedValue(THREAD);
   vi.mocked(models).mockResolvedValue({
     models: [{ model: "test-model", display_name: "Test Model", reasoning_efforts: TEST_REASONING_EFFORTS }],
@@ -110,6 +112,7 @@ beforeEach(() => {
       readyState = 0;
       constructor(url: string) {
         super();
+        eventSourceUrls.push(url);
         queueMicrotask(() => {
           if (sandboxes === null) return;
           this.dispatchEvent(
@@ -164,13 +167,26 @@ async function render(state: ThreadState = threadState()): Promise<HTMLDivElemen
   mounted.push({ root, container, topbarTitle, topbarActions });
   await act(async () => {
     const content = page(state, topbarTitle, topbarActions);
-    root.render(<ThreadsLiveProvider>{content}</ThreadsLiveProvider>);
+    root.render(<TestLiveProviders>{content}</TestLiveProviders>);
   });
   container.append(topbarTitle, topbarActions);
   return container;
 }
 
-function page(state: ThreadState, topbarTitle: HTMLDivElement, topbarActions: HTMLDivElement): JSX.Element {
+function TestLiveProviders({ children }: { children: JSX.Element }): JSX.Element {
+  return (
+    <ThreadsLiveProvider>
+      <SandboxesLiveProvider>{children}</SandboxesLiveProvider>
+    </ThreadsLiveProvider>
+  );
+}
+
+function page(
+  state: ThreadState,
+  topbarTitle: HTMLDivElement,
+  topbarActions: HTMLDivElement,
+  mountKey?: string
+): JSX.Element {
   const sync: ThreadSync = {
     Thread: ({ children }) => <>{children}</>,
     useThread: () => state,
@@ -181,7 +197,7 @@ function page(state: ThreadState, topbarTitle: HTMLDivElement, topbarActions: HT
     <MantineProvider env="test">
       <ThreadSyncContext.Provider value={sync}>
         <TopbarContext.Provider value={{ title: topbarTitle, actions: topbarActions }}>
-          <ProjectedSession threadId={THREAD.id} />
+          <ProjectedSession key={mountKey} threadId={THREAD.id} />
         </TopbarContext.Provider>
       </ThreadSyncContext.Provider>
     </MantineProvider>
@@ -194,7 +210,7 @@ async function rerender(container: HTMLDivElement, state: ThreadState): Promise<
   const topbarActions = current?.topbarActions;
   if (!current || !topbarTitle || !topbarActions) throw new Error("Missing mounted thread page");
   await act(async () =>
-    current.root.render(<ThreadsLiveProvider>{page(state, topbarTitle, topbarActions)}</ThreadsLiveProvider>)
+    current.root.render(<TestLiveProviders>{page(state, topbarTitle, topbarActions)}</TestLiveProviders>)
   );
   container.append(topbarTitle, topbarActions);
 }
@@ -436,6 +452,22 @@ const OUT_OF_DATE = /^What's on screen may be out of date; last update \d{2}:\d{
 function matching(text: string | RegExp): unknown {
   return typeof text === "string" ? expect.stringContaining(text) : expect.stringMatching(text);
 }
+
+it("keeps one sandbox inventory stream mounted across thread route remounts", async () => {
+  const container = await render();
+  const current = mounted.find((entry) => entry.container === container);
+  const topbarTitle = current?.topbarTitle;
+  const topbarActions = current?.topbarActions;
+  if (!current || !topbarTitle || !topbarActions) throw new Error("Missing mounted thread page");
+
+  await act(async () => {
+    current.root.render(
+      <TestLiveProviders>{page(threadState(), topbarTitle, topbarActions, "next-thread")}</TestLiveProviders>
+    );
+  });
+
+  expect(eventSourceUrls.filter((url) => url === "/live/sandboxes")).toHaveLength(1);
+});
 
 // Each of these but the first disables the controls, which the composer's indicator reports only as
 // "Sandbox unavailable"; the header says why: the state the inventory last reported, or that the

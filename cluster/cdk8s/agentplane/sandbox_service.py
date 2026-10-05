@@ -23,7 +23,7 @@ from cdk8s_plus_34 import (
 )
 from constructs import Construct
 
-from agentplane.sandbox_service.instructions import render_agent_instructions_template
+from agentplane.sandbox_service.instructions import render_platform_instructions
 from agentplane.sandbox_service.kubernetes_grants import ClusterRoleBindingGrant, RoleBindingGrant
 from agentplane.sandbox_service.main import CONFIG_FILE_ENV, Settings
 from agentplane.subjects import ServiceAccountRef
@@ -68,11 +68,11 @@ class SandboxService(Construct):
             sandbox_namespace=env.namespace,
             caller_accounts=frozenset({manager, ServiceAccountRef(namespace=env.namespace, name=notifications.NAME)}),
             token_audience=TOKEN_AUDIENCE,
-            agent_instructions=render_agent_instructions_template(
+            agent_instructions=render_platform_instructions(
                 egress_api_url=f"http://{egress.agent_api(env.namespace).fqdn}",
                 actions_service_url=f"http://{actions_service.fqdn}:{actions_service.port.number}",
+                notifications_service_url=f"http://{notifications.service(env.namespace).fqdn}:8080",
             ),
-            agent_notifications_service_url=f"http://{notifications.service(env.namespace).fqdn}:8080",
             default_policies=env.app_config.default_policies,
             kubernetes_grants=env.app_config.kubernetes_grants,
             kubernetes_binding_cleanup_namespaces=set(env.app_config.kubernetes_binding_cleanup_namespaces),

@@ -177,8 +177,6 @@ py_test(
 py_test(
     name = "test_editor",
     srcs = ["test_editor.py"],
-    data = ["__snapshots__/test_editor.ambr"],
-    uses_syrupy = True,
     deps = [
         ":conftest",
         ":editor",

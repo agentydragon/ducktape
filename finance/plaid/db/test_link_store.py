@@ -1,8 +1,7 @@
 from __future__ import annotations
 
 import asyncio
-import re
-from collections.abc import AsyncGenerator
+from collections.abc import Awaitable, Callable
 from datetime import UTC, datetime, timedelta
 
 import asyncpg
@@ -11,55 +10,14 @@ import pytest_bazel
 from sqlalchemy import text
 from sqlalchemy.engine import make_url
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
-from testcontainers.postgres import PostgresContainer
 
 from finance.plaid.db.link_store import ApiEvent, PlaidLinkStorage, SyncAlreadyRunningError
-from util.testing.postgres import force_drop_database
-from util.testing.postgres_fixtures import postgres_container  # noqa: F401
 
 
-@pytest.fixture(scope="session")
-def postgres_admin_url(postgres_container: PostgresContainer) -> str:  # noqa: F811
-    host = postgres_container.get_container_host_ip()
-    port = int(postgres_container.get_exposed_port(5432))
-    return f"postgresql+asyncpg://postgres:postgres@{host}:{port}/postgres"
-
-
-@pytest.fixture
-async def db_url(postgres_admin_url: str, request: pytest.FixtureRequest) -> AsyncGenerator[str]:
-    db_name = re.sub(r"[^a-z0-9]", "_", request.node.name.lower())[:45].rstrip("_") or "plaid_test"
-    admin_engine = create_async_engine(postgres_admin_url, isolation_level="AUTOCOMMIT")
-    async with admin_engine.connect() as conn:
-        await conn.execute(text(f'CREATE DATABASE "{db_name}"'))
-    await admin_engine.dispose()
-    try:
-        yield make_url(postgres_admin_url).set(database=db_name).render_as_string(hide_password=False)
-    finally:
-        await force_drop_database(postgres_admin_url, db_name)
-
-
-@pytest.fixture
-async def storage(db_url: str) -> AsyncGenerator[PlaidLinkStorage]:
-    store = await PlaidLinkStorage.initialize(db_url)
-    try:
-        yield store
-    finally:
-        await store.close()
-
-
-async def _add_link(storage: PlaidLinkStorage, *, item_id: str = "item-investments") -> None:
-    await storage.upsert_link(
-        item_id=item_id,
-        access_token_secret=f"{item_id}-token",
-        products_requested=["investments"],
-        institution_id="ins_investments",
-        institution_name="Investment Test",
-        label=None,
-    )
-
-
-async def test_successful_sync_run_marks_investment_only_link_synced(storage: PlaidLinkStorage) -> None:
-    await _add_link(storage)
+async def test_successful_sync_run_marks_investment_only_link_synced(
+    storage: PlaidLinkStorage, add_link: Callable[[str], Awaitable[None]]
+) -> None:
+    await add_link("item-investments")
     before = datetime.now(UTC)
 
     run_id = await storage.begin_sync_run(trigger="link", item_id="item-investments", configured_windows={})
@@ -71,8 +29,10 @@ async def test_successful_sync_run_marks_investment_only_link_synced(storage: Pl
     assert link.last_synced_at >= before
 
 
-async def test_failed_sync_run_does_not_mark_link_synced(storage: PlaidLinkStorage) -> None:
-    await _add_link(storage)
+async def test_failed_sync_run_does_not_mark_link_synced(
+    storage: PlaidLinkStorage, add_link: Callable[[str], Awaitable[None]]
+) -> None:
+    await add_link("item-investments")
 
     run_id = await storage.begin_sync_run(trigger="link", item_id="item-investments", configured_windows={})
     await storage.finish_sync_run(run_id, status="failed", error_summary="boom")
@@ -83,9 +43,9 @@ async def test_failed_sync_run_does_not_mark_link_synced(storage: PlaidLinkStora
 
 
 async def test_spend_changed_notifies_after_commit_and_on_link_removal(
-    storage: PlaidLinkStorage, db_url: str, monkeypatch: pytest.MonkeyPatch
+    storage: PlaidLinkStorage, add_link: Callable[[str], Awaitable[None]], db_url: str, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    await _add_link(storage)
+    await add_link("item-investments")
     listener_url = make_url(db_url).set(drivername="postgresql").render_as_string(hide_password=False)
     listener = await asyncpg.connect(listener_url)
     notifications: asyncio.Queue[tuple[str, str]] = asyncio.Queue()
@@ -224,16 +184,20 @@ async def test_transaction_delta_commits_changes_and_cursor_together(storage: Pl
         await engine.dispose()
 
 
-async def test_sync_run_claim_is_unique_per_item(storage: PlaidLinkStorage) -> None:
-    await _add_link(storage)
+async def test_sync_run_claim_is_unique_per_item(
+    storage: PlaidLinkStorage, add_link: Callable[[str], Awaitable[None]]
+) -> None:
+    await add_link("item-investments")
     await storage.begin_sync_run(trigger="cron", item_id="item-investments", configured_windows={})
 
     with pytest.raises(SyncAlreadyRunningError):
         await storage.begin_sync_run(trigger="webhook", item_id="item-investments", configured_windows={})
 
 
-async def test_sync_run_claim_recovers_a_stale_run(storage: PlaidLinkStorage, db_url: str) -> None:
-    await _add_link(storage)
+async def test_sync_run_claim_recovers_a_stale_run(
+    storage: PlaidLinkStorage, add_link: Callable[[str], Awaitable[None]], db_url: str
+) -> None:
+    await add_link("item-investments")
     stale_run_id = await storage.begin_sync_run(trigger="cron", item_id="item-investments", configured_windows={})
     engine = create_async_engine(db_url)
     try:
@@ -330,11 +294,11 @@ async def test_plaid_webhook_delivery_keeps_full_body_and_dispatch_metadata(
 
 
 async def test_purge_link_data_removes_mirrored_rows_but_keeps_audit_history(
-    storage: PlaidLinkStorage, db_url: str
+    storage: PlaidLinkStorage, add_link: Callable[[str], Awaitable[None]], db_url: str
 ) -> None:
     captured_at = datetime(2026, 5, 31, 12, 0, tzinfo=UTC)
-    await _add_link(storage, item_id="item-purge")
-    await _add_link(storage, item_id="item-keep")
+    await add_link("item-purge")
+    await add_link("item-keep")
     await storage.enqueue_item_sync("item-purge")
 
     await storage.apply_accounts(

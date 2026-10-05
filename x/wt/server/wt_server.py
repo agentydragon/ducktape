@@ -135,7 +135,6 @@ class WtDaemon:
         self._worktree_observer = None  # Filesystem watcher for worktrees dir
 
         # Managed state
-        self.known_worktrees: dict[Path, DiscoveredWorktree] = {}
         self.worktree_index: WorktreeIndex | None = None
         self.gitstatusd_clients: dict[WorktreeID, GitstatusdListener] = {}
         self.git_watchers: dict[WorktreeID, DebouncedGitstatusRefresh] = {}
@@ -188,12 +187,15 @@ class WtDaemon:
         self.config.wt_dir.mkdir(exist_ok=True)
 
         # Defer initial discovery to start() to avoid running async in __init__
-        self.known_worktrees = {}
         self.worktree_index = None
 
         self._method_handlers = rpc
         with contextlib.suppress(Exception):
             logger.info("Registered RPC methods: %s", sorted(rpc.list_methods()))
+
+    @property
+    def known_worktrees(self) -> dict[Path, DiscoveredWorktree]:
+        return self.registry.known
 
     def _validate_gitstatusd(self) -> tuple[str | None, str | None]:
         """Returns (gitstatusd_path, error_message) where error_message is None on success."""
@@ -319,11 +321,11 @@ class WtDaemon:
     async def _run_discovery_once(self) -> None:
         self.discovery_scanning = True
         try:
-            current = await scan_worktrees(self.config.worktrees_dir)
-            changes = self.registry.apply(current)
+            # The scan runs under the lock: one that began before a concurrent register_worktree must not
+            # overwrite the registry once that registration lands.
             async with self._state_lock:
-                self.known_worktrees = dict(self.registry.known)
-                self.worktree_index = WorktreeIndex.build(self.known_worktrees.values(), self.config.main_repo)
+                changes = self.registry.apply(await scan_worktrees(self.config.worktrees_dir))
+                self._refresh_index()
                 # Sync paths to reactive store
                 self.store.set_worktree_paths(self.known_worktrees.keys())
         finally:
@@ -481,6 +483,9 @@ class WtDaemon:
                 await self.stop()
             return
 
+        # A client's first request follows the ready handshake, and must already see the existing worktrees.
+        await self._run_discovery_once()
+
         # Signal listening via single handshake; redirect stdout to log afterward
         write_startup_handshake(
             success=True,
@@ -551,20 +556,24 @@ class WtDaemon:
 
         logger.info("wt daemon stopped")
 
+    def _refresh_index(self) -> None:
+        """Rebuild the lookup index from the registry; the caller holds `_state_lock`."""
+        self.worktree_index = WorktreeIndex.build(self.known_worktrees.values(), self.config.main_repo)
+
     async def rebuild_index(self) -> None:
         async with self._state_lock:
-            self.worktree_index = WorktreeIndex.build(self.known_worktrees.values(), self.config.main_repo)
+            self._refresh_index()
 
     async def register_worktree(self, info: DiscoveredWorktree) -> None:
         async with self._state_lock:
-            self.known_worktrees[info.path] = info
+            self.registry.add(info)
         await self._start_gitstatusd_for_worktree(info)
         await self.rebuild_index()
 
     async def unregister_worktree(self, info: DiscoveredWorktree) -> None:
         await self._stop_gitstatusd_for_worktree(info)
         async with self._state_lock:
-            self.known_worktrees.pop(info.path, None)
+            self.registry.remove(info.path)
         await self.rebuild_index()
 
 

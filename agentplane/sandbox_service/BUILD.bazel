@@ -135,7 +135,6 @@ py_library(
         ":destinations",
         ":egress",
         ":grpc_api",
-        ":instructions",
         ":inventory",
         ":kubernetes_bindings",
         ":kubernetes_grants",
@@ -195,7 +194,6 @@ py_test(
         "//agentplane/runner:protocol_pb2",
         "//agentplane/sandbox_service:protocol_pb2",
         "@pypi//protobuf",
-        "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],
 )

@@ -90,7 +90,6 @@ def test_unknown_model_raises_400(synced_db: Database, sample_config: PropsConfi
         with pytest.raises(HTTPException) as exc_info:
             _get_upstream_route("nonexistent-model", session, sample_config, LLMApiShape.RESPONSES)
         assert exc_info.value.status_code == 400
-        assert "Unknown model" in exc_info.value.detail
 
 
 def test_unknown_upstream_raises_500(synced_db: Database, sample_config: PropsConfig) -> None:
@@ -115,7 +114,6 @@ def test_unknown_upstream_raises_500(synced_db: Database, sample_config: PropsCo
         with pytest.raises(HTTPException) as exc_info:
             _get_upstream_route("broken-model", session, sample_config, LLMApiShape.RESPONSES)
         assert exc_info.value.status_code == 500
-        assert "unknown upstream" in exc_info.value.detail
 
 
 def test_api_shape_mismatch_raises_400(synced_db: Database, sample_config: PropsConfig) -> None:

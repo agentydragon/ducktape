@@ -318,3 +318,25 @@ py_test(
         "@pypi//pytest_bazel",
     ],
 )
+
+py_test(
+    name = "test_visual_review",
+    srcs = ["test_visual_review.py"],
+    deps = [
+        ":visual_review",
+        "//:conftest",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_visual_diff",
+    srcs = ["test_visual_diff.py"],
+    deps = [
+        ":visual_diff",
+        "//:conftest",
+        "@pypi//pillow",
+        "@pypi//pytest_bazel",
+    ],
+)

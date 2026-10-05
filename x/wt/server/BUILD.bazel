@@ -184,6 +184,12 @@ py_library(
 py_library(
     name = "wt_server",
     srcs = ["wt_server.py"],
+    # Beyond the package default: `//x/wt:wt_cli` ships the daemon module for the client to spawn.
+    visibility = [
+        "//x/wt:__pkg__",
+        "//x/wt/server:__subpackages__",
+        "//x/wt/testing:__pkg__",
+    ],
     deps = [
         ":git_manager",
         ":git_refs_watcher",
@@ -217,12 +223,24 @@ py_binary(
 py_test(
     name = "test_worktree_service",
     srcs = ["test_worktree_service.py"],
-    data = ["//third_party/gitstatusd"],
     deps = [
         ":conftest",
         ":worktree_service",
         "//:conftest",
         "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_wt_server",
+    srcs = ["test_wt_server.py"],
+    deps = [
+        ":conftest",
+        ":types",
+        ":worktree_ids",
+        ":wt_server",
+        "//:conftest",
         "@pypi//pytest_bazel",
     ],
 )

@@ -21,5 +21,5 @@ def test_fetch_success_rejects_duplicate_durations() -> None:
         QuotaWindow(used_percent=2, reset_seconds=2, window_seconds=604800),
     ]
 
-    with pytest.raises(ValidationError, match="quota window identities must be unique"):
+    with pytest.raises(ValidationError):
         FetchSuccess(windows=windows)

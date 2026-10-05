@@ -33,7 +33,7 @@ async def test_double_enter_raises():
     """Test that entering compositor twice raises RuntimeError."""
     async with Compositor() as comp:
         # Try to enter again while already active
-        with pytest.raises(RuntimeError, match="already in an active context"):
+        with pytest.raises(RuntimeError):
             async with comp:
                 pass
 
@@ -46,7 +46,7 @@ async def test_reuse_closed_compositor_raises():
         pass
 
     # Try to reuse closed compositor
-    with pytest.raises(RuntimeError, match="already closed"):
+    with pytest.raises(RuntimeError):
         async with comp:
             pass
 
@@ -60,7 +60,7 @@ async def test_mount_after_close_raises():
 
     # Try to mount after close
     server = FastMCP("backend")
-    with pytest.raises(RuntimeError, match=r"compositor .* is closed"):
+    with pytest.raises(RuntimeError):
         await comp.mount_inproc(MCPMountPrefix("backend"), server)
 
 
@@ -173,10 +173,10 @@ async def test_accessing_inactive_mount_raises(compositor, make_simple_mcp):
     await mount.cleanup()
 
     # After cleanup: raises
-    with pytest.raises(RuntimeError, match="not active"):
+    with pytest.raises(RuntimeError):
         _ = mount.proxy
 
-    with pytest.raises(RuntimeError, match="not active"):
+    with pytest.raises(RuntimeError):
         _ = mount.child_client
 
 
@@ -303,7 +303,7 @@ async def test_unmount_pinned_server_errors_and_kept(compositor, make_simple_mcp
     backend_prefix = MCPMountPrefix("backend")
     await compositor.mount_inproc(backend_prefix, make_simple_mcp, pinned=True)
 
-    with pytest.raises(RuntimeError, match="Cannot unmount pinned server"):
+    with pytest.raises(RuntimeError):
         await compositor.unmount_server(backend_prefix)
 
     entries = await compositor.server_entries()

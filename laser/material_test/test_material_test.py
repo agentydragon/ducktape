@@ -18,7 +18,7 @@ from laser.material_test.material_test import (
     GeometryConfig,
     GridConfig,
     LabelsConfig,
-    _full_subtitle,
+    _constant_params,
     _param_short_label,
     fmt_val,
     generate,
@@ -212,10 +212,9 @@ def test_generate_auto_subtitle_omits_varied_params():
         y=AxisConfig(param=CutParam.SPEED_MM_S, values=[50.0, 100.0]),
         cut=CutConfig(z_offset_mm=-0.1, kerf_mm=0.05),
     )
-    sub = _full_subtitle(cfg)
-    assert "Power" not in sub
-    assert "Speed" not in sub
-    assert "Z=" in sub or "kerf" in sub.lower() or "Kerf" in sub
+    constant = _constant_params(cfg)
+    assert {CutParam.POWER_PCT, CutParam.SPEED_MM_S}.isdisjoint(constant)
+    assert {CutParam.Z_OFFSET_MM, CutParam.KERF_MM} <= set(constant)
 
 
 def test_example_config_parses():
@@ -327,9 +326,9 @@ def test_auto_subtitle_excludes_outer_axes():
         cols=AxisConfig(param=CutParam.NUM_PASSES, values=[1, 2]),
         rows=AxisConfig(param=CutParam.Z_PER_PASS_MM, values=[-0.3]),
     )
-    sub = _full_subtitle(cfg)
-    assert "Passes" not in sub
-    assert "Z/pass" not in sub
+    constant = _constant_params(cfg)
+    assert {CutParam.NUM_PASSES, CutParam.Z_PER_PASS_MM}.isdisjoint(constant)
+    assert {CutParam.Z_OFFSET_MM, CutParam.KERF_MM} <= set(constant)
 
 
 def test_subgrid_gap_affects_layout():

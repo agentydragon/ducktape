@@ -13,13 +13,14 @@ from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
-from unittest.mock import AsyncMock, Mock
-from uuid import UUID, uuid4
+from unittest.mock import Mock
+from uuid import uuid4
 
 import httpx
 import pytest
 import pytest_bazel
 from fastmcp import Client, FastMCP
+from fastmcp.client.transports import StreamableHttpTransport
 from fastmcp.exceptions import ToolError
 from jsonschema import Draft202012Validator
 from mcp.types import Icon, TextContent, Tool, ToolAnnotations
@@ -37,7 +38,7 @@ from haku.console.mcp.approval import DegradedReflection, ReflectionFailureStage
 from haku.console.mcp.reflection_cache import ReflectedCatalog
 from haku.console.mcp.tool_call_service import ToolCallApplicationService, ToolCallNotFoundError
 from haku.console.mcp_config import ConsoleConfigFile, InProcessServers, const_in_process_server
-from haku.console.tool_call_actor import OperatorActor, RuntimeActor
+from haku.console.tool_call_actor import RuntimeActor
 from haku.console.tool_calls import (
     MCP_TOOL_CALL_META_KEY,
     MCP_TOOL_META_KEY,
@@ -969,16 +970,7 @@ async def test_e2e_request_approve_execute_over_http(migrated_db_url: str, migra
 
         # The Operator uses the upstream tool's native shape and the exact-Origin-gated MCP
         # request executes directly, without entering the approval queue.
-        async with httpx.AsyncClient(
-            base_url=base,
-            cookies={
-                "session": operator_session_cookie(
-                    operator_id=str(operator_identity.operator_id),
-                    identity_id=str(operator_identity.identity_id),
-                    username="operator",
-                )
-            },
-        ) as operator:
+        async with httpx.AsyncClient(base_url=base, cookies=_operator_cookies(operator_identity)) as operator:
             direct_request = {
                 "jsonrpc": "2.0",
                 "id": 10,
@@ -1006,6 +998,20 @@ async def test_e2e_request_approve_execute_over_http(migrated_db_url: str, migra
             direct = await operator.post("/mcp", headers={**mcp_headers, "Origin": base}, json=direct_request)
             assert direct.status_code == 200, (direct.text, dict(direct.headers))
             assert "echo:operator" in direct.text
+
+            # What the Operator is shown is that native shape too: the upstream's own input schema,
+            # not the Agent's approval envelope.
+            operator_transport = StreamableHttpTransport(
+                f"{base}/mcp",
+                headers={
+                    "Origin": base,
+                    "Cookie": "; ".join(f"{name}={value}" for name, value in operator.cookies.items()),
+                },
+            )
+            async with Client(operator_transport) as operator_client, Client(_standin_server()) as upstream_client:
+                operator_tools = {tool.name: tool for tool in await operator_client.list_tools()}
+                upstream_tools = {tool.name: tool for tool in await upstream_client.list_tools()}
+            assert operator_tools["standin__echo"].input_schema == upstream_tools["echo"].input_schema
 
             listed = await operator.get("/api/tool-calls")
             assert listed.status_code == 200, listed.text
@@ -1145,53 +1151,6 @@ async def test_tool_discovery_isolates_unexpected_server_failure(
     assert proxy_names == ["healthy__echo"]
     assert "catalog reconciliation failed for server broken" in caplog.text
     assert "unexpected reflection failure" in caplog.text
-
-
-async def test_operator_proxy_advertises_and_dispatches_native_arguments(migrated_db_url: str, tmp_path: Path) -> None:
-    servers, registered = _credential_free_servers("beta")
-    config_file = _write_console_config(
-        tmp_path / "operator-input-shape.yaml", {"static_agents": _STATIC_AGENTS, "mcp": {"servers": servers}}
-    )
-    settings = console_settings(migrated_db_url, config_file=config_file)
-    app = create_app(settings, in_process_servers=registered)
-    execute_direct = AsyncMock(return_value={"content": [{"type": "text", "text": "listed"}]})
-    app.state.tool_call_service.execute_direct = execute_direct
-    catalogs = Mock()
-    catalogs.metadata.return_value = ReflectedCatalog(
-        tools=[
-            Tool(
-                name="list_active",
-                description="List active sessions",
-                inputSchema={"type": "object", "properties": {"limit": {"type": "integer"}}},
-            )
-        ]
-    )
-    actor = OperatorActor(operator_id=UUID("10000000-0000-4000-8000-000000000001"))
-    actor_resolver = Mock(spec=mcp_server_module.HakuMcpActorResolver)
-    actor_resolver.resolve = AsyncMock(return_value=actor)
-    provider = mcp_server_module.OperatorToolProvider(
-        mcp_server_module.ConsoleMcpContext(
-            settings=settings,
-            tool_calls=app.state.tool_call_service,
-            dispatcher=app.state.mcp_dispatcher,
-            catalogs=catalogs,
-        ),
-        actor_resolver,
-    )
-
-    tool = await provider._get_tool("beta__list_active")
-
-    assert isinstance(tool, mcp_server_module.ProxyTool)
-    advertised = tool.to_mcp_tool()
-    assert advertised.input_schema == {"type": "object", "properties": {"limit": {"type": "integer"}}}
-    result = await tool.run({"limit": 100})
-    assert isinstance(result.content[0], TextContent)
-    assert result.content[0].text == "listed"
-    call = execute_direct.await_args
-    assert call is not None
-    request = call.kwargs["req"]
-    assert request.arguments == {"limit": 100}
-    assert call.kwargs["actor"] == actor
 
 
 async def test_targeted_dispatch_reports_a_known_degraded_server(

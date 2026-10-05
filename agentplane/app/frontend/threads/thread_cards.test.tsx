@@ -517,7 +517,7 @@ describe("EntityCard", () => {
         value: { turnId: "test-failed-turn", status: TurnStatus.FAILED, error },
       });
       const alert = container.querySelector('[data-thread-anchor="1"] [role="alert"]')!;
-      expect(alert.textContent).toBe(`Turn failed${error || "The harness reported no error details."}`);
+      expect(alert.textContent).toBe(`Turn failed ${error || "The harness reported no error details."}`);
       expect(alert.querySelector("img")).toBeNull();
     }
   );
@@ -535,7 +535,7 @@ describe("EntityCard", () => {
 
   it.each<[string, string, Observation]>([
     [
-      "Turn losttest harness exited during the turn",
+      "Turn lost test harness exited during the turn",
       "turn_completed",
       {
         case: "turnCompleted",

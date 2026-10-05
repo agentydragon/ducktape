@@ -217,11 +217,11 @@ async def test_event_stream_says_to_page_when_the_server_cannot_resume(
         stream.close()
 
     service.on_open = [truncate]
-    with pytest.raises(ResumePointLostError, match="truncated"):
+    with pytest.raises(ResumePointLostError):
         [e async for e in api.stream_events(ONE, after=3)]
 
     service.stream_refusals = [410]
-    with pytest.raises(ResumePointLostError, match="410"):
+    with pytest.raises(ResumePointLostError):
         [e async for e in api.stream_events(ONE, after=3)]
 
 

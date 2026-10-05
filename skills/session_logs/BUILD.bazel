@@ -20,6 +20,7 @@ py_test(
     srcs = ["test_session_logs.py"],
     deps = [
         ":session_logs_lib",
+        "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],
 )

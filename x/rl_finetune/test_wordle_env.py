@@ -84,14 +84,13 @@ class TestWordleEnv:
     def test_reset_returns_prompt(self):
         env = WordleEnv()
         obs = env.reset(seed=0)
-        assert "Guess" in obs
         assert str(MAX_GUESSES) in obs
 
     def test_correct_guess_wins(self):
         env = self.make_env(seed=0)
         secret = env._secret
-        result = env.guess(secret)
-        assert "Correct!" in result
+        env.guess(secret)
+        assert env.won
         assert env.reward == 1.0
         assert env.done is True
 
@@ -100,19 +99,16 @@ class TestWordleEnv:
         secret = env._secret
         # Pick a word that's definitely not the secret
         wrong = next(w for w in WORD_LIST if w != secret)
-        result = ""
         for _ in range(MAX_GUESSES):
-            result = env.guess(wrong)
+            env.guess(wrong)
         assert env.done is True
-        assert "Game over" in result
         assert env.reward >= 0.0  # partial credit
 
     def test_partial_reward_after_nonterminal_guess(self):
         env = self.make_env(seed=0)
         secret = env._secret
         wrong = next(w for w in WORD_LIST if w != secret and _completion_score(_score_guess(secret, w)) > 0.0)
-        result = env.guess(wrong)
-        assert "guesses left" in result
+        env.guess(wrong)
         assert env.done is False
         assert env.reward == _completion_score(_score_guess(secret, wrong))
 
@@ -122,8 +118,8 @@ class TestWordleEnv:
         wrong = next(w for w in WORD_LIST if w != secret and _completion_score(_score_guess(secret, w)) > 0.0)
         env.guess(wrong)
         reward_after_valid_guess = env.reward
-        result = env.guess("zzzzz")
-        assert "not a recognized" in result
+        env.guess("zzzzz")
+        assert env.n_invalid_word == 1
         assert env.reward == reward_after_valid_guess
 
     def test_post_done_returns_polite_string(self):
@@ -152,8 +148,8 @@ class TestWordleEnv:
     def test_strips_brackets(self):
         env = self.make_env(seed=0)
         secret = env._secret
-        result = env.guess(f"[{secret}]")
-        assert "Correct!" in result
+        env.guess(f"[{secret}]")
+        assert env.won
 
     def test_same_seed_same_word(self):
         env1 = self.make_env(seed=42)

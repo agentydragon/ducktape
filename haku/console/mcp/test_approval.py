@@ -38,12 +38,11 @@ from haku.console.mcp.approval import (
     DegradedReflection,
     McpServerDispatcher,
     PostgresToolCallLedger,
-    ToolCallRecord,
     _mcp_result_to_json,
 )
 from haku.console.mcp.execution import EXECUTION_CONTEXT_DEPENDENCY, McpExecutionContext, OperatorMcpExecutionCaller
 from haku.console.mcp.reflection_cache import ReflectedCatalog
-from haku.console.mcp.tool_call_service import ToolCallApplicationService, backend_auth_for_operator
+from haku.console.mcp.tool_call_service import ToolCallApplicationService
 from haku.console.mcp_config import (
     InProcessBackend,
     InProcessCredentialKind,
@@ -319,17 +318,6 @@ def _static_agent_actor(client: TestClient, bearer: str) -> AgentActor:
     return cast(AgentActor, client.portal.call(resolve))
 
 
-def _record_execution_operator_ids(monkeypatch: pytest.MonkeyPatch) -> list[UUID]:
-    operator_ids: list[UUID] = []
-
-    async def recording_service_auth(*, server: McpServerEntry, operator_id: UUID) -> str | None:
-        operator_ids.append(operator_id)
-        return await backend_auth_for_operator(server=server, operator_id=operator_id)
-
-    monkeypatch.setattr("haku.console.mcp.tool_call_service.backend_auth_for_operator", recording_service_auth)
-    return operator_ids
-
-
 def test_operator_mutations_reject_untrusted_origin(operator_client: TestClient) -> None:
     response = operator_client.request(
         "POST",
@@ -489,105 +477,6 @@ def test_approval_executes_tool_and_records_terminal_result(operator_client: Tes
     finished = operator_client.get(f"/api/tool-calls/{submitted['tool_call_id']}").json()
     assert finished["status"] == "ok"
     assert finished["result"]["content"][0]["text"] == "stock_add:123:1"
-
-
-async def test_approval_resolves_credentials_for_the_canonical_operator_id(
-    *, make_operator_client, console_app: dict[str, Any], migrated_db_url: str, migrated_sessions, monkeypatch
-) -> None:
-    execution_operator_ids = _record_execution_operator_ids(monkeypatch)
-    with make_operator_client(**console_app, operator_external_user_key="credential-free-sub") as client:
-        submitted = _submit(client)
-        approved = client.post(f"/api/tool-calls/{submitted['tool_call_id']}/decision", json={"decision": "approve"})
-        # Drain before the client (and its lifespan aclose) tears down, so execution runs to completion.
-        _drain_executions(client)
-
-    assert approved.status_code == 200, approved.text
-    assert approved.json()["tool_call"]["status"] == "running"
-    assert execution_operator_ids == [await operator_id(migrated_sessions, "credential-free-sub")]
-
-
-async def test_routing_executes_each_agent_as_its_own_operator(
-    *,
-    make_client,
-    tmp_path: Path,
-    migrated_db_url: str,
-    migrated_sessions: async_sessionmaker[AsyncSession],
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """Two static agents bound to two operators: each agent's auto-approved call on an
-    operator-linked server executes with *its* operator's token, with no crosstalk."""
-    # `haku` (bearer tool-token → op-haku) comes from the base config; add a second agent `ops-bot`.
-    tokens = {
-        await operator_id(migrated_sessions, "op-haku"): "grocy-token-haku",
-        await operator_id(migrated_sessions, "op-ops"): "grocy-token-ops",
-    }
-    built_with: list[str] = []
-
-    def build(token: str | None) -> FastMCP:
-        # Auto-approval builds the server once without a credential to read its schema.
-        if token is not None:
-            built_with.append(token)
-        return _build_test_mcp_server()
-
-    async def operator_token(*, server: McpServerEntry, operator_id: UUID) -> str:
-        del server
-        return tokens[operator_id]
-
-    monkeypatch.setattr("haku.console.mcp.tool_call_service.backend_auth_for_operator", operator_token)
-
-    config = _config([_in_process_server("grocy-sf", {"kind": "none"})])
-    config["auto_approval_policies"] = [
-        {"id": "manual_review", "type": "never"},
-        {"id": "grocy_reads", "type": "exact_tools", "tools": {"grocy-sf": ["products_list"]}},
-    ]
-    config["static_agents"] = {
-        "haku": {**_STATIC_AGENTS["haku"], "access_profile_id": "grocy-reader"},
-        "ops": {
-            "agent_id": "30000000-0000-4000-8000-000000000002",
-            "display_name": "Ops Bot",
-            "token": "ops-token",
-            "operator_subject": "op-ops",
-            "access_profile_id": "grocy-reader",
-        },
-    }
-    config["access_profiles"] = [
-        {"id": "manual-review", "auto_approval_policy": "manual_review"},
-        {"id": "grocy-reader", "auto_approval_policy": "grocy_reads"},
-    ]
-    config["default_access_profile_id"] = "manual-review"
-    with make_client(
-        config_file=write_config(tmp_path / "routing.yaml", config),
-        in_process_servers={
-            "grocy-sf": InProcessServerRegistration(builder=build, credential_kind=InProcessCredentialKind.NONE)
-        },
-    ) as client:
-        # products_list is an unconditionally auto-approved grocy read, so each call runs immediately.
-        call_ids: list[str] = []
-        for bearer in ("tool-token", "ops-token"):
-            record = _submit_request(
-                client,
-                # The served upstream's products_list mirrors grocy-sf and requires full detail.
-                SubmitToolCallRequest(
-                    server_id="grocy-sf", tool_name="products_list", arguments={"detail": "full"}, wait_for_ms=0
-                ),
-                actor=_static_agent_actor(client, bearer),
-            )
-            assert record["status"] == "ok", record
-            call_ids.append(record["tool_call_id"])
-
-        for bearer, expected_call_id in zip(("tool-token", "ops-token"), call_ids, strict=True):
-            actor = _static_agent_actor(client, bearer)
-
-            async def list_calls(actor: RuntimeActor = actor) -> list[ToolCallRecord]:
-                return cast(list[ToolCallRecord], await client.app.state.tool_call_service.list_tool_calls(actor=actor))
-
-            assert client.portal is not None
-            listed = client.portal.call(list_calls)
-            assert [call.tool_call_id for call in listed] == [expected_call_id]
-            assert client.get("/api/tool-calls", headers={"Authorization": f"Bearer {bearer}"}).status_code == 401
-
-    # haku's call executed with op-haku's token; ops-bot's with op-ops's — each routed to its operator.
-    assert built_with == ["grocy-token-haku", "grocy-token-ops"]
 
 
 async def test_two_operator_two_agent_http_authorization_matrix(

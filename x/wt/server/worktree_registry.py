@@ -22,6 +22,12 @@ class WorktreeRegistry:
     def known(self) -> dict[Path, DiscoveredWorktree]:
         return self._known
 
+    def add(self, wt: DiscoveredWorktree) -> None:
+        self._known[wt.path] = wt
+
+    def remove(self, path: Path) -> None:
+        self._known.pop(path, None)
+
     def apply(self, current: Iterable[DiscoveredWorktree]) -> ChangeSet:
         cur_map = {wt.path: wt for wt in current}
         added = [cur_map[p] for p in cur_map.keys() - self._known.keys()]
