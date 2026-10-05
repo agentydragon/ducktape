@@ -14,8 +14,6 @@ from finance.augur.api.config import LocationConfig, PropertyAssetConfig
 from finance.augur.api.conftest import MakeCatalogConfig
 from finance.augur.sim.ids import PropertyId
 
-LOCATION_B_PROPERTY = PropertyId("location_b_property")
-
 
 def test_catalog_locations_default_to_loaded_property_source(
     properties_path: Path, make_catalog_config: MakeCatalogConfig
@@ -26,46 +24,29 @@ def test_catalog_locations_default_to_loaded_property_source(
     assert [property_.id for property_ in catalog.properties] == ["location_a_property", "location_b_property"]
 
 
+@pytest.mark.parametrize(
+    ("with_asset", "without_asset"),
+    [
+        (PropertyId("location_a_property"), PropertyId("location_b_property")),
+        (PropertyId("location_b_property"), PropertyId("location_a_property")),
+    ],
+)
 def test_catalog_applies_public_property_asset_urls(
-    properties_path: Path, make_catalog_config: MakeCatalogConfig
+    properties_path: Path, make_catalog_config: MakeCatalogConfig, with_asset: PropertyId, without_asset: PropertyId
 ) -> None:
     catalog = build_catalog(
         make_catalog_config(
             properties_path,
             property_assets=(
                 PropertyAssetConfig(
-                    property_id=PropertyId("location_a_property"),
-                    image_url=HttpUrl("https://cdn.example.com/augur/location-a-hero.jpg"),
+                    property_id=with_asset, image_url=HttpUrl("https://cdn.example.com/augur/hero.jpg")
                 ),
             ),
         )
     )
 
-    assert (
-        catalog.properties_by_id[PropertyId("location_a_property")].image_url
-        == "https://cdn.example.com/augur/location-a-hero.jpg"
-    )
-    assert catalog.properties_by_id[LOCATION_B_PROPERTY].image_url is None
-
-
-def test_catalog_allows_explicit_public_property_asset_url(
-    properties_path: Path, make_catalog_config: MakeCatalogConfig
-) -> None:
-    catalog = build_catalog(
-        make_catalog_config(
-            properties_path,
-            property_assets=(
-                PropertyAssetConfig(
-                    property_id=LOCATION_B_PROPERTY,
-                    image_url=HttpUrl("https://cdn.example.com/augur/location-b-hero.jpg"),
-                ),
-            ),
-        )
-    )
-
-    assert catalog.properties_by_id[LOCATION_B_PROPERTY].image_url == (
-        "https://cdn.example.com/augur/location-b-hero.jpg"
-    )
+    assert catalog.properties_by_id[with_asset].image_url == "https://cdn.example.com/augur/hero.jpg"
+    assert catalog.properties_by_id[without_asset].image_url is None
 
 
 def test_catalog_location_selection_filters_properties_and_locations(

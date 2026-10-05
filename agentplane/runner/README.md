@@ -69,8 +69,9 @@ the app only folds that neutral report.
   turn-item projection, which can omit an unresolved call still sent to the model. At Codex
   0.152.0, `core/src/tasks/mod.rs` flushes conversation items before the interruption notification;
   `core/src/context_manager/normalize.rs` supplies `aborted` for a call with no output. The reader
-  reports this synthetic content as a revision without creating an execution result. Reasoning,
-  unmodeled tools, compacted history, and rollback remain unknown.
+  reports this synthetic content as a revision without creating an execution result. A reasoning
+  item matches the saved `reasoning` record carrying its app-server id, and is absent without one.
+  Unmodeled tools, compacted history, and rollback remain unknown.
 
 Unreadable, malformed, or unsupported native evidence produces an explicit unknown report.
 These readers depend on the pinned native formats and must be checked with the app-level recovery

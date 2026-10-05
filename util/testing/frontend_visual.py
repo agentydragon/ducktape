@@ -14,6 +14,7 @@ from __future__ import annotations
 import json
 import os
 import tempfile
+from collections.abc import Sequence
 from pathlib import Path
 from typing import TYPE_CHECKING, Literal
 
@@ -33,6 +34,12 @@ _FONT_PREFERENCES = json.loads(
 CONTAINER_BASE_BROWSER_ARGS: list[str] = _FLAGS["containerBase"]
 # Container base plus font/raster/compositing/animation pinning for stable renders.
 DETERMINISTIC_BROWSER_ARGS: list[str] = CONTAINER_BASE_BROWSER_ARGS + _FLAGS["deterministicExtra"]
+
+
+# The instant the scenario sweep freezes page clocks to, so date-relative text renders the same on
+# every run. 2025-02-01T12:00:00Z, as FROZEN_NOW_MS in frontend_visual/launcher.mjs, which the
+# Puppeteer sweeps use until their lanes move over.
+FROZEN_NOW_MS = 1_738_411_200_000
 
 
 def chromium_executable() -> str | None:
@@ -56,14 +63,18 @@ async def deterministic_browser_context(
     viewport: ViewportSize,
     frozen_now_ms: int,
     color_scheme: Literal["dark", "light", "no-preference", "null"] = "light",
+    device_scale_factor: float = 1,
+    has_touch: bool = False,
+    extra_args: Sequence[str] = (),
 ) -> BrowserContext:
     context = await playwright.chromium.launch_persistent_context(
         user_data_dir=str(_font_pinned_user_data_dir()),
         headless=True,
         executable_path=chromium_executable(),
-        args=DETERMINISTIC_BROWSER_ARGS,
+        args=[*DETERMINISTIC_BROWSER_ARGS, *extra_args],
         viewport=viewport,
-        device_scale_factor=1,
+        device_scale_factor=device_scale_factor,
+        has_touch=has_touch,
         color_scheme=color_scheme,
         reduced_motion="reduce",
         locale="en-US",

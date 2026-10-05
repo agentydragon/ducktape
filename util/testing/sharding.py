@@ -7,6 +7,10 @@ Deviation from pytest-shard, the plugin pytest_bazel expects: that one places ea
 its node ID, so shard sizes scatter -- 27 items over 4 shards can land 8/9/5/5. Placing by position
 keeps every shard within one item of the others, as <frontend_visual/sharding.mjs> already does for
 visual scenes.
+
+Deviation from running the filter alone: `pytest_bazel` reads "nothing collected" under a filter as success,
+so a `--test_filter` naming no case would pass on every shard having run nothing. A filter that leaves nothing
+before sharding fails instead; one that matches a case owned by another shard still passes on this one.
 """
 
 import os
@@ -32,6 +36,8 @@ def pytest_configure(config: pytest.Config) -> None:
 def pytest_collection_modifyitems(config: pytest.Config, items: list[pytest.Item]) -> None:
     # trylast: shard what `-k` (`--test_filter`) left, so a filtered item runs on whichever shard
     # it lands and the others pass empty.
+    if not items and (keyword := config.getoption("keyword")):
+        pytest.exit(f"{keyword=} matched no test", returncode=pytest.ExitCode.USAGE_ERROR)
     items[:] = items[config.getoption("shard_id") :: config.getoption("num_shards")]
 
 

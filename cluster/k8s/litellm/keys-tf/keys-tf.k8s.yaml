@@ -27,6 +27,10 @@ spec:
             secretKeyRef:
               key: key
               name: litellm-clients-sops-age-key
+      resources:
+        requests:
+          cpu: 250m
+          memory: 512Mi
   serviceAccountName: tf-runner
   sourceRef:
     kind: GitRepository

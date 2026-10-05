@@ -6,7 +6,7 @@ import { createRoot } from "react-dom/client";
 
 import App from "../App";
 import type { DeploymentInfo, OAuthProviderStatus } from "../types";
-import { SCENARIOS } from "./scenarios.mjs";
+import SCENARIOS from "./scenarios.json";
 
 const DEPLOYMENT_INFO: DeploymentInfo = {
   image_tag: "devel-20260529194300-3b9e37c",

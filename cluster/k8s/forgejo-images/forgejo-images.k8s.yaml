@@ -32,6 +32,10 @@ spec:
             secretKeyRef:
               key: password
               name: tofu-state-db-credentials
+      resources:
+        requests:
+          cpu: 250m
+          memory: 512Mi
   serviceAccountName: tf-runner
   sourceRef:
     kind: GitRepository

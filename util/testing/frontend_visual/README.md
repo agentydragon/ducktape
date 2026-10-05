@@ -2,9 +2,10 @@
 
 Shared Puppeteer/Playwright infrastructure for visual render-health tests (see
 `visual-test-lib.mjs` for the JS/Puppeteer path used by `study_casino/frontend`,
-`props/frontend`, `airlock/frontend` and `agentplane/app/frontend`, and
-`frontend_visual.py` for the Python/Playwright path used by `study_casino`
-and `finance/augur`). `capture.mjs` holds the lower-level page-prep/capture
+`props/frontend` and `agentplane/app/frontend`, and `frontend_visual.py` for the
+Python/Playwright path used by `study_casino`, `finance/augur` and `airlock/frontend`).
+Browser tests are moving to the Python path, lane by lane — see [The Python sweep](#the-python-sweep).
+`capture.mjs` holds the lower-level page-prep/capture
 primitives (`prepareDeterministicPage`, `screenshotElement`, `waitForStable`) that
 `visual-test-lib.mjs` and haku console's own multi-scene renderers
 (`haku/console/frontend/screenshots/render.mjs`,
@@ -41,6 +42,48 @@ Under `runScenarios`, `--test_filter=<scenario>` (Bazel's `TESTBRIDGE_TEST_ONLY`
 single scenario — the substitute for a per-scenario target name. Filtering happens before
 sharding, so the match runs wherever it lands and the other shards pass on nothing; a filter
 matching no scenario fails rather than passing vacuously.
+
+## The Python sweep
+
+`py_visual_test` (`py_visual_test.bzl`) is `visual_test` on Playwright and pytest, and is where new
+lanes go. A package supplies its harness page and a `scenarios.json`; the test is
+`//util/testing:visual_sweep`, so there is no Python in the package.
+
+```python
+py_visual_test(
+    name = "visual",
+    size = "small",
+    shard_count = 2,  # optional
+    assets = ["harness/index.html", ":visual_harness_css"],
+    harness = ":visual_harness_js",
+    scenarios = "harness/scenarios.json",
+    title = "Airlock",
+    # fonts = ":app_fonts", font_family = "Outfit",  # an app-owned named font, asserted rendered
+)
+```
+
+Same contract as the sections below — `<outputName>-actual.png` and `visual-review.json`, ready
+selectors, the request fence, the fetch ledger, zero uncaught page errors — with these deviations:
+
+- **The table is `scenarios.json`**, pure data. The TypeScript harness imports it
+  (`import SCENARIOS from "./scenarios.json"`) and the sweep reads it, so no scenario is listed twice;
+  fields only the harness reads sit in the same object. The sweep's fields are in
+  `util/testing/visual_scenarios.py`; `viewport` also takes `deviceScaleFactor` and `hasTouch`, and a
+  scenario can name a `hover` or `tap` selector.
+- **A scenario is a pytest test**, `test_scenario[<name>]`, so Bazel's test report has one case per
+  scenario. `--test_filter` is pytest's `-k`: a case-insensitive match that also sees the file name.
+  Shards deal scenarios out by position, filter first (`util/testing/sharding.py`), and a filter that
+  matches nothing fails.
+- **A fresh browser per scenario**, not one per shard. Launch and close cost about 0.1s on the RBE
+  worker, and what one scenario renders cannot then depend on the scenarios that ran before it.
+- **An element is captured to the nearest pixel**, as Puppeteer does, not outward as Playwright's own
+  element screenshot would (a `#app` 1630.4px tall publishes 1630 rows, not 1631), so a migrated lane's
+  images keep their sizes. An element taller than the viewport is captured whole.
+- **Selectors are Playwright's.** Puppeteer's `::-p-text(...)` does not exist; `readySelectors` wait for
+  presence, as before.
+- **The target is not `visual` if the harness lives in a `visual/` directory.** A `py_test`'s
+  executable is `<package>/<name>`, which collides with that directory's outputs (`js_test` hides its
+  executable in `<name>_/`). Keep the target name and call the directory `harness/`.
 
 ## Screenshot target: element, not viewport
 

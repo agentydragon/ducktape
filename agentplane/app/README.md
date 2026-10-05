@@ -138,10 +138,11 @@ revised continuation content gets a new payload revision without changing the ob
 execution result. Original observations remain in the archive. The app does not infer recovery
 behavior from the harness type.
 
-The thread UI labels retained, revised, and unknown continuation state. Absent content is
-collapsed under "not retained in model context" and remains expandable. Revised tool content
-is labeled "Continuation output"; execution success/failure stays separate. Tool runs summarize
-recovery state even while collapsed, and interrupted items do not become streaming again when
+The thread UI badges revised and unknown continuation state; retained content, the ordinary
+outcome, and a succeeded tool call carry no badge. Absent content is collapsed under "not retained
+in model context" and remains expandable. Revised tool content is labeled "Continuation output";
+the execution outcome stays separate (a failure is badged, a success is not). Tool runs summarize
+their badges even while collapsed, and interrupted items do not become streaming again when
 a later turn starts.
 
 The retained-event SSE API reads committed PostgreSQL events on whichever replica receives

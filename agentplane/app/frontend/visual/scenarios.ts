@@ -107,7 +107,7 @@ export interface Scenario extends ScenarioOptions {
   commandAdmissionTimedOut?: boolean;
   /** Fail the Action group listing, which says whether a stored result is an MCP `CallToolResult`. */
   actionGroupsUnavailable?: boolean;
-  recovery?: "messages" | "tools";
+  recovery?: "messages" | "tools" | "quiet";
   openRecoveryDetails?: boolean;
   failedTurn?: "before-content" | "after-content";
 }
@@ -188,6 +188,24 @@ export const SCENARIOS: Record<string, Scenario> = {
     recovery: "tools",
     openRecoveryDetails: true,
     readySelectors: ['[aria-label="Retention unknown"]', "details[open] details[open] .agentplane-code-block"],
+    captureViewport: true,
+  },
+  session_recovery_quiet: {
+    element: "#app",
+    route: SESSION_ROUTE,
+    viewport: { width: 1200, height: 500 },
+    recovery: "quiet",
+    openRecoveryDetails: false,
+    readySelectors: ['[data-thread-anchor="50"]'],
+    captureViewport: true,
+  },
+  session_recovery_quiet_open: {
+    element: "#app",
+    route: SESSION_ROUTE,
+    viewport: { width: 1200, height: 800 },
+    recovery: "quiet",
+    openRecoveryDetails: true,
+    readySelectors: ['[data-thread-anchor="50"]', "details[open] details[open] .agentplane-code-block"],
     captureViewport: true,
   },
   session_error: {

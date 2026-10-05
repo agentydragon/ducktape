@@ -13,7 +13,7 @@ from agentplane.runner import protocol_pb2
 from agentplane.runner.client import RunnerClient
 from agentplane.runner.errors import RunnerError
 from agentplane.runner.testing import events
-from agentplane.runner.testing.scripted_model import ScriptedModel, ShellCall, Text
+from agentplane.runner.testing.scripted_model import Reasoning, ScriptedModel, ShellCall, Text
 
 # The generated protocol stubs' own stub chain, which the mypy aspect resolves for direct deps only.
 # gazelle:include_dep @pypi//protobuf
@@ -143,6 +143,27 @@ async def test_shutdown_stops_the_harness_and_open_resumes_the_conversation(
         await model.reply(request, Text("RESUMED_OK"))
         done = await second.until(events.turn_completed)
         assert done.event.turn_completed.status == event_pb2.TURN_STATUS_COMPLETED
+
+
+async def test_resume_sends_the_model_the_reasoning_of_the_previous_harness(
+    client: RunnerClient, model: ScriptedModel, spec: protocol_pb2.SessionSpec
+) -> None:
+    first = await client.attach("reasoning-1", spec=spec)
+    await first.send("input-1", "Reply with exactly: SEED_OK")
+    await model.reply(await model.request(), Reasoning("SEED_THOUGHT"), Text("SEED_OK"))
+    await first.until(events.turn_completed)
+    await first.stop_runner_session("stop-1")
+    await first.until(events.is_kind("harness_exited"))
+    await first.drain_until_end()
+
+    async with await client.attach("reasoning-1", spec=spec, after_cursor=first.cursor) as second:
+        started = await second.until(events.is_kind("harness_started"))
+        assert started.event.harness_started.resumed
+        await second.send("input-2", "Reply with exactly: RESUMED_OK")
+        request = await model.request()
+        assert request.reasoning_texts == ["SEED_THOUGHT"]
+        await model.reply(request, Text("RESUMED_OK"))
+        await second.until(events.turn_completed)
 
 
 async def test_open_rejects_a_mismatched_spec(client: RunnerClient, spec: protocol_pb2.SessionSpec) -> None:
