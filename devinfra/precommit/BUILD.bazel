@@ -12,6 +12,7 @@ py_library(
     srcs = ["pytest_main_markers.py"],
     visibility = [
         "//devinfra:__pkg__",
+        "//devinfra/ci:__pkg__",
         "//devinfra/precommit:__pkg__",
     ],
 )

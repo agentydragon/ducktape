@@ -106,6 +106,7 @@ py_library(
     name = "precommit_file_selection",
     srcs = ["precommit_file_selection.py"],
     visibility = ["//:__subpackages__"],
+    deps = ["//devinfra/precommit:pytest_main_markers"],
 )
 
 py_library(

@@ -25,7 +25,7 @@ jobs:
 
       - name: Discover changed files for pre-commit
         id: changed-files
-        run: python3 devinfra/ci/precommit_file_selection.py
+        run: python3 -m devinfra.ci.precommit_file_selection
 
       # ============================================================================
       # ENVIRONMENT SETUP
@@ -37,6 +37,7 @@ jobs:
 
       - uses: ./.github/actions/setup-bazel
         id: bazel-cache
+        if: steps.changed-files.outputs.needs_bazel_setup == 'true'
 
       # Cache Ansible Galaxy roles (required for syntax check - meta/main.yml dependencies)
       - name: Restore Ansible Galaxy roles cache
@@ -85,6 +86,7 @@ jobs:
           # PRs: check only files changed in the PR (fast feedback).
           # Branch pushes + manual runs: check all files (full gate before merge).
           if [ "$GITHUB_EVENT_NAME" = "pull_request" ]; then
+            export DUCKTAPE_PRECOMMIT_EXPLICIT_SELECTION=1
             mapfile -d '' -t changed < "$RUNNER_TEMP/pre-commit-changed-files"
             if [ "${#changed[@]}" -eq 0 ]; then
               echo "No files changed; nothing for pre-commit to check."
@@ -94,6 +96,7 @@ jobs:
             printf '  %s\n' "${changed[@]}"
             pre-commit run --files "${changed[@]}" --show-diff-on-failure -v
           else
+            unset DUCKTAPE_PRECOMMIT_EXPLICIT_SELECTION
             pre-commit run --all-files --show-diff-on-failure -v
           fi
 
