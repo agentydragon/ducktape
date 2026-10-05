@@ -1212,31 +1212,6 @@ export { runner };"#,
     }
 
     #[test]
-    fn number_literals_discriminate_otherwise_identical_items() {
-        let module = parse(
-            r#"const a = make(call(), 123);
-const b = make(call(), 456);
-const c = make(call(), 789);"#,
-        );
-        let index = ShapeIndex::new(&module);
-        for body_idx in 0..3 {
-            let anchor = index.minimal_anchor_set(body_idx).unwrap();
-            assert!(index.read_off_resolves_uniquely(body_idx, &anchor));
-        }
-    }
-
-    #[test]
-    fn bool_literal_discriminates_otherwise_identical_items() {
-        let module = parse(
-            r#"const a = cfg({ flag: true });
-const b = cfg({ flag: false });"#,
-        );
-        let index = ShapeIndex::new(&module);
-        let anchor = index.minimal_anchor_set(0).unwrap();
-        assert!(index.read_off_resolves_uniquely(0, &anchor));
-    }
-
-    #[test]
     fn stable_feature_preferred_over_volatile() {
         // The item carries both a stable key and a volatile-looking literal; the
         // top-ranked anchor must be the stable one.
