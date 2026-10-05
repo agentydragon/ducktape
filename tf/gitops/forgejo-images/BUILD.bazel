@@ -7,7 +7,6 @@ tf_providers_versions(
     providers = {
         "forgejo": "svalabs/forgejo:~>1.5",
         "kubernetes": "hashicorp/kubernetes:~>3.0",
-        "random": "hashicorp/random:~>3.9.0",
         "restapi": "mastercard/restapi:~>2.0",
     },
     tf_version = "1.12.6",
@@ -18,7 +17,6 @@ tf_module(
     providers = [
         "forgejo",
         "kubernetes",
-        "random",
         "restapi",
     ],
     providers_versions = ":providers",

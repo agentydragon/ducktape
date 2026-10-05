@@ -4,7 +4,7 @@ generated directory that pulls a `git.allegedly.works`-hosted image, and the Rec
 that Forgejo's `package` webhook hits when CI pushes an image.
 
 The module creates that webhook on the ducktape-ci user (an owner-level hook fires for
-packages linked to no repository) and writes the token Secret beside the Receiver. The
+packages linked to no repository) and reads the token Secret that ESO mints beside the Receiver. The
 webhook URL's path is `sha256(token + receiver name + namespace)`, so the module takes the
 Receiver's identity from here. The Receiver is `generic` because Flux has no Forgejo
 receiver type, and it checks no signature: the unguessable path is the secret, and a leaked
@@ -26,6 +26,7 @@ from flux_receiver_crds.io.fluxcd.toolkit.notification import ReceiverSpecSecret
 from pydantic import BaseModel, ConfigDict
 
 from cluster.cdk8s import forgejo_image_automation, namespaces, terraform
+from cluster.cdk8s.external_secrets.minted_secret import mint_bearer_secret
 from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on_many
 from cluster.cdk8s.flux_image_automation_ghcr.image_automation import AUTOMATION_NAME
 from cluster.cdk8s.flux_webhook.chart import WEBHOOK_HOST
@@ -38,7 +39,7 @@ NAME = "forgejo-images"
 OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/forgejo-images"
 SECRET_NAME = "forgejo-images-creds"
 # The Receiver that a package webhook on the ducktape-ci user triggers, and the token Secret it
-# reads. The Terraform module writes the Secret here, beside the Receiver.
+# reads. ESO mints the Secret in this namespace and the Terraform module reads it from there.
 RECEIVER_NAME = "receiver"
 WEBHOOK_TOKEN_SECRET = "webhook-token"
 
@@ -81,6 +82,8 @@ def chart(app: App) -> Chart:
     )
     # Flux's own copy, for the image-automation ImageRepositories that scan the registry.
     forgejo_images_creds_external_secret(chart, "flux-system-creds", namespace="flux-system")
+    # Minted once: a new token would change the webhook's path.
+    mint_bearer_secret(chart, "webhook-token", name=WEBHOOK_TOKEN_SECRET, namespace=NAME, key="token")
     Receiver(
         chart,
         "receiver",

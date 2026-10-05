@@ -46,22 +46,13 @@ resource "forgejo_user" "images" {
 # need each package linked to a repository first.
 #
 # The Receiver it calls (cluster/cdk8s/forgejo_images.py) serves /hook/<sha256 of token, receiver
-# name and namespace> and checks no signature: the unguessable path is the secret. A new token
-# changes that path, so the token is minted once and never rotated.
-resource "random_password" "webhook_token" {
-  length  = 40
-  special = false
-}
-
-# Written beside the Receiver, which reads it from its own namespace.
-resource "kubernetes_secret" "webhook_token" {
+# name and namespace> and checks no signature: the unguessable path is the secret. An External
+# Secrets `Password` generator mints the token once and never refreshes it, since a new token
+# changes that path; it is read here from the namespace it is minted into.
+data "kubernetes_secret" "webhook_token" {
   metadata {
     name      = var.webhook_token_secret
     namespace = var.receiver_namespace
-  }
-
-  data = {
-    token = random_password.webhook_token.result
   }
 }
 
@@ -85,12 +76,12 @@ resource "restapi_object" "package_webhook" {
     events = ["package"]
     config = {
       content_type = "json"
-      url          = "https://${var.webhook_host}/hook/${sha256(join("", [random_password.webhook_token.result, var.receiver_name, var.receiver_namespace]))}"
+      url          = "https://${var.webhook_host}/hook/${sha256(join("", [data.kubernetes_secret.webhook_token.data["token"], var.receiver_name, var.receiver_namespace]))}"
     }
   })
   ignore_all_server_changes = true
 
-  depends_on = [forgejo_user.images, kubernetes_secret.webhook_token]
+  depends_on = [forgejo_user.images]
 }
 
 # ESO already owns this Secret through the agent-workspaces ExternalSecret.

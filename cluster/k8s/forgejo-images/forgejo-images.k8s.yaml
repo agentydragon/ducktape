@@ -66,6 +66,38 @@ spec:
       mergePolicy: Merge
       type: kubernetes.io/dockerconfigjson
 ---
+apiVersion: generators.external-secrets.io/v1alpha1
+kind: Password
+metadata:
+  name: webhook-token
+  namespace: forgejo-images
+spec:
+  allowRepeat: true
+  digits: 12
+  length: 48
+  noUpper: false
+  symbols: 0
+---
+apiVersion: external-secrets.io/v1
+kind: ExternalSecret
+metadata:
+  name: webhook-token
+  namespace: forgejo-images
+spec:
+  dataFrom:
+    - sourceRef:
+        generatorRef:
+          apiVersion: generators.external-secrets.io/v1alpha1
+          kind: Password
+          name: webhook-token
+  refreshPolicy: CreatedOnce
+  target:
+    name: webhook-token
+    template:
+      data:
+        token: "{{ .password }}"
+      type: Opaque
+---
 apiVersion: notification.toolkit.fluxcd.io/v1
 kind: Receiver
 metadata:

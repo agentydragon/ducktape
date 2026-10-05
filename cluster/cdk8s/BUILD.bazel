@@ -525,6 +525,7 @@ py_library(
         ":manifest_roots",
         ":namespaces",
         ":terraform",
+        "//cluster/cdk8s/external_secrets:minted_secret",
         "//cluster/cdk8s/flux_image_automation_ghcr:image_automation",
         "//cluster/cdk8s/flux_webhook:chart",
         "//cluster/cdk8s/providers/external_secrets:external_secret",

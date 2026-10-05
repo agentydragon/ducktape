@@ -10,10 +10,6 @@ terraform {
       source  = "hashicorp/kubernetes"
       version = "~> 3.0"
     }
-    random = {
-      source  = "hashicorp/random"
-      version = "~> 3.7"
-    }
     restapi = {
       source  = "mastercard/restapi"
       version = "~> 2.0"
