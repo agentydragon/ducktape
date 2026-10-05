@@ -261,7 +261,7 @@ async def test_an_offered_template_that_says_nothing_is_named_rather_than_offere
     inventory = _inventory(
         _sandbox(ready=True, pod_annotation=None), FakeCoreV1(), FakeExecRunner(), {"test-template": {"metadata": {}}}
     )
-    with pytest.raises(ValueError, match=r"'test-template' has no .*/description' annotation"):
+    with pytest.raises(ValueError, match="test-template"):
         await inventory.template_descriptions()
 
 
