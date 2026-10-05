@@ -51,6 +51,32 @@ def test_small_integer_allocations_conserve_cash_and_capacity() -> None:
                 assert all(part >= 0 and (weight > 0 or part == 0) for part, weight in zip(given, weights, strict=True))
 
 
+@pytest.mark.parametrize(
+    ("values", "weights", "tolerance", "expected"),
+    [
+        ([900, 100], [1, 1], 250_000_000, ([400, 0], [0, 400])),
+        ([600, 400], [1, 1], 250_000_000, ([0, 0], [0, 0])),
+        ([1600, 1100, 300], [1, 1, 1], 250_000_000, ([600, 100, 0], [0, 0, 700])),
+        ([501, 499], [1, 1], 0, ([1, 0], [0, 1])),
+        ([1, 0], [1, 1], 0, ([0, 0], [0, 0])),
+        ([1, 999], [0, 1], 1_000_000_000, ([1, 0], [0, 1])),
+    ],
+)
+def test_rebalance_amounts_drift_arithmetic(
+    values: list[int], weights: list[int], tolerance: int, expected: tuple[list[int], list[int]]
+) -> None:
+    assert sleeves._rebalance_amounts(values, weights, tolerance) == expected
+
+
+@pytest.mark.parametrize("weights", [(0, 0), (-1, 1)])
+def test_allocation_rejects_invalid_weights_even_for_zero_budget(weights: tuple[int, int]) -> None:
+    for withdrawing in (False, True):
+        with pytest.raises(ValueError, match=r"positive target|nonnegative"):
+            sleeves._allocate([1, 1], list(weights), 0, withdrawing=withdrawing)
+    with pytest.raises(ValueError, match=r"positive target|nonnegative"):
+        sleeves._rebalance_amounts([1, 1], list(weights), 0)
+
+
 OWNER = AgentId("test-owner")
 FIRST, SECOND = AssetId("test-first"), AssetId("test-second")
 PORTFOLIO, OUTSIDE = AccountId("portfolio"), AccountId("outside")
