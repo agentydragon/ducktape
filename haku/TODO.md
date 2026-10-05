@@ -53,6 +53,13 @@ slices over the deployed schema, not another identity migration:
   can reassign an OAuth Agent's policy in Settings. What is missing is the notification: a connected
   client enumerated its tool surface once, so an edit that moves a tool between pass-through and
   approval-wrapped does not reach it until it reconnects.
+- **Move domain work from Haku to specialist agents.** Haku carries many domains itself; the aim
+  is domain specialists (the finance agent is the first) with Haku as coordinator that does not
+  handle domain detail. Build on <plans/information_trust_tiers.md>: one repo and provider tier per
+  specialist, minimal briefs down, results and status rollups up (untrusted input to Haku). The
+  handoff channel is undecided; git `incoming/` directories are the interim, and the operator finds
+  them clunky. Needs a written per-specialist contract (what it owns, may receive, reports up, and
+  which actions need approval) and a rule keeping mental-health content out of lower tiers.
 
 ## Console and authority consolidation
 
