@@ -35,11 +35,10 @@ is its own figure on the PR-visuals page, and a widget change re-runs only that 
 (`tool_rendering/<server>/{requests,responses}.tsx`), add a fixture to that server's
 `preview_fixtures.ts` (typed `RegisteredToolPreviewFixture`, so a stale id/arg is a type
 error the `ts_library` wrapping it catches on build; the scenarios follow from the list) and re-run
-`bbr test //haku/console/frontend/tool_rendering/<server>:previews`; `--test_filter=<fixture slug>`
-renders one. Add a whole
-new scene to `screenshots/harness.tsx` (and the `SCENES` list in `screenshots/render.mjs`) whenever
-you add a new surface. A single-component scene must render inside its real production container
-(preview cards use `.haku-shell-panels`) and take an element
+`bbr test //haku/console/frontend/tool_rendering/<server>:previews`; `--test_filter=<tool name>`
+renders just that tool's shots. Add a whole new scene to `screenshots/harness.tsx` (and the `SCENES`
+list in `screenshots/render.mjs`) whenever you add a new surface. A single-component scene must render
+inside its real production container (preview cards use `.haku-shell-panels`) and take an element
 screenshot of that wrapper — never a hardcoded width or a full-viewport shot of a small surface;
 see <../../../util/testing/frontend_visual/README.md> for the repo-wide convention and why.
 
