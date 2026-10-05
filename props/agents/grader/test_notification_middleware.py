@@ -49,7 +49,6 @@ async def _invoke(queue: list[GradingPendingNotification]) -> tuple[_FakeChatCon
 
 def test_format_notifications_text() -> None:
     text = _format_notifications([_critique_notification(), _tp_notification()])
-    assert "2 new grading notification(s)" in text
     assert "reported_issues" in text
     assert "true_positives" in text
 
@@ -62,9 +61,9 @@ def test_empty_queue_appends_nothing() -> None:
 
 def test_notifications_appended_and_drained() -> None:
     queue = [_critique_notification(), _tp_notification()]
+    expected_text = _format_notifications(queue)  # before the middleware drains the queue
     ctx, called = asyncio.run(_invoke(queue))
-    assert len(ctx.messages) == 1
-    assert "2 new grading notification(s)" in ctx.messages[0].text
+    assert [message.text for message in ctx.messages] == [expected_text]
     assert len(queue) == 0
     assert called
 

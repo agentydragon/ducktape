@@ -72,12 +72,13 @@ def test_line_range_start_line_zero_invalid(test_critic_run, db: Database):
         session.flush()
 
         # Invalid: start_line = 0 (Pydantic validation should catch this)
-        with pytest.raises(ValidationError, match="greater than or equal to 1"):
+        with pytest.raises(ValidationError) as excinfo:
             ReportedIssueOccurrence(
                 agent_run_id=test_critic_run,
                 reported_issue_id="test-issue-6",
                 locations=[LocationAnchor(file="add.py", start_line=0)],
             )
+        assert [(e["type"], e["loc"]) for e in excinfo.value.errors()] == [("greater_than_equal", ("start_line",))]
 
 
 def test_line_range_start_line_negative_invalid(test_critic_run, db: Database):
@@ -89,12 +90,13 @@ def test_line_range_start_line_negative_invalid(test_critic_run, db: Database):
         session.flush()
 
         # Invalid: negative start_line (Pydantic validation should catch this)
-        with pytest.raises(ValidationError, match="greater than or equal to 1"):
+        with pytest.raises(ValidationError) as excinfo:
             ReportedIssueOccurrence(
                 agent_run_id=test_critic_run,
                 reported_issue_id="test-issue-7",
                 locations=[LocationAnchor(file="add.py", start_line=-5)],
             )
+        assert [(e["type"], e["loc"]) for e in excinfo.value.errors()] == [("greater_than_equal", ("start_line",))]
 
 
 def test_line_range_end_line_zero_invalid(test_critic_run, db: Database):
@@ -106,12 +108,13 @@ def test_line_range_end_line_zero_invalid(test_critic_run, db: Database):
         session.flush()
 
         # Invalid: end_line = 0 (Pydantic validation should catch this)
-        with pytest.raises(ValidationError, match="greater than or equal to 1"):
+        with pytest.raises(ValidationError) as excinfo:
             ReportedIssueOccurrence(
                 agent_run_id=test_critic_run,
                 reported_issue_id="test-issue-8",
                 locations=[LocationAnchor(file="add.py", start_line=1, end_line=0)],
             )
+        assert [(e["type"], e["loc"]) for e in excinfo.value.errors()] == [("greater_than_equal", ("end_line",))]
 
 
 def test_duplicate_issue_id_not_allowed(test_critic_run, db: Database):

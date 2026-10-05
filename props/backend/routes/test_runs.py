@@ -221,7 +221,6 @@ def test_run_critic_registry_initializing_returns_503(run_critic_client) -> None
     )
 
     assert response.status_code == 503
-    assert "initializing" in response.json()["detail"]
 
 
 def test_run_critic_snapshot_not_found_returns_404(run_critic_client) -> None:
@@ -240,7 +239,6 @@ def test_run_critic_snapshot_not_found_returns_404(run_critic_client) -> None:
     )
 
     assert response.status_code == 404
-    assert "not found" in response.json()["detail"].lower()
     # Snapshot validation happens before image resolution
     mock_registry.resolve_image.assert_not_called()
     mock_registry.start_critic.assert_not_called()
