@@ -33,8 +33,12 @@ on:
     # is what stops that cascade from looping.
     paths:
       # keep-sorted start
+      - ".dockerignore"
+      - ".github/actions/ghcr-build-push/action.yml"
       - ".github/workflows/container-images.yml"
       - "devinfra/buildbuddy_remote_runner/Dockerfile"
+      - "devinfra/ci/runner_image.py"
+      - "devinfra/ci/test_runner_image.py"
       - "devinfra/image_pins.json"
       - "flake.lock"
       - "flake.nix"
@@ -48,13 +52,17 @@ on:
       - "skills/skills_registry.json"
       - "x/rtl_tcp/Dockerfile"
       # keep-sorted end
-  # Build the real runner Dockerfile before merge, but do not log in, tag, push,
-  # publish cache entries, or update the pinned image digest.
+  # Build the real runner Dockerfile before merge with read-only registry access;
+  # do not push images/cache entries or update the pinned image digest.
   pull_request:
     paths:
       # keep-sorted start
+      - ".dockerignore"
+      - ".github/actions/ghcr-build-push/action.yml"
       - ".github/workflows/container-images.yml"
       - "devinfra/buildbuddy_remote_runner/Dockerfile"
+      - "devinfra/ci/runner_image.py"
+      - "devinfra/ci/test_runner_image.py"
       - "devinfra/image_pins.json"
       - "flake.lock"
       - "flake.nix"
@@ -105,9 +113,12 @@ jobs:
 
       - uses: docker/setup-buildx-action@v4
 
-      - id: base
-        run: |
-          python3 -c "import json; p=json.load(open('devinfra/image_pins.json'))['rbe_container']; print('ref=' + p['image'] + '@' + p['digest'])" >> "$GITHUB_OUTPUT"
+      - uses: cachix/install-nix-action@v31
+
+      # Exercise registry inspection too, but always build the PR candidate.
+      - name: Evaluate runner image inputs
+        id: inputs
+        run: python3 devinfra/ci/runner_image.py plan --output "$GITHUB_OUTPUT"
 
       # With no output or tags, Buildx evaluates the complete Dockerfile and
       # leaves the result only in its ephemeral build cache.
@@ -116,7 +127,11 @@ jobs:
         with:
           context: .
           file: devinfra/buildbuddy_remote_runner/Dockerfile
-          build-args: BASE_REF=${{ steps.base.outputs.ref }}
+          platforms: linux/amd64
+          build-args: |
+            BASE_REF=${{ steps.inputs.outputs.base_ref }}
+            EXPECTED_TOOLS_PATH=${{ steps.inputs.outputs.tools_path }}
+            RUNNER_INPUTS_KEY=${{ steps.inputs.outputs.key }}
           push: false
           cache-from: type=registry,ref=${{ env.RUNNER_IMAGE }}:buildcache
 
@@ -129,22 +144,36 @@ jobs:
     timeout-minutes: 30
     outputs:
       pin_tag: ${{ steps.build.outputs.pin_tag }}
+      inputs_key: ${{ steps.inputs.outputs.key }}
     steps:
       - uses: actions/checkout@v7
-        with:
-          ref: ${{ github.ref_name }}
 
-      - id: base
-        run: |
-          python3 -c "import json; p=json.load(open('devinfra/image_pins.json'))['rbe_container']; print('ref=' + p['image'] + '@' + p['digest'])" >> "$GITHUB_OUTPUT"
+      - uses: cachix/install-nix-action@v31
+
+      - uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ github.token }}
+
+      - uses: docker/setup-buildx-action@v4
+
+      - name: Compare inputs with the pinned runner image
+        id: inputs
+        run: python3 devinfra/ci/runner_image.py plan --output "$GITHUB_OUTPUT"
 
       - uses: ./.github/actions/ghcr-build-push
         id: build
+        if: steps.inputs.outputs.needs_build == 'true'
         with:
           image: ${{ env.RUNNER_IMAGE }}
           context: .
           file: devinfra/buildbuddy_remote_runner/Dockerfile
-          build_args: BASE_REF=${{ steps.base.outputs.ref }}
+          platforms: linux/amd64
+          build_args: |
+            BASE_REF=${{ steps.inputs.outputs.base_ref }}
+            EXPECTED_TOOLS_PATH=${{ steps.inputs.outputs.tools_path }}
+            RUNNER_INPUTS_KEY=${{ steps.inputs.outputs.key }}
           cache_from: type=registry,ref=${{ env.RUNNER_IMAGE }}:buildcache
           cache_to: type=registry,ref=${{ env.RUNNER_IMAGE }}:buildcache,mode=max
 
@@ -229,7 +258,7 @@ jobs:
   pin-digests:
     name: Pin Digests
     needs: [buildbuddy-remote-runner, freecad-image]
-    if: always() && !cancelled() && (needs.buildbuddy-remote-runner.result == 'success' || needs.freecad-image.result == 'success')
+    if: always() && !cancelled() && (needs.buildbuddy-remote-runner.outputs.pin_tag != '' || needs.freecad-image.result == 'success')
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
@@ -255,8 +284,11 @@ jobs:
       # published: the entry is seeded against ghcr.io/…/bbr-runner, because a
       # digest reference is scoped to the registry repo holding the manifest.
       - name: Pin buildbuddy_remote_runner
-        if: needs.buildbuddy-remote-runner.result == 'success'
+        if: needs.buildbuddy-remote-runner.outputs.pin_tag != ''
+        env:
+          RUNNER_INPUTS_KEY: ${{ needs.buildbuddy-remote-runner.outputs.inputs_key }}
         run: |
+          python3 devinfra/ci/runner_image.py verify --key "$RUNNER_INPUTS_KEY"
           DIGEST=$(docker manifest inspect "$RUNNER_IMAGE:${{ needs.buildbuddy-remote-runner.outputs.pin_tag }}" --verbose | \
             python3 -c "import json,sys; d=json.load(sys.stdin); d=d[0] if isinstance(d,list) else d; print(d['Descriptor']['digest'])")
           python3 devinfra/update_image_pin.py buildbuddy_remote_runner --digest "$DIGEST" --image "$RUNNER_IMAGE"
@@ -270,6 +302,8 @@ jobs:
 
       - name: Commit and push
         env:
+          RUNNER_PIN_TAG: ${{ needs.buildbuddy-remote-runner.outputs.pin_tag }}
+          RUNNER_INPUTS_KEY: ${{ needs.buildbuddy-remote-runner.outputs.inputs_key }}
           APP_TOKEN: ${{ steps.app.outputs.token }}
           APP_SLUG: ${{ steps.app.outputs.app_slug }}
           APP_USER_ID: ${{ steps.app.outputs.user_id }}
@@ -285,7 +319,7 @@ jobs:
           fi
 
           MSG="chore: pin"
-          if [[ "${{ needs.buildbuddy-remote-runner.result }}" == "success" ]]; then
+          if [[ -n "$RUNNER_PIN_TAG" ]]; then
             MSG="$MSG buildbuddy_remote_runner"
           fi
           if [[ "${{ needs.freecad-image.result }}" == "success" ]]; then
@@ -300,6 +334,12 @@ jobs:
             echo "::error::Rebase failed"
             git status
             exit 1
+          fi
+
+          # Rebase may have brought in new runner inputs. Never publish a stale
+          # runner pin; a concurrent advance after this check rejects the push.
+          if [[ -n "$RUNNER_PIN_TAG" ]]; then
+            python3 devinfra/ci/runner_image.py verify --key "$RUNNER_INPUTS_KEY"
           fi
 
           # Push as the ducktape-automation App via URL-embedded HTTP Basic

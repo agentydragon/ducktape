@@ -12,6 +12,10 @@ inputs:
     description: Path to Dockerfile (optional; defaults to {context}/Dockerfile)
     required: false
     default: ""
+  platforms:
+    description: Target platforms (optional; defaults to the builder's platform)
+    required: false
+    default: ""
   build_args:
     description: Newline-separated Docker build args (e.g. BASE_DIGEST=sha256:...)
     required: false
@@ -66,6 +70,7 @@ runs:
         context: ${{ inputs.context }}
         file: ${{ inputs.file }}
         build-args: ${{ inputs.build_args }}
+        platforms: ${{ inputs.platforms }}
         push: true
         tags: ${{ steps.meta.outputs.tags }}
         cache-from: ${{ inputs.cache_from }}

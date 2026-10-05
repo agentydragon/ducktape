@@ -7,7 +7,7 @@
 # This extends the RBE container image in devinfra/rbe_container_image/Dockerfile: its
 # digest is in every action's cache key, so it must almost never move. The
 # runner image is selected by devinfra/bbr.json and is outside every action's
-# cache key, so it can churn with artifact-pin bumps.
+# cache key. Its digest stays stable when the evaluated tools and recipe do.
 #
 # BASE_REF is the whole base reference, passed by
 # .github/workflows/container-images.yml from
@@ -19,6 +19,9 @@
 # without pulling the private GHCR package.
 ARG BASE_REF
 FROM ${BASE_REF}
+ARG EXPECTED_TOOLS_PATH
+ARG RUNNER_INPUTS_KEY
+LABEL works.allegedly.ducktape.runner-inputs=${RUNNER_INPUTS_KEY}
 LABEL org.opencontainers.image.source=https://github.com/agentydragon/ducktape
 
 # --- Nix + Bazel runner tools ---
@@ -45,7 +48,8 @@ COPY nix/packages /tmp/flake/nix/packages
 COPY nix/gaffer-pins.json /tmp/flake/nix/gaffer-pins.json
 COPY skills/skills_registry.json /tmp/flake/skills/skills_registry.json
 SHELL ["/bin/bash", "-c"]
-RUN mkdir -p ~/.config/nix \
+RUN test -n "$EXPECTED_TOOLS_PATH" && test -n "$RUNNER_INPUTS_KEY" \
+    && mkdir -p ~/.config/nix \
     && ATTIC_PUBLIC_KEY="$(python3 -c 'import json; print(next(key for key in json.load(open("/tmp/flake/nix/attic-pubkeys.json")) if key.startswith("public:")))')" \
     # nix.conf MUST be written BEFORE the installer runs — the installer
     # internally runs nix-env which reads this config. Without build-users-group=,
@@ -58,7 +62,8 @@ RUN mkdir -p ~/.config/nix \
          'sandbox = true' \
          'max-jobs = auto' \
        > ~/.config/nix/nix.conf \
-    && curl -fsSL https://nixos.org/nix/install -o /tmp/nix-install.sh \
+    && curl -fsSL https://releases.nixos.org/nix/nix-2.35.2/install -o /tmp/nix-install.sh \
+    && echo '9adda97297d9e8ab360df95c729eabff4f4f93d6db091953c3a68f29e3fb130c  /tmp/nix-install.sh' | sha256sum --check \
     && sh /tmp/nix-install.sh --no-daemon \
     && rm /tmp/nix-install.sh \
     && export PATH="$HOME/.nix-profile/bin:$PATH" \
@@ -73,6 +78,7 @@ RUN mkdir -p ~/.config/nix \
     # too in case the closure is temporarily cold.
     && BUILDBUDDY_RUNNER_TOOLS=$(nix build .#buildbuddy-remote-runner-tools \
          --max-jobs 2 --no-link --print-out-paths) \
+    && test "$BUILDBUDDY_RUNNER_TOOLS" = "$EXPECTED_TOOLS_PATH" \
     # Register as GC root so nix-collect-garbage keeps the closure.
     && nix-store --add-root /nix/var/nix/gcroots/buildbuddy-remote-runner-tools -r "$BUILDBUDDY_RUNNER_TOOLS" \
     # Symlink binaries into /usr/local/bin (goinit PATH).
