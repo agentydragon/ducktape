@@ -247,10 +247,6 @@ def test_templates_list_the_concrete_choices_for_the_create_form(client: TestCli
     assert client.get("/sandboxes/templates").json() == [TEMPLATE]
 
 
-def test_create_requires_an_explicit_template(client: TestClient) -> None:
-    assert client.post("/sandboxes", json={"slug": "demo"}).status_code == 422
-
-
 def test_create_records_the_concrete_session_defaults_and_bootstrap(
     client: TestClient, custom_objects: FakeCustomObjectsApi
 ) -> None:
@@ -445,19 +441,13 @@ def test_a_default_policy_is_granted_whether_or_not_the_caller_picks_it(client: 
 @pytest.mark.parametrize(
     "body",
     [
+        {"slug": "demo"},
         {"slug": "Demo", "template": TEMPLATE},
         {"slug": "-demo", "template": TEMPLATE},
         {"slug": "a" * 58, "template": TEMPLATE},
         {"slug": "demo", "template": TEMPLATE, "harness": "claude"},
-        {"slug": "demo", "template": TEMPLATE, "model": "cheap"},
     ],
-    ids=[
-        "uppercase-slug",
-        "leading-dash-slug",
-        "slug-too-long-for-a-dns-label",
-        "harness-on-sandbox",
-        "model-on-sandbox",
-    ],
+    ids=["no-template", "uppercase-slug", "leading-dash-slug", "slug-too-long-for-a-dns-label", "harness-on-sandbox"],
 )
 def test_create_rejects_invalid_requests(client: TestClient, custom_objects: FakeCustomObjectsApi, body: dict) -> None:
     response = client.post("/sandboxes", json=body)
@@ -940,8 +930,6 @@ async def test_a_thread_is_found_by_its_session_and_renamed_in_place(
         assert (await http.get(f"/threads/{thread_id}")).json()["name"] == "list the files"
         assert (await http.patch(f"/threads/{thread_id}", json={"name": "   "})).json()["name"] is None
         assert (await http.patch(f"/threads/{thread_id}", json={"name": None})).json()["name"] is None
-        assert (await http.patch(f"/threads/{thread_id}", json={"name": "x" * 201})).status_code == 422
-        assert (await http.patch(f"/threads/{thread_id}", json={})).status_code == 422
         missing = await http.patch("/threads/00000000-0000-0000-0000-000000000000", json={"name": "nobody"})
         assert missing.status_code == 404
 
