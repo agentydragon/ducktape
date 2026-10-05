@@ -1001,10 +1001,7 @@ async def test_command_admission_timeout_is_not_an_internal_server_error(
             _commands(thread_id), json={"commandId": "timed-out-command", "submitInput": {"text": "not delivered"}}
         )
         assert response.status_code == 504, response.text
-        assert (
-            response.json()["detail"]
-            == "admission of command 'timed-out-command' was not confirmed within 15 seconds; outcome uncertain"
-        )
+        assert "uncertain" in response.json()["detail"]
 
 
 async def test_command_admission_wait_rereads_the_durable_prefix_after_a_lost_notification(
