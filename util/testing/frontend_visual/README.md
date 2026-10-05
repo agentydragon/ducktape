@@ -69,6 +69,9 @@ its ready selectors, the request fence, the fetch ledger and zero uncaught page 
   stylesheets and `DISABLE_ANIMATIONS_CSS` into a document loaded with `set_content`. Such a page has no
   URL query, so a scenario's `windowGlobals` assign the `window` values that tell the harness which scene
   it is, and the request fence allows nothing at all. `harness` may then be an esbuild `output_dir`.
+  A page of no origin has no `localStorage` and nothing to resolve its own URL against: a harness that needs
+  either sets `page_url`, which serves the document at that URL (the fence answers the navigation with it)
+  instead of loading it with `set_content`.
   `haku/console/frontend/tool_rendering/screenshot` is the example, its table generated at build time from
   each server's fixtures.
 - **A shell that frames another origin** serves that origin's document from the harness:

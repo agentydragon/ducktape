@@ -8,9 +8,10 @@ Run by the `py_visual_test` macro (`frontend_visual/py_visual_test.bzl`), which 
 
 The harness page is a `file://` `index.html` beside its bundle, told its scene by `?page=<name>`; or
 (`InlinePage`) a document assembled in memory from the bundle and stylesheets and loaded with
-`set_content`, told its scene by the scenario's `windowGlobals`. The in-memory page has no origin to
-fetch from, so the request fence allows nothing at all; the one thing it answers is a document the lane
-serves under a URL prefix (`served_documents`, for a shell that frames another origin).
+`set_content`, told its scene by the scenario's `windowGlobals`. The in-memory page has no origin (no
+`localStorage`, no origin to fetch from) unless the lane gives it a `page_url`, at which the page is served.
+The request fence allows nothing at all; the one thing it answers is a document the lane serves under a
+URL prefix (`served_documents`, for a shell that frames another origin).
 
 A scenario that needs driving first is driven with real input: its `clicks` in order, then
 `scrollToBottom`, each click naming what it must change.
@@ -40,7 +41,7 @@ import pytest
 import pytest_asyncio
 import pytest_bazel
 from more_itertools import one
-from playwright.async_api import Page, Playwright, async_playwright
+from playwright.async_api import Page, Playwright, Route, async_playwright
 from pydantic import JsonValue, TypeAdapter
 
 from util.bazel.runfiles import get_required_path
@@ -83,6 +84,9 @@ class InlinePage:
 
     stylesheet_paths: tuple[Path, ...]
     base_href: str | None
+    # None: loaded with `set_content`, into a page of no origin. A URL: the fence answers the navigation to it
+    # with the document, so the page has that origin and what hangs on one (storage, a cross-origin frame).
+    url: str | None = None
 
     @classmethod
     def from_env(cls) -> InlinePage:
@@ -90,6 +94,7 @@ class InlinePage:
         return cls(
             stylesheet_paths=tuple(get_required_path(path) for path in os.environ["STYLESHEET_PATHS"].split()),
             base_href=os.environ.get("BASE_HREF"),
+            url=os.environ.get("PAGE_URL"),
         )
 
 
@@ -170,6 +175,10 @@ def _check_scene_selection(scenario_name: str, scenario: Scenario, *, config: Sw
         raise ValueError(f"{scenario_name}: an inline page has no URL for a query; name the scene by windowGlobals")
 
 
+async def _fulfill_html(route: Route, html: str) -> None:
+    await route.fulfill(status=200, content_type="text/html; charset=utf-8", body=html)
+
+
 async def _load_harness(
     page: Page, scenario_name: str, scenario: Scenario, *, config: SweepConfig, timeout_ms: int
 ) -> None:
@@ -178,7 +187,12 @@ async def _load_harness(
         await page.goto(f"{config.harness_url}?{urlencode(query)}", wait_until="networkidle", timeout=timeout_ms)
     else:
         html = inline_page_html(inline_page, bundle_script=config.bundle_script, window_globals=scenario.window_globals)
-        await page.set_content(html, wait_until="load", timeout=timeout_ms)
+        if inline_page.url is None:
+            await page.set_content(html, wait_until="load", timeout=timeout_ms)
+        else:
+            # Registered after the fence's catch-all, so it answers first.
+            await page.route(inline_page.url, lambda route: _fulfill_html(route, html))
+            await page.goto(inline_page.url, wait_until="load", timeout=timeout_ms)
 
 
 async def _wait_for_selectors(

@@ -53,6 +53,12 @@ if (scene === "inline") {
   if (window.__PAYLOAD__ !== "<" + "/script><i>") problems.push(`payload is ${window.__PAYLOAD__}`);
   if (problems.length) throw new Error(problems.join("; "));
 }
+if (scene === "origin") {
+  app.innerHTML = shot;
+  // An opaque origin has no storage: this throws there, and the sweep fails the scenario with it.
+  localStorage.setItem("probe", "1");
+  if (location.href !== "https://harness.test/") throw new Error(`location is ${location.href}`);
+}
 if (scene === "interactive") {
   app.innerHTML = shot;
   document.getElementById("target").addEventListener("click", (event) => event.target.classList.add("tapped"));
@@ -450,6 +456,20 @@ async def test_an_inline_page_is_the_stylesheet_the_globals_and_the_bundle_in_a_
     assert [(asset.path, asset.label) for asset in _manifest(tmp_path).assets] == [("inline.png", "An inline shot")]
 
 
+async def test_an_inline_page_with_a_url_is_served_at_it_and_has_its_origin(
+    playwright: Playwright, inline_config: SweepConfig, tmp_path: Path
+) -> None:
+    assert inline_config.inline_page is not None
+    served = replace(inline_config.inline_page, base_href=None, url="https://harness.test/")
+    scenario = Scenario(element="#shot", window_globals={"__SCENE__": "origin"})
+
+    await capture_scenario(
+        playwright, "origin", scenario, config=replace(inline_config, inline_page=served), output_dir=tmp_path
+    )
+
+    assert list(_published(tmp_path)) == ["origin.png"]
+
+
 async def test_an_inline_page_allows_no_request(
     playwright: Playwright, inline_config: SweepConfig, tmp_path: Path
 ) -> None:
@@ -652,6 +672,23 @@ def test_an_inline_sweep_is_configured_from_the_environment(
     pytester.runpytest(visual_sweep.__file__).assert_outcomes(passed=1)
 
     assert list(_published(out)) == ["inline.png"]
+
+
+def test_an_inline_page_url_comes_from_the_environment(
+    pytester: pytest.Pytester, monkeypatch: pytest.MonkeyPatch, inline_config: SweepConfig
+) -> None:
+    assert inline_config.inline_page is not None
+    out = _sweep(
+        pytester, monkeypatch, inline_config, {"origin": {"element": "#shot", "windowGlobals": {"__SCENE__": "origin"}}}
+    )
+    monkeypatch.setenv("INLINE_PAGE", "1")
+    monkeypatch.setenv("STYLESHEET_PATHS", str(inline_config.inline_page.stylesheet_paths[0]))
+    monkeypatch.setenv("PAGE_URL", "https://harness.test/")
+    monkeypatch.setenv("OUTPUT_SUFFIX", "")
+
+    pytester.runpytest(visual_sweep.__file__).assert_outcomes(passed=1)
+
+    assert list(_published(out)) == ["origin.png"]
 
 
 def test_served_documents_come_from_the_environment(

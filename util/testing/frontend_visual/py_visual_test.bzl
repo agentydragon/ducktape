@@ -25,6 +25,7 @@ def py_visual_test(
         inline_page = False,
         stylesheets = [],
         base_href = None,
+        page_url = None,
         served_documents = {},
         env = {},
         tags = [],
@@ -59,6 +60,9 @@ def py_visual_test(
       stylesheets: with `inline_page`, the CSS files inlined into the document, in order.
       base_href: with `inline_page`, the document's `<base href>`, for a harness that parses relative
         URLs its stubbed `fetch` never sends.
+      page_url: with `inline_page`, serve the document at this URL instead of loading it with
+        `set_content`, so the page has that origin: `localStorage`, `location`, a cross-origin frame. The
+        URL is the document's base too, so `base_href` is not also set.
       served_documents: URL prefix to the HTML file the request fence answers a request under it with,
         for a shell that frames another origin (the harness mocks that origin's document). Any other
         request still fails the scenario.
@@ -75,8 +79,10 @@ def py_visual_test(
     if fonts == None and font_family != None:
         fail("py_visual_test(%s) names font_family but does not provide the app-owned fonts; " % name +
              "pass both together.")
-    if (stylesheets or base_href != None) and not inline_page:
-        fail("py_visual_test(%s) sets stylesheets or base_href, which only an inline_page uses." % name)
+    if (stylesheets or base_href != None or page_url != None) and not inline_page:
+        fail("py_visual_test(%s) sets stylesheets, base_href or page_url, which only an inline_page uses." % name)
+    if page_url != None and base_href != None:
+        fail("py_visual_test(%s) sets page_url, which is its own base: drop base_href." % name)
 
     sweep_env = dict(env)
     sweep_env["HARNESS_PATH"] = "$(rlocationpath %s)" % harness
@@ -93,6 +99,8 @@ def py_visual_test(
         sweep_env["STYLESHEET_PATHS"] = " ".join(["$(rlocationpath %s)" % sheet for sheet in stylesheets])
         if base_href != None:
             sweep_env["BASE_HREF"] = base_href
+        if page_url != None:
+            sweep_env["PAGE_URL"] = page_url
 
     if served_documents:
         sweep_env["SERVED_DOCUMENTS"] = json.encode(
