@@ -682,16 +682,15 @@ py_test(
 
 py_test(
     name = "test_egress_testing_credentials",
+    # Synth imports the agentplane services' Settings, and with them their runtime modules.
+    size = "medium",
     srcs = ["test_egress_testing_credentials.py"],
     data = ["@nodejs_linux_amd64//:bin/node"],
     env = {"JSII_NODE": "$(rootpath @nodejs_linux_amd64//:bin/node)"},
     deps = [
-        ":egress_credentials",
-        ":egress_testing_credentials",
+        ":conftest",
+        ":testing",
         "//:conftest",
-        "//cluster/cdk8s/litellm:credentials",
-        "//cluster/cdk8s/ollama:app",
-        "@pypi//cdk8s",
         "@pypi//pytest_bazel",
     ],
 )
