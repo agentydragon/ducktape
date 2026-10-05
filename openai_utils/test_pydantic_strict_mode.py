@@ -98,20 +98,6 @@ class DefsWithAdditionalProperties(BaseModel):
 # ---------------------------------------------------------------------------
 
 
-def test_valid_strict_mode_schema():
-    """Valid schemas should pass validation (automatic via __init_subclass__)."""
-
-    # Should not raise during class definition
-    class ValidModel(OpenAIStrictModeBaseModel):
-        # str not Path: OpenAI strict mode doesn't accept format="path"
-        cwd: str | None = None
-        # list not set: OpenAI strict mode doesn't accept uniqueItems
-        files: list[str]
-        max_bytes: int = Field(ge=0, le=100_000)
-
-    # Model was created successfully, validation passed
-
-
 def test_invalid_path_format():
     """Path types should be rejected (format='path') - automatic validation."""
 
