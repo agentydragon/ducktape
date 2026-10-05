@@ -453,9 +453,24 @@ it("does not show active-turn status when the runner is not active", async () =>
   expect(indicator?.getAttribute("data-status")).toBe("inactive");
 });
 
-// Retained history still says the harness runs and the feed failed; neither is live any more.
+// Retained history still says the harness runs and the feed failed; an archived thread shows the archive
+// icon instead, in the status indicator, the favicon and the title glyph.
+it("shows an archived thread as the archive icon, in the favicon and with its own title glyph", async () => {
+  vi.mocked(getThread).mockResolvedValue({ ...THREAD, archived: true });
+  sharedThread = { archived: true };
+  sandboxes = [inventorySandbox()];
+  const indicator = (await render(threadState({ rows: [viewState({ status: "failed" })] }))).querySelector(
+    ".agentplane-thread-status-indicator"
+  );
+  expect(indicator?.getAttribute("aria-label")).toBe("Thread archived");
+  expect(indicator?.getAttribute("data-status")).toBe("archived");
+  expect(indicator?.querySelector("svg")).not.toBeNull();
+  expect(faviconSvg()).toContain(`stroke="${THREAD_STATUS_MARKS.archived.color}"`);
+  expect(faviconSvg()).not.toContain("<circle");
+  expect(document.title).toBe(`${THREAD_STATUS_MARKS.archived.glyph} Test thread · Archived — Agentplane`);
+});
+
 it.each([
-  [{ archived: true }, [inventorySandbox()], "Thread archived"],
   [{ archived: false }, [], "Sandbox unavailable"],
   [{ archived: false }, [inventorySandbox("Suspended")], "Sandbox unavailable"],
 ])("shows an inactive dot for thread %o with sandboxes %o: %s", async (overrides, inventory, label) => {

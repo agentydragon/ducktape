@@ -5,6 +5,7 @@
  */
 import type { ComponentType } from "react";
 // Per-icon subpaths, never the barrel: see tabler_icons.d.ts.
+import IconArchive from "@tabler/icons-react/dist/esm/icons/IconArchive.mjs";
 import IconCircleX from "@tabler/icons-react/dist/esm/icons/IconCircleX.mjs";
 import IconClock from "@tabler/icons-react/dist/esm/icons/IconClock.mjs";
 import IconPlayerPause from "@tabler/icons-react/dist/esm/icons/IconPlayerPause.mjs";
@@ -16,10 +17,10 @@ import { RunningChevrons, StatusDot } from "./custom_mark_icons";
 /**
  * `running`: a turn is in flight. `idle`: the harness is live and waiting for input. `stopped`: the
  * runner feed is attached but the harness is down (shut down or lost). `failed`: the runner feed
- * failed. `inactive`: nothing live to show (archived, Sandbox suspended or gone, feed ended, or not
- * confirmed).
+ * failed. `archived`: the thread was archived, whatever its retained history says. `inactive`: nothing
+ * else live to show (Sandbox suspended or gone, feed ended, or not confirmed).
  */
-export type ThreadStatusKind = "running" | "idle" | "stopped" | "failed" | "inactive";
+export type ThreadStatusKind = "running" | "idle" | "stopped" | "failed" | "archived" | "inactive";
 
 /**
  * `ready`: the Pod is up and can take sessions. `pending`: on its way (grants applying, no Pod yet,
@@ -37,7 +38,7 @@ export interface StatusMark {
 }
 
 /** What the favicon hand-draws for a thread's status; thread_favicon.ts owns the art. */
-export type FaviconShape = "dot" | "chevrons" | "power";
+export type FaviconShape = "dot" | "chevrons" | "power" | "archive";
 
 // Mantine default-palette shades. Blue means live and waiting, for a thread and a Sandbox alike, and
 // reads apart from both green (a turn running) and gray (switched off or gone).
@@ -63,6 +64,9 @@ export const THREAD_STATUS_MARKS: Record<ThreadStatusKind, ThreadStatusMark> = {
   idle: { icon: StatusDot, color: BLUE, favicon: "dot", glyph: "●" },
   stopped: { icon: IconPower, color: GRAY, favicon: "power", glyph: "⏻" },
   failed: { icon: StatusDot, color: RED, favicon: "dot", glyph: "×" },
+  // A box with drawer lines reads as an archive box at tab-title size, where a plain square reads as a
+  // missing-glyph box.
+  archived: { icon: IconArchive, color: GRAY, favicon: "archive", glyph: "▤" },
   inactive: { icon: StatusDot, color: GRAY, favicon: "dot", glyph: "○" },
 };
 

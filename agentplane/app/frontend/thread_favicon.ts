@@ -12,10 +12,13 @@ const CHEVRON_X = [15.5, 24.5];
 // outline merge into the ring's ends.
 const POWER_PATH = "M28.5 21.6A5.4 5.4 0 1 1 20.5 21.6M24.5 19.3V24.4";
 
+// A lidded box with a handle slot, in the same corner: the archive box.
+const ARCHIVE_PATH = "M19.5 20H29.5V22.8H19.5ZM20.4 22.8V29.4H28.6V22.8M23 25.6H26";
+
 // Keep the paper-plane mark legible on both light and dark tab bars without a solid tile.
 // A dark outer ring and light inner ring keep the dot distinct from the transparent plane
-// on both light and dark browser tab backgrounds. The chevrons and the power symbol use the dark
-// outline alone: at 16px a second ring merges neighbouring chevrons into one blob and fills the
+// on both light and dark browser tab backgrounds. The chevrons, the power symbol and the archive box use
+// the dark outline alone: at 16px a second ring merges neighbouring chevrons into one blob and fills the
 // power ring's hole.
 function statusDot(color: string): string {
   return `<circle cx="24.5" cy="24.5" r="5.1" fill="${color}" stroke="#102a43" stroke-width="3"/><circle cx="24.5" cy="24.5" r="5.1" fill="none" stroke="#fff" stroke-width="1.5"/>`;
@@ -35,6 +38,10 @@ function statusPower(color: string): string {
   return outlinedStroke(POWER_PATH, color, 3.6, 2.2);
 }
 
+function statusArchive(color: string): string {
+  return outlinedStroke(ARCHIVE_PATH, color, 3.6, 2);
+}
+
 function statusGlyph(mark: ThreadStatusMark): string {
   switch (mark.favicon) {
     case "dot":
@@ -43,6 +50,8 @@ function statusGlyph(mark: ThreadStatusMark): string {
       return statusChevrons(mark.color);
     case "power":
       return statusPower(mark.color);
+    case "archive":
+      return statusArchive(mark.color);
   }
 }
 

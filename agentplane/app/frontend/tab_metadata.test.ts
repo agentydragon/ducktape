@@ -23,6 +23,9 @@ describe("browser tab titles", () => {
     expect(threadDocumentTitle(null, "12345678-0000", CONNECTING_TAB_STATUS)).toBe(
       `${THREAD_STATUS_MARKS.inactive.glyph} Thread 12345678 · Connecting — Agentplane`
     );
+    expect(threadDocumentTitle("Old spike", "12345678-0000", { kind: "archived", tabLabel: "Archived" })).toBe(
+      `${THREAD_STATUS_MARKS.archived.glyph} Old spike · Archived — Agentplane`
+    );
   });
 
   it("gives every thread status its own glyph, and never one a platform may draw as emoji", () => {

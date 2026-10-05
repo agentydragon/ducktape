@@ -5,8 +5,8 @@
 }
 
 /* Every thread mark shares one fixed slot, so a row's name does not move when its thread's mark
-   changes between a dot, chevrons and the power icon. The power icon is a little taller than the
-   slot and overflows it evenly. */
+   changes between a dot, chevrons, the power icon and the archive box. The power icon and the archive
+   box are a little taller than the slot and overflow it evenly. */
 .agentplane-thread-status-indicator .agentplane-mark {
   width: 0.875rem;
   height: 0.625rem;

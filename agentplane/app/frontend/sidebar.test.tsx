@@ -404,6 +404,7 @@ it("hides archived threads until the switch is toggled, and archives a thread fr
   if (!(toggle instanceof HTMLInputElement)) throw new Error("missing archived switch");
   await act(async () => toggle.click());
   expect(container.textContent).toContain("Old spike");
+  expect(container.querySelectorAll(".agentplane-thread-status-indicator[data-status='archived']")).toHaveLength(1);
 
   const archiveButton = container.querySelector('button[aria-label="Archive Active thread"]');
   if (!(archiveButton instanceof HTMLButtonElement)) throw new Error("missing archive button");

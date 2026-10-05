@@ -14,7 +14,7 @@ export function threadStatusFromSnapshot(
   fresh: boolean
 ): ThreadTabStatus {
   if (!thread || !fresh) return { kind: "inactive", label: "No live harness confirmed", tabLabel: "Unknown" };
-  if (thread.archived) return { kind: "inactive", label: "Thread archived", tabLabel: "Archived" };
+  if (thread.archived) return { kind: "archived", label: "Thread archived", tabLabel: "Archived" };
   if (!sandboxReady(sandbox)) return { kind: "inactive", label: "Sandbox unavailable", tabLabel: "Unavailable" };
   if (thread.feed_status === "failed")
     return { kind: "failed", label: "Runner feed failed", tabLabel: "Runner failed" };
