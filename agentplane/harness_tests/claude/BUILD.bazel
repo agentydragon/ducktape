@@ -153,6 +153,7 @@ py_test(
         "//agentplane/native/claude:blocks",
         "//agentplane/native/claude:scenarios",
         "//agentplane/native/claude:wire",
+        "@pypi//pytest",
         "@pypi//pytest_bazel",
         "@pypi//tenacity",
     ],

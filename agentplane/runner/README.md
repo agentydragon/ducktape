@@ -65,8 +65,10 @@ the app only folds that neutral report.
   and removes what Claude's resume loader removes: messages with an unresolved tool call, then a
   message holding only thinking once no other entry of its message id is left, so thinking
   before a tool that never answered is not replayed even though the transcript holds it. Ordinary
-  interrupts use the native terminal item observations. Compacted or missing history and
-  unfinished live tool outcomes remain unknown. The reader is tested against Claude Code 2.1.252.
+  interrupts use the native terminal item observations, and the same rule for thinking from the
+  turn's journaled assistant frames: a completed thinking block is retained only if another block
+  of its message was written. Compacted or missing history and unfinished live tool outcomes
+  remain unknown. The reader is tested against Claude Code 2.1.252.
 - `codex_history.py` reads model `response_item` records, not the app-server's reconstructed
   turn-item projection, which can omit an unresolved call still sent to the model. At Codex
   0.152.0, `core/src/tasks/mod.rs` flushes conversation items before the interruption notification;

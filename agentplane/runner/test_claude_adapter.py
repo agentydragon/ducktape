@@ -22,6 +22,7 @@ from agentplane.runner.journal import Journal
 from agentplane.runner.session import Session
 from agentplane.runner.store import SessionRecord
 from agentplane.runner.testing.claude_transcript import (
+    Block,
     assistant_message,
     text_block,
     thinking_block,
@@ -108,6 +109,24 @@ async def journal(tmp_path: Path) -> AsyncIterator[Journal]:
 
 def _launch() -> ClaudeLaunch:
     return ClaudeLaunch(binary=Path("/bin/false"), base_url="http://unused", auth_token="unused")
+
+
+async def _write_block(journal: Journal, message_id: str, block: Block) -> None:
+    """The assistant frame Claude wrote for one block of a message, as the runner journals it."""
+    frame = {
+        "type": "assistant",
+        "message": {"id": message_id, "content": [block]},
+        "session_id": NATIVE_SESSION,
+        "uuid": "frame-uuid",
+    }
+    await journal.append(event_pb2.Native(direction=event_pb2.DIRECTION_FROM_HARNESS, line=json.dumps(frame)))
+
+
+async def _observe_text(journal: Journal, item_id: str, words: str, *, completed: bool) -> None:
+    await journal.append(event_pb2.ItemStarted(item_id=item_id, kind=event_pb2.ITEM_KIND_ASSISTANT_TEXT))
+    await journal.append(event_pb2.TextDelta(item_id=item_id, text=words))
+    if completed:
+        await journal.append(event_pb2.ItemCompleted(item_id=item_id, text=words))
 
 
 async def _observe_reasoning(journal: Journal, item_id: str, thought: str, *, completed: bool) -> None:
@@ -344,23 +363,52 @@ async def test_a_resumed_conversation_reports_reasoning_by_what_the_transcript_k
     assert reconciled.items[1].replacement.text == "FINISHED_THOUGHT"
 
 
-async def test_an_interrupted_conversation_retains_the_reasoning_that_completed(
+async def test_an_interrupted_conversation_keeps_thinking_only_beside_a_block_that_survived(
     journal: Journal, tmp_path: Path
 ) -> None:
+    """The live process drops a thinking block unless its message has another block it wrote."""
     await journal.append(event_pb2.TurnStarted(turn_id="turn"))
-    await _observe_reasoning(journal, "done#0", "COMPLETED_THOUGHT", completed=True)
     await _observe_reasoning(journal, "cut-off#0", "CUT_OFF_THOUGHT", completed=False)
+
+    await _write_block(journal, "with-text", thinking_block("THOUGHT"))
+    await _observe_reasoning(journal, "with-text#0", "THOUGHT", completed=True)
+    await _write_block(journal, "with-text", text_block("PARTIAL_ANSWER"))
+    await _observe_text(journal, "with-text#1", "PARTIAL_ANSWER", completed=True)
+
+    await _write_block(journal, "with-call", thinking_block("THOUGHT"))
+    await _observe_reasoning(journal, "with-call#0", "THOUGHT", completed=True)
+    await _write_block(journal, "with-call", tool_use_block("call"))
     await journal.append(event_pb2.ItemStarted(item_id="call", kind=event_pb2.ITEM_KIND_TOOL_CALL, tool_name="Bash"))
+
+    await _write_block(journal, "alone", thinking_block("THOUGHT"))
+    await _observe_reasoning(journal, "alone#0", "THOUGHT", completed=True)
+
+    # The interrupt came before Claude wrote the text that was streaming, or the call it was reading.
+    await _write_block(journal, "text-not-written", thinking_block("THOUGHT"))
+    await _observe_reasoning(journal, "text-not-written#0", "THOUGHT", completed=True)
+    await _observe_text(journal, "text-not-written#1", "", completed=False)
+    await _write_block(journal, "call-not-written", thinking_block("THOUGHT"))
+    await _observe_reasoning(journal, "call-not-written#0", "THOUGHT", completed=True)
+    await journal.append(
+        event_pb2.ItemStarted(item_id="unwritten-call", kind=event_pb2.ITEM_KIND_TOOL_CALL, tool_name="Bash")
+    )
 
     reconciled = await ClaudeAdapter(cast(Session, JournaledSession(journal, tmp_path)), _launch()).reconcile(
         "turn", resumed=False
     )
 
-    assert _dispositions(reconciled) == [
-        ("done#0", event_pb2.RECOVERY_DISPOSITION_RETAINED),
-        ("cut-off#0", event_pb2.RECOVERY_DISPOSITION_ABSENT),
-        ("call", event_pb2.RECOVERY_DISPOSITION_UNKNOWN),
-    ]
+    assert dict(_dispositions(reconciled)) == {
+        "cut-off#0": event_pb2.RECOVERY_DISPOSITION_ABSENT,
+        "with-text#0": event_pb2.RECOVERY_DISPOSITION_RETAINED,
+        "with-text#1": event_pb2.RECOVERY_DISPOSITION_RETAINED,
+        "with-call#0": event_pb2.RECOVERY_DISPOSITION_RETAINED,
+        "call": event_pb2.RECOVERY_DISPOSITION_UNKNOWN,
+        "alone#0": event_pb2.RECOVERY_DISPOSITION_ABSENT,
+        "text-not-written#0": event_pb2.RECOVERY_DISPOSITION_ABSENT,
+        "text-not-written#1": event_pb2.RECOVERY_DISPOSITION_ABSENT,
+        "call-not-written#0": event_pb2.RECOVERY_DISPOSITION_ABSENT,
+        "unwritten-call": event_pb2.RECOVERY_DISPOSITION_UNKNOWN,
+    }
 
 
 @pytest.mark.parametrize("compacted", [False, True], ids=["no-transcript", "compacted"])

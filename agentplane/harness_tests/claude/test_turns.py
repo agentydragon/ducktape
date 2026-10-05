@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 from collections.abc import Callable
 
+import pytest
 import pytest_bazel
 from tenacity import AsyncRetrying, retry_if_exception_type, stop_after_delay, wait_fixed
 
@@ -327,6 +328,42 @@ async def test_thinking_interrupted_before_any_answer_is_not_sent_again_even_in_
             assert exchange.request.thinking_blocks == []
             await exchange.send(*sse.message_stream([sse.Text("RESUMED_OK")], model=MODEL).events)
         assert (await recovery.result()).result == "RESUMED_OK"
+
+
+@pytest.mark.parametrize(
+    ("answer", "cut_kind", "cut_nth"),
+    [
+        pytest.param(sse.Text("NEVER_WRITTEN"), "content_block_start", 1, id="text-before-its-first-content"),
+        pytest.param(
+            sse.ToolUse("toolu_never_written", "Bash", {"command": "echo NEVER_WRITTEN"}),
+            "input_json_delta",
+            0,
+            id="tool-call-mid-input",
+        ),
+    ],
+)
+async def test_thinking_beside_a_block_interrupted_before_it_was_written_is_not_sent_again(
+    claude: ClaudeHarness, anthropic_messages: AnthropicMessages, answer: sse.Block, cut_kind: str, cut_nth: int
+) -> None:
+    """The block never reaches Claude's context, so its message holds only the thinking: dropped."""
+    async with claude.start(anthropic_messages) as run:
+        interrupted = await run.send(INTERRUPTED_THINKING_INPUT)
+        async with await anthropic_messages.await_next_request() as exchange:
+            stream = sse.message_stream(
+                [sse.Thinking("UNWRITTEN_ANSWER_THOUGHT", "sig_unwritten"), answer], model=MODEL
+            )
+            cut = [index for index, event in enumerate(stream.events) if event.kind == cut_kind][cut_nth]
+            await exchange.send(*stream.events[: cut + 1])
+            await _thinking_completed(run)
+            assert (await run.interrupt(cancel_queued=False)).response.subtype == "success"
+            await exchange.wait_client_closed()
+        assert (await interrupted.result()).is_error is True
+
+        next_input = await run.send(RECOVERY_INPUT)
+        async with await anthropic_messages.await_next_request() as exchange:
+            assert exchange.request.thinking_blocks == []
+            await exchange.send(*sse.message_stream([sse.Text("NEXT_OK")], model=MODEL).events)
+        assert (await next_input.result()).result == "NEXT_OK"
 
 
 if __name__ == "__main__":

@@ -3,13 +3,14 @@
 from __future__ import annotations
 
 import json
+from collections.abc import Callable
 
 import pytest
 import pytest_bazel
 
 from agentplane.protocol import event_log_pb2, event_pb2
 from agentplane.runner import protocol_pb2
-from agentplane.runner.client import RunnerClient
+from agentplane.runner.client import Attachment, RunnerClient
 from agentplane.runner.testing import events
 from agentplane.runner.testing.scripted_model import Reasoning, ScriptedModel, ShellCall, Text
 
@@ -329,6 +330,97 @@ async def test_interrupt_ends_the_turn_as_interrupted(
         await model.reply(request, Text("AFTER_INTERRUPT_OK"))
         done = await session.until(events.turn_completed)
         assert done.event.turn_completed.status == event_pb2.TURN_STATUS_COMPLETED
+
+
+async def _interrupt_and_reconcile(session: Attachment, turn_id: str) -> event_pb2.ConversationReconciled:
+    await session.interrupt("interrupt-thinking", turn_id)
+    done = await session.until(events.turn_completed)
+    assert done.event.turn_completed.status == event_pb2.TURN_STATUS_INTERRUPTED
+    return (await session.until(events.is_kind("conversation_reconciled"))).event.conversation_reconciled
+
+
+def _dispositions(reconciled: event_pb2.ConversationReconciled) -> dict[str, event_pb2.RecoveryDisposition]:
+    return {item.item_id: item.disposition for item in reconciled.items}
+
+
+def _is_streamed(words: str) -> Callable[[event_log_pb2.EventEntry], bool]:
+    return lambda entry: events.kind(entry) == "text_delta" and entry.event.text_delta.text == words
+
+
+@pytest.mark.parametrize("harness", [protocol_pb2.HARNESS_CLAUDE])
+async def test_claude_interrupt_right_after_thinking_reports_it_absent_and_does_not_replay_it(
+    client: RunnerClient, model: ScriptedModel, spec: protocol_pb2.SessionSpec
+) -> None:
+    """Claude keeps a thinking block only beside another block of its message, which the interrupt
+    came too early to write; `harness_tests/claude/test_turns.py` pins that on the real binary."""
+    async with await client.attach("interrupt-thinking-1", spec=spec) as session:
+        await session.send("input-1", "Think, then answer.")
+        await model.hold_through(
+            await model.request(),
+            [Reasoning("DROPPED_THOUGHT"), Text("NEVER_SENT")],
+            lambda event: event.kind == "content_block_stop",
+        )
+        await session.until(events.is_kind("item_completed"))
+        turn_id = events.of_kind(session.seen, "turn_started")[-1].event.turn_started.turn_id
+
+        reconciled = await _interrupt_and_reconcile(session, turn_id)
+
+        (thought,) = events.items(session.seen, event_pb2.ITEM_KIND_REASONING)
+        assert _dispositions(reconciled) == {thought: event_pb2.RECOVERY_DISPOSITION_ABSENT}
+        await session.send("input-2", "Reply with exactly: AFTER_INTERRUPT_OK")
+        request = await model.request()
+        assert request.reasoning_texts == []
+        await model.reply(request, Text("AFTER_INTERRUPT_OK"))
+        await session.until(events.turn_completed)
+
+
+@pytest.mark.parametrize("harness", [protocol_pb2.HARNESS_CLAUDE])
+async def test_claude_interrupt_after_thinking_and_some_text_keeps_the_thinking(
+    client: RunnerClient, model: ScriptedModel, spec: protocol_pb2.SessionSpec
+) -> None:
+    async with await client.attach("interrupt-thinking-2", spec=spec) as session:
+        await session.send("input-1", "Think, then answer.")
+        await model.hold_through(
+            await model.request(),
+            [Reasoning("KEPT_THOUGHT"), Text("PARTIAL_ANSWER")],
+            lambda event: event.kind == "text_delta",
+        )
+        await session.until(_is_streamed("PARTIAL_ANSWER"))
+        turn_id = events.of_kind(session.seen, "turn_started")[-1].event.turn_started.turn_id
+
+        reconciled = await _interrupt_and_reconcile(session, turn_id)
+
+        (thought,) = events.items(session.seen, event_pb2.ITEM_KIND_REASONING)
+        assert _dispositions(reconciled)[thought] == event_pb2.RECOVERY_DISPOSITION_RETAINED
+        await session.send("input-2", "Reply with exactly: AFTER_INTERRUPT_OK")
+        request = await model.request()
+        assert request.reasoning_texts == ["KEPT_THOUGHT"]
+        await model.reply(request, Text("AFTER_INTERRUPT_OK"))
+        await session.until(events.turn_completed)
+
+
+@pytest.mark.parametrize("harness", [protocol_pb2.HARNESS_CLAUDE])
+async def test_claude_interrupt_after_thinking_and_a_tool_call_keeps_the_thinking(
+    client: RunnerClient, model: ScriptedModel, spec: protocol_pb2.SessionSpec
+) -> None:
+    async with await client.attach("interrupt-thinking-3", spec=spec) as session:
+        await session.send("input-1", "Think, then run the shell.")
+        # Only shell builtins: the harness's tool environment has no external commands.
+        await model.reply(
+            await model.request(), Reasoning("KEPT_THOUGHT"), ShellCall("call_test_1", "while :; do :; done")
+        )
+        await session.until(events.is_kind("tool_arguments"))
+        turn_id = events.of_kind(session.seen, "turn_started")[-1].event.turn_started.turn_id
+
+        reconciled = await _interrupt_and_reconcile(session, turn_id)
+
+        (thought,) = events.items(session.seen, event_pb2.ITEM_KIND_REASONING)
+        assert _dispositions(reconciled)[thought] == event_pb2.RECOVERY_DISPOSITION_RETAINED
+        await session.send("input-2", "Reply with exactly: AFTER_INTERRUPT_OK")
+        request = await model.request()
+        assert request.reasoning_texts == ["KEPT_THOUGHT"]
+        await model.reply(request, Text("AFTER_INTERRUPT_OK"))
+        await session.until(events.turn_completed)
 
 
 if __name__ == "__main__":

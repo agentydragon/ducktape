@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import abc
 import asyncio
+from collections.abc import Callable
 from dataclasses import dataclass
 
 from agentplane.harness_tests.model_endpoint import ModelExchange, SseEvent, StreamableRequest
@@ -79,9 +80,15 @@ class ScriptedModel[RequestT: StreamableRequest](abc.ABC):
 
     async def hold_after_first_delta(self, request: ModelRequest[RequestT], item: Item) -> None:
         """Send one streamed fragment, then leave the model response open until the client closes."""
-        events = self.stream([item])
-        delta = next(index for index, event in enumerate(events) if event.kind.endswith("delta"))
-        await request._exchange.send(*events[: delta + 1])
+        await self.hold_through(request, [item], lambda event: event.kind.endswith("delta"))
+
+    async def hold_through(
+        self, request: ModelRequest[RequestT], items: list[Item], stop: Callable[[SseEvent], bool]
+    ) -> None:
+        """Send the answer through its first event matching `stop`, then leave it open until the client closes."""
+        events = self.stream(items)
+        end = next(index for index, event in enumerate(events) if stop(event))
+        await request._exchange.send(*events[: end + 1])
         self._hold_until_client_closes(request)
 
     def _hold_until_client_closes(self, request: ModelRequest[RequestT]) -> None:

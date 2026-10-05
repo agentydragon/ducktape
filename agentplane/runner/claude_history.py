@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from collections.abc import Iterable, Sequence
 from pathlib import Path
 
 from pydantic import BaseModel, Field
@@ -13,7 +14,7 @@ from agentplane.protocol import event_pb2
 # gazelle:include_dep @pypi//protobuf
 from agentplane.runner.recovery import ObservedItem
 
-# The block types Claude's resume loader treats as thinking.
+# The block types Claude treats as thinking when it decides what to send the model again.
 _THINKING_TYPES = frozenset({"thinking", "redacted_thinking"})
 
 
@@ -31,9 +32,19 @@ class TranscriptEntry(BaseModel):
     message: TranscriptMessage | None = None
 
 
-def _holds_only_thinking(message: TranscriptMessage) -> bool:
-    blocks = blocks_of(message.content)
+def holds_only_thinking(blocks: Sequence[Block]) -> bool:
     return bool(blocks) and all(block.type in _THINKING_TYPES for block in blocks)
+
+
+def answered_message_ids(messages: Iterable[tuple[str | None, Sequence[Block]]]) -> set[str | None]:
+    """The ids of messages with a surviving block beyond thinking.
+
+    Claude sends a message that holds only thinking to the model again only if another entry with
+    its message id survives, whether it resumes from the transcript or goes on in the same process
+    (`harness_tests/claude/test_turns.py` pins both). A block survives only if Claude wrote it: a
+    tool call interrupted mid-input, or a text block interrupted before its first content, never is.
+    """
+    return {message_id for message_id, blocks in messages if not holds_only_thinking(blocks)}
 
 
 def read_history(directory: Path, session_id: str) -> dict[str, ObservedItem]:
@@ -72,8 +83,9 @@ def read_history(directory: Path, session_id: str) -> dict[str, ObservedItem]:
         if leaf is None:
             raise ValueError("Claude's persisted conversation has an entry whose parent is missing")
     # Claude's resume deserializer removes assistant messages whose tool calls have no matching
-    # result, then a message holding only thinking once no other entry of its message id is left
-    # (each block is its own entry). Presence in the append-only transcript alone is not continuation.
+    # result, then (`answered_message_ids`) a message holding only thinking once no other entry of
+    # its message id is left; each block is its own entry. Presence in the append-only transcript
+    # alone is not continuation.
     resolved = {
         block.tool_use_id
         for entry in chain
@@ -96,10 +108,10 @@ def read_history(directory: Path, session_id: str) -> dict[str, ObservedItem]:
         calls = [block.id for block in blocks if isinstance(block, ToolUseBlock)]
         if not (calls and all(call not in resolved for call in calls)):
             kept.append((message, offset))
-    answered = {message.id for message, _ in kept if not _holds_only_thinking(message)}
+    answered = answered_message_ids((message.id, blocks_of(message.content)) for message, _ in kept)
     items: dict[str, ObservedItem] = {}
     for message, offset in kept:
-        if _holds_only_thinking(message) and message.id not in answered:
+        if holds_only_thinking(blocks_of(message.content)) and message.id not in answered:
             continue
         for index, block in enumerate(blocks_of(message.content), start=offset):
             match block:
