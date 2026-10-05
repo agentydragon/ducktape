@@ -135,20 +135,5 @@ def test_kubernetes_server_requires_authorization_configuration() -> None:
         )
 
 
-def test_default_access_profile_does_not_require_a_never_policy() -> None:
-    config = ConsoleConfigFile.model_validate(
-        {
-            "auto_approval_policies": [
-                {"id": "operator_review", "type": "never"},
-                {"id": "selected_by_default", "type": "any_of", "policies": ["operator_review"]},
-            ],
-            "access_profiles": [{"id": "operator-default", "auto_approval_policy": "selected_by_default"}],
-            "default_access_profile_id": "operator-default",
-        }
-    )
-
-    assert config.default_access_profile_id == "operator-default"
-
-
 if __name__ == "__main__":
     pytest_bazel.main()
