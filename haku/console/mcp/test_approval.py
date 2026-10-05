@@ -545,29 +545,20 @@ async def test_two_operator_two_agent_http_authorization_matrix(
         assert denied.json()["tool_call"]["status"] == "denied"
 
 
-async def test_approval_denial_is_terminal_and_does_not_execute(operator_client: TestClient) -> None:
-    submitted = _submit(operator_client)
-    resp = operator_client.post(
-        f"/api/tool-calls/{submitted['tool_call_id']}/decision", json={"decision": "deny", "decision_note": "not today"}
-    )
-    assert resp.status_code == 200
-    tool_call = resp.json()["tool_call"]
-    assert tool_call["status"] == "denied"
-    assert tool_call["result"] is None
-    assert tool_call["decision_note"] == "not today"
-    assert tool_call["decision_operator_id"] is not None
-
-
-async def test_approval_note_round_trips_on_approval(operator_client: TestClient) -> None:
+@pytest.mark.parametrize(("decision", "status"), [("deny", ToolCallStatus.DENIED), ("approve", ToolCallStatus.RUNNING)])
+async def test_operator_decision_records_the_note_and_the_deciding_operator(
+    operator_client: TestClient, decision: str, status: ToolCallStatus
+) -> None:
     submitted = _submit(operator_client)
     resp = operator_client.post(
         f"/api/tool-calls/{submitted['tool_call_id']}/decision",
-        json={"decision": "approve", "decision_note": "reviewed and approved"},
+        json={"decision": decision, "decision_note": "reviewed by operator"},
     )
     assert resp.status_code == 200
     tool_call = resp.json()["tool_call"]
-    assert tool_call["status"] == "running"
-    assert tool_call["decision_note"] == "reviewed and approved"
+    assert tool_call["status"] == status
+    assert tool_call["result"] is None
+    assert tool_call["decision_note"] == "reviewed by operator"
     assert tool_call["decision_operator_id"] is not None
 
 
