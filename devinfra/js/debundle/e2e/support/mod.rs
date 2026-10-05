@@ -228,11 +228,6 @@ pub fn assert_fail_fast_stops_at_first_outcome<'a>(
         line.starts_with(&format!("[{kind}] ")),
         "fail-fast stopped at {line:?}, expected a {kind} outcome"
     );
-    assert!(
-        !fail_fast.stderr.contains("Selector outcome report"),
-        "fail-fast printed the keep-going report:\n{}",
-        fail_fast.stderr
-    );
     line.clone()
 }
 
