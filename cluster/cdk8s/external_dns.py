@@ -1,4 +1,4 @@
-"""ExternalDNS observes the public Gateway and Route 53 in dry-run mode."""
+"""ExternalDNS manages public Gateway and static Route 53 records."""
 
 from __future__ import annotations
 
@@ -60,7 +60,6 @@ def chart(app: App) -> Chart:
             "domainFilters": ["allegedly.works"],
             "managedRecordTypes": ["A", "AAAA", "CNAME", "MX", "TXT"],
             "extraArgs": [
-                "--dry-run",
                 "--zone-id-filter=Z02901943N8ZFQFOD9P5I",
                 "--gateway-name=cluster-gateway",
                 "--gateway-namespace=gateway-system",
@@ -84,7 +83,7 @@ def external_dns(chart: Chart, directory: RenderedDirectory, external_secrets_op
 
 
 def records_chart(app: App, mesh: nebula_mesh.Mesh) -> Chart:
-    """The six non-HTTPRoute records currently owned by Terraform."""
+    """The six static endpoints that do not come from HTTPRoutes."""
     chart = Chart(app, f"{NAME}-records", disable_resource_name_hashes=True)
     public_nodes = mesh.public_kubernetes_nodes().values()
     gateway_ips = sorted({ip for node in public_nodes if (ip := node.public_ip) is not None})
