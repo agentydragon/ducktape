@@ -111,6 +111,24 @@ def compare_across_periods(
     ]
 
 
+@dataclass(frozen=True)
+class Tally:
+    """How many comparisons changed sign, among those whose sign could be judged, and how many could not."""
+
+    flipped: int
+    defined: int
+    undefined: int
+
+
+def tally(comparisons: Sequence[Comparison]) -> Tally:
+    defined = [comparison for comparison in comparisons if comparison.flips is not None]
+    return Tally(
+        flipped=sum(1 for comparison in defined if comparison.flips),
+        defined=len(defined),
+        undefined=len(comparisons) - len(defined),
+    )
+
+
 def describe(comparisons: Sequence[Comparison], *, origin_starts: Sequence[date] = ORIGIN_STARTS) -> str:
     periods = "  ".join(f"{start:%Y}" for start in origin_starts)
     lines = [f"origin sets: {periods}", ""]
@@ -121,13 +139,10 @@ def describe(comparisons: Sequence[Comparison], *, origin_starts: Sequence[date]
         + "  ".join(f"{difference:+.5f}" for difference in comparison.differences)
         for comparison in comparisons
     )
-    defined = [comparison for comparison in comparisons if comparison.flips is not None]
-    flipped = sum(1 for comparison in defined if comparison.flips)
+    counts = tally(comparisons)
     lines.append("")
-    lines.append(f"{flipped} of {len(defined)} defined comparisons change sign across the scoring periods.")
-    lines.append(
-        f"{len(comparisons) - len(defined)} comparisons have undefined stability (non-finite or no differences)."
-    )
+    lines.append(f"{counts.flipped} of {counts.defined} defined comparisons change sign across the scoring periods.")
+    lines.append(f"{counts.undefined} comparisons have undefined stability (non-finite or no differences).")
     lines.append("'holds' means the sign was consistent, not that the gap was material — read the numbers.")
     return "\n".join(lines)
 
