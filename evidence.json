@@ -8053,7 +8053,7 @@
       "savings_qualification": "About60s component-based bound including proposed setup gate; hook process overhead remains. No end-to-end A/B benchmark."
     },
     "report_validation": {
-      "invocation": "4c2a0eb3-32e4-4831-b57e-cfdcdabcc479",
+      "invocation": "cf53ca9f-9e93-427c-80c6-36e60c3fc86f",
       "target": "//devinfra/ci/report_preview:preview",
       "viewports": [
         {
@@ -8065,8 +8065,8 @@
           "height": 844
         }
       ],
-      "result": "Passed; desktop and mobile first viewport and implementation screenshots inspected; no horizontal overflow, internal anchor targets valid, methods disclosure opens",
-      "report_sha256": "7d01f90f3d3795db12e7489658dd1a9cd2b598cbc03c60481349e786a4357217"
+      "result": "Passed; desktop implementation and mobile aspect section screenshots inspected; no horizontal overflow, valid internal anchors and working methods disclosure.",
+      "report_sha256": "0770023c05df67d34b196db2c51294a73c5340e39cec6ad9a00e6424ae902ec9"
     },
     "browser_analysis": {
       "fresh_profiles": [
@@ -8391,13 +8391,15 @@
         "same_boot_and_server_start": true,
         "bazel_job_seconds": 376,
         "comparison_limit": "Full-sweep runtime is not comparable to earlier seven-target warm spike",
-        "state": "open"
+        "state": "merged",
+        "merged_at": "2026-10-05T02:22:47Z",
+        "merge_commit_sha": "66982f9448dec5c0c71c5adf6cd713918e9549f7"
       },
       "recorded_at_utc": "2026-10-05T02:16:11.072317+00:00",
       "precommit": {
         "source_pr": 9070,
         "source_head": "a6f646642be4a352735c6cbe4683837c8d81d6b7",
-        "source_state": "open",
+        "source_state": "closed unmerged",
         "source_required_checks": "passed",
         "release": {
           "source_commit": "a6f646642be4a352735c6cbe4683837c8d81d6b7",
@@ -8418,18 +8420,34 @@
           "result": "passed",
           "hook_seconds": 0.15
         },
-        "activation": "Source PR alone does not change CI; dependent workflow pin activates the published hook.",
+        "activation": "Not adopted; both PRs closed after alternative #9134 merged. Published wheel was not pinned by this stack.",
         "workflow_pr": 9073,
         "workflow_head": "e0c88e19e22a52452159c31409b56fc383cd72cf",
         "workflow_base_pr": 9070,
-        "workflow_state": "open",
+        "workflow_state": "closed unmerged",
         "workflow_required_checks": "passed: Bazel CI, artifact/imports, pre-commit and Gazelle",
         "ordinary_pinned_consumer": "nix build .#precommit without artifact overrides passed; installed pinned hook passed marked-file and explicit-empty-batch checks",
         "workflow_precommit_job": 111589397741,
         "workflow_precommit_acceptance": "System Python preflight, setup-bazel and pre-commit passed; changed unmarked selector retained conservative setup as expected.",
-        "workflow_cache_note": "Cache-save log reported read-only GitHub cache budget; job succeeded. Do not infer cache-write success from a passing check."
+        "workflow_cache_note": "Cache-save log reported read-only GitHub cache budget; job succeeded. Do not infer cache-write success from a passing check.",
+        "superseded_by": 9134
       },
-      "status_checked_at_utc": "2026-10-05T02:20:45.872845+00:00"
+      "status_checked_at_utc": "2026-10-05T05:27:12.995374+00:00",
+      "pytest_main_aspect": {
+        "pr": 9134,
+        "head": "439249108d16bdcfc319b9fa4e7823087d16e8a9",
+        "state": "merged",
+        "merged_at": "2026-10-05T05:25:37Z",
+        "merge_commit_sha": "8ea87d7c51677f54a83296d8874d9792d192582c",
+        "required_checks": "all four passed",
+        "bazel_job": 111626239325,
+        "artifact_import_job": 111626719586,
+        "precommit_job": 111625733312,
+        "gazelle_job": 111625715562,
+        "mechanism": "Default Bazel py_test aspect checks srcs; removes pre-commit hook and repo-wide discovery; nolint excludes output group. conftest and custom main exemptions retained.",
+        "setup_gate": "Unconditional setup-bazel remains in inspected devel pre-commit workflow.",
+        "effect": "Not measured; removed hook time must be compared with aspect action/cache cost and parallel required gates. Old roughly60s hook-plus-setup estimate is not applicable as a whole."
+      }
     }
   }
 }
