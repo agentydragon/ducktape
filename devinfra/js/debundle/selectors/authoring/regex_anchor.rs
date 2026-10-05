@@ -211,21 +211,19 @@ mod regex_anchor_pattern_tests {
     }
 
     #[test]
-    fn declines_short_numeric_suffixes() {
-        // A two/three-char numeric suffix is more likely meaningful than
-        // generated, so no pattern is offered.
-        assert_eq!(regex_anchor_pattern("v2"), None);
-        assert_eq!(regex_anchor_pattern("step3"), None);
-        assert_eq!(regex_anchor_pattern("h2o"), None);
-    }
-
-    #[test]
-    fn declines_when_no_stable_prefix_remains() {
-        // The whole literal is the volatile tail: a bare digit/hex anchor pins
-        // nothing meaningful.
-        assert_eq!(regex_anchor_pattern("123456"), None);
-        assert_eq!(regex_anchor_pattern("deadbeef"), None);
-        // Separator-only prefix is likewise rejected.
-        assert_eq!(regex_anchor_pattern("-123456"), None);
+    fn declines_whenever_volatile_tail_declines() {
+        // One case per way `volatile_tail` declines (its own test pins the
+        // boundaries): a regex anchor must pin something stable, so none of
+        // these yields a pattern.
+        for (value, why) in [
+            (
+                "v2",
+                "a short numeric suffix is more likely meaningful than generated",
+            ),
+            ("deadbeef", "the whole literal is the volatile tail"),
+            ("-123456", "a separator-only prefix pins nothing"),
+        ] {
+            assert_eq!(regex_anchor_pattern(value), None, "{value}: {why}");
+        }
     }
 }
