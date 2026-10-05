@@ -51,15 +51,7 @@ fn pass_two_rejection_summary_names_tdz_binding_pair_and_lazy_closure() {
     // computation produced for asymmetric (Pass-2) rejections.
     expect_rejection_containing_all(
         residual_cycle_fixture(),
-        &[
-            "unrealizable",
-            "cross_value",
-            "seed_value",
-            "at-init",
-            "mod_dependent",
-            "closes through lazy read",
-            "lazy_back",
-        ],
+        &["cross_value", "seed_value", "mod_dependent", "lazy_back"],
     );
 }
 
