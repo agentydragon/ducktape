@@ -15,13 +15,10 @@ let
   };
   buildBuddyRunnerTools = builtins.attrValues buildBuddyRunnerPackages;
 
-  # The pre-commit hook invokes only `rustfmt`; copying the binary drops the
-  # unused cargo-fmt wrappers and their Cargo runtime closure.
-  rustfmtCommand = pkgs.runCommand "rustfmt-command-${pkgs.rustfmt.version}" { } ''
-    mkdir -p "$out/bin"
-    cp -- ${pkgs.rustfmt}/bin/rustfmt "$out/bin/rustfmt"
-    chmod 0555 "$out/bin/rustfmt"
-  '';
+  # Experimental command-only runtime; full developer commands remain below.
+  rustfmtCommand = import ../../devinfra/ci/x/precommit_container/rustfmt_runtime.nix {
+    inherit pkgs;
+  };
 
   # All hooks in .pre-commit-config.yaml use this shared Nix tool environment.
   preCommitPackages = [

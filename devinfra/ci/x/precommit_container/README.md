@@ -9,14 +9,14 @@ certificates. `build.sh` builds and publishes a candidate to GHCR. Registry
 credentials remain outside the Nix build.
 
 The branch-only workflow runs three fresh hosted jobs per variant, on the same
-source revision and the same three YAML/Nix files, including Galaxy role setup.
+source revision and the same four YAML/Nix/Rust files, including Galaxy role setup.
 GitHub job and step timestamps supply the measurements. Image construction,
 publication, evaluation in the preparation job, and runner assignment waits are
 separate from the measured job durations. This is a focused workload, not
 validation of every hook or an estimate of whole-PR feedback.
 
-The checked-in `SPIKE_IMAGE` reuses the published candidate for harness reruns.
-Remove that environment variable to build a new candidate. The preparation job
+Setting `SPIKE_IMAGE` in the build step reuses a published candidate for harness
+reruns; leaving it unset builds a new image. The preparation job
 evaluates the current source's Nix closure; candidate jobs compare it with the
 closure embedded in the image and fail on mismatch. This guard prevents this
 spike from silently accepting stale tools; a production path still needs an
@@ -24,8 +24,28 @@ image selection/build policy for PRs that change tooling.
 
 Container jobs explicitly trust only their runner-mounted Git workspace because
 checkout's temporary Git configuration is not retained for subsequent hooks.
-The container does not contain zstd, so Galaxy cache restore differs from the
-standard runner; include it before any broader cache comparison.
+The container includes zstd so it can restore the existing Galaxy cache using
+the same codec as the standard runner.
+
+The first trim copied only the pinned `rustfmt` executable, byte-identically,
+into the focused pre-commit package. The current variant also copies its
+`librustc_driver` and `libLLVM` shared libraries and relocates their RUNPATHs.
+It validates the exact six embedded compiler diagnostic source filenames before
+normalizing only their compiler store-path reference. Any other matching string
+fails the build. Nix also rejects the result if its runtime closure still contains
+the original formatter, compiler, or LLVM output. This is a version-specific
+spike: a toolchain update may require reviewing those explicit guards.
+
+Full Rustfmt, including `cargo-fmt`, remains in the developer tool environment.
+The preparation job pushes the focused closure to the public Attic cache before
+measurements, so baseline jobs substitute it instead of fetching all build-time
+dependencies. Only this branch's preparation job receives the cache publishing
+credential; measured jobs use anonymous cache reads.
+
+A copy-and-relocate attempt without diagnostic-filename normalization retained
+the compiler output and its LLVM dependency. It is not the current variant.
+Compiler source filename strings were the identified reference that required
+normalization; no other references are removed.
 
 Results and timing evidence belong in the latest HTML report on the dedicated
 [`ci-latency-history`](https://github.com/agentydragon/ducktape/tree/ci-latency-history)
