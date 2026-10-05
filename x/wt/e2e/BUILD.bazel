@@ -119,8 +119,6 @@ py_test(
         ":conftest",
         "//:conftest",
         "//x/wt/testing:git_helpers",
-        "//x/wt/testing:utils",
-        "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],
 )

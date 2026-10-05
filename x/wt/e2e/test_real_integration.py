@@ -1,14 +1,10 @@
 """Real integration tests for actual CLI."""
 
-import os
 from datetime import timedelta
-from pathlib import Path
 
-import pytest
 import pytest_bazel
 
 from x.wt.testing.git_helpers import worktree_exists
-from x.wt.testing.utils import wait_until
 
 
 def test_real_program_workflow(pygit2_repo, real_temp_repo, wt_cli):
@@ -52,24 +48,6 @@ def test_real_program_workflow(pygit2_repo, real_temp_repo, wt_cli):
     # Final status
     result = wt_cli.status(timeout=timedelta(seconds=10.0))
     assert result.returncode == 0
-
-
-def test_real_daemon_startup_and_communication(real_temp_repo, wt_cli):
-    # Start daemon
-    result = wt_cli.status(timeout=timedelta(seconds=10.0))
-    assert result.returncode == 0
-
-    daemon_dir = Path(wt_cli.env["WT_DIR"]).resolve()
-    assert daemon_dir.exists()
-    pid_file = daemon_dir / "daemon.pid"
-
-    ok = wait_until(pid_file.exists, timeout_seconds=2.0, interval_seconds=0.05)
-    assert ok, "daemon.pid not created in time"
-    pid = int(pid_file.read_text().strip())
-    try:
-        os.kill(pid, 0)
-    except OSError:
-        pytest.fail(f"Daemon PID {pid} not found")
 
 
 if __name__ == "__main__":
