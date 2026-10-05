@@ -15,7 +15,8 @@ import asyncio
 import base64
 import math
 import re
-from collections.abc import Awaitable, Callable
+from collections.abc import Awaitable, Callable, Mapping
+from types import MappingProxyType
 
 from playwright.async_api import (
     CDPSession,
@@ -161,10 +162,17 @@ class RequestFence:
     racing the capture is exactly how a transient error state gets published as a plausible-looking
     baseline: so the fence aborts it at once and the caller fails the scene by asserting on it before
     capturing. Install it before navigating.
+
+    A request under a key of `served_documents` (a URL prefix) is answered with that HTML: neither
+    allowed nor an escape. It stands in for an origin that does not exist, such as the framed app of a
+    shell that embeds one.
     """
 
-    def __init__(self, allow: Callable[[Request], bool]) -> None:
+    def __init__(
+        self, allow: Callable[[Request], bool], *, served_documents: Mapping[str, str] = MappingProxyType({})
+    ) -> None:
         self._allow = allow
+        self._served_documents = served_documents
         self._escaped: list[str] = []
 
     async def install(self, page: Page) -> None:
@@ -172,6 +180,10 @@ class RequestFence:
 
     async def _handle(self, route: Route) -> None:
         request = route.request
+        for prefix, html in self._served_documents.items():
+            if request.url.startswith(prefix):
+                await route.fulfill(status=200, content_type="text/html; charset=utf-8", body=html)
+                return
         if self._allow(request):
             await route.continue_()
             return

@@ -11,12 +11,13 @@ import pytest_bazel
 from matplotlib import get_data_path
 from PIL import Image
 from playwright.async_api import (
+    Error as PlaywrightError,
     Playwright,
     TimeoutError as PlaywrightTimeoutError,  # the builtin TimeoutError is another type
 )
 
 from util.testing import visual_sweep
-from util.testing.visual_scenarios import Scenario, Viewport
+from util.testing.visual_scenarios import Click, Scenario, Viewport
 from util.testing.visual_sweep import InlinePage, SweepConfig, capture_scenario
 from util.visual_review import VisualReviewManifest
 
@@ -56,6 +57,31 @@ if (scene === "interactive") {
   app.innerHTML = shot;
   document.getElementById("target").addEventListener("click", (event) => event.target.classList.add("tapped"));
 }
+if (scene === "clickable") {
+  app.innerHTML = shot + '<button id="open" class="twin">Open</button><button class="twin">Other</button><p id="loader">Loading</p>';
+  document.getElementById("open").addEventListener("click", () => setTimeout(() => {
+    document.getElementById("loader").remove();
+    app.insertAdjacentHTML("beforeend", '<p id="opened">Opened</p>');
+  }, 100));
+}
+if (scene === "pointer") {
+  app.innerHTML = shot;
+  document.getElementById("target").addEventListener("click", () => app.insertAdjacentHTML("beforeend", '<p id="clicked">Clicked</p>'));
+}
+if (scene === "loading") {
+  app.innerHTML = shot + '<div class="loader"></div>';
+  setTimeout(() => document.querySelector(".loader").remove(), 300);
+}
+if (scene === "stuck") app.innerHTML = shot + '<div class="loader"></div>';
+if (scene === "scroller") {
+  app.innerHTML = shot;
+  const shotElement = document.getElementById("shot");
+  shotElement.style.overflow = "auto";
+  shotElement.innerHTML = '<div style="height: 400px; background: linear-gradient(red 50%, blue 50%)"></div>';
+}
+if (scene === "iframed") {
+  app.innerHTML = '<div id="shot"><iframe id="child" src="https://child.test/doc" style="border: 0; width: 100px; height: 40px"></iframe></div>';
+}
 if (scene === "framed") {
   document.body.style.background = "black";
   app.innerHTML = '<div id="frame"></div>';
@@ -71,6 +97,7 @@ _STYLE = textwrap.dedent(
     #target { width: 100px; height: 40px; background: #3366cc; }
     #target:hover { background: #cc6633; }
     #target.tapped { background: #33cc66; }
+    .loader { position: fixed; inset: 0; background: red; }
     #frame { box-sizing: border-box; width: 100vw; height: 100vh; border: 1px solid white; }
     """
 )
@@ -221,6 +248,135 @@ async def test_hover_and_tap_are_in_the_capture(playwright: Playwright, config: 
     assert sorted(renders) == ["hover-actual.png", "idle-actual.png", "tap-actual.png"]
     assert renders["hover-actual.png"] != renders["idle-actual.png"], "hover"
     assert renders["tap-actual.png"] != renders["idle-actual.png"], "tap"
+
+
+_TARGET_BLUE = (51, 102, 204)
+
+
+def _center_pixel(png: bytes) -> tuple[int, ...]:
+    image = Image.open(io.BytesIO(png)).convert("RGB")
+    pixel = image.getpixel((image.width // 2, image.height // 2))
+    assert isinstance(pixel, tuple)
+    return pixel
+
+
+async def test_a_click_is_driven_with_its_effect_in_the_capture(
+    playwright: Playwright, config: SweepConfig, tmp_path: Path
+) -> None:
+    clicked = Scenario(
+        element="#app",
+        output_name="clicked",
+        clicks=[Click(selector="#open", expect_visible=["#opened"], expect_hidden=["#loader"])],
+    )
+    await capture_scenario(playwright, "clickable", clicked, config=config, output_dir=tmp_path)
+    await capture_scenario(
+        playwright, "clickable", Scenario(element="#app", output_name="unclicked"), config=config, output_dir=tmp_path
+    )
+
+    renders = _published(tmp_path)
+    assert renders["clicked-actual.png"] != renders["unclicked-actual.png"]
+
+
+async def test_the_pointer_is_parked_off_the_page_after_a_click(
+    playwright: Playwright, config: SweepConfig, tmp_path: Path
+) -> None:
+    # `#target:hover` is orange; the click leaves the pointer on it, and what is captured is the page without a hover.
+    scenario = Scenario(element="#target", clicks=[Click(selector="#target", expect_visible=["#clicked"])])
+
+    await capture_scenario(playwright, "pointer", scenario, config=config, output_dir=tmp_path)
+
+    assert _center_pixel(_published(tmp_path)["pointer-actual.png"]) == _TARGET_BLUE
+
+
+async def test_hidden_selectors_are_waited_for_before_capture(
+    playwright: Playwright, inline_config: SweepConfig, tmp_path: Path
+) -> None:
+    # An inline page is captured within a few frames of loading, and the loader covers the page for 300ms.
+    scenario = Scenario(element="#shot", hidden_selectors=[".loader"], window_globals={"__SCENE__": "loading"})
+
+    await capture_scenario(playwright, "loading", scenario, config=inline_config, output_dir=tmp_path)
+
+    assert _center_pixel(_published(tmp_path)["loading.png"]) == _TARGET_BLUE
+
+
+async def test_a_scroller_is_captured_at_its_end(playwright: Playwright, config: SweepConfig, tmp_path: Path) -> None:
+    for scenario in (
+        Scenario(element="#shot", output_name="top"),
+        Scenario(element="#shot", output_name="bottom", scroll_to_bottom="#shot"),
+    ):
+        await capture_scenario(playwright, "scroller", scenario, config=config, output_dir=tmp_path)
+
+    renders = _published(tmp_path)
+    assert _center_pixel(renders["top-actual.png"]) == (255, 0, 0)
+    assert _center_pixel(renders["bottom-actual.png"]) == (0, 0, 255)
+
+
+async def test_a_served_document_fills_a_frame_the_scenario_waits_for(
+    playwright: Playwright, inline_config: SweepConfig, tmp_path: Path
+) -> None:
+    child = tmp_path / "child.html"
+    child.write_text('<!doctype html><body style="margin: 0; background: lime"><main style="height: 40px"></main>')
+    scenario = Scenario(element="#shot", ready_frames={"#child": "main"}, window_globals={"__SCENE__": "iframed"})
+
+    await capture_scenario(
+        playwright,
+        "iframed",
+        scenario,
+        config=replace(inline_config, served_documents={"https://child.test/": child}),
+        output_dir=tmp_path,
+    )
+
+    assert _center_pixel(_published(tmp_path)["iframed.png"]) == (0, 255, 0)
+
+
+@pytest.mark.parametrize(
+    ("page_name", "scenario", "failure"),
+    [
+        pytest.param(
+            "clickable",
+            Scenario(element="#shot", clicks=[Click(selector="#open", expect_visible=["#never"])]),
+            (PlaywrightTimeoutError, r"#never"),
+            id="a click whose effect never arrives",
+        ),
+        pytest.param(
+            "clickable",
+            Scenario(element="#shot", clicks=[Click(selector=".twin", expect_visible=["#opened"])]),
+            (PlaywrightError, r"strict mode violation"),
+            id="a click on a selector that matches two elements",
+        ),
+        pytest.param(
+            "stuck",
+            Scenario(element="#shot", hidden_selectors=[".loader"]),
+            (PlaywrightTimeoutError, r"\.loader"),
+            id="a loader that never goes away",
+        ),
+    ],
+)
+async def test_an_interaction_that_does_not_do_what_the_row_says_fails_the_scenario(
+    playwright: Playwright,
+    config: SweepConfig,
+    tmp_path: Path,
+    page_name: str,
+    scenario: Scenario,
+    failure: tuple[type[Exception], str],
+) -> None:
+    error_type, message = failure
+
+    with pytest.raises(error_type, match=message):
+        await capture_scenario(playwright, page_name, scenario, config=config, output_dir=tmp_path, timeout_ms=1000)
+
+    assert _nothing_published(tmp_path)
+
+
+async def test_a_frame_nothing_serves_is_a_request_that_escaped(
+    playwright: Playwright, inline_config: SweepConfig, tmp_path: Path
+) -> None:
+    scenario = Scenario(element="#shot", window_globals={"__SCENE__": "iframed"})
+
+    with pytest.raises(AssertionError, match=r"requests escaped the harness:\n\s+document https://child.test/doc"):
+        await capture_scenario(playwright, "iframed", scenario, config=inline_config, output_dir=tmp_path)
+
+    assert _nothing_published(tmp_path)
 
 
 @pytest.mark.parametrize(
@@ -496,6 +652,28 @@ def test_an_inline_sweep_is_configured_from_the_environment(
     pytester.runpytest(visual_sweep.__file__).assert_outcomes(passed=1)
 
     assert list(_published(out)) == ["inline.png"]
+
+
+def test_served_documents_come_from_the_environment(
+    pytester: pytest.Pytester, monkeypatch: pytest.MonkeyPatch, inline_config: SweepConfig
+) -> None:
+    assert inline_config.inline_page is not None
+    child = pytester.path / "child.html"
+    child.write_text('<!doctype html><body style="margin: 0; background: lime"><main style="height: 40px"></main>')
+    out = _sweep(
+        pytester,
+        monkeypatch,
+        inline_config,
+        {"iframed": {"element": "#shot", "readyFrames": {"#child": "main"}, "windowGlobals": {"__SCENE__": "iframed"}}},
+    )
+    monkeypatch.setenv("INLINE_PAGE", "1")
+    monkeypatch.setenv("STYLESHEET_PATHS", str(inline_config.inline_page.stylesheet_paths[0]))
+    monkeypatch.setenv("SERVED_DOCUMENTS", json.dumps({"https://child.test/": str(child)}))
+    monkeypatch.setenv("OUTPUT_SUFFIX", "")
+
+    pytester.runpytest(visual_sweep.__file__).assert_outcomes(passed=1)
+
+    assert _center_pixel(_published(out)["iframed.png"]) == (0, 255, 0)
 
 
 if __name__ == "__main__":

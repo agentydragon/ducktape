@@ -5,7 +5,7 @@ import pydantic
 import pytest
 import pytest_bazel
 
-from util.testing.visual_scenarios import Scenario, Viewport, load_scenarios
+from util.testing.visual_scenarios import Click, Scenario, Viewport, load_scenarios
 
 
 def test_scenarios_load_in_table_order_with_harness_only_fields_ignored(tmp_path: Path) -> None:
@@ -25,7 +25,14 @@ def test_scenarios_load_in_table_order_with_harness_only_fields_ignored(tmp_path
                 "readySelectors": ["#a", "#b"],
                 "captureViewport": true,
                 "windowGlobals": {"__FIXTURE__": 3, "__VARIANT__": "compact"},
-                "hover": "#h"
+                "hover": "#h",
+                "readyFrames": {"iframe.child": "main"},
+                "clicks": [
+                  {"selector": "#open", "expectVisible": ["#panel"], "expectHidden": ["#spinner"]},
+                  {"selector": "#next", "expectHidden": ["#panel"]}
+                ],
+                "hiddenSelectors": [".loading"],
+                "scrollToBottom": ".scroller"
               }
             }
             """
@@ -47,6 +54,13 @@ def test_scenarios_load_in_table_order_with_harness_only_fields_ignored(tmp_path
         capture_viewport=True,
         window_globals={"__FIXTURE__": 3, "__VARIANT__": "compact"},
         hover="#h",
+        ready_frames={"iframe.child": "main"},
+        clicks=[
+            Click(selector="#open", expect_visible=["#panel"], expect_hidden=["#spinner"]),
+            Click(selector="#next", expect_hidden=["#panel"]),
+        ],
+        hidden_selectors=[".loading"],
+        scroll_to_bottom=".scroller",
     )
 
 
@@ -67,6 +81,11 @@ def test_every_scenario_states_its_element(tmp_path: Path) -> None:
 def test_tap_needs_a_touch_viewport() -> None:
     with pytest.raises(pydantic.ValidationError, match=r"tap needs viewport\.hasTouch"):
         Scenario.model_validate({"element": "#app", "tap": "#button"})
+
+
+def test_a_click_states_what_it_changes() -> None:
+    with pytest.raises(pydantic.ValidationError, match=r"click '#open' must state what it changes"):
+        Scenario.model_validate({"element": "#app", "clicks": [{"selector": "#open"}]})
 
 
 def test_window_globals_are_assigned_by_name_so_a_name_must_be_an_identifier() -> None:

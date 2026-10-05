@@ -11,6 +11,9 @@ live in the same object and are ignored here.
 A table whose rows enumerate data kept elsewhere (a fixture roster) is generated from it at build time
 rather than copied. A harness loaded as an in-memory page has no URL query to read its scene from;
 the row's `windowGlobals` tell it instead.
+
+A scene that needs driving before it is the subject (a tab to open, a drawer to close) says so in its
+row, and the sweep drives it with real input: `clicks`, then `scrollToBottom`.
 """
 
 from __future__ import annotations
@@ -33,6 +36,29 @@ class Viewport(_TableModel):
     height: int = Field(default=800, description="CSS pixels.")
     device_scale_factor: float = Field(default=1, description="Device pixels per CSS pixel.")
     has_touch: bool = Field(default=False, description="Touch events, which a `tap` scenario needs.")
+
+
+class Click(_TableModel):
+    selector: str = Field(
+        description=(
+            "Selector of the element to click. It must match exactly one element, so that a click cannot "
+            "land silently on a look-alike elsewhere on the page (`>> nth=0` says which one is meant)."
+        )
+    )
+    expect_visible: list[str] = Field(
+        default_factory=list, description="Selectors that must be visible once the click has taken effect."
+    )
+    expect_hidden: list[str] = Field(
+        default_factory=list, description="Selectors that must be gone or hidden once the click has taken effect."
+    )
+
+    @model_validator(mode="after")
+    def _names_its_effect(self) -> Click:
+        # A click on the wrong element fails silently, and so does one whose effect arrives asynchronously
+        # and never does: the scene still renders something plausible. The expectation is the click's proof.
+        if not (self.expect_visible or self.expect_hidden):
+            raise ValueError(f"click {self.selector!r} must state what it changes: expectVisible or expectHidden")
+        return self
 
 
 class Scenario(_TableModel):
@@ -67,6 +93,35 @@ class Scenario(_TableModel):
             "The scene's own readiness conditions: what must be in the DOM before it is the scene at all "
             "(a fetch's result, a lazily mounted component). `wait_for_stable` knows about fonts and paint "
             "but nothing about a scene's content. A scene with nothing arriving after mount lists none."
+        ),
+    )
+    ready_frames: dict[str, str] = Field(
+        default_factory=dict,
+        description=(
+            "Child frames that must have loaded: the selector of an `<iframe>` element, mapped to a selector "
+            "that must be in the document it shows. `ready_selectors` cannot see into a frame."
+        ),
+    )
+    clicks: list[Click] = Field(
+        default_factory=list,
+        description=(
+            "Clicked in order once the scene is ready, each followed by the page settling and the pointer "
+            "being parked off the page, so a tooltip the click opened is not in the capture."
+        ),
+    )
+    hidden_selectors: list[str] = Field(
+        default_factory=list,
+        description=(
+            "What must be gone or hidden before capture, once the interactions are done: loading indicators, "
+            "controls still arming. Satisfied by a selector that matches nothing, so it costs nothing on a "
+            "scene that never shows it."
+        ),
+    )
+    scroll_to_bottom: str | None = Field(
+        default=None,
+        description=(
+            "Selector of a scroller to scroll to its end before capture, for a scene whose subject is down "
+            "there. It also mounts whatever the content below the fold builds only once near the viewport."
         ),
     )
     capture_viewport: bool = Field(

@@ -314,6 +314,9 @@ py_test(
 
 py_test(
     name = "test_visual_sweep",
+    # medium: 38 tests, nearly each on a browser of its own, measure 60s of pytest and 73s with startup
+    # on the RBE worker, every one making progress; `small` is 60s.
+    size = "medium",
     srcs = ["test_visual_sweep.py"],
     deps = [
         ":visual_scenarios",

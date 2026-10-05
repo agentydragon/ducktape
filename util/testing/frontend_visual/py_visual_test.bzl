@@ -25,6 +25,7 @@ def py_visual_test(
         inline_page = False,
         stylesheets = [],
         base_href = None,
+        served_documents = {},
         env = {},
         tags = [],
         **kwargs):
@@ -58,6 +59,9 @@ def py_visual_test(
       stylesheets: with `inline_page`, the CSS files inlined into the document, in order.
       base_href: with `inline_page`, the document's `<base href>`, for a harness that parses relative
         URLs its stubbed `fetch` never sends.
+      served_documents: URL prefix to the HTML file the request fence answers a request under it with,
+        for a shell that frames another origin (the harness mocks that origin's document). Any other
+        request still fails the scenario.
       devtools_viewport: emulate and capture each viewport over the DevTools protocol the way the
         Puppeteer sweep did (`DevtoolsViewport`), so a lane ported from it keeps its images
         byte-identical at a device scale factor where Playwright's own viewport differs.
@@ -90,10 +94,16 @@ def py_visual_test(
         if base_href != None:
             sweep_env["BASE_HREF"] = base_href
 
+    if served_documents:
+        sweep_env["SERVED_DOCUMENTS"] = json.encode(
+            {url: "$(rlocationpath %s)" % document for url, document in served_documents.items()},
+        )
+
     py_test(
         name = name,
         main_module = "util.testing.visual_sweep",
-        data = assets + stylesheets + [harness, scenarios] + ([fonts] if fonts != None else []),
+        data = assets + stylesheets + served_documents.values() + [harness, scenarios] +
+               ([fonts] if fonts != None else []),
         env = sweep_env,
         tags = tags + ["visual"],
         deps = [

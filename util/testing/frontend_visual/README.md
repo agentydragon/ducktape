@@ -71,6 +71,16 @@ its ready selectors, the request fence, the fetch ledger and zero uncaught page 
   it is, and the request fence allows nothing at all. `harness` may then be an esbuild `output_dir`.
   `haku/console/frontend/tool_rendering/screenshot` is the example, its table generated at build time from
   each server's fixtures.
+- **A shell that frames another origin** serves that origin's document from the harness:
+  `served_documents = {"https://framed.test/": "mock_framed.html"}` makes the request fence answer a
+  request under that prefix with the file, and a scenario's `readyFrames` (`{"iframe.selector": "main"}`)
+  waits for the frame and for a selector inside it. Any other request still fails the scenario.
+- **A scene is driven with real input.** A scenario's `clicks` run in order, each naming what it changes
+  (`expectVisible`, `expectHidden`) and each followed by the page settling and the pointer being parked
+  at the page's corner, so a tooltip the click opened is not in the capture. A click must match exactly
+  one element (`>> nth=0` picks one). `hiddenSelectors` are what must be gone before capture once the
+  interactions are done (loaders, controls still arming), and `scrollToBottom` scrolls a scroller to its
+  end.
 - **`devtools_viewport = True` emulates and captures the viewport the way Puppeteer did**
   (`DevtoolsViewport` in `page_capture.py`: `Emulation.setDeviceMetricsOverride`, and an unclipped
   `Page.captureScreenshot` for a `captureViewport` scenario). Playwright's own viewport rasterizes a few

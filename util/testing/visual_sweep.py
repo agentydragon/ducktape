@@ -9,7 +9,11 @@ Run by the `py_visual_test` macro (`frontend_visual/py_visual_test.bzl`), which 
 The harness page is a `file://` `index.html` beside its bundle, told its scene by `?page=<name>`; or
 (`InlinePage`) a document assembled in memory from the bundle and stylesheets and loaded with
 `set_content`, told its scene by the scenario's `windowGlobals`. The in-memory page has no origin to
-fetch from, so the request fence allows nothing at all.
+fetch from, so the request fence allows nothing at all; the one thing it answers is a document the lane
+serves under a URL prefix (`served_documents`, for a shell that frames another origin).
+
+A scenario that needs driving first is driven with real input: its `clicks` in order, then
+`scrollToBottom`, each click naming what it must change.
 
 Selection is pytest's, which is what Bazel drives: `--test_filter=<scenario>` is `-k` (a scenario's
 name is its test id), and `shard_count` is `util.testing.sharding`, filter first, then shard.
@@ -26,9 +30,10 @@ from __future__ import annotations
 import json
 import os
 import sys
-from collections.abc import AsyncIterator, Mapping
-from dataclasses import dataclass
+from collections.abc import AsyncIterator, Iterable, Mapping
+from dataclasses import dataclass, field
 from pathlib import Path
+from typing import Literal
 from urllib.parse import urlencode
 
 import pytest
@@ -36,7 +41,7 @@ import pytest_asyncio
 import pytest_bazel
 from more_itertools import one
 from playwright.async_api import Page, Playwright, async_playwright
-from pydantic import JsonValue
+from pydantic import JsonValue, TypeAdapter
 
 from util.bazel.runfiles import get_required_path
 from util.testing.frontend_visual import DISABLE_ANIMATIONS_CSS, FROZEN_NOW_MS, deterministic_browser_context
@@ -69,6 +74,9 @@ _FONT_STATUS_JS = """async family => {
 }"""
 
 
+_PATHS_BY_URL = TypeAdapter(dict[str, str])
+
+
 @dataclass(frozen=True)
 class InlinePage:
     """What a harness loaded with `set_content` is assembled from, besides the bundle."""
@@ -95,6 +103,8 @@ class SweepConfig:
     # None: the harness is the `file://` page beside its bundle.
     inline_page: InlinePage | None = None
     devtools_viewport: bool = False
+    # URL prefix -> the HTML file the request fence answers it with; see `RequestFence`.
+    served_documents: Mapping[str, Path] = field(default_factory=dict)
 
     @classmethod
     def from_env(cls) -> SweepConfig:
@@ -107,6 +117,10 @@ class SweepConfig:
             output_suffix=os.environ.get("OUTPUT_SUFFIX", "-actual"),
             inline_page=InlinePage.from_env() if os.environ.get("INLINE_PAGE") else None,
             devtools_viewport=bool(os.environ.get("DEVTOOLS_VIEWPORT")),
+            served_documents={
+                url: get_required_path(path)
+                for url, path in _PATHS_BY_URL.validate_json(os.environ.get("SERVED_DOCUMENTS", "{}")).items()
+            },
         )
 
     @property
@@ -167,6 +181,19 @@ async def _load_harness(
         await page.set_content(html, wait_until="load", timeout=timeout_ms)
 
 
+async def _wait_for_selectors(
+    page: Page,
+    page_errors: PageErrors,
+    selectors: Iterable[str],
+    *,
+    state: Literal["attached", "visible", "hidden"],
+    context: str,
+    timeout_ms: int,
+) -> None:
+    for selector in selectors:
+        await page_errors.wait_for(page.wait_for_selector(selector, state=state, timeout=timeout_ms), context=context)
+
+
 async def capture_scenario(
     playwright: Playwright,
     scenario_name: str,
@@ -204,14 +231,24 @@ async def capture_scenario(
         # The harness is entirely local (a file:// page or an in-memory one, bundled fixtures), so
         # nothing may reach the network.
         fence = RequestFence(
-            (lambda request: request.url.startswith("file://")) if config.inline_page is None else (lambda _: False)
+            (lambda request: request.url.startswith("file://")) if config.inline_page is None else (lambda _: False),
+            served_documents={url: path.read_text(encoding="utf-8") for url, path in config.served_documents.items()},
         )
         await fence.install(page)
 
         await _load_harness(page, scenario_name, scenario, config=config, timeout_ms=timeout_ms)
-        for selector in ("#app > *", *scenario.ready_selectors):
+        await _wait_for_selectors(
+            page,
+            page_errors,
+            ("#app > *", *scenario.ready_selectors),
+            state="attached",
+            context=output_name,
+            timeout_ms=timeout_ms,
+        )
+        for frame_selector, selector in scenario.ready_frames.items():
             await page_errors.wait_for(
-                page.wait_for_selector(selector, state="attached", timeout=timeout_ms), context=output_name
+                page.frame_locator(frame_selector).locator(selector).wait_for(state="attached", timeout=timeout_ms),
+                context=output_name,
             )
         # Last, so fonts, images and paint settle around whatever the scene's own conditions let in.
         await wait_for_stable(page)
@@ -221,12 +258,36 @@ async def capture_scenario(
             font_status = await page.evaluate(_FONT_STATUS_JS, config.expected_font_family)
             if font_status != "loaded":
                 raise AssertionError(f"{output_name}: {config.expected_font_family} font did not load ({font_status})")
+        if scenario.clicks or scenario.scroll_to_bottom is not None:
+            # An interaction acts on a page whose first fetches have landed: its target may be replaced under it.
+            await assert_network_settled(page, context=output_name, timeout_ms=timeout_ms)
+        for click in scenario.clicks:
+            await page.click(click.selector, strict=True, timeout=timeout_ms)
+            await _wait_for_selectors(
+                page, page_errors, click.expect_visible, state="visible", context=output_name, timeout_ms=timeout_ms
+            )
+            await _wait_for_selectors(
+                page, page_errors, click.expect_hidden, state="hidden", context=output_name, timeout_ms=timeout_ms
+            )
+            await wait_for_stable(page)
+            await assert_network_settled(page, context=output_name, timeout_ms=timeout_ms)
+            # A click leaves the pointer on its target, and a tooltip it opened would stay open into the capture.
+            await page.mouse.move(0, 0)
+            await wait_for_stable(page)
         # A pointer state no page script can make: :hover and a real touch. Settled again for what it shows.
         if scenario.hover:
             await page.hover(scenario.hover, timeout=timeout_ms)
         if scenario.tap:
             await page.tap(scenario.tap, timeout=timeout_ms)
         if scenario.hover or scenario.tap:
+            await wait_for_stable(page)
+        await _wait_for_selectors(
+            page, page_errors, scenario.hidden_selectors, state="hidden", context=output_name, timeout_ms=timeout_ms
+        )
+        if scenario.scroll_to_bottom is not None:
+            await page.eval_on_selector(
+                scenario.scroll_to_bottom, "element => { element.scrollTop = element.scrollHeight; }"
+            )
             await wait_for_stable(page)
         await assert_network_settled(page, context=output_name, timeout_ms=timeout_ms)
         fence.assert_none_escaped(context=output_name)

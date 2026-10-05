@@ -34,6 +34,22 @@ async def test_page_errors_name_what_the_page_threw(page: Page) -> None:
         errors.assert_none(context="scene foo")
 
 
+async def test_request_fence_answers_a_served_prefix_and_does_not_count_it_as_an_escape(page: Page) -> None:
+    fence = RequestFence(lambda _: False, served_documents={"https://served.test/app/": "<p id='served'>answered</p>"})
+    await fence.install(page)
+    await page.set_content(
+        "<iframe id='framed' src='https://served.test/app/page'></iframe><img src='https://elsewhere.test/x.png'>"
+    )
+
+    served = page.frame_locator("#framed").locator("#served")
+    await served.wait_for(state="attached")
+    assert await served.text_content() == "answered"
+    # Only what the prefix does not cover leaves the page.
+    with pytest.raises(AssertionError) as escaped:
+        fence.assert_none_escaped(context="scene foo")
+    assert str(escaped.value) == "scene foo: requests escaped the harness:\n    image https://elsewhere.test/x.png"
+
+
 async def test_request_fence_aborts_what_it_does_not_allow_and_names_it(page: Page, tmp_path: Path) -> None:
     fence = RequestFence(lambda request: request.url.startswith("file://"))
     await fence.install(page)
