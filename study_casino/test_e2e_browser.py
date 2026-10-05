@@ -1,9 +1,8 @@
 """End-to-end browser tests: real Playwright browser against real uvicorn backend.
 
-Scenarios:
-1. App loads, the first `GET /state` succeeds, status banner reaches "ok".
-2. Server can't be reached for `/state` (mocked 503) — status transitions to
-   `offline`, not stuck on `syncing`.
+Tests that load the app wait for the sync icon's `ok` state, so a first `GET /state` that
+fails breaks all of them. The 5xx test mocks `/state` as 503 and expects `offline`, not
+stuck on `syncing`.
 """
 
 from __future__ import annotations
@@ -83,27 +82,6 @@ def _seed_credits(base_url: str, credits: int) -> None:
         },
     )
     _ack_changelog(base_url)
-
-
-async def test_initial_state_fetch_completes(page: Page, casino_server: str) -> None:
-    """App loads, /state succeeds, banner reaches 'ok'."""
-    logs = _attach_logs(page)
-
-    state_responses: list[dict] = []
-    page.on(
-        "response", lambda r: state_responses.append({"url": r.url, "status": r.status}) if "/state" in r.url else None
-    )
-
-    await page.goto(casino_server)
-    print(f"\n[e2e] page loaded, title={await page.title()!r}")
-
-    # ok banner appears once `GET /state` resolves successfully.
-    await page.wait_for_selector("[data-testid='sync-icon-ok']", state="visible", timeout=30_000)
-    print(f"[e2e] sync ok, state_responses={state_responses}, logs={logs}")
-
-    assert await page.locator("[data-testid='sync-banner-offline']").count() == 0, (
-        f"offline banner showing after first state fetch\nstate_responses={state_responses}\nlogs={logs}"
-    )
 
 
 async def test_state_5xx_shows_offline_not_stuck_syncing(page: Page, casino_server: str) -> None:
