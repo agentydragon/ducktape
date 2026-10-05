@@ -750,7 +750,6 @@ py_test(
         ":bills",
         ":books",
         ":capture",
-        ":events",
         ":ids",
         ":market_path",
         ":mortgage",
