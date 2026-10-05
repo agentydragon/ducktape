@@ -1,6 +1,6 @@
 // Full-page screenshot harness for Haku Console. The production shell is rendered with mocked
-// API data; render.mjs intercepts the real iframe request and supplies an unmistakable striped
-// Haku UI document so layout overlap is visible in the resulting image.
+// API data; the sweep's request fence answers the real iframe request with an unmistakable striped
+// Haku UI document (mock_haku_ui.html) so layout overlap is visible in the resulting image.
 import "./mock_api";
 
 import { MantineProvider } from "@mantine/core";

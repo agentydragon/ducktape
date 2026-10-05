@@ -27,8 +27,7 @@ Use one of the shared harnesses and it's automatic:
   once per rendered case — it copies the PNG into undeclared outputs and
   accumulates the manifest.
 - Custom drivers write the manifest themselves via
-  `writeVisualReviewManifest` / `write_visual_review_manifest`
-  (e.g. haku's `screenshots/render.mjs`).
+  `util.testing.visual_review.write_visual_review_manifest`.
 
 **Gotcha: one commit, several CI runs.** A `//...` devel sweep and an affected-set
 run can both exist at one commit, and only the sweep carries visual manifests. So

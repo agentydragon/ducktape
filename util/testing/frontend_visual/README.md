@@ -1,11 +1,8 @@
 # frontend_visual
 
 Shared infrastructure for visual render-health tests. Every lane runs on the Python/Playwright path
-(`py_visual_test`; `frontend_visual.py`, `visual_sweep.py`), except haku console's own multi-scene
-renderer (`haku/console/frontend/screenshots/render.mjs`), which still runs on Puppeteer and builds on
-`capture.mjs`'s page-prep/capture primitives (`prepareDeterministicPage`, `screenshotElement`,
-`waitForStable`) and `launcher.mjs` -- a library, not a `main()`, so the caller keeps owning
-content-loading, orchestration, and its own exit code. See [The Python sweep](#the-python-sweep).
+(`py_visual_test`; `frontend_visual.py`, `visual_sweep.py`); see [The Python sweep](#the-python-sweep).
+What is left of the Puppeteer stack is `launcher.mjs`, which only `font_environment_test` uses.
 
 Both stacks drive one browser: the Chrome for Testing headless shell `@chrome_headless_shell`
 (MODULE.bazel). Python tests find its executable in the runfiles of `//util/testing:frontend_visual`;

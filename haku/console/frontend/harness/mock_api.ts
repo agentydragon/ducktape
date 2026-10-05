@@ -1,8 +1,8 @@
 // Installs a canned-response `fetch` for the screenshot harness so data-fetching surfaces
 // (the history view) render populated instead of an error. MUST be imported before any
 // module that captures `globalThis.fetch` (openapi-fetch does so when client.ts builds its
-// client) — harness.tsx imports this first. Paired with a `<base href>` in the harness page
-// (render.mjs) so the relative "/api/…" URL parses in the origin-less setContent page.
+// client) — harness.tsx imports this first. Paired with the `base_href` of the `:screenshots`
+// py_visual_test so the relative "/api/…" URL parses in the origin-less in-memory page.
 import {
   SAMPLE_DEPLOYMENT,
   SAMPLE_GRANTS,
@@ -185,9 +185,19 @@ globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit): Promis
 }) as typeof fetch;
 
 // Nothing in this harness serves a live socket, which is what a real browser does here for
-// `/api/events/ws` — every socket the shell opens is refused immediately, and the shell renders
+// `/api/events/ws` — a socket the shell opens on mount is refused immediately, and the shell renders
 // the failure as a sync error. Leaving one hanging instead would hold the shell at "connecting",
 // which reads as a spinner that never stops.
+//
+// Only the sockets opened on mount. The shell reconnects with backoff (1s, 2s, 4s, ...) and refetches
+// on every refusal, so refusing each reconnect too would start a refetch seconds into a scene, and a
+// capture that landed in one would show a refresh spinner. The shell already reads "offline", which
+// persists across attempts, so a reconnect that just hangs changes nothing it renders. Every component
+// that listens opens its socket in the effects of the first render, which flush in one task: the
+// sockets of that task are the mount ones.
+let refusing = true;
+let mountTaskEnds = false;
+
 class HarnessSocket {
   onopen: (() => void) | null = null;
   onmessage: ((event: { data: string }) => void) | null = null;
@@ -195,6 +205,13 @@ class HarnessSocket {
   onerror: (() => void) | null = null;
 
   constructor(_url: string | URL) {
+    if (!refusing) return;
+    if (!mountTaskEnds) {
+      mountTaskEnds = true;
+      setTimeout(() => {
+        refusing = false;
+      });
+    }
     queueMicrotask(() => {
       this.onerror?.();
       this.onclose?.({ code: 1006, reason: "" });

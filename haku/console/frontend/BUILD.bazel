@@ -1,3 +1,4 @@
+load("@aspect_bazel_lib//lib:jq.bzl", "jq")
 load("@aspect_rules_esbuild//esbuild:defs.bzl", "esbuild")
 load("@aspect_rules_js//js:defs.bzl", "js_binary", "js_run_binary", "js_test")
 load("@aspect_rules_ts//ts:defs.bzl", "ts_config")
@@ -9,7 +10,7 @@ load("//devinfra/js:spa_bundle.bzl", "spa_bundle")
 load("//devinfra/js:ts_library.bzl", "ts_library")
 load("//devinfra/js:vitest.bzl", "check_vitest_specs", "vitest_config")
 load("//util:data_uri.bzl", "data_uri_module")
-load("//util/testing/frontend_visual:visual_test.bzl", "chromium_js_test")
+load("//util/testing/frontend_visual:py_visual_test.bzl", "py_visual_test")
 load(":vitest.bzl", "haku_vitest_test")
 
 package(default_visibility = ["//visibility:public"])
@@ -942,22 +943,18 @@ spa_bundle(
 # ── Visual screenshots ─────────────────────────────────────────────────────────
 #
 # `bbr test //haku/console/frontend:screenshots` renders each console visual surface
-# (screenshots/harness.tsx) to a PNG in the test's undeclared outputs, for eyeballing (see
-# AGENTS.md). Browser rendering runs on the RBE worker's display stack — a local Bazel
-# can't fetch repos in web sessions — so it is a js_test, not a `bb run` binary. It is a
-# generator, not a pixel-diff gate: it passes as long as every scene renders.
-#
-# medium: the shots (scenes x light/dark) are split across shards, measured 26-35s per shard against
-# 78s for the whole sweep on one browser (invocations d7a23bd4 and 2759e0d4). `--test_filter=<stem>`
-# renders one shot -- 11s rather than the full sweep -- where before there was no way to ask for
-# less than all of them.
+# (harness/harness.tsx) to a PNG in the test's undeclared outputs, for eyeballing (see
+# AGENTS.md). Browser rendering runs on the RBE worker's display stack, so it is a test, not a
+# `bb run` binary. It is a generator, not a pixel-diff gate: it passes as long as every scene renders.
+# Swept by the Playwright scenario sweep at //util/testing:visual_sweep, one test per shot
+# (`--test_filter=<scene>-<scheme>` renders one).
 
 ts_library(
     name = "screenshot_harness_lib",
     srcs = [
-        "screenshots/harness.tsx",
-        "screenshots/mock_api.ts",
-        "screenshots/sample_data.ts",
+        "harness/harness.tsx",
+        "harness/mock_api.ts",
+        "harness/sample_data.ts",
     ],
     isolated_typecheck = True,
     tags = ["no-lint"],
@@ -990,21 +987,21 @@ ts_library(
 js_binary(
     name = "build_screenshot_harness",
     data = [
-        "screenshots/esbuild.config.mjs",
+        "harness/esbuild.config.mjs",
         ":screenshot_harness_lib",
         "//:node_modules/esbuild",
     ],
-    entry_point = "screenshots/esbuild.config.mjs",
+    entry_point = "harness/esbuild.config.mjs",
 )
 
 js_run_binary(
     name = "screenshot_harness_bundle",
     srcs = [
-        "screenshots/esbuild.config.mjs",
+        "harness/esbuild.config.mjs",
         ":screenshot_harness_lib",
     ],
-    outs = ["screenshots/dist/harness.js"],
-    args = ["screenshots/dist"],
+    outs = ["harness/dist/harness.js"],
+    args = ["harness/dist"],
     chdir = package_name(),
     tool = ":build_screenshot_harness",
 )
@@ -1012,36 +1009,37 @@ js_run_binary(
 # Single-file target so $(rootpath) resolves to one path.
 filegroup(
     name = "screenshot_harness_js",
-    srcs = ["screenshots/dist/harness.js"],
+    srcs = ["harness/dist/harness.js"],
 )
 
-chromium_js_test(
+# The scenario table: every scene in light and dark, with how each is reached.
+jq(
+    name = "screenshot_scenarios",
+    srcs = [],
+    out = "harness/scenarios.json",
+    args = ["--null-input"],
+    filter_file = "harness/scenarios.jq",
+)
+
+py_visual_test(
     name = "screenshots",
+    # medium: each of the 4 shards measures 35s alone and up to 63s with nine runs at once; `small` is 60s.
     size = "medium",
-    data = [
-        "screenshots/mock_haku_ui.html",
-        ":screenshot_harness_js",
-        ":styles_css",
-        "//util/testing/frontend_visual:capture",
-        "//util/testing/frontend_visual:launcher",
-        "//util/testing/frontend_visual:sharding",
-        "//util/testing/frontend_visual:visual_review_manifest",
-    ],
-    entry_point = "screenshots/render.mjs",
-    env = {
-        "HARNESS_JS": "$(rootpath :screenshot_harness_js)",
-        "MOCK_HAKU_UI": "$(rootpath screenshots/mock_haku_ui.html)",
-        "STYLES_CSS": "$(rootpath :styles_css)",
-    },
-    no_copy_to_bin = [
-        ":screenshot_harness_js",
-        "//util/testing/frontend_visual:capture",
-        "//util/testing/frontend_visual:launcher",
-        "//util/testing/frontend_visual:sharding",
-        "//util/testing/frontend_visual:visual_review_manifest",
-    ],
+    harness = ":screenshot_harness_js",
+    inline_page = True,
+    # Keeps the published names (<scene>-<scheme>.png), so PR visual review compares each shot with its
+    # baseline.
+    output_suffix = "",
+    # The shell reads `localStorage`, frames another origin and parses its own location, and the mock
+    # fetch parses relative `/api/…` URLs it never sends: it needs the origin of a real page.
+    page_url = "https://haku-console.test/",
+    scenarios = ":screenshot_scenarios",
+    # The shell frames Haku's UI, an origin that does not exist here: the fence answers it with a striped
+    # test document, so layout overlap with the frame is visible in the image.
+    served_documents = {"https://haku-ui.test/": "harness/mock_haku_ui.html"},
     shard_count = 4,
-    tags = ["visual"],
+    stylesheets = [":styles_css"],
+    title = "Haku Console",
 )
 
 # ── Unit tests ─────────────────────────────────────────────────────────────────

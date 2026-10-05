@@ -1,6 +1,5 @@
 /**
- * The in-page half of the screenshot harnesses' network contract, read by the drivers through
- * `assertNetworkSettled` (util/testing/frontend_visual/capture.mjs) or its Python port
+ * The in-page half of the screenshot harnesses' network contract, read by the sweep's
  * `assert_network_settled` (util/testing/page_capture.py): every stubbed fetch is
  * tracked while in flight, and anything that must fail the run — an unmatched route, a rejected
  * fetch, an unhandled promise rejection — is recorded as a violation. The drivers refuse to

@@ -1,9 +1,9 @@
-"""Deterministic-screenshot primitives for a Playwright page: the Python counterpart of `frontend_visual/capture.mjs`.
+"""Deterministic-screenshot primitives for a Playwright page.
 
-Deviation from `capture.mjs`: nothing prepares the page. Viewport, colour scheme, reduced motion and
-the frozen clock are context options, set by `frontend_visual.deterministic_browser_context`. What is
-left here is what a page records or waits for, and each recorder is a value the caller holds, so
-asserting on a page nobody instrumented cannot be written.
+Nothing prepares the page here: viewport, colour scheme, reduced motion and the frozen clock are
+context options, set by `frontend_visual.deterministic_browser_context`. What is here is what a page
+records or waits for, and each recorder is a value the caller holds, so asserting on a page nobody
+instrumented cannot be written.
 
 Loading content and orchestrating several shots stay with the caller: `visual_sweep` for a table of
 harness scenes, a bespoke driver for anything else.

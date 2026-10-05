@@ -493,8 +493,8 @@ def page_errors(page: Page) -> list[str]:
 
 
 async def _wait_for_painted_frame(page: Page) -> None:
-    """Fonts applied, images decoded, a frame painted: the Playwright twin of `waitForStable` in
-    util/testing/frontend_visual/capture.mjs, which also says why `document.getAnimations()` is not awaited."""
+    """Fonts applied, images decoded, a frame painted: `wait_for_stable` in util/testing/page_capture.py,
+    which also says why `document.getAnimations()` is not awaited."""
     await page.evaluate(
         """
         async () => {

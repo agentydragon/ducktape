@@ -5,8 +5,7 @@ shard environment into the `--shard-id`/`--num-shards` flags it reads.
 
 Deviation from pytest-shard, the plugin pytest_bazel expects: that one places each item by a hash of
 its node ID, so shard sizes scatter -- 27 items over 4 shards can land 8/9/5/5. Placing by position
-keeps every shard within one item of the others, as <frontend_visual/sharding.mjs> already does for
-visual scenes.
+keeps every shard within one item of the others.
 
 Deviation from running the filter alone: `pytest_bazel` reads "nothing collected" under a filter as success,
 so a `--test_filter` naming no case would pass on every shard having run nothing. A filter that leaves nothing

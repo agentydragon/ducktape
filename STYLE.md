@@ -519,10 +519,10 @@ directions at once: too short on a loaded CI runner, where it flakes, and too lo
 run that did not need it. It also hides what is being awaited — the number is a guess nobody
 can check, so it only ever ratchets up.
 
-Wait for the thing itself. In Puppeteer that is `waitForSelector` (including
-`{ hidden: true }`), `waitForFunction`, `waitForNetworkIdle`, or `waitUntil: "networkidle0"`.
-For "the page finished rendering what it has", use `waitForStable` from
-<util/testing/frontend_visual/capture.mjs> — `document.fonts.ready`, images decoded, a painted
+Wait for the thing itself. In Playwright that is `wait_for_selector` (including
+`state="hidden"`), `wait_for_function`, or `wait_for_load_state("networkidle")`.
+For "the page finished rendering what it has", use `wait_for_stable` from
+<util/testing/page_capture.py> — `document.fonts.ready`, images decoded, a painted
 frame — rather than a delay after mount.
 
 When the condition is app-internal (data arrived, a component mounted lazily), expose it as a

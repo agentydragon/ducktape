@@ -1,5 +1,5 @@
 // Bundles the screenshot harness into a single IIFE that renders into #app. IIFE format so the
-// generated file:// page (render.mjs) can <script>-load it without module CORS restrictions in
+// in-memory page the sweep assembles can inline it in a <script> without module CORS restrictions in
 // headless Chromium. Output: <outdir>/harness.js.
 //
 // The entry is `harness.js` — what `:screenshot_harness_lib` (a ts_library) compiles
