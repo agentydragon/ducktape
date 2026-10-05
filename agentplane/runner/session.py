@@ -151,10 +151,7 @@ class Session:
             await asyncio.gather(stdout, stderr)
             await self.emit(event_pb2.SetupFinished(exit_code=exit_code), sources=[])
             if exit_code == 0:
-                try:
-                    await self.ensure_running()
-                except Exception as error:
-                    await self.emit(event_pb2.HarnessLaunchFailed(reason=str(error)), sources=[])
+                await self.launch_harness()
         except asyncio.CancelledError:
             raise
         except Exception:
@@ -243,6 +240,18 @@ class Session:
     @property
     def setup_active(self) -> bool:
         return self._setup_task is not None and not self._setup_task.done()
+
+    async def launch_harness(self) -> None:
+        """`ensure_running`, recording a failed launch as `HarnessLaunchFailed` instead of raising.
+
+        The Event reaches the operator through the Thread's history; an exception out of `Open`
+        reaches them only as the Sandbox Service's sanitized refusal, without the reason.
+        """
+        try:
+            await self.ensure_running()
+        except Exception as error:
+            logger.exception("session %s: harness launch failed", self.session_id)
+            await self.emit(event_pb2.HarnessLaunchFailed(reason=str(error)), sources=[])
 
     async def ensure_running(self) -> None:
         async with self._lock:

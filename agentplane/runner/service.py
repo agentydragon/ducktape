@@ -220,7 +220,7 @@ class Runner:
             protocol_pb2.SETUP_STATE_NOT_REQUIRED,
             protocol_pb2.SETUP_STATE_SUCCEEDED,
         ):
-            await session.ensure_running()
+            await session.launch_harness()
         return session
 
     def _validate_workspace(self, cwd: str) -> None:
@@ -334,7 +334,7 @@ class RunnerService(protocol_pb2_grpc.RunnerServicer):
         except OpenError as error:
             yield protocol_pb2.ServerMessage(error=str(error))
             return
-        except Exception as error:  # the stream must report a launch failure, not hang
+        except Exception as error:  # the stream must report an Open that failed, not hang
             logger.exception("session %s: open failed", first.open.session_id)
             yield protocol_pb2.ServerMessage(error=f"open failed: {error}")
             return

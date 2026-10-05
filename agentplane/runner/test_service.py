@@ -11,7 +11,6 @@ from agentplane.protocol import event_pb2
 from agentplane.runner import protocol_pb2
 from agentplane.runner.client import RunnerClient
 from agentplane.runner.config import ClaudeLaunch, CodexLaunch, RunnerConfig
-from agentplane.runner.errors import RunnerError
 from agentplane.runner.service import Runner
 from agentplane.runner.store import SessionRecord, StateOwner, StateOwnershipError
 
@@ -73,13 +72,27 @@ async def test_failed_session_shutdown_still_closes_its_database(
     runner._state_owner.close()
 
 
+async def _launch_failure_reason(client: RunnerClient, session_id: str, spec: protocol_pb2.SessionSpec) -> str:
+    """The reason of the `HarnessLaunchFailed` Event an Open that could not launch its harness records.
+
+    The Open itself succeeds and its stream ends after that Event, so a Thread follows the failure
+    rather than waiting on a harness that will never start.
+    """
+    attachment = await client.attach(session_id, spec=spec)
+    try:
+        entry = await attachment.until(lambda entry: entry.event.HasField("harness_launch_failed"))
+        await attachment.drain_until_end()
+    finally:
+        attachment.cancel()
+    return entry.event.harness_launch_failed.reason
+
+
 async def test_a_harness_that_dies_in_its_handshake_names_its_exit_and_stderr(
     client: RunnerClient, config: RunnerConfig, harness: protocol_pb2.Harness, spec: protocol_pb2.SessionSpec
 ) -> None:
-    with pytest.raises(RunnerError) as raised:
-        await client.attach("launch-failure-1", spec=spec)
-    assert "exit_code=3" in str(raised.value)
-    assert REFUSAL in str(raised.value)
+    reason = await _launch_failure_reason(client, "launch-failure-1", spec)
+    assert "exit_code=3" in reason
+    assert REFUSAL in reason
     assert config.native_state_dir is not None
     native_home = "claude" if harness == protocol_pb2.HARNESS_CLAUDE else "codex"
     assert (config.native_state_dir / "launch-failure-1" / native_home).is_dir()
@@ -89,10 +102,9 @@ async def test_a_harness_that_dies_in_its_handshake_names_its_exit_and_stderr(
 async def test_a_harness_the_supervisor_cannot_start_names_the_spawn_failure(
     client: RunnerClient, spec: protocol_pb2.SessionSpec
 ) -> None:
-    with pytest.raises(RunnerError) as raised:
-        await client.attach("launch-failure-2", spec=spec)
-    assert "exit_code=125" in str(raised.value)
-    assert "harness supervisor: start native harness" in str(raised.value)
+    reason = await _launch_failure_reason(client, "launch-failure-2", spec)
+    assert "exit_code=125" in reason
+    assert "harness supervisor: start native harness" in reason
 
 
 async def test_summaries_report_the_published_log_not_a_batch_in_progress(tmp_path: Path) -> None:
