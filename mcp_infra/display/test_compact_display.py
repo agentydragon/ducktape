@@ -9,8 +9,8 @@ from typing import cast
 
 import pytest
 import pytest_bazel
-from mcp.types import Implementation, InitializeResult, ServerCapabilities
-from pydantic import BaseModel
+from mcp.types import ListRootsResult, Root
+from pydantic import BaseModel, FileUrl
 from rich.console import Console
 from syrupy.assertion import SnapshotAssertion
 
@@ -96,52 +96,17 @@ def test_docker_exec_shell_unwrapping_snapshot(snapshot: SnapshotAssertion, call
     assert rendered == snapshot
 
 
-# CompactDisplayHandler serialization tests (Pydantic Url/AnyUrl handling)
-
-
-def test_compact_display_handler_with_anyurl_in_result():
-    """Test that CompactDisplayHandler handles tool results with AnyUrl correctly.
-
-    This reproduces the original bug: InitializeResult contains serverInfo.url (AnyUrl),
-    and without mode='json', serialization would fail.
-    """
-
-    # Create a realistic MCP InitializeResult - this is what would come back from an MCP server
-    # The serverInfo.url field is Optional[AnyUrl], which caused the original bug
-    init_result = InitializeResult(
-        protocolVersion="2024-11-05",
-        capabilities=ServerCapabilities(),
-        serverInfo=Implementation(name="test-server", version="1.0.0"),
+def test_compact_display_renders_pydantic_url_in_result(call_id_gen):
+    """A python-mode `model_dump()` leaves pydantic `Url` objects (`Root.uri` is a `FileUrl`) that `json.dumps` rejects."""
+    call = ToolCall(
+        name=build_mcp_function(ContainerExecServer.RUNTIME_MOUNT_PREFIX, "list_roots"),
+        args_json="{}",
+        call_id=call_id_gen(),
     )
+    roots = ListRootsResult(roots=[Root(uri=FileUrl("file:///test/workspace"), name="workspace")])
+    output = ToolCallOutput(call_id=call.call_id, result=ToolResult(structured_content=roots.model_dump()))
 
-    # The bug was: when we try to dump this without mode="json", it contains Url objects
-    # that can't be serialized by json.dumps() or compact_json Formatter
-    dumped_without_mode = init_result.model_dump()  # This would have Url objects
-
-    # Now create a ToolResult with this as structured content (simulating a tool returning it)
-    result = ToolResult(structured_content=dumped_without_mode, is_error=False, content=[])
-
-    # Create handler with a StringIO console to capture output
-    output_buffer = StringIO()
-    console = Console(file=output_buffer, force_terminal=False, width=120)
-    handler = CompactDisplayHandler(max_lines=20, console=console, servers=None, show_token_usage=False)
-
-    # Create a fake tool call and output event
-
-    call = ToolCall(call_id="test-123", name="mcp_initialize", args_json="{}")
-    handler._calls["test-123"] = call
-
-    output = ToolCallOutput(call_id="test-123", result=result)
-
-    # This used to raise "TypeError: Object of type Url is not JSON serializable"
-    # Now it should work because the handler uses to_jsonable_python()
-    handler.on_tool_result_event(output)
-    output_text = output_buffer.getvalue()
-
-    # Should have produced some output
-    assert len(output_text) > 0, "Handler should have produced output"
-    # Should contain the server name
-    assert "test-server" in output_text, f"Output should contain server name, got: {output_text}"
+    assert "file:///test/workspace" in render_handler_to_string(call, output)
 
 
 if __name__ == "__main__":
