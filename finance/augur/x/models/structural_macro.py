@@ -99,7 +99,8 @@ class EquityProcess(FrozenModel):
     # checked-in fit's `rate_beta_fit`/`rate_beta_fitted_value`/`rate_beta_r_squared` are the
     # same finding as data). So the model carries no bond/equity coupling rather than noise
     # dressed as structure — load-bearing per structural_macro.md: a question that turns on bond/equity
-    # correlation is not answered here.
+    # correlation is not answered here. Changing the default changes every bond/equity conclusion
+    # drawn from this model, so it moves only together with structural_macro.md's gap 2.
     rate_beta: float = 0.0
 
 
