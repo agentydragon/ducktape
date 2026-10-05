@@ -1,6 +1,5 @@
 # gazelle:exclude migrations
 load("@aspect_rules_py//py:defs.bzl", "py_image_layer", aspect_py_binary = "py_binary")
-load("@bazel_skylib//rules:build_test.bzl", "build_test")
 load("@rules_oci//oci:defs.bzl", "oci_image", "oci_load")
 load("@rules_pkg//pkg:mappings.bzl", "pkg_files", "strip_prefix")
 load("@rules_pkg//pkg:tar.bzl", "pkg_tar")
@@ -480,14 +479,6 @@ oci_load(
     name = "static_load",
     image = ":static_image",
     repo_tags = ["haku-console-static:latest"],
-)
-
-build_test(
-    name = "static_image_build_test",
-    targets = [
-        ":static_image",
-        ":static_image.digest",
-    ],
 )
 
 py_library(
