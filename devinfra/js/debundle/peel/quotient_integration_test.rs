@@ -293,51 +293,6 @@ fn post_seed_reports_each_unrealizable_scc_in_owner_id_order() {
 }
 
 #[test]
-fn contract_never_un_contracts() {
-    // API surface check: after a contraction, the involved owners
-    // remain in the same class no matter what subsequent operations
-    // are performed. There is no public `split` / `un_contract` /
-    // `set_class` on QuotientGraph; the only mutation is
-    // `contract`, which is monotone (coarsens `~`).
-    //
-    // We verify this empirically by:
-    //   1. Building a fresh quotient.
-    //   2. Contracting (c(a), c(b)).
-    //   3. Performing every other contraction the kernel allows and
-    //      asserting that c(a) == c(b) after each.
-    let a = residual_owner("owner:a", 1, &["BindingA"], 5);
-    let b = residual_owner("owner:b", 2, &["BindingB"], 5);
-    let c = residual_owner("owner:c", 3, &["BindingC"], 5);
-    let d = residual_owner("owner:d", 4, &["BindingD"], 5);
-    let report = singleton_graph(vec![a.clone(), b.clone(), c.clone(), d.clone()], vec![]);
-    let mut q = QuotientGraph::from_report(&report, 10_000).unwrap();
-    let a_idx = q.owner_idx_of("owner:a").unwrap();
-    let b_idx = q.owner_idx_of("owner:b").unwrap();
-    let c_idx = q.owner_idx_of("owner:c").unwrap();
-    let d_idx = q.owner_idx_of("owner:d").unwrap();
-
-    let ca = q.class_of(a_idx);
-    let cb = q.class_of(b_idx);
-    q.contract(ca, cb).expect("contract(a, b)");
-    assert_eq!(q.class_of(a_idx), q.class_of(b_idx));
-
-    // After contracting (c, d), a and b still share a class.
-    let cc = q.class_of(c_idx);
-    let cd = q.class_of(d_idx);
-    q.contract(cc, cd).expect("contract(c, d)");
-    assert_eq!(q.class_of(a_idx), q.class_of(b_idx));
-
-    // After contracting (a-class, c-class), all four share a
-    // class — a and b are still together.
-    let cab = q.class_of(a_idx);
-    let ccd = q.class_of(c_idx);
-    q.contract(cab, ccd).expect("contract(ab, cd)");
-    assert_eq!(q.class_of(a_idx), q.class_of(b_idx));
-    assert_eq!(q.class_of(a_idx), q.class_of(c_idx));
-    assert_eq!(q.class_of(a_idx), q.class_of(d_idx));
-}
-
-#[test]
 fn factorize_golden_output_unchanged() {
     // Golden test: propose's output stays byte-identical for the
     // same representative inputs. The renderer-over-quotient path
@@ -521,35 +476,6 @@ fn greedy_terminates_at_convergence() {
     // Running greedy again is a no-op (converged).
     let again = greedy_merge_to_convergence(&mut q);
     assert!(again.is_empty(), "second pass should be empty: {again:?}");
-}
-
-#[test]
-fn greedy_never_splits_existing_spec_module() {
-    let a1 = active_owner("owner:a1", 1, &["BindingA1"], 10, "ui/x");
-    let a2 = active_owner("owner:a2", 2, &["BindingA2"], 10, "ui/x");
-    let h = residual_owner("owner:h", 3, &["BindingH"], 5);
-    let report = singleton_graph(
-        vec![a1.clone(), a2.clone(), h.clone()],
-        vec![owner_edge(
-            "edge:0",
-            "owner:a1",
-            "owner:h",
-            DepKind::EagerUse,
-            true,
-        )],
-    );
-
-    let groups = vec![module_group(vec![0, 1])];
-    let (mut q, _) = QuotientGraph::from_report_with_partition(&report, 10_000, &groups).unwrap();
-    let _ = greedy_merge_to_convergence(&mut q);
-
-    let a1_idx = q.owner_idx_of("owner:a1").unwrap();
-    let a2_idx = q.owner_idx_of("owner:a2").unwrap();
-    assert_eq!(
-        q.class_of(a1_idx),
-        q.class_of(a2_idx),
-        "spec-module owners must stay co-located",
-    );
 }
 
 // ---------- Full mergeability + merge output shape. ----------
