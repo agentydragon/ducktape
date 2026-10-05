@@ -1,7 +1,6 @@
 """Capture every scenario of a `file://` harness with Playwright: one `test_scenario` per scenario.
 
-The Python counterpart of `runScenarios` in `frontend_visual/visual-test-lib.mjs`, run by the
-`py_visual_test` macro (`frontend_visual/py_visual_test.bzl`), which names this module its
+Run by the `py_visual_test` macro (`frontend_visual/py_visual_test.bzl`), which names this module its
 `main_module` and sets the environment `SweepConfig` reads. The scenarios are the rows of a
 `scenarios.json` (`visual_scenarios`); each is rendered, gated, and published as
 `<outputName>-actual.png` (the suffix is the lane's choice) plus an entry in `visual-review.json`, for PR visual review

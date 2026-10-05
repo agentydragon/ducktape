@@ -1,10 +1,9 @@
 /**
  * Which scenes a Bazel shard of a visual test is responsible for.
  *
- * Shared by every multi-scene runner -- visual-test-lib.mjs's sweep and haku console's own
- * render.mjs -- because filter-then-shard is the same decision wherever scenes are batched, and
- * the Bazel protocol around it (advertise support, then read the shard environment) is easy to get
- * subtly wrong once, let alone twice.
+ * Used by haku console's multi-scene renderer (render.mjs): filter-then-shard is the same decision
+ * wherever scenes are batched, and the Bazel protocol around it (advertise support, then read the
+ * shard environment) is easy to get subtly wrong.
  */
 import { writeFileSync } from "node:fs";
 
