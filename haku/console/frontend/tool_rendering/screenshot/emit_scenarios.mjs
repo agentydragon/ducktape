@@ -45,8 +45,8 @@ for (const [index, { serverId, toolName }] of PREVIEW_FIXTURES.entries()) {
         viewport: VIEWPORT,
         colorScheme,
         label: `${serverId} · ${toolName} — ${variant} · ${colorScheme}`,
-        // The widgets that fetch after mount (gmail subjects, grocy reference, calendar name) render
-        // the card first, so it is the first thing there to wait for.
+        // A widget that fetches after mount (gmail subjects, grocy reference, calendar name) re-renders
+        // inside the card; the sweep's network-ledger wait covers that, so the card is the whole condition.
         readySelectors: [".haku-preview-card"],
         windowGlobals: { __FIXTURE__: index, __VARIANT__: variant },
       };
