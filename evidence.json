@@ -1,5 +1,5 @@
 {
-  "source_devel_commit": "8b1c35555d93acd6afce5718c1002ce14960d85f",
+  "source_devel_commit": "d44921d55c759da6c3f1d32ebc2c265077791c9b",
   "busy_window_evidence": {
     "summary": {
       "window": {
@@ -8449,5 +8449,4798 @@
         "effect": "Not measured; removed hook time must be compared with aspect action/cache cost and parallel required gates. Old roughly60s hook-plus-setup estimate is not applicable as a whole."
       }
     }
-  }
+  },
+  "early_effects": {
+    "collected_from_utc": "2026-10-05T05:35:31Z",
+    "recorded_at_utc": "2026-10-05T05:54:19.753698+00:00",
+    "source_devel_commit": "d44921d55c759da6c3f1d32ebc2c265077791c9b",
+    "windows": {
+      "before": [
+        "2026-10-04T18:00:00Z",
+        "2026-10-04T23:15:00Z"
+      ],
+      "middle": [
+        "2026-10-05T00:15:00Z",
+        "2026-10-05T02:07:00Z"
+      ],
+      "after": [
+        "2026-10-05T02:23:00Z",
+        "2026-10-05T05:25:00Z"
+      ]
+    },
+    "sampling": "All distinct heads with executed main pull-request Bazel job in these windows; first observed CI workflow creation per head. Fork trust workflows and push builds excluded. Two before heads missing passing required gates and one middle failed head excluded from passing-duration summaries.",
+    "required_checks": [
+      "Gazelle diff",
+      "Build artifacts + imports check",
+      "Pre-commit checks",
+      "bazel-ci / Test & Build"
+    ],
+    "statistics": {
+      "before_vs_after": {
+        "all": {
+          "before_heads": 43,
+          "after_heads": 60,
+          "before_prs": 30,
+          "after_prs": 54,
+          "before_median_s": 189.0,
+          "after_median_s": 198.0,
+          "median_difference_after_minus_before_s": 9.0,
+          "cluster_bootstrap_95_interval_s": [
+            -128.5,
+            48.5
+          ]
+        },
+        "frontend": {
+          "before_heads": 20,
+          "after_heads": 14,
+          "before_prs": 9,
+          "after_prs": 13,
+          "before_median_s": 351.5,
+          "after_median_s": 244.5,
+          "median_difference_after_minus_before_s": -107.0,
+          "cluster_bootstrap_95_interval_s": [
+            -189.0,
+            65.0
+          ]
+        },
+        "tooling": {
+          "before_heads": 10,
+          "after_heads": 14,
+          "before_prs": 8,
+          "after_prs": 12,
+          "before_median_s": 167.0,
+          "after_median_s": 160.0,
+          "median_difference_after_minus_before_s": -7.0,
+          "cluster_bootstrap_95_interval_s": [
+            -41.0,
+            94.5
+          ]
+        },
+        "other code": {
+          "before_heads": 10,
+          "after_heads": 23,
+          "before_prs": 10,
+          "after_prs": 23,
+          "before_median_s": 152.0,
+          "after_median_s": 167.0,
+          "median_difference_after_minus_before_s": 15.0,
+          "cluster_bootstrap_95_interval_s": [
+            -31.0,
+            76.0
+          ]
+        }
+      },
+      "middle_vs_after": {
+        "all": {
+          "before_heads": 29,
+          "after_heads": 60,
+          "before_prs": 28,
+          "after_prs": 54,
+          "before_median_s": 263.0,
+          "after_median_s": 198.0,
+          "median_difference_after_minus_before_s": -65.0,
+          "cluster_bootstrap_95_interval_s": [
+            -153.5125,
+            51.01249999999982
+          ]
+        },
+        "frontend": {
+          "before_heads": 12,
+          "after_heads": 14,
+          "before_prs": 11,
+          "after_prs": 13,
+          "before_median_s": 324.5,
+          "after_median_s": 244.5,
+          "median_difference_after_minus_before_s": -80.0,
+          "cluster_bootstrap_95_interval_s": [
+            -186.5125,
+            113.0
+          ]
+        },
+        "tooling": {
+          "before_heads": 6,
+          "after_heads": 14,
+          "before_prs": 6,
+          "after_prs": 12,
+          "before_median_s": 209.0,
+          "after_median_s": 160.0,
+          "median_difference_after_minus_before_s": -49.0,
+          "cluster_bootstrap_95_interval_s": [
+            -240.0,
+            52.0
+          ]
+        },
+        "other code": {
+          "before_heads": 9,
+          "after_heads": 23,
+          "before_prs": 9,
+          "after_prs": 23,
+          "before_median_s": 176.0,
+          "after_median_s": 167.0,
+          "median_difference_after_minus_before_s": -9.0,
+          "cluster_bootstrap_95_interval_s": [
+            -138.0,
+            66.0
+          ]
+        }
+      }
+    },
+    "uncertainty_method": "10000 percentile bootstrap resamples of PR clusters from the union of PRs in each pair; retain every sampled PR head and period. Seed20261005. Pointwise intervals; not causal adjustment.",
+    "implementation_pr_sensitivity": {
+      "comparison": "middle vsafter, exclude9067/9069/9070 from middle",
+      "before_heads": 26,
+      "after_heads": 60,
+      "median_before_s": 224.5,
+      "median_after_s": 198,
+      "difference_s": -26.5,
+      "interval95_s": [
+        -155.0125,
+        54.5
+      ]
+    },
+    "limitations": [
+      "No exact push-to-readiness or agent-notification timestamps.",
+      "Concurrent workload/cache/test/Chromium changes and observational time windows prevent causal attribution.",
+      "Only1early and5late cdk8s passing heads; visual publication not remeasured in this required-gate cohort.",
+      "Pytest aspect merged at05:25:37, after comparison cutoff."
+    ],
+    "heads": [
+      {
+        "run": 37222830816,
+        "head": "04bcea0e79456d8825b3b85f785baa271e650664",
+        "source_merge": "3548c97b7e2de498af855d05ff31bd97bb6bccc6",
+        "pr": 8972,
+        "period": "before",
+        "class": "frontend",
+        "created_at": "2026-10-04T18:02:27Z",
+        "ci_conclusion": "success",
+        "missing_passing_gates": [],
+        "feedback_s": 352.0,
+        "last_gate": "bazel-ci / Test & Build",
+        "gate_offsets_s": {
+          "Gazelle diff": 51.0,
+          "Build artifacts + imports check": 117.0,
+          "Pre-commit checks": 150.0,
+          "bazel-ci / Test & Build": 352.0
+        },
+        "run_url": "https://github.com/agentydragon/ducktape/actions/runs/37222830816"
+      },
+      {
+        "run": 37222855790,
+        "head": "9402551a1c65e48d8c5cb9bc4d1bb149f9b04af7",
+        "source_merge": "593e3a1e03055553efae45af8b6efb5637f13e08",
+        "pr": 8960,
+        "period": "before",
+        "class": "frontend",
+        "created_at": "2026-10-04T18:02:50Z",
+        "ci_conclusion": "success",
+        "missing_passing_gates": [],
+        "feedback_s": 346.0,
+        "last_gate": "bazel-ci / Test & Build",
+        "gate_offsets_s": {
+          "Gazelle diff": 40.0,
+          "Build artifacts + imports check": 122.0,
+          "Pre-commit checks": 134.0,
+          "bazel-ci / Test & Build": 346.0
+        },
+        "run_url": "https://github.com/agentydragon/ducktape/actions/runs/37222855790"
+      },
+      {
+        "run": 37222876664,
+        "head": "e0f96b149ef8620982bcfc3867647ca2e010d9c1",
+        "source_merge": "226f5efaf82ef1e549c25cb593fb1c17c655b1d7",
+        "pr": 8973,
+        "period": "before",
+        "class": "tooling",
+        "created_at": "2026-10-04T18:03:07Z",
+        "ci_conclusion": "success",
+        "missing_passing_gates": [],
+        "feedback_s": 173.0,
+        "last_gate": "Pre-commit checks",
+        "gate_offsets_s": {
+          "Gazelle diff": 40.0,
+          "Build artifacts + imports check": 124.0,
+          "Pre-commit checks": 173.0,
+          "bazel-ci / Test & Build": 153.0
+        },
+        "run_url": "https://github.com/agentydragon/ducktape/actions/runs/37222876664"
+      },
+      {
+        "run": 37222958161,
+        "head": "412e149094262ad31603655c23f073c88fa1ea70",
+        "source_merge": "b101e795394932f7c21a8e92075ef2039726013a",
+        "pr": 8974,
+        "period": "before",
+        "class": "docs",
+        "created_at": "2026-10-04T18:04:19Z",
+        "ci_conclusion": "success",
+        "missing_passing_gates": [],
+        "feedback_s": 115.0,
+        "last_gate": "Build artifacts + imports check",
+        "gate_offsets_s": {
+          "Gazelle diff": 39.0,
+          "Build artifacts + imports check": 115.0,
+          "Pre-commit checks": 107.0,
+          "bazel-ci / Test & Build": 103.0
+        },
+        "run_url": "https://github.com/agentydragon/ducktape/actions/runs/37222958161"
+      },
+      {
+        "run": 37223361180,
+        "head": "888d95498ea6939aae2c246c4ebdaab7b2793f2a",
+        "source_merge": "fdbcc694eafe5777fca3a2de10f3b0ad099e4a28",
+        "pr": 8975,
+        "period": "before",
+        "class": "frontend",
+        "created_at": "2026-10-04T18:10:15Z",
+        "ci_conclusion": "success",
+        "missing_passing_gates": [],
+        "feedback_s": 164.0,
+        "last_gate": "bazel-ci / Test & Build",
+        "gate_offsets_s": {
+          "Gazelle diff": 32.0,
+          "Build artifacts + imports check": 120.0,
+          "Pre-commit checks": 156.0,
+          "bazel-ci / Test & Build": 164.0
+        },
+        "run_url": "https://github.com/agentydragon/ducktape/actions/runs/37223361180"
+      },
+      {
+        "run": 37223692127,
+        "head": "8ff2d41c1e400f460ad83a502da0bb2420c5aff1",
+        "source_merge": "9c351ce3f66bc48edf6731a663471e193227920a",
+        "pr": 8976,
+        "period": "before",
+        "class": "other code",
+        "created_at": "2026-10-04T18:15:02Z",
+        "ci_conclusion": "success",
+        "missing_passing_gates": [],
+        "feedback_s": 144.0,
+        "last_gate": "bazel-ci / Test & Build",
+        "gate_offsets_s": {
+          "Gazelle diff": 40.0,
+          "Build artifacts + imports check": 115.0,
+          "Pre-commit checks": 138.0,
+          "bazel-ci / Test & Build": 144.0
+        },
+        "run_url": "https://github.com/agentydragon/ducktape/actions/runs/37223692127"
+      },
+      {
+        "run": 37224312359,
+        "head": "3cbcf60bb5957001a5d81cf135ff69a1207acd2a",
+        "source_merge": "3bacfc6c636f082e3c45795f47374aa1e2c0f555",
+        "pr": 8960,
+        "period": "before",
+        "class": "frontend",
+        "created_at": "2026-10-04T18:24:19Z",
+        "ci_conclusion": "success",
+        "missing_passing_gates": [],
+        "feedback_s": 351.0,
+        "last_gate": "bazel-ci / Test & Build",
+        "gate_offsets_s": {
+          "Gazelle diff": 39.0,
+          "Build artifacts + imports check": 200.0,
+          "Pre-commit checks": 114.0,
+          "bazel-ci / Test & Build": 351.0
+        },
+        "run_url": "https://github.com/agentydragon/ducktape/actions/runs/37224312359"
+      },
+      {
+        "run": 37224561871,
+        "head": "404aca7cd3402447659267a2b6caf37ac3e2353f",
+        "source_merge": "42082ef4991a59351bc04625194b67182650d23e",
+        "pr": 8977,
+        "period": "before",
+        "class": "tooling",
+        "created_at": "2026-10-04T18:28:17Z",
+        "ci_conclusion": "success",
+        "missing_passing_gates": [],
+        "feedback_s": 161.0,
+        "last_gate": "bazel-ci / Test & Build",
+        "gate_offsets_s": {
+          "Gazelle diff": 39.0,
+          "Build artifacts + imports check": 118.0,
+          "Pre-commit checks": 117.0,
+          "bazel-ci / Test & Build": 161.0
+        },
+        "run_url": "https://github.com/agentydragon/ducktape/actions/runs/37224561871"
+      },
+      {
+        "run": 37225720540,
+        "head": "0e8d803d7afacca89c65d893a8485e8bc83dfdda",
+        "source_merge": "70cef035a461bfb1b10aeaa2423dbfad348ed652",
+        "pr": 8972,
+        "period": "before",
+        "class": "frontend",
+        "created_at": "2026-10-04T18:46:28Z",
+        "ci_conclusion": "success",
+        "missing_passing_gates": [],
+        "feedback_s": 151.0,
+        "last_gate": "bazel-ci / Test & Build",
+        "gate_offsets_s": {
+          "Gazelle diff": 39.0,
+          "Build artifacts + imports check": 107.0,
+          "Pre-commit checks": 137.0,
+          "bazel-ci / Test & Build": 151.0
+        },
+        "run_url": "https://github.com/agentydragon/ducktape/actions/runs/37225720540"
+      },
+      {
+        "run": 37226491442,
+        "head": "38417d685aeee9ceb0c816eb074c2ae7b9766596",
+        "source_merge": "e28f337ec7832e377bd693162096ed61a50ba4f1",
+        "pr": 8973,
+        "period": "before",
+        "class": "tooling",
+        "created_at": "2026-10-04T18:58:47Z",
+        "ci_conclusion": "success",
+        "missing_passing_gates": [],
+        "feedback_s": 183.0,
+        "last_gate": "bazel-ci / Test & Build",
+        "gate_offsets_s": {
+          "Gazelle diff": 39.0,
+          "Build artifacts + imports check": 125.0,
+          "Pre-commit checks": 152.0,
+          "bazel-ci / Test & Build": 183.0
+        },
+        "run_url": "https://github.com/agentydragon/ducktape/actions/runs/37226491442"
+      },
+      {
+        "run": 37231040669,
+        "head": "725a212dafea2ba155bbc02532339b931ba94db7",
+        "source_merge": "7da5fac9d44e378ec766df60ac392eee38d41765",
+        "pr": 8983,
+        "period": "before",
+        "class": "other code",
+        "created_at": "2026-10-04T20:09:48Z",
+        "ci_conclusion": "success",
+        "missing_passing_gates": [],
+        "feedback_s": 147.0,
+        "last_gate": "bazel-ci / Test & Build",
+        "gate_offsets_s": {
+          "Gazelle diff": 43.0,
+          "Build artifacts + imports check": 95.0,
+          "Pre-commit checks": 140.0,
+          "bazel-ci / Test & Build": 147.0
+        },
+        "run_url": "https://github.com/agentydragon/ducktape/actions/runs/37231040669"
+      },
+      {
+        "run": 37231692139,
+        "head": "5feba02dcdee599ee1add410251b802337bd9e74",
+        "source_merge": "28ae1fea5dba14da624f0ec82811fa90d7148f4a",
+        "pr": 8986,
+        "period": "before",
+        "class": "frontend",
+        "created_at": "2026-10-04T20:20:06Z",
+        "ci_conclusion": "success",
+        "missing_passing_gates": [
+          "Build artifacts + imports check",
+          "Pre-commit checks"
+        ],
+        "run_url": "https://github.com/agentydragon/ducktape/actions/runs/37231692139"
+      },
+      {
+        "run": 37231787030,
+        "head": "ef95c91147c08f0ff9d2a618d2cf3a9ab754c1a7",
+        "source_merge": "6dc68fca98cec356fa34a570f10c446522dc4a1c",
+        "pr": 8986,
+        "period": "before",
+        "class": "frontend",
+        "created_at": "2026-10-04T20:21:40Z",
+        "ci_conclusion": "success",
+        "missing_passing_gates": [],
+        "feedback_s": 295.0,
+        "last_gate": "bazel-ci / Test & Build",
+        "gate_offsets_s": {
+          "Gazelle diff": 42.0,
+          "Build artifacts + imports check": 135.0,
+          "Pre-commit checks": 130.0,
+          "bazel-ci / Test & Build": 295.0
+        },
+        "run_url": "https://github.com/agentydragon/ducktape/actions/runs/37231787030"
+      },
+      {
+        "run": 37234086197,
+        "head": "910c4420c67c99a1ac98174194b2c99b49009555",
+        "source_merge": "a8283b375e97b5137ff0508d661a0113bff05aae",
+        "pr": 8991,
+        "period": "before",
+        "class": "tooling",
+        "created_at": "2026-10-04T20:57:15Z",
+        "ci_conclusion": "success",
+        "missing_passing_gates": [],
+        "feedback_s": 189.0,
+        "last_gate": "bazel-ci / Test & Build",
+        "gate_offsets_s": {
+          "Gazelle diff": 50.0,
+          "Build artifacts + imports check": 111.0,
+          "Pre-commit checks": 132.0,
+          "bazel-ci / Test & Build": 189.0
+        },
+        "run_url": "https://github.com/agentydragon/ducktape/actions/runs/37234086197"
+      },
+      {
+        "run": 37234499395,
+        "head": "000e8014587368129c3beee9138db1ba24b5380e",
+        "source_merge": "134bd3b9be030766deb150daad45f1ea56649ed4",
+        "pr": 8986,
+        "period": "before",
+        "class": "frontend",
+        "created_at": "2026-10-04T21:03:11Z",
+        "ci_conclusion": "success",
+        "missing_passing_gates": [],
+        "feedback_s": 401.0,
+        "last_gate": "bazel-ci / Test & Build",
+        "gate_offsets_s": {
+          "Gazelle diff": 41.0,
+          "Build artifacts + imports check": 122.0,
+          "Pre-commit checks": 100.0,
+          "bazel-ci / Test & Build": 401.0
+        },
+        "run_url": "https://github.com/agentydragon/ducktape/actions/runs/37234499395"
+      },
+      {
+        "run": 37234879060,
+        "head": "a7b4e42f84dde0fb9f8947b03470563b38b65527",
+        "source_merge": "1a839ed7767fe681e865a45335d7365280d5d8a2",
+        "pr": 8992,
+        "period": "before",
+        "class": "other code",
+        "created_at": "2026-10-04T21:08:34Z",
+        "ci_conclusion": "success",
+        "missing_passing_gates": [],
+        "feedback_s": 176.0,
+        "last_gate": "bazel-ci / Test & Build",
+        "gate_offsets_s": {
+          "Gazelle diff": 39.0,
+          "Build artifacts + imports check": 122.0,
+          "Pre-commit checks": 166.0,
+          "bazel-ci / Test & Build": 176.0
+        },
+        "run_url": "https://github.com/agentydragon/ducktape/actions/runs/37234879060"
+      },
+      {
+        "run": 37235583511,
+        "head": "f2e4f69abc40199b7614fdaba4d2f0b938644021",
+        "source_merge": "259197fcd201bbec9e08e23daed864ebe575af55",
+        "pr": 8986,
+        "period": "before",
+        "class": "frontend",
+        "created_at": "2026-10-04T21:18:47Z",
+        "ci_conclusion": "success",
+        "missing_passing_gates": [],
+        "feedback_s": 379.0,
+        "last_gate": "bazel-ci / Test & Build",
+        "gate_offsets_s": {
+          "Gazelle diff": 41.0,
+          "Build artifacts + imports check": 121.0,
+          "Pre-commit checks": 103.0,
+          "bazel-ci / Test & Build": 379.0
+        },
+        "run_url": "https://github.com/agentydragon/ducktape/actions/runs/37235583511"
+      },
+      {
+        "run": 37235726079,
+        "head": "161a69ee737e7e9296b62beaa55eab6f7174d877",
+        "source_merge": "8031d39270e8c95f66996cb7ca0300b0047cc04d",
+        "pr": 8986,
+        "period": "before",
+        "class": "frontend",
+        "created_at": "2026-10-04T21:20:55Z",
+        "ci_conclusion": "success",
+        "missing_passing_gates": [],
+        "feedback_s": 342.0,
+        "last_gate": "bazel-ci / Test & Build",
+        "gate_offsets_s": {
+          "Gazelle diff": 30.0,
+          "Build artifacts + imports check": 130.0,
+          "Pre-commit checks": 131.0,
+          "bazel-ci / Test & Build": 342.0
+        },
+        "run_url": "https://github.com/agentydragon/ducktape/actions/runs/37235726079"
+      },
+      {
+        "run": 37235992101,
+        "head": "1061e09692310bdcabfd6be7fb6dfc68d1996fac",
+        "source_merge": "5bd1e68366fd7181b6c1b216430f67e990884402",
+        "pr": 8986,
+        "period": "before",
+        "class": "frontend",
+        "created_at": "2026-10-04T21:24:53Z",
+        "ci_conclusion": "success",
+        "missing_passing_gates": [],
+        "feedback_s": 365.0,
+        "last_gate": "bazel-ci / Test & Build",
+        "gate_offsets_s": {
+          "Gazelle diff": 39.0,
+          "Build artifacts + imports check": 124.0,
+          "Pre-commit checks": 115.0,
+          "bazel-ci / Test & Build": 365.0
+        },
+        "run_url": "https://github.com/agentydragon/ducktape/actions/runs/37235992101"
+      },
+      {
+        "run": 37236199178,
+        "head": "bb9344fe8d637cc59241067199966d7c9640d56a",
+        "source_merge": "64e0ba251f77fee3ff6e65cf5b65ddd892e95571",
+        "pr": 8998,
+        "period": "before",
+        "class": "tooling",
+        "created_at": "2026-10-04T21:27:57Z",
+        "ci_conclusion": "success",
+        "missing_passing_gates": [],
+        "feedback_s": 173.0,
+        "last_gate": "bazel-ci / Test & Build",
+        "gate_offsets_s": {
+          "Gazelle diff": 38.0,
+          "Build artifacts + imports check": 122.0,
+          "Pre-commit checks": 116.0,
+          "bazel-ci / Test & Build": 173.0
+        },
+        "run_url": "https://github.com/agentydragon/ducktape/actions/runs/37236199178"
+      },
+      {
+        "run": 37236810841,
+        "head": "428c3d5de17983089f9b42a531c836dc902957fb",
+        "source_merge": "ce10ae86621f3a92b0ff861e17f96d5bb2b9d87d",
+        "pr": 8986,
+        "period": "before",
+        "class": "frontend",
+        "created_at": "2026-10-04T21:36:57Z",
+        "ci_conclusion": "success",
+        "missing_passing_gates": [],
+        "feedback_s": 494.0,
+        "last_gate": "bazel-ci / Test & Build",
+        "gate_offsets_s": {
+          "Gazelle diff": 37.0,
+          "Build artifacts + imports check": 255.0,
+          "Pre-commit checks": 106.0,
+          "bazel-ci / Test & Build": 494.0
+        },
+        "run_url": "https://github.com/agentydragon/ducktape/actions/runs/37236810841"
+      },
+      {
+        "run": 37237243923,
+        "head": "e4ee508004b4a7d43b8e4351b1afc6721499351c",
+        "source_merge": "898279b87ca6e19ad17a16f3cdbccac498b88db1",
+        "pr": 8986,
+        "period": "before",
+        "class": "frontend",
+        "created_at": "2026-10-04T21:43:31Z",
+        "ci_conclusion": "success",
+        "missing_passing_gates": [
+          "Build artifacts + imports check",
+          "Pre-commit checks"
+        ],
+        "run_url": "https://github.com/agentydragon/ducktape/actions/runs/37237243923"
+      },
+      {
+        "run": 37237322037,
+        "head": "8a97cd68affeef462f5b6a9c1aee0ae7fd1ef04c",
+        "source_merge": "1a5814c010d33de417cf8be91f23d258ea15b0e1",
+        "pr": 8986,
+        "period": "before",
+        "class": "frontend",
+        "created_at": "2026-10-04T21:44:43Z",
+        "ci_conclusion": "success",
+        "missing_passing_gates": [],
+        "feedback_s": 319.0,
+        "last_gate": "bazel-ci / Test & Build",
+        "gate_offsets_s": {
+          "Gazelle diff": 41.0,
+          "Build artifacts + imports check": 100.0,
+          "Pre-commit checks": 117.0,
+          "bazel-ci / Test & Build": 319.0
+        },
+        "run_url": "https://github.com/agentydragon/ducktape/actions/runs/37237322037"
+      },
+      {
+        "run": 37237969990,
+        "head": "9ee7647c987e229fc81c6b202f1fa411ab585a6d",
+        "source_merge": "43fa6e45bf0af5d1f7e5dabf18fbe0e2d7ae1e0b",
+        "pr": 8999,
+        "period": "before",
+        "class": "other code",
+        "created_at": "2026-10-04T21:54:44Z",
+        "ci_conclusion": "success",
+        "missing_passing_gates": [],
+        "feedback_s": 139.0,
+        "last_gate": "Pre-commit checks",
+        "gate_offsets_s": {
+          "Gazelle diff": 40.0,
+          "Build artifacts + imports check": 115.0,
+          "Pre-commit checks": 139.0,
+          "bazel-ci / Test & Build": 131.0
+        },
+        "run_url": "https://github.com/agentydragon/ducktape/actions/runs/37237969990"
+      },
+      {
+        "run": 37238271369,
+        "head": "3560aafb17b154454711a29a86a090da412d46a4",
+        "source_merge": "cb51bc377b7a9f2bb51733995b7697757cd4d261",
+        "pr": 9000,
+        "period": "before",
+        "class": "tooling",
+        "created_at": "2026-10-04T21:59:36Z",
+        "ci_conclusion": "success",
+        "missing_passing_gates": [],
+        "feedback_s": 117.0,
+        "last_gate": "Pre-commit checks",
+        "gate_offsets_s": {
+          "Gazelle diff": 38.0,
+          "Build artifacts + imports check": 108.0,
+          "Pre-commit checks": 117.0,
+          "bazel-ci / Test & Build": 102.0
+        },
+        "run_url": "https://github.com/agentydragon/ducktape/actions/runs/37238271369"
+      },
+      {
+        "run": 37239092050,
+        "head": "76738af5104892400f2b2b8d0de6ef25849e3fee",
+        "source_merge": "93739c2f8c67a3cba80b90911fb0b8ffd4b5c085",
+        "pr": 9002,
+        "period": "before",
+        "class": "tooling",
+        "created_at": "2026-10-04T22:11:57Z",
+        "ci_conclusion": "success",
+        "missing_passing_gates": [],
+        "feedback_s": 151.0,
+        "last_gate": "bazel-ci / Test & Build",
+        "gate_offsets_s": {
+          "Gazelle diff": 38.0,
+          "Build artifacts + imports check": 138.0,
+          "Pre-commit checks": 147.0,
+          "bazel-ci / Test & Build": 151.0
+        },
+        "run_url": "https://github.com/agentydragon/ducktape/actions/runs/37239092050"
+      },
+      {
+        "run": 37239524035,
+        "head": "55109dd79442105a26a849d7f85c70000852f6fe",
+        "source_merge": "49b71ffc94fa92488f80fcb47c8a83a827c2b166",
+        "pr": 9004,
+        "period": "before",
+        "class": "frontend",
+        "created_at": "2026-10-04T22:18:38Z",
+        "ci_conclusion": "success",
+        "missing_passing_gates": [],
+        "feedback_s": 446.0,
+        "last_gate": "bazel-ci / Test & Build",
+        "gate_offsets_s": {
+          "Gazelle diff": 40.0,
+          "Build artifacts + imports check": 118.0,
+          "Pre-commit checks": 102.0,
+          "bazel-ci / Test & Build": 446.0
+        },
+        "run_url": "https://github.com/agentydragon/ducktape/actions/runs/37239524035"
+      },
+      {
+        "run": 37239580135,
+        "head": "7aa3bcc8520b63c0f8c1c50885d7c048b9de2ed9",
+        "source_merge": "02832f15d0be3a738caf0a1cdb083c59145175ee",
+        "pr": 9005,
+        "period": "before",
+        "class": "tooling",
+        "created_at": "2026-10-04T22:19:32Z",
+        "ci_conclusion": "success",
+        "missing_passing_gates": [],
+        "feedback_s": 158.0,
+        "last_gate": "bazel-ci / Test & Build",
+        "gate_offsets_s": {
+          "Gazelle diff": 39.0,
+          "Build artifacts + imports check": 121.0,
+          "Pre-commit checks": 133.0,
+          "bazel-ci / Test & Build": 158.0
+        },
+        "run_url": "https://github.com/agentydragon/ducktape/actions/runs/37239580135"
+      },
+      {
+        "run": 37240032119,
+        "head": "52f6e21412a21bfbd06842cf75118601e04369f7",
+        "source_merge": "76841308e52b753fd1b148a749a289c4f0c892f9",
+        "pr": 9004,
+        "period": "before",
+        "class": "frontend",
+        "created_at": "2026-10-04T22:26:38Z",
+        "ci_conclusion": "success",
+        "missing_passing_gates": [],
+        "feedback_s": 405.0,
+        "last_gate": "bazel-ci / Test & Build",
+        "gate_offsets_s": {
+          "Gazelle diff": 41.0,
+          "Build artifacts + imports check": 119.0,
+          "Pre-commit checks": 108.0,
+          "bazel-ci / Test & Build": 405.0
+        },
+        "run_url": "https://github.com/agentydragon/ducktape/actions/runs/37240032119"
+      },
+      {
+        "run": 37240294149,
+        "head": "6d71299e03bfb1903b69404f78b0740ee4aa2778",
+        "source_merge": "9ae3da96f49d5d5b21d737db4da90e20e1c07390",
+        "pr": 9007,
+        "period": "before",
+        "class": "frontend",
+        "created_at": "2026-10-04T22:30:45Z",
+        "ci_conclusion": "success",
+        "missing_passing_gates": [],
+        "feedback_s": 396.0,
+        "last_gate": "bazel-ci / Test & Build",
+        "gate_offsets_s": {
+          "Gazelle diff": 38.0,
+          "Build artifacts + imports check": 121.0,
+          "Pre-commit checks": 122.0,
+          "bazel-ci / Test & Build": 396.0
+        },
+        "run_url": "https://github.com/agentydragon/ducktape/actions/runs/37240294149"
+      },
+      {
+        "run": 37240536517,
+        "head": "9398336762cf34689c3ccbd1f6a4629127c4a066",
+        "source_merge": "81981f73fa928f30f571212910cc85c3f9d05540",
+        "pr": 9005,
+        "period": "before",
+        "class": "tooling",
+        "created_at": "2026-10-04T22:34:33Z",
+        "ci_conclusion": "success",
+        "missing_passing_gates": [],
+        "feedback_s": 140.0,
+        "last_gate": "Pre-commit checks",
+        "gate_offsets_s": {
+          "Gazelle diff": 32.0,
+          "Build artifacts + imports check": 111.0,
+          "Pre-commit checks": 140.0,
+          "bazel-ci / Test & Build": 138.0
+        },
+        "run_url": "https://github.com/agentydragon/ducktape/actions/runs/37240536517"
+      },
+      {
+        "run": 37240814912,
+        "head": "b4a976ab993a3a6307936cda231a9db41f9090d6",
+        "source_merge": "8d946a2f6a32437711266dbb199a0d02b380d739",
+        "pr": 9008,
+        "period": "before",
+        "class": "other code",
+        "created_at": "2026-10-04T22:39:01Z",
+        "ci_conclusion": "success",
+        "missing_passing_gates": [],
+        "feedback_s": 157.0,
+        "last_gate": "Pre-commit checks",
+        "gate_offsets_s": {
+          "Gazelle diff": 40.0,
+          "Build artifacts + imports check": 128.0,
+          "Pre-commit checks": 157.0,
+          "bazel-ci / Test & Build": 135.0
+        },
+        "run_url": "https://github.com/agentydragon/ducktape/actions/runs/37240814912"
+      },
+      {
+        "run": 37240877465,
+        "head": "0edbd0f2d941a3df44c37e5f91b698729cf29e9d",
+        "source_merge": "24c52d9ff7ab6a2965a6ac7761df098c95fc41ca",
+        "pr": 9009,
+        "period": "before",
+        "class": "other code",
+        "created_at": "2026-10-04T22:40:03Z",
+        "ci_conclusion": "success",
+        "missing_passing_gates": [],
+        "feedback_s": 138.0,
+        "last_gate": "bazel-ci / Test & Build",
+        "gate_offsets_s": {
+          "Gazelle diff": 76.0,
+          "Build artifacts + imports check": 128.0,
+          "Pre-commit checks": 136.0,
+          "bazel-ci / Test & Build": 138.0
+        },
+        "run_url": "https://github.com/agentydragon/ducktape/actions/runs/37240877465"
+      },
+      {
+        "run": 37241009957,
+        "head": "b07b94b57c49572857ec338afa9f834861b5e2c7",
+        "source_merge": "8d7a56ceb9f141d144366d2d2dbe86eddb2678b3",
+        "pr": 9010,
+        "period": "before",
+        "class": "frontend",
+        "created_at": "2026-10-04T22:42:06Z",
+        "ci_conclusion": "success",
+        "missing_passing_gates": [],
+        "feedback_s": 225.0,
+        "last_gate": "bazel-ci / Test & Build",
+        "gate_offsets_s": {
+          "Gazelle diff": 129.0,
+          "Build artifacts + imports check": 176.0,
+          "Pre-commit checks": 140.0,
+          "bazel-ci / Test & Build": 225.0
+        },
+        "run_url": "https://github.com/agentydragon/ducktape/actions/runs/37241009957"
+      },
+      {
+        "run": 37241032422,
+        "head": "a03e275cb4161e4b4f52a0753127a90b3299c37e",
+        "source_merge": "479c1a442d1f524bd86be0067fad5afbf6bfbab2",
+        "pr": 9011,
+        "period": "before",
+        "class": "other code",
+        "created_at": "2026-10-04T22:42:26Z",
+        "ci_conclusion": "success",
+        "missing_passing_gates": [],
+        "feedback_s": 218.0,
+        "last_gate": "Build artifacts + imports check",
+        "gate_offsets_s": {
+          "Gazelle diff": 80.0,
+          "Build artifacts + imports check": 218.0,
+          "Pre-commit checks": 173.0,
+          "bazel-ci / Test & Build": 152.0
+        },
+        "run_url": "https://github.com/agentydragon/ducktape/actions/runs/37241032422"
+      },
+      {
+        "run": 37241060210,
+        "head": "a6098a6aa737ee7fc6f37e905ea4b038ea27a854",
+        "source_merge": "6c6cc63640c8b19de42334f5a0c2ddadf3e5b5dc",
+        "pr": 9004,
+        "period": "before",
+        "class": "frontend",
+        "created_at": "2026-10-04T22:42:54Z",
+        "ci_conclusion": "success",
+        "missing_passing_gates": [],
+        "feedback_s": 549.0,
+        "last_gate": "bazel-ci / Test & Build",
+        "gate_offsets_s": {
+          "Gazelle diff": 138.0,
+          "Build artifacts + imports check": 150.0,
+          "Pre-commit checks": 233.0,
+          "bazel-ci / Test & Build": 549.0
+        },
+        "run_url": "https://github.com/agentydragon/ducktape/actions/runs/37241060210"
+      },
+      {
+        "run": 37241139814,
+        "head": "a740ce8f4d82f16cac6b7c8834fd1ab33d5b9e39",
+        "source_merge": "75cef338795a1fa442d38e347c1fb97bab3de468",
+        "pr": 9012,
+        "period": "before",
+        "class": "frontend",
+        "created_at": "2026-10-04T22:44:10Z",
+        "ci_conclusion": "success",
+        "missing_passing_gates": [],
+        "feedback_s": 198.0,
+        "last_gate": "Pre-commit checks",
+        "gate_offsets_s": {
+          "Gazelle diff": 94.0,
+          "Build artifacts + imports check": 193.0,
+          "Pre-commit checks": 198.0,
+          "bazel-ci / Test & Build": 183.0
+        },
+        "run_url": "https://github.com/agentydragon/ducktape/actions/runs/37241139814"
+      },
+      {
+        "run": 37241142140,
+        "head": "79e5f0c145c9fb29a4bb934ad09d58efd58121f4",
+        "source_merge": "ba04d591b1343c93c85171ea50313fbb46eca6c5",
+        "pr": 9013,
+        "period": "before",
+        "class": "other code",
+        "created_at": "2026-10-04T22:44:13Z",
+        "ci_conclusion": "success",
+        "missing_passing_gates": [],
+        "feedback_s": 229.0,
+        "last_gate": "Pre-commit checks",
+        "gate_offsets_s": {
+          "Gazelle diff": 95.0,
+          "Build artifacts + imports check": 143.0,
+          "Pre-commit checks": 229.0,
+          "bazel-ci / Test & Build": 133.0
+        },
+        "run_url": "https://github.com/agentydragon/ducktape/actions/runs/37241142140"
+      },
+      {
+        "run": 37241462971,
+        "head": "38fd1c94e4bf46e5abf20e5bae16ed9482649936",
+        "source_merge": "188082d8665fb2255863d04e241023d91043dc6f",
+        "pr": 9014,
+        "period": "before",
+        "class": "docs",
+        "created_at": "2026-10-04T22:49:18Z",
+        "ci_conclusion": "success",
+        "missing_passing_gates": [],
+        "feedback_s": 182.0,
+        "last_gate": "Build artifacts + imports check",
+        "gate_offsets_s": {
+          "Gazelle diff": 31.0,
+          "Build artifacts + imports check": 182.0,
+          "Pre-commit checks": 105.0,
+          "bazel-ci / Test & Build": 157.0
+        },
+        "run_url": "https://github.com/agentydragon/ducktape/actions/runs/37241462971"
+      },
+      {
+        "run": 37241609416,
+        "head": "ef6731725b2d7e0639d4e835b0ddfbe8fb28a373",
+        "source_merge": "58b705edebc5a095ba2b1a072c30f9bc802e52de",
+        "pr": 9015,
+        "period": "before",
+        "class": "tooling",
+        "created_at": "2026-10-04T22:51:37Z",
+        "ci_conclusion": "success",
+        "missing_passing_gates": [],
+        "feedback_s": 198.0,
+        "last_gate": "bazel-ci / Test & Build",
+        "gate_offsets_s": {
+          "Gazelle diff": 31.0,
+          "Build artifacts + imports check": 114.0,
+          "Pre-commit checks": 121.0,
+          "bazel-ci / Test & Build": 198.0
+        },
+        "run_url": "https://github.com/agentydragon/ducktape/actions/runs/37241609416"
+      },
+      {
+        "run": 37241791107,
+        "head": "54fe580718a3438f86c5127b423442a3d051f4a9",
+        "source_merge": "c6a1360dac618837787b1dc76cd618f6f600fd92",
+        "pr": 9016,
+        "period": "before",
+        "class": "other code",
+        "created_at": "2026-10-04T22:54:34Z",
+        "ci_conclusion": "success",
+        "missing_passing_gates": [],
+        "feedback_s": 141.0,
+        "last_gate": "bazel-ci / Test & Build",
+        "gate_offsets_s": {
+          "Gazelle diff": 38.0,
+          "Build artifacts + imports check": 117.0,
+          "Pre-commit checks": 132.0,
+          "bazel-ci / Test & Build": 141.0
+        },
+        "run_url": "https://github.com/agentydragon/ducktape/actions/runs/37241791107"
+      },
+      {
+        "run": 37242744931,
+        "head": "f4c0f21d884a548d516d652b8a19e8f9fc44794a",
+        "source_merge": "f229f156d5280f046bdb0f8a9f62d07243d9ebda",
+        "pr": 9017,
+        "period": "before",
+        "class": "frontend",
+        "created_at": "2026-10-04T23:09:46Z",
+        "ci_conclusion": "success",
+        "missing_passing_gates": [],
+        "feedback_s": 162.0,
+        "last_gate": "bazel-ci / Test & Build",
+        "gate_offsets_s": {
+          "Gazelle diff": 41.0,
+          "Build artifacts + imports check": 119.0,
+          "Pre-commit checks": 107.0,
+          "bazel-ci / Test & Build": 162.0
+        },
+        "run_url": "https://github.com/agentydragon/ducktape/actions/runs/37242744931"
+      },
+      {
+        "run": 37242841136,
+        "head": "563cd2a138582c7fd41963b3415611398ff2a2b2",
+        "source_merge": "431b67bf29bcc03f8ca217a035292fed396abe1c",
+        "pr": 9004,
+        "period": "before",
+        "class": "frontend",
+        "created_at": "2026-10-04T23:11:20Z",
+        "ci_conclusion": "success",
+        "missing_passing_gates": [],
+        "feedback_s": 390.0,
+        "last_gate": "bazel-ci / Test & Build",
+        "gate_offsets_s": {
+          "Gazelle diff": 39.0,
+          "Build artifacts + imports check": 122.0,
+          "Pre-commit checks": 158.0,
+          "bazel-ci / Test & Build": 390.0
+        },
+        "run_url": "https://github.com/agentydragon/ducktape/actions/runs/37242841136"
+      },
+      {
+        "run": 37242919954,
+        "head": "8814ac76b0094d89e11258b8b5e4e720f7abf3bc",
+        "source_merge": "73608a613ecf992d0a2ec787d418b3eec53b2a4c",
+        "pr": 9018,
+        "period": "before",
+        "class": "cdk8s",
+        "created_at": "2026-10-04T23:12:35Z",
+        "ci_conclusion": "success",
+        "missing_passing_gates": [],
+        "feedback_s": 193.0,
+        "last_gate": "Build artifacts + imports check",
+        "gate_offsets_s": {
+          "Gazelle diff": 72.0,
+          "Build artifacts + imports check": 193.0,
+          "Pre-commit checks": 192.0,
+          "bazel-ci / Test & Build": 192.0
+        },
+        "run_url": "https://github.com/agentydragon/ducktape/actions/runs/37242919954"
+      },
+      {
+        "run": 37242982136,
+        "head": "83df0ee0dd358f466471d98cecc409abd2812a1d",
+        "source_merge": "7fc35466fc4b401fa745a1df49801c2ac96cb478",
+        "pr": 9019,
+        "period": "before",
+        "class": "other code",
+        "created_at": "2026-10-04T23:13:37Z",
+        "ci_conclusion": "success",
+        "missing_passing_gates": [],
+        "feedback_s": 181.0,
+        "last_gate": "Pre-commit checks",
+        "gate_offsets_s": {
+          "Gazelle diff": 48.0,
+          "Build artifacts + imports check": 160.0,
+          "Pre-commit checks": 181.0,
+          "bazel-ci / Test & Build": 157.0
+        },
+        "run_url": "https://github.com/agentydragon/ducktape/actions/runs/37242982136"
+      },
+      {
+        "run": 37246870085,
+        "head": "17739327f1abdb7903a32b04c59e82921b2c9a82",
+        "source_merge": "fc01efc643a204d28b9f867c47bfc71f6bcba4f5",
+        "pr": 9041,
+        "period": "middle",
+        "class": "frontend",
+        "created_at": "2026-10-05T00:16:32Z",
+        "ci_conclusion": "success",
+        "missing_passing_gates": [],
+        "feedback_s": 296.0,
+        "last_gate": "Build artifacts + imports check",
+        "gate_offsets_s": {
+          "Gazelle diff": 234.0,
+          "Build artifacts + imports check": 296.0,
+          "Pre-commit checks": 186.0,
+          "bazel-ci / Test & Build": 228.0
+        },
+        "run_url": "https://github.com/agentydragon/ducktape/actions/runs/37246870085"
+      },
+      {
+        "run": 37246949332,
+        "head": "13be7068f0d3e76544a368dfc8123fc552a70693",
+        "source_merge": "8cae80cc1ebe0e8ec6f240ed88bdc669652717b4",
+        "pr": 9042,
+        "period": "middle",
+        "class": "frontend",
+        "created_at": "2026-10-05T00:17:40Z",
+        "ci_conclusion": "success",
+        "missing_passing_gates": [],
+        "feedback_s": 353.0,
+        "last_gate": "Pre-commit checks",
+        "gate_offsets_s": {
+          "Gazelle diff": 281.0,
+          "Build artifacts + imports check": 170.0,
+          "Pre-commit checks": 353.0,
+          "bazel-ci / Test & Build": 216.0
+        },
+        "run_url": "https://github.com/agentydragon/ducktape/actions/runs/37246949332"
+      },
+      {
+        "run": 37247015632,
+        "head": "e98c5e9455a59f4b2bc44144313b12ef320bcac4",
+        "source_merge": "e511b61fead9eee87ab25cd77dacb2398c29ba2e",
+        "pr": 9043,
+        "period": "middle",
+        "class": "frontend",
+        "created_at": "2026-10-05T00:18:37Z",
+        "ci_conclusion": "success",
+        "missing_passing_gates": [],
+        "feedback_s": 291.0,
+        "last_gate": "bazel-ci / Test & Build",
+        "gate_offsets_s": {
+          "Gazelle diff": 255.0,
+          "Build artifacts + imports check": 193.0,
+          "Pre-commit checks": 239.0,
+          "bazel-ci / Test & Build": 291.0
+        },
+        "run_url": "https://github.com/agentydragon/ducktape/actions/runs/37247015632"
+      },
+      {
+        "run": 37247115375,
+        "head": "7253e5ea6cd4e1bc5ff9fb590476443824ee7c19",
+        "source_merge": "38ec38a2b83f0a75c5a8bbec1873b6a25fcec2d2",
+        "pr": 9044,
+        "period": "middle",
+        "class": "other code",
+        "created_at": "2026-10-05T00:20:06Z",
+        "ci_conclusion": "success",
+        "missing_passing_gates": [],
+        "feedback_s": 345.0,
+        "last_gate": "Pre-commit checks",
+        "gate_offsets_s": {
+          "Gazelle diff": 66.0,
+          "Build artifacts + imports check": 182.0,
+          "Pre-commit checks": 345.0,
+          "bazel-ci / Test & Build": 163.0
+        },
+        "run_url": "https://github.com/agentydragon/ducktape/actions/runs/37247115375"
+      },
+      {
+        "run": 37247234483,
+        "head": "b53eff79b74c905c24c9759e4cce338cbffa299c",
+        "source_merge": "03b038c4b7ecd1106af5c90867b4c87a721ce543",
+        "pr": 9045,
+        "period": "middle",
+        "class": "other code",
+        "created_at": "2026-10-05T00:21:53Z",
+        "ci_conclusion": "success",
+        "missing_passing_gates": [],
+        "feedback_s": 305.0,
+        "last_gate": "Pre-commit checks",
+        "gate_offsets_s": {
+          "Gazelle diff": 81.0,
+          "Build artifacts + imports check": 224.0,
+          "Pre-commit checks": 305.0,
+          "bazel-ci / Test & Build": 259.0
+        },
+        "run_url": "https://github.com/agentydragon/ducktape/actions/runs/37247234483"
+      },
+      {
+        "run": 37247335396,
+        "head": "0aa540cb8c5ad36f248ca1ff69c05c844abea9ca",
+        "source_merge": "fd4070463ca2d382dd3fb469e6c7912b075d0a04",
+        "pr": 9046,
+        "period": "middle",
+        "class": "frontend",
+        "created_at": "2026-10-05T00:23:28Z",
+        "ci_conclusion": "failure",
+        "missing_passing_gates": [
+          "bazel-ci / Test & Build"
+        ],
+        "run_url": "https://github.com/agentydragon/ducktape/actions/runs/37247335396"
+      },
+      {
+        "run": 37247601205,
+        "head": "2876790deed78103c4692ee3f56eb07f6f9c7600",
+        "source_merge": "ab4c77aa74f6d8b696b4de8dc29798b0556661af",
+        "pr": 9047,
+        "period": "middle",
+        "class": "other code",
+        "created_at": "2026-10-05T00:27:34Z",
+        "ci_conclusion": "success",
+        "missing_passing_gates": [],
+        "feedback_s": 176.0,
+        "last_gate": "Pre-commit checks",
+        "gate_offsets_s": {
+          "Gazelle diff": 33.0,
+          "Build artifacts + imports check": 112.0,
+          "Pre-commit checks": 176.0,
+          "bazel-ci / Test & Build": 168.0
+        },
+        "run_url": "https://github.com/agentydragon/ducktape/actions/runs/37247601205"
+      },
+      {
+        "run": 37247917793,
+        "head": "c3a4f802678547e7085d9004ebfb3219b7628f12",
+        "source_merge": "e7f3b1ece5054b4ee69abed871b18dd65bd0ffbe",
+        "pr": 9048,
+        "period": "middle",
+        "class": "frontend",
+        "created_at": "2026-10-05T00:32:30Z",
+        "ci_conclusion": "success",
+        "missing_passing_gates": [],
+        "feedback_s": 161.0,
+        "last_gate": "bazel-ci / Test & Build",
+        "gate_offsets_s": {
+          "Gazelle diff": 32.0,
+          "Build artifacts + imports check": 115.0,
+          "Pre-commit checks": 151.0,
+          "bazel-ci / Test & Build": 161.0
+        },
+        "run_url": "https://github.com/agentydragon/ducktape/actions/runs/37247917793"
+      },
+      {
+        "run": 37247926992,
+        "head": "bede4b6248d4530794d4ae2f1ae12fd087f3b501",
+        "source_merge": "eb548c4ef1c53802b398c1652d4c5f611cdb7ac4",
+        "pr": 9049,
+        "period": "middle",
+        "class": "other infra",
+        "created_at": "2026-10-05T00:32:39Z",
+        "ci_conclusion": "success",
+        "missing_passing_gates": [],
+        "feedback_s": 163.0,
+        "last_gate": "Pre-commit checks",
+        "gate_offsets_s": {
+          "Gazelle diff": 59.0,
+          "Build artifacts + imports check": 111.0,
+          "Pre-commit checks": 163.0,
+          "bazel-ci / Test & Build": 160.0
+        },
+        "run_url": "https://github.com/agentydragon/ducktape/actions/runs/37247926992"
+      },
+      {
+        "run": 37247933257,
+        "head": "3f22eaec30728cb0e942a9c4a2a1258f3fdad75d",
+        "source_merge": "33392b8f57fdd9be92062ceb201468a67b610e7d",
+        "pr": 9050,
+        "period": "middle",
+        "class": "other code",
+        "created_at": "2026-10-05T00:32:44Z",
+        "ci_conclusion": "success",
+        "missing_passing_gates": [],
+        "feedback_s": 186.0,
+        "last_gate": "Pre-commit checks",
+        "gate_offsets_s": {
+          "Gazelle diff": 57.0,
+          "Build artifacts + imports check": 112.0,
+          "Pre-commit checks": 186.0,
+          "bazel-ci / Test & Build": 176.0
+        },
+        "run_url": "https://github.com/agentydragon/ducktape/actions/runs/37247933257"
+      },
+      {
+        "run": 37248087798,
+        "head": "23f24105027939397b2509532ee9158e2716b64e",
+        "source_merge": "8b2487caadfa9571b5a9f1765d8cd118712c4598",
+        "pr": 9051,
+        "period": "middle",
+        "class": "tooling",
+        "created_at": "2026-10-05T00:35:07Z",
+        "ci_conclusion": "success",
+        "missing_passing_gates": [],
+        "feedback_s": 139.0,
+        "last_gate": "Pre-commit checks",
+        "gate_offsets_s": {
+          "Gazelle diff": 38.0,
+          "Build artifacts + imports check": 111.0,
+          "Pre-commit checks": 139.0,
+          "bazel-ci / Test & Build": 131.0
+        },
+        "run_url": "https://github.com/agentydragon/ducktape/actions/runs/37248087798"
+      },
+      {
+        "run": 37248124045,
+        "head": "c358277d72fe526a9f045735f63ffd18afd6f202",
+        "source_merge": "8ef5af7b9dc7051bf2eeb6283b4081af4c9b366a",
+        "pr": 9052,
+        "period": "middle",
+        "class": "other code",
+        "created_at": "2026-10-05T00:35:39Z",
+        "ci_conclusion": "success",
+        "missing_passing_gates": [],
+        "feedback_s": 141.0,
+        "last_gate": "Pre-commit checks",
+        "gate_offsets_s": {
+          "Gazelle diff": 41.0,
+          "Build artifacts + imports check": 109.0,
+          "Pre-commit checks": 141.0,
+          "bazel-ci / Test & Build": 136.0
+        },
+        "run_url": "https://github.com/agentydragon/ducktape/actions/runs/37248124045"
+      },
+      {
+        "run": 37248297527,
+        "head": "3c05e79e3a83d1ba7da6caa10cf00ff5dc250ef7",
+        "source_merge": "cc7996a51c76d4b0a7036086cc4f9cd5a9a32a01",
+        "pr": 9053,
+        "period": "middle",
+        "class": "other code",
+        "created_at": "2026-10-05T00:38:25Z",
+        "ci_conclusion": "success",
+        "missing_passing_gates": [],
+        "feedback_s": 148.0,
+        "last_gate": "bazel-ci / Test & Build",
+        "gate_offsets_s": {
+          "Gazelle diff": 41.0,
+          "Build artifacts + imports check": 115.0,
+          "Pre-commit checks": 142.0,
+          "bazel-ci / Test & Build": 148.0
+        },
+        "run_url": "https://github.com/agentydragon/ducktape/actions/runs/37248297527"
+      },
+      {
+        "run": 37249081719,
+        "head": "4c093793f969e472ba6be9eb86ce7a1ef02903e0",
+        "source_merge": "29c758298da1da0c2cb50306fa5ea6fc749856be",
+        "pr": 9026,
+        "period": "middle",
+        "class": "frontend",
+        "created_at": "2026-10-05T00:50:53Z",
+        "ci_conclusion": "success",
+        "missing_passing_gates": [],
+        "feedback_s": 384.0,
+        "last_gate": "bazel-ci / Test & Build",
+        "gate_offsets_s": {
+          "Gazelle diff": 31.0,
+          "Build artifacts + imports check": 103.0,
+          "Pre-commit checks": 185.0,
+          "bazel-ci / Test & Build": 384.0
+        },
+        "run_url": "https://github.com/agentydragon/ducktape/actions/runs/37249081719"
+      },
+      {
+        "run": 37249141579,
+        "head": "a063709a67c58d0958acecc01e919f71947334c1",
+        "source_merge": "05bb56825852a668524753f986b7912dee52c23d",
+        "pr": 9046,
+        "period": "middle",
+        "class": "frontend",
+        "created_at": "2026-10-05T00:51:52Z",
+        "ci_conclusion": "success",
+        "missing_passing_gates": [],
+        "feedback_s": 385.0,
+        "last_gate": "bazel-ci / Test & Build",
+        "gate_offsets_s": {
+          "Gazelle diff": 39.0,
+          "Build artifacts + imports check": 112.0,
+          "Pre-commit checks": 150.0,
+          "bazel-ci / Test & Build": 385.0
+        },
+        "run_url": "https://github.com/agentydragon/ducktape/actions/runs/37249141579"
+      },
+      {
+        "run": 37249512597,
+        "head": "75f7dadf651916c442cb1db2360178bc4899ccae",
+        "source_merge": "ef716de979cba00cf26f0a220064439314b5d4c5",
+        "pr": 9054,
+        "period": "middle",
+        "class": "tooling",
+        "created_at": "2026-10-05T00:57:42Z",
+        "ci_conclusion": "success",
+        "missing_passing_gates": [],
+        "feedback_s": 155.0,
+        "last_gate": "bazel-ci / Test & Build",
+        "gate_offsets_s": {
+          "Gazelle diff": 40.0,
+          "Build artifacts + imports check": 122.0,
+          "Pre-commit checks": 120.0,
+          "bazel-ci / Test & Build": 155.0
+        },
+        "run_url": "https://github.com/agentydragon/ducktape/actions/runs/37249512597"
+      },
+      {
+        "run": 37249915576,
+        "head": "ea52956d77b875eca0c801fc0bd5e92c063cc9bb",
+        "source_merge": "bbf85adf5d1d28d08b5bbbf3c59b1726cb93f689",
+        "pr": 9046,
+        "period": "middle",
+        "class": "frontend",
+        "created_at": "2026-10-05T01:03:56Z",
+        "ci_conclusion": "success",
+        "missing_passing_gates": [],
+        "feedback_s": 9245.0,
+        "last_gate": "bazel-ci / Test & Build",
+        "gate_offsets_s": {
+          "Gazelle diff": 32.0,
+          "Build artifacts + imports check": 130.0,
+          "Pre-commit checks": 152.0,
+          "bazel-ci / Test & Build": 9245.0
+        },
+        "run_url": "https://github.com/agentydragon/ducktape/actions/runs/37249915576"
+      },
+      {
+        "run": 37249952484,
+        "head": "9a5ad8a5fcff1acf2cbf0ad0eccab2f42ec2d956",
+        "source_merge": "7e3d7112f660ee457d10675b41faf04aace5992e",
+        "pr": 9031,
+        "period": "middle",
+        "class": "frontend",
+        "created_at": "2026-10-05T01:04:30Z",
+        "ci_conclusion": "success",
+        "missing_passing_gates": [],
+        "feedback_s": 391.0,
+        "last_gate": "bazel-ci / Test & Build",
+        "gate_offsets_s": {
+          "Gazelle diff": 33.0,
+          "Build artifacts + imports check": 124.0,
+          "Pre-commit checks": 116.0,
+          "bazel-ci / Test & Build": 391.0
+        },
+        "run_url": "https://github.com/agentydragon/ducktape/actions/runs/37249952484"
+      },
+      {
+        "run": 37250341480,
+        "head": "5556e173ec61ad0e09162b595bc2d35cd024b046",
+        "source_merge": "ceff7023b50be87413e5a819f5cbc0498dc84d64",
+        "pr": 9057,
+        "period": "middle",
+        "class": "other code",
+        "created_at": "2026-10-05T01:10:01Z",
+        "ci_conclusion": "success",
+        "missing_passing_gates": [],
+        "feedback_s": 149.0,
+        "last_gate": "bazel-ci / Test & Build",
+        "gate_offsets_s": {
+          "Gazelle diff": 39.0,
+          "Build artifacts + imports check": 124.0,
+          "Pre-commit checks": 138.0,
+          "bazel-ci / Test & Build": 149.0
+        },
+        "run_url": "https://github.com/agentydragon/ducktape/actions/runs/37250341480"
+      },
+      {
+        "run": 37251044461,
+        "head": "b2615a17097772db6ab73d1a6e6647ae1992f645",
+        "source_merge": "8ae03856f2f4c425c7572193b7f891c3998c291d",
+        "pr": 9059,
+        "period": "middle",
+        "class": "frontend",
+        "created_at": "2026-10-05T01:20:26Z",
+        "ci_conclusion": "success",
+        "missing_passing_gates": [],
+        "feedback_s": 156.0,
+        "last_gate": "bazel-ci / Test & Build",
+        "gate_offsets_s": {
+          "Gazelle diff": 38.0,
+          "Build artifacts + imports check": 121.0,
+          "Pre-commit checks": 116.0,
+          "bazel-ci / Test & Build": 156.0
+        },
+        "run_url": "https://github.com/agentydragon/ducktape/actions/runs/37251044461"
+      },
+      {
+        "run": 37251051863,
+        "head": "dbcf3badffa50c579fdbf7c26ef9e0462c42bb92",
+        "source_merge": "ea07663cad59404a49d3fc7758d084ed49aeeebd",
+        "pr": 9060,
+        "period": "middle",
+        "class": "frontend",
+        "created_at": "2026-10-05T01:20:33Z",
+        "ci_conclusion": "success",
+        "missing_passing_gates": [],
+        "feedback_s": 136.0,
+        "last_gate": "Pre-commit checks",
+        "gate_offsets_s": {
+          "Gazelle diff": 36.0,
+          "Build artifacts + imports check": 123.0,
+          "Pre-commit checks": 136.0,
+          "bazel-ci / Test & Build": 129.0
+        },
+        "run_url": "https://github.com/agentydragon/ducktape/actions/runs/37251051863"
+      },
+      {
+        "run": 37251056059,
+        "head": "f83439efbc998c41e263055e70be31c3206bcd91",
+        "source_merge": "0c872910bb91154192cb6aa28403f58820175c4b",
+        "pr": 9061,
+        "period": "middle",
+        "class": "frontend",
+        "created_at": "2026-10-05T01:20:36Z",
+        "ci_conclusion": "success",
+        "missing_passing_gates": [],
+        "feedback_s": 132.0,
+        "last_gate": "bazel-ci / Test & Build",
+        "gate_offsets_s": {
+          "Gazelle diff": 33.0,
+          "Build artifacts + imports check": 116.0,
+          "Pre-commit checks": 101.0,
+          "bazel-ci / Test & Build": 132.0
+        },
+        "run_url": "https://github.com/agentydragon/ducktape/actions/runs/37251056059"
+      },
+      {
+        "run": 37251417240,
+        "head": "925548102cc091fcbb8605112ff78e0836e71d44",
+        "source_merge": "fd6285675c47c8a9fb2af0b5dcdd9cd6433996ea",
+        "pr": 9062,
+        "period": "middle",
+        "class": "other code",
+        "created_at": "2026-10-05T01:26:11Z",
+        "ci_conclusion": "success",
+        "missing_passing_gates": [],
+        "feedback_s": 140.0,
+        "last_gate": "bazel-ci / Test & Build",
+        "gate_offsets_s": {
+          "Gazelle diff": 41.0,
+          "Build artifacts + imports check": 117.0,
+          "Pre-commit checks": 135.0,
+          "bazel-ci / Test & Build": 140.0
+        },
+        "run_url": "https://github.com/agentydragon/ducktape/actions/runs/37251417240"
+      },
+      {
+        "run": 37251459273,
+        "head": "628a8e576341b75e6e9a13f650ef4e20ad38e22a",
+        "source_merge": "f6a429e2f94718f7590e6ce7aa4135069c258fdc",
+        "pr": 9063,
+        "period": "middle",
+        "class": "frontend",
+        "created_at": "2026-10-05T01:26:48Z",
+        "ci_conclusion": "success",
+        "missing_passing_gates": [],
+        "feedback_s": 392.0,
+        "last_gate": "bazel-ci / Test & Build",
+        "gate_offsets_s": {
+          "Gazelle diff": 43.0,
+          "Build artifacts + imports check": 141.0,
+          "Pre-commit checks": 148.0,
+          "bazel-ci / Test & Build": 392.0
+        },
+        "run_url": "https://github.com/agentydragon/ducktape/actions/runs/37251459273"
+      },
+      {
+        "run": 37251583385,
+        "head": "e122fa058c64578c32f0329e4cadfb7ef1edc8e7",
+        "source_merge": "65f6046bbee91a4b438450bad397388f07faa6d8",
+        "pr": 9064,
+        "period": "middle",
+        "class": "tooling",
+        "created_at": "2026-10-05T01:28:47Z",
+        "ci_conclusion": "success",
+        "missing_passing_gates": [],
+        "feedback_s": 405.0,
+        "last_gate": "bazel-ci / Test & Build",
+        "gate_offsets_s": {
+          "Gazelle diff": 38.0,
+          "Build artifacts + imports check": 116.0,
+          "Pre-commit checks": 171.0,
+          "bazel-ci / Test & Build": 405.0
+        },
+        "run_url": "https://github.com/agentydragon/ducktape/actions/runs/37251583385"
+      },
+      {
+        "run": 37252736455,
+        "head": "4e1cc0ed3514439abf000e7cbb4ef7cf57e20574",
+        "source_merge": "378f4b7fde7c92f10916f5c5e628f1456b9eb950",
+        "pr": 9066,
+        "period": "middle",
+        "class": "tooling",
+        "created_at": "2026-10-05T01:46:18Z",
+        "ci_conclusion": "success",
+        "missing_passing_gates": [],
+        "feedback_s": 263.0,
+        "last_gate": "bazel-ci / Test & Build",
+        "gate_offsets_s": {
+          "Gazelle diff": 31.0,
+          "Build artifacts + imports check": 242.0,
+          "Pre-commit checks": 152.0,
+          "bazel-ci / Test & Build": 263.0
+        },
+        "run_url": "https://github.com/agentydragon/ducktape/actions/runs/37252736455"
+      },
+      {
+        "run": 37252990794,
+        "head": "ae627a32ed816d968dc263a5d1a97f666645e24f",
+        "source_merge": "79e575bcd1ce8681d7efaa6a30259e31fdcd0e5a",
+        "pr": 9067,
+        "period": "middle",
+        "class": "other code",
+        "created_at": "2026-10-05T01:50:15Z",
+        "ci_conclusion": "success",
+        "missing_passing_gates": [],
+        "feedback_s": 291.0,
+        "last_gate": "bazel-ci / Test & Build",
+        "gate_offsets_s": {
+          "Gazelle diff": 38.0,
+          "Build artifacts + imports check": 109.0,
+          "Pre-commit checks": 98.0,
+          "bazel-ci / Test & Build": 291.0
+        },
+        "run_url": "https://github.com/agentydragon/ducktape/actions/runs/37252990794"
+      },
+      {
+        "run": 37253113403,
+        "head": "494ed15b6108fa9b1f924a013a477e82e4fa305f",
+        "source_merge": "b8bd91f46ffdd69c2e5a9ce1e0f9660fadb7c335",
+        "pr": 9068,
+        "period": "middle",
+        "class": "cdk8s",
+        "created_at": "2026-10-05T01:52:10Z",
+        "ci_conclusion": "success",
+        "missing_passing_gates": [],
+        "feedback_s": 495.0,
+        "last_gate": "bazel-ci / Test & Build",
+        "gate_offsets_s": {
+          "Gazelle diff": 42.0,
+          "Build artifacts + imports check": 118.0,
+          "Pre-commit checks": 138.0,
+          "bazel-ci / Test & Build": 495.0
+        },
+        "run_url": "https://github.com/agentydragon/ducktape/actions/runs/37253113403"
+      },
+      {
+        "run": 37253160796,
+        "head": "d5b651ed806f9c517f88e5da177b812ca6efac05",
+        "source_merge": "677e201d7a5d840eb211efb73599cba71a1314bb",
+        "pr": 9069,
+        "period": "middle",
+        "class": "tooling",
+        "created_at": "2026-10-05T01:52:56Z",
+        "ci_conclusion": "success",
+        "missing_passing_gates": [],
+        "feedback_s": 379.0,
+        "last_gate": "bazel-ci / Test & Build",
+        "gate_offsets_s": {
+          "Gazelle diff": 41.0,
+          "Build artifacts + imports check": 119.0,
+          "Pre-commit checks": 141.0,
+          "bazel-ci / Test & Build": 379.0
+        },
+        "run_url": "https://github.com/agentydragon/ducktape/actions/runs/37253160796"
+      },
+      {
+        "run": 37253898405,
+        "head": "a6f646642be4a352735c6cbe4683837c8d81d6b7",
+        "source_merge": "c56acf1087500c2a549c77340d1a67b3ef8ca72e",
+        "pr": 9070,
+        "period": "middle",
+        "class": "tooling",
+        "created_at": "2026-10-05T02:04:10Z",
+        "ci_conclusion": "success",
+        "missing_passing_gates": [],
+        "feedback_s": 152.0,
+        "last_gate": "Pre-commit checks",
+        "gate_offsets_s": {
+          "Gazelle diff": 31.0,
+          "Build artifacts + imports check": 128.0,
+          "Pre-commit checks": 152.0,
+          "bazel-ci / Test & Build": 142.0
+        },
+        "run_url": "https://github.com/agentydragon/ducktape/actions/runs/37253898405"
+      },
+      {
+        "run": 37255263715,
+        "head": "17d1cffc4e4bbc31151c1b7d4fb42f5635bbe149",
+        "source_merge": "07938ce2d9d1cc25ce0262485768009a3c87adf3",
+        "pr": 9075,
+        "period": "after",
+        "class": "tooling",
+        "created_at": "2026-10-05T02:24:17Z",
+        "ci_conclusion": "success",
+        "missing_passing_gates": [],
+        "feedback_s": 146.0,
+        "last_gate": "Pre-commit checks",
+        "gate_offsets_s": {
+          "Gazelle diff": 42.0,
+          "Build artifacts + imports check": 110.0,
+          "Pre-commit checks": 146.0,
+          "bazel-ci / Test & Build": 101.0
+        },
+        "run_url": "https://github.com/agentydragon/ducktape/actions/runs/37255263715"
+      },
+      {
+        "run": 37255452606,
+        "head": "c902fe017b1f38103c69f0c7ae6729f8039caa00",
+        "source_merge": "53ccadd5e641c6ec29a71564879249be688f67cd",
+        "pr": 9076,
+        "period": "after",
+        "class": "tooling",
+        "created_at": "2026-10-05T02:27:06Z",
+        "ci_conclusion": "success",
+        "missing_passing_gates": [],
+        "feedback_s": 139.0,
+        "last_gate": "Pre-commit checks",
+        "gate_offsets_s": {
+          "Gazelle diff": 42.0,
+          "Build artifacts + imports check": 105.0,
+          "Pre-commit checks": 139.0,
+          "bazel-ci / Test & Build": 69.0
+        },
+        "run_url": "https://github.com/agentydragon/ducktape/actions/runs/37255452606"
+      },
+      {
+        "run": 37255866026,
+        "head": "6f071e29dbff020a4cdb37392a608b5f9a9f7ae8",
+        "source_merge": "0980a0927dbf31887d285548265f754cb194fe5a",
+        "pr": 9078,
+        "period": "after",
+        "class": "other code",
+        "created_at": "2026-10-05T02:33:24Z",
+        "ci_conclusion": "success",
+        "missing_passing_gates": [],
+        "feedback_s": 163.0,
+        "last_gate": "Pre-commit checks",
+        "gate_offsets_s": {
+          "Gazelle diff": 37.0,
+          "Build artifacts + imports check": 119.0,
+          "Pre-commit checks": 163.0,
+          "bazel-ci / Test & Build": 101.0
+        },
+        "run_url": "https://github.com/agentydragon/ducktape/actions/runs/37255866026"
+      },
+      {
+        "run": 37256088582,
+        "head": "26e28b947fe3612b49101e8d58fc05de274f2c9e",
+        "source_merge": "82a933ca242473adc57aa25fbd0477a4cb6b68bc",
+        "pr": 9079,
+        "period": "after",
+        "class": "other code",
+        "created_at": "2026-10-05T02:36:47Z",
+        "ci_conclusion": "success",
+        "missing_passing_gates": [],
+        "feedback_s": 145.0,
+        "last_gate": "Pre-commit checks",
+        "gate_offsets_s": {
+          "Gazelle diff": 43.0,
+          "Build artifacts + imports check": 100.0,
+          "Pre-commit checks": 145.0,
+          "bazel-ci / Test & Build": 87.0
+        },
+        "run_url": "https://github.com/agentydragon/ducktape/actions/runs/37256088582"
+      },
+      {
+        "run": 37256113529,
+        "head": "622711ddc0bc5a270e139f4d6bf687e51ecca44b",
+        "source_merge": "32890d46e3c3048e0d0deafd03fe1f67ed3a4bcd",
+        "pr": 9080,
+        "period": "after",
+        "class": "other code",
+        "created_at": "2026-10-05T02:37:12Z",
+        "ci_conclusion": "success",
+        "missing_passing_gates": [],
+        "feedback_s": 210.0,
+        "last_gate": "Pre-commit checks",
+        "gate_offsets_s": {
+          "Gazelle diff": 55.0,
+          "Build artifacts + imports check": 138.0,
+          "Pre-commit checks": 210.0,
+          "bazel-ci / Test & Build": 136.0
+        },
+        "run_url": "https://github.com/agentydragon/ducktape/actions/runs/37256113529"
+      },
+      {
+        "run": 37256172874,
+        "head": "900da189536a354254b0fedc24b3ec6deb325d50",
+        "source_merge": "47e47d7f75c2801dd10e954621ebb219f71d083b",
+        "pr": 9081,
+        "period": "after",
+        "class": "other code",
+        "created_at": "2026-10-05T02:38:09Z",
+        "ci_conclusion": "success",
+        "missing_passing_gates": [],
+        "feedback_s": 191.0,
+        "last_gate": "Pre-commit checks",
+        "gate_offsets_s": {
+          "Gazelle diff": 127.0,
+          "Build artifacts + imports check": 152.0,
+          "Pre-commit checks": 191.0,
+          "bazel-ci / Test & Build": 176.0
+        },
+        "run_url": "https://github.com/agentydragon/ducktape/actions/runs/37256172874"
+      },
+      {
+        "run": 37256240336,
+        "head": "61262938ea52ab84ba9ff21d340014dbf35b0053",
+        "source_merge": "8650cd4abccb6e8b7728f493de88f5adcf7d5902",
+        "pr": 9082,
+        "period": "after",
+        "class": "frontend",
+        "created_at": "2026-10-05T02:39:15Z",
+        "ci_conclusion": "success",
+        "missing_passing_gates": [],
+        "feedback_s": 166.0,
+        "last_gate": "Build artifacts + imports check",
+        "gate_offsets_s": {
+          "Gazelle diff": 118.0,
+          "Build artifacts + imports check": 166.0,
+          "Pre-commit checks": 145.0,
+          "bazel-ci / Test & Build": 160.0
+        },
+        "run_url": "https://github.com/agentydragon/ducktape/actions/runs/37256240336"
+      },
+      {
+        "run": 37256272397,
+        "head": "2547e7140bb96393b24c0ff14f202a8153e36362",
+        "source_merge": "31383cc6ba6849032a3c19576bb8a70feca38092",
+        "pr": 9083,
+        "period": "after",
+        "class": "tooling",
+        "created_at": "2026-10-05T02:39:44Z",
+        "ci_conclusion": "success",
+        "missing_passing_gates": [],
+        "feedback_s": 204.0,
+        "last_gate": "Pre-commit checks",
+        "gate_offsets_s": {
+          "Gazelle diff": 64.0,
+          "Build artifacts + imports check": 194.0,
+          "Pre-commit checks": 204.0,
+          "bazel-ci / Test & Build": 124.0
+        },
+        "run_url": "https://github.com/agentydragon/ducktape/actions/runs/37256272397"
+      },
+      {
+        "run": 37256474749,
+        "head": "ff610195e212636268c3c73a1848b57ea082720e",
+        "source_merge": "7d8b60cd2c8058e1aa4c32724c2eb7be0ac23906",
+        "pr": 9084,
+        "period": "after",
+        "class": "other code",
+        "created_at": "2026-10-05T02:42:55Z",
+        "ci_conclusion": "success",
+        "missing_passing_gates": [],
+        "feedback_s": 283.0,
+        "last_gate": "Build artifacts + imports check",
+        "gate_offsets_s": {
+          "Gazelle diff": 54.0,
+          "Build artifacts + imports check": 283.0,
+          "Pre-commit checks": 172.0,
+          "bazel-ci / Test & Build": 266.0
+        },
+        "run_url": "https://github.com/agentydragon/ducktape/actions/runs/37256474749"
+      },
+      {
+        "run": 37257055251,
+        "head": "867bcb542b6591bcfbea546320a2be1b81f7561d",
+        "source_merge": "928c5303969958c7974009db8d0ca47887543e51",
+        "pr": 9085,
+        "period": "after",
+        "class": "other code",
+        "created_at": "2026-10-05T02:51:49Z",
+        "ci_conclusion": "success",
+        "missing_passing_gates": [],
+        "feedback_s": 167.0,
+        "last_gate": "Pre-commit checks",
+        "gate_offsets_s": {
+          "Gazelle diff": 49.0,
+          "Build artifacts + imports check": 151.0,
+          "Pre-commit checks": 167.0,
+          "bazel-ci / Test & Build": 120.0
+        },
+        "run_url": "https://github.com/agentydragon/ducktape/actions/runs/37257055251"
+      },
+      {
+        "run": 37257672824,
+        "head": "143fa1216047cb766e136084d2ef40379b7c11ae",
+        "source_merge": "c376b7fcd8d3876a295a0b74c529264586b89537",
+        "pr": 9086,
+        "period": "after",
+        "class": "frontend",
+        "created_at": "2026-10-05T03:00:57Z",
+        "ci_conclusion": "success",
+        "missing_passing_gates": [],
+        "feedback_s": 205.0,
+        "last_gate": "Pre-commit checks",
+        "gate_offsets_s": {
+          "Gazelle diff": 53.0,
+          "Build artifacts + imports check": 102.0,
+          "Pre-commit checks": 205.0,
+          "bazel-ci / Test & Build": 205.0
+        },
+        "run_url": "https://github.com/agentydragon/ducktape/actions/runs/37257672824"
+      },
+      {
+        "run": 37257781148,
+        "head": "7481773f82fd158805b0e544e0dc4ec37f1cd6cb",
+        "source_merge": "76df079dda8439bba61982b5dcc178051783c26c",
+        "pr": 9087,
+        "period": "after",
+        "class": "tooling",
+        "created_at": "2026-10-05T03:02:33Z",
+        "ci_conclusion": "success",
+        "missing_passing_gates": [],
+        "feedback_s": 358.0,
+        "last_gate": "bazel-ci / Test & Build",
+        "gate_offsets_s": {
+          "Gazelle diff": 58.0,
+          "Build artifacts + imports check": 113.0,
+          "Pre-commit checks": 132.0,
+          "bazel-ci / Test & Build": 358.0
+        },
+        "run_url": "https://github.com/agentydragon/ducktape/actions/runs/37257781148"
+      },
+      {
+        "run": 37257865255,
+        "head": "4206dfc9bd5f04bf80ee4596aeb1798ddc6101a6",
+        "source_merge": "c0c63a02dfcaa2121ee3fb2d1221fbc66fc4837a",
+        "pr": 9088,
+        "period": "after",
+        "class": "frontend",
+        "created_at": "2026-10-05T03:03:47Z",
+        "ci_conclusion": "success",
+        "missing_passing_gates": [],
+        "feedback_s": 198.0,
+        "last_gate": "bazel-ci / Test & Build",
+        "gate_offsets_s": {
+          "Gazelle diff": 39.0,
+          "Build artifacts + imports check": 124.0,
+          "Pre-commit checks": 115.0,
+          "bazel-ci / Test & Build": 198.0
+        },
+        "run_url": "https://github.com/agentydragon/ducktape/actions/runs/37257865255"
+      },
+      {
+        "run": 37257975471,
+        "head": "cb6bfe7f29d53b5f8dd17b48e03131874bb7c8e3",
+        "source_merge": "712530c5dcea260fbac8a0582bdd15dbd4a824e2",
+        "pr": 9090,
+        "period": "after",
+        "class": "other code",
+        "created_at": "2026-10-05T03:05:21Z",
+        "ci_conclusion": "success",
+        "missing_passing_gates": [],
+        "feedback_s": 139.0,
+        "last_gate": "Pre-commit checks",
+        "gate_offsets_s": {
+          "Gazelle diff": 40.0,
+          "Build artifacts + imports check": 113.0,
+          "Pre-commit checks": 139.0,
+          "bazel-ci / Test & Build": 92.0
+        },
+        "run_url": "https://github.com/agentydragon/ducktape/actions/runs/37257975471"
+      },
+      {
+        "run": 37257991516,
+        "head": "fd87e438d56e9756fd19768c1f11c5ef04a97be9",
+        "source_merge": "b447e879a2daa359b86fcd89988c332e0b72e0da",
+        "pr": 9091,
+        "period": "after",
+        "class": "other infra",
+        "created_at": "2026-10-05T03:05:34Z",
+        "ci_conclusion": "success",
+        "missing_passing_gates": [],
+        "feedback_s": 139.0,
+        "last_gate": "Pre-commit checks",
+        "gate_offsets_s": {
+          "Gazelle diff": 42.0,
+          "Build artifacts + imports check": 122.0,
+          "Pre-commit checks": 139.0,
+          "bazel-ci / Test & Build": 100.0
+        },
+        "run_url": "https://github.com/agentydragon/ducktape/actions/runs/37257991516"
+      },
+      {
+        "run": 37258205670,
+        "head": "abac511311c7dce5d68f7abd4e8ca02479973fb2",
+        "source_merge": "cadd1f4dc5f365b9c5fb4e4710cf30ae2a316792",
+        "pr": 9087,
+        "period": "after",
+        "class": "tooling",
+        "created_at": "2026-10-05T03:08:33Z",
+        "ci_conclusion": "success",
+        "missing_passing_gates": [],
+        "feedback_s": 181.0,
+        "last_gate": "bazel-ci / Test & Build",
+        "gate_offsets_s": {
+          "Gazelle diff": 39.0,
+          "Build artifacts + imports check": 119.0,
+          "Pre-commit checks": 138.0,
+          "bazel-ci / Test & Build": 181.0
+        },
+        "run_url": "https://github.com/agentydragon/ducktape/actions/runs/37258205670"
+      },
+      {
+        "run": 37258234055,
+        "head": "06d24302c185f36f9e79e351b52755ed550c0c97",
+        "source_merge": "e82d05b0dc1f869dfcfab29721d597f7157fc095",
+        "pr": 9092,
+        "period": "after",
+        "class": "other code",
+        "created_at": "2026-10-05T03:08:57Z",
+        "ci_conclusion": "success",
+        "missing_passing_gates": [],
+        "feedback_s": 421.0,
+        "last_gate": "bazel-ci / Test & Build",
+        "gate_offsets_s": {
+          "Gazelle diff": 76.0,
+          "Build artifacts + imports check": 122.0,
+          "Pre-commit checks": 191.0,
+          "bazel-ci / Test & Build": 421.0
+        },
+        "run_url": "https://github.com/agentydragon/ducktape/actions/runs/37258234055"
+      },
+      {
+        "run": 37258303183,
+        "head": "4a59a1b956ab3de5e565c2ad139301011bd9b55b",
+        "source_merge": "779f97cddf2ce9245c76f0bf124f516a1b7bccf5",
+        "pr": 9093,
+        "period": "after",
+        "class": "tooling",
+        "created_at": "2026-10-05T03:09:54Z",
+        "ci_conclusion": "success",
+        "missing_passing_gates": [],
+        "feedback_s": 150.0,
+        "last_gate": "bazel-ci / Test & Build",
+        "gate_offsets_s": {
+          "Gazelle diff": 50.0,
+          "Build artifacts + imports check": 102.0,
+          "Pre-commit checks": 131.0,
+          "bazel-ci / Test & Build": 150.0
+        },
+        "run_url": "https://github.com/agentydragon/ducktape/actions/runs/37258303183"
+      },
+      {
+        "run": 37258549146,
+        "head": "66be07c00f41cb3774efd0b2be9702c7d1391320",
+        "source_merge": "62339a20a15dcb7f7336b6ed13f228cb115d4bda",
+        "pr": 9094,
+        "period": "after",
+        "class": "tooling",
+        "created_at": "2026-10-05T03:13:15Z",
+        "ci_conclusion": "success",
+        "missing_passing_gates": [],
+        "feedback_s": 122.0,
+        "last_gate": "Build artifacts + imports check",
+        "gate_offsets_s": {
+          "Gazelle diff": 39.0,
+          "Build artifacts + imports check": 122.0,
+          "Pre-commit checks": 103.0,
+          "bazel-ci / Test & Build": 110.0
+        },
+        "run_url": "https://github.com/agentydragon/ducktape/actions/runs/37258549146"
+      },
+      {
+        "run": 37258562246,
+        "head": "34f985bf019acabfcc884e777dfa4d17d20edcc5",
+        "source_merge": "d96d6f071288a38d8c529f457c87bef2dd83ff24",
+        "pr": 9095,
+        "period": "after",
+        "class": "frontend",
+        "created_at": "2026-10-05T03:13:26Z",
+        "ci_conclusion": "success",
+        "missing_passing_gates": [],
+        "feedback_s": 118.0,
+        "last_gate": "Build artifacts + imports check",
+        "gate_offsets_s": {
+          "Gazelle diff": 44.0,
+          "Build artifacts + imports check": 118.0,
+          "Pre-commit checks": 101.0,
+          "bazel-ci / Test & Build": 85.0
+        },
+        "run_url": "https://github.com/agentydragon/ducktape/actions/runs/37258562246"
+      },
+      {
+        "run": 37258633232,
+        "head": "e45b19311002723518c89797610154c1b12a1697",
+        "source_merge": "e4074a64e2135d6cc3c83aa3e9c13f9438bf35c3",
+        "pr": 9096,
+        "period": "after",
+        "class": "other code",
+        "created_at": "2026-10-05T03:14:26Z",
+        "ci_conclusion": "success",
+        "missing_passing_gates": [],
+        "feedback_s": 135.0,
+        "last_gate": "Pre-commit checks",
+        "gate_offsets_s": {
+          "Gazelle diff": 38.0,
+          "Build artifacts + imports check": 113.0,
+          "Pre-commit checks": 135.0,
+          "bazel-ci / Test & Build": 127.0
+        },
+        "run_url": "https://github.com/agentydragon/ducktape/actions/runs/37258633232"
+      },
+      {
+        "run": 37258637687,
+        "head": "12ddf937b662582d71a429c48375d5bac4ba2dad",
+        "source_merge": "3f310277eb4553c784c5cf02851875d5176fd28c",
+        "pr": 9087,
+        "period": "after",
+        "class": "tooling",
+        "created_at": "2026-10-05T03:14:29Z",
+        "ci_conclusion": "success",
+        "missing_passing_gates": [],
+        "feedback_s": 170.0,
+        "last_gate": "bazel-ci / Test & Build",
+        "gate_offsets_s": {
+          "Gazelle diff": 37.0,
+          "Build artifacts + imports check": 141.0,
+          "Pre-commit checks": 104.0,
+          "bazel-ci / Test & Build": 170.0
+        },
+        "run_url": "https://github.com/agentydragon/ducktape/actions/runs/37258637687"
+      },
+      {
+        "run": 37258768690,
+        "head": "764d7b796293e2d4b0fb94aa6d216d0b4ecea81f",
+        "source_merge": "f28e79b2b9ae5fad843cbd0b353fc82f559773f5",
+        "pr": 9097,
+        "period": "after",
+        "class": "other code",
+        "created_at": "2026-10-05T03:16:18Z",
+        "ci_conclusion": "success",
+        "missing_passing_gates": [],
+        "feedback_s": 150.0,
+        "last_gate": "Pre-commit checks",
+        "gate_offsets_s": {
+          "Gazelle diff": 38.0,
+          "Build artifacts + imports check": 90.0,
+          "Pre-commit checks": 150.0,
+          "bazel-ci / Test & Build": 109.0
+        },
+        "run_url": "https://github.com/agentydragon/ducktape/actions/runs/37258768690"
+      },
+      {
+        "run": 37258831289,
+        "head": "2583a3c1c89fd6259e127a1cc406f79d7529764d",
+        "source_merge": "b106a15a2eb1047aa861dc5bd3adeb4c24c80dd5",
+        "pr": 9098,
+        "period": "after",
+        "class": "other code",
+        "created_at": "2026-10-05T03:17:12Z",
+        "ci_conclusion": "success",
+        "missing_passing_gates": [],
+        "feedback_s": 150.0,
+        "last_gate": "Pre-commit checks",
+        "gate_offsets_s": {
+          "Gazelle diff": 37.0,
+          "Build artifacts + imports check": 111.0,
+          "Pre-commit checks": 150.0,
+          "bazel-ci / Test & Build": 97.0
+        },
+        "run_url": "https://github.com/agentydragon/ducktape/actions/runs/37258831289"
+      },
+      {
+        "run": 37258875995,
+        "head": "e89d9da7a576176fceac4bc340e6d2d25c981886",
+        "source_merge": "bac3413d13b8badddd5f9340d4166ee9dea40b0d",
+        "pr": 9099,
+        "period": "after",
+        "class": "tooling",
+        "created_at": "2026-10-05T03:17:53Z",
+        "ci_conclusion": "success",
+        "missing_passing_gates": [],
+        "feedback_s": 128.0,
+        "last_gate": "bazel-ci / Test & Build",
+        "gate_offsets_s": {
+          "Gazelle diff": 43.0,
+          "Build artifacts + imports check": 123.0,
+          "Pre-commit checks": 100.0,
+          "bazel-ci / Test & Build": 128.0
+        },
+        "run_url": "https://github.com/agentydragon/ducktape/actions/runs/37258875995"
+      },
+      {
+        "run": 37258912195,
+        "head": "cac77728f5a0e3a9ab069f7f5424996ed75923c4",
+        "source_merge": "33deb8de7d94782fbdf0da8fa78c351303cea38c",
+        "pr": 9045,
+        "period": "after",
+        "class": "other code",
+        "created_at": "2026-10-05T03:18:23Z",
+        "ci_conclusion": "success",
+        "missing_passing_gates": [],
+        "feedback_s": 223.0,
+        "last_gate": "bazel-ci / Test & Build",
+        "gate_offsets_s": {
+          "Gazelle diff": 38.0,
+          "Build artifacts + imports check": 128.0,
+          "Pre-commit checks": 133.0,
+          "bazel-ci / Test & Build": 223.0
+        },
+        "run_url": "https://github.com/agentydragon/ducktape/actions/runs/37258912195"
+      },
+      {
+        "run": 37258975020,
+        "head": "893694895f2e3fb146b1d8298cf626e39977b1e5",
+        "source_merge": "c39641d50fda4961a82caab566123a3443c7565f",
+        "pr": 9100,
+        "period": "after",
+        "class": "frontend",
+        "created_at": "2026-10-05T03:19:19Z",
+        "ci_conclusion": "success",
+        "missing_passing_gates": [],
+        "feedback_s": 190.0,
+        "last_gate": "bazel-ci / Test & Build",
+        "gate_offsets_s": {
+          "Gazelle diff": 55.0,
+          "Build artifacts + imports check": 128.0,
+          "Pre-commit checks": 109.0,
+          "bazel-ci / Test & Build": 190.0
+        },
+        "run_url": "https://github.com/agentydragon/ducktape/actions/runs/37258975020"
+      },
+      {
+        "run": 37259325344,
+        "head": "2fd5c54454ecd0d7d07747e1587ecf805a177fc4",
+        "source_merge": "88bf64bd50507b9d4520c719b7bb96197908353e",
+        "pr": 9101,
+        "period": "after",
+        "class": "other code",
+        "created_at": "2026-10-05T03:24:37Z",
+        "ci_conclusion": "success",
+        "missing_passing_gates": [],
+        "feedback_s": 147.0,
+        "last_gate": "Pre-commit checks",
+        "gate_offsets_s": {
+          "Gazelle diff": 40.0,
+          "Build artifacts + imports check": 118.0,
+          "Pre-commit checks": 147.0,
+          "bazel-ci / Test & Build": 103.0
+        },
+        "run_url": "https://github.com/agentydragon/ducktape/actions/runs/37259325344"
+      },
+      {
+        "run": 37259399738,
+        "head": "5b95a18f0312cd47ce2296b8982870a40206a813",
+        "source_merge": "a0ab7e3e33d79081f14ce52b716395d1840a4d23",
+        "pr": 9102,
+        "period": "after",
+        "class": "other code",
+        "created_at": "2026-10-05T03:25:42Z",
+        "ci_conclusion": "success",
+        "missing_passing_gates": [],
+        "feedback_s": 154.0,
+        "last_gate": "Pre-commit checks",
+        "gate_offsets_s": {
+          "Gazelle diff": 30.0,
+          "Build artifacts + imports check": 94.0,
+          "Pre-commit checks": 154.0,
+          "bazel-ci / Test & Build": 121.0
+        },
+        "run_url": "https://github.com/agentydragon/ducktape/actions/runs/37259399738"
+      },
+      {
+        "run": 37259411780,
+        "head": "c533bd870c8983326d500aa9396216ff818c2cb2",
+        "source_merge": "b1f58b966c9c54cc17668af89cb6ec87d7c68a30",
+        "pr": 9103,
+        "period": "after",
+        "class": "other code",
+        "created_at": "2026-10-05T03:25:54Z",
+        "ci_conclusion": "success",
+        "missing_passing_gates": [],
+        "feedback_s": 141.0,
+        "last_gate": "Pre-commit checks",
+        "gate_offsets_s": {
+          "Gazelle diff": 41.0,
+          "Build artifacts + imports check": 119.0,
+          "Pre-commit checks": 141.0,
+          "bazel-ci / Test & Build": 116.0
+        },
+        "run_url": "https://github.com/agentydragon/ducktape/actions/runs/37259411780"
+      },
+      {
+        "run": 37259502595,
+        "head": "4a8dea1b364c795eba73c4381b69e27d3f9e2f5a",
+        "source_merge": "20afa7355bc3f8d3a9cd132de49357d0457a4203",
+        "pr": 9104,
+        "period": "after",
+        "class": "frontend",
+        "created_at": "2026-10-05T03:27:16Z",
+        "ci_conclusion": "success",
+        "missing_passing_gates": [],
+        "feedback_s": 226.0,
+        "last_gate": "bazel-ci / Test & Build",
+        "gate_offsets_s": {
+          "Gazelle diff": 39.0,
+          "Build artifacts + imports check": 124.0,
+          "Pre-commit checks": 117.0,
+          "bazel-ci / Test & Build": 226.0
+        },
+        "run_url": "https://github.com/agentydragon/ducktape/actions/runs/37259502595"
+      },
+      {
+        "run": 37259664978,
+        "head": "485e9b2ca09ae95c0edca4eb4abfb6cd6f994ec6",
+        "source_merge": "a73c87ed7a47bb90cf27b245f6c3dcd1cb6c143d",
+        "pr": 9105,
+        "period": "after",
+        "class": "other code",
+        "created_at": "2026-10-05T03:29:51Z",
+        "ci_conclusion": "success",
+        "missing_passing_gates": [],
+        "feedback_s": 183.0,
+        "last_gate": "Build artifacts + imports check",
+        "gate_offsets_s": {
+          "Gazelle diff": 71.0,
+          "Build artifacts + imports check": 183.0,
+          "Pre-commit checks": 137.0,
+          "bazel-ci / Test & Build": 148.0
+        },
+        "run_url": "https://github.com/agentydragon/ducktape/actions/runs/37259664978"
+      },
+      {
+        "run": 37259720988,
+        "head": "6ca4607c4621b69efc9223f6b2d857068ac8e629",
+        "source_merge": "f90581bf2a2428db1a3c779d19294c735e0a9601",
+        "pr": 9106,
+        "period": "after",
+        "class": "other infra",
+        "created_at": "2026-10-05T03:30:36Z",
+        "ci_conclusion": "success",
+        "missing_passing_gates": [],
+        "feedback_s": 211.0,
+        "last_gate": "bazel-ci / Test & Build",
+        "gate_offsets_s": {
+          "Gazelle diff": 39.0,
+          "Build artifacts + imports check": 92.0,
+          "Pre-commit checks": 185.0,
+          "bazel-ci / Test & Build": 211.0
+        },
+        "run_url": "https://github.com/agentydragon/ducktape/actions/runs/37259720988"
+      },
+      {
+        "run": 37259789648,
+        "head": "5bde17ec6cf6a07aa99a965bf56d29efbee71fb6",
+        "source_merge": "b32e05d0e88ea6d7ed55bb2b9261ae365eb1fefc",
+        "pr": 9107,
+        "period": "after",
+        "class": "other code",
+        "created_at": "2026-10-05T03:31:39Z",
+        "ci_conclusion": "success",
+        "missing_passing_gates": [],
+        "feedback_s": 242.0,
+        "last_gate": "bazel-ci / Test & Build",
+        "gate_offsets_s": {
+          "Gazelle diff": 104.0,
+          "Build artifacts + imports check": 112.0,
+          "Pre-commit checks": 216.0,
+          "bazel-ci / Test & Build": 242.0
+        },
+        "run_url": "https://github.com/agentydragon/ducktape/actions/runs/37259789648"
+      },
+      {
+        "run": 37260404019,
+        "head": "ce5665100eee73c11c94d6bdb2703c0fdc335a11",
+        "source_merge": "2a43072ba227556f1bca66badbe8a76eee53dd70",
+        "pr": 9108,
+        "period": "after",
+        "class": "other code",
+        "created_at": "2026-10-05T03:40:59Z",
+        "ci_conclusion": "success",
+        "missing_passing_gates": [],
+        "feedback_s": 283.0,
+        "last_gate": "bazel-ci / Test & Build",
+        "gate_offsets_s": {
+          "Gazelle diff": 39.0,
+          "Build artifacts + imports check": 114.0,
+          "Pre-commit checks": 134.0,
+          "bazel-ci / Test & Build": 283.0
+        },
+        "run_url": "https://github.com/agentydragon/ducktape/actions/runs/37260404019"
+      },
+      {
+        "run": 37260647048,
+        "head": "18fe8d5883240ecef230845a64cff16bd03f7873",
+        "source_merge": "8a2442a9ad4eaa4ce6ca3ae3e4c0692105b85c1a",
+        "pr": 9110,
+        "period": "after",
+        "class": "tooling",
+        "created_at": "2026-10-05T03:44:44Z",
+        "ci_conclusion": "success",
+        "missing_passing_gates": [],
+        "feedback_s": 301.0,
+        "last_gate": "bazel-ci / Test & Build",
+        "gate_offsets_s": {
+          "Gazelle diff": 33.0,
+          "Build artifacts + imports check": 116.0,
+          "Pre-commit checks": 126.0,
+          "bazel-ci / Test & Build": 301.0
+        },
+        "run_url": "https://github.com/agentydragon/ducktape/actions/runs/37260647048"
+      },
+      {
+        "run": 37260884786,
+        "head": "53cda91cc1497e967707c5bdd02519c8b4290fe0",
+        "source_merge": "e3fc365ae2a1ab3e633100d885a421f4e1f508b7",
+        "pr": 9111,
+        "period": "after",
+        "class": "docs",
+        "created_at": "2026-10-05T03:48:18Z",
+        "ci_conclusion": "success",
+        "missing_passing_gates": [],
+        "feedback_s": 223.0,
+        "last_gate": "Build artifacts + imports check",
+        "gate_offsets_s": {
+          "Gazelle diff": 32.0,
+          "Build artifacts + imports check": 223.0,
+          "Pre-commit checks": 107.0,
+          "bazel-ci / Test & Build": 180.0
+        },
+        "run_url": "https://github.com/agentydragon/ducktape/actions/runs/37260884786"
+      },
+      {
+        "run": 37261216299,
+        "head": "4afbe87679285eef4b48b9c1633971a1b50cf9c4",
+        "source_merge": "e6db7643c3f8d234250d55b4044126b557371199",
+        "pr": 9113,
+        "period": "after",
+        "class": "frontend",
+        "created_at": "2026-10-05T03:53:28Z",
+        "ci_conclusion": "success",
+        "missing_passing_gates": [],
+        "feedback_s": 263.0,
+        "last_gate": "bazel-ci / Test & Build",
+        "gate_offsets_s": {
+          "Gazelle diff": 39.0,
+          "Build artifacts + imports check": 114.0,
+          "Pre-commit checks": 179.0,
+          "bazel-ci / Test & Build": 263.0
+        },
+        "run_url": "https://github.com/agentydragon/ducktape/actions/runs/37261216299"
+      },
+      {
+        "run": 37261550838,
+        "head": "b5863861c05fde420ae0963057df25b3a342a834",
+        "source_merge": "8d0f6a85a304f1703aa9899b44f9afffb4870c3c",
+        "pr": 9114,
+        "period": "after",
+        "class": "tooling",
+        "created_at": "2026-10-05T03:58:38Z",
+        "ci_conclusion": "success",
+        "missing_passing_gates": [],
+        "feedback_s": 530.0,
+        "last_gate": "bazel-ci / Test & Build",
+        "gate_offsets_s": {
+          "Gazelle diff": 38.0,
+          "Build artifacts + imports check": 137.0,
+          "Pre-commit checks": 136.0,
+          "bazel-ci / Test & Build": 530.0
+        },
+        "run_url": "https://github.com/agentydragon/ducktape/actions/runs/37261550838"
+      },
+      {
+        "run": 37261629700,
+        "head": "338948d38d3a2195b388261a82027db1d0d18109",
+        "source_merge": "cd20657d6687601d416c9c44387f910a99834f36",
+        "pr": 9115,
+        "period": "after",
+        "class": "docs",
+        "created_at": "2026-10-05T03:59:54Z",
+        "ci_conclusion": "success",
+        "missing_passing_gates": [],
+        "feedback_s": 116.0,
+        "last_gate": "Build artifacts + imports check",
+        "gate_offsets_s": {
+          "Gazelle diff": 32.0,
+          "Build artifacts + imports check": 116.0,
+          "Pre-commit checks": 107.0,
+          "bazel-ci / Test & Build": 70.0
+        },
+        "run_url": "https://github.com/agentydragon/ducktape/actions/runs/37261629700"
+      },
+      {
+        "run": 37263038378,
+        "head": "720b6a08d76423e7c7fad4c541c49c9e90ff43fe",
+        "source_merge": "7e830362f23c799d2d61e36e36f6d45f078121ac",
+        "pr": 9119,
+        "period": "after",
+        "class": "other code",
+        "created_at": "2026-10-05T04:19:54Z",
+        "ci_conclusion": "success",
+        "missing_passing_gates": [],
+        "feedback_s": 134.0,
+        "last_gate": "Pre-commit checks",
+        "gate_offsets_s": {
+          "Gazelle diff": 41.0,
+          "Build artifacts + imports check": 114.0,
+          "Pre-commit checks": 134.0,
+          "bazel-ci / Test & Build": 120.0
+        },
+        "run_url": "https://github.com/agentydragon/ducktape/actions/runs/37263038378"
+      },
+      {
+        "run": 37263225598,
+        "head": "dad43a76376342825a94fd4df04582f86d02f04c",
+        "source_merge": "b9ef3ff7c8451fa37ad0beb8870de0d14cee152d",
+        "pr": 9120,
+        "period": "after",
+        "class": "frontend",
+        "created_at": "2026-10-05T04:22:22Z",
+        "ci_conclusion": "success",
+        "missing_passing_gates": [],
+        "feedback_s": 284.0,
+        "last_gate": "bazel-ci / Test & Build",
+        "gate_offsets_s": {
+          "Gazelle diff": 40.0,
+          "Build artifacts + imports check": 115.0,
+          "Pre-commit checks": 160.0,
+          "bazel-ci / Test & Build": 284.0
+        },
+        "run_url": "https://github.com/agentydragon/ducktape/actions/runs/37263225598"
+      },
+      {
+        "run": 37263770063,
+        "head": "89300b98606cdbb6e5f28579e5a8c92dc3f0fec5",
+        "source_merge": "19780ac808d22474c6d4ed21ce24447122e5de9e",
+        "pr": 9122,
+        "period": "after",
+        "class": "frontend",
+        "created_at": "2026-10-05T04:29:52Z",
+        "ci_conclusion": "success",
+        "missing_passing_gates": [],
+        "feedback_s": 191.0,
+        "last_gate": "bazel-ci / Test & Build",
+        "gate_offsets_s": {
+          "Gazelle diff": 35.0,
+          "Build artifacts + imports check": 117.0,
+          "Pre-commit checks": 139.0,
+          "bazel-ci / Test & Build": 191.0
+        },
+        "run_url": "https://github.com/agentydragon/ducktape/actions/runs/37263770063"
+      },
+      {
+        "run": 37263914691,
+        "head": "7a5effe15cb007b266324c0f00dc196f596fa3ce",
+        "source_merge": "22bcaa05f233fa6006a102484d83b3838174d799",
+        "pr": 9117,
+        "period": "after",
+        "class": "tooling",
+        "created_at": "2026-10-05T04:31:42Z",
+        "ci_conclusion": "success",
+        "missing_passing_gates": [],
+        "feedback_s": 833.0,
+        "last_gate": "bazel-ci / Test & Build",
+        "gate_offsets_s": {
+          "Gazelle diff": 74.0,
+          "Build artifacts + imports check": 108.0,
+          "Pre-commit checks": 156.0,
+          "bazel-ci / Test & Build": 833.0
+        },
+        "run_url": "https://github.com/agentydragon/ducktape/actions/runs/37263914691"
+      },
+      {
+        "run": 37264151864,
+        "head": "102f3f0821a0a5c978abd129dd1caec84c60a7d5",
+        "source_merge": "9f8ccc349cb7d09ed34887f227cc938503c80180",
+        "pr": 9123,
+        "period": "after",
+        "class": "other code",
+        "created_at": "2026-10-05T04:35:00Z",
+        "ci_conclusion": "success",
+        "missing_passing_gates": [],
+        "feedback_s": 420.0,
+        "last_gate": "bazel-ci / Test & Build",
+        "gate_offsets_s": {
+          "Gazelle diff": 39.0,
+          "Build artifacts + imports check": 220.0,
+          "Pre-commit checks": 100.0,
+          "bazel-ci / Test & Build": 420.0
+        },
+        "run_url": "https://github.com/agentydragon/ducktape/actions/runs/37264151864"
+      },
+      {
+        "run": 37264319461,
+        "head": "c2055602af01ca30aaa559fcbc33c8df01950629",
+        "source_merge": "c9b5f04b3d99ea710538b2b8db373b542346c246",
+        "pr": 9124,
+        "period": "after",
+        "class": "frontend",
+        "created_at": "2026-10-05T04:37:19Z",
+        "ci_conclusion": "success",
+        "missing_passing_gates": [],
+        "feedback_s": 332.0,
+        "last_gate": "bazel-ci / Test & Build",
+        "gate_offsets_s": {
+          "Gazelle diff": 40.0,
+          "Build artifacts + imports check": 168.0,
+          "Pre-commit checks": 116.0,
+          "bazel-ci / Test & Build": 332.0
+        },
+        "run_url": "https://github.com/agentydragon/ducktape/actions/runs/37264319461"
+      },
+      {
+        "run": 37264645693,
+        "head": "beb18c214c164a9a5f87930cae1647f795090260",
+        "source_merge": "65aefeee7da2ac0ae39b32c44ffa5d57f6b722e0",
+        "pr": 9125,
+        "period": "after",
+        "class": "frontend",
+        "created_at": "2026-10-05T04:41:52Z",
+        "ci_conclusion": "success",
+        "missing_passing_gates": [],
+        "feedback_s": 474.0,
+        "last_gate": "bazel-ci / Test & Build",
+        "gate_offsets_s": {
+          "Gazelle diff": 40.0,
+          "Build artifacts + imports check": 141.0,
+          "Pre-commit checks": 113.0,
+          "bazel-ci / Test & Build": 474.0
+        },
+        "run_url": "https://github.com/agentydragon/ducktape/actions/runs/37264645693"
+      },
+      {
+        "run": 37264795042,
+        "head": "4b2fd2ebdfc4a803df78eb90fad5e4f1c558c31e",
+        "source_merge": "792fa1211c20678da503cc877236cb7791c448ef",
+        "pr": 9126,
+        "period": "after",
+        "class": "other code",
+        "created_at": "2026-10-05T04:43:59Z",
+        "ci_conclusion": "success",
+        "missing_passing_gates": [],
+        "feedback_s": 235.0,
+        "last_gate": "bazel-ci / Test & Build",
+        "gate_offsets_s": {
+          "Gazelle diff": 56.0,
+          "Build artifacts + imports check": 114.0,
+          "Pre-commit checks": 106.0,
+          "bazel-ci / Test & Build": 235.0
+        },
+        "run_url": "https://github.com/agentydragon/ducktape/actions/runs/37264795042"
+      },
+      {
+        "run": 37265180094,
+        "head": "d62aeafb494bb48ad922dc11baa6c57dd94d9043",
+        "source_merge": "e09f023afd927427c661d1ff2cd42f19300d3a70",
+        "pr": 9124,
+        "period": "after",
+        "class": "frontend",
+        "created_at": "2026-10-05T04:49:42Z",
+        "ci_conclusion": "success",
+        "missing_passing_gates": [],
+        "feedback_s": 318.0,
+        "last_gate": "bazel-ci / Test & Build",
+        "gate_offsets_s": {
+          "Gazelle diff": 42.0,
+          "Build artifacts + imports check": 110.0,
+          "Pre-commit checks": 115.0,
+          "bazel-ci / Test & Build": 318.0
+        },
+        "run_url": "https://github.com/agentydragon/ducktape/actions/runs/37265180094"
+      },
+      {
+        "run": 37265340042,
+        "head": "a8e5d6d704e07346e65ec6904e4655eafaade14b",
+        "source_merge": "3c2269bfac3ec087a639e96200197d90517c4528",
+        "pr": 9128,
+        "period": "after",
+        "class": "cdk8s",
+        "created_at": "2026-10-05T04:52:11Z",
+        "ci_conclusion": "success",
+        "missing_passing_gates": [],
+        "feedback_s": 487.0,
+        "last_gate": "bazel-ci / Test & Build",
+        "gate_offsets_s": {
+          "Gazelle diff": 43.0,
+          "Build artifacts + imports check": 135.0,
+          "Pre-commit checks": 164.0,
+          "bazel-ci / Test & Build": 487.0
+        },
+        "run_url": "https://github.com/agentydragon/ducktape/actions/runs/37265340042"
+      },
+      {
+        "run": 37265731767,
+        "head": "f1a165b7fe728a11b5b88ace2cbfed3034facee2",
+        "source_merge": "c39b37637b0a6620e19fd1d0abaf3e3e6f751970",
+        "pr": 9129,
+        "period": "after",
+        "class": "cdk8s",
+        "created_at": "2026-10-05T04:58:04Z",
+        "ci_conclusion": "success",
+        "missing_passing_gates": [],
+        "feedback_s": 212.0,
+        "last_gate": "bazel-ci / Test & Build",
+        "gate_offsets_s": {
+          "Gazelle diff": 38.0,
+          "Build artifacts + imports check": 112.0,
+          "Pre-commit checks": 147.0,
+          "bazel-ci / Test & Build": 212.0
+        },
+        "run_url": "https://github.com/agentydragon/ducktape/actions/runs/37265731767"
+      },
+      {
+        "run": 37265974222,
+        "head": "451c3185a6f3131001557ffe8b11b81d30918b2c",
+        "source_merge": "ae5c4718e2d62794d33f23731924b5f60c9d8cef",
+        "pr": 9130,
+        "period": "after",
+        "class": "frontend",
+        "created_at": "2026-10-05T05:01:31Z",
+        "ci_conclusion": "success",
+        "missing_passing_gates": [],
+        "feedback_s": 274.0,
+        "last_gate": "bazel-ci / Test & Build",
+        "gate_offsets_s": {
+          "Gazelle diff": 68.0,
+          "Build artifacts + imports check": 140.0,
+          "Pre-commit checks": 130.0,
+          "bazel-ci / Test & Build": 274.0
+        },
+        "run_url": "https://github.com/agentydragon/ducktape/actions/runs/37265974222"
+      },
+      {
+        "run": 37266028132,
+        "head": "43cec8f2613adc23739043292cb846874e6c61de",
+        "source_merge": "4c01220f0e4e0902204431d26f72b4b4b50bc9cf",
+        "pr": 9131,
+        "period": "after",
+        "class": "frontend",
+        "created_at": "2026-10-05T05:02:20Z",
+        "ci_conclusion": "success",
+        "missing_passing_gates": [],
+        "feedback_s": 420.0,
+        "last_gate": "bazel-ci / Test & Build",
+        "gate_offsets_s": {
+          "Gazelle diff": 63.0,
+          "Build artifacts + imports check": 131.0,
+          "Pre-commit checks": 130.0,
+          "bazel-ci / Test & Build": 420.0
+        },
+        "run_url": "https://github.com/agentydragon/ducktape/actions/runs/37266028132"
+      },
+      {
+        "run": 37266122971,
+        "head": "f0efbaceca9ad03852a8d2f8b3ceedad3a4a6af6",
+        "source_merge": "17170be0613ec74c2e4654adcc7943299c9e710e",
+        "pr": 9132,
+        "period": "after",
+        "class": "tooling",
+        "created_at": "2026-10-05T05:03:47Z",
+        "ci_conclusion": "success",
+        "missing_passing_gates": [],
+        "feedback_s": 118.0,
+        "last_gate": "Build artifacts + imports check",
+        "gate_offsets_s": {
+          "Gazelle diff": 41.0,
+          "Build artifacts + imports check": 118.0,
+          "Pre-commit checks": 113.0,
+          "bazel-ci / Test & Build": 91.0
+        },
+        "run_url": "https://github.com/agentydragon/ducktape/actions/runs/37266122971"
+      },
+      {
+        "run": 37266287806,
+        "head": "59aa89009667e23c157df94070524cd8d3cb4109",
+        "source_merge": "d023e5be327cc79981ffb269f0e6c13a8f8a1322",
+        "pr": 9133,
+        "period": "after",
+        "class": "other code",
+        "created_at": "2026-10-05T05:06:09Z",
+        "ci_conclusion": "success",
+        "missing_passing_gates": [],
+        "feedback_s": 112.0,
+        "last_gate": "Build artifacts + imports check",
+        "gate_offsets_s": {
+          "Gazelle diff": 40.0,
+          "Build artifacts + imports check": 112.0,
+          "Pre-commit checks": 102.0,
+          "bazel-ci / Test & Build": 73.0
+        },
+        "run_url": "https://github.com/agentydragon/ducktape/actions/runs/37266287806"
+      },
+      {
+        "run": 37266433935,
+        "head": "ce8df8441cafa8665cc0903116053221b23cbe89",
+        "source_merge": "030b3f3bf1c798a8337960d4013ec7b0f6276d25",
+        "pr": 9135,
+        "period": "after",
+        "class": "tooling",
+        "created_at": "2026-10-05T05:08:14Z",
+        "ci_conclusion": "success",
+        "missing_passing_gates": [],
+        "feedback_s": 137.0,
+        "last_gate": "bazel-ci / Test & Build",
+        "gate_offsets_s": {
+          "Gazelle diff": 89.0,
+          "Build artifacts + imports check": 117.0,
+          "Pre-commit checks": 122.0,
+          "bazel-ci / Test & Build": 137.0
+        },
+        "run_url": "https://github.com/agentydragon/ducktape/actions/runs/37266433935"
+      },
+      {
+        "run": 37266640070,
+        "head": "fcbc1d4a7f6630633e527e26cbd6f991ae060c82",
+        "source_merge": "4d38a543d5036121c75a41c800f1770479c1bec4",
+        "pr": 9128,
+        "period": "after",
+        "class": "cdk8s",
+        "created_at": "2026-10-05T05:11:05Z",
+        "ci_conclusion": "success",
+        "missing_passing_gates": [],
+        "feedback_s": 314.0,
+        "last_gate": "bazel-ci / Test & Build",
+        "gate_offsets_s": {
+          "Gazelle diff": 39.0,
+          "Build artifacts + imports check": 135.0,
+          "Pre-commit checks": 173.0,
+          "bazel-ci / Test & Build": 314.0
+        },
+        "run_url": "https://github.com/agentydragon/ducktape/actions/runs/37266640070"
+      },
+      {
+        "run": 37266914901,
+        "head": "a359958d697aad8317a755124b6b60bf9468f5b0",
+        "source_merge": "7089ea2054f9c53a8ee0f10d3b5bfbf0eed8b4e0",
+        "pr": 9136,
+        "period": "after",
+        "class": "other code",
+        "created_at": "2026-10-05T05:14:48Z",
+        "ci_conclusion": "success",
+        "missing_passing_gates": [],
+        "feedback_s": 266.0,
+        "last_gate": "Pre-commit checks",
+        "gate_offsets_s": {
+          "Gazelle diff": 122.0,
+          "Build artifacts + imports check": 131.0,
+          "Pre-commit checks": 266.0,
+          "bazel-ci / Test & Build": 141.0
+        },
+        "run_url": "https://github.com/agentydragon/ducktape/actions/runs/37266914901"
+      },
+      {
+        "run": 37267029358,
+        "head": "9b256c408638452b5bf1aea8a24c255565b158d7",
+        "source_merge": "a57533655a609d5b82b7a4059f04c8f7d51fd671",
+        "pr": 9129,
+        "period": "after",
+        "class": "cdk8s",
+        "created_at": "2026-10-05T05:16:17Z",
+        "ci_conclusion": "success",
+        "missing_passing_gates": [],
+        "feedback_s": 198.0,
+        "last_gate": "bazel-ci / Test & Build",
+        "gate_offsets_s": {
+          "Gazelle diff": 72.0,
+          "Build artifacts + imports check": 118.0,
+          "Pre-commit checks": 190.0,
+          "bazel-ci / Test & Build": 198.0
+        },
+        "run_url": "https://github.com/agentydragon/ducktape/actions/runs/37267029358"
+      },
+      {
+        "run": 37267600160,
+        "head": "48536652d592bec48d01e03b626160f38274a1ae",
+        "source_merge": "6db5fa2efa5dd257e8fbde895d70554790793334",
+        "pr": 9128,
+        "period": "after",
+        "class": "cdk8s",
+        "created_at": "2026-10-05T05:23:51Z",
+        "ci_conclusion": "success",
+        "missing_passing_gates": [],
+        "feedback_s": 386.0,
+        "last_gate": "bazel-ci / Test & Build",
+        "gate_offsets_s": {
+          "Gazelle diff": 51.0,
+          "Build artifacts + imports check": 137.0,
+          "Pre-commit checks": 136.0,
+          "bazel-ci / Test & Build": 386.0
+        },
+        "run_url": "https://github.com/agentydragon/ducktape/actions/runs/37267600160"
+      }
+    ],
+    "browser": {
+      "collected_at_utc": "2026-10-05T05:35Z",
+      "target": "//agentplane/app:test_thread_browser",
+      "question": "Do merged 4-to-8 shard changes show a credible browser-test effect?",
+      "controlled_same_source_pair": {
+        "source_commit": "05bb56825852a668524753f986b7912dee52c23d",
+        "source_pr_head": "a063709a67c58d0958acecc01e919f71947334c1",
+        "source_link": "https://github.com/agentydragon/ducktape/commit/05bb56825852a668524753f986b7912dee52c23d",
+        "design": "Sequential forced 4-shard then 8-shard commands in one RBE runner/Bazel output base; both used --nocache_test_results, so every test shard action executed fresh. Same 41 test identities in each; 0 failures/skips.",
+        "four_shard": {
+          "invocation": "91b26b8e-5f51-4e80-8d57-d69a8a41d197",
+          "shard_case_counts": [
+            11,
+            10,
+            10,
+            10
+          ],
+          "elapsed_s": 295.954,
+          "critical_path_s": 226.679,
+          "critical_test_action_s": 224.716,
+          "test_runner_worker_lifecycle_sum_s": 683.387,
+          "test_runner_execution_wall_sum_s": 679.778,
+          "test_runner_cpu_sum_s": 1330.4
+        },
+        "eight_shard": {
+          "invocation": "b1c4a9c0-490f-43dd-8f0d-4d1ef0132b38",
+          "shard_case_counts": [
+            6,
+            5,
+            5,
+            5,
+            5,
+            5,
+            5,
+            5
+          ],
+          "elapsed_s": 158.393,
+          "critical_path_s": 156.172,
+          "critical_test_action_s": 156.028,
+          "test_runner_worker_lifecycle_sum_s": 941.313,
+          "test_runner_execution_wall_sum_s": 936.051,
+          "test_runner_cpu_sum_s": 1812.6
+        },
+        "delta_eight_minus_four": {
+          "critical_path_s": -70.508,
+          "critical_test_action_s": -68.688,
+          "worker_lifecycle_percent": 37.7,
+          "cpu_percent": 36.2
+        },
+        "interpretation": "Direct within-source evidence for lower critical browser-test time at higher aggregate worker/CPU cost. It is one ordered pair; second-run analysis was warm, so invocation elapsed delta is confounded. The fresh per-shard test actions and critical action are the relevant timing comparison."
+      },
+      "fresh_eight_shard_ci_observations": [
+        {
+          "invocation": "f258f946-0615-5492-815e-f2fa59a119fc",
+          "buildbuddy_commit": "79e575bcd1ce8681d7efaa6a30259e31fdcd0e5a",
+          "synthetic_merge_base": "9fc4b6964f70f4a8fd2f70fbce9448c7ee8ee9c6",
+          "buildbuddy_source_link": "https://github.com/agentydragon/ducktape/commit/79e575bcd1ce8681d7efaa6a30259e31fdcd0e5a",
+          "tested_pr": 9067,
+          "pr_head": "ae627a32ed816d968dc263a5d1a97f666645e24f",
+          "merge_commit": "efb016f5fe9a07336bfd53d2af868f85590e9914",
+          "merged_at_utc": "2026-10-05T02:07:25Z",
+          "source_link": "https://github.com/agentydragon/ducktape/pull/9067",
+          "result": "8/8 fresh remote actions passed; 41 test cases; 0 failures/skips.",
+          "shard_durations_s": [
+            86.633,
+            95.23,
+            98.142,
+            104.502,
+            109.135,
+            113.621,
+            138.45,
+            141.931
+          ],
+          "critical_shard_s": 141.931,
+          "summed_shard_wall_s": 887.644,
+          "source_comparison": "Acceptance run for shard-count change on synthetic merge 79e575bc (base 9fc4b696, head ae627a32). This is a different source from the controlled pair, which used PR #9046 synthetic merge 05bb5682. Both reports count 41 cases, but identity-level equality was not verified."
+        },
+        {
+          "invocation": "8ed0ed8f-a7f8-5697-a12d-35b0f70279d0",
+          "buildbuddy_commit": "b94511573c4f7edff1bf8b9859bfa1a732facb7d",
+          "tested_pr": 9046,
+          "pr_head": "ea52956d77b875eca0c801fc0bd5e92c063cc9bb",
+          "source_link": "https://github.com/agentydragon/ducktape/pull/9046",
+          "result": "8/8 fresh remote actions passed.",
+          "shard_durations_s": [
+            91.199,
+            104.885,
+            109.571,
+            103.634,
+            106.211,
+            109.679,
+            117.764,
+            130.588
+          ],
+          "critical_shard_s": 130.588,
+          "source_comparison": "Confounded follow-on: changed Agentplane evidence UI and test_thread_browser.py, and added three visual scenarios."
+        },
+        {
+          "invocation": "f448344b-93b2-568c-88f1-cb5ab7b1ffe8",
+          "buildbuddy_commit": "74a30e6af67a5be8d16dd8e94f862d0fe73332b8",
+          "tested_pr": 9122,
+          "pr_head": "89300b98606cdbb6e5f28579e5a8c92dc3f0fec5",
+          "source_link": "https://github.com/agentydragon/ducktape/pull/9122",
+          "result": "8/8 fresh remote actions passed.",
+          "shard_durations_s": [
+            105.789,
+            105.85,
+            106.835,
+            108.731,
+            119.327,
+            120.119,
+            132.465,
+            143.822
+          ],
+          "critical_shard_s": 143.822,
+          "source_comparison": "Confounded follow-on: changed pinned headless Chromium from 133 to 151 and updated its build/run dependencies."
+        }
+      ],
+      "pre_change_fresh_ci_critical_browser_actions_s": [
+        {
+          "invocation": "4895e4bc-b06b-52ac-bbac-287893465510",
+          "pr": 9046,
+          "shards": 4,
+          "critical_action_s": 189.983
+        },
+        {
+          "invocation": "b3f17b21-2381-59e0-9e8e-fb83ce98f368",
+          "pr": 9026,
+          "shards": 4,
+          "critical_action_s": 204.528
+        },
+        {
+          "invocation": "9891a507-3085-5ae0-84c6-3a013ceb5dbc",
+          "pr": 9038,
+          "shards": 4,
+          "critical_action_s": 219.798
+        }
+      ],
+      "history_cache_audit": {
+        "post_merge_sampled_target_history_rows": [
+          {
+            "invocation": "c686bd79-18f8-5746-ae7c-788b4c55be40",
+            "commit": "a08ab2d29521d3b3520b10d1165333322141ef37",
+            "target_history_duration_s": 932.378,
+            "shards": 8,
+            "cache_state": "all 8 remote cache hits"
+          },
+          {
+            "invocation": "9bb7f172-40c4-5cbf-a8e4-860e1cb24bfb",
+            "commit": "fa33b951ce36406e21dea22812c065660f8e7437",
+            "target_history_duration_s": 853.87,
+            "shards": 8,
+            "cache_state": "all 8 remote cache hits"
+          },
+          {
+            "invocation": "a96bfa68-2958-5d93-936f-52ce2cc7858d",
+            "commit": "7844059f352ed28b99e42731778b2b2b7e680538",
+            "target_history_duration_s": 904.122,
+            "shards": 8,
+            "cache_state": "all 8 remote cache hits"
+          },
+          {
+            "invocation": "0797f5c3-4433-559c-a3a4-1c5a59add038",
+            "commit": "765cde3445f50c1ab4c94eb5e0f5a427cd196a02",
+            "target_history_duration_s": 962.274,
+            "shards": 8,
+            "cache_state": "all 8 remote cache hits"
+          },
+          {
+            "invocation": "8ed0ed8f-a7f8-5697-a12d-35b0f70279d0",
+            "commit": "b94511573c4f7edff1bf8b9859bfa1a732facb7d",
+            "target_history_duration_s": 873.531,
+            "shards": 8,
+            "cache_state": "8 fresh remote actions"
+          },
+          {
+            "invocation": "f448344b-93b2-568c-88f1-cb5ab7b1ffe8",
+            "commit": "74a30e6af67a5be8d16dd8e94f862d0fe73332b8",
+            "target_history_duration_s": 942.938,
+            "shards": 8,
+            "cache_state": "8 fresh remote actions"
+          }
+        ],
+        "note": "BuildBuddy target history includes cached results attributed to newer commit SHAs. Its aggregate duration is summed shard runtime, not concurrent target wall time. Four sampled entries were cached and must not be counted as new timing observations."
+      },
+      "conclusion": {
+        "measured_effect": "The one controlled fresh same-source pair improved critical-path browser time by 70.5s (31.1%) at +37.7% worker lifecycle and +36.2% test CPU. Three fresh 8-shard CI runs have 130.6-143.8s longest-shard times, versus three pre-change 4-shard CI profiles at 190.0-219.8s.",
+        "statistical_claim": "Promising, directionally consistent evidence; not statistically established. The controlled comparison has n=1 ordered pair. The acceptance run and the two extra fresh CI runs use different source/browser revisions; the latter were purposively sampled. Shards within one run are not independent samples. No defensible confidence interval or p-value.",
+        "limits": [
+          "The successful post-change target-history page contains cached outputs; time values alone do not imply fresh execution.",
+          "The #9046 and #9122 fresh follow-on runs alter test or browser inputs, so they are not clean replications of the same workload.",
+          "End-to-end PR feedback time has multiple parallel gates and is not an estimate of this isolated target effect."
+        ]
+      }
+    },
+    "checkout_median_statistics": {
+      "bazel": {
+        "before_heads": 45,
+        "after_heads": 90,
+        "before_prs": 30,
+        "after_prs": 81,
+        "before_median_s": 17.0,
+        "after_median_s": 7.0,
+        "median_difference_after_minus_before_s": -10.0,
+        "cluster_bootstrap_95_interval_s": [
+          -10.5,
+          -9.0
+        ]
+      },
+      "wheel": {
+        "before_heads": 43,
+        "after_heads": 90,
+        "before_prs": 30,
+        "after_prs": 81,
+        "before_median_s": 17.0,
+        "after_median_s": 7.0,
+        "median_difference_after_minus_before_s": -10.0,
+        "cluster_bootstrap_95_interval_s": [
+          -10.0,
+          -9.0
+        ]
+      }
+    },
+    "keepwarm": {
+      "title": "Landed keep-warm effect: runner probes and actual Bazel test phase",
+      "source_change": {
+        "change": "deletes the explicit `bazel shutdown` immediately before the test/build phase after impacted-target selection.",
+        "commit": "66982f9448dec5c0c71c5adf6cd713918e9549f7",
+        "commit_url": "https://github.com/agentydragon/ducktape/commit/66982f9448dec5c0c71c5adf6cd713918e9549f7",
+        "exact_head_probe_job": "https://github.com/agentydragon/ducktape/actions/runs/37253160796/job/111584766795",
+        "file": "devinfra/ci/bazel_ci.py",
+        "merged_at": "2026-10-05T02:22:47Z",
+        "pr": 9069
+      },
+      "period_counts": {
+        "after": {
+          "before_probe_only": 0,
+          "cancelled": 0,
+          "failure": 0,
+          "no_affected_targets_skip": 4,
+          "runs": 60,
+          "server_pid_changed_during_test": 0,
+          "server_retained_through_test": 56,
+          "success": 60,
+          "successful_test_phase_metrics": 56
+        },
+        "middle": {
+          "before_probe_only": 1,
+          "cancelled": 0,
+          "failure": 1,
+          "no_affected_targets_skip": 0,
+          "runs": 30,
+          "server_pid_changed_during_test": 28,
+          "server_retained_through_test": 1,
+          "success": 29,
+          "successful_test_phase_metrics": 29
+        }
+      },
+      "small_cached_test_phase_cohort": {
+        "all_target_count_2_sample_ids": {
+          "retained": [
+            37255263715,
+            37257055251,
+            37257975471,
+            37258562246,
+            37259664978
+          ],
+          "shutdown": [
+            37246870085,
+            37251056059
+          ]
+        },
+        "definition": "Successful Bazel test phase, 1-10 impacted test targets, and `Executed 0 out of N tests` where N equals the target count; compare observed server PID changed versus retained.",
+        "exact_target_count_2": [
+          {
+            "critical_path_s": {
+              "median": 0.96,
+              "q1": 0.9,
+              "q3": 1.02
+            },
+            "elapsed_minus_critical_path_s_median": 31.404,
+            "group": "shutdown/restart",
+            "run_ids": [
+              37246870085,
+              37251056059
+            ],
+            "runs": 2,
+            "test_elapsed_s": {
+              "max": 35.066,
+              "median": 32.364,
+              "min": 29.661,
+              "q1": 31.012,
+              "q3": 33.715
+            },
+            "test_targets_in_scope_median": 2.0,
+            "unique_prs": 2
+          },
+          {
+            "critical_path_s": {
+              "median": 0.21,
+              "q1": 0.21,
+              "q3": 0.39
+            },
+            "elapsed_minus_critical_path_s_median": 2.703,
+            "group": "retained",
+            "run_ids": [
+              37255263715,
+              37257055251,
+              37257975471,
+              37258562246,
+              37259664978
+            ],
+            "runs": 5,
+            "test_elapsed_s": {
+              "max": 11.354,
+              "median": 3.064,
+              "min": 2.308,
+              "q1": 2.913,
+              "q3": 3.499
+            },
+            "test_targets_in_scope_median": 2.0,
+            "unique_prs": 5
+          }
+        ],
+        "interpretation": "Descriptive association only: small unbalanced cached cohort (median target count6 versus2); exact label matching was not established by this extraction.",
+        "summary": [
+          {
+            "critical_path_s": {
+              "median": 0.87,
+              "q1": 0.84,
+              "q3": 0.985
+            },
+            "elapsed_minus_critical_path_s_median": 30.602,
+            "group": "server PID changed (shutdown/restart)",
+            "run_ids": [
+              37246870085,
+              37247115375,
+              37247234483,
+              37248124045,
+              37251044461,
+              37251051863,
+              37251056059
+            ],
+            "runs": 7,
+            "test_elapsed_s": {
+              "max": 35.066,
+              "median": 31.392,
+              "min": 29.661,
+              "q1": 30.404,
+              "q3": 32.211
+            },
+            "test_targets_in_scope_median": 6.0,
+            "unique_prs": 7
+          },
+          {
+            "critical_path_s": {
+              "median": 0.27,
+              "q1": 0.2,
+              "q3": 0.41
+            },
+            "elapsed_minus_critical_path_s_median": 2.992,
+            "group": "same server PID retained",
+            "run_ids": [
+              37255263715,
+              37255452606,
+              37255866026,
+              37256088582,
+              37256172874,
+              37256474749,
+              37257055251,
+              37257672824,
+              37257975471,
+              37257991516,
+              37258562246,
+              37258768690,
+              37259325344,
+              37259411780,
+              37259664978
+            ],
+            "runs": 15,
+            "test_elapsed_s": {
+              "max": 56.132,
+              "median": 3.392,
+              "min": 2.308,
+              "q1": 3.051,
+              "q3": 4.784
+            },
+            "test_targets_in_scope_median": 2.0,
+            "unique_prs": 15
+          }
+        ]
+      },
+      "uncertainty_and_limits": [
+        "No defensible causal confidence interval for production time savings from this observational slice: PRs and source revisions differ, no randomized crossover and exact target matching has not been established, and the execution cache and runner reuse state vary over time.",
+        "The direct mechanism result is much stronger than the wall-time estimate: 28 measured middle-window test phases changed server PID after target selection, while the PR #9069 exact-head test plus all 56 measured post-merge test phases retained the PID; this is evidence that the intended warm-server mechanism ran.",
+        "The small cached phase cohort gives a large raw timing contrast, but target-count distribution is different and exact test-label signatures do not overlap; it must not be generalized to production-average savings or treated as a formal effect interval.",
+        "One middle failure (23 impacted tests; 18 executed, 1 failing target; 321.793s Bazel elapsed, 281.43s critical path) emitted a before-test PID but failed before after-test probe. Preserve it as a pre-change control-period failure with unobserved restart outcome, not as a fast or successful phase.",
+        "Four post-merge successful jobs (run/PR IDs 37260884786/#9111, 37261629700/#9115, 37266122971/#9132, 37266287806/#9133) were legitimate zero-target no-ops: each explicitly reported affected targets: 0, skipped test/build, and exited 0. They have no actual test-phase measurement and are excluded only from driver timing samples, while retained in period totals. The //external diagnostics also appear in runs that do execute tests, so they are not the explanation for these no-ops.",
+        "The treatment is a one-line Bazel driver change. Other repository/Bazel/test diffs, runner reuse, remote and disk-cache state, target selection volume, failures, and day-specific load remain confounders. Critical path describes remote action critical path, not local Bazel server analysis time."
+      ],
+      "observations": [
+        {
+          "pr": 9041,
+          "run_id": 37246870085,
+          "job_url": "https://github.com/agentydragon/ducktape/actions/runs/37246870085/job/111566374796",
+          "driver_source_sha": "fc01efc643a204d28b9f867c47bfc71f6bcba4f5",
+          "probe_classification": "server_pid_changed",
+          "test_targets_in_scope": 2,
+          "test_elapsed_s": 35.066,
+          "critical_path_s": 1.08,
+          "all_test_actions_cached": true,
+          "no_affected_targets_skip": false,
+          "test_invocation_id": "ac719bfe-95fd-5a59-96f4-7e60c2727748"
+        },
+        {
+          "pr": 9042,
+          "run_id": 37246949332,
+          "job_url": "https://github.com/agentydragon/ducktape/actions/runs/37246949332/job/111566594021",
+          "driver_source_sha": "8cae80cc1ebe0e8ec6f240ed88bdc669652717b4",
+          "probe_classification": "server_pid_changed",
+          "test_targets_in_scope": 13,
+          "test_elapsed_s": 36.771,
+          "critical_path_s": 2.11,
+          "all_test_actions_cached": true,
+          "no_affected_targets_skip": false,
+          "test_invocation_id": "93bfdf15-99ea-54d2-804c-90249116aba0"
+        },
+        {
+          "pr": 9043,
+          "run_id": 37247015632,
+          "job_url": "https://github.com/agentydragon/ducktape/actions/runs/37247015632/job/111566780837",
+          "driver_source_sha": "e511b61fead9eee87ab25cd77dacb2398c29ba2e",
+          "probe_classification": "server_pid_changed",
+          "test_targets_in_scope": 15,
+          "test_elapsed_s": 68.177,
+          "critical_path_s": 13.92,
+          "all_test_actions_cached": true,
+          "no_affected_targets_skip": false,
+          "test_invocation_id": "0f8417c5-1e7c-52ed-bdd2-0dbacffe1ba9"
+        },
+        {
+          "pr": 9044,
+          "run_id": 37247115375,
+          "job_url": "https://github.com/agentydragon/ducktape/actions/runs/37247115375/job/111567064437",
+          "driver_source_sha": "38ec38a2b83f0a75c5a8bbec1873b6a25fcec2d2",
+          "probe_classification": "server_pid_changed",
+          "test_targets_in_scope": 8,
+          "test_elapsed_s": 31.521,
+          "critical_path_s": 0.87,
+          "all_test_actions_cached": true,
+          "no_affected_targets_skip": false,
+          "test_invocation_id": "16c042f9-d2a5-5b21-9309-b2b13f44aaf5"
+        },
+        {
+          "pr": 9045,
+          "run_id": 37247234483,
+          "job_url": "https://github.com/agentydragon/ducktape/actions/runs/37247234483/job/111567409392",
+          "driver_source_sha": "03b038c4b7ecd1106af5c90867b4c87a721ce543",
+          "probe_classification": "server_pid_changed",
+          "test_targets_in_scope": 6,
+          "test_elapsed_s": 30.546,
+          "critical_path_s": 1.3,
+          "all_test_actions_cached": true,
+          "no_affected_targets_skip": false,
+          "test_invocation_id": "964b788b-5bec-5d18-872c-21522b75b1c1"
+        },
+        {
+          "pr": 9046,
+          "run_id": 37247335396,
+          "job_url": "https://github.com/agentydragon/ducktape/actions/runs/37247335396/job/111567700221",
+          "driver_source_sha": "fd4070463ca2d382dd3fb469e6c7912b075d0a04",
+          "probe_classification": "before_probe_only",
+          "test_targets_in_scope": 23,
+          "test_elapsed_s": null,
+          "critical_path_s": null,
+          "all_test_actions_cached": false,
+          "no_affected_targets_skip": false,
+          "test_invocation_id": "d497a00e-717a-5c8b-b441-426eb8cea0be"
+        },
+        {
+          "pr": 9047,
+          "run_id": 37247601205,
+          "job_url": "https://github.com/agentydragon/ducktape/actions/runs/37247601205/job/111568472865",
+          "driver_source_sha": "ab4c77aa74f6d8b696b4de8dc29798b0556661af",
+          "probe_classification": "server_pid_changed",
+          "test_targets_in_scope": 25,
+          "test_elapsed_s": 60.213,
+          "critical_path_s": 31.12,
+          "all_test_actions_cached": false,
+          "no_affected_targets_skip": false,
+          "test_invocation_id": "89320a1d-2ef1-52aa-95b7-cc7d2d4b664c"
+        },
+        {
+          "pr": 9048,
+          "run_id": 37247917793,
+          "job_url": "https://github.com/agentydragon/ducktape/actions/runs/37247917793/job/111569399151",
+          "driver_source_sha": "e7f3b1ece5054b4ee69abed871b18dd65bd0ffbe",
+          "probe_classification": "server_pid_changed",
+          "test_targets_in_scope": 21,
+          "test_elapsed_s": 61.189,
+          "critical_path_s": 23.74,
+          "all_test_actions_cached": false,
+          "no_affected_targets_skip": false,
+          "test_invocation_id": "1cbe72b1-61a6-559a-9dbc-ae784d0c3cbc"
+        },
+        {
+          "pr": 9049,
+          "run_id": 37247926992,
+          "job_url": "https://github.com/agentydragon/ducktape/actions/runs/37247926992/job/111569426035",
+          "driver_source_sha": "eb548c4ef1c53802b398c1652d4c5f611cdb7ac4",
+          "probe_classification": "server_pid_changed",
+          "test_targets_in_scope": 14,
+          "test_elapsed_s": 31.635,
+          "critical_path_s": 1.29,
+          "all_test_actions_cached": true,
+          "no_affected_targets_skip": false,
+          "test_invocation_id": "1bd45404-7f70-5b36-b263-61e1ee85b87c"
+        },
+        {
+          "pr": 9050,
+          "run_id": 37247933257,
+          "job_url": "https://github.com/agentydragon/ducktape/actions/runs/37247933257/job/111569444105",
+          "driver_source_sha": "33392b8f57fdd9be92062ceb201468a67b610e7d",
+          "probe_classification": "server_pid_changed",
+          "test_targets_in_scope": 17,
+          "test_elapsed_s": 50.953,
+          "critical_path_s": 24.47,
+          "all_test_actions_cached": false,
+          "no_affected_targets_skip": false,
+          "test_invocation_id": "85c1fc32-58a0-57c7-be7d-dcbcd4869d41"
+        },
+        {
+          "pr": 9051,
+          "run_id": 37248087798,
+          "job_url": "https://github.com/agentydragon/ducktape/actions/runs/37248087798/job/111569890396",
+          "driver_source_sha": "8b2487caadfa9571b5a9f1765d8cd118712c4598",
+          "probe_classification": "server_pid_changed",
+          "test_targets_in_scope": 5,
+          "test_elapsed_s": 33.918,
+          "critical_path_s": 8.11,
+          "all_test_actions_cached": false,
+          "no_affected_targets_skip": false,
+          "test_invocation_id": "a4b68100-53fc-516a-a345-ff85a69f29b6"
+        },
+        {
+          "pr": 9052,
+          "run_id": 37248124045,
+          "job_url": "https://github.com/agentydragon/ducktape/actions/runs/37248124045/job/111569993221",
+          "driver_source_sha": "8ef5af7b9dc7051bf2eeb6283b4081af4c9b366a",
+          "probe_classification": "server_pid_changed",
+          "test_targets_in_scope": 7,
+          "test_elapsed_s": 30.262,
+          "critical_path_s": 0.89,
+          "all_test_actions_cached": true,
+          "no_affected_targets_skip": false,
+          "test_invocation_id": "c52cca24-eec4-5427-a85b-2040eb091bef"
+        },
+        {
+          "pr": 9053,
+          "run_id": 37248297527,
+          "job_url": "https://github.com/agentydragon/ducktape/actions/runs/37248297527/job/111570516125",
+          "driver_source_sha": "cc7996a51c76d4b0a7036086cc4f9cd5a9a32a01",
+          "probe_classification": "server_pid_changed",
+          "test_targets_in_scope": 17,
+          "test_elapsed_s": 53.675,
+          "critical_path_s": 28.26,
+          "all_test_actions_cached": false,
+          "no_affected_targets_skip": false,
+          "test_invocation_id": "e912a6f2-ecd7-5b5c-a1ab-d01eecc213e8"
+        },
+        {
+          "pr": 9026,
+          "run_id": 37249081719,
+          "job_url": "https://github.com/agentydragon/ducktape/actions/runs/37249081719/job/111572807712",
+          "driver_source_sha": "29c758298da1da0c2cb50306fa5ea6fc749856be",
+          "probe_classification": "server_pid_changed",
+          "test_targets_in_scope": 18,
+          "test_elapsed_s": 260.751,
+          "critical_path_s": 221.65,
+          "all_test_actions_cached": false,
+          "no_affected_targets_skip": false,
+          "test_invocation_id": "b3f17b21-2381-59e0-9e8e-fb83ce98f368"
+        },
+        {
+          "pr": 9046,
+          "run_id": 37249141579,
+          "job_url": "https://github.com/agentydragon/ducktape/actions/runs/37249141579/job/111572984515",
+          "driver_source_sha": "05bb56825852a668524753f986b7912dee52c23d",
+          "probe_classification": "server_pid_changed",
+          "test_targets_in_scope": 23,
+          "test_elapsed_s": 295.859,
+          "critical_path_s": 259.82,
+          "all_test_actions_cached": false,
+          "no_affected_targets_skip": false,
+          "test_invocation_id": "4895e4bc-b06b-52ac-bbac-287893465510"
+        },
+        {
+          "pr": 9054,
+          "run_id": 37249512597,
+          "job_url": "https://github.com/agentydragon/ducktape/actions/runs/37249512597/job/111574076948",
+          "driver_source_sha": "ef716de979cba00cf26f0a220064439314b5d4c5",
+          "probe_classification": "server_pid_changed",
+          "test_targets_in_scope": 115,
+          "test_elapsed_s": 50.33,
+          "critical_path_s": 28.2,
+          "all_test_actions_cached": false,
+          "no_affected_targets_skip": false,
+          "test_invocation_id": "3cd135a3-e575-5ac9-a875-6a06c8ab24a6"
+        },
+        {
+          "pr": 9046,
+          "run_id": 37249915576,
+          "job_url": "https://github.com/agentydragon/ducktape/actions/runs/37249915576/job/111605021135",
+          "driver_source_sha": "bbf85adf5d1d28d08b5bbbf3c59b1726cb93f689",
+          "probe_classification": "server_pid_changed",
+          "test_targets_in_scope": 23,
+          "test_elapsed_s": 96.743,
+          "critical_path_s": 60.38,
+          "all_test_actions_cached": true,
+          "no_affected_targets_skip": false,
+          "test_invocation_id": "fae8fed2-6f93-5725-86c3-683f6405a6d6"
+        },
+        {
+          "pr": 9031,
+          "run_id": 37249952484,
+          "job_url": "https://github.com/agentydragon/ducktape/actions/runs/37249952484/job/111575401322",
+          "driver_source_sha": "7e3d7112f660ee457d10675b41faf04aace5992e",
+          "probe_classification": "server_pid_changed",
+          "test_targets_in_scope": 16,
+          "test_elapsed_s": 274.238,
+          "critical_path_s": 219.83,
+          "all_test_actions_cached": false,
+          "no_affected_targets_skip": false,
+          "test_invocation_id": "22b5d3b7-f820-5274-98eb-20e716e91d53"
+        },
+        {
+          "pr": 9057,
+          "run_id": 37250341480,
+          "job_url": "https://github.com/agentydragon/ducktape/actions/runs/37250341480/job/111576509641",
+          "driver_source_sha": "ceff7023b50be87413e5a819f5cbc0498dc84d64",
+          "probe_classification": "server_pid_changed",
+          "test_targets_in_scope": 13,
+          "test_elapsed_s": 53.64,
+          "critical_path_s": 28.11,
+          "all_test_actions_cached": false,
+          "no_affected_targets_skip": false,
+          "test_invocation_id": "7f1d9d66-dae9-53dd-aa96-8ea4d7d7ef69"
+        },
+        {
+          "pr": 9059,
+          "run_id": 37251044461,
+          "job_url": "https://github.com/agentydragon/ducktape/actions/runs/37251044461/job/111578543461",
+          "driver_source_sha": "8ae03856f2f4c425c7572193b7f891c3998c291d",
+          "probe_classification": "server_pid_changed",
+          "test_targets_in_scope": 7,
+          "test_elapsed_s": 32.901,
+          "critical_path_s": 0.84,
+          "all_test_actions_cached": true,
+          "no_affected_targets_skip": false,
+          "test_invocation_id": "e6c41dc8-5800-5046-8f59-6d3bbb4499b0"
+        },
+        {
+          "pr": 9060,
+          "run_id": 37251051863,
+          "job_url": "https://github.com/agentydragon/ducktape/actions/runs/37251051863/job/111578565918",
+          "driver_source_sha": "ea07663cad59404a49d3fc7758d084ed49aeeebd",
+          "probe_classification": "server_pid_changed",
+          "test_targets_in_scope": 4,
+          "test_elapsed_s": 31.392,
+          "critical_path_s": 0.79,
+          "all_test_actions_cached": true,
+          "no_affected_targets_skip": false,
+          "test_invocation_id": "350c4bdc-4737-5721-bf44-096abaca456f"
+        },
+        {
+          "pr": 9061,
+          "run_id": 37251056059,
+          "job_url": "https://github.com/agentydragon/ducktape/actions/runs/37251056059/job/111578579161",
+          "driver_source_sha": "0c872910bb91154192cb6aa28403f58820175c4b",
+          "probe_classification": "server_pid_changed",
+          "test_targets_in_scope": 2,
+          "test_elapsed_s": 29.661,
+          "critical_path_s": 0.84,
+          "all_test_actions_cached": true,
+          "no_affected_targets_skip": false,
+          "test_invocation_id": "66e8cc53-83d7-532a-87e0-b9131213b1f1"
+        },
+        {
+          "pr": 9062,
+          "run_id": 37251417240,
+          "job_url": "https://github.com/agentydragon/ducktape/actions/runs/37251417240/job/111579646148",
+          "driver_source_sha": "fd6285675c47c8a9fb2af0b5dcdd9cd6433996ea",
+          "probe_classification": "server_pid_changed",
+          "test_targets_in_scope": 2,
+          "test_elapsed_s": 39.029,
+          "critical_path_s": 12.04,
+          "all_test_actions_cached": false,
+          "no_affected_targets_skip": false,
+          "test_invocation_id": "ca0560c6-6666-5e67-bfae-2f7b74385420"
+        },
+        {
+          "pr": 9063,
+          "run_id": 37251459273,
+          "job_url": "https://github.com/agentydragon/ducktape/actions/runs/37251459273/job/111579770641",
+          "driver_source_sha": "f6a429e2f94718f7590e6ce7aa4135069c258fdc",
+          "probe_classification": "server_pid_changed",
+          "test_targets_in_scope": 22,
+          "test_elapsed_s": 275.831,
+          "critical_path_s": 241.16,
+          "all_test_actions_cached": false,
+          "no_affected_targets_skip": false,
+          "test_invocation_id": "5f3d1ce1-6bd1-5438-b4c5-911b5ed611a0"
+        },
+        {
+          "pr": 9064,
+          "run_id": 37251583385,
+          "job_url": "https://github.com/agentydragon/ducktape/actions/runs/37251583385/job/111580142055",
+          "driver_source_sha": "65f6046bbee91a4b438450bad397388f07faa6d8",
+          "probe_classification": "server_pid_changed",
+          "test_targets_in_scope": 1612,
+          "test_elapsed_s": 304.77,
+          "critical_path_s": 52.63,
+          "all_test_actions_cached": false,
+          "no_affected_targets_skip": false,
+          "test_invocation_id": "b828e5fc-b59a-512b-aeb6-4eb7feadb332"
+        },
+        {
+          "pr": 9066,
+          "run_id": 37252736455,
+          "job_url": "https://github.com/agentydragon/ducktape/actions/runs/37252736455/job/111583507917",
+          "driver_source_sha": "378f4b7fde7c92f10916f5c5e628f1456b9eb950",
+          "probe_classification": "server_pid_changed",
+          "test_targets_in_scope": 124,
+          "test_elapsed_s": 87.008,
+          "critical_path_s": 23.46,
+          "all_test_actions_cached": false,
+          "no_affected_targets_skip": false,
+          "test_invocation_id": "112897ae-e065-58c6-9ba8-381be5bc72e9"
+        },
+        {
+          "pr": 9067,
+          "run_id": 37252990794,
+          "job_url": "https://github.com/agentydragon/ducktape/actions/runs/37252990794/job/111584266442",
+          "driver_source_sha": "79e575bcd1ce8681d7efaa6a30259e31fdcd0e5a",
+          "probe_classification": "server_pid_changed",
+          "test_targets_in_scope": 2,
+          "test_elapsed_s": 187.251,
+          "critical_path_s": 145.59,
+          "all_test_actions_cached": false,
+          "no_affected_targets_skip": false,
+          "test_invocation_id": "f258f946-0615-5492-815e-f2fa59a119fc"
+        },
+        {
+          "pr": 9068,
+          "run_id": 37253113403,
+          "job_url": "https://github.com/agentydragon/ducktape/actions/runs/37253113403/job/111584625100",
+          "driver_source_sha": "b8bd91f46ffdd69c2e5a9ce1e0f9660fadb7c335",
+          "probe_classification": "server_pid_changed",
+          "test_targets_in_scope": 118,
+          "test_elapsed_s": 387.833,
+          "critical_path_s": 216.7,
+          "all_test_actions_cached": false,
+          "no_affected_targets_skip": false,
+          "test_invocation_id": "95dc6b7a-db5b-551e-a52c-1bb7cd6c9063"
+        },
+        {
+          "pr": 9069,
+          "run_id": 37253160796,
+          "job_url": "https://github.com/agentydragon/ducktape/actions/runs/37253160796/job/111584766795",
+          "driver_source_sha": "677e201d7a5d840eb211efb73599cba71a1314bb",
+          "probe_classification": "server_pid_retained",
+          "test_targets_in_scope": 1612,
+          "test_elapsed_s": 250.018,
+          "critical_path_s": 52.42,
+          "all_test_actions_cached": false,
+          "no_affected_targets_skip": false,
+          "test_invocation_id": "a5240555-ab16-57d6-a2c3-005c811eb6c3"
+        },
+        {
+          "pr": 9070,
+          "run_id": 37253898405,
+          "job_url": "https://github.com/agentydragon/ducktape/actions/runs/37253898405/job/111586872888",
+          "driver_source_sha": "c56acf1087500c2a549c77340d1a67b3ef8ca72e",
+          "probe_classification": "server_pid_changed",
+          "test_targets_in_scope": 2,
+          "test_elapsed_s": 45.64,
+          "critical_path_s": 16.57,
+          "all_test_actions_cached": false,
+          "no_affected_targets_skip": false,
+          "test_invocation_id": "550c15f8-bffe-5d52-a946-6a644498f265"
+        },
+        {
+          "pr": 9075,
+          "run_id": 37255263715,
+          "job_url": "https://github.com/agentydragon/ducktape/actions/runs/37255263715/job/111590847016",
+          "driver_source_sha": "07938ce2d9d1cc25ce0262485768009a3c87adf3",
+          "probe_classification": "server_pid_retained",
+          "test_targets_in_scope": 2,
+          "test_elapsed_s": 2.913,
+          "critical_path_s": 0.21,
+          "all_test_actions_cached": true,
+          "no_affected_targets_skip": false,
+          "test_invocation_id": "7f8188fe-12f9-5613-aef6-3c797f785b0b"
+        },
+        {
+          "pr": 9076,
+          "run_id": 37255452606,
+          "job_url": "https://github.com/agentydragon/ducktape/actions/runs/37255452606/job/111591409467",
+          "driver_source_sha": "53ccadd5e641c6ec29a71564879249be688f67cd",
+          "probe_classification": "server_pid_retained",
+          "test_targets_in_scope": 1,
+          "test_elapsed_s": 3.638,
+          "critical_path_s": 0.19,
+          "all_test_actions_cached": true,
+          "no_affected_targets_skip": false,
+          "test_invocation_id": "f12b4cc3-bcdf-5076-a77c-2155b1adc51f"
+        },
+        {
+          "pr": 9078,
+          "run_id": 37255866026,
+          "job_url": "https://github.com/agentydragon/ducktape/actions/runs/37255866026/job/111592681308",
+          "driver_source_sha": "0980a0927dbf31887d285548265f754cb194fe5a",
+          "probe_classification": "server_pid_retained",
+          "test_targets_in_scope": 1,
+          "test_elapsed_s": 3.392,
+          "critical_path_s": 0.4,
+          "all_test_actions_cached": true,
+          "no_affected_targets_skip": false,
+          "test_invocation_id": "aec6367f-651e-557c-a938-e0ecd0e65ab7"
+        },
+        {
+          "pr": 9079,
+          "run_id": 37256088582,
+          "job_url": "https://github.com/agentydragon/ducktape/actions/runs/37256088582/job/111593353002",
+          "driver_source_sha": "82a933ca242473adc57aa25fbd0477a4cb6b68bc",
+          "probe_classification": "server_pid_retained",
+          "test_targets_in_scope": 5,
+          "test_elapsed_s": 3.1,
+          "critical_path_s": 0.23,
+          "all_test_actions_cached": true,
+          "no_affected_targets_skip": false,
+          "test_invocation_id": "789e736e-60dc-5838-9bb6-69868d476d6e"
+        },
+        {
+          "pr": 9080,
+          "run_id": 37256113529,
+          "job_url": "https://github.com/agentydragon/ducktape/actions/runs/37256113529/job/111593431173",
+          "driver_source_sha": "32890d46e3c3048e0d0deafd03fe1f67ed3a4bcd",
+          "probe_classification": "server_pid_retained",
+          "test_targets_in_scope": 17,
+          "test_elapsed_s": 25.262,
+          "critical_path_s": 22.75,
+          "all_test_actions_cached": false,
+          "no_affected_targets_skip": false,
+          "test_invocation_id": "5268178b-91ad-5b08-be94-01c6eb620eb0"
+        },
+        {
+          "pr": 9081,
+          "run_id": 37256172874,
+          "job_url": "https://github.com/agentydragon/ducktape/actions/runs/37256172874/job/111593620613",
+          "driver_source_sha": "47e47d7f75c2801dd10e954621ebb219f71d083b",
+          "probe_classification": "server_pid_retained",
+          "test_targets_in_scope": 5,
+          "test_elapsed_s": 3.038,
+          "critical_path_s": 0.42,
+          "all_test_actions_cached": true,
+          "no_affected_targets_skip": false,
+          "test_invocation_id": "a6a6a703-e871-55b8-8cde-eca18dee1cdd"
+        },
+        {
+          "pr": 9082,
+          "run_id": 37256240336,
+          "job_url": "https://github.com/agentydragon/ducktape/actions/runs/37256240336/job/111593830477",
+          "driver_source_sha": "8650cd4abccb6e8b7728f493de88f5adcf7d5902",
+          "probe_classification": "server_pid_retained",
+          "test_targets_in_scope": 16,
+          "test_elapsed_s": 21.456,
+          "critical_path_s": 17.19,
+          "all_test_actions_cached": true,
+          "no_affected_targets_skip": false,
+          "test_invocation_id": "7df6b97b-a324-5294-a377-d563c9e8561b"
+        },
+        {
+          "pr": 9083,
+          "run_id": 37256272397,
+          "job_url": "https://github.com/agentydragon/ducktape/actions/runs/37256272397/job/111593927644",
+          "driver_source_sha": "31383cc6ba6849032a3c19576bb8a70feca38092",
+          "probe_classification": "server_pid_retained",
+          "test_targets_in_scope": 1,
+          "test_elapsed_s": 40.041,
+          "critical_path_s": 37.64,
+          "all_test_actions_cached": false,
+          "no_affected_targets_skip": false,
+          "test_invocation_id": "ad2cf4e4-e5b0-5da6-9359-c6b685e7bf9a"
+        },
+        {
+          "pr": 9084,
+          "run_id": 37256474749,
+          "job_url": "https://github.com/agentydragon/ducktape/actions/runs/37256474749/job/111594541019",
+          "driver_source_sha": "7d8b60cd2c8058e1aa4c32724c2eb7be0ac23906",
+          "probe_classification": "server_pid_retained",
+          "test_targets_in_scope": 1,
+          "test_elapsed_s": 56.132,
+          "critical_path_s": 1.71,
+          "all_test_actions_cached": true,
+          "no_affected_targets_skip": false,
+          "test_invocation_id": "c74ce8be-f7e8-5016-aac2-f9a52b25ddc8"
+        },
+        {
+          "pr": 9085,
+          "run_id": 37257055251,
+          "job_url": "https://github.com/agentydragon/ducktape/actions/runs/37257055251/job/111596297966",
+          "driver_source_sha": "928c5303969958c7974009db8d0ca47887543e51",
+          "probe_classification": "server_pid_retained",
+          "test_targets_in_scope": 2,
+          "test_elapsed_s": 11.354,
+          "critical_path_s": 10.42,
+          "all_test_actions_cached": true,
+          "no_affected_targets_skip": false,
+          "test_invocation_id": "be133f16-8aa4-503e-84c5-cc4e8b64597a"
+        },
+        {
+          "pr": 9086,
+          "run_id": 37257672824,
+          "job_url": "https://github.com/agentydragon/ducktape/actions/runs/37257672824/job/111598127487",
+          "driver_source_sha": "c376b7fcd8d3876a295a0b74c529264586b89537",
+          "probe_classification": "server_pid_retained",
+          "test_targets_in_scope": 4,
+          "test_elapsed_s": 29.762,
+          "critical_path_s": 1.74,
+          "all_test_actions_cached": true,
+          "no_affected_targets_skip": false,
+          "test_invocation_id": "57fb78c7-c849-5177-b69a-c278f91a9670"
+        },
+        {
+          "pr": 9087,
+          "run_id": 37257781148,
+          "job_url": "https://github.com/agentydragon/ducktape/actions/runs/37257781148/job/111598444839",
+          "driver_source_sha": "76df079dda8439bba61982b5dcc178051783c26c",
+          "probe_classification": "server_pid_retained",
+          "test_targets_in_scope": 1611,
+          "test_elapsed_s": 253.504,
+          "critical_path_s": 66.44,
+          "all_test_actions_cached": false,
+          "no_affected_targets_skip": false,
+          "test_invocation_id": "52abd14b-6981-5252-a31c-815f6cd19684"
+        },
+        {
+          "pr": 9088,
+          "run_id": 37257865255,
+          "job_url": "https://github.com/agentydragon/ducktape/actions/runs/37257865255/job/111598687324",
+          "driver_source_sha": "c0c63a02dfcaa2121ee3fb2d1221fbc66fc4837a",
+          "probe_classification": "server_pid_retained",
+          "test_targets_in_scope": 101,
+          "test_elapsed_s": 99.704,
+          "critical_path_s": 82.77,
+          "all_test_actions_cached": false,
+          "no_affected_targets_skip": false,
+          "test_invocation_id": "080d4d72-ab5e-5374-ac5f-6ee77fb8b4eb"
+        },
+        {
+          "pr": 9090,
+          "run_id": 37257975471,
+          "job_url": "https://github.com/agentydragon/ducktape/actions/runs/37257975471/job/111599000176",
+          "driver_source_sha": "712530c5dcea260fbac8a0582bdd15dbd4a824e2",
+          "probe_classification": "server_pid_retained",
+          "test_targets_in_scope": 2,
+          "test_elapsed_s": 3.499,
+          "critical_path_s": 0.39,
+          "all_test_actions_cached": true,
+          "no_affected_targets_skip": false,
+          "test_invocation_id": "fdd4a2cd-fdda-52f3-965c-c8be65cddd6a"
+        },
+        {
+          "pr": 9091,
+          "run_id": 37257991516,
+          "job_url": "https://github.com/agentydragon/ducktape/actions/runs/37257991516/job/111599048928",
+          "driver_source_sha": "b447e879a2daa359b86fcd89988c332e0b72e0da",
+          "probe_classification": "server_pid_retained",
+          "test_targets_in_scope": 1,
+          "test_elapsed_s": 3.32,
+          "critical_path_s": 0.14,
+          "all_test_actions_cached": true,
+          "no_affected_targets_skip": false,
+          "test_invocation_id": "e5549bbc-d594-56a2-b6ec-874df3dcf2f9"
+        },
+        {
+          "pr": 9087,
+          "run_id": 37258205670,
+          "job_url": "https://github.com/agentydragon/ducktape/actions/runs/37258205670/job/111599670744",
+          "driver_source_sha": "cadd1f4dc5f365b9c5fb4e4710cf30ae2a316792",
+          "probe_classification": "server_pid_retained",
+          "test_targets_in_scope": 1611,
+          "test_elapsed_s": 76.539,
+          "critical_path_s": 62.37,
+          "all_test_actions_cached": false,
+          "no_affected_targets_skip": false,
+          "test_invocation_id": "37515236-6e5c-53a9-89ad-3ab72bc1aa54"
+        },
+        {
+          "pr": 9092,
+          "run_id": 37258234055,
+          "job_url": "https://github.com/agentydragon/ducktape/actions/runs/37258234055/job/111599755029",
+          "driver_source_sha": "e82d05b0dc1f869dfcfab29721d597f7157fc095",
+          "probe_classification": "server_pid_retained",
+          "test_targets_in_scope": 99,
+          "test_elapsed_s": 280.841,
+          "critical_path_s": 203.46,
+          "all_test_actions_cached": false,
+          "no_affected_targets_skip": false,
+          "test_invocation_id": "3f655432-ff1b-5b75-945f-c9cd2f59b03c"
+        },
+        {
+          "pr": 9093,
+          "run_id": 37258303183,
+          "job_url": "https://github.com/agentydragon/ducktape/actions/runs/37258303183/job/111599953636",
+          "driver_source_sha": "779f97cddf2ce9245c76f0bf124f516a1b7bccf5",
+          "probe_classification": "server_pid_retained",
+          "test_targets_in_scope": 115,
+          "test_elapsed_s": 37.787,
+          "critical_path_s": 25.19,
+          "all_test_actions_cached": false,
+          "no_affected_targets_skip": false,
+          "test_invocation_id": "9c6a4057-c678-51d7-ad58-912572428ea5"
+        },
+        {
+          "pr": 9094,
+          "run_id": 37258549146,
+          "job_url": "https://github.com/agentydragon/ducktape/actions/runs/37258549146/job/111600657521",
+          "driver_source_sha": "62339a20a15dcb7f7336b6ed13f228cb115d4bda",
+          "probe_classification": "server_pid_retained",
+          "test_targets_in_scope": 101,
+          "test_elapsed_s": 23.005,
+          "critical_path_s": 18.25,
+          "all_test_actions_cached": true,
+          "no_affected_targets_skip": false,
+          "test_invocation_id": "7f895bd4-0ec7-50a7-93a5-315a94311741"
+        },
+        {
+          "pr": 9095,
+          "run_id": 37258562246,
+          "job_url": "https://github.com/agentydragon/ducktape/actions/runs/37258562246/job/111600697583",
+          "driver_source_sha": "d96d6f071288a38d8c529f457c87bef2dd83ff24",
+          "probe_classification": "server_pid_retained",
+          "test_targets_in_scope": 2,
+          "test_elapsed_s": 2.308,
+          "critical_path_s": 0.11,
+          "all_test_actions_cached": true,
+          "no_affected_targets_skip": false,
+          "test_invocation_id": "962a3a0b-3870-5bc5-ad97-3a596cb6fa87"
+        },
+        {
+          "pr": 9096,
+          "run_id": 37258633232,
+          "job_url": "https://github.com/agentydragon/ducktape/actions/runs/37258633232/job/111600905160",
+          "driver_source_sha": "e4074a64e2135d6cc3c83aa3e9c13f9438bf35c3",
+          "probe_classification": "server_pid_retained",
+          "test_targets_in_scope": 2,
+          "test_elapsed_s": 47.245,
+          "critical_path_s": 44.49,
+          "all_test_actions_cached": false,
+          "no_affected_targets_skip": false,
+          "test_invocation_id": "8df3d5a0-f100-5a2d-a3ea-59c97fad8b20"
+        },
+        {
+          "pr": 9087,
+          "run_id": 37258637687,
+          "job_url": "https://github.com/agentydragon/ducktape/actions/runs/37258637687/job/111600917991",
+          "driver_source_sha": "3f310277eb4553c784c5cf02851875d5176fd28c",
+          "probe_classification": "server_pid_retained",
+          "test_targets_in_scope": 1611,
+          "test_elapsed_s": 72.163,
+          "critical_path_s": 57.58,
+          "all_test_actions_cached": false,
+          "no_affected_targets_skip": false,
+          "test_invocation_id": "d0e87aaa-6496-58cf-83eb-ddb9f6f54b42"
+        },
+        {
+          "pr": 9097,
+          "run_id": 37258768690,
+          "job_url": "https://github.com/agentydragon/ducktape/actions/runs/37258768690/job/111601307817",
+          "driver_source_sha": "f28e79b2b9ae5fad843cbd0b353fc82f559773f5",
+          "probe_classification": "server_pid_retained",
+          "test_targets_in_scope": 3,
+          "test_elapsed_s": 3.026,
+          "critical_path_s": 0.27,
+          "all_test_actions_cached": true,
+          "no_affected_targets_skip": false,
+          "test_invocation_id": "70ff1168-08ce-5f6d-98d6-37dc0f00077b"
+        },
+        {
+          "pr": 9098,
+          "run_id": 37258831289,
+          "job_url": "https://github.com/agentydragon/ducktape/actions/runs/37258831289/job/111601497815",
+          "driver_source_sha": "b106a15a2eb1047aa861dc5bd3adeb4c24c80dd5",
+          "probe_classification": "server_pid_retained",
+          "test_targets_in_scope": 17,
+          "test_elapsed_s": 2.898,
+          "critical_path_s": 0.29,
+          "all_test_actions_cached": true,
+          "no_affected_targets_skip": false,
+          "test_invocation_id": "2ea8cfda-bd8d-5b7d-b9a0-696ec45cb220"
+        },
+        {
+          "pr": 9099,
+          "run_id": 37258875995,
+          "job_url": "https://github.com/agentydragon/ducktape/actions/runs/37258875995/job/111601635622",
+          "driver_source_sha": "bac3413d13b8badddd5f9340d4166ee9dea40b0d",
+          "probe_classification": "server_pid_retained",
+          "test_targets_in_scope": 123,
+          "test_elapsed_s": 36.578,
+          "critical_path_s": 19.93,
+          "all_test_actions_cached": true,
+          "no_affected_targets_skip": false,
+          "test_invocation_id": "ec7e71a5-0ad9-5dba-a78e-ae9491cd459c"
+        },
+        {
+          "pr": 9045,
+          "run_id": 37258912195,
+          "job_url": "https://github.com/agentydragon/ducktape/actions/runs/37258912195/job/111601741339",
+          "driver_source_sha": "33deb8de7d94782fbdf0da8fa78c351303cea38c",
+          "probe_classification": "server_pid_retained",
+          "test_targets_in_scope": 7,
+          "test_elapsed_s": 102.632,
+          "critical_path_s": 98.46,
+          "all_test_actions_cached": false,
+          "no_affected_targets_skip": false,
+          "test_invocation_id": "e9a4c6af-11aa-5f4b-a2c6-ff08a9b91989"
+        },
+        {
+          "pr": 9100,
+          "run_id": 37258975020,
+          "job_url": "https://github.com/agentydragon/ducktape/actions/runs/37258975020/job/111601937847",
+          "driver_source_sha": "c39641d50fda4961a82caab566123a3443c7565f",
+          "probe_classification": "server_pid_retained",
+          "test_targets_in_scope": 1610,
+          "test_elapsed_s": 99.443,
+          "critical_path_s": 79.49,
+          "all_test_actions_cached": false,
+          "no_affected_targets_skip": false,
+          "test_invocation_id": "8e268409-53cb-593e-85ce-b641d85cf3b2"
+        },
+        {
+          "pr": 9101,
+          "run_id": 37259325344,
+          "job_url": "https://github.com/agentydragon/ducktape/actions/runs/37259325344/job/111603003785",
+          "driver_source_sha": "88bf64bd50507b9d4520c719b7bb96197908353e",
+          "probe_classification": "server_pid_retained",
+          "test_targets_in_scope": 1,
+          "test_elapsed_s": 4.182,
+          "critical_path_s": 0.27,
+          "all_test_actions_cached": true,
+          "no_affected_targets_skip": false,
+          "test_invocation_id": "a1dc9a43-6960-5a0b-9430-43c8c39ed25f"
+        },
+        {
+          "pr": 9102,
+          "run_id": 37259399738,
+          "job_url": "https://github.com/agentydragon/ducktape/actions/runs/37259399738/job/111603223673",
+          "driver_source_sha": "a0ab7e3e33d79081f14ce52b716395d1840a4d23",
+          "probe_classification": "server_pid_retained",
+          "test_targets_in_scope": 7,
+          "test_elapsed_s": 14.7,
+          "critical_path_s": 12.18,
+          "all_test_actions_cached": false,
+          "no_affected_targets_skip": false,
+          "test_invocation_id": "e6517352-caa7-5d72-949f-fccb5e58dbeb"
+        },
+        {
+          "pr": 9103,
+          "run_id": 37259411780,
+          "job_url": "https://github.com/agentydragon/ducktape/actions/runs/37259411780/job/111603261080",
+          "driver_source_sha": "b1f58b966c9c54cc17668af89cb6ec87d7c68a30",
+          "probe_classification": "server_pid_retained",
+          "test_targets_in_scope": 1,
+          "test_elapsed_s": 5.386,
+          "critical_path_s": 0.14,
+          "all_test_actions_cached": true,
+          "no_affected_targets_skip": false,
+          "test_invocation_id": "2ff195ec-313c-58d4-925a-1a6f2f7c8a6b"
+        },
+        {
+          "pr": 9104,
+          "run_id": 37259502595,
+          "job_url": "https://github.com/agentydragon/ducktape/actions/runs/37259502595/job/111603536409",
+          "driver_source_sha": "20afa7355bc3f8d3a9cd132de49357d0457a4203",
+          "probe_classification": "server_pid_retained",
+          "test_targets_in_scope": 1610,
+          "test_elapsed_s": 147.584,
+          "critical_path_s": 62.27,
+          "all_test_actions_cached": false,
+          "no_affected_targets_skip": false,
+          "test_invocation_id": "df86eb99-03fd-5c44-bb05-73b7724e396d"
+        },
+        {
+          "pr": 9105,
+          "run_id": 37259664978,
+          "job_url": "https://github.com/agentydragon/ducktape/actions/runs/37259664978/job/111604043704",
+          "driver_source_sha": "a73c87ed7a47bb90cf27b245f6c3dcd1cb6c143d",
+          "probe_classification": "server_pid_retained",
+          "test_targets_in_scope": 2,
+          "test_elapsed_s": 3.064,
+          "critical_path_s": 0.21,
+          "all_test_actions_cached": true,
+          "no_affected_targets_skip": false,
+          "test_invocation_id": "5f3ca14e-cc5d-5bad-8d4a-9008fd8abab1"
+        },
+        {
+          "pr": 9106,
+          "run_id": 37259720988,
+          "job_url": "https://github.com/agentydragon/ducktape/actions/runs/37259720988/job/111604202675",
+          "driver_source_sha": "f90581bf2a2428db1a3c779d19294c735e0a9601",
+          "probe_classification": "server_pid_retained",
+          "test_targets_in_scope": 1,
+          "test_elapsed_s": 13.451,
+          "critical_path_s": 10.4,
+          "all_test_actions_cached": false,
+          "no_affected_targets_skip": false,
+          "test_invocation_id": "f2650633-94cf-5d44-8156-628e3acd2407"
+        },
+        {
+          "pr": 9107,
+          "run_id": 37259789648,
+          "job_url": "https://github.com/agentydragon/ducktape/actions/runs/37259789648/job/111604412746",
+          "driver_source_sha": "b32e05d0e88ea6d7ed55bb2b9261ae365eb1fefc",
+          "probe_classification": "server_pid_retained",
+          "test_targets_in_scope": 14,
+          "test_elapsed_s": 29.049,
+          "critical_path_s": 24.49,
+          "all_test_actions_cached": false,
+          "no_affected_targets_skip": false,
+          "test_invocation_id": "3079980a-178b-5429-9f92-14a826359a5e"
+        },
+        {
+          "pr": 9108,
+          "run_id": 37260404019,
+          "job_url": "https://github.com/agentydragon/ducktape/actions/runs/37260404019/job/111606237607",
+          "driver_source_sha": "2a43072ba227556f1bca66badbe8a76eee53dd70",
+          "probe_classification": "server_pid_retained",
+          "test_targets_in_scope": 7,
+          "test_elapsed_s": 218.595,
+          "critical_path_s": 196.92,
+          "all_test_actions_cached": false,
+          "no_affected_targets_skip": false,
+          "test_invocation_id": "c77e482b-99a6-568a-b435-3c92886b1fb4"
+        },
+        {
+          "pr": 9110,
+          "run_id": 37260647048,
+          "job_url": "https://github.com/agentydragon/ducktape/actions/runs/37260647048/job/111606961262",
+          "driver_source_sha": "8a2442a9ad4eaa4ce6ca3ae3e4c0692105b85c1a",
+          "probe_classification": "server_pid_retained",
+          "test_targets_in_scope": 1613,
+          "test_elapsed_s": 183.709,
+          "critical_path_s": 24.2,
+          "all_test_actions_cached": false,
+          "no_affected_targets_skip": false,
+          "test_invocation_id": "d860aac5-c17c-51b4-a95d-168ff0b3c5d1"
+        },
+        {
+          "pr": 9111,
+          "run_id": 37260884786,
+          "job_url": "https://github.com/agentydragon/ducktape/actions/runs/37260884786/job/111607671008",
+          "driver_source_sha": "e3fc365ae2a1ab3e633100d885a421f4e1f508b7",
+          "probe_classification": "no_affected_targets_skip",
+          "test_targets_in_scope": null,
+          "test_elapsed_s": null,
+          "critical_path_s": null,
+          "all_test_actions_cached": false,
+          "no_affected_targets_skip": true,
+          "test_invocation_id": "82d90347-a04a-5acf-a9fc-e702fed5c291"
+        },
+        {
+          "pr": 9113,
+          "run_id": 37261216299,
+          "job_url": "https://github.com/agentydragon/ducktape/actions/runs/37261216299/job/111608661887",
+          "driver_source_sha": "e6db7643c3f8d234250d55b4044126b557371199",
+          "probe_classification": "server_pid_retained",
+          "test_targets_in_scope": 2,
+          "test_elapsed_s": 178.9,
+          "critical_path_s": 149.68,
+          "all_test_actions_cached": false,
+          "no_affected_targets_skip": false,
+          "test_invocation_id": "896949c5-0826-53bd-ab11-6886bb48b92b"
+        },
+        {
+          "pr": 9114,
+          "run_id": 37261550838,
+          "job_url": "https://github.com/agentydragon/ducktape/actions/runs/37261550838/job/111610994334",
+          "driver_source_sha": "8d0f6a85a304f1703aa9899b44f9afffb4870c3c",
+          "probe_classification": "server_pid_retained",
+          "test_targets_in_scope": 1615,
+          "test_elapsed_s": 40.16,
+          "critical_path_s": 8.92,
+          "all_test_actions_cached": false,
+          "no_affected_targets_skip": false,
+          "test_invocation_id": "32b25f12-ce63-5aae-9286-2b6ebb2df8e5"
+        },
+        {
+          "pr": 9115,
+          "run_id": 37261629700,
+          "job_url": "https://github.com/agentydragon/ducktape/actions/runs/37261629700/job/111609896361",
+          "driver_source_sha": "cd20657d6687601d416c9c44387f910a99834f36",
+          "probe_classification": "no_affected_targets_skip",
+          "test_targets_in_scope": null,
+          "test_elapsed_s": null,
+          "critical_path_s": null,
+          "all_test_actions_cached": false,
+          "no_affected_targets_skip": true,
+          "test_invocation_id": "73bbd8b3-f51b-50ac-a030-1cc8a692982c"
+        },
+        {
+          "pr": 9119,
+          "run_id": 37263038378,
+          "job_url": "https://github.com/agentydragon/ducktape/actions/runs/37263038378/job/111614045253",
+          "driver_source_sha": "7e830362f23c799d2d61e36e36f6d45f078121ac",
+          "probe_classification": "server_pid_retained",
+          "test_targets_in_scope": 19,
+          "test_elapsed_s": 4.202,
+          "critical_path_s": 0.44,
+          "all_test_actions_cached": true,
+          "no_affected_targets_skip": false,
+          "test_invocation_id": "40b195d6-e5c4-5b5c-854a-f024f64c748b"
+        },
+        {
+          "pr": 9120,
+          "run_id": 37263225598,
+          "job_url": "https://github.com/agentydragon/ducktape/actions/runs/37263225598/job/111614586516",
+          "driver_source_sha": "b9ef3ff7c8451fa37ad0beb8870de0d14cee152d",
+          "probe_classification": "server_pid_retained",
+          "test_targets_in_scope": 19,
+          "test_elapsed_s": 183.337,
+          "critical_path_s": 178.01,
+          "all_test_actions_cached": false,
+          "no_affected_targets_skip": false,
+          "test_invocation_id": "26560b82-7cc1-562b-9fcc-0b43a47e1f08"
+        },
+        {
+          "pr": 9122,
+          "run_id": 37263770063,
+          "job_url": "https://github.com/agentydragon/ducktape/actions/runs/37263770063/job/111616190201",
+          "driver_source_sha": "19780ac808d22474c6d4ed21ce24447122e5de9e",
+          "probe_classification": "server_pid_retained",
+          "test_targets_in_scope": 1616,
+          "test_elapsed_s": 102.652,
+          "critical_path_s": 22.13,
+          "all_test_actions_cached": false,
+          "no_affected_targets_skip": false,
+          "test_invocation_id": "e333f08d-893a-5a2c-81b9-5d03f6f567ee"
+        },
+        {
+          "pr": 9117,
+          "run_id": 37263914691,
+          "job_url": "https://github.com/agentydragon/ducktape/actions/runs/37263914691/job/111616603523",
+          "driver_source_sha": "22bcaa05f233fa6006a102484d83b3838174d799",
+          "probe_classification": "server_pid_retained",
+          "test_targets_in_scope": 1616,
+          "test_elapsed_s": 725.295,
+          "critical_path_s": 324.41,
+          "all_test_actions_cached": false,
+          "no_affected_targets_skip": false,
+          "test_invocation_id": "f34a9223-8577-5012-80f3-4c9a8a8c7650"
+        },
+        {
+          "pr": 9123,
+          "run_id": 37264151864,
+          "job_url": "https://github.com/agentydragon/ducktape/actions/runs/37264151864/job/111617310305",
+          "driver_source_sha": "9f8ccc349cb7d09ed34887f227cc938503c80180",
+          "probe_classification": "server_pid_retained",
+          "test_targets_in_scope": 1616,
+          "test_elapsed_s": 211.413,
+          "critical_path_s": 21.8,
+          "all_test_actions_cached": false,
+          "no_affected_targets_skip": false,
+          "test_invocation_id": "e884e545-1288-544f-91d7-3275a7ab0370"
+        },
+        {
+          "pr": 9124,
+          "run_id": 37264319461,
+          "job_url": "https://github.com/agentydragon/ducktape/actions/runs/37264319461/job/111617801905",
+          "driver_source_sha": "c9b5f04b3d99ea710538b2b8db373b542346c246",
+          "probe_classification": "server_pid_retained",
+          "test_targets_in_scope": 20,
+          "test_elapsed_s": 225.511,
+          "critical_path_s": 177.38,
+          "all_test_actions_cached": false,
+          "no_affected_targets_skip": false,
+          "test_invocation_id": "b89d3a1e-e960-51b8-8f92-4ff8d4c600a4"
+        },
+        {
+          "pr": 9125,
+          "run_id": 37264645693,
+          "job_url": "https://github.com/agentydragon/ducktape/actions/runs/37264645693/job/111618759609",
+          "driver_source_sha": "65aefeee7da2ac0ae39b32c44ffa5d57f6b722e0",
+          "probe_classification": "server_pid_retained",
+          "test_targets_in_scope": 1616,
+          "test_elapsed_s": 357.824,
+          "critical_path_s": 147.32,
+          "all_test_actions_cached": false,
+          "no_affected_targets_skip": false,
+          "test_invocation_id": "1ccb7cdc-1886-55bb-a30b-3e13c761efd4"
+        },
+        {
+          "pr": 9126,
+          "run_id": 37264795042,
+          "job_url": "https://github.com/agentydragon/ducktape/actions/runs/37264795042/job/111619200127",
+          "driver_source_sha": "792fa1211c20678da503cc877236cb7791c448ef",
+          "probe_classification": "server_pid_retained",
+          "test_targets_in_scope": 16,
+          "test_elapsed_s": 93.687,
+          "critical_path_s": 88.14,
+          "all_test_actions_cached": false,
+          "no_affected_targets_skip": false,
+          "test_invocation_id": "f92a2b37-50e8-5422-bf17-5ff77ff71860"
+        },
+        {
+          "pr": 9124,
+          "run_id": 37265180094,
+          "job_url": "https://github.com/agentydragon/ducktape/actions/runs/37265180094/job/111620373025",
+          "driver_source_sha": "e09f023afd927427c661d1ff2cd42f19300d3a70",
+          "probe_classification": "server_pid_retained",
+          "test_targets_in_scope": 20,
+          "test_elapsed_s": 203.273,
+          "critical_path_s": 148.84,
+          "all_test_actions_cached": false,
+          "no_affected_targets_skip": false,
+          "test_invocation_id": "5dedaff2-d181-5f56-bcfe-6d5e0eec0293"
+        },
+        {
+          "pr": 9128,
+          "run_id": 37265340042,
+          "job_url": "https://github.com/agentydragon/ducktape/actions/runs/37265340042/job/111620867300",
+          "driver_source_sha": "3c2269bfac3ec087a639e96200197d90517c4528",
+          "probe_classification": "server_pid_retained",
+          "test_targets_in_scope": 1616,
+          "test_elapsed_s": 313.084,
+          "critical_path_s": 89.05,
+          "all_test_actions_cached": false,
+          "no_affected_targets_skip": false,
+          "test_invocation_id": "56bc36f4-ce85-58d0-a317-bc9ce377975a"
+        },
+        {
+          "pr": 9129,
+          "run_id": 37265731767,
+          "job_url": "https://github.com/agentydragon/ducktape/actions/runs/37265731767/job/111622048750",
+          "driver_source_sha": "c39b37637b0a6620e19fd1d0abaf3e3e6f751970",
+          "probe_classification": "server_pid_retained",
+          "test_targets_in_scope": 23,
+          "test_elapsed_s": 108.002,
+          "critical_path_s": 66.76,
+          "all_test_actions_cached": false,
+          "no_affected_targets_skip": false,
+          "test_invocation_id": "c8f9d66b-180d-5224-be44-a5479ac544aa"
+        },
+        {
+          "pr": 9130,
+          "run_id": 37265974222,
+          "job_url": "https://github.com/agentydragon/ducktape/actions/runs/37265974222/job/111622769681",
+          "driver_source_sha": "ae5c4718e2d62794d33f23731924b5f60c9d8cef",
+          "probe_classification": "server_pid_retained",
+          "test_targets_in_scope": 1616,
+          "test_elapsed_s": 163.295,
+          "critical_path_s": 89.85,
+          "all_test_actions_cached": false,
+          "no_affected_targets_skip": false,
+          "test_invocation_id": "53a0dccb-9cb9-5acf-b7dd-3c34be6c91d2"
+        },
+        {
+          "pr": 9131,
+          "run_id": 37266028132,
+          "job_url": "https://github.com/agentydragon/ducktape/actions/runs/37266028132/job/111622936093",
+          "driver_source_sha": "4c01220f0e4e0902204431d26f72b4b4b50bc9cf",
+          "probe_classification": "server_pid_retained",
+          "test_targets_in_scope": 19,
+          "test_elapsed_s": 261.487,
+          "critical_path_s": 226.61,
+          "all_test_actions_cached": false,
+          "no_affected_targets_skip": false,
+          "test_invocation_id": "58eb65b9-8f0a-5507-959f-76e62d6b0129"
+        },
+        {
+          "pr": 9132,
+          "run_id": 37266122971,
+          "job_url": "https://github.com/agentydragon/ducktape/actions/runs/37266122971/job/111623229996",
+          "driver_source_sha": "17170be0613ec74c2e4654adcc7943299c9e710e",
+          "probe_classification": "no_affected_targets_skip",
+          "test_targets_in_scope": null,
+          "test_elapsed_s": null,
+          "critical_path_s": null,
+          "all_test_actions_cached": false,
+          "no_affected_targets_skip": true,
+          "test_invocation_id": "aaee8352-9dde-51d8-8166-901112f9207a"
+        },
+        {
+          "pr": 9133,
+          "run_id": 37266287806,
+          "job_url": "https://github.com/agentydragon/ducktape/actions/runs/37266287806/job/111623721896",
+          "driver_source_sha": "d023e5be327cc79981ffb269f0e6c13a8f8a1322",
+          "probe_classification": "no_affected_targets_skip",
+          "test_targets_in_scope": null,
+          "test_elapsed_s": null,
+          "critical_path_s": null,
+          "all_test_actions_cached": false,
+          "no_affected_targets_skip": true,
+          "test_invocation_id": "5f6380d0-40fc-5c9a-9ac7-4ed3cd6245d8"
+        },
+        {
+          "pr": 9135,
+          "run_id": 37266433935,
+          "job_url": "https://github.com/agentydragon/ducktape/actions/runs/37266433935/job/111624154156",
+          "driver_source_sha": "030b3f3bf1c798a8337960d4013ec7b0f6276d25",
+          "probe_classification": "server_pid_retained",
+          "test_targets_in_scope": 105,
+          "test_elapsed_s": 24.822,
+          "critical_path_s": 20.27,
+          "all_test_actions_cached": true,
+          "no_affected_targets_skip": false,
+          "test_invocation_id": "9fd9e8ca-edb0-52dc-a9f0-4d445b5877bd"
+        },
+        {
+          "pr": 9128,
+          "run_id": 37266640070,
+          "job_url": "https://github.com/agentydragon/ducktape/actions/runs/37266640070/job/111624765714",
+          "driver_source_sha": "4d38a543d5036121c75a41c800f1770479c1bec4",
+          "probe_classification": "server_pid_retained",
+          "test_targets_in_scope": 1616,
+          "test_elapsed_s": 204.43,
+          "critical_path_s": 103.13,
+          "all_test_actions_cached": false,
+          "no_affected_targets_skip": false,
+          "test_invocation_id": "ebca89ef-5391-5dab-9537-bb380084c1bb"
+        },
+        {
+          "pr": 9136,
+          "run_id": 37266914901,
+          "job_url": "https://github.com/agentydragon/ducktape/actions/runs/37266914901/job/111625569845",
+          "driver_source_sha": "7089ea2054f9c53a8ee0f10d3b5bfbf0eed8b4e0",
+          "probe_classification": "server_pid_retained",
+          "test_targets_in_scope": 11,
+          "test_elapsed_s": 3.755,
+          "critical_path_s": 0.3,
+          "all_test_actions_cached": true,
+          "no_affected_targets_skip": false,
+          "test_invocation_id": "62b96f64-d3bc-583e-b4d8-a05f200f7fd3"
+        },
+        {
+          "pr": 9129,
+          "run_id": 37267029358,
+          "job_url": "https://github.com/agentydragon/ducktape/actions/runs/37267029358/job/111625903916",
+          "driver_source_sha": "a57533655a609d5b82b7a4059f04c8f7d51fd671",
+          "probe_classification": "server_pid_retained",
+          "test_targets_in_scope": 23,
+          "test_elapsed_s": 123.252,
+          "critical_path_s": 85.86,
+          "all_test_actions_cached": false,
+          "no_affected_targets_skip": false,
+          "test_invocation_id": "dac4b50a-e9c1-5ce0-a235-d3f458e3ccd4"
+        },
+        {
+          "pr": 9128,
+          "run_id": 37267600160,
+          "job_url": "https://github.com/agentydragon/ducktape/actions/runs/37267600160/job/111627589024",
+          "driver_source_sha": "6db5fa2efa5dd257e8fbde895d70554790793334",
+          "probe_classification": "server_pid_retained",
+          "test_targets_in_scope": 1616,
+          "test_elapsed_s": 274.767,
+          "critical_path_s": 71.96,
+          "all_test_actions_cached": false,
+          "no_affected_targets_skip": false,
+          "test_invocation_id": "276db006-45f8-59ad-b350-b31bbd51c1a7"
+        }
+      ],
+      "all_successful_test_phases_by_observed_probe": [
+        {
+          "critical_path_s": {
+            "median": 23.6,
+            "q1": 1.298,
+            "q3": 54.568
+          },
+          "elapsed_minus_critical_path_s_median": 31.356,
+          "group": "server PID changed (shutdown/restart)",
+          "run_ids": [
+            37246870085,
+            37246949332,
+            37247015632,
+            37247115375,
+            37247234483,
+            37247601205,
+            37247917793,
+            37247926992,
+            37247933257,
+            37248087798,
+            37248124045,
+            37248297527,
+            37249081719,
+            37249141579,
+            37249512597,
+            37249915576,
+            37249952484,
+            37250341480,
+            37251044461,
+            37251051863,
+            37251056059,
+            37251417240,
+            37251459273,
+            37251583385,
+            37252736455,
+            37252990794,
+            37253113403,
+            37253898405
+          ],
+          "runs": 28,
+          "test_elapsed_s": {
+            "max": 387.833,
+            "median": 52.297,
+            "min": 29.661,
+            "q1": 33.664,
+            "q3": 119.37
+          },
+          "test_targets_in_scope_median": 14.5,
+          "unique_prs": 27
+        },
+        {
+          "critical_path_s": {
+            "median": 24.2,
+            "q1": 0.44,
+            "q3": 85.86
+          },
+          "elapsed_minus_critical_path_s_median": 12.597,
+          "group": "same server PID retained",
+          "run_ids": [
+            37253160796,
+            37255263715,
+            37255452606,
+            37255866026,
+            37256088582,
+            37256113529,
+            37256172874,
+            37256240336,
+            37256272397,
+            37256474749,
+            37257055251,
+            37257672824,
+            37257781148,
+            37257865255,
+            37257975471,
+            37257991516,
+            37258205670,
+            37258234055,
+            37258303183,
+            37258549146,
+            37258562246,
+            37258633232,
+            37258637687,
+            37258768690,
+            37258831289,
+            37258875995,
+            37258912195,
+            37258975020,
+            37259325344,
+            37259399738,
+            37259411780,
+            37259502595,
+            37259664978,
+            37259720988,
+            37259789648,
+            37260404019,
+            37260647048,
+            37261216299,
+            37261550838,
+            37263038378,
+            37263225598,
+            37263770063,
+            37263914691,
+            37264151864,
+            37264319461,
+            37264645693,
+            37264795042,
+            37265180094,
+            37265340042,
+            37265731767,
+            37265974222,
+            37266028132,
+            37266433935,
+            37266640070,
+            37266914901,
+            37267029358,
+            37267600160
+          ],
+          "runs": 57,
+          "test_elapsed_s": {
+            "max": 725.295,
+            "median": 47.245,
+            "min": 2.308,
+            "q1": 5.386,
+            "q3": 183.337
+          },
+          "test_targets_in_scope_median": 19.0,
+          "unique_prs": 51
+        }
+      ]
+    },
+    "setup": {
+      "component": "CI setup components: Nix wheel checkout and Ansible Galaxy role provisioning",
+      "source_verification": {
+        "rows": 135,
+        "distinct_source_merge_shas": 135,
+        "source_merge_matches_reusable_workflow_sha": 135,
+        "mismatches": 0,
+        "github_contents_blob_checks": 495,
+        "post_retry_errors": 0,
+        "same_config_hashes_by_period": {
+          "before": {
+            ".github/workflows/bazel-ci.yml": {
+              "source_refs": 45,
+              "blob_variants": 1,
+              "errors_after_retry": 0,
+              "blob_sha": "14f05c41e10a6dd2df37f73ac65348f6ae68a874"
+            },
+            ".github/workflows/nix-wheel-check.yml": {
+              "source_refs": 45,
+              "blob_variants": 1,
+              "errors_after_retry": 0,
+              "blob_sha": "6ead53d7e4946e5ab4a22154aebaeb066a9135fe"
+            },
+            ".github/workflows/pre-commit.yml": {
+              "source_refs": 45,
+              "blob_variants": 1,
+              "errors_after_retry": 0,
+              "blob_sha": "d330e183c430871fa80fef5ae711223c5abd9210"
+            }
+          },
+          "middle": {
+            ".github/workflows/bazel-ci.yml": {
+              "source_refs": 30,
+              "blob_variants": 1,
+              "errors_after_retry": 0,
+              "blob_sha": "ec71fb3012c6374d459685e5d83ed340e12a5353"
+            },
+            ".github/workflows/nix-wheel-check.yml": {
+              "source_refs": 30,
+              "blob_variants": 1,
+              "errors_after_retry": 0,
+              "blob_sha": "54987edfb96ee870ebb5590a3bb98c8b40369adb"
+            },
+            ".github/workflows/pre-commit.yml": {
+              "source_refs": 30,
+              "blob_variants": 1,
+              "errors_after_retry": 0,
+              "blob_sha": "c5ad6278343b201f0c85b853d63e293a4e8a3732"
+            },
+            "devinfra/ci/precommit_file_selection.py": {
+              "source_refs": 30,
+              "blob_variants": 1,
+              "errors_after_retry": 0,
+              "blob_sha": "2ba68fd71bed8c8b32d8206395dd91c339eb11ac"
+            }
+          },
+          "after": {
+            ".github/workflows/bazel-ci.yml": {
+              "source_refs": 60,
+              "blob_variants": 1,
+              "errors_after_retry": 0,
+              "blob_sha": "ec71fb3012c6374d459685e5d83ed340e12a5353"
+            },
+            ".github/workflows/nix-wheel-check.yml": {
+              "source_refs": 60,
+              "blob_variants": 1,
+              "errors_after_retry": 0,
+              "blob_sha": "54987edfb96ee870ebb5590a3bb98c8b40369adb"
+            },
+            ".github/workflows/pre-commit.yml": {
+              "source_refs": 60,
+              "blob_variants": 1,
+              "errors_after_retry": 0,
+              "blob_sha": "c5ad6278343b201f0c85b853d63e293a4e8a3732"
+            },
+            "devinfra/ci/precommit_file_selection.py": {
+              "source_refs": 60,
+              "blob_variants": 1,
+              "errors_after_retry": 0,
+              "blob_sha": "2ba68fd71bed8c8b32d8206395dd91c339eb11ac"
+            }
+          }
+        },
+        "runtime_job_source_checks": {
+          "job_records": 133,
+          "head_sha_matches": 133,
+          "checkout_successes": 133,
+          "resolve_source_successes": 133
+        },
+        "basis": "For each sampled CI run, rows.source_merge equals the SHA of .github/workflows/bazel-ci.yml recorded in referenced_workflows. GitHub Contents API returned one identical blob per target workflow file within each period; one timeout was retried successfully. The checkout uses github.sha and the source-revision verifier; available wheel job records show successful checkout and source verification."
+      },
+      "nix_wheel_checkout": {
+        "change_pr": 9020,
+        "change_url": "https://github.com/agentydragon/ducktape/pull/9020",
+        "step": "Check out source (a failure here means the source was unavailable; no tests or build ran)",
+        "periods": {
+          "before": {
+            "heads": 43,
+            "prs": 30,
+            "median_seconds": 17.0,
+            "mean_seconds": 16.88,
+            "range_seconds": [
+              14.0,
+              23.0
+            ]
+          },
+          "middle": {
+            "heads": 30,
+            "prs": 28,
+            "median_seconds": 7.0,
+            "mean_seconds": 6.73,
+            "range_seconds": [
+              6.0,
+              8.0
+            ]
+          },
+          "after": {
+            "heads": 60,
+            "prs": 54,
+            "median_seconds": 7.0,
+            "mean_seconds": 7.0,
+            "range_seconds": [
+              6.0,
+              9.0
+            ]
+          }
+        },
+        "post_middle_plus_after": {
+          "heads": 90,
+          "prs": 81,
+          "median_seconds": 7.0,
+          "range_seconds": [
+            6.0,
+            9.0
+          ]
+        },
+        "effect": {
+          "estimand": "difference in median checkout step seconds, post (middle+after) minus before; PR-cluster bootstrap percentile interval, 10k resamples",
+          "point_seconds": -10,
+          "ci95_seconds": [
+            -10,
+            -9
+          ],
+          "mean_of_PR_cluster_means_effect_seconds": -10.01,
+          "mean_effect_ci95_seconds": [
+            -10.54,
+            -9.58
+          ]
+        },
+        "runtime_validation": {
+          "job_records": 133,
+          "head_sha_matches": 133,
+          "checkout_successes": 133,
+          "resolve_source_successes": 133
+        },
+        "limits": "Observed component-step reduction, with post source refs carrying the shallow-checkout config and successful source verification. It does not establish the same reduction in full CI time; step times are rounded to seconds and cohorts are observational."
+      },
+      "galaxy_role_provisioning": {
+        "change_pr": 9023,
+        "change_url": "https://github.com/agentydragon/ducktape/pull/9023",
+        "selector": "Skip Galaxy role cache restore/install/save only when a pull request is proven unrelated; retain setup for ansible/**, Ansible config, pushes, manual runs, and unknown selection.",
+        "periods": {
+          "before": {
+            "heads_with_jobs": 43,
+            "prs_with_jobs": 30,
+            "eligible_unrelated_heads": 43,
+            "eligible_unrelated_prs": 30,
+            "needs_roles_heads": 0,
+            "needs_roles_paths": [],
+            "eligible_executed_role_step_seconds": {
+              "mean": 1.28,
+              "median": 1.0,
+              "range": [
+                0.0,
+                2.0
+              ]
+            },
+            "step_conclusions_all_heads": {
+              "success": 86,
+              "skipped": 43
+            },
+            "eligible_all_three_skipped": 0,
+            "eligible_job_median_seconds": 129.0
+          },
+          "middle": {
+            "heads_with_jobs": 30,
+            "prs_with_jobs": 28,
+            "eligible_unrelated_heads": 30,
+            "eligible_unrelated_prs": 28,
+            "needs_roles_heads": 0,
+            "needs_roles_paths": [],
+            "eligible_executed_role_step_seconds": {
+              "mean": 0,
+              "median": 0.0,
+              "range": [
+                0,
+                0
+              ]
+            },
+            "step_conclusions_all_heads": {
+              "skipped": 90
+            },
+            "eligible_all_three_skipped": 30,
+            "eligible_job_median_seconds": 137.5
+          },
+          "after": {
+            "heads_with_jobs": 60,
+            "prs_with_jobs": 54,
+            "eligible_unrelated_heads": 59,
+            "eligible_unrelated_prs": 53,
+            "needs_roles_heads": 1,
+            "needs_roles_paths": [
+              ".pre-commit-config.yaml"
+            ],
+            "eligible_executed_role_step_seconds": {
+              "mean": 0,
+              "median": 0,
+              "range": [
+                0,
+                0
+              ]
+            },
+            "step_conclusions_all_heads": {
+              "skipped": 178,
+              "success": 2
+            },
+            "eligible_all_three_skipped": 59,
+            "eligible_job_median_seconds": 134.0
+          }
+        },
+        "comparison": "Before the change, all 43 available pre-commit jobs were eligible unrelated changes but ran role restore/install. After, all 89 eligible unrelated jobs skipped all three role steps. One after-period change to .pre-commit-config.yaml correctly retained role setup.",
+        "observed_component_time": "Executed role setup steps averaged 1.28 seconds per pre-change head (median 1 second, range 0\u20132); post eligible jobs have zero executed role-step time. GitHub timestamps are rounded to whole seconds and roles were already cached, so this confirms the skip behavior but supports only a small runtime reduction estimate.",
+        "whole_job_context": "The complete pre-commit job did not shorten in these cohorts: eligible median durations were 129 seconds before, 137.5 in middle, and 134 after. These totals include setup, caches, changed-file checks, and file-dependent hooks; they do not isolate this change.",
+        "limits": "Direct step conclusions show activation. Do not infer overall PR/CI improvement from the Galaxy change in this warm-cache sample."
+      },
+      "sample_links": {
+        "wheel_before": "https://github.com/agentydragon/ducktape/actions/runs/37222830546/job/111496442539",
+        "wheel_middle": "https://github.com/agentydragon/ducktape/actions/runs/37246869854/job/111566374211",
+        "wheel_after": "https://github.com/agentydragon/ducktape/actions/runs/37255263236/job/111590845373",
+        "precommit_before": "https://github.com/agentydragon/ducktape/actions/runs/37222830511/job/111496443142",
+        "precommit_after": "https://github.com/agentydragon/ducktape/actions/runs/37255263277/job/111590846043"
+      }
+    },
+    "report_validation": {
+      "invocation": "b2a24c81-f9c3-44f3-a96d-08e7d8b65d3c",
+      "target": "//devinfra/ci/report_preview:preview",
+      "result": "Passed; desktop effects and mobile first viewport/component screenshots inspected; no horizontal overflow, valid anchors and working disclosure.",
+      "report_sha256": "c20c43ea689910913c28a44f97a25a81f21bae5c0e386221735c91a5766cf781"
+    }
+  },
+  "retained_baseline_source_devel_commit": "8b1c35555d93acd6afce5718c1002ce14960d85f"
 }

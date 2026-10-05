@@ -1,8 +1,8 @@
 {
-  "source_devel_commit": "8b1c35555d93acd6afce5718c1002ce14960d85f",
-  "window_start_utc": "2026-10-01T00:00:00Z",
-  "window_end_utc": "2026-10-04T21:15:00Z",
-  "published_at_utc": "2026-10-04T23:05:09.752656+00:00",
+  "source_devel_commit": "d44921d55c759da6c3f1d32ebc2c265077791c9b",
+  "window_start_utc": "2026-10-04T18:00:00Z",
+  "window_end_utc": "2026-10-05T05:35:31Z",
+  "published_at_utc": "2026-10-05T05:44:56.944941+00:00",
   "attribution": "not collected",
   "implementation_followup_at_utc": "2026-10-05T01:01:01.119432+00:00",
   "critical_path_followup": {
@@ -14,5 +14,14 @@
     ],
     "kind": "Focused mechanism investigation and controlled spikes; original baseline window retained",
     "implementation_recorded_at_utc": "2026-10-05T05:27:12.995374+00:00"
+  },
+  "retained_baseline": {
+    "source_devel_commit": "8b1c35555d93acd6afce5718c1002ce14960d85f",
+    "window_start_utc": "2026-10-01T00:00:00Z",
+    "window_end_utc": "2026-10-04T21:15:00Z"
+  },
+  "early_effects": {
+    "comparison_ends_utc": "2026-10-05T05:25:00Z",
+    "kind": "Early observational component and required-gate comparison; earlier baseline and mechanism experiments retained"
   }
 }
