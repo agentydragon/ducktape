@@ -97,6 +97,7 @@ py_test(
     data = ["@tiktoken_o200k_base//file"],
     requires_docker = True,
     deps = [
+        ":config",
         ":conftest",
         "//:conftest",
         "//x/inop/engine:models",
