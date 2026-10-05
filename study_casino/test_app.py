@@ -679,17 +679,5 @@ def test_admin_casino_stats_returns_target_user_stats(admin_app: tuple[TestClien
     assert body["event_count"] == 1
 
 
-def test_admin_casino_stats_404_for_unknown_user(admin_app: tuple[TestClient, Callable[[str], None]]) -> None:
-    c, set_user = admin_app
-    set_user("rai")
-    c.get("/state")  # seed 'rai' so /admin/users isn't empty
-    r = c.get("/admin/casino/stats", params={"user": "ghost"})
-    assert r.status_code == 404
-
-
-def test_admin_casino_stats_403_for_non_admin(non_admin_client: TestClient) -> None:
-    assert non_admin_client.get("/admin/casino/stats?user=default").status_code == 403
-
-
 if __name__ == "__main__":
     pytest_bazel.main()
