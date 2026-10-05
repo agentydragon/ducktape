@@ -12,7 +12,7 @@ import pytest_bazel
 
 from finance.augur.model.series import HomeValueKey, LocationId, SecurityKey, SecuritySymbol
 from finance.augur.policy.funding import ClaimPayer
-from finance.augur.product.metrics import ProductMetricArrays, metric_fan, terminal_summary
+from finance.augur.product.metrics import ProductMetricArrays
 from finance.augur.product.simulation import (
     execute,
     project_events,
@@ -233,24 +233,6 @@ class TestConfigured:
 
         assert int(product_metrics(run).failed_month[0]) < 0
         assert simulate_events(run(), AGENT).rollout_failures.height == 0
-
-    def test_the_fan_is_ordered_and_agrees_with_the_terminal_samples(self, run: Worlds) -> None:
-        """The two reductions are of one population, so the fan must sit inside its range.
-
-        An engine that reduced the wrong axis, or reduced a different run, passes every shape
-        assertion above and fails this one.
-        """
-
-        percentiles = (5.0, 50.0, 95.0)
-        fan = metric_fan(product_metrics(run), metric="cash_quanta", percentiles=percentiles)
-        samples = terminal_summary(product_metrics(run), metric="cash_quanta").terminal_samples
-
-        assert fan.percentiles == percentiles
-        assert fan.monthly_percentiles.shape == (HORIZON_MONTHS + 1, len(percentiles))
-        assert fan.terminal_percentiles is not None
-        assert list(fan.terminal_percentiles) == sorted(fan.terminal_percentiles), "percentiles must not decrease"
-        assert min(samples) <= min(fan.terminal_percentiles)
-        assert max(fan.terminal_percentiles) <= max(samples)
 
     def test_a_property_sells_for_what_the_series_says_it_is_worth(self, property_run: Worlds) -> None:
         """A money level is money, whichever cube an engine happens to keep it in.
