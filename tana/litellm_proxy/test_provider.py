@@ -11,7 +11,7 @@ import httpx
 import litellm
 import pytest
 import pytest_bazel
-from litellm.types.utils import ChatCompletionMessageToolCall, Choices, GenericStreamingChunk, ModelResponse, Usage
+from litellm.types.utils import ChatCompletionMessageToolCall, Choices, GenericStreamingChunk, Usage
 
 from tana.litellm_proxy.provider import (
     TanaChatResult,
@@ -740,39 +740,6 @@ async def test_anthropic_messages_stream_ignores_empty_chunk_after_tool_finish(i
     ] == []
 
 
-async def test_astreaming_emits_nothing_after_the_terminal_chunk() -> None:
-    class FakeClient(_NoStreamingClient):
-        async def astream_completion(
-            self,
-            model: str,
-            messages: Sequence[Mapping[str, Any]],
-            optional_params: Mapping[str, Any] | None = None,
-            *,
-            refresh_token: str | None = None,
-        ) -> AsyncIterator[GenericStreamingChunk]:
-            yield GenericStreamingChunk(text="before", is_finished=False, finish_reason="", usage=None, index=0)
-            yield GenericStreamingChunk(text="", is_finished=True, finish_reason="stop", usage=None, index=0)
-            yield GenericStreamingChunk(text="after", is_finished=False, finish_reason="", usage=None, index=0)
-
-    chunks = [
-        chunk
-        async for chunk in _handler_with_test_client(FakeClient()).astreaming(
-            model="claude-test",
-            messages=[{"role": "user", "content": "hi"}],
-            api_base="",
-            custom_prompt_dict={},
-            model_response=ModelResponse(),
-            print_verbose=print,
-            encoding=None,
-            api_key="refresh-1",
-            logging_obj=None,
-            optional_params={},
-        )
-    ]
-
-    assert [chunk["text"] for chunk in chunks] == ["before", ""]
-
-
 def _decode_anthropic_sse_event(event: Any) -> dict[str, Any]:
     if isinstance(event, dict):
         return event
@@ -1006,6 +973,8 @@ async def test_litellm_routes_async_streaming_to_custom_provider() -> None:
             )
             # Not "stop": LiteLLM reports "stop" on its own when the provider's terminal chunk never arrives.
             yield GenericStreamingChunk(text="", is_finished=True, finish_reason="length", usage=None, index=0)
+            # The handler must not forward what the upstream sends after its terminal chunk.
+            yield GenericStreamingChunk(text="after-terminal", is_finished=False, finish_reason="", usage=None, index=0)
 
     async def collect_chunks() -> list[Any]:
         register_litellm_provider(_handler_with_test_client(FakeClient()))
@@ -1021,7 +990,7 @@ async def test_litellm_routes_async_streaming_to_custom_provider() -> None:
 
     chunks = await collect_chunks()
 
-    assert chunks[0].choices[0].delta.content == "async-route-pong"
+    assert "".join(chunk.choices[0].delta.content or "" for chunk in chunks) == "async-route-pong"
     assert chunks[-1].choices[0].finish_reason == "length"
 
 
