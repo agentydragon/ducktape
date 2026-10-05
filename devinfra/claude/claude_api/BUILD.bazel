@@ -85,3 +85,15 @@ py_library(
     srcs = ["oauth_client.py"],
     visibility = ["//visibility:public"],
 )
+
+py_test(
+    name = "test_credentials",
+    srcs = ["test_credentials.py"],
+    deps = [
+        ":credentials",
+        "//:conftest",
+        "//devinfra/claude:conftest",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
