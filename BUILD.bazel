@@ -97,7 +97,6 @@ npm_link_package(
 
 # Export workspace files for npm_translate_lock data tracking
 exports_files([
-    "buildbuddy.yaml",
     "mypy.ini",
     "nebula-mesh.json",
     "package.json",

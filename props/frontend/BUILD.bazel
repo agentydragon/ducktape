@@ -16,7 +16,6 @@ ts_config(
 
 # Export config files.
 exports_files([
-    ".prettierrc",
     "tsconfig.json",
 ])
 

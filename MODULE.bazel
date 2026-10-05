@@ -51,7 +51,6 @@ single_version_override(
     version = "0.0.0-20260825-d10ac924",
 )
 
-bazel_dep(name = "googleapis-go", version = "1.1.5")
 bazel_dep(name = "rules_shell", version = "0.8.0")  # Required by buildifier_prebuilt
 bazel_dep(name = "buildifier_prebuilt", version = "8.5.1.4")
 bazel_dep(name = "aspect_rules_lint", version = "2.9.0")
@@ -318,18 +317,6 @@ oci.pull(
     tag = "stable",
 )
 
-# Talos imager: builds reproducible Talos disk images from pinned boot assets.
-# Uses v1.13.0-alpha.2+ which supports unprivileged builds (no loop devices) and
-# deterministic output (SOURCE_DATE_EPOCH + DETERMINISTIC_SEED).
-# v1.12.x requires --privileged and produces non-reproducible images.
-oci.pull(
-    name = "talos_imager",
-    digest = "sha256:65ca4a8696abbba5be0700bb929a5126d38b953c5e4e8eff94f065f34a24cc82",
-    image = "ghcr.io/siderolabs/imager",
-    platforms = ["linux/amd64"],
-    tag = "v1.14.0-alpha.2",
-)
-
 # Base image for container E2E tests. rules_distroless layers git + JDK on top.
 oci.pull(
     name = "python_3_14_slim",
@@ -361,7 +348,7 @@ oci.pull(
     platforms = ["linux/amd64"],
     tag = "v0.16.22",
 )
-use_repo(oci, "debian_trixie_slim", "debian_trixie_slim_linux_amd64", "distroless_cc_debian12", "distroless_cc_debian12_linux_amd64", "electric_1_8_1", "electric_1_8_1_linux_amd64", "grocy", "grocy_linux_amd64", "inventree_stable", "inventree_stable_linux_amd64", "litellm_upstream", "litellm_upstream_linux_amd64", "nginx_unprivileged", "nginx_unprivileged_linux_amd64", "pgvector_pg18", "pgvector_pg18_linux_amd64", "postgres_18", "postgres_18_linux_amd64", "python_3_14_slim", "python_3_14_slim_linux_amd64", "registry_3", "registry_3_linux_amd64", "ryuk", "ryuk_linux_amd64", "stalwart", "stalwart_linux_amd64", "talos_imager", "talos_imager_linux_amd64")
+use_repo(oci, "debian_trixie_slim", "debian_trixie_slim_linux_amd64", "distroless_cc_debian12", "distroless_cc_debian12_linux_amd64", "electric_1_8_1", "electric_1_8_1_linux_amd64", "grocy", "grocy_linux_amd64", "inventree_stable", "inventree_stable_linux_amd64", "litellm_upstream", "litellm_upstream_linux_amd64", "nginx_unprivileged", "nginx_unprivileged_linux_amd64", "pgvector_pg18", "pgvector_pg18_linux_amd64", "postgres_18", "postgres_18_linux_amd64", "python_3_14_slim", "python_3_14_slim_linux_amd64", "registry_3", "registry_3_linux_amd64", "ryuk", "ryuk_linux_amd64", "stalwart", "stalwart_linux_amd64")
 
 # Container image pins from devinfra/image_pins.json.
 # - Generates @image_pins//:pins.bzl with NAME_IMAGE / NAME_DIGEST constants
@@ -403,16 +390,6 @@ apt.sources_list(
     suites = ["trixie-security"],
     types = ["deb"],
     uris = ["https://snapshot.debian.org/archive/debian-security/20260301T000000Z"],
-)
-
-# OpenSSL Squid, matching the TLS backend of the Nix client relay.
-apt.install(
-    dependency_set = "github_relay_squid",
-    packages = [
-        "libnss3-tools",
-        "squid-openssl",
-    ],
-    suites = ["forky"],
 )
 
 # E2E test container: git + JDK layered on python:3.14-slim base.
@@ -547,7 +524,7 @@ apt.install(
         "trixie-security",
     ],
 )
-use_repo(apt, "github_relay_squid", "gnome_shell_test", "trixie_attic_rotation", "trixie_authentik_rotation", "trixie_budget_exporter", "trixie_cpap_sync", "trixie_e2e", "trixie_fc_vm_pod", "trixie_wayback_cache")
+use_repo(apt, "gnome_shell_test", "trixie_attic_rotation", "trixie_authentik_rotation", "trixie_budget_exporter", "trixie_cpap_sync", "trixie_e2e", "trixie_fc_vm_pod", "trixie_wayback_cache")
 
 # JavaScript/TypeScript (Node.js frontends)
 bazel_dep(name = "aspect_bazel_lib", version = "2.22.5")
@@ -858,28 +835,6 @@ http_archive(
     sha256 = "6e84a59661aab07686061da4e8f37b9bb828ac3ecf2ea5e69ee482fcc72fed13",
     strip_prefix = "codex-9e552e9d15ba52bed7077d5357f3e18e330f8f38",
     urls = ["https://github.com/openai/codex/archive/9e552e9d15ba52bed7077d5357f3e18e330f8f38.tar.gz"],
-)
-
-# Native Codex CLI distribution used by Haku's provider-neutral bridge runner. Keep the whole
-# target subtree: the executable locates its bundled rg/zsh/bwrap resources relative to itself.
-# This is the platform package behind @openai/codex 0.144.1's optional dependency, pinned by
-# archive digest rather than downloaded by a lifecycle hook during an image build.
-http_archive(
-    name = "codex_cli_linux_x64",
-    build_file_content = """
-filegroup(
-    name = "files",
-    srcs = glob([
-        "bin/**",
-        "codex-path/**",
-        "codex-resources/**",
-    ]) + ["codex-package.json"],
-    visibility = ["//visibility:public"],
-)
-""",
-    sha256 = "e2a64d421c10aaf0b7e3c0e8bd71b71e497d75823003318b674a278d71add0c7",
-    strip_prefix = "package/vendor/x86_64-unknown-linux-musl",
-    urls = ["https://registry.npmjs.org/@openai/codex/-/codex-0.144.1-linux-x64.tgz"],
 )
 
 # Native Claude Code CLI driven by Agentplane's scripted harness tests (//agentplane/harness_tests).
