@@ -13,7 +13,7 @@ import {
 } from "./client";
 import { ActionHistory } from "./history";
 import { stateLabel } from "./requests";
-import { button, render, request, sshExec, unmountLast, type View } from "./testing";
+import { button, DECISION_NOTE, render, request, sshExec, unmountLast, type View } from "./testing";
 
 /** The view reading its Action groups from `list` rather than the real `/action-groups`. */
 function historyOver(list: ActionGroupService["list"]): View {
@@ -80,7 +80,7 @@ describe("ActionHistory", () => {
     expect(container.textContent).toContain("requested by agentplane-test/test-agent");
     expect(container.textContent).toContain("Allowed");
     expect(container.textContent).toContain("Denied");
-    expect(container.textContent).toContain("Reviewed scope — allowed for this request.");
+    expect(container.textContent).toContain(DECISION_NOTE);
     // The caller's own framing stays on the receipt, beside the operator's decision note.
     for (const state of states) {
       expect(container.textContent).toContain(`test title for the ${state} fixture`);
@@ -224,19 +224,12 @@ describe("ActionHistory", () => {
     expect(drawn()).toEqual({ request: true, response: true });
   });
 
-  it("offers no Raw switch where the stored JSON is the only rendering", async () => {
+  it("keeps a sandbox group's result as its stored JSON, without a Raw switch, even one shaped like a CallToolResult", async () => {
     const container = await render(
       { list: async () => [succeeded("test_sandbox", IMAGE_RESULT)], decide: vi.fn() },
       historyOver(async () => [group("test_sandbox", "sandbox")])
     );
     expect(container.querySelector('input[type="checkbox"]')).toBeNull();
-  });
-
-  it("keeps a sandbox group's result as its stored JSON, even one shaped like a CallToolResult", async () => {
-    const container = await render(
-      { list: async () => [succeeded("test_sandbox", IMAGE_RESULT)], decide: vi.fn() },
-      historyOver(async () => [group("test_sandbox", "sandbox")])
-    );
     expect(container.querySelector("img")).toBeNull();
     expect(container.textContent).toContain('"mimeType": "image/png"');
   });
