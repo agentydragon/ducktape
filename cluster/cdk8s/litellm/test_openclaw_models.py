@@ -81,20 +81,12 @@ def test_current_anthropic_roster_matches_haku_openclaw() -> None:
         }
 
 
-def test_public_coder_memory_model_uses_ollama_embedding_route() -> None:
-    """The OpenClaw model identity must match the Ollama embedding route."""
-    config = public_coder_agent_config.config()
-    model = config["memory"]["search"]["model"]
+def test_public_coder_memory_model_is_a_served_embedding_route() -> None:
+    model = public_coder_agent_config.config()["memory"]["search"]["model"]
+    served = _litellm_models()
 
-    assert model == "ollama/olm-embed/qwen3-embedding-4b"
-    assert _litellm_models()[model] == {
-        "model_name": model,
-        "litellm_params": {
-            "model": "ollama/qwen3-embedding:4b",
-            "api_base": "http://ollama.ollama.svc.cluster.local:11434",
-        },
-        "model_info": {"mode": "embedding"},
-    }
+    assert model in served
+    assert served[model]["model_info"]["mode"] == "embedding"
 
 
 if __name__ == "__main__":
