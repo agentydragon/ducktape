@@ -81,6 +81,30 @@ fn singleton_plus_multi_member_bucket_counts() {
 }
 
 #[test]
+fn source_match_bindings_count_toward_orphans_and_renames() {
+    let modules = module_tree(&[
+        (
+            "solo.yaml",
+            "source_matches: [{match: 'const a = 1;', bindings: [{local: a, name: Alpha}]}]\n",
+        ),
+        (
+            "pair.yaml",
+            "source_matches: [{match: 'const b = 2; const c = 3;', bindings: [b, c]}]\n",
+        ),
+    ]);
+
+    let out = run_stats(modules.path(), &["--format", "json"]);
+    let parsed: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
+    assert_eq!(parsed["modules"]["member_count"]["singletons"], 1);
+    assert_eq!(parsed["modules"]["member_count"]["tiny_2_to_5"], 1);
+    assert_eq!(parsed["bindings"]["total"], 3);
+    assert_eq!(parsed["bindings"]["renamed"], 1);
+    assert_eq!(parsed["bindings"]["unrenamed"], 2);
+    // Only `Alpha` is an orphan (the sole binding of `solo`).
+    assert_eq!(parsed["bindings"]["orphan"], 1);
+}
+
+#[test]
 fn output_is_deterministic_across_runs() {
     let modules = module_tree(&[
         (
