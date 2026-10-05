@@ -58,12 +58,15 @@ class ReceiverResource:
         )
 
     @staticmethod
-    def image_repository(name: str, *, namespace: str | None = None) -> ReceiverSpecResources:
+    def image_repository(
+        name: str, *, namespace: str | None = None, filter: str | None = None
+    ) -> ReceiverSpecResources:
         return ReceiverSpecResources(
             api_version="image.toolkit.fluxcd.io/v1",
             kind=ReceiverSpecResourcesKind.IMAGE_REPOSITORY,
             name=name,
             namespace=namespace,
+            filter=filter,
         )
 
     @staticmethod
