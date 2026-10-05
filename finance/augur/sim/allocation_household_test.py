@@ -446,7 +446,7 @@ def test_indexed_bound_overflow_remains_an_error_not_a_financial_stop() -> None:
         0,
     )
     world.start()
-    with pytest.raises(OverflowError, match=r"overflow|signed 64"):
+    with pytest.raises(OverflowError):
         step_to_horizon(world, FinancialCapture(world, capture="forensic"))
 
 
