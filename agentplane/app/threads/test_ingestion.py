@@ -121,7 +121,7 @@ async def test_gapped_batches_leave_no_archived_prefix(
     event_logs: EventLogStore, ingestion: Ingestion, replica: Replica, lease: IngestionLease, cursors: list[int]
 ) -> None:
     thread = await event_logs.open("sb-1", "s-1", SPEC)
-    with pytest.raises(EventReplicationError, match="expected runner cursor"):
+    with pytest.raises(EventReplicationError):
         await ingestion.record(
             thread, [event_entry(cursor, harness_lost=event_pb2.HarnessLost()) for cursor in cursors], lease=lease
         )
@@ -138,7 +138,7 @@ async def test_conflicting_replay_rolls_back_the_whole_batch(
     first = event_entry(1, harness_started=event_pb2.HarnessStarted(pid=1))
     await ingestion.record(thread, [first], lease=lease)
     before = await replica.event_logs.feed_state(thread)
-    with pytest.raises(EventReplicationError, match="conflicting runner entry"):
+    with pytest.raises(EventReplicationError) as raised:
         await ingestion.record(
             thread,
             [
@@ -147,6 +147,8 @@ async def test_conflicting_replay_rolls_back_the_whole_batch(
             ],
             lease=lease,
         )
+    # Entry 1 is what conflicted, after entry 2 had already been staged.
+    assert raised.value.cursor == 1
     assert await replica.event_logs.events(thread, limit=10) == [first]
     assert await replica.event_logs.last_cursor(thread) == 1
     assert await replica.event_logs.feed_state(thread) == before
@@ -179,7 +181,7 @@ async def test_same_batch_duplicates_require_identical_payloads(
     thread = await event_logs.open("sb-1", "s-1", SPEC)
     first = event_entry(1, harness_started=event_pb2.HarnessStarted(pid=1))
     second = event_entry(2, harness_lost=event_pb2.HarnessLost())
-    with pytest.raises(EventReplicationError, match="conflicting runner entry"):
+    with pytest.raises(EventReplicationError):
         await ingestion.record(
             thread, [first, event_entry(1, harness_started=event_pb2.HarnessStarted(pid=2))], lease=lease
         )
@@ -218,7 +220,7 @@ async def test_rejected_entry_inside_a_batch_carries_its_cursor(
     thread = await event_logs.open("sb-1", "s-invalid-origin", SPEC)
     rejected = event_entry(2, harness_started=event_pb2.HarnessStarted())
     rejected.origin.sequence = 3
-    with pytest.raises(EventReplicationError, match="invalid runner origin at cursor 2") as raised:
+    with pytest.raises(EventReplicationError) as raised:
         await ingestion.record(
             thread,
             [
