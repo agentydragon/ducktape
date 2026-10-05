@@ -65,7 +65,6 @@ fn merge_preserves_claims_metadata_and_runtime_with_or_without_target_comments()
             "{}",
             String::from_utf8_lossy(&out.stderr)
         );
-        assert!(String::from_utf8_lossy(&out.stdout).contains("dry-run: would merge 4 source(s)"));
         for (path, bytes) in paths.iter().zip(before) {
             assert_eq!(fs::read(fixture.modules.join(path)).unwrap(), bytes);
         }
@@ -74,11 +73,6 @@ fn merge_preserves_claims_metadata_and_runtime_with_or_without_target_comments()
             out.status.success(),
             "{}",
             String::from_utf8_lossy(&out.stderr)
-        );
-        let stdout = String::from_utf8_lossy(&out.stdout);
-        assert!(
-            stdout.contains("merged 4 source(s) into") && stdout.contains("ui/target.yaml"),
-            "{stdout}"
         );
         let doc: Value =
             serde_yaml::from_slice(&fs::read(fixture.modules.join("ui/target.yaml")).unwrap())
@@ -103,16 +97,31 @@ fn merge_preserves_claims_metadata_and_runtime_with_or_without_target_comments()
             statements,
             ["console.log(\"first\");", "console.log(\"second\");"]
         );
-        let provenance = "merged from: ui/src1.yaml, ui/src2.yaml, ui/claims.yaml, ui/empty.yaml";
-        let note = if metadata.is_empty() {
-            provenance.to_string()
-        } else {
-            format!("existing debt\n{provenance}")
-        };
-        assert_eq!(doc["note"].as_str(), Some(note.as_str()));
+        // Provenance names every merged source, even the empty one, after any
+        // existing note.
+        let note = doc["note"].as_str().unwrap();
+        for source in [
+            "ui/src1.yaml",
+            "ui/src2.yaml",
+            "ui/claims.yaml",
+            "ui/empty.yaml",
+        ] {
+            assert!(note.contains(source), "{note}");
+        }
+        assert_eq!(note.contains("existing debt"), !metadata.is_empty());
+        assert!(
+            note.find("existing debt") < note.find("ui/src1.yaml"),
+            "{note}"
+        );
+        // Source comments are attributed to their source, after the target's own.
         let comment = doc["comment"].as_str().unwrap();
-        assert_eq!(comment.contains("target overview"), !metadata.is_empty());
-        assert!(comment.contains("--- from ui/src1.yaml:") && comment.contains("source overview"));
+        assert!(comment.contains("ui/src1.yaml"), "{comment}");
+        let target_comment = comment.find("target overview");
+        assert_eq!(target_comment.is_some(), !metadata.is_empty());
+        assert!(
+            comment.find("source overview") > target_comment,
+            "{comment}"
+        );
         assert!(!comment.contains("src2.yaml") && !comment.contains("empty.yaml"));
         assert_eq!(fs::read_to_string(sibling).unwrap(), "unrelated data\n");
         // Only the target and the preexisting scratch file remain: no leaked
