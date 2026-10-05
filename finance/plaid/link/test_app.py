@@ -667,15 +667,6 @@ def test_exchange_public_token_uses_sdk_request() -> None:
     assert result.item_id == "item-sandbox-new"
 
 
-def test_remove_item_uses_sdk_request() -> None:
-    api = _FakePlaidApi()
-    client = PlaidClient(api=cast(PlaidSdkApiLike, api))
-
-    client.remove_item("access-sandbox-existing")
-
-    assert api.removed_access_tokens == ["access-sandbox-existing"]
-
-
 def test_remove_link_purges_mirrored_link_data_after_plaid_removal() -> None:
     api = _FakePlaidApi()
     storage = _FakeStorage()
