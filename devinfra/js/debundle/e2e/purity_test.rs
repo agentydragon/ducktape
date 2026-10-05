@@ -478,32 +478,46 @@ export { A, B, D, wrap };
 
 #[test]
 fn canonical_source_match_purity_annotation_contributes_to_analysis_hints() {
-    let fixture = run_fixture(FixtureOpts::new(
-        r#"function pureWrap(x) { return { val: x }; }
-function impureWrap(x) { globalThis.lastWrap = x; return { val: x }; }
-const A = pureWrap("a");
-const B = pureWrap("b");
-const C = pureWrap("c");
-console.log(A.val, B.val, C.val);
-export { A, B, C, pureWrap, impureWrap };
-"#,
+    // `dispatcher` calls through a registry lookup, which inference cannot
+    // prove pure, so the `purity` on its source_match member is the only
+    // thing that drops the `S` edges of the interleaved call sites. The
+    // unannotated control keeps that premise from silently going vacuous.
+    const ENTRY: &str = r#"const registry = {
+  alpha: function (x) { return { handled: "alpha", x }; },
+  beta: function (x) { return { handled: "beta", x }; },
+  gamma: function (x) { return { handled: "gamma", x }; },
+};
+function dispatcher(req) {
+  return registry[req.kind](req.payload);
+}
+const A = dispatcher({ kind: "alpha", payload: 1 });
+const B = dispatcher({ kind: "beta", payload: 2 });
+const C = dispatcher({ kind: "gamma", payload: 3 });
+console.log(A.handled, B.handled, C.handled);
+export { A, B, C, dispatcher };
+"#;
+    let dispatcher = || {
+        Member::source_alpha(
+            "dispatcher",
+            r#"function dispatcher(req) { return registry[req.kind](req.payload); }"#,
+        )
+    };
+    let modules = |dispatcher: Member| {
         vec![
-            logical_module(
-                "mod_a",
-                &[
-                    Member::new("A"),
-                    Member::new("C"),
-                    Member::source_alpha(
-                        "pureWrap",
-                        r#"function pureWrap(x) { return { val: x }; }"#,
-                    )
-                    .with_purity(MemberPurity::Pure),
-                ],
-            ),
+            logical_module("mod_a", &[Member::new("A"), Member::new("C"), dispatcher]),
             logical_module("mod_b", &[Member::new("B")]),
-        ],
+        ]
+    };
+
+    expect_rejection_containing_all(
+        FixtureOpts::new(ENTRY, modules(dispatcher())),
+        &["cycle", "mod_a", "mod_b", "side-effect"],
+    );
+    let fixture = run_fixture(FixtureOpts::new(
+        ENTRY,
+        modules(dispatcher().with_purity(MemberPurity::Pure)),
     ));
-    assert_entry_output(&fixture, "a b c\n");
+    assert_entry_output(&fixture, "alpha beta gamma\n");
 }
 
 #[test]
