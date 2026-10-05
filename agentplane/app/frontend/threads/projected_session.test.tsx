@@ -805,8 +805,8 @@ it("shows a lone reasoning step as its own reasoning block, and assistant text w
   expect(reasoning.querySelector("details.agentplane-step-details")).toBeNull();
   expect(reasoning.querySelector(".agentplane-step-title")?.textContent).toBe("Reasoning");
   expect(reasoning.textContent).toContain("Reasoning preview body");
-  expect(answer.textContent).toContain("Test body of test-entity-2");
-  for (const row of [reasoning, answer]) expect(row.textContent).not.toMatch(/assistant/i);
+  expect(reasoning.querySelector(".mantine-Badge-root")).toBeNull();
+  expect(answer.textContent?.trim()).toBe("Test body of test-entity-2");
 });
 
 describe("recovery presentation", () => {
