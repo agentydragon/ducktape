@@ -2,13 +2,17 @@
 
 from __future__ import annotations
 
+import json
+from collections.abc import Callable
+
 import pytest_bazel
+from tenacity import AsyncRetrying, retry_if_exception_type, stop_after_delay, wait_fixed
 
 from agentplane.harness_tests.claude import anthropic_sse as sse, frames
 from agentplane.harness_tests.claude.harness import MODEL, ClaudeHarness
 from agentplane.harness_tests.claude.messages import AnthropicMessages
-from agentplane.native.claude import wire
-from agentplane.native.claude.blocks import TextBlock, blocks_of
+from agentplane.native.claude import async_run, wire
+from agentplane.native.claude.blocks import TextBlock, ThinkingBlock, blocks_of
 from agentplane.native.claude.scenarios import SYSTEM_PROMPT, TOOLS
 
 CRASHED_SESSION = "00000000-0000-4000-8000-000000000001"
@@ -22,6 +26,32 @@ INTERRUPTED_RESUME_RECOVERY = "Reply with exactly: INTERRUPTED_RESUME_RECOVERY_O
 RETAINED_QUEUE_FIRST = "Reply only after seeing RETAINED_QUEUE_CRASH_FIRST."
 RETAINED_QUEUE_SECOND = "Reply only after seeing RETAINED_QUEUE_CRASH_SECOND."
 RETAINED_QUEUE_RECOVERY = "Reply with exactly: RETAINED_QUEUE_CRASH_RECOVERY_OK"
+KILLED_TOOL_INPUT = "Run the shell command."
+INTERRUPTED_THINKING_INPUT = "Think, then answer."
+RESUMED_AFTER_INTERRUPT_INPUT = "Reply with exactly: RESUMED_OK"
+
+
+async def _until(condition: Callable[[], bool]) -> None:
+    async for attempt in AsyncRetrying(
+        stop=stop_after_delay(10), wait=wait_fixed(0.05), retry=retry_if_exception_type(AssertionError), reraise=True
+    ):
+        with attempt:
+            assert condition()
+
+
+def _transcript(claude: ClaudeHarness) -> str:
+    (path,) = (claude.config / "projects").glob(f"*/{CRASHED_SESSION}.jsonl")
+    return path.read_text()
+
+
+async def _thinking_completed(run: async_run.ClaudeRun) -> None:
+    events = run.events()
+    while True:
+        frame = await events.next()
+        if isinstance(frame, wire.AssistantFrame) and any(
+            isinstance(block, ThinkingBlock) for block in frame.message.content
+        ):
+            return
 
 
 async def _seed_crashed_session(claude: ClaudeHarness, anthropic_messages: AnthropicMessages) -> wire.ResultFrame:
@@ -220,6 +250,83 @@ async def test_resume_after_crash_replays_completed_history_but_drops_active_and
             stream = sse.message_stream([sse.Text("CRASH_RESUME_OK")], model=MODEL)
             await exchange.send(*stream.events)
         assert (await prompt.result()).result == "CRASH_RESUME_OK"
+
+
+async def test_thinking_ahead_of_a_tool_killed_mid_run_is_saved_but_not_replayed(
+    claude: ClaudeHarness, anthropic_messages: AnthropicMessages
+) -> None:
+    """The transcript holds the thinking block as an entry of its own under the id of its message,
+    yet the resume loads neither it nor the tool call: a message left holding only thinking is
+    dropped. `runner/claude_history.py` mirrors this."""
+    await _seed_crashed_session(claude, anthropic_messages)
+
+    async with claude.start(anthropic_messages, resume_id=CRASHED_SESSION) as first:
+        await first.send(KILLED_TOOL_INPUT)
+        async with await anthropic_messages.await_next_request() as exchange:
+            await exchange.send(
+                *sse.message_stream(
+                    [
+                        sse.Thinking("KILLED_TOOL_THOUGHT", "sig_killed_tool"),
+                        sse.ToolUse("toolu_killed", "Bash", {"command": "touch tool_started; sleep 60"}),
+                    ],
+                    model=MODEL,
+                ).events
+            )
+        await _until(lambda: (claude.workspace / "tool_started").exists() and "toolu_killed" in _transcript(claude))
+        assert await first.crash() < 0
+
+    saved = [json.loads(line) for line in _transcript(claude).splitlines()]
+    thinking, tool_use = [entry["message"] for entry in saved if entry["type"] == "assistant"][-2:]
+    assert thinking["id"] == tool_use["id"]
+    assert [thinking["content"][0]["thinking"], tool_use["content"][0]["id"]] == ["KILLED_TOOL_THOUGHT", "toolu_killed"]
+
+    async with claude.start(anthropic_messages, resume_id=CRASHED_SESSION) as resumed:
+        recovery = await resumed.send(RECOVERY_INPUT)
+        async with await anthropic_messages.await_next_request() as exchange:
+            assert exchange.request.thinking_blocks == []
+            assert exchange.request.tool_uses == []
+            await exchange.send(*sse.message_stream([sse.Text("CRASH_RESUME_OK")], model=MODEL).events)
+        assert (await recovery.result()).result == "CRASH_RESUME_OK"
+
+
+async def test_thinking_interrupted_before_any_answer_is_not_sent_again_even_in_the_same_process(
+    claude: ClaudeHarness, anthropic_messages: AnthropicMessages
+) -> None:
+    """An interrupt after a completed thinking block and before the next block leaves a message
+    holding only thinking. Claude drops it from the next request of the live process and of a
+    resumed one, although its transcript saved the block."""
+    await _seed_crashed_session(claude, anthropic_messages)
+
+    async with claude.start(anthropic_messages, resume_id=CRASHED_SESSION) as first:
+        interrupted = await first.send(INTERRUPTED_THINKING_INPUT)
+        async with await anthropic_messages.await_next_request() as exchange:
+            await exchange.send(
+                *sse.message_stream(
+                    [sse.Thinking("INTERRUPTED_THOUGHT", "sig_interrupted"), sse.Text("NEVER_SENT")], model=MODEL
+                )
+                .through("content_block_stop")
+                .events
+            )
+            await _thinking_completed(first)
+            assert (await first.interrupt(cancel_queued=False)).response.subtype == "success"
+            await exchange.wait_client_closed()
+        assert (await interrupted.result()).is_error is True
+
+        live = await first.send(RECOVERY_INPUT)
+        async with await anthropic_messages.await_next_request() as exchange:
+            assert exchange.request.thinking_blocks == []
+            await exchange.send(*sse.message_stream([sse.Text("LIVE_OK")], model=MODEL).events)
+        assert (await live.result()).result == "LIVE_OK"
+        await _until(lambda: "LIVE_OK" in _transcript(claude))
+        assert "INTERRUPTED_THOUGHT" in _transcript(claude)
+        assert await first.crash() < 0
+
+    async with claude.start(anthropic_messages, resume_id=CRASHED_SESSION) as resumed:
+        recovery = await resumed.send(RESUMED_AFTER_INTERRUPT_INPUT)
+        async with await anthropic_messages.await_next_request() as exchange:
+            assert exchange.request.thinking_blocks == []
+            await exchange.send(*sse.message_stream([sse.Text("RESUMED_OK")], model=MODEL).events)
+        assert (await recovery.result()).result == "RESUMED_OK"
 
 
 if __name__ == "__main__":

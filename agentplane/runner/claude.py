@@ -30,7 +30,7 @@ from agentplane.protocol import event_pb2
 from agentplane.runner.adapter import HarnessAdapter
 from agentplane.runner.claude_history import read_history
 from agentplane.runner.config import ClaudeLaunch
-from agentplane.runner.recovery import compare_item, observed_items
+from agentplane.runner.recovery import compare_item, observed_items, unknown_item, unknown_report
 
 # The generated protocol stubs' own stub chain, which the mypy aspect resolves for direct deps only.
 # gazelle:include_dep @pypi//protobuf
@@ -102,27 +102,24 @@ class ClaudeAdapter(HarnessAdapter):
 
     async def reconcile(self, turn_id: str, *, resumed: bool) -> event_pb2.ConversationReconciled:
         observed = await observed_items(self.session.journal, turn_id)
-        reason = "native continuation evidence is unavailable or unsupported"
         if resumed:
             try:
                 recovered = await asyncio.to_thread(
                     read_history, self.session.native_directory / "claude", self._native_session_id
                 )
             except (OSError, ValueError) as error:
-                recovered = None
-                reason = f"cannot inspect native continuation: {error}"
+                return unknown_report(turn_id, observed, f"cannot inspect native continuation: {error}")
         else:
+            # The process outlives an ordinary interruption and keeps what it completed. Known gap:
+            # Claude drops a thinking block interrupted before any answer in its message.
             recovered = {key: item for key, item in observed.items() if item.completed}
         decisions = []
         for item in observed.values():
-            if (
-                recovered is None
-                or item.kind == event_pb2.ITEM_KIND_REASONING
-                or (not resumed and item.kind == event_pb2.ITEM_KIND_TOOL_CALL and not item.completed)
-            ):
+            if not resumed and item.kind == event_pb2.ITEM_KIND_TOOL_CALL and not item.completed:
                 decisions.append(
-                    event_pb2.ItemRecovery(
-                        item_id=item.item_id, disposition=event_pb2.RECOVERY_DISPOSITION_UNKNOWN, reason=reason
+                    unknown_item(
+                        item.item_id,
+                        "Claude does not report whether it keeps a tool call interrupted before its result",
                     )
                 )
             else:

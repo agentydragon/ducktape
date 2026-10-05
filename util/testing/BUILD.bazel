@@ -166,6 +166,7 @@ py_test(
         "//:conftest",
         "//util:playwright",
         "@pypi//playwright",
+        "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],
 )

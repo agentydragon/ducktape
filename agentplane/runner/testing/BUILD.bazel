@@ -20,6 +20,11 @@ py_library(
 )
 
 py_library(
+    name = "claude_transcript",
+    srcs = ["claude_transcript.py"],
+)
+
+py_library(
     name = "codex_model",
     srcs = ["codex_model.py"],
     deps = [

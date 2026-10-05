@@ -32,6 +32,7 @@ import {
   assertNoPageErrors,
   prepareDeterministicPage,
   screenshotElement,
+  waitForSelectorUnlessPageError,
   waitForStable,
   WAIT_TIMEOUT_MS,
 } from "./capture.mjs";
@@ -72,9 +73,8 @@ async function captureScenario(browser, scenarioName, options, { harnessUrl, out
     if (expectedFont && !(await page.evaluate((family) => document.fonts.check(`16px "${family}"`), expectedFont))) {
       throw new Error(`${expectedFont} font did not load`);
     }
-    await page.waitForSelector("#app > *", { timeout: WAIT_TIMEOUT_MS });
-    for (const selector of options.readySelectors ?? []) {
-      await page.waitForSelector(selector, { timeout: WAIT_TIMEOUT_MS });
+    for (const selector of ["#app > *", ...(options.readySelectors ?? [])]) {
+      await waitForSelectorUnlessPageError(page, selector, { context: outputName });
     }
     // Last, so fonts, images and paint settle around whatever the scene's own conditions let in.
     await waitForStable(page);
