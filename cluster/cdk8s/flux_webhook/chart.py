@@ -5,8 +5,6 @@ with their Providers, and the Secret that points the ntfy Provider at the self-h
 
 from __future__ import annotations
 
-import json
-
 from cdk8s import ApiObjectMetadata, App, Chart
 from cdk8s_plus_34 import k8s
 from external_secrets_crds.io.external_secrets import (
@@ -26,6 +24,7 @@ from flux_provider_crds.io.fluxcd.toolkit.notification import ProviderSpecSecret
 from flux_receiver_crds.io.fluxcd.toolkit.notification import ReceiverSpecSecretRef, ReceiverSpecType
 
 from cluster.cdk8s import ntfy
+from cluster.cdk8s.config_format import yaml_config
 from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on_many
 from cluster.cdk8s.gateway import https_route
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
@@ -48,7 +47,8 @@ _RECEIVER = ServiceRef(
 )
 # ntfy fills the X-Title/X-Message placeholders from Flux's webhook payload (Template: yes).
 # They are Go raw strings here so ESO's own template engine emits them untouched instead of
-# failing on the missing `involvedObject` key.
+# failing on the missing `involvedObject` key. ESO substitutes `.alertmanager_token` into the
+# serialized text, unescaped.
 _NTFY_HEADERS = {
     "Template": "yes",
     "Authorization": "Bearer {{ .alertmanager_token }}",
@@ -56,12 +56,6 @@ _NTFY_HEADERS = {
     "X-Message": "{{ `{{.severity}}: {{.reason}} - {{.message}}` }}",
     "X-Tags": "rotating_light",
 }
-
-
-def _headers_yaml(headers: dict[str, str]) -> str:
-    """A Provider Secret's `headers` key is read as a YAML map. Each template source is JSON-quoted,
-    a double-quoted YAML scalar; values ESO substitutes into it afterwards are not escaped."""
-    return "".join(f"{name}: {json.dumps(value)}\n" for name, value in headers.items())
 
 
 def _alert_sources(*sources: tuple[AlertSpecEventSourcesKind, str]) -> list[AlertSpecEventSources]:
@@ -183,7 +177,7 @@ def chart(app: App) -> Chart:
         template=ExternalSecretSpecTargetTemplate(
             engine_version=ExternalSecretSpecTargetTemplateEngineVersion.V2,
             type="Opaque",
-            data={"address": f"https://{ntfy.HOSTNAME}/alerts", "headers": _headers_yaml(_NTFY_HEADERS)},
+            data={"address": f"https://{ntfy.HOSTNAME}/alerts", "headers": yaml_config(_NTFY_HEADERS)},
         ),
     )
     return chart

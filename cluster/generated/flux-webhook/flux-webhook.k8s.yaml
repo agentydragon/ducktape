@@ -146,9 +146,9 @@ spec:
         address: https://ntfy.allegedly.works/alerts
         headers: |
           Template: "yes"
-          Authorization: "Bearer {{ .alertmanager_token }}"
+          Authorization: Bearer {{ .alertmanager_token }}
           X-Title: "{{ `{{.involvedObject.kind}} {{.involvedObject.name}}` }}"
           X-Message: "{{ `{{.severity}}: {{.reason}} - {{.message}}` }}"
-          X-Tags: "rotating_light"
+          X-Tags: rotating_light
       engineVersion: v2
       type: Opaque
