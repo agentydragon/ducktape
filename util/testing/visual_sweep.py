@@ -134,9 +134,10 @@ async def capture_scenario(
 
         query = {"page": scenario_name} if scenario.query is None else scenario.query
         await page.goto(f"{config.harness_url}?{urlencode(query)}", wait_until="networkidle", timeout=timeout_ms)
-        await page.wait_for_selector("#app > *", state="attached", timeout=timeout_ms)
-        for selector in scenario.ready_selectors:
-            await page.wait_for_selector(selector, state="attached", timeout=timeout_ms)
+        for selector in ("#app > *", *scenario.ready_selectors):
+            await page_errors.wait_for(
+                page.wait_for_selector(selector, state="attached", timeout=timeout_ms), context=output_name
+            )
         # Last, so fonts, images and paint settle around whatever the scene's own conditions let in.
         await wait_for_stable(page)
         # Only assert a named font when the app declares one. Generic family resolution is owned by the
