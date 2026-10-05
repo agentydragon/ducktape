@@ -267,7 +267,9 @@ class FakeSync {
 
   /** Answer the held scope read. */
   async respond(response: () => Response): Promise<void> {
-    await vi.waitFor(() => expect(this.#held).not.toBeNull());
+    await vi.waitFor(() => {
+      if (this.#held === null) throw new Error("No scope read is held");
+    });
     const resolve = this.#held!;
     this.#held = null;
     await act(async () => resolve(response()));
@@ -311,7 +313,9 @@ class FakeSync {
   }
 
   async #connection(path: string): Promise<Connection> {
-    await vi.waitFor(() => expect(this.#live.has(path)).toBe(true));
+    await vi.waitFor(() => {
+      if (!this.#live.has(path)) throw new Error(`No live connection at ${path}`);
+    });
     return this.#live.get(path)!;
   }
 
