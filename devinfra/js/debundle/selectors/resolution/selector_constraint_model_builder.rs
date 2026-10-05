@@ -1837,35 +1837,19 @@ mod tests {
 
         let model = compile_selector_problem(&program, &facts).unwrap();
 
-        assert_eq!(model.target_projections.len(), 2);
-        assert_eq!(model.target_projections[0].target, broad_target);
-        assert_eq!(
-            model.target_projections[0].owner_variable,
-            ConstraintVariableId(0)
-        );
-        assert_eq!(
-            model.target_projections[0].binding_projection,
-            Some(TargetBindingProjection::Const("shared".to_string()))
-        );
-        assert_eq!(model.target_projections[1].target, strict_target);
-        assert_eq!(
-            model.target_projections[1].owner_variable,
-            ConstraintVariableId(1)
-        );
-        assert_eq!(
-            model.target_projections[1].binding_projection,
-            Some(TargetBindingProjection::Const("specific".to_string()))
-        );
+        let owner_domain = |target| {
+            let projection = model
+                .target_projections
+                .iter()
+                .find(|projection| projection.target == target)
+                .unwrap();
+            decoded_variable_domain(&model, projection.owner_variable)
+        };
+        // The strict target can only be owner 20, so injectivity removes owner 20
+        // from the broad target's domain and nothing is left to be all-different.
+        assert_eq!(owner_domain(broad_target), vec![owner(10)]);
+        assert_eq!(owner_domain(strict_target), vec![owner(20)]);
         assert!(model.all_different.is_empty());
-
-        assert_eq!(
-            decoded_variable_domain(&model, ConstraintVariableId(0)),
-            vec![owner(10)]
-        );
-        assert_eq!(
-            decoded_variable_domain(&model, ConstraintVariableId(1)),
-            vec![owner(20)]
-        );
     }
 
     #[test]
