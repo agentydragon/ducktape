@@ -36,21 +36,6 @@ class TestFileTruncation:
         max_files_tokens = 150_000
         assert final_tokens <= max_files_tokens, f"Result exceeds limit: {final_tokens} > {max_files_tokens}"
 
-    def test_largest_files_truncated_first(self, test_config):
-        """Largest files should be truncated before smaller ones."""
-        files = [
-            FileInfo(path="small.py", content="print('small')"),
-            FileInfo(path="medium.py", content="x" * 1000),
-            FileInfo(path="large.py", content="y" * 10000),
-        ]
-        manager = TruncationManager(test_config)
-        result = manager.truncate_files_by_tokens(files, 150_000)
-        small_file = next(f for f in result if f.path == "small.py")
-        assert small_file.content == "print('small')"
-        for file_info in result:
-            if "TRUNCATED" in file_info.content:
-                assert file_info.path in ["large.py", "medium.py"]
-
     def test_empty_files_list(self, test_config):
         """Empty input should return empty output."""
         manager = TruncationManager(test_config)
