@@ -21,7 +21,6 @@ import {
   assertNetworkSettled,
   assertNoPageErrors,
   prepareDeterministicPage,
-  screenshotElement,
   waitForStable,
   WAIT_TIMEOUT_MS,
 } from "../../../../util/testing/frontend_visual/capture.mjs";
@@ -266,20 +265,7 @@ try {
   for (const { scene, colorScheme } of SHOTS.filter(({ scene, colorScheme }) =>
     mine.has(`${scene.name}-${colorScheme}`)
   )) {
-    const {
-      name,
-      viewport,
-      click,
-      clicks,
-      closeApprovals,
-      expectVisible,
-      element,
-      fullPage = false,
-      frame,
-      scrollToBottom,
-      clickTabText,
-      typeInto,
-    } = scene;
+    const { name, viewport, clicks, closeApprovals, expectVisible, frame, scrollToBottom } = scene;
     const page = await browser.newPage();
     // One scene must not hide the rest: a failure is recorded and the sweep continues, so a
     // single run enumerates every broken scene (and every route its mocks are missing).
@@ -330,40 +316,10 @@ try {
         if (drawerClose) await drawerClose.click();
         await page.waitForSelector(".haku-shell-drawer", { hidden: true, timeout: WAIT_TIMEOUT_MS });
       }
-      // A scene whose subject is what a control does with operator input has to supply that input
-      // first — a composer's Send stays disabled until something is typed.
-      if (typeInto) {
-        await page.waitForSelector(typeInto.selector, { visible: true, timeout: WAIT_TIMEOUT_MS });
-        await page.type(typeInto.selector, typeInto.text);
-        await waitForStable(page);
-      }
       // Some scenes need clicks to reveal state internal to a component: a popover's open state
       // (location-sharing control) or history rows toggled into their detailed view. Each click
       // re-renders the DOM, so wait for its network and paint state before the next one.
-      const sceneClicks = clicks ?? (click ? [click] : []);
-      if (clickTabText) {
-        await page.evaluate((label) => {
-          const tab = [...document.querySelectorAll('[role="tab"]')].find(
-            (candidate) => candidate.textContent?.trim() === label
-          );
-          if (!tab) throw new Error(`No tab found for ${label}`);
-          tab.scrollIntoView({ block: "nearest", inline: "nearest" });
-          tab.click();
-        }, clickTabText);
-        await page.waitForFunction(
-          (label) =>
-            [...document.querySelectorAll('[role="tab"]')].some(
-              (candidate) =>
-                candidate.textContent?.trim() === label && candidate.getAttribute("aria-selected") === "true"
-            ),
-          { timeout: WAIT_TIMEOUT_MS },
-          clickTabText
-        );
-        await page.mouse.move(0, 0);
-        await waitForStable(page);
-        await assertNetworkSettled(page, { context: `scene ${name}` });
-      }
-      for (const selector of sceneClicks) {
+      for (const selector of clicks ?? []) {
         await page.click(selector);
         await waitForStable(page);
         await assertNetworkSettled(page, { context: `scene ${name}` });
@@ -380,7 +336,7 @@ try {
       // that clicks must also state what the clicks were for; `expectVisible` is its own proof.
       if (expectVisible) {
         await page.waitForSelector(expectVisible, { visible: true, timeout: WAIT_TIMEOUT_MS });
-      } else if (clicks ?? click ?? clickTabText) {
+      } else if (clicks) {
         throw new Error(`scene ${name}: has clicks but no expectVisible — assert what they reveal`);
       }
       if (frame) {
@@ -391,7 +347,7 @@ try {
         // so this must not run there).
         await page.waitForSelector('[aria-label="Syncing"]', { hidden: true, timeout: WAIT_TIMEOUT_MS });
       }
-      // The settings scene's MCP server list resolves through two chained async mock-fetch
+      // The settings scene's MCP server list resolves through chained async mock-fetch
       // rounds (list, then a per-connection status probe). Waiting for these loaders to clear
       // is a no-op on scenes that never had them: `hidden: true` is already satisfied for a
       // selector that was never in the DOM.
@@ -421,10 +377,7 @@ try {
       assertNoPageErrors(page, { context: `scene ${name}` });
       await waitForStable(page);
       const file = `${name}-${colorScheme}.png`;
-      const shot = element
-        ? await screenshotElement(page, element, { context: `scene ${name}` })
-        : await page.screenshot({ fullPage });
-      writeFileSync(join(outDir, file), shot);
+      writeFileSync(join(outDir, file), await page.screenshot());
       assets.push({ path: file, label: `${name} - ${colorScheme}` });
       console.log(`wrote ${join(outDir, file)}`);
     } catch (error) {

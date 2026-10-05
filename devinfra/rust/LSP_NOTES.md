@@ -59,9 +59,12 @@ bazelisk run @rules_rust//tools/rust_analyzer:gen_rust_project -- --config=nolin
 ```
 
 Creates `rust-project.json` at the workspace root (~741KB, 439 crates).
-The `--config=nolint` flag skips mypy/ruff checks during build analysis.
 The file is in `.gitignore` — it contains machine-specific absolute paths
 (Bazel cache dirs under `~/.cache/bazel/`, Nix store paths).
+
+`--config=nolint` after `--` is consumed by `gen_rust_project`'s own `--config` option
+(rules_rust 0.74.0), which passes it to the `bazel build` it runs for crate discovery, not to
+the outer `bazelisk run` that builds `gen_rust_project`.
 
 ## Why this works
 

@@ -66,12 +66,20 @@ def _sandbox(label: str) -> WorkloadPrincipal:
 
 SANDBOX_A = _sandbox("a")
 SANDBOX_B = _sandbox("b")
+READER = WorkloadPrincipal(
+    namespace=NAMESPACE,
+    service_account_name="test-reader",
+    service_account_subject=f"system:serviceaccount:{NAMESPACE}:test-reader",
+    pod_name="test-reader-pod",
+    pod_uid="pod-reader-uid",
+)
 ACCOUNT_A = ServiceAccountRef(namespace=NAMESPACE, name=SANDBOX_A.service_account_name)
 ACCOUNT_B = ServiceAccountRef(namespace=NAMESPACE, name=SANDBOX_B.service_account_name)
+ACCOUNT_READER = ServiceAccountRef(namespace=NAMESPACE, name=READER.service_account_name)
 CALLER_A = workload_principal(SANDBOX_A)
 CALLER_B = workload_principal(SANDBOX_B)
 OPERATOR = OperatorPrincipal(issuer="test-bff", subject="operator")
-WORKLOAD_TOKENS = {"workload-a": SANDBOX_A, "workload-b": SANDBOX_B}
+WORKLOAD_TOKENS = {"workload-a": SANDBOX_A, "workload-b": SANDBOX_B, "workload-reader": READER}
 
 
 class FakeSandboxResolver:
@@ -104,7 +112,12 @@ class LeakyFailingExecutor(CountingExecutor):
         raise RuntimeError("provider rejected Authorization: Bearer provider-token-must-not-escape")
 
 
-async def _client(service: ActionService, *, catalog: ActionCatalog | None = None) -> httpx.AsyncClient:
+async def _client(
+    service: ActionService,
+    *,
+    catalog: ActionCatalog | None = None,
+    reader_accounts: frozenset[ServiceAccountRef] = frozenset(),
+) -> httpx.AsyncClient:
     app = create_app(
         service,
         cast(WorkloadPrincipalResolver, FakeSandboxResolver()),
@@ -114,6 +127,7 @@ async def _client(service: ActionService, *, catalog: ActionCatalog | None = Non
         updates=ActionUpdates("postgresql://unused-test-listener"),
         direct_wait_seconds=30,
         max_wait_seconds=30,
+        reader_accounts=reader_accounts,
     )
     return httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://actions.test")
 
@@ -878,6 +892,58 @@ async def test_cancellation_http_is_owner_only_and_needs_no_version(
         duplicate = await client.post(path, headers=_workload("workload-a"))
         assert CancellationResult.model_validate(duplicate.json()).outcome is CancellationOutcome.ALREADY_CANCELLED
         assert executor.requests == []
+
+
+async def test_service_reader_reads_every_owners_requests_and_holds_no_mutation_authority(
+    engine: AsyncEngine, echo_catalog: ActionCatalog
+) -> None:
+    service = ActionService(ActionStore(make_sessionmaker(engine)), echo_catalog, {"agentplane": CountingExecutor()})
+    reader = _workload("workload-reader")
+    envelope = {
+        "title": "test title for the service reader",
+        "action": {"group": "agentplane", "name": "echo"},
+        "arguments": {"text": "hello"},
+    }
+    async with await _client(service, reader_accounts=frozenset({ACCOUNT_READER})) as client:
+        submitted = await client.post(
+            "/v1/action-requests", headers=_workload("workload-a"), json={**envelope, "idempotency_key": "reader-a"}
+        )
+        submitted.raise_for_status()
+        request = submitted.json()
+        other_submitted = await client.post(
+            "/v1/action-requests", headers=_workload("workload-b"), json={**envelope, "idempotency_key": "reader-b"}
+        )
+        other_submitted.raise_for_status()
+        denied = await client.post(
+            _operator_path(request["id"], "/decision"),
+            headers=_operator(),
+            json={"verdict": "deny", "expected_version": request["version"], "idempotency_key": "deny-test"},
+        )
+        denied.raise_for_status()
+
+        read_path = f"/v1/action-requests/{request['id']}"
+        for suffix in ["", "/events"]:
+            assert (await client.get(read_path + suffix, headers=reader)).status_code == 200
+            assert (await client.get(read_path + suffix, headers=_workload("workload-b"))).status_code == 404
+        detail = await client.get(read_path, headers=reader)
+        assert detail.json()["caller"] == CALLER_A.account.model_dump()
+        listing = await client.get("/v1/action-requests", headers=reader)
+        assert {item["id"] for item in listing.json()} == {request["id"], other_submitted.json()["id"]}
+        first_page = await client.get(read_path + "/events", params={"limit": 1}, headers=reader)
+        assert len(first_page.json()) == 1
+
+        assert (await client.post(read_path + "/cancel", headers=reader)).status_code == 401
+        assert (
+            await client.post("/v1/action-requests", json={**envelope, "idempotency_key": "forbidden"}, headers=reader)
+        ).status_code == 401
+        assert (
+            await client.post(
+                _operator_path(request["id"], "/decision"),
+                json={"verdict": "deny", "expected_version": 1, "idempotency_key": "forbidden"},
+                headers=reader,
+            )
+        ).status_code == 401
+        assert (await client.get(_operator_path(request["id"]), headers=reader)).status_code == 401
 
 
 if __name__ == "__main__":

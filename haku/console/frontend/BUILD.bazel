@@ -946,10 +946,10 @@ spa_bundle(
 # can't fetch repos in web sessions — so it is a js_test, not a `bb run` binary. It is a
 # generator, not a pixel-diff gate: it passes as long as every scene renders.
 #
-# medium: 58 shots (29 scenes x light/dark) split four ways, measured 26-35s per shard against 78s
-# for the whole sweep on one browser (invocations d7a23bd4 and 2759e0d4). `--test_filter=<stem>`
+# medium: the shots (scenes x light/dark) are split across shards, measured 26-35s per shard against
+# 78s for the whole sweep on one browser (invocations d7a23bd4 and 2759e0d4). `--test_filter=<stem>`
 # renders one shot -- 11s rather than the full sweep -- where before there was no way to ask for
-# less than all 58.
+# less than all of them.
 
 ts_library(
     name = "screenshot_harness_lib",

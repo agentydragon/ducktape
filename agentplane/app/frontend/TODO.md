@@ -17,13 +17,6 @@ a field a harness adds sends every such call to the JSON view while the tests st
 
 ## Thread view UX
 
-- **Per-message evidence icon is always-on visual noise**: `EvidenceToggle` (`threads/thread_evidence.tsx`, the
-  magnifying-glass `IconZoomCode` button) renders unconditionally at every one of its 7 call sites, one per
-  message/entity, whether or not a reader is looking at that row. Consider a per-message overflow affordance
-  instead -- e.g. a vertical-dots button, shown only on hover (desktop) or tap (mobile), holding this and other
-  message-level debug actions. This would be its own menu, separate from the thread's topbar menu (`topbar.tsx`'s
-  `TopbarActions`, holding "Debug history" / "Shut down harness" / thread id) -- a per-message menu and a
-  per-thread menu, not one merged control, even though both would share the dots-icon pattern.
 - **Reasoning disclosure toggle with nothing behind it**: the reasoning branch of `EntityCard`'s body
   (`threads/thread_cards.tsx`) wraps a reasoning item's text in `LazyBody`'s `RetainedDisclosure` -- a
   `<details>` (`threads/retained_disclosures.tsx`) whose body is shown only once expanded, though the window reads it

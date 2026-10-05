@@ -915,6 +915,32 @@ export const SCENARIOS: Record<string, Scenario> = {
     readySelectors: ['[data-thread-anchor="34"] [data-evidence-observation]'],
     captureViewport: true,
   },
+  // The evidence toggle takes no space and shows on demand: under the pointer on a desktop, hung in
+  // the gutter beside the user's bubble and in the corner of a reply; on a touch screen, once tapped.
+  session_evidence_hover_bubble: {
+    element: "#app",
+    route: SESSION_ROUTE,
+    viewport: { width: 1200, height: 900 },
+    hover: '[data-thread-anchor="4"] .agentplane-user-bubble',
+    readySelectors: ['[data-thread-anchor="4"] .agentplane-user-bubble', '[data-thread-anchor="34"]'],
+    captureViewport: true,
+  },
+  session_evidence_hover_reply: {
+    element: "#app",
+    route: SESSION_ROUTE,
+    viewport: { width: 1200, height: 900 },
+    hover: '[data-thread-anchor="34"] .agentplane-evidence-owner',
+    readySelectors: ['[data-thread-anchor="34"] .agentplane-evidence-owner'],
+    captureViewport: true,
+  },
+  session_evidence_tap_phone: {
+    element: "#app",
+    route: SESSION_ROUTE,
+    viewport: { ...PHONE, hasTouch: true },
+    tap: '[data-thread-anchor="34"] .agentplane-evidence-owner',
+    readySelectors: ['[data-thread-anchor="34"] .agentplane-evidence-owner'],
+    captureViewport: true,
+  },
   // Native observations are inspected through the chronological drawer. The projected view has
   // no raw-event URL mode: its semantic entities stay identical while the drawer shows archive rows.
   session_raw: {

@@ -11,6 +11,8 @@ export interface Viewport {
   width: number;
   height: number;
   deviceScaleFactor?: number;
+  /** Emulate a touch screen, which reports `hover: none` and takes `tap`. */
+  hasTouch?: boolean;
 }
 
 /** How one scene is captured. Every field here is read by the sweep; nothing else is. */
@@ -35,6 +37,10 @@ export interface ScenarioOptions {
   readySelectors?: string[];
   /** Screenshot the viewport rather than the element, preserving clipping instead of expanding. */
   captureViewport?: boolean;
+  /** A selector to move the pointer over once the scene is ready, for what only `:hover` shows. */
+  hover?: string;
+  /** A selector to tap once the scene is ready. The viewport needs `hasTouch`. */
+  tap?: string;
 }
 
 /** Render every scenario this shard owns on one browser, then exit 0 (pass) or 1 (fail). */

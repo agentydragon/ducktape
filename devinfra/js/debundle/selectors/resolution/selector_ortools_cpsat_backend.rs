@@ -884,24 +884,6 @@ mod tests {
     }
 
     #[test]
-    fn num_search_workers_accepts_a_positive_override() {
-        let settings = CpSatSettings::from_lookup(env(&[(NUM_SEARCH_WORKERS_ENV, "2")])).unwrap();
-        let result = OrToolsCpSatBackend::new(settings)
-            .solve(&CompiledSelectorProblem {
-                variables: vec![dense(0, 1)],
-                target_projections: projections(&[0]),
-                ..problem()
-            })
-            .unwrap();
-
-        assert_eq!(result.status, BackendSolveStatus::Satisfiable);
-        assert_eq!(
-            result.assignment_coverage,
-            BackendAssignmentCoverage::TargetSupportComplete
-        );
-    }
-
-    #[test]
     fn invalid_settings_name_their_variable() {
         for (name, value) in [
             (NUM_SEARCH_WORKERS_ENV, "0"),
@@ -919,10 +901,16 @@ mod tests {
     }
 
     #[test]
-    fn max_time_seconds_is_cp_sats_own_limit() {
-        let settings = CpSatSettings::from_lookup(env(&[(MAX_TIME_SECONDS_ENV, "2.5")])).unwrap();
+    fn overrides_reach_cp_sats_own_parameters() {
+        let parameters = CpSatSettings::from_lookup(env(&[
+            (NUM_SEARCH_WORKERS_ENV, "2"),
+            (MAX_TIME_SECONDS_ENV, "2.5"),
+        ]))
+        .unwrap()
+        .sat_parameters();
 
-        assert_eq!(settings.sat_parameters().max_time_in_seconds, Some(2.5));
+        assert_eq!(parameters.num_workers, Some(2));
+        assert_eq!(parameters.max_time_in_seconds, Some(2.5));
     }
 
     // Independent groups solve in parallel in one process (selector_resolve

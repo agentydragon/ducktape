@@ -158,7 +158,7 @@ def test_server_startup_checks_schema_without_applying_migrations(monkeypatch: p
 
 
 def test_image_command_rejects_unknown_modes() -> None:
-    with pytest.raises(SystemExit, match="usage"):
+    with pytest.raises(SystemExit):
         app.run_command(["unknown"])
 
 

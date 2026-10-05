@@ -1,0 +1,44 @@
+/* The evidence toggle takes no space: it is an overlay in the corner of the item it belongs to (its
+   owner), shown while the item is hovered or focused and while its evidence is open. A touch screen
+   has no hover to count on, so a tap marks the item instead (revealEvidenceOnTap). Owners do not
+   nest, so the descendant selectors below reveal exactly one toggle. */
+.agentplane-evidence-owner {
+  position: relative;
+}
+
+.agentplane-evidence-owner .agentplane-evidence-toggle {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  opacity: 0;
+  pointer-events: none;
+}
+
+/* A hidden toggle stays focusable, so Tab reaches it and :focus-within shows it. */
+.agentplane-evidence-owner:hover .agentplane-evidence-toggle,
+.agentplane-evidence-owner:focus-within .agentplane-evidence-toggle,
+.agentplane-evidence-owner .agentplane-evidence-toggle[aria-expanded="true"] {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+/* Only a touch screen reads the mark, so a click on a desktop does not leave the toggle shown. */
+@media (hover: none) {
+  .agentplane-evidence-owner[data-evidence-revealed] .agentplane-evidence-toggle {
+    opacity: 1;
+    pointer-events: auto;
+  }
+}
+
+/* The user's bubble hangs its toggle in the empty gutter beside it, flush against the bubble so the
+   pointer crosses no gap on the way. A bubble with an action button has that gutter taken, and
+   keeps the toggle in its corner. */
+.agentplane-user-bubble > .agentplane-evidence-toggle {
+  top: 0;
+  right: 100%;
+}
+
+.agentplane-user-bubble[data-has-action="true"] > .agentplane-evidence-toggle {
+  top: 4px;
+  right: 4px;
+}

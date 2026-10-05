@@ -242,6 +242,19 @@ py_test(
         ":worktree_ids",
         ":wt_server",
         "//:conftest",
+        "@pypi//psutil",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_gitstatusd_listener",
+    srcs = ["test_gitstatusd_listener.py"],
+    deps = [
+        ":conftest",
+        ":gitstatusd_listener",
+        "//:conftest",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],

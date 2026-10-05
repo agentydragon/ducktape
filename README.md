@@ -10,7 +10,7 @@ Personal infrastructure monorepo. Manages configuration for: **agentydragon** (T
 
 - Deps: add to `pyproject.toml`, regenerate the lockfile via <devinfra/docs/lockfiles.md>, use `@pypi//pkg` in BUILD
 - Lockfile: `requirements_bazel.txt` (never edit manually)
-- Lint: ruff + mypy via Bazel aspects (default on; `--config=nolint` to skip)
+- Lint: ruff + mypy via Bazel aspects (default on). `--config=nolint` skips all lint: <devinfra/docs/linting.md>
 
 ### Gazelle
 

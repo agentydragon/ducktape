@@ -620,6 +620,7 @@ def test_admin_users_endpoint_lists_seeded_users(admin_app: tuple[TestClient, Ca
 def test_non_admin_admin_endpoints_return_403(non_admin_client: TestClient) -> None:
     assert non_admin_client.get("/admin/users").status_code == 403
     assert non_admin_client.get("/admin/state?user=default").status_code == 403
+    assert non_admin_client.get("/admin/casino/stats?user=default").status_code == 403
 
 
 def test_admin_state_returns_target_user_state(admin_app: tuple[TestClient, Callable[[str], None]]) -> None:
@@ -633,16 +634,15 @@ def test_admin_state_returns_target_user_state(admin_app: tuple[TestClient, Call
     assert r.json()["balance"]["credits_millis"] == 12000
 
 
-def test_admin_state_unknown_user_returns_404_without_seeding(
-    admin_app: tuple[TestClient, Callable[[str], None]],
-) -> None:
-    """A typo in ?user= must 404, NOT lazy-seed a brand-new user."""
+def test_admin_unknown_user_returns_404_without_seeding(admin_app: tuple[TestClient, Callable[[str], None]]) -> None:
+    """A typo in ?user= must 404 on every /admin read, NOT lazy-seed a brand-new user."""
     c, set_user = admin_app
     set_user("rai")
     # 'rai' must exist for /admin/users to be non-empty later.
     c.get("/state")
 
-    assert c.get("/admin/state", params={"user": "ghost"}).status_code == 404
+    for path in ("/admin/state", "/admin/casino/stats"):
+        assert c.get(path, params={"user": "ghost"}).status_code == 404
 
     # The 404 path must not have seeded 'ghost'.
     assert "ghost" not in c.get("/admin/users").json()["users"]
@@ -677,18 +677,6 @@ def test_admin_casino_stats_returns_target_user_stats(admin_app: tuple[TestClien
     body = r.json()
     assert body["username"] == "auragon"
     assert body["event_count"] == 1
-
-
-def test_admin_casino_stats_404_for_unknown_user(admin_app: tuple[TestClient, Callable[[str], None]]) -> None:
-    c, set_user = admin_app
-    set_user("rai")
-    c.get("/state")  # seed 'rai' so /admin/users isn't empty
-    r = c.get("/admin/casino/stats", params={"user": "ghost"})
-    assert r.status_code == 404
-
-
-def test_admin_casino_stats_403_for_non_admin(non_admin_client: TestClient) -> None:
-    assert non_admin_client.get("/admin/casino/stats?user=default").status_code == 403
 
 
 if __name__ == "__main__":

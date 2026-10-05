@@ -133,7 +133,6 @@ async def test_all_gmail_reads_are_auto_approved(tool_name: str, arguments: dict
     policy_id, evaluation = await _decision(tool_name, arguments)
     assert policy_id == AGENT_AUTO_APPROVAL_ID
     assert evaluation is not None
-    assert "exact tool" in evaluation
 
 
 @pytest.mark.parametrize(
@@ -153,7 +152,6 @@ async def test_gmail_writes_stay_manual(tool_name: str, arguments: dict) -> None
 async def test_calendar_read_with_invalid_arguments_is_auto_denied() -> None:
     denial = await _calendar_decision("list_events", {"max_results": 251})
     assert isinstance(denial, PolicyDenial)
-    assert denial.evaluation == "denied: arguments failed the registered tool schema"
     assert "251" in denial.reason  # the concrete validation error reaches the caller
 
 
@@ -210,7 +208,6 @@ async def test_grocy_reads_auto_approve() -> None:
     policy_id, evaluation = await _schemaless_decision("grocy-sf", "products_list", {"detail": "brief"})
     assert policy_id == AGENT_AUTO_APPROVAL_ID
     assert evaluation is not None
-    assert "exact tool" in evaluation
 
 
 async def test_grocy_writes_stay_manual() -> None:

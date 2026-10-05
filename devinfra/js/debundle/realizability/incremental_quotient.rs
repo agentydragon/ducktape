@@ -1155,6 +1155,11 @@ impl IncrementalQuotient {
         let mut overlay = QuotientOverlay::default();
         for edge_id in impacted_edges {
             let edge = owner_graph.edge(edge_id);
+            // Both sides take `project_endpoints`' gate view, so a residual
+            // caller's fallback-promoted edge contributes nothing to either:
+            // the overlay never adds a residual -> target edge the gate lacks
+            // when the target moves, nor cancels a real edge on the same
+            // module pair when the caller leaves residual.
             let current =
                 edge_contribution(edge, partition.residual(), |owner| partition.of(owner));
             let next = edge_contribution(edge, partition.residual(), |owner| {

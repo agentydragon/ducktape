@@ -36,27 +36,6 @@ fn bindings_assign_and_unassign_require_graph_or_no_verify() {
 }
 
 #[test]
-fn assign_rejects_readable_name_claimed_by_source_match_before_writing() {
-    let fixture = GraphFixture::new(
-        "const alpha = 1;\nconst beta = alpha;\nconsole.log(beta);\n",
-        &[
-            (
-                "a.yaml",
-                "members: [{selector: {binding: {name: alpha}}}]\n",
-            ),
-            (
-                "b.yaml",
-                "source_matches: [{match: 'const beta = alpha;', bindings: [{local: beta, name: Existing}]}]\n",
-            ),
-        ],
-    );
-    fixture.assert_rejected_unchanged(
-        &["bindings", "assign", "alpha:c:Existing"],
-        &["name collision", "source_matches[0].bindings[0]"],
-    );
-}
-
-#[test]
 fn bulk_edits_resolve_both_spellings_against_the_pre_edit_spec() {
     let fixture = GraphFixture::new(
         "const alpha = 1; const beta = 2; console.log(alpha + beta);",

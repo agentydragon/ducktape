@@ -1,6 +1,6 @@
 import { ActionIcon, Button, Group, Stack, Text } from "@mantine/core";
 import IconZoomCode from "@tabler/icons-react/dist/esm/icons/IconZoomCode.mjs";
-import { type CSSProperties, type JSX, useEffect, useEffectEvent, useRef, useState } from "react";
+import { type CSSProperties, type JSX, type MouseEvent, useEffect, useEffectEvent, useRef, useState } from "react";
 
 import {
   displayableError,
@@ -13,6 +13,7 @@ import { JsonView } from "../json_view";
 import { ChronologicalDebugIcon } from "./chronological_debug";
 import { RetainedDisclosure, useRetainedDisclosure } from "./retained_disclosures";
 import type { ThreadEntity } from "./thread_sync";
+import "./thread_evidence.css";
 
 function EvidenceFramesPage({
   threadId,
@@ -199,6 +200,7 @@ export function EvidenceToggle({ entity, style }: { entity: ThreadEntity; style?
       size="xs"
       variant={open ? "light" : "subtle"}
       color="gray"
+      className="agentplane-evidence-toggle"
       aria-label="Evidence"
       title="Evidence"
       aria-expanded={open}
@@ -208,6 +210,20 @@ export function EvidenceToggle({ entity, style }: { entity: ThreadEntity; style?
       <IconZoomCode size={14} />
     </ActionIcon>
   );
+}
+
+const EVIDENCE_REVEALED = "data-evidence-revealed";
+
+/** A touch screen has no hover to show an item's evidence toggle, so a tap on the item marks it
+ * instead, and a tap on another item, or on nothing, moves the mark. It is one delegated handler on
+ * the history and a DOM attribute, not state per item: nothing re-renders and no row resizes. The
+ * mark is set on every device, but only a touch screen's stylesheet reads it. */
+export function revealEvidenceOnTap(event: MouseEvent<HTMLElement>): void {
+  const { target } = event;
+  if (!(target instanceof Element) || target.closest("a, button, summary, input, textarea, select")) return;
+  if (window.getSelection()?.isCollapsed === false) return;
+  event.currentTarget.querySelector(`[${EVIDENCE_REVEALED}]`)?.removeAttribute(EVIDENCE_REVEALED);
+  target.closest(".agentplane-evidence-owner")?.setAttribute(EVIDENCE_REVEALED, "");
 }
 
 export function EvidencePanel({ threadId, entity }: { threadId: string; entity: ThreadEntity }): JSX.Element {

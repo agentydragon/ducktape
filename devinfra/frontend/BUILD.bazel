@@ -1,13 +1,9 @@
 # Frontend build tooling
-# Vite and Storybook binaries from root workspace
+# Vite binary from root workspace
 
-load("@npm_ducktape//:storybook/package_json.bzl", storybook_bin = "bin")
 load("@npm_ducktape//:vite/package_json.bzl", vite_bin = "bin")
 
 package(default_visibility = ["//visibility:public"])
 
 # Vite binary for frontend builds
 vite_bin.vite_binary(name = "vite")
-
-# Storybook binary for dev server
-storybook_bin.storybook_binary(name = "storybook")

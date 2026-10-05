@@ -560,22 +560,43 @@ fn a_free_name_may_bind_the_chunk_name_of_a_renamed_declaration() {
     });
 }
 
+// A run-hole keyword anywhere it is not an element of its own list reaches the
+// node matcher instead of being consumed as a list carrier, so the match fails
+// closed with `Unsupported` rather than treating the keyword as an ordinary
+// identifier. One case per keyword plus the parent kinds a carrier rule might
+// wrongly accept; the lone `(SEQ_EXPRS)` case is the instructive one, since a
+// comma sequence needs at least two elements and the keyword there is not a hole.
 #[test]
-fn fail_closed_on_misplaced_run_hole() {
+fn run_hole_keyword_outside_its_list_fails_closed() {
     js_ast::with_swc_globals(|| {
-        // `ARGS` in expression position (not an argument list) is a misplaced run
-        // hole: it reaches the node matcher rather than being consumed as a list
-        // carrier, so the match errors rather than treating it as an identifier.
-        let result = selector_match::matches(
-            &facts("const a = ARGS;"),
-            &facts("const a = b;"),
-            Mode::Exact,
-            &free("const a = ARGS;"),
-        );
-        assert!(
-            matches!(result, Err(selector_match::Unsupported { .. })),
-            "misplaced run hole must be fail-closed, got {result:?}",
-        );
+        for (label, selector) in [
+            ("ARGS in expression position", "const a = ARGS;"),
+            (
+                "ARRAY_ELEMENTS in expression position",
+                "const c = ARRAY_ELEMENTS;",
+            ),
+            ("SEQ_EXPRS in expression position", "const c = SEQ_EXPRS;"),
+            (
+                "lone SEQ_EXPRS in parentheses",
+                "function f() { return (SEQ_EXPRS); }",
+            ),
+            (
+                "SEQ_EXPRS as a call argument",
+                "function f() { call(SEQ_EXPRS); }",
+            ),
+            ("SEQ_EXPRS in an array literal", "const c = [SEQ_EXPRS, 1];"),
+        ] {
+            let result = selector_match::matches(
+                &facts(selector),
+                &facts("const c = x;"),
+                Mode::Exact,
+                &free(selector),
+            );
+            assert!(
+                matches!(result, Err(selector_match::Unsupported { .. })),
+                "{label}: misplaced run hole must be fail-closed, got {result:?}",
+            );
+        }
     });
 }
 
@@ -782,48 +803,19 @@ fn parenthesized_sequence_body_matches_on_its_inner_assignment() {
 // arrays): a bare identifier element absorbing a run of array elements, so a long
 // array initializer can be anchored on its few stable elements without spelling
 // the rest. It is matched as an ordered subsequence with gaps, exactly like the
-// other run holes (the carriers partition the needle into fixed segments).
+// other run holes (the carriers partition the needle into fixed segments); the
+// placement itself (anchoring, empty runs, interior brackets) is that shared
+// algorithm, driven by the ARGS / STMT_LIST / ANYTHING rows of
+// `fact_matcher_verdicts_on_faithful_subset`, so these rows pin what is specific
+// to the array carrier.
 #[test]
 fn array_elements_run_hole_anchors_a_few_stable_elements() {
     js_ast::with_swc_globals(|| {
         let cases = [
-            // anchor-first then the run absorbs the rest (any length, incl. empty).
+            // anchor-first then the run absorbs the rest (any length).
             Case {
                 selector: "const c = [\"keep\", ARRAY_ELEMENTS];",
                 subject: "const c = [\"keep\", 1, 2, 3];",
-                alpha: false,
-                expected: true,
-            },
-            Case {
-                selector: "const c = [\"keep\", ARRAY_ELEMENTS];",
-                subject: "const c = [\"keep\"];",
-                alpha: false,
-                expected: true,
-            },
-            // the anchored-left fixed element must still match.
-            Case {
-                selector: "const c = [\"keep\", ARRAY_ELEMENTS];",
-                subject: "const c = [\"other\", 1];",
-                alpha: false,
-                expected: false,
-            },
-            // run then an anchored-right element; the last element must match.
-            Case {
-                selector: "const c = [ARRAY_ELEMENTS, \"last\"];",
-                subject: "const c = [1, 2, \"last\"];",
-                alpha: false,
-                expected: true,
-            },
-            Case {
-                selector: "const c = [ARRAY_ELEMENTS, \"last\"];",
-                subject: "const c = [1, 2, \"nope\"];",
-                alpha: false,
-                expected: false,
-            },
-            // two run holes bracket one interior anchor.
-            Case {
-                selector: "const c = [ARRAY_ELEMENTS, \"mid\", ARRAY_ELEMENTS];",
-                subject: "const c = [1, \"mid\", 2, 3];",
                 alpha: false,
                 expected: true,
             },
@@ -854,27 +846,6 @@ fn array_elements_run_hole_anchors_a_few_stable_elements() {
     });
 }
 
-// `ARRAY_ELEMENTS` outside an array-element list (here, in expression position) is
-// a misplaced run-hole keyword: it reaches the node matcher rather than being
-// consumed as a list carrier, so the match fails closed with `Unsupported` rather
-// than treating the keyword as an ordinary identifier — the same fail-closed
-// contract the other run holes hold.
-#[test]
-fn fail_closed_on_misplaced_array_elements_hole() {
-    js_ast::with_swc_globals(|| {
-        let result = selector_match::matches(
-            &facts("const c = ARRAY_ELEMENTS;"),
-            &facts("const c = x;"),
-            Mode::Exact,
-            &free("const c = ARRAY_ELEMENTS;"),
-        );
-        assert!(
-            matches!(result, Err(selector_match::Unsupported { .. })),
-            "misplaced ARRAY_ELEMENTS must be fail-closed, got {result:?}",
-        );
-    });
-}
-
 // `SEQ_EXPRS` is the comma-sequence run hole: a bare identifier element of a
 // sequence expression, absorbing a run of the candidate's sequence elements. A
 // React Compiler memo tail is one cache write per hook dependency plus one, so
@@ -882,7 +853,9 @@ fn fail_closed_on_misplaced_array_elements_hole() {
 // subsequence with gaps, exactly like the other run holes: the carriers
 // partition the sequence into fixed segments, a missing leading hole anchors
 // the first segment at the sequence's start, a missing trailing hole anchors
-// the last at its end.
+// the last at its end. Placement is the shared algorithm (see
+// `array_elements_run_hole_anchors_a_few_stable_elements`); these rows pin the
+// sequence carrier.
 #[test]
 fn seq_exprs_run_hole_absorbs_a_comma_sequence_run() {
     js_ast::with_swc_globals(|| {
@@ -894,31 +867,11 @@ fn seq_exprs_run_hole_absorbs_a_comma_sequence_run() {
                 alpha: false,
                 expected: true,
             },
-            // the anchored element must still match.
-            Case {
-                selector: "function f() { return (first, SEQ_EXPRS); }",
-                subject: "function f() { return (other, 1); }",
-                alpha: false,
-                expected: false,
-            },
             // an anchored element with no run beside it: the subject has to be a
             // sequence at all — the hole never matches a non-sequence.
             Case {
                 selector: "function f() { return (first, SEQ_EXPRS); }",
                 subject: "function f() { return (first); }",
-                alpha: false,
-                expected: false,
-            },
-            // run then an anchored last element.
-            Case {
-                selector: "function f() { return (SEQ_EXPRS, last); }",
-                subject: "function f() { return (1, 2, last); }",
-                alpha: false,
-                expected: true,
-            },
-            Case {
-                selector: "function f() { return (SEQ_EXPRS, last); }",
-                subject: "function f() { return (1, 2, nope); }",
                 alpha: false,
                 expected: false,
             },
@@ -929,19 +882,6 @@ fn seq_exprs_run_hole_absorbs_a_comma_sequence_run() {
                 subject: "function f() { return (a, b); }",
                 alpha: false,
                 expected: true,
-            },
-            // two holes bracket the pinned elements between them.
-            Case {
-                selector: "function f() { return (first, SEQ_EXPRS, \"mid\", SEQ_EXPRS, last); }",
-                subject: "function f() { return (first, 1, \"mid\", 2, last); }",
-                alpha: false,
-                expected: true,
-            },
-            Case {
-                selector: "function f() { return (first, SEQ_EXPRS, \"mid\", SEQ_EXPRS, last); }",
-                subject: "function f() { return (first, 1, 2, last); }",
-                alpha: false,
-                expected: false,
             },
             // alpha: a pinned identifier still binds one subject name across the
             // run, so two pins of the same name reject a candidate that renames
@@ -982,34 +922,5 @@ fn seq_exprs_run_hole_absorbs_a_comma_sequence_run() {
             },
         ];
         assert_cases(cases);
-    });
-}
-
-// A misplaced `SEQ_EXPRS` — anywhere the keyword is not an element of a sequence
-// expression — reaches the node matcher instead of being consumed as a list
-// carrier, so the match fails closed with `Unsupported` rather than treating the
-// keyword as an ordinary identifier. A lone `(SEQ_EXPRS)` is the instructive
-// case: a comma sequence needs at least two elements, so the keyword there is
-// not a hole at all.
-#[test]
-fn fail_closed_on_misplaced_seq_exprs_hole() {
-    js_ast::with_swc_globals(|| {
-        for selector in [
-            "const c = SEQ_EXPRS;",
-            "function f() { return (SEQ_EXPRS); }",
-            "function f() { call(SEQ_EXPRS); }",
-            "const c = [SEQ_EXPRS, 1];",
-        ] {
-            let result = selector_match::matches(
-                &facts(selector),
-                &facts("const c = x;"),
-                Mode::Exact,
-                &free(selector),
-            );
-            assert!(
-                matches!(result, Err(selector_match::Unsupported { .. })),
-                "misplaced SEQ_EXPRS must be fail-closed, got {result:?}",
-            );
-        }
     });
 }

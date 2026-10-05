@@ -377,7 +377,7 @@ async def test_projection_epoch_replacement_retires_old_requests_and_preserves_d
 
     await page.route("**/evidence?*", hold_old_evidence)
     try:
-        await page.locator('[data-thread-anchor="3"]').get_by_role("button", name="Evidence", exact=True).click()
+        await click_evidence(page.locator('[data-thread-anchor="3"]'))
         async with asyncio.timeout(15):
             await ready.wait()
 
@@ -519,7 +519,7 @@ async def test_projected_browser_streams_runner_events_and_loads_evidence_lazily
                 ).to_be_visible()
                 assert not any("/evidence" in url for url in requests)
                 first_card = page.locator(f'[data-thread-anchor="{first.cursor}"]')
-                await first_card.get_by_role("button", name="Evidence", exact=True).click()
+                await click_evidence(first_card)
                 frame_summary = first_card.locator("summary", has_text=f"Observation {observed.cursor} raw frames")
                 await expect(frame_summary).to_be_visible()
                 assert not any("/frames?" in url for url in requests)
@@ -527,13 +527,13 @@ async def test_projected_browser_streams_runner_events_and_loads_evidence_lazily
                 frame = first_card.locator(".agentplane-code-block")
                 await expect(frame).to_contain_text("test-text-delta")
                 assert json_format.Parse(await frame.inner_text(), event_log_pb2.EventEntry()) == native
-                await first_card.get_by_role("button", name="Evidence", exact=True).click()
+                await click_evidence(first_card)
                 await expect(frame).to_have_count(0)
-                await first_card.get_by_role("button", name="Evidence", exact=True).click()
+                await click_evidence(first_card)
                 await expect(frame).to_contain_text("test-text-delta")
                 assert json_format.Parse(await frame.inner_text(), event_log_pb2.EventEntry()) == native
                 await page.screenshot(path=undeclared_outputs_dir() / "projected-evidence-reopened.png")
-                await first_card.get_by_role("button", name="Evidence", exact=True).click()
+                await click_evidence(first_card)
                 # The reasoning step and the tool call after it are one folded run, anchored at its first step.
                 run = page.locator(f'[data-thread-anchor="{reasoning.cursor}"]')
                 await expect(page.locator(f'[data-thread-anchor="{tool.cursor}"]')).to_have_count(0)
@@ -659,7 +659,7 @@ async def test_chronological_debug_is_lazy_paged_and_keeps_the_thread(
     # Follow the exact semantic observation back into the original archive, including packets
     # that have no item association. The context query ends at the selected observation.
     card = page.locator('[data-thread-anchor="3"]')
-    await card.get_by_role("button", name="Evidence", exact=True).click()
+    await click_evidence(card)
     await card.get_by_role("button", name="Inspect chronological context").first.click()
     await expect(observations.last).to_have_attribute("data-debug-observation", "3")
     assert parse_qs(urlsplit([url for url in requests if "/observations" in url][-1]).query)["before_cursor"] == ["4"]
@@ -1431,7 +1431,7 @@ async def test_failed_turn_preserves_confirmed_input_and_allows_another_turn(
         (thread,) = await thread_browser.store.list_threads(sandbox=SANDBOX)
         await expect_archived_events(thread_browser.event_logs, thread.id, source.entries)
         lifecycle = page.locator(f'[data-thread-anchor="{failed.cursor}"]')
-        await lifecycle.get_by_role("button", name="Evidence", exact=True).click()
+        await click_evidence(lifecycle)
         raw_frames = lifecycle.locator("summary", has_text=f"Observation {failed.cursor} raw frames")
         await raw_frames.click()
         frames_panel = raw_frames.locator("..")
@@ -1442,7 +1442,7 @@ async def test_failed_turn_preserves_confirmed_input_and_allows_another_turn(
         frame = frames_panel.locator(".agentplane-code-block")
         await expect(frame).to_contain_text("unsafe diagnostic")
         assert json_format.Parse(await frame.inner_text(), event_log_pb2.EventEntry()) == native
-        await lifecycle.get_by_role("button", name="Evidence", exact=True).click()
+        await click_evidence(lifecycle)
 
     await composer.fill("Test distinct input after the failed turn")
     await composer.press("Enter")
@@ -1675,8 +1675,15 @@ async def test_streamed_admission_survives_a_lost_http_reply_and_reload(thread_b
         await page.unroute_all(behavior="wait")
 
 
+async def click_evidence(scope: Locator) -> None:
+    """Click the Evidence toggle under `scope` the way a reader reaches it: it shows while its item is hovered."""
+    toggle = scope.get_by_role("button", name="Evidence", exact=True)
+    await toggle.locator("xpath=ancestor::*[contains(@class, 'agentplane-evidence-owner')][1]").hover()
+    await toggle.click()
+
+
 async def expand_item_evidence(page: Page) -> None:
-    await page.locator('[data-thread-anchor="3"]').get_by_role("button", name="Evidence", exact=True).click()
+    await click_evidence(page.locator('[data-thread-anchor="3"]'))
 
 
 async def open_debug_history(page: Page) -> None:

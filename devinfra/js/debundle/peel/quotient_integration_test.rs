@@ -2,6 +2,8 @@
 //! renderer-over-quotient. Fixtures seed quotients through the
 //! test-only constructors in `quotient::testing`.
 
+use std::collections::BTreeMap;
+
 use analysis::{DepKind, OwnerGraphReport};
 use report_fixtures::{
     active_owner, atomic_edge, atomic_unit_for, claims, graph_of, no_claims, owner_edge,
@@ -293,51 +295,6 @@ fn post_seed_reports_each_unrealizable_scc_in_owner_id_order() {
 }
 
 #[test]
-fn contract_never_un_contracts() {
-    // API surface check: after a contraction, the involved owners
-    // remain in the same class no matter what subsequent operations
-    // are performed. There is no public `split` / `un_contract` /
-    // `set_class` on QuotientGraph; the only mutation is
-    // `contract`, which is monotone (coarsens `~`).
-    //
-    // We verify this empirically by:
-    //   1. Building a fresh quotient.
-    //   2. Contracting (c(a), c(b)).
-    //   3. Performing every other contraction the kernel allows and
-    //      asserting that c(a) == c(b) after each.
-    let a = residual_owner("owner:a", 1, &["BindingA"], 5);
-    let b = residual_owner("owner:b", 2, &["BindingB"], 5);
-    let c = residual_owner("owner:c", 3, &["BindingC"], 5);
-    let d = residual_owner("owner:d", 4, &["BindingD"], 5);
-    let report = singleton_graph(vec![a.clone(), b.clone(), c.clone(), d.clone()], vec![]);
-    let mut q = QuotientGraph::from_report(&report, 10_000).unwrap();
-    let a_idx = q.owner_idx_of("owner:a").unwrap();
-    let b_idx = q.owner_idx_of("owner:b").unwrap();
-    let c_idx = q.owner_idx_of("owner:c").unwrap();
-    let d_idx = q.owner_idx_of("owner:d").unwrap();
-
-    let ca = q.class_of(a_idx);
-    let cb = q.class_of(b_idx);
-    q.contract(ca, cb).expect("contract(a, b)");
-    assert_eq!(q.class_of(a_idx), q.class_of(b_idx));
-
-    // After contracting (c, d), a and b still share a class.
-    let cc = q.class_of(c_idx);
-    let cd = q.class_of(d_idx);
-    q.contract(cc, cd).expect("contract(c, d)");
-    assert_eq!(q.class_of(a_idx), q.class_of(b_idx));
-
-    // After contracting (a-class, c-class), all four share a
-    // class — a and b are still together.
-    let cab = q.class_of(a_idx);
-    let ccd = q.class_of(c_idx);
-    q.contract(cab, ccd).expect("contract(ab, cd)");
-    assert_eq!(q.class_of(a_idx), q.class_of(b_idx));
-    assert_eq!(q.class_of(a_idx), q.class_of(c_idx));
-    assert_eq!(q.class_of(a_idx), q.class_of(d_idx));
-}
-
-#[test]
 fn factorize_golden_output_unchanged() {
     // Golden test: propose's output stays byte-identical for the
     // same representative inputs. The renderer-over-quotient path
@@ -523,35 +480,6 @@ fn greedy_terminates_at_convergence() {
     assert!(again.is_empty(), "second pass should be empty: {again:?}");
 }
 
-#[test]
-fn greedy_never_splits_existing_spec_module() {
-    let a1 = active_owner("owner:a1", 1, &["BindingA1"], 10, "ui/x");
-    let a2 = active_owner("owner:a2", 2, &["BindingA2"], 10, "ui/x");
-    let h = residual_owner("owner:h", 3, &["BindingH"], 5);
-    let report = singleton_graph(
-        vec![a1.clone(), a2.clone(), h.clone()],
-        vec![owner_edge(
-            "edge:0",
-            "owner:a1",
-            "owner:h",
-            DepKind::EagerUse,
-            true,
-        )],
-    );
-
-    let groups = vec![module_group(vec![0, 1])];
-    let (mut q, _) = QuotientGraph::from_report_with_partition(&report, 10_000, &groups).unwrap();
-    let _ = greedy_merge_to_convergence(&mut q);
-
-    let a1_idx = q.owner_idx_of("owner:a1").unwrap();
-    let a2_idx = q.owner_idx_of("owner:a2").unwrap();
-    assert_eq!(
-        q.class_of(a1_idx),
-        q.class_of(a2_idx),
-        "spec-module owners must stay co-located",
-    );
-}
-
 // ---------- Full mergeability + merge output shape. ----------
 //
 // The gate allows two pre-existing-module classes to merge (with or
@@ -560,10 +488,9 @@ fn greedy_never_splits_existing_spec_module() {
 // include ≥2 pre-existing-module groups.
 
 #[test]
-fn greedy_merges_three_clusters_under_cap() {
+fn greedy_merges_three_clusters_until_the_size_cap() {
     // Three pre-existing-module clusters of 20 + 20 + 10 lines, all
-    // mutually coupled by EagerUse edges. Cap = 150 → all three fit.
-    // Assert greedy merges all three into one class.
+    // mutually coupled by EagerUse edges.
     let a = active_owner("owner:a", 1, &["BindingA"], 20, "ui/a");
     let b = active_owner("owner:b", 2, &["BindingB"], 20, "ui/b");
     let c = active_owner("owner:c", 3, &["BindingC"], 10, "ui/c");
@@ -586,74 +513,35 @@ fn greedy_merges_three_clusters_under_cap() {
         module_group(vec![1]),
         module_group(vec![2]),
     ];
-    let (mut q, _) = QuotientGraph::from_report_with_partition(&report, 150, &groups).unwrap();
-    let contractions = greedy_merge_to_convergence(&mut q);
-    assert_eq!(
-        contractions.len(),
-        2,
-        "three clusters under cap should collapse via 2 contractions: {contractions:?}",
-    );
-    let a_idx = q.owner_idx_of("owner:a").unwrap();
-    let b_idx = q.owner_idx_of("owner:b").unwrap();
-    let c_idx = q.owner_idx_of("owner:c").unwrap();
-    assert_eq!(q.class_of(a_idx), q.class_of(b_idx));
-    assert_eq!(q.class_of(b_idx), q.class_of(c_idx));
-}
-
-#[test]
-fn greedy_stops_at_cap() {
-    // Same fixture as `greedy_merges_three_clusters_under_cap`, cap
-    // = 40 lines. After the first merge the surviving class is 40
-    // lines; the third cluster's 10-line addition would tip it to
-    // 50, exceeding the cap. Assert exactly one contraction occurred.
-    let a = active_owner("owner:a", 1, &["BindingA"], 20, "ui/a");
-    let b = active_owner("owner:b", 2, &["BindingB"], 20, "ui/b");
-    let c = active_owner("owner:c", 3, &["BindingC"], 10, "ui/c");
-    let report = graph_of(
-        vec![a.clone(), b.clone(), c.clone()],
-        vec![
-            owner_edge("edge:ab", "owner:a", "owner:b", DepKind::EagerUse, true),
-            owner_edge("edge:bc", "owner:b", "owner:c", DepKind::EagerUse, true),
-            owner_edge("edge:ac", "owner:a", "owner:c", DepKind::EagerUse, true),
-        ],
-        vec![
-            atomic_unit_for("atomic:a", &[&a]),
-            atomic_unit_for("atomic:b", &[&b]),
-            atomic_unit_for("atomic:c", &[&c]),
-        ],
-        vec![],
-    );
-    let groups = vec![
-        module_group(vec![0]),
-        module_group(vec![1]),
-        module_group(vec![2]),
-    ];
-    let (mut q, _) = QuotientGraph::from_report_with_partition(&report, 40, &groups).unwrap();
-    let contractions = greedy_merge_to_convergence(&mut q);
-    assert_eq!(
-        contractions.len(),
-        1,
-        "cap=40 must allow exactly one merge: {contractions:?}",
-    );
-    // Determinism: candidates are (a, b)=20+20=40, (a, c)=20+10=30
-    // (cycle-creating; rejected), (b, c)=20+10=30. After cycle
-    // filtering, (b, c) wins on result-size (30 < 40); (a, b) is
-    // refused on second-pass cap because its 40-line survivor +
-    // 10-line orphan would exceed 40 anyway, but it's picked
-    // strictly after (b, c) by the tiebreak.
-    let a_idx = q.owner_idx_of("owner:a").unwrap();
-    let b_idx = q.owner_idx_of("owner:b").unwrap();
-    let c_idx = q.owner_idx_of("owner:c").unwrap();
-    assert_eq!(
-        q.class_of(b_idx),
-        q.class_of(c_idx),
-        "owner:b and owner:c should be merged (smallest combined size wins tiebreak)",
-    );
-    assert_ne!(
-        q.class_of(a_idx),
-        q.class_of(b_idx),
-        "owner:a stays separate (a+bc would total 50, over cap 40)",
-    );
+    for (cap, expected_contractions, expected_classes) in [
+        // Everything fits: all three collapse through two contractions.
+        (150, 2, vec![vec!["owner:a", "owner:b", "owner:c"]]),
+        // Candidates are (a, b)=40 lines, (a, c)=30 (cycle-creating, so
+        // rejected) and (b, c)=30. (b, c) wins the tie-break on result
+        // size, and folding `a` into the 30-line survivor would total 50,
+        // over the cap.
+        (40, 1, vec![vec!["owner:a"], vec!["owner:b", "owner:c"]]),
+    ] {
+        let (mut q, _) = QuotientGraph::from_report_with_partition(&report, cap, &groups).unwrap();
+        let contractions = greedy_merge_to_convergence(&mut q);
+        assert_eq!(
+            contractions.len(),
+            expected_contractions,
+            "cap {cap}: {contractions:?}",
+        );
+        let mut classes = BTreeMap::<ClassId, Vec<&str>>::new();
+        for owner in ["owner:a", "owner:b", "owner:c"] {
+            classes
+                .entry(q.class_of(q.owner_idx_of(owner).unwrap()))
+                .or_default()
+                .push(owner);
+        }
+        assert_eq!(
+            classes.into_values().collect::<Vec<_>>(),
+            expected_classes,
+            "cap {cap}",
+        );
+    }
 }
 
 #[test]

@@ -742,10 +742,7 @@ rust_test(
     ],
     crate = ":peel",
     edition = "2024",
-    deps = [
-        ":report_fixtures",
-        "@crates//:tempfile",
-    ],
+    deps = [":report_fixtures"],
 )
 
 rust_library(

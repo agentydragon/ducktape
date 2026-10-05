@@ -3,8 +3,8 @@
 // kubectl-passthrough-mcp is a remote third-party binary (containers/kubernetes-mcp-server), so
 // its tools/list schemas are not available to the build-time in-process catalog; these are
 // hand-authored against the live advertised schema. They live in their own React-free module
-// because two consumers need them: the widgets in `requests.tsx`, and the notification action
-// registry in `../actions.ts`, which the service worker bundles.
+// because both the widgets in `requests.tsx` and the notification action registry in
+// `../actions.ts`, which the service worker bundles, need them.
 
 import { z } from "zod";
 

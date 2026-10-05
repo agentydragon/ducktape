@@ -331,19 +331,18 @@ pub struct LoadJsChunksArgs {
     pub js_list_path: PathBuf,
 }
 
+/// Omitted fields take their value from the `Default` impl, so `{}` and an
+/// omitted `swap_vendor_chunks` agree by construction.
 #[derive(Debug, Clone, Deserialize, Serialize)]
-#[serde(deny_unknown_fields)]
+#[serde(deny_unknown_fields, default)]
 pub struct SwapVendorChunksConfig {
     #[serde(skip_serializing_if = "Option::is_none")]
-    #[serde(default)]
     pub output_manifest_path: Option<PathBuf>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    #[serde(default)]
     pub output_wrapper_dir: Option<PathBuf>,
     /// Defaults to `true` — actually write the manifest / wrapper files
     /// to disk. Set `false` for dry-run.
     #[serde(skip_serializing_if = "is_true")]
-    #[serde(default = "default_true")]
     pub write: bool,
 }
 
@@ -1681,13 +1680,5 @@ mod tests {
             selector.selected().is_err(),
             "a member must use exactly one selector kind",
         );
-    }
-
-    #[test]
-    fn omitted_and_empty_vendor_swap_configs_have_the_same_defaults() {
-        let empty: SwapVendorChunksConfig = serde_json::from_str("{}").unwrap();
-        let omitted = SwapVendorChunksConfig::default();
-        assert!(empty.write);
-        assert_eq!(omitted.write, empty.write);
     }
 }

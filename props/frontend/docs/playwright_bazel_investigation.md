@@ -168,12 +168,6 @@ cd props/frontend && pnpm playwright test --list
 cat $BAZEL_CACHE/.../visual_test_/visual_test | grep entry_point
 ```
 
-## Additional Factor: @storybook/test-runner
-
-The `@storybook/test-runner` package (in `props/frontend/package.json`) has its own dependency on
-`playwright@1.57.0`. This could contribute to module duplication, but removing it isn't an option
-as it may be used for other testing.
-
 ## Potential Solutions (Not Yet Tried)
 
 ### 1. Use js_test with Explicit Entry Point

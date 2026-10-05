@@ -14,9 +14,7 @@ import contextlib
 import json
 import logging
 import os
-import shutil
 import signal
-import subprocess
 import time
 import uuid
 from datetime import datetime
@@ -27,7 +25,7 @@ from x.wt.server.git_refs_watcher import GitRefsWatcher
 from x.wt.server.github_client import GitHubInterface
 from x.wt.server.github_watcher import GitHubWatcher
 from x.wt.server.gitstatus_refresh import DebouncedGitstatusRefresh
-from x.wt.server.gitstatusd_listener import GitstatusdListener
+from x.wt.server.gitstatusd_listener import GitstatusdListener, find_gitstatusd
 
 # Force import of handlers to register RPC methods
 from x.wt.server.handlers import (
@@ -142,6 +140,9 @@ class WtDaemon:
         # Centralized GitHub watcher (replaces per-worktree PRService)
         self.github_watcher: GitHubWatcher | None = None
         self._state_lock = asyncio.Lock()
+        # A worktree enters `gitstatusd_clients` only once its process is up, so concurrent starts for one worktree
+        # (discovery and registration of a new one) would each spawn a process and orphan all but the last.
+        self._gitstatusd_start_lock = asyncio.Lock()
         # Strong reference so the signal-handler-created stop task is not garbage-collected.
         self._shutdown_task: asyncio.Task[None] | None = None
         self.git_manager = GitManager(config=self.config)
@@ -197,51 +198,6 @@ class WtDaemon:
     def known_worktrees(self) -> dict[Path, DiscoveredWorktree]:
         return self.registry.known
 
-    def _validate_gitstatusd(self) -> tuple[str | None, str | None]:
-        """Returns (gitstatusd_path, error_message) where error_message is None on success."""
-        gitstatusd_path: str | None = None
-        error: str | None = None
-
-        if self.config.gitstatusd_path:
-            # Prefer explicit configuration; do not fall back to PATH when set
-            path = self.config.gitstatusd_path
-            try:
-                result = subprocess.run([path, "--version"], check=False, capture_output=True, timeout=2)
-                if result.returncode == 0:
-                    logger.info("Using configured gitstatusd at: %s", path)
-                    gitstatusd_path = str(path)
-                else:
-                    error = f"Configured gitstatusd path not working: {path} (exit code {result.returncode})"
-            except (subprocess.TimeoutExpired, FileNotFoundError, PermissionError) as e:
-                error = f"Configured gitstatusd path failed: {path} ({e})"
-        else:
-            # Only check PATH - no hardcoded locations
-            cmd = "gitstatusd"
-            if shutil.which(cmd):
-                try:
-                    result = subprocess.run([cmd, "--version"], check=False, capture_output=True, timeout=2)
-                    if result.returncode == 0:
-                        logger.info("Found gitstatusd on PATH: %s", cmd)
-                        gitstatusd_path = cmd
-                    else:
-                        error = f"gitstatusd found on PATH but not working (exit code {result.returncode})"
-                except (subprocess.TimeoutExpired, FileNotFoundError, PermissionError) as e:
-                    error = f"gitstatusd found on PATH but failed to execute: {e}"
-            else:
-                error = (
-                    "gitstatusd binary not found. Please install gitstatusd and ensure it's available on PATH, "
-                    "or configure gitstatusd_path in your config file. "
-                    "Common installation: brew install romkatv/gitstatus/gitstatus"
-                )
-
-        return gitstatusd_path, error
-
-    def _find_gitstatusd(self) -> str | None:
-        gitstatusd_path, error = self._validate_gitstatusd()
-        if error:
-            logger.error(error)
-        return gitstatusd_path
-
     def _validate_configuration(self) -> str | None:
         """Returns error message if configuration is invalid, None if valid."""
         errors = []
@@ -275,34 +231,35 @@ class WtDaemon:
 
     async def _start_gitstatusd_for_worktree(self, worktree_info: DiscoveredWorktree) -> None:
         """Start gitstatusd for a worktree."""
-        gitstatusd_path = self._find_gitstatusd()
-        if not gitstatusd_path:
-            logger.error("gitstatusd binary not found, cannot start process for %s", worktree_info.name)
+        _, error = find_gitstatusd(self.config)
+        if error:
+            logger.error("Cannot start gitstatusd for %s: %s", worktree_info.name, error)
             return
 
-        if worktree_info.wtid in self.gitstatusd_clients:
-            # Ensure watcher exists
-            if worktree_info.wtid not in self.git_watchers:
-                await self._ensure_git_watcher(worktree_info)
-            return
+        async with self._gitstatusd_start_lock:
+            if worktree_info.wtid in self.gitstatusd_clients:
+                # Ensure watcher exists
+                if worktree_info.wtid not in self.git_watchers:
+                    await self._ensure_git_watcher(worktree_info)
+                return
 
-        # Create listener - it owns its signal, no callbacks needed
-        gs_client = GitstatusdListener(worktree_info.path, self.config, self.git_manager)
-        await gs_client.start()
-        # Register the listener's signal with the store
-        self.store.register_gitstatusd(worktree_info.path, gs_client.status)
-        # Kick an initial nonblocking refresh; watcher/poll keeps it fresh
-        self._initial_status_task = asyncio.create_task(gs_client.update_working_status())
-        self.gitstatusd_clients[worktree_info.wtid] = gs_client
+            # Create listener - it owns its signal, no callbacks needed
+            gs_client = GitstatusdListener(worktree_info.path, self.config, self.git_manager)
+            await gs_client.start()
+            # Register the listener's signal with the store
+            self.store.register_gitstatusd(worktree_info.path, gs_client.status)
+            # Kick an initial nonblocking refresh; watcher/poll keeps it fresh
+            self._initial_status_task = asyncio.create_task(gs_client.update_working_status())
+            self.gitstatusd_clients[worktree_info.wtid] = gs_client
 
-        # Start .git watcher to drive status updates
-        await self._ensure_git_watcher(worktree_info)
+            # Start .git watcher to drive status updates
+            await self._ensure_git_watcher(worktree_info)
 
-        # GitHubWatcher sees the new branch via store.active_branches
-        if self.github_watcher:
-            self.github_watcher.trigger_refresh()
+            # GitHubWatcher sees the new branch via store.active_branches
+            if self.github_watcher:
+                self.github_watcher.trigger_refresh()
 
-        logger.info("Started gitstatusd for worktree %s", worktree_info.name)
+            logger.info("Started gitstatusd for worktree %s", worktree_info.name)
 
     async def _stop_gitstatusd_for_worktree(self, worktree_info: DiscoveredWorktree) -> None:
         """Stop gitstatusd for a worktree."""
@@ -442,11 +399,12 @@ class WtDaemon:
         # Post-creation script is validated at use-time in WorktreeService
 
         # Validate gitstatusd availability
-        gitstatusd_path, gitstatusd_error = self._validate_gitstatusd()
+        gitstatusd_path, gitstatusd_error = find_gitstatusd(self.config)
         if gitstatusd_error:
             startup_errors.append(gitstatusd_error)
             self.store.set_gitstatusd_config(GitstatusdUnavailable(error=gitstatusd_error))
         elif gitstatusd_path:
+            logger.info("Using gitstatusd at: %s", gitstatusd_path)
             self.store.set_gitstatusd_config(GitstatusdAvailable(path=gitstatusd_path))
 
         # If there are critical errors, write error handshake and return

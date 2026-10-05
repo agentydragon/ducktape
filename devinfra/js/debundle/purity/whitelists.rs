@@ -167,6 +167,8 @@ pub(crate) const PURE_BUILTIN_NEW_NO_ARGS: &[&str] = &[
 /// soundly requires statically validating the pattern against the
 /// ECMA-262 grammar (a `regress`-style validator), tracked as the
 /// ignore-reason of `inferred_pure_collection_constructors_with_literal_args_emit_no_s_cycle`.
+/// `TextDecoder` is likewise absent: its one argument is an encoding label,
+/// and an invalid label throws RangeError (see `PURE_BUILTIN_NEW_NO_ARGS`).
 pub(crate) const PURE_BUILTIN_NEW_STRING_LITERAL_ARG: &[&str] = &["URLSearchParams"];
 
 /// Built-in container constructors whose 1-arg form is pure when

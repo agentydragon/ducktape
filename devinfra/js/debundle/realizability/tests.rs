@@ -257,126 +257,134 @@ fn single_module_is_always_realizable() {
     assert!(verdict.is_realizable());
 }
 
-/// Verdict touching `to` after committing the move on a copy of
-/// `index`: the incrementally maintained reference for the overlay
-/// query, which must agree with it without mutating the index.
-fn verdict_touching_after_applying_move(
-    index: &RealizabilityIndex,
-    owner_graph: &OwnerGraph,
-    owners: &[OwnerId],
-    to: ModuleId,
-) -> RealizabilityVerdict {
-    let mut moved = index.clone();
-    moved.apply(
-        owner_graph,
-        PartitionDelta::MoveOwners {
-            owners: owners.to_vec(),
-            to,
-        },
-    );
-    moved.verdict_touching(to)
-}
-
+/// One speculative single-owner move per case: the overlay verdict must equal
+/// the committed and pure verdicts, have the stated shape, and leave the
+/// working index untouched.
 #[test]
-fn move_overlay_matches_applied_verdict_touching() {
-    let source = "const a = b + 1; const b = a + 1;";
-    let owner_graph = parse_and_build(source);
-    let baseline = Partition::new(&owner_graph, module_id(0));
-    let index = RealizabilityIndex::from_partition(&owner_graph, baseline.clone());
-    let before = normalize_verdict(index.verdict());
+fn move_overlay_matches_applied_verdict_on_cycle_rebind_and_chain_moves() {
+    // (label, source, base assignments, moved owner, target module,
+    //  unrealizable SCCs, cross rebinds)
+    let cases = [
+        // Moving `b` out of residual closes the mutual eager `a`/`b` cycle.
+        (
+            "cycle",
+            "const a = b + 1; const b = a + 1;",
+            &[][..],
+            1,
+            1,
+            1,
+            0,
+        ),
+        // The writer leaves the binding it rebinds: a direct violation, not
+        // an SCC edge.
+        (
+            "rebind",
+            "let a = 0; function b() { a = 1; }",
+            &[][..],
+            1,
+            1,
+            0,
+            1,
+        ),
+        // `b` leaves the chain `a -> b -> c` for a fresh module, so its
+        // current edges are masked.
+        (
+            "chain",
+            "const a = b + 1; const b = c + 1; const c = 1;",
+            &[(0, 1), (1, 2), (2, 3)][..],
+            1,
+            4,
+            0,
+            0,
+        ),
+    ];
+    for (label, source, base, owner, to, sccs, rebinds) in cases {
+        let owner_graph = parse_and_build(source);
+        let index =
+            RealizabilityIndex::from_partition(&owner_graph, partition_with(&owner_graph, base));
+        let before = normalize_verdict(index.verdict());
+        let home = index.partition().of(OwnerId(owner));
+        let (owners, to) = ([OwnerId(owner)], module_id(to));
 
-    let overlay =
-        index.verdict_after_moving_owners_touching(&owner_graph, &[OwnerId(1)], module_id(1));
-    let applied =
-        verdict_touching_after_applying_move(&index, &owner_graph, &[OwnerId(1)], module_id(1));
+        assert_move_agrees_across_paths(&index, &owner_graph, &owners, to);
 
-    assert_eq!(normalize_verdict(overlay), normalize_verdict(applied));
-    assert_eq!(
-        normalize_verdict(index.verdict()),
-        before,
-        "overlay query must not mutate the working partition",
-    );
-    assert_eq!(index.partition().of(OwnerId(1)), baseline.of(OwnerId(1)));
-}
-
-#[test]
-fn move_overlay_reports_cross_rebinds_like_applied_verdict() {
-    let source = "let a = 0; function b() { a = 1; }";
-    let owner_graph = parse_and_build(source);
-    let baseline = Partition::new(&owner_graph, module_id(0));
-    let index = RealizabilityIndex::from_partition(&owner_graph, baseline);
-
-    let overlay =
-        index.verdict_after_moving_owners_touching(&owner_graph, &[OwnerId(1)], module_id(1));
-    let applied =
-        verdict_touching_after_applying_move(&index, &owner_graph, &[OwnerId(1)], module_id(1));
-
-    assert_eq!(
-        normalize_verdict(overlay.clone()),
-        normalize_verdict(applied)
-    );
-    assert!(overlay.unrealizable_sccs.is_empty());
-    assert_eq!(overlay.cross_rebinds.len(), 1);
-}
-
-#[test]
-fn move_overlay_masks_removed_current_edges() {
-    let source = "const a = b + 1; const b = c + 1; const c = 1;";
-    let owner_graph = parse_and_build(source);
-    let mut baseline = Partition::new(&owner_graph, module_id(0));
-    baseline.set(OwnerId(0), module_id(1));
-    baseline.set(OwnerId(1), module_id(2));
-    baseline.set(OwnerId(2), module_id(3));
-    let mut explicit = baseline.clone();
-    explicit.set(OwnerId(1), module_id(4));
-    let index = RealizabilityIndex::from_partition(&owner_graph, baseline);
-
-    let overlay =
-        index.verdict_after_moving_owners_touching(&owner_graph, &[OwnerId(1)], module_id(4));
-    let applied =
-        verdict_touching_after_applying_move(&index, &owner_graph, &[OwnerId(1)], module_id(4));
-    let pure = filter_verdict_touching(&check_realizability(&owner_graph, &explicit), module_id(4));
-
-    assert_eq!(
-        normalize_verdict(overlay.clone()),
-        normalize_verdict(applied)
-    );
-    assert_eq!(normalize_verdict(overlay), normalize_verdict(pure));
-}
-
-/// Each committed move leaves the index's verdict equal to the pure
-/// from-scratch verdict on the same partition. The last move rejoins
-/// the `a`/`b` cycle's two modules, removing edges internal to a
-/// multi-module SCC.
-#[test]
-fn incremental_index_matches_pure_verdict_through_sequential_moves() {
-    let source = "const a = b + 1; const b = a + 1; function c() { return a; }";
-    let owner_graph = parse_and_build(source);
-
-    let baseline = Partition::new(&owner_graph, module_id(0));
-    let mut explicit = baseline.clone();
-    let mut index = RealizabilityIndex::from_partition(&owner_graph, baseline);
-
-    assert_eq!(
-        normalize_verdict(index.verdict()),
-        normalize_verdict(check_realizability(&owner_graph, &explicit)),
-    );
-
-    for (owner, to, realizable) in [(1, 1, false), (2, 2, false), (1, 0, true)] {
-        index.apply(
-            &owner_graph,
-            PartitionDelta::MoveOwners {
-                owners: vec![OwnerId(owner)],
-                to: module_id(to),
-            },
+        let overlay = index.verdict_after_moving_owners_touching(&owner_graph, &owners, to);
+        assert_eq!(
+            (overlay.unrealizable_sccs.len(), overlay.cross_rebinds.len()),
+            (sccs, rebinds),
+            "{label}: {overlay:#?}",
         );
-        explicit.set(OwnerId(owner), module_id(to));
+        assert_eq!(
+            normalize_verdict(index.verdict()),
+            before,
+            "{label}: overlay query must not mutate the working partition",
+        );
+        assert_eq!(index.partition().of(OwnerId(owner)), home, "{label}");
+    }
+}
+
+/// After each committed move the index's verdict equals the pure
+/// from-scratch verdict on the same partition, has the stated shape, and its
+/// touching verdict for the target module is the full verdict filtered to it.
+#[test]
+fn incremental_index_matches_pure_verdict_after_each_committed_move() {
+    // Per row: (label, source, moves), each move being (owner, target module,
+    // realizable, unrealizable SCCs, cross rebinds).
+    let rows = [
+        // The last move rejoins the `a`/`b` cycle's two modules, removing
+        // edges internal to a multi-module SCC.
+        (
+            "sequential moves",
+            "const a = b + 1; const b = a + 1; function c() { return a; }",
+            vec![(1, 1, false, 1, 0), (2, 2, false, 1, 0), (1, 0, true, 0, 0)],
+        ),
+        // Rebinds are direct violations, not SCC edges.
+        (
+            "cross rebind",
+            "let a = 0; function b() { a = 1; }",
+            vec![(1, 1, false, 0, 1)],
+        ),
+    ];
+    for (label, source, moves) in rows {
+        let owner_graph = parse_and_build(source);
+        let baseline = Partition::new(&owner_graph, module_id(0));
+        let mut explicit = baseline.clone();
+        let mut index = RealizabilityIndex::from_partition(&owner_graph, baseline);
         assert_eq!(
             normalize_verdict(index.verdict()),
             normalize_verdict(check_realizability(&owner_graph, &explicit)),
-            "after moving owner {owner} to module {to}",
+            "{label}: before any move",
         );
-        assert_eq!(index.verdict().is_realizable(), realizable);
+        for (owner, to, realizable, sccs, rebinds) in moves {
+            index.apply(
+                &owner_graph,
+                PartitionDelta::MoveOwners {
+                    owners: vec![OwnerId(owner)],
+                    to: module_id(to),
+                },
+            );
+            explicit.set(OwnerId(owner), module_id(to));
+            let verdict = index.verdict();
+            assert_eq!(
+                normalize_verdict(verdict.clone()),
+                normalize_verdict(check_realizability(&owner_graph, &explicit)),
+                "{label}: after moving owner {owner} to module {to}",
+            );
+            assert_eq!(
+                (
+                    verdict.is_realizable(),
+                    verdict.unrealizable_sccs.len(),
+                    verdict.cross_rebinds.len(),
+                ),
+                (realizable, sccs, rebinds),
+                "{label}: after moving owner {owner} to module {to}: {verdict:#?}",
+            );
+            assert_eq!(
+                normalize_verdict(index.verdict_touching(module_id(to))),
+                normalize_verdict(filter_verdict_touching(&verdict, module_id(to))),
+                "{label}: touching verdict after moving owner {owner} to module {to}",
+            );
+        }
     }
 }
 
@@ -430,39 +438,6 @@ fn empty_delta_overlay_scc_containing_is_the_base_scc() {
         view.scc_containing(module_id(4)),
         BTreeSet::from([module_id(4)]),
         "4 is reachable from the cycle but cannot reach it",
-    );
-}
-
-#[test]
-fn incremental_index_reports_cross_rebinds_without_scc_edges() {
-    let source = "let a = 0; function b() { a = 1; }";
-    let owner_graph = parse_and_build(source);
-    let baseline = Partition::new(&owner_graph, module_id(0));
-    let mut explicit = baseline.clone();
-    let mut index = RealizabilityIndex::from_partition(&owner_graph, baseline);
-
-    index.apply(
-        &owner_graph,
-        PartitionDelta::MoveOwners {
-            owners: vec![OwnerId(1)],
-            to: module_id(1),
-        },
-    );
-    explicit.set(OwnerId(1), module_id(1));
-
-    let verdict = index.verdict();
-    assert_eq!(
-        normalize_verdict(verdict.clone()),
-        normalize_verdict(check_realizability(&owner_graph, &explicit)),
-    );
-    assert!(
-        verdict.unrealizable_sccs.is_empty(),
-        "rebinds are direct violations, not SCC edges: {verdict:#?}",
-    );
-    assert_eq!(verdict.cross_rebinds.len(), 1);
-    assert_eq!(
-        normalize_verdict(index.verdict_touching(module_id(1))),
-        normalize_verdict(verdict),
     );
 }
 
@@ -885,52 +860,6 @@ fn partition_with(owner_graph: &OwnerGraph, assignments: &[(usize, usize)]) -> P
     partition
 }
 
-/// Fallback-promoted edges (`callee_owner == from`, emitted for an
-/// at-init call the analysis cannot resolve) drop out of the gate view
-/// when the caller is in residual. Moving such an edge's target into a
-/// module that reads residual must not add a residual -> module
-/// constraining edge: the gate accepts the move, the overlay must too.
-#[test]
-fn move_overlay_adds_no_edge_for_residual_fallback_edge_when_target_moves() {
-    // Owners: 0 a, 1 read_a, 2 g, 3 r, 4 m. `r = g()` is unresolvable
-    // (alias), so r -> a is a fallback-promoted edge from residual;
-    // m (module 1) reads r (residual).
-    let owner_graph = parse_and_build(
-        "const a = 1; function read_a() { return a; } const g = read_a; const r = g(); const m = r + 1;",
-    );
-    let index =
-        RealizabilityIndex::from_partition(&owner_graph, partition_with(&owner_graph, &[(4, 1)]));
-    assert_move_agrees_across_paths(
-        &index,
-        &owner_graph,
-        &[OwnerId(0), OwnerId(1)],
-        module_id(1),
-    );
-}
-
-/// Same rule, other direction: moving the *caller* of a residual
-/// fallback edge out of residual must not remove a residual -> target
-/// quotient edge the gate never had, since the removal would cancel a
-/// real edge on the same module pair (here the lazy `api -> a` read)
-/// and hide the TDZ cycle the move closes.
-#[test]
-fn move_overlay_removes_no_edge_for_residual_fallback_edge_when_caller_moves() {
-    // Owners: 0 a, 1 api, 2 r, 3 m. `r = api.read()` is unresolvable
-    // (member call), so r -> a is a fallback-promoted edge from
-    // residual; api (residual) reads a (module 1) lazily.
-    let owner_graph = parse_and_build(
-        "const a = 1; const api = { read: () => a }; const r = api.read(); const m = r + 1;",
-    );
-    let index =
-        RealizabilityIndex::from_partition(&owner_graph, partition_with(&owner_graph, &[(0, 1)]));
-    assert_move_agrees_across_paths(
-        &index,
-        &owner_graph,
-        &[OwnerId(2), OwnerId(3)],
-        module_id(1),
-    );
-}
-
 /// Every single- and pair-owner move from every assignment of the
 /// owners to three modules (module 0 is residual; the targets include
 /// a fresh module) must agree across the overlay, the committed path
@@ -940,10 +869,21 @@ fn move_overlay_removes_no_edge_for_residual_fallback_edge_when_caller_moves() {
 #[test]
 fn move_overlay_matches_committed_and_pure_on_promoted_edge_graphs() {
     let sources = [
+        // `r = g()` is unresolvable (`g` aliases `read_a`), so `r -> a` is a
+        // fallback-promoted edge from residual, and `m` reads `r`. Moving the
+        // target `a` into a module that reads residual must not make the
+        // overlay add a residual -> module constraining edge: the gate
+        // accepts that move.
         (
             "const a = 1; function read_a() { return a; } const g = read_a; const r = g(); const m = r + 1;",
             true,
         ),
+        // `r = api.read()` is a member call, so `r -> a` is a fallback-promoted
+        // edge from residual, and `api` reads `a` lazily. Moving the caller
+        // `r` out of residual must not make the overlay remove a residual ->
+        // `a` edge the gate never had: the removal would cancel the real lazy
+        // `api -> a` edge on that module pair and hide the TDZ cycle the move
+        // closes.
         (
             "const a = 1; const api = { read: () => a }; const r = api.read(); const m = r + 1;",
             true,

@@ -2480,8 +2480,12 @@ mod tests {
         // The esbuild decorate-trio companions: `var X = Object.defineProperty` /
         // `var X = Object.getOwnPropertyDescriptor`. Each row's target is the alias
         // binding; the property is the re-minify-invariant intrinsic method name.
+        // The structural shape — not the declaration keyword — is the invariant, so
+        // the input mixes `var`, `let` and `const`.
         let facts = intrinsic_aliases(
-            "var p = Object.defineProperty;\nvar g = Object.getOwnPropertyDescriptor;\n",
+            "var p = Object.defineProperty;\n\
+             let g = Object.getOwnPropertyDescriptor;\n\
+             const d = Object.defineProperty;\n",
         );
         assert_eq!(
             facts,
@@ -2494,26 +2498,9 @@ mod tests {
                     binding: "g".to_string(),
                     property: "getOwnPropertyDescriptor".to_string(),
                 },
-            ],
-        );
-    }
-
-    #[test]
-    fn intrinsic_alias_uses_accepts_let_and_const_keywords() {
-        // The structural shape — not the declaration keyword — is the invariant.
-        let facts = intrinsic_aliases(
-            "let p = Object.defineProperty;\nconst g = Object.getOwnPropertyDescriptor;\n",
-        );
-        assert_eq!(
-            facts,
-            vec![
                 IntrinsicAliasFact {
-                    binding: "p".to_string(),
+                    binding: "d".to_string(),
                     property: "defineProperty".to_string(),
-                },
-                IntrinsicAliasFact {
-                    binding: "g".to_string(),
-                    property: "getOwnPropertyDescriptor".to_string(),
                 },
             ],
         );

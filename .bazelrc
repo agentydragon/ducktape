@@ -63,22 +63,21 @@ common --lockfile_mode=off
 # Lint + typecheck enabled by default on all builds.
 # Combines lint (ruff, ESLint), typecheck (mypy), and Rust checks (clippy, rustfmt).
 # Use Python 3.14 for mypy to parse Python 3.14 syntax (e.g., homeassistant).
-# To skip lint (e.g. for fast iterative builds): bazel build --config=nolint //...
+# --config=nolint skips ruff, ESLint, mypy, clippy and rustfmt (see build:nolint below).
 build --@rules_python//python/config_settings:python_version=3.14
 build --aspects=//devinfra/lint:linters.bzl%ruff,//devinfra/lint:linters.bzl%mypy_aspect,//devinfra/lint:linters.bzl%eslint,@rules_rust//rust:defs.bzl%rust_clippy_aspect,@rules_rust//rust:defs.bzl%rustfmt_aspect
 build --output_groups=+rules_lint_report,+mypy,+clippy_checks,+rustfmt_checks
 
-# Make ruff + ESLint findings HARD-FAIL the build instead of only populating the
-# rules_lint_report output group. This puts the rules_lint aspects on equal
-# footing with mypy/clippy/rustfmt (whose aspect actions already fail the build
-# directly): code that doesn't lint clean no longer bazel-builds. --config=nolint
-# still bypasses — it drops the rules_lint_report output group, so the
-# report-generating action that enforces this flag is never requested.
+# Make ruff + ESLint findings fail the build, so code that doesn't lint clean no longer
+# bazel-builds, as with mypy/clippy/rustfmt.
+# --config=nolint still bypasses it (see build:nolint below).
 build --@aspect_rules_lint//lint:fail_on_violation
 
-# Skip lint/typecheck. Bazel evaluates aspects lazily, so removing their
-# output groups prevents the aspect actions from running.
+# Skip lint and typecheck. Ruff and ESLint run as validation actions, which
+# --output_groups cannot drop; --norun_validations skips them, and also every other
+# rule's validation actions.
 build:nolint --output_groups=-rules_lint_report,-mypy,-clippy_checks,-rustfmt_checks
+build:nolint --norun_validations
 
 # Remote Build Execution (BuildBuddy). Kept in an importable fragment so the
 # NixOS integration fixture exercises the exact workspace policy.

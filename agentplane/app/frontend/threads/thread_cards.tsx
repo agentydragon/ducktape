@@ -167,14 +167,14 @@ export function UserInputBubble({
           {action.label}
         </Button>
       )}
-      {entity && <EvidenceToggle entity={entity} />}
       <Paper
-        className="agentplane-user-bubble"
+        className="agentplane-user-bubble agentplane-evidence-owner"
         data-message-phase={phase}
         data-has-action={action ? "true" : undefined}
         p="sm"
         style={pending ? { fontStyle: "italic", opacity: 0.6 } : undefined}
       >
+        {entity && <EvidenceToggle entity={entity} />}
         {status && (
           <Text size="xs" c={statusColor} mb="xs" role="status">
             {status}
@@ -354,7 +354,7 @@ function DiscardedCard({ id, summary, children }: { id: string; summary: string;
           </Text>
         }
       >
-        <Stack gap="xs" mt="xs">
+        <Stack gap="xs" mt="xs" className="agentplane-evidence-owner">
           {children}
         </Stack>
       </RetainedDisclosure>
@@ -470,7 +470,7 @@ function ToolCard({
           );
         }
         return (
-          <CollapsibleCard open={opened} stableInlineSize>
+          <CollapsibleCard open={opened} stableInlineSize className="agentplane-evidence-owner">
             <StepLine
               title={call?.label ?? (state.tool_name || "tool")}
               mark={opened ? undefined : mark}
@@ -503,7 +503,7 @@ function ToolCard({
             >
               <Box mt="xs">{detail}</Box>
             </StepLine>
-            <EvidenceToggle entity={entity} style={{ position: "absolute", top: 4, right: 4 }} />
+            <EvidenceToggle entity={entity} />
             <EvidencePanel threadId={threadId} entity={entity} />
           </CollapsibleCard>
         );
@@ -545,9 +545,9 @@ export function EntityCard({
     const wrapped = { whiteSpace: "pre-wrap", overflowWrap: "anywhere" } as const;
     if (!prominent) {
       return (
-        <Stack gap={0} style={{ position: "relative" }}>
+        <Stack gap={0} className="agentplane-evidence-owner">
           <Text c="dimmed">{label}</Text>
-          <EvidenceToggle entity={entity} style={{ position: "absolute", top: 0, right: 0 }} />
+          <EvidenceToggle entity={entity} style={{ top: 0, right: 0 }} />
           {diagnostic && (
             <Text c="dimmed" style={wrapped}>
               {diagnostic}
@@ -558,10 +558,9 @@ export function EntityCard({
       );
     }
     return (
-      <Alert color="red" role="alert" style={{ position: "relative" }}>
-        <EvidenceToggle entity={entity} style={{ position: "absolute", top: 8, right: 8 }} />
-        {/* The end padding keeps the first line clear of the toggle. */}
-        <Text size="sm" style={{ ...wrapped, paddingInlineEnd: "1.5rem" }}>
+      <Alert color="red" role="alert" className="agentplane-evidence-owner">
+        <EvidenceToggle entity={entity} style={{ top: 8, right: 8 }} />
+        <Text size="sm" style={wrapped}>
           <Text span fw={700} c="var(--alert-color)">
             {label}
           </Text>
@@ -592,15 +591,11 @@ export function EntityCard({
     live;
   const body = (
     <>
-      {(!reasoning && entity.state.completion === null && !streamingText) || entity.state.recovery !== null ? (
-        <Group justify="space-between" mb="xs" wrap="nowrap">
-          <Group gap="xs">
-            <ItemStatus items={[entity]} live={live} />
-          </Group>
-          <EvidenceToggle entity={entity} />
+      <EvidenceToggle entity={entity} />
+      {((!reasoning && entity.state.completion === null && !streamingText) || entity.state.recovery !== null) && (
+        <Group gap="xs" mb="xs">
+          <ItemStatus items={[entity]} live={live} />
         </Group>
-      ) : (
-        <EvidenceToggle entity={entity} style={{ position: "absolute", top: 4, right: 4 }} />
       )}
       <RecoveryNotes state={entity.state} tool={false} />
       {reasoning ? (
@@ -640,11 +635,15 @@ export function EntityCard({
   // line.
   if (reasoning)
     return (
-      <CollapsibleCard open={reasoningOpen && reasoningOverflows} stableInlineSize>
+      <CollapsibleCard
+        open={reasoningOpen && reasoningOverflows}
+        stableInlineSize
+        className="agentplane-evidence-owner"
+      >
         {body}
       </CollapsibleCard>
     );
-  return <Box style={{ position: "relative" }}>{body}</Box>;
+  return <Box className="agentplane-evidence-owner">{body}</Box>;
 }
 
 /** Whether any of `items` is unfinished -- streaming while `live`, otherwise never completed in
@@ -718,13 +717,16 @@ export function CollapsibleCard({
   open,
   children,
   stableInlineSize = false,
+  className,
 }: {
   open: boolean;
   children: ReactNode;
   stableInlineSize?: boolean;
+  className?: string;
 }): JSX.Element {
   return (
     <Paper
+      className={className}
       data-open={open}
       // A folded step line is one line, so it needs little more than the line.
       p={open ? "sm" : stableInlineSize ? 2 : "xs"}
