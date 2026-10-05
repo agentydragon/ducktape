@@ -1,0 +1,171 @@
+name: Pre-commit container spike
+
+on:
+  push:
+    branches: [spike/precommit-container]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: read
+
+jobs:
+  build:
+    if: github.ref == 'refs/heads/spike/precommit-container'
+    name: Build and publish pre-commit image
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    permissions:
+      contents: read
+      packages: write
+    outputs:
+      image: ${{ steps.build-image.outputs.image }}
+      closure: ${{ steps.build-image.outputs.closure }}
+    steps:
+      - name: Check out code
+        uses: actions/checkout@v7
+
+      - uses: ./.github/actions/setup-nix-devtools
+        with:
+          package: runner-image-tools
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ github.token }}
+
+      - name: Build and publish image
+        id: build-image
+        env:
+          IMAGE: ghcr.io/${{ github.repository_owner }}/precommit-spike
+        run: bash devinfra/ci/x/precommit_container/build.sh
+
+  baseline:
+    if: github.ref == 'refs/heads/spike/precommit-container'
+    name: Baseline trial ${{ matrix.trial }}
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      max-parallel: 2
+      matrix:
+        trial: [1, 2, 3]
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - name: Check out exact source commit
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ github.sha }}
+
+      - uses: ./.github/actions/setup-nix-devtools
+        with:
+          package: precommit
+
+      - name: Restore Ansible Galaxy roles cache
+        id: cache-ansible-roles-restore
+        uses: actions/cache/restore@v6
+        with:
+          path: ~/.ansible/roles
+          key: ansible-roles-${{ runner.os }}-${{ hashFiles('ansible/requirements.yaml') }}
+          restore-keys: ansible-roles-${{ runner.os }}-
+
+      - name: Install Ansible Galaxy roles
+        run: |
+          cd ansible
+          ansible-galaxy role install -r requirements.yaml
+
+      - name: Run representative pre-commit hooks
+        env:
+          SKIP: no-commit-to-branch
+        run: |
+          set -euo pipefail
+          unset NODE_OPTIONS
+          pre-commit run --files \
+            .pre-commit-config.yaml \
+            .github/workflows/pre-commit.yml \
+            nix/flake/devtools.nix \
+            --show-diff-on-failure -v
+
+      - name: Save Ansible Galaxy roles cache
+        if: always() && steps.cache-ansible-roles-restore.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v6
+        with:
+          path: ~/.ansible/roles
+          key: ${{ steps.cache-ansible-roles-restore.outputs.cache-primary-key }}
+
+  candidate:
+    if: github.ref == 'refs/heads/spike/precommit-container'
+    name: Container candidate trial ${{ matrix.trial }}
+    needs: build
+    permissions:
+      contents: read
+      packages: read
+    container:
+      image: ${{ needs.build.outputs.image }}
+      credentials:
+        username: ${{ github.actor }}
+        password: ${{ github.token }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      max-parallel: 2
+      matrix:
+        trial: [1, 2, 3]
+    defaults:
+      run:
+        shell: bash
+    env:
+      EXPECTED_PRECOMMIT_CLOSURE: ${{ needs.build.outputs.closure }}
+    steps:
+      - name: Check out exact source commit
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ github.sha }}
+
+      - name: Verify pre-commit image
+        run: |
+          set -euo pipefail
+          test "$(cat /etc/ducktape-precommit-closure)" = "$EXPECTED_PRECOMMIT_CLOSURE"
+          for tool in pre-commit trailing-whitespace-fixer end-of-file-fixer \
+            check-merge-conflict check-yaml keep-sorted prettier nixfmt statix \
+            ansible-galaxy git python3 bash; do
+            command -v "$tool"
+          done
+
+      - name: Restore Ansible Galaxy roles cache
+        id: cache-ansible-roles-restore
+        uses: actions/cache/restore@v6
+        with:
+          path: ~/.ansible/roles
+          key: ansible-roles-${{ runner.os }}-${{ hashFiles('ansible/requirements.yaml') }}
+          restore-keys: ansible-roles-${{ runner.os }}-
+
+      - name: Install Ansible Galaxy roles
+        run: |
+          cd ansible
+          ansible-galaxy role install -r requirements.yaml
+
+      - name: Run representative pre-commit hooks
+        env:
+          SKIP: no-commit-to-branch
+        run: |
+          set -euo pipefail
+          unset NODE_OPTIONS
+          pre-commit run --files \
+            .pre-commit-config.yaml \
+            .github/workflows/pre-commit.yml \
+            nix/flake/devtools.nix \
+            --show-diff-on-failure -v
+
+      - name: Save Ansible Galaxy roles cache
+        if: always() && steps.cache-ansible-roles-restore.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v6
+        with:
+          path: ~/.ansible/roles
+          key: ${{ steps.cache-ansible-roles-restore.outputs.cache-primary-key }}
