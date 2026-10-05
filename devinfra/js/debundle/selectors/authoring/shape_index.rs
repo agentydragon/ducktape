@@ -1213,15 +1213,19 @@ export { runner };"#,
 
     #[test]
     fn stable_feature_preferred_over_volatile() {
-        // The item carries both a stable key and a volatile-looking literal; the
-        // top-ranked anchor must be the stable one.
+        // The stable key and the volatile-looking literal are each unique and in the
+        // same anchor class, and the literal is the shorter of the two: only the
+        // stability term keeps it from ranking first.
         let module = parse(
-            r#"const a = init("chunk-a1b2c3", { stableKey: 1 });
-const b = init("chunk-d4e5f6", { otherKey: 2 });"#,
+            r#"const a = init("v-1a2b3c4d", { stableKeyName: arg });
+const b = init("v-5e6f7a8b", { otherKeyName: arg });"#,
         );
         let index = ShapeIndex::new(&module);
         let anchor = index.minimal_anchor_set(0).unwrap();
-        assert_ne!(anchor.anchors[0].stability, Stability::Volatile);
+        assert_eq!(
+            anchor.anchors[0].feature,
+            ShapeFeature::Selector(SelectorFeature::ObjectKey("stableKeyName".into())),
+        );
         assert!(index.read_off_resolves_uniquely(0, &anchor));
     }
 }
