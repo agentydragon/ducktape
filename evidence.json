@@ -29336,5 +29336,501 @@
       "source_audit": "The hook runs rustfmt only; the cargo-fmt wrapper retains cargo/bootstrap packages. Copying the rustfmt binary is projected to save about 0.687 GiB.",
       "status": "Source/reference audit only, not built or runtime-validated. rustc and LLVM remain necessary for the unchanged binary."
     }
+  },
+  "container_closure_trim": {
+    "recorded_at_utc": "2026-10-05T09:57:57.518279+00:00",
+    "source_commit": "adf57c19587ec75839e50499c3d7e125c4b07e22",
+    "repeat_commit": "345a17dff3f318fcec3ac8f99c8e426b041b7fe2",
+    "repeat_preparation_repair": "Run 37292669208 failed before measurements: image reuse evaluated but did not realize the local closure, so an unconditional Attic push failed. Commit 345a17dff3 publishes only newly built closures; reused image uses its previously published closure. Image and measured workload unchanged.",
+    "scope": "Focused spike only; production pre-commit unchanged. Same four YAML/Nix/Rust files within both trim batches and repeat. Earlier full-image batch lacked the Rust file and zstd. Image build/publication and assignment waits excluded.",
+    "variants": [
+      {
+        "name": "Original",
+        "closure_bytes": 4630860136,
+        "compressed_layer_bytes": 1530710121,
+        "digest": "sha256:e37003307538a1fa3ef649d160fdd7cde349878b035efeaf45f7d2714e8af295"
+      },
+      {
+        "name": "Command only",
+        "closure_bytes": 3921419792,
+        "compressed_layer_bytes": 1282344125,
+        "digest": "sha256:d9eb8e432fd81e742a582aaf6f6279af4e603608e7855aa7ee2a187603a33e53",
+        "source_commit": "474a9860db82a3d9b005755daf65a8dd38fbab6c"
+      },
+      {
+        "name": "Guarded runtime",
+        "closure_bytes": 2631867832,
+        "compressed_layer_bytes": 867121160,
+        "digest": "sha256:a681a02795f8f5ce9364a9549d3e41edec8446397c2c8c6370ffa93fe91c6c79"
+      }
+    ],
+    "command_only": {
+      "run_url": "https://github.com/agentydragon/ducktape/actions/runs/37289839299",
+      "jobs": [
+        {
+          "job_id": 111698732100,
+          "name": "Container candidate trial 3",
+          "url": "https://github.com/agentydragon/ducktape/actions/runs/37289839299/job/111698732100",
+          "started_at": "2026-10-05T09:30:06Z",
+          "seconds": 99.0,
+          "steps": {
+            "Set up job": 1.0,
+            "Initialize containers": 79.0,
+            "Check out exact source commit": 7.0,
+            "Verify pre-commit image": 0.0,
+            "Restore Ansible Galaxy roles cache": 1.0,
+            "Install Ansible Galaxy roles": 2.0,
+            "Run representative pre-commit hooks": 5.0,
+            "Save Ansible Galaxy roles cache": 0.0,
+            "Post Check out exact source commit": 1.0,
+            "Stop containers": 0.0,
+            "Complete job": 0.0
+          }
+        },
+        {
+          "job_id": 111698732110,
+          "name": "Baseline trial 3",
+          "url": "https://github.com/agentydragon/ducktape/actions/runs/37289839299/job/111698732110",
+          "started_at": "2026-10-05T09:29:21Z",
+          "seconds": 43.0,
+          "steps": {
+            "Set up job": 1.0,
+            "Check out exact source commit": 7.0,
+            "Run ./.github/actions/setup-nix-devtools": 28.0,
+            "Restore Ansible Galaxy roles cache": 1.0,
+            "Install Ansible Galaxy roles": 1.0,
+            "Run representative pre-commit hooks": 1.0,
+            "Save Ansible Galaxy roles cache": 0.0,
+            "Post Check out exact source commit": 1.0,
+            "Complete job": 0.0
+          }
+        },
+        {
+          "job_id": 111698732115,
+          "name": "Container candidate trial 1",
+          "url": "https://github.com/agentydragon/ducktape/actions/runs/37289839299/job/111698732115",
+          "started_at": "2026-10-05T09:29:06Z",
+          "seconds": 109.0,
+          "steps": {
+            "Set up job": 1.0,
+            "Initialize containers": 75.0,
+            "Check out exact source commit": 7.0,
+            "Verify pre-commit image": 0.0,
+            "Restore Ansible Galaxy roles cache": 1.0,
+            "Install Ansible Galaxy roles": 16.0,
+            "Run representative pre-commit hooks": 6.0,
+            "Save Ansible Galaxy roles cache": 0.0,
+            "Post Check out exact source commit": 1.0,
+            "Stop containers": 0.0,
+            "Complete job": 0.0
+          }
+        },
+        {
+          "job_id": 111698732116,
+          "name": "Baseline trial 2",
+          "url": "https://github.com/agentydragon/ducktape/actions/runs/37289839299/job/111698732116",
+          "started_at": "2026-10-05T09:28:30Z",
+          "seconds": 54.0,
+          "steps": {
+            "Set up job": 0.0,
+            "Check out exact source commit": 7.0,
+            "Run ./.github/actions/setup-nix-devtools": 38.0,
+            "Restore Ansible Galaxy roles cache": 0.0,
+            "Install Ansible Galaxy roles": 1.0,
+            "Run representative pre-commit hooks": 5.0,
+            "Save Ansible Galaxy roles cache": 0.0,
+            "Post Check out exact source commit": 1.0,
+            "Complete job": 0.0
+          }
+        },
+        {
+          "job_id": 111698732125,
+          "name": "Container candidate trial 2",
+          "url": "https://github.com/agentydragon/ducktape/actions/runs/37289839299/job/111698732125",
+          "started_at": "2026-10-05T09:28:30Z",
+          "seconds": 94.0,
+          "steps": {
+            "Set up job": 1.0,
+            "Initialize containers": 78.0,
+            "Check out exact source commit": 7.0,
+            "Verify pre-commit image": 0.0,
+            "Restore Ansible Galaxy roles cache": 0.0,
+            "Install Ansible Galaxy roles": 2.0,
+            "Run representative pre-commit hooks": 2.0,
+            "Save Ansible Galaxy roles cache": 0.0,
+            "Post Check out exact source commit": 0.0,
+            "Stop containers": 1.0,
+            "Complete job": 0.0
+          }
+        },
+        {
+          "job_id": 111698732207,
+          "name": "Baseline trial 1",
+          "url": "https://github.com/agentydragon/ducktape/actions/runs/37289839299/job/111698732207",
+          "started_at": "2026-10-05T09:28:30Z",
+          "seconds": 49.0,
+          "steps": {
+            "Set up job": 2.0,
+            "Check out exact source commit": 7.0,
+            "Run ./.github/actions/setup-nix-devtools": 35.0,
+            "Restore Ansible Galaxy roles cache": 1.0,
+            "Install Ansible Galaxy roles": 0.0,
+            "Run representative pre-commit hooks": 3.0,
+            "Save Ansible Galaxy roles cache": 0.0,
+            "Post Check out exact source commit": 0.0,
+            "Complete job": 0.0
+          }
+        }
+      ],
+      "baseline_median": 49.0,
+      "container_median": 99.0,
+      "init_median": 78.0
+    },
+    "guarded_runtime": {
+      "run_url": "https://github.com/agentydragon/ducktape/actions/runs/37291744634",
+      "jobs": [
+        {
+          "job_id": 111705177231,
+          "name": "Baseline trial 1",
+          "url": "https://github.com/agentydragon/ducktape/actions/runs/37291744634/job/111705177231",
+          "started_at": "2026-10-05T09:46:37Z",
+          "seconds": 83.0,
+          "steps": {
+            "Set up job": 1.0,
+            "Check out exact source commit": 7.0,
+            "Run ./.github/actions/setup-nix-devtools": 69.0,
+            "Restore Ansible Galaxy roles cache": 1.0,
+            "Install Ansible Galaxy roles": 0.0,
+            "Run representative pre-commit hooks": 2.0,
+            "Save Ansible Galaxy roles cache": 0.0,
+            "Post Check out exact source commit": 0.0,
+            "Complete job": 0.0
+          }
+        },
+        {
+          "job_id": 111705177241,
+          "name": "Container candidate trial 2",
+          "url": "https://github.com/agentydragon/ducktape/actions/runs/37291744634/job/111705177241",
+          "started_at": "2026-10-05T09:46:37Z",
+          "seconds": 89.0,
+          "steps": {
+            "Set up job": 1.0,
+            "Initialize containers": 69.0,
+            "Check out exact source commit": 6.0,
+            "Verify pre-commit image": 0.0,
+            "Restore Ansible Galaxy roles cache": 1.0,
+            "Install Ansible Galaxy roles": 1.0,
+            "Run representative pre-commit hooks": 7.0,
+            "Save Ansible Galaxy roles cache": 0.0,
+            "Post Check out exact source commit": 0.0,
+            "Stop containers": 2.0,
+            "Complete job": 0.0
+          },
+          "docker_pull": {
+            "start": "2026-10-05T09:46:39.8929248Z",
+            "last_download_complete": "2026-10-05T09:46:51.0924877Z",
+            "end": "2026-10-05T09:47:48.1727476Z",
+            "seconds": 68.279823,
+            "tail_after_last_download_seconds": 57.08026
+          }
+        },
+        {
+          "job_id": 111705177302,
+          "name": "Baseline trial 2",
+          "url": "https://github.com/agentydragon/ducktape/actions/runs/37291744634/job/111705177302",
+          "started_at": "2026-10-05T09:46:38Z",
+          "seconds": 87.0,
+          "steps": {
+            "Set up job": 0.0,
+            "Check out exact source commit": 8.0,
+            "Run ./.github/actions/setup-nix-devtools": 68.0,
+            "Restore Ansible Galaxy roles cache": 1.0,
+            "Install Ansible Galaxy roles": 1.0,
+            "Run representative pre-commit hooks": 6.0,
+            "Save Ansible Galaxy roles cache": 0.0,
+            "Post Check out exact source commit": 0.0,
+            "Complete job": 0.0
+          }
+        },
+        {
+          "job_id": 111705177342,
+          "name": "Baseline trial 3",
+          "url": "https://github.com/agentydragon/ducktape/actions/runs/37291744634/job/111705177342",
+          "started_at": "2026-10-05T09:48:07Z",
+          "seconds": 62.0,
+          "steps": {
+            "Set up job": 0.0,
+            "Check out exact source commit": 7.0,
+            "Run ./.github/actions/setup-nix-devtools": 46.0,
+            "Restore Ansible Galaxy roles cache": 0.0,
+            "Install Ansible Galaxy roles": 1.0,
+            "Run representative pre-commit hooks": 5.0,
+            "Save Ansible Galaxy roles cache": 0.0,
+            "Post Check out exact source commit": 1.0,
+            "Complete job": 0.0
+          }
+        },
+        {
+          "job_id": 111705177433,
+          "name": "Container candidate trial 1",
+          "url": "https://github.com/agentydragon/ducktape/actions/runs/37291744634/job/111705177433",
+          "started_at": "2026-10-05T09:46:38Z",
+          "seconds": 84.0,
+          "steps": {
+            "Set up job": 1.0,
+            "Initialize containers": 64.0,
+            "Check out exact source commit": 7.0,
+            "Verify pre-commit image": 0.0,
+            "Restore Ansible Galaxy roles cache": 1.0,
+            "Install Ansible Galaxy roles": 4.0,
+            "Run representative pre-commit hooks": 5.0,
+            "Save Ansible Galaxy roles cache": 0.0,
+            "Post Check out exact source commit": 1.0,
+            "Stop containers": 0.0,
+            "Complete job": 0.0
+          },
+          "docker_pull": {
+            "start": "2026-10-05T09:46:40.0232811Z",
+            "last_download_complete": "2026-10-05T09:46:49.3151319Z",
+            "end": "2026-10-05T09:47:43.2399499Z",
+            "seconds": 63.216668,
+            "tail_after_last_download_seconds": 53.924818
+          }
+        },
+        {
+          "job_id": 111705177457,
+          "name": "Container candidate trial 3",
+          "url": "https://github.com/agentydragon/ducktape/actions/runs/37291744634/job/111705177457",
+          "started_at": "2026-10-05T09:48:08Z",
+          "seconds": 89.0,
+          "steps": {
+            "Set up job": 2.0,
+            "Initialize containers": 73.0,
+            "Check out exact source commit": 7.0,
+            "Verify pre-commit image": 0.0,
+            "Restore Ansible Galaxy roles cache": 0.0,
+            "Install Ansible Galaxy roles": 1.0,
+            "Run representative pre-commit hooks": 2.0,
+            "Save Ansible Galaxy roles cache": 0.0,
+            "Post Check out exact source commit": 0.0,
+            "Stop containers": 2.0,
+            "Complete job": 0.0
+          },
+          "docker_pull": {
+            "start": "2026-10-05T09:48:11.2603961Z",
+            "last_download_complete": "2026-10-05T09:48:20.8155421Z",
+            "end": "2026-10-05T09:49:23.2219596Z",
+            "seconds": 71.961563,
+            "tail_after_last_download_seconds": 62.406417
+          }
+        }
+      ],
+      "baseline_median": 83.0,
+      "container_median": 89.0,
+      "init_median": 69.0
+    },
+    "same_digest_repeat": {
+      "run_url": "https://github.com/agentydragon/ducktape/actions/runs/37293002970",
+      "jobs": [
+        {
+          "job_id": 111707857314,
+          "name": "Container candidate trial 1",
+          "url": "https://github.com/agentydragon/ducktape/actions/runs/37293002970/job/111707857314",
+          "started_at": "2026-10-05T09:54:18Z",
+          "seconds": 88.0,
+          "steps": {
+            "Set up job": 1.0,
+            "Initialize containers": 69.0,
+            "Check out exact source commit": 6.0,
+            "Verify pre-commit image": 0.0,
+            "Restore Ansible Galaxy roles cache": 1.0,
+            "Install Ansible Galaxy roles": 1.0,
+            "Run representative pre-commit hooks": 7.0,
+            "Save Ansible Galaxy roles cache": 0.0,
+            "Post Check out exact source commit": 0.0,
+            "Stop containers": 2.0,
+            "Complete job": 0.0
+          },
+          "docker_pull": {
+            "start": "2026-10-05T09:54:20.4245740Z",
+            "last_download_complete": "2026-10-05T09:54:33.7285223Z",
+            "end": "2026-10-05T09:55:28.1288185Z",
+            "seconds": 67.704244,
+            "tail_after_last_download_seconds": 54.400296
+          }
+        },
+        {
+          "job_id": 111707857352,
+          "name": "Baseline trial 2",
+          "url": "https://github.com/agentydragon/ducktape/actions/runs/37293002970/job/111707857352",
+          "started_at": "2026-10-05T09:54:18Z",
+          "seconds": 71.0,
+          "steps": {
+            "Set up job": 1.0,
+            "Check out exact source commit": 8.0,
+            "Run ./.github/actions/setup-nix-devtools": 52.0,
+            "Restore Ansible Galaxy roles cache": 1.0,
+            "Install Ansible Galaxy roles": 1.0,
+            "Run representative pre-commit hooks": 5.0,
+            "Save Ansible Galaxy roles cache": 0.0,
+            "Post Check out exact source commit": 0.0,
+            "Complete job": 0.0
+          }
+        },
+        {
+          "job_id": 111707857395,
+          "name": "Container candidate trial 2",
+          "url": "https://github.com/agentydragon/ducktape/actions/runs/37293002970/job/111707857395",
+          "started_at": "2026-10-05T09:54:18Z",
+          "seconds": 88.0,
+          "steps": {
+            "Set up job": 0.0,
+            "Initialize containers": 67.0,
+            "Check out exact source commit": 6.0,
+            "Verify pre-commit image": 1.0,
+            "Restore Ansible Galaxy roles cache": 0.0,
+            "Install Ansible Galaxy roles": 2.0,
+            "Run representative pre-commit hooks": 7.0,
+            "Save Ansible Galaxy roles cache": 0.0,
+            "Post Check out exact source commit": 1.0,
+            "Stop containers": 1.0,
+            "Complete job": 0.0
+          },
+          "docker_pull": {
+            "start": "2026-10-05T09:54:20.3055899Z",
+            "last_download_complete": "2026-10-05T09:54:33.7163673Z",
+            "end": "2026-10-05T09:55:26.2838749Z",
+            "seconds": 65.978285,
+            "tail_after_last_download_seconds": 52.567507
+          }
+        },
+        {
+          "job_id": 111707857508,
+          "name": "Container candidate trial 3",
+          "url": "https://github.com/agentydragon/ducktape/actions/runs/37293002970/job/111707857508",
+          "started_at": "2026-10-05T09:55:48Z",
+          "seconds": 94.0,
+          "steps": {
+            "Set up job": 1.0,
+            "Initialize containers": 69.0,
+            "Check out exact source commit": 9.0,
+            "Verify pre-commit image": 0.0,
+            "Restore Ansible Galaxy roles cache": 1.0,
+            "Install Ansible Galaxy roles": 1.0,
+            "Run representative pre-commit hooks": 9.0,
+            "Save Ansible Galaxy roles cache": 0.0,
+            "Post Check out exact source commit": 1.0,
+            "Stop containers": 0.0,
+            "Complete job": 0.0
+          },
+          "docker_pull": {
+            "start": "2026-10-05T09:55:50.7909483Z",
+            "last_download_complete": "2026-10-05T09:56:06.5197369Z",
+            "end": "2026-10-05T09:56:58.8098479Z",
+            "seconds": 68.018899,
+            "tail_after_last_download_seconds": 52.290111
+          }
+        },
+        {
+          "job_id": 111707857532,
+          "name": "Baseline trial 3",
+          "url": "https://github.com/agentydragon/ducktape/actions/runs/37293002970/job/111707857532",
+          "started_at": "2026-10-05T09:55:30Z",
+          "seconds": 67.0,
+          "steps": {
+            "Set up job": 1.0,
+            "Check out exact source commit": 3.0,
+            "Run ./.github/actions/setup-nix-devtools": 53.0,
+            "Restore Ansible Galaxy roles cache": 0.0,
+            "Install Ansible Galaxy roles": 1.0,
+            "Run representative pre-commit hooks": 6.0,
+            "Save Ansible Galaxy roles cache": 0.0,
+            "Post Check out exact source commit": 0.0,
+            "Complete job": 0.0
+          }
+        },
+        {
+          "job_id": 111707857553,
+          "name": "Baseline trial 1",
+          "url": "https://github.com/agentydragon/ducktape/actions/runs/37293002970/job/111707857553",
+          "started_at": "2026-10-05T09:54:18Z",
+          "seconds": 86.0,
+          "steps": {
+            "Set up job": 1.0,
+            "Check out exact source commit": 28.0,
+            "Run ./.github/actions/setup-nix-devtools": 52.0,
+            "Restore Ansible Galaxy roles cache": 1.0,
+            "Install Ansible Galaxy roles": 1.0,
+            "Run representative pre-commit hooks": 1.0,
+            "Save Ansible Galaxy roles cache": 0.0,
+            "Post Check out exact source commit": 0.0,
+            "Complete job": 0.0
+          }
+        }
+      ],
+      "baseline_median": 71.0,
+      "container_median": 88.0,
+      "init_median": 69.0
+    },
+    "validation": {
+      "rustfmt_corpus_files": 482,
+      "comparison": "Original and trimmed rustfmt --emit stdout; identical stdout, stderr and exit status on all tracked Rust files, all exiting 0. Malformed input matched exit 1, stdout and stderr.",
+      "command_only": "Executable byte-identical SHA256 df1d62b772bfbab5f1b1579ffe16454c8208ec1180b60cafc9f3f8936d6228f9.",
+      "runtime": "Copy rustfmt, librustc_driver and libLLVM; relocate RUNPATH. Exact six diagnostic-source filenames are checked before removing only the rustc store reference. Nix disallowedRequisites rejects original rustfmt/rustc/LLVM outputs. Developer environment keeps full cargo-fmt.",
+      "limits": "Pinned filename/layout guards require review on toolchain update; compiler-internal crash diagnostics can change. Corpus test does not cover every option or failure mode.",
+      "failed_probe": "Copying libraries and changing RUNPATH alone retained rustc because six diagnostic-source filename strings referenced its output. LLVM remained transitively through rustc. That probe was superseded."
+    },
+    "original_same_digest_pulls": [
+      {
+        "job_id": 111690658654,
+        "pull_command": "2026-10-05T09:05:46.1057426Z ##[command]/usr/bin/docker --config /home/runner/work/_temp/.docker_d0c81460-0a2d-4d36-bdeb-b5f7fea1c759 pull ghcr.io/agentydragon/precommit-spike@sha256:e37003307538a1fa3ef649d160fdd7cde349878b035efeaf45f7d2714e8af295",
+        "pull_complete": "2026-10-05T09:07:14.9320914Z Status: Downloaded newer image for ghcr.io/agentydragon/precommit-spike@sha256:e37003307538a1fa3ef649d160fdd7cde349878b035efeaf45f7d2714e8af295",
+        "last_download_complete": "2026-10-05T09:06:05.7377823Z a22f1e35963c: Download complete",
+        "pull_seconds": 88.826349,
+        "tail_after_last_download_seconds": 69.194309
+      },
+      {
+        "job_id": 111690658664,
+        "pull_command": "2026-10-05T09:07:24.9011060Z ##[command]/usr/bin/docker --config /home/runner/work/_temp/.docker_bebcec35-6ca7-4165-8b49-2a0c3692cd54 pull ghcr.io/agentydragon/precommit-spike@sha256:e37003307538a1fa3ef649d160fdd7cde349878b035efeaf45f7d2714e8af295",
+        "pull_complete": "2026-10-05T09:08:47.2446271Z Status: Downloaded newer image for ghcr.io/agentydragon/precommit-spike@sha256:e37003307538a1fa3ef649d160fdd7cde349878b035efeaf45f7d2714e8af295",
+        "last_download_complete": "2026-10-05T09:07:29.9210567Z a22f1e35963c: Download complete",
+        "pull_seconds": 82.343521,
+        "tail_after_last_download_seconds": 77.323571
+      },
+      {
+        "job_id": 111690658921,
+        "pull_command": "2026-10-05T09:05:46.1133275Z ##[command]/usr/bin/docker --config /home/runner/work/_temp/.docker_92aa32b5-39fa-41db-abf8-be00dcbf7ed8 pull ghcr.io/agentydragon/precommit-spike@sha256:e37003307538a1fa3ef649d160fdd7cde349878b035efeaf45f7d2714e8af295",
+        "pull_complete": "2026-10-05T09:07:06.7291861Z Status: Downloaded newer image for ghcr.io/agentydragon/precommit-spike@sha256:e37003307538a1fa3ef649d160fdd7cde349878b035efeaf45f7d2714e8af295",
+        "last_download_complete": "2026-10-05T09:06:09.5903783Z a22f1e35963c: Download complete",
+        "pull_seconds": 80.615859,
+        "tail_after_last_download_seconds": 57.138808
+      },
+      {
+        "job_id": 111692162817,
+        "pull_command": "2026-10-05T09:09:57.6897904Z ##[command]/usr/bin/docker --config /home/runner/work/_temp/.docker_b16cae40-5988-4398-84dd-33a31fafae51 pull ghcr.io/agentydragon/precommit-spike@sha256:e37003307538a1fa3ef649d160fdd7cde349878b035efeaf45f7d2714e8af295",
+        "pull_complete": "2026-10-05T09:11:21.6579875Z Status: Downloaded newer image for ghcr.io/agentydragon/precommit-spike@sha256:e37003307538a1fa3ef649d160fdd7cde349878b035efeaf45f7d2714e8af295",
+        "last_download_complete": "2026-10-05T09:10:18.8252666Z a22f1e35963c: Download complete",
+        "pull_seconds": 83.968197,
+        "tail_after_last_download_seconds": 62.832721
+      },
+      {
+        "job_id": 111692162879,
+        "pull_command": "2026-10-05T09:11:40.4234904Z ##[command]/usr/bin/docker --config /home/runner/work/_temp/.docker_63e6a650-8905-435d-9b78-38f28767ff69 pull ghcr.io/agentydragon/precommit-spike@sha256:e37003307538a1fa3ef649d160fdd7cde349878b035efeaf45f7d2714e8af295",
+        "pull_complete": "2026-10-05T09:12:59.5117421Z Status: Downloaded newer image for ghcr.io/agentydragon/precommit-spike@sha256:e37003307538a1fa3ef649d160fdd7cde349878b035efeaf45f7d2714e8af295",
+        "last_download_complete": "2026-10-05T09:11:53.4591973Z a22f1e35963c: Download complete",
+        "pull_seconds": 79.088252,
+        "tail_after_last_download_seconds": 66.052545
+      },
+      {
+        "job_id": 111692162900,
+        "pull_command": "2026-10-05T09:09:58.2190620Z ##[command]/usr/bin/docker --config /home/runner/work/_temp/.docker_eabdd8f0-23ba-4d7c-8d68-f1a504107ef5 pull ghcr.io/agentydragon/precommit-spike@sha256:e37003307538a1fa3ef649d160fdd7cde349878b035efeaf45f7d2714e8af295",
+        "pull_complete": "2026-10-05T09:11:25.3252175Z Status: Downloaded newer image for ghcr.io/agentydragon/precommit-spike@sha256:e37003307538a1fa3ef649d160fdd7cde349878b035efeaf45f7d2714e8af295",
+        "last_download_complete": "2026-10-05T09:10:22.9637753Z a22f1e35963c: Download complete",
+        "pull_seconds": 87.106155,
+        "tail_after_last_download_seconds": 62.361442
+      }
+    ],
+    "warming_limits": "Fresh standard hosted VM per job; no persistent local Docker cache. Registry warming is possible but these sequential small batches are not randomized. Pull duration includes overlapping download/extraction; last-download-to-pull-end is remaining processing time, not total extraction.",
+    "github_runner_docs": "https://docs.github.com/en/actions/reference/runners/github-hosted-runners"
   }
 }

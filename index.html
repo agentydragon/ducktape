@@ -9,17 +9,44 @@ header{background:rgba(245,246,243,.97);border-bottom:1px solid var(--line);posi
 @media print{header,.skip{display:none}body{background:white;font-size:11px}main{max-width:none;padding:0}.card,.metrics,.appendix{break-inside:avoid}details>*{display:block!important}.grid2{grid-template-columns:1fr 1fr}.recommendations{grid-template-columns:repeat(3,1fr)}a{color:inherit}section{margin-top:24px}.table-wrap{overflow:visible}table{min-width:0!important}.metric{print-color-adjust:exact}.stack,.bar-fill,.timeline{print-color-adjust:exact}}
 </style></head><body>
 <a class="skip" href="#main">Skip to report</a>
-<header><nav class="nav" aria-label="Report sections"><div class="brand">DUCKTAPE / CI PERFORMANCE</div><div class="navlinks"><a href="#container-spike">Container spike</a><a href="#early-effects">Early effects</a><a href="#critical-path">Experiments</a><a href="#implementation">Implementation</a><a href="#findings">Baseline</a><a href="#recommendations">Landed changes</a><a href="#cases">Case evidence</a><a href="#methods">Methods &amp; limits</a></div></nav></header>
+<header><nav class="nav" aria-label="Report sections"><div class="brand">DUCKTAPE / CI PERFORMANCE</div><div class="navlinks"><a href="#closure-trim">Container &amp; closure</a><a href="#early-effects">Early effects</a><a href="#critical-path">Experiments</a><a href="#implementation">Implementation</a><a href="#findings">Baseline</a><a href="#recommendations">Landed changes</a><a href="#cases">Case evidence</a><a href="#methods">Methods &amp; limits</a></div></nav></header>
 <main id="main">
 <div class="eyebrow">Container experiment · 5 October 2026 UTC</div>
-<h1>Prepared container works.<br>It makes this job slower.</h1>
-<p class="lead"><strong>Keep pre-commit on its current GitHub runner path.</strong> Three successful trials per variant took a median 60s with Nix setup and 102s with our prepared container. Pulling and initializing the 1.53 GB image outweighed the saved installation work. Shrink the shared tool environment before revisiting this approach.</p>
-<div class="meta-line"><span class="chip">3 baseline + 3 container trials passed</span><span class="chip">Same source and requested hooks</span><span class="chip">Production workflow unchanged</span></div>
+<h1>The image is 43% smaller.<br>Keep the current runner path.</h1>
+<p class="lead"><strong>The spike cut the tool closure by 43% and the compressed image to 867 MB.</strong> The later same-image batch still took a median 88s in a container versus 71s with Nix setup. Repeated pulls have not established a warming benefit. Keep the container and deeper runtime slice experimental; the simpler command-only formatter is ready to consider separately.</p>
+<div class="meta-line"><span class="chip">Two trims + a same-digest repeat</span><span class="chip">Matched workload within each batch</span><span class="chip">Production workflow unchanged</span></div>
+<section id="closure-trim">
+<div class="eyebrow">Follow-up / closure trimming and repeat pulls</div>
+<h2>43% smaller. A container still has to earn its setup cost.</h2>
+<p class="section-lead">Both trims passed the focused GitHub workload. Removing the unused Cargo wrapper cuts 709 MB without changing the formatter executable. Slicing the formatter runtime removes another 1.29 GB, with explicit version guards and additional maintenance cost.</p>
+<div class="grid2">
+<article class="card"><h3>Tool closure: 4.63 → 2.63 GB</h3>
+<div class="bar-chart" role="img" aria-label="Nix closure sizes: original 4.63 GB, command only 3.92 GB, guarded runtime 2.63 GB">
+<div class="bar-row"><div class="bar-label">Original</div><div class="bar-track"><div class="bar-fill" style="width:100%;background:var(--orange)"></div></div><strong>4.63 GB</strong></div>
+<div class="bar-row"><div class="bar-label">Command only</div><div class="bar-track"><div class="bar-fill" style="width:84.7%"></div></div><strong>3.92 GB</strong></div>
+<div class="bar-row"><div class="bar-label">Guarded runtime</div><div class="bar-track"><div class="bar-fill" style="width:56.8%"></div></div><strong>2.63 GB</strong></div></div>
+<p class="caption">Compressed image layers: 1.53 GB → 1.28 GB → 867 MB. Decimal GB; these are image and closure sizes, not measured network traffic.</p></article>
+<article class="card"><h3>Does repeated pulling warm it up?</h3>
+<p>The original digest had median initialization times of <strong>83s then 84s</strong> across two batches of three fresh runners. The smaller digest took <strong>69s then 69s</strong>. These small sequential batches do not establish a warming benefit.</p>
+<p>Original-image logs show <strong>57–77s after the last layer download completed</strong> before the pull finished. Downloads and extraction overlap; this is the remaining local processing tail. Faster registry downloads cannot remove that work. Even the smaller image’s later pulls retained a 52–54s processing tail.</p>
+<p class="subtle"><a href="https://docs.github.com/en/actions/reference/runners/github-hosted-runners">Standard GitHub-hosted jobs get fresh VMs</a>, so a previous job's local Docker cache is not retained. Registry-side caching may still help; this experiment does not rule it out.</p></article></div>
+<div class="table-wrap" style="margin-top:20px"><table><thead><tr><th>Batch · 3 jobs per variant</th><th>Nix job median</th><th>Container job median</th><th>Container init median</th></tr></thead><tbody><tr><th scope="row"><a href="https://github.com/agentydragon/ducktape/actions/runs/37289839299">Command only</a></th><td>49s</td><td>99s</td><td>78s</td></tr>
+<tr><th scope="row"><a href="https://github.com/agentydragon/ducktape/actions/runs/37291744634">Guarded runtime</a></th><td>83s</td><td>89s</td><td>69s</td></tr>
+<tr><th scope="row"><a href="https://github.com/agentydragon/ducktape/actions/runs/37293002970">Same runtime, later pulls</a></th><td>71s</td><td>88s</td><td>69s</td></tr>
+</tbody></table></div>
+<p class="table-note">Assigned-job wall time; excludes build/publication and runner assignment. Nix baseline uses the same trimmed closure, available from Attic before measurement. Different batches ran at different times; do not interpret their differences as a causal production speedup. All variants used the same four-file YAML/Nix/Rust workload. zstd restored the Galaxy cache in the trimmed containers.</p>
+<div class="callout warm"><strong>Decision:</strong> keep the current GitHub runner execution path. The command-only formatter is the simpler candidate for a separate production change: it preserves the binary and developer <code>cargo-fmt</code> while removing 15% of the focused closure. The deeper runtime slice remains an experiment; this evidence does not justify adopting its maintenance burden or rolling out a job container.</div>
+<details class="appendix"><summary>What was changed, validated, and learned</summary><div class="detail-body">
+<p>The first trim copied only the formatter executable, byte-identically. The second copied the formatter and its two shared libraries, changed RUNPATHs, and checked exactly six compiler diagnostic-source filenames before normalizing their compiler store reference. A copy-and-relocate-only probe still retained the compiler and LLVM through those references; it was superseded.</p>
+<p><strong>Validation:</strong> original and runtime-trimmed formatters returned identical stdout, stderr and exit status on all 482 tracked Rust files and on a malformed input. All focused GitHub jobs passed, including the Rust hook. Nix rejects a sliced output that still retains the original formatter, compiler or LLVM package. Full Rustfmt and cargo-fmt remain in the devshell.</p>
+<p><strong>Limits:</strong> exact library and source-filename guards require review after a Rust update. Compiler-internal crash diagnostics may differ. This is not coverage of every formatter option, every hook, or whole-PR feedback.</p>
+<p>The later batch reused <code>a681a02795f8…</code> explicitly, with the same Nix closure and requested workload. Source <code>adf57c19587e</code> built it; <code>345a17dff3f3</code> selects that digest, documents validation, and avoids republishing an absent local closure on reuse. The first repeat attempt failed in preparation, before any timed jobs, because it tried to republish that absent path. <a href="https://github.com/agentydragon/ducktape/tree/345a17dff3f318fcec3ac8f99c8e426b041b7fe2/devinfra/ci/x/precommit_container">Exact recipe</a> · <a href="evidence.json">Per-job timestamps and pull evidence</a>.</p>
+</div></details></section>
 <section id="container-spike">
         <div class="eyebrow">
           New experiment / 5 October · GitHub Free hosted runners
         </div>
-        <h2>Keep the current execution path; shrink the environment first.</h2>
+        <h2>Initial experiment: the full image was slower.</h2>
         <p class="section-lead">
           All three baseline and three corrected container jobs passed on
           identical source and the same YAML/Nix workload. The prepared
@@ -79,10 +106,8 @@ header{background:rgba(245,246,243,.97);border-bottom:1px solid var(--line);posi
             </p>
             <div class="callout warm">
               <strong>Recommendation:</strong> do not roll out this full-size
-              image. First validate a command-only rustfmt package: the unused
-              Cargo wrappers retain about 0.7 GiB of extra dependencies. The
-              unchanged formatter still needs its Rust compiler and LLVM
-              runtime.
+              image. The command-only formatter and runtime slice have now been
+              tested; see the closure-trimming results above.
             </div>
           </article>
         </div>
