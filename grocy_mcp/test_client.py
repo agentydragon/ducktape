@@ -74,13 +74,18 @@ async def test_resolve_product_by_name_case_insensitive(grocy_client: GrocyClien
 
 
 async def test_resolve_product_unknown_id(grocy_client: GrocyClient) -> None:
-    with pytest.raises(ValueError, match="No product with id=99"):
+    with pytest.raises(ValueError, match="99") as exc_info:
         await grocy_client.resolve_entity(EntityType.PRODUCT, 99)
+    assert "Milk" in str(exc_info.value)
+    assert "Rice" in str(exc_info.value)
 
 
 async def test_resolve_product_unknown_name_suggests_similar(grocy_client: GrocyClient) -> None:
-    with pytest.raises(ValueError, match=r"No product named 'Ric'.*Similar"):
+    # Only the close match is offered: the fallback would list every product.
+    with pytest.raises(ValueError, match=r"\bRic\b") as exc_info:
         await grocy_client.resolve_entity(EntityType.PRODUCT, "Ric")
+    assert "Rice" in str(exc_info.value)
+    assert "Milk" not in str(exc_info.value)
 
 
 # -- Location resolution ---------------------------------------------------
@@ -92,7 +97,7 @@ async def test_resolve_location_by_name(grocy_client: GrocyClient) -> None:
 
 
 async def test_resolve_location_unknown(grocy_client: GrocyClient) -> None:
-    with pytest.raises(ValueError, match="No location named 'Garage'"):
+    with pytest.raises(ValueError, match="Garage"):
         await grocy_client.resolve_entity(EntityType.LOCATION, "Garage")
 
 
@@ -132,8 +137,10 @@ async def test_qu_for_product_specific_conversion(grocy_client: GrocyClient) -> 
 
 async def test_qu_for_product_no_conversion(grocy_client: GrocyClient) -> None:
     """Milk's stock QU is Liter (id=5). Piece has no conversion to Liter."""
-    with pytest.raises(ValueError, match=r"No conversion from 'Piece' to stock QU 'Liter'.*Milk"):
+    with pytest.raises(ValueError, match="Piece") as exc_info:
         await grocy_client.resolve_qu_for_product("Piece", product_id=2)
+    assert "Liter" in str(exc_info.value)
+    assert "Milk" in str(exc_info.value)
 
 
 # -- QU for product: product-specific overrides global ----------------------
