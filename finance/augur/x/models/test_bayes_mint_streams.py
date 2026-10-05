@@ -83,7 +83,6 @@ def _synthetic_mint_streams_data(
     tender_discount = -0.02  # match the fit's tender_price_log_discount_mu prior
 
     log_v = math.log(v0)
-    log_shares = math.log(shares0)
 
     valuations: list[ValuationObservation] = []
     prices: list[PriceObservation] = []
@@ -94,28 +93,16 @@ def _synthetic_mint_streams_data(
     # Walk forward month-by-month, applying drift, mint, and event jumps.
     for m in range(1, horizon_months + 1):
         log_v += monthly_drift + sigma_v * rng.gauss(0.0, 1.0)
-        log_shares += monthly_mint_log
         if m % event_interval == 0:
             # Sample cash/V_pre from the true LogNormal distribution.
             cash_over_v = math.exp(rng.gauss(math.log(cash_over_v_pre_true), cash_over_v_pre_log_sigma_true))
             cash_usd = math.exp(log_v) * cash_over_v
             v_post = math.exp(log_v) + cash_usd
             log_v = math.log(v_post)
-            log_shares += math.log1p(cash_over_v)  # shares grow by same factor as V (step_up=1)
             valuations.append(_primary(_date_at_months(m), v_post, cash_usd))
 
-    # Tender prices at evenly spaced months over the window, with small noise.
-    for k in range(n_tender_prices):
-        # Pick a month not at the very start.
-        m = max(1, round((k + 1) * horizon_months / (n_tender_prices + 1)))
-        # Replay the trajectory to month m so we can read V(m) and shares(m).
-        # (Easier than tracking grids: do a fresh deterministic replay with the same seed.)
-        # Approach: regenerate the path up to month m. Skip; cleaner to track inline.
-        # For test simplicity, we'll just attach a tender at the END of the loop using the
-        # final log_v / log_shares values (only at the horizon). Tenders elsewhere need
-        # mid-loop bookkeeping; do that via the second loop below.
-
-    # Re-derive V and shares at every month so we can pick tender prices anywhere.
+    # Tender prices at evenly spaced months over the window, with small noise. Re-derive V and
+    # shares at every month so a tender can sit anywhere.
     rng2 = random.Random(seed)
     log_v2 = math.log(v0)
     log_shares2 = math.log(shares0)
