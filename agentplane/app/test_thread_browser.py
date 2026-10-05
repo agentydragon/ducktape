@@ -831,9 +831,7 @@ async def test_thread_follows_bottom_until_reader_scrolls_up(
     # The app adopts the reader's position at the gesture's scrollend. Rows entering the window can
     # still load and be re-measured after it, and the scroll correction for a re-measure lands a
     # frame after its commit; capture_reading_anchor samples once two consecutive frames agree.
-    gesture = await history.evaluate_handle(
-        "area => ({ ended: new Promise(resolve => area.addEventListener('scrollend', () => resolve(), { once: true })) })"
-    )
+    gesture = await history.evaluate_handle("area => window.__threadPage.scrollEnded(area)")
     await page.mouse.wheel(0, -600)
     async with asyncio.timeout(30):
         await gesture.evaluate("gesture => gesture.ended")
@@ -858,10 +856,10 @@ async def test_thread_follows_bottom_until_reader_scrolls_up(
     await expect_projected_cursor(page, completed.cursor)
     # Wait for the paint following layout/ResizeObserver, so a premature assertion cannot miss
     # an unwanted jump scheduled by that observer. No elapsed-time delay stands in for rendering.
-    await page.evaluate("() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))")
+    await frames(page)
     await expect_reading_anchor(page, reading_anchor)
     await page.set_viewport_size({"width": 360 if phone else 800, "height": 700})
-    await page.evaluate("() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))")
+    await frames(page)
     await expect_reading_anchor(page, reading_anchor)
     # A late expansion above the reader can advance scrollTop through browser anchoring.
     # Passing the old bottom that way must not be mistaken for returning to it.
@@ -872,7 +870,7 @@ async def test_thread_follows_bottom_until_reader_scrolls_up(
             message.style.minHeight = `${area.scrollHeight}px`;
         }"""
     )
-    await page.evaluate("() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))")
+    await frames(page)
     assert await history.evaluate("area => area.scrollTop") > previous_bottom
     await expect_reading_anchor(page, reading_anchor)
     assert await history.evaluate("area => area.scrollHeight - area.clientHeight - area.scrollTop") > 24
@@ -930,7 +928,7 @@ async def test_small_upward_scroll_stays_detached_when_tail_streams(thread_brows
 
     history = page.get_by_role("region", name="Thread history", exact=True)
     await expect_history_bottom(page)
-    await page.evaluate("() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))")
+    await frames(page)
     initial_scroll_top = await history.evaluate("area => area.scrollTop")
     gesture = await history.evaluate_handle(
         """area => {
@@ -996,7 +994,7 @@ async def test_small_upward_scroll_stays_detached_when_tail_streams(thread_brows
             }""",
             arg=previous_height,
         )
-        await page.evaluate("() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))")
+        await frames(page)
     finally:
         await scroll_gesture
         await cdp.detach()
@@ -1007,7 +1005,7 @@ async def test_small_upward_scroll_stays_detached_when_tail_streams(thread_brows
     assert events_after_scrollend.index("stream-rendered") < events_after_scrollend.index("scrollend"), (
         f"expected the streamed update to render before scrollend: {events_after_scrollend}"
     )
-    await page.evaluate("() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))")
+    await frames(page)
     bottom_gap = await history.evaluate("area => area.scrollHeight - area.scrollTop - area.clientHeight")
     assert bottom_gap > 24, f"streaming growth pulled the reader back to the bottom (gap={bottom_gap:.1f}px)"
     await gesture.dispose()
@@ -1102,9 +1100,7 @@ async def wheel(page: Page, delta: float) -> None:
     the reader."""
     history = page.get_by_role("region", name="Thread history", exact=True)
     await history.hover()
-    gesture = await history.evaluate_handle(
-        "area => ({ ended: new Promise(resolve => area.addEventListener('scrollend', () => resolve(), { once: true })) })"
-    )
+    gesture = await history.evaluate_handle("area => window.__threadPage.scrollEnded(area)")
     await page.mouse.wheel(0, round(delta))
     async with asyncio.timeout(30):
         await gesture.evaluate("gesture => gesture.ended")

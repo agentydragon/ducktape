@@ -140,9 +140,7 @@ async def test_a_growing_thread_stays_one_shape_and_scrolling_back_keeps_the_rea
     async with _holding_older_pages(page) as held:
         # Reaching the top asks for the page before it. Sample the reader's row while that page is
         # still on its way, once the gesture has ended and two consecutive frames agree.
-        gesture = await history.evaluate_handle(
-            "area => ({ ended: new Promise(resolve => area.addEventListener('scrollend', () => resolve(), { once: true })) })"
-        )
+        gesture = await history.evaluate_handle("area => window.__threadPage.scrollEnded(area)")
         await page.mouse.wheel(0, -10_000)
         async with asyncio.timeout(30):
             await held.asked.wait()
@@ -195,9 +193,7 @@ async def test_an_older_page_landing_mid_gesture_does_not_move_the_reader(thread
     loading = history.get_by_role("status").filter(has_text="Loading earlier…")
     await history.hover()
     async with _holding_older_pages(page) as held:
-        gesture = await history.evaluate_handle(
-            "area => ({ ended: new Promise(resolve => area.addEventListener('scrollend', () => resolve(), { once: true })) })"
-        )
+        gesture = await history.evaluate_handle("area => window.__threadPage.scrollEnded(area)")
         await page.mouse.wheel(0, -10_000)
         async with asyncio.timeout(30):
             await held.asked.wait()
