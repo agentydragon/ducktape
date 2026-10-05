@@ -146,57 +146,21 @@ mod from_report_tests {
         }
     }
 
-    /// Direct edges serialize with `role = None`; on the way back in
-    /// they reconstruct as `EdgeRole::Direct`.
-    #[test]
-    fn direct_role_round_trips_via_none() {
-        let report = OwnerGraphReport {
-            chunk_id: "chunk".into(),
-            nodes: vec![node("owner:0", 0), node("owner:1", 1)],
-            edges: vec![OwnerGraphEdgeReport {
-                id: "owner_edge:0".to_string(),
-                source: "owner:1".to_string(),
-                target: "owner:0".to_string(),
-                edge_kind: DepKind::EagerUse,
-                binding: None,
-                statement_ordinal: StatementOrdinal(1),
-                constrains_init_order: true,
-                role: None,
-            }],
-            quotient: OwnerGraphQuotientReport {
-                nodes: Vec::new(),
-                edges: Vec::new(),
-                sccs: Vec::new(),
-            },
-            atomic_graph: AtomicGraphReport {
-                nodes: Vec::new(),
-                edges: Vec::new(),
-            },
-        };
-        let graph = OwnerGraph::from_report(&report).unwrap();
-        assert_eq!(graph.num_edges(), 1);
-        assert_eq!(graph.edge(OwnerEdgeId(0)).reason.role(), EdgeRole::Direct);
-    }
-
-    /// Promoted edges carry an `EdgeRoleReport::PromotedAtInit` on
-    /// the wire and reconstruct as `EdgeRole::PromotedAtInit` with
-    /// the resolved `OwnerId`.
-    #[test]
-    fn promoted_at_init_role_round_trips_with_callee_owner() {
-        let report = OwnerGraphReport {
+    /// An eager edge from `owner:1` to `target`, over owners 0..=2, carrying
+    /// `role` on the wire.
+    fn report_with_edge(target: &str, role: Option<EdgeRoleReport>) -> OwnerGraphReport {
+        OwnerGraphReport {
             chunk_id: "chunk".into(),
             nodes: vec![node("owner:0", 0), node("owner:1", 1), node("owner:2", 2)],
             edges: vec![OwnerGraphEdgeReport {
                 id: "owner_edge:0".to_string(),
                 source: "owner:1".to_string(),
-                target: "owner:0".to_string(),
+                target: target.to_string(),
                 edge_kind: DepKind::EagerUse,
                 binding: None,
                 statement_ordinal: StatementOrdinal(1),
                 constrains_init_order: true,
-                role: Some(EdgeRoleReport::PromotedAtInit {
-                    callee_owner: "owner:2".to_string(),
-                }),
+                role,
             }],
             quotient: OwnerGraphQuotientReport {
                 nodes: Vec::new(),
@@ -207,15 +171,31 @@ mod from_report_tests {
                 nodes: Vec::new(),
                 edges: Vec::new(),
             },
-        };
-        let graph = OwnerGraph::from_report(&report).unwrap();
-        assert_eq!(graph.num_edges(), 1);
-        assert_eq!(
-            graph.edge(OwnerEdgeId(0)).reason.role(),
-            EdgeRole::PromotedAtInit {
-                callee_owner: OwnerId(2),
-            }
-        );
+        }
+    }
+
+    /// Direct edges serialize with `role = None` and reconstruct as
+    /// `EdgeRole::Direct`; promoted edges carry an
+    /// `EdgeRoleReport::PromotedAtInit` and reconstruct as
+    /// `EdgeRole::PromotedAtInit` with the resolved callee `OwnerId`.
+    #[test]
+    fn edge_role_round_trips_through_the_wire_shape() {
+        for (case, wire_role, expected) in [
+            ("direct via none", None, EdgeRole::Direct),
+            (
+                "promoted at init",
+                Some(EdgeRoleReport::PromotedAtInit {
+                    callee_owner: "owner:2".to_string(),
+                }),
+                EdgeRole::PromotedAtInit {
+                    callee_owner: OwnerId(2),
+                },
+            ),
+        ] {
+            let graph = OwnerGraph::from_report(&report_with_edge("owner:0", wire_role)).unwrap();
+            assert_eq!(graph.num_edges(), 1, "{case}");
+            assert_eq!(graph.edge(OwnerEdgeId(0)).reason.role(), expected, "{case}");
+        }
     }
 
     /// Strict mapping: an edge referencing an owner id missing from
@@ -224,30 +204,7 @@ mod from_report_tests {
     /// planner-side gate would otherwise reason over a weaker graph.
     #[test]
     fn from_report_errors_on_unresolvable_edge_endpoint() {
-        let report = OwnerGraphReport {
-            chunk_id: "chunk".into(),
-            nodes: vec![node("owner:0", 0), node("owner:1", 1)],
-            edges: vec![OwnerGraphEdgeReport {
-                id: "owner_edge:0".to_string(),
-                source: "owner:1".to_string(),
-                target: "owner:999".to_string(),
-                edge_kind: DepKind::EagerUse,
-                binding: None,
-                statement_ordinal: StatementOrdinal(1),
-                constrains_init_order: true,
-                role: None,
-            }],
-            quotient: OwnerGraphQuotientReport {
-                nodes: Vec::new(),
-                edges: Vec::new(),
-                sccs: Vec::new(),
-            },
-            atomic_graph: AtomicGraphReport {
-                nodes: Vec::new(),
-                edges: Vec::new(),
-            },
-        };
-        let err = OwnerGraph::from_report(&report).unwrap_err();
+        let err = OwnerGraph::from_report(&report_with_edge("owner:999", None)).unwrap_err();
         assert_eq!(err.endpoint, "owner:999");
         assert_eq!(err.edge_id, "owner_edge:0");
         assert!(err.to_string().contains("owner:999"), "{err}");
