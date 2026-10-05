@@ -175,8 +175,7 @@ async def test_competing_runner_cannot_take_state_or_dispatch_before_replacement
     stdout, stderr = await contender.communicate()
     assert contender.returncode != 0
     assert stdout == b""
-    assert "runner state directory" in stderr.decode()
-    assert "already owned" in stderr.decode()
+    assert "StateOwnershipError:" in stderr.decode()
 
     await first_runner.crash(harness_pids)
     await client.close()
@@ -243,8 +242,7 @@ async def test_state_fence_survives_native_leader_exit_until_its_child_group_is_
             stderr = await contender.stderr.read()
             await contender.wait()
             assert contender.returncode != 0
-            assert "runner state directory" in stderr.decode()
-            assert "already owned" in stderr.decode()
+            assert "StateOwnershipError:" in stderr.decode()
         finally:
             if contender.returncode is None:
                 os.killpg(contender.pid, signal.SIGKILL)
@@ -321,8 +319,7 @@ async def test_runner_sigkill_fences_an_active_native_group_before_successor_dis
     )
     _, stderr = await contender.communicate()
     assert contender.returncode != 0
-    assert "runner state directory" in stderr.decode()
-    assert "already owned" in stderr.decode()
+    assert "StateOwnershipError:" in stderr.decode()
     assert model.request_count == 1
 
     # ``crash`` waits the actual native harness PID, not merely the dead runner or supervisor.
