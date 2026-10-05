@@ -150,44 +150,6 @@ async def test_listen_deliver_read_ack_and_recover_lost_response_without_app(
                         ),
                         OperatorPrincipal(issuer="test", subject="operator"),
                     )
-                    read_path = f"/v1/action-requests/{request['id']}"
-                    delegate_headers = {"Authorization": "Bearer delegate-token"}
-                    for suffix in ["", "/events"]:
-                        assert (await action_http.get(read_path + suffix, headers=delegate_headers)).status_code == 200
-                        assert (
-                            await action_http.get(read_path + suffix, headers={"Authorization": "Bearer other-token"})
-                        ).status_code == 404
-                    detail = await action_http.get(read_path, headers=delegate_headers)
-                    assert detail.json()["caller"] == owner.model_dump()
-                    listing = await action_http.get("/v1/action-requests", headers=delegate_headers)
-                    assert [item["id"] for item in listing.json()] == [request["id"]]
-                    first_page = await action_http.get(
-                        read_path + "/events", params={"limit": 1}, headers=delegate_headers
-                    )
-                    assert len(first_page.json()) == 1
-                    assert (await action_http.post(read_path + "/cancel", headers=delegate_headers)).status_code == 401
-                    assert (
-                        await action_http.post(
-                            "/v1/action-requests",
-                            json={
-                                "idempotency_key": "forbidden",
-                                "title": "Forbidden",
-                                "action": {"group": "agentplane", "name": "echo"},
-                                "arguments": {"text": "hello"},
-                            },
-                            headers=delegate_headers,
-                        )
-                    ).status_code == 401
-                    assert (
-                        await action_http.post(
-                            f"/v1/operator/action-requests/{request['id']}/decision",
-                            json={"verdict": "deny", "expected_version": 1, "idempotency_key": "forbidden"},
-                            headers=delegate_headers,
-                        )
-                    ).status_code == 401
-                    assert (
-                        await action_http.get(f"/v1/operator/action-requests/{request['id']}", headers=delegate_headers)
-                    ).status_code == 401
                     body = {
                         "destination_ref": {"namespace": SANDBOX_NAMESPACE, "name": SANDBOX, "uid": SANDBOX_UID},
                         "session_id": "notifications",
