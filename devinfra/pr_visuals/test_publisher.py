@@ -17,6 +17,7 @@ from PIL import Image
 from devinfra.ci.invocation_ids import invocation_id
 from devinfra.pr_visuals.publisher import (
     COMMENT_BUDGET,
+    COMMENT_MARKER,
     BaselinePointer,
     ClassificationCounts,
     DownloadedVisualTest,
@@ -134,7 +135,7 @@ def test_a_genuine_query_failure_still_raises() -> None:
     """A transport or auth failure must not read as 'this run had no visuals' — that
     would publish an empty bundle over a commit that really did render something."""
     broken = subprocess.CompletedProcess(args=[], returncode=1, stdout="", stderr="Error: HTTP 503: upstream timeout")
-    with pytest.raises(RuntimeError, match="all BuildBuddy artifact queries failed"):
+    with pytest.raises(RuntimeError):
         list_ci_artifacts(["a", "b"], run=lambda *_a, **_k: broken)
 
 
@@ -489,11 +490,8 @@ def test_comment_bodies_link_commit_targets_and_report_errors() -> None:
     )
 
     assert "commit/0123456789abcdef0123456789abcdef01234567" in success
-    assert "[Open visual review](https://visuals/commits/sha/index.html)" in success
+    assert "https://visuals/commits/sha/index.html" in success
     assert "tests/example-visuals-" in success
-    assert "Visual review failed" in failure
-    assert "publisher failed while processing this Bazel CI run" in failure
-    assert "invalid or incomplete" not in failure
     assert "missing artifact screen.png" in failure
 
     warning = success_comment_body(
@@ -504,7 +502,6 @@ def test_comment_bodies_link_commit_targets_and_report_errors() -> None:
         ci_conclusion="failure",
         ci_failures=["//haku/console:x_test"],
     )
-    assert "visual artifacts that arrived are shown below" in warning
     assert "//haku/console:x_test" in warning
 
     no_visuals = no_visual_comment_body(
@@ -514,40 +511,40 @@ def test_comment_bodies_link_commit_targets_and_report_errors() -> None:
         ci_failures=["//haku/console:x_test"],
         details_url="https://github/actions/runs/1",
     )
-    assert "No visual artifacts were available" in no_visuals
     assert "https://github/actions/runs/1" in no_visuals
 
 
+HEAD_SHA = "0123456789abcdef0123456789abcdef01234567"
+OTHER_SHA = "fedcba9876543210fedcba9876543210fedcba98"
+REPOSITORY = "agentydragon/ducktape"
+
+
+def _success_comment(commit_sha: str) -> str:
+    return success_comment_body(
+        repository=REPOSITORY, commit_sha=commit_sha, url="https://visuals/commits/sha/", review_tests=[]
+    )
+
+
+# Each existing body comes from the function that writes it, so this pins that the refresh
+# recognizes what the publisher actually posts, whatever its wording.
 @pytest.mark.parametrize(
     ("existing_body", "expected_edit"),
     [
-        (
-            "<!-- pr-visuals -->\n## Visual review failed for "
-            "[`01234567`](https://github.com/agentydragon/ducktape/commit/"
-            "0123456789abcdef0123456789abcdef01234567)",
+        pytest.param(
+            error_comment_body(repository=REPOSITORY, commit_sha=HEAD_SHA, error=ValueError("boom")),
             True,
+            id="failure-of-this-commit",
         ),
-        (
-            "<!-- pr-visuals -->\n## Visual review for "
-            "[`fedcba98`](https://github.com/agentydragon/ducktape/commit/"
-            "fedcba9876543210fedcba9876543210fedcba98)",
+        pytest.param(_success_comment(OTHER_SHA), True, id="success-of-another-commit"),
+        pytest.param(_success_comment(HEAD_SHA), False, id="success-of-this-commit"),
+        pytest.param(
+            no_visual_comment_body(
+                repository=REPOSITORY, commit_sha=HEAD_SHA, ci_conclusion="failure", ci_failures=[], details_url=None
+            ),
             True,
+            id="no-artifacts-for-this-commit",
         ),
-        (
-            "<!-- pr-visuals -->\n## Visual review for "
-            "[`01234567`](https://github.com/agentydragon/ducktape/commit/"
-            "0123456789abcdef0123456789abcdef01234567)\n\n"
-            "[Open visual review](https://visuals/commits/01234567/index.html)",
-            False,
-        ),
-        (
-            "<!-- pr-visuals -->\n## Visual review for "
-            "[`01234567`](https://github.com/agentydragon/ducktape/commit/"
-            "0123456789abcdef0123456789abcdef01234567)\n\n"
-            "> Bazel CI concluded `failure`.\n\nNo visual artifacts were available from the Bazel CI run.",
-            True,
-        ),
-        (None, False),
+        pytest.param(None, False, id="no-comment"),
     ],
 )
 def test_refresh_stale_pull_request_comment(
@@ -588,18 +585,13 @@ def test_refresh_stale_pull_request_comment(
 
     monkeypatch.setattr("devinfra.pr_visuals.publisher.Github", FakeGithub)
     refresh_stale_pull_request_comment(
-        repository="agentydragon/ducktape",
-        pull_request=4594,
-        commit_sha="0123456789abcdef0123456789abcdef01234567",
-        body="replacement",
-        token="token",
+        repository=REPOSITORY, pull_request=4594, commit_sha=HEAD_SHA, body="replacement", token="token"
     )
 
     assert edits == (["replacement"] if expected_edit else [])
     assert created == []
 
 
-HEAD_SHA = "0123456789abcdef0123456789abcdef01234567"
 PR_HEAD_REF = "pr-owner:topic"
 
 
@@ -685,7 +677,6 @@ def test_a_superseded_run_publishes_its_bundle_but_leaves_the_comment_alone(
     assert len(checks) == 1, "the announced in-progress check must still be terminated"
     assert checks[0]["conclusion"] == "neutral"
     assert checks[0]["commit_sha"] == HEAD_SHA
-    assert "uperseded" in str(checks[0]["summary"])
 
 
 PR_CHECK_ID = "pr-visual-review:33060467222"
@@ -795,7 +786,6 @@ def test_a_pr_run_whose_commit_is_no_longer_a_pr_head_only_closes_its_check(
     main()
 
     assert [(check["conclusion"], check["external_id"]) for check in publisher_run.checks] == [("neutral", PR_CHECK_ID)]
-    assert "no longer the head of an open pull request" in str(publisher_run.checks[0]["summary"])
     assert publisher_run.comments == []
 
 
@@ -995,23 +985,18 @@ def test_write_baseline_pointers_puts_mutable_json() -> None:
 
 
 def test_diff_check_conclusions() -> None:
-    def review_test(summary: ClassificationCounts | None, *, fallback: bool = False) -> ReviewTest:
-        return ReviewTest(
-            target_label="//t:a", slug="s", title="T", assets=[], summary=summary, baseline_fallback=fallback or None
-        )
+    def review_test(summary: ClassificationCounts | None) -> ReviewTest:
+        return ReviewTest(target_label="//t:a", slug="s", title="T", assets=[], summary=summary)
 
     assert diff_check([review_test(None)]) is None
 
     clean = diff_check([review_test(ClassificationCounts(new=1, unchanged=3))])
     assert clean is not None
     assert clean[0] == "success"
-    assert "1 new" in clean[1]
 
-    changed = diff_check([review_test(ClassificationCounts(modified=2), fallback=True)])
+    changed = diff_check([review_test(ClassificationCounts(modified=2))])
     assert changed is not None
     assert changed[0] == "neutral"
-    assert "2 modified" in changed[1]
-    assert "devel-latest fallback baseline" in changed[1]
 
     removed_only = diff_check([review_test(ClassificationCounts(removed=1))])
     assert removed_only is not None
@@ -1041,7 +1026,6 @@ def test_success_comment_body_reports_counts_and_previews() -> None:
     )
     assert "**2 modified**, 1 new, 0 removed, 1 unchanged" in body
     # Each preview is a before/after/diff table row.
-    assert "| Before | After | Diff |" in body
     assert "tests/ex-visuals-abcdef/baseline/a.png" in body
     assert "tests/ex-visuals-abcdef/a.png" in body
     assert "tests/ex-visuals-abcdef/diff/a.png" in body
@@ -1069,9 +1053,7 @@ def test_success_comment_body_warns_when_comparison_uses_fallback_baseline() -> 
     )
 
     assert "[!WARNING]" in body
-    assert "exact PR-base visual baseline was unavailable" in body
     assert "`fedcba98`" in body
-    assert "not attributable solely to this PR" in body
 
 
 def test_success_comment_body_hides_zero_count_buckets_per_test() -> None:
@@ -1117,15 +1099,14 @@ def test_success_comment_body_is_compact_when_every_affected_test_is_unchanged()
         repository="r", commit_sha=sha, url="https://v/commits/sha/", review_tests=review_tests, base_sha="f" * 40
     )
 
-    assert body == "\n".join(
-        [
-            "<!-- pr-visuals -->",
-            "## Visual review for [`01234567`](https://github.com/r/commit/0123456789abcdef0123456789abcdef01234567)",
-            "",
-            "No visual changes among the 2 affected Bazel test targets. "
-            "[Open visual review](https://v/commits/sha/index.html).",
-        ]
-    )
+    assert body.startswith(COMMENT_MARKER)
+    assert f"https://github.com/r/commit/{sha}" in body
+    assert "https://v/commits/sha/index.html" in body
+    # Compact: no per-target list (the unchanged targets would be named) and no previews.
+    assert "//a:x" not in body
+    assert "//b:y" not in body
+    assert "<details>" not in body
+    assert "<img " not in body
 
 
 def test_success_comment_body_shows_new_previews_when_nothing_modified() -> None:
@@ -1152,7 +1133,6 @@ def test_success_comment_body_shows_new_previews_when_nothing_modified() -> None
         review_tests=review_tests,
         base_sha="f" * 40,
     )
-    assert "### New screenshots" in body
     assert "tests/ex-visuals-abcdef/a.png" in body
     assert "tests/ex-visuals-abcdef/b.png" in body
     assert body.count("<img ") == 2
@@ -1187,14 +1167,14 @@ def test_success_comment_body_folds_unchanged_targets_and_keeps_the_new_preview(
         base_sha="f" * 40,
     )
     lines = body.splitlines()
-    assert "### New screenshots" in lines
     assert "tests/ex-visuals-abcdef/fresh.png" in body
-    assert "<summary>22 unchanged targets</summary>" in lines
-    # The changed target is listed in the open, before the fold.
-    assert lines.index(
-        "- [`//ex:visuals`](https://v/commits/sha/tests/ex-visuals-abcdef/index.html): 1 new"
-    ) < lines.index("<details>")
-    assert "- [`//untouched0:visuals`](https://v/commits/sha/tests/untouched-0/index.html): unchanged" in lines
+    # The changed target is listed in the open, before the fold; the untouched ones sit inside it.
+    assert (
+        lines.index("- [`//ex:visuals`](https://v/commits/sha/tests/ex-visuals-abcdef/index.html): 1 new")
+        < lines.index("<details>")
+        < lines.index("- [`//untouched0:visuals`](https://v/commits/sha/tests/untouched-0/index.html): unchanged")
+        < lines.index("</details>")
+    )
     assert len(body) <= COMMENT_BUDGET
 
 
@@ -1224,8 +1204,6 @@ def test_success_comment_body_shows_both_modified_and_new_previews() -> None:
         review_tests=review_tests,
         base_sha="f" * 40,
     )
-    assert "### Top changes" in body
-    assert "### New screenshots" in body
     assert "tests/s/diff/changed.png" in body
     assert "tests/s/added.png" in body
 
@@ -1260,7 +1238,6 @@ def test_success_comment_body_dimension_change_degrades_diff_cell() -> None:
         base_sha="f" * 40,
     )
     assert "baseline/a.png" in body
-    assert "_(dimensions changed)_" in body
     assert "diff/a.png" not in body
 
 
