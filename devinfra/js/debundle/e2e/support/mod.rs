@@ -251,19 +251,11 @@ pub fn assert_fail_fast_stops_at_first_outcome<'a>(
     kind: &str,
 ) -> String {
     let keep_going = run_dry_run_rejection_fixture(fixture());
-    let reported = keep_going
-        .stderr
-        .lines()
-        .filter_map(|line| line.strip_prefix("  - ["))
-        .map(|line| format!("[{line}"))
-        .collect::<Vec<_>>();
-    let recorded = read_selector_outcomes(&keep_going.report_root);
-    assert_eq!(
-        reported.len(),
-        recorded.len(),
-        "keep-going must print every recorded outcome\nstderr:\n{}\nrecorded: {recorded:#?}",
-        keep_going.stderr
+    assert_stderr_lists_every_outcome(
+        &keep_going.stderr,
+        &read_selector_outcomes(&keep_going.report_root),
     );
+    let reported = reported_outcome_lines(&keep_going.stderr);
     assert!(
         reported.len() >= 2,
         "the fixture needs outcomes after the first: {reported:#?}"
@@ -936,6 +928,52 @@ pub fn read_chunk_selector_outcomes(report_root: &Path, chunk: &str) -> Vec<Valu
         .as_array()
         .unwrap_or_else(|| panic!("outcomes must be an array: {report:#}"))
         .clone()
+}
+
+/// The outcome lines of a `debundle run` stderr report, each from its `[kind]` tag on.
+pub fn reported_outcome_lines(stderr: &str) -> Vec<String> {
+    stderr
+        .lines()
+        .filter_map(|line| line.strip_prefix("  - ["))
+        .map(|line| format!("[{line}"))
+        .collect()
+}
+
+/// Asserts the stderr report has no outcome line beyond `outcomes`' records, and for each
+/// record exactly one line that opens with its kind, chunk and logical module and names its
+/// entity before the description. Names the description mentions (a conflict's other
+/// selectors) do not count.
+pub fn assert_stderr_lists_every_outcome(stderr: &str, outcomes: &[Value]) {
+    let lines = reported_outcome_lines(stderr);
+    assert_eq!(
+        lines.len(),
+        outcomes.len(),
+        "the report must have one line per recorded outcome\nstderr:\n{stderr}\nrecorded: {outcomes:#?}"
+    );
+    for record in outcomes {
+        let opening = format!(
+            "[{}] {}::{} ",
+            record["outcome"]["kind"].as_str().unwrap(),
+            record["chunk"].as_str().unwrap(),
+            record["placement"]["logical_module"].as_str().unwrap(),
+        );
+        let entity = &record["placement"]["entity"];
+        let entity = match entity["export"].as_str() {
+            Some(name) => format!("`{name}`"),
+            None => format!("anonymous_statements[{}]", entity["anonymous_statement"]),
+        };
+        let matching = lines
+            .iter()
+            .filter(|line| {
+                let (head, _description) = line.split_once(": ").unwrap_or((line, ""));
+                head.starts_with(&opening) && head.contains(&entity)
+            })
+            .count();
+        assert_eq!(
+            matching, 1,
+            "the report must have exactly one line for {record:#}\nstderr:\n{stderr}"
+        );
+    }
 }
 
 /// The outcome record of `kind` placed in `logical_module`.

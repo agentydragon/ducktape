@@ -1,0 +1,14 @@
+{
+  "DefinitionDetail": { "element": "#shot" },
+  "FileViewerAnnotated": { "element": "#shot" },
+  "FileViewerGroundTruth": { "element": "#shot" },
+  "LLMRequests": { "element": "#shot" },
+  "LLMRequestsToolCall": { "element": "#shot" },
+  "DistributionChartRecall": { "element": "#shot" },
+  "DistributionChartTP": { "element": "#shot" },
+  "CoverageHeatmap": { "element": "#shot" },
+  "OccurrenceStatsTable": { "element": "#shot" },
+  "RunsBrowser": { "element": "#shot" },
+  "RunDetailCritic": { "element": "#shot" },
+  "SnapshotDetail": { "element": "#shot" }
+}

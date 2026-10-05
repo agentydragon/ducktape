@@ -3,7 +3,7 @@ load("@aspect_rules_ts//ts:defs.bzl", "ts_config")
 load("@npm_ducktape//:defs.bzl", "npm_link_all_packages")
 load("//devinfra/js:spa_bundle.bzl", "spa_bundle")
 load("//devinfra/js:ts_library.bzl", "ts_library")
-load("//util/testing/frontend_visual:visual_test.bzl", "visual_test")
+load("//util/testing/frontend_visual:py_visual_test.bzl", "py_visual_test")
 
 # Link npm packages for this workspace member.
 npm_link_all_packages(name = "node_modules")
@@ -140,9 +140,10 @@ spa_bundle(
 # Test harness (visual regression scaffold)
 # ============================================================
 
+# The scenario table: read by the harness (it mounts the page `?page=` names) and by the sweep.
 js_library(
     name = "scenarios",
-    srcs = ["tests/harness/scenarios.mjs"],
+    srcs = ["tests/harness/scenarios.json"],
     visibility = ["//props/frontend/src:__subpackages__"],
 )
 
@@ -151,7 +152,6 @@ ts_library(
     srcs = [
         "tests/harness/assets.d.ts",
         "tests/harness/harness.tsx",
-        "tests/harness/scenarios.d.mts",
     ] + glob(["tests/harness/fixtures/*.ts"]),
     tags = ["no-lint"],
     tsconfig = ":tsconfig",
@@ -213,7 +213,7 @@ filegroup(
 # ============================================================
 # Visual regression tests
 #
-# Every scenario in tests/harness/scenarios.mjs, swept on one browser per shard.
+# Every scenario in tests/harness/scenarios.json, one browser each.
 #
 # Run all:  bazel test //props/frontend:visual
 # Run one:  bazel test //props/frontend:visual --test_filter=DefinitionDetail
@@ -225,17 +225,17 @@ filegroup(
     visibility = ["//props/frontend/src:__subpackages__"],
 )
 
-# small: a shard renders 3 scenarios on one Chromium. The 12 per-scenario targets this replaces
-# were 6.0-9.4s each, almost all of it browser launch and input staging paid once per scenario.
-visual_test(
+# small: a shard renders 3 scenarios. The 12 per-scenario targets this replaces were 6.0-9.4s
+# each, almost all of it browser launch and input staging paid once per scenario.
+py_visual_test(
     name = "visual",
     size = "small",
     assets = [
         ":harness_bundle",
         ":visual_test_assets",
     ],
-    entry_point = "tests/visual_runner.mjs",
     harness = ":harness_js",
-    scenarios = ":scenarios",
+    scenarios = "tests/harness/scenarios.json",
     shard_count = 4,
+    title = "Props frontend",
 )

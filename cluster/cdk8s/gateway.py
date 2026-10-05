@@ -34,6 +34,7 @@ from cluster.cdk8s.providers.gateway_api.gateway import Gateway
 from cluster.cdk8s.providers.gateway_api.http_route import HttpRoute, RouteFilter, RouteMatch
 from cluster.cdk8s.providers.gateway_api.listener import Listener, ListenerTls
 from cluster.cdk8s.service_ref import HostNetworkServiceRef, ServiceRef
+from cluster.scripts import nebula_mesh
 
 _NAME = "cluster-gateway"
 _NAMESPACE = "gateway-system"
@@ -102,9 +103,14 @@ def https_route(
     )
 
 
-def chart(app: App) -> Chart:
+def chart(app: App, mesh: nebula_mesh.Mesh) -> Chart:
     chart = Chart(app, "gateway-system", disable_resource_name_hashes=True)
     namespaces.namespace(chart, "namespace", name=_NAMESPACE, vpa=Vpa.RECOMMEND)
+    public_gateway_ips = sorted(
+        ip for host in mesh.public_kubernetes_nodes().values() if (ip := host.public_ip) is not None
+    )
+    if not public_gateway_ips:
+        raise ValueError("cluster Gateway needs at least one public node for ExternalDNS")
     # Every listener admits routes from all namespaces. Per-listener Selector restriction is
     # avoided because Cilium bug #42159 makes listener-scoped allowedRoutes config bleed
     # across listeners (see cluster/docs/plan.md). The fence against agents publishing
@@ -120,7 +126,13 @@ def chart(app: App) -> Chart:
         chart,
         "gateway",
         metadata=ApiObjectMetadata(
-            name=_NAME, namespace=_NAMESPACE, annotations={"cert-manager.io/cluster-issuer": LETSENCRYPT_ISSUER}
+            name=_NAME,
+            namespace=_NAMESPACE,
+            annotations={
+                "cert-manager.io/cluster-issuer": LETSENCRYPT_ISSUER,
+                # Cilium reports private node addresses in Gateway status.addresses.
+                "external-dns.kubernetes.io/target": ",".join(public_gateway_ips),
+            },
         ),
         gateway_class_name=GATEWAY_CLASS,
         listeners=[

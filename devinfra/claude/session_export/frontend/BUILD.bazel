@@ -1,11 +1,10 @@
 load("@aspect_rules_esbuild//esbuild:defs.bzl", "esbuild")
-load("@aspect_rules_js//js:defs.bzl", "js_library")
 load("@aspect_rules_ts//ts:defs.bzl", "ts_config")
 load("//devinfra/js:openapi.bzl", "js_openapi_schema")
 load("//devinfra/js:spa_bundle.bzl", "spa_bundle")
 load("//devinfra/js:ts_library.bzl", "ts_library")
 load("//devinfra/js:vitest.bzl", "check_vitest_specs", "vitest_config")
-load("//util/testing/frontend_visual:visual_test.bzl", "visual_test")
+load("//util/testing/frontend_visual:py_visual_test.bzl", "py_visual_test")
 load(":vitest.bzl", "session_export_vitest_test")
 
 package(default_visibility = ["//devinfra/claude/session_export:__pkg__"])
@@ -288,16 +287,10 @@ vitest_config(
 
 # The screenshot harness mounts the full app with deterministic API fixtures. CI publishes
 # the desktop, dark, and narrow captures on the PR visual-review page.
-js_library(
-    name = "visual_scenarios",
-    testonly = True,
-    srcs = ["visual/scenarios.mjs"],
-)
-
 ts_library(
     name = "visual_harness_lib",
     testonly = True,
-    srcs = ["visual/harness.tsx"],
+    srcs = ["harness/harness.tsx"],
     isolated_typecheck = True,
     tsconfig = TSCONFIG,
     deps = [
@@ -316,11 +309,11 @@ esbuild(
     name = "visual_harness_bundle",
     testonly = True,
     config = {"jsx": "automatic"},
-    entry_point = "visual/harness.tsx",
+    entry_point = "harness/harness.tsx",
     format = "iife",
     minify = False,
-    output = "visual/dist/harness.js",
-    output_css = "visual/dist/harness.css",
+    output = "harness/dist/harness.js",
+    output_css = "harness/dist/harness.css",
     platform = "browser",
     sourcemap = "linked",
     target = ["es2022"],
@@ -330,27 +323,26 @@ esbuild(
 filegroup(
     name = "visual_harness_js",
     testonly = True,
-    srcs = ["visual/dist/harness.js"],
+    srcs = ["harness/dist/harness.js"],
 )
 
 filegroup(
     name = "visual_harness_css",
     testonly = True,
-    srcs = ["visual/dist/harness.css"],
+    srcs = ["harness/dist/harness.css"],
 )
 
-visual_test(
+py_visual_test(
     name = "visual",
     size = "small",
     assets = [
-        "visual/index.html",
+        "harness/index.html",
         ":visual_harness_css",
     ],
-    entry_point = "visual/runner.mjs",
-    env = {"TZ": "UTC"},
     harness = ":visual_harness_js",
-    scenarios = ":visual_scenarios",
+    scenarios = "harness/scenarios.json",
     shard_count = 2,
+    title = "Claude session sync",
 )
 
 check_vitest_specs()

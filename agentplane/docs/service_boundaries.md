@@ -84,8 +84,8 @@ Backend independence is not a reason to discard the current staging instance. Fo
 default to preserving existing data and identities, with an inventory, tested migration/restore path,
 and controlled ownership handoff. One-time migration of app-owned records is distinct from a
 steady-state dependency on app tables. See [staging data preservation](../plans/sandbox_service.md#staging-data-preservation).
-Any necessary loss/reset must be described and explicitly approved before execution; the repository's
-general staging-disposability guidance is not permission to bypass this task-specific requirement.
+Any necessary loss/reset must be described and explicitly approved before execution; the general
+staging-disposability rule in [`../AGENTS.md`](../AGENTS.md) is not permission to bypass this task-specific requirement.
 
 ## Review and acceptance gates
 
