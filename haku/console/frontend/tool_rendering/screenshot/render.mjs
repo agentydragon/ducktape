@@ -17,6 +17,7 @@ import {
   prepareDeterministicPage,
   screenshotElement,
   waitForStable,
+  WAIT_TIMEOUT_MS,
 } from "../../../../../util/testing/frontend_visual/capture.mjs";
 import {
   DISABLE_ANIMATIONS_CSS,
@@ -126,7 +127,7 @@ try {
         await page.setContent(pageHtml(css, harnessJs, colorScheme, { __FIXTURE__: index, __VARIANT__: variant }), {
           waitUntil: "load",
         });
-        await page.waitForSelector(".haku-preview-card", { timeout: 10_000 });
+        await page.waitForSelector(".haku-preview-card", { timeout: WAIT_TIMEOUT_MS });
         const context = `fixture ${slug} ${variant} ${colorScheme}`;
         // A mock-backed widget (gmail subjects, grocy reference, calendar name) fetches after
         // mount and re-renders: paint once so those effects have started, drain the stubbed
