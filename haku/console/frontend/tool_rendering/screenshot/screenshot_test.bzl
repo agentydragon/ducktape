@@ -59,7 +59,8 @@ def preview_screenshots(name, entry, fixtures, deps, visibility = None):
     )
     py_visual_test(
         name = name,
-        # medium: the largest of these (grocy) measures 54.5s, gmail 33.0s. large gave a 900s budget to under a minute of work.
+        # medium: the largest of these (grocy, 36 shots each on its own browser) measures 79s alone and up
+        # to 130s with all seven running at once. large gave a 900s budget to under two minutes of work.
         size = "medium",
         harness = ":%s_bundle" % name,
         scenarios = ":%s_scenarios" % name,
