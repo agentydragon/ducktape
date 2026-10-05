@@ -330,10 +330,10 @@ def test_link_ui_exposes_management_actions() -> None:
 
     assert response.status_code == 200
     assert root_response.status_code == 200
-    assert "Connect Institution" in response.text
-    assert "Connect Institution" in root_response.text
-    assert "History days" in response.text
-    assert "Active Links" in response.text
+    assert root_response.text == response.text
+    # The elements link.js looks up by id.
+    for element_id in ("connect", "links", "transaction-days", "products"):
+        assert f'id="{element_id}"' in response.text
 
 
 def test_static_assets_are_served_with_their_own_content_types() -> None:
@@ -348,9 +348,10 @@ def test_static_assets_are_served_with_their_own_content_types() -> None:
     assert '<script src="/static/link.js"></script>' in page.text
     assert css.headers["content-type"].startswith("text/css")
     assert js.headers["content-type"].startswith("text/javascript")
-    # The per-link row actions are rendered by the script, not present in the served HTML.
-    for action in ("Repair link", "Sync data", "Remove link"):
-        assert action in js.text
+    # The per-link row actions are rendered by the script, not present in the served HTML; its click
+    # handler dispatches on `data-action`.
+    for action in ("repair", "sync", "remove", "update"):
+        assert f'data-action="{action}"' in js.text
 
 
 def test_sync_conflict_is_a_sentence_not_an_item_id() -> None:
@@ -371,7 +372,9 @@ def test_sync_conflict_is_a_sentence_not_an_item_id() -> None:
     assert listed[0]["sync_running"] is True
     assert response.status_code == 409
     assert response.json()["detail"]["error_code"] == "SYNC_ALREADY_RUNNING"
-    assert "already running" in response.json()["detail"]["error_message"]
+    message = response.json()["detail"]["error_message"]
+    assert message
+    assert "item_123" not in message
 
 
 def test_list_links_exposes_product_and_secret_state() -> None:
