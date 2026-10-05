@@ -143,7 +143,8 @@ export { userSchema, productSchema, orderSchema };
 #[ignore = "blocked on a RegExp entry in the Expr::New whitelist: Set/Map array-literal \
             forms landed (PURE_BUILTIN_NEW_ARRAY_ITERABLE; see the new_map / new_set / \
             new_map_with_array_of_pure_pairs tests below), but `new RegExp(\"a+\")` still \
-            classifies UnknownNew"]
+            classifies UnknownNew; the entry needs a static ECMA-262 pattern validator first \
+            (see PURE_BUILTIN_NEW_STRING_LITERAL_ARG)"]
 fn inferred_pure_collection_constructors_with_literal_args_emit_no_s_cycle() {
     // `new Set([...])`, `new Map([...])`, `new RegExp("...")` with
     // literal-only args are pure by built-in catalogue. Set/Map

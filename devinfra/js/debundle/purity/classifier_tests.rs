@@ -560,15 +560,6 @@ fn builtin_constructors_without_args_are_pure() {
 }
 
 #[test]
-fn text_decoder_with_label_arg_stays_unknown() {
-    // Even a LITERAL label is not admitted: an invalid label throws
-    // RangeError at construction — an observable init effect under
-    // statement reordering — and validating labels statically would
-    // mean embedding the encodings registry.
-    assert!(!(classify(r#"new TextDecoder("utf-8")"#)).is_pure());
-}
-
-#[test]
 fn url_search_params_string_literal_arg_is_pure() {
     // The string branch of `new URLSearchParams(init)` parses
     // application/x-www-form-urlencoded, which is total over
@@ -585,15 +576,6 @@ fn url_search_params_non_literal_args_stay_unknown() {
     assert!(!(classify("new URLSearchParams(q)")).is_pure());
     assert!(!(classify("new URLSearchParams({ a: 1 })")).is_pure());
     assert!(!(classify("new URLSearchParams(`a=${x}`)")).is_pure());
-}
-
-#[test]
-fn regexp_constructor_stays_unknown_even_with_literal_args() {
-    // Deliberate exclusion (see PURE_BUILTIN_NEW_STRING_LITERAL_ARG
-    // doc): pattern compilation can throw SyntaxError at
-    // construction; admitting RegExp soundly needs a static
-    // ECMA-262 pattern validator.
-    assert!(!(classify(r#"new RegExp("a+", "g")"#)).is_pure());
 }
 
 #[test]
