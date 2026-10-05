@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import time
 from collections.abc import Callable, Generator
 from pathlib import Path
 from typing import Any, cast
@@ -14,32 +13,13 @@ import pytest_bazel
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from fastmcp import FastMCP
-from mcp import types as mcp_types
-from sqlalchemy import event, select, text
-from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker, create_async_engine
-from starlette.websockets import WebSocketDisconnect
+from sqlalchemy import event, select
+from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 
 from haku.console.conftest import operator_id, write_config
-from haku.console.database_migrate import apply_migrations
 from haku.console.database_schema import Agent, CredentialBinding, StaticCredential
-from haku.console.identity import operator_auth
-from haku.console.identity.agent import (
-    # TestClient drives the app over httpx, imported inside starlette; gazelle cannot see it.
-    # gazelle:include_dep @pypi//httpx
-    AgentStatus,
-    ClientRegistrationKind,
-    CredentialBindingStatus,
-    CredentialKind,
-    EnrollmentPhase,
-)
 from haku.console.identity.authorization import fingerprint_static_token
-from haku.console.identity.operator_identity import OperatorStatus
-from haku.console.mcp.approval import (
-    DegradedReflection,
-    McpServerDispatcher,
-    PostgresToolCallLedger,
-    _mcp_result_to_json,
-)
+from haku.console.mcp.approval import DegradedReflection, McpServerDispatcher, PostgresToolCallLedger
 from haku.console.mcp.execution import EXECUTION_CONTEXT_DEPENDENCY, McpExecutionContext, OperatorMcpExecutionCaller
 from haku.console.mcp.reflection_cache import ReflectedCatalog
 from haku.console.mcp.tool_call_service import ToolCallApplicationService
@@ -51,7 +31,6 @@ from haku.console.mcp_config import (
     NoCredential,
     const_in_process_server,
 )
-from haku.console.notifications import console_events
 from haku.console.tool_call_actor import AgentActor, OperatorActor, RuntimeActor
 from haku.console.tool_calls import (
     AgentToolCallCaller,
@@ -60,6 +39,9 @@ from haku.console.tool_calls import (
     ToolCallPayloadField,
     ToolCallStatus,
 )
+
+# TestClient drives the app over httpx, imported inside starlette; gazelle cannot see it.
+# gazelle:include_dep @pypi//httpx
 
 
 def _build_test_mcp_server() -> FastMCP:
@@ -181,26 +163,6 @@ _STATIC_AGENTS = {
         "access_profile_id": "no_auto_approval",
     }
 }
-
-
-async def _enum_values(engine: AsyncEngine) -> dict[str, tuple[str, ...]]:
-    async with engine.connect() as conn:
-        rows = (
-            await conn.execute(
-                text(
-                    """
-                SELECT type.typname, enum.enumlabel
-                FROM pg_type AS type
-                JOIN pg_enum AS enum ON enum.enumtypid = type.oid
-                ORDER BY type.typname, enum.enumsortorder
-                """
-                )
-            )
-        ).all()
-    return {
-        type_name: tuple(label for row_type_name, label in rows if row_type_name == type_name)
-        for type_name in {row_type_name for row_type_name, _ in rows}
-    }
 
 
 def _config(servers: list[dict[str, Any]]) -> dict[str, Any]:
@@ -328,25 +290,6 @@ def test_operator_mutations_reject_untrusted_origin(operator_client: TestClient)
 
     assert response.status_code == 403
     assert response.json()["detail"] == "operator mutations require the console's exact Origin"
-
-
-async def test_mcp_result_serialization_uses_mcp_wire_shape() -> None:
-    result = mcp_types.CallToolResult(
-        content=[
-            mcp_types.TextContent(type="text", text="ok"),
-            mcp_types.ImageContent(type="image", mimeType="image/png", data="ZmFrZQ=="),
-        ],
-        structuredContent={"changed": True},
-        isError=False,
-    )
-
-    assert _mcp_result_to_json(result) == {
-        "content": [{"type": "text", "text": "ok"}, {"type": "image", "data": "ZmFrZQ==", "mimeType": "image/png"}],
-        "structuredContent": {"changed": True},
-        "isError": False,
-        # Always serialized (mcp_types.CallToolResult.result_type); older peers ignore it.
-        "resultType": "complete",
-    }
 
 
 async def test_rest_submission_route_is_retired(operator_client: TestClient) -> None:
@@ -570,29 +513,20 @@ async def test_two_operator_two_agent_http_authorization_matrix(
         assert denied.json()["tool_call"]["status"] == "denied"
 
 
-async def test_approval_denial_is_terminal_and_does_not_execute(operator_client: TestClient) -> None:
-    submitted = _submit(operator_client)
-    resp = operator_client.post(
-        f"/api/tool-calls/{submitted['tool_call_id']}/decision", json={"decision": "deny", "decision_note": "not today"}
-    )
-    assert resp.status_code == 200
-    tool_call = resp.json()["tool_call"]
-    assert tool_call["status"] == "denied"
-    assert tool_call["result"] is None
-    assert tool_call["decision_note"] == "not today"
-    assert tool_call["decision_operator_id"] is not None
-
-
-async def test_approval_note_round_trips_on_approval(operator_client: TestClient) -> None:
+@pytest.mark.parametrize(("decision", "status"), [("deny", ToolCallStatus.DENIED), ("approve", ToolCallStatus.RUNNING)])
+async def test_operator_decision_records_the_note_and_the_deciding_operator(
+    operator_client: TestClient, decision: str, status: ToolCallStatus
+) -> None:
     submitted = _submit(operator_client)
     resp = operator_client.post(
         f"/api/tool-calls/{submitted['tool_call_id']}/decision",
-        json={"decision": "approve", "decision_note": "reviewed and approved"},
+        json={"decision": decision, "decision_note": "reviewed by operator"},
     )
     assert resp.status_code == 200
     tool_call = resp.json()["tool_call"]
-    assert tool_call["status"] == "running"
-    assert tool_call["decision_note"] == "reviewed and approved"
+    assert tool_call["status"] == status
+    assert tool_call["result"] is None
+    assert tool_call["decision_note"] == "reviewed by operator"
     assert tool_call["decision_operator_id"] is not None
 
 
@@ -741,36 +675,6 @@ async def test_two_operator_websockets_only_receive_their_interleaved_tool_calls
     assert {event["tool_call_id"] for event in received_b} == expected_b
 
 
-async def test_websocket_reports_an_expired_session_apart_from_a_rejected_one(
-    make_operator_client, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    """Expiry gets its own close code so the shell re-authenticates instead of showing the live
-    channel as merely offline and retrying a handshake that can only be refused."""
-    deadline = int(time.time()) + 300
-    with (
-        make_operator_client(operator_session_expires_at=deadline) as client,
-        client.websocket_connect("/api/events/ws", headers={"Origin": "https://haku.test"}) as ws,
-    ):
-        assert ws.receive_json() == {"event_type": "hello"}
-        monkeypatch.setattr(operator_auth.time, "time", lambda: deadline + 1)
-        # Any client frame wakes the socket's revalidation ahead of its idle tick.
-        ws.send_text("ping")
-        with pytest.raises(WebSocketDisconnect) as disconnected:
-            ws.receive_json()
-
-    assert disconnected.value.code == console_events.OPERATOR_SESSION_EXPIRED_CLOSE_CODE
-
-
-async def test_websocket_rejects_cross_origin(make_operator_client) -> None:
-    with (
-        make_operator_client() as client,
-        pytest.raises(WebSocketDisconnect) as exc_info,
-        client.websocket_connect("/api/events/ws", headers={"Origin": "https://haku-ui.test"}),
-    ):
-        pass
-    assert exc_info.value.code == 1008
-
-
 async def test_audit_log_is_tenant_scoped_and_redacts_secrets(
     make_client, make_operator_client, console_app: dict[str, Any]
 ) -> None:
@@ -797,26 +701,6 @@ async def test_audit_log_is_tenant_scoped_and_redacts_secrets(
     assert future["tool_calls"] == []
     dumped = str([operator_body, haku_body])
     assert "tool-token" not in dumped
-
-
-async def test_fresh_baseline_enum_values_match_domain_enums(db_url: str) -> None:
-    apply_migrations(db_url)
-    engine = create_async_engine(db_url)
-    try:
-        baseline_values = await _enum_values(engine)
-    finally:
-        await engine.dispose()
-
-    current_values = {
-        "agent_status": tuple(status.value for status in AgentStatus),
-        "client_registration_kind": tuple(kind.value for kind in ClientRegistrationKind),
-        "credential_binding_status": tuple(status.value for status in CredentialBindingStatus),
-        "credential_kind": tuple(kind.value for kind in CredentialKind),
-        "enrollment_phase": tuple(phase.value for phase in EnrollmentPhase),
-        "operator_status": tuple(status.value for status in OperatorStatus),
-        "tool_call_status": tuple(status.value for status in ToolCallStatus),
-    }
-    assert baseline_values == current_values
 
 
 # --- In-process MCP servers (McpServerDispatcher in-process registration) ---

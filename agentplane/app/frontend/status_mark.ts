@@ -16,9 +16,10 @@ import { RunningChevrons, StatusDot } from "./custom_mark_icons";
 
 /**
  * `running`: a turn is in flight. `idle`: the harness is live and waiting for input. `stopped`: the
- * runner feed is attached but the harness is down (shut down or lost). `failed`: the runner feed
- * failed. `archived`: the thread was archived, whatever its retained history says. `inactive`: nothing
- * else live to show (Sandbox suspended or gone, feed ended, or not confirmed).
+ * harness is down (shut down or lost), whether its runner feed is still attached or has ended.
+ * `failed`: the runner feed failed. `archived`: the thread was archived, whatever its retained history
+ * says. `inactive`: nothing else live to show (Sandbox suspended or gone, the feed ended with the
+ * harness not known to be down, or not confirmed).
  */
 export type ThreadStatusKind = "running" | "idle" | "stopped" | "failed" | "archived" | "inactive";
 
@@ -64,9 +65,9 @@ export const THREAD_STATUS_MARKS: Record<ThreadStatusKind, ThreadStatusMark> = {
   idle: { icon: StatusDot, color: BLUE, favicon: "dot", glyph: "●" },
   stopped: { icon: IconPower, color: GRAY, favicon: "power", glyph: "⏻" },
   failed: { icon: StatusDot, color: RED, favicon: "dot", glyph: "×" },
-  // A box with drawer lines reads as an archive box at tab-title size, where a plain square reads as a
-  // missing-glyph box.
-  archived: { icon: IconArchive, color: GRAY, favicon: "archive", glyph: "▤" },
+  // An arrow onto a bar reads as filing away at tab-title size; box shapes read as a missing-glyph box
+  // there.
+  archived: { icon: IconArchive, color: GRAY, favicon: "archive", glyph: "↧" },
   inactive: { icon: StatusDot, color: GRAY, favicon: "dot", glyph: "○" },
 };
 

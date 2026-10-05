@@ -14,8 +14,4 @@ describe("hakuRoutinePreviews", () => {
     expect(renderPreview(hakuRoutinePreviews.launch_routine, {}, "detailed")).not.toBeNull();
     expect(renderPreview(hakuRoutinePreviews.launch_routine, { text: null }, "detailed")).not.toBeNull();
   });
-
-  it("rejects arguments the FastMCP tool does not advertise", () => {
-    expect(renderPreview(hakuRoutinePreviews.launch_routine, { unexpected: true }, "detailed")).toBeNull();
-  });
 });

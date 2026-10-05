@@ -871,7 +871,8 @@ filegroup(
 
 # The one browser every Puppeteer (JS) and Playwright (Python) test drives: Chrome for Testing's
 # headless shell. `:executable` is a single-file target, so `$(rootpath ...)` of it is the path
-# tests receive as CHROMIUM_HEADLESS_SHELL; the rest of the archive (libs, .pak, icudtl.dat, ...)
+# JS tests receive as CHROMIUM_HEADLESS_SHELL (Python tests find the binary in the runfiles of
+# //util/testing:frontend_visual); the rest of the archive (libs, .pak, icudtl.dat, ...)
 # rides along as its runfiles, because the executable loads those from its own directory.
 # Pinned to the `chromium-headless-shell` browserVersion in Playwright 1.62.0's browsers.json, the
 # Chromium that Playwright release is tested against; keep in step with `playwright==1.62.0` in

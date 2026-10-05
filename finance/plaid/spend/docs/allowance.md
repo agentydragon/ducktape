@@ -40,9 +40,13 @@ transaction **dates**, not trustworthy purchase times: activation uses the full 
 credit arrives immediately on activation, again on each UTC monthly anniversary
 (clamped to month-end, always measured from the original day). Unspent credit carries
 forward; no monthly reset or second credit at the first calendar-month boundary.
-Do not backdate the anchor expecting a clean slate; choose the intended first credit date. Only transactions dated
-on or after activation are counted, and the calendar and year views only span the
-activated period.
+Do not backdate the anchor expecting a clean slate; choose the intended first credit date. Only transactions dated on or after activation reduce the allowance or appear in the
+spending-window totals. For **pace only**, the service also reads the preceding seven
+calendar-day window, applies the same fixed/excluded/flexible rules and pending
+replacement handling, and considers positive flexible purchases from before the
+activation date. This history is **never imported as opening debt**; the current-cycle,
+trailing 7/30-day, calendar and year spend views all start at activation. Plaid's
+transaction date (not an exact swipe timestamp) defines membership in each window.
 
 Configured account IDs should cover **all accounts used for purchases** (credit and
 checking/debit); otherwise this is not a reliable allowance. If an account is missing,
@@ -62,10 +66,17 @@ foreign spending separately before calling the coverage complete.
 
 The authenticated web page shows available credit, current-cycle carry, calendar
 month and year-to-date spend, trailing 7/30-day spend, sync timestamp, and a local
-what-if purchase check (no server-side purchase request). An early warning compares
-7-day daily positive spend pace against remaining days until the next credit; the
-exhaustion timestamp uses that pace **without future credits**. This
-is a noisy _estimate_, not a forecast or transaction authorization. The GNOME panel
+what-if purchase check (no server-side purchase request). The pace uses the larger
+of the last-seven-day positive flexible purchase average and the since-activation
+daily average during the first seven days, so a day-one burst is not diluted by
+historic quiet days. If no positive flexible purchase is recorded, pace and projected
+balance are unavailable until seven activated calendar days have elapsed; only then
+is a zero rate evidence for an empty seven-day window. Availability remains visible,
+and an exhausted balance is still marked exceeded regardless of pace. The exhaustion
+timestamp uses the pace **without future credits**. This is a noisy _estimate_, not
+a prediction or transaction authorization; Plaid sync and transaction posting lag,
+whose oldest timestamp is displayed on the primary allowance panel, can hide fresh
+purchases. The GNOME panel
 shows the allowance when active, and links to the cookie-authenticated dashboard for
 the purchase check; existing card cycles remain displayed separately. No account
 limit, card choice, bank controls or automatic recharging is configured by this PR.

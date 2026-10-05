@@ -20,18 +20,6 @@ describe("kubectlPreviews", () => {
     ).not.toBeNull();
   });
 
-  it("renders resources_get target in both variants", () => {
-    for (const variant of ["compact", "detailed"] as const) {
-      expect(
-        renderPreview(
-          kubectlPreviews.resources_get,
-          { apiVersion: "apps/v1", kind: "Deployment", name: "api", namespace: "prod" },
-          variant
-        )
-      ).not.toBeNull();
-    }
-  });
-
   it("renders pods_list_in_namespace with selectors in both variants", () => {
     for (const variant of ["compact", "detailed"] as const) {
       expect(

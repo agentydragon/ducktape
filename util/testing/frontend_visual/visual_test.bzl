@@ -11,6 +11,20 @@ load("@aspect_rules_js//js:defs.bzl", "js_test")
 _CHROMIUM = "@chrome_headless_shell//:executable"
 _LIB = "//util/testing/frontend_visual:visual_test_lib"
 
+def chromium_js_test(name, data = [], env = {}, no_copy_to_bin = [], **kwargs):
+    """A `js_test` that drives the pinned browser.
+
+    Deviation from `js_test`: the browser is added to `data` and left out of bin (its libraries
+    and .pak files must stay beside the executable), and its path is `CHROMIUM_HEADLESS_SHELL`.
+    """
+    js_test(
+        name = name,
+        data = data + [_CHROMIUM],
+        env = env | {"CHROMIUM_HEADLESS_SHELL": "$(rootpath %s)" % _CHROMIUM},
+        no_copy_to_bin = no_copy_to_bin + [_CHROMIUM],
+        **kwargs
+    )
+
 def visual_test(
         name,
         entry_point,
@@ -47,17 +61,16 @@ def visual_test(
 
     # Read from the source tree, not copied to bin: the harness page is a file:// URL and pulls
     # these by relative path, so a copy would be a second set of bytes nothing points at.
-    read_in_place = assets + [harness, _CHROMIUM, _LIB]
+    read_in_place = assets + [harness, _LIB]
     if fonts != None:
         read_in_place.append(fonts)
 
     runner_env = dict(env)
     runner_env["HARNESS_PATH"] = "$(rootpath %s)" % harness
-    runner_env["CHROMIUM_HEADLESS_SHELL"] = "$(rootpath %s)" % _CHROMIUM
     if font_family:
         runner_env["EXPECTED_FONT_FAMILY"] = font_family
 
-    js_test(
+    chromium_js_test(
         name = name,
         data = read_in_place + [scenarios],
         entry_point = entry_point,

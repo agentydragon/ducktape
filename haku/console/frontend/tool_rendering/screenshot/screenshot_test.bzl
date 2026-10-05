@@ -17,7 +17,7 @@ file:// page can `<script>`-load the bundle without module CORS.
 """
 
 load("@aspect_rules_esbuild//esbuild:defs.bzl", "esbuild")
-load("@aspect_rules_js//js:defs.bzl", "js_test")
+load("//util/testing/frontend_visual:visual_test.bzl", "chromium_js_test")
 
 def preview_screenshots(name, entry, deps, visibility = None):
     """Define a per-server preview screenshot `js_test`.
@@ -44,7 +44,7 @@ def preview_screenshots(name, entry, deps, visibility = None):
         output_dir = True,
         visibility = visibility,
     )
-    js_test(
+    chromium_js_test(
         name = name,
         # medium: the largest of these (grocy) measures 54.5s, gmail 33.0s. large gave a 900s budget to under a minute of work.
         size = "medium",
@@ -56,19 +56,16 @@ def preview_screenshots(name, entry, deps, visibility = None):
             "//util/testing/frontend_visual:capture",
             "//util/testing/frontend_visual:launcher",
             "//util/testing/frontend_visual:visual_review_manifest",
-            "@chrome_headless_shell//:executable",
         ],
         env = {
             "HARNESS_JS": "$(rootpath :%s_bundle)" % name,
             "STYLES_CSS": "$(rootpath //haku/console/frontend:styles_css)",
-            "CHROMIUM_HEADLESS_SHELL": "$(rootpath @chrome_headless_shell//:executable)",
         },
         no_copy_to_bin = [
             ":%s_bundle" % name,
             "//util/testing/frontend_visual:capture",
             "//util/testing/frontend_visual:launcher",
             "//util/testing/frontend_visual:visual_review_manifest",
-            "@chrome_headless_shell//:executable",
         ],
         visibility = visibility,
     )

@@ -66,23 +66,10 @@ async def test_concurrent_reflections_of_one_server_collapse_into_a_single_upstr
     assert all([tool.name for tool in result.tools] == ["stock_add"] for result in results)
 
 
-async def test_a_caller_mutating_the_returned_catalog_cannot_corrupt_the_cache() -> None:
-    """Every caller gets its own list. The cached one is handed to every later caller too, so a
-    consumer that sorts or filters in place would otherwise change what everyone else sees."""
-    cache = ReflectionCache(NEVER_EXPIRES)
-    reflect = _CountingReflector(_tools("stock_add", "echo"))
-
-    first = await cache.reflect(_key(), reflect)
-    first.tools.clear()
-    second = await cache.reflect(_key(), reflect)
-
-    assert [tool.name for tool in second.tools] == ["stock_add", "echo"]
-    assert reflect.calls == 1
-
-
 async def test_a_caller_mutating_a_returned_tool_cannot_corrupt_the_cache() -> None:
-    """The nested half, which a new list alone does not cover: a `Tool` is mutable and its
-    `inputSchema` is a plain dict that `_build_proxy_tool` hands straight to a passthrough tool."""
+    """Every caller gets its own copy, nested objects included: the cached catalog is handed to every
+    later caller, a `Tool` is mutable, and its `inputSchema` is a plain dict that `_build_proxy_tool`
+    hands straight to a passthrough tool."""
     cache = ReflectionCache(NEVER_EXPIRES)
     reflect = _CountingReflector()
 

@@ -1,6 +1,6 @@
 # Pre-commit checks reusable workflow
 #
-# Runs safety checks + Bazel aspects (lint, typecheck, format)
+# Runs pre-commit safety checks and formatters; Bazel aspects run in bazel-ci.yml.
 name: Pre-commit checks
 
 on:
@@ -34,9 +34,6 @@ jobs:
       - uses: ./.github/actions/setup-nix-devtools
         with:
           package: precommit
-
-      - uses: ./.github/actions/setup-bazel
-        id: bazel-cache
 
       # Cache Ansible Galaxy roles (required for syntax check - meta/main.yml dependencies)
       - name: Restore Ansible Galaxy roles cache

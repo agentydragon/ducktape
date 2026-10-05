@@ -1,11 +1,14 @@
 // @vitest-environment happy-dom
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, onTestFinished, vi } from "vitest";
 
 import { ScreenshotSession } from "./screenshot_capture";
 
 // The DOM has no getDisplayMedia / real video decoding; each test stubs what it needs and
 // restores afterward.
-afterEach(() => vi.restoreAllMocks());
+afterEach(() => {
+  vi.restoreAllMocks();
+  vi.unstubAllGlobals();
+});
 
 function fakeTrack() {
   const listeners: Record<string, (() => void)[]> = {};
@@ -25,6 +28,27 @@ function stubGetDisplayMedia(track: ReturnType<typeof fakeTrack>) {
   vi.stubGlobal("navigator", { ...navigator, mediaDevices: { getDisplayMedia } });
   vi.spyOn(HTMLVideoElement.prototype, "play").mockResolvedValue(undefined);
   return getDisplayMedia;
+}
+
+// happy-dom's HTMLVideoElement has no videoWidth/videoHeight, and a real one reports 0 until its
+// first frame decodes, so a test states the size it wants. The override is removed afterwards.
+function stubVideoSize(width: number, height: number): void {
+  for (const [name, value] of [
+    ["videoWidth", width],
+    ["videoHeight", height],
+  ] as const) {
+    Object.defineProperty(HTMLVideoElement.prototype, name, { configurable: true, value });
+    onTestFinished(() => void Reflect.deleteProperty(HTMLVideoElement.prototype, name));
+  }
+}
+
+function stubCanvas() {
+  const drawImage = vi.fn();
+  vi.spyOn(HTMLCanvasElement.prototype, "getContext").mockReturnValue({
+    drawImage,
+  } as unknown as CanvasRenderingContext2D);
+  vi.spyOn(HTMLCanvasElement.prototype, "toDataURL").mockReturnValue("data:image/png;base64,CROPPED");
+  return drawImage;
 }
 
 describe("ScreenshotSession.start", () => {
@@ -102,15 +126,10 @@ describe("ScreenshotSession.captureFrame", () => {
     await session.start();
 
     // A 2x-scaled capture (e.g. a HiDPI tab share) of a 1000x800 viewport.
-    Object.defineProperty(window, "innerWidth", { configurable: true, value: 1000 });
-    Object.defineProperty(window, "innerHeight", { configurable: true, value: 800 });
-    Object.defineProperty(HTMLVideoElement.prototype, "videoWidth", { configurable: true, value: 2000 });
-    Object.defineProperty(HTMLVideoElement.prototype, "videoHeight", { configurable: true, value: 1600 });
-    const drawImage = vi.fn();
-    vi.spyOn(HTMLCanvasElement.prototype, "getContext").mockReturnValue({
-      drawImage,
-    } as unknown as CanvasRenderingContext2D);
-    vi.spyOn(HTMLCanvasElement.prototype, "toDataURL").mockReturnValue("data:image/png;base64,CROPPED");
+    vi.stubGlobal("innerWidth", 1000);
+    vi.stubGlobal("innerHeight", 800);
+    stubVideoSize(2000, 1600);
+    const drawImage = stubCanvas();
 
     // The iframe occupies [100,50]..[600,450] in CSS pixels — should map to [200,100]..[1200,900]
     // in the 2x-scaled capture.
@@ -125,7 +144,9 @@ describe("ScreenshotSession.captureFrame", () => {
     stubGetDisplayMedia(fakeTrack());
     const session = new ScreenshotSession(() => {});
     await session.start();
-    // The default videoWidth/videoHeight are 0 — captureFrame must not divide by them.
+    stubVideoSize(0, 0);
+    // The canvas would succeed, so only the zero-size guard can make captureFrame return null.
+    stubCanvas();
 
     expect(session.captureFrame(new DOMRect(0, 0, 100, 100))).toBeNull();
   });

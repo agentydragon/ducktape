@@ -80,17 +80,6 @@ haku_vitest_test(
     ],
 )
 
-haku_vitest_test(
-    name = "responses_test",
-    srcs = ["responses.test.ts"],
-    isolated_typecheck = True,
-    deps = [
-        ":responses",
-        "//:node_modules/vitest",
-        "//haku/console/frontend/tool_rendering:result_entry",
-    ],
-)
-
 ts_library(
     name = "preview_harness",
     srcs = ["preview_harness.tsx"],

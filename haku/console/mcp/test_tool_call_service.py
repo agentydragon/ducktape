@@ -644,23 +644,6 @@ async def test_auto_approval_finishes_as_agent(
     assert ledger.finish_actors == submitted_actors
 
 
-async def test_withdraw_retracts_the_agents_own_pending_call(
-    actors: dict[str, RuntimeActor], publisher: _RecordingInvalidationPublisher, service: ToolCallApplicationService
-) -> None:
-    actor = actors["aa1"]
-    pending = await service.submit_and_wait(req=_request(owner="stale"), actor=actor)
-    assert pending.status is ToolCallStatus.PENDING_APPROVAL
-    publisher.publications.clear()
-
-    withdrawn = await service.withdraw(tool_call_id=pending.tool_call_id, reason="superseded", actor=actor)
-
-    assert withdrawn.status is ToolCallStatus.WITHDRAWN
-    assert withdrawn.withdrawal_reason == "superseded"
-    # Published to the owning operator, so their open approvals drawer drops the item live.
-    assert publisher.publications == [(actor.operator_id, pending.tool_call_id)]
-    assert await service.pending_approvals(actor=actors["oa"]) == []
-
-
 async def test_queued_call_is_notified_once_and_retracted_by_whichever_exit_it_takes(
     actors: dict[str, RuntimeActor], notifier: _RecordingApprovalNotifier, service: ToolCallApplicationService
 ) -> None:

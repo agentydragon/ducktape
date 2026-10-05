@@ -42,7 +42,7 @@ it("groups threads by sandbox, newest thread first fixing each group's order", (
   const oldest = threadView({ id: "t-oldest", sandbox: "sb-a", session_id: "s-3" });
   const sandboxes = { "sb-a": sandboxView("sb-a"), "sb-b": sandboxView("sb-b", { operating_mode: "Suspended" }) };
 
-  const groups = groupThreads([newest, middle, oldest], sandboxes, false);
+  const groups = groupThreads([newest, middle, oldest], sandboxes, false, null);
 
   expect(groups.map((group) => group.sandboxName)).toEqual(["sb-b", "sb-a"]);
   expect(groups[1].threads).toEqual([middle, oldest]);
@@ -54,12 +54,22 @@ it("hides archived Threads without hiding their existing Sandbox", () => {
   const kept = threadView({ id: "t-2", sandbox: "sb-b", session_id: "s-2" });
   const sandboxes = { "sb-a": sandboxView("sb-a"), "sb-b": sandboxView("sb-b") };
 
-  const hidden = groupThreads([archived, kept], sandboxes, false);
+  const hidden = groupThreads([archived, kept], sandboxes, false, null);
   expect(hidden.map((group) => group.sandboxName)).toEqual(["sb-b", "sb-a"]);
   expect(hidden[1].threads).toEqual([]);
 
-  const shown = groupThreads([archived, kept], sandboxes, true);
+  const shown = groupThreads([archived, kept], sandboxes, true, null);
   expect(shown.map((group) => group.sandboxName)).toEqual(["sb-a", "sb-b"]);
+});
+
+it("keeps the open Thread in its group even when it is archived and archived Threads are hidden", () => {
+  const open = threadView({ id: "t-1", sandbox: "sb-a", session_id: "s-1", archived: true });
+  const other = threadView({ id: "t-2", sandbox: "sb-a", session_id: "s-2", archived: true });
+  const kept = threadView({ id: "t-3", sandbox: "sb-a", session_id: "s-3" });
+
+  const groups = groupThreads([open, other, kept], { "sb-a": sandboxView("sb-a") }, false, "t-1");
+
+  expect(groups.map((group) => group.threads)).toEqual([[open, kept]]);
 });
 
 it("counts archived threads across every sandbox regardless of visibility", () => {

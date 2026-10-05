@@ -1,5 +1,6 @@
 load("@aspect_rules_js//js:defs.bzl", "js_library", "js_test")
 load("@npm_ducktape//:defs.bzl", "npm_link_all_packages")
+load(":visual_test.bzl", "chromium_js_test")
 
 package(default_testonly = True)
 
@@ -36,20 +37,11 @@ js_test(
     entry_point = "capture.test.mjs",
 )
 
-js_test(
+chromium_js_test(
     name = "font_environment_test",
-    data = [
-        ":launcher",
-        "@chrome_headless_shell//:executable",
-    ],
+    data = [":launcher"],
     entry_point = "font_environment.test.mjs",
-    env = {
-        "CHROMIUM_HEADLESS_SHELL": "$(rootpath @chrome_headless_shell//:executable)",
-    },
-    no_copy_to_bin = [
-        ":launcher",
-        "@chrome_headless_shell//:executable",
-    ],
+    no_copy_to_bin = [":launcher"],
     tags = ["visual"],
 )
 

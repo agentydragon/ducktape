@@ -320,7 +320,7 @@ class SpendService:
                        WHERE t.account_id = ANY($1::text[]) AND t.date >= $2 AND t.date <= $3
                          AND t.removed IS FALSE AND l.status = 'active'""",
                     list(policy.spending_account_ids),
-                    policy.activation_at,
+                    min(policy.activation_at, (now - timedelta(days=6)).date()),
                     now.date(),
                 )
         return calculate(

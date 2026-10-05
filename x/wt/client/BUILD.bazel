@@ -86,6 +86,7 @@ py_test(
         ":conftest",
         "//:conftest",
         "//x/wt:cli",
+        "//x/wt/shared:constants",
         "//x/wt/shared:protocol",
         "//x/wt/testing:asserts",
         "@pypi//pytest_bazel",

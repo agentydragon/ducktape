@@ -917,9 +917,7 @@ py_test(
     srcs = ["test_thread_browser.py"],
     data = [
         "//agentplane/app/frontend:bundle",
-        "@chrome_headless_shell//:executable",
     ],
-    env = {"CHROMIUM_HEADLESS_SHELL": "$(rootpath @chrome_headless_shell//:executable)"},
     requires_docker = True,
     shard_count = 8,
     deps = [
@@ -1102,9 +1100,7 @@ py_test(
     srcs = ["test_thread_window_browser.py"],
     data = [
         "//agentplane/app/frontend:bundle",
-        "@chrome_headless_shell//:executable",
     ],
-    env = {"CHROMIUM_HEADLESS_SHELL": "$(rootpath @chrome_headless_shell//:executable)"},
     main = "test_thread_window_browser.py",
     requires_docker = True,
     deps = [

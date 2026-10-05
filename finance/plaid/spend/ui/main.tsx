@@ -34,6 +34,7 @@ type Allowance = {
   alert_state: string;
   available_minor_units: number | null;
   monthly_minor_units: number | null;
+  activation_at: string;
   prior_carry_minor_units: number | null;
   posted_minor_units: number | null;
   pending_minor_units: number | null;
@@ -120,7 +121,8 @@ function PurchaseCheck({ allowance }: { allowance: Allowance }) {
   const projected = allowance.projected_cycle_end_minor_units;
   const after = valid && available != null ? available - cents : null;
   const projectedAfter = valid && projected != null ? projected - cents : null;
-  const signal = after != null && projectedAfter != null ? signalFor(after, projectedAfter) : null;
+  const signal =
+    after != null ? (after <= 0 ? "exceeded" : projectedAfter != null ? signalFor(after, projectedAfter) : null) : null;
   const m = (value: number | null) => money(value, allowance.currency);
 
   return (
@@ -151,7 +153,7 @@ function PurchaseCheck({ allowance }: { allowance: Allowance }) {
           radius="md"
           aria-live="polite"
         >
-          {signal && after != null && projectedAfter != null ? (
+          {after != null ? (
             <Stack gap="sm">
               <Group justify="space-between" align="flex-start" gap="sm">
                 <div>
@@ -160,14 +162,14 @@ function PurchaseCheck({ allowance }: { allowance: Allowance }) {
                     {m(after)}
                   </Text>
                 </div>
-                <SignalLabel signal={signal} />
+                {signal && <SignalLabel signal={signal} />}
               </Group>
               <Text size="sm">
-                At your recent pace,{" "}
-                {projectedAfter < 0 ? `${m(-projectedAfter)} short before` : `${m(projectedAfter)} left before`} the
-                next credit.
+                {projectedAfter == null
+                  ? "Pace estimate warming up; use the available balance rather than the forecast."
+                  : `At the estimated pace, ${projectedAfter < 0 ? `${m(-projectedAfter)} short before` : `${m(projectedAfter)} left before`} the next credit.`}
               </Text>
-              {signal !== "normal" && (
+              {signal && signal !== "normal" && (
                 <Text size="sm" fw={600}>
                   This is a signal to pause, not a declined transaction.
                 </Text>
@@ -221,7 +223,13 @@ function AllowancePanel({ allowance }: { allowance: Allowance }) {
               <Text id="allowance-title" size="sm" fw={700}>
                 Flexible spending available
               </Text>
-              {signal && <SignalLabel signal={signal} />}
+              {signal ? (
+                <SignalLabel signal={signal} />
+              ) : (
+                <Badge color="gray" variant="light">
+                  Pace warming up
+                </Badge>
+              )}
             </Group>
             <Text fz={{ base: 36, sm: 44 }} fw={700} lh={1.1} style={{ overflowWrap: "anywhere" }}>
               {m(available)}
@@ -231,7 +239,11 @@ function AllowancePanel({ allowance }: { allowance: Allowance }) {
               and pending charges are included.
             </Text>
             <Divider color="teal.6" />
+            <Text size="sm">Allowance began: {time(`${allowance.activation_at}T00:00:00Z`)}</Text>
             <Text size="sm">Next credit: {time(allowance.next_credit_at)}</Text>
+            <Text size="xs" c="teal.0">
+              Oldest account sync: {time(allowance.last_synced_at)}. New purchases may appear later.
+            </Text>
             <Text size="xs" c="teal.0">
               Adds {m(allowance.monthly_minor_units)}; unused allowance carries forward.
             </Text>
@@ -240,28 +252,31 @@ function AllowancePanel({ allowance }: { allowance: Allowance }) {
         <Paper component="section" aria-label="Spending pace" withBorder radius="lg" p="xl">
           <Stack gap="md">
             <Text size="sm" fw={700} c="dimmed">
-              If you keep spending at this pace
+              Estimated balance before next credit
             </Text>
             <Text fz={{ base: 32, sm: 38 }} fw={700} lh={1.1} style={{ overflowWrap: "anywhere" }}>
-              {projected == null ? "Unavailable" : m(projected)}
+              {projected == null ? "Not enough data" : m(projected)}
             </Text>
             <Text size="sm" c="dimmed">
               {projected == null
-                ? "Forecast needs account data."
+                ? "No reliable pace yet; the allowance balance above is still available."
                 : projected < 0
                   ? "Projected shortfall before your next credit"
                   : "Projected balance before your next credit"}
             </Text>
             <Divider />
             <Group justify="space-between" gap="sm">
-              <Text size="sm">Recent daily spend</Text>
+              <Text size="sm">Pace used for estimate</Text>
               <Text size="sm" fw={700}>
-                {m(allowance.trailing_7_daily_minor_units)} / day
+                {allowance.trailing_7_daily_minor_units == null
+                  ? "Warming up"
+                  : `${m(allowance.trailing_7_daily_minor_units)} / day`}
               </Text>
             </Group>
             <Text size="xs" c="dimmed">
-              Based on positive purchases over the last 7 days, projected forward without another credit. An estimate,
-              not a prediction.
+              Uses positive flexible purchases over the last seven days, including before the allowance began; early
+              post-start bursts can increase the pace. Earlier purchases inform the estimate but do not reduce your
+              available balance. Plaid data may lag.
             </Text>
             {allowance.estimated_exhaustion_at && (
               <Text size="sm">
@@ -332,8 +347,16 @@ function AllowancePanel({ allowance }: { allowance: Allowance }) {
                 all credits since activation, less posted and pending flexible spending.
               </Text>
               <SimpleGrid cols={{ base: 2, sm: 4 }} spacing="lg">
-                <Metric label="LAST 7 DAYS" value={m(windows?.trailing_7_days_minor_units)} />
-                <Metric label="LAST 30 DAYS" value={m(windows?.trailing_30_days_minor_units)} />
+                <Metric
+                  label="LAST 7 DAYS"
+                  value={m(windows?.trailing_7_days_minor_units)}
+                  detail="Since allowance start"
+                />
+                <Metric
+                  label="LAST 30 DAYS"
+                  value={m(windows?.trailing_30_days_minor_units)}
+                  detail="Since allowance start"
+                />
                 <Metric
                   label="CALENDAR MONTH"
                   value={m(windows?.calendar_month_minor_units)}
@@ -388,7 +411,7 @@ function SpendCard({ card }: { card: CardView }) {
           {card.statement_available
             ? `This statement${card.limit_minor_units == null ? "" : ` · ${money(card.limit_minor_units, card.currency)} card limit`}`
             : card.cycle_start
-              ? `Since first recorded transaction (${card.cycle_start}); statement date not yet reported`
+              ? `Provisional card total since ${card.cycle_start}; statement date not yet reported. Includes purchases outside the allowance.`
               : "Statement data unavailable"}
         </Text>
         <Text size="xs" c="dimmed">

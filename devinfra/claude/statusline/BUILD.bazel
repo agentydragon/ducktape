@@ -73,7 +73,6 @@ py_test(
         "//:conftest",
         "//aiquota:models",
         "//devinfra/claude:conftest",
-        "//devinfra/claude/claude_api:credentials",
         "//devinfra/claude/claude_api:statusline",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
