@@ -2,11 +2,9 @@
 
 Shared infrastructure for visual render-health tests. Every lane runs on the Python/Playwright path
 (`py_visual_test`; `frontend_visual.py`, `visual_sweep.py`); see [The Python sweep](#the-python-sweep).
-What is left of the Puppeteer stack is `launcher.mjs`, which only `font_environment_test` uses.
 
-Both stacks drive one browser: the Chrome for Testing headless shell `@chrome_headless_shell`
-(MODULE.bazel). Python tests find its executable in the runfiles of `//util/testing:frontend_visual`;
-JS tests are handed its path as `CHROMIUM_HEADLESS_SHELL`.
+They drive one browser: the Chrome for Testing headless shell `@chrome_headless_shell`
+(MODULE.bazel), whose executable a test finds in the runfiles of `//util/testing:frontend_visual`.
 Its version is pinned to the Chromium of the `playwright==1.62.0` driver in `pyproject.toml`;
 MODULE.bazel says how to bump the two together.
 
@@ -52,15 +50,15 @@ its ready selectors, the request fence, the fetch ledger and zero uncaught page 
   matches nothing fails.
 - **A named font must be declared as well as loaded.** With `fonts` and `font_family`, each scenario
   asserts that an `@font-face` declares the family and that it loaded. `document.fonts.check` alone
-  (the Puppeteer sweep's assertion) is true for a family nothing declares, so a stylesheet that never
+  is true for a family nothing declares, so a stylesheet that never
   arrived passes it and the page renders in the fallback font. The assertion is made of the mounted,
   painted scene: a face loads only once laid-out text uses it, which on a loaded worker is after
   the navigation's network idle.
 - **A fresh browser per scenario**, not one per shard. Launch and close cost about 0.1s on the RBE
   worker, and what one scenario renders cannot then depend on the scenarios that ran before it.
-- **An element is captured to the nearest pixel**, as Puppeteer does, not outward as Playwright's own
-  element screenshot would (a `#app` 1630.4px tall publishes 1630 rows, not 1631), so a migrated lane's
-  images keep their sizes. An element taller than the viewport is captured whole.
+- **An element is captured to the nearest pixel**, not outward as Playwright's own element screenshot
+  would (a `#app` 1630.4px tall publishes 1630 rows, not 1631). An element taller than the viewport is
+  captured whole.
 - **A page can be assembled in memory** instead of being a `file://` `index.html` beside the bundle:
   `py_visual_test(inline_page = True, stylesheets = [...], base_href = ...)` inlines the bundle, the
   stylesheets and `DISABLE_ANIMATIONS_CSS` into a document loaded with `set_content`. Such a page has no
@@ -81,16 +79,15 @@ its ready selectors, the request fence, the fetch ledger and zero uncaught page 
   one element (`>> nth=0` picks one). `hiddenSelectors` are what must be gone before capture once the
   interactions are done (loaders, controls still arming), and `scrollToBottom` scrolls a scroller to its
   end.
-- **`devtools_viewport = True` emulates and captures the viewport the way Puppeteer did**
+- **`devtools_viewport = True` emulates and captures the viewport over the DevTools protocol**
   (`DevtoolsViewport` in `page_capture.py`: `Emulation.setDeviceMetricsOverride`, and an unclipped
   `Page.captureScreenshot` for a `captureViewport` scenario). Playwright's own viewport rasterizes a few
   pixels differently at some device scale factors (identical at 1 and 2; 1.5, 2.625 and 3 differ), so a
-  lane with such a scale that must stay byte-identical to its Puppeteer sweep turns it on. Off by default.
-- **Selectors are Playwright's.** Puppeteer's `::-p-text(...)` does not exist; `readySelectors` wait for
-  presence, as before.
+  lane at such a scale whose published images must not change turns it on. Off by default.
+- **Selectors are Playwright's** (`:text("...")`, `>> nth=0`); `readySelectors` wait for presence.
 - **The target is not `visual` if the harness lives in a `visual/` directory.** A `py_test`'s
-  executable is `<package>/<name>`, which collides with that directory's outputs (`js_test` hides its
-  executable in `<name>_/`). Keep the target name and call the directory `harness/`.
+  executable is `<package>/<name>`, which collides with that directory's outputs. Keep the target name
+  and call the directory `harness/`.
 
 ## Screenshot target: element, not viewport
 

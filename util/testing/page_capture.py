@@ -67,14 +67,14 @@ _ELEMENT_BOX_JS = """element => {
 
 
 class DevtoolsViewport:
-    """A page's viewport, emulated and captured over the DevTools protocol the way Puppeteer's `setViewport` and `screenshot` do.
+    """A page's viewport, emulated and captured over the DevTools protocol: `Emulation.setDeviceMetricsOverride`, then an unclipped `Page.captureScreenshot`.
 
     Deviation from the Playwright viewport (a context option, captured by `page.screenshot()`): Playwright
     emulates the metrics without setting the visible size and clips a viewport screenshot to the layout
-    viewport, and at some device scale factors that rasterizes a few pixels of the capture differently from
-    Puppeteer: the partly covered last row and column, and some anti-aliased edges. Measured on one page set:
-    identical at a scale of 1 and 2, different at 1.5, 2.625 and 3. A lane whose images the Puppeteer sweep
-    published uses this to keep them byte-identical; any other lane has no reason to. Attach before navigating.
+    viewport, and at some device scale factors that rasterizes a few pixels of the capture differently: the
+    partly covered last row and column, and some anti-aliased edges. Measured on one page set: identical at
+    a scale of 1 and 2, different at 1.5, 2.625 and 3. A lane whose published images must not change at such
+    a scale uses this; any other lane has no reason to. Attach before navigating.
     """
 
     def __init__(self, session: CDPSession) -> None:
@@ -225,10 +225,9 @@ async def assert_network_settled(page: Page, *, context: str, timeout_ms: int = 
 async def screenshot_element(page: Page, selector: str, *, context: str) -> bytes:
     """Screenshot the element `selector` matches, failing by name when it matches none.
 
-    The element's box is rounded to the nearest pixel, the way Puppeteer does, and not outward as
-    Playwright's own element screenshot does: a fractional height such as 1630.4 would otherwise
-    publish one row taller than the Puppeteer sweeps did, and every migrated image would then
-    read as changed in PR visual review. An element taller than the viewport is captured whole.
+    The element's box is rounded to the nearest pixel, not outward as Playwright's own element
+    screenshot does: a fractional height such as 1630.4 would otherwise publish one row taller.
+    An element taller than the viewport is captured whole.
     """
     if (element := await page.query_selector(selector)) is None:
         raise LookupError(f"{context}: {selector=} matched no element")
@@ -246,5 +245,5 @@ async def screenshot_element(page: Page, selector: str, *, context: str) -> byte
 
 
 def _round_half_up(value: float) -> int:
-    # JavaScript's Math.round, which Puppeteer rounds with; Python's round() goes to the even neighbour.
+    # Half up, like JavaScript's Math.round; Python's round() goes to the even neighbour.
     return math.floor(value + 0.5)

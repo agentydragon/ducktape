@@ -1,29 +1,6 @@
-load("@aspect_rules_js//js:defs.bzl", "js_library")
 load("@npm_ducktape//:defs.bzl", "npm_link_all_packages")
-load(":visual_test.bzl", "chromium_js_test")
 
 package(default_testonly = True)
 
 # Link npm packages for this workspace member
 npm_link_all_packages(name = "node_modules")
-
-# The one Puppeteer launcher for JS visual/screenshot tests. The flag/clock
-# assets it reads live in //util/testing:browser_launcher_assets, shared with
-# the Python launcher (//util/testing:frontend_visual).
-js_library(
-    name = "launcher",
-    srcs = ["launcher.mjs"],
-    visibility = ["//visibility:public"],
-    deps = [
-        ":node_modules/puppeteer",
-        "//util/testing:browser_launcher_assets_js",
-    ],
-)
-
-chromium_js_test(
-    name = "font_environment_test",
-    data = [":launcher"],
-    entry_point = "font_environment.test.mjs",
-    no_copy_to_bin = [":launcher"],
-    tags = ["visual"],
-)

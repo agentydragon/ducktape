@@ -1234,7 +1234,7 @@ filegroup(
 # a test batch going at once (92260881-030d-484a-aa4c-d78914a4fe46), past `small`'s 60s.
 #
 # devtools_viewport: the phone scenarios' 2.625 device scale factor is where Playwright's viewport
-# renders a few pixels differently from the Puppeteer sweep's.
+# renders a few pixels differently from the DevTools one the published images were rendered with.
 py_visual_test(
     name = "visual",
     size = "medium",
