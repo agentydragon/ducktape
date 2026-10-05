@@ -1,8 +1,9 @@
 """Shared helpers for Python Playwright visual render-health tests.
 
-The Chromium flag set and the frozen-clock init script are single-sourced with
-the JS Puppeteer launcher (`frontend_visual/launcher.mjs`): both read
-`util/testing/chromium-flags.json` and `util/testing/frozen-clock.js` (kept at
+The Chromium flag set, the frozen-clock init script and the animation-pinning CSS are single-sourced
+with the JS Puppeteer launcher (`frontend_visual/launcher.mjs`): both read
+`util/testing/chromium-flags.json`, `util/testing/frozen-clock.js` and
+`util/testing/disable-animations.css` (kept at
 this level — a data file under `frontend_visual/` would shadow this module as
 a namespace package), and both drive the hermetic `@chrome_headless_shell` browser. This
 module finds its binary in the runfiles, where `browser_launcher_assets` puts it; the JS launcher
@@ -34,6 +35,10 @@ _FONT_PREFERENCES = json.loads(
 CONTAINER_BASE_BROWSER_ARGS: list[str] = _FLAGS["containerBase"]
 # Container base plus font/raster/compositing/animation pinning for stable renders.
 DETERMINISTIC_BROWSER_ARGS: list[str] = CONTAINER_BASE_BROWSER_ARGS + _FLAGS["deterministicExtra"]
+# Hard-pins every animation and transition to its first frame, for a page that inlines its own
+# `<style>`. Why `reduced_motion="reduce"` is not enough, and why it must be in the page before the
+# animated element mounts: the `DISABLE_ANIMATIONS_CSS` comment in `frontend_visual/launcher.mjs`.
+DISABLE_ANIMATIONS_CSS = get_required_path(own_repo_rlocation("util/testing/disable-animations.css")).read_text()
 
 
 # The instant the scenario sweep freezes page clocks to, so date-relative text renders the same on

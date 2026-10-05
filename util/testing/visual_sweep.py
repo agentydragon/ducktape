@@ -1,4 +1,4 @@
-"""Capture every scenario of a `file://` harness with Playwright: one `test_scenario` per scenario.
+"""Capture every scenario of a harness page with Playwright: one `test_scenario` per scenario.
 
 The Python counterpart of `runScenarios` in `frontend_visual/visual-test-lib.mjs`, run by the
 `py_visual_test` macro (`frontend_visual/py_visual_test.bzl`), which names this module its
@@ -6,6 +6,11 @@ The Python counterpart of `runScenarios` in `frontend_visual/visual-test-lib.mjs
 `scenarios.json` (`visual_scenarios`); each is rendered, gated, and published as
 `<outputName>-actual.png` (the suffix is the lane's choice) plus an entry in `visual-review.json`, for PR visual review
 (`devinfra/pr_visuals`). There are no checked-in baselines: a scenario passes when it renders healthily.
+
+The harness page is a `file://` `index.html` beside its bundle, told its scene by `?page=<name>`; or
+(`InlinePage`) a document assembled in memory from the bundle and stylesheets and loaded with
+`set_content`, told its scene by the scenario's `windowGlobals`. The in-memory page has no origin to
+fetch from, so the request fence allows nothing at all.
 
 Selection is pytest's, which is what Bazel drives: `--test_filter=<scenario>` is `-k` (a scenario's
 name is its test id), and `shard_count` is `util.testing.sharding`, filter first, then shard.
@@ -19,9 +24,10 @@ renders cannot depend on which others ran before it or on which shard it landed.
 
 from __future__ import annotations
 
+import json
 import os
 import sys
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Mapping
 from dataclasses import dataclass
 from pathlib import Path
 from urllib.parse import urlencode
@@ -29,10 +35,12 @@ from urllib.parse import urlencode
 import pytest
 import pytest_asyncio
 import pytest_bazel
-from playwright.async_api import Playwright, async_playwright
+from more_itertools import one
+from playwright.async_api import Page, Playwright, async_playwright
+from pydantic import JsonValue
 
 from util.bazel.runfiles import get_required_path
-from util.testing.frontend_visual import FROZEN_NOW_MS, deterministic_browser_context
+from util.testing.frontend_visual import DISABLE_ANIMATIONS_CSS, FROZEN_NOW_MS, deterministic_browser_context
 from util.testing.page_capture import (
     WAIT_TIMEOUT_MS,
     PageErrors,
@@ -51,12 +59,30 @@ pytestmark = pytest.mark.asyncio(loop_scope="session")
 
 
 @dataclass(frozen=True)
+class InlinePage:
+    """What a harness loaded with `set_content` is assembled from, besides the bundle."""
+
+    stylesheet_paths: tuple[Path, ...]
+    base_href: str | None
+
+    @classmethod
+    def from_env(cls) -> InlinePage:
+        """What `py_visual_test(inline_page = True)` sets: runfiles paths (`rlocationpath`) of the stylesheets, space-separated."""
+        return cls(
+            stylesheet_paths=tuple(get_required_path(path) for path in os.environ["STYLESHEET_PATHS"].split()),
+            base_href=os.environ.get("BASE_HREF"),
+        )
+
+
+@dataclass(frozen=True)
 class SweepConfig:
     harness_path: Path
     scenarios_path: Path
     title: str
     expected_font_family: str | None
     output_suffix: str
+    # None: the harness is the `file://` page beside its bundle.
+    inline_page: InlinePage | None = None
 
     @classmethod
     def from_env(cls) -> SweepConfig:
@@ -67,6 +93,7 @@ class SweepConfig:
             title=os.environ["VISUAL_TITLE"],
             expected_font_family=os.environ.get("EXPECTED_FONT_FAMILY"),
             output_suffix=os.environ.get("OUTPUT_SUFFIX", "-actual"),
+            inline_page=InlinePage.from_env() if os.environ.get("INLINE_PAGE") else None,
         )
 
     @property
@@ -79,6 +106,48 @@ class SweepConfig:
         # absolute(), not resolve(): the page pulls its bundle by relative path, which only exists beside
         # the runfiles symlink, not beside whatever it points to.
         return index.absolute().as_uri()
+
+    @property
+    def bundle_script(self) -> str:
+        """The bundle's JavaScript: the file itself, or the one `.js` an esbuild directory output holds."""
+        return (one(self.harness_path.glob("*.js")) if self.harness_path.is_dir() else self.harness_path).read_text(
+            encoding="utf-8"
+        )
+
+
+def inline_page_html(page: InlinePage, *, bundle_script: str, window_globals: Mapping[str, JsonValue] | None) -> str:
+    """The document `set_content` loads: stylesheets, then `window_globals`, then the bundle.
+
+    The animation-pinning CSS goes in with the stylesheets so it is in effect before anything mounts.
+    """
+    css = "".join(path.read_text(encoding="utf-8") for path in page.stylesheet_paths) + DISABLE_ANIMATIONS_CSS
+    assignments = "".join(f"window.{name}={_script_literal(value)};" for name, value in (window_globals or {}).items())
+    return (
+        "<!doctype html><html><head><meta charset='utf-8'>"
+        + (f"<base href='{page.base_href}'>" if page.base_href else "")
+        + f"<style>{css}</style></head><body><div id='app'></div>"
+        + f"<script>{assignments}</script><script>{bundle_script}</script></body></html>"
+    )
+
+
+def _script_literal(value: JsonValue) -> str:
+    # `<` is escaped so a string value cannot close the script element.
+    return json.dumps(value).replace("<", "\\u003c")
+
+
+async def _load_harness(
+    page: Page, scenario_name: str, scenario: Scenario, *, config: SweepConfig, timeout_ms: int
+) -> None:
+    if (inline_page := config.inline_page) is None:
+        if scenario.window_globals is not None:
+            raise ValueError(f"{scenario_name}: windowGlobals reach only an inline page, and this harness is a file")
+        query = {"page": scenario_name} if scenario.query is None else scenario.query
+        await page.goto(f"{config.harness_url}?{urlencode(query)}", wait_until="networkidle", timeout=timeout_ms)
+        return
+    if scenario.query is not None:
+        raise ValueError(f"{scenario_name}: an inline page has no URL for a query; name the scene by windowGlobals")
+    html = inline_page_html(inline_page, bundle_script=config.bundle_script, window_globals=scenario.window_globals)
+    await page.set_content(html, wait_until="load", timeout=timeout_ms)
 
 
 async def capture_scenario(
@@ -99,17 +168,19 @@ async def capture_scenario(
         color_scheme=scenario.color_scheme,
         device_scale_factor=scenario.viewport.device_scale_factor,
         has_touch=scenario.viewport.has_touch,
-        # The harness page is a file:// URL, so it needs file access to reach its own bundle.
-        extra_args=["--allow-file-access-from-files"],
+        # A file:// harness page needs file access to reach its own bundle.
+        extra_args=["--allow-file-access-from-files"] if config.inline_page is None else [],
     ) as context:
         page = await context.new_page()
         page_errors = PageErrors(page)
-        # The harness is entirely local (file:// page, bundled fixtures), so nothing may reach the network.
-        fence = RequestFence(lambda request: request.url.startswith("file://"))
+        # The harness is entirely local (a file:// page or an in-memory one, bundled fixtures), so
+        # nothing may reach the network.
+        fence = RequestFence(
+            (lambda request: request.url.startswith("file://")) if config.inline_page is None else (lambda _: False)
+        )
         await fence.install(page)
 
-        query = {"page": scenario_name} if scenario.query is None else scenario.query
-        await page.goto(f"{config.harness_url}?{urlencode(query)}", wait_until="networkidle", timeout=timeout_ms)
+        await _load_harness(page, scenario_name, scenario, config=config, timeout_ms=timeout_ms)
         # Only assert a named font when the app declares one. Generic family resolution is owned by the
         # deterministic browser profile, and must not be emulated with test CSS.
         if config.expected_font_family and not await page.evaluate(

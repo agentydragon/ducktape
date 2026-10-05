@@ -7,14 +7,19 @@ one. BUILD names no scenario either: `shard_count` splits the table, `--test_fil
 A table is a JSON object from scenario name to the fields below. Fields are camelCase because the
 harness reads them from the same file. Fields only the harness reads (a route, a fixture variation)
 live in the same object and are ignored here.
+
+A table whose rows enumerate data kept elsewhere (a fixture roster) is generated from it at build time
+rather than copied. A harness loaded as an in-memory page has no URL query to read its scene from;
+the row's `windowGlobals` tell it instead.
 """
 
 from __future__ import annotations
 
+import re
 from pathlib import Path
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field, RootModel, model_validator
+from pydantic import BaseModel, ConfigDict, Field, JsonValue, RootModel, field_validator, model_validator
 from pydantic.alias_generators import to_camel
 
 
@@ -67,8 +72,23 @@ class Scenario(_TableModel):
     capture_viewport: bool = Field(
         default=False, description="Screenshot the viewport rather than `element`, preserving clipping."
     )
+    window_globals: dict[str, JsonValue] | None = Field(
+        default=None,
+        description=(
+            "Values assigned to `window` before the harness script runs, for a harness loaded as an "
+            "in-memory page (`visual_sweep.InlinePage`), which has no URL query to name its scene."
+        ),
+    )
     hover: str | None = Field(default=None, description="Selector to move the pointer over once the scene is ready.")
     tap: str | None = Field(default=None, description="Selector to tap once the scene is ready; needs `has_touch`.")
+
+    @field_validator("window_globals")
+    @classmethod
+    def _globals_are_identifiers(cls, value: dict[str, JsonValue] | None) -> dict[str, JsonValue] | None:
+        # The names are written into a `<script>` as `window.<name>=...`.
+        if value is not None and (bad := [name for name in value if not re.fullmatch(r"[A-Za-z_$][\w$]*", name)]):
+            raise ValueError(f"window globals must be JavaScript identifiers: {bad}")
+        return value
 
     @model_validator(mode="after")
     def _tap_needs_touch(self) -> Scenario:

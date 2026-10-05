@@ -1,7 +1,7 @@
 /**
  * The one Puppeteer launcher for JS visual/screenshot tests, mirroring the
  * Python side (util/testing/frontend_visual.py, Playwright): both read the
- * same chromium-flags.json and frozen-clock.js, and both resolve the hermetic
+ * same chromium-flags.json, frozen-clock.js and disable-animations.css, and both resolve the hermetic
  * browser from CHROMIUM_HEADLESS_SHELL (the Bazel-wired rootpath of the
  * @chrome_headless_shell//:executable binary).
  */
@@ -45,13 +45,9 @@ export const FROZEN_NOW_MS = Date.parse("2025-02-01T12:00:00Z");
  * be present before the animated element mounts, since `animation-play-state: paused` only pins
  * an animation deterministically to its start frame when it's already in effect at creation —
  * applying it later would freeze whatever frame the animation happened to reach by then.
+ * Single-sourced with the Python sweep (`frontend_visual.DISABLE_ANIMATIONS_CSS`).
  */
-export const DISABLE_ANIMATIONS_CSS = `
-*, *::before, *::after {
-  animation-play-state: paused !important;
-  transition: none !important;
-}
-`;
+export const DISABLE_ANIMATIONS_CSS = readFileSync(join(__dirname, "..", "disable-animations.css"), "utf8");
 
 /**
  * Launch headless Chromium with the container-safe base flags plus `args`. Every Bazel target that

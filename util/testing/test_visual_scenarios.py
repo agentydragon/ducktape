@@ -24,6 +24,7 @@ def test_scenarios_load_in_table_order_with_harness_only_fields_ignored(tmp_path
                 "colorScheme": "dark",
                 "readySelectors": ["#a", "#b"],
                 "captureViewport": true,
+                "windowGlobals": {"__FIXTURE__": 3, "__VARIANT__": "compact"},
                 "hover": "#h"
               }
             }
@@ -44,6 +45,7 @@ def test_scenarios_load_in_table_order_with_harness_only_fields_ignored(tmp_path
         color_scheme="dark",
         ready_selectors=["#a", "#b"],
         capture_viewport=True,
+        window_globals={"__FIXTURE__": 3, "__VARIANT__": "compact"},
         hover="#h",
     )
 
@@ -65,6 +67,11 @@ def test_every_scenario_states_its_element(tmp_path: Path) -> None:
 def test_tap_needs_a_touch_viewport() -> None:
     with pytest.raises(pydantic.ValidationError, match=r"tap needs viewport\.hasTouch"):
         Scenario.model_validate({"element": "#app", "tap": "#button"})
+
+
+def test_window_globals_are_assigned_by_name_so_a_name_must_be_an_identifier() -> None:
+    with pytest.raises(pydantic.ValidationError, match=r"window globals must be JavaScript identifiers: .*not-a-name"):
+        Scenario.model_validate({"element": "#app", "windowGlobals": {"__OK__": 1, "not-a-name": 2}})
 
 
 def test_unsupported_color_scheme_is_rejected() -> None:

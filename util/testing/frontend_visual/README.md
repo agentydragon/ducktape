@@ -84,6 +84,11 @@ selectors, the request fence, the fetch ledger, zero uncaught page errors — wi
 - **An element is captured to the nearest pixel**, as Puppeteer does, not outward as Playwright's own
   element screenshot would (a `#app` 1630.4px tall publishes 1630 rows, not 1631), so a migrated lane's
   images keep their sizes. An element taller than the viewport is captured whole.
+- **A page can be assembled in memory** instead of being a `file://` `index.html` beside the bundle:
+  `py_visual_test(inline_page = True, stylesheets = [...], base_href = ...)` inlines the bundle, the
+  stylesheets and `DISABLE_ANIMATIONS_CSS` into a document loaded with `set_content`. Such a page has no
+  URL query, so a scenario's `windowGlobals` assign the `window` values that tell the harness which scene
+  it is, and the request fence allows nothing at all. `harness` may then be an esbuild `output_dir`.
 - **Selectors are Playwright's.** Puppeteer's `::-p-text(...)` does not exist; `readySelectors` wait for
   presence, as before.
 - **The target is not `visual` if the harness lives in a `visual/` directory.** A `py_test`'s
