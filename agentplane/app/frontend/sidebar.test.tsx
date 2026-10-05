@@ -416,6 +416,25 @@ it("hides archived threads until the switch is toggled, and archives a thread fr
   expect((archiveCall?.[0] as Request).method).toBe("POST");
 });
 
+it("keeps the open Thread in the list while it is archived and the archived switch is off", async () => {
+  await render(
+    [
+      thread({ id: "t-1", sandbox: "demo-a1b2", session_id: "s-1", name: "Active thread" }),
+      thread({ id: "t-2", sandbox: "demo-a1b2", session_id: "s-2", name: "Open archive", archived: true }),
+      thread({ id: "t-3", sandbox: "demo-a1b2", session_id: "s-3", name: "Other archive", archived: true }),
+    ],
+    { "demo-a1b2": sandbox("demo-a1b2") },
+    { initialPath: "/threads/t-2" }
+  );
+
+  expect(row("Open archive").className).toContain("current");
+  expect(container.textContent).not.toContain("Other archive");
+  expect(container.textContent).toContain("Show archived (2)");
+
+  await act(async () => row("Active thread").click());
+  expect(container.textContent).not.toContain("Open archive");
+});
+
 it.each([null, "turn-1"])("blocks archiving a live harness, idle or mid-turn (active turn %s)", async (turn) => {
   await render(
     [

@@ -14,16 +14,18 @@ export interface ThreadGroup {
 
 /**
  * Groups with visible Threads come first in newest-Thread order. Existing Sandboxes without a
- * visible Thread follow in inventory order. Archived filtering never hides an existing Sandbox.
+ * visible Thread follow in inventory order. Archived filtering never hides an existing Sandbox,
+ * nor the Thread that is open (`openThreadId`), so the reader can always find where they are.
  */
 export function groupThreads(
   threads: ThreadView[],
   sandboxes: Record<string, SandboxView>,
-  includeArchived: boolean
+  includeArchived: boolean,
+  openThreadId: string | null
 ): ThreadGroup[] {
   const groups = new Map<string, ThreadGroup>();
   for (const thread of threads) {
-    if (!includeArchived && thread.archived) continue;
+    if (!includeArchived && thread.archived && thread.id !== openThreadId) continue;
     let group = groups.get(thread.sandbox);
     if (!group) {
       group = { sandboxName: thread.sandbox, sandbox: sandboxes[thread.sandbox] ?? null, threads: [] };
