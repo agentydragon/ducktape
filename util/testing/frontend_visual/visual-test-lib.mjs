@@ -78,6 +78,10 @@ async function captureScenario(browser, scenarioName, options, { harnessUrl, out
     }
     // Last, so fonts, images and paint settle around whatever the scene's own conditions let in.
     await waitForStable(page);
+    // A pointer state no page script can make: :hover and a real touch. Settled again for what it shows.
+    if (options.hover) await page.hover(options.hover);
+    if (options.tap) await page.tap(options.tap);
+    if (options.hover || options.tap) await waitForStable(page);
     await assertNetworkSettled(page, { context: outputName });
     if (escapedRequests.length > 0) {
       throw new Error(`requests escaped the harness:\n    ${escapedRequests.join("\n    ")}`);
@@ -120,6 +124,8 @@ async function captureScenario(browser, scenarioName, options, { harnessUrl, out
  *   for those, and neither is `waitForStable`, which knows about fonts and paint but nothing
  *   about a scene's content. A scene with nothing arriving after mount passes none.
  *   captureViewport screenshots the viewport rather than the element, preserving clipping.
+ *   hover is a selector to move the pointer over, and tap one to tap (the viewport needs hasTouch),
+ *   after the scene is ready and before the capture.
  * @param {{ title: string }} options - Title for the published visual-review manifest.
  */
 export async function runScenarios(scenarios, { title }) {
