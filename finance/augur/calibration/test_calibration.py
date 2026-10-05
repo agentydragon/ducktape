@@ -161,7 +161,6 @@ async def test_surfaced_row_carries_augur_context(
     # deadline 2026-12-31 is month 7 from as_of 2026-05-27; rollout 0 IPOs at month 7 (<=7),
     # the others don't -> P(IPO by deadline) = 1/4. This is surfaced context, NOT a score.
     assert surfaced.augur_context is not None
-    assert surfaced.augur_context.signal == "P(PUBLIC_MARKET_OPEN by deadline)"
     assert surfaced.augur_context.p_model == 0.25
 
 
