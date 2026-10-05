@@ -7,7 +7,7 @@
  */
 import { fromJson, type JsonValue } from "@bufbuild/protobuf";
 
-import { EventSchema, ItemKind, TurnCompletedSchema, TurnStatus } from "../../../protocol/event_pb";
+import { EventSchema, ItemKind, TurnStatus, TurnStatusSchema } from "../../../protocol/event_pb";
 import type { ThreadEntity } from "./thread_sync";
 
 /** A row is identified by its first entity: its key and reading anchor stay put while later steps
@@ -65,12 +65,17 @@ const TURN_OUTCOMES: Record<TurnStatus, { label: string; prominent: boolean }> =
   [TurnStatus.PROCESS_LOST]: { label: "Turn lost", prominent: true },
 };
 
-/** What a turn that ended in an error is called, for a turn that ended with `status`, a TurnStatus member
- * name as a thread's `last_turn_status` carries it; null for an ending the thread shows as ordinary. A name
- * outside TurnStatus throws. */
-export function turnErrorLabel(status: string): string | null {
-  const outcome = TURN_OUTCOMES[fromJson(TurnCompletedSchema, { status }).status];
-  return outcome.prominent ? outcome.label : null;
+export type TurnErrorLabel = { kind: "error"; label: string } | { kind: "ordinary" } | { kind: "unrecognised" };
+
+/** What a turn that ended with `status`, a TurnStatus member name as a thread's `last_turn_status` carries it,
+ * is called when it ended in an error. `ordinary` is an ending the thread shows as ordinary. `unrecognised` is
+ * a name outside this bundle's TurnStatus: a newer backend may have added one, and it is not known to be an
+ * error. */
+export function turnErrorLabel(status: string): TurnErrorLabel {
+  const member = TurnStatusSchema.values.find((value) => value.name === status);
+  if (!member) return { kind: "unrecognised" };
+  const outcome = TURN_OUTCOMES[member.number as TurnStatus];
+  return outcome.prominent ? { kind: "error", label: outcome.label } : { kind: "ordinary" };
 }
 
 export interface LifecyclePresentation {
