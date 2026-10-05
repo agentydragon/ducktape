@@ -8,6 +8,15 @@ py_library(
 )
 
 py_library(
+    name = "pytest_main_markers",
+    srcs = ["pytest_main_markers.py"],
+    visibility = [
+        "//devinfra:__pkg__",
+        "//devinfra/precommit:__pkg__",
+    ],
+)
+
+py_library(
     name = "conftest",
     testonly = True,
     srcs = ["conftest.py"],
@@ -45,6 +54,7 @@ py_test(
         ":conftest",
         ":git_hook",
         "//:conftest",
+        "//devinfra:pytest_main",
         "@pypi//pygit2",
         "@pypi//pytest_bazel",
     ],

@@ -22,7 +22,10 @@ py_library(
     name = "pytest_main",
     srcs = ["pytest_main.py"],
     visibility = ["//visibility:public"],
-    deps = ["//util/bazel:workspace"],
+    deps = [
+        "//devinfra/precommit:pytest_main_markers",
+        "//util/bazel:workspace",
+    ],
 )
 
 py_test(

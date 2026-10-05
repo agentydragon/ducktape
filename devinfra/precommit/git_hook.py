@@ -24,6 +24,7 @@ from opentelemetry.trace import StatusCode
 from devinfra.precommit.enforce_bazel_tests.enforce_bazel_tests import run as enforce_bazel_tests_run
 from devinfra.precommit.filename_conventions import check_filename_conventions
 from devinfra.precommit.frozen_specimens import check_specimen_code_changes
+from devinfra.precommit.pytest_main_markers import has_unconditional_pytest_main_pass
 from devinfra.pytest_main import BazelPyTestIndex, build_bazel_index, check_files_async
 from util.bazel.workspace import BazelWorkspace, detect_bazel_backend
 from util.otel import JsonlSpanExporter
@@ -71,6 +72,22 @@ def get_all_files(repo: pygit2.Repository) -> list[Path]:
     """Get all tracked files from git index, excluding deleted files."""
     repo_root = Path(repo.workdir)
     return [Path(entry.path) for entry in repo.index if (repo_root / entry.path).exists()]
+
+
+def _changed_python_files_always_pass(changed_files: list[Path], repo_root: Path) -> bool:
+    """Whether every selected Python file passes before Bazel membership matters."""
+    python_files = [path for path in changed_files if path.suffix == ".py"]
+    if not python_files:
+        return False
+    for path in python_files:
+        try:
+            content = (repo_root / path).read_text()
+        except OSError, UnicodeError:
+            # Preserve the existing index path for unreadable files.
+            return False
+        if not has_unconditional_pytest_main_pass(content):
+            return False
+    return True
 
 
 def _staged_deltas(repo: pygit2.Repository) -> tuple[pygit2.Tree | None, list[pygit2.DiffDelta]]:
@@ -162,12 +179,16 @@ def main_pre_commit() -> int:
 
 def main_pytest_main_check() -> int:
     changed_files = [Path(f) for f in sys.argv[1:]]
+    if not changed_files and os.environ.get("DUCKTAPE_PRECOMMIT_EXPLICIT_SELECTION") == "1":
+        return 0
     if changed_files and not any(path.suffix == ".py" for path in changed_files):
         return 0
 
     repo = pygit2.Repository(".")
     repo_root = Path(repo.workdir)
     _setup_tracing(repo)
+    if changed_files and _changed_python_files_always_pass(changed_files, repo_root):
+        return 0
 
     workspace = BazelWorkspace(root=repo_root, backend=detect_bazel_backend())
     bazel_index = build_bazel_index(workspace)

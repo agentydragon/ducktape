@@ -29,6 +29,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import NamedTuple
 
+from devinfra.precommit.pytest_main_markers import has_pytest_bazel_main, has_pytest_main
 from util.bazel.workspace import BazelWorkspace
 
 
@@ -79,11 +80,6 @@ def build_bazel_index(workspace: BazelWorkspace) -> BazelPyTestIndex:
     return index
 
 
-def has_pytest_bazel_main(content: str) -> bool:
-    """Check if content has pytest_bazel.main() call."""
-    return "pytest_bazel.main()" in content
-
-
 def check_file(file_path: Path, repo_root: Path, bazel_index: BazelPyTestIndex) -> CheckResult:
     """Check if test file has required pytest_bazel.main() entry point."""
     content = (repo_root / file_path).read_text()
@@ -97,8 +93,7 @@ def check_file(file_path: Path, repo_root: Path, bazel_index: BazelPyTestIndex) 
     if abs_path in bazel_index.exempt_srcs:
         return CheckResult(file_path, passed=True, reason="exempt: py_test uses custom main= (bazel query)")
 
-    # Check if using pytest.main() directly (custom runner)
-    if "pytest.main(" in content:
+    if has_pytest_main(content):
         return CheckResult(file_path, passed=True, reason="uses pytest.main() (custom runner)")
 
     return CheckResult(file_path, passed=False, reason="missing pytest_bazel.main() entry point")
