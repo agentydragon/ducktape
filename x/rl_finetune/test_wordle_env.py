@@ -2,7 +2,22 @@
 
 from __future__ import annotations
 
-from wordle_env import MAX_GUESSES, WORD_LENGTH, WORD_LIST, WordleEnv, _completion_score, _score_guess
+import pytest
+import pytest_bazel
+
+from x.rl_finetune.wordle_env import (
+    MAX_GUESSES,
+    WORD_LENGTH,
+    WordleEnv,
+    _completion_score,
+    _load_word_lists,
+    _score_guess,
+)
+
+
+@pytest.fixture
+def word_list() -> list[str]:
+    return _load_word_lists()[0]
 
 
 class TestScoreGuess:
@@ -62,17 +77,17 @@ class TestCompletionScore:
 
 
 class TestWordList:
-    def test_all_words_correct_length(self):
-        for word in WORD_LIST:
+    def test_all_words_correct_length(self, word_list: list[str]):
+        for word in word_list:
             assert len(word) == WORD_LENGTH, f"{word!r} has length {len(word)}"
 
-    def test_all_words_lowercase_alpha(self):
-        for word in WORD_LIST:
+    def test_all_words_lowercase_alpha(self, word_list: list[str]):
+        for word in word_list:
             assert word.isalpha(), f"{word!r} is not alpha"
             assert word.islower(), f"{word!r} is not lowercase"
 
-    def test_has_reasonable_size(self):
-        assert len(WORD_LIST) >= 50
+    def test_has_reasonable_size(self, word_list: list[str]):
+        assert len(word_list) >= 50
 
 
 class TestWordleEnv:
@@ -94,28 +109,28 @@ class TestWordleEnv:
         assert env.reward == 1.0
         assert env.done is True
 
-    def test_six_wrong_guesses_ends_game(self):
+    def test_six_wrong_guesses_ends_game(self, word_list: list[str]):
         env = self.make_env(seed=0)
         secret = env._secret
         # Pick a word that's definitely not the secret
-        wrong = next(w for w in WORD_LIST if w != secret)
+        wrong = next(w for w in word_list if w != secret)
         for _ in range(MAX_GUESSES):
             env.guess(wrong)
         assert env.done is True
         assert env.reward >= 0.0  # partial credit
 
-    def test_partial_reward_after_nonterminal_guess(self):
+    def test_partial_reward_after_nonterminal_guess(self, word_list: list[str]):
         env = self.make_env(seed=0)
         secret = env._secret
-        wrong = next(w for w in WORD_LIST if w != secret and _completion_score(_score_guess(secret, w)) > 0.0)
+        wrong = next(w for w in word_list if w != secret and _completion_score(_score_guess(secret, w)) > 0.0)
         env.guess(wrong)
         assert env.done is False
         assert env.reward == _completion_score(_score_guess(secret, wrong))
 
-    def test_invalid_guess_preserves_best_reward(self):
+    def test_invalid_guess_preserves_best_reward(self, word_list: list[str]):
         env = self.make_env(seed=0)
         secret = env._secret
-        wrong = next(w for w in WORD_LIST if w != secret and _completion_score(_score_guess(secret, w)) > 0.0)
+        wrong = next(w for w in word_list if w != secret and _completion_score(_score_guess(secret, w)) > 0.0)
         env.guess(wrong)
         reward_after_valid_guess = env.reward
         env.guess("zzzzz")
@@ -162,11 +177,11 @@ class TestWordleEnv:
         # Not guaranteed but very likely with 150+ words
         assert env1._secret != env2._secret
 
-    def test_partial_reward_on_loss(self):
+    def test_partial_reward_on_loss(self, word_list: list[str]):
         env = self.make_env(seed=0)
         secret = env._secret
         # Pick a word that shares some letters with the secret for partial credit
-        wrong = next(w for w in WORD_LIST if w != secret and any(c in secret for c in w))
+        wrong = next(w for w in word_list if w != secret and any(c in secret for c in w))
         for _ in range(MAX_GUESSES):
             if not env.done:
                 env.guess(wrong)
@@ -174,6 +189,4 @@ class TestWordleEnv:
 
 
 if __name__ == "__main__":
-    import pytest_bazel
-
     pytest_bazel.main()

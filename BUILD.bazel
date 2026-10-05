@@ -18,7 +18,6 @@
 # gazelle:exclude x/domains
 # gazelle:exclude x/ember_evals
 # gazelle:exclude x/local_llm
-# gazelle:exclude x/rl_finetune
 
 # gazelle:python_root
 # gazelle:python_generation_mode file

@@ -169,6 +169,9 @@ dependencies = [
     # habitify
     "python-dotenv>=1.2.3",
 
+    # rl_finetune: the Wordle environment's word lists (>=3.9 for the JSON tagger models)
+    "nltk>=3.9",
+
     # ember
     "jupyter-client>=8.10.0",
     "kubernetes>=32.0",

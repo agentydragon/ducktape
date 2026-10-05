@@ -98,12 +98,16 @@ pre-commit, ansible-lint, nix-attic-push, container-images, rbe-container-image,
 openclaw-image trigger independently. Adding or publishing a container image:
 <cluster/docs/container-images.md>.
 
-**Never widen `rbe-container-image.yml`'s trigger, and put nothing in
-<devinfra/rbe_container_image/Dockerfile> that Bazel could supply from the repo it is building.** The
-`container-image` exec property on `//:rbe_linux_x64` carries the full image reference, including its digest.
-Changing the pin changes every action's cache key and BuildBuddy's warm Firecracker
-snapshot key; a repin orphans the action cache and dumps every snapshot. Developer and
-agent tooling belongs in
+**FYI: a repin of the RBE image is costly, so avoid churn, not edits.** The
+`container-image` exec property on `//:rbe_linux_x64` carries the full image reference,
+including its digest, so a repin changes every action's cache key and BuildBuddy's warm
+Firecracker snapshot key: it orphans the action cache and dumps every snapshot
+(measurements in <.github/workflows/rbe-container-image.yml>). A deliberate edit to
+<devinfra/rbe_container_image/Dockerfile> is a one-time cost, and a comment gone false or
+a library an action needs is worth it; never leave a falsehood in place to dodge a
+rebuild. What to avoid is regular repins: don't widen `rbe-container-image.yml`'s
+trigger, and put nothing in the image that Bazel could supply from the repo it is
+building. Developer and agent tooling belongs in
 <devinfra/buildbuddy_remote_runner/Dockerfile>, whose digest no action hashes.
 
 ## Issue Tracking
