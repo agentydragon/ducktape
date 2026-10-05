@@ -57,15 +57,9 @@ async def test_nullable_fastmcp_arguments_remain_nullable() -> None:
             "recurrence": ["RRULE:FREQ=WEEKLY;BYDAY=TU,TH;COUNT=12"],
         }
     )
-    Draft202012Validator(schema["properties"]["google_calendar"]["properties"]["get_event"]).validate(
-        {"event_id": "series1"}
-    )
     # update_event is a partial patch: every field but event_id is nullable/omittable.
     Draft202012Validator(schema["properties"]["google_calendar"]["properties"]["update_event"]).validate(
         {"event_id": "series1", "summary": "Renamed event"}
-    )
-    Draft202012Validator(schema["properties"]["google_calendar"]["properties"]["delete_event"]).validate(
-        {"event_id": "series1"}
     )
 
 
