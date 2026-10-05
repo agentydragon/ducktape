@@ -24,7 +24,7 @@ bb run //devinfra:gazelle_python_manifest.update \
 
 `--config=nolint` avoids the ruff lint aspect in a sandbox that lacks coreutils; it is
 for this manifest update path, not a general validation shortcut
-(<linting.md#skipping-lint>).
+(<linting.md#bazel-aspect-configs>).
 
 ## Rust Crates
 

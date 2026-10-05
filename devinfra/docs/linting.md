@@ -66,25 +66,14 @@ bazel build //...
 bazel build --config=nolint //...
 ```
 
+`--config=nolint` also skips every other rule's validation actions, so use it only where
+that is wanted (as in <lockfiles.md>).
+
 Aspect definitions in `devinfra/lint/linters.bzl`:
 
 - `ruff` - Python linting via `@multitool//tools/ruff`
 - `mypy_aspect` - Type checking via `//devinfra/lint:mypy_cli`
 - `eslint` - JS/TS linting via `//devinfra/lint:eslint`
-
-### Skipping lint
-
-`--config=nolint` skips ruff, ESLint, mypy, clippy and rustfmt. `build:nolint` removes the
-`mypy`, `clippy_checks` and `rustfmt_checks` output groups, which stops those aspect
-actions. aspect_rules_lint attaches the ruff and ESLint actions as validation actions (the
-`_validation` output group), which `--output_groups` cannot remove, so `build:nolint` also
-sets `--norun_validations`.
-
-`--norun_validations` turns off every validation action of every rule, not only lint. Use
-`--config=nolint` only where that is wanted (as in <lockfiles.md>).
-
-`.bazelrc` also names `rules_lint_report` in its output-group lists; the pinned
-aspect_rules_lint defines no output group of that name, so naming it has no effect.
 
 ## GitHub CI Workflows
 
