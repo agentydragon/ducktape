@@ -560,22 +560,43 @@ fn a_free_name_may_bind_the_chunk_name_of_a_renamed_declaration() {
     });
 }
 
+// A run-hole keyword anywhere it is not an element of its own list reaches the
+// node matcher instead of being consumed as a list carrier, so the match fails
+// closed with `Unsupported` rather than treating the keyword as an ordinary
+// identifier. One case per keyword plus the parent kinds a carrier rule might
+// wrongly accept; the lone `(SEQ_EXPRS)` case is the instructive one, since a
+// comma sequence needs at least two elements and the keyword there is not a hole.
 #[test]
-fn fail_closed_on_misplaced_run_hole() {
+fn run_hole_keyword_outside_its_list_fails_closed() {
     js_ast::with_swc_globals(|| {
-        // `ARGS` in expression position (not an argument list) is a misplaced run
-        // hole: it reaches the node matcher rather than being consumed as a list
-        // carrier, so the match errors rather than treating it as an identifier.
-        let result = selector_match::matches(
-            &facts("const a = ARGS;"),
-            &facts("const a = b;"),
-            Mode::Exact,
-            &free("const a = ARGS;"),
-        );
-        assert!(
-            matches!(result, Err(selector_match::Unsupported { .. })),
-            "misplaced run hole must be fail-closed, got {result:?}",
-        );
+        for (label, selector) in [
+            ("ARGS in expression position", "const a = ARGS;"),
+            (
+                "ARRAY_ELEMENTS in expression position",
+                "const c = ARRAY_ELEMENTS;",
+            ),
+            ("SEQ_EXPRS in expression position", "const c = SEQ_EXPRS;"),
+            (
+                "lone SEQ_EXPRS in parentheses",
+                "function f() { return (SEQ_EXPRS); }",
+            ),
+            (
+                "SEQ_EXPRS as a call argument",
+                "function f() { call(SEQ_EXPRS); }",
+            ),
+            ("SEQ_EXPRS in an array literal", "const c = [SEQ_EXPRS, 1];"),
+        ] {
+            let result = selector_match::matches(
+                &facts(selector),
+                &facts("const c = x;"),
+                Mode::Exact,
+                &free(selector),
+            );
+            assert!(
+                matches!(result, Err(selector_match::Unsupported { .. })),
+                "{label}: misplaced run hole must be fail-closed, got {result:?}",
+            );
+        }
     });
 }
 
@@ -854,27 +875,6 @@ fn array_elements_run_hole_anchors_a_few_stable_elements() {
     });
 }
 
-// `ARRAY_ELEMENTS` outside an array-element list (here, in expression position) is
-// a misplaced run-hole keyword: it reaches the node matcher rather than being
-// consumed as a list carrier, so the match fails closed with `Unsupported` rather
-// than treating the keyword as an ordinary identifier — the same fail-closed
-// contract the other run holes hold.
-#[test]
-fn fail_closed_on_misplaced_array_elements_hole() {
-    js_ast::with_swc_globals(|| {
-        let result = selector_match::matches(
-            &facts("const c = ARRAY_ELEMENTS;"),
-            &facts("const c = x;"),
-            Mode::Exact,
-            &free("const c = ARRAY_ELEMENTS;"),
-        );
-        assert!(
-            matches!(result, Err(selector_match::Unsupported { .. })),
-            "misplaced ARRAY_ELEMENTS must be fail-closed, got {result:?}",
-        );
-    });
-}
-
 // `SEQ_EXPRS` is the comma-sequence run hole: a bare identifier element of a
 // sequence expression, absorbing a run of the candidate's sequence elements. A
 // React Compiler memo tail is one cache write per hook dependency plus one, so
@@ -982,34 +982,5 @@ fn seq_exprs_run_hole_absorbs_a_comma_sequence_run() {
             },
         ];
         assert_cases(cases);
-    });
-}
-
-// A misplaced `SEQ_EXPRS` — anywhere the keyword is not an element of a sequence
-// expression — reaches the node matcher instead of being consumed as a list
-// carrier, so the match fails closed with `Unsupported` rather than treating the
-// keyword as an ordinary identifier. A lone `(SEQ_EXPRS)` is the instructive
-// case: a comma sequence needs at least two elements, so the keyword there is
-// not a hole at all.
-#[test]
-fn fail_closed_on_misplaced_seq_exprs_hole() {
-    js_ast::with_swc_globals(|| {
-        for selector in [
-            "const c = SEQ_EXPRS;",
-            "function f() { return (SEQ_EXPRS); }",
-            "function f() { call(SEQ_EXPRS); }",
-            "const c = [SEQ_EXPRS, 1];",
-        ] {
-            let result = selector_match::matches(
-                &facts(selector),
-                &facts("const c = x;"),
-                Mode::Exact,
-                &free(selector),
-            );
-            assert!(
-                matches!(result, Err(selector_match::Unsupported { .. })),
-                "misplaced SEQ_EXPRS must be fail-closed, got {result:?}",
-            );
-        }
     });
 }
