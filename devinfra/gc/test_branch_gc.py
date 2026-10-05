@@ -22,7 +22,9 @@ def _classify(
 def test_ancestor_branch_is_prunable(repo: GitRepo) -> None:
     repo.branch("feature")
     repo.commit("later", "1\n", "advance main")  # feature is now an ancestor of main
-    assert _classify(repo, "feature").reason is bg.PrunableBranchReason.CONTENT_IN_MAIN
+    result = _classify(repo, "feature")
+    assert isinstance(result, bg.PrunableBranch)
+    assert (result.reason, result.main) == (bg.PrunableBranchReason.CONTENT_IN_MAIN, "main")
 
 
 def test_empty_branch_is_prunable(repo: GitRepo) -> None:
@@ -57,7 +59,9 @@ def test_squash_merged_branch_survives_missing_blob(repo: GitRepo, monkeypatch: 
 def test_unique_branch_no_pr_is_review(repo: GitRepo) -> None:
     wt = repo.worktree("wt", "feature")
     wt.commit("novel", "unique\n", "unmerged work")
-    assert _classify(repo, "feature").reason is bg.ReviewBranchReason.UNMERGED
+    result = _classify(repo, "feature")
+    assert isinstance(result, bg.ReviewBranch)
+    assert (result.reason, result.main) == (bg.ReviewBranchReason.UNMERGED, "main")
 
 
 def test_merged_pr_with_content_in_main_is_prunable(repo: GitRepo) -> None:
@@ -80,7 +84,8 @@ def test_squash_merged_pr_beyond_git_proof_is_prunable(repo: GitRepo) -> None:
     repo.commit("f", "C\n", "main advances past the squash")
     pr = PrInfo(7, PrState.MERGED, head_sha=head)
     result = _classify(repo, "feature", pr=pr)
-    assert (result.reason, result.pr) == (bg.PrunableBranchReason.PR_HEAD_REACHED, pr)
+    assert isinstance(result, bg.PrunableBranch)
+    assert (result.reason, result.pr, result.main) == (bg.PrunableBranchReason.PR_HEAD_REACHED, pr, "main")
 
 
 def test_branch_advanced_past_merged_head_is_review(repo: GitRepo) -> None:
@@ -92,7 +97,8 @@ def test_branch_advanced_past_merged_head_is_review(repo: GitRepo) -> None:
     repo.commit("f", "B\n", "main advances")
     pr = PrInfo(7, PrState.MERGED, head_sha=head)
     result = _classify(repo, "feature", pr=pr)
-    assert (result.reason, result.pr) == (bg.ReviewBranchReason.PR_HEAD_EXCEEDED, pr)
+    assert isinstance(result, bg.ReviewBranch)
+    assert (result.reason, result.pr, result.main) == (bg.ReviewBranchReason.PR_HEAD_EXCEEDED, pr, "main")
 
 
 def test_closed_pr_with_nothing_beyond_its_head_is_prunable(repo: GitRepo) -> None:
@@ -158,7 +164,9 @@ def test_cherry_picked_branch_past_the_tree_check_is_prunable(repo: GitRepo) -> 
     repo.commit("f", "B\n", "main advances past the cherry-pick")
     repo.commit("f", "C\n", "and again")
 
-    assert _classify(repo, "feature", pr=None).reason is bg.PrunableBranchReason.PATCHES_IN_MAIN
+    result = _classify(repo, "feature", pr=None)
+    assert isinstance(result, bg.PrunableBranch)
+    assert (result.reason, result.main) == (bg.PrunableBranchReason.PATCHES_IN_MAIN, "main")
 
 
 def test_branch_with_an_unlanded_commit_stays_review(repo: GitRepo) -> None:

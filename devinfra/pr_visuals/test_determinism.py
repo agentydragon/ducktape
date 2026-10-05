@@ -244,20 +244,31 @@ def _exit_status() -> int | str | None:
 
 
 @pytest.mark.parametrize(
-    ("drifts", "exit_code"), [pytest.param(False, None, id="reproducible"), pytest.param(True, 1, id="drifted")]
+    ("published_uris", "exit_code"),
+    [
+        pytest.param(["same", "same", "same"], None, id="reproducible"),
+        pytest.param(["first", "second", "third"], 1, id="drifted"),
+        pytest.param([None, "same", "same"], 1, id="missing from one run"),
+    ],
 )
 def test_the_exit_status_says_whether_every_render_was_reproducible(
-    monkeypatch: pytest.MonkeyPatch, drifts: bool, exit_code: int | None
+    monkeypatch: pytest.MonkeyPatch, published_uris: list[str | None], exit_code: int | None
 ) -> None:
-    """A scheduled sweep reports on this status alone; the markdown only says which renders."""
+    """A scheduled sweep reports on this status alone; the markdown only says which renders.
+
+    `published_uris` is what each run, in order, published for the one render: its content-addressed
+    URI, or `None` for a run that published nothing.
+    """
+    invocations: list[str] = []
 
     def fake_run(command: list[str | Path], **_kwargs: object) -> subprocess.CompletedProcess[str]:
         payload: object = None
         match [str(part) for part in command]:
-            case ["bbr", "test", *_]:
-                pass
+            case ["bbr", "test", flag, *_]:
+                invocations.append(flag.removeprefix("--invocation_id="))
             case ["bbapi", "artifact", "list", invocation, "--json"]:
-                payload = [_png("//ui:visual", "list.png", f"bytestream://{invocation if drifts else 'same'}")]
+                uri = published_uris[invocations.index(invocation)]
+                payload = [] if uri is None else [_png("//ui:visual", "list.png", f"bytestream://{uri}")]
             case ["bbapi", "target", _, "--json"]:
                 payload = {"targetGroups": [{"targets": [_test_row("//ui:visual", seconds=9.0)]}]}
             case other:
@@ -265,7 +276,7 @@ def test_the_exit_status_says_whether_every_render_was_reproducible(
         return subprocess.CompletedProcess(command, 0, json.dumps(payload) if payload is not None else "", "")
 
     monkeypatch.setattr(subprocess, "run", fake_run)
-    monkeypatch.setattr(sys, "argv", ["determinism", "--runs", "3", "//ui:visual"])
+    monkeypatch.setattr(sys, "argv", ["determinism", "--runs", str(len(published_uris)), "//ui:visual"])
 
     assert _exit_status() == exit_code
 
