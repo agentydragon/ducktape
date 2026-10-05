@@ -33,6 +33,23 @@ ts_library(
 )
 
 ts_library(
+    name = "testing_library",
+    testonly = True,
+    srcs = ["testing_library.tsx"],
+    tsconfig = TSCONFIG,
+    deps = [
+        "//:node_modules/@mantine/core",
+        "//:node_modules/@testing-library/jest-dom",
+        "//:node_modules/@testing-library/react",
+        "//:node_modules/@testing-library/user-event",
+        "//:node_modules/@types/react",
+        "//:node_modules/react",
+        "//:node_modules/react-dom",
+        "//:node_modules/vitest",
+    ],
+)
+
+ts_library(
     name = "status_mark",
     srcs = [
         "status_mark.ts",
@@ -169,11 +186,8 @@ agentplane_vitest_test(
         ":connections_fixture",
         ":consent",
         ":consent_client",
-        "//:node_modules/@mantine/core",
-        "//:node_modules/@types/react",
-        "//:node_modules/@types/react-dom",
-        "//:node_modules/react",
-        "//:node_modules/react-dom",
+        ":testing_library",
+        "//:node_modules/@testing-library/react",
         "//:node_modules/vitest",
     ],
 )
@@ -301,9 +315,11 @@ agentplane_vitest_test(
     name = "clamped_block_test",
     srcs = ["clamped_block.test.tsx"],
     deps = [
-        ":actions_testing",
         ":clamped_block",
+        ":testing_library",
+        "//:node_modules/@testing-library/react",
         "//:node_modules/@types/react",
+        "//:node_modules/react",
         "//:node_modules/vitest",
     ],
 )
@@ -580,11 +596,10 @@ agentplane_vitest_test(
     deps = [
         ":live_stream",
         ":stream_status",
-        "//:node_modules/@mantine/core",
+        ":testing_library",
+        "//:node_modules/@testing-library/react",
         "//:node_modules/@types/react",
-        "//:node_modules/@types/react-dom",
         "//:node_modules/react",
-        "//:node_modules/react-dom",
         "//:node_modules/vitest",
     ],
 )
@@ -887,11 +902,9 @@ agentplane_vitest_test(
         ":live",
         ":sandbox_page",
         ":test_model_catalog",
-        "//:node_modules/@mantine/core",
-        "//:node_modules/@types/react",
-        "//:node_modules/@types/react-dom",
-        "//:node_modules/react",
-        "//:node_modules/react-dom",
+        ":testing_library",
+        "//:node_modules/@testing-library/react",
+        "//:node_modules/@testing-library/user-event",
         "//:node_modules/react-router",
         "//:node_modules/vitest",
     ],
@@ -1124,11 +1137,9 @@ agentplane_vitest_test(
         ":client",
         ":sandboxes",
         ":test_model_catalog",
-        "//:node_modules/@mantine/core",
-        "//:node_modules/@types/react",
-        "//:node_modules/@types/react-dom",
-        "//:node_modules/react",
-        "//:node_modules/react-dom",
+        ":testing_library",
+        "//:node_modules/@testing-library/react",
+        "//:node_modules/@testing-library/user-event",
         "//:node_modules/react-router",
         "//:node_modules/vitest",
     ],

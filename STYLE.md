@@ -507,6 +507,13 @@ How a `vitest_test` is built is under TypeScript above; what a spec may assume i
   in `data`), with the cause in a comment under the pragma and a `CLEANUP` tombstone (§ Tombstones)
   whose condition is a check that ends the exception. Passing under both is not a reason: the
   default's choice stands.
+- **A spec that drives the UI as a user would uses Testing Library**: forms, menus, comboboxes,
+  buttons. It renders with `renderInMantine` (<agentplane/app/frontend/testing_library.tsx>, which
+  wires cleanup, `jest-dom` and fake timers), queries by role, label or text, acts through `user`, and
+  waits on the condition (`findBy*`, `waitFor`). A class or DOM position is the fallback, for markup
+  with no role (`<summary>`, an SVG mark); what a user cannot do, such as two events inside one React
+  batch, is `fireEvent` inside one `act`. Specs convert when their next edit touches them, not for
+  their own sake.
 - **Lint**: the `@vitest/eslint-plugin` recommended rules are errors on every frontend's
   `*.test.{ts,tsx}` (`eslint.config.js`), so `.only`, `.skip`, a test without an `expect` and an
   unawaited async matcher fail the build. `valid-expect` allows vitest's second argument, the failure

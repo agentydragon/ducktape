@@ -2,9 +2,9 @@
 
 import { create } from "@bufbuild/protobuf";
 import { TEST_REASONING_EFFORTS } from "../test_model_catalog";
-import { MantineProvider } from "@mantine/core";
-import { act, type JSX } from "react";
-import { createRoot } from "react-dom/client";
+import { act, fireEvent, screen, waitFor, within } from "@testing-library/react";
+import type { UserEvent } from "@testing-library/user-event";
+import type { JSX, ReactElement } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { CommandSchema, type Command } from "../../../protocol/command_pb";
@@ -21,17 +21,9 @@ import { RetainedDisclosureProvider } from "./retained_disclosures";
 import { DEGRADED_AFTER_MS, STALE_AFTER_MS } from "../stream_status";
 import { THREAD_STATUS_MARKS } from "../status_mark";
 import { testItem } from "./thread_entity_fixture";
-import {
-  badgeLabels,
-  entity,
-  reference,
-  serving,
-  THREAD,
-  threadState,
-  toggle,
-  viewState,
-} from "./thread_state_fixture";
+import { badgeLabels, entity, reference, serving, THREAD, threadState, viewState } from "./thread_state_fixture";
 import { ThreadSyncContext, type ThreadEntity, type ThreadState, type ThreadSync } from "./thread_sync";
+import { renderInMantine } from "../testing_library";
 import { TopbarContext } from "../topbar";
 
 vi.mock("../client", async (importOriginal) => ({
@@ -42,13 +34,13 @@ vi.mock("../client", async (importOriginal) => ({
   resumeThread: vi.fn(),
 }));
 
-(globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 const mounted: Array<{
-  root: ReturnType<typeof createRoot>;
-  container: HTMLDivElement;
-  topbarTitle?: HTMLDivElement;
-  topbarActions?: HTMLDivElement;
+  container: HTMLElement;
+  rerender: (ui: ReactElement) => void;
+  topbarTitle: HTMLDivElement;
+  topbarActions: HTMLDivElement;
 }> = [];
+let user: UserEvent;
 let favicon: HTMLLinkElement;
 
 // What the sandbox inventory stream reports -- nothing at all while `sandboxes` is null -- and
@@ -154,11 +146,8 @@ beforeEach(() => {
   );
 });
 
-afterEach(async () => {
-  for (const { root, container } of mounted.splice(0)) {
-    await act(async () => root.unmount());
-    container.remove();
-  }
+afterEach(() => {
+  mounted.length = 0;
   vi.useRealTimers();
   vi.unstubAllGlobals();
   vi.resetAllMocks();
@@ -166,22 +155,27 @@ afterEach(async () => {
   document.title = "Agentplane";
 });
 
-async function render(state: ThreadState = threadState()): Promise<HTMLDivElement> {
-  const container = document.createElement("div");
-  document.body.append(container);
+/** The page rendered, once what its first render sets going has settled. */
+async function renderPage(content: (topbarTitle: HTMLDivElement, topbarActions: HTMLDivElement) => ReactElement) {
   // The real shell topbar (app.tsx) isn't mounted here, so ProjectedSession's title/menu need
-  // somewhere to portal into. Left unattached until after the initial render: createRoot's first
-  // commit clears container's pre-existing children, which would tear these back out.
+  // somewhere to portal into. Attached once the page has rendered: createRoot's first commit clears
+  // its container's pre-existing children, which would tear these back out.
   const topbarTitle = document.createElement("div");
   const topbarActions = document.createElement("div");
-  const root = createRoot(container);
-  mounted.push({ root, container, topbarTitle, topbarActions });
+  let rendered!: ReturnType<typeof renderInMantine>;
   await act(async () => {
-    const content = page(state, topbarTitle, topbarActions);
-    root.render(<TestLiveProviders>{content}</TestLiveProviders>);
+    rendered = renderInMantine(content(topbarTitle, topbarActions));
   });
-  container.append(topbarTitle, topbarActions);
-  return container;
+  user = rendered.user;
+  rendered.container.append(topbarTitle, topbarActions);
+  mounted.push({ container: rendered.container, rerender: rendered.rerender, topbarTitle, topbarActions });
+  return rendered.container;
+}
+
+function render(state: ThreadState = threadState()): Promise<HTMLElement> {
+  return renderPage((topbarTitle, topbarActions) => (
+    <TestLiveProviders>{page(state, topbarTitle, topbarActions)}</TestLiveProviders>
+  ));
 }
 
 function TestLiveProviders({ children }: { children: JSX.Element }): JSX.Element {
@@ -197,23 +191,12 @@ function WaitForThreadsSnapshot({ children }: { children: JSX.Element }): JSX.El
   return live.snapshot ? children : null;
 }
 
-async function renderAfterThreadsSnapshot(state: ThreadState = threadState()): Promise<HTMLDivElement> {
-  const container = document.createElement("div");
-  document.body.append(container);
-  const topbarTitle = document.createElement("div");
-  const topbarActions = document.createElement("div");
-  const root = createRoot(container);
-  mounted.push({ root, container, topbarTitle, topbarActions });
-  await act(async () => {
-    const content = page(state, topbarTitle, topbarActions);
-    root.render(
-      <TestLiveProviders>
-        <WaitForThreadsSnapshot>{content}</WaitForThreadsSnapshot>
-      </TestLiveProviders>
-    );
-  });
-  container.append(topbarTitle, topbarActions);
-  return container;
+function renderAfterThreadsSnapshot(state: ThreadState = threadState()): Promise<HTMLElement> {
+  return renderPage((topbarTitle, topbarActions) => (
+    <TestLiveProviders>
+      <WaitForThreadsSnapshot>{page(state, topbarTitle, topbarActions)}</WaitForThreadsSnapshot>
+    </TestLiveProviders>
+  ));
 }
 
 function page(
@@ -229,112 +212,100 @@ function page(
     usePayload: () => ({ body: null, error: null, retry: () => {} }),
   };
   return (
-    <MantineProvider env="test">
-      <ThreadSyncContext.Provider value={sync}>
-        <TopbarContext.Provider value={{ title: topbarTitle, actions: topbarActions }}>
-          <ProjectedSession key={mountKey} threadId={THREAD.id} />
-        </TopbarContext.Provider>
-      </ThreadSyncContext.Provider>
-    </MantineProvider>
+    <ThreadSyncContext.Provider value={sync}>
+      <TopbarContext.Provider value={{ title: topbarTitle, actions: topbarActions }}>
+        <ProjectedSession key={mountKey} threadId={THREAD.id} />
+      </TopbarContext.Provider>
+    </ThreadSyncContext.Provider>
   );
 }
 
-async function rerender(container: HTMLDivElement, state: ThreadState): Promise<void> {
+function mountedPage(container: HTMLElement): (typeof mounted)[number] {
   const current = mounted.find((entry) => entry.container === container);
-  const topbarTitle = current?.topbarTitle;
-  const topbarActions = current?.topbarActions;
-  if (!current || !topbarTitle || !topbarActions) throw new Error("Missing mounted thread page");
+  if (!current) throw new Error("Missing mounted thread page");
+  return current;
+}
+
+async function rerender(container: HTMLElement, state: ThreadState, mountKey?: string): Promise<void> {
+  const { rerender: renderAgain, topbarTitle, topbarActions } = mountedPage(container);
   await act(async () =>
-    current.root.render(<TestLiveProviders>{page(state, topbarTitle, topbarActions)}</TestLiveProviders>)
+    renderAgain(<TestLiveProviders>{page(state, topbarTitle, topbarActions, mountKey)}</TestLiveProviders>)
   );
   container.append(topbarTitle, topbarActions);
 }
 
-function composer(container: HTMLDivElement): HTMLTextAreaElement {
-  const field = container.querySelector("textarea");
-  if (!field) throw new Error("Missing composer");
-  return field;
+function composer(container: HTMLElement): HTMLElement {
+  return within(container).getByPlaceholderText("Enter sends, Shift+Enter or Ctrl+Enter for a new line");
 }
 
-async function type(field: HTMLTextAreaElement, text: string): Promise<void> {
-  await act(async () => {
-    Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value")?.set?.call(field, text);
-    field.dispatchEvent(new Event("input", { bubbles: true }));
-  });
+function button(container: HTMLElement, label: string): HTMLElement {
+  return within(container).getByRole("button", { name: label });
 }
 
-async function press(field: HTMLTextAreaElement, init: KeyboardEventInit): Promise<void> {
-  await act(async () => {
-    field.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true, ...init }));
-  });
+/** Puts `text` in the composer as one paste: typing it re-renders the whole page for every character. */
+async function enterText(field: HTMLElement, text: string): Promise<void> {
+  await user.click(field);
+  await user.paste(text);
 }
 
-function button(container: HTMLDivElement, label: string): HTMLButtonElement {
-  const found = container.querySelector<HTMLButtonElement>(`button[aria-label="${label}"]`);
-  if (!found) throw new Error(`Missing ${label}`);
-  return found;
+/** The status indicator in the page's topbar title. */
+function statusIndicator(): HTMLElement {
+  return within(mounted.at(-1)!.topbarTitle).getByRole("img");
 }
 
-function buttonIn(row: Element | null | undefined, text: string): HTMLButtonElement | undefined {
-  return [...(row?.querySelectorAll("button") ?? [])].find((candidate) => candidate.textContent === text);
-}
-
-async function openMenuItem(container: HTMLDivElement, text: string): Promise<HTMLButtonElement> {
-  await act(async () => button(container, "More").click());
-  const item = [...document.querySelectorAll<HTMLButtonElement>('[role="menuitem"]')].find(
-    (candidate) => candidate.textContent === text
-  );
-  if (!item) throw new Error(`Missing menu item ${text}`);
-  return item;
+async function openMenuItem(container: HTMLElement, text: string): Promise<HTMLElement> {
+  await user.click(button(container, "More"));
+  // Mantine portals the menu onto `document.body`, which a `screen` query reaches.
+  return screen.findByRole("menuitem", { name: text });
 }
 
 function sentOperations(): unknown[] {
   return vi.mocked(command).mock.calls.map(([, value]) => value.operation);
 }
 
-it.each<KeyboardEventInit>([{ ctrlKey: true }, { metaKey: true }, { shiftKey: true }])(
-  "inserts a newline at the caret on Enter with %o, without sending",
-  async (modifier) => {
-    const field = composer(await render());
-    await type(field, "helloworld");
-    field.setSelectionRange(5, 5);
-    await press(field, modifier);
-    // The caret is put back on the frame after the controlled value lands.
-    await act(() => new Promise<void>((resolve) => requestAnimationFrame(() => resolve())));
-    expect(field.value).toBe("hello\nworld");
-    expect([field.selectionStart, field.selectionEnd]).toEqual([6, 6]);
-    expect(command).not.toHaveBeenCalled();
-  }
-);
+it.each<[KeyboardEventInit, string]>([
+  [{ ctrlKey: true }, "{Control>}{Enter}{/Control}"],
+  [{ metaKey: true }, "{Meta>}{Enter}{/Meta}"],
+  [{ shiftKey: true }, "{Shift>}{Enter}{/Shift}"],
+])("inserts a newline at the caret on Enter with %o, without sending", async (_, keys) => {
+  const field = composer(await render()) as HTMLTextAreaElement;
+  await enterText(field, "helloworld");
+  field.setSelectionRange(5, 5);
+  await user.keyboard(keys);
+  // The caret is put back on the frame after the controlled value lands.
+  await act(() => new Promise<void>((resolve) => requestAnimationFrame(() => resolve())));
+  expect(field).toHaveValue("hello\nworld");
+  expect([field.selectionStart, field.selectionEnd]).toEqual([6, 6]);
+  expect(command).not.toHaveBeenCalled();
+});
 
 it("sends the draft on Enter and clears it", async () => {
   const container = await render();
   const field = composer(container);
-  await type(field, "hello");
-  await press(field, {});
+  await enterText(field, "hello");
+  await user.keyboard("{Enter}");
   expect(sentOperations()).toMatchObject([{ case: "submitInput", value: { text: "hello" } }]);
-  expect(field.value).toBe("");
-  const bubble = container.querySelector<HTMLElement>('.agentplane-user-bubble[data-message-phase="local"]');
-  expect(bubble?.querySelector(".agentplane-verbatim")?.textContent).toBe("hello");
-  expect(bubble?.parentElement?.querySelector('[role="status"]')?.textContent).toBe(
-    "Saved locally · awaiting admission"
-  );
-  expect(bubble?.querySelector('[role="status"]')).toBeNull();
-  expect(buttonIn(bubble?.parentElement, "Retry")).toBeDefined();
-  expect(container.querySelector('[aria-label="Pending commands"]')).toBeNull();
+  expect(field).toHaveValue("");
+  const bubble = container.querySelector<HTMLElement>('.agentplane-user-bubble[data-message-phase="local"]')!;
+  expect(bubble.querySelector(".agentplane-verbatim")?.textContent).toBe("hello");
+  expect(within(bubble.parentElement!).getByRole("status").textContent).toBe("Saved locally · awaiting admission");
+  expect(within(bubble).queryByRole("status")).toBeNull();
+  expect(within(bubble.parentElement!).getByRole("button", { name: "Retry" })).toBeInTheDocument();
+  expect(screen.queryByLabelText("Pending commands")).toBeNull();
 });
 
 it("submits once for two Enters before the cleared draft renders, then takes the next draft", async () => {
   const field = composer(await render());
-  await type(field, "hello");
+  await enterText(field, "hello");
+  // Two events in one React batch: `user.keyboard` would let the first render before sending the second.
   await act(async () => {
-    const enter = () => field.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true }));
+    const enter = () => fireEvent.keyDown(field, { key: "Enter" });
     enter();
     enter();
   });
   expect(sentOperations()).toMatchObject([{ case: "submitInput", value: { text: "hello" } }]);
-  await type(field, "second");
-  await press(field, {});
+  await enterText(field, "second");
+  await user.keyboard("{Enter}");
   expect(sentOperations()).toMatchObject([
     { case: "submitInput", value: { text: "hello" } },
     { case: "submitInput", value: { text: "second" } },
@@ -343,29 +314,29 @@ it("submits once for two Enters before the cleared draft renders, then takes the
 
 it("sends the draft from the Send button, which an empty draft disables", async () => {
   const container = await render();
-  expect(button(container, "Send").disabled).toBe(true);
-  await type(composer(container), "hello");
-  await act(async () => button(container, "Send").click());
+  expect(button(container, "Send")).toBeDisabled();
+  await enterText(composer(container), "hello");
+  await user.click(button(container, "Send"));
   expect(sentOperations()).toMatchObject([{ case: "submitInput", value: { text: "hello" } }]);
 });
 
 it("resumes the existing Thread and restores sending on the open and reloaded pages", async () => {
   const ended = threadState({ rows: [viewState({ harness: "stopped", status: "ended" })] });
   const original = await render(ended);
-  expect(composer(original).disabled).toBe(true);
-  await act(async () => button(original, "Resume harness").click());
+  expect(composer(original)).toBeDisabled();
+  await user.click(button(original, "Resume harness"));
   expect(resumeThread).toHaveBeenCalledWith(THREAD.id);
 
   const running = threadState();
   await rerender(original, running);
-  expect(composer(original).disabled).toBe(false);
-  await type(composer(original), "from the open page");
-  await press(composer(original), {});
+  expect(composer(original)).toBeEnabled();
+  await enterText(composer(original), "from the open page");
+  await user.keyboard("{Enter}");
 
   const reloaded = await render(running);
-  expect(composer(reloaded).disabled).toBe(false);
-  await type(composer(reloaded), "from the reloaded page");
-  await press(composer(reloaded), {});
+  expect(composer(reloaded)).toBeEnabled();
+  await enterText(composer(reloaded), "from the reloaded page");
+  await user.keyboard("{Enter}");
   expect(sentOperations()).toEqual(
     expect.arrayContaining([
       expect.objectContaining({ case: "submitInput", value: expect.objectContaining({ text: "from the open page" }) }),
@@ -381,21 +352,21 @@ it("resumes the existing Thread and restores sending on the open and reloaded pa
 
 it("shows the thread id in the More menu, not inline once a name is set", async () => {
   const container = await render();
-  expect(document.body.textContent).not.toContain(THREAD.id);
-  await act(async () => button(container, "More").click());
-  expect(document.body.textContent).toContain(THREAD.id);
+  expect(document.body).not.toHaveTextContent(THREAD.id);
+  await user.click(button(container, "More"));
+  expect(document.body).toHaveTextContent(THREAD.id);
 });
 
 it("shuts the harness down from the More menu, not a control on the row", async () => {
   const container = await render();
-  expect(document.body.textContent).not.toContain("Shut down harness");
-  await act(async () => (await openMenuItem(container, "Shut down harness")).click());
+  expect(document.body).not.toHaveTextContent("Shut down harness");
+  await user.click(await openMenuItem(container, "Shut down harness"));
   expect(sentOperations()).toMatchObject([{ case: "stopRunnerSession" }]);
 });
 
 it("disables shutdown while the harness is not running", async () => {
   const container = await render(threadState({ rows: [viewState({ harness: "stopped" })] }));
-  expect((await openMenuItem(container, "Shut down harness")).disabled).toBe(true);
+  expect(await openMenuItem(container, "Shut down harness")).toBeDisabled();
 });
 
 it.each([
@@ -410,11 +381,10 @@ it.each([
   [{ last_turn_status: "TURN_STATUS_PROCESS_LOST" }, "Turn lost · Runner feed active · harness running", "turn_error"],
 ] as const)("uses shared thread row %o for the topbar status", async (row, label, kind) => {
   sharedThread = row;
-  const container = await render();
-  const indicator = container.querySelector(".agentplane-thread-status-indicator");
-  expect(mounted.at(-1)?.topbarTitle?.contains(indicator ?? null)).toBe(true);
-  expect(indicator?.getAttribute("aria-label")).toBe(label);
-  expect(indicator?.getAttribute("data-status")).toBe(kind);
+  await render();
+  const indicator = statusIndicator();
+  expect(indicator).toHaveAccessibleName(label);
+  expect(indicator).toHaveAttribute("data-status", kind);
 });
 
 const faviconSvg = (): string => decodeURIComponent(favicon.getAttribute("href")?.split(",")[1] ?? "");
@@ -422,12 +392,11 @@ const faviconSvg = (): string => decodeURIComponent(favicon.getAttribute("href")
 it("shows green chevrons in the status indicator and the favicon, and a leading glyph in the title, while a turn is active", async () => {
   vi.useFakeTimers();
   sharedThread = { active_turn_id: "turn-1" };
-  const indicator = (await render(threadState({ rows: [viewState({ activeTurn: "turn-1" })] }))).querySelector(
-    ".agentplane-thread-status-indicator"
-  );
-  expect(indicator?.getAttribute("aria-label")).toBe("Turn running · Runner feed active · harness running");
-  expect(indicator?.getAttribute("data-status")).toBe("running");
-  expect(indicator?.querySelector("svg")).not.toBeNull();
+  await render(threadState({ rows: [viewState({ activeTurn: "turn-1" })] }));
+  const indicator = statusIndicator();
+  expect(indicator).toHaveAccessibleName("Turn running · Runner feed active · harness running");
+  expect(indicator).toHaveAttribute("data-status", "running");
+  expect(indicator.querySelector("svg")).not.toBeNull();
   expect(document.title).toBe(`${THREAD_STATUS_MARKS.running.glyph} Test thread · Running — Agentplane`);
   expect(favicon.getAttribute("href")).toMatch(/^data:image\/svg\+xml,/);
   const frame = faviconSvg();
@@ -445,18 +414,20 @@ it("shows green chevrons in the status indicator and the favicon, and a leading 
 
 it("shows an idle thread as a dot in the idle color, in the favicon and with its own title glyph", async () => {
   sharedThread = {};
-  const indicator = (await render()).querySelector(".agentplane-thread-status-indicator");
-  expect(indicator?.getAttribute("data-status")).toBe("idle");
-  expect(indicator?.querySelector("svg")).toBeNull();
+  await render();
+  const indicator = statusIndicator();
+  expect(indicator).toHaveAttribute("data-status", "idle");
+  expect(indicator.querySelector("svg")).toBeNull();
   expect(faviconSvg()).toContain(`fill="${THREAD_STATUS_MARKS.idle.color}" stroke="#102a43"`);
   expect(document.title).toBe(`${THREAD_STATUS_MARKS.idle.glyph} Test thread · Ready — Agentplane`);
 });
 
 it("shows an idle thread whose last turn failed as a red warning icon, in the favicon and with its own title glyph", async () => {
   sharedThread = { last_turn_status: "TURN_STATUS_FAILED" };
-  const indicator = (await render()).querySelector(".agentplane-thread-status-indicator");
-  expect(indicator?.getAttribute("data-status")).toBe("turn_error");
-  expect(indicator?.querySelector("svg")).not.toBeNull();
+  await render();
+  const indicator = statusIndicator();
+  expect(indicator).toHaveAttribute("data-status", "turn_error");
+  expect(indicator.querySelector("svg")).not.toBeNull();
   expect(faviconSvg()).toContain(`fill="${THREAD_STATUS_MARKS.turn_error.color}"`);
   // Not the red dot of a failed runner feed, which has a white inner ring.
   expect(faviconSvg()).not.toContain('stroke="#fff"');
@@ -465,9 +436,10 @@ it("shows an idle thread whose last turn failed as a red warning icon, in the fa
 
 it("shows a stopped harness as an icon in the status indicator and the favicon, with its own title glyph", async () => {
   sharedThread = { harness_state: "HARNESS_STATE_STOPPED" };
-  const indicator = (await render()).querySelector(".agentplane-thread-status-indicator");
-  expect(indicator?.getAttribute("data-status")).toBe("stopped");
-  expect(indicator?.querySelector("svg")).not.toBeNull();
+  await render();
+  const indicator = statusIndicator();
+  expect(indicator).toHaveAttribute("data-status", "stopped");
+  expect(indicator.querySelector("svg")).not.toBeNull();
   expect(faviconSvg()).toContain(`stroke="${THREAD_STATUS_MARKS.stopped.color}"`);
   expect(document.title).toBe(`${THREAD_STATUS_MARKS.stopped.glyph} Test thread · Stopped — Agentplane`);
 });
@@ -475,9 +447,10 @@ it("shows a stopped harness as an icon in the status indicator and the favicon, 
 it("does not show active-turn status when the runner is not active", async () => {
   sharedFeed = "ended";
   sharedThread = { active_turn_id: "turn-1" };
-  const indicator = (await render()).querySelector(".agentplane-thread-status-indicator");
-  expect(indicator?.getAttribute("aria-label")).toBe("Runner feed ended");
-  expect(indicator?.getAttribute("data-status")).toBe("inactive");
+  await render();
+  const indicator = statusIndicator();
+  expect(indicator).toHaveAccessibleName("Runner feed ended");
+  expect(indicator).toHaveAttribute("data-status", "inactive");
 });
 
 // Retained history still says the harness runs and the feed failed; an archived thread shows the archive
@@ -486,12 +459,11 @@ it("shows an archived thread as the archive icon, in the favicon and with its ow
   vi.mocked(getThread).mockResolvedValue({ ...THREAD, archived: true });
   sharedThread = { archived: true };
   sandboxes = [inventorySandbox()];
-  const indicator = (await render(threadState({ rows: [viewState({ status: "failed" })] }))).querySelector(
-    ".agentplane-thread-status-indicator"
-  );
-  expect(indicator?.getAttribute("aria-label")).toBe("Thread archived");
-  expect(indicator?.getAttribute("data-status")).toBe("archived");
-  expect(indicator?.querySelector("svg")).not.toBeNull();
+  await render(threadState({ rows: [viewState({ status: "failed" })] }));
+  const indicator = statusIndicator();
+  expect(indicator).toHaveAccessibleName("Thread archived");
+  expect(indicator).toHaveAttribute("data-status", "archived");
+  expect(indicator.querySelector("svg")).not.toBeNull();
   expect(faviconSvg()).toContain(`stroke="${THREAD_STATUS_MARKS.archived.color}"`);
   expect(faviconSvg()).not.toContain("<circle");
   expect(document.title).toBe(`${THREAD_STATUS_MARKS.archived.glyph} Test thread · Archived — Agentplane`);
@@ -504,11 +476,10 @@ it.each([
   vi.mocked(getThread).mockResolvedValue({ ...THREAD, ...overrides });
   sharedThread = overrides;
   sandboxes = inventory;
-  const indicator = (await render(threadState({ rows: [viewState({ status: "failed" })] }))).querySelector(
-    ".agentplane-thread-status-indicator"
-  );
-  expect(indicator?.getAttribute("aria-label")).toBe(label);
-  expect(indicator?.getAttribute("data-status")).toBe("inactive");
+  await render(threadState({ rows: [viewState({ status: "failed" })] }));
+  const indicator = statusIndicator();
+  expect(indicator).toHaveAccessibleName(label);
+  expect(indicator).toHaveAttribute("data-status", "inactive");
 });
 
 const RUNNING = inventorySandbox();
@@ -523,16 +494,8 @@ function matching(text: string | RegExp): unknown {
 
 it("keeps one sandbox inventory stream mounted across thread route remounts", async () => {
   const container = await render();
-  const current = mounted.find((entry) => entry.container === container);
-  const topbarTitle = current?.topbarTitle;
-  const topbarActions = current?.topbarActions;
-  if (!current || !topbarTitle || !topbarActions) throw new Error("Missing mounted thread page");
 
-  await act(async () => {
-    current.root.render(
-      <TestLiveProviders>{page(threadState(), topbarTitle, topbarActions, "next-thread")}</TestLiveProviders>
-    );
-  });
+  await rerender(container, threadState(), "next-thread");
 
   expect(eventSourceUrls.filter((url) => url === "/live/sandboxes")).toHaveLength(1);
 });
@@ -541,7 +504,7 @@ it("mounts the thread from the live snapshot without fetching its metadata again
   const container = await renderAfterThreadsSnapshot();
 
   expect(getThread).not.toHaveBeenCalled();
-  expect(container.querySelector("textarea")).not.toBeNull();
+  expect(composer(container)).toBeInTheDocument();
 });
 
 it("fetches thread metadata when it is absent from the live snapshot", async () => {
@@ -550,7 +513,7 @@ it("fetches thread metadata when it is absent from the live snapshot", async () 
   const container = await render();
 
   expect(getThread).toHaveBeenCalledExactlyOnceWith(THREAD.id);
-  expect(container.querySelector("textarea")).not.toBeNull();
+  expect(composer(container)).toBeInTheDocument();
 });
 
 // Each of these but the first disables the controls, which the composer's indicator reports only as
@@ -582,28 +545,27 @@ it.each<[string, Inventory, { fresh?: boolean; droppedFor?: number }, string | n
   inventoryDrops = droppedFor !== undefined;
   const container = await render();
   await act(async () => vi.advanceTimersByTime(droppedFor ?? 0));
-  const texts = (role: string) => [...container.querySelectorAll(`[role="${role}"]`)].map((node) => node.textContent);
+  const texts = (role: string) =>
+    within(container)
+      .queryAllByRole(role)
+      .map((node) => node.textContent);
   expect(texts("status")).toEqual(status === null ? [] : [matching(status)]);
   expect(texts("alert")).toEqual(alert === null ? [] : [matching(alert)]);
 });
 
 it("shows the applied effort and sends a change command without optimistically changing it", async () => {
   const container = await render();
-  const picker = container.querySelector<HTMLInputElement>('input[aria-label="Reasoning effort"]');
-  expect(picker?.value).toBe("low");
-  await act(async () => picker?.click());
-  const high = [...document.querySelectorAll<HTMLElement>('[role="option"]')].find(
-    (option) => option.textContent === "high"
-  );
-  expect(high).toBeDefined();
-  await act(async () => high?.click());
+  const picker = within(container).getByRole("combobox", { name: "Reasoning effort" });
+  expect(picker).toHaveValue("low");
+  await user.click(picker);
+  await user.click(screen.getByRole("option", { name: "high" }));
   expect(sentOperations()).toContainEqual({
     case: "changeReasoningEffort",
     value: expect.objectContaining({ effort: "high" }),
   });
-  expect(picker?.value).toBe("low");
+  expect(picker).toHaveValue("low");
   await rerender(container, threadState({ rows: [viewState()] }));
-  expect(picker?.value).toBe("low");
+  expect(picker).toHaveValue("low");
 });
 
 it.each([
@@ -612,8 +574,8 @@ it.each([
   [{ rows: [viewState({ status: "failed", model: null })] }, "Model unavailable"],
   [{ rows: [viewState({ model: null })] }, "Model"],
 ])("names why %o shows no model: %s", async (state, placeholder) => {
-  const picker = (await render(threadState(state))).querySelector<HTMLInputElement>('input[aria-label="Model"]');
-  expect(picker?.placeholder).toBe(placeholder);
+  const container = await render(threadState(state));
+  expect(within(container).getByRole("combobox", { name: "Model" })).toHaveAttribute("placeholder", placeholder);
 });
 
 // A stopped window says so in its own alert, and is not following the thread to be out of date.
@@ -625,7 +587,9 @@ it.each<[{ reconnectingFor: number; windowError?: string }, (string | RegExp)[]]
   "tells the reader the thread may be out of date only once its reads have failed a minute: %o",
   async (state, alerts) => {
     const container = await render(threadState(state));
-    const shown = [...container.querySelectorAll('[role="alert"]')].map((node) => node.textContent);
+    const shown = within(container)
+      .queryAllByRole("alert")
+      .map((node) => node.textContent);
     expect(shown).toEqual(alerts.map(matching));
   }
 );
@@ -653,18 +617,14 @@ function sentIds(): string[] {
   return vi.mocked(command).mock.calls.map(([, value]) => value.commandId);
 }
 
-function pendingRow(container: HTMLDivElement, commandId: string): HTMLElement {
+function pendingRow(container: HTMLElement, commandId: string): HTMLElement {
   const row = container.querySelector<HTMLElement>(`[data-command-id="${commandId}"]`);
   if (!row) throw new Error(`Missing pending command ${commandId}`);
   return row;
 }
 
-function retry(container: HTMLDivElement, commandId: string): HTMLButtonElement {
-  const found = [...pendingRow(container, commandId).querySelectorAll("button")].find(
-    (candidate) => candidate.textContent === "Retry"
-  );
-  if (!found) throw new Error(`Missing Retry for ${commandId}`);
-  return found;
+function retry(container: HTMLElement, commandId: string): HTMLElement {
+  return within(pendingRow(container, commandId)).getByRole("button", { name: "Retry" });
 }
 
 it("does not send a retained command whose admission it already holds", async () => {
@@ -676,7 +636,7 @@ it("does not send a retained command whose admission it already holds", async ()
   vi.mocked(command).mockImplementation(admit);
   const container = await render();
   expect(sentIds()).toEqual(["retained-unadmitted"]);
-  expect(pendingRow(container, "retained-admitted").textContent).toContain("Saved · awaiting effect");
+  expect(pendingRow(container, "retained-admitted")).toHaveTextContent("Saved · awaiting effect");
 });
 
 it("shows a delivery that outlives its deadline as a failed attempt the operator can retry", async () => {
@@ -690,16 +650,16 @@ it("shows a delivery that outlives its deadline as a failed attempt the operator
     )
     .mockImplementationOnce(admit);
   const container = await render();
-  expect(pendingRow(container, "hung").textContent).toContain("Saved locally · awaiting admission");
+  expect(pendingRow(container, "hung")).toHaveTextContent("Saved locally · awaiting admission");
 
   await act(async () => expire(new DOMException("signal timed out", "TimeoutError")));
-  expect(pendingRow(container, "hung").textContent).toContain("signal timed out");
+  expect(pendingRow(container, "hung")).toHaveTextContent("signal timed out");
   expect(sentIds()).toEqual(["hung"]);
 
-  await act(async () => retry(container, "hung").click());
+  await user.click(retry(container, "hung"));
   expect(sentIds()).toEqual(["hung", "hung"]);
-  expect(pendingRow(container, "hung").textContent).toContain("Saved · awaiting effect");
-  expect(pendingRow(container, "hung").textContent).not.toContain("signal timed out");
+  expect(pendingRow(container, "hung")).toHaveTextContent("Saved · awaiting effect");
+  expect(pendingRow(container, "hung")).not.toHaveTextContent("signal timed out");
 });
 
 it("delivers a failed command again when the browser comes back online", async () => {
@@ -708,12 +668,12 @@ it("delivers a failed command again when the browser comes back online", async (
     .mockRejectedValueOnce(new Error("the sandbox's runner is not answering"))
     .mockImplementationOnce(admit);
   const container = await render();
-  expect(pendingRow(container, "offline").textContent).toContain("the sandbox's runner is not answering");
+  expect(pendingRow(container, "offline")).toHaveTextContent("the sandbox's runner is not answering");
   expect(sentIds()).toEqual(["offline"]);
 
   await act(async () => window.dispatchEvent(new Event("online")));
   expect(sentIds()).toEqual(["offline", "offline"]);
-  expect(pendingRow(container, "offline").textContent).toContain("Saved · awaiting effect");
+  expect(pendingRow(container, "offline")).toHaveTextContent("Saved · awaiting effect");
 });
 
 it("shows a server-only pending command as saved, not as a local delivery", async () => {
@@ -729,14 +689,14 @@ it("shows a server-only pending command as saved, not as a local delivery", asyn
       ],
     })
   );
-  const pending = container.querySelector('[aria-label="Pending commands"]');
-  expect(pending?.textContent).toContain("Saved · awaiting effect");
-  expect(pending?.textContent).not.toContain("Saved locally");
-  expect([...container.querySelectorAll("button")].some((button) => button.textContent === "Retry")).toBe(false);
+  const pending = screen.getByLabelText("Pending commands");
+  expect(pending).toHaveTextContent("Saved · awaiting effect");
+  expect(pending).not.toHaveTextContent("Saved locally");
+  expect(within(container).queryByRole("button", { name: "Retry" })).toBeNull();
 });
 
 it("shows the failure and reason for a server-only command", async () => {
-  const container = await render(
+  await render(
     threadState({
       rows: [
         viewState(),
@@ -748,8 +708,7 @@ it("shows the failure and reason for a server-only command", async () => {
       ],
     })
   );
-  const pending = container.querySelector('[aria-label="Pending commands"]');
-  expect(pending?.textContent).toContain("Model change failed: model unavailable");
+  expect(screen.getByLabelText("Pending commands")).toHaveTextContent("Model change failed: model unavailable");
 });
 
 it.each([
@@ -774,17 +733,15 @@ it.each([
       ],
     })
   );
-  const bubble = container.querySelector<HTMLElement>(`.agentplane-user-bubble[data-message-phase="${phase}"]`);
-  expect(bubble?.parentElement?.querySelector('[role="status"]')?.textContent).toBe(status);
-  const dismiss = buttonIn(bubble?.parentElement, "Dismiss");
-  expect(dismiss).toBeDefined();
-  await act(async () => dismiss?.click());
+  const bubble = container.querySelector<HTMLElement>(`.agentplane-user-bubble[data-message-phase="${phase}"]`)!;
+  expect(within(bubble.parentElement!).getByRole("status").textContent).toBe(status);
+  await user.click(within(bubble.parentElement!).getByRole("button", { name: "Dismiss" }));
   expect(container.querySelector(`.agentplane-user-bubble[data-message-phase="${phase}"]`)).toBeNull();
   expect(new LocalCommands(THREAD.id).isDismissed("test-entity")).toBe(true);
 });
 
 it("keeps a still-pending sent message out of the pending-commands box, since it renders inline instead", async () => {
-  const container = await render(
+  await render(
     threadState({
       rows: [
         viewState(),
@@ -796,7 +753,7 @@ it("keeps a still-pending sent message out of the pending-commands box, since it
       ],
     })
   );
-  expect(container.querySelector('[aria-label="Pending commands"]')).toBeNull();
+  expect(screen.queryByLabelText("Pending commands")).toBeNull();
 });
 
 /** One element per history row, each holding what the thread view renders for it. */
@@ -805,26 +762,22 @@ async function renderHistory(
   live: boolean,
   bodies: Record<string, string> = {}
 ): Promise<HTMLElement[]> {
-  const container = document.createElement("div");
-  document.body.append(container);
-  const root = createRoot(container);
-  mounted.push({ root, container });
-  await act(async () =>
-    root.render(
-      <MantineProvider env="test">
-        <ThreadSyncContext.Provider value={serving(new Map(Object.entries(bodies)))}>
-          <RetainedDisclosureProvider>
-            {historyRows(segments).map((row) => (
-              <section key={rowKey(row)}>
-                <HistoryRowView threadId="test-thread" row={row} live={() => live} />
-              </section>
-            ))}
-          </RetainedDisclosureProvider>
-        </ThreadSyncContext.Provider>
-      </MantineProvider>
-    )
-  );
-  return [...container.querySelectorAll("section")];
+  let rendered!: ReturnType<typeof renderInMantine>;
+  await act(async () => {
+    rendered = renderInMantine(
+      <ThreadSyncContext.Provider value={serving(new Map(Object.entries(bodies)))}>
+        <RetainedDisclosureProvider>
+          {historyRows(segments).map((row) => (
+            <section key={rowKey(row)}>
+              <HistoryRowView threadId="test-thread" row={row} live={() => live} />
+            </section>
+          ))}
+        </RetainedDisclosureProvider>
+      </ThreadSyncContext.Provider>
+    );
+  });
+  user = rendered.user;
+  return [...rendered.container.querySelectorAll("section")];
 }
 
 it("folds a run of tool calls and reasoning behind its summary until it is opened", async () => {
@@ -837,26 +790,27 @@ it("folds a run of tool calls and reasoning behind its summary until it is opene
     false,
     { "test-entity-2:text": "The plan is to **inspect** the evidence." }
   );
+  // `summary` has no ARIA role, so no role query reaches it.
   const summary = run.querySelector("summary")!;
-  expect(summary.textContent).toContain("2 tool calls, 1 reasoning step");
-  expect(summary.querySelector('[role="img"][aria-label="Failed"]')).not.toBeNull();
-  expect(run.textContent).not.toContain("test-read");
+  expect(summary).toHaveTextContent("2 tool calls, 1 reasoning step");
+  expect(within(summary).getByRole("img", { name: "Failed" })).toBeInTheDocument();
+  expect(run).not.toHaveTextContent("test-read");
 
-  await toggle(summary);
-  expect(run.textContent).toContain("test-read");
-  expect(run.textContent).toContain("test-shell");
-  expect(run.textContent).toContain("The plan is to inspect the evidence.");
+  await user.click(summary);
+  await waitFor(() => expect(run).toHaveTextContent("test-read"));
+  expect(run).toHaveTextContent("test-shell");
+  expect(run).toHaveTextContent("The plan is to inspect the evidence.");
   expect(run.querySelector(".agentplane-step-preview strong")?.textContent).toBe("inspect");
   // Each step keeps its own evidence; the run is not an entity and has none.
-  expect(run.querySelectorAll('button[aria-label="Evidence"]')).toHaveLength(3);
+  expect(within(run).getAllByRole("button", { name: "Evidence" })).toHaveLength(3);
 });
 
 it("marks an unfinished run as streaming in the live turn, and as incomplete once that is over", async () => {
   const segments = [testItem(1, ItemKind.REASONING, { completion: null }), testItem(2, ItemKind.TOOL_CALL)];
   const [live] = await renderHistory(segments, true);
-  expect(live.querySelector('summary [role="img"]')?.getAttribute("aria-label")).toBe("Streaming");
+  expect(within(live.querySelector("summary")!).getByRole("img")).toHaveAccessibleName("Streaming");
   const [retained] = await renderHistory(segments, false);
-  expect(retained.querySelector('summary [role="img"]')?.getAttribute("aria-label")).toBe("Incomplete");
+  expect(within(retained.querySelector("summary")!).getByRole("img")).toHaveAccessibleName("Incomplete");
 });
 
 it("puts a live assistant-text cursor inline after its Markdown body", async () => {
@@ -868,8 +822,8 @@ it("puts a live assistant-text cursor inline after its Markdown body", async () 
   );
   const cursor = row.querySelector<HTMLElement>(".agentplane-streaming-cursor");
 
-  expect(cursor?.getAttribute("aria-label")).toBe("Streaming");
-  expect(cursor?.getAttribute("data-character")).toBe(STREAMING_CURSOR);
+  expect(cursor).toHaveAttribute("aria-label", "Streaming");
+  expect(cursor).toHaveAttribute("data-character", STREAMING_CURSOR);
   expect(cursor?.closest(".agentplane-markdown")).not.toBeNull();
   expect(cursor?.parentElement?.textContent?.trimEnd()).toBe(body);
 });
@@ -888,9 +842,9 @@ it("shows a lone reasoning step as its own reasoning block, and assistant text w
   );
   expect(reasoning.querySelector("details.agentplane-step-details")).toBeNull();
   expect(reasoning.querySelector(".agentplane-step-title")?.textContent).toBe("Reasoning");
-  expect(reasoning.textContent).toContain("Reasoning preview body");
-  expect(answer.textContent).toContain("Test body of test-entity-2");
-  for (const row of [reasoning, answer]) expect(row.textContent).not.toMatch(/assistant/i);
+  expect(reasoning).toHaveTextContent("Reasoning preview body");
+  expect(answer).toHaveTextContent("Test body of test-entity-2");
+  for (const row of [reasoning, answer]) expect(row).not.toHaveTextContent(/assistant/i);
 });
 
 describe("recovery presentation", () => {
@@ -910,7 +864,7 @@ describe("recovery presentation", () => {
         { "recovered-reply:text": "Interrupted reply" }
       );
       expect(row.querySelector(".agentplane-streaming-cursor")).toBeNull();
-      expect(row.querySelector('[aria-label="Interrupted"]')).not.toBeNull();
+      expect(within(row).getByLabelText("Interrupted")).toBeInTheDocument();
     }
   );
 
@@ -956,11 +910,11 @@ describe("recovery presentation", () => {
       { "test-entity-2:text": "Kept in context" }
     );
     const summary = run.querySelector("summary")!;
-    expect(summary.textContent).toContain("2 tool calls, 1 reasoning step");
+    expect(summary).toHaveTextContent("2 tool calls, 1 reasoning step");
     expect(badgeLabels(run)).toEqual([]);
 
-    await toggle(summary);
-    expect(run.textContent).toContain("test-read");
+    await user.click(summary);
+    await waitFor(() => expect(run).toHaveTextContent("test-read"));
     expect(badgeLabels(run)).toEqual([]);
   });
 });
