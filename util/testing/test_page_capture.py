@@ -1,3 +1,4 @@
+import io
 import re
 import struct
 import textwrap
@@ -5,9 +6,11 @@ from pathlib import Path
 
 import pytest
 import pytest_bazel
-from playwright.async_api import Page
+from PIL import Image
+from playwright.async_api import Browser, Page
 
 from util.testing.page_capture import (
+    DevtoolsViewport,
     PageErrors,
     RequestFence,
     assert_network_settled,
@@ -137,6 +140,31 @@ async def test_screenshot_refuses_an_element_with_no_extent(page: Page) -> None:
 
     with pytest.raises(ValueError, match=r"scene foo: selector='#empty' has no visible extent"):
         await screenshot_element(page, "#empty", context="scene foo")
+
+
+async def test_devtools_viewport_captures_the_last_row_as_drawn_and_playwrights_does_not(browser: Browser) -> None:
+    # 915 CSS px at a scale of 1.5 is 1372.5 device px, so the last row is half covered. The frame's white
+    # border is drawn there at full strength in the capture the compositor makes; Playwright's clipped
+    # capture of the same page blends it with the black behind it.
+    width, height, scale = 412, 915, 1.5
+    async with await browser.new_context(
+        viewport={"width": width, "height": height}, device_scale_factor=scale
+    ) as context:
+        page = await context.new_page()
+        viewport = await DevtoolsViewport.attach(page, width=width, height=height, device_scale_factor=scale)
+        await page.set_content(
+            "<body style='margin: 0; background: black'>"
+            "<div style='box-sizing: border-box; width: 100vw; height: 100vh; border: 1px solid white'></div>"
+        )
+        await wait_for_stable(page)
+
+        devtools = Image.open(io.BytesIO(await viewport.screenshot())).convert("RGB")
+        playwright = Image.open(io.BytesIO(await page.screenshot())).convert("RGB")
+
+    assert devtools.size == playwright.size == (618, 1373)
+    last_row = (0, 1372, 618, 1373)
+    assert set(devtools.crop(last_row).getdata()) == {(255, 255, 255)}
+    assert set(playwright.crop(last_row).getdata()) != {(255, 255, 255)}
 
 
 if __name__ == "__main__":

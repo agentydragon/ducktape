@@ -20,6 +20,7 @@ def py_visual_test(
         assets = [],
         fonts = None,
         font_family = None,
+        devtools_viewport = False,
         env = {},
         tags = [],
         **kwargs):
@@ -41,6 +42,9 @@ def py_visual_test(
       fonts: optional app-owned font filegroup the harness serves alongside its assets.
       font_family: optional named family asserted against what actually rendered. Required with
         `fonts`, so a custom font asset cannot be staged without declaring its purpose.
+      devtools_viewport: emulate and capture each viewport over the DevTools protocol the way the
+        Puppeteer sweep did (`DevtoolsViewport`), so a lane ported from it keeps its images
+        byte-identical at a device scale factor where Playwright's own viewport differs.
       env: extra environment for the sweep.
       tags: extra tags; `visual` is always added.
       **kwargs: passed to `py_test` -- `size` and `shard_count` in practice.
@@ -58,6 +62,8 @@ def py_visual_test(
     sweep_env["VISUAL_TITLE"] = title
     if font_family:
         sweep_env["EXPECTED_FONT_FAMILY"] = font_family
+    if devtools_viewport:
+        sweep_env["DEVTOOLS_VIEWPORT"] = "1"
 
     py_test(
         name = name,

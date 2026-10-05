@@ -60,6 +60,7 @@ py_visual_test(
     scenarios = "harness/scenarios.json",
     title = "Airlock",
     # fonts = ":app_fonts", font_family = "Outfit",  # an app-owned named font, asserted rendered
+    # devtools_viewport = True,  # see below
 )
 ```
 
@@ -80,6 +81,11 @@ selectors, the request fence, the fetch ledger, zero uncaught page errors — wi
 - **An element is captured to the nearest pixel**, as Puppeteer does, not outward as Playwright's own
   element screenshot would (a `#app` 1630.4px tall publishes 1630 rows, not 1631), so a migrated lane's
   images keep their sizes. An element taller than the viewport is captured whole.
+- **`devtools_viewport = True` emulates and captures the viewport the way Puppeteer did**
+  (`DevtoolsViewport` in `page_capture.py`: `Emulation.setDeviceMetricsOverride`, and an unclipped
+  `Page.captureScreenshot` for a `captureViewport` scenario). Playwright's own viewport rasterizes a few
+  pixels differently at some device scale factors (identical at 1 and 2; 1.5, 2.625 and 3 differ), so a
+  lane with such a scale that must stay byte-identical to its Puppeteer sweep turns it on. Off by default.
 - **Selectors are Playwright's.** Puppeteer's `::-p-text(...)` does not exist; `readySelectors` wait for
   presence, as before.
 - **The target is not `visual` if the harness lives in a `visual/` directory.** A `py_test`'s

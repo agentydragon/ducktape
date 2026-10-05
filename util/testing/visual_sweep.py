@@ -35,6 +35,7 @@ from util.bazel.runfiles import get_required_path
 from util.testing.frontend_visual import FROZEN_NOW_MS, deterministic_browser_context
 from util.testing.page_capture import (
     WAIT_TIMEOUT_MS,
+    DevtoolsViewport,
     PageErrors,
     RequestFence,
     assert_network_settled,
@@ -56,6 +57,7 @@ class SweepConfig:
     scenarios_path: Path
     title: str
     expected_font_family: str | None
+    devtools_viewport: bool = False
 
     @classmethod
     def from_env(cls) -> SweepConfig:
@@ -65,6 +67,7 @@ class SweepConfig:
             scenarios_path=get_required_path(os.environ["SCENARIOS_PATH"]),
             title=os.environ["VISUAL_TITLE"],
             expected_font_family=os.environ.get("EXPECTED_FONT_FAMILY"),
+            devtools_viewport=bool(os.environ.get("DEVTOOLS_VIEWPORT")),
         )
 
     @property
@@ -101,6 +104,16 @@ async def capture_scenario(
         extra_args=["--allow-file-access-from-files"],
     ) as context:
         page = await context.new_page()
+        devtools_viewport = (
+            await DevtoolsViewport.attach(
+                page,
+                width=scenario.viewport.width,
+                height=scenario.viewport.height,
+                device_scale_factor=scenario.viewport.device_scale_factor,
+            )
+            if config.devtools_viewport
+            else None
+        )
         page_errors = PageErrors(page)
         # The harness is entirely local (file:// page, bundled fixtures), so nothing may reach the network.
         fence = RequestFence(lambda request: request.url.startswith("file://"))
@@ -132,11 +145,12 @@ async def capture_scenario(
         page_errors.assert_none(context=output_name)
 
         # Viewport captures preserve clipping instead of expanding to fit an overflowing app.
-        screenshot = (
-            await page.screenshot()
-            if scenario.capture_viewport
-            else await screenshot_element(page, scenario.element, context=output_name)
-        )
+        if not scenario.capture_viewport:
+            screenshot = await screenshot_element(page, scenario.element, context=output_name)
+        elif devtools_viewport:
+            screenshot = await devtools_viewport.screenshot()
+        else:
+            screenshot = await page.screenshot()
 
     asset = VisualReviewAsset(path=f"{output_name}-actual.png", label=output_name)
     (output_dir / asset.path).write_bytes(screenshot)

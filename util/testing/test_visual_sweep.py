@@ -1,3 +1,4 @@
+import io
 import json
 import struct
 import textwrap
@@ -5,6 +6,7 @@ from pathlib import Path
 
 import pytest
 import pytest_bazel
+from PIL import Image
 from playwright.async_api import (
     Playwright,
     TimeoutError as PlaywrightTimeoutError,  # the builtin TimeoutError is another type
@@ -37,6 +39,10 @@ if (scene === "interactive") {
   app.innerHTML = shot;
   document.getElementById("target").addEventListener("click", (event) => event.target.classList.add("tapped"));
 }
+if (scene === "framed") {
+  document.body.style.background = "black";
+  app.innerHTML = '<div id="frame"></div>';
+}
 """
 _INDEX_HTML = textwrap.dedent(
     """\
@@ -48,6 +54,7 @@ _INDEX_HTML = textwrap.dedent(
       #target { width: 100px; height: 40px; background: #3366cc; }
       #target:hover { background: #cc6633; }
       #target.tapped { background: #33cc66; }
+      #frame { box-sizing: border-box; width: 100vw; height: 100vh; border: 1px solid white; }
     </style>
     <div id="app"></div>
     <script src="./harness.js"></script>
@@ -270,6 +277,31 @@ def test_one_broken_scenario_does_not_hide_the_rest(
     result.stdout.fnmatch_lines(["*throws: uncaught page errors:*", "*Error: scene exploded*"])
     assert sorted(_published(out)) == ["late-actual.png", "plain-actual.png"]
     assert [asset.label for asset in _manifest(out).assets] == ["plain", "late"]
+
+
+@pytest.mark.parametrize(("devtools_viewport", "last_row_is_white"), [(False, False), (True, True)])
+def test_the_environment_switches_the_viewport_capture_to_devtools(
+    pytester: pytest.Pytester,
+    monkeypatch: pytest.MonkeyPatch,
+    config: SweepConfig,
+    devtools_viewport: bool,
+    last_row_is_white: bool,
+) -> None:
+    # A scale of 1.5 makes the 915px viewport 1372.5 device px high; see `DevtoolsViewport`.
+    framed = {
+        "element": "#frame",
+        "captureViewport": True,
+        "viewport": {"width": 412, "height": 915, "deviceScaleFactor": 1.5},
+    }
+    out = _sweep(pytester, monkeypatch, config, {"framed": framed})
+    if devtools_viewport:
+        monkeypatch.setenv("DEVTOOLS_VIEWPORT", "1")
+
+    pytester.runpytest(visual_sweep.__file__).assert_outcomes(passed=1)
+
+    capture = Image.open(io.BytesIO(_published(out)["framed-actual.png"])).convert("RGB")
+    assert capture.size == (618, 1373)
+    assert (set(capture.crop((0, 1372, 618, 1373)).getdata()) == {(255, 255, 255)}) is last_row_is_white
 
 
 if __name__ == "__main__":

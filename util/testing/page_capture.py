@@ -11,11 +11,13 @@ Loading content and orchestrating several shots stay with the caller: `visual_sw
 
 from __future__ import annotations
 
+import base64
 import math
 import re
 from collections.abc import Callable
 
 from playwright.async_api import (
+    CDPSession,
     FloatRect,
     Page,
     Request,
@@ -59,6 +61,38 @@ _ELEMENT_BOX_JS = """element => {
     const { x, y, width, height } = element.getBoundingClientRect();
     return { x: x + window.scrollX, y: y + window.scrollY, width, height };
 }"""
+
+
+class DevtoolsViewport:
+    """A page's viewport, emulated and captured over the DevTools protocol the way Puppeteer's `setViewport` and `screenshot` do.
+
+    Deviation from the Playwright viewport (a context option, captured by `page.screenshot()`): Playwright
+    emulates the metrics without setting the visible size and clips a viewport screenshot to the layout
+    viewport, and at some device scale factors that rasterizes a few pixels of the capture differently from
+    Puppeteer: the partly covered last row and column, and some anti-aliased edges. Measured on one page set:
+    identical at a scale of 1 and 2, different at 1.5, 2.625 and 3. A lane whose images the Puppeteer sweep
+    published uses this to keep them byte-identical; any other lane has no reason to. Attach before navigating.
+    """
+
+    def __init__(self, session: CDPSession) -> None:
+        self._session = session
+
+    @classmethod
+    async def attach(cls, page: Page, *, width: int, height: int, device_scale_factor: float) -> DevtoolsViewport:
+        session = await page.context.new_cdp_session(page)
+        await session.send(
+            "Emulation.setDeviceMetricsOverride",
+            {"mobile": False, "width": width, "height": height, "deviceScaleFactor": device_scale_factor},
+        )
+        return cls(session)
+
+    async def screenshot(self) -> bytes:
+        """The viewport as drawn, in device pixels."""
+        capture = await self._session.send(
+            "Page.captureScreenshot",
+            {"format": "png", "optimizeForSpeed": False, "fromSurface": True, "captureBeyondViewport": False},
+        )
+        return base64.b64decode(capture["data"])
 
 
 async def wait_for_stable(page: Page) -> None:
