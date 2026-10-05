@@ -303,8 +303,10 @@ fn run_rejection_fixture_with_args(opts: FixtureOpts<'_>, extra_args: &[&str]) -
     let setup = prepare_fixture(&opts);
 
     let result = spawn_transform_with_args(&setup.spec_path, extra_args);
-    assert!(
-        !result.status.success(),
+    // `debundle` exits 1 when it refuses a spec; a panic exits 101 and is no refusal.
+    assert_eq!(
+        result.status.code(),
+        Some(1),
         "expected spec to be rejected\nstdout:\n{}\nstderr:\n{}",
         result.stdout,
         result.stderr,
