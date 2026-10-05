@@ -1,7 +1,9 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import type { SandboxView, ThreadView } from "./client";
 import { threadStatusFromSnapshot } from "./thread_status";
+
+afterEach(() => vi.restoreAllMocks());
 
 const SANDBOX_UID = "00000000-0000-4000-8000-000000000001";
 
@@ -69,10 +71,16 @@ describe("a thread whose harness is live and waiting", () => {
     expect(threadStatusFromSnapshot(thread({ last_turn_status: lastTurnStatus }), READY_SANDBOX, true).kind).toBe(kind);
   });
 
-  it("rejects a last turn status that is not a TurnStatus member", () => {
-    expect(() =>
-      threadStatusFromSnapshot(thread({ last_turn_status: "TURN_STATUS_NOT_A_MEMBER" }), READY_SANDBOX, true)
-    ).toThrow();
+  // A newer backend can add a TurnStatus member this bundle has no name for; it must not break the sidebar.
+  it("is idle, and logs the status, for a last turn status that is not a TurnStatus member", () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const status = threadStatusFromSnapshot(
+      thread({ last_turn_status: "TURN_STATUS_NOT_A_MEMBER" }),
+      READY_SANDBOX,
+      true
+    );
+    expect(status.kind).toBe("idle");
+    expect(warn).toHaveBeenCalledWith(expect.any(String), "TURN_STATUS_NOT_A_MEMBER");
   });
 });
 

@@ -1,7 +1,9 @@
+import dataclasses
 import os
 import shutil
 import subprocess
 import sys
+from enum import StrEnum
 from pathlib import Path
 
 import pytest
@@ -26,6 +28,12 @@ def _inspect(base: Path, *, proc_root: Path = Path("/proc")) -> gc.Inspection:
     return gc.inspect_output_base(base, uid=os.getuid(), points=set(), proc_root=proc_root)
 
 
+def _reason(inspection: gc.Inspection) -> StrEnum:
+    """Why a base is kept or sent to review; a prunable base has no reason to be anything else."""
+    assert isinstance(inspection, gc.RetainedBase | gc.ReviewBase)
+    return inspection.reason
+
+
 def test_missing_workspace_is_immediately_prunable(prunable_base: Path) -> None:
     assert isinstance(_inspect(prunable_base), gc.PrunableBase)
 
@@ -34,14 +42,14 @@ def test_existing_workspace_is_retained(tmp_path: Path) -> None:
     workspace = tmp_path / "workspace"
     workspace.mkdir()
     base = make_base(tmp_path / "output", workspace)
-    assert isinstance(_inspect(base), gc.RetainedBase)
+    assert _reason(_inspect(base)) is gc.RetainedBaseReason.WORKSPACE_EXISTS
 
 
 def test_dangling_workspace_symlink_is_not_prunable(tmp_path: Path) -> None:
     workspace = tmp_path / "workspace"
     workspace.symlink_to(tmp_path / "missing-target", target_is_directory=True)
     base = make_base(tmp_path / "output", workspace)
-    assert isinstance(_inspect(base), gc.ReviewBase)
+    assert _reason(_inspect(base)) is gc.ReviewBaseReason.WORKSPACE_UNRESOLVABLE
 
 
 @pytest.mark.parametrize("metadata", ["README", "DO_NOT_BUILD_HERE", "server/cmdline"])
@@ -63,25 +71,25 @@ def test_single_surviving_record_is_enough(prunable_base: Path) -> None:
 def test_all_records_absent_requires_review(prunable_base: Path) -> None:
     for metadata in ("README", "DO_NOT_BUILD_HERE", "server/cmdline"):
         (prunable_base / metadata).unlink()
-    assert isinstance(_inspect(prunable_base), gc.ReviewBase)
+    assert _reason(_inspect(prunable_base)) is gc.ReviewBaseReason.UNSAFE_METADATA
 
 
 def test_fifo_metadata_requires_review_without_blocking(prunable_base: Path) -> None:
     (prunable_base / "README").unlink()
     os.mkfifo(prunable_base / "README")
 
-    assert isinstance(_inspect(prunable_base), gc.ReviewBase)
+    assert _reason(_inspect(prunable_base)) is gc.ReviewBaseReason.UNSAFE_METADATA
 
 
 def test_disagreeing_records_require_review(prunable_base: Path) -> None:
     (prunable_base / "README").write_text("WORKSPACE: /different\n")
-    assert isinstance(_inspect(prunable_base), gc.ReviewBase)
+    assert _reason(_inspect(prunable_base)) is gc.ReviewBaseReason.UNSAFE_METADATA
 
 
 def test_nondefault_output_base_requires_review(tmp_path: Path) -> None:
     workspace = tmp_path / "gone"
     base = make_base(tmp_path / "output", workspace, name="0" * 32)
-    assert isinstance(_inspect(base), gc.ReviewBase)
+    assert _reason(_inspect(base)) is gc.ReviewBaseReason.UNSAFE_METADATA
 
 
 def test_existing_server_pid_retains_base(tmp_path: Path) -> None:
@@ -90,7 +98,7 @@ def test_existing_server_pid_retains_base(tmp_path: Path) -> None:
     proc_root = tmp_path / "proc"
     (proc_root / "42").mkdir(parents=True)
 
-    assert isinstance(_inspect(base, proc_root=proc_root), gc.RetainedBase)
+    assert _reason(_inspect(base, proc_root=proc_root)) is gc.RetainedBaseReason.SERVER_LIVE
 
 
 def test_missing_server_pid_is_not_live(tmp_path: Path) -> None:
@@ -107,12 +115,40 @@ def test_impossible_server_pid_requires_review(tmp_path: Path, value: str) -> No
     base = make_base(tmp_path / "output", tmp_path / "gone")
     (base / "server" / "server.pid.txt").write_text(value)
 
-    assert isinstance(_inspect(base), gc.ReviewBase)
+    assert _reason(_inspect(base)) is gc.ReviewBaseReason.UNSAFE_METADATA
+
+
+def test_unstatable_output_base_requires_review(tmp_path: Path) -> None:
+    assert _reason(_inspect(tmp_path / "missing")) is gc.ReviewBaseReason.CANNOT_STAT
+
+
+def test_output_base_owned_by_another_user_requires_review(prunable_base: Path) -> None:
+    inspection = gc.inspect_output_base(prunable_base, uid=os.getuid() + 1, points=set())
+
+    assert _reason(inspection) is gc.ReviewBaseReason.WRONG_OWNER
+
+
+def test_workspace_that_cannot_be_inspected_requires_review(tmp_path: Path) -> None:
+    (tmp_path / "file").write_text("not a directory")
+    base = make_base(tmp_path / "output", tmp_path / "file" / "workspace")
+
+    assert _reason(_inspect(base)) is gc.ReviewBaseReason.CANNOT_INSPECT_WORKSPACE
+
+
+def test_workspace_reached_through_a_symlink_requires_review(tmp_path: Path) -> None:
+    (tmp_path / "real").mkdir()
+    (tmp_path / "real" / "workspace").mkdir()
+    (tmp_path / "link").symlink_to(tmp_path / "real", target_is_directory=True)
+    base = make_base(tmp_path / "output", tmp_path / "link" / "workspace")
+
+    assert _reason(_inspect(base)) is gc.ReviewBaseReason.WORKSPACE_RESOLVES_ELSEWHERE
 
 
 def test_nested_mount_requires_review(tmp_path: Path) -> None:
     base = make_base(tmp_path / "output", tmp_path / "gone")
-    assert isinstance(gc.inspect_output_base(base, uid=os.getuid(), points={base / "nested"}), gc.ReviewBase)
+    inspection = gc.inspect_output_base(base, uid=os.getuid(), points={base / "nested"})
+
+    assert _reason(inspection) is gc.ReviewBaseReason.NESTED_MOUNT
 
 
 def test_scan_reports_symlink_and_failed_quarantine(tmp_path: Path, proc: Path, mountinfo: Path) -> None:
@@ -125,7 +161,10 @@ def test_scan_reports_symlink_and_failed_quarantine(tmp_path: Path, proc: Path, 
     inspections = gc.scan_output_user_root(root, proc_root=proc, mountinfo_path=mountinfo)
 
     assert len(inspections) == 2
-    assert all(isinstance(item, gc.ReviewBase) for item in inspections)
+    assert {_reason(item) for item in inspections} == {
+        gc.ReviewBaseReason.NOT_A_DIRECTORY,
+        gc.ReviewBaseReason.INCOMPLETE_QUARANTINE,
+    }
 
 
 def test_mount_points_unescapes_kernel_path_encoding(tmp_path: Path) -> None:
@@ -253,6 +292,42 @@ def test_scan_and_render_report_flag_a_prunable_base(
     assert prunable_base.exists()
     assert [type(item) for item in inspections] == [gc.PrunableBase]
     assert "PRUNE" in gc.render_report(inspections, include_kept=False, include_sizes=False)
+
+
+def _populated(reason: StrEnum) -> gc.RetainedBase | gc.ReviewBase:
+    """The inspection `reason` belongs to, carrying the detail a review reason can cite."""
+    base = Path("/test-output/base")
+    match reason:
+        case gc.RetainedBaseReason():
+            return gc.RetainedBase(base, Path("/test-workspace"), reason, 0, False)
+        case gc.ReviewBaseReason():
+            return gc.ReviewBase(base, reason, 0, detail="test-detail")
+    raise TypeError(reason)
+
+
+@pytest.mark.parametrize("reason", [*gc.RetainedBaseReason, *gc.ReviewBaseReason], ids=str)
+def test_every_reason_is_described(reason: StrEnum) -> None:
+    assert gc.describe_reason(_populated(reason))
+
+
+_STATIC_REVIEW_REASONS = {gc.ReviewBaseReason.NOT_A_DIRECTORY, gc.ReviewBaseReason.INCOMPLETE_QUARANTINE}
+
+
+@pytest.mark.parametrize(
+    "reason", [reason for reason in gc.ReviewBaseReason if reason not in _STATIC_REVIEW_REASONS], ids=str
+)
+def test_a_review_reason_with_detail_renders_it(reason: gc.ReviewBaseReason) -> None:
+    assert "test-detail" in gc.describe_reason(_populated(reason))
+
+
+def test_a_base_whose_workspace_would_be_orphaned_reads_differently(tmp_path: Path) -> None:
+    plain = gc.RetainedBase(tmp_path / "base", tmp_path / "workspace", gc.RetainedBaseReason.WORKSPACE_EXISTS, 0, False)
+    orphaning = dataclasses.replace(plain, workspace_is_prunable_worktree=True)
+
+    def report(base: gc.RetainedBase) -> str:
+        return gc.render_report([base], include_kept=True, include_sizes=False)
+
+    assert report(orphaning) != report(plain)
 
 
 if __name__ == "__main__":

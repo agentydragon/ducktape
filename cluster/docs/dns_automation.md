@@ -1,33 +1,30 @@
 # DNS
 
-DNS for `allegedly.works` is served by AWS Route 53. Terraform relinquishes
-the record sets in this handoff while ExternalDNS remains dry-run. Terraform
-still owns domain registration and Route 53 delegation.
+DNS for `allegedly.works` is served by AWS Route 53. ExternalDNS manages the
+record sets; Terraform still owns domain registration and Route 53 delegation.
 
-ExternalDNS is installed in the `external-dns` namespace in dry-run mode as the
-first migration stage. It reads accepted HTTPRoutes attached to
+ExternalDNS runs in the `external-dns` namespace. It reads accepted HTTPRoutes attached to
 `gateway-system/cluster-gateway` and the `external-dns/static-records`
-`DNSEndpoint`, but its
-`--dry-run` flag prevents Route 53 changes. It is limited to the
+`DNSEndpoint`. It is limited to the
 `allegedly.works` hosted zone, uses the TXT registry owner
 `ducktape-allegedly-works`, and runs with `upsert-only` policy. The static endpoint's IP
 targets come from the `nebula-mesh.json` roster. The
 TXT registry replaces `*` with `wildcard` in its ownership marker name.
+Accepted HTTPRoute hostnames get explicit A records pointing at the Gateway's
+public target IPs. These explicit names take precedence over the wildcard.
+With `upsert-only`, deleting an HTTPRoute does not remove its DNS record;
+record deletion needs a separately reviewed policy change or cleanup.
 
 ExternalDNS uses the dedicated IAM user `cluster-external-dns` with record
 permissions limited to this hosted zone. Its key is stored in a separate SOPS
 Secret and is not shared with Terraform's registrar-capable credential. The
 record and marker addresses are removed from Terraform state with `removed`
-blocks and `destroy = false`; the registered domain stays in Terraform. Until
-ExternalDNS writes are enabled, existing Route 53 records stay at their last
-values even if `nebula-mesh.json` changes.
+blocks and `destroy = false`; the registered domain stays in Terraform.
 
 The seven existing record sets have ExternalDNS TXT registry markers. These use
 `heritage=external-dns,external-dns/owner=ducktape-allegedly-works`; ExternalDNS
 recognizes the owner without a resource label. The marker names use the configured
-`external-dns-%{record_type}.` prefix and `wildcard` replacement. Before
-enabling writes, verify that tofu-controller has forgotten all 14 addresses
-without changing any of the 16 Route 53 record sets.
+`external-dns-%{record_type}.` prefix and `wildcard` replacement.
 
 ## Architecture
 
@@ -37,7 +34,7 @@ AWS Route 53 hosted zone (Z02901943N8ZFQFOD9P5I)
 ├── allegedly.works    A  → OVH gateway node IPs (apex)
 └── _acme-challenge.*  TXT  (managed by cert-manager for ACME DNS-01)
 
-ExternalDNS manages A records after writes are enabled.
+ExternalDNS manages A records.
 cert-manager Route 53 solver manages ACME challenge TXT records.
 ```
 
@@ -62,8 +59,8 @@ Gateway's target annotation.
 | `k8s/external-creds/aws-route53-external-dns.sops.yaml`   | Dedicated ExternalDNS IAM key (SOPS)                                      |
 | `k8s/external-creds/aws-route53-cert-manager.sops.yaml`   | Canonical AWS IAM Secret for cert-manager (SOPS)                          |
 | `cdk8s/dns_automation.py`                                 | ESO destination Secret for Terraform in `flux-system`                     |
-| `cdk8s/external_dns.py`                                   | Dry-run ExternalDNS HelmRelease and ESO credential copy                   |
-| `generated/external-dns-records/`                         | Dry-run DNSEndpoint for wildcard, API, and mail records                   |
+| `cdk8s/external_dns.py`                                   | ExternalDNS HelmRelease and ESO credential copy                           |
+| `generated/external-dns-records/`                         | DNSEndpoint for wildcard, API, and mail records                           |
 | `cdk8s/cert_manager/environment.py`                       | ESO destination Secret for cert-manager                                   |
 
 ### IAM User: `cluster-dns-manager`
@@ -93,7 +90,7 @@ dig allegedly.works NS
 # Check certificate status
 kubectl get certificate -A
 
-# Inspect proposed changes after the ExternalDNS release is Ready
+# Inspect ExternalDNS changes after its release is Ready
 kubectl -n external-dns logs deployment/external-dns --since=15m
 ```
 
@@ -101,6 +98,4 @@ kubectl -n external-dns logs deployment/external-dns --since=15m
 
 Edit the node's `nebula-mesh.json` entry and
 `bb run //cluster/cdk8s:generate_manifests`, which rewrites the static
-`DNSEndpoint` targets. After ExternalDNS writes are enabled, it applies the
-new IPs; during dry-run, check the proposed changes before making any roster
-change that would require live DNS updates.
+`DNSEndpoint` targets. Commit and push; ExternalDNS applies the new IPs.

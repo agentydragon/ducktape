@@ -1,10 +1,11 @@
 import threading
+from enum import StrEnum
 from pathlib import Path
 
 import pytest_bazel
 
 from devinfra.gc import output_base_gc, workspace_scan
-from devinfra.gc.branch_gc import PrunableBranch, RetainedBranch
+from devinfra.gc.branch_gc import PrunableBranch, RetainedBranch, RetainedBranchReason
 from devinfra.gc.conftest import GitRepo, make_base
 from devinfra.gc.output_base_gc import Inspection, PrunableBase, RetainedBase, ReviewBase
 from devinfra.gc.worktree_gc import PrunableWorktree, RetainedWorktree
@@ -63,10 +64,9 @@ def test_branch_follows_its_holding_worktree(repo: GitRepo, proc: Path, mountinf
     assert branches["merged"].checkout == prunable_wt
     # Held by a retained worktree → not provably deletable.
     assert isinstance(branches["kept"], RetainedBranch)
-    assert "retained worktree" in branches["kept"].reason
+    assert (branches["kept"].reason, branches["kept"].checkout) == (RetainedBranchReason.HELD_BY_WORKTREE, kept_wt)
     # The default branch, checked out on the main worktree, is always kept.
-    assert isinstance(branches["main"], RetainedBranch)
-    assert branches["main"].reason == "default branch"
+    assert branches["main"].reason is RetainedBranchReason.DEFAULT_BRANCH
 
 
 def test_scan_workspace_reports_progress(repo: GitRepo, proc: Path, mountinfo: Path) -> None:
@@ -114,7 +114,7 @@ def test_base_whose_workspace_is_a_prunable_worktree_is_annotated(
     # The workspace exists (the worktree is still there), so the base is retained for now …
     assert isinstance(base, RetainedBase)
     # … but flagged because pruning the worktree would orphan it.
-    assert "prunable worktree" in base.reason
+    assert base.workspace_is_prunable_worktree
 
 
 def test_base_with_absent_workspace_is_prunable(repo: GitRepo, proc: Path, mountinfo: Path, tmp_path: Path) -> None:
@@ -126,10 +126,10 @@ def test_base_with_absent_workspace_is_prunable(repo: GitRepo, proc: Path, mount
     assert [type(base) for base in scan.bases] == [PrunableBase]
 
 
-def _verdict(base: Inspection) -> tuple[type, Path, str | None]:
+def _verdict(base: Inspection) -> tuple[type, Path, StrEnum | None, bool]:
     """Everything a base's row is rendered from, so the comparison is not just the class."""
     reason = base.reason if isinstance(base, RetainedBase | ReviewBase) else None
-    return (type(base), base.path, reason)
+    return (type(base), base.path, reason, isinstance(base, RetainedBase) and base.workspace_is_prunable_worktree)
 
 
 def _annotated(repo: GitRepo, proc: Path, mountinfo: Path, root: Path) -> list[Inspection]:
@@ -155,7 +155,7 @@ def test_annotate_bases_matches_the_joint_scan(repo: GitRepo, proc: Path, mounti
 
     assert [_verdict(item) for item in fast] == [_verdict(item) for item in joint]
     assert any(isinstance(item, PrunableBase) for item in fast)
-    assert any(isinstance(item, RetainedBase) and "prunable worktree" in item.reason for item in fast)
+    assert any(isinstance(item, RetainedBase) and item.workspace_is_prunable_worktree for item in fast)
 
 
 def test_annotate_bases_needs_no_worktree_scan_when_no_base_has_a_workspace(

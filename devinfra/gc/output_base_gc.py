@@ -7,6 +7,7 @@ server does not block cleanup — and every present record must agree and hash t
 base name. Ambiguous state is reported for manual review and is never deleted.
 """
 
+import enum
 import errno
 import fcntl
 import hashlib
@@ -54,19 +55,39 @@ class PrunableBase:
     last_activity_ns: int
 
 
+class RetainedBaseReason(enum.StrEnum):
+    SERVER_LIVE = enum.auto()
+    WORKSPACE_EXISTS = enum.auto()
+
+
+class ReviewBaseReason(enum.StrEnum):
+    CANNOT_STAT = enum.auto()
+    NOT_A_DIRECTORY = enum.auto()
+    WRONG_OWNER = enum.auto()
+    UNSAFE_METADATA = enum.auto()  # `detail` is the MetadataError or OSError message
+    NESTED_MOUNT = enum.auto()
+    CANNOT_INSPECT_WORKSPACE = enum.auto()
+    WORKSPACE_UNRESOLVABLE = enum.auto()
+    WORKSPACE_RESOLVES_ELSEWHERE = enum.auto()
+    INCOMPLETE_QUARANTINE = enum.auto()
+
+
 @dataclass(frozen=True, slots=True)
 class RetainedBase:
     path: Path
     workspace: Path | None
-    reason: str
+    reason: RetainedBaseReason
     last_activity_ns: int
+    workspace_is_prunable_worktree: bool  # pruning that worktree would orphan this base
 
 
 @dataclass(frozen=True, slots=True)
 class ReviewBase:
     path: Path
-    reason: str
+    reason: ReviewBaseReason
     last_activity_ns: int | None
+    # The variable part of the explanation; None for NOT_A_DIRECTORY and INCOMPLETE_QUARANTINE.
+    detail: str | None = None
 
 
 type Inspection = PrunableBase | RetainedBase | ReviewBase
@@ -291,16 +312,12 @@ def inspect_output_base(base: Path, *, uid: int, points: set[Path], proc_root: P
     try:
         metadata = base.lstat()
     except OSError as error:
-        return ReviewBase(path=base, reason=f"cannot stat output base: {error.strerror}", last_activity_ns=None)
+        return ReviewBase(base, ReviewBaseReason.CANNOT_STAT, None, detail=error.strerror)
     if not stat.S_ISDIR(metadata.st_mode):
-        return ReviewBase(
-            path=base, reason="output base is not a real directory", last_activity_ns=metadata.st_mtime_ns
-        )
+        return ReviewBase(base, ReviewBaseReason.NOT_A_DIRECTORY, metadata.st_mtime_ns)
     if metadata.st_uid != uid:
         return ReviewBase(
-            path=base,
-            reason=f"output base is owned by uid {metadata.st_uid}, expected {uid}",
-            last_activity_ns=metadata.st_mtime_ns,
+            base, ReviewBaseReason.WRONG_OWNER, metadata.st_mtime_ns, detail=f"uid {metadata.st_uid}, expected {uid}"
         )
 
     try:
@@ -310,27 +327,32 @@ def inspect_output_base(base: Path, *, uid: int, points: set[Path], proc_root: P
         if not stat.S_ISREG(lock_stat.st_mode) or lock_stat.st_uid != uid:
             raise MetadataError("lock is not a regular file owned by the current user")
         if _server_is_live(base, uid=uid, proc_root=proc_root):
-            return RetainedBase(base, workspace, "Bazel server is live", last_activity_ns)
+            return RetainedBase(base, workspace, RetainedBaseReason.SERVER_LIVE, last_activity_ns, False)
     except (MetadataError, OSError) as error:
-        return ReviewBase(path=base, reason=str(error), last_activity_ns=metadata.st_mtime_ns)
+        return ReviewBase(base, ReviewBaseReason.UNSAFE_METADATA, metadata.st_mtime_ns, detail=str(error))
 
     resolved_base = base.resolve(strict=True)
     nested_mount = _nested_mount(resolved_base, points)
     if nested_mount is not None:
-        return ReviewBase(base, f"contains mount point {nested_mount}", last_activity_ns)
+        return ReviewBase(base, ReviewBaseReason.NESTED_MOUNT, last_activity_ns, detail=os.fspath(nested_mount))
 
     try:
         workspace_exists = _workspace_exists(workspace)
     except OSError as error:
-        return ReviewBase(base, f"cannot inspect workspace: {error.strerror}", last_activity_ns)
+        return ReviewBase(base, ReviewBaseReason.CANNOT_INSPECT_WORKSPACE, last_activity_ns, detail=error.strerror)
     if workspace_exists:
         try:
             resolved_workspace = workspace.resolve(strict=True)
         except OSError as error:
-            return ReviewBase(base, f"workspace path exists but cannot be resolved: {error.strerror}", last_activity_ns)
+            return ReviewBase(base, ReviewBaseReason.WORKSPACE_UNRESOLVABLE, last_activity_ns, detail=error.strerror)
         if resolved_workspace != workspace:
-            return ReviewBase(base, f"workspace resolves to {resolved_workspace}, not {workspace}", last_activity_ns)
-        return RetainedBase(base, workspace, "workspace exists", last_activity_ns)
+            return ReviewBase(
+                base,
+                ReviewBaseReason.WORKSPACE_RESOLVES_ELSEWHERE,
+                last_activity_ns,
+                detail=f"{resolved_workspace}, not {workspace}",
+            )
+        return RetainedBase(base, workspace, RetainedBaseReason.WORKSPACE_EXISTS, last_activity_ns, False)
 
     return PrunableBase(base, workspace, _identity(metadata), last_activity_ns)
 
@@ -360,7 +382,7 @@ def scan_output_user_root(
         if _HASHED_BASE_RE.fullmatch(base.name):
             inspection = inspect_output_base(base, uid=uid, points=points, proc_root=proc_root)
         else:
-            inspection = ReviewBase(base, "incomplete previous GC quarantine", base.lstat().st_mtime_ns)
+            inspection = ReviewBase(base, ReviewBaseReason.INCOMPLETE_QUARANTINE, base.lstat().st_mtime_ns)
         inspections.append(inspection)
         progress.record("bases", _status(inspection))
         logger.info("Finished output base %d/%d %s", index, len(candidates), base.name)
@@ -446,10 +468,41 @@ def delete_prunable_bases(
     return results
 
 
+def describe_reason(inspection: RetainedBase | ReviewBase) -> str:
+    match inspection:
+        case RetainedBase(reason=RetainedBaseReason.SERVER_LIVE):
+            text = "Bazel server is live"
+        case RetainedBase(reason=RetainedBaseReason.WORKSPACE_EXISTS):
+            text = "workspace exists"
+        case ReviewBase(reason=ReviewBaseReason.NOT_A_DIRECTORY):
+            return "output base is not a real directory"
+        case ReviewBase(reason=ReviewBaseReason.INCOMPLETE_QUARANTINE):
+            return "incomplete previous GC quarantine"
+        case ReviewBase(reason=ReviewBaseReason.UNSAFE_METADATA, detail=str() as detail):
+            return detail
+        case ReviewBase(reason=ReviewBaseReason.CANNOT_STAT, detail=str() as detail):
+            return f"cannot stat output base: {detail}"
+        case ReviewBase(reason=ReviewBaseReason.WRONG_OWNER, detail=str() as detail):
+            return f"output base is owned by {detail}"
+        case ReviewBase(reason=ReviewBaseReason.NESTED_MOUNT, detail=str() as detail):
+            return f"contains mount point {detail}"
+        case ReviewBase(reason=ReviewBaseReason.CANNOT_INSPECT_WORKSPACE, detail=str() as detail):
+            return f"cannot inspect workspace: {detail}"
+        case ReviewBase(reason=ReviewBaseReason.WORKSPACE_UNRESOLVABLE, detail=str() as detail):
+            return f"workspace path exists but cannot be resolved: {detail}"
+        case ReviewBase(reason=ReviewBaseReason.WORKSPACE_RESOLVES_ELSEWHERE, detail=str() as detail):
+            return f"workspace resolves to {detail}"
+        case _:
+            raise ValueError(f"{inspection=} lacks the detail its reason cites")
+    if inspection.workspace_is_prunable_worktree:
+        text += " — workspace is a prunable worktree (prune it first)"
+    return text
+
+
 def _inspection_reason(inspection: Inspection) -> str:
     if isinstance(inspection, PrunableBase):
         return "workspace is absent"
-    return inspection.reason
+    return describe_reason(inspection)
 
 
 def _status(inspection: Inspection) -> ProgressCategory:
@@ -465,8 +518,8 @@ def _detail(inspection: Inspection) -> str:
         return f"{inspection.workspace} (workspace absent)"
     if isinstance(inspection, RetainedBase):
         prefix = f"{inspection.workspace}: " if inspection.workspace is not None else ""
-        return prefix + inspection.reason
-    return inspection.reason
+        return prefix + describe_reason(inspection)
+    return describe_reason(inspection)
 
 
 def _last_activity(inspection: Inspection) -> str:

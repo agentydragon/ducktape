@@ -97,13 +97,25 @@ async def _run(argv: list[str] | None) -> int:
         for r in clean_rows
     ]
     print("\nSCORED MARKETS (sorted by |KL|, loudest first)")
-    print(tabulate(clean_table, headers=["p_model", "p_market", "KL_bits", "platform", "market_id", "question"]))
+    print(
+        tabulate(
+            clean_table,
+            headers=["p_model", "p_market", "KL_bits", "platform", "market_id", "question"],
+            disable_numparse=[4],
+        )
+    )
 
     surfaced_table = [
         [f"{r.p_market:.3f}", r.platform, r.mappability, r.market_id, (r.question or "")[:60]] for r in result.surfaced
     ]
     print("\nSURFACED MARKETS (not scored, context only)")
-    print(tabulate(surfaced_table, headers=["p_market", "platform", "mappability", "market_id", "question"]))
+    print(
+        tabulate(
+            surfaced_table,
+            headers=["p_market", "platform", "mappability", "market_id", "question"],
+            disable_numparse=[3],
+        )
+    )
 
     for fam in result.categorical:
         kl = f"{fam.kl_bits:+.4f} bits" if fam.kl_bits is not None else "n/a"

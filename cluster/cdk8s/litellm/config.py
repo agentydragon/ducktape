@@ -31,7 +31,7 @@ def model_entry(entry: Route | RouteAlias) -> dict:
         params["api_base"] = binding.api_base
     if binding.api_key is not None:
         params["api_key"] = binding.api_key
-    if route.num_ctx is not None and route.num_ctx != 128 * 1024:
+    if route.num_ctx is not None:
         params["extra_body"] = {"options": {"num_ctx": route.num_ctx}}
     if upstream.provider == Provider.TANA:
         params.update(

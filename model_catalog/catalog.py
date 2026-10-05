@@ -66,8 +66,10 @@ scheme and public-coder-agent's durable memory index stores that model identity,
 stays until the index is deliberately rebuilt.
 """
 
-from dataclasses import dataclass, replace
+from dataclasses import dataclass
 from enum import StrEnum
+
+from model_catalog import ollama
 
 
 class Provider(StrEnum):
@@ -202,12 +204,6 @@ class RouteAlias:
 
     id: str
     target: Route
-
-
-@dataclass(frozen=True)
-class OllamaModel:
-    model: Model
-    upstream_model: str
 
 
 _ANTHROPIC_EFFORTS = ("low", "medium", "high", "max")
@@ -525,38 +521,6 @@ _GEMINI_EMBEDDING_001 = Model("gemini-embedding-001")
 GEMINI_EMBEDDING_COMPAT_ALIAS = _GEMINI_EMBEDDING_2.id
 
 
-# Self-hosted Ollama chat models: (exposed model, Ollama model, num_ctx variants).
-# Each variant is served on both the OpenAI-compatible `/v1` and Ollama's native
-# wire; the context rides in the model segment (`_ollama_chat_variant`) so the chat
-# entries stay distinct.
-#
-# qwen3.8-flash-next-q4: 125B-total/6B-active MoE, Unsloth Dynamic UD-Q4_K_XL quant
-# (metalspork/qwen3.8-flash-next-ud:UD-Q4_K_XL, 112GB), native 256K context. Disabled
-# (2026-09-26): does not fit in wyrm2's combined GPU VRAM (87GB resident vs. ~61GB usable
-# across 2x RTX 5090), forcing most MoE-expert weight paging onto the HDD-backed
-# `llm-models` PVC; measured 0.056-1.44 tokens/sec generation depending on warm-up state
-# (~20-1000x too slow to be usable), on both Ollama 0.34.0 and 0.34.4. Tool-call parsing
-# itself works correctly, and the same GGUF served directly via a current llama-server
-# build off SSD-backed storage on this same hardware reached ~30 tokens/sec -- so the
-# model and hardware are capable, this specific Ollama-on-HDD path is not. Re-enable only
-# once served from SSD-backed storage or with the full CPU-resident working set reliably
-# page-cache-hot; see agentplane/debug/agentplane_ollama_live_smoke_2026_09_24.md for the
-# full investigation.
-_QWEN_IQ4XS = Model("qwen3.8-flash-next-iq4xs", "Qwen3.8 Flash Next IQ4_XS")
-_GPT_OSS_20B = OllamaModel(Model("gpt-oss-20b", "GPT-OSS 20B"), "gpt-oss:20b")
-
-
-def _ollama_chat_variant(model: str, context: int) -> str:
-    """The model segment of an Ollama chat entry at this `num_ctx`: `gpt-oss-20b-512k`."""
-    return f"{model}-1m" if context == 1024 * 1024 else f"{model}-{context // 1024}k"
-
-
-# The self-hosted Ollama embedding route,
-# also referenced by public-coder-agent's OpenClaw memory-search config so its
-# embedding backend names the same route it's actually served on.
-_OLLAMA_EMBEDDING = Model("qwen3-embedding-4b")
-
-
 # Canonical served routes. These are the only account/wire/model associations;
 # downstream code receives Route objects, not naming ingredients.
 OLLAMA_OPENAI = Upstream(Provider.OLLAMA, "openai", "chat", supports_function_calling=True)
@@ -569,31 +533,36 @@ class OllamaRoutes:
     native: Route
 
 
-def _ollama_routes(source: OllamaModel, context: int) -> OllamaRoutes:
+def _ollama_routes(variant: ollama.ChatVariant) -> OllamaRoutes:
+    context = variant.num_ctx
     suffix = "1M" if context == 1024 * 1024 else f"{context // 1024}K"
-    model = replace(
-        source.model,
-        id=_ollama_chat_variant(source.model.id, context),
-        display_name=f"{source.model.display_name} ({suffix})",
+    model = Model(
+        id=f"{variant.model.tag.removesuffix(':latest').replace(':', '-')}-{suffix.lower()}",
+        display_name=f"{variant.model.display_name} ({suffix})",
+        # Legacy publication metadata, preserved here until the separate limits cleanup.
+        # num_ctx is a requested allocation, not evidence of provider capacity.
         context_window=context,
     )
     return OllamaRoutes(
-        openai=Route(model, OLLAMA_OPENAI, upstream_model=source.upstream_model, num_ctx=context),
-        native=Route(model, OLLAMA_NATIVE, upstream_model=source.upstream_model, num_ctx=context),
+        openai=Route(model, OLLAMA_OPENAI, upstream_model=variant.tag),
+        native=Route(model, OLLAMA_NATIVE, upstream_model=variant.tag, num_ctx=context),
     )
 
 
-OLLAMA_QWEN_IQ4XS_128K = _ollama_routes(OllamaModel(_QWEN_IQ4XS, "qwen3.8-flash-next-iq4xs:latest"), 128 * 1024)
-# Ollama /v1 ignores native options.num_ctx; bake this size into an alias.
-OLLAMA_QWEN_IQ4XS_256K = _ollama_routes(OllamaModel(_QWEN_IQ4XS, "qwen3.8-flash-next-iq4xs-256k:latest"), 256 * 1024)
-_GPT_OSS_20B_128K = _ollama_routes(_GPT_OSS_20B, 128 * 1024)
+OLLAMA_QWEN_IQ4XS_128K = _ollama_routes(ollama.QWEN_IQ4XS_128K)
+OLLAMA_QWEN_IQ4XS_256K = _ollama_routes(ollama.QWEN_IQ4XS_256K)
+_GPT_OSS_20B_128K = _ollama_routes(ollama.ChatVariant(ollama.GPT_OSS_20B, 128 * 1024))
 OLLAMA_GPT_OSS_20B_128K = _GPT_OSS_20B_128K.openai
 _OLLAMA_ROUTE_GROUPS = (
     (OLLAMA_QWEN_IQ4XS_128K,),
     (OLLAMA_QWEN_IQ4XS_256K,),
-    (_GPT_OSS_20B_128K, *(_ollama_routes(_GPT_OSS_20B, context * 1024) for context in (256, 512, 1024))),
-    (_ollama_routes(OllamaModel(Model("gpt-oss-120b", "GPT-OSS 120B"), "gpt-oss:120b"), 128 * 1024),),
-    (_ollama_routes(OllamaModel(Model("gemma4-31b-it-q8_0", "Gemma 4 31B"), "gemma4:31b-it-q8_0"), 128 * 1024),),
+    # Existing request-only variants: no corresponding baked GPT-OSS aliases.
+    (
+        _GPT_OSS_20B_128K,
+        *(_ollama_routes(ollama.ChatVariant(ollama.GPT_OSS_20B, context * 1024)) for context in (256, 512, 1024)),
+    ),
+    (_ollama_routes(ollama.ChatVariant(ollama.GPT_OSS_120B, 128 * 1024)),),
+    (_ollama_routes(ollama.ChatVariant(ollama.GEMMA4, 128 * 1024)),),
 )
 OLLAMA_OPENAI_ROUTES = tuple(pair.openai for group in _OLLAMA_ROUTE_GROUPS for pair in group)
 OLLAMA_CHAT_ROUTES = tuple(
@@ -607,7 +576,9 @@ _OLLAMA_PROXY_ROUTES = tuple(
     for route in (*(pair.openai for pair in group), *(pair.native for pair in group))
 )
 OLLAMA_EMBED = Upstream(Provider.OLLAMA, "ollama", "embed")
-OLLAMA_EMBEDDING_ROUTE = Route(_OLLAMA_EMBEDDING, OLLAMA_EMBED, upstream_model="qwen3-embedding:4b")
+OLLAMA_EMBEDDING_ROUTE = Route(
+    Model(ollama.QWEN_EMBEDDING.tag.replace(":", "-")), OLLAMA_EMBED, upstream_model=ollama.QWEN_EMBEDDING.tag
+)
 TANA_ROUTES = (TANA_SONNET, TANA_OPUS, TANA_HAIKU)
 CHATGPT_MESSAGES = Upstream(Provider.CHATGPT, "anthropic", "messages", supports_function_calling=True)
 CHATGPT_RESPONSES = Upstream(Provider.CHATGPT, "openai", "responses", supports_function_calling=True)

@@ -1,5 +1,6 @@
 import json
 import subprocess
+import sys
 from datetime import timedelta
 from pathlib import Path
 from uuid import UUID
@@ -12,6 +13,7 @@ from devinfra.pr_visuals.determinism import (
     Observation,
     Render,
     analyze,
+    main,
     observe,
     observe_targets,
     report,
@@ -230,6 +232,42 @@ def test_a_target_that_did_not_pass_says_so_in_the_report() -> None:
     )
 
     assert "FLAKY, PASSED" in summary
+
+
+def _exit_status() -> int | str | None:
+    """What `main()` raises through `SystemExit`; `None` when it returns, which is exit status 0."""
+    try:
+        main()
+    except SystemExit as exited:
+        return exited.code
+    return None
+
+
+@pytest.mark.parametrize(
+    ("drifts", "exit_code"), [pytest.param(False, None, id="reproducible"), pytest.param(True, 1, id="drifted")]
+)
+def test_the_exit_status_says_whether_every_render_was_reproducible(
+    monkeypatch: pytest.MonkeyPatch, drifts: bool, exit_code: int | None
+) -> None:
+    """A scheduled sweep reports on this status alone; the markdown only says which renders."""
+
+    def fake_run(command: list[str | Path], **_kwargs: object) -> subprocess.CompletedProcess[str]:
+        payload: object = None
+        match [str(part) for part in command]:
+            case ["bbr", "test", *_]:
+                pass
+            case ["bbapi", "artifact", "list", invocation, "--json"]:
+                payload = [_png("//ui:visual", "list.png", f"bytestream://{invocation if drifts else 'same'}")]
+            case ["bbapi", "target", _, "--json"]:
+                payload = {"targetGroups": [{"targets": [_test_row("//ui:visual", seconds=9.0)]}]}
+            case other:
+                raise AssertionError(f"unexpected command {other}")
+        return subprocess.CompletedProcess(command, 0, json.dumps(payload) if payload is not None else "", "")
+
+    monkeypatch.setattr(subprocess, "run", fake_run)
+    monkeypatch.setattr(sys, "argv", ["determinism", "--runs", "3", "//ui:visual"])
+
+    assert _exit_status() == exit_code
 
 
 if __name__ == "__main__":

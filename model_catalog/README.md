@@ -1,8 +1,11 @@
 # Model catalogue
 
 Shared Python inputs for Kubernetes and Nix configuration, with no dependency on
-cdk8s. Consumers select named routes and serialize them at their own boundary.
+cdk8s. Consumers select source models or gateway routes and serialize them at their
+own boundary.
 
+- `ollama.py`: source tags, names and requested serving variants. Both Ollama
+  provisioning and gateway routing consume these; LiteLLM does not own provisioning.
 - `catalog.py`: account-specific model facts, account/wire identities, named routes,
   compatibility aliases, and ordered rosters. Define named routes **before** rosters;
   a tuple's position or a lookup by slug must not define a named selection.

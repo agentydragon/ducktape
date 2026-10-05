@@ -1,6 +1,9 @@
 # Ollama
 
-`app.py` packages Ollama's ConfigMaps from the files beside it: `setup-gpt-oss-v2.sh`,
+`app.py` renders `setup-gpt-oss-v2.sh.j2` using the source declarations in
+`model_catalog/ollama.py` and packages the result as `setup-gpt-oss-v2.sh`.
+Those declarations also feed LiteLLM routing; provisioning does not depend on
+LiteLLM's route roster. Other ConfigMap inputs beside `app.py` are
 `link-ssd-models.sh` and the two shard manifests (`gpt-oss-scripts`), and the nginx
 bearer proxy's configuration (`ollama-auth-proxy`). `qwen38-chat-template.jinja` is
 not deployed; it is the derivation input below.

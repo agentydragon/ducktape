@@ -30,8 +30,24 @@ export function threadStatusFromSnapshot(
     return { kind: "stopped", label: "Harness not running", tabLabel: "Stopped" };
   if (thread.active_turn_id)
     return { kind: "running", label: "Turn running · Runner feed active · harness running", tabLabel: "Running" };
-  const turnError = thread.last_turn_status ? turnErrorLabel(thread.last_turn_status) : null;
-  if (turnError)
-    return { kind: "turn_error", label: `${turnError} · Runner feed active · harness running`, tabLabel: turnError };
+  if (thread.last_turn_status) {
+    const turnError = turnErrorLabel(thread.last_turn_status);
+    switch (turnError.kind) {
+      case "error":
+        return {
+          kind: "turn_error",
+          label: `${turnError.label} · Runner feed active · harness running`,
+          tabLabel: turnError.label,
+        };
+      case "unrecognised":
+        console.warn(
+          "thread_status: unrecognised last turn status, showing the thread as idle",
+          thread.last_turn_status
+        );
+        break;
+      case "ordinary":
+        break;
+    }
+  }
   return { kind: "idle", label: "Runner feed active · harness running", tabLabel: "Ready" };
 }

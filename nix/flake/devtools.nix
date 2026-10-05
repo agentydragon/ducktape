@@ -35,6 +35,10 @@ let
     pkgs.kubeconform
     pkgs.tflint
     pkgs.checkov
+    # TODO: Consider a rustfmt-only package here, preserving cargo-fmt in
+    # developer shells. Deferred: the container spike did not show enough
+    # setup-time benefit to justify the extra packaging complexity.
+    # Evidence and prototype: https://github.com/agentydragon/ducktape/pull/9220
     pkgs.rustfmt
     pkgs.ansible
   ];

@@ -80,7 +80,8 @@ def test_artifact_directory_is_the_first_copy_of_an_artifact_with_bases() -> Non
     ],
 )
 def test_artifact_directory_refuses_a_partial_or_moved_copy(copy: ArtifactGeneratorSpecArtifactsCopy) -> None:
-    with pytest.raises(ValueError, match="not a whole-directory copy"):
+    # Only the whole-directory guard names the offending `copy.from_`; the "copies nothing" error does not.
+    with pytest.raises(ValueError, match=r"copy\.from_="):
         artifact_directory(ArtifactGeneratorSpecArtifacts(name="test-app", origin_revision="@repo", copy=[copy]))
 
 

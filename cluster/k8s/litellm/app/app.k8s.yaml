@@ -24,6 +24,9 @@ data:
         litellm_params:
           model: ollama_chat/qwen3.8-flash-next-iq4xs:latest
           api_base: http://ollama.ollama.svc.cluster.local:11434
+          extra_body:
+            options:
+              num_ctx: 131072
         model_info:
           mode: chat
           supports_function_calling: true
@@ -32,9 +35,6 @@ data:
           model: openai/qwen3.8-flash-next-iq4xs-256k:latest
           api_base: http://ollama.ollama.svc.cluster.local:11434/v1
           api_key: ollama
-          extra_body:
-            options:
-              num_ctx: 262144
         model_info:
           mode: chat
           supports_function_calling: true
@@ -61,9 +61,6 @@ data:
           model: openai/gpt-oss:20b
           api_base: http://ollama.ollama.svc.cluster.local:11434/v1
           api_key: ollama
-          extra_body:
-            options:
-              num_ctx: 262144
         model_info:
           mode: chat
           supports_function_calling: true
@@ -72,9 +69,6 @@ data:
           model: openai/gpt-oss:20b
           api_base: http://ollama.ollama.svc.cluster.local:11434/v1
           api_key: ollama
-          extra_body:
-            options:
-              num_ctx: 524288
         model_info:
           mode: chat
           supports_function_calling: true
@@ -83,9 +77,6 @@ data:
           model: openai/gpt-oss:20b
           api_base: http://ollama.ollama.svc.cluster.local:11434/v1
           api_key: ollama
-          extra_body:
-            options:
-              num_ctx: 1048576
         model_info:
           mode: chat
           supports_function_calling: true
@@ -93,6 +84,9 @@ data:
         litellm_params:
           model: ollama_chat/gpt-oss:20b
           api_base: http://ollama.ollama.svc.cluster.local:11434
+          extra_body:
+            options:
+              num_ctx: 131072
         model_info:
           mode: chat
           supports_function_calling: true
@@ -138,6 +132,9 @@ data:
         litellm_params:
           model: ollama_chat/gpt-oss:120b
           api_base: http://ollama.ollama.svc.cluster.local:11434
+          extra_body:
+            options:
+              num_ctx: 131072
         model_info:
           mode: chat
           supports_function_calling: true
@@ -153,6 +150,9 @@ data:
         litellm_params:
           model: ollama_chat/gemma4:31b-it-q8_0
           api_base: http://ollama.ollama.svc.cluster.local:11434
+          extra_body:
+            options:
+              num_ctx: 131072
         model_info:
           mode: chat
           supports_function_calling: true

@@ -349,6 +349,28 @@ intended tag/settings, not just that their generated strings agree. No capacity 
 variant activation/retirement, client-budget change or provisioning change is approved
 by recording this pattern; the corresponding file decisions in §3 remain open.
 
+### First source-declaration extraction
+
+`model_catalog/ollama.py` now owns Ollama tags, names, the server's default
+`num_ctx`, and the two Qwen serving variants. `catalog.py` projects them into
+LiteLLM identities; Ollama cdk8s renders its existing setup shell from the same
+source declarations. Storage/shard handling, other generation parameters and the
+choice of models to provision remain local to Ollama cdk8s. This is not a generic
+provisioning system or an adoption of the entire illustrative API above.
+
+Provisioning, route identities and client budgets are unchanged. Native Ollama
+routes now always send their explicitly requested `options.num_ctx`, including
+128K: matching the server default is not a reason to inherit it (or a model's baked
+parameters). OpenAI-compatible routes omit this ignored option and rely on their
+selected tag's baked settings instead.
+
+GPT-OSS 20B's larger gateway variants still use the base tag, with no baked alias;
+only the native wire applies their requested context. Those route names do **not**
+establish equivalent effective allocations across wires. Creating aliases or
+retiring routes needs a separate behavior decision. Likewise,
+the legacy projection from requested `num_ctx` into `Model.context_window` remains
+pending the publication cleanup; the source declarations make no capacity claim.
+
 ## 3. Consumer inventory and side effects
 
 Before deletion or renaming, check these as well as the obvious clients:
@@ -427,7 +449,7 @@ finds another consumer or source of independently maintained configuration.
 | Current file(s)                                                                                         | Question to resolve                                                                                                                                                                                                       |
 | ------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `cluster/cdk8s/ollama/app.py`                                                                           | Where should server defaults and serving-variant configuration be declared, and what should deployment rendering consume?                                                                                                 |
-| `cluster/cdk8s/ollama/setup-gpt-oss-v2.sh`                                                              | How should model/alias creation obtain tags and parameters without independent hard-coded copies? Decide whether this script/interface remains appropriate.                                                               |
+| `cluster/cdk8s/ollama/setup-gpt-oss-v2.sh.j2`                                                           | Now rendered from Ollama source declarations; shell remains the executor. Further script/interface changes remain open.                                                                                                   |
 | Ollama definitions in `model_catalog/catalog.py`; their projection in `cluster/cdk8s/litellm/config.py` | Decide jointly with the two files above: who defines variant identity, upstream tag and requested context, and how each wire actually applies them? Do not infer provider limits or client budgets from serving settings. |
 
 #### Public Coder and smaller consumers

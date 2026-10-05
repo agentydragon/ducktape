@@ -86,7 +86,6 @@ spec:
             key: AWS_SECRET_ACCESS_KEY
             name: aws-route53-credentials
     extraArgs:
-      - --dry-run
       - --zone-id-filter=Z02901943N8ZFQFOD9P5I
       - --gateway-name=cluster-gateway
       - --gateway-namespace=gateway-system

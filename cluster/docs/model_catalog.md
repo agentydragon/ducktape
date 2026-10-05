@@ -13,6 +13,10 @@ cdk8s dependency; Kubernetes generator internals remain visibility-restricted.
 
 ## Ownership
 
+`model_catalog/ollama.py` owns Ollama source declarations. They feed both the
+Ollama setup-script renderer and the gateway catalogue below; cdk8s retains storage,
+workloads and provisioning selections. Requested `num_ctx` is not a capacity fact.
+
 - `Model` describes a model **as served by its account**: upstream identity, known
   display name, context/output limits, and reasoning capability. Unknown metadata is
   unset. The declaration's comments retain the evidence and its limitations; a
