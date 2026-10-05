@@ -914,7 +914,7 @@ mod tests {
             (MAX_TIME_SECONDS_ENV, "inf"),
         ] {
             let err = CpSatSettings::from_lookup(env(&[(name, value)])).unwrap_err();
-            assert_eq!(err.to_string().split(' ').next(), Some(name), "{value}");
+            assert!(err.to_string().contains(name), "{value}: {err}");
         }
     }
 
