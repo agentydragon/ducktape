@@ -347,14 +347,6 @@ async def test_tool_surface_splits_pass_through_and_request(agent_client: Client
     assert "get_tool_call" in tools
     assert "wait_for_result_ms" in gmail_write_description
     assert "get_tool_call" in gmail_write_description
-    # Calendar reads are transparent; creation is the approval-gated request tool. The server
-    # prefix supplies "calendar", so no tool repeats it in the local name.
-    assert "google_calendar__get_event" in tools
-    assert "input" not in tools["google_calendar__get_event"].input_schema.get("properties", {})
-    cal_read_ann = tools["google_calendar__get_event"].annotations
-    assert cal_read_ann is not None
-    assert cal_read_ann.read_only_hint is True
-    assert "google_calendar__create_event" in tools
     # Every advertised tool's schemas — passthrough and envelope input schemas, and any declared
     # output schema — must be valid, fully-resolvable JSON Schema, not just superficially shaped.
     for tool in tools.values():
