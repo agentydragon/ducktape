@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import pytest
 import pytest_bazel
 
 from x.ember.python_session import ensure_kernel, restart_kernel, run_code
@@ -8,9 +7,7 @@ from x.ember.python_session import ensure_kernel, restart_kernel, run_code
 
 def test_persistent_python_session_preserves_state():
     conn = ensure_kernel()
-    if conn is None:
-        pytest.skip("ipykernel not available in runtime")
-
+    assert conn is not None, "kernel failed to start"
     assert conn.exists(), "kernel connection file should exist"
 
     run_code("x = 41")

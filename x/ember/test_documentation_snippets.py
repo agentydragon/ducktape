@@ -2,9 +2,7 @@ from __future__ import annotations
 
 import os
 import runpy
-import shutil
 import subprocess
-import sys
 from importlib import resources
 from pathlib import Path
 from types import SimpleNamespace
@@ -12,8 +10,12 @@ from types import SimpleNamespace
 import pytest
 import pytest_bazel
 
+from util.bazel.runfiles import get_required_path
 from x import ember  # gazelle:ignore x.ember
 from x.ember.system_prompt import load_system_prompt
+
+# `quickstart.py` imports the Matrix client, which `runpy` hides from the import scan.
+# gazelle:include_dep //x/ember:matrix_client
 
 
 def _embedded_text(relative: str) -> str:
@@ -38,9 +40,8 @@ def test_python_session_demo_scripts_are_embedded_and_work(
     env = os.environ.copy()
     env["EMBER_WORKSPACE_DIR"] = str(tmp_path / "workspace")
     env["EMBER_PYTHON_SESSION_DIR"] = str(tmp_path / "session")
-    env["PATH"] = f"{Path(sys.executable).parent}{os.pathsep}{env['PATH']}"
-    if not shutil.which("ember_python", path=env["PATH"]):
-        pytest.skip("ember_python CLI not available on PATH")
+    # `demo.sh` calls `ember_python` by name; Bazel builds the launcher under that name.
+    env["PATH"] = f"{get_required_path(os.environ['EMBER_PYTHON']).parent}{os.pathsep}{env['PATH']}"
 
     test_script = resources.files(ember).joinpath(f"resources/{test_relative}")
     subprocess.run(["bash", str(test_script)], check=True, env=env, text=True)
