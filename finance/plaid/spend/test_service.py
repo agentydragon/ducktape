@@ -13,7 +13,6 @@ import asyncpg
 import pytest
 import pytest_asyncio
 from sqlalchemy.engine import make_url
-from testcontainers.postgres import PostgresContainer
 
 from finance.plaid.db.link_store import PlaidLinkStorage
 from finance.plaid.spend.allowance import AllowancePolicy, CategoryExact, Kind, Rule, Status
@@ -21,14 +20,6 @@ from finance.plaid.spend.app import _event_stream
 from finance.plaid.spend.models import AlertState, CardConfig, SpendConfiguration
 from finance.plaid.spend.service import SpendService
 from util.testing.postgres import create_database_async, force_drop_database
-from util.testing.postgres_fixtures import postgres_container  # noqa: F401
-
-
-@pytest.fixture(scope="session")
-def postgres_admin_url(postgres_container: PostgresContainer) -> str:  # noqa: F811
-    host = postgres_container.get_container_host_ip()
-    port = int(postgres_container.get_exposed_port(5432))
-    return f"postgresql+asyncpg://postgres:postgres@{host}:{port}/postgres"
 
 
 @pytest_asyncio.fixture
