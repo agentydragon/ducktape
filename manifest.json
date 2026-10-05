@@ -4,5 +4,15 @@
   "window_end_utc": "2026-10-04T21:15:00Z",
   "published_at_utc": "2026-10-04T23:05:09.752656+00:00",
   "attribution": "not collected",
-  "implementation_followup_at_utc": "2026-10-05T01:01:01.119432+00:00"
+  "implementation_followup_at_utc": "2026-10-05T01:01:01.119432+00:00",
+  "critical_path_followup": {
+    "recorded_at_utc": "2026-10-05T01:40:55.052121+00:00",
+    "source_devel_commit": "c8da83bc382db8d3c49a440cf57a74a34b935825",
+    "ci_run_creation_window_utc": [
+      "2026-10-05T00:03:52Z",
+      "2026-10-05T00:57:42Z"
+    ],
+    "kind": "Focused mechanism investigation and controlled spikes; original baseline window retained",
+    "implementation_recorded_at_utc": "2026-10-05T02:16:11.072317+00:00"
+  }
 }
