@@ -40,6 +40,7 @@ def thread_start(
 ) -> wire.ThreadStartRequest:
     """`config` adds per-thread `config.toml` keys; app-server layers them over its own configuration.
 
+    An empty `effort` leaves Codex's default: the app-server rejects an empty `model_reasoning_effort`.
     `instructions` becomes the thread's developer instructions, which the app-server keeps with the
     thread, so a `thread/resume` does not restate them. Empty sends no key for them. `dynamic_tools`
     declares the driver's own tools; it requires `initialize(experimental_api=True)` first.
@@ -56,7 +57,7 @@ def thread_start(
             # Replaces the broad default coding-agent policy in recorded model requests.
             base_instructions=BASE_INSTRUCTIONS,
             developer_instructions=instructions or None,
-            config={"model_reasoning_effort": effort, **(config or {})},
+            config={**({"model_reasoning_effort": effort} if effort else {}), **(config or {})},
             dynamic_tools=dynamic_tools,
         ),
     )
@@ -84,9 +85,12 @@ def thread_resume(
 def turn_start(
     request_id: str, *, thread_id: str, text: str, model: str | None = None, effort: str | None = None
 ) -> wire.TurnStartRequest:
+    """An empty `effort` is none: a session whose model offers no effort stores it as an empty string."""
     return wire.TurnStartRequest(
         id=request_id,
-        params=wire.TurnStartParams(thread_id=thread_id, input=[wire.TextInput(text=text)], model=model, effort=effort),
+        params=wire.TurnStartParams(
+            thread_id=thread_id, input=[wire.TextInput(text=text)], model=model, effort=effort or None
+        ),
     )
 
 

@@ -4,6 +4,7 @@ serde quirk on the way out."""
 from __future__ import annotations
 
 import json
+from typing import Any
 
 import pytest
 import pytest_bazel
@@ -72,6 +73,20 @@ def test_thread_start_names_developer_instructions_only_when_it_has_them() -> No
     )
     assert instructed["params"]["developerInstructions"] == "Stand by."
     assert instructed["params"]["baseInstructions"] == driver.BASE_INSTRUCTIONS
+
+
+def test_an_empty_effort_is_left_to_codex_rather_than_sent_empty() -> None:
+    def thread_config(effort: str) -> Any:
+        request = driver.thread_start("r1", cwd="/w", model="m", effort=effort)
+        return json.loads(request.model_dump_json(by_alias=True))["params"]["config"]
+
+    def turn_params(effort: str) -> Any:
+        return json.loads(driver.turn_start("r1", thread_id="t", text="hi", effort=effort).model_dump_json())["params"]
+
+    assert thread_config("low") == {"model_reasoning_effort": "low"}
+    assert thread_config("") == {}
+    assert turn_params("low")["effort"] == "low"
+    assert "effort" not in turn_params("")
 
 
 if __name__ == "__main__":
