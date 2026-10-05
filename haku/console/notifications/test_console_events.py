@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import time
 from collections.abc import Callable
 from typing import Any, cast
 from unittest.mock import AsyncMock, Mock
@@ -9,7 +10,9 @@ from uuid import UUID
 import pytest
 import pytest_bazel
 from fastapi import WebSocket
+from starlette.websockets import WebSocketDisconnect
 
+from haku.console.identity import operator_auth
 from haku.console.identity.operator_identity_store import PostgresOperatorIdentityStore
 from haku.console.notifications import console_events
 from haku.console.notifications.console_events import ConsoleEventHub, ToolCallsChangedEvent
@@ -232,6 +235,36 @@ async def test_disabled_operator_socket_is_closed_before_event_delivery() -> Non
     assert websocket.closed
     assert cast(WebSocket, websocket) not in hub._connections
     await hub.aclose()
+
+
+async def test_websocket_reports_an_expired_session_apart_from_a_rejected_one(
+    make_operator_client, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Expiry gets its own close code so the shell re-authenticates instead of showing the live
+    channel as merely offline and retrying a handshake that can only be refused."""
+    deadline = int(time.time()) + 300
+    with (
+        make_operator_client(operator_session_expires_at=deadline) as client,
+        client.websocket_connect("/api/events/ws", headers={"Origin": "https://haku.test"}) as ws,
+    ):
+        assert ws.receive_json() == {"event_type": "hello"}
+        monkeypatch.setattr(operator_auth.time, "time", lambda: deadline + 1)
+        # Any client frame wakes the socket's revalidation ahead of its idle tick.
+        ws.send_text("ping")
+        with pytest.raises(WebSocketDisconnect) as disconnected:
+            ws.receive_json()
+
+    assert disconnected.value.code == console_events.OPERATOR_SESSION_EXPIRED_CLOSE_CODE
+
+
+async def test_websocket_rejects_cross_origin(make_operator_client) -> None:
+    with (
+        make_operator_client() as client,
+        pytest.raises(WebSocketDisconnect) as exc_info,
+        client.websocket_connect("/api/events/ws", headers={"Origin": "https://haku-ui.test"}),
+    ):
+        pass
+    assert exc_info.value.code == 1008
 
 
 def test_a_field_a_later_release_adds_does_not_cost_the_previous_one_the_event() -> None:

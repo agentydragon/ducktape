@@ -226,16 +226,13 @@ py_test(
         "//haku/console:tool_call_actor",
         "//haku/console/identity:agent",
         "//haku/console/identity:authorization",
-        "//haku/console/identity:operator_auth",
         "//haku/console/identity:operator_identity",
-        "//haku/console/notifications:console_events",
         "@ducktape_haku//haku/console:tool_calls",
         "@pypi//fastapi",
         "@pypi//fastmcp_slim",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
         "@pypi//sqlalchemy",
-        "@pypi//starlette",
     ],
 )
 

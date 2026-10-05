@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import time
 from collections.abc import Callable, Generator
 from pathlib import Path
 from typing import Any, cast
@@ -16,12 +15,10 @@ from fastapi.testclient import TestClient
 from fastmcp import FastMCP
 from sqlalchemy import event, select, text
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker, create_async_engine
-from starlette.websockets import WebSocketDisconnect
 
 from haku.console.conftest import operator_id, write_config
 from haku.console.database_migrate import apply_migrations
 from haku.console.database_schema import Agent, CredentialBinding, StaticCredential
-from haku.console.identity import operator_auth
 from haku.console.identity.agent import (
     # TestClient drives the app over httpx, imported inside starlette; gazelle cannot see it.
     # gazelle:include_dep @pypi//httpx
@@ -45,7 +42,6 @@ from haku.console.mcp_config import (
     NoCredential,
     const_in_process_server,
 )
-from haku.console.notifications import console_events
 from haku.console.tool_call_actor import AgentActor, OperatorActor, RuntimeActor
 from haku.console.tool_calls import (
     AgentToolCallCaller,
@@ -705,36 +701,6 @@ async def test_two_operator_websockets_only_receive_their_interleaved_tool_calls
     expected_b = {call_id for owner, call_id in submitted if owner == "b"}
     assert {event["tool_call_id"] for event in received_a} == expected_a
     assert {event["tool_call_id"] for event in received_b} == expected_b
-
-
-async def test_websocket_reports_an_expired_session_apart_from_a_rejected_one(
-    make_operator_client, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    """Expiry gets its own close code so the shell re-authenticates instead of showing the live
-    channel as merely offline and retrying a handshake that can only be refused."""
-    deadline = int(time.time()) + 300
-    with (
-        make_operator_client(operator_session_expires_at=deadline) as client,
-        client.websocket_connect("/api/events/ws", headers={"Origin": "https://haku.test"}) as ws,
-    ):
-        assert ws.receive_json() == {"event_type": "hello"}
-        monkeypatch.setattr(operator_auth.time, "time", lambda: deadline + 1)
-        # Any client frame wakes the socket's revalidation ahead of its idle tick.
-        ws.send_text("ping")
-        with pytest.raises(WebSocketDisconnect) as disconnected:
-            ws.receive_json()
-
-    assert disconnected.value.code == console_events.OPERATOR_SESSION_EXPIRED_CLOSE_CODE
-
-
-async def test_websocket_rejects_cross_origin(make_operator_client) -> None:
-    with (
-        make_operator_client() as client,
-        pytest.raises(WebSocketDisconnect) as exc_info,
-        client.websocket_connect("/api/events/ws", headers={"Origin": "https://haku-ui.test"}),
-    ):
-        pass
-    assert exc_info.value.code == 1008
 
 
 async def test_audit_log_is_tenant_scoped_and_redacts_secrets(
