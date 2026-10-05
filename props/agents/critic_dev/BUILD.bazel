@@ -177,7 +177,6 @@ py_test(
         "//props/testing:constants",
         "@pypi//more_itertools",
         "@pypi//pyhamcrest",
-        "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],
 )

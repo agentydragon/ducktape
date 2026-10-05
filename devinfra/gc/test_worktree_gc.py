@@ -39,13 +39,17 @@ def test_squash_merge_is_prunable(repo: GitRepo, proc: Path) -> None:
 
 def test_empty_branch_is_prunable(repo: GitRepo, proc: Path) -> None:
     wt = repo.worktree("wt", "feature")  # no commits beyond main
-    assert _classify(repo, wt.path, proc).reason is wg.PrunableWorktreeReason.CONTENT_IN_MAIN
+    result = _classify(repo, wt.path, proc)
+    assert isinstance(result, wg.PrunableWorktree)
+    assert (result.reason, result.main) == (wg.PrunableWorktreeReason.CONTENT_IN_MAIN, "main")
 
 
 def test_unique_unmerged_is_review(repo: GitRepo, proc: Path) -> None:
     wt = repo.worktree("wt", "feature")
     wt.commit("novel", "unique\n", "unmerged work")
-    assert _classify(repo, wt.path, proc).reason is wg.ReviewWorktreeReason.UNMERGED
+    result = _classify(repo, wt.path, proc)
+    assert isinstance(result, wg.ReviewWorktree)
+    assert (result.reason, result.main) == (wg.ReviewWorktreeReason.UNMERGED, "main")
 
 
 def test_dirty_tracked_change_is_kept(repo: GitRepo, proc: Path) -> None:
@@ -137,7 +141,8 @@ def test_missing_worktree_directory_is_prunable(repo: GitRepo, proc: Path) -> No
     wt = repo.worktree("wt", "feature")
     shutil.rmtree(wt.path)  # `git worktree list` still reports it, marked prunable
     result = _classify(repo, wt.path, proc)
-    assert result.reason is wg.PrunableWorktreeReason.DIRECTORY_MISSING
+    assert isinstance(result, wg.PrunableWorktree)
+    assert (result.reason, result.main) == (wg.PrunableWorktreeReason.DIRECTORY_MISSING, "main")
     assert result.last_activity is None
 
 

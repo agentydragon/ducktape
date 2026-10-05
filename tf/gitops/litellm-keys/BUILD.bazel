@@ -12,7 +12,6 @@ tf_providers_versions(
     providers = {
         "kubernetes": "hashicorp/kubernetes:~>3.0",
         "litellm": "ncecere/litellm:~>2.0",
-        "random": "hashicorp/random:~>3.9.0",
         "sops": "carlpett/sops:~>1.0",
     },
     tf_version = "1.12.6",
@@ -23,7 +22,6 @@ tf_module(
     providers = [
         "kubernetes",
         "litellm",
-        "random",
         "sops",
     ],
     providers_versions = ":providers",

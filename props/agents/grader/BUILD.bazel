@@ -213,7 +213,6 @@ py_test(
         "//props/testing:assertions",
         "//props/testing:constants",
         "//props/testing/fixtures:runs",
-        "@pypi//pytest",
         "@pypi//pytest_asyncio",  # keep
         "@pypi//pytest_bazel",
     ],
@@ -269,7 +268,6 @@ py_test(
         "//props/testing:assertions",
         "//props/testing:constants",
         "//props/testing/fixtures:runs",
-        "@pypi//pytest",
         "@pypi//pytest_asyncio",  # keep
         "@pypi//pytest_bazel",
     ],
@@ -294,7 +292,6 @@ py_test(
         "//props/db:snapshots",
         "//props/testing:constants",
         "//props/testing/fixtures:runs",
-        "@pypi//pytest",
         "@pypi//pytest_asyncio",  # keep
         "@pypi//pytest_bazel",
     ],

@@ -508,12 +508,13 @@ existing small separation rather than adding a meta-configuration layer:
 5. **Native client behavior:** configure and verify the actual harness. A clean
    `/model/info` response cannot fix Codex/Claude's independent recognition tables.
 
-Item 4 is the desired contract, **not a solved implementation**. First test whether
-an upstream-supported configuration mechanism can satisfy it through registration,
-reload, list and single-deployment endpoints. If not, compare a small upstream fix
-or targeted response projection against leaving LiteLLM's endpoint explicitly
-non-authoritative. The latter does **not** satisfy the requested public pair-or-none
-contract and requires an explicit decision, not silent acceptance. Avoid global
+Item 4 is the desired contract, **not a solved implementation**. Appendix B's
+pinned-runtime experiment rules out omission, null and zero as the publication
+policy: omission/null allow catalogue fallback, and zero declares a numeric limit.
+Next compare a small upstream suppression mechanism or targeted response projection
+against leaving LiteLLM's endpoint explicitly non-authoritative. The latter does
+**not** satisfy the requested public pair-or-none contract and requires an explicit
+decision, not silent acceptance. Avoid global
 model-cost mutation or a broad wrapper service as a premature solution.
 
 Internal catalogue use also needs an explicit decision: suppressing fields in an
@@ -528,9 +529,10 @@ which checks execute on the retained path before changing them; preserve account
    path, direct clients, and retained state; verify activation separately from merge status.
 2. The active-session audit in Appendix C records the real slug, binary and resolved budget.
    Recheck this evidence when changing harness versions or recognition strategy.
-3. Finish the narrow LiteLLM publication experiment using the proxy-local pin, both
-   bundled and controlled remote catalogue fixtures. Check load/reload and both
-   metadata endpoint shapes, with a known pair, unknown limits, and legacy fallback.
+3. Use Appendix B's completed config/API experiment to choose the narrow publication
+   mechanism; do not repeat catalogue research or ship omit/null as a fix. Validate
+   the chosen mechanism through load/reload and supported endpoint shapes, including
+   DB-backed paths if retained, without changing pricing or request behavior.
 4. Verify retained harness startup arguments/environment and reported window with
    a bounded request. Test model switching where budgets differ. Test Ollama alias
    effectiveness only for variants we decide to keep. No silent live deployment.
@@ -674,7 +676,10 @@ for our subscription gateway's limits.
 2. Exact misses can use catalogue regex generalizations. Native Ollama may query
    `/api/show`; there is more than a static JSON lookup involved.
 3. Deployment `model_info` registers/merges overrides into LiteLLM's model-cost map.
-   This map contains both capacity/capability and pricing metadata.
+   This map contains both capacity/capability and pricing metadata. Catalogue reload
+   replaces the map, then `reapply_runtime_model_cost_registrations()` replays live
+   router deployments and explicit runtime registrations; it is not a reset to
+   catalogue-only metadata. Router replay serializes `model_info` with `exclude_none=True`.
 4. Router objects and metadata endpoints perform further serialization and merging.
    List and single-deployment `/model/info` paths are not identical.
 
@@ -684,8 +689,62 @@ router serialization uses `exclude_none=True`; the single-deployment metadata
 endpoint removes nulls before filling missing keys. The final response merge alone
 is therefore insufficient evidence that null suppression works.
 
-This is a source-traced finding, not a completed end-to-end null-config test. That
-experiment remains a prerequisite for any chosen publication implementation.
+### Isolated config/API experiment, 2026-10-05
+
+The missing runtime check is now complete for `/model/info` listing and
+`?litellm_model_id=...`, using the **1.100.1 proxy-local dependency**. Eight fresh
+processes exercised the real config loader and ASGI endpoint handlers, then the
+catalogue fetch/install/replay path and same-router config reload. The
+[temporary collector](https://github.com/agentydragon/ducktape/blob/cdada7566024793a350eff494597dfe97c4bd559/tana/litellm_proxy/test_proxy_runtime.py)
+ran under `//tana/litellm_proxy:test_proxy_runtime`;
+[CI passed](https://github.com/agentydragon/ducktape/actions/runs/37301188187), and
+[BuildBuddy](https://app.buildbuddy.io/invocation/f504038a-972e-554a-a93c-0a01514077c0)
+retains `publication-probe.json`. The collector is not permanent test plumbing.
+
+The table shows **input / output / legacy** from `openai/gpt-4o-mini`. List and
+single-deployment responses agreed for the selected fields in every case. `B` is
+the bundled triple **128000 / 16384 / 16384**; `C` is a controlled initial catalogue
+triple **900001 / 900002 / 900003**; `R` is the fetched replacement triple
+**800001 / 800002 / 800003**; `P` is our explicit pair **111111 / 22222**.
+The controlled values are deliberately synthetic, **not model capacity claims**.
+
+| Initial catalogue / configured limits       | Initial API triple | After catalogue reload | After withdrawing overrides on same router |
+| ------------------------------------------- | ------------------ | ---------------------- | ------------------------------------------ |
+| Bundled / omitted or all null               | B                  | R                      | R                                          |
+| Bundled / P                                 | P / 16384          | P / 800003             | P / 800003                                 |
+| Controlled / omitted or all null            | C                  | R                      | R                                          |
+| Controlled / P, with legacy omitted or null | P / 900003         | P / 800003             | P / 800003                                 |
+| Controlled / all three zero                 | 0 / 0 / 0          | 0 / 0 / 0              | 0 / 0 / 0                                  |
+
+Thus neither omission nor null implements unknown limits or legacy-field removal.
+A pair survives catalogue replacement while the legacy field continues following
+that catalogue. Removing the pair from the file and calling
+`ProxyConfig.load_config(previous_router, ...)` with stable deployment IDs did
+**not** withdraw the published pair on this route. Do not generalize that result to
+a fresh process or every DB/admin update path. Zero is a real registered value,
+not an unknown sentinel. `context_window` was absent in all observed responses.
+
+Adapter controls matter: `anthropic/gpt-4o-mini` and an unknown
+`openai/publication-fixture:latest` returned null token fields without overrides,
+not the OpenAI catalogue triple. Native Ollama discovery was **not validated**:
+the fixture supplied a route-local `api_base`, but the metadata endpoint's
+`get_litellm_model_info()` calls `get_model_info(model)` without forwarding it.
+The source-traced `/api/show` behavior below must not be replaced with a claim
+that native Ollama reliably leaves unknown limits unset.
+
+Limit overrides left the matching OpenAI catalogue's prices and function-calling
+flag intact. The pricing helper for 10 input / 5 output tokens returned
+$0.0000015 / $0.000003 on the bundled fixture and $0.00017 / $0.000095 after
+reload, independent of the limit overrides. Both `modify_params` and router
+`enable_pre_call_checks` resolved to false. This verifies selected metadata and
+helper behavior, **not end-to-end spend logging, budgets or inference**.
+
+Scope limits: auth was replaced with a synthetic admin; no ASGI lifespan, database,
+paid requests or production changes were involved. `/v2/model/info` returned 500
+because no database was connected, so its publication behavior remains untested.
+Reload exercised `refetch_model_cost_map()` plus `_swap_in_model_cost_map()`, not
+the admin endpoint's authorization or cross-pod signaling. A chosen implementation
+still needs acceptance coverage for its supported deployment/endpoint paths.
 
 ### Token KVPs in the remote catalogue
 
@@ -742,11 +801,20 @@ lookups, and the restricted key does not establish the state of every deployment
 ### Who consumes these KVPs?
 
 - `/model/info` clients and the LiteLLM dashboard see published metadata.
-- LiteLLM itself can use the model-cost map for token checks and output adjustment,
-  not only display. For example, `get_modified_max_tokens()` uses catalogue-derived
-  maxima, and I/O token-rate checks can fall back from `max_output_tokens` to
-  `max_tokens`. Whether a specific check runs depends on configuration/call path;
-  an internal reader does not prove it is enabled on our active path.
+- LiteLLM itself can use the model-cost map, not only display it. In 1.100.1:
+  - `get_modified_max_tokens()` is guarded by a supplied request `max_tokens`,
+    `litellm.modify_params=True`, and a completion/acompletion/anthropic_messages
+    call type. Responses is not in that guard.
+  - Router context prechecks require `enable_pre_call_checks=True`.
+  - The separate I/O token-rate limiter can fall back from `max_output_tokens` to
+    `max_tokens` when estimating output reservations without a request cap; its
+    deployment I/O limits must be configured for that path to run.
+
+  Our generated LiteLLM config enables `drop_params`, not `modify_params` or router
+  pre-call checks. No deployment I/O limits were found in the inspected generated
+  config/key declarations; that is not an audit of every live DB/key setting.
+  These guards do not establish that no other adapter or callback reads the map.
+
 - OpenClaw's audited discovery reads `/v1/models` or `/models`, not `/model/info`.
   Its configured budgets come from our OpenClaw projection.
 - Our Agentplane launch adapters do not obtain their context overrides from
@@ -946,8 +1014,9 @@ client's 258400 telemetry and LiteLLM's 872000/372000 metadata are separate outp
 changing one does not update the other. Do not promote either, or the historical
 128000 output value, into a justified subscription input/output pair.
 
-Next, run the narrow pinned-LiteLLM unknown/known-pair publication experiment in §4,
-including internal request-side consumers. If changing Codex recognition is later
+Appendix B records the pinned-LiteLLM publication experiment and request-side
+consumer guards. The next step in §4 is selecting and validating a publication
+mechanism, not another capacity audit. If changing Codex recognition is later
 necessary, test the exact ingress-translation, alias or catalogue strategy with native tools, reasoning,
 Responses-lite and compaction before enabling it. Do not build a general harness
 metadata service to preserve paused consumers. Separate Claude/Codex configuration

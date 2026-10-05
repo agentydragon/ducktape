@@ -377,7 +377,6 @@ manifest:
     pytest_asyncio: pytest_asyncio
     pytest_bazel: pytest_bazel
     pytest_httpx2: pytest_httpx2
-    pytest_timeout: pytest_timeout
     python_multipart: python_multipart
     python_socks: python_socks
     pytz: pytz
@@ -464,4 +463,4 @@ manifest:
     zstandard: zstandard
   pip_repository:
     name: pypi
-integrity: 6a2cc6744d2c64f4cf8afbf6821df9d864fdb3a30fa9035369b083feb98ceb89
+integrity: 7a1dd47d9b97fb475bb352d5288b27b93a1ad404454d559fa3fa867d03b21460
