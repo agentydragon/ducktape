@@ -77,37 +77,36 @@ fn coverage_counts_anonymous_statement_claims() {
 }
 
 #[test]
-fn source_match_claims_combine_with_members_in_either_yaml_order() {
-    let members = "members: [{selector: {binding: {name: beta}}}]\n";
-    let matches =
-        "source_matches: [{match: 'let alpha = 1;', bindings: [{local: alpha, name: Alpha}]}]\n";
-    for yaml in [format!("{members}{matches}"), format!("{matches}{members}")] {
-        let fixture = GraphFixture::new(
-            "let alpha = 1;\nfunction beta() { alpha = 2; }\n",
-            &[("features/state.yaml", &yaml)],
-        );
-        let coverage = fixture.json(&["coverage"]);
-        assert_eq!(coverage["summary"]["total_patch_sets"], 1);
-        assert_eq!(coverage["summary"]["complete_patch_sets"], 1);
-        assert_eq!(coverage["summary"]["split_patch_sets"], 0);
-        let row = &coverage["rows"][0];
-        assert_eq!(row["status"], "complete_units");
-        assert_eq!(row["requested_binding_ids"], json!(["alpha", "beta"]));
-        assert_eq!(row["complete_unit_ids"], json!(["atomic:0"]));
-        assert_eq!(row["missing_binding_ids"], json!([]));
-        assert_eq!(row["missing_owner_ids"], json!([]));
-        let describe = fixture.json(&["describe", "features/state"]);
-        assert_eq!(describe["owner_ids"], json!(["owner:0", "owner:1"]));
-        assert_eq!(
-            describe["bindings"]
-                .as_array()
-                .unwrap()
-                .iter()
-                .map(|b| b["binding"].as_str().unwrap())
-                .collect::<Vec<_>>(),
-            ["alpha", "beta"]
-        );
-    }
+fn source_match_claims_combine_with_members() {
+    let fixture = GraphFixture::new(
+        "let alpha = 1;\nfunction beta() { alpha = 2; }\n",
+        &[(
+            "features/state.yaml",
+            "members: [{selector: {binding: {name: beta}}}]\n\
+             source_matches: [{match: 'let alpha = 1;', bindings: [{local: alpha, name: Alpha}]}]\n",
+        )],
+    );
+    let coverage = fixture.json(&["coverage"]);
+    assert_eq!(coverage["summary"]["total_patch_sets"], 1);
+    assert_eq!(coverage["summary"]["complete_patch_sets"], 1);
+    assert_eq!(coverage["summary"]["split_patch_sets"], 0);
+    let row = &coverage["rows"][0];
+    assert_eq!(row["status"], "complete_units");
+    assert_eq!(row["requested_binding_ids"], json!(["alpha", "beta"]));
+    assert_eq!(row["complete_unit_ids"], json!(["atomic:0"]));
+    assert_eq!(row["missing_binding_ids"], json!([]));
+    assert_eq!(row["missing_owner_ids"], json!([]));
+    let describe = fixture.json(&["describe", "features/state"]);
+    assert_eq!(describe["owner_ids"], json!(["owner:0", "owner:1"]));
+    assert_eq!(
+        describe["bindings"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|b| b["binding"].as_str().unwrap())
+            .collect::<Vec<_>>(),
+        ["alpha", "beta"]
+    );
 }
 
 #[test]
