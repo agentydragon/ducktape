@@ -135,19 +135,23 @@ def _script_literal(value: JsonValue) -> str:
     return json.dumps(value).replace("<", "\\u003c")
 
 
+def _check_scene_selection(scenario_name: str, scenario: Scenario, *, config: SweepConfig) -> None:
+    """A scenario names its scene the way its harness page is told: by query for a file, by globals for an inline page."""
+    if config.inline_page is None and scenario.window_globals is not None:
+        raise ValueError(f"{scenario_name}: windowGlobals reach only an inline page, and this harness is a file")
+    if config.inline_page is not None and scenario.query is not None:
+        raise ValueError(f"{scenario_name}: an inline page has no URL for a query; name the scene by windowGlobals")
+
+
 async def _load_harness(
     page: Page, scenario_name: str, scenario: Scenario, *, config: SweepConfig, timeout_ms: int
 ) -> None:
     if (inline_page := config.inline_page) is None:
-        if scenario.window_globals is not None:
-            raise ValueError(f"{scenario_name}: windowGlobals reach only an inline page, and this harness is a file")
         query = {"page": scenario_name} if scenario.query is None else scenario.query
         await page.goto(f"{config.harness_url}?{urlencode(query)}", wait_until="networkidle", timeout=timeout_ms)
-        return
-    if scenario.query is not None:
-        raise ValueError(f"{scenario_name}: an inline page has no URL for a query; name the scene by windowGlobals")
-    html = inline_page_html(inline_page, bundle_script=config.bundle_script, window_globals=scenario.window_globals)
-    await page.set_content(html, wait_until="load", timeout=timeout_ms)
+    else:
+        html = inline_page_html(inline_page, bundle_script=config.bundle_script, window_globals=scenario.window_globals)
+        await page.set_content(html, wait_until="load", timeout=timeout_ms)
 
 
 async def capture_scenario(
@@ -161,6 +165,7 @@ async def capture_scenario(
 ) -> None:
     """Render one scenario on its own browser; raise, naming it, if it is not healthy."""
     output_name = scenario.output_name or scenario_name
+    _check_scene_selection(scenario_name, scenario, config=config)
     async with await deterministic_browser_context(
         playwright,
         viewport={"width": scenario.viewport.width, "height": scenario.viewport.height},
