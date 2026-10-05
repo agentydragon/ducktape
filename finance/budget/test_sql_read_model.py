@@ -16,7 +16,6 @@ from pydantic import ValidationError
 from sqlalchemy import text
 from sqlalchemy.engine import make_url
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
-from testcontainers.postgres import PostgresContainer
 
 from finance.budget import sql_read_model
 from finance.budget.schema import (
@@ -44,7 +43,6 @@ from finance.budget.schema import (
 from finance.plaid.db.schema import AccountRow, LinkRow, TransactionRow, async_session_factory
 from util.bazel.runfiles import get_required_path
 from util.testing.postgres import force_drop_database
-from util.testing.postgres_fixtures import postgres_container  # noqa: F401
 
 _PLAID_MIGRATIONS_DIR = "_main/finance/plaid/db/migrations"
 
@@ -54,13 +52,6 @@ def _run_alembic_migrations(conn: Any) -> None:
     cfg.set_main_option("script_location", str(get_required_path(_PLAID_MIGRATIONS_DIR)))
     cfg.attributes["connection"] = conn
     alembic_command.upgrade(cfg, "head")
-
-
-@pytest.fixture(scope="session")
-def postgres_admin_url(postgres_container: PostgresContainer) -> str:  # noqa: F811
-    host = postgres_container.get_container_host_ip()
-    port = int(postgres_container.get_exposed_port(5432))
-    return f"postgresql+asyncpg://postgres:postgres@{host}:{port}/postgres"
 
 
 @pytest_asyncio.fixture

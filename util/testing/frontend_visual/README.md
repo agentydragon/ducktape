@@ -3,7 +3,8 @@
 Shared Puppeteer/Playwright infrastructure for visual render-health tests (see
 `visual-test-lib.mjs` for the JS/Puppeteer path used by `study_casino/frontend` and
 `props/frontend`, and `frontend_visual.py` for the Python/Playwright path used by
-`study_casino`, `finance/augur`, `airlock/frontend` and `agentplane/app/frontend`).
+`study_casino`, `finance/augur`, `airlock/frontend`,
+`devinfra/claude/session_export/frontend` and `agentplane/app/frontend`).
 Browser tests are moving to the Python path, lane by lane — see [The Python sweep](#the-python-sweep).
 `capture.mjs` holds the lower-level page-prep/capture
 primitives (`prepareDeterministicPage`, `screenshotElement`, `waitForStable`) that

@@ -1,5 +1,11 @@
 # Served-model catalog
 
+> This guide describes landed source wiring, not verification of live rollout.
+> The [model-roster and consumer-configuration design](../../model_catalog/design.md)
+> proposes changes that are not enabled by merging documentation. Its
+> [documentation consolidation options](../../model_catalog/design.md#6-documentation-consolidation)
+> discuss a smaller cluster wiring/operations guide; the exact fate is not yet decided.
+
 [`model_catalog`](../../model_catalog/README.md) owns shared model facts, named routes,
 client lanes, and Nix wrapper selections. `cluster/cdk8s/model_selections.py` owns
 cluster environment, picker, and harness-override selections. The catalogue has no

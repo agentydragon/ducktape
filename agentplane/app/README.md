@@ -175,7 +175,7 @@ native harness recovery, or PostgreSQL host/storage loss.
 
 `test_thread_browser.py` loads the built SPA in hermetic Chromium against real application
 processes, PostgreSQL and Electric through a real HTTP/2 ingress. Only the runner source,
-Kubernetes and authentication boundaries are controlled. Its cases are split across four Bazel
+Kubernetes and authentication boundaries are controlled. Its cases are split across Bazel
 shards. Traces and screenshots are test artifacts; inspect the images as well as results.
 
 Coverage includes older-item streaming, selective bodies/debug, archived threads,

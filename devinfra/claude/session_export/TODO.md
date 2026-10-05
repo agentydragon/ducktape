@@ -6,8 +6,7 @@ Ships as `jsonb` with a NUL rewrite ([docs/sync.md](docs/sync.md) § `payload`).
 sample than the 3.2% measured (size, extraction timings, how the 151 NUL rows would be filtered out of `json`
 queries) and decide whether byte-exact payloads outweigh containment queries and a clean scan.
 
-Switching is one column type in `store.py` and `migrations/versions/0001_sessions.py`, and dropping `dumps_jsonb`'s
-rewrite; deployed databases are disposable.
+Switching is one column type in `store.py`, a new migration, and dropping `dumps_jsonb`'s rewrite.
 
 ## Confirm live following on the deployed sync
 

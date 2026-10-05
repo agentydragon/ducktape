@@ -1,6 +1,11 @@
 # Harness model-metadata under LiteLLM route names
 
-Scope: Claude Code 2.1.252 and Codex 0.152.0 (the `MODULE.bazel` `claude_code_cli_linux_x64` and `agentplane_codex_cli_linux_x64` archives) launched by Agentplane against LiteLLM (`litellm/litellm:1.100.0`, the `tana-litellm-proxy` image, `tana/litellm_proxy/BUILD.bazel`; the LiteLLM source citations in § 1 are from the 1.90.2 package) with the cheap-experiments key. Binary evidence comes from `strings` of the pinned tarballs and from the `openai/codex` source at tag `rust-v0.152.0` (file paths below are in that tree). Live evidence comes from the `hooks` capture scenario of [`../capture/`](../capture/) run against LiteLLM for both harnesses on 2026-09-03; the captures stay outside Git, as every probe run does.
+> Historical, version-scoped audit. Paths and pins below describe that investigation,
+> not necessarily the current deployment. See the
+> [model-roster and consumer-configuration design](../design.md) for
+> the cross-layer ownership proposal and current open questions.
+
+Scope: Claude Code 2.1.252 and Codex 0.152.0 (the `MODULE.bazel` `claude_code_cli_linux_x64` and `agentplane_codex_cli_linux_x64` archives) launched by Agentplane against LiteLLM (`litellm/litellm:1.100.0`, the `tana-litellm-proxy` image, `tana/litellm_proxy/BUILD.bazel`; the LiteLLM source citations in § 1 are from the 1.90.2 package) with the cheap-experiments key. Binary evidence comes from `strings` of the pinned tarballs and from the `openai/codex` source at tag `rust-v0.152.0` (file paths below are in that tree). Live evidence comes from the `hooks` capture scenario of [Agentplane capture probe](../../agentplane/capture/) run against LiteLLM for both harnesses on 2026-09-03; the captures stay outside Git, as every probe run does.
 
 ## Headline
 

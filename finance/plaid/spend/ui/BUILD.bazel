@@ -37,6 +37,7 @@ py_test(
     tags = ["visual"],
     deps = [
         "//:conftest",
+        "//finance/plaid/spend:conftest",
         "//util:playwright",
         "//util/bazel:runfiles",
         "//util/testing:asgi",

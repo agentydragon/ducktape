@@ -38,6 +38,7 @@ py_test(
     tags = ["visual"],
     deps = [
         "//:conftest",
+        "//finance/plaid/spend:conftest",
         "//util:oci",
         "//util/bazel:runfiles",
         "//util/testing:undeclared_outputs",
