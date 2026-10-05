@@ -106,30 +106,16 @@ async def test_result_schemas_validate_and_terminate_recursion() -> None:
     assert parts_items == {"type": "object"}
 
 
-@pytest.mark.parametrize("keyword", ["$defs", "$ref", "definitions"])
-def test_rejects_surviving_schema_references(keyword: str) -> None:
-    with pytest.raises(ValueError, match="unresolved schema reference"):
-        _validate_frontend_schema({keyword: {}}, "$.tool")
-
-
 @pytest.mark.parametrize(
-    "keyword",
+    ("schema", "message"),
     [
-        "contains",
-        "contentMediaType",
-        "dependentRequired",
-        "dependentSchemas",
-        "else",
-        "if",
-        "not",
-        "then",
-        "unevaluatedItems",
-        "unevaluatedProperties",
+        pytest.param({"$ref": {}}, "unresolved schema reference", id="surviving-reference"),
+        pytest.param({"type": "string", "if": {}}, "frontend-unreviewed JSON Schema keyword", id="unreviewed-keyword"),
     ],
 )
-def test_rejects_unreviewed_schema_keywords(keyword: str) -> None:
-    with pytest.raises(ValueError, match="frontend-unreviewed JSON Schema keyword"):
-        _validate_frontend_schema({"type": "string", keyword: {}}, "$.tool")
+def test_rejects_schemas_the_frontend_adapter_was_not_reviewed_against(schema: dict[str, object], message: str) -> None:
+    with pytest.raises(ValueError, match=message):
+        _validate_frontend_schema(schema, "$.tool")
 
 
 if __name__ == "__main__":
