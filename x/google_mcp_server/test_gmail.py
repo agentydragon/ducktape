@@ -55,7 +55,7 @@ async def test_tool_surface(client):
 
 
 # --- generated reads: one representative round-trip proves the wiring (spec -> FastMCP -> executor
-# -> service call with userId pinned -> verbatim result). Per-tool schema/overlay/dispatch behavior
+# -> service call with userId pinned -> verbatim result). Per-tool schema/overlay behavior
 # is covered once in test_google_discovery.py; the surface test above guards the full name set. ---
 async def test_generated_read_round_trip(gmail: Mock, client):
     threads = gmail.service.users.return_value.threads.return_value

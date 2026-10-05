@@ -2,11 +2,12 @@
 
 Test posture for generated Google tools: the **factory is the logic**, so it gets deep unit tests
 here — Discovery→JSON-Schema conversion, the expose/pin overlay, output schema, `$ref`-cycle
-collapse, fail-loud, and generic dispatch — driven by a small **synthetic** discovery doc, not a
+collapse, and fail-loud — driven by a small **synthetic** discovery doc, not a
 real Google one. That keeps these tests about *our* conversion (not Google's data) and stops them
 drifting when the wheel snapshot updates. Each generated **server** (gmail, and future Drive/Tasks)
-then needs only a thin smoke test: its advertised tool-name set + one representative round-trip +
-one strict-input rejection (see `test_gmail.py`). Don't re-test the factory once per generated tool.
+then needs only a thin smoke test: its advertised tool-name set + one representative round-trip
+(which also exercises the generic executor's dotted-path dispatch) + one strict-input rejection
+(see `test_gmail.py`). Don't re-test the factory once per generated tool.
 """
 
 from __future__ import annotations
@@ -17,7 +18,7 @@ import pytest
 import pytest_bazel
 
 from x.google_mcp_server import google_discovery
-from x.google_mcp_server.google_discovery import GenTool, _execute, build_generated_tools
+from x.google_mcp_server.google_discovery import GenTool, build_generated_tools
 
 # A synthetic discovery doc exercising each dialect feature the converter must handle.
 _DOC: dict[str, Any] = {
@@ -89,27 +90,6 @@ def _synthetic_doc(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(google_discovery, "_load_doc", lambda _api_version: _DOC)
 
 
-class _FakeService:
-    """Records the chained call; every attribute is a chainable method, `.execute()` returns result."""
-
-    def __init__(self, result: Any = None) -> None:
-        self.result = result
-        self.calls: list[tuple[str, dict[str, Any]]] = []
-
-    def __getattr__(self, name: str) -> Any:
-        if name.startswith("__") and name.endswith("__"):
-            raise AttributeError(name)
-
-        def call(**kwargs: Any) -> _FakeService:
-            self.calls.append((name, kwargs))
-            return self
-
-        return call
-
-    def execute(self) -> Any:
-        return self.result
-
-
 def _build(spec: GenTool, service: Any = None):
     return build_generated_tools([spec], service)[0]
 
@@ -163,18 +143,6 @@ def test_unknown_exposed_param_fails_loud() -> None:
 def test_unknown_method_id_fails_loud() -> None:
     with pytest.raises(KeyError, match="missing"):
         _build(GenTool("fake.widgets.missing", "x", "fake.v1"))
-
-
-def test_executor_walks_dotted_path_and_merges_pinned_constants() -> None:
-    service = _FakeService(result={"ok": True})
-    assert _execute(service, "fake.widgets.get", {"userId": "me", "id": "w1"}) == {"ok": True}
-    assert service.calls == [("widgets", {}), ("get", {"userId": "me", "id": "w1"})]
-
-
-def test_executor_walks_nested_resource_path() -> None:
-    service = _FakeService()
-    _execute(service, "fake.sub.items.list", {"userId": "me"})
-    assert service.calls == [("sub", {}), ("items", {}), ("list", {"userId": "me"})]
 
 
 if __name__ == "__main__":
