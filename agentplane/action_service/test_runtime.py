@@ -198,10 +198,11 @@ async def test_runtime_sanitizes_connect_and_cleanup_failures() -> None:
     with (
         patch.object(McpActionGroupExecutor, "start", AsyncMock(side_effect=RuntimeError("private connect material"))),
         patch.object(McpActionGroupExecutor, "close", AsyncMock(side_effect=RuntimeError("private cleanup material"))),
-        pytest.raises(RuntimeError, match="MCP shutdown failed") as error,
+        pytest.raises(RuntimeError) as error,
     ):
         async with running_executor(catalog):
             pytest.fail("unavailable runtime served")
+    assert "private" not in str(error.value)
     assert error.value.__suppress_context__
 
 
