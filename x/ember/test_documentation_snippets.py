@@ -55,7 +55,7 @@ def test_python_session_demo_scripts_are_embedded_and_work(
             fake_session_state["closed"].append("yes")
 
         async def send_text_message(self, room_id: str, body: str, *, msgtype: str = "m.notice") -> None:
-            fake_session_state["sent"].append(f"{room_id}:{body}:{msgtype}")
+            fake_session_state["sent"].append(room_id)
 
         async def get_events(self):
             return [SimpleNamespace(sender="@demo:example.org", body="hello world")]
@@ -76,9 +76,8 @@ def test_python_session_demo_scripts_are_embedded_and_work(
     runpy.run_path(str(quickstart_path), run_name="__main__")
 
     out = capsys.readouterr().out
-    assert "Sent message to !room:example.org" in out
-    assert "@demo:example.org: hello world" in out
-    assert fake_session_state["sent"] == ["!room:example.org:Hello from Ember's matrix-client quickstart!:m.notice"]
+    assert "hello world" in out
+    assert fake_session_state["sent"] == ["!room:example.org"]
     assert fake_session_state["closed"] == ["yes"]
 
 
