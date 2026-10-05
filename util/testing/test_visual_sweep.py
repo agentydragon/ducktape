@@ -1,6 +1,7 @@
 import json
 import struct
 import textwrap
+from dataclasses import replace
 from pathlib import Path
 
 import pytest
@@ -19,10 +20,12 @@ from util.visual_review import VisualReviewManifest
 
 pytest_plugins = ("util.playwright", "pytester")
 
-# What each scene of the test harness page shows, by `?page=` name. The scenes that fail do so in
-# the way their name says; `index.html` and this file are all the harness there is.
+# What each scene of the test harness page shows, by `?page=` name (or `?scene=`, for a scenario that
+# names its own query). The scenes that fail do so in the way their name says; `index.html` and this
+# file are all the harness there is.
 _HARNESS_JS = """
-const scene = new URLSearchParams(location.search).get("page");
+const params = new URLSearchParams(location.search);
+const scene = params.get("page") ?? params.get("scene");
 const app = document.getElementById("app");
 const shot = '<div id="shot"><div id="target"></div></div>';
 if (scene === "plain") app.innerHTML = shot;
@@ -66,6 +69,7 @@ def config(tmp_path: Path) -> SweepConfig:
         scenarios_path=tmp_path / "scenarios.json",
         title="Test sweep",
         expected_font_family=None,
+        output_suffix="-actual",
     )
 
 
@@ -114,6 +118,32 @@ async def test_a_scenario_publishes_its_png_and_manifest_entry(
         ("renamed-actual.png", "renamed"),
         ("plain-actual.png", "plain"),
     ]
+
+
+async def test_a_scenario_can_name_its_harness_query_and_its_manifest_label(
+    playwright: Playwright, config: SweepConfig, tmp_path: Path
+) -> None:
+    # Neither the scenario name nor `?page=` is a scene of the harness: only `?scene=plain` mounts one.
+    await capture_scenario(
+        playwright,
+        "plain_wide",
+        Scenario(element="#shot", query={"scene": "plain"}, label="plain · wide"),
+        config=config,
+        output_dir=tmp_path,
+        timeout_ms=1000,
+    )
+
+    assert [(asset.path, asset.label) for asset in _manifest(tmp_path).assets] == [
+        ("plain_wide-actual.png", "plain · wide")
+    ]
+
+
+async def test_a_lane_can_publish_bare_png_names(playwright: Playwright, config: SweepConfig, tmp_path: Path) -> None:
+    await capture_scenario(
+        playwright, "plain", Scenario(element="#shot"), config=replace(config, output_suffix=""), output_dir=tmp_path
+    )
+
+    assert [asset.path for asset in _manifest(tmp_path).assets] == list(_published(tmp_path)) == ["plain.png"]
 
 
 async def test_the_color_scheme_reaches_the_page(playwright: Playwright, config: SweepConfig, tmp_path: Path) -> None:
@@ -206,12 +236,7 @@ async def test_an_unhealthy_scenario_fails_by_name_and_publishes_nothing(
 async def test_a_declared_font_that_did_not_load_fails_the_scenario(
     playwright: Playwright, config: SweepConfig, tmp_path: Path
 ) -> None:
-    declared = SweepConfig(
-        harness_path=config.harness_path,
-        scenarios_path=config.scenarios_path,
-        title=config.title,
-        expected_font_family="Declared Sans",
-    )
+    declared = replace(config, expected_font_family="Declared Sans")
 
     with pytest.raises(AssertionError, match="plain: Declared Sans font did not load"):
         await capture_scenario(playwright, "plain", Scenario(element="#shot"), config=declared, output_dir=tmp_path)
@@ -270,6 +295,17 @@ def test_one_broken_scenario_does_not_hide_the_rest(
     result.stdout.fnmatch_lines(["*throws: uncaught page errors:*", "*Error: scene exploded*"])
     assert sorted(_published(out)) == ["late-actual.png", "plain-actual.png"]
     assert [asset.label for asset in _manifest(out).assets] == ["plain", "late"]
+
+
+def test_the_output_suffix_comes_from_the_environment(
+    pytester: pytest.Pytester, monkeypatch: pytest.MonkeyPatch, config: SweepConfig
+) -> None:
+    out = _sweep(pytester, monkeypatch, config, {"plain": {"element": "#shot"}})
+    monkeypatch.setenv("OUTPUT_SUFFIX", "")
+
+    pytester.runpytest(visual_sweep.__file__).assert_outcomes(passed=1)
+
+    assert list(_published(out)) == ["plain.png"]
 
 
 if __name__ == "__main__":

@@ -4,7 +4,7 @@ The Python counterpart of `runScenarios` in `frontend_visual/visual-test-lib.mjs
 `py_visual_test` macro (`frontend_visual/py_visual_test.bzl`), which names this module its
 `main_module` and sets the environment `SweepConfig` reads. The scenarios are the rows of a
 `scenarios.json` (`visual_scenarios`); each is rendered, gated, and published as
-`<outputName>-actual.png` plus an entry in `visual-review.json`, for PR visual review
+`<outputName>-actual.png` (the suffix is the lane's choice) plus an entry in `visual-review.json`, for PR visual review
 (`devinfra/pr_visuals`). There are no checked-in baselines: a scenario passes when it renders healthily.
 
 Selection is pytest's, which is what Bazel drives: `--test_filter=<scenario>` is `-k` (a scenario's
@@ -56,6 +56,7 @@ class SweepConfig:
     scenarios_path: Path
     title: str
     expected_font_family: str | None
+    output_suffix: str
 
     @classmethod
     def from_env(cls) -> SweepConfig:
@@ -65,6 +66,7 @@ class SweepConfig:
             scenarios_path=get_required_path(os.environ["SCENARIOS_PATH"]),
             title=os.environ["VISUAL_TITLE"],
             expected_font_family=os.environ.get("EXPECTED_FONT_FAMILY"),
+            output_suffix=os.environ.get("OUTPUT_SUFFIX", "-actual"),
         )
 
     @property
@@ -106,9 +108,8 @@ async def capture_scenario(
         fence = RequestFence(lambda request: request.url.startswith("file://"))
         await fence.install(page)
 
-        await page.goto(
-            f"{config.harness_url}?{urlencode({'page': scenario_name})}", wait_until="networkidle", timeout=timeout_ms
-        )
+        query = {"page": scenario_name} if scenario.query is None else scenario.query
+        await page.goto(f"{config.harness_url}?{urlencode(query)}", wait_until="networkidle", timeout=timeout_ms)
         # Only assert a named font when the app declares one. Generic family resolution is owned by the
         # deterministic browser profile, and must not be emulated with test CSS.
         if config.expected_font_family and not await page.evaluate(
@@ -138,7 +139,7 @@ async def capture_scenario(
             else await screenshot_element(page, scenario.element, context=output_name)
         )
 
-    asset = VisualReviewAsset(path=f"{output_name}-actual.png", label=output_name)
+    asset = VisualReviewAsset(path=f"{output_name}{config.output_suffix}.png", label=scenario.label or output_name)
     (output_dir / asset.path).write_bytes(screenshot)
     upsert_review_asset(output_dir, title=config.title, asset=asset)
 

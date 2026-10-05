@@ -20,6 +20,7 @@ def py_visual_test(
         assets = [],
         fonts = None,
         font_family = None,
+        output_suffix = None,
         env = {},
         tags = [],
         **kwargs):
@@ -32,15 +33,19 @@ def py_visual_test(
         under the executable's path. Name the directory something else (`harness/`).
       harness: the bundled harness page's JS. The page is the `index.html` beside it, or beside its
         `dist/` directory.
-      scenarios: the scenario table, a JSON file shared with the harness (see
-        `//util/testing:visual_scenarios`). The only list of scenarios: BUILD names a shard count,
-        not a scenario, and `--test_filter=<scenario>` runs one.
+      scenarios: the scenario table, a JSON file (see `//util/testing:visual_scenarios`) shared with
+        the harness, or generated from the data the harness already consumes when its rows derive
+        from it. The only list of scenarios: BUILD names a shard count, not a scenario, and
+        `--test_filter=<scenario>` runs one.
       title: title of the published visual-review manifest.
       assets: everything else the harness page pulls over `file://`: its `index.html`, any
         stylesheet, the bundle rule itself.
       fonts: optional app-owned font filegroup the harness serves alongside its assets.
       font_family: optional named family asserted against what actually rendered. Required with
         `fonts`, so a custom font asset cannot be staged without declaring its purpose.
+      output_suffix: what follows a scenario's output name in its PNG's file name; `-actual` if
+        unset. A lane migrating from a runner that wrote bare `<name>.png` sets `""`, so its images
+        keep their names in PR visual review.
       env: extra environment for the sweep.
       tags: extra tags; `visual` is always added.
       **kwargs: passed to `py_test` -- `size` and `shard_count` in practice.
@@ -58,6 +63,8 @@ def py_visual_test(
     sweep_env["VISUAL_TITLE"] = title
     if font_family:
         sweep_env["EXPECTED_FONT_FAMILY"] = font_family
+    if output_suffix != None:
+        sweep_env["OUTPUT_SUFFIX"] = output_suffix
 
     py_test(
         name = name,

@@ -19,6 +19,8 @@ def test_scenarios_load_in_table_order_with_harness_only_fields_ignored(tmp_path
                 "element": "#shot",
                 "viewport": {"width": 412, "height": 915, "deviceScaleFactor": 2.625, "hasTouch": true},
                 "outputName": "first-phone",
+                "label": "First · phone",
+                "query": {"scene": "alpha", "variant": "narrow"},
                 "colorScheme": "dark",
                 "readySelectors": ["#a", "#b"],
                 "captureViewport": true,
@@ -26,7 +28,8 @@ def test_scenarios_load_in_table_order_with_harness_only_fields_ignored(tmp_path
               }
             }
             """
-        )
+        ),
+        encoding="utf-8",
     )
 
     scenarios = load_scenarios(table)
@@ -36,6 +39,8 @@ def test_scenarios_load_in_table_order_with_harness_only_fields_ignored(tmp_path
         element="#shot",
         viewport=Viewport(width=412, height=915, device_scale_factor=2.625, has_touch=True),
         output_name="first-phone",
+        label="First · phone",
+        query={"scene": "alpha", "variant": "narrow"},
         color_scheme="dark",
         ready_selectors=["#a", "#b"],
         capture_viewport=True,
