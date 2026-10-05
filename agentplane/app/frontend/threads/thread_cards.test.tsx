@@ -464,7 +464,7 @@ describe("EntityCard", () => {
     expect(container.querySelector(".agentplane-markdown, strong, li")).toBeNull();
   });
 
-  it("renders a still-pending sent message as the same bubble, marked pending", async () => {
+  it("renders a still-pending sent message as the same bubble, with its status beside it, not inside", async () => {
     const container = await renderCard(
       entity(
         "command",
@@ -475,7 +475,9 @@ describe("EntityCard", () => {
     );
     const bubble = container.querySelector<HTMLElement>(".agentplane-user-bubble");
     expect(bubble?.querySelector(".agentplane-verbatim")?.textContent).toBe(PROSE);
-    expect(bubble?.textContent).toContain("Saved · awaiting effect");
+    // The bubble holds only the message, so it is the same once the status goes and nothing moves.
+    expect(bubble?.textContent).toBe(PROSE);
+    expect(bubble?.parentElement?.querySelector('[role="status"]')?.textContent).toBe("Saved · awaiting effect");
   });
 
   it.each<[string, Observation, string]>([

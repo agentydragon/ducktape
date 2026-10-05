@@ -127,8 +127,9 @@ export function VerbatimText({ text }: { text: string }): JSX.Element {
   );
 }
 
-/** The operator's input, including provisional sends. Actions sit in the gutter before the bubble;
- * local text uses no event evidence until runner admission gives it an ordered Event. */
+/** The operator's input, including provisional sends. The status, error and action sit together in the
+ * gutter before the bubble, so the bubble reads the same, and does not move, when they go; local text
+ * uses no event evidence until runner admission gives it an ordered Event. */
 export function UserInputBubble({
   threadId,
   entity,
@@ -162,29 +163,34 @@ export function UserInputBubble({
       style={{ width: "100%" }}
       data-command-id={commandId ?? entity?.entityId}
     >
-      {action && (
-        <Button size="xs" variant="subtle" onClick={action.onClick} aria-label={action.label}>
-          {action.label}
-        </Button>
+      {(status || error || action) && (
+        <Stack className="agentplane-user-message-aside" gap={2} align="flex-end">
+          {status && (
+            <Text size="xs" c={statusColor} role="status">
+              {status}
+            </Text>
+          )}
+          {error && (
+            <Text size="xs" c="red" role="alert">
+              {error}
+            </Text>
+          )}
+          {action && (
+            <Button size="xs" variant="subtle" onClick={action.onClick} aria-label={action.label}>
+              {action.label}
+            </Button>
+          )}
+        </Stack>
       )}
       <Paper
         className="agentplane-user-bubble agentplane-evidence-owner"
         data-message-phase={phase}
         data-has-action={action ? "true" : undefined}
+        data-has-aside={status || error || action ? "true" : undefined}
         p="sm"
         style={pending ? { fontStyle: "italic", opacity: 0.6 } : undefined}
       >
         {entity && <EvidenceToggle entity={entity} />}
-        {status && (
-          <Text size="xs" c={statusColor} mb="xs" role="status">
-            {status}
-          </Text>
-        )}
-        {error && (
-          <Text size="xs" c="red" mb="xs" role="alert">
-            {error}
-          </Text>
-        )}
         {entity ? (
           <Body reference={entity.inputRef} format="text" />
         ) : text !== undefined ? (

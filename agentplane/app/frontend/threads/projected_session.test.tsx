@@ -307,7 +307,10 @@ it("sends the draft on Enter and clears it", async () => {
   expect(field.value).toBe("");
   const bubble = container.querySelector<HTMLElement>('.agentplane-user-bubble[data-message-phase="local"]');
   expect(bubble?.querySelector(".agentplane-verbatim")?.textContent).toBe("hello");
-  expect(bubble?.textContent).toContain("Saved locally · awaiting admission");
+  expect(bubble?.parentElement?.querySelector('[role="status"]')?.textContent).toBe(
+    "Saved locally · awaiting admission"
+  );
+  expect(bubble?.querySelector('[role="status"]')).toBeNull();
   expect(buttonIn(bubble?.parentElement, "Retry")).toBeDefined();
   expect(container.querySelector('[aria-label="Pending commands"]')).toBeNull();
 });
@@ -733,7 +736,7 @@ it.each([
     })
   );
   const bubble = container.querySelector<HTMLElement>(`.agentplane-user-bubble[data-message-phase="${phase}"]`);
-  expect(bubble?.textContent).toContain(status);
+  expect(bubble?.parentElement?.querySelector('[role="status"]')?.textContent).toBe(status);
   const dismiss = buttonIn(bubble?.parentElement, "Dismiss");
   expect(dismiss).toBeDefined();
   await act(async () => dismiss?.click());
