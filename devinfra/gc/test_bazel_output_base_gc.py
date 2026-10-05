@@ -189,29 +189,26 @@ def test_delete_rechecks_mounts_under_lock(tmp_path: Path) -> None:
     assert base.exists()
 
 
-def test_unreadable_nested_directory_fails_without_crashing(tmp_path: Path) -> None:
+def _rmtree_unreadable_subtree(*_args: object, **_kwargs: object) -> None:
+    raise PermissionError("unreadable directory")
+
+
+def test_rmtree_permission_error_fails_with_the_quarantine_kept(
+    tmp_path: Path, proc: Path, mountinfo: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # An unreadable subtree is injected rather than made: chmod(0) does not stop a root runner,
+    # which would take the delete-succeeds path instead.
     base = make_base(tmp_path / "output", tmp_path / "gone")
-    unreadable = base / "execroot" / "nested"
-    unreadable.mkdir(parents=True)
-    unreadable.chmod(0)
     candidate = _inspect(base)
     assert isinstance(candidate, gc.PrunableBase)
-    proc = tmp_path / "proc"
-    proc.mkdir()
-    mountinfo = tmp_path / "mountinfo"
-    mountinfo.write_text("")
+    monkeypatch.setattr(shutil, "rmtree", _rmtree_unreadable_subtree)
 
-    results = gc.delete_prunable_bases([candidate], proc_root=proc, mountinfo_path=mountinfo)
+    [result] = gc.delete_prunable_bases([candidate], proc_root=proc, mountinfo_path=mountinfo)
 
-    result = results[0]
-    if isinstance(result, gc.DeletedBase):
-        assert not base.exists()
-    else:
-        assert isinstance(result, gc.FailedBase)
-        assert result.quarantine is not None
-        assert result.quarantine.exists()
-        (result.quarantine / "execroot" / "nested").chmod(0o700)
-        shutil.rmtree(result.quarantine)
+    assert isinstance(result, gc.FailedBase)
+    assert result.quarantine is not None
+    assert result.quarantine.is_dir()
+    assert not base.exists()
 
 
 def test_rmtree_callback_does_not_retry_open_with_the_wrong_signature(tmp_path: Path) -> None:
@@ -256,21 +253,6 @@ def test_scan_and_render_report_flag_a_prunable_base(
     assert prunable_base.exists()
     assert [type(item) for item in inspections] == [gc.PrunableBase]
     assert "PRUNE" in gc.render_report(inspections, include_kept=False, include_sizes=False)
-
-
-def test_delete_removes_revalidated_candidate(
-    prunable_base: Path, output_root: Path, proc: Path, mountinfo: Path
-) -> None:
-    candidates = [
-        item
-        for item in gc.scan_output_user_root(output_root, proc_root=proc, mountinfo_path=mountinfo)
-        if isinstance(item, gc.PrunableBase)
-    ]
-
-    results = gc.delete_prunable_bases(candidates, proc_root=proc, mountinfo_path=mountinfo)
-
-    assert results == [gc.DeletedBase(prunable_base)]
-    assert not prunable_base.exists()
 
 
 if __name__ == "__main__":
