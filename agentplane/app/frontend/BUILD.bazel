@@ -1218,9 +1218,9 @@ filegroup(
 # parallelism per-scenario targets used to give, without BUILD repeating the scenario list. Run one
 # with `--test_filter=<scenario>`; see AGENTS.md.
 #
-# medium: a shard renders 20-21 scenarios, each on its own browser, and took 32-59s on the six shards
-# of one run (invocation b4c9de0e-a2bd-4dd7-9cf4-336af5fc7295) -- the slowest too close to `small`'s
-# 60s to hold on a loaded RBE worker.
+# medium: a shard renders 20-21 scenarios, each on its own browser. The six shards took 32-59s in a
+# run alone (invocation b4c9de0e-a2bd-4dd7-9cf4-336af5fc7295) and up to 74s with three such runs and
+# a test batch going at once (92260881-030d-484a-aa4c-d78914a4fe46), past `small`'s 60s.
 #
 # devtools_viewport: the phone scenarios' 2.625 device scale factor is where Playwright's viewport
 # renders a few pixels differently from the Puppeteer sweep's.
