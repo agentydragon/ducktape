@@ -14,9 +14,7 @@ import contextlib
 import json
 import logging
 import os
-import shutil
 import signal
-import subprocess
 import time
 import uuid
 from datetime import datetime
@@ -27,7 +25,7 @@ from x.wt.server.git_refs_watcher import GitRefsWatcher
 from x.wt.server.github_client import GitHubInterface
 from x.wt.server.github_watcher import GitHubWatcher
 from x.wt.server.gitstatus_refresh import DebouncedGitstatusRefresh
-from x.wt.server.gitstatusd_listener import GitstatusdListener
+from x.wt.server.gitstatusd_listener import GitstatusdListener, find_gitstatusd
 
 # Force import of handlers to register RPC methods
 from x.wt.server.handlers import (
@@ -197,51 +195,6 @@ class WtDaemon:
     def known_worktrees(self) -> dict[Path, DiscoveredWorktree]:
         return self.registry.known
 
-    def _validate_gitstatusd(self) -> tuple[str | None, str | None]:
-        """Returns (gitstatusd_path, error_message) where error_message is None on success."""
-        gitstatusd_path: str | None = None
-        error: str | None = None
-
-        if self.config.gitstatusd_path:
-            # Prefer explicit configuration; do not fall back to PATH when set
-            path = self.config.gitstatusd_path
-            try:
-                result = subprocess.run([path, "--version"], check=False, capture_output=True, timeout=2)
-                if result.returncode == 0:
-                    logger.info("Using configured gitstatusd at: %s", path)
-                    gitstatusd_path = str(path)
-                else:
-                    error = f"Configured gitstatusd path not working: {path} (exit code {result.returncode})"
-            except (subprocess.TimeoutExpired, FileNotFoundError, PermissionError) as e:
-                error = f"Configured gitstatusd path failed: {path} ({e})"
-        else:
-            # Only check PATH - no hardcoded locations
-            cmd = "gitstatusd"
-            if shutil.which(cmd):
-                try:
-                    result = subprocess.run([cmd, "--version"], check=False, capture_output=True, timeout=2)
-                    if result.returncode == 0:
-                        logger.info("Found gitstatusd on PATH: %s", cmd)
-                        gitstatusd_path = cmd
-                    else:
-                        error = f"gitstatusd found on PATH but not working (exit code {result.returncode})"
-                except (subprocess.TimeoutExpired, FileNotFoundError, PermissionError) as e:
-                    error = f"gitstatusd found on PATH but failed to execute: {e}"
-            else:
-                error = (
-                    "gitstatusd binary not found. Please install gitstatusd and ensure it's available on PATH, "
-                    "or configure gitstatusd_path in your config file. "
-                    "Common installation: brew install romkatv/gitstatus/gitstatus"
-                )
-
-        return gitstatusd_path, error
-
-    def _find_gitstatusd(self) -> str | None:
-        gitstatusd_path, error = self._validate_gitstatusd()
-        if error:
-            logger.error(error)
-        return gitstatusd_path
-
     def _validate_configuration(self) -> str | None:
         """Returns error message if configuration is invalid, None if valid."""
         errors = []
@@ -275,9 +228,9 @@ class WtDaemon:
 
     async def _start_gitstatusd_for_worktree(self, worktree_info: DiscoveredWorktree) -> None:
         """Start gitstatusd for a worktree."""
-        gitstatusd_path = self._find_gitstatusd()
-        if not gitstatusd_path:
-            logger.error("gitstatusd binary not found, cannot start process for %s", worktree_info.name)
+        _, error = find_gitstatusd(self.config)
+        if error:
+            logger.error("Cannot start gitstatusd for %s: %s", worktree_info.name, error)
             return
 
         if worktree_info.wtid in self.gitstatusd_clients:
@@ -442,11 +395,12 @@ class WtDaemon:
         # Post-creation script is validated at use-time in WorktreeService
 
         # Validate gitstatusd availability
-        gitstatusd_path, gitstatusd_error = self._validate_gitstatusd()
+        gitstatusd_path, gitstatusd_error = find_gitstatusd(self.config)
         if gitstatusd_error:
             startup_errors.append(gitstatusd_error)
             self.store.set_gitstatusd_config(GitstatusdUnavailable(error=gitstatusd_error))
         elif gitstatusd_path:
+            logger.info("Using gitstatusd at: %s", gitstatusd_path)
             self.store.set_gitstatusd_config(GitstatusdAvailable(path=gitstatusd_path))
 
         # If there are critical errors, write error handshake and return
