@@ -40,6 +40,7 @@ py_test(
         "//:conftest",
         "//x/wt/shared:fixtures",
         "//x/wt/shared:github_models",
+        "//x/wt/testing:asserts",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],

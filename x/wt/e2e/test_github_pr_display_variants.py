@@ -13,6 +13,7 @@ import pytest_bazel
 
 from x.wt.shared.fixtures import PRFixtureEntry
 from x.wt.shared.github_models import PRState
+from x.wt.testing.asserts import assert_output_contains, extract_status_rows
 
 
 def _rpc_json(sock_path: str | os.PathLike, method: str, params: dict[str, Any]) -> dict[str, Any]:
@@ -83,13 +84,11 @@ def test_github_pr_variants(pr, expects, real_temp_repo, daemon_config_factory, 
     # Render once and assert
     status_result = wt_cli.status(timeout=timedelta(seconds=30.0))
     assert status_result.returncode == 0, status_result.stderr
-    out = status_result.stdout
-    if expects:
-        for x in expects:
-            assert x in out
-    else:
-        # No PR should render no #<n>
-        assert not re.search(r"#\d+", out)
+    # The row, not the whole output: the output also prints the daemon log path, which names the pytest test id.
+    row = extract_status_rows(status_result.stdout)["feature-x"]
+    assert_output_contains(row, *expects)
+    if pr is None:
+        assert not re.search(r"#\d+", row)
 
 
 if __name__ == "__main__":
