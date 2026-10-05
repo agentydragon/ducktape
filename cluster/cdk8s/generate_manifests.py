@@ -707,10 +707,16 @@ def generate_manifests(root: Path) -> None:
         external_secrets_operator_kustomization,
     )
     external_dns_artifact = artifact("external-dns", external_dns.OUTPUT_DIR)
-    external_dns.external_dns(
+    external_dns_kustomization = external_dns.external_dns(
         flux_chart,
         write_directory(root, external_dns_artifact, external_dns.chart),
         external_secrets_operator_kustomization,
+    )
+    external_dns_records_artifact = artifact("external-dns-records", external_dns.RECORDS_OUTPUT_DIR)
+    external_dns.records(
+        flux_chart,
+        write_directory(root, external_dns_records_artifact, functools.partial(external_dns.records_chart, mesh=mesh)),
+        external_dns_kustomization,
     )
     infra_drift_artifact = artifact("infra-drift", drift_watch.OUTPUT_DIR)
     drift_watch.infra_drift(
@@ -1640,6 +1646,7 @@ def generate_manifests(root: Path) -> None:
             descheduler_artifact,
             dns_automation_artifact,
             external_dns_artifact,
+            external_dns_records_artifact,
             flux_grafana_secrets_artifact,
             flux_image_automation_forgejo_artifact,
             flux_webhook_artifact,

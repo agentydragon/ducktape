@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from cdk8s import ApiObjectMetadata, App, Chart
 from cdk8s_plus_34 import k8s
+from external_dns_crds.io.k8s.externaldns import DnsEndpoint, DnsEndpointSpec, DnsEndpointSpecEndpoints
 from external_secrets_crds.io.external_secrets import ExternalSecretSpecTargetCreationPolicy
 
 from cluster.cdk8s import external_creds, namespaces, node_scheduling
@@ -12,10 +13,12 @@ from cluster.cdk8s.helm import RETRY_FAILED_INSTALL, helm_release, https_helm_re
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
 from cluster.cdk8s.namespaces import Vpa
 from cluster.cdk8s.providers.external_secrets.external_secret import ExternalSecret, remote_data
+from cluster.scripts import nebula_mesh
 
 NAME = "external-dns"
 NAMESPACE = NAME
 OUTPUT_DIR = f"{GENERATED_ROOT}/{NAME}"
+RECORDS_OUTPUT_DIR = f"{GENERATED_ROOT}/{NAME}-records"
 _CREDENTIALS_SOURCE = "aws-route53-dns-automation-credentials"
 _CREDENTIALS_SECRET = "aws-route53-credentials"
 
@@ -61,6 +64,7 @@ def chart(app: App) -> Chart:
                 "--zone-id-filter=Z02901943N8ZFQFOD9P5I",
                 "--gateway-name=cluster-gateway",
                 "--gateway-namespace=gateway-system",
+                "--txt-wildcard-replacement=wildcard",
             ],
             "env": [
                 {"name": key, "valueFrom": {"secretKeyRef": {"name": _CREDENTIALS_SECRET, "key": key}}}
@@ -77,3 +81,48 @@ def external_dns(chart: Chart, directory: RenderedDirectory, external_secrets_op
     return flux_kustomization(
         chart, NAME, directory, timeout="5m", depends_on=[flux_kustomization_depends_on(external_secrets_operator)]
     )
+
+
+def records_chart(app: App, mesh: nebula_mesh.Mesh) -> Chart:
+    """The six non-HTTPRoute records currently owned by Terraform."""
+    chart = Chart(app, f"{NAME}-records", disable_resource_name_hashes=True)
+    public_nodes = mesh.public_kubernetes_nodes().values()
+    gateway_ips = sorted({node.public_ip for node in public_nodes})
+    api_ips = sorted(
+        {node.public_ip for node in mesh.public_kubernetes_nodes().values() if node.role == "control-plane"}
+    )
+    DnsEndpoint(
+        chart,
+        "static-records",
+        metadata=ApiObjectMetadata(name="static-records", namespace=NAMESPACE),
+        spec=DnsEndpointSpec(
+            endpoints=[
+                DnsEndpointSpecEndpoints(
+                    dns_name="*.allegedly.works", record_type="A", record_ttl=300, targets=gateway_ips
+                ),
+                DnsEndpointSpecEndpoints(
+                    dns_name="mx.allegedly.works", record_type="A", record_ttl=300, targets=gateway_ips
+                ),
+                DnsEndpointSpecEndpoints(
+                    dns_name="api.allegedly.works", record_type="A", record_ttl=60, targets=api_ips
+                ),
+                DnsEndpointSpecEndpoints(
+                    dns_name="allegedly.works", record_type="MX", record_ttl=300, targets=["10 mx.allegedly.works"]
+                ),
+                DnsEndpointSpecEndpoints(
+                    dns_name="allegedly.works", record_type="TXT", record_ttl=300, targets=["v=spf1 -all"]
+                ),
+                DnsEndpointSpecEndpoints(
+                    dns_name="_dmarc.allegedly.works",
+                    record_type="TXT",
+                    record_ttl=300,
+                    targets=["v=DMARC1; p=reject; adkim=s; aspf=s"],
+                ),
+            ]
+        ),
+    )
+    return chart
+
+
+def records(chart: Chart, directory: RenderedDirectory, operator: Kustomization) -> Kustomization:
+    return flux_kustomization(chart, f"{NAME}-records", directory, depends_on=[flux_kustomization_depends_on(operator)])

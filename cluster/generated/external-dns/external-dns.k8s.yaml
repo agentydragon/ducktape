@@ -90,6 +90,7 @@ spec:
       - --zone-id-filter=Z02901943N8ZFQFOD9P5I
       - --gateway-name=cluster-gateway
       - --gateway-namespace=gateway-system
+      - --txt-wildcard-replacement=wildcard
     managedRecordTypes:
       - A
       - AAAA

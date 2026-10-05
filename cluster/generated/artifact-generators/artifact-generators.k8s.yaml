@@ -461,6 +461,11 @@ spec:
       name: external-dns
       originRevision: "@repo"
     - copy:
+        - from: "@repo/cluster/generated/external-dns-records/**"
+          to: "@artifact/cluster/generated/external-dns-records/"
+      name: external-dns-records
+      originRevision: "@repo"
+    - copy:
         - from: "@repo/cluster/generated/flux-grafana-secrets/**"
           to: "@artifact/cluster/generated/flux-grafana-secrets/"
       name: flux-grafana-secrets

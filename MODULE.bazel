@@ -1012,6 +1012,14 @@ http_file(
     urls = ["https://raw.githubusercontent.com/kubernetes-sigs/gateway-api/v1.5.1/config/crd/experimental/gateway.networking.k8s.io_httproutes.yaml"],
 )
 
+# Match the ExternalDNS app version in cluster/cdk8s/external_dns.py.
+http_file(
+    name = "external_dns_dnsendpoint_crd",
+    downloaded_file_path = "dnsendpoints.externaldns.k8s.io.yaml",
+    sha256 = "7d1c06b1e991c8db3a70be658fb628e61e71ba72f2686469c276f4f6ab0d1e30",
+    urls = ["https://raw.githubusercontent.com/kubernetes-sigs/external-dns/v0.22.0/config/crd/standard/dnsendpoints.externaldns.k8s.io.yaml"],
+)
+
 http_file(
     name = "gateway_api_gateway_crd",
     downloaded_file_path = "gateway.networking.k8s.io_gateways.yaml",

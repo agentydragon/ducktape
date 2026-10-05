@@ -5,11 +5,21 @@ Terraform via tofu-controller.
 
 ExternalDNS is installed in the `external-dns` namespace in dry-run mode as the
 first migration stage. It reads accepted HTTPRoutes attached to
-`gateway-system/cluster-gateway` and future `DNSEndpoint` objects, but its
+`gateway-system/cluster-gateway` and the `external-dns/static-records`
+`DNSEndpoint`, but its
 `--dry-run` flag prevents Route 53 changes. It is limited to the
 `allegedly.works` hosted zone, uses the TXT registry owner
 `ducktape-allegedly-works`, and runs with `upsert-only` policy. Terraform remains
-the record owner until a separately reviewed handoff.
+the record owner until a separately reviewed handoff. The static endpoint's IP
+targets come from the same `nebula-mesh.json` roster as Terraform's inputs. The
+TXT registry replaces `*` with `wildcard` in its ownership marker name.
+
+Before enabling writes, provision a separate Route 53 credential limited to
+this hosted zone's record operations. The current ExternalDNS credential is
+shared with Terraform and also has registrar nameserver permissions. Import
+ownership TXT markers for the existing record sets and remove their Terraform
+state addresses without destroying the Route 53 records; keep the registered
+domain resource in Terraform.
 
 ## Architecture
 
@@ -44,6 +54,7 @@ The gateway and API node IPs are the `public_nodes` var on the generated Terrafo
 | `k8s/external-creds/aws-route53-cert-manager.sops.yaml`   | Canonical AWS IAM Secret for cert-manager (SOPS)                          |
 | `cdk8s/dns_automation.py`                                 | ESO destination Secret for Terraform in `flux-system`                     |
 | `cdk8s/external_dns.py`                                   | Dry-run ExternalDNS HelmRelease and ESO credential copy                   |
+| `generated/external-dns-records/`                         | Dry-run DNSEndpoint for wildcard, API, and mail records                   |
 | `cdk8s/cert_manager/environment.py`                       | ESO destination Secret for cert-manager                                   |
 
 ### IAM User: `cluster-dns-manager`

@@ -1,0 +1,49 @@
+apiVersion: externaldns.k8s.io/v1alpha1
+kind: DNSEndpoint
+metadata:
+  name: static-records
+  namespace: external-dns
+spec:
+  endpoints:
+    - dnsName: "*.allegedly.works"
+      recordTTL: 300
+      recordType: A
+      targets:
+        - 147.135.104.16
+        - 147.135.104.5
+        - 147.135.37.175
+        - 147.135.39.162
+        - 147.135.39.176
+        - 51.81.245.180
+    - dnsName: mx.allegedly.works
+      recordTTL: 300
+      recordType: A
+      targets:
+        - 147.135.104.16
+        - 147.135.104.5
+        - 147.135.37.175
+        - 147.135.39.162
+        - 147.135.39.176
+        - 51.81.245.180
+    - dnsName: api.allegedly.works
+      recordTTL: 60
+      recordType: A
+      targets:
+        - 147.135.104.16
+        - 147.135.104.5
+        - 51.81.245.180
+    - dnsName: allegedly.works
+      recordTTL: 300
+      recordType: MX
+      targets:
+        - 10 mx.allegedly.works
+    - dnsName: allegedly.works
+      recordTTL: 300
+      recordType: TXT
+      targets:
+        - v=spf1 -all
+    - dnsName: _dmarc.allegedly.works
+      recordTTL: 300
+      recordType: TXT
+      targets:
+        - v=DMARC1; p=reject; adkim=s; aspf=s
