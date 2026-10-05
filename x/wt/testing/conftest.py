@@ -3,9 +3,9 @@ import importlib.util
 import json
 import os
 import shlex
-import shutil
 import socket
 import subprocess
+import tempfile
 import uuid
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -19,7 +19,6 @@ from typer.testing import CliRunner
 
 from x.wt.server import github_client
 from x.wt.server.git_manager import GitManager
-from x.wt.server.gitstatusd_listener import find_gitstatusd_in_runfiles
 from x.wt.server.worktree_service import WorktreeService
 from x.wt.shared.config_file import ConfigFile
 from x.wt.shared.configuration import Configuration
@@ -41,21 +40,18 @@ from x.wt.testing.utils import run_cli_command, wait_until
 
 
 @pytest.fixture(scope="session", autouse=True)
-def _project_root_on_pythonpath():
-    """Set a global test-mode env var for the WT suite without monkeypatch.
+def wt_test_mode():
+    """Run the suite, and the CLI/daemon subprocesses it spawns, in WT_TEST_MODE.
 
-    Session-scoped fixtures cannot depend on the function-scoped monkeypatch fixture.
-    Use direct os.environ mutation with a restore on teardown instead.
+    Test mode requires WT_DIR and the repos to sit under `tempfile.gettempdir()`. pytest_bazel
+    roots `tmp_path` at TEST_TMPDIR, which `tempfile` ignores unless TMPDIR points at it.
     """
-    prev = os.environ.get("WT_TEST_MODE")
-    os.environ["WT_TEST_MODE"] = "1"
-    try:
+    with pytest.MonkeyPatch.context() as mp:
+        mp.setenv("WT_TEST_MODE", "1")
+        if test_tmpdir := os.environ.get("TEST_TMPDIR"):
+            mp.setenv("TMPDIR", test_tmpdir)
+            mp.setattr(tempfile, "tempdir", None)  # drop the cached gettempdir() result
         yield
-    finally:
-        if prev is None:
-            os.environ.pop("WT_TEST_MODE", None)
-        else:
-            os.environ["WT_TEST_MODE"] = prev
 
 
 @pytest.fixture
@@ -70,7 +66,7 @@ def write_pr_fixtures():
 
 
 @pytest.fixture(autouse=True)
-def _disable_gh_cli_token(monkeypatch):
+def disable_gh_cli_token(monkeypatch):
     """Disable gh CLI token retrieval in all tests by default.
 
     Tests that truly need real GitHub should explicitly bypass or override this.
@@ -310,23 +306,8 @@ def create_integration_test_config_file(repo_path: Path) -> Path:
     return wt_dir / "config.yaml"
 
 
-@pytest.fixture(scope="session")
-def require_gitstatusd():
-    """Fixture that skips test if gitstatusd is not available.
-
-    Checks Bazel runfiles first (hermetic test execution), then PATH.
-    Integration tests that need gitstatusd should depend on this fixture.
-    Not autouse - unit tests can run without gitstatusd.
-    """
-    if find_gitstatusd_in_runfiles():
-        return
-    if shutil.which("gitstatusd"):
-        return
-    pytest.skip("gitstatusd not available (not in runfiles or PATH)")
-
-
 @pytest.fixture
-def real_temp_repo(repo_factory, require_gitstatusd):
+def real_temp_repo(repo_factory):
     """Create real temporary git repository for integration tests.
 
     Uses modern repo_factory internally but maintains compatibility with
@@ -502,7 +483,7 @@ def build_test_configuration(repo_path: Path, wt_dir: Path | None = None, **conf
 # Apply hermetic git environment to every test to prevent leakage from user/system config
 # Ensures subprocesses inherit HOME/XDG/GIT_* isolation unless a test explicitly overrides
 @pytest.fixture(autouse=True)
-def _apply_isolated_git_env(tmp_path: Path, monkeypatch):
+def isolated_git_env(tmp_path: Path, monkeypatch):
     """Apply hermetic git environment per test to prevent leakage.
 
     Sets HOME/XDG_CONFIG_HOME; GIT_* vars are set via pytest config.

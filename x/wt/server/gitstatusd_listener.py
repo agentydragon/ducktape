@@ -14,7 +14,6 @@ Reactive architecture:
 
 import asyncio
 import logging
-import os
 import shutil
 import subprocess
 import uuid
@@ -278,22 +277,11 @@ class GitStatusdProtocol:
         raise GitStatusdValidationError(f"Unknown repository state: {value}")
 
 
-def find_gitstatusd_in_runfiles() -> str | None:
-    """Check Bazel runfiles for a hermetically-provided gitstatusd binary."""
-    runfiles_dir = os.environ.get("TEST_SRCDIR") or os.environ.get("RUNFILES_DIR")
-    if not runfiles_dir:
-        return None
-    candidate = Path(runfiles_dir) / "_main" / "third_party" / "gitstatusd" / "gitstatusd-linux-x86_64"
-    if candidate.exists() and os.access(candidate, os.X_OK):
-        return str(candidate)
-    return None
-
-
 def find_gitstatusd(config) -> tuple[str | None, str | None]:
-    """Find and validate gitstatusd binary using config, runfiles, or PATH.
+    """Find and validate gitstatusd binary using config or PATH.
 
     Returns (path, error_message). On success, error_message is None.
-    Checks config first, then Bazel runfiles, then PATH.
+    Checks config first, then PATH.
     """
     if config.gitstatusd_path:
         gitstatusd_path = str(config.gitstatusd_path)
@@ -304,10 +292,6 @@ def find_gitstatusd(config) -> tuple[str | None, str | None]:
             return None, (f"Configured gitstatusd path not working: {gitstatusd_path} (exit code {result.returncode})")
         except (subprocess.TimeoutExpired, FileNotFoundError, PermissionError) as e:
             return None, f"Configured gitstatusd path failed: {gitstatusd_path} ({e})"
-
-    runfiles_path = find_gitstatusd_in_runfiles()
-    if runfiles_path:
-        return runfiles_path, None
 
     gitstatusd_cmd = "gitstatusd"
     if shutil.which(gitstatusd_cmd):
