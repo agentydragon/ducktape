@@ -40,8 +40,15 @@ jobs:
         id: build-image
         env:
           IMAGE: ghcr.io/${{ github.repository_owner }}/precommit-spike
-          SPIKE_IMAGE: ghcr.io/agentydragon/precommit-spike@sha256:e37003307538a1fa3ef649d160fdd7cde349878b035efeaf45f7d2714e8af295
         run: bash devinfra/ci/x/precommit_container/build.sh
+
+      - name: Publish the focused closure for a steady-state Nix comparison
+        env:
+          SOPS_AGE_KEY: ${{ secrets.SOPS_AGE_KEY }}
+          PRECOMMIT_CLOSURE: ${{ steps.build-image.outputs.closure }}
+        run: >-
+          nix shell --inputs-from . nixpkgs#attic-client nixpkgs#sops
+          --command bash devinfra/ci/x/precommit_container/push_cache.sh
 
   baseline:
     if: github.ref == 'refs/heads/spike/precommit-container'
@@ -90,6 +97,7 @@ jobs:
             .pre-commit-config.yaml \
             .github/workflows/pre-commit.yml \
             nix/flake/devtools.nix \
+            agentplane/runner/pid_line.rs \
             --show-diff-on-failure -v
 
       - name: Save Ansible Galaxy roles cache
@@ -138,9 +146,8 @@ jobs:
             ansible-galaxy git python3 bash; do
             command -v "$tool"
           done
-          # Diagnose the initial trial's git failure, then trust only this
-          # runner-mounted workspace for tools outside checkout's temporary HOME.
-          git rev-parse --show-toplevel || git -c safe.directory="$GITHUB_WORKSPACE" rev-parse --show-toplevel
+          # Trust only this runner-mounted workspace for tools outside
+          # checkout's temporary Git configuration.
           git config --global --add safe.directory "$GITHUB_WORKSPACE"
 
       - name: Restore Ansible Galaxy roles cache
@@ -166,6 +173,7 @@ jobs:
             .pre-commit-config.yaml \
             .github/workflows/pre-commit.yml \
             nix/flake/devtools.nix \
+            agentplane/runner/pid_line.rs \
             --show-diff-on-failure -v
 
       - name: Save Ansible Galaxy roles cache

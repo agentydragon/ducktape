@@ -24,6 +24,7 @@ pkgs.dockerTools.buildLayeredImage {
           precommit
           pkgs.git
           pkgs.python3
+          pkgs.zstd
         ]
       }:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
       "SSL_CERT_FILE=${pkgs.cacert}/etc/ssl/certs/ca-bundle.crt"
