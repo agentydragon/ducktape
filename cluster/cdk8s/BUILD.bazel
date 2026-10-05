@@ -1049,6 +1049,24 @@ py_library(
 )
 
 py_library(
+    name = "external_dns",
+    srcs = ["external_dns.py"],
+    deps = [
+        ":external_creds",
+        ":flux",
+        ":helm",
+        ":manifest_roots",
+        ":namespaces",
+        ":node_scheduling",
+        "//cluster/cdk8s/providers/external_secrets:external_secret",
+        "//cluster/cdk8s/providers/external_secrets:externalsecret",
+        "//cluster/cdk8s/providers/flux:kustomization",
+        "@pypi//cdk8s",
+        "@pypi//cdk8s_plus_34",
+    ],
+)
+
+py_library(
     name = "tana_mcp",
     srcs = ["tana_mcp.py"],
     deps = [
@@ -1599,6 +1617,7 @@ py_library(
         ":egress_fences",
         ":etcd",
         ":external_creds",
+        ":external_dns",
         ":flux",
         ":flux_monitoring",
         ":flux_sources",

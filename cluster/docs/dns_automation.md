@@ -3,6 +3,14 @@
 DNS for `allegedly.works` is served by AWS Route 53. Records are managed by
 Terraform via tofu-controller.
 
+ExternalDNS is installed in the `external-dns` namespace in dry-run mode as the
+first migration stage. It reads accepted HTTPRoutes attached to
+`gateway-system/cluster-gateway` and future `DNSEndpoint` objects, but its
+`--dry-run` flag prevents Route 53 changes. It is limited to the
+`allegedly.works` hosted zone, uses the TXT registry owner
+`ducktape-allegedly-works`, and runs with `upsert-only` policy. Terraform remains
+the record owner until a separately reviewed handoff.
+
 ## Architecture
 
 ```text
@@ -35,6 +43,7 @@ The gateway and API node IPs are the `public_nodes` var on the generated Terrafo
 | `k8s/external-creds/aws-route53-dns-automation.sops.yaml` | Canonical AWS IAM Secret for DNS automation (SOPS)                        |
 | `k8s/external-creds/aws-route53-cert-manager.sops.yaml`   | Canonical AWS IAM Secret for cert-manager (SOPS)                          |
 | `cdk8s/dns_automation.py`                                 | ESO destination Secret for Terraform in `flux-system`                     |
+| `cdk8s/external_dns.py`                                   | Dry-run ExternalDNS HelmRelease and ESO credential copy                   |
 | `cdk8s/cert_manager/environment.py`                       | ESO destination Secret for cert-manager                                   |
 
 ### IAM User: `cluster-dns-manager`
@@ -54,6 +63,9 @@ dig allegedly.works NS
 
 # Check certificate status
 kubectl get certificate -A
+
+# Inspect proposed changes after the ExternalDNS release is Ready
+kubectl -n external-dns logs deployment/external-dns --since=15m
 ```
 
 ## Updating Gateway Node IPs

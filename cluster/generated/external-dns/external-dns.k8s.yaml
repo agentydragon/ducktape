@@ -1,0 +1,116 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  labels:
+    goldilocks.fairwinds.com/vpa-update-mode: "off"
+  name: external-dns
+spec: {}
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: external-creds-reader
+  namespace: external-dns
+---
+apiVersion: external-secrets.io/v1
+kind: ExternalSecret
+metadata:
+  name: aws-route53-credentials
+  namespace: external-dns
+spec:
+  data:
+    - remoteRef:
+        key: aws-route53-dns-automation-credentials
+        property: AWS_ACCESS_KEY_ID
+      secretKey: AWS_ACCESS_KEY_ID
+    - remoteRef:
+        key: aws-route53-dns-automation-credentials
+        property: AWS_REGION
+      secretKey: AWS_REGION
+    - remoteRef:
+        key: aws-route53-dns-automation-credentials
+        property: AWS_SECRET_ACCESS_KEY
+      secretKey: AWS_SECRET_ACCESS_KEY
+  refreshInterval: 1h
+  secretStoreRef:
+    kind: ClusterSecretStore
+    name: kubernetes-external-creds-secret-store
+  target:
+    creationPolicy: Owner
+    name: aws-route53-credentials
+---
+apiVersion: source.toolkit.fluxcd.io/v1
+kind: HelmRepository
+metadata:
+  name: external-dns
+  namespace: external-dns
+spec:
+  interval: 24h
+  url: https://kubernetes-sigs.github.io/external-dns/
+---
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: external-dns
+  namespace: external-dns
+spec:
+  chart:
+    spec:
+      chart: external-dns
+      sourceRef:
+        kind: HelmRepository
+        name: external-dns
+        namespace: external-dns
+      version: 1.22.0
+  install:
+    remediation:
+      retries: 3
+  interval: 15m
+  values:
+    domainFilters:
+      - allegedly.works
+    env:
+      - name: AWS_ACCESS_KEY_ID
+        valueFrom:
+          secretKeyRef:
+            key: AWS_ACCESS_KEY_ID
+            name: aws-route53-credentials
+      - name: AWS_REGION
+        valueFrom:
+          secretKeyRef:
+            key: AWS_REGION
+            name: aws-route53-credentials
+      - name: AWS_SECRET_ACCESS_KEY
+        valueFrom:
+          secretKeyRef:
+            key: AWS_SECRET_ACCESS_KEY
+            name: aws-route53-credentials
+    extraArgs:
+      - --dry-run
+      - --zone-id-filter=Z02901943N8ZFQFOD9P5I
+      - --gateway-name=cluster-gateway
+      - --gateway-namespace=gateway-system
+    managedRecordTypes:
+      - A
+      - AAAA
+      - CNAME
+      - MX
+      - TXT
+    nodeSelector:
+      topology.kubernetes.io/zone: hil-ovh
+    policy: upsert-only
+    provider:
+      name: aws
+    registry: txt
+    resources:
+      limits:
+        cpu: 250m
+        memory: 256Mi
+      requests:
+        cpu: 25m
+        memory: 64Mi
+    sources:
+      - gateway-httproute
+      - crd
+    txtOwnerId: ducktape-allegedly-works
+    txtPrefix: external-dns-%{record_type}.

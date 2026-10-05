@@ -28,6 +28,7 @@ from cluster.cdk8s import (
     egress_fences,
     etcd,
     external_creds,
+    external_dns,
     flux,
     flux_monitoring,
     flux_sources,
@@ -703,6 +704,12 @@ def generate_manifests(root: Path) -> None:
         flux_chart,
         write_directory(root, dns_automation_artifact, functools.partial(dns_automation.chart, mesh=mesh)),
         tofu_controller_kustomization,
+        external_secrets_operator_kustomization,
+    )
+    external_dns_artifact = artifact("external-dns", external_dns.OUTPUT_DIR)
+    external_dns.external_dns(
+        flux_chart,
+        write_directory(root, external_dns_artifact, external_dns.chart),
         external_secrets_operator_kustomization,
     )
     infra_drift_artifact = artifact("infra-drift", drift_watch.OUTPUT_DIR)
@@ -1632,6 +1639,7 @@ def generate_manifests(root: Path) -> None:
             dcgm_exporter_artifact,
             descheduler_artifact,
             dns_automation_artifact,
+            external_dns_artifact,
             flux_grafana_secrets_artifact,
             flux_image_automation_forgejo_artifact,
             flux_webhook_artifact,

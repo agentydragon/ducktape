@@ -134,6 +134,21 @@ subjects:
     namespace: flux-system
 ---
 apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: aws-route53-dns-automation-credentials-external-dns-reader
+  namespace: ducktape-flux
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: aws-route53-dns-automation-credentials-reader
+subjects:
+  - apiGroup: ""
+    kind: ServiceAccount
+    name: external-creds-reader
+    namespace: external-dns
+---
+apiVersion: rbac.authorization.k8s.io/v1
 kind: Role
 metadata:
   name: brave-search-api-key-reader
