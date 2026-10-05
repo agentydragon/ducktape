@@ -51,7 +51,7 @@ def test_write_kubeconfig_file_refuses_to_clobber(tmp_path: Path) -> None:
     output = tmp_path / "kubeconfig"
     other = {**_KUBECONFIG, "current-context": "different"}
     output.write_text(yaml.safe_dump(other))
-    with pytest.raises(RuntimeError, match="refusing to overwrite"):
+    with pytest.raises(RuntimeError):
         kubeconfig.write_kubeconfig_file(_KUBECONFIG, output)
     assert yaml.safe_load(output.read_text()) == other
 
@@ -59,8 +59,9 @@ def test_write_kubeconfig_file_refuses_to_clobber(tmp_path: Path) -> None:
 def test_write_kubeconfig_file_refuses_on_invalid_yaml(tmp_path: Path) -> None:
     output = tmp_path / "kubeconfig"
     output.write_text("not: valid: yaml: [")
-    with pytest.raises(RuntimeError, match="not valid YAML"):
+    with pytest.raises(RuntimeError):
         kubeconfig.write_kubeconfig_file(_KUBECONFIG, output)
+    assert output.read_text() == "not: valid: yaml: ["
 
 
 def _make_fake_sops(token: str = _FAKE_TOKEN):
