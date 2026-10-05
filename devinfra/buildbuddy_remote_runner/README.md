@@ -40,7 +40,9 @@ architecture with the imported base and fails if a future base requires an updat
 twice and exercise the tools in Docker with read-only registry access. Branch runs
 publish only when the assembled manifest differs from the current pin. Skopeo
 preserves the manifest digest during upload; the helper checks the registry result.
-The pin job checks the current base and image derivation before changing the pin
+Changed candidates must also pass a real BuildBuddy test invocation with Docker
+initialized before pinning. Manual dispatch defaults to candidate-only validation
+without changing a branch pin. The pin job checks the current base and image derivation before changing the pin
 and again after rebasing. A concurrent advance after that check rejects the push.
 
 FreeCAD and other standalone images keep their separate container-images workflow.

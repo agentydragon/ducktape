@@ -59,6 +59,10 @@ inputs:
       the runner and calls `crane push` directly, so it doesn't need this.
     required: false
     default: ""
+  runner_container_image:
+    description: Override the outer runner image to validate a candidate before pinning it.
+    required: false
+    default: ""
   rbe_container_image:
     description: >
       Override the RBE container image for remote actions (e.g. ghcr.io/.../rbe-container-image:sha).
@@ -125,6 +129,7 @@ runs:
         INPUT_ARGS: ${{ inputs.args }}
         INPUT_SCRIPT: ${{ inputs.script }}
         INPUT_ENV_OVERRIDES: ${{ inputs.env_overrides }}
+        INPUT_RUNNER_CONTAINER_IMAGE: ${{ inputs.runner_container_image }}
         INPUT_RBE_CONTAINER_IMAGE: ${{ inputs.rbe_container_image }}
         INPUT_DISK_BYTES: ${{ inputs.disk_bytes }}
         INPUT_COMPUTE_UNITS: ${{ inputs.compute_units }}
@@ -165,17 +170,21 @@ runs:
         # so that repo-rule resolution (pip wheel builds) runs on the custom image with
         # system libs (pkg-config, libcairo2-dev, etc.). Without this, bb remote uses
         # BuildBuddy's default image which lacks these dependencies. The rbe_container_image input
-        # overrides the remote action container; the BuildBuddy Remote Runner VM always boots
-        # the image pinned by buildbuddy_remote_runner.
+        # overrides the remote action container; runner_container_image separately
+        # overrides the outer runner for candidate image validation.
         RBE_CONTAINER_IMAGE="$INPUT_RBE_CONTAINER_IMAGE"
         if [[ -z "$RBE_CONTAINER_IMAGE" ]]; then
           pin_image=$(jq -r '.rbe_container.image' devinfra/image_pins.json)
           pin_digest=$(jq -r '.rbe_container.digest' devinfra/image_pins.json)
           RBE_CONTAINER_IMAGE="${pin_image}@${pin_digest}"
         fi
-        runner_image=$(jq -r '.buildbuddy_remote_runner.image' devinfra/image_pins.json)
-        runner_digest=$(jq -r '.buildbuddy_remote_runner.digest' devinfra/image_pins.json)
-        BB_IMAGE_ARGS=(--container_image="docker://${runner_image}@${runner_digest}")
+        RUNNER_CONTAINER_IMAGE="$INPUT_RUNNER_CONTAINER_IMAGE"
+        if [[ -z "$RUNNER_CONTAINER_IMAGE" ]]; then
+          runner_image=$(jq -r '.buildbuddy_remote_runner.image' devinfra/image_pins.json)
+          runner_digest=$(jq -r '.buildbuddy_remote_runner.digest' devinfra/image_pins.json)
+          RUNNER_CONTAINER_IMAGE="${runner_image}@${runner_digest}"
+        fi
+        BB_IMAGE_ARGS=(--container_image="docker://${RUNNER_CONTAINER_IMAGE}")
 
         RUNNER_EXEC_PROPS=(
           --runner_exec_properties=EstimatedFreeDiskBytes="$INPUT_DISK_BYTES"

@@ -92,7 +92,12 @@ def test_publish_preserves_digests_and_rejects_a_registry_manifest_change(
     assembled_manifest = b'{"schemaVersion":2}\n'
     published_manifest = b'{"schemaVersion":2}'
     commands: list[tuple[str, ...]] = []
-    monkeypatch.setattr(nix_runner_image, "command", lambda *args, **_kwargs: commands.append(args) or "")
+
+    def record_command(*args: str) -> str:
+        commands.append(args)
+        return ""
+
+    monkeypatch.setattr(nix_runner_image, "command", record_command)
     monkeypatch.setattr(nix_runner_image.subprocess, "check_output", lambda *_args: published_manifest)
     state = {"layout": str(tmp_path / "oci"), "digest": "sha256:" + hashlib.sha256(assembled_manifest).hexdigest()}
 

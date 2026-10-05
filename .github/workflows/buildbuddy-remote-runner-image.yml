@@ -4,6 +4,7 @@ on:
   push:
     branches: [main, devel]
     paths: &runner_paths # keep-sorted start
+      - ".github/actions/bb-remote/action.yml"
       - ".github/actions/build-runner-image/action.yml"
       - ".github/actions/setup-nix-devtools/action.yml"
       - ".github/workflows/buildbuddy-remote-runner-image.yml"
@@ -23,6 +24,11 @@ on:
   pull_request:
     paths: *runner_paths
   workflow_dispatch:
+    inputs:
+      candidate_only:
+        description: Publish and exercise the image without changing the branch pin.
+        type: boolean
+        default: true
 
 concurrency:
   group: runner-image-${{ github.ref }}
@@ -69,14 +75,37 @@ jobs:
             --state "$RUNNER_TEMP/runner-image/state.json" \
             --image "$RUNNER_IMAGE" --tag "$GITHUB_SHA"
 
-      - uses: ./.github/actions/mint-automation-token
+      - name: Install the pinned BuildBuddy launcher
         if: steps.image.outputs.needs_publish == 'true'
+        run: |
+          python3 devinfra/ci/install_bb.py --pins nix/artifact-pins.json \
+            --destination "$RUNNER_TEMP/buildbuddy-cli/bin/bb"
+          echo "$RUNNER_TEMP/buildbuddy-cli/bin" >> "$GITHUB_PATH"
+
+      - name: Exercise candidate on a BuildBuddy runner before pinning
+        if: steps.image.outputs.needs_publish == 'true'
+        uses: ./.github/actions/bb-remote
+        env:
+          BUILDBUDDY_API_KEY: ${{ secrets.BUILDBUDDY_API_KEY }}
+        with:
+          runner_container_image: ${{ env.RUNNER_IMAGE }}@${{ steps.image.outputs.digest }}
+          run_from_commit: ${{ github.sha }}
+          script: |
+            set -euo pipefail
+            docker info >/dev/null
+            bazel-diff --help >/dev/null
+            bazelisk test --config=rbe --config=ci \
+              --remote_default_exec_properties="container-image=docker://$RBE_CONTAINER_IMAGE" \
+              //devinfra/ci:test_nix_runner_image
+
+      - uses: ./.github/actions/mint-automation-token
+        if: steps.image.outputs.needs_publish == 'true' && !inputs.candidate_only
         id: app
         with:
           sops_age_key: ${{ secrets.SOPS_AGE_KEY }}
 
       - name: Pin on the latest branch after verifying its inputs
-        if: steps.image.outputs.needs_publish == 'true'
+        if: steps.image.outputs.needs_publish == 'true' && !inputs.candidate_only
         env:
           DIGEST: ${{ steps.image.outputs.digest }}
           APP_TOKEN: ${{ steps.app.outputs.token }}
