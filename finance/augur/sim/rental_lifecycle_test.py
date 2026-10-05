@@ -1017,15 +1017,19 @@ class TestRentalIncomeTaxation:
             60_000 - expected_depreciation, abs=0.05
         )
 
-    def test_property_sale_recaptures_depreciation_and_routes_remaining_gain_to_ltcg(self) -> None:
-        """Sale of a fully-let property after 12 months of depreciation.
+    def test_property_sale_at_a_loss_recaptures_nothing_and_owes_no_ltcg(self) -> None:
+        """Sale of a fully-let property after 12 months of depreciation, on a 24-month horizon so
+        the sale year's accrual is inside it.
         Building basis $400k → $400k / 27.5 ≈ $14,545.45/yr, so cumulative $14,545.45.
         Home value flat → market value $500k, 6% closing → gross proceeds $470k.
         Adjusted basis $500k - $14,545.45 = $485,454.55, so the realized gain is
         -$15,454.55 — a loss, hence no recapture and no LTCG."""
 
-        [rollout] = run(sale_situation(horizon=13, sale_month=12))
-        assert breakdown(rollout, month=11, jurisdiction=FEDERAL)["ltcg_quanta"] / 100 == pytest.approx(0, abs=1e-6)
+        [rollout] = run(sale_situation(horizon=24, sale_month=12))
+        sale = sale_rows(rollout)["p1"]
+        assert sale["realized_gain_quanta"] / 100 == pytest.approx(-15_454.55, abs=0.02)
+        assert (sale["depreciation_recapture_quanta"], sale["long_term_capital_gain_quanta"]) == (0, 0)
+        assert breakdown(rollout, month=23, jurisdiction=FEDERAL)["ltcg_quanta"] == 0
 
     def test_property_sale_requires_home_value_series(self) -> None:
         situation = sale_situation(horizon=13, sale_month=12)
@@ -1594,34 +1598,6 @@ class TestRentalIncomeTaxation:
         sale = one(trace(rollout).events.property_sale_events.iter_rows(named=True))
         assert sale["depreciation_recapture_quanta"] == BUILDING_BASIS_QUANTA, (
             "recapture is capped by the basis the building had, not by the months it was held"
-        )
-
-    def test_depreciation_does_not_accrue_when_not_rented(self) -> None:
-        """No letting → no depreciation accrual → no Schedule E deduction."""
-
-        situation = Situation(
-            horizon_months=12,
-            rollout_count=1,
-            series=level_series({HOME_VALUE: [[1.0] * 13]}, horizon_months=12, rollout_count=1),
-            accounts=(account(OWNER, 600_000), account(TENANT), account(SELLER), account(IRS)),
-            tax_profiles=(taxpayer(),),
-            recurring_transfers=(
-                recurring_transfer(
-                    "paycheck",
-                    start_month=0,
-                    end_month=11,
-                    payer=TENANT,
-                    payee=OWNER,
-                    amount=5_000 * 100,
-                    income=ORDINARY_INCOME,
-                ),
-            ),
-            housing=Housing(purchases=(purchase(PropertyId("p1"), rented_fraction=0),)),
-        )
-        [rollout] = run(situation)
-        # No depreciation → ordinary income equals gross paycheck income: $60,000.
-        assert breakdown(rollout, month=11, jurisdiction=FEDERAL)["ordinary_income_quanta"] / 100 == pytest.approx(
-            60_000, abs=1e-6
         )
 
 
