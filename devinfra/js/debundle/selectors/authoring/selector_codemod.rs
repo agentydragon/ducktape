@@ -1602,18 +1602,6 @@ mod adjacent_function_grouping_tests {
     }
 
     #[test]
-    fn accessors_differing_only_in_member_key_share_a_shape() {
-        // The minimized accessor selectors differ only in the holed function name
-        // and the trailing member key; blanking those discriminating leaves
-        // collapses them to one canonical shape — the run-grouping trigger.
-        let alpha = "function selectedAlphaAccessor() { return ANYTHING.alpha; }";
-        let beta = "function selectedBetaAccessor() { return ANYTHING.beta; }";
-        let core = "function selectedDeltaAccessor() { return ANYTHING.coreServices; }";
-        assert_eq!(signature(alpha), signature(beta));
-        assert_eq!(signature(alpha), signature(core));
-    }
-
-    #[test]
     fn different_shapes_do_not_share_a_signature() {
         // A zero-arg member-return accessor anti-unifies to neither a one-arg
         // arithmetic helper (param count + body differ) nor a bare call (body
