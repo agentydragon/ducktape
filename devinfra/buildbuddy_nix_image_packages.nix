@@ -75,7 +75,7 @@ with pkgs;
   # TODO: add back once image size is manageable
   # cpio             # Firecracker initramfs genrule
   # dbus             # private D-Bus sessions in tests
-  # Chromium headless shell deps (rules_playwright):
+  # Chromium headless shell deps (@chrome_headless_shell):
   # alsa-lib at-spi2-atk cups libdrm mesa nspr nss pango
   # xorg.libXcomposite xorg.libXdamage libxkbcommon
   # xorg.libXrandr xorg.libXfixes xorg.libxshmfence

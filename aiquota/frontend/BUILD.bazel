@@ -251,7 +251,7 @@ SCREENSHOT_DATA = [
     "//util/testing/frontend_visual:capture",
     "//util/testing/frontend_visual:launcher",
     "//util/testing/frontend_visual:visual_review_manifest",
-    "@playwright_browsers//:chromium-headless-shell",
+    "@chrome_headless_shell//:executable",
 ]
 
 js_test(
@@ -262,7 +262,7 @@ js_test(
     entry_point = "screenshots/render.mjs",
     env = {
         "SCENES_JSON": "$(rootpath :scenes_json)",
-        "CHROMIUM_HEADLESS_SHELL": "$(rootpath @playwright_browsers//:chromium-headless-shell)",
+        "CHROMIUM_HEADLESS_SHELL": "$(rootpath @chrome_headless_shell//:executable)",
         # Peak-burn hours and credit expiries render in the viewer's zone, which is the point
         # of surfacing them; pin one so the renders do not depend on the worker's.
         "TZ": "UTC",

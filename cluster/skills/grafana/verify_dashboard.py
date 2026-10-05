@@ -361,11 +361,11 @@ def dashboard_url(base_url: str, uid: str, dashboard: dict[str, Any], from_range
 async def browser_verify(
     url: str, dashboard: dict[str, Any], screenshot_dir: Path, wait_seconds: float, user: str, password: str
 ) -> dict[str, Any]:
-    chromium_root = os.environ.get("CHROMIUM_HEADLESS_SHELL", "")
     chrome = (
-        str(Path(chromium_root) / "chrome-linux" / "headless_shell")
-        if chromium_root
-        else os.environ.get("GRAFANA_CHROME_PATH") or shutil.which("google-chrome") or shutil.which("chromium")
+        os.environ.get("CHROMIUM_HEADLESS_SHELL")
+        or os.environ.get("GRAFANA_CHROME_PATH")
+        or shutil.which("google-chrome")
+        or shutil.which("chromium")
     )
     if not chrome:
         raise VerificationError(

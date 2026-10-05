@@ -8,7 +8,7 @@ hand-maintained roster.
 
 load("@aspect_rules_js//js:defs.bzl", "js_test")
 
-_CHROMIUM = "@playwright_browsers//:chromium-headless-shell"
+_CHROMIUM = "@chrome_headless_shell//:executable"
 _LIB = "//util/testing/frontend_visual:visual_test_lib"
 
 def visual_test(

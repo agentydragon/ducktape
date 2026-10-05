@@ -2,12 +2,12 @@
  * The one Puppeteer launcher for JS visual/screenshot tests, mirroring the
  * Python side (util/testing/frontend_visual.py, Playwright): both read the
  * same chromium-flags.json and frozen-clock.js, and both resolve the hermetic
- * browser from CHROMIUM_HEADLESS_SHELL (the Bazel-wired
- * @playwright_browsers//:chromium-headless-shell rootpath), falling back to
- * the ambient PLAYWRIGHT_BROWSERS_PATH for a local `bazel run`.
+ * browser from CHROMIUM_HEADLESS_SHELL (the Bazel-wired rootpath of the
+ * @chrome_headless_shell//:executable binary), falling back to the ambient
+ * PLAYWRIGHT_BROWSERS_PATH for a local `bazel run`.
  */
 
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -76,13 +76,8 @@ export async function launchDeterministicBrowser({ args = [], userDataDir } = {}
 }
 
 export function resolveChromiumExecutable() {
-  const root =
+  const executable =
     process.env.CHROMIUM_HEADLESS_SHELL ||
     (process.env.PLAYWRIGHT_BROWSERS_PATH ? join(process.env.PLAYWRIGHT_BROWSERS_PATH, "chromium") : null);
-  if (!root) {
-    return null;
-  }
-  const resolved = resolve(root);
-  const headlessShell = join(resolved, "chrome-linux", "headless_shell");
-  return existsSync(headlessShell) ? headlessShell : resolved;
+  return executable ? resolve(executable) : null;
 }
