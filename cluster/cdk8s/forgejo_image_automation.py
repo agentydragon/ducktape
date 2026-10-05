@@ -5,7 +5,8 @@ Every entry has the same shape -- same registry, scan interval, pull credential 
 policy -- so the roster below is just the names. The `ImageUpdateAutomation` that writes
 the selected tags back into each directory's `image-pins/` Component lives in
 `cluster/generated/flux-image-automation-ghcr`, not here; nothing in this chart carries an
-`$imagepolicy` marker, so Flux never rewrites this generated file.
+`$imagepolicy` marker, so Flux never rewrites this generated file. The Receiver that scans an
+image on its push (`forgejo_images.py`) is built from the same roster.
 """
 
 from __future__ import annotations
@@ -101,6 +102,11 @@ IMAGES = (
 _REPOSITORIES = {"grocy-mcp-oidc-server": "grocy-mcp", "tana-mcp": "tana-desktop"}
 
 
+def package_name(image: str) -> str:
+    """The registry package of the `IMAGES` entry `image`: the name Forgejo's `package` webhook reports."""
+    return _REPOSITORIES.get(image, image)
+
+
 class ForgejoImageAutomation(Construct):
     """The ImageRepository/ImagePolicy pair for every image in `IMAGES`."""
 
@@ -113,7 +119,7 @@ class ForgejoImageAutomation(Construct):
                     self,
                     f"{name}-repository",
                     metadata=ApiObjectMetadata(name=name, namespace=NAMESPACE),
-                    image=f"{_REGISTRY}/{_REPOSITORIES.get(name, name)}",
+                    image=f"{_REGISTRY}/{package_name(name)}",
                     interval=_SCAN_INTERVAL,
                     secret_ref=ImageRepositorySpecSecretRef(name=_PULL_SECRET),
                 ),

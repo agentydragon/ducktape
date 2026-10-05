@@ -40,8 +40,10 @@ registry proxy (`props.allegedly.works` → `git.allegedly.works/props/*`).
    - Add `{"$imagepolicy": "flux-system:<policy-name>"}` comment to the image field
    - **GHCR only: add the `ImageRepository` to the GitHub webhook receiver** at
      `cdk8s/flux_webhook/chart.py` — without this, the image only
-     gets picked up on the 5m poll interval instead of immediately on push. Forgejo
-     images ride the poll; the webhook is GitHub's.
+     gets picked up on the 5m poll interval instead of immediately on push. A Forgejo
+     image needs nothing here: the `forgejo-images` Receiver is built from the same
+     roster that generates its `ImageRepository`, and `cluster/validation` fails an
+     `ImageRepository` that no Receiver lists.
    - Flux updates the tag in-repo on each new push
 
    For images not deployed in-cluster, pin the tag in the consuming BUILD.bazel.
@@ -77,7 +79,8 @@ Flux image scan are retired.
 3. **Auto-roll** — add `ImageRepository` (with `secretRef: forgejo-images-creds`)
    - `ImagePolicy` under `cluster/generated/flux-image-automation-forgejo/`, and the
      `{"$imagepolicy": "flux-system:<name>"}` marker on the image field. The
-     cluster-wide `all-images` `ImageUpdateAutomation` updates it.
+     cluster-wide `all-images` `ImageUpdateAutomation` updates it, and Forgejo's
+     `package` webhook (the `receiver` in `forgejo-images`) scans the image on push.
 4. **Consume** — image `git.allegedly.works/ducktape-ci/<image>` +
    `imagePullSecrets: [{name: forgejo-images-creds}]`. The app's Flux Kustomization
    does not depend on `forgejo-images`: kubelet retries the pull until the
