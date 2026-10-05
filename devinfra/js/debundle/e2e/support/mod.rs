@@ -207,45 +207,20 @@ pub fn expect_selector_outcome(opts: FixtureOpts<'_>, kind: &str, logical_module
     find_outcome_in_module(&outcomes, kind, logical_module).clone()
 }
 
-/// Run the materializer over `opts` and assert it rejects the spec
-/// with stderr containing at least one of `error_substring_alternatives`
-/// (case-insensitive). Use this helper when the rejection's exact
-/// wording isn't pinned — e.g. when several rejection paths converge
-/// on the same outcome and the caller is fine with any of them.
-///
-/// For tests that need to assert *specific evidence* in the error
-/// (e.g. "the cycle report names mod_a AND mod_b"), use
-/// [`expect_rejection_containing_all`] instead.
-pub fn expect_rejection(opts: FixtureOpts<'_>, error_substring_alternatives: &[&str]) {
+/// Runs `opts` and asserts it is rejected with stderr naming every one of `tokens`: identifiers,
+/// paths or code tokens, matched case-sensitively. For a rejection with no report under the
+/// report root, or a rendering whose identifiers are under test; otherwise assert on the report.
+pub fn expect_rejection_containing_all(opts: FixtureOpts<'_>, tokens: &[&str]) {
     let rejected = run_rejection_fixture(opts);
-    let stderr = rejected.stderr;
-    let stderr_lower = stderr.to_lowercase();
-    assert!(
-        error_substring_alternatives
-            .iter()
-            .any(|s| stderr_lower.contains(&s.to_lowercase())),
-        "stderr did not contain any of {error_substring_alternatives:?}\nstderr:\n{stderr}",
-    );
-}
-
-/// Stricter sibling of [`expect_rejection`]: the
-/// stderr must contain **every** substring in `required_substrings`,
-/// not just one. Use when the test's contract is that the error
-/// names specific evidence (every module in a cycle, every binding
-/// in a collision, etc.); a generic-but-empty error wouldn't pass
-/// the contract.
-pub fn expect_rejection_containing_all(opts: FixtureOpts<'_>, required_substrings: &[&str]) {
-    let rejected = run_rejection_fixture(opts);
-    let stderr = rejected.stderr;
-    let stderr_lower = stderr.to_lowercase();
-    let missing: Vec<&str> = required_substrings
+    let missing: Vec<&str> = tokens
         .iter()
         .copied()
-        .filter(|s| !stderr_lower.contains(&s.to_lowercase()))
+        .filter(|token| !rejected.stderr.contains(token))
         .collect();
     assert!(
         missing.is_empty(),
-        "stderr missing required substrings {missing:?}\nstderr:\n{stderr}",
+        "stderr missing {missing:?}\nstderr:\n{}",
+        rejected.stderr,
     );
 }
 
