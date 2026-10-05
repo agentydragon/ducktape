@@ -7616,5 +7616,754 @@
         "separate direct-API announcement implementation; one published package chosen instead"
       ]
     }
+  },
+  "critical_path_followup": {
+    "recorded_at_utc": "2026-10-05T01:22:44.999494+00:00",
+    "inspected_devel_commit": "c8da83bc382db8d3c49a440cf57a74a34b935825",
+    "selection": "Ten purposively selected successful same-repository PR CI runs, three slow UI, six test/tooling, one package rollout; not representative or a matched before/after cohort",
+    "ci_run_creation_window_utc": [
+      "2026-10-05T00:03:52Z",
+      "2026-10-05T00:57:42Z"
+    ],
+    "job_breakdown": [
+      {
+        "run_id": 37245999473,
+        "job_id": 111563921108,
+        "head_sha": "39d4a473c8437d02304d938fd22c42296023b1ee",
+        "created_at_utc": "2026-10-05T00:03:52Z",
+        "pr": 9025,
+        "bazel_job_seconds": 131.0,
+        "test_build_step_seconds": 101.0,
+        "bazel_test_seconds": 28.696,
+        "bazel_test_action_critical_path_seconds": 0.44,
+        "bazel_build_seconds": 0.542,
+        "affected_target_count": 9,
+        "test_target_count": 4,
+        "step_start_to_runner_repo_sync_seconds": 11.828,
+        "runner_repo_sync_to_driver_seconds": 7.971
+      },
+      {
+        "run_id": 37246185211,
+        "job_id": 111564453077,
+        "head_sha": "d6a98cc396ca4a9336ebbb68988a98fd23bddfe8",
+        "created_at_utc": "2026-10-05T00:06:39Z",
+        "pr": 9038,
+        "bazel_job_seconds": 381.0,
+        "test_build_step_seconds": 330.0,
+        "bazel_test_seconds": 262.122,
+        "bazel_test_action_critical_path_seconds": 223.14,
+        "bazel_build_seconds": 1.786,
+        "affected_target_count": 152,
+        "test_target_count": 19,
+        "step_start_to_runner_repo_sync_seconds": 7.419,
+        "runner_repo_sync_to_driver_seconds": 7.687
+      },
+      {
+        "run_id": 37246870085,
+        "job_id": 111566374796,
+        "head_sha": "17739327f1abdb7903a32b04c59e82921b2c9a82",
+        "created_at_utc": "2026-10-05T00:16:32Z",
+        "pr": 9041,
+        "bazel_job_seconds": 210.0,
+        "test_build_step_seconds": 183.0,
+        "bazel_test_seconds": 35.066,
+        "bazel_test_action_critical_path_seconds": 1.08,
+        "bazel_build_seconds": 1.315,
+        "affected_target_count": 16,
+        "test_target_count": 2
+      },
+      {
+        "run_id": 37247601205,
+        "job_id": 111568472865,
+        "head_sha": "2876790deed78103c4692ee3f56eb07f6f9c7600",
+        "created_at_utc": "2026-10-05T00:27:34Z",
+        "pr": 9047,
+        "bazel_job_seconds": 159.0,
+        "test_build_step_seconds": 129.0,
+        "bazel_test_seconds": 60.213,
+        "bazel_test_action_critical_path_seconds": 31.12,
+        "bazel_build_seconds": 0.806,
+        "affected_target_count": 23,
+        "test_target_count": 25,
+        "step_start_to_runner_repo_sync_seconds": 6.148,
+        "runner_repo_sync_to_driver_seconds": 8.976
+      },
+      {
+        "run_id": 37248087798,
+        "job_id": 111569890396,
+        "head_sha": "23f24105027939397b2509532ee9158e2716b64e",
+        "created_at_utc": "2026-10-05T00:35:07Z",
+        "pr": 9051,
+        "bazel_job_seconds": 129.0,
+        "test_build_step_seconds": 99.0,
+        "bazel_test_seconds": 33.918,
+        "bazel_test_action_critical_path_seconds": 8.11,
+        "bazel_build_seconds": 0.611,
+        "affected_target_count": 7,
+        "test_target_count": 5,
+        "step_start_to_runner_repo_sync_seconds": 6.873,
+        "runner_repo_sync_to_driver_seconds": 9.948
+      },
+      {
+        "run_id": 37248124045,
+        "job_id": 111569993221,
+        "head_sha": "c358277d72fe526a9f045735f63ffd18afd6f202",
+        "created_at_utc": "2026-10-05T00:35:39Z",
+        "pr": 9052,
+        "bazel_job_seconds": 134.0,
+        "test_build_step_seconds": 105.0,
+        "bazel_test_seconds": 30.262,
+        "bazel_test_action_critical_path_seconds": 0.89,
+        "bazel_build_seconds": 0.626,
+        "affected_target_count": 7,
+        "test_target_count": 7,
+        "step_start_to_runner_repo_sync_seconds": 15.755,
+        "runner_repo_sync_to_driver_seconds": 7.824
+      },
+      {
+        "run_id": 37248297527,
+        "job_id": 111570516125,
+        "head_sha": "3c05e79e3a83d1ba7da6caa10cf00ff5dc250ef7",
+        "created_at_utc": "2026-10-05T00:38:25Z",
+        "pr": 9053,
+        "bazel_job_seconds": 146.0,
+        "test_build_step_seconds": 116.0,
+        "bazel_test_seconds": 53.675,
+        "bazel_test_action_critical_path_seconds": 28.26,
+        "bazel_build_seconds": 0.662,
+        "affected_target_count": 34,
+        "test_target_count": 17,
+        "step_start_to_runner_repo_sync_seconds": 7.213,
+        "runner_repo_sync_to_driver_seconds": 7.562
+      },
+      {
+        "run_id": 37249081719,
+        "job_id": 111572807712,
+        "head_sha": "4c093793f969e472ba6be9eb86ce7a1ef02903e0",
+        "created_at_utc": "2026-10-05T00:50:53Z",
+        "pr": 9026,
+        "bazel_job_seconds": 346.0,
+        "test_build_step_seconds": 316.0,
+        "bazel_test_seconds": 260.751,
+        "bazel_test_action_critical_path_seconds": 221.65,
+        "bazel_build_seconds": 1.595,
+        "affected_target_count": 127,
+        "test_target_count": 18,
+        "step_start_to_runner_repo_sync_seconds": 5.827,
+        "runner_repo_sync_to_driver_seconds": 8.539
+      },
+      {
+        "run_id": 37249141579,
+        "job_id": 111572984515,
+        "head_sha": "a063709a67c58d0958acecc01e919f71947334c1",
+        "created_at_utc": "2026-10-05T00:51:52Z",
+        "pr": 9046,
+        "bazel_job_seconds": 382.0,
+        "test_build_step_seconds": 355.0,
+        "bazel_test_seconds": 295.859,
+        "bazel_test_action_critical_path_seconds": 259.82,
+        "bazel_build_seconds": 1.723,
+        "affected_target_count": 157,
+        "test_target_count": 23,
+        "step_start_to_runner_repo_sync_seconds": 6.295,
+        "runner_repo_sync_to_driver_seconds": 8.58
+      },
+      {
+        "run_id": 37249512597,
+        "job_id": 111574076948,
+        "head_sha": "75f7dadf651916c442cb1db2360178bc4899ccae",
+        "created_at_utc": "2026-10-05T00:57:42Z",
+        "pr": 9054,
+        "bazel_job_seconds": 152.0,
+        "test_build_step_seconds": 119.0,
+        "bazel_test_seconds": 50.33,
+        "bazel_test_action_critical_path_seconds": 28.2,
+        "bazel_build_seconds": 1.024,
+        "affected_target_count": 148,
+        "test_target_count": 115,
+        "step_start_to_runner_repo_sync_seconds": 7.278,
+        "runner_repo_sync_to_driver_seconds": 8.422
+      }
+    ],
+    "gate_caps": [
+      {
+        "run": 37245999473,
+        "pr": 9025,
+        "head": "39d4a473c8437d02304d938fd22c42296023b1ee",
+        "ci_run_creation_to_last_required_seconds": 436.0,
+        "bazel_done_seconds": 273.0,
+        "next_gate": "Build artifacts + imports check",
+        "other_done_seconds": 436.0,
+        "max_saving_if_only_bazel_faster_seconds": 0
+      },
+      {
+        "run": 37247601205,
+        "pr": 9047,
+        "head": "2876790deed78103c4692ee3f56eb07f6f9c7600",
+        "ci_run_creation_to_last_required_seconds": 176.0,
+        "bazel_done_seconds": 168.0,
+        "next_gate": "Pre-commit checks",
+        "other_done_seconds": 176.0,
+        "max_saving_if_only_bazel_faster_seconds": 0
+      },
+      {
+        "run": 37248087798,
+        "pr": 9051,
+        "head": "23f24105027939397b2509532ee9158e2716b64e",
+        "ci_run_creation_to_last_required_seconds": 139.0,
+        "bazel_done_seconds": 131.0,
+        "next_gate": "Pre-commit checks",
+        "other_done_seconds": 139.0,
+        "max_saving_if_only_bazel_faster_seconds": 0
+      },
+      {
+        "run": 37248297527,
+        "pr": 9053,
+        "head": "3c05e79e3a83d1ba7da6caa10cf00ff5dc250ef7",
+        "ci_run_creation_to_last_required_seconds": 148.0,
+        "bazel_done_seconds": 148.0,
+        "next_gate": "Pre-commit checks",
+        "other_done_seconds": 142.0,
+        "max_saving_if_only_bazel_faster_seconds": 6.0
+      },
+      {
+        "run": 37249081719,
+        "pr": 9026,
+        "head": "4c093793f969e472ba6be9eb86ce7a1ef02903e0",
+        "ci_run_creation_to_last_required_seconds": 384.0,
+        "bazel_done_seconds": 384.0,
+        "next_gate": "Pre-commit checks",
+        "other_done_seconds": 185.0,
+        "max_saving_if_only_bazel_faster_seconds": 199.0
+      },
+      {
+        "run": 37246185211,
+        "pr": 9038,
+        "head": "d6a98cc396ca4a9336ebbb68988a98fd23bddfe8",
+        "ci_run_creation_to_last_required_seconds": 503.0,
+        "bazel_done_seconds": 503.0,
+        "next_gate": "Pre-commit checks",
+        "other_done_seconds": 278.0,
+        "max_saving_if_only_bazel_faster_seconds": 225.0
+      },
+      {
+        "run": 37249512597,
+        "pr": 9054,
+        "head": "75f7dadf651916c442cb1db2360178bc4899ccae",
+        "ci_run_creation_to_last_required_seconds": 155.0,
+        "bazel_done_seconds": 155.0,
+        "next_gate": "Build artifacts + imports check",
+        "other_done_seconds": 122.0,
+        "max_saving_if_only_bazel_faster_seconds": 33.0
+      },
+      {
+        "run": 37246870085,
+        "pr": 9041,
+        "head": "17739327f1abdb7903a32b04c59e82921b2c9a82",
+        "ci_run_creation_to_last_required_seconds": 296.0,
+        "bazel_done_seconds": 228.0,
+        "next_gate": "Build artifacts + imports check",
+        "other_done_seconds": 296.0,
+        "max_saving_if_only_bazel_faster_seconds": 0
+      },
+      {
+        "run": 37248124045,
+        "pr": 9052,
+        "head": "c358277d72fe526a9f045735f63ffd18afd6f202",
+        "ci_run_creation_to_last_required_seconds": 141.0,
+        "bazel_done_seconds": 136.0,
+        "next_gate": "Pre-commit checks",
+        "other_done_seconds": 141.0,
+        "max_saving_if_only_bazel_faster_seconds": 0
+      },
+      {
+        "run": 37249141579,
+        "pr": 9046,
+        "head": "a063709a67c58d0958acecc01e919f71947334c1",
+        "ci_run_creation_to_last_required_seconds": 385.0,
+        "bazel_done_seconds": 385.0,
+        "next_gate": "Pre-commit checks",
+        "other_done_seconds": 150.0,
+        "max_saving_if_only_bazel_faster_seconds": 235.0
+      }
+    ],
+    "shutdown_spike": {
+      "source_merge": "8ef5af7b9dc7051bf2eeb6283b4081af4c9b366a",
+      "head_sha": "c358277d72fe526a9f045735f63ffd18afd6f202",
+      "profiler": "cProfile around unchanged CI main; only _run([bazel,shutdown]) suppressed in keep_server variants",
+      "rounds": [
+        {
+          "variant": "baseline",
+          "test_id": "94fd81b6-8fd6-4d52-80f1-f00e8b8afd43",
+          "build_id": "e08c4ec2-b43e-486d-8316-9f6305d87b75",
+          "driver_seconds": 115.331,
+          "selection_seconds": 55.52,
+          "bazel_elapsed_seconds": [
+            54.685,
+            1.658
+          ],
+          "affected_targets": 7,
+          "test_targets": 7,
+          "returncode": 0
+        },
+        {
+          "variant": "keep_server",
+          "test_id": "869f259d-fc4c-4529-b69a-57b70730fd5b",
+          "build_id": "0e717ba1-3abd-4ff3-8a12-2720a58f38cd",
+          "driver_seconds": 46.144,
+          "selection_seconds": 42.402,
+          "bazel_elapsed_seconds": [
+            0.78,
+            0.321
+          ],
+          "affected_targets": 7,
+          "test_targets": 7,
+          "returncode": 0
+        },
+        {
+          "variant": "keep_server",
+          "test_id": "81e9a953-8299-46aa-877a-183ba76b7ac3",
+          "build_id": "5658b49b-60e4-4afd-9628-393ab53f38fb",
+          "driver_seconds": 20.114,
+          "selection_seconds": 16.461,
+          "bazel_elapsed_seconds": [
+            0.704,
+            0.318
+          ],
+          "affected_targets": 7,
+          "test_targets": 7,
+          "returncode": 0
+        },
+        {
+          "variant": "baseline",
+          "test_id": "acf62f11-5f3b-4fce-88e6-c7a9b424194b",
+          "build_id": "3e644431-2c8a-4567-aa43-bfde74426fd5",
+          "driver_seconds": 47.168,
+          "selection_seconds": 16.456,
+          "bazel_elapsed_seconds": [
+            26.792,
+            0.54
+          ],
+          "affected_targets": 7,
+          "test_targets": 7,
+          "returncode": 0
+        }
+      ],
+      "comparison": "Use rounds2and3: selection16.461vs16.456s; exclude initialcold/warmingrounds fromsavingestimate",
+      "warm_driver_saving_seconds": 27.054,
+      "limits": "Same source and seven cached tests in one VM; excludes outer GitHub and runner provisioning. Testsandlintretained; not universalPRspeedup.",
+      "invalidation_check": {
+        "source": "same synthetic merge and //haku/console:test_mcp_config",
+        "phases": [
+          {
+            "phase": "original",
+            "invocation": "3b9563ed-6200-4750-b45e-89146ea8b754",
+            "returncode": 0
+          },
+          {
+            "phase": "changed_source_expected_failure",
+            "invocation": "e3f6a587-d7ce-43b4-b9f7-a34b01bde9a3",
+            "returncode": 3
+          },
+          {
+            "phase": "restored",
+            "invocation": "8b11e5af-37c6-466e-b6fa-c6648c7afed7",
+            "returncode": 0
+          }
+        ],
+        "mutation": "Add one temporary pytest test that raises AssertionError; restore original source in finally",
+        "result": "Changed TestRunner failed, restored version passed, with no shutdown between commands",
+        "limit": "One deliberate source mutation; not proof against every Bazel invalidation bug"
+      },
+      "historical_shutdown_origin": {
+        "commit": "01ba86f19b",
+        "pr": 5257,
+        "reason_in_comment": "Do not let a server from a previous checkout serve this test run",
+        "investigation": "PR body concerns Haku UI and contains no shutdown explanation; no inline review comments on bazel_ci. No specific invalidation defect documented in these inspected sources."
+      }
+    },
+    "measurement_limits": [
+      "Job steps use GitHub second-resolution timestamps",
+      "Runner timeline uses embedded remote timestamps where present; cross-host clock skew not measured",
+      "Other gate completion held fixed in ceiling calculations",
+      "Bazel-only savings do not add across parallel gates",
+      "No production policy modifications"
+    ],
+    "selection_assessment": {
+      "recommendation": "Defer cross-run base-hash caching in this minute-scale pass",
+      "warm_full_selection_seconds": [
+        16.461,
+        16.456
+      ],
+      "absolute_saving_ceiling_seconds": 16.5,
+      "ceiling_scope": "One warm workload; full selection includes both hashes and final queries, so base-only saving is smaller",
+      "diagnostic_jobs": 10,
+      "distinct_base_shas": 8,
+      "actual_cache_spike": "Not performed; no transport or hit-rate claim",
+      "coverage_limit": "Root .bazelignore excludes nested modules even with //...; independent of caching"
+    },
+    "parallel_gate_example": {
+      "pr": 9052,
+      "head": "c358277d72fe526a9f045735f63ffd18afd6f202",
+      "observed_completion_offsets_seconds": {
+        "Pre-commit checks": 141,
+        "bazel-ci / Test & Build": 136,
+        "Build artifacts + imports check": 109,
+        "Gazelle diff": 41
+      },
+      "hypothetical_reductions_seconds": {
+        "Pre-commit checks": 60,
+        "bazel-ci / Test & Build": 27
+      },
+      "hypothetical_last_gate_seconds": 109,
+      "hypothetical_feedback_saving_seconds": 32,
+      "qualification": "Counterfactual illustration, not measured end-to-end result"
+    },
+    "precommit_spike": {
+      "source_commit": "c8da83bc382db8d3c49a440cf57a74a34b935825",
+      "scope": "CLI lexical fast path only; workflow setup gate proposed and not implemented",
+      "test_invocation": "778b43e0-2e6d-4d37-9f87-6dc24bf7b2fb",
+      "test_targets": [
+        "//devinfra:test_pytest_main",
+        "//devinfra/precommit:test_git_hook"
+      ],
+      "library_build_invocation": "aabfbd99-bf56-47ad-bbf7-88a11fc1bd99",
+      "library_targets": [
+        "//devinfra:pytest_main",
+        "//devinfra/precommit:git_hook"
+      ],
+      "checks": "Pinned pre-commit, both Bazel test targets, both library builds with lint aspects, and diff check passed",
+      "validated_behaviors": [
+        "Accepted pytest_bazel.main() and pytest.main( strings avoid backend and index",
+        "Unmarked Python and mixed batches retain query and missing-entrypoint failure",
+        "Custom main exemptions pass",
+        "Unreadable and no-argument inputs retain query path"
+      ],
+      "observed_test_only_job": {
+        "run_id": 37248123810,
+        "job_id": 111569992354,
+        "head_sha": "c358277d72fe526a9f045735f63ffd18afd6f202",
+        "changed_python_files": 7,
+        "accepted_marker_python_files": 7,
+        "changed_build_files": 3,
+        "hook_seconds": 32.79,
+        "bazel_setup_seconds": 21,
+        "bazel_cache_post_save_seconds": 6
+      },
+      "savings_qualification": "About60s component-based bound including proposed setup gate; hook process overhead remains. No end-to-end A/B benchmark."
+    },
+    "report_validation": {
+      "invocation": "cccbce4b-ac92-4406-9fba-b55b74855b47",
+      "target": "//devinfra/ci/report_preview:preview",
+      "viewports": [
+        {
+          "width": 1440,
+          "height": 1100
+        },
+        {
+          "width": 390,
+          "height": 844
+        }
+      ],
+      "result": "Passed; desktop and mobile screenshots inspected; no horizontal overflow, internal anchor targets valid, methods disclosure opens",
+      "report_sha256": "4fc848b3777b47083cbc6ba41697e8e7bee4c324115f077ff4b720f3ab11b296"
+    },
+    "browser_analysis": {
+      "fresh_profiles": [
+        {
+          "invocation": "4895e4bc-b06b-52ac-bbac-287893465510",
+          "run": 37249141579,
+          "job": 111572984515,
+          "pr": 9046,
+          "head": "a063709a67c58d0958acecc01e919f71947334c1",
+          "synthetic_merge_commit": "05bb56825852a668524753f986b7912dee52c23d",
+          "elapsed_s": 295.859,
+          "critical_path_s": 259.82,
+          "critical_browser_action_s": 189.983,
+          "other_critical_path_components_s": 69.837,
+          "profile_phase_s": {
+            "eval_to_load_marker": 1.326,
+            "load_analyze_exec_span": 284.542,
+            "pre_action_after_load_marker": 0.589
+          },
+          "bes_analysis_phase_s": 22.609,
+          "bes_execution_phase_s": 280.217,
+          "profile_wall_union_s": {
+            "action_processing": 262.49,
+            "remote_cache_check": 4.214,
+            "remote_action_execution": 260.032,
+            "remote_execution_process_wall": 259.01
+          },
+          "cache_hits": 9879,
+          "cache_misses": 225,
+          "browser_test_shards": 4,
+          "critical_action": "//agentplane/app:test_thread_browser shard 2 of 4",
+          "other_long_critical_components_s": [
+            23.42,
+            15.86,
+            14.954,
+            12.419
+          ]
+        },
+        {
+          "invocation": "b3f17b21-2381-59e0-9e8e-fb83ce98f368",
+          "job": 111572807712,
+          "pr": 9026,
+          "head": "4c093793f969e472ba6be9eb86ce7a1ef02903e0",
+          "elapsed_s": 260.751,
+          "critical_path_s": 221.65,
+          "critical_browser_action_s": 204.528,
+          "other_critical_path_components_s": 17.122,
+          "profile_phase_s": {
+            "eval_to_load_marker": 1.09,
+            "load_analyze_exec_span": 249.609,
+            "pre_action_after_load_marker": 0.552
+          },
+          "bes_analysis_phase_s": 21.219,
+          "bes_execution_phase_s": 243.866,
+          "profile_wall_union_s": {
+            "action_processing": 225.3,
+            "remote_cache_check": 3.131,
+            "remote_action_execution": 222.828,
+            "remote_execution_process_wall": 221.789
+          },
+          "cache_hits": 8719,
+          "cache_misses": 143,
+          "browser_test_shards": 4,
+          "critical_action": "//agentplane/app:test_thread_browser shard 2 of 4",
+          "run": 37249081719
+        },
+        {
+          "invocation": "9891a507-3085-5ae0-84c6-3a013ceb5dbc",
+          "job": 111564453077,
+          "pr": 9038,
+          "head": "d6a98cc396ca4a9336ebbb68988a98fd23bddfe8",
+          "elapsed_s": 262.122,
+          "critical_path_s": 223.14,
+          "critical_browser_action_s": 219.798,
+          "other_critical_path_components_s": 3.342,
+          "profile_phase_s": {
+            "eval_to_load_marker": 1.092,
+            "load_analyze_exec_span": 250.549,
+            "pre_action_after_load_marker": 0.448
+          },
+          "bes_analysis_phase_s": 23.896,
+          "bes_execution_phase_s": 244.226,
+          "profile_wall_union_s": {
+            "action_processing": 229.679,
+            "remote_cache_check": 8.734,
+            "remote_action_execution": 224.008,
+            "remote_execution_process_wall": 222.157
+          },
+          "cache_hits": 4541,
+          "cache_misses": 3282,
+          "not_cached_misses": 3177,
+          "browser_test_shards": 4,
+          "critical_action": "//agentplane/app:test_thread_browser shard 4 of 4",
+          "run": 37246185211
+        }
+      ],
+      "sharding_experiment": {
+        "source_commit": "05bb56825852a668524753f986b7912dee52c23d",
+        "source_parents": [
+          "f8cf2a8bdf993850174534622046a1b0729537ab",
+          "a063709a67c58d0958acecc01e919f71947334c1"
+        ],
+        "pr_head": "a063709a67c58d0958acecc01e919f71947334c1",
+        "target": "//agentplane/app:test_thread_browser",
+        "bazel_version": "9.2.0",
+        "parent_runner_invocation": "22797bd3-2513-430a-9d7d-c1c967d47578",
+        "design": "Sequential 4-shard then 8-shard runs in one remote runner and Bazel output base. Remote cache stayed enabled; both runs used --nocache_test_results so all test shards executed.",
+        "common_args": [
+          "test",
+          "--config=rbe",
+          "--config=ci",
+          "--keep_going",
+          "--nocache_test_results",
+          "//agentplane/app:test_thread_browser"
+        ],
+        "four_shard": {
+          "invocation": "91b26b8e-5f51-4e80-8d57-d69a8a41d197",
+          "args": [
+            "--test_sharding_strategy=forced=4"
+          ],
+          "elapsed_s": 295.954,
+          "critical_path_s": 226.679,
+          "critical_action_s": 224.716,
+          "action_processing_union_s": 229.727,
+          "remote_action_cache_check_union_s": 3.706,
+          "remote_action_execution_union_s": 224.035,
+          "remote_execution_process_wall_union_s": 222.811,
+          "analysis_phase_s": 63.671,
+          "execution_phase_s": 229.662,
+          "test_shard_case_counts": [
+            11,
+            10,
+            10,
+            10
+          ],
+          "test_runner_worker_lifecycle_sum_s": 683.387,
+          "test_runner_execution_wall_sum_s": 679.778,
+          "test_runner_cpu_sum_s": 1330.4,
+          "queue_to_worker_start_sum_s": 0.237,
+          "bazel_summary": "PASSED in 222.7s; 2220 total actions; 1074 remote cache hit, 1142 internal, 4 remote",
+          "test_runner_worker_lifecycle_samples_s": [
+            161.441,
+            223.915,
+            138.738,
+            159.293
+          ],
+          "test_runner_execution_wall_samples_s": [
+            160.8,
+            222.655,
+            137.898,
+            158.425
+          ],
+          "test_runner_cpu_samples_s": [
+            319.7,
+            429.3,
+            283.6,
+            297.8
+          ],
+          "sample_array_order": "Unordered per-action samples; array positions do not identify shard numbers"
+        },
+        "eight_shard": {
+          "invocation": "b1c4a9c0-490f-43dd-8f0d-4d1ef0132b38",
+          "args": [
+            "--test_sharding_strategy=forced=8"
+          ],
+          "elapsed_s": 158.393,
+          "critical_path_s": 156.172,
+          "critical_action_s": 156.028,
+          "action_processing_union_s": 156.853,
+          "remote_action_cache_check_union_s": 0.081,
+          "remote_action_execution_union_s": 155.481,
+          "remote_execution_process_wall_union_s": 154.68,
+          "analysis_phase_s": 1.517,
+          "execution_phase_s": 156.314,
+          "test_shard_case_counts": [
+            6,
+            5,
+            5,
+            5,
+            5,
+            5,
+            5,
+            5
+          ],
+          "test_runner_worker_lifecycle_sum_s": 941.313,
+          "test_runner_execution_wall_sum_s": 936.051,
+          "test_runner_cpu_sum_s": 1812.6,
+          "queue_to_worker_start_sum_s": 0.458,
+          "bazel_summary": "PASSED in 154.4s; 8 remote test actions; 195 action cache hit and 3 remote cache hit",
+          "test_runner_worker_lifecycle_samples_s": [
+            151.355,
+            103.358,
+            107.335,
+            112.887,
+            111.378,
+            92.723,
+            155.359,
+            106.918
+          ],
+          "test_runner_execution_wall_samples_s": [
+            150.765,
+            102.639,
+            106.8,
+            112.277,
+            110.861,
+            92.073,
+            154.368,
+            106.268
+          ],
+          "test_runner_cpu_samples_s": [
+            278.6,
+            202.4,
+            199.0,
+            218.0,
+            219.6,
+            188.2,
+            298.3,
+            208.4
+          ],
+          "sample_array_order": "Unordered per-action samples; array positions do not identify shard numbers"
+        },
+        "deltas_8_minus_4": {
+          "critical_path_s": -70.508,
+          "critical_action_s": -68.688,
+          "test_runner_worker_lifecycle_s": 257.926,
+          "test_runner_worker_lifecycle_percent": 37.7,
+          "test_runner_execution_wall_s": 256.273,
+          "test_runner_cpu_s": 482.2,
+          "test_runner_cpu_percent": 36.2
+        },
+        "definitions": {
+          "critical_path_s": "Bazel profile/BES critical path; wall time along the dependency path, not summed action work.",
+          "test_runner_worker_lifecycle_s": "Sum over remote TestRunner actions of workerCompletedTimestamp - workerStartTimestamp. Aggregate concurrent worker-seconds, not user-visible elapsed time; includes the remote action worker's test setup and output phase.",
+          "test_runner_execution_wall_s": "Sum of executionCompletedTimestamp - executionStartTimestamp for TestRunner actions; excludes input fetch and output upload.",
+          "test_runner_cpu_s": "Sum of BuildBuddy usageStats.cpuNanos for TestRunner actions; CPU-seconds, not wall time.",
+          "queue_to_worker_start_s": "Sum of workerStartTimestamp - queuedTimestamp; about 0.06s per action in both runs and not a material measured bottleneck."
+        },
+        "test_coverage_validation": {
+          "xml_artifacts_downloaded": 12,
+          "four_shard_xml_case_counts": [
+            11,
+            10,
+            10,
+            10
+          ],
+          "eight_shard_xml_case_counts": [
+            6,
+            5,
+            5,
+            5,
+            5,
+            5,
+            5,
+            5
+          ],
+          "distinct_testcase_identities": 41,
+          "identity_counter_equal_between_runs": true,
+          "each_identity_occurs_once_per_run": true,
+          "failures": 0,
+          "skipped": 0
+        },
+        "cache_and_elapsed_caveat": "Do not treat the 137.561s 4-to-8 invocation elapsed delta as causal: the second command reused the same Bazel server/output base; analysis phase fell from 63.671s to 1.517s, and the second run had only 12 newly executed actions. The 8 test actions did run fresh because --nocache_test_results was set. The action critical path and remote action timings are the more relevant comparison.",
+        "exact_remote_commands": [
+          "bazel test --config=rbe --config=ci --remote_default_exec_properties=container-image=docker://ghcr.io/agentydragon/rbe-container-image@sha256:bfe6aa979d999ccdd24389e07460c054efa8ab11dc49f416a6b129f1fc1bb814 --keep_going --invocation_id=91b26b8e-5f51-4e80-8d57-d69a8a41d197 --nocache_test_results --test_sharding_strategy=forced=4 //agentplane/app:test_thread_browser",
+          "bazel test --config=rbe --config=ci --remote_default_exec_properties=container-image=docker://ghcr.io/agentydragon/rbe-container-image@sha256:bfe6aa979d999ccdd24389e07460c054efa8ab11dc49f416a6b129f1fc1bb814 --keep_going --invocation_id=b1c4a9c0-490f-43dd-8f0d-4d1ef0132b38 --nocache_test_results --test_sharding_strategy=forced=8 //agentplane/app:test_thread_browser"
+        ]
+      },
+      "long_cases": [
+        {
+          "name": "test_switching_threads_starts_at_each_threads_tail",
+          "observed_s": [
+            51.2,
+            69.86
+          ]
+        },
+        {
+          "name": "test_returning_to_a_thread_lays_its_rows_out_at_the_heights_they_had",
+          "observed_s": [
+            40.9,
+            52.01
+          ]
+        },
+        {
+          "name": "test_returning_to_a_thread_reads_only_what_changed_while_the_reader_was_away",
+          "observed_s": [
+            47.58,
+            74.2
+          ]
+        },
+        {
+          "name": "test_archived_thread_page_survives_deleted_sandbox_and_reload",
+          "observed_s": [
+            34.6,
+            52.26
+          ]
+        }
+      ]
+    }
   }
 }
