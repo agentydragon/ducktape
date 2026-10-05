@@ -153,8 +153,7 @@ describe("ActionRequests", () => {
 
     await act(async () => button(container, label).click());
 
-    expect(decide).toHaveBeenCalledOnce();
-    expect(decide).toHaveBeenCalledWith(expect.objectContaining({ state: "decision_pending" }), verdict);
+    expect(decide).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ state: "decision_pending" }), verdict);
     expect(container.textContent).not.toContain("Pending (1)");
   });
 

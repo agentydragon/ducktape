@@ -94,8 +94,7 @@ describe("ConnectionConsent", () => {
     expect(button(container, "Authorize").disabled).toBe(true);
     await act(async () => confirmation.click());
     await act(async () => button(container, "Authorize").click());
-    expect(decide).toHaveBeenCalledOnce();
-    expect(decide).toHaveBeenCalledWith("opaque-handle", {
+    expect(decide).toHaveBeenCalledExactlyOnceWith("opaque-handle", {
       verdict: "allow",
       csrf_token: "test-only-csrf",
       service_account: PUBLIC_CODER,
@@ -135,8 +134,7 @@ describe("ConnectionConsent", () => {
       connection: { kind: "new", display_name: "Claude on wyrm2" },
       service_account: PUBLIC_CODER,
     });
-    expect(navigate).toHaveBeenCalledOnce();
-    expect(navigate).toHaveBeenCalledWith("https://idp.test/held-authorization");
+    expect(navigate).toHaveBeenCalledExactlyOnceWith("https://idp.test/held-authorization");
   });
 
   it("can deny without a labeled ServiceAccount and never follows the client redirect", async () => {
