@@ -26,33 +26,63 @@ exclude: |
     props/specimens/[^/]+/[^/]+/code/.*
   )$
 repos:
-  - repo: https://github.com/pre-commit/pre-commit-hooks
-    rev: v6.0.0
+  # Upstream pre-commit-hooks comes from the flake-locked Nix precommit package.
+  # Keep upstream hook metadata when changing these local definitions.
+  - repo: local
     hooks:
       # Safety guard: block direct commits on protected branches. Listing
       # --branch replaces the default (main, master), so name each one;
       # devel is the default branch and is server-side protected by the
       # github-branch-protection ruleset.
       - id: no-commit-to-branch
+        name: don't commit to branch
+        entry: no-commit-to-branch
+        language: system
+        pass_filenames: false
+        always_run: true
         args: [--branch, devel, --branch, main]
 
       - id: trailing-whitespace
+        name: trim trailing whitespace
+        entry: trailing-whitespace-fixer
+        language: system
+        types: [text]
+        stages: [pre-commit, pre-push, manual]
+        minimum_pre_commit_version: 3.2.0
         # .dxf: FreeCAD TechDraw DXF output has trailing whitespace in geometry lines
         # model_comparison/*.svg: matplotlib emits a trailing space after every path
         #   coordinate; stripping it just churns against the next deterministic render
         exclude: "(__snapshots__/.*\\.ambr|\\.patch|\\.dxf|cluster/docs/inference/model_comparison/.*\\.svg)$"
       - id: end-of-file-fixer
+        name: fix end of files
+        entry: end-of-file-fixer
+        language: system
+        types: [text]
+        stages: [pre-commit, pre-push, manual]
+        minimum_pre_commit_version: 3.2.0
         # .dxf: FreeCAD TechDraw DXF output ends without a trailing newline
         exclude: "\\.dxf$"
 
       - id: check-merge-conflict
+        name: check for merge conflicts
+        entry: check-merge-conflict
+        language: system
+        types: [text]
 
       # Syntax checks
       - id: check-yaml
+        name: check yaml
+        entry: check-yaml
+        language: system
+        types: [yaml]
         args: ["--allow-multiple-documents"]
         # Skip ansible !vault tags (not parseable without custom YAML constructor), Helm/Flux dirs (Go templating), chart values
         exclude: "ansible/host_vars/.*\\.yml$|cluster/k8s/|cluster/generated/|cluster/parked/|cluster/charts/|props/helm/templates/"
       - id: check-toml
+        name: check toml
+        entry: check-toml
+        language: system
+        types: [toml]
 
       # TODO: enable check-json
       # - id: check-json

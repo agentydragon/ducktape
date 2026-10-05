@@ -54,15 +54,6 @@ jobs:
           cd ansible
           ansible-galaxy role install -r requirements.yaml
 
-      - name: Restore pre-commit cache
-        id: cache-precommit-restore
-        uses: actions/cache/restore@v6
-        with:
-          path: ~/.cache/pre-commit
-          key: pre-commit-${{ runner.os }}-${{ hashFiles('.pre-commit-config.yaml') }}
-          restore-keys: |
-            pre-commit-${{ runner.os }}-
-
       # ============================================================================
       # PRE-COMMIT RUN
       # ============================================================================
@@ -74,8 +65,7 @@ jobs:
           # branch's own checkout, where that hook would always fail — skip it here.
           SKIP: no-commit-to-branch
         run: |
-          # Unset NODE_OPTIONS to avoid global-agent requirement in pre-commit's
-          # isolated node environments (markdownlint-cli2 hook uses npm)
+          # Avoid injecting global-agent into the Nix-provided Node tools.
           unset NODE_OPTIONS
           set -euo pipefail
 
@@ -95,15 +85,8 @@ jobs:
           fi
 
       # ============================================================================
-      # CACHE SAVES
+      # ANSIBLE CACHE SAVE
       # ============================================================================
-
-      - name: Save pre-commit cache
-        if: always() && steps.cache-precommit-restore.outputs.cache-hit != 'true'
-        uses: actions/cache/save@v6
-        with:
-          path: ~/.cache/pre-commit
-          key: ${{ steps.cache-precommit-restore.outputs.cache-primary-key }}
 
       - name: Save Ansible Galaxy roles cache
         if: >-

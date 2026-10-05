@@ -15,13 +15,13 @@ let
   };
   buildBuddyRunnerTools = builtins.attrValues buildBuddyRunnerPackages;
 
-  # Nix-provided tools used by .pre-commit-config.yaml. Hook environments from
-  # pre-commit-managed repos continue to be installed and cached by pre-commit.
+  # All hooks in .pre-commit-config.yaml use this shared Nix tool environment.
   preCommitPackages = [
     buildBuddyRunnerPackages.bb
     ducktapePkgs.bbr
     ducktapePkgs.ducktape-git-hooks
     pkgs.pre-commit
+    pkgs.python3Packages.pre-commit-hooks
     buildBuddyRunnerPackages.bazelisk
     pkgs.nixfmt
     pkgs.statix
