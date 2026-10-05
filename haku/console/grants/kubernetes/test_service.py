@@ -146,6 +146,23 @@ async def test_create_and_match_require_the_explicit_agent_id() -> None:
         )
     ).allowed
 
+    # The lifecycle owner need not be the principal: a grant owned by `_AGENT` applies to `_OTHER_AGENT`.
+    await service.create_grant(
+        owner_agent_id=_AGENT,
+        grant_principal=AgentGrantPrincipal(agent_id=_OTHER_AGENT),
+        source_tool_call_id="tool-call-2",
+        scope=_SCOPE,
+        rules=(_rule(),),
+        expires_at=_NOW + timedelta(minutes=5),
+    )
+    assert (
+        await service.match_request(
+            request_principal=RequestPrincipal(agent_id=_OTHER_AGENT, access_profile_id=None),
+            required_scope=_DEFAULT_SCOPE,
+            required_rules=(_rule(),),
+        )
+    ).allowed
+
 
 async def test_permanent_grant_has_no_expiry_and_can_be_ended() -> None:
     repo = FakeRepository()
