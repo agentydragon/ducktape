@@ -6,7 +6,7 @@ import json
 from collections.abc import Sequence
 from typing import Any
 
-from hamcrest import assert_that, has_item, has_items, has_properties, instance_of, is_not
+from hamcrest import assert_that, has_item, has_items, has_properties, instance_of
 from hamcrest.core.base_matcher import BaseMatcher
 from hamcrest.core.description import Description
 
@@ -101,11 +101,6 @@ def assert_items_include_instances(items: Sequence[Any], *types: type[object]) -
         raise ValueError("at least one type is required")
     matchers = [instance_of(tp) for tp in types]
     assert_that(items, has_items(*matchers))
-
-
-def assert_items_exclude_instance(items: Sequence[Any], typ: type[object]) -> None:
-    """Assert that items contains no instance of typ."""
-    assert_that(items, is_not(has_item(instance_of(typ))))
 
 
 # ------------------------

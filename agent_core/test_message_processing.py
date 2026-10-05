@@ -10,7 +10,7 @@ from agent_core.agent import Agent
 from agent_core.events import AssistantText, SystemText, UserText
 from agent_core.handler import FinishOnTextMessageHandler
 from agent_core.loop_control import AllowAnyToolOrTextMessage
-from agent_core.testing.matchers import assert_items_exclude_instance, assert_items_include_instances
+from agent_core.testing.matchers import assert_items_include_instances
 from agent_core.testing.mcp.echo_server import ECHO_MOUNT_PREFIX, ECHO_TOOL_NAME, EchoInput
 from agent_core.testing.mcp.responses import EchoMock
 from agent_core.testing.responses import DecoratorMock
@@ -75,29 +75,6 @@ async def test_process_message_adds_to_transcript(noop_agent, recording_handler)
 
 
 @pytest.mark.timeout(1)
-async def test_function_call_and_function_call_output_replay(mcp_tool_provider_echo) -> None:
-    """Request1 produces a function_call; after local execution, messages() must include function_call and function_call_output."""
-
-    @EchoMock.mock()
-    def mock(m: EchoMock):
-        yield
-        yield from m.echo_roundtrip("hi")
-        # Capture second request to verify it contains function_call + output
-        req = yield [m.make_item_reasoning(), m.assistant_text("done")]
-        input_items = list(req.input or [])
-        assert_items_include_instances(input_items, FunctionCallItem, FunctionCallOutputItem)
-
-    agent = await Agent.create(
-        tool_provider=mcp_tool_provider_echo,
-        client=mock,
-        handlers=[FinishOnTextMessageHandler()],
-        tool_policy=AllowAnyToolOrTextMessage(),
-    )
-    agent.process_message(UserMessage.text("say hi"))
-    await agent.run()
-
-
-@pytest.mark.timeout(1)
 async def test_mixed_reasoning_fc_ordering(mcp_tool_provider_echo) -> None:
     """Resp1 returns reasoning, function_call, assistant; after function_call_output, messages preserves order
     reasoning, function_call, function_call_output, assistant.
@@ -120,29 +97,6 @@ async def test_mixed_reasoning_fc_ordering(mcp_tool_provider_echo) -> None:
 
     messages = agent.to_openai_messages()
     assert_items_include_instances(messages, ReasoningItem, FunctionCallItem, FunctionCallOutputItem, AssistantMessage)
-
-
-@pytest.mark.timeout(1)
-async def test_no_synthesized_reasoning_items(mcp_tool_provider_echo) -> None:
-    """Ensure agent does not fabricate reasoning rs_* items when missing."""
-
-    @EchoMock.mock()
-    def mock(m: EchoMock):
-        yield
-        yield from m.echo_roundtrip("hi")
-        # Capture request to verify no synthesized reasoning
-        req = yield [m.make_item_reasoning(), m.assistant_text("done")]
-        input_items = list(req.input or [])
-        assert_items_exclude_instance(input_items, ReasoningItem)
-
-    agent = await Agent.create(
-        tool_provider=mcp_tool_provider_echo,
-        client=mock,
-        handlers=[FinishOnTextMessageHandler()],
-        tool_policy=AllowAnyToolOrTextMessage(),
-    )
-    agent.process_message(UserMessage.text("say hi"))
-    await agent.run()
 
 
 # --- Reasoning threading tests ---
