@@ -8,6 +8,7 @@ instead of running it as a remote Bazel action.
 from __future__ import annotations
 
 import argparse
+import asyncio
 import base64
 import contextlib
 import copy
@@ -24,7 +25,7 @@ from typing import Any
 from urllib.parse import urlencode
 
 import httpx
-from playwright.sync_api import Page, sync_playwright
+from playwright.async_api import Page, async_playwright
 
 DEFAULT_GRAFANA_URL = "https://grafana.allegedly.works"
 DEFAULT_SECRET = "monitoring/grafana-admin-password"
@@ -357,7 +358,7 @@ def dashboard_url(base_url: str, uid: str, dashboard: dict[str, Any], from_range
     return f"{base_url.rstrip('/')}/d/{uid}/{slug}?{query_string}"
 
 
-def browser_verify(
+async def browser_verify(
     url: str, dashboard: dict[str, Any], screenshot_dir: Path, wait_seconds: float, user: str, password: str
 ) -> dict[str, Any]:
     chromium_root = os.environ.get("CHROMIUM_HEADLESS_SHELL", "")
@@ -371,7 +372,7 @@ def browser_verify(
             "no Chrome/Chromium executable found; Bazel should set CHROMIUM_HEADLESS_SHELL "
             "or set GRAFANA_CHROME_PATH for a direct invocation"
         )
-    screenshot_dir.mkdir(parents=True, exist_ok=True)
+    await asyncio.to_thread(screenshot_dir.mkdir, parents=True, exist_ok=True)
     screenshot = screenshot_dir / f"{dashboard.get('uid', 'dashboard')}.png"
     console_errors: list[str] = []
     page_errors: list[str] = []
@@ -379,11 +380,11 @@ def browser_verify(
     bad_responses: list[str] = []
     bad_query_payloads: list[str] = []
 
-    with sync_playwright() as playwright:
-        browser = playwright.chromium.launch(
+    async with async_playwright() as playwright:
+        browser = await playwright.chromium.launch(
             executable_path=chrome, headless=True, args=["--no-sandbox", "--disable-dev-shm-usage"]
         )
-        page: Page = browser.new_page(viewport={"width": 1920, "height": 1200})
+        page: Page = await browser.new_page(viewport={"width": 1920, "height": 1200})
         page.on("console", lambda message: console_errors.append(message.text) if message.type == "error" else None)
         page.on("pageerror", lambda error: page_errors.append(str(error)))
         page.on(
@@ -413,30 +414,32 @@ def browser_verify(
 
         page.on("request", inspect_request)
 
-        page.goto(url, wait_until="domcontentloaded", timeout=60000)
+        await page.goto(url, wait_until="domcontentloaded", timeout=60000)
         user_input = page.locator('input[name="user"], input[autocomplete="username"]').first
-        if user_input.count():
-            user_input.fill(user)
-            page.locator('input[name="password"], input[type="password"]').first.fill(password)
-            page.locator('button[type="submit"]').first.click()
-            page.wait_for_timeout(1000)
-            page.goto(url, wait_until="domcontentloaded", timeout=60000)
+        if await user_input.count():
+            await user_input.fill(user)
+            await page.locator('input[name="password"], input[type="password"]').first.fill(password)
+            await page.locator('button[type="submit"]').first.click()
+            await page.wait_for_timeout(1000)
+            await page.goto(url, wait_until="domcontentloaded", timeout=60000)
         if "/login" in page.url:
             raise VerificationError("browser could not authenticate to Grafana")
-        page.wait_for_timeout(int(wait_seconds * 1000))
-        body_text = page.locator("body").inner_text()
+        await page.wait_for_timeout(int(wait_seconds * 1000))
+        body_text = await page.locator("body").inner_text()
         missing_titles = [
             panel_name(panel)
             for panel in panels_in(dashboard)
-            if panel.get("type") != "text" and not page.get_by_text(panel.get("title", ""), exact=True).count()
+            if panel.get("type") != "text" and not await page.get_by_text(panel.get("title", ""), exact=True).count()
         ]
-        visible_no_data = sum(
-            1
-            for index in range(page.get_by_text("No data", exact=True).count())
-            if page.get_by_text("No data", exact=True).nth(index).is_visible()
+        visible_no_data = len(
+            [
+                index
+                for index in range(await page.get_by_text("No data", exact=True).count())
+                if await page.get_by_text("No data", exact=True).nth(index).is_visible()
+            ]
         )
-        page.screenshot(path=str(screenshot), full_page=True)
-        browser.close()
+        await page.screenshot(path=str(screenshot), full_page=True)
+        await browser.close()
 
     print(f"screenshot={screenshot}")
     bad_console = [message for message in console_errors + page_errors if BAD_BROWSER_TEXT.search(message)]
@@ -484,8 +487,7 @@ def temporary_dashboard(api: GrafanaApi, dashboard: dict[str, Any]) -> Iterator[
             raise VerificationError(f"failed to delete temporary dashboard {uid}: HTTP {delete_response.status_code}")
 
 
-def main() -> int:
-    args = parse_args()
+async def async_main(args: argparse.Namespace) -> None:
     user, password = read_secret(args.secret)
     api = GrafanaApi(args.grafana_url, user, password)
     try:
@@ -514,15 +516,18 @@ def main() -> int:
                 api, dashboard, by_name, by_uid, from_ms, to_ms, args.allow_empty_panel, args.allow_all_zero_panel
             )
             url = dashboard_url(args.grafana_url, dashboard["uid"], dashboard, args.from_range, args.to_range)
-            browser_report = browser_verify(
+            browser_report = await browser_verify(
                 url, dashboard, args.screenshot_dir, args.browser_wait_seconds, user, password
             )
             print(json.dumps({"queries": query_report, "browser": browser_report}, indent=2, sort_keys=True))
             print("VERIFIED: datasource queries and authenticated browser rendering passed")
-            return 0
     finally:
         api.close()
 
 
+def main() -> None:
+    asyncio.run(async_main(parse_args()))
+
+
 if __name__ == "__main__":
-    raise SystemExit(main())
+    main()
