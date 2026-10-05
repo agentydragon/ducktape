@@ -16,6 +16,7 @@ from agentplane.app.test_thread_browser import (
     db_url,
     expect_reading_anchor,
     frames,
+    message_composer,
     wheel_and_capture_anchor_at_scrollend,
 )
 from agentplane.app.testing import history_trace
@@ -119,7 +120,7 @@ async def test_a_growing_thread_stays_one_shape_and_scrolling_back_keeps_the_rea
     await page.reload()
     await expect(page.locator(f'[data-projection-cursor="{latest.cursor}"]')).to_have_count(1, timeout=30_000)
     await expect(page.get_by_text("Window message 129", exact=False)).to_be_visible()
-    composer = page.get_by_placeholder("Enter sends, Shift+Enter or Ctrl+Enter for a new line")
+    composer = message_composer(page)
     await composer.fill("Draft retained while the thread grows")
     # Virtualization keeps only the measured viewport and overscan mounted, not every row appended.
     assert await page.locator("[data-thread-anchor]").count() < len(appended)
@@ -329,7 +330,7 @@ async def test_a_long_offline_gap_resumes_the_same_shape_without_losing_the_draf
     thread_browser.opened.replay.set()
     await expect(page.get_by_text("Test retained prefix", exact=True)).to_be_visible()
     (thread,) = await store.list_threads()
-    composer = page.get_by_placeholder("Enter sends, Shift+Enter or Ctrl+Enter for a new line")
+    composer = message_composer(page)
     await composer.fill("Draft retained across a long offline gap")
     document = await page.evaluate_handle("document")
     before = _handles(await page.evaluate("() => performance.getEntriesByType('resource').map(entry => entry.name)"))

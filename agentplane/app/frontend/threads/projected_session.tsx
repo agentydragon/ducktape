@@ -1005,6 +1005,7 @@ function ProjectedSessionBody({
         <Textarea
           value={draft}
           onChange={(event) => setDraft(event.currentTarget.value)}
+          aria-label="Message"
           placeholder="Enter sends, Shift+Enter or Ctrl+Enter for a new line"
           autosize
           minRows={2}

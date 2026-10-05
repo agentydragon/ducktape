@@ -209,7 +209,7 @@ async def test_archived_thread_page_survives_deleted_sandbox_and_reload(
                 "Sandbox no longer exists. Showing archived Thread history; controls are disabled.", exact=True
             )
         ).to_be_visible()
-        await expect(page.get_by_placeholder("Enter sends, Shift+Enter or Ctrl+Enter for a new line")).to_be_disabled()
+        await expect(message_composer(page)).to_be_disabled()
         await expect(page.get_by_role("combobox", name="Model", exact=True)).to_be_disabled()
         await expect(page.get_by_role("button", name="Interrupt", exact=True)).to_be_disabled()
         await expect(page.get_by_role("img", name="Streaming", exact=True)).to_have_count(0)
@@ -461,7 +461,7 @@ async def test_projection_epoch_replacement_retires_old_requests_and_preserves_d
     thread_browser.opened.replay.set()
     await expect_projected_cursor(page, source.entries[-1].cursor)
     await expect(page.get_by_text("Test retained prefix", exact=True)).to_be_visible()
-    draft = page.get_by_placeholder("Enter sends, Shift+Enter or Ctrl+Enter for a new line")
+    draft = message_composer(page)
     await draft.fill("Draft survives projection replacement")
     previous = await page.request.get(f"{thread_browser.ingress.url}/threads/{thread}/sync/scope")
     assert previous.ok
@@ -732,7 +732,7 @@ async def test_chronological_debug_is_lazy_paged_and_keeps_the_thread(
     )
     thread_browser.opened.replay.set()
     await expect(page.get_by_text("Test retained prefix and debug ready", exact=True)).to_be_visible()
-    draft = page.get_by_placeholder("Enter sends, Shift+Enter or Ctrl+Enter for a new line")
+    draft = message_composer(page)
     await draft.fill("Draft survives debug inspection")
     assert not any("/observations" in url for url in requests)
     await open_debug_history(page)
@@ -1141,6 +1141,10 @@ def append_items(thread_browser: ThreadBrowser, prefix: str, numbers: range) -> 
         )
     assert latest is not None
     return latest
+
+
+def message_composer(page: Page) -> Locator:
+    return page.get_by_role("textbox", name="Message", exact=True)
 
 
 async def frames(page: Page) -> None:
@@ -1591,7 +1595,7 @@ async def test_failed_turn_preserves_confirmed_input_and_allows_another_turn(
     await expect(page.get_by_text("Test retained prefix", exact=True)).to_be_visible()
     if raw:
         await expand_item_evidence(page)
-    composer = page.get_by_placeholder("Enter sends, Shift+Enter or Ctrl+Enter for a new line")
+    composer = message_composer(page)
     await composer.fill("Test input confirmed before a model error")
     await composer.press("Enter")
     async with asyncio.timeout(15):
@@ -1633,7 +1637,7 @@ async def test_failed_turn_preserves_confirmed_input_and_allows_another_turn(
     await expect(error_text).to_be_in_viewport()
     await expect_history_bottom(page)
     await expect(page.locator(".agentplane-user-bubble .agentplane-verbatim")).to_have_text(command.submit_input.text)
-    await expect(page.get_by_role("region", name="Pending commands")).to_have_count(0)
+    await expect_input_confirmed(page)
     await expect(page.get_by_role("button", name="Retry", exact=True)).to_have_count(0)
     await expect(page.get_by_role("img", name="Streaming", exact=True)).to_have_count(0)
     await expect(page.get_by_role("img", name="Incomplete", exact=True)).to_have_count(1)
@@ -1646,7 +1650,7 @@ async def test_failed_turn_preserves_confirmed_input_and_allows_another_turn(
     await expect(error_text).to_be_in_viewport()
     await expect(page.get_by_text("Test partial paragraph 29", exact=True)).to_have_count(1)
     await expect(page.locator(".agentplane-user-bubble .agentplane-verbatim")).to_have_text(command.submit_input.text)
-    await expect(page.get_by_role("region", name="Pending commands")).to_have_count(0)
+    await expect_input_confirmed(page)
     if raw:
         (thread,) = await thread_browser.store.list_threads(sandbox=SANDBOX)
         await expect_archived_events(thread_browser.event_logs, thread.id, source.entries)
@@ -1705,7 +1709,7 @@ async def test_failed_turn_preserves_confirmed_input_and_allows_another_turn(
     await expect(page.locator(".agentplane-user-bubble .agentplane-verbatim")).to_have_text(
         [command.submit_input.text, following.submit_input.text]
     )
-    await expect(page.get_by_role("region", name="Command outcomes")).to_have_count(0)
+    await expect_input_confirmed(page)
     assert source.commands.empty()
     (thread,) = await thread_browser.store.list_threads(sandbox=SANDBOX)
     archived = await thread_browser.event_logs.events(thread.id, limit=100)
@@ -1724,7 +1728,7 @@ async def test_settled_command_reason_survives_leaving_the_tail_and_reload(
     thread_browser.opened.replay.set()
     await expect(page.get_by_text("Test retained prefix", exact=True)).to_be_visible()
     submitted = "Test input whose outcome must remain visible"
-    composer = page.get_by_placeholder("Enter sends, Shift+Enter or Ctrl+Enter for a new line")
+    composer = message_composer(page)
     await composer.fill(submitted)
     await composer.press("Enter")
     async with asyncio.timeout(15):
@@ -1771,7 +1775,7 @@ async def test_browser_sends_a_command_and_transitions_its_message_to_confirmed_
     page, source = thread_browser.page, thread_browser.source
     thread_browser.opened.replay.set()
     await expect(page.get_by_text("Test retained prefix", exact=True)).to_be_visible()
-    composer = page.get_by_placeholder("Enter sends, Shift+Enter or Ctrl+Enter for a new line")
+    composer = message_composer(page)
     await composer.fill("Test input from the real browser")
     await composer.press("Enter")
     async with asyncio.timeout(15):
@@ -1806,7 +1810,7 @@ async def test_reload_redelivers_an_unsaved_command_with_its_original_identity(t
         await route.abort()
 
     await page.route("**/threads/*/commands", lose_request, times=1)
-    composer = page.get_by_placeholder("Enter sends, Shift+Enter or Ctrl+Enter for a new line")
+    composer = message_composer(page)
     await composer.fill("Test input retained across an unsent request")
     await composer.press("Enter")
     async with asyncio.timeout(15):
@@ -1835,6 +1839,11 @@ async def test_reload_redelivers_an_unsaved_command_with_its_original_identity(t
         if entry.event.HasField("command_admitted")
     ]
     assert admissions == [command]
+
+
+async def expect_input_confirmed(page: Page) -> None:
+    """Every input bubble is the confirmed message, none still local, pending, failed or no-op."""
+    await expect(page.locator('.agentplane-user-bubble:not([data-message-phase="confirmed"])')).to_have_count(0)
 
 
 async def expect_pending_message_bubble(page: Page, text: str) -> None:
@@ -1867,7 +1876,7 @@ async def test_streamed_admission_survives_a_lost_http_reply_and_reload(thread_b
 
     await page.route("**/threads/*/commands", hold_reply, times=1)
     try:
-        composer = page.get_by_placeholder("Enter sends, Shift+Enter or Ctrl+Enter for a new line")
+        composer = message_composer(page)
         await composer.fill("Test input saved without its HTTP reply")
         await composer.press("Enter")
         async with asyncio.timeout(15):
@@ -1920,7 +1929,7 @@ async def test_unobserved_committed_admission_reconciles_once_after_reload(threa
 
     await page.route("**/threads/*/commands", lose_committed_reply, times=1)
     try:
-        composer = page.get_by_placeholder("Enter sends, Shift+Enter or Ctrl+Enter for a new line")
+        composer = message_composer(page)
         await composer.fill("Test input whose admission neither browser channel observed")
         await composer.press("Enter")
         async with asyncio.timeout(15):
@@ -1993,7 +2002,7 @@ async def test_http_admission_ahead_of_replay_does_not_skip_earlier_events(threa
     async with asyncio.timeout(15):
         assert (await app.replay_held()).cursor >= 5
 
-    composer = page.get_by_placeholder("Enter sends, Shift+Enter or Ctrl+Enter for a new line")
+    composer = message_composer(page)
     await composer.fill("Test input admitted ahead of the browser prefix")
     async with page.expect_response(lambda response: response.url.endswith("/commands")) as replied:
         await composer.press("Enter")
@@ -2056,7 +2065,7 @@ async def test_electric_reconnects_unconfirmed_command_without_reloading(thread_
 
     await page.route("**/threads/*/commands", lose_committed_reply, times=1)
     try:
-        composer = page.get_by_placeholder("Enter sends, Shift+Enter or Ctrl+Enter for a new line")
+        composer = message_composer(page)
         await composer.fill("Test input pending across Electric reconnect")
         await composer.press("Enter")
         async with asyncio.timeout(15):
@@ -2125,7 +2134,7 @@ async def test_terminal_shape_error_keeps_rows_until_a_refresh_replaces_the_wind
     page, source = thread_browser.page, thread_browser.source
     thread_browser.opened.replay.set()
     await expect(page.get_by_text("Test retained prefix", exact=True)).to_be_visible()
-    composer = page.get_by_placeholder("Enter sends, Shift+Enter or Ctrl+Enter for a new line")
+    composer = message_composer(page)
     await composer.fill("Command retained across terminal shape error")
     await composer.press("Enter")
     async with asyncio.timeout(15):
@@ -2207,7 +2216,7 @@ async def test_ahead_snapshot_is_not_a_thread_or_effective_model(thread_browser:
     await expect(page.get_by_role("status")).to_have_count(0)
     await expect(page.get_by_role("combobox", name="Model", exact=True)).to_have_value("Test Model Before")
     await expect(page.get_by_role("combobox", name="Model", exact=True)).to_be_enabled()
-    await expect(page.get_by_placeholder("Enter sends, Shift+Enter or Ctrl+Enter for a new line")).to_be_enabled()
+    await expect(message_composer(page)).to_be_enabled()
     await expect(page.get_by_role("button", name="Interrupt", exact=True)).to_be_enabled()
     assert await thread_browser.event_logs.events(thread.id, limit=100) == thread_browser.source.entries
 
@@ -2239,7 +2248,7 @@ async def test_rejected_source_suffix_stops_browser_without_replacing_verified_h
     await expect(page.get_by_text("Test retained prefix", exact=True)).to_have_count(1)
     await expect(page.get_by_text("INVALID SUFFIX", exact=False)).to_have_count(0)
     await expect(page.get_by_role("combobox", name="Model", exact=True)).to_be_disabled()
-    await expect(page.get_by_placeholder("Enter sends, Shift+Enter or Ctrl+Enter for a new line")).to_be_disabled()
+    await expect(message_composer(page)).to_be_disabled()
     await expect(page.get_by_role("button", name="Interrupt", exact=True)).to_be_disabled()
     (thread,) = await thread_browser.store.list_threads(sandbox=SANDBOX)
     assert await thread_browser.event_logs.events(thread.id, limit=100) == source.entries[:4]
@@ -2251,7 +2260,7 @@ async def test_unknown_projection_failure_keeps_verified_history_and_stops_brows
     page, source, store = thread_browser.page, thread_browser.source, thread_browser.store
     thread_browser.opened.replay.set()
     await expect(page.get_by_text("Test retained prefix", exact=True)).to_be_visible()
-    composer = page.get_by_placeholder("Enter sends, Shift+Enter or Ctrl+Enter for a new line")
+    composer = message_composer(page)
     draft = "Retained draft while projection failure is reported"
     await composer.fill(draft)
 
