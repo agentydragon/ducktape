@@ -80,36 +80,35 @@ fn opts_for_fixture() -> FixtureOpts<'static> {
     opts
 }
 
-/// The gate rejects the split (the fixture runner asserts the non-zero exit)
-/// and the diagnostic does binding-pair blame, not just module-list
-/// rendering. The `render_cycle_summary` must name the implicated bindings as
-/// `from_binding (from_module) --kind--> to_binding (to_module)`
-/// rows with the `at-init` edge kind so spec authors can act
-/// directly: "move {X, Y} into one module."
+/// The gate rejects the split and the diagnostic does binding-pair blame, not
+/// just module-list rendering: `cycles.json` carries the cut edges and the
+/// `render_cycle_summary` rows name their `from_binding` and `binding`, so
+/// spec authors can act directly: "move {X, Y} into one module."
 ///
 /// The cut is a minimum feedback arc set over the constraining-edge
 /// view, so only the bindings on the edges FAS picks as back-edges
 /// are guaranteed to appear; for this fixture FAS picks the
 /// `consumed → ids` back-edge from residual into the aggregator
 /// (it breaks both `…→sub1→residual` and `…→sub2→residual`
-/// cycles with a single arc). Assert the binding-pair format and
-/// the `ids` aggregator name; the smaller cut is by design.
+/// cycles with a single arc). Assert the `ids` aggregator name; the
+/// smaller cut is by design.
 #[test]
 fn namespace_aggregator_diagnostic_blames_binding_pairs() {
-    expect_rejection_containing_all(
-        opts_for_fixture(),
-        &[
-            "unrealizable",
-            "cycle",
-            // the aggregator binding is the target of the cut's
-            // back-edge, so it must appear in the rendered cut.
-            "ids",
-            // the renderer labels edge kinds in human-readable form.
-            "at-init",
-            // binding-pair rendering uses the arrow syntax.
-            "-->",
-            // the renderer prints actionable guidance.
-            "co-locate",
-        ],
-    );
+    let rejected = run_rejection_fixture(opts_for_fixture());
+    // The aggregator binding is the target of the cut's back-edge.
+    let cycles = rejected.cycles();
+    let edge = cycles
+        .iter()
+        .flat_map(|scc| scc["cut"].as_array().expect("SCC cut"))
+        .find(|edge| edge["binding"] == "ids")
+        .unwrap_or_else(|| panic!("no cut edge targets `ids`: {cycles:#?}"));
+    // The summary renders the edge as a binding pair.
+    for end in ["from_binding", "binding"] {
+        let binding = edge[end].as_str().expect("edge binding");
+        assert!(
+            rejected.stderr.contains(binding),
+            "summary does not name `{binding}`:\n{}",
+            rejected.stderr
+        );
+    }
 }

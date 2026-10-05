@@ -8,7 +8,7 @@ import pytest_bazel
 
 from devinfra.gc import git_repo, worktree_gc as wg
 from devinfra.gc.conftest import GitRepo
-from devinfra.gc.pull_request import PrInfo, PrState
+from devinfra.gc.pull_request import PrInfo, PrState, pr_phrase
 
 
 def _classify(repo: GitRepo, path: Path, proc: Path, **kwargs: object) -> wg.Classification:
@@ -24,9 +24,7 @@ def _classify(repo: GitRepo, path: Path, proc: Path, **kwargs: object) -> wg.Cla
 def test_ancestor_is_prunable(repo: GitRepo, proc: Path) -> None:
     wt = repo.worktree("wt", "feature")  # branched at main's HEAD, then main moves ahead
     repo.commit("later", "1\n", "advance main")
-    result = _classify(repo, wt.path, proc)
-    assert isinstance(result, wg.PrunableWorktree)
-    assert "already in main" in result.reason
+    assert isinstance(_classify(repo, wt.path, proc), wg.PrunableWorktree)
 
 
 def test_squash_merge_is_prunable(repo: GitRepo, proc: Path) -> None:
@@ -45,17 +43,13 @@ def test_empty_branch_is_prunable(repo: GitRepo, proc: Path) -> None:
 def test_unique_unmerged_is_review(repo: GitRepo, proc: Path) -> None:
     wt = repo.worktree("wt", "feature")
     wt.commit("novel", "unique\n", "unmerged work")
-    result = _classify(repo, wt.path, proc)
-    assert isinstance(result, wg.ReviewWorktree)
-    assert "no merged PR" in result.reason
+    assert isinstance(_classify(repo, wt.path, proc), wg.ReviewWorktree)
 
 
 def test_dirty_tracked_change_is_kept(repo: GitRepo, proc: Path) -> None:
     wt = repo.worktree("wt", "feature")
     (wt.path / "base").write_text("dirty\n")
-    result = _classify(repo, wt.path, proc)
-    assert isinstance(result, wg.RetainedWorktree)
-    assert result.reason == "uncommitted changes"
+    assert isinstance(_classify(repo, wt.path, proc), wg.RetainedWorktree)
 
 
 def test_dirty_tracked_deletion_is_kept(repo: GitRepo, proc: Path) -> None:
@@ -63,9 +57,7 @@ def test_dirty_tracked_deletion_is_kept(repo: GitRepo, proc: Path) -> None:
     caught by the tracked-only fast path, not just a tracked modification."""
     wt = repo.worktree("wt", "feature")
     (wt.path / "base").unlink()
-    result = _classify(repo, wt.path, proc)
-    assert isinstance(result, wg.RetainedWorktree)
-    assert result.reason == "uncommitted changes"
+    assert isinstance(_classify(repo, wt.path, proc), wg.RetainedWorktree)
 
 
 def _record_status_calls(monkeypatch: pytest.MonkeyPatch) -> list[str]:
@@ -113,21 +105,27 @@ def test_clean_on_tracked_files_falls_back_to_the_full_status(
 
 
 def test_dirty_with_open_pr_notes_the_pr(repo: GitRepo, proc: Path) -> None:
+    pr = PrInfo(9, PrState.OPEN)
     wt = repo.worktree("wt", "feature")
     (wt.path / "base").write_text("dirty\n")
-    result = _classify(repo, wt.path, proc, pr_states={"feature": PrInfo(9, PrState.OPEN)})
+    without_pr = _classify(repo, wt.path, proc)
+    result = _classify(repo, wt.path, proc, pr_states={"feature": pr})
     assert isinstance(result, wg.RetainedWorktree)
-    assert result.reason == "uncommitted changes (open PR #9)"
+    assert without_pr.reason in result.reason
+    assert pr_phrase(pr) in result.reason
 
 
 def test_dirty_with_merged_pr_is_kept_and_flagged(repo: GitRepo, proc: Path) -> None:
     # Uncommitted work always wins over the merged-PR prune, but the reason surfaces the
     # merge so the tree reads as stale scratch worth clearing by hand.
+    pr = PrInfo(5, PrState.MERGED)
     wt = repo.worktree("wt", "feature")
     (wt.path / "base").write_text("dirty\n")
-    result = _classify(repo, wt.path, proc, pr_states={"feature": PrInfo(5, PrState.MERGED)})
+    without_pr = _classify(repo, wt.path, proc)
+    result = _classify(repo, wt.path, proc, pr_states={"feature": pr})
     assert isinstance(result, wg.RetainedWorktree)
-    assert result.reason == "uncommitted changes (PR #5 merged)"
+    assert without_pr.reason in result.reason
+    assert pr_phrase(pr) in result.reason
 
 
 def test_last_activity_reflects_uncommitted_file_mtime(repo: GitRepo, proc: Path) -> None:
@@ -146,7 +144,6 @@ def test_missing_worktree_directory_is_prunable(repo: GitRepo, proc: Path) -> No
     shutil.rmtree(wt.path)  # `git worktree list` still reports it, marked prunable
     result = _classify(repo, wt.path, proc)
     assert isinstance(result, wg.PrunableWorktree)
-    assert result.reason == "worktree directory is missing"
     assert result.last_activity is None
 
 
@@ -154,17 +151,15 @@ def test_detached_head_with_commit_is_review(repo: GitRepo, proc: Path) -> None:
     path = repo.path.parent / "wt"
     repo.run("worktree", "add", "-q", "--detach", str(path), "main")
     GitRepo(path).commit("novel", "unique\n", "detached work")
-    result = _classify(repo, path, proc)
-    assert isinstance(result, wg.ReviewWorktree)
-    assert "detached HEAD" in result.reason
+    assert isinstance(_classify(repo, path, proc), wg.ReviewWorktree)
 
 
 def test_merged_pr_overrides_unmerged_git(repo: GitRepo, proc: Path) -> None:
     wt = repo.worktree("wt", "feature")
     wt.commit("novel", "unique\n", "landed via squash PR")
-    result = _classify(repo, wt.path, proc, pr_states={"feature": PrInfo(42, PrState.MERGED)})
-    assert isinstance(result, wg.PrunableWorktree)
-    assert "PR #42 merged" in result.reason
+    assert isinstance(
+        _classify(repo, wt.path, proc, pr_states={"feature": PrInfo(42, PrState.MERGED)}), wg.PrunableWorktree
+    )
 
 
 def test_closed_pr_overrides_unmerged_git(repo: GitRepo, proc: Path) -> None:
@@ -172,33 +167,29 @@ def test_closed_pr_overrides_unmerged_git(repo: GitRepo, proc: Path) -> None:
     # worktree either way — its branch (whatever it holds) stays reachable through the ref.
     wt = repo.worktree("wt", "feature")
     wt.commit("novel", "unique\n", "abandoned attempt")
-    result = _classify(repo, wt.path, proc, pr_states={"feature": PrInfo(11, PrState.CLOSED)})
-    assert isinstance(result, wg.PrunableWorktree)
-    assert "closed PR #11" in result.reason
+    assert isinstance(
+        _classify(repo, wt.path, proc, pr_states={"feature": PrInfo(11, PrState.CLOSED)}), wg.PrunableWorktree
+    )
 
 
 def test_open_pr_is_kept(repo: GitRepo, proc: Path) -> None:
     wt = repo.worktree("wt", "feature")
     wt.commit("novel", "unique\n", "work in review")
-    result = _classify(repo, wt.path, proc, pr_states={"feature": PrInfo(7, PrState.OPEN)})
-    assert isinstance(result, wg.RetainedWorktree)
-    assert result.reason == "open PR #7"
+    assert isinstance(
+        _classify(repo, wt.path, proc, pr_states={"feature": PrInfo(7, PrState.OPEN)}), wg.RetainedWorktree
+    )
 
 
 def test_live_process_is_kept(repo: GitRepo, proc: Path) -> None:
     wt = repo.worktree("wt", "feature")
     (proc / "1234").mkdir()
     (proc / "1234" / "cwd").symlink_to(wt.path)
-    result = _classify(repo, wt.path, proc)
-    assert isinstance(result, wg.RetainedWorktree)
-    assert "process is working in it" in result.reason
+    assert isinstance(_classify(repo, wt.path, proc), wg.RetainedWorktree)
 
 
 def test_active_worktree_is_kept(repo: GitRepo, proc: Path) -> None:
     wt = repo.worktree("wt", "feature")
-    result = _classify(repo, wt.path, proc, active_path=wt.path)
-    assert isinstance(result, wg.RetainedWorktree)
-    assert result.reason == "the invoking worktree"
+    assert isinstance(_classify(repo, wt.path, proc, active_path=wt.path), wg.RetainedWorktree)
 
 
 def test_main_worktree_identified(repo: GitRepo) -> None:

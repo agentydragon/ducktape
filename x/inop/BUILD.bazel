@@ -64,24 +64,6 @@ py_library(
     ],
 )
 
-# no-mypy: statsmodels (transitive dep of plotnine) has broken module discovery
-# that rules_mypy can't work around (mypy.ini exclude doesn't help here).
-# See: https://github.com/python/mypy/issues/8944
-py_library(
-    name = "plots",
-    testonly = True,
-    srcs = ["plots.py"],
-    tags = ["no-mypy"],
-    visibility = ["//:__subpackages__"],
-    deps = [
-        "//x/inop/io:logging_utils",
-        "@pypi//matplotlib",
-        "@pypi//pandas",
-        "@pypi//plotnine",
-        "@pypi//pydantic",
-    ],
-)
-
 py_library(
     name = "conftest",
     testonly = True,

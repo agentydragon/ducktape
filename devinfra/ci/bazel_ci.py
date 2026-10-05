@@ -213,7 +213,6 @@ def main() -> int:
             print(f"test targets in scope: {test_target_count}")
 
             _probe("before-test")
-            _run(["bazel", "shutdown"], check=False)
             if test_target_count == 0:
                 print("No test targets in scope -- skipping bazel test.")
                 _announce_bazel_command("build")

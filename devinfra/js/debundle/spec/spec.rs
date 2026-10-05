@@ -1630,7 +1630,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn source_match_unknown_field_reports_unsupported_selector_capability() {
+    fn source_match_unknown_field_is_rejected_naming_the_field() {
         let error: serde_json::Error = serde_json::from_str::<SourceMatch>(
             r#"{
               "match": "const readable = 1;",
@@ -1639,10 +1639,6 @@ mod tests {
         )
         .unwrap_err();
         let message = error.to_string();
-        assert!(
-            message.contains("unsupported selector capability"),
-            "unexpected error: {message}"
-        );
         assert!(
             message.contains("object_props"),
             "unexpected error: {message}"

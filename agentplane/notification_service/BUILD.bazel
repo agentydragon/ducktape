@@ -69,12 +69,6 @@ py_library(
 )
 
 py_library(
-    name = "instructions",
-    srcs = ["instructions.py"],
-    visibility = ["//agentplane/sandbox_service:__pkg__"],
-)
-
-py_library(
     name = "main",
     srcs = ["main.py"],
     deps = [
@@ -164,7 +158,6 @@ py_test(
         ":api",
         ":conftest",
         ":db",
-        ":instructions",
         ":service",
         ":settings",
         ":store",
@@ -186,6 +179,7 @@ py_test(
         "//agentplane/runner:protocol_pb2",
         "//agentplane/runner/testing:scripted_model",
         "//agentplane/sandbox_service:client",
+        "//agentplane/sandbox_service:instructions",
         "//agentplane/sandbox_service:protocol_pb2",
         "//agentplane/sandbox_service/testing:kubernetes",
         "//agentplane/testing:fake_apiserver",

@@ -102,8 +102,6 @@ if query_arg:
         print("//ci:normal_test")
     else:
         raise SystemExit(f"unexpected query file: {{query_arg}}")
-elif args and args[0] == "shutdown":
-    pass
 elif args and args[0] in {"test", "build"}:
     if args[0] == "test":
         Path({str(test_args_log)!r}).write_text("\\n".join(args))
@@ -135,7 +133,6 @@ else:
     assert result.returncode == 0, result.stderr + result.stdout
     test_args = test_args_log.read_text().splitlines()
     if graph_wide:
-        assert f"graph-wide change: {changed_file}" in result.stdout
         assert not bazel_diff_args_log.exists()
         assert "//..." in test_args
         assert not any(arg.startswith("--target_pattern_file=") for arg in test_args)

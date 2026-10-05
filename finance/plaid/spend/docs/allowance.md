@@ -6,9 +6,9 @@ statement-cycle card totals. The Deployment requires one privately delivered Sec
 required `cards` and optional `allowance`; omitting `allowance` disables the allowance.
 Do not commit this configuration to the public repo; storing it in private git alone
 does not deploy it. Without the Secret the pod will not start. Invalid JSON or policy
-fails application startup. Restart the Deployment after changing the Secret; the
+fails application startup. Reloader restarts the Deployment after the Secret changes; the
 process reads the file only at startup.
-Check the current read-only Plaid account coverage **before** activating.
+Check the current read-only Plaid account coverage **before** configuring the allowance.
 
 Generic _synthetic_ example (amounts are integer cents; IDs, categories and prefixes illustrative):
 
@@ -17,7 +17,7 @@ Generic _synthetic_ example (amounts are integer cents; IDs, categories and pref
   "cards": [],
   "allowance": {
     "monthly_minor_units": 100000,
-    "activation_at": null,
+    "activation_at": "2026-01-31",
     "spending_account_ids": ["example-credit-id", "example-checking-id"],
     "currency": "USD",
     "max_sync_age_hours": 72,
@@ -33,13 +33,14 @@ Generic _synthetic_ example (amounts are integer cents; IDs, categories and pref
 }
 ```
 
-`activation_at: null` is **preview**, without a live allowance or historic debt;
-set it to an explicit ISO calendar date (YYYY-MM-DD) to activate. Plaid supplies only
+When `allowance` is present, it is active. Supply a required `activation_at` ISO date
+(YYYY-MM-DD) as the stable credit-cycle anchor; null or omission is invalid. To disable
+the allowance, omit the entire `allowance` object. Plaid supplies only
 transaction **dates**, not trustworthy purchase times: activation uses the full UTC date, and a purchase dated on activation day counts in full. A full monthly
 credit arrives immediately on activation, again on each UTC monthly anniversary
 (clamped to month-end, always measured from the original day). Unspent credit carries
 forward; no monthly reset or second credit at the first calendar-month boundary.
-Do not set activation in the past expecting a clean slate. Only transactions dated
+Do not backdate the anchor expecting a clean slate; choose the intended first credit date. Only transactions dated
 on or after activation are counted, and the calendar and year views only span the
 activated period.
 

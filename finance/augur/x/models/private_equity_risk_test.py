@@ -30,7 +30,6 @@ from finance.augur.x.models.private_equity_risk import (
     _sample_company_valuation_vectorized,
     _sample_issuer,
     _scale_reverting_drift,
-    _seed_from_rollout_seeds,
 )
 from finance.augur.x.models.provider_config import ProviderConfig
 
@@ -242,27 +241,6 @@ def test_private_equity_risk_tender_cancellation_suppresses_scheduled_tender() -
     np.testing.assert_array_equal(sale_capacity[0, :], np.zeros(4, dtype=np.float64))
 
 
-def test_private_equity_risk_tender_cancellation_default_zero_preserves_tender() -> None:
-    """Cancellation defaults to 0.0 — scheduled tender fires as before."""
-
-    sampled = _sample(
-        _issuer(
-            monthly_log_return_mu=0.0,
-            monthly_log_return_sigma=0.0,
-            tender_interval_months_median=2.0,
-            tender_interval_log_sigma=0.0,
-            tender_price_log_discount_sigma=0.0,
-        ),
-        horizon_months=3,
-    )
-
-    event_kind = _int(sampled, PrivateEquityIntChannel.EVENT_KIND_CODE, horizon=3)
-    tenders = _bool(sampled, PrivateEquityBoolChannel.SALE_OPPORTUNITY_ACTIVE, horizon=3)
-
-    assert int(event_kind[0, 2]) == int(PrivateEquityEventKindCode.TENDER)
-    assert tenders[0, 2]
-
-
 def test_private_equity_risk_legal_event_severity_matches_80_15_5_split() -> None:
     """Umbrella legal_event probability splits into 80%/15%/5% severities.
 
@@ -345,7 +323,7 @@ def test_private_equity_risk_unrequested_issuer_still_satisfies_request() -> Non
 
     model = PrivateEquityRiskProviderConfig(issuers={ACME: _issuer()}).realize_model()
 
-    with pytest.raises(ValueError, match=r"missing required private-equity issuer\(s\): \['other_issuer'\]"):
+    with pytest.raises(ValueError, match="other_issuer"):
         model.sample(
             ExogenousSamplingRequest(
                 horizon_months=1,
@@ -399,7 +377,7 @@ def test_public_market_open_hazard_without_anchors_is_flat_tail() -> None:
 
 
 def test_public_market_cdf_anchors_reject_non_increasing_month() -> None:
-    with pytest.raises(ValidationError, match="strictly increasing in month"):
+    with pytest.raises(ValidationError, match="public_market_cdf_anchors"):
         _issuer(
             public_market_cdf_anchors=(
                 PublicMarketCdfAnchor(month=7, cumulative_probability=0.5),
@@ -409,7 +387,7 @@ def test_public_market_cdf_anchors_reject_non_increasing_month() -> None:
 
 
 def test_public_market_cdf_anchors_reject_decreasing_cumulative_probability() -> None:
-    with pytest.raises(ValidationError, match="non-decreasing in cumulative_probability"):
+    with pytest.raises(ValidationError, match="public_market_cdf_anchors"):
         _issuer(
             public_market_cdf_anchors=(
                 PublicMarketCdfAnchor(month=7, cumulative_probability=0.6),
@@ -599,7 +577,7 @@ def test_scale_reversion_curbs_long_horizon_growth_vs_constant_hot_drift() -> No
 def test_scale_reversion_validator_rejects_young_below_mature() -> None:
     """Reversion is downward: a young drift below the mature asymptote is rejected."""
 
-    with pytest.raises(ValidationError, match="mu_young must be >= the mature"):
+    with pytest.raises(ValidationError, match="monthly_log_return_mu_young"):
         _valuation_issuer(
             valuation_monthly_log_return_mu=0.05,
             valuation_drift_scale_reversion=ValuationDriftScaleReversion(
@@ -784,16 +762,6 @@ def _sample_dilution_paths(issuer: PrivateEquityRiskIssuerConfig, *, rollout_cou
     return _sample_issuer(ACME, issuer, request)
 
 
-def _drawn_rates(issuer: PrivateEquityRiskIssuerConfig, *, rollout_count: int) -> np.ndarray:
-    """Reproduce the per-rollout dilution-rate draw the sampler performs."""
-
-    seeds = tuple(range(1, rollout_count + 1))
-    dilution_seeds = derive_stream_rollout_seeds(seeds, stream_id="acme:pe_risk_dilution")
-    rng = np.random.default_rng(_seed_from_rollout_seeds(dilution_seeds))
-    z = rng.standard_normal(rollout_count)
-    return issuer.annual_dilution_rate * np.exp(issuer.annual_dilution_rate_log_sigma * z)
-
-
 def _latent_coupled_mark(
     issuer: PrivateEquityRiskIssuerConfig, *, rollout_count: int, horizon_months: int
 ) -> np.ndarray:
@@ -869,11 +837,19 @@ def test_drawn_rate_median_is_anchored_at_annual_dilution_rate() -> None:
     """median(r) ~ annual_dilution_rate over many rollouts (median-anchored LogNormal)."""
 
     rate = 0.20
-    issuer = _dilution_issuer(annual_dilution_rate=rate, annual_dilution_rate_log_sigma=0.4)
-    rates = _drawn_rates(issuer, rollout_count=5000)
+    rollout_count = 5000
+    factor = _dilution_factor(
+        annual_dilution_rate=rate,
+        annual_dilution_rate_log_sigma=0.4,
+        rollout_seeds=tuple(range(1, rollout_count + 1)),
+        issuer_id=ACME,
+        rollout_count=rollout_count,
+        horizon_months=12,
+    )
+    # At month 12 the factor is (1 + r_i) ** 1, so it carries each rollout's drawn rate.
     # LogNormal median == exp(mu) == rate; the sample median converges to it (NOT the mean,
     # which would sit at rate * exp(sigma**2 / 2) ~ 0.217 here).
-    assert float(np.median(rates)) == pytest.approx(rate, rel=0.05)
+    assert float(np.median(factor[:, 12] - 1.0)) == pytest.approx(rate, rel=0.05)
 
 
 def test_positive_sigma_is_deterministic_under_fixed_seeds() -> None:

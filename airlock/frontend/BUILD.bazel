@@ -142,7 +142,7 @@ airlock_vitest_test(
 
 vitest_config(
     name = "vitest_config",
-    environment = "happy-dom",
+    environment = "node",
 )
 
 esbuild(

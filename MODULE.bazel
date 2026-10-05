@@ -635,6 +635,7 @@ npm.npm_translate_lock(
         "@eslint/js": [""],
         "@typescript-eslint/eslint-plugin": [""],
         "@typescript-eslint/parser": [""],
+        "@vitest/eslint-plugin": [""],
         "eslint-plugin-import-x": [""],
         "eslint-plugin-react": [""],
         "eslint-plugin-react-hooks": [""],

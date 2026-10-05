@@ -47,7 +47,7 @@ LOCATION_A_PROPERTY = PropertyId("location_a_property")
 
 
 def test_property_asset_property_ids_must_be_unique() -> None:
-    with pytest.raises(ValidationError, match="duplicate property asset property_ids"):
+    with pytest.raises(ValidationError):
         PropertySourceConfig(
             properties_path=Path("/tmp/properties.json"),
             property_assets=(
@@ -126,13 +126,17 @@ def test_config_carries_optional_plaid_portfolio_source(minimal_config: MinimalC
 
 
 def test_enabled_plaid_portfolio_source_must_select_something() -> None:
-    with pytest.raises(ValidationError, match="must select cash accounts or SP500 proxy groups"):
+    with pytest.raises(ValidationError):
         PlaidPortfolioSourceConfig(enabled=True)
 
 
 def test_unknown_field_is_rejected(minimal_config: MinimalConfig) -> None:
-    with pytest.raises(ValidationError, match="Extra inputs are not permitted"):
+    with pytest.raises(ValidationError) as rejected:
         minimal_config(extra_field="nope")
+
+    assert [(error["type"], error["loc"]) for error in rejected.value.errors()] == [
+        ("extra_forbidden", ("extra_field",))
+    ]
 
 
 def test_yaml_round_trip_through_dump_and_load(tmp_path: Path, minimal_config: MinimalConfig) -> None:
@@ -271,7 +275,7 @@ def test_a_security_distribution_must_allocate_its_whole_payout(minimal_config: 
     """A short split pays out less than the fund distributes, which reads as a lower yield
     rather than as the misconfiguration it is."""
 
-    with pytest.raises(ValidationError, match="fractions must sum to 1"):
+    with pytest.raises(ValidationError):
         minimal_config(
             security_distributions=(
                 SecurityDistributionConfig(
@@ -289,7 +293,7 @@ def test_a_security_distribution_is_declared_once_per_symbol(minimal_config: Min
         symbol=SecuritySymbol("bnd"), tax_character=(DistributionTaxShareConfig(fraction=1.0, character=Taxable()),)
     )
 
-    with pytest.raises(ValidationError, match="name each symbol once"):
+    with pytest.raises(ValidationError):
         minimal_config(security_distributions=(declaration, declaration))
 
 

@@ -9,7 +9,7 @@ from x.wt.testing.git_helpers import add_worktree
 pytestmark = pytest.mark.timeout(10)
 
 
-def test_worktree_branch_names_are_actual(repo_factory, config_factory, wtcli, require_gitstatusd):
+def test_worktree_branch_names_are_actual(repo_factory, config_factory, wtcli):
     repo_path = repo_factory.create_repo()
     cfg = config_factory(repo_path).minimal(upstream_branch="HEAD")
 

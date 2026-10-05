@@ -86,7 +86,7 @@ with this shape (synthetic example; omit `allowance` to disable it):
 
 Use `null` for an optional limit or threshold. The service validates this file at startup and reads
 it from `/etc/plaid-spend/config.json`. Until the private Secret exists, the pod cannot start;
-a missing or invalid file fails application startup. Restart the Deployment after updating it;
+a missing or invalid file fails application startup. Reloader restarts the Deployment after updating it;
 the process does not watch for mounted Secret updates. The spend database role can only read the
 four Plaid source tables needed to compute the view; it does not store or write this configuration.
 

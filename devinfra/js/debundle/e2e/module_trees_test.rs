@@ -88,6 +88,88 @@ fn two_trees_share_one_chunk() {
     );
 }
 
+/// A module in one chunk's tree uses a binding the chunk imports from another
+/// mapped chunk: the import is rebuilt relative to the module's own file and
+/// keeps the legacy local name, while the other chunk's entry exports its
+/// binding under both names. Each mapped chunk writes its `modules.json` report.
+#[test]
+fn tree_module_imports_from_another_mapped_chunk() {
+    let run = run_tree_fixture(
+        &TreeFixture {
+            chunks: &[
+                (
+                    "cli",
+                    "import { printFeature } from './print.js';\nfunction cliFeature() { return `cli:${printFeature()}`; }\nconsole.log(cliFeature());\nexport { cliFeature };\n",
+                ),
+                (
+                    "print",
+                    "function printFeature() { return 'print'; }\nexport { printFeature };\n",
+                ),
+            ],
+            module_roots: &[("chunks/cli", "cli"), ("chunks/print", "print")],
+            modules: &[
+                (
+                    "chunks/cli/runtime/session.yaml",
+                    r#"source_matches:
+  - match: |
+      function selectedFeature() {
+        return `cli:${printFeature()}`;
+      }
+    bindings:
+      - local: selectedFeature
+        name: CliFeature
+"#,
+                ),
+                (
+                    "chunks/print/protocol/stream.yaml",
+                    r#"source_matches:
+  - match: |
+      function selectedFeature() {
+        return "print";
+      }
+    bindings:
+      - local: selectedFeature
+        name: PrintFeature
+"#,
+                ),
+            ],
+        },
+        &[],
+    );
+    assert_succeeded(&run);
+    assert_module_source(
+        &run.out_root,
+        "app/cli/runtime/session.js",
+        &["import { printFeature } from \"../../print/entry.js\""],
+        &["PrintFeature"],
+    );
+    // Loading the module resolves its `../../print/entry.js` import.
+    assert_module_exports(
+        &run.out_root,
+        "app/cli/runtime/session.js",
+        &["CliFeature"],
+        &["PrintFeature"],
+    );
+    assert_module_exports(
+        &run.out_root,
+        "app/print/protocol/stream.js",
+        &["PrintFeature"],
+        &["CliFeature"],
+    );
+    assert_module_exports(
+        &run.out_root,
+        "app/print/entry.js",
+        &["printFeature", "PrintFeature"],
+        &[],
+    );
+    for chunk in ["cli", "print"] {
+        assert!(
+            run.report_root.join(chunk).join("modules.json").exists(),
+            "{chunk} has no modules.json report",
+        );
+    }
+}
+
 /// Two trees of one chunk whose `source_matches[]` entries can only take the
 /// same place: one program, so `all_different` holds across the trees and
 /// neither entity resolves. Another chunk is unaffected.

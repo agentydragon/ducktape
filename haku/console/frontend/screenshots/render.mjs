@@ -17,11 +17,13 @@ import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import {
+  abortUnexpectedRequests,
   assertNetworkSettled,
   assertNoPageErrors,
   prepareDeterministicPage,
   screenshotElement,
   waitForStable,
+  WAIT_TIMEOUT_MS,
 } from "../../../../util/testing/frontend_visual/capture.mjs";
 import {
   DISABLE_ANIMATIONS_CSS,
@@ -221,6 +223,8 @@ function pageHtml(css, harnessJs, scene, colorScheme) {
   ].join("");
 }
 
+const htmlResponse = (body) => ({ status: 200, contentType: "text/html", body });
+
 // Prefer the BUILD-wired $(rootpath) env (resolves against the js_test runfiles-root CWD);
 // fall back to this script's runfiles-relative location, where the harness bundle and
 // generated stylesheet sit at fixed workspace-relative paths alongside it.
@@ -285,31 +289,24 @@ try {
       // (e.g. formatAge) would drift between runs instead of rendering the same value every time.
       await prepareDeterministicPage(page, { viewport: { ...viewport, deviceScaleFactor: 2 }, colorScheme });
       page.on("console", (message) => console.log(`[${name}] browser: ${message.text()}`));
-      await page.setRequestInterception(true);
       const html = pageHtml(css, harnessJs, name, colorScheme);
       // Everything this page may load is served right here; anything else escaping to the network
       // is a hole in the harness's hermeticity and fails the scene by name below — in the test
       // sandbox it could only fail asynchronously, racing the capture into a flaked shot.
-      const escapedRequests = [];
-      page.on("request", (request) => {
-        if (request.isNavigationRequest() && request.frame() === page.mainFrame()) {
-          void request.respond({ status: 200, contentType: "text/html", body: html });
-        } else if (request.url().startsWith("https://haku-ui.test/")) {
-          void request.respond({ status: 200, contentType: "text/html", body: mockHakuUi });
-        } else if (/^(?:data|about):/.test(request.url())) {
-          // Resolves inside the page — not network, so not a hermeticity hole.
-          void request.continue();
-        } else {
-          escapedRequests.push(`${request.resourceType()} ${request.url()}`);
-          void request.abort();
+      const escapedRequests = await abortUnexpectedRequests(
+        page,
+        () => false,
+        (request) => {
+          if (request.isNavigationRequest() && request.frame() === page.mainFrame()) return htmlResponse(html);
+          return request.url().startsWith("https://haku-ui.test/") ? htmlResponse(mockHakuUi) : undefined;
         }
-      });
-      await page.goto("https://haku-console.test/", { waitUntil: "load" });
-      await page.waitForSelector("#app > *", { timeout: 10_000 });
+      );
+      await page.goto("https://haku-console.test/", { waitUntil: "load", timeout: WAIT_TIMEOUT_MS });
+      await page.waitForSelector("#app > *", { timeout: WAIT_TIMEOUT_MS });
       if (frame) {
         const hakuFrame = page.frames().find((candidate) => candidate.url().startsWith("https://haku-ui.test/"));
         if (!hakuFrame) throw new Error(`scene ${name}: mocked Haku UI iframe did not load`);
-        await hakuFrame.waitForSelector("main", { timeout: 10_000 });
+        await hakuFrame.waitForSelector("main", { timeout: WAIT_TIMEOUT_MS });
       }
       // Wait for the initial fetches and paint rather than guessing how long the first render
       // takes. This also gives approval cards a chance to arm without coupling the harness to
@@ -321,7 +318,7 @@ try {
           [...document.querySelectorAll("button")]
             .filter((button) => /^(Approve|Deny)$/.test(button.textContent?.trim() ?? ""))
             .every((button) => !button.disabled),
-        { timeout: 5_000 }
+        { timeout: WAIT_TIMEOUT_MS }
       );
       // Close the drawer BEFORE the clicks below, not after. The drawer renders its own tool-call
       // cards, so while it is open its controls shadow the page's — `page.click` takes the first
@@ -331,12 +328,12 @@ try {
       if (closeApprovals) {
         const drawerClose = await page.$('.haku-shell-drawer [aria-label="Close approvals"]');
         if (drawerClose) await drawerClose.click();
-        await page.waitForSelector(".haku-shell-drawer", { hidden: true, timeout: 5_000 });
+        await page.waitForSelector(".haku-shell-drawer", { hidden: true, timeout: WAIT_TIMEOUT_MS });
       }
       // A scene whose subject is what a control does with operator input has to supply that input
       // first — a composer's Send stays disabled until something is typed.
       if (typeInto) {
-        await page.waitForSelector(typeInto.selector, { visible: true, timeout: 5_000 });
+        await page.waitForSelector(typeInto.selector, { visible: true, timeout: WAIT_TIMEOUT_MS });
         await page.type(typeInto.selector, typeInto.text);
         await waitForStable(page);
       }
@@ -359,7 +356,7 @@ try {
               (candidate) =>
                 candidate.textContent?.trim() === label && candidate.getAttribute("aria-selected") === "true"
             ),
-          { timeout: 5_000 },
+          { timeout: WAIT_TIMEOUT_MS },
           clickTabText
         );
         await page.mouse.move(0, 0);
@@ -382,7 +379,7 @@ try {
       // does. Either way the scene renders something plausible and the test passes. So a scene
       // that clicks must also state what the clicks were for; `expectVisible` is its own proof.
       if (expectVisible) {
-        await page.waitForSelector(expectVisible, { visible: true, timeout: 5_000 });
+        await page.waitForSelector(expectVisible, { visible: true, timeout: WAIT_TIMEOUT_MS });
       } else if (clicks ?? click ?? clickTabText) {
         throw new Error(`scene ${name}: has clicks but no expectVisible — assert what they reveal`);
       }
@@ -392,16 +389,19 @@ try {
         // sync-status icon. Only the real-shell (frame) scenes hit this; the isolated sync-* scenes
         // force a specific state via clicks (sync-syncing deliberately wants "Syncing" left showing,
         // so this must not run there).
-        await page.waitForSelector('[aria-label="Syncing"]', { hidden: true, timeout: 5_000 });
+        await page.waitForSelector('[aria-label="Syncing"]', { hidden: true, timeout: WAIT_TIMEOUT_MS });
       }
       // The settings scene's MCP server list resolves through two chained async mock-fetch
       // rounds (list, then a per-connection status probe). Waiting for these loaders to clear
       // is a no-op on scenes that never had them: `hidden: true` is already satisfied for a
       // selector that was never in the DOM.
-      await page.waitForSelector('[aria-label="Loading MCP servers"]', { hidden: true, timeout: 5_000 });
-      await page.waitForSelector('[aria-label="Loading Agents"]', { hidden: true, timeout: 5_000 });
-      await page.waitForSelector('[aria-label="Loading Agent enrollment"]', { hidden: true, timeout: 5_000 });
-      await page.waitForSelector('[aria-label="Checking connection status"]', { hidden: true, timeout: 5_000 });
+      await page.waitForSelector('[aria-label="Loading MCP servers"]', { hidden: true, timeout: WAIT_TIMEOUT_MS });
+      await page.waitForSelector('[aria-label="Loading Agents"]', { hidden: true, timeout: WAIT_TIMEOUT_MS });
+      await page.waitForSelector('[aria-label="Loading Agent enrollment"]', { hidden: true, timeout: WAIT_TIMEOUT_MS });
+      await page.waitForSelector('[aria-label="Checking connection status"]', {
+        hidden: true,
+        timeout: WAIT_TIMEOUT_MS,
+      });
       // A scene whose subject is at the end of a long scroller (the history view's "Load older
       // calls") captures the bottom of it. Scrolling is also what mounts the code blocks of the
       // rows down there, since they build their editors only once near the viewport.

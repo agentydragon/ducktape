@@ -55,9 +55,10 @@ provider "litellm" {
 # ============================================================================
 # cheap-experiments — shared low-cost key for temporary agent experiments
 # ============================================================================
-# Agents receive this Secret only through an expiring Haku Console Kubernetes grant.
-# The canonical Secret lives beside LiteLLM; the Agentplane testing copy is owned by
-# the cdk8s-generated ESO distribution, and LiteLLM enforces the model allowlist below.
+# The canonical Secret lives beside LiteLLM. ESO copies it into the Agentplane
+# testing ingress and both isolated egress-credentials namespaces. Agents use
+# proxy-substituted placeholders, not the real key; LiteLLM enforces this allowlist
+# and the shared budget. Existing Haku Console grants remain a separate access path.
 
 resource "litellm_key" "cheap_experiments" {
   key_alias       = "cheap-experiments"

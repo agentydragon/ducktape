@@ -75,11 +75,11 @@ instructions string clears the caller's inherited instructions, but not backend 
 Nested paths, unknown paths, duplicate paths, and supplied nondefault fields outside the mask are
 refused. An empty mask means no overrides. Optional `setup_script` distinguishes omitted from empty.
 
-`agent_instructions` in deployment configuration is the complete deployment-wide platform instruction
+`platform_instructions` in deployment configuration is the complete deployment-wide platform instruction
 block; deployment construction supplies service URLs and assembles all shared guidance into this value.
 The Sandbox Service passes it through unchanged. On `OpenSession`, the backend prepends the explicit
 Sandbox/session destination (and notification destination when configured), then appends the effective
-session `instructions`, stored or overridden. A non-empty `agent_instructions` value is required; there is
+session `instructions`, stored or overridden. A non-empty `platform_instructions` value is required; there is
 no runtime default. Stored specs are never rewritten. Changed defaults may make an Open retry conflict:
 inspect retained state and explicitly resume rather than silently adopting a different spec or creating
 another ID.

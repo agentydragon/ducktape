@@ -35,9 +35,6 @@ console.log(av, helper);
             vec![],
         )
         .with_unassigned_mode(mode);
-        expect_rejection_containing_all(
-            opts,
-            &["validate_emitted_exports", "duplicate", "`av`", file],
-        );
+        expect_rejection_containing_all(opts, &["validate_emitted_exports", "av", file]);
     }
 }

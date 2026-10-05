@@ -36,7 +36,7 @@ def name_rule(field: Literal["name", "merchant_name"], prefix: str, kind: Kind) 
     return Rule(condition=NamePrefix(type="name_prefix", field=field, prefix=prefix), kind=kind)
 
 
-def policy(*, activation_at: date | None = START_DATE, rules: list[Rule] | None = None) -> AllowancePolicy:
+def policy(*, activation_at: date = START_DATE, rules: list[Rule] | None = None) -> AllowancePolicy:
     return AllowancePolicy(
         monthly_minor_units=10_000,
         spending_account_ids={"card-1"},
@@ -79,7 +79,8 @@ def view(rows=(), when=START):
 def test_single_config_parses_cards_and_optional_allowance():
     assert SpendConfiguration.model_validate_json('{"cards":[]}').allowance is None
     config = SpendConfiguration.model_validate_json(
-        '{"cards":[],"allowance":{"monthly_minor_units":10000,"spending_account_ids":["example-card"],'
+        '{"cards":[],"allowance":{"monthly_minor_units":10000,"activation_at":"2026-01-31",'
+        '"spending_account_ids":["example-card"],'
         '"rules":[{"condition":{"type":"name_prefix","field":"name","prefix":"EXAMPLE"},"kind":"flexible"}]}}'
     )
     assert config.allowance is not None
@@ -88,10 +89,28 @@ def test_single_config_parses_cards_and_optional_allowance():
     assert config.allowance.rules[0] == name_rule("name", "EXAMPLE", Kind.FLEXIBLE)
     with pytest.raises(ValidationError):
         SpendConfiguration.model_validate_json('{"cards":[],"allowance":{"monthly_minor_units":10000}}')
+    with pytest.raises(ValidationError):
+        SpendConfiguration.model_validate_json(
+            '{"cards":[],"allowance":{"monthly_minor_units":10000,"spending_account_ids":["example-card"],'
+            '"rules":[{"condition":{"type":"name_prefix","field":"name","prefix":"EXAMPLE"},"kind":"flexible"}]}}'
+        )
+    with pytest.raises(ValidationError):
+        AllowancePolicy.model_validate(
+            {
+                "monthly_minor_units": 10_000,
+                "activation_at": None,
+                "spending_account_ids": ["example-card"],
+                "rules": [
+                    {"condition": {"type": "name_prefix", "field": "name", "prefix": "EXAMPLE"}, "kind": "flexible"}
+                ],
+            }
+        )
 
 
-def test_activation_preview_and_no_double_credit():
-    assert calculate(policy(activation_at=None), [], now=START, last_synced_at=START).status == Status.PREVIEW
+def test_configured_allowance_is_active_and_no_double_credit():
+    assert view().status == Status.ACTIVE
+    with pytest.raises(ValueError, match="future"):
+        view(when=START.replace(year=2025))
     assert view([row("2026-01-30", 90)]).available_minor_units == 10_000
     assert view(when=datetime(2026, 2, 1, tzinfo=UTC)).available_minor_units == 10_000
     assert view(when=datetime(2026, 2, 28, tzinfo=UTC)).available_minor_units == 20_000

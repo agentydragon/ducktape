@@ -558,13 +558,15 @@ export function EntityCard({
       );
     }
     return (
-      <Alert color="red" title={label} role="alert" style={{ position: "relative" }}>
+      <Alert color="red" role="alert" style={{ position: "relative" }}>
         <EvidenceToggle entity={entity} style={{ position: "absolute", top: 8, right: 8 }} />
-        {diagnostic && (
-          <Text size="sm" style={wrapped}>
-            {diagnostic}
+        {/* The end padding keeps the first line clear of the toggle. */}
+        <Text size="sm" style={{ ...wrapped, paddingInlineEnd: "1.5rem" }}>
+          <Text span fw={700} c="var(--alert-color)">
+            {label}
           </Text>
-        )}
+          {diagnostic && ` ${diagnostic}`}
+        </Text>
         <EvidencePanel threadId={threadId} entity={entity} />
       </Alert>
     );

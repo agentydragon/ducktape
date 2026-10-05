@@ -79,6 +79,27 @@ impl RejectedFixture {
     pub fn owner_graph(&self) -> OwnerGraphReport {
         read_owner_graph(&self.report_root, &self.chunk_id)
     }
+
+    /// `cycles.json`: one entry per blocking SCC, with its `modules` and `cut`.
+    pub fn cycles(&self) -> Vec<Value> {
+        read_json(&self.report_root.join(&self.chunk_id).join("cycles.json"))
+    }
+
+    /// `atomic_unit_conflicts.json`: one entry per atomic unit the spec splits, with its
+    /// `claims` (owner, binding names, module) and `causes`.
+    pub fn atomic_unit_conflicts(&self) -> Vec<Value> {
+        read_json(
+            &self
+                .report_root
+                .join(&self.chunk_id)
+                .join("atomic_unit_conflicts.json"),
+        )
+    }
+
+    /// The `outcomes` of `selector_diagnostics.json`.
+    pub fn selector_outcomes(&self) -> Vec<Value> {
+        read_chunk_selector_outcomes(&self.report_root, &self.chunk_id)
+    }
 }
 
 fn read_owner_graph(report_root: &Path, chunk_id: &str) -> OwnerGraphReport {
@@ -126,45 +147,80 @@ pub fn run_fixture(opts: FixtureOpts<'_>) -> Fixture {
     }
 }
 
-/// Run the materializer over `opts` and assert it rejects the spec
-/// with stderr containing at least one of `error_substring_alternatives`
-/// (case-insensitive). Use this helper when the rejection's exact
-/// wording isn't pinned — e.g. when several rejection paths converge
-/// on the same outcome and the caller is fine with any of them.
-///
-/// For tests that need to assert *specific evidence* in the error
-/// (e.g. "the cycle report names mod_a AND mod_b"), use
-/// [`expect_rejection_containing_all`] instead.
-pub fn expect_rejection(opts: FixtureOpts<'_>, error_substring_alternatives: &[&str]) {
-    let rejected = run_rejection_fixture(opts);
-    let stderr = rejected.stderr;
-    let stderr_lower = stderr.to_lowercase();
+/// Runs `opts` and asserts the realizability gate rejected it: returns the blocking SCC of
+/// `cycles.json` whose modules include every one of `modules`.
+pub fn expect_cycle_rejection(opts: FixtureOpts<'_>, modules: &[&str]) -> Value {
+    let cycles = run_rejection_fixture(opts).cycles();
+    cycles
+        .iter()
+        .find(|scc| {
+            let members = scc["modules"].as_array().expect("SCC modules");
+            modules.iter().all(|module| {
+                members
+                    .iter()
+                    .any(|member| member.as_str() == Some(*module))
+            })
+        })
+        .cloned()
+        .unwrap_or_else(|| panic!("no blocking SCC contains {modules:?}: {cycles:#?}"))
+}
+
+/// [`expect_cycle_rejection`] for a cycle whose cut has a side-effect ordering (`sequenced`) edge.
+pub fn expect_sequenced_cycle_rejection(opts: FixtureOpts<'_>, modules: &[&str]) {
+    let scc = expect_cycle_rejection(opts, modules);
     assert!(
-        error_substring_alternatives
+        scc["cut"]
+            .as_array()
+            .expect("SCC cut")
             .iter()
-            .any(|s| stderr_lower.contains(&s.to_lowercase())),
-        "stderr did not contain any of {error_substring_alternatives:?}\nstderr:\n{stderr}",
+            .any(|edge| edge["kind"] == "sequenced"),
+        "no sequenced edge in the cut: {scc:#}"
     );
 }
 
-/// Stricter sibling of [`expect_rejection`]: the
-/// stderr must contain **every** substring in `required_substrings`,
-/// not just one. Use when the test's contract is that the error
-/// names specific evidence (every module in a cycle, every binding
-/// in a collision, etc.); a generic-but-empty error wouldn't pass
-/// the contract.
-pub fn expect_rejection_containing_all(opts: FixtureOpts<'_>, required_substrings: &[&str]) {
+/// Runs `opts` and asserts the atomic-unit check rejected it: some conflict of
+/// `atomic_unit_conflicts.json` has claims in every one of `modules` and every one of `causes`.
+pub fn expect_atomic_conflict_rejection(opts: FixtureOpts<'_>, modules: &[&str], causes: &[&str]) {
+    let conflicts = run_rejection_fixture(opts).atomic_unit_conflicts();
+    assert!(
+        conflicts.iter().any(|conflict| {
+            let claims = conflict["claims"].as_array().expect("conflict claims");
+            let conflict_causes = conflict["causes"].as_array().expect("conflict causes");
+            modules.iter().all(|module| {
+                claims
+                    .iter()
+                    .any(|claim| claim["module"].as_str() == Some(*module))
+            }) && causes.iter().all(|cause| {
+                conflict_causes
+                    .iter()
+                    .any(|candidate| candidate.as_str() == Some(*cause))
+            })
+        }),
+        "no atomic-unit conflict claimed by {modules:?} with causes {causes:?}: {conflicts:#?}"
+    );
+}
+
+/// Runs `opts` and asserts the selector pass rejected it: returns the outcome of `kind` placed
+/// in `logical_module`.
+pub fn expect_selector_outcome(opts: FixtureOpts<'_>, kind: &str, logical_module: &str) -> Value {
+    let outcomes = run_rejection_fixture(opts).selector_outcomes();
+    find_outcome_in_module(&outcomes, kind, logical_module).clone()
+}
+
+/// Runs `opts` and asserts it is rejected with stderr naming every one of `tokens`: identifiers,
+/// paths or code tokens, matched case-sensitively. For a rejection with no report under the
+/// report root, or a rendering whose identifiers are under test; otherwise assert on the report.
+pub fn expect_rejection_containing_all(opts: FixtureOpts<'_>, tokens: &[&str]) {
     let rejected = run_rejection_fixture(opts);
-    let stderr = rejected.stderr;
-    let stderr_lower = stderr.to_lowercase();
-    let missing: Vec<&str> = required_substrings
+    let missing: Vec<&str> = tokens
         .iter()
         .copied()
-        .filter(|s| !stderr_lower.contains(&s.to_lowercase()))
+        .filter(|token| !rejected.stderr.contains(token))
         .collect();
     assert!(
         missing.is_empty(),
-        "stderr missing required substrings {missing:?}\nstderr:\n{stderr}",
+        "stderr missing {missing:?}\nstderr:\n{}",
+        rejected.stderr,
     );
 }
 
@@ -227,11 +283,6 @@ pub fn assert_fail_fast_stops_at_first_outcome<'a>(
     assert!(
         line.starts_with(&format!("[{kind}] ")),
         "fail-fast stopped at {line:?}, expected a {kind} outcome"
-    );
-    assert!(
-        !fail_fast.stderr.contains("Selector outcome report"),
-        "fail-fast printed the keep-going report:\n{}",
-        fail_fast.stderr
     );
     line.clone()
 }
@@ -501,7 +552,7 @@ pub fn assert_pure_cycle_break_with_opts(
 }
 
 pub fn expect_pure_cycle_rejection(opts: FixtureOpts<'_>, module_path: &str) {
-    expect_rejection_containing_all(opts, &["cycle", module_path, "residual"]);
+    expect_cycle_rejection(opts, &[module_path, "residual"]);
 }
 
 pub fn assert_file_ends_with_single_newline(out_root: &Path, module_path: &str) {
@@ -885,6 +936,21 @@ pub fn read_chunk_selector_outcomes(report_root: &Path, chunk: &str) -> Vec<Valu
         .as_array()
         .unwrap_or_else(|| panic!("outcomes must be an array: {report:#}"))
         .clone()
+}
+
+/// The outcome record of `kind` placed in `logical_module`.
+pub fn find_outcome_in_module<'a>(
+    outcomes: &'a [Value],
+    kind: &str,
+    logical_module: &str,
+) -> &'a Value {
+    outcomes
+        .iter()
+        .find(|record| {
+            record["outcome"]["kind"] == kind
+                && record["placement"]["logical_module"] == logical_module
+        })
+        .unwrap_or_else(|| panic!("missing {kind} outcome in {logical_module}: {outcomes:#?}"))
 }
 
 /// The outcome record of `kind` whose entity is the export `export_name`.

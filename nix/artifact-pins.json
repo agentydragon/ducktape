@@ -45,8 +45,8 @@
       "sha256": "QEkhch/PGM7nW1BsP5K8MYMdT0FlzOXLRSiBYeZdZaw="
     },
     "debundle": {
-      "url": "https://github.com/agentydragon/ducktape/releases/download/debundle-09e047580068/debundle",
-      "sha256": "CeBHWABomJFIDeTy3PtMr3nkLsOZEHeIBhvG7+sbvaA="
+      "url": "https://github.com/agentydragon/ducktape/releases/download/debundle-1fe0a257af1e/debundle",
+      "sha256": "H+CiV68e+NhcRXtFqLFrGBIE6NxhOUfaIrvFnaf5A3o="
     },
     "skill-cluster_health": {
       "url": "https://github.com/agentydragon/ducktape/releases/download/skill-cluster_health-dd6165877050/cluster_health.skill",
@@ -185,8 +185,8 @@
       "sha256": "BLRbTVupl++pIpqmQZ7WZVzCw1IGy/JDG50ZOqc7HGg="
     },
     "skill-session_logs": {
-      "url": "https://github.com/agentydragon/ducktape/releases/download/skill-session_logs-670be672dca3/session_logs.skill",
-      "sha256": "Zwvmctyj1zEbZaxFmSsGXc2vWioL6+IkJTbnpLkTK6g="
+      "url": "https://github.com/agentydragon/ducktape/releases/download/skill-session_logs-b03e78000a82/session_logs.skill",
+      "sha256": "sD54AAqCIBPyyQKDdITPqAJxlED5Ng36c35+ggd0Gqc="
     },
     "skill-superforecaster": {
       "url": "https://github.com/agentydragon/ducktape/releases/download/skill-superforecaster-6619e2155fb3/superforecaster.skill",

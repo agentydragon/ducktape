@@ -21,6 +21,7 @@ _THREAD_PRESET_HAKU_CLAUDE = "haku-claude"
 # The EgressPolicy objects egress creates in every environment, named here
 # because presets and explicit grants refer to them.
 BASIC_POLICY = "basic"
+INFERENCE_EXPERIMENTS_POLICY = "inference-experiments"
 GITHUB_AGENTYDRAGON_AGENT_POLICY = "github-agentydragon-agent"
 GITHUB_CLONE_POLICY = "github-clone"
 GITHUB_ACTIONS_LOGS_POLICY = "github-actions-logs"
@@ -186,10 +187,9 @@ def settings(
                 else {}
             ),
         },
-        # Granted to every sandbox before whatever the operator picks: without the model
-        # endpoint a sandbox has no agent, so it is not a choice (see this namespace's
-        # egress/ directory).
-        default_policies=[BASIC_POLICY],
+        # Grant platform operations and inference experiments independently. The latter
+        # is a fleet default, not part of the basic Agentplane platform policy.
+        default_policies=[BASIC_POLICY, INFERENCE_EXPERIMENTS_POLICY],
         # The egress proxy's admin port (agentplane/egress `Settings.admin_port`), asked
         # for each sandbox's recent decisions; until the proxy Deployment lands the page
         # shows the rules alone.

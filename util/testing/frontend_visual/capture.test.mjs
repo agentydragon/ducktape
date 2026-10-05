@@ -95,13 +95,26 @@ function fakePage() {
     resourceType: () => resourceType,
     continue: async () => log.push(`continue ${url}`),
     abort: async () => log.push(`abort ${url}`),
+    respond: async (response) => log.push(`respond ${url} ${response.body}`),
   });
-  const violations = await abortUnexpectedRequests(page, (candidate) => candidate.url().startsWith("file://"));
+  const violations = await abortUnexpectedRequests(
+    page,
+    (candidate) => candidate.url().startsWith("file://"),
+    (candidate) =>
+      candidate.url().startsWith("https://app.test/")
+        ? { status: 200, contentType: "text/html", body: "page" }
+        : undefined
+  );
   assert.deepEqual(seen, [["intercept", true]]);
   const log = [];
   handlers.request(request("file:///harness/index.html", "document", log));
+  handlers.request(request("https://app.test/", "document", log));
   handlers.request(request("https://fonts.example/inter.woff2", "font", log));
-  assert.deepEqual(log, ["continue file:///harness/index.html", "abort https://fonts.example/inter.woff2"]);
+  assert.deepEqual(log, [
+    "continue file:///harness/index.html",
+    "respond https://app.test/ page",
+    "abort https://fonts.example/inter.woff2",
+  ]);
   assert.deepEqual(violations, ["font https://fonts.example/inter.woff2"]);
 }
 

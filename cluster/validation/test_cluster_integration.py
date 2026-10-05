@@ -88,6 +88,13 @@ def test_no_dependency_errors(cluster: ParsedCluster, repo_root: Path) -> None:
     assert not errors, "\n".join(errors)
 
 
+def test_plaid_mcp_is_not_gated_by_unrelated_authentik_terraform(cluster: ParsedCluster) -> None:
+    """Auth service and secret operator are prerequisites; other SSO apps are not."""
+    spec = cluster.flux_kustomizations["plaid-mcp"]
+    assert {dependency.name for dependency in spec.depends_on} == {"cnpg", "external-secrets-operator", "authentik"}
+    assert spec.wait
+
+
 def test_controller_resources_have_health_checks(cluster: ParsedCluster, repo_root: Path) -> None:
     errors = check_controller_health_checks(cluster, repo_root)
     assert not errors, "\n".join(errors)

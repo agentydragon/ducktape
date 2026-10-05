@@ -41,7 +41,7 @@ import {
   summarizeSetup,
   type HistoryRow,
 } from "./history_rows";
-import { liveSandboxesUrl, LiveStatus, useLive, useRequiredThreadsLive, type SandboxesSnapshot } from "../live";
+import { LiveStatus, useRequiredSandboxesLive, useRequiredThreadsLive } from "../live";
 import { StaleNotice, useOptionalStreamStatus, type StreamStatus } from "../stream_status";
 import { RetainedDisclosure, RetainedDisclosureProvider, useRetainedDisclosure } from "./retained_disclosures";
 import { CollapsibleCard, EntityCard, ItemStatus, pendingSentMessage } from "./thread_cards";
@@ -1202,22 +1202,40 @@ export function ProjectedSession({
   settingsOpen?: boolean;
 }): JSX.Element {
   const sync = useThreadSync();
-  const [thread, setThread] = useState<ThreadView | null>(null);
-  const [tabStatus, setTabStatus] = useState(CONNECTING_TAB_STATUS);
   const threadsLive = useRequiredThreadsLive();
+  const snapshotThread = threadsLive.snapshot?.threads.find((candidate) => candidate.id === threadId);
+  const [thread, setThread] = useState<ThreadView | null>(snapshotThread ?? null);
+  const [tabStatus, setTabStatus] = useState(CONNECTING_TAB_STATUS);
   const topbarStatus = threadStatusFromSnapshot(
-    threadsLive.snapshot?.threads.find((candidate) => candidate.id === threadId),
+    snapshotThread,
     threadsLive.snapshot?.sandboxes.find((candidate) => candidate.name === thread?.sandbox),
     snapshotFresh(threadsLive)
   );
   const [error, setError] = useState<string | null>(null);
-  const environment = useLive<SandboxesSnapshot>(liveSandboxesUrl(), "Sandboxes");
+  const environment = useRequiredSandboxesLive();
   const inventoryFresh = environment.stream.standing === "current" && environment.health?.fresh === true;
   const sandbox = environment.snapshot?.sandboxes.find((candidate) => candidate.name === thread?.sandbox);
   const notice = thread && environment.snapshot && sandboxNotice(sandbox, inventoryFresh);
   useEffect(() => {
-    void getThread(threadId).then(setThread, (reason: unknown) => setError(displayableError(reason)));
-  }, [threadId]);
+    let current = true;
+    setError(null);
+    if (snapshotThread) {
+      setThread(snapshotThread);
+    } else {
+      setThread(null);
+      void getThread(threadId).then(
+        (view) => {
+          if (current) setThread(view);
+        },
+        (reason: unknown) => {
+          if (current) setError(displayableError(reason));
+        }
+      );
+    }
+    return () => {
+      current = false;
+    };
+  }, [snapshotThread, threadId]);
   useEffect(() => {
     document.title = settingsOpen
       ? appDocumentTitle("/", true)

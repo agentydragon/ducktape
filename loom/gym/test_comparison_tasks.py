@@ -33,7 +33,8 @@ def test_outcome_compares_percentage_changes() -> None:
     assert "100.00" in task.question.text
     assert "200.00" in task.question.text
     assert task.outcome == BinaryOutcome(value=True)
-    assert task.outcome_source == "computed from synthetic btcusd and synthetic sp500"
+    assert a.provenance in task.outcome_source
+    assert b.provenance in task.outcome_source
 
     swapped = comparison_task(b, a, anchor=date(2020, 1, 1))
     assert swapped is not None

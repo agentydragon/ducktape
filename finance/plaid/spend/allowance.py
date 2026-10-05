@@ -19,7 +19,6 @@ class Kind(StrEnum):
 
 
 class Status(StrEnum):
-    PREVIEW = "preview"
     ACTIVE = "active"
     UNAVAILABLE = "unavailable"
 
@@ -69,7 +68,7 @@ class Rule(BaseModel):
 class AllowancePolicy(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
     monthly_minor_units: int = Field(gt=0)
-    activation_at: date | None = None
+    activation_at: date
     spending_account_ids: set[str] = Field(min_length=1)
     currency: Literal["USD"] = "USD"
     rules: list[Rule] = Field(min_length=1)
@@ -112,7 +111,7 @@ class AllowanceView(BaseModel):
     status: Status
     currency: str
     monthly_minor_units: int
-    activation_at: date | None
+    activation_at: date
     available_minor_units: int | None
     next_credit_at: datetime | None
     posted_minor_units: int
@@ -120,7 +119,7 @@ class AllowanceView(BaseModel):
     review_minor_units: int
     unmatched_refunds_minor_units: int
     windows_minor_units: Windows | None = Field(
-        description="Spend after activation in each reporting window; null until active."
+        description="Spend after the configured start date in each reporting window; null when unavailable."
     )
     trailing_7_daily_minor_units: int | None
     estimated_exhaustion_at: datetime | None = Field(
@@ -163,26 +162,9 @@ def calculate(
     if now.utcoffset() is None:
         raise ValueError("now must be timezone-aware")
     now = now.astimezone(UTC)
-    start = datetime.combine(policy.activation_at, datetime.min.time(), tzinfo=UTC) if policy.activation_at else None
-    if start is None or start > now:
-        return AllowanceView(
-            status=Status.PREVIEW,
-            currency=policy.currency,
-            monthly_minor_units=policy.monthly_minor_units,
-            activation_at=policy.activation_at,
-            available_minor_units=None,
-            next_credit_at=None,
-            posted_minor_units=0,
-            pending_minor_units=0,
-            review_minor_units=0,
-            unmatched_refunds_minor_units=0,
-            windows_minor_units=None,
-            trailing_7_daily_minor_units=None,
-            estimated_exhaustion_at=None,
-            alert_state=PaceAlert.UNAVAILABLE,
-            last_synced_at=last_synced_at,
-            note="Not activated; no pre-launch debt or credit is imported",
-        )
+    start = datetime.combine(policy.activation_at, datetime.min.time(), tzinfo=UTC)
+    if start > now:
+        raise ValueError("allowance start date cannot be in the future")
 
     credits = 0
     while month_anniversary(start, credits) <= now:

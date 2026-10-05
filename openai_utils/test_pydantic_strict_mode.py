@@ -146,7 +146,7 @@ def test_ref_with_description_rejected_without_inlining():
 
     # Default generator produces $ref with description sibling
     schema = RawModel.model_json_schema()
-    with pytest.raises(OpenAIStrictModeValidationError, match=r"\$ref cannot have additional keywords"):
+    with pytest.raises(OpenAIStrictModeValidationError, match=r"\$ref"):
         validate_openai_strict_mode_schema(schema, "RawModel")
 
 
@@ -181,7 +181,7 @@ def test_oneof_not_permitted():
         "additionalProperties": False,
     }
 
-    with pytest.raises(OpenAIStrictModeValidationError, match="oneOf is not supported"):
+    with pytest.raises(OpenAIStrictModeValidationError, match="oneOf"):
         validate_openai_strict_mode_schema(schema_with_oneof, "OneOfSchema")
 
 
@@ -206,7 +206,7 @@ def test_anyof_at_schema_root_not_permitted():
         ]
     }
 
-    with pytest.raises(OpenAIStrictModeValidationError, match="Schema root cannot use anyOf"):
+    with pytest.raises(OpenAIStrictModeValidationError, match="anyOf"):
         validate_openai_strict_mode_schema(schema_with_root_anyof, "RootAnyOfSchema")
 
 

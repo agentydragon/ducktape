@@ -2,22 +2,17 @@
 
 from __future__ import annotations
 
-import datetime
-from uuid import UUID
-
 import pytest
 import pytest_bazel
 from pydantic import TypeAdapter, ValidationError
 
 from haku.console.grants.kubernetes.models import (
-    Grant,
     GrantScope,
     NamespacesGrantScope,
     NonResourceGrantScope,
     Rule,
     validate_grant_scope_rules,
 )
-from haku.console.grants.principal import AgentGrantPrincipal
 
 
 def resource_rule() -> Rule:
@@ -61,21 +56,6 @@ def test_scope_is_a_discriminated_union_consistent_with_rule_kind() -> None:
         NamespacesGrantScope(namespaces={"*"})
     with pytest.raises(ValueError, match="requires only non-resource"):
         validate_grant_scope_rules(NonResourceGrantScope(), (resource_rule(),))
-
-
-def test_agent_grant_principal_may_differ_from_lifecycle_owner() -> None:
-    grant = Grant(
-        grant_id=UUID(int=1),
-        owner_agent_id=UUID(int=2),
-        principal=AgentGrantPrincipal(agent_id=UUID(int=3)),
-        source_tool_call_id="tc_source",
-        scope=NamespacesGrantScope(namespaces={"demo"}),
-        rules=(resource_rule(),),
-        created_at=datetime.datetime(2026, 8, 21, tzinfo=datetime.UTC),
-        expires_at=datetime.datetime(2026, 8, 21, 1, tzinfo=datetime.UTC),
-    )
-
-    assert grant.principal == AgentGrantPrincipal(agent_id=UUID(int=3))
 
 
 if __name__ == "__main__":

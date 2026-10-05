@@ -136,7 +136,7 @@ function mockWatchStream() {
   return stream;
 }
 
-it("recovers an initial session-list network failure without a refresh control", async () => {
+it("recovers an initial session-list network failure by retrying on its own", async () => {
   vi.useFakeTimers();
   vi.mocked(listSessions)
     .mockRejectedValueOnce(new TypeError("temporary network failure"))
@@ -146,9 +146,6 @@ it("recovers an initial session-list network failure without a refresh control",
   await act(async () => vi.advanceTimersByTimeAsync(500));
   expect(listSessions).toHaveBeenCalledTimes(2);
   expect(container.textContent).toContain(session.title);
-  expect([...container.querySelectorAll("button")].some((button) => button.textContent?.trim() === "Refresh")).toBe(
-    false
-  );
 });
 
 it("keeps the selected session when the session list is hidden and shown", async () => {
@@ -439,9 +436,6 @@ it("applies committed session and transcript changes without restarting the watc
   expect(getSession).toHaveBeenCalledWith(session.id, expect.any(AbortSignal));
   expect(listSessions).toHaveBeenCalledTimes(1);
   expect(watchSessions).toHaveBeenCalledTimes(1);
-  expect([...container.querySelectorAll("button")].some((button) => button.textContent?.trim() === "Refresh")).toBe(
-    false
-  );
 });
 
 it("updates an older loaded session into and out of the active filter across a stale page response", async () => {

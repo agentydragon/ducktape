@@ -521,6 +521,7 @@ py_test(
         ":conftest",
         ":mcp_config",
         "//:conftest",
+        "@pypi//pydantic",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],

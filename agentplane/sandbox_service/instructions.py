@@ -2,10 +2,9 @@
 
 from jinja2 import StrictUndefined, Template
 
-from agentplane.notification_service.instructions import instructions as notification_instructions
-from util.bazel.runfiles import get_required_path
+from util.bazel.runfiles import get_required_path, own_repo_rlocation
 
-PLATFORM_INSTRUCTIONS_TEMPLATE = "_main/agentplane/sandbox_service/agent_instructions.j2"
+PLATFORM_INSTRUCTIONS_TEMPLATE = "agentplane/sandbox_service/agent_instructions.j2"
 
 
 def render_platform_instructions(
@@ -13,10 +12,16 @@ def render_platform_instructions(
 ) -> str:
     """Render the complete deployment-wide prompt from service URLs and shared guidance."""
     template = Template(
-        get_required_path(PLATFORM_INSTRUCTIONS_TEMPLATE).read_text(encoding="utf-8"), undefined=StrictUndefined
+        get_required_path(own_repo_rlocation(PLATFORM_INSTRUCTIONS_TEMPLATE)).read_text(encoding="utf-8"),
+        undefined=StrictUndefined,
     )
-    configured = str(template.render(egress_api_url=egress_api_url, actions_service_url=actions_service_url))
-    return combine_instructions(configured, notification_instructions(notifications_service_url))
+    return str(
+        template.render(
+            egress_api_url=egress_api_url,
+            actions_service_url=actions_service_url,
+            notifications_service_url=notifications_service_url,
+        )
+    ).strip()
 
 
 def combine_instructions(platform: str, task: str) -> str:

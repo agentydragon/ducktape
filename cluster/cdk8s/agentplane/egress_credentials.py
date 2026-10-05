@@ -15,7 +15,10 @@ from external_secrets_crds.io.external_secrets import (
 
 from cluster.cdk8s import namespaces
 from cluster.cdk8s.api_resource import custom_resource
+from cluster.cdk8s.external_secrets.single_secret_store import single_secret_store
+from cluster.cdk8s.litellm.credentials import CHEAP_EXPERIMENTS_KEY
 from cluster.cdk8s.namespaces import Vpa
+from cluster.cdk8s.ollama.app import DIRECT_TOKEN
 from cluster.cdk8s.providers.external_secrets.external_secret import ExternalSecret, SecretStoreRef, remote_data
 
 STAGING_NAMESPACE = "agentplane-staging-egress-credentials"
@@ -71,3 +74,23 @@ def credential_external_secret(
         creation_policy=ExternalSecretSpecTargetCreationPolicy.OWNER,
         deletion_policy=ExternalSecretSpecTargetDeletionPolicy.RETAIN,
     )
+
+
+def inference_credentials(scope: Construct, *, reader: ServiceAccount, credentials_namespace: str) -> None:
+    """Copy existing inference keys for proxy substitution, never into a sandbox."""
+    for source in (DIRECT_TOKEN, CHEAP_EXPERIMENTS_KEY):
+        credential_external_secret(
+            scope,
+            namespace=credentials_namespace,
+            target=source.secret.name,
+            source=source.secret.name,
+            key=source.key,
+            store=single_secret_store(
+                scope,
+                f"{credentials_namespace}-{source.secret.name}",
+                reader=reader,
+                source_namespace=source.secret.namespace,
+                source_secret=source.secret.name,
+                consumer_namespace=credentials_namespace,
+            ),
+        )

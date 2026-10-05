@@ -4,7 +4,10 @@ py_library(
     name = "cli",
     srcs = ["cli.py"],
     visibility = ["//visibility:public"],
-    deps = ["@pypi//typer"],
+    deps = [
+        "//util:agent_sandbox",
+        "@pypi//typer",
+    ],
 )
 
 py_binary(

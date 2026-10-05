@@ -38,9 +38,14 @@ py_library(
 py_library(
     name = "credentials",
     srcs = ["credentials.py"],
+    visibility = [
+        "//cluster/cdk8s:__pkg__",
+        "//cluster/cdk8s/agentplane:__pkg__",
+    ],
     deps = [
         "//cluster/cdk8s:flux",
         "//cluster/cdk8s:generation",
+        "//cluster/cdk8s:secret_ref",
         "//cluster/cdk8s/external_secrets:single_secret_store",
         "//cluster/cdk8s/providers/external_secrets:external_secret",
         "//cluster/cdk8s/providers/external_secrets:externalsecret",
@@ -55,6 +60,7 @@ py_library(
     srcs = ["proxy.py"],
     visibility = [
         "//cluster/cdk8s:__pkg__",
+        "//cluster/cdk8s/agentplane:__pkg__",
         "//cluster/cdk8s/gatus:__pkg__",
     ],
     deps = [

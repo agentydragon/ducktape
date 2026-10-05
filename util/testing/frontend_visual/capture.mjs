@@ -157,12 +157,20 @@ export async function assertNetworkSettled(page, { context, timeoutMs = WAIT_TIM
  * as a plausible-looking baseline — so the fence aborts it immediately and the caller fails the
  * scene by asserting the returned array is empty before capturing.
  *
- * Installs request interception; `allow` receives the Puppeteer request object.
+ * Installs request interception; `allow` receives the Puppeteer request object. `serve`, which
+ * runs first, may answer a request from memory by returning a Puppeteer response
+ * (`{ status, contentType, body }`) — for a page whose own document or iframes live on synthetic
+ * origins nothing real backs. A served request is neither continued nor recorded.
  */
-export async function abortUnexpectedRequests(page, allow) {
+export async function abortUnexpectedRequests(page, allow, serve = () => undefined) {
   await page.setRequestInterception(true);
   const violations = [];
   page.on("request", (request) => {
+    const response = serve(request);
+    if (response) {
+      void request.respond(response);
+      return;
+    }
     // data:/about: resolve inside the page — not network, so never a hermeticity hole.
     if (/^(?:data|about):/.test(request.url()) || allow(request)) {
       void request.continue();

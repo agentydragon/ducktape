@@ -4,10 +4,15 @@ from functools import partial
 
 import pytest_bazel
 
-from git_commit_ai.editor import SCISSORS_MARK, render_editor_content
+from git_commit_ai.editor import SCISSORS_MARK, extract_commit_content, render_editor_content
 
 # Test helper - stats args are irrelevant for these tests
 _render = partial(render_editor_content, cached=False, elapsed_s=0.0)
+
+
+def _listed_changes(content: str) -> str:
+    """The commented part above the scissors line, where the changed files are listed."""
+    return content.partition(f"# {SCISSORS_MARK}")[0]
 
 
 def test_editor_content_respects_commit_verbose_config(temp_repo, git_repo):
@@ -44,8 +49,9 @@ def test_editor_content_sections_for_staged_changes(temp_repo, git_repo):
     temp_repo.stage("b.txt")
 
     content = _render(git_repo, "test msg")
-    assert "# Changes to be committed:" in content
-    assert "b.txt" in content
+    listed = _listed_changes(content)
+    assert "b.txt" in listed
+    assert "a.txt" not in listed
     assert f"# {SCISSORS_MARK}" in content
 
 
@@ -61,10 +67,9 @@ def test_editor_content_sections_for_unstaged_and_untracked(temp_repo, git_repo)
     temp_repo.write("untracked.txt", "x\n")
 
     content = _render(git_repo, "test msg")
-    assert "# Changes not staged for commit:" in content
-    assert "file.txt" in content
-    assert "# Untracked files:" in content
-    assert "untracked.txt" in content
+    listed = _listed_changes(content)
+    assert listed.count("file.txt") == 1
+    assert listed.count("untracked.txt") == 1
     assert f"# {SCISSORS_MARK}" in content
 
 
@@ -74,10 +79,7 @@ def test_editor_content_clean_repo(temp_repo, git_repo):
     temp_repo.commit("init")
 
     content = _render(git_repo, "test msg")
-    # Should not show any change sections if clean
-    assert "# Changes to be committed:" not in content
-    assert "# Changes not staged for commit:" not in content
-    assert "# Untracked files:" not in content
+    assert "r.txt" not in _listed_changes(content)
     assert f"# {SCISSORS_MARK}" in content
 
 
@@ -90,8 +92,8 @@ def test_editor_content_includes_user_context(temp_repo, git_repo):
     temp_repo.stage("b.txt")
 
     content = _render(git_repo, "test msg", user_context="fixing the auth bug")
-    assert "# User context (-m):" in content
     assert "# fixing the auth bug" in content
+    assert extract_commit_content(content) == "test msg"
 
 
 def test_editor_content_includes_previous_message_when_amending(temp_repo, git_repo):
@@ -103,8 +105,8 @@ def test_editor_content_includes_previous_message_when_amending(temp_repo, git_r
     temp_repo.stage("b.txt")
 
     content = _render(git_repo, "new msg", previous_message="old commit message")
-    assert "# Previous commit message (being amended):" in content
     assert "# old commit message" in content
+    assert extract_commit_content(content) == "new msg"
 
 
 def test_editor_content_includes_both_user_context_and_previous_message(temp_repo, git_repo):
@@ -117,15 +119,14 @@ def test_editor_content_includes_both_user_context_and_previous_message(temp_rep
 
     content = _render(git_repo, "new msg", previous_message="old commit", user_context="user hint")
     # Both should be present and commented
-    assert "# User context (-m):" in content
     assert "# user hint" in content
-    assert "# Previous commit message (being amended):" in content
     assert "# old commit" in content
     # User context should appear before previous message
-    assert content.index("# User context") < content.index("# Previous commit message")
+    assert content.index("user hint") < content.index("old commit")
+    assert extract_commit_content(content) == "new msg"
 
 
-def test_staged_files_not_duplicated_in_unstaged_section(temp_repo, git_repo, snapshot):
+def test_staged_files_not_duplicated_in_unstaged_section(temp_repo, git_repo):
     """Staged-only files must NOT appear in 'Changes not staged for commit'.
 
     Bug: When modifying an existing tracked file and staging it, the file
@@ -143,13 +144,8 @@ def test_staged_files_not_duplicated_in_unstaged_section(temp_repo, git_repo, sn
 
     content = _render(git_repo, "test")
 
-    # Snapshot the full content
-    assert content == snapshot
-
-    # Explicit assertion: tracked.txt must NOT appear in unstaged section
-    assert "# Changes not staged for commit:" not in content, (
-        "Unstaged section should not exist when all changes are staged"
-    )
+    # Listed once (under "to be committed"), not a second time as unstaged.
+    assert content.count("tracked.txt") == 1
 
 
 if __name__ == "__main__":

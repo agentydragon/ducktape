@@ -289,7 +289,7 @@ class SpendService:
                     note="Account coverage or sync freshness unavailable; do not rely on the allowance.",
                 )
             rows = []
-            if policy.activation_at is not None and policy.activation_at <= now.date():
+            if policy.activation_at <= now.date():
                 rows = await connection.fetch(
                     """SELECT t.account_id, t.transaction_id, t.pending_transaction_id,
                               t.date, t.amount, t.pending, t.name, t.merchant_name,

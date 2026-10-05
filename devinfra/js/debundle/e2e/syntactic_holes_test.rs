@@ -607,7 +607,7 @@ fn member_source_match_comma_list_siblings_disambiguated_by_nested_value() {
 
 #[test]
 fn comma_list_siblings_without_the_nested_anchor_are_ambiguous() {
-    expect_rejection_containing_all(
+    let outcome = expect_selector_outcome(
         member_fixture(
             HANDLER_SIBLINGS,
             "routes",
@@ -617,12 +617,21 @@ fn comma_list_siblings_without_the_nested_anchor_are_ambiguous() {
                 "const readable = makeHandler({ route: { method: EXPR } });",
             ),
         ),
-        &["ambiguous", "handlerA", "handlerB"],
+        "ambiguous",
+        "routes",
     );
+    let candidates: Vec<&str> = outcome["outcome"]["candidates"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|candidate| candidate["binding"].as_str().unwrap())
+        .collect();
+    assert_eq!(candidates, ["handlerA", "handlerB"], "{outcome:#}");
 }
 
 #[test]
 fn source_match_anything_object_key_reports_unsupported_position() {
+    // Rejected before selector resolution: no report, and the position is named only in the error.
     expect_rejection_containing_all(
         member_fixture(
             r#"const actual = { mode: "runtime" };
@@ -632,12 +641,7 @@ export { actual };
             "config",
             Member::source_alpha("makeConfig", r#"const readable = { ANYTHING: "runtime" };"#),
         ),
-        &[
-            "ANYTHING",
-            "unsupported",
-            "object property key",
-            "key: ANYTHING",
-        ],
+        &["ANYTHING", "object property key"],
     );
 }
 
@@ -767,7 +771,7 @@ export { runtimeStyle };
 
 #[test]
 fn literal_regex_holes_preserve_no_match_and_ambiguity_diagnostics() {
-    for (source, selector, outcome, anchor) in [
+    for (source, selector, kind) in [
         (
             r#"const decoyStyle = "foo";
 const runtimeStyle = "fo";
@@ -776,7 +780,6 @@ export { decoyStyle, runtimeStyle };
 "#,
             r#"const readableStyle = STR_LITERAL_MATCHING_RE("^foo*");"#,
             "ambiguous",
-            "foo",
         ),
         (
             r#"const runtimeStyle = "PanelShell-42";
@@ -784,8 +787,7 @@ console.log(runtimeStyle);
 export { runtimeStyle };
 "#,
             r#"const readableStyle = STR_LITERAL_MATCHING_RE("^WidgetShell-[0-9]+$");"#,
-            "did not match any top-level declaration",
-            "WidgetShell",
+            "no_match",
         ),
         (
             r#"const runtimePrimaryStyle = "WidgetShell-1";
@@ -795,17 +797,18 @@ export { runtimePrimaryStyle, runtimeSecondaryStyle };
 "#,
             r#"const readableStyle = STR_LITERAL_MATCHING_RE("^WidgetShell-[0-9]+$");"#,
             "ambiguous",
-            "WidgetShell",
         ),
     ] {
-        expect_rejection_containing_all(
+        let outcome = expect_selector_outcome(
             member_fixture(
                 source,
                 "styles/shell",
                 Member::source_alpha("shellStyle", selector),
             ),
-            &["styles/shell", outcome, "STR_LITERAL_MATCHING_RE", anchor],
+            kind,
+            "styles/shell",
         );
+        assert_eq!(outcome["selector_preview"], selector);
     }
 }
 
@@ -1318,14 +1321,7 @@ export { primary, secondary };
         )],
     );
 
-    expect_rejection_containing_all(
-        opts,
-        &[
-            "static/app::settings",
-            "annotations key `secondary` does not match",
-            "secondary",
-        ],
-    );
+    expect_rejection_containing_all(opts, &["static/app::settings", "secondary"]);
 }
 
 #[test]
@@ -1575,17 +1571,16 @@ export { selectedA, selectedB, selectedC };
         ),
     );
 
-    expect_rejection_containing_all(
-        opts,
-        &[
-            "static/app::selected_values",
-            "source_matches[].bindings[`selectedB`]",
-            "did not match any top-level declaration",
-            "selectedA = buildItem",
-            "selectedB = buildItem",
-            "selectedC = buildItem",
-        ],
-    );
+    let outcome = expect_selector_outcome(opts, "no_match", "selected_values");
+    assert_eq!(outcome["target_binding"], "selectedB");
+    let preview = outcome["selector_preview"].as_str().unwrap();
+    for declarator in [
+        "selectedA = buildItem",
+        "selectedB = buildItem",
+        "selectedC = buildItem",
+    ] {
+        assert!(preview.contains(declarator), "{preview}");
+    }
 }
 
 #[test]
@@ -1631,15 +1626,11 @@ export { marker };
 }"#,
     );
 
-    expect_rejection_containing_all(
-        opts,
-        &[
-            "static/app::init",
-            "ambiguous",
-            "STMT_SETUP",
-            r#"console.log("done")"#,
-        ],
-    );
+    let outcome = expect_selector_outcome(opts, "ambiguous", "init");
+    let preview = outcome["selector_preview"].as_str().unwrap();
+    for fragment in ["STMT_SETUP", r#"console.log("done")"#] {
+        assert!(preview.contains(fragment), "{preview}");
+    }
 }
 
 #[test]
@@ -1852,7 +1843,7 @@ export { Alpha };
         ),
     );
 
-    expect_rejection_containing_all(opts, &["static/app::shapes", "ambiguous"]);
+    expect_selector_outcome(opts, "ambiguous", "shapes");
 }
 
 #[test]
@@ -1888,15 +1879,7 @@ export { Counter };
         ),
     );
 
-    expect_rejection_containing_all(
-        opts,
-        &[
-            "static/app::shapes",
-            "did not match",
-            "class K",
-            "STMT_LIST_A",
-        ],
-    );
+    expect_selector_outcome(opts, "no_match", "shapes");
 }
 
 #[test]
@@ -2073,7 +2056,7 @@ export { Widget };
         ),
     );
 
-    expect_rejection_containing_all(opts, &["static/app::shapes", "did not match"]);
+    expect_selector_outcome(opts, "no_match", "shapes");
 }
 
 #[test]
@@ -2294,7 +2277,7 @@ export { actual };
     );
 
     // ANYTHING in the same position is a single EXPR: arity 1 != 2, no match.
-    expect_rejection_containing_all(
+    expect_selector_outcome(
         member_fixture(
             subject,
             "joined",
@@ -2303,10 +2286,8 @@ export { actual };
                 r#"const selectedValue = joinParts(ANYTHING);"#,
             ),
         ),
-        &[
-            "static/app::joined",
-            "did not match any top-level declaration",
-        ],
+        "no_match",
+        "joined",
     );
 }
 
@@ -2327,14 +2308,15 @@ fn stmt_list_run_absorber_is_not_redundant_with_anything_single_stmt() {
     assert_entry_output(&with_stmt_list, "a\nb\nc\n");
 
     // ANYTHING as a block statement is a single STMT: arity 1 != 3, no match.
-    expect_rejection_containing_all(
+    expect_selector_outcome(
         anonymous_init_fixture(
             subject,
             r#"if (true) {
   ANYTHING;
 }"#,
         ),
-        &["static/app::init", "did not match"],
+        "no_match",
+        "init",
     );
 }
 

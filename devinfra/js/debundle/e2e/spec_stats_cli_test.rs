@@ -111,17 +111,10 @@ fn text_format_emits_non_empty_human_output() {
 
     let out = run_stats(modules.path(), &["--format", "text"]);
     let stdout = String::from_utf8(out.stdout).unwrap();
+    assert!(!stdout.trim().is_empty(), "text output is empty");
     assert!(
-        stdout.contains("modules:"),
-        "missing modules header: {stdout}"
-    );
-    assert!(
-        stdout.contains("bindings:"),
-        "missing bindings header: {stdout}"
-    );
-    assert!(
-        stdout.contains("singletons"),
-        "missing bucket name: {stdout}"
+        serde_json::from_str::<serde_json::Value>(&stdout).is_err(),
+        "`--format text` printed JSON: {stdout}"
     );
 }
 

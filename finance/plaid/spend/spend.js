@@ -40,7 +40,7 @@ function renderAllowance(a) {
   allowanceSummary.replaceChildren();
   allowanceDetails.replaceChildren();
   if (a.status !== "active") {
-    allowanceSummary.textContent = `${a.status === "preview" ? "Preview only" : "Unavailable"}: ${a.note || "No active allowance"}`;
+    allowanceSummary.textContent = `Unavailable: ${a.note || "Allowance data unavailable"}`;
     purchaseInput.disabled = true;
     renderPurchase();
     return;

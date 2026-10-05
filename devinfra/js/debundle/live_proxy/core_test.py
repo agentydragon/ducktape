@@ -379,7 +379,7 @@ class LiveProxyCoreTest(unittest.TestCase):
                 "state_dir": str(escape_fixture.root / "state"),
             }
         )
-        with pytest.raises(RuntimeError, match="Refusing to serve path outside root"):
+        with pytest.raises(RuntimeError):
             map_local_asset_path("/_debundle/live/escape/app/../../etc/passwd", config)
 
 

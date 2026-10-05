@@ -354,6 +354,8 @@ spec:
                   name: postgres-electric
             - name: DATABASE_URL
               value: postgresql://$(POSTGRES_USER):$(POSTGRES_PASSWORD)@$(POSTGRES_HOST):$(POSTGRES_PORT)/$(POSTGRES_DB)
+            - name: ELECTRIC_DB_POOL_SIZE
+              value: "10"
             - name: ELECTRIC_INSECURE
               value: "true"
             - name: ELECTRIC_PORT
@@ -1127,6 +1129,22 @@ spec:
         - ports:
             - port: "3000"
               protocol: TCP
+    - toEndpoints:
+        - matchLabels:
+            app.kubernetes.io/name: ollama
+            k8s:io.kubernetes.pod.namespace: ollama
+      toPorts:
+        - ports:
+            - port: "11435"
+              protocol: TCP
+    - toEndpoints:
+        - matchLabels:
+            app.kubernetes.io/name: litellm
+            k8s:io.kubernetes.pod.namespace: litellm
+      toPorts:
+        - ports:
+            - port: "4000"
+              protocol: TCP
     - toEntities:
         - remote-node
         - host
@@ -1263,6 +1281,38 @@ spec:
 apiVersion: agentplane.allegedly.works/v1alpha1
 kind: EgressCredential
 metadata:
+  name: ollama
+  namespace: agentplane-staging
+spec:
+  description: Direct Ollama inference and model metadata at http://ollama.ollama.svc.cluster.local:11435. Uses the existing token-authenticated proxy, not the unauthenticated Ollama port. Shared local GPUs; avoid unbounded or concurrent load experiments.
+  source:
+    secretRef:
+      name: ollama-direct-token
+      key: token
+  targets:
+    - header: Authorization
+      method: schemeToken
+      scheme: Bearer
+---
+apiVersion: agentplane.allegedly.works/v1alpha1
+kind: EgressCredential
+metadata:
+  name: litellm-cheap-experiments
+  namespace: agentplane-staging
+spec:
+  description: The shared LiteLLM cheap-experiments virtual key at http://litellm.litellm.svc.cluster.local:4000. LiteLLM enforces its model allowlist and shared spending budget; this is not an admin key.
+  source:
+    secretRef:
+      name: litellm-key-cheap-experiments
+      key: api-key
+  targets:
+    - header: Authorization
+      method: schemeToken
+      scheme: Bearer
+---
+apiVersion: agentplane.allegedly.works/v1alpha1
+kind: EgressCredential
+metadata:
   name: kubernetes-workload
   namespace: agentplane-staging
 spec:
@@ -1274,6 +1324,69 @@ spec:
     - header: Authorization
       method: schemeToken
       scheme: Bearer
+---
+apiVersion: agentplane.allegedly.works/v1alpha1
+kind: EgressPolicy
+metadata:
+  name: inference-experiments
+  namespace: agentplane-staging
+spec:
+  rules:
+    - hosts:
+        - ollama.ollama.svc.cluster.local
+      methods:
+        - GET
+      paths:
+        - /api/tags
+        - /api/ps
+        - /api/version
+        - /v1/models
+      clusterInternal: true
+      credentialRef:
+        name: ollama
+    - hosts:
+        - ollama.ollama.svc.cluster.local
+      methods:
+        - POST
+      paths:
+        - /api/show
+        - /api/chat
+        - /api/generate
+        - /api/embed
+        - /api/embeddings
+        - /v1/chat/completions
+        - /v1/completions
+        - /v1/responses
+        - /v1/embeddings
+      clusterInternal: true
+      credentialRef:
+        name: ollama
+    - hosts:
+        - litellm.litellm.svc.cluster.local
+      methods:
+        - GET
+      paths:
+        - /v1/models
+        - /models
+        - /model/info
+      clusterInternal: true
+      credentialRef:
+        name: litellm-cheap-experiments
+    - hosts:
+        - litellm.litellm.svc.cluster.local
+      methods:
+        - POST
+      paths:
+        - /v1/chat/completions
+        - /v1/completions
+        - /v1/responses
+        - /v1/messages
+        - /v1/messages/count_tokens
+        - /v1/embeddings
+        - /v1/audio/transcriptions
+      clusterInternal: true
+      credentialRef:
+        name: litellm-cheap-experiments
 ---
 apiVersion: agentplane.allegedly.works/v1alpha1
 kind: EgressPolicy
@@ -1746,7 +1859,7 @@ data:
         name: agentplane-app
       - namespace: agentplane-staging
         name: agentplane-notifications
-    agent_instructions: |-
+    platform_instructions: |-
       You are running in a Kubernetes sandbox managed by Agentplane. Agentplane governs outbound network
       access and sensitive operations. Instead of real service tokens you receive credential placeholders:
       literal strings of the form agentplane-credential-<name> that the rules endpoint below returns.
@@ -1929,6 +2042,7 @@ data:
     lifecycle_timeout_s: 300
     default_policies:
       - basic
+      - inference-experiments
     kubernetes_grants:
       sandbox-tool-config:
         kind: RoleBinding
@@ -3788,6 +3902,7 @@ data:
     kubernetes_cluster_binding_cleanup: true
     default_policies:
       - basic
+      - inference-experiments
     egress_admin_url: http://agentplane-egress-admin.agentplane-staging.svc:8081
     action_federation:
       mode: exchange
@@ -6774,6 +6889,7 @@ spec:
       name: claude-ai
   policies:
     - basic
+    - inference-experiments
     - forgejo-haku
     - packages
     - google-readonly
@@ -6804,6 +6920,7 @@ spec:
       name: haku-agent
   policies:
     - basic
+    - inference-experiments
     - forgejo-haku
     - packages
     - google-readonly
@@ -7988,6 +8105,148 @@ spec:
 apiVersion: rbac.authorization.k8s.io/v1
 kind: Role
 metadata:
+  name: agentplane-staging-egress-credentials-ollama-direct-token-reader
+  namespace: ollama
+rules:
+  - apiGroups:
+      - ""
+    resourceNames:
+      - ollama-direct-token
+    resources:
+      - secrets
+    verbs:
+      - get
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: agentplane-staging-egress-credentials-ollama-direct-token-reader
+  namespace: ollama
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: agentplane-staging-egress-credentials-ollama-direct-token-reader
+subjects:
+  - apiGroup: ""
+    kind: ServiceAccount
+    name: external-creds-reader
+    namespace: agentplane-staging-egress-credentials
+---
+apiVersion: external-secrets.io/v1
+kind: ClusterSecretStore
+metadata:
+  name: kubernetes-agentplane-staging-egress-credentials-ollama-direct-token-secret-store
+spec:
+  conditions:
+    - namespaces:
+        - agentplane-staging-egress-credentials
+  provider:
+    kubernetes:
+      auth:
+        serviceAccount:
+          name: external-creds-reader
+      remoteNamespace: ollama
+      server:
+        caProvider:
+          key: ca.crt
+          name: kube-root-ca.crt
+          namespace: default
+          type: ConfigMap
+---
+apiVersion: external-secrets.io/v1
+kind: ExternalSecret
+metadata:
+  name: ollama-direct-token
+  namespace: agentplane-staging-egress-credentials
+spec:
+  data:
+    - remoteRef:
+        key: ollama-direct-token
+        property: token
+      secretKey: token
+  refreshInterval: 1h
+  secretStoreRef:
+    kind: ClusterSecretStore
+    name: kubernetes-agentplane-staging-egress-credentials-ollama-direct-token-secret-store
+  target:
+    creationPolicy: Owner
+    deletionPolicy: Retain
+    name: ollama-direct-token
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: agentplane-staging-egress-credentials-litellm-key-cheap-experiments-reader
+  namespace: litellm
+rules:
+  - apiGroups:
+      - ""
+    resourceNames:
+      - litellm-key-cheap-experiments
+    resources:
+      - secrets
+    verbs:
+      - get
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: agentplane-staging-egress-credentials-litellm-key-cheap-experiments-reader
+  namespace: litellm
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: agentplane-staging-egress-credentials-litellm-key-cheap-experiments-reader
+subjects:
+  - apiGroup: ""
+    kind: ServiceAccount
+    name: external-creds-reader
+    namespace: agentplane-staging-egress-credentials
+---
+apiVersion: external-secrets.io/v1
+kind: ClusterSecretStore
+metadata:
+  name: kubernetes-agentplane-staging-egress-credentials-litellm-key-cheap-experiments-secret-store
+spec:
+  conditions:
+    - namespaces:
+        - agentplane-staging-egress-credentials
+  provider:
+    kubernetes:
+      auth:
+        serviceAccount:
+          name: external-creds-reader
+      remoteNamespace: litellm
+      server:
+        caProvider:
+          key: ca.crt
+          name: kube-root-ca.crt
+          namespace: default
+          type: ConfigMap
+---
+apiVersion: external-secrets.io/v1
+kind: ExternalSecret
+metadata:
+  name: litellm-key-cheap-experiments
+  namespace: agentplane-staging-egress-credentials
+spec:
+  data:
+    - remoteRef:
+        key: litellm-key-cheap-experiments
+        property: api-key
+      secretKey: api-key
+  refreshInterval: 1h
+  secretStoreRef:
+    kind: ClusterSecretStore
+    name: kubernetes-agentplane-staging-egress-credentials-litellm-key-cheap-experiments-secret-store
+  target:
+    creationPolicy: Owner
+    deletionPolicy: Retain
+    name: litellm-key-cheap-experiments
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
   name: agentplane-public-coder-haku-console-reader
   namespace: authentik
 rules:
@@ -8345,6 +8604,7 @@ spec:
       name: openclaw
   policies:
     - public-coder-openclaw
+    - inference-experiments
     - public-internet
 ---
 apiVersion: cilium.io/v2

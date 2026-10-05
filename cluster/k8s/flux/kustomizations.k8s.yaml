@@ -2711,8 +2711,6 @@ spec:
       namespace: ducktape-flux
     - name: authentik
       namespace: ducktape-flux
-    - name: authentik-tf
-      namespace: ducktape-flux
   interval: 10m
   path: ./cluster/k8s/agents/plaid-mcp
   prune: true

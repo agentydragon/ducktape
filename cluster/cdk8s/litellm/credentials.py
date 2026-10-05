@@ -10,10 +10,10 @@ from external_secrets_crds.io.external_secrets import (
 
 from cluster.cdk8s.external_secrets.single_secret_store import single_secret_store
 from cluster.cdk8s.providers.external_secrets.external_secret import ExternalSecret, SecretStoreRef, remote_data
+from cluster.cdk8s.secret_ref import SecretRef
 
-_LITELLM_NAMESPACE = "litellm"
+CHEAP_EXPERIMENTS_KEY = SecretRef(namespace="litellm", name="litellm-key-cheap-experiments").key("api-key")
 _AGENTPLANE_NAMESPACE = "agentplane-testing"
-_KEY_SECRET_NAME = "litellm-key-cheap-experiments"
 _READER_SERVICE_ACCOUNT_NAME = "external-creds-reader"
 
 
@@ -32,17 +32,17 @@ class CheapExperimentsCredentials(Construct):
             self,
             "litellm-cheap-experiments",
             reader=reader_service_account,
-            source_namespace=_LITELLM_NAMESPACE,
-            source_secret=_KEY_SECRET_NAME,
+            source_namespace=CHEAP_EXPERIMENTS_KEY.secret.namespace,
+            source_secret=CHEAP_EXPERIMENTS_KEY.secret.name,
             consumer_namespace=_AGENTPLANE_NAMESPACE,
         )
         ExternalSecret(
             self,
             "target-external-secret",
-            metadata=ApiObjectMetadata(name=_KEY_SECRET_NAME, namespace=_AGENTPLANE_NAMESPACE),
+            metadata=ApiObjectMetadata(name=CHEAP_EXPERIMENTS_KEY.secret.name, namespace=_AGENTPLANE_NAMESPACE),
             refresh_interval="1m",
             secret_store_ref=SecretStoreRef.cluster(store),
-            data=[remote_data(_KEY_SECRET_NAME, "api-key")],
+            data=[remote_data(CHEAP_EXPERIMENTS_KEY.secret.name, CHEAP_EXPERIMENTS_KEY.key)],
             creation_policy=ExternalSecretSpecTargetCreationPolicy.OWNER,
             deletion_policy=ExternalSecretSpecTargetDeletionPolicy.DELETE,
         )

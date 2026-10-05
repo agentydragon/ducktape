@@ -494,6 +494,24 @@ re-assemble a bundle at runtime. Per-client details (`pygit2` ignores
 - **`textwrap.dedent`** for inline multiline strings (YAML, JSON, scripts) so test
   indentation stays readable.
 
+### Frontend specs (vitest)
+
+How a `vitest_test` is built is under TypeScript above; what a spec may assume is here.
+
+- **A spec is `<module>.test.ts[x]`** beside the module it tests.
+- **`node` unless the spec needs a DOM.** A package's `vitest_config` has `environment = "node"`, and
+  a spec that needs a DOM says so on its first line, `// @vitest-environment happy-dom`. The config's
+  `data` lists `//:node_modules/happy-dom`: `vitest_config` adds the default environment's package,
+  not a pragma's.
+- **happy-dom is the DOM.** A spec that fails under it may use `jsdom` instead (`//:node_modules/jsdom`
+  in `data`), with the cause in a comment under the pragma and a `CLEANUP` tombstone (§ Tombstones)
+  whose condition is a check that ends the exception. Passing under both is not a reason: the
+  default's choice stands.
+- **Lint**: the `@vitest/eslint-plugin` recommended rules are errors on every frontend's
+  `*.test.{ts,tsx}` (`eslint.config.js`), so `.only`, `.skip`, a test without an `expect` and an
+  unawaited async matcher fail the build. `valid-expect` allows vitest's second argument, the failure
+  message that names the case in a loop.
+
 ### Waiting
 
 **Never sleep for a duration; wait for the condition.** A blind delay is wrong in both

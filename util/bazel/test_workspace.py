@@ -3,8 +3,8 @@
 from __future__ import annotations
 
 from pathlib import Path
-from subprocess import CalledProcessError
-from unittest.mock import MagicMock, patch
+from subprocess import CalledProcessError, CompletedProcess
+from unittest.mock import patch
 
 import pytest
 import pytest_bazel
@@ -86,11 +86,9 @@ def test_str(label: BazelLabel, expected: str) -> None:
 
 
 def test_query_parses_labels(tmp_path: Path) -> None:
-    mock_result = MagicMock()
-    mock_result.stdout = "//foo:bar.py\n@ext//pkg:target\n\n"
-    mock_result.returncode = 0
+    completed = CompletedProcess(args=[], returncode=0, stdout="//foo:bar.py\n@ext//pkg:target\n\n", stderr="")
     workspace = BazelWorkspace(root=tmp_path, backend=BazelBackend.LOCAL)
-    with patch("util.bazel.workspace.subprocess.run", return_value=mock_result) as mock_run:
+    with patch("util.bazel.workspace.subprocess.run", return_value=completed) as mock_run:
         result = workspace.query("//...")
     (cmd,), kwargs = mock_run.call_args
     assert cmd[:3] == ["bazelisk", "query", "--output=label"]
@@ -106,12 +104,9 @@ def test_query_parses_labels(tmp_path: Path) -> None:
 def test_query_persist_dir(tmp_path: Path) -> None:
     persist_dir = tmp_path / "persist"
     persist_dir.mkdir()
-    mock_result = MagicMock()
-    mock_result.stdout = "//foo:bar\n"
-    mock_result.stderr = ""
-    mock_result.returncode = 0
+    completed = CompletedProcess(args=[], returncode=0, stdout="//foo:bar\n", stderr="")
     workspace = BazelWorkspace(root=tmp_path, backend=BazelBackend.LOCAL)
-    with patch("util.bazel.workspace.subprocess.run", return_value=mock_result):
+    with patch("util.bazel.workspace.subprocess.run", return_value=completed):
         workspace.query("//...", persist_dir=persist_dir)
     assert (persist_dir / "query").read_text() == "//..."
     assert (persist_dir / "stdout").read_text() == "//foo:bar\n"
@@ -120,8 +115,7 @@ def test_query_persist_dir(tmp_path: Path) -> None:
 
 def test_query_filters_bbr_log_lines(tmp_path: Path) -> None:
     """bbr mixes its own log lines into stdout; query() must filter them."""
-    mock_result = MagicMock()
-    mock_result.stdout = (
+    stdout = (
         "Streaming remote runner logs to: https://app.buildbuddy.io/invocation/0b50b97b\n"
         "\x1b[90m2026-04-08 14:38:25.577 UTC \x1b[mSyncing existing repo...\n"
         "\x1b[90m2026-04-08 14:38:25.577 UTC \x1b[mConfiguring repository...\n"
@@ -138,9 +132,9 @@ def test_query_filters_bbr_log_lines(tmp_path: Path) -> None:
         "\x1b[32mINFO: \x1b[mStreaming build results to: https://app.buildbuddy.io/invocation/0b50b97b\n"
         "\x1b[90m2026-04-08 14:38:30.000 UTC (command exited with code 0)\n"
     )
-    mock_result.returncode = 0
+    completed = CompletedProcess(args=[], returncode=0, stdout=stdout, stderr="")
     workspace = BazelWorkspace(root=tmp_path, backend=BazelBackend.LOCAL)
-    with patch("util.bazel.workspace.subprocess.run", return_value=mock_result):
+    with patch("util.bazel.workspace.subprocess.run", return_value=completed):
         result = workspace.query("//...")
     assert result == [
         BazelLabel(repo="", package=Path("devinfra/precommit"), name="test_filename_conventions.py"),
@@ -150,13 +144,10 @@ def test_query_filters_bbr_log_lines(tmp_path: Path) -> None:
 
 
 def test_query_raises_on_failure_with_stderr_in_the_traceback(tmp_path: Path) -> None:
-    mock_result = MagicMock()
-    mock_result.stdout = ""
-    mock_result.stderr = "ERROR: no such package 'missing'"
-    mock_result.returncode = 7
+    completed = CompletedProcess(args=[], returncode=7, stdout="", stderr="ERROR: no such package 'missing'")
     workspace = BazelWorkspace(root=tmp_path, backend=BazelBackend.LOCAL)
     with (
-        patch("util.bazel.workspace.subprocess.run", return_value=mock_result),
+        patch("util.bazel.workspace.subprocess.run", return_value=completed),
         pytest.raises(CalledProcessError) as excinfo,
     ):
         workspace.query("//...")

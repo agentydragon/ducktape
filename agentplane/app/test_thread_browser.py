@@ -1627,7 +1627,8 @@ async def test_failed_turn_preserves_confirmed_input_and_allows_another_turn(
             ),
         )
     )
-    error_text = page.get_by_text(diagnostic, exact=True)
+    # The label leads the diagnostic in one paragraph, so the alert is what holds the diagnostic's text.
+    error_text = page.get_by_role("alert").filter(has_text=diagnostic)
     await expect(error_text).to_have_count(1)
     await expect(error_text).to_be_in_viewport()
     await expect_history_bottom(page)

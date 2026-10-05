@@ -136,7 +136,7 @@ export { keep };
 //      is broken).
 //   2. The selector source verbatim (so the author can spot what
 //      changed).
-//   3. A clear "did not match" framing so the author knows the
+//   3. The `no_match` outcome kind, so the author knows the
 //      remediation is "find the new shape" or "remove the entry."
 //
 // Mirrors the validator's "cycle = reject" philosophy: a stale
@@ -161,19 +161,11 @@ export { X, Existing };
         )],
     );
 
-    expect_rejection_containing_all(
-        opts,
-        &[
-            // Names the offending logical module so the author
-            // knows which spec entry to fix.
-            "static/app::x_module",
-            // "did not match" framing.
-            "did not match",
-            // The selector source verbatim so the author can see
-            // what's stale.
-            r#"console.log("nope")"#,
-        ],
-    );
+    // Names the offending logical module so the author knows which spec
+    // entry to fix, and carries the selector source verbatim so the author
+    // can see what's stale.
+    let outcome = expect_selector_outcome(opts, "no_match", "x_module");
+    assert_eq!(outcome["selector_preview"], r#"console.log("nope");"#);
 }
 
 // Pin the ambiguous-match error path for anonymous-statement
@@ -218,17 +210,9 @@ export { X, Existing };
         )],
     );
 
-    expect_rejection_containing_all(
-        opts,
-        &[
-            // Names the offending logical module.
-            "static/app::x_module",
-            // "ambiguous" framing.
-            "ambiguous",
-            // Selector source verbatim.
-            r#"console.log("dup")"#,
-        ],
-    );
+    // Names the offending logical module and carries the selector source verbatim.
+    let outcome = expect_selector_outcome(opts, "ambiguous", "x_module");
+    assert_eq!(outcome["selector_preview"], r#"console.log("dup");"#);
 }
 
 #[test]
@@ -930,16 +914,10 @@ export { firstA, firstB, firstC, secondA, secondB, secondC };
         )],
     );
 
-    expect_rejection_containing_all(
-        opts,
-        &[
-            "static/app::selected_values",
-            "NameA",
-            "ambiguous",
-            "source_matches[].bindings[`a`]",
-            "a",
-        ],
-    );
+    let outcomes = run_rejection_fixture(opts).selector_outcomes();
+    let name_a = find_outcome(&outcomes, "ambiguous", "NameA");
+    assert_eq!(name_a["placement"]["logical_module"], "selected_values");
+    assert_eq!(name_a["target_binding"], "a");
 }
 
 #[test]
@@ -1041,14 +1019,12 @@ export { firstRuntime, secondRuntime };
         )],
     );
 
-    expect_rejection_containing_all(
-        opts,
-        &[
-            "static/app::selected_config",
-            "selectedConfig",
-            "ambiguous",
-            r#"const oldBinding = { kind: "selected", enabled: true }"#,
-        ],
+    let outcomes = run_rejection_fixture(opts).selector_outcomes();
+    let outcome = find_outcome(&outcomes, "ambiguous", "selectedConfig");
+    assert_eq!(outcome["placement"]["logical_module"], "selected_config");
+    assert_eq!(
+        outcome["selector_preview"],
+        r#"const oldBinding = { kind: "selected", enabled: true };"#
     );
 }
 
@@ -1075,16 +1051,10 @@ export { firstLocalPart, firstDomain, firstAddress, secondLocalPart, secondDomai
         )],
     );
 
-    expect_rejection_containing_all(
-        opts,
-        &[
-            "static/app::selected_config",
-            "selectedLocalPart",
-            "ambiguous",
-            "source_matches[].bindings[`localPart`]",
-            "localPart",
-        ],
-    );
+    let outcomes = run_rejection_fixture(opts).selector_outcomes();
+    let outcome = find_outcome(&outcomes, "ambiguous", "selectedLocalPart");
+    assert_eq!(outcome["placement"]["logical_module"], "selected_config");
+    assert_eq!(outcome["target_binding"], "localPart");
 }
 
 #[test]
@@ -1111,16 +1081,10 @@ for (const context of traceContexts)
         )],
     );
 
-    expect_rejection_containing_all(
-        opts,
-        &[
-            "static/app::selected_registry",
-            "traceCommandRegistry",
-            "ambiguous",
-            "source_matches[].bindings[`registry`]",
-            "registry",
-        ],
-    );
+    let outcomes = run_rejection_fixture(opts).selector_outcomes();
+    let outcome = find_outcome(&outcomes, "ambiguous", "traceCommandRegistry");
+    assert_eq!(outcome["placement"]["logical_module"], "selected_registry");
+    assert_eq!(outcome["target_binding"], "registry");
 }
 
 #[test]
@@ -1148,12 +1112,9 @@ export { FirstSubject, SecondSubject };
         )],
     );
 
-    expect_rejection_containing_all(
-        opts,
-        &[
-            "static/app::first_subject",
-            "ambiguous",
-            r#"applyMetadata([token], Subject.prototype, "statusFlag")"#,
-        ],
+    let outcome = expect_selector_outcome(opts, "ambiguous", "first_subject");
+    assert_eq!(
+        outcome["selector_preview"],
+        r#"applyMetadata([token], Subject.prototype, "statusFlag");"#
     );
 }

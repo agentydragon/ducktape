@@ -161,9 +161,11 @@ py_library(
     name = "instructions",
     srcs = ["instructions.py"],
     data = ["agent_instructions.j2"],  # explicit deployment config renders this shared instruction template
-    visibility = ["//cluster/cdk8s/agentplane:__subpackages__"],
+    visibility = [
+        "//agentplane/notification_service:__pkg__",
+        "//cluster/cdk8s/agentplane:__subpackages__",
+    ],
     deps = [
-        "//agentplane/notification_service:instructions",
         "//util/bazel:runfiles",
         "@pypi//jinja2",
     ],

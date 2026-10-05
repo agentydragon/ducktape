@@ -25,6 +25,7 @@ from cluster.cdk8s.agentplane.app_settings import (
     GROCY_SF_READONLY_POLICY,
     HAKU_MAILBOX_POLICY,
     HOME_ASSISTANT_READONLY_POLICY,
+    INFERENCE_EXPERIMENTS_POLICY,
     PLAID_PGWEB_POLICY,
     PUBLIC_INTERNET_POLICY,
 )
@@ -56,7 +57,11 @@ def test_public_internet_is_available_but_never_implicitly_granted(
         if doc["kind"] == "EgressBinding":
             if namespace == "agentplane-staging" and doc["metadata"]["name"] == "public-coder-openclaw":
                 assert doc["spec"]["subjects"] == [{"namespace": "public-coder-agent", "name": "openclaw"}]
-                assert doc["spec"]["policies"] == ["public-coder-openclaw", PUBLIC_INTERNET_POLICY]
+                assert doc["spec"]["policies"] == [
+                    "public-coder-openclaw",
+                    INFERENCE_EXPERIMENTS_POLICY,
+                    PUBLIC_INTERNET_POLICY,
+                ]
             else:
                 assert PUBLIC_INTERNET_POLICY not in doc["spec"]["policies"]
 
@@ -283,6 +288,40 @@ def test_environments_do_not_share_cluster_scoped_bundles(
             name = doc["metadata"]["name"]
             assert name not in owners, f"Bundle {name} is owned by both {owners.get(name)} and {namespace}"
             owners[name] = namespace
+
+
+@pytest.mark.parametrize("namespace", NAMESPACES)
+def test_inference_is_granted_separately_from_platform_operations(
+    namespace: str, agentplane_manifests: dict[str, list[dict[str, Any]]]
+) -> None:
+    docs = agentplane_manifests[namespace]
+    granted = _by_name(docs, "EgressPolicy", INFERENCE_EXPERIMENTS_POLICY)
+    basic = _by_name(docs, "EgressPolicy", BASIC_POLICY)
+    config = _by_name(docs, "ConfigMap", "agentplane-app-config")
+    assert INFERENCE_EXPERIMENTS_POLICY in yaml.safe_load(config["data"]["config.yaml"])["default_policies"]
+    # Standing caller identities and static OpenClaw must receive the separate grant too.
+    for binding in (doc for doc in docs if doc["kind"] == "EgressBinding"):
+        policies = binding["spec"]["policies"]
+        if BASIC_POLICY in policies or binding["metadata"]["name"] == "public-coder-openclaw":
+            assert INFERENCE_EXPERIMENTS_POLICY in policies
+    inference_hosts = {host for rule in granted["spec"]["rules"] for host in rule["hosts"]}
+    assert inference_hosts.isdisjoint(host for rule in basic["spec"]["rules"] for host in rule["hosts"])
+    for name, denied_paths in (
+        ("ollama", {"/api/pull", "/api/push", "/api/create", "/api/delete", "/api/copy", "/api/blobs/*"}),
+        ("litellm-cheap-experiments", {"/key/generate", "/key/info", "/user/new", "/config/update"}),
+    ):
+        rules = [rule for rule in granted["spec"]["rules"] if rule.get("credentialRef") == {"name": name}]
+        assert rules
+        assert all(rule["clusterInternal"] and rule["paths"] for rule in rules)
+        assert all("*" not in path for rule in rules for path in rule["paths"])
+        assert denied_paths.isdisjoint(path for rule in rules for path in rule["paths"])
+        assert any("POST" in rule["methods"] and "/v1/chat/completions" in rule["paths"] for rule in rules)
+        assert all(set(rule["methods"]) <= {"GET", "POST"} for rule in rules)
+        credential = _by_name(docs, "EgressCredential", name)
+        source = credential["spec"]["source"]["secretRef"]
+        secret = _by_name(docs, "ExternalSecret", source["name"])
+        assert secret["metadata"]["namespace"] == f"{namespace}-egress-credentials"
+        assert source["key"] in {item["secretKey"] for item in secret["spec"]["data"]}
 
 
 if __name__ == "__main__":

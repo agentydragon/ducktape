@@ -233,7 +233,7 @@ export { a, b };
 fn rejects_extraction_with_a_propagated_final_name_collision() {
     // Two members both renamed to "a" — one from the variable `a`, one from
     // function `b`. The extractor should refuse before emitting.
-    expect_rejection(
+    expect_rejection_containing_all(
         FixtureOpts::new(
             r#"const a = 1;
 function b() { return a; }
@@ -245,11 +245,6 @@ export { b };
                 &[Member::new("a"), Member::renamed("a", "b")],
             )],
         ),
-        &[
-            "propagated final name collision",
-            "conflicts with existing top-level binding",
-            "duplicate binding name",
-            "duplicate exported logical names",
-        ],
+        &["static/app::x"],
     );
 }

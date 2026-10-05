@@ -1125,7 +1125,7 @@ agentplane_vitest_test(
 vitest_config(
     name = "vitest_config",
     # Specs that need a DOM select one with an `// @vitest-environment` pragma: happy-dom, or
-    # jsdom for code_block.test.ts and markdown.test.tsx.
+    # jsdom for markdown.test.tsx.
     data = [
         "//:node_modules/happy-dom",
         "//:node_modules/jsdom",

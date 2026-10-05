@@ -24,7 +24,6 @@ from agentplane.action_service.test_fixtures.callers import admitted_callers
 from agentplane.action_service.updates import ActionUpdates
 from agentplane.notification_service.api import create_app
 from agentplane.notification_service.db import Inbox
-from agentplane.notification_service.instructions import instructions
 from agentplane.notification_service.service import Service
 from agentplane.notification_service.settings import NoticeDebounceSettings
 from agentplane.notification_service.sources.actions import Actions
@@ -34,6 +33,7 @@ from agentplane.runner import protocol_pb2
 from agentplane.runner.conftest import RunnerHandle
 from agentplane.runner.testing.scripted_model import ScriptedModel, Text
 from agentplane.sandbox_service.client import Runner
+from agentplane.sandbox_service.instructions import render_platform_instructions
 from agentplane.sandbox_service.protocol_pb2 import SandboxDestination, ServiceAccount
 from agentplane.sandbox_service.testing.kubernetes import (
     ACCOUNT,
@@ -108,7 +108,11 @@ async def test_listen_deliver_read_ack_and_recover_lost_response_without_app(
                     manager=delegate,
                     token="delegate-token",
                     audience="test-notifications",
-                    platform_instructions=instructions("http://notifications.test"),
+                    platform_instructions=render_platform_instructions(
+                        egress_api_url="http://egress.test",
+                        actions_service_url="http://actions.test",
+                        notifications_service_url="http://notifications.test",
+                    ),
                 ) as remote,
             ):
                 source = Actions(action_http, token_file)

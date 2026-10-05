@@ -72,6 +72,7 @@ export function useLive<T extends { watch: WatchHealth }>(url: string, name: str
 }
 
 const ThreadsLiveContext = createContext<Live<ThreadsSnapshot> | null>(null);
+const SandboxesLiveContext = createContext<Live<SandboxesSnapshot> | null>(null);
 
 /** One /live/threads connection for the shell, shared by navigation and the open composer. */
 export function ThreadsLiveProvider({ children }: { children: ReactNode }): JSX.Element {
@@ -82,6 +83,18 @@ export function ThreadsLiveProvider({ children }: { children: ReactNode }): JSX.
 export function useRequiredThreadsLive(): Live<ThreadsSnapshot> {
   const live = useContext(ThreadsLiveContext);
   if (!live) throw new Error("Thread status requires ThreadsLiveProvider");
+  return live;
+}
+
+/** One /live/sandboxes connection for thread routes that need current runner availability. */
+export function SandboxesLiveProvider({ children }: { children: ReactNode }): JSX.Element {
+  const live = useLive<SandboxesSnapshot>(liveSandboxesUrl(), "Sandboxes");
+  return <SandboxesLiveContext.Provider value={live}>{children}</SandboxesLiveContext.Provider>;
+}
+
+export function useRequiredSandboxesLive(): Live<SandboxesSnapshot> {
+  const live = useContext(SandboxesLiveContext);
+  if (!live) throw new Error("Sandbox status requires SandboxesLiveProvider");
   return live;
 }
 

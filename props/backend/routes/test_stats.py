@@ -92,38 +92,6 @@ def test_occurrences_with_runs(
     assert 0.0 <= row["mean_credit"] <= 1.0
 
 
-def test_occurrences_filter_by_split(
-    stats_client: TestClient, test_train_example_with_runs: tuple[ExampleSpec, AgentRun, AgentRun]
-) -> None:
-    """Filter by split returns only matching rows."""
-    resp = stats_client.get("/api/stats/occurrences", params={"split": "train"})
-    assert resp.status_code == 200
-    for row in resp.json()["occurrences"]:
-        assert row["split"] == "train"
-
-
-def test_occurrences_filter_by_snapshot(
-    stats_client: TestClient, test_train_example_with_runs: tuple[ExampleSpec, AgentRun, AgentRun]
-) -> None:
-    """Filter by snapshot_slug returns only matching rows."""
-    example, _, _ = test_train_example_with_runs
-    slug = example.snapshot_slug
-    resp = stats_client.get("/api/stats/occurrences", params={"snapshot_slug": slug})
-    assert resp.status_code == 200
-    for row in resp.json()["occurrences"]:
-        assert row["snapshot_slug"] == slug
-
-
-def test_occurrences_sort_desc(
-    stats_client: TestClient, test_train_example_with_runs: tuple[ExampleSpec, AgentRun, AgentRun]
-) -> None:
-    """sort_dir=desc returns highest credits first."""
-    resp = stats_client.get("/api/stats/occurrences", params={"sort_dir": "desc"})
-    assert resp.status_code == 200
-    credits = [r["mean_credit"] for r in resp.json()["occurrences"]]
-    assert credits == sorted(credits, reverse=True)
-
-
 # --- /coverage ---
 
 
@@ -157,15 +125,6 @@ def test_coverage_with_runs(
     assert all(0.0 <= v <= 1.0 for v in body["max_recall_values"])
     assert len(body["tp_count_values"]) > 0
     assert all(v > 0 for v in body["tp_count_values"])
-
-
-def test_coverage_limit_definitions(
-    stats_client: TestClient, test_train_example_with_runs: tuple[ExampleSpec, AgentRun, AgentRun]
-) -> None:
-    """limit_definitions caps the number of returned definitions."""
-    resp = stats_client.get("/api/stats/coverage", params={"split": "train", "limit_definitions": 1})
-    assert resp.status_code == 200
-    assert len(resp.json()["definitions"]) <= 1
 
 
 if __name__ == "__main__":

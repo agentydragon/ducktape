@@ -21,8 +21,6 @@ def real_env_with_python_post_script(real_temp_repo, config_factory, tmp_path):
         """#!/usr/bin/env python3
 import sys, argparse
 from pathlib import Path
-from datetime import timedelta
-import pytest_bazel
 
 # Verify stdin is valid (raises if fd 0 is bad)
 sys.stdin.fileno()

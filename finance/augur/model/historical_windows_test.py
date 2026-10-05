@@ -240,7 +240,8 @@ def test_the_provenance_says_the_rollouts_are_not_independent() -> None:
     bundle = model.materialize(window_starts=model.window_starts(120)[:4], horizon_months=120)
 
     assert bundle.provenance["distinct_windows_available"] == 480
-    assert "not independent draws" in str(bundle.provenance["notes"]).lower()
+    assert bundle.provenance["independent_window_estimate"] == 5.0
+    assert bundle.provenance["notes"]
 
 
 def _levels(start_year: int, values: list[float]) -> list[MonthlyLevel]:

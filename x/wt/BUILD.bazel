@@ -25,5 +25,9 @@ py_binary(
     name = "wt_cli",
     main_module = "x.wt.cli",
     visibility = ["//visibility:public"],
-    deps = [":cli"],
+    deps = [
+        ":cli",
+        # The client spawns the daemon as `python -m x.wt.server.wt_server` in this binary's own venv.
+        "//x/wt/server:wt_server",
+    ],
 )

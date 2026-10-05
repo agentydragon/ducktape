@@ -1,7 +1,7 @@
 """agentplane-staging's egress credentials: each real account the staging proxy presents for a
 sandbox, with the Secret plumbing that delivers it and, beyond the GitHub PAT whose EgressCredential
 and policy both environments share (`egress.py`), the EgressPolicy that scopes where it is
-presented. Testing copies in only the GitHub PAT (`egress_testing_credentials.py`).
+presented. Testing shares GitHub, BuildBuddy, and inference credentials (`egress_testing_credentials.py`).
 """
 
 from agentplane_egresscredential_crds.works.allegedly.agentplane import (
@@ -35,6 +35,7 @@ from cluster.cdk8s.agentplane.egress_credentials import (
     EXTERNAL_CREDS_STORE,
     GITHUB_PAT_SECRET,
     credential_external_secret,
+    inference_credentials,
 )
 from cluster.cdk8s.aiquota import AGENTPLANE_STAGING_BEARER
 from cluster.cdk8s.external_secrets.single_secret_store import single_secret_store
@@ -77,6 +78,7 @@ def add_staging_egress_credentials(scope: Construct, *, namespace: str, credenti
     _haku_mailbox(construct, reader=reader, namespace=namespace, credentials_namespace=credentials_namespace)
     _buildbuddy(construct, namespace=namespace, credentials_namespace=credentials_namespace)
     _plaid_pgweb(construct, reader=reader, namespace=namespace, credentials_namespace=credentials_namespace)
+    inference_credentials(construct, reader=reader, credentials_namespace=credentials_namespace)
     add_gateway_resources(construct, reader=reader, namespace=namespace, credentials_namespace=credentials_namespace)
 
 

@@ -64,24 +64,6 @@ def _exec_under_env(
 
 
 # ---------------------------------------------------------------------------
-# Hook implementation under test
-# ---------------------------------------------------------------------------
-
-
-def _install_rust(c: container_e2e.E2EContainer) -> None:
-    c.install_rust()
-
-
-_IMPLS = {"rust": _install_rust}
-
-
-@pytest.fixture(params=list(_IMPLS.keys()))
-def impl(request: pytest.FixtureRequest) -> str:
-    param: str = request.param
-    return param
-
-
-# ---------------------------------------------------------------------------
 # Fixtures
 # ---------------------------------------------------------------------------
 
@@ -121,9 +103,7 @@ def test_age_key() -> str:
 
 
 @pytest.fixture
-def container(
-    impl: str, staged_project: Path, test_age_key: str, e2e_image: str
-) -> Iterator[container_e2e.E2EContainer]:
+def container(staged_project: Path, test_age_key: str, e2e_image: str) -> Iterator[container_e2e.E2EContainer]:
     env = {
         "CLAUDE_PROJECT_DIR": "/project",
         "CLAUDE_ENV_FILE": _ENV_FILE,
@@ -132,10 +112,10 @@ def container(
     }
     with container_e2e.run_e2e_container(
         e2e_image,
-        f"{_CONTAINER_NAME}-{impl}",
+        _CONTAINER_NAME,
         env,
         staged_project,
-        f"container-e2e-{impl}",
+        "container-e2e",
         _SESSION_ID,
         extra_session_files=["sessionstart-hook-0.sh", "bazelrc"],
         extra_rust_files=["daemon.pid"],
@@ -148,10 +128,9 @@ def container(
 # ---------------------------------------------------------------------------
 
 
-def test_container_e2e(impl: str, container: container_e2e.E2EContainer) -> None:
-    """SessionStart contract test, parameterized over python/rust impls."""
-    # Install whichever claude-hook impl this run is for.
-    _IMPLS[impl](container)
+def test_container_e2e(container: container_e2e.E2EContainer) -> None:
+    """SessionStart contract test."""
+    container.install_rust()
     container.exec(["which", "claude-hook"])
     container.exec(["which", "sops"])
     container.exec(["which", "curl"])
@@ -230,11 +209,11 @@ def test_container_e2e(impl: str, container: container_e2e.E2EContainer) -> None
         rc, _, stderr = _exec_under_env(container, cmd, workdir="/tmp/shim-test", check=False)
         stderr_str = stderr.decode(errors="replace")
         if should_block:
-            assert rc != 0, f"[{impl}] {cmd!r} should have been blocked but exited 0\nstderr: {stderr_str}"
-            assert b"BLOCKED" in stderr, f"[{impl}] {cmd!r} expected BLOCKED in stderr\nstderr: {stderr_str}"
+            assert rc != 0, f"{cmd!r} should have been blocked but exited 0\nstderr: {stderr_str}"
+            assert b"BLOCKED" in stderr, f"{cmd!r} expected BLOCKED in stderr\nstderr: {stderr_str}"
         else:
-            assert rc == 0, f"[{impl}] {cmd!r} should passthrough but exited {rc}\nstderr: {stderr_str}"
-            assert b"BLOCKED" not in stderr, f"[{impl}] {cmd!r} unexpectedly BLOCKED\nstderr: {stderr_str}"
+            assert rc == 0, f"{cmd!r} should passthrough but exited {rc}\nstderr: {stderr_str}"
+            assert b"BLOCKED" not in stderr, f"{cmd!r} unexpectedly BLOCKED\nstderr: {stderr_str}"
 
     # Bazel build over the staged workspace.
     _exec_under_env(container, "bazelisk build //:hello", workdir="/project")

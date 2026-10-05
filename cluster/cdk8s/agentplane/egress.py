@@ -58,6 +58,7 @@ from cluster.cdk8s.agentplane.app_settings import (
     GITHUB_ACTIONS_LOGS_POLICY,
     GITHUB_AGENTYDRAGON_AGENT_POLICY,
     GITHUB_CLONE_POLICY,
+    INFERENCE_EXPERIMENTS_POLICY,
     PACKAGES_POLICY,
     PUBLIC_INTERNET_POLICY,
 )
@@ -70,6 +71,9 @@ from cluster.cdk8s.cert_manager.interception_ca import interception_root_ca
 from cluster.cdk8s.forgejo import app as forgejo  # a bare `app.HTTP` would not say whose
 from cluster.cdk8s.forgejo_images import forgejo_images_creds_secret_ref
 from cluster.cdk8s.home_assistant import app as home_assistant  # a bare `app.SERVICE` would not say whose
+from cluster.cdk8s.litellm import proxy as litellm_proxy
+from cluster.cdk8s.litellm.credentials import CHEAP_EXPERIMENTS_KEY
+from cluster.cdk8s.ollama import app as ollama
 from cluster.cdk8s.probes import http_probe
 from cluster.cdk8s.providers.agentplane.egress_credential import EgressCredential, Source
 from cluster.cdk8s.providers.agentplane.egress_policy import EgressPolicy
@@ -208,6 +212,34 @@ def _egress_credentials(scope: Construct, *, namespace: str) -> None:
         ],
     )
 
+    for name, source, description in (
+        (
+            "ollama",
+            ollama.DIRECT_TOKEN,
+            f"Direct Ollama inference and model metadata at http://{ollama.AUTH_PROXY.fqdn}:{ollama.AUTH_PROXY.port.number}. "
+            "Uses the existing token-authenticated proxy, not the unauthenticated Ollama port. "
+            "Shared local GPUs; avoid unbounded or concurrent load experiments.",
+        ),
+        (
+            "litellm-cheap-experiments",
+            CHEAP_EXPERIMENTS_KEY,
+            "The shared LiteLLM cheap-experiments virtual key at http://litellm.litellm.svc.cluster.local:4000. "
+            "LiteLLM enforces its model allowlist and shared spending budget; this is not an admin key.",
+        ),
+    ):
+        EgressCredential(
+            scope,
+            f"egresscredential-{name}",
+            metadata=ApiObjectMetadata(name=name, namespace=namespace),
+            description=description,
+            source=Source.secret_ref(name=source.secret.name, key=source.key),
+            targets=[
+                EgressCredentialSpecTargets(
+                    header="Authorization", method=EgressCredentialSpecTargetsMethod.SCHEME_TOKEN, scheme="Bearer"
+                )
+            ],
+        )
+
     EgressCredential(
         scope,
         "egresscredential-kubernetes-workload",
@@ -228,6 +260,61 @@ def _egress_credentials(scope: Construct, *, namespace: str) -> None:
 
 
 def _egress_policies(scope: Construct, *, namespace: str) -> None:
+    (litellm_spec,) = litellm_proxy.proxy_specs()
+    litellm_service = litellm_proxy.service(litellm_spec)
+    EgressPolicy(
+        scope,
+        "egresspolicy-inference-experiments",
+        metadata=ApiObjectMetadata(name=INFERENCE_EXPERIMENTS_POLICY, namespace=namespace),
+        rules=[
+            EgressPolicySpecRules(
+                hosts=[ollama.AUTH_PROXY.fqdn],
+                cluster_internal=True,
+                methods=[EgressPolicySpecRulesMethods.GET],
+                paths=["/api/tags", "/api/ps", "/api/version", "/v1/models"],
+                credential_ref=EgressPolicySpecRulesCredentialRef(name="ollama"),
+            ),
+            EgressPolicySpecRules(
+                hosts=[ollama.AUTH_PROXY.fqdn],
+                cluster_internal=True,
+                methods=[EgressPolicySpecRulesMethods.POST],
+                paths=[
+                    "/api/show",
+                    "/api/chat",
+                    "/api/generate",
+                    "/api/embed",
+                    "/api/embeddings",
+                    "/v1/chat/completions",
+                    "/v1/completions",
+                    "/v1/responses",
+                    "/v1/embeddings",
+                ],
+                credential_ref=EgressPolicySpecRulesCredentialRef(name="ollama"),
+            ),
+            EgressPolicySpecRules(
+                hosts=[litellm_service.fqdn],
+                cluster_internal=True,
+                methods=[EgressPolicySpecRulesMethods.GET],
+                paths=["/v1/models", "/models", "/model/info"],
+                credential_ref=EgressPolicySpecRulesCredentialRef(name="litellm-cheap-experiments"),
+            ),
+            EgressPolicySpecRules(
+                hosts=[litellm_service.fqdn],
+                cluster_internal=True,
+                methods=[EgressPolicySpecRulesMethods.POST],
+                paths=[
+                    "/v1/chat/completions",
+                    "/v1/completions",
+                    "/v1/responses",
+                    "/v1/messages",
+                    "/v1/messages/count_tokens",
+                    "/v1/embeddings",
+                    "/v1/audio/transcriptions",
+                ],
+                credential_ref=EgressPolicySpecRulesCredentialRef(name="litellm-cheap-experiments"),
+            ),
+        ],
+    )
     # Available for explicit grants only: no defaults, presets or standing bindings opt in.
     EgressPolicy(
         scope,
@@ -673,6 +760,7 @@ class Egress(Construct):
 
     def _add_network_policy(self) -> None:
         namespace = self.env.namespace
+        (litellm_spec,) = litellm_proxy.proxy_specs()
         NetworkPolicy(
             self,
             "networkpolicy",
@@ -702,6 +790,8 @@ class Egress(Construct):
                 actions.service(namespace).egress(),
                 notifications.service(namespace).egress(),
                 forgejo.HTTP.egress(),
+                ollama.AUTH_PROXY.egress(),
+                litellm_proxy.service(litellm_spec).egress(),
                 # hostNetwork: Cilium sees the node, not an endpoint.
                 EgressRule.to_entities(Entity.REMOTE_NODE, Entity.HOST, ports=[home_assistant.SERVICE.port.number]),
                 *cilium.open_internet_egress(ports=[443, 80]),

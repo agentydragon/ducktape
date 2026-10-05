@@ -48,11 +48,11 @@ _PODS = Pods(namespace=_NAMESPACE, labels=(("app.kubernetes.io/name", _NAME),))
 # Ollama's own API, without auth, for in-cluster clients.
 SERVICE = ServiceRef(name=_NAME, port=Port(name="http", number=11434), pods=_PODS)
 # The bearer-checking nginx in front of it, which the public route targets.
-_AUTH_PROXY = ServiceRef(name=_NAME, port=Port(name="auth-proxy", number=11435), pods=_PODS)
+AUTH_PROXY = ServiceRef(name=_NAME, port=Port(name="auth-proxy", number=11435), pods=_PODS)
 _MODELS_CLAIM = "llm-models"
 _SSD_MODELS_CLAIM = "qwen38-iq4-ssd"
 _SSD_MODELS_VOLUME = "wyrm2-qwen38-iq4-ssd"
-_DIRECT_TOKEN = SecretRef(namespace=_NAMESPACE, name="ollama-direct-token").key("token")
+DIRECT_TOKEN = SecretRef(namespace=_NAMESPACE, name="ollama-direct-token").key("token")
 _AUTH_PROXY_CONFIG_MAP = "ollama-auth-proxy"
 _SCRIPTS_CONFIG_MAP = "gpt-oss-scripts"
 _SETUP_SCRIPT = "setup-gpt-oss-v2.sh"
@@ -214,11 +214,11 @@ def _auth_proxy_container() -> k8s.Container:
     return k8s.Container(
         name="auth-proxy",
         image="nginx:1.31-alpine",
-        ports=[_AUTH_PROXY.port.k8s_container_port()],
+        ports=[AUTH_PROXY.port.k8s_container_port()],
         # nginx-auth-proxy.conf.template reads all three.
         env=[
-            _DIRECT_TOKEN.env_var("OLLAMA_DIRECT_TOKEN"),
-            k8s.EnvVar(name="AUTH_PROXY_PORT", value=str(_AUTH_PROXY.pod_port)),
+            DIRECT_TOKEN.env_var("OLLAMA_DIRECT_TOKEN"),
+            k8s.EnvVar(name="AUTH_PROXY_PORT", value=str(AUTH_PROXY.pod_port)),
             k8s.EnvVar(name="OLLAMA_API_PORT", value=str(SERVICE.pod_port)),
         ],
         volume_mounts=[
@@ -226,7 +226,7 @@ def _auth_proxy_container() -> k8s.Container:
             k8s.VolumeMount(name="nginx-config", mount_path=f"/etc/nginx/{_NGINX_CONF}", sub_path=_NGINX_CONF),
         ],
         liveness_probe=k8s.Probe(
-            tcp_socket=k8s.TcpSocketAction(port=k8s.IntOrString.from_string(_AUTH_PROXY.port.name)),
+            tcp_socket=k8s.TcpSocketAction(port=k8s.IntOrString.from_string(AUTH_PROXY.port.name)),
             initial_delay_seconds=5,
             period_seconds=30,
         ),
@@ -284,7 +284,7 @@ def _service(scope: Construct) -> None:
         spec=k8s.ServiceSpec(
             type="ClusterIP",
             selector=_PODS.selector,
-            ports=[SERVICE.port.k8s_service_port(), _AUTH_PROXY.port.k8s_service_port()],
+            ports=[SERVICE.port.k8s_service_port(), AUTH_PROXY.port.k8s_service_port()],
         ),
     )
 
@@ -298,7 +298,7 @@ def _rbac(scope: Construct) -> None:
             k8s.PolicyRule(
                 api_groups=[""],
                 resources=["secrets"],
-                resource_names=["litellm-master-key", _DIRECT_TOKEN.secret.name],
+                resource_names=["litellm-master-key", DIRECT_TOKEN.secret.name],
                 verbs=["get"],
             )
         ],
@@ -411,9 +411,9 @@ def _direct_token(scope: Construct) -> None:
     mint_bearer_secret(
         scope,
         "direct-token",
-        name=_DIRECT_TOKEN.secret.name,
-        namespace=_DIRECT_TOKEN.secret.namespace,
-        key=_DIRECT_TOKEN.key,
+        name=DIRECT_TOKEN.secret.name,
+        namespace=DIRECT_TOKEN.secret.namespace,
+        key=DIRECT_TOKEN.key,
         # A direct-API credential is generated once, not periodically rotated.
         refresh="8760h",
         creation_policy=ExternalSecretSpecTargetCreationPolicy.OWNER,
@@ -439,7 +439,7 @@ def chart(app: App) -> Chart:
         "route",
         metadata=ApiObjectMetadata(name=_NAME, namespace=_NAMESPACE),
         hostnames=["ollama.allegedly.works"],
-        backend=_AUTH_PROXY,
+        backend=AUTH_PROXY,
         timeout="600s",
         hsts=False,
         listener=None,
@@ -496,7 +496,7 @@ def ollama(
             KustomizationSpecHealthChecks(
                 api_version="external-secrets.io/v1",
                 kind="ExternalSecret",
-                name=_DIRECT_TOKEN.secret.name,
+                name=DIRECT_TOKEN.secret.name,
                 namespace=_NAMESPACE,
             )
         ],

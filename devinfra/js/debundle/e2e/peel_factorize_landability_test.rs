@@ -374,10 +374,7 @@ export { anchor, mutable, peer };
         ],
     );
     rejected_opts.unassigned_mode = unassigned_mode_inline();
-    expect_rejection_containing_all(
-        rejected_opts,
-        &["assignment", "mutable", "cross-destination"],
-    );
+    expect_atomic_conflict_rejection(rejected_opts, &["state/mutable"], &["eager_rebind"]);
 }
 
 #[test]
@@ -479,5 +476,5 @@ export { anchor, SearchPopoverState };
         ],
     );
 
-    expect_rejection_containing_all(opts, &["atomic-factor-unit", "local effect"]);
+    expect_atomic_conflict_rejection(opts, &["features/search/popover_state"], &["local_effect"]);
 }

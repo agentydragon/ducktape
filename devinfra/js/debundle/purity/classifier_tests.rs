@@ -294,6 +294,12 @@ fn classify_template_interpolation_requires_primitive_values() {
 }
 
 #[test]
+fn classify_strict_equality_inherits_operand_impurity() {
+    assert!(!(classify("foo() === 1")).is_pure());
+    assert!(!(classify("1 !== foo()")).is_pure());
+}
+
+#[test]
 fn classify_sequence_takes_worst() {
     assert!((classify("(A, B, C)")).is_pure());
     assert!(!(classify("(A, foo(), C)")).is_pure());

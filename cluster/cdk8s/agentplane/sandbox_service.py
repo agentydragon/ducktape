@@ -68,7 +68,7 @@ class SandboxService(Construct):
             sandbox_namespace=env.namespace,
             caller_accounts=frozenset({manager, ServiceAccountRef(namespace=env.namespace, name=notifications.NAME)}),
             token_audience=TOKEN_AUDIENCE,
-            agent_instructions=render_platform_instructions(
+            platform_instructions=render_platform_instructions(
                 egress_api_url=f"http://{egress.agent_api(env.namespace).fqdn}",
                 actions_service_url=f"http://{actions_service.fqdn}:{actions_service.port.number}",
                 notifications_service_url=f"http://{notifications.service(env.namespace).fqdn}:8080",

@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { GeolocationWatcher, getGeolocation, type WatchEmit } from "./geolocation";
 
-// jsdom has no navigator.geolocation; each test installs its own stub, so clear it after.
+// Node's navigator has no geolocation; each test installs its own stub, so clear it after.
 afterEach(() => Reflect.deleteProperty(navigator, "geolocation"));
 
 function positionAt(latitude: number, longitude: number): GeolocationPosition {

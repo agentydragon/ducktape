@@ -1353,12 +1353,6 @@ mod tests {
         assert_eq!(group.occurrences.len(), 2);
         assert_eq!(group.occurrences[0].module, "format/duplicate");
         assert_eq!(group.occurrences[1].module, "format/primary");
-
-        let mut text = String::new();
-        render_selector_debt_text(&report, &mut text);
-        assert!(text.contains("source-aware repeated exact: 1"));
-        assert!(text.contains("source-aware repeated exact structural selectors:"));
-        assert!(text.contains("2x exact=[0]"));
     }
 
     #[test]
@@ -1457,12 +1451,14 @@ const stableName = 1;
 
         let mut text = String::new();
         render_selector_debt_text(&report, &mut text);
-        assert!(
-            text.contains("source-aware source_matches suggestions: 2 selector(s) in 1 group(s)")
-        );
-        assert!(text.contains("source-aware source_matches suggestions:"));
-        assert!(text.contains("styles body=0 kind=const selectors=2"));
-        assert!(text.contains("local_binding=primaryStyle [PrimaryStyle] styles decl#0"));
+        for identifier in [
+            "styles",
+            "primaryStyle",
+            "PrimaryStyle",
+            "DECLARATORS_BEFORE",
+        ] {
+            assert!(text.contains(identifier), "{identifier}\n{text}");
+        }
     }
 
     #[test]

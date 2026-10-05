@@ -140,6 +140,7 @@ js_library(
         ":node_modules/@eslint/js",
         ":node_modules/@typescript-eslint/eslint-plugin",
         ":node_modules/@typescript-eslint/parser",
+        ":node_modules/@vitest/eslint-plugin",
         ":node_modules/eslint-plugin-import-x",
         ":node_modules/eslint-plugin-react",
         ":node_modules/eslint-plugin-react-hooks",
