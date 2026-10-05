@@ -1,6 +1,1 @@
-load("@npm_ducktape//:defs.bzl", "npm_link_all_packages")
-
 package(default_testonly = True)
-
-# Link npm packages for this workspace member
-npm_link_all_packages(name = "node_modules")

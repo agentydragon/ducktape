@@ -579,7 +579,6 @@ npm.npm_translate_lock(
         "//:pnpm-workspace.yaml",
         "//:props/frontend/package.json",
         "//:study_casino/frontend/package.json",
-        "//:util/testing/frontend_visual/package.json",
         "//:x/rspcache/admin_ui/package.json",
     ],
     # Disable postinstall for packages that download binaries during lifecycle hooks.
@@ -590,11 +589,6 @@ npm.npm_translate_lock(
         # platform's @unrs/resolver-binding-* optionalDependency itself, so the postinstall has
         # nothing left to fetch.
         "unrs-resolver",
-        # Postinstall downloads Chromium (~280MB) which fails in sandboxed builds.
-        # .puppeteerrc.cjs (skipDownload: true) isn't visible inside the lifecycle
-        # hook sandbox. The browser is provided hermetically by @chrome_headless_shell
-        # (below) and handed to Puppeteer through CHROMIUM_HEADLESS_SHELL.
-        "puppeteer",
     ],
     npmrc = "//:.npmrc",
     # Root pnpm-lock.yaml with workspace packages

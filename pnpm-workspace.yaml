@@ -3,4 +3,3 @@ packages:
   - "airlock/frontend"
   - "x/rspcache/admin_ui"
   - "props/frontend"
-  - "util/testing/frontend_visual"
