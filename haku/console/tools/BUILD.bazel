@@ -161,6 +161,7 @@ py_test(
         "//:conftest",
         "//haku/console:conftest",
         "@pypi//fastmcp_slim",
+        "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],
 )
