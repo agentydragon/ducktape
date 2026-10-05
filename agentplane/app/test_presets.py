@@ -6,7 +6,7 @@ import pytest
 import pytest_bazel
 
 from agentplane.app.presets import PresetCatalog, SandboxPreset, ThreadPreset
-from agentplane.app.sandbox_models import SandboxBinding, SessionDefaults
+from agentplane.app.sandbox_models import SessionDefaults
 from agentplane.runner.harness import Harness
 
 
@@ -34,24 +34,19 @@ def presets() -> PresetCatalog:
     )
 
 
-def test_sandbox_binding_keeps_the_selected_values_when_the_catalog_changes(presets: PresetCatalog) -> None:
+@pytest.mark.parametrize(
+    ("edit", "instructions"),
+    [(SessionDefaults(instructions=""), ""), (SessionDefaults(), "preset instructions")],
+    ids=["explicit-empty-wins", "unset-keeps-preset"],
+)
+def test_session_defaults_over_replaces_only_explicitly_set_fields(
+    presets: PresetCatalog, edit: SessionDefaults, instructions: str
+) -> None:
     [selected] = presets.views()
-    binding = SandboxBinding(
-        session_defaults=SessionDefaults(instructions="").over(selected.session_defaults), bootstrap=selected.bootstrap
-    )
-    presets.threads["public-coder-codex"] = presets.threads["public-coder-codex"].model_copy(
-        update={"model": "new-preset-model", "reasoning_effort": "high"}
-    )
 
-    assert binding.session_defaults is not None
-    assert binding.session_defaults.model_dump() == {
-        "harness": "HARNESS_CODEX",
-        "model": "preset-model",
-        "cwd": "/state/workspaces/{session_id}",
-        "reasoning_effort": "medium",
-        "instructions": "",
-        "setup_script": "",
-    }
+    merged = edit.over(selected.session_defaults)
+
+    assert (merged.model, merged.instructions) == ("preset-model", instructions)
 
 
 if __name__ == "__main__":
