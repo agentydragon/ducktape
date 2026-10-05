@@ -108,7 +108,7 @@ py_library(
     ],
 )
 
-# Chromium launch flags + frozen-clock init script, single-sourced between
+# Chromium launch flags, frozen-clock init script and animation-pinning CSS, single-sourced between
 # the Python launcher below and the JS one
 # (//util/testing/frontend_visual:launcher). They live at this level (not in
 # frontend_visual/) because a data file there would turn the directory into a
@@ -120,6 +120,7 @@ filegroup(
     srcs = [
         "chromium-flags.json",
         "chromium-font-preferences.json",
+        "disable-animations.css",
         "frozen-clock.js",
         "@chrome_headless_shell//:executable",
     ],
@@ -131,6 +132,7 @@ js_library(
     srcs = [
         "chromium-flags.json",
         "chromium-font-preferences.json",
+        "disable-animations.css",
         "frozen-clock.js",
     ],
     # frozen-clock.js is raw injected text (its `frozenClock` const is only
@@ -274,7 +276,9 @@ py_library(
         ":visual_scenarios",
         "//util:visual_review",
         "//util/bazel:runfiles",
+        "@pypi//more_itertools",
         "@pypi//playwright",
+        "@pypi//pydantic",
         "@pypi//pytest",
         "@pypi//pytest_asyncio",
         "@pypi//pytest_bazel",

@@ -12,7 +12,7 @@ from playwright.async_api import (
 
 from util.testing import visual_sweep
 from util.testing.visual_scenarios import Scenario, Viewport
-from util.testing.visual_sweep import SweepConfig, capture_scenario
+from util.testing.visual_sweep import InlinePage, SweepConfig, capture_scenario
 from util.visual_review import VisualReviewManifest
 
 # gazelle:include_dep //util:playwright
@@ -22,7 +22,7 @@ pytest_plugins = ("util.playwright", "pytester")
 # What each scene of the test harness page shows, by `?page=` name. The scenes that fail do so in
 # the way their name says; `index.html` and this file are all the harness there is.
 _HARNESS_JS = """
-const scene = new URLSearchParams(location.search).get("page");
+const scene = new URLSearchParams(location.search).get("page") ?? window.__SCENE__;
 const app = document.getElementById("app");
 const shot = '<div id="shot"><div id="target"></div></div>';
 if (scene === "plain") app.innerHTML = shot;
@@ -33,26 +33,38 @@ if (scene === "ledger") {
   app.innerHTML = shot;
   window.__visualNetworkLedger__ = { pending: [], violations: ["unmatched route /api/x"] };
 }
+if (scene === "inline") {
+  app.innerHTML = shot;
+  const problems = [];
+  if (Date.now() !== 1738411200000) problems.push("clock not frozen");
+  if (document.baseURI !== "https://harness.test/") problems.push(`base is ${document.baseURI}`);
+  if (getComputedStyle(document.getElementById("target")).animationPlayState !== "paused") problems.push("animation runs");
+  if (window.__PAYLOAD__ !== "</script><i>") problems.push(`payload is ${window.__PAYLOAD__}`);
+  if (problems.length) throw new Error(problems.join("; "));
+}
 if (scene === "interactive") {
   app.innerHTML = shot;
   document.getElementById("target").addEventListener("click", (event) => event.target.classList.add("tapped"));
 }
 """
-_INDEX_HTML = textwrap.dedent(
+_STYLE = textwrap.dedent(
     """\
-    <!doctype html>
-    <style>
-      @font-face { font-family: "Declared Sans"; src: url("./missing.woff2"); }
-      body { margin: 0; background: Canvas; color: CanvasText; color-scheme: light dark; }
-      #shot { width: 100px; height: 40px; margin: 60px; }
-      #target { width: 100px; height: 40px; background: #3366cc; }
-      #target:hover { background: #cc6633; }
-      #target.tapped { background: #33cc66; }
-    </style>
-    <div id="app"></div>
-    <script src="./harness.js"></script>
+    @font-face { font-family: "Declared Sans"; src: url("./missing.woff2"); }
+    body { margin: 0; background: Canvas; color: CanvasText; color-scheme: light dark; }
+    #shot { width: 100px; height: 40px; margin: 60px; }
+    #target { width: 100px; height: 40px; background: #3366cc; }
+    #target:hover { background: #cc6633; }
+    #target.tapped { background: #33cc66; }
     """
 )
+_INDEX_HTML = f"""<!doctype html>
+<style>{_STYLE}</style>
+<div id="app"></div>
+<script src="./harness.js"></script>
+"""
+# Only an inline page has the animation: it is what the sweep must pin, and in the file harness a
+# running one would make every render differ from the last.
+_INLINE_STYLE = _STYLE + "@keyframes pulse { to { opacity: 0.5; } } #target { animation: pulse 1s linear infinite; }"
 
 
 @pytest.fixture
@@ -66,6 +78,21 @@ def config(tmp_path: Path) -> SweepConfig:
         scenarios_path=tmp_path / "scenarios.json",
         title="Test sweep",
         expected_font_family=None,
+    )
+
+
+@pytest.fixture
+def inline_config(config: SweepConfig, tmp_path: Path) -> SweepConfig:
+    """The same harness script, loaded in memory beside the stylesheet; `harness_path` is a directory, as an esbuild output is."""
+    stylesheet = tmp_path / "style.css"
+    stylesheet.write_text(_INLINE_STYLE)
+    return SweepConfig(
+        harness_path=config.harness_path.parent,
+        scenarios_path=config.scenarios_path,
+        title=config.title,
+        expected_font_family=None,
+        inline_page=InlinePage(stylesheet_paths=(stylesheet,), base_href="https://harness.test/"),
+        output_suffix="",
     )
 
 
@@ -203,6 +230,39 @@ async def test_an_unhealthy_scenario_fails_by_name_and_publishes_nothing(
     assert _nothing_published(tmp_path)
 
 
+async def test_an_inline_page_is_the_stylesheet_the_globals_and_the_bundle_in_a_frozen_pinned_document(
+    playwright: Playwright, inline_config: SweepConfig, tmp_path: Path
+) -> None:
+    # The harness throws, naming each of these, if the document is not as the sweep promises.
+    scenario = Scenario(
+        element="#shot", label="A captioned shot", window_globals={"__SCENE__": "inline", "__PAYLOAD__": "</script><i>"}
+    )
+
+    await capture_scenario(playwright, "inline", scenario, config=inline_config, output_dir=tmp_path)
+
+    # The suffix is the sweep's to choose, the caption the scenario's.
+    assert _png_size(_published(tmp_path)["inline.png"]) == (100, 40)
+    assert [(asset.path, asset.label) for asset in _manifest(tmp_path).assets] == [("inline.png", "A captioned shot")]
+
+
+async def test_an_inline_page_allows_no_request(
+    playwright: Playwright, inline_config: SweepConfig, tmp_path: Path
+) -> None:
+    scenario = Scenario(element="#shot", window_globals={"__SCENE__": "escapes"})
+
+    with pytest.raises(AssertionError, match=r"requests escaped the harness:\n\s+image http://fenced.test/x.png"):
+        await capture_scenario(playwright, "escapes", scenario, config=inline_config, output_dir=tmp_path)
+
+    assert _nothing_published(tmp_path)
+
+
+async def test_window_globals_need_an_inline_page(playwright: Playwright, config: SweepConfig, tmp_path: Path) -> None:
+    scenario = Scenario(element="#shot", window_globals={"__SCENE__": "plain"})
+
+    with pytest.raises(ValueError, match="plain: windowGlobals reach only an inline page"):
+        await capture_scenario(playwright, "plain", scenario, config=config, output_dir=tmp_path)
+
+
 async def test_a_declared_font_that_did_not_load_fails_the_scenario(
     playwright: Playwright, config: SweepConfig, tmp_path: Path
 ) -> None:
@@ -227,6 +287,33 @@ def _sweep(
     monkeypatch.setenv("VISUAL_TITLE", config.title)
     monkeypatch.setenv("TEST_UNDECLARED_OUTPUTS_DIR", str(out))
     return out
+
+
+def test_an_inline_sweep_is_configured_from_the_environment(
+    pytester: pytest.Pytester, monkeypatch: pytest.MonkeyPatch, inline_config: SweepConfig
+) -> None:
+    assert inline_config.inline_page is not None
+    out = _sweep(
+        pytester,
+        monkeypatch,
+        inline_config,
+        {
+            "inline": {
+                "element": "#shot",
+                "label": "Inline",
+                "windowGlobals": {"__SCENE__": "inline", "__PAYLOAD__": "</script><i>"},
+            }
+        },
+    )
+    monkeypatch.setenv("INLINE_PAGE", "1")
+    monkeypatch.setenv("STYLESHEET_PATHS", str(inline_config.inline_page.stylesheet_paths[0]))
+    monkeypatch.setenv("BASE_HREF", "https://harness.test/")
+    monkeypatch.setenv("OUTPUT_SUFFIX", "")
+
+    result = pytester.runpytest(visual_sweep.__file__)
+
+    result.assert_outcomes(passed=1)
+    assert [(asset.path, asset.label) for asset in _manifest(out).assets] == [("inline.png", "Inline")]
 
 
 def test_every_scenario_is_a_test_named_for_it_in_table_order(

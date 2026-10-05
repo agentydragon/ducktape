@@ -16,7 +16,10 @@ def write_visual_review_manifest(output_dir: Path, *, title: str, assets: Iterab
 
     output_dir.mkdir(parents=True, exist_ok=True)
     destination = output_dir / MANIFEST_NAME
-    destination.write_text(json.dumps(manifest.model_dump(by_alias=True), indent=2) + "\n")
+    # Non-ASCII labels stay as written, as `JSON.stringify` does, so the file is byte-identical to the Puppeteer lanes'.
+    destination.write_text(
+        json.dumps(manifest.model_dump(by_alias=True), indent=2, ensure_ascii=False) + "\n", encoding="utf-8"
+    )
     return destination
 
 
@@ -28,7 +31,7 @@ def upsert_review_asset(output_dir: Path, *, title: str, asset: VisualReviewAsse
     """
     manifest_path = output_dir / MANIFEST_NAME
     assets = (
-        list(VisualReviewManifest.model_validate_json(manifest_path.read_text()).assets)
+        list(VisualReviewManifest.model_validate_json(manifest_path.read_text(encoding="utf-8")).assets)
         if manifest_path.exists()
         else []
     )

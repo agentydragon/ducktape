@@ -21,6 +21,14 @@ def test_write_visual_review_manifest(tmp_path: Path) -> None:
     }
 
 
+def test_a_non_ascii_label_is_written_as_it_is(tmp_path: Path) -> None:
+    destination = write_visual_review_manifest(
+        tmp_path, title="Example UI", assets=[VisualReviewAsset(path="screen.png", label="tool · compact — dark")]
+    )
+
+    assert '"label": "tool · compact — dark"' in destination.read_text(encoding="utf-8")
+
+
 @pytest.mark.parametrize(
     ("title", "path"),
     [

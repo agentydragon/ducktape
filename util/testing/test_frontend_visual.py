@@ -5,7 +5,7 @@ from __future__ import annotations
 import pytest_bazel
 from playwright.async_api import Page, Playwright
 
-from util.testing.frontend_visual import deterministic_browser_context
+from util.testing.frontend_visual import DISABLE_ANIMATIONS_CSS, deterministic_browser_context
 
 # gazelle:include_dep //util:playwright
 
@@ -56,6 +56,34 @@ async def test_generic_families_are_browser_pinned(playwright: Playwright) -> No
         ):
             families = await _platform_families(page, selector)
             assert family in families, f"{selector} used {families}, expected {family}"
+
+
+async def test_animations_and_transitions_are_pinned_by_the_css(playwright: Playwright) -> None:
+    async with await deterministic_browser_context(
+        playwright, viewport={"width": 800, "height": 600}, frozen_now_ms=0
+    ) as context:
+        page = await context.new_page()
+        await page.set_content(
+            f"""
+            <style>
+              @keyframes pulse {{ to {{ opacity: 0.5; }} }}
+              #animated {{ animation: pulse 1s linear infinite; }}
+              #transitioned {{ transition: opacity 5s; }}
+              {DISABLE_ANIMATIONS_CSS}
+            </style>
+            <div id="animated">a</div>
+            <div id="transitioned">t</div>
+            """
+        )
+
+        styles = await page.evaluate(
+            """() => ({
+                playState: getComputedStyle(document.getElementById("animated")).animationPlayState,
+                transition: getComputedStyle(document.getElementById("transitioned")).transitionProperty,
+            })"""
+        )
+
+    assert styles == {"playState": "paused", "transition": "none"}
 
 
 if __name__ == "__main__":

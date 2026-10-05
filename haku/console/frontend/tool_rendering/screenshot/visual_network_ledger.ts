@@ -1,6 +1,7 @@
 /**
  * The in-page half of the screenshot harnesses' network contract, read by the drivers through
- * `assertNetworkSettled` (util/testing/frontend_visual/capture.mjs): every stubbed fetch is
+ * `assertNetworkSettled` (util/testing/frontend_visual/capture.mjs) or its Python port
+ * `assert_network_settled` (util/testing/page_capture.py): every stubbed fetch is
  * tracked while in flight, and anything that must fail the run — an unmatched route, a rejected
  * fetch, an unhandled promise rejection — is recorded as a violation. The drivers refuse to
  * capture while requests are pending and fail the scene on any violation, so a missing mock or a

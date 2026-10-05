@@ -4,6 +4,10 @@ One file, two readers, so no scenario is listed twice: the TypeScript harness im
 whichever scene `?page=<name>` names) and the Python sweep (`visual_sweep`) reads it to capture each
 one. BUILD names no scenario either: `shard_count` splits the table, `--test_filter=<name>` runs one.
 
+A table needs not be written by hand. One that enumerates data kept elsewhere (the preview fixtures of
+`haku/console/frontend/tool_rendering/screenshot`) is generated from it at build time, and the harness
+is told its scene by the row's `windowGlobals`.
+
 A table is a JSON object from scenario name to the fields below. Fields are camelCase because the
 harness reads them from the same file. Fields only the harness reads (a route, a fixture variation)
 live in the same object and are ignored here.
@@ -11,10 +15,11 @@ live in the same object and are ignored here.
 
 from __future__ import annotations
 
+import re
 from pathlib import Path
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field, RootModel, model_validator
+from pydantic import BaseModel, ConfigDict, Field, JsonValue, RootModel, field_validator, model_validator
 from pydantic.alias_generators import to_camel
 
 
@@ -44,6 +49,9 @@ class Scenario(_TableModel):
     output_name: str | None = Field(
         default=None, description="Filename stem of the published PNG; the scenario name if unset."
     )
+    label: str | None = Field(
+        default=None, description="Caption in the visual-review manifest; the published PNG's name stem if unset."
+    )
     # A Literal because Playwright's `color_scheme` option dictates it.
     color_scheme: Literal["light", "dark"] = Field(
         default="light", description="The `prefers-color-scheme` media feature."
@@ -59,8 +67,23 @@ class Scenario(_TableModel):
     capture_viewport: bool = Field(
         default=False, description="Screenshot the viewport rather than `element`, preserving clipping."
     )
+    window_globals: dict[str, JsonValue] | None = Field(
+        default=None,
+        description=(
+            "Values assigned to `window` before the harness script runs, for a harness loaded as an in-memory "
+            "page (`visual_sweep.InlinePage`): that page has no URL query to tell the harness which scene it is."
+        ),
+    )
     hover: str | None = Field(default=None, description="Selector to move the pointer over once the scene is ready.")
     tap: str | None = Field(default=None, description="Selector to tap once the scene is ready; needs `has_touch`.")
+
+    @field_validator("window_globals")
+    @classmethod
+    def _globals_are_identifiers(cls, value: dict[str, JsonValue] | None) -> dict[str, JsonValue] | None:
+        # The names are written into a `<script>` as `window.<name>=...`.
+        if value is not None and (bad := [name for name in value if not re.fullmatch(r"[A-Za-z_$][\w$]*", name)]):
+            raise ValueError(f"window globals must be JavaScript identifiers: {bad}")
+        return value
 
     @model_validator(mode="after")
     def _tap_needs_touch(self) -> Scenario:
@@ -74,4 +97,4 @@ class ScenarioTable(RootModel[dict[str, Scenario]]):
 
 
 def load_scenarios(path: Path) -> dict[str, Scenario]:
-    return ScenarioTable.model_validate_json(path.read_text()).root
+    return ScenarioTable.model_validate_json(path.read_text(encoding="utf-8")).root

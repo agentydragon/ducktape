@@ -20,6 +20,10 @@ def py_visual_test(
         assets = [],
         fonts = None,
         font_family = None,
+        inline_page = False,
+        stylesheets = [],
+        base_href = None,
+        output_suffix = None,
         env = {},
         tags = [],
         **kwargs):
@@ -41,6 +45,14 @@ def py_visual_test(
       fonts: optional app-owned font filegroup the harness serves alongside its assets.
       font_family: optional named family asserted against what actually rendered. Required with
         `fonts`, so a custom font asset cannot be staged without declaring its purpose.
+      inline_page: load the harness as a document assembled in memory (`set_content`) from the bundle,
+        `stylesheets` and the scenario's `windowGlobals`, not as the `index.html` beside the bundle.
+        Nothing can then be fetched, not even over `file://`, and `harness` may be a directory output
+        holding one `.js` (an esbuild `output_dir`). `assets` is not needed.
+      stylesheets: with `inline_page`, CSS files inlined into the document, in order.
+      base_href: with `inline_page`, the document's `<base href>`, for a harness that parses relative
+        URLs its stubbed `fetch` never sends.
+      output_suffix: what goes between a scenario's output name and `.png`; `-actual` if unset.
       env: extra environment for the sweep.
       tags: extra tags; `visual` is always added.
       **kwargs: passed to `py_test` -- `size` and `shard_count` in practice.
@@ -52,17 +64,27 @@ def py_visual_test(
         fail("py_visual_test(%s) names font_family but does not provide the app-owned fonts; " % name +
              "pass both together.")
 
+    if (stylesheets or base_href != None) and not inline_page:
+        fail("py_visual_test(%s) sets stylesheets or base_href, which only an inline_page uses." % name)
+
     sweep_env = dict(env)
     sweep_env["HARNESS_PATH"] = "$(rlocationpath %s)" % harness
     sweep_env["SCENARIOS_PATH"] = "$(rlocationpath %s)" % scenarios
     sweep_env["VISUAL_TITLE"] = title
     if font_family:
         sweep_env["EXPECTED_FONT_FAMILY"] = font_family
+    if inline_page:
+        sweep_env["INLINE_PAGE"] = "1"
+        sweep_env["STYLESHEET_PATHS"] = " ".join(["$(rlocationpath %s)" % sheet for sheet in stylesheets])
+        if base_href != None:
+            sweep_env["BASE_HREF"] = base_href
+    if output_suffix != None:
+        sweep_env["OUTPUT_SUFFIX"] = output_suffix
 
     py_test(
         name = name,
         main_module = "util.testing.visual_sweep",
-        data = assets + [harness, scenarios] + ([fonts] if fonts != None else []),
+        data = assets + stylesheets + [harness, scenarios] + ([fonts] if fonts != None else []),
         env = sweep_env,
         tags = tags + ["visual"],
         deps = [
