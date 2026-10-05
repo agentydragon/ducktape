@@ -1085,6 +1085,13 @@ fn set_readable_name(doc: &mut LogicalModule, location: &BindingLocation, name: 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use analysis::{DepKind, OwnerGraphNodeReport};
+    use peel::propose::propose;
+    use report_fixtures::{
+        active_owner, atomic_edge, atomic_unit_for, claims, graph_of, no_claims, owner_edge,
+        residual_owner,
+    };
+
     #[test]
     fn parse_move_triple_rejects_one_field() {
         assert!(parse_move_triple("XOe").is_err());
@@ -1156,6 +1163,78 @@ mod tests {
                     "landable_today": true
                 }
             ]"#,
+        )
+        .unwrap_err();
+    }
+
+    // `modules propose --format json` is documented `--batch` input (docs/cli.md). The row
+    // fields are read through `serde(default)`, so a renamed `ModuleProposal` field would parse
+    // as absent instead of failing: these pair the real proposer with `parse_batch_json`.
+    fn propose_as_batch(
+        from: OwnerGraphNodeReport,
+        to: OwnerGraphNodeReport,
+        active_claims: &BTreeMap<String, ModulePath>,
+    ) -> Result<Vec<Move>> {
+        let graph = graph_of(
+            vec![from.clone(), to.clone()],
+            vec![owner_edge(
+                "edge:0",
+                &from.id,
+                &to.id,
+                DepKind::EagerUse,
+                true,
+            )],
+            vec![
+                atomic_unit_for("atomic:0", &[&from]),
+                atomic_unit_for("atomic:1", &[&to]),
+            ],
+            vec![atomic_edge("atomic_edge:0", "atomic:0", "atomic:1")],
+        );
+        let report = propose(&graph, active_claims, 10_000).unwrap();
+        parse_batch_json(&serde_json::to_string(&report).unwrap())
+    }
+
+    fn sym_module_pairs(moves: &[Move]) -> Vec<(&str, &str)> {
+        moves
+            .iter()
+            .map(|m| (m.sym.as_str(), m.module.as_str()))
+            .collect()
+    }
+
+    #[test]
+    fn proposed_fresh_module_batch_moves_its_bindings_there() {
+        let moves = propose_as_batch(
+            residual_owner("owner:a", 1, &["BindingA"], 10),
+            residual_owner("owner:b", 2, &["BindingB"], 10),
+            &no_claims(),
+        )
+        .unwrap();
+        assert_eq!(
+            sym_module_pairs(&moves),
+            [
+                ("BindingA", "auto_partition_0000"),
+                ("BindingB", "auto_partition_0000")
+            ],
+        );
+    }
+
+    #[test]
+    fn proposed_extension_batch_moves_its_bindings_into_the_extended_module() {
+        let moves = propose_as_batch(
+            residual_owner("owner:b", 2, &["BindingB"], 5),
+            active_owner("owner:a", 1, &["BindingA"], 10, "ui/x"),
+            &claims(&[("BindingA", "ui/x")]),
+        )
+        .unwrap();
+        assert_eq!(sym_module_pairs(&moves), [("BindingB", "ui/x")]);
+    }
+
+    #[test]
+    fn proposed_batch_with_anonymous_statements_is_rejected() {
+        propose_as_batch(
+            residual_owner("owner:a", 1, &["BindingA"], 10),
+            residual_owner("owner:anon", 2, &[], 5),
+            &no_claims(),
         )
         .unwrap_err();
     }

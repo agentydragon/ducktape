@@ -735,11 +735,6 @@ rust_library(
 
 rust_test(
     name = "peel_test",
-    compile_data = [
-        "peel/golden/closed_residual_unit.json",
-        "peel/golden/extend_active_via_anon.json",
-        "peel/golden/residual_singletons.json",
-    ],
     crate = ":peel",
     edition = "2024",
     deps = [":report_fixtures"],
@@ -983,6 +978,7 @@ rust_test(
     name = "cli_test",
     crate = ":cli",
     edition = "2024",
+    deps = [":report_fixtures"],
 )
 
 # Shared selector-program IR: the data boundary between selector lowering and

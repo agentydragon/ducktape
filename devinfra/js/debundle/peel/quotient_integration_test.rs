@@ -6,8 +6,8 @@ use std::collections::BTreeMap;
 
 use analysis::{DepKind, OwnerGraphReport};
 use report_fixtures::{
-    active_owner, atomic_edge, atomic_unit_for, claims, graph_of, no_claims, owner_edge,
-    residual_owner, singleton_graph,
+    active_owner, atomic_edge, atomic_unit_for, claims, graph_of, owner_edge, residual_owner,
+    singleton_graph,
 };
 
 use crate::propose::{ModuleProposal, propose};
@@ -294,105 +294,6 @@ fn post_seed_reports_each_unrealizable_scc_in_owner_id_order() {
     );
 }
 
-#[test]
-fn factorize_golden_output_unchanged() {
-    // Golden test: propose's output stays byte-identical for the
-    // same representative inputs. The renderer-over-quotient path
-    // must keep these outputs stable unless the proposal contract
-    // intentionally changes.
-    //
-    // Each fixture exercises a representative shape:
-    //   - `residual_singletons`: two unrelated residual owners,
-    //     no edges.
-    //   - `closed_residual_unit`: two residual units coupled by
-    //     a constraining edge.
-    //   - `extend_active_via_anon`: an anonymous statement whose
-    //     unique constraining edge points at an active module.
-    //
-    // Snapshots live at `devinfra/js/debundle/peel/golden/`. To
-    // regenerate (only after a deliberate, justified change), set
-    // `UPDATE_GOLDENS=1` when running the test.
-    let f1 = propose(&golden_residual_singletons(), &no_claims(), 10_000).unwrap();
-    let f2 = propose(&golden_closed_residual_unit(), &no_claims(), 10_000).unwrap();
-    let claims_active = claims(&[("BindingA", "ui/x")]);
-    let f3 = propose(&golden_extend_active_via_anon(), &claims_active, 10_000).unwrap();
-
-    let json1 = serde_json::to_string_pretty(&f1).unwrap();
-    let json2 = serde_json::to_string_pretty(&f2).unwrap();
-    let json3 = serde_json::to_string_pretty(&f3).unwrap();
-
-    // Strip a single trailing newline from each golden file before
-    // comparing — JSON formatters and pre-commit hooks routinely
-    // add one, while `serde_json::to_string_pretty` doesn't. The
-    // semantic content is what we're locking down, not whether
-    // pre-commit thinks the file ends in a newline.
-    let golden1 = include_str!("golden/residual_singletons.json").trim_end_matches('\n');
-    let golden2 = include_str!("golden/closed_residual_unit.json").trim_end_matches('\n');
-    let golden3 = include_str!("golden/extend_active_via_anon.json").trim_end_matches('\n');
-
-    assert_eq!(
-        json1, golden1,
-        "residual_singletons fixture diverged from golden baseline",
-    );
-    assert_eq!(
-        json2, golden2,
-        "closed_residual_unit fixture diverged from golden baseline",
-    );
-    assert_eq!(
-        json3, golden3,
-        "extend_active_via_anon fixture diverged from golden baseline",
-    );
-}
-
-fn golden_residual_singletons() -> OwnerGraphReport {
-    let a = residual_owner("owner:a", 1, &["BindingA"], 10);
-    let b = residual_owner("owner:b", 2, &["BindingB"], 10);
-    singleton_graph(vec![a.clone(), b.clone()], vec![])
-}
-
-fn golden_closed_residual_unit() -> OwnerGraphReport {
-    let a = residual_owner("owner:a", 1, &["BindingA"], 10);
-    let b = residual_owner("owner:b", 2, &["BindingB"], 10);
-    graph_of(
-        vec![a.clone(), b.clone()],
-        vec![owner_edge(
-            "edge:0",
-            "owner:a",
-            "owner:b",
-            DepKind::EagerUse,
-            true,
-        )],
-        vec![
-            atomic_unit_for("atomic:0", &[&a]),
-            atomic_unit_for("atomic:1", &[&b]),
-        ],
-        vec![atomic_edge("atomic_edge:0", "atomic:0", "atomic:1")],
-    )
-}
-
-fn golden_extend_active_via_anon() -> OwnerGraphReport {
-    // BindingA is in an active module ui/x. An anonymous statement
-    // (no declared bindings) has one constraining edge into a.
-    // propose should promote it to extend:ui/x.
-    let a = active_owner("owner:a", 1, &["BindingA"], 10, "ui/x");
-    let anon = residual_owner("owner:anon", 2, &[], 5);
-    graph_of(
-        vec![a.clone(), anon.clone()],
-        vec![owner_edge(
-            "edge:0",
-            "owner:anon",
-            "owner:a",
-            DepKind::EagerUse,
-            true,
-        )],
-        vec![
-            atomic_unit_for("atomic:0", &[&a]),
-            atomic_unit_for("atomic:1", &[&anon]),
-        ],
-        vec![atomic_edge("atomic_edge:0", "atomic:1", "atomic:0")],
-    )
-}
-
 // ---------- Greedy merge to convergence tests. ----------
 //
 // The greedy operates over a quotient whose initial partition the
@@ -654,11 +555,10 @@ fn merge_absorbs_residual_owner_with_only_intra_deps() {
 // ---------- Atomic-DAG reachability seeding. ----------
 //
 // The third gated contraction pass in `build_seed_quotient` groups
-// residual owners by atomic-DAG reachability. Well-formed input stays
-// stable (locked down by `factorize_golden_output_unchanged` above).
-// Input whose atomic-DAG reachability closure would form a cycle gets
-// a `SeedContractionRejected::AtomicReachability` diagnostic
-// pinpointing the rejected pair.
+// residual owners by atomic-DAG reachability. Input whose atomic-DAG
+// reachability closure would form a cycle gets a
+// `SeedContractionRejected::AtomicReachability` diagnostic pinpointing
+// the rejected pair.
 
 #[test]
 fn pass3_diagnostic_walk_never_commits_a_merge() {
