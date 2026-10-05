@@ -15,11 +15,13 @@ export type QuotasView = components["schemas"]["AllQuotasView"];
 export type ProviderView = components["schemas"]["ProviderView"];
 export type QuotaWindow = components["schemas"]["QuotaWindow"];
 export type ExtraSpend = components["schemas"]["ExtraSpend"];
+export type PaidCredits = components["schemas"]["PaidCredits"];
 export type BurnStatus = components["schemas"]["BurnStatus"];
 
 export type EffectiveQuota = {
   windows: QuotaWindow[];
   extraSpend: ExtraSpend | null;
+  paidCredits: PaidCredits | null;
   resetCredits: number | null;
   resetCreditExpiries: string[];
   /** When the shown numbers come from an older snapshot: when that snapshot was taken. */
@@ -30,12 +32,23 @@ export type EffectiveQuota = {
 export function effectiveQuota(provider: ProviderView): EffectiveQuota {
   const result = provider.last_output.result;
   const error = result.kind === "error" ? result.error : null;
-  if (result.kind === "success" && (result.windows?.length || result.available_reset_credits != null)) {
+  if (
+    result.kind === "success" &&
+    (result.windows?.length || result.available_reset_credits != null || result.paid_credits != null)
+  ) {
     return { ...shown(result), staleSince: null, error };
   }
   const fallback = provider.last_success;
   if (fallback) return { ...shown(fallback.result), staleSince: fallback.fetched_at, error };
-  return { windows: [], extraSpend: null, resetCredits: null, resetCreditExpiries: [], staleSince: null, error };
+  return {
+    windows: [],
+    extraSpend: null,
+    paidCredits: null,
+    resetCredits: null,
+    resetCreditExpiries: [],
+    staleSince: null,
+    error,
+  };
 }
 
 /** Seconds until reset, counted from `now` where the provider gave an absolute instant. */
@@ -53,6 +66,7 @@ function shown(result: components["schemas"]["FetchSuccess"]): Omit<EffectiveQuo
   return {
     windows: (result.windows ?? []).filter((window) => window.display),
     extraSpend: result.extra_spend ?? null,
+    paidCredits: result.paid_credits ?? null,
     resetCredits: result.available_reset_credits ?? null,
     resetCreditExpiries: result.available_reset_credit_expiries ?? [],
   };

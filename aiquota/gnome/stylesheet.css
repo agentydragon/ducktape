@@ -71,6 +71,11 @@
   font-feature-settings: "tnum";
 }
 
+.quota-popup-row.quota-credit-active {
+  color: #e01b24;
+  font-weight: bold;
+}
+
 .quota-popup-bar-item {
   padding-top: 5px;
   padding-bottom: 5px;

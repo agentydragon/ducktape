@@ -23,6 +23,7 @@ from aiquota.models import (
     FetchSuccess,
     HistoryKind,
     HistoryObservation,
+    PaidCredits,
     ProviderFetch,
     QuotaWindow,
     ResetCredit,
@@ -102,12 +103,21 @@ class _ResetCreditsSummary(BaseModel):
     available_count: int
 
 
+class _Credits(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+
+    has_credits: bool = False
+    unlimited: bool = False
+    balance: str | None = None
+
+
 class _UsageResponse(BaseModel):
     model_config = ConfigDict(extra="ignore")
 
     rate_limit: _RateLimit | None = None
     additional_rate_limits: list[_AdditionalRateLimit] | None = None
     rate_limit_reset_credits: _ResetCreditsSummary | None = None
+    credits: _Credits | None = None
 
 
 class _DailyUsageBucket(BaseModel):
@@ -378,6 +388,9 @@ def _to_success(usage: _UsageResponse) -> FetchSuccess:
     return FetchSuccess(
         windows=[window for window in windows if window],
         available_reset_credits=reset_credits.available_count if reset_credits else None,
+        paid_credits=PaidCredits(balance=usage.credits.balance, unlimited=usage.credits.unlimited)
+        if usage.credits and (usage.credits.has_credits or usage.credits.unlimited)
+        else None,
     )
 
 
