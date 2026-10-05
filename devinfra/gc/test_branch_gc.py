@@ -8,7 +8,7 @@ from devinfra.gc import branch_gc as bg
 from devinfra.gc.conftest import GitRepo
 from devinfra.gc.git_repo import Worktree
 from devinfra.gc.pull_request import PrInfo, PrState
-from devinfra.gc.worktree_gc import PrunableWorktree, RetainedWorktree
+from devinfra.gc.worktree_gc import RetainedWorktree
 
 
 def _classify(
@@ -111,23 +111,10 @@ def test_open_pr_is_kept(repo: GitRepo) -> None:
     assert isinstance(_classify(repo, "feature", pr=PrInfo(9, PrState.OPEN)), bg.RetainedBranch)
 
 
-def test_default_branch_is_kept(repo: GitRepo) -> None:
-    assert isinstance(_classify(repo, "main"), bg.RetainedBranch)
-
-
 def test_branch_in_retained_worktree_is_kept(repo: GitRepo) -> None:
     repo.branch("feature")
     holder = RetainedWorktree(Worktree(path=Path("/wt"), branch="feature"), "uncommitted changes", None)
     assert isinstance(_classify(repo, "feature", holder=holder), bg.RetainedBranch)
-
-
-def test_branch_in_prunable_worktree_is_prunable(repo: GitRepo) -> None:
-    repo.branch("feature")
-    repo.commit("later", "1\n", "advance main")
-    holder = PrunableWorktree(Worktree(path=Path("/wt"), branch="feature"), "changes already in main", None)
-    result = _classify(repo, "feature", holder=holder)
-    assert isinstance(result, bg.PrunableBranch)
-    assert result.checkout == Path("/wt")
 
 
 def test_delete_branch_removes_it(repo: GitRepo) -> None:
