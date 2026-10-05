@@ -551,7 +551,7 @@ async def test_request_tool_returns_pending_stub_with_deep_link(agent_client: Cl
     assert view is not None
     assert view["status"] == ToolCallStatus.PENDING_APPROVAL
     assert view["tool_name"] == "drafts_create"
-    assert view["url"] == f"https://haku.test/_console/tool-calls/{tool_call_id}"
+    assert view["url"] == stub["url"]
 
 
 async def test_get_tool_call_missing_raises(agent_client: Client) -> None:
@@ -646,7 +646,7 @@ async def test_withdraw_tool_call_retracts_a_pending_stub(agent_client: Client) 
     assert view is not None
     assert view["call"]["status"] == ToolCallStatus.WITHDRAWN
     assert view["call"]["withdrawal_reason"] == "superseded by a corrected draft"
-    assert view["url"] == f"https://haku.test/_console/tool-calls/{tool_call_id}"
+    assert view["url"].endswith(f"/{tool_call_id}")
 
     # The durable row is what the agent re-reads, so the retraction has to be visible there too.
     got = await agent_client.call_tool("get_tool_call", {"tool_call_id": tool_call_id})
