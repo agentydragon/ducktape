@@ -50,7 +50,7 @@ from haku.console.tool_calls import (
 )
 from mcp_infra.persistence import PostgresPersistence
 from util.net import bind_free_port
-from util.testing.asgi import serve_app_sync
+from util.testing.asgi import serve_app_in_loop, serve_app_sync
 from util.testing.mock_oidc import build_mock_oidc_app, generate_rsa_keypair
 from x.google_mcp_server import gmail as gmail_tools, google_calendar as calendar_tools
 
@@ -929,7 +929,8 @@ async def test_e2e_request_approve_execute_over_http(migrated_db_url: str, migra
     operator_identity = await resolve_operator_identity(
         migrated_sessions, issuer=settings.operator_oidc.issuer, subject="42"
     )
-    with serve_app_sync(app, sock=console_sock) as base:
+    base = settings.public_base_url
+    async with serve_app_in_loop(app, sock=console_sock):
         async with httpx.AsyncClient() as anon:
             # No bearer -> unauthorized at the exact canonical resource URL.
             unauth = await anon.post(
@@ -1033,16 +1034,13 @@ async def test_e2e_request_approve_execute_over_http(migrated_db_url: str, migra
         # decide records the approval and dispatches execution in the background — it returns RUNNING.
         assert decided.json()["tool_call"]["status"] == "running"
 
-        # The agent resolves its stub; execution runs in the background on the server loop, so
-        # poll get_tool_call until it terminalizes, then check the real upstream result.
-        terminal = {ToolCallStatus.OK, ToolCallStatus.ERROR, ToolCallStatus.DENIED}
+        # The agent resolves its stub once the background execution has finished (the app runs in
+        # this test's loop, so the service's executions can be awaited), then checks the real
+        # upstream result.
+        await app.state.tool_call_service.join_executions()
         async with Client(f"{base}/mcp", auth=_AGENT_TOKEN) as client:
-            for _ in range(100):
-                got = await client.call_tool("get_tool_call", {"tool_call_id": tool_call_id})
-                assert got.structured_content is not None
-                if got.structured_content["status"] in terminal:
-                    break
-                await asyncio.sleep(0.02)
+            got = await client.call_tool("get_tool_call", {"tool_call_id": tool_call_id})
+        assert got.structured_content is not None
         assert got.structured_content["status"] == ToolCallStatus.OK
         assert "echo:hi" in str(got.structured_content["result"])
 
@@ -1107,6 +1105,7 @@ async def test_tool_discovery_is_concurrent_and_preserves_config_order(
     app = create_app(console_settings(migrated_db_url, config_file=config_file), in_process_servers=registered)
     started: set[str] = set()
     both_started = asyncio.Event()
+    alpha_done = asyncio.Event()
 
     async def metadata_for_operator(**kwargs: Any) -> ReflectedCatalog:
         server_id = str(kwargs["server"].id)
@@ -1114,8 +1113,11 @@ async def test_tool_discovery_is_concurrent_and_preserves_config_order(
         if len(started) == 2:
             both_started.set()
         await asyncio.wait_for(both_started.wait(), timeout=1)
+        # Completion order (alpha, then beta) is the reverse of config order (beta, alpha).
         if server_id == "beta":
-            await asyncio.sleep(0.01)
+            await asyncio.wait_for(alpha_done.wait(), timeout=1)
+        else:
+            alpha_done.set()
         return ReflectedCatalog(tools=[Tool(name="echo", inputSchema={"type": "object"})])
 
     monkeypatch.setattr(mcp_catalog_reconciler_module, "metadata_for_operator", metadata_for_operator)
