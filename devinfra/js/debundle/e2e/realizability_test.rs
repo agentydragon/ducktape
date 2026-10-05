@@ -131,43 +131,9 @@ export { A, B, C, D };
 
 // --- I cycles via lazy back-edges ----------------------------------------
 
-#[test]
-fn mixed_cycle_with_lazy_back_edge_is_realizable_when_residual_imports_scc() {
-    // mod_a imports B from mod_b (readB body's lazy read); mod_b
-    // imports A from mod_a (B's eager initializer). The imports
-    // graph `I` has a 2-cycle {mod_a, mod_b}; the constraining-
-    // edge subgraph (drops LazyUse) is acyclic — only
-    // mod_b → mod_a constrains init order.
-    //
-    // Residual reads `readB()` and re-exports A, B, readB, so
-    // residual has direct I-edges into both SCC members. The
-    // materializer's `source_import_position` reversal at
-    // residual orders entry's imports as `[mod_b, mod_a]`; ESM
-    // DFS enters mod_b → recurses into mod_a (eager) → mod_a's
-    // lazy back-edge hits mod_b on the link stack (no-op) → mod_a
-    // body evaluates with no TDZ → mod_b body sees A
-    // initialized. Lemma 2 rescues. The companion
-    // `mediator_reaches_asymmetric_cycle_test` exercises the
-    // shape Lemma 2 cannot rescue (non-residual mediator into
-    // SCC), and `runtime_tdz_on_imported_class_test` pins the
-    // residual-in-cycle rejection.
-    let fixture = run_fixture(FixtureOpts::new(
-        r#"const A = "a-value";
-function readB() { return B; }
-const B = A + "-postfix";
-console.log(readB());
-export { A, B, readB };
-"#,
-        vec![
-            logical_module("mod_a", &[Member::new("A"), Member::new("readB")]),
-            logical_module("mod_b", &[Member::new("B")]),
-        ],
-    ));
-    assert_entry_output(&fixture, "a-value-postfix\n");
-}
-
-// Calling the lazy reader at initialization closes the otherwise accepted
-// mixed cycle above. The original source is valid; splitting it is not.
+// A mixed cycle whose lazy edge is only read at call time is accepted
+// (`lemma_two_rescued_asymmetric_cycle_test`); calling the lazy reader at
+// initialization closes it. The original source is valid; splitting it is not.
 #[test]
 fn at_init_call_closes_mixed_cycle() {
     let rejected = run_rejection_fixture(FixtureOpts::new(
