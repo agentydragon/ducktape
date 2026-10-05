@@ -324,8 +324,14 @@ export function ProjectedCommandRows({
   return (
     <Stack role="region" aria-label="Pending commands" gap="xs">
       {otherCommands.map((row) => (
-        <Paper key={row.entityId} data-command-id={row.entityId} p="xs" withBorder style={{ position: "relative" }}>
-          <EvidenceToggle entity={row} style={{ position: "absolute", top: 4, right: 4 }} />
+        <Paper
+          key={row.entityId}
+          data-command-id={row.entityId}
+          p="xs"
+          withBorder
+          className="agentplane-evidence-owner"
+        >
+          <EvidenceToggle entity={row} />
           <Text size="xs" c={row.pending ? "dimmed" : row.state.outcome === "failed" ? "red" : undefined}>
             {row.state.outcome === "pending"
               ? "Saved · awaiting effect"

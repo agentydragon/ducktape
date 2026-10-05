@@ -51,6 +51,7 @@ import {
   SelectedCommandOutcomes,
   useProjectedCommands,
 } from "./thread_commands";
+import { revealEvidenceOnTap } from "./thread_evidence";
 import { ChronologicalDebugProvider, useOpenChronologicalDebug } from "./chronological_debug";
 import { historyTrace, LayoutSettle, type FollowReason } from "./history_trace";
 import { rememberRowHeight, rememberedRowHeight } from "./history_sizes";
@@ -699,6 +700,7 @@ function VirtualizedHistory({
           clientHeight: element.clientHeight,
         });
       }}
+      onClick={revealEvidenceOnTap}
       onScroll={(event) => {
         const element = event.currentTarget;
         if (element.scrollTop !== clickedAt.current) clickedAt.current = null;
