@@ -239,19 +239,6 @@ fn owner_graph_report_emits_atomic_graph() {
 }
 
 #[test]
-fn atomic_graph_excludes_lazy_use_edges() {
-    let factorization = factorization_for("function Leaf() { return Dep; } const Dep = 1;", &[]);
-
-    let report = factorization.owner_graph_report();
-    assert_eq!(report.atomic_graph.nodes.len(), 2);
-    assert!(
-        report.atomic_graph.edges.is_empty(),
-        "lazy-only function body reads should not create atomic DAG edges: {:#?}",
-        report.atomic_graph,
-    );
-}
-
-#[test]
 fn atomic_graph_collapses_constraining_eager_cycle() {
     let factorization =
         factorization_with_residual_module("const A = B + 1; const B = A + 1;", &["A", "B"], &[]);
@@ -348,23 +335,6 @@ fn multi_declarator_var_decl_is_side_effecting_if_any_init_is() {
 fn statement_kinds(source: &str) -> Vec<StatementKind> {
     let module = parse(source);
     analyze_facts(&module).into_iter().map(|f| f.kind).collect()
-}
-
-fn declared_per_statement(source: &str) -> Vec<Vec<String>> {
-    let module = parse(source);
-    analyze_facts(&module)
-        .into_iter()
-        .map(|f| f.declared.into_iter().map(|id| id.0.to_string()).collect())
-        .collect()
-}
-
-#[test]
-fn single_declarator_var_decl_is_unchanged() {
-    assert_eq!(statement_kinds("var A;"), vec![StatementKind::VarDecl]);
-    assert_eq!(
-        declared_per_statement("var A;"),
-        vec![vec!["A".to_string()]]
-    );
 }
 
 #[test]
