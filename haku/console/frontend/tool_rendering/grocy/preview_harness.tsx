@@ -141,7 +141,7 @@ const PREVIEW_FIXTURES = [
     args: {
       items: [
         { shopping_list: "Weekly", product: "Rolled oats", amount: 2 },
-        { shopping_list: "Weekly", amount: 1, note: "check if we need paper towels" },
+        { shopping_list: "Weekly", note: "check if we need paper towels" },
         { shopping_list: "Costco run", product: "Almond butter", amount: 1, note: "the crunchy kind" },
       ],
     },
