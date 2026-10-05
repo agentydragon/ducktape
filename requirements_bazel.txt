@@ -1168,11 +1168,14 @@ click==8.5.0 \
     #   huggingface-hub
     #   inspect-ai
     #   litellm
+    #   nltk
     #   uvicorn
 cloudpickle==3.1.2 \
     --hash=sha256:7fda9eb655c9c230dab534f1983763de5835249750e85fbcef43aaa30a9a2414 \
     --hash=sha256:9acb47f6afd73f60dc1df93bb801b472f05ff42fa6c84167d25cb206be1fbf4a
-    # via gymnasium
+    # via
+    #   gymnasium
+    #   joblib
 code-sandboxes==1.8.0 \
     --hash=sha256:0d75e7c3d14d851622283a0081cf44febf33e1a2a489f810a1d488e03ac8ed4f \
     --hash=sha256:fa9a4064ffefbf8b4d2b3b68256a16f317cb79f0a6f8071f6948afcb3abaa69b
@@ -1566,7 +1569,9 @@ debugpy==1.8.21 \
 defusedxml==0.7.1 \
     --hash=sha256:1bb3032db185915b62d7c6209c5a8792be6a32ab2fedacc84e01b52c51aa3e69 \
     --hash=sha256:a352e7e428770286cc899e2542b6cdaedb2b4953ff269a210103ec58f6198a61
-    # via nbconvert
+    # via
+    #   nbconvert
+    #   nltk
 distlib==0.4.3 \
     --hash=sha256:4b0ce306c966eb73bc3a7b6abad017c556dadd92c44701562cd528ac7fde4d5b \
     --hash=sha256:f152097224a0ae24be5a0f6bae1b9359af82133bce63f98a95f86cae1aede9ed
@@ -2856,6 +2861,10 @@ jmespath==1.1.0 \
     #   aiobotocore
     #   boto3
     #   botocore
+joblib==1.6.0 \
+    --hash=sha256:2ccc96785b12046c08fd6d55839c12857831b54a3c1673ffadd2f04bfc4eda03 \
+    --hash=sha256:3dbbf9f6e4b592a2357b854608e980fe6390d131d7a82f011a377ef2ebef7aba
+    # via nltk
 joserfc==1.7.5 \
     --hash=sha256:add2c2c84e8373b084d526a8b53daba5d7a513a118cd2dcd9fc9f979d0922159 \
     --hash=sha256:d5ff536e658e17664f8c1b1ab60dc4aa62aa973fcef1edd33cc44bda45d6f5ea
@@ -4365,6 +4374,10 @@ nest-asyncio2==1.7.2 \
 networkx==3.6.1 \
     --hash=sha256:26b7c357accc0c8cde558ad486283728b65b6a95d85ee1cd66bafab4c8168509 \
     --hash=sha256:d47fbf302e7d9cbbb9e2555a0d267983d2aa476bac30e90dfbe5669bd57f3762
+    # via ducktape (pyproject.toml)
+nltk==3.10.3 \
+    --hash=sha256:bb9327a461c3811c2fa4900e03840401f2126adfb30c0072827c433bd2444ea4 \
+    --hash=sha256:ff9598a8e20518ee0d557745890cc4435b9578489e2dcbc69c4f81fa060caf7c
     # via ducktape (pyproject.toml)
 nodeenv==1.10.0 \
     --hash=sha256:5bb13e3eed2923615535339b3c620e76779af4cb4c6a90deccc9e36b274d3827 \
@@ -6193,6 +6206,7 @@ regex==2026.9.10 \
     --hash=sha256:ffc2da104e43db716ce30cef9f28049a1faa6aca385dd8771b033268d0730b07
     # via
     #   beancount
+    #   nltk
     #   tiktoken
 requests==2.34.2 \
     --hash=sha256:2a0d60c172f83ac6ab31e4554906c0f3b3588d37b5cb939b1c061f4907e278e0 \
@@ -6896,6 +6910,7 @@ tqdm==4.70.1 \
     # via
     #   ducktape (pyproject.toml)
     #   huggingface-hub
+    #   nltk
     #   numpyro
 traitlets==5.16.1 \
     --hash=sha256:ed900c2b631aa3a112811139fa97b8d2c3bad5e989656bba4b7e52c7852c18c1 \

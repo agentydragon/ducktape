@@ -252,6 +252,7 @@ manifest:
     jinja2: jinja2
     jiter: jiter
     jmespath: jmespath
+    joblib: joblib
     joserfc: joserfc
     jsii: jsii
     json5: json5
@@ -348,6 +349,7 @@ manifest:
     nest_asyncio2: nest_asyncio2
     networkx: networkx
     nio: matrix_nio
+    nltk: nltk
     nodeenv: nodeenv
     notebook_shim: notebook_shim
     nulltype: nulltype
@@ -556,4 +558,4 @@ manifest:
     zstandard: zstandard
   pip_repository:
     name: pypi
-integrity: 65a4a39b665712d2df2a8c361089265c5cec89fa04396734d00d1a334006b401
+integrity: cb439fef36c1504f6677ec2f16b74de3d61f9aa4aaa577c422d8fd551ecc79a5

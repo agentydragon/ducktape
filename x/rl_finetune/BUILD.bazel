@@ -1,0 +1,40 @@
+load("//devinfra/python:defs.bzl", "py_library", "py_test")
+
+# `wordle_train.py` is a PEP 723 script for GPU hosts: torch, trl, peft, transformers and datasets are
+# not in the lockfile. `bench.py` and `analyze_run.py` are one-off scripts no target needs.
+# gazelle:exclude analyze_run.py
+# gazelle:exclude bench.py
+# gazelle:exclude wordle_train.py
+
+py_library(
+    name = "wordle_env",
+    srcs = ["wordle_env.py"],
+    deps = ["@pypi//nltk"],
+)
+
+py_library(
+    name = "conftest",
+    testonly = True,
+    srcs = ["conftest.py"],
+    deps = [
+        "//util/bazel:runfiles",
+        "@pypi//nltk",
+        "@pypi//pytest",
+    ],
+)
+
+py_test(
+    name = "test_wordle_env",
+    srcs = ["test_wordle_env.py"],
+    data = [
+        "@nltk_tagger//:data",
+        "@nltk_words//:data",
+    ],
+    deps = [
+        ":conftest",
+        ":wordle_env",
+        "//:conftest",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
