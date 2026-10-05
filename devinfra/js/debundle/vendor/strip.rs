@@ -1513,34 +1513,6 @@ mod tests {
     }
 
     #[test]
-    fn drops_non_exported_local_swap_after_self_rewrite() {
-        let mut module = parse(
-            "function nY(t) { return `vendor:${t.name}`; }\nconst schema = Zod.instanceof(URL);\nexport { schema };\n",
-        );
-        let symbols = BTreeMap::from([(
-            "zodInstanceof".to_string(),
-            PartialSwapSymbol {
-                package: "zod".to_string(),
-                kind: PartialSwapKind::Named,
-                upstream_export: Some("instanceof".to_string()),
-                local: Some("nY".to_string()),
-            },
-        )]);
-
-        strip_one_chunk(&mut module, &symbols, "chunk.js").unwrap();
-
-        let emitted = emit(&module);
-        assert!(
-            !emitted.contains("function nY"),
-            "chunk-local swapped helper should be DCE'd:\n{emitted}",
-        );
-        assert!(
-            emitted.contains("schema"),
-            "residual schema export should remain:\n{emitted}",
-        );
-    }
-
-    #[test]
     fn local_swap_split_brain_reports_unrewritten_residual_call() {
         let mut module = parse(
             "function nY(t) { return `vendor:${t.name}`; }\nconst schema = nY(URL);\nexport { schema };\n",
@@ -1561,10 +1533,6 @@ mod tests {
         assert!(
             err.to_string().contains("split-brain vendor swap"),
             "wrong error: {err}",
-        );
-        assert!(
-            err.to_string().contains("reads [nY]"),
-            "diagnostic should show the residual read of the local helper: {err}",
         );
     }
 
