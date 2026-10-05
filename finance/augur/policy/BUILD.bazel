@@ -25,7 +25,6 @@ py_test(
         ":cash_band",
         "//:conftest",
         "//finance/augur:conftest",
-        "//finance/augur/sim:fixed_point",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],
