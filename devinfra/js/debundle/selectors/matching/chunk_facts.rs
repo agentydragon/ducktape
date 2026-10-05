@@ -2289,30 +2289,6 @@ mod tests {
     }
 
     #[test]
-    fn module_member_uses_joins_imported_object_to_source_module() {
-        // `codegen` is imported from `./codegen`; the helper consuming
-        // `codegen.emit` yields a use-site row keyed by the source module + export
-        // name (both re-minify-invariant). A second helper reads `.emit` off a
-        // *non-imported* local `local`, so it contributes nothing — the join to the
-        // import table is what makes this a module-member use, not any member read.
-        let uses = module_member_uses(
-            "function a() { return codegen.emit(); }\nfunction b(local) { return local.emit(); }\n",
-            &[("codegen", "./codegen")],
-        );
-        assert_eq!(
-            uses[&0],
-            vec![ModuleMemberUseFact {
-                module: "./codegen".to_string(),
-                member: "emit".to_string(),
-            }],
-        );
-        assert!(
-            !uses.contains_key(&1),
-            "non-imported object contributes no row"
-        );
-    }
-
-    #[test]
     fn module_member_uses_skips_computed_access() {
         // `mod[expr]` is computed — no static export name — so it contributes
         // nothing even though `mod` is imported; the sibling `mod.kept` does.

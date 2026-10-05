@@ -173,10 +173,12 @@ export { a };
 }
 
 /// Fail-closed: a member access on a **non-imported** local is not a
-/// module-member use, so a `member_of_module` selector naming that object's
-/// (would-be) module finds nothing and errors. The import join — not any member
-/// access — is what makes a row, so consuming `local.next` off a chunk-top
-/// declaration (not an import) yields no use-site edge.
+/// module-member use, so a `member_of_module` selector finds nothing and
+/// errors. The import join — not any member access — is what makes a row, so
+/// consuming `local.next` off a chunk-top declaration (not an import) yields no
+/// use-site edge. The selector names the local itself as the module, so a row
+/// labelled by the object (a join that falls back to it when the import table
+/// has no entry) would resolve.
 #[test]
 fn member_of_module_non_imported_object_fails_closed() {
     expect_rejection_containing_all(
@@ -188,7 +190,7 @@ export { gen, a };
 "#,
             vec![logical_module(
                 "ids",
-                &[Member::member_of_module("genId", "./gen.js", "next", None)],
+                &[Member::member_of_module("genId", "gen", "next", None)],
             )],
         ),
         &["member_of_module", "next"],
