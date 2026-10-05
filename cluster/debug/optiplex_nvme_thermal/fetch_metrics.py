@@ -1,4 +1,4 @@
-"""Pull the metrics behind `cluster/debug/2026_10_04_optiplex_nvme_thermal_dropout.md` out of Mimir.
+"""Pull the metrics behind the note `2026_10_04_dropout.md` out of Mimir.
 
 Writes one JSON bundle: whole-period series, 30 s zoom windows around the dropouts, and, for every
 episode where the NVMe's hottest sensor reached `--threshold`, which pods wrote in the 15 minutes

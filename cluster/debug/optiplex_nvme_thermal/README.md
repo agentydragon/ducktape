@@ -1,8 +1,9 @@
-# `optiplex` NVMe thermal dropout: metric scripts
+# `optiplex` NVMe thermal dropout
 
-Scripts behind the plots and tables in
-[`../2026_10_04_optiplex_nvme_thermal_dropout.md`](../2026_10_04_optiplex_nvme_thermal_dropout.md).
-Not part of the Bazel graph, like the other one-off scripts under `debug/` directories.
+The investigation of the 2026-09-23 and 2026-10-04 NVMe dropouts on `optiplex`:
+[`2026_10_04_dropout.md`](2026_10_04_dropout.md) has the evidence, what is unknown and the options;
+the scripts here produce its plots and tables. They are not part of the Bazel graph, like the other
+one-off scripts under `debug/` directories.
 
 - `fetch_metrics.py`: pulls the series from Mimir into one JSON bundle (standard library only).
   Mimir's `mimir-gateway` is cluster-internal and reachable from `haku-sandbox` pods, so run it in
