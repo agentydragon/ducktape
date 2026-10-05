@@ -456,8 +456,10 @@ fn unsafe_global_callables_stay_unknown() {
 fn unsafe_static_calls_stay_unknown() {
     // One representative per way an unlisted call fires user code:
     // coercion (`Math.abs`), iteration (`Array.from`), `toJSON`
-    // (`JSON.stringify`, a receiver outside the whitelist). The `Object.*`
-    // function refs are pinned by `static_function_ref_calls_remain_unknown`.
+    // (`JSON.stringify`, a receiver outside the whitelist). `Object.*` calls
+    // are not repeated here: `static_function_ref_calls_remain_unknown` skips
+    // any function ref already listed in `PURE_STATIC_CALLS`, so listing one
+    // fails a test only where an explicit assert or an `object_*` test names it.
     for src in ["Math.abs(x)", "Array.from(x)", "JSON.stringify(x)"] {
         assert!(
             !classify(src).is_pure(),
