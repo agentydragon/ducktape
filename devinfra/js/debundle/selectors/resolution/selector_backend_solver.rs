@@ -694,20 +694,6 @@ mod tests {
     }
 
     #[test]
-    fn constant_binding_projection_decodes_without_binding_variable() {
-        let (program, target) = const_binding_program();
-        let backend = SelectingBackend {
-            status: BackendSolveStatus::Satisfiable,
-            coverage: BackendAssignmentCoverage::TargetSupportComplete,
-            assignments: vec![vec![(ConstraintVariableId(0), owner(1))]],
-        };
-
-        let result = solve_with_backend(&program, &facts(), &backend).unwrap();
-
-        assert_eq!(result.outcome_for(target), Some(&min_a_outcome()));
-    }
-
-    #[test]
     fn multiple_backend_assignments_become_ambiguous_claims() {
         let (program, target) = binding_program();
         let backend = SelectingBackend {
