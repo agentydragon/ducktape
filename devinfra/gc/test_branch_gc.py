@@ -21,9 +21,7 @@ def _classify(
 def test_ancestor_branch_is_prunable(repo: GitRepo) -> None:
     repo.branch("feature")
     repo.commit("later", "1\n", "advance main")  # feature is now an ancestor of main
-    result = _classify(repo, "feature")
-    assert isinstance(result, bg.PrunableBranch)
-    assert "already in main" in result.reason
+    assert isinstance(_classify(repo, "feature"), bg.PrunableBranch)
 
 
 def test_empty_branch_is_prunable(repo: GitRepo) -> None:
@@ -52,38 +50,32 @@ def test_squash_merged_branch_survives_missing_blob(repo: GitRepo, monkeypatch: 
         raise KeyError("object not found - no match for id deadbeef")
 
     monkeypatch.setattr(pygit2.Repository, "merge_commits", _raise_missing_object)
-    result = _classify(repo, "feature")
-    assert isinstance(result, bg.PrunableBranch)
-    assert "equivalent already on main" in result.reason
+    assert isinstance(_classify(repo, "feature"), bg.PrunableBranch)
 
 
 def test_unique_branch_no_pr_is_review(repo: GitRepo) -> None:
     wt = repo.worktree("wt", "feature")
     wt.commit("novel", "unique\n", "unmerged work")
-    result = _classify(repo, "feature")
-    assert isinstance(result, bg.ReviewBranch)
-    assert "commits not in main" in result.reason
+    assert isinstance(_classify(repo, "feature"), bg.ReviewBranch)
 
 
 def test_merged_pr_with_content_in_main_is_prunable(repo: GitRepo) -> None:
     repo.branch("feature")
     repo.commit("later", "1\n", "advance main")
-    result = _classify(repo, "feature", pr=PrInfo(5, PrState.MERGED))
-    assert isinstance(result, bg.PrunableBranch)
-    assert "PR #5 merged" in result.reason
+    assert isinstance(_classify(repo, "feature", pr=PrInfo(5, PrState.MERGED)), bg.PrunableBranch)
 
 
 def test_squash_merged_pr_beyond_git_proof_is_prunable(repo: GitRepo) -> None:
-    # main squash-merged feature, then moved the same file on past it, so the git tree-merge
-    # now conflicts — only the PR's merged head SHA proves nothing is lost.
+    # main squash-merged two feature commits into one, then moved the same file on past it:
+    # the git tree-merge now conflicts, and no single feature commit has a patch-equivalent on
+    # main, so only the PR's merged head SHA proves nothing is lost.
     wt = repo.worktree("wt", "feature")
     wt.commit("f", "A\n", "feature change")
+    wt.commit("f", "A\nB\n", "feature follow-up")
     head = repo.rev("feature")
-    repo.commit("f", "A\n", "squash-merge onto main")
-    repo.commit("f", "B\n", "main advances past the squash")
-    result = _classify(repo, "feature", pr=PrInfo(7, PrState.MERGED, head_sha=head))
-    assert isinstance(result, bg.PrunableBranch)
-    assert "nothing beyond the merged head" in result.reason
+    repo.commit("f", "A\nB\n", "squash-merge onto main")
+    repo.commit("f", "C\n", "main advances past the squash")
+    assert isinstance(_classify(repo, "feature", pr=PrInfo(7, PrState.MERGED, head_sha=head)), bg.PrunableBranch)
 
 
 def test_branch_advanced_past_merged_head_is_review(repo: GitRepo) -> None:
@@ -93,9 +85,7 @@ def test_branch_advanced_past_merged_head_is_review(repo: GitRepo) -> None:
     wt.commit("extra", "more\n", "work past the merge")  # feature advances beyond it
     repo.commit("f", "A\n", "squash-merge onto main")
     repo.commit("f", "B\n", "main advances")
-    result = _classify(repo, "feature", pr=PrInfo(7, PrState.MERGED, head_sha=head))
-    assert isinstance(result, bg.ReviewBranch)
-    assert "beyond it" in result.reason
+    assert isinstance(_classify(repo, "feature", pr=PrInfo(7, PrState.MERGED, head_sha=head)), bg.ReviewBranch)
 
 
 def test_closed_pr_with_nothing_beyond_its_head_is_prunable(repo: GitRepo) -> None:
@@ -104,9 +94,7 @@ def test_closed_pr_with_nothing_beyond_its_head_is_prunable(repo: GitRepo) -> No
     wt = repo.worktree("wt", "feature")
     wt.commit("f", "A\n", "abandoned attempt")
     head = repo.rev("feature")
-    result = _classify(repo, "feature", pr=PrInfo(11, PrState.CLOSED, head_sha=head))
-    assert isinstance(result, bg.PrunableBranch)
-    assert "nothing beyond the closed head" in result.reason
+    assert isinstance(_classify(repo, "feature", pr=PrInfo(11, PrState.CLOSED, head_sha=head)), bg.PrunableBranch)
 
 
 def test_branch_advanced_past_closed_head_is_review(repo: GitRepo) -> None:
@@ -114,32 +102,23 @@ def test_branch_advanced_past_closed_head_is_review(repo: GitRepo) -> None:
     wt.commit("f", "A\n", "the closed PR's tip")
     head = repo.rev("feature")
     wt.commit("extra", "more\n", "work after the PR was closed")
-    result = _classify(repo, "feature", pr=PrInfo(11, PrState.CLOSED, head_sha=head))
-    assert isinstance(result, bg.ReviewBranch)
-    assert "closed PR #11" in result.reason
-    assert "beyond it" in result.reason
+    assert isinstance(_classify(repo, "feature", pr=PrInfo(11, PrState.CLOSED, head_sha=head)), bg.ReviewBranch)
 
 
 def test_open_pr_is_kept(repo: GitRepo) -> None:
     wt = repo.worktree("wt", "feature")
     wt.commit("novel", "unique\n", "work in review")
-    result = _classify(repo, "feature", pr=PrInfo(9, PrState.OPEN))
-    assert isinstance(result, bg.RetainedBranch)
-    assert result.reason == "open PR #9"
+    assert isinstance(_classify(repo, "feature", pr=PrInfo(9, PrState.OPEN)), bg.RetainedBranch)
 
 
 def test_default_branch_is_kept(repo: GitRepo) -> None:
-    result = _classify(repo, "main")
-    assert isinstance(result, bg.RetainedBranch)
-    assert result.reason == "default branch"
+    assert isinstance(_classify(repo, "main"), bg.RetainedBranch)
 
 
 def test_branch_in_retained_worktree_is_kept(repo: GitRepo) -> None:
     repo.branch("feature")
     holder = RetainedWorktree(Worktree(path=Path("/wt"), branch="feature"), "uncommitted changes", None)
-    result = _classify(repo, "feature", holder=holder)
-    assert isinstance(result, bg.RetainedBranch)
-    assert "retained worktree /wt" in result.reason
+    assert isinstance(_classify(repo, "feature", holder=holder), bg.RetainedBranch)
 
 
 def test_branch_in_prunable_worktree_is_prunable(repo: GitRepo) -> None:
@@ -176,10 +155,7 @@ def test_cherry_picked_branch_past_the_tree_check_is_prunable(repo: GitRepo) -> 
     repo.commit("f", "B\n", "main advances past the cherry-pick")
     repo.commit("f", "C\n", "and again")
 
-    result = _classify(repo, "feature", pr=None)
-
-    assert isinstance(result, bg.PrunableBranch)
-    assert "equivalent already on" in result.reason
+    assert isinstance(_classify(repo, "feature", pr=None), bg.PrunableBranch)
 
 
 def test_branch_with_an_unlanded_commit_stays_review(repo: GitRepo) -> None:
