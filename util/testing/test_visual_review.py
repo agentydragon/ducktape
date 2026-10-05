@@ -21,6 +21,13 @@ def test_write_visual_review_manifest(tmp_path: Path) -> None:
     }
 
 
+def test_labels_keep_their_non_ascii_characters_across_upserts(tmp_path: Path) -> None:
+    upsert_review_asset(tmp_path, title="Example UI", asset=VisualReviewAsset(path="a.png", label="hot · dark"))
+    destination = upsert_review_asset(tmp_path, title="Example UI", asset=VisualReviewAsset(path="b.png", label="B"))
+
+    assert '"label": "hot · dark"' in destination.read_text(encoding="utf-8")
+
+
 @pytest.mark.parametrize(
     ("title", "path"),
     [
