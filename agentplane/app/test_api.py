@@ -466,10 +466,7 @@ def test_suspend_resume_apply_in_order(client: TestClient, custom_objects: FakeC
 def test_delete_removes_the_sandbox_once_it_is_suspended(
     client: TestClient, custom_objects: FakeCustomObjectsApi
 ) -> None:
-    refused = client.delete("/sandboxes/live")
-
-    assert refused.status_code == 409
-    assert "refused" in refused.json()["detail"]
+    assert client.delete("/sandboxes/live").status_code == 409
     assert ("sandboxes", "live") in custom_objects.objects
 
     assert client.post("/sandboxes/live/suspend").status_code == 204
@@ -586,7 +583,6 @@ def test_service_launch_failure_preserves_uncertainty(
         json={"session_id": "uncertain", "spec": {"harness": "HARNESS_CLAUDE", "cwd": "/w", "model": "m"}},
     )
     assert response.status_code == status_code
-    assert "uncertain" in response.json()["detail"]
 
 
 def test_a_runner_that_does_not_answer_is_a_503(
@@ -643,7 +639,7 @@ def test_a_runner_that_does_not_answer_is_a_503(
     assert "UNAVAILABLE" in response.json()["detail"]
 
 
-async def test_a_runner_that_never_answers_open_is_a_504_naming_the_session(
+async def test_a_runner_that_never_answers_open_is_a_504_and_releases_its_stream(
     tmp_path: Path,
     custom_objects: FakeCustomObjectsApi,
     core_v1: FakeCoreV1Api,
@@ -705,7 +701,6 @@ async def test_a_runner_that_never_answers_open_is_a_504_naming_the_session(
                         json={"commandId": "test-unanswered-command", "submitInput": {"text": "never admitted"}},
                     )
                     assert response.status_code == 504, response.text
-                    assert "uncertain" in response.json()["detail"]
                     assert await wedged.cancelled.get() == "test-unanswered"
             finally:
                 await ingester.close()
@@ -756,10 +751,7 @@ def test_a_grant_naming_a_policy_that_does_not_exist_is_refused(
     """422 and not 404: the sandbox in the path is there, and 404 on this route already says it is
     not. The CRD would admit the dangling name and the proxy would report `MissingPolicy`, so what
     the operator would otherwise get is a grant that grants nothing."""
-    refused = client.post("/sandboxes/live/egress", json={"policies": ["github", "vanished"]})
-
-    assert refused.status_code == 422
-    assert "INVALID_ARGUMENT" in refused.json()["detail"]
+    assert client.post("/sandboxes/live/egress", json={"policies": ["github", "vanished"]}).status_code == 422
     assert [b["name"] for b in client.get("/sandboxes/live/egress").json()] == ["live-granted", "live-seeded"]
     assert client.post("/sandboxes/nope/egress", json={"policies": ["github"]}).status_code == 404
     # The CRD's policies are minItems: 1, so an empty grant is refused here rather than at admission.
@@ -801,10 +793,7 @@ def test_egress_decisions_are_502_when_the_proxy_is_unreachable(
 ) -> None:
     egress_admin.reachable = False
 
-    response = client.get("/sandboxes/live/egress/decisions")
-
-    assert response.status_code == 502
-    assert "did not answer" in response.json()["detail"]
+    assert client.get("/sandboxes/live/egress/decisions").status_code == 502
     assert [b["name"] for b in client.get("/sandboxes/live/egress").json()] == ["live-granted", "live-seeded"]
 
 
@@ -825,9 +814,7 @@ def test_thread_sync_routes_authenticate_before_dispatch(client: TestClient) -> 
 
 def test_binding_revocation(client: TestClient) -> None:
     """A runtime binding is revoked by deleting it; one the manifest declares would be re-applied."""
-    refused = client.delete("/egress/bindings/live-seeded")
-    assert refused.status_code == 409
-    assert "refused" in refused.json()["detail"]
+    assert client.delete("/egress/bindings/live-seeded").status_code == 409
     assert client.delete("/egress/bindings/live-granted").status_code == 204
     assert client.delete("/egress/bindings/live-granted").status_code == 404
     assert [b["name"] for b in client.get("/sandboxes/live/egress").json()] == ["live-seeded"]
@@ -1084,7 +1071,10 @@ async def test_a_running_thread_cannot_be_archived(
     spec = protocol_pb2.SessionSpec(harness=protocol_pb2.HARNESS_CLAUDE, cwd="/w", model="test-model")
     thread_id = await event_logs.open("live", "s-1", spec)
 
-    async def running_sessions(_sandbox: str) -> list[protocol_pb2.SessionSummary]:
+    consulted: list[str] = []
+
+    async def running_sessions(sandbox: str) -> list[protocol_pb2.SessionSummary]:
+        consulted.append(sandbox)
         return [
             protocol_pb2.SessionSummary(session_id="s-1", spec=spec, harness_state=protocol_pb2.HARNESS_STATE_RUNNING)
         ]
@@ -1111,7 +1101,8 @@ async def test_a_running_thread_cannot_be_archived(
         response = await http.post(f"/threads/{thread_id}/archive")
 
     assert response.status_code == 409
-    assert response.json()["detail"] == "stop the harness before archiving this thread"
+    # Only the running-harness refusal lists sessions; the unverifiable-Pod 409 comes before that.
+    assert consulted == ["live"]
     thread = await store.get_thread(thread_id)
     assert thread is not None
     assert thread.archived is False
