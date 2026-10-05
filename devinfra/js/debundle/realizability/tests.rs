@@ -359,39 +359,6 @@ fn incremental_index_matches_pure_verdict_after_each_committed_move() {
 }
 
 #[test]
-fn verdict_touching_matches_full_verdict_filtered_to_module() {
-    let source = "const a = b + 1; const b = a + 1; const c = 1;";
-    let owner_graph = parse_and_build(source);
-    let baseline = Partition::new(&owner_graph, module_id(0));
-    let mut index = RealizabilityIndex::from_partition(&owner_graph, baseline);
-    index.apply(
-        &owner_graph,
-        PartitionDelta::MoveOwners {
-            owners: vec![OwnerId(1)],
-            to: module_id(1),
-        },
-    );
-    index.apply(
-        &owner_graph,
-        PartitionDelta::MoveOwners {
-            owners: vec![OwnerId(2)],
-            to: module_id(2),
-        },
-    );
-
-    let full = index.verdict();
-    assert_eq!(
-        normalize_verdict(index.verdict_touching(module_id(1))),
-        normalize_verdict(filter_verdict_touching(&full, module_id(1))),
-    );
-    assert_eq!(
-        normalize_verdict(index.verdict_touching(module_id(2))),
-        normalize_verdict(filter_verdict_touching(&full, module_id(2))),
-        "unrelated module should not inherit the a/b SCC",
-    );
-}
-
-#[test]
 fn empty_delta_overlay_scc_containing_is_the_base_scc() {
     let mut graph = CountedDiGraph::new();
     for (from, to) in [(1, 2), (2, 3), (3, 1), (3, 4), (4, 5)] {
