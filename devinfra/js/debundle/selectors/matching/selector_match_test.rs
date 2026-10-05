@@ -803,48 +803,19 @@ fn parenthesized_sequence_body_matches_on_its_inner_assignment() {
 // arrays): a bare identifier element absorbing a run of array elements, so a long
 // array initializer can be anchored on its few stable elements without spelling
 // the rest. It is matched as an ordered subsequence with gaps, exactly like the
-// other run holes (the carriers partition the needle into fixed segments).
+// other run holes (the carriers partition the needle into fixed segments); the
+// placement itself (anchoring, empty runs, interior brackets) is that shared
+// algorithm, driven by the ARGS / STMT_LIST / ANYTHING rows of
+// `fact_matcher_verdicts_on_faithful_subset`, so these rows pin what is specific
+// to the array carrier.
 #[test]
 fn array_elements_run_hole_anchors_a_few_stable_elements() {
     js_ast::with_swc_globals(|| {
         let cases = [
-            // anchor-first then the run absorbs the rest (any length, incl. empty).
+            // anchor-first then the run absorbs the rest (any length).
             Case {
                 selector: "const c = [\"keep\", ARRAY_ELEMENTS];",
                 subject: "const c = [\"keep\", 1, 2, 3];",
-                alpha: false,
-                expected: true,
-            },
-            Case {
-                selector: "const c = [\"keep\", ARRAY_ELEMENTS];",
-                subject: "const c = [\"keep\"];",
-                alpha: false,
-                expected: true,
-            },
-            // the anchored-left fixed element must still match.
-            Case {
-                selector: "const c = [\"keep\", ARRAY_ELEMENTS];",
-                subject: "const c = [\"other\", 1];",
-                alpha: false,
-                expected: false,
-            },
-            // run then an anchored-right element; the last element must match.
-            Case {
-                selector: "const c = [ARRAY_ELEMENTS, \"last\"];",
-                subject: "const c = [1, 2, \"last\"];",
-                alpha: false,
-                expected: true,
-            },
-            Case {
-                selector: "const c = [ARRAY_ELEMENTS, \"last\"];",
-                subject: "const c = [1, 2, \"nope\"];",
-                alpha: false,
-                expected: false,
-            },
-            // two run holes bracket one interior anchor.
-            Case {
-                selector: "const c = [ARRAY_ELEMENTS, \"mid\", ARRAY_ELEMENTS];",
-                subject: "const c = [1, \"mid\", 2, 3];",
                 alpha: false,
                 expected: true,
             },
@@ -882,7 +853,9 @@ fn array_elements_run_hole_anchors_a_few_stable_elements() {
 // subsequence with gaps, exactly like the other run holes: the carriers
 // partition the sequence into fixed segments, a missing leading hole anchors
 // the first segment at the sequence's start, a missing trailing hole anchors
-// the last at its end.
+// the last at its end. Placement is the shared algorithm (see
+// `array_elements_run_hole_anchors_a_few_stable_elements`); these rows pin the
+// sequence carrier.
 #[test]
 fn seq_exprs_run_hole_absorbs_a_comma_sequence_run() {
     js_ast::with_swc_globals(|| {
@@ -894,31 +867,11 @@ fn seq_exprs_run_hole_absorbs_a_comma_sequence_run() {
                 alpha: false,
                 expected: true,
             },
-            // the anchored element must still match.
-            Case {
-                selector: "function f() { return (first, SEQ_EXPRS); }",
-                subject: "function f() { return (other, 1); }",
-                alpha: false,
-                expected: false,
-            },
             // an anchored element with no run beside it: the subject has to be a
             // sequence at all — the hole never matches a non-sequence.
             Case {
                 selector: "function f() { return (first, SEQ_EXPRS); }",
                 subject: "function f() { return (first); }",
-                alpha: false,
-                expected: false,
-            },
-            // run then an anchored last element.
-            Case {
-                selector: "function f() { return (SEQ_EXPRS, last); }",
-                subject: "function f() { return (1, 2, last); }",
-                alpha: false,
-                expected: true,
-            },
-            Case {
-                selector: "function f() { return (SEQ_EXPRS, last); }",
-                subject: "function f() { return (1, 2, nope); }",
                 alpha: false,
                 expected: false,
             },
@@ -929,19 +882,6 @@ fn seq_exprs_run_hole_absorbs_a_comma_sequence_run() {
                 subject: "function f() { return (a, b); }",
                 alpha: false,
                 expected: true,
-            },
-            // two holes bracket the pinned elements between them.
-            Case {
-                selector: "function f() { return (first, SEQ_EXPRS, \"mid\", SEQ_EXPRS, last); }",
-                subject: "function f() { return (first, 1, \"mid\", 2, last); }",
-                alpha: false,
-                expected: true,
-            },
-            Case {
-                selector: "function f() { return (first, SEQ_EXPRS, \"mid\", SEQ_EXPRS, last); }",
-                subject: "function f() { return (first, 1, 2, last); }",
-                alpha: false,
-                expected: false,
             },
             // alpha: a pinned identifier still binds one subject name across the
             // run, so two pins of the same name reject a candidate that renames
