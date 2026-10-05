@@ -354,6 +354,8 @@ spec:
                   name: postgres-electric
             - name: DATABASE_URL
               value: postgresql://$(POSTGRES_USER):$(POSTGRES_PASSWORD)@$(POSTGRES_HOST):$(POSTGRES_PORT)/$(POSTGRES_DB)
+            - name: ELECTRIC_DB_POOL_SIZE
+              value: "10"
             - name: ELECTRIC_INSECURE
               value: "true"
             - name: ELECTRIC_PORT

@@ -73,6 +73,8 @@ class Electric(Construct):
                 "DATABASE_URL": EnvValue.from_value(
                     "postgresql://$(POSTGRES_USER):$(POSTGRES_PASSWORD)@$(POSTGRES_HOST):$(POSTGRES_PORT)/$(POSTGRES_DB)"
                 ),
+                # Staging OOM: 20 idle Electric pool sessions plus one replication connection.
+                "ELECTRIC_DB_POOL_SIZE": EnvValue.from_value("10"),
                 "ELECTRIC_INSECURE": EnvValue.from_value("true"),
                 "ELECTRIC_PORT": EnvValue.from_value(str(electric.pod_port)),
                 "ELECTRIC_STORAGE": EnvValue.from_value("fast_file"),
