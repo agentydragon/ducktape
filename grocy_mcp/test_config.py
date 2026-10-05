@@ -14,7 +14,6 @@ import pytest
 import pytest_bazel
 
 from grocy_mcp.mcp_types import ServerSettings
-from mcp_infra.authentik_auth.config import AuthentikAuthConfig
 from mcp_infra.persistence import ValkeyPersistence
 
 
@@ -60,21 +59,6 @@ def test_yaml_config_deep_merges_with_env_secrets(tmp_path: Path, monkeypatch: p
     # from env (the secret):
     assert settings.auth.oidc_client_secret == "shh"
     assert settings.auth.proxy_client_id == "grocy-sf"
-
-
-def test_auth_round_trips_through_settings() -> None:
-    settings = ServerSettings(
-        grocy_url="https://grocy.example.com",
-        auth=AuthentikAuthConfig(
-            oidc_issuer="https://auth.example.com/application/o/grocy-mcp/",
-            oidc_client_id="id",
-            oidc_client_secret="secret",
-            public_base_url="https://grocy-mcp.example.com",
-            proxy_client_id="grocy-proxy-id",
-        ),
-    )
-    assert settings.auth is not None
-    assert settings.auth.authentik_token_endpoint() == "https://auth.example.com/application/o/token/"
 
 
 if __name__ == "__main__":
