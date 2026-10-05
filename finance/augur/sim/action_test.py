@@ -237,6 +237,21 @@ def test_claim_handle_cannot_alias_another_sessions_claim() -> None:
         second.advance([])
 
 
+def test_serialized_claim_handle_cannot_pay_in_the_session_that_issued_it() -> None:
+    live = session([0])
+    batch = live.start()
+    assert not isinstance(batch, Finished)
+    claim = batch[0].observation.claims[0]
+    request = PayClaim(
+        request_id=0, cause_id="pay", claim=claim, from_account=claim.from_account, amount=claim.amount_due
+    )
+    restored = PayClaim.model_validate_json(request.model_dump_json(by_alias=True))
+    with pytest.raises(ValueError, match="different rollout or session"):
+        live.advance([DecisionActions(0, 0, [restored])])
+    with pytest.raises(ValueError, match="finished, aborted or closed"):
+        live.advance([])
+
+
 def test_repeated_start_and_advance_before_start_abort() -> None:
     early = session([0])
     with pytest.raises(ValueError, match="lifecycle state"):
