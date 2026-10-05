@@ -180,5 +180,17 @@
       matchPackageNames: ["modus-agendi/anthropic-claude-managed-agents"],
       automerge: false,
     },
+    {
+      // The Python driver is tested against exactly one Chromium, and `@chrome_headless_shell` in
+      // MODULE.bazel is that Chromium. Renovate has no manager for that `http_archive` and cannot
+      // derive a Chromium version from a Playwright release, so any Playwright bump it opened would
+      // leave the browser behind. Bump both together by hand: the `chromium-headless-shell`
+      // `browserVersion` in the new release's `browsers.json` is the Chrome for Testing version
+      // (MODULE.bazel has the procedure).
+      description: "Bump Playwright by hand, together with the Chrome for Testing archive",
+      matchDatasources: ["pypi"],
+      matchPackageNames: ["playwright"],
+      enabled: false,
+    },
   ],
 }

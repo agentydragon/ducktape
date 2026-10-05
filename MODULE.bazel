@@ -872,7 +872,9 @@ filegroup(
 # rides along as its runfiles, because the executable loads those from its own directory.
 # Pinned to the `chromium-headless-shell` browserVersion in Playwright 1.62.0's browsers.json, the
 # Chromium that Playwright release is tested against; keep in step with `playwright==1.62.0` in
-# pyproject.toml. To bump: read browserVersion for `chromium-headless-shell` from
+# pyproject.toml. Renovate cannot derive one from the other, so renovate.json5 skips the Playwright
+# pin and nothing automatic bumps this archive. To bump: read browserVersion for
+# `chromium-headless-shell` from
 # https://unpkg.com/playwright-core@<playwright version>/browsers.json, then take the sha256 of
 # https://storage.googleapis.com/chrome-for-testing-public/<browserVersion>/linux64/chrome-headless-shell-linux64.zip
 http_archive(

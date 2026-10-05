@@ -152,7 +152,7 @@ dependencies = [
     # tana
     "mitmproxy>=12.2,<13",
     # Exact: the driver is tested against one Chromium, and `@chrome_headless_shell` in MODULE.bazel
-    # is that Chromium. Bump both together (MODULE.bazel says how).
+    # is that Chromium. Bump both together (MODULE.bazel says how); renovate.json5 skips this pin.
     "playwright==1.62.0",
 
     # ducktape-llm-common
