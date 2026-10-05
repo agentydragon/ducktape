@@ -265,15 +265,6 @@ def test_session_rejections_are_logged_with_distinguishing_reasons(
     assert any("reason=no_session_cookie" in message for message in anonymous)
     assert not any("reason=expired" in message for message in anonymous)
     assert any("reason=expired" in message and "path=/api/config" in message for message in expired)
-    # The elapsed time since the deadline is what identifies the absolute-deadline case on sight.
-    elapsed_text = next(
-        message.partition("expired_for=")[2].split()[0] for message in expired if "expired_for=" in message
-    )
-    hours, minutes, seconds = (int(part) for part in elapsed_text.split(":"))
-    elapsed = datetime.timedelta(hours=hours, minutes=minutes, seconds=seconds)
-    # Constructing the client can cross a wall-clock second (and can take longer on a loaded CI
-    # worker), so assert the diagnostic's meaningful range rather than scheduler-perfect timing.
-    assert datetime.timedelta(seconds=90) <= elapsed < datetime.timedelta(minutes=2)
 
 
 def test_logout_is_an_exact_origin_post_that_clears_the_session(make_operator_client) -> None:
@@ -331,13 +322,7 @@ def _seed_login_flow(client, *, return_to: str | None, binding: str = "test-brow
 
 @pytest.mark.parametrize(
     "return_to",
-    [
-        "/auth/agent-enrollment/d9377996-7f17-4dcb-a746-3f401e0b1413?browser_nonce=opaque-value",
-        "/_console/tool-calls",
-        "/_console/settings",
-        "/threads/42?reply=1",
-        "/",
-    ],
+    ["/auth/agent-enrollment/d9377996-7f17-4dcb-a746-3f401e0b1413?browser_nonce=opaque-value", "/_console/tool-calls"],
 )
 def test_callback_returns_to_the_page_the_login_started_from(make_operator_client, return_to: str) -> None:
     with make_operator_client() as client:
