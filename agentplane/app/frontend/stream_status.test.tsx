@@ -1,7 +1,6 @@
 // @vitest-environment happy-dom
-import { MantineProvider } from "@mantine/core";
-import { act, type JSX, type ReactNode } from "react";
-import { createRoot } from "react-dom/client";
+import { act, screen } from "@testing-library/react";
+import type { JSX } from "react";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 
 import type { StreamConnection } from "./live_stream";
@@ -13,18 +12,14 @@ import {
   streamRegistry,
   useStreamStatus,
 } from "./stream_status";
-
-(globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
+import { renderInMantine } from "./testing_library";
 
 const KEY = Symbol("test stream");
-const roots: ReturnType<typeof createRoot>[] = [];
 
 beforeEach(() => vi.useFakeTimers({ now: new Date(2026, 0, 1, 17, 21, 4) }));
 
-afterEach(async () => {
-  for (const root of roots.splice(0)) await act(async () => root.unmount());
+afterEach(() => {
   streamRegistry.remove(KEY);
-  document.body.replaceChildren();
   vi.useRealTimers();
 });
 
@@ -69,44 +64,31 @@ it("never counts a stream that recovers within the grace, and gives its next dro
   expect(standing()).toBe("degraded");
 });
 
-function mount(element: ReactNode): HTMLDivElement {
-  const container = document.createElement("div");
-  document.body.append(container);
-  const root = createRoot(container);
-  roots.push(root);
-  act(() => root.render(<MantineProvider env="test">{element}</MantineProvider>));
-  return container;
-}
-
 function Page({ connection }: { connection: StreamConnection }): JSX.Element {
   const stream = useStreamStatus("Actions", connection);
   return <StaleNotice streams={[stream]} />;
 }
 
 it("shows nothing within the grace, then a spinner naming the stream, then the page's own notice", async () => {
-  const indicator = mount(<ConnectionIndicator />);
-  const page = mount(
+  renderInMantine(<ConnectionIndicator />);
+  const page = renderInMantine(
     <Page connection={{ phase: "reconnecting", since: Date.now(), attempt: 3, lastError: "HTTP 503" }} />
   );
-  expect(indicator.querySelector("[data-connection]")).toBeNull();
-  expect(page.querySelector('[role="alert"]')).toBeNull();
+  expect(screen.queryByRole("img")).toBeNull();
+  expect(screen.queryByRole("alert")).toBeNull();
 
   await act(async () => vi.advanceTimersByTime(DEGRADED_AFTER_MS - 1));
-  expect(indicator.querySelector("[data-connection]")).toBeNull();
+  expect(screen.queryByRole("img")).toBeNull();
   await act(async () => vi.advanceTimersByTime(1));
-  const spinner = indicator.querySelector("[data-connection]");
-  expect(spinner?.getAttribute("data-connection")).toBe("degraded");
-  expect(spinner?.getAttribute("aria-label")).toBe("Actions: reconnecting since 17:21:04 · attempt 3 · HTTP 503");
-  expect(page.querySelector('[role="alert"]')).toBeNull();
+  const spinner = screen.getByRole("img", { name: "Actions: reconnecting since 17:21:04 · attempt 3 · HTTP 503" });
+  expect(spinner).toHaveAttribute("data-connection", "degraded");
+  expect(screen.queryByRole("alert")).toBeNull();
 
   await act(async () => vi.advanceTimersByTime(STALE_AFTER_MS - DEGRADED_AFTER_MS));
-  expect(indicator.querySelector("[data-connection]")?.getAttribute("data-connection")).toBe("stale");
-  expect(page.querySelector('[role="alert"]')?.textContent).toBe(
-    "What's on screen may be out of date; last update 17:21:04"
-  );
+  expect(screen.getByRole("img")).toHaveAttribute("data-connection", "stale");
+  expect(screen.getByRole("alert")).toHaveTextContent(/^What's on screen may be out of date; last update 17:21:04$/);
 
   // The stream goes with the page that followed it.
-  const [pageRoot] = roots.splice(1, 1);
-  await act(async () => pageRoot.unmount());
-  expect(indicator.querySelector("[data-connection]")).toBeNull();
+  page.unmount();
+  expect(screen.queryByRole("img")).toBeNull();
 });

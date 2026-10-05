@@ -1,14 +1,14 @@
 // @vitest-environment happy-dom
-import { MantineProvider } from "@mantine/core";
-import { TEST_REASONING_EFFORTS, testModelCatalog } from "./test_model_catalog";
-import { act } from "react";
-import { createRoot } from "react-dom/client";
+import { screen, waitFor, within } from "@testing-library/react";
+import type { UserEvent } from "@testing-library/user-event";
 import { MemoryRouter } from "react-router";
+import { TEST_REASONING_EFFORTS, testModelCatalog } from "./test_model_catalog";
 import { afterEach, expect, it, vi } from "vitest";
 
 import { api, type SandboxPresetView, type SandboxView } from "./client";
 import type { ActionPolicySetView } from "./actions/client";
 import { SandboxList } from "./sandboxes";
+import { renderInMantine } from "./testing_library";
 
 vi.mock("./live", () => ({
   liveSandboxesUrl: () => "/live/sandboxes",
@@ -16,15 +16,7 @@ vi.mock("./live", () => ({
   LiveStatus: () => null,
 }));
 
-(globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
-const mounted: Array<{ root: ReturnType<typeof createRoot>; container: HTMLDivElement }> = [];
-afterEach(async () => {
-  for (const { root, container } of mounted.splice(0)) {
-    await act(async () => root.unmount());
-    container.remove();
-  }
-  vi.restoreAllMocks();
-});
+afterEach(() => vi.restoreAllMocks());
 
 const CREATED: SandboxView = {
   name: "test-created-sandbox",
@@ -93,84 +85,61 @@ async function render(
                 : [];
     return { data, response: new Response() } as Awaited<ReturnType<typeof api.GET>>;
   });
-  const container = document.createElement("div");
-  document.body.append(container);
-  const root = createRoot(container);
-  mounted.push({ root, container });
-  await act(async () =>
-    root.render(
-      <MantineProvider env="test">
-        <MemoryRouter>
-          <SandboxList onOpen={onOpen} />
-        </MemoryRouter>
-      </MantineProvider>
-    )
+  const rendered = renderInMantine(
+    <MemoryRouter>
+      <SandboxList onOpen={onOpen} />
+    </MemoryRouter>
   );
-  await choose(container, "Preset", "Test preset");
-  return { container, onOpen };
+  await choose(rendered.user, "Preset", "Test preset");
+  return Object.assign(rendered, { onOpen });
 }
 
-function input(container: HTMLElement, label: string): HTMLInputElement {
-  const element = [...container.querySelectorAll("label")].find((node) => node.textContent === label);
-  const control = element?.control;
-  if (!(control instanceof HTMLInputElement)) throw new Error(`Missing ${label} input`);
-  return control;
+const field = (label: string): HTMLElement => screen.getByRole("combobox", { name: label });
+
+/** The options a dropdown offers. Mantine renders it in a portal, which a `screen` query reaches. */
+function options(label: string): HTMLElement[] {
+  return within(screen.getByRole("listbox", { name: label })).getAllByRole("option");
 }
 
-async function choose(container: HTMLElement, label: string, value: string): Promise<void> {
-  await act(async () => input(container, label).click());
-  const option = options(container, label).find((node) => node.textContent === value);
-  if (!option) throw new Error(`Missing ${value} option`);
-  await act(async () => option.click());
+async function choose(user: UserEvent, label: string, value: string): Promise<void> {
+  await user.click(field(label));
+  await user.click(await screen.findByRole("option", { name: value }));
 }
 
-/** Type into a controlled input the way a keyboard does, so React sees the change. */
-async function type(element: HTMLInputElement, value: string): Promise<void> {
-  const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")?.set;
-  if (!setter) throw new Error("HTMLInputElement.value has no setter");
-  await act(async () => {
-    setter.call(element, value);
-    element.dispatchEvent(new Event("input", { bubbles: true }));
-  });
-}
-
-function options(container: HTMLElement, label: string): HTMLElement[] {
-  const listId = input(container, label).getAttribute("aria-controls");
-  const list = listId ? document.getElementById(listId) : null;
-  if (!list) throw new Error(`Missing ${label} options`);
-  return [...list.querySelectorAll<HTMLElement>('[role="option"]')];
+async function createSandbox(user: UserEvent, name: string): Promise<void> {
+  // Pasted, not typed: each keystroke re-renders the whole creation form.
+  await user.click(screen.getByRole("textbox", { name: "Name" }));
+  await user.paste(name);
+  await user.click(screen.getByRole("button", { name: "New sandbox" }));
 }
 
 it("inherits the preset model and replaces incompatible choices when the harness changes", async () => {
-  const { container } = await render();
-  expect(input(container, "Template").value).toBe("test-template");
-  expect(input(container, "Model").value).toBe("Test Codex B");
-  await choose(container, "Model", "Test Codex A");
-  expect(input(container, "Model").value).toBe("Test Codex A");
-  await choose(container, "Harness", "Claude");
-  expect(input(container, "Model").value).toBe("Test Claude");
-  await act(async () => input(container, "Model").click());
-  expect(options(container, "Model").map((node) => node.textContent)).toEqual(["Test Claude"]);
+  const { user } = await render();
+  expect(field("Template")).toHaveValue("test-template");
+  expect(field("Model")).toHaveValue("Test Codex B");
+  await choose(user, "Model", "Test Codex A");
+  expect(field("Model")).toHaveValue("Test Codex A");
+  await choose(user, "Harness", "Claude");
+  expect(field("Model")).toHaveValue("Test Claude");
+  await user.click(field("Model"));
+  expect(options("Model").map((node) => node.textContent)).toEqual(["Test Claude"]);
 });
 
 it("pre-fills the preset's policy sets and Kubernetes grants, shows role scope, and sends the picks", async () => {
-  const { container, onOpen } = await render();
-  expect(input(container, "Action policy sets").value).toBe("");
-  expect(container.textContent).toContain("test-reads");
-  expect(container.textContent).toContain("workspace-read");
-  expect(container.textContent).toContain("Role/workspace-reader");
-  expect(container.textContent).toContain("namespace agentplane-test");
-  await act(async () => input(container, "Action policy sets").click());
-  expect(options(container, "Action policy sets").map((node) => node.textContent)).toEqual([
+  const { container, onOpen, user } = await render();
+  expect(field("Action policy sets")).toHaveValue("");
+  expect(container).toHaveTextContent("test-reads");
+  expect(container).toHaveTextContent("workspace-read");
+  expect(container).toHaveTextContent("Role/workspace-reader");
+  expect(container).toHaveTextContent("namespace agentplane-test");
+  await user.click(field("Action policy sets"));
+  expect(options("Action policy sets").map((node) => node.textContent)).toEqual([
     "test-reads",
     "test-broken · invalid",
   ]);
-  await act(async () => input(container, "Action policy sets").click());
+  await user.click(field("Action policy sets"));
   const post = vi.spyOn(api, "POST").mockResolvedValue({ data: CREATED, response: new Response() } as never);
-  await type(input(container, "Name"), "picked");
-  const button = [...container.querySelectorAll("button")].find((node) => node.textContent === "New sandbox");
-  if (!button) throw new Error("Missing New sandbox button");
-  await act(async () => button.click());
+  await createSandbox(user, "picked");
   expect(post).toHaveBeenCalledWith(
     "/sandboxes",
     expect.objectContaining({
@@ -183,24 +152,17 @@ it("pre-fills the preset's policy sets and Kubernetes grants, shows role scope, 
       }),
     })
   );
-  expect(onOpen).toHaveBeenCalledExactlyOnceWith(CREATED.name);
+  await waitFor(() => expect(onOpen).toHaveBeenCalledExactlyOnceWith(CREATED.name));
 });
 
 it("allows an operator to remove the preset grant and sends an explicit empty grant list", async () => {
-  const { container } = await render();
-  await act(async () => {
-    const pill = [...container.querySelectorAll<HTMLElement>(".mantine-Pill-root")].find((node) =>
-      node.textContent?.includes("workspace-read")
-    );
-    const remove = pill?.querySelector<HTMLButtonElement>(".mantine-Pill-remove");
-    if (!remove) throw new Error("Missing selected workspace-read grant control");
-    remove.click();
-  });
+  const { user } = await render();
+  // Mantine hides a pill's own remove button from the accessibility tree (`aria-hidden`); the keyboard
+  // removes the last pill with Backspace.
+  await user.click(field("Kubernetes grants"));
+  await user.keyboard("{Backspace}");
   const post = vi.spyOn(api, "POST").mockResolvedValue({ data: CREATED, response: new Response() } as never);
-  await type(input(container, "Name"), "without-grant");
-  const button = [...container.querySelectorAll("button")].find((node) => node.textContent === "New sandbox");
-  if (!button) throw new Error("Missing New sandbox button");
-  await act(async () => button.click());
+  await createSandbox(user, "without-grant");
   expect(post).toHaveBeenCalledWith(
     "/sandboxes",
     expect.objectContaining({ body: expect.objectContaining({ kubernetes_grants: [] }) })
@@ -208,13 +170,10 @@ it("allows an operator to remove the preset grant and sends an explicit empty gr
 });
 
 it("lets an operator replace the preset template before creating the sandbox", async () => {
-  const { container } = await render();
-  await choose(container, "Template", "other-template");
+  const { user } = await render();
+  await choose(user, "Template", "other-template");
   const post = vi.spyOn(api, "POST").mockResolvedValue({ data: CREATED, response: new Response() } as never);
-  await type(input(container, "Name"), "picked");
-  const button = [...container.querySelectorAll("button")].find((node) => node.textContent === "New sandbox");
-  if (!button) throw new Error("Missing New sandbox button");
-  await act(async () => button.click());
+  await createSandbox(user, "picked");
 
   expect(post).toHaveBeenCalledWith(
     "/sandboxes",
@@ -223,27 +182,25 @@ it("lets an operator replace the preset template before creating the sandbox", a
 });
 
 it("replaces an unavailable preset harness and disables its option", async () => {
-  const { container } = await render([]);
-  expect(input(container, "Harness").value).toBe("Claude");
-  expect(input(container, "Model").value).toBe("Test Claude");
-  await act(async () => input(container, "Harness").click());
-  const codex = options(container, "Harness").find((option) => option.textContent === "Codex (no models offered)");
-  expect(codex?.hasAttribute("data-combobox-disabled")).toBe(true);
-  await act(async () => codex!.click());
-  expect(input(container, "Harness").value).toBe("Claude");
+  const { user } = await render([]);
+  expect(field("Harness")).toHaveValue("Claude");
+  expect(field("Model")).toHaveValue("Test Claude");
+  await user.click(field("Harness"));
+  const codex = screen.getByRole("option", { name: "Codex (no models offered)" });
+  // Mantine marks a disabled option only with this attribute, not `aria-disabled`.
+  expect(codex).toHaveAttribute("data-combobox-disabled");
+  await user.click(codex);
+  expect(field("Harness")).toHaveValue("Claude");
 });
 
 it("keeps the creation form and reports rejection without navigating", async () => {
-  const { container, onOpen } = await render();
+  const { onOpen, user } = await render();
   vi.spyOn(api, "POST").mockResolvedValue({
     error: { detail: "Test creation refused" },
     response: new Response(null, { status: 409 }),
   } as never);
-  await type(input(container, "Name"), "test-not-created");
-  const button = [...container.querySelectorAll("button")].find((node) => node.textContent === "New sandbox");
-  if (!button) throw new Error("Missing New sandbox button");
-  await act(async () => button.click());
+  await createSandbox(user, "test-not-created");
+  expect(await screen.findByText(/Test creation refused/)).toBeInTheDocument();
   expect(onOpen).not.toHaveBeenCalled();
-  expect(input(container, "Name").value).toBe("test-not-created");
-  expect(container.textContent).toContain("Test creation refused");
+  expect(screen.getByRole("textbox", { name: "Name" })).toHaveValue("test-not-created");
 });

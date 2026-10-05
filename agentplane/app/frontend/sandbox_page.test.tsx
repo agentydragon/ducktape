@@ -1,15 +1,15 @@
 // @vitest-environment happy-dom
-import { MantineProvider } from "@mantine/core";
-import { TEST_REASONING_EFFORTS, testModelCatalog } from "./test_model_catalog";
-import { act } from "react";
-import { createRoot } from "react-dom/client";
+import { act, screen, waitFor, within } from "@testing-library/react";
+import type { UserEvent } from "@testing-library/user-event";
 import { MemoryRouter } from "react-router";
+import { TEST_REASONING_EFFORTS, testModelCatalog } from "./test_model_catalog";
 import { afterAll, afterEach, expect, it, vi, type Mock } from "vitest";
 
 import type { SandboxView, ThreadView } from "./client";
 import type * as LiveModule from "./live";
 import type { Live, SandboxSnapshot } from "./live";
 import { SandboxPage } from "./sandbox_page";
+import { renderInMantine } from "./testing_library";
 
 const fetchMock = vi.hoisted(() => {
   const fetch = vi.fn<(request: Request) => Promise<Response>>();
@@ -66,12 +66,7 @@ vi.mock("./live", async (importOriginal) => ({
   useLive: () => live,
 }));
 
-(globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
-let root: ReturnType<typeof createRoot>;
-let container: HTMLDivElement;
-afterEach(async () => {
-  await act(async () => root.unmount());
-  container.remove();
+afterEach(() => {
   vi.useRealTimers();
   live.snapshot.threads = [];
   (live.snapshot.sandbox as SandboxView).binding = null;
@@ -97,11 +92,11 @@ function thread(overrides: Partial<ThreadView> & Pick<ThreadView, "id" | "sessio
   };
 }
 
-async function render(
+function render(
   sessions: (request: Request) => Promise<Response>,
   threadActions: (request: Request) => Promise<Response> = async () => new Response(null, { status: 204 }),
   claudePaused = false
-): Promise<ReturnType<typeof vi.fn>> {
+): ReturnType<typeof renderInMantine> & { onOpenThread: ReturnType<typeof vi.fn> } {
   fetchMock.mockImplementation((request: Request) => {
     const path = new URL(request.url).pathname;
     if (path === "/models") {
@@ -115,46 +110,20 @@ async function render(
     if (/^\/threads\/[^/]+\/(un)?archive$/.test(path)) return threadActions(request);
     throw new Error(`Unexpected request: ${request.method} ${path}`);
   });
-  container = document.createElement("div");
-  document.body.append(container);
-  root = createRoot(container);
   const onOpenThread = vi.fn();
-  await act(async () =>
-    root.render(
-      <MantineProvider env="test">
-        <MemoryRouter>
-          <SandboxPage name="startup-test" onBack={vi.fn()} onOpenThread={onOpenThread} />
-        </MemoryRouter>
-      </MantineProvider>
-    )
+  const rendered = renderInMantine(
+    <MemoryRouter>
+      <SandboxPage name="startup-test" onBack={vi.fn()} onOpenThread={onOpenThread} />
+    </MemoryRouter>
   );
-  return onOpenThread;
+  return Object.assign(rendered, { onOpenThread });
 }
 
-function newSession(): HTMLButtonElement {
-  const button = [...container.querySelectorAll("button")].find((node) =>
-    /New session|Creating session/.test(node.textContent ?? "")
-  );
-  if (!button) throw new Error("Missing new session button");
-  return button;
-}
+const newSession = (): HTMLElement => screen.getByRole("button", { name: /New session|Creating session/ });
 
-function labeledInput(label: string): HTMLInputElement {
-  const element = [...container.querySelectorAll("label")].find((node) => node.textContent === label);
-  const control = element?.control;
-  if (!(control instanceof HTMLInputElement)) throw new Error(`Missing ${label} input`);
-  return control;
-}
-
-async function choose(label: string, value: string): Promise<void> {
-  const field = labeledInput(label);
-  await act(async () => field.click());
-  const list = document.getElementById(field.getAttribute("aria-controls") ?? "");
-  const option = [...(list?.querySelectorAll<HTMLElement>('[role="option"]') ?? [])].find(
-    (node) => node.textContent === value
-  );
-  if (!option) throw new Error(`Missing ${value} option`);
-  await act(async () => option.click());
+async function choose(user: UserEvent, label: string, value: string): Promise<void> {
+  await user.click(await screen.findByRole("combobox", { name: label }));
+  await user.click(await screen.findByRole("option", { name: value }));
 }
 
 /** The JSON body of the first POST the page made to the sessions endpoint. */
@@ -172,9 +141,9 @@ it("preserves a Sandbox reasoning default through model loading and submits it o
   const sessions = vi.fn<(request: Request) => Promise<Response>>((request) =>
     Promise.resolve(request.method === "GET" ? Response.json([]) : Response.json({ detail: "stop" }, { status: 422 }))
   );
-  await render(sessions);
-  expect(labeledInput("Reasoning effort").value).toBe("high");
-  await act(async () => newSession().click());
+  const { user } = render(sessions);
+  expect(await screen.findByRole("combobox", { name: "Reasoning effort" })).toHaveValue("high");
+  await user.click(newSession());
   expect((await postedBody(sessions)).spec.reasoningEffort).toBe("high");
 });
 
@@ -191,8 +160,9 @@ it("uses the bound working directory template and setup script for later Threads
   const sessions = vi.fn<(request: Request) => Promise<Response>>((request) =>
     Promise.resolve(request.method === "GET" ? Response.json([]) : Response.json({ detail: "stop" }, { status: 422 }))
   );
-  await render(sessions);
-  await act(async () => newSession().click());
+  const { user } = render(sessions);
+  await waitFor(() => expect(newSession()).toBeEnabled());
+  await user.click(newSession());
   const body = await postedBody(sessions);
   expect(body.spec.cwd).toMatch(/^\/state\/custom\/s-[^/]+\/work$/);
   expect(body.setup_script).toBe("printf 'ready\\n'");
@@ -200,17 +170,17 @@ it("uses the bound working directory template and setup script for later Threads
 
 it("shows an unspecified legacy setup as absent and a completed setup as complete", async () => {
   const spec = { harness: "HARNESS_CLAUDE", cwd: "/work", model: "test-model" };
-  await render(async () =>
+  render(async () =>
     Response.json([
       { sessionId: "legacy", spec, harnessState: "HARNESS_STATE_STOPPED" },
       { sessionId: "prepared", spec, harnessState: "HARNESS_STATE_RUNNING", setupState: "SETUP_STATE_SUCCEEDED" },
     ])
   );
-  await vi.waitFor(() => {
-    const rows = [...container.querySelectorAll("tbody tr")];
-    expect(rows.find((row) => row.textContent?.includes("legacy"))?.children[2]?.textContent).toBe("—");
-    expect(rows.find((row) => row.textContent?.includes("prepared"))?.children[2]?.textContent).toBe("Complete");
-  });
+  // The Setup column is the third cell of a row.
+  const setup = async (session: string) =>
+    within(await screen.findByRole("row", { name: new RegExp(session) })).getAllByRole("cell")[2];
+  expect(await setup("legacy")).toHaveTextContent(/^—$/);
+  expect(await setup("prepared")).toHaveTextContent(/^Complete$/);
 });
 
 it("lets a later Thread override the Sandbox reasoning default locally", async () => {
@@ -221,9 +191,9 @@ it("lets a later Thread override the Sandbox reasoning default locally", async (
   const sessions = vi.fn<(request: Request) => Promise<Response>>((request) =>
     Promise.resolve(request.method === "GET" ? Response.json([]) : Response.json({ detail: "stop" }, { status: 422 }))
   );
-  await render(sessions);
-  await choose("Reasoning effort", "medium");
-  await act(async () => newSession().click());
+  const { user } = render(sessions);
+  await choose(user, "Reasoning effort", "medium");
+  await user.click(newSession());
   expect((await postedBody(sessions)).spec.reasoningEffort).toBe("medium");
   expect((live.snapshot.sandbox as SandboxView).binding?.session_defaults?.reasoning_effort).toBe("high");
 });
@@ -242,25 +212,14 @@ it("shows the selected Kubernetes grant scope, role, and application error", asy
   ];
   (live.snapshot.sandbox as SandboxView).kubernetes_grants_ready = false;
   (live.snapshot.sandbox as SandboxView).kubernetes_grant_error = "binding controller is waiting";
-  await render(async () => Response.json([]));
-  const statusTab = [...container.querySelectorAll<HTMLButtonElement>('button[role="tab"]')].find(
-    (tab) => tab.textContent === "Status"
-  );
-  if (!statusTab) throw new Error("Missing Status tab");
-  await act(async () => statusTab.click());
-  expect(container.textContent).toContain("Error");
-  expect(container.textContent).toContain("Launch or Kubernetes grants are not ready; sessions cannot start yet.");
-  expect(container.textContent).toContain("workspace-read · RoleBinding · namespace agentplane-test");
-  expect(container.textContent).toContain("Role/workspace-reader");
-  expect(container.textContent).toContain("binding controller is waiting");
+  const { container, user } = render(async () => Response.json([]));
+  await user.click(await screen.findByRole("tab", { name: "Status" }));
+  expect(container).toHaveTextContent("Error");
+  expect(container).toHaveTextContent("Launch or Kubernetes grants are not ready; sessions cannot start yet.");
+  expect(container).toHaveTextContent("workspace-read · RoleBinding · namespace agentplane-test");
+  expect(container).toHaveTextContent("Role/workspace-reader");
+  expect(container).toHaveTextContent("binding controller is waiting");
 });
-
-/** Mantine portals a Menu's dropdown onto `document.body`, so its items live outside `container`. */
-function menuItem(text: string): HTMLElement {
-  const item = [...document.querySelectorAll('[role="menuitem"]')].find((node) => node.textContent === text);
-  if (!(item instanceof HTMLElement)) throw new Error(`Missing menu item ${text}`);
-  return item;
-}
 
 it.each([409, 503])("recovers from runner HTTP %s without a reload", async (status) => {
   vi.useFakeTimers();
@@ -268,19 +227,19 @@ it.each([409, 503])("recovers from runner HTTP %s without a reload", async (stat
     .fn<(request: Request) => Promise<Response>>()
     .mockResolvedValueOnce(Response.json({ detail: "runner not available" }, { status }))
     .mockResolvedValueOnce(Response.json([{ sessionId: "existing-session" }]));
-  await render(sessions);
-  expect(container.querySelector('[role="status"]')?.textContent).toContain("Waiting for the sandbox runner");
-  expect(newSession().disabled).toBe(true);
+  render(sessions);
+  await waitFor(() => expect(screen.getByRole("status")).toHaveTextContent("Waiting for the sandbox runner"));
+  expect(newSession()).toBeDisabled();
   await act(async () => vi.advanceTimersByTimeAsync(2000));
-  expect(container.textContent).toContain("existing-session");
-  expect(container.querySelector('[role="status"]')).toBeNull();
-  expect(newSession().disabled).toBe(false);
+  expect(await screen.findByText("existing-session")).toBeInTheDocument();
+  expect(screen.queryByRole("status")).toBeNull();
+  expect(newSession()).toBeEnabled();
 });
 
 it("reports non-transient session-list failures instead of treating them as startup", async () => {
-  await render(async () => Response.json({ detail: "invalid runner response" }, { status: 500 }));
-  expect(container.textContent).toContain("invalid runner response");
-  expect(container.textContent).not.toContain("Waiting for the sandbox runner");
+  const { container } = render(async () => Response.json({ detail: "invalid runner response" }, { status: 500 }));
+  expect(await screen.findByText(/invalid runner response/)).toBeInTheDocument();
+  expect(container).not.toHaveTextContent("Waiting for the sandbox runner");
 });
 
 it("shows creation progress, prevents duplicate clicks, and restores the button after failure", async () => {
@@ -291,39 +250,38 @@ it("shows creation progress, prevents duplicate clicks, and restores the button 
   const sessions = vi.fn<(request: Request) => Promise<Response>>((request) =>
     request.method === "GET" ? Promise.resolve(Response.json([])) : pending
   );
-  const onOpenThread = await render(sessions);
-  await act(async () => newSession().click());
-  expect(newSession().textContent).toContain("Creating session");
-  expect(newSession().disabled).toBe(true);
-  await act(async () => newSession().click());
+  const { onOpenThread, user } = render(sessions);
+  await waitFor(() => expect(newSession()).toBeEnabled());
+  await user.click(newSession());
+  expect(newSession()).toHaveTextContent("Creating session");
+  expect(newSession()).toBeDisabled();
+  await user.click(newSession());
   expect(sessions.mock.calls.filter(([request]) => request.method === "POST")).toHaveLength(1);
   await act(async () => fail(Response.json({ detail: "session refused" }, { status: 422 })));
-  expect(newSession().disabled).toBe(false);
-  expect(container.textContent).toContain("session refused");
+  expect(newSession()).toBeEnabled();
+  expect(await screen.findByText(/session refused/)).toBeInTheDocument();
   expect(onOpenThread).not.toHaveBeenCalled();
 });
 
 it("hides an archived thread's session by default, reveals it via Show archived, and unarchives it", async () => {
   live.snapshot.threads = [thread({ id: "test-thread-1", session_id: "existing-session", archived: true })];
   const archiveRequests: Request[] = [];
-  await render(
+  const { container, user } = render(
     async () => Response.json([{ sessionId: "existing-session" }]),
     async (request) => {
       archiveRequests.push(request);
       return new Response(null, { status: 204 });
     }
   );
-  expect(container.textContent).not.toContain("existing-session");
+  await screen.findByRole("switch", { name: "Show archived" });
+  expect(container).not.toHaveTextContent("existing-session");
 
-  await act(async () => labeledInput("Show archived").click());
-  expect(container.textContent).toContain("existing-session");
+  await user.click(screen.getByRole("switch", { name: "Show archived" }));
+  expect(await screen.findByText("existing-session")).toBeInTheDocument();
 
-  const menuButton = [...container.querySelectorAll("button")].find(
-    (node) => node.getAttribute("aria-label") === "More actions for existing-session"
-  );
-  if (!menuButton) throw new Error("Missing per-session actions menu");
-  await act(async () => menuButton.click());
-  await act(async () => menuItem("Unarchive").click());
+  // Mantine portals a Menu's dropdown onto `document.body`, which a `screen` query reaches.
+  await user.click(screen.getByRole("button", { name: "More actions for existing-session" }));
+  await user.click(await screen.findByRole("menuitem", { name: "Unarchive" }));
 
   expect(archiveRequests.map((request) => [request.method, new URL(request.url).pathname])).toEqual([
     ["POST", "/threads/test-thread-1/unarchive"],
@@ -332,7 +290,7 @@ it("hides an archived thread's session by default, reveals it via Show archived,
 
 it("disables archiving a thread while its harness is running", async () => {
   live.snapshot.threads = [thread({ id: "test-thread-1", session_id: "existing-session" })];
-  await render(async () =>
+  const { user } = render(async () =>
     Response.json([
       {
         sessionId: "existing-session",
@@ -342,15 +300,10 @@ it("disables archiving a thread while its harness is running", async () => {
       },
     ])
   );
-  const menuButton = [...container.querySelectorAll("button")].find(
-    (node) => node.getAttribute("aria-label") === "More actions for existing-session"
-  );
-  if (!menuButton) throw new Error("Missing per-session actions menu");
-  await act(async () => menuButton.click());
-  const archiveItem = menuItem("Stop harness before archiving");
-  expect(archiveItem).toBeInstanceOf(HTMLButtonElement);
-  expect((archiveItem as HTMLButtonElement).disabled).toBe(true);
-  await act(async () => archiveItem.click());
+  await user.click(await screen.findByRole("button", { name: "More actions for existing-session" }));
+  const archiveItem = await screen.findByRole("menuitem", { name: "Stop harness before archiving" });
+  expect(archiveItem).toBeDisabled();
+  await user.click(archiveItem);
   expect(
     fetchMock.mock.calls.some(([request]) => new URL((request as Request).url).pathname.endsWith("/archive"))
   ).toBe(false);
@@ -363,18 +316,17 @@ it("defaults new sessions to an offered harness while retaining existing Claude 
       ? Response.json([{ sessionId: "old-session", spec: { harness: "HARNESS_CLAUDE" } }])
       : Response.json({ detail: "Launch recorded" }, { status: 503 })
   );
-  await render(sessions, undefined, true);
-  expect(container.textContent).toContain("Existing Claude");
-  const harness = labeledInput("Harness");
-  expect(harness.value).toBe("Codex");
-  await act(async () => harness.click());
-  const claude = [...document.querySelectorAll<HTMLElement>('[role="option"]')].find(
-    (option) => option.textContent === "Claude (no models offered)"
-  );
-  expect(claude?.hasAttribute("data-combobox-disabled")).toBe(true);
-  await act(async () => claude!.click());
-  expect(harness.value).toBe("Codex");
-  await act(async () => harness.click());
-  await act(async () => newSession().click());
+  const { user } = render(sessions, undefined, true);
+  expect(await screen.findByText("Existing Claude")).toBeInTheDocument();
+  const harness = screen.getByRole("combobox", { name: "Harness" });
+  await waitFor(() => expect(harness).toHaveValue("Codex"));
+  await user.click(harness);
+  const claude = screen.getByRole("option", { name: "Claude (no models offered)" });
+  // Mantine marks a disabled option only with this attribute, not `aria-disabled`.
+  expect(claude).toHaveAttribute("data-combobox-disabled");
+  await user.click(claude);
+  expect(harness).toHaveValue("Codex");
+  await user.click(harness);
+  await user.click(newSession());
   expect((await postedBody(sessions)).spec.harness).toBe("HARNESS_CODEX");
 });

@@ -1,48 +1,32 @@
 // @vitest-environment happy-dom
 
-import { act, type JSX } from "react";
-import { createRoot } from "react-dom/client";
-import { afterEach, expect, it } from "vitest";
+import { screen } from "@testing-library/react";
+import type { JSX } from "react";
+import { expect, it } from "vitest";
 
+import { renderInMantine } from "../testing_library";
 import { RetainedDisclosure, RetainedDisclosureProvider, useRetainedDisclosure } from "./retained_disclosures";
 
-(globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
-const roots: ReturnType<typeof createRoot>[] = [];
-
-afterEach(async () => {
-  for (const root of roots.splice(0)) await act(async () => root.unmount());
-});
-
 it("restores an open disclosure after its virtualized row remounts", async () => {
-  const container = document.createElement("div");
-  const root = createRoot(container);
-  roots.push(root);
-  const render = async (visible: boolean) =>
-    act(async () =>
-      root.render(
-        <RetainedDisclosureProvider>
-          {visible && (
-            <RetainedDisclosure id="item:tool:output" summary="Output">
-              <span>selected output</span>
-            </RetainedDisclosure>
-          )}
-        </RetainedDisclosureProvider>
-      )
-    );
+  const tree = (visible: boolean) => (
+    <RetainedDisclosureProvider>
+      {visible && (
+        <RetainedDisclosure id="item:tool:output" summary="Output">
+          <span>selected output</span>
+        </RetainedDisclosure>
+      )}
+    </RetainedDisclosureProvider>
+  );
+  const { rerender, user } = renderInMantine(tree(true));
 
-  await render(true);
-  const details = container.querySelector("details")!;
-  await act(async () => {
-    details.open = true;
-    details.dispatchEvent(new Event("toggle"));
-  });
-  expect(container.textContent).toContain("selected output");
+  await user.click(screen.getByText("Output"));
+  expect(await screen.findByText("selected output")).toBeInTheDocument();
 
-  await render(false);
-  expect(container.querySelector("details")).toBeNull();
-  await render(true);
-  expect(container.querySelector("details")?.open).toBe(true);
-  expect(container.textContent).toContain("selected output");
+  rerender(tree(false));
+  expect(screen.queryByText("Output")).toBeNull();
+  rerender(tree(true));
+  expect(screen.getByRole("group")).toHaveAttribute("open");
+  expect(screen.getByText("selected output")).toBeInTheDocument();
 });
 
 function ButtonDisclosure({ id }: { id: string }): JSX.Element {
@@ -58,64 +42,50 @@ function ButtonDisclosure({ id }: { id: string }): JSX.Element {
 }
 
 it("restores a button-toggled disclosure after its virtualized row remounts", async () => {
-  const container = document.createElement("div");
-  const root = createRoot(container);
-  roots.push(root);
-  const render = async (visible: boolean) =>
-    act(async () =>
-      root.render(
-        <RetainedDisclosureProvider>
-          {visible && <ButtonDisclosure id="item:message:evidence" />}
-        </RetainedDisclosureProvider>
-      )
-    );
-  const press = async () => act(async () => container.querySelector("button")!.click());
+  const tree = (visible: boolean) => (
+    <RetainedDisclosureProvider>
+      {visible && <ButtonDisclosure id="item:message:evidence" />}
+    </RetainedDisclosureProvider>
+  );
+  const { rerender, user } = renderInMantine(tree(true));
+  const evidence = () => screen.getByRole("button", { name: "Evidence" });
 
-  await render(true);
-  await press();
-  expect(container.querySelector("button")?.getAttribute("aria-expanded")).toBe("true");
+  await user.click(evidence());
+  expect(evidence()).toHaveAttribute("aria-expanded", "true");
 
-  await render(false);
-  expect(container.querySelector("button")).toBeNull();
-  await render(true);
-  expect(container.querySelector("button")?.getAttribute("aria-expanded")).toBe("true");
-  expect(container.textContent).toContain("selected evidence");
+  rerender(tree(false));
+  expect(screen.queryByRole("button")).toBeNull();
+  rerender(tree(true));
+  expect(evidence()).toHaveAttribute("aria-expanded", "true");
+  expect(screen.getByText("selected evidence")).toBeInTheDocument();
 
-  await press();
-  expect(container.querySelector("button")?.getAttribute("aria-expanded")).toBe("false");
-  expect(container.querySelector("span")).toBeNull();
+  await user.click(evidence());
+  expect(evidence()).toHaveAttribute("aria-expanded", "false");
+  expect(screen.queryByText("selected evidence")).toBeNull();
 });
 
 it("evicts old disclosure choices and keeps a replacement source closed", async () => {
-  const container = document.createElement("div");
-  const root = createRoot(container);
-  roots.push(root);
-  const render = async (source: string, item: number) =>
-    act(async () =>
-      root.render(
-        <RetainedDisclosureProvider>
-          <RetainedDisclosure id={`${source}:epoch:${item}:evidence`} summary="Evidence">
-            <span>{`${source} evidence ${item}`}</span>
-          </RetainedDisclosure>
-        </RetainedDisclosureProvider>
-      )
-    );
+  const tree = (source: string, item: number) => (
+    <RetainedDisclosureProvider>
+      <RetainedDisclosure id={`${source}:epoch:${item}:evidence`} summary="Evidence">
+        <span>{`${source} evidence ${item}`}</span>
+      </RetainedDisclosure>
+    </RetainedDisclosureProvider>
+  );
+  const { rerender, user } = renderInMantine(tree("original", 0));
+  const disclosure = () => screen.getByRole("group");
 
   for (let item = 0; item < 129; item++) {
-    await render("original", item);
-    const details = container.querySelector("details")!;
-    await act(async () => {
-      details.open = true;
-      details.dispatchEvent(new Event("toggle"));
-    });
-    expect(container.querySelector("span")?.textContent).toBe(`original evidence ${item}`);
+    rerender(tree("original", item));
+    await user.click(screen.getByText("Evidence"));
+    expect(await screen.findByText(`original evidence ${item}`)).toBeInTheDocument();
   }
-  await render("original", 0);
-  expect(container.querySelector("details")?.open).toBe(false);
-  expect(container.querySelector("span")).toBeNull();
-  await render("original", 128);
-  expect(container.querySelector("details")?.open).toBe(true);
-  await render("replacement", 128);
-  expect(container.querySelector("details")?.open).toBe(false);
-  expect(container.querySelector("span")).toBeNull();
+  rerender(tree("original", 0));
+  expect(disclosure()).not.toHaveAttribute("open");
+  expect(screen.queryByText(/^original evidence/)).toBeNull();
+  rerender(tree("original", 128));
+  expect(disclosure()).toHaveAttribute("open");
+  rerender(tree("replacement", 128));
+  expect(disclosure()).not.toHaveAttribute("open");
+  expect(screen.queryByText(/evidence 128$/)).toBeNull();
 });

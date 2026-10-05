@@ -1,10 +1,10 @@
 // @vitest-environment happy-dom
-import { MantineProvider } from "@mantine/core";
-import { act } from "react";
-import { createRoot } from "react-dom/client";
+import { screen, waitFor } from "@testing-library/react";
+import type { UserEvent } from "@testing-library/user-event";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 
 import type { ThreadView } from "../client";
+import { renderInMantine } from "../testing_library";
 import { ThreadTitle } from "./thread_title";
 
 const fetchMock = vi.hoisted(() => {
@@ -13,7 +13,6 @@ const fetchMock = vi.hoisted(() => {
   return fetch;
 });
 
-(globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 const THREAD: ThreadView = {
   id: "10000000-0000-4000-8000-000000000001",
   sandbox: "title-test",
@@ -27,54 +26,34 @@ const THREAD: ThreadView = {
   last_cursor: 0,
   harness_state: "HARNESS_STATE_RUNNING",
 };
-let root: ReturnType<typeof createRoot>;
-let container: HTMLDivElement;
 beforeEach(() => {
   vi.stubGlobal("fetch", fetchMock);
   fetchMock.mockImplementation(async (request: Request) =>
     Response.json({ ...THREAD, ...((await request.clone().json()) as { name: string | null }) })
   );
 });
-afterEach(async () => {
-  await act(async () => root.unmount());
-  container.remove();
+afterEach(() => {
   vi.clearAllMocks();
   vi.unstubAllGlobals();
 });
 
-async function render(thread: ThreadView | null): Promise<{
-  input: HTMLInputElement;
+function render(thread: ThreadView | null): ReturnType<typeof renderInMantine> & {
   onRenamed: ReturnType<typeof vi.fn>;
-  rerender: (next: ThreadView) => Promise<void>;
-}> {
+  rerenderThread: (next: ThreadView) => void;
+} {
   const onRenamed = vi.fn();
-  container = document.createElement("div");
-  document.body.append(container);
-  root = createRoot(container);
-  const rerender = async (next: ThreadView | null): Promise<void> =>
-    act(async () =>
-      root.render(
-        <MantineProvider env="test">
-          <ThreadTitle threadId={THREAD.id} thread={next} onRenamed={onRenamed} onError={() => {}} />
-        </MantineProvider>
-      )
-    );
-  await rerender(thread);
-  return { input: container.querySelector<HTMLInputElement>('input[aria-label="Thread name"]')!, onRenamed, rerender };
+  const title = (next: ThreadView | null) => (
+    <ThreadTitle threadId={THREAD.id} thread={next} onRenamed={onRenamed} onError={() => {}} />
+  );
+  const rendered = renderInMantine(title(thread));
+  return Object.assign(rendered, { onRenamed, rerenderThread: (next: ThreadView) => rendered.rerender(title(next)) });
 }
 
-async function type(input: HTMLInputElement, text: string): Promise<void> {
-  await act(async () => {
-    input.focus();
-    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")?.set?.call(input, text);
-    input.dispatchEvent(new Event("input", { bubbles: true }));
-  });
-}
-
-async function press(input: HTMLInputElement, key: string): Promise<void> {
-  await act(async () => {
-    input.dispatchEvent(new KeyboardEvent("keydown", { key, bubbles: true }));
-  });
+/** Replaces what the field holds with `text`, typing it as a keyboard does. */
+async function retype(user: UserEvent, text: string): Promise<void> {
+  const input = screen.getByRole("textbox", { name: "Thread name" });
+  await user.clear(input);
+  await user.type(input, text);
 }
 
 async function renames(): Promise<Array<{ path: string; method: string; body: unknown }>> {
@@ -87,64 +66,63 @@ async function renames(): Promise<Array<{ path: string; method: string; body: un
   );
 }
 
-it("waits for the thread before taking typing, with the thread id as its placeholder", async () => {
-  const { input } = await render(null);
+it("waits for the thread before taking typing, with the thread id as its placeholder", () => {
+  const { container } = render(null);
+  const input = screen.getByRole("textbox", { name: "Thread name" });
 
-  expect(input.disabled).toBe(true);
-  expect(input.placeholder).toBe(THREAD.id);
-  expect(container.textContent).not.toContain(THREAD.id);
+  expect(input).toBeDisabled();
+  expect(input).toHaveAttribute("placeholder", THREAD.id);
+  expect(container).not.toHaveTextContent(THREAD.id);
 });
 
 it("commits the trimmed name on Enter", async () => {
-  const { input, onRenamed } = await render(THREAD);
-  expect(container.textContent).not.toContain(THREAD.id);
+  const { container, onRenamed, user } = render(THREAD);
+  expect(container).not.toHaveTextContent(THREAD.id);
 
-  await type(input, "  Test typed name  ");
-  await press(input, "Enter");
+  await retype(user, "  Test typed name  {Enter}");
 
+  await waitFor(() => expect(onRenamed).toHaveBeenCalledWith({ ...THREAD, name: "Test typed name" }));
   expect(await renames()).toEqual([
     { path: `/threads/${THREAD.id}`, method: "PATCH", body: { name: "Test typed name" } },
   ]);
-  expect(onRenamed).toHaveBeenCalledWith({ ...THREAD, name: "Test typed name" });
 });
 
 it("puts the stored name back on Escape and sends nothing", async () => {
-  const { input } = await render(THREAD);
+  const { user } = render(THREAD);
 
-  await type(input, "Test discarded name");
-  await press(input, "Escape");
-  expect(input.value).toBe("Test stored name");
-  await act(async () => input.blur());
+  await retype(user, "Test discarded name{Escape}");
+  expect(screen.getByRole("textbox", { name: "Thread name" })).toHaveValue("Test stored name");
+  await user.tab();
 
   expect(fetchMock).not.toHaveBeenCalled();
 });
 
 it("sends nothing when the committed name is the stored one", async () => {
-  const { input } = await render(THREAD);
+  const { user } = render(THREAD);
 
-  await type(input, " Test stored name ");
-  await press(input, "Enter");
+  await retype(user, " Test stored name {Enter}");
 
   expect(fetchMock).not.toHaveBeenCalled();
 });
 
 it("clears the name when a blank one is committed by moving away", async () => {
-  const { input, onRenamed } = await render(THREAD);
+  const { onRenamed, user } = render(THREAD);
 
-  await type(input, "   ");
-  await act(async () => input.blur());
+  await retype(user, "   ");
+  await user.tab();
 
+  await waitFor(() => expect(onRenamed).toHaveBeenCalledWith({ ...THREAD, name: null }));
   expect(await renames()).toEqual([{ path: `/threads/${THREAD.id}`, method: "PATCH", body: { name: null } }]);
-  expect(onRenamed).toHaveBeenCalledWith({ ...THREAD, name: null });
 });
 
 it("shows a rename from elsewhere unless a name is being typed", async () => {
-  const { input, rerender } = await render(THREAD);
+  const { rerenderThread, user } = render(THREAD);
+  const input = screen.getByRole("textbox", { name: "Thread name" });
 
-  await rerender({ ...THREAD, name: "Test renamed elsewhere" });
-  expect(input.value).toBe("Test renamed elsewhere");
+  rerenderThread({ ...THREAD, name: "Test renamed elsewhere" });
+  expect(input).toHaveValue("Test renamed elsewhere");
 
-  await type(input, "Test typed name");
-  await rerender({ ...THREAD, name: "Test renamed again" });
-  expect(input.value).toBe("Test typed name");
+  await retype(user, "Test typed name");
+  rerenderThread({ ...THREAD, name: "Test renamed again" });
+  expect(input).toHaveValue("Test typed name");
 });
