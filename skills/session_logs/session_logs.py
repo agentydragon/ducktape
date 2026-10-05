@@ -10,6 +10,7 @@ import sys
 import time
 from collections.abc import Iterator, Mapping, Sequence
 from dataclasses import dataclass, field
+from enum import StrEnum
 from pathlib import Path
 from typing import Any
 
@@ -381,14 +382,20 @@ def analyze_transcript(path: Path, harness: str) -> tuple[dict[str, str | int], 
     )
 
 
-def followups_replay_guidance(compactions: int, malformed_records: int) -> str:
-    """Recommend whether followups needs transcript output to recover context."""
+class ReplayGuidance(StrEnum):
+    """Whether followups needs transcript output to recover context; the value is the advice printed."""
 
+    SKIP = "skip; no compaction markers were found and no records were malformed"
+    REPLAY = "replay unless already recovered in this context after the latest marker"
+    UNCERTAIN = "uncertain; malformed records may hide compaction markers, so do not use the no-compaction shortcut"
+
+
+def followups_replay_guidance(compactions: int, malformed_records: int) -> ReplayGuidance:
     if malformed_records:
-        return "uncertain; malformed records may hide compaction markers, so do not use the no-compaction shortcut"
+        return ReplayGuidance.UNCERTAIN
     if compactions:
-        return f"{compactions} marker(s) found; replay unless already recovered in this context after the latest marker"
-    return "skip; no compaction markers were found and no records were malformed"
+        return ReplayGuidance.REPLAY
+    return ReplayGuidance.SKIP
 
 
 def main_find() -> int:
