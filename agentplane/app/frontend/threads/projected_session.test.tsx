@@ -242,6 +242,12 @@ function button(container: HTMLElement, label: string): HTMLElement {
   return within(container).getByRole("button", { name: label });
 }
 
+/** Puts `text` in the composer as one paste: typing it re-renders the whole page for every character. */
+async function enterText(field: HTMLElement, text: string): Promise<void> {
+  await user.click(field);
+  await user.paste(text);
+}
+
 /** The status indicator in the page's topbar title. */
 function statusIndicator(): HTMLElement {
   return within(mounted.at(-1)!.topbarTitle).getByRole("img");
@@ -263,7 +269,7 @@ it.each<[KeyboardEventInit, string]>([
   [{ shiftKey: true }, "{Shift>}{Enter}{/Shift}"],
 ])("inserts a newline at the caret on Enter with %o, without sending", async (_, keys) => {
   const field = composer(await render()) as HTMLTextAreaElement;
-  await user.type(field, "helloworld");
+  await enterText(field, "helloworld");
   field.setSelectionRange(5, 5);
   await user.keyboard(keys);
   // The caret is put back on the frame after the controlled value lands.
@@ -276,7 +282,8 @@ it.each<[KeyboardEventInit, string]>([
 it("sends the draft on Enter and clears it", async () => {
   const container = await render();
   const field = composer(container);
-  await user.type(field, "hello{Enter}");
+  await enterText(field, "hello");
+  await user.keyboard("{Enter}");
   expect(sentOperations()).toMatchObject([{ case: "submitInput", value: { text: "hello" } }]);
   expect(field).toHaveValue("");
   const bubble = container.querySelector<HTMLElement>('.agentplane-user-bubble[data-message-phase="local"]')!;
@@ -289,7 +296,7 @@ it("sends the draft on Enter and clears it", async () => {
 
 it("submits once for two Enters before the cleared draft renders, then takes the next draft", async () => {
   const field = composer(await render());
-  await user.type(field, "hello");
+  await enterText(field, "hello");
   // Two events in one React batch: `user.keyboard` would let the first render before sending the second.
   await act(async () => {
     const enter = () => fireEvent.keyDown(field, { key: "Enter" });
@@ -297,7 +304,8 @@ it("submits once for two Enters before the cleared draft renders, then takes the
     enter();
   });
   expect(sentOperations()).toMatchObject([{ case: "submitInput", value: { text: "hello" } }]);
-  await user.type(field, "second{Enter}");
+  await enterText(field, "second");
+  await user.keyboard("{Enter}");
   expect(sentOperations()).toMatchObject([
     { case: "submitInput", value: { text: "hello" } },
     { case: "submitInput", value: { text: "second" } },
@@ -307,7 +315,7 @@ it("submits once for two Enters before the cleared draft renders, then takes the
 it("sends the draft from the Send button, which an empty draft disables", async () => {
   const container = await render();
   expect(button(container, "Send")).toBeDisabled();
-  await user.type(composer(container), "hello");
+  await enterText(composer(container), "hello");
   await user.click(button(container, "Send"));
   expect(sentOperations()).toMatchObject([{ case: "submitInput", value: { text: "hello" } }]);
 });
@@ -322,11 +330,13 @@ it("resumes the existing Thread and restores sending on the open and reloaded pa
   const running = threadState();
   await rerender(original, running);
   expect(composer(original)).toBeEnabled();
-  await user.type(composer(original), "from the open page{Enter}");
+  await enterText(composer(original), "from the open page");
+  await user.keyboard("{Enter}");
 
   const reloaded = await render(running);
   expect(composer(reloaded)).toBeEnabled();
-  await user.type(composer(reloaded), "from the reloaded page{Enter}");
+  await enterText(composer(reloaded), "from the reloaded page");
+  await user.keyboard("{Enter}");
   expect(sentOperations()).toEqual(
     expect.arrayContaining([
       expect.objectContaining({ case: "submitInput", value: expect.objectContaining({ text: "from the open page" }) }),
