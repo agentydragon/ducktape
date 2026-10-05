@@ -127,16 +127,18 @@ reconciled here.
 
 ## Options
 
-In order of how much of the cause each removes. The scheduling fields in 1 and 2 are the
-tofu-controller runner pod template's; confirm the CRD accepts them before relying on this.
+In order of how much of the cause each removes. The runner pod template of the
+tofu-controller `Terraform` CRD accepts `resources`, `nodeSelector`, `affinity` and `tolerations`.
 
 1. **Place runner pods off the home nodes.** Set a `nodeSelector`
    (`topology.kubernetes.io/region: hil`) on the runner pod template in `tofu_state_terraform`
    (`cluster/cdk8s/terraform.py` sets none). One change, covers every module, and removes the
    trigger from this drive.
-2. **Give runner pods resource requests and an ephemeral-storage limit.** They ran best-effort;
-   a limit lets the kubelet evict a runaway pod instead of letting it keep writing, and requests
-   make the scheduler count their cost.
+2. **Give runner pods resource requests, and later an ephemeral-storage limit.** They ran
+   best-effort. CPU and memory requests (250m, 512Mi, sized from three days of observed usage)
+   are in `cluster/cdk8s/terraform.py`. An ephemeral-storage limit would let the kubelet evict a
+   runaway pod instead of letting it keep writing; scratch-space use was not measured, so none is
+   set.
 3. **Reconcile less often and not all at once.** All 19 objects poll every 15 minutes in
    synchronised waves, and nearly all report `TerraformPlannedNoChanges`. Stagger the intervals
    or lengthen them (a spec change already reconciles at once, per the comment in
