@@ -391,7 +391,7 @@ try {
         // so this must not run there).
         await page.waitForSelector('[aria-label="Syncing"]', { hidden: true, timeout: WAIT_TIMEOUT_MS });
       }
-      // The settings scene's MCP server list resolves through two chained async mock-fetch
+      // The settings scene's MCP server list resolves through chained async mock-fetch
       // rounds (list, then a per-connection status probe). Waiting for these loaders to clear
       // is a no-op on scenes that never had them: `hidden: true` is already satisfied for a
       // selector that was never in the DOM.

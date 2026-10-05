@@ -43,8 +43,8 @@ see <../../../util/testing/frontend_visual/README.md> for the repo-wide conventi
 
 ## Tool-call rendering — design requirements
 
-A tool call shows up in two places — the **approvals panel** cards (`shell_chrome.tsx`) and
-the **history** rows (`tool_calls_page.tsx`) — but both render through one shared component,
+A tool call shows up in the **approvals panel** cards (`shell_chrome.tsx`) and the **history**
+rows (`tool_calls_page.tsx`), and they render through one shared component,
 `tool_call_card.tsx` (identity header + action line + status badge + `Details` toggle, the
 arguments body, the result body, and the detailed Metadata); only the status badge and footer
 actions differ per surface. Each renders at one of two variants, **compact** or **detailed**,
