@@ -20,15 +20,15 @@ metadata:
 spec:
   data:
     - remoteRef:
-        key: aws-route53-dns-automation-credentials
+        key: aws-route53-external-dns-credentials
         property: AWS_ACCESS_KEY_ID
       secretKey: AWS_ACCESS_KEY_ID
     - remoteRef:
-        key: aws-route53-dns-automation-credentials
+        key: aws-route53-external-dns-credentials
         property: AWS_REGION
       secretKey: AWS_REGION
     - remoteRef:
-        key: aws-route53-dns-automation-credentials
+        key: aws-route53-external-dns-credentials
         property: AWS_SECRET_ACCESS_KEY
       secretKey: AWS_SECRET_ACCESS_KEY
   refreshInterval: 1h

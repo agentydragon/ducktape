@@ -19,7 +19,7 @@ NAME = "external-dns"
 NAMESPACE = NAME
 OUTPUT_DIR = f"{GENERATED_ROOT}/{NAME}"
 RECORDS_OUTPUT_DIR = f"{GENERATED_ROOT}/{NAME}-records"
-_CREDENTIALS_SOURCE = "aws-route53-dns-automation-credentials"
+_CREDENTIALS_SOURCE = "aws-route53-external-dns-credentials"
 _CREDENTIALS_SECRET = "aws-route53-credentials"
 
 

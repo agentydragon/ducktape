@@ -14,9 +14,9 @@ the record owner until a separately reviewed handoff. The static endpoint's IP
 targets come from the same `nebula-mesh.json` roster as Terraform's inputs. The
 TXT registry replaces `*` with `wildcard` in its ownership marker name.
 
-Before enabling writes, provision a separate Route 53 credential limited to
-this hosted zone's record operations. The current ExternalDNS credential is
-shared with Terraform and also has registrar nameserver permissions. Import
+ExternalDNS uses the dedicated IAM user `cluster-external-dns` with record
+permissions limited to this hosted zone. Its key is stored in a separate SOPS
+Secret and is not shared with Terraform's registrar-capable credential. Import
 ownership TXT markers for the existing record sets and remove their Terraform
 state addresses without destroying the Route 53 records; keep the registered
 domain resource in Terraform.
@@ -51,6 +51,7 @@ The gateway and API node IPs are the `public_nodes` var on the generated Terrafo
 | `tf/gitops/dns-records/main.tf`                           | Route 53 records + domain delegation                                      |
 | `generated/dns-automation/dns-automation.k8s.yaml`        | tofu-controller Terraform resource (generated, `cdk8s/dns_automation.py`) |
 | `k8s/external-creds/aws-route53-dns-automation.sops.yaml` | Canonical AWS IAM Secret for DNS automation (SOPS)                        |
+| `k8s/external-creds/aws-route53-external-dns.sops.yaml`   | Dedicated ExternalDNS IAM key (SOPS)                                      |
 | `k8s/external-creds/aws-route53-cert-manager.sops.yaml`   | Canonical AWS IAM Secret for cert-manager (SOPS)                          |
 | `cdk8s/dns_automation.py`                                 | ESO destination Secret for Terraform in `flux-system`                     |
 | `cdk8s/external_dns.py`                                   | Dry-run ExternalDNS HelmRelease and ESO credential copy                   |
@@ -59,8 +60,17 @@ The gateway and API node IPs are the `public_nodes` var on the generated Terrafo
 
 ### IAM User: `cluster-dns-manager`
 
-Dedicated user with Route 53 policy. Credentials in SOPS-encrypted secrets
-(see table above). IAM policy documented in <iam-policy-route53.json>.
+Dedicated user with Route 53 and registrar permissions for Terraform.
+Credentials are in SOPS-encrypted secrets (see table above). IAM policy:
+<iam-policy-route53.json>.
+
+### IAM User: `cluster-external-dns`
+
+Dedicated user for ExternalDNS. Its inline policy is documented in
+<iam-policy-external-dns.json>. The user and policy are provisioned in AWS IAM;
+the access key is stored in the ExternalDNS SOPS Secret above. The policy permits
+record changes only in hosted zone `Z02901943N8ZFQFOD9P5I` and has no Route 53
+Domains permissions.
 
 ## Verification
 
