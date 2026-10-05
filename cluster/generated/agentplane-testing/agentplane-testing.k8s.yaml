@@ -2263,10 +2263,16 @@ data:
             - xhigh
         - model: ollama/oai-chat/qwen3.8-flash-next-iq4xs-128k
           display_name: Qwen3.8 Flash Next IQ4_XS (128K)
-          reasoning_efforts: []
+          reasoning_efforts:
+            - low
+            - medium
+            - xhigh
         - model: ollama/oai-chat/qwen3.8-flash-next-iq4xs-256k
           display_name: Qwen3.8 Flash Next IQ4_XS (256K)
-          reasoning_efforts: []
+          reasoning_efforts:
+            - low
+            - medium
+            - xhigh
         - model: ollama/oai-chat/gpt-oss-20b-128k
           display_name: GPT-OSS 20B (128K)
           reasoning_efforts: []

@@ -474,7 +474,7 @@ class OllamaRoutes:
     native: Route
 
 
-def _ollama_routes(variant: ollama.ChatVariant) -> OllamaRoutes:
+def _ollama_routes(variant: ollama.ChatVariant, *, openai_reasoning_efforts: tuple[str, ...] = ()) -> OllamaRoutes:
     context = variant.num_ctx
     suffix = "1M" if context == 1024 * 1024 else f"{context // 1024}K"
     model = Model(
@@ -482,13 +482,19 @@ def _ollama_routes(variant: ollama.ChatVariant) -> OllamaRoutes:
         display_name=f"{variant.model.display_name} ({suffix})",
     )
     return OllamaRoutes(
-        openai=Route(model, OLLAMA_OPENAI, upstream_model=variant.tag),
+        openai=Route(model, OLLAMA_OPENAI, upstream_model=variant.tag, reasoning_efforts=openai_reasoning_efforts),
         native=Route(model, OLLAMA_NATIVE, upstream_model=variant.tag, num_ctx=context),
     )
 
 
-OLLAMA_QWEN_IQ4XS_128K = _ollama_routes(ollama.QWEN_IQ4XS_128K)
-OLLAMA_QWEN_IQ4XS_256K = _ollama_routes(ollama.QWEN_IQ4XS_256K)
+# Qwen3.8's chat template (cluster/cdk8s/ollama/qwen38-chat-template.jinja) accepts
+# xhigh (its default), medium and low, and rejects any other value; it treats `high` as
+# an alias of xhigh, so that is not a separate level. Declared on the OpenAI-compatible
+# wire only: on the native wire LiteLLM's mapper fails on the reasoning object Codex sends.
+_QWEN_EFFORTS = ("low", "medium", "xhigh")
+
+OLLAMA_QWEN_IQ4XS_128K = _ollama_routes(ollama.QWEN_IQ4XS_128K, openai_reasoning_efforts=_QWEN_EFFORTS)
+OLLAMA_QWEN_IQ4XS_256K = _ollama_routes(ollama.QWEN_IQ4XS_256K, openai_reasoning_efforts=_QWEN_EFFORTS)
 _GPT_OSS_20B_128K = _ollama_routes(ollama.ChatVariant(ollama.GPT_OSS_20B, 128 * 1024))
 OLLAMA_GPT_OSS_20B_128K = _GPT_OSS_20B_128K.openai
 _OLLAMA_ROUTE_GROUPS = (
