@@ -310,15 +310,15 @@ fn classify_sequence_takes_worst() {
 
 #[test]
 fn whitelist_static_props_are_pure() {
-    // Math / Number / Symbol constants: pure internal-slot
-    // reads, no coercion.
-    assert!((classify("Math.PI")).is_pure());
-    assert!((classify("Math.E")).is_pure());
-    assert!((classify("Math.SQRT2")).is_pure());
-    assert!((classify("Number.EPSILON")).is_pure());
-    assert!((classify("Number.MAX_SAFE_INTEGER")).is_pure());
-    assert!((classify("Symbol.iterator")).is_pure());
-    assert!((classify("Symbol.toStringTag")).is_pure());
+    // Table-driven over the whole whitelist: every entry is a pure
+    // internal-slot read, no coercion.
+    for &(recv, prop) in PURE_STATIC_PROPS {
+        let src = format!("{recv}.{prop}");
+        assert!(
+            classify(&src).is_pure(),
+            "expected static read `{src}` to classify Pure"
+        );
+    }
 }
 
 #[test]
@@ -334,17 +334,17 @@ fn whitelist_misses_fall_back_to_unknown() {
 
 #[test]
 fn whitelist_static_calls_are_pure_regardless_of_arg() {
-    // Type predicates do not coerce or read user props on the
-    // argument, so any Pure-classified arg keeps the call Pure.
-    assert!((classify("Array.isArray(x)")).is_pure());
-    assert!((classify("Array.isArray([1, 2, 3])")).is_pure());
-    assert!((classify("Number.isNaN(x)")).is_pure());
-    assert!((classify("Number.isFinite(x)")).is_pure());
-    assert!((classify("Number.isInteger(x)")).is_pure());
-    assert!((classify("Number.isSafeInteger(x)")).is_pure());
-    // Object.is performs SameValue (ECMA-262 §20.1.2.13) with no
-    // coercion of either argument — fires no user code on any type.
-    assert!((classify("Object.is(a, b)")).is_pure());
+    // Type predicates and `Object.is` neither coerce nor read user props
+    // on the argument, so any Pure-classified args (an identifier and an
+    // array literal here, two arguments to cover `Object.is`) keep the call
+    // Pure. Table-driven over the whole whitelist.
+    for &(recv, prop) in PURE_STATIC_CALLS {
+        let src = format!("{recv}.{prop}(x, [1, 2, 3])");
+        assert!(
+            classify(&src).is_pure(),
+            "expected static call `{src}` to classify Pure"
+        );
+    }
 }
 
 #[test]
@@ -429,12 +429,17 @@ fn static_function_ref_object_shadowed_falls_back_to_unknown() {
 
 #[test]
 fn whitelist_global_callables_are_pure() {
-    // Boolean(x) is `ToBoolean(x)`; per spec, no path fires
-    // user code (objects → true unconditionally; primitives
-    // are case-analysed structurally).
-    assert!((classify("Boolean(x)")).is_pure());
-    assert!((classify("Boolean(0)")).is_pure());
-    assert!((classify("Boolean({})")).is_pure());
+    // `ToBoolean`-style callables fire no user code on any value: an
+    // identifier, a primitive and an object literal all stay Pure.
+    for &name in PURE_GLOBAL_CALLS {
+        for arg in ["x", "0", "{}"] {
+            let src = format!("{name}({arg})");
+            assert!(
+                classify(&src).is_pure(),
+                "expected global call `{src}` to classify Pure"
+            );
+        }
+    }
 }
 
 #[test]
@@ -543,14 +548,15 @@ fn import_specifier_locals_shadow_whitelist() {
 // --- Whitelist: shadow tracking covers every table -----------------------
 
 #[test]
-fn whatwg_platform_constructors_no_args_are_pure() {
-    // No-arg WHATWG constructors: TextDecoder defaults to "utf-8"
-    // (cannot reach the RangeError label-validation path),
-    // TextEncoder takes no parameters, URLSearchParams constructs an
-    // empty query list. None fires user code.
-    assert!((classify("new TextDecoder()")).is_pure());
-    assert!((classify("new TextEncoder()")).is_pure());
-    assert!((classify("new URLSearchParams()")).is_pure());
+fn builtin_constructors_without_args_are_pure() {
+    // Table-driven over every no-arg constructor, WHATWG ones included.
+    for &name in PURE_BUILTIN_NEW_NO_ARGS {
+        let src = format!("new {name}()");
+        assert!(
+            classify(&src).is_pure(),
+            "expected `{src}` to classify Pure"
+        );
+    }
 }
 
 #[test]
