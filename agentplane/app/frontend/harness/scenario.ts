@@ -13,7 +13,11 @@ export interface Scenario {
   claudePaused?: boolean;
   /**
    * The app's hash route. The harness sets it before mounting, so App's router picks the view.
-   * `/` is the threads view, so the launch form is `/sandboxes`.
+   * `/` is the threads view, so the launch form is `/sandboxes`. A route can carry view state in its
+   * query: `?tab=egress&rules=<binding>` opens that binding's rules, so the shot carries its
+   * credential detail (description, where the proxy puts it, which secret it comes from) beside the
+   * other binding's folded row. `/mcp-servers` is where the MCP-linkage OAuth callback lands:
+   * Settings, open on its MCP servers tab.
    */
   route: string;
   /**
