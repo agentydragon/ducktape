@@ -42,7 +42,8 @@ if (scene === "inline") {
   if (Date.now() !== 1738411200000) problems.push("clock not frozen");
   if (document.baseURI !== "https://harness.test/") problems.push(`base is ${document.baseURI}`);
   if (getComputedStyle(document.getElementById("target")).animationPlayState !== "paused") problems.push("animation runs");
-  if (window.__PAYLOAD__ !== "</script><i>") problems.push(`payload is ${window.__PAYLOAD__}`);
+  // Not spelled out: the bundle is inlined in a <script>, which a literal closing tag would end.
+  if (window.__PAYLOAD__ !== "<" + "/script><i>") problems.push(`payload is ${window.__PAYLOAD__}`);
   if (problems.length) throw new Error(problems.join("; "));
 }
 if (scene === "interactive") {
