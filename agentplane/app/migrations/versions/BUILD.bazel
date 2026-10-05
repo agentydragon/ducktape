@@ -18,6 +18,7 @@ exports_files(
         "0014_operator_session_login.py",
         "0015_event_payload_json.py",
         "0016_thread_payload_chunk_json.py",
+        "0017_event_turn_completed_index.py",
     ],
     visibility = ["//agentplane/app/migrations:__pkg__"],
 )
@@ -151,6 +152,15 @@ py_library(
 py_library(
     name = "0016_thread_payload_chunk_json",
     srcs = ["0016_thread_payload_chunk_json.py"],
+    deps = [
+        "@pypi//alembic",
+        "@pypi//sqlalchemy",
+    ],
+)
+
+py_library(
+    name = "0017_event_turn_completed_index",
+    srcs = ["0017_event_turn_completed_index.py"],
     deps = [
         "@pypi//alembic",
         "@pypi//sqlalchemy",

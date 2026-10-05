@@ -131,6 +131,9 @@ export interface Scenario {
   actionGroupsUnavailable?: boolean;
   recovery?: "messages" | "tools" | "quiet";
   openRecoveryDetails?: boolean;
+  /** The idle thread's history ends in a failed turn, before or after the assistant's content. The
+   * thread is named for it and carries it as its last completed turn, so its status mark is the turn
+   * error's, in the sidebar and the topbar. */
   failedTurn?: "before-content" | "after-content";
 }
 

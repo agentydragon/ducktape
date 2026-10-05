@@ -60,7 +60,13 @@ class Thread(Base):
 
 class Event(Base):
     __tablename__ = "event"
-    __table_args__ = (Index("ix_event_thread_at", "thread_id", "at"),)
+    __table_args__ = (
+        Index("ix_event_thread_at", "thread_id", "at"),
+        # Reads a thread's newest completed turn without walking the rest of its log.
+        Index(
+            "ix_event_thread_turn_completed", "thread_id", "cursor", postgresql_where=text("kind = 'turn_completed'")
+        ),
+    )
 
     thread_id: Mapped[UUID] = mapped_column(
         PGUUID(as_uuid=True), ForeignKey("event_log.id", ondelete="CASCADE"), primary_key=True

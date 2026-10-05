@@ -5,6 +5,7 @@
  */
 import type { ComponentType } from "react";
 // Per-icon subpaths, never the barrel: see tabler_icons.d.ts.
+import IconAlertTriangle from "@tabler/icons-react/dist/esm/icons/IconAlertTriangle.mjs";
 import IconArchive from "@tabler/icons-react/dist/esm/icons/IconArchive.mjs";
 import IconCircleX from "@tabler/icons-react/dist/esm/icons/IconCircleX.mjs";
 import IconClock from "@tabler/icons-react/dist/esm/icons/IconClock.mjs";
@@ -15,13 +16,14 @@ import IconPower from "@tabler/icons-react/dist/esm/icons/IconPower.mjs";
 import { RunningChevrons, StatusDot } from "./custom_mark_icons";
 
 /**
- * `running`: a turn is in flight. `idle`: the harness is live and waiting for input. `stopped`: the
- * harness is down (shut down or lost), whether its runner feed is still attached or has ended.
- * `failed`: the runner feed failed. `archived`: the thread was archived, whatever its retained history
- * says. `inactive`: nothing else live to show (Sandbox suspended or gone, the feed ended with the
- * harness not known to be down, or not confirmed).
+ * `running`: a turn is in flight. `idle`: the harness is live and waiting for input. `turn_error`: as
+ * `idle`, but the last turn to complete ended in an error; the next to complete without one makes the
+ * thread `idle` again. `stopped`: the harness is down (shut down or lost), whether its runner feed is
+ * still attached or has ended. `failed`: the runner feed failed. `archived`: the thread was archived,
+ * whatever its retained history says. `inactive`: nothing else live to show (Sandbox suspended or gone,
+ * the feed ended with the harness not known to be down, or not confirmed).
  */
-export type ThreadStatusKind = "running" | "idle" | "stopped" | "failed" | "archived" | "inactive";
+export type ThreadStatusKind = "running" | "idle" | "turn_error" | "stopped" | "failed" | "archived" | "inactive";
 
 /**
  * `ready`: the Pod is up and can take sessions. `pending`: on its way (grants applying, no Pod yet,
@@ -39,7 +41,7 @@ export interface StatusMark {
 }
 
 /** What the favicon hand-draws for a thread's status; thread_favicon.ts owns the art. */
-export type FaviconShape = "dot" | "chevrons" | "power" | "archive";
+export type FaviconShape = "dot" | "chevrons" | "alert" | "power" | "archive";
 
 // Mantine default-palette shades. Blue means live and waiting, for a thread and a Sandbox alike, and
 // reads apart from both green (a turn running) and gray (switched off or gone).
@@ -63,6 +65,9 @@ export interface ThreadStatusMark extends StatusMark {
 export const THREAD_STATUS_MARKS: Record<ThreadStatusKind, ThreadStatusMark> = {
   running: { icon: RunningChevrons, color: GREEN, favicon: "chevrons", glyph: "»" },
   idle: { icon: StatusDot, color: BLUE, favicon: "dot", glyph: "●" },
+  // Red like `failed`, but a triangle where that is a dot: a failed runner feed is the infrastructure, this
+  // is what the last turn did. "!" is plain text, where ⚠ may be drawn as emoji.
+  turn_error: { icon: IconAlertTriangle, color: RED, favicon: "alert", glyph: "!" },
   stopped: { icon: IconPower, color: GRAY, favicon: "power", glyph: "⏻" },
   failed: { icon: StatusDot, color: RED, favicon: "dot", glyph: "×" },
   // An arrow onto a bar reads as filing away at tab-title size; box shapes read as a missing-glyph box

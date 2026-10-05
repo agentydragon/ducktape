@@ -85,7 +85,7 @@
     "route": "/threads/5f1c4a2e-0000-4000-8000-000000000001",
     "viewport": { "width": 1200, "height": 900 },
     "failedTurn": "before-content",
-    "readySelectors": ["[data-thread-anchor=\"6\"]"],
+    "readySelectors": ["[data-thread-anchor=\"6\"]", ".agentplane-thread-status-indicator[data-status=\"turn_error\"]"],
     "captureViewport": true
   },
   "session_error_phone": {
@@ -93,7 +93,7 @@
     "route": "/threads/5f1c4a2e-0000-4000-8000-000000000001",
     "viewport": { "width": 412, "height": 915, "deviceScaleFactor": 2.625 },
     "failedTurn": "after-content",
-    "readySelectors": ["[data-thread-anchor=\"8\"]"],
+    "readySelectors": ["[data-thread-anchor=\"8\"]", ".agentplane-thread-status-indicator[data-status=\"turn_error\"]"],
     "captureViewport": true
   },
   "session_error_raw": {
@@ -200,6 +200,22 @@
     "outputName": "threads-phone-drawer",
     "readySelectors": [".agentplane-sidebar-open", "a.agentplane-sidebar-group-name"],
     "openMobileSidebar": true
+  },
+  "threads_failed_turn": {
+    "element": "#app",
+    "route": "/",
+    "viewport": { "width": 1200, "height": 900 },
+    "failedTurn": "before-content",
+    "readySelectors": [".agentplane-thread-status-indicator[data-status='turn_error']"]
+  },
+  "threads_failed_turn_phone_drawer": {
+    "element": "#app",
+    "route": "/",
+    "viewport": { "width": 412, "height": 915, "deviceScaleFactor": 2.625 },
+    "outputName": "threads-failed-turn-phone-drawer",
+    "failedTurn": "before-content",
+    "openMobileSidebar": true,
+    "readySelectors": [".agentplane-sidebar-open", ".agentplane-thread-status-indicator[data-status='turn_error']"]
   },
   "threads_provisioning": {
     "element": "#app",

@@ -188,7 +188,7 @@ function ThreadRow({
   const label = thread.name ?? thread.session_id;
   const readonly = sandbox === null;
   const status = threadStatusFromSnapshot(thread, sandbox ?? undefined, fresh);
-  const harnessRunning = status.kind === "running" || status.kind === "idle";
+  const harnessRunning = status.kind === "running" || status.kind === "idle" || status.kind === "turn_error";
   const className = [
     "agentplane-sidebar-row",
     current ? "current" : "",

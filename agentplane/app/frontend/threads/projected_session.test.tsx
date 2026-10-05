@@ -406,6 +406,8 @@ it.each([
   [{ harness_state: "HARNESS_STATE_STOPPED" }, "Harness not running", "stopped"],
   [{ active_turn_id: "turn-1" }, "Turn running · Runner feed active · harness running", "running"],
   [{}, "Runner feed active · harness running", "idle"],
+  [{ last_turn_status: "TURN_STATUS_FAILED" }, "Turn failed · Runner feed active · harness running", "turn_error"],
+  [{ last_turn_status: "TURN_STATUS_PROCESS_LOST" }, "Turn lost · Runner feed active · harness running", "turn_error"],
 ] as const)("uses shared thread row %o for the topbar status", async (row, label, kind) => {
   sharedThread = row;
   const container = await render();
@@ -448,6 +450,17 @@ it("shows an idle thread as a dot in the idle color, in the favicon and with its
   expect(indicator?.querySelector("svg")).toBeNull();
   expect(faviconSvg()).toContain(`fill="${THREAD_STATUS_MARKS.idle.color}" stroke="#102a43"`);
   expect(document.title).toBe(`${THREAD_STATUS_MARKS.idle.glyph} Test thread · Ready — Agentplane`);
+});
+
+it("shows an idle thread whose last turn failed as a red warning icon, in the favicon and with its own title glyph", async () => {
+  sharedThread = { last_turn_status: "TURN_STATUS_FAILED" };
+  const indicator = (await render()).querySelector(".agentplane-thread-status-indicator");
+  expect(indicator?.getAttribute("data-status")).toBe("turn_error");
+  expect(indicator?.querySelector("svg")).not.toBeNull();
+  expect(faviconSvg()).toContain(`fill="${THREAD_STATUS_MARKS.turn_error.color}"`);
+  // Not the red dot of a failed runner feed, which has a white inner ring.
+  expect(faviconSvg()).not.toContain('stroke="#fff"');
+  expect(document.title).toBe(`${THREAD_STATUS_MARKS.turn_error.glyph} Test thread · Turn failed — Agentplane`);
 });
 
 it("shows a stopped harness as an icon in the status indicator and the favicon, with its own title glyph", async () => {

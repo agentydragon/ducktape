@@ -183,3 +183,9 @@ class ThreadView(BaseModel):
     feed_status: Literal["active", "ended", "failed"] | None = Field(
         default=None, description="Runner feed lifecycle; None before the first attachment."
     )
+    last_turn_status: str | None = Field(
+        default=None,
+        description="The protocol's TurnStatus enum member, by name, of the thread's most recently completed turn: "
+        "TURN_STATUS_COMPLETED, TURN_STATUS_INTERRUPTED, TURN_STATUS_FAILED, TURN_STATUS_PROCESS_LOST, or "
+        "TURN_STATUS_UNSPECIFIED when the turn ended without a status; None while no turn has completed.",
+    )

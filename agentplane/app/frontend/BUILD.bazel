@@ -685,6 +685,17 @@ ts_library(
         ":live",
         ":sandbox_status",
         ":tab_metadata",
+        "//agentplane/app/frontend/threads:history_rows",
+    ],
+)
+
+agentplane_vitest_test(
+    name = "thread_status_test",
+    srcs = ["thread_status.test.ts"],
+    deps = [
+        ":client",
+        ":thread_status",
+        "//:node_modules/vitest",
     ],
 )
 

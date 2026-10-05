@@ -7,7 +7,7 @@
  */
 import { fromJson, type JsonValue } from "@bufbuild/protobuf";
 
-import { EventSchema, ItemKind, TurnStatus } from "../../../protocol/event_pb";
+import { EventSchema, ItemKind, TurnCompletedSchema, TurnStatus } from "../../../protocol/event_pb";
 import type { ThreadEntity } from "./thread_sync";
 
 /** A row is identified by its first entity: its key and reading anchor stay put while later steps
@@ -55,7 +55,8 @@ function runStep(entity: ThreadEntity): boolean {
   return kind === ItemKind.TOOL_CALL || kind === ItemKind.REASONING;
 }
 
-// An interrupt is usually the operator's own doing, so an interrupted turn reads as ordinary.
+// An interrupt is usually the operator's own doing, so an interrupted turn reads as ordinary. What is
+// prominent here is also what marks an idle thread as `turn_error` (turnErrorLabel).
 const TURN_OUTCOMES: Record<TurnStatus, { label: string; prominent: boolean }> = {
   [TurnStatus.UNSPECIFIED]: { label: "Turn ended without a status", prominent: true },
   [TurnStatus.COMPLETED]: { label: "Turn completed", prominent: false },
@@ -63,6 +64,14 @@ const TURN_OUTCOMES: Record<TurnStatus, { label: string; prominent: boolean }> =
   [TurnStatus.FAILED]: { label: "Turn failed", prominent: true },
   [TurnStatus.PROCESS_LOST]: { label: "Turn lost", prominent: true },
 };
+
+/** What a turn that ended in an error is called, for a turn that ended with `status`, a TurnStatus member
+ * name as a thread's `last_turn_status` carries it; null for an ending the thread shows as ordinary. A name
+ * outside TurnStatus throws. */
+export function turnErrorLabel(status: string): string | null {
+  const outcome = TURN_OUTCOMES[fromJson(TurnCompletedSchema, { status }).status];
+  return outcome.prominent ? outcome.label : null;
+}
 
 export interface LifecyclePresentation {
   label: string;

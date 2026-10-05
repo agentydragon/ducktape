@@ -3,6 +3,7 @@ import type { SandboxView, ThreadView } from "./client";
 import type { Live, ThreadsSnapshot } from "./live";
 import type { ThreadTabStatus } from "./tab_metadata";
 import { sandboxReady } from "./sandbox_status";
+import { turnErrorLabel } from "./threads/history_rows";
 
 export function snapshotFresh(live: Live<ThreadsSnapshot>): boolean {
   return live.stream.standing === "current" && live.health?.fresh === true && live.snapshot?.updates_connected === true;
@@ -27,10 +28,10 @@ export function threadStatusFromSnapshot(
     return { kind: "inactive", label: "No live harness confirmed", tabLabel: "Starting" };
   if (thread.harness_state !== "HARNESS_STATE_RUNNING")
     return { kind: "stopped", label: "Harness not running", tabLabel: "Stopped" };
-  const activeTurn = Boolean(thread.active_turn_id);
-  return {
-    kind: activeTurn ? "running" : "idle",
-    label: activeTurn ? "Turn running · Runner feed active · harness running" : "Runner feed active · harness running",
-    tabLabel: activeTurn ? "Running" : "Ready",
-  };
+  if (thread.active_turn_id)
+    return { kind: "running", label: "Turn running · Runner feed active · harness running", tabLabel: "Running" };
+  const turnError = thread.last_turn_status ? turnErrorLabel(thread.last_turn_status) : null;
+  if (turnError)
+    return { kind: "turn_error", label: `${turnError} · Runner feed active · harness running`, tabLabel: turnError };
+  return { kind: "idle", label: "Runner feed active · harness running", tabLabel: "Ready" };
 }

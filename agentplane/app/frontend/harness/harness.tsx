@@ -556,6 +556,18 @@ function withEndedAttachment(thread: ThreadView): ThreadView {
     : thread;
 }
 
+/** The `failedTurn` scenarios: the idle thread's history ends in a failed turn, which is also its last completed one. */
+function withFailedTurn(thread: ThreadView): ThreadView {
+  return thread.session_id === "s-1"
+    ? { ...thread, name: "Failed-turn thread", last_turn_status: "TURN_STATUS_FAILED" }
+    : thread;
+}
+
+function scenarioThread(thread: ThreadView): ThreadView {
+  if (scenario.endedAttachment) return withEndedAttachment(thread);
+  return scenario.failedTurn ? withFailedTurn(thread) : thread;
+}
+
 // A 32x32 checkerboard, 95 bytes: a real image, small enough to inline.
 const DIAGRAM_PNG =
   "iVBORw0KGgoAAAANSUhEUgAAACAAAAAgAQMAAABJtOi3AAAABlBMVEX///8ii+b/FUc9AAAAFElEQVR42mNg+A+ERBBEKmOgsnkA7b0/wU6R7xwAAAAASUVORK5CYII=";
@@ -1881,7 +1893,7 @@ routes.push(
     /^\/threads\/([0-9a-f-]+)$/,
     (match) => {
       const thread = THREADS_WITH_SANDBOXES.find((candidate) => candidate.id === match[1]);
-      return thread && scenario.endedAttachment ? withEndedAttachment(thread) : thread;
+      return thread && scenarioThread(thread);
     },
   ]
 );
@@ -2169,7 +2181,7 @@ class HarnessEventSource extends EventTarget {
     if (url.pathname === "/live/threads") {
       const snapshot: ThreadsSnapshot = {
         sandboxes: SANDBOXES,
-        threads: scenario.endedAttachment ? THREADS_WITH_SANDBOXES.map(withEndedAttachment) : THREADS_WITH_SANDBOXES,
+        threads: THREADS_WITH_SANDBOXES.map(scenarioThread),
         updates_connected: scenario.sidebarSource !== "database-disconnected",
         watch: watch(),
       };

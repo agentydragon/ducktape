@@ -266,21 +266,25 @@ The retained snapshot stays navigable during an outage, with separate warnings f
 connection, stale Kubernetes watch, and disconnected database listener. A Thread's live dot
 requires fresh sources, a running Sandbox, and its last observed harness state; a stale persisted
 RUNNING state alone does not make a suspended or deleted Sandbox look live. The snapshot includes
-the feed's active turn so the sidebar and open-thread composer can use the same status-dot
-component. These are operational snapshots, not replacements for a Thread's runner Event prefix.
+the feed's active turn, and how the Thread's last completed turn ended (`last_turn_status`, read
+from the newest stored `turn_completed` entry through a partial index), so the sidebar and
+open-thread composer can use the same status-dot component. These are operational snapshots, not
+replacements for a Thread's runner Event prefix.
 
 Every status indicator is drawn from one table, `frontend/status_mark.ts`, which gives each thread
 and Sandbox status its icon component (a Tabler icon, or one of `custom_mark_icons.tsx`) and color,
 and each thread status also its favicon shape and tab-title glyph. The in-page glyph (`mark_glyph.tsx`)
 and the browser-tab favicon (`thread_favicon.ts`, which hand-draws its own SVG) only render what it
 says. A thread shows two green chevrons moving left to right in the page while a turn runs, a steady
-light blue dot when its harness is live and waiting, a gray power icon when its harness is down, a red
-dot when its runner feed failed, and a gray dot when nothing else is live. A Sandbox shows a light blue
+light blue dot when its harness is live and waiting, a red warning triangle instead of that dot while
+the last turn to complete failed, was lost or ended without a status (an interrupt does not count; the
+next turn to complete without an error brings the dot back), a gray power icon when its harness is
+down, a red dot when its runner feed failed, and a gray dot when nothing else is live. A Sandbox shows a light blue
 play icon when its Pod is ready, a yellow clock while it comes up, a gray pause when suspended, a red
 cross when failed, and a gray cross once deleted or ended.
 
 The favicon draws the same marks but never moves, and the tab title leads with a plain text glyph for
-the thread's status (`»` running, `●` idle, `⏻` harness down, `○` not live, `×` failed). A favicon is only seen in a
+the thread's status (`»` running, `●` idle, `!` last turn errored, `⏻` harness down, `○` not live, `×` failed). A favicon is only seen in a
 background tab, where browsers throttle timers, so both change on status events rather than on a clock.
 
 ## Shutdown
