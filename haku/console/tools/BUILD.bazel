@@ -159,13 +159,8 @@ py_test(
     deps = [
         ":routine",
         "//:conftest",
-        "//haku/console:config",
         "//haku/console:conftest",
         "@pypi//fastmcp_slim",
-        "@pypi//httpx",
-        "@pypi//pydantic",
-        "@pypi//pytest",
         "@pypi//pytest_bazel",
-        "@pypi//respx",
     ],
 )
