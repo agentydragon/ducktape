@@ -492,6 +492,25 @@ def page_errors(page: Page) -> list[str]:
     return errors
 
 
+async def _wait_for_painted_frame(page: Page) -> None:
+    """Fonts applied, images decoded, a frame painted: the Playwright twin of `waitForStable` in
+    util/testing/frontend_visual/capture.mjs, which also says why `document.getAnimations()` is not awaited."""
+    await page.evaluate(
+        """
+        async () => {
+          await document.fonts.ready;
+          await Promise.all(
+            Array.from(document.images)
+              .filter((image) => !image.complete)
+              .map((image) => image.decode().catch(() => {}))
+          );
+          // Two frames: the first flushes pending style and layout, the second lands after paint.
+          await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+        }
+        """
+    )
+
+
 async def _take_stable_full_page_screenshot(page: Page, target_path: Path) -> Path:
     # Pin the `sticky top-0` header to the top of the full-page capture: Playwright paints a
     # sticky element at its last on-screen position, so a mid-page scroll (e.g. after a rollout
@@ -500,6 +519,7 @@ async def _take_stable_full_page_screenshot(page: Page, target_path: Path) -> Pa
     previous_bytes: bytes | None = None
     previous_path: Path | None = None
     for attempt in range(6):
+        await _wait_for_painted_frame(page)
         attempt_path = target_path.with_name(f"{target_path.stem}.attempt{attempt}{target_path.suffix}")
         await page.screenshot(path=str(attempt_path), full_page=True, animations="disabled", caret="hide", scale="css")
         current_bytes = attempt_path.read_bytes()
@@ -508,7 +528,6 @@ async def _take_stable_full_page_screenshot(page: Page, target_path: Path) -> Pa
             return target_path
         previous_bytes = current_bytes
         previous_path = attempt_path
-        await page.wait_for_timeout(150)
     assert previous_path is not None
     shutil.copy(previous_path, target_path)
     return target_path

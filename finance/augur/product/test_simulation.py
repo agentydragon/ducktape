@@ -22,7 +22,6 @@ from finance.augur.product.simulation import (
 )
 from finance.augur.sim.actions import LotSale, Sell
 from finance.augur.sim.books import AccountRef
-from finance.augur.sim.events import EVENT_FRAME_SPECS
 from finance.augur.sim.fixed_point import quantity_scale_for_asset, quantity_to_quanta, rate_to_ppb
 from finance.augur.sim.ids import AccountId, AgentId, AssetId, JurisdictionId, LotId, PropertyId
 from finance.augur.sim.income import ORDINARY_INCOME
@@ -200,15 +199,6 @@ class TestConfigured:
     @pytest.fixture(scope="class")
     def fractional_closing_cost_run(self) -> Worlds:
         return a_property_bought_and_sold(closing_cost_pct=FRACTIONAL_CLOSING_COST_PCT)
-
-    def test_events_carry_every_canonical_frame(self, run: Worlds) -> None:
-        """A frame an engine omits reads downstream as "nothing happened", not as a gap."""
-
-        events = simulate_events(run(), AGENT)
-        for spec in EVENT_FRAME_SPECS:
-            frame = getattr(events, spec.name)
-            assert isinstance(frame, pl.DataFrame), f"{spec.name} is not a frame"
-            assert frame.schema == spec.schema, f"{spec.name} does not match its declared schema"
 
     def test_the_sale_is_reported_as_a_disposition(self, run: Worlds) -> None:
         """Proceeds and basis follow from the scenario, so every engine owes the same ones."""

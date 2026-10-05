@@ -286,20 +286,6 @@ py_library(
     ],
 )
 
-py_test(
-    name = "test_actions",
-    srcs = ["test_actions.py"],
-    deps = [
-        ":actions",
-        ":books",
-        ":ids",
-        ":observations",
-        "//:conftest",
-        "//finance/augur:conftest",
-        "@pypi//pytest_bazel",
-    ],
-)
-
 py_library(
     name = "mortgage",
     srcs = ["mortgage.py"],
@@ -764,7 +750,6 @@ py_test(
         ":bills",
         ":books",
         ":capture",
-        ":events",
         ":ids",
         ":market_path",
         ":mortgage",

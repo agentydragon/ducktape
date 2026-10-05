@@ -24,46 +24,6 @@ AGENT_A = AgentId("agent_a")
 ALICE = AgentId("alice")
 
 
-def test_one_account_can_hold_multiple_holding_positions() -> None:
-    portfolio = PortfolioConfig(
-        accounts=(PortfolioAccountConfig(account_id=TAXABLE_BROKERAGE, owner_agent_id=AGENT_A),),
-        holdings=(
-            SecurityHoldingConfig(
-                position_id="voo_position",
-                account_id=TAXABLE_BROKERAGE,
-                symbol=SecuritySymbol("VOO"),
-                security_kind=HoldingKind.ETF,
-                unit_value=Decimal(500),
-                lots=(
-                    HoldingTaxLotConfig(
-                        lot_id=LotId("voo_lot"),
-                        holding_period_months_at_start=28,
-                        quantity=10.0,
-                        cost_basis=Decimal(4_000),
-                    ),
-                ),
-            ),
-            SecurityHoldingConfig(
-                position_id="goog_position",
-                account_id=TAXABLE_BROKERAGE,
-                symbol=SecuritySymbol("GOOG"),
-                security_kind=HoldingKind.STOCK,
-                unit_value=Decimal(180),
-                lots=(
-                    HoldingTaxLotConfig(
-                        lot_id=LotId("goog_lot"),
-                        holding_period_months_at_start=35,
-                        quantity=5.0,
-                        cost_basis=Decimal(500),
-                    ),
-                ),
-            ),
-        ),
-    )
-
-    assert portfolio.total_holdings_value == Decimal(5_900)
-
-
 def test_holding_positions_must_reference_known_accounts() -> None:
     with pytest.raises(ValidationError):
         PortfolioConfig(

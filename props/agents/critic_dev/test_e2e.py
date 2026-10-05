@@ -14,12 +14,18 @@ Uses the in-container architecture with:
 
 from __future__ import annotations
 
+import json
 import logging
+import textwrap
 
 import pytest
 import pytest_bazel
+from hamcrest import all_of, assert_that
+from more_itertools import one
 
 from agent_core.testing.responses import PlayGen
+from mcp_infra.exec.matchers import exited_successfully, stdout_contains
+from mcp_infra.exec.models import BaseExecResult
 from props.agents.critic.testing.mocks import CriticMock
 from props.agents.critic_dev.testing.mocks import CriticDevMock
 from props.agents.critic_dev.testing.orchestration_fixtures import (
@@ -32,7 +38,6 @@ from props.core.agent_types import TargetMetric
 from props.core.eval_api_models import CriticRunStatus, GradingStatusResponse, RunCriticRequest, StartCriticResponse
 from props.core.ids import DefinitionId, SnapshotSlug
 from props.core.models.examples import ExampleKind, WholeSnapshotExample
-from props.db.database import Database
 from props.db.models import AgentRun, AgentRunStatus
 from props.testing.constants import DEFAULT_TEST_MODEL
 from props.testing.mocks import get_system_prompt_text
@@ -152,46 +157,56 @@ async def test_po_orchestrates_critic_with_system_prompt_check(
                 assert optimizer_run.status == AgentRunStatus.EXITED, f"Expected COMPLETED, got {optimizer_run.status}"
 
 
-@pytest.mark.timeout(180)
-async def test_critic_cannot_push_images(e2e_stack, synced_db: Database, all_files_scope, critic_image):
-    """Test that critic agents cannot push images to registry.
+# Runs inside the critic container with the credentials it was launched with and reports the status the registry
+# proxy answers at each step of an image push. Stdlib only: the critic image carries no crane or curl.
+_REGISTRY_PUSH_PROBE = textwrap.dedent(
+    """\
+    import base64, hashlib, json, os, urllib.error, urllib.request
 
-    Critic agents should only be able to read from the registry, not write.
-    Attempting to push should result in a 403 Forbidden error.
+    auth = base64.b64encode(f"{os.environ['PGUSER']}:{os.environ['PGPASSWORD']}".encode()).decode()
+    manifest = b'{"schemaVersion": 2}'
 
-    Note: This test verifies the permission model at the registry proxy level.
-    The critic container has RLS-scoped database access via a temp user,
-    and the registry proxy should check the agent type before allowing pushes.
+
+    def status(method, path, body=None):
+        url = os.environ["PROPS_REGISTRY_URL"] + path
+        request = urllib.request.Request(url, data=body, method=method, headers={"Authorization": "Basic " + auth})
+        try:
+            with urllib.request.urlopen(request, timeout=20) as response:
+                return response.status
+        except urllib.error.HTTPError as error:
+            return error.code
+
+
+    digest = hashlib.sha256(manifest).hexdigest()
+    statuses = {
+        "api_check": status("GET", "/v2/"),
+        "blob_upload": status("POST", "/v2/critic/blobs/uploads/", b""),
+        "manifest_put": status("PUT", f"/v2/critic/manifests/sha256:{digest}", manifest),
+    }
+    print(json.dumps(statuses, sort_keys=True))
     """
+)
+
+
+@pytest.mark.timeout(180)
+async def test_critic_cannot_push_images(e2e_stack, all_files_scope, critic_image):
+    """A critic's own credentials authenticate to the registry proxy, but both steps of an image push are refused.
+
+    The first request anchors the other two: the proxy accepts the credentials, so the refusals come from the
+    role check and not from a bad login or an unreachable proxy. A critic-dev agent's push through the same proxy
+    is exercised by recipes/test_build_critic_e2e.py.
+    """
+    probes: list[BaseExecResult] = []
 
     @CriticMock.mock()
     def mock(m: CriticMock) -> PlayGen:
         yield None  # First request
-
-        # Try crane push from critic container — should fail because
-        # critics don't have registry write access (403 Forbidden).
-        result = yield from m.exec_roundtrip(
-            [
-                "sh",
-                "-c",
-                "REGISTRY=${PROPS_REGISTRY_URL#http://}; "
-                "REGISTRY=${REGISTRY#https://}; "
-                "crane push /workspace/ $REGISTRY/test-push:latest --insecure 2>&1",
-            ],
-            timeout_ms=30000,
-        )
-        stdout = result.stdout if isinstance(result.stdout, str) else ""
-        stderr = result.stderr if isinstance(result.stderr, str) else ""
-        logger.info(f"Critic push attempt stdout: {stdout}")
-        logger.info(f"Critic push attempt stderr: {stderr}")
-
-        # Submit zero issues (expected behavior: push failed, critic still completes)
-        yield m.submit(issues_count=0, summary="Push attempt completed (expected to fail)")
+        probes.append((yield from m.exec_roundtrip(["python3", "-c", _REGISTRY_PUSH_PROBE], timeout_ms=60000)))
+        yield m.submit(issues_count=0, summary="Registry probe completed")
 
     async with e2e_stack({DEFAULT_TEST_MODEL: mock}, images=[critic_image]) as stack:
-        critic_image_resolved = stack.resolved_images["critic"]
-        run_id = await stack.registry.run_critic(
-            image=critic_image_resolved,
+        await stack.registry.run_critic(
+            image=stack.resolved_images["critic"],
             example=all_files_scope,
             model=stack.model,
             timeout_seconds=TEST_TIMEOUT_SECONDS,
@@ -199,12 +214,13 @@ async def test_critic_cannot_push_images(e2e_stack, synced_db: Database, all_fil
             budget_usd=5.0,
         )
 
-        # Verify critic completed (it should complete even though push failed)
-        with synced_db.session() as session:
-            critic_run = session.get(AgentRun, run_id)
-            assert critic_run is not None
-            # The critic should complete because it handled the push failure gracefully
-            assert critic_run.status == AgentRunStatus.EXITED
+    assert_that(
+        one(probes),
+        all_of(
+            exited_successfully(),
+            stdout_contains(json.dumps({"api_check": 200, "blob_upload": 403, "manifest_put": 403}, sort_keys=True)),
+        ),
+    )
 
 
 if __name__ == "__main__":

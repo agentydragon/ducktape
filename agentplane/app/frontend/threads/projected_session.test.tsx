@@ -21,7 +21,16 @@ import { RetainedDisclosureProvider } from "./retained_disclosures";
 import { DEGRADED_AFTER_MS, STALE_AFTER_MS } from "../stream_status";
 import { THREAD_STATUS_MARKS } from "../status_mark";
 import { testItem } from "./thread_entity_fixture";
-import { entity, reference, serving, THREAD, threadState, toggle, viewState } from "./thread_state_fixture";
+import {
+  badgeLabels,
+  entity,
+  reference,
+  serving,
+  THREAD,
+  threadState,
+  toggle,
+  viewState,
+} from "./thread_state_fixture";
 import { ThreadSyncContext, type ThreadEntity, type ThreadState, type ThreadSync } from "./thread_sync";
 import { TopbarContext } from "../topbar";
 
@@ -904,10 +913,41 @@ describe("recovery presentation", () => {
       ],
       true
     );
-    expect(run.querySelector('[aria-label="Retention unknown"]')).not.toBeNull();
-    expect(run.querySelector('[aria-label="Retained in context"]')).not.toBeNull();
-    expect(run.querySelector('[aria-label="Interrupted"]')).not.toBeNull();
-    expect(run.querySelector('[aria-label="Failed"]')).not.toBeNull();
-    expect(run.querySelector('[aria-label="Streaming"]')).toBeNull();
+    // The retained call adds nothing of its own beside the failure it carries.
+    expect(badgeLabels(run).sort()).toEqual(["Failed", "Interrupted", "Retention unknown"]);
+  });
+
+  it("gives a collapsed run of retained, finished steps a header with no badges", async () => {
+    const [run] = await renderHistory(
+      [
+        testItem(1, ItemKind.TOOL_CALL, {
+          tool_name: "test-read",
+          completion: "tool",
+          tool_succeeded: true,
+          recovery: RecoveryDisposition.RETAINED,
+        }),
+        testItem(
+          2,
+          ItemKind.REASONING,
+          { recovery: RecoveryDisposition.RETAINED },
+          { textRef: reference("test-entity-2", "text") }
+        ),
+        testItem(3, ItemKind.TOOL_CALL, {
+          tool_name: "test-shell",
+          completion: "tool",
+          tool_succeeded: true,
+          recovery: RecoveryDisposition.RETAINED,
+        }),
+      ],
+      false,
+      { "test-entity-2:text": "Kept in context" }
+    );
+    const summary = run.querySelector("summary")!;
+    expect(summary.textContent).toContain("2 tool calls, 1 reasoning step");
+    expect(badgeLabels(run)).toEqual([]);
+
+    await toggle(summary);
+    expect(run.textContent).toContain("test-read");
+    expect(badgeLabels(run)).toEqual([]);
   });
 });
