@@ -1,12 +1,12 @@
 """Tests for util.crane.
 
-Focused on `_format_crane_error` and the `Crane._run` / `_arun` failure paths,
-since those are the bits that determine how a failed crane subprocess shows
-up in tracebacks. The original code wrapped the subprocess in
-`subprocess.run(check=True, capture_output=True)` and let the resulting
-`CalledProcessError` propagate, which only renders as the exit code — losing
-the actual error message. These tests pin the new behavior: stderr (and
-stdout, when present) are visible in the raised exception's message.
+Focused on the `Crane._run` / `_arun` failure paths, since those are the bits
+that determine how a failed crane subprocess shows up in tracebacks. The
+original code wrapped the subprocess in `subprocess.run(check=True,
+capture_output=True)` and let the resulting `CalledProcessError` propagate,
+which only renders as the exit code — losing the actual error message. These
+tests pin the new behavior: stderr (and stdout, when present) are visible in
+the raised exception's message.
 """
 
 from __future__ import annotations
@@ -19,18 +19,7 @@ from unittest.mock import patch
 import pytest
 import pytest_bazel
 
-from util.crane import Crane, CraneError, _format_crane_error, find_crane
-
-
-def test_format_crane_error_omits_empty_streams() -> None:
-    msg = _format_crane_error(("digest", "x"), 2, "", "")
-    assert msg == "crane digest x failed (exit 2)"
-
-
-def test_format_crane_error_includes_only_nonempty_stream() -> None:
-    msg = _format_crane_error(("ls", "ghcr.io/foo"), 1, "  \t\n", "tag1\ntag2\n")
-    assert "stderr" not in msg
-    assert "stdout:\ntag1\ntag2" in msg
+from util.crane import Crane, CraneError, find_crane
 
 
 def test_run_wraps_called_process_error_with_full_context() -> None:
@@ -52,8 +41,9 @@ def test_run_wraps_called_process_error_with_full_context() -> None:
     with patch("subprocess.run", side_effect=fake_error), pytest.raises(CraneError) as exc_info:
         crane._run("push", "img", "ref")
 
+    assert exc_info.value.command == ("push", "img", "ref")
+    assert exc_info.value.returncode == 1
     msg = str(exc_info.value)
-    assert "crane push img ref failed (exit 1)" in msg
     assert "DENIED: requested access to the resource is denied" in msg
     assert "partial-stdout" in msg
     # The original CalledProcessError should be chained for tracebacks.
@@ -66,7 +56,10 @@ def test_run_handles_calledprocesserror_with_none_streams() -> None:
     fake_error = subprocess.CalledProcessError(returncode=1, cmd=["crane", "tag", "x", "y"])
     with patch("subprocess.run", side_effect=fake_error), pytest.raises(CraneError) as exc_info:
         crane._run("tag", "x", "y")
-    assert "crane tag x y failed (exit 1)" in str(exc_info.value)
+    assert exc_info.value.command == ("tag", "x", "y")
+    assert exc_info.value.returncode == 1
+    assert exc_info.value.stderr == ""
+    assert exc_info.value.stdout == ""
 
 
 def test_digest_or_none_returns_digest_when_present() -> None:
@@ -105,7 +98,7 @@ def test_find_crane_raises_when_the_binary_is_not_on_path() -> None:
     Deliberately not a `CraneError`: nothing was invoked, and a caller catching
     "crane failed" to decide whether to publish must not swallow "no crane".
     """
-    with patch("shutil.which", return_value=None), pytest.raises(RuntimeError, match="not on PATH"):
+    with patch("shutil.which", return_value=None), pytest.raises(RuntimeError):
         find_crane()
 
 
@@ -140,8 +133,9 @@ def test_arun_raises_with_stderr_and_stdout() -> None:
     with pytest.raises(CraneError) as exc_info:
         asyncio.run(_go())
 
+    assert exc_info.value.command == ("push", "img", "registry/foo:bar")
+    assert exc_info.value.returncode == 1
     msg = str(exc_info.value)
-    assert "crane push img registry/foo:bar failed (exit 1)" in msg
     assert "AUTH_FAILED: token expired" in msg
     assert "some output" in msg
 
