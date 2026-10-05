@@ -129,6 +129,7 @@ impl GraphFixture {
             files
         }
         let before = snapshot(&self.modules);
+        let mut codes = Vec::new();
         for dry_run in [true, false] {
             let mut args = args.to_vec();
             if dry_run {
@@ -150,7 +151,9 @@ impl GraphFixture {
                 before,
                 "{args:?}: spec changed after refusal"
             );
+            codes.push(out.status.code());
         }
+        assert_eq!(codes[0], codes[1], "dry-run and apply must agree");
     }
 
     /// Configure only this child process, including optional editor overrides.
