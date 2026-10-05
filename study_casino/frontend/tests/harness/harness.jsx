@@ -1,7 +1,7 @@
 // Visual-test harness for the Study Casino. Pre-seeds the in-memory state
 // cache directly via the `casinoSync.state` observable so the harness
 // renders a deterministic, populated screenshot without contacting the
-// backend. The `?page=` query param (set by visual-test-lib) selects a
+// backend. The `?page=` query param (set by the visual sweep) selects a
 // scenario: full-app renders with different mocked `/state` payloads, or
 // standalone components that carry transient React state in production.
 
@@ -13,11 +13,11 @@ import { SessionAwardToast } from "../../StudyView.jsx";
 import { ChangelogModal } from "../../ChangelogModal.jsx";
 import { COLORS } from "../../shared.jsx";
 import { casinoSync } from "../../sync.js";
-import { SCENARIOS } from "./scenarios.mjs";
+import SCENARIOS from "./scenarios.json";
 
-// visual-test-lib freezes the wall clock via an init script before this
+// The visual sweep freezes the wall clock via an init script before this
 // bundle runs, so Date.now() *is* the frozen instant — reading it here keeps
-// every relative-time fixture below in sync with the lib's frozen date
+// every relative-time fixture below in sync with the sweep's frozen date
 // without duplicating the magic timestamp.
 const FROZEN_NOW_MS = Date.now();
 
@@ -146,7 +146,7 @@ function seedActiveSession(minutesAgo) {
   );
 }
 
-// One entry per scenario, keyed as scenarios.mjs keys them: each seeds whatever state its scene
+// One entry per scenario, keyed as scenarios.json keys them: each seeds whatever state its scene
 // needs and returns the tree to mount. A record rather than a switch so the scene set is data the
 // check below can compare -- and so an unrecognised name fails instead of quietly rendering the
 // main page, which a typo used to do.
@@ -174,7 +174,8 @@ const SCENES = {
     return <StudyCasino />;
   },
   // The #shot box shrink-wraps the toast (plus a little padding for its shadow), so the PNG is
-  // just the toast on its felt backdrop — not however much of the viewport the test asks for.
+  // just the toast on its felt backdrop — not however much of the viewport the test asks for, so
+  // scenarios.json leaves this scenario the default viewport.
   session_award: () => (
     <Standalone>
       <div id="shot" style={{ display: "inline-block", padding: 16 }}>
@@ -182,6 +183,9 @@ const SCENES = {
       </div>
     </Standalone>
   ),
+  // ChangelogModal is a real `position: fixed; inset: 0` overlay in production, so its extent is
+  // genuinely the viewport -- scenarios.json captures it via #app, not #shot, and it seeds no sync
+  // state to wait on.
   changelog: () => (
     <Standalone>
       <ChangelogModal entries={CHANGELOG_FIXTURE} onAck={() => {}} />
@@ -189,7 +193,7 @@ const SCENES = {
   ),
 };
 
-// scenarios.mjs is what the sweep renders; SCENES is what this harness can build. A name in one
+// scenarios.json is what the sweep renders; SCENES is what this harness can build. A name in one
 // and not the other is a scene never captured, or one the runner asks for and cannot get.
 const declared = Object.keys(SCENARIOS);
 const buildable = Object.keys(SCENES);
@@ -197,7 +201,7 @@ const missing = declared.filter((name) => !buildable.includes(name));
 const unswept = buildable.filter((name) => !declared.includes(name));
 if (missing.length || unswept.length) {
   throw new Error(
-    `scenarios.mjs and harness scenes disagree: ${JSON.stringify({ missingFromHarness: missing, missingFromScenarios: unswept })}`
+    `scenarios.json and harness scenes disagree: ${JSON.stringify({ missingFromHarness: missing, missingFromScenarios: unswept })}`
   );
 }
 
@@ -205,6 +209,13 @@ const page = new URLSearchParams(window.location.search).get("page") || "main_pa
 const scene = SCENES[page];
 if (scene === undefined) throw new Error(`unknown harness scenario ${page}`);
 const element = scene();
+// The full-app scenes in scenarios.json wait for `[data-testid="sync-banner-offline"]`, the state
+// this settles into. Importing `casinoSync` also constructs the module-level singleton, which runs
+// its own startup fetches against the 503 stub above; their result lands after mount and is the
+// last change the page makes, replacing the `ok` status seeded here with `offline` (the header's
+// sync icon flips from a green check to a red bolt). Capturing before that photographs the icon
+// mid-flight. A harness that answered those fetches with fixtures would settle on `ok` instead --
+// a deliberate change to what these scenes show, which that selector would then fail on by name.
 casinoSync.status.set({ kind: "ok", lastSyncedAt: FROZEN_NOW_MS });
 
 createRoot(document.getElementById("app")).render(element);
