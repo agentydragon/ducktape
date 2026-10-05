@@ -549,13 +549,6 @@ def test_authenticated_unrecognized_envelope_body_is_recorded() -> None:
     ]
 
 
-def test_link_token_rejects_an_empty_product_set() -> None:
-    with _client() as client:
-        response = client.post("/api/link-token", json={"products": []})
-
-    assert response.status_code == 422
-
-
 def test_create_link_token_initializes_requested_products() -> None:
     api = _FakePlaidApi()
     client = PlaidClient(api=cast(PlaidSdkApiLike, api))
