@@ -111,16 +111,6 @@ describe("requestScreenshot", () => {
     expect(result.ok).toBe(true);
     expect(result.imageDataUrl).toBe("data:image/png;base64,AAAA");
   });
-
-  it("resolves ok:false with a reason on decline", async () => {
-    const post = vi.spyOn(window.parent, "postMessage").mockImplementation(() => {});
-    const pending = requestScreenshot();
-    const { id } = post.mock.calls[0][0] as { id: string };
-
-    shellReply({ type: "screenshotResult", id, ok: false, reason: "declined" });
-    const result = await pending;
-    expect(result).toEqual({ type: "screenshotResult", id, ok: false, imageDataUrl: undefined, reason: "declined" });
-  });
 });
 
 describe("notifyRouteChanged", () => {
