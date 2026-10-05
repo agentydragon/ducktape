@@ -1569,75 +1569,48 @@ mod tests {
     }
 
     #[test]
-    fn allows_shared_pure_function_helper() {
-        let mut module = parse(
-            "function helper(x) { return x; }\nconst oldImpl = () => helper(\"old\");\nconst keep = () => helper(\"keep\");\nexport { oldImpl as swapped, keep };\n",
-        );
-        strip_one_chunk(&mut module, &mk_symbols(&["swapped"]), "chunk.js").unwrap();
-        let emitted = emit(&module);
-        assert!(
-            emitted.contains("function helper"),
-            "residual export should keep shared helper:\n{emitted}",
-        );
-        assert!(
-            emitted.contains("keep"),
-            "residual export should remain:\n{emitted}",
-        );
-        assert!(
-            !emitted.contains("oldImpl"),
-            "swapped old implementation should be removed:\n{emitted}",
-        );
-    }
-
-    #[test]
-    fn allows_shared_pure_function_expression_helper() {
-        let mut module = parse(
-            "const helper = function(x) { return x; };\nconst oldImpl = () => helper(\"old\");\nconst keep = () => helper(\"keep\");\nexport { oldImpl as swapped, keep };\n",
-        );
-        strip_one_chunk(&mut module, &mk_symbols(&["swapped"]), "chunk.js").unwrap();
-        let emitted = emit(&module);
-        assert!(
-            emitted.contains("function"),
-            "residual export should keep shared function-expression helper:\n{emitted}",
-        );
-        assert!(
-            !emitted.contains("oldImpl"),
-            "swapped old implementation should be removed:\n{emitted}",
-        );
-    }
-
-    #[test]
-    fn allows_shared_intrinsic_alias_helper() {
-        let mut module = parse(
-            "const assign = Object.assign;\nconst oldImpl = () => assign({}, { old: true });\nconst keep = () => assign({}, { keep: true });\nexport { oldImpl as swapped, keep };\n",
-        );
-        strip_one_chunk(&mut module, &mk_symbols(&["swapped"]), "chunk.js").unwrap();
-        let emitted = emit(&module);
-        assert!(
-            emitted.contains("Object.assign"),
-            "residual export should keep intrinsic alias:\n{emitted}",
-        );
-        assert!(
-            !emitted.contains("oldImpl"),
-            "swapped old implementation should be removed:\n{emitted}",
-        );
-    }
-
-    #[test]
-    fn allows_shared_primitive_literal_helper() {
-        let mut module = parse(
-            "const preloadRel = \"modulepreload\";\nconst oldImpl = () => preloadRel;\nconst keep = () => preloadRel;\nexport { oldImpl as swapped, keep };\n",
-        );
-        strip_one_chunk(&mut module, &mk_symbols(&["swapped"]), "chunk.js").unwrap();
-        let emitted = emit(&module);
-        assert!(
-            emitted.contains("modulepreload"),
-            "residual export should keep the inert shared literal:\n{emitted}",
-        );
-        assert!(
-            !emitted.contains("oldImpl"),
-            "swapped old implementation should be removed:\n{emitted}",
-        );
+    fn allows_shared_helper_declaration_shapes() {
+        // Each case swaps `oldImpl` out while `keep` still reads the same
+        // helper, differing only in how the helper is declared (one
+        // `item_is_shareable_helper` branch each); the helper stays.
+        for (shape, source, retained) in [
+            (
+                "function declaration",
+                "function helper(x) { return x; }\nconst oldImpl = () => helper(\"old\");\nconst keep = () => helper(\"keep\");\nexport { oldImpl as swapped, keep };\n",
+                "function helper",
+            ),
+            (
+                "function expression",
+                "const helper = function(x) { return x; };\nconst oldImpl = () => helper(\"old\");\nconst keep = () => helper(\"keep\");\nexport { oldImpl as swapped, keep };\n",
+                "function",
+            ),
+            (
+                "intrinsic alias",
+                "const assign = Object.assign;\nconst oldImpl = () => assign({}, { old: true });\nconst keep = () => assign({}, { keep: true });\nexport { oldImpl as swapped, keep };\n",
+                "Object.assign",
+            ),
+            (
+                "primitive literal",
+                "const preloadRel = \"modulepreload\";\nconst oldImpl = () => preloadRel;\nconst keep = () => preloadRel;\nexport { oldImpl as swapped, keep };\n",
+                "modulepreload",
+            ),
+        ] {
+            let mut module = parse(source);
+            strip_one_chunk(&mut module, &mk_symbols(&["swapped"]), "chunk.js").expect(shape);
+            let emitted = emit(&module);
+            assert!(
+                emitted.contains(retained),
+                "{shape}: residual export should keep the shared helper:\n{emitted}",
+            );
+            assert!(
+                emitted.contains("keep"),
+                "{shape}: residual export should remain:\n{emitted}",
+            );
+            assert!(
+                !emitted.contains("oldImpl"),
+                "{shape}: swapped old implementation should be removed:\n{emitted}",
+            );
+        }
     }
 
     #[test]
