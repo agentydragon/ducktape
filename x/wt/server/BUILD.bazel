@@ -241,6 +241,7 @@ py_test(
         ":worktree_ids",
         ":wt_server",
         "//:conftest",
+        "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],
 )

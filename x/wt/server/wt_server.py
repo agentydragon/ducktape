@@ -484,7 +484,16 @@ class WtDaemon:
             return
 
         # A client's first request follows the ready handshake, and must already see the existing worktrees.
-        await self._run_discovery_once()
+        try:
+            await self._run_discovery_once()
+        except Exception as e:
+            write_startup_handshake(
+                success=False,
+                error_message=f"Initial worktree discovery failed: {e!r}",
+                protocol_version=1,
+                daemon_log_path=self.config.daemon_log_file,
+            )
+            raise
 
         # Signal listening via single handshake; redirect stdout to log afterward
         write_startup_handshake(
@@ -517,8 +526,6 @@ class WtDaemon:
         if not self.config.worktrees_dir.exists():
             raise RuntimeError(f"Worktrees directory does not exist: {self.config.worktrees_dir}")
         self._worktree_observer = start_watcher(self.store, self.config.worktrees_dir)
-
-        self._discovery_kick = asyncio.create_task(self._run_discovery_once())
 
     async def stop(self) -> None:
         logger.info("Stopping wt daemon")

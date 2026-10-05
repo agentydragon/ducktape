@@ -1,5 +1,6 @@
 import asyncio
 
+import pytest
 import pytest_bazel
 
 from x.wt.server import wt_server
@@ -33,6 +34,27 @@ async def test_registration_survives_discovery_scan_that_predates_it(real_config
 
     assert daemon.worktree_index is not None
     assert daemon.worktree_index.get_by_name("created") == created
+
+
+async def test_failed_initial_discovery_fails_the_startup_handshake(real_config, monkeypatch):
+    handshakes = []
+    monkeypatch.setattr(wt_server, "write_startup_handshake", lambda **kwargs: handshakes.append(kwargs))
+
+    async def refuse_scan(_worktrees_dir):
+        raise OSError("scan refused")
+
+    monkeypatch.setattr(wt_server, "scan_worktrees", refuse_scan)
+    daemon = WtDaemon(real_config)
+
+    try:
+        with pytest.raises(OSError, match="scan refused"):
+            await daemon.start()
+    finally:
+        await daemon.stop()
+
+    assert not any(handshake.get("ready") for handshake in handshakes)
+    assert handshakes[-1]["success"] is False
+    assert "scan refused" in handshakes[-1]["error_message"]
 
 
 if __name__ == "__main__":
