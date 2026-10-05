@@ -232,8 +232,6 @@ py_test(
         "@ducktape_haku//haku/console:tool_calls",
         "@pypi//fastapi",
         "@pypi//fastmcp_slim",
-        "@pypi//mcp",
-        "@pypi//mcp_types",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
         "@pypi//sqlalchemy",

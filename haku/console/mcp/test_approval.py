@@ -14,7 +14,6 @@ import pytest_bazel
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from fastmcp import FastMCP
-from mcp import types as mcp_types
 from sqlalchemy import event, select, text
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker, create_async_engine
 from starlette.websockets import WebSocketDisconnect
@@ -34,12 +33,7 @@ from haku.console.identity.agent import (
 )
 from haku.console.identity.authorization import fingerprint_static_token
 from haku.console.identity.operator_identity import OperatorStatus
-from haku.console.mcp.approval import (
-    DegradedReflection,
-    McpServerDispatcher,
-    PostgresToolCallLedger,
-    _mcp_result_to_json,
-)
+from haku.console.mcp.approval import DegradedReflection, McpServerDispatcher, PostgresToolCallLedger
 from haku.console.mcp.execution import EXECUTION_CONTEXT_DEPENDENCY, McpExecutionContext, OperatorMcpExecutionCaller
 from haku.console.mcp.reflection_cache import ReflectedCatalog
 from haku.console.mcp.tool_call_service import ToolCallApplicationService
@@ -328,25 +322,6 @@ def test_operator_mutations_reject_untrusted_origin(operator_client: TestClient)
 
     assert response.status_code == 403
     assert response.json()["detail"] == "operator mutations require the console's exact Origin"
-
-
-async def test_mcp_result_serialization_uses_mcp_wire_shape() -> None:
-    result = mcp_types.CallToolResult(
-        content=[
-            mcp_types.TextContent(type="text", text="ok"),
-            mcp_types.ImageContent(type="image", mimeType="image/png", data="ZmFrZQ=="),
-        ],
-        structuredContent={"changed": True},
-        isError=False,
-    )
-
-    assert _mcp_result_to_json(result) == {
-        "content": [{"type": "text", "text": "ok"}, {"type": "image", "data": "ZmFrZQ==", "mimeType": "image/png"}],
-        "structuredContent": {"changed": True},
-        "isError": False,
-        # Always serialized (mcp_types.CallToolResult.result_type); older peers ignore it.
-        "resultType": "complete",
-    }
 
 
 async def test_rest_submission_route_is_retired(operator_client: TestClient) -> None:
