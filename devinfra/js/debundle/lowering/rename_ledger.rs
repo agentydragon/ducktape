@@ -1190,13 +1190,26 @@ mod tests {
                 })
                 .collect(),
         };
+        let error = seal_error(ledger, &SealValidation::default());
         assert_eq!(
-            seal_error(ledger, &SealValidation::default()),
+            error,
             SealError::ConflictingIntents(vec![
                 conflict("a", [("first", A), ("second", B)]),
                 conflict("b", [("fourth", B), ("third", A)]),
             ]),
         );
+        // The rendered diagnostic names every target and both contributors.
+        let message = error.to_string();
+        for identifier in [
+            "first",
+            "second",
+            "third",
+            "fourth",
+            "contributor_a",
+            "contributor_b",
+        ] {
+            assert!(message.contains(identifier), "{identifier}: {message}");
+        }
     }
 
     #[test]
