@@ -5,7 +5,7 @@ closure="$(nix eval --raw .#precommit.outPath)"
 if [[ -n "${SPIKE_IMAGE:-}" ]]; then
   # Reuse the measured candidate while iterating on the harness. The container
   # job compares its embedded closure against this revision's evaluated closure.
-  printf 'image=%s\nclosure=%s\n' "$SPIKE_IMAGE" "$closure" >>"$GITHUB_OUTPUT"
+  printf 'image=%s\nclosure=%s\nbuilt=false\n' "$SPIKE_IMAGE" "$closure" >>"$GITHUB_OUTPUT"
   exit 0
 fi
 spike_dir="$(dirname "$0")"
@@ -22,4 +22,4 @@ nix path-info --closure-size "$closure"
 # Explicit candidate tag; no latest tag, branch pin, or deploy is changed.
 skopeo copy --insecure-policy "docker-archive:$work_dir/image" "docker://${IMAGE}:${GITHUB_SHA}"
 digest="$(skopeo inspect --format '{{.Digest}}' "docker://${IMAGE}:${GITHUB_SHA}")"
-printf 'image=%s@%s\nclosure=%s\n' "$IMAGE" "$digest" "$closure" >>"$GITHUB_OUTPUT"
+printf 'image=%s@%s\nclosure=%s\nbuilt=true\n' "$IMAGE" "$digest" "$closure" >>"$GITHUB_OUTPUT"

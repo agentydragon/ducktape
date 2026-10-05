@@ -45,6 +45,7 @@ jobs:
         run: bash devinfra/ci/x/precommit_container/build.sh
 
       - name: Publish the focused closure for a steady-state Nix comparison
+        if: steps.build-image.outputs.built == 'true'
         env:
           SOPS_AGE_KEY: ${{ secrets.SOPS_AGE_KEY }}
           PRECOMMIT_CLOSURE: ${{ steps.build-image.outputs.closure }}
