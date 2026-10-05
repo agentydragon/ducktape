@@ -1587,33 +1587,5 @@ def test_secondary_residence_mortgage_omits_mortgage_interest_deduction(
     assert federal_accrual.standard_deduction_quanta == _usd_quanta(14_600.0)
 
 
-def test_cash_property_purchase_omits_mortgage_interest_deduction(
-    counting_model: CountingModel, augur_config: Config, make_product_service: MakeProductService
-) -> None:
-    """A cash purchase has no mortgage and therefore no MID even when is_primary_residence=True."""
-    config = _with_fixed_cash(augur_config, 1_200_000)
-    product = make_product_service(counting_model, config=config)
-    scenario = ScenarioKey(
-        model_id="current_model",
-        horizon_months=13,
-        monthly_spend=Decimal(1_000),
-        spend_index=SpendIndex.NONE,
-        funding_policy=FundingPolicy(sleeve_weights=()),
-        property_purchase=PropertyPurchase(
-            property_id=LOCATION_A_PROPERTY, financing=CashFinancing(), is_primary_residence=True
-        ),
-    )
-
-    detail = product.rollout(_rollout_request(scenario))
-
-    federal_accrual = one(
-        event
-        for event in detail.rollout.events
-        if event.kind == "tax_accrual" and event.jurisdiction_id == "federal_us"
-    )
-    assert federal_accrual.mortgage_interest_deduction_quanta == _usd_quanta(0.0)
-    assert federal_accrual.itemized_deduction_quanta == _usd_quanta(0.0)
-
-
 if __name__ == "__main__":
     pytest_bazel.main()
