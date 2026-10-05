@@ -441,13 +441,11 @@ manifest:
     pyroute2: pyroute2
     pytest: pytest
     pytest_asyncio: pytest_asyncio
-    pytest_base_url: pytest_base_url
     pytest_bazel: pytest_bazel
     pytest_cov: pytest_cov
     pytest_env: pytest_env
     pytest_httpx2: pytest_httpx2
     pytest_mock: pytest_mock
-    pytest_playwright: pytest_playwright
     pytest_postgresql: pytest_postgresql
     pytest_shard: pytest_shard
     pytest_timeout: pytest_timeout
@@ -487,7 +485,6 @@ manifest:
     shellingham: shellingham
     shortuuid: shortuuid
     six: six
-    slugify: python_slugify
     sniffio: sniffio
     sortedcontainers: sortedcontainers
     soupsieve: soupsieve
@@ -507,7 +504,6 @@ manifest:
     terminado: terminado
     testcontainers: testcontainers
     tests: splitwise
-    text_unidecode: text_unidecode
     textual: textual
     tiktoken: tiktoken
     tiktoken_ext.openai_public: tiktoken
@@ -560,4 +556,4 @@ manifest:
     zstandard: zstandard
   pip_repository:
     name: pypi
-integrity: fc8188f68a6d9bd77c4bc61d1f570f64a90e552f410adfe35525e485a308ba2c
+integrity: 65a4a39b665712d2df2a8c361089265c5cec89fa04396734d00d1a334006b401
