@@ -49,74 +49,6 @@ fn annotated_effect_module(
 }
 
 #[test]
-fn proposer_proposes_lazy_consumer_alone_via_emit_auto_grown_exports() {
-    // `dep` is residual and NOT in entry's `export { ... }` list;
-    // `consumer` lazily reads it inside its body. Emit grows entry's
-    // export list on demand (docs/design.md "Valid peels and atomic
-    // modules", importability clause), so `consumer` is peelable on its
-    // own and `dep` stays in the residual entry.
-    //
-    // `anchor` exists so the chunk has at least one active logical
-    // module (the spec rejects all-residual chunks).
-    let chunk_source = r#"const anchor = "anchor";
-const dep = "secret";
-function consumer() { return dep; }
-export { anchor, consumer };
-"#;
-
-    let report = factorize_residual(
-        chunk_source,
-        vec![logical_module("anchors/anchor", &[Member::new("anchor")])],
-    );
-
-    assert!(
-        report.proposals.iter().all(
-            |proposal| proposal.status == PeelCandidateStatus::PeelableNow
-                && (proposal.landable_today
-                    || (!proposal.unaddressable_anonymous_owner_ids.is_empty()
-                        && !proposal.landability_notes.is_empty()))
-        ),
-        "propose proposals must be landable or explicitly advisory: {report:#?}",
-    );
-    assert!(
-        report.proposals.iter().any(|proposal| proposal.binding_ids
-            == vec!["consumer".to_string()]
-            && proposal.landable_today),
-        "lazy consumer should be peelable on its own: {report:#?}",
-    );
-}
-
-#[test]
-fn analyzer_proposer_keeps_importable_lazy_consumers_as_singletons() {
-    let chunk_source = r#"const anchor = "anchor";
-function dep() { return "dep"; }
-function consumer() { return dep(); }
-export { anchor, dep, consumer };
-"#;
-
-    let report = factorize_residual(
-        chunk_source,
-        vec![logical_module("anchors/anchor", &[Member::new("anchor")])],
-    );
-
-    assert!(
-        report.proposals.iter().any(|proposal| {
-            proposal.binding_ids == vec!["consumer".to_string()]
-                && proposal.landable_today
-                && proposal.status == PeelCandidateStatus::PeelableNow
-        }),
-        "entry-exported lazy provider should not be forced into consumer's proposal: {report:#?}",
-    );
-    assert!(
-        !report
-            .proposals
-            .iter()
-            .any(|proposal| proposal_has_bindings(proposal, &["dep", "consumer"])),
-        "importable lazy edge should not create a must-colocate factor: {report:#?}",
-    );
-}
-
-#[test]
 fn proposer_orders_chain_cells_by_dependency_and_materializer_accepts_promotion() {
     // Source: three `const` initializers chained by at-init reads
     // (b reads a, c reads b). Only `a` is logical-module-claimed;
@@ -162,32 +94,81 @@ export { a, b, c };
 }
 
 #[test]
-fn proposer_proposes_lazy_consumer_alone_when_multiple_residual_deps_are_unexported() {
-    // `dep_a` and `dep_b` are residual and unexported; `consumer` reads
-    // both lazily. As in the single-`dep` test above, all three are
-    // independently peelable: three singleton proposals, not one closure.
-    let chunk_source = r#"const anchor = "anchor";
+fn proposer_proposes_lazy_consumer_and_its_deps_as_landable_singletons() {
+    // A lazy edge is not a must-colocate constraint: `consumer` reads each
+    // dep only inside its body, so every dep and the consumer are
+    // independently peelable singletons, whether or not the dep is exported
+    // from the entry. Emit grows entry's `export { ... }` list on demand
+    // (docs/design.md "Valid peels and atomic modules", importability
+    // clause).
+    //
+    // Each source also holds `anchor` so the chunk has at least one active
+    // logical module (the spec rejects all-residual chunks).
+    for (case, chunk_source, deps) in [
+        (
+            "one unexported dep",
+            r#"const anchor = "anchor";
+const dep = "secret";
+function consumer() { return dep; }
+export { anchor, consumer };
+"#,
+            &["dep"][..],
+        ),
+        (
+            "one entry-exported dep",
+            r#"const anchor = "anchor";
+function dep() { return "dep"; }
+function consumer() { return dep(); }
+export { anchor, dep, consumer };
+"#,
+            &["dep"][..],
+        ),
+        (
+            "two unexported deps",
+            r#"const anchor = "anchor";
 const dep_a = "left";
 const dep_b = "right";
 function consumer() { return dep_a + dep_b; }
 export { anchor, consumer };
-"#;
-
-    let report = factorize_residual(
-        chunk_source,
-        vec![logical_module("anchors/anchor", &[Member::new("anchor")])],
-    );
-
-    for binding in ["dep_a", "dep_b", "consumer"] {
-        let singleton = report
-            .proposals
-            .iter()
-            .find(|p| p.binding_ids == vec![binding.to_string()])
-            .unwrap_or_else(|| panic!("proposer should propose `{{{binding}}}` as a singleton"));
-        assert!(
-            singleton.landable_today,
-            "singleton `{binding}` cell must be landable; got {singleton:?}",
+"#,
+            &["dep_a", "dep_b"][..],
+        ),
+    ] {
+        let report = factorize_residual(
+            chunk_source,
+            vec![logical_module("anchors/anchor", &[Member::new("anchor")])],
         );
+
+        assert!(
+            report.proposals.iter().all(|proposal| proposal.status
+                == PeelCandidateStatus::PeelableNow
+                && (proposal.landable_today
+                    || (!proposal.unaddressable_anonymous_owner_ids.is_empty()
+                        && !proposal.landability_notes.is_empty()))),
+            "{case}: proposals must be landable or explicitly advisory: {report:#?}",
+        );
+        for binding in deps.iter().copied().chain(["consumer"]) {
+            let singleton = report
+                .proposals
+                .iter()
+                .find(|p| p.binding_ids == vec![binding.to_string()])
+                .unwrap_or_else(|| {
+                    panic!("{case}: proposer should propose `{{{binding}}}` as a singleton")
+                });
+            assert!(
+                singleton.landable_today,
+                "{case}: singleton `{binding}` cell must be landable; got {singleton:?}",
+            );
+        }
+        for dep in deps {
+            assert!(
+                !report
+                    .proposals
+                    .iter()
+                    .any(|proposal| proposal_has_bindings(proposal, &[dep, "consumer"])),
+                "{case}: lazy edge must not create a must-colocate factor for `{dep}`: {report:#?}",
+            );
+        }
     }
 }
 
