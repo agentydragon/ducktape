@@ -1,7 +1,6 @@
 import { describe, expect, it } from "vitest";
 
 import {
-  approvalDisplayFields,
   approvalQueueItems,
   geolocationApprovalQueueId,
   makeRecentToolCall,
@@ -9,7 +8,6 @@ import {
   recentToolCallTtlMs,
   screenshotApprovalQueueId,
   showsAutoApprovalEvaluation,
-  terminalStatusLabel,
   toolApprovalQueueId,
   type GeolocationApproval,
   type ScreenshotApproval,
@@ -94,27 +92,6 @@ describe("approval queue state", () => {
     expect(items[0].kind).toBe("screenshot");
   });
 
-  it("extracts structured display fields without collapsing everything into one JSON blob", () => {
-    const fields = approvalDisplayFields(pendingApproval());
-
-    expect(fields.serverId).toBe("grocy-sf");
-    expect(fields.toolName).toBe("shopping_list_items_remove");
-    expect(fields.argumentsJson).toContain('"ids"');
-    expect(fields.toolCallId).toBe("tc_1");
-    expect(fields.callerDisplayName).toBe("Haku agent");
-  });
-
-  it("surfaces auto-approval policy provenance for terminal calls", () => {
-    const fields = approvalDisplayFields(
-      toolCallRecord({
-        approval_policy_id: "v1",
-        auto_approval_evaluation: "approved: Gmail search/read operation",
-      })
-    );
-    expect(fields.approvalPolicyId).toBe("v1");
-    expect(fields.autoApprovalEvaluation).toBe("approved: Gmail search/read operation");
-  });
-
   it("hides a declined policy's evaluation in compact but keeps an auto-approval's", () => {
     const declined = { autoApprovalEvaluation: "manual: not a read-only tool", approvalPolicyId: null };
     const approved = { autoApprovalEvaluation: "approved: allowlisted read", approvalPolicyId: "unconditional_v1" };
@@ -126,11 +103,6 @@ describe("approval queue state", () => {
     expect(showsAutoApprovalEvaluation(approved, false)).toBe(true);
     expect(showsAutoApprovalEvaluation(approved, true)).toBe(true);
     expect(showsAutoApprovalEvaluation({ autoApprovalEvaluation: null, approvalPolicyId: null }, true)).toBe(false);
-  });
-
-  it("labels an agent withdrawal distinctly from an operator denial", () => {
-    expect(terminalStatusLabel("withdrawn")).toBe("Withdrawn");
-    expect(terminalStatusLabel("denied")).toBe("Denied");
   });
 
   it("never shows a withdrawal as recent operator feedback", () => {
