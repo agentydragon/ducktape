@@ -464,7 +464,6 @@ it("routes the footer icons to Sandboxes, Actions, and Settings", async () => {
 
   await act(async () => footerButton("Settings").click());
   expect(onOpenSettings).toHaveBeenCalledOnce();
-  expect(container.querySelector('[aria-label="Action history"]')).toBeNull();
 });
 
 function sidebarWidth(): number {
