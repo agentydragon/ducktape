@@ -181,6 +181,8 @@ class FakeSync {
   /** How many reads of bodies have reached the proxy, and what each waits for before it is answered. */
   bodyReads = 0;
   beforeBodyRead: ((read: number) => Promise<void>) | null = null;
+  /** Whether every read of bodies is refused 400, as one the proxy rejects is. */
+  refusingBodies = false;
   readonly requests: { thread: string; method: string; path: string; query: URLSearchParams; subset: Subset | null }[] =
     [];
   readonly #live = new Map<string, Connection>();
@@ -210,6 +212,8 @@ class FakeSync {
     if (instead !== undefined) return instead;
     if (subset !== null) {
       if (relation === "thread_payload_chunk") await this.beforeBodyRead?.(++this.bodyReads);
+      if (relation === "thread_payload_chunk" && this.refusingBodies)
+        return Response.json({ message: "test refusal" }, { status: 400 });
       const rows = relation === "thread_entity" ? this.#entitySubset(subset) : this.#bodySubset(subset);
       return new Response(
         JSON.stringify({
@@ -419,8 +423,15 @@ function Rows({ rows, history }: { rows: ThreadEntity[]; history: ThreadWindow }
 }
 
 function Body({ id, reference }: { id: string; reference: PayloadRef }): JSX.Element {
-  const { body } = electricThreadSync.usePayload(reference);
-  return <p data-body={id}>{body ?? "loading"}</p>;
+  const { body, error, retry } = electricThreadSync.usePayload(reference);
+  return (
+    <>
+      <p data-body={id} data-stopped={error ?? undefined}>
+        {body ?? "loading"}
+      </p>
+      {error && <button onClick={retry}>retry {id}</button>}
+    </>
+  );
 }
 
 function Commands({ ids }: { ids: readonly string[] }): JSX.Element {
@@ -889,8 +900,13 @@ it("reads as many rows as it held when the log it was to follow on from has been
   expect(itemsShown(container)).toContain("item-10@10");
 });
 
-function bodyText(container: HTMLElement): string | null | undefined {
-  return container.querySelector('[data-body="item-1"]')?.textContent;
+function bodyText(container: HTMLElement, id = "item-1"): string | null | undefined {
+  return container.querySelector(`[data-body="${id}"]`)?.textContent;
+}
+
+/** Why the body shown for `id` stopped loading: null while it has not, undefined where none is shown. */
+function bodyStopped(container: HTMLElement, id: string): string | null | undefined {
+  return container.querySelector(`[data-body="${id}"]`)?.getAttribute("data-stopped");
 }
 
 function threadWithBody(sync: FakeSync): void {
@@ -959,6 +975,58 @@ it("reads the bodies in view again when Electric retires their log, for the chun
 
   await vi.waitFor(() => expect(bodyText(container)).toBe("Hello there"));
   expect(sync.posted("chunks/text").length - before).toBe(1);
+});
+
+/** A thread whose first body has loaded, and whose second row arrives with a body the proxy refuses to read. */
+async function threadWithRefusedBody(sync: FakeSync): Promise<HTMLDivElement> {
+  threadWithBody(sync);
+  const container = await renderThread(bodiesView);
+  await vi.waitFor(() => expect(bodyText(container)).toBe("Hello"));
+  sync.refusingBodies = true;
+  await sync.send("entities", (relation) => [
+    change(relation, "insert", item(2, "epoch-1", { text_ref: textRef("b", 1) })),
+  ]);
+  await vi.waitFor(() => expect(bodyStopped(container, "item-2")).not.toBeNull());
+  return container;
+}
+
+it("stops only the bodies a refused read left unloaded, whatever arrives for the others", async () => {
+  const sync = stubSync();
+  const container = await threadWithRefusedBody(sync);
+
+  expect(bodyStopped(container, "item-1")).toBeNull();
+  await sync.send("chunks/text", (relation) => [change(relation, "insert", chunk("a", 2, " there"))]);
+  await sync.send("entities", (relation) => [
+    change(relation, "update", item(1, "epoch-1", { text_ref: textRef("a", 3) })),
+  ]);
+  await vi.waitFor(() => expect(bodyText(container)).toBe("Hello there"));
+  expect(bodyStopped(container, "item-1")).toBeNull();
+  expect(bodyStopped(container, "item-2")).not.toBeNull();
+});
+
+it("takes a body as no longer stopped once its chunks arrive", async () => {
+  const sync = stubSync();
+  const container = await threadWithRefusedBody(sync);
+
+  sync.refusingBodies = false;
+  await sync.send("chunks/text", (relation) => [change(relation, "insert", chunk("b", 0, "Bye"))]);
+
+  await vi.waitFor(() => expect(bodyText(container, "item-2")).toBe("Bye"));
+  expect(bodyStopped(container, "item-2")).toBeNull();
+});
+
+it("reads a stopped body again on retry", async () => {
+  const sync = stubSync();
+  const container = await threadWithRefusedBody(sync);
+
+  sync.refusingBodies = false;
+  sync.chunks.push(chunk("b", 0, "Bye"));
+  await act(async () =>
+    [...container.querySelectorAll("button")].find((button) => button.textContent === "retry item-2")!.click()
+  );
+
+  await vi.waitFor(() => expect(bodyText(container, "item-2")).toBe("Bye"));
+  expect(bodyStopped(container, "item-2")).toBeNull();
 });
 
 it("retains the windows of the last few threads the reader left, not every one", async () => {

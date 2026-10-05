@@ -4,7 +4,7 @@ import { create, toJson, type MessageInitShape } from "@bufbuild/protobuf";
 import { MantineProvider } from "@mantine/core";
 import { act } from "react";
 import { createRoot } from "react-dom/client";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { EventSchema, ItemKind, RecoveryDisposition, TurnStatus } from "../../../protocol/event_pb";
 import { RetainedDisclosureProvider } from "./retained_disclosures";
@@ -23,7 +23,12 @@ afterEach(async () => {
   }
 });
 
-async function renderCard(card: ThreadEntity, bodies: Record<string, string>, live = false): Promise<HTMLDivElement> {
+async function renderCard(
+  card: ThreadEntity,
+  bodies: Record<string, string>,
+  live = false,
+  stopped: ReadonlyMap<string, () => void> = new Map()
+): Promise<HTMLDivElement> {
   const container = document.createElement("div");
   document.body.append(container);
   const root = createRoot(container);
@@ -31,7 +36,7 @@ async function renderCard(card: ThreadEntity, bodies: Record<string, string>, li
   await act(async () =>
     root.render(
       <MantineProvider env="test">
-        <ThreadSyncContext.Provider value={serving(new Map(Object.entries(bodies)))}>
+        <ThreadSyncContext.Provider value={serving(new Map(Object.entries(bodies)), stopped)}>
           <RetainedDisclosureProvider>
             {/* The history's row carries the anchor; a card renders inside it. */}
             <div data-thread-anchor={card.cursor.toString()}>
@@ -415,6 +420,35 @@ describe("tool call rows", () => {
     await show(true);
     expect(container.querySelector("details")?.open).toBe(true);
     expect(container.querySelector<HTMLInputElement>('input[type="checkbox"]')?.checked).toBe(true);
+  });
+});
+
+describe("a row whose body stopped loading", () => {
+  const reasoning = entity(
+    "item",
+    {
+      kind: ItemKind.REASONING,
+      tool_name: "",
+      completion: "text",
+      tool_succeeded: null,
+      recovery: null,
+      recovery_reason: "",
+    },
+    { textRef: reference("test-reasoning", "text") }
+  );
+
+  it.each([
+    ["reasoning step", reasoning, {}, "test-reasoning:text"],
+    ["tool call", toolEntity("Bash"), { "test-tool:output": "test-output" }, "test-tool:arguments"],
+  ])("offers a %s a Retry of its own, which reads the body again", async (_, card, bodies, stopped) => {
+    const retry = vi.fn();
+    const container = await renderCard(card, bodies, false, new Map([[stopped, retry]]));
+
+    expect(lineOf(container)).toBe("Preview unavailable");
+    const [button, ...others] = [...container.querySelectorAll("button")].filter((b) => b.textContent === "Retry");
+    expect(others).toEqual([]);
+    await act(async () => button.click());
+    expect(retry).toHaveBeenCalledOnce();
   });
 });
 
