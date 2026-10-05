@@ -371,13 +371,6 @@ spec:
       enabled: false
     nodeExporter:
       enabled: true
-      resources:
-        limits:
-          cpu: 100m
-          memory: 64Mi
-        requests:
-          cpu: 10m
-          memory: 32Mi
     prometheus:
       enabled: false
       serviceAccount:

@@ -39,7 +39,6 @@ def _values() -> dict[str, object]:
             # all 3 replicas to stack on a single control-plane node.
             # The chart default uses preferredDuringScheduling with the correct labels.
             "antiAffinity": {"enabled": True},
-            "resources": {"limits": {"cpu": "500m", "memory": "512Mi"}, "requests": {"cpu": "100m", "memory": "128Mi"}},
             # Use kyverno's INTERNAL cert management, not external cert-manager.
             #
             # WHY: Kyverno's startup sequence (cmd/kyverno/main.go:922-934) is:

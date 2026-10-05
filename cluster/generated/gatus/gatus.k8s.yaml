@@ -71,14 +71,6 @@ spec:
     strategy:
       name: RetryOnFailure
   values:
-    affinity:
-      nodeAffinity:
-        preferredDuringSchedulingIgnoredDuringExecution:
-          - preference:
-              matchExpressions:
-                - key: node-role.kubernetes.io/control-plane
-                  operator: DoesNotExist
-            weight: 100
     env:
       GATUS_DB_URI:
         valueFrom:

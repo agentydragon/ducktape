@@ -109,10 +109,8 @@ def _helm_release(scope: Construct) -> None:
             "serviceMonitor": {"enabled": False},
             "nodeSelector": node_scheduling.HIL_OVH_NODE_SELECTOR,
             # Gatus is stateless at the pod level (state moved to gatus-db above). Allow
-            # control-plane nodes as overflow capacity, while the affinity below keeps
-            # ordinary placement on workers.
+            # control-plane nodes as overflow capacity.
             "tolerations": [node_scheduling.CONTROL_PLANE_TOLERATION],
-            "affinity": node_scheduling.PREFER_WORKERS,
             "resources": {"requests": {"cpu": "20m", "memory": "64Mi"}, "limits": {"cpu": "200m", "memory": "128Mi"}},
         },
     )

@@ -158,7 +158,6 @@ def _synapse(scope: Construct) -> None:
             # Public server name - the hostname where Synapse is publicly accessible.
             # The chart derives public_baseurl as https://<publicServerName>.
             "publicServerName": HOSTNAME,
-            "resources": {"limits": {"cpu": "1000m", "memory": "2Gi"}, "requests": {"cpu": "200m", "memory": "512Mi"}},
             # Media store on distributed storage — the AGENTS.md default for app data
             # volumes, and RWX, so Synapse is not pinned to whichever node owns a local
             # directory. Supersedes the old idea of synapse-s3-storage-provider against
