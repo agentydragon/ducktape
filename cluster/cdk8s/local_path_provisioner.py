@@ -134,9 +134,6 @@ def chart(app: App) -> Chart:
                 # OptiPlex's radios. Keep its local state on this machine's SSD.
                 _node_path("optiplex", "/var/local-path-provisioner"),
             ],
-            # Helper pods run in the privileged local-path-storage namespace, which
-            # avoids PodSecurity restrictions in workload namespaces.
-            "configmap": {"helperPodNamespace": NAMESPACE},
         },
     )
     _storage_classes(chart)

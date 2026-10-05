@@ -166,13 +166,11 @@ spec:
         configReloaders: true
         etcd: false
         general: true
-        k8s: true
         kubeApiserverAvailability: true
         kubeApiserverSlos: true
         kubePrometheusGeneral: true
         kubePrometheusNodeRecording: true
         kubeProxy: false
-        kubeScheduler: true
         kubeStateMetrics: true
         kubelet: true
         kubernetesApps: true

@@ -190,11 +190,7 @@ def _synapse(scope: Construct) -> None:
                 "existingSecret": "synapse-signing-key",
                 "existingSecretKey": "signing.key",
             },
-            "service": {
-                "type": "ClusterIP",
-                "port": SYNAPSE_HTTP.port.number,
-                "federation": {"enabled": True, "port": 8448},
-            },
+            "service": {"type": "ClusterIP", "port": SYNAPSE_HTTP.port.number},
             # PostgreSQL via external CNPG cluster (matrix-db)
             "postgresql": {"enabled": False},
             "externalPostgresql": {
