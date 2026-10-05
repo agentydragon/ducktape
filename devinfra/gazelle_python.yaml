@@ -7,7 +7,6 @@
 manifest:
   modules_mapping:
     08ae81f72d5a2b5fa9e0__mypyc: mypy
-    955cd85d9c9a4f4b30d3__mypyc: tomli
     Crypto: pycryptodome
     FreeCADTemplates: freecad_stubs
     IPython: ipython
@@ -40,13 +39,10 @@ manifest:
     anyio: anyio
     apiclient: google_api_python_client
     apscheduler: apscheduler
-    arch: arch
     argon2: argon2_cffi
-    arrow: arrow
     asgiref: asgiref
     ast_serialize: ast_serialize
     asttokens: asttokens
-    async_lru: async_lru
     asyncpg: asyncpg
     asyncvnc: asyncvnc
     atomicwrites: atomicwrites
@@ -57,7 +53,6 @@ manifest:
     bcrypt: bcrypt
     beancount: beancount
     beartype: beartype
-    bleach: bleach
     blinker: blinker
     boto3: boto3
     botocore: botocore
@@ -72,20 +67,17 @@ manifest:
     cdk8s_plus_34: cdk8s_plus_34
     certifi: certifi
     cffi: cffi
-    cfgv: cfgv
     charset_normalizer: charset_normalizer
     claude_agent_sdk: claude_agent_sdk
     claude_code_sdk: claude_code_sdk
     click: click
     cloudpickle: cloudpickle
-    code_sandboxes: code_sandboxes
     colorama: colorama
     comm: comm
     compact_json: compact_json
     connecpy: connecpy
     constructs: constructs
     contourpy: contourpy
-    coverage: coverage
     cryptography: cryptography
     cycler: cycler
     cyclopts: cyclopts
@@ -94,8 +86,6 @@ manifest:
     dbus_next: dbus_next
     debugpy: debugpy
     defusedxml: defusedxml
-    dev.make-release-notes: vulture
-    distlib: distlib
     distro: distro
     django: django
     dns: dnspython
@@ -106,22 +96,16 @@ manifest:
     e2e-tests: splitwise
     email_validator: email_validator
     exceptiongroup: exceptiongroup
-    execnet: execnet
     executing: executing
     ezdxf: ezdxf
-    faker: faker
     farama_notifications: farama_notifications
     fastapi: fastapi
-    fastjsonschema: fastjsonschema
     fastmcp: fastmcp_slim
-    fastuuid: fastuuid
-    filelock: filelock
     flask: flask
     flexcache: flexcache
     flexparser: flexparser
     fontTools: fonttools
     formulaic: formulaic
-    fqdn: fqdn
     frozenlist: frozenlist
     fsspec: fsspec
     genai_prices: genai_prices
@@ -212,7 +196,6 @@ manifest:
     hamcrest: pyhamcrest
     hass_client: hass_client
     hcloud: hcloud
-    hf_xet: hf_xet
     hpack: hpack
     http_ece: http_ece
     httpcore: httpcore
@@ -222,14 +205,11 @@ manifest:
     httpx: httpx
     httpx2: httpx2
     httpx_sse: httpx_sse
-    huggingface_hub: huggingface_hub
     humanize: humanize
     hyperframe: hyperframe
     hypothesis: hypothesis
-    identify: identify
     idna: idna
     ijson: ijson
-    importlib_metadata: importlib_metadata
     importlib_resources: importlib_resources
     iniconfig: iniconfig
     inspect_ai: inspect_ai
@@ -239,7 +219,6 @@ manifest:
     ipykernel: ipykernel
     ipykernel_launcher: ipykernel
     ipython_pygments_lexers: ipython_pygments_lexers
-    isoduration: isoduration
     itsdangerous: itsdangerous
     jaraco.classes: jaraco.classes
     jaraco.context: jaraco_context
@@ -255,7 +234,6 @@ manifest:
     joblib: joblib
     joserfc: joserfc
     jsii: jsii
-    json5: json5
     jsonlines: jsonlines
     jsonpatch: jsonpatch
     jsonpath_ng: jsonpath_ng
@@ -265,28 +243,8 @@ manifest:
     jsonschema_path: jsonschema_path
     jsonschema_specifications: jsonschema_specifications
     jupyter: jupyter_core
-    jupyter_builder: jupyter_builder
     jupyter_client: jupyter_client
-    jupyter_collaboration: jupyter_collaboration
-    jupyter_collaboration_ui: jupyter_collaboration_ui
     jupyter_core: jupyter_core
-    jupyter_docprovider: jupyter_docprovider
-    jupyter_events: jupyter_events
-    jupyter_kernel_client: jupyter_kernel_client
-    jupyter_lsp: jupyter_lsp
-    jupyter_mcp_server: jupyter_mcp_server
-    jupyter_mimetypes: jupyter_mimetypes
-    jupyter_nbmodel_client: jupyter_nbmodel_client
-    jupyter_server: jupyter_server
-    jupyter_server_client: jupyter_server_client
-    jupyter_server_fileid: jupyter_server_fileid
-    jupyter_server_nbmodel: jupyter_server_nbmodel
-    jupyter_server_terminals: jupyter_server_terminals
-    jupyter_server_ydoc: jupyter_server_ydoc
-    jupyter_ydoc: jupyter_ydoc
-    jupyterlab: jupyterlab
-    jupyterlab_pygments: jupyterlab_pygments
-    jupyterlab_server: jupyterlab_server
     jwt: pyjwt
     kaitaistruct: kaitaistruct
     key_value: py_key_value_aio
@@ -295,7 +253,6 @@ manifest:
     kiwisolver: kiwisolver
     kubernetes: kubernetes
     kubernetes_asyncio: kubernetes_asyncio
-    lark: lark
     ldap3: ldap3
     librt.base64: librt
     librt.internal: librt
@@ -305,13 +262,9 @@ manifest:
     librt.time: librt
     librt.vecs: librt
     linkify_it: linkify_it_py
-    litellm: litellm
     logfire_api: logfire_api
-    lxml: lxml
     mako: mako
-    markdown: markdown
     markdown_it: markdown_it_py
-    markdownify: markdownify
     markupsafe: markupsafe
     matplotlib: matplotlib
     matplotlib_inline: matplotlib_inline
@@ -320,12 +273,9 @@ manifest:
     mcp_types: mcp_types
     mdit_py_plugins: mdit_py_plugins
     mdurl: mdurl
-    mirakuru: mirakuru
-    mistune: mistune
     mitmproxy: mitmproxy
     mitmproxy_linux: mitmproxy_linux
     mitmproxy_rs: mitmproxy_rs
-    mizani: mizani
     ml_dtypes: ml_dtypes
     mmh3: mmh3
     more_itertools: more_itertools
@@ -343,15 +293,10 @@ manifest:
     mypyc: mypy
     nacl: pynacl
     narwhals: narwhals
-    nbclient: nbclient
-    nbconvert: nbconvert
-    nbformat: nbformat
     nest_asyncio2: nest_asyncio2
     networkx: networkx
     nio: matrix_nio
     nltk: nltk
-    nodeenv: nodeenv
-    notebook_shim: notebook_shim
     nulltype: nulltype
     numpy: numpy
     numpyro: numpyro
@@ -362,13 +307,10 @@ manifest:
     opentelemetry.baggage: opentelemetry_api
     opentelemetry.context: opentelemetry_api
     opentelemetry.environment_variables: opentelemetry_api
-    opentelemetry.exporter.otlp.proto.common: opentelemetry_exporter_otlp_proto_common
-    opentelemetry.exporter.otlp.proto.http: opentelemetry_exporter_otlp_proto_http
     opentelemetry.metrics: opentelemetry_api
     opentelemetry.propagate: opentelemetry_api
     opentelemetry.propagators.composite: opentelemetry_api
     opentelemetry.propagators.textmap: opentelemetry_api
-    opentelemetry.proto: opentelemetry_proto
     opentelemetry.sdk.environment_variables: opentelemetry_sdk
     opentelemetry.sdk.error_handler: opentelemetry_sdk
     opentelemetry.sdk.metrics: opentelemetry_sdk
@@ -385,7 +327,6 @@ manifest:
     outcome: outcome
     packaging: packaging
     pandas: pandas
-    pandocfilters: pandocfilters
     paramiko: paramiko
     parso: parso
     pathable: pathable
@@ -397,11 +338,8 @@ manifest:
     plaid: plaid_python
     platformdirs: platformdirs
     playwright: playwright
-    plotnine: plotnine
     pluggy: pluggy
     polars: polars
-    port_for: port_for
-    pre_commit: pre_commit
     prometheus_client: prometheus_client
     prompt_toolkit: prompt_toolkit
     propcache: propcache
@@ -419,13 +357,9 @@ manifest:
     pure_eval: pure_eval
     py: pytest
     py_vapid: py_vapid
-    pyarrow: pyarrow
     pyasn1: pyasn1
     pyasn1_modules: pyasn1_modules
     pycparser: pycparser
-    pycrdt: pycrdt
-    pycrdt.store: pycrdt_store
-    pycrdt.websocket: pycrdt_websocket
     pydantic: pydantic
     pydantic_ai: pydantic_ai_slim
     pydantic_core: pydantic_core
@@ -444,22 +378,14 @@ manifest:
     pytest: pytest
     pytest_asyncio: pytest_asyncio
     pytest_bazel: pytest_bazel
-    pytest_cov: pytest_cov
-    pytest_env: pytest_env
     pytest_httpx2: pytest_httpx2
-    pytest_mock: pytest_mock
-    pytest_postgresql: pytest_postgresql
-    pytest_shard: pytest_shard
     pytest_timeout: pytest_timeout
-    python_discovery: python_discovery
     python_multipart: python_multipart
     python_socks: python_socks
-    pythonjsonlogger: python_json_logger
     pytz: pytz
     pywebpush: pywebpush
     qrcode: qrcode
     qtpy: QtPy
-    reactor: datalayer_reactor
     reaktiv: reaktiv
     redis: redis
     redisvl: redisvl
@@ -468,20 +394,15 @@ manifest:
     requests: requests
     requests_oauthlib: requests_oauthlib
     respx: respx
-    rfc3339_validator: rfc3339_validator
-    rfc3986_validator: rfc3986_validator
-    rfc3987_syntax: rfc3987_syntax
     rich: rich
     rich_rst: rich_rst
     rpds: rpds_py
     ruamel.yaml: ruamel_yaml
-    ruff: ruff
     s3fs: s3fs
     s3transfer: s3transfer
     scipy: scipy
     secretstorage: secretstorage
     semver: semver
-    send2trash: send2trash
     service_identity: service_identity
     setuptools: setuptools
     shellingham: shellingham
@@ -492,7 +413,6 @@ manifest:
     soupsieve: soupsieve
     splitwise: splitwise
     sqlalchemy: sqlalchemy
-    sqlite_anyio: sqlite_anyio
     sqlparse: sqlparse
     sse_starlette: sse_starlette
     stack_data: stack_data
@@ -503,17 +423,12 @@ manifest:
     syrupy: syrupy
     tabulate: tabulate
     tenacity: tenacity
-    terminado: terminado
     testcontainers: testcontainers
     tests: splitwise
     textual: textual
     tiktoken: tiktoken
     tiktoken_ext.openai_public: tiktoken
-    tinycss2: tinycss2
-    tokenizers: tokenizers
-    tomli: tomli
     tomli_w: tomli_w
-    tomlkit: tomlkit
     tornado: tornado
     tqdm: tqdm
     traitlets: traitlets
@@ -524,33 +439,26 @@ manifest:
     typer_di: typer_di
     typing_extensions: typing_extensions
     typing_inspection: typing_inspection
-    tzdata: tzdata
     tzlocal: tzlocal
     ulid: python_ulid
     uncalled_for: uncalled_for
     unidiff: unidiff
     unpaddedbase64: unpaddedbase64
     upath: universal_pathlib
-    uri_template: uri_template
     uritemplate: uritemplate
     urllib3: urllib3
     urwid: urwid
     uvicorn: uvicorn
     uvloop: uvloop
-    virtualenv: virtualenv
-    vulture: vulture
     wadler_lindig: wadler_lindig
     watchdog: watchdog
     watchfiles: watchfiles
     wcwidth: wcwidth
-    webcolors: webcolors
-    webencodings: webencodings
     websocket: websocket_client
     websockets: websockets
     werkzeug: werkzeug
     wrapt: wrapt
     wsproto: wsproto
-    xdist: pytest_xdist
     yaml: pyyaml
     yarl: yarl
     zipp: zipp
@@ -558,4 +466,4 @@ manifest:
     zstandard: zstandard
   pip_repository:
     name: pypi
-integrity: cb439fef36c1504f6677ec2f16b74de3d61f9aa4aaa577c422d8fd551ecc79a5
+integrity: b8ac041e04831516a4aca918ba489963fd8870832bc79e03fe3dc6b3c54a56c1
