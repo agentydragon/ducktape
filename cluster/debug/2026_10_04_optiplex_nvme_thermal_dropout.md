@@ -174,8 +174,9 @@ tofu-controller runner pod template's; confirm the CRD accepts them before relyi
   field).
 - **Why it helps:** a long-lived Deployment calling the Route 53 API directly downloads no
   provider per reconcile.
-- **Constraints:** the cluster's invariant that DNS recovery works with OVH only means it must run
-  on OVH nodes with no Proxmox-pinned storage. The wildcard is the front door to every
+- **Constraints:** the OVH-only resilience invariant (`cluster/docs/decisions.md`) asks for no
+  Proxmox-pinned storage or workloads and that it can schedule on OVH nodes; external-dns is
+  stateless, so it meets that without any placement rule. The wildcard is the front door to every
   hostname, so a bad delete takes ingress DNS down (TTL 300 s).
 - **Adoption risk (from memory of external-dns behaviour, not checked against its docs):** it
   tracks ownership with `TXT` registry records and skips records it does not own, so the existing
