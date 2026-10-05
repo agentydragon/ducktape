@@ -123,6 +123,18 @@ distribution or an operator with the cluster decryption identity when it is abse
 Add `metadata.annotations.description` to any resource where name + namespace doesn't
 make the purpose obvious. Skip for obvious cases.
 
+## Kubernetes object names
+
+Name each object for its application or purpose; don't prepend its Kubernetes kind or
+type (for example, `service-foo`, `secret-foo`, or `configmap-foo`) to `metadata.name`.
+The kind is already part of the object's Kubernetes identity.
+
+For cdk8s objects, apply this rule to the synthesized `metadata.name`: an explicit
+name is independent of the construct ID, while an omitted name is generated from the
+construct path. Renaming `metadata.name` creates a different API object and requires
+updating its references. Check stateful lifecycle and Flux ownership before renaming;
+use a staged migration where needed.
+
 ## Container Images
 
 See <docs/container-images.md> for build/push/tag guide and Flux image automation.
