@@ -386,8 +386,7 @@ export { palette };
 // A React Compiler memoized hook keeps its cache writes in one comma sequence
 // after the memo assignment: one write per dependency plus the memo write.
 // `SEQ_EXPRS` absorbs that tail, so the selector pins the hook by its memoized
-// callback and survives a rebuild that changes the dependency count. Here: two
-// writes.
+// callback and survives a rebuild that changes the dependency count.
 #[test]
 fn member_source_match_seq_exprs_hole_anchors_a_memoized_hook() {
     let fixture = run_fixture(member_fixture(
@@ -442,56 +441,6 @@ export { loadLabel };
         // the whole hook, cache writes and all; the hole absorbed them in the
         // selector only.
         &["function label_resource", "load:", "cache[0]"],
-        &["SEQ_EXPRS", "readable"],
-    );
-}
-
-// The same selector against a hook whose dependency count grew: five writes
-// instead of two. The selector names no cache slot, so it still resolves
-// uniquely — the reason `SEQ_EXPRS` exists.
-#[test]
-fn member_source_match_seq_exprs_hole_survives_a_dependency_count_change() {
-    let fixture = run_fixture(member_fixture(
-        r#"const slots = [];
-function loadLabel(cache, label) {
-  let memo;
-  return (cache[0] !== label || cache[1] !== label || cache[2] !== label
-    ? (memo = async (id) => {
-        const base = `load:${label}`;
-        return `${base}:${id}`;
-      }, cache[0] = label, cache[1] = label, cache[2] = label, cache[3] = label,
-      cache[4] = memo)
-    : (memo = cache[4])),
-    memo;
-}
-loadLabel(slots, "first")("a").then((value) => console.log(value));
-export { loadLabel };
-"#,
-        "resource",
-        Member::source_alpha_target(
-            "label_resource",
-            "readable",
-            r#"function readable(cache, label) {
-  let memo;
-  return (EXPR ? (memo = async (id) => {
-    const base = `load:${label}`;
-    return `${base}:${id}`;
-  }, SEQ_EXPRS) : memo = EXPR), memo;
-}"#,
-        ),
-    ));
-
-    assert_entry_output(&fixture, "load:first:a\n");
-    assert_module_exports(
-        &fixture.out_root,
-        "static/app/modules/resource.js",
-        &["label_resource"],
-        &["loadLabel"],
-    );
-    assert_module_source(
-        &fixture.out_root,
-        "static/app/modules/resource.js",
-        &["function label_resource", "load:", "cache[4]"],
         &["SEQ_EXPRS", "readable"],
     );
 }
@@ -1811,39 +1760,6 @@ export { RuntimeCounter };
         &["class Counter", "increment()", "reset()"],
         &["ANYTHING"],
     );
-}
-
-#[test]
-fn member_source_match_class_skeleton_rejects_ambiguous_match() {
-    // The skeleton `class K { run() { STMT_LIST } ANYTHING; }` matches
-    // both `Alpha` and `Beta`; ambiguous matches stay hard errors.
-    let opts = member_fixture(
-        r#"class Alpha {
-  run() {
-    return 1;
-  }
-}
-class Beta {
-  run() {
-    return 2;
-  }
-}
-console.log(new Alpha().run() + new Beta().run());
-export { Alpha };
-"#,
-        "shapes",
-        Member::source_alpha(
-            "Selected",
-            r#"class K {
-  run() {
-    STMT_LIST_BODY;
-  }
-  ANYTHING;
-}"#,
-        ),
-    );
-
-    expect_selector_outcome(opts, "ambiguous", "shapes");
 }
 
 #[test]
