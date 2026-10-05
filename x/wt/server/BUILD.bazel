@@ -235,6 +235,7 @@ py_test(
 py_test(
     name = "test_wt_server",
     srcs = ["test_wt_server.py"],
+    data = ["//third_party/gitstatusd"],
     deps = [
         ":conftest",
         ":types",

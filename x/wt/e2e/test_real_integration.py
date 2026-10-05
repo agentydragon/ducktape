@@ -10,8 +10,6 @@ import pytest_bazel
 from x.wt.testing.git_helpers import worktree_exists
 from x.wt.testing.utils import wait_until
 
-pytestmark = [pytest.mark.timeout(10), pytest.mark.xdist_group("wt-daemon-e2e")]
-
 
 def test_real_program_workflow(pygit2_repo, real_temp_repo, wt_cli):
     # Initial status

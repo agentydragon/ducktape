@@ -9,18 +9,15 @@ import tempfile
 import uuid
 from datetime import datetime, timedelta
 from pathlib import Path
-from typing import Any
 from unittest.mock import Mock
 
 import pygit2
 import pytest
-import yaml
 from typer.testing import CliRunner
 
 from x.wt.server import github_client
 from x.wt.server.git_manager import GitManager
 from x.wt.server.worktree_service import WorktreeService
-from x.wt.shared.config_file import ConfigFile
 from x.wt.shared.configuration import Configuration
 from x.wt.shared.fixtures import write_pr_fixtures_file
 from x.wt.shared.protocol import (
@@ -33,7 +30,7 @@ from x.wt.shared.protocol import (
     StatusResult,
     StatusResultOk,
 )
-from x.wt.testing.config_factory import ConfigFactory
+from x.wt.testing.config_factory import ConfigFactory, gitstatusd_binary
 from x.wt.testing.mock_factory import MockFactory, ServiceBuilder
 from x.wt.testing.repo_factory import GitRepoFactory
 from x.wt.testing.utils import run_cli_command, wait_until
@@ -115,6 +112,20 @@ def config_factory(temp_dir):
 
     def _factory_for_repo(repo_path: Path):
         return ConfigFactory(repo_path, temp_dir)
+
+    return _factory_for_repo
+
+
+@pytest.fixture
+def daemon_config_factory(temp_dir):
+    """`config_factory` for configurations a daemon runs on: they carry the gitstatusd binary.
+
+    The requesting test target must list `//third_party/gitstatusd` in `data`.
+    """
+    gitstatusd_path = gitstatusd_binary()
+
+    def _factory_for_repo(repo_path: Path):
+        return ConfigFactory(repo_path, temp_dir, gitstatusd_path=gitstatusd_path)
 
     return _factory_for_repo
 
@@ -283,29 +294,6 @@ def kill_daemon_at_wt_dir(wt_dir: Path) -> None:
     )
 
 
-def create_integration_test_config_file(repo_path: Path) -> Path:
-    """Create a test config file for integration tests using centralized helper.
-
-    Creates config in separate WT_DIR to test for baked-in assumptions.
-    """
-    # Put WT_DIR in separate location to test for baked-in assumptions about WT_DIR = MAIN_REPO/.wt
-    temp_parent = repo_path.parent
-    wt_dir = temp_parent / "WTDIR" / ".wt"
-
-    # Use centralized helper to create configuration
-    build_test_configuration(
-        repo_path,
-        wt_dir=wt_dir,
-        branch_prefix="test/",
-        upstream_branch="HEAD",
-        log_operations=False,
-        cow_method="copy",
-        github_repo=None,
-    )
-
-    return wt_dir / "config.yaml"
-
-
 @pytest.fixture
 def real_temp_repo(repo_factory):
     """Create real temporary git repository for integration tests.
@@ -317,13 +305,13 @@ def real_temp_repo(repo_factory):
 
 
 @pytest.fixture
-def real_config(real_temp_repo, config_factory) -> Configuration:
+def real_config(real_temp_repo, daemon_config_factory) -> Configuration:
     """Create real configuration for integration tests.
 
     This fixture provides the Configuration object directly for tests
     that need to access config properties like worktrees_dir, main_repo, etc.
     """
-    factory = config_factory(real_temp_repo)
+    factory = daemon_config_factory(real_temp_repo)
     config: Configuration = factory.integration(github_repo=None)
     return config
 
@@ -404,10 +392,10 @@ def wtcli():
 
 
 @pytest.fixture
-def real_env_with_existing_worktrees(real_temp_repo, config_factory):
+def real_env_with_existing_worktrees(real_temp_repo, daemon_config_factory):
     """Set up real environment with pre-created worktrees for complex tests."""
     # Create config using factory pattern
-    factory = config_factory(real_temp_repo)
+    factory = daemon_config_factory(real_temp_repo)
     config = factory.integration(github_repo=None)
 
     # Ensure clean daemon state for this WT_DIR before creating worktrees
@@ -444,40 +432,6 @@ def test_config(repo_factory, config_factory) -> Configuration:
     factory = config_factory(repo_path)
     config: Configuration = factory.minimal(upstream_branch="main")
     return config
-
-
-def build_test_configuration(repo_path: Path, wt_dir: Path | None = None, **config_overrides) -> Configuration:
-    """Centralized helper to build test configurations with the standard pattern.
-
-    This eliminates duplication of the ConfigFile → YAML → Configuration.resolve workflow.
-    """
-    if wt_dir is None:
-        wt_dir = repo_path / ".wt"
-
-    # Default config suitable for most tests
-    defaults: dict[str, Any] = {
-        "main_repo": str(repo_path),
-        "worktrees_dir": str(repo_path / "worktrees"),
-        "branch_prefix": "test/",
-        "upstream_branch": "main",
-        "github_repo": None,
-        "log_operations": True,
-        "cache_expiration": 3600,
-        "cache_refresh_age": 300,
-        "hidden_worktree_patterns": [],
-        "gitstatusd_path": None,
-        "cow_method": "copy",
-    }
-
-    config_file = ConfigFile(**{**defaults, **config_overrides})
-
-    # Save to .wt directory
-    wt_dir.mkdir(parents=True, exist_ok=True)
-    config_path = wt_dir / "config.yaml"
-
-    config_path.write_text(yaml.dump(config_file.model_dump()), encoding="utf-8")
-
-    return Configuration.resolve(wt_dir)
 
 
 # Apply hermetic git environment to every test to prevent leakage from user/system config

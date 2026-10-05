@@ -74,11 +74,11 @@ class TestCLIIntegration:
 
     @pytest.mark.parametrize(("hydrate", "expected_entries"), [(True, {"README.md"}), (False, set())])
     def test_create_honors_hydrate_worktrees_config(
-        self, real_temp_repo, config_factory, wt_cli, hydrate, expected_entries
+        self, real_temp_repo, daemon_config_factory, wt_cli, hydrate, expected_entries
     ):
         """`hydrate_worktrees` in config.yaml reaches the daemon: the worktree is checked out, or holds only `.git`."""
         # Rewrites config.yaml in the WT_DIR `wt_cli` is bound to, before the first CLI call starts the daemon.
-        config_factory(real_temp_repo).integration(hydrate_worktrees=hydrate)
+        daemon_config_factory(real_temp_repo).integration(hydrate_worktrees=hydrate)
 
         result = wt_cli.sh_c("hydrate-test")
         assert result.returncode == 0, f"Create failed: {result.stderr}"

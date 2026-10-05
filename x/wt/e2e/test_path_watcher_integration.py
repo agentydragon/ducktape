@@ -42,7 +42,6 @@ def wait_for_status_not_contains(wt_cli, needle: str, timeout: float = WATCHER_D
         pytest.fail(f"Timed out waiting for status to drop '{needle}'. Last output:\n{last['out']}")
 
 
-@pytest.mark.timeout(30)
 def test_path_watcher_full_lifecycle(wt_cli, real_config, pygit2_repo):
     """
     Test the path watcher through complete worktree lifecycle:

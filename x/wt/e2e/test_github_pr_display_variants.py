@@ -46,7 +46,7 @@ def _rpc_json(sock_path: str | os.PathLike, method: str, params: dict[str, Any])
 )
 def test_github_pr_variants(variant, expects, github_pr_env: GithubPrEnv):
     env = github_pr_env
-    factory = env.config_factory(env.repo_path)
+    factory = env.daemon_config_factory(env.repo_path)
     config = factory.integration(github_repo="test/test")
     wt_cli = env.wt_cli
     write_pr_fixtures = env.write_pr_fixtures
@@ -123,17 +123,17 @@ def test_github_pr_variants(variant, expects, github_pr_env: GithubPrEnv):
 @dataclass(frozen=True)
 class GithubPrEnv:
     repo_path: Path
-    config_factory: Any
+    daemon_config_factory: Any
     tmp_path: Path
     write_pr_fixtures: Any
     wt_cli: Any
 
 
 @pytest.fixture
-def github_pr_env(real_temp_repo, config_factory, tmp_path, write_pr_fixtures, wt_cli) -> GithubPrEnv:
+def github_pr_env(real_temp_repo, daemon_config_factory, tmp_path, write_pr_fixtures, wt_cli) -> GithubPrEnv:
     return GithubPrEnv(
         repo_path=real_temp_repo,
-        config_factory=config_factory,
+        daemon_config_factory=daemon_config_factory,
         tmp_path=tmp_path,
         write_pr_fixtures=write_pr_fixtures,
         wt_cli=wt_cli,

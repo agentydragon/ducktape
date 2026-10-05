@@ -7,14 +7,14 @@ import pytest_bazel
 
 
 @pytest.fixture
-def failing_env(real_temp_repo, config_factory, tmp_path):
+def failing_env(real_temp_repo, daemon_config_factory, tmp_path):
     # Clean state ensured by per-test WT_DIR via fixtures
     script = tmp_path / "post_create_fail.sh"
     script.write_text(
         '#!/usr/bin/env bash\nset -euo pipefail\necho "hello from setup"\n>&2 echo "setup error"\nexit 42\n'
     )
     script.chmod(0o755)
-    factory = config_factory(real_temp_repo)
+    factory = daemon_config_factory(real_temp_repo)
     config = factory.integration(github_repo=None, post_creation_script=str(script))
     env = os.environ.copy()
     env["WT_DIR"] = str(config.wt_dir)

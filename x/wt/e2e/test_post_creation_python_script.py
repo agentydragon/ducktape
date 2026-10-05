@@ -9,7 +9,7 @@ from x.wt.testing.conftest import kill_daemon_at_wt_dir
 
 
 @pytest.fixture
-def real_env_with_python_post_script(real_temp_repo, config_factory, tmp_path):
+def real_env_with_python_post_script(real_temp_repo, daemon_config_factory, tmp_path):
     """Provide a real repo + WT_DIR configured to run a Python post-create hook.
 
     The hook verifies stdin is valid, parses required args, emits stdout/stderr,
@@ -45,7 +45,7 @@ print("py post-create: hello from stderr", file=sys.stderr)
     script.chmod(0o755)
 
     # Configure environment (WT_DIR) with this post-creation script
-    factory = config_factory(real_temp_repo)
+    factory = daemon_config_factory(real_temp_repo)
     config = factory.integration(github_repo=None, post_creation_script=str(script))
     env = os.environ.copy()
     env["WT_DIR"] = str(config.wt_dir)

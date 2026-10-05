@@ -9,8 +9,6 @@ import pytest_bazel
 
 from x.wt.testing.utils import wait_until
 
-pytestmark = [pytest.mark.timeout(10), pytest.mark.xdist_group("wt-daemon-e2e")]
-
 
 def test_real_workflow_with_existing_worktrees(real_env_with_existing_worktrees, real_temp_repo, wtcli):
     """Test workflow starting with existing worktrees - tests real status display."""

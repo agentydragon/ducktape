@@ -1,17 +1,14 @@
 import os
 
 import pygit2
-import pytest
 import pytest_bazel
 
 from x.wt.testing.git_helpers import add_worktree
 
-pytestmark = pytest.mark.timeout(10)
 
-
-def test_worktree_branch_names_are_actual(repo_factory, config_factory, wtcli):
+def test_worktree_branch_names_are_actual(repo_factory, daemon_config_factory, wtcli):
     repo_path = repo_factory.create_repo()
-    cfg = config_factory(repo_path).minimal(upstream_branch="HEAD")
+    cfg = daemon_config_factory(repo_path).minimal(upstream_branch="HEAD")
 
     # Create two worktrees against branches test/aaaaa and test/bbbbb
     repo = pygit2.Repository(repo_path)

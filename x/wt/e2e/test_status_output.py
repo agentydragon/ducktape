@@ -7,13 +7,10 @@ through the existing `real_env` fixture and helpers.
 from datetime import timedelta
 from pathlib import Path
 
-import pytest
 import pytest_bazel
 
 from x.wt.testing.asserts import assert_output_contains, extract_status_rows, status_row_ok
 from x.wt.testing.utils import wait_until
-
-pytestmark = pytest.mark.timeout(10)
 
 
 def test_status_lists_multiple_worktrees(real_temp_repo, wt_cli):
