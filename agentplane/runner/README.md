@@ -67,7 +67,8 @@ the app only folds that neutral report.
   before a tool that never answered is not replayed even though the transcript holds it. Ordinary
   interrupts use the native terminal item observations, and the same rule for thinking from the
   turn's journaled assistant frames: a completed thinking block is retained only if another block
-  of its message was written. Compacted or missing history and unfinished live tool outcomes
+  of its message was written, and thinking that would otherwise be absent is unknown when a native
+  line of the turn could not be parsed. Compacted or missing history and unfinished live tool outcomes
   remain unknown. The reader is tested against Claude Code 2.1.252.
 - `codex_history.py` reads model `response_item` records, not the app-server's reconstructed
   turn-item projection, which can omit an unresolved call still sent to the model. At Codex

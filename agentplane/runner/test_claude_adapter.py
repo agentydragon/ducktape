@@ -411,6 +411,32 @@ async def test_an_interrupted_conversation_keeps_thinking_only_beside_a_block_th
     }
 
 
+async def test_an_interrupted_conversation_is_unknown_for_thinking_a_line_we_could_not_parse_may_have_answered(
+    journal: Journal, tmp_path: Path
+) -> None:
+    await journal.append(event_pb2.TurnStarted(turn_id="turn"))
+    await _write_block(journal, "alone", thinking_block("THOUGHT"))
+    await _observe_reasoning(journal, "alone#0", "THOUGHT", completed=True)
+    await _write_block(journal, "answered", thinking_block("THOUGHT"))
+    await _observe_reasoning(journal, "answered#0", "THOUGHT", completed=True)
+    await _write_block(journal, "answered", text_block("ANSWER"))
+    await _observe_text(journal, "answered#1", "ANSWER", completed=True)
+    await _observe_reasoning(journal, "cut-off#0", "CUT_OFF_THOUGHT", completed=False)
+    await journal.append(event_pb2.Native(direction=event_pb2.DIRECTION_FROM_HARNESS, line='{"type": "assistant"'))
+
+    reconciled = await ClaudeAdapter(cast(Session, JournaledSession(journal, tmp_path)), _launch()).reconcile(
+        "turn", resumed=False
+    )
+
+    # Only thinking that would be reported absent for want of a sibling we may have missed is unknown.
+    assert dict(_dispositions(reconciled)) == {
+        "alone#0": event_pb2.RECOVERY_DISPOSITION_UNKNOWN,
+        "answered#0": event_pb2.RECOVERY_DISPOSITION_RETAINED,
+        "answered#1": event_pb2.RECOVERY_DISPOSITION_RETAINED,
+        "cut-off#0": event_pb2.RECOVERY_DISPOSITION_ABSENT,
+    }
+
+
 @pytest.mark.parametrize("compacted", [False, True], ids=["no-transcript", "compacted"])
 async def test_a_resumed_conversation_is_unknown_where_the_transcript_cannot_say(
     journal: Journal, tmp_path: Path, compacted: bool

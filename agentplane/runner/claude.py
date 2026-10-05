@@ -105,6 +105,7 @@ class ClaudeAdapter(HarnessAdapter):
 
     async def reconcile(self, turn_id: str, *, resumed: bool) -> event_pb2.ConversationReconciled:
         observed = await observed_items(self.session.journal, turn_id)
+        undetermined: set[str] = set()
         if resumed:
             try:
                 recovered = await asyncio.to_thread(
@@ -115,12 +116,20 @@ class ClaudeAdapter(HarnessAdapter):
         else:
             # The process outlives an ordinary interruption and keeps what it completed, except
             # thinking whose message has no other surviving block (`answered_message_ids`).
-            answered = await self._answered_messages(turn_id)
+            answered, unparsed = await self._answered_messages(turn_id)
             recovered = {
                 key: item
                 for key, item in observed.items()
                 if item.completed and (item.kind != event_pb2.ITEM_KIND_REASONING or key.rsplit("#", 1)[0] in answered)
             }
+            if unparsed:
+                # A line we could not read may be the frame that answered a thinking block, so thinking
+                # that would be absent for want of one is unknown.
+                undetermined = {
+                    key
+                    for key, item in observed.items()
+                    if item.completed and item.kind == event_pb2.ITEM_KIND_REASONING and key not in recovered
+                }
         decisions = []
         for item in observed.values():
             if not resumed and item.kind == event_pb2.ITEM_KIND_TOOL_CALL and not item.completed:
@@ -130,14 +139,24 @@ class ClaudeAdapter(HarnessAdapter):
                         "Claude does not report whether it keeps a tool call interrupted before its result",
                     )
                 )
+            elif item.item_id in undetermined:
+                decisions.append(
+                    unknown_item(
+                        item.item_id,
+                        "a native line of this turn could not be parsed, so whether another block of this message"
+                        " survived is unknown",
+                    )
+                )
             else:
                 decisions.append(compare_item(item, recovered.get(item.item_id)))
         return event_pb2.ConversationReconciled(turn_id=turn_id, items=decisions)
 
-    async def _answered_messages(self, turn_id: str) -> set[str | None]:
+    async def _answered_messages(self, turn_id: str) -> tuple[set[str | None], bool]:
         """The turn's messages with a surviving block beyond thinking, from its journaled assistant
-        frames: a tool call's item id carries no message id, so the items alone cannot say."""
+        frames: a tool call's item id carries no message id, so the items alone cannot say. Also
+        whether any native line could not be parsed, which leaves the answer incomplete."""
         messages = []
+        unparsed = False
         async for entry in self.session.journal.turn_events(turn_id):
             native = entry.event.native
             if native.direction != event_pb2.DIRECTION_FROM_HARNESS:
@@ -145,13 +164,12 @@ class ClaudeAdapter(HarnessAdapter):
             try:
                 frame = wire.parse_frame(json.loads(native.line))
             except ValueError:
-                # TODO: a frame we cannot read may be the one that answered a thinking block, so this
-                # turn's thinking can wrongly come out absent; report it unknown instead.
                 logger.warning("turn %s: cannot parse a native line: %r", turn_id, native.line[:200], exc_info=True)
+                unparsed = True
                 continue
             if isinstance(frame, wire.AssistantFrame):
                 messages.append((frame.message.id, frame.message.content))
-        return answered_message_ids(messages)
+        return answered_message_ids(messages), unparsed
 
     async def submit(self, command_id: str, text: str) -> None:
         if not self.session.active_turn_id:
