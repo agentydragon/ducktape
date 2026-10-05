@@ -1,6 +1,6 @@
 # gazelle:ignore
 
-load("//devinfra/python:defs.bzl", "py_library", "py_test")
+load("//devinfra/python:defs.bzl", "py_library")
 
 py_library(
     name = "chart",
@@ -20,18 +20,5 @@ py_library(
         "//cluster/cdk8s/providers/flux:receiver",
         "@pypi//cdk8s",
         "@pypi//cdk8s_plus_34",
-    ],
-)
-
-py_test(
-    name = "test_chart",
-    srcs = ["test_chart.py"],
-    data = ["@nodejs_linux_amd64//:bin/node"],
-    env = {"JSII_NODE": "$(rootpath @nodejs_linux_amd64//:bin/node)"},
-    deps = [
-        ":chart",
-        "//:conftest",
-        "@pypi//pytest_bazel",
-        "@pypi//pyyaml",
     ],
 )

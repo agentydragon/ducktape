@@ -5,6 +5,8 @@ with their Providers, and the Secret that points the ntfy Provider at the self-h
 
 from __future__ import annotations
 
+import json
+
 from cdk8s import ApiObjectMetadata, App, Chart
 from cdk8s_plus_34 import k8s
 from external_secrets_crds.io.external_secrets import (
@@ -47,13 +49,19 @@ _RECEIVER = ServiceRef(
 # ntfy fills the X-Title/X-Message placeholders from Flux's webhook payload (Template: yes).
 # They are Go raw strings here so ESO's own template engine emits them untouched instead of
 # failing on the missing `involvedObject` key.
-_NTFY_HEADERS = """\
-Template: "yes"
-Authorization: "Bearer {{ .alertmanager_token }}"
-X-Title: "{{ `{{.involvedObject.kind}} {{.involvedObject.name}}` }}"
-X-Message: "{{ `{{.severity}}: {{.reason}} - {{.message}}` }}"
-X-Tags: "rotating_light"
-"""
+_NTFY_HEADERS = {
+    "Template": "yes",
+    "Authorization": "Bearer {{ .alertmanager_token }}",
+    "X-Title": "{{ `{{.involvedObject.kind}} {{.involvedObject.name}}` }}",
+    "X-Message": "{{ `{{.severity}}: {{.reason}} - {{.message}}` }}",
+    "X-Tags": "rotating_light",
+}
+
+
+def _headers_yaml(headers: dict[str, str]) -> str:
+    """A Provider Secret's `headers` key is read as a YAML map. A JSON string is a double-quoted
+    YAML scalar, so each value stays one scalar whatever the template renders into it."""
+    return "".join(f"{name}: {json.dumps(value)}\n" for name, value in headers.items())
 
 
 def _alert_sources(*sources: tuple[AlertSpecEventSourcesKind, str]) -> list[AlertSpecEventSources]:
@@ -175,7 +183,7 @@ def chart(app: App) -> Chart:
         template=ExternalSecretSpecTargetTemplate(
             engine_version=ExternalSecretSpecTargetTemplateEngineVersion.V2,
             type="Opaque",
-            data={"address": f"https://{ntfy.HOSTNAME}/alerts", "headers": _NTFY_HEADERS},
+            data={"address": f"https://{ntfy.HOSTNAME}/alerts", "headers": _headers_yaml(_NTFY_HEADERS)},
         ),
     )
     return chart
