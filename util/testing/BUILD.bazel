@@ -168,6 +168,7 @@ py_test(
         ":frontend_visual",
         "//:conftest",
         "//util:playwright",
+        "@pypi//playwright",
         "@pypi//pytest_bazel",
     ],
 )

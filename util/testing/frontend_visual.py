@@ -19,7 +19,7 @@ from typing import TYPE_CHECKING, Literal
 from util.bazel.runfiles import get_required_path, own_repo_rlocation
 
 if TYPE_CHECKING:
-    from playwright.sync_api import BrowserContext, Playwright, ViewportSize
+    from playwright.async_api import BrowserContext, Playwright, ViewportSize
 
 
 _FLAGS = json.loads(get_required_path(own_repo_rlocation("util/testing/chromium-flags.json")).read_text())
@@ -41,20 +41,24 @@ def chromium_executable() -> str | None:
     return str(Path(chromium_root) / "chrome-linux" / "headless_shell") if chromium_root else None
 
 
-def deterministic_browser_context(
-    playwright_sync: Playwright,
-    *,
-    viewport: ViewportSize,
-    frozen_now_ms: int,
-    color_scheme: Literal["dark", "light", "no-preference", "null"] = "light",
-) -> BrowserContext:
+def _font_pinned_user_data_dir() -> Path:
     user_data_parent = Path(os.environ.get("TEST_TMPDIR", tempfile.gettempdir()))
     user_data_parent.mkdir(parents=True, exist_ok=True)
     user_data_dir = Path(tempfile.mkdtemp(prefix="chrome-user-data-", dir=user_data_parent))
     (user_data_dir / "Default").mkdir()
     (user_data_dir / "Default" / "Preferences").write_text(json.dumps(_FONT_PREFERENCES))
-    context = playwright_sync.chromium.launch_persistent_context(
-        user_data_dir=str(user_data_dir),
+    return user_data_dir
+
+
+async def deterministic_browser_context(
+    playwright: Playwright,
+    *,
+    viewport: ViewportSize,
+    frozen_now_ms: int,
+    color_scheme: Literal["dark", "light", "no-preference", "null"] = "light",
+) -> BrowserContext:
+    context = await playwright.chromium.launch_persistent_context(
+        user_data_dir=str(_font_pinned_user_data_dir()),
         headless=True,
         executable_path=chromium_executable(),
         args=DETERMINISTIC_BROWSER_ARGS,
@@ -65,7 +69,7 @@ def deterministic_browser_context(
         locale="en-US",
         timezone_id="UTC",
     )
-    context.add_init_script(frozen_clock_script(frozen_now_ms))
+    await context.add_init_script(frozen_clock_script(frozen_now_ms))
     return context
 
 

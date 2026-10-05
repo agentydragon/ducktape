@@ -85,7 +85,6 @@ py_test(
         "//util:net",
         "//util:playwright",
         "//util/bazel:runfiles",
-        "//util/testing:frontend_visual",
         "//util/testing:undeclared_outputs",
         "@pypi//playwright",
         "@pypi//pytest",

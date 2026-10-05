@@ -16,14 +16,14 @@ from __future__ import annotations
 import json
 import shutil
 from collections import defaultdict
-from collections.abc import Callable, Iterator
+from collections.abc import AsyncIterator, Awaitable, Callable, Iterator
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import TYPE_CHECKING
 from urllib.parse import urlencode
 
 import pytest
 import pytest_bazel
+from playwright.async_api import Error, Page, Playwright, ViewportSize
 
 from finance.augur.api.config import Config
 from finance.augur.api.server import static_price_clients
@@ -42,27 +42,24 @@ from util.testing.visual_review import retain_review_asset
 
 pytest_plugins = ("util.playwright",)
 
-if TYPE_CHECKING:
-    from playwright.sync_api import Page, Playwright, ViewportSize
-
 
 @dataclass(frozen=True)
 class VisualCase:
     name: str
     path: str
-    wait_ready: Callable[[Page], None]
+    wait_ready: Callable[[Page], Awaitable[None]]
     # Optional interaction to run after the page is ready but before screenshot (e.g. clicking a
     # rollout sliver to expand the events panel). Mutating callable; receives the live `Page`.
-    interact: Callable[[Page], None] | None = field(default=None)
+    interact: Callable[[Page], Awaitable[None]] | None = field(default=None)
 
 
 SCREENSHOT_VIEWPORT: ViewportSize = {"width": 1280, "height": 1000}
 FROZEN_NOW_MS = 1_779_768_000_000  # 2026-05-15T12:00:00Z.
 
 
-def _wait_for_product_chart_geometry(page: Page) -> None:
+async def _wait_for_product_chart_geometry(page: Page) -> None:
     """Wait for ResizeObserver-fed chart coordinates to catch up with the visible SVG width."""
-    page.wait_for_function(
+    await page.wait_for_function(
         """
         () => {
           const chart = document.querySelector("[data-product-fan-chart='netWorthQuanta'] svg[role='img']");
@@ -90,9 +87,9 @@ def _wait_for_product_chart_geometry(page: Page) -> None:
     )
 
 
-def _wait_for_terminal_distribution_density(page: Page, *, min_series: int) -> None:
+async def _wait_for_terminal_distribution_density(page: Page, *, min_series: int) -> None:
     """Wait until the terminal-distribution chart is drawing dense terminal percentiles."""
-    page.wait_for_function(
+    await page.wait_for_function(
         f"""
         () => {{
           const plot = document.querySelector("[data-product-terminal-distribution-plot]");
@@ -112,12 +109,12 @@ def _wait_for_terminal_distribution_density(page: Page, *, min_series: int) -> N
     )
 
 
-def _click_terminal_distribution_percentile(page: Page, *, percentile: float, y_fraction: float) -> None:
+async def _click_terminal_distribution_percentile(page: Page, *, percentile: float, y_fraction: float) -> None:
     plot = page.locator("[data-product-terminal-distribution-plot]")
-    plot.wait_for(state="visible", timeout=30_000)
-    box = plot.bounding_box()
+    await plot.wait_for(state="visible", timeout=30_000)
+    box = await plot.bounding_box()
     assert box is not None
-    x = page.evaluate(
+    x = await page.evaluate(
         """
         (percentile) => {
           const plot = document.querySelector("[data-product-terminal-distribution-plot]");
@@ -131,17 +128,17 @@ def _click_terminal_distribution_percentile(page: Page, *, percentile: float, y_
         """,
         percentile,
     )
-    plot.click(position={"x": float(x), "y": box["height"] * y_fraction})
+    await plot.click(position={"x": float(x), "y": box["height"] * y_fraction})
 
 
-def _wait_for_product_page(page: Page) -> None:
+async def _wait_for_product_page(page: Page) -> None:
     """Wait for the product surface's net-worth fan to render at non-zero height."""
-    page.add_style_tag(content=stability_style())
-    page.locator("[data-augur-surface='product']").wait_for(state="visible", timeout=30_000)
-    page.locator("[data-product-fan-chart='netWorthQuanta']").wait_for(state="visible", timeout=30_000)
-    page.get_by_role("heading", name="Augur", exact=True).wait_for(state="visible", timeout=30_000)
-    page.get_by_label("Metric to plot").wait_for(state="visible", timeout=30_000)
-    page.wait_for_function(
+    await page.add_style_tag(content=stability_style())
+    await page.locator("[data-augur-surface='product']").wait_for(state="visible", timeout=30_000)
+    await page.locator("[data-product-fan-chart='netWorthQuanta']").wait_for(state="visible", timeout=30_000)
+    await page.get_by_role("heading", name="Augur", exact=True).wait_for(state="visible", timeout=30_000)
+    await page.get_by_label("Metric to plot").wait_for(state="visible", timeout=30_000)
+    await page.wait_for_function(
         """
         () => {
           const chart = document.querySelector("[data-product-fan-chart='netWorthQuanta'] svg[role='img']");
@@ -159,109 +156,109 @@ def _wait_for_product_page(page: Page) -> None:
         """,
         timeout=30_000,
     )
-    assert page.evaluate("() => document.documentElement.scrollWidth <= window.innerWidth + 1")
-    page.evaluate("() => document.fonts.ready.then(() => true)")
-    _wait_for_product_chart_geometry(page)
-    _wait_for_terminal_distribution_density(page, min_series=1)
+    assert await page.evaluate("() => document.documentElement.scrollWidth <= window.innerWidth + 1")
+    await page.evaluate("() => document.fonts.ready.then(() => true)")
+    await _wait_for_product_chart_geometry(page)
+    await _wait_for_terminal_distribution_density(page, min_series=1)
 
 
-def _select_first_rollout(page: Page) -> None:
+async def _select_first_rollout(page: Page) -> None:
     """Select a rollout from the terminal-distribution chart and exercise the marker↔event-table
     cross-selection handshake. A click anywhere in the plot selects the nearest variant line at that
     percentile; clicking at 70% width binds to a mid-upper rollout. Leaves the table-clicked-month
     selected so the screenshot shows event detail."""
-    _click_terminal_distribution_percentile(page, percentile=0.7, y_fraction=0.5)
-    page.locator("[data-product-selected-rollout-line]").wait_for(state="visible", timeout=30_000)
-    page.locator("[data-product-rollout-event-marker]").first.wait_for(state="visible", timeout=30_000)
-    page.get_by_text("Selected rollout events").wait_for(state="visible", timeout=30_000)
-    page.locator(r"text=/Seed \d+ - (completed|failed m\d+)/").wait_for(state="visible", timeout=30_000)
+    await _click_terminal_distribution_percentile(page, percentile=0.7, y_fraction=0.5)
+    await page.locator("[data-product-selected-rollout-line]").wait_for(state="visible", timeout=30_000)
+    await page.locator("[data-product-rollout-event-marker]").first.wait_for(state="visible", timeout=30_000)
+    await page.get_by_text("Selected rollout events").wait_for(state="visible", timeout=30_000)
+    await page.locator(r"text=/Seed \d+ - (completed|failed m\d+)/").wait_for(state="visible", timeout=30_000)
     marker = page.locator("[data-product-rollout-event-marker]").last
-    marker_month = marker.get_attribute("data-product-rollout-event-marker-month")
+    marker_month = await marker.get_attribute("data-product-rollout-event-marker-month")
     assert marker_month is not None
-    marker.click()
-    page.locator(
+    await marker.click()
+    await page.locator(
         f"[data-product-rollout-event-month='{marker_month}'][data-product-rollout-event-month-selected='true']"
     ).wait_for(state="visible", timeout=30_000)
-    marker.click()
-    page.locator(
+    await marker.click()
+    await page.locator(
         f"[data-product-rollout-event-month='{marker_month}'][data-product-rollout-event-month-selected='false']"
     ).wait_for(state="visible", timeout=30_000)
-    page.locator(
+    await page.locator(
         f"[data-product-rollout-event-marker-month='{marker_month}'][data-product-rollout-event-marker-selected='false']"
     ).first.wait_for(state="visible", timeout=30_000)
     # Pick a table-row month that has a corresponding marker — `monthly_expense` and `outside_rent`
     # have no markers, so the first table row may be a marker-less month.
-    first_marker_month = page.locator("[data-product-rollout-event-marker]").first.get_attribute(
+    first_marker_month = await page.locator("[data-product-rollout-event-marker]").first.get_attribute(
         "data-product-rollout-event-marker-month"
     )
     assert first_marker_month is not None
     table_group = page.locator(f"[data-product-rollout-event-month='{first_marker_month}']")
     table_month = first_marker_month
-    table_group.click()
-    page.locator(
+    await table_group.click()
+    await page.locator(
         f"[data-product-rollout-event-marker-month='{table_month}'][data-product-rollout-event-marker-selected='true']"
     ).first.wait_for(state="visible", timeout=30_000)
-    table_group.click()
-    page.locator(
+    await table_group.click()
+    await page.locator(
         f"[data-product-rollout-event-month='{table_month}'][data-product-rollout-event-month-selected='false']"
     ).wait_for(state="visible", timeout=30_000)
-    page.locator(
+    await page.locator(
         f"[data-product-rollout-event-marker-month='{table_month}'][data-product-rollout-event-marker-selected='false']"
     ).first.wait_for(state="visible", timeout=30_000)
-    table_group.click()
-    page.locator(
+    await table_group.click()
+    await page.locator(
         f"[data-product-rollout-event-marker-month='{table_month}'][data-product-rollout-event-marker-selected='true']"
     ).first.wait_for(state="visible", timeout=30_000)
 
 
-def _wait_for_property_panel(page: Page) -> None:
+async def _wait_for_property_panel(page: Page) -> None:
     """Wait for the Base owning rows + the lifecycle timeline editor (prefilled events) to mount."""
-    _wait_for_product_page(page)
+    await _wait_for_product_page(page)
     # Owning knobs surface as table rows once the (single) Base scenario buys; the lifecycle timeline
     # is now one of those scenario table rows.
-    page.locator("[data-product-knob-row='financingKind']").wait_for(state="visible", timeout=30_000)
-    page.locator("[data-product-timeline]").wait_for(state="visible", timeout=30_000)
-    page.get_by_text("Timeline (mid-horizon changes)").wait_for(state="visible", timeout=30_000)
+    await page.locator("[data-product-knob-row='financingKind']").wait_for(state="visible", timeout=30_000)
+    await page.locator("[data-product-timeline]").wait_for(state="visible", timeout=30_000)
+    await page.get_by_text("Timeline (mid-horizon changes)").wait_for(state="visible", timeout=30_000)
     # Three event rows pre-decoded from the URL: set-rented%, capital improvement, sale.
-    page.get_by_label("Rented", exact=True).wait_for(state="visible", timeout=30_000)
-    page.get_by_label("Amount", exact=True).wait_for(state="visible", timeout=30_000)
-    page.get_by_label("Closing cost", exact=True).wait_for(state="visible", timeout=30_000)
+    await page.get_by_label("Rented", exact=True).wait_for(state="visible", timeout=30_000)
+    await page.get_by_label("Amount", exact=True).wait_for(state="visible", timeout=30_000)
+    await page.get_by_label("Closing cost", exact=True).wait_for(state="visible", timeout=30_000)
 
 
-def _wait_for_distribution_failures(page: Page) -> None:
+async def _wait_for_distribution_failures(page: Page) -> None:
     """Inspect a stopped book without placing it in the terminal-wealth distribution."""
-    page.add_style_tag(content=stability_style())
-    page.locator("[data-augur-surface='product']").wait_for(state="visible", timeout=30_000)
-    page.locator("[data-product-fan-chart='netWorthQuanta']").wait_for(state="visible", timeout=30_000)
-    _wait_for_terminal_distribution_density(page, min_series=1)
+    await page.add_style_tag(content=stability_style())
+    await page.locator("[data-augur-surface='product']").wait_for(state="visible", timeout=30_000)
+    await page.locator("[data-product-fan-chart='netWorthQuanta']").wait_for(state="visible", timeout=30_000)
+    await _wait_for_terminal_distribution_density(page, min_series=1)
     stopped_selector = page.get_by_label("Inspect stopped rollout", exact=True)
-    stopped_selector.wait_for(state="visible", timeout=30_000)
-    seed = stopped_selector.locator("option").nth(1).get_attribute("value")
+    await stopped_selector.wait_for(state="visible", timeout=30_000)
+    seed = await stopped_selector.locator("option").nth(1).get_attribute("value")
     assert seed is not None
-    stopped_selector.select_option(seed)
-    page.locator("[data-product-stop-book]").wait_for(state="visible", timeout=30_000)
-    page.locator("[data-product-selected-rollout-line]").wait_for(state="visible", timeout=30_000)
-    assert page.locator("[data-product-distribution-failed]").count() == 0
-    assert page.evaluate("() => document.documentElement.scrollWidth <= window.innerWidth + 1")
-    page.evaluate("() => document.fonts.ready.then(() => true)")
-    _wait_for_product_chart_geometry(page)
+    await stopped_selector.select_option(seed)
+    await page.locator("[data-product-stop-book]").wait_for(state="visible", timeout=30_000)
+    await page.locator("[data-product-selected-rollout-line]").wait_for(state="visible", timeout=30_000)
+    assert await page.locator("[data-product-distribution-failed]").count() == 0
+    assert await page.evaluate("() => document.documentElement.scrollWidth <= window.innerWidth + 1")
+    await page.evaluate("() => document.fonts.ready.then(() => true)")
+    await _wait_for_product_chart_geometry(page)
 
 
-def _wait_for_calibration_page(page: Page) -> None:
+async def _wait_for_calibration_page(page: Page) -> None:
     """Wait for the calibration tab's auto-run to land (results, not just the form).
 
     The tab now auto-runs on load (no button), so the screenshot captures the scored-markets
     table and the issuer mark fan. Hermetic prices are served by the in-process server, so the
     auto-run resolves without touching the network."""
-    page.add_style_tag(content=stability_style())
-    page.locator("[data-augur-surface='calibration']").wait_for(state="visible", timeout=30_000)
-    page.get_by_role("heading", name="Augur", exact=True).wait_for(state="visible", timeout=30_000)
-    page.locator("[data-augur-tab='calibration'][data-active]").wait_for(state="visible", timeout=30_000)
-    page.locator("[data-calibration-catalog]").wait_for(state="visible", timeout=30_000)
-    page.locator("[data-calibration-categorical-chart]").first.wait_for(state="visible", timeout=30_000)
-    page.locator("[data-calibration-mark-fan]").wait_for(state="visible", timeout=30_000)
-    assert page.evaluate("() => document.documentElement.scrollWidth <= window.innerWidth + 1")
-    page.evaluate("() => document.fonts.ready.then(() => true)")
+    await page.add_style_tag(content=stability_style())
+    await page.locator("[data-augur-surface='calibration']").wait_for(state="visible", timeout=30_000)
+    await page.get_by_role("heading", name="Augur", exact=True).wait_for(state="visible", timeout=30_000)
+    await page.locator("[data-augur-tab='calibration'][data-active]").wait_for(state="visible", timeout=30_000)
+    await page.locator("[data-calibration-catalog]").wait_for(state="visible", timeout=30_000)
+    await page.locator("[data-calibration-categorical-chart]").first.wait_for(state="visible", timeout=30_000)
+    await page.locator("[data-calibration-mark-fan]").wait_for(state="visible", timeout=30_000)
+    assert await page.evaluate("() => document.documentElement.scrollWidth <= window.innerWidth + 1")
+    await page.evaluate("() => document.fonts.ready.then(() => true)")
 
 
 # A single Base scenario that buys the fixture property `location_a_property` and carries three
@@ -337,65 +334,69 @@ _FAILURE_SCENARIOS = {
 _FAILURE_URL = "/product?" + urlencode({"scenarios": json.dumps(_FAILURE_SCENARIOS), "h": "120", "n": "32"})
 
 
-def _wait_for_scenario_comparison(page: Page) -> None:
+async def _wait_for_scenario_comparison(page: Page) -> None:
     """Wait for the multi-scenario overlay: the scenario bar, the editor spreadsheet with a Base +
     two variant columns (and the per-scenario "Property to buy" row), three scenario fans + legend,
     and the per-scenario comparison table."""
-    page.add_style_tag(content=stability_style())
-    page.locator("[data-augur-surface='product']").wait_for(state="visible", timeout=30_000)
-    page.locator("[data-product-scenario-tabs]").wait_for(state="visible", timeout=30_000)
-    page.locator("[data-product-fan-chart='netWorthQuanta']").wait_for(state="visible", timeout=30_000)
-    page.locator("[data-product-fan-legend]").wait_for(state="visible", timeout=30_000)
-    page.locator("[data-product-scenario-comparison]").wait_for(state="visible", timeout=30_000)
+    await page.add_style_tag(content=stability_style())
+    await page.locator("[data-augur-surface='product']").wait_for(state="visible", timeout=30_000)
+    await page.locator("[data-product-scenario-tabs]").wait_for(state="visible", timeout=30_000)
+    await page.locator("[data-product-fan-chart='netWorthQuanta']").wait_for(state="visible", timeout=30_000)
+    await page.locator("[data-product-fan-legend]").wait_for(state="visible", timeout=30_000)
+    await page.locator("[data-product-scenario-comparison]").wait_for(state="visible", timeout=30_000)
     # The editor spreadsheet shows Base + the two variants as columns (rows = knobs), including the
     # per-scenario property row.
-    page.locator("[data-product-scenario-table]").wait_for(state="visible", timeout=30_000)
-    page.locator("[data-product-knob-row='propertyId']").wait_for(state="visible", timeout=30_000)
-    page.wait_for_function('() => document.querySelectorAll("[data-product-scenario-col]").length >= 3', timeout=30_000)
+    await page.locator("[data-product-scenario-table]").wait_for(state="visible", timeout=30_000)
+    await page.locator("[data-product-knob-row='propertyId']").wait_for(state="visible", timeout=30_000)
+    await page.wait_for_function(
+        '() => document.querySelectorAll("[data-product-scenario-col]").length >= 3', timeout=30_000
+    )
     # All three scenario fans have drawn their median lines.
-    page.wait_for_function('() => document.querySelectorAll("[data-product-fan-series]").length >= 3', timeout=30_000)
+    await page.wait_for_function(
+        '() => document.querySelectorAll("[data-product-fan-series]").length >= 3', timeout=30_000
+    )
     # The terminal-distribution chart overlays one dense line per variant (all three present).
-    _wait_for_terminal_distribution_density(page, min_series=3)
-    assert page.evaluate("() => document.documentElement.scrollWidth <= window.innerWidth + 1")
-    page.evaluate("() => document.fonts.ready.then(() => true)")
-    _wait_for_product_chart_geometry(page)
+    await _wait_for_terminal_distribution_density(page, min_series=3)
+    assert await page.evaluate("() => document.documentElement.scrollWidth <= window.innerWidth + 1")
+    await page.evaluate("() => document.fonts.ready.then(() => true)")
+    await _wait_for_product_chart_geometry(page)
 
 
-def _show_candles(page: Page) -> None:
+async def _show_candles(page: Page) -> None:
     """Switch the rollout chart from fans to candles, then select a rollout so the screenshot pins
     the continuous rollout trajectory + event markers over the box-and-whisker candles."""
-    page.locator("[data-product-chart-mode-toggle]").get_by_text("Candles", exact=True).click()
-    page.locator("[data-product-candle-series]").first.wait_for(state="visible", timeout=30_000)
-    page.wait_for_function(
+    await page.locator("[data-product-chart-mode-toggle]").get_by_text("Candles", exact=True).click()
+    await page.locator("[data-product-candle-series]").first.wait_for(state="visible", timeout=30_000)
+    await page.wait_for_function(
         '() => new Set([...document.querySelectorAll("[data-product-candle-series]")]'
         '.map((node) => node.getAttribute("data-product-candle-series"))).size >= 3',
         timeout=30_000,
     )
-    _select_rollout_from_distribution(page)
-    page.locator("[data-product-selected-rollout-line]").wait_for(state="visible", timeout=30_000)
-    page.locator("[data-product-rollout-event-marker]").first.wait_for(state="visible", timeout=30_000)
+    await _select_rollout_from_distribution(page)
+    await page.locator("[data-product-selected-rollout-line]").wait_for(state="visible", timeout=30_000)
+    await page.locator("[data-product-rollout-event-marker]").first.wait_for(state="visible", timeout=30_000)
 
 
-def _select_rollout_from_distribution(page: Page) -> None:
+async def _select_rollout_from_distribution(page: Page) -> None:
     """Select a rollout directly from the multi-variant terminal-distribution chart. A click binds to
     the nearest variant line at that percentile (making it active), drawing the selection marker on
     the line and the rollout overlay on the timeline chart below, with the events panel carrying the active
     badge."""
-    _click_terminal_distribution_percentile(page, percentile=0.6, y_fraction=0.4)
-    page.locator("[data-product-distribution-selected]").wait_for(state="visible", timeout=30_000)
-    page.locator("[data-product-selected-rollout-line]").wait_for(state="visible", timeout=30_000)
-    page.get_by_text("Selected rollout events").wait_for(state="visible", timeout=30_000)
+    await _click_terminal_distribution_percentile(page, percentile=0.6, y_fraction=0.4)
+    await page.locator("[data-product-distribution-selected]").wait_for(state="visible", timeout=30_000)
+    await page.locator("[data-product-selected-rollout-line]").wait_for(state="visible", timeout=30_000)
+    await page.get_by_text("Selected rollout events").wait_for(state="visible", timeout=30_000)
 
 
-def _focus_active_scenario(page: Page) -> None:
+async def _focus_active_scenario(page: Page) -> None:
     """Collapse the multi-scenario overlay to just the active scenario via the Compare/Focus toggle,
     then select a rollout. Focus renders the active variant as a full single-scenario fan (the
     pre-comparison view), so the multi-scenario legend disappears; with a rollout selected, the
     events panel below carries the active-scenario badge that names which variant the timeline is."""
-    page.locator("[data-product-fan-legend]").wait_for(state="visible", timeout=30_000)
-    page.locator("[data-product-scenario-focus-toggle]").get_by_text("Focus", exact=True).click()
-    page.locator("[data-product-fan-legend]").wait_for(state="detached", timeout=30_000)
-    _select_first_rollout(page)
+    await page.locator("[data-product-fan-legend]").wait_for(state="visible", timeout=30_000)
+    await page.locator("[data-product-scenario-focus-toggle]").get_by_text("Focus", exact=True).click()
+    await page.locator("[data-product-fan-legend]").wait_for(state="detached", timeout=30_000)
+    await _select_first_rollout(page)
 
 
 VISUAL_CASES = (
@@ -464,22 +465,19 @@ def augur_server(augur_config: Config, hermetic_prices: dict[Platform, dict[str,
 
 
 @pytest.fixture
-def page(playwright_sync: Playwright) -> Iterator[Page]:
-    context = deterministic_browser_context(playwright_sync, viewport=SCREENSHOT_VIEWPORT, frozen_now_ms=FROZEN_NOW_MS)
-    page = context.new_page()
-    page.on(
-        "pageerror",
-        lambda err: page.evaluate(
-            "err => { window.__jsErrors = window.__jsErrors || []; window.__jsErrors.push(String(err)); }", str(err)
-        ),
-    )
-    try:
+async def page(playwright: Playwright) -> AsyncIterator[Page]:
+    async with await deterministic_browser_context(
+        playwright, viewport=SCREENSHOT_VIEWPORT, frozen_now_ms=FROZEN_NOW_MS
+    ) as context:
+        page = await context.new_page()
+
+        async def record_js_error(err: Error) -> None:
+            await page.evaluate(
+                "err => { window.__jsErrors = window.__jsErrors || []; window.__jsErrors.push(String(err)); }", str(err)
+            )
+
+        page.on("pageerror", record_js_error)
         yield page
-    finally:
-        try:
-            page.close()
-        finally:
-            context.close()
 
 
 @pytest.fixture
@@ -494,53 +492,53 @@ def page_errors(page: Page) -> list[str]:
     return errors
 
 
-def _take_stable_full_page_screenshot(page: Page, target_path: Path) -> Path:
+async def _take_stable_full_page_screenshot(page: Page, target_path: Path) -> Path:
     # Pin the `sticky top-0` header to the top of the full-page capture: Playwright paints a
     # sticky element at its last on-screen position, so a mid-page scroll (e.g. after a rollout
     # interaction) would otherwise leave the header floating over the middle of the screenshot.
-    page.evaluate("() => window.scrollTo(0, 0)")
+    await page.evaluate("() => window.scrollTo(0, 0)")
     previous_bytes: bytes | None = None
     previous_path: Path | None = None
     for attempt in range(6):
         attempt_path = target_path.with_name(f"{target_path.stem}.attempt{attempt}{target_path.suffix}")
-        page.screenshot(path=str(attempt_path), full_page=True, animations="disabled", caret="hide", scale="css")
+        await page.screenshot(path=str(attempt_path), full_page=True, animations="disabled", caret="hide", scale="css")
         current_bytes = attempt_path.read_bytes()
         if current_bytes == previous_bytes:
             shutil.copy(attempt_path, target_path)
             return target_path
         previous_bytes = current_bytes
         previous_path = attempt_path
-        page.wait_for_timeout(150)
+        await page.wait_for_timeout(150)
     assert previous_path is not None
     shutil.copy(previous_path, target_path)
     return target_path
 
 
-def _render_case(page: Page, origin: str, case: VisualCase, out_dir: Path) -> Path:
-    page.goto(f"{origin}{case.path}", wait_until="networkidle", timeout=60_000)
+async def _render_case(page: Page, origin: str, case: VisualCase, out_dir: Path) -> Path:
+    await page.goto(f"{origin}{case.path}", wait_until="networkidle", timeout=60_000)
     try:
-        case.wait_ready(page)
+        await case.wait_ready(page)
     except Exception:
         debug_dir = undeclared_outputs_dir()
-        page.screenshot(path=str(debug_dir / f"{case.name}.debug.png"), full_page=True)
-        dom = page.content()
+        await page.screenshot(path=str(debug_dir / f"{case.name}.debug.png"), full_page=True)
+        dom = await page.content()
         (debug_dir / f"{case.name}.debug.html").write_text(dom[:5000])
-        errors = page.evaluate("() => window.__jsErrors?.join('\\n') ?? 'no __jsErrors'")
+        errors = await page.evaluate("() => window.__jsErrors?.join('\\n') ?? 'no __jsErrors'")
         (debug_dir / f"{case.name}.debug.txt").write_text(f"JS errors: {errors}\nURL: {page.url}")
         raise
-    page.goto(page.url, wait_until="networkidle", timeout=60_000)
-    case.wait_ready(page)
+    await page.goto(page.url, wait_until="networkidle", timeout=60_000)
+    await case.wait_ready(page)
     if case.interact is not None:
-        case.interact(page)
-        _wait_for_product_chart_geometry(page)
-    return _take_stable_full_page_screenshot(page, out_dir / f"{case.name}.png")
+        await case.interact(page)
+        await _wait_for_product_chart_geometry(page)
+    return await _take_stable_full_page_screenshot(page, out_dir / f"{case.name}.png")
 
 
 @pytest.mark.parametrize("case", VISUAL_CASES, ids=[case.name for case in VISUAL_CASES])
-def test_augur_pages_render(
+async def test_augur_pages_render(
     page: Page, page_errors: list[str], augur_server: str, tmp_path: Path, case: VisualCase
 ) -> None:
-    rendered = _render_case(page, augur_server, case, tmp_path)
+    rendered = await _render_case(page, augur_server, case, tmp_path)
     if page_errors:
         raise AssertionError(f"{case.name}: uncaught page error(s) during render:\n" + "\n".join(page_errors))
 
