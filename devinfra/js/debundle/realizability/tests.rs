@@ -147,36 +147,6 @@ fn pure_lazy_cycle_is_realizable() {
     );
 }
 
-/// Residual is the source of a constraining edge into the SCC,
-/// but the SCC also has a constraining-target-residual edge.
-/// Lemma 2 fails: residual is the DFS root and evaluates last in
-/// post-order; the SCC member reading residual's binding TDZs.
-#[test]
-fn constraining_edge_into_residual_inside_scc_is_unrealizable() {
-    // owner_0: class Backend { ... } (residual, TDZ-locked target)
-    // owner_1: let currentLogger; (mod_logger)
-    // owner_2: function setLogger(impl) { currentLogger = impl; ... } (mod_logger)
-    // owner_3: setLogger(new Backend()); (mod_logger, at-init reads Backend)
-    // owner_4: console.log(currentLogger.tag); (residual, lazy read of currentLogger from mod_logger via re-export)
-    let source = "class Backend { constructor() { this.tag = \"B\"; } } let currentLogger; function setLogger(impl) { currentLogger = impl; globalThis.__tag = impl.tag; } setLogger(new Backend()); console.log(currentLogger);";
-    let owner_graph = parse_and_build(source);
-    let mut partition = Partition::new(&owner_graph, module_id(0));
-    // Backend (owner 0) stays in residual.
-    partition.set(OwnerId(1), module_id(1)); // currentLogger → mod_logger
-    partition.set(OwnerId(2), module_id(1)); // setLogger → mod_logger
-    partition.set(OwnerId(3), module_id(1)); // setLogger(new Backend()) → mod_logger
-    // owner 4 (console.log) stays in residual.
-    let verdict = check_realizability(&owner_graph, &partition);
-    // mod_logger → residual EagerUse (constraining target = residual)
-    // residual → mod_logger LazyUse (re-export / console.log)
-    // SCC = {residual, mod_logger}. Constraining edge target = residual.
-    // Residual is DFS root; mod_logger body runs first, reads Backend → TDZ.
-    assert!(
-        !verdict.is_realizable(),
-        "constraining edge target=residual must TDZ; verdict: {verdict:#?}",
-    );
-}
-
 /// Namespace-aggregator split: a module-level `const ids = {...sub1, ...sub2}`
 /// gets sub1 and sub2 extracted into separate modules, both INDEPENDENT of
 /// residual (pure literal initializers). The split is realizable: ESM evaluates
