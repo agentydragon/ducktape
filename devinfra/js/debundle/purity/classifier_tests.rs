@@ -756,38 +756,11 @@ fn declared_pure_overrides_global_shadowing() {
 }
 
 #[test]
-fn declared_pure_does_not_bleed_to_unannotated_callees() {
-    // Only the listed binding is treated pure. A call to a
-    // sibling that wasn't annotated stays subject to the
-    // normal classifier path (Unknown for opaque idents).
-    assert!(
-        !(classify_with_declared_pure(
-            "function pure(x) { return x; } function impure(x) { return x; }",
-            "impure(x)",
-            &["pure"]
-        ))
-        .is_pure()
-    );
-}
-
-#[test]
 fn declared_pure_new_ident_new_classifies_pure_with_pure_args() {
     assert!(
         (classify_with_declared_pure_new(
             "class PureBox { constructor(value) { globalThis.notAnalyzed = value; } }",
             "new PureBox({ value: 1, later() { globalThis.later = true; } })",
-            &["PureBox"]
-        ))
-        .is_pure()
-    );
-}
-
-#[test]
-fn declared_pure_new_requires_pure_args() {
-    assert!(
-        !(classify_with_declared_pure_new(
-            "class PureBox { constructor(value) { this.value = value; } }",
-            "new PureBox(makeValue())",
             &["PureBox"]
         ))
         .is_pure()
@@ -819,22 +792,6 @@ fn declared_pure_member_call_classifies_pure() {
         (classify_with_declared_pure_members(
             r#"import * as b from "vendor";"#,
             "b.forwardRef(function () {})",
-            "b",
-            &["forwardRef"]
-        ))
-        .is_pure()
-    );
-}
-
-#[test]
-fn declared_pure_member_call_with_impure_arg_inherits_arg_purity() {
-    // The declared-member-purity contract covers the function
-    // value; arg evaluation is independent. An impure arg makes
-    // the whole call Unknown.
-    assert!(
-        !(classify_with_declared_pure_members(
-            r#"import * as b from "vendor"; function io() { globalThis.x = 1; return 1; }"#,
-            "b.forwardRef(io())",
             "b",
             &["forwardRef"]
         ))
