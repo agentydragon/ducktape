@@ -189,7 +189,6 @@ tf.download(
         "restapi": "mastercard/restapi:2.0.1",
         "sops": "carlpett/sops:1.4.1",
         "talos": "siderolabs/talos:0.11.0",
-        "tls": "hashicorp/tls:4.4.1",
     },
     tfdoc_version = "0.19.0",
     tflint_version = "0.53.0",

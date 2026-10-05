@@ -10,17 +10,6 @@ output "kubeconfig" {
   sensitive = true
 }
 
-output "kubeconfig_data" {
-  description = "Kubeconfig data components for provider configuration"
-  value = {
-    host                   = local.kubeconfig_cluster_endpoint
-    client_certificate     = talos_cluster_kubeconfig.cluster.kubernetes_client_configuration.client_certificate
-    client_key             = talos_cluster_kubeconfig.cluster.kubernetes_client_configuration.client_key
-    cluster_ca_certificate = talos_cluster_kubeconfig.cluster.kubernetes_client_configuration.ca_certificate
-  }
-  sensitive = true
-}
-
 output "talos_config" {
   description = "Talos client configuration"
   value       = data.talos_client_configuration.cluster.talos_config
@@ -126,19 +115,8 @@ output "instructions" {
   EOT
 }
 
-# K8S WORKER JOIN CREDENTIALS (consumed by k8s-worker-proxmox / k8s-worker-libvirt)
-
-output "k8s_ca_cert" {
-  description = "Kubernetes CA certificate (PEM, base64-encoded)"
-  value       = talos_machine_secrets.cluster.machine_secrets.certs.k8s.cert
-  sensitive   = true
-}
-
-output "k8s_bootstrap_token" {
-  description = "Kubernetes bootstrap token for kubelet TLS bootstrap"
-  value       = talos_machine_secrets.cluster.machine_secrets.secrets.bootstrap_token
-  sensitive   = true
-}
+# TALOS MACHINE SECRETS (read by cluster/bootstrap.py, which derives the NixOS worker join
+# material from it)
 
 output "machine_secrets_json" {
   description = "Full machine secrets as JSON (for SOPS backup)"
