@@ -2,8 +2,6 @@
 # Most images still target GHCR; RTL-TCP targets the private Forgejo registry.
 #
 # Images:
-#   buildbuddy-remote-runner    — the `bb remote` runner: RBE container image base + the Nix devtools
-#                   (devinfra/buildbuddy_remote_runner/Dockerfile). Pinned in devinfra/bbr.json.
 #   freecad-test  — FreeCAD test runner (skills/freecad/Dockerfile.test)
 #   rtl-tcp       — RTL-SDR Blog V4 rtl_tcp server (x/rtl_tcp/Dockerfile); Flux ImagePolicy,
 #                   no digest pin needed. Uses rtl-sdr-blog fork for V4 R828D support.
@@ -19,51 +17,12 @@ name: Container Images
 on:
   push:
     branches: [main, devel]
-    # buildbuddy-remote-runner's Dockerfile COPYs flake.nix + nix/flake/** + nix/packages/**
-    # + artifact/gaffer pins and Attic's public key, then runs
-    # `nix build .#buildbuddy-remote-runner-tools`, so the image depends on
-    # those inputs. Missing them here means a Nix tooling change
-    # (e.g. #2706 adding bazel-diff) doesn't rebuild the image and
-    # image_pins.json falls out of date; the next `bazel-ci` run silently uses
-    # the old runner.
-    #
-    # devinfra/image_pins.json is here for the rbe_container pin only: the runner
-    # is FROM that digest, so an RBE container repin must cascade into a remote runner rebuild.
-    # Every pin commit except rbe-container-image.yml's carries `[skip ci]`, which
-    # is what stops that cascade from looping.
     paths:
       # keep-sorted start
       - ".github/workflows/container-images.yml"
-      - "devinfra/buildbuddy_remote_runner/Dockerfile"
-      - "devinfra/image_pins.json"
-      - "flake.lock"
-      - "flake.nix"
       - "loom/gym/sandbox/**"
-      - "nix/artifact-pins.json"
-      - "nix/attic-pubkeys.json"
-      - "nix/flake/**"
-      - "nix/gaffer-pins.json"
-      - "nix/packages/**"
       - "skills/freecad/Dockerfile.test"
-      - "skills/skills_registry.json"
       - "x/rtl_tcp/Dockerfile"
-      # keep-sorted end
-  # Build the real runner Dockerfile before merge, but do not log in, tag, push,
-  # publish cache entries, or update the pinned image digest.
-  pull_request:
-    paths:
-      # keep-sorted start
-      - ".github/workflows/container-images.yml"
-      - "devinfra/buildbuddy_remote_runner/Dockerfile"
-      - "devinfra/image_pins.json"
-      - "flake.lock"
-      - "flake.nix"
-      - "nix/artifact-pins.json"
-      - "nix/attic-pubkeys.json"
-      - "nix/flake/**"
-      - "nix/gaffer-pins.json"
-      - "nix/packages/**"
-      - "skills/skills_registry.json"
       # keep-sorted end
   workflow_dispatch:
 
@@ -76,78 +35,9 @@ permissions:
   packages: write
 
 env:
-  RUNNER_IMAGE: ghcr.io/${{ github.repository_owner }}/buildbuddy-remote-runner
   FREECAD_IMAGE: ghcr.io/${{ github.repository_owner }}/freecad-test
 
 jobs:
-  buildbuddy-remote-runner-pr:
-    name: BuildBuddy Remote Runner (build only)
-    if: github.event_name == 'pull_request'
-    # Read-only, and read-only is new here: the runner is FROM the RBE container image
-    # package, which is private, so an anonymous pull 404s. The rest of the
-    # deliberate no-credentials posture stands — no tag, no push, no cache
-    # publish, no repin.
-    permissions:
-      contents: read
-      packages: read
-    runs-on: ubuntu-latest
-    # A cold Nix closure plus Docker layer export can exceed the default on
-    # hosted runners; the build is still making progress when 15 minutes ends.
-    timeout-minutes: 30
-    steps:
-      - uses: actions/checkout@v7
-
-      - uses: docker/login-action@v4
-        with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ github.token }}
-
-      - uses: docker/setup-buildx-action@v4
-
-      - id: base
-        run: |
-          python3 -c "import json; p=json.load(open('devinfra/image_pins.json'))['rbe_container']; print('ref=' + p['image'] + '@' + p['digest'])" >> "$GITHUB_OUTPUT"
-
-      # With no output or tags, Buildx evaluates the complete Dockerfile and
-      # leaves the result only in its ephemeral build cache.
-      - name: Build
-        uses: docker/build-push-action@v7
-        with:
-          context: .
-          file: devinfra/buildbuddy_remote_runner/Dockerfile
-          build-args: BASE_REF=${{ steps.base.outputs.ref }}
-          push: false
-          cache-from: type=registry,ref=${{ env.RUNNER_IMAGE }}:buildcache
-
-  buildbuddy-remote-runner:
-    name: BuildBuddy Remote Runner
-    if: github.event_name != 'pull_request'
-    runs-on: ubuntu-latest
-    # Keep the production path consistent with the pull-request build above:
-    # cold-cache Nix evaluation and image export can take over 15 minutes.
-    timeout-minutes: 30
-    outputs:
-      pin_tag: ${{ steps.build.outputs.pin_tag }}
-    steps:
-      - uses: actions/checkout@v7
-        with:
-          ref: ${{ github.ref_name }}
-
-      - id: base
-        run: |
-          python3 -c "import json; p=json.load(open('devinfra/image_pins.json'))['rbe_container']; print('ref=' + p['image'] + '@' + p['digest'])" >> "$GITHUB_OUTPUT"
-
-      - uses: ./.github/actions/ghcr-build-push
-        id: build
-        with:
-          image: ${{ env.RUNNER_IMAGE }}
-          context: .
-          file: devinfra/buildbuddy_remote_runner/Dockerfile
-          build_args: BASE_REF=${{ steps.base.outputs.ref }}
-          cache_from: type=registry,ref=${{ env.RUNNER_IMAGE }}:buildcache
-          cache_to: type=registry,ref=${{ env.RUNNER_IMAGE }}:buildcache,mode=max
-
   freecad-image:
     name: FreeCAD Test
     if: github.event_name != 'pull_request'
@@ -228,8 +118,8 @@ jobs:
   # — registry auth is unaffected by branch protection.
   pin-digests:
     name: Pin Digests
-    needs: [buildbuddy-remote-runner, freecad-image]
-    if: always() && !cancelled() && (needs.buildbuddy-remote-runner.result == 'success' || needs.freecad-image.result == 'success')
+    needs: [freecad-image]
+    if: needs.freecad-image.result == 'success'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
@@ -251,16 +141,6 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ github.token }}
 
-      # --image re-homes the pin the first time a purpose-built runner is
-      # published: the entry is seeded against ghcr.io/…/bbr-runner, because a
-      # digest reference is scoped to the registry repo holding the manifest.
-      - name: Pin buildbuddy_remote_runner
-        if: needs.buildbuddy-remote-runner.result == 'success'
-        run: |
-          DIGEST=$(docker manifest inspect "$RUNNER_IMAGE:${{ needs.buildbuddy-remote-runner.outputs.pin_tag }}" --verbose | \
-            python3 -c "import json,sys; d=json.load(sys.stdin); d=d[0] if isinstance(d,list) else d; print(d['Descriptor']['digest'])")
-          python3 devinfra/update_image_pin.py buildbuddy_remote_runner --digest "$DIGEST" --image "$RUNNER_IMAGE"
-
       - name: Pin freecad_test
         if: needs.freecad-image.result == 'success'
         run: |
@@ -277,21 +157,14 @@ jobs:
           git config user.name "${APP_SLUG}[bot]"
           git config user.email "${APP_USER_ID}+${APP_SLUG}[bot]@users.noreply.github.com"
 
-          git add devinfra/image_pins.json devinfra/bbr.json
+          git add devinfra/image_pins.json
 
           if git diff --cached --quiet; then
             echo "Image pins already up to date"
             exit 0
           fi
 
-          MSG="chore: pin"
-          if [[ "${{ needs.buildbuddy-remote-runner.result }}" == "success" ]]; then
-            MSG="$MSG buildbuddy_remote_runner"
-          fi
-          if [[ "${{ needs.freecad-image.result }}" == "success" ]]; then
-            MSG="$MSG freecad_test"
-          fi
-          MSG="$MSG image digest(s) [skip ci]"
+          MSG="chore: pin freecad_test image digest [skip ci]"
 
           git commit -m "$MSG"
 

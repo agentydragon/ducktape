@@ -108,7 +108,7 @@ a library an action needs is worth it; never leave a falsehood in place to dodge
 rebuild. What to avoid is regular repins: don't widen `rbe-container-image.yml`'s
 trigger, and put nothing in the image that Bazel could supply from the repo it is
 building. Developer and agent tooling belongs in
-<devinfra/buildbuddy_remote_runner/Dockerfile>, whose digest no action hashes.
+<devinfra/buildbuddy_remote_runner/image.nix>, whose digest no action hashes.
 
 ## Issue Tracking
 

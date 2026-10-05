@@ -47,7 +47,7 @@ Two images, deliberately separate. `ghcr.io/agentydragon/rbe-container-image`
 BuildBuddy's `container-image` execution property. Its digest participates in each
 action's cache key, so it carries only what Bazel cannot supply from the repo.
 `ghcr.io/agentydragon/buildbuddy-remote-runner`
-(<devinfra/buildbuddy_remote_runner/Dockerfile>) adds the Nix devtools for the outer
+(<devinfra/buildbuddy_remote_runner/image.nix>) adds the Nix devtools for the outer
 `bb remote` Bazel invocation. It is pinned in <devinfra/bbr.json>. Setup:
 <devinfra/setup_buildbuddy.sh>.
 
