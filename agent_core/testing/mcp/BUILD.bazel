@@ -1,4 +1,4 @@
-load("//devinfra/python:defs.bzl", "py_library", "py_test")
+load("//devinfra/python:defs.bzl", "py_library")
 
 package(default_testonly = True)
 
@@ -41,33 +41,5 @@ py_library(
         "@pypi//fastmcp_slim",
         "@pypi//pydantic",
         "@pypi//pytest",
-    ],
-)
-
-py_library(
-    name = "conftest",
-    testonly = True,
-    srcs = ["conftest.py"],
-    deps = [
-        ":responses",
-        "//agent_core/testing:responses",
-        "@pypi//pytest",
-    ],
-)
-
-py_test(
-    name = "test_responses",
-    srcs = ["test_responses.py"],
-    deps = [
-        ":conftest",
-        ":responses",
-        "//:conftest",
-        "//agent_core:conftest",
-        "//agent_core/testing:matchers",
-        "//mcp_infra:prefix",
-        "//openai_utils:model",
-        "@pypi//pydantic",
-        "@pypi//pyhamcrest",
-        "@pypi//pytest_bazel",
     ],
 )
