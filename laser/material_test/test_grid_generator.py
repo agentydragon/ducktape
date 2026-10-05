@@ -9,7 +9,7 @@ import pytest
 import pytest_bazel
 
 from laser.lightburn.lbrn2_writer import LightBurnProject, RectShape, TextShape
-from laser.material_test.material_test import (
+from laser.material_test.grid_generator import (
     AxisConfig,
     BorderConfig,
     CellContent,

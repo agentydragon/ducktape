@@ -56,8 +56,7 @@ Import validation is on; every escape is explicit and local:
   gazelle-managed.
 - A rule-level `# keep` on hand-maintained rules whose `srcs` are excluded files:
   gazelle deletes managed-kind rules over files it cannot see
-  (`laser/material_test`, `skills/forgejo/scripts:forgejo_lib`,
-  `skills/testing:frontmatter_test`).
+  (`skills/forgejo/scripts:forgejo_lib`, `skills/testing:frontmatter_test`).
 - A dep-level `# keep: <reason>` suffix where the source file cannot carry the
   annotation: sibling stub dists a package's `__init__` chains into
   (`agent_framework_{anthropic,claude,openai}` beside `_core`), and any dep of a rule

@@ -3,7 +3,7 @@
 # Generates a parametric material test grid as a LightBurn .lbrn2 file.
 # Each cell is cut with a unique (x-param, y-param) combination.
 #
-# Run:  bazel run //laser/material_test -- example_config.toml [-o output.lbrn2]
+# Run:  bazel run //laser/material_test:grid_generator_bin -- example_config.toml [-o output.lbrn2]
 
 # ── Title / subtitle ────────────────────────────────────────────────────────────
 # title:         Main title printed above the grid.
