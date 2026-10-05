@@ -129,12 +129,9 @@ async def test_heartbeat_renewal_keeps_the_lease_alive_past_its_original_duratio
     store = ActionStore(make_sessionmaker(engine))
     request_id = await _allowed_execution(store, idempotency_key="renewed-lease")
 
-    claim = await store.claim_execution(
-        request_id, executor_id="healthy-executor", lease_duration=timedelta(seconds=0.05)
-    )
+    claim = await store.claim_execution(request_id, executor_id="healthy-executor", lease_duration=ALREADY_EXPIRED)
     assert claim is not None
     await store.mark_running(request_id)
-    await asyncio.sleep(0.06)  # past the original lease window
     renewed = await store.heartbeat_execution(
         request_id, claim.executor_id, claim.lease_token, lease_duration=timedelta(seconds=30)
     )
