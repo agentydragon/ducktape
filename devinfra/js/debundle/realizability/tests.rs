@@ -686,8 +686,7 @@ fn ladder_tier3_accepts_lemma_two_rescued_move() {
 #[test]
 fn ladder_rejects_entry_tdz_before_simulation() {
     // Asymmetric I-SCC with the constraining edge pointing INTO
-    // residual (the `constraining_edge_into_residual_inside_scc`
-    // shape, reached via a move): residual is the DFS root and
+    // residual (reached via a move): residual is the DFS root and
     // evaluates last, so the moved statement's eager read of `seed`
     // TDZs. Pass 1 is clean (one constraining direction) and the
     // entry-last check rejects before tier 2 can skip the simulator.
