@@ -24,6 +24,8 @@ export interface Scenario extends ScenarioOptions {
   openSettings?: boolean;
   /** Flip every Raw switch as it mounts: no URL param toggles one. */
   openRaw?: boolean;
+  /** Flip the sidebar's "Show archived" switch once it mounts: no URL param toggles it. */
+  showArchived?: boolean;
   /** Show failed Kubernetes grant provisioning in the Sandbox status summary. */
   grantError?: boolean;
   /** Show live pending Actions in the shell and thread composer. */
@@ -287,6 +289,15 @@ export const SCENARIOS: Record<string, Scenario> = {
     route: "/",
     viewport: { width: 1200, height: 900 },
     readySelectors: ["a.agentplane-sidebar-group-name"],
+  },
+  // The landing state with "Show archived" on: the archived thread's row carries the archive icon
+  // where a live thread has its status mark.
+  threads_archived: {
+    element: "#app",
+    route: "/",
+    viewport: { width: 1200, height: 900 },
+    showArchived: true,
+    readySelectors: [".agentplane-thread-status-indicator[data-status='archived']"],
   },
   threads_phone: { element: "#app", route: "/", viewport: PHONE, outputName: "threads-phone" },
   // The phone-width sidebar drawer opened full-screen over the landing view: the same

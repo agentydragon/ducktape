@@ -2444,6 +2444,16 @@ if (scenario.openSettings) {
   });
   openSettings.observe(document, { childList: true, subtree: true });
 }
+if (scenario.showArchived) {
+  // The switch is sidebar state with no URL param; flip it the way an operator would.
+  const showArchived = new MutationObserver(() => {
+    const toggle = document.querySelector<HTMLInputElement>('input[aria-label="Show archived threads"]');
+    if (!toggle) return;
+    showArchived.disconnect();
+    toggle.click();
+  });
+  showArchived.observe(document, { childList: true, subtree: true });
+}
 if (scenario.openRaw) {
   // No URL param toggles a Raw switch; flip each one as it mounts, the way an operator would.
   const flipped = new WeakSet<HTMLLabelElement>();
