@@ -87,9 +87,9 @@ def records_chart(app: App, mesh: nebula_mesh.Mesh) -> Chart:
     """The six non-HTTPRoute records currently owned by Terraform."""
     chart = Chart(app, f"{NAME}-records", disable_resource_name_hashes=True)
     public_nodes = mesh.public_kubernetes_nodes().values()
-    gateway_ips = sorted({node.public_ip for node in public_nodes})
+    gateway_ips = sorted({ip for node in public_nodes if (ip := node.public_ip) is not None})
     api_ips = sorted(
-        {node.public_ip for node in mesh.public_kubernetes_nodes().values() if node.role == "control-plane"}
+        {ip for node in public_nodes if node.role == "control-plane" and (ip := node.public_ip) is not None}
     )
     DnsEndpoint(
         chart,
