@@ -21,6 +21,7 @@ from external_secrets_crds.io.external_secrets import (
 from pydantic import BaseModel, ConfigDict
 
 from cluster.cdk8s import namespaces, terraform
+from cluster.cdk8s.external_secrets.minted_secret import mint_bearer_secret
 from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on_many
 from cluster.cdk8s.flux_webhook.chart import WEBHOOK_HOST
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
@@ -31,7 +32,7 @@ NAME = "forgejo-images"
 OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/forgejo-images"
 SECRET_NAME = "forgejo-images-creds"
 # The Receiver that a package webhook on the ducktape-ci user triggers, and the token Secret it
-# reads. The Terraform module writes the Secret here, beside the Receiver.
+# reads. ESO mints the Secret in this namespace and the Terraform module reads it from there.
 RECEIVER_NAME = "receiver"
 WEBHOOK_TOKEN_SECRET = "webhook-token"
 
@@ -74,6 +75,8 @@ def chart(app: App) -> Chart:
     )
     # Flux's own copy, for the image-automation ImageRepositories that scan the registry.
     forgejo_images_creds_external_secret(chart, "flux-system-creds", namespace="flux-system")
+    # Minted once: a new token would change the webhook's path.
+    mint_bearer_secret(chart, "webhook-token", name=WEBHOOK_TOKEN_SECRET, namespace=NAME, key="token")
     return chart
 
 
