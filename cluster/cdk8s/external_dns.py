@@ -42,9 +42,7 @@ def chart(app: App) -> Chart:
         chart,
         NAME,
         NAMESPACE,
-        repository=https_helm_repository(
-            chart, NAME, NAMESPACE, url="https://kubernetes-sigs.github.io/external-dns/"
-        ),
+        repository=https_helm_repository(chart, NAME, NAMESPACE, url="https://kubernetes-sigs.github.io/external-dns/"),
         chart=NAME,
         version="1.22.0",
         interval="15m",
@@ -77,9 +75,5 @@ def chart(app: App) -> Chart:
 
 def external_dns(chart: Chart, directory: RenderedDirectory, external_secrets_operator: Kustomization) -> Kustomization:
     return flux_kustomization(
-        chart,
-        NAME,
-        directory,
-        timeout="5m",
-        depends_on=[flux_kustomization_depends_on(external_secrets_operator)],
+        chart, NAME, directory, timeout="5m", depends_on=[flux_kustomization_depends_on(external_secrets_operator)]
     )
