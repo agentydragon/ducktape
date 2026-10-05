@@ -81,12 +81,20 @@ haku_vitest_test(
 )
 
 ts_library(
+    name = "preview_fixtures",
+    srcs = ["preview_fixtures.ts"],
+    isolated_typecheck = True,
+    tsconfig = TSCONFIG,
+    deps = ["//haku/console/frontend/tool_rendering"],
+)
+
+ts_library(
     name = "preview_harness",
     srcs = ["preview_harness.tsx"],
     isolated_typecheck = True,
     tsconfig = TSCONFIG,
     deps = [
-        "//haku/console/frontend/tool_rendering",
+        ":preview_fixtures",
         "//haku/console/frontend/tool_rendering/screenshot:mount",
     ],
 )
@@ -94,6 +102,7 @@ ts_library(
 preview_screenshots(
     name = "previews",
     entry = "preview_harness.js",
+    fixtures = "preview_fixtures.js",
     deps = [":preview_harness"],
 )
 

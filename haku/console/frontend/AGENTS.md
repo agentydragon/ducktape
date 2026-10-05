@@ -23,18 +23,20 @@ overflows or collides, and that both content and chrome read clearly — not mer
 rendered. The test is a generator, not a pixel-diff gate: it passes as long as every scene
 renders, so it never blocks CI on "looks different", but a blank/crashed scene fails it.
 
-The per-tool-call **preview cards** are a separate `:previews` `js_test` per MCP server, co-located
-with the widgets under `tool_rendering/<server>/` (`preview_harness.tsx`),
-sharing one harness in `tool_rendering/screenshot/` (`card.tsx` renders a standalone `ToolCallCard`
-at the real approvals-panel width; `render.mjs` screenshots each fixture × variant × theme; the
-`preview_screenshots` macro wires the native-esbuild bundle + `js_test`). Each server's target
+The per-tool-call **preview cards** are a separate `:previews` `py_visual_test` per MCP server,
+co-located with the widgets under `tool_rendering/<server>/` (`preview_fixtures.ts`, mounted by
+`preview_harness.tsx`), sharing one harness in `tool_rendering/screenshot/` (`card.tsx` renders a
+standalone `ToolCallCard` at the real approvals-panel width; the `preview_screenshots` macro wires the
+native-esbuild bundle, a scenario table generated from the fixtures by `emit_scenarios.mjs`, and the
+Python sweep that screenshots each fixture × variant × theme). Each server's target
 emits its own `visual-review.json`, and `pr_visuals.py` aggregates them — so each tool-call preview
 is its own figure on the PR-visuals page, and a widget change re-runs only that server's screenshots
 (per-target Bazel caching). When you add or change a per-server widget
 (`tool_rendering/<server>/{requests,responses}.tsx`), add a fixture to that server's
-`preview_harness.tsx` (it `satisfies RegisteredToolPreviewFixture`, so a stale id/arg is a type
-error the `ts_library` wrapping it catches on build) and re-run
-`bbr test //haku/console/frontend/tool_rendering/<server>:previews`. Add a whole
+`preview_fixtures.ts` (typed `RegisteredToolPreviewFixture`, so a stale id/arg is a type
+error the `ts_library` wrapping it catches on build; the scenarios follow from the list) and re-run
+`bbr test //haku/console/frontend/tool_rendering/<server>:previews`; `--test_filter=<fixture slug>`
+renders one. Add a whole
 new scene to `screenshots/harness.tsx` (and the `SCENES` list in `screenshots/render.mjs`) whenever
 you add a new surface. A single-component scene must render inside its real production container
 (preview cards use `.haku-shell-panels`) and take an element

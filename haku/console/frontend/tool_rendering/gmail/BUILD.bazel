@@ -87,19 +87,27 @@ filegroup(
     srcs = glob(["*.tsx"]),
 )
 
-# Preview-screenshot fixtures for this server (rendered by the `:previews` target below). Each
-# (serverId, toolName, args) `satisfies RegisteredToolPreviewFixture`, so a stale id/arg is a
-# type error against the registry's real Zod schemas.
-# The esbuild entry the `:previews` target bundles into an IIFE — this server's fixtures plus the
-# mount call (mount imports the fetch mock first).
+# Preview-screenshot fixtures for this server. Each (serverId, toolName, args) is a
+# `RegisteredToolPreviewFixture`, so a stale id/arg is a type error against the registry's real Zod
+# schemas. The `:previews` target mounts them and derives its scenarios from them.
+ts_library(
+    name = "preview_fixtures",
+    srcs = ["preview_fixtures.ts"],
+    isolated_typecheck = True,
+    tsconfig = TSCONFIG,
+    deps = ["//haku/console/frontend/tool_rendering"],
+)
+
+# The esbuild entry the `:previews` target bundles into an IIFE: the fetch mock, then the mount of
+# the fixtures.
 ts_library(
     name = "preview_harness",
     srcs = ["preview_harness.tsx"],
     isolated_typecheck = True,
     tsconfig = TSCONFIG,
     deps = [
+        ":preview_fixtures",
         ":preview_mock",
-        "//haku/console/frontend/tool_rendering",
         "//haku/console/frontend/tool_rendering/screenshot:mount",
     ],
 )
@@ -147,15 +155,15 @@ haku_vitest_test(
     ],
 )
 
-# One preview screenshot `js_test` for this server: bundles preview_harness.tsx (this server's
-# fixtures + the shared mount) and runs the shared render driver; :preview_harness's transitive
-# deps (shared harness and gmail widgets) are what esbuild bundles.
+# One preview screenshot sweep for this server: bundles preview_harness.tsx (the fixtures + the
+# shared mount) and renders one scenario per fixture x variant x color scheme, the table derived from
+# preview_fixtures.js; :preview_harness's transitive deps (shared harness and gmail widgets) are what
+# esbuild bundles.
 preview_screenshots(
     name = "previews",
     entry = "preview_harness.js",
-    deps = [
-        ":preview_harness",
-    ],
+    fixtures = "preview_fixtures.js",
+    deps = [":preview_harness"],
 )
 
 check_vitest_specs()

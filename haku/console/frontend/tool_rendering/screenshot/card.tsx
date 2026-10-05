@@ -1,7 +1,7 @@
 // The standalone preview card each per-server screenshot target renders. Shared across servers;
 // each server's `preview_harness.tsx` imports `mountPreviewCards` (see mount.tsx) with its own
-// fixtures. render.mjs (in this dir) drives one page load per fixture × variant × color scheme
-// and element-screenshots `.haku-preview-card`.
+// fixtures. The sweep loads one page per fixture × variant × color scheme and element-screenshots
+// `.haku-preview-card`.
 import type { ReactNode } from "react";
 
 import { approvalDisplayFields } from "../../approval_state";
@@ -38,26 +38,6 @@ export function callToolResult(value: unknown): StoredToolResult {
   };
 }
 
-// Slug for one preview fixture's PNG filename (mirrors target_slug in devinfra/ci/pr_visuals.py).
-export function previewSlug(serverId: string, toolName: string): string {
-  return `${serverId}-${toolName}`
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/^-+|-+$/g, "");
-}
-
-// One stable slug + human label per fixture; duplicate (serverId, toolName) pairs get -2, -3, …
-// so every preview PNG filename stays unique (writeVisualReviewManifest rejects duplicate paths).
-export function previewFixtureSlugs(fixtures: PreviewFixture[]): { slug: string; label: string }[] {
-  const seen = new Map<string, number>();
-  return fixtures.map(({ serverId, toolName }) => {
-    const base = previewSlug(serverId, toolName);
-    const count = seen.get(base) ?? 0;
-    seen.set(base, count + 1);
-    return { slug: count === 0 ? base : `${base}-${count + 1}`, label: `${serverId} · ${toolName}` };
-  });
-}
-
 const noop = () => {};
 
 export function PreviewCard({ fixture, variant }: { fixture: PreviewFixture; variant: PreviewVariant }): ReactNode {
@@ -91,7 +71,7 @@ export function PreviewCard({ fixture, variant }: { fixture: PreviewFixture; var
     // `.haku-page` (position overridden to static) mirrors the real surface so the card's
     // page-scoped CSS applies, and `.haku-shell-panels` is the real approvals-panel column class,
     // so the card renders at its production width and tracks that CSS if it changes — never a
-    // magic-number viewport width. `.haku-preview-card` is render.mjs's screenshot target: an
+    // magic-number viewport width. `.haku-preview-card` is the sweep's screenshot target: an
     // opaque background keeps the standalone PNG self-contained, and forcing no height gives a
     // tight crop at the card's real rendered height.
     <AgentNamesProvider load={false} initialNames={new Map(Object.entries(agentDisplayNames ?? {}))}>

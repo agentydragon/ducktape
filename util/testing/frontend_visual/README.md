@@ -8,9 +8,8 @@ Python/Playwright path used by `study_casino`, `finance/augur`, `airlock/fronten
 Browser tests are moving to the Python path, lane by lane — see [The Python sweep](#the-python-sweep).
 `capture.mjs` holds the lower-level page-prep/capture
 primitives (`prepareDeterministicPage`, `screenshotElement`, `waitForStable`) that
-`visual-test-lib.mjs` and haku console's own multi-scene renderers
-(`haku/console/frontend/screenshots/render.mjs`,
-`haku/console/frontend/tool_rendering/screenshot/render.mjs`) build on — a
+`visual-test-lib.mjs` and haku console's own multi-scene renderer
+(`haku/console/frontend/screenshots/render.mjs`) build on — a
 library, not a `main()`, so each caller keeps owning content-loading,
 orchestration, and its own exit code.
 
@@ -89,6 +88,8 @@ selectors, the request fence, the fetch ledger, zero uncaught page errors — wi
   stylesheets and `DISABLE_ANIMATIONS_CSS` into a document loaded with `set_content`. Such a page has no
   URL query, so a scenario's `windowGlobals` assign the `window` values that tell the harness which scene
   it is, and the request fence allows nothing at all. `harness` may then be an esbuild `output_dir`.
+  `haku/console/frontend/tool_rendering/screenshot` is the example, its table generated at build time from
+  each server's fixtures.
 - **Selectors are Playwright's.** Puppeteer's `::-p-text(...)` does not exist; `readySelectors` wait for
   presence, as before.
 - **The target is not `visual` if the harness lives in a `visual/` directory.** A `py_test`'s

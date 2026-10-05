@@ -30,7 +30,7 @@ Use one of the shared harnesses and it's automatic:
   accumulates the manifest.
 - Custom drivers write the manifest themselves via
   `writeVisualReviewManifest` / `write_visual_review_manifest`
-  (e.g. haku's `tool_rendering/screenshot/render.mjs`).
+  (e.g. haku's `screenshots/render.mjs`).
 
 **Gotcha: one commit, several CI runs.** A `//...` devel sweep and an affected-set
 run can both exist at one commit, and only the sweep carries visual manifests. So
