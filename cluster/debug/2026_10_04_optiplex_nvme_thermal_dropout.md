@@ -111,9 +111,9 @@ reconciled here.
 
 ## What is not known
 
-- Why the runner pods were recreated repeatedly (five incarnations of `dns-records-tf-runner`
-  in 35 minutes), and what inside them wrote gigabytes. Repeated `tofu init` provider downloads
-  into the pod's scratch volume fit the numbers but were not observed.
+- Why runner creations at 23:11–23:15 ran at about three times the designed rate (the failed pods'
+  reasons were not read), and what inside the runners wrote gigabytes. Repeated provider
+  downloads into the pod's scratch volume fit the numbers but were not observed.
 - Why 30 MB/s was enough to reach 97 °C, and why write latency reached seconds. Both fit a
   drive that was thermally throttling and then stalling, but that is not shown. A 256 GB OEM
   drive with no heatsink in an enclosed micro chassis is a candidate; its SMART data (media
