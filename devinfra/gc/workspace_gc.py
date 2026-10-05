@@ -223,7 +223,7 @@ def render_worktrees(items: list[Classification], *, include_kept: bool) -> str:
         "review": sum(isinstance(item, ReviewWorktree) for item in items),
     }
     headers = ["STATUS", "LAST ACTIVITY", "WORKTREE", "BRANCH", "DETAIL"]
-    parts = [tabulate(rows, headers=headers, tablefmt="plain")] if rows else []
+    parts = [tabulate(rows, headers=headers, tablefmt="plain", disable_numparse=True)] if rows else []
     parts.append(
         f"Summary: {len(items)} worktrees; {counts['prunable']} prunable, "
         f"{counts['kept']} kept, {counts['review']} review"
@@ -248,7 +248,7 @@ def render_branches(items: list[BranchClassification], *, include_kept: bool) ->
         "review": sum(not isinstance(item, PrunableBranch | RetainedBranch) for item in items),
     }
     headers = ["STATUS", "BRANCH", "DETAIL"]
-    parts = [tabulate(rows, headers=headers, tablefmt="plain")] if rows else []
+    parts = [tabulate(rows, headers=headers, tablefmt="plain", disable_numparse=True)] if rows else []
     parts.append(
         f"Summary: {len(items)} branches; {counts['prunable']} prunable, "
         f"{counts['kept']} kept, {counts['review']} review"
