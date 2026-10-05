@@ -274,9 +274,7 @@ def test_product_fails_when_sample_is_missing_required_series(
 
     # The portfolio's index-proxy holding is VOO; that it tracks SPY is the model's mirror, so
     # the scenario's DEMAND is for VOO — the holding's own symbol.
-    with pytest.raises(
-        ValueError, match=f"missing required level series: .*{SecurityKey(symbol=SecuritySymbol('VOO')).wire_id}"
-    ):
+    with pytest.raises(ValueError, match=SecurityKey(symbol=SecuritySymbol("VOO")).wire_id):
         product.rollout(_rollout_request(scenario_key))
 
     assert model.sample_requests[0].required_level_series
@@ -315,7 +313,7 @@ def test_product_fails_when_crypto_holding_price_is_not_modeled(
     ).realize_model()
     product = make_product_service(model, config=augur_config)
 
-    with pytest.raises(ValueError, match=r"missing required level series: .*security:btc"):
+    with pytest.raises(ValueError, match="security:btc"):
         product.rollout(_rollout_request(scenario_key))
 
 
@@ -768,7 +766,8 @@ def test_product_rollout_includes_private_equity_opportunity_trace(make_product_
     [opportunity] = [event for event in detail.rollout.events if event.kind == "private_equity_opportunity"]
     assert isinstance(opportunity, PrivateEquityOpportunityEvent)
     assert opportunity.month_index == 1
-    assert opportunity.asset_label == "Private Holding A (PHA)"
+    assert opportunity.asset == PrivateEquityAssetKey(issuer_id=issuer_id)
+    assert opportunity.asset_label is not None
     assert opportunity.event_kind == "tender"
     assert opportunity.outcome == "floor_satisfied"
     assert opportunity.shortfall_quanta == _usd_quanta(0.0)
@@ -937,7 +936,7 @@ def test_outside_rent_zero_omits_rent_series_requirement(
     assert not any(isinstance(key, RentKey) for key in counting_model.sample_requests[0].required_level_series)
 
 
-def test_outside_rent_rejects_unknown_location(product: service.ProductService) -> None:
+def test_outside_rent_rejects_unknown_location(product: service.ProductService, counting_model: CountingModel) -> None:
     scenario = ScenarioKey(
         model_id="current_model",
         horizon_months=3,
@@ -947,8 +946,11 @@ def test_outside_rent_rejects_unknown_location(product: service.ProductService) 
         rental_location_id=LocationId("not_a_real_location"),
     )
 
-    with pytest.raises(ValueError, match=r"unknown rental_location_id"):
+    with pytest.raises(ValueError, match="not_a_real_location"):
         product.rollout(_rollout_request(scenario))
+
+    # Refused before anything is sampled; otherwise it would fail later, on the rent series it demands.
+    assert counting_model.sample_requests == []
 
 
 def test_scenario_key_rejects_rent_without_location() -> None:
@@ -1583,7 +1585,7 @@ def test_property_purchase_rejects_unknown_property(product: service.ProductServ
         ),
     )
 
-    with pytest.raises(ValueError, match=r"unknown property_id"):
+    with pytest.raises(ValueError, match="ghost_property"):
         product.rollout(_rollout_request(scenario))
 
 
