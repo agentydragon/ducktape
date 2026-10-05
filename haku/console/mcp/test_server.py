@@ -37,7 +37,7 @@ from haku.console.mcp import catalog_reconciler as mcp_catalog_reconciler_module
 from haku.console.mcp.approval import DegradedReflection, ReflectionFailureStage
 from haku.console.mcp.reflection_cache import ReflectedCatalog
 from haku.console.mcp.tool_call_service import ToolCallApplicationService, ToolCallNotFoundError
-from haku.console.mcp_config import ConsoleConfigFile, InProcessServers, const_in_process_server
+from haku.console.mcp_config import InProcessServers, const_in_process_server
 from haku.console.tool_call_actor import RuntimeActor
 from haku.console.tool_calls import (
     MCP_TOOL_CALL_META_KEY,
@@ -1216,18 +1216,6 @@ def test_mcp_oauth_requires_postgres_persistence() -> None:
         McpOAuthConfig.model_validate({**provider, "persistence": {"kind": "valkey", "host": "valkey.example.test"}})
 
 
-def test_mcp_oauth_persistence_must_share_the_console_database() -> None:
-    oauth = McpOAuthConfig(
-        oidc_issuer="https://auth.example.test/application/o/haku-console-mcp/",
-        oidc_client_id="console",
-        oidc_client_secret=SecretStr("secret"),
-        persistence=PostgresPersistence(kind="postgres", url="postgresql://app:secret@other-db.example.test:5432/haku"),
-    )
-
-    with pytest.raises(ValidationError):
-        console_settings("postgresql+psycopg://app:secret@db.example.test:5432/haku", mcp_oauth=oauth)
-
-
 async def test_oauth_composes_with_static_bearer(migrated_db_url: str, tmp_path: Path) -> None:
     with _serve_mock_oidc() as oidc:
         # public_base_url is the console's own URL, so bind its port before building the app.
@@ -1405,73 +1393,6 @@ async def test_oauth_composes_with_static_bearer(migrated_db_url: str, tmp_path:
 
                 # Discovery is shared at root, not the operational OAuth surface.
                 assert (await anon.post(f"{base}/register", json={})).status_code == 404
-
-
-def test_duplicate_static_agent_ids_fail_startup(migrated_db_url: str, tmp_path: Path) -> None:
-    config_file = _write_console_config(
-        tmp_path / "duplicate-agent.yaml", {"static_agents": {**_STATIC_AGENTS, "duplicate": _STATIC_AGENTS["haku"]}}
-    )
-    with pytest.raises(ValidationError, match="duplicate static Agent id"):
-        create_app(console_settings(migrated_db_url, config_file=config_file))
-
-
-def test_missing_deploy_config_fails_startup(migrated_db_url: str) -> None:
-    with pytest.raises(RuntimeError, match=re.escape("/nonexistent/haku-console.yaml")):
-        console_settings(migrated_db_url, config_file=Path("/nonexistent/haku-console.yaml"))
-
-
-def test_duplicate_mcp_server_ids_fail_config_validation() -> None:
-    with pytest.raises(ValidationError):
-        ConsoleConfigFile.model_validate(
-            _with_manual_authority(
-                {
-                    "mcp": {
-                        "servers": {
-                            "grocy_one": {"id": "grocy", "backend": _in_process_backend({"kind": "none"})},
-                            "grocy_two": {"id": "grocy", "backend": _in_process_backend({"kind": "none"})},
-                        }
-                    }
-                }
-            )
-        )
-
-
-def test_duplicate_sanitized_mcp_server_prefixes_fail_config_validation() -> None:
-    with pytest.raises(ValidationError):
-        ConsoleConfigFile.model_validate(
-            _with_manual_authority(
-                {
-                    "mcp": {
-                        "servers": {
-                            "grocy_hyphen": {"id": "grocy-sf", "backend": _in_process_backend({"kind": "none"})},
-                            "grocy_underscore": {"id": "grocy_sf", "backend": _in_process_backend({"kind": "none"})},
-                        }
-                    }
-                }
-            )
-        )
-
-
-def test_duplicate_static_agent_tokens_fail_startup(
-    migrated_db_url: str, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    config_file = _write_console_config(
-        tmp_path / "duplicate-token.yaml",
-        {
-            "static_agents": {
-                **_STATIC_AGENTS,
-                "ops": {
-                    "agent_id": "40000000-0000-4000-8000-000000000005",
-                    "display_name": "Ops Bot",
-                    "token": _AGENT_TOKEN,
-                    "operator_subject": "99",
-                    "access_profile_id": _MANUAL_ACCESS_PROFILE_ID,
-                },
-            }
-        },
-    )
-    with pytest.raises(RuntimeError, match="duplicate static agent bearer tokens"):
-        create_app(console_settings(migrated_db_url, config_file=config_file))
 
 
 if __name__ == "__main__":
