@@ -124,15 +124,22 @@ export function entity(
   };
 }
 
-/** Serves every body at once, over an empty thread with no command rows. */
-export function serving(bodies: ReadonlyMap<string, string>): ThreadSync {
+/** Serves every body at once, over an empty thread with no command rows, except the `stopped` ones
+ * (by `owner:field`), whose reads failed before any of them arrived and which `retry` reads again. */
+export function serving(
+  bodies: ReadonlyMap<string, string>,
+  stopped: ReadonlyMap<string, () => void> = new Map()
+): ThreadSync {
   const empty = threadState({ rows: [] });
   return {
     Thread: ({ children }) => <>{children}</>,
     useThread: () => empty,
     useCommandRows: () => [],
     usePayload: ({ owner_id, field }) => {
-      const body = bodies.get(`${owner_id}:${field}`);
+      const key = `${owner_id}:${field}`;
+      const retry = stopped.get(key);
+      if (retry) return { body: null, error: "test read failure", retry };
+      const body = bodies.get(key);
       if (body === undefined) throw new Error(`test fixture has no ${field} body for ${owner_id}`);
       return { body, error: null, retry: () => {} };
     },

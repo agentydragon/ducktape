@@ -33,11 +33,7 @@ py_test(
     name = "visual_test",
     size = "large",
     srcs = ["visual_test.py"],
-    data = [
-        ":bundle",
-        "@chrome_headless_shell//:executable",
-    ],
-    env = {"CHROMIUM_HEADLESS_SHELL": "$(rootpath @chrome_headless_shell//:executable)"},
+    data = [":bundle"],
     tags = ["visual"],
     deps = [
         "//:conftest",

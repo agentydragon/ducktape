@@ -51,10 +51,12 @@ py_test(
         ":console_events",
         "//:conftest",
         "//haku/console:conftest",
+        "//haku/console/identity:operator_auth",
         "//haku/console/identity:operator_identity_store",
         "@pypi//fastapi",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
+        "@pypi//starlette",
     ],
 )
 

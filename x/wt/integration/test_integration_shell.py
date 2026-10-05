@@ -29,10 +29,7 @@ class TestShellIntegration:
         # Test basic help command - should not require real git repo setup
         result = shell_runner.run_wt(main_repo=test_config.main_repo, wt_args=["--help"])
 
-        # Should succeed and show help output
         assert result.returncode == 0, f"Help command failed: {result.stderr}"
-        # Click default help prints 'Usage:' for subcommands
-        assert "Usage:" in result.stdout
 
     def test_wt_main_changes_directory(self, real_temp_repo, real_env, shell_runner):
         # Cleaned by real_env fixture

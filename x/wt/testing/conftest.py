@@ -31,7 +31,7 @@ from x.wt.shared.protocol import (
     StatusResultOk,
 )
 from x.wt.testing.config_factory import ConfigFactory, gitstatusd_binary
-from x.wt.testing.mock_factory import MockFactory, ServiceBuilder
+from x.wt.testing.mock_factory import ServiceBuilder
 from x.wt.testing.repo_factory import GitRepoFactory
 from x.wt.testing.utils import run_cli_command, wait_until
 
@@ -69,12 +69,6 @@ def disable_gh_cli_token(monkeypatch):
     Tests that truly need real GitHub should explicitly bypass or override this.
     """
     monkeypatch.setattr(github_client, "get_github_token", lambda *a, **kw: None)
-
-
-@pytest.fixture
-def mock_factory():
-    """Factory for creating configured mocks with standard behaviors."""
-    return MockFactory
 
 
 @pytest.fixture

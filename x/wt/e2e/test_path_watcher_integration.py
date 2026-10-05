@@ -64,13 +64,8 @@ def test_path_watcher_full_lifecycle(wt_cli, real_config, pygit2_repo):
     assert worktree_path.exists(), f"Worktree not created at {worktree_path}"
     assert worktree_path.is_dir(), f"Worktree path is not a directory: {worktree_path}"
 
-    # Wait for watcher-driven status to reflect the new worktree
-    wait_for_status_contains(wt_cli, "feature-test")
-
     # Step 3: Status should now show the new worktree (detected via path watcher)
-    result = wt_cli.status(timeout=timedelta(seconds=5.0))
-    assert result.returncode == 0, f"Status after create failed: {result.stderr}"
-    assert "feature-test" in result.stdout, "New worktree not detected in status output"
+    wait_for_status_contains(wt_cli, "feature-test")
 
     # Step 4: Remove the worktree
     result = wt_cli.sh("rm", "feature-test", "--force", timeout=timedelta(seconds=5.0))
@@ -81,16 +76,8 @@ def test_path_watcher_full_lifecycle(wt_cli, real_config, pygit2_repo):
     # Verify worktree was removed from filesystem
     assert not worktree_path.exists(), f"Worktree still exists after removal: {worktree_path}"
 
-    # Wait for watcher to drop the worktree from status
-    wait_for_status_not_contains(wt_cli, "feature-test")
-
     # Step 5: Status should no longer show the worktree (detected removal via path watcher)
-    result = wt_cli.status(timeout=timedelta(seconds=5.0))
-    assert result.returncode == 0, f"Status after remove failed: {result.stderr}"
-    # Note: The daemon should detect that the worktree is gone and either:
-    # 1. Not show it in status output, or
-    # 2. Show it with an error state indicating it's missing
-    # Either way, this tests that the path watcher is working
+    wait_for_status_not_contains(wt_cli, "feature-test")
 
 
 if __name__ == "__main__":

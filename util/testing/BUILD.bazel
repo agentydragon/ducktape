@@ -121,6 +121,7 @@ filegroup(
         "chromium-flags.json",
         "chromium-font-preferences.json",
         "frozen-clock.js",
+        "@chrome_headless_shell//:executable",
     ],
     visibility = ["//util/testing/frontend_visual:__pkg__"],
 )
@@ -158,11 +159,7 @@ py_test(
     srcs = ["test_frontend_visual.py"],
     data = [
         "//util:playwright",
-        "@chrome_headless_shell//:executable",
     ],
-    env = {
-        "CHROMIUM_HEADLESS_SHELL": "$(rootpath @chrome_headless_shell//:executable)",
-    },
     tags = ["visual"],
     deps = [
         ":frontend_visual",

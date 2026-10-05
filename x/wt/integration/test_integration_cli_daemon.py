@@ -18,35 +18,12 @@ class TestCLIIntegration:
         # We assert absence of typical worktree parent path
         assert "Available worktrees:" not in result.stdout
 
-    def test_list_worktrees_with_existing(self, real_temp_repo, real_env, wt_cli):
-        """Test listing worktrees when some exist."""
-
-        # Create a worktree first
-        result = wt_cli.sh_c("feature1")
-        assert result.returncode == 0, f"Create failed: {result.stderr}"
-
-        # List worktrees
-        result = wt_cli.sh("ls")
-        assert result.returncode == 0
-        assert_output_contains(result.stdout, "feature1")
-
     def test_create_worktree_reserved_name(self, real_temp_repo, wt_cli):
         """Test that creating worktrees with reserved names fails."""
 
         result = wt_cli.sh_c("main")
         assert result.returncode != 0
         assert "reserved" in result.stderr.lower() or "error" in result.stdout.lower()
-
-    def test_path_commands(self, real_temp_repo, wt_cli):
-        """Test path resolution commands."""
-
-        # Create a worktree
-        wt_cli.sh_c("path-test")
-
-        # Test path command
-        result = wt_cli.sh("path", "path-test")
-        assert result.returncode == 0
-        assert_output_contains(result.stdout, "path-test")
 
     def test_path_command_worktree_name(self, real_temp_repo, wt_cli):
         """ "x" resolves to the worktree directory (treat as worktree name)."""

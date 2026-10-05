@@ -343,13 +343,14 @@ function SidebarView({
   }, [open, phone, onClose]);
 
   const threads = data?.threads ?? [];
+  const current = threadRoute?.params.threadId ?? null;
   const groups = groupThreads(
     threads,
     Object.fromEntries((data?.sandboxes ?? []).map((sandbox) => [sandbox.name, sandbox])),
-    includeArchived
+    includeArchived,
+    current
   );
   const archived = archivedCount(threads);
-  const current = threadRoute?.params.threadId ?? null;
 
   async function toggleArchived(thread: ThreadView): Promise<void> {
     setError(null);

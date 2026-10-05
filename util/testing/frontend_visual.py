@@ -4,8 +4,9 @@ The Chromium flag set and the frozen-clock init script are single-sourced with
 the JS Puppeteer launcher (`frontend_visual/launcher.mjs`): both read
 `util/testing/chromium-flags.json` and `util/testing/frozen-clock.js` (kept at
 this level — a data file under `frontend_visual/` would shadow this module as
-a namespace package), and both resolve the hermetic browser from
-`CHROMIUM_HEADLESS_SHELL`, the path of the `@chrome_headless_shell//:executable` binary.
+a namespace package), and both drive the hermetic `@chrome_headless_shell` browser. This
+module finds its binary in the runfiles, where `browser_launcher_assets` puts it; the JS launcher
+is handed the path in `CHROMIUM_HEADLESS_SHELL`.
 """
 
 from __future__ import annotations
@@ -16,7 +17,7 @@ import tempfile
 from pathlib import Path
 from typing import TYPE_CHECKING, Literal
 
-from util.bazel.runfiles import get_required_path, own_repo_rlocation
+from util.bazel.runfiles import find_path, get_required_path, own_repo_rlocation
 
 if TYPE_CHECKING:
     from playwright.async_api import BrowserContext, Playwright, ViewportSize
@@ -35,9 +36,9 @@ DETERMINISTIC_BROWSER_ARGS: list[str] = CONTAINER_BASE_BROWSER_ARGS + _FLAGS["de
 
 
 def chromium_executable() -> str | None:
-    """The hermetic headless-shell executable from `CHROMIUM_HEADLESS_SHELL`, or None
-    to fall back to Playwright's own browser resolution (local runs)."""
-    return os.environ.get("CHROMIUM_HEADLESS_SHELL") or None
+    """The hermetic headless-shell executable in this target's runfiles, or None
+    to fall back to Playwright's own browser resolution."""
+    return str(path) if (path := find_path("chrome_headless_shell/chrome-headless-shell")) else None
 
 
 def _font_pinned_user_data_dir() -> Path:

@@ -255,6 +255,40 @@ async def test_allowance_account_coverage_and_freshness_gate(connection: asyncpg
         await service.close()
 
 
+async def test_prior_purchases_are_queried_for_pace_but_not_balance(
+    connection: asyncpg.Connection, postgres_url: str
+) -> None:
+    now = datetime.now(UTC)
+    await add_link(connection, "item-card", synced=now)
+    await add_account(connection, "card-1", "item-card", type="credit")
+    await add_transaction(connection, "card-1", "item-card", "prior", now.date() - timedelta(days=1), 70.0)
+    config = SpendConfiguration(
+        cards=[],
+        allowance=AllowancePolicy(
+            monthly_minor_units=10_000,
+            activation_at=now.date(),
+            spending_account_ids={"card-1"},
+            rules=[
+                Rule(
+                    condition=CategoryExact(type="category_exact", field="pfc_primary", value="SHOPPING"),
+                    kind=Kind.FLEXIBLE,
+                )
+            ],
+        ),
+    )
+    service = SpendService(postgres_url, config, dashboard_url="https://spend.example.test")
+    await service.start()
+    try:
+        allowance = (await service.read_view()).allowance
+    finally:
+        await service.close()
+    assert allowance is not None
+    assert allowance.available_minor_units == 10_000
+    assert allowance.trailing_7_daily_minor_units == 1_000
+    assert allowance.windows_minor_units is not None
+    assert allowance.windows_minor_units.trailing_7_days_minor_units == 0
+
+
 class _ConnectedRequest:
     async def is_disconnected(self) -> bool:
         return False

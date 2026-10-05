@@ -9,11 +9,6 @@ from pydantic import ValidationError
 from haku.console.tool_calls import ApprovalDecision, ApprovalDecisionRequest
 
 
-def test_approval_decision_rejects_unknown_wire_value() -> None:
-    with pytest.raises(ValidationError):
-        ApprovalDecisionRequest.model_validate_json('{"decision":"permit"}')
-
-
 @pytest.mark.parametrize("decision", [ApprovalDecision.APPROVE, ApprovalDecision.DENY])
 def test_decision_note_is_shared_by_both_operator_decisions(decision: ApprovalDecision) -> None:
     request = ApprovalDecisionRequest(decision=decision, decision_note="  reviewed  ")

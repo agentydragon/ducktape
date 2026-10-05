@@ -1,15 +1,11 @@
 """E2E: real daemon/client with WT_TEST_MODE PR fixtures; PR variants: open(can merge), merged, closed, no PR."""
 
-from __future__ import annotations
-
 import json
 import os
 import re
 import socket
 import uuid
-from dataclasses import dataclass
-from datetime import datetime, timedelta
-from pathlib import Path
+from datetime import timedelta
 from typing import Any
 
 import pytest
@@ -17,6 +13,7 @@ import pytest_bazel
 
 from x.wt.shared.fixtures import PRFixtureEntry
 from x.wt.shared.github_models import PRState
+from x.wt.testing.asserts import assert_output_contains, extract_status_rows
 
 
 def _rpc_json(sock_path: str | os.PathLike, method: str, params: dict[str, Any]) -> dict[str, Any]:
@@ -36,59 +33,38 @@ def _rpc_json(sock_path: str | os.PathLike, method: str, params: dict[str, Any])
 
 
 @pytest.mark.parametrize(
-    ("variant", "expects"),
+    ("pr", "expects"),
     [
-        ("open_mergeable", ["#123", "can merge", "+10/-2"]),
-        ("merged", ["#456", "merged", "+3/-1"]),
-        ("closed", ["#789", "closed", "+4/-4"]),
-        ("none", []),
+        pytest.param(
+            PRFixtureEntry(number=123, state=PRState.OPEN, mergeable=True, additions=10, deletions=2),
+            ["#123", "can merge", "+10/-2"],
+            id="open_mergeable",
+        ),
+        pytest.param(
+            PRFixtureEntry(
+                number=456,
+                state=PRState.CLOSED,
+                mergeable=True,
+                merged_at="2024-01-15T10:30:00",
+                additions=3,
+                deletions=1,
+            ),
+            ["#456", "merged", "+3/-1"],
+            id="merged",
+        ),
+        pytest.param(
+            PRFixtureEntry(number=789, state=PRState.CLOSED, mergeable=False, additions=4, deletions=4),
+            ["#789", "closed", "+4/-4"],
+            id="closed",
+        ),
+        pytest.param(None, [], id="none"),
     ],
 )
-def test_github_pr_variants(variant, expects, github_pr_env: GithubPrEnv):
-    env = github_pr_env
-    factory = env.daemon_config_factory(env.repo_path)
-    config = factory.integration(github_repo="test/test")
-    wt_cli = env.wt_cli
-    write_pr_fixtures = env.write_pr_fixtures
-
-    test_env = os.environ.copy()
-    test_env["WT_DIR"] = str(config.wt_dir)
-    # Bind wt_cli to this test's WT_DIR/config
-    wt_cli.env = test_env
-    # Write PR fixtures for WT_TEST_MODE to avoid PYTHONPATH hacks
-    if variant == "none":
-        pr_map = {}
-    else:
-        entry = PRFixtureEntry(
-            number=123
-            if variant == "open_mergeable"
-            else 456
-            if variant == "merged"
-            else 789
-            if variant == "closed"
-            else 0,
-            state=PRState.OPEN if variant == "open_mergeable" else PRState.CLOSED,
-            draft=False,
-            mergeable=variant in {"open_mergeable", "merged"},
-            merged_at=None if variant != "merged" else datetime.now().isoformat(),
-            additions=10
-            if variant == "open_mergeable"
-            else 3
-            if variant == "merged"
-            else 4
-            if variant == "closed"
-            else 0,
-            deletions=2
-            if variant == "open_mergeable"
-            else 1
-            if variant == "merged"
-            else 4
-            if variant == "closed"
-            else 0,
-        )
-        pr_map = {"feature-x": entry, "*": entry}
-    # Use shared fixture helper to write Pydantic-validated map
-    write_pr_fixtures(config, pr_map)
+def test_github_pr_variants(pr, expects, real_temp_repo, daemon_config_factory, write_pr_fixtures, wt_cli):
+    # Rewrites config.yaml in the WT_DIR `wt_cli` is bound to, before the first CLI call starts the daemon.
+    config = daemon_config_factory(real_temp_repo).integration(github_repo="test/test")
+    # PR fixtures are read by the daemon under WT_TEST_MODE
+    write_pr_fixtures(config, {} if pr is None else {"feature-x": pr, "*": pr})
 
     # Start daemon
     r1 = wt_cli.status(timeout=timedelta(seconds=30.0))
@@ -108,36 +84,11 @@ def test_github_pr_variants(variant, expects, github_pr_env: GithubPrEnv):
     # Render once and assert
     status_result = wt_cli.status(timeout=timedelta(seconds=30.0))
     assert status_result.returncode == 0, status_result.stderr
-    out = status_result.stdout
-    if expects:
-        for x in expects:
-            assert x in out
-    else:
-        # No PR should render no #<n>
-        assert not re.search(r"#\d+", out)
-
-
-# Global conftest disables gh token via get_github_token
-
-
-@dataclass(frozen=True)
-class GithubPrEnv:
-    repo_path: Path
-    daemon_config_factory: Any
-    tmp_path: Path
-    write_pr_fixtures: Any
-    wt_cli: Any
-
-
-@pytest.fixture
-def github_pr_env(real_temp_repo, daemon_config_factory, tmp_path, write_pr_fixtures, wt_cli) -> GithubPrEnv:
-    return GithubPrEnv(
-        repo_path=real_temp_repo,
-        daemon_config_factory=daemon_config_factory,
-        tmp_path=tmp_path,
-        write_pr_fixtures=write_pr_fixtures,
-        wt_cli=wt_cli,
-    )
+    # The row, not the whole output: the output also prints the daemon log path, which names the pytest test id.
+    row = extract_status_rows(status_result.stdout)["feature-x"]
+    assert_output_contains(row, *expects)
+    if pr is None:
+        assert not re.search(r"#\d+", row)
 
 
 if __name__ == "__main__":

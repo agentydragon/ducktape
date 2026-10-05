@@ -13,7 +13,8 @@ library, not a `main()`, so each caller keeps owning content-loading,
 orchestration, and its own exit code.
 
 Both stacks drive one browser: the Chrome for Testing headless shell `@chrome_headless_shell`
-(MODULE.bazel), which Bazel hands to tests as `CHROMIUM_HEADLESS_SHELL`, the path of its executable.
+(MODULE.bazel). Python tests find its executable in the runfiles of `//util/testing:frontend_visual`;
+JS tests are handed its path as `CHROMIUM_HEADLESS_SHELL`.
 Its version is pinned to the Chromium of the `playwright==1.62.0` driver in `pyproject.toml`;
 MODULE.bazel says how to bump the two together.
 

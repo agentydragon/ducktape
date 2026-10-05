@@ -178,9 +178,11 @@ def calculate(
     }
     # Keep each included purchase once, with its category and posting state.
     included: list[Purchase] = []
+    recent_positive = 0
     unmatched = 0
+    pace_start = (now - timedelta(days=6)).date()
     for transaction in transactions:
-        if not start.date() <= transaction.date <= now.date():
+        if not min(start.date(), pace_start) <= transaction.date <= now.date():
             continue
         if transaction.pending and (transaction.account_id, transaction.transaction_id) in superseded:
             continue
@@ -192,9 +194,13 @@ def calculate(
         amount = int((transaction.amount * 100).quantize(Decimal(1), rounding=ROUND_HALF_UP))
         # An inferred category alone cannot associate a refund with an actual discretionary purchase.
         if amount < 0 and not (rule is not None and isinstance(rule.condition, NamePrefix)):
-            unmatched += -amount
+            if transaction.date >= start.date():
+                unmatched += -amount
             continue
-        included.append(Purchase(transaction=transaction, minor_units=amount, needs_review=rule is None))
+        if transaction.date >= pace_start:
+            recent_positive += max(0, amount)
+        if transaction.date >= start.date():
+            included.append(Purchase(transaction=transaction, minor_units=amount, needs_review=rule is None))
 
     posted = sum(p.minor_units for p in included if not p.transaction.pending)
     pending = sum(p.minor_units for p in included if p.transaction.pending)
@@ -213,13 +219,24 @@ def calculate(
             p.minor_units for p in included if p.transaction.date >= (now - timedelta(days=29)).date()
         ),
     )
-    trailing_positive = sum(
-        max(0, p.minor_units) for p in included if p.transaction.date >= (now - timedelta(days=6)).date()
-    )
-    daily = trailing_positive // max(1, min(7, (now.date() - start.date()).days + 1))
+    elapsed_days = min(7, (now.date() - start.date()).days + 1)
+    since_start_positive = sum(max(0, p.minor_units) for p in included if p.transaction.date >= pace_start)
+    # History can inform the pace without becoming an opening allowance debt.
+    # Early post-start bursts should not disappear into the seven-day average.
+    daily = max(recent_positive // 7, since_start_positive // elapsed_days) if recent_positive else None
+    if daily is None and elapsed_days == 7:
+        daily = 0
     available = credits * policy.monthly_minor_units - posted - pending
-    projected_end = available - daily * max(1, (next_credit.date() - now.date()).days)
-    alert = PaceAlert.EXCEEDED if available <= 0 else PaceAlert.WARNING if projected_end < 0 else PaceAlert.NORMAL
+    projected_end = available - daily * max(1, (next_credit.date() - now.date()).days) if daily is not None else None
+    alert = (
+        PaceAlert.EXCEEDED
+        if available <= 0
+        else PaceAlert.UNAVAILABLE
+        if projected_end is None
+        else PaceAlert.WARNING
+        if projected_end < 0
+        else PaceAlert.NORMAL
+    )
     return AllowanceView(
         status=Status.ACTIVE,
         currency=policy.currency,

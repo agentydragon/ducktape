@@ -1,6 +1,5 @@
 # gazelle:exclude migrations
 load("@aspect_rules_py//py:defs.bzl", "py_image_layer", aspect_py_binary = "py_binary")
-load("@bazel_skylib//rules:build_test.bzl", "build_test")
 load("@rules_oci//oci:defs.bzl", "oci_image", "oci_load")
 load("@rules_pkg//pkg:mappings.bzl", "pkg_files", "strip_prefix")
 load("@rules_pkg//pkg:tar.bzl", "pkg_tar")
@@ -202,6 +201,9 @@ py_test(
         "@pypi//pytest_bazel",
         "@pypi//sqlalchemy",
         "//third_party/containers:pgvector_pg18",
+        "//haku/console/identity:agent",
+        "//haku/console/identity:operator_identity",
+        "@ducktape_haku//haku/console:tool_calls",
     ],
 )
 
@@ -482,14 +484,6 @@ oci_load(
     repo_tags = ["haku-console-static:latest"],
 )
 
-build_test(
-    name = "static_image_build_test",
-    targets = [
-        ":static_image",
-        ":static_image.digest",
-    ],
-)
-
 py_library(
     name = "settings",
     srcs = ["settings.py"],
@@ -508,7 +502,6 @@ py_test(
         ":conftest",
         ":database_migrate",
         "//:conftest",
-        "@pypi//pydantic",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],
@@ -521,6 +514,20 @@ py_test(
         ":conftest",
         ":mcp_config",
         "//:conftest",
+        "@pypi//pydantic",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_settings",
+    srcs = ["test_settings.py"],
+    deps = [
+        ":config",
+        ":conftest",
+        "//:conftest",
+        "//mcp_infra:persistence",
         "@pypi//pydantic",
         "@pypi//pytest",
         "@pypi//pytest_bazel",

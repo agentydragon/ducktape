@@ -12,6 +12,7 @@ import pytest
 import pytest_bazel
 
 from haku.console import app
+from haku.console.conftest import console_settings, write_config
 
 
 def test_healthz(client) -> None:
@@ -155,6 +156,33 @@ def test_server_startup_checks_schema_without_applying_migrations(monkeypatch: p
     app.main()
 
     assert checked == ["postgresql+asyncpg://approval_store:secret@db.example/approval_store"]
+
+
+def test_duplicate_static_agent_tokens_fail_startup(migrated_db_url: str, tmp_path: Path) -> None:
+    def static_agent(agent_number: int, display_name: str, operator_subject: str) -> dict[str, str]:
+        return {
+            "agent_id": f"00000000-0000-0000-0000-{agent_number:012d}",
+            "display_name": display_name,
+            "token": "shared-test-token",
+            "operator_subject": operator_subject,
+            "access_profile_id": "manual",
+        }
+
+    config_file = write_config(
+        tmp_path / "duplicate-token.yaml",
+        {
+            "auto_approval_policies": [{"id": "manual", "type": "never"}],
+            "access_profiles": [{"id": "manual", "auto_approval_policy": "manual"}],
+            "default_access_profile_id": "manual",
+            "static_agents": {
+                "first": static_agent(1, "First Agent", "operator-a"),
+                "second": static_agent(2, "Second Agent", "operator-b"),
+            },
+        },
+    )
+
+    with pytest.raises(RuntimeError, match="duplicate static agent bearer tokens"):
+        app.create_app(console_settings(migrated_db_url, config_file=config_file))
 
 
 def test_image_command_rejects_unknown_modes() -> None:

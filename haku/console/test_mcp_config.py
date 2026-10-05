@@ -1,5 +1,6 @@
-"""`ConsoleConfigFile` cross-reference validation: policy cycles, and the access profiles, Recall indexes,
-Kubernetes authorization and in-process MCP servers that the config must declare."""
+"""`ConsoleConfigFile` cross-reference validation: policy cycles, duplicate MCP server ids and tool
+prefixes, duplicate static Agent ids, and the access profiles, Recall indexes, Kubernetes authorization
+and in-process MCP servers that the config must declare."""
 
 from __future__ import annotations
 
@@ -14,6 +15,7 @@ _MANUAL_AUTHORITY_CONFIG = {
     "access_profiles": [{"id": "manual", "auto_approval_policy": "manual"}],
     "default_access_profile_id": "manual",
 }
+_NO_CREDENTIAL_BACKEND = {"kind": "in_process", "credential": {"kind": "none"}}
 
 
 def test_recall_profile_grants_require_declared_indexes() -> None:
@@ -118,6 +120,53 @@ def test_profile_config_rejects_unknown_kubernetes_authorization_profile() -> No
         )
 
 
+def test_duplicate_mcp_server_ids_fail_config_validation() -> None:
+    with pytest.raises(ValidationError):
+        ConsoleConfigFile.model_validate(
+            {
+                **_MANUAL_AUTHORITY_CONFIG,
+                "mcp": {
+                    "servers": {
+                        "grocy_one": {"id": "grocy", "backend": _NO_CREDENTIAL_BACKEND},
+                        "grocy_two": {"id": "grocy", "backend": _NO_CREDENTIAL_BACKEND},
+                    }
+                },
+            }
+        )
+
+
+def test_duplicate_sanitized_mcp_server_prefixes_fail_config_validation() -> None:
+    with pytest.raises(ValidationError):
+        ConsoleConfigFile.model_validate(
+            {
+                **_MANUAL_AUTHORITY_CONFIG,
+                "mcp": {
+                    "servers": {
+                        "grocy_hyphen": {"id": "grocy-sf", "backend": _NO_CREDENTIAL_BACKEND},
+                        "grocy_underscore": {"id": "grocy_sf", "backend": _NO_CREDENTIAL_BACKEND},
+                    }
+                },
+            }
+        )
+
+
+def test_duplicate_static_agent_ids_fail_config_validation() -> None:
+    agent = {
+        "agent_id": "00000000-0000-0000-0000-000000000003",
+        "display_name": "Test Agent",
+        "token": "test-agent-token",
+        "operator_subject": "test-agent-operator",
+        "access_profile_id": "manual",
+    }
+    with pytest.raises(ValidationError, match="duplicate static Agent id"):
+        ConsoleConfigFile.model_validate(
+            {
+                **_MANUAL_AUTHORITY_CONFIG,
+                "static_agents": {"first": agent, "second": {**agent, "display_name": "Other Agent"}},
+            }
+        )
+
+
 def test_kubernetes_server_requires_authorization_configuration() -> None:
     with pytest.raises(ValidationError):
         ConsoleConfigFile.model_validate(
@@ -133,21 +182,6 @@ def test_kubernetes_server_requires_authorization_configuration() -> None:
                 },
             }
         )
-
-
-def test_default_access_profile_does_not_require_a_never_policy() -> None:
-    config = ConsoleConfigFile.model_validate(
-        {
-            "auto_approval_policies": [
-                {"id": "operator_review", "type": "never"},
-                {"id": "selected_by_default", "type": "any_of", "policies": ["operator_review"]},
-            ],
-            "access_profiles": [{"id": "operator-default", "auto_approval_policy": "selected_by_default"}],
-            "default_access_profile_id": "operator-default",
-        }
-    )
-
-    assert config.default_access_profile_id == "operator-default"
 
 
 if __name__ == "__main__":

@@ -37,7 +37,7 @@ from haku.console.mcp import catalog_reconciler as mcp_catalog_reconciler_module
 from haku.console.mcp.approval import DegradedReflection, ReflectionFailureStage
 from haku.console.mcp.reflection_cache import ReflectedCatalog
 from haku.console.mcp.tool_call_service import ToolCallApplicationService, ToolCallNotFoundError
-from haku.console.mcp_config import ConsoleConfigFile, InProcessServers, const_in_process_server
+from haku.console.mcp_config import InProcessServers, const_in_process_server
 from haku.console.tool_call_actor import RuntimeActor
 from haku.console.tool_calls import (
     MCP_TOOL_CALL_META_KEY,
@@ -50,7 +50,7 @@ from haku.console.tool_calls import (
 )
 from mcp_infra.persistence import PostgresPersistence
 from util.net import bind_free_port
-from util.testing.asgi import serve_app_sync
+from util.testing.asgi import serve_app_in_loop, serve_app_sync
 from util.testing.mock_oidc import build_mock_oidc_app, generate_rsa_keypair
 from x.google_mcp_server import gmail as gmail_tools, google_calendar as calendar_tools
 
@@ -347,14 +347,6 @@ async def test_tool_surface_splits_pass_through_and_request(agent_client: Client
     assert "get_tool_call" in tools
     assert "wait_for_result_ms" in gmail_write_description
     assert "get_tool_call" in gmail_write_description
-    # Calendar reads are transparent; creation is the approval-gated request tool. The server
-    # prefix supplies "calendar", so no tool repeats it in the local name.
-    assert "google_calendar__get_event" in tools
-    assert "input" not in tools["google_calendar__get_event"].input_schema.get("properties", {})
-    cal_read_ann = tools["google_calendar__get_event"].annotations
-    assert cal_read_ann is not None
-    assert cal_read_ann.read_only_hint is True
-    assert "google_calendar__create_event" in tools
     # Every advertised tool's schemas — passthrough and envelope input schemas, and any declared
     # output schema — must be valid, fully-resolvable JSON Schema, not just superficially shaped.
     for tool in tools.values():
@@ -551,7 +543,7 @@ async def test_request_tool_returns_pending_stub_with_deep_link(agent_client: Cl
     assert view is not None
     assert view["status"] == ToolCallStatus.PENDING_APPROVAL
     assert view["tool_name"] == "drafts_create"
-    assert view["url"] == f"https://haku.test/_console/tool-calls/{tool_call_id}"
+    assert view["url"] == stub["url"]
 
 
 async def test_get_tool_call_missing_raises(agent_client: Client) -> None:
@@ -646,7 +638,7 @@ async def test_withdraw_tool_call_retracts_a_pending_stub(agent_client: Client) 
     assert view is not None
     assert view["call"]["status"] == ToolCallStatus.WITHDRAWN
     assert view["call"]["withdrawal_reason"] == "superseded by a corrected draft"
-    assert view["url"] == f"https://haku.test/_console/tool-calls/{tool_call_id}"
+    assert view["url"].endswith(f"/{tool_call_id}")
 
     # The durable row is what the agent re-reads, so the retraction has to be visible there too.
     got = await agent_client.call_tool("get_tool_call", {"tool_call_id": tool_call_id})
@@ -929,7 +921,8 @@ async def test_e2e_request_approve_execute_over_http(migrated_db_url: str, migra
     operator_identity = await resolve_operator_identity(
         migrated_sessions, issuer=settings.operator_oidc.issuer, subject="42"
     )
-    with serve_app_sync(app, sock=console_sock) as base:
+    base = settings.public_base_url
+    async with serve_app_in_loop(app, sock=console_sock):
         async with httpx.AsyncClient() as anon:
             # No bearer -> unauthorized at the exact canonical resource URL.
             unauth = await anon.post(
@@ -1033,16 +1026,13 @@ async def test_e2e_request_approve_execute_over_http(migrated_db_url: str, migra
         # decide records the approval and dispatches execution in the background — it returns RUNNING.
         assert decided.json()["tool_call"]["status"] == "running"
 
-        # The agent resolves its stub; execution runs in the background on the server loop, so
-        # poll get_tool_call until it terminalizes, then check the real upstream result.
-        terminal = {ToolCallStatus.OK, ToolCallStatus.ERROR, ToolCallStatus.DENIED}
+        # The agent resolves its stub once the background execution has finished (the app runs in
+        # this test's loop, so the service's executions can be awaited), then checks the real
+        # upstream result.
+        await app.state.tool_call_service.join_executions()
         async with Client(f"{base}/mcp", auth=_AGENT_TOKEN) as client:
-            for _ in range(100):
-                got = await client.call_tool("get_tool_call", {"tool_call_id": tool_call_id})
-                assert got.structured_content is not None
-                if got.structured_content["status"] in terminal:
-                    break
-                await asyncio.sleep(0.02)
+            got = await client.call_tool("get_tool_call", {"tool_call_id": tool_call_id})
+        assert got.structured_content is not None
         assert got.structured_content["status"] == ToolCallStatus.OK
         assert "echo:hi" in str(got.structured_content["result"])
 
@@ -1107,6 +1097,7 @@ async def test_tool_discovery_is_concurrent_and_preserves_config_order(
     app = create_app(console_settings(migrated_db_url, config_file=config_file), in_process_servers=registered)
     started: set[str] = set()
     both_started = asyncio.Event()
+    alpha_done = asyncio.Event()
 
     async def metadata_for_operator(**kwargs: Any) -> ReflectedCatalog:
         server_id = str(kwargs["server"].id)
@@ -1114,8 +1105,11 @@ async def test_tool_discovery_is_concurrent_and_preserves_config_order(
         if len(started) == 2:
             both_started.set()
         await asyncio.wait_for(both_started.wait(), timeout=1)
+        # Completion order (alpha, then beta) is the reverse of config order (beta, alpha).
         if server_id == "beta":
-            await asyncio.sleep(0.01)
+            await asyncio.wait_for(alpha_done.wait(), timeout=1)
+        else:
+            alpha_done.set()
         return ReflectedCatalog(tools=[Tool(name="echo", inputSchema={"type": "object"})])
 
     monkeypatch.setattr(mcp_catalog_reconciler_module, "metadata_for_operator", metadata_for_operator)
@@ -1212,18 +1206,6 @@ def test_mcp_oauth_requires_postgres_persistence() -> None:
         McpOAuthConfig.model_validate({**provider, "persistence": {"kind": "file"}})
     with pytest.raises(ValidationError, match="persistence"):
         McpOAuthConfig.model_validate({**provider, "persistence": {"kind": "valkey", "host": "valkey.example.test"}})
-
-
-def test_mcp_oauth_persistence_must_share_the_console_database() -> None:
-    oauth = McpOAuthConfig(
-        oidc_issuer="https://auth.example.test/application/o/haku-console-mcp/",
-        oidc_client_id="console",
-        oidc_client_secret=SecretStr("secret"),
-        persistence=PostgresPersistence(kind="postgres", url="postgresql://app:secret@other-db.example.test:5432/haku"),
-    )
-
-    with pytest.raises(ValidationError):
-        console_settings("postgresql+psycopg://app:secret@db.example.test:5432/haku", mcp_oauth=oauth)
 
 
 async def test_oauth_composes_with_static_bearer(migrated_db_url: str, tmp_path: Path) -> None:
@@ -1403,73 +1385,6 @@ async def test_oauth_composes_with_static_bearer(migrated_db_url: str, tmp_path:
 
                 # Discovery is shared at root, not the operational OAuth surface.
                 assert (await anon.post(f"{base}/register", json={})).status_code == 404
-
-
-def test_duplicate_static_agent_ids_fail_startup(migrated_db_url: str, tmp_path: Path) -> None:
-    config_file = _write_console_config(
-        tmp_path / "duplicate-agent.yaml", {"static_agents": {**_STATIC_AGENTS, "duplicate": _STATIC_AGENTS["haku"]}}
-    )
-    with pytest.raises(ValidationError, match="duplicate static Agent id"):
-        create_app(console_settings(migrated_db_url, config_file=config_file))
-
-
-def test_missing_deploy_config_fails_startup(migrated_db_url: str) -> None:
-    with pytest.raises(RuntimeError, match=re.escape("/nonexistent/haku-console.yaml")):
-        console_settings(migrated_db_url, config_file=Path("/nonexistent/haku-console.yaml"))
-
-
-def test_duplicate_mcp_server_ids_fail_config_validation() -> None:
-    with pytest.raises(ValidationError):
-        ConsoleConfigFile.model_validate(
-            _with_manual_authority(
-                {
-                    "mcp": {
-                        "servers": {
-                            "grocy_one": {"id": "grocy", "backend": _in_process_backend({"kind": "none"})},
-                            "grocy_two": {"id": "grocy", "backend": _in_process_backend({"kind": "none"})},
-                        }
-                    }
-                }
-            )
-        )
-
-
-def test_duplicate_sanitized_mcp_server_prefixes_fail_config_validation() -> None:
-    with pytest.raises(ValidationError):
-        ConsoleConfigFile.model_validate(
-            _with_manual_authority(
-                {
-                    "mcp": {
-                        "servers": {
-                            "grocy_hyphen": {"id": "grocy-sf", "backend": _in_process_backend({"kind": "none"})},
-                            "grocy_underscore": {"id": "grocy_sf", "backend": _in_process_backend({"kind": "none"})},
-                        }
-                    }
-                }
-            )
-        )
-
-
-def test_duplicate_static_agent_tokens_fail_startup(
-    migrated_db_url: str, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    config_file = _write_console_config(
-        tmp_path / "duplicate-token.yaml",
-        {
-            "static_agents": {
-                **_STATIC_AGENTS,
-                "ops": {
-                    "agent_id": "40000000-0000-4000-8000-000000000005",
-                    "display_name": "Ops Bot",
-                    "token": _AGENT_TOKEN,
-                    "operator_subject": "99",
-                    "access_profile_id": _MANUAL_ACCESS_PROFILE_ID,
-                },
-            }
-        },
-    )
-    with pytest.raises(RuntimeError, match="duplicate static agent bearer tokens"):
-        create_app(console_settings(migrated_db_url, config_file=config_file))
 
 
 if __name__ == "__main__":

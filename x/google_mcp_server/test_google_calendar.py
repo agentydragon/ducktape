@@ -15,8 +15,19 @@ def _mcp(calendar=None):
 
 async def test_tool_surface():
     async with Client(_mcp()) as client:
-        tools = {tool.name for tool in await client.list_tools()}
-    assert tools == {"create_event", "update_event", "delete_event", "get_event", "list_event_instances", "list_events"}
+        tools = {tool.name: tool for tool in await client.list_tools()}
+    assert tools.keys() == {
+        "create_event",
+        "update_event",
+        "delete_event",
+        "get_event",
+        "list_event_instances",
+        "list_events",
+    }
+    for read_tool in ("get_event", "list_event_instances", "list_events"):
+        annotations = tools[read_tool].annotations
+        assert annotations is not None
+        assert annotations.read_only_hint is True
 
 
 async def test_create_event_dispatches_to_calendar_client():
