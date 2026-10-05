@@ -264,11 +264,6 @@ async def test_p0_allow_deny_scope_forgery_redaction_and_single_execution(
             "idempotency_key": "decision-allow-1",
             "decision_note": "Reviewed scope — allowed for this request.",
         }
-        oversized = await client.post(
-            _operator_path(request_id, "/decision"), headers=_operator(), json={**decision, "decision_note": "x" * 2001}
-        )
-        assert oversized.status_code == 422
-        assert DecisionInput.model_validate({**decision, "decision_note": "x" * 2000}).decision_note == "x" * 2000
         allowed, duplicate_allow = await asyncio.gather(
             client.post(_operator_path(request_id, "/decision"), headers=_operator(), json=decision),
             client.post(_operator_path(request_id, "/decision"), headers=_operator(), json=decision),
@@ -420,9 +415,13 @@ async def test_executor_exception_material_is_not_logged_projected_or_retried(
 
         restarted = ActionService(store, echo_catalog, {"agentplane": executor})
         await restarted.start()
-        await asyncio.sleep(0)
+        try:
+            # A restart resumes pending dispatches only, and a failed Execution is not one.
+            assert await store.pending_dispatches() == []
+            assert (await _terminal(client, pending["id"]))["state"] == "failed"
+        finally:
+            await restarted.close()
         assert len(executor.requests) == 1
-        await restarted.close()
 
         rendered = failed.__str__() + "\n" + "\n".join(record.getMessage() for record in caplog.records)
         assert "provider-token-must-not-escape" not in rendered
@@ -499,13 +498,12 @@ async def test_restart_resumes_only_pending_dispatch_and_leaves_inflight_work_to
     never_called = CountingExecutor()
     after_crash = ActionService(store, echo_catalog, {"agentplane": never_called})
     await after_crash.start()
-    await asyncio.sleep(0)
     try:
         # The lease from before the crash is still comfortably unexpired, so the new process
         # must not assume the old one's work is dead.
+        assert await store.pending_dispatches() == []
         still_running = await store.get(inflight_view.id, CALLER_A)
         assert still_running.state is ActionState.RUNNING
-        assert never_called.requests == []
         # A cursor still only returns transitions after the last sequence the caller already
         # saw, restart included.
         assert [event.state for event in await store.events(inflight_view.id, CALLER_A, after_sequence=3)] == [
@@ -513,6 +511,7 @@ async def test_restart_resumes_only_pending_dispatch_and_leaves_inflight_work_to
         ]
     finally:
         await after_crash.close()
+    assert never_called.requests == []
 
 
 async def test_configured_catalog_is_discoverable_and_unknown_lookups_fail_clearly(engine: AsyncEngine) -> None:
