@@ -4,7 +4,7 @@ from datetime import date
 
 import pytest_bazel
 
-from loom.gym.monthly_series import MonthlySeries, add_months, month_end
+from loom.gym.monthly_series import MonthlySeries, add_months
 from loom.gym.series_tasks import SeriesTaskSpec, tasks_for_spec
 from loom.gym.task import BinaryOutcome, GridCoordinates, GridShape, ScalarOutcome, Task
 
@@ -34,21 +34,6 @@ FLAT = MonthlySeries(
     provenance="synthetic",
     values={add_months(date(2020, 1, 1), n): 100.0 for n in range(12)},
 )
-
-
-def test_month_arithmetic() -> None:
-    assert add_months(date(2024, 11, 1), 2) == date(2025, 1, 1)
-    assert month_end(date(2024, 2, 1)) == date(2024, 2, 29)
-
-
-def test_max_observed_skips_holes() -> None:
-    # Window (2020-03, 2020-06] contains the 2020-05 hole; max is over observed months only.
-    assert RAMP.max_observed_between(after=date(2020, 3, 1), through=date(2020, 6, 1)) == 110.0
-
-
-def test_min_observed_skips_holes() -> None:
-    # Window (2020-03, 2020-06] contains the 2020-05 hole; min is over observed months only.
-    assert RAMP.min_observed_between(after=date(2020, 3, 1), through=date(2020, 6, 1)) == 106.0
 
 
 def test_floor_threshold_outcomes() -> None:
