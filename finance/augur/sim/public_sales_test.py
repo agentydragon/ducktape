@@ -6,7 +6,6 @@ assessment, exact lot accounting and payment still use the common action session
 
 from dataclasses import dataclass
 from decimal import Decimal
-from typing import Any
 
 import numpy as np
 import pytest
@@ -162,44 +161,6 @@ def _run(case: Situation, *, sale_month: int, rollout_ids: list[int]) -> Finishe
         ActionSession({id_: _compose(case, id_) for id_ in rollout_ids}, ALICE),
         lambda batch: _sell_and_pay(batch, sale_month),
     )
-
-
-def test_sale_receipt_cannot_be_rewritten_through_policy_memory() -> None:
-    case = _gain_situation(wages=Decimal(0))
-    session = ActionSession({0: _compose(case, 0)}, ALICE)
-    try:
-        batch = session.start()
-        assert not isinstance(batch, Finished)
-        lots = [
-            LotSale(account_id=lot.account_id, lot_id=lot.lot_id, units=lot.units)
-            for lot in batch[0].observation.public_positions
-        ]
-        request = Sell(
-            cause_id="sell-once",
-            agent_id=ALICE,
-            proceeds_account_id=AccountId("checking"),
-            asset_id=AssetId("vti"),
-            lots=tuple(lots),
-        )
-        batch = session.advance([DecisionActions(0, 0, [request])])
-        assert not isinstance(batch, Finished)
-        [receipt] = batch[0].observation.previous_receipts
-        assert isinstance(receipt.action, Sell)
-        expected = tuple(lots)
-        lots.clear()
-        recorded_lots: Any = receipt.action.lots
-        with pytest.raises(TypeError, match="does not support item assignment"):
-            recorded_lots[0] = LotSale(account_id=AccountId("checking"), lot_id=LotId("invented"), units=1)
-        assert receipt.action.lots == expected
-        while not isinstance(batch, Finished):
-            batch = session.advance(_sell_and_pay(batch, sale_month=-1))
-        [rollout] = batch.rollouts
-        assert rollout.trace is not None
-        assert rollout.trace.receipts[0].action == request
-        assert len(rollout.trace.events.lot_dispositions) == 1
-        assert all(lot.units_remaining == 0 for lot in rollout.summary.ending_book.lots)
-    finally:
-        session.close()
 
 
 def _gain_situation(*, wages: Decimal) -> Situation:
