@@ -96,15 +96,45 @@ export async function prepareDeterministicPage(page, { viewport, colorScheme, no
  * asserting on an uninstrumented page believes it is gated and is not.
  */
 export function assertNoPageErrors(page, { context } = {}) {
+  const failure = pageErrorFailure(page, context);
+  if (failure) throw failure;
+}
+
+function pageErrorFailure(page, context) {
   const errors = pageErrors.get(page);
   if (errors === undefined) {
-    throw new Error(`${context ? `${context}: ` : ""}page was not prepared by prepareDeterministicPage`);
+    return new Error(`${context ? `${context}: ` : ""}page was not prepared by prepareDeterministicPage`);
   }
   if (errors.length > 0) {
-    throw new Error(
+    return new Error(
       `${context ? `${context}: ` : ""}uncaught page errors:\n  ` +
         errors.map((error) => error.stack ?? String(error)).join("\n  ")
     );
+  }
+  return undefined;
+}
+
+/**
+ * `page.waitForSelector`, failing with the page's uncaught error the moment it throws.
+ *
+ * A scene whose page threw usually never reaches the state its selector waits for, so a plain
+ * wait runs out `WAIT_TIMEOUT_MS` and reports only the selector, never the error that explains
+ * it. Fails as `assertNoPageErrors` does, immediately, for an error thrown before the wait began
+ * or while it is pending. A wait that loses the race is left to settle on its own, which the
+ * page's close ends.
+ */
+export async function waitForSelectorUnlessPageError(page, selector, { context, timeout = WAIT_TIMEOUT_MS } = {}) {
+  assertNoPageErrors(page, { context });
+  let onPageError;
+  const thrown = new Promise((_, reject) => {
+    // Registered after `prepareDeterministicPage`'s own listener, so the error is already recorded.
+    onPageError = () => reject(pageErrorFailure(page, context));
+    page.on("pageerror", onPageError);
+  });
+  try {
+    return await Promise.race([page.waitForSelector(selector, { timeout }), thrown]);
+  } finally {
+    page.off("pageerror", onPageError);
   }
 }
 

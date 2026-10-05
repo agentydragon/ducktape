@@ -142,7 +142,9 @@ before the capture. `waitForStable` (fonts applied, images decoded, a frame
 painted) knows nothing about a scene's content, so anything that arrives after
 mount — a mocked fetch's result, a lazily-mounted component — needs a selector
 that exists only once it has arrived. A scene with nothing arriving after mount
-passes none.
+passes none. A scene whose page throws while the mount wait or one of these is
+pending fails with that error (`waitForSelectorUnlessPageError`), not with the
+wait's timeout.
 
 There is no delay option to fall back on: a fixed wait is too short on a loaded
 runner and pure dead time on every run that did not need it, and it hides what is
