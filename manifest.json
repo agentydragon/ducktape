@@ -3,5 +3,6 @@
   "window_start_utc": "2026-10-01T00:00:00Z",
   "window_end_utc": "2026-10-04T21:15:00Z",
   "published_at_utc": "2026-10-04T23:05:09.752656+00:00",
-  "attribution": "not collected"
+  "attribution": "not collected",
+  "implementation_followup_at_utc": "2026-10-05T01:01:01.119432+00:00"
 }
