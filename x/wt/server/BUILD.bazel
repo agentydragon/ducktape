@@ -231,3 +231,16 @@ py_test(
         "@pypi//pytest_bazel",
     ],
 )
+
+py_test(
+    name = "test_wt_server",
+    srcs = ["test_wt_server.py"],
+    deps = [
+        ":conftest",
+        ":types",
+        ":worktree_ids",
+        ":wt_server",
+        "//:conftest",
+        "@pypi//pytest_bazel",
+    ],
+)
