@@ -225,13 +225,14 @@ export { alpha, bravo, charlie, delta };
     ]))
     .with_unassigned_mode(unassigned_mode_inline());
 
-    expect_rejection_containing_all(
-        opts,
-        &[
-            "invalid chunk_renames spec",
-            "not a valid JS identifier",
-            "collides with an existing top-level local",
-            "duplicates an earlier rename target",
-        ],
-    );
+    let rejected = run_rejection_fixture(opts);
+    // Every failing entry is named, and the accepted one (`charlie`) is not.
+    for name in ["1-bad-ident", "alpha", "bravo", "delta", "shared_target"] {
+        assert!(
+            rejected.stderr.contains(name),
+            "{name}: {}",
+            rejected.stderr
+        );
+    }
+    assert!(!rejected.stderr.contains("charlie"), "{}", rejected.stderr);
 }
