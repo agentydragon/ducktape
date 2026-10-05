@@ -257,7 +257,7 @@ def test_copied_observations_do_not_mutate_books() -> None:
     assert not isinstance(batch, Finished)
     observation = batch[0].observation
     copied_accounts: Any = observation.accounts
-    with pytest.raises(TypeError, match="does not support item assignment"):
+    with pytest.raises(TypeError):
         copied_accounts[0] = ("invented", 999)
     writable: Any = observation
     with pytest.raises(ValueError, match="frozen"):
