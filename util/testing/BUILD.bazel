@@ -217,6 +217,8 @@ py_test(
         ":visual_review",
         "//:conftest",
         "//util:visual_review",
+        "@pypi//pydantic",
+        "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],
 )
@@ -243,5 +245,78 @@ py_test(
         "@pypi//pytest",
         "@pypi//pytest_bazel",
         "@pypi//starlette",
+    ],
+)
+
+py_library(
+    name = "page_capture",
+    srcs = ["page_capture.py"],
+    visibility = ["//visibility:public"],
+    deps = ["@pypi//playwright"],
+)
+
+py_library(
+    name = "visual_scenarios",
+    srcs = ["visual_scenarios.py"],
+    visibility = ["//visibility:public"],
+    deps = ["@pypi//pydantic"],
+)
+
+py_library(
+    name = "visual_sweep",
+    srcs = ["visual_sweep.py"],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":frontend_visual",
+        ":page_capture",
+        ":undeclared_outputs",
+        ":visual_review",
+        ":visual_scenarios",
+        "//util:visual_review",
+        "//util/bazel:runfiles",
+        "@pypi//playwright",
+        "@pypi//pytest",
+        "@pypi//pytest_asyncio",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_page_capture",
+    srcs = ["test_page_capture.py"],
+    deps = [
+        ":page_capture",
+        "//:conftest",
+        "//util:playwright",
+        "@pypi//playwright",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_visual_scenarios",
+    srcs = ["test_visual_scenarios.py"],
+    deps = [
+        ":visual_scenarios",
+        "//:conftest",
+        "@pypi//pydantic",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_visual_sweep",
+    srcs = ["test_visual_sweep.py"],
+    deps = [
+        ":visual_scenarios",
+        ":visual_sweep",
+        "//:conftest",
+        "//util:playwright",
+        "//util:visual_review",
+        "@pypi//playwright",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
     ],
 )

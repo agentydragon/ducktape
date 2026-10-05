@@ -22,6 +22,8 @@ Use one of the shared harnesses and it's automatic:
 
 - JS (`js_test`): `util/testing/frontend_visual/visual-test-lib.mjs` retains
   the rendered PNG and upserts the manifest on every run.
+- Python scenario sweep (`py_visual_test`): `util/testing/visual_sweep.py` does the
+  same for every row of the target's `scenarios.json`.
 - Python (`py_test`): call
   `util.testing.visual_review.retain_review_asset(png, title=..., label=...)`
   once per rendered case — it copies the PNG into undeclared outputs and

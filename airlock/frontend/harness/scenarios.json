@@ -1,0 +1,22 @@
+{
+  "OAuthPage": {
+    "element": "#app",
+    "readySelectors": ["form[action^=\"/oauth/authorize/\"] button", "footer"]
+  },
+  "OAuthPage_dark": {
+    "element": "#app",
+    "readySelectors": ["form[action^=\"/oauth/authorize/\"] button", "footer"],
+    "colorScheme": "dark"
+  },
+  "OAuthPage_mobile": {
+    "element": "#app",
+    "readySelectors": ["form[action^=\"/oauth/authorize/\"] button", "footer"],
+    "viewport": { "width": 375, "height": 812 }
+  },
+  "OAuthPage_mobile_dark": {
+    "element": "#app",
+    "readySelectors": ["form[action^=\"/oauth/authorize/\"] button", "footer"],
+    "viewport": { "width": 375, "height": 812 },
+    "colorScheme": "dark"
+  }
+}

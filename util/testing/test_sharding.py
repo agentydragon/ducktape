@@ -29,6 +29,19 @@ def test_shards_what_the_filter_left(pytester: pytest.Pytester, shard_id: int, e
     assert _run_shard(pytester, shard_id, "-k", "test_1 or test_4 or test_5") == expected
 
 
+@pytest.mark.parametrize("shard_id", [0, 1, 2])
+def test_a_filter_matching_nothing_fails_on_every_shard(pytester: pytest.Pytester, shard_id: int) -> None:
+    # pytest_bazel reads "nothing collected" under a filter as success, so without this a mistyped
+    # --test_filter passes everywhere having run nothing.
+    pytester.makepyfile("\n".join(f"def test_{i}(): pass" for i in range(7)))
+
+    reprec = pytester.inline_run(
+        "-p", "util.testing.sharding", f"--shard-id={shard_id}", "--num-shards=3", "-k", "no_such_test"
+    )
+
+    assert reprec.ret == pytest.ExitCode.USAGE_ERROR
+
+
 def test_advertises_sharding_to_bazel(
     pytester: pytest.Pytester, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
