@@ -1,0 +1,138 @@
+/**
+ * What `harness.tsx` reads of a row of `scenarios.json`: the route it mounts and the fixture
+ * variations that route alone does not express. One file, two readers -- the harness routes and
+ * seeds from it, `//util/testing:visual_sweep` captures it (`util/testing/visual_scenarios.py`
+ * describes the fields that are the sweep's: `element`, `viewport`, `readySelectors`, ...) -- so
+ * BUILD names no scenario at all.
+ */
+
+import table from "./scenarios.json";
+
+export interface Scenario {
+  /** Offer Codex only while retaining existing Claude threads. */
+  claudePaused?: boolean;
+  /**
+   * The app's hash route. The harness sets it before mounting, so App's router picks the view.
+   * `/` is the threads view, so the launch form is `/sandboxes`. A route can carry view state in its
+   * query: `?tab=egress&rules=<binding>` opens that binding's rules, so the shot carries its
+   * credential detail (description, where the proxy puts it, which secret it comes from) beside the
+   * other binding's folded row. `/mcp-servers` is where the MCP-linkage OAuth callback lands:
+   * Settings, open on its MCP servers tab.
+   */
+  route: string;
+  /**
+   * Serve a watch that has stopped cycling: the staleness banner is the page saying so. On a thread
+   * whose sandbox the stale inventory lacks, it cannot say the sandbox was deleted.
+   */
+  wedgedWatch?: boolean;
+  /** Preselect an existing connection and service account: the reconnect review's opening state. */
+  preselectReconnect?: boolean;
+  /** Click the nav's Settings button once it mounts: the modal has no route of its own. */
+  openSettings?: boolean;
+  /** Flip every Raw switch as it mounts: no URL param toggles one. */
+  openRaw?: boolean;
+  /** Flip the sidebar's "Show archived" switch once it mounts: no URL param toggles it. */
+  showArchived?: boolean;
+  /** Show failed Kubernetes grant provisioning in the Sandbox status summary. */
+  grantError?: boolean;
+  /** Show live pending Actions in the shell and thread composer. */
+  pendingActions?: boolean;
+  /** Click the inline approval prompt's Review button once it mounts. */
+  openActionReview?: boolean;
+  /** Make the SSH command taller than the inline review and scroll to its decisions. */
+  longPendingAction?: boolean;
+  scrollActionReview?: boolean;
+  /** Assert phone composer controls and the topbar dot fit before capture. */
+  checkComposerControls?: boolean;
+  /** Render a bounded first history page with a Load more control. */
+  historyPaged?: boolean;
+  /** Once the preset's pick has landed as a pill, open the action policy sets dropdown. */
+  openActionPolicySets?: boolean;
+  /** Click the phone-width hamburger once it mounts: the sidebar drawer has no route of its own. */
+  openMobileSidebar?: boolean;
+  threadlessSandbox?: boolean;
+  /** `disconnected` drops the sidebar's own stream after its first snapshot; `database-disconnected`
+   * keeps it up but reports the server's database feed down. */
+  sidebarSource?: "disconnected" | "database-disconnected";
+  /** Drop the sandbox inventory stream after its first snapshot, leaving the sidebar's own stream
+   * up. */
+  inventoryDropped?: boolean;
+  /** How long, in ms, the streams this scenario drops have been down when it renders. Without it
+   * they have only just dropped, which shows nothing. */
+  outageAge?: number;
+  /** Focus the sidebar's connection indicator once it shows, which opens its tooltip. */
+  openConnectionStatus?: boolean;
+  /** Exercise the production scope and Electric shape synchronization boundary. `unavailable`
+   * is a persistent initial service failure, unlike a retired epoch, whose 410 triggers a refresh;
+   * `reconnecting` fails every live read of the thread's rows once they have loaded, which
+   * Electric's client retries, so the rows stay on screen while the connection indicator reports
+   * the outage; `catching-up` serves a stale view state that withholds segments on purpose. */
+  sessionReplay?: "catching-up" | "unavailable" | "reconnecting";
+  /** The harness was shut down and its runner feed ended while the Sandbox remains available, so the Thread can resume it. */
+  endedAttachment?: boolean;
+  /** Assistant output precedes coalesced queued input, then model/interrupt effects. */
+  interleavedEvents?: boolean;
+  /** Mundane lifecycle observations collapse into one comma-joined row; a prominent one (harness
+   * lost) still stands alone and breaks the group around it. */
+  lifecycleGroup?: boolean;
+  threadSetup?: boolean;
+  openSetup?: boolean;
+  /** Open the chronological archive drawer, the native-frame inspection surface. The projected
+   * view has no raw-event URL mode: its semantic entities stay identical while the drawer shows
+   * archive rows. */
+  openDebug?: "latest" | "stderr";
+  /** Open the composer's overflow "More" menu and leave it open, showing the thread id label
+   * alongside "Debug history" / "Shut down harness". */
+  openMoreMenu?: boolean;
+  /** Open the tool-call run once it mounts, then the reasoning step folded inside it. */
+  openReasoning?: boolean;
+  /** Open the folded tool-call run once it mounts, leaving the lines inside it as they are. */
+  openRun?: boolean;
+  /** Open the tool-call run once it mounts, then each tool call's line inside it. */
+  openToolPayloads?: boolean;
+  /** Shell tool calls as Claude and Codex record them, with a script and an output past their caps:
+   * the model's description for Claude's Bash, the script without its `bash -lc` wrapper for Codex,
+   * and a call still streaming its arguments. Opened, each is capped in height with its clipped
+   * bottom to click for the rest. */
+  shellCalls?: boolean;
+  /** Click the Evidence icon of the row at this thread anchor once it mounts: which rows show
+   * their evidence is not in the URL. The icon takes no space and shows on demand: under the
+   * pointer on a desktop (the sweep's `hover`), hung in the gutter beside the user's bubble and in
+   * the corner of a reply; on a touch screen (`tap`), once tapped. */
+  openEvidence?: string;
+  /** One assistant message containing a fenced code block, rendered by the shared code widget. */
+  markdownCodeFence?: boolean;
+  /** Put bidi, zero-width, and control characters in SSH arguments and output for marker review:
+   * all should be readable as labeled CodeMirror markers in the specialized command/result preview. */
+  hiddenCodepoints?: boolean;
+  /** Interleave completed assistant text, folded tool/reasoning runs, and streaming assistant text.
+   * Captured as the thread pane alone at 572px: the default sidebar is 240px, so an 812px viewport
+   * leaves the pane that wide. The history's "Jump to latest" control follows an IntersectionObserver
+   * that reports a frame or two after the layout moves, so the scenario waits for the history to
+   * say its layout has come to rest. */
+  streamingInterleaved?: boolean;
+  /** A reasoning step with no neighboring tool call, so `historyRows` never folds it into a run and
+   * `EntityCard` renders it directly -- the standalone case, distinct from `openReasoning`'s
+   * reasoning-nested-inside-a-run-card one. Collapsed it reads as one plain dimmed line with no card
+   * chrome, like a collapsed run; opened it gets the card chrome (padding, border). */
+  standaloneReasoning?: boolean;
+  /** An unfinished reasoning step in the running turn and another its turn left unfinished: the
+   * title is blue and breathing while its turn runs (the animation is frozen in the sweep, so the
+   * class is what says it is live), blue and still once its turn has ended. */
+  unfinishedReasoning?: boolean;
+  /** Give reasoning enough Markdown to exercise a clipped inline preview and disclosure. */
+  longReasoningPreview?: boolean;
+  pendingCommands?: "mixed" | "controls" | "outcomes";
+  /** Answer a command POST as the app does when a runner misses its admission deadline. Without
+   * this it stays unanswered, like one queued behind the browser's connection limit. */
+  commandAdmissionTimedOut?: boolean;
+  /** Fail the Action group listing, which says whether a stored result is an MCP `CallToolResult`:
+   * without the groups each result shows as its stored JSON. */
+  actionGroupsUnavailable?: boolean;
+  recovery?: "messages" | "tools" | "quiet";
+  openRecoveryDetails?: boolean;
+  failedTurn?: "before-content" | "after-content";
+}
+
+// The JSON module types a string field as `string`, not as the literal union `Scenario` names.
+export const SCENARIOS: Record<string, Scenario> = table as Record<string, Scenario>;

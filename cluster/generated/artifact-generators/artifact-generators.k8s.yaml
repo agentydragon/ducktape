@@ -456,6 +456,11 @@ spec:
       name: dns-automation
       originRevision: "@repo"
     - copy:
+        - from: "@repo/cluster/generated/external-dns/**"
+          to: "@artifact/cluster/generated/external-dns/"
+      name: external-dns
+      originRevision: "@repo"
+    - copy:
         - from: "@repo/cluster/generated/flux-grafana-secrets/**"
           to: "@artifact/cluster/generated/flux-grafana-secrets/"
       name: flux-grafana-secrets

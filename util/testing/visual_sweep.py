@@ -43,6 +43,7 @@ from util.bazel.runfiles import get_required_path
 from util.testing.frontend_visual import DISABLE_ANIMATIONS_CSS, FROZEN_NOW_MS, deterministic_browser_context
 from util.testing.page_capture import (
     WAIT_TIMEOUT_MS,
+    DevtoolsViewport,
     PageErrors,
     RequestFence,
     assert_network_settled,
@@ -56,6 +57,17 @@ from util.visual_review import VisualReviewAsset
 
 # One event loop for the whole sweep, so one Playwright driver serves every scenario.
 pytestmark = pytest.mark.asyncio(loop_scope="session")
+
+# `document.fonts.check` is true for a family no `@font-face` declares, so on its own it passes when the
+# stylesheet declaring the font never arrived (or the name is misspelled) and the page renders in a fallback.
+# A face loads only once laid-out text uses it, so this is asked of a mounted, painted scene, after
+# `document.fonts.ready` has covered a load that frame started.
+_FONT_STATUS_JS = """async family => {
+    await document.fonts.ready;
+    const declared = Array.from(document.fonts).some((face) => face.family.replace(/^["']|["']$/g, "") === family);
+    if (!declared) return "undeclared";
+    return document.fonts.check(`16px "${family}"`) ? "loaded" : "unloaded";
+}"""
 
 
 @dataclass(frozen=True)
@@ -83,6 +95,7 @@ class SweepConfig:
     output_suffix: str
     # None: the harness is the `file://` page beside its bundle.
     inline_page: InlinePage | None = None
+    devtools_viewport: bool = False
 
     @classmethod
     def from_env(cls) -> SweepConfig:
@@ -94,6 +107,7 @@ class SweepConfig:
             expected_font_family=os.environ.get("EXPECTED_FONT_FAMILY"),
             output_suffix=os.environ.get("OUTPUT_SUFFIX", "-actual"),
             inline_page=InlinePage.from_env() if os.environ.get("INLINE_PAGE") else None,
+            devtools_viewport=bool(os.environ.get("DEVTOOLS_VIEWPORT")),
         )
 
     @property
@@ -177,6 +191,16 @@ async def capture_scenario(
         extra_args=["--allow-file-access-from-files"] if config.inline_page is None else [],
     ) as context:
         page = await context.new_page()
+        devtools_viewport = (
+            await DevtoolsViewport.attach(
+                page,
+                width=scenario.viewport.width,
+                height=scenario.viewport.height,
+                device_scale_factor=scenario.viewport.device_scale_factor,
+            )
+            if config.devtools_viewport
+            else None
+        )
         page_errors = PageErrors(page)
         # The harness is entirely local (a file:// page or an in-memory one, bundled fixtures), so
         # nothing may reach the network.
@@ -186,17 +210,17 @@ async def capture_scenario(
         await fence.install(page)
 
         await _load_harness(page, scenario_name, scenario, config=config, timeout_ms=timeout_ms)
-        # Only assert a named font when the app declares one. Generic family resolution is owned by the
-        # deterministic browser profile, and must not be emulated with test CSS.
-        if config.expected_font_family and not await page.evaluate(
-            'family => document.fonts.check(`16px "${family}"`)', config.expected_font_family
-        ):
-            raise AssertionError(f"{output_name}: {config.expected_font_family} font did not load")
         await page.wait_for_selector("#app > *", state="attached", timeout=timeout_ms)
         for selector in scenario.ready_selectors:
             await page.wait_for_selector(selector, state="attached", timeout=timeout_ms)
         # Last, so fonts, images and paint settle around whatever the scene's own conditions let in.
         await wait_for_stable(page)
+        # Only assert a named font when the app declares one. Generic family resolution is owned by the
+        # deterministic browser profile, and must not be emulated with test CSS.
+        if config.expected_font_family:
+            font_status = await page.evaluate(_FONT_STATUS_JS, config.expected_font_family)
+            if font_status != "loaded":
+                raise AssertionError(f"{output_name}: {config.expected_font_family} font did not load ({font_status})")
         # A pointer state no page script can make: :hover and a real touch. Settled again for what it shows.
         if scenario.hover:
             await page.hover(scenario.hover, timeout=timeout_ms)
@@ -209,11 +233,12 @@ async def capture_scenario(
         page_errors.assert_none(context=output_name)
 
         # Viewport captures preserve clipping instead of expanding to fit an overflowing app.
-        screenshot = (
-            await page.screenshot()
-            if scenario.capture_viewport
-            else await screenshot_element(page, scenario.element, context=output_name)
-        )
+        if not scenario.capture_viewport:
+            screenshot = await screenshot_element(page, scenario.element, context=output_name)
+        elif devtools_viewport:
+            screenshot = await devtools_viewport.screenshot()
+        else:
+            screenshot = await page.screenshot()
 
     asset = VisualReviewAsset(path=f"{output_name}{config.output_suffix}.png", label=scenario.label or output_name)
     (output_dir / asset.path).write_bytes(screenshot)

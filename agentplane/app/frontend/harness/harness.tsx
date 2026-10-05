@@ -1,6 +1,6 @@
 /**
  * Visual-test harness: the app mounted on canned data, nothing on the network. The `?page=` query
- * (set by visual-test-lib) picks the route; `fetch` (stubbed by network.ts, imported first so the
+ * (set by the visual sweep) picks the route; `fetch` (stubbed by network.ts, imported first so the
  * app's client captures the stub) answers API and Electric Shape routes. `EventSource` remains
  * only for the live sandbox, thread, and action-inventory views.
  */
@@ -27,7 +27,7 @@ import {
   type SessionSpec,
   type SessionSummary,
 } from "../../../runner/protocol_pb";
-import { SCENARIOS, type Scenario } from "./scenarios";
+import { SCENARIOS, type Scenario } from "./scenario";
 import { LocalCommands } from "../threads/local_commands";
 import { streamRegistry } from "../stream_status";
 import { ThemeProvider } from "../theme";
@@ -44,7 +44,7 @@ const scenario = resolveScenario();
 // Pages in a visual sweep share an origin. Each scene owns its local-command fixtures.
 localStorage.clear();
 
-// visual-test-lib freezes the wall clock before this bundle runs, so relative ages stay put.
+// The visual sweep freezes the wall clock before this bundle runs, so relative ages stay put.
 const NOW = Date.now();
 const HOUR = 3_600_000;
 
@@ -1130,6 +1130,14 @@ function endedAttachmentRows(threadId: string): Record<string, unknown>[] {
   });
 }
 
+/**
+ * The statuses the main thread fixture does not produce on its own: a standalone failed tool call, a
+ * run whose reasoning is still streaming beside a tool call, and queued commands. Both runs render
+ * folded, which is the point: a run's summary is where its streaming and failed indicators show.
+ * The run's first step, at cursor 16, is its anchor. The existing nav/header chrome leaves little
+ * vertical room at phone width, so the queued-input dot at the bottom falls off the page; the desktop
+ * capture is where every state here is visible.
+ */
 function statesRows(threadId: string): Record<string, unknown>[] {
   const rows = [
     viewState(28, "t2"),

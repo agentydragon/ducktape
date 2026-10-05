@@ -33,6 +33,8 @@ in force; listing a file does not authorize modifying, deleting or re-enabling i
 
 - [Scope and priorities](#1-scope-and-priorities)
 - [Ownership and data flow](#2-ownership-and-data-flow)
+  - [Consumer-local settings pattern](#consumer-local-settings-pattern-tentative-agreement)
+  - [Ollama serving-variant pattern](#ollama-serving-variant-pattern-tentative-agreement)
 - [Consumer inventory and side effects](#3-consumer-inventory-and-side-effects)
   - [Files requiring disposition decisions](#files-requiring-disposition-decisions)
 - [Proposed shape and rollout](#4-proposed-shape-and-rollout)
@@ -171,6 +173,139 @@ it. Before each wiring change, trace its source declarations, renderer, generate
 and actual reader; name the redundant source/lookup being removed and the independently
 owned policy being preserved. Paused consumers need a recorded boundary and revival path,
 not an exhaustive behavior matrix in the active refactor.
+
+### Consumer-local settings pattern (tentative agreement)
+
+The operator is **tentatively comfortable with this pattern**: a consumer selects a
+canonical route and combines shared roster facts with its own settings downstream.
+This is not approval of the exact helper APIs, example values, field derivations or
+file locations. Per-file dispositions remain open unless separately approved in §3.
+
+For example, an OpenClaw-specific configuration projection could look like:
+
+```python
+from model_catalog.catalog import GPT6_LUNA_RESPONSES, Route
+
+
+def openclaw_model(
+    route: Route,
+    *,
+    context_budget: int,
+    output_budget: int,
+) -> dict[str, object]:
+    return {
+        # Shared identity and presentation:
+        "id": route.id,
+        "name": route.display_name,
+        # OpenClaw-specific policy, expressed in its native schema:
+        "contextWindow": context_budget,
+        "maxTokens": output_budget,
+    }
+
+
+models = [
+    openclaw_model(
+        GPT6_LUNA_RESPONSES,
+        context_budget=128_000,
+        output_budget=16_000,
+    ),
+]
+```
+
+**The numbers are illustrative policy choices, not recommendations, provider-capacity
+claims or verified output-cap enforcement.** The route supplies shared identity/name;
+the consumer supplies its own accounting/request settings. The central roster does
+not need to know OpenClaw exists. The selection and its settings stay together rather
+than in a model list plus parallel override dictionaries. Agent-wide compaction policy
+belongs at the agent level, not forcibly attached to every model entry.
+
+A Claude-wrapper projection could independently accept:
+
+```python
+wrapper = claude_wrapper(
+    primary=GPT6_ASTRA_MESSAGES,
+    haiku=GPT6_LUNA_MESSAGES,
+    max_context_tokens=128_000,
+    max_output_tokens=16_000,
+)
+```
+
+Here `claude_wrapper` is an illustrative consumer-local helper, not a new shared API.
+It would project route IDs and Claude-specific settings into the wrapper's JSON shape;
+the Nix gateway renderer would apply them in Claude's environment/configuration. The
+same numeric values above do not imply equivalent Claude/OpenClaw semantics. Both
+consumers remain paused; illustrating their retained renderers does not re-enable them.
+
+These settings are not necessarily **overrides of central defaults**. They may have
+no corresponding central value at all. Where justified, a known provider constraint
+can validate a consumer choice, or support an explicit derivation with matching
+semantics. It must not silently rewrite an independently chosen compaction budget.
+Unknown provider facts remain unknown rather than being filled from client settings.
+
+Prefer a small projection per consumer over a universal client-budget object or a
+framework abstracting the superficial similarity of these helpers. This is a pattern
+for separating shared facts from genuine consumer policy, not another model registry.
+
+### Ollama serving-variant pattern (tentative agreement)
+
+The operator is also **tentatively comfortable with one Ollama serving-variant
+definition feeding both provisioning and routing**, separate from provider facts and
+consumer budgets. Neutral means independent of cdk8s/deployment, not ignorant of provider
+protocols. Exact records, file locations and how provisioning consumes them remain
+undecided; existing records may suffice instead of adding the illustrative class below.
+
+```python
+QWEN_256K = OllamaServingVariant(
+    model=QWEN_IQ4XS,  # Shared model identity/name/capabilities.
+    base_tag="qwen3.8-flash-next-iq4xs",
+    tag="qwen3.8-flash-next-iq4xs-256k",
+    num_ctx=262_144,
+)
+
+QWEN_256K_OPENAI = Route(
+    upstream=OLLAMA_OPENAI,
+    serving_variant=QWEN_256K,
+)
+QWEN_256K_NATIVE = Route(
+    upstream=OLLAMA_NATIVE,
+    serving_variant=QWEN_256K,
+)
+```
+
+This is a sketch, not an implemented API. The serving definition describes a requested
+allocation, not a measured capacity. The intended boundaries are:
+
+```text
+shared model facts ─────────────────────→ route identity/name/capabilities
+Ollama serving variant ─┬─→ provisioning: base model → tag + parameters
+                       └─→ canonical routes → LiteLLM adapter + upstream tag
+                                                  ↑
+                                      deployment endpoint/auth bindings
+consumer selection ──→ chosen route + consumer-owned settings
+```
+
+- **Provisioning:** obtain the base/tag/parameters from the serving definition rather
+  than independently maintaining copies in shell literals. The setup script may remain
+  the execution mechanism; its fate is open. Credentials, scheduling, storage/GPU
+  placement and readiness remain deployment concerns.
+- **Routing:** both routes reference the same variant; LiteLLM combines its tag with
+  the selected adapter and deployment URL/auth bindings. Prefer using the baked-in
+  variant on both wires **if verified**, rather than two competing ways to set context.
+  Ollama's OpenAI-compatible path does not apply native `options.num_ctx` the same way;
+  identical extra request bodies across wires do not establish equivalent behavior.
+- **Server defaults:** a global `OLLAMA_CONTEXT_LENGTH` may still be useful, but it
+  must not silently determine the meaning of an explicitly named 256K variant.
+- **Publication:** neither projection assigns `max_input_tokens` or `max_output_tokens`
+  from `num_ctx`. Known provider limits follow the independently justified pair-or-none
+  policy; LiteLLM/Ollama discovery must not silently reintroduce unjustified limits.
+- **Clients:** Agentplane, OpenClaw or another consumer selects the route and owns its
+  budget. A derivation from serving configuration needs explicit justification, not an
+  automatic rule that every `num_ctx` becomes the harness's window.
+
+Acceptance must check that provisioning and both selected wire paths resolve to the
+intended tag/settings, not just that their generated strings agree. No capacity claim,
+variant activation/retirement, client-budget change or provisioning change is approved
+by recording this pattern; the corresponding file decisions in §3 remain open.
 
 ## 3. Consumer inventory and side effects
 

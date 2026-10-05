@@ -104,21 +104,12 @@ def test_clean_on_tracked_files_falls_back_to_the_full_status(
     assert isinstance(result, wg.RetainedWorktree)
 
 
-def test_dirty_with_open_pr_notes_the_pr(repo: GitRepo, proc: Path) -> None:
-    pr = PrInfo(9, PrState.OPEN)
-    wt = repo.worktree("wt", "feature")
-    (wt.path / "base").write_text("dirty\n")
-    without_pr = _classify(repo, wt.path, proc)
-    result = _classify(repo, wt.path, proc, pr_states={"feature": pr})
-    assert isinstance(result, wg.RetainedWorktree)
-    assert without_pr.reason in result.reason
-    assert pr_phrase(pr) in result.reason
-
-
-def test_dirty_with_merged_pr_is_kept_and_flagged(repo: GitRepo, proc: Path) -> None:
-    # Uncommitted work always wins over the merged-PR prune, but the reason surfaces the
-    # merge so the tree reads as stale scratch worth clearing by hand.
-    pr = PrInfo(5, PrState.MERGED)
+@pytest.mark.parametrize(
+    "pr", [pytest.param(PrInfo(9, PrState.OPEN), id="open"), pytest.param(PrInfo(5, PrState.MERGED), id="merged")]
+)
+def test_dirty_with_pr_is_kept_and_flagged(repo: GitRepo, proc: Path, pr: PrInfo) -> None:
+    # Uncommitted work always wins over a PR-based verdict, but the reason surfaces the PR so
+    # a dirty tree whose PR already merged reads as stale scratch worth clearing by hand.
     wt = repo.worktree("wt", "feature")
     (wt.path / "base").write_text("dirty\n")
     without_pr = _classify(repo, wt.path, proc)

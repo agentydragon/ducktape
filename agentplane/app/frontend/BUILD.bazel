@@ -5,7 +5,7 @@ load("//devinfra/js:openapi.bzl", "js_openapi_schema")
 load("//devinfra/js:spa_bundle.bzl", "spa_bundle")
 load("//devinfra/js:ts_library.bzl", "ts_library")
 load("//devinfra/js:vitest.bzl", "check_vitest_specs", "vitest_config")
-load("//util/testing/frontend_visual:visual_test.bzl", "visual_test")
+load("//util/testing/frontend_visual:py_visual_test.bzl", "py_visual_test")
 load(":vitest.bzl", "agentplane_vitest_test")
 
 package(default_visibility = ["//agentplane/app:__subpackages__"])
@@ -1135,24 +1135,33 @@ vitest_config(
     setup_files = ["test_setup.ts"],
 )
 
-# Visual render-health tests: the app mounted by visual/harness.tsx on canned inventory and runner
+# Visual render-health tests: the app mounted by harness/harness.tsx on canned inventory and runner
 # events (fetch and EventSource stubbed, nothing on the network), one scenario per row of
-# visual/scenarios.ts, the PNGs published for PR visual review on the shared
+# harness/scenarios.json, the PNGs published for PR visual review on the shared
 # //util/testing/frontend_visual machinery.
-ts_library(
-    name = "visual_scenarios",
+#
+# The scenario table: read by the harness (the route and fixture switches of the scene `?page=`
+# names) and by the sweep (what to capture).
+js_library(
+    name = "visual_scenarios_json",
     testonly = True,
-    srcs = ["visual/scenarios.ts"],
+    srcs = ["harness/scenarios.json"],
+)
+
+ts_library(
+    name = "visual_scenario",
+    testonly = True,
+    srcs = ["harness/scenario.ts"],
     tsconfig = TSCONFIG,
-    deps = ["//util/testing/frontend_visual:visual_test_lib"],
+    deps = [":visual_scenarios_json"],
 )
 
 ts_library(
     name = "visual_harness_lib",
     testonly = True,
     srcs = [
-        "visual/harness.tsx",
-        "visual/network.ts",
+        "harness/harness.tsx",
+        "harness/network.ts",
     ],
     tsconfig = TSCONFIG,
     deps = [
@@ -1164,7 +1173,7 @@ ts_library(
         ":stream_status",
         ":test_model_catalog",
         ":theme",
-        ":visual_scenarios",
+        ":visual_scenario",
         "//:node_modules/@bufbuild/protobuf",
         "//:node_modules/@mantine/core",
         "//:node_modules/@types/react",
@@ -1176,16 +1185,16 @@ ts_library(
     ],
 )
 
-# A classic script (iife) so visual/index.html loads it from file:// without module CORS.
+# A classic script (iife) so harness/index.html loads it from file:// without module CORS.
 esbuild(
     name = "visual_bundle",
     testonly = True,
     config = {"jsx": "automatic"},
-    entry_point = "visual/harness.js",
+    entry_point = "harness/harness.js",
     format = "iife",
     minify = False,
-    output = "visual/bundle.js",
-    output_css = "visual/bundle.css",
+    output = "harness/bundle.js",
+    output_css = "harness/bundle.css",
     platform = "browser",
     sourcemap = "linked",
     target = ["es2022"],
@@ -1196,33 +1205,37 @@ esbuild(
 filegroup(
     name = "visual_bundle_js",
     testonly = True,
-    srcs = ["visual/bundle.js"],
+    srcs = ["harness/bundle.js"],
 )
 
 filegroup(
     name = "visual_bundle_css",
     testonly = True,
-    srcs = ["visual/bundle.css"],
+    srcs = ["harness/bundle.css"],
 )
 
-# Every scenario in visual/scenarios.ts, swept on one browser per shard -- `shard_count` buys the
+# Every scenario in harness/scenarios.json, each on its own browser -- `shard_count` buys the
 # parallelism per-scenario targets used to give, without BUILD repeating the scenario list. Run one
 # with `--test_filter=<scenario>`; see AGENTS.md.
 #
-# medium: a shard renders 4-5 scenarios on one Chromium, measured at 10-16s per shard
-# (invocation 4493681a-c750-49ba-af99-d756df6e956e) -- against 30-40s for a single scenario when
-# each one paid its own browser launch and input staging.
-visual_test(
+# medium: a shard renders 20-21 scenarios, each on its own browser. The six shards took 32-59s in a
+# run alone (invocation b4c9de0e-a2bd-4dd7-9cf4-336af5fc7295) and up to 74s with three such runs and
+# a test batch going at once (92260881-030d-484a-aa4c-d78914a4fe46), past `small`'s 60s.
+#
+# devtools_viewport: the phone scenarios' 2.625 device scale factor is where Playwright's viewport
+# renders a few pixels differently from the Puppeteer sweep's.
+py_visual_test(
     name = "visual",
     size = "medium",
     assets = [
-        "visual/index.html",
+        "harness/index.html",
         ":visual_bundle_css",
     ],
-    entry_point = "visual/runner.mjs",
+    devtools_viewport = True,
     harness = ":visual_bundle_js",
-    scenarios = ":visual_scenarios",
+    scenarios = "harness/scenarios.json",
     shard_count = 6,
+    title = "Agentplane",
 )
 
 js_test(
