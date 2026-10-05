@@ -24,7 +24,7 @@ from agentplane.protocol import event_pb2
 from agentplane.runner.adapter import HarnessAdapter
 from agentplane.runner.codex_history import read_history
 from agentplane.runner.config import CodexLaunch
-from agentplane.runner.recovery import compare_item, observed_items
+from agentplane.runner.recovery import ObservedItem, compare_item, observed_items, unknown_item, unknown_report
 
 # The generated protocol stubs' own stub chain, which the mypy aspect resolves for direct deps only.
 # gazelle:include_dep @pypi//protobuf
@@ -113,29 +113,17 @@ class CodexAdapter(HarnessAdapter):
         # a stopped process also has no pending writes. The UI thread/resume projection
         # omits some pending calls, so inspect the model history instead.
         observed = await observed_items(self.session.journal, turn_id)
-        reason = "native continuation evidence is unavailable or unsupported"
         try:
             recovered = await asyncio.to_thread(
                 read_history, self.session.native_directory / "codex", self._thread_id, observed
             )
         except (OSError, ValueError) as error:
-            recovered = None
-            reason = f"cannot inspect native continuation: {error}"
-        decisions = []
-        for item in observed.values():
-            if (
-                recovered is None
-                or item.kind == event_pb2.ITEM_KIND_REASONING
-                or (item.kind == event_pb2.ITEM_KIND_TOOL_CALL and item.tool_name != "commandExecution")
-            ):
-                decisions.append(
-                    event_pb2.ItemRecovery(
-                        item_id=item.item_id, disposition=event_pb2.RECOVERY_DISPOSITION_UNKNOWN, reason=reason
-                    )
-                )
-            else:
-                decisions.append(compare_item(item, recovered.get(item.item_id)))
-        return event_pb2.ConversationReconciled(turn_id=turn_id, items=decisions)
+            return unknown_report(turn_id, observed, f"cannot inspect native continuation: {error}")
+        if recovered is None:
+            return unknown_report(turn_id, observed, "native continuation evidence is unavailable or unsupported")
+        return event_pb2.ConversationReconciled(
+            turn_id=turn_id, items=[_decide(item, recovered) for item in observed.values()]
+        )
 
     async def submit(self, command_id: str, text: str) -> None:
         model_change = await self._take_pending_model_change()
@@ -328,6 +316,13 @@ class CodexAdapter(HarnessAdapter):
                     ),
                     sources=sources,
                 )
+
+
+def _decide(item: ObservedItem, recovered: dict[str, ObservedItem]) -> event_pb2.ItemRecovery:
+    """One item's disposition once the saved history was read; `recovered` holds the items it vouches for."""
+    if item.kind == event_pb2.ITEM_KIND_TOOL_CALL and item.tool_name != "commandExecution":
+        return unknown_item(item.item_id, f"the adapter does not match {item.tool_name} items to saved function calls")
+    return compare_item(item, recovered.get(item.item_id))
 
 
 def _extras(item: wire.UnknownItem) -> dict[str, object]:

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import math
+from collections.abc import Callable
 
 import numpy as np
 import numpy.typing as npt
@@ -463,39 +464,6 @@ def test_valuation_channel_off_by_default() -> None:
     assert not _issuer().valuation_channel_enabled
 
 
-def test_valuation_channel_on_anchors_columns_zero() -> None:
-    """Channel ON: valuation[:,0] == V0 and mark[:,0] == current_mark_usd exactly."""
-
-    issuer = _valuation_issuer()
-    assert issuer.valuation_channel_enabled
-    sampled = _sample(issuer, horizon_months=6)
-
-    valuation = _float(sampled, PrivateEquityFloatChannel.COMPANY_VALUATION_USD, horizon=6)
-    mark = _float(sampled, PrivateEquityFloatChannel.MARK_USD_PER_UNIT, horizon=6)
-
-    np.testing.assert_array_equal(valuation[:, 0], np.full(valuation.shape[0], 1.0e11))
-    assert mark[0, 0] == pytest.approx(100.0)
-    # The coupled valuation is a strictly positive market cap, never the all-zeros sentinel.
-    assert np.all(valuation > 0.0)
-
-
-def test_valuation_channel_on_is_deterministic_under_fixed_seeds() -> None:
-    """Two samples with identical `rollout_seeds` produce identical coupled arrays."""
-
-    issuer = _valuation_issuer()
-    request = ExogenousSamplingRequest(
-        horizon_months=8, rollout_seeds=(11, 22, 33), required_private_equity_issuers=frozenset({ACME})
-    )
-    model = PrivateEquityRiskProviderConfig(issuers={ACME: issuer}).realize_model()
-    first = model.sample(request)
-    second = model.sample(request)
-
-    for channel in (PrivateEquityFloatChannel.COMPANY_VALUATION_USD, PrivateEquityFloatChannel.MARK_USD_PER_UNIT):
-        a = first.private_equity.issuer_float_matrix("acme", str(channel), rollout_count=3, horizon_months=8)
-        b = second.private_equity.issuer_float_matrix("acme", str(channel), rollout_count=3, horizon_months=8)
-        np.testing.assert_array_equal(a, b)
-
-
 # ---- M2.2-D: scale-dependent mean-reverting valuation drift -------------------------------
 
 
@@ -949,15 +917,25 @@ def test_mint_streams_rejects_legacy_dilution_set() -> None:
         )
 
 
-def test_mint_streams_anchors_at_t0() -> None:
-    """V[:,0] == V0 and shares[:,0] == shares0 exactly; latent_mark[:,0] == current_mark_usd."""
+@pytest.mark.parametrize("make_issuer", [_valuation_issuer, _mint_streams_issuer], ids=["valuation", "mint_streams"])
+@pytest.mark.parametrize("horizon", [6, 0])
+def test_channel_on_anchors_columns_zero(
+    make_issuer: Callable[..., PrivateEquityRiskIssuerConfig], horizon: int
+) -> None:
+    """Channel ON: V[:,0] == V0 and mark[:,0] == current_mark_usd exactly, including a horizon-0
+    sample that is only column 0. With mint streams the latent mark is current_mark *
+    (V/V0) / (shares/shares0), which is current_mark at t0."""
 
-    issuer = _mint_streams_issuer()
-    sampled = _sample(issuer, horizon_months=6)
-    valuation = _float(sampled, PrivateEquityFloatChannel.COMPANY_VALUATION_USD, horizon=6)
-    mark = _float(sampled, PrivateEquityFloatChannel.MARK_USD_PER_UNIT, horizon=6)
+    issuer = make_issuer()
+    assert issuer.valuation_channel_enabled
+    sampled = _sample(issuer, horizon_months=horizon)
+    valuation = _float(sampled, PrivateEquityFloatChannel.COMPANY_VALUATION_USD, horizon=horizon)
+    mark = _float(sampled, PrivateEquityFloatChannel.MARK_USD_PER_UNIT, horizon=horizon)
+
+    assert mark.shape == valuation.shape == (1, horizon + 1)
     np.testing.assert_array_equal(valuation[:, 0], np.full(valuation.shape[0], 1.0e11))
     assert mark[0, 0] == pytest.approx(100.0)
+    # The coupled valuation is a strictly positive market cap, never the all-zeros sentinel.
     assert np.all(valuation > 0.0)
 
 
@@ -1016,19 +994,6 @@ def test_mint_streams_round_events_fire_at_expected_rate() -> None:
     expected_rounds = (1.0 / 12.0) * 120  # = 10
     # Mean realized rounds should be within ~10% of the Poisson expectation at this sample size.
     assert abs(rounds_per_rollout.mean() - expected_rounds) < 1.5
-
-
-def test_mint_streams_invariant_mark_equals_v_over_shares_at_t0() -> None:
-    """latent_mark[:,0] = current_mark * (V0/V0) / (shares0/shares0) = current_mark exactly.
-
-    A sample at horizon 0 returns just column 0; verify the invariant directly.
-    """
-
-    issuer = _mint_streams_issuer()
-    sampled = _sample(issuer, horizon_months=0)
-    mark = _float(sampled, PrivateEquityFloatChannel.MARK_USD_PER_UNIT, horizon=0)
-    assert mark.shape == (1, 1)
-    assert mark[0, 0] == pytest.approx(100.0)
 
 
 def test_mint_streams_zero_hazard_is_continuous_mint_only() -> None:

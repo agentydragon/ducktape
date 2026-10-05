@@ -58,6 +58,10 @@ spec:
       envFrom:
         - secretRef:
             name: aws-route53-credentials
+      resources:
+        requests:
+          cpu: 250m
+          memory: 512Mi
   serviceAccountName: tf-runner
   sourceRef:
     kind: GitRepository

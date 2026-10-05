@@ -127,38 +127,38 @@ def _synthetic_mint_streams_data(
 
 
 def test_recovers_known_cash_over_v_pre_median() -> None:
-    """On clean synthetic data, the posterior recovers cash_over_v_pre_median near the truth."""
+    """The posterior median follows the round sizes in the data. The truth sits well above the prior
+    centre (`cash_over_v_pre_median_mu`), so a fit that ignored the rounds would land outside the band."""
 
     prices, valuations = _synthetic_mint_streams_data(
         monthly_hazard_true=1.0 / 8.0,
-        cash_over_v_pre_true=0.10,
+        cash_over_v_pre_true=0.30,
         cash_over_v_pre_log_sigma_true=0.4,
         annual_mint_rate_true=0.05,
-        seed=42,
+        seed=7,
     )
     posterior = fit_bayesian_mint_streams_prior(prices, valuations, num_warmup=600, num_samples=800, num_chains=1)
-    # Recovered median within a generous band (small sample + small NUTS run).
-    assert posterior.cash_over_v_pre_median == pytest.approx(0.10, abs=0.05)
+    assert posterior.cash_over_v_pre_median == pytest.approx(0.30, rel=0.25)
     assert posterior.n_primary_events >= 6
 
 
 def test_recovers_known_annual_mint_rate() -> None:
-    """Posterior recovers annual_mint_rate_mature near the truth (driven by the residual share
-    growth not attributable to primary rounds)."""
+    """Posterior recovers annual_mint_rate_mature from the tender prices (the residual share growth
+    not attributable to primary rounds). The truth sits well above the prior centre
+    (`annual_mint_rate_mature_mu`), so a fit that ignored the prices would land outside the band; the
+    band allows for the posterior's shrinkage toward that centre."""
 
     prices, valuations = _synthetic_mint_streams_data(
         monthly_hazard_true=1.0 / 12.0,
         cash_over_v_pre_true=0.08,
         cash_over_v_pre_log_sigma_true=0.3,
-        annual_mint_rate_true=0.05,
+        annual_mint_rate_true=0.25,
         horizon_months=96,
         n_tender_prices=12,
         seed=11,
     )
     posterior = fit_bayesian_mint_streams_prior(prices, valuations, num_warmup=800, num_samples=1000, num_chains=1)
-    # Wider band — mint rate is identified from tender-price residual, weaker signal than
-    # cash/V_pre which has direct observations.
-    assert posterior.annual_mint_rate_mature == pytest.approx(0.05, abs=0.04)
+    assert posterior.annual_mint_rate_mature == pytest.approx(0.25, abs=0.08)
 
 
 def test_too_few_primary_events_raises() -> None:
@@ -172,7 +172,8 @@ def test_too_few_primary_events_raises() -> None:
 
 
 def test_priors_overridable() -> None:
-    """A caller can pass a different priors instance to control the fit."""
+    """A caller-supplied prior reaches the fit: pinned tightly at 0.30 against rounds whose own
+    median is about 0.15, the posterior median lands at the prior, not at the data or the default prior."""
 
     prices, valuations = _synthetic_mint_streams_data(
         monthly_hazard_true=1.0 / 10.0,
@@ -182,14 +183,13 @@ def test_priors_overridable() -> None:
         seed=99,
     )
     tight_priors = BayesianMintStreamsPriors(
-        cash_over_v_pre_median_mu=0.15,
+        cash_over_v_pre_median_mu=0.30,
         log_cash_over_v_pre_sigma_prior=0.05,  # very tight
     )
     posterior = fit_bayesian_mint_streams_prior(
         prices, valuations, priors=tight_priors, num_warmup=400, num_samples=500, num_chains=1
     )
-    # Tight prior pulls posterior to the truth even with limited data.
-    assert posterior.cash_over_v_pre_median == pytest.approx(0.15, abs=0.03)
+    assert posterior.cash_over_v_pre_median == pytest.approx(0.30, abs=0.05)
 
 
 if __name__ == "__main__":

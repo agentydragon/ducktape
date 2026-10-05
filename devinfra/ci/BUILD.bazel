@@ -158,6 +158,12 @@ py_library(
 )
 
 py_library(
+    name = "install_bb",
+    srcs = ["install_bb.py"],
+    visibility = ["//:__subpackages__"],
+)
+
+py_library(
     name = "emit_bb_remote_linkage",
     srcs = ["emit_bb_remote_linkage.py"],
     visibility = ["//:__subpackages__"],
@@ -334,6 +340,16 @@ py_test(
     srcs = ["test_invocation_ids.py"],
     deps = [
         ":invocation_ids",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_install_bb",
+    srcs = ["test_install_bb.py"],
+    deps = [
+        ":install_bb",
+        "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],
 )

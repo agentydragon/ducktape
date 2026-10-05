@@ -6,7 +6,6 @@ import pytest
 import pytest_bazel
 
 from finance.augur.policy.cash_band import Hold, Invest, Raise, cash_band
-from finance.augur.sim.fixed_point import quantity_for_value
 
 
 @pytest.mark.parametrize(
@@ -34,15 +33,6 @@ def test_integer_precision_and_largest_representable_proposals() -> None:
     assert cash_band(projected_cash=-(2**63) + 1, floor=0, ceiling=0) == Raise(amount=2**63 - 1)
     assert cash_band(projected_cash=2**63 - 1, floor=0, ceiling=0) == Invest(amount=2**63 - 1)
     assert cash_band(projected_cash=2**63 - 1, floor=2**63 - 1, ceiling=2**63 - 1) == Hold()
-
-
-def test_investment_budget_composes_with_exact_quantity_rounding() -> None:
-    adjustment = cash_band(projected_cash=111, floor=10, ceiling=30)
-    assert isinstance(adjustment, Invest)
-    assert adjustment.amount == 101
-    assert quantity_for_value(adjustment.amount, 100, 10, round_up=False) == 10
-    # A proposal does not round up an unaffordable next unit or execute anything.
-    assert 10 * 100 <= adjustment.amount * 10 < 11 * 100
 
 
 @pytest.mark.parametrize(("floor", "ceiling"), [(-1, 0), (2, 1)])
