@@ -23,7 +23,7 @@ from agentplane.runner.client import RunnerClient
 from agentplane.runner.harness_process import HarnessProcess
 from agentplane.runner.store import StateOwner
 from agentplane.runner.testing import events, launches
-from agentplane.runner.testing.scripted_model import ScriptedModel, Text
+from agentplane.runner.testing.scripted_model import Reasoning, ScriptedModel, Text
 from util.bazel.runfiles import get_required_path, own_repo_rlocation
 
 # The generated protocol stubs' own stub chain, which the mypy aspect resolves for direct deps only.
@@ -531,6 +531,39 @@ async def test_sigterm_stops_the_harness_cleanly_and_the_next_runner_resumes(
     assert done.event.turn_completed.status == event_pb2.TURN_STATUS_COMPLETED
     events.assert_contiguous([*first.seen, *second.seen])
     await second.stop_runner_session("stop-after-sigterm")
+    await second.drain_until_end()
+    await client.close()
+
+
+async def test_a_reasoning_item_cut_off_by_a_harness_kill_is_reported_absent_and_not_replayed(
+    start_runner: Callable[[], Awaitable[RunnerProcess]], model: ScriptedModel, spec: protocol_pb2.SessionSpec
+) -> None:
+    first_runner = await start_runner()
+    client = RunnerClient(first_runner.target, capture_history=True)
+    first = await client.attach("cut-off-reasoning-1", spec=spec)
+    await first.send("input-1", "Reply with exactly: SEED_OK")
+    await model.hold_after_first_delta(await model.request(), Reasoning("CUT_OFF_THOUGHT"))
+    cut_off = (await first.until(events.is_kind("item_started"))).event.item_started.item_id
+    await first.until(events.is_kind("text_delta"))
+    harness_pids = [entry.event.harness_started.pid for entry in events.of_kind(first.seen, "harness_started")]
+    await first_runner.crash(harness_pids)
+    await client.close()
+
+    second_runner = await start_runner()
+    client = RunnerClient(second_runner.target, capture_history=True)
+    second = await client.attach("cut-off-reasoning-1", spec=spec, after_cursor=first.cursor)
+    await second.until(events.is_kind("harness_started"))
+    # The reconciliation the resumed harness makes is the last word on the lost turn's items.
+    reconciled = await second.until(events.is_kind("conversation_reconciled"))
+    assert [(item.item_id, item.disposition) for item in reconciled.event.conversation_reconciled.items] == [
+        (cut_off, event_pb2.RECOVERY_DISPOSITION_ABSENT)
+    ]
+    await second.send("input-2", "Reply with exactly: RESUMED_OK")
+    request = await model.request()
+    assert request.reasoning_texts == []
+    await model.reply(request, Text("RESUMED_OK"))
+    await second.until(events.turn_completed)
+    await second.stop_runner_session("stop-after-cut-off")
     await second.drain_until_end()
     await client.close()
 
