@@ -13,23 +13,12 @@ import pytest_bazel
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from fastmcp import FastMCP
-from sqlalchemy import event, select, text
-from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker, create_async_engine
+from sqlalchemy import event, select
+from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 
 from haku.console.conftest import operator_id, write_config
-from haku.console.database_migrate import apply_migrations
 from haku.console.database_schema import Agent, CredentialBinding, StaticCredential
-from haku.console.identity.agent import (
-    # TestClient drives the app over httpx, imported inside starlette; gazelle cannot see it.
-    # gazelle:include_dep @pypi//httpx
-    AgentStatus,
-    ClientRegistrationKind,
-    CredentialBindingStatus,
-    CredentialKind,
-    EnrollmentPhase,
-)
 from haku.console.identity.authorization import fingerprint_static_token
-from haku.console.identity.operator_identity import OperatorStatus
 from haku.console.mcp.approval import DegradedReflection, McpServerDispatcher, PostgresToolCallLedger
 from haku.console.mcp.execution import EXECUTION_CONTEXT_DEPENDENCY, McpExecutionContext, OperatorMcpExecutionCaller
 from haku.console.mcp.reflection_cache import ReflectedCatalog
@@ -50,6 +39,9 @@ from haku.console.tool_calls import (
     ToolCallPayloadField,
     ToolCallStatus,
 )
+
+# TestClient drives the app over httpx, imported inside starlette; gazelle cannot see it.
+# gazelle:include_dep @pypi//httpx
 
 
 def _build_test_mcp_server() -> FastMCP:
@@ -171,26 +163,6 @@ _STATIC_AGENTS = {
         "access_profile_id": "no_auto_approval",
     }
 }
-
-
-async def _enum_values(engine: AsyncEngine) -> dict[str, tuple[str, ...]]:
-    async with engine.connect() as conn:
-        rows = (
-            await conn.execute(
-                text(
-                    """
-                SELECT type.typname, enum.enumlabel
-                FROM pg_type AS type
-                JOIN pg_enum AS enum ON enum.enumtypid = type.oid
-                ORDER BY type.typname, enum.enumsortorder
-                """
-                )
-            )
-        ).all()
-    return {
-        type_name: tuple(label for row_type_name, label in rows if row_type_name == type_name)
-        for type_name in {row_type_name for row_type_name, _ in rows}
-    }
 
 
 def _config(servers: list[dict[str, Any]]) -> dict[str, Any]:
@@ -729,26 +701,6 @@ async def test_audit_log_is_tenant_scoped_and_redacts_secrets(
     assert future["tool_calls"] == []
     dumped = str([operator_body, haku_body])
     assert "tool-token" not in dumped
-
-
-async def test_fresh_baseline_enum_values_match_domain_enums(db_url: str) -> None:
-    apply_migrations(db_url)
-    engine = create_async_engine(db_url)
-    try:
-        baseline_values = await _enum_values(engine)
-    finally:
-        await engine.dispose()
-
-    current_values = {
-        "agent_status": tuple(status.value for status in AgentStatus),
-        "client_registration_kind": tuple(kind.value for kind in ClientRegistrationKind),
-        "credential_binding_status": tuple(status.value for status in CredentialBindingStatus),
-        "credential_kind": tuple(kind.value for kind in CredentialKind),
-        "enrollment_phase": tuple(phase.value for phase in EnrollmentPhase),
-        "operator_status": tuple(status.value for status in OperatorStatus),
-        "tool_call_status": tuple(status.value for status in ToolCallStatus),
-    }
-    assert baseline_values == current_values
 
 
 # --- In-process MCP servers (McpServerDispatcher in-process registration) ---

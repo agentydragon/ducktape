@@ -202,6 +202,9 @@ py_test(
         "@pypi//pytest_bazel",
         "@pypi//sqlalchemy",
         "//third_party/containers:pgvector_pg18",
+        "//haku/console/identity:agent",
+        "//haku/console/identity:operator_identity",
+        "@ducktape_haku//haku/console:tool_calls",
     ],
 )
 
