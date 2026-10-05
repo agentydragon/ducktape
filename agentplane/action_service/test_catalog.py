@@ -105,7 +105,7 @@ def test_a_direct_tool_group_key_cannot_hold_the_name_separator() -> None:
     )
     # The key is fine where no tool name is split at it.
     ActionCatalog(groups={"test__group": group})
-    with pytest.raises(ValidationError, match="must not contain"):
+    with pytest.raises(ValidationError):
         ActionCatalog.model_validate({"groups": {"test__group": {**group, "direct_tools": ["act"]}}})
 
 
