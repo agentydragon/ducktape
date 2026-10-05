@@ -89,6 +89,7 @@ py_test(
         "//x/wt/shared:constants",
         "//x/wt/shared:protocol",
         "//x/wt/testing:asserts",
+        "@pypi//pytest",
         "@pypi//pytest_bazel",
         "@pypi//typer_slim",
     ],

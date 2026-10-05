@@ -6,6 +6,7 @@ These tests use Click's CliRunner with patched WtClient methods.
 from pathlib import Path
 from unittest.mock import patch
 
+import pytest
 import pytest_bazel
 from typer.testing import CliRunner
 
@@ -48,13 +49,18 @@ class TestNewCLIIntegration:
         # Should list the mocked worktree we provided
         assert_output_contains(result.output, "test-worktree")
 
-    def test_help_command(self, wt_env):
-        """`sh help` dispatches to the help listing, which describes every reserved command."""
+    @pytest.mark.parametrize(("name", "description"), COMMAND_DESCRIPTIONS.items(), ids=list(COMMAND_DESCRIPTIONS))
+    def test_help_command(self, wt_env, name, description):
+        """`sh help` lists each reserved command as its own `wt <name>` row with its description.
+
+        Matching the whole row keeps the FLAGS and `wt status [name]` rows, which repeat the
+        `help` and `status` descriptions, from satisfying it.
+        """
 
         result = CliRunner().invoke(app, ["sh", "help"])
 
         assert result.exit_code == 0
-        assert_output_contains(result.output, *COMMAND_DESCRIPTIONS.values())
+        assert ["wt", name, *description.split()] in [line.split() for line in result.output.splitlines()]
 
 
 if __name__ == "__main__":
