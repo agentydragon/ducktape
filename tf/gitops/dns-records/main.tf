@@ -126,6 +126,36 @@ resource "aws_route53_record" "api" {
   allow_overwrite = true
 }
 
+# ExternalDNS v0.22.0 maps its `external-dns-%{record_type}.` TXT prefix and
+# `wildcard` replacement to these seven names. The TXT registry recognizes an
+# existing record by its heritage and owner labels; the resource label is optional.
+# Keep these markers Terraform-owned while ExternalDNS is dry-run. The later
+# ownership handoff must forget both these markers and the seven records above
+# without destroying any Route 53 record sets.
+locals {
+  external_dns_ownership_txt_names = {
+    wildcard_a = "external-dns-a.wildcard.${local.domain}"
+    apex_a     = "external-dns-a.${local.domain}"
+    mx_a       = "external-dns-a.mx.${local.domain}"
+    api_a      = "external-dns-a.api.${local.domain}"
+    apex_mx    = "external-dns-mx.${local.domain}"
+    apex_txt   = "external-dns-txt.${local.domain}"
+    dmarc_txt  = "external-dns-txt._dmarc.${local.domain}"
+  }
+}
+
+resource "aws_route53_record" "external_dns_ownership" {
+  #checkov:skip=CKV2_AWS_23:TXT ownership metadata has no AWS alias target
+  for_each = local.external_dns_ownership_txt_names
+
+  zone_id         = var.route53_zone_id
+  name            = each.value
+  type            = "TXT"
+  ttl             = 300
+  records         = ["heritage=external-dns,external-dns/owner=ducktape-allegedly-works"]
+  allow_overwrite = false
+}
+
 # Domain registration — delegate to Route 53 nameservers
 import {
   to = aws_route53domains_registered_domain.allegedly_works

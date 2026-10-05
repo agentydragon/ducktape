@@ -16,10 +16,19 @@ TXT registry replaces `*` with `wildcard` in its ownership marker name.
 
 ExternalDNS uses the dedicated IAM user `cluster-external-dns` with record
 permissions limited to this hosted zone. Its key is stored in a separate SOPS
-Secret and is not shared with Terraform's registrar-capable credential. Import
-ownership TXT markers for the existing record sets and remove their Terraform
-state addresses without destroying the Route 53 records; keep the registered
-domain resource in Terraform.
+Secret and is not shared with Terraform's registrar-capable credential. Before
+enabling writes, remove the record and marker addresses from Terraform state
+without destroying the Route 53 records; keep the registered domain resource
+in Terraform.
+
+The seven existing record sets have Terraform-owned ExternalDNS TXT registry
+markers while the controller remains dry-run. These markers use
+`heritage=external-dns,external-dns/owner=ducktape-allegedly-works`; ExternalDNS
+recognizes the owner without a resource label. The marker names use the configured
+`external-dns-%{record_type}.` prefix and `wildcard` replacement. The next
+handoff must forget the seven record addresses **and** the seven marker addresses
+with `removed` blocks and `destroy = false`, then verify the Route 53 record
+sets remain intact before enabling ExternalDNS writes.
 
 ## Architecture
 
