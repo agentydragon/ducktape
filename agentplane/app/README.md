@@ -94,7 +94,7 @@ bbr test //agentplane/app/...
   `:migrate`, which fails when the migrated schema differs from the models; the server itself
   never creates or checks tables at startup. `:image` and `:migration_image` are separate OCI targets.
 - `frontend/`: the React SPA on the repo's `ts_library` and esbuild toolchain, with the visual
-  scenarios under `frontend/visual/`.
+  scenarios under `frontend/harness/`.
 
 ## Live views
 

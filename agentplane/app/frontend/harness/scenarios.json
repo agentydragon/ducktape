@@ -1,0 +1,1006 @@
+{
+  "session_recovery_messages": {
+    "element": "#app",
+    "route": "/threads/5f1c4a2e-0000-4000-8000-000000000001",
+    "viewport": { "width": 1200, "height": 1000 },
+    "recovery": "messages",
+    "openRecoveryDetails": false,
+    "readySelectors": ["[aria-label=\"Retention unknown\"]"],
+    "captureViewport": true
+  },
+  "session_recovery_messages_phone": {
+    "element": "#app",
+    "route": "/threads/5f1c4a2e-0000-4000-8000-000000000001",
+    "viewport": { "width": 412, "height": 915 },
+    "recovery": "messages",
+    "openRecoveryDetails": false,
+    "readySelectors": ["[aria-label=\"Retention unknown\"]"],
+    "captureViewport": true
+  },
+  "session_recovery_messages_open": {
+    "element": "#app",
+    "route": "/threads/5f1c4a2e-0000-4000-8000-000000000001",
+    "viewport": { "width": 1200, "height": 1100 },
+    "recovery": "messages",
+    "openRecoveryDetails": true,
+    "readySelectors": ["[aria-label=\"Retention unknown\"]", "[aria-label=\"Not retained in context\"]"],
+    "captureViewport": true
+  },
+  "session_recovery_messages_open_phone": {
+    "element": "#app",
+    "route": "/threads/5f1c4a2e-0000-4000-8000-000000000001",
+    "viewport": { "width": 412, "height": 915 },
+    "recovery": "messages",
+    "openRecoveryDetails": true,
+    "readySelectors": ["[aria-label=\"Retention unknown\"]", "[aria-label=\"Not retained in context\"]"],
+    "captureViewport": true
+  },
+  "session_recovery_tools": {
+    "element": "#app",
+    "route": "/threads/5f1c4a2e-0000-4000-8000-000000000001",
+    "viewport": { "width": 1200, "height": 900 },
+    "recovery": "tools",
+    "openRecoveryDetails": false,
+    "readySelectors": ["[aria-label=\"Retention unknown\"]"],
+    "captureViewport": true
+  },
+  "session_recovery_tools_open": {
+    "element": "#app",
+    "route": "/threads/5f1c4a2e-0000-4000-8000-000000000001",
+    "viewport": { "width": 1200, "height": 1100 },
+    "recovery": "tools",
+    "openRecoveryDetails": true,
+    "readySelectors": ["[aria-label=\"Retention unknown\"]", "details[open] details[open] .agentplane-code-block"],
+    "captureViewport": true
+  },
+  "session_recovery_tools_open_phone": {
+    "element": "#app",
+    "route": "/threads/5f1c4a2e-0000-4000-8000-000000000001",
+    "viewport": { "width": 412, "height": 1100 },
+    "recovery": "tools",
+    "openRecoveryDetails": true,
+    "readySelectors": ["[aria-label=\"Retention unknown\"]", "details[open] details[open] .agentplane-code-block"],
+    "captureViewport": true
+  },
+  "session_recovery_quiet": {
+    "element": "#app",
+    "route": "/threads/5f1c4a2e-0000-4000-8000-000000000001",
+    "viewport": { "width": 1200, "height": 500 },
+    "recovery": "quiet",
+    "openRecoveryDetails": false,
+    "readySelectors": ["[data-thread-anchor=\"50\"]"],
+    "captureViewport": true
+  },
+  "session_recovery_quiet_open": {
+    "element": "#app",
+    "route": "/threads/5f1c4a2e-0000-4000-8000-000000000001",
+    "viewport": { "width": 1200, "height": 800 },
+    "recovery": "quiet",
+    "openRecoveryDetails": true,
+    "readySelectors": ["[data-thread-anchor=\"50\"]", "details[open] details[open] .agentplane-code-block"],
+    "captureViewport": true
+  },
+  "session_error": {
+    "element": "#app",
+    "route": "/threads/5f1c4a2e-0000-4000-8000-000000000001",
+    "viewport": { "width": 1200, "height": 900 },
+    "failedTurn": "before-content",
+    "readySelectors": ["[data-thread-anchor=\"6\"]"],
+    "captureViewport": true
+  },
+  "session_error_phone": {
+    "element": "#app",
+    "route": "/threads/5f1c4a2e-0000-4000-8000-000000000001",
+    "viewport": { "width": 412, "height": 915, "deviceScaleFactor": 2.625 },
+    "failedTurn": "after-content",
+    "readySelectors": ["[data-thread-anchor=\"8\"]"],
+    "captureViewport": true
+  },
+  "session_error_raw": {
+    "element": "#app",
+    "route": "/threads/5f1c4a2e-0000-4000-8000-000000000001",
+    "viewport": { "width": 1200, "height": 1100 },
+    "failedTurn": "after-content",
+    "openDebug": "latest",
+    "readySelectors": ["[aria-label=\"Chronological observations\"]"],
+    "captureViewport": true
+  },
+  "session_error_raw_phone": {
+    "element": "#app",
+    "route": "/threads/5f1c4a2e-0000-4000-8000-000000000001",
+    "viewport": { "width": 412, "height": 915, "deviceScaleFactor": 2.625 },
+    "failedTurn": "before-content",
+    "openDebug": "latest",
+    "readySelectors": ["[aria-label=\"Chronological observations\"]"],
+    "captureViewport": true
+  },
+  "session_interleaved": {
+    "element": "#app",
+    "route": "/threads/5f1c4a2e-0000-4000-8000-000000000001",
+    "viewport": { "width": 1200, "height": 1100 },
+    "interleavedEvents": true,
+    "readySelectors": ["[data-thread-anchor=\"18\"]"],
+    "captureViewport": true
+  },
+  "session_interleaved_raw": {
+    "element": "#app",
+    "route": "/threads/5f1c4a2e-0000-4000-8000-000000000001",
+    "viewport": { "width": 1200, "height": 1500 },
+    "interleavedEvents": true,
+    "openDebug": "latest",
+    "readySelectors": ["[aria-label=\"Chronological observations\"]"],
+    "captureViewport": true
+  },
+  "session_interleaved_raw_phone": {
+    "element": "#app",
+    "route": "/threads/5f1c4a2e-0000-4000-8000-000000000001",
+    "viewport": { "width": 412, "height": 915, "deviceScaleFactor": 2.625 },
+    "interleavedEvents": true,
+    "openDebug": "latest",
+    "readySelectors": ["[aria-label=\"Chronological observations\"]"],
+    "captureViewport": true
+  },
+  "session_lifecycle_group": {
+    "element": "#app",
+    "route": "/threads/5f1c4a2e-0000-4000-8000-000000000001",
+    "viewport": { "width": 1200, "height": 900 },
+    "lifecycleGroup": true,
+    "readySelectors": ["[data-thread-anchor=\"50\"]"],
+    "captureViewport": true
+  },
+  "session_thread_setup": {
+    "element": "#app",
+    "route": "/threads/5f1c4a2e-0000-4000-8000-000000000001",
+    "viewport": { "width": 1200, "height": 900 },
+    "threadSetup": true,
+    "readySelectors": [":text(\"Thread setup complete\")"],
+    "captureViewport": true
+  },
+  "session_thread_setup_open": {
+    "element": "#app",
+    "route": "/threads/5f1c4a2e-0000-4000-8000-000000000001",
+    "viewport": { "width": 1200, "height": 900 },
+    "threadSetup": true,
+    "openSetup": true,
+    "readySelectors": [":text(\"Setup stdout\")"],
+    "captureViewport": true
+  },
+  "session_interleaved_native_details": {
+    "element": "#app",
+    "route": "/threads/5f1c4a2e-0000-4000-8000-000000000001",
+    "viewport": { "width": 1200, "height": 1100 },
+    "interleavedEvents": true,
+    "openDebug": "stderr",
+    "readySelectors": ["[aria-label=\"Chronological observations\"]"],
+    "captureViewport": true
+  },
+  "threads": {
+    "element": "#app",
+    "route": "/",
+    "viewport": { "width": 1200, "height": 900 },
+    "readySelectors": ["a.agentplane-sidebar-group-name"]
+  },
+  "threads_archived": {
+    "element": "#app",
+    "route": "/",
+    "viewport": { "width": 1200, "height": 900 },
+    "showArchived": true,
+    "readySelectors": [".agentplane-thread-status-indicator[data-status='archived']"]
+  },
+  "threads_phone": {
+    "element": "#app",
+    "route": "/",
+    "viewport": { "width": 412, "height": 915, "deviceScaleFactor": 2.625 },
+    "outputName": "threads-phone"
+  },
+  "threads_phone_drawer": {
+    "element": "#app",
+    "route": "/",
+    "viewport": { "width": 412, "height": 915, "deviceScaleFactor": 2.625 },
+    "outputName": "threads-phone-drawer",
+    "readySelectors": [".agentplane-sidebar-open", "a.agentplane-sidebar-group-name"],
+    "openMobileSidebar": true
+  },
+  "threads_provisioning": {
+    "element": "#app",
+    "route": "/",
+    "viewport": { "width": 1200, "height": 900 },
+    "threadlessSandbox": true,
+    "readySelectors": ["a[href=\"#/sandboxes/test-provisioning\"]"]
+  },
+  "threads_provisioning_phone": {
+    "element": "#app",
+    "route": "/",
+    "viewport": { "width": 412, "height": 915, "deviceScaleFactor": 2.625 },
+    "threadlessSandbox": true,
+    "openMobileSidebar": true,
+    "readySelectors": ["a[href=\"#/sandboxes/test-provisioning\"]", ".agentplane-sidebar-open"]
+  },
+  "threads_updates_disconnected": {
+    "element": "#app",
+    "route": "/",
+    "viewport": { "width": 1200, "height": 900 },
+    "sidebarSource": "database-disconnected",
+    "readySelectors": ["[role=\"alert\"]"]
+  },
+  "threads_disconnected": {
+    "element": "#app",
+    "route": "/",
+    "viewport": { "width": 1200, "height": 900 },
+    "sidebarSource": "disconnected",
+    "outageAge": 10000,
+    "openConnectionStatus": true,
+    "readySelectors": ["[data-connection=\"degraded\"]", ":text(\"Threads: reconnecting since\")"],
+    "captureViewport": true
+  },
+  "threads_disconnected_phone": {
+    "element": "#app",
+    "route": "/",
+    "viewport": { "width": 412, "height": 915, "deviceScaleFactor": 2.625 },
+    "sidebarSource": "disconnected",
+    "outageAge": 10000,
+    "openMobileSidebar": true,
+    "readySelectors": [".agentplane-sidebar-open", "[data-connection=\"degraded\"]"]
+  },
+  "threads_watch_stale": {
+    "element": "#app",
+    "route": "/",
+    "viewport": { "width": 1200, "height": 900 },
+    "wedgedWatch": true,
+    "readySelectors": ["[role=\"alert\"]"]
+  },
+  "sandboxes_claude_paused": {
+    "element": "#app",
+    "route": "/sandboxes?preset=public-coder",
+    "viewport": { "width": 1200, "height": 900 },
+    "claudePaused": true,
+    "readySelectors": ["[role=\"option\"][data-combobox-disabled]"]
+  },
+  "sandboxes": {
+    "element": "#app",
+    "route": "/sandboxes",
+    "viewport": { "width": 1200, "height": 900 }
+  },
+  "sandboxes_phone": {
+    "element": "#app",
+    "route": "/sandboxes",
+    "viewport": { "width": 412, "height": 915, "deviceScaleFactor": 2.625 },
+    "outputName": "sandboxes-phone"
+  },
+  "sandboxes_stale": {
+    "element": "#app",
+    "route": "/sandboxes",
+    "viewport": { "width": 1200, "height": 900 },
+    "wedgedWatch": true
+  },
+  "new_sandbox": {
+    "element": "#app",
+    "route": "/sandboxes?preset=public-coder",
+    "viewport": { "width": 1200, "height": 900 },
+    "outputName": "new-sandbox",
+    "readySelectors": [".mantine-Pill-root", "[role=\"listbox\"]"],
+    "openActionPolicySets": true
+  },
+  "new_sandbox_phone": {
+    "element": "#app",
+    "route": "/sandboxes?preset=public-coder",
+    "viewport": { "width": 412, "height": 915, "deviceScaleFactor": 2.625 },
+    "outputName": "new-sandbox-phone",
+    "readySelectors": [".mantine-Pill-root", "[role=\"listbox\"]"],
+    "openActionPolicySets": true
+  },
+  "actions_attention_composer_desktop": {
+    "element": "#app",
+    "route": "/threads/5f1c4a2e-0000-4000-8000-000000000001",
+    "viewport": { "width": 1200, "height": 1000 },
+    "pendingActions": true,
+    "captureViewport": true,
+    "readySelectors": ["button[aria-label=\"Actions, 2 pending\"]", ".action-affordance-notice"]
+  },
+  "actions_attention_composer_phone": {
+    "element": "#app",
+    "route": "/threads/5f1c4a2e-0000-4000-8000-000000000001",
+    "viewport": { "width": 412, "height": 915, "deviceScaleFactor": 2.625 },
+    "pendingActions": true,
+    "captureViewport": true,
+    "readySelectors": ["button[aria-label=\"Actions, 2 pending\"]", ".action-affordance-notice"]
+  },
+  "actions_attention_composer_long_phone": {
+    "element": "#app",
+    "route": "/threads/5f1c4a2e-0000-4000-8000-000000000001",
+    "viewport": { "width": 412, "height": 915, "deviceScaleFactor": 2.625 },
+    "pendingActions": true,
+    "openActionReview": true,
+    "longPendingAction": true,
+    "scrollActionReview": true,
+    "checkComposerControls": true,
+    "captureViewport": true,
+    "readySelectors": [
+      ".action-affordance-details[data-scroll-ready=\"true\"]",
+      "[data-composer-layout-ready=\"true\"]"
+    ]
+  },
+  "actions_attention_composer_long_desktop": {
+    "element": "#app",
+    "route": "/threads/5f1c4a2e-0000-4000-8000-000000000001",
+    "viewport": { "width": 1200, "height": 900 },
+    "pendingActions": true,
+    "openActionReview": true,
+    "longPendingAction": true,
+    "scrollActionReview": true,
+    "captureViewport": true,
+    "readySelectors": [".action-affordance-details[data-scroll-ready=\"true\"]"]
+  },
+  "actions_attention_composer_open_desktop": {
+    "element": "#app",
+    "route": "/threads/5f1c4a2e-0000-4000-8000-000000000001",
+    "viewport": { "width": 1200, "height": 1000 },
+    "pendingActions": true,
+    "openActionReview": true,
+    "captureViewport": true,
+    "readySelectors": [
+      "button[aria-label=\"Hide pending action details\"]",
+      ".action-affordance-notice .agentplane-code-block"
+    ]
+  },
+  "actions_attention_composer_open_phone": {
+    "element": "#app",
+    "route": "/threads/5f1c4a2e-0000-4000-8000-000000000001",
+    "viewport": { "width": 412, "height": 915, "deviceScaleFactor": 2.625 },
+    "pendingActions": true,
+    "openActionReview": true,
+    "captureViewport": true,
+    "readySelectors": [
+      "button[aria-label=\"Hide pending action details\"]",
+      ".action-affordance-notice .agentplane-code-block"
+    ]
+  },
+  "actions": {
+    "element": "#app",
+    "route": "/actions",
+    "viewport": { "width": 1200, "height": 1100 },
+    "readySelectors": ["details"]
+  },
+  "actions_phone": {
+    "element": "#app",
+    "route": "/actions",
+    "viewport": { "width": 390, "height": 1100 },
+    "readySelectors": ["details"]
+  },
+  "actions_raw": {
+    "element": "#app",
+    "route": "/actions",
+    "viewport": { "width": 1200, "height": 1100 },
+    "readySelectors": ["details", "input[type=\"checkbox\"]:checked"],
+    "openRaw": true
+  },
+  "actions_history": {
+    "element": "#app",
+    "route": "/actions",
+    "viewport": { "width": 1200, "height": 2560 },
+    "readySelectors": ["details", "img[src^=\"data:image/\"]"]
+  },
+  "actions_history_more": {
+    "element": "#app",
+    "route": "/actions",
+    "viewport": { "width": 1200, "height": 1100 },
+    "historyPaged": true,
+    "readySelectors": ["details", "[data-testid=\"action-history-load-more\"]"]
+  },
+  "actions_history_phone": {
+    "element": "#app",
+    "route": "/actions",
+    "viewport": { "width": 390, "height": 3200 },
+    "readySelectors": ["details", "img[src^=\"data:image/\"]"]
+  },
+  "actions_history_raw": {
+    "element": "#app",
+    "route": "/actions",
+    "viewport": { "width": 1200, "height": 3720 },
+    "readySelectors": ["details", "input[type=\"checkbox\"]:checked"],
+    "openRaw": true
+  },
+  "actions_history_groups_unavailable": {
+    "element": "#app",
+    "route": "/actions",
+    "viewport": { "width": 1200, "height": 3760 },
+    "actionGroupsUnavailable": true,
+    "readySelectors": ["details", "[role=\"alert\"]"]
+  },
+  "actions_hidden_codepoints": {
+    "element": "#app",
+    "route": "/actions",
+    "viewport": { "width": 1200, "height": 1700 },
+    "hiddenCodepoints": true,
+    "readySelectors": [
+      ".cm-agentplane-special-char-bidi",
+      ".cm-agentplane-special-char-ignorable",
+      ".cm-agentplane-special-char-control"
+    ]
+  },
+  "connections": {
+    "element": "#app",
+    "route": "/",
+    "viewport": { "width": 1200, "height": 1000 },
+    "readySelectors": ["[data-connection-id]"],
+    "openSettings": true
+  },
+  "connections_phone": {
+    "element": "#app",
+    "route": "/",
+    "viewport": { "width": 390, "height": 1100 },
+    "readySelectors": ["[data-connection-id]"],
+    "openSettings": true
+  },
+  "mcp_servers": {
+    "element": "#app",
+    "route": "/mcp-servers",
+    "viewport": { "width": 1200, "height": 1480 },
+    "readySelectors": ["[data-mcp-server]"]
+  },
+  "mcp_servers_phone": {
+    "element": "#app",
+    "route": "/mcp-servers",
+    "viewport": { "width": 390, "height": 2040 },
+    "readySelectors": ["[data-mcp-server]"]
+  },
+  "consent": {
+    "element": "#app",
+    "route": "/connection-enrollments/test-only-opaque-handle",
+    "viewport": { "width": 1200, "height": 1100 }
+  },
+  "consent_phone": {
+    "element": "#app",
+    "route": "/connection-enrollments/test-only-opaque-handle",
+    "viewport": { "width": 390, "height": 1100 }
+  },
+  "consent_reconnect": {
+    "element": "#app",
+    "route": "/connection-enrollments/test-only-opaque-handle",
+    "viewport": { "width": 1200, "height": 1300 },
+    "readySelectors": ["[data-reconnect-review]"],
+    "preselectReconnect": true
+  },
+  "consent_reconnect_phone": {
+    "element": "#app",
+    "route": "/connection-enrollments/test-only-opaque-handle",
+    "viewport": { "width": 390, "height": 1600 },
+    "readySelectors": ["[data-reconnect-review]"],
+    "preselectReconnect": true
+  },
+  "sandbox_claude_paused": {
+    "element": "#app",
+    "route": "/sandboxes/ready-sandbox",
+    "viewport": { "width": 1200, "height": 900 },
+    "claudePaused": true,
+    "readySelectors": ["[role=\"option\"][data-combobox-disabled]"]
+  },
+  "sandbox": {
+    "element": "#app",
+    "route": "/sandboxes/ready-sandbox",
+    "viewport": { "width": 1200, "height": 900 }
+  },
+  "sandbox_phone": {
+    "element": "#app",
+    "route": "/sandboxes/ready-sandbox",
+    "viewport": { "width": 412, "height": 915, "deviceScaleFactor": 2.625 },
+    "outputName": "sandbox-phone"
+  },
+  "sandbox_status": {
+    "element": "#app",
+    "route": "/sandboxes/ready-sandbox?tab=status",
+    "viewport": { "width": 1200, "height": 900 },
+    "outputName": "sandbox-status"
+  },
+  "sandbox_status_phone": {
+    "element": "#app",
+    "route": "/sandboxes/ready-sandbox?tab=status",
+    "viewport": { "width": 412, "height": 915, "deviceScaleFactor": 2.625 },
+    "outputName": "sandbox-status-phone"
+  },
+  "sandbox_status_grant_error": {
+    "element": "#app",
+    "route": "/sandboxes/ready-sandbox?tab=status",
+    "viewport": { "width": 1200, "height": 900 },
+    "outputName": "sandbox-status-grant-error",
+    "grantError": true
+  },
+  "sandbox_egress": {
+    "element": "#app",
+    "route": "/sandboxes/ready-sandbox?tab=egress&rules=ready-sandbox-github-public",
+    "viewport": { "width": 1200, "height": 900 },
+    "outputName": "sandbox-egress"
+  },
+  "sandbox_egress_phone": {
+    "element": "#app",
+    "route": "/sandboxes/ready-sandbox?tab=egress&rules=ready-sandbox-github-public",
+    "viewport": { "width": 412, "height": 915, "deviceScaleFactor": 2.625 },
+    "outputName": "sandbox-egress-phone"
+  },
+  "sandbox_status_raw": {
+    "element": "#app",
+    "route": "/sandboxes/ready-sandbox?tab=status",
+    "viewport": { "width": 1200, "height": 900 },
+    "outputName": "sandbox-status-raw",
+    "readySelectors": [".agentplane-code-block"],
+    "openRaw": true
+  },
+  "sandbox_status_raw_phone": {
+    "element": "#app",
+    "route": "/sandboxes/ready-sandbox?tab=status",
+    "viewport": { "width": 412, "height": 915, "deviceScaleFactor": 2.625 },
+    "outputName": "sandbox-status-raw-phone",
+    "readySelectors": [".agentplane-code-block"],
+    "openRaw": true
+  },
+  "sandbox_policy": {
+    "element": "#app",
+    "route": "/sandboxes/ready-sandbox?tab=policy",
+    "viewport": { "width": 1200, "height": 1100 },
+    "outputName": "sandbox-policy"
+  },
+  "sandbox_policy_phone": {
+    "element": "#app",
+    "route": "/sandboxes/ready-sandbox?tab=policy",
+    "viewport": { "width": 412, "height": 915, "deviceScaleFactor": 2.625 },
+    "outputName": "sandbox-policy-phone"
+  },
+  "session": {
+    "element": "#app",
+    "route": "/threads/5f1c4a2e-0000-4000-8000-000000000001",
+    "viewport": { "width": 1200, "height": 900 },
+    "readySelectors": ["[data-thread-anchor=\"34\"]"],
+    "captureViewport": true
+  },
+  "session_deleted_sandbox": {
+    "element": "#app",
+    "route": "/threads/5f1c4a2e-0000-4000-8000-000000000005",
+    "viewport": { "width": 1200, "height": 900 },
+    "readySelectors": ["[role=\"status\"]"],
+    "captureViewport": true
+  },
+  "session_deleted_sandbox_phone": {
+    "element": "#app",
+    "route": "/threads/5f1c4a2e-0000-4000-8000-000000000005",
+    "viewport": { "width": 412, "height": 915, "deviceScaleFactor": 2.625 },
+    "readySelectors": ["[role=\"status\"]"],
+    "captureViewport": true
+  },
+  "session_suspended_sandbox": {
+    "element": "#app",
+    "route": "/threads/5f1c4a2e-0000-4000-8000-000000000004",
+    "viewport": { "width": 1200, "height": 900 },
+    "readySelectors": [":text(\"Last observed Sandbox and Pod\")", "[data-thread-anchor=\"34\"]"],
+    "captureViewport": true
+  },
+  "session_suspended_sandbox_phone": {
+    "element": "#app",
+    "route": "/threads/5f1c4a2e-0000-4000-8000-000000000004",
+    "viewport": { "width": 412, "height": 915, "deviceScaleFactor": 2.625 },
+    "readySelectors": [":text(\"Last observed Sandbox and Pod\")", "[data-thread-anchor=\"34\"]"],
+    "captureViewport": true
+  },
+  "session_inventory_stale": {
+    "element": "#app",
+    "route": "/threads/5f1c4a2e-0000-4000-8000-000000000001",
+    "viewport": { "width": 1200, "height": 900 },
+    "wedgedWatch": true,
+    "readySelectors": [":text(\"so this page is not being updated\")", "[data-thread-anchor=\"34\"]"],
+    "captureViewport": true
+  },
+  "session_inventory_stale_phone": {
+    "element": "#app",
+    "route": "/threads/5f1c4a2e-0000-4000-8000-000000000005",
+    "viewport": { "width": 412, "height": 915, "deviceScaleFactor": 2.625 },
+    "wedgedWatch": true,
+    "readySelectors": [":text(\"Current availability unknown\")", "[data-thread-anchor=\"34\"]"],
+    "captureViewport": true
+  },
+  "session_inventory_dropped": {
+    "element": "#app",
+    "route": "/threads/5f1c4a2e-0000-4000-8000-000000000001",
+    "viewport": { "width": 1200, "height": 900 },
+    "inventoryDropped": true,
+    "outageAge": 90000,
+    "readySelectors": ["[data-connection=\"stale\"]", ":text(\"may be out of date\")", "[data-thread-anchor=\"34\"]"],
+    "captureViewport": true
+  },
+  "session_inventory_dropped_phone": {
+    "element": "#app",
+    "route": "/threads/5f1c4a2e-0000-4000-8000-000000000001",
+    "viewport": { "width": 412, "height": 915, "deviceScaleFactor": 2.625 },
+    "inventoryDropped": true,
+    "outageAge": 90000,
+    "readySelectors": [":text(\"may be out of date\")", "[data-thread-anchor=\"34\"]"],
+    "captureViewport": true
+  },
+  "session_phone_controls": {
+    "element": "#app",
+    "route": "/threads/5f1c4a2e-0000-4000-8000-000000000001",
+    "viewport": { "width": 412, "height": 915, "deviceScaleFactor": 2.625 },
+    "checkComposerControls": true,
+    "captureViewport": true,
+    "readySelectors": ["[data-composer-layout-ready=\"true\"]"]
+  },
+  "session_phone": {
+    "element": "#app",
+    "route": "/threads/5f1c4a2e-0000-4000-8000-000000000001",
+    "viewport": { "width": 412, "height": 915, "deviceScaleFactor": 2.625 },
+    "outputName": "session-phone",
+    "readySelectors": ["[data-thread-anchor=\"34\"]"],
+    "captureViewport": true
+  },
+  "session_more_menu": {
+    "element": "#app",
+    "route": "/threads/5f1c4a2e-0000-4000-8000-000000000001",
+    "viewport": { "width": 1200, "height": 900 },
+    "openMoreMenu": true,
+    "readySelectors": ["[role=\"menu\"]", "[data-thread-anchor=\"34\"]"],
+    "captureViewport": true
+  },
+  "session_more_menu_phone": {
+    "element": "#app",
+    "route": "/threads/5f1c4a2e-0000-4000-8000-000000000001",
+    "viewport": { "width": 412, "height": 915, "deviceScaleFactor": 2.625 },
+    "openMoreMenu": true,
+    "readySelectors": ["[role=\"menu\"]", "[data-thread-anchor=\"34\"]"],
+    "captureViewport": true
+  },
+  "session_unnamed": {
+    "element": "#app",
+    "route": "/threads/5f1c4a2e-0000-4000-8000-000000000000",
+    "viewport": { "width": 1200, "height": 900 },
+    "readySelectors": ["[data-thread-anchor=\"34\"]"],
+    "captureViewport": true
+  },
+  "session_unnamed_phone": {
+    "element": "#app",
+    "route": "/threads/5f1c4a2e-0000-4000-8000-000000000000",
+    "viewport": { "width": 412, "height": 915, "deviceScaleFactor": 2.625 },
+    "readySelectors": ["[data-thread-anchor=\"34\"]"],
+    "captureViewport": true
+  },
+  "session_reasoning": {
+    "element": "#app",
+    "route": "/threads/5f1c4a2e-0000-4000-8000-000000000001",
+    "viewport": { "width": 1200, "height": 900 },
+    "outputName": "session-reasoning",
+    "openReasoning": true,
+    "longReasoningPreview": true,
+    "readySelectors": ["details.agentplane-step-details[open] > .agentplane-markdown"]
+  },
+  "session_reasoning_phone": {
+    "element": "#app",
+    "route": "/threads/5f1c4a2e-0000-4000-8000-000000000001",
+    "viewport": { "width": 412, "height": 915, "deviceScaleFactor": 2.625 },
+    "outputName": "session-reasoning-phone",
+    "openReasoning": true,
+    "longReasoningPreview": true,
+    "readySelectors": ["details.agentplane-step-details[open] > .agentplane-markdown"]
+  },
+  "session_markdown_code_fence": {
+    "element": "#app",
+    "route": "/threads/5f1c4a2e-0000-4000-8000-000000000001",
+    "viewport": { "width": 1200, "height": 700 },
+    "outputName": "session-markdown-code-fence",
+    "markdownCodeFence": true,
+    "readySelectors": [".agentplane-code-block"]
+  },
+  "session_standalone_reasoning": {
+    "element": "#app",
+    "route": "/threads/5f1c4a2e-0000-4000-8000-000000000001",
+    "viewport": { "width": 1200, "height": 700 },
+    "outputName": "session-standalone-reasoning",
+    "standaloneReasoning": true,
+    "readySelectors": ["[data-thread-anchor=\"20\"] .agentplane-step-preview .agentplane-markdown--single-line"]
+  },
+  "session_standalone_reasoning_preview": {
+    "element": "#app",
+    "route": "/threads/5f1c4a2e-0000-4000-8000-000000000001",
+    "viewport": { "width": 412, "height": 915, "deviceScaleFactor": 2.625 },
+    "outputName": "session-standalone-reasoning-preview",
+    "standaloneReasoning": true,
+    "longReasoningPreview": true,
+    "readySelectors": ["[data-thread-anchor=\"20\"] details.agentplane-step-details"]
+  },
+  "session_unfinished_reasoning": {
+    "element": "#app",
+    "route": "/threads/5f1c4a2e-0000-4000-8000-000000000001",
+    "viewport": { "width": 1200, "height": 500 },
+    "outputName": "session-unfinished-reasoning",
+    "unfinishedReasoning": true,
+    "readySelectors": [".agentplane-step-title--streaming"],
+    "captureViewport": true
+  },
+  "session_unfinished_reasoning_phone": {
+    "element": "#app",
+    "route": "/threads/5f1c4a2e-0000-4000-8000-000000000001",
+    "viewport": { "width": 412, "height": 915, "deviceScaleFactor": 2.625 },
+    "outputName": "session-unfinished-reasoning-phone",
+    "unfinishedReasoning": true,
+    "readySelectors": [".agentplane-step-title--streaming"],
+    "captureViewport": true
+  },
+  "session_standalone_reasoning_open": {
+    "element": "#app",
+    "route": "/threads/5f1c4a2e-0000-4000-8000-000000000001",
+    "viewport": { "width": 1200, "height": 700 },
+    "outputName": "session-standalone-reasoning-open",
+    "standaloneReasoning": true,
+    "longReasoningPreview": true,
+    "openReasoning": true,
+    "readySelectors": ["[data-thread-anchor=\"20\"] details.agentplane-step-details[open] > .agentplane-markdown"]
+  },
+  "session_tool_payloads": {
+    "element": "#app",
+    "route": "/threads/5f1c4a2e-0000-4000-8000-000000000001",
+    "viewport": { "width": 1200, "height": 1300 },
+    "outputName": "session-tool-payloads",
+    "openToolPayloads": true,
+    "readySelectors": [
+      ".agentplane-code-block .cm-content",
+      "details.agentplane-step-details[open] .agentplane-code-block"
+    ]
+  },
+  "session_tool_payloads_phone": {
+    "element": "#app",
+    "route": "/threads/5f1c4a2e-0000-4000-8000-000000000001",
+    "viewport": { "width": 412, "height": 1500, "deviceScaleFactor": 2.625 },
+    "outputName": "session-tool-payloads-phone",
+    "openToolPayloads": true,
+    "readySelectors": [
+      ".agentplane-code-block .cm-content",
+      "details.agentplane-step-details[open] .agentplane-code-block"
+    ]
+  },
+  "session_shell_calls": {
+    "element": "#app",
+    "route": "/threads/5f1c4a2e-0000-4000-8000-000000000001",
+    "viewport": { "width": 1200, "height": 700 },
+    "outputName": "session-shell-calls",
+    "shellCalls": true,
+    "openRun": true,
+    "readySelectors": ["details.agentplane-step-details .agentplane-step-preview"],
+    "captureViewport": true
+  },
+  "session_shell_calls_phone": {
+    "element": "#app",
+    "route": "/threads/5f1c4a2e-0000-4000-8000-000000000001",
+    "viewport": { "width": 412, "height": 915, "deviceScaleFactor": 2.625 },
+    "outputName": "session-shell-calls-phone",
+    "shellCalls": true,
+    "openRun": true,
+    "readySelectors": ["details.agentplane-step-details .agentplane-step-preview"],
+    "captureViewport": true
+  },
+  "session_shell_calls_open": {
+    "element": "#app",
+    "route": "/threads/5f1c4a2e-0000-4000-8000-000000000001",
+    "viewport": { "width": 1200, "height": 1700 },
+    "outputName": "session-shell-calls-open",
+    "shellCalls": true,
+    "openToolPayloads": true,
+    "readySelectors": [
+      "[data-clamped=\"true\"]",
+      "details.agentplane-step-details[open] .agentplane-code-block .cm-content"
+    ]
+  },
+  "session_shell_calls_open_phone": {
+    "element": "#app",
+    "route": "/threads/5f1c4a2e-0000-4000-8000-000000000001",
+    "viewport": { "width": 412, "height": 2400, "deviceScaleFactor": 2.625 },
+    "outputName": "session-shell-calls-open-phone",
+    "shellCalls": true,
+    "openToolPayloads": true,
+    "readySelectors": [
+      "[data-clamped=\"true\"]",
+      "details.agentplane-step-details[open] .agentplane-code-block .cm-content"
+    ]
+  },
+  "session_evidence": {
+    "element": "#app",
+    "route": "/threads/5f1c4a2e-0000-4000-8000-000000000001",
+    "viewport": { "width": 1200, "height": 1100 },
+    "openEvidence": "4",
+    "readySelectors": ["[data-thread-anchor=\"4\"] [data-evidence-observation]", "[data-thread-anchor=\"34\"]"],
+    "captureViewport": true
+  },
+  "session_evidence_phone": {
+    "element": "#app",
+    "route": "/threads/5f1c4a2e-0000-4000-8000-000000000001",
+    "viewport": { "width": 412, "height": 915, "deviceScaleFactor": 2.625 },
+    "openEvidence": "34",
+    "readySelectors": ["[data-thread-anchor=\"34\"] [data-evidence-observation]"],
+    "captureViewport": true
+  },
+  "session_evidence_hover_bubble": {
+    "element": "#app",
+    "route": "/threads/5f1c4a2e-0000-4000-8000-000000000001",
+    "viewport": { "width": 1200, "height": 900 },
+    "hover": "[data-thread-anchor=\"4\"] .agentplane-user-bubble",
+    "readySelectors": ["[data-thread-anchor=\"4\"] .agentplane-user-bubble", "[data-thread-anchor=\"34\"]"],
+    "captureViewport": true
+  },
+  "session_evidence_hover_reply": {
+    "element": "#app",
+    "route": "/threads/5f1c4a2e-0000-4000-8000-000000000001",
+    "viewport": { "width": 1200, "height": 900 },
+    "hover": "[data-thread-anchor=\"34\"] .agentplane-evidence-owner",
+    "readySelectors": ["[data-thread-anchor=\"34\"] .agentplane-evidence-owner"],
+    "captureViewport": true
+  },
+  "session_evidence_tap_phone": {
+    "element": "#app",
+    "route": "/threads/5f1c4a2e-0000-4000-8000-000000000001",
+    "viewport": { "width": 412, "height": 915, "deviceScaleFactor": 2.625, "hasTouch": true },
+    "tap": "[data-thread-anchor=\"34\"] .agentplane-evidence-owner",
+    "readySelectors": ["[data-thread-anchor=\"34\"] .agentplane-evidence-owner"],
+    "captureViewport": true
+  },
+  "session_raw": {
+    "element": "#app",
+    "route": "/threads/5f1c4a2e-0000-4000-8000-000000000001",
+    "viewport": { "width": 1200, "height": 1800 },
+    "openDebug": "latest",
+    "readySelectors": ["[aria-label=\"Chronological observations\"]"]
+  },
+  "session_raw_phone": {
+    "element": "#app",
+    "route": "/threads/5f1c4a2e-0000-4000-8000-000000000001",
+    "viewport": { "width": 412, "height": 915, "deviceScaleFactor": 2.625 },
+    "outputName": "session-raw-phone",
+    "openDebug": "latest",
+    "readySelectors": ["[aria-label=\"Chronological observations\"]"]
+  },
+  "session_states": {
+    "element": "#app",
+    "route": "/threads/5f1c4a2e-0000-4000-8000-000000000002",
+    "viewport": { "width": 1200, "height": 900 },
+    "outputName": "session-states",
+    "readySelectors": [
+      "[data-thread-anchor=\"16\"]",
+      ".agentplane-user-bubble[data-message-phase=\"failed\"]",
+      ".agentplane-user-bubble[data-message-phase=\"noop\"]",
+      ".agentplane-thread-status-indicator[data-status=\"running\"]"
+    ],
+    "captureViewport": true
+  },
+  "session_streaming_interleaved": {
+    "element": ".agentplane-shell-main-content",
+    "route": "/threads/5f1c4a2e-0000-4000-8000-000000000002",
+    "viewport": { "width": 812, "height": 900 },
+    "outputName": "session-streaming-interleaved",
+    "streamingInterleaved": true,
+    "readySelectors": [
+      ".agentplane-streaming-cursor[aria-label=\"Streaming\"]",
+      "[aria-label=\"Thread history\"][data-layout-settled=\"true\"]"
+    ]
+  },
+  "session_resume": {
+    "element": "#app",
+    "route": "/threads/5f1c4a2e-0000-4000-8000-000000000002",
+    "viewport": { "width": 1200, "height": 900 },
+    "endedAttachment": true,
+    "readySelectors": ["[aria-label=\"Harness not running\"]", "[aria-label=\"Resume harness\"]"],
+    "captureViewport": true
+  },
+  "session_pending": {
+    "element": "#app",
+    "route": "/threads/5f1c4a2e-0000-4000-8000-000000000002",
+    "viewport": { "width": 1200, "height": 1100 },
+    "pendingCommands": "mixed",
+    "readySelectors": [
+      "[aria-label=\"Pending commands\"]",
+      "[data-thread-anchor=\"16\"]",
+      ".agentplane-user-bubble[data-message-phase=\"local\"]"
+    ],
+    "captureViewport": true
+  },
+  "session_pending_phone": {
+    "element": "#app",
+    "route": "/threads/5f1c4a2e-0000-4000-8000-000000000002",
+    "viewport": { "width": 412, "height": 915, "deviceScaleFactor": 2.625 },
+    "pendingCommands": "mixed",
+    "readySelectors": [
+      "[aria-label=\"Pending commands\"]",
+      "[data-thread-anchor=\"16\"]",
+      ".agentplane-user-bubble[data-message-phase=\"local\"]"
+    ],
+    "captureViewport": true
+  },
+  "session_pending_raw": {
+    "element": "#app",
+    "route": "/threads/5f1c4a2e-0000-4000-8000-000000000002",
+    "viewport": { "width": 1200, "height": 1100 },
+    "pendingCommands": "mixed",
+    "openDebug": "latest",
+    "readySelectors": [
+      "[aria-label=\"Chronological observations\"]",
+      "[data-thread-anchor=\"16\"]",
+      ".agentplane-user-bubble[data-message-phase=\"local\"]"
+    ],
+    "captureViewport": true
+  },
+  "session_pending_failed": {
+    "element": "#app",
+    "route": "/threads/5f1c4a2e-0000-4000-8000-000000000002",
+    "viewport": { "width": 1200, "height": 1100 },
+    "pendingCommands": "mixed",
+    "commandAdmissionTimedOut": true,
+    "readySelectors": [
+      ":text(\"runner did not admit the command\")",
+      "[data-thread-anchor=\"16\"]",
+      ".agentplane-user-bubble[data-message-phase=\"local\"]"
+    ],
+    "captureViewport": true
+  },
+  "session_pending_controls": {
+    "element": "#app",
+    "route": "/threads/5f1c4a2e-0000-4000-8000-000000000002",
+    "viewport": { "width": 1200, "height": 1100 },
+    "pendingCommands": "controls",
+    "readySelectors": ["[data-command-id=\"queued-interrupt\"]", "[data-thread-anchor=\"16\"]"],
+    "captureViewport": true
+  },
+  "session_command_outcomes_phone": {
+    "element": "#app",
+    "route": "/threads/5f1c4a2e-0000-4000-8000-000000000002",
+    "viewport": { "width": 412, "height": 915, "deviceScaleFactor": 2.625 },
+    "pendingCommands": "outcomes",
+    "readySelectors": [
+      "[aria-label=\"Pending commands\"]",
+      "[data-thread-anchor=\"16\"]",
+      ".agentplane-user-bubble[data-message-phase=\"failed\"]",
+      ".agentplane-user-bubble[data-message-phase=\"noop\"]"
+    ],
+    "captureViewport": true
+  },
+  "session_catching_up": {
+    "element": "#app",
+    "route": "/threads/5f1c4a2e-0000-4000-8000-000000000001",
+    "viewport": { "width": 1200, "height": 900 },
+    "sessionReplay": "catching-up",
+    "readySelectors": ["[data-thread-catchup=\"true\"]"]
+  },
+  "session_sync_unavailable": {
+    "element": "#app",
+    "route": "/threads/5f1c4a2e-0000-4000-8000-000000000001",
+    "viewport": { "width": 1200, "height": 900 },
+    "sessionReplay": "unavailable",
+    "readySelectors": ["[role=\"alert\"]"]
+  },
+  "session_sync_reconnecting": {
+    "element": "#app",
+    "route": "/threads/5f1c4a2e-0000-4000-8000-000000000001",
+    "viewport": { "width": 1200, "height": 900 },
+    "sessionReplay": "reconnecting",
+    "outageAge": 10000,
+    "readySelectors": [
+      "[aria-label=\"Runner feed active \u00b7 harness running\"]",
+      "[data-connection=\"degraded\"]",
+      "[data-thread-anchor=\"34\"]"
+    ],
+    "captureViewport": true
+  },
+  "session_sync_reconnecting_phone": {
+    "element": "#app",
+    "route": "/threads/5f1c4a2e-0000-4000-8000-000000000001",
+    "viewport": { "width": 412, "height": 915, "deviceScaleFactor": 2.625 },
+    "sessionReplay": "reconnecting",
+    "outageAge": 90000,
+    "readySelectors": [
+      "[aria-label=\"Runner feed active \u00b7 harness running\"]",
+      ":text(\"may be out of date\")",
+      "[data-thread-anchor=\"34\"]"
+    ],
+    "captureViewport": true
+  },
+  "session_states_phone": {
+    "element": "#app",
+    "route": "/threads/5f1c4a2e-0000-4000-8000-000000000002",
+    "viewport": { "width": 412, "height": 915, "deviceScaleFactor": 2.625 },
+    "outputName": "session-states-phone",
+    "readySelectors": ["[data-thread-anchor=\"16\"]"],
+    "captureViewport": true
+  }
+}

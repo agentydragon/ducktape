@@ -2,8 +2,8 @@
  * The harness's stand-in for the network, installed at import time. `openapi-fetch` captures
  * `globalThis.fetch` when `client.ts` creates its client, which happens as the app is imported, so
  * this module must be imported before the app: the harness lists it first. Routes are registered
- * afterwards, since a request cannot arrive before the app has mounted. The ledger is what
- * visual-test-lib's `assertNetworkSettled` reads.
+ * afterwards, since a request cannot arrive before the app has mounted. The ledger is what the
+ * sweep's `assert_network_settled` reads.
  */
 
 /** An answer is a JSON body, `undefined` for 404, a ready `Response` for any other status, or
