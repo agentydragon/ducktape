@@ -524,11 +524,13 @@ py_library(
         ":manifest_roots",
         ":namespaces",
         ":terraform",
+        "//cluster/cdk8s/flux_webhook:chart",
         "//cluster/cdk8s/providers/external_secrets:external_secret",
         "//cluster/cdk8s/providers/external_secrets:externalsecret",
         "@pypi//cdk8s",
         "@pypi//cdk8s_plus_34",
         "@pypi//constructs",
+        "@pypi//pydantic",
     ],
 )
 
@@ -1085,12 +1087,14 @@ py_test(
     srcs = ["test_terraform_vars.py"],
     data = [
         "//tf/gitops/dns-records:variables.tf",
+        "//tf/gitops/forgejo-images:variables.tf",
         "//tf/gitops/litellm-keys:variables.tf",
         "@nodejs_linux_amd64//:bin/node",
     ],
     env = {"JSII_NODE": "$(rootpath @nodejs_linux_amd64//:bin/node)"},
     deps = [
         ":dns_automation",
+        ":forgejo_images",
         "//:conftest",
         "//cluster/cdk8s/litellm:keys",
         "//util/bazel:runfiles",

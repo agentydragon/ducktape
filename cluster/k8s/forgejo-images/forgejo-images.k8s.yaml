@@ -37,6 +37,15 @@ spec:
     kind: GitRepository
     name: ducktape
     namespace: ducktape-flux
+  vars:
+    - name: webhook_host
+      value: flux-webhook.allegedly.works
+    - name: receiver_name
+      value: receiver
+    - name: receiver_namespace
+      value: forgejo-images
+    - name: webhook_token_secret
+      value: webhook-token
 ---
 apiVersion: external-secrets.io/v1
 kind: ExternalSecret

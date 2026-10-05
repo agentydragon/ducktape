@@ -13,11 +13,15 @@ import pytest_bazel
 from pydantic import BaseModel
 
 from cluster.cdk8s.dns_automation import DnsRecordsVars
+from cluster.cdk8s.forgejo_images import ForgejoImagesVars
 from cluster.cdk8s.litellm.keys import KeysVars
 from util.bazel.runfiles import get_required_path
 
 
-@pytest.mark.parametrize(("model", "module"), [(DnsRecordsVars, "dns-records"), (KeysVars, "litellm-keys")])
+@pytest.mark.parametrize(
+    ("model", "module"),
+    [(DnsRecordsVars, "dns-records"), (ForgejoImagesVars, "forgejo-images"), (KeysVars, "litellm-keys")],
+)
 def test_vars_model_matches_module(model: type[BaseModel], module: str) -> None:
     declared = pygohcl.loads(get_required_path(f"_main/tf/gitops/{module}/variables.tf").read_text())["variable"]
     assert (
