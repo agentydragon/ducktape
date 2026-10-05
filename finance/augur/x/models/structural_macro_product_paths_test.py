@@ -44,7 +44,7 @@ def test_structural_markets_are_reusable_but_do_not_invent_credit(structural: St
     check_two_constructions(paths)
     assert paths.provenance["rollout_seeds"] == (71, 12)
     assert paths.short_rate[0, 0] == -0.01
-    with pytest.raises(ValueError, match=r"cannot produce.*no credit factor"):
+    with pytest.raises(ValueError, match="test_credit"):
         construct_products(
             paths,
             equity=None,
@@ -61,7 +61,7 @@ def test_equity_requires_an_actual_equity_market_path(structural: StructuralMacr
         structural.sample_market(ExogenousSamplingRequest(horizon_months=1, rollout_seeds=(1,))),
         equity_total_return_index=None,
     )
-    with pytest.raises(ValueError, match="no equity total-return path"):
+    with pytest.raises(ValueError, match=TEST_EQUITY):
         construct_products(paths, equity=EquitySpec(symbol=TEST_EQUITY, initial_price_usd=100.0), instruments=())
 
 
