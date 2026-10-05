@@ -83,11 +83,6 @@ CASES: tuple[Case, ...] = (
 )
 
 
-@pytest.fixture
-def browser(playwright_sync: Playwright) -> Playwright:
-    return playwright_sync
-
-
 @pytest.fixture(scope="module")
 def casino_server() -> Iterator[str]:
     """uvicorn-backed casino server with a fresh Postgres testcontainer."""
@@ -182,10 +177,10 @@ def _render_case(playwright_sync: Playwright, origin: str, case: Case, out_dir: 
 
 
 @pytest.mark.parametrize("case", CASES, ids=[case.name for case in CASES])
-def test_casino_views_render(browser: Playwright, casino_server: str, tmp_path: Path, case: Case) -> None:
+def test_casino_views_render(playwright_sync: Playwright, casino_server: str, tmp_path: Path, case: Case) -> None:
     undeclared_dir = undeclared_outputs_dir()
-    first_path = _render_case(browser, casino_server, case, tmp_path, "first")
-    second_path = _render_case(browser, casino_server, case, tmp_path, "second")
+    first_path = _render_case(playwright_sync, casino_server, case, tmp_path, "first")
+    second_path = _render_case(playwright_sync, casino_server, case, tmp_path, "second")
     if first_path.read_bytes() != second_path.read_bytes():
         shutil.copy(first_path, undeclared_dir / f"{case.name}.first.png")
         shutil.copy(second_path, undeclared_dir / f"{case.name}.second.png")
