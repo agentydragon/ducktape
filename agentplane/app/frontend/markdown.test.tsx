@@ -32,6 +32,17 @@ async function render(source: string, streaming = false, singleLine = false): Pr
   return container;
 }
 
+async function rerender(source: string, streaming = false, singleLine = false): Promise<HTMLDivElement> {
+  await act(async () =>
+    root.render(
+      <MantineProvider env="test">
+        <Markdown source={source} streaming={streaming} singleLine={singleLine} />
+      </MantineProvider>
+    )
+  );
+  return container;
+}
+
 afterEach(async () => {
   await act(async () => root.unmount());
   container.remove();
@@ -111,6 +122,25 @@ describe("Markdown", () => {
     expect(cursor?.getAttribute("aria-label")).toBe("Streaming");
     expect(cursor?.getAttribute("data-character")).toBe(STREAMING_CURSOR);
     expect(code?.textContent).toBe("print('still streaming')");
+  });
+
+  it("updates a streaming cursor as a fenced code block grows", async () => {
+    const initialCode = "a".repeat(34);
+    await render(`\`\`\`python\n${initialCode}`, true);
+
+    await rerender(`\`\`\`python\n${initialCode}${"b".repeat(20)}`, true);
+
+    const code = container.querySelector<HTMLElement>(".agentplane-code-block");
+    const content = code?.querySelector(".cm-content");
+    const cursor = code?.querySelector(".agentplane-streaming-cursor");
+    const range = document.createRange();
+    if (content && cursor) {
+      range.selectNodeContents(content);
+      range.setEndBefore(cursor);
+    }
+
+    expect(cursor).not.toBeNull();
+    expect(range.toString()).toBe(`${initialCode}${"b".repeat(20)}`);
   });
 
   it("keeps Markdown tables in a horizontally scrollable wrapper", async () => {

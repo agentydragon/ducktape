@@ -197,8 +197,10 @@ class StreamingCursor extends WidgetType {
 const STREAMING_CURSOR_WIDGET = new StreamingCursor();
 
 function streamingCursorDecoration(offset: number): Extension {
-  return EditorView.decorations.of(
-    Decoration.set([Decoration.widget({ widget: STREAMING_CURSOR_WIDGET, side: 1 }).range(offset)])
+  return EditorView.decorations.compute(["doc"], (state) =>
+    Decoration.set([
+      Decoration.widget({ widget: STREAMING_CURSOR_WIDGET, side: 1 }).range(Math.min(offset, state.doc.length)),
+    ])
   );
 }
 
