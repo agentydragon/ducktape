@@ -8,5 +8,5 @@ class LaunchGrants(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
-    policies: list[str]
+    egress_policies: list[str]
     action_policy_sets: list[str]

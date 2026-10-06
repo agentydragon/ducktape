@@ -30,9 +30,6 @@ Proposed execution order for the Thread correctness/UI track:
   [#8695](https://github.com/agentydragon/ducktape/issues/8695)).
 - **P2:** browser-driven acceptance against the deployed cluster (`CLUSTER_BROWSER_ACCEPTANCE`)
   and driver-hosted tools (`DT`). Neither blocks the current API-level acceptance closure.
-- **Unranked cross-cutting cleanup:** make egress-specific uses of “policy” explicit throughout
-  Agentplane (`EGRESS_POLICY_TERMINOLOGY`); this is a terminology change, not a policy behavior
-  or authority change.
 - **Low priority / deferred:** bounded browser cache state (`THREAD_LAZY_HISTORY`, desire D6),
   and optional app-wide/per-Thread raw-evidence retention controls (`THREAD_EVIDENCE_RETENTION`).
   The current view sync pages older rows in on demand, reads the bodies of the rows it holds ahead
@@ -71,8 +68,6 @@ flowchart TB
     ACCESS["Deferred design<br/>delegated vs brokered external access<br/>grants and revocation"]:::future
     PUBLIC_MCP_ROUTE_ISOLATION["Remaining deployed security check<br/>operator REST and enrollment APIs<br/>unreachable through public MCP route"]:::future
     EGRESS_CHANGE["Deferred design<br/>agent-requested egress<br/>policy expansion"]:::future
-    EGRESS_POLICY_TERMINOLOGY["Unranked cross-cutting cleanup<br/>name egress policies explicitly<br/>in UI, protocols, fields and docs"]:::future
-
     NOTIFICATION_ACTION_FEED["Notification source follow-up<br/>event-driven Action consumption<br/>replace idle history polling"]:::future
     NOTIFICATION_DEBOUNCE["Remaining deployed acceptance<br/>configurable runner-notice debounce<br/>real burst behavior"]:::active
     NOTIFICATION_TURN_GATING["Deferred design<br/>avoid notices piling up<br/>before the agent processes them"]:::future
@@ -200,38 +195,6 @@ The request may become a policy-gated Action with operator approval, or use anot
 configuration path. Keep the authority, approval, persistence, and rollback model open until a
 concrete caller and policy owner are chosen. This does not grant agents a direct policy mutation
 path and does not block current credential-placeholder egress.
-
-### `EGRESS_POLICY_TERMINOLOGY` — name egress policies explicitly
-
-**Unranked cross-cutting cleanup:** Agentplane has egress policies, Action policy sets, and
-Kubernetes RBAC grants and policy objects. Use “egress policy” when the containing type, route,
-resource kind, or module does not make that scope clear. Keep Action policy and Kubernetes RBAC
-terminology distinct, and retain the native names of Kubernetes NetworkPolicy and Kyverno policy
-objects. This changes naming, not policy behavior or authority. Update producers and consumers
-together.
-
-**Scan findings:** `NewSandbox.egress_policies` and `SandboxPreset.egress_policies` make the choice
-explicit because those request/config objects also carry Action policy sets and Kubernetes grants.
-`EgressGrant.policies` is clear from the type and `/egress` route. The egress binding response fields
-`BindingView.policies` / `missing_policies`, the agent view's `AgentEgressView.policies`,
-`EgressBinding.spec.policies`, and egress-package types and indexes are scoped by their containing
-type or endpoint and can stay generic. The Sandbox Service gRPC contract has
-`CreateSandboxRequest.egress_policies` and `GrantEgressRequest.egress_policies` (field numbers 3 and
-2, preserved for binary wire compatibility). Runtime config now calls its default list
-`default_egress_policies`. `LaunchGrants.policies` is still ambiguous beside its Action and
-Kubernetes grant fields and is persisted on the Sandbox while provisioning is pending, so renaming it
-needs a roll-safe stored-record plan. The egress decision's
-`policy` is scoped by its decision type, route, and `egress_decision` table. The `/egress/policies`
-route is already explicit. Regenerate OpenAPI/protobuf/CRD schemas and rendered cluster config when
-their source contracts change.
-
-This PR clarifies the UI and descriptive text, renames the ambiguous create and preset fields, and
-renames the protobuf request fields while preserving their field numbers. The in-repo producers and
-consumers are updated together. Context-scoped names remain unchanged.
-
-**Acceptance:** an audit finds no ambiguous generic policy names for egress policies across the
-Agentplane surfaces above; generated schemas reflect renamed fields, and tests cover the resulting
-serialized names and unchanged behavior.
 
 ### `CONNECTION_SA_REBIND` — rebind a Connection's ServiceAccount in place
 
