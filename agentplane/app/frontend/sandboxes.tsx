@@ -43,7 +43,7 @@ import { StaleNotice } from "./stream_status";
 const EMPTY_FORM: NewSandbox = {
   slug: "",
   template: "",
-  policies: [],
+  egress_policies: [],
   action_policy_sets: [],
   kubernetes_grants: [],
   bootstrap: "",
@@ -104,7 +104,7 @@ export function SandboxList({ onOpen }: { onOpen: (name: string) => void }): JSX
       setForm((current) => ({
         ...current,
         template: "",
-        policies: [],
+        egress_policies: [],
         action_policy_sets: [],
         kubernetes_grants: [],
         bootstrap: "",
@@ -115,7 +115,7 @@ export function SandboxList({ onOpen }: { onOpen: (name: string) => void }): JSX
     setForm((current) => ({
       ...current,
       template: preset.template,
-      policies: preset.policies,
+      egress_policies: preset.egress_policies,
       action_policy_sets: preset.action_policy_sets,
       kubernetes_grants: preset.kubernetes_grants,
       bootstrap: preset.bootstrap,
@@ -257,8 +257,8 @@ export function SandboxList({ onOpen }: { onOpen: (name: string) => void }): JSX
           label="Egress policies"
           description="What this sandbox may reach"
           data={egressPolicies}
-          value={form.policies ?? []}
-          onChange={(picked) => setForm({ ...form, policies: picked })}
+          value={form.egress_policies ?? []}
+          onChange={(picked) => setForm({ ...form, egress_policies: picked })}
           style={{ flex: "1 1 12rem" }}
         />
         <MultiSelect

@@ -213,7 +213,7 @@ async def test_a_kubernetes_token_reaches_the_same_app_without_a_session(served:
         # No Origin check on this path: a token is not ambient, so no site can make a browser send it.
         created = await agent.post(
             "/sandboxes",
-            json={"slug": "demo", "template": TEMPLATE, "policies": []},
+            json={"slug": "demo", "template": TEMPLATE, "egress_policies": []},
             headers={"Origin": "https://evil.test"},
         )
         assert created.status_code == 201, created.text
@@ -230,7 +230,7 @@ async def test_a_token_for_another_service_account_is_refused(served: str) -> No
     """
     async with httpx.AsyncClient(base_url=served, headers=STRANGER_AUTH) as other_account:
         refused = await other_account.get("/sandboxes")
-        created = await other_account.post("/sandboxes", json={"slug": "demo", "policies": []})
+        created = await other_account.post("/sandboxes", json={"slug": "demo", "egress_policies": []})
 
     assert (refused.status_code, created.status_code) == (403, 403), refused.text
 

@@ -53,7 +53,7 @@ async function render(
     name: "test-preset",
     title: "Test preset",
     template: "test-template",
-    policies: [],
+    egress_policies: [],
     action_policy_sets: ["test-reads"],
     kubernetes_grants: ["workspace-read"],
     session_defaults: { harness: "HARNESS_CODEX", model: "test-codex-b" },

@@ -138,7 +138,7 @@ def settings(
             "public-coder": SandboxPreset(
                 title="Public coder",
                 template="agentplane-runner",
-                policies=[
+                egress_policies=[
                     BASIC_POLICY,
                     PACKAGES_POLICY,
                     GITHUB_AGENTYDRAGON_AGENT_POLICY,
@@ -163,7 +163,7 @@ def settings(
                         template="agentplane-runner",
                         # These policies are what a *launch* is granted, independent of
                         # which caller/ServiceAccount stamps it.
-                        policies=[
+                        egress_policies=[
                             BASIC_POLICY,
                             FORGEJO_HAKU_POLICY,
                             PACKAGES_POLICY,
@@ -190,7 +190,7 @@ def settings(
         },
         # Grant platform operations and inference experiments independently. The latter
         # is a fleet default, not part of the basic Agentplane platform policy.
-        default_policies=[BASIC_POLICY, INFERENCE_EXPERIMENTS_POLICY],
+        default_egress_policies=[BASIC_POLICY, INFERENCE_EXPERIMENTS_POLICY],
         # The egress proxy's admin port (agentplane/egress `Settings.admin_port`), asked
         # for each sandbox's recent decisions; until the proxy Deployment lands the page
         # shows the rules alone.

@@ -93,7 +93,7 @@ class NewSandbox(BaseModel):
 
     slug: Slug = Field(description="Human-chosen name stem; a random suffix makes the Sandbox name unique.")
     template: str = Field(min_length=1, description="SandboxTemplate whose Pod and volume shape this Sandbox copies.")
-    policies: list[str] = Field(default_factory=list, description="EgressPolicy names to grant.")
+    egress_policies: list[str] = Field(default_factory=list, description="EgressPolicy names to grant.")
     action_policy_sets: list[str] = Field(
         default_factory=list,
         description="ActionPolicySet names to bind; an explicit list, empty included, is bound as given.",
@@ -199,6 +199,4 @@ def sandbox_has_ready_pod(view: SandboxView) -> bool:
 
 
 def create_request(value: NewSandbox) -> protocol_pb2.CreateSandboxRequest:
-    data = value.model_dump(mode="json", exclude_none=True)
-    data["egress_policies"] = data.pop("policies", [])
-    return ParseDict(data, protocol_pb2.CreateSandboxRequest())
+    return ParseDict(value.model_dump(mode="json", exclude_none=True), protocol_pb2.CreateSandboxRequest())

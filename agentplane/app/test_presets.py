@@ -17,7 +17,7 @@ def presets() -> PresetCatalog:
             "public-coder": SandboxPreset(
                 title="Public coder",
                 template="runner",
-                policies=["github-agentydragon-agent"],
+                egress_policies=["github-agentydragon-agent"],
                 thread_preset="public-coder-codex",
                 bootstrap="mkdir -p /state/workspaces",
             )

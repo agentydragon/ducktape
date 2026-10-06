@@ -1916,7 +1916,7 @@ data:
       Subscriptions expire unless renewed. GET http://agentplane-notifications.agentplane-testing.svc.cluster.local:8080/v1/sources and the OpenAPI schema describe provider
       inputs and subscription management; consult the service documentation for retention and quotas.
     lifecycle_timeout_s: 300
-    default_policies:
+    default_egress_policies:
       - basic
       - inference-experiments
     kubernetes_grants: {}
@@ -2335,7 +2335,7 @@ data:
       public-coder:
         title: Public coder
         template: agentplane-runner
-        policies:
+        egress_policies:
           - basic
           - packages
           - github-agentydragon-agent
@@ -2350,7 +2350,7 @@ data:
             printf '%s\n' 'public-coder workspace initialized' > "$marker"
           fi
     kubernetes_grants: {}
-    default_policies:
+    default_egress_policies:
       - basic
       - inference-experiments
     egress_admin_url: http://agentplane-egress-admin.agentplane-testing.svc:8081

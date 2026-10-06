@@ -89,7 +89,7 @@ def test_kubernetes_access_is_part_of_what_every_sandbox_is_granted(
     """Every agent talks to the API server, so the rule admitting it is in `basic`.
 
     `basic` is the policy every launch is granted before the caller picks anything
-    (`default_policies` and `launch_policies`, agentplane/app/egress.py), which is what makes
+    (`default_egress_policies` and `launch_policies`, agentplane/app/egress.py), which is what makes
     Kubernetes access a property of a sandbox rather than a choice one. It was its own policy
     while every SandboxTemplate already mounted the kubeconfig naming this credential
     (sandbox_pod.py): a box whose preset or caller did not name it held a working-looking config
@@ -118,7 +118,7 @@ def test_kubernetes_access_is_part_of_what_every_sandbox_is_granted(
 
     # And `basic` reaches a sandbox that picks nothing, which is the whole claim.
     app_config = _by_name(docs, "ConfigMap", "agentplane-app-config")
-    defaults: list[str] = yaml.safe_load(app_config["data"]["config.yaml"])["default_policies"]
+    defaults: list[str] = yaml.safe_load(app_config["data"]["config.yaml"])["default_egress_policies"]
     assert BASIC_POLICY in defaults, defaults
 
 
@@ -203,7 +203,7 @@ def test_public_diagnostics_share_haku_reads_but_not_privileged_grants(
     selected = config["sandbox_presets"][preset]["kubernetes_grants"]
     credential_grants = {"coinbase-credentials", "spend-private-config"} if preset == "finance-agent" else set()
     # Coinbase egress follows the Secret grant; haku-agent's EgressBinding carries none.
-    assert (COINBASE_POLICY in config["sandbox_presets"][preset]["policies"]) == (preset == "finance-agent")
+    assert (COINBASE_POLICY in config["sandbox_presets"][preset]["egress_policies"]) == (preset == "finance-agent")
     assert COINBASE_POLICY not in _by_name(docs, "EgressBinding", "haku-agent")["spec"]["policies"]
     assert set(selected) == set(config["sandbox_presets"]["public-coder"]["kubernetes_grants"]) | credential_grants
     assert len(selected) == len(set(selected))
@@ -307,7 +307,7 @@ def test_inference_is_granted_separately_from_platform_operations(
     granted = _by_name(docs, "EgressPolicy", INFERENCE_EXPERIMENTS_POLICY)
     basic = _by_name(docs, "EgressPolicy", BASIC_POLICY)
     config = _by_name(docs, "ConfigMap", "agentplane-app-config")
-    assert INFERENCE_EXPERIMENTS_POLICY in yaml.safe_load(config["data"]["config.yaml"])["default_policies"]
+    assert INFERENCE_EXPERIMENTS_POLICY in yaml.safe_load(config["data"]["config.yaml"])["default_egress_policies"]
     # Standing caller identities and static OpenClaw must receive the separate grant too.
     for binding in (doc for doc in docs if doc["kind"] == "EgressBinding"):
         policies = binding["spec"]["policies"]
@@ -342,10 +342,10 @@ def test_finance_aiquota_history_is_read_only_and_finance_only(
 ) -> None:
     docs = agentplane_manifests[staging.ENV.namespace]
     config = yaml.safe_load(_by_name(docs, "ConfigMap", "agentplane-app-config")["data"]["config.yaml"])
-    assert FINANCE_AIQUOTA_HISTORY_POLICY in config["sandbox_presets"]["finance-agent"]["policies"]
+    assert FINANCE_AIQUOTA_HISTORY_POLICY in config["sandbox_presets"]["finance-agent"]["egress_policies"]
     for name in ("public-coder", "haku"):
         if name in config["sandbox_presets"]:
-            assert FINANCE_AIQUOTA_HISTORY_POLICY not in config["sandbox_presets"][name]["policies"]
+            assert FINANCE_AIQUOTA_HISTORY_POLICY not in config["sandbox_presets"][name]["egress_policies"]
     policy = _by_name(docs, "EgressPolicy", FINANCE_AIQUOTA_HISTORY_POLICY)
     assert policy["spec"]["rules"] == [
         {

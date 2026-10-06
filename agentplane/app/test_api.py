@@ -114,7 +114,7 @@ TEST_PRESETS = PresetCatalog(
         "public-coder": SandboxPreset(
             title="Public coder",
             template="agentplane-test-runner",
-            policies=["github"],
+            egress_policies=["github"],
             action_policy_sets=["github-reads"],
             thread_preset="public-coder-codex",
             bootstrap="mkdir -p /state/workspaces",
@@ -255,7 +255,7 @@ def test_create_records_the_concrete_session_defaults_and_bootstrap(
         json={
             "slug": "coder",
             "template": TEMPLATE,
-            "policies": ["github"],
+            "egress_policies": ["github"],
             "action_policy_sets": ["github-reads"],
             "session_defaults": {
                 "harness": "HARNESS_CODEX",
@@ -408,7 +408,7 @@ def test_policy_sets_list_the_namespace_for_the_create_form(client: TestClient) 
 def test_create_with_picked_policies_grants_one_binding_the_sandbox_owns(
     client: TestClient, custom_objects: FakeCustomObjectsApi
 ) -> None:
-    response = client.post("/sandboxes", json={"slug": "demo", "template": TEMPLATE, "policies": ["pypi"]})
+    response = client.post("/sandboxes", json={"slug": "demo", "template": TEMPLATE, "egress_policies": ["pypi"]})
 
     assert response.status_code == 201, response.text
     row = response.json()
@@ -422,17 +422,17 @@ def test_create_with_picked_policies_grants_one_binding_the_sandbox_owns(
     )
 
 
-@pytest.mark.parametrize("default_policies", [["github"]])
+@pytest.mark.parametrize("default_egress_policies", [["github"]])
 def test_a_default_policy_is_granted_whether_or_not_the_caller_picks_it(client: TestClient) -> None:
     """The model endpoint is what this is for in the deployment: without it a sandbox has no agent,
     so it is not the caller's to leave out — nor, having picked it, to be granted twice. The
-    parameter overrides the `default_policies` fixture the client is built from."""
+    parameter overrides the `default_egress_policies` fixture the client is built from."""
     unpicked = client.post("/sandboxes", json={"slug": "plain", "template": TEMPLATE}).json()
     (binding,) = client.get(f"/sandboxes/{unpicked['name']}/egress").json()
     assert [policy["name"] for policy in binding["policies"]] == ["github"]
 
     picked = client.post(
-        "/sandboxes", json={"slug": "asked", "template": TEMPLATE, "policies": ["github", "pypi"]}
+        "/sandboxes", json={"slug": "asked", "template": TEMPLATE, "egress_policies": ["github", "pypi"]}
     ).json()
     (binding,) = client.get(f"/sandboxes/{picked['name']}/egress").json()
     assert [policy["name"] for policy in binding["policies"]] == ["github", "pypi"]
@@ -771,7 +771,9 @@ def test_a_grant_naming_a_policy_that_does_not_exist_is_refused(
     assert client.post("/sandboxes/live/egress", json={"policies": []}).status_code == 422
     # And at launch the names resolve before the Sandbox exists, so a typo leaves none behind.
     assert (
-        client.post("/sandboxes", json={"slug": "demo", "template": TEMPLATE, "policies": ["vanished"]}).status_code
+        client.post(
+            "/sandboxes", json={"slug": "demo", "template": TEMPLATE, "egress_policies": ["vanished"]}
+        ).status_code
         == 422
     )
     assert all(kind != "sandboxes" or name in {"live", "fresh"} for kind, name in custom_objects.objects)
@@ -848,7 +850,7 @@ def test_presets_publish_editable_sandbox_and_session_defaults(client: TestClien
             "name": "public-coder",
             "title": "Public coder",
             "template": "agentplane-test-runner",
-            "policies": ["github"],
+            "egress_policies": ["github"],
             "action_policy_sets": ["github-reads"],
             "kubernetes_grants": [],
             "session_defaults": {

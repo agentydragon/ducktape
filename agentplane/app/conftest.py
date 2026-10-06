@@ -275,7 +275,7 @@ def sandbox_runner_port() -> int:
 def sandbox_endpoint(
     custom_objects: FakeCustomObjectsApi,
     core_v1: FakeCoreV1Api,
-    default_policies: list[str],
+    default_egress_policies: list[str],
     sandbox_grants: dict[str, KubernetesGrant],
     sandbox_rbac: FakeRbac,
     tmp_path: Path,
@@ -285,7 +285,7 @@ def sandbox_endpoint(
         custom_objects,
         core_v1,
         tmp_path / "sandbox-token",
-        default_policies=default_policies,
+        default_policies=default_egress_policies,
         grants=sandbox_grants,
         rbac=sandbox_rbac,
         runner_port=sandbox_runner_port,
@@ -337,7 +337,7 @@ def live_index(core_v1: FakeCoreV1Api) -> LiveIndex:
 
 
 @pytest.fixture
-def default_policies() -> list[str]:
+def default_egress_policies() -> list[str]:
     """What the deployment grants every sandbox; overridden by the tests about that."""
     return []
 

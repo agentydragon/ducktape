@@ -73,7 +73,7 @@ class SandboxService(Construct):
                 actions_service_url=f"http://{actions_service.fqdn}:{actions_service.port.number}",
                 notifications_service_url=f"http://{notifications.service(env.namespace).fqdn}:8080",
             ),
-            default_policies=env.app_config.default_policies,
+            default_egress_policies=env.app_config.default_egress_policies,
             kubernetes_grants=env.app_config.kubernetes_grants,
             kubernetes_binding_cleanup_namespaces=set(env.app_config.kubernetes_binding_cleanup_namespaces),
             kubernetes_cluster_binding_cleanup=env.app_config.kubernetes_cluster_binding_cleanup,

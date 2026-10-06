@@ -1799,7 +1799,7 @@ routes.push(
         name: "public-coder",
         title: "Public coder",
         template: "agentplane-runner",
-        policies: ["github-public"],
+        egress_policies: ["github-public"],
         action_policy_sets: ["public-coder"],
         kubernetes_grants: ["workspace-read"],
         session_defaults: {

@@ -38,7 +38,7 @@ class Settings(BaseSettings):
     caller_accounts: frozenset[ServiceAccountRef] = Field(min_length=1)
     platform_instructions: str = Field(min_length=1)
     lifecycle_timeout_s: float = Field(default=300, gt=0)
-    default_policies: list[str] = Field(default_factory=list)
+    default_egress_policies: list[str] = Field(default_factory=list)
     kubernetes_grants: dict[str, KubernetesGrant] = Field(default_factory=dict)
     kubernetes_binding_cleanup_namespaces: set[str] = Field(default_factory=set)
     kubernetes_cluster_binding_cleanup: bool = False
@@ -93,7 +93,9 @@ async def serve(settings: Settings) -> None:
         provisioning = Provisioning(
             inventory,
             EgressInventory(
-                namespace=settings.sandbox_namespace, custom_objects=custom, default_policies=settings.default_policies
+                namespace=settings.sandbox_namespace,
+                custom_objects=custom,
+                default_policies=settings.default_egress_policies,
             ),
             ActionPolicyBindings(namespace=settings.sandbox_namespace, custom_objects=custom),
             settings.kubernetes_grants,
