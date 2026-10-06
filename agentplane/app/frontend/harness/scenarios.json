@@ -294,7 +294,7 @@
     "route": "/sandboxes?preset=public-coder",
     "viewport": { "width": 1200, "height": 900 },
     "outputName": "new-sandbox",
-    "readySelectors": [".mantine-Pill-root", "[role=\"listbox\"]"],
+    "readySelectors": [".mantine-Pill-root", "[role=\"option\"]:text(\"harness-reviews\")"],
     "hiddenSelectors": ["[role=\"option\"]:text(\"public-coder\")"],
     "openActionPolicySets": true
   },
@@ -303,7 +303,7 @@
     "route": "/sandboxes?preset=public-coder",
     "viewport": { "width": 412, "height": 915, "deviceScaleFactor": 2.625 },
     "outputName": "new-sandbox-phone",
-    "readySelectors": [".mantine-Pill-root", "[role=\"listbox\"]"],
+    "readySelectors": [".mantine-Pill-root", "[role=\"option\"]:text(\"harness-reviews\")"],
     "hiddenSelectors": ["[role=\"option\"]:text(\"public-coder\")"],
     "openActionPolicySets": true
   },
