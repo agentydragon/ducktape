@@ -218,7 +218,12 @@ def test_managed_agent_read_grants_cover_declarative_namespace_opt_ins(
 
     external_grant_namespaces = {grant["namespace"] for grant in catalog.values() if grant["kind"] == "RoleBinding"}
     expected_external_scopes = (external_grant_namespaces | cleanup_namespaces) - {"agentplane-staging"}
-    assert expected_external_scopes == expected_external_namespaces | {"ducktape-flux", "haku-console", "haku-sandbox"}
+    assert expected_external_scopes == expected_external_namespaces | {
+        "ducktape-flux",
+        "haku-console",
+        "haku-sandbox",
+        "plaid-mcp",  # Finance's named spend-policy grant, outside shared diagnostics.
+    }
     assert not any(
         doc["kind"] in {"Role", "RoleBinding"}
         and doc["metadata"]["name"] in {"agentplane-staging-managed-bindings", "agentplane-staging-external-bindings"}
@@ -467,7 +472,8 @@ def test_agent_permission_superset_and_finance_parity(agent_permissions: tuple[R
     assert not uncovered(public, haku)
     assert not uncovered(public, finance)
     assert uncovered(finance, public) == {
-        Permission("agentplane-staging", "", "secrets", "get", "coinbase-api-credentials")
+        Permission("agentplane-staging", "", "secrets", "get", "coinbase-api-credentials"),
+        Permission("plaid-mcp", "", "configmaps", "get", "plaid-spend-policy"),
     }
     static_public = rbac.identity("Group", "haku:access-profile:public-coder")
     for kind, name, namespace in (
