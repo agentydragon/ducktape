@@ -12,7 +12,7 @@ from agentplane.harness_tests.codex.harness import MODEL, CodexHarness
 from agentplane.harness_tests.codex.responses import OpenAIResponses
 from agentplane.native.codex import driver, wire
 
-TOOLS = ["exec_command", "write_stdin", "request_user_input"]
+TOOLS = ["exec_command", "write_stdin", "request_user_input", "get_goal", "create_goal", "update_goal"]
 IN_FLIGHT_INPUT = "Reply with exactly: CODEX_CRASHED_IN_FLIGHT_REPLAYED"
 QUEUED_INPUT = "Reply with exactly: CODEX_CRASHED_QUEUE_FATE"
 RECOVERY_INPUT = "Reply with exactly: CODEX_CRASH_RESUME_OK"
@@ -158,11 +158,11 @@ async def test_resume_after_an_interrupted_partial_turn_keeps_the_user_item_not_
             )
             assert (await turn.agent_message_delta()).params.delta == INTERRUPTED_RESUME_PARTIAL
             assert (await interrupted.interrupt(turn)).error is None
-            # Unlike an interrupt before any output, Codex reports this turn interrupted while
-            # retaining the upstream Responses stream. Finish the scripted response only after
-            # observing that terminal native event.
+            # Codex reports this turn interrupted while closing the upstream Responses stream.
+            # Wait for the client close before killing the process, rather than trying to finish a
+            # request the app-server has already canceled.
             assert (await turn.completed()).params.turn.status is wire.TurnStatus.INTERRUPTED
-            await exchange.close()
+            await exchange.wait_client_closed()
         assert await interrupted.crash() < 0
 
     assert [

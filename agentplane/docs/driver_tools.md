@@ -5,10 +5,11 @@ page records how a call round-trips on each side, how much of the registry each 
 the model, whether the registry itself can change while a session runs, and what each harness does
 with an MCP server's `notifications/tools/list_changed`.
 
-Evidence: the pinned Claude Code 2.1.252 and Codex app-server 0.152.0 binaries, driven by a
+Evidence: the pinned Claude Code 2.1.252 and Codex app-server 0.152.0 binaries used for this
+investigation, driven by a
 throwaway rig against a loopback model endpoint — every claim marked **confirmed** was produced by
 running the real binary that way. Claims marked **read** name their source: Codex's Rust at the
-tag `rust-v0.152.0` (the pinned release, not `main`, which has moved on), the
+tag `rust-v0.152.0` (the release used for this investigation, not `main`, which has moved on), the
 `@anthropic-ai/claude-agent-sdk` type declarations, which document the control protocol Claude Code
 speaks, or the debundled `cli.js` chunks
 ([gaffer-private `claude/re`](https://github.com/agentydragon/gaffer-private/tree/devel/claude/re)).

@@ -1,9 +1,10 @@
-"""A Codex rollout as the pinned binary writes it, for tests of `runner.codex_history`.
+"""A persisted Codex rollout sample for tests of `runner.codex_history`.
 
-Captured from codex-cli 0.152.0 (app-server, persisted thread) over the `agentplane/harness_tests/codex`
-fake Responses server: the model answers with reasoning and an `exec_command` call, then with reasoning and
-a message. Each record is verbatim; only the records the reader looks at are kept (`response_item`), bracketed
-by the turn's `event_msg` start and end.
+Captured from codex-cli 0.152.0 (app-server, persisted thread) over the
+`agentplane/harness_tests/codex` fake Responses server: the model answers with reasoning and an
+`exec_command` call, then with reasoning and a message. Each record is verbatim; only the records the
+reader looks at are kept (`response_item`), bracketed by the turn's `event_msg` start and end. The
+native app-server process tests use the current Bazel binary pin from `MODULE.bazel`.
 """
 
 import json

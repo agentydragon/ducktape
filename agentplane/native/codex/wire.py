@@ -1,5 +1,5 @@
 """Codex app-server JSON-RPC frames, per `codex-rs/app-server-protocol/src/protocol/v2` at
-rust-v0.152.0 (serde `camelCase`).
+rust-v0.157.0 (serde `camelCase`).
 
 Inbound frames are what the app-server writes to stdout: responses to our requests, requests of its
 own that block a turn until answered, and notifications. Only the notifications and items a consumer

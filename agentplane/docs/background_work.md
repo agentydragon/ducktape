@@ -4,7 +4,8 @@ What each harness tells the driver, and the model, about work the agent left run
 that started it — and what a common abstraction over the two could honestly promise.
 
 Evidence as in [driver_tools.md](driver_tools.md): **confirmed** means observed by driving the
-pinned Claude Code 2.1.252 or Codex app-server 0.152.0 binary against a loopback model endpoint;
+pinned Claude Code 2.1.252 or the Codex app-server 0.152.0 binary used for this investigation
+against a loopback model endpoint;
 **read** means taken from Codex's Rust, the `@anthropic-ai/claude-agent-sdk` type declarations, or
 the debundled `cli.js`.
 
