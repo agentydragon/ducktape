@@ -4,6 +4,5 @@ resources:
   - agentplane-staging.k8s.yaml
   - web-push-vapid.sops.yaml
   - github-app.sops.yaml
-  - pixel6-mcp-bearer.sops.yaml
 components:
   - image-pins

@@ -1,6 +1,6 @@
 """agentplane-staging: two replicas of everything, operator login federated through the
 shared Authentik, and the reviewed GitHub/Kubernetes/Grocy SF/SSH/Home Assistant/Tana/Gmail/
-Google Calendar/Pixel 6 MCP action groups.
+Google Calendar MCP action groups.
 """
 
 from __future__ import annotations
@@ -55,8 +55,6 @@ from cluster.cdk8s.model_selections import STAGING_APP_MODELS
 from cluster.cdk8s.providers.cilium.network_policy import EgressRule, IngressRule, NetworkPolicy
 from cluster.cdk8s.providers.external_secrets.external_secret import ExternalSecret, SecretStoreRef, remote_data
 from cluster.cdk8s.ssh_mcp.config import BEARER_SECRET_KEY, BEARER_SECRET_NAME, MCP_URL
-from cluster.scripts import nebula_mesh
-from util.bazel.runfiles import get_required_path
 
 _NAMESPACE = "agentplane-staging"
 _HOSTNAME = "agentplane-staging.allegedly.works"
@@ -77,9 +75,6 @@ _TANA_MCP_URL = "http://tana-mcp.tana-mcp.svc.cluster.local:8263/mcp"
 # distinct paths -- see that module's docstring for its Google credential.
 _GMAIL_MCP_URL = "http://google-mcp.google-mcp.svc.cluster.local:8080/gmail/mcp"
 _CALENDAR_MCP_URL = "http://google-mcp.google-mcp.svc.cluster.local:8080/calendar/mcp"
-# Pixel 6 is a non-Kubernetes Nebula peer; derive its address from the mesh roster.
-_PIXEL6_MESH_IP = nebula_mesh.load(get_required_path("_main/nebula-mesh.json")).hosts["pixel6"].nebula_ip
-_PIXEL6_MCP_URL = f"http://{_PIXEL6_MESH_IP}:8080/mcp"
 # ssh-mcp, ha-mcp and google-mcp each mint their bearer in their own namespace
 # (cluster/cdk8s/ssh_mcp/backend.py, ha_mcp.py, google_mcp.py), and this namespace copies it
 # through a store that can read that one Secret; the Tana PAT is an external-creds copy approved
@@ -88,7 +83,6 @@ _SSH_MCP_BEARER_SECRET = "ssh-mcp-client-bearer"
 _HA_MCP_BEARER_SECRET = "ha-mcp-client-bearer"
 _TANA_MCP_BEARER_SECRET = "tana-agentydragon-gmail-com-account-pat"
 _GOOGLE_MCP_BEARER_SECRET = "google-mcp-bearer"
-_PIXEL6_MCP_BEARER_SECRET = "pixel6-mcp-bearer"
 _WEB_PUSH_SECRET = "agentplane-staging-web-push-vapid"
 _WEB_PUSH_SECRET_FILE = "web-push-vapid.sops.yaml"
 _GITHUB_MCP_CLIENT_SECRET = "haku-console-github-mcp-client-credentials"
@@ -283,22 +277,6 @@ _ACTIONS_SETTINGS = ActionServiceDeploymentSettings(
                 },
             ),
         ),
-        "pixel6": ActionGroup(
-            title="Pixel 6",
-            description=(
-                "Pixel 6 screen and app controls through Android Accessibility; Actions require operator approval."
-            ),
-            executor=McpExecutorBinding(
-                kind="mcp",
-                description="Android Remote Control MCP app running on the Pixel 6 over Nebula.",
-                config={
-                    "transport": "streamable-http",
-                    "url": _PIXEL6_MCP_URL,
-                    "auth": "static_bearer",
-                    "bearer_file": "/run/secrets/pixel6-mcp/bearer-token",
-                },
-            ),
-        ),
     },
 )
 
@@ -313,7 +291,7 @@ ENV = Environment(
     ),
     output_dir=f"{HAND_WRITTEN_ROOT}/{_NAMESPACE}",
     image_pins=f"{HAND_WRITTEN_ROOT}/{_NAMESPACE}/image-pins",
-    extra_resources=(_WEB_PUSH_SECRET_FILE, "github-app.sops.yaml", "pixel6-mcp-bearer.sops.yaml"),
+    extra_resources=(_WEB_PUSH_SECRET_FILE, "github-app.sops.yaml"),
     replicas=ReplicaProfile(
         count=2,
         strategy=DeploymentStrategy.rolling_update(
@@ -352,7 +330,6 @@ ENV = Environment(
             _HA_MCP_BEARER_SECRET,
             _TANA_MCP_BEARER_SECRET,
             _GOOGLE_MCP_BEARER_SECRET,
-            _PIXEL6_MCP_BEARER_SECRET,
         ),
         # The full OAuth linkage triad; testing mounts only the one MCP client's secret.
         oauth_secret_items=("client-secret", "jwt-signing-key", "encryption-key"),
@@ -368,7 +345,6 @@ ENV = Environment(
             # One mount, shared by both the gmail and google_calendar ActionGroups -- one pod,
             # one caller-facing bearer.
             BearerMcpMount(name="google-mcp", secret_name=_GOOGLE_MCP_BEARER_SECRET, secret_key="bearer-token"),
-            BearerMcpMount(name="pixel6-mcp", secret_name=_PIXEL6_MCP_BEARER_SECRET, secret_key="bearer-token"),
         ],
         extra_egress=[
             EgressRule.to_fqdns(*_WEB_PUSH_ALLOWED_HOSTS),
@@ -376,7 +352,6 @@ ENV = Environment(
             ha_mcp.FACADE.egress(),
             EgressRule.to_endpoints(cilium.endpoint_labels("tana-mcp", "tana-mcp"), 8263),
             EgressRule.to_endpoints(cilium.endpoint_labels("google-mcp", "google-mcp"), 8080),
-            EgressRule.to_cidrs(f"{_PIXEL6_MESH_IP}/32", ports=[8080]),
             # Same public-origin Gateway path as the BFF: only Authentik SNI on node:443. The
             # resolver fetches /application/o/agentplane-staging-actions/jwks/ over HTTPS.
             cilium.egress_via_gateway("auth.allegedly.works"),

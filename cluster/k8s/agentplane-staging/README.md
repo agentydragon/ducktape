@@ -68,17 +68,6 @@ callback URLs. GitHub Apps support
 [multiple callback URLs](https://docs.github.com/en/apps/creating-github-apps/registering-a-github-app/about-the-user-authorization-callback-url).
 Changing this deployment's `redirect_uri` does not update the registration.
 
-## Pixel 6 MCP
-
-The `pixel6` ActionGroup connects to the Android Remote Control MCP server at the Pixel's
-Nebula address. The phone's OAuth server and bearer authentication both stay enabled, so
-the `/mcp` endpoint rejects unauthenticated requests. Agentplane uses a dedicated bearer
-token stored in `pixel6-mcp-bearer.sops.yaml` and mounted only into the Action Service.
-
-The app currently rejects Agentplane's `/mcp-linkage/callback` during OAuth client
-registration (`invalid_redirect_uri`), so its OAuth flow cannot yet be linked from
-Agentplane. Agentplane Actions remain subject to the existing operator approval flow.
-
 ## Staging GitHub App
 
 The `agentplane-staging` GitHub App serves the staging environment, initially for
