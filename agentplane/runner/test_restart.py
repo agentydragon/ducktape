@@ -502,9 +502,14 @@ async def test_codex_acceptance_before_confirmation_crash_replays_input_with_ori
 
     second_runner = await start_runner()
     client = runner_client_factory(second_runner.target, capture_history=True)
-    second = await client.attach("codex-accepted-before-confirmation", after_cursor=first.cursor)
+    second = await client.attach("codex-accepted-before-confirmation", spec=spec, after_cursor=first.cursor)
+    started = await second.until(events.is_kind("harness_started"))
+    assert started.event.harness_started.resumed
     retried = await model.request()
-    assert retried.user_texts == ["Reply with exactly: ACCEPTANCE_SEED_OK", target_text, target_text]
+    assert retried.user_texts[0:2] == ["Reply with exactly: ACCEPTANCE_SEED_OK", target_text]
+    assert retried.user_texts[-1] == target_text
+    assert retried.user_texts.count(target_text) == 2
+    assert "<turn_aborted>" in retried.user_texts[-2]
     assert any(
         result.call_id == "acceptance-side-effect" and "SIDE_EFFECT_OUTPUT" in result.text
         for result in retried.tool_outputs
