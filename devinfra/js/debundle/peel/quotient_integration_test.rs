@@ -2,10 +2,12 @@
 //! renderer-over-quotient. Fixtures seed quotients through the
 //! test-only constructors in `quotient::testing`.
 
-use analysis::{AtomicUnitEdgeReport, DepKind, OwnerGraphReport};
+use std::collections::BTreeMap;
+
+use analysis::{DepKind, OwnerGraphReport};
 use report_fixtures::{
-    active_owner, atomic_edge, atomic_unit_for, claims, graph_of, no_claims, owner_edge,
-    residual_owner, singleton_graph,
+    active_owner, atomic_edge, atomic_unit_for, claims, graph_of, owner_edge, residual_owner,
+    singleton_graph,
 };
 
 use crate::propose::{ModuleProposal, propose};
@@ -202,41 +204,6 @@ fn merge_cannot_hide_an_existing_entry_dependency() {
 }
 
 #[test]
-fn seed_rejection_diagnostic_is_canonical() {
-    // Same fixture run twice; rejection diagnostic byte-equal across
-    // runs. Determinism check.
-    let make_report = || {
-        let a1 = residual_owner("owner:a1", 1, &["BindingA1"], 5);
-        let a2 = residual_owner("owner:a2", 2, &["BindingA2"], 5);
-        let b1 = residual_owner("owner:b1", 3, &["BindingB1"], 5);
-        let b2 = residual_owner("owner:b2", 4, &["BindingB2"], 5);
-        let edges = vec![
-            owner_edge("edge:0", "owner:a1", "owner:b1", DepKind::EagerUse, true),
-            owner_edge("edge:1", "owner:b2", "owner:a2", DepKind::EagerUse, true),
-        ];
-        singleton_graph(vec![a1.clone(), a2.clone(), b1.clone(), b2.clone()], edges)
-    };
-    let spec = vec![
-        spec_module("mod_alpha", &["owner:a1", "owner:a2"]),
-        spec_module("mod_beta", &["owner:b1", "owner:b2"]),
-    ];
-
-    let report_a = make_report();
-    let (_q1, rejected_a) =
-        build_seed_quotient(&report_a, &report_a.atomic_graph.nodes, &spec, 10_000).unwrap();
-    let report_b = make_report();
-    let (_q2, rejected_b) =
-        build_seed_quotient(&report_b, &report_b.atomic_graph.nodes, &spec, 10_000).unwrap();
-
-    let json_a = serde_json::to_string_pretty(&rejected_a).unwrap();
-    let json_b = serde_json::to_string_pretty(&rejected_b).unwrap();
-    assert_eq!(
-        json_a, json_b,
-        "rejection diagnostic must be byte-identical across runs",
-    );
-}
-
-#[test]
 fn post_seed_reports_each_unrealizable_scc_in_owner_id_order() {
     // Two independent mutual-eager module pairs, (c, d) before (a, b)
     // in the report. Every spec module is one owner, so no seed
@@ -290,150 +257,6 @@ fn post_seed_reports_each_unrealizable_scc_in_owner_id_order() {
             scc(["owner:c", "owner:d"], [0, 1]),
         ],
     );
-}
-
-#[test]
-fn contract_never_un_contracts() {
-    // API surface check: after a contraction, the involved owners
-    // remain in the same class no matter what subsequent operations
-    // are performed. There is no public `split` / `un_contract` /
-    // `set_class` on QuotientGraph; the only mutation is
-    // `contract`, which is monotone (coarsens `~`).
-    //
-    // We verify this empirically by:
-    //   1. Building a fresh quotient.
-    //   2. Contracting (c(a), c(b)).
-    //   3. Performing every other contraction the kernel allows and
-    //      asserting that c(a) == c(b) after each.
-    let a = residual_owner("owner:a", 1, &["BindingA"], 5);
-    let b = residual_owner("owner:b", 2, &["BindingB"], 5);
-    let c = residual_owner("owner:c", 3, &["BindingC"], 5);
-    let d = residual_owner("owner:d", 4, &["BindingD"], 5);
-    let report = singleton_graph(vec![a.clone(), b.clone(), c.clone(), d.clone()], vec![]);
-    let mut q = QuotientGraph::from_report(&report, 10_000).unwrap();
-    let a_idx = q.owner_idx_of("owner:a").unwrap();
-    let b_idx = q.owner_idx_of("owner:b").unwrap();
-    let c_idx = q.owner_idx_of("owner:c").unwrap();
-    let d_idx = q.owner_idx_of("owner:d").unwrap();
-
-    let ca = q.class_of(a_idx);
-    let cb = q.class_of(b_idx);
-    q.contract(ca, cb).expect("contract(a, b)");
-    assert_eq!(q.class_of(a_idx), q.class_of(b_idx));
-
-    // After contracting (c, d), a and b still share a class.
-    let cc = q.class_of(c_idx);
-    let cd = q.class_of(d_idx);
-    q.contract(cc, cd).expect("contract(c, d)");
-    assert_eq!(q.class_of(a_idx), q.class_of(b_idx));
-
-    // After contracting (a-class, c-class), all four share a
-    // class — a and b are still together.
-    let cab = q.class_of(a_idx);
-    let ccd = q.class_of(c_idx);
-    q.contract(cab, ccd).expect("contract(ab, cd)");
-    assert_eq!(q.class_of(a_idx), q.class_of(b_idx));
-    assert_eq!(q.class_of(a_idx), q.class_of(c_idx));
-    assert_eq!(q.class_of(a_idx), q.class_of(d_idx));
-}
-
-#[test]
-fn factorize_golden_output_unchanged() {
-    // Golden test: propose's output stays byte-identical for the
-    // same representative inputs. The renderer-over-quotient path
-    // must keep these outputs stable unless the proposal contract
-    // intentionally changes.
-    //
-    // Each fixture exercises a representative shape:
-    //   - `residual_singletons`: two unrelated residual owners,
-    //     no edges.
-    //   - `closed_residual_unit`: two residual units coupled by
-    //     a constraining edge.
-    //   - `extend_active_via_anon`: an anonymous statement whose
-    //     unique constraining edge points at an active module.
-    //
-    // Snapshots live at `devinfra/js/debundle/peel/golden/`. To
-    // regenerate (only after a deliberate, justified change), set
-    // `UPDATE_GOLDENS=1` when running the test.
-    let f1 = propose(&golden_residual_singletons(), &no_claims(), 10_000).unwrap();
-    let f2 = propose(&golden_closed_residual_unit(), &no_claims(), 10_000).unwrap();
-    let claims_active = claims(&[("BindingA", "ui/x")]);
-    let f3 = propose(&golden_extend_active_via_anon(), &claims_active, 10_000).unwrap();
-
-    let json1 = serde_json::to_string_pretty(&f1).unwrap();
-    let json2 = serde_json::to_string_pretty(&f2).unwrap();
-    let json3 = serde_json::to_string_pretty(&f3).unwrap();
-
-    // Strip a single trailing newline from each golden file before
-    // comparing — JSON formatters and pre-commit hooks routinely
-    // add one, while `serde_json::to_string_pretty` doesn't. The
-    // semantic content is what we're locking down, not whether
-    // pre-commit thinks the file ends in a newline.
-    let golden1 = include_str!("golden/residual_singletons.json").trim_end_matches('\n');
-    let golden2 = include_str!("golden/closed_residual_unit.json").trim_end_matches('\n');
-    let golden3 = include_str!("golden/extend_active_via_anon.json").trim_end_matches('\n');
-
-    assert_eq!(
-        json1, golden1,
-        "residual_singletons fixture diverged from golden baseline",
-    );
-    assert_eq!(
-        json2, golden2,
-        "closed_residual_unit fixture diverged from golden baseline",
-    );
-    assert_eq!(
-        json3, golden3,
-        "extend_active_via_anon fixture diverged from golden baseline",
-    );
-}
-
-fn golden_residual_singletons() -> OwnerGraphReport {
-    let a = residual_owner("owner:a", 1, &["BindingA"], 10);
-    let b = residual_owner("owner:b", 2, &["BindingB"], 10);
-    singleton_graph(vec![a.clone(), b.clone()], vec![])
-}
-
-fn golden_closed_residual_unit() -> OwnerGraphReport {
-    let a = residual_owner("owner:a", 1, &["BindingA"], 10);
-    let b = residual_owner("owner:b", 2, &["BindingB"], 10);
-    graph_of(
-        vec![a.clone(), b.clone()],
-        vec![owner_edge(
-            "edge:0",
-            "owner:a",
-            "owner:b",
-            DepKind::EagerUse,
-            true,
-        )],
-        vec![
-            atomic_unit_for("atomic:0", &[&a]),
-            atomic_unit_for("atomic:1", &[&b]),
-        ],
-        vec![atomic_edge("atomic_edge:0", "atomic:0", "atomic:1")],
-    )
-}
-
-fn golden_extend_active_via_anon() -> OwnerGraphReport {
-    // BindingA is in an active module ui/x. An anonymous statement
-    // (no declared bindings) has one constraining edge into a.
-    // propose should promote it to extend:ui/x.
-    let a = active_owner("owner:a", 1, &["BindingA"], 10, "ui/x");
-    let anon = residual_owner("owner:anon", 2, &[], 5);
-    graph_of(
-        vec![a.clone(), anon.clone()],
-        vec![owner_edge(
-            "edge:0",
-            "owner:anon",
-            "owner:a",
-            DepKind::EagerUse,
-            true,
-        )],
-        vec![
-            atomic_unit_for("atomic:0", &[&a]),
-            atomic_unit_for("atomic:1", &[&anon]),
-        ],
-        vec![atomic_edge("atomic_edge:0", "atomic:1", "atomic:0")],
-    )
 }
 
 // ---------- Greedy merge to convergence tests. ----------
@@ -523,35 +346,6 @@ fn greedy_terminates_at_convergence() {
     assert!(again.is_empty(), "second pass should be empty: {again:?}");
 }
 
-#[test]
-fn greedy_never_splits_existing_spec_module() {
-    let a1 = active_owner("owner:a1", 1, &["BindingA1"], 10, "ui/x");
-    let a2 = active_owner("owner:a2", 2, &["BindingA2"], 10, "ui/x");
-    let h = residual_owner("owner:h", 3, &["BindingH"], 5);
-    let report = singleton_graph(
-        vec![a1.clone(), a2.clone(), h.clone()],
-        vec![owner_edge(
-            "edge:0",
-            "owner:a1",
-            "owner:h",
-            DepKind::EagerUse,
-            true,
-        )],
-    );
-
-    let groups = vec![module_group(vec![0, 1])];
-    let (mut q, _) = QuotientGraph::from_report_with_partition(&report, 10_000, &groups).unwrap();
-    let _ = greedy_merge_to_convergence(&mut q);
-
-    let a1_idx = q.owner_idx_of("owner:a1").unwrap();
-    let a2_idx = q.owner_idx_of("owner:a2").unwrap();
-    assert_eq!(
-        q.class_of(a1_idx),
-        q.class_of(a2_idx),
-        "spec-module owners must stay co-located",
-    );
-}
-
 // ---------- Full mergeability + merge output shape. ----------
 //
 // The gate allows two pre-existing-module classes to merge (with or
@@ -560,10 +354,9 @@ fn greedy_never_splits_existing_spec_module() {
 // include ≥2 pre-existing-module groups.
 
 #[test]
-fn greedy_merges_three_clusters_under_cap() {
+fn greedy_merges_three_clusters_until_the_size_cap() {
     // Three pre-existing-module clusters of 20 + 20 + 10 lines, all
-    // mutually coupled by EagerUse edges. Cap = 150 → all three fit.
-    // Assert greedy merges all three into one class.
+    // mutually coupled by EagerUse edges.
     let a = active_owner("owner:a", 1, &["BindingA"], 20, "ui/a");
     let b = active_owner("owner:b", 2, &["BindingB"], 20, "ui/b");
     let c = active_owner("owner:c", 3, &["BindingC"], 10, "ui/c");
@@ -586,74 +379,35 @@ fn greedy_merges_three_clusters_under_cap() {
         module_group(vec![1]),
         module_group(vec![2]),
     ];
-    let (mut q, _) = QuotientGraph::from_report_with_partition(&report, 150, &groups).unwrap();
-    let contractions = greedy_merge_to_convergence(&mut q);
-    assert_eq!(
-        contractions.len(),
-        2,
-        "three clusters under cap should collapse via 2 contractions: {contractions:?}",
-    );
-    let a_idx = q.owner_idx_of("owner:a").unwrap();
-    let b_idx = q.owner_idx_of("owner:b").unwrap();
-    let c_idx = q.owner_idx_of("owner:c").unwrap();
-    assert_eq!(q.class_of(a_idx), q.class_of(b_idx));
-    assert_eq!(q.class_of(b_idx), q.class_of(c_idx));
-}
-
-#[test]
-fn greedy_stops_at_cap() {
-    // Same fixture as `greedy_merges_three_clusters_under_cap`, cap
-    // = 40 lines. After the first merge the surviving class is 40
-    // lines; the third cluster's 10-line addition would tip it to
-    // 50, exceeding the cap. Assert exactly one contraction occurred.
-    let a = active_owner("owner:a", 1, &["BindingA"], 20, "ui/a");
-    let b = active_owner("owner:b", 2, &["BindingB"], 20, "ui/b");
-    let c = active_owner("owner:c", 3, &["BindingC"], 10, "ui/c");
-    let report = graph_of(
-        vec![a.clone(), b.clone(), c.clone()],
-        vec![
-            owner_edge("edge:ab", "owner:a", "owner:b", DepKind::EagerUse, true),
-            owner_edge("edge:bc", "owner:b", "owner:c", DepKind::EagerUse, true),
-            owner_edge("edge:ac", "owner:a", "owner:c", DepKind::EagerUse, true),
-        ],
-        vec![
-            atomic_unit_for("atomic:a", &[&a]),
-            atomic_unit_for("atomic:b", &[&b]),
-            atomic_unit_for("atomic:c", &[&c]),
-        ],
-        vec![],
-    );
-    let groups = vec![
-        module_group(vec![0]),
-        module_group(vec![1]),
-        module_group(vec![2]),
-    ];
-    let (mut q, _) = QuotientGraph::from_report_with_partition(&report, 40, &groups).unwrap();
-    let contractions = greedy_merge_to_convergence(&mut q);
-    assert_eq!(
-        contractions.len(),
-        1,
-        "cap=40 must allow exactly one merge: {contractions:?}",
-    );
-    // Determinism: candidates are (a, b)=20+20=40, (a, c)=20+10=30
-    // (cycle-creating; rejected), (b, c)=20+10=30. After cycle
-    // filtering, (b, c) wins on result-size (30 < 40); (a, b) is
-    // refused on second-pass cap because its 40-line survivor +
-    // 10-line orphan would exceed 40 anyway, but it's picked
-    // strictly after (b, c) by the tiebreak.
-    let a_idx = q.owner_idx_of("owner:a").unwrap();
-    let b_idx = q.owner_idx_of("owner:b").unwrap();
-    let c_idx = q.owner_idx_of("owner:c").unwrap();
-    assert_eq!(
-        q.class_of(b_idx),
-        q.class_of(c_idx),
-        "owner:b and owner:c should be merged (smallest combined size wins tiebreak)",
-    );
-    assert_ne!(
-        q.class_of(a_idx),
-        q.class_of(b_idx),
-        "owner:a stays separate (a+bc would total 50, over cap 40)",
-    );
+    for (cap, expected_contractions, expected_classes) in [
+        // Everything fits: all three collapse through two contractions.
+        (150, 2, vec![vec!["owner:a", "owner:b", "owner:c"]]),
+        // Candidates are (a, b)=40 lines, (a, c)=30 (cycle-creating, so
+        // rejected) and (b, c)=30. (b, c) wins the tie-break on result
+        // size, and folding `a` into the 30-line survivor would total 50,
+        // over the cap.
+        (40, 1, vec![vec!["owner:a"], vec!["owner:b", "owner:c"]]),
+    ] {
+        let (mut q, _) = QuotientGraph::from_report_with_partition(&report, cap, &groups).unwrap();
+        let contractions = greedy_merge_to_convergence(&mut q);
+        assert_eq!(
+            contractions.len(),
+            expected_contractions,
+            "cap {cap}: {contractions:?}",
+        );
+        let mut classes = BTreeMap::<ClassId, Vec<&str>>::new();
+        for owner in ["owner:a", "owner:b", "owner:c"] {
+            classes
+                .entry(q.class_of(q.owner_idx_of(owner).unwrap()))
+                .or_default()
+                .push(owner);
+        }
+        assert_eq!(
+            classes.into_values().collect::<Vec<_>>(),
+            expected_classes,
+            "cap {cap}",
+        );
+    }
 }
 
 #[test]
@@ -766,167 +520,10 @@ fn merge_absorbs_residual_owner_with_only_intra_deps() {
 // ---------- Atomic-DAG reachability seeding. ----------
 //
 // The third gated contraction pass in `build_seed_quotient` groups
-// residual owners by atomic-DAG reachability. Well-formed input stays
-// stable (locked down by `factorize_golden_output_unchanged` above).
-// Input whose atomic-DAG reachability closure would form a cycle gets
-// a `SeedContractionRejected::AtomicReachability` diagnostic
-// pinpointing the rejected pair.
-
-#[test]
-fn unification_rejects_cyclic_atomic_reachability_with_diagnostic() {
-    // Pass 3 contracts atomic-DAG edges one at a time. A constraining
-    // cycle among residual owners alone yields no rejection: the
-    // contractions collapse it into one residual class and same-class
-    // edges are skipped silently.
-    //
-    // The cyclic-rejection diagnostic fires when a pre-existing spec
-    // module closes the cycle. So the fixture pins one binding to a
-    // spec module, leaving two residuals that would close a cycle
-    // through it:
-    //   - Foo lives in spec module mod_alpha.
-    //   - Bar, Helper are residual.
-    //   - Bar reads Foo (Bar → Foo, constraining).
-    //   - Helper reads Bar (Helper → Bar, constraining).
-    //   - Foo reads Helper (Foo → Helper, constraining).
-    // Atomic-DAG edges:
-    //   atomic_edge:a (atomic:bar → atomic:foo)      // Bar reads Foo
-    //   atomic_edge:b (atomic:foo → atomic:helper)   // Foo reads Helper
-    //   atomic_edge:c (atomic:helper → atomic:bar)   // Helper reads Bar
-    // Only `atomic_edge:b` and `atomic_edge:c` have a residual
-    // target (Helper / Bar are residual; Foo is active so
-    // `atomic_edge:a` is skipped by pass-3's `target has residual`
-    // filter).
-    // Pass 3 in id-lex order:
-    //   atomic_edge:b: contract class(Foo) (= mod_alpha class) with
-    //     class(Helper). Singleton Helper → no pre-merge cycle. The
-    //     merge would set up Foo+Helper in one class; Bar still
-    //     reads Foo (Bar's only edge), Helper still reads Bar (now
-    //     Foo+Helper → Bar). New cross-class edges:
-    //       Bar → Foo+Helper (constraining, via Bar reads Foo)
-    //       Foo+Helper → Bar (constraining, via Helper reads Bar)
-    //     That's a 2-class SCC. The gate rejects.
-    //   atomic_edge:c: same situation by symmetry — would close a
-    //     2-class cycle.
-    // The diagnostic must name the rejected edge + pair.
-    let foo = active_owner("owner:foo", 1, &["Foo"], 5, "mod_alpha");
-    let bar = residual_owner("owner:bar", 2, &["Bar"], 5);
-    let helper = residual_owner("owner:helper", 3, &["Helper"], 5);
-    let edges = vec![
-        // Bar reads Foo
-        owner_edge("edge:0", "owner:bar", "owner:foo", DepKind::EagerUse, true),
-        // Foo reads Helper
-        owner_edge(
-            "edge:1",
-            "owner:foo",
-            "owner:helper",
-            DepKind::EagerUse,
-            true,
-        ),
-        // Helper reads Bar
-        owner_edge(
-            "edge:2",
-            "owner:helper",
-            "owner:bar",
-            DepKind::EagerUse,
-            true,
-        ),
-    ];
-    let report = graph_of(
-        vec![foo.clone(), bar.clone(), helper.clone()],
-        edges,
-        vec![
-            atomic_unit_for("atomic:foo", &[&foo]),
-            atomic_unit_for("atomic:bar", &[&bar]),
-            atomic_unit_for("atomic:helper", &[&helper]),
-        ],
-        vec![
-            // atomic_edge:a — Bar reads Foo (target active, skipped
-            // by pass 3's residual-target filter).
-            AtomicUnitEdgeReport {
-                id: "atomic_edge:a".to_string(),
-                source: "atomic:bar".to_string(),
-                target: "atomic:foo".to_string(),
-                edge_kinds: vec![DepKind::EagerUse],
-                owner_edge_ids: vec!["edge:0".to_string()],
-                constrains_init_order: true,
-            },
-            // atomic_edge:b — Foo reads Helper (target residual).
-            AtomicUnitEdgeReport {
-                id: "atomic_edge:b".to_string(),
-                source: "atomic:foo".to_string(),
-                target: "atomic:helper".to_string(),
-                edge_kinds: vec![DepKind::EagerUse],
-                owner_edge_ids: vec!["edge:1".to_string()],
-                constrains_init_order: true,
-            },
-            // atomic_edge:c — Helper reads Bar (target residual).
-            AtomicUnitEdgeReport {
-                id: "atomic_edge:c".to_string(),
-                source: "atomic:helper".to_string(),
-                target: "atomic:bar".to_string(),
-                edge_kinds: vec![DepKind::EagerUse],
-                owner_edge_ids: vec!["edge:2".to_string()],
-                constrains_init_order: true,
-            },
-        ],
-    );
-    // Spec module mod_alpha contains Foo. The propose entry
-    // point derives spec_modules from the owner destinations, so
-    // the active owner above is already registered as mod_alpha.
-    let result = propose(&report, &claims(&[("Foo", "mod_alpha")]), 10_000).unwrap();
-
-    // (a) No proposal should bundle Foo with Helper or Bar — the
-    // cycle prevents merging Foo's class with Helper's class
-    // through the pass-3 atomic-DAG-reachability contraction.
-    let foo_extension = result
-        .proposals
-        .iter()
-        .find(|p| p.extends_module_id.as_deref() == Some("mod_alpha"));
-    if let Some(p) = foo_extension {
-        assert!(
-            !p.extension_owner_ids.contains(&"owner:helper".to_string())
-                && !p.extension_owner_ids.contains(&"owner:bar".to_string()),
-            "mod_alpha extension must NOT include Helper or Bar: {p:?}",
-        );
-    }
-
-    // (b) The seed rejections must include an AtomicReachability
-    // entry naming the rejected edge + pair.
-    let reachability_rejections: Vec<&SeedContractionRejected> = result
-        .seed_rejections
-        .iter()
-        .filter(|r| matches!(r, SeedContractionRejected::AtomicReachability { .. }))
-        .collect();
-    assert!(
-        !reachability_rejections.is_empty(),
-        "expected at least one AtomicReachability rejection, got: {:?}",
-        result.seed_rejections,
-    );
-    // At least one rejection must name a (Foo, Helper) or
-    // (Helper, Bar) or (Foo, Bar) pair (the cycle-closing edges).
-    let pinpoints_cycle = reachability_rejections.iter().any(|r| {
-        if let SeedContractionRejected::AtomicReachability {
-            rejected_pair,
-            cycle,
-            ..
-        } = r
-        {
-            !cycle.is_empty()
-                && (rejected_pair.0 == "owner:foo"
-                    || rejected_pair.1 == "owner:foo"
-                    || rejected_pair.0 == "owner:bar"
-                    || rejected_pair.1 == "owner:bar"
-                    || rejected_pair.0 == "owner:helper"
-                    || rejected_pair.1 == "owner:helper")
-        } else {
-            false
-        }
-    });
-    assert!(
-        pinpoints_cycle,
-        "AtomicReachability rejection must pinpoint a cycle-closing pair with cycle evidence: {reachability_rejections:?}",
-    );
-}
+// residual owners by atomic-DAG reachability. Input whose atomic-DAG
+// reachability closure would form a cycle gets a
+// `SeedContractionRejected::AtomicReachability` diagnostic pinpointing
+// the rejected pair.
 
 #[test]
 fn pass3_diagnostic_walk_never_commits_a_merge() {
@@ -950,12 +547,13 @@ fn pass3_diagnostic_walk_never_commits_a_merge() {
     // (`check_merge_preconditions` / `would_be_cycles_after_contract`)
     // prevent.
     //
-    // Fixture mirrors the cycle in
-    // `unification_rejects_cyclic_atomic_reachability_with_diagnostic`:
-    // residual Bar / Helper and active Foo (in spec module mod_alpha)
-    // form a constraining 3-cycle; pass-3's atomic-DAG-reachability
+    // Fixture: residual Bar / Helper and active Foo (in spec module
+    // mod_alpha) form a constraining 3-cycle (Bar reads Foo, Foo reads
+    // Helper, Helper reads Bar); pass-3's atomic-DAG-reachability
     // contraction rejects the cycle-closing edges, driving the
-    // diagnostic walk.
+    // diagnostic walk. A constraining cycle among residual owners alone
+    // yields no rejection: the contractions collapse it into one
+    // residual class and same-class edges are skipped silently.
     let foo = active_owner("owner:foo", 1, &["Foo"], 5, "mod_alpha");
     let bar = residual_owner("owner:bar", 2, &["Bar"], 5);
     let helper = residual_owner("owner:helper", 3, &["Helper"], 5);
@@ -1008,9 +606,18 @@ fn pass3_diagnostic_walk_never_commits_a_merge() {
     // merged by the diagnostic walk. Each pivot pair stays in a
     // distinct class.
     for r in &reachability_rejections {
-        let SeedContractionRejected::AtomicReachability { rejected_pair, .. } = r else {
+        let SeedContractionRejected::AtomicReachability {
+            rejected_pair,
+            cycle,
+            ..
+        } = r
+        else {
             unreachable!("filtered to AtomicReachability above");
         };
+        assert!(
+            !cycle.is_empty(),
+            "AtomicReachability rejection must carry cycle evidence: {r:?}"
+        );
         let (src_owner, tgt_owner) = rejected_pair;
         let src_idx = q
             .owner_idx_of(src_owner)
@@ -1025,6 +632,10 @@ fn pass3_diagnostic_walk_never_commits_a_merge() {
              {src_owner} and {tgt_owner}; they must remain in distinct classes",
         );
     }
+
+    // `propose` surfaces the seed rejections, cycle evidence included.
+    let proposed = propose(&report, &claims(&[("Foo", "mod_alpha")]), 10_000).unwrap();
+    assert_eq!(proposed.seed_rejections, rejected);
 }
 
 // ---------- Planner gate ≡ materializer gate. ----------

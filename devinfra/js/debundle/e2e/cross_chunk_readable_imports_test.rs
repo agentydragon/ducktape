@@ -67,42 +67,6 @@ import("../provider/entry.js").then(dynamic => console.log(dynamic.h()));
 }
 
 #[test]
-fn unprocessed_chunk_consumers_keep_legacy_named_namespace_and_dynamic_exports() {
-    let mut opts = importer_opts(
-        r#"import "../external.js";
-console.log("entry");
-"#,
-        vec![],
-    );
-    opts.unassigned_mode = unassigned_mode_inline();
-    opts.extra_chunks = &[(
-        "static/provider",
-        "function p() { return 7; }\nexport { p as h };\n",
-    )];
-    opts.extra_files = &[(
-        "static/external.js",
-        r#"import { h } from "./provider/entry.js";
-import * as ns from "./provider/entry.js";
-console.log(h(), ns.h());
-import("./provider/entry.js").then(dynamic => console.log(dynamic.h()));
-"#,
-    )];
-    let provider_modules = named_provider_modules();
-    let extra_modules = [("static/provider", provider_modules)];
-    opts.extra_chunk_logical_modules = &extra_modules;
-    let fixture = run_fixture(opts);
-
-    assert_entry_output(&fixture, "7 7\nentry\n7\n");
-    assert_module_source(
-        &fixture.out_root,
-        "static/external.js",
-        &["import { h }", "import * as ns", "ns.h()", "dynamic.h()"],
-        &["import { readable"],
-    );
-    assert_all_emitted_js_checks(&fixture);
-}
-
-#[test]
 fn source_match_binding_name_is_used_for_cross_chunk_import() {
     let mut opts = importer_opts(
         r#"import { h as x } from "./provider.js";

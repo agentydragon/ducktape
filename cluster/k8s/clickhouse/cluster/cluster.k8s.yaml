@@ -186,6 +186,40 @@ spec:
               storage: 2Gi
           storageClassName: local-path-ovh-hdd-retain
 ---
+apiVersion: generators.external-secrets.io/v1alpha1
+kind: Password
+metadata:
+  name: clickhouse-finance-agent-credentials
+  namespace: clickhouse
+spec:
+  allowRepeat: true
+  digits: 12
+  length: 48
+  noUpper: false
+  symbols: 0
+---
+apiVersion: external-secrets.io/v1
+kind: ExternalSecret
+metadata:
+  annotations:
+    description: Read-only finance-agent access to typed AIQuota history; never mounted by a sandbox.
+  name: clickhouse-finance-agent-credentials
+  namespace: clickhouse
+spec:
+  dataFrom:
+    - sourceRef:
+        generatorRef:
+          apiVersion: generators.external-secrets.io/v1alpha1
+          kind: Password
+          name: clickhouse-finance-agent-credentials
+  refreshPolicy: CreatedOnce
+  target:
+    name: clickhouse-finance-agent-credentials
+    template:
+      data:
+        password: "{{ .password }}"
+      type: Opaque
+---
 apiVersion: clickhouse.altinity.com/v1
 kind: ClickHouseInstallation
 metadata:
@@ -238,6 +272,18 @@ spec:
       default/networks/ip:
         - 127.0.0.1/32
         - ::1/128
+      finance_agent_aiquota/grants/query:
+        - GRANT SELECT ON aiquota.aiquota_windows
+      finance_agent_aiquota/networks/ip:
+        - 0.0.0.0/0
+        - ::/0
+      finance_agent_aiquota/password:
+        valueFrom:
+          secretKeyRef:
+            key: password
+            name: clickhouse-finance-agent-credentials
+      finance_agent_aiquota/profile: readonly
+      finance_agent_aiquota/quota: readonly
       grafana/grants/query:
         - GRANT SELECT ON aiquota.*
       grafana/networks/ip:
@@ -492,6 +538,16 @@ spec:
           podSelector:
             matchLabels:
               app.kubernetes.io/name: public-coder-agent-proxy
+      ports:
+        - port: 8123
+          protocol: TCP
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: agentplane-staging
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: agentplane-egress
       ports:
         - port: 8123
           protocol: TCP

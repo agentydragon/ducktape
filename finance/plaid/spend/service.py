@@ -12,7 +12,15 @@ import asyncpg
 from babel.numbers import get_currency_precision
 
 from finance.plaid.spend.allowance import AllowanceView, PaceAlert, Status, Transaction, calculate
-from finance.plaid.spend.models import AlertState, CardView, SpendConfiguration, SpendView
+from finance.plaid.spend.models import (
+    AlertState,
+    AllowanceConfigurationView,
+    CardConfigurationView,
+    CardView,
+    SpendConfiguration,
+    SpendConfigurationView,
+    SpendView,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -61,6 +69,32 @@ class SpendService:
         queue: asyncio.Queue[None] = asyncio.Queue(maxsize=1)
         self._subscribers.add(queue)
         return queue
+
+    def read_configuration(self) -> SpendConfigurationView:
+        configuration = self._configuration
+        policy = configuration.allowance
+        allowance = None
+        if policy is not None:
+            allowance = AllowanceConfigurationView(
+                monthly_minor_units=policy.monthly_minor_units,
+                activation_at=policy.activation_at,
+                currency=policy.currency,
+                spending_account_count=len(policy.spending_account_ids),
+                max_sync_age_hours=policy.max_sync_age_hours,
+                rules=policy.rules,
+            )
+        return SpendConfigurationView(
+            cards=[
+                CardConfigurationView(
+                    label=card.label,
+                    enabled=card.enabled,
+                    limit_minor_units=card.limit_minor_units,
+                    alert_threshold_percent=card.alert_threshold_percent,
+                )
+                for card in configuration.cards
+            ],
+            allowance=allowance,
+        )
 
     def unsubscribe(self, queue: asyncio.Queue[None]) -> None:
         self._subscribers.discard(queue)
@@ -124,10 +158,25 @@ class SpendService:
             for row in liability_rows:
                 if (cycle_start := _cycle_start(row["last_statement_issue_date"])) is not None:
                     cycle_starts[row["account_id"]] = cycle_start
-            dated_account_rows = [row for row in account_rows if row["account_id"] in cycle_starts]
+            statement_account_ids = set(cycle_starts)
+            missing_statement_ids = [row["account_id"] for row in account_rows if row["account_id"] not in cycle_starts]
+            if missing_statement_ids:
+                first_transactions = await connection.fetch(
+                    """SELECT t.account_id, MIN(t.date) AS first_date
+                       FROM public.transactions t
+                       JOIN public.accounts a ON a.account_id = t.account_id AND a.item_id = t.item_id
+                       JOIN public.links l ON l.item_id = a.item_id
+                       WHERE t.account_id = ANY($1::text[]) AND t.date <= $2
+                         AND t.removed IS FALSE AND l.status = 'active'
+                       GROUP BY t.account_id""",
+                    missing_statement_ids,
+                    today,
+                )
+                cycle_starts.update({row["account_id"]: row["first_date"] for row in first_transactions})
+            counted_accounts = [row for row in account_rows if row["account_id"] in cycle_starts]
             transaction_rows: list[asyncpg.Record] = []
-            if dated_account_rows:
-                first_cycle_start = min(cycle_starts[row["account_id"]] for row in dated_account_rows)
+            if counted_accounts:
+                first_cycle_start = min(cycle_starts[row["account_id"]] for row in counted_accounts)
                 transaction_rows = await connection.fetch(
                     """
                     SELECT t.account_id, t.transaction_id, t.date, t.amount, t.pending,
@@ -149,7 +198,7 @@ class SpendService:
                       )
                       AND t.removed IS FALSE AND l.status = 'active'
                     """,
-                    [row["account_id"] for row in dated_account_rows],
+                    [row["account_id"] for row in counted_accounts],
                     first_cycle_start,
                     today,
                 )
@@ -209,12 +258,15 @@ class SpendService:
 
             spend_minor_units = posted_minor_units + pending_minor_units
             limit_minor_units = card_config.limit_minor_units
+            statement_available = account_id in statement_account_ids
             spend_percent = (
                 float(Decimal(spend_minor_units) * Decimal(100) / Decimal(limit_minor_units))
-                if limit_minor_units is not None
+                if limit_minor_units is not None and statement_available
                 else None
             )
-            if spend_percent is not None and spend_percent >= 100:
+            if not statement_available:
+                alert_state = AlertState.UNAVAILABLE
+            elif spend_percent is not None and spend_percent >= 100:
                 alert_state = AlertState.EXCEEDED
             elif (
                 spend_percent is not None
@@ -241,7 +293,7 @@ class SpendService:
                     spend_percent=spend_percent,
                     alert_state=alert_state,
                     last_synced_at=_as_utc(account["last_synced_at"]),
-                    statement_available=True,
+                    statement_available=statement_available,
                 )
             )
         return SpendView(
@@ -280,16 +332,22 @@ class SpendService:
                     posted_minor_units=0,
                     pending_minor_units=0,
                     review_minor_units=0,
+                    review_transaction_count=0,
                     unmatched_refunds_minor_units=0,
                     windows_minor_units=None,
                     trailing_7_daily_minor_units=None,
+                    trailing_7_observed_daily_minor_units=None,
+                    trailing_30_observed_daily_minor_units=None,
+                    trailing_7_unmatched_count=None,
+                    trailing_7_unmatched_minor_units=None,
                     estimated_exhaustion_at=None,
                     alert_state=PaceAlert.UNAVAILABLE,
+                    spending_signal=PaceAlert.UNAVAILABLE,
                     last_synced_at=last_synced,
                     note="Account coverage or sync freshness unavailable; do not rely on the allowance.",
                 )
             rows = []
-            if policy.activation_at is not None and policy.activation_at <= now.date():
+            if policy.activation_at <= now.date():
                 rows = await connection.fetch(
                     """SELECT t.account_id, t.transaction_id, t.pending_transaction_id,
                               t.date, t.amount, t.pending, t.name, t.merchant_name,
@@ -301,7 +359,7 @@ class SpendService:
                        WHERE t.account_id = ANY($1::text[]) AND t.date >= $2 AND t.date <= $3
                          AND t.removed IS FALSE AND l.status = 'active'""",
                     list(policy.spending_account_ids),
-                    policy.activation_at,
+                    min(policy.activation_at, (now - timedelta(days=29)).date()),
                     now.date(),
                 )
         return calculate(

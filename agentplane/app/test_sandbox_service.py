@@ -1,5 +1,6 @@
 """The production app directory/bridge/archive against authenticated Sandbox Service gRPC."""
 
+import asyncio
 import logging
 from collections.abc import AsyncIterator
 from datetime import timedelta
@@ -21,7 +22,7 @@ from agentplane.app.threads.sessions import SandboxSessions
 from agentplane.app.threads.view.content import ContentStore
 from agentplane.protocol import command_pb2, event_log_pb2
 from agentplane.runner import protocol_pb2
-from agentplane.runner.conftest import RunnerHandle
+from agentplane.runner.testing.fixtures import RunnerHandle
 from agentplane.runner.testing.scripted_model import ScriptedModel, Text
 from agentplane.sandbox_service.client import Attachment, ReconnectRequiredError, ServiceError
 from agentplane.sandbox_service.testing.kubernetes import SANDBOX, Cluster, authenticated_service, kubernetes
@@ -61,17 +62,19 @@ async def test_production_bridge_archives_native_evidence_across_service_leases(
     monkeypatch: pytest.MonkeyPatch,
     caplog: pytest.LogCaptureFixture,
 ) -> None:
-    caplog.set_level(logging.DEBUG, logger="agentplane.app.threads.ingestion")
-    if lost_marker:
-        next_entry = Attachment.next_entry
+    marker_received = asyncio.Event()
+    next_entry = Attachment.next_entry
 
-        async def lose_marker(attachment: Attachment) -> event_log_pb2.EventEntry:
-            try:
-                return await next_entry(attachment)
-            except ReconnectRequiredError as error:
+    async def receive_marker(attachment: Attachment) -> event_log_pb2.EventEntry:
+        try:
+            return await next_entry(attachment)
+        except ReconnectRequiredError as error:
+            marker_received.set()
+            if lost_marker:
                 raise ConnectionError("lost terminal observation") from error
+            raise
 
-        monkeypatch.setattr(Attachment, "next_entry", lose_marker)
+    monkeypatch.setattr(Attachment, "next_entry", receive_marker)
     async with authenticated_service(cluster, runner.port, tmp_path / "service-token") as remote:
         directory = SandboxSessions(live_index, remote)
         ingester = Ingester(runners=directory, event_logs=event_logs, ingestion=ingestion)
@@ -98,12 +101,8 @@ async def test_production_bridge_archives_native_evidence_across_service_leases(
             assert receipt in await event_logs.events(thread, limit=1000)
             await model.reply(await model.request(), Text("FIRST"))
             # Observe actual renewal (or lost-marker recovery), not just elapsed wall time.
-            async for attempt in AsyncRetrying(
-                stop=stop_after_delay(10), wait=wait_fixed(0.1), retry=retry_if_exception_type(AssertionError)
-            ):
-                with attempt:
-                    notice = "reconnecting ingestion" if lost_marker else "renewing ingestion"
-                    assert any(notice in record.message for record in caplog.records)
+            async with asyncio.timeout(10):
+                await marker_received.wait()
             snapshot = await event_logs.feed_state(thread)
             assert snapshot is not None
             assert snapshot.end is None

@@ -3,25 +3,21 @@ import importlib.util
 import json
 import os
 import shlex
-import shutil
 import socket
 import subprocess
+import tempfile
 import uuid
 from datetime import datetime, timedelta
 from pathlib import Path
-from typing import Any
 from unittest.mock import Mock
 
 import pygit2
 import pytest
-import yaml
 from typer.testing import CliRunner
 
 from x.wt.server import github_client
 from x.wt.server.git_manager import GitManager
-from x.wt.server.gitstatusd_listener import find_gitstatusd_in_runfiles
 from x.wt.server.worktree_service import WorktreeService
-from x.wt.shared.config_file import ConfigFile
 from x.wt.shared.configuration import Configuration
 from x.wt.shared.fixtures import write_pr_fixtures_file
 from x.wt.shared.protocol import (
@@ -34,28 +30,25 @@ from x.wt.shared.protocol import (
     StatusResult,
     StatusResultOk,
 )
-from x.wt.testing.config_factory import ConfigFactory
-from x.wt.testing.mock_factory import MockFactory, ServiceBuilder
+from x.wt.testing.config_factory import ConfigFactory, gitstatusd_binary
+from x.wt.testing.mock_factory import ServiceBuilder
 from x.wt.testing.repo_factory import GitRepoFactory
 from x.wt.testing.utils import run_cli_command, wait_until
 
 
 @pytest.fixture(scope="session", autouse=True)
-def _project_root_on_pythonpath():
-    """Set a global test-mode env var for the WT suite without monkeypatch.
+def wt_test_mode():
+    """Run the suite, and the CLI/daemon subprocesses it spawns, in WT_TEST_MODE.
 
-    Session-scoped fixtures cannot depend on the function-scoped monkeypatch fixture.
-    Use direct os.environ mutation with a restore on teardown instead.
+    Test mode requires WT_DIR and the repos to sit under `tempfile.gettempdir()`. pytest_bazel
+    roots `tmp_path` at TEST_TMPDIR, which `tempfile` ignores unless TMPDIR points at it.
     """
-    prev = os.environ.get("WT_TEST_MODE")
-    os.environ["WT_TEST_MODE"] = "1"
-    try:
+    with pytest.MonkeyPatch.context() as mp:
+        mp.setenv("WT_TEST_MODE", "1")
+        if test_tmpdir := os.environ.get("TEST_TMPDIR"):
+            mp.setenv("TMPDIR", test_tmpdir)
+            mp.setattr(tempfile, "tempdir", None)  # drop the cached gettempdir() result
         yield
-    finally:
-        if prev is None:
-            os.environ.pop("WT_TEST_MODE", None)
-        else:
-            os.environ["WT_TEST_MODE"] = prev
 
 
 @pytest.fixture
@@ -70,18 +63,12 @@ def write_pr_fixtures():
 
 
 @pytest.fixture(autouse=True)
-def _disable_gh_cli_token(monkeypatch):
+def disable_gh_cli_token(monkeypatch):
     """Disable gh CLI token retrieval in all tests by default.
 
     Tests that truly need real GitHub should explicitly bypass or override this.
     """
     monkeypatch.setattr(github_client, "get_github_token", lambda *a, **kw: None)
-
-
-@pytest.fixture
-def mock_factory():
-    """Factory for creating configured mocks with standard behaviors."""
-    return MockFactory
 
 
 @pytest.fixture
@@ -119,6 +106,20 @@ def config_factory(temp_dir):
 
     def _factory_for_repo(repo_path: Path):
         return ConfigFactory(repo_path, temp_dir)
+
+    return _factory_for_repo
+
+
+@pytest.fixture
+def daemon_config_factory(temp_dir):
+    """`config_factory` for configurations a daemon runs on: they carry the gitstatusd binary.
+
+    The requesting test target must list `//third_party/gitstatusd` in `data`.
+    """
+    gitstatusd_path = gitstatusd_binary()
+
+    def _factory_for_repo(repo_path: Path):
+        return ConfigFactory(repo_path, temp_dir, gitstatusd_path=gitstatusd_path)
 
     return _factory_for_repo
 
@@ -287,46 +288,8 @@ def kill_daemon_at_wt_dir(wt_dir: Path) -> None:
     )
 
 
-def create_integration_test_config_file(repo_path: Path) -> Path:
-    """Create a test config file for integration tests using centralized helper.
-
-    Creates config in separate WT_DIR to test for baked-in assumptions.
-    """
-    # Put WT_DIR in separate location to test for baked-in assumptions about WT_DIR = MAIN_REPO/.wt
-    temp_parent = repo_path.parent
-    wt_dir = temp_parent / "WTDIR" / ".wt"
-
-    # Use centralized helper to create configuration
-    build_test_configuration(
-        repo_path,
-        wt_dir=wt_dir,
-        branch_prefix="test/",
-        upstream_branch="HEAD",
-        log_operations=False,
-        cow_method="copy",
-        github_repo=None,
-    )
-
-    return wt_dir / "config.yaml"
-
-
-@pytest.fixture(scope="session")
-def require_gitstatusd():
-    """Fixture that skips test if gitstatusd is not available.
-
-    Checks Bazel runfiles first (hermetic test execution), then PATH.
-    Integration tests that need gitstatusd should depend on this fixture.
-    Not autouse - unit tests can run without gitstatusd.
-    """
-    if find_gitstatusd_in_runfiles():
-        return
-    if shutil.which("gitstatusd"):
-        return
-    pytest.skip("gitstatusd not available (not in runfiles or PATH)")
-
-
 @pytest.fixture
-def real_temp_repo(repo_factory, require_gitstatusd):
+def real_temp_repo(repo_factory):
     """Create real temporary git repository for integration tests.
 
     Uses modern repo_factory internally but maintains compatibility with
@@ -336,13 +299,13 @@ def real_temp_repo(repo_factory, require_gitstatusd):
 
 
 @pytest.fixture
-def real_config(real_temp_repo, config_factory) -> Configuration:
+def real_config(real_temp_repo, daemon_config_factory) -> Configuration:
     """Create real configuration for integration tests.
 
     This fixture provides the Configuration object directly for tests
     that need to access config properties like worktrees_dir, main_repo, etc.
     """
-    factory = config_factory(real_temp_repo)
+    factory = daemon_config_factory(real_temp_repo)
     config: Configuration = factory.integration(github_repo=None)
     return config
 
@@ -423,10 +386,10 @@ def wtcli():
 
 
 @pytest.fixture
-def real_env_with_existing_worktrees(real_temp_repo, config_factory):
+def real_env_with_existing_worktrees(real_temp_repo, daemon_config_factory):
     """Set up real environment with pre-created worktrees for complex tests."""
     # Create config using factory pattern
-    factory = config_factory(real_temp_repo)
+    factory = daemon_config_factory(real_temp_repo)
     config = factory.integration(github_repo=None)
 
     # Ensure clean daemon state for this WT_DIR before creating worktrees
@@ -465,44 +428,10 @@ def test_config(repo_factory, config_factory) -> Configuration:
     return config
 
 
-def build_test_configuration(repo_path: Path, wt_dir: Path | None = None, **config_overrides) -> Configuration:
-    """Centralized helper to build test configurations with the standard pattern.
-
-    This eliminates duplication of the ConfigFile → YAML → Configuration.resolve workflow.
-    """
-    if wt_dir is None:
-        wt_dir = repo_path / ".wt"
-
-    # Default config suitable for most tests
-    defaults: dict[str, Any] = {
-        "main_repo": str(repo_path),
-        "worktrees_dir": str(repo_path / "worktrees"),
-        "branch_prefix": "test/",
-        "upstream_branch": "main",
-        "github_repo": None,
-        "log_operations": True,
-        "cache_expiration": 3600,
-        "cache_refresh_age": 300,
-        "hidden_worktree_patterns": [],
-        "gitstatusd_path": None,
-        "cow_method": "copy",
-    }
-
-    config_file = ConfigFile(**{**defaults, **config_overrides})
-
-    # Save to .wt directory
-    wt_dir.mkdir(parents=True, exist_ok=True)
-    config_path = wt_dir / "config.yaml"
-
-    config_path.write_text(yaml.dump(config_file.model_dump()), encoding="utf-8")
-
-    return Configuration.resolve(wt_dir)
-
-
 # Apply hermetic git environment to every test to prevent leakage from user/system config
 # Ensures subprocesses inherit HOME/XDG/GIT_* isolation unless a test explicitly overrides
 @pytest.fixture(autouse=True)
-def _apply_isolated_git_env(tmp_path: Path, monkeypatch):
+def isolated_git_env(tmp_path: Path, monkeypatch):
     """Apply hermetic git environment per test to prevent leakage.
 
     Sets HOME/XDG_CONFIG_HOME; GIT_* vars are set via pytest config.

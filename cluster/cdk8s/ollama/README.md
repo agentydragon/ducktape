@@ -1,9 +1,31 @@
 # Ollama
 
-`app.py` packages Ollama's ConfigMaps from the files beside it: `setup-gpt-oss-v2.sh`,
+`app.py` renders `setup-gpt-oss-v2.sh.j2` using the source declarations in
+`model_catalog/ollama.py` and packages the result as `setup-gpt-oss-v2.sh`.
+Those declarations also feed LiteLLM routing; provisioning does not depend on
+LiteLLM's route roster. Other ConfigMap inputs beside `app.py` are
 `link-ssd-models.sh` and the two shard manifests (`gpt-oss-scripts`), and the nginx
 bearer proxy's configuration (`ollama-auth-proxy`). `qwen38-chat-template.jinja` is
 not deployed; it is the derivation input below.
+
+## Deferred provisioning cleanup
+
+TODO([#9233](https://github.com/agentydragon/ducktape/issues/9233)): keep the current
+shell/Jinja executor for now. Revisit these options separately from the roster work:
+
+- A small one-shot image using the [official Python client](https://github.com/ollama/ollama-python):
+  reuse its create/pull calls and typed progress instead of writing HTTP/JSON parsing.
+  Generate configuration data, not executable source; check terminal success explicitly.
+- An [operator for an existing Ollama server](https://github.com/dmk/ollama-operator),
+  later: verify custom model/alias support and retention before adopting its pull/delete
+  lifecycle. Broader serving operators are a separate deployment decision.
+- [Ollama Helm](https://github.com/otwld/ollama-helm) supports declarative pull/create,
+  but uses templated shell in a serving-container startup hook. NixOS and Terraform
+  partial alternatives, plus the source-inspection findings, are recorded in the issue.
+
+No replacement is selected. Any image/Job change needs an explicit version/rerun plan
+for the immutable setup Job and the shared-volume constraint described below; no
+incidental provisioning, pruning, storage changes or consumer reactivation.
 
 ## Direct bearer token
 

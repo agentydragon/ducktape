@@ -379,6 +379,20 @@ re-assemble a bundle at runtime. Per-client details (`pygit2` ignores
   only way to hold a security boundary, or where it exercises an analyzer whose job is
   detecting the pattern; a refactor adds no tests pinning its new architecture, though a
   rare high-level check such as "importing `x` does not import expensive `y`" may stay.
+- **Assert structured results, not wording**: tests rarely assert exact human-readable
+  text — prompt or instruction text, UI copy, labels, error, log and CLI messages. Assert
+  what the text stands for: an error type or code, an enum, a state, a structured field,
+  which item rendered, that a part was included. A test that exists only to show a prompt
+  tells the agent to do X is cut: the intent goes in a comment on the prompt template or in
+  the README. A `match=` that lint requires (a bare `ValueError`, `OSError` or `Exception`)
+  stays; never narrow the class or silence the rule to drop it. Text is asserted only where:
+  - a program parses the string;
+  - an outside protocol holds it (OAuth, MCP, HTTP);
+  - it is legal or safety text;
+  - a replayed or live model verifies the prompt end to end;
+  - the test is that a log entry was emitted: it may match a text marker, though a
+    structured field is preferred where that does not make production code much heavier;
+  - a UI-driven test checks a narrow snippet of copy the user sees.
 - **No pure change-detector tests**: every expectation encodes a durable rule, not the
   artifact's current state. Copying a checked-in file's values, shape, or roster into
   assertions is not coverage — an intentional edit changes the test in lockstep, so it
@@ -480,6 +494,24 @@ re-assemble a bundle at runtime. Per-client details (`pygit2` ignores
 - **`textwrap.dedent`** for inline multiline strings (YAML, JSON, scripts) so test
   indentation stays readable.
 
+### Frontend specs (vitest)
+
+How a `vitest_test` is built is under TypeScript above; what a spec may assume is here.
+
+- **A spec is `<module>.test.ts[x]`** beside the module it tests.
+- **`node` unless the spec needs a DOM.** A package's `vitest_config` has `environment = "node"`, and
+  a spec that needs a DOM says so on its first line, `// @vitest-environment happy-dom`. The config's
+  `data` lists `//:node_modules/happy-dom`: `vitest_config` adds the default environment's package,
+  not a pragma's.
+- **happy-dom is the DOM.** A spec that fails under it may use `jsdom` instead (`//:node_modules/jsdom`
+  in `data`), with the cause in a comment under the pragma and a `CLEANUP` tombstone (§ Tombstones)
+  whose condition is a check that ends the exception. Passing under both is not a reason: the
+  default's choice stands.
+- **Lint**: the `@vitest/eslint-plugin` recommended rules are errors on every frontend's
+  `*.test.{ts,tsx}` (`eslint.config.js`), so `.only`, `.skip`, a test without an `expect` and an
+  unawaited async matcher fail the build. `valid-expect` allows vitest's second argument, the failure
+  message that names the case in a loop.
+
 ### Waiting
 
 **Never sleep for a duration; wait for the condition.** A blind delay is wrong in both
@@ -487,10 +519,10 @@ directions at once: too short on a loaded CI runner, where it flakes, and too lo
 run that did not need it. It also hides what is being awaited — the number is a guess nobody
 can check, so it only ever ratchets up.
 
-Wait for the thing itself. In Puppeteer that is `waitForSelector` (including
-`{ hidden: true }`), `waitForFunction`, `waitForNetworkIdle`, or `waitUntil: "networkidle0"`.
-For "the page finished rendering what it has", use `waitForStable` from
-<util/testing/frontend_visual/capture.mjs> — `document.fonts.ready`, images decoded, a painted
+Wait for the thing itself. In Playwright that is `wait_for_selector` (including
+`state="hidden"`), `wait_for_function`, or `wait_for_load_state("networkidle")`.
+For "the page finished rendering what it has", use `wait_for_stable` from
+<util/testing/page_capture.py> — `document.fonts.ready`, images decoded, a painted
 frame — rather than a delay after mount.
 
 When the condition is app-internal (data arrived, a component mounted lazily), expose it as a

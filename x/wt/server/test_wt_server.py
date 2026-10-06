@@ -1,0 +1,93 @@
+import asyncio
+
+import psutil
+import pytest
+import pytest_bazel
+
+from x.wt.server import wt_server
+from x.wt.server.types import DiscoveredWorktree
+from x.wt.server.worktree_ids import make_worktree_id
+from x.wt.server.wt_server import WtDaemon
+
+
+async def test_registration_survives_discovery_scan_that_predates_it(real_config, monkeypatch):
+    daemon = WtDaemon(real_config)
+    scan_started = asyncio.Event()
+    release_scan = asyncio.Event()
+
+    async def scan_before_creation(_worktrees_dir):
+        scan_started.set()
+        await release_scan.wait()
+        return set()
+
+    async def start_nothing(_info):
+        return None
+
+    monkeypatch.setattr(wt_server, "scan_worktrees", scan_before_creation)
+    monkeypatch.setattr(daemon, "_start_gitstatusd_for_worktree", start_nothing)
+
+    discovery = asyncio.create_task(daemon._run_discovery_once())
+    await scan_started.wait()
+    created = DiscoveredWorktree(real_config.worktrees_dir / "created", "created", make_worktree_id("created"))
+    registration = asyncio.create_task(daemon.register_worktree(created))
+    release_scan.set()
+    await asyncio.gather(discovery, registration)
+
+    assert daemon.worktree_index is not None
+    assert daemon.worktree_index.get_by_name("created") == created
+
+
+async def test_worktree_found_by_a_scan_while_being_registered_gets_one_gitstatusd(real_config, monkeypatch):
+    daemon = WtDaemon(real_config)
+    created = DiscoveredWorktree(real_config.worktrees_dir / "created", "created", make_worktree_id("created"))
+    created.path.mkdir()
+    scan_started = asyncio.Event()
+    release_scan = asyncio.Event()
+
+    async def scan_that_sees_the_worktree(_worktrees_dir):
+        scan_started.set()
+        await release_scan.wait()
+        return {created}
+
+    monkeypatch.setattr(wt_server, "scan_worktrees", scan_that_sees_the_worktree)
+
+    def gitstatusd_children() -> list[psutil.Process]:
+        return [p for p in psutil.Process().children() if p.cmdline()[:1] == [str(real_config.gitstatusd_path)]]
+
+    try:
+        discovery = asyncio.create_task(daemon._run_discovery_once())
+        await scan_started.wait()
+        registration = asyncio.create_task(daemon.register_worktree(created))
+        release_scan.set()
+        await asyncio.gather(discovery, registration)
+
+        assert len(gitstatusd_children()) == 1
+    finally:
+        await daemon.stop()
+        for orphan in gitstatusd_children():
+            orphan.kill()
+
+
+async def test_failed_initial_discovery_fails_the_startup_handshake(real_config, monkeypatch):
+    handshakes = []
+    monkeypatch.setattr(wt_server, "write_startup_handshake", lambda **kwargs: handshakes.append(kwargs))
+
+    async def refuse_scan(_worktrees_dir):
+        raise OSError("scan refused")
+
+    monkeypatch.setattr(wt_server, "scan_worktrees", refuse_scan)
+    daemon = WtDaemon(real_config)
+
+    try:
+        with pytest.raises(OSError, match="scan refused"):
+            await daemon.start()
+    finally:
+        await daemon.stop()
+
+    assert not any(handshake.get("ready") for handshake in handshakes)
+    assert handshakes[-1]["success"] is False
+    assert "scan refused" in handshakes[-1]["error_message"]
+
+
+if __name__ == "__main__":
+    pytest_bazel.main()

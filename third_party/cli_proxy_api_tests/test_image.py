@@ -51,8 +51,9 @@ def test_image_serves_bundled_ui_and_preserves_key_authentication(tmp_path: Path
             assert response.json() == {"authenticated": False, "oidcEnabled": False}
             ui = client.get("/management.html")
             assert ui.status_code == 200
+            # Routes that only the patched management UI hardcodes: session discovery and the SSO sign-in target.
             assert "/v0/management/session" in ui.text
-            assert "Sign in with SSO" in ui.text
+            assert "/v0/management/login" in ui.text
 
             assert client.get("/v1/models").status_code == 401
             models = client.get("/v1/models", headers={"Authorization": f"Bearer {CLIENT_KEY}"})

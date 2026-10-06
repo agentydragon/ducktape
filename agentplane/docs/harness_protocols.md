@@ -199,7 +199,7 @@ clears whatever was pending for it (`InputQueue::clear_pending`), so there is no
 one joined message without killing the turn it joined.
 
 Codex additionally ships a **separate, durable queue** unrelated to steering/joining
-(`codex-rs/ext/queue`, present in the `rust-v0.152.0` pin): `thread/queue/{add,list,update,delete,
+(`codex-rs/ext/queue`, present in the runner-matched `rust-v0.157.0` source): `thread/queue/{add,list,update,delete,
 reorder,start}` plus a `thread/queue/changed {threadId}` notification (all `#[experimental(...)]`
 on the wire — opt-in requirements against the pinned binary are unconfirmed). Unlike joining, a
 queued item does not affect the active turn at all; it is SQLite-backed

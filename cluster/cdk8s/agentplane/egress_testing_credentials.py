@@ -10,12 +10,13 @@ from cluster.cdk8s.agentplane.egress_credentials import (
     EXTERNAL_CREDS_STORE,
     GITHUB_PAT_SECRET,
     credential_external_secret,
+    inference_credentials,
 )
 
 
 def add_testing_egress_credentials(scope: Construct, *, credentials_namespace: str) -> None:
     construct = Construct(scope, "testing-egress-credentials")
-    ServiceAccount(
+    reader = ServiceAccount(
         construct, "reader", metadata=ApiObjectMetadata(name=EXTERNAL_CREDS_READER, namespace=credentials_namespace)
     )
     credential_external_secret(
@@ -34,3 +35,4 @@ def add_testing_egress_credentials(scope: Construct, *, credentials_namespace: s
         key="api-key",
         store=EXTERNAL_CREDS_STORE,
     )
+    inference_credentials(construct, reader=reader, credentials_namespace=credentials_namespace)

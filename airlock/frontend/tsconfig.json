@@ -15,5 +15,5 @@
     "strict": true,
     "types": []
   },
-  "include": ["*.ts", "*.tsx", "visual/**/*.ts", "visual/**/*.tsx"]
+  "include": ["*.ts", "*.tsx", "harness/**/*.ts", "harness/**/*.tsx"]
 }

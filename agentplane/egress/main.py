@@ -1,4 +1,4 @@
-"""Run the Agentplane egress proxy: policy from one namespace, over sandboxes in another."""
+"""Run the Agentplane egress proxy: egress policies from one namespace, over sandboxes in another."""
 
 from __future__ import annotations
 
@@ -48,7 +48,7 @@ class Settings(BaseSettings):
 
     rules_namespace: str = Field(
         description="The one namespace holding the EgressPolicy, EgressBinding and EgressCredential objects this "
-        "proxy enforces. One deployment serves one policy set; a caller's own namespace is unrelated to it."
+        "proxy enforces. One deployment serves one egress-policy set; a caller's own namespace is unrelated to it."
     )
     credentials_namespace: str = Field(description="Namespace the rules' Secrets are read from.")
     allowed_service_account_namespaces: frozenset[str] = Field(

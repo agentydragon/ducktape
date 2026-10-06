@@ -62,7 +62,7 @@ pkg_tar(
     ],
 )
 
-# E2E test container: python:3.14-slim base + curl + git + JDK from trixie,
+# E2E test container: python:3.14-slim base + curl + git from trixie,
 # bazelisk + sops as static binaries. The Debian package set is in MODULE.bazel.
 oci_image(
     name = "e2e_container_image",

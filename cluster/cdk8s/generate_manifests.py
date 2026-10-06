@@ -28,6 +28,7 @@ from cluster.cdk8s import (
     egress_fences,
     etcd,
     external_creds,
+    external_dns,
     flux,
     flux_monitoring,
     flux_sources,
@@ -526,16 +527,8 @@ def generate_manifests(root: Path) -> None:
     claude_rbac_kustomization = agent_rbac_base.claude_rbac(
         flux_chart, write_directory(root, claude_rbac_artifact, agent_rbac_base.chart), kyverno_policies_kustomization
     )
-    clickhouse_artifact = artifact("clickhouse", clickhouse_installation.OUTPUT_DIR)
     vpa_artifact = artifact("vpa", vpa.OUTPUT_DIR)
     vpa.vpa(flux_chart, write_directory(root, vpa_artifact, vpa.chart), kyverno_kustomization)
-    clickhouse_kustomization = clickhouse_installation.clickhouse(
-        flux_chart,
-        write_directory(
-            root, clickhouse_artifact, *clickhouse_installation.CHARTS, siblings=clickhouse_installation.SOPS_FILES
-        ),
-        clickhouse_operator_kustomization,
-    )
     dcgm_exporter_artifact = artifact("dcgm-exporter", dcgm_exporter_exporter.OUTPUT_DIR)
     dcgm_exporter_exporter.dcgm_exporter(
         flux_chart,
@@ -566,6 +559,15 @@ def generate_manifests(root: Path) -> None:
         external_secrets_crds_kustomization,
         cert_manager_kustomization,
     )
+    clickhouse_artifact = artifact("clickhouse", clickhouse_installation.OUTPUT_DIR)
+    clickhouse_kustomization = clickhouse_installation.clickhouse(
+        flux_chart,
+        write_directory(
+            root, clickhouse_artifact, *clickhouse_installation.CHARTS, siblings=clickhouse_installation.SOPS_FILES
+        ),
+        clickhouse_operator_kustomization,
+        external_secrets_operator_kustomization,
+    )
     budget_namespace_artifact = artifact("budget-namespace", forgejo_budget_namespace.OUTPUT_DIR)
     forgejo_budget_namespace.budget_namespace(
         flux_chart,
@@ -584,7 +586,11 @@ def generate_manifests(root: Path) -> None:
         external_secrets_operator_kustomization,
     )
     gateway_artifact = artifact("gateway", gateway.OUTPUT_DIR)
-    gateway.gateway(flux_chart, write_directory(root, gateway_artifact, gateway.chart), kyverno_kustomization)
+    gateway.gateway(
+        flux_chart,
+        write_directory(root, gateway_artifact, functools.partial(gateway.chart, mesh=mesh)),
+        kyverno_kustomization,
+    )
     tofu_controller_artifact = artifact("tofu-controller", tofu_controller_release.OUTPUT_DIR)
     tofu_controller_kustomization = tofu_controller_release.tofu_controller(
         flux_chart,
@@ -697,9 +703,21 @@ def generate_manifests(root: Path) -> None:
     dns_automation_artifact = artifact("dns-automation", dns_automation.OUTPUT_DIR)
     dns_automation.dns_automation(
         flux_chart,
-        write_directory(root, dns_automation_artifact, functools.partial(dns_automation.chart, mesh=mesh)),
+        write_directory(root, dns_automation_artifact, dns_automation.chart),
         tofu_controller_kustomization,
         external_secrets_operator_kustomization,
+    )
+    external_dns_artifact = artifact("external-dns", external_dns.OUTPUT_DIR)
+    external_dns_kustomization = external_dns.external_dns(
+        flux_chart,
+        write_directory(root, external_dns_artifact, external_dns.chart),
+        external_secrets_operator_kustomization,
+    )
+    external_dns_records_artifact = artifact("external-dns-records", external_dns.RECORDS_OUTPUT_DIR)
+    external_dns.records(
+        flux_chart,
+        write_directory(root, external_dns_records_artifact, functools.partial(external_dns.records_chart, mesh=mesh)),
+        external_dns_kustomization,
     )
     infra_drift_artifact = artifact("infra-drift", drift_watch.OUTPUT_DIR)
     drift_watch.infra_drift(
@@ -761,7 +779,7 @@ def generate_manifests(root: Path) -> None:
         user_agentydragon_kustomization,
     )
     authentik_tf_artifact = artifact(authentik_tf.NAME, authentik_tf.OUTPUT_DIR)
-    authentik_tf_kustomization = authentik_tf.authentik_tf(
+    authentik_tf.authentik_tf(
         flux_chart,
         write_directory(
             root,
@@ -1116,7 +1134,6 @@ def generate_manifests(root: Path) -> None:
         cnpg_kustomization,
         external_secrets_operator_kustomization,
         authentik_kustomization,
-        authentik_tf_kustomization,
     )
     tana_mcp_artifact = artifact("tana-mcp", tana_mcp.OUTPUT_DIR)
     tana_mcp_kustomization = agents_flux_kustomizations.tana_mcp(
@@ -1629,6 +1646,8 @@ def generate_manifests(root: Path) -> None:
             dcgm_exporter_artifact,
             descheduler_artifact,
             dns_automation_artifact,
+            external_dns_artifact,
+            external_dns_records_artifact,
             flux_grafana_secrets_artifact,
             flux_image_automation_forgejo_artifact,
             flux_webhook_artifact,

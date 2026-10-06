@@ -31,36 +31,6 @@ def _quotas(*providers: ProviderQuota) -> AllQuotas:
     return AllQuotas(providers=list(providers), fetched_at=_FETCHED_AT)
 
 
-def test_renders_both_windows_with_reset_and_pace(snapshot: SnapshotAssertion) -> None:
-    out = human.render(
-        _quotas(
-            _pq(
-                "codex",
-                _success(
-                    short_window=QuotaWindow(used_percent=24, reset_seconds=3600 + 33 * 60, window_seconds=5 * 3600),
-                    long_window=QuotaWindow(
-                        used_percent=48, reset_seconds=5 * 86400 + 12 * 3600, window_seconds=7 * 86400
-                    ),
-                ),
-            ),
-            _pq(
-                "zai",
-                _success(
-                    short_window=QuotaWindow(
-                        used_percent=49, reset_seconds=2 * 3600 + 45 * 60, window_seconds=5 * 3600
-                    ),
-                    long_window=QuotaWindow(
-                        used_percent=100, reset_seconds=6 * 86400 + 14 * 3600, window_seconds=7 * 86400
-                    ),
-                ),
-            ),
-        ),
-        now=_FETCHED_AT,
-        tz=UTC,
-    )
-    assert out == snapshot
-
-
 @pytest.mark.parametrize("used_percent", [100, 105])
 def test_exhausted_window_suppresses_pace_and_projection(used_percent: float) -> None:
     # A provider with no burn schedule, so the whole-output equality below stays

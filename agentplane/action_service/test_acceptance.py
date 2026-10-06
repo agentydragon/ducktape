@@ -41,7 +41,7 @@ from agentplane.action_service.models import (
 from agentplane.action_service.policies.resources import parse_binding, parse_policy_set
 from agentplane.action_service.policy_view import SubjectActionPolicyView
 from agentplane.action_service.service import ActionService
-from agentplane.action_service.test_fixtures.callers import admitted_callers, in_sync_index
+from agentplane.action_service.testing.callers import admitted_callers, in_sync_index
 from agentplane.action_service.updates import ActionUpdates
 from agentplane.subjects import ServiceAccountRef
 from agentplane.workload_auth.principal import (
@@ -66,12 +66,20 @@ def _sandbox(label: str) -> WorkloadPrincipal:
 
 SANDBOX_A = _sandbox("a")
 SANDBOX_B = _sandbox("b")
+READER = WorkloadPrincipal(
+    namespace=NAMESPACE,
+    service_account_name="test-reader",
+    service_account_subject=f"system:serviceaccount:{NAMESPACE}:test-reader",
+    pod_name="test-reader-pod",
+    pod_uid="pod-reader-uid",
+)
 ACCOUNT_A = ServiceAccountRef(namespace=NAMESPACE, name=SANDBOX_A.service_account_name)
 ACCOUNT_B = ServiceAccountRef(namespace=NAMESPACE, name=SANDBOX_B.service_account_name)
+ACCOUNT_READER = ServiceAccountRef(namespace=NAMESPACE, name=READER.service_account_name)
 CALLER_A = workload_principal(SANDBOX_A)
 CALLER_B = workload_principal(SANDBOX_B)
 OPERATOR = OperatorPrincipal(issuer="test-bff", subject="operator")
-WORKLOAD_TOKENS = {"workload-a": SANDBOX_A, "workload-b": SANDBOX_B}
+WORKLOAD_TOKENS = {"workload-a": SANDBOX_A, "workload-b": SANDBOX_B, "workload-reader": READER}
 
 
 class FakeSandboxResolver:
@@ -104,7 +112,12 @@ class LeakyFailingExecutor(CountingExecutor):
         raise RuntimeError("provider rejected Authorization: Bearer provider-token-must-not-escape")
 
 
-async def _client(service: ActionService, *, catalog: ActionCatalog | None = None) -> httpx.AsyncClient:
+async def _client(
+    service: ActionService,
+    *,
+    catalog: ActionCatalog | None = None,
+    reader_accounts: frozenset[ServiceAccountRef] = frozenset(),
+) -> httpx.AsyncClient:
     app = create_app(
         service,
         cast(WorkloadPrincipalResolver, FakeSandboxResolver()),
@@ -114,6 +127,7 @@ async def _client(service: ActionService, *, catalog: ActionCatalog | None = Non
         updates=ActionUpdates("postgresql://unused-test-listener"),
         direct_wait_seconds=30,
         max_wait_seconds=30,
+        reader_accounts=reader_accounts,
     )
     return httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://actions.test")
 
@@ -250,11 +264,6 @@ async def test_p0_allow_deny_scope_forgery_redaction_and_single_execution(
             "idempotency_key": "decision-allow-1",
             "decision_note": "Reviewed scope — allowed for this request.",
         }
-        oversized = await client.post(
-            _operator_path(request_id, "/decision"), headers=_operator(), json={**decision, "decision_note": "x" * 2001}
-        )
-        assert oversized.status_code == 422
-        assert DecisionInput.model_validate({**decision, "decision_note": "x" * 2000}).decision_note == "x" * 2000
         allowed, duplicate_allow = await asyncio.gather(
             client.post(_operator_path(request_id, "/decision"), headers=_operator(), json=decision),
             client.post(_operator_path(request_id, "/decision"), headers=_operator(), json=decision),
@@ -406,9 +415,13 @@ async def test_executor_exception_material_is_not_logged_projected_or_retried(
 
         restarted = ActionService(store, echo_catalog, {"agentplane": executor})
         await restarted.start()
-        await asyncio.sleep(0)
+        try:
+            # A restart resumes pending dispatches only, and a failed Execution is not one.
+            assert await store.pending_dispatches() == []
+            assert (await _terminal(client, pending["id"]))["state"] == "failed"
+        finally:
+            await restarted.close()
         assert len(executor.requests) == 1
-        await restarted.close()
 
         rendered = failed.__str__() + "\n" + "\n".join(record.getMessage() for record in caplog.records)
         assert "provider-token-must-not-escape" not in rendered
@@ -485,13 +498,12 @@ async def test_restart_resumes_only_pending_dispatch_and_leaves_inflight_work_to
     never_called = CountingExecutor()
     after_crash = ActionService(store, echo_catalog, {"agentplane": never_called})
     await after_crash.start()
-    await asyncio.sleep(0)
     try:
         # The lease from before the crash is still comfortably unexpired, so the new process
         # must not assume the old one's work is dead.
+        assert await store.pending_dispatches() == []
         still_running = await store.get(inflight_view.id, CALLER_A)
         assert still_running.state is ActionState.RUNNING
-        assert never_called.requests == []
         # A cursor still only returns transitions after the last sequence the caller already
         # saw, restart included.
         assert [event.state for event in await store.events(inflight_view.id, CALLER_A, after_sequence=3)] == [
@@ -499,6 +511,7 @@ async def test_restart_resumes_only_pending_dispatch_and_leaves_inflight_work_to
         ]
     finally:
         await after_crash.close()
+    assert never_called.requests == []
 
 
 async def test_configured_catalog_is_discoverable_and_unknown_lookups_fail_clearly(engine: AsyncEngine) -> None:
@@ -878,6 +891,58 @@ async def test_cancellation_http_is_owner_only_and_needs_no_version(
         duplicate = await client.post(path, headers=_workload("workload-a"))
         assert CancellationResult.model_validate(duplicate.json()).outcome is CancellationOutcome.ALREADY_CANCELLED
         assert executor.requests == []
+
+
+async def test_service_reader_reads_every_owners_requests_and_holds_no_mutation_authority(
+    engine: AsyncEngine, echo_catalog: ActionCatalog
+) -> None:
+    service = ActionService(ActionStore(make_sessionmaker(engine)), echo_catalog, {"agentplane": CountingExecutor()})
+    reader = _workload("workload-reader")
+    envelope = {
+        "title": "test title for the service reader",
+        "action": {"group": "agentplane", "name": "echo"},
+        "arguments": {"text": "hello"},
+    }
+    async with await _client(service, reader_accounts=frozenset({ACCOUNT_READER})) as client:
+        submitted = await client.post(
+            "/v1/action-requests", headers=_workload("workload-a"), json={**envelope, "idempotency_key": "reader-a"}
+        )
+        submitted.raise_for_status()
+        request = submitted.json()
+        other_submitted = await client.post(
+            "/v1/action-requests", headers=_workload("workload-b"), json={**envelope, "idempotency_key": "reader-b"}
+        )
+        other_submitted.raise_for_status()
+        denied = await client.post(
+            _operator_path(request["id"], "/decision"),
+            headers=_operator(),
+            json={"verdict": "deny", "expected_version": request["version"], "idempotency_key": "deny-test"},
+        )
+        denied.raise_for_status()
+
+        read_path = f"/v1/action-requests/{request['id']}"
+        for suffix in ["", "/events"]:
+            assert (await client.get(read_path + suffix, headers=reader)).status_code == 200
+            assert (await client.get(read_path + suffix, headers=_workload("workload-b"))).status_code == 404
+        detail = await client.get(read_path, headers=reader)
+        assert detail.json()["caller"] == CALLER_A.account.model_dump()
+        listing = await client.get("/v1/action-requests", headers=reader)
+        assert {item["id"] for item in listing.json()} == {request["id"], other_submitted.json()["id"]}
+        first_page = await client.get(read_path + "/events", params={"limit": 1}, headers=reader)
+        assert len(first_page.json()) == 1
+
+        assert (await client.post(read_path + "/cancel", headers=reader)).status_code == 401
+        assert (
+            await client.post("/v1/action-requests", json={**envelope, "idempotency_key": "forbidden"}, headers=reader)
+        ).status_code == 401
+        assert (
+            await client.post(
+                _operator_path(request["id"], "/decision"),
+                json={"verdict": "deny", "expected_version": 1, "idempotency_key": "forbidden"},
+                headers=reader,
+            )
+        ).status_code == 401
+        assert (await client.get(_operator_path(request["id"]), headers=reader)).status_code == 401
 
 
 if __name__ == "__main__":

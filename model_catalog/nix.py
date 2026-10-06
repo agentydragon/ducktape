@@ -27,37 +27,45 @@ def _wrapper(
     haiku: Route,
     lane: ModelLaneRoutes,
     *,
-    publish_limits: bool = False,
-    max_output_override: int | None = None,
+    max_context_tokens: int | None = None,
+    max_output_tokens: int | None = None,
 ) -> dict[str, str | int]:
     if primary not in lane.allowed or haiku not in lane.allowed:
         raise ValueError(f"wrapper selects a route outside its key lane: {primary.id}, {haiku.id}")
     config: dict[str, str | int] = {"model": primary.id, "haikuModel": haiku.id}
-    if publish_limits:
-        context = primary.model.context_window
-        output = max_output_override if max_output_override is not None else primary.model.max_output_tokens
-        if context is None or output is None:
-            raise ValueError(f"missing Claude wrapper limits for {primary.id}")
-        config.update(maxContextTokens=context, maxOutputTokens=output)
+    if max_context_tokens is not None:
+        config["maxContextTokens"] = max_context_tokens
+    if max_output_tokens is not None:
+        config["maxOutputTokens"] = max_output_tokens
     return config
 
 
 def claude_wrapper_models() -> dict[str, dict[str, str | int]]:
+    # Preserve existing Claude settings, not provider capacity claims. Omission
+    # leaves the client's default in place; these wrappers remain paused (#9121).
     return {
         "codex-claude": _wrapper(
-            GPT6_ASTRA_MESSAGES, GPT6_LUNA_MESSAGES, KEY_MODEL_LANES["codex_client_models"], publish_limits=True
+            GPT6_ASTRA_MESSAGES,
+            GPT6_LUNA_MESSAGES,
+            KEY_MODEL_LANES["codex_client_models"],
+            max_context_tokens=872_000,
+            max_output_tokens=128_000,
         ),
         "litellm-claude": _wrapper(SONNET_SUBSCRIPTION, HAIKU_SUBSCRIPTION, KEY_MODEL_LANES["claude_client_models"]),
         "gemini-claude": _wrapper(
-            GEMINI_FLASH, GEMINI_FLASH_LITE, KEY_MODEL_LANES["gemini_client_models"], publish_limits=True
+            GEMINI_FLASH,
+            GEMINI_FLASH_LITE,
+            KEY_MODEL_LANES["gemini_client_models"],
+            max_context_tokens=1_048_576,
+            max_output_tokens=65_536,
         ),
         "antigravity-claude": _wrapper(
             ANTIGRAVITY_PRO,
             ANTIGRAVITY_FLASH_LITE,
             KEY_MODEL_LANES["antigravity_client_models"],
-            publish_limits=True,
-            # Client override, distinct from this account's published 65,535 output limit.
-            max_output_override=65_536,
+            max_context_tokens=1_048_576,
+            # Preserve this wrapper's 65,536, independently of account metadata.
+            max_output_tokens=65_536,
         ),
         "tana-claude": _wrapper(TANA_SONNET, TANA_HAIKU, KEY_MODEL_LANES["tana_client_models"]),
     }

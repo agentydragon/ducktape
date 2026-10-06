@@ -34,7 +34,7 @@ substitutes. The design it implements is [the ADR](../docs/adr_sandbox_proxy_gat
   exemption; combine it with separate, destination-scoped credential/internal rules as needed.
   Authentication and a live binding are still required. No default or preset opts in.
 - A rule matches a request when its hosts, methods, and paths all admit it. One matching rule in
-  any policy of any of the subject's bindings is enough to admit the request; nothing matching
+  any egress policy of any of the subject's bindings is enough to admit the request; nothing matching
   refuses with `no-rule`. A CONNECT is matched on host alone; each request inside the tunnel is
   decided on its own.
 - A credential is an `EgressCredential`: where its real value comes from, and every exact location
@@ -75,7 +75,7 @@ substitutes. The design it implements is [the ADR](../docs/adr_sandbox_proxy_gat
   their existing body handling. Body values and rewritten bytes are excluded from evidence and repr.
 - Which of the matching rules decides is directed by the placeholder the request presents. A
   placeholder is known when some `EgressCredential` in the namespace has it, whether or not the
-  subject is bound to a policy naming that credential. A request presenting a known placeholder is
+  subject is bound to an egress policy naming that credential. A request presenting a known placeholder is
   decided by a matching rule naming exactly that credential; when none does — the matching rules
   name no credential, or another one, or the request presents two — it is refused with
   `placeholder-unresolved`. A request presenting no known placeholder is decided by the first
@@ -83,7 +83,7 @@ substitutes. The design it implements is [the ADR](../docs/adr_sandbox_proxy_gat
   widens what it may reach; it never takes a credential away from a call that asks for one.
 - Where several matching rules would decide alike — two naming the same credential, two naming
   none — the first in walk order is the one recorded: bindings by name, their
-  policies as listed, their rules in order. Which one that is changes neither the verdict nor what
+  egress policies as listed, their rules in order. Which one that is changes neither the verdict nor what
   is forwarded, and shows only in the decision log.
 - Hosts match exactly (case-insensitive) or by `*.` suffix, which never matches the apex. Path
   globs match the path without its query: `*` stays within one segment, `**` crosses segments.
@@ -108,7 +108,7 @@ substitutes. The design it implements is [the ADR](../docs/adr_sandbox_proxy_gat
 - **A sandbox can read the rules that apply to it**, at
   `http://agentplane-egress.agentplane-staging.svc.cluster.local/v1/rules` through the sidecar's
   existing HTTP(S) proxy, the same path it uses for every other destination. The answer names the
-  subject it is of and the policies an active binding grants it: each rule's
+  subject it is of and the egress policies an active binding grants it: each rule's
   hosts, methods, paths, and where a credential is substituted, its placeholder, its operator-written
   `description`, and every target — which is what a client needs to build the value and to know whose
   credential it is spending, since a header name and a placeholder leave open both whether the value
@@ -118,7 +118,7 @@ substitutes. The design it implements is [the ADR](../docs/adr_sandbox_proxy_gat
   does not appear here until someone writes it in.
   The caller sends the published inert `agentplane-credential-agentplane-workload` placeholder
   in ordinary `Authorization: Bearer` through the configured proxy. An active ordinary
-  `basic` policy/binding authorizes exact substitution using `agentplane-workload`.
+  `basic` egress policy/binding authorizes exact substitution using `agentplane-workload`.
   Missing or forged destination auth and unbound placeholders fail closed.
   The destination independently authenticates its Authorization bearer with TokenReview and live
   Pod resolution, without relying on proxy-hop identity or the caller's source address. The answer
@@ -153,7 +153,7 @@ substitutes. The design it implements is [the ADR](../docs/adr_sandbox_proxy_gat
 - The proxy depends on the API server and nothing else. The integration app is a viewer of the
   same resources, never a participant: no part of a decision passes through it, so an app that is
   down or broken changes nothing about what a sandbox may reach.
-- The proxy watches policies, bindings and credentials in its one configured rules namespace, and
+- The proxy watches egress policies, bindings and credentials in its one configured rules namespace, and
   Secrets in the credentials namespace; it reads no Pods at all, in any namespace. The rules namespace may be one
   of the workload namespaces, and in both deployments it is the only one; the credentials namespace
   is separate, so a workload is never in a namespace holding the Secrets the proxy substitutes. The proxy's picture is kept equal to the API server's, and a

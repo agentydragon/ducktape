@@ -81,11 +81,9 @@ def _arguments_equal(left: str, right: str) -> bool:
         return False
 
 
+def unknown_item(item_id: str, reason: str) -> event_pb2.ItemRecovery:
+    return event_pb2.ItemRecovery(item_id=item_id, disposition=event_pb2.RECOVERY_DISPOSITION_UNKNOWN, reason=reason)
+
+
 def unknown_report(turn_id: str, items: dict[str, ObservedItem], reason: str) -> event_pb2.ConversationReconciled:
-    return event_pb2.ConversationReconciled(
-        turn_id=turn_id,
-        items=[
-            event_pb2.ItemRecovery(item_id=item_id, disposition=event_pb2.RECOVERY_DISPOSITION_UNKNOWN, reason=reason)
-            for item_id in items
-        ],
-    )
+    return event_pb2.ConversationReconciled(turn_id=turn_id, items=[unknown_item(item_id, reason) for item_id in items])

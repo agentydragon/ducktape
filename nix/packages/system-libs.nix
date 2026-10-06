@@ -18,7 +18,7 @@ let
     pkgs.cairo
     pkgs.dbus
     pkgs.ncurses5 # libtinfo5 for GHC toolchain
-    # Chromium headless shell shared library dependencies (rules_playwright)
+    # Chromium headless shell shared library dependencies (@chrome_headless_shell)
     pkgs.alsa-lib
     pkgs.at-spi2-atk
     pkgs.cups.lib

@@ -54,6 +54,18 @@ export type Harness = components["schemas"]["Harness"];
 export type ModelOption = components["schemas"]["ModelOption"];
 export type ModelCatalog = components["schemas"]["ModelCatalog"];
 
+/** An empty model list disables new-session selection, not the native harness. */
+export function harnessOptions(catalog: ModelCatalog | null): { value: Harness; label: string; disabled: boolean }[] {
+  const harnesses: { value: Harness; label: string }[] = [
+    { value: "HARNESS_CLAUDE", label: "Claude" },
+    { value: "HARNESS_CODEX", label: "Codex" },
+  ];
+  return harnesses.map(({ value, label }) => {
+    const disabled = !catalog?.harnesses[value]?.length;
+    return { value, label: disabled && catalog ? `${label} (no models offered)` : label, disabled };
+  });
+}
+
 /** The models offered for one harness, resolved from the catalog's deduplicated `models`
  * list via its `harnesses` id references. */
 export function modelsForHarness(catalog: ModelCatalog, harness: Harness): ModelOption[] {

@@ -117,7 +117,7 @@ fn read_between_redeclarations_cannot_be_moved_away_from_them() {
     // residual initializer for `seen` observe the final value of `a`, not
     // the value between the declarations. The ordering constraints make
     // this split unrealizable, so claiming only `a` must be rejected.
-    expect_rejection_containing_all(
+    expect_atomic_conflict_rejection(
         FixtureOpts::new(
             r#"var a = 1;
 const seen = a;
@@ -127,7 +127,8 @@ export { a, seen };
 "#,
             vec![logical_module("state", &[Member::new("a")])],
         ),
-        &["atomic-factor-unit conflict(s)", "state"],
+        &["state"],
+        &[],
     );
 }
 
@@ -136,7 +137,7 @@ fn predeclaration_reader_cannot_be_split_from_shared_var_declarations() {
     // In the input, `seen` observes the hoisted `value` before either
     // initializer runs, so it must be `undefined`. An ESM import from the
     // later `state` module would evaluate both initializers first.
-    expect_rejection(
+    expect_atomic_conflict_rejection(
         FixtureOpts::new(
             r#"const seen = value;
 var value = 1;
@@ -149,7 +150,8 @@ export { seen, value };
                 logical_module("state", &[Member::new("value")]),
             ],
         ),
-        &["cycle", "unrealizable", "atomic-factor-unit conflict(s)"],
+        &["reader", "state"],
+        &[],
     );
 }
 
@@ -231,28 +233,33 @@ export { seen, x };
     // The optimized S-chain must retain the sequencing constraints too:
     // extracting both writes to `x` while leaving `seen` in residual would
     // make `seen` observe 2 instead of 1, so this split is rejected.
-    expect_rejection_containing_all(
+    expect_atomic_conflict_rejection(
         FixtureOpts::new(source, vec![logical_module("state", &[Member::new("x")])])
             .with_dataflow_aware_s_chain(),
-        &["atomic-factor-unit conflict(s)", "state"],
+        &["state"],
+        &[],
     );
 }
 
 #[test]
 fn repeated_binding_cannot_be_placed_in_two_named_modules() {
-    expect_rejection_containing_all(
-        FixtureOpts::new(
-            r#"var counter = 1;
+    let outcomes = run_rejection_fixture(FixtureOpts::new(
+        r#"var counter = 1;
 var counter = counter + 1;
 console.log(counter);
 export { counter };
 "#,
-            vec![
-                logical_module("state/primary", &[Member::new("counter")]),
-                logical_module("state/duplicate", &[Member::new("counter")]),
-            ],
-        ),
-        &["already claimed", "state/primary", "state/duplicate"],
+        vec![
+            logical_module("state/primary", &[Member::new("counter")]),
+            logical_module("state/duplicate", &[Member::new("counter")]),
+        ],
+    ))
+    .selector_outcomes();
+    let claim = find_outcome(&outcomes, "duplicate_claim", "counter");
+    assert_eq!(claim["placement"]["logical_module"], "state/primary");
+    assert_eq!(
+        claim["outcome"]["claimed_by"]["logical_module"],
+        "state/duplicate"
     );
 }
 
@@ -270,10 +277,7 @@ export { a, b };
                 logical_module("right", &[Member::new("b")]),
             ],
         ),
-        &[
-            "declares bindings assigned to different modules",
-            "assign all nested var bindings to one module",
-        ],
+        &["declares bindings assigned to different modules"],
     );
 }
 
@@ -305,7 +309,7 @@ export { read, late, answer };
     // Inline residual statements stay in entry. Entry imports `reader`
     // before initializing `late`, while the reader calls the later closure
     // at module init, so this split creates a real at-init cycle.
-    expect_rejection(
+    expect_cycle_rejection(
         FixtureOpts::new(
             source,
             vec![logical_module(
@@ -314,7 +318,7 @@ export { read, late, answer };
             )],
         )
         .with_unassigned_mode(unassigned_mode_inline()),
-        &["cycle", "unrealizable", "atomic-factor-unit conflict(s)"],
+        &["reader"],
     );
 }
 
@@ -353,17 +357,18 @@ fn named_loop_binding_moves_and_renames_every_loop() {
 
 #[test]
 fn name_pin_and_later_site_selector_cannot_claim_same_binding_twice() {
-    expect_rejection(
-        FixtureOpts::new(
-            "var value = 1; var value = 2; console.log(value);",
-            vec![
-                logical_module("first", &[Member::new("value")]),
-                logical_module(
-                    "second",
-                    &[Member::source_alpha("readableValue", "var candidate = 2;")],
-                ),
-            ],
-        ),
-        &["conflict", "already claimed"],
-    );
+    let outcomes = run_rejection_fixture(FixtureOpts::new(
+        "var value = 1; var value = 2; console.log(value);",
+        vec![
+            logical_module("first", &[Member::new("value")]),
+            logical_module(
+                "second",
+                &[Member::source_alpha("readableValue", "var candidate = 2;")],
+            ),
+        ],
+    ))
+    .selector_outcomes();
+    let claim = find_outcome(&outcomes, "duplicate_claim", "readableValue");
+    assert_eq!(claim["placement"]["logical_module"], "second");
+    assert_eq!(claim["outcome"]["claimed_by"]["logical_module"], "first");
 }

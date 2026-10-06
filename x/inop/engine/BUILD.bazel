@@ -25,7 +25,6 @@ py_library(
         "//openai_utils:model",
         "//x/inop:config",
         "//x/inop:model_factory",
-        "//x/inop:plots",
         "//x/inop:prompt_feedback_mcp",
         "//x/inop/grading:grader",
         "//x/inop/io:jsonl_logger",

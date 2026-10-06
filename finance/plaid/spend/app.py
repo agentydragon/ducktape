@@ -8,14 +8,15 @@ import logging
 import sys
 from collections.abc import AsyncGenerator, AsyncIterator
 from contextlib import asynccontextmanager
-from importlib import resources
+from pathlib import Path
 from typing import Annotated, cast
 
 import uvicorn
 from fastapi import Depends, FastAPI, HTTPException, Request, status
-from fastapi.responses import HTMLResponse, Response, StreamingResponse
+from fastapi.responses import FileResponse, Response, StreamingResponse
+from fastapi.staticfiles import StaticFiles
 
-from finance.plaid.spend.models import SpendConfiguration, SpendView
+from finance.plaid.spend.models import SpendConfiguration, SpendConfigurationView, SpendView
 from finance.plaid.spend.service import SpendService
 from finance.plaid.spend.settings import SpendSettings
 from mcp_infra.oidc_principal import (
@@ -26,11 +27,7 @@ from mcp_infra.oidc_principal import (
 )
 from util.oidc_login import LoginConfig, install_login
 
-# The image entrypoint executes this file as `__main__`, so resolve assets by package name.
-_ASSETS = resources.files("finance.plaid.spend")
-_SPEND_HTML = _ASSETS.joinpath("spend.html").read_text("utf-8")
-_SPEND_CSS = _ASSETS.joinpath("spend.css").read_text("utf-8")
-_SPEND_JS = _ASSETS.joinpath("spend.js").read_text("utf-8")
+_UI_DIR = Path(__file__).resolve().parent / "ui" / "dist"
 
 
 async def _require_api_principal(request: Request) -> VerifiedOidcPrincipal:
@@ -80,7 +77,7 @@ def _web_login_config(settings: SpendSettings) -> LoginConfig:
     )
 
 
-def create_app(settings: SpendSettings, *, service: SpendService) -> FastAPI:
+def create_app(settings: SpendSettings, *, service: SpendService, include_ui: bool = True) -> FastAPI:
     resolver = AuthentikOidcPrincipalResolver(
         expected_issuer=settings.api_oidc_issuer,
         discovered_issuer=settings.api_oidc_discovered_issuer,
@@ -106,17 +103,13 @@ def create_app(settings: SpendSettings, *, service: SpendService) -> FastAPI:
     async def healthz() -> dict[str, bool]:
         return {"ok": True}
 
-    @app.get("/", response_class=HTMLResponse)
-    async def root() -> str:
-        return _SPEND_HTML
+    if include_ui:
 
-    @app.get("/static/spend.css", include_in_schema=False)
-    async def spend_css() -> Response:
-        return Response(_SPEND_CSS, media_type="text/css")
+        @app.get("/", include_in_schema=False)
+        async def root() -> FileResponse:
+            return FileResponse(_UI_DIR / "index.html")
 
-    @app.get("/static/spend.js", include_in_schema=False)
-    async def spend_js() -> Response:
-        return Response(_SPEND_JS, media_type="text/javascript")
+        app.mount("/static", StaticFiles(directory=_UI_DIR), name="spend-ui")
 
     @app.get("/favicon.ico", include_in_schema=False)
     async def favicon() -> Response:
@@ -129,6 +122,10 @@ def create_app(settings: SpendSettings, *, service: SpendService) -> FastAPI:
     @app.get("/api/v1/web/view", response_model=SpendView)
     async def get_web_view(reader: SpendReader) -> SpendView:
         return await reader.read_view()
+
+    @app.get("/api/v1/web/configuration", response_model=SpendConfigurationView)
+    async def get_web_configuration(reader: SpendReader) -> SpendConfigurationView:
+        return reader.read_configuration()
 
     @app.get("/api/v1/events")
     async def events(request: Request, _principal: ApiPrincipal, reader: SpendReader) -> StreamingResponse:

@@ -19,7 +19,6 @@ class Kind(StrEnum):
 
 
 class Status(StrEnum):
-    PREVIEW = "preview"
     ACTIVE = "active"
     UNAVAILABLE = "unavailable"
 
@@ -38,6 +37,13 @@ class NamePrefix(BaseModel):
     prefix: str = Field(min_length=2)
 
 
+class NameContains(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+    type: Literal["name_contains"]
+    field: Literal["name", "merchant_name"]
+    substring: str = Field(min_length=2)
+
+
 class CategoryExact(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
     type: Literal["category_exact"]
@@ -45,16 +51,24 @@ class CategoryExact(BaseModel):
     value: str = Field(min_length=2)
 
 
+class AllOf(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+    type: Literal["all_of"]
+    conditions: list[Annotated[NamePrefix | NameContains | CategoryExact, Field(discriminator="type")]] = Field(
+        min_length=2
+    )
+
+
 class Rule(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
-    condition: Annotated[NamePrefix | CategoryExact, Field(discriminator="type")]
+    condition: Annotated[NamePrefix | NameContains | CategoryExact | AllOf, Field(discriminator="type")]
     kind: Kind
 
 
 class AllowancePolicy(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
     monthly_minor_units: int = Field(gt=0)
-    activation_at: date | None = None
+    activation_at: date
     spending_account_ids: set[str] = Field(min_length=1)
     currency: Literal["USD"] = "USD"
     rules: list[Rule] = Field(min_length=1)
@@ -97,21 +111,29 @@ class AllowanceView(BaseModel):
     status: Status
     currency: str
     monthly_minor_units: int
-    activation_at: date | None
+    activation_at: date
     available_minor_units: int | None
     next_credit_at: datetime | None
     posted_minor_units: int
     pending_minor_units: int
     review_minor_units: int
+    review_transaction_count: int
     unmatched_refunds_minor_units: int
     windows_minor_units: Windows | None = Field(
-        description="Spend after activation in each reporting window; null until active."
+        description="Spend after the configured start date in each reporting window; null when unavailable."
     )
     trailing_7_daily_minor_units: int | None
+    # Recorded positive purchases, including preactivation history, divided by the full window.
+    # Separate from the short-window burst-sensitive pace used for forecasting.
+    trailing_7_observed_daily_minor_units: int | None
+    trailing_30_observed_daily_minor_units: int | None
+    trailing_7_unmatched_count: int | None
+    trailing_7_unmatched_minor_units: int | None
     estimated_exhaustion_at: datetime | None = Field(
         description="Projected at trailing seven-day positive purchase pace, ignoring future credits; null if no recent spend."
     )
     alert_state: PaceAlert
+    spending_signal: PaceAlert
     last_synced_at: datetime | None
     note: str | None = None
     prior_carry_minor_units: int = 0
@@ -124,18 +146,22 @@ def month_anniversary(start: datetime, months: int) -> datetime:
     return start.replace(year=year, month=month, day=min(start.day, calendar.monthrange(year, month)[1]))
 
 
+def matches(transaction: Transaction, condition: NamePrefix | NameContains | CategoryExact | AllOf) -> bool:
+    if isinstance(condition, AllOf):
+        return all(matches(transaction, part) for part in condition.conditions)
+    if isinstance(condition, CategoryExact):
+        category = transaction.pfc_primary if condition.field == "pfc_primary" else transaction.pfc_detailed
+        return category == condition.value
+    name = transaction.name if condition.field == "name" else transaction.merchant_name
+    if name is None:
+        return False
+    if isinstance(condition, NamePrefix):
+        return name.casefold().startswith(condition.prefix.casefold())
+    return condition.substring.casefold() in name.casefold()
+
+
 def matching_rule(transaction: Transaction, rules: list[Rule]) -> Rule | None:
-    for rule in rules:
-        condition = rule.condition
-        if isinstance(condition, NamePrefix):
-            name = transaction.name if condition.field == "name" else transaction.merchant_name
-            if name is not None and name.casefold().startswith(condition.prefix.casefold()):
-                return rule
-        else:
-            category = transaction.pfc_primary if condition.field == "pfc_primary" else transaction.pfc_detailed
-            if category == condition.value:
-                return rule
-    return None
+    return next((rule for rule in rules if matches(transaction, rule.condition)), None)
 
 
 def calculate(
@@ -144,26 +170,9 @@ def calculate(
     if now.utcoffset() is None:
         raise ValueError("now must be timezone-aware")
     now = now.astimezone(UTC)
-    start = datetime.combine(policy.activation_at, datetime.min.time(), tzinfo=UTC) if policy.activation_at else None
-    if start is None or start > now:
-        return AllowanceView(
-            status=Status.PREVIEW,
-            currency=policy.currency,
-            monthly_minor_units=policy.monthly_minor_units,
-            activation_at=policy.activation_at,
-            available_minor_units=None,
-            next_credit_at=None,
-            posted_minor_units=0,
-            pending_minor_units=0,
-            review_minor_units=0,
-            unmatched_refunds_minor_units=0,
-            windows_minor_units=None,
-            trailing_7_daily_minor_units=None,
-            estimated_exhaustion_at=None,
-            alert_state=PaceAlert.UNAVAILABLE,
-            last_synced_at=last_synced_at,
-            note="Not activated; no pre-launch debt or credit is imported",
-        )
+    start = datetime.combine(policy.activation_at, datetime.min.time(), tzinfo=UTC)
+    if start > now:
+        raise ValueError("allowance start date cannot be in the future")
 
     credits = 0
     while month_anniversary(start, credits) <= now:
@@ -176,9 +185,15 @@ def calculate(
     }
     # Keep each included purchase once, with its category and posting state.
     included: list[Purchase] = []
+    recent_positive = 0
+    monthly_positive = 0
+    weekly_unmatched_count = 0
+    weekly_unmatched_minor_units = 0
     unmatched = 0
+    pace_start = (now - timedelta(days=6)).date()
+    monthly_pace_start = (now - timedelta(days=29)).date()
     for transaction in transactions:
-        if not start.date() <= transaction.date <= now.date():
+        if not min(start.date(), monthly_pace_start) <= transaction.date <= now.date():
             continue
         if transaction.pending and (transaction.account_id, transaction.transaction_id) in superseded:
             continue
@@ -190,9 +205,18 @@ def calculate(
         amount = int((transaction.amount * 100).quantize(Decimal(1), rounding=ROUND_HALF_UP))
         # An inferred category alone cannot associate a refund with an actual discretionary purchase.
         if amount < 0 and not (rule is not None and isinstance(rule.condition, NamePrefix)):
-            unmatched += -amount
+            if transaction.date >= start.date():
+                unmatched += -amount
             continue
-        included.append(Purchase(transaction=transaction, minor_units=amount, needs_review=rule is None))
+        if transaction.date >= pace_start:
+            recent_positive += max(0, amount)
+            if rule is None and amount > 0:
+                weekly_unmatched_count += 1
+                weekly_unmatched_minor_units += amount
+        if transaction.date >= monthly_pace_start:
+            monthly_positive += max(0, amount)
+        if transaction.date >= start.date():
+            included.append(Purchase(transaction=transaction, minor_units=amount, needs_review=rule is None))
 
     posted = sum(p.minor_units for p in included if not p.transaction.pending)
     pending = sum(p.minor_units for p in included if p.transaction.pending)
@@ -211,13 +235,40 @@ def calculate(
             p.minor_units for p in included if p.transaction.date >= (now - timedelta(days=29)).date()
         ),
     )
-    trailing_positive = sum(
-        max(0, p.minor_units) for p in included if p.transaction.date >= (now - timedelta(days=6)).date()
+    elapsed_days = min(7, (now.date() - start.date()).days + 1)
+    since_start_positive = sum(max(0, p.minor_units) for p in included if p.transaction.date >= pace_start)
+    observed_weekly = recent_positive // 7 if recent_positive else (0 if elapsed_days >= 7 else None)
+    observed_monthly = (
+        monthly_positive // 30 if monthly_positive else (0 if (now.date() - start.date()).days >= 29 else None)
     )
-    daily = trailing_positive // max(1, min(7, (now.date() - start.date()).days + 1))
+    # History can inform the pace without becoming an opening allowance debt.
+    # Early post-start bursts should not disappear into the seven-day average.
+    daily = max(recent_positive // 7, since_start_positive // elapsed_days) if recent_positive else None
+    if daily is None and elapsed_days == 7:
+        daily = 0
     available = credits * policy.monthly_minor_units - posted - pending
-    projected_end = available - daily * max(1, (next_credit.date() - now.date()).days)
-    alert = PaceAlert.EXCEEDED if available <= 0 else PaceAlert.WARNING if projected_end < 0 else PaceAlert.NORMAL
+    projected_end = available - daily * max(1, (next_credit.date() - now.date()).days) if daily is not None else None
+    alert = (
+        PaceAlert.EXCEEDED
+        if available <= 0
+        else PaceAlert.UNAVAILABLE
+        if projected_end is None
+        else PaceAlert.WARNING
+        if projected_end < 0
+        else PaceAlert.NORMAL
+    )
+    reference_rate = Decimal(policy.monthly_minor_units) * 12 / Decimal("365.2425")
+    signal = (
+        PaceAlert.EXCEEDED
+        if available <= 0
+        else PaceAlert.WARNING
+        if alert == PaceAlert.WARNING
+        or (observed_weekly is not None and observed_weekly > reference_rate)
+        or (observed_monthly is not None and observed_monthly > reference_rate)
+        else PaceAlert.UNAVAILABLE
+        if observed_weekly is None and observed_monthly is None
+        else PaceAlert.NORMAL
+    )
     return AllowanceView(
         status=Status.ACTIVE,
         currency=policy.currency,
@@ -228,11 +279,17 @@ def calculate(
         posted_minor_units=posted,
         pending_minor_units=pending,
         review_minor_units=review,
+        review_transaction_count=sum(1 for p in included if p.needs_review and p.minor_units > 0),
         unmatched_refunds_minor_units=unmatched,
         windows_minor_units=windows,
         trailing_7_daily_minor_units=daily,
+        trailing_7_observed_daily_minor_units=observed_weekly,
+        trailing_30_observed_daily_minor_units=observed_monthly,
+        trailing_7_unmatched_count=weekly_unmatched_count,
+        trailing_7_unmatched_minor_units=weekly_unmatched_minor_units,
         estimated_exhaustion_at=now + timedelta(days=max(0, available) / daily) if daily else None,
         alert_state=alert,
+        spending_signal=signal,
         last_synced_at=last_synced_at,
         prior_carry_minor_units=(credits - 1) * policy.monthly_minor_units
         - (posted + pending - windows.current_credit_cycle_minor_units),

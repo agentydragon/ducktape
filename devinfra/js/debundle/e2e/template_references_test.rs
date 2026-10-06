@@ -212,8 +212,8 @@ console.log(a(), b());
     assert_module_source(
         &fixture.out_root,
         "static/app/modules/ids/use.js",
-        &["source bindings: a."],
-        &[],
+        &["generateId()"],
+        &["h()"],
     );
 }
 
@@ -281,12 +281,11 @@ fn name_exported_by_several_other_modules_is_invalid() {
     ));
     let outcomes = read_selector_outcomes(&rejected.report_root);
     let default_widget = find_outcome(&outcomes, "invalid", "DefaultWidget");
-    assert_eq!(
-        default_widget["outcome"]["error"],
-        "ambiguous_reference: template identifier `Widget` is exported by modules widgets/a, \
-         widgets/b; rename it in the template or rename one export",
-        "{default_widget:#}"
-    );
+    let error = default_widget["outcome"]["error"].as_str().unwrap();
+    assert!(error.starts_with("ambiguous_reference:"), "{error}");
+    for identifier in ["Widget", "widgets/a", "widgets/b"] {
+        assert!(error.contains(identifier), "{identifier}: {error}");
+    }
 }
 
 /// The template's own module exports `Widget`, so another module's `Widget`
@@ -346,8 +345,8 @@ console.log(p().length, q().length);
     assert_module_source(
         &fixture.out_root,
         "static/app/modules/widgets/pair.js",
-        &["source bindings: q."],
-        &[],
+        &["()=>Widget"],
+        &["()=>b"],
     );
 }
 
@@ -511,14 +510,23 @@ fn validate_lists_free_identifiers_by_kind() {
     let fixture = write_validate_fixture_spec(kinds_fixture());
     let text = run_spec_validate(&fixture.spec_path, &["--format", "text"]);
     assert!(text.status.success(), "stderr={}", text.stderr);
-    for line in [
-        "  - static/app::kinds/alias `alias`: `Shared` is ambiguous: exported by kinds/x, kinds/y",
-        "2 matched template(s) with free identifiers: ambiguous=1, global=1, reference=1, \
-         wildcard=1",
-        "  - static/app::kinds/made `made`: `Widget` references `Widget` in kinds/widget",
-    ] {
-        assert!(text.stdout.contains(line), "{line}\n{}", text.stdout);
+    for count in ["ambiguous=1", "global=1", "reference=1", "wildcard=1"] {
+        assert!(text.stdout.contains(count), "{count}\n{}", text.stdout);
     }
-    assert!(!text.stdout.contains("`helper`"), "{}", text.stdout);
-    assert!(!text.stdout.contains("`Object`"), "{}", text.stdout);
+    let listed: [(&str, &[&str]); 2] = [
+        ("kinds/alias", &["Shared", "kinds/x", "kinds/y"]),
+        ("kinds/made", &["Widget", "kinds/widget"]),
+    ];
+    for (module, identifiers) in listed {
+        let line = text
+            .stdout
+            .lines()
+            .find(|line| line.contains(module))
+            .unwrap_or_else(|| panic!("no line for {module}:\n{}", text.stdout));
+        for identifier in identifiers {
+            assert!(line.contains(identifier), "{identifier}: {line}");
+        }
+    }
+    assert!(!text.stdout.contains("helper"), "{}", text.stdout);
+    assert!(!text.stdout.contains("Object"), "{}", text.stdout);
 }

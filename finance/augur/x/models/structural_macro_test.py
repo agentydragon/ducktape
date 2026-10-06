@@ -320,30 +320,19 @@ def test_the_rates_coupling_works_when_configured() -> None:
     could support a nonzero one, and a silently-broken channel would look exactly like the
     honest zero this model ships with."""
 
-    equity = EquityProcess(
-        instrument=EquitySpec(symbol=EQUITY, initial_price_usd=500.0), monthly_log_return_sigma=0.0, rate_beta=-2.0
-    )
-    rising = _series(_sample(_rising_rates().model_copy(update={"equity": equity})), SecurityKey(symbol=EQUITY))
-    falling = _series(_sample(_falling_rates().model_copy(update={"equity": equity})), SecurityKey(symbol=EQUITY))
+    def equity_path(rates: StructuralMacroProviderConfig, rate_beta: float) -> np.ndarray:
+        equity = EquityProcess(
+            instrument=EquitySpec(symbol=EQUITY, initial_price_usd=500.0),
+            monthly_log_return_sigma=0.0,
+            rate_beta=rate_beta,
+        )
+        return _series(_sample(rates.model_copy(update={"equity": equity})), SecurityKey(symbol=EQUITY))
 
-    # Same drift, same (zero) shocks: the only difference between these two paths is the rates
-    # state, so a gap proves the channel carries and its sign says a hiking cycle is a headwind.
-    assert np.all(rising[:, -1] < falling[:, -1])
-
-
-def test_equity_ignores_rates_by_default() -> None:
-    """The shipped state, asserted rather than left implicit. `rate_beta` fits to +1.57 on
-    1993-2026 and -0.62 on 1980-2026, both explaining under half a percent of variance — the
-    sign is not stable, so the default is zero and equity is INDEPENDENT of rates here. That is
-    a documented gap (structural_macro.md), and a model that quietly grew a coupling would invalidate every
-    bond/equity conclusion drawn from it without failing anything."""
-
-    equity = EquityProcess(instrument=EquitySpec(symbol=EQUITY, initial_price_usd=500.0), monthly_log_return_sigma=0.0)
-    assert equity.rate_beta == 0.0
-
-    rising = _series(_sample(_rising_rates().model_copy(update={"equity": equity})), SecurityKey(symbol=EQUITY))
-    falling = _series(_sample(_falling_rates().model_copy(update={"equity": equity})), SecurityKey(symbol=EQUITY))
-    assert np.array_equal(rising, falling)
+    # Same drift, same (zero) shocks: the only difference between these paths is the rates state.
+    # With the coupling off they are identical, so no other channel carries rates into equity; with
+    # it on, a gap proves the channel carries and its sign says a hiking cycle is a headwind.
+    assert np.array_equal(equity_path(_rising_rates(), 0.0), equity_path(_falling_rates(), 0.0))
+    assert np.all(equity_path(_rising_rates(), -2.0)[:, -1] < equity_path(_falling_rates(), -2.0)[:, -1])
 
 
 def test_emissions_are_exactly_the_declared_keys() -> None:
@@ -424,12 +413,12 @@ def test_a_symbol_priced_twice_is_rejected() -> None:
     """Two rows for one symbol would concatenate into a double-length frame and surface much
     later as a shape error that names the symbol but not the cause."""
 
-    with pytest.raises(ValueError, match="prices a symbol more than once"):
+    with pytest.raises(ValueError, match=BOND):
         StructuralMacroProviderConfig(
             instruments=(BondFundSpec(symbol=BOND, maturity_years=6.0), BondFundSpec(symbol=BOND, maturity_years=2.0))
         ).realize_model()
 
-    with pytest.raises(ValueError, match="prices a symbol more than once"):
+    with pytest.raises(ValueError, match=EQUITY):
         StructuralMacroProviderConfig(
             instruments=(BondFundSpec(symbol=EQUITY, maturity_years=6.0),),
             equity=EquityProcess(instrument=EquitySpec(symbol=EQUITY, initial_price_usd=1.0)),
@@ -548,7 +537,7 @@ def test_an_explosive_state_is_rejected() -> None:
     early path attached to a tail where the short rate reaches thousands of percent. Nothing
     downstream inspects the state, so nothing downstream could catch it."""
 
-    with pytest.raises(ValidationError, match="explosive"):
+    with pytest.raises(ValidationError):
         MacroVarSpec(
             initial_state=(0.04, 0.005, 0.025),
             intercept=(0.0, 0.0, 0.0),

@@ -89,7 +89,6 @@ py_test(
         "//props/db:models",
         "//props/testing:constants",
         "@pypi//pyhamcrest",
-        "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],
 )
@@ -120,7 +119,6 @@ py_test(
         "//props/core/models:examples",
         "//props/db:models",
         "@pypi//pyhamcrest",
-        "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],
 )

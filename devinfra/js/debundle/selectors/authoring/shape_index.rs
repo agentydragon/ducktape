@@ -1057,6 +1057,18 @@ mod tests {
     }
 
     #[test]
+    fn items_differing_only_in_identifier_names_cannot_be_singled_out() {
+        // Identifier references wildcard in the skeleton (alpha-equivalence), so
+        // these items share every feature and the read-off reports "could not
+        // minimize" rather than an anchor the alpha-equivalent matcher would not
+        // honor. The init identifier sits at the deepest skeleton level.
+        let module = parse("const a = foo;\nconst b = bar;");
+        let index = ShapeIndex::new(&module);
+        assert!(index.minimal_anchor_set(0).is_none());
+        assert!(index.minimal_anchor_set(1).is_none());
+    }
+
+    #[test]
     fn volatile_tail_splits_off_a_generated_suffix() {
         assert_eq!(volatile_tail("chunk-a1b2c3"), Some(("chunk-", "a1b2c3")));
         assert_eq!(volatile_tail("main.4f3a2b"), Some(("main.", "4f3a2b")));
@@ -1200,41 +1212,20 @@ export { runner };"#,
     }
 
     #[test]
-    fn number_literals_discriminate_otherwise_identical_items() {
-        let module = parse(
-            r#"const a = make(call(), 123);
-const b = make(call(), 456);
-const c = make(call(), 789);"#,
-        );
-        let index = ShapeIndex::new(&module);
-        for body_idx in 0..3 {
-            let anchor = index.minimal_anchor_set(body_idx).unwrap();
-            assert!(index.read_off_resolves_uniquely(body_idx, &anchor));
-        }
-    }
-
-    #[test]
-    fn bool_literal_discriminates_otherwise_identical_items() {
-        let module = parse(
-            r#"const a = cfg({ flag: true });
-const b = cfg({ flag: false });"#,
-        );
-        let index = ShapeIndex::new(&module);
-        let anchor = index.minimal_anchor_set(0).unwrap();
-        assert!(index.read_off_resolves_uniquely(0, &anchor));
-    }
-
-    #[test]
     fn stable_feature_preferred_over_volatile() {
-        // The item carries both a stable key and a volatile-looking literal; the
-        // top-ranked anchor must be the stable one.
+        // The stable key and the volatile-looking literal are each unique and in the
+        // same anchor class, and the literal is the shorter of the two: only the
+        // stability term keeps it from ranking first.
         let module = parse(
-            r#"const a = init("chunk-a1b2c3", { stableKey: 1 });
-const b = init("chunk-d4e5f6", { otherKey: 2 });"#,
+            r#"const a = init("v-1a2b3c4d", { stableKeyName: arg });
+const b = init("v-5e6f7a8b", { otherKeyName: arg });"#,
         );
         let index = ShapeIndex::new(&module);
         let anchor = index.minimal_anchor_set(0).unwrap();
-        assert_ne!(anchor.anchors[0].stability, Stability::Volatile);
+        assert_eq!(
+            anchor.anchors[0].feature,
+            ShapeFeature::Selector(SelectorFeature::ObjectKey("stableKeyName".into())),
+        );
         assert!(index.read_off_resolves_uniquely(0, &anchor));
     }
 }

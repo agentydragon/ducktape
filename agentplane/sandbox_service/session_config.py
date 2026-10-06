@@ -4,9 +4,9 @@ from pydantic import BaseModel, ConfigDict
 
 
 class LaunchGrants(BaseModel):
-    """Pending concrete policy grants, persisted on the Sandbox until provisioning completes."""
+    """Pending concrete egress-policy grants, persisted on the Sandbox until provisioning completes."""
 
     model_config = ConfigDict(extra="forbid")
 
-    policies: list[str]
+    egress_policies: list[str]
     action_policy_sets: list[str]

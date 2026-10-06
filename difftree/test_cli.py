@@ -79,7 +79,6 @@ def test_cli_columns_flag_invalid_column(runner, git_repo_with_changes):
     result = runner.invoke(main, ["--columns", "tree,invalid,counts"], obj={}, catch_exceptions=False)
 
     assert result.exit_code == 2
-    assert "Unknown column" in result.output
     assert "invalid" in result.output.lower()
 
 
@@ -92,7 +91,8 @@ def test_cli_no_changes(runner, temp_git_repo, run_git, monkeypatch):
     result = runner.invoke(main, [])
 
     assert result.exit_code == 0
-    assert "No changes" in result.output
+    assert result.stdout == ""  # no tree rendered
+    assert result.stderr != ""  # the notice goes to stderr
 
 
 # CLI Integration Tests

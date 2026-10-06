@@ -19,11 +19,11 @@
 #
 # We layer on: libssl-dev + pkg-config (Rust toolchain), lld (the linker used
 # by Bazel's GCC toolchain), libtinfo5 (GHC
-# toolchain), Chromium shared libraries (headless_shell from rules_playwright
-# for visual regression tests), and Liberation fonts (so headless_shell has a
-# real "sans-serif"/"monospace" to substitute -- with zero fonts installed it
-# renders every generic family, monospace included, as the same undifferentiated
-# fallback glyph, which is misleading in a screenshot).
+# toolchain), Chromium shared libraries (for the Chrome for Testing headless shell,
+# @chrome_headless_shell, that visual regression tests run), and Liberation fonts
+# (so the headless shell has a real "sans-serif"/"monospace" to substitute -- with
+# zero fonts installed it renders every generic family, monospace included, as the
+# same undifferentiated fallback glyph, which is misleading in a screenshot).
 #
 # The Nix devShell's corresponding system libraries are in
 # nix/packages/system-libs.nix. The experimental Nix-based RBE container image

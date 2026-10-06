@@ -304,7 +304,9 @@ async def test_a_refused_watch_is_reported_with_its_reason_while_discovery_carri
 
     await eventually(watch_reported)
     [problem] = [p for p in follower.problems if p.source == WATCH]
-    assert "404 Not Found from GET /v1/code/sessions/watch" in problem.message
+    assert "404" in problem.message
+    assert "/v1/code/sessions/watch" in problem.message
+    assert RESUME_TOKEN not in problem.message  # the request's query string, which carries it, stays out
 
     async def discovery_stored_the_session() -> bool:  # the refused watch did not stop discovery
         return (await store.synced_last_event_at()).keys() == {ONE}
@@ -330,7 +332,8 @@ async def test_a_failing_discovery_is_reported_with_its_reason_and_clears_once_i
 
     await eventually(reported)
     [problem] = [p for p in follower.problems if p.source == DISCOVERY]
-    assert "404 Not Found from GET /v1/code/sessions" in problem.message
+    assert "404" in problem.message
+    assert "/v1/code/sessions" in problem.message
     assert "refused" in problem.message  # the API's own error body
 
     service.list_status = None

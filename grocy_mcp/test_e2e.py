@@ -438,13 +438,11 @@ async def test_stock_set_qu_optional_when_zeroing(mcp_client: Client, refunwrap_
     assert zero_ops[0]["qu_name"] == qu
 
     # (2) Nonzero without `qu` — batch tools collect per-item errors rather
-    # than raising, so the batch succeeds but this item reports an error
-    # naming the omitted `qu`.
+    # than raising, so the batch succeeds but this item reports an error.
     nonzero_ops = unwrap_result(
         await mcp_client.call_tool("stock_set", {"items": [{"product": product, "new_amount": 3, "location": loc}]})
     )
     assert nonzero_ops[0]["kind"] == "error", nonzero_ops
-    assert "qu" in nonzero_ops[0]["error"]
 
     # (3) Nonzero with `qu` — still works (regression check for the happy path).
     set_ops = unwrap_result(

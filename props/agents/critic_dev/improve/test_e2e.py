@@ -20,7 +20,6 @@ condition checks would require real grading infrastructure.
 
 from __future__ import annotations
 
-import pytest
 import pytest_bazel
 from hamcrest import assert_that
 
@@ -88,7 +87,6 @@ chmod +x /workspace/improved/init""",
     return mock
 
 
-@pytest.mark.timeout(180)
 async def test_prompt_improve_e2e_creates_package(
     e2e_stack, subtract_file_example, critic_dev_improve_image, critic_image, db: Database
 ):

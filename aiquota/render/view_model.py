@@ -12,6 +12,7 @@ second without re-spawning the CLI.
 """
 
 from datetime import UTC, datetime
+from decimal import Decimal, InvalidOperation
 from typing import Literal
 
 from pydantic import BaseModel
@@ -29,6 +30,7 @@ class ProviderView(BaseModel):
     last_success: SuccessfulProviderFetch | None
     currently_over_plan: bool
     extra_status: ExtraStatus
+    paid_credits_active: bool
     burn: BurnStatus | None
 
 
@@ -51,6 +53,7 @@ def _provider_view(pq: ProviderQuota, now: datetime) -> ProviderView:
         last_success=pq.last_success,
         currently_over_plan=currently_over_plan(pq.last_output),
         extra_status=_extra_status(pq.last_output),
+        paid_credits_active=_paid_credits_active(pq.last_output),
         burn=status_for(pq.provider, now),
     )
 
@@ -80,3 +83,16 @@ def _extra_status(out: ProviderFetch) -> ExtraStatus:
     if extra is not None and extra.is_enabled and extra.used_usd > 0:
         return "informational"
     return "none"
+
+
+def _paid_credits_active(out: ProviderFetch) -> bool:
+    if not isinstance(out.result, FetchSuccess) or out.result.paid_credits is None:
+        return False
+    credits = out.result.paid_credits
+    if not credits.unlimited and credits.balance is not None:
+        try:
+            if Decimal(credits.balance) <= 0:
+                return False
+        except InvalidOperation:
+            return False
+    return any(is_exhausted(window) for window in out.result.windows if window.display)

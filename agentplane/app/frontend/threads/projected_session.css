@@ -35,13 +35,26 @@
 .agentplane-user-bubble {
   background-color: var(--mantine-color-blue-light);
   max-width: min(34rem, 80%);
+  /* The gutter takes what the bubble leaves, never the other way round: the bubble keeps its width
+     when the gutter's status goes. */
+  flex-shrink: 0;
 }
 
 .agentplane-user-message-row {
   min-width: 0;
 }
 
-/* Keep room for actions and the evidence toggle in the gutter before an input message. */
+/* The status, error and action of an unsettled input, before its bubble. They wrap into the room the
+   bubble leaves. */
+.agentplane-user-message-aside {
+  flex: 0 1 auto;
+  min-width: 0;
+  max-width: 10rem;
+  text-align: right;
+  overflow-wrap: anywhere;
+}
+
+/* Keep room for the action button in the gutter before an input message. */
 .agentplane-user-bubble[data-has-action="true"] {
   max-width: min(34rem, calc(100% - 6rem));
 }

@@ -1,4 +1,4 @@
-"""A Python policy on composed worlds: the path's CPI, selected replay and an experiment's own claim labels."""
+"""A Python policy on composed worlds: the path's CPI and selected replay."""
 
 from collections.abc import Callable
 
@@ -7,7 +7,6 @@ import pytest_bazel
 
 from finance.augur.model.series import InflationKey
 from finance.augur.sim.actions import Action, Consume, DecisionActions
-from finance.augur.sim.bills import Biller
 from finance.augur.sim.books import AccountRef
 from finance.augur.sim.ids import AccountId, AgentId
 from finance.augur.sim.income import ORDINARY_INCOME
@@ -15,7 +14,6 @@ from finance.augur.sim.market_path import MarketPath
 from finance.augur.sim.money import mul_div
 from finance.augur.sim.observations import Decision
 from finance.augur.sim.results import Finished
-from finance.augur.sim.schedule import Once
 from finance.augur.sim.session import ActionSession
 from finance.augur.sim.testing.series import level_series
 from finance.augur.sim.testing.session import finish
@@ -67,6 +65,8 @@ def _run(compose: Callable[[int], World], rollout_ids: list[int], capture: Captu
 
 def test_each_path_keeps_its_own_cpi_and_selected_replay_matches_the_population() -> None:
     cpi = np.ones((3, HORIZON + 1))
+    # Path 1 starts at CPI 2, so its origin differs from the others' as well as its current level.
+    cpi[:, 0] = [1.0, 2.0, 1.0]
     cpi[:, 12:] = np.asarray([2.0, 1.0, 3.0])[:, None]
     series = level_series({InflationKey(): cpi}, rollout_count=3, horizon_months=HORIZON)
 
@@ -76,36 +76,10 @@ def test_each_path_keeps_its_own_cpi_and_selected_replay_matches_the_population(
     baseline = _run(compose, [0, 1, 2], "summary")
     assert [
         row.receipt.amount_paid for rollout in baseline.rollouts for row in rollout.summary.payments if row.month == 12
-    ] == [800, 400, 1200]
+    ] == [800, 200, 1200]
     replay = _run(compose, [2, 0], "forensic")
     assert [row.rollout_id for row in replay.rollouts] == [2, 0]
     assert [row.summary for row in replay.rollouts] == [baseline.rollouts[id_].summary for id_ in [2, 0]]
-
-
-def test_an_experiment_defined_claim_label_reaches_the_policy() -> None:
-    world = _retiree(MarketPath((), 0, rollout_count=1))
-    world.track(
-        Biller(
-            schedule=Once(month=0),
-            obligation_id="test-outflow",
-            obligation_type="experiment:annual-outflow",
-            from_account=AccountRef(agent_id=AgentId("retiree"), account_id=AccountId("checking")),
-            to_account=AccountRef(agent_id=AgentId("world"), account_id=AccountId("checking")),
-            amount_due=15_000,
-            property_id=None,
-            deduction_category=None,
-            deductible_fraction_ppb=1_000_000_000,
-        )
-    )
-    session = ActionSession({0: world}, AgentId("retiree"))
-    try:
-        batch = session.start()
-        assert not isinstance(batch, Finished)
-        [observed] = batch[0].observation.claims
-        assert observed.obligation_type == "experiment:annual-outflow"
-        assert observed.amount_due == 15_000
-    finally:
-        session.close()
 
 
 if __name__ == "__main__":

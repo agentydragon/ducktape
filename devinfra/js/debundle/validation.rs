@@ -199,11 +199,6 @@ impl CycleEdge {
 /// For ESM-evaluation-simulator (Pass-2 / TDZ) rejections, the cut
 /// rows are followed by the lazy back-edges that close the I-cycle
 /// (`CycleReport::lazy_closure`), in the same binding-pair format.
-///
-/// The text retains the words "unrealizable" and "cycle" so existing
-/// rejection-keyword tests (`expect_rejection` in the e2e harness)
-/// keep working — the format change is additive: more actionable
-/// blame, same trigger keywords.
 pub fn render_cycle_summary(cycles: &[CycleReport]) -> String {
     let mut out = String::new();
     const TOP_K: usize = 10;

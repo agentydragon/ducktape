@@ -3,10 +3,14 @@
 from __future__ import annotations
 
 from typing import TYPE_CHECKING
-from unittest.mock import patch
 
+import pytest
 import pytest_bazel
-from hamcrest import assert_that, has_entries
+from hamcrest import assert_that, close_to, equal_to, has_entries
+
+from homeassistant.config_entries import ConfigEntryState
+from homeassistant.const import STATE_UNAVAILABLE
+from homeassistant.setup import async_setup_component
 
 if TYPE_CHECKING:
     from homeassistant.core import HomeAssistant
@@ -14,14 +18,12 @@ if TYPE_CHECKING:
 DOMAIN = "indoor_aqi"
 
 
-async def test_setup_component(hass: HomeAssistant):
-    """Test setting up the Indoor AQI component."""
-    # Import inside test function to avoid loading HA modules before
-    # pytest_homeassistant_custom_component can patch them
-    from homeassistant.setup import async_setup_component  # noqa: PLC0415
-
-    # Define a basic YAML config
-    config = {
+@pytest.fixture
+def yaml_config(hass: HomeAssistant) -> dict:
+    """YAML config for one monitor, with its source sensors present in the state machine."""
+    hass.states.async_set("sensor.test_co2", "800")
+    hass.states.async_set("sensor.test_pm25", "30")
+    return {
         DOMAIN: {
             "monitors": [
                 {
@@ -34,50 +36,35 @@ async def test_setup_component(hass: HomeAssistant):
         }
     }
 
-    # Mock entity states - we don't need actual states for this test
-    hass.states.async_set("sensor.test_co2", "800")
-    hass.states.async_set("sensor.test_pm25", "30")
 
-    # Set up the component
-    assert await async_setup_component(hass, DOMAIN, config)
+async def test_setup_component(hass: HomeAssistant, yaml_config: dict):
+    """Test setting up the Indoor AQI component."""
+    assert await async_setup_component(hass, DOMAIN, yaml_config)
     await hass.async_block_till_done()
 
     # Verify that the component initialized correctly
-    assert_that(hass.data[DOMAIN], has_entries(yaml_config=config[DOMAIN]))
+    assert_that(hass.data[DOMAIN], has_entries(yaml_config=yaml_config[DOMAIN]))
 
 
-async def test_setup_entry(hass: HomeAssistant):
-    """Test setting up a config entry."""
-    from custom_components.indoor_aqi import async_setup_entry  # noqa: PLC0415
-    from pytest_homeassistant_custom_component.common import MockConfigEntry  # noqa: PLC0415
+async def test_entry_loads_and_unloads_sensor(hass: HomeAssistant, yaml_config: dict):
+    """The YAML-imported entry loads the sensor platform; unloading takes the sensor offline."""
+    assert await async_setup_component(hass, DOMAIN, yaml_config)
+    await hass.async_block_till_done()
 
-    # Create a mock entry
-    entry = MockConfigEntry(domain=DOMAIN, data={}, entry_id="test_entry_id")
+    (entry,) = hass.config_entries.async_entries(DOMAIN)
+    assert_that(entry.state, equal_to(ConfigEntryState.LOADED))
+    sensor_state = hass.states.get("sensor.test_aqi")
+    assert sensor_state is not None
+    # CO2 800 ppm is the bottleneck: halfway between the 600 ppm (80) and 1000 ppm (60) breakpoints.
+    assert_that(float(sensor_state.state), close_to(70.0, 0.1))
 
-    # We expect async_setup_entry to call async_forward_entry_setups for sensor platform
-    with patch("homeassistant.config_entries.ConfigEntries.async_forward_entry_setups") as mock_forward:
-        assert await async_setup_entry(hass, entry)
-        # Check that it forwarded the setup to the sensor platform
-        mock_forward.assert_called_once_with(entry, ["sensor"])
+    assert await hass.config_entries.async_unload(entry.entry_id)
+    await hass.async_block_till_done()
 
-
-async def test_unload_entry(hass: HomeAssistant):
-    """Test unloading a config entry."""
-    from custom_components.indoor_aqi import async_unload_entry  # noqa: PLC0415
-    from pytest_homeassistant_custom_component.common import MockConfigEntry  # noqa: PLC0415
-
-    # Create a mock entry
-    entry = MockConfigEntry(domain=DOMAIN, data={}, entry_id="test_entry_id")
-
-    # We expect async_unload_entry to call async_unload_platforms
-    with patch("homeassistant.config_entries.ConfigEntries.async_unload_platforms") as mock_unload:
-        # Need to add hass.data for the entry first
-        hass.data.setdefault(DOMAIN, {})
-
-        assert await async_unload_entry(hass, entry)
-
-        # Check that it unloaded the platforms
-        mock_unload.assert_called_once_with(entry, ["sensor"])
+    assert_that(entry.state, equal_to(ConfigEntryState.NOT_LOADED))
+    sensor_state = hass.states.get("sensor.test_aqi")
+    assert sensor_state is not None
+    assert sensor_state.state == STATE_UNAVAILABLE
 
 
 if __name__ == "__main__":

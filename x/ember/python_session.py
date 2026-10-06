@@ -10,7 +10,11 @@ import textwrap
 import time
 from pathlib import Path
 
+import psutil
 from jupyter_client import BlockingKernelClient
+
+# The kernel runs as `python -m ipykernel_launcher`, which the import scan cannot see.
+# gazelle:include_dep @pypi//ipykernel
 
 logger = logging.getLogger(__name__)
 
@@ -138,10 +142,10 @@ def _kernel_alive() -> bool:
     if pid is None:
         return False
     try:
-        os.kill(pid, 0)
-    except OSError:
+        # Signal 0 also succeeds for a terminated child its launcher has not yet waited on.
+        return psutil.Process(pid).status() != psutil.STATUS_ZOMBIE
+    except psutil.NoSuchProcess:
         return False
-    return True
 
 
 def _kernel_pid() -> int | None:

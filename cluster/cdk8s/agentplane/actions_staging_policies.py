@@ -47,6 +47,7 @@ from cluster.cdk8s.agentplane.app_settings import (
     GROCY_SF_READONLY_POLICY,
     HAKU_MAILBOX_POLICY,
     HOME_ASSISTANT_READONLY_POLICY,
+    INFERENCE_EXPERIMENTS_POLICY,
     PACKAGES_POLICY,
     PLAID_PGWEB_POLICY,
     SSH_READS_SET,
@@ -701,6 +702,7 @@ def add_staging_action_policies(scope: Construct) -> None:
         claude_ai,
         policies=[
             BASIC_POLICY,
+            INFERENCE_EXPERIMENTS_POLICY,
             FORGEJO_HAKU_POLICY,
             PACKAGES_POLICY,
             GOOGLE_READONLY_POLICY,
@@ -727,6 +729,7 @@ def add_staging_action_policies(scope: Construct) -> None:
         haku_agent,
         policies=[
             BASIC_POLICY,
+            INFERENCE_EXPERIMENTS_POLICY,
             FORGEJO_HAKU_POLICY,
             PACKAGES_POLICY,
             GOOGLE_READONLY_POLICY,

@@ -666,6 +666,7 @@ augur_vitest_test(
         ":data_helpers",
         ":input_helpers",
         "//:node_modules/vitest",
+        "//finance/augur/frontend/lib:format",
     ],
 )
 

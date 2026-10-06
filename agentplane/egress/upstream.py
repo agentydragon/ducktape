@@ -1,6 +1,6 @@
 """The upstream address: the admitted host, resolved by the proxy and pinned to the dial.
 
-A policy names hosts, but a connection is made to an address, and nothing about a name says where
+An egress policy names hosts, but a connection is made to an address, and nothing about a name says where
 it points: an allowed name can resolve into the cluster (a Service, a Pod, a node), and it can
 resolve differently on the second lookup (DNS rebinding). So the proxy resolves the host itself,
 refuses every address that is not globally reachable, and dials exactly the address it checked.
@@ -133,7 +133,7 @@ class UpstreamResolver:
         """The fresh pin for the host, resolving it when there is none.
 
         A host with any address that is not reachable is refused whole, rather than served from
-        its reachable addresses: a name that points into the cluster at all is not one a policy
+        its reachable addresses: a name that points into the cluster at all is not one an egress policy
         meant to admit -- unless the rule that admitted it says so, which is what `internal`
         carries. Among the reachable ones an IPv4 address is pinned before an IPv6 one: the Pod
         network the proxy dials from has no IPv6 route.

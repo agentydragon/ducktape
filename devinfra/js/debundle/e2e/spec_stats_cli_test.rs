@@ -81,25 +81,27 @@ fn singleton_plus_multi_member_bucket_counts() {
 }
 
 #[test]
-fn output_is_deterministic_across_runs() {
+fn source_match_bindings_count_toward_orphans_and_renames() {
     let modules = module_tree(&[
         (
-            "a.yaml",
-            "members:\n  - selector: { binding: { name: a } }\n  - selector: { binding: { name: b } }\n",
+            "solo.yaml",
+            "source_matches: [{match: 'const a = 1;', bindings: [{local: a, name: Alpha}]}]\n",
         ),
         (
-            "nested/c.yaml",
-            "members:\n  - selector: { binding: { name: c } }\n",
+            "pair.yaml",
+            "source_matches: [{match: 'const b = 2; const c = 3;', bindings: [b, c]}]\n",
         ),
     ]);
-    write_text_file(
-        &modules.path().join("residual/unhandled.yaml"),
-        "members: []\n",
-    );
 
-    let out1 = run_stats(modules.path(), &["--format", "json"]);
-    let out2 = run_stats(modules.path(), &["--format", "json"]);
-    assert_eq!(out1.stdout, out2.stdout, "same spec -> same json");
+    let out = run_stats(modules.path(), &["--format", "json"]);
+    let parsed: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
+    assert_eq!(parsed["modules"]["member_count"]["singletons"], 1);
+    assert_eq!(parsed["modules"]["member_count"]["tiny_2_to_5"], 1);
+    assert_eq!(parsed["bindings"]["total"], 3);
+    assert_eq!(parsed["bindings"]["renamed"], 1);
+    assert_eq!(parsed["bindings"]["unrenamed"], 2);
+    // Only `Alpha` is an orphan (the sole binding of `solo`).
+    assert_eq!(parsed["bindings"]["orphan"], 1);
 }
 
 #[test]
@@ -111,17 +113,10 @@ fn text_format_emits_non_empty_human_output() {
 
     let out = run_stats(modules.path(), &["--format", "text"]);
     let stdout = String::from_utf8(out.stdout).unwrap();
+    assert!(!stdout.trim().is_empty(), "text output is empty");
     assert!(
-        stdout.contains("modules:"),
-        "missing modules header: {stdout}"
-    );
-    assert!(
-        stdout.contains("bindings:"),
-        "missing bindings header: {stdout}"
-    );
-    assert!(
-        stdout.contains("singletons"),
-        "missing bucket name: {stdout}"
+        serde_json::from_str::<serde_json::Value>(&stdout).is_err(),
+        "`--format text` printed JSON: {stdout}"
     );
 }
 

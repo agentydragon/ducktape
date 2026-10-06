@@ -130,6 +130,8 @@ class ModelCatalog(BaseModel):
 
     `models` holds each model's metadata once; `harnesses` references it by `model` id, so a
     model two harnesses both accept (e.g. a local Ollama route) names its display name only once.
+    An empty harness list pauses its launch-form offerings, not its existing sessions
+    or the low-level Sandbox Service/runner API.
     """
 
     model_config = ConfigDict(extra="forbid")
@@ -290,14 +292,14 @@ class EgressGrant(BaseModel):
 @router.get("/{name}/egress")
 async def sandbox_egress(inventory: Inventory, egress: Egress, name: str) -> list[BindingView]:
     """What may leave the sandbox: the bindings naming the ServiceAccount it runs as, with their
-    policies as they resolve."""
+    egress policies as they resolve."""
     return await egress.bindings_for(sandbox_view(await inventory.get(name)).service_account)
 
 
 @router.post("/{name}/egress", status_code=status.HTTP_201_CREATED)
 async def grant_sandbox_egress(inventory: Inventory, egress: Egress, name: str, body: EgressGrant) -> BindingView:
-    """Grant policies to a sandbox already running: a new binding naming it, never an edit of one it
-    has, so this grant's expiry and revocation are its own."""
+    """Grant egress policies to a sandbox already running: a new binding naming it, never an edit of
+    one it has, so this grant's expiry and revocation are its own."""
     return await egress.grant(await inventory.get(name), body.policies)
 
 
@@ -312,7 +314,7 @@ egress_router = APIRouter(prefix="/egress", tags=["egress"])
 
 @egress_router.get("/policies")
 async def list_policies(egress: Egress) -> list[PolicyView]:
-    """The namespace's policies: what the create form offers to pick from."""
+    """The namespace's egress policies: what the create form offers to pick from."""
     return await egress.list_policies()
 
 
@@ -962,8 +964,8 @@ def create_app(
 ) -> FastAPI:
     """The whole HTTP surface, guarded. Each of `oidc` and `reviewer` enables one way to authenticate,
     and an app given neither answers 401 to everything but /healthz."""
-    if set(catalog.harnesses) != set(Harness) or not all(catalog.harnesses.values()):
-        raise ValueError(f"the model catalog needs a non-empty list for every harness: {catalog=}")
+    if set(catalog.harnesses) != set(Harness) or not any(catalog.harnesses.values()):
+        raise ValueError(f"the model catalog needs every harness key and at least one offered model: {catalog=}")
     configured_presets = presets or PresetCatalog()
     configured_grants = kubernetes_grants or {}
     grant_views(configured_grants)  # validate catalog keys before serving requests

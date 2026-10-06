@@ -2,24 +2,30 @@ import { expect, test } from "vitest";
 
 import { eventDetailText, eventLabel, sellableSleeves } from "./data_helpers";
 import { resolveSleeveWeights } from "./input_helpers";
+import { fmtQuanta } from "./lib/format";
 
 test("TLH timeline renders signed effects and distinguishes zero-cash redemption from modeled loss", () => {
+  const currency = { currencyCode: "USD", currencyQuantum: "1" };
   const event = {
     kind: "tlh_financial_effect",
     operation: "redemption",
     portfolioId: "test-managed",
     amountQuanta: "0",
-    shortTermGainQuanta: "0",
-    longTermGainQuanta: "-1",
-    basisChangeQuanta: "-1",
-    incomeQuanta: "0",
-    _currency: { currencyCode: "USD", currencyQuantum: "1" },
+    shortTermGainQuanta: "2",
+    longTermGainQuanta: "-3",
+    basisChangeQuanta: "-4",
+    incomeQuanta: "5",
+    _currency: currency,
   };
-  expect(eventLabel(event)).toBe("TLH redemption: test-managed");
-  expect(eventDetailText(event)).toBe(
-    "cash USD\u00a00; ST gain USD\u00a00; LT gain USD\u00a0-1; basis change USD\u00a0-1; income USD\u00a00"
-  );
-  expect(eventLabel({ ...event, operation: "modeled_realization" })).toBe("TLH modeled realization: test-managed");
+  const redemption = eventLabel(event);
+  const modeledRealization = eventLabel({ ...event, operation: "modeled_realization" });
+  expect(redemption).toContain("test-managed");
+  expect(modeledRealization).toContain("test-managed");
+  expect(redemption).not.toBe(modeledRealization);
+  const detail = eventDetailText(event);
+  for (const quanta of ["0", "2", "-3", "-4", "5"]) {
+    expect(detail).toContain(fmtQuanta(quanta, currency));
+  }
 });
 
 test("each TLH portfolio is its own sleeve, labelled as itself and apart from lots of its index", () => {

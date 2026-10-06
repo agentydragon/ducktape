@@ -68,7 +68,7 @@ class AgentEgressView(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     subject: ServiceAccountRef = Field(description="The ServiceAccount this view is of.")
-    policies: list[PolicyView] = Field(description="Granted by an active binding; empty means no egress.")
+    policies: list[PolicyView] = Field(description="Granted egress policies; empty means no egress.")
 
 
 def _credential_view(credential: EgressCredential) -> CredentialView:

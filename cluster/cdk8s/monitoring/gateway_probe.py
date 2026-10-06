@@ -91,7 +91,7 @@ def _daemon_set(scope: Chart, nodes: list[str]) -> None:
             template=k8s.PodTemplateSpec(
                 metadata=k8s.ObjectMeta(labels=_LABELS),
                 spec=k8s.PodSpec(
-                    # Exactly the nodes public DNS resolves to (tf/gitops/dns-records).
+                    # Exactly the nodes in the ExternalDNS public target roster.
                     affinity=k8s.Affinity(
                         node_affinity=k8s.NodeAffinity(
                             required_during_scheduling_ignored_during_execution=k8s.NodeSelector(

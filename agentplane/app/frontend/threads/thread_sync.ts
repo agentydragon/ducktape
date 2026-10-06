@@ -62,7 +62,8 @@ export interface Payload {
   /** The longest prefix of the referenced revision that has arrived, itself an earlier revision;
    * null before any has. */
   body: string | null;
-  /** Why the body stopped loading; `retry` starts it again. */
+  /** Why the body stopped loading short of the whole revision; null while it loads and once it is
+   * whole. `retry` starts it again. */
   error: string | null;
   retry: () => void;
 }

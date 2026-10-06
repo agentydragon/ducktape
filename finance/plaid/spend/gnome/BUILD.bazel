@@ -7,6 +7,7 @@ pkg_files(
     srcs = [
         "extension.js",
         "metadata.json",
+        "stylesheet.css",
     ],
     strip_prefix = strip_prefix.from_pkg(),
     visibility = ["//visibility:public"],
@@ -38,6 +39,7 @@ py_test(
     tags = ["visual"],
     deps = [
         "//:conftest",
+        "//finance/plaid/spend:conftest",
         "//util:oci",
         "//util/bazel:runfiles",
         "//util/testing:undeclared_outputs",

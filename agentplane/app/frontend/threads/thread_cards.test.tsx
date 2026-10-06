@@ -4,13 +4,13 @@ import { create, toJson, type MessageInitShape } from "@bufbuild/protobuf";
 import { MantineProvider } from "@mantine/core";
 import { act } from "react";
 import { createRoot } from "react-dom/client";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { EventSchema, ItemKind, RecoveryDisposition, TurnStatus } from "../../../protocol/event_pb";
 import { RetainedDisclosureProvider } from "./retained_disclosures";
 import { EntityCard } from "./thread_cards";
 import { testItem } from "./thread_entity_fixture";
-import { entity, reference, serving, toggle } from "./thread_state_fixture";
+import { badgeLabels, entity, reference, serving, toggle } from "./thread_state_fixture";
 import { ThreadSyncContext, type ThreadEntity } from "./thread_sync";
 
 (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
@@ -23,7 +23,12 @@ afterEach(async () => {
   }
 });
 
-async function renderCard(card: ThreadEntity, bodies: Record<string, string>, live = false): Promise<HTMLDivElement> {
+async function renderCard(
+  card: ThreadEntity,
+  bodies: Record<string, string>,
+  live = false,
+  stopped: ReadonlyMap<string, () => void> = new Map()
+): Promise<HTMLDivElement> {
   const container = document.createElement("div");
   document.body.append(container);
   const root = createRoot(container);
@@ -31,7 +36,7 @@ async function renderCard(card: ThreadEntity, bodies: Record<string, string>, li
   await act(async () =>
     root.render(
       <MantineProvider env="test">
-        <ThreadSyncContext.Provider value={serving(new Map(Object.entries(bodies)))}>
+        <ThreadSyncContext.Provider value={serving(new Map(Object.entries(bodies)), stopped)}>
           <RetainedDisclosureProvider>
             {/* The history's row carries the anchor; a card renders inside it. */}
             <div data-thread-anchor={card.cursor.toString()}>
@@ -66,7 +71,10 @@ async function disclose(container: HTMLElement, summary: string): Promise<HTMLDe
 const PROSE = "Run **every** test\n- first";
 
 describe("recovery presentation", () => {
-  it.each([null, "text"])("labels retained text with completion %s", async (completion) => {
+  it.each<[string | null, string[]]>([
+    [null, ["Interrupted"]],
+    ["text", []],
+  ])("badges retained text that completed as %j with %j", async (completion, badges) => {
     const container = await renderCard(
       testItem(
         1,
@@ -77,7 +85,7 @@ describe("recovery presentation", () => {
       { "test-entity-1:text": "Remember the name in the margin" }
     );
     expect(container.textContent).toContain("Remember the name in the margin");
-    expect(container.querySelector('[aria-label="Retained in context"]')).not.toBeNull();
+    expect(badgeLabels(container)).toEqual(badges);
   });
 
   it("collapses discarded text and preserves it behind a disclosure", async () => {
@@ -131,13 +139,27 @@ describe("recovery presentation", () => {
       ),
       { "test-entity-1:output": "aborted" }
     );
-    expect(container.querySelector('[aria-label="Revised for continuation"]')).not.toBeNull();
+    expect(badgeLabels(container).sort()).toEqual(["Interrupted", "Revised for continuation"]);
     await toggle(container.querySelector("summary")!);
     expect(container.textContent).toContain("Recovery content does not establish a tool execution outcome.");
     expect(container.textContent).toContain("Continuation output");
     expect(container.textContent).toContain("aborted");
-    expect(container.querySelector('[aria-label="Succeeded"]')).toBeNull();
-    expect(container.querySelector('[aria-label="Failed"]')).toBeNull();
+    expect(badgeLabels(container).sort()).toEqual(["Interrupted", "Revised for continuation"]);
+  });
+
+  it("badges a revised tool call that did succeed only as revised", async () => {
+    const container = await renderCard(
+      testItem(
+        1,
+        ItemKind.TOOL_CALL,
+        { tool_name: "Bash", completion: "tool", tool_succeeded: true, recovery: RecoveryDisposition.REVISED },
+        { outputRef: reference("test-entity-1", "output") }
+      ),
+      { "test-entity-1:output": "Created report.txt" }
+    );
+    expect(badgeLabels(container)).toEqual(["Revised for continuation"]);
+    await toggle(container.querySelector("summary")!);
+    expect(badgeLabels(container)).toEqual(["Revised for continuation"]);
   });
 
   it("preserves a successful execution result when its context was discarded", async () => {
@@ -157,8 +179,69 @@ describe("recovery presentation", () => {
     );
     await disclose(container, "Bash: discarded context (not retained in model context)");
     expect(container.textContent).toContain("does not undo tool side effects");
-    expect(container.querySelector('[aria-label="Succeeded"]')).not.toBeNull();
+    expect(badgeLabels(container)).toEqual(["Not retained in context"]);
     expect(container.textContent).toContain("Created report.txt");
+  });
+});
+
+// A recovery marks everything in the last turn, so most of what it marks is retained and finished:
+// that is the ordinary case, and says nothing.
+describe("an item the recovery left as it was", () => {
+  // The containers a card puts status badges in, which take their margin or gap even when empty.
+  const blankStatusWrappers = (container: HTMLElement): Element[] =>
+    [...container.querySelectorAll(".mantine-Group-root, .agentplane-step-trailing")].filter(
+      (wrapper) => wrapper.childElementCount === 0
+    );
+  const bodies = {
+    "test-entity-1:text": "Kept in context",
+    "test-entity-1:arguments": JSON.stringify({ command: "ls" }),
+    "test-entity-1:output": "test-output",
+  };
+
+  it.each([
+    ["assistant text", ItemKind.ASSISTANT_TEXT],
+    ["reasoning step", ItemKind.REASONING],
+  ])("gives retained, finished %s no badge and no row for one", async (_, kind) => {
+    const container = await renderCard(
+      testItem(1, kind, { recovery: RecoveryDisposition.RETAINED }, { textRef: reference("test-entity-1", "text") }),
+      bodies
+    );
+    expect(container.textContent).toContain("Kept in context");
+    expect(badgeLabels(container)).toEqual([]);
+    expect(blankStatusWrappers(container)).toEqual([]);
+  });
+
+  it("gives a retained tool call that succeeded no badge, folded or open, and no slot for one", async () => {
+    const container = await renderCard(
+      testItem(
+        1,
+        ItemKind.TOOL_CALL,
+        { tool_name: "Bash", completion: "tool", tool_succeeded: true, recovery: RecoveryDisposition.RETAINED },
+        { argumentsRef: reference("test-entity-1", "arguments"), outputRef: reference("test-entity-1", "output") }
+      ),
+      bodies
+    );
+    expect(badgeLabels(container)).toEqual([]);
+    expect(blankStatusWrappers(container)).toEqual([]);
+
+    await toggle(container.querySelector("summary")!);
+    expect(container.textContent).toContain("test-output");
+    expect(badgeLabels(container)).toEqual([]);
+    expect(blankStatusWrappers(container)).toEqual([]);
+  });
+
+  it("still badges a retained tool call that failed", async () => {
+    const container = await renderCard(
+      testItem(
+        1,
+        ItemKind.TOOL_CALL,
+        { tool_name: "Bash", completion: "tool", tool_succeeded: false, recovery: RecoveryDisposition.RETAINED },
+        { argumentsRef: reference("test-entity-1", "arguments"), outputRef: reference("test-entity-1", "output") }
+      ),
+      bodies
+    );
+    await toggle(container.querySelector("summary")!);
+    expect(badgeLabels(container)).toEqual(["Failed"]);
   });
 });
 
@@ -418,6 +501,35 @@ describe("tool call rows", () => {
   });
 });
 
+describe("a row whose body stopped loading", () => {
+  const reasoning = entity(
+    "item",
+    {
+      kind: ItemKind.REASONING,
+      tool_name: "",
+      completion: "text",
+      tool_succeeded: null,
+      recovery: null,
+      recovery_reason: "",
+    },
+    { textRef: reference("test-reasoning", "text") }
+  );
+
+  it.each([
+    ["reasoning step", reasoning, {}, "test-reasoning:text"],
+    ["tool call", toolEntity("Bash"), { "test-tool:output": "test-output" }, "test-tool:arguments"],
+  ])("offers a %s a Retry of its own, which reads the body again", async (_, card, bodies, stopped) => {
+    const retry = vi.fn();
+    const container = await renderCard(card, bodies, false, new Map([[stopped, retry]]));
+
+    expect(lineOf(container)).toBe("Preview unavailable");
+    const [button, ...others] = [...container.querySelectorAll("button")].filter((b) => b.textContent === "Retry");
+    expect(others).toEqual([]);
+    await act(async () => button.click());
+    expect(retry).toHaveBeenCalledOnce();
+  });
+});
+
 describe("EntityCard", () => {
   it("renders a tool call's JSON arguments highlighted and its plain output verbatim, both as code", async () => {
     const container = await renderTool("Read", { file_path: "test-file", limit: 30 }, PROSE);
@@ -464,7 +576,7 @@ describe("EntityCard", () => {
     expect(container.querySelector(".agentplane-markdown, strong, li")).toBeNull();
   });
 
-  it("renders a still-pending sent message as the same bubble, marked pending", async () => {
+  it("renders a still-pending sent message as the same bubble, with its status beside it, not inside", async () => {
     const container = await renderCard(
       entity(
         "command",
@@ -475,7 +587,9 @@ describe("EntityCard", () => {
     );
     const bubble = container.querySelector<HTMLElement>(".agentplane-user-bubble");
     expect(bubble?.querySelector(".agentplane-verbatim")?.textContent).toBe(PROSE);
-    expect(bubble?.textContent).toContain("Saved · awaiting effect");
+    // The bubble holds only the message, so it is the same once the status goes and nothing moves.
+    expect(bubble?.textContent).toBe(PROSE);
+    expect(bubble?.parentElement?.querySelector('[role="status"]')?.textContent).toBe("Saved · awaiting effect");
   });
 
   it.each<[string, Observation, string]>([
@@ -517,7 +631,7 @@ describe("EntityCard", () => {
         value: { turnId: "test-failed-turn", status: TurnStatus.FAILED, error },
       });
       const alert = container.querySelector('[data-thread-anchor="1"] [role="alert"]')!;
-      expect(alert.textContent).toBe(`Turn failed${error || "The harness reported no error details."}`);
+      expect(alert.textContent).toBe(`Turn failed ${error || "The harness reported no error details."}`);
       expect(alert.querySelector("img")).toBeNull();
     }
   );
@@ -535,7 +649,7 @@ describe("EntityCard", () => {
 
   it.each<[string, string, Observation]>([
     [
-      "Turn losttest harness exited during the turn",
+      "Turn lost test harness exited during the turn",
       "turn_completed",
       {
         case: "turnCompleted",

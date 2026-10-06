@@ -20,20 +20,19 @@ is an explicit temporary operational constraint, never an implicit correctness a
 
 Proposed execution order for the Thread correctness/UI track:
 
-- **P0:** close deployed Claude/Codex acceptance (`THREAD_DEPLOYED_ACCEPTANCE`), including
-  the current model-path availability failure (`EGRESS_IDENTITY_AVAILABILITY`). Keep one
+- **P0:** close deployed Claude/Codex acceptance (`THREAD_DEPLOYED_ACCEPTANCE`). Keep one
   runner-owned command queue; no app outbox or combined-start expansion in this batch.
 - **P1, current batch:** end-to-end LLM error evidence (`LLM_ERROR_SURFACE`). Native
   resume/recovery remains on the board but is excluded from this dispatch batch.
+- **P1, reported against deployed staging:** command-submission deadlines
+  (`ADMISSION_DEADLINE_BUDGET`, then `ADMISSION_UNCERTAIN_OUTCOME`). The staged submission
+  indicator (`SUBMISSION_STAGE_INDICATOR`) follows them and shares its test changes with
+  [#9063](https://github.com/agentydragon/ducktape/issues/9063).
 - **P0, hosted Haku blocker, pending deployment acceptance:** verify per-Thread setup and
   working directories for Haku and Finance (`THREAD_WORKSPACE_BOOTSTRAP`,
   [#8695](https://github.com/agentydragon/ducktape/issues/8695)).
 - **P2:** browser-driven acceptance against the deployed cluster (`CLUSTER_BROWSER_ACCEPTANCE`)
   and driver-hosted tools (`DT`). Neither blocks the current API-level acceptance closure.
-- **Low priority / deferred:** bounded browser cache state (`THREAD_LAZY_HISTORY`, desire D6),
-  and optional app-wide/per-Thread raw-evidence retention controls (`THREAD_EVIDENCE_RETENTION`).
-  The current view sync pages older rows in on demand, reads the bodies of the rows it holds ahead
-  of the reader, and retains the windows of the last few Threads left; it keeps the archive lossless.
 - **Unranked future harness capabilities:** project skills and commands, web search, visual input,
   native subagents, interactive controls, project hooks/plugins, and prompt suggestions. The
   existing P2 item `DT` is included below as a cross-reference and keeps its current priority; it
@@ -63,15 +62,12 @@ flowchart TB
     ELEVATE["Planned behavior<br/>agent-requested temporary permission<br/>ServiceAccount and Sandbox callers, operator-approved"]:::future
     INPUT_DELIVERY["Remaining native evidence<br/>input/interrupt/recovery gaps<br/>exact upstream requests and queue fates"]:::active
     T3["Deferred product work<br/>thread search and lookup<br/>later prioritization"]:::future
-    PC_EGRESS_CREDENTIALS["Planned configuration<br/>public-coder's iron-proxy substitutions as EgressCredentials<br/>plus its dedicated ServiceAccount"]:::future
+    PC_EGRESS_CREDENTIALS["Remaining configuration<br/>label public-coder's OpenClaw caller<br/>for Action Service admission"]:::future
     PC_EGRESS["Capstone<br/>public-coder-agent egress migration<br/>proven equivalent, cut over, old proxy retired"]:::milestone
     ACCESS["Deferred design<br/>delegated vs brokered external access<br/>grants and revocation"]:::future
-    PUBLIC_MCP_ROUTE_ISOLATION["Remaining deployed security check<br/>operator REST and enrollment APIs<br/>unreachable through public MCP route"]:::future
     EGRESS_CHANGE["Deferred design<br/>agent-requested egress<br/>policy expansion"]:::future
-
+    BINDING_SUBJECT_ARITY["Schema cleanup<br/>singular subject across binding kinds<br/>before multi-subject use"]:::future
     NOTIFICATION_ACTION_FEED["Notification source follow-up<br/>event-driven Action consumption<br/>replace idle history polling"]:::future
-    NOTIFICATION_DEBOUNCE["Remaining deployed acceptance<br/>configurable runner-notice debounce<br/>real burst behavior"]:::active
-    NOTIFICATION_TURN_GATING["Deferred design<br/>avoid notices piling up<br/>before the agent processes them"]:::future
     NOTIFICATION_COMPACT_NOTICES["Deferred design<br/>brief notices and shared instructions<br/>Claude/Codex compaction evidence"]:::future
     GITHUB_DELIVERY_RECOVERY["Remaining GitHub acceptance<br/>redelivery deduplication and restart recovery"]:::future
     HOME_ASSISTANT_NOTIFICATIONS["Unranked future source<br/>Home Assistant events and state changes"]:::future
@@ -93,9 +89,9 @@ flowchart TB
     HOSTED_THREAD_SURFACES["Deferred design<br/>read and control surfaces for a hosted Thread<br/>beyond today's Sandbox-bound view"]:::future
     CROSS_IDENTITY_READ_POLICY["Deferred decision<br/>explicit policy for reading across Identities<br/>what cross-Identity delivery waits on"]:::decision
     AG["Capstone<br/>hosted Agent and Thread model<br/>lifecycle, surfaces and read policy together"]:::milestone
-    PROD["Milestone<br/>production-capable governed action execution"]:::milestone
     CONNECTION_SA_REBIND["Planned mutation<br/>rebind a Connection's ServiceAccount in place<br/>no mutation exists; only a fresh OAuth consent does"]:::future
     SANDBOX_RBAC["Managed Kubernetes access<br/>catalog choices and SA bindings<br/>live acceptance pending; see #8596"]:::active
+    KUBERNETES_RBAC_POLICIES["Deferred design<br/>reusable Kubernetes RBAC policies<br/>shared bindings, propagation, compact UI"]:::future
     CALLER_GRANT_VIEW["Planned UI<br/>one grant view for Sandboxes and unmanaged agents<br/>an unmanaged agent's policy is invisible today"]:::future
     MANAGED_SA_RBAC["Planned Kubernetes access<br/>RoleBindings as a managed grant kind<br/>any managed ServiceAccount, Sandbox-backed or not"]:::future
     CLAUDE_AI_SA["Planned identity<br/>the claude.ai account's deliberate authority<br/>cluster diagnostics and agent-readable reads; reaches Forgejo as haku"]:::future
@@ -103,17 +99,20 @@ flowchart TB
     UISHELL_NEWTHREAD_SANDBOX["Deferred combined UI<br/>pre-scoped '+ New thread' on a Sandbox's page<br/>Sandbox selected, Thread fields editable"]:::future
     UISHELL_NEWTHREAD_LANDING["Deferred combined UI<br/>sidebar '+' unscoped new-thread composer<br/>Sandbox/preset/model pickers + prompt"]:::future
     COMMAND_QUEUE_DECISION["Deferred decision<br/>accept commands while runner unavailable?<br/>current slice uses runner admission first"]:::decision
+    ADMISSION_DEADLINE_BUDGET["P1 reported failure<br/>submission waits bound on archive lag<br/>four coupled 15 s budgets, one setting"]:::active
+    ADMISSION_UNCERTAIN_OUTCOME["Planned correctness<br/>unconfirmed submission reconciles<br/>not a failed send"]:::future
+    COMMAND_DISPATCHED_EVENT["Missing observation<br/>runner handed the command to the harness<br/>journal-only today; needs an Event"]:::future
+    SUBMISSION_STAGE_INDICATOR["Planned UI<br/>staged submission indicator<br/>which of five stages, not two strings"]:::future
     CLAUDE_RECOVERY["Required evidence then implementation<br/>Claude execution before durable runner proof<br/>native correlation and safe recovery"]:::active
     CODEX_RECOVERY["Required evidence then implementation<br/>Codex execution before durable runner proof<br/>native correlation and safe recovery"]:::active
+    CODEX_RECOVERY_PROTOCOL["Deferred interoperability follow-up<br/>Codex reconciliation via documented app-server APIs<br/>replace private rollout inspection"]:::future
     SANDBOX_LIFECYCLE_DURABILITY["Planned lifecycle correctness<br/>retained state through suspension<br/>archive before managed storage deletion"]:::future
-    SANDBOX_VM_ISOLATION["Deferred platform proof<br/>selectable KubeVirt execution environments<br/>guest runner, launcher proxy, resource isolation"]:::future
+    RUNNER_IMAGE_ROLLOUT["Planned operator workflow<br/>upgrade the runner image on existing Sandboxes<br/>preserve Thread state and resume safely"]:::future
+    SANDBOX_VM_ISOLATION["Deferred provider integration<br/>selectable KubeVirt environments<br/>production service, gateway and lifecycle proof"]:::future
     THREAD_EVENT_CONTINUITY["Planned identity cutover<br/>one Thread journal across incarnations<br/>exclusive runner writer and retained state"]:::future
     THREAD_COMMAND_DELIVERY["Deferred backend<br/>app outbox delivery to existing runner<br/>only if app-first acceptance is chosen later"]:::future
-    THREAD_LAZY_HISTORY["Deferred desire D6<br/>bound browser cache after loading<br/>long content remains on demand"]:::future
-    THREAD_EVIDENCE_RETENTION["Low-priority design<br/>optional app-wide / per-Thread raw retention<br/>lossless storage remains the default contract"]:::future
     THREAD_DEPLOYED_ACCEPTANCE["P0 remaining acceptance<br/>deployed commands/events cutover<br/>real Claude and Codex via devbox"]:::active
-    EGRESS_IDENTITY_AVAILABILITY["P0 observed availability failure<br/>egress authentication ApiException / 502<br/>trace Kubernetes, ingress, LiteLLM hops"]:::active
-    LLM_ERROR_SURFACE["P1 correctness<br/>native LLM errors through protocol and UI<br/>partial output, retries, terminal failure"]:::future
+    LLM_ERROR_SURFACE["P1 correctness<br/>native LLM errors through protocol and UI<br/>partial output, retries, terminal failure"]:::active
     THREAD_WORKSPACE_BOOTSTRAP["P0 deployment acceptance<br/>per-Thread setup in cwd<br/>Haku and Finance repos; #8695"]:::active
     CLUSTER_BROWSER_ACCEPTANCE["P2 deployed browser acceptance<br/>in-cluster frontend button clicks<br/>screenshots and behavioral assertions"]:::future
     NATIVE_SUBAGENT_THREADS["Unranked candidate<br/>enable and adopt native subagents<br/>as linked Agentplane Threads"]:::future
@@ -125,7 +124,6 @@ flowchart TB
     THREAD_OUTLIVES_SANDBOX --> AG
     HOSTED_THREAD_SURFACES --> AG
     CROSS_IDENTITY_READ_POLICY --> AG
-    EGRESS_IDENTITY_AVAILABILITY --> THREAD_DEPLOYED_ACCEPTANCE
     PC_EGRESS_CREDENTIALS --> PC_EGRESS
 
     HARNESS_CONFIG_ISOLATION -. prerequisite .-> HARNESS_SKILLS
@@ -140,16 +138,20 @@ flowchart TB
     THREAD_EVENT_CONTINUITY --> THREAD_SUCCESSOR_DELIVERY
     CLAUDE_RECOVERY -. native continuation evidence .-> THREAD_SUCCESSOR_DELIVERY
     CODEX_RECOVERY -. native continuation evidence .-> THREAD_SUCCESSOR_DELIVERY
+    CODEX_RECOVERY -. required recovery evidence .-> CODEX_RECOVERY_PROTOCOL
     COMMAND_QUEUE_DECISION -. if app-first acceptance chosen .-> THREAD_COMMAND_DELIVERY
+    ADMISSION_DEADLINE_BUDGET --> ADMISSION_UNCERTAIN_OUTCOME
+    ADMISSION_UNCERTAIN_OUTCOME --> SUBMISSION_STAGE_INDICATOR
+    COMMAND_DISPATCHED_EVENT --> SUBMISSION_STAGE_INDICATOR
     THREAD_COMMAND_DELIVERY --> THREAD_OUTBOX_CUTOVER
     THREAD_OUTBOX_CUTOVER --> NEWTHREAD_DURABLE
     NEWTHREAD_DURABLE --> UISHELL_NEWTHREAD_SANDBOX
     NEWTHREAD_DURABLE --> UISHELL_NEWTHREAD_LANDING
-    T3 -. product work .-> PROD
 
     ACCESS -. authority choice .-> EGRESS_CHANGE
     ACCESS -. Kubernetes authority and credential choices .-> SANDBOX_RBAC
     SANDBOX_RBAC -. subject generalization .-> MANAGED_SA_RBAC
+    KUBERNETES_RBAC_POLICIES -. reusable policy contract .-> MANAGED_SA_RBAC
     MANAGED_SA_RBAC -. third grant kind to render .-> CALLER_GRANT_VIEW
     CLAUDE_AI_SA -. one account by hand, then the kind .-> MANAGED_SA_RBAC
 ```
@@ -179,12 +181,6 @@ The combined start composers require `NEWTHREAD_DURABLE` before promising “sub
 and walk away.” A browser-owned provisioning chain is not a correct intermediate
 version of that promise. Manual Sandbox creation and explicit open/resume remain
 available while combined start is deferred.
-
-### `PUBLIC_MCP_ROUTE_ISOLATION` — deployed route isolation
-
-**Remaining deployed acceptance:** verify operator REST and enrollment-management endpoints are
-unreachable through the public MCP route. Successful external-client execution does not establish
-this negative boundary. Keep the probe read-only and retain redacted route/status evidence.
 
 ### `EGRESS_CHANGE` — agent-requested egress policy expansion
 
@@ -223,76 +219,57 @@ remain later work.
 
 ### `CLAUDE_AI_SA` — the claude.ai account's deliberate permissions and egress
 
-**Planned identity:** `agentplane-staging/claude-ai` is the principal a Connection from the
-Claude.ai MCP connector acts as, and now also the account every sandbox this caller creates runs
-as ([sandbox Actions](../action_service/sandbox/README.md)). Its authority accreted from what each smoke
-test needed rather than from a decision about what this caller should hold, and the sandbox surface
-changed what that authority reaches: the account is no longer only an Action caller, it is the
-identity of a shell somebody can run arbitrary commands in.
+**Remaining authority review:** `agentplane-staging/claude-ai` is both the Claude.ai MCP
+Connection's principal and the ServiceAccount used by Sandboxes it creates. Review its current
+access for that arbitrary-shell surface before adding grants. The
+[staging policy source](../../cluster/cdk8s/agentplane/actions_staging_policies.py),
+[Agent RBAC documentation](../../cluster/docs/agent_rbac.md), and
+[Haku wiring notes](../../haku/TODO.md) hold the current grant inventory and credential details.
 
-What exists today (<../../cluster/cdk8s/agentplane/actions_staging_policies.py>, which lists each
-policy and set with why it is there): the labelled ServiceAccount with
-`automountServiceAccountToken: false`, an `EgressBinding` to the basic policy -- which carries the
-API server rule every sandbox is granted (egress.py) -- plus read-only and credentialed ones, and
-an `ActionPolicyBinding` auto-approving reviewed reads plus the whole `sandbox-self` set. Its
-Kubernetes authority is the cluster-wide `cluster-diagnostics-reader`
-ClusterRoleBinding (`cluster/generated/agents/shared-rbac/`), reads of
-non-sensitive cluster state, plus the metadata and pod-log readers Kyverno generates in namespaces
-labelled `agent-readable-*`, plus `get` on one Secret: the view-only Coinbase key its sandboxes
-sign with, since the proxy cannot. The verified Kubernetes evidence from a sandbox is still a
-`SelfSubjectReview`, not a read of any object.
-
-Haku's credentials are the deliberate part, and `forgejo-haku` the widest. claude-ai is the
-Connection Haku runs through (<../../haku/TODO.md> § Wiring / hardening), so at the operator's
-request a sandbox of this caller's reaches the in-cluster Forgejo as the `haku` service account
-(`forgejo-haku`, the proxy substituting that account's own password into Basic auth) and Haku's own
-mailbox (`haku-mailbox`). `forgejo-haku` is the account rather than a scoped token, so it carries
-every repository haku owns and the web UI besides, and any other agent run through the same
-Connection holds all of it too. Those grants are decided; what they sharpen is the question below, because
-the account holds authority whose blast radius is Haku's.
-
-**Kubernetes authority is RoleBindings on this ServiceAccount.** Decided; which roles beyond the
-diagnostics reader, at what scope, is the open part and needs a conversation before anything is
-written. The two alternatives
-are rejected: binding haku's `haku-k8s` Authentik JWT on `kubeapi.allegedly.works` would make a
-sandbox `oidc-ksbx-groups:haku`, and the `claude-web-k8s` one `kubectl-sandbox-users`, but both
-hairpin out through the Gateway for an apiserver one hop away and, worse, layer a second identity
-on a box that already authenticates as itself. The projected token is Pod-bound to the box that
-sent the request -- `SelfSubjectReview` from inside one names its own Pod and UID -- and that
-binding is the property the whole substitution design rests on. Roles on the account keep it; a
-bearer for a group does not.
-
-Still to decide: the roles themselves; whether the Kubernetes egress rule should stay an
-all-verbs, all-paths admission once RBAC is what bounds it; and whether the GitHub reads a
-Connection may auto-approve should also be what a sandbox of this account reaches, since the
-`EgressBinding` and the `ActionPolicyBinding` are separate grants that nothing keeps consistent.
+Decide which Kubernetes Roles beyond the diagnostics reader this account needs and at what scope.
+Preserve its existing Pod-bound identity as the authority boundary. Also decide whether its
+Kubernetes egress rule should remain all-verbs/all-paths once RBAC bounds access, and whether GitHub
+reads approved for its Connection should also be available to its Sandboxes; the egress and Action
+policy bindings are separate grants and can drift.
 
 **Acceptance:** a stated, reviewed authority for the account, rendered by the generator rather than
 accumulated; a real API request from inside a sandbox succeeds for the intended operations and is
 refused outside them; and removing the account or its label still disables the whole path.
 
+### `KUBERNETES_RBAC_POLICIES` — reusable Kubernetes RBAC policies
+
+**Deferred design:** decide whether Agentplane should let one named Kubernetes access policy be
+bound to many Sandboxes or managed ServiceAccounts, so changing that policy updates every existing
+binding. A preset such as `public-coder` should be selectable as one policy in Sandbox creation,
+with its detailed permissions inspectable elsewhere, rather than presenting a long list of repeated
+namespace-level metadata and log grants.
+
+The deployment-side `cluster/cdk8s/agent_access_profiles.py` already factors static identity and
+preset selections, but those profiles resolve to individual catalog grant names; they are not
+independently managed runtime policies. Each Sandbox still stores its expanded grant selections
+and gets its own RoleBinding or ClusterRoleBinding objects. The pain is the repeated per-Sandbox,
+per-scope bindings and UI choices, not a claim that every underlying Role's rules are independently
+authored for every Sandbox.
+
+**Questions, not yet settled:** should a policy be a named bundle of Kubernetes Role/ClusterRole
+references, an Agentplane-owned rule set compiled into those native objects, or another explicit
+model? Kubernetes RoleBindings are namespace-scoped while ClusterRoleBindings are cluster-scoped;
+work out how a multi-namespace policy expands without broadening authority, and who owns, reconciles,
+updates, audits, rolls back, and cleans up those objects. Determine how edits reach existing
+Sandboxes, how migration from persisted grant lists works, and how the UI shows the policy name
+while still exposing its effective scope and permissions. Keep Flux ownership and other RBAC
+reconcilers from fighting Agentplane over the same objects.
+
+This is a Kubernetes-specific representation and lifecycle question. It does not settle or require
+the broader cross-cutting capability profile in `PROFILES`, and it does not choose to replace
+Kubernetes RBAC as the enforcement model. No storage/API shape or migration is decided here.
+
 ### `CALLER_GRANT_VIEW` — one grant view for Sandboxes and unmanaged agents
 
-**Planned UI:** a caller with no Sandbox is an **unmanaged agent** -- an OAuth-bound externally
-hosted one such as claude.ai, holding an account and its grants while the app runs no Pod for it.
-An Action policy bound to such a caller cannot be seen in the web UI at all. The only surface that
-renders one is the Sandbox page's "Action policy" tab, which `live.py` fills from
-`policy.for_subject(sandbox.service_account)` and skips entirely when there is no Sandbox. Egress is
-the same shape: `GET /sandboxes/{name}/egress` is the only read. So the operator can create such a
-caller through consent, rename and unbind its Connection, and never learn what it may reach or do.
-
-**Most of the machinery is already account-keyed.** `Egress.bindings_for(subject: ServiceAccountRef)`
-returns every binding naming an account, and `ActionPolicy.for_subject(subject)` asks the Action
-Service's `/v1/operator/action-policy/service-accounts/{namespace}/{name}` for the same. The Sandbox
-is a lookup detour rather than a data dependency: `sandbox_egress` dereferences one only to reach
-`.service_account`. The roster exists too -- `caller_service_accounts()` lists every account carrying
-`CALLER_LABEL`, sandbox-backed or not, already plumbed to `callerServiceAccounts()` in the frontend,
-where both consumers use it as a picker (the OAuth-clients table, the consent dropdown) rather than
-as a subject to inspect.
-
-What is missing is therefore routes and a page, not a read model: an app route for an arbitrary
-account's action policy (`for_subject` has no HTTP exposure, only `live.py`'s snapshot path), an
-egress read keyed by account rather than Sandbox name, and a surface that joins the roster to both.
+**Remaining UI and API work:** expose each managed ServiceAccount's Action policy and egress
+bindings by account, then let an operator inspect them from a caller roster even when the account
+has no Sandbox. The account-keyed read helpers and caller roster already exist; this needs the
+missing app routes and joined grant view, plus the Kubernetes view when `MANAGED_SA_RBAC` lands.
 
 **Settled intent:** Sandboxes and unmanaged agents share one Action policy view rather than each
 getting their own, and share the Kubernetes permissions view too once `MANAGED_SA_RBAC` provides one.
@@ -319,57 +296,22 @@ design question rather than a detail -- a Sandbox's grants are garbage-collected
 `ownerReference` on the Sandbox, and an account that outlives every Sandbox has no such owner, so
 what creates, owns and reclaims its RoleBindings is unsettled.
 
-**Further questions, not yet settled:** whether a grant names a Role the operator selects or a named
-bundle the way an `ActionPolicySet` does; whether expiry works as it does for the other two kinds,
+**Further questions, not yet settled:** whether expiry works as it does for the other two kinds,
 given that Kubernetes RBAC has no expiry of its own and something must sweep; and whether this
-shares `ACCESS`'s credential boundary or only its authority decisions. Respect existing GitOps
+shares `ACCESS`'s credential boundary or only its authority decisions. The reusable policy and
+Role-versus-bundle representation belongs to `KUBERNETES_RBAC_POLICIES`. Respect existing GitOps
 ownership: an account's bindings must not fight a reconciler for the same objects.
 
 ## Named gates and acceptance evidence
 
 ### `THREAD_DEPLOYED_ACCEPTANCE` — close the deployed command/Event cutover
 
-**P0:** finish operator-login/MCP-linkage setup and run the explicit egress,
-instructions, launch-preset, and MCP acceptance targets from the cluster devbox
-against the final deployed app/runner images. Existing runs cover egress, instructions,
-basic MCP execution on both harnesses, and preset behavior; they do not close the
-operator-authenticated cases or validate the command-relay candidate on its deployed image.
-Use the [acceptance suite](../acceptance/README.md) as the runbook, retain sanitized
-test/runtime evidence, and verify fixture cleanup. Do not resend the operator's failed
-staging input as a test. This is API-level deployed proof, not browser click-through proof.
-Testing's operator federation runs the explicit Dex claim profile; rerun the operator cases
-against it (the [sanitized investigation](../debug/agentplane_testing_operator_dex_20260915.md)
-records the last run). Signed offline tests alone do not close this gate.
-
-### `EGRESS_IDENTITY_AVAILABILITY` — locate the observed model-path 502
-
-**P0:** the live run [92f9cd4c](https://app.buildbuddy.io/invocation/92f9cd4c-2f08-4914-b14d-cc343381b0b0)
-passed five egress cases, both instruction cases, and the preset case. Claude's late-binding
-case failed before executing its GitHub probe: retained Events show command admission,
-input confirmation, and `TURN_STATUS_FAILED` with an HTTP 502 diagnostic. In the same
-08:01–08:03 UTC window on 2026-09-15, central egress denied three POSTs to testing's LLM
-ingress with `reason=unavailable` and no Sandbox identity. These are consistent with
-the failed case being unable to reach its model endpoint, but cannot be correlated
-directly to its sandbox. Its GitHub decision history was empty. The retained `(504)`
-`ApiException` logs were from the staging app/actions Kubernetes watchers, not central
-egress. Kube-apiserver logs also showed handler and etcd timeouts in the window. This
-suggests control-plane degradation
-may have contributed to identity lookup failures, but there is no request-level evidence
-proving which Kubernetes call failed or linking a specific API-server timeout to egress.
-The model vendor is not established as the source of the 502. See the
-[investigation note](../debug/egress_identity_502_20260915.md).
-
-The shared workload resolver's fixed-operation/numeric-status diagnostic for TokenReview
-failures is now deployed in staging. The historical type-only logs cannot identify which
-operation failed. The new diagnostic improves future evidence but does not establish an
-incident repair.
-
-Correlate the path from runner/sidecar through central egress authentication, Kubernetes
-TokenReview, Agentplane LLM ingress, LiteLLM, and the model backend. Identify
-the first failing hop and distinguish policy denial, identity-service unavailability,
-transport failure, and backend rejection using safe status/correlation evidence. Do not
-log bearer headers or relax the fail-closed identity boundary. Fix the established cause
-in a focused PR, rerun the failed case, and retain both failed and successful evidence.
+**P0 remaining acceptance:** from the cluster devbox, run the operator-authenticated MCP
+linkage and Action decision cases against the deployed testing profile, then verify fixture
+cleanup. Validate the command-relay candidate against the final deployed app and runner images.
+Use the [acceptance suite](../acceptance/README.md) for setup and evidence handling; this is
+API-level deployed proof, not browser click-through proof. Do not reuse the failed staging input
+as a test. Signed offline tests alone do not close this gate.
 
 ### `LLM_ERROR_SURFACE` — truthful model-turn failures through every layer
 
@@ -393,20 +335,11 @@ delivery retry from requesting a new model turn; do not silently resend the orig
 
 ### `THREAD_WORKSPACE_BOOTSTRAP` — make Thread cwd and bootstrap ownership coherent
 
-**Chosen design, pending deployment verification:** [#8695](https://github.com/agentydragon/ducktape/issues/8695)
-tracks this hosted Haku blocker. Sandbox bootstrap remains once per Sandbox. Each Thread may select
-a one-time setup script, run in its resolved `SessionSpec.cwd` before the harness starts. The runner
-records setup output and terminal status in that Thread's event stream. Failure or runner
-interruption is terminal for that Thread; the operator creates a new Thread to try again. Haku's
-cwd is its per-Thread `haku-state` checkout, with a sibling `ducktape` reference checkout. Finance's
-cwd is its per-Thread `finance-agent` checkout for private memory commits. The Sandbox page uses
-the bound cwd template instead of overriding it. Existing Sandboxes keep their saved binding and
-need recreation to take new defaults.
-
-**Remaining acceptance:** after deployment, create Haku and Finance Sandboxes from their new
-presets; verify both their first and later Threads report the intended cwd and can operate in the
-checked-out repositories. Verify setup output, failure, and new-Thread recovery through the UI,
-and confirm separate Threads use separate directories.
+**Remaining deployment acceptance:** [#8695](https://github.com/agentydragon/ducktape/issues/8695)
+tracks this hosted Haku blocker. After the preset changes deploy, create Haku and Finance Sandboxes;
+verify first and later Threads use the intended checked-out repository and each has a separate
+directory. Verify setup output and failure through the UI, then confirm a new Thread is the recovery
+path. Existing Sandboxes retain their saved bindings and must be recreated to use new defaults.
 
 ### `CLUSTER_BROWSER_ACCEPTANCE` — browser-driven acceptance in the cluster
 
@@ -556,129 +489,34 @@ accounts one policy becomes several objects, which is already what per-binding `
 
 Its own clock, and cheaper before something starts using it than after.
 
-### `PC_EGRESS_CREDENTIALS` — public-coder's substitutions as EgressCredentials
+### `PC_EGRESS_CREDENTIALS` — label public-coder's Action Service caller
 
-**Planned configuration:** give the app Pod a dedicated ServiceAccount, labelled
-`agentplane.allegedly.works/use-action-service` so one object serves both surfaces, and express every
-substitution its own iron-proxy performs today as an `EgressCredential` with its exact targets.
-`_substitutions()` in `cluster/cdk8s/public_coder_proxy.py` is the roster; its Haku Console bearer
-is also what kubectl presents to Haku's Kubernetes API proxy. An unsubstituted placeholder reaches
-the upstream inert, so a missed credential loses that destination silently rather than failing
-loudly.
+**Remaining configuration:** add
+`agentplane.allegedly.works/use-action-service: "true"` to the existing `openclaw` ServiceAccount.
+The Deployment already uses that account; its egress sidecar, binding, and credential substitutions
+are configured.
 
-Its own clock: configuration against a mechanism that already exists, needing no Action Service
-change. Adopting the egress sidecar in the OpenClaw Pod belongs here too, since it replaces the
-dedicated proxy with the central engine.
+The label admits the account only to an Action Service instance that watches the
+`public-coder-agent` namespace. Namespace admission and ActionPolicyBindings belong with that
+instance; the egress production cutover and behavior proof remain in `PC_EGRESS`.
 
 ### `PC_EGRESS` — public-coder-agent egress migration
 
-**Capstone,** over `PC_EGRESS_CREDENTIALS`: what remains once it lands is proving equivalence and
-cutting over.
+**Remaining migration:** deploy a dedicated production Agentplane instance that watches
+`public-coder-agent`, configure its egress credentials and reviewed Action policies, then point the
+OpenClaw sidecar at it. The checked-in Deployment sets `replicas=0`; verify live state and arrange
+a resumed or equivalent controlled deployment for real-agent acceptance.
+Compare effective destinations, credential substitution, Action behavior, denied traffic, and
+rollout/restart behavior with the existing proxy before a reversible cutover. Compare the
+production Action catalog and policies with the current Haku Console grant path as well. Do not
+widen the current egress or Action contract.
 
-**Milestone:** replace the existing `haku-console` / `iron-proxy` proxy path in front of
-`public-coder-agent` with the Agentplane egress proxy, using a dedicated production (non-staging)
-Agentplane instance. Preserve the current public-coder configuration as the starting contract: its
-wide-open egress and the small set of substituted tokens are intentional inputs to the migration,
-not an invitation to redesign policy in this milestone.
-
-**Needed support:** deploy and operate the production Agentplane egress instance, express the
-public-coder destination rules and token substitutions in its reviewed configuration, and provide
-the required ServiceAccount, network policy, routing, and secret wiring. Compare effective behavior
-against the existing path before cutover; do not infer equivalence from source configuration alone.
-
-**What already exists**, read from the repository rather than assumed, because this milestone is
-smaller than its description implies:
-
-- **The substitution mechanism is built.** An `EgressCredential` holds the real value and declares
-  every exact location it may be presented; its placeholder is `agentplane-credential-<name>` and
-  the `schemeToken` target parses `<scheme> <credential>`, which is the shape public-coder's GitHub
-  token already travels in. That is iron-proxy's `iron.yaml` expressed as resources
-  (<../egress/SPEC.md>), so the GitHub token substitution needs configuration, not code.
-- **Some GitHub auto-approval is ported**: `cluster/k8s/agentplane-staging/` carries
-  `ActionPolicySet`s for `github-identity-reads`, `github-reads`, `public-github-reads`,
-  `public-ducktape-reads`, `public-ducktape-fork-reads` and `public-gaffer-private-reads`.
-  Whether that set covers what
-  public-coder is allowed to do today is not established here; the ported ones are a starting point
-  to diff against, not a finished policy.
-
-**The gap is configuration, not identity.** Egress and the Action Service both authenticate a
-Pod-bound ServiceAccount token and stop at the account it names, whatever owns the Pod
-(`workload_auth/principal.py`, behind `egress/identity.py` and `action_service/caller_auth.py`),
-and on each a binding naming that account is the grant (`BindingSpec.subjects` in
-`egress/resources.py`, `subject` in `action_service/policies/resources.py`). So public-coder being a
-plain Deployment running OpenClaw stands in the way of neither surface: what it lacks is the
-dedicated, labelled ServiceAccount of `PC_EGRESS_CREDENTIALS`, in a namespace both services accept
-bearers from, and the bindings naming it. The app Pod runs as `default` today; only the sshpiper
-Deployment names an account. Give the new one to exactly this workload and never reuse it: a
-subject is every Pod running as that account, and the token's Pod binding is all that stands
-between it and replay from elsewhere in the cluster.
-
-**The sidecar replaces the per-agent proxy.** Egress already ships a sidecar: a loopback listener
-in the Pod that the workload speaks ordinary HTTP proxy to, forwarding every request and CONNECT to
-the central proxy with `Proxy-Authorization: Bearer <token>` added from the Pod's projected
-ServiceAccount token. It holds no credential and never looks inside a tunnel (`egress/sidecar.py`).
-Putting that in the OpenClaw Pod replaces `public-coder-agent-proxy` outright, and moves
-substitution from a per-agent iron-proxy config to the one central engine.
-
-When it is scheduled, diff what public-coder would gain and lose against Console's tool set, which
-for this agent is only `grants` (`cluster/cdk8s/haku/console_config.py`): the staging Action Service
-offers its own ActionGroups at `agentplane-actions-staging.allegedly.works`, and this milestone
-requires a production instance rather than staging.
-
-**Acceptance evidence:** public-coder can reach every currently supported destination, each existing
-substituted token is presented only at its intended destination, denied/unmatched traffic behaves as
-specified, and the Agentplane proxy survives rollout/restart without silently dropping the agent's
-in-flight work. Run the real devbox/agent acceptance through the new path, retain redacted effective
-rules and token-boundary evidence, then cut over with a reversible rollback window. This milestone is
-an egress migration, not permission to widen the stable configuration.
-
-**What retirement covers.** "The old `haku-console` / `iron-proxy` path" names three separate things,
-and only the first is this milestone's to delete. Inventory taken from the repository, not from
-running cluster state, so re-check before deleting anything.
-
-_Retire, once the production path is proven and rollback is available:_
-
-- `cluster/cdk8s/public_coder_proxy.py` and everything it renders into
-  `cluster/k8s/agents/public-coder-agent/proxy/` — the dedicated iron-proxy for this agent, which is
-  an OpenClaw instance (`git.allegedly.works/ducktape-ci/public-coder-agent`, configured by
-  `cluster/cdk8s/public_coder_agent_config.py`); the proxy is what lets it hold placeholders instead
-  of real credentials. It renders the Deployment, Service, `iron.yaml` substitution rules, the
-  `public-coder-agent-proxy-root-ca` Certificate and its trust Bundle, the ingress and egress
-  CiliumNetworkPolicies and the ExternalSecrets; `proxy/image-pins/` beside them is hand-written.
-  One of those ExternalSecrets, `forgejo-images-creds`, is also the agent Deployment's and the
-  namespace `default` ServiceAccount's image pull secret: move it, don't delete it.
-- The placeholder contract in `cluster/cdk8s/public_coder_agent_config.py`: the agent is handed the
-  placeholder of every credential the proxy substitutes (`public_coder_proxy`'s `*_PLACEHOLDER`
-  constants) and told the contract, because only the sibling proxy performs the swap. Whatever
-  replaces the proxy inherits that contract or the agent's configuration changes with it.
-- The Haku Console side of the credential: `HAKU_CONSOLE__STATIC_AGENTS__PUBLIC_CODER__TOKEN` in
-  `cluster/cdk8s/haku/console.py` and `Secret/haku-console-public-coder-agent`. This is
-  the whole "`haku-console`" half of the name — Console is the bearer's authority, not a proxy.
-
-_Shared, so not this milestone's to delete:_
-
-- The `iron-proxy` image build — `cluster/images/iron-proxy/`,
-  `.github/workflows/iron-proxy-image.yml`, and its entry in
-  `cluster/cdk8s/forgejo_image_automation.py`. It carries a pinned upstream commit for HTTP/2 MITM
-  support and is consumed by `haku-openclaw-spike-proxy` as well. It was named for public-coder
-  only because this was its first consumer.
-
-_A second consumer set, on its own retirement clock:_
-
-The `haku-egress-proxy` namespace is the other half of the estate. It is not public-coder's path and
-this milestone does not retire it, but it is the same question asked of different workloads, so its
-consumers are listed here rather than discovered later:
-
-- **Pods admitted in `haku-sandbox`**, including Haku-authored workloads, which the generic egress
-  injection still reaches.
-- **`haku-ci`**, which wires it explicitly instead: `HTTP(S)_PROXY` env in
-  `cluster/cdk8s/haku_ci/runner.py`, including for dockerd's image pulls.
-- **One more iron-proxy listener it hosts**: `haku-openclaw-spike-proxy` for
-  `haku-openclaw-spike` -- the second OpenClaw deployment, after public-coder.
-
-`cluster/cdk8s/haku_egress_proxy.py` and `egress_fences.py` generate the proxy and its fence.
-Deleting this namespace because this entry says "retire the old proxy" would remove the fence in
-front of Haku's sandbox and CI.
+After acceptance, remove only OpenClaw-specific proxy dependencies and Console credential wiring.
+Keep the Iron path used by the devbox and shared `iron-proxy` resources. The separate
+`haku-egress-proxy` still serves Haku Sandboxes, Haku CI, and another OpenClaw workload; confirm
+current consumers before removing or splitting any shared resource. Source inventory starts at
+[`public_coder_proxy.py`](../../cluster/cdk8s/public_coder_proxy.py) and
+[`haku_egress_proxy.py`](../../cluster/cdk8s/haku_egress_proxy.py).
 
 ### `INPUT_DELIVERY` — remaining native queue and recovery evidence
 
@@ -691,15 +529,6 @@ Claude fresh-process resume framing is under investigation in
 Long-running Bash interruption, partial output, and queued-message fate are tracked in
 [#6807](https://github.com/agentydragon/ducktape/issues/6807). Reuse native tests and the
 sibling `gaffer-private` checkout; new evidence gates only the operations it proves.
-
-**Needed support — mandatory first step:** re-read the landed
-[Claude queue research](../docs/claude_input_queue.md),
-[Claude/Codex protocol notes](../docs/harness_protocols.md),
-[native harness evidence](../docs/harness_evidence.md),
-[Claude runtime contracts](../docs/claude_runtime_contracts.md), and
-[current common protocol](../docs/common_protocol.md), then inspect the pinned drivers/tests.
-Reconsider the common protocol's input semantics from this evidence rather than assuming the
-bridge is the only queue or that one input equals one turn.
 
 - Claude: UUID command handles, lifecycle receipts, capability negotiation, targeted withdrawal,
   interrupt receipts/queued survivors, and coalescing that can make cancellation batch-granular.
@@ -738,6 +567,72 @@ sequence. Review them for independently useful changes to salvage into appropria
 slices; do not stack new work on their deferred queue design. Preserve the runner's
 own journal in either option.
 
+### `ADMISSION_DEADLINE_BUDGET` — one submission budget, bounded by ingest lag rather than failure
+
+**P1, reported against deployed staging:** submitting a message can answer
+`admission of command '…' was not confirmed within 15 seconds; outcome uncertain` after the runner
+already took the command. Four independent 15-second budgets gate one submission, and only moving
+them together helps:
+
+- `agentplane/app/threads/bridge.py` `COMMAND_ADMISSION_S`, the wait in `_wait_for_admission`. It is
+  not a runner round trip: it polls `ContentStore.admitted_command`, so it ends when the Ingester has
+  copied the runner's `CommandAdmitted` into the app archive — ingest lag, longest on a Thread whose
+  stream is busy delivering `TextDelta`/`ToolOutputDelta` for the turn already in progress.
+- The same file's `_archive_open`, which inlines its own 15 s wait for the Ingester to reach the
+  runner's `attached.last_cursor` on Open and Resume.
+- `agentplane/sandbox_service/main.py` `admission_timeout_s`, which `grpc_api.py` applies both as the
+  generic request deadline, as the `admit_running_command` budget and as the per-write timeout inside
+  `FollowSession`. It is one field doing three unrelated jobs, and its `le=60` makes the target below
+  unconfigurable.
+- `agentplane/app/frontend/client.ts` `COMMAND_TIMEOUT_MS`, a browser abort documented as sitting above
+  the server's sequential waits, so it inherits their size.
+
+Split submission out of `admission_timeout_s` — the SSE write timeout should stay short and the
+submit budget should not be its side effect — thread one named setting through the app and the
+Sandbox Service instead of four constants, and keep the browser abort above the server bound.
+Set it generously: a Codex harness inserts a steer only at an opportunity inside the turn, and on a
+local model that gap is long, workload-dependent and routinely dwarfs 15 seconds. Five minutes is
+the starting value, not a measured one; measure ingest lag on a busy Thread rather than guessing
+again.
+
+### `ADMISSION_UNCERTAIN_OUTCOME` — an unconfirmed submission reconciles instead of failing
+
+A deadline on the archive wait means "not yet observed", not "the runner never received it"; the
+exception already says the outcome is uncertain, and
+[the command protocol](../docs/thread_layering.md#command-protocol-intent-admission-then-outcome)
+makes the absence of observed admission non-authoritative. Today the error reaches the composer as a
+failed send while the command may already be admitted and running. Turn the timeout into a
+non-terminal state: keep watching the archive for that immutable command, resolve through the
+Thread's existing push feed when it lands, and make any retry replay the same command —
+`RunnerBridge.command` already short-circuits on an archived admission, so no new recovery path is
+needed. Only an explicit runner refusal is a failure. Land after `ADMISSION_DEADLINE_BUDGET` so the
+reconciliation window is not simply a longer error message.
+
+### `COMMAND_DISPATCHED_EVENT` — make "the runner sent this to the harness" an observation
+
+The third submission stage is unobservable. The runner records it in its own SQLite —
+`Command.dispatch_planned` in `agentplane/runner/journal.py`, written by `dispatch_planned()` at the
+points in `agentplane/runner/session.py` where an input goes to the adapter, sometimes with a
+`native_correlation` such as a Codex `turn_id` — and none of it reaches the app: no observation in
+`agentplane/protocol/event.proto`, no fold row, so no consumer can tell "queued in the runner" from
+"handed to the harness", which is what an operator waiting on a steer means. Add the Event, its fold
+and view handling, and runner tests pinning its ordering against `CommandAdmitted` for both harnesses.
+Keep `native_correlation` runner-local unless a consumer is named for it; a native id is not an
+app-level promise.
+
+### `SUBMISSION_STAGE_INDICATOR` — show which submission stage a pending command is in
+
+Replace the two-state copy in `agentplane/app/frontend/threads/thread_commands.tsx` and
+`thread_cards.tsx` — `"Saved locally · awaiting admission"` and `"Saved · awaiting effect"` — with an
+indicator that names its stage: the browser holds it, the app has it, the runner was sent it, the
+runner admitted it, the harness has taken effect. Four of the five are observable now; the third
+waits on `COMMAND_DISPATCHED_EVENT`. Prefer a fixed-angular-position advancing indicator — a dot or
+breathing spinner whose position _is_ the stage — over longer prose, with the exact stage and its
+age in the hover/expanded copy. Keep the wording honest: nothing tells the app that the model's
+context contains the input, so the last stage stays "awaiting effect" and never claims the model has
+seen it. Pin the state machine and its transitions in tests, not the strings —
+[#9063](https://github.com/agentydragon/ducktape/issues/9063) removes the existing wording pins.
+
 ### `CLAUDE_RECOVERY` — native execution before durable runner evidence
 
 **Evidence first, then runner implementation:** pin the uncovered crash window where
@@ -763,6 +658,28 @@ PRs, with real-process crash tests preserving command provenance. The same
 [recovery contract](../docs/thread_layering.md#command-protocol-intent-admission-then-outcome)
 applies; neither harness waits for the other's research to land its own proven change.
 
+### `CODEX_RECOVERY_PROTOCOL` — reconcile through documented app-server history APIs
+
+**Remaining migration:** replace Agentplane's private rollout parsing with the public Codex
+history APIs. At implementation time, first update the runner's Codex CLI pin and native protocol
+fixtures to the newest release selected for the runner; target that protocol rather than maintaining
+a compatibility matrix for older CLI versions. Evaluate metadata-only `thread/read` followed by
+`thread/timeline/list`, `thread/turns/list`, and `thread/items/list`. In the runner-matched 0.157.0
+protocol, the unified timeline API is experimental, while turns/items pagination are not marked
+experimental in the request registry even though the public docs classify them that way; item
+pagination is also history-store-dependent. Before implementation, refresh these details against the
+release selected for the runner and verify its negotiation requirements and store support. Determine
+whether the returned fields support the existing retained, absent, revised, and unknown decisions,
+including interrupted tool and reasoning items. The [API investigation](../debug/codex_app_server_history_apis.md)
+records the current protocol baseline and migration constraints. History items are Codex's persisted
+display projection, so an item missing from a page does not prove it is absent from raw model context
+or rollout records. Preserve command provenance and never replay old side effects. Keep outcomes
+unknown where the public protocol cannot establish them, and record any upstream protocol gap
+instead of silently depending on internal rollout details.
+
+Agentplane still reads Codex's persisted history for reconciliation. `excludeTurns` only avoids
+returning the full transcript in a resume response; it does not replace this migration.
+
 ### `SANDBOX_LIFECYCLE_DURABILITY` — preserve state through suspension and deletion
 
 **Planned lifecycle correctness:** verify the actual runner state mount, native artifacts,
@@ -776,22 +693,30 @@ and native evidence can proceed independently; full archive-preservation accepta
 requires Event durability and app replication. Gate lifecycle automation on its own
 evidence without blocking ordinary messaging and UI work.
 
+### `RUNNER_IMAGE_ROLLOUT` — upgrade runner images on existing Sandboxes
+
+**Planned operator workflow:** a runner image version is recorded in each Sandbox CR's
+`podTemplate`, so updating the default image only affects newly created Sandboxes. Define
+and implement a supported way to move an existing Thread to a fixed runner image while
+preserving its Sandbox storage and native session state. First establish whether a safe
+manual recovery sequence is possible by quiescing or pausing the Sandbox, patching its
+stored image, and resuming it; make the eventual workflow smoother than hand-editing CRs.
+Specify writer fencing, interruption handling, and rollback, then verify that an existing
+Thread resumes on the fixed image without losing state or repeating side effects.
+
 ### `SANDBOX_VM_ISOLATION` — selectable VM-backed Sandbox isolation
 
-**Deferred platform proof:** the [KubeVirt environment plan](kubevirt_environments.md)
-recommends an explicit creation-time `agent_sandbox` / `kubevirt` choice, with the runner
-baked into the guest and the token-holding relay outside it in the launcher Pod. Sandbox
-Service owns both providers; harness selection is independent. Presets prefill editable
-kind/template fields. No existing environment conversion or live migration is implied.
-The selected v1 approach uses existing Kyverno admission to inject the relay and private
-token mounts; the first implementation step is a disposable VM proof on the pinned stack.
+**Deferred provider integration:** the pinned-stack prototype and guest acceptance are complete
+([platform evidence](../debug/kubevirt/evidence.md),
+[guest runtime acceptance](../debug/kubevirt/runtime-20261003.md)). They do not add a KubeVirt
+provider to the production Sandbox Service or exercise the production egress gateway.
 
-This node gates the pinned-version proof of sidecar admission, proxy-only token mounts,
-guest routing, storage and resource containment. The plan owns the proposed implementation
-slices and acceptance matrix; expand those into DAG nodes when scheduled. VM isolation alone
-does not guarantee runner survival: prove guest cgroup budgets, retained journal recovery,
-truthful failure reporting and no invented or duplicated effects. This deferred track does
-not block current container correctness work or ordinary Sandbox Service extraction.
+Implement the creation-time `agent_sandbox` / `kubevirt` choice and provider lifecycle in the
+Sandbox Service, API, app, and deployment; publish and run the integrated guest image through
+the production egress path. Complete the remaining admission-failure, guest resource-boundary,
+and lifecycle/recovery acceptance in the [KubeVirt environment plan](kubevirt_environments.md).
+No existing-environment conversion or live migration is implied. This remains independent of
+current container correctness work and ordinary Sandbox Service extraction.
 
 ### `THREAD_EVENT_CONTINUITY` — one runner-owned Thread Event log through harness resume
 
@@ -830,13 +755,6 @@ Cover immutable ids/payloads, multi-replica delivery, cancellation/expiry, unava
 targets, and response loss at admission. Delivery order must not wait for terminal
 effects; the runner owns scheduling. Input, model, interrupt, and stop need one coherent
 app admission policy. No automatic cross-successor replay is implied.
-
-### `PROD` — production-capable governed action execution
-
-**Milestone:** a production Agentplane instance, distinct from staging, governing Actions for real
-operator work; `PC_EGRESS` needs the same instance. Its former gate on credentialed-provider
-acceptance has cleared; `T3` is product work that lands on it, not a prerequisite. What "production-capable"
-requires beyond the staging deployment is not defined.
 
 ### `THREAD_OUTLIVES_SANDBOX` — a Thread lifecycle beyond its Sandbox
 
@@ -878,24 +796,6 @@ Reuse the existing Action Service committed-event signals; no operator authority
 DB access. [Acceptance](notifications.md#next-event-driven-actions-consumption) includes reconnect,
 missed-signal recovery, subscription-creation races and idle-without-polling behavior.
 The shared PostgreSQL listener refactor did not implement this cross-service feed.
-
-### `NOTIFICATION_DEBOUNCE` — configurable runner-notice batching
-
-**Remaining deployed acceptance:** [#8988](https://github.com/agentydragon/ducktape/pull/8988) is merged.
-After rollout, verify
-a real event burst produces fewer harness interruptions, sustained traffic cannot indefinitely
-postpone a notice, and explicit acknowledgement/no-reminder semantics remain intact.
-
-### `NOTIFICATION_TURN_GATING` — avoid notices piling up before processing
-
-**Deferred design; rule TBD:** be more conservative than time-based debounce when the agent has not
-yet begun processing an earlier notice. One candidate is "do not send another notice until a turn
-has started since the previous notice"; this is a proposal, not the selected algorithm. Decide what
-causal runner evidence counts, including an already-active turn, queued/coalesced inputs and restart.
-Admission, harness receipt and turn start are not acknowledgement or proof that entries were handled.
-Keep new entries immediately readable and their latest cursor durable while suppressing notices;
-define how pending work becomes eligible again without starvation or repeated reminders. Test both
-harnesses, slow/not-running agents, bursts and recovery before choosing the gating semantics.
 
 ### `NOTIFICATION_COMPACT_NOTICES` — shared instructions and brief cursor hints
 
@@ -978,7 +878,8 @@ whole machine-oriented message, with expansion/raw evidence available.
   hide human input or discard the authoritative message/evidence.
 
 The owning backend/protocol carries metadata without depending on the integration app; the app is
-its presentation client. This is independent of notice debounce and of Kubernetes source selection.
+its presentation client. This is independent of the shipped notice debounce and of Kubernetes
+source selection.
 
 ### `KUBERNETES_MONITORING` — agents observe rollout progress and outcomes
 
@@ -1047,23 +948,6 @@ and runner effects remain distinct. Each preset field is individually editable.
 Do not infer native resume from Sandbox readiness or silently transfer unsettled
 commands into a successor scope.
 
-### `THREAD_LAZY_HISTORY` — deferred browser-cache bound (D6)
-
-The thread store retains every row and body it has loaded until the Thread closes. Long content is
-loaded on demand, and the owner accepts this cache growth for the current product slice; bounded
-browser state is not an acceptance gate. If resource pressure justifies revisiting D6, evict rows
-and bodies outside the reading window while preserving the reader's place. The proposed design and
-future evidence are in [Thread view synchronization](../docs/thread_view_sync.md#accepted-browser-cache-state-d6)
-and the [Thread sync plan](thread_sync/README.md).
-
-### `THREAD_EVIDENCE_RETENTION` — optional raw capture
-
-After durable semantic storage is sufficient for recovery, separate raw capture from content
-and sync-log retention. Define the semantic replication checkpoint before omitting Native rows
-from the current dense log. Preserve item/turn evidence links and explicit not-captured/expired
-availability; evaluate compressed raw batches with indexed manifests. Compaction cannot delete
-unreplicated content or native resume artifacts. No capture deletion is authorized by this plan.
-
 ### `THREAD_OUTBOX_CUTOVER` — one ingress if the app queue is chosen
 
 **Deferred for this slice, conditional on `COMMAND_QUEUE_DECISION`:** when the app queue has its complete
@@ -1108,22 +992,13 @@ relationship. The rest are parked by decision even though they had one. Where th
 edge leaves the diagram with the node and the relationship it carried is stated in the entry's
 own text instead, so bringing one back means restoring an edge rather than inventing one.
 
-- **`THREAD_VIEW_TRANSPORT`** — reconsider an RPC transport, gated on authorization
 - **`SSHDURABLE`** — durable SSH-backed processes
 - **`PROFILES`** — cross-cutting capability profiles
 - **`BB`** — BuildBuddy hosted-run credential boundary
-- **`DENY_LISTS`** — denial rules for `ActionPolicySet`
 - **`THREAD_BROWSE_PAGINATE`** — paginated/searchable all-threads page
 - **`CONTROL_STATE`** — dynamic runtime control acceptance
 - **`LIVE_CLEAN`** — executor heartbeat retention cleanup
 - **`FORK`** — per-task identity fork (depends on `ELEVATE`, which stays on the board)
-
-### `THREAD_VIEW_TRANSPORT` — optional RPC transport
-
-Deferred. Electric's protocol serves thread sync, which does not require migrating ordinary app
-REST/SSE or runner protobuf RPC. The prior [transport experiments](../docs/thread_view_sync.md#transport-experiments)
-record concrete Python-streaming and ingress/test costs. Revisit against the existing browser
-session authorization boundary if a remaining use case benefits from RPC.
 
 ### `SSHDURABLE` — durable SSH-backed processes
 
@@ -1159,42 +1034,6 @@ rewrite that keeps the real key out of the local Sandbox but hands it to agent-c
 BuildBuddy's runner — or wait for a stronger seam (a per-run BuildBuddy credential or a run-scoped
 gateway). The boundary, wire shape and required evidence are in
 [`buildbuddy_remote_auth.md`](../docs/buildbuddy_remote_auth.md).
-
-### `DENY_LISTS` — denial rules for an `ActionPolicySet`
-
-**Consider adding, do not add by reflex.** A set carries one list, `autoApproveIf`, and what it does
-not match waits for a human. It used to carry `autoDenyIf` and `autoDenyUnless` too: parsed,
-validated, reported to callers and to the Sandbox page, and evaluated by nothing. Those fields are
-removed; the reasoning is the [action policies design](../docs/action_policies.md) § Rejected. A set
-whose spec adds a deny list later is a non-breaking `v1alpha1` change, so nothing is reserved here.
-
-Two things a deny list would obviously be reached for are **not** deny lists, and should be built
-without one:
-
-- **Hiding an Action the operator will never approve** (Haku's old steering denial of the GitHub
-  Copilot delegation tools). A policy denial still advertises the tool, still costs a submit and a
-  round-trip, and teaches the agent that routing around is worth trying. That is a per-group tool
-  denylist over catalog discovery and admission -- already noted in
-  [`action_service/TODO.md`](../action_service/TODO.md) with the same example -- and the catalog
-  already carries `available` and per-group health to hang it on.
-- **A broad set minus one carve-out.** Because a policy set is the _shared_ unit and a carve-out is
-  about one subject, this belongs on the `ActionPolicyBinding`, not the set; and evaluation unions
-  across every set of every binding, so it cannot be expressed against the set today. If a real
-  case ever needs it, the deny field goes on the binding.
-
-`autoDenyUnless` should not come back as a policy field at all. "Deny me anything outside this
-list" is a caller saying how much operator attention it is willing to spend, which is a
-request-side flag -- the shape `submit_decided` already refuses with for direct tools -- not an
-operator-authored authorization rule.
-
-**Open question a re-add has to settle first:** whether a deny that wins over approve is even
-compatible with evaluate-once. `autoDenyIf` was specced to dominate `autoApproveIf`, so a set edit
-could deny what an earlier revision approved; that is fine, since each request decides from one
-snapshot. But a deny on a _binding_ joined to a subject that also holds an approved, unclaimed
-Execution is a different object's decision than the one that allowed it, and dispatch re-checks
-caller authority only. Say which of the two the deny is allowed to reach.
-
-Nothing waits on this.
 
 ### `THREAD_BROWSE_PAGINATE` — paginated/searchable all-threads page
 

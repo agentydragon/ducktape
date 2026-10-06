@@ -100,7 +100,7 @@ placeholder, on JMAP paths only
 ## Traffic
 
 - **Port 25**: `MX allegedly.works → mx.allegedly.works` (A records on the
-  public OVH gateway roster, `tf/gitops/dns-records/`) → one
+  public OVH gateway roster, `cluster/cdk8s/external_dns.py`) → one
   `smtp-ingress` nginx pod per public node (`hostPort: 25`) →
   the cluster-internal `smtp:2525` Service → Stalwart's :2525
   listener (STARTTLS with the cert-manager certificate). This mirrors the

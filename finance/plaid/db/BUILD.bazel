@@ -32,6 +32,7 @@ py_test(
     srcs = ["test_client.py"],
     deps = [
         ":client",
+        ":conftest",
         "//:conftest",
         "@pypi//certifi",
         "@pypi//plaid_python",
@@ -43,6 +44,7 @@ py_test(
     name = "test_products",
     srcs = ["test_products.py"],
     deps = [
+        ":conftest",
         ":products",
         "//:conftest",
         "@pypi//pytest_bazel",
@@ -86,15 +88,13 @@ py_test(
     srcs = ["test_link_store.py"],
     requires_docker = True,
     deps = [
+        ":conftest",
         ":link_store",
         "//:conftest",
-        "//util/testing:postgres",
-        "//util/testing:postgres_fixtures",
         "@pypi//asyncpg",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
         "@pypi//sqlalchemy",
-        "@pypi//testcontainers",
     ],
 )
 
@@ -104,17 +104,14 @@ py_test(
     srcs = ["test_read_model.py"],
     requires_docker = True,
     deps = [
+        ":conftest",
         ":link_store",
         ":read_model",
         ":schema",
         "//:conftest",
-        "//util/testing:postgres",
-        "//util/testing:postgres_fixtures",
         "@pypi//pytest",
-        "@pypi//pytest_asyncio",
         "@pypi//pytest_bazel",
         "@pypi//sqlalchemy",
-        "@pypi//testcontainers",
     ],
 )
 
@@ -122,6 +119,7 @@ py_test(
     name = "test_sync",
     srcs = ["test_sync.py"],
     deps = [
+        ":conftest",
         ":link_store",
         ":sync",
         "//:conftest",
@@ -199,4 +197,18 @@ py_binary(
     name = "sandbox_smoke_bin",
     main_module = "finance.plaid.db.sandbox_smoke",
     deps = [":sandbox_smoke"],
+)
+
+py_library(
+    name = "conftest",
+    testonly = True,
+    srcs = ["conftest.py"],
+    deps = [
+        ":link_store",
+        "//util/testing:postgres",
+        "//util/testing:postgres_fixtures",
+        "@pypi//pytest",
+        "@pypi//sqlalchemy",
+        "@pypi//testcontainers",
+    ],
 )

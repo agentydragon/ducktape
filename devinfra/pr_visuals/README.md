@@ -20,15 +20,14 @@ which takes a download-mode flag to hold
 
 Use one of the shared harnesses and it's automatic:
 
-- JS (`js_test`): `util/testing/frontend_visual/visual-test-lib.mjs` retains
-  the rendered PNG and upserts the manifest on every run.
+- Python scenario sweep (`py_visual_test`): `util/testing/visual_sweep.py` does the
+  same for every row of the target's `scenarios.json`.
 - Python (`py_test`): call
   `util.testing.visual_review.retain_review_asset(png, title=..., label=...)`
   once per rendered case — it copies the PNG into undeclared outputs and
   accumulates the manifest.
 - Custom drivers write the manifest themselves via
-  `writeVisualReviewManifest` / `write_visual_review_manifest`
-  (e.g. haku's `tool_rendering/screenshot/render.mjs`).
+  `util.testing.visual_review.write_visual_review_manifest`.
 
 **Gotcha: one commit, several CI runs.** A `//...` devel sweep and an affected-set
 run can both exist at one commit, and only the sweep carries visual manifests. So
@@ -137,3 +136,21 @@ Nothing is deleted: commit bundles are immutable and pointer files only ever
 advance. The bucket grows with devel history; garbage-collecting bundles that
 no pointer or open PR references is future work
 (<plans/generic_pr_visual_reviews.md>).
+
+## Released commands
+
+The `//devinfra/pr_visuals:wheel` target builds the `pr-visuals` wheel. It
+provides `pr-visuals-announce` for check-run updates and `pr-visuals-publish`
+for trusted publication. The wheel bundles the publisher's small internal
+source dependencies and HTML templates; Python runtime dependencies are listed
+in wheel metadata.
+
+Both workflow jobs install `.#pr-visuals` from trusted `devel`. This Nix package
+provides the wheel's Python dependencies and the publisher's `bbapi` executable;
+the public Attic cache carries its closure. Each job logs the wheel URL and hash
+from `nix/artifact-pins.json` before running the installed command.
+
+Source changes go through the content-addressed GitHub release pipeline, then
+`sync-pins` updates the wheel pin. `flake.lock` pins the Nix dependency set. The
+Nix wheel CI gate substitutes the PR-built wheel for the release pin and checks
+imports and both installed entrypoints without relying on the checkout.

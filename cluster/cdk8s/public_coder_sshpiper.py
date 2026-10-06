@@ -168,7 +168,7 @@ def _deployment(scope: Construct) -> None:
             # One replica, and not only because the recordings PVC is RWO: two pipers would each
             # need the host key, and a client reconnecting to the other one is indistinguishable
             # from a MITM.
-            replicas=1,
+            replicas=0,  # Public Coder is paused; keep its storage and configuration for resuming.
             strategy=k8s.DeploymentStrategy(type="Recreate"),
             selector=k8s.LabelSelector(match_labels=SERVICE.pods.selector),
             template=k8s.PodTemplateSpec(

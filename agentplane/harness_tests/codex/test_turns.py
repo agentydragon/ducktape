@@ -2,14 +2,17 @@
 
 from __future__ import annotations
 
+import json
+
 import pytest_bazel
+from more_itertools import one
 
 from agentplane.harness_tests.codex import frames, responses_sse as sse
 from agentplane.harness_tests.codex.harness import MODEL, CodexHarness
 from agentplane.harness_tests.codex.responses import OpenAIResponses
 from agentplane.native.codex import driver, wire
 
-TOOLS = ["exec_command", "write_stdin", "request_user_input"]
+TOOLS = ["exec_command", "write_stdin", "request_user_input", "get_goal", "create_goal", "update_goal"]
 IN_FLIGHT_INPUT = "Reply with exactly: CODEX_CRASHED_IN_FLIGHT_REPLAYED"
 QUEUED_INPUT = "Reply with exactly: CODEX_CRASHED_QUEUE_FATE"
 RECOVERY_INPUT = "Reply with exactly: CODEX_CRASH_RESUME_OK"
@@ -70,6 +73,8 @@ async def test_idle_resume_replays_the_thread_from_disk(codex: CodexHarness, ope
 
     async with codex.start(openai_responses, resume_thread_id=first.thread_id) as second:
         assert second.thread_id == first.thread_id
+        resume_response = next(frame for frame in second.native_frames() if frame.get("id") == "capture-2")
+        assert resume_response["result"]["thread"]["turns"] == []
         turn = await second.start_turn("Reply with exactly: IDLE_RESUME_OK")
 
         async with await openai_responses.await_next_request() as exchange:
@@ -86,6 +91,40 @@ async def test_idle_resume_replays_the_thread_from_disk(codex: CodexHarness, ope
             await exchange.send(*stream.events)
         assert (await turn.completed()).params.turn.status is wire.TurnStatus.COMPLETED
     frames.assert_success(second.native_frames(), "IDLE_RESUME_OK")
+
+
+async def test_rollout_saves_each_reasoning_item_under_the_id_the_app_server_announced(
+    codex: CodexHarness, openai_responses: OpenAIResponses
+) -> None:
+    """The runner matches an observed item to its saved record by id; this pins that for reasoning."""
+    async with codex.start(openai_responses, persist=True) as run:
+        turn = await run.start_turn("Think, run a command, think again, then answer")
+        async with await openai_responses.await_next_request() as exchange:
+            stream = sse.response_stream(
+                [
+                    sse.Reasoning("first thought", "enc_rollout_1"),
+                    sse.FunctionCall("call_test_1", "exec_command", {"cmd": "true"}),
+                ],
+                model=MODEL,
+            )
+            await exchange.send(*stream.events)
+        async with await openai_responses.await_next_request() as exchange:
+            stream = sse.response_stream(
+                [sse.Reasoning("second thought", "enc_rollout_2"), sse.Message("ROLLOUT_DONE")], model=MODEL
+            )
+            await exchange.send(*stream.events)
+        assert (await turn.completed()).params.turn.status is wire.TurnStatus.COMPLETED
+    announced = {
+        item.id: item.summary for item in frames.assert_item_lifecycles(run.native_frames(), wire.ReasoningItem)
+    }
+    assert list(announced.values()) == [["first thought"], ["second thought"]]
+    rollout = one((codex.codex_home / "sessions").glob(f"**/*{run.thread_id}.jsonl")).read_text().splitlines()
+    saved = {
+        record["payload"]["id"]: [part["text"] for part in record["payload"]["summary"]]
+        for record in map(json.loads, rollout)
+        if record["type"] == "response_item" and record["payload"]["type"] == "reasoning"
+    }
+    assert saved == announced
 
 
 async def test_resume_after_an_interrupted_partial_turn_keeps_the_user_item_not_partial_output(
@@ -119,11 +158,11 @@ async def test_resume_after_an_interrupted_partial_turn_keeps_the_user_item_not_
             )
             assert (await turn.agent_message_delta()).params.delta == INTERRUPTED_RESUME_PARTIAL
             assert (await interrupted.interrupt(turn)).error is None
-            # Unlike an interrupt before any output, Codex reports this turn interrupted while
-            # retaining the upstream Responses stream. Finish the scripted response only after
-            # observing that terminal native event.
+            # Codex reports this turn interrupted while closing the upstream Responses stream.
+            # Wait for the client close before killing the process, rather than trying to finish a
+            # request the app-server has already canceled.
             assert (await turn.completed()).params.turn.status is wire.TurnStatus.INTERRUPTED
-            await exchange.close()
+            await exchange.wait_client_closed()
         assert await interrupted.crash() < 0
 
     assert [

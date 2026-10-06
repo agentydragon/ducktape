@@ -132,15 +132,12 @@ class Actions(Construct):
             service_account_name=_NAME,
             namespace=namespace,
         )
-        # The policy informer watches the sets and bindings it evaluates and the
-        # labeled caller ServiceAccounts, and writes back only each object's Ready
-        # condition. No Pods, no Thread/Agent reads, no Secrets.
-        Role(
-            self,
-            "role",
-            metadata=ApiObjectMetadata(name=_NAME, namespace=namespace),
-            rules=[
-                RolePolicyRule(resources=[custom_resource("", "serviceaccounts")], verbs=["get", "list", "watch"]),
+        # The runtime policy and caller watch scopes are independent. Keep the policy
+        # CR permissions in the policy namespace, and grant only ServiceAccount reads in
+        # caller namespaces. No Secrets or serviceaccounts/token permissions are needed.
+        policy_namespace = self.env.actions.settings.policy_namespace
+        rules_by_namespace: dict[str, list[RolePolicyRule]] = {
+            policy_namespace: [
                 RolePolicyRule(
                     resources=[
                         custom_resource("agentplane.allegedly.works", resource)
@@ -155,10 +152,19 @@ class Actions(Construct):
                     ],
                     verbs=["patch"],
                 ),
-                # The sandbox ActionGroup stamps Sandboxes and runs commands in their Pods. This is
-                # namespace-wide and cannot say "only the boxes this Action made": that boundary is
-                # the executor's own label check (agentplane/action_service/sandbox/inventory.py), which
-                # is why it is an application rule tested as one rather than something RBAC states.
+            ]
+        }
+        for caller_namespace in self.env.actions.settings.caller_service_account_namespaces:
+            rules_by_namespace.setdefault(caller_namespace, []).append(
+                RolePolicyRule(resources=[custom_resource("", "serviceaccounts")], verbs=["get", "list", "watch"])
+            )
+
+        # The sandbox ActionGroup stamps Sandboxes and runs commands in their Pods. This is
+        # namespace-wide and cannot say "only the boxes this Action made": that boundary is
+        # the executor's own label check (agentplane/action_service/sandbox/inventory.py), which
+        # is why it is an application rule tested as one rather than something RBAC states.
+        rules_by_namespace.setdefault(namespace, []).extend(
+            [
                 RolePolicyRule(
                     resources=[custom_resource("extensions.agents.x-k8s.io", "sandboxtemplates")], verbs=["get"]
                 ),
@@ -172,14 +178,27 @@ class Actions(Construct):
                 # `get` and not `create`: kubernetes_asyncio opens exec as an HTTP GET upgrade,
                 # where kubectl POSTs.
                 RolePolicyRule(resources=[custom_resource("", "pods/exec")], verbs=["get", "create"]),
-            ],
+            ]
         )
-        RoleBinding(
-            self,
-            "rolebinding",
-            metadata=ApiObjectMetadata(name=_NAME, namespace=namespace),
-            role=Role.from_role_name(self, "role-ref", _NAME),
-        ).add_subjects(service_account)
+        for target_namespace, rules in sorted(rules_by_namespace.items()):
+            suffix = "" if target_namespace == namespace else f"-{target_namespace}"
+            role = Role(
+                self, f"role{suffix}", metadata=ApiObjectMetadata(name=_NAME, namespace=target_namespace), rules=rules
+            )
+            binding = RoleBinding(
+                self,
+                f"rolebinding{suffix}",
+                metadata=ApiObjectMetadata(name=_NAME, namespace=target_namespace),
+                role=role,
+            )
+            subject = (
+                service_account
+                if target_namespace == namespace
+                else ServiceAccount.from_service_account_name(
+                    self, f"service-account-ref-{target_namespace}", _NAME, namespace_name=namespace
+                )
+            )
+            binding.add_subjects(subject)
 
     def _database_env(self) -> dict[str, EnvValue]:
         # The managed role's login, which database.py mints.

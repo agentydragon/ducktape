@@ -1429,8 +1429,9 @@ that: the entry imports every module with the SCC's dependent first
 (`[mod_b, mod_a]`, Lemma 2), so the DFS runs `entry → mod_b → mod_a → mod_b`
 (cycle, no-op), `mod_a` evaluates first, and `mod_b` sees `A` initialized.
 Pass 2's simulator reproduces that order and accepts; the e2e test
-`mixed_cycle_with_lazy_back_edge_is_realizable_when_residual_imports_scc`
-(<../e2e/realizability_test.rs>) runs the emitted bundle under Node.
+`lemma_two_rescued_asymmetric_cycle_test`
+(<../e2e/lemma_two_rescued_asymmetric_cycle_test.rs>) runs the emitted bundle
+of the same shape under Node.
 
 Pass 2 rejects the same cycle shape when the target of the constraining edge
 is the residual module: residual is the DFS root, so it evaluates last and a

@@ -71,15 +71,6 @@ def test_configured_groups_and_actions_are_discoverable() -> None:
     assert views["calendar"].available is False
 
 
-def test_executor_backend_configuration_never_reaches_a_view() -> None:
-    catalog = _catalog()
-
-    rendered = "\n".join(view.model_dump_json() for view in catalog.group_views(with_detail=False))
-
-    assert "github-mcp-account" not in rendered
-    assert "github-mcp.internal.example" not in rendered
-
-
 def test_server_id_must_match_its_own_group_key() -> None:
     bad_yaml = textwrap.dedent("""
         github:

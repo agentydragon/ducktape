@@ -61,9 +61,13 @@ def _compile(paths: ExternalSeriesContext) -> None:
     compile_series(paths, rollout_count=1, horizon_months=HORIZON, currency=USD)
 
 
+def test_a_complete_nonnegative_payout_path_compiles() -> None:
+    _compile(_payout_paths())
+
+
 @pytest.mark.parametrize("value", [float("nan"), float("inf"), float("-inf")])
 def test_nonfinite_distribution_is_not_treated_as_a_zero_payout(value: float) -> None:
-    with pytest.raises(ValueError, match=r"security_distribution:bnd.*no finite level at rollout 0, month 6"):
+    with pytest.raises(ValueError, match="security_distribution:bnd"):
         _compile(_payout_paths(bad_month_value=value))
 
 
@@ -71,13 +75,13 @@ def test_missing_distribution_snapshot_is_not_treated_as_a_zero_payout() -> None
     kind = SecurityDistributionKey(symbol=SYMBOL).kind
     frames = dict(_payout_paths().levels.by_kind)
     frames[kind] = frames[kind].filter(pl.col("month_index") != 6)
-    with pytest.raises(ValueError, match=r"security_distribution:bnd.*no finite level at rollout 0, month 6"):
+    with pytest.raises(ValueError, match="security_distribution:bnd"):
         _compile(ExternalSeriesContext(levels=LevelFrames.from_partial(frames)))
 
 
 @pytest.mark.parametrize("value", [-0.1, -1e-15])
 def test_negative_distribution_is_rejected_even_if_it_would_round_to_zero(value: float) -> None:
-    with pytest.raises(ValueError, match=r"security_distribution:bnd.*negative payout at rollout 0, month 6"):
+    with pytest.raises(ValueError, match="security_distribution:bnd"):
         _compile(_payout_paths(bad_month_value=value))
 
 

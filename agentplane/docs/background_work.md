@@ -4,9 +4,10 @@ What each harness tells the driver, and the model, about work the agent left run
 that started it — and what a common abstraction over the two could honestly promise.
 
 Evidence as in [driver_tools.md](driver_tools.md): **confirmed** means observed by driving the
-pinned Claude Code 2.1.252 or Codex app-server 0.152.0 binary against a loopback model endpoint;
-**read** means taken from Codex's Rust, the `@anthropic-ai/claude-agent-sdk` type declarations, or
-the debundled `cli.js`.
+pinned native binary against a loopback model endpoint; **read** means taken from Codex's Rust,
+the `@anthropic-ai/claude-agent-sdk` type declarations, or the debundled `cli.js`. Codex's current
+protocol baseline is 0.157.0; its background-terminal schema and handler were checked at the
+[`rust-v0.157.0` source](https://github.com/openai/codex/tree/rust-v0.157.0/codex-rs/app-server-protocol/src/protocol/v2).
 
 ## Claude Code: a session-scoped task registry
 
@@ -68,8 +69,8 @@ background work" (read).
 
 ## Codex: live exec sessions, and nothing above them
 
-Codex has no registry of agent background work. What it has is the set of PTY sessions
-`exec_command` left running.
+Codex has no registry of agent background work. Its app-server exposes per-thread background
+terminal queries for PTY sessions left running by `exec_command`.
 
 **What the model gets.** `exec_command` returns a session id when the command outlives
 `yield_time_ms`, and `write_stdin {session_id, chars, yield_time_ms}` writes to it and/or polls for
@@ -93,18 +94,18 @@ output. Confirmed. The model only learns anything by calling `write_stdin` again
 | -------------------------------------- | ----------------------------------------------------------------------- |
 | `thread/backgroundTerminals/list`      | paginated `{itemId, processId, command, cwd, osPid, cpuPercent, rssKb}` |
 | `thread/backgroundTerminals/terminate` | `{terminated: bool}`, by `processId`                                    |
-| `thread/backgroundTerminals/clean`     | drops all of them (read; not exercised)                                 |
+| `thread/backgroundTerminals/clean`     | drops all of them                                                       |
 
-Confirmed: a `sleep 120` appeared as
-`{itemId: "call-3", processId: "44371", command: "sleep 120", cwd: …}` with `osPid`, `cpuPercent`
-and `rssKb` null on this platform; it survived `turn/completed`; `terminate` returned
-`{terminated: true}` and the next list was empty.
+`list` is cursor-paginated and returns `itemId`, `processId`, `command`, `cwd`, `osPid`,
+`cpuPercent`, and `rssKb`. The 0.157.0 app-server currently fills the three process-stat fields
+with `null`; they are not stable runtime telemetry. `terminate` accepts `processId` and returns
+`{terminated: bool}`. See the [protocol schema](https://github.com/openai/codex/blob/rust-v0.157.0/codex-rs/app-server-protocol/src/protocol/v2/thread.rs#L1143-L1184)
+and [handler](https://github.com/openai/codex/blob/rust-v0.157.0/codex-rs/app-server/src/request_processors/thread_processor.rs#L2234-L2286).
 
-**There is no push notification for membership.** No notification method in the v2 protocol reports
-a background terminal starting or ending, and none arrived. What the driver does get is
-item-scoped: `item/commandExecution/outputDelta` and `item/completed` for the originating
-`exec_command` item, which arrived after the process exited while the thread was idle. Confirmed. A
-driver that wants the current set has to poll the list.
+**There is no push notification for membership.** The 0.157.0 v2 protocol has no notification for a
+background terminal starting or ending. The driver gets item-scoped
+`item/commandExecution/outputDelta` and `item/completed` events for the originating `exec_command`
+item; a driver that wants the current set has to poll the list.
 
 Codex's `process/{spawn,writeStdin,kill,resizePty}` with `process/outputDelta` and `process/exited`,
 and the `command/exec*` family, are processes the **driver** starts through the app-server, not work

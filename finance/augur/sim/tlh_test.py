@@ -193,8 +193,11 @@ def test_unrepresentable_rate_is_rejected_before_model_runs() -> None:
 
 
 def test_removed_or_misplaced_fields_cannot_silently_disable_the_model(assumptions: TlhAssumptions) -> None:
-    with pytest.raises(ValidationError, match="Extra inputs are not permitted"):
+    with pytest.raises(ValidationError) as refusal:
         TlhAssumptions.model_validate({**assumptions.model_dump(), "cumulative_harvest": 1})
+    assert [(error["type"], error["loc"]) for error in refusal.value.errors()] == [
+        ("extra_forbidden", ("cumulative_harvest",))
+    ]
 
 
 def test_financial_effects_balance_each_transition(assumptions: TlhAssumptions) -> None:

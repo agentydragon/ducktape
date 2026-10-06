@@ -16,8 +16,28 @@ def write_visual_review_manifest(output_dir: Path, *, title: str, assets: Iterab
 
     output_dir.mkdir(parents=True, exist_ok=True)
     destination = output_dir / MANIFEST_NAME
-    destination.write_text(json.dumps(manifest.model_dump(by_alias=True), indent=2) + "\n")
+    # Literal UTF-8 rather than `\uXXXX` escapes, so a label such as "hot · dark" stays readable.
+    destination.write_text(
+        json.dumps(manifest.model_dump(by_alias=True), indent=2, ensure_ascii=False) + "\n", encoding="utf-8"
+    )
     return destination
+
+
+def upsert_review_asset(output_dir: Path, *, title: str, asset: VisualReviewAsset) -> Path:
+    """Add `asset` to the manifest in `output_dir`, creating it if absent.
+
+    Lets a runner publish renders one at a time without knowing the full list upfront. An asset
+    whose path is already listed keeps its first label.
+    """
+    manifest_path = output_dir / MANIFEST_NAME
+    assets = (
+        list(VisualReviewManifest.model_validate_json(manifest_path.read_bytes()).assets)
+        if manifest_path.exists()
+        else []
+    )
+    if all(existing.path != asset.path for existing in assets):
+        assets.append(asset)
+    return write_visual_review_manifest(output_dir, title=title, assets=assets)
 
 
 def retain_review_asset(
@@ -38,14 +58,5 @@ def retain_review_asset(
     asset_name = name or png_path.name
     out_dir.mkdir(parents=True, exist_ok=True)
     shutil.copyfile(png_path, out_dir / asset_name)
-
-    manifest_path = out_dir / MANIFEST_NAME
-    assets = (
-        list(VisualReviewManifest.model_validate_json(manifest_path.read_text()).assets)
-        if manifest_path.exists()
-        else []
-    )
-    if all(asset.path != asset_name for asset in assets):
-        assets.append(VisualReviewAsset(path=asset_name, label=label))
-    write_visual_review_manifest(out_dir, title=title, assets=assets)
+    upsert_review_asset(out_dir, title=title, asset=VisualReviewAsset(path=asset_name, label=label))
     return out_dir / asset_name

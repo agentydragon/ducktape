@@ -47,7 +47,7 @@ class Provisioning:
         ):
             raise ValueError("unsupported harness")
         grants = resolve_grants(list(spec.kubernetes_grants), self.grants)
-        policies = self.egress.launch_policies(list(spec.policies))
+        policies = self.egress.launch_policies(list(spec.egress_policies))
         await self.egress.require_policies(policies)
         await self.action_policy.require_policy_sets(list(spec.action_policy_sets))
         binding = (
@@ -60,7 +60,7 @@ class Provisioning:
         )
         annotations = {
             PROVISIONING_ANNOTATION: LaunchGrants(
-                policies=policies, action_policy_sets=list(spec.action_policy_sets)
+                egress_policies=policies, action_policy_sets=list(spec.action_policy_sets)
             ).model_dump_json()
         }
         if binding is not None:
@@ -88,8 +88,8 @@ class Provisioning:
         intent = await self.inventory.pending_grants(sandbox.name)
         if intent is None:
             return  # Existing staging resources have no new intent to reinterpret or replace.
-        if intent.policies:
-            await self.egress.grant(sandbox, intent.policies, initial=True)
+        if intent.egress_policies:
+            await self.egress.grant(sandbox, intent.egress_policies, initial=True)
         if intent.action_policy_sets:
             await self.action_policy.bind(sandbox, intent.action_policy_sets, initial=True)
         if sandbox.kubernetes_grants:

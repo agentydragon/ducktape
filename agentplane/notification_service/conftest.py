@@ -9,11 +9,11 @@ from sqlalchemy.ext.asyncio import AsyncEngine, create_async_engine
 from testcontainers.postgres import PostgresContainer
 
 # Both native harnesses, not an app-managed session or app database.
-from agentplane.action_service.conftest import echo_catalog, echo_executor
 from agentplane.action_service.database_migrate import RUNNER as ACTIONS_MIGRATIONS
+from agentplane.action_service.testing.fixtures import echo_catalog, echo_executor
 from agentplane.notification_service.database_migrate import RUNNER
 from agentplane.notification_service.store import Store
-from agentplane.runner.conftest import config, endpoint, harness, model, runner, spec, workspace
+from agentplane.runner.testing.fixtures import config, endpoint, harness, model, runner, spec, workspace
 from util.testing.postgres import create_database_sync, force_drop_database_sync
 from util.testing.postgres_fixtures import postgres_container
 

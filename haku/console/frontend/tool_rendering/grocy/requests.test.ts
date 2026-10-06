@@ -4,91 +4,29 @@ import { renderPreview } from "../entry";
 import { grocyPreviews } from "./requests";
 
 describe("grocyPreviews", () => {
-  it("renders products_create for valid args, in both variants", () => {
-    for (const variant of ["compact", "detailed"] as const) {
-      const node = renderPreview(
-        grocyPreviews.products_create,
-        { items: [{ name: "Oats", stock_qu: "Gram", location: "Pantry", default_best_before_days: 270 }] },
-        variant
-      );
-      expect(node).not.toBeNull();
-    }
-  });
-
-  it("renders products_edit for valid partial updates, in both variants", () => {
-    for (const variant of ["compact", "detailed"] as const) {
-      const node = renderPreview(
-        grocyPreviews.products_edit,
-        {
-          items: [
-            {
-              product: "Oats",
-              location: "Pantry",
-              default_best_before_days: 270,
-              clear_fields: ["description"],
-            },
-          ],
-        },
-        variant
-      );
-      expect(node).not.toBeNull();
-    }
-  });
-
-  it("renders stock_entry_edit partial updates and cleared fields, in both variants", () => {
-    for (const variant of ["compact", "detailed"] as const) {
-      expect(
-        renderPreview(
-          grocyPreviews.stock_entry_edit,
-          { items: [{ entry_id: 189, price: 9.99, location: "Pantry", open: true, clear_fields: ["note"] }] },
-          variant
-        )
-      ).not.toBeNull();
-    }
-  });
-
-  it("renders stock/list/system reads and shopping-list removal", () => {
-    const cases = [
-      [grocyPreviews.stock_get, { products: ["Oats"], locations: [2] }],
-      [grocyPreviews.products_list, { detail: "brief" }],
-      [grocyPreviews.quantity_units_list, { detail: "full" }],
-      [grocyPreviews.get_system_info, {}],
-      [grocyPreviews.shopping_list_items_remove, { item_ids: [3, 7] }],
-    ] as const;
-    for (const [preview, args] of cases) expect(renderPreview(preview, args, "detailed")).not.toBeNull();
-  });
-
-  it("renders shopping_list_get in both variants", () => {
-    for (const variant of ["compact", "detailed"] as const) {
-      expect(renderPreview(grocyPreviews.shopping_list_get, { shopping_list: "Weekly" }, variant)).not.toBeNull();
-    }
-  });
-
-  it("renders shopping_list_items_add with product and note-only items, in both variants", () => {
-    for (const variant of ["compact", "detailed"] as const) {
-      const node = renderPreview(
-        grocyPreviews.shopping_list_items_add,
-        {
-          items: [
-            { shopping_list: "Weekly", product: "Oats", amount: 2 },
-            { shopping_list: "Weekly", note: "paper towels?" },
-          ],
-        },
-        variant
-      );
-      expect(node).not.toBeNull();
-    }
-  });
-
-  it("renders shopping_list_item_edit in both variants", () => {
-    for (const variant of ["compact", "detailed"] as const) {
-      const node = renderPreview(
-        grocyPreviews.shopping_list_item_edit,
-        { item_id: 42, amount: 3, done: true, clear_fields: ["note"] },
-        variant
-      );
-      expect(node).not.toBeNull();
-    }
+  // `clear_fields` is a Python `set[StrEnum]`, which the generated JSON Schema carries as a
+  // `uniqueItems` enum array. The preview-harness fixtures are only type-checked, never parsed, so
+  // this is the one place the runtime validator sees that shape for each edit tool.
+  it.each([
+    {
+      tool: "products_edit",
+      preview: grocyPreviews.products_edit,
+      args: {
+        items: [{ product: "Oats", location: "Pantry", default_best_before_days: 270, clear_fields: ["description"] }],
+      },
+    },
+    {
+      tool: "stock_entry_edit",
+      preview: grocyPreviews.stock_entry_edit,
+      args: { items: [{ entry_id: 189, price: 9.99, location: "Pantry", open: true, clear_fields: ["note"] }] },
+    },
+    {
+      tool: "shopping_list_item_edit",
+      preview: grocyPreviews.shopping_list_item_edit,
+      args: { item_id: 42, amount: 3, done: true, clear_fields: ["note"] },
+    },
+  ])("accepts clear_fields next to other edits on $tool", ({ preview, args }) => {
+    expect(preview.schema.safeParse(args).error?.issues).toBeUndefined();
   });
 
   it("returns null (not false) when args don't match the tool's schema", () => {

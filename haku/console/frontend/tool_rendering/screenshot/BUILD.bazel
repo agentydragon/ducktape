@@ -1,4 +1,4 @@
-load("@aspect_rules_js//js:defs.bzl", "js_library")
+load("@aspect_rules_js//js:defs.bzl", "js_binary")
 load("//devinfra/js:ts_library.bzl", "ts_library")
 
 package(default_visibility = ["//visibility:public"])
@@ -6,12 +6,11 @@ package(default_visibility = ["//visibility:public"])
 TSCONFIG = "//haku/console/frontend:tsconfig"
 
 # Shared preview-screenshot harness. `mcp_mock.ts` owns only the JSON-RPC transport simulation;
-# each server package owns its fixtures and tiny installer beside its widgets. `render` wraps the
-# shared Puppeteer driver each server's `js_test` runs as its entry point.
-js_library(
-    name = "render",
-    testonly = True,
-    srcs = ["render.mjs"],
+# each server package owns its fixtures and tiny installer beside its widgets. `emit_scenarios`
+# derives a server's scenario table from its fixtures (see `preview_screenshots`).
+js_binary(
+    name = "emit_scenarios",
+    entry_point = "emit_scenarios.mjs",
 )
 
 ts_library(

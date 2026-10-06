@@ -173,7 +173,6 @@ py_test(
         "//finance/augur/model:series",
         "//finance/evidence:markets",
         "//util/bazel:runfiles",
-        "@pypi//pydantic",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],

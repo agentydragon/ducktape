@@ -19,12 +19,12 @@ shell override for the Gazelle manifest update:
 
 ```bash
 bb run //devinfra:gazelle_python_manifest.update \
-  --config=nolint --norun_validations --shell_executable="$(command -v bash)"
+  --config=nolint --shell_executable="$(command -v bash)"
 ```
 
-`--config=nolint` and `--norun_validations` avoid the ruff lint aspect in a
-sandbox that lacks coreutils; they are for this manifest update path, not a
-general validation shortcut.
+`--config=nolint` avoids the ruff lint aspect in a sandbox that lacks coreutils; it is
+for this manifest update path, not a general validation shortcut
+(<linting.md#bazel-aspect-configs>).
 
 ## Rust Crates
 

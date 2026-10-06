@@ -220,6 +220,7 @@ py_package(
     # outside Bazel and are needed by Nix-shipped wheels (Claude statusline,
     # ducktape-git-hooks).
     deps = [
+        ":agent_sandbox",
         ":env",
         ":fmt",
         ":fs",
@@ -315,6 +316,28 @@ py_test(
         "@pypi//itsdangerous",
         "@pypi//pydantic",
         "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_visual_review",
+    srcs = ["test_visual_review.py"],
+    deps = [
+        ":visual_review",
+        "//:conftest",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_visual_diff",
+    srcs = ["test_visual_diff.py"],
+    deps = [
+        ":visual_diff",
+        "//:conftest",
+        "@pypi//pillow",
         "@pypi//pytest_bazel",
     ],
 )

@@ -3,14 +3,12 @@
 import json
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
-from unittest.mock import patch
 
 import pytest
 import pytest_bazel
 from syrupy.assertion import SnapshotAssertion
 
 from aiquota.models import ExtraSpend, FetchSuccess, ProviderFetch, ProviderQuota, QuotaWindow
-from devinfra.claude.claude_api.credentials import read_credentials
 from devinfra.claude.claude_api.statusline import ContextWindow, Input
 from devinfra.claude.statusline.statusline import (
     QuotaRoute,
@@ -80,31 +78,6 @@ def test_null_context_usage():
     assert data.context_window is not None
     assert data.context_window.used_percentage is None
     assert data.context_window.current_usage is None
-
-
-def test_read_credentials(tmp_path: Path):
-    creds = {"claudeAiOauth": {"accessToken": "test-token-123", "subscriptionType": "max"}}
-    creds_file = tmp_path / ".credentials.json"
-    creds_file.write_text(json.dumps(creds))
-
-    with patch("devinfra.claude.claude_api.credentials.CREDENTIALS_PATH", creds_file):
-        oauth = read_credentials()
-        assert oauth is not None
-        assert oauth.access_token == "test-token-123"
-        assert oauth.subscription_type == "max"
-
-
-def test_read_credentials_missing_file(tmp_path: Path):
-    with patch("devinfra.claude.claude_api.credentials.CREDENTIALS_PATH", tmp_path / "nonexistent"):
-        assert read_credentials() is None
-
-
-def test_read_credentials_malformed(tmp_path: Path):
-    creds_file = tmp_path / ".credentials.json"
-    creds_file.write_text("not json")
-
-    with patch("devinfra.claude.claude_api.credentials.CREDENTIALS_PATH", creds_file):
-        assert read_credentials() is None
 
 
 def _make_quota(

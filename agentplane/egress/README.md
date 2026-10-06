@@ -15,7 +15,7 @@ bbr test //agentplane/egress/...
   server; the derivation of a credential's placeholder from its name.
 - `presentation.py`: one parse per declared target, shared by detection and substitution — where a
   credential's placeholder sits in a request, and how to put the real value there.
-- `policy.py`: the pure decision over an in-memory `Index` — subject bindings, the matching rule
+- `policy.py`: the pure decision over an in-memory `Index` — subject bindings, the matching egress rule
   the request's placeholder directs it to, substitution, binding resolution. No I/O.
 - `identity.py`: the shared `workload_auth` resolver behind a proxied connection, translating a
   refused bearer into the `DenyReason` the client sees.
@@ -26,7 +26,7 @@ bbr test //agentplane/egress/...
 - `rules_api.py`: the agent-facing
   `agentplane-egress.agentplane-staging.svc.cluster.local/v1/rules` API and the narrow
   independently authenticated FastAPI listener and shared `RulesProjection`; `addon.py` is the
-  ordinary mitmproxy policy/substitution gate. `decisions.py` defines admission records;
+  ordinary egress-policy/substitution gate. `decisions.py` defines admission records;
   `decision_log.py` queues them for `decision_store.py`. `admin.py` serves history, local
   binding observations, readiness and liveness.
 - `proxy.py`: mitmproxy hosted in-process with the fail-closed options pinned; `main.py` the
@@ -39,7 +39,7 @@ bbr test //agentplane/egress/...
 
 The proxy needs an interception CA (`--ca-cert`, `--ca-key`) that the runner containers trust
 and a writable `--confdir` where mitmproxy keeps it and the leaves it issues; upstream
-certificates are verified against the image's system trust store. Identity and policy come from
+certificates are verified against the image's system trust store. Identity and egress policy come from
 the API server, in-cluster or through `--kubeconfig`.
 
 The image `//agentplane/egress:image` is published as `agentplane-egress`
@@ -74,7 +74,7 @@ spec:
       method: wholeValue
 ```
 
-The policy still decides the admitted hosts, methods, and paths. `app.buildbuddy.io` serves the
+The egress policy still decides the admitted hosts, methods, and paths. `app.buildbuddy.io` serves the
 HTTP API; `remote.buildbuddy.io` serves Build Event Service, remote cache, Remote Execution, and the
 Remote Runner control service over gRPCS. Standard server-authenticated TLS is sufficient for
 API-key authentication. BuildBuddy also supports mTLS as a separate authentication mode; that is
@@ -91,7 +91,7 @@ boundary and the candidate rewrite are in <../docs/buildbuddy_remote_auth.md>.
 
 For a trusted first-party destination that directly validates the Sandbox Pod's projected workload
 token, an `EgressCredential` may resolve the bearer already authenticated on the sidecar-to-central
-hop. This remains ordinary policy and target substitution: there is no destination-specific branch,
+hop. This remains ordinary egress policy and target substitution: there is no destination-specific branch,
 second token, sideband, or unconditional `Authorization` injection.
 
 ```yaml
@@ -131,13 +131,13 @@ both appends the key to the local outgoing gRPC context and retains it in the ne
 Agents send an ordinary proxied HTTP `GET` to
 `http://agentplane-egress.agentplane-staging.svc.cluster.local/v1/rules` with
 `Authorization: Bearer agentplane-credential-agentplane-workload`. The placeholder is inert and
-published in nonsecret runner instructions. The default `basic` policy binds this exact
+published in nonsecret runner instructions. The default `basic` egress policy binds this exact
 host, method, and path to the existing `agentplane-workload` credential's `schemeToken` target.
 Central applies normal exact-placeholder substitution using the authenticated sidecar workload
 context; no rules-specific proxy dispatch or credential injection mode is involved.
 
 Service port `80` targets the separate HTTP API listener on `8082`; port `8888` remains the forward
-proxy. Central resolves and dials the API like any other cluster-internal policy destination.
+proxy. Central resolves and dials the API like any other destination admitted by an egress policy.
 The FastAPI endpoint validates ordinary `Authorization` through `WorkloadPrincipalAuthenticator`,
 reviewing the bearer itself rather than inheriting the tunnel's verdict: one proxied read is two
 TokenReviews, deliberately. The API sees central's
@@ -173,7 +173,7 @@ Reading the calling Pod and refusing a connection whose source is not that Pod's
 request including cache hits, stops a token copied out of its Pod from being replayed elsewhere in
 the cluster. It costs a `pods` read in every `allowed_service_account_namespaces` entry, the grant
 the rule above keeps at nothing. Without it the exposure is bounded (<SPEC.md> § Identity): one
-in-cluster workload borrowing another's egress rules, not a way past the policy. Restore it if that
+in-cluster workload borrowing another's egress rules, not a way past the egress policy. Restore it if that
 borrowing becomes a real concern — a compromised sidecar reading another Pod's projected token, or
 a namespace whose Pod specs are not ours — with a `pod_ip` on the principal, the check in
 `WorkloadIdentityVerifier.identify`, the peer-address read in the addon, and that `pods` read.
@@ -221,7 +221,7 @@ initially synced and have cycle timestamps no older than three configured resync
 (default 900 seconds). Negative clock ages also fail closed. DB health does not participate.
 `/livez` only proves the admin event loop answers; a recoverable watch outage does not cause a
 restart loop. Every request on an existing TLS/HTTP2 connection is gated again. After DNS I/O,
-a changed policy decision denies that admission without forwarding or replay.
+a changed egress-policy decision denies that admission without forwarding or replay.
 Revocation is eventually observed independently by each watch, not globally linearizable.
 
 SIGTERM/SIGINT closes admission immediately and uses mitmproxy `Proxyserver.servers.update([])`
@@ -236,7 +236,7 @@ Staging runs two replicas on separate nodes with `RollingUpdate` (`maxUnavailabl
 endpoint away before its replacement is ready, and a voluntary eviction keeps one.
 
 The admin-only `/bindings` endpoint reports `scope: replica-local`, observation time, readiness,
-and derived binding name/UID/generation, resolution reason, and present/missing policy names.
+and derived binding name/UID/generation, resolution reason, and present/missing egress-policy names.
 It neither persists conditions nor claims other replicas observed that generation. The app shows
 Kubernetes desired bindings as “configured”, not an enforcement acknowledgement. Expiry is
 computed on every observation, with no timer-owned status or transition timestamps.

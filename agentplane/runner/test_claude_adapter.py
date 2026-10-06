@@ -3,19 +3,36 @@
 from __future__ import annotations
 
 import asyncio
+import json
+from collections.abc import AsyncIterator
 from pathlib import Path
 from typing import cast
 
+import pytest
 import pytest_bazel
 from pydantic import BaseModel
 
 from agentplane.native.claude import wire
 from agentplane.native.claude.blocks import ToolResultBlock
 from agentplane.native.transport import FrameMatcher, NativeReceipt
+from agentplane.protocol import event_pb2
 from agentplane.runner.claude import ClaudeAdapter
 from agentplane.runner.config import ClaudeLaunch
+from agentplane.runner.journal import Journal
 from agentplane.runner.session import Session
 from agentplane.runner.store import SessionRecord
+from agentplane.runner.testing.claude_transcript import (
+    Block,
+    assistant_message,
+    text_block,
+    thinking_block,
+    tool_use_block,
+    user_message,
+    write_transcript,
+)
+
+# The generated protocol stubs' own stub chain, which the mypy aspect resolves for direct deps only.
+# gazelle:include_dep @pypi//protobuf
 
 
 class RecordedSession:
@@ -69,6 +86,58 @@ class RecordedSession:
 
     async def emit(self, observation: object, *, sources: list[int]) -> None:
         self.emitted.append(observation)
+
+
+NATIVE_SESSION = "native-session"
+
+
+class JournaledSession(RecordedSession):
+    """The seam `reconcile` reads: the journal of the turn and the harness's native directory."""
+
+    def __init__(self, journal: Journal, native_directory: Path) -> None:
+        super().__init__()
+        self.journal = journal
+        self.native_directory = native_directory
+        self.record.native_session_id = NATIVE_SESSION
+
+
+@pytest.fixture
+async def journal(tmp_path: Path) -> AsyncIterator[Journal]:
+    async with Journal.open(tmp_path / "journal.sqlite", "test-source") as opened:
+        yield opened
+
+
+def _launch() -> ClaudeLaunch:
+    return ClaudeLaunch(binary=Path("/bin/false"), base_url="http://unused", auth_token="unused")
+
+
+async def _write_block(journal: Journal, message_id: str, block: Block) -> None:
+    """The assistant frame Claude wrote for one block of a message, as the runner journals it."""
+    frame = {
+        "type": "assistant",
+        "message": {"id": message_id, "content": [block]},
+        "session_id": NATIVE_SESSION,
+        "uuid": "frame-uuid",
+    }
+    await journal.append(event_pb2.Native(direction=event_pb2.DIRECTION_FROM_HARNESS, line=json.dumps(frame)))
+
+
+async def _observe_text(journal: Journal, item_id: str, words: str, *, completed: bool) -> None:
+    await journal.append(event_pb2.ItemStarted(item_id=item_id, kind=event_pb2.ITEM_KIND_ASSISTANT_TEXT))
+    await journal.append(event_pb2.TextDelta(item_id=item_id, text=words))
+    if completed:
+        await journal.append(event_pb2.ItemCompleted(item_id=item_id, text=words))
+
+
+async def _observe_reasoning(journal: Journal, item_id: str, thought: str, *, completed: bool) -> None:
+    await journal.append(event_pb2.ItemStarted(item_id=item_id, kind=event_pb2.ITEM_KIND_REASONING))
+    await journal.append(event_pb2.TextDelta(item_id=item_id, text=thought))
+    if completed:
+        await journal.append(event_pb2.ItemCompleted(item_id=item_id, text=thought))
+
+
+def _dispositions(reconciled: event_pb2.ConversationReconciled) -> list[tuple[str, event_pb2.RecoveryDisposition]]:
+    return [(item.item_id, item.disposition) for item in reconciled.items]
 
 
 def _lifecycle(command_uuid: str, state: wire.CommandState) -> dict[str, object]:
@@ -258,6 +327,135 @@ async def test_effort_requires_matching_successful_native_control_response() -> 
     await change
     assert recorded.effort_changes == [("effort-1", "high", [7])]
     assert recorded.failures[-1] == ("effort-2", "Claude Code refused reasoning effort switch: denied", [9])
+
+
+async def test_a_resumed_conversation_reports_reasoning_by_what_the_transcript_kept(
+    journal: Journal, tmp_path: Path
+) -> None:
+    write_transcript(
+        tmp_path / "claude",
+        NATIVE_SESSION,
+        user_message("input"),
+        assistant_message("kept", thinking_block("KEPT_THOUGHT")),
+        assistant_message("kept", text_block("ANSWER")),
+        assistant_message("finished-late", thinking_block("FINISHED_THOUGHT")),
+        assistant_message("finished-late", text_block("ANSWER")),
+        assistant_message("tool", thinking_block("THOUGHT_BEFORE_UNANSWERED_TOOL")),
+        assistant_message("tool", tool_use_block("call")),
+    )
+    await journal.append(event_pb2.TurnStarted(turn_id="turn"))
+    await _observe_reasoning(journal, "kept#0", "KEPT_THOUGHT", completed=True)
+    # The journal holds only the first fragment of a block the harness went on to finish.
+    await _observe_reasoning(journal, "finished-late#0", "FINISHED", completed=False)
+    await _observe_reasoning(journal, "tool#0", "THOUGHT_BEFORE_UNANSWERED_TOOL", completed=True)
+    await _observe_reasoning(journal, "cut-off#0", "CUT_OFF_THOUGHT", completed=False)
+
+    reconciled = await ClaudeAdapter(cast(Session, JournaledSession(journal, tmp_path)), _launch()).reconcile(
+        "turn", resumed=True
+    )
+
+    assert _dispositions(reconciled) == [
+        ("kept#0", event_pb2.RECOVERY_DISPOSITION_RETAINED),
+        ("finished-late#0", event_pb2.RECOVERY_DISPOSITION_REVISED),
+        ("tool#0", event_pb2.RECOVERY_DISPOSITION_ABSENT),
+        ("cut-off#0", event_pb2.RECOVERY_DISPOSITION_ABSENT),
+    ]
+    assert reconciled.items[1].replacement.text == "FINISHED_THOUGHT"
+
+
+async def test_an_interrupted_conversation_keeps_thinking_only_beside_a_block_that_survived(
+    journal: Journal, tmp_path: Path
+) -> None:
+    """The live process drops a thinking block unless its message has another block it wrote."""
+    await journal.append(event_pb2.TurnStarted(turn_id="turn"))
+    await _observe_reasoning(journal, "cut-off#0", "CUT_OFF_THOUGHT", completed=False)
+
+    await _write_block(journal, "with-text", thinking_block("THOUGHT"))
+    await _observe_reasoning(journal, "with-text#0", "THOUGHT", completed=True)
+    await _write_block(journal, "with-text", text_block("PARTIAL_ANSWER"))
+    await _observe_text(journal, "with-text#1", "PARTIAL_ANSWER", completed=True)
+
+    await _write_block(journal, "with-call", thinking_block("THOUGHT"))
+    await _observe_reasoning(journal, "with-call#0", "THOUGHT", completed=True)
+    await _write_block(journal, "with-call", tool_use_block("call"))
+    await journal.append(event_pb2.ItemStarted(item_id="call", kind=event_pb2.ITEM_KIND_TOOL_CALL, tool_name="Bash"))
+
+    await _write_block(journal, "alone", thinking_block("THOUGHT"))
+    await _observe_reasoning(journal, "alone#0", "THOUGHT", completed=True)
+
+    # The interrupt came before Claude wrote the text that was streaming, or the call it was reading.
+    await _write_block(journal, "text-not-written", thinking_block("THOUGHT"))
+    await _observe_reasoning(journal, "text-not-written#0", "THOUGHT", completed=True)
+    await _observe_text(journal, "text-not-written#1", "", completed=False)
+    await _write_block(journal, "call-not-written", thinking_block("THOUGHT"))
+    await _observe_reasoning(journal, "call-not-written#0", "THOUGHT", completed=True)
+    await journal.append(
+        event_pb2.ItemStarted(item_id="unwritten-call", kind=event_pb2.ITEM_KIND_TOOL_CALL, tool_name="Bash")
+    )
+
+    reconciled = await ClaudeAdapter(cast(Session, JournaledSession(journal, tmp_path)), _launch()).reconcile(
+        "turn", resumed=False
+    )
+
+    assert dict(_dispositions(reconciled)) == {
+        "cut-off#0": event_pb2.RECOVERY_DISPOSITION_ABSENT,
+        "with-text#0": event_pb2.RECOVERY_DISPOSITION_RETAINED,
+        "with-text#1": event_pb2.RECOVERY_DISPOSITION_RETAINED,
+        "with-call#0": event_pb2.RECOVERY_DISPOSITION_RETAINED,
+        "call": event_pb2.RECOVERY_DISPOSITION_UNKNOWN,
+        "alone#0": event_pb2.RECOVERY_DISPOSITION_ABSENT,
+        "text-not-written#0": event_pb2.RECOVERY_DISPOSITION_ABSENT,
+        "text-not-written#1": event_pb2.RECOVERY_DISPOSITION_ABSENT,
+        "call-not-written#0": event_pb2.RECOVERY_DISPOSITION_ABSENT,
+        "unwritten-call": event_pb2.RECOVERY_DISPOSITION_UNKNOWN,
+    }
+
+
+async def test_an_interrupted_conversation_is_unknown_for_thinking_a_line_we_could_not_parse_may_have_answered(
+    journal: Journal, tmp_path: Path
+) -> None:
+    await journal.append(event_pb2.TurnStarted(turn_id="turn"))
+    await _write_block(journal, "alone", thinking_block("THOUGHT"))
+    await _observe_reasoning(journal, "alone#0", "THOUGHT", completed=True)
+    await _write_block(journal, "answered", thinking_block("THOUGHT"))
+    await _observe_reasoning(journal, "answered#0", "THOUGHT", completed=True)
+    await _write_block(journal, "answered", text_block("ANSWER"))
+    await _observe_text(journal, "answered#1", "ANSWER", completed=True)
+    await _observe_reasoning(journal, "cut-off#0", "CUT_OFF_THOUGHT", completed=False)
+    await journal.append(event_pb2.Native(direction=event_pb2.DIRECTION_FROM_HARNESS, line='{"type": "assistant"'))
+
+    reconciled = await ClaudeAdapter(cast(Session, JournaledSession(journal, tmp_path)), _launch()).reconcile(
+        "turn", resumed=False
+    )
+
+    # Only thinking that would be reported absent for want of a sibling we may have missed is unknown.
+    assert dict(_dispositions(reconciled)) == {
+        "alone#0": event_pb2.RECOVERY_DISPOSITION_UNKNOWN,
+        "answered#0": event_pb2.RECOVERY_DISPOSITION_RETAINED,
+        "answered#1": event_pb2.RECOVERY_DISPOSITION_RETAINED,
+        "cut-off#0": event_pb2.RECOVERY_DISPOSITION_ABSENT,
+    }
+
+
+@pytest.mark.parametrize("compacted", [False, True], ids=["no-transcript", "compacted"])
+async def test_a_resumed_conversation_is_unknown_where_the_transcript_cannot_say(
+    journal: Journal, tmp_path: Path, compacted: bool
+) -> None:
+    if compacted:
+        transcript = write_transcript(
+            tmp_path / "claude", NATIVE_SESSION, assistant_message("msg", thinking_block("THOUGHT"))
+        )
+        with transcript.open("a") as output:
+            output.write(json.dumps({"type": "system", "subtype": "compact_boundary"}) + "\n")
+    await journal.append(event_pb2.TurnStarted(turn_id="turn"))
+    await _observe_reasoning(journal, "msg#0", "THOUGHT", completed=True)
+
+    reconciled = await ClaudeAdapter(cast(Session, JournaledSession(journal, tmp_path)), _launch()).reconcile(
+        "turn", resumed=True
+    )
+
+    assert _dispositions(reconciled) == [("msg#0", event_pb2.RECOVERY_DISPOSITION_UNKNOWN)]
+    assert reconciled.items[0].reason
 
 
 if __name__ == "__main__":

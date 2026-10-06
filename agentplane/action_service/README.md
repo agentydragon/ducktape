@@ -14,13 +14,14 @@ Console's being the one to retire, not two systems that happen to resemble each 
 ## External Connections
 
 Any caller is a ServiceAccount labeled `agentplane.allegedly.works/use-action-service: "true"` in
-one of `allowed_service_account_namespaces` — a Pod-bound workload token and a Connection are two
+one of `caller_service_account_namespaces` — a Pod-bound workload token and a Connection are two
 ways to prove one account, and the label admits either. The integration app labels the account it
 mints per Sandbox; staging commits `claude-ai`, the principal for
 Connections enrolled from the Claude.ai MCP connector, alongside its policies in
 `cluster/cdk8s/agentplane/actions_staging_policies.py`. Testing commits none:
 nothing there enrolls an external Connection, and the acceptance suite creates the objects it
-needs at run time. `policy_informer.PolicyInformer` watches them with a label selector into the `PolicyIndex`,
+needs at run time. `policy_informer.PolicyInformer` watches them with a label selector into the
+`PolicyIndex`,
 and `connections.ConnectionAuthority` resolves grants against that index: a grant whose
 ServiceAccount is missing, unlabeled, or not yet listed by the watch refuses resolution.
 `ConnectionAuthority` persists runtime named Connections and immutable grant revisions in the
@@ -405,12 +406,13 @@ transactionally if unexpected preexisting rows exist.
 
 `policies/resources` parses `ActionPolicySet` and `ActionPolicyBinding` (CRDs in
 `agentplane/crds/`) strictly: an unknown key or policy kind, an invalid JSON Schema, or
-a subject that is not a namespaced ServiceAccount makes the object an `InvalidResource`. `policy_informer` list-and-watches both kinds and the labeled caller
-ServiceAccounts in every `allowed_service_account_namespaces` entry into one `PolicyIndex`, and
-writes each set's and binding's `Ready` condition with `observedGeneration`, so `kubectl get`
-shows a refused edit and a writer can wait for the service to have seen a spec change. The
-status subresource is the informer's only write, and the Role in each environment's `actions/`
-manifests grants exactly that.
+a subject that is not a namespaced ServiceAccount makes the object an `InvalidResource`.
+`policy_informer` list-and-watches both kinds only in `policy_namespace`, and labeled caller
+ServiceAccounts only in `caller_service_account_namespaces`, into one `PolicyIndex`. It writes each
+set's and binding's `Ready` condition with `observedGeneration`, so `kubectl get` shows a refused
+edit and a writer can wait for the service to have seen a spec change. The status subresource is
+the informer's only write, and the rendered Roles grant these permissions independently in the
+namespaces that need them.
 
 Each policy kind is one module under `policies/` holding its wire model and its evaluator
 (`exact_actions`; `argument_schema` over the `jsonschema` package; `github_repository` and
@@ -448,8 +450,11 @@ composition against a fake API server.
 
 ## Authentication boundaries
 
-`allowed_service_account_namespaces` lists the Kubernetes namespaces whose ServiceAccounts
-may authenticate sandbox callers. It does not approve Actions or select an MCP destination.
+`caller_service_account_namespaces` lists the Kubernetes namespaces whose labeled ServiceAccounts
+may authenticate callers. `policy_namespace` names where ActionPolicySets and ActionPolicyBindings
+are read and their Ready statuses are written. These settings are independent: a binding in a policy
+namespace can name a ServiceAccount in another caller namespace. Neither setting approves Actions or
+selects an MCP destination.
 
 Sandbox calls use ordinary `Authorization: Bearer <workload token>` at this service. The runner does
 not hold that token: it presents the public

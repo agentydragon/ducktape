@@ -11,6 +11,7 @@
 # gazelle:exclude devinfra/debug/agent_fleet
 # gazelle:exclude debug/atlas
 # gazelle:exclude debug/kernel_6_18_amd_kvm_stall
+# gazelle:exclude cluster/debug/optiplex_nvme_thermal
 # gazelle:exclude cluster/debug/sqlite_storage_bench
 # gazelle:exclude nix/debug/wyrm2
 # gazelle:exclude nix/nixos
@@ -18,7 +19,6 @@
 # gazelle:exclude x/domains
 # gazelle:exclude x/ember_evals
 # gazelle:exclude x/local_llm
-# gazelle:exclude x/rl_finetune
 
 # gazelle:python_root
 # gazelle:python_generation_mode file
@@ -98,7 +98,6 @@ npm_link_package(
 
 # Export workspace files for npm_translate_lock data tracking
 exports_files([
-    "buildbuddy.yaml",
     "mypy.ini",
     "nebula-mesh.json",
     "package.json",
@@ -140,6 +139,7 @@ js_library(
         ":node_modules/@eslint/js",
         ":node_modules/@typescript-eslint/eslint-plugin",
         ":node_modules/@typescript-eslint/parser",
+        ":node_modules/@vitest/eslint-plugin",
         ":node_modules/eslint-plugin-import-x",
         ":node_modules/eslint-plugin-react",
         ":node_modules/eslint-plugin-react-hooks",
@@ -260,7 +260,6 @@ py_wheel(
     entry_points = {
         "console_scripts": [
             "ducktape-precommit = devinfra.precommit.git_hook:main_pre_commit",
-            "ducktape-pytest-main-check = devinfra.precommit.git_hook:main_pytest_main_check",
             "ducktape-prepare-commit-msg = devinfra.precommit.git_hook:main_prepare_commit_msg",
             "ducktape-enforce-bazel-tests = devinfra.precommit.git_hook:main_enforce_bazel_tests",
         ],

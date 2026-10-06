@@ -1,22 +1,18 @@
 """Offline checks for undefined comparisons; no evidence downloads or fitting."""
 
-from datetime import date
-
 import pytest
 import pytest_bazel
 
-from finance.augur.study.macro_window.stability import Comparison, describe
+from finance.augur.study.macro_window.stability import Comparison, Tally, describe, tally
 
 
 @pytest.mark.parametrize("bad", [float("nan"), float("inf"), float("-inf")])
 def test_nonfinite_difference_cannot_establish_a_stable_sign(bad: float) -> None:
     comparison = Comparison("test_left", "test_right", 12, "test_metric", (1.0, bad, 2.0))
     assert comparison.flips is None
-    report = describe([comparison])
-    assert "UNDEFINED" in report
-    assert "0 of 0 defined" in report
-    assert "1 comparisons have undefined stability" in report
-    assert "nan" in report or "inf" in report
+    assert tally([comparison]) == Tally(flipped=0, defined=0, undefined=1)
+    # The undefined period stays in the report rather than being dropped.
+    assert str(bad) in describe([comparison])
 
 
 def test_finite_sign_changes_still_report_separately_from_undefined_comparisons() -> None:
@@ -26,9 +22,7 @@ def test_finite_sign_changes_still_report_separately_from_undefined_comparisons(
         Comparison("test_left", "test_right", 60, "test_unknown", (float("inf") - float("inf"), 1.0)),
     ]
     assert [comparison.flips for comparison in comparisons] == [True, False, None]
-    report = describe(comparisons, origin_starts=(date(2000, 1, 1), date(2001, 1, 1)))
-    assert "1 of 2 defined" in report
-    assert "1 comparisons have undefined stability" in report
+    assert tally(comparisons) == Tally(flipped=1, defined=2, undefined=1)
 
 
 if __name__ == "__main__":

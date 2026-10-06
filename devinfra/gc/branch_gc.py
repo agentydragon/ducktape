@@ -26,6 +26,7 @@ output-base removal use. The default branch is never a candidate.
 
 from __future__ import annotations
 
+import enum
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -50,26 +51,74 @@ class MainCheckout:
 type Holder = Classification | MainCheckout | None
 
 
+class PrunableBranchReason(enum.StrEnum):
+    CONTENT_IN_MAIN = enum.auto()
+    PR_HEAD_REACHED = enum.auto()  # nothing beyond the head of the branch's merged or closed PR
+    PATCHES_IN_MAIN = enum.auto()
+
+
+class RetainedBranchReason(enum.StrEnum):
+    DEFAULT_BRANCH = enum.auto()
+    MAIN_CHECKOUT = enum.auto()
+    HELD_BY_WORKTREE = enum.auto()  # by a retained or review worktree
+    OPEN_PR = enum.auto()
+
+
+class ReviewBranchReason(enum.StrEnum):
+    PR_HEAD_EXCEEDED = enum.auto()  # commits beyond the head of the branch's merged or closed PR
+    UNMERGED = enum.auto()
+
+
 @dataclass(frozen=True, slots=True)
 class PrunableBranch:
     branch: Branch
-    reason: str
+    reason: PrunableBranchReason
     checkout: Path | None  # the prunable worktree holding it, removed before the branch
+    main: str  # the ref the verdict was judged against, e.g. `origin/devel`
+    pr: PrInfo | None  # set for PR_HEAD_REACHED; for CONTENT_IN_MAIN when the branch has a merged or closed PR
 
 
 @dataclass(frozen=True, slots=True)
 class RetainedBranch:
     branch: Branch
-    reason: str
+    reason: RetainedBranchReason
+    checkout: Path | None = None  # set for HELD_BY_WORKTREE: the worktree holding it
+    pr: PrInfo | None = None  # set for OPEN_PR
 
 
 @dataclass(frozen=True, slots=True)
 class ReviewBranch:
     branch: Branch
-    reason: str
+    reason: ReviewBranchReason
+    main: str  # the ref the verdict was judged against, e.g. `origin/devel`
+    pr: PrInfo | None = None  # set for PR_HEAD_EXCEEDED
 
 
 type BranchClassification = PrunableBranch | RetainedBranch | ReviewBranch
+
+
+def describe_reason(item: BranchClassification) -> str:
+    match item:
+        case PrunableBranch(reason=PrunableBranchReason.CONTENT_IN_MAIN, main=main, pr=pr):
+            return f"changes already in {main}" + (f" ({pr_phrase(pr)})" if pr is not None else "")
+        case PrunableBranch(reason=PrunableBranchReason.PR_HEAD_REACHED, pr=PrInfo() as pr):
+            return f"{pr_phrase(pr)}; nothing beyond the {pr.state.value} head"
+        case PrunableBranch(reason=PrunableBranchReason.PATCHES_IN_MAIN, main=main):
+            return f"every commit has an equivalent already on {main}"
+        case RetainedBranch(reason=RetainedBranchReason.DEFAULT_BRANCH):
+            return "default branch"
+        case RetainedBranch(reason=RetainedBranchReason.MAIN_CHECKOUT):
+            return "checked out in main checkout"
+        case RetainedBranch(reason=RetainedBranchReason.HELD_BY_WORKTREE, checkout=Path() as checkout):
+            return f"checked out in retained worktree {checkout}"
+        case RetainedBranch(reason=RetainedBranchReason.OPEN_PR, pr=PrInfo() as pr):
+            return pr_phrase(pr)
+        case ReviewBranch(reason=ReviewBranchReason.PR_HEAD_EXCEEDED, pr=PrInfo() as pr):
+            return f"{pr_phrase(pr)} but branch has commits beyond it"
+        case ReviewBranch(reason=ReviewBranchReason.UNMERGED, main=main):
+            return f"commits not in {main}"
+        case _:
+            raise ValueError(f"{item=} lacks the data its reason cites")
 
 
 def local_branches(pg: pygit2.Repository) -> list[str]:
@@ -105,30 +154,29 @@ def classify_branch(
     branch = Branch(name)
 
     if name == default_branch:
-        return RetainedBranch(branch, "default branch")
+        return RetainedBranch(branch, RetainedBranchReason.DEFAULT_BRANCH)
     if isinstance(holder, MainCheckout):
-        return RetainedBranch(branch, "checked out in main checkout")
+        return RetainedBranch(branch, RetainedBranchReason.MAIN_CHECKOUT)
     if isinstance(holder, RetainedWorktree | ReviewWorktree):
-        return RetainedBranch(branch, f"checked out in retained worktree {holder.worktree.path}")
+        return RetainedBranch(branch, RetainedBranchReason.HELD_BY_WORKTREE, checkout=holder.worktree.path)
     if pr is not None and pr.state is PrState.OPEN:
-        return RetainedBranch(branch, pr_phrase(pr))
+        return RetainedBranch(branch, RetainedBranchReason.OPEN_PR, pr=pr)
 
     # holder is None or a PrunableWorktree (removed before the branch is deleted).
     checkout = holder.worktree.path if isinstance(holder, PrunableWorktree) else None
     branch_oid = pg.branches.local[name].peel(pygit2.Commit).id
     if content_in_main(pg, branch_oid, main):
-        annotation = f" ({pr_phrase(pr)})" if pr is not None and pr.state in (PrState.MERGED, PrState.CLOSED) else ""
-        return PrunableBranch(branch, f"changes already in {main}{annotation}", checkout)
+        return PrunableBranch(branch, PrunableBranchReason.CONTENT_IN_MAIN, checkout, main, pr)
     if pr is not None and pr.state in (PrState.MERGED, PrState.CLOSED) and _tip_within_pr_head(pg, branch_oid, pr):
-        return PrunableBranch(branch, f"{pr_phrase(pr)}; nothing beyond the {pr.state.value} head", checkout)
+        return PrunableBranch(branch, PrunableBranchReason.PR_HEAD_REACHED, checkout, main, pr)
     # Last, because it is the only check here that shells out: ~200ms, worth paying for the
     # handful of branches otherwise bound for REVIEW but not for every branch in the repo.
     # The cheaper tests above also name a more specific reason when they apply.
     if patches_landed_in_main(Path(pg.path), name, main):
-        return PrunableBranch(branch, f"every commit has an equivalent already on {main}", checkout)
+        return PrunableBranch(branch, PrunableBranchReason.PATCHES_IN_MAIN, checkout, main, None)
     if pr is not None and pr.state in (PrState.MERGED, PrState.CLOSED):
-        return ReviewBranch(branch, f"{pr_phrase(pr)} but branch has commits beyond it")
-    return ReviewBranch(branch, f"commits not in {main}")
+        return ReviewBranch(branch, ReviewBranchReason.PR_HEAD_EXCEEDED, main, pr)
+    return ReviewBranch(branch, ReviewBranchReason.UNMERGED, main)
 
 
 @dataclass(frozen=True, slots=True)

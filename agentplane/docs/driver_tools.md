@@ -5,13 +5,15 @@ page records how a call round-trips on each side, how much of the registry each 
 the model, whether the registry itself can change while a session runs, and what each harness does
 with an MCP server's `notifications/tools/list_changed`.
 
-Evidence: the pinned Claude Code 2.1.252 and Codex app-server 0.152.0 binaries, driven by a
-throwaway rig against a loopback model endpoint — every claim marked **confirmed** was produced by
-running the real binary that way. Claims marked **read** name their source: Codex's Rust at the
-tag `rust-v0.152.0` (the pinned release, not `main`, which has moved on), the
+Evidence: the runner currently pins Codex app-server 0.157.0 and Claude Code 2.1.252.
+**Confirmed** marks behavior observed with a real binary; **read** marks source-based conclusions,
+checked against Codex's Rust at the runner-matched tag `rust-v0.157.0`, the
 `@anthropic-ai/claude-agent-sdk` type declarations, which document the control protocol Claude Code
 speaks, or the debundled `cli.js` chunks
 ([gaffer-private `claude/re`](https://github.com/agentydragon/gaffer-private/tree/devel/claude/re)).
+Capture-only timings are observations from their probe runs, not protocol guarantees.
+Codex source findings use the 0.157.0 baseline; current scripted coverage is listed in the
+[native protocol roster](../native/docs/protocol_roster.md).
 Background work is a separate page: [background_work.md](background_work.md).
 
 Two axes run through this page and are easy to conflate. **What the model sees on a turn** is
@@ -213,7 +215,7 @@ turn, rather than answering an `item/tool/call`.
 Per-tool `deferLoading: true` keeps a tool registered and callable while excluding it from the
 model-facing list sent on ordinary turns; the model finds it with `tool_search`. A deferred tool
 must sit in a namespace, which `validate_dynamic_tool` enforces
-(`codex-rs/app-server/src/request_processors/thread_processor.rs`, read at `rust-v0.152.0`). The
+(`codex-rs/app-server/src/request_processors/thread_processor.rs`, read at `rust-v0.157.0`). The
 whole path is confirmed:
 
 1. **Enablement.** `tool_search` is offered only when the model's catalog entry sets
@@ -241,7 +243,7 @@ The Responses API rebuilds the `tools` array on every request, and Codex uses th
 code mode both vary what a given turn carries. What a client cannot do is change **which tools
 exist** or **a tool's input schema** once the thread exists.
 
-Traced at `rust-v0.152.0`. Each turn builds a fresh `ToolRegistry`, and
+Traced at `rust-v0.157.0`. Each turn builds a fresh `ToolRegistry`, and
 `append_dynamic_tool_runtimes(&turn_context.dynamic_tools, …)` (`core/src/tools/spec_plan.rs`) feeds
 the driver's tools into it. `TurnContext.dynamic_tools` is a verbatim clone of
 `SessionConfiguration.dynamic_tools` (`core/src/session/turn_context.rs:812`), which is populated
@@ -276,7 +278,7 @@ field to an empty vector, which reads like the tools are silently dropped. The e
 exactly the trigger — `Session::new` falls back to `conversation_history.get_dynamic_tools()`, which
 reads the specs back out of the rollout's `SessionMeta` line, under the comment "Dynamic tools are
 defined at thread start and persisted in rollout session metadata" (`core/src/session/mod.rs`, read
-at `rust-v0.152.0`). Two edges follow from that lookup: an **ephemeral** thread writes no rollout
+at `rust-v0.157.0`). Two edges follow from that lookup: an **ephemeral** thread writes no rollout
 and cannot be resumed at all, and a **cleared** history returns `None`, so the specs are gone.
 
 ### `notifications/tools/list_changed` from a real MCP server

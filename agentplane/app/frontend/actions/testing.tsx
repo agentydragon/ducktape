@@ -12,6 +12,8 @@ export type View = (props: { service?: ActionService }) => JSX.Element;
 
 (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
+export const DECISION_NOTE = "test decision note";
+
 export function request(state: ActionState, index: number): ActionRequestView {
   const decided = state !== "decision_pending";
   const executing = !["decision_pending", "allowed", "denied"].includes(state);
@@ -33,7 +35,7 @@ export function request(state: ActionState, index: number): ActionRequestView {
           verdict: state === "denied" ? "deny" : "allow",
           provider: "human_operator",
           operator: { issuer: "https://test-operator.example/oidc", subject: "test-operator" },
-          decision_note: "Reviewed scope — allowed for this request.",
+          decision_note: DECISION_NOTE,
           idempotency_key: `decision-${index}`,
           decided_at: "2026-09-05T12:00:00Z",
         }

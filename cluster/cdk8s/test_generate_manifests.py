@@ -257,5 +257,44 @@ def test_openclaw_cutover_waits_for_agentplane_credentials(
     }
 
 
+def test_public_coder_pause_retains_storage_without_running_agents(
+    generated: Path, parsed_yaml_documents: dict[Path, tuple[Any, ...]]
+) -> None:
+    root = generated / "cluster/k8s/agents/public-coder-agent"
+    objects = [
+        doc
+        for path, docs in parsed_yaml_documents.items()
+        if path.is_relative_to(root)
+        for doc in docs
+        if isinstance(doc, dict)
+    ]
+    deployments = [doc for doc in objects if doc["kind"] == "Deployment"]
+    assert {doc["metadata"]["name"] for doc in deployments} == {"public-coder-agent", "proxy", "sshpiper"}
+    assert all(doc["spec"]["replicas"] == 0 for doc in deployments)
+    vms = [doc for doc in objects if doc["kind"] == "VirtualMachine"]
+    assert len(vms) == 1
+    assert vms[0]["spec"]["runStrategy"] == "Halted"
+    assert "ducktape.org/auto-restart-template-changes" not in vms[0]["metadata"].get("annotations", {})
+    assert {doc["metadata"]["name"] for doc in objects if doc["kind"] == "PersistentVolumeClaim"} == {
+        "public-coder-agent-state-v2",
+        "public-coder-agent-diagnostics",
+        "public-coder-agent-sshpiper-recordings",
+        "public-coder-devbox-bazel-cache",
+    }
+    assert any(doc["kind"] == "Namespace" and doc["metadata"]["name"] == "public-coder-agent" for doc in objects)
+    # VolSync owns its cache PVC; keep the backup source rather than deleting its owner.
+    assert any(doc["kind"] == "ReplicationSource" for doc in objects)
+    owners = {
+        doc["metadata"]["name"]: doc["spec"]
+        for docs in parsed_yaml_documents.values()
+        for doc in docs
+        if isinstance(doc, dict) and doc.get("kind") == "Kustomization" and "spec" in doc
+    }
+    for name in ("public-coder-agent-app", "public-coder-agent-devbox"):
+        assert owners[name]["deletionPolicy"] == "Orphan"
+        assert not owners[name].get("suspend", False)
+    assert owners["public-coder-agent-devbox"]["wait"] is False
+
+
 if __name__ == "__main__":
     pytest_bazel.main()

@@ -18,6 +18,7 @@ from cluster.cdk8s.agentplane.app_settings import (
     AIQUOTA_READ_POLICY,
     BASIC_POLICY,
     COINBASE_POLICY,
+    FINANCE_AIQUOTA_HISTORY_POLICY,
     FORGEJO_FINANCE_AGENT_POLICY,
     FORGEJO_HAKU_POLICY,
     GITHUB_AGENTYDRAGON_AGENT_POLICY,
@@ -25,11 +26,14 @@ from cluster.cdk8s.agentplane.app_settings import (
     GROCY_SF_READONLY_POLICY,
     HAKU_MAILBOX_POLICY,
     HOME_ASSISTANT_READONLY_POLICY,
+    INFERENCE_EXPERIMENTS_POLICY,
     PLAID_PGWEB_POLICY,
     PUBLIC_INTERNET_POLICY,
 )
 from cluster.cdk8s.agentplane.conftest import NAMESPACES
 from cluster.cdk8s.agentplane.egress import KUBERNETES_AUDIENCE, KUBERNETES_CREDENTIAL, KUBERNETES_HOST
+from cluster.cdk8s.clickhouse import client
+from model_catalog.catalog import OLLAMA_QWEN_IQ4XS_256K
 
 # What a workload token may reach on the Actions service: the MCP endpoint, its schema and
 # the action-group/request API. The operator API (/v1/operator/*) and the OAuth endpoints
@@ -56,7 +60,11 @@ def test_public_internet_is_available_but_never_implicitly_granted(
         if doc["kind"] == "EgressBinding":
             if namespace == "agentplane-staging" and doc["metadata"]["name"] == "public-coder-openclaw":
                 assert doc["spec"]["subjects"] == [{"namespace": "public-coder-agent", "name": "openclaw"}]
-                assert doc["spec"]["policies"] == ["public-coder-openclaw", PUBLIC_INTERNET_POLICY]
+                assert doc["spec"]["policies"] == [
+                    "public-coder-openclaw",
+                    INFERENCE_EXPERIMENTS_POLICY,
+                    PUBLIC_INTERNET_POLICY,
+                ]
             else:
                 assert PUBLIC_INTERNET_POLICY not in doc["spec"]["policies"]
 
@@ -82,7 +90,7 @@ def test_kubernetes_access_is_part_of_what_every_sandbox_is_granted(
     """Every agent talks to the API server, so the rule admitting it is in `basic`.
 
     `basic` is the policy every launch is granted before the caller picks anything
-    (`default_policies` and `launch_policies`, agentplane/app/egress.py), which is what makes
+    (`default_egress_policies` and `launch_policies`, agentplane/app/egress.py), which is what makes
     Kubernetes access a property of a sandbox rather than a choice one. It was its own policy
     while every SandboxTemplate already mounted the kubeconfig naming this credential
     (sandbox_pod.py): a box whose preset or caller did not name it held a working-looking config
@@ -111,7 +119,7 @@ def test_kubernetes_access_is_part_of_what_every_sandbox_is_granted(
 
     # And `basic` reaches a sandbox that picks nothing, which is the whole claim.
     app_config = _by_name(docs, "ConfigMap", "agentplane-app-config")
-    defaults: list[str] = yaml.safe_load(app_config["data"]["config.yaml"])["default_policies"]
+    defaults: list[str] = yaml.safe_load(app_config["data"]["config.yaml"])["default_egress_policies"]
     assert BASIC_POLICY in defaults, defaults
 
 
@@ -164,11 +172,53 @@ def test_testing_github_policy_has_its_credential_and_no_real_account_credential
             ACTIVITYWATCH_READ_POLICY,
             AGENTPLANE_TESTING_POLICY,
             AIQUOTA_READ_POLICY,
+            FINANCE_AIQUOTA_HISTORY_POLICY,
             HAKU_MAILBOX_POLICY,
             PLAID_PGWEB_POLICY,
         }
         for doc in manifests
     )
+
+
+@pytest.mark.parametrize("namespace", NAMESPACES)
+def test_claude_pause_omits_launch_offerings_but_keeps_ingress(
+    namespace: str, agentplane_manifests: dict[str, list[dict[str, Any]]]
+) -> None:
+    docs = agentplane_manifests[namespace]
+    config = yaml.safe_load(_by_name(docs, "ConfigMap", "agentplane-app-config")["data"]["config.yaml"])
+    assert config["models"]["harnesses"]["HARNESS_CLAUDE"] == []
+    assert config["models"]["harnesses"]["HARNESS_CODEX"]
+    assert all(preset["harness"] == "HARNESS_CODEX" for preset in config["thread_presets"].values())
+    # Existing sessions retain the Anthropic ingress endpoint and proxy policy.
+    assert any(doc["kind"] == "Service" and doc["metadata"]["name"] == "agentplane-llm-ingress" for doc in docs)
+
+
+def test_haku_launches_on_codex_with_the_wider_qwen_context_window(
+    agentplane_manifests: dict[str, list[dict[str, Any]]],
+) -> None:
+    """Haku's preset follows the paused Claude offerings onto the local Qwen route.
+
+    The preset is the only reason a launch form picks a model, so it must name a route the
+    harness accepts and an effort that route declares; agentplane-testing offers no Haku preset
+    at all, since only staging provisions Haku's credentials.
+    """
+    docs = agentplane_manifests[staging.ENV.namespace]
+    config = yaml.safe_load(_by_name(docs, "ConfigMap", "agentplane-app-config")["data"]["config.yaml"])
+    preset = config["thread_presets"]["haku-codex"]
+    assert preset["harness"] == "HARNESS_CODEX"
+    assert preset["model"] == OLLAMA_QWEN_IQ4XS_256K.openai.id
+    assert preset["model"] in config["models"]["harnesses"]["HARNESS_CODEX"]
+    option = one(model for model in config["models"]["models"] if model["model"] == preset["model"])
+    assert preset["reasoning_effort"] in option["reasoning_efforts"]
+    assert config["sandbox_presets"]["haku"]["thread_preset"] == "haku-codex"
+
+    testing_config = yaml.safe_load(
+        _by_name(agentplane_manifests[testing.ENV.namespace], "ConfigMap", "agentplane-app-config")["data"][
+            "config.yaml"
+        ]
+    )
+    assert not {"haku", "haku-codex"} & set(testing_config["sandbox_presets"])
+    assert not {"haku", "haku-codex"} & set(testing_config["thread_presets"])
 
 
 @pytest.mark.parametrize("preset", ["public-coder", "finance-agent"])
@@ -181,7 +231,7 @@ def test_public_diagnostics_share_haku_reads_but_not_privileged_grants(
     selected = config["sandbox_presets"][preset]["kubernetes_grants"]
     credential_grants = {"coinbase-credentials", "spend-private-config"} if preset == "finance-agent" else set()
     # Coinbase egress follows the Secret grant; haku-agent's EgressBinding carries none.
-    assert (COINBASE_POLICY in config["sandbox_presets"][preset]["policies"]) == (preset == "finance-agent")
+    assert (COINBASE_POLICY in config["sandbox_presets"][preset]["egress_policies"]) == (preset == "finance-agent")
     assert COINBASE_POLICY not in _by_name(docs, "EgressBinding", "haku-agent")["spec"]["policies"]
     assert set(selected) == set(config["sandbox_presets"]["public-coder"]["kubernetes_grants"]) | credential_grants
     assert len(selected) == len(set(selected))
@@ -285,5 +335,72 @@ def test_environments_do_not_share_cluster_scoped_bundles(
             owners[name] = namespace
 
 
+@pytest.mark.parametrize("namespace", NAMESPACES)
+def test_inference_is_granted_separately_from_platform_operations(
+    namespace: str, agentplane_manifests: dict[str, list[dict[str, Any]]]
+) -> None:
+    docs = agentplane_manifests[namespace]
+    granted = _by_name(docs, "EgressPolicy", INFERENCE_EXPERIMENTS_POLICY)
+    basic = _by_name(docs, "EgressPolicy", BASIC_POLICY)
+    config = _by_name(docs, "ConfigMap", "agentplane-app-config")
+    assert INFERENCE_EXPERIMENTS_POLICY in yaml.safe_load(config["data"]["config.yaml"])["default_egress_policies"]
+    # Standing caller identities and static OpenClaw must receive the separate grant too.
+    for binding in (doc for doc in docs if doc["kind"] == "EgressBinding"):
+        policies = binding["spec"]["policies"]
+        if BASIC_POLICY in policies or binding["metadata"]["name"] == "public-coder-openclaw":
+            assert INFERENCE_EXPERIMENTS_POLICY in policies
+    inference_hosts = {host for rule in granted["spec"]["rules"] for host in rule["hosts"]}
+    assert inference_hosts.isdisjoint(host for rule in basic["spec"]["rules"] for host in rule["hosts"])
+    for name, denied_paths in (
+        ("ollama", {"/api/pull", "/api/push", "/api/create", "/api/delete", "/api/copy", "/api/blobs/*"}),
+        ("litellm-cheap-experiments", {"/key/generate", "/key/info", "/user/new", "/config/update"}),
+    ):
+        rules = [rule for rule in granted["spec"]["rules"] if rule.get("credentialRef") == {"name": name}]
+        assert rules
+        assert all(rule["clusterInternal"] and rule["paths"] for rule in rules)
+        assert all("*" not in path for rule in rules for path in rule["paths"])
+        assert denied_paths.isdisjoint(path for rule in rules for path in rule["paths"])
+        assert any("POST" in rule["methods"] and "/v1/chat/completions" in rule["paths"] for rule in rules)
+        assert all(set(rule["methods"]) <= {"GET", "POST"} for rule in rules)
+        credential = _by_name(docs, "EgressCredential", name)
+        source = credential["spec"]["source"]["secretRef"]
+        secret = _by_name(docs, "ExternalSecret", source["name"])
+        assert secret["metadata"]["namespace"] == f"{namespace}-egress-credentials"
+        assert source["key"] in {item["secretKey"] for item in secret["spec"]["data"]}
+
+
 if __name__ == "__main__":
     pytest_bazel.main()
+
+
+def test_finance_aiquota_history_is_read_only_and_finance_only(
+    agentplane_manifests: dict[str, list[dict[str, Any]]],
+) -> None:
+    docs = agentplane_manifests[staging.ENV.namespace]
+    config = yaml.safe_load(_by_name(docs, "ConfigMap", "agentplane-app-config")["data"]["config.yaml"])
+    assert FINANCE_AIQUOTA_HISTORY_POLICY in config["sandbox_presets"]["finance-agent"]["egress_policies"]
+    for name in ("public-coder", "haku"):
+        assert FINANCE_AIQUOTA_HISTORY_POLICY not in config["sandbox_presets"][name]["egress_policies"]
+    policy = _by_name(docs, "EgressPolicy", FINANCE_AIQUOTA_HISTORY_POLICY)
+    assert policy["spec"]["rules"] == [
+        {
+            "hosts": [client.HTTP.fqdn],
+            "clusterInternal": True,
+            "methods": ["GET"],
+            "paths": ["/"],
+            "credentialRef": {"name": client.FINANCE_AGENT_CREDENTIALS},
+        }
+    ]
+    credential = _by_name(docs, "EgressCredential", client.FINANCE_AGENT_CREDENTIALS)
+    assert credential["spec"]["source"] == {
+        "secretRef": {"name": client.FINANCE_AGENT_CREDENTIALS, "key": client.PASSWORD_KEY}
+    }
+    assert credential["spec"]["targets"] == [{"header": "Authorization", "method": "basicPassword"}]
+    quota = _by_name(docs, "EgressPolicy", AIQUOTA_READ_POLICY)
+    assert any(
+        rule.get("clusterInternal")
+        and rule.get("hosts") == ["aiquota-api.cli-proxy-api.svc.cluster.local"]
+        and rule["methods"] == ["GET"]
+        and rule["paths"] == ["/v1/quotas", "/v1/providers/*/raw"]
+        for rule in quota["spec"]["rules"]
+    )

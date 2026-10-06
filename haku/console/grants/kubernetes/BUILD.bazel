@@ -133,7 +133,6 @@ py_test(
         ":models",
         "//:conftest",
         "//haku/console:conftest",
-        "//haku/console/grants:principal",
         "@pypi//pydantic",
         "@pypi//pytest",
         "@pypi//pytest_bazel",

@@ -1,8 +1,8 @@
 // Argument schemas for the `tana` tools the console renders.
 //
 // tana is a remote server, so its schemas are hand-authored rather than generated. They live
-// in their own React-free module because two consumers need them: the widgets in `requests.tsx`,
-// and the notification action registry in `../actions.ts`, which the service worker bundles.
+// in their own React-free module because both the widgets in `requests.tsx` and the notification
+// action registry in `../actions.ts`, which the service worker bundles, need them.
 
 import { z } from "zod";
 

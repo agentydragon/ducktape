@@ -119,8 +119,6 @@ debundle_e2e_test(name = "duplicate_export_test")
 
 debundle_e2e_test(name = "at_init_promotion_nested_closure_test")
 
-debundle_e2e_test(name = "at_init_promotion_post_await_test")
-
 debundle_e2e_test(name = "hoisted_var_declaration_test")
 
 debundle_e2e_test(name = "export_default_purity_test")

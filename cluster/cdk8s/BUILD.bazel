@@ -76,10 +76,7 @@ py_library(
 py_library(
     name = "model_selections",
     srcs = ["model_selections.py"],
-    visibility = [
-        "//cluster/cdk8s/agentplane:__pkg__",
-        "//cluster/cdk8s/litellm:__pkg__",
-    ],
+    visibility = ["//cluster/cdk8s/agentplane:__pkg__"],
     deps = ["//model_catalog:catalog"],
 )
 
@@ -374,7 +371,6 @@ py_library(
         ":forgejo_images",
         ":generation",
         ":manifest_roots",
-        ":model_selections",
         ":namespaces",
         ":openclaw_gateway",
         ":public_coder_egress",
@@ -521,14 +517,21 @@ py_library(
     deps = [
         ":artifact_generators",
         ":flux",
+        ":forgejo_image_automation",
         ":manifest_roots",
         ":namespaces",
         ":terraform",
+        "//cluster/cdk8s/external_secrets:minted_secret",
+        "//cluster/cdk8s/flux_image_automation_ghcr:image_automation",
+        "//cluster/cdk8s/flux_webhook:chart",
         "//cluster/cdk8s/providers/external_secrets:external_secret",
         "//cluster/cdk8s/providers/external_secrets:externalsecret",
+        "//cluster/cdk8s/providers/flux:notification",
+        "//cluster/cdk8s/providers/flux:receiver",
         "@pypi//cdk8s",
         "@pypi//cdk8s_plus_34",
         "@pypi//constructs",
+        "@pypi//pydantic",
     ],
 )
 
@@ -568,6 +571,7 @@ py_library(
         "//cluster/cdk8s/providers/gateway_api:http_route",
         "//cluster/cdk8s/providers/gateway_api:httproute",
         "//cluster/cdk8s/providers/gateway_api:listener",
+        "//cluster/scripts:nebula_mesh",
         "@pypi//cdk8s",
         "@pypi//constructs",
     ],
@@ -1041,6 +1045,26 @@ py_library(
 )
 
 py_library(
+    name = "external_dns",
+    srcs = ["external_dns.py"],
+    deps = [
+        ":external_creds",
+        ":flux",
+        ":helm",
+        ":manifest_roots",
+        ":namespaces",
+        ":node_scheduling",
+        "//cluster/cdk8s/providers/external_dns:dnsendpoint",
+        "//cluster/cdk8s/providers/external_secrets:external_secret",
+        "//cluster/cdk8s/providers/external_secrets:externalsecret",
+        "//cluster/cdk8s/providers/flux:kustomization",
+        "//cluster/scripts:nebula_mesh",
+        "@pypi//cdk8s",
+        "@pypi//cdk8s_plus_34",
+    ],
+)
+
+py_library(
     name = "tana_mcp",
     srcs = ["tana_mcp.py"],
     deps = [
@@ -1085,12 +1109,14 @@ py_test(
     srcs = ["test_terraform_vars.py"],
     data = [
         "//tf/gitops/dns-records:variables.tf",
+        "//tf/gitops/forgejo-images:variables.tf",
         "//tf/gitops/litellm-keys:variables.tf",
         "@nodejs_linux_amd64//:bin/node",
     ],
     env = {"JSII_NODE": "$(rootpath @nodejs_linux_amd64//:bin/node)"},
     deps = [
         ":dns_automation",
+        ":forgejo_images",
         "//:conftest",
         "//cluster/cdk8s/litellm:keys",
         "//util/bazel:runfiles",
@@ -1589,6 +1615,7 @@ py_library(
         ":egress_fences",
         ":etcd",
         ":external_creds",
+        ":external_dns",
         ":flux",
         ":flux_monitoring",
         ":flux_sources",
@@ -1792,10 +1819,10 @@ py_library(
         ":manifest_roots",
         ":node_scheduling",
         ":service_ref",
-        ":vm_image_restart",
         "//cluster/cdk8s/kubevirt:virtual_machine",
         "//cluster/cdk8s/providers/external_secrets:external_secret",
         "//cluster/cdk8s/providers/external_secrets:externalsecret",
+        "//cluster/cdk8s/providers/flux:kustomization",
         "//cluster/cdk8s/providers/kubevirt:virtual_machine",
         "//cluster/cdk8s/providers/kubevirt:virtualmachine",
         "//cluster/cdk8s/providers/source_watcher:artifactgenerator",

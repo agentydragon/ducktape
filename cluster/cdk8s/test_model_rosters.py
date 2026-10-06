@@ -56,6 +56,8 @@ def test_picker_is_narrower_than_ollama_key() -> None:
 def test_equal_model_slugs_do_not_collapse_account_routes() -> None:
     subscription, direct = ANTHROPIC_SUBSCRIPTION_ROUTES[0], ANTHROPIC_API_ROUTES[0]
     assert subscription.model.id == direct.model.id
+    assert subscription.model.limits is None
+    assert direct.model.limits is not None
     assert subscription.id != direct.id
     assert model_entry(subscription)["litellm_params"]["api_key"] != model_entry(direct)["litellm_params"]["api_key"]
     assert subscription.reasoning_efforts
@@ -71,23 +73,18 @@ def test_same_slug_on_different_accounts_keeps_distinct_limits() -> None:
     ]
     assert shared_slugs
     for google, antigravity in shared_slugs:
-        assert google.model.context_window is not None
-        assert antigravity.model.context_window is None
+        assert google.model.limits is not None
+        assert antigravity.model.limits is None
 
 
-def test_unknown_limits_are_not_invented_or_published() -> None:
-    unknown_codex = [route for route in CHATGPT_RESPONSES_ROUTES if route.model.context_window is None]
-    assert unknown_codex
-    for route in unknown_codex:
-        assert not route.publish_limits
-        assert "max_input_tokens" not in model_entry(route)["model_info"]
-    assert any(route.model.context_window is None for route in ANTIGRAVITY_ROUTES)
-
-
-def test_publishing_unknown_limits_fails() -> None:
-    unknown = next(route for route in CHATGPT_RESPONSES_ROUTES if route.model.context_window is None)
-    with pytest.raises(ValueError, match="unknown limits"):
-        model_entry(replace(unknown, publish_limits=True))
+@pytest.mark.parametrize("publish_limits", [False, True])
+def test_unknown_limits_are_not_invented_or_published(publish_limits: bool) -> None:
+    route = replace(CHATGPT_RESPONSES_ROUTES[0], model=Model("unknown-model"), publish_limits=publish_limits)
+    if publish_limits:
+        with pytest.raises(ValueError, match="unknown limits"):
+            model_entry(route)
+    else:
+        assert not {"max_input_tokens", "max_output_tokens", "max_tokens"} & model_entry(route)["model_info"].keys()
 
 
 def test_missing_display_name_is_not_prettified_from_a_slug() -> None:

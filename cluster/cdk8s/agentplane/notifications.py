@@ -98,6 +98,7 @@ class Notifications(Construct):
                 },
                 "sandbox_service": {
                     "target": f"{sandboxes.fqdn}:{sandboxes.port.number}",
+                    "grpc_channel_options": env.app_config.sandbox_service_grpc_channel_options,
                     "token_file": "/var/run/secrets/notifications/sandboxes",
                 },
                 "github": {"app_id": github.app_id} if github is not None else None,

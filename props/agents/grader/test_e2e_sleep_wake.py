@@ -36,7 +36,6 @@ from props.testing.fixtures.runs import make_fake_critic_run
 logger = logging.getLogger(__name__)
 
 
-@pytest.mark.timeout(240)
 async def test_grader_sleep_wake_cycle(e2e_stack, test_snapshot, all_files_scope, grader_image, db: Database):
     """Test that snapshot grader sleeps after grading, wakes on new drift, grades again.
 

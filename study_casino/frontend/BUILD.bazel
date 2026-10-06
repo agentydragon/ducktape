@@ -1,7 +1,7 @@
 load("@aspect_rules_js//js:defs.bzl", "js_binary", "js_library", "js_run_binary")
 load("@npm_ducktape//:defs.bzl", "npm_link_all_packages")
 load("//devinfra/js:spa_bundle.bzl", "spa_bundle")
-load("//util/testing/frontend_visual:visual_test.bzl", "visual_test")
+load("//util/testing/frontend_visual:py_visual_test.bzl", "py_visual_test")
 
 npm_link_all_packages(name = "node_modules")
 
@@ -212,15 +212,13 @@ spa_bundle(
 #
 # Renders the StudyCasino component with mocked state and publishes the
 # screenshot for PR visual review (publishOnly — no checked-in baselines).
-# Reuses the shared Puppeteer lib at //util/testing/frontend_visual.
+# Swept by the Playwright scenario sweep at //util/testing:visual_sweep.
 # Casino fonts above are wired in so the test captures the same typography users see in production.
 
+# The scenario table: read by the harness (it mounts the scene `?page=` names) and by the sweep.
 js_library(
     name = "visual_scenarios",
-    srcs = [
-        "tests/harness/scenarios.mjs",
-        "tests/scene_ready.mjs",
-    ],
+    srcs = ["tests/harness/scenarios.json"],
 )
 
 js_library(
@@ -272,16 +270,16 @@ filegroup(
     srcs = ["tests/harness/dist/harness.js"],
 )
 
-# Every scenario in tests/harness/scenarios.mjs, swept on one browser per shard. BUILD carries a
-# shard count, not a scenario list. Run one with `--test_filter=<scenario>`.
-visual_test(
+# Every scenario in tests/harness/scenarios.json, one fresh browser each, dealt across the shards.
+# BUILD carries a shard count, not a scenario list. Run one with `--test_filter=<scenario>`.
+py_visual_test(
     name = "visual",
     size = "small",
     assets = ["tests/harness/index.html"],
-    entry_point = "tests/visual_runner.mjs",
     font_family = "Outfit",
     fonts = ":casino_fonts",
     harness = ":visual_harness_js",
-    scenarios = ":visual_scenarios",
+    scenarios = "tests/harness/scenarios.json",
     shard_count = 2,
+    title = "Study Casino",
 )

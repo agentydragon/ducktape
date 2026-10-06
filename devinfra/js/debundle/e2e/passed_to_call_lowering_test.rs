@@ -118,18 +118,19 @@ export { viewRegistry, commandRegistry, TableView, DeleteCommand };
     assert_entry_output(&fixture, "TableViewComponent DeleteCommand\n");
 }
 
-/// Argument-position disambiguation: the target `Widget` is the *second* argument
-/// of `host.define("widget", Widget)` (the string literal occupies index 0, which
-/// names no binding). The `arg_index: 1` constraint pins exactly the target at that
-/// position — proving the index rides through the full pipeline.
+/// Argument-position disambiguation: `Widget` and `Mixin` are the second and third
+/// arguments of `host.define("widget", Widget, Mixin)` (the string literal occupies
+/// index 0, which names no binding). The callee member alone is ambiguous between
+/// the two; the `arg_index: 1` constraint pins exactly the target at that position.
 #[test]
 fn passed_to_call_constrains_by_arg_index() {
     let fixture = run_fixture(FixtureOpts::new(
-        r#"const host = { define(name, ctor) { (this.m ||= {})[name] = ctor; } };
+        r#"const host = { define(name, ctor, mixin) { (this.m ||= {})[name] = [ctor, mixin]; } };
 class Widget {}
-host.define("widget", Widget);
-console.log(new Widget().constructor.name);
-export { host, Widget };
+class Mixin {}
+host.define("widget", Widget, Mixin);
+console.log(new Widget().constructor.name, new Mixin().constructor.name);
+export { host, Widget, Mixin };
 "#,
         vec![logical_module(
             "widgets",
@@ -147,9 +148,9 @@ export { host, Widget };
         &fixture.out_root,
         "static/app/modules/widgets.js",
         &["source bindings: Widget", "class WidgetClass"],
-        &[],
+        &["source bindings: Mixin"],
     );
-    assert_entry_output(&fixture, "WidgetClass\n");
+    assert_entry_output(&fixture, "WidgetClass Mixin\n");
 }
 
 /// Fail-closed: a `passed_to_call` whose callee member is the argument of **two**

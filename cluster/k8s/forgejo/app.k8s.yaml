@@ -193,8 +193,6 @@ spec:
           scopes: email profile
     global:
       imageRegistry: ""
-    memcached:
-      enabled: false
     nodeSelector:
       topology.kubernetes.io/zone: hil-ovh
     persistence:
@@ -203,12 +201,6 @@ spec:
       claimName: forgejo-git-rwx-ssd
       create: false
       enabled: true
-    postgresql:
-      enabled: false
-    postgresql-ha:
-      enabled: false
-    redis-cluster:
-      enabled: false
     replicaCount: 2
     resources:
       limits:
@@ -230,8 +222,6 @@ spec:
       rollingUpdate:
         maxUnavailable: 1
       type: RollingUpdate
-    valkey-cluster:
-      enabled: false
   valuesFrom:
     - kind: Secret
       name: forgejo-db-ssd-creds

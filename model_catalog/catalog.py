@@ -69,6 +69,8 @@ stays until the index is deliberately rebuilt.
 from dataclasses import dataclass, replace
 from enum import StrEnum
 
+from model_catalog import ollama
+
 
 class Provider(StrEnum):
     """First scheme segment: the upstream account/provider an entry spends from."""
@@ -134,6 +136,20 @@ _UPSTREAM_DEFINER: dict[str, str] = {
 
 
 @dataclass(frozen=True)
+class TokenLimits:
+    """Declared input allowance and output ceiling for an account's serving path.
+
+    Not a combined context window, nor a guarantee that both maxima are attainable
+    together. Sources and uncertainty belong beside the declarations; this type does
+    not turn a provisional allowance into a measured capacity. Client budgets and
+    Ollama's num_ctx are separate settings, not derived from this pair.
+    """
+
+    max_input_tokens: int
+    max_output_tokens: int
+
+
+@dataclass(frozen=True)
 class Model:
     """Metadata for a model as served by its account, not a universal vendor claim.
 
@@ -144,8 +160,7 @@ class Model:
 
     id: str
     display_name: str | None = None
-    context_window: int | None = None
-    max_output_tokens: int | None = None
+    limits: TokenLimits | None = None
     reasoning: bool | None = None
 
 
@@ -171,8 +186,8 @@ class Route:
     upstream: Upstream
     upstream_model: str | None = None
     reasoning_efforts: tuple[str, ...] = ()
-    # Publishing additional LiteLLM model_info changes behavior. Preserve which routes
-    # currently override LiteLLM's defaults rather than publishing every known limit.
+    # Transitional: preserve existing LiteLLM publication while declarations are
+    # completed. Remove this gate once every served route owns its token metadata.
     publish_limits: bool = False
     # Native Ollama request configuration, not evidence of attended context capacity.
     num_ctx: int | None = None
@@ -202,12 +217,6 @@ class RouteAlias:
 
     id: str
     target: Route
-
-
-@dataclass(frozen=True)
-class OllamaModel:
-    model: Model
-    upstream_model: str
 
 
 _ANTHROPIC_EFFORTS = ("low", "medium", "high", "max")
@@ -240,82 +249,24 @@ _CODEX_EFFORTS = ("minimal", "low", "medium", "high", "xhigh")
 # accounting reference only.
 
 
-# Context window + max output tokens for the Codex-subscription models. Measured,
-# not published: litellm's model_cost DB (live-fetched from BerriAI) has exact
-# entries for the real OpenAI models at their raw-API windows -- gpt-5.6-{sol,terra,
-# luna} at 922K, gpt-5.4/5.5 at 1.05M -- and Codex product docs say 272K, but none
-# is what this subscription path (client -> LiteLLM -> CLIProxyAPI -> upstream)
-# actually serves. So the openai/-prefixed routes advertise litellm's raw-API window
-# (it has no entry for the anthropic/-prefixed twins -> null); this measured value is
-# the SSOT the LiteLLM config injects into model_info (test_litellm/config.py).
-#
-# openai_utils/probe_context_window.py binary-searches the live path. On 2026-07-29
-# all three 5.6 models behaved identically: 370,629 tokens accepted, 372,194
-# rejected. Re-derive with:
-#
-#     kubectl exec -i -n <ns> <pod> -- python3 - --low 350000 --high 400000 \
-#         chatgpt/ant-messages/gpt-5.6-{luna,sol,terra} < openai_utils/probe_context_window.py
-CODEX_CONTEXT_WINDOW = 372_000
-CODEX_MAX_TOKENS = 128_000
-
-# Codex 0.153.4's bundled Astra metadata permits model_context_window up to
-# 872k. Advertise that maximum instead of Codex's conservative 272k default;
-# the raw API advertises a 1.05M combined window and 128k maximum output.
-ASTRA_CONTEXT_WINDOW = 872_000
-ASTRA_MAX_TOKENS = 128_000
+# Existing ChatGPT-subscription metadata allowances, NOT a verified capacity pair.
+# GPT-5.6 input probing on 2026-07-29 accepted 370,629 tokens and rejected 372,194;
+# it established neither an exact input maximum nor the 128K output ceiling. GPT-6
+# Sol/Luna inherited this declaration, not independent serving-path measurements.
+# Astra's 872K came from Codex 0.153.4's configurable client window, not an input
+# capacity measurement. Preserve these already-published proxy values pending the
+# source audit, without passing them to consumers as client budgets. See
+# model_catalog/client_budgets.md; raw OpenAI API limits are not evidence for this path.
+_CHATGPT_LIMITS = TokenLimits(max_input_tokens=372_000, max_output_tokens=128_000)
+_ASTRA_LIMITS = TokenLimits(max_input_tokens=872_000, max_output_tokens=128_000)
 
 
-# The Codex models with known serving-path limits: Astra from Codex's bundled metadata,
-# the 5.6 models measured (CODEX_CONTEXT_WINDOW above), and GPT-6 Sol/Luna using the
-# same conservative bound until their subscription path is probed. The LiteLLM manifest
-# advertises these limits in model_info; consumer pickers can expose narrower subsets.
-# OpenClaw declares the limits itself because its bundled LiteLLM provider does not query
-# the proxy's authenticated /v1/models endpoint. gpt-5.4/5.5/5.3-codex-spark were never
-# probed and stay out.
-GPT_6_ASTRA = Model(
-    id="gpt-6-astra",
-    display_name="GPT-6 Astra",
-    context_window=ASTRA_CONTEXT_WINDOW,
-    max_output_tokens=ASTRA_MAX_TOKENS,
-    reasoning=True,
-)
-GPT_6_LUNA = Model(
-    id="gpt-6-luna",
-    display_name="GPT-6 Luna",
-    context_window=CODEX_CONTEXT_WINDOW,
-    max_output_tokens=CODEX_MAX_TOKENS,
-    reasoning=True,
-)
-GPT_6_SOL = Model(
-    id="gpt-6-sol",
-    display_name="GPT-6 Sol",
-    context_window=CODEX_CONTEXT_WINDOW,
-    max_output_tokens=CODEX_MAX_TOKENS,
-    reasoning=True,
-)
-GPT_5_6_LUNA = Model(
-    id="gpt-5.6-luna",
-    display_name="GPT-5.6 Luna",
-    context_window=CODEX_CONTEXT_WINDOW,
-    max_output_tokens=CODEX_MAX_TOKENS,
-    reasoning=True,
-)
-GPT_5_6_TERRA = Model(
-    id="gpt-5.6-terra",
-    display_name="GPT-5.6 Terra",
-    context_window=CODEX_CONTEXT_WINDOW,
-    max_output_tokens=CODEX_MAX_TOKENS,
-    reasoning=True,
-)
-GPT_5_6_SOL = Model(
-    id="gpt-5.6-sol",
-    display_name="GPT-5.6 Sol",
-    context_window=CODEX_CONTEXT_WINDOW,
-    max_output_tokens=CODEX_MAX_TOKENS,
-    reasoning=True,
-)
-GPT_5_4 = Model("gpt-5.4", "GPT-5.4")
-GPT_5_5 = Model("gpt-5.5", "GPT-5.5")
+GPT_6_ASTRA = Model(id="gpt-6-astra", display_name="GPT-6 Astra", limits=_ASTRA_LIMITS, reasoning=True)
+GPT_6_LUNA = Model(id="gpt-6-luna", display_name="GPT-6 Luna", limits=_CHATGPT_LIMITS, reasoning=True)
+GPT_6_SOL = Model(id="gpt-6-sol", display_name="GPT-6 Sol", limits=_CHATGPT_LIMITS, reasoning=True)
+GPT_5_6_LUNA = Model(id="gpt-5.6-luna", display_name="GPT-5.6 Luna", limits=_CHATGPT_LIMITS, reasoning=True)
+GPT_5_6_TERRA = Model(id="gpt-5.6-terra", display_name="GPT-5.6 Terra", limits=_CHATGPT_LIMITS, reasoning=True)
+GPT_5_6_SOL = Model(id="gpt-5.6-sol", display_name="GPT-5.6 Sol", limits=_CHATGPT_LIMITS, reasoning=True)
 
 # Tana-UI models served by the main LiteLLM proxy's in-process Tana provider. Tana
 # encodes reasoning effort in the
@@ -338,8 +289,8 @@ TANA_HAIKU = Route(
 # endpoint. Feeds Haku OpenClaw and the Terraform claude lane (litellm/keys.py), and is
 # the exposed set for the cliproxyapi Claude-subscription `anthropic-max20/ant-messages/*` route: cliproxyapi's Claude
 # OAuth session serves older generations too, but we expose only this current group — the
-# subscription and the direct API serve the same current models, and sharing one list
-# keeps them in sync ("newest group only", as with the Gemini roster).
+# subscription and direct API share these identities, not capacity evidence. Only
+# the direct-API routes below add API limits; subscription declarations stay unknown.
 _OPUS = Model("claude-opus-5", "Opus 5")
 _SONNET = Model("claude-sonnet-5", "Sonnet 5")
 _FABLE = Model("claude-fable-5", "Fable 5")
@@ -370,7 +321,15 @@ _HAIKU = Model("claude-haiku-4-5-20251001", "Haiku 4.5")
 # True, -low/-lite/plain/-image as False). OpenClaw consumes this capability flag;
 # the Agentplane projection separately uses the route's declared effort choices.
 #
-# `context_window`/`max_output_tokens`: Google's own declared capability for each model as
+# Source mapping: Google's maxTokens -> TokenLimits.max_input_tokens;
+# maxOutputTokens -> TokenLimits.max_output_tokens. For gemini-3.1-flash-lite, maxTokens
+# is an INPUT allowance, not input+output: the live check crossed that combined
+# total. Do not subtract the output allowance from it. Claude/GPT-OSS were not
+# covered by that check; source/probe evidence is in model_catalog/antigravity_limits.md.
+# The pinned snapshot below is historical; that document also records fresh Google
+# metadata from 2026-10-05. Refreshing provider metadata must not change client budgets.
+#
+# The input/output declarations below are Google metadata for each model as
 # served through Antigravity, not a public-API figure borrowed from Anthropic/OpenAI/a
 # third-party host -- and deliberately not the result of a live binary-search probe
 # (openai_utils/probe_context_window.py) run against claude-opus-4-6-thinking on
@@ -396,37 +355,27 @@ _ANTIGRAVITY_OPUS = Model(
     id="claude-opus-4-6-thinking",
     display_name="Claude Opus 4.6 (Thinking)",
     reasoning=True,
-    context_window=200_000,
-    max_output_tokens=64_000,
+    limits=TokenLimits(max_input_tokens=200_000, max_output_tokens=64_000),
 )
 _ANTIGRAVITY_SONNET = Model(
     id="claude-sonnet-4-6",
     display_name="Claude Sonnet 4.6 (Thinking)",
     reasoning=True,
-    context_window=200_000,
-    max_output_tokens=64_000,
+    limits=TokenLimits(max_input_tokens=200_000, max_output_tokens=64_000),
 )
 _ANTIGRAVITY_FLASH_LITE_31 = Model(
     id="gemini-3.1-flash-lite",
     display_name="Gemini 3.1 Flash Lite",
     reasoning=False,
-    context_window=1_048_576,
-    max_output_tokens=65_535,
+    limits=TokenLimits(max_input_tokens=1_048_576, max_output_tokens=65_535),
 )
-_ANTIGRAVITY_FLASH_LITE_35 = Model(
-    id="gemini-3.5-flash-lite",
-    display_name="Gemini 3.5 Flash Lite",
-    reasoning=False,
-    context_window=None,
-    max_output_tokens=None,
-)
+_ANTIGRAVITY_FLASH_LITE_35 = Model(id="gemini-3.5-flash-lite", display_name="Gemini 3.5 Flash Lite", reasoning=False)
 
 _ANTIGRAVITY_PRO = Model(
     id="gemini-pro-agent",
     display_name="Gemini 3.1 Pro (High)",
     reasoning=True,
-    context_window=1_048_576,
-    max_output_tokens=65_535,
+    limits=TokenLimits(max_input_tokens=1_048_576, max_output_tokens=65_535),
 )
 
 
@@ -447,59 +396,52 @@ _ANTIGRAVITY_PRO = Model(
 # RESOURCE_EXHAUSTED with a quota of 0. It may simply have no quota, but keep it
 # out of the roster until that is verified. Feeds the gemini-clients Terraform
 # key (litellm/keys.py) and public-coder-agent's OpenClaw catalog.
-# Published input/output token limits shared across the current Gemini chat
-# generation: ai.google.dev/gemini-api/docs/models/gemini-3.7-flash and
-# .../gemini-3.5-flash-lite (2026-08-23). Unlike
-# Codex's CODEX_CONTEXT_WINDOW above, there is no live serving-path probe for
-# a third-party hosted API, so this is Google's published figure rather than
-# a measured one. Used by public-coder-agent's OpenClaw catalog.
-GEMINI_CONTEXT_WINDOW = 1_048_576
-GEMINI_MAX_OUTPUT_TOKENS = 65_536
+# Google explicitly labels these as input/output token limits (checked 2026-10-05):
+# https://ai.google.dev/gemini-api/docs/models/gemini-3.7-flash
+# https://ai.google.dev/gemini-api/docs/models/gemini-3.5-flash-lite
+# These are direct Gemini API declarations, not Antigravity or client budgets.
+_GEMINI_LIMITS = TokenLimits(max_input_tokens=1_048_576, max_output_tokens=65_536)
 
-_GEMINI_FLASH = Model(
-    id="gemini-3.7-flash",
-    display_name="Gemini 3.7 Flash",
-    reasoning=True,
-    context_window=GEMINI_CONTEXT_WINDOW,
-    max_output_tokens=GEMINI_MAX_OUTPUT_TOKENS,
-)
+_GEMINI_FLASH = Model(id="gemini-3.7-flash", display_name="Gemini 3.7 Flash", reasoning=True, limits=_GEMINI_LIMITS)
 _GEMINI_FLASH_LITE = Model(
-    id="gemini-3.5-flash-lite",
-    display_name="Gemini 3.5 Flash-Lite",
-    reasoning=False,
-    context_window=GEMINI_CONTEXT_WINDOW,
-    max_output_tokens=GEMINI_MAX_OUTPUT_TOKENS,
+    id="gemini-3.5-flash-lite", display_name="Gemini 3.5 Flash-Lite", reasoning=False, limits=_GEMINI_LIMITS
 )
 
 # Mistral chat models that accepted a minimal completion with the cluster's API
 # key on 2026-08-31. Catalog entries that returned 403 are intentionally
 # excluded; account-specific fine-tuned models are excluded as well.
+# Copy max_input_tokens/max_output_tokens from each exact `mistral/<id>` entry in:
+# https://github.com/BerriAI/litellm/blob/02f61c9c420b9aa9de10ff673098ad7132b78f5b/model_prices_and_context_window.json
+# Equal bounds are NOT additive: Mistral requires prompt tokens + requested output
+# to fit the context length (https://docs.mistral.ai/api/endpoint/chat).
+# These are reviewed catalogue declarations, not measured capacities. Floating aliases
+# require an explicit metadata refresh; no runtime catalogue import supplies this pair.
 _MISTRAL_MODELS = (
-    Model("codestral-2508"),
-    Model("codestral-latest"),
-    Model("magistral-medium-latest"),
-    Model("magistral-small-latest"),
-    Model("ministral-14b-latest"),
-    Model("ministral-14b-2512"),
-    Model("ministral-8b-latest"),
-    Model("ministral-8b-2512"),
-    Model("ministral-3b-latest"),
-    Model("ministral-3b-2512"),
-    Model("mistral-code-fim-latest"),
-    Model("mistral-code-latest"),
-    Model("mistral-medium"),
-    Model("mistral-medium-2604"),
-    Model("mistral-medium-3"),
-    Model("mistral-medium-3-5"),
-    Model("mistral-medium-3.5"),
-    Model("mistral-medium-latest"),
-    Model("mistral-small-2603"),
-    Model("mistral-small-latest"),
-    Model("mistral-vibe-cli-fast"),
-    Model("mistral-vibe-cli-latest"),
-    Model("mistral-vibe-cli-with-tools"),
-    Model("voxtral-small-2507"),
-    Model("voxtral-small-latest"),
+    Model("codestral-2508", limits=TokenLimits(max_input_tokens=128_000, max_output_tokens=128_000)),
+    Model("codestral-latest", limits=TokenLimits(max_input_tokens=128_000, max_output_tokens=128_000)),
+    Model("magistral-medium-latest", limits=TokenLimits(max_input_tokens=262_144, max_output_tokens=262_144)),
+    Model("magistral-small-latest", limits=TokenLimits(max_input_tokens=262_144, max_output_tokens=262_144)),
+    Model("ministral-14b-latest", limits=TokenLimits(max_input_tokens=262_144, max_output_tokens=262_144)),
+    Model("ministral-14b-2512", limits=TokenLimits(max_input_tokens=262_144, max_output_tokens=262_144)),
+    Model("ministral-8b-latest", limits=TokenLimits(max_input_tokens=262_144, max_output_tokens=262_144)),
+    Model("ministral-8b-2512", limits=TokenLimits(max_input_tokens=262_144, max_output_tokens=262_144)),
+    Model("ministral-3b-latest", limits=TokenLimits(max_input_tokens=131_072, max_output_tokens=131_072)),
+    Model("ministral-3b-2512", limits=TokenLimits(max_input_tokens=131_072, max_output_tokens=131_072)),
+    Model("mistral-code-fim-latest", limits=TokenLimits(max_input_tokens=128_000, max_output_tokens=128_000)),
+    Model("mistral-code-latest", limits=TokenLimits(max_input_tokens=128_000, max_output_tokens=128_000)),
+    Model("mistral-medium", limits=TokenLimits(max_input_tokens=262_144, max_output_tokens=262_144)),
+    Model("mistral-medium-2604", limits=TokenLimits(max_input_tokens=262_144, max_output_tokens=262_144)),
+    Model("mistral-medium-3", limits=TokenLimits(max_input_tokens=262_144, max_output_tokens=262_144)),
+    Model("mistral-medium-3-5", limits=TokenLimits(max_input_tokens=262_144, max_output_tokens=262_144)),
+    Model("mistral-medium-3.5", limits=TokenLimits(max_input_tokens=262_144, max_output_tokens=262_144)),
+    Model("mistral-medium-latest", limits=TokenLimits(max_input_tokens=262_144, max_output_tokens=262_144)),
+    Model("mistral-small-2603", limits=TokenLimits(max_input_tokens=262_144, max_output_tokens=262_144)),
+    Model("mistral-small-latest", limits=TokenLimits(max_input_tokens=262_144, max_output_tokens=262_144)),
+    Model("mistral-vibe-cli-fast", limits=TokenLimits(max_input_tokens=262_144, max_output_tokens=262_144)),
+    Model("mistral-vibe-cli-latest", limits=TokenLimits(max_input_tokens=262_144, max_output_tokens=262_144)),
+    Model("mistral-vibe-cli-with-tools", limits=TokenLimits(max_input_tokens=262_144, max_output_tokens=262_144)),
+    Model("voxtral-small-2507", limits=TokenLimits(max_input_tokens=32_768, max_output_tokens=32_768)),
+    Model("voxtral-small-latest", limits=TokenLimits(max_input_tokens=32_768, max_output_tokens=32_768)),
 )
 
 # Gemini embeddings, same key as the chat lineup. Added for OpenClaw memory search,
@@ -525,38 +467,6 @@ _GEMINI_EMBEDDING_001 = Model("gemini-embedding-001")
 GEMINI_EMBEDDING_COMPAT_ALIAS = _GEMINI_EMBEDDING_2.id
 
 
-# Self-hosted Ollama chat models: (exposed model, Ollama model, num_ctx variants).
-# Each variant is served on both the OpenAI-compatible `/v1` and Ollama's native
-# wire; the context rides in the model segment (`_ollama_chat_variant`) so the chat
-# entries stay distinct.
-#
-# qwen3.8-flash-next-q4: 125B-total/6B-active MoE, Unsloth Dynamic UD-Q4_K_XL quant
-# (metalspork/qwen3.8-flash-next-ud:UD-Q4_K_XL, 112GB), native 256K context. Disabled
-# (2026-09-26): does not fit in wyrm2's combined GPU VRAM (87GB resident vs. ~61GB usable
-# across 2x RTX 5090), forcing most MoE-expert weight paging onto the HDD-backed
-# `llm-models` PVC; measured 0.056-1.44 tokens/sec generation depending on warm-up state
-# (~20-1000x too slow to be usable), on both Ollama 0.34.0 and 0.34.4. Tool-call parsing
-# itself works correctly, and the same GGUF served directly via a current llama-server
-# build off SSD-backed storage on this same hardware reached ~30 tokens/sec -- so the
-# model and hardware are capable, this specific Ollama-on-HDD path is not. Re-enable only
-# once served from SSD-backed storage or with the full CPU-resident working set reliably
-# page-cache-hot; see agentplane/debug/agentplane_ollama_live_smoke_2026_09_24.md for the
-# full investigation.
-_QWEN_IQ4XS = Model("qwen3.8-flash-next-iq4xs", "Qwen3.8 Flash Next IQ4_XS")
-_GPT_OSS_20B = OllamaModel(Model("gpt-oss-20b", "GPT-OSS 20B"), "gpt-oss:20b")
-
-
-def _ollama_chat_variant(model: str, context: int) -> str:
-    """The model segment of an Ollama chat entry at this `num_ctx`: `gpt-oss-20b-512k`."""
-    return f"{model}-1m" if context == 1024 * 1024 else f"{model}-{context // 1024}k"
-
-
-# The self-hosted Ollama embedding route,
-# also referenced by public-coder-agent's OpenClaw memory-search config so its
-# embedding backend names the same route it's actually served on.
-_OLLAMA_EMBEDDING = Model("qwen3-embedding-4b")
-
-
 # Canonical served routes. These are the only account/wire/model associations;
 # downstream code receives Route objects, not naming ingredients.
 OLLAMA_OPENAI = Upstream(Provider.OLLAMA, "openai", "chat", supports_function_calling=True)
@@ -569,32 +479,42 @@ class OllamaRoutes:
     native: Route
 
 
-def _ollama_routes(source: OllamaModel, context: int) -> OllamaRoutes:
+def _ollama_routes(variant: ollama.ChatVariant, *, openai_reasoning_efforts: tuple[str, ...] = ()) -> OllamaRoutes:
+    context = variant.num_ctx
     suffix = "1M" if context == 1024 * 1024 else f"{context // 1024}K"
-    model = replace(
-        source.model,
-        id=_ollama_chat_variant(source.model.id, context),
-        display_name=f"{source.model.display_name} ({suffix})",
-        context_window=context,
+    model = Model(
+        id=f"{variant.model.tag.removesuffix(':latest').replace(':', '-')}-{suffix.lower()}",
+        display_name=f"{variant.model.display_name} ({suffix})",
     )
     return OllamaRoutes(
-        openai=Route(model, OLLAMA_OPENAI, upstream_model=source.upstream_model, num_ctx=context),
-        native=Route(model, OLLAMA_NATIVE, upstream_model=source.upstream_model, num_ctx=context),
+        openai=Route(model, OLLAMA_OPENAI, upstream_model=variant.tag, reasoning_efforts=openai_reasoning_efforts),
+        native=Route(model, OLLAMA_NATIVE, upstream_model=variant.tag, num_ctx=context),
     )
 
 
-_QWEN_128K = _ollama_routes(OllamaModel(_QWEN_IQ4XS, "qwen3.8-flash-next-iq4xs:latest"), 128 * 1024)
-# Ollama /v1 ignores native options.num_ctx; bake this size into an alias.
-_QWEN_256K = _ollama_routes(OllamaModel(_QWEN_IQ4XS, "qwen3.8-flash-next-iq4xs-256k:latest"), 256 * 1024)
-_GPT_OSS_20B_128K = _ollama_routes(_GPT_OSS_20B, 128 * 1024)
+# The efforts a client can ask Ollama for that Qwen3.8's chat template
+# (cluster/cdk8s/ollama/qwen38-chat-template.jinja) accepts. The template takes xhigh (its
+# default), medium and low, and treats `high` as xhigh. Ollama rewrites a requested `xhigh`
+# to `max` unless the model has thinking metadata, which a GGUF registered through
+# /api/create lacks, and the template rejects `max`: `high` is how a client asks for
+# Qwen's xhigh. Declared on the OpenAI-compatible wire only: on the native wire LiteLLM's
+# mapper fails on the reasoning object Codex sends.
+_QWEN_EFFORTS = ("low", "medium", "high")
+
+OLLAMA_QWEN_IQ4XS_128K = _ollama_routes(ollama.QWEN_IQ4XS_128K, openai_reasoning_efforts=_QWEN_EFFORTS)
+OLLAMA_QWEN_IQ4XS_256K = _ollama_routes(ollama.QWEN_IQ4XS_256K, openai_reasoning_efforts=_QWEN_EFFORTS)
+_GPT_OSS_20B_128K = _ollama_routes(ollama.ChatVariant(ollama.GPT_OSS_20B, 128 * 1024))
 OLLAMA_GPT_OSS_20B_128K = _GPT_OSS_20B_128K.openai
-OLLAMA_QWEN_IQ4XS_ROUTES = (_QWEN_128K.openai, _QWEN_128K.native, _QWEN_256K.openai, _QWEN_256K.native)
 _OLLAMA_ROUTE_GROUPS = (
-    (_QWEN_128K,),
-    (_QWEN_256K,),
-    (_GPT_OSS_20B_128K, *(_ollama_routes(_GPT_OSS_20B, context * 1024) for context in (256, 512, 1024))),
-    (_ollama_routes(OllamaModel(Model("gpt-oss-120b", "GPT-OSS 120B"), "gpt-oss:120b"), 128 * 1024),),
-    (_ollama_routes(OllamaModel(Model("gemma4-31b-it-q8_0", "Gemma 4 31B"), "gemma4:31b-it-q8_0"), 128 * 1024),),
+    (OLLAMA_QWEN_IQ4XS_128K,),
+    (OLLAMA_QWEN_IQ4XS_256K,),
+    # Existing request-only variants: no corresponding baked GPT-OSS aliases.
+    (
+        _GPT_OSS_20B_128K,
+        *(_ollama_routes(ollama.ChatVariant(ollama.GPT_OSS_20B, context * 1024)) for context in (256, 512, 1024)),
+    ),
+    (_ollama_routes(ollama.ChatVariant(ollama.GPT_OSS_120B, 128 * 1024)),),
+    (_ollama_routes(ollama.ChatVariant(ollama.GEMMA4, 128 * 1024)),),
 )
 OLLAMA_OPENAI_ROUTES = tuple(pair.openai for group in _OLLAMA_ROUTE_GROUPS for pair in group)
 OLLAMA_CHAT_ROUTES = tuple(
@@ -608,7 +528,9 @@ _OLLAMA_PROXY_ROUTES = tuple(
     for route in (*(pair.openai for pair in group), *(pair.native for pair in group))
 )
 OLLAMA_EMBED = Upstream(Provider.OLLAMA, "ollama", "embed")
-OLLAMA_EMBEDDING_ROUTE = Route(_OLLAMA_EMBEDDING, OLLAMA_EMBED, upstream_model="qwen3-embedding:4b")
+OLLAMA_EMBEDDING_ROUTE = Route(
+    Model(ollama.QWEN_EMBEDDING.tag.replace(":", "-")), OLLAMA_EMBED, upstream_model=ollama.QWEN_EMBEDDING.tag
+)
 TANA_ROUTES = (TANA_SONNET, TANA_OPUS, TANA_HAIKU)
 CHATGPT_MESSAGES = Upstream(Provider.CHATGPT, "anthropic", "messages", supports_function_calling=True)
 CHATGPT_RESPONSES = Upstream(Provider.CHATGPT, "openai", "responses", supports_function_calling=True)
@@ -621,8 +543,8 @@ CHATGPT_MESSAGES_ROUTES = (
     GPT6_SOL_MESSAGES,
     GPT6_LUNA_MESSAGES,
     *(
-        Route(model, CHATGPT_MESSAGES, publish_limits=model.context_window is not None)
-        for model in (GPT_5_4, GPT_5_5, GPT_5_6_SOL, GPT_5_6_TERRA, GPT_5_6_LUNA)
+        Route(model, CHATGPT_MESSAGES, publish_limits=model.limits is not None)
+        for model in (GPT_5_6_SOL, GPT_5_6_TERRA, GPT_5_6_LUNA)
     ),
 )
 GPT6_ASTRA_RESPONSES = Route(GPT_6_ASTRA, CHATGPT_RESPONSES, publish_limits=True, reasoning_efforts=_CODEX_EFFORTS)
@@ -634,10 +556,8 @@ CHATGPT_RESPONSES_ROUTES = (
     GPT6_SOL_RESPONSES,
     GPT6_LUNA_RESPONSES,
     *(
-        Route(
-            model, CHATGPT_RESPONSES, publish_limits=model.context_window is not None, reasoning_efforts=_CODEX_EFFORTS
-        )
-        for model in (GPT_5_4, GPT_5_5, GPT_5_6_SOL, GPT_5_6_TERRA, GPT_5_6_LUNA)
+        Route(model, CHATGPT_RESPONSES, publish_limits=model.limits is not None, reasoning_efforts=_CODEX_EFFORTS)
+        for model in (GPT_5_6_SOL, GPT_5_6_TERRA, GPT_5_6_LUNA)
     ),
 )
 ANTHROPIC_SUBSCRIPTION = Upstream(Provider.ANTHROPIC_MAX20, "anthropic", "messages", supports_function_calling=True)
@@ -646,11 +566,31 @@ SONNET_SUBSCRIPTION = Route(_SONNET, ANTHROPIC_SUBSCRIPTION, reasoning_efforts=_
 FABLE_SUBSCRIPTION = Route(_FABLE, ANTHROPIC_SUBSCRIPTION, reasoning_efforts=_ANTHROPIC_EFFORTS)
 HAIKU_SUBSCRIPTION = Route(_HAIKU, ANTHROPIC_SUBSCRIPTION, reasoning_efforts=_ANTHROPIC_EFFORTS)
 ANTHROPIC_SUBSCRIPTION_ROUTES = (OPUS_SUBSCRIPTION, SONNET_SUBSCRIPTION, FABLE_SUBSCRIPTION, HAIKU_SUBSCRIPTION)
+# Direct-API limits copied from the exact unprefixed Claude model IDs in:
+# https://github.com/BerriAI/litellm/blob/02f61c9c420b9aa9de10ff673098ad7132b78f5b/model_prices_and_context_window.json
+# Copy the input/output fields, not a combined window. replace() keeps names/slugs
+# shared without attaching raw-API facts to the subscription models above.
 ANTHROPIC_API = Upstream(Provider.ANTHROPIC_API, "anthropic", "messages", supports_function_calling=True)
-OPUS_API = Route(_OPUS, ANTHROPIC_API)
-SONNET_API = Route(_SONNET, ANTHROPIC_API)
-FABLE_API = Route(_FABLE, ANTHROPIC_API)
-HAIKU_API = Route(_HAIKU, ANTHROPIC_API)
+OPUS_API = Route(
+    replace(_OPUS, limits=TokenLimits(max_input_tokens=1_000_000, max_output_tokens=128_000)),
+    ANTHROPIC_API,
+    publish_limits=True,
+)
+SONNET_API = Route(
+    replace(_SONNET, limits=TokenLimits(max_input_tokens=1_000_000, max_output_tokens=128_000)),
+    ANTHROPIC_API,
+    publish_limits=True,
+)
+FABLE_API = Route(
+    replace(_FABLE, limits=TokenLimits(max_input_tokens=1_000_000, max_output_tokens=128_000)),
+    ANTHROPIC_API,
+    publish_limits=True,
+)
+HAIKU_API = Route(
+    replace(_HAIKU, limits=TokenLimits(max_input_tokens=200_000, max_output_tokens=64_000)),
+    ANTHROPIC_API,
+    publish_limits=True,
+)
 ANTHROPIC_API_ROUTES = (OPUS_API, SONNET_API, FABLE_API, HAIKU_API)
 ANTIGRAVITY_MESSAGES = Upstream(Provider.ANTIGRAVITY, "anthropic", "messages", supports_function_calling=True)
 ANTIGRAVITY_OPUS = Route(_ANTIGRAVITY_OPUS, ANTIGRAVITY_MESSAGES, reasoning_efforts=_ANTHROPIC_EFFORTS)
@@ -658,93 +598,97 @@ ANTIGRAVITY_SONNET = Route(_ANTIGRAVITY_SONNET, ANTIGRAVITY_MESSAGES, reasoning_
 ANTIGRAVITY_PRO = Route(_ANTIGRAVITY_PRO, ANTIGRAVITY_MESSAGES)
 ANTIGRAVITY_FLASH_LITE_31 = Route(_ANTIGRAVITY_FLASH_LITE_31, ANTIGRAVITY_MESSAGES)
 ANTIGRAVITY_FLASH_LITE = Route(_ANTIGRAVITY_FLASH_LITE_35, ANTIGRAVITY_MESSAGES)
+ANTIGRAVITY_FLASH_36 = Route(
+    Model(
+        id="gemini-3.6-flash-high",
+        display_name="Gemini 3.6 Flash",
+        reasoning=True,
+        limits=TokenLimits(max_input_tokens=1_048_576, max_output_tokens=65_536),
+    ),
+    ANTIGRAVITY_MESSAGES,
+)
+ANTIGRAVITY_FLASH_37 = Route(
+    Model(
+        id="gemini-3.7-flash-high",
+        display_name="Gemini 3.7 Flash",
+        reasoning=True,
+        limits=TokenLimits(max_input_tokens=1_048_576, max_output_tokens=65_536),
+    ),
+    ANTIGRAVITY_MESSAGES,
+)
+ANTIGRAVITY_FLASH_38 = Route(
+    Model(
+        id="gemini-3.8-flash-high",
+        display_name="Gemini 3.8 Flash",
+        reasoning=True,
+        limits=TokenLimits(max_input_tokens=1_048_576, max_output_tokens=65_536),
+    ),
+    ANTIGRAVITY_MESSAGES,
+)
+ANTIGRAVITY_FLASH_3 = Route(
+    Model(
+        id="gemini-3-flash",
+        display_name="Gemini 3 Flash",
+        reasoning=False,
+        limits=TokenLimits(max_input_tokens=1_048_576, max_output_tokens=65_536),
+    ),
+    ANTIGRAVITY_MESSAGES,
+)
+ANTIGRAVITY_FLASH_IMAGE = Route(
+    Model(id="gemini-3.1-flash-image", display_name="Gemini 3.1 Flash Image", reasoning=False), ANTIGRAVITY_MESSAGES
+)
+ANTIGRAVITY_PRO_LOW = Route(
+    Model(
+        id="gemini-3.1-pro-low",
+        display_name="Gemini 3.1 Pro (Low)",
+        reasoning=False,
+        limits=TokenLimits(max_input_tokens=1_048_576, max_output_tokens=65_535),
+    ),
+    ANTIGRAVITY_MESSAGES,
+)
+ANTIGRAVITY_GPT_OSS_120B_MEDIUM = Route(
+    Model(
+        id="gpt-oss-120b-medium",
+        display_name="GPT-OSS 120B (Medium)",
+        reasoning=True,
+        limits=TokenLimits(max_input_tokens=114_000, max_output_tokens=32_768),
+    ),
+    ANTIGRAVITY_MESSAGES,
+)
 ANTIGRAVITY_ROUTES = (
     ANTIGRAVITY_OPUS,
     ANTIGRAVITY_SONNET,
-    Route(
-        Model(
-            id="gemini-3.6-flash-high",
-            display_name="Gemini 3.6 Flash",
-            reasoning=True,
-            context_window=1_048_576,
-            max_output_tokens=65_536,
-        ),
-        ANTIGRAVITY_MESSAGES,
-    ),
-    Route(
-        Model(
-            id="gemini-3.7-flash-high",
-            display_name="Gemini 3.7 Flash",
-            reasoning=True,
-            context_window=1_048_576,
-            max_output_tokens=65_536,
-        ),
-        ANTIGRAVITY_MESSAGES,
-    ),
-    Route(
-        Model(
-            id="gemini-3.8-flash-high",
-            display_name="Gemini 3.8 Flash",
-            reasoning=True,
-            context_window=1_048_576,
-            max_output_tokens=65_536,
-        ),
-        ANTIGRAVITY_MESSAGES,
-    ),
-    Route(
-        Model(
-            id="gemini-3-flash",
-            display_name="Gemini 3 Flash",
-            reasoning=False,
-            context_window=1_048_576,
-            max_output_tokens=65_536,
-        ),
-        ANTIGRAVITY_MESSAGES,
-    ),
-    Route(
-        Model(
-            id="gemini-3.1-flash-image",
-            display_name="Gemini 3.1 Flash Image",
-            reasoning=False,
-            context_window=None,
-            max_output_tokens=None,
-        ),
-        ANTIGRAVITY_MESSAGES,
-    ),
+    ANTIGRAVITY_FLASH_36,
+    ANTIGRAVITY_FLASH_37,
+    ANTIGRAVITY_FLASH_38,
+    ANTIGRAVITY_FLASH_3,
+    ANTIGRAVITY_FLASH_IMAGE,
     ANTIGRAVITY_PRO,
-    Route(
-        Model(
-            id="gemini-3.1-pro-low",
-            display_name="Gemini 3.1 Pro (Low)",
-            reasoning=False,
-            context_window=1_048_576,
-            max_output_tokens=65_535,
-        ),
-        ANTIGRAVITY_MESSAGES,
-    ),
-    Route(
-        Model(
-            id="gpt-oss-120b-medium",
-            display_name="GPT-OSS 120B (Medium)",
-            reasoning=True,
-            context_window=114_000,
-            max_output_tokens=32_768,
-        ),
-        ANTIGRAVITY_MESSAGES,
-    ),
+    ANTIGRAVITY_PRO_LOW,
+    ANTIGRAVITY_GPT_OSS_120B_MEDIUM,
     ANTIGRAVITY_FLASH_LITE_31,
     ANTIGRAVITY_FLASH_LITE,
 )
 ANTIGRAVITY_FLASH_LITE_ROUTES = (ANTIGRAVITY_FLASH_LITE_31, ANTIGRAVITY_FLASH_LITE)
 GROQ_CHAT = Upstream(Provider.GROQ, "groq", "chat", supports_function_calling=True)
-GROQ_CHAT_ROUTES = tuple(Route(Model(id), GROQ_CHAT) for id in ("llama-3.3-70b-versatile", "llama-3.1-8b-instant"))
+# Exact `groq/<id>` input/output entries from our pinned LiteLLM 1.100.1 backup:
+# https://github.com/BerriAI/litellm/blob/1dba17b10ded12ad0021edb453ba2c54e4637928/litellm/model_prices_and_context_window_backup.json
+# The 2026-10-05 remote catalogue omits these IDs. Preserve the pinned backup's
+# last-known metadata explicitly, not a sibling-model guess or availability claim.
+GROQ_CHAT_ROUTES = tuple(
+    Route(model, GROQ_CHAT, publish_limits=True)
+    for model in (
+        Model("llama-3.3-70b-versatile", limits=TokenLimits(max_input_tokens=131_072, max_output_tokens=32_768)),
+        Model("llama-3.1-8b-instant", limits=TokenLimits(max_input_tokens=131_072, max_output_tokens=131_072)),
+    )
+)
 GROQ_TRANSCRIBE = Upstream(Provider.GROQ, "groq", "transcribe")
 GROQ_AUDIO_ROUTES = tuple(
     Route(Model(id), GROQ_TRANSCRIBE, bare_name=True) for id in ("whisper-large-v3", "whisper-large-v3-turbo")
 )
 GOOGLE_GENERATE = Upstream(Provider.GOOGLE, "gemini", "generate", supports_function_calling=True)
-GEMINI_FLASH = Route(_GEMINI_FLASH, GOOGLE_GENERATE)
-GEMINI_FLASH_LITE = Route(_GEMINI_FLASH_LITE, GOOGLE_GENERATE)
+GEMINI_FLASH = Route(_GEMINI_FLASH, GOOGLE_GENERATE, publish_limits=True)
+GEMINI_FLASH_LITE = Route(_GEMINI_FLASH_LITE, GOOGLE_GENERATE, publish_limits=True)
 GEMINI_ROUTES = (GEMINI_FLASH, GEMINI_FLASH_LITE)
 GOOGLE_EMBED = Upstream(Provider.GOOGLE, "gemini", "embed")
 GEMINI_EMBEDDING_2 = Route(_GEMINI_EMBEDDING_2, GOOGLE_EMBED)
@@ -752,7 +696,7 @@ GEMINI_EMBEDDING_001 = Route(_GEMINI_EMBEDDING_001, GOOGLE_EMBED)
 GEMINI_EMBEDDING_ROUTES = (GEMINI_EMBEDDING_2, GEMINI_EMBEDDING_001)
 GEMINI_EMBEDDING_ALIAS = RouteAlias(GEMINI_EMBEDDING_COMPAT_ALIAS, GEMINI_EMBEDDING_2)
 MISTRAL_CHAT = Upstream(Provider.MISTRAL, "mistral", "chat", supports_function_calling=True)
-MISTRAL_ROUTES = tuple(Route(model, MISTRAL_CHAT) for model in _MISTRAL_MODELS)
+MISTRAL_ROUTES = tuple(Route(model, MISTRAL_CHAT, publish_limits=True) for model in _MISTRAL_MODELS)
 
 # Ordered public catalog. Aliases reference routes rather than repeat their upstream
 # or metadata. Hidden harness-compatibility aliases are not advertised as model entries.

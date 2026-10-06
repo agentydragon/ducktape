@@ -226,3 +226,27 @@ and a paginated read are one intention and three requests — so the counter wou
 mid-operation and call it enforcement. A genuine one-shot needs something that can see the
 operation, which is the webhook decision path a rule may later delegate to; nothing is built for it
 until a rule needs one.
+
+## Inference experiments
+
+The `inference-experiments` policy in staging and testing grants direct Ollama
+inference and LiteLLM's existing `cheap-experiments` key. It is separate from
+`basic`, which contains Agentplane platform operations only. New sandbox launches
+receive both through the deployment's default policies; standing caller bindings
+and static OpenClaw explicitly include `inference-experiments`. Existing per-sandbox
+bindings need an explicit grant update or a new sandbox; changing defaults does not
+rewrite those grants. Read `/v1/rules` for the active
+hosts, methods, paths, and credential placeholders; send the returned placeholder
+as `Authorization: Bearer ...` through the configured proxy. Override any matching
+`NO_PROXY` entry for these experiment calls (`curl --noproxy ''`), particularly
+Static OpenClaw's direct LiteLLM conversation exception. The real tokens stay
+in the isolated egress-credentials namespaces, not in agent sandboxes.
+
+Ollama uses its authenticated listener at
+`http://ollama.ollama.svc.cluster.local:11435`, including `/api/show`, `/api/chat`,
+and the OpenAI-compatible inference endpoints. Model pull/create/delete is not
+allowed. The GPUs are shared: keep probes bounded and avoid concurrent load tests.
+LiteLLM is at `http://litellm.litellm.svc.cluster.local:4000`; its cheap-experiments
+key retains the Terraform-managed model allowlist and shared spending budget.
+Key-management and admin endpoints are not granted. This access is independent of
+the workload-authenticated LLM ingress used for an agent's own conversation.

@@ -108,8 +108,8 @@ export { a, b };
 }
 
 #[test]
-fn multi_line_member_comment_preserves_paragraph_structure() {
-    let comment = "Line one of the doc.\n\nLine three after a blank.\nLine four.";
+fn multi_line_member_comment_keeps_paragraphs_and_trims_trailing_whitespace() {
+    let comment = "Line one of the doc.   \n\nLine three after a blank.\nLine four.\t";
     let fixture = run_fixture(FixtureOpts::new(
         r#"const value = 42;
 console.log(value);
@@ -121,15 +121,16 @@ export { value };
         )],
     ));
     let code = read_module(&fixture, MODULE_PATH);
-    // Each input line becomes one `// ...` line; the blank input
-    // line emits as a bare `//` so paragraph structure survives.
+    // Each input line becomes one `// ...` line with trailing spaces and tabs
+    // trimmed; the blank input line emits as a bare `//` so paragraph structure
+    // survives. The `\n` in each needle fails the match if whitespace leaks.
     assert_contains_in_order(
         &code,
         &[
-            "// Line one of the doc.",
+            "// Line one of the doc.\n",
             "//\n",
-            "// Line three after a blank.",
-            "// Line four.",
+            "// Line three after a blank.\n",
+            "// Line four.\n",
             "const value = 42",
         ],
     );
@@ -226,32 +227,5 @@ export { value };
         no_comment_code, empty_comment_code,
         "empty-string comment must emit nothing — output should match the no-comment baseline\n\
          --- no comment ---\n{no_comment_code}\n--- empty comment ---\n{empty_comment_code}",
-    );
-}
-
-#[test]
-fn trailing_whitespace_in_comment_lines_is_trimmed() {
-    // Trailing spaces / tabs on each input line shouldn't leak into
-    // the emitted comment — keeps diffs clean and matches what most
-    // linters expect.
-    let comment = "Has trailing spaces.   \nClean line.";
-    let fixture = run_fixture(FixtureOpts::new(
-        r#"const value = 1;
-console.log(value);
-export { value };
-"#,
-        vec![logical_module(
-            "x",
-            &[Member::new("value").with_comment(comment)],
-        )],
-    ));
-    let code = read_module(&fixture, MODULE_PATH);
-    assert!(
-        code.contains("// Has trailing spaces.\n"),
-        "trailing spaces must be trimmed:\n{code}",
-    );
-    assert!(
-        !code.contains("// Has trailing spaces.   \n"),
-        "trailing spaces must not appear in emitted comment:\n{code}",
     );
 }

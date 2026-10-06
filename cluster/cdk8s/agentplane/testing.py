@@ -45,6 +45,7 @@ from cluster.cdk8s.agentplane.environment import (
     LlmIngressProps,
     ReplicaProfile,
 )
+from cluster.cdk8s.agentplane.grpc_channel_config import LARGE_EVENT_GRPC_CHANNEL_OPTIONS
 from cluster.cdk8s.flux import Kustomization, flux_kustomization, flux_kustomization_depends_on_many
 from cluster.cdk8s.generation import CNPG_DATABASE_READY
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT, HAND_WRITTEN_ROOT
@@ -76,7 +77,8 @@ _ACTION_FEDERATION = DirectFederationSettings(
 )
 _ACTIONS_SETTINGS = ActionServiceDeploymentSettings(
     operator_oidc=_FEDERATION_TARGET,
-    allowed_service_account_namespaces=frozenset({_NAMESPACE}),
+    policy_namespace=_NAMESPACE,
+    caller_service_account_namespaces=frozenset({_NAMESPACE}),
     direct_wait_seconds=30,
     max_wait_seconds=180,
     mcp_servers={
@@ -135,7 +137,10 @@ ENV = Environment(
     extra_resources=(),
     replicas=ReplicaProfile(count=1, strategy=DeploymentStrategy.recreate(), min_ready=None, pdb_min_available=None),
     model_routes=TESTING_APP_MODELS,
-    app_config=testing_config.config(action_federation=_ACTION_FEDERATION),
+    app_config=testing_config.config(
+        action_federation=_ACTION_FEDERATION, sandbox_service_grpc_channel_options=LARGE_EVENT_GRPC_CHANNEL_OPTIONS
+    ),
+    runner_grpc_channel_options=LARGE_EVENT_GRPC_CHANNEL_OPTIONS,
     db=DbProps(instances=1),
     llm_ingress=LlmIngressProps(litellm_key_secret_name=_LITELLM_KEY_SECRET),
     egress=EgressProps(ca_secret_name="agentplane-testing-egress-ca", credentials_namespace=TESTING_NAMESPACE),

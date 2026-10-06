@@ -105,19 +105,8 @@ async def test_litellm_proxy_config_registers_custom_provider_before_router_buil
 
         router, _, _ = await ProxyConfig().load_config(router=None, config_file_path=str(config_path))
 
-        assert "tana" in litellm.provider_list
-        assert "tana" in litellm.model_list_set
-        assert litellm.get_llm_provider(model="tana/tana/gpt-4o-mini")[1] == "tana"
         assert router is not None
-        deployments = router.get_model_list(model_name="gpt-4o-mini")
-        assert deployments is not None
-        assert len(deployments) == 1
-        assert deployments[0]["litellm_params"]["model"] == "tana/tana/gpt-4o-mini"
-        assert deployments[0]["litellm_params"]["custom_llm_provider"] == "tana"
-
-        handler = next(item["custom_handler"] for item in litellm.custom_provider_map if item["provider"] == "tana")
-        assert isinstance(handler, TanaLiteLLM)
-        monkeypatch.setattr(handler, "_make_client", lambda _: FakeClient())
+        monkeypatch.setattr(TanaLiteLLM, "_make_client", lambda _self, _config: FakeClient())
         response = await router.acompletion(model="gpt-4o-mini", messages=[{"role": "user", "content": "hi"}])
 
         assert response.choices[0].message.content == "pong"

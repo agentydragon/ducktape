@@ -37,7 +37,6 @@ from agentplane.action_service.catalog import (
     McpExecutorBinding,
 )
 from agentplane.action_service.client import WORKLOAD_CREDENTIAL_PLACEHOLDER
-from agentplane.action_service.conftest import ScriptedExecutor, lifespan_in_own_task
 from agentplane.action_service.db import ActionStore, make_sessionmaker
 from agentplane.action_service.mcp_frontend import CancellationView, PolicyField, Receipt, RequestField
 from agentplane.action_service.models import (
@@ -60,7 +59,8 @@ from agentplane.action_service.policy_view import CallerActionPolicyView
 from agentplane.action_service.sandbox.binding import SandboxExecutorBinding
 from agentplane.action_service.sandbox.models import ExecResult
 from agentplane.action_service.service import ActionService
-from agentplane.action_service.test_fixtures.callers import in_sync_index
+from agentplane.action_service.testing.callers import in_sync_index
+from agentplane.action_service.testing.fixtures import ScriptedExecutor, lifespan_in_own_task
 from agentplane.action_service.updates import ActionSubscription, ActionUpdates
 from agentplane.subjects import ServiceAccountRef
 from agentplane.workload_auth.principal import (

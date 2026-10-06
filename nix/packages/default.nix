@@ -302,6 +302,48 @@ rec {
     propagatedBuildInputs = with python314Packages; [ pygit2 ];
   };
 
+  pr-visuals =
+    (mkWheel {
+      pname = "pr-visuals";
+      description = "Announce and publish CI visual reviews";
+      mainProgram = "pr-visuals-publish";
+      importsCheck = [
+        "devinfra.pr_visuals.check_run"
+        "devinfra.pr_visuals.publisher"
+      ];
+      # SYNC: requires in //devinfra/pr_visuals:wheel.
+      propagatedBuildInputs = with python314Packages; [
+        boto3
+        botocore
+        jinja2
+        more-itertools
+        pillow
+        pydantic
+        pygithub
+        tenacity
+      ];
+    }).overrideAttrs
+      (old: {
+        # The publisher invokes bbapi; make it available even outside a devshell.
+        makeWrapperArgs = (old.makeWrapperArgs or [ ]) ++ [
+          "--prefix"
+          "PATH"
+          ":"
+          (lib.makeBinPath [ bbapi ])
+        ];
+        doInstallCheck = true;
+        installCheckPhase = ''
+          runHook preInstallCheck
+          (
+            cd "$(mktemp -d)"
+            unset PYTHONPATH
+            "$out/bin/pr-visuals-announce" --help
+            "$out/bin/pr-visuals-publish" --help
+          )
+          runHook postInstallCheck
+        '';
+      });
+
   ducktape = mkWheel {
     pname = "ducktape";
     description = "Ducktape command-line tools";

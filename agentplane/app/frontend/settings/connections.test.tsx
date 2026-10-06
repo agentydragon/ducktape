@@ -88,8 +88,7 @@ it("requires confirmation, permits cancelling, and preserves the row after unlin
   expect(api.unbind).not.toHaveBeenCalled();
   await act(async () => button(container, "Unlink").click());
   await act(async () => button(container, "Confirm unlink").click());
-  expect(api.unbind).toHaveBeenCalledOnce();
-  expect(api.unbind).toHaveBeenCalledWith(row);
+  expect(api.unbind).toHaveBeenCalledExactlyOnceWith(row);
   expect(button(container, "Unlink").disabled).toBe(true);
 });
 it("refreshes stale unlink state without destructive automatic retry", async () => {

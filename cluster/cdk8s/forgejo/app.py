@@ -301,13 +301,6 @@ def _values(storage: s3.PrivateBucket) -> dict[str, object]:
             # RWX claim — but the assertion still reads this value.
             "accessModes": ["ReadWriteMany"],
         },
-        # PostgreSQL: external CNPG cluster (forgejo-db)
-        "postgresql": {"enabled": False},
-        "postgresql-ha": {"enabled": False},
-        "redis-cluster": {"enabled": False},
-        # Valkey (disabled — using db sessions, memory cache, level queues)
-        "valkey-cluster": {"enabled": False},
-        "memcached": {"enabled": False},
         "serviceAccount": {"create": True},
     }
 

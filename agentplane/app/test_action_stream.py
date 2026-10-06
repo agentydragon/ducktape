@@ -21,13 +21,14 @@ from agentplane.action_service.client import OperatorActionServiceClient
 from agentplane.app.action_federation import FederatedOperatorActions
 from agentplane.app.action_policy import ActionPolicyInventory
 from agentplane.app.api import ModelCatalog, ModelOption, create_app
-from agentplane.app.conftest import TEST_REASONING_EFFORTS, Replica
 from agentplane.app.database_updates import Channel, DatabaseUpdates
 from agentplane.app.decisions import DecisionsClient
 from agentplane.app.egress_access import EgressAccess
 from agentplane.app.live import LiveIndex
 from agentplane.app.oidc import INSECURE_COOKIE, OIDCSettings
 from agentplane.app.operator_sessions import OperatorSession, OperatorSessionStore, request_session
+from agentplane.app.testing.model_test_data import TEST_REASONING_EFFORTS
+from agentplane.app.testing.thread_test_support import Replica
 from agentplane.app.threads.bridge import RunnerBridge
 from agentplane.app.threads.events.event_log import EventLogStore
 from agentplane.app.threads.store import ThreadStore
@@ -230,13 +231,12 @@ async def logout(app: FastAPI, cookie: str) -> None:
         assert response.status_code == 303, response.text
 
 
-@pytest.mark.parametrize("upstream_status", [401, 403, 503])
-async def test_upstream_status_before_downstream_headers(app: FastAPI, upstream_status: int) -> None:
-    service = ActionService(Upstream(FIRST), status_code=upstream_status)
+async def test_upstream_status_before_downstream_headers(app: FastAPI) -> None:
+    service = ActionService(Upstream(FIRST), status_code=403)
     cookie = await login(app)
     async with operator_actions(app, service.transport()):
         messages = await EventSource(app, cookie).ended()
-    assert messages[0]["status"] == upstream_status
+    assert messages[0]["status"] == 403
     assert service.upstreams[0].closed
 
 

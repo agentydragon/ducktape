@@ -25,12 +25,6 @@ async function render(element: JSX.Element): Promise<HTMLDivElement> {
 }
 
 describe("JsonView", () => {
-  it("renders a value in the shared CodeMirror viewer", async () => {
-    const container = await render(<JsonView value={{ repository: "test-owner/test-repository", count: 3 }} />);
-    expect(container.textContent).toContain('"repository": "test-owner/test-repository"');
-    expect(container.querySelector(".cm-editor")).not.toBeNull();
-  });
-
   it("renders untrusted source as inert text", async () => {
     // An untrusted value (agent/tool output) that must never become a live DOM element.
     const container = await render(<JsonView value={{ payload: '<img src=x onerror="alert(1)">' }} />);

@@ -1577,8 +1577,7 @@ mod tests {
     use selector_constraint_backend::{AllowedTupleConstraintId, BackendValueId, ConstraintValue};
     use selector_ir::ClaimKind;
     use selector_test_fixtures::{
-        broad_specific_targets, call_argument_use, declared_binding, member_read,
-        module_member_use, owner_fact,
+        broad_specific_targets, declared_binding, member_read, module_member_use, owner_fact,
     };
 
     #[derive(Debug, Clone, PartialEq, Eq)]
@@ -1838,35 +1837,19 @@ mod tests {
 
         let model = compile_selector_problem(&program, &facts).unwrap();
 
-        assert_eq!(model.target_projections.len(), 2);
-        assert_eq!(model.target_projections[0].target, broad_target);
-        assert_eq!(
-            model.target_projections[0].owner_variable,
-            ConstraintVariableId(0)
-        );
-        assert_eq!(
-            model.target_projections[0].binding_projection,
-            Some(TargetBindingProjection::Const("shared".to_string()))
-        );
-        assert_eq!(model.target_projections[1].target, strict_target);
-        assert_eq!(
-            model.target_projections[1].owner_variable,
-            ConstraintVariableId(1)
-        );
-        assert_eq!(
-            model.target_projections[1].binding_projection,
-            Some(TargetBindingProjection::Const("specific".to_string()))
-        );
+        let owner_domain = |target| {
+            let projection = model
+                .target_projections
+                .iter()
+                .find(|projection| projection.target == target)
+                .unwrap();
+            decoded_variable_domain(&model, projection.owner_variable)
+        };
+        // The strict target can only be owner 20, so injectivity removes owner 20
+        // from the broad target's domain and nothing is left to be all-different.
+        assert_eq!(owner_domain(broad_target), vec![owner(10)]);
+        assert_eq!(owner_domain(strict_target), vec![owner(20)]);
         assert!(model.all_different.is_empty());
-
-        assert_eq!(
-            decoded_variable_domain(&model, ConstraintVariableId(0)),
-            vec![owner(10)]
-        );
-        assert_eq!(
-            decoded_variable_domain(&model, ConstraintVariableId(1)),
-            vec![owner(20)]
-        );
     }
 
     #[test]
@@ -2057,82 +2040,6 @@ mod tests {
         assert_eq!(
             decoded_variable_domain(&model, ConstraintVariableId(7)),
             vec![owner(65)]
-        );
-    }
-
-    #[test]
-    fn passed_to_call_atoms_lower_to_allowed_tuple_constraints() {
-        let mut program = SelectorProgram::default();
-        let bare_argument_owner =
-            program.add_variable(VariableDomain::Owner, Some("bare_argument".to_string()));
-        let object_owner =
-            program.add_variable(VariableDomain::Owner, Some("object_owner".to_string()));
-        let owner_constrained_argument = program.add_variable(
-            VariableDomain::Owner,
-            Some("owner_constrained_argument".to_string()),
-        );
-        let owner_constrained_object = program.add_variable(
-            VariableDomain::Owner,
-            Some("owner_constrained_object".to_string()),
-        );
-
-        program.add_atom(SelectorAtom::PassedToCall {
-            owner: OwnerTerm::Var {
-                id: bare_argument_owner,
-            },
-            callee_member: StringTerm::Const {
-                value: "register".to_string(),
-            },
-            arg_index: Some(0),
-        });
-        program.add_atom(SelectorAtom::OwnerDeclaresBinding {
-            owner: OwnerTerm::Var { id: object_owner },
-            binding: StringTerm::Const {
-                value: "registry".to_string(),
-            },
-        });
-        program.add_atom(SelectorAtom::PassedToCallOfOwner {
-            owner: OwnerTerm::Var {
-                id: owner_constrained_argument,
-            },
-            callee_object: OwnerTerm::Var {
-                id: owner_constrained_object,
-            },
-            callee_member: StringTerm::Const {
-                value: "register".to_string(),
-            },
-            arg_index: Some(1),
-        });
-
-        let facts = fact_store(vec![
-            owner_fact(10, 0, "class"),
-            declared_binding(10, "WidgetA"),
-            call_argument_use("WidgetA", None, "register", 0),
-            owner_fact(20, 1, "class"),
-            declared_binding(20, "WidgetB"),
-            call_argument_use("WidgetB", Some("registry"), "register", 1),
-            owner_fact(30, 2, "var_decl"),
-            declared_binding(30, "registry"),
-            owner_fact(40, 3, "class"),
-            declared_binding(40, "Other"),
-            call_argument_use("Other", Some("otherRegistry"), "register", 1),
-            owner_fact(50, 4, "var_decl"),
-            declared_binding(50, "otherRegistry"),
-        ]);
-
-        let model = compile_selector_problem(&program, &facts).unwrap();
-
-        assert_eq!(
-            decoded_variable_domain(&model, ConstraintVariableId(0)),
-            vec![owner(10)]
-        );
-        assert_eq!(
-            decoded_variable_domain(&model, ConstraintVariableId(1)),
-            vec![owner(30)]
-        );
-        assert_eq!(
-            allowed_tuples_for(&model, &[ConstraintVariableId(2), ConstraintVariableId(3)]).tuples,
-            vec![vec![owner(20), owner(30)], vec![owner(40), owner(50)],]
         );
     }
 

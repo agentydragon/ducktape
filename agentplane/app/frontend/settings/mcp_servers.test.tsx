@@ -63,7 +63,11 @@ function pendingGroupList(): {
   return { promise, resolve };
 }
 
-it.each(["Reconnect", "Disconnect"])("spins only the clicked %s button until the operation fails", async (label) => {
+// Each button's label, the service method it calls, and with what.
+it.each([
+  ["Reconnect", "start", ["github", []]],
+  ["Disconnect", "disconnect", ["github"]],
+] as const)("spins only the clicked %s button until the operation fails", async (label, method, args) => {
   const rows: McpLinkageView[] = ["github", "second-server"].map((server_id) => ({
     server_id,
     server_url: "https://mcp.example.test",
@@ -80,7 +84,8 @@ it.each(["Reconnect", "Disconnect"])("spins only the clicked %s button until the
   });
   const start = vi.fn<McpLinkageService["start"]>().mockReturnValue(pending);
   const disconnect = vi.fn<McpLinkageService["disconnect"]>().mockReturnValue(pending);
-  const container = await render(async () => rows, { start, disconnect });
+  const service = { start, disconnect };
+  const container = await render(async () => rows, service);
   const buttons = [...container.querySelectorAll("button")];
   const clicked = buttons.find((button) => button.textContent === label);
   if (!clicked) throw new Error(`Missing ${label}`);
@@ -89,8 +94,7 @@ it.each(["Reconnect", "Disconnect"])("spins only the clicked %s button until the
   expect(clicked.hasAttribute("data-loading")).toBe(true);
   expect(refresh(container).hasAttribute("data-loading")).toBe(false);
   expect(buttons.every((button) => button.disabled)).toBe(true);
-  if (label === "Reconnect") expect(start).toHaveBeenCalledWith("github", []);
-  else expect(disconnect).toHaveBeenCalledWith("github");
+  expect(service[method]).toHaveBeenCalledWith(...args);
 
   await act(async () => reject(new Error("Operation failed")));
   expect(container.querySelectorAll("button[data-loading]")).toHaveLength(0);

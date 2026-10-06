@@ -238,16 +238,45 @@ fn owner_graph_report_emits_atomic_graph() {
     assert!(json.contains(r#""atomic_graph""#));
 }
 
+/// `cli/gate.rs` reads the callee owner off the serialized `owner_graph.json` edge to
+/// drop a promoted edge when callee and caller land in different modules.
 #[test]
-fn atomic_graph_excludes_lazy_use_edges() {
-    let factorization = factorization_for("function Leaf() { return Dep; } const Dep = 1;", &[]);
+fn owner_graph_report_names_the_callee_owner_on_a_promoted_at_init_edge() {
+    let factorization = factorization_with_residual_module(
+        "const seed = 7; const result = callee(seed); function callee(x) { return dep + x; } const dep = 42;",
+        &["seed", "result", "callee", "dep"],
+        &[],
+    );
 
     let report = factorization.owner_graph_report();
-    assert_eq!(report.atomic_graph.nodes.len(), 2);
-    assert!(
-        report.atomic_graph.edges.is_empty(),
-        "lazy-only function body reads should not create atomic DAG edges: {:#?}",
-        report.atomic_graph,
+    let owner_of = |binding: &str| {
+        report
+            .nodes
+            .iter()
+            .find(|node| node.declared_bindings.iter().any(|b| b.binding == binding))
+            .unwrap_or_else(|| panic!("no owner declares `{binding}`: {:#?}", report.nodes))
+            .id
+            .clone()
+    };
+    let promoted = report
+        .edges
+        .iter()
+        .find(|edge| {
+            edge.source == owner_of("result")
+                && edge.target == owner_of("dep")
+                && edge.edge_kind == DepKind::EagerUse
+        })
+        .unwrap_or_else(|| {
+            panic!(
+                "no promoted edge from `result` to `dep`: {:#?}",
+                report.edges
+            )
+        });
+    assert_eq!(
+        promoted.role,
+        Some(EdgeRoleReport::PromotedAtInit {
+            callee_owner: owner_of("callee")
+        }),
     );
 }
 
@@ -348,23 +377,6 @@ fn multi_declarator_var_decl_is_side_effecting_if_any_init_is() {
 fn statement_kinds(source: &str) -> Vec<StatementKind> {
     let module = parse(source);
     analyze_facts(&module).into_iter().map(|f| f.kind).collect()
-}
-
-fn declared_per_statement(source: &str) -> Vec<Vec<String>> {
-    let module = parse(source);
-    analyze_facts(&module)
-        .into_iter()
-        .map(|f| f.declared.into_iter().map(|id| id.0.to_string()).collect())
-        .collect()
-}
-
-#[test]
-fn single_declarator_var_decl_is_unchanged() {
-    assert_eq!(statement_kinds("var A;"), vec![StatementKind::VarDecl]);
-    assert_eq!(
-        declared_per_statement("var A;"),
-        vec![vec!["A".to_string()]]
-    );
 }
 
 #[test]

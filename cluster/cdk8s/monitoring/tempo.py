@@ -92,7 +92,6 @@ def chart(app: App) -> Chart:
             },
             "persistence": {"enabled": False},
             "nodeSelector": {"topology.kubernetes.io/region": "hil"},
-            "resources": {"requests": {"cpu": "50m", "memory": "128Mi"}, "limits": {"cpu": "500m", "memory": "512Mi"}},
             "serviceMonitor": {"enabled": True},
         },
     )

@@ -8,8 +8,8 @@ import pytest_bazel
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import create_async_engine
 
-from agentplane.app.conftest import SPEC, Replica, event_entry
 from agentplane.app.database_updates import Channel, DatabaseUpdates
+from agentplane.app.testing.thread_test_support import SPEC, Replica, event_entry
 from agentplane.app.threads.events.event_log import EventLogStore
 from agentplane.app.threads.events.ingestion_lease import IngestionLease
 from agentplane.app.threads.ingestion import Ingestion

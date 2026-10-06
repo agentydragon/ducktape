@@ -1,5 +1,6 @@
 import json
 
+import pytest
 import pytest_bazel
 
 from skills.session_logs import session_logs
@@ -38,7 +39,8 @@ def test_display_text_preserves_both_ends() -> None:
     rendered = session_logs.display_text("a" * 120, 100)
     assert rendered.startswith("a")
     assert rendered.endswith("a")
-    assert "...(cut; pass --max-display-text-length >= 100)..." in rendered
+    assert len(rendered) == 100
+    assert "--max-display-text-length" in rendered
 
 
 def test_codex_harness_detection_uses_session_meta(tmp_path) -> None:
@@ -98,14 +100,20 @@ def test_codex_compaction_markers_are_counted(tmp_path) -> None:
     )
 
 
-def test_followups_replay_guidance_requires_clean_scan_for_fast_path() -> None:
-    assert session_logs.followups_replay_guidance(0, 0) == (
-        "skip; no compaction markers were found and no records were malformed"
-    )
-    assert session_logs.followups_replay_guidance(2, 0) == (
-        "2 marker(s) found; replay unless already recovered in this context after the latest marker"
-    )
-    assert "do not use the no-compaction shortcut" in session_logs.followups_replay_guidance(0, 1)
+@pytest.mark.parametrize(
+    ("compactions", "malformed_records", "expected"),
+    [
+        (0, 0, session_logs.ReplayGuidance.SKIP),
+        (2, 0, session_logs.ReplayGuidance.REPLAY),
+        (0, 1, session_logs.ReplayGuidance.UNCERTAIN),
+        # A scan that skipped records cannot vouch for its compaction count either way.
+        (2, 1, session_logs.ReplayGuidance.UNCERTAIN),
+    ],
+)
+def test_followups_replay_guidance_requires_clean_scan_for_fast_path(
+    compactions: int, malformed_records: int, expected: session_logs.ReplayGuidance
+) -> None:
+    assert session_logs.followups_replay_guidance(compactions, malformed_records) == expected
 
 
 if __name__ == "__main__":

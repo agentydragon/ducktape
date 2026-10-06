@@ -63,12 +63,13 @@ def container_disk_vm(
     node_selector: Mapping[str, str],
     ports: Sequence[VirtualMachineSpecTemplateSpecDomainDevicesInterfacesPorts],
     disks: Mapping[str, VirtualMachineSpecTemplateSpecVolumes],
+    run_strategy: str = "Always",
     annotations: Mapping[str, str] | None = None,
     affinity: VirtualMachineSpecTemplateSpecAffinity | None = None,
     host_devices: Sequence[VirtualMachineSpecTemplateSpecDomainDevicesHostDevices] | None = None,
     autoattach_graphics_device: bool | None = None,
 ) -> VirtualMachine:
-    """An always-running VM that boots `image` as an ephemeral containerDisk under EFI without
+    """A VM (always running by default) that boots `image` as an ephemeral containerDisk under EFI without
     Secure Boot, and reaches the pod network through masquerade on `ports`. Each of `disks`
     attaches as a virtio disk the guest finds at `/dev/disk/by-id/virtio-<key>`. The VM is labelled
     with its name, and its pods with `domain_labels(name)` too. `cpu`, `resources`, `node_selector`,
@@ -80,7 +81,7 @@ def container_disk_vm(
         scope,
         id,
         metadata=ApiObjectMetadata(name=name, namespace=namespace, labels=labels, annotations=annotations),
-        run_strategy="Always",
+        run_strategy=run_strategy,
         template=VirtualMachineSpecTemplate(
             metadata=k8s.ObjectMeta(labels=domain_labels(name) | labels),
             spec=VirtualMachineSpecTemplateSpec(

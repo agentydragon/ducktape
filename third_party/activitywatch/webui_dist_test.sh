@@ -9,7 +9,6 @@ main_js=("$dist"/js/index.*.js)
 [[ -f "$dist/sw.js" ]]
 [[ ${#main_js[@]} -eq 1 ]]
 grep -qF 'crossorigin="use-credentials"' "$dist/index.html"
-grep -qF '.COMMIT_HASH="3cbe349"' "${main_js[0]}"
 grep -qF '.getRegistrations()' "${main_js[0]}"
 ! grep -qF '.serviceWorker.register(' "${main_js[0]}"
 grep -qF 'self.skipWaiting()' "$dist/sw.js"

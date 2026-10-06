@@ -6,9 +6,9 @@ statement-cycle card totals. The Deployment requires one privately delivered Sec
 required `cards` and optional `allowance`; omitting `allowance` disables the allowance.
 Do not commit this configuration to the public repo; storing it in private git alone
 does not deploy it. Without the Secret the pod will not start. Invalid JSON or policy
-fails application startup. Restart the Deployment after changing the Secret; the
+fails application startup. Reloader restarts the Deployment after the Secret changes; the
 process reads the file only at startup.
-Check the current read-only Plaid account coverage **before** activating.
+Check the current read-only Plaid account coverage **before** configuring the allowance.
 
 Generic _synthetic_ example (amounts are integer cents; IDs, categories and prefixes illustrative):
 
@@ -17,7 +17,7 @@ Generic _synthetic_ example (amounts are integer cents; IDs, categories and pref
   "cards": [],
   "allowance": {
     "monthly_minor_units": 100000,
-    "activation_at": null,
+    "activation_at": "2026-01-31",
     "spending_account_ids": ["example-credit-id", "example-checking-id"],
     "currency": "USD",
     "max_sync_age_hours": 72,
@@ -33,21 +33,39 @@ Generic _synthetic_ example (amounts are integer cents; IDs, categories and pref
 }
 ```
 
-`activation_at: null` is **preview**, without a live allowance or historic debt;
-set it to an explicit ISO calendar date (YYYY-MM-DD) to activate. Plaid supplies only
+When `allowance` is present, it is active. Supply a required `activation_at` ISO date
+(YYYY-MM-DD) as the stable credit-cycle anchor; null or omission is invalid. To disable
+the allowance, omit the entire `allowance` object. Plaid supplies only
 transaction **dates**, not trustworthy purchase times: activation uses the full UTC date, and a purchase dated on activation day counts in full. A full monthly
 credit arrives immediately on activation, again on each UTC monthly anniversary
 (clamped to month-end, always measured from the original day). Unspent credit carries
 forward; no monthly reset or second credit at the first calendar-month boundary.
-Do not set activation in the past expecting a clean slate. Only transactions dated
-on or after activation are counted, and the calendar and year views only span the
-activated period.
+Do not backdate the anchor expecting a clean slate; choose the intended first credit date. Only transactions dated on or after activation reduce the allowance or appear in the
+spending-window totals. For **pace only**, the service also reads the preceding 30
+calendar days, applies the same fixed/excluded/flexible rules and pending
+replacement handling, and considers positive flexible purchases from before the
+activation date. This history is **never imported as opening debt**; the current-cycle,
+trailing 7/30-day, calendar and year _spend totals_ still start at activation. The
+separate `trailing_7_observed_daily_minor_units` and `trailing_30_observed_daily_minor_units`
+are positive recorded purchases in the respective full calendar-day windows divided
+by 7 and 30 (null on startup without pace evidence). `trailing_7_daily_minor_units`
+is the existing, potentially higher, early-burst-sensitive projection pace; do not
+present it as the literal seven-day average. Web, GNOME and CLI show both observed
+rates against the same approximate monthly-credit-equivalent daily reference;
+`spending_signal` compares those rates and the existing forecast against that
+**provisional allowance**, not a sustainability guarantee.
+`trailing_7_unmatched_count` and `trailing_7_unmatched_minor_units` count
+positive, default-flexible purchases in the pace lookback, including before
+activation; this is separate from the postactivation review tally. Plaid's
+transaction date (not an exact swipe timestamp) defines membership in each
+window. A newly linked account with a short historical backfill can understate
+observed pace; show sync freshness, not a promise of comprehensive coverage.
 
 Configured account IDs should cover **all accounts used for purchases** (credit and
 checking/debit); otherwise this is not a reliable allowance. If an account is missing,
 inactive, or its sync exceeds `max_sync_age_hours`, the allowance shows _unavailable_
 with no available balance. Ordered private rules match `name`/`merchant_name`
-prefixes or exact `pfc_primary`/`pfc_detailed` values; first match wins.
+prefixes, case-insensitive substrings, exact `pfc_primary`/`pfc_detailed` values, or an `all_of` of two or more of those conditions; first match wins. For a named transfer embedded in a long bank descriptor, combine `name_contains` with an exact transfer category rather than excluding all wires. An `all_of` is not an explicit merchant-name flexible refund match; verify refund handling separately.
 **No spending categories are hard-coded.** A purchase with no matching rule counts
 as flexible and appears in the review tally; configure exclusions for repayments,
 income, transfers, and other non-purchases or they will consume allowance.
@@ -61,10 +79,17 @@ foreign spending separately before calling the coverage complete.
 
 The authenticated web page shows available credit, current-cycle carry, calendar
 month and year-to-date spend, trailing 7/30-day spend, sync timestamp, and a local
-what-if purchase check (no server-side purchase request). An early warning compares
-7-day daily positive spend pace against remaining days until the next credit; the
-exhaustion timestamp uses that pace **without future credits**. This
-is a noisy _estimate_, not a forecast or transaction authorization. The GNOME panel
+what-if purchase check (no server-side purchase request). The pace uses the larger
+of the last-seven-day positive flexible purchase average and the since-activation
+daily average during the first seven days, so a day-one burst is not diluted by
+historic quiet days. If no positive flexible purchase is recorded, pace and projected
+balance are unavailable until seven activated calendar days have elapsed; only then
+is a zero rate evidence for an empty seven-day window. Availability remains visible,
+and an exhausted balance is still marked exceeded regardless of pace. The exhaustion
+timestamp uses the pace **without future credits**. This is a noisy _estimate_, not
+a prediction or transaction authorization; Plaid sync and transaction posting lag,
+whose oldest timestamp is displayed on the primary allowance panel, can hide fresh
+purchases. The GNOME panel
 shows the allowance when active, and links to the cookie-authenticated dashboard for
 the purchase check; existing card cycles remain displayed separately. No account
 limit, card choice, bank controls or automatic recharging is configured by this PR.

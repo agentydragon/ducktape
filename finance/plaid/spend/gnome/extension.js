@@ -39,11 +39,21 @@ function formatMoney(minorUnits, currency) {
   const code = typeof currency === "string" && currency.length === 3 ? currency.toUpperCase() : "USD";
   const value = Number(minorUnits);
   try {
-    const formatter = new Intl.NumberFormat(undefined, { style: "currency", currency: code });
-    const fractionDigits = formatter.resolvedOptions().maximumFractionDigits;
-    return formatter.format(value / 10 ** fractionDigits);
+    const precision = new Intl.NumberFormat(undefined, { style: "currency", currency: code }).resolvedOptions()
+      .maximumFractionDigits;
+    const formatter = new Intl.NumberFormat(undefined, {
+      style: "currency",
+      currency: code,
+      maximumFractionDigits: 0,
+      minimumFractionDigits: 0,
+    });
+    const amount = value / 10 ** (precision ?? 2);
+    if (amount !== 0 && Math.abs(amount) < 0.5) return `${amount < 0 ? "-" : ""}<${formatter.format(1)}`;
+    return formatter.format(amount);
   } catch (_error) {
-    return `${code} ${(value / 100).toFixed(2)}`;
+    const amount = value / 100;
+    if (amount !== 0 && Math.abs(amount) < 0.5) return `${amount < 0 ? "-" : ""}<${code} 1`;
+    return `${code} ${amount.toFixed(0)}`;
   }
 }
 
@@ -68,7 +78,9 @@ function cardAlert(card) {
     case "exceeded":
       return "Limit exceeded";
     case "unavailable":
-      return "Alert state unavailable";
+      return !card.statement_available && card.cycle_start
+        ? "First statement not yet reported"
+        : "Alert state unavailable";
     case "normal":
     default:
       return "No alert";
@@ -82,6 +94,8 @@ function totalLabel(view) {
     (card) => card.spend_minor_units != null && Number.isFinite(Number(card.spend_minor_units))
   );
   if (cards.length === 1) return formatMoney(cards[0].spend_minor_units, cards[0].currency);
+  // Do not add a provisional since-first-transaction total to statement-cycle totals.
+  if (cards.some((card) => !card.statement_available)) return `${cards.length} cards`;
 
   const currencies = new Set(available.map((card) => (card.currency || "USD").toUpperCase()));
   if (available.length > 0 && currencies.size === 1) {
@@ -90,6 +104,27 @@ function totalLabel(view) {
     return `${approximate}${formatMoney(total, [...currencies][0])}`;
   }
   return `${cards.length} cards`;
+}
+
+function allowanceSignal(allowance) {
+  if (allowance.status !== "active" || allowance.available_minor_units == null)
+    return { level: "unknown", label: "Unavailable", marker: "" };
+  if (allowance.available_minor_units <= 0) return { level: "danger", label: "Exhausted", marker: "!!" };
+  if (allowance.spending_signal === "warning") return { level: "caution", label: "Pace high", marker: "!" };
+  if (allowance.spending_signal === "unavailable") return { level: "unknown", label: "Pace warming up", marker: "" };
+  return { level: "good", label: "Below leash", marker: "" };
+}
+
+function formatDaily(minorUnits, currency) {
+  return minorUnits == null ? "n/a" : `${formatMoney(minorUnits, currency)}/day`;
+}
+
+function formatSyncAge(timestamp) {
+  const elapsed = (Date.now() - new Date(timestamp).getTime()) / 60000;
+  if (!Number.isFinite(elapsed)) return "?";
+  if (elapsed < 60) return `${Math.max(0, Math.floor(elapsed))}m`;
+  if (elapsed < 2880) return `${Math.floor(elapsed / 60)}h`;
+  return `${Math.floor(elapsed / 1440)}d`;
 }
 
 const PlaidSpendIndicator = GObject.registerClass(
@@ -198,15 +233,40 @@ const PlaidSpendIndicator = GObject.registerClass(
       else if (this._status === "authorizing") label = "Signing in…";
       else if (!this._hasView && this._status === "error") label = "Offline";
       else if (!this._hasView && this._status !== "ready") label = "Connecting…";
-      else if (this._view?.allowance?.status === "active") {
+      else if (this._view?.allowance?.status === "active" && this._status === "ready") {
         const a = this._view.allowance;
-        label = formatMoney(a.available_minor_units, a.currency) + (a.alert_state === "normal" ? "" : " !");
-      } else if (cards.length === 0) label = this._status === "error" ? "Offline" : "No cards";
+        const signal = allowanceSignal(a);
+        label = `Flex ${formatMoney(a.available_minor_units, a.currency)} ${signal.marker}`.trim();
+      } else if (this._view?.allowance) label = "Flex unavailable";
+      else if (cards.length === 0) label = this._status === "error" ? "Offline" : "No cards";
       else label = totalLabel(this._view);
-      if (cards.some((card) => card.alert_state === "warning" || card.alert_state === "exceeded")) {
+      if (
+        !this._view?.allowance &&
+        cards.some((card) => card.alert_state === "warning" || card.alert_state === "exceeded")
+      ) {
         label = `${label} !`;
       }
 
+      for (const level of ["good", "caution", "danger", "unknown"])
+        this._label.remove_style_class_name(`plaid-spend-${level}`);
+      if (this._view?.allowance) {
+        const signal = this._status === "ready" ? allowanceSignal(this._view.allowance) : { level: "unknown" };
+        this._label.add_style_class_name(`plaid-spend-${signal.level}`);
+      }
+
+      const level =
+        this._view?.allowance && this._status === "ready" ? allowanceSignal(this._view.allowance).level : "unknown";
+      // Keep the card glyph in ordinary operation; an alert glyph makes a high pace
+      // or exhausted cushion recognizable before reading the compact number.
+      this._icon.icon_name =
+        level === "danger"
+          ? "dialog-error-symbolic"
+          : level === "caution"
+            ? "dialog-warning-symbolic"
+            : "credit-card-symbolic";
+      for (const state of ["good", "caution", "danger", "unknown"])
+        this._icon.remove_style_class_name(`plaid-spend-${state}`);
+      this._icon.add_style_class_name(`plaid-spend-${level}`);
       this._label.set_text(label);
       this.accessible_name = `Plaid Spend ${label}`;
       this._renderPopup();
@@ -236,6 +296,7 @@ const PlaidSpendIndicator = GObject.registerClass(
           '<method name="OpenMenu"/>' +
           '<method name="CloseMenu"/>' +
           '<method name="GetPanelLabel"><arg type="s" direction="out" name="label"/></method>' +
+          '<method name="GetMenuText"><arg type="s" direction="out" name="text"/></method>' +
           '<method name="GetMenuGeometry"><arg type="(iiii)" direction="out" name="rect"/></method>' +
           "</interface></node>",
         {
@@ -243,6 +304,11 @@ const PlaidSpendIndicator = GObject.registerClass(
           OpenMenu: () => this.menu.open(false),
           CloseMenu: () => this.menu.close(false),
           GetPanelLabel: () => this._label.get_text(),
+          GetMenuText: () =>
+            this.menu
+              ._getMenuItems()
+              .map((item) => item.label?.get_text() || "")
+              .join("\n"),
           GetMenuGeometry: () => {
             const actor = this.menu.actor;
             const [x, y] = actor.get_transformed_position();
@@ -283,16 +349,17 @@ const PlaidSpendIndicator = GObject.registerClass(
     _renderPopup() {
       if (this._destroyed || !this.menu) return;
       this.menu.removeAll();
+      const allowance = this._view?.allowance;
       const statusText =
         {
           starting: "Starting desktop client…",
           connecting: "Connecting to Plaid Spend…",
           authorizing: "Waiting for Authentik sign-in…",
-          "authentication-required": "Sign in to view your card spend",
-          error: "Connection problem",
-          ready: "Statement-cycle spend",
+          "authentication-required": "Sign in to see flexible spending",
+          error: "Connection problem · figures may be stale",
+          ready: allowance ? "Flexible spending" : "Statement-cycle spend",
         }[this._status] || "Plaid Spend";
-      this._addReadOnly(statusText, "plaid-spend-header");
+      if (!allowance || this._status !== "ready") this._addReadOnly(statusText, "plaid-spend-header");
 
       if (this._status === "authentication-required") {
         const login = new PopupMenu.PopupMenuItem("Sign in with Authentik…");
@@ -300,53 +367,61 @@ const PlaidSpendIndicator = GObject.registerClass(
         this.menu.addMenuItem(login);
       }
 
-      const allowance = this._view?.allowance;
       if (allowance) {
-        this.menu.addMenuItem(new PopupMenu.PopupSeparatorMenuItem("Flexible allowance · advisory"));
-        if (allowance.status === "active") {
+        if (allowance.status === "active" && this._status === "ready") {
+          const signal = allowanceSignal(allowance);
           this._addReadOnly(
-            `${formatMoney(allowance.available_minor_units, allowance.currency)} available · ${allowance.alert_state}`
+            `${formatMoney(allowance.available_minor_units, allowance.currency)} available · ${signal.label}`,
+            `plaid-spend-${signal.level}`
           );
-          this._addReadOnly(`Next credit ${formatTimestamp(allowance.next_credit_at)}`);
           this._addReadOnly(
-            `Projected exhaustion (no future credits): ${formatTimestamp(allowance.estimated_exhaustion_at)}`
+            `7d ${formatDaily(allowance.trailing_7_observed_daily_minor_units, allowance.currency)} · ` +
+              `30d ${formatDaily(allowance.trailing_30_observed_daily_minor_units, allowance.currency)}`
           );
-        } else this._addReadOnly(allowance.note || allowance.status);
+          const daily = Math.round((Number(allowance.monthly_minor_units) * 12) / 365.2425);
+          this._addReadOnly(`Leash ~${formatDaily(daily, allowance.currency)}`, "plaid-spend-caption");
+          if (allowance.trailing_7_unmatched_count > 0)
+            this._addReadOnly(
+              `7d unmatched ${allowance.trailing_7_unmatched_count} (${formatMoney(allowance.trailing_7_unmatched_minor_units, allowance.currency)})`,
+              "plaid-spend-caution"
+            );
+          if (allowance.last_synced_at)
+            this._addReadOnly(`Sync ${formatSyncAge(allowance.last_synced_at)} ago`, "plaid-spend-caption");
+        } else this._addReadOnly(allowance.note || "Allowance unavailable; check connection");
       }
       if (this._view?.dashboard_url?.startsWith("https://")) {
-        const link = new PopupMenu.PopupMenuItem("Open spending dashboard / purchase check…");
+        const link = new PopupMenu.PopupMenuItem("Check a purchase / dashboard…");
         link.connect("activate", () => Gio.AppInfo.launch_default_for_uri(this._view.dashboard_url, null));
         this.menu.addMenuItem(link);
       }
-      const cards = Array.isArray(this._view?.cards) ? this._view.cards : [];
-      if (cards.length === 0) {
-        this._addReadOnly(
-          this._status === "authentication-required" ? "Your account is not connected." : "No card data is available."
-        );
-      }
-
-      for (const card of cards) {
-        this.menu.addMenuItem(new PopupMenu.PopupSeparatorMenuItem(cardTitle(card)));
-        if (card.institution_name) this._addReadOnly(`Institution: ${card.institution_name}`);
-        const spend = formatMoney(card.spend_minor_units, card.currency);
-        const limit =
-          card.limit_minor_units == null ? "no limit set" : formatMoney(card.limit_minor_units, card.currency);
-        const percent = card.spend_percent == null ? "" : ` · ${Number(card.spend_percent).toFixed(1)}%`;
-        this._addReadOnly(`Spend: ${spend} / ${limit}${percent}`);
-
-        if (card.posted_minor_units != null || card.pending_minor_units != null) {
-          const posted = card.posted_minor_units == null ? "—" : formatMoney(card.posted_minor_units, card.currency);
-          const pending = card.pending_minor_units == null ? "—" : formatMoney(card.pending_minor_units, card.currency);
-          this._addReadOnly(`Posted: ${posted} · Pending: ${pending}`);
+      if (!allowance) {
+        const cards = Array.isArray(this._view?.cards) ? this._view.cards : [];
+        if (cards.length === 0) {
+          this._addReadOnly(
+            this._status === "authentication-required" ? "Your account is not connected." : "No card data is available."
+          );
         }
-
-        const cycle = card.cycle_start ? `Cycle starts ${card.cycle_start}` : "Statement cycle unavailable";
-        this._addReadOnly(cycle);
-        this._addReadOnly(cardAlert(card));
-        this._addReadOnly(`Last synced ${formatTimestamp(card.last_synced_at)}`);
+        for (const card of cards) {
+          this.menu.addMenuItem(new PopupMenu.PopupSeparatorMenuItem(cardTitle(card)));
+          const spend = formatMoney(card.spend_minor_units, card.currency);
+          const limit =
+            card.limit_minor_units == null ? "no limit set" : formatMoney(card.limit_minor_units, card.currency);
+          const percent = card.spend_percent == null ? "" : ` · ${Number(card.spend_percent).toFixed(1)}%`;
+          this._addReadOnly(
+            card.statement_available ? `Spend: ${spend} / ${limit}${percent}` : `Recorded spend: ${spend}`
+          );
+          const cycle = card.statement_available
+            ? `Cycle starts ${card.cycle_start}`
+            : card.cycle_start
+              ? `Since first recorded transaction ${card.cycle_start} · statement date unavailable`
+              : "Statement cycle unavailable";
+          this._addReadOnly(cycle);
+          this._addReadOnly(cardAlert(card));
+          this._addReadOnly(`Last synced ${formatTimestamp(card.last_synced_at)}`);
+        }
       }
 
-      if (this._view?.generated_at) {
+      if (this._view?.generated_at && (!allowance || allowance.status !== "active" || this._status !== "ready")) {
         this.menu.addMenuItem(new PopupMenu.PopupSeparatorMenuItem());
         this._addReadOnly(`View updated ${formatTimestamp(this._view.generated_at)}`);
       }

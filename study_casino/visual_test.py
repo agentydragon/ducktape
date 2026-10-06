@@ -22,10 +22,10 @@ import urllib.request
 from collections.abc import Iterator
 from dataclasses import dataclass
 from pathlib import Path
-from typing import TYPE_CHECKING
 
 import pytest
 import pytest_bazel
+from playwright.async_api import Playwright, ViewportSize
 
 from study_casino.app import create_app
 from study_casino.changelog import LATEST_CHANGELOG_ID
@@ -41,9 +41,6 @@ from util.testing.visual_review import retain_review_asset
 # gazelle:include_dep //util:playwright
 
 pytest_plugins = ("util.playwright",)
-
-if TYPE_CHECKING:
-    from playwright.sync_api import Playwright, ViewportSize
 
 
 # Two viewports per case: a desktop width that exercises the two-column casino
@@ -81,11 +78,6 @@ CASES: tuple[Case, ...] = (
     *_both_widths("prizes", "?view=prizes", "The Vault"),
     *_both_widths("stats", "?view=stats", "The Ledger"),
 )
-
-
-@pytest.fixture
-def browser(playwright_sync: Playwright) -> Playwright:
-    return playwright_sync
 
 
 @pytest.fixture(scope="module")
@@ -139,7 +131,7 @@ def _seed_fixture_state(origin: str) -> None:
     )
     _post(origin, "/actions/convert", {"client_action_id": "visual-seed-convert", "amount": 100})
     # Ack the changelog so the "what's new" modal doesn't cover every view;
-    # the modal has its own harness-based visual test (frontend:visual_changelog).
+    # the modal has its own harness-based visual test (//study_casino/frontend:visual, scenario `changelog`).
     _post(
         origin, "/actions/changelog/ack", {"client_action_id": "visual-seed-changelog", "last_id": LATEST_CHANGELOG_ID}
     )
@@ -157,35 +149,31 @@ def _post(origin: str, path: str, payload: dict) -> None:
             raise RuntimeError(f"seed {path} failed: HTTP {response.status}")
 
 
-def _render_case(playwright_sync: Playwright, origin: str, case: Case, out_dir: Path, suffix: str) -> Path:
+async def _render_case(playwright: Playwright, origin: str, case: Case, out_dir: Path, suffix: str) -> Path:
     """Render one case; fails on any browser page error (render health)."""
-    context = deterministic_browser_context(
-        playwright_sync, viewport=case.viewport, frozen_now_ms=FROZEN_NOW_MS, color_scheme="dark"
-    )
-    page = context.new_page()
-    page_errors: list[str] = []
-    page.on("pageerror", lambda e: page_errors.append(f"{e}\n{getattr(e, 'stack', '')}"))
-    try:
-        page.goto(f"{origin}/{case.query}", wait_until="networkidle", timeout=30_000)
-        page.add_style_tag(content=stability_style())
-        page.get_by_text(case.visible_text).first.wait_for(state="visible", timeout=15_000)
+    async with await deterministic_browser_context(
+        playwright, viewport=case.viewport, frozen_now_ms=FROZEN_NOW_MS, color_scheme="dark"
+    ) as context:
+        page = await context.new_page()
+        page_errors: list[str] = []
+        page.on("pageerror", lambda e: page_errors.append(f"{e}\n{getattr(e, 'stack', '')}"))
+        await page.goto(f"{origin}/{case.query}", wait_until="networkidle", timeout=30_000)
+        await page.add_style_tag(content=stability_style())
+        await page.get_by_text(case.visible_text).first.wait_for(state="visible", timeout=15_000)
         # Force fonts to settle before screenshot.
-        page.evaluate("() => document.fonts.ready.then(() => true)")
+        await page.evaluate("() => document.fonts.ready.then(() => true)")
         actual_path = out_dir / f"{case.name}.{suffix}.png"
-        page.screenshot(path=str(actual_path), full_page=True, animations="disabled", caret="hide", scale="css")
+        await page.screenshot(path=str(actual_path), full_page=True, animations="disabled", caret="hide", scale="css")
         if page_errors:
             raise AssertionError(f"{case.name} raised browser page errors:\n" + "\n".join(page_errors))
         return actual_path
-    finally:
-        page.close()
-        context.close()
 
 
 @pytest.mark.parametrize("case", CASES, ids=[case.name for case in CASES])
-def test_casino_views_render(browser: Playwright, casino_server: str, tmp_path: Path, case: Case) -> None:
+async def test_casino_views_render(playwright: Playwright, casino_server: str, tmp_path: Path, case: Case) -> None:
     undeclared_dir = undeclared_outputs_dir()
-    first_path = _render_case(browser, casino_server, case, tmp_path, "first")
-    second_path = _render_case(browser, casino_server, case, tmp_path, "second")
+    first_path = await _render_case(playwright, casino_server, case, tmp_path, "first")
+    second_path = await _render_case(playwright, casino_server, case, tmp_path, "second")
     if first_path.read_bytes() != second_path.read_bytes():
         shutil.copy(first_path, undeclared_dir / f"{case.name}.first.png")
         shutil.copy(second_path, undeclared_dir / f"{case.name}.second.png")

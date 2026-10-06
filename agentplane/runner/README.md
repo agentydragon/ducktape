@@ -62,15 +62,22 @@ The adapters compare it with native continuation evidence and emit `Conversation
 the app only folds that neutral report.
 
 - `claude_history.py` walks the persisted main parent chain, correlates split assistant blocks,
-  and removes unresolved tool-call messages as Claude's resume loader does. Ordinary interrupts
-  use the native terminal item observations. Reasoning, compacted history, and unfinished live
-  tool outcomes remain unknown. The reader is tested against Claude Code 2.1.252.
+  and removes what Claude's resume loader removes: messages with an unresolved tool call, then a
+  message holding only thinking once no other entry of its message id is left, so thinking
+  before a tool that never answered is not replayed even though the transcript holds it. Ordinary
+  interrupts use the native terminal item observations, and the same rule for thinking from the
+  turn's journaled assistant frames: a completed thinking block is retained only if another block
+  of its message was written, and thinking that would otherwise be absent is unknown when a native
+  line of the turn could not be parsed. Compacted or missing history and unfinished live tool outcomes
+  remain unknown. The reader is tested against Claude Code 2.1.252.
 - `codex_history.py` reads model `response_item` records, not the app-server's reconstructed
-  turn-item projection, which can omit an unresolved call still sent to the model. At Codex
-  0.152.0, `core/src/tasks/mod.rs` flushes conversation items before the interruption notification;
-  `core/src/context_manager/normalize.rs` supplies `aborted` for a call with no output. The reader
-  reports this synthetic content as a revision without creating an execution result. Reasoning,
-  unmodeled tools, compacted history, and rollback remain unknown.
+  turn-item projection, which can omit an unresolved call still sent to the model. In Codex
+  0.157.0, `core/src/tasks/mod.rs` flushes the interrupted-turn marker before the terminal
+  notification and then flushes that event; `core/src/context_manager/normalize.rs` supplies
+  `aborted` for a call with no output. The reader
+  reports this synthetic content as a revision without creating an execution result. A reasoning
+  item matches the saved `reasoning` record carrying its app-server id, and is absent without one.
+  Unmodeled tools, compacted history, and rollback remain unknown.
 
 Unreadable, malformed, or unsupported native evidence produces an explicit unknown report.
 These readers depend on the pinned native formats and must be checked with the app-level recovery

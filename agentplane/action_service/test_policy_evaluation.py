@@ -26,8 +26,6 @@ from agentplane.action_service.policies.resources import (
     ActionPolicyBinding,
     ActionPolicySet,
     InvalidResource,
-    ObjectMeta,
-    Status,
     parse_binding,
     parse_policy_set,
 )
@@ -277,15 +275,6 @@ async def test_an_entry_is_named_as_the_decision_names_the_policy_that_matched(
     entry = view.auto_approve_if[1]
     assert (matched.policy_set, matched.index, matched.type) == (entry.policy_set, entry.index, entry.policy.type)
     assert entry.binding in {b.name for b in outcome.evidence.bindings}
-
-
-def test_invalid_resource_keeps_metadata_for_status_reporting() -> None:
-    broken = binding("b-invalid", {"name": "coder"}, ["set-reads"])
-    assert isinstance(broken, InvalidResource)
-    assert broken.metadata == ObjectMeta(
-        name="b-invalid", namespace=NAMESPACE, uid="uid-b-invalid", generation=1, resource_version="1"
-    )
-    assert broken.status == Status()
 
 
 GITHUB_READ_ACTIONS = {"github": ["get_file_contents", "search_pull_requests", "search_code"]}

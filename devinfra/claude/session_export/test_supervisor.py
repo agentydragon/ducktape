@@ -209,7 +209,8 @@ async def test_a_refused_stream_shows_on_the_page_with_its_reason(
 
         await eventually(stream_reported)
         problem = {p.source: p for p in (await live.supervisor.status()).live.problems}[ONE]
-        assert "403 Forbidden from GET /v1/code/sessions/cse_test0001/events/stream" in problem.message
+        assert "403" in problem.message
+        assert "/events/stream" in problem.message
         assert "refused" in problem.message
 
 

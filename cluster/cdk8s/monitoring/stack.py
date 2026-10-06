@@ -280,7 +280,6 @@ def _values() -> dict[str, object]:
                 "etcd": False,
                 "configReloaders": True,
                 "general": True,
-                "k8s": True,
                 "kubeApiserverAvailability": True,
                 "kubeApiserverSlos": True,
                 "kubelet": True,
@@ -293,7 +292,6 @@ def _values() -> dict[str, object]:
                 "kubernetesResources": True,
                 "kubernetesStorage": True,
                 "kubernetesSystem": True,
-                "kubeScheduler": True,
                 "kubeStateMetrics": True,
                 "network": True,
                 "node": True,
@@ -361,10 +359,7 @@ def _values() -> dict[str, object]:
             # exporter remains UID 65534 and has no added capabilities.
             "securityContext": {"fsGroup": 45321, "runAsGroup": 45321, "runAsNonRoot": True, "runAsUser": 65534},
         },
-        "nodeExporter": {
-            "enabled": True,
-            "resources": {"requests": {"cpu": "10m", "memory": "32Mi"}, "limits": {"cpu": "100m", "memory": "64Mi"}},
-        },
+        "nodeExporter": {"enabled": True},
         "kube-state-metrics": {
             "fullnameOverride": "kube-state-metrics",
             # Export the node media tier used by the local-path storage classes. The

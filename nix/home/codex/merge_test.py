@@ -76,49 +76,14 @@ def test_main_prints_unmanaged_toml_and_preserves_live_only_config(tmp_path, mon
     assert result["projects"]["/repo"]["trust_level"] == "trusted"
 
 
-def test_main_adds_github_pr_app_tool_approvals(tmp_path, monkeypatch) -> None:
-    base = tmp_path / "config.nix-base.toml"
-    live = tmp_path / "config.toml"
-    base.write_text(
-        textwrap.dedent(
-            """
-            [apps.connector_76869538009648d5b282a4bb21c3d157.tools.github_create_pull_request]
-            approval_mode = "approve"
+def test_deep_merge_adds_base_only_table_beside_live_entries() -> None:
+    live = {"live_scalar": "live-value", "shared": {"live_only": {"key": "live-value"}}}
+    base = {"shared": {"base_only": {"nested": {"key": "base-value"}}}}
 
-            [apps.connector_76869538009648d5b282a4bb21c3d157.tools.github_update_pull_request]
-            approval_mode = "approve"
-
-            [apps.connector_76869538009648d5b282a4bb21c3d157.tools.create_pull_request]
-            approval_mode = "approve"
-
-            [apps.connector_76869538009648d5b282a4bb21c3d157.tools.update_pull_request]
-            approval_mode = "approve"
-            """
-        )
-    )
-    live.write_text(
-        textwrap.dedent(
-            """
-            model = "local"
-
-            [apps.slack]
-            enabled = true
-            """
-        )
-    )
-    monkeypatch.setenv("BASE", str(base))
-    monkeypatch.setenv("LIVE", str(live))
-
-    merge.main()
-
-    result = tomllib.loads(live.read_text())
-    assert result["model"] == "local"
-    assert result["apps"]["slack"]["enabled"] is True
-    github_connector = result["apps"]["connector_76869538009648d5b282a4bb21c3d157"]
-    assert github_connector["tools"]["github_create_pull_request"]["approval_mode"] == "approve"
-    assert github_connector["tools"]["github_update_pull_request"]["approval_mode"] == "approve"
-    assert github_connector["tools"]["create_pull_request"]["approval_mode"] == "approve"
-    assert github_connector["tools"]["update_pull_request"]["approval_mode"] == "approve"
+    assert merge.deep_merge(live, base) == {
+        "live_scalar": "live-value",
+        "shared": {"live_only": {"key": "live-value"}, "base_only": {"nested": {"key": "base-value"}}},
+    }
 
 
 if __name__ == "__main__":

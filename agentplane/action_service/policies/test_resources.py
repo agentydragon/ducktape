@@ -113,6 +113,11 @@ def test_binding_subject_is_a_namespaced_service_account() -> None:
 def test_invalid_binding_is_kept_with_its_report(spec: dict[str, Any]) -> None:
     parsed = parse_binding(binding(spec))
     assert isinstance(parsed, InvalidResource)
+    assert (parsed.metadata.name, parsed.metadata.namespace, parsed.metadata.generation) == (
+        METADATA["name"],
+        METADATA["namespace"],
+        METADATA["generation"],
+    )
     assert parsed.message
 
 

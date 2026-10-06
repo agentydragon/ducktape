@@ -208,7 +208,7 @@ fn first_order_lazy_rebind_keeps_pre_await_in_async_body() {
 /// finished — it doesn't fire synchronously when the function is
 /// invoked, so it must not appear in `rebinds.first_order_lazy`.
 /// The coarse `rebinds.lazy` still records it (it IS lazy from the
-/// chunk's top-level POV). See `at_init_promotion_post_await_test`.
+/// chunk's top-level POV).
 #[test]
 fn first_order_lazy_rebind_skips_after_await_in_async_body() {
     let module = parse(
@@ -1021,6 +1021,27 @@ fn lazy_class_registration_cannot_suppress_an_eager_callback_source() {
                 .at_init_unresolved_sources
                 .contains(&test_id("provider")),
             "{source}: {facts:#?}"
+        );
+    }
+}
+
+/// One binding declared by several top-level statements is supported only when every site is a
+/// `var`; any other mix is refused, naming the binding and the first two sites.
+#[test]
+fn repeated_declaration_is_refused_unless_every_site_is_var() {
+    build_owner_graph(&analyze_facts(&parse("var pick = 1;\nvar pick = 2;"))).unwrap();
+    for source in [
+        "function pick() {}\nfunction pick() {}",
+        "var pick = 1;\nfunction pick() {}",
+    ] {
+        assert_eq!(
+            build_owner_graph(&analyze_facts(&parse(source))).unwrap_err(),
+            DuplicateTopLevelDeclaration {
+                binding: "pick".into(),
+                first: StatementOrdinal(0),
+                second: StatementOrdinal(1),
+            },
+            "{source}"
         );
     }
 }

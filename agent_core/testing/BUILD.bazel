@@ -20,7 +20,6 @@ py_library(
     deps = [
         "//agent_core:events",
         "//agent_core:tool_provider",
-        "//openai_utils:model",
         "@pypi//pyhamcrest",
     ],
 )

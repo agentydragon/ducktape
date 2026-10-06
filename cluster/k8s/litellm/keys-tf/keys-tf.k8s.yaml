@@ -27,6 +27,10 @@ spec:
             secretKeyRef:
               key: key
               name: litellm-clients-sops-age-key
+      resources:
+        requests:
+          cpu: 250m
+          memory: 512Mi
   serviceAccountName: tf-runner
   sourceRef:
     kind: GitRepository
@@ -116,8 +120,6 @@ spec:
             - chatgpt/ant-messages/gpt-6-astra
             - chatgpt/ant-messages/gpt-6-sol
             - chatgpt/ant-messages/gpt-6-luna
-            - chatgpt/ant-messages/gpt-5.4
-            - chatgpt/ant-messages/gpt-5.5
             - chatgpt/ant-messages/gpt-5.6-sol
             - chatgpt/ant-messages/gpt-5.6-terra
             - chatgpt/ant-messages/gpt-5.6-luna

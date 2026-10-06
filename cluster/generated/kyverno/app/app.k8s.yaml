@@ -44,13 +44,6 @@ spec:
         node-role.kubernetes.io/control-plane: ""
       priorityClassName: system-cluster-critical
       replicas: 3
-      resources:
-        limits:
-          cpu: 500m
-          memory: 512Mi
-        requests:
-          cpu: 100m
-          memory: 128Mi
       tolerations:
         - effect: NoSchedule
           key: node-role.kubernetes.io/control-plane

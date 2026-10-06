@@ -142,25 +142,20 @@ async def test_critic_dev_optimize_cannot_see_valid_split_true_positives(
 async def test_critic_dev_optimize_can_see_train_split_false_positives(
     synced_db: Database, critic_dev_optimize_session: Session
 ):
-    """Critic-dev optimize users can see TRAIN split false positives (RLS policy allows).
+    """Critic-dev optimize users see exactly the TRAIN split false positives the admin sees (RLS policy allows).
 
-    Uses test-fixtures/train1 (TRAIN split) from git fixtures.
-    Note: test-trivial may not have FPs, but the test verifies RLS allows the query.
-
-    Setup (as admin_user):
-    - Git fixture already has test-trivial snapshot
-
-    Verify (as critic-dev temp user):
-    - Can query false positives for train specimens (query succeeds, no RLS block)
+    Uses test-fixtures/train1 (TRAIN split) from git fixtures. A policy that hid every row
+    would leave the valid1 negative tests passing vacuously, so this is their positive anchor.
     """
-    # Query should succeed (no RLS block), but may return empty if no FPs defined
-    _ = (
-        critic_dev_optimize_session.query(FalsePositive)
-        .filter(FalsePositive.snapshot_slug == "test-fixtures/train1")
-        .all()
-    )
-    # Just verify query succeeded (no exception from RLS block)
-    # Not asserting specific count since test-trivial may not have FPs
+    with synced_db.session() as session:
+        expected = {fp.fp_id for fp in session.query(FalsePositive).filter_by(snapshot_slug="test-fixtures/train1")}
+    assert expected, "train1 specimen must have FPs (check specimen sync)"
+
+    visible = {
+        fp.fp_id
+        for fp in critic_dev_optimize_session.query(FalsePositive).filter_by(snapshot_slug="test-fixtures/train1")
+    }
+    assert visible == expected, "critic-dev user should see train split false_positives via RLS"
 
 
 async def test_critic_dev_optimize_cannot_see_test_split_critic_runs(

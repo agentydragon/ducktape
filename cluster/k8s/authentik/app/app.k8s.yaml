@@ -53,8 +53,6 @@ spec:
         secret.reloader.stakater.com/reload: authentik-db-app,authentik-user-password
     postgresql:
       enabled: false
-    redis:
-      enabled: true
     server:
       affinity:
         podAntiAffinity:
@@ -107,15 +105,12 @@ spec:
           cpu: 300m
           memory: 512Mi
       service:
-        enabled: true
-        port: 80
         type: ClusterIP
       startupProbe:
         failureThreshold: 120
         periodSeconds: 10
     serviceAccount:
       create: true
-      name: authentik
     worker:
       affinity:
         podAntiAffinity:

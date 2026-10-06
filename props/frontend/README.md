@@ -23,7 +23,7 @@ bazel test //props/frontend:visual # All visual regression tests
 
 ## Visual Render-Health Testing
 
-The Bazel visual target uses Puppeteer to render React components in the `createRoot` harness. Scenarios are declared in `tests/harness/scenarios.mjs` and mounted by `tests/harness/harness.tsx`; the test fails on harness/scenario load failures and uncaught page errors, and publishes rendered PNGs for PR visual review. There are no checked-in baselines — pixel changes are reviewed on the PR's visual-review page, see `devinfra/pr_visuals/README.md`.
+The Bazel visual target uses Playwright to render React components in the `createRoot` harness. Scenarios are declared in `tests/harness/scenarios.json` and mounted by `tests/harness/harness.tsx`; the test fails on harness/scenario load failures and uncaught page errors, and publishes rendered PNGs for PR visual review. There are no checked-in baselines — pixel changes are reviewed on the PR's visual-review page, see `devinfra/pr_visuals/README.md`.
 
 ```bash
 # Run all visual tests
@@ -33,7 +33,7 @@ bazel test //props/frontend:visual
 bazel test //props/frontend:visual --test_filter=DefinitionDetail
 ```
 
-Add a scenario name to `tests/harness/scenarios.mjs` and a matching component entry to `tests/harness/harness.tsx`. Rendered `*-actual.png` files land in `TEST_UNDECLARED_OUTPUTS_DIR` for manual inspection.
+Add a scenario to `tests/harness/scenarios.json` and a matching component entry to `tests/harness/harness.tsx`. Rendered `*-actual.png` files land in `TEST_UNDECLARED_OUTPUTS_DIR` for manual inspection.
 
 ## Issue overlay colors
 

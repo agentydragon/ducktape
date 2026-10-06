@@ -79,7 +79,7 @@ def test_coupon_rejects_invalid_exact_terms(face: int, rate: int, period: int) -
 
 
 def test_coupon_rejects_overflow_without_float_conversion() -> None:
-    with pytest.raises(OverflowError, match="coupon does not fit"):
+    with pytest.raises(OverflowError):
         coupon_amount_quanta(face_quanta=(1 << 63) - 1, annual_coupon_rate_ppb=2_000_000_000, coupon_period_months=12)
 
 

@@ -5,6 +5,7 @@
 import js from "@eslint/js";
 import tseslint from "@typescript-eslint/eslint-plugin";
 import tsparser from "@typescript-eslint/parser";
+import vitest from "@vitest/eslint-plugin";
 import importPlugin from "eslint-plugin-import-x";
 import react from "eslint-plugin-react";
 import reactHooks from "eslint-plugin-react-hooks";
@@ -124,20 +125,16 @@ export default [
     },
   },
 
-  // ── Tests: a focused or skipped test changes which tests run without failing anything ──
+  // ── Tests: vitest's recommended rules, every one an error ──
+  // A focused or skipped test changes which tests run without failing anything; an `expect` that is
+  // never awaited, or a test without one, passes without checking.
   {
     files: testFiles,
+    plugins: { vitest },
     rules: {
-      "no-restricted-properties": [
-        "error",
-        ...["describe", "it", "test"].flatMap((object) =>
-          ["only", "skip"].map((property) => ({
-            object,
-            property,
-            message: "`.only` hides every other test in the run and `.skip` hides this one: fix the test or delete it.",
-          }))
-        ),
-      ],
+      ...Object.fromEntries(Object.keys(vitest.configs.recommended.rules).map((rule) => [rule, "error"])),
+      // vitest's `expect(value, message)` takes the failure message second; the rule defaults to Jest's one argument.
+      "vitest/valid-expect": ["error", { maxArgs: 2 }],
     },
   },
 
@@ -163,11 +160,9 @@ export default [
     },
   },
 
-  // ── Node scripts (.mjs): Puppeteer/Playwright drivers, manifest writers ──
+  // ── Node scripts (.mjs): bundler configs, scenario emitters, worker checks ──
   // These run under Node, not the browser, so grant Node globals (process/console/setTimeout/…).
-  // Without this they trip no-undef under js.recommended's env-less default — which is why the
-  // visual-test .mjs drivers have historically carried `tags = ["no-lint"]`; this block lets them
-  // (and new drivers like the per-server screenshot render.mjs) lint instead of opting out.
+  // Without this they trip no-undef under js.recommended's env-less default.
   {
     files: ["**/*.mjs"],
     languageOptions: { globals: globals.node },

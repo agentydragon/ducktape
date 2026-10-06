@@ -1,11 +1,10 @@
 """Shared helpers for Python Playwright visual render-health tests.
 
-The Chromium flag set and the frozen-clock init script are single-sourced with
-the JS Puppeteer launcher (`frontend_visual/launcher.mjs`): both read
-`util/testing/chromium-flags.json` and `util/testing/frozen-clock.js` (kept at
-this level — a data file under `frontend_visual/` would shadow this module as
-a namespace package), and both resolve the hermetic browser from
-`CHROMIUM_HEADLESS_SHELL`.
+The Chromium flag set, the frozen-clock init script and the animation-pinning CSS are read from
+`util/testing/chromium-flags.json`, `util/testing/frozen-clock.js` and
+`util/testing/disable-animations.css` (kept at this level — a data file under `frontend_visual/`
+would shadow this module as a namespace package). The browser is the hermetic `@chrome_headless_shell`,
+found in the runfiles, where `browser_launcher_assets` puts it.
 """
 
 from __future__ import annotations
@@ -13,18 +12,18 @@ from __future__ import annotations
 import json
 import os
 import tempfile
+from collections.abc import Sequence
 from pathlib import Path
 from typing import TYPE_CHECKING, Literal
 
-from util.bazel.runfiles import get_required_path, own_repo_rlocation
+from util.bazel.runfiles import find_path, get_required_path, own_repo_rlocation
 
 if TYPE_CHECKING:
-    from playwright.sync_api import BrowserContext, Playwright, ViewportSize
+    from playwright.async_api import BrowserContext, Playwright, ViewportSize
 
 
 _FLAGS = json.loads(get_required_path(own_repo_rlocation("util/testing/chromium-flags.json")).read_text())
-# Chromium reads generic-family choices from the profile, not from page CSS. Keep this shared with
-# the Puppeteer launcher so the two visual-test stacks exercise the same browser configuration.
+# Chromium reads generic-family choices from the profile, not from page CSS.
 _FONT_PREFERENCES = json.loads(
     get_required_path(own_repo_rlocation("util/testing/chromium-font-preferences.json")).read_text()
 )
@@ -32,40 +31,61 @@ _FONT_PREFERENCES = json.loads(
 CONTAINER_BASE_BROWSER_ARGS: list[str] = _FLAGS["containerBase"]
 # Container base plus font/raster/compositing/animation pinning for stable renders.
 DETERMINISTIC_BROWSER_ARGS: list[str] = CONTAINER_BASE_BROWSER_ARGS + _FLAGS["deterministicExtra"]
+# Hard-pins every animation and transition to its first frame, for a page that inlines its own
+# `<style>`. `reduced_motion="reduce"` is not enough: it only helps component CSS that checks that
+# media feature, and some does not (Mantine's `Indicator processing` ping is an unconditional
+# `animation: … 1000ms linear infinite`). An animation like that keeps running on the compositor's own
+# clock whatever the frozen `Date`, so the frame captured depends on scheduling jitter. It must be in
+# the page before the animated element mounts: `animation-play-state: paused` pins an animation to its
+# start frame only when it is in effect at creation; applied later it freezes whatever frame the
+# animation had reached by then.
+DISABLE_ANIMATIONS_CSS = get_required_path(own_repo_rlocation("util/testing/disable-animations.css")).read_text()
+
+
+# The instant the scenario sweep freezes page clocks to, so date-relative text renders the same on
+# every run. 2025-02-01T12:00:00Z.
+FROZEN_NOW_MS = 1_738_411_200_000
 
 
 def chromium_executable() -> str | None:
-    """The hermetic headless-shell path from `CHROMIUM_HEADLESS_SHELL`, or None
-    to fall back to Playwright's own browser resolution (local runs)."""
-    chromium_root = os.environ.get("CHROMIUM_HEADLESS_SHELL", "")
-    return str(Path(chromium_root) / "chrome-linux" / "headless_shell") if chromium_root else None
+    """The hermetic headless-shell executable in this target's runfiles, or None
+    to fall back to Playwright's own browser resolution."""
+    return str(path) if (path := find_path("chrome_headless_shell/chrome-headless-shell")) else None
 
 
-def deterministic_browser_context(
-    playwright_sync: Playwright,
-    *,
-    viewport: ViewportSize,
-    frozen_now_ms: int,
-    color_scheme: Literal["dark", "light", "no-preference", "null"] = "light",
-) -> BrowserContext:
+def _font_pinned_user_data_dir() -> Path:
     user_data_parent = Path(os.environ.get("TEST_TMPDIR", tempfile.gettempdir()))
     user_data_parent.mkdir(parents=True, exist_ok=True)
     user_data_dir = Path(tempfile.mkdtemp(prefix="chrome-user-data-", dir=user_data_parent))
     (user_data_dir / "Default").mkdir()
     (user_data_dir / "Default" / "Preferences").write_text(json.dumps(_FONT_PREFERENCES))
-    context = playwright_sync.chromium.launch_persistent_context(
-        user_data_dir=str(user_data_dir),
+    return user_data_dir
+
+
+async def deterministic_browser_context(
+    playwright: Playwright,
+    *,
+    viewport: ViewportSize,
+    frozen_now_ms: int,
+    color_scheme: Literal["dark", "light", "no-preference", "null"] = "light",
+    device_scale_factor: float = 1,
+    has_touch: bool = False,
+    extra_args: Sequence[str] = (),
+) -> BrowserContext:
+    context = await playwright.chromium.launch_persistent_context(
+        user_data_dir=str(_font_pinned_user_data_dir()),
         headless=True,
         executable_path=chromium_executable(),
-        args=DETERMINISTIC_BROWSER_ARGS,
+        args=[*DETERMINISTIC_BROWSER_ARGS, *extra_args],
         viewport=viewport,
-        device_scale_factor=1,
+        device_scale_factor=device_scale_factor,
+        has_touch=has_touch,
         color_scheme=color_scheme,
         reduced_motion="reduce",
         locale="en-US",
         timezone_id="UTC",
     )
-    context.add_init_script(frozen_clock_script(frozen_now_ms))
+    await context.add_init_script(frozen_clock_script(frozen_now_ms))
     return context
 
 

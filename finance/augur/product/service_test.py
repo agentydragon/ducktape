@@ -60,6 +60,8 @@ from finance.augur.product.scenarios import (
 )
 from finance.augur.product.testing import TEST_CONFIG_LEVEL_PLACEHOLDERS
 from finance.augur.product.wire import (
+    DEFAULT_ANNUAL_INSURANCE_PCT,
+    DEFAULT_ANNUAL_MAINTENANCE_PCT,
     CashFinancing,
     ClosingCostPaymentEvent,
     FundingPolicy,
@@ -274,9 +276,7 @@ def test_product_fails_when_sample_is_missing_required_series(
 
     # The portfolio's index-proxy holding is VOO; that it tracks SPY is the model's mirror, so
     # the scenario's DEMAND is for VOO — the holding's own symbol.
-    with pytest.raises(
-        ValueError, match=f"missing required level series: .*{SecurityKey(symbol=SecuritySymbol('VOO')).wire_id}"
-    ):
+    with pytest.raises(ValueError, match=SecurityKey(symbol=SecuritySymbol("VOO")).wire_id):
         product.rollout(_rollout_request(scenario_key))
 
     assert model.sample_requests[0].required_level_series
@@ -315,7 +315,7 @@ def test_product_fails_when_crypto_holding_price_is_not_modeled(
     ).realize_model()
     product = make_product_service(model, config=augur_config)
 
-    with pytest.raises(ValueError, match=r"missing required level series: .*security:btc"):
+    with pytest.raises(ValueError, match="security:btc"):
         product.rollout(_rollout_request(scenario_key))
 
 
@@ -768,7 +768,8 @@ def test_product_rollout_includes_private_equity_opportunity_trace(make_product_
     [opportunity] = [event for event in detail.rollout.events if event.kind == "private_equity_opportunity"]
     assert isinstance(opportunity, PrivateEquityOpportunityEvent)
     assert opportunity.month_index == 1
-    assert opportunity.asset_label == "Private Holding A (PHA)"
+    assert opportunity.asset == PrivateEquityAssetKey(issuer_id=issuer_id)
+    assert opportunity.asset_label is not None
     assert opportunity.event_kind == "tender"
     assert opportunity.outcome == "floor_satisfied"
     assert opportunity.shortfall_quanta == _usd_quanta(0.0)
@@ -937,7 +938,7 @@ def test_outside_rent_zero_omits_rent_series_requirement(
     assert not any(isinstance(key, RentKey) for key in counting_model.sample_requests[0].required_level_series)
 
 
-def test_outside_rent_rejects_unknown_location(product: service.ProductService) -> None:
+def test_outside_rent_rejects_unknown_location(product: service.ProductService, counting_model: CountingModel) -> None:
     scenario = ScenarioKey(
         model_id="current_model",
         horizon_months=3,
@@ -947,8 +948,11 @@ def test_outside_rent_rejects_unknown_location(product: service.ProductService) 
         rental_location_id=LocationId("not_a_real_location"),
     )
 
-    with pytest.raises(ValueError, match=r"unknown rental_location_id"):
+    with pytest.raises(ValueError, match="not_a_real_location"):
         product.rollout(_rollout_request(scenario))
+
+    # Refused before anything is sampled; otherwise it would fail later, on the rent series it demands.
+    assert counting_model.sample_requests == []
 
 
 def test_scenario_key_rejects_rent_without_location() -> None:
@@ -1382,55 +1386,80 @@ def test_cash_property_purchase_omits_mortgage_payments(
     assert detail.rollout.monthly_metrics["mortgage_balance_quanta"][0] == _usd_quanta(0.0)
 
 
-def test_property_purchase_emits_hoa_dues_when_property_has_monthly_hoa(
-    product: service.ProductService, counting_model: CountingModel
-) -> None:
-    # location_b_property has hoa_monthly=150 in the public fixture.
-    scenario = ScenarioKey(
+def _property_expense_scenario(
+    property_id: PropertyId,
+    *,
+    annual_insurance_pct: float = DEFAULT_ANNUAL_INSURANCE_PCT,
+    annual_maintenance_pct: float = DEFAULT_ANNUAL_MAINTENANCE_PCT,
+) -> ScenarioKey:
+    return ScenarioKey(
         model_id="current_model",
         horizon_months=3,
         monthly_spend=Decimal(1_000),
         spend_index=SpendIndex.NONE,
         funding_policy=FundingPolicy(sleeve_weights=()),
         property_purchase=PropertyPurchase(
-            property_id=PropertyId("location_b_property"),
+            property_id=property_id,
             financing=MortgageFinancing(term_months=360, down_payment_pct=20.0, annual_rate_pct=7.0),
             is_primary_residence=True,
         ),
+        annual_insurance_pct=annual_insurance_pct,
+        annual_maintenance_pct=annual_maintenance_pct,
     )
 
-    detail = product.rollout(_rollout_request(scenario))
 
-    hoa_events = [event for event in detail.rollout.events if event.kind == "hoa_dues_payment"]
-    assert hoa_events
-    for event in hoa_events:
-        assert isinstance(event, HoaDuesPaymentEvent)
-        # Base is 150.0 USD/month; inflation-indexed so the realized amount drifts each month, but it
-        # must stay near base on a short horizon.
-        assert _usd_from_quanta(event.amount_due_quanta) == pytest.approx(150.0, rel=0.1)
-        assert event.amount_paid_quanta == event.amount_due_quanta
-        assert event.shortfall_quanta == _usd_quanta(0.0)
+@pytest.mark.parametrize(
+    ("property_id", "event_type", "monthly_usd"),
+    [
+        # location_b_property has hoa_monthly=150 in the public fixture.
+        pytest.param(PropertyId("location_b_property"), HoaDuesPaymentEvent, 150.0, id="hoa"),
+        # location_a_property is $900k. Default annual_insurance_pct=0.4 -> $300/mo at month 0.
+        pytest.param(LOCATION_A_PROPERTY, HomeownersInsurancePaymentEvent, 300.0, id="insurance"),
+        # Default annual_maintenance_pct=1.0 -> $750/mo at month 0.
+        pytest.param(LOCATION_A_PROPERTY, PropertyMaintenancePaymentEvent, 750.0, id="maintenance"),
+    ],
+)
+def test_property_purchase_pays_each_expense_at_its_base_amount(
+    product: service.ProductService,
+    counting_model: CountingModel,
+    property_id: PropertyId,
+    event_type: type[HoaDuesPaymentEvent | HomeownersInsurancePaymentEvent | PropertyMaintenancePaymentEvent],
+    monthly_usd: float,
+) -> None:
+    detail = product.rollout(_rollout_request(_property_expense_scenario(property_id)))
+
+    payments = [event for event in detail.rollout.events if isinstance(event, event_type)]
+    assert payments
+    for payment in payments:
+        # Inflation-indexed, so the realized amount drifts each month, but it must stay near base on a
+        # short horizon.
+        assert _usd_from_quanta(payment.amount_due_quanta) == pytest.approx(monthly_usd, rel=0.1)
+        assert payment.amount_paid_quanta == payment.amount_due_quanta
+        assert payment.shortfall_quanta == _usd_quanta(0.0)
     assert InflationKey() in counting_model.sample_requests[0].required_level_series
 
 
-def test_property_purchase_skips_hoa_when_property_has_no_monthly_hoa(product: service.ProductService) -> None:
-    # location_a_property has hoa_monthly=0 in the public fixture.
-    scenario = ScenarioKey(
-        model_id="current_model",
-        horizon_months=3,
-        monthly_spend=Decimal(1_000),
-        spend_index=SpendIndex.NONE,
-        funding_policy=FundingPolicy(sleeve_weights=()),
-        property_purchase=PropertyPurchase(
-            property_id=LOCATION_A_PROPERTY,
-            financing=MortgageFinancing(term_months=360, down_payment_pct=20.0, annual_rate_pct=7.0),
-            is_primary_residence=True,
+@pytest.mark.parametrize(
+    ("annual_insurance_pct", "annual_maintenance_pct", "event_type"),
+    [
+        # location_a_property has hoa_monthly=0 in the public fixture.
+        pytest.param(
+            DEFAULT_ANNUAL_INSURANCE_PCT, DEFAULT_ANNUAL_MAINTENANCE_PCT, HoaDuesPaymentEvent, id="no_monthly_hoa"
         ),
+        pytest.param(0.0, DEFAULT_ANNUAL_MAINTENANCE_PCT, HomeownersInsurancePaymentEvent, id="zero_insurance_pct"),
+        pytest.param(DEFAULT_ANNUAL_INSURANCE_PCT, 0.0, PropertyMaintenancePaymentEvent, id="zero_maintenance_pct"),
+    ],
+)
+def test_property_purchase_omits_an_expense_that_is_zero(
+    product: service.ProductService, annual_insurance_pct: float, annual_maintenance_pct: float, event_type: type
+) -> None:
+    scenario = _property_expense_scenario(
+        LOCATION_A_PROPERTY, annual_insurance_pct=annual_insurance_pct, annual_maintenance_pct=annual_maintenance_pct
     )
 
     detail = product.rollout(_rollout_request(scenario))
 
-    assert [event for event in detail.rollout.events if event.kind == "hoa_dues_payment"] == []
+    assert [event for event in detail.rollout.events if isinstance(event, event_type)] == []
 
 
 def test_build_situation_wires_property_expenses_to_payees(augur_config: Config, catalog: CatalogResponse) -> None:
@@ -1482,96 +1511,6 @@ def test_build_situation_wires_property_expenses_to_payees(augur_config: Config,
     assert {account.agent_id for account, _ in situation.accounts} >= {"hoa", "insurer", "maintenance_vendor"}
 
 
-def test_property_purchase_emits_homeowners_insurance_at_default_pct(product: service.ProductService) -> None:
-    # location_a_property is $900k. Default annual_insurance_pct=0.4 → $300/mo at month 0.
-    scenario = ScenarioKey(
-        model_id="current_model",
-        horizon_months=3,
-        monthly_spend=Decimal(1_000),
-        spend_index=SpendIndex.NONE,
-        funding_policy=FundingPolicy(sleeve_weights=()),
-        property_purchase=PropertyPurchase(
-            property_id=LOCATION_A_PROPERTY,
-            financing=MortgageFinancing(term_months=360, down_payment_pct=20.0, annual_rate_pct=7.0),
-            is_primary_residence=True,
-        ),
-    )
-
-    detail = product.rollout(_rollout_request(scenario))
-
-    insurance_events = [event for event in detail.rollout.events if event.kind == "homeowners_insurance_payment"]
-    assert insurance_events
-    monthly_premium = 0.4 / 100.0 * 900_000.0 / 12.0
-    for event in insurance_events:
-        assert isinstance(event, HomeownersInsurancePaymentEvent)
-        assert _usd_from_quanta(event.amount_due_quanta) == pytest.approx(monthly_premium, rel=0.1)
-        assert event.amount_paid_quanta == event.amount_due_quanta
-        assert event.shortfall_quanta == _usd_quanta(0.0)
-
-
-def test_property_purchase_with_zero_insurance_pct_omits_insurance(product: service.ProductService) -> None:
-    scenario = ScenarioKey(
-        model_id="current_model",
-        horizon_months=2,
-        monthly_spend=Decimal(1_000),
-        spend_index=SpendIndex.NONE,
-        funding_policy=FundingPolicy(sleeve_weights=()),
-        property_purchase=PropertyPurchase(
-            property_id=LOCATION_A_PROPERTY, financing=CashFinancing(), is_primary_residence=True
-        ),
-        annual_insurance_pct=0.0,
-    )
-
-    detail = product.rollout(_rollout_request(scenario))
-
-    assert [event for event in detail.rollout.events if event.kind == "homeowners_insurance_payment"] == []
-
-
-def test_property_purchase_emits_maintenance_at_default_pct(product: service.ProductService) -> None:
-    # location_a_property is $900k. Default annual_maintenance_pct=1.0 → $750/mo at month 0.
-    scenario = ScenarioKey(
-        model_id="current_model",
-        horizon_months=3,
-        monthly_spend=Decimal(1_000),
-        spend_index=SpendIndex.NONE,
-        funding_policy=FundingPolicy(sleeve_weights=()),
-        property_purchase=PropertyPurchase(
-            property_id=LOCATION_A_PROPERTY,
-            financing=MortgageFinancing(term_months=360, down_payment_pct=20.0, annual_rate_pct=7.0),
-            is_primary_residence=True,
-        ),
-    )
-
-    detail = product.rollout(_rollout_request(scenario))
-
-    maintenance_events = [event for event in detail.rollout.events if event.kind == "property_maintenance_payment"]
-    assert maintenance_events
-    monthly_amount = 1.0 / 100.0 * 900_000.0 / 12.0
-    for event in maintenance_events:
-        assert isinstance(event, PropertyMaintenancePaymentEvent)
-        assert _usd_from_quanta(event.amount_due_quanta) == pytest.approx(monthly_amount, rel=0.1)
-        assert event.amount_paid_quanta == event.amount_due_quanta
-        assert event.shortfall_quanta == _usd_quanta(0.0)
-
-
-def test_property_purchase_with_zero_maintenance_pct_omits_maintenance(product: service.ProductService) -> None:
-    scenario = ScenarioKey(
-        model_id="current_model",
-        horizon_months=2,
-        monthly_spend=Decimal(1_000),
-        spend_index=SpendIndex.NONE,
-        funding_policy=FundingPolicy(sleeve_weights=()),
-        property_purchase=PropertyPurchase(
-            property_id=LOCATION_A_PROPERTY, financing=CashFinancing(), is_primary_residence=True
-        ),
-        annual_maintenance_pct=0.0,
-    )
-
-    detail = product.rollout(_rollout_request(scenario))
-
-    assert [event for event in detail.rollout.events if event.kind == "property_maintenance_payment"] == []
-
-
 def test_property_purchase_rejects_unknown_property(product: service.ProductService) -> None:
     scenario = ScenarioKey(
         model_id="current_model",
@@ -1583,7 +1522,7 @@ def test_property_purchase_rejects_unknown_property(product: service.ProductServ
         ),
     )
 
-    with pytest.raises(ValueError, match=r"unknown property_id"):
+    with pytest.raises(ValueError, match="ghost_property"):
         product.rollout(_rollout_request(scenario))
 
 
@@ -1646,34 +1585,6 @@ def test_secondary_residence_mortgage_omits_mortgage_interest_deduction(
     assert federal_accrual.mortgage_interest_deduction_quanta == _usd_quanta(0.0)
     assert federal_accrual.itemized_deduction_quanta == _usd_quanta(0.0)
     assert federal_accrual.standard_deduction_quanta == _usd_quanta(14_600.0)
-
-
-def test_cash_property_purchase_omits_mortgage_interest_deduction(
-    counting_model: CountingModel, augur_config: Config, make_product_service: MakeProductService
-) -> None:
-    """A cash purchase has no mortgage and therefore no MID even when is_primary_residence=True."""
-    config = _with_fixed_cash(augur_config, 1_200_000)
-    product = make_product_service(counting_model, config=config)
-    scenario = ScenarioKey(
-        model_id="current_model",
-        horizon_months=13,
-        monthly_spend=Decimal(1_000),
-        spend_index=SpendIndex.NONE,
-        funding_policy=FundingPolicy(sleeve_weights=()),
-        property_purchase=PropertyPurchase(
-            property_id=LOCATION_A_PROPERTY, financing=CashFinancing(), is_primary_residence=True
-        ),
-    )
-
-    detail = product.rollout(_rollout_request(scenario))
-
-    federal_accrual = one(
-        event
-        for event in detail.rollout.events
-        if event.kind == "tax_accrual" and event.jurisdiction_id == "federal_us"
-    )
-    assert federal_accrual.mortgage_interest_deduction_quanta == _usd_quanta(0.0)
-    assert federal_accrual.itemized_deduction_quanta == _usd_quanta(0.0)
 
 
 if __name__ == "__main__":

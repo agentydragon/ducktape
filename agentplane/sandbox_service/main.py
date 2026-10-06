@@ -18,7 +18,6 @@ from agentplane.sandbox_service.action_policy import ActionPolicyBindings
 from agentplane.sandbox_service.destinations import DestinationResolver
 from agentplane.sandbox_service.egress import EgressInventory
 from agentplane.sandbox_service.grpc_api import Resources, add_service
-from agentplane.sandbox_service.instructions import resolved_agent_instructions
 from agentplane.sandbox_service.inventory import SandboxInventory
 from agentplane.sandbox_service.kubernetes_bindings import KubernetesBindings
 from agentplane.sandbox_service.kubernetes_grants import ClusterRoleBindingGrant, KubernetesGrant, RoleBindingGrant
@@ -37,10 +36,9 @@ class Settings(BaseSettings):
 
     sandbox_namespace: str = Field(min_length=1)
     caller_accounts: frozenset[ServiceAccountRef] = Field(min_length=1)
-    agent_instructions: str = Field(min_length=1)
-    agent_notifications_service_url: str | None = None
+    platform_instructions: str = Field(min_length=1)
     lifecycle_timeout_s: float = Field(default=300, gt=0)
-    default_policies: list[str] = Field(default_factory=list)
+    default_egress_policies: list[str] = Field(default_factory=list)
     kubernetes_grants: dict[str, KubernetesGrant] = Field(default_factory=dict)
     kubernetes_binding_cleanup_namespaces: set[str] = Field(default_factory=set)
     kubernetes_cluster_binding_cleanup: bool = False
@@ -48,6 +46,10 @@ class Settings(BaseSettings):
     runner_port: int = Field(default=7000, ge=1, le=65535)
     admission_timeout_s: float = Field(default=15, gt=0, le=60)
     follow_lease_s: float = Field(default=900, gt=0, le=900)
+    runner_grpc_channel_options: dict[str, int | str] = Field(
+        default_factory=dict,
+        description="gRPC options for Sandbox Service-to-runner channels; receives retained journal events up to the configured limit.",
+    )
     host: str = "0.0.0.0"
     port: int = Field(default=8080, ge=1, le=65535)
     health_port: int = Field(default=8081, ge=1, le=65535)
@@ -73,9 +75,7 @@ class Settings(BaseSettings):
 
 
 async def serve(settings: Settings) -> None:
-    platform_instructions = resolved_agent_instructions(
-        settings.agent_instructions, notifications_service_url=settings.agent_notifications_service_url
-    )
+    platform_instructions = settings.platform_instructions
     configuration = k8s_client.Configuration()
     if settings.kubeconfig is None:
         k8s_config.load_incluster_config(client_configuration=configuration)
@@ -97,7 +97,9 @@ async def serve(settings: Settings) -> None:
         provisioning = Provisioning(
             inventory,
             EgressInventory(
-                namespace=settings.sandbox_namespace, custom_objects=custom, default_policies=settings.default_policies
+                namespace=settings.sandbox_namespace,
+                custom_objects=custom,
+                default_policies=settings.default_egress_policies,
             ),
             ActionPolicyBindings(namespace=settings.sandbox_namespace, custom_objects=custom),
             settings.kubernetes_grants,
@@ -125,6 +127,7 @@ async def serve(settings: Settings) -> None:
             caller_accounts=settings.caller_accounts,
             platform_instructions=platform_instructions,
             lifecycle_timeout_s=settings.lifecycle_timeout_s,
+            runner_grpc_channel_options=settings.runner_grpc_channel_options,
             provisioning=provisioning,
         )
         if settings.port == settings.health_port:

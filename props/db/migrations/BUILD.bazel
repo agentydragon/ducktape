@@ -34,7 +34,6 @@ py_test(
     name = "test_materialize_examples",
     size = "medium",
     srcs = ["test_materialize_examples.py"],
-    data = [":migrations"],
     requires_docker = True,
     deps = [
         "//:conftest",
@@ -42,7 +41,6 @@ py_test(
         "//props/db:config",
         "//props/db:conftest",
         "//util/testing:postgres",
-        "@pypi//alembic",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
         "@pypi//sqlalchemy",

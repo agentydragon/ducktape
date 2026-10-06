@@ -62,9 +62,12 @@ Defined in `.bazelrc`. Lint runs by default on every `bazel build`.
 # Lint runs by default (ruff + eslint + mypy + clippy + rustfmt):
 bazel build //...
 
-# Skip lint for faster iterative builds:
+# Skip all of it:
 bazel build --config=nolint //...
 ```
+
+`--config=nolint` also skips every other rule's validation actions, so use it only where
+that is wanted (as in <lockfiles.md>).
 
 Aspect definitions in `devinfra/lint/linters.bzl`:
 

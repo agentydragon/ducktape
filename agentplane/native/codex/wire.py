@@ -1,5 +1,5 @@
 """Codex app-server JSON-RPC frames, per `codex-rs/app-server-protocol/src/protocol/v2` at
-rust-v0.152.0 (serde `camelCase`).
+rust-v0.157.0 (serde `camelCase`).
 
 Inbound frames are what the app-server writes to stdout: responses to our requests, requests of its
 own that block a turn until answered, and notifications. Only the notifications and items a consumer
@@ -351,6 +351,7 @@ class ThreadResumeParams(Wire, OmitNone):
     thread_id: str
     base_instructions: str | None = None
     developer_instructions: str | None = None
+    exclude_turns: bool | None = None
 
 
 class ThreadResumeRequest(Wire):

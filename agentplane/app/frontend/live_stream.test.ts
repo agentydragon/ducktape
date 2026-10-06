@@ -20,7 +20,7 @@ class FakeSource extends EventTarget {
 
   constructor(url: string) {
     super();
-    expect(url).toBe("/test/stream");
+    if (url !== "/test/stream") throw new Error(`Unexpected stream URL ${url}`);
     sources.push(this);
   }
 

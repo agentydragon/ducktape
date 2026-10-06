@@ -1,4 +1,4 @@
-// @vitest-environment jsdom
+// @vitest-environment happy-dom
 import { describe, expect, it } from "vitest";
 
 import { isRegisteredLanguage, renderSpecialChar, VISIBLE_SPECIAL_CHARS } from "./code_block";

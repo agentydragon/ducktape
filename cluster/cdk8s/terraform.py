@@ -19,6 +19,8 @@ from tofu_controller.io.fluxcd.contrib.infra import (
     TerraformV1Alpha2SpecRunnerPodTemplateSpecEnvFromSecretRef,
     TerraformV1Alpha2SpecRunnerPodTemplateSpecEnvValueFrom,
     TerraformV1Alpha2SpecRunnerPodTemplateSpecEnvValueFromSecretKeyRef,
+    TerraformV1Alpha2SpecRunnerPodTemplateSpecResources,
+    TerraformV1Alpha2SpecRunnerPodTemplateSpecResourcesRequests,
     TerraformV1Alpha2SpecSourceRef,
     TerraformV1Alpha2SpecSourceRefKind,
     TerraformV1Alpha2SpecStoreReadablePlan,
@@ -33,6 +35,17 @@ from cluster.cdk8s.tofu_state import db
 NAMESPACE = "flux-system"
 _STATE_DB = f"postgres://tfstate@{db.DATABASE.rw.host}:{db.DATABASE.rw.port.number}/tfstate?sslmode=disable"
 _STATE_DB_PASSWORD = SecretRef(namespace=NAMESPACE, name="tofu-state-db-credentials").key("password")
+
+# Requests only. Without them runner pods are BestEffort, so the scheduler counts them as free and
+# stacks a synchronised wave of up to a dozen on one node. Observed per runner: median working set
+# 90 MiB, peak 516 MiB (dns-records, the AWS provider), 20-35 CPU-seconds per run. A memory limit
+# would OOM-kill a plan mid-run.
+_RUNNER_RESOURCES = TerraformV1Alpha2SpecRunnerPodTemplateSpecResources(
+    requests={
+        "cpu": TerraformV1Alpha2SpecRunnerPodTemplateSpecResourcesRequests.from_string("250m"),
+        "memory": TerraformV1Alpha2SpecRunnerPodTemplateSpecResourcesRequests.from_string("512Mi"),
+    }
+)
 
 
 def secret_env(name: str, key: SecretKey) -> TerraformV1Alpha2SpecRunnerPodTemplateSpecEnv:
@@ -98,7 +111,9 @@ def tofu_state_terraform(
         depends_on=depends_on,
         runner_pod_template=TerraformV1Alpha2SpecRunnerPodTemplate(
             spec=TerraformV1Alpha2SpecRunnerPodTemplateSpec(
-                env_from=list(env_from) or None, env=[secret_env("PGPASSWORD", _STATE_DB_PASSWORD), *env]
+                env_from=list(env_from) or None,
+                env=[secret_env("PGPASSWORD", _STATE_DB_PASSWORD), *env],
+                resources=_RUNNER_RESOURCES,
             )
         ),
     )
@@ -110,6 +125,7 @@ def gitops_terraform(
     *,
     name: str,
     variables: BaseModel | None,
+    interval: str = "15m",
     depends_on: Sequence[Terraform] = (),
     env: Sequence[TerraformV1Alpha2SpecRunnerPodTemplateSpecEnv] = (),
     env_from: Sequence[TerraformV1Alpha2SpecRunnerPodTemplateSpecEnvFrom] = (),
@@ -123,6 +139,8 @@ def gitops_terraform(
     `variables` models the module's variables.tf (None: set none); each field is written
     structurally into the runner's tfvars, so a nested map arrives as a Terraform
     map/object, not a string.
+
+    `interval` controls periodic drift checks; the default is 15 minutes.
 
     `store_readable_plan=HUMAN` writes each plan's diff to the `tfplan-default-<name>`
     ConfigMap, readable by anyone who can read ConfigMaps in flux-system. Enable it only
@@ -140,7 +158,7 @@ def gitops_terraform(
             namespace=flux.NAMESPACE,
         ),
         path=f"./{ducktape_flux.TF_GITOPS_ROOT}/{name}",
-        interval="15m",
+        interval=interval,
         approve_plan="auto",
         store_readable_plan=store_readable_plan,
         vars=None

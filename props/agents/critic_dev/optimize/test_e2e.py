@@ -21,7 +21,6 @@ from __future__ import annotations
 
 import logging
 
-import pytest
 import pytest_bazel
 
 from agent_core.testing.responses import PlayGen
@@ -49,7 +48,6 @@ logger = logging.getLogger(__name__)
 # =============================================================================
 
 
-@pytest.mark.timeout(180)
 async def test_optimizer_orchestrates_critic(
     synced_db: Database, e2e_stack, test_snapshot, critic_dev_optimize_image, critic_image, grader_image
 ):

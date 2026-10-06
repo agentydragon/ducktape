@@ -1,9 +1,12 @@
 # KubeVirt execution environments
 
-Status: proposed design; implementation and deployed acceptance remain open under
+Status: provider implementation and production integration acceptance remain open under
 [`SANDBOX_VM_ISOLATION`](task_dag.md#sandbox_vm_isolation--selectable-vm-backed-sandbox-isolation).
-KubeVirt is the recommended first VM provider. This document records source inspection and upstream
-constraints, not a working VM integration or a live cluster audit.
+The disposable pinned-stack prototype and guest runtime acceptance are recorded in
+[`platform evidence`](../debug/kubevirt/evidence.md) and
+[`guest runtime acceptance`](../debug/kubevirt/runtime-20261003.md). They do not exercise the
+production Sandbox Service or production egress gateway. KubeVirt remains the recommended first
+VM provider.
 
 ## Proposed shape
 
@@ -84,22 +87,23 @@ specification, not a PodSpec with an arbitrary `containers` list. KubeVirt docum
 [Istio sidecars](https://kubevirt.io/user-guide/network/istio_service_mesh/), which establishes the
 general composition, but does not implement our relay injection or token mounts.
 
-**Selected v1 approach:** KubeVirt owns VM lifecycle; the existing Kyverno installation injects
-the relay container and its private projected-token mounts into launcher Pods. The runner and
-harnesses run inside the guest. First prove this composition with a disposable VM on the pinned
-stack, including secure owner/ServiceAccount resolution; revisit the mechanism only if that proof
-finds a concrete limitation. A hook adapter, dedicated admission server and KubeVirt fork are outside
-v1: this relay needs no domain or cloud-init hook, and the hook protocol alone cannot supply its mounts.
+**Selected v1 approach:** KubeVirt owns VM lifecycle; Kyverno injects the relay container and its
+private projected-token mounts into launcher Pods. The disposable pinned-stack prototype verified
+the launcher owner/ServiceAccount boundary, token isolation, guest route, token rotation, and
+cross-environment denial. See the linked platform evidence. Production policy ownership and
+Sandbox Service integration remain open; revisit the mechanism only if those changes expose a
+concrete limitation. A hook adapter, dedicated admission server and KubeVirt fork are outside v1:
+this relay needs no domain or cloud-init hook, and the hook protocol alone cannot supply its mounts.
 
 The repo already owns Kyverno
 [proxy injection policies](../../cluster/cdk8s/kyverno/proxy_injection.py); these currently inject
-environment and CA configuration, not our launcher sidecar or credentials. Extend that machinery with
-a separately scoped policy. The other mechanisms below are alternatives if the proof requires a
-design change, not additional components of the selected approach.
+environment and CA configuration, not our production launcher sidecar or credentials. Extend that
+machinery with a separately scoped policy. The other mechanisms below are alternatives if
+integration finds a concrete limitation, not additional components of the selected approach.
 
 | Mechanism                                            | Fit and unresolved work                                                                                                                                                                                                                                                                                                                   |
 | ---------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Existing Kyverno admission                           | Can mutate the launcher Pod to add the relay and projected volumes. Still uses an admission webhook, but the existing Kyverno service owns it. Prove live owner/SA verification using API context and narrowly scoped reader RBAC, reinvocation, admission ordering and failure behavior.                                                 |
+| Existing Kyverno admission                           | Can mutate the launcher Pod to add the relay and projected volumes. The disposable prototype verified owner/SA selection, token mounts, reinvocation and admission ordering. Production policy scope and admission failure isolation remain to be implemented and accepted.                                                               |
 | Kubernetes `MutatingAdmissionPolicy`                 | Runs CEL mutation in the API server, with no webhook service. Check the cluster's API/version/feature-gate support. It cannot simply perform arbitrary live VMI/VM reads like a webhook; require a separately enforced trusted mapping from controller-created VM intent to Pod identity.                                                 |
 | KubeVirt hook sidecar plus declarative admission     | KubeVirt creates the hook container; our wrapper implements the handshake and runs the relay. Admission supplies identity and token mounts omitted by the hook schema. Viable if KubeVirt lifecycle integration is useful; never inject a second relay through the admission policy.                                                      |
 | Native KubeVirt extension with no admission mutation | Would need supported launcher ServiceAccount selection and proxy-only projected volumes as well as container creation. Those are not supplied by the v1.8.2 hook API. An upstream enhancement or maintained KubeVirt patch is an explicit option, with API/upgrade maintenance cost; implementing only the hook protocol is insufficient. |
@@ -107,7 +111,7 @@ design change, not additional components of the selected approach.
 
 [Kubernetes admission policy](https://kubernetes.io/docs/reference/access-authn-authz/mutating-admission-policy/)
 and [Kyverno API context](https://kyverno.io/docs/policy-types/cluster-policy/external-data-sources/#variables-from-kubernetes-api-server-calls)
-describe the declarative mechanisms. Their availability and suitability here still need proof.
+describe alternative declarative mechanisms; they are not the selected integration path.
 A dedicated webhook remains a fallback if the required live verification cannot be expressed safely
 in the existing policy engine; accepting KubeVirt-specific integration is not itself a reason to
 operate a new service.
@@ -266,21 +270,22 @@ environments and the Sandbox Service extraction's staging-preservation requireme
 
 These are proposed independently reviewable PR slices, not a priority change to the task DAG. Move
 them into dispatchable DAG nodes when this deferred track is scheduled. Image packaging and provider
-contract work can proceed in parallel with the platform proof; only integration depends on its result.
+contract work can proceed independently; lifecycle acceptance requires the integrated provider and image.
 
-| Slice                    | Deliverable and exit evidence                                                                                                                                                                                                                                                                                                                                                                                                          |
-| ------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Platform proof           | Disposable VM on the pinned KubeVirt/Cilium stack. Prove injected relay lifecycle, selected SA with proxy-only rotating tokens, guest routing, control ingress, and cross-environment denial. Inspect final admitted Pod and guest devices; compare generated manifests. Record whether namespace PodSecurity, KVM scheduling and local storage admit this shape. If injection is incompatible, resolve that before production wiring. |
-| Image and storage        | Published digest-pinned guest with runner/harness versions recorded; blank disk initialization, retained state and workspace bounds; runner starts without package downloads or real credentials. Verify the actual image with both harnesses.                                                                                                                                                                                         |
-| Provider and API         | Typed kind/templates/destinations, KubeVirt inventory/reconciliation, owner-chain discovery, grants/finalizers, scoped RBAC and app watchers/UI. Existing container semantics still pass. Reconcile after service restart and under concurrent replicas, with the integration app unavailable.                                                                                                                                         |
-| Guest resource isolation | Enforced aggregate harness budgets and runner launch/fencing integration. Force memory, process and disk exhaustion; prove runner/journal survival and truthful harness failure. Tool-only survival is a separately measured capability.                                                                                                                                                                                               |
-| Lifecycle acceptance     | Both harnesses through real LLM ingress and Action Service; stop/start, Pod replacement, proxy restart/token rotation, guest crash, runner crash, image change, deletion/export, and negative access. Confirm stable environment identity, changed incarnation identity, retained Events, and no invented or duplicate command effects.                                                                                                |
+| Slice                    | Deliverable and exit evidence                                                                                                                                                                                                                                                                                                           |
+| ------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Platform proof           | Prototype evidence covers launcher admission, proxy-only token mounts, guest routing, control ingress, cross-environment denial and rotating tokens on the pinned stack. Remaining proof is admission outage/failure isolation and production-policy behavior changed by integration.                                                   |
+| Image and storage        | Published digest-pinned guest with runner/harness versions recorded; blank disk initialization, retained state and workspace bounds; runner starts without package downloads or real credentials. Verify the actual image with both harnesses.                                                                                          |
+| Provider and API         | Typed kind/templates/destinations, KubeVirt inventory/reconciliation, owner-chain discovery, grants/finalizers, scoped RBAC and app watchers/UI. Existing container semantics still pass. Reconcile after service restart and under concurrent replicas, with the integration app unavailable.                                          |
+| Guest resource isolation | Enforced aggregate harness budgets and runner launch/fencing integration. Force memory, process and disk exhaustion; prove runner/journal survival and truthful harness failure. Tool-only survival is a separately measured capability.                                                                                                |
+| Lifecycle acceptance     | Both harnesses through real LLM ingress and Action Service; stop/start, Pod replacement, proxy restart/token rotation, guest crash, runner crash, image change, deletion/export, and negative access. Confirm stable environment identity, changed incarnation identity, retained Events, and no invented or duplicate command effects. |
 
-The platform proof must test Kyverno admission failure/reinvocation, missing/expired tokens,
+Production acceptance must test Kyverno admission failure and its scope, missing/expired tokens,
 replacement Pods, forged environment labels, and attempts to reach another environment's
-relay/control port. Verify
-revocation using actual TokenReview semantics; deletion must not be described as instantaneous token
-invalidation without measurement. Inspect rendered credentials/mounts without logging bearer values.
+relay/control port. The disposable prototype already covers reinvocation, owner forgery, valid token
+rotation, and cross-environment reachability. Verify revocation using actual TokenReview semantics;
+deletion must not be described as instantaneous token invalidation without measurement. Inspect
+rendered credentials/mounts without logging bearer values.
 
 For crash acceptance, separately kill a tool, harness, runner, guest and launcher; distinguish
 surviving control from durable recovery. Capture exact image/runner/harness versions, VM/VMI/Pod UIDs,
@@ -288,7 +293,8 @@ storage backend, resource limits, readiness timings and journal evidence. Measur
 shutdown and scheduling overhead before choosing defaults. Unit and Docker/RBE tests cover provider
 and runner logic; they cannot substitute for KVM/Cilium/storage acceptance on the deployed stack.
 
-The design is ready to implement once the platform proof resolves sidecar admission, guest proxy
-reachability and disk initialization. A per-environment companion proxy Pod is a fallback only if
-launcher injection fails: it changes the token's Pod identity and introduces a guest-to-proxy
-authentication/lifecycle problem, so it needs a revised design rather than an invisible substitution.
+The prototype resolved initial sidecar-admission, guest-routing and disk-initialization questions.
+Production implementation can proceed on the selected Kyverno path. A per-environment companion
+proxy Pod is a fallback only if production launcher injection fails: it changes the token's Pod
+identity and introduces a guest-to-proxy authentication/lifecycle problem, so it needs a revised
+design rather than an invisible substitution.

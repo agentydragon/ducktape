@@ -6,18 +6,31 @@ from typing import Any
 
 import yaml
 
+from util.bazel.runfiles import get_required_path
 from x.wt.shared.config_file import ConfigFile
 from x.wt.shared.configuration import Configuration
 from x.wt.testing.data import WATCHER_DEBOUNCE_SECS, ConfigPresets, TestData
+
+# Apparent repo name of the `gitstatusd` http_archive in MODULE.bazel.
+_GITSTATUSD_RLOCATION = "gitstatusd/gitstatusd-linux-x86_64"
+
+
+def gitstatusd_binary() -> Path:
+    """The Bazel-provided gitstatusd; only test targets that list `//third_party/gitstatusd` in `data` have it."""
+    return get_required_path(_GITSTATUSD_RLOCATION)
 
 
 class ConfigFactory:
     """Factory for creating test configurations with different presets."""
 
-    def __init__(self, repo_path: Path, temp_base_dir: Path | None = None):
-        """Initialize factory with repository path."""
+    def __init__(self, repo_path: Path, temp_base_dir: Path | None = None, *, gitstatusd_path: Path | None = None):
+        """Initialize factory with repository path.
+
+        `gitstatusd_path` is written into the configurations of a test that starts a daemon; None leaves it unset.
+        """
         self.repo_path = repo_path
         self.temp_base_dir = temp_base_dir or repo_path.parent
+        self.gitstatusd_path = gitstatusd_path
 
     def create(
         self, preset: str | Mapping[str, Any] = "MINIMAL", *, wt_dir: Path | None = None, **config_overrides
@@ -47,7 +60,8 @@ class ConfigFactory:
             "cache_refresh_age": 300,
             "hidden_worktree_patterns": [],
             "cow_method": "copy",
-            "gitstatusd_path": None,  # Will be filled by tests that need it
+            # The daemon subprocess re-reads this from config.yaml, so it needs no runfiles access of its own.
+            "gitstatusd_path": None if self.gitstatusd_path is None else str(self.gitstatusd_path),
             "post_creation_script": None,
             "git_watcher_debounce_delay": WATCHER_DEBOUNCE_SECS,
             # Keep daemon startup bounded well under per-test subprocess timeouts
@@ -109,62 +123,3 @@ class ConfigFactory:
             for name in dir(ConfigPresets)
             if not name.startswith("_") and isinstance(getattr(ConfigPresets, name), dict)
         ]
-
-
-class ConfigBuilder:
-    """Builder pattern for more complex configuration creation."""
-
-    def __init__(self, repo_path: Path):
-        """Initialize builder with repository path."""
-        self.factory = ConfigFactory(repo_path)
-        self._overrides: dict[str, Any] = {}
-        self._preset = "MINIMAL"
-
-    def with_preset(self, preset: str):
-        """Set the configuration preset."""
-        self._preset = preset
-        return self
-
-    def with_github(self, repo: str | None = "test-user/test-repo"):
-        """Configure GitHub integration; None disables it."""
-        self._overrides.update({"github_repo": repo})
-        return self
-
-    def with_worktrees_dir(self, path: str | Path):
-        """Set custom worktrees directory."""
-        self._overrides["worktrees_dir"] = str(path)
-        return self
-
-    def with_branch_prefix(self, prefix: str):
-        """Set custom branch prefix."""
-        self._overrides["branch_prefix"] = prefix
-        return self
-
-    def with_upstream_branch(self, branch: str):
-        """Set custom upstream branch."""
-        self._overrides["upstream_branch"] = branch
-        return self
-
-    def with_cow_method(self, method: str):
-        """Set copy-on-write method."""
-        self._overrides["cow_method"] = method
-        return self
-
-    def with_gitstatusd_path(self, path: str | Path):
-        """Set gitstatusd binary path."""
-        self._overrides["gitstatusd_path"] = str(path)
-        return self
-
-    def with_post_creation_script(self, script_path: str | Path):
-        """Set post-creation script path."""
-        self._overrides["post_creation_script"] = str(script_path)
-        return self
-
-    def with_custom_field(self, field_name: str, value: Any):
-        """Set any custom configuration field."""
-        self._overrides[field_name] = value
-        return self
-
-    def build(self, wt_dir: Path | None = None) -> Configuration:
-        """Build the final configuration."""
-        return self.factory.create(self._preset, wt_dir=wt_dir, **self._overrides)

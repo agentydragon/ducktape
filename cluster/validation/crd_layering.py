@@ -15,6 +15,8 @@ OPERATOR_CRDS: dict[str, set[str]] = {
         "VaultDynamicSecret",
     },
     "external-secrets": set(),
+    # The HelmRelease in this Kustomization installs ExternalDNS's DNSEndpoint CRD.
+    "external-dns": {"DNSEndpoint"},
     "cert-manager": {"Certificate", "CertificateRequest", "Issuer", "ClusterIssuer"},
     "cert-manager-config": set(),
     "cert-manager-trust": {"Bundle"},

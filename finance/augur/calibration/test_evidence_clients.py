@@ -81,7 +81,9 @@ async def test_kalshi_market_maps_placeholder_sides_to_none(tmp_path: Path) -> N
     )
     market = await EvidenceMarketReader(platform=Platform.KALSHI, evidence_dir=tmp_path).get_market("KXT-1")
     assert market.quote == BookQuote(bid=None, ask=0.15, bid_size=None, ask_size=800.0, last_trade=0.13)
-    assert market.title == "CPI YoY — Above 3.0%"
+    assert market.title is not None
+    assert "CPI YoY" in market.title
+    assert "Above 3.0%" in market.title  # the leg clause (yes_sub_title) is folded into the question
     assert market.rules == "Resolves YES if CPI YoY is above 3.0%."
     assert market.volume == 10250.0
     assert market.volume_unit == "contracts"

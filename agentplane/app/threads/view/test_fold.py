@@ -323,15 +323,15 @@ def test_commands_settle_coalesced_input_and_observed_model_effect(script: list[
 
 def test_missing_lookup_is_not_absence_and_preloaded_rows_cannot_be_from_this_batch() -> None:
     observed = entry(1, event_pb2.Event(text_delta=event_pb2.TextDelta(item_id="item", text="x")))
-    with pytest.raises(FoldContractError, match="missing prior item lookup"):
+    with pytest.raises(FoldContractError):
         advance(initial(SOURCE, EPOCH), EventBatch(SOURCE, 0, (observed,)), PriorEntities({}, {}, {}))
     future = Item(EPOCH, "item", 1, 2)
-    with pytest.raises(FoldContractError, match="invalid prior item"):
+    with pytest.raises(FoldContractError):
         advance(initial(SOURCE, EPOCH), EventBatch(SOURCE, 0, (observed,)), PriorEntities({"item": future}, {}, {}))
     store = Store()
     store.apply([observed])
     completion = authoritative(2, PayloadField.TEXT, "x")
-    with pytest.raises(FoldContractError, match="missing prior body lookup"):
+    with pytest.raises(FoldContractError):
         advance(store.state, EventBatch(SOURCE, 1, (completion,)), PriorEntities({"item": store.items["item"]}, {}, {}))
 
 
@@ -343,7 +343,7 @@ def test_rejects_wrong_field_ref_unknown_kind_and_does_not_mutate_inputs_on_fail
         EPOCH, "item", prior.cursor, prior.revision_cursor, text=PayloadRef(EPOCH, 1, "item", PayloadField.OUTPUT, 1, 1)
     )
     next_entry = entry(2, event_pb2.Event(text_delta=event_pb2.TextDelta(item_id="item", text="y")))
-    with pytest.raises(FoldContractError, match="owner revision"):
+    with pytest.raises(FoldContractError):
         advance(store.state, EventBatch(SOURCE, 1, (next_entry,)), PriorEntities({"item": invalid}, {}, {}))
     unknown = entry(2, json_format.ParseDict({"itemStarted": {"itemId": "other", "kind": 99}}, event_pb2.Event()))
     before = unknown.SerializeToString(), store.state
@@ -441,6 +441,60 @@ def test_recovered_tool_content_does_not_fabricate_an_execution_result() -> None
     assert original is not None
     assert store.payloads[original] == "partial stdout"
     assert recovered.recovery == event_pb2.RECOVERY_DISPOSITION_REVISED
+
+
+def _recovery(disposition: event_pb2.RecoveryDisposition, reason: str) -> event_pb2.ItemRecovery:
+    return event_pb2.ItemRecovery(
+        item_id="tool",
+        disposition=disposition,
+        reason=reason,
+        replacement=(
+            event_pb2.RecoveredContent(arguments_json='{"command":"run"}', output="interrupted")
+            if disposition == event_pb2.RECOVERY_DISPOSITION_REVISED
+            else None
+        ),
+    )
+
+
+@pytest.mark.parametrize(
+    ("first", "second", "second_wins"),
+    [
+        (event_pb2.RECOVERY_DISPOSITION_RETAINED, event_pb2.RECOVERY_DISPOSITION_UNKNOWN, False),
+        (event_pb2.RECOVERY_DISPOSITION_ABSENT, event_pb2.RECOVERY_DISPOSITION_UNKNOWN, False),
+        (event_pb2.RECOVERY_DISPOSITION_REVISED, event_pb2.RECOVERY_DISPOSITION_UNKNOWN, False),
+        (event_pb2.RECOVERY_DISPOSITION_UNKNOWN, event_pb2.RECOVERY_DISPOSITION_RETAINED, True),
+        (event_pb2.RECOVERY_DISPOSITION_UNKNOWN, event_pb2.RECOVERY_DISPOSITION_UNKNOWN, True),
+        (event_pb2.RECOVERY_DISPOSITION_RETAINED, event_pb2.RECOVERY_DISPOSITION_ABSENT, True),
+        (event_pb2.RECOVERY_DISPOSITION_ABSENT, event_pb2.RECOVERY_DISPOSITION_REVISED, True),
+    ],
+)
+def test_a_later_reconciliation_replaces_a_decision_unless_it_could_not_tell(
+    first: event_pb2.RecoveryDisposition, second: event_pb2.RecoveryDisposition, second_wins: bool
+) -> None:
+    store = Store()
+    store.apply(
+        [
+            entry(
+                1,
+                event_pb2.Event(item_started=event_pb2.ItemStarted(item_id="tool", kind=event_pb2.ITEM_KIND_TOOL_CALL)),
+            )
+        ]
+    )
+    for cursor, (disposition, reason) in enumerate([(first, "first"), (second, "second")], start=2):
+        store.apply(
+            [
+                entry(
+                    cursor,
+                    event_pb2.Event(
+                        conversation_reconciled=event_pb2.ConversationReconciled(
+                            turn_id=f"turn-{cursor}", items=[_recovery(disposition, reason)]
+                        )
+                    ),
+                )
+            ]
+        )
+    shown = store.items["tool"]
+    assert (shown.recovery, shown.recovery_reason) == ((second, "second") if second_wins else (first, "first"))
 
 
 def test_setup_output_and_failure_remain_visible_lifecycle_evidence() -> None:

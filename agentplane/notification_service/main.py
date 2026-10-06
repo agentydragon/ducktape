@@ -22,14 +22,16 @@ from agentplane.workload_auth.principal import WorkloadPrincipalResolver
 
 async def serve(settings: Settings) -> None:
     k8s_config.load_incluster_config()
+    # Staging OOM: 22 notification sessions, 21 idle across two replicas.
     engine = create_async_engine(
-        make_url(settings.database_url).set(drivername="postgresql+asyncpg"), pool_size=10, max_overflow=5
+        make_url(settings.database_url).set(drivername="postgresql+asyncpg"), pool_size=4, max_overflow=2
     )
     sandboxes = SandboxServiceClient(
         settings.sandbox_service.target,
         namespace=settings.namespace,
         token_file=settings.sandbox_service.token_file,
         request_timeout_s=5,
+        channel_options=settings.sandbox_service.grpc_channel_options,
     )
     try:
         async with (

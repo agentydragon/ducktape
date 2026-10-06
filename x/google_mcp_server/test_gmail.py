@@ -55,7 +55,7 @@ async def test_tool_surface(client):
 
 
 # --- generated reads: one representative round-trip proves the wiring (spec -> FastMCP -> executor
-# -> service call with userId pinned -> verbatim result). Per-tool schema/overlay/dispatch behavior
+# -> service call with userId pinned -> verbatim result). Per-tool schema/overlay behavior
 # is covered once in test_google_discovery.py; the surface test above guards the full name set. ---
 async def test_generated_read_round_trip(gmail: Mock, client):
     threads = gmail.service.users.return_value.threads.return_value
@@ -64,6 +64,9 @@ async def test_generated_read_round_trip(gmail: Mock, client):
     assert not result.is_error
     assert result.structured_content["nextPageToken"] == "N"  # raw Gmail camelCase, verbatim
     threads.list.assert_called_once_with(userId="me", q="from:a", maxResults=5, pageToken="P")
+    # googleapiclient's nested-resource accessors take no arguments; only the leaf method does.
+    gmail.service.users.assert_called_once_with()
+    gmail.service.users.return_value.threads.assert_called_once_with()
 
 
 async def test_read_rejects_unknown_argument(client):

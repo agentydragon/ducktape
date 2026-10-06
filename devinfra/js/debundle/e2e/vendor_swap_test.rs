@@ -2785,3 +2785,95 @@ fn assert_bundled_dotted_export(kind: PartialSwapKind, expected: &str) {
     assert_success(&run_debundler(&path, &[("lib", &package)]));
     assert_node_output(&ws.out_root.join("app/static/app/entry.js"), expected, "");
 }
+
+// ─── full swap: cross-module purity ─────────────────────────────────────
+
+/// Three `callWrap(...)` calls in `app`, interleaved across two logical
+/// modules, where `callWrap` comes from `adapter` and `adapter` delegates to the
+/// pure `vendorlib::wrap`. `swap_adapter` fully swaps `adapter`.
+fn run_interleaved_calls_through_adapter(swap_adapter: bool) -> CommandResult {
+    const APP_PATH: &str = "static/app.js";
+    const ADAPTER_PATH: &str = "static/adapter.js";
+    const VENDORLIB_PATH: &str = "static/vendorlib.js";
+    const PACKAGE_NAME: &str = "lib";
+    let ws = VendorTestWorkspace::new("vendor-full-swap-purity-");
+    ws.write_chunk(
+        APP_PATH,
+        "import { callWrap } from \"./adapter.js\";\n\
+         const A = callWrap(() => \"a\");\n\
+         const B = callWrap(() => \"b\");\n\
+         const C = callWrap(() => \"c\");\n\
+         console.log(A, B, C);\n\
+         export { A, B, C };\n",
+    );
+    ws.write_chunk(
+        ADAPTER_PATH,
+        "import { wrap } from \"./vendorlib.js\";\n\
+         export function callWrap(f) { return wrap(f); }\n",
+    );
+    ws.write_chunk(
+        VENDORLIB_PATH,
+        "export function wrap(f) { return { impl: f }; }\n",
+    );
+    ws.write_js_list(&format!("{APP_PATH}\n{ADAPTER_PATH}\n{VENDORLIB_PATH}\n"));
+    let package_root = ws.write_upstream_package(
+        "upstream",
+        PACKAGE_NAME,
+        "1.0.0",
+        "dist/index.mjs",
+        "export const callWrap = (f) => ({ impl: f });\n",
+    );
+    let vendor = if swap_adapter {
+        json!({ADAPTER_PATH: {
+            "level": "swap",
+            "identity": "lib/dist/index.mjs",
+            "package": PACKAGE_NAME,
+            "version": "1.0.0",
+            "subpath": "dist/index.mjs",
+        }})
+    } else {
+        json!({})
+    };
+    let member = |name: &str| json!({"name": name, "selector": {"binding": {"name": name}}});
+    let spec = build_bundled_partial_swap_spec(
+        &ws,
+        vendor,
+        Some(json!({
+            "logical_modules": {
+                "static/app": {
+                    "mod_a": {"members": [member("A"), member("C")]},
+                    "mod_b": {"members": [member("B")]},
+                },
+            },
+            "unassigned_mode": {"static/app": {"kind": "inline_in_entry"}},
+            "materialize_logical_modules": {
+                "prune_other_chunks": false,
+                "report_out_dir": ws.out_root.join("reports").join("tree"),
+                "target_dir": "modules",
+            },
+        })),
+    );
+    let spec_path = ws.root.path().join("transform_spec.yaml");
+    write_yaml_file(&spec_path, &spec);
+    run_debundler(&spec_path, &[(PACKAGE_NAME, &package_root)])
+}
+
+/// A fully swapped chunk's body is replaced by the upstream package at serve
+/// time, so the cross-module purity oracle must not derive verdicts from its
+/// bundle copy: with `adapter` kept the interleaved calls are pure and the
+/// split is accepted; with it swapped `callWrap` stays an opaque call and the
+/// split is rejected on an S-cycle.
+#[test]
+fn full_swapped_chunk_stays_opaque_to_cross_module_purity() {
+    assert_success(&run_interleaved_calls_through_adapter(false));
+
+    let swapped = run_interleaved_calls_through_adapter(true);
+    assert!(!swapped.status.success(), "stdout:\n{}", swapped.stdout);
+    for expected in ["cycle", "mod_a", "mod_b", "side-effect"] {
+        assert!(
+            swapped.stderr.to_lowercase().contains(expected),
+            "stderr missing {expected:?}:\n{}",
+            swapped.stderr,
+        );
+    }
+}

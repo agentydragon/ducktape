@@ -288,18 +288,14 @@ export { runtimeProcessor };
             ),
         ],
     );
-    expect_rejection_containing_all(
-        opts,
-        &[
-            "[duplicate_claim]",
-            "\"runtimeProcessor\" (`class` at body[0])",
-            "mod_a",
-            "as `RuntimeProcessor`",
-            "is already claimed by mod_a as `RuntimeProcessor`",
-            "mod_b",
-            "as `RuntimeProcessorAlias`",
-        ],
-    );
+    let outcomes = run_rejection_fixture(opts).selector_outcomes();
+    let claim = find_outcome(&outcomes, "duplicate_claim", "RuntimeProcessorAlias");
+    assert_eq!(claim["placement"]["logical_module"], "mod_b");
+    assert_eq!(claim["outcome"]["binding"], "runtimeProcessor");
+    assert_eq!(claim["outcome"]["declaration"]["kind"], "class");
+    let claimed_by = &claim["outcome"]["claimed_by"];
+    assert_eq!(claimed_by["logical_module"], "mod_a");
+    assert_eq!(claimed_by["entity"]["export"], "RuntimeProcessor");
 }
 
 #[test]
@@ -393,18 +389,25 @@ export { RuntimeCatalog };
         ],
     );
 
-    expect_rejection_containing_all(
-        opts,
-        &[
-            "participates in ownership conflict",
-            "catalog/primary",
-            "as `PrimaryCatalog`",
-            "source_matches[].bindings[`K`]",
-            "catalog/duplicate",
-            "as `DuplicateCatalog`",
-            "source_matches[].bindings[`K`]",
-        ],
-    );
+    let outcomes = run_rejection_fixture(opts).selector_outcomes();
+    for (export, module) in [
+        ("PrimaryCatalog", "catalog/primary"),
+        ("DuplicateCatalog", "catalog/duplicate"),
+    ] {
+        // Each claim is one side of the same ownership conflict.
+        let claim = find_outcome(&outcomes, "unsatisfiable", export);
+        assert_eq!(claim["placement"]["logical_module"], module);
+        assert_eq!(claim["placement"]["selector_kind"], "source_matches");
+        assert_eq!(claim["target_binding"], "K");
+        assert_eq!(
+            claim["outcome"]["witness"]["selectors"]
+                .as_array()
+                .unwrap()
+                .len(),
+            2,
+            "{claim:#}"
+        );
+    }
 }
 
 #[test]
@@ -750,14 +753,14 @@ export { a };
         ],
     );
     opts.extra_files = &[("static/vendor.js", "export const j = () => 42;\n")];
-    expect_rejection_containing_all(
-        opts,
-        &[
-            "[duplicate_claim]",
-            "\"a\" (`import` at body[0])",
-            "mod_jsx_runtime",
-            "mod_dunder_jsx",
-        ],
+    let outcomes = run_rejection_fixture(opts).selector_outcomes();
+    let claim = find_outcome(&outcomes, "duplicate_claim", "jsxRuntime");
+    assert_eq!(claim["placement"]["logical_module"], "mod_jsx_runtime");
+    assert_eq!(claim["outcome"]["binding"], "a");
+    assert_eq!(claim["outcome"]["declaration"]["kind"], "import");
+    assert_eq!(
+        claim["outcome"]["claimed_by"]["logical_module"],
+        "mod_dunder_jsx"
     );
 }
 

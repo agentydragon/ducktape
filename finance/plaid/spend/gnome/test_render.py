@@ -32,7 +32,14 @@ from util.testing.visual_review import retain_review_asset
 _GNOME_SHELL_TEST = OciImage("_main/gnome/test_image/gnome_shell_test.rloc", "gnome-shell-test:pinned")
 _EXTENSION_ZIP = "_main/finance/plaid/spend/gnome/plaid-spend-desktop.zip"
 _EXTENSION_UUID = "plaid-spend@allegedly.works"
-_FIXTURE_NAMES = ("ready_two_cards", "authentication_required", "offline")
+_FIXTURE_NAMES = (
+    "ready_two_cards",
+    "authentication_required",
+    "offline",
+    "allowance_paced",
+    "allowance_warming",
+    "allowance_exhausted",
+)
 _FIXTURE_DIR = "_main/finance/plaid/spend/gnome/fixtures"
 _SCREEN_WIDTH = 1920
 _EXTENSION_STATE_ENABLED = 1
@@ -273,7 +280,14 @@ def _crop_combined(full: Image.Image, menu_geometry: tuple[int, int, int, int]) 
 
 @pytest.mark.parametrize(
     ("fixture_name", "expected_label"),
-    [("ready_two_cards", "$149.45 !"), ("authentication_required", "Sign in"), ("offline", "Offline")],
+    [
+        ("ready_two_cards", "$149 !"),
+        ("authentication_required", "Sign in"),
+        ("offline", "Offline"),
+        ("allowance_paced", "Flex $200 !"),
+        ("allowance_warming", "Flex $700"),
+        ("allowance_exhausted", "Flex -<$1 !!"),
+    ],
 )
 def test_render(
     render_session: tuple[docker.models.containers.Container, Path],
@@ -290,6 +304,24 @@ def test_render(
     _reload_fixture(container, fixture_path)
     assert _panel_label(container) == expected_label
     menu_geometry = _open_menu(container)
+    if fixture_name.startswith("allowance_"):
+        menu_text = ast.literal_eval(_test_dbus_call_output(container, "GetMenuText").decode().strip())[0]
+        assert "Synthetic card" not in menu_text
+        assert "Check a purchase / dashboard" in menu_text
+        if fixture_name == "allowance_paced":
+            assert "7d $28/day" in menu_text
+            assert "30d $18/day" in menu_text
+            assert "Leash ~$23/day" in menu_text
+            assert "7d unmatched 3 ($12)" in menu_text
+            assert "Sync " in menu_text
+            assert "View updated" not in menu_text
+            assert "sustainability target" not in menu_text
+            assert "past pace is not opening debt" not in menu_text
+        if fixture_name == "allowance_warming":
+            assert "Pace warming up" in menu_text
+            assert "7d n/a" in menu_text
+        if fixture_name == "allowance_exhausted":
+            assert "Exhausted" in menu_text
     _screenshot(container, output_path)
     _close_menu(container)
 

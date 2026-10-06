@@ -26,7 +26,7 @@ use swc_ecma_ast::Id;
 
 use super::rename_ledger::{
     FunctionScopeId, RenameIntent, RenameLedger, RenameOrigin, RenameScope, ScopeOccupancy,
-    SealValidation, SealedRenames,
+    SealError, SealValidation, SealedRenames,
 };
 
 /// Source-binding pool, disjoint from [`TARGETS`] so a generated
@@ -86,16 +86,13 @@ fn distinct_pair(n: usize) -> impl Strategy<Value = (usize, usize)> {
         .prop_map(|(first, second)| (first, if second >= first { second + 1 } else { second }))
 }
 
-/// Submit all intents into a fresh ledger and seal. Errors projected
-/// to their message so results are comparable.
-fn seal_all(intents: Vec<RenameIntent>) -> Result<SealedRenames, String> {
+/// Submit all intents into a fresh ledger and seal.
+fn seal_all(intents: Vec<RenameIntent>) -> Result<SealedRenames, SealError> {
     let mut ledger = RenameLedger::default();
     for intent in intents {
         ledger.submit(intent);
     }
-    ledger
-        .seal(&SealValidation::default())
-        .map_err(|error| error.to_string())
+    ledger.seal(&SealValidation::default())
 }
 
 /// Bounded case count for CI; a `PROPTEST_CASES` env override still
@@ -175,8 +172,8 @@ proptest! {
     }
 
     /// Two intents at the same priority disagreeing on one
-    /// `(scope, from)` target always seal to a hard error whose
-    /// message names both origins' contributors and both targets.
+    /// `(scope, from)` target always seal to a conflict error that
+    /// names both targets, each with its own origin.
     #[test]
     fn same_priority_disagreement_errors_naming_both_origins(
         scope in arb_scope(),
@@ -185,37 +182,42 @@ proptest! {
         (target_a, target_b) in distinct_pair(TARGETS.len()),
         (contributor_a, contributor_b) in distinct_pair(CONTRIBUTORS.len()),
     ) {
+        let origin_a = origin_at(priority_kind, CONTRIBUTORS[contributor_a]);
+        let origin_b = origin_at(priority_kind, CONTRIBUTORS[contributor_b]);
         let mut ledger = RenameLedger::default();
         ledger.submit(RenameIntent {
             scope,
             from: id(from),
             to: Atom::from(TARGETS[target_a]),
-            origin: origin_at(priority_kind, CONTRIBUTORS[contributor_a]),
+            origin: origin_a,
         });
         ledger.submit(RenameIntent {
             scope,
             from: id(from),
             to: Atom::from(TARGETS[target_b]),
-            origin: origin_at(priority_kind, CONTRIBUTORS[contributor_b]),
+            origin: origin_b,
         });
-        let message = match ledger.seal(&SealValidation::default()) {
-            Ok(_) => return Err(TestCaseError::fail(
-                "same-priority disagreement sealed successfully",
-            )),
-            Err(error) => error.to_string(),
+        let conflicts = match ledger.seal(&SealValidation::default()) {
+            Err(SealError::ConflictingIntents(conflicts)) => conflicts,
+            other => return Err(TestCaseError::fail(format!(
+                "same-priority disagreement did not seal to a conflict: {other:?}",
+            ))),
         };
-        for needle in [
-            CONTRIBUTORS[contributor_a],
-            CONTRIBUTORS[contributor_b],
-            TARGETS[target_a],
-            TARGETS[target_b],
-        ] {
-            prop_assert!(
-                message.contains(needle),
-                "conflict error omits `{}`: {}",
-                needle, message,
-            );
-        }
+        let [conflict] = conflicts.as_slice() else {
+            return Err(TestCaseError::fail(format!("expected one conflict: {conflicts:?}")));
+        };
+        prop_assert_eq!(conflict.scope, scope);
+        prop_assert_eq!(conflict.from.as_str(), from);
+        let sides: BTreeMap<&str, BTreeSet<RenameOrigin>> = conflict
+            .sides
+            .iter()
+            .map(|side| (side.to.as_str(), side.origins.clone()))
+            .collect();
+        let expected = BTreeMap::from([
+            (TARGETS[target_a], BTreeSet::from([origin_a])),
+            (TARGETS[target_b], BTreeSet::from([origin_b])),
+        ]);
+        prop_assert_eq!(sides, expected);
     }
 
     /// Scopes validate independently: the combined ledger seals iff
@@ -230,7 +232,7 @@ proptest! {
         for intent in &intents {
             by_scope.entry(intent.scope).or_default().push(intent.clone());
         }
-        let per_scope: BTreeMap<RenameScope, Result<SealedRenames, String>> = by_scope
+        let per_scope: BTreeMap<RenameScope, Result<SealedRenames, SealError>> = by_scope
             .into_iter()
             .map(|(scope, scope_intents)| (scope, seal_all(scope_intents)))
             .collect();

@@ -32,7 +32,7 @@ The externally built v3 image avoids adding our own image or transport wrapper.
 
 `everything` has no auth, so it cannot exercise the operator-managed OAuth linkage flow
 (`agentplane/action_service/mcp_linkage.py`). For that,
-`agentplane/action_service/test_fixtures/oauth_mcp_server.py` provides two variants with the
+`agentplane/action_service/testing/oauth_mcp_server.py` provides two variants with the
 same `echo` tool. `build_app()` uses `fastmcp`'s `InMemoryOAuthProvider` for the hermetic test,
 while the deployed image uses `build_dex_app()`: Dex handles authorization and token exchange,
 and the fixture verifies Dex-issued JWTs using Dex's internal JWKS endpoint. The deployed client

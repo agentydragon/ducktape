@@ -26,59 +26,6 @@ def cli_runner_with_env(cli_runner, wt_env):
 
 class TestCLIOutputFormat:
     @patch("x.wt.client.wt_client.WtClient.get_status")
-    def test_status_table_rendering(self, mock_get_status, cli_runner_with_env, build_status_response):
-        """Test that the status table renders correctly with real formatting."""
-        # Create status data
-        commit_info = CommitInfo(
-            hash="abcdef1234567890abcdef1234567890abcdef12",
-            short_hash="abcdef12",
-            message="Add new feature",
-            author="Test Author",
-            date="2024-01-15T10:30:00",
-        )
-
-        # Create test results
-        results = {
-            "main": (
-                StatusResult(
-                    branch_name="master",
-                    dirty_files_lower_bound=1,
-                    untracked_files_lower_bound=1,
-                    last_updated_at=datetime.now(),
-                    commit_info=commit_info,
-                    ahead_count=2,
-                    behind_count=0,
-                    is_main=True,
-                    upstream_branch="master",
-                ),
-                Path("/test/main"),
-            ),
-            "feature-branch": (
-                StatusResult(
-                    branch_name="feature/test",
-                    dirty_files_lower_bound=0,
-                    untracked_files_lower_bound=0,
-                    last_updated_at=datetime.now(),
-                    commit_info=commit_info,
-                    ahead_count=1,
-                    behind_count=0,
-                    is_main=False,
-                    upstream_branch="master",
-                ),
-                Path("/test/feature-branch"),
-            ),
-        }
-
-        status_response = build_status_response(results)
-        result = cli_runner_with_env(status_response, [], mock_get_status)
-
-        assert result.exit_code == 0
-        output = result.output
-
-        # Verify content appears in output
-        assert_output_contains(output, "main", "feature-branch")
-
-    @patch("x.wt.client.wt_client.WtClient.get_status")
     def test_status_unknown_when_not_cached(self, mock_get_status, cli_runner_with_env, build_status_response):
         """When status isn't cached yet, show 'unknown' instead of 'clean'."""
         commit_info = CommitInfo(

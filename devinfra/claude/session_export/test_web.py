@@ -6,6 +6,7 @@ from collections.abc import AsyncIterator, Callable
 from contextlib import AbstractAsyncContextManager, asynccontextmanager
 from datetime import timedelta
 from pathlib import Path
+from typing import Any
 
 import httpx
 import pytest
@@ -32,6 +33,7 @@ from util.testing.asgi import serve_app, serve_app_in_loop
 from util.testing.mock_oidc import build_mock_oidc_app, generate_rsa_keypair
 
 OWNER = "test-owner-subject"
+REFUSAL_BODY = "test-refusal-body"
 
 Serve = Callable[..., AbstractAsyncContextManager[str]]
 
@@ -52,7 +54,9 @@ def serve(store: SessionStore, tmp_path: Path) -> Serve:
     """The app and a mock IdP whose login yields `subject`, on real sockets; yields the app's origin."""
 
     @asynccontextmanager
-    async def serving(*, subject: str = OWNER, token_status: int = 200) -> AsyncIterator[str]:
+    async def serving(
+        *, subject: str = OWNER, token_status: int = 200, token_response: dict[str, Any] = PAIRED_RESPONSE
+    ) -> AsyncIterator[str]:
         frontend_dir = tmp_path / "frontend"
         frontend_dir.mkdir()
         (frontend_dir / "index.html").write_text(
@@ -81,7 +85,7 @@ def serve(store: SessionStore, tmp_path: Path) -> Serve:
         supervisor = SyncSupervisor(
             credentials=CredentialStore(settings.credentials_file),
             store=store,
-            token_client=FakeTokenEndpoint(PAIRED_RESPONSE, status=token_status).client,
+            token_client=FakeTokenEndpoint(token_response, status=token_status).client,
             interval=3600,
             workers=1,
             live_streams=0,
@@ -292,7 +296,7 @@ async def test_a_pasted_url_from_another_attempt_is_a_client_error(owner: httpx.
 
 async def test_a_code_anthropic_refuses_is_reported_without_its_body(serve: Serve) -> None:
     async with (
-        serve(token_status=400) as app_url,
+        serve(token_status=400, token_response={"error": REFUSAL_BODY}) as app_url,
         httpx.AsyncClient(base_url=app_url, headers={"Origin": app_url}) as owner,
     ):
         await owner.get("/auth/login", follow_redirects=True)
@@ -302,7 +306,9 @@ async def test_a_code_anthropic_refuses_is_reported_without_its_body(serve: Serv
             json={"redirect_url": redirect_url(authorization_state(started.json()["authorization_url"]))},
         )
     assert refused.status_code == 502
-    assert refused.json()["detail"] == "Anthropic refused the authorization code (400); start pairing again."
+    detail = refused.json()["detail"]
+    assert "400" in detail  # the status Anthropic answered
+    assert REFUSAL_BODY not in detail
 
 
 if __name__ == "__main__":

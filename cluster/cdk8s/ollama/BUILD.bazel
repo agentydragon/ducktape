@@ -37,7 +37,7 @@ py_library(
         "nginx-auth-proxy.conf.template",
         "qwen38-ssd-derived-shards.tsv",
         "qwen38-ssd-shards.tsv",
-        "setup-gpt-oss-v2.sh",
+        "setup-gpt-oss-v2.sh.j2",
     ],
     # Clients in other packages read SERVICE.
     visibility = ["//cluster/cdk8s:__subpackages__"],
@@ -52,8 +52,11 @@ py_library(
         "//cluster/cdk8s/external_secrets:minted_secret",
         "//cluster/cdk8s/providers/external_secrets:externalsecret",
         "//cluster/cdk8s/providers/flux:kustomization",
+        "//model_catalog:ollama",
+        "//util/bazel:runfiles",
         "@pypi//cdk8s",
         "@pypi//cdk8s_plus_34",
         "@pypi//constructs",
+        "@pypi//jinja2",
     ],
 )

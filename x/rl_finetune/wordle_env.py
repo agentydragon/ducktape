@@ -6,29 +6,39 @@ game server needed.
 
 from __future__ import annotations
 
+import functools
 import logging
 
 import nltk
 from nltk import pos_tag
 from nltk.corpus import words
 
-# Ensure NLTK data is available.
-for resource in ["words", "averaged_perceptron_tagger_eng"]:
-    try:
-        nltk.data.find(f"corpora/{resource}" if resource == "words" else f"taggers/{resource}")
-    except LookupError:
-        nltk.download(resource, quiet=True)
-
 logger = logging.getLogger(__name__)
 
 MAX_GUESSES = 6
 WORD_LENGTH = 5
 
-# 5-letter nouns from NLTK (same approach as TextArena's Wordle).
-_all_words = words.words("en-basic")
-WORD_LIST = [w.lower() for w in _all_words if len(w) == WORD_LENGTH and pos_tag([w])[0][1] == "NN"]
-_VALID_WORDS = {w.lower() for w in words.words("en") if len(w) == WORD_LENGTH and w.isalpha()}
-logger.info("Wordle: %d target words, %d valid guesses", len(WORD_LIST), len(_VALID_WORDS))
+
+@functools.cache
+def _load_word_lists() -> tuple[list[str], set[str]]:
+    """The secret-word candidates and the accepted guesses.
+
+    Loaded on first use, not at import, so importing this module needs neither NLTK data nor the
+    network and a caller can point NLTK at its data first.
+    """
+    # Ensure NLTK data is available.
+    for resource in ["words", "averaged_perceptron_tagger_eng"]:
+        try:
+            nltk.data.find(f"corpora/{resource}" if resource == "words" else f"taggers/{resource}")
+        except LookupError:
+            nltk.download(resource, quiet=True)
+
+    # 5-letter nouns from NLTK (same approach as TextArena's Wordle).
+    targets = [w.lower() for w in words.words("en-basic") if len(w) == WORD_LENGTH and pos_tag([w])[0][1] == "NN"]
+    valid = {w.lower() for w in words.words("en") if len(w) == WORD_LENGTH and w.isalpha()}
+    logger.info("Wordle: %d target words, %d valid guesses", len(targets), len(valid))
+    return targets, valid
+
 
 SYSTEM_PROMPT = """\
 You are playing Wordle. Guess the secret 5-letter word in 6 attempts.
@@ -88,9 +98,10 @@ class WordleEnv:
         self._unique_guesses: set[str] = set()
         self.won = False
 
-    def reset(self, seed: int = 0, **_kwargs) -> str | None:
+    def reset(self, seed: int = 0, **_kwargs) -> str:
         # seed ensures all G completions within a GRPO group play the same word.
-        self._secret = WORD_LIST[seed % len(WORD_LIST)]
+        targets, _ = _load_word_lists()
+        self._secret = targets[seed % len(targets)]
         self.reward = 0.0
         self.done = False
         self._guess_count = 0
@@ -122,7 +133,7 @@ class WordleEnv:
             self.n_invalid_length += 1
             return f"Invalid: must be exactly {WORD_LENGTH} letters."
 
-        if word not in _VALID_WORDS:
+        if word not in _load_word_lists()[1]:
             self.n_invalid_word += 1
             return f"'{word}' is not a recognized English word."
 

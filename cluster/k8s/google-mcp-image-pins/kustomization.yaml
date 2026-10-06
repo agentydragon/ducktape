@@ -2,4 +2,4 @@ apiVersion: kustomize.config.k8s.io/v1alpha1
 kind: Component
 images:
   - name: git.allegedly.works/ducktape-ci/google-mcp
-    newTag: devel-20261001082011-fcb462c # {"$imagepolicy": "flux-system:google-mcp:tag"}
+    newTag: devel-20261005050127-23ec961 # {"$imagepolicy": "flux-system:google-mcp:tag"}

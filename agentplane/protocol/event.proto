@@ -154,13 +154,18 @@ message ItemCompleted {
   }
 }
 
+// Whether the model's next request carries an observed item, as of the point the reconciliation
+// reports. Later compaction does not change an earlier decision.
 enum RecoveryDisposition {
   RECOVERY_DISPOSITION_UNSPECIFIED = 0;
-  // This item's observed content survived in the continuing conversation.
+  // The next model request carries this item's observed content.
   RECOVERY_DISPOSITION_RETAINED = 1;
+  // The next model request does not carry this item.
   RECOVERY_DISPOSITION_ABSENT = 2;
-  // The adapter cannot establish what survived. Never interpret this as absent.
+  // The adapter cannot establish whether the next model request carries this item. Never interpret
+  // this as absent.
   RECOVERY_DISPOSITION_UNKNOWN = 3;
+  // The next model request carries different content for this item: `ItemRecovery.replacement`.
   RECOVERY_DISPOSITION_REVISED = 4;
 }
 

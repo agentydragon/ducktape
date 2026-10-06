@@ -77,7 +77,7 @@ def _annotate_base(base: Inspection, prunable_workspaces: set[Path]) -> Inspecti
         return base
     if workspace not in prunable_workspaces:
         return base
-    return dataclasses.replace(base, reason=f"{base.reason} — workspace is a prunable worktree (prune it first)")
+    return dataclasses.replace(base, workspace_is_prunable_worktree=True)
 
 
 def _worktree_category(classification: Classification) -> ProgressCategory:

@@ -59,7 +59,7 @@ BOT_LOGIN = "agentydragon-agent"
 UNLISTED_HOST = "example.com"
 # The authenticated model ingress, on the same egress path as everything else
 # (cluster/k8s/agentplane-staging/agentplane-staging.k8s.yaml, EgressPolicy "basic"). It holds
-# the LiteLLM key and is granted by the deployment's `default_policies` rather than by a caller,
+# the LiteLLM key and is granted by the deployment's `default_egress_policies` rather than by a caller,
 # because an agent that cannot reach it has nothing to run -- so a sandbox that names no policy
 # still has this one.
 BASIC_POLICY = "basic"
@@ -173,7 +173,7 @@ async def test_the_model_call_itself_goes_through_the_proxy(
     and is what routing the model endpoint through the proxy exists to stop.
 
     The sandbox names no policy. `basic` reaching the ingress anyway is what
-    `default_policies` is
+    `default_egress_policies` is
     for.
     """
     view = await sandbox(f"accept-model-{harness}")

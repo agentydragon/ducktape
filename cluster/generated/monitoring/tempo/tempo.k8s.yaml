@@ -80,13 +80,6 @@ spec:
       topology.kubernetes.io/region: hil
     persistence:
       enabled: false
-    resources:
-      limits:
-        cpu: 500m
-        memory: 512Mi
-      requests:
-        cpu: 50m
-        memory: 128Mi
     serviceMonitor:
       enabled: true
     tempo:

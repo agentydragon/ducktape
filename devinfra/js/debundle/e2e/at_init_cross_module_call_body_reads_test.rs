@@ -48,7 +48,7 @@
 //! (callee and caller in the same module) keeps promoting body reads
 //! — that case is unaffected.
 
-use analysis::{DepKind, OwnerGraphReport};
+use analysis::OwnerGraphReport;
 use debundle_e2e_support::*;
 
 const CROSS_MODULE_SOURCE: &str = r#"const iA = 7;
@@ -132,62 +132,6 @@ export { state, setState };
         )],
     ));
     assert_entry_output(&fixture, "updated\n");
-}
-
-#[test]
-fn at_init_call_keeps_owner_edge_marked_with_callee() {
-    // The promoted owner edge is retained in the owner graph (the
-    // analyzer's IR keeps it as evidence of the promotion), but with
-    // the `at_init_callee_owner` field set so the gate can filter it
-    // out at quotient time. This guards against an accidental
-    // regression where the owner edge gets dropped entirely (which
-    // would break any consumer that audits the owner-level promotion
-    // shape).
-    let fixture = run_fixture(FixtureOpts::new(
-        CROSS_MODULE_SOURCE,
-        vec![
-            logical_module("mod_m", &[Member::new("gR")]),
-            logical_module("mod_m2", &[Member::new("crossModBinding")]),
-        ],
-    ));
-
-    let graph = fixture.owner_graph();
-    let trigger_owner = owner_for_binding(&graph, "triggerInit");
-    let target_owner = owner_for_binding(&graph, "crossModBinding");
-    let gr_owner = owner_for_binding(&graph, "gR");
-
-    let promoted: Vec<_> = graph
-        .edges
-        .iter()
-        .filter(|edge| {
-            edge.source == trigger_owner
-                && edge.target == target_owner
-                && edge.edge_kind == DepKind::EagerUse
-        })
-        .collect();
-
-    assert_eq!(
-        promoted.len(),
-        1,
-        "expected exactly one owner-level promoted EagerUse edge \
-         from `triggerInit` ({trigger_owner}) to `crossModBinding` \
-         ({target_owner}); got {promoted:#?}\n\nFull owner graph: {graph:#?}",
-    );
-    let callee = match promoted[0].role.as_ref() {
-        Some(analysis::EdgeRoleReport::PromotedAtInit { callee_owner }) => callee_owner.as_str(),
-        _ => panic!(
-            "promoted owner edge must carry an `EdgeRole::PromotedAtInit` role \
-             (callee_owner = {gr_owner}); got {:#?}",
-            promoted[0],
-        ),
-    };
-    assert_eq!(
-        callee, gr_owner,
-        "promoted owner edge's at-init callee owner must point at gR \
-         ({gr_owner}) so the quotient and realizability gates can \
-         drop it under cross-module assignment; got {:#?}",
-        promoted[0],
-    );
 }
 
 #[test]

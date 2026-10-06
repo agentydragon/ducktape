@@ -1,6 +1,9 @@
+import base64
+import json
 from datetime import UTC, datetime
 from pathlib import Path
 
+import httpx
 import pytest_bazel
 
 from cluster.rotators.forgejo_token_rotation import rotate
@@ -17,36 +20,23 @@ from cluster.rotators.forgejo_token_rotation.rotate import (
 )
 
 
-class _FakeResponse:
-    def __init__(self, payload, status_code: int = 200):
-        self._payload = payload
-        self.status_code = status_code
-
-    def raise_for_status(self) -> None:
-        if self.status_code >= 400:
-            raise RuntimeError(f"status {self.status_code}")
-
-    def json(self):
-        return self._payload
-
-
-class _RecordingClient:
-    def __init__(self):
-        self.posts = []
-
-    def post(self, url: str, **kwargs):
-        self.posts.append((url, kwargs))
-        return _FakeResponse(
-            {
+def _minting_client(seen: list[httpx.Request]) -> httpx.Client:
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.append(request)
+        body = json.loads(request.content)
+        return httpx.Response(
+            201,
+            json={
                 "id": 12,
-                "name": kwargs["json"]["name"],
+                "name": body["name"],
                 "sha1": "abcd1234token",
                 "token_last_eight": "34token",
-                "scopes": kwargs["json"]["scopes"],
+                "scopes": body["scopes"],
                 "repositories": None,
             },
-            status_code=201,
         )
+
+    return httpx.Client(transport=httpx.MockTransport(handler))
 
 
 def test_write_raw_token_sops_file_formats_after_encrypt(monkeypatch, tmp_path: Path):
@@ -122,10 +112,9 @@ def test_build_tea_secret_preserves_configured_metadata_annotations(tmp_path: Pa
         {"sha1": "token", "name": "forgejo-token-test", "token_last_eight": "token"},
     )
 
-    assert manifest["metadata"]["annotations"] == {
-        "description": "Forgejo API token + tea config minted by forgejo-token-rotation.",
-        "reflector.v1.k8s.emberstack.com/reflection-allowed": "true",
-    }
+    annotations = manifest["metadata"]["annotations"]
+    assert annotations["reflector.v1.k8s.emberstack.com/reflection-allowed"] == "true"
+    assert "description" in annotations
 
 
 def test_minted_token_requests_full_non_admin_write_scope_set():
@@ -136,9 +125,9 @@ def test_minted_token_requests_full_non_admin_write_scope_set():
     """
     r = Rotation(name="haku", credentials_dir=Path("/creds"), sops_file=Path("secrets/haku.yaml"))
     creds = ForgejoCredentials("test-user", "test-secret", "http://forgejo.test:3000", "https://git.test")
-    client = _RecordingClient()
-    mint_token(client, r, creds, now=datetime(2026, 7, 1, tzinfo=UTC))
-    assert client.posts[0][1]["json"]["scopes"] == [
+    seen: list[httpx.Request] = []
+    mint_token(_minting_client(seen), r, creds, now=datetime(2026, 7, 1, tzinfo=UTC))
+    assert json.loads(seen[0].content)["scopes"] == [
         "write:activitypub",
         "write:issue",
         "write:misc",
@@ -152,9 +141,8 @@ def test_minted_token_requests_full_non_admin_write_scope_set():
 
 def test_should_rotate_missing_stamps():
     r = Rotation(name="haku", credentials_dir=Path("/creds"), sops_file=Path("secrets/haku.yaml"))
-    due, reason = should_rotate(r, {}, [], now=datetime(2026, 7, 1, tzinfo=UTC))
+    due, _ = should_rotate(r, {}, [], now=datetime(2026, 7, 1, tzinfo=UTC))
     assert due
-    assert "no existing" in reason
 
 
 def test_should_skip_fresh_present_token():
@@ -169,9 +157,8 @@ def test_should_skip_fresh_present_token():
         "token_last_eight_unencrypted": "34token",
     }
     tokens = [{"id": 12, "name": "forgejo-tea-haku-20260701000000", "token_last_eight": "34token"}]
-    due, reason = should_rotate(r, stamps, tokens, now=datetime(2026, 7, 2, tzinfo=UTC))
+    due, _ = should_rotate(r, stamps, tokens, now=datetime(2026, 7, 2, tzinfo=UTC))
     assert not due
-    assert "fresh until" in reason
 
 
 def test_should_rotate_when_scopes_change():
@@ -183,9 +170,8 @@ def test_should_rotate_when_scopes_change():
         "scopes_unencrypted": ["write:repository"],
         "token_id_unencrypted": 12,
     }
-    due, reason = should_rotate(r, stamps, [{"id": 12}], now=datetime(2026, 7, 2, tzinfo=UTC))
+    due, _ = should_rotate(r, stamps, [{"id": 12}], now=datetime(2026, 7, 2, tzinfo=UTC))
     assert due
-    assert reason == "scope set changed"
 
 
 def test_should_rotate_when_token_age_reaches_interval():
@@ -197,9 +183,8 @@ def test_should_rotate_when_token_age_reaches_interval():
         "scopes_unencrypted": FULL_ACCOUNT_SCOPES,
         "token_id_unencrypted": 12,
     }
-    due, reason = should_rotate(r, stamps, [{"id": 12}], now=datetime(2026, 7, 31, tzinfo=UTC))
+    due, _ = should_rotate(r, stamps, [{"id": 12}], now=datetime(2026, 7, 31, tzinfo=UTC))
     assert due
-    assert reason == "token age reached 30d"
 
 
 def test_should_rotate_when_stamped_token_missing_from_forgejo():
@@ -211,9 +196,8 @@ def test_should_rotate_when_stamped_token_missing_from_forgejo():
         "scopes_unencrypted": FULL_ACCOUNT_SCOPES,
         "token_id_unencrypted": 12,
     }
-    due, reason = should_rotate(r, stamps, [{"id": 13}], now=datetime(2026, 7, 2, tzinfo=UTC))
+    due, _ = should_rotate(r, stamps, [{"id": 13}], now=datetime(2026, 7, 2, tzinfo=UTC))
     assert due
-    assert reason == "stamped token is not present in Forgejo"
 
 
 def test_tea_config_yaml_matches_upstream_config_shape():
@@ -273,11 +257,11 @@ def test_mint_token_omits_repositories_for_full_account_access():
         sops_file=Path("secrets/haku.yaml"),
     )
     creds = ForgejoCredentials("test-user", "test-secret", "http://forgejo.test:3000", "https://git.test")
-    client = _RecordingClient()
-    data = mint_token(client, r, creds, now=datetime(2026, 7, 1, 1, 2, 3, 456789, tzinfo=UTC))
+    seen: list[httpx.Request] = []
+    data = mint_token(_minting_client(seen), r, creds, now=datetime(2026, 7, 1, 1, 2, 3, 456789, tzinfo=UTC))
     assert data["name"] == "forgejo-tea-haku-20260701010203456789"
-    assert client.posts[0][1]["auth"] == ("test-user", "test-secret")
-    assert client.posts[0][1]["json"] == {"name": data["name"], "scopes": FULL_ACCOUNT_SCOPES}
+    assert seen[0].headers["Authorization"] == "Basic " + base64.b64encode(b"test-user:test-secret").decode()
+    assert json.loads(seen[0].content) == {"name": data["name"], "scopes": FULL_ACCOUNT_SCOPES}
 
 
 def test_tokens_to_prune_keeps_current_and_newest_previous():

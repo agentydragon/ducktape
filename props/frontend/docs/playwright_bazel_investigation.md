@@ -1,6 +1,6 @@
 # Playwright + Bazel Module Resolution Investigation
 
-Historical investigation: Props now uses a React + Mantine harness with Puppeteer visual tests and no longer runs this Playwright setup. The module-identity findings remain context for other Bazel frontends.
+Historical investigation: Props now uses a React + Mantine harness swept by the Python Playwright visual tests and no longer runs this Playwright-from-JS setup. The module-identity findings remain context for other Bazel frontends.
 
 ## Problem
 
@@ -167,12 +167,6 @@ cd props/frontend && pnpm playwright test --list
 ```bash
 cat $BAZEL_CACHE/.../visual_test_/visual_test | grep entry_point
 ```
-
-## Additional Factor: @storybook/test-runner
-
-The `@storybook/test-runner` package (in `props/frontend/package.json`) has its own dependency on
-`playwright@1.57.0`. This could contribute to module duplication, but removing it isn't an option
-as it may be used for other testing.
 
 ## Potential Solutions (Not Yet Tried)
 

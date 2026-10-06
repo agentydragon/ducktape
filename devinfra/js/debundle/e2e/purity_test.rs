@@ -143,7 +143,8 @@ export { userSchema, productSchema, orderSchema };
 #[ignore = "blocked on a RegExp entry in the Expr::New whitelist: Set/Map array-literal \
             forms landed (PURE_BUILTIN_NEW_ARRAY_ITERABLE; see the new_map / new_set / \
             new_map_with_array_of_pure_pairs tests below), but `new RegExp(\"a+\")` still \
-            classifies UnknownNew"]
+            classifies UnknownNew; the entry needs a static ECMA-262 pattern validator first \
+            (see PURE_BUILTIN_NEW_STRING_LITERAL_ARG)"]
 fn inferred_pure_collection_constructors_with_literal_args_emit_no_s_cycle() {
     // `new Set([...])`, `new Map([...])`, `new RegExp("...")` with
     // literal-only args are pure by built-in catalogue. Set/Map
@@ -238,7 +239,7 @@ fn unsafe_iife_enum_builder_still_emits_s_cycle() {
     // A call inside the IIFE body is outside the narrow enum-init
     // model. These statements stay side-effecting and the
     // interleaved modules still reject on the S-cycle.
-    expect_rejection_containing_all(
+    expect_sequenced_cycle_rejection(
         FixtureOpts::new(
             r#"function value(x) { return x; }
 var A = ((n) => (n.OK = value(0), n))(A || {});
@@ -252,7 +253,7 @@ export { A, B, C };
                 logical_module("mod_b", &[Member::new("B")]),
             ],
         ),
-        &["cycle", "mod_a", "mod_b", "side-effect"],
+        &["mod_a", "mod_b"],
     );
 }
 
@@ -294,7 +295,7 @@ fn inferred_impure_console_log_still_rejected() {
     // classified impure. Top-level statements that invoke
     // such a function across modules must still produce S
     // edges and reject the spec.
-    expect_rejection_containing_all(
+    expect_sequenced_cycle_rejection(
         FixtureOpts::new(
             r#"function logged(x) { console.log("init:", x); return x; }
 const a1 = logged("a1");
@@ -308,7 +309,7 @@ export { a1, a2, b1 };
                 logical_module("mod_b", &[Member::new("b1")]),
             ],
         ),
-        &["cycle", "mod_a", "mod_b", "side-effect"],
+        &["mod_a", "mod_b"],
     );
 }
 
@@ -320,7 +321,7 @@ fn inferred_impure_via_transitively_impure_callee_still_rejected() {
     // back to `caller` and reject specs that distribute
     // `caller(...)` calls across modules in interleaved
     // source order.
-    expect_rejection_containing_all(
+    expect_sequenced_cycle_rejection(
         FixtureOpts::new(
             r#"function tainted() { globalThis.touched = true; return 1; }
 function caller(label) { tainted(); return { label }; }
@@ -335,7 +336,7 @@ export { a1, a2, b1 };
                 logical_module("mod_b", &[Member::new("b1")]),
             ],
         ),
-        &["cycle", "mod_a", "mod_b", "side-effect"],
+        &["mod_a", "mod_b"],
     );
 }
 
@@ -347,7 +348,7 @@ fn coercing_operator_on_opaque_operand_still_emits_s_edges() {
     // S cycle the gate must reject. Pins the coercing-operator
     // gate at the pipeline level (the classifier previously
     // admitted `A + 1` as pure).
-    expect_rejection_containing_all(
+    expect_sequenced_cycle_rejection(
         FixtureOpts::new(
             r#"const a1 = obj + 1;
 const b1 = obj + 2;
@@ -360,7 +361,7 @@ export { a1, a2, b1 };
                 logical_module("mod_b", &[Member::new("b1")]),
             ],
         ),
-        &["cycle", "mod_a", "mod_b", "side-effect"],
+        &["mod_a", "mod_b"],
     );
 }
 
@@ -369,7 +370,7 @@ fn destructuring_declarators_still_emit_s_edges() {
     // SOUNDNESS: `const { a1 } = src` fires `src`'s getters at
     // declaration time — the statements stay side-effecting and
     // interleaved modules close an S cycle the gate must reject.
-    expect_rejection_containing_all(
+    expect_sequenced_cycle_rejection(
         FixtureOpts::new(
             r#"const src = make();
 const { a1 } = src;
@@ -383,7 +384,7 @@ export { a1, a2, b1 };
                 logical_module("mod_b", &[Member::new("b1")]),
             ],
         ),
-        &["cycle", "mod_a", "mod_b", "side-effect"],
+        &["mod_a", "mod_b"],
     );
 }
 
@@ -444,7 +445,7 @@ fn declared_pure_member_does_not_bypass_at_init_read_cycle() {
     // mod_a still reads `B` from mod_b at-init, and `wrap(A)`
     // in mod_b still reads `A` from mod_a at-init: the `R`
     // graph has a cycle and the gate must still reject.
-    expect_rejection_containing_all(
+    expect_cycle_rejection(
         FixtureOpts::new(
             r#"function wrap(x) { return { ref: x }; }
 const A = "a";
@@ -470,40 +471,53 @@ export { A, B, D, wrap };
         // R-edge mod_a → mod_b (D's init reads B); R-edge
         // mod_b → mod_a (B's init reads A). The cycle's
         // evidence is at-init reads, not the wrapped call.
-        // The rejection message must still mention the cycle
-        // and both modules.
-        &["cycle", "mod_a", "mod_b"],
+        // The cycle report must still list both modules.
+        &["mod_a", "mod_b"],
     );
 }
 
 #[test]
 fn canonical_source_match_purity_annotation_contributes_to_analysis_hints() {
-    let fixture = run_fixture(FixtureOpts::new(
-        r#"function pureWrap(x) { return { val: x }; }
-function impureWrap(x) { globalThis.lastWrap = x; return { val: x }; }
-const A = pureWrap("a");
-const B = pureWrap("b");
-const C = pureWrap("c");
-console.log(A.val, B.val, C.val);
-export { A, B, C, pureWrap, impureWrap };
-"#,
+    // `dispatcher` calls through a registry lookup, which inference cannot
+    // prove pure, so the `purity` on its source_match member is the only
+    // thing that drops the `S` edges of the interleaved call sites. The
+    // unannotated control keeps that premise from silently going vacuous.
+    const ENTRY: &str = r#"const registry = {
+  alpha: function (x) { return { handled: "alpha", x }; },
+  beta: function (x) { return { handled: "beta", x }; },
+  gamma: function (x) { return { handled: "gamma", x }; },
+};
+function dispatcher(req) {
+  return registry[req.kind](req.payload);
+}
+const A = dispatcher({ kind: "alpha", payload: 1 });
+const B = dispatcher({ kind: "beta", payload: 2 });
+const C = dispatcher({ kind: "gamma", payload: 3 });
+console.log(A.handled, B.handled, C.handled);
+export { A, B, C, dispatcher };
+"#;
+    let dispatcher = || {
+        Member::source_alpha(
+            "dispatcher",
+            r#"function dispatcher(req) { return registry[req.kind](req.payload); }"#,
+        )
+    };
+    let modules = |dispatcher: Member| {
         vec![
-            logical_module(
-                "mod_a",
-                &[
-                    Member::new("A"),
-                    Member::new("C"),
-                    Member::source_alpha(
-                        "pureWrap",
-                        r#"function pureWrap(x) { return { val: x }; }"#,
-                    )
-                    .with_purity(MemberPurity::Pure),
-                ],
-            ),
+            logical_module("mod_a", &[Member::new("A"), Member::new("C"), dispatcher]),
             logical_module("mod_b", &[Member::new("B")]),
-        ],
+        ]
+    };
+
+    expect_rejection_containing_all(
+        FixtureOpts::new(ENTRY, modules(dispatcher())),
+        &["cycle", "mod_a", "mod_b", "side-effect"],
+    );
+    let fixture = run_fixture(FixtureOpts::new(
+        ENTRY,
+        modules(dispatcher().with_purity(MemberPurity::Pure)),
     ));
-    assert_entry_output(&fixture, "a b c\n");
+    assert_entry_output(&fixture, "alpha beta gamma\n");
 }
 
 #[test]
@@ -516,7 +530,7 @@ fn declared_pure_annotation_applies_only_to_annotated_member_negative() {
     // `S` graph has cross-module edges in both directions and
     // the gate must reject. The `pureWrap` annotation does
     // not bleed onto sibling members.
-    expect_rejection_containing_all(
+    expect_sequenced_cycle_rejection(
         FixtureOpts::new(
             r#"function pureWrap(x) { return { val: x }; }
 function impureWrap(x) { globalThis.lastWrap = x; return { val: x }; }
@@ -540,7 +554,7 @@ export { A, B, C, pureWrap, impureWrap };
                 logical_module("mod_b", &[Member::new("B")]),
             ],
         ),
-        &["cycle", "mod_a", "mod_b", "side-effect"],
+        &["mod_a", "mod_b"],
     );
 }
 
@@ -575,7 +589,7 @@ export { A, B, C, PureBox };
 
 #[test]
 fn declared_pure_new_member_still_evaluates_constructor_args() {
-    expect_rejection_containing_all(
+    expect_sequenced_cycle_rejection(
         FixtureOpts::new(
             r#"class PureBox {
   constructor(value) {
@@ -604,7 +618,7 @@ export { A, B, C, PureBox };
                 logical_module("mod_b", &[Member::new("B")]),
             ],
         ),
-        &["cycle", "mod_a", "mod_b", "side-effect"],
+        &["mod_a", "mod_b"],
     );
 }
 
@@ -891,7 +905,7 @@ fn cross_module_impure_import_still_emits_s_cycle() {
     // must propagate that impurity back to the call sites, so the interleaved
     // modules still reject on the S-cycle (the oracle removes only genuine
     // false-impurity, never real effects).
-    expect_rejection(
+    expect_sequenced_cycle_rejection(
         FixtureOpts::new(
             r#"import { wrap } from "./vendorlib.js";
 const A = wrap(function () { return "a"; });
@@ -909,7 +923,7 @@ export { A, B, C };
             "static/vendorlib",
             "export function wrap(f) { globalThis.__sink = f; return { impl: f }; }\n",
         )]),
-        &["cycle", "mod_a", "mod_b", "side-effect"],
+        &["mod_a", "mod_b"],
     );
 }
 
@@ -970,7 +984,7 @@ fn fluent_chain_schema_decls_without_assertion_emit_s_cycle() {
     // Baseline pin: the chain receivers are call results, so every
     // schema decl is impure (`unknown_call`/`unknown_member`) and the
     // interleaved destinations S-cycle.
-    expect_rejection(
+    expect_sequenced_cycle_rejection(
         FixtureOpts::new(
             FLUENT_CHAIN_ENTRY,
             vec![
@@ -979,7 +993,7 @@ fn fluent_chain_schema_decls_without_assertion_emit_s_cycle() {
             ],
         )
         .with_extra_chunks(&[("static/vendorlib", FLUENT_VENDORLIB)]),
-        &["cycle", "mod_a", "mod_b", "side-effect"],
+        &["mod_a", "mod_b"],
     );
 }
 
@@ -1041,9 +1055,9 @@ fn annotation_property_writes_without_policy_emit_s_cycle() {
     // their source order across the interleaved destinations
     // (mod_a → mod_b → mod_a), which cycles — even though each write
     // is claimed right next to its component.
-    expect_rejection(
+    expect_sequenced_cycle_rejection(
         FixtureOpts::new(ANNOTATION_WRITE_ENTRY, annotation_write_modules()),
-        &["cycle", "mod_a", "mod_b", "side-effect"],
+        &["mod_a", "mod_b"],
     );
 }
 
@@ -1065,7 +1079,7 @@ fn annotation_property_write_cannot_be_split_from_its_declarer() {
     // does not erase it. Claiming the write into a DIFFERENT module
     // than its target binding still conflicts — the LocalEffect edge
     // forces co-location with the declarer.
-    expect_rejection(
+    expect_atomic_conflict_rejection(
         FixtureOpts::new(
             ANNOTATION_WRITE_ENTRY,
             vec![
@@ -1078,7 +1092,8 @@ fn annotation_property_write_cannot_be_split_from_its_declarer() {
             ],
         )
         .with_local_property_effects(),
-        &["atomic", "cycle", "co-locate"],
+        &["mod_a", "mod_b"],
+        &["local_effect"],
     );
 }
 

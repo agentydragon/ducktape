@@ -13,10 +13,6 @@
 let
   toTOML = (pkgs.formats.toml { }).generate;
 
-  # `codex-claude`: Claude Code on ChatGPT/Codex via the in-cluster CLIProxyAPI gateway.
-  # See ./claude_code/codex-claude.nix.
-  codexClaude = import ./claude_code/codex-claude.nix { inherit pkgs config; };
-
   ducktapePackages = import ../packages {
     inherit lib pkgs;
     artifacts = ducktape-artifacts;
@@ -37,21 +33,6 @@ let
     gterm-theme
     bbapi
     ;
-
-  tanaClaude = import ./claude_code/tana-claude.nix { inherit pkgs config; };
-
-  # `litellm-claude`: Claude Code on its ordinary Claude models, routed through the cluster
-  # LiteLLM proxy rather than straight to Anthropic, reading
-  # $CLAUDE_SUBSCRIPTION_LITELLM_KEY. See ./claude_code/litellm-claude.nix.
-  litellmClaude = import ./claude_code/litellm-claude.nix { inherit pkgs config; };
-
-  # `gemini-claude`: Claude Code on Google Gemini via the cluster LiteLLM proxy, reading
-  # $GEMINI_LITELLM_KEY. See ./claude_code/gemini-claude.nix.
-  geminiClaude = import ./claude_code/gemini-claude.nix { inherit pkgs config; };
-
-  # `antigravity-claude`: Claude Code on Google's Antigravity OAuth session (via
-  # CLIProxyAPI) through the cluster LiteLLM proxy. See ./claude_code/antigravity-claude.nix.
-  antigravityClaude = import ./claude_code/antigravity-claude.nix { inherit pkgs config; };
 
   mkHomeGtkBookmark =
     { path, title }:
@@ -133,6 +114,11 @@ in
     };
   };
 
+  # Claude gateway wrappers are paused: do not install codex-claude, tana-claude,
+  # gemini-claude, antigravity-claude, or litellm-claude in home.packages. Their
+  # renderers in ./claude_code/ and key declarations below remain for re-enabling.
+  # Direct Claude Code and Codex installations are unaffected.
+  #
   # LiteLLM virtual keys for the Claude Code gateway wrappers. Declared as plain secrets
   # rather than through ducktape.sopsEnv because each wrapper cats its own file at exec
   # time: only the one process that authenticates holds the credential, instead of every
@@ -385,12 +371,6 @@ in
       rust-analyzer
       sccache
       gcc
-
-      codexClaude
-      tanaClaude
-      geminiClaude
-      antigravityClaude
-      litellmClaude
 
       go
 

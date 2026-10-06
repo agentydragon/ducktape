@@ -42,7 +42,7 @@ from agentplane.action_service.enrollments import (
 )
 from agentplane.action_service.models import OperatorPrincipal, Verdict
 from agentplane.action_service.service import ActionService
-from agentplane.action_service.test_fixtures.callers import OTHER, PERSONAL, UNLABELED, admitted_callers
+from agentplane.action_service.testing.callers import OTHER, PERSONAL, UNLABELED, admitted_callers
 from agentplane.action_service.updates import ActionUpdates
 from agentplane.subjects import ServiceAccountRef
 from agentplane.workload_auth.principal import WorkloadPrincipalResolver

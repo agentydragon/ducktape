@@ -22,16 +22,22 @@ export function expiry(expiresAt: string | null | undefined): JSX.Element {
   );
 }
 
-/** Every rule of every resolved policy, one line each: what may be reached and with which credential. */
-function PolicySummary({ policies, missing }: { policies: PolicyView[]; missing: string[] }): JSX.Element {
+/** Every rule of every resolved egress policy, one line each: what may be reached and with which credential. */
+function EgressPolicySummary({
+  egressPolicies,
+  missingEgressPolicies,
+}: {
+  egressPolicies: PolicyView[];
+  missingEgressPolicies: string[];
+}): JSX.Element {
   return (
     <Stack gap="xs">
-      {policies.map((policy) => (
-        <Stack key={policy.name} gap={2}>
+      {egressPolicies.map((egressPolicy) => (
+        <Stack key={egressPolicy.name} gap={2}>
           <Text size="sm" fw={600}>
-            {policy.name}
+            {egressPolicy.name}
           </Text>
-          {policy.rules.map((rule, index) => (
+          {egressPolicy.rules.map((rule, index) => (
             <Text key={index} size="sm" style={{ overflowWrap: "anywhere" }}>
               {rule.hosts.join(", ")} · {rule.methods ? rule.methods.join(" ") : "any method"} ·{" "}
               {rule.paths ? rule.paths.join(", ") : "any path"}
@@ -56,9 +62,9 @@ function PolicySummary({ policies, missing }: { policies: PolicyView[]; missing:
           ))}
         </Stack>
       ))}
-      {missing.map((name) => (
+      {missingEgressPolicies.map((name) => (
         <Text key={name} size="sm" c="red">
-          {name}: no such policy
+          {name}: no such egress policy
         </Text>
       ))}
     </Stack>
@@ -123,7 +129,7 @@ function BindingsTable({
           <Table.Th>Binding</Table.Th>
           <Table.Th visibleFrom="sm">Provenance</Table.Th>
           <Table.Th visibleFrom="sm">Expires</Table.Th>
-          <Table.Th visibleFrom="sm">Policies</Table.Th>
+          <Table.Th visibleFrom="sm">Egress policies</Table.Th>
           <Table.Th visibleFrom="sm">Active</Table.Th>
           <Table.Th />
         </Table.Tr>
@@ -198,7 +204,10 @@ function BindingsTable({
             rows.push(
               <Table.Tr key={`${binding.name}-rules`}>
                 <Table.Td colSpan={6}>
-                  <PolicySummary policies={binding.policies} missing={binding.missing_policies} />
+                  <EgressPolicySummary
+                    egressPolicies={binding.policies}
+                    missingEgressPolicies={binding.missing_policies}
+                  />
                 </Table.Td>
               </Table.Tr>
             );
@@ -207,21 +216,21 @@ function BindingsTable({
         })}
       </Table.Tbody>
       <Table.Caption>
-        A binding is the permission: it allows while it exists, and revoking deletes it. One from the repository is
-        removed there.
+        An egress binding is the permission: it allows while it exists, and revoking deletes it. One from the repository
+        is removed there.
       </Table.Caption>
     </Table>
   );
 }
 
 /** Grants to a sandbox that is already running; each grant is its own binding, revoked on its own. */
-function GrantPolicies({
-  policies,
+function GrantEgressPolicies({
+  egressPolicies,
   picked,
   onPick,
   onGrant,
 }: {
-  policies: string[];
+  egressPolicies: string[];
   picked: string[];
   onPick: (names: string[]) => void;
   onGrant: () => void;
@@ -229,9 +238,10 @@ function GrantPolicies({
   return (
     <Group align="flex-end">
       <MultiSelect
-        label="Grant policies"
+        label="Grant egress policies"
         description="Added as a binding of its own; what this sandbox already has is untouched"
-        data={policies}
+        hidePickedOptions
+        data={egressPolicies}
         value={picked}
         onChange={onPick}
         style={{ flex: "1 1 12rem" }}
@@ -323,8 +333,8 @@ export function EgressSection({ name, bindings }: { name: string; bindings: Bind
   const [decisions, setDecisions] = useState<Decision[] | null>(null);
   const [decisionsError, setDecisionsError] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  // The namespace's policies, and the ones picked to grant this sandbox next.
-  const [policies, setPolicies] = useState<string[]>([]);
+  // The namespace's egress policies, and the ones picked to grant this sandbox next.
+  const [egressPolicies, setEgressPolicies] = useState<string[]>([]);
   const [picked, setPicked] = useState<string[]>([]);
 
   const refresh = useCallback(async () => {
@@ -348,7 +358,7 @@ export function EgressSection({ name, bindings }: { name: string; bindings: Bind
     void (async () => {
       const { data, error: failure } = await api.GET("/egress/policies");
       setError(failure ? displayableError(failure) : null);
-      if (!failure) setPolicies(data.map((policy) => policy.name));
+      if (!failure) setEgressPolicies(data.map((policy) => policy.name));
     })();
   }, []);
 
@@ -373,7 +383,12 @@ export function EgressSection({ name, bindings }: { name: string; bindings: Bind
   return (
     <Stack gap="xs">
       {error && <Text c="red">{error}</Text>}
-      <GrantPolicies policies={policies} picked={picked} onPick={setPicked} onGrant={() => void grant()} />
+      <GrantEgressPolicies
+        egressPolicies={egressPolicies}
+        picked={picked}
+        onPick={setPicked}
+        onGrant={() => void grant()}
+      />
       {bindings && <BindingsTable bindings={bindings} onRevoke={(binding) => void revoke(binding)} />}
       <Title order={5}>Recent decisions</Title>
       {decisions && <DecisionsTable decisions={decisions} />}

@@ -1,0 +1,54 @@
+name: Assemble BuildBuddy runner image
+description: Import the pinned base, assemble the Nix closure, and validate reproducibility and runtime tools.
+inputs:
+  image:
+    description: Publication repository, used to compare the existing pin.
+    required: true
+outputs:
+  digest:
+    description: Digest of the assembled OCI manifest.
+    value: ${{ steps.build.outputs.digest }}
+  needs_publish:
+    description: Whether this image differs from the current pin.
+    value: ${{ steps.build.outputs.needs_publish }}
+runs:
+  using: composite
+  steps:
+    - uses: ./.github/actions/setup-nix-devtools
+      with:
+        package: runner-image-tools
+
+    - uses: docker/login-action@v4
+      with:
+        registry: ghcr.io
+        username: ${{ github.actor }}
+        password: ${{ github.token }}
+
+    - name: Assemble and compare repeated builds
+      id: build
+      shell: bash
+      env:
+        IMAGE: ${{ inputs.image }}
+      run: |
+        python3 devinfra/ci/nix_runner_image.py build \
+          --work-dir "$RUNNER_TEMP/runner-image" --image "$IMAGE" \
+          --github-output "$GITHUB_OUTPUT" --check-reproducible
+
+    - name: Exercise the assembled tools in Docker
+      shell: bash
+      env:
+        ARCHIVE: ${{ steps.build.outputs.archive }}
+      run: |
+        docker load --input "$ARCHIVE"
+        docker run --rm --entrypoint /bin/bash \
+          -e USE_BAZEL_VERSION="$(cat .bazelversion)" \
+          buildbuddy-remote-runner:latest -euxo pipefail -c '
+            command -v bb bazelisk bazel-diff
+            bb version
+            bazelisk version
+            bazel-diff --help
+            git --version
+            python3 -c "import json, subprocess, urllib.request"
+            test -x /usr/bin/dockerd.real
+            /usr/bin/dockerd --version
+          '

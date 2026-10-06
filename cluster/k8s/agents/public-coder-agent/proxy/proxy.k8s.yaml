@@ -192,7 +192,7 @@ metadata:
   name: proxy
   namespace: public-coder-agent
 spec:
-  replicas: 1
+  replicas: 0
   selector:
     matchLabels:
       app.kubernetes.io/name: public-coder-agent-proxy

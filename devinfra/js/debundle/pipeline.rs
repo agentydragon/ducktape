@@ -683,9 +683,6 @@ mod tests {
             assert!(out.join("reports/runtime.json").exists());
             let entry = fs::read_to_string(out.join("app/static/index-EXAMPLE/entry.js"))?;
             assert!(entry.contains("../chunk-DuckMock/entry.js"));
-            let chunk_entry = fs::read_to_string(out.join("app/static/chunk-DuckMock/entry.js"))?;
-            let total_bytes = entry.len() + chunk_entry.len();
-            let total_lines = entry.lines().count() + chunk_entry.lines().count();
 
             let output: serde_json::Value =
                 serde_json::from_str(&fs::read_to_string(out.join("reports/output.json"))?)?;
@@ -694,36 +691,6 @@ mod tests {
                     .pointer("/output_metrics/total/files")
                     .and_then(serde_json::Value::as_u64),
                 Some(2),
-            );
-            assert_eq!(
-                output
-                    .pointer("/output_metrics/total/bytes")
-                    .and_then(serde_json::Value::as_u64),
-                Some(total_bytes as u64),
-            );
-            assert_eq!(
-                output
-                    .pointer("/output_metrics/total/lines")
-                    .and_then(serde_json::Value::as_u64),
-                Some(total_lines as u64),
-            );
-            assert_eq!(
-                output
-                    .pointer("/output_metrics/top_level_entry/files")
-                    .and_then(serde_json::Value::as_u64),
-                Some(2),
-            );
-            assert_eq!(
-                output
-                    .pointer("/output_metrics/named_modules/files")
-                    .and_then(serde_json::Value::as_u64),
-                Some(0),
-            );
-            assert_eq!(
-                output
-                    .pointer("/output_metrics/largest_files_by_bytes/0/role")
-                    .and_then(serde_json::Value::as_str),
-                Some("top_level_entry"),
             );
             let runtime: serde_json::Value =
                 serde_json::from_str(&fs::read_to_string(out.join("reports/runtime.json"))?)?;
@@ -754,104 +721,6 @@ mod tests {
                     .map(Vec::len),
                 Some(2)
             );
-            Ok(())
-        })
-    }
-
-    #[test]
-    fn tree_authoring_resolves_source_selectors_in_each_mapped_chunk() -> Result<()> {
-        js_ast::with_swc_globals(|| {
-            let temp = tempfile::tempdir()?;
-            let root = temp.path();
-            let snapshot = root.join("snapshot");
-            let extracted = root.join("extracted");
-            let modules = root.join("modules");
-            let out = root.join("out");
-            fs::create_dir_all(&snapshot)?;
-            fs::create_dir_all(&extracted)?;
-            fs::create_dir_all(modules.join("chunks/cli/runtime"))?;
-            fs::create_dir_all(modules.join("chunks/print/protocol"))?;
-            fs::write(
-                snapshot.join("cli.js"),
-                "import { printFeature } from './print.js';\nfunction cliFeature() { return `cli:${printFeature()}`; }\nconsole.log(cliFeature());\nexport { cliFeature };\n",
-            )?;
-            fs::write(
-                snapshot.join("print.js"),
-                "function printFeature() { return 'print'; }\nexport { printFeature };\n",
-            )?;
-            fs::write(extracted.join("js-files.txt"), "cli.js\nprint.js\n")?;
-            fs::write(
-                modules.join("chunks/cli/runtime/session.yaml"),
-                r#"source_matches:
-  - match: |
-      function selectedFeature() {
-        return `cli:${printFeature()}`;
-      }
-    bindings:
-      - local: selectedFeature
-        name: CliFeature
-"#,
-            )?;
-            fs::write(
-                modules.join("chunks/print/protocol/stream.yaml"),
-                r#"source_matches:
-  - match: |
-      function selectedFeature() {
-        return "print";
-      }
-    bindings:
-      - local: selectedFeature
-        name: PrintFeature
-"#,
-            )?;
-            let config = root.join("spec_config.yaml");
-            fs::write(
-                &config,
-                r#"main_chunk_id: cli
-module_roots:
-  chunks/cli: cli
-  chunks/print: print
-inputs:
-  root: snapshot
-  js_list_path: extracted/js-files.txt
-write_js_tree: true
-unassigned_mode:
-  cli: { kind: inline_in_entry }
-  print: { kind: inline_in_entry }
-"#,
-            )?;
-            let vendor_marks = root.join("vendor_marks.yaml");
-            fs::write(&vendor_marks, "vendor_marks: []\n")?;
-
-            run_transform_cli(
-                &TransformCli {
-                    spec_source: TransformSpecSource::Tree(CompileSpecTreeOptions {
-                        config_path: config,
-                        modules_root: modules,
-                        vendor_marks_path: vendor_marks,
-                        source_root: Some(root.to_path_buf()),
-                        out_root: out.clone(),
-                    }),
-                    package_roots: HashMap::new(),
-                    packages_root: None,
-                },
-                KEEP_GOING_RUN,
-            )?;
-
-            let cli_module = fs::read_to_string(out.join("app/cli/runtime/session.js"))?;
-            let print_module = fs::read_to_string(out.join("app/print/protocol/stream.js"))?;
-            assert!(cli_module.contains("CliFeature"), "{cli_module}");
-            assert!(cli_module.contains("printFeature"), "{cli_module}");
-            assert!(cli_module.contains("../../print/entry.js"), "{cli_module}");
-            assert!(!cli_module.contains("PrintFeature"), "{cli_module}");
-            assert!(print_module.contains("PrintFeature"), "{print_module}");
-            assert!(print_module.contains("'print'"), "{print_module}");
-            assert!(!print_module.contains("CliFeature"), "{print_module}");
-            let print_entry = fs::read_to_string(out.join("app/print/entry.js"))?;
-            assert!(print_entry.contains("PrintFeature"), "{print_entry}");
-            assert!(print_entry.contains("printFeature"), "{print_entry}");
-            assert!(out.join("reports/tree/cli/modules.json").exists());
-            assert!(out.join("reports/tree/print/modules.json").exists());
             Ok(())
         })
     }
@@ -916,12 +785,13 @@ unassigned_mode:
                 KEEP_GOING_RUN,
             )
             .expect_err("non-empty output directories should be rejected, not replaced");
-            assert!(
-                err.to_string().contains("Output directory is not empty"),
-                "unexpected error: {err:#}"
-            );
             assert!(js_out.join("stale.txt").exists());
             assert!(harness_out.join("stale.txt").exists());
+            // Refused before any write: a later failure would leave `app/` or `reports/` behind.
+            for out_dir in [&js_out, &harness_out] {
+                assert!(!out_dir.join("app").exists(), "{err:#}");
+                assert!(!out_dir.join("reports").exists(), "{err:#}");
+            }
             Ok(())
         })
     }

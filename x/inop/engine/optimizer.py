@@ -61,7 +61,6 @@ from x.inop.io.logging_utils import DualOutputLogging
 from x.inop.io.task_loader import load_runner_configs, load_task_definitions, load_task_types
 from x.inop.io.yaml_loader import load_yaml_files
 from x.inop.model_factory import create_optimizer_models
-from x.inop.plots import ScoreEvolutionTracker
 from x.inop.prompt_feedback_mcp import make_prompt_feedback_server_with_state
 from x.inop.prompting.pe_controller import ProposePromptNTimes
 from x.inop.prompting.prompt_engineer import (
@@ -87,53 +86,12 @@ logger = logging.getLogger(__name__)
 # MCP mount prefix for prompt feedback server
 PROMPT_FEEDBACK_MOUNT_PREFIX = MCPMountPrefix("prompt_feedback")
 
-# Global trackers
-score_tracker = ScoreEvolutionTracker()
-
-
-# Global cost tracking
-@dataclass
-class CostTracker:
-    """Tracks total costs across all coding agent rollouts."""
-
-    total_cost_usd = 0.0
-    rollout_count = 0
-
-    def add_rollout_cost(self, cost_usd: float):
-        """Add cost from a completed rollout."""
-        self.total_cost_usd += cost_usd
-        self.rollout_count += 1
-        logger.info(
-            "Rollout cost added",
-            extra={
-                "rollout_cost_usd": cost_usd,
-                "total_cost_usd": self.total_cost_usd,
-                "rollout_count": self.rollout_count,
-            },
-        )
-
-    def report_final_cost(self):
-        """Report final cost summary."""
-        logger.info(
-            "FINAL COST SUMMARY",
-            extra={
-                "total_cost_usd": self.total_cost_usd,
-                "rollout_count": self.rollout_count,
-                "avg_cost_per_rollout_usd": self.total_cost_usd / max(1, self.rollout_count),
-            },
-        )
-
-
-# Global cost tracker instance
-cost_tracker = CostTracker()
-
 
 def setup_signal_handlers():
-    """Setup signal handlers for graceful cost reporting on interruption."""
+    """Exit with status 1 on SIGINT/SIGTERM so `finally` cleanup in main() runs."""
 
     def signal_handler(signum, _frame):
-        logger.info("Interrupt received, reporting costs before exit", extra={"signal": signum})
-        cost_tracker.report_final_cost()
+        logger.info("Interrupt received, exiting", extra={"signal": signum})
         sys.exit(1)
 
     signal.signal(signal.SIGINT, signal_handler)
@@ -495,7 +453,6 @@ Examples:
     DualOutputLogging.setup_logging(verbose=args.verbose)
     # Module-level logger inherits root handlers configured above
 
-    # Setup signal handlers for graceful cost reporting on interruption
     setup_signal_handlers()
 
     # Load ALL configuration explicitly from --config-dir
@@ -577,19 +534,7 @@ Examples:
     finally:
         asyncio.run(docker_client.close())
 
-    # Generate final score evolution report
-    final_evolution_report = score_tracker.generate_report(run_dir, run_dir)
-    final_report_path = run_dir / "final_score_evolution_report.txt"
-    final_report_path.write_text(final_evolution_report)
-
-    print("\n" + "=" * 60)
-    print(final_evolution_report)
-    print("=" * 60)
-
-    logger.info(
-        "Score evolution report generated", extra={"report_path": str(final_report_path), "run_directory": str(run_dir)}
-    )
-    cost_tracker.report_final_cost()
+    logger.info("Optimization complete", extra={"run_directory": str(run_dir)})
 
 
 if __name__ == "__main__":

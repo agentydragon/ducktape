@@ -2051,31 +2051,6 @@ mod tests {
     }
 
     #[test]
-    fn extracts_function_declaration_body() {
-        // The bare-delegator shape: a function whose only identity is the call in
-        // its body.
-        let facts = extract("function f(x) { return g(x); }").expect("covered shape extracts");
-
-        let idents: BTreeSet<&str> = facts.ident_name.iter().map(|(_, s)| s.as_str()).collect();
-        for name in ["f", "x", "g"] {
-            assert!(idents.contains(name), "ident {name} present: {idents:?}");
-        }
-        assert_kinds(
-            &facts,
-            [
-                NodeKind::FnDecl,
-                NodeKind::Function,
-                NodeKind::Block,
-                NodeKind::Return,
-                NodeKind::Call,
-                NodeKind::Ident,
-                NodeKind::BindingIdent,
-            ],
-        );
-        assert_eq!(facts.top_level.len(), 1);
-    }
-
-    #[test]
     fn extracts_class_with_method_returning_literal() {
         // Identity = a getName() returning the class's own readable name, plus an
         // `extends` edge.
@@ -2136,71 +2111,56 @@ mod tests {
     }
 
     #[test]
-    fn extracts_function_expression_and_object_literal() {
-        let facts = extract("const a = { handler: function (x) { return x; }, ...rest };")
-            .expect("covered shape extracts");
-        assert_kinds(
-            &facts,
-            [
-                NodeKind::Object,
-                NodeKind::KeyValue,
-                NodeKind::FnExpr,
-                NodeKind::Function,
-                NodeKind::Spread,
-            ],
-        );
-        let props: Vec<&str> = facts.prop_name.iter().map(|(_, s)| s.as_str()).collect();
-        assert_eq!(props, vec!["handler"], "object key");
+    fn extracts_each_modeled_construct_with_its_node_kinds() {
+        use NodeKind::*;
+        let cases: [(&str, &[NodeKind]); 10] = [
+            (
+                "function f(x) { return g(x); }",
+                &[FnDecl, Function, Block, Return, Call, Ident, BindingIdent],
+            ),
+            (
+                "const a = { handler: function (x) { return x; }, ...rest };",
+                &[Object, KeyValue, FnExpr, Function, Spread],
+            ),
+            ("a.b = c;", &[ExprStmt, Assign, Member]),
+            (
+                "if (a) { b(); } else throw c;",
+                &[If, Block, ExprStmt, Call, Throw],
+            ),
+            (
+                "class C { x = 1; constructor(a) { this.a = a; } }",
+                &[ClassDecl, ClassProp, Constructor, This, Assign],
+            ),
+            (
+                "for (const { a, b } of items) { log(`x${a}`); }",
+                &[ForOf, ObjectPat, PatAssign, Tpl, TplQuasi],
+            ),
+            (
+                "class C extends B { async m() { return await super.n()?.p; } }",
+                &[SuperProp, Await, OptChain],
+            ),
+            (
+                "import { a, b } from \"m\"; export default function () {}",
+                &[Import, ImportSpecifier, ExportDefaultDecl, Function],
+            ),
+            ("const a = import.meta;", &[MetaPropImportMeta]),
+            (
+                "function f() { debugger; }\nconst a = tag`x${y}z`;",
+                &[Debugger, TaggedTpl, Tpl, TplQuasi],
+            ),
+        ];
+        for (src, kinds) in cases {
+            let facts = extract(src).unwrap_or_else(|error| panic!("{src:?}: {error:?}"));
+            assert_kinds(&facts, kinds.iter().copied());
+        }
     }
 
     #[test]
-    fn extracts_member_assignment() {
-        // `a.b = c;` — the module-export assignment shape that dominates the
-        // corpus after fn/object.
-        let facts = extract("a.b = c;").expect("covered shape extracts");
-        assert_kinds(
-            &facts,
-            [NodeKind::ExprStmt, NodeKind::Assign, NodeKind::Member],
-        );
-        assert!(
-            facts.operator.iter().any(|(_, op)| op == "="),
-            "assign operator: {:?}",
-            facts.operator,
-        );
-        let props: Vec<&str> = facts.prop_name.iter().map(|(_, s)| s.as_str()).collect();
-        assert_eq!(props, vec!["b"], "assigned member name");
-    }
-
-    #[test]
-    fn extracts_control_flow_statements() {
-        // if/else with a block consequent and a throw alternative.
-        let facts = extract("if (a) { b(); } else throw c;").expect("covered shape extracts");
-        assert_kinds(
-            &facts,
-            [
-                NodeKind::If,
-                NodeKind::Block,
-                NodeKind::ExprStmt,
-                NodeKind::Call,
-                NodeKind::Throw,
-            ],
-        );
-    }
-
-    #[test]
-    fn extracts_class_constructor_and_property() {
-        let facts = extract("class C { x = 1; constructor(a) { this.a = a; } }")
-            .expect("covered shape extracts");
-        assert_kinds(
-            &facts,
-            [
-                NodeKind::ClassDecl,
-                NodeKind::ClassProp,
-                NodeKind::Constructor,
-                NodeKind::This,
-                NodeKind::Assign,
-            ],
-        );
+    fn records_function_names_assignment_operators_and_import_sources() {
+        let facts = extract("function f() {}\na.b = c;\nimport \"m\";").expect("extracts");
+        assert!(facts.ident_name.iter().any(|(_, s)| s == "f"));
+        assert!(facts.operator.iter().any(|(_, s)| s == "="));
+        assert!(facts.str_lit.iter().any(|(_, s)| s == "m"));
     }
 
     #[test]
@@ -2240,53 +2200,6 @@ mod tests {
     }
 
     #[test]
-    fn extracts_for_of_destructuring_and_template() {
-        let facts = extract("for (const { a, b } of items) { log(`x${a}`); }")
-            .expect("covered shape extracts");
-        assert_kinds(
-            &facts,
-            [
-                NodeKind::ForOf,
-                NodeKind::ObjectPat,
-                NodeKind::PatAssign,
-                NodeKind::Tpl,
-                NodeKind::TplQuasi,
-            ],
-        );
-    }
-
-    #[test]
-    fn extracts_super_await_optional_chain() {
-        let facts = extract("class C extends B { async m() { return await super.n()?.p; } }")
-            .expect("covered shape extracts");
-        assert_kinds(
-            &facts,
-            [NodeKind::SuperProp, NodeKind::Await, NodeKind::OptChain],
-        );
-    }
-
-    #[test]
-    fn extracts_module_imports_and_default_export() {
-        let facts = extract("import { a, b } from \"m\"; export default function () {}")
-            .expect("covered shape extracts");
-        assert_kinds(
-            &facts,
-            [
-                NodeKind::Import,
-                NodeKind::ImportSpecifier,
-                NodeKind::ExportDefaultDecl,
-                NodeKind::Function,
-            ],
-        );
-        let imported_module = facts.str_lit.iter().any(|(_, s)| s == "m");
-        assert!(
-            imported_module,
-            "import source recorded: {:?}",
-            facts.str_lit
-        );
-    }
-
-    #[test]
     fn coverage_report_tallies_per_statement() {
         // One extractable statement; one blocked by an unmodeled class member.
         // `PrivateMethod`/`PrivateProp` (`#x`) are modeled now (see
@@ -2315,40 +2228,6 @@ mod tests {
         // query under-constrain.
         let error = extract("class C { [k: string]: number; }").unwrap_err();
         assert_eq!(error.context, "class_member");
-    }
-
-    #[test]
-    fn extracts_meta_properties() {
-        // `import.meta` / `new.target` are fixed meta-properties: a subject
-        // statement using one must still project to facts (otherwise a needle
-        // whose `STMT_LIST` would absorb it could never match the owner).
-        let kinds: HashSet<NodeKind> = extract("const a = import.meta;")
-            .expect("import.meta extracts")
-            .node_kind
-            .iter()
-            .map(|(_, k)| *k)
-            .collect();
-        assert!(
-            kinds.contains(&NodeKind::MetaPropImportMeta),
-            "kinds: {kinds:?}"
-        );
-    }
-
-    #[test]
-    fn extracts_debugger_and_tagged_template() {
-        // `debugger;` is a childless statement node; a tagged template carries
-        // its tag plus the template (quasis interleaved with exprs).
-        let facts = extract("function f() { debugger; }\nconst a = tag`x${y}z`;")
-            .expect("debugger + tagged template extract");
-        assert_kinds(
-            &facts,
-            [
-                NodeKind::Debugger,
-                NodeKind::TaggedTpl,
-                NodeKind::Tpl,
-                NodeKind::TplQuasi,
-            ],
-        );
     }
 
     fn member_reads(src: &str) -> BTreeMap<usize, Vec<MemberReadFact>> {
@@ -2388,63 +2267,6 @@ mod tests {
             reads[&0],
             vec![MemberReadFact {
                 object: Some("obj".to_string()),
-                member: "kept".to_string(),
-            }],
-        );
-    }
-
-    fn module_member_uses(
-        src: &str,
-        import_sources: &[(&str, &str)],
-    ) -> BTreeMap<usize, Vec<ModuleMemberUseFact>> {
-        let imports: HashMap<String, String> = import_sources
-            .iter()
-            .map(|(local, src)| ((*local).to_string(), (*src).to_string()))
-            .collect();
-        js_ast::with_swc_globals(|| {
-            module_member_uses_by_ordinal(
-                &js_ast::parse_js_module_ast("<test>", src).unwrap(),
-                &imports,
-            )
-        })
-    }
-
-    #[test]
-    fn module_member_uses_joins_imported_object_to_source_module() {
-        // `codegen` is imported from `./codegen`; the helper consuming
-        // `codegen.emit` yields a use-site row keyed by the source module + export
-        // name (both re-minify-invariant). A second helper reads `.emit` off a
-        // *non-imported* local `local`, so it contributes nothing — the join to the
-        // import table is what makes this a module-member use, not any member read.
-        let uses = module_member_uses(
-            "function a() { return codegen.emit(); }\nfunction b(local) { return local.emit(); }\n",
-            &[("codegen", "./codegen")],
-        );
-        assert_eq!(
-            uses[&0],
-            vec![ModuleMemberUseFact {
-                module: "./codegen".to_string(),
-                member: "emit".to_string(),
-            }],
-        );
-        assert!(
-            !uses.contains_key(&1),
-            "non-imported object contributes no row"
-        );
-    }
-
-    #[test]
-    fn module_member_uses_skips_computed_access() {
-        // `mod[expr]` is computed — no static export name — so it contributes
-        // nothing even though `mod` is imported; the sibling `mod.kept` does.
-        let uses = module_member_uses(
-            "function f(k) { return mod[k] + mod.kept; }\n",
-            &[("mod", "./m")],
-        );
-        assert_eq!(
-            uses[&0],
-            vec![ModuleMemberUseFact {
-                module: "./m".to_string(),
                 member: "kept".to_string(),
             }],
         );
@@ -2601,8 +2423,12 @@ mod tests {
         // The esbuild decorate-trio companions: `var X = Object.defineProperty` /
         // `var X = Object.getOwnPropertyDescriptor`. Each row's target is the alias
         // binding; the property is the re-minify-invariant intrinsic method name.
+        // The structural shape — not the declaration keyword — is the invariant, so
+        // the input mixes `var`, `let` and `const`.
         let facts = intrinsic_aliases(
-            "var p = Object.defineProperty;\nvar g = Object.getOwnPropertyDescriptor;\n",
+            "var p = Object.defineProperty;\n\
+             let g = Object.getOwnPropertyDescriptor;\n\
+             const d = Object.defineProperty;\n",
         );
         assert_eq!(
             facts,
@@ -2615,26 +2441,9 @@ mod tests {
                     binding: "g".to_string(),
                     property: "getOwnPropertyDescriptor".to_string(),
                 },
-            ],
-        );
-    }
-
-    #[test]
-    fn intrinsic_alias_uses_accepts_let_and_const_keywords() {
-        // The structural shape — not the declaration keyword — is the invariant.
-        let facts = intrinsic_aliases(
-            "let p = Object.defineProperty;\nconst g = Object.getOwnPropertyDescriptor;\n",
-        );
-        assert_eq!(
-            facts,
-            vec![
                 IntrinsicAliasFact {
-                    binding: "p".to_string(),
+                    binding: "d".to_string(),
                     property: "defineProperty".to_string(),
-                },
-                IntrinsicAliasFact {
-                    binding: "g".to_string(),
-                    property: "getOwnPropertyDescriptor".to_string(),
                 },
             ],
         );

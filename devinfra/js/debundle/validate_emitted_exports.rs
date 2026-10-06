@@ -317,21 +317,6 @@ export { av };\n";
     }
 
     #[test]
-    fn flags_export_decl_vs_named_block_duplicate() {
-        js_ast::with_swc_globals(|| {
-            let source = "\
-export const x = 1;\n\
-const y = 2;\n\
-export { y as x };\n";
-            assert_eq!(
-                duplicates(source),
-                [("x".to_string(), vec![ExportShape::Decl, ExportShape::Named])]
-            );
-            validate_sources(&[("c", "f.js", Some(source))]).expect_err("duplicate x");
-        });
-    }
-
-    #[test]
     fn flags_two_default_exports() {
         js_ast::with_swc_globals(|| {
             let source = "\

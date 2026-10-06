@@ -143,9 +143,13 @@ mod tests {
 
     #[test]
     fn format_mailbox_only() {
-        let s = format_system_message(vec!["hi".into(), "there".into()], HashMap::new()).unwrap();
-        assert!(s.contains("Messages from hook daemon mailbox:"));
-        assert!(s.contains("- hi"));
+        let s = format_system_message(
+            vec!["mailbox-alpha".into(), "mailbox-beta".into()],
+            HashMap::new(),
+        )
+        .unwrap();
+        assert!(s.contains("mailbox-alpha"));
+        assert!(s.contains("mailbox-beta"));
     }
 
     #[test]
@@ -153,7 +157,6 @@ mod tests {
         let mut bg = HashMap::new();
         bg.insert(("kubeconfig".into(), BgStream::Stdout), vec!["done".into()]);
         let s = format_system_message(vec![], bg).unwrap();
-        assert!(s.contains("Background task output:"));
         assert!(s.contains("<task kubeconfig><stdout>done</stdout></task>"));
     }
 
@@ -165,10 +168,10 @@ mod tests {
     #[test]
     fn format_both_sections_ordered() {
         let mut bg = HashMap::new();
-        bg.insert(("t".into(), BgStream::Stdout), vec!["o".into()]);
-        let s = format_system_message(vec!["m".into()], bg).unwrap();
-        let a = s.find("Background task output:").unwrap();
-        let b = s.find("Messages from hook daemon mailbox:").unwrap();
+        bg.insert(("t".into(), BgStream::Stdout), vec!["bg-payload".into()]);
+        let s = format_system_message(vec!["mailbox-payload".into()], bg).unwrap();
+        let a = s.find("bg-payload").unwrap();
+        let b = s.find("mailbox-payload").unwrap();
         assert!(a < b, "bg before mailbox in {s}");
     }
 }

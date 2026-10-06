@@ -3,7 +3,7 @@
 # Sweeps power × z_per_pass (inner grid) × num_passes (outer cols).
 # Each outer column value produces a complete inner 2D sub-grid.
 #
-# Run:  bazel run //laser/material_test -- example_config_3d.toml -o /tmp/3d.lbrn2
+# Run:  bazel run //laser/material_test:grid_generator_bin -- example_config_3d.toml -o /tmp/3d.lbrn2
 
 title = "3D Sweep: Power × Z/pass × Passes"
 auto_subtitle = true

@@ -8,15 +8,18 @@ import pytest
 from pydantic import ValidationError
 
 from finance.plaid.spend.allowance import (
+    AllOf,
     AllowancePolicy,
     CategoryExact,
     Kind,
+    NameContains,
     NamePrefix,
     PaceAlert,
     Rule,
     Status,
     Transaction,
     calculate,
+    matching_rule,
     month_anniversary,
 )
 from finance.plaid.spend.models import SpendConfiguration
@@ -33,7 +36,7 @@ def name_rule(field: Literal["name", "merchant_name"], prefix: str, kind: Kind) 
     return Rule(condition=NamePrefix(type="name_prefix", field=field, prefix=prefix), kind=kind)
 
 
-def policy(*, activation_at: date | None = START_DATE, rules: list[Rule] | None = None) -> AllowancePolicy:
+def policy(*, activation_at: date = START_DATE, rules: list[Rule] | None = None) -> AllowancePolicy:
     return AllowancePolicy(
         monthly_minor_units=10_000,
         spending_account_ids={"card-1"},
@@ -76,7 +79,8 @@ def view(rows=(), when=START):
 def test_single_config_parses_cards_and_optional_allowance():
     assert SpendConfiguration.model_validate_json('{"cards":[]}').allowance is None
     config = SpendConfiguration.model_validate_json(
-        '{"cards":[],"allowance":{"monthly_minor_units":10000,"spending_account_ids":["example-card"],'
+        '{"cards":[],"allowance":{"monthly_minor_units":10000,"activation_at":"2026-01-31",'
+        '"spending_account_ids":["example-card"],'
         '"rules":[{"condition":{"type":"name_prefix","field":"name","prefix":"EXAMPLE"},"kind":"flexible"}]}}'
     )
     assert config.allowance is not None
@@ -85,10 +89,28 @@ def test_single_config_parses_cards_and_optional_allowance():
     assert config.allowance.rules[0] == name_rule("name", "EXAMPLE", Kind.FLEXIBLE)
     with pytest.raises(ValidationError):
         SpendConfiguration.model_validate_json('{"cards":[],"allowance":{"monthly_minor_units":10000}}')
+    with pytest.raises(ValidationError):
+        SpendConfiguration.model_validate_json(
+            '{"cards":[],"allowance":{"monthly_minor_units":10000,"spending_account_ids":["example-card"],'
+            '"rules":[{"condition":{"type":"name_prefix","field":"name","prefix":"EXAMPLE"},"kind":"flexible"}]}}'
+        )
+    with pytest.raises(ValidationError):
+        AllowancePolicy.model_validate(
+            {
+                "monthly_minor_units": 10_000,
+                "activation_at": None,
+                "spending_account_ids": ["example-card"],
+                "rules": [
+                    {"condition": {"type": "name_prefix", "field": "name", "prefix": "EXAMPLE"}, "kind": "flexible"}
+                ],
+            }
+        )
 
 
-def test_activation_preview_and_no_double_credit():
-    assert calculate(policy(activation_at=None), [], now=START, last_synced_at=START).status == Status.PREVIEW
+def test_configured_allowance_is_active_and_no_double_credit():
+    assert view().status == Status.ACTIVE
+    with pytest.raises(ValueError, match="future"):
+        view(when=START.replace(year=2025))
     assert view([row("2026-01-30", 90)]).available_minor_units == 10_000
     assert view(when=datetime(2026, 2, 1, tzinfo=UTC)).available_minor_units == 10_000
     assert view(when=datetime(2026, 2, 28, tzinfo=UTC)).available_minor_units == 20_000
@@ -120,6 +142,62 @@ def test_trailing_windows_include_exactly_seven_and_thirty_calendar_days():
     assert result.windows_minor_units is not None
     assert result.windows_minor_units.trailing_7_days_minor_units == 2_000
     assert result.windows_minor_units.trailing_30_days_minor_units == 7_000
+    assert result.trailing_7_observed_daily_minor_units == 2_000 // 7
+    assert result.trailing_30_observed_daily_minor_units == 7_000 // 30
+
+
+def test_prior_purchases_inform_pace_without_importing_debt():
+    # Fixed purchases and purchases outside the lookback must not affect the pace.
+    result = calculate(
+        policy(
+            rules=[
+                category_rule(field="pfc_primary", value="RENT", kind=Kind.FIXED),
+                category_rule(field="pfc_primary", value="SHOPPING", kind=Kind.FLEXIBLE),
+            ]
+        ),
+        [
+            row("2026-01-24", 50),
+            row("2026-01-26", 14),
+            row("2026-01-30", 56),
+            row("2026-01-30", 300, pfc_primary="RENT", pfc_detailed=None),
+        ],
+        now=START,
+        last_synced_at=START,
+    )
+    assert result.available_minor_units == 10_000
+    assert result.posted_minor_units == 0
+    assert result.windows_minor_units is not None
+    assert result.windows_minor_units.trailing_7_days_minor_units == 0
+    assert result.trailing_7_daily_minor_units == 1_000
+    assert result.trailing_7_observed_daily_minor_units == 1_000
+    assert result.trailing_30_observed_daily_minor_units == 12_000 // 30
+    assert result.alert_state == PaceAlert.WARNING
+    assert result.projected_cycle_end_minor_units == -18_000
+
+
+def test_monthly_observed_pace_warns_without_weekly_forecast_or_opening_debt():
+    now = datetime(2026, 3, 2, tzinfo=UTC)
+    result = calculate(policy(activation_at=now.date()), [row("2026-02-10", 200)], now=now, last_synced_at=now)
+    assert result.available_minor_units == 10_000
+    assert result.trailing_7_observed_daily_minor_units is None
+    assert result.trailing_30_observed_daily_minor_units == 20_000 // 30
+    assert result.alert_state == PaceAlert.UNAVAILABLE
+    assert result.spending_signal == PaceAlert.WARNING
+
+
+def test_no_pace_until_history_or_a_full_week_of_zero_spend():
+    opening = view()
+    assert opening.available_minor_units == 10_000
+    assert opening.trailing_7_daily_minor_units is None
+    assert opening.trailing_7_observed_daily_minor_units is None
+    assert opening.trailing_30_observed_daily_minor_units is None
+    assert opening.projected_cycle_end_minor_units is None
+    assert opening.alert_state == PaceAlert.UNAVAILABLE
+    assert view(when=datetime(2026, 2, 5, tzinfo=UTC)).alert_state == PaceAlert.UNAVAILABLE
+    mature = view(when=datetime(2026, 2, 6, tzinfo=UTC))
+    assert mature.trailing_7_daily_minor_units == 0
+    assert mature.trailing_7_observed_daily_minor_units == 0
+    assert mature.alert_state == PaceAlert.NORMAL
 
 
 def test_pending_posted_transfer_and_unmatched_refund():
@@ -175,6 +253,28 @@ def test_private_rule_and_uncertain_purchases():
     uncertain = view([row("2026-01-31", 12, pfc_primary=None, pfc_detailed=None)])
     assert uncertain.available_minor_units == 8_800
     assert uncertain.review_minor_units == 1_200
+    assert uncertain.review_transaction_count == 1
+    assert uncertain.trailing_7_unmatched_count == 1
+    assert uncertain.trailing_7_unmatched_minor_units == 1_200
+    prior = calculate(
+        policy(activation_at=START_DATE, rules=[name_rule("name", "RENT ONLY", Kind.FIXED)]),
+        [row("2026-01-30", 12)],
+        now=START,
+        last_synced_at=START,
+    )
+    assert prior.available_minor_units == 10_000
+    assert prior.review_transaction_count == 0
+    assert prior.trailing_7_unmatched_count == 1
+    assert prior.trailing_7_unmatched_minor_units == 1_200
+    two_uncertain = view(
+        [
+            row("2026-01-31", 12, pfc_primary=None, pfc_detailed=None),
+            row("2026-01-31", 3, pfc_primary=None, pfc_detailed=None),
+        ]
+    )
+    assert two_uncertain.review_minor_units == 1_500
+    assert two_uncertain.review_transaction_count == 2
+    assert two_uncertain.trailing_7_unmatched_count == 2
     with pytest.raises(ValidationError):
         Rule.model_validate(
             {"condition": {"type": "name_prefix", "field": "pfc_primary", "prefix": "SHOPPING"}, "kind": "excluded"}
@@ -186,3 +286,26 @@ if __name__ == "__main__":
     import pytest_bazel
 
     pytest_bazel.main()
+
+
+def test_compound_wire_rule_matches_only_named_beneficiary_and_wire_category():
+    rule = Rule(
+        condition=AllOf(
+            type="all_of",
+            conditions=[
+                NameContains(type="name_contains", field="name", substring="EXAMPLE BROKER"),
+                CategoryExact(type="category_exact", field="pfc_detailed", value="TRANSFER_OUT_WIRE"),
+            ],
+        ),
+        kind=Kind.EXCLUDED,
+    )
+    assert Rule.model_validate(rule.model_dump()) == rule
+    wire = row("2026-01-31", 500, pfc_detailed="TRANSFER_OUT_WIRE").model_copy(
+        update={"name": "WIRE BENEFICIARY: Example Broker LLC"}
+    )
+    assert matching_rule(wire, [rule]) == rule
+    assert matching_rule(wire.model_copy(update={"pfc_detailed": "GENERAL_SERVICES_LEGAL"}), [rule]) is None
+    assert matching_rule(wire.model_copy(update={"name": "WIRE BENEFICIARY: OTHER BROKER"}), [rule]) is None
+    assert calculate(policy(rules=[rule]), [wire], now=START, last_synced_at=START).available_minor_units == 10_000
+    with pytest.raises(ValidationError):
+        AllOf(type="all_of", conditions=[NameContains(type="name_contains", field="name", substring="XX")])

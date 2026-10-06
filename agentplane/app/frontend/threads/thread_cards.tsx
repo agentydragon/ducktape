@@ -127,8 +127,9 @@ export function VerbatimText({ text }: { text: string }): JSX.Element {
   );
 }
 
-/** The operator's input, including provisional sends. Actions sit in the gutter before the bubble;
- * local text uses no event evidence until runner admission gives it an ordered Event. */
+/** The operator's input, including provisional sends. The status, error and action sit together in the
+ * gutter before the bubble, so the bubble reads the same, and does not move, when they go; local text
+ * uses no event evidence until runner admission gives it an ordered Event. */
 export function UserInputBubble({
   threadId,
   entity,
@@ -162,29 +163,34 @@ export function UserInputBubble({
       style={{ width: "100%" }}
       data-command-id={commandId ?? entity?.entityId}
     >
-      {action && (
-        <Button size="xs" variant="subtle" onClick={action.onClick} aria-label={action.label}>
-          {action.label}
-        </Button>
+      {(status || error || action) && (
+        <Stack className="agentplane-user-message-aside" gap={2} align="flex-end">
+          {status && (
+            <Text size="xs" c={statusColor} role="status">
+              {status}
+            </Text>
+          )}
+          {error && (
+            <Text size="xs" c="red" role="alert">
+              {error}
+            </Text>
+          )}
+          {action && (
+            <Button size="xs" variant="subtle" onClick={action.onClick} aria-label={action.label}>
+              {action.label}
+            </Button>
+          )}
+        </Stack>
       )}
-      {entity && <EvidenceToggle entity={entity} />}
       <Paper
-        className="agentplane-user-bubble"
+        className="agentplane-user-bubble agentplane-evidence-owner"
         data-message-phase={phase}
         data-has-action={action ? "true" : undefined}
+        data-has-aside={status || error || action ? "true" : undefined}
         p="sm"
         style={pending ? { fontStyle: "italic", opacity: 0.6 } : undefined}
       >
-        {status && (
-          <Text size="xs" c={statusColor} mb="xs" role="status">
-            {status}
-          </Text>
-        )}
-        {error && (
-          <Text size="xs" c="red" mb="xs" role="alert">
-            {error}
-          </Text>
-        )}
+        {entity && <EvidenceToggle entity={entity} />}
         {entity ? (
           <Body reference={entity.inputRef} format="text" />
         ) : text !== undefined ? (
@@ -354,7 +360,7 @@ function DiscardedCard({ id, summary, children }: { id: string; summary: string;
           </Text>
         }
       >
-        <Stack gap="xs" mt="xs">
+        <Stack gap="xs" mt="xs" className="agentplane-evidence-owner">
           {children}
         </Stack>
       </RetainedDisclosure>
@@ -456,9 +462,7 @@ function ToolCard({
                 Discarded context does not undo tool side effects or change its recorded execution outcome.
               </Text>
               <Group justify="space-between" wrap="nowrap">
-                <Group gap="xs">
-                  <ItemStatus items={[entity]} live={live} />
-                </Group>
+                <Group gap="xs">{itemStatus([entity], live)}</Group>
                 <Group gap="xs" wrap="nowrap">
                   {rawSwitch}
                   <EvidenceToggle entity={entity} />
@@ -470,7 +474,7 @@ function ToolCard({
           );
         }
         return (
-          <CollapsibleCard open={opened} stableInlineSize>
+          <CollapsibleCard open={opened} stableInlineSize className="agentplane-evidence-owner">
             <StepLine
               title={call?.label ?? (state.tool_name || "tool")}
               mark={opened ? undefined : mark}
@@ -481,14 +485,14 @@ function ToolCard({
                     {args.error ? "Preview unavailable" : "Loading preview…"}
                   </Text>
                 ) : call && !call.description ? (
-                  <InlineCode text={call.summary} />
+                  <InlineCode text={call.summary} language="bash" />
                 ) : (
                   <Text component="span" ff={call ? undefined : "monospace"}>
                     {call?.summary ?? oneLine(argumentsBody)}
                   </Text>
                 ))
               }
-              trailing={<ItemStatus items={[entity]} live={live} titleMarked={!opened} />}
+              trailing={itemStatus([entity], live, !opened)}
               aside={
                 args?.error && (
                   <button className="agentplane-step-retry" onClick={args.retry} type="button">
@@ -503,7 +507,7 @@ function ToolCard({
             >
               <Box mt="xs">{detail}</Box>
             </StepLine>
-            <EvidenceToggle entity={entity} style={{ position: "absolute", top: 4, right: 4 }} />
+            <EvidenceToggle entity={entity} />
             <EvidencePanel threadId={threadId} entity={entity} />
           </CollapsibleCard>
         );
@@ -545,9 +549,9 @@ export function EntityCard({
     const wrapped = { whiteSpace: "pre-wrap", overflowWrap: "anywhere" } as const;
     if (!prominent) {
       return (
-        <Stack gap={0} style={{ position: "relative" }}>
+        <Stack gap={0} className="agentplane-evidence-owner">
           <Text c="dimmed">{label}</Text>
-          <EvidenceToggle entity={entity} style={{ position: "absolute", top: 0, right: 0 }} />
+          <EvidenceToggle entity={entity} style={{ top: 0, right: 0 }} />
           {diagnostic && (
             <Text c="dimmed" style={wrapped}>
               {diagnostic}
@@ -558,13 +562,14 @@ export function EntityCard({
       );
     }
     return (
-      <Alert color="red" title={label} role="alert" style={{ position: "relative" }}>
-        <EvidenceToggle entity={entity} style={{ position: "absolute", top: 8, right: 8 }} />
-        {diagnostic && (
-          <Text size="sm" style={wrapped}>
-            {diagnostic}
+      <Alert color="red" role="alert" className="agentplane-evidence-owner">
+        <EvidenceToggle entity={entity} style={{ top: 8, right: 8 }} />
+        <Text size="sm" style={wrapped}>
+          <Text span fw={700} c="var(--alert-color)">
+            {label}
           </Text>
-        )}
+          {diagnostic && ` ${diagnostic}`}
+        </Text>
         <EvidencePanel threadId={threadId} entity={entity} />
       </Alert>
     );
@@ -588,18 +593,16 @@ export function EntityCard({
     entity.state.completion === null &&
     entity.state.recovery === null &&
     live;
+  const status = itemStatus([entity], live);
   const body = (
     <>
-      {(!reasoning && entity.state.completion === null && !streamingText) || entity.state.recovery !== null ? (
-        <Group justify="space-between" mb="xs" wrap="nowrap">
-          <Group gap="xs">
-            <ItemStatus items={[entity]} live={live} />
+      <EvidenceToggle entity={entity} />
+      {status &&
+        ((!reasoning && entity.state.completion === null && !streamingText) || entity.state.recovery !== null) && (
+          <Group gap="xs" mb="xs">
+            {status}
           </Group>
-          <EvidenceToggle entity={entity} />
-        </Group>
-      ) : (
-        <EvidenceToggle entity={entity} style={{ position: "absolute", top: 4, right: 4 }} />
-      )}
+        )}
       <RecoveryNotes state={entity.state} tool={false} />
       {reasoning ? (
         entity.textRef ? (
@@ -607,7 +610,7 @@ export function EntityCard({
             <ReasoningPreview
               reference={entity.textRef}
               mark={reasoningMark}
-              status={<ItemStatus items={[entity]} live={live} />}
+              status={status}
               open={reasoningOpen}
               overflows={reasoningOverflows}
               setOpen={setReasoningOpen}
@@ -638,67 +641,62 @@ export function EntityCard({
   // line.
   if (reasoning)
     return (
-      <CollapsibleCard open={reasoningOpen && reasoningOverflows} stableInlineSize>
+      <CollapsibleCard
+        open={reasoningOpen && reasoningOverflows}
+        stableInlineSize
+        className="agentplane-evidence-owner"
+      >
         {body}
       </CollapsibleCard>
     );
-  return <Box style={{ position: "relative" }}>{body}</Box>;
+  return <Box className="agentplane-evidence-owner">{body}</Box>;
 }
 
-/** Whether any of `items` is unfinished -- streaming while `live`, otherwise never completed in
- * the retained history -- and whether any tool call among them failed. */
-export function ItemStatus({
-  items,
-  live,
-  titleMarked = false,
-}: {
-  items: ThreadEntity[];
-  live: boolean;
-  /** Leave out the Failed and Streaming/Incomplete badges, for a line whose title shows them. */
-  titleMarked?: boolean;
-}): JSX.Element {
+interface StatusBadge {
+  label: string;
+  color?: MantineColor;
+}
+
+/** A badge says how items differ from the ordinary case -- ran to completion, still in the model's
+ * context, no failure -- which wears none. */
+function statusBadges(items: ThreadEntity[], live: boolean, titleMarked: boolean): StatusBadge[] {
   const states = items.flatMap((item) => ("kind" in item.state ? [item.state] : []));
-  const unfinished = states.some((state) => state.completion === null && state.recovery === null);
-  const interrupted = states.some((state) => state.completion === null && state.recovery !== null);
-  const recoveries = [...new Set(states.flatMap((state) => (state.recovery === null ? [] : [state.recovery])))];
-  return (
+  const badges: StatusBadge[] = [
+    ...(!titleMarked && states.some((state) => state.completion === null && state.recovery === null)
+      ? [{ label: live ? "Streaming" : "Incomplete" }]
+      : []),
+    ...(states.some((state) => state.completion === null && state.recovery !== null) ? [{ label: "Interrupted" }] : []),
+    ...states.flatMap((state) => (state.recovery === null ? [] : (recoveryBadge(state.recovery) ?? []))),
+    ...(!titleMarked && states.some((state) => state.tool_succeeded === false)
+      ? [{ label: "Failed", color: "red" }]
+      : []),
+  ];
+  return [...new Map(badges.map((badge) => [badge.label, badge])).values()];
+}
+
+/** The badges for `items`, or `null` when none is out of the ordinary, so the caller can leave out
+ * the row or gap it would hold them in. Unfinished items are streaming while `live`, otherwise
+ * never completed in the retained history.
+ *
+ * `titleMarked` leaves out the Failed and Streaming/Incomplete badges, for a line whose title shows them. */
+export function itemStatus(items: ThreadEntity[], live: boolean, titleMarked = false): JSX.Element | null {
+  const badges = statusBadges(items, live, titleMarked);
+  return badges.length === 0 ? null : (
     <>
-      {!titleMarked && unfinished && (
-        <Badge role="img" aria-label={live ? "Streaming" : "Incomplete"}>
-          {live ? "Streaming" : "Incomplete"}
+      {badges.map(({ label, color }) => (
+        <Badge key={label} color={color} role="img" aria-label={label}>
+          {label}
         </Badge>
-      )}
-      {interrupted && (
-        <Badge role="img" aria-label="Interrupted">
-          Interrupted
-        </Badge>
-      )}
-      {recoveries.map((recovery) => {
-        const { label, color } = recoveryPresentation(recovery);
-        return (
-          <Badge key={recovery} color={color} role="img" aria-label={label}>
-            {label}
-          </Badge>
-        );
-      })}
-      {states.some((state) => state.recovery !== null && state.tool_succeeded === true) && (
-        <Badge color="green" role="img" aria-label="Succeeded">
-          Succeeded
-        </Badge>
-      )}
-      {!titleMarked && states.some((state) => state.tool_succeeded === false) && (
-        <Badge color="red" role="img" aria-label="Failed">
-          Failed
-        </Badge>
-      )}
+      ))}
     </>
   );
 }
 
-function recoveryPresentation(recovery: number): { label: string; color: string } {
+/** `RETAINED` is what a recovery ordinarily leaves, so it has no badge. */
+function recoveryBadge(recovery: number): StatusBadge | null {
   switch (recovery) {
     case RecoveryDisposition.RETAINED:
-      return { label: "Retained in context", color: "gray" };
+      return null;
     case RecoveryDisposition.ABSENT:
       return { label: "Not retained in context", color: "gray" };
     case RecoveryDisposition.REVISED:
@@ -716,13 +714,16 @@ export function CollapsibleCard({
   open,
   children,
   stableInlineSize = false,
+  className,
 }: {
   open: boolean;
   children: ReactNode;
   stableInlineSize?: boolean;
+  className?: string;
 }): JSX.Element {
   return (
     <Paper
+      className={className}
       data-open={open}
       // A folded step line is one line, so it needs little more than the line.
       p={open ? "sm" : stableInlineSize ? 2 : "xs"}

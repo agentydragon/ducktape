@@ -111,7 +111,8 @@ class ActionServiceDeploymentSettings(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     operator_oidc: OperatorOidcSettings
-    allowed_service_account_namespaces: frozenset[str]
+    policy_namespace: str
+    caller_service_account_namespaces: frozenset[str]
     direct_wait_seconds: float = Field(
         ge=0,
         allow_inf_nan=False,
@@ -156,11 +157,15 @@ class Settings(BaseSettings):
     port: int = 8080
     token_audience: str = "agentplane-egress"
     reader_accounts: frozenset[ServiceAccountRef] = frozenset()
-    allowed_service_account_namespaces: frozenset[str] = Field(
+    policy_namespace: str = Field(
+        default="agentplane-staging",
+        description="Kubernetes namespace whose ActionPolicySets and ActionPolicyBindings this service watches; "
+        "it writes Ready conditions only on those objects.",
+    )
+    caller_service_account_namespaces: frozenset[str] = Field(
         default=frozenset({"agentplane-staging"}),
-        description="Kubernetes namespaces whose ServiceAccounts may authenticate sandbox callers and whose "
-        "ActionPolicySets, ActionPolicyBindings and labeled caller ServiceAccounts the service watches; "
-        "does not grant Action approval.",
+        description="Kubernetes namespaces whose labeled ServiceAccounts may authenticate Action Service callers "
+        "and whose ServiceAccounts this service watches; it does not grant Action approval.",
     )
     direct_wait_seconds: float = Field(
         default=DEFAULT_DIRECT_WAIT_SECONDS,
@@ -243,7 +248,8 @@ async def async_main(settings: Settings) -> None:
                 index=policy_index,
                 custom_objects=cast(CustomObjectsClient, CustomObjectsApi(api)),
                 core_v1=CoreV1Api(api),
-                namespaces=settings.allowed_service_account_namespaces,
+                policy_namespace=settings.policy_namespace,
+                caller_service_account_namespaces=settings.caller_service_account_namespaces,
                 resync_seconds=settings.policy_resync_seconds,
             ).run(),
             name="action-policy-informer",
@@ -318,7 +324,7 @@ async def async_main(settings: Settings) -> None:
             WorkloadPrincipalResolver(
                 authentication=AuthenticationV1Api(api),
                 audience=settings.token_audience,
-                allowed_service_account_namespaces=settings.allowed_service_account_namespaces,
+                allowed_service_account_namespaces=settings.caller_service_account_namespaces,
             ),
             operator_authenticator,
             catalog,

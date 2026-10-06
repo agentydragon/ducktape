@@ -16,6 +16,7 @@ py_library(
     srcs = ["config_factory.py"],
     deps = [
         ":data",
+        "//util/bazel:runfiles",
         "//x/wt/shared:config_file",
         "//x/wt/shared:configuration",
         "@pypi//pyyaml",
@@ -80,15 +81,12 @@ py_library(
         ":utils",
         "//x/wt/server:git_manager",
         "//x/wt/server:github_client",
-        "//x/wt/server:gitstatusd_listener",
         "//x/wt/server:worktree_service",
-        "//x/wt/shared:config_file",
         "//x/wt/shared:configuration",
         "//x/wt/shared:fixtures",
         "//x/wt/shared:protocol",
         "@pypi//pygit2",
         "@pypi//pytest",
-        "@pypi//pyyaml",
         "@pypi//typer_slim",
     ],
 )

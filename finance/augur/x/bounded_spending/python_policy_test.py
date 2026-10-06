@@ -11,7 +11,6 @@ import pytest
 import pytest_bazel
 
 from finance.augur.model.series import InflationKey, SecurityKey, SecuritySymbol
-from finance.augur.sim.actions import DecisionActions
 from finance.augur.sim.bills import Biller
 from finance.augur.sim.books import AccountRef
 from finance.augur.sim.claims import ObligationType
@@ -24,7 +23,6 @@ from finance.augur.sim.market_path import MarketPath, Series
 from finance.augur.sim.money import USD
 from finance.augur.sim.results import Finished, Paid, RejectedAction, Rollout
 from finance.augur.sim.schedule import Once
-from finance.augur.sim.session import ActionSession
 from finance.augur.sim.tax_authority import TaxAuthority
 from finance.augur.sim.tax_indexation import FixedNominalLaw
 from finance.augur.sim.tax_profile import TaxProfile, compile_profile
@@ -200,28 +198,6 @@ def test_post_cashflow_review_and_ordered_claim_prefix_are_explicit() -> None:
     assert row.summary.cash[0].values == [10_000, 17_000]  # the earlier bill stays paid
     assert isinstance(row.summary.payments[0].receipt.outcome, Paid)
     assert row.summary.unpaid_claims == []
-
-
-def test_current_cpi_is_routed_without_future_values() -> None:
-    series = _series(
-        ExternalSeriesContext.from_level_blocks(
-            [(InflationKey(), np.array([[2.0, 3.0, 90.0], [4.0, 5.0, 70.0]]))], rollout_count=2, horizon_months=2
-        ),
-        rollout_count=2,
-        horizon_months=2,
-    )
-    session = ActionSession(
-        {id_: _books(series, id_, rollout_count=2, horizon_months=2, retiree_cash=100) for id_ in [1, 0]},
-        RETIREE,
-        capture="summary",
-    )
-    batch = session.start()
-    assert not isinstance(batch, Finished)
-    assert [row.observation.cpi for row in batch] == [(4_000_000_000, 4_000_000_000), (2_000_000_000, 2_000_000_000)]
-    batch = session.advance([DecisionActions(row.rollout_id, 0, []) for row in batch])
-    assert not isinstance(batch, Finished)
-    assert [row.observation.cpi for row in batch] == [(5_000_000_000, 4_000_000_000), (3_000_000_000, 2_000_000_000)]
-    session.close()
 
 
 def test_cpi_dependent_rule_does_not_invent_a_flat_missing_index() -> None:

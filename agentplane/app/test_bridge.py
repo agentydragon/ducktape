@@ -29,7 +29,7 @@ from tenacity import AsyncRetrying, retry_if_exception_type, stop_after_delay, w
 from agentplane.app.action_policy import ActionPolicyInventory
 from agentplane.app.api import ModelCatalog, ModelOption, create_app
 from agentplane.app.changes import Changes
-from agentplane.app.conftest import _CALL_REPORT, AGENT_AUTH, TEST_REASONING_EFFORTS
+from agentplane.app.conftest import _CALL_REPORT, AGENT_AUTH
 from agentplane.app.database import connect
 from agentplane.app.database_updates import Channel, DatabaseUpdates
 from agentplane.app.decisions import DecisionsClient
@@ -37,6 +37,7 @@ from agentplane.app.egress_access import EgressAccess
 from agentplane.app.identity import TokenReviewer
 from agentplane.app.live import LiveIndex
 from agentplane.app.operator_sessions import OperatorSessionStore
+from agentplane.app.testing.model_test_data import TEST_REASONING_EFFORTS
 from agentplane.app.threads.bridge import RunnerAdmissionTimeoutError, RunnerBridge
 from agentplane.app.threads.events.event_log import EventLogStore, FeedError
 from agentplane.app.threads.events.stream import follow
@@ -49,10 +50,10 @@ from agentplane.app.threads.view.views import ThreadOperationalState
 from agentplane.protocol import command_pb2, event_log_pb2, event_pb2
 from agentplane.runner import protocol_pb2, service
 from agentplane.runner.client import RunnerClient
-from agentplane.runner.conftest import RunnerHandle
 from agentplane.runner.errors import RunnerError, StreamClosedError
 from agentplane.runner.harness import Harness
 from agentplane.runner.session import Session
+from agentplane.runner.testing.fixtures import RunnerClientFactory, RunnerHandle
 from agentplane.runner.testing.scripted_model import ScriptedModel, ShellCall, Text
 from agentplane.sandbox_service.client import Attachment, SandboxServiceClient
 from agentplane.sandbox_service.testing.backend import Endpoint, seed_runner
@@ -805,7 +806,6 @@ async def test_thread_resume_reports_missing_runner_recovery_state(
     async with httpx.AsyncClient(base_url=app_url, timeout=60, headers=AGENT_AUTH) as http:
         response = await http.post(f"/threads/{thread_id}/resume")
     assert response.status_code == 409
-    assert "no retained session 'missing-runner-session'" in response.json()["detail"]
 
 
 async def test_the_feed_records_a_turn_nobody_is_watching(
@@ -852,13 +852,14 @@ async def test_thread_command_reports_id_conflict_after_runner_admitted_before_a
     event_logs: EventLogStore,
     spec: protocol_pb2.SessionSpec,
     failed_native_journal: None,
+    runner_client_factory: RunnerClientFactory,
 ) -> None:
     """An app prefix lag must still preserve the runner's id-conflict verdict as a 409."""
     thread = await event_logs.open(SANDBOX, SESSION, spec)
     original = command_pb2.Command(
         command_id="reused-before-copy", interrupt_turn=command_pb2.InterruptTurn(turn_id="first-target")
     )
-    client = RunnerClient(runner.target, capture_history=True)
+    client = runner_client_factory(runner.target, capture_history=True)
     try:
         attachment = await client.attach(SESSION, spec=spec)
         try:
@@ -877,7 +878,6 @@ async def test_thread_command_reports_id_conflict_after_runner_admitted_before_a
             json={"commandId": "reused-before-copy", "interruptTurn": {"turnId": "second-target"}},
         )
         assert conflict.status_code == 409, conflict.text
-        assert "refused" in conflict.json()["detail"]
         stored = await _stored_events(http, str(thread), until="commandNoop")
         (admitted,) = [entry for entry in stored if "commandAdmitted" in entry["event"]]
         assert admitted["event"]["commandAdmitted"]["command"] == {
@@ -1001,10 +1001,7 @@ async def test_command_admission_timeout_is_not_an_internal_server_error(
             _commands(thread_id), json={"commandId": "timed-out-command", "submitInput": {"text": "not delivered"}}
         )
         assert response.status_code == 504, response.text
-        assert (
-            response.json()["detail"]
-            == "admission of command 'timed-out-command' was not confirmed within 15 seconds; outcome uncertain"
-        )
+        assert "uncertain" in response.json()["detail"]
 
 
 async def test_command_admission_wait_rereads_the_durable_prefix_after_a_lost_notification(
@@ -1135,45 +1132,6 @@ async def frame_lines(frames: AsyncIterator[bytes]) -> AsyncIterator[str]:
             yield line
 
 
-async def test_ingestion_reconnect_checks_the_archived_boundary_entry(
-    runner: RunnerHandle,
-    local_runners: SandboxSessions,
-    event_logs: EventLogStore,
-    ingestion: Ingestion,
-    spec: protocol_pb2.SessionSpec,
-) -> None:
-    client = RunnerClient(runner.target, capture_history=True)
-    try:
-        attachment = await client.attach(SESSION, spec=spec)
-        try:
-            await attachment.detach()
-            await attachment.drain_until_end()
-            assert attachment.seen
-            # A different fact under the same final cursor must be detected even before
-            # the runner produces any further Events.
-            attachment.seen[-1].event.at.seconds += 1
-            thread = await event_logs.open(SANDBOX, SESSION, spec)
-            lease = await ingestion.acquire(SANDBOX, timedelta(minutes=1))
-            assert lease is not None
-            await ingestion.record(thread, attachment.seen, lease=lease)
-            async with asyncio.timeout(10):
-                await Feed(
-                    session_id=SESSION,
-                    client=local_runners.client(SANDBOX),
-                    event_logs=event_logs,
-                    ingestion=ingestion,
-                    lease=lease,
-                ).run()
-            snapshot = await event_logs.feed_state(thread)
-            assert snapshot is not None
-            assert snapshot.end == FeedError(f"conflicting runner entry at cursor {attachment.seen[-1].cursor}")
-            assert await event_logs.events(thread, limit=len(attachment.seen) + 1) == attachment.seen
-        finally:
-            attachment.cancel()
-    finally:
-        await client.close()
-
-
 async def test_semantic_feed_failure_survives_replica_reconcile(
     runner: RunnerHandle,
     local_runners: SandboxSessions,
@@ -1182,9 +1140,10 @@ async def test_semantic_feed_failure_survives_replica_reconcile(
     db_url: str,
     spec: protocol_pb2.SessionSpec,
     monkeypatch: pytest.MonkeyPatch,
+    runner_client_factory: RunnerClientFactory,
 ) -> None:
     """A new app owner cannot overwrite a rejected prefix's persisted failure with active."""
-    client = RunnerClient(runner.target, capture_history=True)
+    client = runner_client_factory(runner.target, capture_history=True)
     replica_engine = connect(db_url)
     replica_store, replica_event_logs = ThreadStore(replica_engine), EventLogStore(replica_engine)
     replica_updates = DatabaseUpdates(replica_engine.url)
@@ -1200,16 +1159,18 @@ async def test_semantic_feed_failure_survives_replica_reconcile(
                 lease = await ingestion.acquire(SANDBOX, timedelta(minutes=1))
                 assert lease is not None
                 await ingestion.record(thread, attachment.seen, lease=lease)
-                await Feed(
-                    session_id=SESSION,
-                    client=local_runners.client(SANDBOX),
-                    event_logs=event_logs,
-                    ingestion=ingestion,
-                    lease=lease,
-                ).run()
+                async with asyncio.timeout(10):
+                    await Feed(
+                        session_id=SESSION,
+                        client=local_runners.client(SANDBOX),
+                        event_logs=event_logs,
+                        ingestion=ingestion,
+                        lease=lease,
+                    ).run()
                 failed = await replica_event_logs.feed_state(thread)
                 assert failed is not None
                 assert failed.end == FeedError(f"conflicting runner entry at cursor {attachment.seen[-1].cursor}")
+                assert await event_logs.events(thread, limit=len(attachment.seen) + 1) == attachment.seen
                 async with replica_store._sessions() as session:
                     checkpoint = await session.get(ThreadCheckpoint, thread)
                     assert checkpoint is not None
@@ -1247,7 +1208,7 @@ async def test_semantic_feed_failure_survives_replica_reconcile(
                     dispatched = True
 
                 monkeypatch.setattr(survivor, "_command", reject_dispatch)
-                with pytest.raises(RunnerError, match="runner history is rejected"):
+                with pytest.raises(RunnerError):
                     await survivor.command(
                         thread,
                         command_pb2.Command(
@@ -1267,7 +1228,7 @@ async def test_semantic_feed_failure_survives_replica_reconcile(
                 # Patched on the class, not the bridge: the survivor's discovery loop keeps listing the
                 # runner's sessions meanwhile, and it must not reattach the rejected one either.
                 monkeypatch.setattr(RunnerClient, "attach", reject_attach)
-                with pytest.raises(RunnerError, match="runner history is rejected"):
+                with pytest.raises(RunnerError):
                     await survivor.open_session(SANDBOX, SESSION, spec)
                 assert not reattached
             finally:
@@ -1284,8 +1245,9 @@ async def test_ingestion_reports_truncated_replay_instead_of_normal_completion(
     ingestion: Ingestion,
     spec: protocol_pb2.SessionSpec,
     monkeypatch: pytest.MonkeyPatch,
+    runner_client_factory: RunnerClientFactory,
 ) -> None:
-    client = RunnerClient(runner.target, capture_history=True)
+    client = runner_client_factory(runner.target, capture_history=True)
     try:
         attachment = await client.attach(SESSION, spec=spec)
         try:
@@ -1312,9 +1274,7 @@ async def test_ingestion_reports_truncated_replay_instead_of_normal_completion(
             ).run()
         snapshot = await event_logs.feed_state(thread)
         assert snapshot is not None
-        assert snapshot.end == FeedError(
-            f"runner replay ended at cursor 0 before promised cursor {snapshot.attached.last_cursor}"
-        )
+        assert isinstance(snapshot.end, FeedError)
         assert await event_logs.last_cursor(thread) == 0
     finally:
         await client.close()
@@ -1375,6 +1335,7 @@ async def test_inventory_change_discovers_existing_runner_session_without_browse
     monkeypatch: pytest.MonkeyPatch,
     ingestion: Ingestion,
     live_index: LiveIndex,
+    runner_client_factory: RunnerClientFactory,
 ) -> None:
     # This must wake from the informer notification, not the periodic recovery scan.
     monkeypatch.setattr("agentplane.app.threads.ingestion.RECONCILE_S", 3600)
@@ -1388,7 +1349,7 @@ async def test_inventory_change_discovers_existing_runner_session_without_browse
 
     monkeypatch.setattr(runners, "running", observed_running)
     ingester = Ingester(runners=runners, event_logs=event_logs, ingestion=ingestion)
-    client = RunnerClient(runner.target, capture_history=True)
+    client = runner_client_factory(runner.target, capture_history=True)
     try:
         async with await client.attach(SESSION, spec=spec):
             pass

@@ -13,22 +13,13 @@ import asyncpg
 import pytest
 import pytest_asyncio
 from sqlalchemy.engine import make_url
-from testcontainers.postgres import PostgresContainer
 
 from finance.plaid.db.link_store import PlaidLinkStorage
 from finance.plaid.spend.allowance import AllowancePolicy, CategoryExact, Kind, Rule, Status
 from finance.plaid.spend.app import _event_stream
-from finance.plaid.spend.models import CardConfig, SpendConfiguration
+from finance.plaid.spend.models import AlertState, CardConfig, SpendConfiguration
 from finance.plaid.spend.service import SpendService
 from util.testing.postgres import create_database_async, force_drop_database
-from util.testing.postgres_fixtures import postgres_container  # noqa: F401
-
-
-@pytest.fixture(scope="session")
-def postgres_admin_url(postgres_container: PostgresContainer) -> str:  # noqa: F811
-    host = postgres_container.get_container_host_ip()
-    port = int(postgres_container.get_exposed_port(5432))
-    return f"postgresql+asyncpg://postgres:postgres@{host}:{port}/postgres"
 
 
 @pytest_asyncio.fixture
@@ -170,6 +161,49 @@ async def test_read_view_uses_statement_cycle_and_normalizes_transactions(
     assert late_card.spend_minor_units == 3_884
 
 
+async def test_card_without_statement_reports_observed_spend_not_a_statement_cycle(
+    connection: asyncpg.Connection, postgres_url: str
+) -> None:
+    today = datetime.now(UTC).date()
+    start = today - timedelta(days=32)
+    await add_link(connection, "item-new", synced=datetime.now(UTC))
+    for account_id in ("card-first", "card-empty"):
+        await add_account(connection, account_id, "item-new", type="credit")
+    await add_transaction(connection, "card-first", "item-new", "first", start, 10.0)
+    await add_transaction(connection, "card-first", "item-new", "pending", today, 15.0, pending=True)
+    await add_transaction(connection, "card-first", "item-new", "posted", today, 17.0, pending_transaction_id="pending")
+    await add_transaction(connection, "card-first", "item-new", "new", today, 12.0)
+    await add_transaction(
+        connection, "card-first", "item-new", "repayment", today, 30.0, category="LOAN_PAYMENTS_CREDIT_CARD_PAYMENT"
+    )
+    service = SpendService(
+        postgres_url,
+        SpendConfiguration(
+            cards=[
+                CardConfig(account_id=aid, label=aid, limit_minor_units=10_000, enabled=True)
+                for aid in ("card-first", "card-empty")
+            ]
+        ),
+        dashboard_url="https://spend.example.test",
+    )
+    await service.start()
+    try:
+        view = await service.read_view()
+    finally:
+        await service.close()
+    cards = {card.account_id: card for card in view.cards}
+    first, empty = cards["card-first"], cards["card-empty"]
+    assert first.cycle_start == start  # first observed transaction, not a statement boundary
+    assert first.statement_available is False
+    assert first.posted_minor_units == 3_900
+    assert first.pending_minor_units == 0  # superseded by posted
+    assert first.spend_minor_units == 3_900
+    assert first.spend_percent is None
+    assert first.alert_state == AlertState.UNAVAILABLE
+    assert empty.cycle_start is None
+    assert empty.spend_minor_units is None
+
+
 async def test_allowance_account_coverage_and_freshness_gate(connection: asyncpg.Connection, postgres_url: str) -> None:
     now = datetime.now(UTC)
     midnight = datetime.combine(now.date(), datetime.min.time(), tzinfo=UTC)
@@ -210,6 +244,43 @@ async def test_allowance_account_coverage_and_freshness_gate(connection: asyncpg
         assert unavailable.status == Status.UNAVAILABLE
     finally:
         await service.close()
+
+
+async def test_prior_purchases_are_queried_for_pace_but_not_balance(
+    connection: asyncpg.Connection, postgres_url: str
+) -> None:
+    now = datetime.now(UTC)
+    await add_link(connection, "item-card", synced=now)
+    await add_account(connection, "card-1", "item-card", type="credit")
+    await add_transaction(connection, "card-1", "item-card", "prior", now.date() - timedelta(days=1), 70.0)
+    await add_transaction(connection, "card-1", "item-card", "older", now.date() - timedelta(days=20), 30.0)
+    config = SpendConfiguration(
+        cards=[],
+        allowance=AllowancePolicy(
+            monthly_minor_units=10_000,
+            activation_at=now.date(),
+            spending_account_ids={"card-1"},
+            rules=[
+                Rule(
+                    condition=CategoryExact(type="category_exact", field="pfc_primary", value="SHOPPING"),
+                    kind=Kind.FLEXIBLE,
+                )
+            ],
+        ),
+    )
+    service = SpendService(postgres_url, config, dashboard_url="https://spend.example.test")
+    await service.start()
+    try:
+        allowance = (await service.read_view()).allowance
+    finally:
+        await service.close()
+    assert allowance is not None
+    assert allowance.available_minor_units == 10_000
+    assert allowance.trailing_7_observed_daily_minor_units == 1_000
+    assert allowance.trailing_30_observed_daily_minor_units == 10_000 // 30
+    assert allowance.trailing_7_daily_minor_units == 1_000
+    assert allowance.windows_minor_units is not None
+    assert allowance.windows_minor_units.trailing_7_days_minor_units == 0
 
 
 class _ConnectedRequest:

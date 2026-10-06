@@ -44,10 +44,16 @@ py_binary(
 py_test(
     name = "test_documentation_snippets",
     srcs = ["test_documentation_snippets.py"],
-    data = [":data_files"],
+    data = [
+        ":data_files",
+        ":ember_python",
+    ],
+    env = {"EMBER_PYTHON": "$(rlocationpath :ember_python)"},
     deps = [
         ":system_prompt",
         "//:conftest",
+        "//util/bazel:runfiles",
+        "//x/ember:matrix_client",
         "@pypi//pytest",
         "@pypi//pytest_asyncio",  # keep
         "@pypi//pytest_bazel",
@@ -72,7 +78,6 @@ py_test(
     deps = [
         ":python_session",
         "//:conftest",
-        "@pypi//pytest",
         "@pypi//pytest_asyncio",  # keep
         "@pypi//pytest_bazel",
     ],
@@ -179,7 +184,11 @@ py_library(
     name = "python_session",
     srcs = ["python_session.py"],
     visibility = ["//:__subpackages__"],
-    deps = ["@pypi//jupyter_client"],
+    deps = [
+        "@pypi//ipykernel",
+        "@pypi//jupyter_client",
+        "@pypi//psutil",
+    ],
 )
 
 py_library(

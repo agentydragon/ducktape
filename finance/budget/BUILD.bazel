@@ -36,20 +36,19 @@ py_test(
     ],
     requires_docker = True,
     deps = [
+        ":conftest",
         ":schema",
         ":sql_read_model",
         "//:conftest",
         "//finance/plaid/db:schema",
         "//util/bazel:runfiles",
         "//util/testing:postgres",
-        "//util/testing:postgres_fixtures",
         "@pypi//alembic",
         "@pypi//pydantic",
         "@pypi//pytest",
         "@pypi//pytest_asyncio",
         "@pypi//pytest_bazel",
         "@pypi//sqlalchemy",
-        "@pypi//testcontainers",
     ],
 )
 
@@ -63,6 +62,7 @@ py_test(
     name = "test_csv_export",
     srcs = ["test_csv_export.py"],
     deps = [
+        ":conftest",
         ":csv_export",
         ":schema",
         ":wire",
@@ -80,5 +80,16 @@ py_library(
         ":sql_read_model",
         ":wire",
         "@pypi//sqlalchemy",
+    ],
+)
+
+py_library(
+    name = "conftest",
+    testonly = True,
+    srcs = ["conftest.py"],
+    deps = [
+        "//util/testing:postgres_fixtures",
+        "@pypi//pytest",
+        "@pypi//testcontainers",
     ],
 )

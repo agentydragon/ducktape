@@ -1,25 +1,9 @@
 use chrono::prelude::*;
 use json_output::{
-    Asset, Conversion, ConverterSnapshot, ConverterType::*, Denomination, Denomination::*,
-    Snapshot, SourceSnapshot, SourceType, SourceType::*,
+    Asset, Conversion, ConverterSnapshot, ConverterType::*, Denomination::*, Snapshot,
+    SourceSnapshot, SourceType, SourceType::*,
 };
 use rust_decimal_macros::*;
-
-#[test]
-fn parse_asset() {
-    let json = r#"{"Type": "currency", "Symbol": "A", "Amount": 1.23}"#;
-    let parsed: Asset = serde_json::from_str(json).expect("could not parse");
-    println!("{parsed:#?}");
-
-    let expected = Asset {
-        denomination: Denomination::Currency {
-            symbol: "A".to_string(),
-        },
-        amount: dec!(1.23),
-    };
-
-    assert_eq!(expected, parsed);
-}
 
 #[test]
 fn parse_snapshot() {

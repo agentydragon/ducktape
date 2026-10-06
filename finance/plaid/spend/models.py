@@ -7,7 +7,7 @@ from enum import StrEnum
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
-from finance.plaid.spend.allowance import AllowancePolicy, AllowanceView
+from finance.plaid.spend.allowance import AllowancePolicy, AllowanceView, Rule
 
 
 class AlertState(StrEnum):
@@ -47,6 +47,39 @@ class SpendConfiguration(BaseModel):
         if len(account_ids) != len(set(account_ids)):
             raise ValueError("cards must contain at most one item per account_id")
         return self
+
+
+class CardConfigurationView(BaseModel):
+    """Safe web projection of a configured card, without its Plaid account ID."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    label: str
+    enabled: bool
+    limit_minor_units: int | None
+    alert_threshold_percent: int | None
+
+
+class AllowanceConfigurationView(BaseModel):
+    """Safe web projection of the flexible allowance policy."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    monthly_minor_units: int
+    activation_at: date
+    currency: str
+    spending_account_count: int
+    max_sync_age_hours: int
+    rules: list[Rule]
+
+
+class SpendConfigurationView(BaseModel):
+    """Configuration currently loaded by the service, omitting all account IDs."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    cards: list[CardConfigurationView]
+    allowance: AllowanceConfigurationView | None
 
 
 class CardView(BaseModel):

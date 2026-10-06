@@ -14,7 +14,7 @@ const tokens = (container: HTMLElement, token: string): string[] =>
 describe("InlineCode", () => {
   it("colours shell by the grammar the viewer uses, without changing a character of it", async () => {
     const text = 'if true; then echo "test-output"; fi';
-    const container = await mount(<InlineCode text={text} />);
+    const container = await mount(<InlineCode text={text} language="bash" />);
     expect(codeText(container)).toBe(text);
     expect(tokens(container, "keyword")).toEqual(expect.arrayContaining(["if", "then", "fi"]));
     expect(tokens(container, "string")).toEqual(['"test-output"']);
@@ -29,7 +29,25 @@ describe("InlineCode", () => {
   });
 
   it("copes with a quote that never closes, as a summary cut short does", async () => {
-    const container = await mount(<InlineCode text={'echo "test-cut-off'} />);
+    const container = await mount(<InlineCode text={'echo "test-cut-off'} language="bash" />);
     expect(codeText(container)).toBe('echo "test-cut-off');
+  });
+
+  it("uses the registered language grammar for inline code without an editor", async () => {
+    const container = await mount(<InlineCode text={'def greet(): return "hello"'} language="python" />);
+
+    expect(codeText(container)).toBe('def greet(): return "hello"');
+    expect(tokens(container, "keyword")).toContain("def");
+    expect(container.querySelector(".cm-editor")).toBeNull();
+  });
+
+  it("keeps a streaming cursor at the end of the inline code", async () => {
+    const container = await mount(<InlineCode text="print(42)" language="python" streamingCursor />);
+    const cursor = container.querySelector<HTMLElement>(".agentplane-streaming-cursor");
+
+    expect(cursor?.getAttribute("aria-label")).toBe("Streaming");
+    expect(cursor?.getAttribute("data-character")).toBe("|");
+    expect(cursor?.parentElement?.tagName).toBe("CODE");
+    expect(codeText(container)).toBe("print(42)");
   });
 });

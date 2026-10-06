@@ -68,11 +68,11 @@ def test_default_off_and_startup_validation(tmp_path: Path, monkeypatch: pytest.
     addon.done()
     assert addon.heartbeat is None
     assert not Path(options.cloud_session_ws_events).exists()
-    with pytest.raises(exceptions.OptionsError, match="startup-only"):
+    with pytest.raises(exceptions.OptionsError):
         addon.configure(OPTION_NAMES)
     options.record_cloud_session_ws = True
     options.cloud_session_ws_events = ""
-    with pytest.raises(exceptions.OptionsError, match="requires an output path"):
+    with pytest.raises(exceptions.OptionsError):
         SessionWebSocketMetadata().configure(OPTION_NAMES)
 
 

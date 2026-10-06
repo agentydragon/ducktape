@@ -110,7 +110,8 @@ async def index(fake: FakeApiServer) -> AsyncIterator[PolicyIndex]:
             index=index,
             custom_objects=cast(CustomObjectsClient, CustomObjectsApi(api)),
             core_v1=CoreV1Api(api),
-            namespaces={NAMESPACE},
+            policy_namespace=NAMESPACE,
+            caller_service_account_namespaces={NAMESPACE},
             resync_seconds=60,
         )
         task = asyncio.create_task(informer.run())

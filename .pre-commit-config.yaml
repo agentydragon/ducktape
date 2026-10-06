@@ -14,7 +14,6 @@ exclude: |
     devinfra/claude/web_env/live-dpkg-versions\.txt|
 
     # Test data
-    x/claude_hooks/testdata/.*\.md|
     tana/testdata/.*|
 
     # Generated content
@@ -27,33 +26,63 @@ exclude: |
     props/specimens/[^/]+/[^/]+/code/.*
   )$
 repos:
-  - repo: https://github.com/pre-commit/pre-commit-hooks
-    rev: v6.0.0
+  # Upstream pre-commit-hooks comes from the flake-locked Nix precommit package.
+  # Keep upstream hook metadata when changing these local definitions.
+  - repo: local
     hooks:
       # Safety guard: block direct commits on protected branches. Listing
       # --branch replaces the default (main, master), so name each one;
       # devel is the default branch and is server-side protected by the
       # github-branch-protection ruleset.
       - id: no-commit-to-branch
+        name: don't commit to branch
+        entry: no-commit-to-branch
+        language: system
+        pass_filenames: false
+        always_run: true
         args: [--branch, devel, --branch, main]
 
       - id: trailing-whitespace
+        name: trim trailing whitespace
+        entry: trailing-whitespace-fixer
+        language: system
+        types: [text]
+        stages: [pre-commit, pre-push, manual]
+        minimum_pre_commit_version: 3.2.0
         # .dxf: FreeCAD TechDraw DXF output has trailing whitespace in geometry lines
         # model_comparison/*.svg: matplotlib emits a trailing space after every path
         #   coordinate; stripping it just churns against the next deterministic render
         exclude: "(__snapshots__/.*\\.ambr|\\.patch|\\.dxf|cluster/docs/inference/model_comparison/.*\\.svg)$"
       - id: end-of-file-fixer
+        name: fix end of files
+        entry: end-of-file-fixer
+        language: system
+        types: [text]
+        stages: [pre-commit, pre-push, manual]
+        minimum_pre_commit_version: 3.2.0
         # .dxf: FreeCAD TechDraw DXF output ends without a trailing newline
         exclude: "\\.dxf$"
 
       - id: check-merge-conflict
+        name: check for merge conflicts
+        entry: check-merge-conflict
+        language: system
+        types: [text]
 
       # Syntax checks
       - id: check-yaml
+        name: check yaml
+        entry: check-yaml
+        language: system
+        types: [yaml]
         args: ["--allow-multiple-documents"]
         # Skip ansible !vault tags (not parseable without custom YAML constructor), Helm/Flux dirs (Go templating), chart values
         exclude: "ansible/host_vars/.*\\.yml$|cluster/k8s/|cluster/generated/|cluster/parked/|cluster/charts/|props/helm/templates/"
       - id: check-toml
+        name: check toml
+        entry: check-toml
+        language: system
+        types: [toml]
 
       # TODO: enable check-json
       # - id: check-json
@@ -222,18 +251,6 @@ repos:
         always_run: true
         stages: [pre-commit]
 
-      # Verify test files have pytest_bazel.main() entry points
-      - id: ducktape-pytest-main-check
-        name: ducktape pytest-main-check
-        entry: ducktape-pytest-main-check
-        language: system
-        pass_filenames: true
-        # Every invocation queries the whole repo's py_test srcs; parallel filename batches would
-        # repeat those queries as concurrent Bazel clients against one cold output base.
-        require_serial: true
-        always_run: true
-        stages: [pre-commit]
-
       # Enforce affected Bazel tests are cached/passing (opt-in via DUCKTAPE_PRECOMMIT_ENFORCE_BAZEL_TESTS=1)
       - id: ducktape-enforce-bazel-tests
         name: ducktape enforce-bazel-tests
@@ -274,40 +291,12 @@ repos:
         files: ^cluster/(k8s|generated|parked)/.*\.(yaml|yml)$
         exclude: |
           (?x)^(
-            cluster/k8s/flux-system/gotk-components\.yaml|
             # kustomize config files (kustomize.config.k8s.io/v1beta1) — not K8s resources
             cluster/(k8s|generated|parked)/.*/kustomization\.yaml|
-            # RedisReplication CRD schema in datreeio catalog is outdated (missing spec.sentinel)
-            cluster/(k8s|generated)/.*/valkey-instance\.yaml|
-            # Seaweed v1 CRD schema in datreeio catalog is outdated (missing spec.s3,
-            # spec.master.defaultReplication, spec.volume.storageClassName — all
-            # present in operator v1.0.19's live CRD)
-            cluster/k8s/seaweedfs/cluster/seaweed\.yaml|
             # Authentik blueprints are not K8s manifests, skip validation
             cluster/k8s/authentik/app/blueprints/.*|
-            # Application config files, not K8s manifests
-            cluster/k8s/agents/airlock/config\.yaml|
-            cluster/k8s/agents/plaid-mcp/app/items\.yaml|
-            cluster/k8s/agents/grocy-mcp/envoy\.yaml|
-            cluster/k8s/agents/homeassistant-proxy/config\.yaml|
-            # OpenShell policy mounted via configMapGenerator, not a K8s manifest
-            cluster/k8s/agents/openshell/openclaw/policy\.yaml|
-            # iron-proxy config mounted via configMapGenerator, not a K8s manifest
-            cluster/k8s/agents/public-coder-agent/proxy/codex-runner-iron\.yaml|
-            cluster/k8s/litellm/app/(chatgpt-)?proxy-config\.yaml|
-            cluster/k8s/litellm/tana/proxy-config\.yaml|
-            haku/x/dispatch/deploy/workers-litellm-config\.yaml|
-            # dispatcher Job template with ${...} placeholders, mounted via configMapGenerator
-            haku/x/dispatch/deploy/job-template\.yaml|
-            haku/x/dispatch/deploy/zones\.yaml|
-            # Helm values files consumed via configMapGenerator, not K8s manifests
-            cluster/(k8s|generated)/.*/ccm-values\.yaml|
             # Authelia configuration files consumed via configMapGenerator, not K8s manifests
-            cluster/parked/authelia/(configuration|users)\.yml|
-            # rotate.py token list, mounted via configMapGenerator, not a K8s manifest
-            cluster/k8s/nix-cache/rotators\.yaml|
-            # APT manifests for Bazel rules_distroless, not K8s manifests
-            cluster/k8s/agents/attic-jwt-rotation/trixie_attic_rotation\.yaml|
+            cluster/parked/authelia/(configuration|users)\.yml
           )$
         types: [yaml]
 

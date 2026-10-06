@@ -119,11 +119,9 @@ py_test(
 py_test(
     name = "test_markets",
     srcs = ["test_markets.py"],
-    data = ["example_market_roster.yaml"],
     deps = [
         ":markets",
         "//:conftest",
-        "//util/bazel:runfiles",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],

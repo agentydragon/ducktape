@@ -602,6 +602,13 @@ class _Fold:
                     }:
                         raise ObservationNotUnderstoodError(cursor, "conversation_reconciled.disposition")
                     item = self._item(cursor, recovered.item_id)
+                    # A reconciliation that could not tell never overrides an earlier one that could; any other
+                    # disposition replaces it.
+                    if recovered.disposition == event_pb2.RECOVERY_DISPOSITION_UNKNOWN and item.recovery not in {
+                        None,
+                        event_pb2.RECOVERY_DISPOSITION_UNKNOWN,
+                    }:
+                        continue
                     revised = recovered.disposition == event_pb2.RECOVERY_DISPOSITION_REVISED
                     if revised != recovered.HasField("replacement"):
                         raise FoldContractError(cursor, "revised recovery requires replacement content")

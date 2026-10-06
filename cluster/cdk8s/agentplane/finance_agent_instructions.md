@@ -53,6 +53,26 @@ The pgweb query API accepts POST to `/api/query`; the underlying Postgres role c
 Do not use direct database credentials or bypass the egress proxy. Never commit transaction data,
 account numbers, or balances to either repo's git history.
 
+The finance preset reads live AIQuota via GET on the internal `aiquota-api` Service
+(`aiquota-api.cli-proxy-api.svc.cluster.local:8080/v1/quotas`), using the
+`agentplane-credential-aiquota-read` Bearer placeholder; the public hostname may be
+unavailable even when the Service is healthy. For historical typed quota/spend
+observations, query ClickHouse's HTTP endpoint at
+`clickhouse.clickhouse.svc.cluster.local:8123/` with GET and URL-encoded `query=`,
+HTTP Basic username `finance_agent_aiquota` and password placeholder
+`agentplane-credential-clickhouse-finance-agent-credentials`. This role is restricted
+to SELECT on `aiquota.aiquota_windows`; it cannot read raw provider bodies or other
+tenants. Check current egress rules before either request; no auth token or raw
+provider payload belongs in a public repo. The `finance-agent` sandbox
+preset grants `aiquota-read` and `finance-aiquota-history` to new sandboxes;
+verify the actual live `/v1/rules` before using either route. A minimal
+read-only history probe is `SELECT count() FROM aiquota.aiquota_windows` via
+GET with URL-encoded `query=`.
+These typed windows report observed **usage against a Claude cap**, not purchases,
+prepaid-credit wallet balances, or net card charges; reconcile separately with Plaid
+before recommending a spending cap. The private finance-agent repo holds working
+queries and dated findings, not the public prompt.
+
 This is analysis and tooling work only. Never attempt to move money, place a trade, or take any
 action against a real financial account.
 

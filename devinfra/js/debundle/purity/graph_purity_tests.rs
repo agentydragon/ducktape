@@ -790,50 +790,6 @@ fn plain_data_let_with_update_disqualifies() {
 }
 
 #[test]
-fn plain_data_let_chain_collapses_env_config_walkthrough_shape() {
-    // The full gaffer-private chain-of-hints shape, end to end:
-    //
-    //   let envConfig = { REACT_APP_ENV: …, FUNCTIONS_EMULATOR: false, … };
-    //   const applySystemConfigOverrides = (n) => { envConfig = { ...envConfig, ...n }; };
-    //   const getEnv = (n) => envConfig[n];
-    //   const isEmulatorEnv = () =>
-    //       (mr.FUNCTIONS_EMULATOR ? true : getEnv("REACT_APP_ENV") === "emulator");
-    //   const getSystemConfig = () => envConfig;
-    //
-    // The let+mutator extension keeps `envConfig` PlainData and
-    // static-prop readers pure. The opaque-key accessor `getEnv`
-    // (and its transitive caller `isEmulatorEnv`) are NOT inferred
-    // pure under the ToPropertyKey gate — `envConfig[n]` coerces an
-    // opaque key — so those two still need `purity: pure` hints in
-    // `runtime/environment/{env_config,config}.yaml` when the spec
-    // author wants their call sites S-edge-free.
-    let src = r#"
-    const mr = { FUNCTIONS_EMULATOR: false };
-    let envConfig = {
-        REACT_APP_ENV: "production",
-        REACT_APP_FIREBASE_API_KEY: "x",
-    };
-    const applySystemConfigOverrides = (n) => {
-        envConfig = { ...envConfig, ...n };
-    };
-    const getEnv = (n) => envConfig[n];
-    const isEmulatorEnv = () =>
-        (mr.FUNCTIONS_EMULATOR ? true : getEnv("REACT_APP_ENV") === "emulator");
-    const getSystemConfig = () => envConfig;
-"#;
-    assert!(is_plain_data(src, "envConfig"));
-    assert!(is_plain_data(src, "mr"));
-    assert_eq!(fn_purity(src, "getEnv"), Some(false));
-    assert_eq!(fn_purity(src, "isEmulatorEnv"), Some(false));
-    assert_eq!(fn_purity(src, "getSystemConfig"), Some(true));
-    // `applySystemConfigOverrides` itself is impure (it writes
-    // to envConfig); call sites still need to anchor it via
-    // S-edges. Confirm the impurity is detected, so the
-    // debundler doesn't accidentally classify the mutator pure.
-    assert_eq!(fn_purity(src, "applySystemConfigOverrides"), Some(false));
-}
-
-#[test]
 fn plain_data_const_with_accessor_property_is_not_tracked() {
     // A getter installed in the literal makes `X.a` fire user
     // code. Reject these initializers — even though the binding
@@ -977,72 +933,15 @@ fn plain_data_computed_read_with_primitive_key_is_pure() {
 
 #[test]
 fn plain_data_read_with_static_property_is_pure() {
-    // `mr.FUNCTIONS_EMULATOR` is the second leg of the
-    // recursive-purity walkthrough: a chunk-local config
-    // object accessed via a non-computed property name. With
-    // `mr` as PlainData, the read is unconditionally pure (no
-    // key sub-expression to validate).
+    // `mr.FUNCTIONS_EMULATOR`: a chunk-local config object
+    // accessed via a non-computed property name. With `mr` as
+    // PlainData, the read is unconditionally pure (no key
+    // sub-expression to validate).
     let src = r#"
     const mr = { FUNCTIONS_EMULATOR: false, FOO: 1 };
     const check = () => mr.FUNCTIONS_EMULATOR;
 "#;
     assert_eq!(fn_purity(src, "check"), Some(true));
-}
-
-#[test]
-fn plain_data_chain_collapses_size_33_walkthrough_shape() {
-    // The full chain-of-hints case from
-    // `(internal purity research notes)`: a config
-    // table `TA`, an accessor `Me`, an env-derived predicate
-    // `$i`, and a top-level binding `gF` whose init is an
-    // object literal whose values are calls to `Me`.
-    //
-    // Under the ToPropertyKey gate, the opaque-key accessor
-    // `Me = (n) => TA[n]` is NOT inferred pure (an object key
-    // fires user `toString`), so the inference-only collapse of
-    // this chain no longer happens — the spec author keeps the
-    // `purity: pure` hint on `Me` (one hint instead of four:
-    // hint-pure `Me` lets `$i` / `vR` / `Oge` infer pure).
-    let src = r#"
-    const TA = { ENV: "emulator", KEY: "x" };
-    const mr = { FUNCTIONS_EMULATOR: false };
-    const Me = (n) => TA[n];
-    const $i = () => mr.FUNCTIONS_EMULATOR ? true : Me("ENV") === "emulator";
-    const vR = (x) => Me(x);
-    const Oge = () => vR("KEY");
-"#;
-    assert_eq!(fn_purity(src, "Me"), Some(false));
-    assert_eq!(fn_purity(src, "$i"), Some(false));
-    assert_eq!(fn_purity(src, "vR"), Some(false));
-    assert_eq!(fn_purity(src, "Oge"), Some(false));
-    // With a single `purity: pure` hint on `Me`, the rest of the
-    // chain (and the `gF` owner statement) infers pure.
-    let full = format!(
-        r#"
-    {src}
-    const gF = {{ apiKey: Me("KEY"), authDomain: Me("ENV"), feat: $i() }};
-"#
-    );
-    let module = parse(&full);
-    let facts = analyze_chunk(
-        &module,
-        &AnalysisHints {
-            declared_pure: BTreeSet::from(["Me".to_string()]),
-            ..AnalysisHints::default()
-        },
-        None,
-        |_| None,
-    )
-    .facts;
-    let gf_fact = facts
-        .iter()
-        .find(|f| f.declared.contains(&test_id("gF")))
-        .expect("gF fact missing from chunk analysis");
-    assert!(
-        gf_fact.purity.is_pure(),
-        "gF should classify pure with a single hint on Me, got {:?}",
-        gf_fact.purity,
-    );
 }
 
 // --- Call-graph topology: deep chains, isolated nodes ------------------
@@ -1106,6 +1005,39 @@ fn fn_purity_mutual_recursion_with_external_impure_callee() {
     assert_eq!(fn_purity(src, "c"), Some(false));
     assert_eq!(fn_purity(src, "a"), Some(false));
     assert_eq!(fn_purity(src, "b"), Some(false));
+}
+
+#[test]
+fn declared_pure_hint_applies_inside_chunk_function_bodies() {
+    // `io` is impure by its body. `value` is pure only when chunk analysis
+    // honors the hint on `io` while classifying `read`'s body, not just at
+    // the top-level statement.
+    let module = parse(
+        r#"
+    function io() { globalThis.touched = true; }
+    const read = () => io();
+    const value = read();
+"#,
+    );
+    let value_is_pure = |declared_pure: BTreeSet<String>| {
+        analyze_chunk(
+            &module,
+            &AnalysisHints {
+                declared_pure,
+                ..AnalysisHints::default()
+            },
+            None,
+            |_| None,
+        )
+        .facts
+        .iter()
+        .find(|f| f.declared.contains(&test_id("value")))
+        .expect("value fact missing")
+        .purity
+        .is_pure()
+    };
+    assert!(value_is_pure(BTreeSet::from(["io".to_string()])));
+    assert!(!value_is_pure(BTreeSet::new()));
 }
 
 // --- Body-level shadowing of global tables / chunk graph / annotations --

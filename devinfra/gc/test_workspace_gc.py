@@ -9,7 +9,8 @@ import pytest
 import pytest_bazel
 import respx
 
-from devinfra.gc import workspace_gc
+from devinfra.gc import workspace_gc, workspace_scan
+from devinfra.gc.conftest import GitRepo
 
 
 def test_main_routes_options_to_default_command(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -106,6 +107,47 @@ def test_pr_states_resolves_every_branch_when_the_quota_holds(github_repo: pathl
     respx.post(_GRAPHQL_URL).mock(side_effect=_always_merged)
 
     assert workspace_gc.pr_states(github_repo, _BRANCHES).keys() == _BRANCHES
+
+
+# Branch names that look like numbers: `tabulate` rewrites a column whose every cell does.
+_NUMERIC_LOOKING_BRANCHES = ["1e5", "2.10", "1.0", "007"]
+
+
+def _scan_numeric_looking_branches(
+    repo: GitRepo, proc: pathlib.Path, mountinfo: pathlib.Path
+) -> workspace_scan.WorkspaceScan:
+    for index, branch in enumerate(_NUMERIC_LOOKING_BRANCHES):
+        repo.worktree(f"wt{index}", branch)  # an empty branch: its worktree and branch are both prunable
+    return workspace_scan.scan_workspace(
+        repo.path, main="main", default_branch="main", pr_states={}, proc_root=proc, mountinfo_path=mountinfo
+    )
+
+
+def _cells(report: str, column: int) -> list[str]:
+    """One column of a rendered table's rows: not its header line, nor its trailing summary line."""
+    return sorted(line.split()[column] for line in report.splitlines()[1:-1])
+
+
+def test_render_worktrees_prints_numeric_looking_branch_names_verbatim(
+    repo: GitRepo, proc: pathlib.Path, mountinfo: pathlib.Path
+) -> None:
+    scan = _scan_numeric_looking_branches(repo, proc, mountinfo)
+
+    report = workspace_gc.render_worktrees(scan.worktrees, include_kept=False)
+
+    # STATUS, LAST ACTIVITY, WORKTREE, BRANCH: the fourth cell of a row.
+    assert _cells(report, 3) == sorted(_NUMERIC_LOOKING_BRANCHES)
+
+
+def test_render_branches_prints_numeric_looking_branch_names_verbatim(
+    repo: GitRepo, proc: pathlib.Path, mountinfo: pathlib.Path
+) -> None:
+    scan = _scan_numeric_looking_branches(repo, proc, mountinfo)
+
+    report = workspace_gc.render_branches(scan.branches, include_kept=False)
+
+    # STATUS, BRANCH: the second cell of a row. The default branch is kept, so it is not a row.
+    assert _cells(report, 1) == sorted(_NUMERIC_LOOKING_BRANCHES)
 
 
 if __name__ == "__main__":

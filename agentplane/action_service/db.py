@@ -410,7 +410,8 @@ _SECRET_KEYS = frozenset(
 
 def make_engine(database_url: str) -> AsyncEngine:
     url = database_url.replace("postgresql://", "postgresql+asyncpg://", 1)
-    return create_async_engine(url, pool_pre_ping=True)
+    # Staging OOM: 14 Action Service sessions were idle.
+    return create_async_engine(url, pool_pre_ping=True, pool_size=4, max_overflow=2)
 
 
 def make_sessionmaker(engine: AsyncEngine) -> SessionMaker:

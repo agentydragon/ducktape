@@ -1,3 +1,4 @@
+load("@rules_python//python:packaging.bzl", "py_package", "py_wheel")
 load("//devinfra/python:defs.bzl", "py_binary", "py_library", "py_test")
 
 py_library(
@@ -109,7 +110,6 @@ py_test(
         ":pull_request",
         "//:conftest",
         "//devinfra/ci:invocation_ids",
-        "//util:visual_diff",
         "//util:visual_review",
         "@pypi//botocore",
         "@pypi//pillow",
@@ -134,6 +134,58 @@ py_test(
         ":pull_request",
         "//:conftest",
         "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+# Keep this wheel limited to the publisher's import closure. The internal helper
+# modules are included here rather than making the release depend on another
+# ducktape wheel.
+py_package(
+    name = "pr_visuals_pkg",
+    packages = [
+        "devinfra.ci",
+        "devinfra.pr_visuals",
+        "util",
+    ],
+    deps = [":publisher"],
+)
+
+py_wheel(
+    name = "wheel",
+    distribution = "pr_visuals",
+    entry_points = {
+        "console_scripts": [
+            "pr-visuals-announce = devinfra.pr_visuals.check_run:main",
+            "pr-visuals-publish = devinfra.pr_visuals.publisher:main",
+        ],
+    },
+    python_requires = ">=3.14",
+    # SYNC: Keep this list aligned with the runtime dependencies of publisher
+    # and nix/packages/default.nix (pr-visuals) when Nix packaging is enabled.
+    requires = [
+        "boto3",
+        "botocore",
+        "jinja2",
+        "more-itertools",
+        "Pillow",
+        "pydantic>=2.0",
+        "PyGithub",
+        "tenacity",
+    ],
+    version = "0.1.0",
+    visibility = ["//visibility:public"],
+    deps = [":pr_visuals_pkg"],
+)
+
+py_test(
+    name = "test_wheel",
+    srcs = ["test_wheel.py"],
+    data = [":wheel"],
+    deps = [
+        "//:conftest",
+        "//devinfra/pr_visuals:publisher",
+        "//util/bazel:runfiles",
         "@pypi//pytest_bazel",
     ],
 )

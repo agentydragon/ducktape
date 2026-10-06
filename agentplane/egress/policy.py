@@ -1,4 +1,4 @@
-"""The decision: bindings to policies to the rule the request's placeholder picks, over an in-memory index. No I/O.
+"""The decision: bindings to egress policies to the rule the request's placeholder picks, over an in-memory index. No I/O.
 
 `Index` is the proxy's picture of the namespace, kept equal to the API server's by the informer;
 `evaluate` and `resolve_binding` use the caller's clock to decide expiry.
@@ -151,7 +151,7 @@ type Decision = Allowed | Denied
 
 @dataclass(frozen=True)
 class BindingResolution:
-    """A binding as it stands right now: which of its policies exist, and why it may grant nothing."""
+    """A binding as it stands right now: which of its egress policies exist, and why it may grant nothing."""
 
     binding: EgressBinding
     policies: tuple[EgressPolicy, ...]
@@ -229,7 +229,7 @@ class _Match:
 
 
 def _matching_rules(bindings: Sequence[BindingResolution], request: EgressRequest) -> list[_Match]:
-    """Every rule that admits the request, in walk order: bindings by name, policies and rules as listed."""
+    """Every rule that admits the request, in walk order: bindings by name, egress policies and rules as listed."""
     return [
         _Match(binding=resolution.binding.metadata.name, policy=policy.metadata.name, number=number, rule=rule)
         for resolution in bindings
@@ -245,7 +245,7 @@ def presented_credentials(
     """Every known credential this request presents, by name.
 
     Known is namespace-wide: any `EgressCredential` in the index counts, whether or not the subject
-    is bound to a policy naming it, so a placeholder the subject was never granted is recognised and
+    is bound to an egress policy naming it, so a placeholder the subject was never granted is recognised and
     refused rather than forwarded.
     """
     return {

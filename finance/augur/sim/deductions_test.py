@@ -317,6 +317,10 @@ def test_acquisition_interest_above_the_standard_deduction_is_itemized() -> None
     assert usd(federal_baseline, "mortgage_interest_deduction_quanta") == 0.0
     assert usd(federal_baseline, "itemized_deduction_quanta") == 0.0
     assert usd(federal_baseline, "standard_deduction_quanta") == pytest.approx(FEDERAL_STANDARD)
+    assert usd(california_baseline, "mortgage_interest_deduction_quanta") == 0.0
+    assert usd(california_baseline, "itemized_deduction_quanta") == pytest.approx(
+        property_tax_through(baseline, month=11)
+    )
 
     assert usd(federal, "mortgage_interest_deduction_quanta") == pytest.approx(interest, rel=1e-5)
     assert usd(federal, "itemized_deduction_quanta") == pytest.approx(interest, rel=1e-5)
@@ -387,20 +391,6 @@ def test_acquisition_and_home_equity_debt_are_classified_per_liability() -> None
     federal = breakdown(rollout, jurisdiction_id=FEDERAL)
     assert usd(federal, "mortgage_interest_deduction_quanta") == pytest.approx(acquisition, rel=1e-5)
     assert usd(federal, "mortgage_interest_deduction_quanta") < acquisition + heloc
-
-
-def test_without_a_policy_no_interest_is_deducted() -> None:
-    """A mortgage alone does not itemize its interest. Federally the standard deduction stands;
-    California itemizes the property tax paid."""
-    rollout = run(Situation(purchase_price=900_000, down_payment=180_000, annual_rate=Decimal("0.07")))
-
-    federal = breakdown(rollout, jurisdiction_id=FEDERAL)
-    california = breakdown(rollout, jurisdiction_id=CALIFORNIA)
-    assert usd(federal, "mortgage_interest_deduction_quanta") == 0.0
-    assert usd(federal, "itemized_deduction_quanta") == 0.0
-    assert usd(federal, "standard_deduction_quanta") == pytest.approx(FEDERAL_STANDARD)
-    assert usd(california, "mortgage_interest_deduction_quanta") == 0.0
-    assert usd(california, "itemized_deduction_quanta") == pytest.approx(property_tax_through(rollout, month=11))
 
 
 def test_the_federal_principal_cap_prorates_interest_and_california_does_not() -> None:

@@ -10,7 +10,6 @@ from cluster.cdk8s.render_diff import (
     BlobStore,
     Failed,
     Graph,
-    IgnorePattern,
     Renderer,
     Revision,
     apply_copy,
@@ -174,9 +173,10 @@ def test_source_ignore_reincludes_a_single_file(tmp_path: Path) -> None:
     assert set(flux_ignore(files, ignore, BlobStore(tmp_path))) == {"plugin/kubernetes/crd.yaml"}
 
 
-def test_default_ignore_drops_sops_config() -> None:
-    assert IgnorePattern.parse("**/.sops.yaml").match(("cluster", ".sops.yaml"), False) is True
-    assert IgnorePattern.parse("**/.sops.yaml").match(("cluster", "x.sops.yaml"), False) is None
+def test_default_ignore_drops_sops_config(tmp_path: Path) -> None:
+    blob = Blob(Path("/unused"), "0")
+    files = dict.fromkeys(("cluster/.sops.yaml", "cluster/x.sops.yaml"), blob)
+    assert set(flux_ignore(files, None, BlobStore(tmp_path))) == {"cluster/x.sops.yaml"}
 
 
 @pytest.mark.parametrize(

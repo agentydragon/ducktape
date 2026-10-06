@@ -25,6 +25,7 @@ import {
   displayableError,
   models,
   modelsForHarness,
+  harnessOptions,
   type KubernetesGrantView,
   type ModelCatalog,
   type NewSandbox,
@@ -42,7 +43,7 @@ import { StaleNotice } from "./stream_status";
 const EMPTY_FORM: NewSandbox = {
   slug: "",
   template: "",
-  policies: [],
+  egress_policies: [],
   action_policy_sets: [],
   kubernetes_grants: [],
   bootstrap: "",
@@ -84,8 +85,8 @@ export function SandboxList({ onOpen }: { onOpen: (name: string) => void }): JSX
   const [modelCatalog, setModelCatalog] = useState<ModelCatalog | null>(null);
   const modelOptions = thread.harness && modelCatalog ? modelsForHarness(modelCatalog, thread.harness) : [];
   const reasoningEfforts = modelOptions.find((option) => option.model === thread.model)?.reasoning_efforts ?? [];
-  // The namespace's policies; ticking some grants them to this sandbox alone.
-  const [policies, setPolicies] = useState<string[]>([]);
+  // The namespace's egress policies; ticking some grants them to this sandbox alone.
+  const [egressPolicies, setEgressPolicies] = useState<string[]>([]);
   const [templates, setTemplates] = useState<string[]>([]);
   // The namespace's action policy sets; a preset pre-fills the pick and the operator edits it.
   const [policySets, setPolicySets] = useState<ActionPolicySetView[]>([]);
@@ -103,7 +104,7 @@ export function SandboxList({ onOpen }: { onOpen: (name: string) => void }): JSX
       setForm((current) => ({
         ...current,
         template: "",
-        policies: [],
+        egress_policies: [],
         action_policy_sets: [],
         kubernetes_grants: [],
         bootstrap: "",
@@ -114,7 +115,7 @@ export function SandboxList({ onOpen }: { onOpen: (name: string) => void }): JSX
     setForm((current) => ({
       ...current,
       template: preset.template,
-      policies: preset.policies,
+      egress_policies: preset.egress_policies,
       action_policy_sets: preset.action_policy_sets,
       kubernetes_grants: preset.kubernetes_grants,
       bootstrap: preset.bootstrap,
@@ -131,9 +132,9 @@ export function SandboxList({ onOpen }: { onOpen: (name: string) => void }): JSX
 
   useEffect(() => {
     void (async () => {
-      const { data: policyViews, error: policyFailure } = await api.GET("/egress/policies");
+      const { data: egressPolicyViews, error: policyFailure } = await api.GET("/egress/policies");
       if (policyFailure) setError(displayableError(policyFailure));
-      else setPolicies(policyViews.map((policy) => policy.name));
+      else setEgressPolicies(egressPolicyViews.map((policy) => policy.name));
       const { data: setViews, error: setFailure } = await api.GET("/action-policy/sets");
       if (setFailure) setError(displayableError(setFailure));
       else setPolicySets(setViews);
@@ -161,9 +162,13 @@ export function SandboxList({ onOpen }: { onOpen: (name: string) => void }): JSX
     if (!modelCatalog) return;
     setThread((current) => {
       if (!current.harness) return current;
-      const offered = modelsForHarness(modelCatalog, current.harness);
-      if (current.model && offered.some((option) => option.model === current.model)) return current;
-      return { ...current, model: offered[0]?.model ?? null, reasoning_effort: undefined };
+      const available = harnessOptions(modelCatalog).filter((option) => !option.disabled);
+      const harness = available.find((option) => option.value === current.harness)?.value ?? available[0]?.value;
+      if (!harness) return current;
+      const offered = modelsForHarness(modelCatalog, harness);
+      if (harness === current.harness && current.model && offered.some((option) => option.model === current.model))
+        return current;
+      return { ...current, harness, model: offered[0]?.model ?? null, reasoning_effort: undefined };
     });
   }, [modelCatalog, thread.harness, thread.model]);
 
@@ -249,16 +254,18 @@ export function SandboxList({ onOpen }: { onOpen: (name: string) => void }): JSX
           style={{ flex: "1 1 14rem" }}
         />
         <MultiSelect
-          label="Policies"
+          label="Egress policies"
           description="What this sandbox may reach"
-          data={policies}
-          value={form.policies ?? []}
-          onChange={(picked) => setForm({ ...form, policies: picked })}
+          hidePickedOptions
+          data={egressPolicies.filter((policy) => !(form.egress_policies ?? []).includes(policy))}
+          value={form.egress_policies ?? []}
+          onChange={(picked) => setForm({ ...form, egress_policies: picked })}
           style={{ flex: "1 1 12rem" }}
         />
         <MultiSelect
           label="Action policy sets"
           description="What its harness may do without the operator"
+          hidePickedOptions
           data={policySets.map(policySetOption)}
           value={form.action_policy_sets ?? []}
           onChange={(picked) => setForm({ ...form, action_policy_sets: picked })}
@@ -267,6 +274,7 @@ export function SandboxList({ onOpen }: { onOpen: (name: string) => void }): JSX
         <MultiSelect
           label="Kubernetes grants"
           description="Roles bound to this sandbox's ServiceAccount"
+          hidePickedOptions
           data={kubernetesGrantOptions.map((grant) => ({
             value: grant.name,
             label: `${grant.name} · ${grant.kind} · ${grant.namespace ? `namespace ${grant.namespace}` : "cluster"} → ${grant.role_ref.kind}/${grant.role_ref.name}`,
@@ -316,10 +324,7 @@ export function SandboxList({ onOpen }: { onOpen: (name: string) => void }): JSX
           <Select
             label="Harness"
             allowDeselect={false}
-            data={[
-              { value: "HARNESS_CLAUDE", label: "Claude" },
-              { value: "HARNESS_CODEX", label: "Codex" },
-            ]}
+            data={harnessOptions(modelCatalog)}
             value={thread.harness ?? null}
             onChange={(harness) =>
               setThread({ ...thread, harness: (harness ?? undefined) as SessionDefaults["harness"] })

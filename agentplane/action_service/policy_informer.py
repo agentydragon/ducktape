@@ -139,7 +139,8 @@ class PolicyInformer:
         index: PolicyIndex,
         custom_objects: CustomObjectsClient,
         core_v1: CoreV1Api,
-        namespaces: Collection[str],
+        policy_namespace: str,
+        caller_service_account_namespaces: Collection[str],
         resync_seconds: int,
     ) -> None:
         self._index = index
@@ -150,38 +151,39 @@ class PolicyInformer:
         # What this replica last wrote, by object UID, so a write is not repeated while its own MODIFIED
         # event is in flight and a recreated object (same name, new UID) is judged afresh.
         self._written: dict[str, Condition] = {}
-        kinds: list[WatchedKind] = []
-        for namespace in sorted(namespaces):
-            kinds += [
-                WatchedKind(
-                    name=f"{namespace}/{POLICY_SETS_PLURAL}",
-                    list=custom_objects.list_namespaced_custom_object,
-                    args=(GROUP, VERSION, namespace, POLICY_SETS_PLURAL),
-                    parse=parse_policy_set,
-                    key=lambda obj: obj.namespaced_name,
-                    names=partial(_keys_in, index.policy_sets, namespace),
-                    apply=lambda key, obj: apply_to(index.policy_sets, key, obj),
-                ),
-                WatchedKind(
-                    name=f"{namespace}/{BINDINGS_PLURAL}",
-                    list=custom_objects.list_namespaced_custom_object,
-                    args=(GROUP, VERSION, namespace, BINDINGS_PLURAL),
-                    parse=parse_binding,
-                    key=lambda obj: obj.namespaced_name,
-                    names=partial(_keys_in, index.bindings, namespace),
-                    apply=lambda key, obj: apply_to(index.bindings, key, obj),
-                ),
-                WatchedKind(
-                    name=f"{namespace}/{SERVICE_ACCOUNTS_PLURAL}",
-                    list=core_v1.list_namespaced_service_account,
-                    args=(namespace,),
-                    kwargs={"label_selector": CALLER_LABEL_SELECTOR},
-                    parse=_service_account,
-                    key=service_account_key,
-                    names=partial(_keys_in, index.service_accounts, namespace),
-                    apply=lambda key, obj: apply_to(index.service_accounts, key, obj),
-                ),
-            ]
+        kinds: list[WatchedKind] = [
+            WatchedKind(
+                name=f"{policy_namespace}/{POLICY_SETS_PLURAL}",
+                list=custom_objects.list_namespaced_custom_object,
+                args=(GROUP, VERSION, policy_namespace, POLICY_SETS_PLURAL),
+                parse=parse_policy_set,
+                key=lambda obj: obj.namespaced_name,
+                names=partial(_keys_in, index.policy_sets, policy_namespace),
+                apply=lambda key, obj: apply_to(index.policy_sets, key, obj),
+            ),
+            WatchedKind(
+                name=f"{policy_namespace}/{BINDINGS_PLURAL}",
+                list=custom_objects.list_namespaced_custom_object,
+                args=(GROUP, VERSION, policy_namespace, BINDINGS_PLURAL),
+                parse=parse_binding,
+                key=lambda obj: obj.namespaced_name,
+                names=partial(_keys_in, index.bindings, policy_namespace),
+                apply=lambda key, obj: apply_to(index.bindings, key, obj),
+            ),
+        ]
+        kinds.extend(
+            WatchedKind(
+                name=f"{namespace}/{SERVICE_ACCOUNTS_PLURAL}",
+                list=core_v1.list_namespaced_service_account,
+                args=(namespace,),
+                kwargs={"label_selector": CALLER_LABEL_SELECTOR},
+                parse=_service_account,
+                key=service_account_key,
+                names=partial(_keys_in, index.service_accounts, namespace),
+                apply=lambda key, obj: apply_to(index.service_accounts, key, obj),
+            )
+            for namespace in sorted(caller_service_account_namespaces)
+        )
         self._watch = ListWatch(
             kinds=kinds,
             resync_seconds=resync_seconds,

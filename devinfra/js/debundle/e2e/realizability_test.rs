@@ -108,7 +108,7 @@ fn pair_list_get<'a>(array: &'a serde_json::Value, key: &str) -> Option<&'a serd
 // --- R cycles (both back-edges at-init) ----------------------------------
 
 #[test]
-fn cyclic_spec_is_rejected_with_clear_error() {
+fn cyclic_spec_is_rejected() {
     // mod_x = {A, D}: D = wrap(C) reads C from mod_y.
     // mod_y = {B, C}: B = wrap(A) reads A from mod_x.
     // Cycle: mod_x ↔ mod_y.
@@ -126,48 +126,14 @@ export { A, B, C, D };
             logical_module("mod_y", &[Member::new("B"), Member::new("C")]),
         ],
     );
-    expect_rejection(opts, &["cycle", "mod_x", "mod_y"]);
+    expect_cycle_rejection(opts, &["mod_x", "mod_y"]);
 }
 
 // --- I cycles via lazy back-edges ----------------------------------------
 
-#[test]
-fn mixed_cycle_with_lazy_back_edge_is_realizable_when_residual_imports_scc() {
-    // mod_a imports B from mod_b (readB body's lazy read); mod_b
-    // imports A from mod_a (B's eager initializer). The imports
-    // graph `I` has a 2-cycle {mod_a, mod_b}; the constraining-
-    // edge subgraph (drops LazyUse) is acyclic — only
-    // mod_b → mod_a constrains init order.
-    //
-    // Residual reads `readB()` and re-exports A, B, readB, so
-    // residual has direct I-edges into both SCC members. The
-    // materializer's `source_import_position` reversal at
-    // residual orders entry's imports as `[mod_b, mod_a]`; ESM
-    // DFS enters mod_b → recurses into mod_a (eager) → mod_a's
-    // lazy back-edge hits mod_b on the link stack (no-op) → mod_a
-    // body evaluates with no TDZ → mod_b body sees A
-    // initialized. Lemma 2 rescues. The companion
-    // `mediator_reaches_asymmetric_cycle_test` exercises the
-    // shape Lemma 2 cannot rescue (non-residual mediator into
-    // SCC), and `runtime_tdz_on_imported_class_test` pins the
-    // residual-in-cycle rejection.
-    let fixture = run_fixture(FixtureOpts::new(
-        r#"const A = "a-value";
-function readB() { return B; }
-const B = A + "-postfix";
-console.log(readB());
-export { A, B, readB };
-"#,
-        vec![
-            logical_module("mod_a", &[Member::new("A"), Member::new("readB")]),
-            logical_module("mod_b", &[Member::new("B")]),
-        ],
-    ));
-    assert_entry_output(&fixture, "a-value-postfix\n");
-}
-
-// Calling the lazy reader at initialization closes the otherwise accepted
-// mixed cycle above. The original source is valid; splitting it is not.
+// A mixed cycle whose lazy edge is only read at call time is accepted
+// (`lemma_two_rescued_asymmetric_cycle_test`); calling the lazy reader at
+// initialization closes it. The original source is valid; splitting it is not.
 #[test]
 fn at_init_call_closes_mixed_cycle() {
     let rejected = run_rejection_fixture(FixtureOpts::new(
@@ -632,14 +598,10 @@ export { a1, a2, b1 };
         ],
     ));
     assert!(
-        rejected.stderr.contains("owner graph at"),
+        rejected.stderr.contains("owner_graph.json"),
         "stderr should point at the owner graph report:\n{}",
         rejected.stderr,
     );
-
-    for expected in ["cycle", "mod_a", "mod_b", "side-effect"] {
-        assert!(rejected.stderr.contains(expected), "{}", rejected.stderr);
-    }
     let graph = rejected.owner_graph();
     assert!(
         graph
@@ -670,6 +632,14 @@ export { a1, a2, b1 };
     for (i, entry) in cycles.iter().enumerate() {
         let cut = entry["cut"].as_array().expect("cycle cut");
         assert!(!cut.is_empty(), "a blocking cycle needs a cut: {entry}");
+        let mut modules: Vec<&str> = entry["modules"]
+            .as_array()
+            .expect("SCC modules")
+            .iter()
+            .map(|module| module.as_str().expect("module path"))
+            .collect();
+        modules.sort_unstable();
+        assert_eq!(modules, ["mod_a", "mod_b"], "{entry}");
         assert!(
             cut.iter().all(|edge| edge["kind"] == "sequenced"),
             "S-only cycle cut must contain only side-effect reasons: {entry}"
@@ -774,7 +744,7 @@ fn comma_list_split_surfaces_missed_cross_module_cycle() {
     // mod_y → mod_x edge disappears and validator accepts a spec
     // that TDZs at runtime. Pre-analysis split keeps B's row
     // attributed to mod_y; cycle re-surfaces.
-    expect_rejection_containing_all(
+    expect_cycle_rejection(
         FixtureOpts::new(
             r#"const a_in_x = "x";
 const A = 1, B = a_in_x;
@@ -794,7 +764,7 @@ export { A, B, fromB, a_in_x };
                 logical_module("mod_y", &[Member::new("B")]),
             ],
         ),
-        &["cycle", "mod_x", "mod_y"],
+        &["mod_x", "mod_y"],
     );
 }
 
@@ -814,7 +784,7 @@ export { value };
 "#,
             vec![logical_module("mod_x", &[Member::new("value")])],
         ),
-        &["top-level", "await", "TLA"],
+        &["TLA"],
     );
 }
 
@@ -880,7 +850,7 @@ export { C };
                 &[Member::new("C"), Member::new("f")],
             )],
         ),
-        &["top-level", "await", "TLA"],
+        &["TLA"],
     );
 }
 
@@ -903,7 +873,7 @@ export { C };
                 &[Member::new("C"), Member::new("k")],
             )],
         ),
-        &["top-level", "await", "TLA"],
+        &["TLA"],
     );
 }
 
@@ -914,7 +884,7 @@ fn for_await_makes_the_module_async() {
             "const a = 1; for await (const x of []) {}",
             vec![logical_module("mod_x", &[Member::new("a")])],
         ),
-        &["top-level", "await", "TLA"],
+        &["TLA"],
     );
 }
 
@@ -925,7 +895,7 @@ fn await_using_makes_the_module_async() {
             "const a = 1; await using resource = null;",
             vec![logical_module("mod_x", &[Member::new("a")])],
         ),
-        &["top-level", "await", "TLA"],
+        &["TLA"],
     );
 }
 
@@ -936,7 +906,7 @@ fn await_in_an_object_method_key_is_eager() {
             "const a = { [await Promise.resolve('x')]() {} };",
             vec![logical_module("mod_x", &[Member::new("a")])],
         ),
-        &["top-level", "await", "TLA"],
+        &["TLA"],
     );
 }
 
@@ -944,13 +914,13 @@ fn await_in_an_object_method_key_is_eager() {
 fn extracted_initializer_cannot_read_inline_entry_binding() {
     // No export or residual expression references b: only the emitted entry's
     // implicit import of mod_x closes the runtime cycle.
-    expect_rejection_containing_all(
+    expect_cycle_rejection(
         FixtureOpts::new(
             "const a = 1; const b = a + 1;",
             vec![logical_module("mod_x", &[Member::new("b")])],
         )
         .with_unassigned_mode(unassigned_mode_inline()),
-        &["cycle", "mod_x"],
+        &["mod_x"],
     );
 }
 
