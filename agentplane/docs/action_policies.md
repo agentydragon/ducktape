@@ -36,8 +36,7 @@ need them, as `github_public_repository` did with its live visibility lookup.
 
 **A policy set is the shared unit** and the only thing a subject references; a one-off grant is a
 small set of its own. `autoApproveIf` auto-approves a matching request; a request matching nothing
-takes the human path. A set has no deny form -- see [Rejected](#rejected) and the `DENY_LISTS` entry
-in [`plans/task_dag.md`](../plans/task_dag.md).
+takes the human path. A set has no deny form; see [Rejected](#rejected) for the design rationale.
 
 **A binding joins one subject to sets, by reference only.** A subject may have many bindings; the
 effective policy is the union of the unexpired bindings' sets. `expiresAt` makes an expired binding
@@ -149,11 +148,11 @@ binding revision they used.
   surface where a reader is guaranteed not to double-check, and the opposite of the guarantee this
   page makes, that what the view reports and what a Decision decides cannot drift. An inert control
   is worse than an absent one, so the fields are gone; `v1alpha1` makes each cheap to add back when
-  an evaluator exists to make it true. What a re-add has to settle first is in the `DENY_LISTS`
-  entry of [`plans/task_dag.md`](../plans/task_dag.md): whether a deny belongs on the set at all,
-  since a set is the _shared_ unit and a deny is per-subject, and the two cases that look like a
-  deny -- hiding a tool the operator will never approve, and refusing what the caller's own
-  identity already covers -- are a catalog question and a caller-side one rather than policy kinds.
+  an evaluator exists to make it true. A future request to add a deny would first need to decide
+  whether a deny belongs on the set at all, since a set is the _shared_ unit and a deny is per-subject.
+  The two cases that look like a deny -- hiding a tool the operator will never approve, and refusing
+  what the caller's own identity already covers -- are a catalog question and a caller-side one
+  rather than policy kinds.
 - **Re-evaluating policy at dispatch.** An approval a later object edit could withdraw is a
   different contract from a human approval; dispatch re-checks caller authority only.
 - **Persisting the request before evaluation and deciding in a second transaction.** The request
