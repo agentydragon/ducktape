@@ -43,7 +43,7 @@ from agentplane.runner import protocol_pb2
 # gazelle:include_dep @pypi//psycopg
 # The bridge tests run one script against a local runner over both harnesses; those fixtures live
 # with the runner.
-from agentplane.runner.conftest import config, endpoint, harness, model, runner, spec, workspace
+from agentplane.runner.conftest import config, endpoint, harness, model, runner, runner_client_factory, spec, workspace
 from agentplane.sandbox_service.client import SandboxServiceClient
 from agentplane.sandbox_service.egress_views import EgressReader
 from agentplane.sandbox_service.kubernetes_grants import KubernetesGrant

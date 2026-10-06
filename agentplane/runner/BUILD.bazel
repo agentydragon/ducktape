@@ -410,7 +410,6 @@ py_test(
         "//agentplane/runner/testing:launches",
         "//agentplane/runner/testing:scripted_model",
         "//util/bazel:runfiles",
-        "@pypi//grpcio",
         "@pypi//protobuf",
         "@pypi//pytest",
         "@pypi//pytest_bazel",

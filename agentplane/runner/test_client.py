@@ -11,7 +11,8 @@ import pytest_bazel
 
 from agentplane.protocol import event_log_pb2
 from agentplane.runner import protocol_pb2
-from agentplane.runner.client import Attachment, RunnerClient
+from agentplane.runner.client import Attachment
+from agentplane.runner.conftest import RunnerClientFactory
 from agentplane.runner.errors import OpenTimeoutError
 from agentplane.runner.testing.unanswering_runner import UnansweringRunner
 
@@ -119,14 +120,17 @@ async def test_cursor_is_independent_of_opt_in_history_capture() -> None:
     ids=["observe", "launch"],
 )
 async def test_an_unanswered_open_fails_on_its_bound_and_cancels_the_call(
-    monkeypatch: pytest.MonkeyPatch, spec: protocol_pb2.SessionSpec | None, bound: str
+    monkeypatch: pytest.MonkeyPatch,
+    spec: protocol_pb2.SessionSpec | None,
+    bound: str,
+    runner_client_factory: RunnerClientFactory,
 ) -> None:
     # The other bound is past the outer deadline, so an Open that took it fails this test.
     for name in ("OBSERVE_ANSWER_S", "LAUNCH_ANSWER_S"):
         monkeypatch.setattr(f"agentplane.runner.client.{name}", 1 if name == bound else 3600)
     wedged = UnansweringRunner()
     async with wedged.serve() as port:
-        client = RunnerClient(grpc.aio.insecure_channel(f"127.0.0.1:{port}"))
+        client = runner_client_factory(f"127.0.0.1:{port}")
         try:
             async with asyncio.timeout(10):
                 with pytest.raises(OpenTimeoutError, match="'test-unanswered'"):

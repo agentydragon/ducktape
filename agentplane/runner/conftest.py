@@ -5,7 +5,7 @@ from __future__ import annotations
 from collections.abc import AsyncIterator
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, cast
+from typing import Any, Protocol, cast
 
 import grpc
 import pytest
@@ -87,6 +87,19 @@ class RunnerHandle:
         await self.server.stop(0)
 
 
+class RunnerClientFactory(Protocol):
+    def __call__(self, target: str, *, capture_history: bool = False) -> RunnerClient: ...
+
+
+@pytest.fixture
+def runner_client_factory() -> RunnerClientFactory:
+    def create(target: str, *, capture_history: bool = False) -> RunnerClient:
+        channel = grpc.aio.insecure_channel(target)
+        return RunnerClient(channel, capture_history=capture_history)
+
+    return create
+
+
 @pytest.fixture
 async def runner(config: RunnerConfig) -> AsyncIterator[RunnerHandle]:
     server, started, port = await serve(config)
@@ -96,7 +109,9 @@ async def runner(config: RunnerConfig) -> AsyncIterator[RunnerHandle]:
 
 
 @pytest.fixture
-async def client(runner: RunnerHandle) -> AsyncIterator[RunnerClient]:
-    client = RunnerClient(grpc.aio.insecure_channel(runner.target), capture_history=True)
-    yield client
-    await client.close()
+async def client(runner: RunnerHandle, runner_client_factory: RunnerClientFactory) -> AsyncIterator[RunnerClient]:
+    client = runner_client_factory(runner.target, capture_history=True)
+    try:
+        yield client
+    finally:
+        await client.close()

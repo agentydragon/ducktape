@@ -9,8 +9,8 @@ import pytest
 import pytest_bazel
 
 from agentplane.runner import protocol_pb2
-from agentplane.runner.client import RunnerClient
 from agentplane.runner.config import RunnerConfig
+from agentplane.runner.conftest import RunnerClientFactory
 from agentplane.runner.service import serve
 
 # The generated protocol stubs' own stub chain, which the mypy aspect resolves for direct deps only.
@@ -21,11 +21,13 @@ async def collect(call: grpc.aio.UnaryStreamCall) -> list[protocol_pb2.Initializ
     return [event async for event in call]
 
 
-async def test_initialize_executes_once_and_replays_its_output(tmp_path: Path) -> None:
+async def test_initialize_executes_once_and_replays_its_output(
+    tmp_path: Path, runner_client_factory: RunnerClientFactory
+) -> None:
     state = tmp_path / "state"
     state.mkdir()
     server, runner, port = await serve(RunnerConfig(state_dir=state))
-    client = RunnerClient(grpc.aio.insecure_channel(f"127.0.0.1:{port}"))
+    client = runner_client_factory(f"127.0.0.1:{port}")
     script = "mkdir -p workspaces\nprintf 'ready\\n' | tee -a workspaces/public-coder-ready\n"
     try:
         first = await collect(client.initialize_events(script))
@@ -44,11 +46,13 @@ async def test_initialize_executes_once_and_replays_its_output(tmp_path: Path) -
     assert (state / "workspaces/public-coder-ready").read_text() == "ready\n"
 
 
-async def test_initialize_reconnect_replays_after_the_client_cursor(tmp_path: Path) -> None:
+async def test_initialize_reconnect_replays_after_the_client_cursor(
+    tmp_path: Path, runner_client_factory: RunnerClientFactory
+) -> None:
     state = tmp_path / "state"
     state.mkdir()
     server, runner, port = await serve(RunnerConfig(state_dir=state))
-    client = RunnerClient(grpc.aio.insecure_channel(f"127.0.0.1:{port}"))
+    client = runner_client_factory(f"127.0.0.1:{port}")
     script = "printf 'first\\n'\nwhile [ ! -f continue ]; do sleep 0.01; done\nprintf 'second\\n' >&2\n"
     try:
         disconnected = client.initialize_events(script)
@@ -70,12 +74,14 @@ async def test_initialize_reconnect_replays_after_the_client_cursor(tmp_path: Pa
     assert resumed[1].result.exit_code == 0
 
 
-async def test_initialized_sandbox_refuses_a_different_script_after_restart(tmp_path: Path) -> None:
+async def test_initialized_sandbox_refuses_a_different_script_after_restart(
+    tmp_path: Path, runner_client_factory: RunnerClientFactory
+) -> None:
     state = tmp_path / "state"
     state.mkdir()
     script = "printf 'first\\n' | tee -a initialized\n"
     first_server, first_runner, first_port = await serve(RunnerConfig(state_dir=state))
-    first_client = RunnerClient(grpc.aio.insecure_channel(f"127.0.0.1:{first_port}"))
+    first_client = runner_client_factory(f"127.0.0.1:{first_port}")
     try:
         await first_client.initialize(script)
     finally:
@@ -84,7 +90,7 @@ async def test_initialized_sandbox_refuses_a_different_script_after_restart(tmp_
         await first_server.stop(0)
 
     server, runner, port = await serve(RunnerConfig(state_dir=state))
-    client = RunnerClient(grpc.aio.insecure_channel(f"127.0.0.1:{port}"))
+    client = runner_client_factory(f"127.0.0.1:{port}")
     try:
         replayed = await collect(client.initialize_events(script))
         with pytest.raises(grpc.aio.AioRpcError) as changed_script:
@@ -101,11 +107,13 @@ async def test_initialized_sandbox_refuses_a_different_script_after_restart(tmp_
     assert (state / "initialized").read_text() == "first\n"
 
 
-async def test_failed_initialize_output_is_saved_and_the_same_script_may_be_retried(tmp_path: Path) -> None:
+async def test_failed_initialize_output_is_saved_and_the_same_script_may_be_retried(
+    tmp_path: Path, runner_client_factory: RunnerClientFactory
+) -> None:
     state = tmp_path / "state"
     state.mkdir()
     server, runner, port = await serve(RunnerConfig(state_dir=state))
-    client = RunnerClient(grpc.aio.insecure_channel(f"127.0.0.1:{port}"))
+    client = runner_client_factory(f"127.0.0.1:{port}")
     script = "echo broken >&2\nexit 7\n"
     try:
         first = await collect(client.initialize_events(script))

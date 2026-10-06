@@ -18,7 +18,6 @@ from pathlib import Path
 from typing import Any
 from uuid import UUID
 
-import grpc
 import httpx
 import pytest
 import pytest_bazel
@@ -50,7 +49,7 @@ from agentplane.app.threads.view.views import ThreadOperationalState
 from agentplane.protocol import command_pb2, event_log_pb2, event_pb2
 from agentplane.runner import protocol_pb2, service
 from agentplane.runner.client import RunnerClient
-from agentplane.runner.conftest import RunnerHandle
+from agentplane.runner.conftest import RunnerClientFactory, RunnerHandle
 from agentplane.runner.errors import RunnerError, StreamClosedError
 from agentplane.runner.harness import Harness
 from agentplane.runner.session import Session
@@ -853,13 +852,14 @@ async def test_thread_command_reports_id_conflict_after_runner_admitted_before_a
     event_logs: EventLogStore,
     spec: protocol_pb2.SessionSpec,
     failed_native_journal: None,
+    runner_client_factory: RunnerClientFactory,
 ) -> None:
     """An app prefix lag must still preserve the runner's id-conflict verdict as a 409."""
     thread = await event_logs.open(SANDBOX, SESSION, spec)
     original = command_pb2.Command(
         command_id="reused-before-copy", interrupt_turn=command_pb2.InterruptTurn(turn_id="first-target")
     )
-    client = RunnerClient(grpc.aio.insecure_channel(runner.target), capture_history=True)
+    client = runner_client_factory(runner.target, capture_history=True)
     try:
         attachment = await client.attach(SESSION, spec=spec)
         try:
@@ -1141,9 +1141,10 @@ async def test_semantic_feed_failure_survives_replica_reconcile(
     db_url: str,
     spec: protocol_pb2.SessionSpec,
     monkeypatch: pytest.MonkeyPatch,
+    runner_client_factory: RunnerClientFactory,
 ) -> None:
     """A new app owner cannot overwrite a rejected prefix's persisted failure with active."""
-    client = RunnerClient(grpc.aio.insecure_channel(runner.target), capture_history=True)
+    client = runner_client_factory(runner.target, capture_history=True)
     replica_engine = connect(db_url)
     replica_store, replica_event_logs = ThreadStore(replica_engine), EventLogStore(replica_engine)
     replica_updates = DatabaseUpdates(replica_engine.url)
@@ -1245,8 +1246,9 @@ async def test_ingestion_reports_truncated_replay_instead_of_normal_completion(
     ingestion: Ingestion,
     spec: protocol_pb2.SessionSpec,
     monkeypatch: pytest.MonkeyPatch,
+    runner_client_factory: RunnerClientFactory,
 ) -> None:
-    client = RunnerClient(grpc.aio.insecure_channel(runner.target), capture_history=True)
+    client = runner_client_factory(runner.target, capture_history=True)
     try:
         attachment = await client.attach(SESSION, spec=spec)
         try:
@@ -1336,6 +1338,7 @@ async def test_inventory_change_discovers_existing_runner_session_without_browse
     monkeypatch: pytest.MonkeyPatch,
     ingestion: Ingestion,
     live_index: LiveIndex,
+    runner_client_factory: RunnerClientFactory,
 ) -> None:
     # This must wake from the informer notification, not the periodic recovery scan.
     monkeypatch.setattr("agentplane.app.threads.ingestion.RECONCILE_S", 3600)
@@ -1349,7 +1352,7 @@ async def test_inventory_change_discovers_existing_runner_session_without_browse
 
     monkeypatch.setattr(runners, "running", observed_running)
     ingester = Ingester(runners=runners, event_logs=event_logs, ingestion=ingestion)
-    client = RunnerClient(grpc.aio.insecure_channel(runner.target), capture_history=True)
+    client = runner_client_factory(runner.target, capture_history=True)
     try:
         async with await client.attach(SESSION, spec=spec):
             pass
