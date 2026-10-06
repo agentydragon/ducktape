@@ -335,6 +335,7 @@
       {
         "label": "Egress policies",
         "force": true,
+        "press": "ArrowDown",
         "expectVisible": [".mantine-MultiSelect-input[data-expanded]", "[role=\"option\"]:visible:has-text(\"pypi\")"],
         "expectHidden": ["[role=\"option\"]:visible:has-text(\"github-public\")"]
       }
@@ -350,6 +351,7 @@
       {
         "label": "Egress policies",
         "force": true,
+        "press": "ArrowDown",
         "expectVisible": [".mantine-MultiSelect-input[data-expanded]", "[role=\"option\"]:visible:has-text(\"pypi\")"],
         "expectHidden": ["[role=\"option\"]:visible:has-text(\"github-public\")"]
       }
@@ -620,7 +622,10 @@
       },
       {
         "selector": "[role=\"option\"]:visible:has-text(\"pypi\")",
-        "expectVisible": [".mantine-Pill-root:text(\"pypi\")", "[role=\"option\"]:visible:has-text(\"github-public\")"],
+        "expectVisible": [
+          ".mantine-Pill-root:has-text(\"pypi\")",
+          "[role=\"option\"]:visible:has-text(\"github-public\")"
+        ],
         "expectHidden": ["[role=\"option\"]:visible:has-text(\"pypi\")"]
       }
     ]
@@ -638,7 +643,10 @@
       },
       {
         "selector": "[role=\"option\"]:visible:has-text(\"pypi\")",
-        "expectVisible": [".mantine-Pill-root:text(\"pypi\")", "[role=\"option\"]:visible:has-text(\"github-public\")"],
+        "expectVisible": [
+          ".mantine-Pill-root:has-text(\"pypi\")",
+          "[role=\"option\"]:visible:has-text(\"github-public\")"
+        ],
         "expectHidden": ["[role=\"option\"]:visible:has-text(\"pypi\")"]
       }
     ]
