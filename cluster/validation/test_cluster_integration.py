@@ -89,9 +89,14 @@ def test_no_dependency_errors(cluster: ParsedCluster, repo_root: Path) -> None:
 
 
 def test_plaid_mcp_is_not_gated_by_unrelated_authentik_terraform(cluster: ParsedCluster) -> None:
-    """Auth service and secret operator are prerequisites; other SSO apps are not."""
+    """App infrastructure and policy are prerequisites; unrelated SSO apps are not."""
     spec = cluster.flux_kustomizations["plaid-mcp"]
-    assert {dependency.name for dependency in spec.depends_on} == {"cnpg", "external-secrets-operator", "authentik"}
+    assert {dependency.name for dependency in spec.depends_on} == {
+        "cnpg",
+        "external-secrets-operator",
+        "authentik",
+        "plaid-spend-policy",
+    }
     assert spec.wait
 
 
