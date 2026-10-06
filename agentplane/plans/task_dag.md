@@ -30,6 +30,9 @@ Proposed execution order for the Thread correctness/UI track:
   [#8695](https://github.com/agentydragon/ducktape/issues/8695)).
 - **P2:** browser-driven acceptance against the deployed cluster (`CLUSTER_BROWSER_ACCEPTANCE`)
   and driver-hosted tools (`DT`). Neither blocks the current API-level acceptance closure.
+- **Unranked cross-cutting cleanup:** make egress-specific uses of “policy” explicit throughout
+  Agentplane (`EGRESS_POLICY_TERMINOLOGY`); this is a terminology change, not a policy behavior
+  or authority change.
 - **Low priority / deferred:** bounded browser cache state (`THREAD_LAZY_HISTORY`, desire D6),
   and optional app-wide/per-Thread raw-evidence retention controls (`THREAD_EVIDENCE_RETENTION`).
   The current view sync pages older rows in on demand, reads the bodies of the rows it holds ahead
@@ -68,6 +71,7 @@ flowchart TB
     ACCESS["Deferred design<br/>delegated vs brokered external access<br/>grants and revocation"]:::future
     PUBLIC_MCP_ROUTE_ISOLATION["Remaining deployed security check<br/>operator REST and enrollment APIs<br/>unreachable through public MCP route"]:::future
     EGRESS_CHANGE["Deferred design<br/>agent-requested egress<br/>policy expansion"]:::future
+    EGRESS_POLICY_TERMINOLOGY["Unranked cross-cutting cleanup<br/>name egress policies explicitly<br/>in UI, protocols, fields and docs"]:::future
 
     NOTIFICATION_ACTION_FEED["Notification source follow-up<br/>event-driven Action consumption<br/>replace idle history polling"]:::future
     NOTIFICATION_DEBOUNCE["Remaining deployed acceptance<br/>configurable runner-notice debounce<br/>real burst behavior"]:::active
@@ -195,6 +199,19 @@ The request may become a policy-gated Action with operator approval, or use anot
 configuration path. Keep the authority, approval, persistence, and rollback model open until a
 concrete caller and policy owner are chosen. This does not grant agents a direct policy mutation
 path and does not block current credential-placeholder egress.
+
+### `EGRESS_POLICY_TERMINOLOGY` — name egress policies explicitly
+
+**Unranked cross-cutting cleanup:** Agentplane has multiple policy kinds, so wherever it uses generic
+“policy” or “policies” to mean egress policies, rename those terms to say “egress policy” or
+“egress policies” throughout the product. This includes UI labels, protocols, API/CRD and serialized
+field names, configuration and storage identifiers, and documentation, along with their clients,
+servers, and generated artifacts. Keep Action policy and Kubernetes RBAC terminology distinct;
+this task changes naming, not policy behavior or authority. Update producers and consumers together.
+
+**Acceptance:** an audit finds no ambiguous generic policy names for egress policies across the
+Agentplane surfaces above; generated schemas reflect renamed fields, and tests cover the resulting
+serialized names and unchanged behavior.
 
 ### `CONNECTION_SA_REBIND` — rebind a Connection's ServiceAccount in place
 
