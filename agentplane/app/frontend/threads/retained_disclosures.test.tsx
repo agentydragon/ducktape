@@ -95,7 +95,7 @@ it("evicts old disclosure choices and keeps a replacement source closed", async 
       root.render(
         <RetainedDisclosureProvider>
           <RetainedDisclosure id={`${source}:epoch:${item}:evidence`} summary="Evidence">
-            <span>{`${source} evidence ${item}`}</span>
+            <span data-retained-content>{`${source} evidence ${item}`}</span>
           </RetainedDisclosure>
         </RetainedDisclosureProvider>
       )
@@ -108,14 +108,14 @@ it("evicts old disclosure choices and keeps a replacement source closed", async 
       details.open = true;
       details.dispatchEvent(new Event("toggle"));
     });
-    expect(container.querySelector("span")?.textContent).toBe(`original evidence ${item}`);
+    expect(container.querySelector("[data-retained-content]")?.textContent).toBe(`original evidence ${item}`);
   }
   await render("original", 0);
   expect(container.querySelector("details")?.open).toBe(false);
-  expect(container.querySelector("span")).toBeNull();
+  expect(container.querySelector("[data-retained-content]")).toBeNull();
   await render("original", 128);
   expect(container.querySelector("details")?.open).toBe(true);
   await render("replacement", 128);
   expect(container.querySelector("details")?.open).toBe(false);
-  expect(container.querySelector("span")).toBeNull();
+  expect(container.querySelector("[data-retained-content]")).toBeNull();
 });

@@ -1262,7 +1262,7 @@ async def test_opening_a_call_and_its_output_leaves_the_clicked_line_where_it_wa
     await read_at(page, show_all, 0.3)
     async with holding_still(page, call.get_by_text("Output", exact=True)):
         await show_all.click()
-        await expect(call.get_by_role("button", name="Show less")).to_be_visible()
+        await expect(call.get_by_role("button", name="Collapse Output")).to_be_visible()
     await page.screenshot(path=undeclared_outputs_dir() / f"{request.node.name}-output-open.png")
 
 
@@ -1287,7 +1287,7 @@ async def test_opening_a_call_while_output_streams_in_leaves_the_clicked_line_wh
         await read_at(page, show_all, 0.3)
         async with holding_still(page, call.get_by_text("Output", exact=True), rest_first=False):
             await show_all.click()
-            await expect(call.get_by_role("button", name="Show less")).to_be_visible()
+            await expect(call.get_by_role("button", name="Collapse Output")).to_be_visible()
     assert len(delivered) >= 3, "the tail's output was not arriving while the call was opened"
 
 

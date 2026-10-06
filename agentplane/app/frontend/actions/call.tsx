@@ -45,6 +45,7 @@ function RequestAuditDetails({ request }: { request: ActionRequestView }): JSX.E
           {grant ? "Request & grant audit details" : "Request audit details"}
         </Text>
       }
+      keepMounted
     >
       <Stack gap={2} mt={4}>
         <Text size="xs" c="dimmed" style={{ overflowWrap: "anywhere" }}>

@@ -198,7 +198,6 @@ function evidenceDisclosure(entity: ThreadEntity): string {
  * callback, committing the whole list's pending re-render mid-delivery (a "ResizeObserver loop"). */
 export function EvidenceToggle({ entity, style }: { entity: ThreadEntity; style?: CSSProperties }): JSX.Element {
   const [open, setOpen] = useRetainedDisclosure(evidenceDisclosure(entity));
-  if (open) return <></>;
   return (
     <ActionIcon
       size="xs"
