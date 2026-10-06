@@ -12,7 +12,7 @@ def grpc_channel_option_kvps(
     configured: Mapping[str, int | str] | None = None, *, required: Mapping[str, int | str] | None = None
 ) -> tuple[tuple[str, int | str], ...]:
     """Combine ConfigMap channel options with shared defaults and client invariants."""
-    options = dict(DEFAULT_GRPC_CHANNEL_OPTION_KVPS)
+    options: dict[str, int | str] = dict(DEFAULT_GRPC_CHANNEL_OPTION_KVPS)
     options.update(configured or {})
     options.update(required or {})
     return tuple(options.items())
