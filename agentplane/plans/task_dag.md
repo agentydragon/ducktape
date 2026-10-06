@@ -72,7 +72,6 @@ flowchart TB
     ACCESS["Deferred design<br/>delegated vs brokered external access<br/>grants and revocation"]:::future
     EGRESS_CHANGE["Deferred design<br/>agent-requested egress<br/>policy expansion"]:::future
     NOTIFICATION_ACTION_FEED["Notification source follow-up<br/>event-driven Action consumption<br/>replace idle history polling"]:::future
-    NOTIFICATION_DEBOUNCE["Remaining deployed acceptance<br/>configurable runner-notice debounce<br/>real burst behavior"]:::active
     NOTIFICATION_TURN_GATING["Deferred design<br/>avoid notices piling up<br/>before the agent processes them"]:::future
     NOTIFICATION_COMPACT_NOTICES["Deferred design<br/>brief notices and shared instructions<br/>Claude/Codex compaction evidence"]:::future
     GITHUB_DELIVERY_RECOVERY["Remaining GitHub acceptance<br/>redelivery deduplication and restart recovery"]:::future
@@ -1006,13 +1005,6 @@ Reuse the existing Action Service committed-event signals; no operator authority
 DB access. [Acceptance](notifications.md#next-event-driven-actions-consumption) includes reconnect,
 missed-signal recovery, subscription-creation races and idle-without-polling behavior.
 The shared PostgreSQL listener refactor did not implement this cross-service feed.
-
-### `NOTIFICATION_DEBOUNCE` — configurable runner-notice batching
-
-**Remaining deployed acceptance:** [#8988](https://github.com/agentydragon/ducktape/pull/8988) is merged.
-After rollout, verify
-a real event burst produces fewer harness interruptions, sustained traffic cannot indefinitely
-postpone a notice, and explicit acknowledgement/no-reminder semantics remain intact.
 
 ### `NOTIFICATION_TURN_GATING` — avoid notices piling up before processing
 
