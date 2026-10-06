@@ -39,7 +39,7 @@ class ReasoningSummaryPart(BaseModel):
 
 
 class ModelReasoning(BaseModel):
-    # Observed with Codex 0.152.0: the id of the app-server's reasoning item, so observed items match by it.
+    # Codex 0.157.0 uses the app-server reasoning item id here, so observed items match by it.
     id: str
     summary: list[ReasoningSummaryPart]
 
@@ -83,7 +83,7 @@ def read_history(directory: Path, session_id: str, observed: dict[str, ObservedI
                 recovered[item_id] = replace(item, text=texts[item_id])
         elif item.kind == event_pb2.ITEM_KIND_TOOL_CALL:
             if item_id in calls:
-                # core/context_manager/normalize.rs at rust-v0.152.0 inserts "aborted"
+                # core/context_manager/normalize.rs at rust-v0.157.0 inserts "aborted"
                 # for a function call without output. This is model input, not execution evidence.
                 output = outputs.get(item_id, "aborted")
                 if item.completed and item.output in output:

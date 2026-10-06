@@ -71,9 +71,10 @@ the app only folds that neutral report.
   line of the turn could not be parsed. Compacted or missing history and unfinished live tool outcomes
   remain unknown. The reader is tested against Claude Code 2.1.252.
 - `codex_history.py` reads model `response_item` records, not the app-server's reconstructed
-  turn-item projection, which can omit an unresolved call still sent to the model. At Codex
-  0.152.0, `core/src/tasks/mod.rs` flushes conversation items before the interruption notification;
-  `core/src/context_manager/normalize.rs` supplies `aborted` for a call with no output. The reader
+  turn-item projection, which can omit an unresolved call still sent to the model. In Codex
+  0.157.0, `core/src/tasks/mod.rs` flushes the interrupted-turn marker before the terminal
+  notification and then flushes that event; `core/src/context_manager/normalize.rs` supplies
+  `aborted` for a call with no output. The reader
   reports this synthetic content as a revision without creating an execution result. A reasoning
   item matches the saved `reasoning` record carrying its app-server id, and is absent without one.
   Unmodeled tools, compacted history, and rollback remain unknown.

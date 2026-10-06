@@ -664,15 +664,16 @@ applies; neither harness waits for the other's research to land its own proven c
 history APIs. At implementation time, first update the runner's Codex CLI pin and native protocol
 fixtures to the newest release selected for the runner; target that protocol rather than maintaining
 a compatibility matrix for older CLI versions. Evaluate metadata-only `thread/read` followed by
-`thread/timeline/list`, `thread/turns/list`, and `thread/items/list`. The 0.160.1 protocol has an
-experimental unified timeline API, while the public docs classify turns/items pagination as
-experimental even though that release's request registry does not; verify negotiation requirements
-and support in the selected release and history store. Determine whether the returned fields support
-the existing retained / absent / revised / unknown decisions, including interrupted tool and
-reasoning items. The [API investigation](../debug/codex_app_server_history_apis.md) records the
-completed protocol research and migration constraints. History items are Codex's persisted display
-projection, so an item missing from a page does not prove it is absent from raw model context or
-rollout records. Preserve command provenance and never replay old side effects. Keep outcomes
+`thread/timeline/list`, `thread/turns/list`, and `thread/items/list`. In the runner-matched 0.157.0
+protocol, the unified timeline API is experimental, while turns/items pagination are not marked
+experimental in the request registry even though the public docs classify them that way; item
+pagination is also history-store-dependent. Before implementation, refresh these details against the
+release selected for the runner and verify its negotiation requirements and store support. Determine
+whether the returned fields support the existing retained, absent, revised, and unknown decisions,
+including interrupted tool and reasoning items. The [API investigation](../debug/codex_app_server_history_apis.md)
+records the current protocol baseline and migration constraints. History items are Codex's persisted
+display projection, so an item missing from a page does not prove it is absent from raw model context
+or rollout records. Preserve command provenance and never replay old side effects. Keep outcomes
 unknown where the public protocol cannot establish them, and record any upstream protocol gap
 instead of silently depending on internal rollout details.
 

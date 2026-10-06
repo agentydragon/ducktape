@@ -1,6 +1,6 @@
 """Codex app-server over JSON-RPC: launch, input, interrupt, and frame translation.
 
-Observed with Codex app-server 0.152.0:
+Observed and covered by the native harness scenarios against Codex app-server 0.157.0:
 
 - `turn/start` answers synchronously with the turn, and a second `turn/start` during a turn answers
   with the same turn id: the input joined it;

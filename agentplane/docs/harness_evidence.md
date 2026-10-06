@@ -1,7 +1,8 @@
 # Native harness evidence
 
 The Claude and Codex drivers are grounded in live captures against LiteLLM and scripted tests that
-run the pinned native harnesses against a loopback model endpoint. The probe under
+run Claude Code 2.1.252 and the runner-matched Codex app-server 0.157.0 against a loopback model
+endpoint. The probe under
 [`../capture/`](../capture/) preserves ordered native frames and model bodies outside Git; the
 tests under [`../harness_tests/`](../harness_tests/) carry the committed behavioral contract.
 
@@ -15,6 +16,8 @@ tests under [`../harness_tests/`](../harness_tests/) carry the committed behavio
   evidence supports that interpretation.
 - Codex exposes `turn/steer` and `turn/interrupt`; `turn/steer` requires `expectedTurnId` and joins
   the running turn.
+- On Codex 0.157.0, interrupting an in-flight streamed model request closes that upstream request
+  before the process exits; the interrupted-turn recovery test waits for this close.
 - Codex switches to code mode for model ids in its built-in catalog. Scripted tests use an unknown
   model id to exercise the classic function-call shape.
 - Claude's session-title model call is suppressed by `--name`.

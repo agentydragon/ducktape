@@ -1,40 +1,77 @@
 # Codex app-server history APIs
 
-Checked 2026-10-06 against the [Codex app-server documentation](https://learn.chatgpt.com/docs/app-server/) and the newest stable Codex CLI release, [0.160.1](https://github.com/openai/codex/releases/tag/rust-v0.160.1). The runner image's locked nixpkgs-unstable input currently selects Codex 0.157.0; this change aligns the Bazel native protocol fixture with that runner version. A staging sandbox was observed running 0.156.1 on 2026-09-27, and the earlier Bazel fixture was 0.152.0; those are historical snapshots, not compatibility targets. Agentplane intends to keep its runner's Codex CLI current, so reconciliation work should target the CLI selected for the runner at implementation time without a compatibility matrix for older CLI versions. The version above records this investigation, not a permanent pin.
+Checked 2026-10-06 against the [Codex app-server documentation](https://learn.chatgpt.com/docs/app-server/)
+and source at [`rust-v0.157.0`](https://github.com/openai/codex/tree/rust-v0.157.0), the current
+runner and Bazel fixture pin. Use that selected release for recovery protocol work; do not assume
+schema changes from newer CLI releases without updating the runner pin and fixture together.
 
 ## Documented read paths
 
-- `thread/read` reads a stored thread without resuming it or subscribing to events. With `includeTurns` omitted or false it returns the summary; with it true it returns full turns. Full-history reads are deprecated for paginated threads.
-- `thread/resume` is a live lifecycle operation. `excludeTurns: true` returns thread metadata and resume state without populating `thread.turns`. Codex still resumes the persisted conversation for the next model request; this only keeps the transcript out of the resume response. The 0.152.0 and 0.157.0 protocol sources have this field without an experimental annotation.
-- `thread/turns/list` pages stored turns with `threadId`, optional opaque `cursor` and `limit`, `sortDirection`, and `itemsView`. Pages contain `data`, `nextCursor`, and `backwardsCursor`; ordering defaults to newest first. `itemsView` selects omitted, summarized (the default), or full item data.
-- `thread/items/list` pages persisted items, optionally scoped to `turnId`, with `cursor`, `limit`, and `sortDirection`; ordering defaults to oldest first. Pages contain `data`, `nextCursor`, and `backwardsCursor`. The 0.152.0/0.156.1 entries pair each projected item with its `turnId`.
-- `thread/timeline/list` is present in the 0.157.0 and 0.160.1 protocol sources but not the public history-method documentation reviewed here. It is explicitly experimental and returns bounded pages of a single ordered timeline containing items, realtime entries, and turn-start/turn-complete markers, with positions and a next cursor. Its handler delegates to the active thread store's timeline listing, so support is store-dependent. This unified ordering may be a better reconciliation input than independently paging turns and items, subject to verification against the runner's selected release and store.
+- `thread/read` reads a stored thread without resuming it or subscribing to events. With
+  `includeTurns` omitted or false it returns the summary; with it true it returns full turns. Full
+  history reads are deprecated for paginated threads.
+- `thread/resume` is a live lifecycle operation. `excludeTurns: true` returns thread metadata and
+  resume state without populating `thread.turns`. Codex still resumes the persisted conversation
+  for the next model request; this only keeps the transcript out of the resume response. The field
+  is not experimental in 0.157.0.
+- `thread/turns/list` pages stored turns with `threadId`, optional opaque `cursor` and `limit`,
+  `sortDirection`, and `itemsView`. Pages contain `data`, `nextCursor`, and `backwardsCursor`;
+  ordering defaults to newest first. `itemsView` selects omitted, summarized (the default), or full
+  item data.
+- `thread/items/list` pages persisted items, optionally scoped to `turnId`, with `cursor`, `limit`,
+  and `sortDirection`; ordering defaults to oldest first. Each result pairs a projected item with
+  its `turnId` and optional start/completion timestamps. Pages contain `data`, `nextCursor`, and
+  `backwardsCursor`.
+- `thread/timeline/list` is also present in 0.157.0. It is explicitly experimental and returns
+  bounded pages of one ordered timeline containing items, realtime entries, and turn-start/turn-
+  complete markers, with positions and a next cursor. Its handler delegates to the active thread
+  store, so support depends on that store. This unified ordering may be a better reconciliation
+  input than independently paging turns and items.
 
-There is a documentation/source mismatch to resolve before implementation. The current public docs classify `thread/turns/list` and `thread/items/list` as experimental and say `thread/items/list` can fail with an unsupported-method error when the active thread store does not implement item pagination. In both the 0.157.0 and 0.160.1 sources, the request registry does not mark either list method experimental, while `thread/timeline/list` is explicitly experimental. `thread/start.historyMode` and `thread/resume.initialTurnsPage` are explicitly capability-gated in the 0.160.1 protocol; `excludeTurns` is not. The docs also contain a separate paragraph saying paginated history operations fail closed, which conflicts with their turn/item API descriptions. Use the selected release's protocol sources for the wire contract, and verify the experimental handshake and exact store's runtime support; do not add `experimentalApi` to methods solely on the basis of the current docs.
+There is a public-docs/source mismatch to keep in mind before implementation. The public docs
+classify `thread/turns/list` and `thread/items/list` as experimental and say item listing may fail
+with an unsupported-method error when the active thread store lacks pagination. The 0.157.0 request
+registry does not mark either list method experimental, but its item-list handler does return
+method-not-found for an unsupported store. `thread/start.historyMode` and
+`thread/resume.initialTurnsPage` are experimental; `excludeTurns` is not. The docs also contain a
+separate paragraph saying paginated history operations fail closed, which conflicts with their
+turn/item API descriptions. Use the selected release's protocol sources for the wire contract, and
+verify the experimental handshake and exact store's runtime support; do not add `experimentalApi`
+to methods solely on the basis of the current public docs.
 
-The 0.152.0 and 0.156.1 parameter schemas leave page size uncapped; their implementations default to 25 and clamp requests to 1–100. Treat this as observed implementation behavior, not a guarantee in the public schema. A `ThreadItem` is Codex's persisted display projection, not a raw Responses API `response_item` journal record; `itemsView: "full"` means full projected `ThreadItem` values available from app-server history.
-
-The 0.157.0 item-list schema uses an opaque string cursor and includes optional item timestamps. The 0.160.1 schema adds a typed item-anchor cursor scoped to a turn; do not assume that newer cursor shape while the runner is pinned to 0.157.0. Reconciliation should use the schema for the current runner-selected release rather than carrying support for older shapes.
+The 0.157.0 list schemas leave page size uncapped; the implementation defaults to 25 and clamps
+requests to 1–100. Treat that as implementation behavior, not a schema guarantee. A `ThreadItem` is
+Codex's persisted display projection, not a raw Responses API `response_item` journal record;
+`itemsView: "full"` means full projected `ThreadItem` values available from app-server history.
+The 0.157.0 item-list cursor is an opaque string and entries carry optional timestamps.
 
 ## Recovery implications
 
-The public API can replace private rollout parsing as the source of Codex's stored turn/item projection, and it lets a client fetch that history in bounded pages. For history inspection alone, prefer `thread/read` without turns followed by the paginated APIs; reserve `thread/resume` for the separate need to attach a live Codex session.
+The public API can replace private rollout parsing as the source of Codex's stored turn/item
+projection, and it lets a client fetch that history in bounded pages. For history inspection alone,
+prefer `thread/read` without turns followed by the paginated APIs; reserve `thread/resume` for the
+separate need to attach a live Codex session.
 
-This is not by itself a completion guarantee for an external side effect. A missing or unsupported item page, partial pagination, or a Codex item that does not prove the corresponding runner action outcome must remain unknown. Since the public API exposes a projection, absence from a returned page cannot prove that raw model context or rollout records lack an item. Reconciliation still needs to preserve command provenance, compare stable item identity and terminal state only where the protocol exposes it, and never replay a prior side effect. In particular, the app-server protocol describes Codex history; it does not replace Agentplane's canonical Action/Event evidence.
+This is not by itself a completion guarantee for an external side effect. A missing or unsupported
+item page, partial pagination, or a Codex item that does not prove the corresponding runner action
+outcome must remain unknown. Since the public API exposes a projection, absence from a returned page
+cannot prove that raw model context or rollout records lack an item. Reconciliation still needs to
+preserve command provenance, compare stable item identity and terminal state only where the protocol
+exposes it, and never replay a prior side effect. In particular, the app-server protocol describes
+Codex history; it does not replace Agentplane's canonical Action/Event evidence.
 
 ## Sources
 
-- [Codex app-server docs](https://learn.chatgpt.com/docs/app-server/): experimental API negotiation, `thread/read`, turn/item pagination, and store support.
-- [Codex 0.152.0 request registry](https://github.com/openai/codex/blob/rust-v0.152.0/codex-rs/app-server-protocol/src/protocol/common.rs#L751-L772), [resume fields](https://github.com/openai/codex/blob/rust-v0.152.0/codex-rs/app-server-protocol/src/protocol/v2/thread.rs#L383-L445), and [turn/item list schemas](https://github.com/openai/codex/blob/rust-v0.152.0/codex-rs/app-server-protocol/src/protocol/v2/thread.rs#L1588-L1654).
-- [Codex 0.156.1 request registry](https://github.com/openai/codex/blob/rust-v0.156.1/codex-rs/app-server-protocol/src/protocol/common.rs#L815-L836), [resume fields](https://github.com/openai/codex/blob/rust-v0.156.1/codex-rs/app-server-protocol/src/protocol/v2/thread.rs#L404-L471), and [turn/item list schemas](https://github.com/openai/codex/blob/rust-v0.156.1/codex-rs/app-server-protocol/src/protocol/v2/thread.rs#L1604-L1670), from a version observed in a staging sandbox.
-- [Codex 0.156.1 pagination implementation](https://github.com/openai/codex/blob/rust-v0.156.1/codex-rs/app-server/src/request_processors/thread_processor.rs#L2881-L2935) and [item-store dispatch](https://github.com/openai/codex/blob/rust-v0.156.1/codex-rs/app-server/src/request_processors/thread_processor.rs#L3230-L3286): page bounds and store-dependent support.
-- [Codex 0.156.1 item protocol](https://github.com/openai/codex/blob/rust-v0.156.1/codex-rs/app-server-protocol/src/protocol/v2/item.rs#L221-L356): item data is a tagged display union.
-- [Codex 0.157.0 request registry](https://raw.githubusercontent.com/openai/codex/rust-v0.157.0/codex-rs/app-server-protocol/src/protocol/common.rs#L817-L827) and [timeline method annotation](https://raw.githubusercontent.com/openai/codex/rust-v0.157.0/codex-rs/app-server-protocol/src/protocol/common.rs#L1051-L1056): list methods and experimental timeline registration.
-- [Codex 0.157.0 history schemas](https://raw.githubusercontent.com/openai/codex/rust-v0.157.0/codex-rs/app-server-protocol/src/protocol/v2/thread.rs#L1604-L1742): opaque item cursor, timestamps, and timeline entries.
-- [Codex 0.160.1 request registry](https://github.com/openai/codex/blob/rust-v0.160.1/codex-rs/app-server-protocol/src/protocol/common.rs#L851-L861): `thread/turns/list` and `thread/items/list` are registered without experimental annotations; [`thread/timeline/list` is marked experimental](https://github.com/openai/codex/blob/rust-v0.160.1/codex-rs/app-server-protocol/src/protocol/common.rs#L1085-L1089).
-- [Codex 0.160.1 thread history schemas](https://github.com/openai/codex/blob/rust-v0.160.1/codex-rs/app-server-protocol/src/protocol/v2/thread.rs#L1705-L1873): turns, typed item-anchor pagination, item timestamps, and the unified timeline response.
-- [Codex 0.160.1 timeline handler](https://github.com/openai/codex/blob/rust-v0.160.1/codex-rs/app-server/src/request_processors/thread_processor.rs#L902-L928): the timeline request delegates to the history store.
-- [Codex 0.160.1 thread history handlers](https://github.com/openai/codex/blob/rust-v0.160.1/codex-rs/app-server/src/request_processors/thread_processor.rs#L3073-L3117) and [item-list handler](https://github.com/openai/codex/blob/rust-v0.160.1/codex-rs/app-server/src/request_processors/thread_processor.rs#L3432-L3509): pagination and store-dependent support.
-- [Codex app-server thread-history tests](https://github.com/openai/codex/blob/main/codex-rs/app-server/tests/suite/v2/thread_read.rs): upstream test coverage for paginated history.
-
-This note records the investigation for [`CODEX_RECOVERY_PROTOCOL`](../plans/task_dag.md#codex_recovery_protocol); it does not implement the protocol migration.
+- [Codex app-server docs](https://learn.chatgpt.com/docs/app-server/): experimental API negotiation,
+  `thread/read`, turn/item pagination, and store support.
+- [0.157.0 request registry](https://github.com/openai/codex/blob/rust-v0.157.0/codex-rs/app-server-protocol/src/protocol/common.rs#L817-L827)
+  and [timeline registration](https://github.com/openai/codex/blob/rust-v0.157.0/codex-rs/app-server-protocol/src/protocol/common.rs#L1051-L1056):
+  history methods and experimental annotation.
+- [0.157.0 resume and history schemas](https://github.com/openai/codex/blob/rust-v0.157.0/codex-rs/app-server-protocol/src/protocol/v2/thread.rs#L383-L472)
+  and [turn/item/timeline schemas](https://github.com/openai/codex/blob/rust-v0.157.0/codex-rs/app-server-protocol/src/protocol/v2/thread.rs#L1604-L1742):
+  resume exclusion, opaque cursors, timestamps, and timeline entries.
+- [0.157.0 pagination handlers](https://github.com/openai/codex/blob/rust-v0.157.0/codex-rs/app-server/src/request_processors/thread_processor.rs#L846-L872)
+  and [item-list handler](https://github.com/openai/codex/blob/rust-v0.157.0/codex-rs/app-server/src/request_processors/thread_processor.rs#L3230-L3293):
+  bounds, store support, and response projection.
+  This note records the current protocol baseline for [`CODEX_RECOVERY_PROTOCOL`](../plans/task_dag.md#codex_recovery_protocol);
+  it does not implement the protocol migration.
