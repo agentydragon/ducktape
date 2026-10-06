@@ -558,9 +558,16 @@ function ConfigurationPanel({
                             <Badge color={color} variant="light" style={{ flexShrink: 0 }}>
                               {kind}
                             </Badge>
-                            <Text size="sm" style={{ overflowWrap: "anywhere" }}>
-                              {ruleConditionText(rule.condition)}
-                            </Text>
+                            <Stack gap={2} style={{ minWidth: 0 }}>
+                              <Text size="sm" style={{ overflowWrap: "anywhere" }}>
+                                {ruleConditionText(rule.condition)}
+                              </Text>
+                              {rule.description && (
+                                <Text size="xs" c="dimmed" style={{ overflowWrap: "anywhere" }}>
+                                  {rule.description}
+                                </Text>
+                              )}
+                            </Stack>
                           </Group>
                         </Paper>
                       );

@@ -8,6 +8,56 @@ metadata:
 spec: {}
 ---
 apiVersion: v1
+kind: Namespace
+metadata:
+  annotations:
+    description: Isolated target for the private Finance spend-policy Secret; namespace and access are Ducktape-owned.
+  labels:
+    goldilocks.fairwinds.com/enabled: "false"
+    name: finance-spend-config
+  name: finance-spend-config
+spec: {}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  annotations:
+    description: Allows Finance Flux to create Secrets of any name only in the isolated finance-spend-config namespace and get, patch, or update only the named spend-policy Secret; no deletes or other resource kinds.
+  name: plaid-spend-config-applier
+  namespace: finance-spend-config
+rules:
+  - apiGroups:
+      - ""
+    resources:
+      - secrets
+    verbs:
+      - create
+  - apiGroups:
+      - ""
+    resourceNames:
+      - plaid-spend-policy
+    resources:
+      - secrets
+    verbs:
+      - get
+      - patch
+      - update
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: plaid-spend-config-applier
+  namespace: finance-spend-config
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: plaid-spend-config-applier
+subjects:
+  - kind: ServiceAccount
+    name: plaid-spend-config-applier
+    namespace: ducktape-flux
+---
+apiVersion: v1
 kind: ServiceAccount
 metadata:
   name: forgejo-secret-reader

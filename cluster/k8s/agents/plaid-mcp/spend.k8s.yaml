@@ -23,48 +23,9 @@ rules:
     resourceNames:
       - plaid-spend-policy
     resources:
-      - configmaps
+      - secrets
     verbs:
       - get
----
-apiVersion: rbac.authorization.k8s.io/v1
-kind: Role
-metadata:
-  annotations:
-    description: Lets the private Finance Flux root create ConfigMaps in plaid-mcp and update only the named spend-policy ConfigMap; no deletes, Secrets, or workloads.
-  name: plaid-spend-config-applier
-  namespace: plaid-mcp
-rules:
-  - apiGroups:
-      - ""
-    resources:
-      - configmaps
-    verbs:
-      - create
-  - apiGroups:
-      - ""
-    resourceNames:
-      - plaid-spend-policy
-    resources:
-      - configmaps
-    verbs:
-      - get
-      - patch
-      - update
----
-apiVersion: rbac.authorization.k8s.io/v1
-kind: RoleBinding
-metadata:
-  name: plaid-spend-config-applier
-  namespace: plaid-mcp
-roleRef:
-  apiGroup: rbac.authorization.k8s.io
-  kind: Role
-  name: plaid-spend-config-applier
-subjects:
-  - kind: ServiceAccount
-    name: plaid-spend-config-applier
-    namespace: ducktape-flux
 ---
 apiVersion: v1
 kind: ServiceAccount
@@ -141,6 +102,82 @@ spec:
     creationPolicy: Owner
     deletionPolicy: Delete
     name: plaid-spend-web-oidc-config
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: plaid-spend-policy-reader
+  namespace: plaid-mcp
+automountServiceAccountToken: false
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: plaid-spend-policy-reader
+  namespace: finance-spend-config
+rules:
+  - apiGroups:
+      - ""
+    resourceNames:
+      - plaid-spend-policy
+    resources:
+      - secrets
+    verbs:
+      - get
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: plaid-spend-policy-reader
+  namespace: finance-spend-config
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: plaid-spend-policy-reader
+subjects:
+  - apiGroup: ""
+    kind: ServiceAccount
+    name: plaid-spend-policy-reader
+    namespace: plaid-mcp
+---
+apiVersion: external-secrets.io/v1
+kind: ClusterSecretStore
+metadata:
+  name: kubernetes-plaid-spend-policy-secret-store
+spec:
+  conditions:
+    - namespaces:
+        - plaid-mcp
+  provider:
+    kubernetes:
+      auth:
+        serviceAccount:
+          name: plaid-spend-policy-reader
+      remoteNamespace: finance-spend-config
+      server:
+        caProvider:
+          key: ca.crt
+          name: kube-root-ca.crt
+          namespace: default
+          type: ConfigMap
+---
+apiVersion: external-secrets.io/v1
+kind: ExternalSecret
+metadata:
+  name: plaid-spend-policy
+  namespace: plaid-mcp
+spec:
+  dataFrom:
+    - extract:
+        key: plaid-spend-policy
+  refreshInterval: 10m
+  secretStoreRef:
+    kind: ClusterSecretStore
+    name: kubernetes-plaid-spend-policy-secret-store
+  target:
+    creationPolicy: Owner
+    deletionPolicy: Delete
+    name: plaid-spend-policy
 ---
 apiVersion: v1
 kind: ServiceAccount
@@ -271,9 +308,9 @@ spec:
           type: RuntimeDefault
       serviceAccountName: plaid-spend
       volumes:
-        - configMap:
-            name: plaid-spend-policy
-          name: config
+        - name: config
+          secret:
+            secretName: plaid-spend-policy
 ---
 apiVersion: v1
 kind: Service

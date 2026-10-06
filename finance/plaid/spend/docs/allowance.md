@@ -2,11 +2,13 @@
 
 The service can also compute a **single flexible spending allowance**, independently of
 statement-cycle card totals. Its `spend-policy.yaml` comes from the private finance-agent
-repository and Flux reconciles it to the `plaid-mcp/plaid-spend-policy` ConfigMap. Keep
-Plaid account IDs in that private file, never in public ducktape. Until the Flux migration
-has rolled out, the live app still reads the existing named Secret. Without the policy
-file the pod will not start. Invalid YAML or policy fails application startup. Reloader
-restarts the Deployment after ConfigMap changes; the process reads the file only at startup.
+repository. Finance Flux reconciles it to a Secret in the isolated
+`finance-spend-config` namespace; Ducktape owns an ExternalSecret that copies the named
+Secret into `plaid-mcp` for the app. Keep Plaid account IDs in the private file, never in
+public ducktape. Until the Flux migration has rolled out, the live app still reads the
+existing named Secret. Without the policy file the pod will not start. Invalid YAML or
+policy fails application startup. Reloader restarts the Deployment after Secret changes;
+the process reads the file only at startup.
 Check the current read-only Plaid account coverage **before** configuring the allowance.
 
 Generic _synthetic_ YAML example (amounts are integer cents; IDs, categories and prefixes illustrative):
@@ -34,12 +36,14 @@ allowance:
         value: EXAMPLE_TRANSFER_DETAIL
       kind: excluded
       analysis_category: excluded_transfer_or_fee
-    - condition:
-        type: name_prefix
-        field: name
-        prefix: EXAMPLE ONLINE
-      kind: flexible
+  - condition:
+      type: name_prefix
+      field: name
+      prefix: EXAMPLE ONLINE
+    description: Example subscription; keep the classification reviewable.
+    kind: flexible
       analysis_category: elastic_online_services_candidate
+      description: Optional plain-language context for people reviewing this rule.
 ```
 
 When `allowance` is present, it is active. Supply a required `activation_at` ISO date

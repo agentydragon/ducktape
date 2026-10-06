@@ -2739,7 +2739,7 @@ apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
 metadata:
   annotations:
-    description: Reconciles the private Finance spend-policy ConfigMap. Its impersonated service account can create ConfigMaps in plaid-mcp and can get/update only the named policy ConfigMap; it cannot delete resources or manage Secrets or workloads. Kubernetes RBAC does not name-restrict create.
+    description: Reconciles the private Finance spend-policy Secret into the isolated finance-spend-config namespace. The impersonated service account can create Secrets of any name there and can get, patch, or update only the named policy Secret; it cannot delete resources, create namespaces, or manage other resource kinds. Ducktape owns the namespace and the Secret copy consumed by the app.
   name: plaid-spend-policy
   namespace: ducktape-flux
 spec:
@@ -2752,7 +2752,7 @@ spec:
     kind: GitRepository
     name: finance-agent
     namespace: ducktape-flux
-  targetNamespace: plaid-mcp
+  targetNamespace: finance-spend-config
   timeout: 2m
   wait: true
 ---
@@ -2772,6 +2772,8 @@ spec:
     - name: external-secrets-operator
       namespace: ducktape-flux
     - name: authentik
+      namespace: ducktape-flux
+    - name: plaid-spend-policy
       namespace: ducktape-flux
   interval: 10m
   path: ./cluster/k8s/agents/plaid-mcp

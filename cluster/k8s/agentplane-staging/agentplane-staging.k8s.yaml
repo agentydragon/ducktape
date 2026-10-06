@@ -3034,17 +3034,18 @@ data:
           This is analysis and tooling work only. Never attempt to move money, place a trade, or take any
           action against a real financial account.
 
-          The finance preset has a named `get` grant for the **one** spend-policy ConfigMap
+          The finance preset has a named `get` grant for the **one** spend-policy Secret
           `plaid-mcp/plaid-spend-policy`, for live rollout inspection. The source of truth is
           `config/plaid-spend/spend-policy.yaml` in the private finance-agent repo. Read IDs
           only in process when needed; never print or copy them into notes, analyses, logs,
           tool output, or ducktape. The app's configuration endpoint omits account IDs.
           Flux reads the private repo through a separate Forgejo account with read access to
-          that repo only. Its impersonated service account can create ConfigMaps in
-          `plaid-mcp` and can read/update only the named policy ConfigMap; it cannot delete
-          resources or access Secrets or workloads. Kubernetes RBAC cannot name-restrict
-          the create verb. Keep the current spend Secret until the new Flux source and ConfigMap
-          are confirmed deployed; remove it later through the approved gaffer-private workflow.
+          that repo only. Its impersonated service account can create Secrets in the isolated
+          `finance-spend-config` namespace and can get, patch, or update only the named
+          policy Secret; it cannot delete resources, create namespaces, or manage other
+          resource kinds. Kubernetes RBAC cannot name-restrict the create verb, so the
+          namespace is the capability boundary. Ducktape owns the namespace and the
+          ExternalSecret copy in `plaid-mcp`; Finance Flux has no write access there.
 
           Coinbase is separate from the Plaid mirror. The finance preset grants `get` on the
           view-only CDP credential `agentplane-staging/coinbase-api-credentials` and GET egress

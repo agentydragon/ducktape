@@ -60,6 +60,7 @@ def plaid_mcp(
     cnpg: Kustomization,
     external_secrets_operator: Kustomization,
     authentik: Kustomization,
+    spend_policy: Kustomization,
 ) -> Kustomization:
     name = "plaid-mcp"
     return flux_kustomization(
@@ -71,12 +72,12 @@ def plaid_mcp(
         # Web OIDC credentials are supplied by an ExternalSecret and required by
         # the pods at startup; wait=True tracks their readiness. Unrelated
         # Authentik Terraform projects must not block app image/config updates.
-        depends_on=flux_kustomization_depends_on_many(cnpg, external_secrets_operator, authentik),
+        depends_on=flux_kustomization_depends_on_many(cnpg, external_secrets_operator, authentik, spend_policy),
     )
 
 
 def plaid_spend_policy(chart: Chart) -> Kustomization:
-    """Reconcile the private Finance policy ConfigMap through a namespace-scoped SA."""
+    """Reconcile the private Finance policy Secret into its isolated namespace."""
     return flux_kustomization(
         chart,
         "plaid-spend-policy",
@@ -88,12 +89,13 @@ def plaid_spend_policy(chart: Chart) -> Kustomization:
         retry_interval="1m",
         timeout="2m",
         prune=False,
-        target_namespace="plaid-mcp",
+        target_namespace="finance-spend-config",
         service_account_name="plaid-spend-config-applier",
         description=(
-            "Reconciles the private Finance spend-policy ConfigMap. Its impersonated service account can "
-            "create ConfigMaps in plaid-mcp and can get/update only the named policy ConfigMap; it cannot "
-            "delete resources or manage Secrets or workloads. Kubernetes RBAC does not name-restrict create."
+            "Reconciles the private Finance spend-policy Secret into the isolated finance-spend-config namespace. "
+            "The impersonated service account can create Secrets of any name there and can get, patch, or update "
+            "only the named policy Secret; it cannot delete resources, create namespaces, or manage other resource "
+            "kinds. Ducktape owns the namespace and the Secret copy consumed by the app."
         ),
     )
 

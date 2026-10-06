@@ -14,6 +14,8 @@ class AgentReadable(StrEnum):
     LOGS = "rbac.ducktape.io/agent-readable-logs"
 
 
+# `plaid-mcp` is intentionally absent: it contains Plaid-linked private data and
+# the Finance-only spend policy, so access uses narrower named roles instead.
 NAMESPACE_DIAGNOSTICS = {
     "activitywatch": AgentReadable.LOGS,
     "agent-sandbox-system": AgentReadable.METADATA,
@@ -40,8 +42,6 @@ NAMESPACE_DIAGNOSTICS = {
     "nvidia-device-plugin": AgentReadable.LOGS,
     "oci-cache": AgentReadable.LOGS,
     "openebs": AgentReadable.LOGS,
-    # Contains Plaid-linked private data and the Finance-only spend policy. Access
-    # is granted through narrower named roles, not shared namespace diagnostics.
     "proxmox-proxy": AgentReadable.LOGS,
     "public-coder-agent": AgentReadable.METADATA,
     "study-casino": AgentReadable.LOGS,

@@ -71,6 +71,9 @@ class Rule(BaseModel):
     condition: Annotated[NamePrefix | NameContains | CategoryExact | AmountExact | AllOf, Field(discriminator="type")]
     kind: Kind
     analysis_category: str | None = Field(default=None, min_length=1)
+    description: str | None = Field(
+        default=None, min_length=1, max_length=240, description="Human-readable rationale for this classification rule."
+    )
 
 
 class AllowancePolicy(BaseModel):
