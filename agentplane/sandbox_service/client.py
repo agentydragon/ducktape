@@ -155,7 +155,7 @@ class SandboxServiceClient:
     async def grant_egress(self, sandbox: Sandbox, policies: list[str]) -> str:
         destination = SandboxDestination(owner=sandbox.service_account, sandbox=sandbox.name, sandbox_uid=sandbox.uid)
         result = await self.unary(
-            self.stub.GrantEgress, protocol_pb2.GrantEgressRequest(destination=destination, policies=policies)
+            self.stub.GrantEgress, protocol_pb2.GrantEgressRequest(destination=destination, egress_policies=policies)
         )
         return result.binding_name
 

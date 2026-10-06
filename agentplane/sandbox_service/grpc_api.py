@@ -186,9 +186,9 @@ class SandboxService(protocol_pb2_grpc.SandboxServiceServicer):
             provisioning, view = await self.checked_sandbox(
                 protocol_pb2.SandboxRequest(destination=request.destination)
             )
-            if not request.policies:
-                raise ValueError("at least one policy is required")
-            binding = await provisioning.egress.grant(view, list(request.policies))
+            if not request.egress_policies:
+                raise ValueError("at least one egress policy is required")
+            binding = await provisioning.egress.grant(view, list(request.egress_policies))
             return protocol_pb2.GrantEgressResponse(binding_name=binding.name)
 
     @override

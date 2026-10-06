@@ -47,7 +47,7 @@ class Provisioning:
         ):
             raise ValueError("unsupported harness")
         grants = resolve_grants(list(spec.kubernetes_grants), self.grants)
-        policies = self.egress.launch_policies(list(spec.policies))
+        policies = self.egress.launch_policies(list(spec.egress_policies))
         await self.egress.require_policies(policies)
         await self.action_policy.require_policy_sets(list(spec.action_policy_sets))
         binding = (

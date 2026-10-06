@@ -202,7 +202,8 @@ path and does not block current credential-placeholder egress.
 
 ### `EGRESS_POLICY_TERMINOLOGY` — name egress policies explicitly
 
-**Unranked cross-cutting cleanup:** Agentplane has multiple policy kinds, so wherever it uses generic
+**Unranked cross-cutting cleanup:** Agentplane has egress policies, Action policy sets, and
+Kubernetes RBAC grants and policy objects, so wherever it uses generic
 “policy” or “policies” to mean egress policies, rename those terms to say “egress policy” or
 “egress policies” throughout the product. This includes UI labels, protocols, API/CRD and serialized
 field names, configuration and storage identifiers, and documentation, along with their clients,
@@ -214,8 +215,10 @@ naming, not policy behavior or authority. Update producers and consumers togethe
 `EgressGrant.policies`, and `BindingView.policies` / `missing_policies`; the recent egress-decision
 view also exposes `policy`. The egress proxy's rule and binding views expose `AgentEgressView.policies`
 and `bindings[].policies` / `missingPolicies`; generic egress model names such as `PolicyView`,
-`PolicySpec`, and internal `Index.policies` / `BindingResolution.policies` feed them. The Sandbox Service gRPC contract has
-`CreateSandboxRequest.policies` and `GrantEgressRequest.policies`. The Kubernetes boundary is
+`PolicySpec`, and internal `Index.policies` / `BindingResolution.policies` feed them. The Sandbox
+Service gRPC contract now has `CreateSandboxRequest.egress_policies` and
+`GrantEgressRequest.egress_policies` (field numbers 3 and 2, preserved for binary wire
+compatibility). The Kubernetes boundary is
 `EgressBinding.spec.policies` (`BindingSpec.policies` in the model), supplied by the cdk8s provider.
 Runtime launch defaults use `default_policies` in both app and Sandbox Service settings. These paths
 also appear in the app's preset configuration and staging chart; regenerated output includes
@@ -224,9 +227,12 @@ This spans API, proxy, protobuf, CRD, config, and storage contracts: update ever
 consumer, then regenerate OpenAPI/protobuf/CRD schemas and rendered cluster config as appropriate.
 The egress decision record persists `policy` in `egress_decision`;
 renaming that column needs a new migration. The `/egress/policies` route is already explicit. This PR
-clarifies the UI labels, nearby source descriptions, egress docs, protobuf field comments, and API
-schema descriptions without changing the wire field names. The serialized field and storage renames
-remain for the coordinated task.
+clarifies the UI labels, nearby source descriptions, egress docs, API schema descriptions, and
+protobuf fields. The protobuf request fields are renamed while preserving their field numbers, so
+binary gRPC messages remain wire-compatible; all in-repo protobuf producers and consumers are
+updated together. The remaining serialized field and storage renames cover the app-facing API,
+Kubernetes CRD and proxy contracts, configuration, and the egress-decision database column (which
+needs a new migration).
 
 **Acceptance:** an audit finds no ambiguous generic policy names for egress policies across the
 Agentplane surfaces above; generated schemas reflect renamed fields, and tests cover the resulting

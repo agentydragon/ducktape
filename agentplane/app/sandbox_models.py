@@ -199,4 +199,6 @@ def sandbox_has_ready_pod(view: SandboxView) -> bool:
 
 
 def create_request(value: NewSandbox) -> protocol_pb2.CreateSandboxRequest:
-    return ParseDict(value.model_dump(mode="json", exclude_none=True), protocol_pb2.CreateSandboxRequest())
+    data = value.model_dump(mode="json", exclude_none=True)
+    data["egress_policies"] = data.pop("policies", [])
+    return ParseDict(data, protocol_pb2.CreateSandboxRequest())
