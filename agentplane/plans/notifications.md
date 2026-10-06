@@ -51,8 +51,6 @@ Replace the notification source's five-second Action-history polling in a separa
 
 ## Deferred decisions and follow-ups
 
-- More conservative, potentially turn-aware notice gating; the rule is still TBD:
-  [`NOTIFICATION_TURN_GATING`](task_dag.md#notification_turn_gating--avoid-notices-piling-up-before-processing).
 - Brief cursor-only notices backed by shared instructions, conditional on Claude/Codex mock-LLM
   compaction/resume evidence: [`NOTIFICATION_COMPACT_NOTICES`](task_dag.md#notification_compact_notices--shared-instructions-and-brief-cursor-hints).
 

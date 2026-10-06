@@ -68,7 +68,6 @@ flowchart TB
     EGRESS_CHANGE["Deferred design<br/>agent-requested egress<br/>policy expansion"]:::future
     BINDING_SUBJECT_ARITY["Schema cleanup<br/>singular subject across binding kinds<br/>before multi-subject use"]:::future
     NOTIFICATION_ACTION_FEED["Notification source follow-up<br/>event-driven Action consumption<br/>replace idle history polling"]:::future
-    NOTIFICATION_TURN_GATING["Deferred design<br/>avoid notices piling up<br/>before the agent processes them"]:::future
     NOTIFICATION_COMPACT_NOTICES["Deferred design<br/>brief notices and shared instructions<br/>Claude/Codex compaction evidence"]:::future
     GITHUB_DELIVERY_RECOVERY["Remaining GitHub acceptance<br/>redelivery deduplication and restart recovery"]:::future
     HOME_ASSISTANT_NOTIFICATIONS["Unranked future source<br/>Home Assistant events and state changes"]:::future
@@ -797,17 +796,6 @@ DB access. [Acceptance](notifications.md#next-event-driven-actions-consumption) 
 missed-signal recovery, subscription-creation races and idle-without-polling behavior.
 The shared PostgreSQL listener refactor did not implement this cross-service feed.
 
-### `NOTIFICATION_TURN_GATING` — avoid notices piling up before processing
-
-**Deferred design; rule TBD:** be more conservative than time-based debounce when the agent has not
-yet begun processing an earlier notice. One candidate is "do not send another notice until a turn
-has started since the previous notice"; this is a proposal, not the selected algorithm. Decide what
-causal runner evidence counts, including an already-active turn, queued/coalesced inputs and restart.
-Admission, harness receipt and turn start are not acknowledgement or proof that entries were handled.
-Keep new entries immediately readable and their latest cursor durable while suppressing notices;
-define how pending work becomes eligible again without starvation or repeated reminders. Test both
-harnesses, slow/not-running agents, bursts and recovery before choosing the gating semantics.
-
 ### `NOTIFICATION_COMPACT_NOTICES` — shared instructions and brief cursor hints
 
 **Deferred design; wire format TBD:** put retrieval/explicit-acknowledgement instructions in shared
@@ -889,7 +877,8 @@ whole machine-oriented message, with expansion/raw evidence available.
   hide human input or discard the authoritative message/evidence.
 
 The owning backend/protocol carries metadata without depending on the integration app; the app is
-its presentation client. This is independent of notice debounce and of Kubernetes source selection.
+its presentation client. This is independent of the shipped notice debounce and of Kubernetes
+source selection.
 
 ### `KUBERNETES_MONITORING` — agents observe rollout progress and outcomes
 
