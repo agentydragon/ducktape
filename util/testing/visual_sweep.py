@@ -276,9 +276,11 @@ async def capture_scenario(
             # An interaction acts on a page whose first fetches have landed: its target may be replaced under it.
             await assert_network_settled(page, context=output_name, timeout_ms=timeout_ms)
         for click in scenario.clicks:
-            target = (
-                page.get_by_label(click.label, exact=True) if click.label is not None else page.locator(click.selector)
-            )
+            if click.selector is not None:
+                target = page.locator(click.selector)
+            else:
+                assert click.label is not None
+                target = page.get_by_role("combobox", name=click.label, exact=True)
             await target.click(force=click.force, timeout=timeout_ms)
             if click.press is not None:
                 await target.press(click.press, timeout=timeout_ms)
