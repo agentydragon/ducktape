@@ -1231,12 +1231,10 @@ async def test_the_history_is_not_settled_while_a_row_is_still_loading_its_text(
 
 @pytest.mark.parametrize("following", [False, True], ids=["mid-thread", "following"])
 @pytest.mark.parametrize("phone", [False, True], ids=["desktop", "phone"])
-async def test_opening_a_call_and_its_output_leaves_the_clicked_line_where_it_was(
+async def test_opening_a_call_and_its_output_keeps_it_collapsible_while_reading(
     thread_browser: ThreadBrowser, phone: bool, following: bool, request: pytest.FixtureRequest
 ) -> None:
-    """A row that grows on its own click -- the run, a call in it, an output past its clamp -- grows
-    below the line clicked, whether the reader is partway up the thread or at the tail it follows
-    with a few rows after the run."""
+    """Opening a run or call preserves its row; a long output stays collapsible while the reader scrolls it."""
     page = thread_browser.page
     if phone:
         await page.set_viewport_size({"width": 412, "height": 915})
@@ -1262,15 +1260,22 @@ async def test_opening_a_call_and_its_output_leaves_the_clicked_line_where_it_wa
     await page.screenshot(path=undeclared_outputs_dir() / f"{request.node.name}-call-open.png")
 
     await read_at(page, show_all, 0.3)
-    async with holding_still(page, call.locator(".agentplane-output-label")):
-        await show_all.click()
-        await expect(call.get_by_role("button", name="Collapse Output")).to_be_visible()
+    await show_all.click()
+    collapse = call.get_by_role("button", name="Collapse Output")
+    await expect(collapse).to_be_in_viewport()
+    output_line = call.locator('.agentplane-clamped-block[data-label="Output"] .cm-line').filter(
+        has_text="output line 45"
+    )
+    await wheel(page, 500)
+    await expect(output_line).to_be_visible()
+    await read_at(page, output_line, 0.5)
+    await expect(collapse).to_be_in_viewport()
     await page.screenshot(path=undeclared_outputs_dir() / f"{request.node.name}-output-open.png")
+    await collapse.click()
+    await expect(show_all).to_be_visible()
 
 
-async def test_opening_a_call_while_output_streams_in_leaves_the_clicked_line_where_it_was(
-    thread_browser: ThreadBrowser,
-) -> None:
+async def test_opening_a_call_while_output_streams_in_keeps_it_collapsible(thread_browser: ThreadBrowser) -> None:
     page = thread_browser.page
     await append_run_among_rows(thread_browser, below=40)
     history = page.get_by_role("region", name="Thread history", exact=True)
@@ -1287,9 +1292,18 @@ async def test_opening_a_call_while_output_streams_in_leaves_the_clicked_line_wh
             await call.locator("summary").first.click()
             await expect(show_all).to_be_visible()
         await read_at(page, show_all, 0.3)
-        async with holding_still(page, call.locator(".agentplane-output-label"), rest_first=False):
-            await show_all.click()
-            await expect(call.get_by_role("button", name="Collapse Output")).to_be_visible()
+        await show_all.click()
+        collapse = call.get_by_role("button", name="Collapse Output")
+        await expect(collapse).to_be_in_viewport()
+        output_line = call.locator('.agentplane-clamped-block[data-label="Output"] .cm-line').filter(
+            has_text="output line 45"
+        )
+        await wheel(page, 500)
+        await expect(output_line).to_be_visible()
+        await read_at(page, output_line, 0.5)
+        await expect(collapse).to_be_in_viewport()
+        await collapse.click()
+        await expect(show_all).to_be_visible()
     assert len(delivered) >= 3, "the tail's output was not arriving while the call was opened"
 
 
