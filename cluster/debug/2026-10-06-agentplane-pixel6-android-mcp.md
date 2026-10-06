@@ -1,8 +1,8 @@
 # Agentplane staging and Pixel 6 Android MCP (deferred)
 
 This note preserves the integration investigation from PR [#9313](https://github.com/agentydragon/ducktape/pull/9313).
-The Pixel 6 ActionGroup is deferred; the PR is being reduced to this note. On 2026-10-06 the user
-decided to uninstall the phone MCP app for now. The phone's state after that decision is unknown.
+The Pixel 6 ActionGroup is deferred; the PR branch now contains only this note. On 2026-10-06 the
+user decided to uninstall the phone MCP app for now. The phone's state after that decision is unknown.
 
 ## Last observed setup
 
