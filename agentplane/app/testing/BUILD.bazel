@@ -8,19 +8,13 @@ package(
 py_library(
     name = "model_test_data",
     srcs = ["model_test_data.py"],
-    visibility = [
-        "//agentplane/app:__pkg__",
-        "//agentplane/app:__subpackages__",
-    ],
+    visibility = ["//agentplane/app:__subpackages__"],
 )
 
 py_library(
     name = "thread_test_support",
     srcs = ["thread_test_support.py"],
-    visibility = [
-        "//agentplane/app:__pkg__",
-        "//agentplane/app:__subpackages__",
-    ],
+    visibility = ["//agentplane/app:__subpackages__"],
     deps = [
         "//agentplane/app:operator_sessions",
         "//agentplane/app/threads:ingestion",
