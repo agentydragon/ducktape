@@ -273,7 +273,7 @@ async def test_main_serves_real_stdio_execution_and_closes_in_order(db_url: str,
     group = _group(
         {
             "transport": "stdio",
-            "command": str(get_required_path("_main/agentplane/action_service/testing/fake_mcp_server")),
+            "command": str(get_required_path("_main/agentplane/action_service/testing/fake_mcp_server_bin")),
             "args": [],
             "env": dict(os.environ),
         }

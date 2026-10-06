@@ -8,10 +8,17 @@ package(
     default_visibility = ["//agentplane:__subpackages__"],
 )
 
-aspect_py_binary(
+py_library(
     name = "fake_mcp_server",
-    main = "fake_mcp_server.py",
+    testonly = True,
+    srcs = ["fake_mcp_server.py"],
     deps = ["@pypi//fastmcp_slim"],
+)
+
+aspect_py_binary(
+    name = "fake_mcp_server_bin",
+    main = "fake_mcp_server.py",
+    deps = [":fake_mcp_server"],
 )
 
 py_library(
