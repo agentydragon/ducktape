@@ -9,6 +9,8 @@
 import table from "./scenarios.json";
 
 export interface Scenario {
+  /** Mount the isolated shared-disclosure phone scene instead of the full app. */
+  disclosureVisual?: "collapsed" | "reasoning-scrolled" | "output-clamped" | "output-scrolled" | "after-output";
   /** Offer Codex only while retaining existing Claude threads. */
   claudePaused?: boolean;
   /**

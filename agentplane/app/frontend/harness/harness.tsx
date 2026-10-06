@@ -27,6 +27,7 @@ import {
   type SessionSpec,
   type SessionSummary,
 } from "../../../runner/protocol_pb";
+import { DisclosureVisual } from "./disclosure_visual";
 import { SCENARIOS, type Scenario } from "./scenario";
 import { LocalCommands } from "../threads/local_commands";
 import { streamRegistry } from "../stream_status";
@@ -2570,13 +2571,13 @@ if (scenario.openMobileSidebar) {
   });
   openMobileSidebar.observe(document, { childList: true, subtree: true });
 }
-window.location.hash = scenario.route;
+if (!scenario.disclosureVisual) window.location.hash = scenario.route;
 
 const container = document.getElementById("app");
 if (!container) throw new Error("missing #app");
 createRoot(container).render(
   <ThemeProvider>
-    <App />
+    {scenario.disclosureVisual ? <DisclosureVisual stage={scenario.disclosureVisual} /> : <App />}
   </ThemeProvider>
 );
 

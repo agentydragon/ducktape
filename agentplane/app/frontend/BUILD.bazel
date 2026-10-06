@@ -1193,6 +1193,7 @@ ts_library(
     name = "visual_harness_lib",
     testonly = True,
     srcs = [
+        "harness/disclosure_visual.tsx",
         "harness/harness.tsx",
         "harness/network.ts",
     ],
@@ -1201,7 +1202,9 @@ ts_library(
         ":actions_client",
         ":app",
         ":client",
+        ":command_view",
         ":connections_fixture",
+        ":disclosure",
         ":live",
         ":stream_status",
         ":test_model_catalog",

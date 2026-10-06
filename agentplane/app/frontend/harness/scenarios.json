@@ -931,6 +931,61 @@
     "captureViewport": true,
     "scrollToBottom": "[aria-label='Thread history']"
   },
+  "disclosure_visual_phone_collapsed": {
+    "element": "#shot",
+    "route": "/",
+    "viewport": { "width": 412, "height": 915, "deviceScaleFactor": 2.625 },
+    "outputName": "disclosure-phone-collapsed",
+    "disclosureVisual": "collapsed",
+    "readySelectors": [
+      "[data-disclosure-demo-scroll][data-scroll-ready='true']",
+      ".agentplane-disclosure-summary[aria-expanded='false']"
+    ]
+  },
+  "disclosure_visual_phone_reasoning_scrolled": {
+    "element": "#shot",
+    "route": "/",
+    "viewport": { "width": 412, "height": 915, "deviceScaleFactor": 2.625 },
+    "outputName": "disclosure-phone-reasoning-scrolled",
+    "disclosureVisual": "reasoning-scrolled",
+    "readySelectors": [
+      "[data-disclosure-demo-scroll][data-scroll-ready='true']",
+      ".agentplane-disclosure-summary[aria-expanded='true']"
+    ]
+  },
+  "disclosure_visual_phone_output_clamped": {
+    "element": "#shot",
+    "route": "/",
+    "viewport": { "width": 412, "height": 915, "deviceScaleFactor": 2.625 },
+    "outputName": "disclosure-phone-output-clamped",
+    "disclosureVisual": "output-clamped",
+    "readySelectors": [
+      "[data-disclosure-demo-scroll][data-scroll-ready='true']",
+      ".agentplane-clamped-block button[aria-expanded='false']"
+    ]
+  },
+  "disclosure_visual_phone_output_scrolled": {
+    "element": "#shot",
+    "route": "/",
+    "viewport": { "width": 412, "height": 915, "deviceScaleFactor": 2.625 },
+    "outputName": "disclosure-phone-output-scrolled",
+    "disclosureVisual": "output-scrolled",
+    "readySelectors": [
+      "[data-disclosure-demo-scroll][data-scroll-ready='true']",
+      ".agentplane-disclosure-collapse button[aria-label='Collapse Output']"
+    ]
+  },
+  "disclosure_visual_phone_after_output": {
+    "element": "#shot",
+    "route": "/",
+    "viewport": { "width": 412, "height": 915, "deviceScaleFactor": 2.625 },
+    "outputName": "disclosure-phone-after-output",
+    "disclosureVisual": "after-output",
+    "readySelectors": [
+      "[data-disclosure-demo-scroll][data-scroll-ready='true']",
+      ".agentplane-disclosure-summary[aria-expanded='true']"
+    ]
+  },
   "session_evidence": {
     "element": "#app",
     "route": "/threads/5f1c4a2e-0000-4000-8000-000000000001",
