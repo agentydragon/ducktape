@@ -2450,7 +2450,7 @@ if (scenario.openKubernetesGrants) {
   // Show the remaining grants beside the preset's selected workspace-read grant.
   const openGrants = new MutationObserver(() => {
     const pill = [...document.querySelectorAll(".mantine-Pill-root")].find(
-      (node) => node.textContent?.trim() === "workspace-read"
+      (node) => node.textContent?.includes("workspace-read")
     );
     const label = [...document.querySelectorAll("label")].find((node) => node.textContent === "Kubernetes grants");
     const control = label?.control;
