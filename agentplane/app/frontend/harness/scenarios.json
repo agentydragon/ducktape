@@ -931,60 +931,89 @@
     "captureViewport": true,
     "scrollToBottom": "[aria-label='Thread history']"
   },
-  "disclosure_visual_phone_collapsed": {
+  "disclosure_component_phone_collapsed": {
     "element": "#shot",
     "route": "/",
     "viewport": { "width": 412, "height": 915, "deviceScaleFactor": 2.625 },
-    "outputName": "disclosure-phone-collapsed",
+    "outputName": "disclosure-component-phone-collapsed",
     "disclosureVisual": "collapsed",
     "readySelectors": [
       "[data-disclosure-demo-scroll][data-scroll-ready='true']",
-      ".agentplane-disclosure-summary[aria-expanded='false']"
-    ]
+      ".demo-main .agentplane-disclosure-summary[aria-expanded='false']"
+    ],
+    "captureViewport": true
   },
-  "disclosure_visual_phone_reasoning_scrolled": {
+  "disclosure_component_phone_short_expanded": {
     "element": "#shot",
     "route": "/",
     "viewport": { "width": 412, "height": 915, "deviceScaleFactor": 2.625 },
-    "outputName": "disclosure-phone-reasoning-scrolled",
-    "disclosureVisual": "reasoning-scrolled",
+    "outputName": "disclosure-component-phone-short-expanded",
+    "disclosureVisual": "short-expanded",
     "readySelectors": [
       "[data-disclosure-demo-scroll][data-scroll-ready='true']",
-      ".agentplane-disclosure-summary[aria-expanded='true']"
-    ]
+      ".demo-main .agentplane-disclosure-summary[aria-expanded='true']"
+    ],
+    "captureViewport": true
   },
-  "disclosure_visual_phone_output_clamped": {
+  "disclosure_component_phone_long_top": {
     "element": "#shot",
     "route": "/",
     "viewport": { "width": 412, "height": 915, "deviceScaleFactor": 2.625 },
-    "outputName": "disclosure-phone-output-clamped",
-    "disclosureVisual": "output-clamped",
+    "outputName": "disclosure-component-phone-long-top",
+    "disclosureVisual": "long-top",
     "readySelectors": [
       "[data-disclosure-demo-scroll][data-scroll-ready='true']",
-      ".agentplane-clamped-block button[aria-expanded='false']"
-    ]
+      ".demo-main .agentplane-disclosure-summary[aria-expanded='true']"
+    ],
+    "captureViewport": true
   },
-  "disclosure_visual_phone_output_scrolled": {
+  "disclosure_component_phone_long_scrolled": {
     "element": "#shot",
     "route": "/",
     "viewport": { "width": 412, "height": 915, "deviceScaleFactor": 2.625 },
-    "outputName": "disclosure-phone-output-scrolled",
-    "disclosureVisual": "output-scrolled",
+    "outputName": "disclosure-component-phone-long-scrolled",
+    "disclosureVisual": "long-scrolled",
     "readySelectors": [
       "[data-disclosure-demo-scroll][data-scroll-ready='true']",
-      ".agentplane-disclosure-collapse button[aria-label='Collapse Output']"
-    ]
+      ".demo-main .agentplane-disclosure-heading[data-expanded='true']"
+    ],
+    "captureViewport": true
   },
-  "disclosure_visual_phone_after_output": {
+  "disclosure_component_phone_after_disclosure": {
     "element": "#shot",
     "route": "/",
     "viewport": { "width": 412, "height": 915, "deviceScaleFactor": 2.625 },
-    "outputName": "disclosure-phone-after-output",
-    "disclosureVisual": "after-output",
+    "outputName": "disclosure-component-phone-after-disclosure",
+    "disclosureVisual": "after-disclosure",
     "readySelectors": [
       "[data-disclosure-demo-scroll][data-scroll-ready='true']",
-      ".agentplane-disclosure-summary[aria-expanded='true']"
-    ]
+      "[data-disclosure-visual-stage='after-disclosure']"
+    ],
+    "captureViewport": true
+  },
+  "disclosure_component_phone_nested_child_scrolled": {
+    "element": "#shot",
+    "route": "/",
+    "viewport": { "width": 412, "height": 915, "deviceScaleFactor": 2.625 },
+    "outputName": "disclosure-component-phone-nested-child-scrolled",
+    "disclosureVisual": "nested-child-scrolled",
+    "readySelectors": [
+      "[data-disclosure-demo-scroll][data-scroll-ready='true']",
+      ".demo-inner .agentplane-disclosure-heading[data-expanded='true']"
+    ],
+    "captureViewport": true
+  },
+  "disclosure_component_phone_nested_after_child": {
+    "element": "#shot",
+    "route": "/",
+    "viewport": { "width": 412, "height": 915, "deviceScaleFactor": 2.625 },
+    "outputName": "disclosure-component-phone-nested-after-child",
+    "disclosureVisual": "nested-after-child",
+    "readySelectors": [
+      "[data-disclosure-demo-scroll][data-scroll-ready='true']",
+      ".demo-outer .agentplane-disclosure-heading[data-expanded='true']"
+    ],
+    "captureViewport": true
   },
   "session_evidence": {
     "element": "#app",
