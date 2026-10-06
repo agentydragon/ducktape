@@ -470,10 +470,10 @@ async def test_codex_acceptance_before_confirmation_crash_replays_input_with_ori
     await first.send(command_id, target_text)
     await first.until(events.is_kind("command_admitted"))
     checkpoint = await first.until(events.is_kind("debug_checkpoint"))
-    assert (
-        checkpoint.event.debug_checkpoint.name,
-        checkpoint.event.debug_checkpoint.command_id,
-    ) == ("before-user-message-confirmed", command_id)
+    assert (checkpoint.event.debug_checkpoint.name, checkpoint.event.debug_checkpoint.command_id) == (
+        "before-user-message-confirmed",
+        command_id,
+    )
     assert not [
         entry
         for entry in events.of_kind(first.seen, "harness_user_message_confirmed")
@@ -486,10 +486,7 @@ async def test_codex_acceptance_before_confirmation_crash_replays_input_with_ori
     assert not accepted.tool_calls
     await model.reply(
         accepted,
-        ShellCall(
-            "acceptance-side-effect",
-            "printf 'ran\\n' >> side-effect.txt; printf 'SIDE_EFFECT_OUTPUT\\n'",
-        ),
+        ShellCall("acceptance-side-effect", "printf 'ran\\n' >> side-effect.txt; printf 'SIDE_EFFECT_OUTPUT\\n'"),
     )
     tool_result_request = await model.request()
     assert any(
@@ -517,8 +514,10 @@ async def test_codex_acceptance_before_confirmation_crash_replays_input_with_ori
     await model.reply(retried, Text("CODEX_ACCEPTED_BEFORE_CONFIRMATION_OK"))
 
     confirmed = await second.until(
-        lambda entry: events.kind(entry) == "harness_user_message_confirmed"
-        and command_id in entry.event.harness_user_message_confirmed.origin_command_ids
+        lambda entry: (
+            events.kind(entry) == "harness_user_message_confirmed"
+            and command_id in entry.event.harness_user_message_confirmed.origin_command_ids
+        )
     )
     message = confirmed.event.harness_user_message_confirmed
     assert message.text == target_text
