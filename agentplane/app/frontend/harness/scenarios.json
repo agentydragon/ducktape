@@ -311,6 +311,7 @@
     "viewport": { "width": 1200, "height": 900 },
     "outputName": "new-sandbox-grants",
     "readySelectors": [".mantine-Pill-root", "[role=\"option\"]:text(\"config-read\")"],
+    "hiddenSelectors": ["[role=\"option\"]:text(\"workspace-read\")"],
     "openKubernetesGrants": true
   },
   "new_sandbox_grants_phone": {
@@ -319,6 +320,7 @@
     "viewport": { "width": 412, "height": 915, "deviceScaleFactor": 2.625 },
     "outputName": "new-sandbox-grants-phone",
     "readySelectors": [".mantine-Pill-root", "[role=\"option\"]:text(\"config-read\")"],
+    "hiddenSelectors": ["[role=\"option\"]:text(\"workspace-read\")"],
     "openKubernetesGrants": true
   },
   "actions_attention_composer_desktop": {
