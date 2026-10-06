@@ -36,9 +36,9 @@ describe("ClampedBlock", () => {
     expect(control(container, "Show all")).toBeUndefined();
 
     expect(control(container, "Collapse")).toBeDefined();
-    expect(container.querySelector(".agentplane-disclosure-collapse")?.nextElementSibling?.textContent).toContain(
-      "test-content"
-    );
+    expect(
+      container.querySelector(".agentplane-disclosure-collapse-anchor")?.nextElementSibling?.textContent
+    ).toContain("test-content");
     await act(async () => control(container, "Collapse")?.click());
     expect(container.querySelector('[data-clamped="true"]')).not.toBeNull();
   });

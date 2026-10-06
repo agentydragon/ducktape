@@ -51,17 +51,19 @@ export function StickyCollapseControl({
 }): JSX.Element {
   const depth = useDisclosureDepth();
   return (
-    <div className={`agentplane-disclosure-collapse${className ? ` ${className}` : ""}`} style={depthStyle(depth)}>
-      <span className="agentplane-disclosure-collapse-label">{label}</span>
-      <Button
-        variant="subtle"
-        size="compact-xs"
-        aria-expanded={true}
-        aria-label={`Collapse ${label}`}
-        onClick={onCollapse}
-      >
-        Collapse
-      </Button>
+    <div className="agentplane-disclosure-collapse-anchor" style={depthStyle(depth)}>
+      <div className={`agentplane-disclosure-collapse${className ? ` ${className}` : ""}`}>
+        <span className="agentplane-disclosure-collapse-label">{label}</span>
+        <Button
+          variant="subtle"
+          size="compact-xs"
+          aria-expanded={true}
+          aria-label={`Collapse ${label}`}
+          onClick={onCollapse}
+        >
+          Collapse
+        </Button>
+      </div>
     </div>
   );
 }
