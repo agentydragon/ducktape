@@ -99,6 +99,7 @@ flowchart TB
     PROD["Milestone<br/>production-capable governed action execution"]:::milestone
     CONNECTION_SA_REBIND["Planned mutation<br/>rebind a Connection's ServiceAccount in place<br/>no mutation exists; only a fresh OAuth consent does"]:::future
     SANDBOX_RBAC["Managed Kubernetes access<br/>catalog choices and SA bindings<br/>live acceptance pending; see #8596"]:::active
+    KUBERNETES_RBAC_POLICIES["Deferred design<br/>reusable Kubernetes RBAC policies<br/>shared bindings, propagation, compact UI"]:::future
     CALLER_GRANT_VIEW["Planned UI<br/>one grant view for Sandboxes and unmanaged agents<br/>an unmanaged agent's policy is invisible today"]:::future
     MANAGED_SA_RBAC["Planned Kubernetes access<br/>RoleBindings as a managed grant kind<br/>any managed ServiceAccount, Sandbox-backed or not"]:::future
     CLAUDE_AI_SA["Planned identity<br/>the claude.ai account's deliberate authority<br/>cluster diagnostics and agent-readable reads; reaches Forgejo as haku"]:::future
@@ -163,6 +164,7 @@ flowchart TB
     ACCESS -. authority choice .-> EGRESS_CHANGE
     ACCESS -. Kubernetes authority and credential choices .-> SANDBOX_RBAC
     SANDBOX_RBAC -. subject generalization .-> MANAGED_SA_RBAC
+    KUBERNETES_RBAC_POLICIES -. reusable policy contract .-> MANAGED_SA_RBAC
     MANAGED_SA_RBAC -. third grant kind to render .-> CALLER_GRANT_VIEW
     CLAUDE_AI_SA -. one account by hand, then the kind .-> MANAGED_SA_RBAC
 ```
@@ -284,6 +286,34 @@ Connection may auto-approve should also be what a sandbox of this account reache
 accumulated; a real API request from inside a sandbox succeeds for the intended operations and is
 refused outside them; and removing the account or its label still disables the whole path.
 
+### `KUBERNETES_RBAC_POLICIES` — reusable Kubernetes RBAC policies
+
+**Deferred design:** decide whether Agentplane should let one named Kubernetes access policy be
+bound to many Sandboxes or managed ServiceAccounts, so changing that policy updates every existing
+binding. A preset such as `public-coder` should be selectable as one policy in Sandbox creation,
+with its detailed permissions inspectable elsewhere, rather than presenting a long list of repeated
+namespace-level metadata and log grants.
+
+The deployment-side `cluster/cdk8s/agent_access_profiles.py` already factors static identity and
+preset selections, but those profiles resolve to individual catalog grant names; they are not
+independently managed runtime policies. Each Sandbox still stores its expanded grant selections
+and gets its own RoleBinding or ClusterRoleBinding objects. The pain is the repeated per-Sandbox,
+per-scope bindings and UI choices, not a claim that every underlying Role's rules are independently
+authored for every Sandbox.
+
+**Questions, not yet settled:** should a policy be a named bundle of Kubernetes Role/ClusterRole
+references, an Agentplane-owned rule set compiled into those native objects, or another explicit
+model? Kubernetes RoleBindings are namespace-scoped while ClusterRoleBindings are cluster-scoped;
+work out how a multi-namespace policy expands without broadening authority, and who owns, reconciles,
+updates, audits, rolls back, and cleans up those objects. Determine how edits reach existing
+Sandboxes, how migration from persisted grant lists works, and how the UI shows the policy name
+while still exposing its effective scope and permissions. Keep Flux ownership and other RBAC
+reconcilers from fighting Agentplane over the same objects.
+
+This is a Kubernetes-specific representation and lifecycle question. It does not settle or require
+the broader cross-cutting capability profile in `PROFILES`, and it does not choose to replace
+Kubernetes RBAC as the enforcement model. No storage/API shape or migration is decided here.
+
 ### `CALLER_GRANT_VIEW` — one grant view for Sandboxes and unmanaged agents
 
 **Planned UI:** a caller with no Sandbox is an **unmanaged agent** -- an OAuth-bound externally
@@ -332,10 +362,10 @@ design question rather than a detail -- a Sandbox's grants are garbage-collected
 `ownerReference` on the Sandbox, and an account that outlives every Sandbox has no such owner, so
 what creates, owns and reclaims its RoleBindings is unsettled.
 
-**Further questions, not yet settled:** whether a grant names a Role the operator selects or a named
-bundle the way an `ActionPolicySet` does; whether expiry works as it does for the other two kinds,
+**Further questions, not yet settled:** whether expiry works as it does for the other two kinds,
 given that Kubernetes RBAC has no expiry of its own and something must sweep; and whether this
-shares `ACCESS`'s credential boundary or only its authority decisions. Respect existing GitOps
+shares `ACCESS`'s credential boundary or only its authority decisions. The reusable policy and
+Role-versus-bundle representation belongs to `KUBERNETES_RBAC_POLICIES`. Respect existing GitOps
 ownership: an account's bindings must not fight a reconciler for the same objects.
 
 ## Named gates and acceptance evidence
