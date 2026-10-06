@@ -184,10 +184,7 @@ class Actions(Construct):
         for target_namespace, rules in sorted(rules_by_namespace.items()):
             suffix = "" if target_namespace == namespace else f"-{target_namespace}"
             role = Role(
-                self,
-                f"role{suffix}",
-                metadata=ApiObjectMetadata(name=_NAME, namespace=target_namespace),
-                rules=rules,
+                self, f"role{suffix}", metadata=ApiObjectMetadata(name=_NAME, namespace=target_namespace), rules=rules
             )
             binding = RoleBinding(
                 self,
@@ -199,10 +196,7 @@ class Actions(Construct):
                 service_account
                 if target_namespace == namespace
                 else ServiceAccount.from_service_account_name(
-                    self,
-                    f"service-account-ref-{target_namespace}",
-                    _NAME,
-                    namespace_name=namespace,
+                    self, f"service-account-ref-{target_namespace}", _NAME, namespace_name=namespace
                 )
             )
             binding.add_subjects(subject)
