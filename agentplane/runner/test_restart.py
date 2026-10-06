@@ -23,7 +23,7 @@ from agentplane.runner.harness_process import HarnessProcess
 from agentplane.runner.store import StateOwner
 from agentplane.runner.testing import events, launches
 from agentplane.runner.testing.fixtures import RunnerClientFactory
-from agentplane.runner.testing.scripted_model import Reasoning, ScriptedModel, Text
+from agentplane.runner.testing.scripted_model import Reasoning, ScriptedModel, ShellCall, Text
 from util.bazel.runfiles import get_required_path, own_repo_rlocation
 
 # The generated protocol stubs' own stub chain, which the mypy aspect resolves for direct deps only.
@@ -437,6 +437,96 @@ async def test_crash_after_runner_receipt_before_native_dispatch_retries_once(
     assert confirmed.event.harness_user_message_confirmed.origin_command_ids == [command_id]
     await second.until(events.turn_completed)
     await second.stop_runner_session("stop-after-retry")
+    await second.drain_until_end()
+    await client.close()
+
+
+@pytest.mark.parametrize("harness", [protocol_pb2.HARNESS_CODEX], ids=["codex"])
+async def test_codex_acceptance_before_confirmation_crash_replays_input_with_original_provenance(
+    harness: protocol_pb2.Harness,
+    model: ScriptedModel,
+    spec: protocol_pb2.SessionSpec,
+    start_runner: Callable[..., Awaitable[RunnerProcess]],
+    runner_client_factory: RunnerClientFactory,
+) -> None:
+    """Codex can persist a turn and tool result before the runner confirms its user message.
+
+    The runner's pending command is retried after restart, so Codex sees that user input twice.
+    The completed tool result remains native history and is not executed by thread resume itself;
+    the eventual confirmation still carries the original command id.
+    """
+    command_id = "codex-accepted-before-confirmation"
+    target_text = "Reply with exactly: CODEX_ACCEPTED_BEFORE_CONFIRMATION_OK"
+    effect_file = Path(spec.cwd) / "side-effect.txt"
+    first_runner = await start_runner(test_debug_checkpoint=("before-user-message-confirmed", command_id))
+    client = runner_client_factory(first_runner.target, capture_history=True)
+    first = await client.attach("codex-accepted-before-confirmation", spec=spec)
+
+    await first.send("seed-before-acceptance-crash", "Reply with exactly: ACCEPTANCE_SEED_OK")
+    seed_request = await model.request()
+    await model.reply(seed_request, Text("ACCEPTANCE_SEED_OK"))
+    await first.until(events.turn_completed)
+
+    await first.send(command_id, target_text)
+    await first.until(events.is_kind("command_admitted"))
+    checkpoint = await first.until(events.is_kind("debug_checkpoint"))
+    assert (
+        checkpoint.event.debug_checkpoint.name,
+        checkpoint.event.debug_checkpoint.command_id,
+    ) == ("before-user-message-confirmed", command_id)
+    assert not [
+        entry
+        for entry in events.of_kind(first.seen, "harness_user_message_confirmed")
+        if command_id in entry.event.harness_user_message_confirmed.origin_command_ids
+    ]
+    original_turn_id = events.of_kind(first.seen, "turn_started")[-1].event.turn_started.turn_id
+
+    accepted = await model.request()
+    assert accepted.user_texts == ["Reply with exactly: ACCEPTANCE_SEED_OK", target_text]
+    assert not accepted.tool_calls
+    await model.reply(
+        accepted,
+        ShellCall(
+            "acceptance-side-effect",
+            "printf 'ran\\n' >> side-effect.txt; printf 'SIDE_EFFECT_OUTPUT\\n'",
+        ),
+    )
+    tool_result_request = await model.request()
+    assert any(
+        result.call_id == "acceptance-side-effect" and "SIDE_EFFECT_OUTPUT" in result.text
+        for result in tool_result_request.tool_outputs
+    )
+    await model.hold(tool_result_request)
+    assert effect_file.read_text() == "ran\n"
+
+    harness_pids = [entry.event.harness_started.pid for entry in events.of_kind(first.seen, "harness_started")]
+    await first_runner.crash(harness_pids)
+    await client.close()
+
+    second_runner = await start_runner()
+    client = runner_client_factory(second_runner.target, capture_history=True)
+    second = await client.attach("codex-accepted-before-confirmation", after_cursor=first.cursor)
+    retried = await model.request()
+    assert retried.user_texts == ["Reply with exactly: ACCEPTANCE_SEED_OK", target_text, target_text]
+    assert any(
+        result.call_id == "acceptance-side-effect" and "SIDE_EFFECT_OUTPUT" in result.text
+        for result in retried.tool_outputs
+    )
+    # Native resume retains the completed call/output without executing that old call again.
+    assert effect_file.read_text() == "ran\n"
+    await model.reply(retried, Text("CODEX_ACCEPTED_BEFORE_CONFIRMATION_OK"))
+
+    confirmed = await second.until(
+        lambda entry: events.kind(entry) == "harness_user_message_confirmed"
+        and command_id in entry.event.harness_user_message_confirmed.origin_command_ids
+    )
+    message = confirmed.event.harness_user_message_confirmed
+    assert message.text == target_text
+    assert message.origin_command_ids == [command_id]
+    assert message.turn_id != original_turn_id
+    await second.until(events.turn_completed)
+    assert effect_file.read_text() == "ran\n"
+    await second.stop_runner_session("stop-after-codex-acceptance-recovery")
     await second.drain_until_end()
     await client.close()
 

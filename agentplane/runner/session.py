@@ -473,6 +473,7 @@ class Session:
         sources: Sequence[int],
     ) -> None:
         """Record one confirmed harness message, preserving all application command origins."""
+        await self._debug_checkpoint("before-user-message-confirmed", origin_command_ids[0])
         observation = event_pb2.HarnessUserMessageConfirmed(
             harness_message_id=harness_message_id,
             text=text,
