@@ -368,9 +368,7 @@ ENV = Environment(
             # One mount, shared by both the gmail and google_calendar ActionGroups -- one pod,
             # one caller-facing bearer.
             BearerMcpMount(name="google-mcp", secret_name=_GOOGLE_MCP_BEARER_SECRET, secret_key="bearer-token"),
-            BearerMcpMount(
-                name="pixel6-mcp", secret_name=_PIXEL6_MCP_BEARER_SECRET, secret_key="bearer-token"
-            ),
+            BearerMcpMount(name="pixel6-mcp", secret_name=_PIXEL6_MCP_BEARER_SECRET, secret_key="bearer-token"),
         ],
         extra_egress=[
             EgressRule.to_fqdns(*_WEB_PUSH_ALLOWED_HOSTS),
