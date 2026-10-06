@@ -139,7 +139,8 @@ class PolicyInformer:
         index: PolicyIndex,
         custom_objects: CustomObjectsClient,
         core_v1: CoreV1Api,
-        namespaces: Collection[str],
+        policy_namespaces: Collection[str],
+        caller_service_account_namespaces: Collection[str],
         resync_seconds: int,
     ) -> None:
         self._index = index
@@ -151,7 +152,7 @@ class PolicyInformer:
         # event is in flight and a recreated object (same name, new UID) is judged afresh.
         self._written: dict[str, Condition] = {}
         kinds: list[WatchedKind] = []
-        for namespace in sorted(namespaces):
+        for namespace in sorted(policy_namespaces):
             kinds += [
                 WatchedKind(
                     name=f"{namespace}/{POLICY_SETS_PLURAL}",
@@ -171,6 +172,9 @@ class PolicyInformer:
                     names=partial(_keys_in, index.bindings, namespace),
                     apply=lambda key, obj: apply_to(index.bindings, key, obj),
                 ),
+            ]
+        for namespace in sorted(caller_service_account_namespaces):
+            kinds.append(
                 WatchedKind(
                     name=f"{namespace}/{SERVICE_ACCOUNTS_PLURAL}",
                     list=core_v1.list_namespaced_service_account,
@@ -180,8 +184,8 @@ class PolicyInformer:
                     key=service_account_key,
                     names=partial(_keys_in, index.service_accounts, namespace),
                     apply=lambda key, obj: apply_to(index.service_accounts, key, obj),
-                ),
-            ]
+                )
+            )
         self._watch = ListWatch(
             kinds=kinds,
             resync_seconds=resync_seconds,

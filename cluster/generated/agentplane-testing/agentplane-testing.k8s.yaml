@@ -3014,14 +3014,6 @@ metadata:
   namespace: agentplane-testing
 rules:
   - apiGroups:
-      - ""
-    resources:
-      - serviceaccounts
-    verbs:
-      - get
-      - list
-      - watch
-  - apiGroups:
       - agentplane.allegedly.works
     resources:
       - actionpolicysets
@@ -3049,6 +3041,14 @@ rules:
       - actionpolicybindings/status
     verbs:
       - patch
+  - apiGroups:
+      - ""
+    resources:
+      - serviceaccounts
+    verbs:
+      - get
+      - list
+      - watch
   - apiGroups:
       - extensions.agents.x-k8s.io
     resources:
@@ -3106,7 +3106,9 @@ data:
       audience: agentplane-testing
       jwks_uri: https://agentplane-dex-testing.allegedly.works/dex/keys
       token_profile: dex
-    allowed_service_account_namespaces:
+    policy_namespaces:
+      - agentplane-testing
+    caller_service_account_namespaces:
       - agentplane-testing
     direct_wait_seconds: 30
     max_wait_seconds: 180

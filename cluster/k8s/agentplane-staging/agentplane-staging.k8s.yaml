@@ -4522,14 +4522,6 @@ metadata:
   namespace: agentplane-staging
 rules:
   - apiGroups:
-      - ""
-    resources:
-      - serviceaccounts
-    verbs:
-      - get
-      - list
-      - watch
-  - apiGroups:
       - agentplane.allegedly.works
     resources:
       - actionpolicysets
@@ -4557,6 +4549,14 @@ rules:
       - actionpolicybindings/status
     verbs:
       - patch
+  - apiGroups:
+      - ""
+    resources:
+      - serviceaccounts
+    verbs:
+      - get
+      - list
+      - watch
   - apiGroups:
       - extensions.agents.x-k8s.io
     resources:
@@ -4613,7 +4613,9 @@ data:
       issuer: https://auth.allegedly.works/application/o/agentplane-staging-actions/
       audience: agentplane-staging-actions
       jwks_uri: https://auth.allegedly.works/application/o/agentplane-staging-actions/jwks/
-    allowed_service_account_namespaces:
+    policy_namespaces:
+      - agentplane-staging
+    caller_service_account_namespaces:
       - agentplane-staging
     direct_wait_seconds: 30
     max_wait_seconds: 180

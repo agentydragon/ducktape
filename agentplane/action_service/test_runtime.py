@@ -402,7 +402,8 @@ async def test_main_auto_approves_the_bound_service_account_from_watched_policy_
     settings = Settings(
         database_url=db_url,
         action_groups={"fixture": _group({"transport": "streamable-http", "url": echo_mcp_url, "auth": "none"})},
-        allowed_service_account_namespaces=frozenset({namespace}),
+        policy_namespaces=frozenset({namespace}),
+        caller_service_account_namespaces=frozenset({namespace}),
         _cli_parse_args=False,
     )
     index = PolicyIndex(freshness=Freshness(stale_after_seconds=900))
