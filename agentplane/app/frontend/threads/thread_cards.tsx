@@ -485,7 +485,7 @@ function ToolCard({
                     {args.error ? "Preview unavailable" : "Loading preview…"}
                   </Text>
                 ) : call && !call.description ? (
-                  <InlineCode text={call.summary} />
+                  <InlineCode text={call.summary} language="bash" />
                 ) : (
                   <Text component="span" ff={call ? undefined : "monospace"}>
                     {call?.summary ?? oneLine(argumentsBody)}

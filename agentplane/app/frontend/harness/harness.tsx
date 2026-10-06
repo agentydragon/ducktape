@@ -1355,10 +1355,25 @@ function codeFenceRows(threadId: string): Record<string, unknown>[] {
 /** A reasoning step with no neighboring tool call, so `historyRows` never folds it into a run and
  * `EntityCard` renders it directly -- the standalone case, distinct from `standardRows`'s reasoning
  * step, which sits right after a tool call and so is always part of a run. */
-function standaloneReasoningRows(threadId: string, longPreview: boolean): Record<string, unknown>[] {
-  const reasoning = longPreview
-    ? "Weighing whether to **add a retry** or fix the root cause first. The latest results point toward the projection path, so I should verify it before changing client behavior."
-    : "Weighing which path to try next.";
+function standaloneReasoningRows(
+  threadId: string,
+  longPreview: boolean,
+  codeFence: boolean
+): Record<string, unknown>[] {
+  const reasoning = codeFence
+    ? [
+        "I checked the typed implementation and its returned value:",
+        "",
+        "```python",
+        "def greet(name: str) -> str:",
+        '    return f"Hello, {name}!"',
+        "```",
+        "",
+        "The complete implementation remains available when expanded.",
+      ].join("\n")
+    : longPreview
+      ? "Weighing whether to **add a retry** or fix the root cause first. The latest results point toward the projection path, so I should verify it before changing client behavior."
+      : "Weighing which path to try next.";
   const rows = [
     viewState(24, null),
     entity(
@@ -1571,7 +1586,12 @@ function threadEntityRows(threadId: string): Record<string, unknown>[] {
   if (scenario.markdownCodeFence) return codeFenceRows(threadId);
   if (scenario.streamingInterleaved) return streamingInterleavedRows(threadId);
   if (scenario.unfinishedReasoning) return unfinishedReasoningRows(threadId);
-  if (scenario.standaloneReasoning) return standaloneReasoningRows(threadId, scenario.longReasoningPreview ?? false);
+  if (scenario.standaloneReasoning)
+    return standaloneReasoningRows(
+      threadId,
+      scenario.longReasoningPreview ?? false,
+      scenario.reasoningCodeFence ?? false
+    );
   if (threadId === THREADS[2].id || scenario.pendingCommands) return statesRows(threadId);
   return standardRows(threadId, scenario.longReasoningPreview ?? false);
 }

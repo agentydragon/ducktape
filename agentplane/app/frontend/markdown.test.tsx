@@ -18,14 +18,14 @@ import { Markdown, STREAMING_CURSOR } from "./markdown";
 let root: ReturnType<typeof createRoot>;
 let container: HTMLDivElement;
 
-async function render(source: string, streaming = false): Promise<HTMLDivElement> {
+async function render(source: string, streaming = false, singleLine = false): Promise<HTMLDivElement> {
   container = document.createElement("div");
   document.body.append(container);
   root = createRoot(container);
   await act(async () =>
     root.render(
       <MantineProvider env="test">
-        <Markdown source={source} streaming={streaming} />
+        <Markdown source={source} streaming={streaming} singleLine={singleLine} />
       </MantineProvider>
     )
   );
@@ -75,6 +75,42 @@ describe("Markdown", () => {
         .map((line) => line.textContent)
         .join("\n")
     ).toBe(text);
+  });
+
+  it("coerces a registered fenced block into one highlighted inline run for a single-line preview", async () => {
+    const rendered = await render(
+      'Before the example:\n\n```python\ndef greet(name: str) -> str:\n    return "hello"\n```\nAfter the example.',
+      false,
+      true
+    );
+    const code = rendered.querySelector<HTMLElement>(".agentplane-markdown--single-line .agentplane-code-inline");
+
+    expect(code).not.toBeNull();
+    expect(code?.textContent).toBe('def greet(name: str) -> str: return "hello"');
+    expect(code?.querySelector(".agentplane-tok-keyword")?.textContent).toBe("def");
+    expect(rendered.querySelector(".agentplane-code-block, .cm-editor")).toBeNull();
+  });
+
+  it.each([
+    ["an unrecognized language", '```elixir\nIO.puts("hi")\n```', 'IO.puts("hi")'],
+    ["no language", "```\n<not a real tag>\n```", "<not a real tag>"],
+  ])("shows %s as safe plain inline code", async (_case, source, text) => {
+    const rendered = await render(source, false, true);
+    const code = rendered.querySelector<HTMLElement>(".agentplane-code-inline");
+
+    expect(code?.textContent).toBe(text);
+    expect(code?.querySelector(".agentplane-tok-keyword")).toBeNull();
+    expect(rendered.querySelector("script, .agentplane-code-block, .cm-editor")).toBeNull();
+  });
+
+  it("keeps the streaming cursor inside an inline fenced-code preview", async () => {
+    const rendered = await render("```python\nprint('still streaming')", true, true);
+    const code = rendered.querySelector<HTMLElement>(".agentplane-code-inline");
+    const cursor = code?.querySelector<HTMLElement>(".agentplane-streaming-cursor");
+
+    expect(cursor?.getAttribute("aria-label")).toBe("Streaming");
+    expect(cursor?.getAttribute("data-character")).toBe(STREAMING_CURSOR);
+    expect(code?.textContent).toBe("print('still streaming')");
   });
 
   it("keeps Markdown tables in a horizontally scrollable wrapper", async () => {

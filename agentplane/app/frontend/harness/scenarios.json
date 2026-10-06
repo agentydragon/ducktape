@@ -747,6 +747,48 @@
     "openReasoning": true,
     "readySelectors": ["[data-thread-anchor=\"20\"] details.agentplane-step-details[open] > .agentplane-markdown"]
   },
+  "session_reasoning_code_fence": {
+    "element": "#app",
+    "route": "/threads/5f1c4a2e-0000-4000-8000-000000000001",
+    "viewport": { "width": 1200, "height": 700 },
+    "outputName": "session-reasoning-code-fence",
+    "standaloneReasoning": true,
+    "reasoningCodeFence": true,
+    "readySelectors": ["[data-thread-anchor=\"20\"] .agentplane-step-preview .agentplane-code-inline"]
+  },
+  "session_reasoning_code_fence_phone": {
+    "element": "#app",
+    "route": "/threads/5f1c4a2e-0000-4000-8000-000000000001",
+    "viewport": { "width": 412, "height": 915, "deviceScaleFactor": 2.625 },
+    "outputName": "session-reasoning-code-fence-phone",
+    "standaloneReasoning": true,
+    "reasoningCodeFence": true,
+    "readySelectors": ["[data-thread-anchor=\"20\"] .agentplane-step-preview .agentplane-code-inline"]
+  },
+  "session_reasoning_code_fence_open": {
+    "element": "#app",
+    "route": "/threads/5f1c4a2e-0000-4000-8000-000000000001",
+    "viewport": { "width": 1200, "height": 1000 },
+    "outputName": "session-reasoning-code-fence-open",
+    "standaloneReasoning": true,
+    "reasoningCodeFence": true,
+    "openReasoning": true,
+    "readySelectors": [
+      "[data-thread-anchor=\"20\"] details.agentplane-step-details[open] > .agentplane-markdown .agentplane-code-block .cm-content"
+    ]
+  },
+  "session_reasoning_code_fence_open_phone": {
+    "element": "#app",
+    "route": "/threads/5f1c4a2e-0000-4000-8000-000000000001",
+    "viewport": { "width": 412, "height": 1000, "deviceScaleFactor": 2.625 },
+    "outputName": "session-reasoning-code-fence-open-phone",
+    "standaloneReasoning": true,
+    "reasoningCodeFence": true,
+    "openReasoning": true,
+    "readySelectors": [
+      "[data-thread-anchor=\"20\"] details.agentplane-step-details[open] > .agentplane-markdown .agentplane-code-block .cm-content"
+    ]
+  },
   "session_tool_payloads": {
     "element": "#app",
     "route": "/threads/5f1c4a2e-0000-4000-8000-000000000001",

@@ -116,6 +116,8 @@ export interface Scenario {
    * reasoning-nested-inside-a-run-card one. Collapsed it reads as one plain dimmed line with no card
    * chrome, like a collapsed run; opened it gets the card chrome (padding, border). */
   standaloneReasoning?: boolean;
+  /** Put a fenced Python block in the standalone reasoning step to exercise its folded preview. */
+  reasoningCodeFence?: boolean;
   /** An unfinished reasoning step in the running turn and another its turn left unfinished: the
    * title is blue and breathing while its turn runs (the animation is frozen in the sweep, so the
    * class is what says it is live), blue and still once its turn has ended. */
