@@ -4602,6 +4602,36 @@ subjects:
     name: agentplane-actions
     namespace: agentplane-staging
 ---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: agentplane-actions
+  namespace: public-coder-agent
+rules:
+  - apiGroups:
+      - ""
+    resources:
+      - serviceaccounts
+    verbs:
+      - get
+      - list
+      - watch
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: agentplane-actions
+  namespace: public-coder-agent
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: agentplane-actions
+subjects:
+  - apiGroup: ""
+    kind: ServiceAccount
+    name: agentplane-actions
+    namespace: agentplane-staging
+---
 apiVersion: v1
 kind: ConfigMap
 metadata:
@@ -4616,6 +4646,7 @@ data:
     policy_namespace: agentplane-staging
     caller_service_account_namespaces:
       - agentplane-staging
+      - public-coder-agent
     direct_wait_seconds: 30
     max_wait_seconds: 180
     web_push:
@@ -7084,6 +7115,23 @@ spec:
     - grocy-sf-reads
     - ssh-reads
 ---
+apiVersion: agentplane.allegedly.works/v1alpha1
+kind: ActionPolicyBinding
+metadata:
+  annotations:
+    description: Auto-approves the reviewed public-coder repository reads for the OpenClaw ServiceAccount.
+  name: public-coder-openclaw-actions
+  namespace: agentplane-staging
+spec:
+  subject:
+    namespace: public-coder-agent
+    name: openclaw
+  policySets:
+    - public-github-reads
+    - public-ducktape-reads
+    - public-ducktape-fork-reads
+    - public-gaffer-private-reads
+---
 apiVersion: v1
 kind: Namespace
 metadata:
@@ -8681,6 +8729,22 @@ spec:
       paths:
         - /v1/rules
         - /openapi.json
+      clusterInternal: true
+      credentialRef:
+        name: agentplane-workload
+    - hosts:
+        - agentplane-actions.agentplane-staging.svc.cluster.local
+      methods:
+        - GET
+        - POST
+      paths:
+        - /mcp
+        - /openapi.json
+        - /v1/action-groups
+        - /v1/action-groups/**
+        - /v1/action-policy
+        - /v1/action-requests
+        - /v1/action-requests/**
       clusterInternal: true
       credentialRef:
         name: agentplane-workload

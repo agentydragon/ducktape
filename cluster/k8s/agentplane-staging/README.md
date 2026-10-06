@@ -15,7 +15,8 @@ asynchronously outside the artifact.
 ## Action policies
 
 This environment's Git-managed `ActionPolicySet`s and the bindings for labeled caller
-ServiceAccounts such as `claude-ai` are defined in
+ServiceAccounts such as `claude-ai`, `haku-agent`, and the cross-namespace
+`public-coder-agent/openclaw` are defined in
 `cluster/cdk8s/agentplane/actions_staging_policies.py` and generated into
 `agentplane-staging.k8s.yaml`; a new set, or a binding for a ServiceAccount, is a PR to
 that Python module (regenerate with `bb run //cluster/cdk8s:generate_manifests`). Bindings

@@ -521,6 +521,8 @@ spec:
 apiVersion: v1
 kind: ServiceAccount
 metadata:
+  labels:
+    agentplane.allegedly.works/use-action-service: "true"
   name: openclaw
   namespace: public-coder-agent
 automountServiceAccountToken: false

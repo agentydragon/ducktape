@@ -563,7 +563,11 @@ def _deployment(scope: Construct) -> None:
     k8s.KubeServiceAccount(
         scope,
         "openclaw-service-account",
-        metadata=k8s.ObjectMeta(name=public_coder_egress.SERVICE_ACCOUNT, namespace=NAMESPACE),
+        metadata=k8s.ObjectMeta(
+            name=public_coder_egress.SERVICE_ACCOUNT,
+            namespace=NAMESPACE,
+            labels={"agentplane.allegedly.works/use-action-service": "true"},
+        ),
         automount_service_account_token=False,
     )
     k8s.KubeDeployment(

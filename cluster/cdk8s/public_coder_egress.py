@@ -20,7 +20,7 @@ from constructs import Construct
 
 from agentplane.egress import sidecar
 from cluster.cdk8s import cilium
-from cluster.cdk8s.agentplane import egress
+from cluster.cdk8s.agentplane import actions, egress
 from cluster.cdk8s.agentplane.app_settings import INFERENCE_EXPERIMENTS_POLICY, PUBLIC_INTERNET_POLICY
 from cluster.cdk8s.agentplane.egress_credentials import EXTERNAL_CREDS_STORE, credential_external_secret
 from cluster.cdk8s.clickhouse import client
@@ -201,6 +201,21 @@ def add_gateway_resources(
                 cluster_internal=True,
                 methods=[EgressPolicySpecRulesMethods.GET],
                 paths=["/v1/rules", "/openapi.json"],
+                credential_ref=EgressPolicySpecRulesCredentialRef(name="agentplane-workload"),
+            ),
+            EgressPolicySpecRules(
+                hosts=[actions.service("agentplane-staging").fqdn],
+                cluster_internal=True,
+                methods=[EgressPolicySpecRulesMethods.GET, EgressPolicySpecRulesMethods.POST],
+                paths=[
+                    "/mcp",
+                    "/openapi.json",
+                    "/v1/action-groups",
+                    "/v1/action-groups/**",
+                    "/v1/action-policy",
+                    "/v1/action-requests",
+                    "/v1/action-requests/**",
+                ],
                 credential_ref=EgressPolicySpecRulesCredentialRef(name="agentplane-workload"),
             ),
         ],

@@ -1,9 +1,7 @@
-"""Staging-only Action Service policy objects: the claude-ai caller ServiceAccount, its
-five reviewed GitHub-reads ActionPolicySets, its reviewed Home Assistant/Gmail/Google
-Calendar-reads ActionPolicySets, and the ActionPolicyBinding granting them to that
-ServiceAccount; also what its sandboxes may reach (the EgressBinding) and read (the Coinbase
-key). See cluster/k8s/agentplane-staging/README.md § Action policies -- Sandbox-subject
-bindings are written by the integration app at runtime and are never checked in here.
+"""Staging-only Action Service policy objects: caller ServiceAccounts, reviewed
+ActionPolicySets, and their bindings; also what its sandboxes may reach (the EgressBinding)
+and read (the Coinbase key). See cluster/k8s/agentplane-staging/README.md § Action policies --
+Sandbox-subject bindings are written by the integration app at runtime and are never checked in here.
 """
 
 from __future__ import annotations
@@ -29,7 +27,7 @@ from external_secrets_crds.io.external_secrets import (
 
 from agentplane.action_service.policies.resources import BindingSpec, PolicySetSpec
 from agentplane.action_service.sandbox.actions import SANDBOX_GROUP, SandboxAction
-from cluster.cdk8s import agent_access_profiles as access, cilium, external_creds
+from cluster.cdk8s import agent_access_profiles as access, cilium, external_creds, public_coder_egress
 from cluster.cdk8s.agentplane import app as app_component, dex, egress, testing
 from cluster.cdk8s.agentplane.app_settings import (
     ACTIVITYWATCH_READ_POLICY,
@@ -904,5 +902,28 @@ def add_staging_action_policies(scope: Construct) -> None:
             _TANA_READS_SET,
             _GROCY_SF_READS_SET,
             SSH_READS_SET,
+        ],
+    )
+
+    # The long-running OpenClaw Pod is hosted in its own namespace; keep its Action
+    # authorization here with the shared policy sets, addressed by the full SA identity.
+    _binding(
+        scope,
+        "actionpolicybinding-public-coder-openclaw-actions",
+        metadata=ApiObjectMetadata(
+            name="public-coder-openclaw-actions",
+            namespace=_NAMESPACE,
+            annotations={
+                "description": "Auto-approves the reviewed public-coder repository reads for the OpenClaw ServiceAccount."
+            },
+        ),
+        subject=ActionPolicyBindingSpecSubject(
+            namespace=public_coder_egress.NAMESPACE, name=public_coder_egress.SERVICE_ACCOUNT
+        ),
+        policy_sets=[
+            PUBLIC_GITHUB_READS_SET,
+            PUBLIC_DUCKTAPE_READS_SET,
+            PUBLIC_DUCKTAPE_FORK_READS_SET,
+            PUBLIC_GAFFER_PRIVATE_READS_SET,
         ],
     )

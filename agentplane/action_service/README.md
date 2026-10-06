@@ -16,8 +16,8 @@ Console's being the one to retire, not two systems that happen to resemble each 
 Any caller is a ServiceAccount labeled `agentplane.allegedly.works/use-action-service: "true"` in
 one of `caller_service_account_namespaces` — a Pod-bound workload token and a Connection are two
 ways to prove one account, and the label admits either. The integration app labels the account it
-mints per Sandbox; staging commits `claude-ai`, the principal for
-Connections enrolled from the Claude.ai MCP connector, alongside its policies in
+mints per Sandbox; staging commits `claude-ai` for Claude.ai MCP Connections, `haku-agent`, and a
+binding for `public-coder-agent/openclaw` alongside their policies in
 `cluster/cdk8s/agentplane/actions_staging_policies.py`. Testing commits none:
 nothing there enrolls an external Connection, and the acceptance suite creates the objects it
 needs at run time. `policy_informer.PolicyInformer` watches them with a label selector into the
