@@ -6,9 +6,6 @@ load("//props:oci.bzl", "py_image_entrypoint", "py_image_env")
 py_library(
     name = "app",
     srcs = ["app.py"],
-    data = [
-        "//finance/plaid/spend/ui:bundle",
-    ],
     deps = [
         ":models",
         ":service",
@@ -75,6 +72,7 @@ py_test(
 py_test(
     name = "test_ui",
     srcs = ["test_ui.py"],
+    data = ["//finance/plaid/spend/ui:bundle"],
     deps = [
         ":app",
         ":conftest",
@@ -87,6 +85,7 @@ py_test(
     name = "test_service",
     size = "medium",
     srcs = ["test_service.py"],
+    data = ["//finance/plaid/spend/ui:bundle"],
     requires_docker = True,
     deps = [
         ":allowance",
@@ -107,12 +106,32 @@ py_test(
 
 py_binary(
     name = "app_cli",
+    data = ["//finance/plaid/spend/ui:bundle"],
     main_module = "finance.plaid.spend.app",
     deps = [":app"],
 )
 
+py_library(
+    name = "export_schema",
+    srcs = ["export_schema.py"],
+    deps = [
+        ":app",
+        ":service",
+        ":settings",
+        "@pypi//pydantic",
+    ],
+)
+
+py_binary(
+    name = "export_schema_bin",
+    main_module = "finance.plaid.spend.export_schema",
+    visibility = ["//finance/plaid/spend/ui:__pkg__"],
+    deps = [":export_schema"],
+)
+
 aspect_py_binary(
     name = "server_bin",
+    data = ["//finance/plaid/spend/ui:bundle"],
     main = "app.py",
     deps = [":app"],
 )

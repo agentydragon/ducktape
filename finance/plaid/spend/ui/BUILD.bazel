@@ -1,4 +1,5 @@
 load("@aspect_rules_ts//ts:defs.bzl", "ts_config")
+load("//devinfra/js:openapi.bzl", "js_openapi_schema")
 load("//devinfra/js:spa_bundle.bzl", "spa_bundle")
 load("//devinfra/js:ts_library.bzl", "ts_library")
 load("//devinfra/python:defs.bzl", "py_test")
@@ -8,11 +9,18 @@ ts_config(
     src = "tsconfig.json",
 )
 
+# Generate browser wire types from the API's Pydantic response models.
+js_openapi_schema(
+    name = "schema",
+    generator = "//finance/plaid/spend:export_schema_bin",
+)
+
 ts_library(
     name = "main",
     srcs = ["main.tsx"],
     tsconfig = ":tsconfig",
     deps = [
+        ":schema",
         "//:node_modules/@mantine/core",
         "//:node_modules/@types/react",
         "//:node_modules/@types/react-dom",

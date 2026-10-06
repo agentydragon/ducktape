@@ -21,78 +21,13 @@ import {
   Title,
 } from "@mantine/core";
 import "@mantine/core/styles.css";
+import type { components } from "./api/schema";
 
-type Windows = {
-  current_credit_cycle_minor_units: number;
-  trailing_7_days_minor_units: number;
-  trailing_30_days_minor_units: number;
-  calendar_month_minor_units: number;
-  year_to_date_minor_units: number;
-};
-type Allowance = {
-  status: string;
-  note: string | null;
-  currency: string;
-  alert_state: string;
-  available_minor_units: number | null;
-  monthly_minor_units: number;
-  activation_at: string;
-  prior_carry_minor_units: number | null;
-  posted_minor_units: number | null;
-  pending_minor_units: number | null;
-  review_minor_units: number | null;
-  review_transaction_count: number;
-  unmatched_refunds_minor_units: number | null;
-  trailing_7_daily_minor_units: number | null;
-  trailing_7_observed_daily_minor_units: number | null;
-  trailing_30_observed_daily_minor_units: number | null;
-  trailing_7_unmatched_count: number | null;
-  trailing_7_unmatched_minor_units: number | null;
-  spending_signal: string;
-  projected_cycle_end_minor_units: number | null;
-  estimated_exhaustion_at: string | null;
-  next_credit_at: string | null;
-  last_synced_at: string | null;
-  windows_minor_units: Windows | null;
-};
-type CardView = {
-  label: string | null;
-  account_name: string | null;
-  mask: string | null;
-  institution_name: string | null;
-  currency: string | null;
-  alert_state: string;
-  spend_minor_units: number | null;
-  limit_minor_units: number | null;
-  statement_available: boolean;
-  cycle_start: string | null;
-  pending_minor_units: number | null;
-  last_synced_at: string | null;
-};
-type View = { cards: CardView[]; allowance: Allowance | null; generated_at: string | null };
-type SimpleRuleCondition =
-  | { type: "name_prefix"; field: "name" | "merchant_name"; prefix: string }
-  | { type: "name_contains"; field: "name" | "merchant_name"; substring: string }
-  | { type: "category_exact"; field: "pfc_primary" | "pfc_detailed"; value: string };
-type RuleCondition = SimpleRuleCondition | { type: "all_of"; conditions: SimpleRuleCondition[] };
-type ConfigurationRule = { condition: RuleCondition; kind: "flexible" | "fixed" | "excluded" };
-type ConfiguredCard = {
-  label: string;
-  enabled: boolean;
-  limit_minor_units: number | null;
-  alert_threshold_percent: number | null;
-};
-type SpendConfiguration = {
-  cards: ConfiguredCard[];
-  allowance: {
-    monthly_minor_units: number;
-    activation_at: string;
-    currency: string;
-    spending_account_count: number;
-    max_sync_age_hours: number;
-    rules: ConfigurationRule[];
-  } | null;
-};
+type Windows = components["schemas"]["Windows"];
+type Allowance = components["schemas"]["AllowanceView"];
+type CardView = components["schemas"]["CardView"];
+type View = components["schemas"]["SpendView"];
+type SpendConfiguration = components["schemas"]["SpendConfigurationView"];
 
 function money(value: number | null | undefined, currency: string | null, exact = false): string {
   if (value == null || !Number.isFinite(value)) return "Unavailable";

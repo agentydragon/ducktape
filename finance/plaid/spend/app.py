@@ -77,7 +77,7 @@ def _web_login_config(settings: SpendSettings) -> LoginConfig:
     )
 
 
-def create_app(settings: SpendSettings, *, service: SpendService) -> FastAPI:
+def create_app(settings: SpendSettings, *, service: SpendService, include_ui: bool = True) -> FastAPI:
     resolver = AuthentikOidcPrincipalResolver(
         expected_issuer=settings.api_oidc_issuer,
         discovered_issuer=settings.api_oidc_discovered_issuer,
@@ -103,11 +103,13 @@ def create_app(settings: SpendSettings, *, service: SpendService) -> FastAPI:
     async def healthz() -> dict[str, bool]:
         return {"ok": True}
 
-    @app.get("/", include_in_schema=False)
-    async def root() -> FileResponse:
-        return FileResponse(_UI_DIR / "index.html")
+    if include_ui:
 
-    app.mount("/static", StaticFiles(directory=_UI_DIR), name="spend-ui")
+        @app.get("/", include_in_schema=False)
+        async def root() -> FileResponse:
+            return FileResponse(_UI_DIR / "index.html")
+
+        app.mount("/static", StaticFiles(directory=_UI_DIR), name="spend-ui")
 
     @app.get("/favicon.ico", include_in_schema=False)
     async def favicon() -> Response:
