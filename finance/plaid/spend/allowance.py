@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import calendar
+from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import UTC, date, datetime, timedelta
 from decimal import ROUND_HALF_UP, Decimal
@@ -51,18 +52,25 @@ class CategoryExact(BaseModel):
     value: str = Field(min_length=2)
 
 
+class AmountExact(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+    type: Literal["amount_exact"]
+    value: str = Field(pattern=r"^\d+(\.\d{1,4})?$")
+
+
 class AllOf(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
     type: Literal["all_of"]
-    conditions: list[Annotated[NamePrefix | NameContains | CategoryExact, Field(discriminator="type")]] = Field(
-        min_length=2
-    )
+    conditions: list[
+        Annotated[NamePrefix | NameContains | CategoryExact | AmountExact, Field(discriminator="type")]
+    ] = Field(min_length=2)
 
 
 class Rule(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
-    condition: Annotated[NamePrefix | NameContains | CategoryExact | AllOf, Field(discriminator="type")]
+    condition: Annotated[NamePrefix | NameContains | CategoryExact | AmountExact | AllOf, Field(discriminator="type")]
     kind: Kind
+    analysis_category: str | None = Field(default=None, min_length=1)
 
 
 class AllowancePolicy(BaseModel):
@@ -146,18 +154,40 @@ def month_anniversary(start: datetime, months: int) -> datetime:
     return start.replace(year=year, month=month, day=min(start.day, calendar.monthrange(year, month)[1]))
 
 
-def matches(transaction: Transaction, condition: NamePrefix | NameContains | CategoryExact | AllOf) -> bool:
+def matches(
+    transaction: Transaction, condition: NamePrefix | NameContains | CategoryExact | AmountExact | AllOf
+) -> bool:
+    return matches_fields(transaction, condition)
+
+
+def matches_fields(
+    fields: Mapping[str, object] | object,
+    condition: NamePrefix | NameContains | CategoryExact | AmountExact | AllOf,
+) -> bool:
+    """Match policy conditions against a mapping or a runtime model object."""
+
+    def value(field: str) -> object | None:
+        if isinstance(fields, Mapping):
+            return fields.get(field)
+        return getattr(fields, field, None)
+
     if isinstance(condition, AllOf):
-        return all(matches(transaction, part) for part in condition.conditions)
+        return all(matches_fields(fields, part) for part in condition.conditions)
     if isinstance(condition, CategoryExact):
-        category = transaction.pfc_primary if condition.field == "pfc_primary" else transaction.pfc_detailed
+        category = value(condition.field)
         return category == condition.value
-    name = transaction.name if condition.field == "name" else transaction.merchant_name
+    if isinstance(condition, AmountExact):
+        amount = value("amount")
+        try:
+            return amount is not None and Decimal(str(amount)) == Decimal(condition.value)
+        except ArithmeticError:
+            return False
+    name = value(condition.field)
     if name is None:
         return False
     if isinstance(condition, NamePrefix):
-        return name.casefold().startswith(condition.prefix.casefold())
-    return condition.substring.casefold() in name.casefold()
+        return isinstance(name, str) and name.casefold().startswith(condition.prefix.casefold())
+    return isinstance(name, str) and condition.substring.casefold() in name.casefold()
 
 
 def matching_rule(transaction: Transaction, rules: list[Rule]) -> Rule | None:

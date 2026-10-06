@@ -8,7 +8,7 @@ data:
   PLAID_SPEND_API_OIDC_DISCOVERED_ISSUER: https://auth.allegedly.works/application/o/plaid-spend-desktop/
   PLAID_SPEND_API_OIDC_ISSUER: https://auth.allegedly.works/application/o/plaid-spend-desktop/
   PLAID_SPEND_API_OIDC_JWKS_URI: https://auth.allegedly.works/application/o/plaid-spend-desktop/jwks/
-  PLAID_SPEND_CONFIG_PATH: /etc/plaid-spend/config.json
+  PLAID_SPEND_CONFIG_PATH: /etc/plaid-spend/spend-policy.yaml
   PLAID_SPEND_WEB_OIDC_ISSUER: https://auth.allegedly.works/application/o/plaid-spend-web/
   PLAID_SPEND_WEB_OIDC_PUBLIC_BASE_URL: https://plaid-spend.allegedly.works
 ---
@@ -21,11 +21,50 @@ rules:
   - apiGroups:
       - ""
     resourceNames:
-      - plaid-spend-private-config
+      - plaid-spend-policy
     resources:
-      - secrets
+      - configmaps
     verbs:
       - get
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  annotations:
+    description: Lets the private Finance Flux root create ConfigMaps in plaid-mcp and update only the named spend-policy ConfigMap; no deletes, Secrets, or workloads.
+  name: plaid-spend-config-applier
+  namespace: plaid-mcp
+rules:
+  - apiGroups:
+      - ""
+    resources:
+      - configmaps
+    verbs:
+      - create
+  - apiGroups:
+      - ""
+    resourceNames:
+      - plaid-spend-policy
+    resources:
+      - configmaps
+    verbs:
+      - get
+      - patch
+      - update
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: plaid-spend-config-applier
+  namespace: plaid-mcp
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: plaid-spend-config-applier
+subjects:
+  - kind: ServiceAccount
+    name: plaid-spend-config-applier
+    namespace: ducktape-flux
 ---
 apiVersion: v1
 kind: ServiceAccount
@@ -232,9 +271,9 @@ spec:
           type: RuntimeDefault
       serviceAccountName: plaid-spend
       volumes:
-        - name: config
-          secret:
-            secretName: plaid-spend-private-config
+        - configMap:
+            name: plaid-spend-policy
+          name: config
 ---
 apiVersion: v1
 kind: Service

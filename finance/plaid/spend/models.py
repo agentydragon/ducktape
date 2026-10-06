@@ -4,7 +4,9 @@ from __future__ import annotations
 
 from datetime import date, datetime
 from enum import StrEnum
+from pathlib import Path
 
+import yaml
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from finance.plaid.spend.allowance import AllowancePolicy, AllowanceView, Rule
@@ -47,6 +49,12 @@ class SpendConfiguration(BaseModel):
         if len(account_ids) != len(set(account_ids)):
             raise ValueError("cards must contain at most one item per account_id")
         return self
+
+
+def load_configuration(path: Path) -> SpendConfiguration:
+    """Load and validate the shared YAML configuration used by the app and analyses."""
+    document = yaml.safe_load(path.read_text(encoding="utf-8"))
+    return SpendConfiguration.model_validate(document)
 
 
 class CardConfigurationView(BaseModel):

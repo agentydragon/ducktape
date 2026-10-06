@@ -7,15 +7,15 @@
 # service user (full read/write on its own repo), plus a write collaborator grant for `haku`
 # (operator, 2026-09-30) so Haku can help maintain it. No `claude` grant — not asked for.
 #
-# No data lives in this repo — the agent queries Plaid live rather than committing transaction
-# data to git history, which can't be un-committed later. The repo holds code/config only. Mirrors
-# tf/gitops/budget-ledger and tf/gitops/augur-evidence, minus their CI/sidecar consumers (this
-# repo has no in-cluster consumer at all).
+# No transaction data lives in this repo — the agent queries Plaid live rather than committing
+# transactions to git history, which can't be un-committed later. The repo holds code/config only.
+# It mirrors tf/gitops/budget-ledger and tf/gitops/augur-evidence, minus their CI/sidecar consumers.
+# Its only in-cluster reader is Flux, which uses a separate read-only account and Secret.
 #
 # The Secret lands in the `forgejo` namespace, same as every other module here. Rai reads it
 # directly with his own kubectl access (`kubectl -n forgejo get secret finance-agent-git-creds -o
-# jsonpath=...`) to set up his local clone / Codex CLI — no ESO copy anywhere, since nothing
-# in-cluster consumes it.
+# jsonpath=...`) to set up his local clone / Codex CLI. Flux reads through a separate
+# `finance-agent-flux-reader` collaborator and `finance-agent-flux-read-credentials` Secret.
 
 data "kubernetes_secret" "forgejo_admin" {
   metadata {
@@ -43,6 +43,20 @@ resource "forgejo_user" "finance_agent" {
   visibility           = "private"
 }
 
+# Flux uses a separate identity with read access to this repository only.
+resource "random_password" "finance_agent_flux_reader" {
+  length  = 48
+  special = false
+}
+
+resource "forgejo_user" "finance_agent_flux_reader" {
+  login                = "finance-agent-flux-reader"
+  email                = "finance-agent-flux-reader@allegedly.works"
+  password             = random_password.finance_agent_flux_reader.result
+  must_change_password = false
+  visibility           = "private"
+}
+
 resource "forgejo_repository" "finance_agent" {
   owner          = forgejo_user.finance_agent.login
   name           = "finance-agent"
@@ -61,6 +75,12 @@ resource "forgejo_collaborator" "haku" {
   permission    = "write"
 }
 
+resource "forgejo_collaborator" "flux_reader" {
+  repository_id = forgejo_repository.finance_agent.id
+  user          = forgejo_user.finance_agent_flux_reader.login
+  permission    = "read"
+}
+
 # Git credentials for Rai's own local clone. Not copied anywhere in-cluster — retrieved
 # directly via kubectl, same access he already has to every other secret here.
 #
@@ -77,5 +97,18 @@ resource "kubernetes_secret" "finance_agent_git_creds_source" {
     username = forgejo_user.finance_agent.login
     password = random_password.finance_agent.result
     repo_url = "https://git.allegedly.works/${forgejo_user.finance_agent.login}/${forgejo_repository.finance_agent.name}.git"
+  }
+}
+
+# Flux consumes only this repository-scoped read credential through External Secrets.
+resource "kubernetes_secret" "finance_agent_flux_reader_source" {
+  metadata {
+    name      = "finance-agent-flux-read-credentials"
+    namespace = "forgejo"
+  }
+
+  data = {
+    username = forgejo_user.finance_agent_flux_reader.login
+    password = random_password.finance_agent_flux_reader.result
   }
 }

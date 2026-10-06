@@ -5,7 +5,8 @@ in `gnome/`.
 
 `//finance/plaid/spend:server_image` serves the same backend-computed statement-cycle view to the
 Authentik-protected browser UI and desktop clients. Card settings and the optional flexible allowance
-share one `config.json` in the privately delivered `plaid-spend-private-config` Secret.
+share one `spend-policy.yaml` in the Flux-managed `plaid-spend-policy` ConfigMap, generated from the
+private finance-agent repository's `config/plaid-spend/spend-policy.yaml`.
 
 The browser at `/` signs in through the confidential Authentik `plaid-spend-web` client. The server
 keeps OIDC tokens out of the browser and authenticates page, stylesheet, script, view, configuration,
@@ -69,8 +70,8 @@ the Plaid account name and its institution when available.
 
 ## Shared card configuration
 
-The private Secret `plaid-mcp/plaid-spend-private-config` must contain one `config.json` key
-with this shape (synthetic example; omit `allowance` to disable it):
+The private policy file defines `cards` and an optional `allowance` with this shape (synthetic
+example; omit `allowance` to disable it):
 
 ```json
 {
@@ -87,9 +88,9 @@ with this shape (synthetic example; omit `allowance` to disable it):
 ```
 
 Use `null` for an optional limit or threshold. The service validates this file at startup and reads
-it from `/etc/plaid-spend/config.json`. Until the private Secret exists, the pod cannot start;
+it from `/etc/plaid-spend/spend-policy.yaml`. Until the policy ConfigMap exists, the pod cannot start;
 a missing or invalid file fails application startup. Reloader restarts the Deployment after updating it;
-the process does not watch for mounted Secret updates. The spend database role can only read the
+the process does not watch for mounted ConfigMap updates. The spend database role can only read the
 four Plaid source tables needed to compute the view; it does not store or write this configuration.
 
 ## Runtime settings
@@ -97,7 +98,7 @@ four Plaid source tables needed to compute the view; it does not store or write 
 All service settings use the `PLAID_SPEND_` prefix except `DATABASE_URL`:
 
 - `DATABASE_URL`
-- `PLAID_SPEND_CONFIG_PATH` (default `/etc/plaid-spend/config.json`)
+- `PLAID_SPEND_CONFIG_PATH` (default `/etc/plaid-spend/spend-policy.yaml`)
 - `PLAID_SPEND_API_OIDC_ISSUER`, `PLAID_SPEND_API_OIDC_CLIENT_ID`,
   `PLAID_SPEND_API_OIDC_DISCOVERED_ISSUER`, `PLAID_SPEND_API_OIDC_JWKS_URI`, and optional
   comma-separated `PLAID_SPEND_API_OIDC_SIGNING_ALGORITHMS` (default `RS256`)
@@ -114,4 +115,4 @@ requires the configured audience and authorized party. The listener subscribes t
 ## Optional flexible allowance
 
 See [allowance setup and accounting](docs/allowance.md). The allowance is read-only
-and requires a separately delivered private policy; no payment rail is controlled.
+and uses the private Flux-managed policy; no payment rail is controlled.

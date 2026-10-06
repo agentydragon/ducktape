@@ -20,7 +20,7 @@ Plaid -> https://plaid-mcp.allegedly.works/webhooks/plaid
 GNOME panel app -> https://plaid-spend.allegedly.works/api/v1/view and `/api/v1/events`
   Gateway -> separate plaid-spend Deployment -> Plaid CNPG database
     - validates Authentik public OIDC access tokens from the desktop PKCE client
-    - computes one shared view from the privately delivered `plaid-spend-private-config` Secret
+    - computes one shared view from the Flux-managed `plaid-spend-policy` ConfigMap
     - LISTEN/NOTIFY invalidates views after synced source rows commit
 
 Browser -> https://plaid-spend.allegedly.works/
@@ -52,11 +52,12 @@ and read-only in-cluster PostgreSQL access; it is not exposed over MCP.
   and copied through a get-only SecretStore into the `plaid-mcp` namespace. The web
   process uses the confidential `plaid-spend-web` OIDC client and a signed session
   cookie; desktop API authentication remains on the separate public client.
-- The `plaid-spend-private-config` Secret must be delivered separately from this public repo.
-  Its sole `config.json` key contains a `cards` list and optional `allowance` policy.
-  The service mounts it at `/etc/plaid-spend/config.json` and needs a restart after updates.
-  Without this Secret the spend Deployment cannot start; create it after merging. Each device
-  receives the same server-computed view. The desktop uses the public
+- The `plaid-spend-policy` ConfigMap is reconciled from the private finance-agent repository's
+  `config/plaid-spend/spend-policy.yaml`. The Flux service account can create ConfigMaps in this
+  namespace and can read/update only the named policy ConfigMap. It cannot delete resources, read
+  Secrets, or manage workloads. Kubernetes RBAC cannot name-restrict the create verb. Reloader
+  restarts the service after policy changes. Each device receives the same server-computed view.
+  The desktop uses the public
   `plaid-spend-desktop` provider with PKCE and a strict loopback callback.
 - Plaid access tokens are stored one Secret per linked Item and are not written to Postgres.
 - `plaid_api_events` is append-only and stores redacted Plaid request/response metadata.

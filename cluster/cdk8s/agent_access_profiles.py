@@ -107,7 +107,7 @@ def catalog() -> dict[str, KubernetesGrant]:
             role_ref=RoleRef(kind="Role", name="agentplane-testing-operator"),
         ),
         **_namespace_read_grants(),
-        "spend-private-config": RoleBindingGrant(
+        "spend-policy-config": RoleBindingGrant(
             kind="RoleBinding",
             namespace=spend.NAMESPACE,
             role_ref=RoleRef(kind="Role", name=spend.FINANCE_CONFIG_READER),
@@ -162,7 +162,7 @@ HAKU_EXTRAS = ("cluster-diagnostics", "haku-sandbox-write")
 PUBLIC_GRANTS = (*SHARED_DIAGNOSTICS, *TESTING_ACCESS, *PUBLIC_INVENTORY)
 MANAGED_GRANTS = {
     "public-coder": PUBLIC_GRANTS,
-    "finance-agent": (*PUBLIC_GRANTS, "coinbase-credentials", "spend-private-config"),
+    "finance-agent": (*PUBLIC_GRANTS, "coinbase-credentials", "spend-policy-config"),
     "haku": (*SHARED_DIAGNOSTICS, *TESTING_ACCESS, *HAKU_EXTRAS, "coinbase-credentials"),
 }
 STATIC_GRANTS = {

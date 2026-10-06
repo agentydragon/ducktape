@@ -1127,6 +1127,7 @@ def generate_manifests(root: Path) -> None:
         ),
         external_secrets_operator_kustomization,
     )
+    agents_flux_kustomizations.plaid_spend_policy(flux_chart)
     plaid_mcp_artifact = artifact("plaid-mcp", f"{HAND_WRITTEN_ROOT}/agents/plaid-mcp")
     plaid_mcp_kustomization = agents_flux_kustomizations.plaid_mcp(
         flux_chart,

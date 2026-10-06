@@ -12,10 +12,11 @@ from pathlib import Path
 
 from cdk8s import ApiObjectMetadata, App, Chart
 from cdk8s_plus_34 import k8s
-from flux_gitrepository_crds.io.fluxcd.toolkit.source import GitRepositorySpecRef
+from flux_gitrepository_crds.io.fluxcd.toolkit.source import GitRepositorySpecRef, GitRepositorySpecSecretRef
 
 from cluster.cdk8s import agent_access_profiles as access, namespaces
 from cluster.cdk8s.flux import NAMESPACE
+from cluster.cdk8s.forgejo import secret_copy
 from cluster.cdk8s.generation import write_charts
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT, HAND_WRITTEN_ROOT, PARKED_ROOT
 from cluster.cdk8s.namespaces import Vpa
@@ -28,6 +29,9 @@ REPOSITORY_URL = "https://github.com/agentydragon/ducktape.git"
 BRANCH = "devel"
 TF_GITOPS_ROOT = "tf/gitops"  # tofu-controller Terraform modules (terraform.py)
 _READER = "ducktape-flux-reader"
+_FINANCE_READER_SECRET = "finance-agent-flux-read-credentials"
+_FINANCE_SOURCE = "finance-agent"
+_SPEND_POLICY_APPLIER = "plaid-spend-config-applier"
 
 
 def _reader_binding(chart: Chart, name: str, *, description: str, subjects: list[k8s.Subject]) -> None:
@@ -44,6 +48,27 @@ def chart(app: App) -> Chart:
     chart = Chart(app, NAMESPACE, disable_resource_name_hashes=True)
     # A control-plane boundary only: managed workloads retain their own namespaces.
     namespaces.namespace(chart, "namespace", name=NAMESPACE, vpa=Vpa.RECOMMEND, labels={"name": NAMESPACE})
+    # Flux's private Finance source gets a distinct repo-scoped read-only credential.
+    # The ExternalSecret can read only its named source Secret in `forgejo`.
+    reader = secret_copy.reader(chart, NAMESPACE)
+    secret_copy.secret_copy(chart, _FINANCE_READER_SECRET, reader=reader)
+    GitRepository(
+        chart,
+        "finance-agent-source",
+        metadata=ApiObjectMetadata(name=_FINANCE_SOURCE, namespace=NAMESPACE),
+        interval="5m",
+        ref=GitRepositorySpecRef(branch="main"),
+        sparse_checkout=["config/plaid-spend/"],
+        secret_ref=GitRepositorySpecSecretRef(name=_FINANCE_READER_SECRET),
+        url="http://forgejo-http.forgejo:3000/finance-agent/finance-agent.git",
+    )
+
+    k8s.KubeServiceAccount(
+        chart,
+        "plaid-spend-config-applier",
+        metadata=k8s.ObjectMeta(name=_SPEND_POLICY_APPLIER, namespace=NAMESPACE),
+        automount_service_account_token=False,
+    )
     # Intentionally sparse, like flux-system's public-repository source: the source roots
     # the ArtifactGenerator consumes, and the paths public Kustomizations read directly,
     # including the suspended ones' under the parked tree.

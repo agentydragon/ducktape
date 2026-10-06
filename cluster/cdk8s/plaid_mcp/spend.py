@@ -1,4 +1,4 @@
-"""The separate plaid-spend API and its shared encrypted card configuration."""
+"""The separate plaid-spend API and its Flux-managed private card policy."""
 
 from __future__ import annotations
 
@@ -28,8 +28,10 @@ NAMESPACE = db.NAMESPACE
 _NAME = "plaid-spend"
 _HOST = "plaid-spend.allegedly.works"
 _CONFIG_MAP = "plaid-spend-config"
-PRIVATE_CONFIG = SecretRef(namespace=NAMESPACE, name="plaid-spend-private-config")
+POLICY_CONFIG_MAP = "plaid-spend-policy"
 FINANCE_CONFIG_READER = "plaid-spend-finance-config-reader"
+POLICY_APPLIER = "plaid-spend-config-applier"
+POLICY_APPLIER_NAMESPACE = "ducktape-flux"
 _WEB_OIDC_CREDENTIALS_NAME = "plaid-spend-web-oidc-config"
 _WEB_OIDC_CREDENTIALS = SecretRef(namespace=NAMESPACE, name=_WEB_OIDC_CREDENTIALS_NAME)
 _WEB_OIDC_READER = "plaid-spend-web-oidc-reader"
@@ -131,8 +133,9 @@ def _deployment(chart: Chart) -> None:
                     automount_service_account_token=False,
                     image_pull_secrets=[k8s.LocalObjectReference(name="forgejo-images-creds")],
                     security_context=k8s.PodSecurityContext(seccomp_profile=k8s.SeccompProfile(type="RuntimeDefault")),
-                    # A private delivery channel owns both files; the pod cannot start without the Secret.
-                    volumes=[k8s.Volume(name="config", secret=k8s.SecretVolumeSource(secret_name=PRIVATE_CONFIG.name))],
+                    volumes=[
+                        k8s.Volume(name="config", config_map=k8s.ConfigMapVolumeSource(name=POLICY_CONFIG_MAP))
+                    ],
                     containers=[
                         k8s.Container(
                             name=_NAME,
@@ -183,7 +186,47 @@ def chart(app: App) -> Chart:
         "finance-config-reader",
         metadata=k8s.ObjectMeta(name=FINANCE_CONFIG_READER, namespace=NAMESPACE),
         rules=[
-            k8s.PolicyRule(api_groups=[""], resources=["secrets"], resource_names=[PRIVATE_CONFIG.name], verbs=["get"])
+            k8s.PolicyRule(
+                api_groups=[""],
+                resources=["configmaps"],
+                resource_names=[POLICY_CONFIG_MAP],
+                verbs=["get"],
+            )
+        ],
+    )
+    policy_role = POLICY_APPLIER
+    k8s.KubeRole(
+        chart,
+        "policy-applier-role",
+        metadata=k8s.ObjectMeta(
+            name=policy_role,
+            namespace=NAMESPACE,
+            annotations={
+                "description": (
+                    "Lets the private Finance Flux root create ConfigMaps in plaid-mcp and update only "
+                    "the named spend-policy ConfigMap; no deletes, Secrets, or workloads."
+                )
+            },
+        ),
+        rules=[
+            # Kubernetes RBAC cannot name-restrict create. Keep it to ConfigMaps in this namespace;
+            # reads and updates are limited to the policy ConfigMap.
+            k8s.PolicyRule(api_groups=[""], resources=["configmaps"], verbs=["create"]),
+            k8s.PolicyRule(
+                api_groups=[""],
+                resources=["configmaps"],
+                resource_names=[POLICY_CONFIG_MAP],
+                verbs=["get", "patch", "update"],
+            ),
+        ],
+    )
+    k8s.KubeRoleBinding(
+        chart,
+        "policy-applier-binding",
+        metadata=k8s.ObjectMeta(name=policy_role, namespace=NAMESPACE),
+        role_ref=k8s.RoleRef(api_group="rbac.authorization.k8s.io", kind="Role", name=policy_role),
+        subjects=[
+            k8s.Subject(kind="ServiceAccount", name=POLICY_APPLIER, namespace=POLICY_APPLIER_NAMESPACE)
         ],
     )
     _web_oidc_credentials(chart)

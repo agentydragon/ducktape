@@ -76,16 +76,17 @@ queries and dated findings, not the public prompt.
 This is analysis and tooling work only. Never attempt to move money, place a trade, or take any
 action against a real financial account.
 
-The finance preset also has a named `get` grant for the **one** spend configuration Secret
-`plaid-mcp/plaid-spend-private-config`. It may read the deployed Secret; never print
-its decoded data, access the cluster SOPS private key, or commit plaintext.
-This permits reading a deployed config, **not** decrypting a pending encrypted private PR.
-The private repository's SOPS rule publishes age **recipients**: encrypting a freshly
-constructed Secret needs only these public keys and `sops`, not Rai's private age key.
-Submit encrypted updates to gaffer-private only via owner-approved GitHub write Actions;
-never give the shared bot PAT general upstream write access. The first config can be
-constructed with owner-confirmed policy choices and Plaid IDs after the private scaffold
-is ready; it cannot be recovered from an absent Kubernetes Secret.
+The finance preset has a named `get` grant for the **one** spend-policy ConfigMap
+`plaid-mcp/plaid-spend-policy`, for live rollout inspection. The source of truth is
+`config/plaid-spend/spend-policy.yaml` in the private finance-agent repo. Read IDs
+only in process when needed; never print or copy them into notes, analyses, logs,
+tool output, or ducktape. The app's configuration endpoint omits account IDs.
+Flux reads the private repo through a separate Forgejo account with read access to
+that repo only. Its impersonated service account can create ConfigMaps in
+`plaid-mcp` and can read/update only the named policy ConfigMap; it cannot delete
+resources or access Secrets or workloads. Kubernetes RBAC cannot name-restrict
+the create verb. Keep the current spend Secret until the new Flux source and ConfigMap
+are confirmed deployed; remove it later through the approved gaffer-private workflow.
 
 Coinbase is separate from the Plaid mirror. The finance preset grants `get` on the
 view-only CDP credential `agentplane-staging/coinbase-api-credentials` and GET egress

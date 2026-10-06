@@ -620,6 +620,7 @@ py_library(
         ":generation",
         ":manifest_roots",
         ":namespaces",
+        "//cluster/cdk8s/forgejo:secret_copy",
         "//cluster/cdk8s/providers/flux:git_repository",
         "//cluster/cdk8s/providers/flux:gitrepository",
         "@pypi//cdk8s",

@@ -479,6 +479,8 @@ function ruleConditionText(condition: RuleCondition): string {
       return `${condition.field === "name" ? "Transaction name" : "Merchant name"} contains “${condition.substring}”`;
     case "category_exact":
       return `${condition.field} equals ${condition.value}`;
+    case "amount_exact":
+      return `Amount equals ${condition.value} USD`;
     case "all_of":
       return condition.conditions.map(ruleConditionText).join(" AND ");
   }

@@ -16,7 +16,7 @@ from fastapi import Depends, FastAPI, HTTPException, Request, status
 from fastapi.responses import FileResponse, Response, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 
-from finance.plaid.spend.models import SpendConfiguration, SpendConfigurationView, SpendView
+from finance.plaid.spend.models import SpendConfiguration, SpendConfigurationView, SpendView, load_configuration
 from finance.plaid.spend.service import SpendService
 from finance.plaid.spend.settings import SpendSettings
 from mcp_infra.oidc_principal import (
@@ -177,7 +177,7 @@ def _sse_view(view: SpendView) -> str:
 def main() -> None:
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(levelname)s %(message)s", stream=sys.stderr)
     settings = SpendSettings()
-    configuration = SpendConfiguration.model_validate_json(settings.config_path.read_text("utf-8"))
+    configuration = load_configuration(settings.config_path)
     service = SpendService(settings.database_url, configuration, dashboard_url=settings.web_oidc_public_base_url)
     uvicorn.run(create_app(settings, service=service), host=settings.host, port=settings.port, log_level="info")
 

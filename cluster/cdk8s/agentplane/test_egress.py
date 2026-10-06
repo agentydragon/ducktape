@@ -229,7 +229,7 @@ def test_public_diagnostics_share_haku_reads_but_not_privileged_grants(
     config = yaml.safe_load(_by_name(docs, "ConfigMap", "agentplane-app-config")["data"]["config.yaml"])
     catalog = config["kubernetes_grants"]
     selected = config["sandbox_presets"][preset]["kubernetes_grants"]
-    credential_grants = {"coinbase-credentials", "spend-private-config"} if preset == "finance-agent" else set()
+    credential_grants = {"coinbase-credentials", "spend-policy-config"} if preset == "finance-agent" else set()
     # Coinbase egress follows the Secret grant; haku-agent's EgressBinding carries none.
     assert (COINBASE_POLICY in config["sandbox_presets"][preset]["egress_policies"]) == (preset == "finance-agent")
     assert COINBASE_POLICY not in _by_name(docs, "EgressBinding", "haku-agent")["spec"]["policies"]
@@ -242,7 +242,7 @@ def test_public_diagnostics_share_haku_reads_but_not_privileged_grants(
         == {"cluster-diagnostics", "haku-sandbox-write", "coinbase-credentials"} - credential_grants
     )
     assert set(selected) - set(haku) == {"public-coder-node-read", "public-coder-cluster-metadata-read"} | (
-        {"spend-private-config"} if preset == "finance-agent" else set()
+        {"spend-policy-config"} if preset == "finance-agent" else set()
     )
     assert {
         "agentplane-staging-metadata",

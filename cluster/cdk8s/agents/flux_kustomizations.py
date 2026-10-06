@@ -3,7 +3,12 @@
 from __future__ import annotations
 
 from cdk8s import Chart
-from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpecDeletionPolicy, KustomizationSpecHealthChecks
+from flux_kustomize.io.fluxcd.toolkit.kustomize import (
+    KustomizationSpecDeletionPolicy,
+    KustomizationSpecHealthChecks,
+    KustomizationSpecSourceRef,
+    KustomizationSpecSourceRefKind,
+)
 from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
 
 from cluster.cdk8s.flux import (
@@ -67,6 +72,31 @@ def plaid_mcp(
         # the pods at startup; wait=True tracks their readiness. Unrelated
         # Authentik Terraform projects must not block app image/config updates.
         depends_on=flux_kustomization_depends_on_many(cnpg, external_secrets_operator, authentik),
+    )
+
+
+def plaid_spend_policy(chart: Chart) -> Kustomization:
+    """Reconcile the private Finance policy ConfigMap through a namespace-scoped SA."""
+    return flux_kustomization(
+        chart,
+        "plaid-spend-policy",
+        KustomizationSpecSourceRef(
+            kind=KustomizationSpecSourceRefKind.GIT_REPOSITORY,
+            name="finance-agent",
+            namespace="ducktape-flux",
+        ),
+        path="./config/plaid-spend",
+        interval="5m",
+        retry_interval="1m",
+        timeout="2m",
+        prune=False,
+        target_namespace="plaid-mcp",
+        service_account_name="plaid-spend-config-applier",
+        description=(
+            "Reconciles the private Finance spend-policy ConfigMap. Its impersonated service account can "
+            "create ConfigMaps in plaid-mcp and can get/update only the named policy ConfigMap; it cannot "
+            "delete resources or manage Secrets or workloads. Kubernetes RBAC does not name-restrict create."
+        ),
     )
 
 
