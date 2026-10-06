@@ -397,7 +397,6 @@ py_test(
         "@platforms//os:linux",
     ],
     deps = [
-        ":client",
         ":conftest",
         ":harness_process",
         ":store",
@@ -496,7 +495,6 @@ py_test(
     name = "test_initialize",
     srcs = ["test_initialize.py"],
     deps = [
-        ":client",
         ":config",
         ":conftest",
         ":service",
