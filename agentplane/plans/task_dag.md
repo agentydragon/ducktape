@@ -67,7 +67,7 @@ flowchart TB
     ELEVATE["Planned behavior<br/>agent-requested temporary permission<br/>ServiceAccount and Sandbox callers, operator-approved"]:::future
     INPUT_DELIVERY["Remaining native evidence<br/>input/interrupt/recovery gaps<br/>exact upstream requests and queue fates"]:::active
     T3["Deferred product work<br/>thread search and lookup<br/>later prioritization"]:::future
-    PC_EGRESS_CREDENTIALS["Planned configuration<br/>public-coder's iron-proxy substitutions as EgressCredentials<br/>plus its dedicated ServiceAccount"]:::future
+    PC_EGRESS_CREDENTIALS["Remaining configuration<br/>label public-coder's OpenClaw caller<br/>for Action Service admission"]:::future
     PC_EGRESS["Capstone<br/>public-coder-agent egress migration<br/>proven equivalent, cut over, old proxy retired"]:::milestone
     ACCESS["Deferred design<br/>delegated vs brokered external access<br/>grants and revocation"]:::future
     EGRESS_CHANGE["Deferred design<br/>agent-requested egress<br/>policy expansion"]:::future
@@ -592,19 +592,16 @@ accounts one policy becomes several objects, which is already what per-binding `
 
 Its own clock, and cheaper before something starts using it than after.
 
-### `PC_EGRESS_CREDENTIALS` — public-coder's substitutions as EgressCredentials
+### `PC_EGRESS_CREDENTIALS` — label public-coder's Action Service caller
 
-**Planned configuration:** give the app Pod a dedicated ServiceAccount, labelled
-`agentplane.allegedly.works/use-action-service` so one object serves both surfaces, and express every
-substitution its own iron-proxy performs today as an `EgressCredential` with its exact targets.
-`_substitutions()` in `cluster/cdk8s/public_coder_proxy.py` is the roster; its Haku Console bearer
-is also what kubectl presents to Haku's Kubernetes API proxy. An unsubstituted placeholder reaches
-the upstream inert, so a missed credential loses that destination silently rather than failing
-loudly.
+**Remaining configuration:** add
+`agentplane.allegedly.works/use-action-service: "true"` to the existing `openclaw` ServiceAccount.
+The Deployment already uses that account; its egress sidecar, binding, and credential substitutions
+are configured.
 
-Its own clock: configuration against a mechanism that already exists, needing no Action Service
-change. Adopting the egress sidecar in the OpenClaw Pod belongs here too, since it replaces the
-dedicated proxy with the central engine.
+The label admits the account only to an Action Service instance that watches the
+`public-coder-agent` namespace. Namespace admission and ActionPolicyBindings belong with that
+instance; the egress production cutover and behavior proof remain in `PC_EGRESS`.
 
 ### `PC_EGRESS` — public-coder-agent egress migration
 
@@ -617,10 +614,10 @@ Agentplane instance. Preserve the current public-coder configuration as the star
 wide-open egress and the small set of substituted tokens are intentional inputs to the migration,
 not an invitation to redesign policy in this milestone.
 
-**Needed support:** deploy and operate the production Agentplane egress instance, express the
-public-coder destination rules and token substitutions in its reviewed configuration, and provide
-the required ServiceAccount, network policy, routing, and secret wiring. Compare effective behavior
-against the existing path before cutover; do not infer equivalence from source configuration alone.
+**Needed support:** deploy and operate the production Agentplane egress instance, point the existing
+OpenClaw sidecar at it, and provide the required network policy, routing, and secret wiring. Compare
+effective behavior against the existing path before cutover; do not infer equivalence from source
+configuration alone.
 
 **What already exists**, read from the repository rather than assumed, because this milestone is
 smaller than its description implies:
@@ -637,24 +634,17 @@ smaller than its description implies:
   public-coder is allowed to do today is not established here; the ported ones are a starting point
   to diff against, not a finished policy.
 
-**The gap is configuration, not identity.** Egress and the Action Service both authenticate a
-Pod-bound ServiceAccount token and stop at the account it names, whatever owns the Pod
-(`workload_auth/principal.py`, behind `egress/identity.py` and `action_service/caller_auth.py`),
-and on each a binding naming that account is the grant (`BindingSpec.subjects` in
-`egress/resources.py`, `subject` in `action_service/policies/resources.py`). So public-coder being a
-plain Deployment running OpenClaw stands in the way of neither surface: what it lacks is the
-dedicated, labelled ServiceAccount of `PC_EGRESS_CREDENTIALS`, in a namespace both services accept
-bearers from, and the bindings naming it. The app Pod runs as `default` today; only the sshpiper
-Deployment names an account. Give the new one to exactly this workload and never reuse it: a
-subject is every Pod running as that account, and the token's Pod binding is all that stands
-between it and replay from elsewhere in the cluster.
+**The workload identity and sidecar are already configured.** The Deployment uses its dedicated
+`openclaw` ServiceAccount, and its egress binding names that account. `PC_EGRESS_CREDENTIALS` adds
+the missing Action Service caller label. Any Action Service instance serving this workload must
+also watch `public-coder-agent` and have reviewed bindings; the current staging service watches only
+`agentplane-staging`.
 
-**The sidecar replaces the per-agent proxy.** Egress already ships a sidecar: a loopback listener
-in the Pod that the workload speaks ordinary HTTP proxy to, forwarding every request and CONNECT to
-the central proxy with `Proxy-Authorization: Bearer <token>` added from the Pod's projected
-ServiceAccount token. It holds no credential and never looks inside a tunnel (`egress/sidecar.py`).
-Putting that in the OpenClaw Pod replaces `public-coder-agent-proxy` outright, and moves
-substitution from a per-agent iron-proxy config to the one central engine.
+The OpenClaw Pod already has the egress sidecar, which forwards through a loopback HTTP proxy using
+its projected ServiceAccount token (`egress/sidecar.py`). It currently targets
+`agentplane-staging`; point it at the dedicated production instance and prove the behavior before
+cutover. The devbox deliberately remains on Iron, so retiring the OpenClaw path must preserve the
+proxy service it still uses.
 
 When it is scheduled, diff what public-coder would gain and lose against Console's tool set, which
 for this agent is only `grants` (`cluster/cdk8s/haku/console_config.py`): the staging Action Service
@@ -668,21 +658,19 @@ in-flight work. Run the real devbox/agent acceptance through the new path, retai
 rules and token-boundary evidence, then cut over with a reversible rollback window. This milestone is
 an egress migration, not permission to widen the stable configuration.
 
-**What retirement covers.** "The old `haku-console` / `iron-proxy` path" names three separate things,
-and only the first is this milestone's to delete. Inventory taken from the repository, not from
-running cluster state, so re-check before deleting anything.
+**What retirement covers.** The OpenClaw cutover must leave the devbox's Iron path intact. Retire
+only OpenClaw-specific dependencies; split or preserve shared proxy resources. Inventory taken
+from the repository, not from running cluster state, so re-check before deleting anything.
 
 _Retire, once the production path is proven and rollback is available:_
 
-- `cluster/cdk8s/public_coder_proxy.py` and everything it renders into
-  `cluster/k8s/agents/public-coder-agent/proxy/` — the dedicated iron-proxy for this agent, which is
-  an OpenClaw instance (`git.allegedly.works/ducktape-ci/public-coder-agent`, configured by
-  `cluster/cdk8s/public_coder_agent_config.py`); the proxy is what lets it hold placeholders instead
-  of real credentials. It renders the Deployment, Service, `iron.yaml` substitution rules, the
-  `public-coder-agent-proxy-root-ca` Certificate and its trust Bundle, the ingress and egress
-  CiliumNetworkPolicies and the ExternalSecrets; `proxy/image-pins/` beside them is hand-written.
-  One of those ExternalSecrets, `forgejo-images-creds`, is also the agent Deployment's and the
-  namespace `default` ServiceAccount's image pull secret: move it, don't delete it.
+- OpenClaw's dependency on `cluster/cdk8s/public_coder_proxy.py` and the generated resources under
+  `cluster/k8s/agents/public-coder-agent/proxy/`. The Deployment and Service still provide the Iron
+  path used by the devbox, so this milestone cannot delete that shared path wholesale. Split or
+  preserve the devbox's proxy, CA trust, substitution rules, policies, and ExternalSecrets while
+  removing only what OpenClaw no longer needs; `proxy/image-pins/` beside them is hand-written.
+  `forgejo-images-creds` also supplies image pulls for the app Deployment and namespace `default`
+  ServiceAccount: move it if its current owner is removed, don't delete it.
 - The placeholder contract in `cluster/cdk8s/public_coder_agent_config.py`: the agent is handed the
   placeholder of every credential the proxy substitutes (`public_coder_proxy`'s `*_PLACEHOLDER`
   constants) and told the contract, because only the sibling proxy performs the swap. Whatever
