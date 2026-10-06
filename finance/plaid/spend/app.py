@@ -16,7 +16,7 @@ from fastapi import Depends, FastAPI, HTTPException, Request, status
 from fastapi.responses import FileResponse, Response, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 
-from finance.plaid.spend.models import SpendConfiguration, SpendConfigurationView, SpendView, load_configuration
+from finance.plaid.spend.models import SpendConfigurationView, SpendView, load_configuration
 from finance.plaid.spend.service import SpendService
 from finance.plaid.spend.settings import SpendSettings
 from mcp_infra.oidc_principal import (

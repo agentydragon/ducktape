@@ -19,6 +19,7 @@ python314Packages.buildPythonApplication {
     dbus-next
     httpx
     pydantic
+    pyyaml
   ];
   pythonImportsCheck = [
     "finance.plaid.spend.desktop.cli"

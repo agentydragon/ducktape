@@ -81,9 +81,7 @@ def plaid_spend_policy(chart: Chart) -> Kustomization:
         chart,
         "plaid-spend-policy",
         KustomizationSpecSourceRef(
-            kind=KustomizationSpecSourceRefKind.GIT_REPOSITORY,
-            name="finance-agent",
-            namespace="ducktape-flux",
+            kind=KustomizationSpecSourceRefKind.GIT_REPOSITORY, name="finance-agent", namespace="ducktape-flux"
         ),
         path="./config/plaid-spend",
         interval="5m",

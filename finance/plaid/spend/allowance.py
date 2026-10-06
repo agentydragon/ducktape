@@ -161,8 +161,7 @@ def matches(
 
 
 def matches_fields(
-    fields: Mapping[str, object] | object,
-    condition: NamePrefix | NameContains | CategoryExact | AmountExact | AllOf,
+    fields: Mapping[str, object] | object, condition: NamePrefix | NameContains | CategoryExact | AmountExact | AllOf
 ) -> bool:
     """Match policy conditions against a mapping or a runtime model object."""
 
