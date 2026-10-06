@@ -301,9 +301,9 @@
         "force": true,
         "expectVisible": [
           ".mantine-MultiSelect-input[data-expanded]",
-          "[role=\"option\"]:visible:text(\"harness-reviews\")"
+          "[role=\"option\"]:visible:has-text(\"harness-reviews\")"
         ],
-        "expectHidden": ["[role=\"option\"]:visible:text(\"public-coder\")"]
+        "expectHidden": ["[role=\"option\"]:visible:has-text(\"public-coder\")"]
       }
     ]
   },
@@ -319,9 +319,9 @@
         "force": true,
         "expectVisible": [
           ".mantine-MultiSelect-input[data-expanded]",
-          "[role=\"option\"]:visible:text(\"harness-reviews\")"
+          "[role=\"option\"]:visible:has-text(\"harness-reviews\")"
         ],
-        "expectHidden": ["[role=\"option\"]:visible:text(\"public-coder\")"]
+        "expectHidden": ["[role=\"option\"]:visible:has-text(\"public-coder\")"]
       }
     ]
   },
@@ -333,10 +333,10 @@
     "readySelectors": [".mantine-Pill-root"],
     "clicks": [
       {
-        "label": "Policies",
+        "label": "Egress policies",
         "force": true,
-        "expectVisible": [".mantine-MultiSelect-input[data-expanded]", "[role=\"option\"]:visible:text(\"pypi\")"],
-        "expectHidden": ["[role=\"option\"]:visible:text(\"github-public\")"]
+        "expectVisible": [".mantine-MultiSelect-input[data-expanded]", "[role=\"option\"]:visible:has-text(\"pypi\")"],
+        "expectHidden": ["[role=\"option\"]:visible:has-text(\"github-public\")"]
       }
     ]
   },
@@ -348,10 +348,10 @@
     "readySelectors": [".mantine-Pill-root"],
     "clicks": [
       {
-        "label": "Policies",
+        "label": "Egress policies",
         "force": true,
-        "expectVisible": [".mantine-MultiSelect-input[data-expanded]", "[role=\"option\"]:visible:text(\"pypi\")"],
-        "expectHidden": ["[role=\"option\"]:visible:text(\"github-public\")"]
+        "expectVisible": [".mantine-MultiSelect-input[data-expanded]", "[role=\"option\"]:visible:has-text(\"pypi\")"],
+        "expectHidden": ["[role=\"option\"]:visible:has-text(\"github-public\")"]
       }
     ]
   },
@@ -367,9 +367,9 @@
         "force": true,
         "expectVisible": [
           ".mantine-MultiSelect-input[data-expanded]",
-          "[role=\"option\"]:visible:text(\"config-read\")"
+          "[role=\"option\"]:visible:has-text(\"config-read\")"
         ],
-        "expectHidden": ["[role=\"option\"]:visible:text(\"workspace-read\")"]
+        "expectHidden": ["[role=\"option\"]:visible:has-text(\"workspace-read\")"]
       }
     ]
   },
@@ -385,9 +385,9 @@
         "force": true,
         "expectVisible": [
           ".mantine-MultiSelect-input[data-expanded]",
-          "[role=\"option\"]:visible:text(\"config-read\")"
+          "[role=\"option\"]:visible:has-text(\"config-read\")"
         ],
-        "expectHidden": ["[role=\"option\"]:visible:text(\"workspace-read\")"]
+        "expectHidden": ["[role=\"option\"]:visible:has-text(\"workspace-read\")"]
       }
     ]
   },
@@ -614,14 +614,14 @@
     "outputName": "sandbox-egress",
     "clicks": [
       {
-        "label": "Grant policies",
+        "label": "Grant egress policies",
         "force": true,
-        "expectVisible": [".mantine-MultiSelect-input[data-expanded]", "[role=\"option\"]:visible:text(\"pypi\")"]
+        "expectVisible": [".mantine-MultiSelect-input[data-expanded]", "[role=\"option\"]:visible:has-text(\"pypi\")"]
       },
       {
-        "selector": "[role=\"option\"]:visible:text(\"pypi\")",
-        "expectVisible": [".mantine-Pill-root:text(\"pypi\")", "[role=\"option\"]:visible:text(\"github-public\")"],
-        "expectHidden": ["[role=\"option\"]:visible:text(\"pypi\")"]
+        "selector": "[role=\"option\"]:visible:has-text(\"pypi\")",
+        "expectVisible": [".mantine-Pill-root:text(\"pypi\")", "[role=\"option\"]:visible:has-text(\"github-public\")"],
+        "expectHidden": ["[role=\"option\"]:visible:has-text(\"pypi\")"]
       }
     ]
   },
@@ -632,14 +632,14 @@
     "outputName": "sandbox-egress-phone",
     "clicks": [
       {
-        "label": "Grant policies",
+        "label": "Grant egress policies",
         "force": true,
-        "expectVisible": [".mantine-MultiSelect-input[data-expanded]", "[role=\"option\"]:visible:text(\"pypi\")"]
+        "expectVisible": [".mantine-MultiSelect-input[data-expanded]", "[role=\"option\"]:visible:has-text(\"pypi\")"]
       },
       {
-        "selector": "[role=\"option\"]:visible:text(\"pypi\")",
-        "expectVisible": [".mantine-Pill-root:text(\"pypi\")", "[role=\"option\"]:visible:text(\"github-public\")"],
-        "expectHidden": ["[role=\"option\"]:visible:text(\"pypi\")"]
+        "selector": "[role=\"option\"]:visible:has-text(\"pypi\")",
+        "expectVisible": [".mantine-Pill-root:text(\"pypi\")", "[role=\"option\"]:visible:has-text(\"github-public\")"],
+        "expectHidden": ["[role=\"option\"]:visible:has-text(\"pypi\")"]
       }
     ]
   },
