@@ -21,7 +21,7 @@ from agentplane.app.threads.sessions import SandboxSessions
 from agentplane.app.threads.view.content import ContentStore
 from agentplane.protocol import command_pb2, event_log_pb2
 from agentplane.runner import protocol_pb2
-from agentplane.runner.conftest import RunnerHandle
+from agentplane.runner.testing.fixtures import RunnerHandle
 from agentplane.runner.testing.scripted_model import ScriptedModel, Text
 from agentplane.sandbox_service.client import Attachment, ReconnectRequiredError, ServiceError
 from agentplane.sandbox_service.testing.kubernetes import SANDBOX, Cluster, authenticated_service, kubernetes

@@ -49,10 +49,10 @@ from agentplane.app.threads.view.views import ThreadOperationalState
 from agentplane.protocol import command_pb2, event_log_pb2, event_pb2
 from agentplane.runner import protocol_pb2, service
 from agentplane.runner.client import RunnerClient
-from agentplane.runner.conftest import RunnerClientFactory, RunnerHandle
 from agentplane.runner.errors import RunnerError, StreamClosedError
 from agentplane.runner.harness import Harness
 from agentplane.runner.session import Session
+from agentplane.runner.testing.fixtures import RunnerClientFactory, RunnerHandle
 from agentplane.runner.testing.scripted_model import ScriptedModel, ShellCall, Text
 from agentplane.sandbox_service.client import Attachment, SandboxServiceClient
 from agentplane.sandbox_service.testing.backend import Endpoint, seed_runner

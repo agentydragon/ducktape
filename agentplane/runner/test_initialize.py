@@ -10,8 +10,8 @@ import pytest_bazel
 
 from agentplane.runner import protocol_pb2
 from agentplane.runner.config import RunnerConfig
-from agentplane.runner.conftest import RunnerClientFactory
 from agentplane.runner.service import serve
+from agentplane.runner.testing.fixtures import RunnerClientFactory
 
 # The generated protocol stubs' own stub chain, which the mypy aspect resolves for direct deps only.
 # gazelle:include_dep @pypi//protobuf

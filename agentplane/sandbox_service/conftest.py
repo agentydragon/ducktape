@@ -6,7 +6,7 @@ from typing import cast
 import pytest
 from kubernetes_asyncio import client as k8s_client
 
-from agentplane.runner.conftest import client, config, endpoint, harness, model, runner, spec, workspace
+from agentplane.runner.testing.fixtures import client, config, endpoint, harness, model, runner, spec, workspace
 from agentplane.sandbox_service.egress import EgressInventory
 from agentplane.sandbox_service.inventory import SandboxInventory
 from agentplane.sandbox_service.testing.fake_inventory import (

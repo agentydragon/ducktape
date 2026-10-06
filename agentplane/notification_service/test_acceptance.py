@@ -16,11 +16,11 @@ from sqlalchemy.ext.asyncio import AsyncEngine
 from agentplane.action_service.api import create_app as actions_app
 from agentplane.action_service.auth import DisabledOperatorAuthenticator
 from agentplane.action_service.catalog import ActionCatalog
-from agentplane.action_service.conftest import RecordingExecutor
 from agentplane.action_service.db import ActionStore, make_sessionmaker
 from agentplane.action_service.models import DecisionInput, OperatorPrincipal, Verdict
 from agentplane.action_service.service import ActionService
 from agentplane.action_service.test_fixtures.callers import admitted_callers
+from agentplane.action_service.test_fixtures.fixtures import RecordingExecutor
 from agentplane.action_service.updates import ActionUpdates
 from agentplane.notification_service.api import create_app
 from agentplane.notification_service.db import Inbox
@@ -30,7 +30,7 @@ from agentplane.notification_service.sources.actions import Actions
 from agentplane.notification_service.store import Store
 from agentplane.protocol import command_pb2, event_log_pb2
 from agentplane.runner import protocol_pb2
-from agentplane.runner.conftest import RunnerHandle
+from agentplane.runner.testing.fixtures import RunnerHandle
 from agentplane.runner.testing.scripted_model import ScriptedModel, Text
 from agentplane.sandbox_service.client import Runner
 from agentplane.sandbox_service.instructions import render_platform_instructions

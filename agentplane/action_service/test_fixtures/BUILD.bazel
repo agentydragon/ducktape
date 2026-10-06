@@ -25,6 +25,30 @@ py_library(
 )
 
 py_library(
+    name = "fixtures",
+    srcs = ["fixtures.py"],
+    deps = [
+        ":lifecycle",
+        "//agentplane/action_service:catalog",
+        "//agentplane/action_service:database_migrate",
+        "//agentplane/action_service:db",
+        "//agentplane/action_service:mcp_executor",
+        "//agentplane/action_service:models",
+        "//agentplane/action_service/github_policy:visibility",
+        "//mcp_infra/testing:remote_server",
+        "//util/testing:postgres",
+        "@pypi//asyncpg",
+        "@pypi//fastmcp_slim",
+        "@pypi//httpx",
+        "@pypi//psycopg",
+        "@pypi//pytest",
+        "@pypi//sqlalchemy",
+        "@pypi//starlette",
+        "@pypi//testcontainers",
+    ],
+)
+
+py_library(
     name = "oauth_mcp_server",
     srcs = ["oauth_mcp_server.py"],
     deps = [

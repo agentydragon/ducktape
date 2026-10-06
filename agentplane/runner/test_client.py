@@ -12,8 +12,8 @@ import pytest_bazel
 from agentplane.protocol import event_log_pb2
 from agentplane.runner import protocol_pb2
 from agentplane.runner.client import Attachment
-from agentplane.runner.conftest import RunnerClientFactory
 from agentplane.runner.errors import OpenTimeoutError
+from agentplane.runner.testing.fixtures import RunnerClientFactory
 from agentplane.runner.testing.unanswering_runner import UnansweringRunner
 
 # The generated protocol stubs' own stub chain, which the mypy aspect resolves for direct deps only.

@@ -14,7 +14,6 @@ from sqlalchemy.exc import DBAPIError
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession
 
 from agentplane.action_service.catalog import ActionCatalog, ActionIdentity
-from agentplane.action_service.conftest import RecordingExecutor
 from agentplane.action_service.connections import (
     ConnectionAuthority,
     Grant,
@@ -48,6 +47,7 @@ from agentplane.action_service.policy_evaluation import PROVIDER_NAME, PolicySet
 from agentplane.action_service.providers import DecisionContext
 from agentplane.action_service.service import ActionService
 from agentplane.action_service.test_fixtures.callers import OTHER, PERSONAL, admitted_callers, in_sync_index
+from agentplane.action_service.test_fixtures.fixtures import RecordingExecutor
 from agentplane.subjects import ServiceAccountRef
 
 ISSUER = "https://actions.example.test"
