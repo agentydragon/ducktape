@@ -1277,7 +1277,7 @@ function streamingInterleavedRows(threadId: string): Record<string, unknown>[] {
   appendRun("small-run-2", 3, 2);
   appendAssistantText(
     "streaming-response-4",
-    "Understood — the rule belongs in basic, and the separate Kubernetes policy should be removed with it. I'll make the change and verify the result.\n\n```python\nanswer = \"ready\"\nprint(answer)",
+    'Understood — the rule belongs in basic, and the separate Kubernetes policy should be removed with it. I\'ll make the change and verify the result.\n\n```python\nanswer = "ready"\nprint(answer)',
     true
   );
   rows.unshift(viewState(cursor - 1, activeTurn));
