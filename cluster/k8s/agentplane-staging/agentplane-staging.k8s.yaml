@@ -4753,6 +4753,17 @@ data:
             url: http://google-mcp.google-mcp.svc.cluster.local:8080/calendar/mcp
             auth: static_bearer
             bearer_file: /run/secrets/google-mcp/bearer-token
+      pixel6:
+        title: Pixel 6
+        description: Pixel 6 screen and app controls through Android Accessibility; Actions require operator approval.
+        executor:
+          kind: mcp
+          description: Android Remote Control MCP app running on the Pixel 6 over Nebula.
+          config:
+            transport: streamable-http
+            url: http://10.42.0.50:8080/mcp
+            auth: static_bearer
+            bearer_file: /run/secrets/pixel6-mcp/bearer-token
 immutable: false
 ---
 apiVersion: apps/v1
@@ -4760,7 +4771,7 @@ kind: Deployment
 metadata:
   annotations:
     configmap.reloader.stakater.com/reload: agentplane-actions-settings
-    secret.reloader.stakater.com/reload: agentplane-mcp-oauth,haku-console-github-mcp-client-credentials,agentplane-staging-web-push-vapid,ssh-mcp-client-bearer,ha-mcp-client-bearer,tana-agentydragon-gmail-com-account-pat,google-mcp-bearer
+    secret.reloader.stakater.com/reload: agentplane-mcp-oauth,haku-console-github-mcp-client-credentials,agentplane-staging-web-push-vapid,ssh-mcp-client-bearer,ha-mcp-client-bearer,tana-agentydragon-gmail-com-account-pat,google-mcp-bearer,pixel6-mcp-bearer
   labels:
     app.kubernetes.io/name: agentplane-actions
   name: agentplane-actions
@@ -4898,6 +4909,9 @@ spec:
             - mountPath: /run/secrets/google-mcp
               name: secret-google-mcp-bearer
               readOnly: true
+            - mountPath: /run/secrets/pixel6-mcp
+              name: secret-pixel6-mcp-bearer
+              readOnly: true
       dnsPolicy: ClusterFirst
       hostNetwork: false
       imagePullSecrets:
@@ -5027,6 +5041,12 @@ spec:
               - key: bearer-token
                 path: bearer-token
             secretName: google-mcp-bearer
+        - name: secret-pixel6-mcp-bearer
+          secret:
+            items:
+              - key: bearer-token
+                path: bearer-token
+            secretName: pixel6-mcp-bearer
 ---
 apiVersion: v1
 kind: Service
@@ -5174,6 +5194,12 @@ spec:
         - matchLabels:
             app.kubernetes.io/name: google-mcp
             k8s:io.kubernetes.pod.namespace: google-mcp
+      toPorts:
+        - ports:
+            - port: "8080"
+              protocol: TCP
+    - toCIDR:
+        - 10.42.0.50/32
       toPorts:
         - ports:
             - port: "8080"
