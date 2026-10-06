@@ -299,7 +299,6 @@
       {
         "label": "Action policy sets",
         "force": true,
-        "press": "ArrowDown",
         "expectVisible": ["[role=\"option\"]:visible:text(\"harness-reviews\")"],
         "expectHidden": ["[role=\"option\"]:visible:text(\"public-coder\")"]
       }
@@ -315,7 +314,6 @@
       {
         "label": "Action policy sets",
         "force": true,
-        "press": "ArrowDown",
         "expectVisible": ["[role=\"option\"]:visible:text(\"harness-reviews\")"],
         "expectHidden": ["[role=\"option\"]:visible:text(\"public-coder\")"]
       }
@@ -331,7 +329,6 @@
       {
         "label": "Policies",
         "force": true,
-        "press": "ArrowDown",
         "expectVisible": ["[role=\"option\"]:visible:text(\"pypi\")"],
         "expectHidden": ["[role=\"option\"]:visible:text(\"github-public\")"]
       }
@@ -347,7 +344,6 @@
       {
         "label": "Policies",
         "force": true,
-        "press": "ArrowDown",
         "expectVisible": ["[role=\"option\"]:visible:text(\"pypi\")"],
         "expectHidden": ["[role=\"option\"]:visible:text(\"github-public\")"]
       }
@@ -363,7 +359,6 @@
       {
         "label": "Kubernetes grants",
         "force": true,
-        "press": "ArrowDown",
         "expectVisible": ["[role=\"option\"]:visible:text(\"config-read\")"],
         "expectHidden": ["[role=\"option\"]:visible:text(\"workspace-read\")"]
       }
@@ -379,7 +374,6 @@
       {
         "label": "Kubernetes grants",
         "force": true,
-        "press": "ArrowDown",
         "expectVisible": ["[role=\"option\"]:visible:text(\"config-read\")"],
         "expectHidden": ["[role=\"option\"]:visible:text(\"workspace-read\")"]
       }
@@ -610,7 +604,6 @@
       {
         "label": "Grant policies",
         "force": true,
-        "press": "ArrowDown",
         "expectVisible": ["[role=\"option\"]:visible:text(\"pypi\")"]
       },
       {
@@ -629,7 +622,6 @@
       {
         "label": "Grant policies",
         "force": true,
-        "press": "ArrowDown",
         "expectVisible": ["[role=\"option\"]:visible:text(\"pypi\")"]
       },
       {

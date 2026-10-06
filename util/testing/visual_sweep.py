@@ -278,12 +278,19 @@ async def capture_scenario(
         for click in scenario.clicks:
             if click.selector is not None:
                 target = page.locator(click.selector)
+                press_target = target
             else:
                 assert click.label is not None
-                target = page.get_by_role("combobox", name=click.label, exact=True)
+                press_target = page.get_by_role("combobox", name=click.label, exact=True)
+                # Mantine's MultiSelect opens from its PillsInput wrapper's click handler; its
+                # labelled combobox input is read-only (and can be visually hidden).
+                target = press_target.locator(
+                    "xpath=ancestor::div[contains(concat(' ', normalize-space(@class), ' '), "
+                    "' mantine-MultiSelect-input ')][1]"
+                )
             await target.click(force=click.force, timeout=timeout_ms)
             if click.press is not None:
-                await target.press(click.press, timeout=timeout_ms)
+                await press_target.press(click.press, timeout=timeout_ms)
             await _wait_for_selectors(
                 page, page_errors, click.expect_visible, state="visible", context=output_name, timeout_ms=timeout_ms
             )
