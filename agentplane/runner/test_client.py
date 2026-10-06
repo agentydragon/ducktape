@@ -126,7 +126,7 @@ async def test_an_unanswered_open_fails_on_its_bound_and_cancels_the_call(
         monkeypatch.setattr(f"agentplane.runner.client.{name}", 1 if name == bound else 3600)
     wedged = UnansweringRunner()
     async with wedged.serve() as port:
-        client = RunnerClient.connect(f"127.0.0.1:{port}")
+        client = RunnerClient(grpc.aio.insecure_channel(f"127.0.0.1:{port}"))
         try:
             async with asyncio.timeout(10):
                 with pytest.raises(OpenTimeoutError, match="'test-unanswered'"):

@@ -3,13 +3,12 @@
 from __future__ import annotations
 
 import asyncio
-from collections.abc import Callable, Mapping
+from collections.abc import Callable
 from types import TracebackType
 from typing import Self
 
 import grpc
 
-from agentplane.grpc_options import grpc_channel_option_kvps
 from agentplane.protocol import command_pb2, event_log_pb2
 from agentplane.runner import protocol_pb2, protocol_pb2_grpc
 from agentplane.runner.errors import OpenTimeoutError, RunnerError, StreamClosedError
@@ -142,14 +141,6 @@ class RunnerClient:
         self._capture_history = capture_history
         self._channel = channel
         self._stub = protocol_pb2_grpc.RunnerStub(self._channel)
-
-    @classmethod
-    def connect(
-        cls, target: str, *, capture_history: bool = False, channel_options: Mapping[str, int | str] | None = None
-    ) -> Self:
-        """Create a client with a configured channel; direct construction accepts injected channels."""
-        channel = grpc.aio.insecure_channel(target, options=grpc_channel_option_kvps(channel_options))
-        return cls(channel, capture_history=capture_history)
 
     async def attach(
         self,

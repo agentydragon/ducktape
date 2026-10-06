@@ -369,6 +369,7 @@ py_test(
         "//util:net",
         "//util/testing:asgi",
         "//util/testing:undeclared_outputs",
+        "@pypi//grpcio",
         "@pypi//httpx",
         "@pypi//protobuf",
         "@pypi//pytest",

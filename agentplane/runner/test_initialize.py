@@ -25,7 +25,7 @@ async def test_initialize_executes_once_and_replays_its_output(tmp_path: Path) -
     state = tmp_path / "state"
     state.mkdir()
     server, runner, port = await serve(RunnerConfig(state_dir=state))
-    client = RunnerClient.connect(f"127.0.0.1:{port}")
+    client = RunnerClient(grpc.aio.insecure_channel(f"127.0.0.1:{port}"))
     script = "mkdir -p workspaces\nprintf 'ready\\n' | tee -a workspaces/public-coder-ready\n"
     try:
         first = await collect(client.initialize_events(script))
@@ -48,7 +48,7 @@ async def test_initialize_reconnect_replays_after_the_client_cursor(tmp_path: Pa
     state = tmp_path / "state"
     state.mkdir()
     server, runner, port = await serve(RunnerConfig(state_dir=state))
-    client = RunnerClient.connect(f"127.0.0.1:{port}")
+    client = RunnerClient(grpc.aio.insecure_channel(f"127.0.0.1:{port}"))
     script = "printf 'first\\n'\nwhile [ ! -f continue ]; do sleep 0.01; done\nprintf 'second\\n' >&2\n"
     try:
         disconnected = client.initialize_events(script)
@@ -75,7 +75,7 @@ async def test_initialized_sandbox_refuses_a_different_script_after_restart(tmp_
     state.mkdir()
     script = "printf 'first\\n' | tee -a initialized\n"
     first_server, first_runner, first_port = await serve(RunnerConfig(state_dir=state))
-    first_client = RunnerClient.connect(f"127.0.0.1:{first_port}")
+    first_client = RunnerClient(grpc.aio.insecure_channel(f"127.0.0.1:{first_port}"))
     try:
         await first_client.initialize(script)
     finally:
@@ -84,7 +84,7 @@ async def test_initialized_sandbox_refuses_a_different_script_after_restart(tmp_
         await first_server.stop(0)
 
     server, runner, port = await serve(RunnerConfig(state_dir=state))
-    client = RunnerClient.connect(f"127.0.0.1:{port}")
+    client = RunnerClient(grpc.aio.insecure_channel(f"127.0.0.1:{port}"))
     try:
         replayed = await collect(client.initialize_events(script))
         with pytest.raises(grpc.aio.AioRpcError) as changed_script:
@@ -105,7 +105,7 @@ async def test_failed_initialize_output_is_saved_and_the_same_script_may_be_retr
     state = tmp_path / "state"
     state.mkdir()
     server, runner, port = await serve(RunnerConfig(state_dir=state))
-    client = RunnerClient.connect(f"127.0.0.1:{port}")
+    client = RunnerClient(grpc.aio.insecure_channel(f"127.0.0.1:{port}"))
     script = "echo broken >&2\nexit 7\n"
     try:
         first = await collect(client.initialize_events(script))

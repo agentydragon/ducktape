@@ -12,6 +12,7 @@ from contextlib import suppress
 from dataclasses import dataclass
 from pathlib import Path
 
+import grpc
 import pytest
 import pytest_bazel
 
@@ -87,7 +88,7 @@ async def test_runner_shutdown_interrupts_setup_without_rerunning_it(
     spec: protocol_pb2.SessionSpec, start_runner: Callable[..., Awaitable[RunnerProcess]]
 ) -> None:
     first_runner = await start_runner()
-    first_client = RunnerClient.connect(first_runner.target, capture_history=True)
+    first_client = RunnerClient(grpc.aio.insecure_channel(first_runner.target), capture_history=True)
     first = await first_client.attach(
         "setup-interrupted", spec=spec, setup_script='printf "started\\n"; while :; do sleep 1; done'
     )
@@ -96,7 +97,7 @@ async def test_runner_shutdown_interrupts_setup_without_rerunning_it(
     await first_client.close()
 
     second_runner = await start_runner()
-    second_client = RunnerClient.connect(second_runner.target, capture_history=True)
+    second_client = RunnerClient(grpc.aio.insecure_channel(second_runner.target), capture_history=True)
     second = await second_client.attach("setup-interrupted", spec=spec)
     assert second.attached.setup_state == protocol_pb2.SETUP_STATE_INTERRUPTED
     await second.drain_until_end()
@@ -155,7 +156,7 @@ async def test_competing_runner_cannot_take_state_or_dispatch_before_replacement
     """A retained-state owner fences a contender until its native child is gone."""
     command_id = "fenced-replacement"
     first_runner = await start_runner(test_debug_checkpoint=("after-dispatch-planned", command_id))
-    client = RunnerClient.connect(first_runner.target, capture_history=True)
+    client = RunnerClient(grpc.aio.insecure_channel(first_runner.target), capture_history=True)
     first = await client.attach("writer-handoff-1", spec=spec)
     await first.send("handoff-seed", "Reply with exactly: HANDOFF_SEED_OK")
     await model.reply(await model.request(), Text("HANDOFF_SEED_OK"))
@@ -182,7 +183,7 @@ async def test_competing_runner_cannot_take_state_or_dispatch_before_replacement
     await client.close()
 
     replacement_runner = await start_runner()
-    client = RunnerClient.connect(replacement_runner.target, capture_history=True)
+    client = RunnerClient(grpc.aio.insecure_channel(replacement_runner.target), capture_history=True)
     replacement = await client.attach("writer-handoff-1", spec=spec, after_cursor=checkpoint.cursor)
     lost = await replacement.until(events.is_kind("harness_lost"))
     # The checkpoint pauses command dispatch, not the independent native-output reader.
@@ -303,7 +304,7 @@ async def test_runner_sigkill_fences_an_active_native_group_before_successor_dis
 ) -> None:
     """A successor cannot dispatch while the killed runner's native harness awaits upstream."""
     first_runner = await start_runner()
-    client = RunnerClient.connect(first_runner.target, capture_history=True)
+    client = RunnerClient(grpc.aio.insecure_channel(first_runner.target), capture_history=True)
     first = await client.attach("writer-handoff-active", spec=spec)
     await first.send("active-before-crash", "Reply with exactly: ACTIVE_FENCE_OK")
     active_request = await model.request()
@@ -330,7 +331,7 @@ async def test_runner_sigkill_fences_an_active_native_group_before_successor_dis
     await client.close()
 
     replacement_runner = await start_runner()
-    client = RunnerClient.connect(replacement_runner.target, capture_history=True)
+    client = RunnerClient(grpc.aio.insecure_channel(replacement_runner.target), capture_history=True)
     recovered = await client.attach("writer-handoff-active", after_cursor=first.cursor)
     await recovered.until(events.is_kind("harness_lost"))
     await recovered.drain_until_end()
@@ -352,7 +353,7 @@ async def test_a_restarted_runner_reports_the_loss_and_resumes_the_conversation(
     start_runner: Callable[[], Awaitable[RunnerProcess]], model: ScriptedModel, spec: protocol_pb2.SessionSpec
 ) -> None:
     first_runner = await start_runner()
-    client = RunnerClient.connect(first_runner.target, capture_history=True)
+    client = RunnerClient(grpc.aio.insecure_channel(first_runner.target), capture_history=True)
     async with await client.attach("restart-1", spec=spec) as first:
         await first.send("input-1", "Reply with exactly: SEED_OK")
         request = await model.request()
@@ -363,7 +364,7 @@ async def test_a_restarted_runner_reports_the_loss_and_resumes_the_conversation(
     await first_runner.crash(harness_pids)
 
     second_runner = await start_runner()
-    client = RunnerClient.connect(second_runner.target, capture_history=True)
+    client = RunnerClient(grpc.aio.insecure_channel(second_runner.target), capture_history=True)
     second = await client.attach("restart-1", spec=spec, after_cursor=first.cursor)
     lost = await second.until(events.is_kind("harness_lost"))
     started = await second.until(events.is_kind("harness_started"))
@@ -394,7 +395,7 @@ async def test_crash_after_runner_receipt_before_native_dispatch_retries_once(
     """
     command_id = "retry-after-receipt"
     first_runner = await start_runner(test_debug_checkpoint=("after-dispatch-planned", command_id))
-    client = RunnerClient.connect(first_runner.target, capture_history=True)
+    client = RunnerClient(grpc.aio.insecure_channel(first_runner.target), capture_history=True)
     first = await client.attach("restart-retry-1", spec=spec)
     # Both native harnesses make a durable resume point only after one completed turn. This is the
     # normal target for a later command and keeps the crash test about command recovery, not a
@@ -417,7 +418,7 @@ async def test_crash_after_runner_receipt_before_native_dispatch_retries_once(
     # The first process is dead; the successor sees the persisted checkpoint and issues the one
     # native command. The upstream has seen no request at the first checkpoint.
     second_runner = await start_runner()
-    client = RunnerClient.connect(second_runner.target, capture_history=True)
+    client = RunnerClient(grpc.aio.insecure_channel(second_runner.target), capture_history=True)
     second = await client.attach("restart-retry-1", spec=spec, after_cursor=first.cursor)
     request = await model.request()
     assert request.user_texts[-1] == "Reply with exactly: RETRIED_ONCE_OK"
@@ -439,7 +440,7 @@ async def test_crash_after_terminal_effect_persists_replays_that_effect(
     # This case needs only the real harness/runner protocol path; let dispatch proceed to the
     # native confirmation gate, then crash after its atomic command/Event commit.
     first_runner = await start_runner(test_debug_checkpoint=("after-terminal-outcome", command_id))
-    client = RunnerClient.connect(first_runner.target, capture_history=True)
+    client = RunnerClient(grpc.aio.insecure_channel(first_runner.target), capture_history=True)
     first = await client.attach("restart-effect-1", spec=spec)
     await first.send("seed-before-effect", "Reply with exactly: EFFECT_SEED_OK")
     seed_request = await model.request()
@@ -470,7 +471,7 @@ async def test_crash_after_terminal_effect_persists_replays_that_effect(
     await client.close()
 
     second_runner = await start_runner()
-    client = RunnerClient.connect(second_runner.target, capture_history=True)
+    client = RunnerClient(grpc.aio.insecure_channel(second_runner.target), capture_history=True)
     # Do not start a replacement harness here. This boundary proves the runner's own durable
     # event replay before a later continuation contract decides how to resume an interrupted native
     # turn; attaching without a spec is the protocol's diagnostic/replay path.
@@ -497,7 +498,7 @@ async def test_sigterm_stops_the_harness_cleanly_and_the_next_runner_resumes(
     start_runner: Callable[[], Awaitable[RunnerProcess]], model: ScriptedModel, spec: protocol_pb2.SessionSpec
 ) -> None:
     first_runner = await start_runner()
-    client = RunnerClient.connect(first_runner.target, capture_history=True)
+    client = RunnerClient(grpc.aio.insecure_channel(first_runner.target), capture_history=True)
     async with await client.attach("sigterm-1", spec=spec) as first:
         await first.send("input-1", "Reply with exactly: SEED_OK")
         await model.reply(await model.request(), Text("SEED_OK"))
@@ -513,7 +514,7 @@ async def test_sigterm_stops_the_harness_cleanly_and_the_next_runner_resumes(
     await first_runner.stop()
 
     second_runner = await start_runner()
-    client = RunnerClient.connect(second_runner.target, capture_history=True)
+    client = RunnerClient(grpc.aio.insecure_channel(second_runner.target), capture_history=True)
     (stopped,) = await client.list_sessions()
     assert stopped.harness_state == protocol_pb2.HARNESS_STATE_STOPPED
     assert stopped.last_cursor > first.cursor
@@ -539,7 +540,7 @@ async def test_a_reasoning_item_cut_off_by_a_harness_kill_is_reported_absent_and
     start_runner: Callable[[], Awaitable[RunnerProcess]], model: ScriptedModel, spec: protocol_pb2.SessionSpec
 ) -> None:
     first_runner = await start_runner()
-    client = RunnerClient.connect(first_runner.target, capture_history=True)
+    client = RunnerClient(grpc.aio.insecure_channel(first_runner.target), capture_history=True)
     first = await client.attach("cut-off-reasoning-1", spec=spec)
     await first.send("input-1", "Reply with exactly: SEED_OK")
     await model.hold_after_first_delta(await model.request(), Reasoning("CUT_OFF_THOUGHT"))
@@ -550,7 +551,7 @@ async def test_a_reasoning_item_cut_off_by_a_harness_kill_is_reported_absent_and
     await client.close()
 
     second_runner = await start_runner()
-    client = RunnerClient.connect(second_runner.target, capture_history=True)
+    client = RunnerClient(grpc.aio.insecure_channel(second_runner.target), capture_history=True)
     second = await client.attach("cut-off-reasoning-1", spec=spec, after_cursor=first.cursor)
     await second.until(events.is_kind("harness_started"))
     # The reconciliation the resumed harness makes is the last word on the lost turn's items.
