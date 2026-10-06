@@ -39,10 +39,10 @@ bbr test //agentplane/app/...
   fields.
 - Sandbox provisioning, grants, and runner control are owned by `../sandbox_service/` and reached
   through its authenticated gRPC client. The app retains read-only Kubernetes projections for UI updates.
-- `egress.py`: read-only policy/binding projections for the UI, with mutations delegated to Sandbox
+- `egress.py`: read-only egress-policy/binding projections for the UI, with mutations delegated to Sandbox
   Service. Bindings remain desired-state grants, with expiry/revocation per binding and Flux-owned
   bindings protected from app revocation ([composition](../docs/egress_composition.md)).
-  `decisions.py` reads the proxy's recent decisions; an unreachable proxy leaves policy views readable.
+  `decisions.py` reads the proxy's recent decisions; an unreachable proxy leaves egress-policy views readable.
 - `action_policy.py`: read-only binding views composed with Action Service's effective-policy answer.
   Launch grants and binding mutations belong to Sandbox Service, not this app or its preset catalog.
 - `threads/`: the app-owned PostgreSQL archive and presentation state for

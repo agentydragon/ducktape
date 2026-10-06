@@ -224,7 +224,8 @@ This spans API, proxy, protobuf, CRD, config, and storage contracts: update ever
 consumer, then regenerate OpenAPI/protobuf/CRD schemas and rendered cluster config as appropriate.
 The egress decision record persists `policy` in `egress_decision`;
 renaming that column needs a new migration. The `/egress/policies` route is already explicit. This PR
-takes the low-risk UI label and nearby description pass; the serialized field and storage renames
+clarifies the UI labels, nearby source descriptions, egress docs, protobuf field comments, and API
+schema descriptions without changing the wire field names. The serialized field and storage renames
 remain for the coordinated task.
 
 **Acceptance:** an audit finds no ambiguous generic policy names for egress policies across the

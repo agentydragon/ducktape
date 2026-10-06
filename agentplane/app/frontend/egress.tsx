@@ -332,7 +332,7 @@ export function EgressSection({ name, bindings }: { name: string; bindings: Bind
   const [decisions, setDecisions] = useState<Decision[] | null>(null);
   const [decisionsError, setDecisionsError] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  // The namespace's policies, and the ones picked to grant this sandbox next.
+  // The namespace's egress policies, and the ones picked to grant this sandbox next.
   const [egressPolicies, setEgressPolicies] = useState<string[]>([]);
   const [picked, setPicked] = useState<string[]>([]);
 
