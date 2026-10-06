@@ -28,6 +28,7 @@ type Allowance = components["schemas"]["AllowanceView"];
 type CardView = components["schemas"]["CardView"];
 type View = components["schemas"]["SpendView"];
 type SpendConfiguration = components["schemas"]["SpendConfigurationView"];
+type RuleCondition = components["schemas"]["Rule"]["condition"];
 
 function money(value: number | null | undefined, currency: string | null, exact = false): string {
   if (value == null || !Number.isFinite(value)) return "Unavailable";
