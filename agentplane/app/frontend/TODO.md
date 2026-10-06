@@ -17,6 +17,10 @@ a field a harness adds sends every such call to the JSON view while the tests st
 
 ## Thread view UX
 
+- **Give block Markdown clear one-line summaries**: `Markdown`'s `singleLine` mode makes lists,
+  tables, and blockquotes inline, but removes list markers and flattens table cells without visible
+  separators; a blockquote also loses its quote cue. Choose compact separators and markers that keep
+  these structures readable in reasoning previews, while leaving the expanded Markdown unchanged.
 - **Reasoning disclosure toggle with nothing behind it**: the reasoning branch of `EntityCard`'s body
   (`threads/thread_cards.tsx`) wraps a reasoning item's text in `LazyBody`'s `RetainedDisclosure` -- a
   `<details>` (`threads/retained_disclosures.tsx`) whose body is shown only once expanded, though the window reads it

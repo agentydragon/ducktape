@@ -1362,6 +1362,8 @@ function standaloneReasoningRows(
 ): Record<string, unknown>[] {
   const reasoning = codeFence
     ? [
+        "# Result",
+        "",
         "I checked the typed implementation and its returned value:",
         "",
         "```python",
