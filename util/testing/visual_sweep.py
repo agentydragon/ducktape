@@ -41,7 +41,7 @@ import pytest
 import pytest_asyncio
 import pytest_bazel
 from more_itertools import one
-from playwright.async_api import Page, Playwright, Route, async_playwright
+from playwright.async_api import Page, Playwright, Route, TimeoutError as PlaywrightTimeoutError, async_playwright
 from pydantic import JsonValue, TypeAdapter
 
 from util.bazel.runfiles import get_required_path
@@ -291,9 +291,28 @@ async def capture_scenario(
             await target.click(force=click.force, timeout=timeout_ms)
             if click.press is not None:
                 await press_target.press(click.press, timeout=timeout_ms)
-            await _wait_for_selectors(
-                page, page_errors, click.expect_visible, state="visible", context=output_name, timeout_ms=timeout_ms
-            )
+            try:
+                await _wait_for_selectors(
+                    page, page_errors, click.expect_visible, state="visible", context=output_name, timeout_ms=timeout_ms
+                )
+            except PlaywrightTimeoutError as error:
+                state = await page.evaluate(
+                    """() => ({
+                      multiSelects: [...document.querySelectorAll('.mantine-MultiSelect-input')].map(root => ({
+                        expanded: root.getAttribute('data-expanded'),
+                        input: root.querySelector('[role="combobox"]')?.outerHTML,
+                        options: [...root.querySelectorAll('[role="option"]')].map(option => ({
+                          text: option.textContent,
+                          visible: option.getBoundingClientRect().width > 0 && getComputedStyle(option).visibility === 'visible',
+                        })),
+                      })),
+                      visibleOptions: [...document.querySelectorAll('[role="option"]')]
+                        .filter(option => option.getBoundingClientRect().width > 0 && getComputedStyle(option).visibility === 'visible')
+                        .map(option => option.textContent),
+                    })"""
+                )
+                error.add_note(f"{output_name}: state after click: {state}")
+                raise
             await _wait_for_selectors(
                 page, page_errors, click.expect_hidden, state="hidden", context=output_name, timeout_ms=timeout_ms
             )
