@@ -869,12 +869,19 @@ applies; neither harness waits for the other's research to land its own proven c
 
 **Deferred interoperability improvement:** replace Agentplane's direct reads of Codex rollout
 records and their private format with documented app-server history APIs. Evaluate a metadata-only
-`thread/resume` followed by `thread/turns/list` and `thread/items/list` (or their supported stable
-equivalents); verify version and capability requirements and whether the returned fields support
-the existing retained / absent / revised / unknown decisions, including interrupted tool and
-reasoning items. Preserve command provenance and the rule that recovery never replays old side
-effects. Keep outcomes unknown where the public protocol cannot establish them, and record any
-upstream protocol gap instead of silently depending on internal rollout details.
+`thread/read` or `thread/resume` followed by `thread/turns/list` and `thread/items/list`; verify
+version and capability requirements, pagination support for the thread's history store, and whether
+the returned fields support the existing retained / absent / revised / unknown decisions, including
+interrupted tool and reasoning items. The current public docs describe both list methods as
+experimental, while the 0.152.0 and 0.156.1 protocol sources do not mark them experimental and the
+docs disagree about paginated-history availability; probe the exact runner version and history
+store before relying on either behavior. History items are Codex's persisted display projection, so
+an item missing from a page does not prove it is absent from raw model context or rollout records.
+Preserve command provenance and the rule that recovery never replays old side effects. Keep outcomes
+unknown where the public protocol cannot establish them, and record any upstream protocol gap
+instead of silently depending on internal rollout details.
+
+Current API findings: [Codex app-server history API investigation](../debug/codex_app_server_history_apis.md).
 
 This follow-up changes the source Agentplane uses for reconciliation. The `excludeTurns` resume
 request only avoids returning the full transcript in a single native response; current recovery
