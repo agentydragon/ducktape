@@ -39,11 +39,10 @@
 
 .agentplane-disclosure-collapse {
   position: sticky;
-  z-index: 3;
   box-sizing: border-box;
   display: flex;
   min-width: 0;
-  min-height: 2.25rem;
+  min-height: 2.75rem;
   align-items: center;
   justify-content: space-between;
   gap: var(--mantine-spacing-xs);
@@ -53,6 +52,13 @@
   border-radius: var(--mantine-radius-xs);
   background: var(--mantine-color-body);
   box-shadow: 0 2px 5px rgb(0 0 0 / 12%);
+}
+
+.agentplane-disclosure-collapse-button {
+  flex: 0 0 auto;
+  min-height: 2.75rem;
+  padding-inline: var(--mantine-spacing-md);
+  white-space: nowrap;
 }
 
 .agentplane-disclosure-collapse-label {

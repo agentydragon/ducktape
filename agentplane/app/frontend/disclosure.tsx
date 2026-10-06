@@ -1,9 +1,11 @@
 import { Accordion, Button } from "@mantine/core";
-import { createContext, type JSX, type ReactNode, useContext, useLayoutEffect, useRef, useState } from "react";
+import { createContext, type JSX, type ReactNode, useContext, useState } from "react";
 
 import "./disclosure.css";
 
-const DisclosureStickyOffset = createContext(0);
+// Nested sticky rows share one top slot. Deeper disclosures and their collapse controls paint over
+// ancestors instead of stacking another toolbar below each parent heading.
+const DisclosureDepth = createContext(0);
 
 /** A sticky close affordance for expanded text that must stay mounted while clipped, such as a
  * command or tool output. */
@@ -20,23 +22,31 @@ export function StickyCollapseControl({
   onCollapse: () => void;
   className?: string;
 }): JSX.Element {
-  const top = useContext(DisclosureStickyOffset);
+  const depth = useContext(DisclosureDepth);
   return (
     <div
       className={`agentplane-disclosure-collapse${className ? ` ${className}` : ""}`}
       data-expanded={expanded}
-      style={{ top }}
+      data-label={label}
+      style={{
+        top: 0,
+        zIndex: 4 + depth,
+        // Cover the ancestor summary across its full width when this deeper action occupies the
+        // shared sticky slot; account for each panel inset and the enclosing Mantine card padding.
+        marginInline: depth > 0 ? `calc(var(--mantine-spacing-md) * -${depth} - var(--mantine-spacing-sm))` : undefined,
+      }}
     >
       <div className="agentplane-disclosure-collapse-label">{header ?? label}</div>
       {expanded && (
         <Button
           variant="subtle"
-          size="compact-xs"
+          size="sm"
+          className="agentplane-disclosure-collapse-button"
           aria-expanded={true}
           aria-label={`Collapse ${label}`}
           onClick={onCollapse}
         >
-          Collapse
+          Collapse {label}
         </Button>
       )}
     </div>
@@ -68,31 +78,16 @@ export function Disclosure({
   /** Keep hidden content mounted when the caller relies on native selection/copy behavior. */
   keepMounted?: boolean;
 }): JSX.Element {
-  const parentTop = useContext(DisclosureStickyOffset);
+  const depth = useContext(DisclosureDepth);
   const [localOpen, setLocalOpen] = useState(defaultOpen);
-  const [headerHeight, setHeaderHeight] = useState(0);
-  const headingRef = useRef<HTMLDivElement>(null);
   const expanded = open ?? localOpen;
   const setExpanded = (next: boolean) => {
     if (open === undefined) setLocalOpen(next);
     onOpenChange?.(next);
   };
 
-  useLayoutEffect(() => {
-    const heading = headingRef.current;
-    if (!heading) return;
-    const measure = () => {
-      const nextHeight = heading.getBoundingClientRect().height;
-      setHeaderHeight((current) => (Math.abs(current - nextHeight) < 0.5 ? current : nextHeight));
-    };
-    measure();
-    const observer = new ResizeObserver(measure);
-    observer.observe(heading);
-    return () => observer.disconnect();
-  }, []);
-
   return (
-    <DisclosureStickyOffset.Provider value={parentTop + headerHeight}>
+    <DisclosureDepth.Provider value={depth + 1}>
       <Accordion
         className={`agentplane-disclosure${className ? ` ${className}` : ""}`}
         transitionDuration={0}
@@ -110,10 +105,10 @@ export function Disclosure({
       >
         <Accordion.Item value="content" {...dataAttributes}>
           <div
-            ref={headingRef}
             className="agentplane-disclosure-heading"
             data-expanded={expanded}
-            style={{ top: parentTop }}
+            data-depth={depth}
+            style={{ top: 0, zIndex: 2 + depth + (expanded ? 1 : 0) }}
           >
             <Accordion.Control>{summary}</Accordion.Control>
             {summaryAside}
@@ -121,6 +116,6 @@ export function Disclosure({
           <Accordion.Panel>{(expanded || keepMounted) && children}</Accordion.Panel>
         </Accordion.Item>
       </Accordion>
-    </DisclosureStickyOffset.Provider>
+    </DisclosureDepth.Provider>
   );
 }

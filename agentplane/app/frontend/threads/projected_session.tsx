@@ -772,11 +772,12 @@ function VirtualizedHistory({
               data-thread-anchor={row.entities[0].cursor.toString()}
               ref={virtualizer.measureElement}
               style={{
+                // Keep rows in scroll-content coordinates so sticky disclosure descendants track
+                // the viewport instead of moving with a per-row transform.
                 position: "absolute",
-                top: 0,
+                top: item.start,
                 left: 0,
                 width: "100%",
-                transform: `translateY(${item.start}px)`,
                 paddingBottom: 4,
               }}
             >

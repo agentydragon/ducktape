@@ -1275,6 +1275,38 @@ async def test_opening_a_call_and_its_output_keeps_it_collapsible_while_reading(
     await expect(output_line).to_be_visible()
     await read_at(page, output_line, 0.5)
     await expect(collapse).to_be_in_viewport()
+    await expect(collapse).to_have_text("Collapse Output")
+    collapse_box = await collapse.bounding_box()
+    sticky_bar_box = await call.locator(
+        '.agentplane-clamped-block[data-label="Output"] > .agentplane-disclosure-collapse'
+    ).bounding_box()
+    run_heading_box = await run.locator(".agentplane-disclosure-heading").first.bounding_box()
+    history_box = await history.bounding_box()
+    assert collapse_box is not None
+    assert sticky_bar_box is not None
+    assert run_heading_box is not None
+    assert history_box is not None
+    assert collapse_box["height"] >= 44, f"collapse target is too short: {collapse_box}"
+    covers_heading_left = sticky_bar_box["x"] <= run_heading_box["x"] + 1
+    covers_heading_right = (
+        sticky_bar_box["x"] + sticky_bar_box["width"] >= run_heading_box["x"] + run_heading_box["width"] - 1
+    )
+    assert covers_heading_left, (
+        f"the active collapse bar should cover the summary's left edge: {sticky_bar_box=}, {run_heading_box=}"
+    )
+    assert covers_heading_right, (
+        f"the active collapse bar should cover the summary's right edge: {sticky_bar_box=}, {run_heading_box=}"
+    )
+    assert abs(collapse_box["y"] - history_box["y"]) <= 2, (
+        f"the active collapse control should use the history's top sticky slot: {collapse_box=} {history_box=}"
+    )
+    active_sticky_action = await page.evaluate(
+        """point => document.elementFromPoint(point.x, point.y)?.closest('button')?.getAttribute('aria-label')""",
+        {"x": collapse_box["x"] + collapse_box["width"] / 2, "y": collapse_box["y"] + collapse_box["height"] / 2},
+    )
+    assert active_sticky_action == "Collapse Output", (
+        f"another sticky row obscured the active action: {active_sticky_action}"
+    )
     await page.screenshot(path=undeclared_outputs_dir() / f"{request.node.name}-output-open.png")
     await collapse.click()
     await expect(show_all).to_be_visible()
