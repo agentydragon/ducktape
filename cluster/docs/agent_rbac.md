@@ -214,16 +214,16 @@ readers migrate to Flux-owned bindings as described below.
 
 The logical profiles are distinct from the transport identities:
 
-| Access path                                    | Logical profile / contract                                                                                                                       |
-| ---------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `haku:access-profile:public-coder` group       | Static public coder; equals managed `public-coder`                                                                                               |
-| `oidc-ksbx-groups:haku` group                  | Static Haku; checked independently                                                                                                               |
-| `haku:access-profile:haku` group               | Static Haku Console; checked independently                                                                                                       |
-| `haku-sandbox/haku` ServiceAccount             | Static Haku compute; checked independently                                                                                                       |
-| Managed `haku` preset                          | Includes public coder; matches each static Haku path, including the exact Coinbase grant below                                                   |
-| Managed `finance-agent` preset                 | Public coder permissions plus the exact Coinbase grant below; no static finance identity is implied                                              |
-| `agentplane-staging/claude-ai` ServiceAccount  | Separate legacy OAuth/Actions account: broad cluster diagnostics, labeled namespace readers, Coinbase read, and testing acceptance-token minting |
-| `agentplane-staging/haku-agent` ServiceAccount | Separate Actions account: testing acceptance-token minting, not the managed Haku preset                                                          |
+| Access path                                    | Logical profile / contract                                                                                                                               |
+| ---------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `haku:access-profile:public-coder` group       | Static public coder; equals managed `public-coder`                                                                                                       |
+| `oidc-ksbx-groups:haku` group                  | Static Haku; checked independently                                                                                                                       |
+| `haku:access-profile:haku` group               | Static Haku Console; checked independently                                                                                                               |
+| `haku-sandbox/haku` ServiceAccount             | Static Haku compute; checked independently                                                                                                               |
+| Managed `haku` preset                          | Includes public coder; matches each static Haku path, including the exact Coinbase grant below                                                           |
+| Managed `finance-agent` preset                 | Public coder permissions plus the exact Coinbase grant below; no static finance identity is implied                                                      |
+| `agentplane-staging/claude-ai` ServiceAccount  | Separate legacy OAuth/Actions account: broad cluster diagnostics, labeled namespace readers, Coinbase read, and testing acceptance-token minting         |
+| `agentplane-staging/haku-agent` ServiceAccount | Separate Actions account: testing acceptance-token minting, not the managed Haku preset                                                                  |
 | `public-coder-agent/openclaw` ServiceAccount   | Static OpenClaw Action caller; Action Service reads labeled ServiceAccount metadata here, while its policy binding and sets stay in `agentplane-staging` |
 
 **Intended relationship between the Haku and finance-agent presets.** Haku is the executive
