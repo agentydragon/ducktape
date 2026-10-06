@@ -50,8 +50,8 @@ historical Decision or invoking an executor. Revocation does not stop already cl
 An `ActionPolicySet` holds typed policies in `autoApproveIf`;
 an `ActionPolicyBinding` joins one subject -- a namespaced ServiceAccount, which is what a
 workload's Pod runs as and what an external Connection acts as -- to sets by name, optionally until
-`expiresAt`. Both are namespaced Kubernetes objects the service watches in configured policy
-namespaces. Labeled caller ServiceAccounts are watched independently in configured caller
+`expiresAt`. Both are namespaced Kubernetes objects the service watches in its configured policy
+namespace. Labeled caller ServiceAccounts are watched independently in configured caller
 namespaces, so a binding can target an account outside the policy namespace. The service reads
 `spec` only and reports in each object's `Ready` condition, stamped with the generation it judged,
 whether the spec parsed;

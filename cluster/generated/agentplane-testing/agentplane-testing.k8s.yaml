@@ -3106,8 +3106,7 @@ data:
       audience: agentplane-testing
       jwks_uri: https://agentplane-dex-testing.allegedly.works/dex/keys
       token_profile: dex
-    policy_namespaces:
-      - agentplane-testing
+    policy_namespace: agentplane-testing
     caller_service_account_namespaces:
       - agentplane-testing
     direct_wait_seconds: 30

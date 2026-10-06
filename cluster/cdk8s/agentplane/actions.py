@@ -133,28 +133,27 @@ class Actions(Construct):
             namespace=namespace,
         )
         # The runtime policy and caller watch scopes are independent. Keep the policy
-        # CR permissions in policy namespaces, and grant only ServiceAccount reads in
+        # CR permissions in the policy namespace, and grant only ServiceAccount reads in
         # caller namespaces. No Secrets or serviceaccounts/token permissions are needed.
-        rules_by_namespace: dict[str, list[RolePolicyRule]] = {namespace: []}
-        for policy_namespace in self.env.actions.settings.policy_namespaces:
-            rules_by_namespace.setdefault(policy_namespace, []).extend(
-                [
-                    RolePolicyRule(
-                        resources=[
-                            custom_resource("agentplane.allegedly.works", resource)
-                            for resource in ("actionpolicysets", "actionpolicybindings")
-                        ],
-                        verbs=["get", "list", "watch"],
-                    ),
-                    RolePolicyRule(
-                        resources=[
-                            custom_resource("agentplane.allegedly.works", resource)
-                            for resource in ("actionpolicysets/status", "actionpolicybindings/status")
-                        ],
-                        verbs=["patch"],
-                    ),
-                ]
-            )
+        policy_namespace = self.env.actions.settings.policy_namespace
+        rules_by_namespace: dict[str, list[RolePolicyRule]] = {
+            policy_namespace: [
+                RolePolicyRule(
+                    resources=[
+                        custom_resource("agentplane.allegedly.works", resource)
+                        for resource in ("actionpolicysets", "actionpolicybindings")
+                    ],
+                    verbs=["get", "list", "watch"],
+                ),
+                RolePolicyRule(
+                    resources=[
+                        custom_resource("agentplane.allegedly.works", resource)
+                        for resource in ("actionpolicysets/status", "actionpolicybindings/status")
+                    ],
+                    verbs=["patch"],
+                ),
+            ]
+        }
         for caller_namespace in self.env.actions.settings.caller_service_account_namespaces:
             rules_by_namespace.setdefault(caller_namespace, []).append(
                 RolePolicyRule(resources=[custom_resource("", "serviceaccounts")], verbs=["get", "list", "watch"])
@@ -164,7 +163,7 @@ class Actions(Construct):
         # namespace-wide and cannot say "only the boxes this Action made": that boundary is
         # the executor's own label check (agentplane/action_service/sandbox/inventory.py), which
         # is why it is an application rule tested as one rather than something RBAC states.
-        rules_by_namespace[namespace].extend(
+        rules_by_namespace.setdefault(namespace, []).extend(
             [
                 RolePolicyRule(
                     resources=[custom_resource("extensions.agents.x-k8s.io", "sandboxtemplates")], verbs=["get"]

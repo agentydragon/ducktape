@@ -4613,8 +4613,7 @@ data:
       issuer: https://auth.allegedly.works/application/o/agentplane-staging-actions/
       audience: agentplane-staging-actions
       jwks_uri: https://auth.allegedly.works/application/o/agentplane-staging-actions/jwks/
-    policy_namespaces:
-      - agentplane-staging
+    policy_namespace: agentplane-staging
     caller_service_account_namespaces:
       - agentplane-staging
     direct_wait_seconds: 30

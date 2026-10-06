@@ -104,7 +104,7 @@ _ACTION_FEDERATION = ExchangeFederationSettings(
 )
 _ACTIONS_SETTINGS = ActionServiceDeploymentSettings(
     operator_oidc=_FEDERATION_TARGET,
-    policy_namespaces=frozenset({_NAMESPACE}),
+    policy_namespace=_NAMESPACE,
     caller_service_account_namespaces=frozenset({_NAMESPACE}),
     direct_wait_seconds=30,
     max_wait_seconds=180,

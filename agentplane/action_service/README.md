@@ -407,7 +407,7 @@ transactionally if unexpected preexisting rows exist.
 `policies/resources` parses `ActionPolicySet` and `ActionPolicyBinding` (CRDs in
 `agentplane/crds/`) strictly: an unknown key or policy kind, an invalid JSON Schema, or
 a subject that is not a namespaced ServiceAccount makes the object an `InvalidResource`.
-`policy_informer` list-and-watches both kinds only in `policy_namespaces`, and labeled caller
+`policy_informer` list-and-watches both kinds only in `policy_namespace`, and labeled caller
 ServiceAccounts only in `caller_service_account_namespaces`, into one `PolicyIndex`. It writes each
 set's and binding's `Ready` condition with `observedGeneration`, so `kubectl get` shows a refused
 edit and a writer can wait for the service to have seen a spec change. The status subresource is
@@ -451,7 +451,7 @@ composition against a fake API server.
 ## Authentication boundaries
 
 `caller_service_account_namespaces` lists the Kubernetes namespaces whose labeled ServiceAccounts
-may authenticate callers. `policy_namespaces` lists where ActionPolicySets and ActionPolicyBindings
+may authenticate callers. `policy_namespace` names where ActionPolicySets and ActionPolicyBindings
 are read and their Ready statuses are written. These settings are independent: a binding in a policy
 namespace can name a ServiceAccount in another caller namespace. Neither setting approves Actions or
 selects an MCP destination.

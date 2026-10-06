@@ -111,7 +111,7 @@ class ActionServiceDeploymentSettings(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     operator_oidc: OperatorOidcSettings
-    policy_namespaces: frozenset[str]
+    policy_namespace: str
     caller_service_account_namespaces: frozenset[str]
     direct_wait_seconds: float = Field(
         ge=0,
@@ -157,9 +157,9 @@ class Settings(BaseSettings):
     port: int = 8080
     token_audience: str = "agentplane-egress"
     reader_accounts: frozenset[ServiceAccountRef] = frozenset()
-    policy_namespaces: frozenset[str] = Field(
-        default=frozenset({"agentplane-staging"}),
-        description="Kubernetes namespaces whose ActionPolicySets and ActionPolicyBindings this service watches; "
+    policy_namespace: str = Field(
+        default="agentplane-staging",
+        description="Kubernetes namespace whose ActionPolicySets and ActionPolicyBindings this service watches; "
         "it writes Ready conditions only on those objects.",
     )
     caller_service_account_namespaces: frozenset[str] = Field(
@@ -248,7 +248,7 @@ async def async_main(settings: Settings) -> None:
                 index=policy_index,
                 custom_objects=cast(CustomObjectsClient, CustomObjectsApi(api)),
                 core_v1=CoreV1Api(api),
-                policy_namespaces=settings.policy_namespaces,
+                policy_namespace=settings.policy_namespace,
                 caller_service_account_namespaces=settings.caller_service_account_namespaces,
                 resync_seconds=settings.policy_resync_seconds,
             ).run(),
