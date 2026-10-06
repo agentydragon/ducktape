@@ -48,7 +48,7 @@ from agentplane.action_service.models import CallerPrincipal, Executor, Operator
 from agentplane.action_service.oauth import ActionsOAuthProxy, OAuthSettings, running_oauth
 from agentplane.action_service.policy_informer import PolicyIndex
 from agentplane.action_service.service import ActionService
-from agentplane.action_service.test_fixtures.callers import OTHER, PERSONAL, admitted_callers
+from agentplane.action_service.testing.callers import OTHER, PERSONAL, admitted_callers
 from agentplane.action_service.updates import ActionUpdates
 from agentplane.subjects import ServiceAccountRef
 from agentplane.workload_auth.principal import WorkloadPrincipalRejectedError, WorkloadPrincipalResolver

@@ -26,7 +26,7 @@ from agentplane.action_service.mcp_linkage import (
 )
 from agentplane.action_service.models import OperatorPrincipal
 from agentplane.action_service.service import ActionService
-from agentplane.action_service.test_fixtures.callers import admitted_callers
+from agentplane.action_service.testing.callers import admitted_callers
 from agentplane.action_service.updates import ActionUpdates
 from agentplane.workload_auth.principal import WorkloadPrincipalResolver
 

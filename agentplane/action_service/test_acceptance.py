@@ -41,7 +41,7 @@ from agentplane.action_service.models import (
 from agentplane.action_service.policies.resources import parse_binding, parse_policy_set
 from agentplane.action_service.policy_view import SubjectActionPolicyView
 from agentplane.action_service.service import ActionService
-from agentplane.action_service.test_fixtures.callers import admitted_callers, in_sync_index
+from agentplane.action_service.testing.callers import admitted_callers, in_sync_index
 from agentplane.action_service.updates import ActionUpdates
 from agentplane.subjects import ServiceAccountRef
 from agentplane.workload_auth.principal import (

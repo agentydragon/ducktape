@@ -19,7 +19,7 @@ from agentplane.action_service.operator_oidc import (
     OperatorTokenProfile,
 )
 from agentplane.action_service.service import ActionService
-from agentplane.action_service.test_fixtures.callers import admitted_callers
+from agentplane.action_service.testing.callers import admitted_callers
 from agentplane.action_service.updates import ActionUpdates
 from agentplane.workload_auth.principal import WorkloadPrincipalResolver
 from util.net import bind_free_port

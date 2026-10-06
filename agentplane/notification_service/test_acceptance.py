@@ -19,8 +19,8 @@ from agentplane.action_service.catalog import ActionCatalog
 from agentplane.action_service.db import ActionStore, make_sessionmaker
 from agentplane.action_service.models import DecisionInput, OperatorPrincipal, Verdict
 from agentplane.action_service.service import ActionService
-from agentplane.action_service.test_fixtures.callers import admitted_callers
-from agentplane.action_service.test_fixtures.fixtures import RecordingExecutor
+from agentplane.action_service.testing.callers import admitted_callers
+from agentplane.action_service.testing.fixtures import RecordingExecutor
 from agentplane.action_service.updates import ActionUpdates
 from agentplane.notification_service.api import create_app
 from agentplane.notification_service.db import Inbox

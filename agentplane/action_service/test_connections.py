@@ -36,7 +36,7 @@ from agentplane.action_service.db import (
 from agentplane.action_service.models import ActionRequestInput, OperatorPrincipal, service_account_key
 from agentplane.action_service.policy_informer import PolicyIndex
 from agentplane.action_service.service import ActionService
-from agentplane.action_service.test_fixtures.callers import OTHER, PERSONAL, UNLABELED, admitted_callers
+from agentplane.action_service.testing.callers import OTHER, PERSONAL, UNLABELED, admitted_callers
 from agentplane.action_service.updates import ActionUpdates
 from agentplane.kubernetes_watch import Freshness
 from agentplane.subjects import ServiceAccountRef

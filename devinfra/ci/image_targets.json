@@ -254,8 +254,8 @@
       "registry": "forgejo"
     },
     "agentplane-oauth-fixture": {
-      "target": "//agentplane/action_service/test_fixtures:oauth_mcp_server_image",
-      "test": "//agentplane/action_service/test_fixtures/...",
+      "target": "//agentplane/action_service/testing:oauth_mcp_server_image",
+      "test": "//agentplane/action_service/testing/...",
       "registry": "forgejo"
     },
     "agentplane-sandbox-service": {

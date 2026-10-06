@@ -43,14 +43,14 @@ from agentplane.action_service.models import (
     Verdict,
 )
 from agentplane.action_service.service import ActionService, ExecutionOutcomeUnknownError
-from agentplane.action_service.test_fixtures.lifecycle import wait_available
+from agentplane.action_service.testing.lifecycle import wait_available
 from agentplane.subjects import ServiceAccountRef
 from util.bazel.runfiles import get_required_path
 
 CALLER = CallerPrincipal(account=ServiceAccountRef(namespace="agentplane-test", name="test-workload-a"))
 OPERATOR = OperatorPrincipal(issuer="test-bff", subject="operator")
 GROUP_KEY = "demo"
-FAKE_SERVER = "_main/agentplane/action_service/test_fixtures/fake_mcp_server.py"
+FAKE_SERVER = "_main/agentplane/action_service/testing/fake_mcp_server.py"
 
 
 def _group() -> ActionGroup:

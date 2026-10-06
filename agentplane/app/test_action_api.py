@@ -42,7 +42,7 @@ from agentplane.action_service.operator_oidc import OidcOperatorAuthenticator, O
 from agentplane.action_service.policies.resources import parse_binding, parse_policy_set
 from agentplane.action_service.policy_informer import PolicyIndex
 from agentplane.action_service.service import ActionService
-from agentplane.action_service.test_fixtures.callers import PERSONAL, admitted_callers
+from agentplane.action_service.testing.callers import PERSONAL, admitted_callers
 from agentplane.action_service.updates import ActionUpdates
 from agentplane.app.action_federation import (
     DirectFederationSettings,

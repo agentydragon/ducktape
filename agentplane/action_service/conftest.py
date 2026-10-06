@@ -1,6 +1,6 @@
 """Register Action Service test fixtures."""
 
-from agentplane.action_service.test_fixtures.fixtures import (
+from agentplane.action_service.testing.fixtures import (
     db_url,
     echo_catalog,
     echo_executor,

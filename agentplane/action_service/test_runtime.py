@@ -47,8 +47,8 @@ from agentplane.action_service.policy_evaluation import PROVIDER_NAME
 from agentplane.action_service.policy_informer import PolicyIndex
 from agentplane.action_service.runtime import running_executor
 from agentplane.action_service.service import ActionService, UnsupportedActionError
-from agentplane.action_service.test_fixtures.callers import in_sync_index
-from agentplane.action_service.test_fixtures.lifecycle import wait_available
+from agentplane.action_service.testing.callers import in_sync_index
+from agentplane.action_service.testing.lifecycle import wait_available
 from agentplane.action_service.updates import ActionUpdates
 from agentplane.crd_group import GROUP, VERSION
 from agentplane.kubernetes_watch import Freshness
@@ -274,7 +274,7 @@ async def test_main_serves_real_stdio_execution_and_closes_in_order(db_url: str,
         {
             "transport": "stdio",
             "command": sys.executable,
-            "args": [str(get_required_path("_main/agentplane/action_service/test_fixtures/fake_mcp_server.py"))],
+            "args": [str(get_required_path("_main/agentplane/action_service/testing/fake_mcp_server.py"))],
             "env": {**os.environ, "PYTHONPATH": os.pathsep.join(sys.path)},
         }
     )

@@ -235,7 +235,7 @@ py_test(
         "//agentplane/action_service:service",
         "//agentplane/action_service:updates",
         "//agentplane/action_service/policies:resources",
-        "//agentplane/action_service/test_fixtures:callers",
+        "//agentplane/action_service/testing:callers",
         "//agentplane/app/threads:bridge",
         "//agentplane/app/threads:store",
         "//agentplane/app/threads/events:event_log",
