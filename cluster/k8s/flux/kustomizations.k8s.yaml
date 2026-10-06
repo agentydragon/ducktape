@@ -5113,27 +5113,6 @@ apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
 metadata:
   annotations:
-    description: Static agent diagnostics in plaid-mcp; policy shared with managed agents.
-  name: agent-namespace-rbac-plaid-mcp
-  namespace: ducktape-flux
-spec:
-  dependsOn:
-    - name: claude-rbac
-      namespace: ducktape-flux
-  interval: 10m
-  path: ./cluster/generated/agents/namespace-rbac/plaid-mcp
-  prune: true
-  retryInterval: 1m
-  sourceRef:
-    kind: GitRepository
-    name: ducktape
-    namespace: ducktape-flux
-  wait: true
----
-apiVersion: kustomize.toolkit.fluxcd.io/v1
-kind: Kustomization
-metadata:
-  annotations:
     description: Static agent diagnostics in proxmox-proxy; policy shared with managed agents.
   name: agent-namespace-rbac-proxmox-proxy
   namespace: ducktape-flux

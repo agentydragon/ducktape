@@ -40,7 +40,8 @@ NAMESPACE_DIAGNOSTICS = {
     "nvidia-device-plugin": AgentReadable.LOGS,
     "oci-cache": AgentReadable.LOGS,
     "openebs": AgentReadable.LOGS,
-    "plaid-mcp": AgentReadable.LOGS,
+    # Contains Plaid-linked private data and the Finance-only spend policy. Access
+    # is granted through narrower named roles, not shared namespace diagnostics.
     "proxmox-proxy": AgentReadable.LOGS,
     "public-coder-agent": AgentReadable.METADATA,
     "study-casino": AgentReadable.LOGS,

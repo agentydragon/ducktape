@@ -467,8 +467,7 @@ def test_agent_permission_superset_and_finance_parity(agent_permissions: tuple[R
     assert not uncovered(public, haku)
     assert not uncovered(public, finance)
     assert uncovered(finance, public) == {
-        Permission("agentplane-staging", "", "secrets", "get", "coinbase-api-credentials"),
-        Permission("plaid-mcp", "", "configmaps", "get", "plaid-spend-policy"),
+        Permission("agentplane-staging", "", "secrets", "get", "coinbase-api-credentials")
     }
     static_public = rbac.identity("Group", "haku:access-profile:public-coder")
     for kind, name, namespace in (

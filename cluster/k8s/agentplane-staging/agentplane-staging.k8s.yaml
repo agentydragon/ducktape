@@ -2365,18 +2365,6 @@ data:
         role_ref:
           kind: ClusterRole
           name: agent-readable-namespace-logs
-      plaid-mcp-metadata:
-        kind: RoleBinding
-        namespace: plaid-mcp
-        role_ref:
-          kind: ClusterRole
-          name: agent-readable-namespace-metadata
-      plaid-mcp-logs:
-        kind: RoleBinding
-        namespace: plaid-mcp
-        role_ref:
-          kind: ClusterRole
-          name: agent-readable-namespace-logs
       proxmox-proxy-metadata:
         kind: RoleBinding
         namespace: proxmox-proxy
@@ -2501,7 +2489,6 @@ data:
       - nvidia-device-plugin
       - oci-cache
       - openebs
-      - plaid-mcp
       - proxmox-proxy
       - public-coder-agent
       - study-casino
@@ -3153,8 +3140,6 @@ data:
           - oci-cache-logs
           - openebs-metadata
           - openebs-logs
-          - plaid-mcp-metadata
-          - plaid-mcp-logs
           - proxmox-proxy-metadata
           - proxmox-proxy-logs
           - public-coder-agent-metadata
@@ -3251,8 +3236,6 @@ data:
           - oci-cache-logs
           - openebs-metadata
           - openebs-logs
-          - plaid-mcp-metadata
-          - plaid-mcp-logs
           - proxmox-proxy-metadata
           - proxmox-proxy-logs
           - public-coder-agent-metadata
@@ -3348,8 +3331,6 @@ data:
           - oci-cache-logs
           - openebs-metadata
           - openebs-logs
-          - plaid-mcp-metadata
-          - plaid-mcp-logs
           - proxmox-proxy-metadata
           - proxmox-proxy-logs
           - public-coder-agent-metadata
@@ -3692,18 +3673,6 @@ data:
         role_ref:
           kind: ClusterRole
           name: agent-readable-namespace-logs
-      plaid-mcp-metadata:
-        kind: RoleBinding
-        namespace: plaid-mcp
-        role_ref:
-          kind: ClusterRole
-          name: agent-readable-namespace-metadata
-      plaid-mcp-logs:
-        kind: RoleBinding
-        namespace: plaid-mcp
-        role_ref:
-          kind: ClusterRole
-          name: agent-readable-namespace-logs
       proxmox-proxy-metadata:
         kind: RoleBinding
         namespace: proxmox-proxy
@@ -3828,7 +3797,6 @@ data:
       - nvidia-device-plugin
       - oci-cache
       - openebs
-      - plaid-mcp
       - proxmox-proxy
       - public-coder-agent
       - study-casino

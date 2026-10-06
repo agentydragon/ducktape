@@ -66,7 +66,6 @@ NAMESPACE_ALLOWLIST = (
     "nvidia-device-plugin",
     "oci-cache",
     "openebs",
-    "plaid-mcp",
     "props",
     "proxmox-proxy",
     "study-casino",
