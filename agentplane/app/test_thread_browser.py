@@ -524,10 +524,12 @@ async def test_projected_browser_streams_runner_events_and_loads_evidence_lazily
                 await expect(frame_summary).to_be_visible()
                 # The label shares the disclosure marker's line instead of starting below it.
                 summary_box = await frame_summary.bounding_box()
-                label_box = await frame_summary.locator("span").first.bounding_box()
+                label_box = await frame_summary.locator(".agentplane-disclosure-summary-content").bounding_box()
                 assert summary_box is not None
                 assert label_box is not None
-                assert summary_box["height"] < 1.5 * label_box["height"]
+                assert (
+                    summary_box["y"] <= label_box["y"] <= summary_box["y"] + summary_box["height"] - label_box["height"]
+                )
                 assert not any("/frames?" in url for url in requests)
                 await frame_summary.click()
                 frame = first_card.locator(".agentplane-code-block")
@@ -1260,7 +1262,7 @@ async def test_opening_a_call_and_its_output_leaves_the_clicked_line_where_it_wa
     await page.screenshot(path=undeclared_outputs_dir() / f"{request.node.name}-call-open.png")
 
     await read_at(page, show_all, 0.3)
-    async with holding_still(page, call.get_by_text("Output", exact=True)):
+    async with holding_still(page, call.locator(".agentplane-output-label")):
         await show_all.click()
         await expect(call.get_by_role("button", name="Collapse Output")).to_be_visible()
     await page.screenshot(path=undeclared_outputs_dir() / f"{request.node.name}-output-open.png")
@@ -1285,7 +1287,7 @@ async def test_opening_a_call_while_output_streams_in_leaves_the_clicked_line_wh
             await call.locator("summary").first.click()
             await expect(show_all).to_be_visible()
         await read_at(page, show_all, 0.3)
-        async with holding_still(page, call.get_by_text("Output", exact=True), rest_first=False):
+        async with holding_still(page, call.locator(".agentplane-output-label"), rest_first=False):
             await show_all.click()
             await expect(call.get_by_role("button", name="Collapse Output")).to_be_visible()
     assert len(delivered) >= 3, "the tail's output was not arriving while the call was opened"

@@ -2443,44 +2443,6 @@ if (scenario.openClampedBlocks) {
   openClamped();
 }
 
-if (scenario.scrollExpandedDisclosure) {
-  let scrollRequested = false;
-  let frames = 0;
-  const verifyStickyHeader = () => {
-    const history = document.querySelector<HTMLElement>('[aria-label="Thread history"]');
-    const target = document.querySelector<HTMLElement>(scenario.scrollExpandedDisclosure!);
-    if (!history || !target || history.dataset.layoutSettled !== "true") return false;
-    const isClampedBlock = target.matches(".agentplane-clamped-block");
-    const sticky = target.querySelector<HTMLElement>(
-      isClampedBlock ? ":scope > .agentplane-disclosure-collapse" : ":scope > .agentplane-disclosure-summary"
-    );
-    if (!sticky) return false;
-
-    if (!scrollRequested) {
-      const historyTop = history.getBoundingClientRect().top;
-      const targetTop = target.getBoundingClientRect().top - historyTop;
-      const requested = history.scrollTop + targetTop + 200;
-      history.scrollTop = Math.max(0, Math.min(history.scrollHeight - history.clientHeight, requested));
-      scrollRequested = true;
-      return false;
-    }
-
-    const historyTop = history.getBoundingClientRect().top;
-    const stickyTop = Number.parseFloat(getComputedStyle(sticky).top) || 0;
-    const scrolledPastOriginalHeader = target.getBoundingClientRect().top < historyTop - 100;
-    const closeControlIsSticky = Math.abs(sticky.getBoundingClientRect().top - historyTop - stickyTop) < 2;
-    if (!scrolledPastOriginalHeader || !closeControlIsSticky) return false;
-
-    target.dataset.visualScrollComplete = "true";
-    return true;
-  };
-  const waitForStickyHeader = () => {
-    if (verifyStickyHeader() || ++frames >= 300) return;
-    requestAnimationFrame(waitForStickyHeader);
-  };
-  requestAnimationFrame(waitForStickyHeader);
-}
-
 if (scenario.preselectReconnect) {
   const selectExisting = new MutationObserver(() => {
     const connection = document.querySelector<HTMLSelectElement>('select[name="connection"]');

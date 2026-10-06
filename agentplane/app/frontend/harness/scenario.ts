@@ -128,8 +128,6 @@ export interface Scenario {
   longReasoningBody?: boolean;
   /** Expand the clamped command/output blocks in the thread fixture. */
   openClampedBlocks?: boolean;
-  /** Scroll this disclosure or clamped block until its sticky close control is in use. */
-  scrollExpandedDisclosure?: string;
   pendingCommands?: "mixed" | "controls" | "outcomes";
   /** Answer a command POST as the app does when a runner misses its admission deadline. Without
    * this it stays unanswered, like one queued behind the browser's connection limit. */

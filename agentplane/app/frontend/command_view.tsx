@@ -65,7 +65,7 @@ export function OutputBlock({
 }): JSX.Element {
   return (
     <div>
-      <Text size="xs" c="dimmed" mb={4}>
+      <Text className="agentplane-output-label" size="xs" c="dimmed" mb={4}>
         {name}
         {note && (
           <Text span size="xs" c="orange">
