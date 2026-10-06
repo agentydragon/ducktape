@@ -2431,55 +2431,6 @@ if (scenario.preselectReconnect) {
   });
   selectExisting.observe(document, { childList: true, subtree: true });
 }
-if (scenario.openActionPolicySets) {
-  // Once the preset's pick has landed as a pill, open the sets dropdown so the shot carries the
-  // namespace's options beside the pre-filled pick.
-  const openSets = new MutationObserver(() => {
-    const pill = [...document.querySelectorAll(".mantine-Pill-root")].find(
-      (node) => node.textContent?.trim() === "public-coder"
-    );
-    const label = [...document.querySelectorAll("label")].find((node) => node.textContent === "Action policy sets");
-    const control = label?.control;
-    const clickTarget =
-      control instanceof HTMLInputElement ? control.closest<HTMLElement>(".mantine-MultiSelect-input") : null;
-    if (!pill || !clickTarget) return;
-    openSets.disconnect();
-    clickTarget.click();
-  });
-  openSets.observe(document, { childList: true, subtree: true });
-}
-if (scenario.openSandboxPolicies) {
-  // Show the remaining policies beside the preset's selected github-public policy.
-  const openPolicies = new MutationObserver(() => {
-    const pill = [...document.querySelectorAll(".mantine-Pill-root")].find(
-      (node) => node.textContent?.trim() === "github-public"
-    );
-    const label = [...document.querySelectorAll("label")].find((node) => node.textContent === "Policies");
-    const control = label?.control;
-    const clickTarget =
-      control instanceof HTMLInputElement ? control.closest<HTMLElement>(".mantine-MultiSelect-input") : null;
-    if (!pill || !clickTarget) return;
-    openPolicies.disconnect();
-    clickTarget.click();
-  });
-  openPolicies.observe(document, { childList: true, subtree: true });
-}
-if (scenario.openKubernetesGrants) {
-  // Show the remaining grants beside the preset's selected workspace-read grant.
-  const openGrants = new MutationObserver(() => {
-    const pill = [...document.querySelectorAll(".mantine-Pill-root")].find((node) =>
-      node.textContent?.includes("workspace-read")
-    );
-    const label = [...document.querySelectorAll("label")].find((node) => node.textContent === "Kubernetes grants");
-    const control = label?.control;
-    const clickTarget =
-      control instanceof HTMLInputElement ? control.closest<HTMLElement>(".mantine-MultiSelect-input") : null;
-    if (!pill || !(control instanceof HTMLInputElement) || control.disabled || !clickTarget) return;
-    openGrants.disconnect();
-    clickTarget.click();
-  });
-  openGrants.observe(document, { attributes: true, attributeFilter: ["disabled"], childList: true, subtree: true });
-}
 if (scenario.checkComposerControls) {
   const checkControls = new MutationObserver(() => {
     const send = document.querySelector<HTMLElement>('.agentplane-composer-send button[aria-label="Send"]');

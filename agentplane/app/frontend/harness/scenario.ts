@@ -46,12 +46,6 @@ export interface Scenario {
   checkComposerControls?: boolean;
   /** Render a bounded first history page with a Load more control. */
   historyPaged?: boolean;
-  /** Once the preset's pick has landed as a pill, open the action policy sets dropdown. */
-  openActionPolicySets?: boolean;
-  /** Once the preset's pick has landed as a pill, open the sandbox policies dropdown. */
-  openSandboxPolicies?: boolean;
-  /** Once the preset's grant has landed as a pill, open the Kubernetes grants dropdown. */
-  openKubernetesGrants?: boolean;
   /** Click the phone-width hamburger once it mounts: the sidebar drawer has no route of its own. */
   openMobileSidebar?: boolean;
   threadlessSandbox?: boolean;

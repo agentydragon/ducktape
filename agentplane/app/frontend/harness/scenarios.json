@@ -294,54 +294,84 @@
     "route": "/sandboxes?preset=public-coder",
     "viewport": { "width": 1200, "height": 900 },
     "outputName": "new-sandbox",
-    "readySelectors": [".mantine-Pill-root", "[role=\"option\"]:text(\"harness-reviews\")"],
-    "hiddenSelectors": ["[role=\"option\"]:text(\"public-coder\")"],
-    "openActionPolicySets": true
+    "readySelectors": [".mantine-Pill-root"],
+    "clicks": [
+      {
+        "selector": "label:text(\"Action policy sets\")",
+        "expectVisible": ["[role=\"option\"]:visible:text(\"harness-reviews\")"],
+        "expectHidden": ["[role=\"option\"]:visible:text(\"public-coder\")"]
+      }
+    ]
   },
   "new_sandbox_phone": {
     "element": "#app",
     "route": "/sandboxes?preset=public-coder",
     "viewport": { "width": 412, "height": 915, "deviceScaleFactor": 2.625 },
     "outputName": "new-sandbox-phone",
-    "readySelectors": [".mantine-Pill-root", "[role=\"option\"]:text(\"harness-reviews\")"],
-    "hiddenSelectors": ["[role=\"option\"]:text(\"public-coder\")"],
-    "openActionPolicySets": true
+    "readySelectors": [".mantine-Pill-root"],
+    "clicks": [
+      {
+        "selector": "label:text(\"Action policy sets\")",
+        "expectVisible": ["[role=\"option\"]:visible:text(\"harness-reviews\")"],
+        "expectHidden": ["[role=\"option\"]:visible:text(\"public-coder\")"]
+      }
+    ]
   },
   "new_sandbox_policies": {
     "element": "#app",
     "route": "/sandboxes?preset=public-coder",
     "viewport": { "width": 1200, "height": 900 },
     "outputName": "new-sandbox-policies",
-    "readySelectors": [".mantine-Pill-root", "[role=\"option\"]:text(\"pypi\")"],
-    "hiddenSelectors": ["[role=\"option\"]:text(\"github-public\")"],
-    "openSandboxPolicies": true
+    "readySelectors": [".mantine-Pill-root"],
+    "clicks": [
+      {
+        "selector": "label:text(\"Policies\")",
+        "expectVisible": ["[role=\"option\"]:visible:text(\"pypi\")"],
+        "expectHidden": ["[role=\"option\"]:visible:text(\"github-public\")"]
+      }
+    ]
   },
   "new_sandbox_policies_phone": {
     "element": "#app",
     "route": "/sandboxes?preset=public-coder",
     "viewport": { "width": 412, "height": 915, "deviceScaleFactor": 2.625 },
     "outputName": "new-sandbox-policies-phone",
-    "readySelectors": [".mantine-Pill-root", "[role=\"option\"]:text(\"pypi\")"],
-    "hiddenSelectors": ["[role=\"option\"]:text(\"github-public\")"],
-    "openSandboxPolicies": true
+    "readySelectors": [".mantine-Pill-root"],
+    "clicks": [
+      {
+        "selector": "label:text(\"Policies\")",
+        "expectVisible": ["[role=\"option\"]:visible:text(\"pypi\")"],
+        "expectHidden": ["[role=\"option\"]:visible:text(\"github-public\")"]
+      }
+    ]
   },
   "new_sandbox_grants": {
     "element": "#app",
     "route": "/sandboxes?preset=public-coder",
     "viewport": { "width": 1200, "height": 900 },
     "outputName": "new-sandbox-grants",
-    "readySelectors": [".mantine-Pill-root", "[role=\"option\"]:text(\"config-read\")"],
-    "hiddenSelectors": ["[role=\"option\"]:text(\"workspace-read\")"],
-    "openKubernetesGrants": true
+    "readySelectors": [".mantine-Pill-root"],
+    "clicks": [
+      {
+        "selector": "label:text(\"Kubernetes grants\")",
+        "expectVisible": ["[role=\"option\"]:visible:text(\"config-read\")"],
+        "expectHidden": ["[role=\"option\"]:visible:text(\"workspace-read\")"]
+      }
+    ]
   },
   "new_sandbox_grants_phone": {
     "element": "#app",
     "route": "/sandboxes?preset=public-coder",
     "viewport": { "width": 412, "height": 915, "deviceScaleFactor": 2.625 },
     "outputName": "new-sandbox-grants-phone",
-    "readySelectors": [".mantine-Pill-root", "[role=\"option\"]:text(\"config-read\")"],
-    "hiddenSelectors": ["[role=\"option\"]:text(\"workspace-read\")"],
-    "openKubernetesGrants": true
+    "readySelectors": [".mantine-Pill-root"],
+    "clicks": [
+      {
+        "selector": "label:text(\"Kubernetes grants\")",
+        "expectVisible": ["[role=\"option\"]:visible:text(\"config-read\")"],
+        "expectHidden": ["[role=\"option\"]:visible:text(\"workspace-read\")"]
+      }
+    ]
   },
   "actions_attention_composer_desktop": {
     "element": "#app",
@@ -566,7 +596,7 @@
     "outputName": "sandbox-egress",
     "clicks": [
       {
-        "selector": "div.mantine-MultiSelect-input",
+        "selector": "label:text(\"Grant policies\")",
         "expectVisible": ["[role=\"option\"]:visible:text(\"pypi\")"]
       },
       {
@@ -583,7 +613,7 @@
     "outputName": "sandbox-egress-phone",
     "clicks": [
       {
-        "selector": "div.mantine-MultiSelect-input",
+        "selector": "label:text(\"Grant policies\")",
         "expectVisible": ["[role=\"option\"]:visible:text(\"pypi\")"]
       },
       {
