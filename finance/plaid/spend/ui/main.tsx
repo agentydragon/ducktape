@@ -291,13 +291,11 @@ function AllowancePanel({ allowance }: { allowance: Allowance }) {
             <Text fz={{ base: 32, sm: 38 }} fw={700} lh={1.1} style={{ overflowWrap: "anywhere" }}>
               {projected == null ? "Not enough data" : m(projected)}
             </Text>
-            <Text size="sm" c="dimmed">
-              {projected == null
-                ? "No reliable pace yet; the allowance balance above is still available."
-                : projected < 0
-                  ? "Shortfall at the current 7-day spend pace"
-                  : "At the current 7-day spend pace"}
-            </Text>
+            {projected == null && (
+              <Text size="sm" c="dimmed">
+                No reliable pace yet; the allowance balance above is still available.
+              </Text>
+            )}
             <Divider />
             <Text size="sm" fw={700}>
               Recorded flexible spending pace
