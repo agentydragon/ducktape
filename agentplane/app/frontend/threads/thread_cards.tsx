@@ -430,13 +430,15 @@ function ToolCard({
                 />
               ) : (
                 <div>
-                  <Text size="xs" c="dimmed" mb={4}>
-                    Arguments
-                  </Text>
                   <ClampedBlock
                     maxHeightRem={COMMAND_MAX_HEIGHT_REM}
                     lines={lineCount(argumentsBody)}
                     label="Arguments"
+                    header={
+                      <Text size="xs" c="dimmed" mb={4}>
+                        Arguments
+                      </Text>
+                    }
                     expansion={input}
                   >
                     <HighlightedText text={argumentsBody} />

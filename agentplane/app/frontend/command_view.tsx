@@ -65,16 +65,23 @@ export function OutputBlock({
 }): JSX.Element {
   return (
     <div>
-      <Text className="agentplane-output-label" size="xs" c="dimmed" mb={4}>
-        {name}
-        {note && (
-          <Text span size="xs" c="orange">
-            {" "}
-            · {note}
+      <ClampedBlock
+        maxHeightRem={OUTPUT_MAX_HEIGHT_REM}
+        lines={lineCount(text)}
+        label={name}
+        header={
+          <Text className="agentplane-output-label" size="xs" c="dimmed" mb={4}>
+            {name}
+            {note && (
+              <Text span size="xs" c="orange">
+                {" "}
+                · {note}
+              </Text>
+            )}
           </Text>
-        )}
-      </Text>
-      <ClampedBlock maxHeightRem={OUTPUT_MAX_HEIGHT_REM} lines={lineCount(text)} label={name} expansion={expansion}>
+        }
+        expansion={expansion}
+      >
         {/* A final newline ends the last line rather than starting an empty one. */}
         <HighlightedText text={text.replace(/\n$/, "")} />
       </ClampedBlock>

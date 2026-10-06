@@ -42,18 +42,26 @@ export function DisclosureSummary({
  * command or tool output. */
 export function StickyCollapseControl({
   label,
+  header,
+  expanded,
   onCollapse,
   className,
 }: {
   label: string;
+  header?: ReactNode;
+  expanded: boolean;
   onCollapse: () => void;
   className?: string;
 }): JSX.Element {
   const depth = useDisclosureDepth();
   return (
-    <div className="agentplane-disclosure-collapse-anchor" style={depthStyle(depth)}>
-      <div className={`agentplane-disclosure-collapse${className ? ` ${className}` : ""}`}>
-        <span className="agentplane-disclosure-collapse-label">{label}</span>
+    <div
+      className={`agentplane-disclosure-collapse${className ? ` ${className}` : ""}`}
+      data-expanded={expanded}
+      style={depthStyle(depth)}
+    >
+      <div className="agentplane-disclosure-collapse-label">{header ?? label}</div>
+      {expanded && (
         <Button
           variant="subtle"
           size="compact-xs"
@@ -63,7 +71,7 @@ export function StickyCollapseControl({
         >
           Collapse
         </Button>
-      </div>
+      )}
     </div>
   );
 }

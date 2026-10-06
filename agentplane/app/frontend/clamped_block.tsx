@@ -21,6 +21,7 @@ export function ClampedBlock({
   maxHeightRem,
   lines,
   label = "Expanded content",
+  header,
   expansion,
   children,
 }: {
@@ -28,6 +29,8 @@ export function ClampedBlock({
   lines?: number;
   /** Short context for the sticky collapse control while expanded. */
   label?: string;
+  /** Existing heading to turn into the sticky control row when the block opens. */
+  header?: ReactNode;
   expansion?: readonly [boolean, (expanded: boolean) => void];
   children: ReactNode;
 }): JSX.Element {
@@ -51,7 +54,14 @@ export function ClampedBlock({
   const clipped = overflows && !expanded;
   return (
     <div className="agentplane-clamped-block" data-expanded={expanded && overflows} data-label={label}>
-      {overflows && expanded && <StickyCollapseControl label={label} onCollapse={() => setExpanded(false)} />}
+      {(header !== undefined || (overflows && expanded)) && (
+        <StickyCollapseControl
+          label={label}
+          header={header}
+          expanded={overflows && expanded}
+          onCollapse={() => setExpanded(false)}
+        />
+      )}
       <div
         data-clamped={clipped}
         style={{
