@@ -31,6 +31,7 @@ from aiquota.providers.codex import (
     USAGE_URL,
     CodexProvider,
     CodexSettings,
+    _to_success,
     _UsageResponse,
 )
 
@@ -123,6 +124,21 @@ def test_usage_response_parses_null_additional_rate_limits() -> None:
     assert usage.rate_limit is not None
     assert usage.rate_limit.primary_window is not None
     assert usage.rate_limit.primary_window.used_percent == 96
+    assert _to_success(usage).paid_credits is None
+
+
+def test_paid_credit_balance_is_distinct_from_banked_resets() -> None:
+    usage = _UsageResponse.model_validate(
+        {
+            **_USAGE_BODY,
+            "credits": {"has_credits": True, "unlimited": False, "balance": "2745.7597130000"},
+            "rate_limit_reset_credits": {"available_count": 2},
+        }
+    )
+    result = _to_success(usage)
+    assert result.paid_credits is not None
+    assert result.paid_credits.balance == "2745.7597130000"
+    assert result.available_reset_credits == 2
 
 
 async def test_refreshes_expired_access_token_before_usage(tmp_path: Path) -> None:

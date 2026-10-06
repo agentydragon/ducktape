@@ -59,7 +59,7 @@ from agentplane.action_service.models import (
 from agentplane.action_service.oauth import OAuthSettings
 from agentplane.action_service.runtime import running_executor
 from agentplane.action_service.service import ActionService, ExecutionOutcomeUnknownError
-from agentplane.action_service.test_fixtures.lifecycle import wait_available, wait_retry
+from agentplane.action_service.testing.lifecycle import wait_available, wait_retry
 from agentplane.subjects import ServiceAccountRef
 from util.net import bind_free_port
 from util.testing.asgi import serve_app_sync

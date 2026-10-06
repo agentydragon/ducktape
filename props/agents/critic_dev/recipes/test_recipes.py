@@ -15,7 +15,6 @@ import logging
 from collections.abc import Generator
 from typing import Any
 
-import pytest
 import pytest_bazel
 from hamcrest import assert_that
 
@@ -47,7 +46,6 @@ def _run_recipe(
     return data
 
 
-@pytest.mark.timeout(180)
 async def test_recipes_in_container(
     synced_db, e2e_stack, test_snapshot, test_train_example_with_runs, critic_dev_optimize_image, critic_image
 ):

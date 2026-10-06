@@ -54,7 +54,6 @@ PERSISTENT_AUTH_TARGETS = [
 # Applied after persistent-auth, before Flux.
 INFRA_TARGETS = [
     "talos_image_factory_schematic.proxmox",
-    "tls_private_key.ssh",
     "proxmox_virtual_environment_download_file.talos_disk",
     "proxmox_virtual_environment_file.network_config",
     "proxmox_virtual_environment_vm.talos",
@@ -69,7 +68,6 @@ INFRA_TARGETS = [
     "null_resource.wait_for_nodes_ready",
     "kubernetes_namespace.flux_system",
     "kubernetes_secret.sops_age_cluster_secrets",
-    "kubernetes_config_map.cluster_info",
     # OVH Kimsufi worker nodes (bare metal, rescue→dd→harddisk provisioning)
     "ovh_dedicated_server.kimsufi",
     "ovh_dedicated_server_update.kimsufi_rescue",

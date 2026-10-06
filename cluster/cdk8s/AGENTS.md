@@ -29,8 +29,8 @@ how to regenerate: `cluster/AGENTS.md` § Generated manifests.
 - **Stateful data is never destroyed by a change here.** Databases, PersistentVolumes
   and anything a person authored survive every conversion and restructuring; caches may
   be dropped. A Kustomization that owns PVCs carries `deletionPolicy: Orphan`, and an
-  ownership change goes through § Restructuring. The repository-level rule that deployed
-  state is disposable covers schemas and wire formats, not volumes.
+  ownership change goes through § Restructuring. Agentplane's rule that deployed
+  state is disposable (<../../agentplane/AGENTS.md>) covers schemas and wire formats, not volumes.
 - **Escape hatches stay.** Every Flux and Kustomize field remains expressible, so an
   incident `suspend`, the two-step ownership move, a VolSync restore, or a one-off
   hand-written sibling file is a plain edit and not a fight with the generator. A shape

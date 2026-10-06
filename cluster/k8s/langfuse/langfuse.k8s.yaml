@@ -239,7 +239,6 @@ spec:
         existingSecret: clickhouse-langfuse-credentials
         existingSecretKey: password
         username: langfuse
-      clusterEnabled: true
       database: langfuse
       deploy: false
       host: clickhouse.clickhouse.svc
@@ -249,8 +248,6 @@ spec:
         ssl: false
         url: clickhouse://clickhouse.clickhouse.svc:9000
       nativePort: 9000
-    ingress:
-      enabled: false
     langfuse:
       additionalEnv:
         - name: NODE_OPTIONS

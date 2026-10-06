@@ -2272,63 +2272,6 @@ mod tests {
         );
     }
 
-    fn module_member_uses(
-        src: &str,
-        import_sources: &[(&str, &str)],
-    ) -> BTreeMap<usize, Vec<ModuleMemberUseFact>> {
-        let imports: HashMap<String, String> = import_sources
-            .iter()
-            .map(|(local, src)| ((*local).to_string(), (*src).to_string()))
-            .collect();
-        js_ast::with_swc_globals(|| {
-            module_member_uses_by_ordinal(
-                &js_ast::parse_js_module_ast("<test>", src).unwrap(),
-                &imports,
-            )
-        })
-    }
-
-    #[test]
-    fn module_member_uses_joins_imported_object_to_source_module() {
-        // `codegen` is imported from `./codegen`; the helper consuming
-        // `codegen.emit` yields a use-site row keyed by the source module + export
-        // name (both re-minify-invariant). A second helper reads `.emit` off a
-        // *non-imported* local `local`, so it contributes nothing — the join to the
-        // import table is what makes this a module-member use, not any member read.
-        let uses = module_member_uses(
-            "function a() { return codegen.emit(); }\nfunction b(local) { return local.emit(); }\n",
-            &[("codegen", "./codegen")],
-        );
-        assert_eq!(
-            uses[&0],
-            vec![ModuleMemberUseFact {
-                module: "./codegen".to_string(),
-                member: "emit".to_string(),
-            }],
-        );
-        assert!(
-            !uses.contains_key(&1),
-            "non-imported object contributes no row"
-        );
-    }
-
-    #[test]
-    fn module_member_uses_skips_computed_access() {
-        // `mod[expr]` is computed — no static export name — so it contributes
-        // nothing even though `mod` is imported; the sibling `mod.kept` does.
-        let uses = module_member_uses(
-            "function f(k) { return mod[k] + mod.kept; }\n",
-            &[("mod", "./m")],
-        );
-        assert_eq!(
-            uses[&0],
-            vec![ModuleMemberUseFact {
-                module: "./m".to_string(),
-                member: "kept".to_string(),
-            }],
-        );
-    }
-
     fn call_args(src: &str) -> Vec<CallArgumentFact> {
         js_ast::with_swc_globals(|| {
             call_argument_uses(&js_ast::parse_js_module_ast("<test>", src).unwrap())
@@ -2480,8 +2423,12 @@ mod tests {
         // The esbuild decorate-trio companions: `var X = Object.defineProperty` /
         // `var X = Object.getOwnPropertyDescriptor`. Each row's target is the alias
         // binding; the property is the re-minify-invariant intrinsic method name.
+        // The structural shape — not the declaration keyword — is the invariant, so
+        // the input mixes `var`, `let` and `const`.
         let facts = intrinsic_aliases(
-            "var p = Object.defineProperty;\nvar g = Object.getOwnPropertyDescriptor;\n",
+            "var p = Object.defineProperty;\n\
+             let g = Object.getOwnPropertyDescriptor;\n\
+             const d = Object.defineProperty;\n",
         );
         assert_eq!(
             facts,
@@ -2494,26 +2441,9 @@ mod tests {
                     binding: "g".to_string(),
                     property: "getOwnPropertyDescriptor".to_string(),
                 },
-            ],
-        );
-    }
-
-    #[test]
-    fn intrinsic_alias_uses_accepts_let_and_const_keywords() {
-        // The structural shape — not the declaration keyword — is the invariant.
-        let facts = intrinsic_aliases(
-            "let p = Object.defineProperty;\nconst g = Object.getOwnPropertyDescriptor;\n",
-        );
-        assert_eq!(
-            facts,
-            vec![
                 IntrinsicAliasFact {
-                    binding: "p".to_string(),
+                    binding: "d".to_string(),
                     property: "defineProperty".to_string(),
-                },
-                IntrinsicAliasFact {
-                    binding: "g".to_string(),
-                    property: "getOwnPropertyDescriptor".to_string(),
                 },
             ],
         );

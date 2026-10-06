@@ -1,0 +1,16 @@
+.plaid-spend-caption {
+  font-size: 0.9em;
+  color: #aeb7c2;
+}
+.plaid-spend-good {
+  color: #8bd49c;
+}
+.plaid-spend-caution {
+  color: #ffc36a;
+}
+.plaid-spend-danger {
+  color: #ff868c;
+}
+.plaid-spend-unknown {
+  color: #aeb7c2;
+}

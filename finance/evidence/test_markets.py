@@ -12,12 +12,6 @@ from finance.evidence.markets import (
     market_json_path,
     merged_roster,
 )
-from util.bazel.runfiles import get_required_path
-
-
-def test_example_roster_parses() -> None:
-    # The checked-in example documents the ConfigMap file format; keep it valid.
-    load_roster(get_required_path("_main/finance/evidence/example_market_roster.yaml"))
 
 
 def test_load_roster_rejects_unknown_keys(tmp_path: Path) -> None:

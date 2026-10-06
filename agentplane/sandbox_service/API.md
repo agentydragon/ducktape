@@ -39,10 +39,11 @@ The same service-caller allowlist gates every RPC. Provisioning is always enable
   separate objects. Operating mode, launch-grants-pending, and Kubernetes-grant facts remain
   separate fields; the service does not synthesize one status from them.
 - `ListTemplates`: available SandboxTemplates. The app renders its configured grant catalog locally.
-- `CreateSandbox`: concrete template, policy/grant selections, optional session defaults, and bootstrap.
+- `CreateSandbox`: concrete template, egress policy selections, Action policy sets, Kubernetes grants,
+  optional session defaults, and bootstrap.
   Grant intent is stored on the Sandbox so reconciliation can recover partial provisioning without
   the app. The RPC returns after provisioning orchestration, not necessarily after Pod readiness.
-- `GrantEgress`: UID-pinned Sandbox destination and policy names; returns the created binding name.
+- `GrantEgress`: UID-pinned Sandbox destination and egress policy names; returns the created binding name.
   `RevokeEgress`: binding name; retains the refusal to delete Git-owned bindings. Both require the
   same service-caller authorization as other operations.
 - `SuspendSandbox`, `ResumeSandbox`, `DeleteSandbox`: explicit owner/name/UID-pinned mutations.
@@ -75,11 +76,11 @@ instructions string clears the caller's inherited instructions, but not backend 
 Nested paths, unknown paths, duplicate paths, and supplied nondefault fields outside the mask are
 refused. An empty mask means no overrides. Optional `setup_script` distinguishes omitted from empty.
 
-`agent_instructions` in deployment configuration is the complete deployment-wide platform instruction
+`platform_instructions` in deployment configuration is the complete deployment-wide platform instruction
 block; deployment construction supplies service URLs and assembles all shared guidance into this value.
 The Sandbox Service passes it through unchanged. On `OpenSession`, the backend prepends the explicit
 Sandbox/session destination (and notification destination when configured), then appends the effective
-session `instructions`, stored or overridden. A non-empty `agent_instructions` value is required; there is
+session `instructions`, stored or overridden. A non-empty `platform_instructions` value is required; there is
 no runtime default. Stored specs are never rewritten. Changed defaults may make an Open retry conflict:
 inspect retained state and explicitly resume rather than silently adopting a different spec or creating
 another ID.

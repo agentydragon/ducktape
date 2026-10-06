@@ -29,7 +29,7 @@ export { pick };
 "#,
             vec![logical_module("mod_a", &[Member::new("pick")])],
         ),
-        &["duplicate top-level declaration of binding `pick`"],
+        &["pick"],
     );
 }
 

@@ -14,10 +14,14 @@ from model_catalog.catalog import GPT6_LUNA_RESPONSES
 _NAMESPACE = "agentplane-testing"
 
 
-def config(action_federation: ActionFederationSettings | None = None) -> AppSettingsConfig:
+def config(
+    action_federation: ActionFederationSettings | None = None,
+    sandbox_service_grpc_channel_options: dict[str, int | str] | None = None,
+) -> AppSettingsConfig:
     return settings(
         namespace=_NAMESPACE,
         models=TESTING_APP_MODELS,
         thread_preset_codex_model=GPT6_LUNA_RESPONSES,
         action_federation=action_federation,
+        sandbox_service_grpc_channel_options=sandbox_service_grpc_channel_options,
     )

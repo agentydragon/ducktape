@@ -6,6 +6,28 @@ package(
 )
 
 py_library(
+    name = "model_test_data",
+    srcs = ["model_test_data.py"],
+    visibility = ["//agentplane/app:__subpackages__"],
+)
+
+py_library(
+    name = "thread_test_support",
+    srcs = ["thread_test_support.py"],
+    visibility = ["//agentplane/app:__subpackages__"],
+    deps = [
+        "//agentplane/app:operator_sessions",
+        "//agentplane/app/threads:ingestion",
+        "//agentplane/app/threads:store",
+        "//agentplane/app/threads/events:event_log",
+        "//agentplane/protocol:event_log_pb2",
+        "//agentplane/protocol:event_pb2",
+        "//agentplane/runner:protocol_pb2",
+        "@pypi//protobuf",
+    ],
+)
+
+py_library(
     name = "egress_proxy",
     srcs = ["egress_proxy.py"],
     deps = ["@pypi//httpx"],
@@ -15,10 +37,10 @@ py_library(
     name = "replication_process",
     srcs = ["replication_process.py"],
     deps = [
+        ":model_test_data",
         ":replication_source",
         "//agentplane/app:action_policy",
         "//agentplane/app:api",
-        "//agentplane/app:conftest",
         "//agentplane/app:database",
         "//agentplane/app:database_updates",
         "//agentplane/app:decisions",
@@ -108,5 +130,30 @@ py_library(
     deps = [
         "@pypi//playwright",
         "@pypi//pydantic",
+    ],
+)
+
+py_library(
+    name = "thread_browser",
+    srcs = ["thread_browser.py"],
+    data = ["thread_page.js"],
+    deps = [
+        ":electric_service",
+        ":history_probe",
+        ":history_trace",
+        ":http2_proxy",
+        ":replication_process",
+        ":replication_source",
+        "//agentplane/app/threads:store",
+        "//agentplane/app/threads/events:event_log",
+        "//agentplane/app/threads/view:content",
+        "//agentplane/protocol:event_log_pb2",
+        "//agentplane/protocol:event_pb2",
+        "//util/bazel:runfiles",
+        "//util/testing:frontend_visual",
+        "//util/testing:undeclared_outputs",
+        "@pypi//playwright",
+        "@pypi//protobuf",
+        "@pypi//pytest",
     ],
 )

@@ -29,8 +29,10 @@ def test_gaffer_write_policies_are_finance_agent_only() -> None:
     finance_policies = cfg.sandbox_presets["finance-agent"].action_policy_sets
     assert FINANCE_AGENT_GAFFER_BRANCH_CREATION_SET in finance_policies
     assert FINANCE_AGENT_GAFFER_PR_CREATION_SET in finance_policies
-    for preset in ("public-coder", "haku"):
-        policies = cfg.sandbox_presets[preset].action_policy_sets
+    for name, preset in cfg.sandbox_presets.items():
+        if name == "finance-agent":
+            continue
+        policies = preset.action_policy_sets
         assert FINANCE_AGENT_GAFFER_BRANCH_CREATION_SET not in policies
         assert FINANCE_AGENT_GAFFER_PR_CREATION_SET not in policies
 

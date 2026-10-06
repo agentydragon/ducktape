@@ -354,6 +354,8 @@ spec:
                   name: postgres-electric
             - name: DATABASE_URL
               value: postgresql://$(POSTGRES_USER):$(POSTGRES_PASSWORD)@$(POSTGRES_HOST):$(POSTGRES_PORT)/$(POSTGRES_DB)
+            - name: ELECTRIC_DB_POOL_SIZE
+              value: "10"
             - name: ELECTRIC_INSECURE
               value: "true"
             - name: ELECTRIC_PORT
@@ -1733,7 +1735,7 @@ data:
         name: agentplane-app
       - namespace: agentplane-testing
         name: agentplane-notifications
-    agent_instructions: |-
+    platform_instructions: |-
       You are running in a Kubernetes sandbox managed by Agentplane. Agentplane governs outbound network
       access and sensitive operations. Instead of real service tokens you receive credential placeholders:
       literal strings of the form agentplane-credential-<name> that the rules endpoint below returns.
@@ -1744,7 +1746,7 @@ data:
       read, print, persist, or ask for substituted credentials.
 
       All protected network egress goes through the configured Agentplane egress proxy. The proxy checks
-      the sandbox's active policy and substitutes an allowed placeholder with the real credential. Before
+      the sandbox's active egress policy and substitutes an allowed placeholder with the real credential. Before
       using a protected service, ask what is currently allowed at
       http://agentplane-egress.agentplane-testing.svc.cluster.local/v1/rules with Authorization: Bearer
       agentplane-credential-agentplane-workload; that API's OpenAPI schema is at
@@ -1914,7 +1916,7 @@ data:
       Subscriptions expire unless renewed. GET http://agentplane-notifications.agentplane-testing.svc.cluster.local:8080/v1/sources and the OpenAPI schema describe provider
       inputs and subscription management; consult the service documentation for retention and quotas.
     lifecycle_timeout_s: 300
-    default_policies:
+    default_egress_policies:
       - basic
       - inference-experiments
     kubernetes_grants: {}
@@ -1924,6 +1926,8 @@ data:
     runner_port: 7000
     admission_timeout_s: 15
     follow_lease_s: 900
+    runner_grpc_channel_options:
+      grpc.max_receive_message_length: 33554432
     host: 0.0.0.0
     port: 8080
     health_port: 8081
@@ -2251,21 +2255,26 @@ data:
   config.yaml: |
     models:
       models:
-        - model: anthropic-api/ant-messages/claude-haiku-4-5-20251001
-          display_name: Haiku 4.5
-          reasoning_efforts: []
-        - model: antigravity/ant-messages/gemini-3.1-flash-lite
-          display_name: Gemini 3.1 Flash Lite
-          reasoning_efforts: []
-        - model: antigravity/ant-messages/gemini-3.5-flash-lite
-          display_name: Gemini 3.5 Flash Lite
-          reasoning_efforts: []
+        - model: chatgpt/oai-responses/gpt-6-luna
+          display_name: GPT-6 Luna
+          reasoning_efforts:
+            - minimal
+            - low
+            - medium
+            - high
+            - xhigh
         - model: ollama/oai-chat/qwen3.8-flash-next-iq4xs-128k
           display_name: Qwen3.8 Flash Next IQ4_XS (128K)
-          reasoning_efforts: []
+          reasoning_efforts:
+            - low
+            - medium
+            - high
         - model: ollama/oai-chat/qwen3.8-flash-next-iq4xs-256k
           display_name: Qwen3.8 Flash Next IQ4_XS (256K)
-          reasoning_efforts: []
+          reasoning_efforts:
+            - low
+            - medium
+            - high
         - model: ollama/oai-chat/gpt-oss-20b-128k
           display_name: GPT-OSS 20B (128K)
           reasoning_efforts: []
@@ -2284,27 +2293,8 @@ data:
         - model: ollama/oai-chat/gemma4-31b-it-q8_0-128k
           display_name: Gemma 4 31B (128K)
           reasoning_efforts: []
-        - model: chatgpt/oai-responses/gpt-6-luna
-          display_name: GPT-6 Luna
-          reasoning_efforts:
-            - minimal
-            - low
-            - medium
-            - high
-            - xhigh
       harnesses:
-        HARNESS_CLAUDE:
-          - anthropic-api/ant-messages/claude-haiku-4-5-20251001
-          - antigravity/ant-messages/gemini-3.1-flash-lite
-          - antigravity/ant-messages/gemini-3.5-flash-lite
-          - ollama/oai-chat/qwen3.8-flash-next-iq4xs-128k
-          - ollama/oai-chat/qwen3.8-flash-next-iq4xs-256k
-          - ollama/oai-chat/gpt-oss-20b-128k
-          - ollama/oai-chat/gpt-oss-20b-256k
-          - ollama/oai-chat/gpt-oss-20b-512k
-          - ollama/oai-chat/gpt-oss-20b-1m
-          - ollama/oai-chat/gpt-oss-120b-128k
-          - ollama/oai-chat/gemma4-31b-it-q8_0-128k
+        HARNESS_CLAUDE: []
         HARNESS_CODEX:
           - chatgpt/oai-responses/gpt-6-luna
           - ollama/oai-chat/qwen3.8-flash-next-iq4xs-128k
@@ -2347,7 +2337,7 @@ data:
       public-coder:
         title: Public coder
         template: agentplane-runner
-        policies:
+        egress_policies:
           - basic
           - packages
           - github-agentydragon-agent
@@ -2362,9 +2352,11 @@ data:
             printf '%s\n' 'public-coder workspace initialized' > "$marker"
           fi
     kubernetes_grants: {}
-    default_policies:
+    default_egress_policies:
       - basic
       - inference-experiments
+    sandbox_service_grpc_channel_options:
+      grpc.max_receive_message_length: 33554432
     egress_admin_url: http://agentplane-egress-admin.agentplane-testing.svc:8081
     action_federation:
       mode: direct
@@ -3680,6 +3672,8 @@ data:
       token_file: /var/run/secrets/notifications/actions
     sandbox_service:
       target: agentplane-sandbox-service.agentplane-testing.svc.cluster.local:8080
+      grpc_channel_options:
+        grpc.max_receive_message_length: 33554432
       token_file: /var/run/secrets/notifications/sandboxes
 immutable: false
 ---

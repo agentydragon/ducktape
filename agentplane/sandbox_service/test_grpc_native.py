@@ -14,9 +14,9 @@ from kubernetes_asyncio import client as k8s_client
 
 from agentplane.protocol import command_pb2, event_log_pb2
 from agentplane.runner import protocol_pb2 as runner_pb2
-from agentplane.runner.conftest import RunnerHandle
 from agentplane.runner.errors import RunnerError, StreamClosedError
 from agentplane.runner.testing import events
+from agentplane.runner.testing.fixtures import RunnerHandle
 from agentplane.runner.testing.scripted_model import ScriptedModel, Text
 from agentplane.sandbox_service import protocol_pb2
 from agentplane.sandbox_service.binding_storage import write_binding

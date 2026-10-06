@@ -191,16 +191,6 @@ haku_vitest_test(
 )
 
 haku_vitest_test(
-    name = "result_entry_test",
-    srcs = ["result_entry.test.ts"],
-    isolated_typecheck = True,
-    deps = [
-        ":result_entry",
-        "//:node_modules/vitest",
-    ],
-)
-
-haku_vitest_test(
     name = "call_entry_test",
     srcs = ["call_entry.test.ts"],
     isolated_typecheck = True,

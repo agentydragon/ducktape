@@ -39,12 +39,12 @@ class FluxOwnedBindingError(InventoryError):
 
 
 class UnknownPolicyError(InventoryError):
-    """A grant naming a policy the namespace does not hold, which would grant nothing.
+    """A grant naming an egress policy the namespace does not hold, which would grant nothing.
 
     The CRD admits any string in `spec.policies` and the proxy answers a name that resolves to
     nothing with `MissingPolicy`, so a dangling name is a state the system already handles. This
     refuses one at the moment it would be written; one the operator deletes afterwards still lands
-    there without granting rules from the missing policy.
+    there without granting rules from the missing egress policy.
     """
 
     def __init__(self, names: list[str]) -> None:
@@ -109,8 +109,10 @@ class BindingView(BaseModel):
     from_git: bool = Field(description="Flux applied it; removing it is git's.")
     subjects: list[ServiceAccountRef] = Field(description="The ServiceAccounts this binding names.")
     expires_at: datetime | None = None
-    policies: list[PolicyView] = Field(description="The named policies that exist, in the binding's order.")
-    missing_policies: list[str] = Field(description="Names in the binding that no EgressPolicy answers to.")
+    policies: list[PolicyView] = Field(description="The named egress policies that exist, in the binding's order.")
+    missing_policies: list[str] = Field(
+        description="Egress-policy names in the binding that no EgressPolicy answers to."
+    )
 
 
 class EgressReader:

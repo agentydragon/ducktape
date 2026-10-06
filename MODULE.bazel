@@ -51,7 +51,6 @@ single_version_override(
     version = "0.0.0-20260825-d10ac924",
 )
 
-bazel_dep(name = "googleapis-go", version = "1.1.5")
 bazel_dep(name = "rules_shell", version = "0.8.0")  # Required by buildifier_prebuilt
 bazel_dep(name = "buildifier_prebuilt", version = "8.5.1.4")
 bazel_dep(name = "aspect_rules_lint", version = "2.9.0")
@@ -173,7 +172,6 @@ tf.download(
         "helm": "hashicorp/helm:3.3.0",
         "http": "hashicorp/http:3.6.2",
         "kubernetes": "hashicorp/kubernetes:3.2.1",
-        "libvirt": "dmacvicar/libvirt:0.9.9",
         # CAUTION: low-user-count community provider that authenticates with the
         # LiteLLM master key (tf/gitops/litellm-keys). On every version bump,
         # manually review the source diff since the last pinned tag (focus:
@@ -185,9 +183,11 @@ tf.download(
         "ovh": "ovh/ovh:2.19.0",
         "proxmox": "bpg/proxmox:0.113.1",
         "random": "hashicorp/random:3.9.1",
+        # Receives the ducktape-ci password (tf/gitops/forgejo-images), which Forgejo's own
+        # provider has no resource to use for a user-level webhook.
+        "restapi": "mastercard/restapi:2.0.1",
         "sops": "carlpett/sops:1.4.1",
         "talos": "siderolabs/talos:0.11.0",
-        "tls": "hashicorp/tls:4.4.1",
     },
     tfdoc_version = "0.19.0",
     tflint_version = "0.53.0",
@@ -318,19 +318,7 @@ oci.pull(
     tag = "stable",
 )
 
-# Talos imager: builds reproducible Talos disk images from pinned boot assets.
-# Uses v1.13.0-alpha.2+ which supports unprivileged builds (no loop devices) and
-# deterministic output (SOURCE_DATE_EPOCH + DETERMINISTIC_SEED).
-# v1.12.x requires --privileged and produces non-reproducible images.
-oci.pull(
-    name = "talos_imager",
-    digest = "sha256:65ca4a8696abbba5be0700bb929a5126d38b953c5e4e8eff94f065f34a24cc82",
-    image = "ghcr.io/siderolabs/imager",
-    platforms = ["linux/amd64"],
-    tag = "v1.14.0-alpha.2",
-)
-
-# Base image for container E2E tests. rules_distroless layers git + JDK on top.
+# Base image for container E2E tests. rules_distroless layers curl + git on top.
 oci.pull(
     name = "python_3_14_slim",
     digest = "sha256:cad9a2c871761c413caa6fdd6441c783451e740a48aaeba60ae62a8b53525ef6",
@@ -361,7 +349,7 @@ oci.pull(
     platforms = ["linux/amd64"],
     tag = "v0.16.22",
 )
-use_repo(oci, "debian_trixie_slim", "debian_trixie_slim_linux_amd64", "distroless_cc_debian12", "distroless_cc_debian12_linux_amd64", "electric_1_8_1", "electric_1_8_1_linux_amd64", "grocy", "grocy_linux_amd64", "inventree_stable", "inventree_stable_linux_amd64", "litellm_upstream", "litellm_upstream_linux_amd64", "nginx_unprivileged", "nginx_unprivileged_linux_amd64", "pgvector_pg18", "pgvector_pg18_linux_amd64", "postgres_18", "postgres_18_linux_amd64", "python_3_14_slim", "python_3_14_slim_linux_amd64", "registry_3", "registry_3_linux_amd64", "ryuk", "ryuk_linux_amd64", "stalwart", "stalwart_linux_amd64", "talos_imager", "talos_imager_linux_amd64")
+use_repo(oci, "debian_trixie_slim", "debian_trixie_slim_linux_amd64", "distroless_cc_debian12", "distroless_cc_debian12_linux_amd64", "electric_1_8_1", "electric_1_8_1_linux_amd64", "grocy", "grocy_linux_amd64", "inventree_stable", "inventree_stable_linux_amd64", "litellm_upstream", "litellm_upstream_linux_amd64", "nginx_unprivileged", "nginx_unprivileged_linux_amd64", "pgvector_pg18", "pgvector_pg18_linux_amd64", "postgres_18", "postgres_18_linux_amd64", "python_3_14_slim", "python_3_14_slim_linux_amd64", "registry_3", "registry_3_linux_amd64", "ryuk", "ryuk_linux_amd64", "stalwart", "stalwart_linux_amd64")
 
 # Container image pins from devinfra/image_pins.json.
 # - Generates @image_pins//:pins.bzl with NAME_IMAGE / NAME_DIGEST constants
@@ -405,17 +393,7 @@ apt.sources_list(
     uris = ["https://snapshot.debian.org/archive/debian-security/20260301T000000Z"],
 )
 
-# OpenSSL Squid, matching the TLS backend of the Nix client relay.
-apt.install(
-    dependency_set = "github_relay_squid",
-    packages = [
-        "libnss3-tools",
-        "squid-openssl",
-    ],
-    suites = ["forky"],
-)
-
-# E2E test container: git + JDK layered on python:3.14-slim base.
+# E2E test container: curl + git layered on python:3.14-slim base.
 apt.install(
     dependency_set = "trixie_e2e",
     packages = [
@@ -439,8 +417,8 @@ apt.install(
     ],
 )
 
-# CPAP sync: nmcli (talks to host NetworkManager over dbus) + git (pushes to
-# the cpap-data Forgejo repo) on debian:trixie-slim.
+# CPAP sync: the Wi-Fi tooling cpap/sync.py runs (ip, iw, wpa_supplicant,
+# dhclient) + git (pushes to the cpap-data Forgejo repo) on debian:trixie-slim.
 apt.install(
     dependency_set = "trixie_cpap_sync",
     packages = [
@@ -456,35 +434,11 @@ apt.install(
     ],
 )
 
-# JWT rotation image: git + ca-certificates on debian:trixie-slim for the
-# authentik-jwt-rotation CronJob (Authentik client_credentials exchange + commit).
+# git on debian:trixie-slim for the authentik-jwt-rotation and forgejo-token-rotation
+# CronJobs, which clone, commit and push with the git CLI.
 apt.install(
     dependency_set = "trixie_authentik_rotation",
-    packages = [
-        "bash",
-        "ca-certificates",
-        "curl",
-        "git",
-        "jq",
-        # Explicit awk provider: forky and trixie share one apt extension,
-        # and forky's newer mawk evicts trixie's Provides:awk entry
-        # (bazel-contrib/rules_distroless#272), so bash's transitive
-        # base-files -> awk lookup fails silently otherwise.
-        "mawk",
-    ],
-    suites = [
-        "trixie",
-        "trixie-security",
-    ],
-)
-
-# attic-jwt-rotation CronJob (kubectl exec into attic pod for atticadm + commit).
-apt.install(
-    dependency_set = "trixie_attic_rotation",
-    packages = [
-        "ca-certificates",
-        "git",
-    ],
+    packages = ["git"],
     suites = [
         "trixie",
         "trixie-security",
@@ -504,8 +458,10 @@ apt.install(
         "libglib2.0-bin",
         "libglib2.0-dev-bin",
         "librsvg2-common",
-        # Explicit awk provider - same rules_distroless#272 cross-suite
-        # collision as trixie_authentik_rotation's mawk, above.
+        # Explicit awk provider: forky and trixie share one apt extension,
+        # and forky's newer mawk evicts trixie's Provides:awk entry
+        # (bazel-contrib/rules_distroless#272), so base-files' awk lookup
+        # fails silently otherwise.
         "mawk",
         "procps",
         "scrot",
@@ -547,7 +503,7 @@ apt.install(
         "trixie-security",
     ],
 )
-use_repo(apt, "github_relay_squid", "gnome_shell_test", "trixie_attic_rotation", "trixie_authentik_rotation", "trixie_budget_exporter", "trixie_cpap_sync", "trixie_e2e", "trixie_fc_vm_pod", "trixie_wayback_cache")
+use_repo(apt, "gnome_shell_test", "trixie_authentik_rotation", "trixie_budget_exporter", "trixie_cpap_sync", "trixie_e2e", "trixie_fc_vm_pod", "trixie_wayback_cache")
 
 # JavaScript/TypeScript (Node.js frontends)
 bazel_dep(name = "aspect_bazel_lib", version = "2.22.5")
@@ -555,16 +511,6 @@ bazel_dep(name = "aspect_rules_esbuild", version = "0.27.0")
 bazel_dep(name = "aspect_rules_js", version = "3.4.1")
 bazel_dep(name = "aspect_rules_ts", version = "3.10.1")
 bazel_dep(name = "rules_nodejs", version = "6.7.5")
-
-# Browser testing (provides hermetic Chromium for Puppeteer/Playwright tests)
-bazel_dep(name = "rules_playwright", version = "0.5.3", dev_dependency = True)
-
-playwright = use_extension("@rules_playwright//playwright:extensions.bzl", "playwright", dev_dependency = True)
-playwright.repo(
-    # Use Playwright 1.50.x for Chromium compatibility with Puppeteer 23.x
-    playwright_version = "1.50.1",
-)
-use_repo(playwright, playwright_browsers = "playwright")
 
 # Node.js toolchain
 node = use_extension("@rules_nodejs//nodejs:extensions.bzl", "node")
@@ -600,8 +546,6 @@ npm.npm_translate_lock(
         "eslint": ["eslint=./bin/eslint.js"],
         "json-schema-to-typescript": ["json2ts=./dist/src/cli.js"],
         "prettier": ["prettier=./bin/prettier.cjs"],
-        "vite": ["vite=./bin/vite.js"],
-        "storybook": ["storybook=./index.cjs"],
         "http-server": ["http-server=./bin/http-server"],
     },
     # Track package.json and workspace files for auto-update
@@ -611,21 +555,16 @@ npm.npm_translate_lock(
         "//:pnpm-workspace.yaml",
         "//:props/frontend/package.json",
         "//:study_casino/frontend/package.json",
-        "//:util/testing/frontend_visual/package.json",
         "//:x/rspcache/admin_ui/package.json",
     ],
     # Disable postinstall for packages that download binaries during lifecycle hooks.
     # These fail in Bazel's sandboxed builds (network blocked, RBE).
     lifecycle_hooks_exclude = [
-        # Tries to download native bindings from npm registry. Safe to skip since
-        # @storybook/test-runner (the only consumer via jest-resolve) isn't executed
-        # during bazel build - only used for manual testing.
+        # Tries to download native bindings from npm registry. Consumer is
+        # eslint-plugin-import-x (via eslint-import-context). Safe to skip: pnpm installs the
+        # platform's @unrs/resolver-binding-* optionalDependency itself, so the postinstall has
+        # nothing left to fetch.
         "unrs-resolver",
-        # Postinstall downloads Chromium (~280MB) which fails in sandboxed builds.
-        # .puppeteerrc.cjs (skipDownload: true) isn't visible inside the lifecycle
-        # hook sandbox. Browsers are provided hermetically via rules_playwright
-        # (@playwright_browsers//:chromium-headless-shell) and CHROMIUM_HEADLESS_SHELL.
-        "puppeteer",
     ],
     npmrc = "//:.npmrc",
     # Root pnpm-lock.yaml with workspace packages
@@ -635,6 +574,7 @@ npm.npm_translate_lock(
         "@eslint/js": [""],
         "@typescript-eslint/eslint-plugin": [""],
         "@typescript-eslint/parser": [""],
+        "@vitest/eslint-plugin": [""],
         "eslint-plugin-import-x": [""],
         "eslint-plugin-react": [""],
         "eslint-plugin-react-hooks": [""],
@@ -834,6 +774,26 @@ http_file(
     urls = ["https://openaipublic.blob.core.windows.net/encodings/o200k_base.tiktoken"],
 )
 
+# NLTK data for the Wordle environment (//x/rl_finetune:wordle_env), pinned to an nltk_data
+# commit so its tests need no network. NLTK reads <root>/corpora/words/ and
+# <root>/taggers/averaged_perceptron_tagger_eng/ as directories (its zip lookup does not cover the
+# tagger), which `add_prefix` lays out from the archives' top-level directories.
+http_archive(
+    name = "nltk_words",
+    add_prefix = "corpora",
+    build_file_content = 'filegroup(name = "data", srcs = glob(["**"]), visibility = ["//visibility:public"])',
+    sha256 = "54ed02917d6771dcc3e8141218960d020947f7f2ccfd9ac9b320979349746015",
+    urls = ["https://raw.githubusercontent.com/nltk/nltk_data/550b6625bcef1f2abff2ff770a5a0d272c9c6b2a/packages/corpora/words.zip"],
+)
+
+http_archive(
+    name = "nltk_tagger",
+    add_prefix = "taggers",
+    build_file_content = 'filegroup(name = "data", srcs = glob(["**"]), visibility = ["//visibility:public"])',
+    sha256 = "6025f530624335c67d6547d44757b357b4e79bae030a0383e9887a92c1718f0b",
+    urls = ["https://raw.githubusercontent.com/nltk/nltk_data/550b6625bcef1f2abff2ff770a5a0d272c9c6b2a/packages/taggers/averaged_perceptron_tagger_eng.zip"],
+)
+
 # openai/codex source — consumed via overlaid BUILD files by the execpolicy audit
 # tool (//x/codex_execpolicy_audit). Pinned to a specific commit; the overlay patch
 # adds BUILD.bazel to the crates we need, wires them to stable-repo dependencies,
@@ -847,28 +807,6 @@ http_archive(
     sha256 = "6e84a59661aab07686061da4e8f37b9bb828ac3ecf2ea5e69ee482fcc72fed13",
     strip_prefix = "codex-9e552e9d15ba52bed7077d5357f3e18e330f8f38",
     urls = ["https://github.com/openai/codex/archive/9e552e9d15ba52bed7077d5357f3e18e330f8f38.tar.gz"],
-)
-
-# Native Codex CLI distribution used by Haku's provider-neutral bridge runner. Keep the whole
-# target subtree: the executable locates its bundled rg/zsh/bwrap resources relative to itself.
-# This is the platform package behind @openai/codex 0.144.1's optional dependency, pinned by
-# archive digest rather than downloaded by a lifecycle hook during an image build.
-http_archive(
-    name = "codex_cli_linux_x64",
-    build_file_content = """
-filegroup(
-    name = "files",
-    srcs = glob([
-        "bin/**",
-        "codex-path/**",
-        "codex-resources/**",
-    ]) + ["codex-package.json"],
-    visibility = ["//visibility:public"],
-)
-""",
-    sha256 = "e2a64d421c10aaf0b7e3c0e8bd71b71e497d75823003318b674a278d71add0c7",
-    strip_prefix = "package/vendor/x86_64-unknown-linux-musl",
-    urls = ["https://registry.npmjs.org/@openai/codex/-/codex-0.144.1-linux-x64.tgz"],
 )
 
 # Native Claude Code CLI driven by Agentplane's scripted harness tests (//agentplane/harness_tests).
@@ -899,6 +837,38 @@ filegroup(
     sha256 = "9e4c4a25b88d9c93ce0ee4f64fba23fc55949f66d9ecb79e419c541b64b80997",
     strip_prefix = "package/vendor/x86_64-unknown-linux-musl",
     urls = ["https://registry.npmjs.org/@openai/codex/-/codex-0.152.0-linux-x64.tgz"],
+)
+
+# The one browser every Playwright test drives: Chrome for Testing's headless shell. `:executable`
+# is a single-file target, so `$(rootpath ...)` of it is a path a test can be handed (the grafana skill
+# takes it as CHROMIUM_HEADLESS_SHELL); the visual tests find the binary in the runfiles of
+# //util/testing:frontend_visual. The rest of the archive (libs, .pak, icudtl.dat, ...)
+# rides along as its runfiles, because the executable loads those from its own directory.
+# Pinned to the `chromium-headless-shell` browserVersion in Playwright 1.62.0's browsers.json, the
+# Chromium that Playwright release is tested against; keep in step with `playwright==1.62.0` in
+# pyproject.toml. To bump: read browserVersion for `chromium-headless-shell` from
+# https://unpkg.com/playwright-core@<playwright version>/browsers.json, then take the sha256 of
+# https://storage.googleapis.com/chrome-for-testing-public/<browserVersion>/linux64/chrome-headless-shell-linux64.zip
+http_archive(
+    name = "chrome_headless_shell",
+    build_file_content = """
+filegroup(
+    name = "executable",
+    srcs = ["chrome-headless-shell"],
+    data = glob(
+        ["**"],
+        exclude = [
+            "BUILD.bazel",
+            "REPO.bazel",
+        ],
+    ),
+    visibility = ["//visibility:public"],
+)
+""",
+    dev_dependency = True,
+    sha256 = "3cfc2bd00d1bafcf8a68dc74c9c92bb7150ddc8d26ade948a776316e1cec4f14",
+    strip_prefix = "chrome-headless-shell-linux64",
+    urls = ["https://storage.googleapis.com/chrome-for-testing-public/151.0.7922.34/linux64/chrome-headless-shell-linux64.zip"],
 )
 
 # Flux CRD pins follow the controller versions in cluster/k8s/flux/flux-system/gotk-components.yaml.
@@ -1010,6 +980,14 @@ http_file(
     downloaded_file_path = "gateway.networking.k8s.io_httproutes.yaml",
     sha256 = "9012253cf248583189ff74426140556fafa38b66dc57553fd79f9ae34b2eee9f",
     urls = ["https://raw.githubusercontent.com/kubernetes-sigs/gateway-api/v1.5.1/config/crd/experimental/gateway.networking.k8s.io_httproutes.yaml"],
+)
+
+# Match the ExternalDNS app version in cluster/cdk8s/external_dns.py.
+http_file(
+    name = "external_dns_dnsendpoint_crd",
+    downloaded_file_path = "dnsendpoints.externaldns.k8s.io.yaml",
+    sha256 = "7d1c06b1e991c8db3a70be658fb628e61e71ba72f2686469c276f4f6ab0d1e30",
+    urls = ["https://raw.githubusercontent.com/kubernetes-sigs/external-dns/v0.22.0/config/crd/standard/dnsendpoints.externaldns.k8s.io.yaml"],
 )
 
 http_file(

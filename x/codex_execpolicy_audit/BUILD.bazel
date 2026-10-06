@@ -37,5 +37,6 @@ rust_test(
     deps = [
         "@codex//codex-rs/execpolicy",
         "@crates//:anyhow",
+        "@crates//:tempfile",
     ],
 )

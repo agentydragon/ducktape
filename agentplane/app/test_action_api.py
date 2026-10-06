@@ -42,7 +42,7 @@ from agentplane.action_service.operator_oidc import OidcOperatorAuthenticator, O
 from agentplane.action_service.policies.resources import parse_binding, parse_policy_set
 from agentplane.action_service.policy_informer import PolicyIndex
 from agentplane.action_service.service import ActionService
-from agentplane.action_service.test_fixtures.callers import PERSONAL, admitted_callers
+from agentplane.action_service.testing.callers import PERSONAL, admitted_callers
 from agentplane.action_service.updates import ActionUpdates
 from agentplane.app.action_federation import (
     DirectFederationSettings,
@@ -56,7 +56,7 @@ from agentplane.app.action_policy import (
     BindingProvenance,
 )
 from agentplane.app.api import ModelCatalog, ModelOption, create_app
-from agentplane.app.conftest import AGENT_AUTH, TEST_REASONING_EFFORTS
+from agentplane.app.conftest import AGENT_AUTH
 from agentplane.app.consent import ConsentAllow
 from agentplane.app.database import connect
 from agentplane.app.database_updates import DatabaseUpdates
@@ -66,6 +66,7 @@ from agentplane.app.identity import TokenReviewer
 from agentplane.app.live import LiveIndex, SandboxSnapshot
 from agentplane.app.oidc import INSECURE_COOKIE, OIDCSettings
 from agentplane.app.operator_sessions import BrowserSession, OperatorSession, OperatorSessionStore
+from agentplane.app.testing.model_test_data import TEST_REASONING_EFFORTS
 from agentplane.app.threads.bridge import RunnerBridge
 from agentplane.app.threads.events.event_log import EventLogStore
 from agentplane.app.threads.store import ThreadStore

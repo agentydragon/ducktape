@@ -84,7 +84,6 @@ def chart(app: App) -> Chart:
                 "replicas": 1,
             },
             "serviceMonitor": {"enabled": True},
-            "resources": {"requests": {"cpu": "50m", "memory": "128Mi"}, "limits": {"cpu": "500m", "memory": "512Mi"}},
         },
     )
     k8s.KubeNetworkPolicy(

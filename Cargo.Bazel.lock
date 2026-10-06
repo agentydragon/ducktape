@@ -1,5 +1,5 @@
 {
-  "checksum": "c5f6c5e4f4fdff340b86340ad52cbbcda5326278daf5d5cd7e5d2f1ca3070114",
+  "checksum": "4ce278ccfd2323c150d67e6d0df567fe168b597969eb75c36e2d59211826ed67",
   "conditions": {
     "aarch64-apple-darwin": [
       "aarch64-apple-darwin"
@@ -11716,10 +11716,6 @@
             "target": "http_body_util"
           },
           {
-            "id": "humantime 2.4.0",
-            "target": "humantime"
-          },
-          {
             "id": "hyper 1.11.1",
             "target": "hyper"
           },
@@ -11944,16 +11940,8 @@
             "target": "url"
           },
           {
-            "id": "uuid 1.26.1",
-            "target": "uuid"
-          },
-          {
             "id": "v8_valueserializer 0.1.2",
             "target": "v8_valueserializer"
-          },
-          {
-            "id": "warp 0.4.3",
-            "target": "warp"
           },
           {
             "id": "which 8.0.6",
@@ -15751,98 +15739,6 @@
         }
       ],
       "version": "0.11.1"
-    },
-    "headers 0.4.1": {
-      "common_attrs": {
-        "deps": [
-          {
-            "id": "base64 0.22.1",
-            "target": "base64"
-          },
-          {
-            "id": "bytes 1.12.1",
-            "target": "bytes"
-          },
-          {
-            "id": "headers-core 0.3.0",
-            "target": "headers_core"
-          },
-          {
-            "id": "http 1.5.0",
-            "target": "http"
-          },
-          {
-            "id": "httpdate 1.0.3",
-            "target": "httpdate"
-          },
-          {
-            "id": "mime 0.3.17",
-            "target": "mime"
-          },
-          {
-            "id": "sha1 0.10.6",
-            "target": "sha1"
-          }
-        ],
-        "edition": "2018"
-      },
-      "library_target_name": "headers",
-      "license": "MIT",
-      "license_file": "LICENSE",
-      "license_ids": [
-        "MIT"
-      ],
-      "name": "headers",
-      "package_url": "https://github.com/hyperium/headers",
-      "repository": {
-        "Http": {
-          "sha256": "b3314d5adb5d94bcdf56771f2e50dbbc80bb4bdf88967526706205ac9eff24eb",
-          "url": "https://static.crates.io/crates/headers/0.4.1/download"
-        }
-      },
-      "targets": [
-        {
-          "Library": {
-            "crate_name": "headers",
-            "crate_root": "src/lib.rs"
-          }
-        }
-      ],
-      "version": "0.4.1"
-    },
-    "headers-core 0.3.0": {
-      "common_attrs": {
-        "deps": [
-          {
-            "id": "http 1.5.0",
-            "target": "http"
-          }
-        ],
-        "edition": "2015"
-      },
-      "library_target_name": "headers_core",
-      "license": "MIT",
-      "license_file": "LICENSE",
-      "license_ids": [
-        "MIT"
-      ],
-      "name": "headers-core",
-      "package_url": "https://github.com/hyperium/headers",
-      "repository": {
-        "Http": {
-          "sha256": "54b4a22553d4242c49fddb9ba998a99962b5cc6f22cb5a3482bec22522403ce4",
-          "url": "https://static.crates.io/crates/headers-core/0.3.0/download"
-        }
-      },
-      "targets": [
-        {
-          "Library": {
-            "crate_name": "headers_core",
-            "crate_root": "src/lib.rs"
-          }
-        }
-      ],
-      "version": "0.3.0"
     },
     "heapless 0.7.17": {
       "build_script_attrs": {
@@ -35894,10 +35790,6 @@
     },
     "sha1 0.10.6": {
       "common_attrs": {
-        "crate_features": [
-          "default",
-          "std"
-        ],
         "deps": {
           "common": [
             {
@@ -41848,11 +41740,32 @@
     },
     "tokio-util 0.7.18": {
       "common_attrs": {
-        "crate_features": [
-          "codec",
-          "default",
-          "io"
-        ],
+        "crate_features": {
+          "common": [
+            "codec",
+            "default"
+          ],
+          "selects": {
+            "aarch64-apple-darwin": [
+              "io"
+            ],
+            "aarch64-unknown-linux-gnu": [
+              "io"
+            ],
+            "wasm32-wasip1": [
+              "io"
+            ],
+            "x86_64-pc-windows-msvc": [
+              "io"
+            ],
+            "x86_64-unknown-linux-gnu": [
+              "io"
+            ],
+            "x86_64-unknown-nixos-gnu": [
+              "io"
+            ]
+          }
+        },
         "deps": [
           {
             "id": "bytes 1.12.1",
@@ -43852,53 +43765,6 @@
     },
     "uuid 1.26.1": {
       "common_attrs": {
-        "crate_features": [
-          "default",
-          "rng",
-          "std",
-          "v4"
-        ],
-        "deps": {
-          "common": [],
-          "selects": {
-            "aarch64-apple-darwin": [
-              {
-                "id": "getrandom 0.4.2",
-                "target": "getrandom"
-              }
-            ],
-            "aarch64-unknown-linux-gnu": [
-              {
-                "id": "getrandom 0.4.2",
-                "target": "getrandom"
-              }
-            ],
-            "wasm32-wasip1": [
-              {
-                "id": "getrandom 0.4.2",
-                "target": "getrandom"
-              }
-            ],
-            "x86_64-pc-windows-msvc": [
-              {
-                "id": "getrandom 0.4.2",
-                "target": "getrandom"
-              }
-            ],
-            "x86_64-unknown-linux-gnu": [
-              {
-                "id": "getrandom 0.4.2",
-                "target": "getrandom"
-              }
-            ],
-            "x86_64-unknown-nixos-gnu": [
-              {
-                "id": "getrandom 0.4.2",
-                "target": "getrandom"
-              }
-            ]
-          }
-        },
         "edition": "2021"
       },
       "library_target_name": "uuid",
@@ -44312,115 +44178,6 @@
         }
       ],
       "version": "0.3.1"
-    },
-    "warp 0.4.3": {
-      "common_attrs": {
-        "crate_features": [
-          "default"
-        ],
-        "deps": [
-          {
-            "id": "bytes 1.12.1",
-            "target": "bytes"
-          },
-          {
-            "id": "futures-util 0.3.34",
-            "target": "futures_util"
-          },
-          {
-            "id": "headers 0.4.1",
-            "target": "headers"
-          },
-          {
-            "id": "http 1.5.0",
-            "target": "http"
-          },
-          {
-            "id": "http-body 1.0.1",
-            "target": "http_body"
-          },
-          {
-            "id": "http-body-util 0.1.5",
-            "target": "http_body_util"
-          },
-          {
-            "id": "log 0.4.34",
-            "target": "log"
-          },
-          {
-            "id": "mime 0.3.17",
-            "target": "mime"
-          },
-          {
-            "id": "mime_guess 2.0.5",
-            "target": "mime_guess"
-          },
-          {
-            "id": "percent-encoding 2.3.2",
-            "target": "percent_encoding"
-          },
-          {
-            "id": "pin-project 1.1.11",
-            "target": "pin_project"
-          },
-          {
-            "id": "scoped-tls 1.0.1",
-            "target": "scoped_tls"
-          },
-          {
-            "id": "serde 1.0.229",
-            "target": "serde"
-          },
-          {
-            "id": "serde_json 1.0.151",
-            "target": "serde_json"
-          },
-          {
-            "id": "serde_urlencoded 0.7.1",
-            "target": "serde_urlencoded"
-          },
-          {
-            "id": "tokio 1.53.1",
-            "target": "tokio"
-          },
-          {
-            "id": "tokio-util 0.7.18",
-            "target": "tokio_util"
-          },
-          {
-            "id": "tower-service 0.3.3",
-            "target": "tower_service"
-          },
-          {
-            "id": "tracing 0.1.44",
-            "target": "tracing"
-          }
-        ],
-        "edition": "2021"
-      },
-      "library_target_name": "warp",
-      "license": "MIT",
-      "license_file": "LICENSE",
-      "license_ids": [
-        "MIT"
-      ],
-      "name": "warp",
-      "package_url": "https://github.com/seanmonstar/warp",
-      "repository": {
-        "Http": {
-          "sha256": "c0a808122a8a77eecdabaefd88ddb1913c4be5ea1465399f63ba64c7aa705fea",
-          "url": "https://static.crates.io/crates/warp/0.4.3/download"
-        }
-      },
-      "targets": [
-        {
-          "Library": {
-            "crate_name": "warp",
-            "crate_root": "src/lib.rs"
-          }
-        }
-      ],
-      "version": "0.4.3"
     },
     "wasi 0.11.1+wasi-snapshot-preview1": {
       "common_attrs": {
@@ -48382,7 +48139,6 @@
     "glob 0.3.4",
     "http 1.5.0",
     "http-body-util 0.1.5",
-    "humantime 2.4.0",
     "hyper 1.11.1",
     "hyper-util 0.1.20",
     "jsonwebtoken 11.0.0",
@@ -48440,9 +48196,7 @@
     "tree-sitter-bash 0.25.1",
     "ts-rs 12.0.1",
     "url 2.5.8",
-    "uuid 1.26.1",
     "v8_valueserializer 0.1.2",
-    "warp 0.4.3",
     "which 8.0.6",
     "xdg 3.0.0"
   ],

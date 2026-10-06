@@ -22,6 +22,7 @@
 //! `serde_yaml::Value` tree.
 
 use std::collections::{BTreeMap, BTreeSet};
+use std::fmt;
 use std::fs;
 use std::path::{Path, PathBuf};
 
@@ -78,6 +79,65 @@ pub struct DeleteOutcome {
     #[serde(flatten)]
     pub outcome: MutationOutcome,
 }
+
+/// Why `modules merge` cannot compose its documents; the merge refuses before writing anything,
+/// in every mode. `target` is the merge target and `source` the source whose claims clash with
+/// the target's or an earlier source's.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum MergeConflict {
+    /// The source claims a `members[].selector.binding` name that is already claimed.
+    DuplicateSourceBinding {
+        name: String,
+        target: PathBuf,
+        source: PathBuf,
+    },
+    /// The source claims a readable member name that is already claimed.
+    DuplicateReadableName {
+        name: String,
+        target: PathBuf,
+        source: PathBuf,
+    },
+    /// The source annotates a readable name differently from the target's annotation.
+    ConflictingAnnotation {
+        name: String,
+        target: PathBuf,
+        source: PathBuf,
+    },
+}
+
+impl fmt::Display for MergeConflict {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::DuplicateSourceBinding {
+                name,
+                target,
+                source,
+            }
+            | Self::DuplicateReadableName {
+                name,
+                target,
+                source,
+            } => write!(
+                f,
+                "duplicate member name \"{name}\" in {} and {}",
+                target.display(),
+                source.display()
+            ),
+            Self::ConflictingAnnotation {
+                name,
+                target,
+                source,
+            } => write!(
+                f,
+                "conflicting annotation for \"{name}\" in {} and {}",
+                target.display(),
+                source.display()
+            ),
+        }
+    }
+}
+
+impl std::error::Error for MergeConflict {}
 
 impl MergeSummary {
     /// Render the one-line stdout summary.
@@ -252,22 +312,22 @@ fn plan_merge(modules_root: &Path, target: &Path, sources: &[&Path]) -> Result<M
         let src_names = claim_names(&src_module, src)?;
         for name in src_names.selector_bindings {
             if !existing_names.selector_bindings.insert(name.clone()) {
-                bail!(
-                    "duplicate member name \"{}\" in {} and {}",
+                return Err(MergeConflict::DuplicateSourceBinding {
                     name,
-                    target_abs.display(),
-                    src.display()
-                );
+                    target: target_abs,
+                    source: src.clone(),
+                }
+                .into());
             }
         }
         for name in src_names.readable_names {
             if !existing_names.readable_names.insert(name.clone()) {
-                bail!(
-                    "duplicate member name \"{}\" in {} and {}",
+                return Err(MergeConflict::DuplicateReadableName {
                     name,
-                    target_abs.display(),
-                    src.display()
-                );
+                    target: target_abs,
+                    source: src.clone(),
+                }
+                .into());
             }
         }
         let label = display_relative(modules_root, src);
@@ -295,12 +355,12 @@ fn plan_merge(modules_root: &Path, target: &Path, sources: &[&Path]) -> Result<M
             if let Some(existing) = target_module.annotations.get(&name)
                 && existing != &annotation
             {
-                bail!(
-                    "conflicting annotation for \"{}\" in {} and {}",
+                return Err(MergeConflict::ConflictingAnnotation {
                     name,
-                    target_abs.display(),
-                    src.display()
-                );
+                    target: target_abs,
+                    source: src.clone(),
+                }
+                .into());
             }
             target_module.annotations.insert(name, annotation);
         }
@@ -589,4 +649,103 @@ fn compose_block(existing: Option<&str>, additions: impl IntoIterator<Item = Str
         .chain(additions)
         .collect::<Vec<_>>()
         .join("\n")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Writes `target`, `first` and `second` as module files under a fresh root and plans
+    /// merging `first` then `second` into `target`.
+    fn plan(target: &str, first: &str, second: &str) -> (tempfile::TempDir, Result<MergePlan>) {
+        let root = tempfile::tempdir().unwrap();
+        for (name, yaml) in [("target", target), ("first", first), ("second", second)] {
+            fs::write(root.path().join(format!("{name}.yaml")), yaml).unwrap();
+        }
+        let plan = plan_merge(
+            root.path(),
+            Path::new("target"),
+            &[Path::new("first"), Path::new("second")],
+        );
+        (root, plan)
+    }
+
+    /// The root and the typed refusal of a merge that must be refused.
+    fn refused(target: &str, first: &str, second: &str) -> (tempfile::TempDir, MergeConflict) {
+        let (root, plan) = plan(target, first, second);
+        let error = plan.err().expect("the clash must be refused");
+        (root, error.downcast::<MergeConflict>().unwrap())
+    }
+
+    #[test]
+    fn a_readable_name_claimed_by_two_sources_is_refused_naming_the_later_one() {
+        let (root, conflict) = refused(
+            "members: [{selector: {binding: {name: a}}}]",
+            "members: [{name: Clash, selector: {binding: {name: b}}}]",
+            "members: [{name: Clash, selector: {binding: {name: c}}}]",
+        );
+        assert_eq!(
+            conflict,
+            MergeConflict::DuplicateReadableName {
+                name: "Clash".to_string(),
+                target: root.path().join("target.yaml"),
+                source: root.path().join("second.yaml"),
+            }
+        );
+    }
+
+    #[test]
+    fn a_source_binding_claimed_twice_is_refused_apart_from_readable_names() {
+        let (root, conflict) = refused(
+            "members: [{selector: {binding: {name: shared_binding}}}]",
+            "members: [{selector: {binding: {name: shared_binding}}}]",
+            "members: []",
+        );
+        assert_eq!(
+            conflict,
+            MergeConflict::DuplicateSourceBinding {
+                name: "shared_binding".to_string(),
+                target: root.path().join("target.yaml"),
+                source: root.path().join("first.yaml"),
+            }
+        );
+    }
+
+    #[test]
+    fn a_member_name_and_a_source_match_binding_name_share_one_namespace() {
+        let (root, conflict) = refused(
+            "members: [{name: Widget, selector: {binding: {name: a}}}]",
+            "source_matches: [{match: 'const b = 2;', bindings: [{local: b, name: Widget}]}]",
+            "members: []",
+        );
+        assert_eq!(
+            conflict,
+            MergeConflict::DuplicateReadableName {
+                name: "Widget".to_string(),
+                target: root.path().join("target.yaml"),
+                source: root.path().join("first.yaml"),
+            }
+        );
+    }
+
+    #[test]
+    fn differing_annotations_clash_and_identical_ones_do_not() {
+        let target = "members: [{selector: {binding: {name: annotated}}}]\nannotations: {annotated: {note: first}}";
+        let source = |note: &str| {
+            format!(
+                "members: [{{selector: {{binding: {{name: b}}}}}}]\nannotations: {{annotated: {{note: {note}}}}}"
+            )
+        };
+        let (root, conflict) = refused(target, &source("second"), "members: []");
+        assert_eq!(
+            conflict,
+            MergeConflict::ConflictingAnnotation {
+                name: "annotated".to_string(),
+                target: root.path().join("target.yaml"),
+                source: root.path().join("first.yaml"),
+            }
+        );
+        let (_root, plan) = plan(target, &source("first"), "members: []");
+        plan.expect("identical annotations merge");
+    }
 }

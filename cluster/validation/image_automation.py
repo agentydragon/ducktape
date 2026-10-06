@@ -1,9 +1,8 @@
-"""Consistency between Flux image automation and the GitHub webhook receiver.
+"""Consistency between Flux image automation and the webhook Receivers.
 
-Every `ImageRepository` must be listed in the `flux-webhook` GitHub `Receiver` so a push /
-`registry_package` webhook reconciles it immediately — otherwise new GHCR tags are only
-picked up on the 5-minute `ImageRepository` poll. Also checks that the webhook doesn't
-reference one that no longer exists.
+Every `ImageRepository` must be listed in some `Receiver`, so a registry webhook reconciles
+it immediately — otherwise a new tag is only picked up on the 5-minute `ImageRepository`
+poll. Also checks that no Receiver references one that no longer exists.
 
 Reads the typed resources from `ParsedCluster.build_results` — the kustomize/flux build
 output the validator already produces — and isinstance-dispatches on the parsed variants, so
@@ -40,22 +39,12 @@ _FLOW_MAPPING = re.compile(r"^\s*(?:-\s+\{|[\w./-]+:\s*\{)\s*[^}\s]")
 
 def check_image_automation_webhook(cluster: ParsedCluster) -> list[str]:
     image_repos: set[str] = set()
-    # Only GHCR images get push-time reconcile via the GitHub `registry_package`
-    # webhook; images in other registries (e.g. our own Forgejo, git.allegedly.works)
-    # can't, so they're not required in the GitHub Receiver — they use the 5m poll
-    # (or their own registry webhook).
-    ghcr_repos: set[str] = set()
     webhook_repos: set[str] = set()
 
     for result in cluster.build_results:
         for resource in result.resources:
             if isinstance(resource, ImageRepositoryResource):
                 image_repos.add(resource.name)
-                # The registry host is the first path component of the OCI ref.
-                # Compare it exactly (not a substring/prefix match) so a repo like
-                # `git.allegedly.works/…` can't be mistaken for GHCR.
-                if resource.spec.image.split("/", 1)[0] == "ghcr.io":
-                    ghcr_repos.add(resource.name)
             elif isinstance(resource, ReceiverResource):
                 webhook_repos.update(
                     ref.name for ref in resource.spec.resources if ref.kind == "ImageRepository" and ref.name
@@ -63,13 +52,13 @@ def check_image_automation_webhook(cluster: ParsedCluster) -> list[str]:
 
     return [
         *(
-            f"ImageRepository '{name}' is not listed in the flux-webhook GitHub Receiver (cluster/cdk8s/flux_webhook/chart.py); "
-            "new GHCR tags will only be picked up on the 5m poll, not on push. Add it to the Receiver's resources."
-            for name in sorted(ghcr_repos - webhook_repos)
+            f"ImageRepository '{name}' is not listed in any Receiver; new tags will only be picked up on the 5m poll, "
+            "not on push. Add it to the Receiver for its registry (cluster/cdk8s/flux_webhook/chart.py for GHCR, "
+            "cluster/cdk8s/forgejo_images.py for the Forgejo registry)."
+            for name in sorted(image_repos - webhook_repos)
         ),
         *(
-            f"The flux-webhook GitHub Receiver references ImageRepository '{name}', "
-            "but no such ImageRepository is defined under cluster/k8s."
+            f"A Receiver references ImageRepository '{name}', but no such ImageRepository is defined in the cluster."
             for name in sorted(webhook_repos - image_repos - _HAKU_STATE_IMAGE_REPOS)
         ),
     ]

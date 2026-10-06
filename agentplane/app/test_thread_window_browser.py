@@ -6,27 +6,32 @@ from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
 from urllib.parse import parse_qs, urlsplit
 
+import pytest
 import pytest_bazel
 from playwright.async_api import Page, Request, Route, TimeoutError as PlaywrightTimeoutError, expect
 
-from agentplane.app.test_thread_browser import (
+from agentplane.app.testing import history_trace
+from agentplane.app.testing.electric_service import ElectricService
+from agentplane.app.testing.thread_browser import (
     ThreadBrowser,
     append_items,
     capture_reading_anchor,
-    db_url,
     expect_reading_anchor,
     frames,
     message_composer,
     wheel_and_capture_anchor_at_scrollend,
 )
-from agentplane.app.testing import history_trace
 from agentplane.protocol import event_log_pb2, event_pb2
 from util.testing.undeclared_outputs import undeclared_outputs_dir
 
 # gazelle:include_dep @pypi//protobuf
 
-pytest_plugins = ("agentplane.app.test_thread_browser",)
-__all__ = ["db_url"]
+pytest_plugins = ("agentplane.app.testing.thread_browser",)
+
+
+@pytest.fixture
+async def db_url(electric: ElectricService) -> str:
+    return electric.database_url
 
 
 def _append_uneven_items(thread_browser: ThreadBrowser, prefix: str, numbers: range) -> event_log_pb2.EventEntry:
@@ -136,9 +141,7 @@ async def test_a_growing_thread_stays_one_shape_and_scrolling_back_keeps_the_rea
     async with _holding_older_pages(page) as held:
         # Reaching the top asks for the page before it. Sample the reader's row while that page is
         # still on its way, once the gesture has ended and two consecutive frames agree.
-        gesture = await history.evaluate_handle(
-            "area => ({ ended: new Promise(resolve => area.addEventListener('scrollend', () => resolve(), { once: true })) })"
-        )
+        gesture = await history.evaluate_handle("area => window.__threadPage.scrollEnded(area)")
         await page.mouse.wheel(0, -10_000)
         async with asyncio.timeout(30):
             await held.asked.wait()
@@ -191,9 +194,7 @@ async def test_an_older_page_landing_mid_gesture_does_not_move_the_reader(thread
     loading = history.get_by_role("status").filter(has_text="Loading earlier…")
     await history.hover()
     async with _holding_older_pages(page) as held:
-        gesture = await history.evaluate_handle(
-            "area => ({ ended: new Promise(resolve => area.addEventListener('scrollend', () => resolve(), { once: true })) })"
-        )
+        gesture = await history.evaluate_handle("area => window.__threadPage.scrollEnded(area)")
         await page.mouse.wheel(0, -10_000)
         async with asyncio.timeout(30):
             await held.asked.wait()

@@ -311,6 +311,12 @@ re-handshake, decrypt failures), see
 dig allegedly.works A +short
 dig api.allegedly.works A +short
 dig allegedly.works NS
+
+# Check the two reconcilers separately
+kubectl -n ducktape-flux get kustomization external-dns external-dns-records
+kubectl -n external-dns get dnsendpoint static-records
+kubectl -n external-dns logs deployment/external-dns --since=15m
+kubectl -n flux-system get terraform dns-records  # domain registration/delegation only
 ```
 
 **cert-manager DNS-01 failures**:

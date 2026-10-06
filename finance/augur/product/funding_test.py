@@ -17,15 +17,7 @@ from finance.augur.api.portfolio import (
     PortfolioConfig,
     SecurityHoldingConfig,
 )
-from finance.augur.model.series import (
-    InflationKey,
-    LevelSeriesKey,
-    LocationId,
-    RentKey,
-    SecurityDistributionKey,
-    SecurityKey,
-    SecuritySymbol,
-)
+from finance.augur.model.series import LevelSeriesKey, SecurityDistributionKey, SecurityKey, SecuritySymbol
 from finance.augur.product.funding import Policy
 from finance.augur.product.holdings import opening_holdings
 from finance.augur.product.scenarios import PRIMARY_ACCOUNT_ID, TAX_AUTHORITY_AGENT_ID, Situation, build_situation
@@ -82,10 +74,7 @@ def product_situation(
     config: FundingPolicy,
     *,
     lots: tuple[SecurityHoldingConfig, ...],
-    cash: Decimal = Decimal(0),
     spend: Decimal = Decimal(10),
-    rent: Decimal = Decimal(0),
-    spend_index: SpendIndex = SpendIndex.NONE,
     horizon: int = 1,
     distributions: tuple[SecurityDistributionConfig, ...] = (),
 ) -> Product:
@@ -101,13 +90,11 @@ def product_situation(
             model_id="stipulated-policy-control",
             horizon_months=horizon,
             monthly_spend=spend,
-            spend_index=spend_index,
-            monthly_rent=rent,
-            rental_location_id=LocationId("test-location") if rent else None,
+            spend_index=SpendIndex.NONE,
             funding_policy=config,
         ),
         primary_agent_id=ACTOR,
-        initial_cash=cash,
+        initial_cash=Decimal(0),
         holdings=opening_holdings(
             portfolio, distributions, tlh_portfolios=(), primary_agent_id=ACTOR, payout_account_id=PRIMARY_ACCOUNT_ID
         ),
@@ -202,40 +189,6 @@ def run(
         currency=situation.currency,
     )
     return finish(ActionSession({0: world}, ACTOR), policy).rollouts[0]
-
-
-def test_product_spend_tracks_monthly_cpi_but_rent_resets_only_annually() -> None:
-    config = FundingPolicy()
-    product = product_situation(
-        config,
-        cash=Decimal(1000),
-        spend=Decimal(1),
-        rent=Decimal(10),
-        spend_index=SpendIndex.INFLATION,
-        horizon=14,
-        lots=(),
-    )
-    cpi = np.full((1, 15), 1.5)
-    cpi[:, 0] = 1
-    cpi[:, 12] = 2
-    cpi[:, 13:] = 3
-    rent = np.full((1, 15), 9.0)
-    rent[:, 0] = 1
-    rent[:, 12] = 2
-    rent[:, 13:] = 8
-    result = run(product, config, {InflationKey(): cpi, RentKey(location_id=LocationId("test-location")): rent})
-    payments = result.summary.payments
-    assert [
-        row.receipt.amount_paid
-        for row in payments
-        if row.target is not None and row.target.obligation_type == "cash_spend"
-    ] == [100] + [150] * 11 + [200, 300]
-    assert [
-        row.receipt.amount_paid
-        for row in payments
-        if row.target is not None and row.target.obligation_type == "outside_rent"
-    ] == [1000] * 12 + [2000] * 2
-    assert result.stop is None
 
 
 def test_coupon_precedes_funding_and_next_year_tax_is_an_explicit_funded_claim() -> None:

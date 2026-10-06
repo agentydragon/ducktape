@@ -18,8 +18,7 @@ describe("replaceSearchParams", () => {
     const { browser, replaceState } = browserAt();
 
     expect(replaceSearchParams({ scenarios: "new", fmt: null, scale: "log" }, browser)).toBe(true);
-    expect(replaceState).toHaveBeenCalledOnce();
-    expect(replaceState).toHaveBeenCalledWith(null, "", "/augur?unknown=keep&scenarios=new&scale=log#chart");
+    expect(replaceState).toHaveBeenCalledExactlyOnceWith(null, "", "/augur?unknown=keep&scenarios=new&scale=log#chart");
   });
 
   it("does not write an unchanged URL", () => {

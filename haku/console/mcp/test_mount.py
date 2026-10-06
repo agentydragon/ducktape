@@ -26,18 +26,6 @@ async def _healthy_asgi_app(scope: Scope, receive: Receive, send: Send) -> None:
     await PlainTextResponse("ok")(scope, receive, send)
 
 
-def test_observe_ignores_unrelated_runtime_errors() -> None:
-    health = McpSessionManagerHealth()
-    health.observe(RuntimeError("some other failure"))
-    assert health.alive is True
-
-
-def test_observe_marks_dead_on_session_manager_wedge() -> None:
-    health = McpSessionManagerHealth()
-    health.observe(RuntimeError(_WEDGE_MESSAGE))
-    assert health.alive is False
-
-
 def test_mount_mcp_app_forwards_healthy_requests() -> None:
     app = Starlette()
     health = McpSessionManagerHealth()

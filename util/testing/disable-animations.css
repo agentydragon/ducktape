@@ -1,0 +1,6 @@
+*,
+*::before,
+*::after {
+  animation-play-state: paused !important;
+  transition: none !important;
+}

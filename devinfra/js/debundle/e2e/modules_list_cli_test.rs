@@ -1,9 +1,8 @@
 //! End-to-end exercise of `debundle modules list`'s filters by
 //! shelling out to the built binary against a tiny modules fixture.
 
-use debundle_e2e_support::{debundler_path, run_debundle, write_text_file};
+use debundle_e2e_support::{run_debundle, write_text_file};
 use std::path::Path;
-use std::process::Command;
 
 fn setup_modules_fixture(root: &Path) {
     write_text_file(
@@ -101,26 +100,4 @@ fn modules_list_empty_filter_excludes_canonical_source_claims_and_annotations() 
         .map(|m| m["path"].as_str().unwrap())
         .collect();
     assert_eq!(paths, vec!["ui/empty"]);
-}
-
-#[test]
-fn modules_list_picks_up_modules_env_var() {
-    // CLI flags override env vars (per docs/cli.md); both pointing at
-    // the same dir is enough to prove env-var plumbing parses.
-    let dir = tempfile::tempdir().unwrap();
-    let modules = dir.path().join("modules");
-    setup_modules_fixture(&modules);
-
-    let output = Command::new(debundler_path())
-        .args(["modules", "list", "--format", "json"])
-        .env("DEBUNDLE_MODULES", &modules)
-        .output()
-        .expect("spawn debundle");
-    assert!(
-        output.status.success(),
-        "non-zero exit: stderr={}",
-        String::from_utf8_lossy(&output.stderr)
-    );
-    let parsed: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
-    assert_eq!(parsed["modules"].as_array().unwrap().len(), 4);
 }

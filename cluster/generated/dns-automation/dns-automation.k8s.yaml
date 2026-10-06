@@ -44,7 +44,7 @@ spec:
         conn_str    = "postgres://tfstate@tofu-state-db-ovh-rw.tofu-state.svc:5432/tfstate?sslmode=disable"
         schema_name = "dns_records"
       }
-  interval: 15m
+  interval: 2h
   path: ./tf/gitops/dns-records
   refreshBeforeApply: true
   runnerPodTemplate:
@@ -58,6 +58,10 @@ spec:
       envFrom:
         - secretRef:
             name: aws-route53-credentials
+      resources:
+        requests:
+          cpu: 250m
+          memory: 512Mi
   serviceAccountName: tf-runner
   sourceRef:
     kind: GitRepository
@@ -66,23 +70,3 @@ spec:
   vars:
     - name: route53_zone_id
       value: Z02901943N8ZFQFOD9P5I
-    - name: public_nodes
-      value:
-        ovh-ns1001419:
-          public_ip: 51.81.245.180
-          role: control-plane
-        ovh-ns102453:
-          public_ip: 147.135.37.175
-          role: worker
-        ovh-ns103656:
-          public_ip: 147.135.39.162
-          role: worker
-        ovh-ns103711:
-          public_ip: 147.135.39.176
-          role: worker
-        ovh-ns104952:
-          public_ip: 147.135.104.5
-          role: control-plane
-        ovh-ns104963:
-          public_ip: 147.135.104.16
-          role: control-plane

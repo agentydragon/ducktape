@@ -1,6 +1,9 @@
+import base64
+import json
 from datetime import UTC, datetime
 from pathlib import Path
 
+import httpx
 import pytest_bazel
 
 from cluster.rotators.forgejo_token_rotation import rotate
@@ -17,36 +20,23 @@ from cluster.rotators.forgejo_token_rotation.rotate import (
 )
 
 
-class _FakeResponse:
-    def __init__(self, payload, status_code: int = 200):
-        self._payload = payload
-        self.status_code = status_code
-
-    def raise_for_status(self) -> None:
-        if self.status_code >= 400:
-            raise RuntimeError(f"status {self.status_code}")
-
-    def json(self):
-        return self._payload
-
-
-class _RecordingClient:
-    def __init__(self):
-        self.posts = []
-
-    def post(self, url: str, **kwargs):
-        self.posts.append((url, kwargs))
-        return _FakeResponse(
-            {
+def _minting_client(seen: list[httpx.Request]) -> httpx.Client:
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.append(request)
+        body = json.loads(request.content)
+        return httpx.Response(
+            201,
+            json={
                 "id": 12,
-                "name": kwargs["json"]["name"],
+                "name": body["name"],
                 "sha1": "abcd1234token",
                 "token_last_eight": "34token",
-                "scopes": kwargs["json"]["scopes"],
+                "scopes": body["scopes"],
                 "repositories": None,
             },
-            status_code=201,
         )
+
+    return httpx.Client(transport=httpx.MockTransport(handler))
 
 
 def test_write_raw_token_sops_file_formats_after_encrypt(monkeypatch, tmp_path: Path):
@@ -135,9 +125,9 @@ def test_minted_token_requests_full_non_admin_write_scope_set():
     """
     r = Rotation(name="haku", credentials_dir=Path("/creds"), sops_file=Path("secrets/haku.yaml"))
     creds = ForgejoCredentials("test-user", "test-secret", "http://forgejo.test:3000", "https://git.test")
-    client = _RecordingClient()
-    mint_token(client, r, creds, now=datetime(2026, 7, 1, tzinfo=UTC))
-    assert client.posts[0][1]["json"]["scopes"] == [
+    seen: list[httpx.Request] = []
+    mint_token(_minting_client(seen), r, creds, now=datetime(2026, 7, 1, tzinfo=UTC))
+    assert json.loads(seen[0].content)["scopes"] == [
         "write:activitypub",
         "write:issue",
         "write:misc",
@@ -267,11 +257,11 @@ def test_mint_token_omits_repositories_for_full_account_access():
         sops_file=Path("secrets/haku.yaml"),
     )
     creds = ForgejoCredentials("test-user", "test-secret", "http://forgejo.test:3000", "https://git.test")
-    client = _RecordingClient()
-    data = mint_token(client, r, creds, now=datetime(2026, 7, 1, 1, 2, 3, 456789, tzinfo=UTC))
+    seen: list[httpx.Request] = []
+    data = mint_token(_minting_client(seen), r, creds, now=datetime(2026, 7, 1, 1, 2, 3, 456789, tzinfo=UTC))
     assert data["name"] == "forgejo-tea-haku-20260701010203456789"
-    assert client.posts[0][1]["auth"] == ("test-user", "test-secret")
-    assert client.posts[0][1]["json"] == {"name": data["name"], "scopes": FULL_ACCOUNT_SCOPES}
+    assert seen[0].headers["Authorization"] == "Basic " + base64.b64encode(b"test-user:test-secret").decode()
+    assert json.loads(seen[0].content) == {"name": data["name"], "scopes": FULL_ACCOUNT_SCOPES}
 
 
 def test_tokens_to_prune_keeps_current_and_newest_previous():

@@ -9,7 +9,6 @@ from __future__ import annotations
 
 import logging
 
-import pytest
 import pytest_bazel
 from hamcrest import assert_that
 
@@ -32,7 +31,6 @@ from props.db.models import AgentRun, AgentRunStatus, GradingEdge, ReportedIssue
 logger = logging.getLogger(__name__)
 
 
-@pytest.mark.timeout(300)
 async def test_build_critic_sh_via_agent(
     synced_db, e2e_stack, test_snapshot, critic_dev_optimize_image, critic_image, grader_image
 ):

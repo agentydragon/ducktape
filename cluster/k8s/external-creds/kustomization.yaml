@@ -7,6 +7,7 @@ resources:
   - anthropic-haku.sops.yaml
   - aws-route53-cert-manager.sops.yaml
   - aws-route53-dns-automation.sops.yaml
+  - aws-route53-external-dns.sops.yaml
   - brave-search-api-key.sops.yaml
   - coinbase-api-credentials.sops.yaml
   - buildbuddy-api-key.sops.yaml

@@ -73,11 +73,9 @@ py_test(
         "//finance/augur/api:public_fixture_calibration_catalog",
         "//finance/augur/api:public_fixture_config",
         "//finance/augur/api:public_fixture_properties",
-        "@playwright_browsers//:chromium-headless-shell",
     ],
     env = {
         "AUGUR_BUNDLE_INDEX_RUNFILE": "_main/finance/augur/frontend/dist/index.html",
-        "CHROMIUM_HEADLESS_SHELL": "$(rootpath @playwright_browsers//:chromium-headless-shell)",
     },
     deps = [
         ":conftest",
@@ -85,7 +83,6 @@ py_test(
         "//util:net",
         "//util:playwright",
         "//util/bazel:runfiles",
-        "//util/testing:frontend_visual",
         "//util/testing:undeclared_outputs",
         "@pypi//playwright",
         "@pypi//pytest",
@@ -110,11 +107,9 @@ py_test(
         "//finance/augur/api:public_fixture_config",
         "//finance/augur/api:public_fixture_properties",
         "//finance/augur/frontend:bundle_base",
-        "@playwright_browsers//:chromium-headless-shell",
     ],
     env = {
         "AUGUR_BUNDLE_INDEX_RUNFILE": "_main/finance/augur/frontend/dist/index.html",
-        "CHROMIUM_HEADLESS_SHELL": "$(rootpath @playwright_browsers//:chromium-headless-shell)",
     },
     tags = ["visual"],
     deps = [

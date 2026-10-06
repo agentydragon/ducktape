@@ -3,7 +3,7 @@ import DOMPurify from "dompurify";
 import { Marked } from "marked";
 import { createElement, type JSX, type ReactNode, useMemo } from "react";
 
-import { CodeBlock, isRegisteredLanguage } from "./code_block";
+import { CodeBlock, InlineCode, isRegisteredLanguage } from "./code_block";
 
 import "./markdown.css";
 
@@ -82,9 +82,17 @@ function appendStreamingCursor(content: DocumentFragment): void {
     [...parent.childNodes]
       .reverse()
       .find((node) => node.nodeType !== Node.TEXT_NODE || Boolean(node.textContent?.trim())) ?? null;
+  const isFencedCode = (element: Element): boolean =>
+    element.tagName === "CODE" &&
+    element.parentElement?.tagName === "PRE" &&
+    element.classList.contains("agentplane-code-fence");
   let parent: ParentNode = content;
   let last = lastContentChild(content);
-  while (last instanceof Element && !INLINE_TAGS.has(last.tagName) && !VOID_TAGS.has(last.tagName)) {
+  while (
+    last instanceof Element &&
+    (!INLINE_TAGS.has(last.tagName) || isFencedCode(last)) &&
+    !VOID_TAGS.has(last.tagName)
+  ) {
     parent = last;
     const child = lastContentChild(last);
     if (!child) {
@@ -107,7 +115,9 @@ function appendStreamingCursor(content: DocumentFragment): void {
   else parent.append(cursor);
 }
 
-function codeFence(node: Element, key: string): ReactNode | null {
+const INLINE_CODE_PREVIEW_CHARACTERS = 600;
+
+function codeFence(node: Element, key: string, singleLine: boolean): ReactNode | null {
   if (node.tagName !== "PRE") return null;
   const code = node.firstElementChild;
   if (code?.tagName !== "CODE" || !code.classList.contains("agentplane-code-fence")) return null;
@@ -125,10 +135,26 @@ function codeFence(node: Element, key: string): ReactNode | null {
     return false;
   };
   const cursorOffset = cursor && findCursor(code) ? textBeforeCursor.length : null;
+  const text = code.textContent ?? "";
+
+  if (singleLine) {
+    const preview = text.replace(/\s+/gu, " ").trim();
+    const previewCharacters = Array.from(preview);
+    const compactText =
+      previewCharacters.length > INLINE_CODE_PREVIEW_CHARACTERS
+        ? `${previewCharacters.slice(0, INLINE_CODE_PREVIEW_CHARACTERS).join("").trimEnd()}…`
+        : preview;
+    return createElement(InlineCode, {
+      key,
+      text: compactText,
+      ...(language !== undefined && isRegisteredLanguage(language) ? { language } : {}),
+      ...(cursorOffset !== null ? { streamingCursor: true } : {}),
+    });
+  }
 
   return createElement(CodeBlock, {
     key,
-    text: code.textContent ?? "",
+    text,
     ...(language !== undefined && isRegisteredLanguage(language) ? { language } : {}),
     ...(cursorOffset !== null ? { streamingCursorOffset: cursorOffset } : {}),
   });
@@ -139,7 +165,7 @@ function toReactNode(node: ChildNode, key: string, singleLine: boolean): ReactNo
   if (!(node instanceof Element)) return null;
   if (singleLine && (node.tagName === "BR" || node.tagName === "HR")) return " ";
 
-  const renderedCodeFence = codeFence(node, key);
+  const renderedCodeFence = codeFence(node, key, singleLine);
   if (renderedCodeFence !== null) return renderedCodeFence;
 
   const cursor = node.hasAttribute(STREAMING_CURSOR_MARKER);

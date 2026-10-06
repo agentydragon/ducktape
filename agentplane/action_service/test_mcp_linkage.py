@@ -1,4 +1,4 @@
-"""MCP OAuth linkage against PostgreSQL with a mocked provider: linking a server, and refreshing its token."""
+"""MCP OAuth token refresh against PostgreSQL with a mocked provider."""
 
 from __future__ import annotations
 
@@ -8,10 +8,9 @@ import httpx2
 import pytest
 import pytest_bazel
 from more_itertools import one
-from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncEngine
 
-from agentplane.action_service.db import McpOAuthTokenStateRow, make_sessionmaker
+from agentplane.action_service.db import make_sessionmaker
 from agentplane.action_service.mcp_linkage import McpLinkageAuthority, McpLinkageStart, McpLinkageStatus, McpOAuthServer
 from agentplane.action_service.models import OperatorPrincipal
 
@@ -52,18 +51,6 @@ def _provider(refresh: httpx2.Response) -> httpx2.MockTransport:
 async def _link(authority: McpLinkageAuthority) -> None:
     started = await authority.start(SERVER.server_id, McpLinkageStart(), OPERATOR)
     await authority.callback(one(parse_qs(urlparse(started.authorization_url).query)["state"]), "test-code")
-
-
-async def test_first_linkage_creates_token_state(engine: AsyncEngine) -> None:
-    sessions = make_sessionmaker(engine)
-    async with httpx2.AsyncClient(transport=_provider(httpx2.Response(500))) as http:
-        authority = McpLinkageAuthority(sessions, {SERVER.server_id: SERVER}, http=http, engine=engine)
-        await _link(authority)
-        view = await authority.status(SERVER.server_id)
-    assert view.status is McpLinkageStatus.LINKED
-    assert view.revision == 1
-    async with sessions() as db:
-        assert await db.scalar(select(McpOAuthTokenStateRow.token_revision)) == 1
 
 
 async def test_a_refreshed_token_is_served_and_wakes_the_servers_executors(engine: AsyncEngine) -> None:

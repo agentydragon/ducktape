@@ -47,7 +47,7 @@ bb run //cluster/skills/grafana:verify_dashboard -- \
 ```
 
 This uses the live Grafana API and a real headless Chromium browser. Under
-Bazel, it uses the repository's pinned `@playwright_browsers` binary; direct
+Bazel, it uses the repository's pinned `@chrome_headless_shell` binary; direct
 invocations may set `GRAFANA_CHROME_PATH` as a fallback. It reads the admin
 credentials from the Kubernetes Secret named
 `monitoring/grafana-admin-password`; values are never printed. The candidate

@@ -68,6 +68,10 @@ spec:
             secretKeyRef:
               key: age.agekey
               name: sops-age-cluster-secrets
+      resources:
+        requests:
+          cpu: 250m
+          memory: 512Mi
   serviceAccountName: tf-runner
   sourceRef:
     kind: GitRepository

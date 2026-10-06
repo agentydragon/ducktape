@@ -17,7 +17,6 @@ terraform {
     # Utility (from multiple)
     local = { source = "hashicorp/local", version = "~> 2.9.0" }
     null  = { source = "hashicorp/null", version = "~> 3.3.0" }
-    tls   = { source = "hashicorp/tls", version = "~> 4.4.0" }
     ovh   = { source = "ovh/ovh", version = "~> 2.0" }
   }
 }

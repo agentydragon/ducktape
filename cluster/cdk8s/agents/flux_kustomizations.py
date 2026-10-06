@@ -55,7 +55,6 @@ def plaid_mcp(
     cnpg: Kustomization,
     external_secrets_operator: Kustomization,
     authentik: Kustomization,
-    authentik_tf: Kustomization,
 ) -> Kustomization:
     name = "plaid-mcp"
     return flux_kustomization(
@@ -64,7 +63,10 @@ def plaid_mcp(
         artifact,
         timeout="10m",
         decryption=SOPS_DECRYPTION,
-        depends_on=flux_kustomization_depends_on_many(cnpg, external_secrets_operator, authentik, authentik_tf),
+        # Web OIDC credentials are supplied by an ExternalSecret and required by
+        # the pods at startup; wait=True tracks their readiness. Unrelated
+        # Authentik Terraform projects must not block app image/config updates.
+        depends_on=flux_kustomization_depends_on_many(cnpg, external_secrets_operator, authentik),
     )
 
 

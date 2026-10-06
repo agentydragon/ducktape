@@ -58,18 +58,18 @@
 
 ## Renovate Coverage gaps
 
-Already covered by built-in managers (verified on dashboard):
+Already covered (verified on dashboard; the first three by built-in managers):
 
 - `bazel-module`: `bazel_dep()` AND `oci.pull()` blocks in MODULE.bazel (both tags and digests)
 - `terraform`: `required_providers` version constraints in `.tf` files
 - Container images in k8s manifests, Dockerfiles, etc.
+- `tf.download(mirror = {...})` exact pins in `MODULE.bazel` — the authoritative provider versions for hermetic Bazel builds, which the loose `>=` constraints in `.tf` files can drift from. Covered by the `terraform-provider` regex custom manager in `renovate.json5`, which matches each `"name": "owner/repo:x.y.z"` entry.
 
 Not covered — need custom regex managers or restructuring:
 
-- [ ] `tf.download(mirror = {...})` exact pins in `MODULE.bazel` — these are the authoritative provider versions for hermetic Bazel builds, but Renovate only tracks the loose `>=` constraints in `.tf` files. The two can drift.
-- [ ] OpenTofu version in `MODULE.bazel` (`version = "1.11.2"` in `tf.download`)
+- [ ] OpenTofu version in `MODULE.bazel` (`version = "1.12.6"` in `tf.download`) — a sibling key of the covered `mirror` map, so the mirror manager's shape does not match it.
 - [ ] `tfdoc_version` and `tflint_version` in `MODULE.bazel`
-- [ ] Talos extension/imager versions if pinned outside standard patterns
+- [ ] Talos installer/imager versions — the `var.talos_version` and `var.proxmox_talos_version` defaults in `cluster/terraform/main/variables.tf`, and the `factory.talos.dev/metal-installer/<schematic>` image URLs they interpolate into. The `siderolabs/talos` provider pin is covered (by the `terraform` manager's `~> 0.11.0` in `cluster/terraform/main/terraform.tf` and by the mirror manager above); these are not.
 
 ### LLM-powered update summaries
 

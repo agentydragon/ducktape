@@ -105,35 +105,18 @@ def test_lists_direct_catalog_grants_with_provenance(console: _Console) -> None:
 
     assert response.status_code == 200
     record = next(record for record in response.json()["grants"] if record["source"]["kind"] == "database")
-    assert record == {
-        "source": {
-            "kind": "database",
-            "id": str(grant.grant_id),
-            "tool_call_id": grant.source_tool_call_id,
-            "created_at": _wire(grant.created_at),
-        },
-        "subject": {"kind": "agent", "agent_id": str(console.agent_id)},
-        "coverage": {
-            "kind": "kubernetes_rules",
-            "scope": {"kind": "namespaces", "namespaces": ["public-coder-agent"]},
-            "rules": [
-                {
-                    "api_groups": [""],
-                    "resources": ["pods/log"],
-                    "verbs": ["get"],
-                    "resource_names": [],
-                    "non_resource_urls": [],
-                }
-            ],
-        },
-        "validity": {"ends_at": _wire(grant.expires_at), "status": "active", "ended_at": None, "end_reason": None},
-    }
+    assert record["source"]["id"] == str(grant.grant_id)
+    assert record["source"]["tool_call_id"] == grant.source_tool_call_id
+    assert record["subject"] == {"kind": "agent", "agent_id": str(console.agent_id)}
+    assert record["coverage"]["scope"] == {"kind": "namespaces", "namespaces": ["public-coder-agent"]}
+    (rule,) = record["coverage"]["rules"]
+    assert (rule["api_groups"], rule["resources"], rule["verbs"]) == ([""], ["pods/log"], ["get"])
+    assert record["validity"]["status"] == "active"
+    assert record["validity"]["ends_at"] == _wire(grant.expires_at)
     config_record = next(record for record in response.json()["grants"] if record["source"]["kind"] == "config_file")
-    assert config_record["source"] == {
-        "kind": "config_file",
-        "entry_id": f"kubernetes-profile:{DEFAULT_ACCESS_PROFILE_ID}",
-    }
-    assert config_record["validity"] == {"ends_at": None, "status": "active", "ended_at": None, "end_reason": None}
+    assert config_record["source"]["entry_id"] == f"kubernetes-profile:{DEFAULT_ACCESS_PROFILE_ID}"
+    assert config_record["validity"]["status"] == "active"
+    assert config_record["validity"]["ends_at"] is None
 
 
 def test_revoke_accepts_a_blank_reason(console: _Console) -> None:

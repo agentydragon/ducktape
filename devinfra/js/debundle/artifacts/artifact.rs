@@ -1982,18 +1982,14 @@ mod tests {
     }
 
     #[test]
-    fn module_path_dirname_normalizes_backslashes() {
-        assert_eq!(module_path_dirname("static\\app\\entry.js"), "static/app");
-    }
-
-    #[test]
-    fn module_path_dirname_normalizes_relative_segments() {
-        assert_eq!(module_path_dirname("static/./app/entry.js"), "static/app");
-    }
-
-    #[test]
-    fn module_path_dirname_handles_file_at_root() {
-        assert_eq!(module_path_dirname("entry.js"), "");
+    fn module_path_dirname_cases() {
+        for (path, expected) in [
+            ("static\\app\\entry.js", "static/app"),
+            ("static/./app/entry.js", "static/app"),
+            ("entry.js", ""),
+        ] {
+            assert_eq!(module_path_dirname(path), expected, "{path:?}");
+        }
     }
 
     #[test]

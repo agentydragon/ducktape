@@ -443,6 +443,60 @@ def test_recovered_tool_content_does_not_fabricate_an_execution_result() -> None
     assert recovered.recovery == event_pb2.RECOVERY_DISPOSITION_REVISED
 
 
+def _recovery(disposition: event_pb2.RecoveryDisposition, reason: str) -> event_pb2.ItemRecovery:
+    return event_pb2.ItemRecovery(
+        item_id="tool",
+        disposition=disposition,
+        reason=reason,
+        replacement=(
+            event_pb2.RecoveredContent(arguments_json='{"command":"run"}', output="interrupted")
+            if disposition == event_pb2.RECOVERY_DISPOSITION_REVISED
+            else None
+        ),
+    )
+
+
+@pytest.mark.parametrize(
+    ("first", "second", "second_wins"),
+    [
+        (event_pb2.RECOVERY_DISPOSITION_RETAINED, event_pb2.RECOVERY_DISPOSITION_UNKNOWN, False),
+        (event_pb2.RECOVERY_DISPOSITION_ABSENT, event_pb2.RECOVERY_DISPOSITION_UNKNOWN, False),
+        (event_pb2.RECOVERY_DISPOSITION_REVISED, event_pb2.RECOVERY_DISPOSITION_UNKNOWN, False),
+        (event_pb2.RECOVERY_DISPOSITION_UNKNOWN, event_pb2.RECOVERY_DISPOSITION_RETAINED, True),
+        (event_pb2.RECOVERY_DISPOSITION_UNKNOWN, event_pb2.RECOVERY_DISPOSITION_UNKNOWN, True),
+        (event_pb2.RECOVERY_DISPOSITION_RETAINED, event_pb2.RECOVERY_DISPOSITION_ABSENT, True),
+        (event_pb2.RECOVERY_DISPOSITION_ABSENT, event_pb2.RECOVERY_DISPOSITION_REVISED, True),
+    ],
+)
+def test_a_later_reconciliation_replaces_a_decision_unless_it_could_not_tell(
+    first: event_pb2.RecoveryDisposition, second: event_pb2.RecoveryDisposition, second_wins: bool
+) -> None:
+    store = Store()
+    store.apply(
+        [
+            entry(
+                1,
+                event_pb2.Event(item_started=event_pb2.ItemStarted(item_id="tool", kind=event_pb2.ITEM_KIND_TOOL_CALL)),
+            )
+        ]
+    )
+    for cursor, (disposition, reason) in enumerate([(first, "first"), (second, "second")], start=2):
+        store.apply(
+            [
+                entry(
+                    cursor,
+                    event_pb2.Event(
+                        conversation_reconciled=event_pb2.ConversationReconciled(
+                            turn_id=f"turn-{cursor}", items=[_recovery(disposition, reason)]
+                        )
+                    ),
+                )
+            ]
+        )
+    shown = store.items["tool"]
+    assert (shown.recovery, shown.recovery_reason) == ((second, "second") if second_wins else (first, "first"))
+
+
 def test_setup_output_and_failure_remain_visible_lifecycle_evidence() -> None:
     store = Store()
     result = store.apply(

@@ -12,18 +12,18 @@ use debundle_e2e_support::*;
 #[test]
 fn chunk_rename_target_captured_by_nested_binding_is_rejected() {
     let opts = FixtureOpts::new(
-        r#"var a = "A";
-function f(b) {
-  return a + b;
+        r#"var source_value = "A";
+function f(taken_name) {
+  return source_value + taken_name;
 }
 console.log(f("B"));
-export { a, f };
+export { source_value, f };
 "#,
         vec![],
     )
-    .with_chunk_renames(chunk_rename("b", "a"))
+    .with_chunk_renames(chunk_rename("taken_name", "source_value"))
     .with_unassigned_mode(unassigned_mode_inline());
-    expect_rejection_containing_all(opts, &["captured by a nested binding"]);
+    expect_rejection_containing_all(opts, &["source_value", "taken_name"]);
 }
 
 /// Plan-driven naturalization path: a logical-module member rename
@@ -32,33 +32,39 @@ export { a, f };
 #[test]
 fn module_member_rename_target_captured_by_nested_binding_is_rejected() {
     let opts = FixtureOpts::new(
-        r#"var a = "A";
-function f(b) {
-  return a + b;
+        r#"var source_value = "A";
+function f(taken_name) {
+  return source_value + taken_name;
 }
 console.log(f("B"));
-export { a, f };
+export { source_value, f };
 "#,
         vec![logical_module(
             "x",
-            &[Member::renamed("b", "a"), Member::new("f")],
+            &[
+                Member::renamed("taken_name", "source_value"),
+                Member::new("f"),
+            ],
         )],
     );
-    expect_rejection_containing_all(opts, &["captured by a nested binding"]);
+    expect_rejection_containing_all(opts, &["source_value", "taken_name"]);
 }
 
 /// Sibling collision: the rename target is another top-level binding
 /// of the same module body (a destructure sibling pulled along with
-/// the claimed binding). Renaming `a` -> `readable` would declare
-/// `readable` twice in one pattern.
+/// the claimed binding). Renaming `origin_name` -> `sibling_name` would
+/// declare `sibling_name` twice in one pattern.
 #[test]
 fn module_member_rename_target_colliding_with_sibling_binding_is_rejected() {
     let opts = FixtureOpts::new(
-        r#"const { a, readable } = { a: "A", readable: "R" };
-console.log(a + readable);
-export { a, readable };
+        r#"const { origin_name, sibling_name } = { origin_name: "A", sibling_name: "R" };
+console.log(origin_name + sibling_name);
+export { origin_name, sibling_name };
 "#,
-        vec![logical_module("x", &[Member::renamed("readable", "a")])],
+        vec![logical_module(
+            "x",
+            &[Member::renamed("sibling_name", "origin_name")],
+        )],
     );
-    expect_rejection_containing_all(opts, &["collides"]);
+    expect_rejection_containing_all(opts, &["origin_name", "sibling_name"]);
 }

@@ -26,6 +26,15 @@ from haku.console.database_schema import (
     UNMAPPED_TABLES_PENDING_DROP,
     metadata,
 )
+from haku.console.identity.agent import (
+    AgentStatus,
+    ClientRegistrationKind,
+    CredentialBindingStatus,
+    CredentialKind,
+    EnrollmentPhase,
+)
+from haku.console.identity.operator_identity import OperatorStatus
+from haku.console.tool_calls import ToolCallStatus
 from third_party.containers import pgvector_pg18
 from util.testing.postgres import create_database_sync, force_drop_database_sync
 from util.testing.postgres_fixtures import start_postgres_container
@@ -583,6 +592,24 @@ def _not_awaiting_its_drop(name: str | None, type_: str, parent_names: dict[str,
             return True
 
 
+def _enum_values(engine: Engine) -> dict[str, tuple[str, ...]]:
+    with engine.connect() as conn:
+        rows = conn.execute(
+            text(
+                """
+                SELECT type.typname, enum.enumlabel
+                FROM pg_type AS type
+                JOIN pg_enum AS enum ON enum.enumtypid = type.oid
+                ORDER BY type.typname, enum.enumsortorder
+                """
+            )
+        ).all()
+    return {
+        type_name: tuple(label for row_type_name, label in rows if row_type_name == type_name)
+        for type_name in {row_type_name for row_type_name, _ in rows}
+    }
+
+
 def test_fresh_baseline_matches_sqlalchemy_metadata(db_url: str) -> None:
     """Exact in both directions: every name the migrations create is mapped, and every name the ORM
     maps exists. Only the names awaiting their drop are excluded, so a column left behind by a
@@ -649,73 +676,32 @@ def test_database_already_at_head_is_unchanged(db_url: str) -> None:
         engine.dispose()
 
 
-def test_create_issue_complete_and_first_use_activation_form_one_graph(db_url: str) -> None:
+def test_fresh_baseline_enum_values_match_domain_enums(db_url: str) -> None:
     apply_migrations(db_url)
     engine = create_engine(db_url)
     try:
-        # NFKC + Unicode casefold need not equal PostgreSQL lower(display_name). The database owns
-        # nonempty/global uniqueness and immutability; application naming code owns normalization.
-        graph = _create_oauth_graph(engine, "unicode", display_name="Straße ⑨", display_name_key="strasse 9")
-        with engine.connect() as conn:
-            row = (
-                conn.execute(
-                    text(
-                        """
-                        SELECT agent.status::TEXT AS agent_status,
-                               binding.status::TEXT AS binding_status,
-                               interaction.phase::TEXT AS phase,
-                               name.display_name,
-                               name.display_name_key,
-                               agent.owner_operator_id,
-                               auth_grant.allowed_scopes,
-                               auth_grant.initial_access_jti
-                        FROM authorization_grants AS auth_grant
-                        JOIN credential_bindings AS binding
-                          ON binding.binding_id = auth_grant.binding_id
-                        JOIN agents AS agent ON agent.agent_id = binding.agent_id
-                        JOIN agent_name_reservations AS name
-                          ON name.reservation_id = agent.current_name_reservation_id
-                        JOIN enrollment_interactions AS interaction
-                          ON interaction.interaction_id = auth_grant.enrollment_interaction_id
-                        WHERE auth_grant.grant_id = :grant_id
-                        """
-                    ),
-                    {"grant_id": graph.grant_id},
-                )
-                .mappings()
-                .one()
-            )
-            assert row["agent_status"] == "draft"
-            assert row["binding_status"] == "issued"
-            assert row["phase"] == "completed"
-            assert row["display_name"] == "Straße ⑨"
-            assert row["display_name_key"] == "strasse 9"
-            assert row["owner_operator_id"] == graph.identity.operator_id
-            assert row["allowed_scopes"] == ["tools:call"]
-            assert row["initial_access_jti"] == f"access-{graph.grant_id}"
-
-        _activate_agent(engine, graph)
-        with engine.connect() as conn:
-            statuses = conn.execute(
-                text(
-                    """
-                    SELECT agent.status::TEXT, binding.status::TEXT
-                    FROM agents AS agent
-                    JOIN credential_bindings AS binding ON binding.agent_id = agent.agent_id
-                    WHERE agent.agent_id = :agent_id
-                    """
-                ),
-                {"agent_id": graph.agent_id},
-            ).one()
-            assert statuses == ("active", "active")
+        baseline_values = _enum_values(engine)
     finally:
         engine.dispose()
+
+    current_values = {
+        "agent_status": tuple(status.value for status in AgentStatus),
+        "client_registration_kind": tuple(kind.value for kind in ClientRegistrationKind),
+        "credential_binding_status": tuple(status.value for status in CredentialBindingStatus),
+        "credential_kind": tuple(kind.value for kind in CredentialKind),
+        "enrollment_phase": tuple(phase.value for phase in EnrollmentPhase),
+        "operator_status": tuple(status.value for status in OperatorStatus),
+        "tool_call_status": tuple(status.value for status in ToolCallStatus),
+    }
+    assert baseline_values == current_values
 
 
 def test_agent_names_are_required_globally_unique_and_owned_by_current_agent(db_url: str) -> None:
     apply_migrations(db_url)
     engine = create_engine(db_url)
     try:
+        # NFKC + Unicode casefold need not equal PostgreSQL lower(display_name). The database owns
+        # nonempty/global uniqueness and immutability; application naming code owns normalization.
         graph = _create_oauth_graph(engine, "name-owner", display_name="Straße ⑨", display_name_key="strasse 9")
         _activate_agent(engine, graph)
         with engine.begin() as conn:

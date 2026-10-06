@@ -13,7 +13,7 @@ import { ItemKind, RecoveryDisposition } from "../../../protocol/event_pb";
 import type * as ClientModule from "../client";
 import { command, getThread, models, resumeThread, type SandboxView, type ThreadView } from "../client";
 import { historyRows, rowKey } from "./history_rows";
-import { SandboxesLiveProvider, ThreadsLiveProvider } from "../live";
+import { SandboxesLiveProvider, ThreadsLiveProvider, useRequiredThreadsLive } from "../live";
 import { LocalCommands } from "./local_commands";
 import { STREAMING_CURSOR } from "../markdown";
 import { HistoryRowView, ProjectedSession } from "./projected_session";
@@ -21,7 +21,16 @@ import { RetainedDisclosureProvider } from "./retained_disclosures";
 import { DEGRADED_AFTER_MS, STALE_AFTER_MS } from "../stream_status";
 import { THREAD_STATUS_MARKS } from "../status_mark";
 import { testItem } from "./thread_entity_fixture";
-import { entity, reference, serving, THREAD, threadState, toggle, viewState } from "./thread_state_fixture";
+import {
+  badgeLabels,
+  entity,
+  reference,
+  serving,
+  THREAD,
+  threadState,
+  toggle,
+  viewState,
+} from "./thread_state_fixture";
 import { ThreadSyncContext, type ThreadEntity, type ThreadState, type ThreadSync } from "./thread_sync";
 import { TopbarContext } from "../topbar";
 
@@ -83,6 +92,7 @@ let inventoryDrops = false;
 let sharedFeed: "active" | "ended" | "failed" = "active";
 let sharedThread: Partial<ThreadView> = {};
 let eventSourceUrls: string[] = [];
+let threadRows: ThreadView[] | null = null;
 
 beforeEach(() => {
   document.title = "Agentplane";
@@ -98,6 +108,7 @@ beforeEach(() => {
   sharedFeed = "active";
   sharedThread = {};
   eventSourceUrls = [];
+  threadRows = null;
   vi.mocked(getThread).mockResolvedValue(THREAD);
   vi.mocked(models).mockResolvedValue({
     models: [{ model: "test-model", display_name: "Test Model", reasoning_efforts: TEST_REASONING_EFFORTS }],
@@ -121,7 +132,7 @@ beforeEach(() => {
                 sandboxes,
                 ...(url === "/live/threads"
                   ? {
-                      threads: [
+                      threads: threadRows ?? [
                         { ...THREAD, harness_state: "HARNESS_STATE_RUNNING", feed_status: sharedFeed, ...sharedThread },
                       ],
                       updates_connected: true,
@@ -179,6 +190,30 @@ function TestLiveProviders({ children }: { children: JSX.Element }): JSX.Element
       <SandboxesLiveProvider>{children}</SandboxesLiveProvider>
     </ThreadsLiveProvider>
   );
+}
+
+function WaitForThreadsSnapshot({ children }: { children: JSX.Element }): JSX.Element | null {
+  const live = useRequiredThreadsLive();
+  return live.snapshot ? children : null;
+}
+
+async function renderAfterThreadsSnapshot(state: ThreadState = threadState()): Promise<HTMLDivElement> {
+  const container = document.createElement("div");
+  document.body.append(container);
+  const topbarTitle = document.createElement("div");
+  const topbarActions = document.createElement("div");
+  const root = createRoot(container);
+  mounted.push({ root, container, topbarTitle, topbarActions });
+  await act(async () => {
+    const content = page(state, topbarTitle, topbarActions);
+    root.render(
+      <TestLiveProviders>
+        <WaitForThreadsSnapshot>{content}</WaitForThreadsSnapshot>
+      </TestLiveProviders>
+    );
+  });
+  container.append(topbarTitle, topbarActions);
+  return container;
 }
 
 function page(
@@ -281,7 +316,10 @@ it("sends the draft on Enter and clears it", async () => {
   expect(field.value).toBe("");
   const bubble = container.querySelector<HTMLElement>('.agentplane-user-bubble[data-message-phase="local"]');
   expect(bubble?.querySelector(".agentplane-verbatim")?.textContent).toBe("hello");
-  expect(bubble?.textContent).toContain("Saved locally · awaiting admission");
+  expect(bubble?.parentElement?.querySelector('[role="status"]')?.textContent).toBe(
+    "Saved locally · awaiting admission"
+  );
+  expect(bubble?.querySelector('[role="status"]')).toBeNull();
   expect(buttonIn(bubble?.parentElement, "Retry")).toBeDefined();
   expect(container.querySelector('[aria-label="Pending commands"]')).toBeNull();
 });
@@ -363,9 +401,13 @@ it("disables shutdown while the harness is not running", async () => {
 it.each([
   [{ feed_status: "failed" }, "Runner feed failed", "failed"],
   [{ feed_status: "ended" }, "Runner feed ended", "inactive"],
+  // Where a harness shutdown settles: its feed has ended and the harness is down.
+  [{ feed_status: "ended", harness_state: "HARNESS_STATE_STOPPED" }, "Harness not running", "stopped"],
   [{ harness_state: "HARNESS_STATE_STOPPED" }, "Harness not running", "stopped"],
   [{ active_turn_id: "turn-1" }, "Turn running · Runner feed active · harness running", "running"],
   [{}, "Runner feed active · harness running", "idle"],
+  [{ last_turn_status: "TURN_STATUS_FAILED" }, "Turn failed · Runner feed active · harness running", "turn_error"],
+  [{ last_turn_status: "TURN_STATUS_PROCESS_LOST" }, "Turn lost · Runner feed active · harness running", "turn_error"],
 ] as const)("uses shared thread row %o for the topbar status", async (row, label, kind) => {
   sharedThread = row;
   const container = await render();
@@ -410,6 +452,17 @@ it("shows an idle thread as a dot in the idle color, in the favicon and with its
   expect(document.title).toBe(`${THREAD_STATUS_MARKS.idle.glyph} Test thread · Ready — Agentplane`);
 });
 
+it("shows an idle thread whose last turn failed as a red warning icon, in the favicon and with its own title glyph", async () => {
+  sharedThread = { last_turn_status: "TURN_STATUS_FAILED" };
+  const indicator = (await render()).querySelector(".agentplane-thread-status-indicator");
+  expect(indicator?.getAttribute("data-status")).toBe("turn_error");
+  expect(indicator?.querySelector("svg")).not.toBeNull();
+  expect(faviconSvg()).toContain(`fill="${THREAD_STATUS_MARKS.turn_error.color}"`);
+  // Not the red dot of a failed runner feed, which has a white inner ring.
+  expect(faviconSvg()).not.toContain('stroke="#fff"');
+  expect(document.title).toBe(`${THREAD_STATUS_MARKS.turn_error.glyph} Test thread · Turn failed — Agentplane`);
+});
+
 it("shows a stopped harness as an icon in the status indicator and the favicon, with its own title glyph", async () => {
   sharedThread = { harness_state: "HARNESS_STATE_STOPPED" };
   const indicator = (await render()).querySelector(".agentplane-thread-status-indicator");
@@ -427,9 +480,24 @@ it("does not show active-turn status when the runner is not active", async () =>
   expect(indicator?.getAttribute("data-status")).toBe("inactive");
 });
 
-// Retained history still says the harness runs and the feed failed; neither is live any more.
+// Retained history still says the harness runs and the feed failed; an archived thread shows the archive
+// icon instead, in the status indicator, the favicon and the title glyph.
+it("shows an archived thread as the archive icon, in the favicon and with its own title glyph", async () => {
+  vi.mocked(getThread).mockResolvedValue({ ...THREAD, archived: true });
+  sharedThread = { archived: true };
+  sandboxes = [inventorySandbox()];
+  const indicator = (await render(threadState({ rows: [viewState({ status: "failed" })] }))).querySelector(
+    ".agentplane-thread-status-indicator"
+  );
+  expect(indicator?.getAttribute("aria-label")).toBe("Thread archived");
+  expect(indicator?.getAttribute("data-status")).toBe("archived");
+  expect(indicator?.querySelector("svg")).not.toBeNull();
+  expect(faviconSvg()).toContain(`stroke="${THREAD_STATUS_MARKS.archived.color}"`);
+  expect(faviconSvg()).not.toContain("<circle");
+  expect(document.title).toBe(`${THREAD_STATUS_MARKS.archived.glyph} Test thread · Archived — Agentplane`);
+});
+
 it.each([
-  [{ archived: true }, [inventorySandbox()], "Thread archived"],
   [{ archived: false }, [], "Sandbox unavailable"],
   [{ archived: false }, [inventorySandbox("Suspended")], "Sandbox unavailable"],
 ])("shows an inactive dot for thread %o with sandboxes %o: %s", async (overrides, inventory, label) => {
@@ -469,6 +537,22 @@ it("keeps one sandbox inventory stream mounted across thread route remounts", as
   expect(eventSourceUrls.filter((url) => url === "/live/sandboxes")).toHaveLength(1);
 });
 
+it("mounts the thread from the live snapshot without fetching its metadata again", async () => {
+  const container = await renderAfterThreadsSnapshot();
+
+  expect(getThread).not.toHaveBeenCalled();
+  expect(container.querySelector("textarea")).not.toBeNull();
+});
+
+it("fetches thread metadata when it is absent from the live snapshot", async () => {
+  threadRows = [];
+
+  const container = await render();
+
+  expect(getThread).toHaveBeenCalledExactlyOnceWith(THREAD.id);
+  expect(container.querySelector("textarea")).not.toBeNull();
+});
+
 // Each of these but the first disables the controls, which the composer's indicator reports only as
 // "Sandbox unavailable"; the header says why: the state the inventory last reported, or that the
 // watch behind it has stalled or the stream been down a minute. A drop within the grace is a blip,
@@ -499,7 +583,7 @@ it.each<[string, Inventory, { fresh?: boolean; droppedFor?: number }, string | n
   const container = await render();
   await act(async () => vi.advanceTimersByTime(droppedFor ?? 0));
   const texts = (role: string) => [...container.querySelectorAll(`[role="${role}"]`)].map((node) => node.textContent);
-  expect(texts("status")).toEqual(status === null ? [] : [expect.stringContaining(status)]);
+  expect(texts("status")).toEqual(status === null ? [] : [matching(status)]);
   expect(texts("alert")).toEqual(alert === null ? [] : [matching(alert)]);
 });
 
@@ -691,7 +775,7 @@ it.each([
     })
   );
   const bubble = container.querySelector<HTMLElement>(`.agentplane-user-bubble[data-message-phase="${phase}"]`);
-  expect(bubble?.textContent).toContain(status);
+  expect(bubble?.parentElement?.querySelector('[role="status"]')?.textContent).toBe(status);
   const dismiss = buttonIn(bubble?.parentElement, "Dismiss");
   expect(dismiss).toBeDefined();
   await act(async () => dismiss?.click());
@@ -842,10 +926,41 @@ describe("recovery presentation", () => {
       ],
       true
     );
-    expect(run.querySelector('[aria-label="Retention unknown"]')).not.toBeNull();
-    expect(run.querySelector('[aria-label="Retained in context"]')).not.toBeNull();
-    expect(run.querySelector('[aria-label="Interrupted"]')).not.toBeNull();
-    expect(run.querySelector('[aria-label="Failed"]')).not.toBeNull();
-    expect(run.querySelector('[aria-label="Streaming"]')).toBeNull();
+    // The retained call adds nothing of its own beside the failure it carries.
+    expect(badgeLabels(run).sort()).toEqual(["Failed", "Interrupted", "Retention unknown"]);
+  });
+
+  it("gives a collapsed run of retained, finished steps a header with no badges", async () => {
+    const [run] = await renderHistory(
+      [
+        testItem(1, ItemKind.TOOL_CALL, {
+          tool_name: "test-read",
+          completion: "tool",
+          tool_succeeded: true,
+          recovery: RecoveryDisposition.RETAINED,
+        }),
+        testItem(
+          2,
+          ItemKind.REASONING,
+          { recovery: RecoveryDisposition.RETAINED },
+          { textRef: reference("test-entity-2", "text") }
+        ),
+        testItem(3, ItemKind.TOOL_CALL, {
+          tool_name: "test-shell",
+          completion: "tool",
+          tool_succeeded: true,
+          recovery: RecoveryDisposition.RETAINED,
+        }),
+      ],
+      false,
+      { "test-entity-2:text": "Kept in context" }
+    );
+    const summary = run.querySelector("summary")!;
+    expect(summary.textContent).toContain("2 tool calls, 1 reasoning step");
+    expect(badgeLabels(run)).toEqual([]);
+
+    await toggle(summary);
+    expect(run.textContent).toContain("test-read");
+    expect(badgeLabels(run)).toEqual([]);
   });
 });

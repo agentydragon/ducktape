@@ -36,7 +36,7 @@ py_library(
     deps = [
         ":egress",
         ":inventory",
-        "//agentplane/runner:conftest",
+        "//agentplane/runner/testing:fixtures",
         "//agentplane/sandbox_service/testing:fake_inventory",
         "//agentplane/sandbox_service/testing:kubernetes",
         "//util:kubernetes",
@@ -161,9 +161,11 @@ py_library(
     name = "instructions",
     srcs = ["instructions.py"],
     data = ["agent_instructions.j2"],  # explicit deployment config renders this shared instruction template
-    visibility = ["//cluster/cdk8s/agentplane:__subpackages__"],
+    visibility = [
+        "//agentplane/notification_service:__pkg__",
+        "//cluster/cdk8s/agentplane:__subpackages__",
+    ],
     deps = [
-        "//agentplane/notification_service:instructions",
         "//util/bazel:runfiles",
         "@pypi//jinja2",
     ],
@@ -396,6 +398,7 @@ py_library(
     deps = [
         ":models",
         ":wire",
+        "//agentplane:grpc_options",
         "//agentplane/protocol:command_pb2",
         "//agentplane/protocol:event_log_pb2",
         "//agentplane/runner:errors",
@@ -420,6 +423,7 @@ py_library(
         ":provisioning",
         ":session_lifecycle",
         ":wire",
+        "//agentplane:grpc_options",
         "//agentplane:subjects",
         "//agentplane/protocol:event_log_pb2",
         "//agentplane/runner:client",
@@ -491,10 +495,10 @@ py_test(
         "//agentplane:subjects",
         "//agentplane/protocol:command_pb2",
         "//agentplane/protocol:event_log_pb2",
-        "//agentplane/runner:conftest",
         "//agentplane/runner:errors",
         "//agentplane/runner:protocol_pb2",
         "//agentplane/runner/testing:events",
+        "//agentplane/runner/testing:fixtures",
         "//agentplane/runner/testing:scripted_model",
         "//agentplane/sandbox_service:protocol_pb2",
         "//agentplane/sandbox_service/testing:grpc_service",

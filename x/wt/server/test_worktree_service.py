@@ -95,7 +95,7 @@ class TestWorktreeService:
         inside_path = config.worktrees_dir / "valid-worktree"
         assert worktree_service._is_managed_worktree(inside_path, config)
 
-    async def test_post_creation_script_execution(self, repo_factory, config_factory, mock_factory, service_builder):
+    async def test_post_creation_script_execution(self, repo_factory, config_factory, service_builder):
         """Test post-creation script runner executes and passes expected args."""
         repo_path = repo_factory.create_repo()
 

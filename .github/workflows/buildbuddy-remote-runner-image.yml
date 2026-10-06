@@ -1,0 +1,134 @@
+# The outer Bazel runner is assembled with Nix; the RBE action image is unchanged.
+name: BuildBuddy Runner Image
+on:
+  push:
+    branches: [main, devel]
+    paths: &runner_paths # keep-sorted start
+      - ".github/actions/bb-remote/action.yml"
+      - ".github/actions/build-runner-image/action.yml"
+      - ".github/actions/setup-nix-devtools/action.yml"
+      - ".github/workflows/buildbuddy-remote-runner-image.yml"
+      - "devinfra/buildbuddy_remote_runner/image.nix"
+      - "devinfra/ci/nix_runner_image.py"
+      - "devinfra/ci/test_nix_runner_image.py"
+      - "devinfra/image_pins.json"
+      - "flake.lock"
+      - "flake.nix"
+      - "nix/artifact-pins.json"
+      - "nix/attic-pubkeys.json"
+      - "nix/flake/**"
+      - "nix/gaffer-pins.json"
+      - "nix/packages/**"
+      - "skills/skills_registry.json"
+      # keep-sorted end
+  pull_request:
+    paths: *runner_paths
+  workflow_dispatch:
+    inputs:
+      candidate_only:
+        description: Publish and exercise the image without changing the branch pin.
+        type: boolean
+        default: true
+
+concurrency:
+  group: runner-image-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  packages: read
+
+env:
+  RUNNER_IMAGE: ghcr.io/${{ github.repository_owner }}/buildbuddy-remote-runner
+
+jobs:
+  build-only:
+    name: Nix runner image (build only)
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+      - uses: ./.github/actions/build-runner-image
+        with:
+          image: ${{ env.RUNNER_IMAGE }}
+
+  publish:
+    name: Nix runner image (publish and pin)
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: write
+      packages: write
+    steps:
+      - uses: actions/checkout@v7
+      - uses: ./.github/actions/build-runner-image
+        id: image
+        with:
+          image: ${{ env.RUNNER_IMAGE }}
+
+      - name: Publish changed image
+        if: steps.image.outputs.needs_publish == 'true'
+        run: |
+          python3 devinfra/ci/nix_runner_image.py publish \
+            --state "$RUNNER_TEMP/runner-image/state.json" \
+            --image "$RUNNER_IMAGE" --tag "$GITHUB_SHA"
+
+      - name: Install the pinned BuildBuddy launcher
+        if: steps.image.outputs.needs_publish == 'true'
+        run: |
+          python3 devinfra/ci/install_bb.py --pins nix/artifact-pins.json \
+            --destination "$RUNNER_TEMP/buildbuddy-cli/bin/bb"
+          echo "$RUNNER_TEMP/buildbuddy-cli/bin" >> "$GITHUB_PATH"
+
+      - name: Exercise candidate on a BuildBuddy runner before pinning
+        if: steps.image.outputs.needs_publish == 'true'
+        uses: ./.github/actions/bb-remote
+        env:
+          BUILDBUDDY_API_KEY: ${{ secrets.BUILDBUDDY_API_KEY }}
+        with:
+          runner_container_image: ${{ env.RUNNER_IMAGE }}@${{ steps.image.outputs.digest }}
+          run_from_commit: ${{ github.sha }}
+          script: |
+            set -euo pipefail
+            docker info >/dev/null
+            bazel-diff --help >/dev/null
+            bazelisk test --config=rbe --config=ci \
+              --remote_default_exec_properties="container-image=docker://$RBE_CONTAINER_IMAGE" \
+              //devinfra/ci:test_nix_runner_image
+
+      - uses: ./.github/actions/mint-automation-token
+        if: steps.image.outputs.needs_publish == 'true' && !inputs.candidate_only
+        id: app
+        with:
+          sops_age_key: ${{ secrets.SOPS_AGE_KEY }}
+
+      - name: Pin on the latest branch after verifying its inputs
+        if: steps.image.outputs.needs_publish == 'true' && !inputs.candidate_only
+        env:
+          DIGEST: ${{ steps.image.outputs.digest }}
+          APP_TOKEN: ${{ steps.app.outputs.token }}
+          APP_SLUG: ${{ steps.app.outputs.app_slug }}
+          APP_USER_ID: ${{ steps.app.outputs.user_id }}
+        run: |
+          git fetch origin "$GITHUB_REF_NAME"
+          git checkout --detach FETCH_HEAD
+          python3 devinfra/ci/nix_runner_image.py verify --state "$RUNNER_TEMP/runner-image/state.json"
+          python3 devinfra/update_image_pin.py buildbuddy_remote_runner --digest "$DIGEST" --image "$RUNNER_IMAGE"
+          git add devinfra/image_pins.json devinfra/bbr.json
+          if git diff --cached --quiet; then
+            echo "Runner image already pinned"
+            exit 0
+          fi
+          git config user.name "${APP_SLUG}[bot]"
+          git config user.email "${APP_USER_ID}+${APP_SLUG}[bot]@users.noreply.github.com"
+          git commit -m 'chore: pin BuildBuddy runner image [skip ci]'
+          git pull --rebase origin "$GITHUB_REF_NAME"
+          python3 devinfra/ci/nix_runner_image.py verify --state "$RUNNER_TEMP/runner-image/state.json"
+          # A further branch advance is rejected by the ordinary non-force push.
+          set +x
+          for key in $(git config --local --name-only --get-regexp '^includeif\.gitdir:.*\.path$' || true); do
+            git config --local --unset-all "$key"
+          done
+          git push "https://x-access-token:${APP_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" "HEAD:${GITHUB_REF_NAME}"

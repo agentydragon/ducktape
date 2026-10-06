@@ -118,6 +118,8 @@ class Environment:
     replicas: ReplicaProfile
     # The ConfigMap-authored portion of agentplane/app/main.py's `Settings`.
     app_config: AppSettingsConfig
+    # Options for Sandbox Service's gRPC channel to the runner, authored into its ConfigMap.
+    runner_grpc_channel_options: Mapping[str, int | str]
     # Shared source for app settings and the follow-up ingress metadata projection.
     model_routes: HarnessRoutes
     db: DbProps

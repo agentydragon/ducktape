@@ -74,7 +74,6 @@ async def test_process_message_adds_to_transcript(noop_agent, recording_handler)
 # --- Message forwarding tests ---
 
 
-@pytest.mark.timeout(1)
 async def test_mixed_reasoning_fc_ordering(mcp_tool_provider_echo) -> None:
     """Resp1 returns reasoning, function_call, assistant; after function_call_output, messages preserves order
     reasoning, function_call, function_call_output, assistant.

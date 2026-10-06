@@ -154,7 +154,6 @@ py_test(
         ":mcp_types",
         "//:conftest",
         "//mcp_infra:persistence",
-        "//mcp_infra/authentik_auth:config",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],

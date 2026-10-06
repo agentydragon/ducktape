@@ -26,7 +26,7 @@ from util.kubernetes import CustomObjectsClient
 
 
 class EgressInventory(EgressReader):
-    """Service-owned mutations of Kubernetes policy bindings."""
+    """Service-owned mutations of Kubernetes egress-policy bindings."""
 
     def __init__(
         self, *, namespace: str, custom_objects: CustomObjectsClient, default_policies: Sequence[str] = ()
@@ -35,12 +35,12 @@ class EgressInventory(EgressReader):
         self._default_policies = default_policies
 
     def launch_policies(self, picked: Sequence[str]) -> list[str]:
-        """What a new sandbox is granted: the policies no sandbox works without, then what the caller
+        """What a new sandbox is granted: the egress policies no sandbox works without, then what the caller
         picked. Picking a default again is not an error and does not name it twice."""
         return list(unique_everseen([*self._default_policies, *picked]))
 
     async def require_policies(self, names: list[str]) -> None:
-        """Every name must resolve to a policy the namespace holds, or nothing is written."""
+        """Every name must resolve to an egress policy the namespace holds, or nothing is written."""
         _require_known(names, await self._policies_by_name())
 
     async def revoke(self, name: str) -> None:
@@ -53,7 +53,7 @@ class EgressInventory(EgressReader):
         )
 
     async def grant(self, sandbox: Sandbox, policies: list[str], *, initial: bool = False) -> BindingView:
-        """One binding of the ServiceAccount the sandbox runs as to the policies, owned by the
+        """One binding of the ServiceAccount the sandbox runs as to the egress policies, owned by the
         Sandbox so its deletion garbage-collects it. Creating it is the grant, at launch and
         afterwards alike: granting an already-running sandbox adds another binding rather than
         editing one it has, so each grant's `expiresAt` is its own.

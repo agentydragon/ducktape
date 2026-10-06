@@ -67,7 +67,7 @@ export { reader };
 /// which evaluates last — unrealizable, rejected.
 #[test]
 fn block_hoisted_var_shadowing_whitelisted_global_is_rejected() {
-    expect_rejection(
+    expect_cycle_rejection(
         FixtureOpts::new(
             r#"try { var Math = { PI: "shimmed" }; } catch (e) {}
 const out = Math.PI;
@@ -77,6 +77,6 @@ export { out };
             vec![logical_module("mod_out", &[Member::new("out")])],
         )
         .with_unassigned_mode(unassigned_mode_inline()),
-        &["cycle", "unrealizable", "not exported"],
+        &["mod_out"],
     );
 }

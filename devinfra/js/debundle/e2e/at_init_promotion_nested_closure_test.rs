@@ -54,7 +54,7 @@ export { state, setupHandler };
 /// `globalThis.__updateState()` ran).
 #[test]
 fn nested_closure_rebind_across_destinations_is_rejected() {
-    expect_rejection(
+    expect_atomic_conflict_rejection(
         FixtureOpts::new(
             r#"let state = "initial";
 function setupHandler() {
@@ -69,7 +69,8 @@ export { state, setupHandler };
                 logical_module("mod_handler", &[Member::new("setupHandler")]),
             ],
         ),
-        &["rebind", "read-only", "assignment", "mutable"],
+        &["mod_state", "mod_handler"],
+        &["deferred_rebind"],
     );
 }
 

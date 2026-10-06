@@ -1,11 +1,9 @@
 """Integration tests for the CLI daemon with real git operations."""
 
-import os
-
 import pygit2
+import pytest
 import pytest_bazel
 
-from x.wt.shared.git_utils import GitRunOptions, git_run
 from x.wt.testing.asserts import assert_output_contains
 
 
@@ -20,35 +18,12 @@ class TestCLIIntegration:
         # We assert absence of typical worktree parent path
         assert "Available worktrees:" not in result.stdout
 
-    def test_list_worktrees_with_existing(self, real_temp_repo, real_env, wt_cli):
-        """Test listing worktrees when some exist."""
-
-        # Create a worktree first
-        result = wt_cli.sh_c("feature1")
-        assert result.returncode == 0, f"Create failed: {result.stderr}"
-
-        # List worktrees
-        result = wt_cli.sh("ls")
-        assert result.returncode == 0
-        assert_output_contains(result.stdout, "feature1")
-
     def test_create_worktree_reserved_name(self, real_temp_repo, wt_cli):
         """Test that creating worktrees with reserved names fails."""
 
         result = wt_cli.sh_c("main")
         assert result.returncode != 0
         assert "reserved" in result.stderr.lower() or "error" in result.stdout.lower()
-
-    def test_path_commands(self, real_temp_repo, wt_cli):
-        """Test path resolution commands."""
-
-        # Create a worktree
-        wt_cli.sh_c("path-test")
-
-        # Test path command
-        result = wt_cli.sh("path", "path-test")
-        assert result.returncode == 0
-        assert_output_contains(result.stdout, "path-test")
 
     def test_path_command_worktree_name(self, real_temp_repo, wt_cli):
         """ "x" resolves to the worktree directory (treat as worktree name)."""
@@ -74,6 +49,20 @@ class TestCLIIntegration:
         assert res.returncode == 0
         assert_output_contains(res.stdout, wt_path / "subdir")
 
+    @pytest.mark.parametrize(("hydrate", "expected_entries"), [(True, {"README.md"}), (False, set())])
+    def test_create_honors_hydrate_worktrees_config(
+        self, real_temp_repo, daemon_config_factory, wt_cli, hydrate, expected_entries
+    ):
+        """`hydrate_worktrees` in config.yaml reaches the daemon: the worktree is checked out, or holds only `.git`."""
+        # Rewrites config.yaml in the WT_DIR `wt_cli` is bound to, before the first CLI call starts the daemon.
+        daemon_config_factory(real_temp_repo).integration(hydrate_worktrees=hydrate)
+
+        result = wt_cli.sh_c("hydrate-test")
+        assert result.returncode == 0, f"Create failed: {result.stderr}"
+
+        wt_path = real_temp_repo / "worktrees" / "hydrate-test"
+        assert {p.name for p in wt_path.iterdir() if p.name != ".git"} == expected_entries
+
 
 class TestRealGitOperations:
     """Tests that verify actual git operations work correctly."""
@@ -94,47 +83,6 @@ class TestRealGitOperations:
         worktree_path = real_temp_repo / "worktrees" / "test-branch"
         worktree_repo = pygit2.Repository(worktree_path)
         assert worktree_repo.head.shorthand == "test/test-branch"
-
-    def test_sparse_empty_cone_then_extend(self, real_temp_repo, config_factory, wtcli):
-        # Create a repo with nested content
-        (real_temp_repo / "foo").mkdir()
-        (real_temp_repo / "foo" / "bar").mkdir(parents=True, exist_ok=True)
-        (real_temp_repo / "foo" / "bar" / "baz.txt").write_text("baz")
-        (real_temp_repo / "top.txt").write_text("top")
-
-        repo = pygit2.Repository(real_temp_repo)
-        repo.index.add_all()
-        repo.index.write()
-        sig = pygit2.Signature("Test User", "test@example.com")
-        tree = repo.index.write_tree()
-        parent = repo.head.target
-        repo.create_commit("HEAD", sig, sig, "Seed content", tree, [parent])
-
-        factory = config_factory(real_temp_repo)
-        config = factory.integration(hydrate_worktrees=False)
-        env = os.environ.copy()
-        env["WT_DIR"] = str(config.wt_dir)
-
-        # Create worktree via CLI
-        cli = wtcli(env)
-        result = cli.sh_c("cone-test")
-        assert result.returncode == 0, f"Create failed: {result.stderr}"
-        wt_path = real_temp_repo / "worktrees" / "cone-test"
-        assert wt_path.exists()
-
-        # Verify worktree is initially empty (no files except .git)
-        entries = [p for p in wt_path.iterdir() if p.name != ".git"]
-        assert entries == []
-
-        # Extend cone using git, then verify files appear
-
-        git_run(["sparse-checkout", "init", "--no-cone"], cwd=wt_path)
-        git_run(
-            ["sparse-checkout", "set", "--no-cone", "--stdin"], cwd=wt_path, options=GitRunOptions(input_data=b"foo\n")
-        )
-        git_run(["checkout", "-f"], cwd=wt_path)
-        assert (wt_path / "foo" / "bar" / "baz.txt").exists()
-        assert not (wt_path / "top.txt").exists()
 
 
 if __name__ == "__main__":

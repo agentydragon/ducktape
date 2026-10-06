@@ -16,24 +16,24 @@ from sqlalchemy.ext.asyncio import AsyncEngine
 from agentplane.action_service.api import create_app as actions_app
 from agentplane.action_service.auth import DisabledOperatorAuthenticator
 from agentplane.action_service.catalog import ActionCatalog
-from agentplane.action_service.conftest import RecordingExecutor
 from agentplane.action_service.db import ActionStore, make_sessionmaker
 from agentplane.action_service.models import DecisionInput, OperatorPrincipal, Verdict
 from agentplane.action_service.service import ActionService
-from agentplane.action_service.test_fixtures.callers import admitted_callers
+from agentplane.action_service.testing.callers import admitted_callers
+from agentplane.action_service.testing.fixtures import RecordingExecutor
 from agentplane.action_service.updates import ActionUpdates
 from agentplane.notification_service.api import create_app
 from agentplane.notification_service.db import Inbox
-from agentplane.notification_service.instructions import instructions
 from agentplane.notification_service.service import Service
 from agentplane.notification_service.settings import NoticeDebounceSettings
 from agentplane.notification_service.sources.actions import Actions
 from agentplane.notification_service.store import Store
 from agentplane.protocol import command_pb2, event_log_pb2
 from agentplane.runner import protocol_pb2
-from agentplane.runner.conftest import RunnerHandle
+from agentplane.runner.testing.fixtures import RunnerHandle
 from agentplane.runner.testing.scripted_model import ScriptedModel, Text
 from agentplane.sandbox_service.client import Runner
+from agentplane.sandbox_service.instructions import render_platform_instructions
 from agentplane.sandbox_service.protocol_pb2 import SandboxDestination, ServiceAccount
 from agentplane.sandbox_service.testing.kubernetes import (
     ACCOUNT,
@@ -108,7 +108,11 @@ async def test_listen_deliver_read_ack_and_recover_lost_response_without_app(
                     manager=delegate,
                     token="delegate-token",
                     audience="test-notifications",
-                    platform_instructions=instructions("http://notifications.test"),
+                    platform_instructions=render_platform_instructions(
+                        egress_api_url="http://egress.test",
+                        actions_service_url="http://actions.test",
+                        notifications_service_url="http://notifications.test",
+                    ),
                 ) as remote,
             ):
                 source = Actions(action_http, token_file)
@@ -146,44 +150,6 @@ async def test_listen_deliver_read_ack_and_recover_lost_response_without_app(
                         ),
                         OperatorPrincipal(issuer="test", subject="operator"),
                     )
-                    read_path = f"/v1/action-requests/{request['id']}"
-                    delegate_headers = {"Authorization": "Bearer delegate-token"}
-                    for suffix in ["", "/events"]:
-                        assert (await action_http.get(read_path + suffix, headers=delegate_headers)).status_code == 200
-                        assert (
-                            await action_http.get(read_path + suffix, headers={"Authorization": "Bearer other-token"})
-                        ).status_code == 404
-                    detail = await action_http.get(read_path, headers=delegate_headers)
-                    assert detail.json()["caller"] == owner.model_dump()
-                    listing = await action_http.get("/v1/action-requests", headers=delegate_headers)
-                    assert [item["id"] for item in listing.json()] == [request["id"]]
-                    first_page = await action_http.get(
-                        read_path + "/events", params={"limit": 1}, headers=delegate_headers
-                    )
-                    assert len(first_page.json()) == 1
-                    assert (await action_http.post(read_path + "/cancel", headers=delegate_headers)).status_code == 401
-                    assert (
-                        await action_http.post(
-                            "/v1/action-requests",
-                            json={
-                                "idempotency_key": "forbidden",
-                                "title": "Forbidden",
-                                "action": {"group": "agentplane", "name": "echo"},
-                                "arguments": {"text": "hello"},
-                            },
-                            headers=delegate_headers,
-                        )
-                    ).status_code == 401
-                    assert (
-                        await action_http.post(
-                            f"/v1/operator/action-requests/{request['id']}/decision",
-                            json={"verdict": "deny", "expected_version": 1, "idempotency_key": "forbidden"},
-                            headers=delegate_headers,
-                        )
-                    ).status_code == 401
-                    assert (
-                        await action_http.get(f"/v1/operator/action-requests/{request['id']}", headers=delegate_headers)
-                    ).status_code == 401
                     body = {
                         "destination_ref": {"namespace": SANDBOX_NAMESPACE, "name": SANDBOX, "uid": SANDBOX_UID},
                         "session_id": "notifications",

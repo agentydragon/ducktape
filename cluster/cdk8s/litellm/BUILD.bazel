@@ -145,7 +145,6 @@ py_test(
     deps = [
         ":config",
         "//:conftest",
-        "//cluster/cdk8s:model_selections",
         "//cluster/cdk8s:public_coder_agent_config",
         "//cluster/cdk8s/parked:haku_openclaw_spike_config",
         "//model_catalog:catalog",

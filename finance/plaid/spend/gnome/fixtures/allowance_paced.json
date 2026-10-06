@@ -1,0 +1,33 @@
+{
+  "status": "ready",
+  "error": "",
+  "view": {
+    "generated_at": "2026-10-15T12:00:00Z",
+    "dashboard_url": "https://spend.example.test/",
+    "cards": [
+      {
+        "label": "Synthetic card",
+        "alert_state": "exceeded",
+        "spend_minor_units": 90000,
+        "currency": "USD",
+        "statement_available": true,
+        "cycle_start": "2026-10-01",
+        "last_synced_at": "2026-10-15T11:59:00Z"
+      }
+    ],
+    "allowance": {
+      "status": "active",
+      "currency": "USD",
+      "monthly_minor_units": 70000,
+      "activation_at": "2026-10-01",
+      "available_minor_units": 20000,
+      "alert_state": "normal",
+      "trailing_7_observed_daily_minor_units": 2800,
+      "trailing_30_observed_daily_minor_units": 1800,
+      "trailing_7_unmatched_count": 3,
+      "trailing_7_unmatched_minor_units": 1200,
+      "last_synced_at": "2026-10-15T11:00:00Z",
+      "spending_signal": "warning"
+    }
+  }
+}

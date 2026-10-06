@@ -3,15 +3,11 @@
 from dataclasses import dataclass
 
 from model_catalog.catalog import (
-    ANTHROPIC_SUBSCRIPTION_ROUTES,
-    ANTIGRAVITY_FLASH_LITE_ROUTES,
-    ANTIGRAVITY_ROUTES,
-    GEMINI_ROUTES,
     GPT6_LUNA_RESPONSES,
     GPT6_RESPONSES_ROUTES,
-    HAIKU_API,
     OLLAMA_OPENAI_ROUTES,
-    OLLAMA_QWEN_IQ4XS_ROUTES,
+    OLLAMA_QWEN_IQ4XS_128K,
+    OLLAMA_QWEN_IQ4XS_256K,
     Route,
 )
 
@@ -28,25 +24,16 @@ class HarnessRoutes:
         return tuple(dict.fromkeys((*self.claude, *self.codex)))
 
 
-STAGING_APP_MODELS = HarnessRoutes(
-    claude=(*ANTHROPIC_SUBSCRIPTION_ROUTES, *ANTIGRAVITY_ROUTES, *OLLAMA_OPENAI_ROUTES),
-    codex=(*GPT6_RESPONSES_ROUTES, *OLLAMA_OPENAI_ROUTES),
-)
-TESTING_APP_MODELS = HarnessRoutes(
-    claude=(HAIKU_API, *ANTIGRAVITY_FLASH_LITE_ROUTES, *OLLAMA_OPENAI_ROUTES),
-    codex=(GPT6_LUNA_RESPONSES, *OLLAMA_OPENAI_ROUTES),
-)
+# Claude offerings are temporarily paused (#9121). Keep runner support, credentials,
+# and served routes for existing sessions; re-enable these selections after validation.
+STAGING_APP_MODELS = HarnessRoutes(claude=(), codex=(*GPT6_RESPONSES_ROUTES, *OLLAMA_OPENAI_ROUTES))
+TESTING_APP_MODELS = HarnessRoutes(claude=(), codex=(GPT6_LUNA_RESPONSES, *OLLAMA_OPENAI_ROUTES))
 
-# OpenClaw reserves maxTokens within contextWindow; omit routes without known limits.
-PUBLIC_CODER_MODELS = (
-    *GPT6_RESPONSES_ROUTES,
-    *GEMINI_ROUTES,
-    *(
-        route
-        for route in ANTIGRAVITY_ROUTES
-        if route.model.context_window is not None and route.model.max_output_tokens is not None
-    ),
-)
-
-# An explicit harness override policy, not all routes with known context metadata.
-RUNNER_CONTEXT_OVERRIDES = OLLAMA_QWEN_IQ4XS_ROUTES
+# Preserve the existing runner-owned context overrides for both native harnesses.
+# These are client budgets, not inferred from Ollama num_ctx or provider limits.
+RUNNER_CONTEXT_OVERRIDES = {
+    OLLAMA_QWEN_IQ4XS_128K.openai: 128 * 1024,
+    OLLAMA_QWEN_IQ4XS_128K.native: 128 * 1024,
+    OLLAMA_QWEN_IQ4XS_256K.openai: 256 * 1024,
+    OLLAMA_QWEN_IQ4XS_256K.native: 256 * 1024,
+}

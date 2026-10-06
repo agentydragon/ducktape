@@ -1,0 +1,274 @@
+{
+  "SessionCompletedActivity": {
+    "element": "#app",
+    "readySelectors": ["#app[data-completed-activity-ready=\"true\"]"]
+  },
+  "SessionCompletedActivityExpanded": {
+    "element": "#app",
+    "readySelectors": ["#app[data-completed-activity-ready=\"true\"]"]
+  },
+  "SessionCompletedActivity_mobile": {
+    "element": "#app",
+    "readySelectors": ["#app[data-completed-activity-ready=\"true\"]"],
+    "viewport": { "width": 420, "height": 900 }
+  },
+  "SessionCompletedActivityExpanded_mobile": {
+    "element": "#app",
+    "readySelectors": ["#app[data-completed-activity-ready=\"true\"]"],
+    "viewport": { "width": 420, "height": 900 }
+  },
+  "SessionNoisyActivity": {
+    "element": "#app",
+    "readySelectors": ["#app[data-activity-ready=\"true\"]"]
+  },
+  "SessionNoisyActivityExpanded": {
+    "element": "#app",
+    "readySelectors": ["#app[data-activity-ready=\"true\"]"]
+  },
+  "SessionNoisyActivityExpanded_mobile": {
+    "element": "#app",
+    "readySelectors": ["#app[data-activity-ready=\"true\"]"],
+    "viewport": { "width": 420, "height": 900 }
+  },
+  "SessionNoisyTimeline": {
+    "element": "#app",
+    "readySelectors": ["#app[data-timeline-ready=\"true\"]"]
+  },
+  "SessionNoisyTimeline_mobile": {
+    "element": "#app",
+    "readySelectors": ["#app[data-timeline-ready=\"true\"]"],
+    "viewport": { "width": 420, "height": 900 }
+  },
+  "SessionNoisyTimelineExpanded": {
+    "element": "#app",
+    "readySelectors": ["#app[data-timeline-ready=\"true\"]"]
+  },
+  "SessionNoisyTimelineExpanded_mobile": {
+    "element": "#app",
+    "readySelectors": ["#app[data-timeline-ready=\"true\"]"],
+    "viewport": { "width": 420, "height": 900 }
+  },
+  "SessionNoisySidebar": {
+    "element": "#app",
+    "readySelectors": ["#app[data-noisy-ready=\"true\"][data-sidebar-ready=\"expanded\"]"]
+  },
+  "SessionNoisySidebarCollapsed": {
+    "element": "#app",
+    "readySelectors": ["#app[data-noisy-ready=\"true\"][data-sidebar-ready=\"collapsed\"]"]
+  },
+  "SessionNoisySidebarWide": {
+    "element": "#app",
+    "readySelectors": ["#app[data-noisy-ready=\"true\"][data-sidebar-ready=\"wide\"]"]
+  },
+  "SessionNoisySidebar_mobile": {
+    "element": "#app",
+    "readySelectors": ["#app[data-noisy-ready=\"true\"][data-sidebar-ready=\"mobile-open\"]"],
+    "viewport": { "width": 420, "height": 900 }
+  },
+  "SessionNoisy": {
+    "element": "#app",
+    "readySelectors": ["#app[data-noisy-ready=\"true\"]"]
+  },
+  "SessionNoisy_mobile": {
+    "element": "#app",
+    "readySelectors": ["#app[data-noisy-ready=\"true\"]"],
+    "viewport": { "width": 420, "height": 900 }
+  },
+  "SessionNoisyThinking": {
+    "element": "#app",
+    "readySelectors": ["#app[data-noisy-ready=\"true\"]"]
+  },
+  "SessionNoisyRaw": {
+    "element": "#app",
+    "readySelectors": ["#app[data-noisy-ready=\"true\"]"]
+  },
+  "SessionNoisyHook": {
+    "element": "#app",
+    "readySelectors": ["#app[data-noisy-ready=\"true\"]"]
+  },
+  "SessionNoisyHook_mobile": {
+    "element": "#app",
+    "readySelectors": ["#app[data-noisy-ready=\"true\"]"],
+    "viewport": { "width": 420, "height": 900 }
+  },
+  "SessionNarrationVisibility": {
+    "element": "#app",
+    "readySelectors": ["#app[data-narration-ready=\"true\"]"]
+  },
+  "SessionNarrationVisibility_mobile": {
+    "element": "#app",
+    "readySelectors": ["#app[data-narration-ready=\"true\"]"],
+    "viewport": { "width": 420, "height": 900 }
+  },
+  "SessionLatestFirstTail": {
+    "element": "#app",
+    "readySelectors": ["#app[data-latest-tail-ready=\"true\"]"]
+  },
+  "SessionLatestFirstAnchor": {
+    "element": "#app",
+    "readySelectors": ["#app[data-history-anchor-ready=\"true\"]"]
+  },
+  "SessionViewer": {
+    "element": "#app",
+    "readySelectors": [
+      "[aria-label=\"Session history\"]",
+      "[data-fold-kind=\"tool-run\"][data-tool-count=\"5\"]",
+      "[data-tool-run-toggle]"
+    ]
+  },
+  "SessionViewer_dark": {
+    "element": "#app",
+    "readySelectors": [
+      "[aria-label=\"Session history\"]",
+      "[data-fold-kind=\"tool-run\"][data-tool-count=\"5\"]",
+      "[data-tool-run-toggle]"
+    ],
+    "colorScheme": "dark"
+  },
+  "SessionViewer_mobile": {
+    "element": "#app",
+    "readySelectors": [
+      "[aria-label=\"Session history\"]",
+      "[data-fold-kind=\"tool-run\"][data-tool-count=\"5\"]",
+      "[data-tool-run-toggle]"
+    ],
+    "viewport": { "width": 420, "height": 900 }
+  },
+  "SessionMarkdown": {
+    "element": "#app",
+    "readySelectors": [
+      "#app[data-markdown-sanitized=\"true\"]",
+      "[aria-label=\"Session history\"]",
+      "[data-message-role=\"user\"] .agentplane-markdown ul",
+      "[data-message-role=\"user\"] .agentplane-markdown table",
+      "[data-message-role=\"assistant\"] .agentplane-markdown h2",
+      "[data-message-role=\"assistant\"] .agentplane-markdown a[href^=\"https://\"]",
+      "[data-message-role=\"assistant\"] .agentplane-markdown .agentplane-code-block .cm-editor"
+    ]
+  },
+  "SessionMarkdown_mobile": {
+    "element": "#app",
+    "readySelectors": [
+      "#app[data-markdown-sanitized=\"true\"]",
+      "[aria-label=\"Session history\"]",
+      "[data-message-role=\"user\"] .agentplane-markdown ul",
+      "[data-message-role=\"user\"] .agentplane-markdown table",
+      "[data-message-role=\"assistant\"] .agentplane-markdown h2",
+      "[data-message-role=\"assistant\"] .agentplane-markdown a[href^=\"https://\"]",
+      "[data-message-role=\"assistant\"] .agentplane-markdown .agentplane-code-block .cm-editor"
+    ],
+    "viewport": { "width": 420, "height": 900 }
+  },
+  "SessionToolResult": {
+    "element": "#app",
+    "readySelectors": ["[aria-label=\"Session history\"]", "[data-tool-name=\"Read\"]", "[data-tool-output-image]"]
+  },
+  "SessionToolResult_mobile": {
+    "element": "#app",
+    "readySelectors": ["[aria-label=\"Session history\"]", "[data-tool-name=\"Read\"]", "[data-tool-output-image]"],
+    "viewport": { "width": 420, "height": 900 }
+  },
+  "SessionReadFileResult": {
+    "element": "#app",
+    "readySelectors": [
+      "[aria-label=\"Session history\"]",
+      "[data-tool-file-path=\"src/session-viewer.ts\"]",
+      "[data-tool-file-preview]"
+    ]
+  },
+  "SessionReadFileResult_mobile": {
+    "element": "#app",
+    "readySelectors": [
+      "[aria-label=\"Session history\"]",
+      "[data-tool-file-path=\"src/session-viewer.ts\"]",
+      "[data-tool-file-preview]"
+    ],
+    "viewport": { "width": 420, "height": 900 }
+  },
+  "SessionSubagent": {
+    "element": "#app",
+    "readySelectors": [
+      "[aria-label=\"Session history\"]",
+      "[data-subagent-activity][data-subagent-tool-count=\"2\"]",
+      "[data-subagent-latest-tool=\"Grep\"]"
+    ]
+  },
+  "SessionSubagent_mobile": {
+    "element": "#app",
+    "readySelectors": [
+      "[aria-label=\"Session history\"]",
+      "[data-subagent-activity][data-subagent-tool-count=\"2\"]",
+      "[data-subagent-latest-tool=\"Grep\"]"
+    ],
+    "viewport": { "width": 420, "height": 900 }
+  },
+  "SessionPeerHold": {
+    "element": "#app",
+    "readySelectors": [
+      "[aria-label=\"Session history\"]",
+      "[data-fold-kind=\"peer-message\"][data-peer-from=\"plan-agent\"]",
+      "[data-fold-kind=\"peer-hold\"][data-peer-state=\"held\"]",
+      "[data-fold-kind=\"peer-hold\"][data-peer-state=\"dropped\"]"
+    ]
+  },
+  "SessionPeerHold_mobile": {
+    "element": "#app",
+    "readySelectors": [
+      "[aria-label=\"Session history\"]",
+      "[data-fold-kind=\"peer-message\"][data-peer-from=\"plan-agent\"]",
+      "[data-fold-kind=\"peer-hold\"][data-peer-state=\"held\"]",
+      "[data-fold-kind=\"peer-hold\"][data-peer-state=\"dropped\"]"
+    ],
+    "viewport": { "width": 420, "height": 900 }
+  },
+  "SessionPeerMessage": {
+    "element": "#app",
+    "readySelectors": [
+      "[aria-label=\"Session history\"]",
+      "[data-fold-kind=\"peer-message\"][data-peer-from=\"review-agent\"][data-peer-handback=\"true\"]"
+    ]
+  },
+  "SessionPeerMessage_mobile": {
+    "element": "#app",
+    "readySelectors": [
+      "[aria-label=\"Session history\"]",
+      "[data-fold-kind=\"peer-message\"][data-peer-from=\"review-agent\"][data-peer-handback=\"true\"]"
+    ],
+    "viewport": { "width": 420, "height": 900 }
+  },
+  "SessionLocalCommandRows": {
+    "element": "#app",
+    "readySelectors": [
+      "[aria-label=\"Session history\"]",
+      "[data-fold-kind=\"context\"][data-context-model=\"claude-sonnet-4-5\"]",
+      "[data-fold-kind=\"stats\"][data-stats-state=\"data\"]",
+      "[data-fold-kind=\"usage\"]",
+      "[data-fold-kind=\"status\"]"
+    ]
+  },
+  "SessionLocalCommandRows_mobile": {
+    "element": "#app",
+    "readySelectors": [
+      "[aria-label=\"Session history\"]",
+      "[data-fold-kind=\"context\"][data-context-model=\"claude-sonnet-4-5\"]",
+      "[data-fold-kind=\"stats\"][data-stats-state=\"data\"]",
+      "[data-fold-kind=\"usage\"]",
+      "[data-fold-kind=\"status\"]"
+    ],
+    "viewport": { "width": 420, "height": 900 }
+  },
+  "SessionSync": {
+    "element": "#app",
+    "readySelectors": ["#overview-heading", "#pairing-heading"]
+  },
+  "SessionSync_paired_dark": {
+    "element": "#app",
+    "readySelectors": ["#overview-heading", "#pairing-heading"],
+    "colorScheme": "dark"
+  },
+  "SessionSync_paired_mobile": {
+    "element": "#app",
+    "readySelectors": ["#overview-heading", "#pairing-heading"],
+    "viewport": { "width": 420, "height": 900 }
+  }
+}

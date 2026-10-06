@@ -1,7 +1,7 @@
 """App-owned form presets.
 
 A preset is only a convenient collection of values the operator may choose individually. Kubernetes
-and the runner receive the selected concrete template, policies, bootstrap source, and SessionSpec
+and the runner receive the selected concrete template, egress policies, bootstrap source, and SessionSpec
 fields, never a preset name to resolve later.
 """
 
@@ -33,7 +33,7 @@ class SandboxPreset(BaseModel):
 
     title: str
     template: str
-    policies: list[str] = Field(default_factory=list, description="EgressPolicy names every launch is granted.")
+    egress_policies: list[str] = Field(default_factory=list, description="EgressPolicy names every launch is granted.")
     action_policy_sets: list[str] = Field(
         default_factory=list,
         description="ActionPolicySet names every launch is bound to: what its harness may do without the operator.",
@@ -51,7 +51,7 @@ class SandboxPresetView(BaseModel):
     name: str
     title: str
     template: str
-    policies: list[str]
+    egress_policies: list[str]
     action_policy_sets: list[str]
     kubernetes_grants: list[str]
     session_defaults: SessionDefaults
@@ -81,7 +81,7 @@ class PresetCatalog(BaseModel):
                 name=name,
                 title=preset.title,
                 template=preset.template,
-                policies=preset.policies,
+                egress_policies=preset.egress_policies,
                 action_policy_sets=preset.action_policy_sets,
                 kubernetes_grants=preset.kubernetes_grants,
                 session_defaults=self.threads[preset.thread_preset].defaults(),

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import math
+from collections.abc import Callable
 
 import numpy as np
 import numpy.typing as npt
@@ -30,7 +31,6 @@ from finance.augur.x.models.private_equity_risk import (
     _sample_company_valuation_vectorized,
     _sample_issuer,
     _scale_reverting_drift,
-    _seed_from_rollout_seeds,
 )
 from finance.augur.x.models.provider_config import ProviderConfig
 
@@ -464,39 +464,6 @@ def test_valuation_channel_off_by_default() -> None:
     assert not _issuer().valuation_channel_enabled
 
 
-def test_valuation_channel_on_anchors_columns_zero() -> None:
-    """Channel ON: valuation[:,0] == V0 and mark[:,0] == current_mark_usd exactly."""
-
-    issuer = _valuation_issuer()
-    assert issuer.valuation_channel_enabled
-    sampled = _sample(issuer, horizon_months=6)
-
-    valuation = _float(sampled, PrivateEquityFloatChannel.COMPANY_VALUATION_USD, horizon=6)
-    mark = _float(sampled, PrivateEquityFloatChannel.MARK_USD_PER_UNIT, horizon=6)
-
-    np.testing.assert_array_equal(valuation[:, 0], np.full(valuation.shape[0], 1.0e11))
-    assert mark[0, 0] == pytest.approx(100.0)
-    # The coupled valuation is a strictly positive market cap, never the all-zeros sentinel.
-    assert np.all(valuation > 0.0)
-
-
-def test_valuation_channel_on_is_deterministic_under_fixed_seeds() -> None:
-    """Two samples with identical `rollout_seeds` produce identical coupled arrays."""
-
-    issuer = _valuation_issuer()
-    request = ExogenousSamplingRequest(
-        horizon_months=8, rollout_seeds=(11, 22, 33), required_private_equity_issuers=frozenset({ACME})
-    )
-    model = PrivateEquityRiskProviderConfig(issuers={ACME: issuer}).realize_model()
-    first = model.sample(request)
-    second = model.sample(request)
-
-    for channel in (PrivateEquityFloatChannel.COMPANY_VALUATION_USD, PrivateEquityFloatChannel.MARK_USD_PER_UNIT):
-        a = first.private_equity.issuer_float_matrix("acme", str(channel), rollout_count=3, horizon_months=8)
-        b = second.private_equity.issuer_float_matrix("acme", str(channel), rollout_count=3, horizon_months=8)
-        np.testing.assert_array_equal(a, b)
-
-
 # ---- M2.2-D: scale-dependent mean-reverting valuation drift -------------------------------
 
 
@@ -618,39 +585,6 @@ def test_dilution_factor_shape_and_values() -> None:
     np.testing.assert_allclose(_deterministic_dilution_factor(rate=0.0, horizon_months=6), np.ones(7))
 
 
-def test_positive_dilution_makes_coupled_mark_grow_slower_than_valuation_ratio() -> None:
-    """`annual_dilution_rate > 0` ⇒ the coupled latent mark grows strictly slower than V(t)/V0.
-
-    The coupled latent mark is `current_mark × (V(t)/V0) / dilution_factor(t)` with
-    `dilution_factor(t) = (1+rate)^(t/12) > 1` for t > 0. Verified directly on the
-    sampler's building blocks (`_sample_company_valuation_vectorized` + `_dilution_factor`),
-    since the observed `mark_usd_per_unit` channel is piecewise-constant between observation
-    events and so doesn't continuously track the latent mark. Same V(t) used for both rates
-    (identical valuation seed stream), so the only difference is the dilution divisor.
-    """
-
-    rate = 0.30
-    horizon = 12
-    issuer = _valuation_issuer(annual_dilution_rate=rate)
-    valuation_seeds = (900, 901, 902, 903)
-    valuation = _sample_company_valuation_vectorized(issuer, valuation_seeds=valuation_seeds, horizon_months=horizon)
-    valuation_ratio = valuation / valuation[:, [0]]
-
-    diluted = _deterministic_dilution_factor(rate=rate, horizon_months=horizon)
-    undiluted = _deterministic_dilution_factor(rate=0.0, horizon_months=horizon)
-    coupled_mark = issuer.current_mark_usd * valuation_ratio / diluted
-    coupled_mark_no_dilution = issuer.current_mark_usd * valuation_ratio / undiluted
-
-    mark_ratio = coupled_mark / coupled_mark[:, [0]]
-    # t == 0: mark ratio equals valuation ratio (dilution_factor(0) == 1).
-    np.testing.assert_allclose(mark_ratio[:, 0], valuation_ratio[:, 0])
-    # t > 0: strictly below the valuation ratio, by exactly the dilution factor.
-    assert np.all(mark_ratio[:, 1:] < valuation_ratio[:, 1:])
-    np.testing.assert_allclose(mark_ratio, valuation_ratio / diluted)
-    # Zero dilution ⇒ coupled mark tracks V(t)/V0 exactly.
-    np.testing.assert_allclose(coupled_mark_no_dilution / issuer.current_mark_usd, valuation_ratio)
-
-
 def test_valuation_channel_off_is_byte_identical_to_pre_m2_baseline() -> None:
     """Zero-regression guard: turning the channel off must leave mark/event arrays
     bit-identical to a model with NO valuation fields at all (the pre-M2 shape).
@@ -763,16 +697,6 @@ def _sample_dilution_paths(issuer: PrivateEquityRiskIssuerConfig, *, rollout_cou
     return _sample_issuer(ACME, issuer, request)
 
 
-def _drawn_rates(issuer: PrivateEquityRiskIssuerConfig, *, rollout_count: int) -> np.ndarray:
-    """Reproduce the per-rollout dilution-rate draw the sampler performs."""
-
-    seeds = tuple(range(1, rollout_count + 1))
-    dilution_seeds = derive_stream_rollout_seeds(seeds, stream_id="acme:pe_risk_dilution")
-    rng = np.random.default_rng(_seed_from_rollout_seeds(dilution_seeds))
-    z = rng.standard_normal(rollout_count)
-    return issuer.annual_dilution_rate * np.exp(issuer.annual_dilution_rate_log_sigma * z)
-
-
 def _latent_coupled_mark(
     issuer: PrivateEquityRiskIssuerConfig, *, rollout_count: int, horizon_months: int
 ) -> np.ndarray:
@@ -848,11 +772,19 @@ def test_drawn_rate_median_is_anchored_at_annual_dilution_rate() -> None:
     """median(r) ~ annual_dilution_rate over many rollouts (median-anchored LogNormal)."""
 
     rate = 0.20
-    issuer = _dilution_issuer(annual_dilution_rate=rate, annual_dilution_rate_log_sigma=0.4)
-    rates = _drawn_rates(issuer, rollout_count=5000)
+    rollout_count = 5000
+    factor = _dilution_factor(
+        annual_dilution_rate=rate,
+        annual_dilution_rate_log_sigma=0.4,
+        rollout_seeds=tuple(range(1, rollout_count + 1)),
+        issuer_id=ACME,
+        rollout_count=rollout_count,
+        horizon_months=12,
+    )
+    # At month 12 the factor is (1 + r_i) ** 1, so it carries each rollout's drawn rate.
     # LogNormal median == exp(mu) == rate; the sample median converges to it (NOT the mean,
     # which would sit at rate * exp(sigma**2 / 2) ~ 0.217 here).
-    assert float(np.median(rates)) == pytest.approx(rate, rel=0.05)
+    assert float(np.median(factor[:, 12] - 1.0)) == pytest.approx(rate, rel=0.05)
 
 
 def test_positive_sigma_is_deterministic_under_fixed_seeds() -> None:
@@ -985,15 +917,25 @@ def test_mint_streams_rejects_legacy_dilution_set() -> None:
         )
 
 
-def test_mint_streams_anchors_at_t0() -> None:
-    """V[:,0] == V0 and shares[:,0] == shares0 exactly; latent_mark[:,0] == current_mark_usd."""
+@pytest.mark.parametrize("make_issuer", [_valuation_issuer, _mint_streams_issuer], ids=["valuation", "mint_streams"])
+@pytest.mark.parametrize("horizon", [6, 0])
+def test_channel_on_anchors_columns_zero(
+    make_issuer: Callable[..., PrivateEquityRiskIssuerConfig], horizon: int
+) -> None:
+    """Channel ON: V[:,0] == V0 and mark[:,0] == current_mark_usd exactly, including a horizon-0
+    sample that is only column 0. With mint streams the latent mark is current_mark *
+    (V/V0) / (shares/shares0), which is current_mark at t0."""
 
-    issuer = _mint_streams_issuer()
-    sampled = _sample(issuer, horizon_months=6)
-    valuation = _float(sampled, PrivateEquityFloatChannel.COMPANY_VALUATION_USD, horizon=6)
-    mark = _float(sampled, PrivateEquityFloatChannel.MARK_USD_PER_UNIT, horizon=6)
+    issuer = make_issuer()
+    assert issuer.valuation_channel_enabled
+    sampled = _sample(issuer, horizon_months=horizon)
+    valuation = _float(sampled, PrivateEquityFloatChannel.COMPANY_VALUATION_USD, horizon=horizon)
+    mark = _float(sampled, PrivateEquityFloatChannel.MARK_USD_PER_UNIT, horizon=horizon)
+
+    assert mark.shape == valuation.shape == (1, horizon + 1)
     np.testing.assert_array_equal(valuation[:, 0], np.full(valuation.shape[0], 1.0e11))
     assert mark[0, 0] == pytest.approx(100.0)
+    # The coupled valuation is a strictly positive market cap, never the all-zeros sentinel.
     assert np.all(valuation > 0.0)
 
 
@@ -1052,19 +994,6 @@ def test_mint_streams_round_events_fire_at_expected_rate() -> None:
     expected_rounds = (1.0 / 12.0) * 120  # = 10
     # Mean realized rounds should be within ~10% of the Poisson expectation at this sample size.
     assert abs(rounds_per_rollout.mean() - expected_rounds) < 1.5
-
-
-def test_mint_streams_invariant_mark_equals_v_over_shares_at_t0() -> None:
-    """latent_mark[:,0] = current_mark * (V0/V0) / (shares0/shares0) = current_mark exactly.
-
-    A sample at horizon 0 returns just column 0; verify the invariant directly.
-    """
-
-    issuer = _mint_streams_issuer()
-    sampled = _sample(issuer, horizon_months=0)
-    mark = _float(sampled, PrivateEquityFloatChannel.MARK_USD_PER_UNIT, horizon=0)
-    assert mark.shape == (1, 1)
-    assert mark[0, 0] == pytest.approx(100.0)
 
 
 def test_mint_streams_zero_hazard_is_continuous_mint_only() -> None:

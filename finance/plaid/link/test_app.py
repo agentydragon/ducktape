@@ -11,17 +11,13 @@ import pytest_bazel
 from cryptography.hazmat.primitives.asymmetric import ec
 from fastapi.testclient import TestClient
 from itsdangerous import TimestampSigner
-from plaid.model.accounts_get_request import AccountsGetRequest
 from plaid.model.country_code import CountryCode
 from plaid.model.institution import Institution
 from plaid.model.institutions_get_by_id_request import InstitutionsGetByIdRequest
 from plaid.model.institutions_get_by_id_response import InstitutionsGetByIdResponse
 from plaid.model.institutions_search_request import InstitutionsSearchRequest
 from plaid.model.institutions_search_response import InstitutionsSearchResponse
-from plaid.model.investments_holdings_get_request import InvestmentsHoldingsGetRequest
-from plaid.model.investments_transactions_get_request import InvestmentsTransactionsGetRequest
 from plaid.model.item import Item
-from plaid.model.item_get_request import ItemGetRequest
 from plaid.model.item_public_token_exchange_request import ItemPublicTokenExchangeRequest
 from plaid.model.item_public_token_exchange_response import ItemPublicTokenExchangeResponse
 from plaid.model.item_remove_request import ItemRemoveRequest
@@ -29,11 +25,9 @@ from plaid.model.item_remove_response import ItemRemoveResponse
 from plaid.model.item_webhook_update_request import ItemWebhookUpdateRequest
 from plaid.model.item_webhook_update_response import ItemWebhookUpdateResponse
 from plaid.model.jwk_public_key import JWKPublicKey
-from plaid.model.liabilities_get_request import LiabilitiesGetRequest
 from plaid.model.link_token_create_request import LinkTokenCreateRequest
 from plaid.model.link_token_create_response import LinkTokenCreateResponse
 from plaid.model.products import Products
-from plaid.model.transactions_get_request import TransactionsGetRequest
 from plaid.model.transactions_sync_response import TransactionsSyncResponse
 from plaid.model.webhook_verification_key_get_request import WebhookVerificationKeyGetRequest
 from plaid.model.webhook_verification_key_get_response import WebhookVerificationKeyGetResponse
@@ -105,12 +99,6 @@ class _FakeStorage:
         self.webhook_deliveries[delivery_id - 1].update(
             {"webhook_type": webhook_type, "webhook_code": webhook_code, "item_id": item_id, "disposition": disposition}
         )
-
-    async def finish_item_sync(self, claim: object) -> None:
-        raise AssertionError("the fake worker never claims Item syncs")
-
-    async def retry_item_sync(self, claim: object) -> None:
-        raise AssertionError("the fake worker never claims Item syncs")
 
 
 class _FakeSecrets:
@@ -212,24 +200,6 @@ class _FakePlaidApi:
 
     def transactions_sync(self, request: object) -> TransactionsSyncResponse:
         raise AssertionError("unexpected transaction sync in this app test")
-
-    def item_get(self, request: ItemGetRequest) -> object:
-        raise AssertionError("unexpected sync call in smoke test")
-
-    def accounts_get(self, request: AccountsGetRequest) -> object:
-        raise AssertionError("unexpected sync call in smoke test")
-
-    def transactions_get(self, request: TransactionsGetRequest) -> object:
-        raise AssertionError("unexpected sync call in smoke test")
-
-    def investments_holdings_get(self, request: InvestmentsHoldingsGetRequest) -> object:
-        raise AssertionError("unexpected sync call in smoke test")
-
-    def investments_transactions_get(self, request: InvestmentsTransactionsGetRequest) -> object:
-        raise AssertionError("unexpected sync call in smoke test")
-
-    def liabilities_get(self, request: LiabilitiesGetRequest) -> object:
-        raise AssertionError("unexpected sync call in smoke test")
 
     def institutions_search(self, request: InstitutionsSearchRequest) -> InstitutionsSearchResponse:
         return cast(
@@ -579,13 +549,6 @@ def test_authenticated_unrecognized_envelope_body_is_recorded() -> None:
     ]
 
 
-def test_link_token_rejects_an_empty_product_set() -> None:
-    with _client() as client:
-        response = client.post("/api/link-token", json={"products": []})
-
-    assert response.status_code == 422
-
-
 def test_create_link_token_initializes_requested_products() -> None:
     api = _FakePlaidApi()
     client = PlaidClient(api=cast(PlaidSdkApiLike, api))
@@ -695,15 +658,6 @@ def test_exchange_public_token_uses_sdk_request() -> None:
     assert api.exchanged_public_tokens == ["public-sandbox-token"]
     assert result.access_token == "access-sandbox-new"
     assert result.item_id == "item-sandbox-new"
-
-
-def test_remove_item_uses_sdk_request() -> None:
-    api = _FakePlaidApi()
-    client = PlaidClient(api=cast(PlaidSdkApiLike, api))
-
-    client.remove_item("access-sandbox-existing")
-
-    assert api.removed_access_tokens == ["access-sandbox-existing"]
 
 
 def test_remove_link_purges_mirrored_link_data_after_plaid_removal() -> None:

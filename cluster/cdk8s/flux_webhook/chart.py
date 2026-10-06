@@ -24,6 +24,7 @@ from flux_provider_crds.io.fluxcd.toolkit.notification import ProviderSpecSecret
 from flux_receiver_crds.io.fluxcd.toolkit.notification import ReceiverSpecSecretRef, ReceiverSpecType
 
 from cluster.cdk8s import ntfy
+from cluster.cdk8s.config_format import yaml_config
 from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on_many
 from cluster.cdk8s.gateway import https_route
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
@@ -33,6 +34,8 @@ from cluster.cdk8s.service_ref import Pods, Port, ServiceRef
 
 NAME = "flux-webhook"
 NAMESPACE = "flux-system"
+# The public host of the Receivers: Forgejo refuses private addresses, so its webhooks cannot use the in-cluster Service.
+WEBHOOK_HOST = "flux-webhook.allegedly.works"
 OUTPUT_DIR = f"{GENERATED_ROOT}/flux-webhook"
 _NTFY_WEBHOOK = "ntfy-webhook"
 # notification-controller's receiver Service, from the Flux install (gotk-components.yaml).
@@ -44,14 +47,15 @@ _RECEIVER = ServiceRef(
 )
 # ntfy fills the X-Title/X-Message placeholders from Flux's webhook payload (Template: yes).
 # They are Go raw strings here so ESO's own template engine emits them untouched instead of
-# failing on the missing `involvedObject` key.
-_NTFY_HEADERS = """\
-Template: "yes"
-Authorization: "Bearer {{ .alertmanager_token }}"
-X-Title: "{{ `{{.involvedObject.kind}} {{.involvedObject.name}}` }}"
-X-Message: "{{ `{{.severity}}: {{.reason}} - {{.message}}` }}"
-X-Tags: "rotating_light"
-"""
+# failing on the missing `involvedObject` key. ESO substitutes `.alertmanager_token` into the
+# serialized text, unescaped.
+_NTFY_HEADERS = {
+    "Template": "yes",
+    "Authorization": "Bearer {{ .alertmanager_token }}",
+    "X-Title": "{{ `{{.involvedObject.kind}} {{.involvedObject.name}}` }}",
+    "X-Message": "{{ `{{.severity}}: {{.reason}} - {{.message}}` }}",
+    "X-Tags": "rotating_light",
+}
 
 
 def _alert_sources(*sources: tuple[AlertSpecEventSourcesKind, str]) -> list[AlertSpecEventSources]:
@@ -133,7 +137,7 @@ def chart(app: App) -> Chart:
         chart,
         "route",
         metadata=ApiObjectMetadata(name=NAME, namespace=NAMESPACE),
-        hostnames=["flux-webhook.allegedly.works"],
+        hostnames=[WEBHOOK_HOST],
         backend=_RECEIVER,
         hsts=False,
         listener=None,
@@ -173,7 +177,7 @@ def chart(app: App) -> Chart:
         template=ExternalSecretSpecTargetTemplate(
             engine_version=ExternalSecretSpecTargetTemplateEngineVersion.V2,
             type="Opaque",
-            data={"address": f"https://{ntfy.HOSTNAME}/alerts", "headers": _NTFY_HEADERS},
+            data={"address": f"https://{ntfy.HOSTNAME}/alerts", "headers": yaml_config(_NTFY_HEADERS)},
         ),
     )
     return chart

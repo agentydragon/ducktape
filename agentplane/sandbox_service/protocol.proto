@@ -103,7 +103,8 @@ message SandboxBinding {
 message CreateSandboxRequest {
   string slug = 1;
   string template = 2;
-  repeated string policies = 3;
+  // EgressPolicy names to grant to the new sandbox.
+  repeated string egress_policies = 3;
   repeated string action_policy_sets = 4;
   repeated string kubernetes_grants = 5;
   SessionDefaults session_defaults = 6;
@@ -164,7 +165,8 @@ message ListTemplatesResponse { repeated string templates = 1; }
 
 message GrantEgressRequest {
   SandboxDestination destination = 1;
-  repeated string policies = 2;
+  // EgressPolicy names to grant in the new binding.
+  repeated string egress_policies = 2;
 }
 message GrantEgressResponse { string binding_name = 1; }
 message RevokeEgressRequest { string binding_name = 1; }

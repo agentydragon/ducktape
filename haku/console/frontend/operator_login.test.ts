@@ -44,8 +44,7 @@ describe("redirectToOperatorLogin", () => {
     redirectToOperatorLogin(location);
     redirectToOperatorLogin(location);
 
-    expect(replace).toHaveBeenCalledOnce();
-    expect(replace).toHaveBeenCalledWith("/auth/login?return_to=%2F");
+    expect(replace).toHaveBeenCalledExactlyOnceWith("/auth/login?return_to=%2F");
     expect(operatorLoginRedirectStarted()).toBe(true);
   });
 });

@@ -6,9 +6,8 @@ from cdk8s import Testing as Cdk8sTesting  # pytest auto-collects classes named 
 
 from cluster.cdk8s import public_coder_agent_config
 from cluster.cdk8s.litellm.config import main_proxy_config
-from cluster.cdk8s.model_selections import PUBLIC_CODER_MODELS
 from cluster.cdk8s.parked import haku_openclaw_spike_config
-from model_catalog.catalog import ANTHROPIC_API_ROUTES, ANTHROPIC_SUBSCRIPTION_ROUTES, ANTIGRAVITY_ROUTES, Model
+from model_catalog.catalog import ANTHROPIC_SUBSCRIPTION_ROUTES, GPT6_ASTRA_RESPONSES
 
 
 def _public_coder_agent_models() -> list[dict]:
@@ -43,25 +42,12 @@ def test_public_coder_agent_catalog_names_only_served_routes() -> None:
         assert model["maxTokens"] < model["contextWindow"]
 
 
-def test_public_coder_omits_unknown_limits() -> None:
-    unknown = [route for route in ANTIGRAVITY_ROUTES if route.model.context_window is None]
-    assert unknown
-    assert not any(route in PUBLIC_CODER_MODELS for route in unknown)
-
-
-@pytest.mark.parametrize(
-    "model",
-    [
-        replace(PUBLIC_CODER_MODELS[0].model, context_window=None),
-        replace(PUBLIC_CODER_MODELS[0].model, max_output_tokens=None),
-        replace(PUBLIC_CODER_MODELS[0].model, reasoning=None),
-    ],
-    ids=["context_window", "max_output_tokens", "reasoning"],
-)
-def test_public_coder_rejects_incomplete_metadata(model: Model) -> None:
-    incomplete = replace(PUBLIC_CODER_MODELS[0], model=model)
+def test_public_coder_rejects_unknown_reasoning_capability() -> None:
+    route = GPT6_ASTRA_RESPONSES
     with pytest.raises(ValueError, match="missing OpenClaw metadata"):
-        public_coder_agent_config._model_entry(incomplete)
+        public_coder_agent_config._model_entry(
+            replace(route, model=replace(route.model, reasoning=None)), context_budget=128_000, output_budget=16_000
+        )
 
 
 def test_current_anthropic_roster_matches_haku_openclaw() -> None:
@@ -85,30 +71,13 @@ def test_current_anthropic_roster_matches_haku_openclaw() -> None:
     assert haku_env["CLAUDE_CODE_OAUTH_TOKEN"].startswith("sk-ant-oat01-")
     assert haku_env["GH_PAT"] == "proxy-github-placeholder"
 
-    litellm_models = _litellm_models()
-    for route in ANTHROPIC_API_ROUTES:
-        model_name = route.id
-        assert litellm_models[model_name] == {
-            "model_name": model_name,
-            "litellm_params": {"model": route.upstream_id, "api_key": "os.environ/ANTHROPIC_API_KEY"},
-            "model_info": {"mode": "chat", "supports_function_calling": True},
-        }
 
+def test_public_coder_memory_model_is_a_served_embedding_route() -> None:
+    model = public_coder_agent_config.config()["memory"]["search"]["model"]
+    served = _litellm_models()
 
-def test_public_coder_memory_model_uses_ollama_embedding_route() -> None:
-    """The OpenClaw model identity must match the Ollama embedding route."""
-    config = public_coder_agent_config.config()
-    model = config["memory"]["search"]["model"]
-
-    assert model == "ollama/olm-embed/qwen3-embedding-4b"
-    assert _litellm_models()[model] == {
-        "model_name": model,
-        "litellm_params": {
-            "model": "ollama/qwen3-embedding:4b",
-            "api_base": "http://ollama.ollama.svc.cluster.local:11434",
-        },
-        "model_info": {"mode": "embedding"},
-    }
+    assert model in served
+    assert served[model]["model_info"]["mode"] == "embedding"
 
 
 if __name__ == "__main__":

@@ -344,7 +344,8 @@ class PayloadShape extends Listeners {
   readonly #requested = new Map<string, BodyId>();
   #queued: BodyId[] = [];
   #version = 0;
-  #error: string | null = null;
+  // Why a read of a body failed, until a chunk of the body arrives or the bodies are read again.
+  readonly #failures = new Map<string, string>();
   #closed = false;
   #suspended = false;
   // Where the shape was read through when it was suspended, until it is opened there.
@@ -362,10 +363,6 @@ class PayloadShape extends Listeners {
   }
 
   getVersion = (): number => this.#version;
-
-  get error(): string | null {
-    return this.#error;
-  }
 
   want(reference: PayloadRef): void {
     const key = bodyKey(reference.owner_id, reference.generation);
@@ -394,22 +391,32 @@ class PayloadShape extends Listeners {
   /** The body as far as the reference spans it. Every prefix of a body's chunks is one of its
    * revisions, so until a chunk the reference names arrives, the body shows the one before. */
   body(reference: PayloadRef): string | null {
+    const parts = this.#arrived(reference);
+    return parts.length === 0 && Number(reference.chunk_count) > 0 ? null : parts.join("");
+  }
+
+  /** Why a read stopped the body from loading to the extent the reference spans it, or null where
+   * the body is whole or no read of it has failed. */
+  failure(reference: PayloadRef): string | null {
+    const failure = this.#failures.get(bodyKey(reference.owner_id, reference.generation));
+    return failure !== undefined && this.#arrived(reference).length < Number(reference.chunk_count) ? failure : null;
+  }
+
+  #arrived(reference: PayloadRef): string[] {
     const chunks = this.#chunks.get(bodyKey(reference.owner_id, reference.generation));
-    const count = Number(reference.chunk_count);
-    if (count === 0) return "";
     const parts: string[] = [];
-    for (let index = 0; index < count; index++) {
+    for (let index = 0; index < Number(reference.chunk_count); index++) {
       const text = chunks?.get(index);
       if (text === undefined) break;
       parts.push(text);
     }
-    return parts.length === 0 ? null : parts.join("");
+    return parts;
   }
 
   retry = (): void => {
     this.#shape?.close();
     this.#shape = null;
-    this.#error = null;
+    this.#failures.clear();
     this.#changed();
     this.#queue([...this.#requested.values()]);
   };
@@ -444,7 +451,7 @@ class PayloadShape extends Listeners {
     return new Shape(
       this.#url,
       (messages) => this.#apply(messages),
-      (error) => this.#fail(error),
+      (error) => this.#fail(error, [...this.#requested.values()]),
       this.#onAttempt,
       from
     );
@@ -467,7 +474,7 @@ class PayloadShape extends Listeners {
     shape
       .subset(bodySubset(bodies))
       .catch((error: unknown) => {
-        if (!shape.closed) this.#fail(error);
+        if (!shape.closed) this.#fail(error, bodies);
       })
       .finally(() => {
         this.#reading--;
@@ -503,6 +510,7 @@ class PayloadShape extends Listeners {
       let chunks = this.#chunks.get(key);
       if (chunks === undefined) this.#chunks.set(key, (chunks = new Map()));
       chunks.set(Number(chunk.chunkIndex), chunk.text);
+      this.#failures.delete(key);
       changed = true;
     }
     if (changed) this.#changed();
@@ -510,10 +518,12 @@ class PayloadShape extends Listeners {
     if (retired) this.#queue([...this.#requested.values()]);
   }
 
-  #fail(error: unknown): void {
+  /** `error` stopped the read of `bodies`, or of every body requested where it ended the shape. */
+  #fail(error: unknown, bodies: readonly BodyId[]): void {
     if (error instanceof FetchError && error.status === 410) this.#onGone();
     else {
-      this.#error = displayableError(error);
+      const failure = displayableError(error);
+      for (const { ownerId, generation } of bodies) this.#failures.set(bodyKey(ownerId, generation), failure);
       this.#changed();
     }
   }
@@ -1028,7 +1038,7 @@ function usePayload(reference: PayloadRef): Payload {
   useEffect(() => {
     shape.want(reference);
   }, [reference, shape]);
-  return { body: shape.body(reference), error: shape.error, retry: shape.retry };
+  return { body: shape.body(reference), error: shape.failure(reference), retry: shape.retry };
 }
 
 export const electricThreadSync: ThreadSync = createElectricThreadSync();

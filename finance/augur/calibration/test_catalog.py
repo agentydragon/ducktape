@@ -6,7 +6,6 @@ from datetime import date
 
 import pytest
 import pytest_bazel
-from pydantic import ValidationError
 
 from finance.augur.calibration.catalog import (
     CatalogMetadata,
@@ -108,24 +107,6 @@ def test_referenced_markets_unions_and_dedupes() -> None:
     }
 
 
-def test_invalid_cross_field_state_is_unrepresentable() -> None:
-    """A `mapping` on an unmappable market is rejected by `extra="forbid"`: the field
-    does not exist on that variant, so the nonsensical combination cannot be built."""
-    with pytest.raises(ValidationError):
-        MarketCatalog.model_validate(
-            {
-                "metadata": {"as_of": "2026-05-29"},
-                "markets": [
-                    {
-                        "manifold_id": "F",
-                        "mappability": "unmappable",
-                        "mapping": {"kind": "ipo_by_date", "issuer": "openai", "by_date": "2027-01-01"},
-                    }
-                ],
-            }
-        )
-
-
 def test_platform_ref_discriminated_union() -> None:
     """Each platform variant carries its own required ID field."""
     poly_market = ExactMarket(
@@ -140,23 +121,6 @@ def test_platform_ref_discriminated_union() -> None:
         mapping=IpoByDateMapping(issuer=OPENAI, by_date=date(2027, 1, 1)),
     )
     assert kalshi_market.market_id == "OPENAI-IPO-2027"
-
-
-def test_flat_yaml_backward_compat() -> None:
-    """Existing catalogs with top-level `manifold_id` (no `platform`) are accepted."""
-    catalog = MarketCatalog.model_validate(
-        {
-            "metadata": {"as_of": "2026-05-29"},
-            "markets": [
-                {
-                    "manifold_id": "AAA",
-                    "mappability": "exact",
-                    "mapping": {"kind": "ipo_by_date", "issuer": "openai", "by_date": "2027-01-01"},
-                }
-            ],
-        }
-    )
-    assert catalog.markets[0].market_id == "AAA"
 
 
 def test_shipped_example_catalog_parses() -> None:

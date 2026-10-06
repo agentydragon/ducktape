@@ -79,6 +79,7 @@ spec:
         - agents-infra
         - cert-manager
         - claude-sandbox
+        - external-dns
         - flux-system
         - haku-console
         - haku-sandbox

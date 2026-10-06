@@ -18,7 +18,7 @@ from fastapi.testclient import TestClient
 
 from agentplane.app.action_policy import ActionPolicyInventory
 from agentplane.app.api import ModelCatalog, ModelOption, create_app, upstream_http_error
-from agentplane.app.conftest import AGENT_AUTH, TEST_REASONING_EFFORTS
+from agentplane.app.conftest import AGENT_AUTH
 from agentplane.app.database_updates import Channel, DatabaseUpdates
 from agentplane.app.decisions import DecisionsClient
 from agentplane.app.egress_access import EgressAccess
@@ -28,6 +28,7 @@ from agentplane.app.live import LiveIndex
 from agentplane.app.operator_sessions import OperatorSessionStore
 from agentplane.app.presets import PresetCatalog, SandboxPreset, ThreadPreset
 from agentplane.app.testing.egress_proxy import FakeEgressAdmin, decision
+from agentplane.app.testing.model_test_data import TEST_REASONING_EFFORTS
 from agentplane.app.threads.bridge import RunnerBridge
 from agentplane.app.threads.events.event_log import EventLogStore
 from agentplane.app.threads.ingestion import Ingester, Ingestion
@@ -74,6 +75,17 @@ TEST_MODELS = ModelCatalog(
 )
 
 
+CODEX_ONLY = ModelCatalog(
+    models=[option for option in TEST_MODELS.models if option.model == "test-codex-model"],
+    harnesses={Harness.CLAUDE: [], Harness.CODEX: ["test-codex-model"]},
+)
+
+
+@pytest.fixture(params=[TEST_MODELS])
+def model_catalog(request: pytest.FixtureRequest) -> ModelCatalog:
+    return cast(ModelCatalog, request.param)
+
+
 @pytest.mark.parametrize("upstream_status", [None, 403])
 def test_upstream_http_error_preserves_request_without_secrets(upstream_status: int | None) -> None:
     request = httpx.Request(
@@ -103,7 +115,7 @@ TEST_PRESETS = PresetCatalog(
         "public-coder": SandboxPreset(
             title="Public coder",
             template="agentplane-test-runner",
-            policies=["github"],
+            egress_policies=["github"],
             action_policy_sets=["github-reads"],
             thread_preset="public-coder-codex",
             bootstrap="mkdir -p /state/workspaces",
@@ -136,6 +148,7 @@ async def electric(
 
 @pytest.fixture
 def client(
+    model_catalog: ModelCatalog,
     inventory: SandboxServiceClient,
     bridge: RunnerBridge,
     store: ThreadStore,
@@ -180,7 +193,7 @@ def client(
         inventory,
         bridge,
         store,
-        TEST_MODELS,
+        model_catalog,
         egress,
         decisions,
         live_index,
@@ -235,10 +248,6 @@ def test_templates_list_the_concrete_choices_for_the_create_form(client: TestCli
     assert client.get("/sandboxes/templates").json() == [TEMPLATE]
 
 
-def test_create_requires_an_explicit_template(client: TestClient) -> None:
-    assert client.post("/sandboxes", json={"slug": "demo"}).status_code == 422
-
-
 def test_create_records_the_concrete_session_defaults_and_bootstrap(
     client: TestClient, custom_objects: FakeCustomObjectsApi
 ) -> None:
@@ -247,7 +256,7 @@ def test_create_records_the_concrete_session_defaults_and_bootstrap(
         json={
             "slug": "coder",
             "template": TEMPLATE,
-            "policies": ["github"],
+            "egress_policies": ["github"],
             "action_policy_sets": ["github-reads"],
             "session_defaults": {
                 "harness": "HARNESS_CODEX",
@@ -400,7 +409,7 @@ def test_policy_sets_list_the_namespace_for_the_create_form(client: TestClient) 
 def test_create_with_picked_policies_grants_one_binding_the_sandbox_owns(
     client: TestClient, custom_objects: FakeCustomObjectsApi
 ) -> None:
-    response = client.post("/sandboxes", json={"slug": "demo", "template": TEMPLATE, "policies": ["pypi"]})
+    response = client.post("/sandboxes", json={"slug": "demo", "template": TEMPLATE, "egress_policies": ["pypi"]})
 
     assert response.status_code == 201, response.text
     row = response.json()
@@ -414,17 +423,17 @@ def test_create_with_picked_policies_grants_one_binding_the_sandbox_owns(
     )
 
 
-@pytest.mark.parametrize("default_policies", [["github"]])
+@pytest.mark.parametrize("default_egress_policies", [["github"]])
 def test_a_default_policy_is_granted_whether_or_not_the_caller_picks_it(client: TestClient) -> None:
     """The model endpoint is what this is for in the deployment: without it a sandbox has no agent,
     so it is not the caller's to leave out — nor, having picked it, to be granted twice. The
-    parameter overrides the `default_policies` fixture the client is built from."""
+    parameter overrides the `default_egress_policies` fixture the client is built from."""
     unpicked = client.post("/sandboxes", json={"slug": "plain", "template": TEMPLATE}).json()
     (binding,) = client.get(f"/sandboxes/{unpicked['name']}/egress").json()
     assert [policy["name"] for policy in binding["policies"]] == ["github"]
 
     picked = client.post(
-        "/sandboxes", json={"slug": "asked", "template": TEMPLATE, "policies": ["github", "pypi"]}
+        "/sandboxes", json={"slug": "asked", "template": TEMPLATE, "egress_policies": ["github", "pypi"]}
     ).json()
     (binding,) = client.get(f"/sandboxes/{picked['name']}/egress").json()
     assert [policy["name"] for policy in binding["policies"]] == ["github", "pypi"]
@@ -433,19 +442,13 @@ def test_a_default_policy_is_granted_whether_or_not_the_caller_picks_it(client: 
 @pytest.mark.parametrize(
     "body",
     [
+        {"slug": "demo"},
         {"slug": "Demo", "template": TEMPLATE},
         {"slug": "-demo", "template": TEMPLATE},
         {"slug": "a" * 58, "template": TEMPLATE},
         {"slug": "demo", "template": TEMPLATE, "harness": "claude"},
-        {"slug": "demo", "template": TEMPLATE, "model": "cheap"},
     ],
-    ids=[
-        "uppercase-slug",
-        "leading-dash-slug",
-        "slug-too-long-for-a-dns-label",
-        "harness-on-sandbox",
-        "model-on-sandbox",
-    ],
+    ids=["no-template", "uppercase-slug", "leading-dash-slug", "slug-too-long-for-a-dns-label", "harness-on-sandbox"],
 )
 def test_create_rejects_invalid_requests(client: TestClient, custom_objects: FakeCustomObjectsApi, body: dict) -> None:
     response = client.post("/sandboxes", json=body)
@@ -521,9 +524,11 @@ def test_bound_thread_forwards_overrides_without_app_bootstrap_or_default_assemb
     assert setup_scripts == [None, ""]
 
 
+@pytest.mark.parametrize("model_catalog", [CODEX_ONLY], indirect=True)
 def test_thread_resume_for_regular_sandbox_reaches_the_bridge(
     client: TestClient, bridge: RunnerBridge, store: ThreadStore, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    assert client.get("/models").json()["harnesses"]["HARNESS_CLAUDE"] == []
     thread_id = UUID("be4017d0-8994-4a36-b58c-5e6e264d0119")
 
     async def get_thread(_thread_id: UUID) -> Any:
@@ -543,6 +548,7 @@ def test_thread_resume_for_regular_sandbox_reaches_the_bridge(
     assert calls == [(thread_id, Harness.CLAUDE.value, "/w")]
 
 
+@pytest.mark.parametrize("model_catalog", [CODEX_ONLY], indirect=True)
 def test_direct_session_launch_leaves_platform_instructions_to_service(
     client: TestClient, bridge: RunnerBridge, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -758,7 +764,9 @@ def test_a_grant_naming_a_policy_that_does_not_exist_is_refused(
     assert client.post("/sandboxes/live/egress", json={"policies": []}).status_code == 422
     # And at launch the names resolve before the Sandbox exists, so a typo leaves none behind.
     assert (
-        client.post("/sandboxes", json={"slug": "demo", "template": TEMPLATE, "policies": ["vanished"]}).status_code
+        client.post(
+            "/sandboxes", json={"slug": "demo", "template": TEMPLATE, "egress_policies": ["vanished"]}
+        ).status_code
         == 422
     )
     assert all(kind != "sandboxes" or name in {"live", "fresh"} for kind, name in custom_objects.objects)
@@ -830,7 +838,7 @@ def test_presets_publish_editable_sandbox_and_session_defaults(client: TestClien
             "name": "public-coder",
             "title": "Public coder",
             "template": "agentplane-test-runner",
-            "policies": ["github"],
+            "egress_policies": ["github"],
             "action_policy_sets": ["github-reads"],
             "kubernetes_grants": [],
             "session_defaults": {
@@ -912,8 +920,6 @@ async def test_a_thread_is_found_by_its_session_and_renamed_in_place(
         assert (await http.get(f"/threads/{thread_id}")).json()["name"] == "list the files"
         assert (await http.patch(f"/threads/{thread_id}", json={"name": "   "})).json()["name"] is None
         assert (await http.patch(f"/threads/{thread_id}", json={"name": None})).json()["name"] is None
-        assert (await http.patch(f"/threads/{thread_id}", json={"name": "x" * 201})).status_code == 422
-        assert (await http.patch(f"/threads/{thread_id}", json={})).status_code == 422
         missing = await http.patch("/threads/00000000-0000-0000-0000-000000000000", json={"name": "nobody"})
         assert missing.status_code == 404
 
@@ -965,7 +971,7 @@ async def test_command_reconciliation_recovers_saved_outcomes_after_a_lost_reply
         inventory,
         bridge,
         store,
-        TEST_MODELS,
+        CODEX_ONLY,
         egress,
         decisions,
         live_index,

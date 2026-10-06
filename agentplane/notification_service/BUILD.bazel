@@ -35,9 +35,9 @@ py_library(
     deps = [
         ":database_migrate",
         ":store",
-        "//agentplane/action_service:conftest",
         "//agentplane/action_service:database_migrate",
-        "//agentplane/runner:conftest",
+        "//agentplane/action_service/testing:fixtures",
+        "//agentplane/runner/testing:fixtures",
         "//util/testing:postgres",
         "//util/testing:postgres_fixtures",
         "@pypi//asyncpg",
@@ -66,12 +66,6 @@ py_library(
         "@pypi//pydantic",
         "@pypi//sqlalchemy",
     ],
-)
-
-py_library(
-    name = "instructions",
-    srcs = ["instructions.py"],
-    visibility = ["//agentplane/sandbox_service:__pkg__"],
 )
 
 py_library(
@@ -164,7 +158,6 @@ py_test(
         ":api",
         ":conftest",
         ":db",
-        ":instructions",
         ":service",
         ":settings",
         ":store",
@@ -173,19 +166,20 @@ py_test(
         "//agentplane/action_service:api",
         "//agentplane/action_service:auth",
         "//agentplane/action_service:catalog",
-        "//agentplane/action_service:conftest",
         "//agentplane/action_service:db",
         "//agentplane/action_service:models",
         "//agentplane/action_service:service",
         "//agentplane/action_service:updates",
-        "//agentplane/action_service/test_fixtures:callers",
+        "//agentplane/action_service/testing:callers",
+        "//agentplane/action_service/testing:fixtures",
         "//agentplane/notification_service/sources:actions",
         "//agentplane/protocol:command_pb2",
         "//agentplane/protocol:event_log_pb2",
-        "//agentplane/runner:conftest",
         "//agentplane/runner:protocol_pb2",
+        "//agentplane/runner/testing:fixtures",
         "//agentplane/runner/testing:scripted_model",
         "//agentplane/sandbox_service:client",
+        "//agentplane/sandbox_service:instructions",
         "//agentplane/sandbox_service:protocol_pb2",
         "//agentplane/sandbox_service/testing:kubernetes",
         "//agentplane/testing:fake_apiserver",

@@ -44,13 +44,14 @@ import {
 import { LiveStatus, useRequiredSandboxesLive, useRequiredThreadsLive } from "../live";
 import { StaleNotice, useOptionalStreamStatus, type StreamStatus } from "../stream_status";
 import { RetainedDisclosure, RetainedDisclosureProvider, useRetainedDisclosure } from "./retained_disclosures";
-import { CollapsibleCard, EntityCard, ItemStatus, pendingSentMessage } from "./thread_cards";
+import { CollapsibleCard, EntityCard, itemStatus, pendingSentMessage } from "./thread_cards";
 import {
   PendingInputMessages,
   ProjectedCommandRows,
   SelectedCommandOutcomes,
   useProjectedCommands,
 } from "./thread_commands";
+import { revealEvidenceOnTap } from "./thread_evidence";
 import { ChronologicalDebugProvider, useOpenChronologicalDebug } from "./chronological_debug";
 import { historyTrace, LayoutSettle, type FollowReason } from "./history_trace";
 import { rememberRowHeight, rememberedRowHeight } from "./history_sizes";
@@ -117,7 +118,7 @@ function RunView({
           <Text size="xs" c="dimmed">
             {summarizeRun(entities)}
           </Text>
-          <ItemStatus items={entities} live={entities.some(live)} />
+          {itemStatus(entities, entities.some(live))}
         </Flex>
       }
       threadId={threadId}
@@ -699,6 +700,7 @@ function VirtualizedHistory({
           clientHeight: element.clientHeight,
         });
       }}
+      onClick={revealEvidenceOnTap}
       onScroll={(event) => {
         const element = event.currentTarget;
         if (element.scrollTop !== clickedAt.current) clickedAt.current = null;
@@ -1203,11 +1205,12 @@ export function ProjectedSession({
   settingsOpen?: boolean;
 }): JSX.Element {
   const sync = useThreadSync();
-  const [thread, setThread] = useState<ThreadView | null>(null);
-  const [tabStatus, setTabStatus] = useState(CONNECTING_TAB_STATUS);
   const threadsLive = useRequiredThreadsLive();
+  const snapshotThread = threadsLive.snapshot?.threads.find((candidate) => candidate.id === threadId);
+  const [thread, setThread] = useState<ThreadView | null>(snapshotThread ?? null);
+  const [tabStatus, setTabStatus] = useState(CONNECTING_TAB_STATUS);
   const topbarStatus = threadStatusFromSnapshot(
-    threadsLive.snapshot?.threads.find((candidate) => candidate.id === threadId),
+    snapshotThread,
     threadsLive.snapshot?.sandboxes.find((candidate) => candidate.name === thread?.sandbox),
     snapshotFresh(threadsLive)
   );
@@ -1217,8 +1220,25 @@ export function ProjectedSession({
   const sandbox = environment.snapshot?.sandboxes.find((candidate) => candidate.name === thread?.sandbox);
   const notice = thread && environment.snapshot && sandboxNotice(sandbox, inventoryFresh);
   useEffect(() => {
-    void getThread(threadId).then(setThread, (reason: unknown) => setError(displayableError(reason)));
-  }, [threadId]);
+    let current = true;
+    setError(null);
+    if (snapshotThread) {
+      setThread(snapshotThread);
+    } else {
+      setThread(null);
+      void getThread(threadId).then(
+        (view) => {
+          if (current) setThread(view);
+        },
+        (reason: unknown) => {
+          if (current) setError(displayableError(reason));
+        }
+      );
+    }
+    return () => {
+      current = false;
+    };
+  }, [snapshotThread, threadId]);
   useEffect(() => {
     document.title = settingsOpen
       ? appDocumentTitle("/", true)

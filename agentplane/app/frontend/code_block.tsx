@@ -1,7 +1,7 @@
 import CodeMirror from "@uiw/react-codemirror";
 import { json } from "@codemirror/lang-json";
 import { yaml } from "@codemirror/lang-yaml";
-import { HighlightStyle, StreamLanguage, syntaxHighlighting } from "@codemirror/language";
+import { ensureSyntaxTree, HighlightStyle, StreamLanguage, syntaxHighlighting } from "@codemirror/language";
 import { go } from "@codemirror/legacy-modes/mode/go";
 import { javascript, typescript } from "@codemirror/legacy-modes/mode/javascript";
 import { protobuf } from "@codemirror/legacy-modes/mode/protobuf";
@@ -9,7 +9,7 @@ import { python } from "@codemirror/legacy-modes/mode/python";
 import { rust } from "@codemirror/legacy-modes/mode/rust";
 import { shell } from "@codemirror/legacy-modes/mode/shell";
 import { nix } from "@replit/codemirror-lang-nix";
-import type { Extension } from "@codemirror/state";
+import { EditorState, type Extension } from "@codemirror/state";
 import { Decoration, EditorView, highlightSpecialChars, WidgetType } from "@codemirror/view";
 import { highlightCode, type Tag, tagHighlighter, tags } from "@lezer/highlight";
 import { type JSX, type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -350,16 +350,26 @@ export function CodeBlock({
   );
 }
 
-/** `text` as the runs the shell grammar colours, in the classes `INLINE_HIGHLIGHT` gives them. */
-function highlightShell(text: string): Array<{ text: string; classes: string }> {
+/** `text` as the runs its registered CodeMirror grammar colours, in the classes `INLINE_HIGHLIGHT` gives them. */
+function highlightInlineCode(text: string, language: Language | undefined): Array<{ text: string; classes: string }> {
   const runs: Array<{ text: string; classes: string }> = [];
-  highlightCode(
-    text,
-    LEGACY_LANGUAGES.bash.parser.parse(text),
-    INLINE_HIGHLIGHT,
-    (code, classes) => runs.push({ text: code, classes }),
-    () => runs.push({ text: " ", classes: "" })
-  );
+  if (!language) return [{ text, classes: "" }];
+
+  try {
+    const state = EditorState.create({ doc: text, extensions: LANGUAGE_EXTENSIONS[language]() });
+    const tree = ensureSyntaxTree(state, text.length, 50);
+    if (!tree) return [{ text, classes: "" }];
+    highlightCode(
+      text,
+      tree,
+      INLINE_HIGHLIGHT,
+      (code, classes) => runs.push({ text: code, classes }),
+      () => runs.push({ text: " ", classes: "" })
+    );
+  } catch {
+    // A short preview should stay readable if a grammar cannot parse this particular input.
+    return [{ text, classes: "" }];
+  }
   return runs;
 }
 
@@ -381,11 +391,17 @@ function withMarkers(text: string): ReactNode[] {
   return parts;
 }
 
-/** Shell as a run of text, highlighted as the viewer highlights it, for a line that cannot afford
- * an editor view each: a thread's one-line summary of a command. Hidden characters are marked as
- * in the viewer. Whitespace is the caller's to collapse. */
-export function InlineCode({ text }: { text: string }): JSX.Element {
-  const runs = useMemo(() => highlightShell(text), [text]);
+/** Code as a run of text, highlighted by its CodeMirror grammar without mounting an editor. */
+export function InlineCode({
+  text,
+  language,
+  streamingCursor = false,
+}: {
+  text: string;
+  language?: Language;
+  streamingCursor?: boolean;
+}): JSX.Element {
+  const runs = useMemo(() => highlightInlineCode(text, language), [text, language]);
   return (
     <code className="agentplane-code-inline">
       {runs.map((run, index) => (
@@ -393,6 +409,15 @@ export function InlineCode({ text }: { text: string }): JSX.Element {
           {withMarkers(run.text)}
         </span>
       ))}
+      {streamingCursor && (
+        <span
+          key="agentplane-streaming-cursor"
+          className="agentplane-streaming-cursor"
+          role="img"
+          aria-label="Streaming"
+          data-character="|"
+        />
+      )}
     </code>
   );
 }

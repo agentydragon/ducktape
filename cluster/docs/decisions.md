@@ -74,13 +74,13 @@ fix. It still keeps the hard taint toleration and the no-local-storage rule.
 Proxmox-pinned storage (`lvm-proxmox-*`, `local-path-proxmox`) or Proxmox-pinned
 workloads.
 
-| Service   | Status | Storage            | Notes                                                                                                          |
-| --------- | ------ | ------------------ | -------------------------------------------------------------------------------------------------------------- |
-| DNS       | OK     | None in-cluster    | Zone is AWS Route 53; records reconciled by the `dns-records` Terraform CR (state in CNPG `tofu-state-db-ovh`) |
-| Website   | OK     | None (stateless)   |                                                                                                                |
-| Ingress   | OK     | None (hostNetwork) | Cilium Gateway on OVH                                                                                          |
-| Authentik | OK     | OVH hdd tier       | CNPG `authentik-db-ovh` (OVH-HA); server + worker pinned to OVH                                                |
-| Grafana   | OK     | OVH hdd tier       | CNPG `grafana-db-ovh` (OVH-HA); grafana-operator managed, JWT auth, no admin creds dependency                  |
+| Service   | Status | Storage            | Notes                                                                                                             |
+| --------- | ------ | ------------------ | ----------------------------------------------------------------------------------------------------------------- |
+| DNS       | OK     | OVH CNPG (domain)  | Route 53 records reconciled by stateless ExternalDNS on OVH; Terraform retains domain registration and delegation |
+| Website   | OK     | None (stateless)   |                                                                                                                   |
+| Ingress   | OK     | None (hostNetwork) | Cilium Gateway on OVH                                                                                             |
+| Authentik | OK     | OVH hdd tier       | CNPG `authentik-db-ovh` (OVH-HA); server + worker pinned to OVH                                                   |
+| Grafana   | OK     | OVH hdd tier       | CNPG `grafana-db-ovh` (OVH-HA); grafana-operator managed, JWT auth, no admin creds dependency                     |
 
 The DB manifests still name `local-path-ovh` — the deprecated alias re-pinned to
 the hdd tier (<cnpg_conventions.md> § R2).

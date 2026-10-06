@@ -14,7 +14,6 @@ py_library(
 py_library(
     name = "config_factory",
     srcs = ["config_factory.py"],
-    data = ["//third_party/gitstatusd"],
     deps = [
         ":data",
         "//util/bazel:runfiles",
@@ -83,13 +82,11 @@ py_library(
         "//x/wt/server:git_manager",
         "//x/wt/server:github_client",
         "//x/wt/server:worktree_service",
-        "//x/wt/shared:config_file",
         "//x/wt/shared:configuration",
         "//x/wt/shared:fixtures",
         "//x/wt/shared:protocol",
         "@pypi//pygit2",
         "@pypi//pytest",
-        "@pypi//pyyaml",
         "@pypi//typer_slim",
     ],
 )

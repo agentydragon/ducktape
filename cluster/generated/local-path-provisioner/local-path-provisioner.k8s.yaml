@@ -38,8 +38,6 @@ spec:
       retries: 3
   interval: 30m
   values:
-    configmap:
-      helperPodNamespace: local-path-storage
     nodePathMap:
       - node: DEFAULT_PATH_FOR_NON_LISTED_NODES
         paths:

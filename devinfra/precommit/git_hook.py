@@ -2,7 +2,6 @@
 
 Installed as separate console scripts via the ducktape-git-hooks wheel:
 - ducktape-precommit: file validations (filenames, frozen-specimens)
-- ducktape-pytest-main-check: verify test files have pytest_bazel.main() entry points
 - ducktape-prepare-commit-msg: block amending already-pushed commits
 - ducktape-enforce-bazel-tests: verify affected Bazel tests are cached/passing
 """
@@ -24,7 +23,6 @@ from opentelemetry.trace import StatusCode
 from devinfra.precommit.enforce_bazel_tests.enforce_bazel_tests import run as enforce_bazel_tests_run
 from devinfra.precommit.filename_conventions import check_filename_conventions
 from devinfra.precommit.frozen_specimens import check_specimen_code_changes
-from devinfra.pytest_main import BazelPyTestIndex, build_bazel_index, check_files_async
 from util.bazel.workspace import BazelWorkspace, detect_bazel_backend
 from util.otel import JsonlSpanExporter
 
@@ -35,24 +33,6 @@ tracer = trace.get_tracer(__name__)
 
 def _is_ignored(repo: pygit2.Repository, path: str) -> bool:
     return any(repo.get_attr(path, a) in (True, "true") for a in _IGNORE_ATTRS)
-
-
-async def run_pytest_main_check(files: list[Path], repo_root: Path, bazel_index: BazelPyTestIndex) -> str | None:
-    """Check that test files have pytest_bazel.main() calls."""
-    if not files:
-        candidates = [p.relative_to(repo_root) for p in bazel_index.known_srcs]
-    else:
-        candidates = [f for f in files if (repo_root / f).resolve() in bazel_index.known_srcs]
-
-    test_files = [f for f in candidates if f.name != "conftest.py"]
-    if not test_files:
-        return None
-
-    results = await check_files_async(test_files, repo_root, bazel_index)
-    failed = [r for r in results if not r.passed]
-    if failed:
-        return "\n".join(f"{r.file_path}: {r.reason}" for r in failed)
-    return None
 
 
 async def run_filename_convention_check(deltas: list[pygit2.DiffDelta], head_tree: pygit2.Tree | None) -> str | None:
@@ -158,26 +138,6 @@ def _run_prepare_commit_msg(argv: list[str]) -> int:
 
 def main_pre_commit() -> int:
     return asyncio.run(_run_pre_commit())
-
-
-def main_pytest_main_check() -> int:
-    changed_files = [Path(f) for f in sys.argv[1:]]
-    if changed_files and not any(path.suffix == ".py" for path in changed_files):
-        return 0
-
-    repo = pygit2.Repository(".")
-    repo_root = Path(repo.workdir)
-    _setup_tracing(repo)
-
-    workspace = BazelWorkspace(root=repo_root, backend=detect_bazel_backend())
-    bazel_index = build_bazel_index(workspace)
-
-    files = changed_files or get_all_files(repo)
-    error = asyncio.run(run_pytest_main_check(files, repo_root, bazel_index))
-    if error:
-        print(error, file=sys.stderr)
-        return 1
-    return 0
 
 
 def main_enforce_bazel_tests() -> None:

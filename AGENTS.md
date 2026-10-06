@@ -98,13 +98,17 @@ pre-commit, ansible-lint, nix-attic-push, container-images, rbe-container-image,
 openclaw-image trigger independently. Adding or publishing a container image:
 <cluster/docs/container-images.md>.
 
-**Never widen `rbe-container-image.yml`'s trigger, and put nothing in
-<devinfra/rbe_container_image/Dockerfile> that Bazel could supply from the repo it is building.** The
-`container-image` exec property on `//:rbe_linux_x64` carries the full image reference, including its digest.
-Changing the pin changes every action's cache key and BuildBuddy's warm Firecracker
-snapshot key; a repin orphans the action cache and dumps every snapshot. Developer and
-agent tooling belongs in
-<devinfra/buildbuddy_remote_runner/Dockerfile>, whose digest no action hashes.
+**FYI: a repin of the RBE image is costly, so avoid churn, not edits.** The
+`container-image` exec property on `//:rbe_linux_x64` carries the full image reference,
+including its digest, so a repin changes every action's cache key and BuildBuddy's warm
+Firecracker snapshot key: it orphans the action cache and dumps every snapshot
+(measurements in <.github/workflows/rbe-container-image.yml>). A deliberate edit to
+<devinfra/rbe_container_image/Dockerfile> is a one-time cost, and a comment gone false or
+a library an action needs is worth it; never leave a falsehood in place to dodge a
+rebuild. What to avoid is regular repins: don't widen `rbe-container-image.yml`'s
+trigger, and put nothing in the image that Bazel could supply from the repo it is
+building. Developer and agent tooling belongs in
+<devinfra/buildbuddy_remote_runner/image.nix>, whose digest no action hashes.
 
 ## Issue Tracking
 
@@ -129,16 +133,11 @@ entire codebase (imports, BUILD files, CI configs, docs, Dockerfiles, k8s manife
 **Atomic API changes**: update all callers in the same commit. No transitional shims
 within this monorepo.
 
-**There is no production tier — only staging and testing — so deployed state is disposable.**
-A schema, CRD or wire change does not have to keep existing rows, custom resources or messages
-readable: change the shape, and delete and recreate whatever no longer parses. Do not write a
-migration, a tolerant reader, or a compatibility field to carry old data forward, and do not
-stage a rollout to avoid a window where the two disagree. The schema change itself is still a new
-migration, never an edit to one that has landed: a database that applied the old version stays on
-it, and the migrate step fails the rollout when the schema differs from the models. What this does not license is
-destroying data a person authored and cannot regenerate — a repo, a notebook, a mailbox — or
-skipping the roll-safety rules where a reader genuinely is a newer release of a rolling
-deployment (<STYLE.md> § General, strict data mapping).
+**Stored data**: a schema change is a new migration, never an edit to one that has landed (a
+database that applied the old version stays on it). Never destroy data a person authored and
+cannot regenerate — a repo, a notebook, a mailbox — to land a change, and keep the roll-safety
+rules where a reader genuinely is a newer release of a rolling deployment (<STYLE.md> § General,
+strict data mapping).
 
 ### Declarative configuration scope
 

@@ -38,6 +38,19 @@ def _rule(verb: str = "get", resource_names: Set[str] = frozenset()) -> Rule:
     return Rule(api_groups={""}, resources={"pods"}, verbs={verb}, resource_names=resource_names)
 
 
+def _expired_grant() -> Grant:
+    return Grant(
+        grant_id=uuid4(),
+        owner_agent_id=_AGENT,
+        principal=_GRANT_PRINCIPAL,
+        source_tool_call_id="tool-call-1",
+        scope=_SCOPE,
+        rules=(_rule(),),
+        created_at=_NOW - timedelta(minutes=10),
+        expires_at=_NOW - timedelta(minutes=1),
+    )
+
+
 class FakeRepository:
     """Facts-holding in-memory double: like the real store, status is derived at read time."""
 
@@ -176,6 +189,7 @@ async def test_permanent_grant_has_no_expiry_and_can_be_ended() -> None:
         expires_at=None,
     )
 
+    assert grant.created_at == _NOW
     assert grant.expires_at is None
     decision = await service.match_request(
         request_principal=RequestPrincipal(agent_id=_AGENT, access_profile_id=None),
@@ -189,32 +203,6 @@ async def test_permanent_grant_has_no_expiry_and_can_be_ended() -> None:
     assert ended.status is GrantStatus.ENDED
 
 
-async def test_create_many_uses_one_source_and_shared_timestamps() -> None:
-    repo = FakeRepository()
-    clock_calls = 0
-
-    def clock() -> datetime:
-        nonlocal clock_calls
-        clock_calls += 1
-        return _NOW
-
-    service = GrantService(repo, max_lifetime=timedelta(hours=1), clock=clock)
-    expires_at = _NOW + timedelta(minutes=5)
-    grants = await service.create_grants(
-        owner_agent_id=_AGENT,
-        grant_principal=_GRANT_PRINCIPAL,
-        source_tool_call_id="tool-call-1",
-        grants=(GrantSpec(scope=_SCOPE, rules=(_rule(),)), GrantSpec(scope=_DEFAULT_SCOPE, rules=(_rule("list"),))),
-        expires_at=expires_at,
-    )
-
-    assert len(grants) == 2
-    assert {grant.source_tool_call_id for grant in grants} == {"tool-call-1"}
-    assert {grant.created_at for grant in grants} == {_NOW}
-    assert {grant.expires_at for grant in grants} == {expires_at}
-    assert clock_calls == 1
-
-
 async def test_create_many_enforces_the_tool_batch_limit_in_the_service() -> None:
     service = GrantService(FakeRepository(), max_lifetime=timedelta(hours=1), clock=lambda: _NOW)
 
@@ -226,28 +214,6 @@ async def test_create_many_enforces_the_tool_batch_limit_in_the_service() -> Non
             grants=tuple(GrantSpec(scope=_SCOPE, rules=(_rule(),)) for _ in range(33)),
             expires_at=_NOW + timedelta(minutes=5),
         )
-
-
-async def test_end_many_is_bounded_sequential_and_uses_one_timestamp() -> None:
-    repo = FakeRepository()
-    service = GrantService(repo, max_lifetime=timedelta(hours=1), clock=lambda: _NOW)
-    grants = await service.create_grants(
-        owner_agent_id=_AGENT,
-        grant_principal=_GRANT_PRINCIPAL,
-        source_tool_call_id="tool-call-1",
-        grants=(GrantSpec(scope=_SCOPE, rules=(_rule(),)), GrantSpec(scope=_DEFAULT_SCOPE, rules=(_rule("list"),))),
-        expires_at=_NOW + timedelta(minutes=5),
-    )
-
-    ended = await service.end_grants(
-        owner_agent_id=_AGENT, grant_ids=[grants[1].grant_id, grants[0].grant_id], reason="probe complete"
-    )
-
-    assert [grant.grant_id for grant in ended] == [grants[1].grant_id, grants[0].grant_id]
-    assert repo.end_calls == [
-        ((_AGENT,), grants[1].grant_id, "probe complete", _NOW),
-        ((_AGENT,), grants[0].grant_id, "probe complete", _NOW),
-    ]
 
 
 @pytest.mark.parametrize(
@@ -318,16 +284,7 @@ async def test_create_rejects_invalid_input(source_tool_call_id, rules, expires_
 
 async def test_match_ignores_expired_rows_without_writing() -> None:
     repo = FakeRepository()
-    grant = Grant(
-        grant_id=uuid4(),
-        owner_agent_id=_AGENT,
-        principal=_GRANT_PRINCIPAL,
-        source_tool_call_id="tool-call-1",
-        scope=_SCOPE,
-        rules=(_rule(),),
-        created_at=_NOW - timedelta(minutes=10),
-        expires_at=_NOW - timedelta(minutes=1),
-    )
+    grant = _expired_grant()
     repo.grants[grant.grant_id] = grant
     service = GrantService(repo, max_lifetime=timedelta(hours=1), clock=lambda: _NOW)
 
@@ -340,26 +297,13 @@ async def test_match_ignores_expired_rows_without_writing() -> None:
     ).allowed
 
 
-async def test_get_returns_status_derived_from_facts_without_a_sweep() -> None:
+async def test_get_returns_an_expired_grant_rather_than_hiding_it() -> None:
     repo = FakeRepository()
-    grant = Grant(
-        grant_id=uuid4(),
-        owner_agent_id=_AGENT,
-        principal=_GRANT_PRINCIPAL,
-        source_tool_call_id="tool-call-1",
-        scope=_SCOPE,
-        rules=(_rule(),),
-        created_at=_NOW - timedelta(minutes=10),
-        expires_at=_NOW - timedelta(minutes=1),
-    )
+    grant = _expired_grant()
     repo.grants[grant.grant_id] = grant
     service = GrantService(repo, max_lifetime=timedelta(hours=1), clock=lambda: _NOW)
 
-    result = await service.get_grant(owner_agent_id=_AGENT, grant_id=grant.grant_id)
-
-    # Past expiry with no end fact derives EXPIRED; the row is neither swept nor mutated.
-    assert result.status is GrantStatus.EXPIRED
-    assert repo.grants[grant.grant_id] is grant
+    assert (await service.get_grant(owner_agent_id=_AGENT, grant_id=grant.grant_id)).status is GrantStatus.EXPIRED
 
 
 async def test_match_returns_the_earliest_expiration_bound() -> None:

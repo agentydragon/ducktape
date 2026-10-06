@@ -31,7 +31,7 @@ from agentplane.action_service.models import (
 )
 from agentplane.action_service.policies.resources import CALLER_LABEL
 from agentplane.action_service.service import ActionService
-from agentplane.action_service.test_fixtures.callers import admitted_callers
+from agentplane.action_service.testing.callers import admitted_callers
 from agentplane.action_service.updates import ActionUpdates
 from agentplane.subjects import ServiceAccountRef
 from agentplane.workload_auth.principal import (

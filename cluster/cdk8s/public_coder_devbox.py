@@ -1,8 +1,8 @@
 """The public-coder-agent devbox: its KubeVirt VirtualMachine, SSH Service, Bazel cache claim,
-BuildBuddy API key and VM-image restart controller.
+and BuildBuddy API key. Paused alongside OpenClaw; its cache PVC remains declared.
 
 Hand-written beside the generated output: the sshd host key's SOPS Secret, and `image-pins/`,
-whose image-automation markers override the VM and controller placeholder image tags
+whose image-automation marker overrides the VM placeholder image tag
 (cluster/cdk8s/AGENTS.md § the `:tag` Setters marker).
 """
 
@@ -17,6 +17,7 @@ from external_secrets_crds.io.external_secrets import (
     ExternalSecretSpecTargetCreationPolicy,
     ExternalSecretSpecTargetDeletionPolicy,
 )
+from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpecDeletionPolicy
 from kubevirt_virtualmachine_crds.io.kubevirt import (
     VirtualMachineSpecTemplateSpecAffinity,
     VirtualMachineSpecTemplateSpecAffinityNodeAffinity,
@@ -48,7 +49,6 @@ from cluster.cdk8s.kubevirt.virtual_machine import container_disk_vm, domain_lab
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 from cluster.cdk8s.providers.external_secrets.external_secret import ExternalSecret, remote_data
 from cluster.cdk8s.providers.kubevirt.virtual_machine import VirtualMachine
-from cluster.cdk8s.vm_image_restart import OPT_IN_ANNOTATION, VmImageRestartController
 
 NAMESPACE = "public-coder-agent"
 VM_NAME = "public-coder-devbox"
@@ -136,7 +136,7 @@ def virtual_machine(scope: Construct) -> VirtualMachine:
         "virtual-machine",
         name=VM_NAME,
         namespace=NAMESPACE,
-        annotations={OPT_IN_ANNOTATION: "true"},
+        run_strategy="Halted",  # Public Coder is paused; retain the VM definition and cache PVC.
         # This is an ephemeral VM disk (accepted tradeoff: no checkout or other local
         # state survives an image update or VM restart). Flux ImageUpdateAutomation
         # sets the tag in image-pins/ after .github/workflows/public-coder-devbox-image.yml
@@ -210,8 +210,7 @@ def write_manifests(root: Path) -> Service:
     app = App()
     chart = Chart(app, VM_NAME, disable_resource_name_hashes=True)
     service = ssh_service(chart)
-    vm = virtual_machine(chart)
-    VmImageRestartController(chart, "vm-image-restart-controller", target_vm=vm)
+    virtual_machine(chart)
     _bazel_cache_claim(chart)
     _buildbuddy_api_key(chart)
     write_yaml(
@@ -234,13 +233,14 @@ def public_coder_agent_devbox(
         chart,
         name,
         artifact,
+        # A deliberately halted VM is not Ready. Do not block Flux on guest readiness.
+        wait=False,
+        deletion_policy=KustomizationSpecDeletionPolicy.ORPHAN,
         timeout="30m",
         decryption=SOPS_DECRYPTION,
         depends_on=flux_kustomization_depends_on_many(kubevirt, external_secrets_operator),
         description=(
-            "KubeVirt build/test devbox for public-coder-agent "
-            "(Bazel/BuildBuddy/direnv), with an ephemeral containerDisk root and automatic "
-            "restart after staged VM image changes "
-            "apart from the sshd host key and SSH access through ../sshpiper."
+            "Paused Public Coder devbox: VM halted and image restart controller removed; "
+            "the separately declared Bazel cache PVC and SSH identity are retained."
         ),
     )

@@ -1,0 +1,157 @@
+// Full-page screenshot harness for Haku Console. The production shell is rendered with mocked
+// API data; the sweep's request fence answers the real iframe request with an unmistakable striped
+// Haku UI document (mock_haku_ui.html) so layout overlap is visible in the resulting image.
+import "./mock_api";
+
+import { MantineProvider } from "@mantine/core";
+import { Notifications } from "@mantine/notifications";
+import { createRoot } from "react-dom/client";
+
+import { AgentNamesProvider } from "../agent_names";
+import { ApprovalsEmbedPage } from "../approvals_embed_page";
+import { HakuUiEmbed } from "../haku_ui_embed";
+import type { ConsoleNavigationView, ConsoleView } from "../routing";
+import { ShellChrome, type ShellChromeProps } from "../shell_chrome";
+import { hakuTheme } from "../theme";
+import { sampleAiquota, SAMPLE_PENDING, sampleRecentToolCalls } from "./sample_data";
+
+const noop = () => {};
+const noopNavigate = (_view: ConsoleNavigationView) => {};
+
+const ENROLLMENT_ID = "10000000-0000-4000-8000-000000000001";
+
+function ConsoleScene({ view, reconnect = false }: { view: ConsoleView; reconnect?: boolean }) {
+  return (
+    <AgentNamesProvider>
+      <HakuUiEmbed
+        uiUrl="https://haku-ui.test/"
+        launchAvailable
+        view={view}
+        agentEnrollmentId={view === "agentEnrollment" ? ENROLLMENT_ID : null}
+        agentEnrollmentInitialChoice={reconnect ? "reconnect" : undefined}
+        onNavigate={noopNavigate}
+      />
+    </AgentNamesProvider>
+  );
+}
+
+const chromeProps: ShellChromeProps = {
+  aiquota: sampleAiquota(Date.now()),
+  aiquotaLoading: false,
+  aiquotaError: null,
+  aiquotaOpen: false,
+  onAiquotaOpenChange: noop,
+  view: "embed",
+  onNavigate: noopNavigate,
+  approvalsOpen: false,
+  onApprovalsOpenChange: noop,
+  pendingApprovals: SAMPLE_PENDING,
+  geolocationApprovals: [],
+  screenshotApprovals: [],
+  decidingApprovalIds: [],
+  recentToolCalls: sampleRecentToolCalls(Date.now()),
+  onApproveTool: noop,
+  onDenyTool: noop,
+  onApproveGeolocation: noop,
+  onDenyGeolocation: noop,
+  onApproveScreenshot: noop,
+  onDenyScreenshot: noop,
+  onDismissRecentToolCall: noop,
+  liveStatus: "live",
+  syncError: null,
+  syncing: false,
+  lastSyncAt: new Date("2026-07-20T12:34:56-07:00"),
+  geoGranted: true,
+  tracking: true,
+  onWithdrawGeolocation: noop,
+  screenshotGranted: true,
+  sharingScreen: true,
+  onWithdrawScreenshot: noop,
+  sessionExpiresAt: null,
+  sessionExpiringSoon: false,
+  onReauthenticate: noop,
+};
+
+function IndicatorScene({ state }: { state: "current" | "syncing" | "error" }) {
+  return (
+    <div className="haku-console-shell">
+      <ShellChrome
+        {...chromeProps}
+        liveStatus={state === "error" ? "offline" : "live"}
+        syncError={state === "error" ? "Unauthorized" : null}
+        syncing={state === "syncing"}
+      />
+      <main className="haku-shell-content" />
+    </div>
+  );
+}
+
+// The rail's session warning, which only appears inside the last few minutes of the session.
+// The quota drawer is rendered in its production shell container so spacing and overflow are reviewed.
+function AiquotaScene() {
+  return (
+    <div className="haku-console-shell">
+      <ShellChrome {...chromeProps} aiquotaOpen />
+      <main className="haku-shell-content" />
+    </div>
+  );
+}
+
+function SessionExpiringScene() {
+  return (
+    <div className="haku-console-shell">
+      <ShellChrome {...chromeProps} sessionExpiresAt={new Date(Date.now() + 4 * 60_000)} sessionExpiringSoon />
+      <main className="haku-shell-content" />
+    </div>
+  );
+}
+
+function sceneElement(scene: string) {
+  switch (scene) {
+    case "aiquota":
+      return <AiquotaScene />;
+    case "approvals-embed":
+      return <ApprovalsEmbedPage />;
+    case "settings":
+    case "settings-mobile":
+    case "settings-agents":
+    case "settings-grants":
+    case "settings-grants-history":
+    case "settings-grants-revoke":
+    case "settings-notifications":
+    case "settings-system":
+      return <ConsoleScene view="settings" />;
+    case "agent-enrollment":
+    case "agent-enrollment-mobile":
+      return <ConsoleScene view="agentEnrollment" />;
+    case "agent-enrollment-reconnect":
+      return <ConsoleScene view="agentEnrollment" reconnect />;
+    case "history":
+    case "history-auto-approved":
+    case "history-paged":
+      return <ConsoleScene view="toolCalls" />;
+    case "sync-current":
+      return <IndicatorScene state="current" />;
+    case "sync-syncing":
+      return <IndicatorScene state="syncing" />;
+    case "sync-error":
+      return <IndicatorScene state="error" />;
+    case "session-expiring":
+      return <SessionExpiringScene />;
+    case "not-found":
+      return <ConsoleScene view="notFound" />;
+    default:
+      return <ConsoleScene view="embed" />;
+  }
+}
+
+const scene = (window as unknown as { __SCENE__?: string }).__SCENE__ ?? "console";
+const colorScheme = (window as unknown as { __COLOR_SCHEME__?: "light" | "dark" }).__COLOR_SCHEME__ ?? "light";
+const container = document.getElementById("app");
+if (!container) throw new Error("missing #app");
+createRoot(container).render(
+  <MantineProvider forceColorScheme={colorScheme} theme={hakuTheme}>
+    <Notifications position="top-right" />
+    {sceneElement(scene)}
+  </MantineProvider>
+);

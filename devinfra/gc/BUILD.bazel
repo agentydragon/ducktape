@@ -160,6 +160,7 @@ py_test(
     deps = [
         ":conftest",
         ":workspace_gc",
+        ":workspace_scan",
         "//:conftest",
         "@pypi//httpx",
         "@pypi//pytest",

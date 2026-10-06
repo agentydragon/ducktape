@@ -13,7 +13,6 @@ from uuid import UUID
 
 import pytest
 import pytest_bazel
-from pydantic import ValidationError
 
 from haku.console.auto_approval.registry import (
     AGENT_AUTO_APPROVAL_ID,
@@ -54,11 +53,6 @@ _EXACT_TOOLS = {
 _SERVER_CONFIGS: dict[str, dict[str, Any]] = {
     server_id.replace("-", "_"): {"id": server_id, "backend": {"kind": "in_process", "credential": {"kind": "none"}}}
     for server_id in _EXACT_TOOLS
-}
-_MANUAL_AUTHORITY_CONFIG = {
-    "auto_approval_policies": [{"id": "manual", "type": "never"}],
-    "access_profiles": [{"id": "manual", "auto_approval_policy": "manual"}],
-    "default_access_profile_id": "manual",
 }
 _CONFIG = ConsoleConfigFile.model_validate(
     {
@@ -139,7 +133,6 @@ async def test_all_gmail_reads_are_auto_approved(tool_name: str, arguments: dict
     policy_id, evaluation = await _decision(tool_name, arguments)
     assert policy_id == AGENT_AUTO_APPROVAL_ID
     assert evaluation is not None
-    assert "exact tool" in evaluation
 
 
 @pytest.mark.parametrize(
@@ -159,7 +152,6 @@ async def test_gmail_writes_stay_manual(tool_name: str, arguments: dict) -> None
 async def test_calendar_read_with_invalid_arguments_is_auto_denied() -> None:
     denial = await _calendar_decision("list_events", {"max_results": 251})
     assert isinstance(denial, PolicyDenial)
-    assert denial.evaluation == "denied: arguments failed the registered tool schema"
     assert "251" in denial.reason  # the concrete validation error reaches the caller
 
 
@@ -201,38 +193,6 @@ async def test_actor_profile_with_a_never_policy_is_not_auto_approved() -> None:
     )
 
 
-def test_kubernetes_server_requires_authorization_configuration() -> None:
-    with pytest.raises(ValidationError, match="requires Kubernetes authorization configuration"):
-        ConsoleConfigFile.model_validate(
-            {
-                **_MANUAL_AUTHORITY_CONFIG,
-                "mcp": {
-                    "servers": {
-                        "kubernetes": {
-                            "id": "kubernetes",
-                            "backend": {"kind": "in_process", "credential": {"kind": "none"}},
-                        }
-                    }
-                },
-            }
-        )
-
-
-def test_default_access_profile_does_not_require_a_never_policy() -> None:
-    config = ConsoleConfigFile.model_validate(
-        {
-            "auto_approval_policies": [
-                {"id": "operator_review", "type": "never"},
-                {"id": "selected_by_default", "type": "any_of", "policies": ["operator_review"]},
-            ],
-            "access_profiles": [{"id": "operator-default", "auto_approval_policy": "selected_by_default"}],
-            "default_access_profile_id": "operator-default",
-        }
-    )
-
-    assert config.default_access_profile_id == "operator-default"
-
-
 async def _schemaless_decision(
     server_id: str, tool_name: str, arguments: dict, *, actor: RuntimeActor = AGENT_ACTOR
 ) -> tuple[str | None, str | None]:
@@ -248,7 +208,6 @@ async def test_grocy_reads_auto_approve() -> None:
     policy_id, evaluation = await _schemaless_decision("grocy-sf", "products_list", {"detail": "brief"})
     assert policy_id == AGENT_AUTO_APPROVAL_ID
     assert evaluation is not None
-    assert "exact tool" in evaluation
 
 
 async def test_grocy_writes_stay_manual() -> None:

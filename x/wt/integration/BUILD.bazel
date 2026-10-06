@@ -14,13 +14,16 @@ py_library(
 py_test(
     name = "test_integration_cli_daemon",
     srcs = ["test_integration_cli_daemon.py"],
-    data = ["//x/wt:wt_cli"],
+    data = [
+        "//third_party/gitstatusd",
+        "//x/wt:wt_cli",
+    ],
     deps = [
         ":conftest",
         "//:conftest",
-        "//x/wt/shared:git_utils",
         "//x/wt/testing:asserts",
         "@pypi//pygit2",
+        "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],
 )
@@ -42,7 +45,10 @@ py_test(
 py_test(
     name = "test_integration_shell",
     srcs = ["test_integration_shell.py"],
-    data = ["//x/wt:wt_cli"],
+    data = [
+        "//third_party/gitstatusd",
+        "//x/wt:wt_cli",
+    ],
     deps = [
         ":conftest",
         "//:conftest",

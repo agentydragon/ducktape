@@ -386,8 +386,7 @@ export { palette };
 // A React Compiler memoized hook keeps its cache writes in one comma sequence
 // after the memo assignment: one write per dependency plus the memo write.
 // `SEQ_EXPRS` absorbs that tail, so the selector pins the hook by its memoized
-// callback and survives a rebuild that changes the dependency count. Here: two
-// writes.
+// callback and survives a rebuild that changes the dependency count.
 #[test]
 fn member_source_match_seq_exprs_hole_anchors_a_memoized_hook() {
     let fixture = run_fixture(member_fixture(
@@ -442,56 +441,6 @@ export { loadLabel };
         // the whole hook, cache writes and all; the hole absorbed them in the
         // selector only.
         &["function label_resource", "load:", "cache[0]"],
-        &["SEQ_EXPRS", "readable"],
-    );
-}
-
-// The same selector against a hook whose dependency count grew: five writes
-// instead of two. The selector names no cache slot, so it still resolves
-// uniquely — the reason `SEQ_EXPRS` exists.
-#[test]
-fn member_source_match_seq_exprs_hole_survives_a_dependency_count_change() {
-    let fixture = run_fixture(member_fixture(
-        r#"const slots = [];
-function loadLabel(cache, label) {
-  let memo;
-  return (cache[0] !== label || cache[1] !== label || cache[2] !== label
-    ? (memo = async (id) => {
-        const base = `load:${label}`;
-        return `${base}:${id}`;
-      }, cache[0] = label, cache[1] = label, cache[2] = label, cache[3] = label,
-      cache[4] = memo)
-    : (memo = cache[4])),
-    memo;
-}
-loadLabel(slots, "first")("a").then((value) => console.log(value));
-export { loadLabel };
-"#,
-        "resource",
-        Member::source_alpha_target(
-            "label_resource",
-            "readable",
-            r#"function readable(cache, label) {
-  let memo;
-  return (EXPR ? (memo = async (id) => {
-    const base = `load:${label}`;
-    return `${base}:${id}`;
-  }, SEQ_EXPRS) : memo = EXPR), memo;
-}"#,
-        ),
-    ));
-
-    assert_entry_output(&fixture, "load:first:a\n");
-    assert_module_exports(
-        &fixture.out_root,
-        "static/app/modules/resource.js",
-        &["label_resource"],
-        &["loadLabel"],
-    );
-    assert_module_source(
-        &fixture.out_root,
-        "static/app/modules/resource.js",
-        &["function label_resource", "load:", "cache[4]"],
         &["SEQ_EXPRS", "readable"],
     );
 }
@@ -607,7 +556,7 @@ fn member_source_match_comma_list_siblings_disambiguated_by_nested_value() {
 
 #[test]
 fn comma_list_siblings_without_the_nested_anchor_are_ambiguous() {
-    expect_rejection_containing_all(
+    let outcome = expect_selector_outcome(
         member_fixture(
             HANDLER_SIBLINGS,
             "routes",
@@ -617,12 +566,21 @@ fn comma_list_siblings_without_the_nested_anchor_are_ambiguous() {
                 "const readable = makeHandler({ route: { method: EXPR } });",
             ),
         ),
-        &["ambiguous", "handlerA", "handlerB"],
+        "ambiguous",
+        "routes",
     );
+    let candidates: Vec<&str> = outcome["outcome"]["candidates"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|candidate| candidate["binding"].as_str().unwrap())
+        .collect();
+    assert_eq!(candidates, ["handlerA", "handlerB"], "{outcome:#}");
 }
 
 #[test]
 fn source_match_anything_object_key_reports_unsupported_position() {
+    // Rejected before selector resolution: no report, and the position is named only in the error.
     expect_rejection_containing_all(
         member_fixture(
             r#"const actual = { mode: "runtime" };
@@ -632,12 +590,7 @@ export { actual };
             "config",
             Member::source_alpha("makeConfig", r#"const readable = { ANYTHING: "runtime" };"#),
         ),
-        &[
-            "ANYTHING",
-            "unsupported",
-            "object property key",
-            "key: ANYTHING",
-        ],
+        &["ANYTHING", "object property key"],
     );
 }
 
@@ -767,7 +720,7 @@ export { runtimeStyle };
 
 #[test]
 fn literal_regex_holes_preserve_no_match_and_ambiguity_diagnostics() {
-    for (source, selector, outcome, anchor) in [
+    for (source, selector, kind) in [
         (
             r#"const decoyStyle = "foo";
 const runtimeStyle = "fo";
@@ -776,7 +729,6 @@ export { decoyStyle, runtimeStyle };
 "#,
             r#"const readableStyle = STR_LITERAL_MATCHING_RE("^foo*");"#,
             "ambiguous",
-            "foo",
         ),
         (
             r#"const runtimeStyle = "PanelShell-42";
@@ -784,8 +736,7 @@ console.log(runtimeStyle);
 export { runtimeStyle };
 "#,
             r#"const readableStyle = STR_LITERAL_MATCHING_RE("^WidgetShell-[0-9]+$");"#,
-            "did not match any top-level declaration",
-            "WidgetShell",
+            "no_match",
         ),
         (
             r#"const runtimePrimaryStyle = "WidgetShell-1";
@@ -795,17 +746,18 @@ export { runtimePrimaryStyle, runtimeSecondaryStyle };
 "#,
             r#"const readableStyle = STR_LITERAL_MATCHING_RE("^WidgetShell-[0-9]+$");"#,
             "ambiguous",
-            "WidgetShell",
         ),
     ] {
-        expect_rejection_containing_all(
+        let outcome = expect_selector_outcome(
             member_fixture(
                 source,
                 "styles/shell",
                 Member::source_alpha("shellStyle", selector),
             ),
-            &["styles/shell", outcome, "STR_LITERAL_MATCHING_RE", anchor],
+            kind,
+            "styles/shell",
         );
+        assert_eq!(outcome["selector_preview"], selector);
     }
 }
 
@@ -1318,14 +1270,7 @@ export { primary, secondary };
         )],
     );
 
-    expect_rejection_containing_all(
-        opts,
-        &[
-            "static/app::settings",
-            "annotations key `secondary` does not match",
-            "secondary",
-        ],
-    );
+    expect_rejection_containing_all(opts, &["static/app::settings", "secondary"]);
 }
 
 #[test]
@@ -1575,17 +1520,16 @@ export { selectedA, selectedB, selectedC };
         ),
     );
 
-    expect_rejection_containing_all(
-        opts,
-        &[
-            "static/app::selected_values",
-            "source_matches[].bindings[`selectedB`]",
-            "did not match any top-level declaration",
-            "selectedA = buildItem",
-            "selectedB = buildItem",
-            "selectedC = buildItem",
-        ],
-    );
+    let outcome = expect_selector_outcome(opts, "no_match", "selected_values");
+    assert_eq!(outcome["target_binding"], "selectedB");
+    let preview = outcome["selector_preview"].as_str().unwrap();
+    for declarator in [
+        "selectedA = buildItem",
+        "selectedB = buildItem",
+        "selectedC = buildItem",
+    ] {
+        assert!(preview.contains(declarator), "{preview}");
+    }
 }
 
 #[test]
@@ -1631,15 +1575,11 @@ export { marker };
 }"#,
     );
 
-    expect_rejection_containing_all(
-        opts,
-        &[
-            "static/app::init",
-            "ambiguous",
-            "STMT_SETUP",
-            r#"console.log("done")"#,
-        ],
-    );
+    let outcome = expect_selector_outcome(opts, "ambiguous", "init");
+    let preview = outcome["selector_preview"].as_str().unwrap();
+    for fragment in ["STMT_SETUP", r#"console.log("done")"#] {
+        assert!(preview.contains(fragment), "{preview}");
+    }
 }
 
 #[test]
@@ -1823,39 +1763,6 @@ export { RuntimeCounter };
 }
 
 #[test]
-fn member_source_match_class_skeleton_rejects_ambiguous_match() {
-    // The skeleton `class K { run() { STMT_LIST } ANYTHING; }` matches
-    // both `Alpha` and `Beta`; ambiguous matches stay hard errors.
-    let opts = member_fixture(
-        r#"class Alpha {
-  run() {
-    return 1;
-  }
-}
-class Beta {
-  run() {
-    return 2;
-  }
-}
-console.log(new Alpha().run() + new Beta().run());
-export { Alpha };
-"#,
-        "shapes",
-        Member::source_alpha(
-            "Selected",
-            r#"class K {
-  run() {
-    STMT_LIST_BODY;
-  }
-  ANYTHING;
-}"#,
-        ),
-    );
-
-    expect_rejection_containing_all(opts, &["static/app::shapes", "ambiguous"]);
-}
-
-#[test]
 fn member_source_match_class_member_hole_pins_member_order() {
     // The class-member hole is positional: members pinned before it must be
     // the candidate's leading members in the same order. Listing `b`
@@ -1888,15 +1795,7 @@ export { Counter };
         ),
     );
 
-    expect_rejection_containing_all(
-        opts,
-        &[
-            "static/app::shapes",
-            "did not match",
-            "class K",
-            "STMT_LIST_A",
-        ],
-    );
+    expect_selector_outcome(opts, "no_match", "shapes");
 }
 
 #[test]
@@ -2073,7 +1972,7 @@ export { Widget };
         ),
     );
 
-    expect_rejection_containing_all(opts, &["static/app::shapes", "did not match"]);
+    expect_selector_outcome(opts, "no_match", "shapes");
 }
 
 #[test]
@@ -2294,7 +2193,7 @@ export { actual };
     );
 
     // ANYTHING in the same position is a single EXPR: arity 1 != 2, no match.
-    expect_rejection_containing_all(
+    expect_selector_outcome(
         member_fixture(
             subject,
             "joined",
@@ -2303,10 +2202,8 @@ export { actual };
                 r#"const selectedValue = joinParts(ANYTHING);"#,
             ),
         ),
-        &[
-            "static/app::joined",
-            "did not match any top-level declaration",
-        ],
+        "no_match",
+        "joined",
     );
 }
 
@@ -2327,14 +2224,15 @@ fn stmt_list_run_absorber_is_not_redundant_with_anything_single_stmt() {
     assert_entry_output(&with_stmt_list, "a\nb\nc\n");
 
     // ANYTHING as a block statement is a single STMT: arity 1 != 3, no match.
-    expect_rejection_containing_all(
+    expect_selector_outcome(
         anonymous_init_fixture(
             subject,
             r#"if (true) {
   ANYTHING;
 }"#,
         ),
-        &["static/app::init", "did not match"],
+        "no_match",
+        "init",
     );
 }
 

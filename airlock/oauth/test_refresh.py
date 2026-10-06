@@ -50,14 +50,25 @@ def _make_refreshed_token() -> TokenData:
     )
 
 
-async def _run_loop_briefly(
-    providers: dict[str, GenericOAuth2Provider], k8s_store: AsyncMock, namespace: str, sleep: float = 0.05
+async def _run_loop_passes(
+    providers: dict[str, GenericOAuth2Provider], k8s_store: AsyncMock, namespace: str, passes: int = 1
 ) -> None:
-    task = asyncio.create_task(token_refresh_loop(providers, k8s_store, namespace, check_interval=0))
-    await asyncio.sleep(sleep)
-    task.cancel()
+    """Run `token_refresh_loop` for exactly `passes` passes, then cancel it.
+
+    The loop awaits `delete_orphaned_secrets` once at the end of every pass; the last wanted pass cancels
+    there, as a shutdown arriving at that await would.
+    """
+    completed = 0
+
+    async def cancel_after_last_pass(*_: object) -> None:
+        nonlocal completed
+        completed += 1
+        if completed == passes:
+            raise asyncio.CancelledError
+
+    k8s_store.delete_orphaned_secrets.side_effect = cancel_after_last_pass
     with pytest.raises(asyncio.CancelledError):
-        await task
+        await token_refresh_loop(providers, k8s_store, namespace, check_interval=0)
 
 
 async def test_refresh_loop_refreshes_expiring_token(provider: GenericOAuth2Provider) -> None:
@@ -68,7 +79,7 @@ async def test_refresh_loop_refreshes_expiring_token(provider: GenericOAuth2Prov
     mock_store.read_token.return_value = expiring_token
 
     with patch.object(provider, "refresh_tokens", return_value=refreshed_token):
-        await _run_loop_briefly({"test": provider}, mock_store, "test-ns")
+        await _run_loop_passes({"test": provider}, mock_store, "test-ns")
 
     mock_store.read_token.assert_called_with("test-tokens", "test-ns")
     mock_store.write_token.assert_any_call("test-tokens", "test-ns", refreshed_token)
@@ -82,7 +93,7 @@ async def test_refresh_loop_skips_fresh_token(provider: GenericOAuth2Provider) -
     mock_store.read_token.return_value = fresh_token
 
     with patch.object(provider, "refresh_tokens") as mock_refresh:
-        await _run_loop_briefly({"test": provider}, mock_store, "test-ns")
+        await _run_loop_passes({"test": provider}, mock_store, "test-ns")
 
     mock_refresh.assert_not_called()
     mock_store.write_token.assert_not_called()
@@ -93,7 +104,7 @@ async def test_refresh_loop_skips_unconnected_provider(provider: GenericOAuth2Pr
     mock_store.read_token.return_value = None
 
     with patch.object(provider, "refresh_tokens") as mock_refresh:
-        await _run_loop_briefly({"test": provider}, mock_store, "test-ns")
+        await _run_loop_passes({"test": provider}, mock_store, "test-ns")
 
     mock_refresh.assert_not_called()
 
@@ -112,9 +123,9 @@ async def test_refresh_loop_continues_on_error(provider: GenericOAuth2Provider) 
         raise RuntimeError("network error")
 
     with patch.object(provider, "refresh_tokens", side_effect=failing_refresh):
-        await _run_loop_briefly({"test": provider}, mock_store, "test-ns", sleep=0.1)
+        await _run_loop_passes({"test": provider}, mock_store, "test-ns", passes=2)
 
-    assert call_count >= 2
+    assert call_count == 2
     mock_store.write_token.assert_not_called()
 
 
@@ -130,7 +141,7 @@ async def test_refresh_loop_keeps_access_secret_when_refresh_fails_for_valid_tok
         caplog.at_level("WARNING"),
         patch.object(provider, "refresh_tokens", side_effect=RuntimeError("network error")),
     ):
-        await _run_loop_briefly({"test": provider}, mock_store, "test-ns")
+        await _run_loop_passes({"test": provider}, mock_store, "test-ns")
 
     mock_store.delete_secret.assert_not_called()
     assert any(
@@ -152,7 +163,7 @@ async def test_refresh_loop_deletes_access_secret_when_refresh_fails_for_expired
         caplog.at_level("WARNING"),
         patch.object(provider, "refresh_tokens", side_effect=RuntimeError("network error")),
     ):
-        await _run_loop_briefly({"test": provider}, mock_store, "test-ns")
+        await _run_loop_passes({"test": provider}, mock_store, "test-ns")
 
     mock_store.delete_secret.assert_any_call("test-access-token", "test-ns")
     assert any(
@@ -168,7 +179,7 @@ async def test_refresh_loop_logs_when_refresh_token_cannot_be_read(
     mock_store.read_token.side_effect = RuntimeError("k8s down")
 
     with caplog.at_level("WARNING"), patch.object(provider, "refresh_tokens") as mock_refresh:
-        await _run_loop_briefly({"test": provider}, mock_store, "test-ns")
+        await _run_loop_passes({"test": provider}, mock_store, "test-ns")
 
     mock_refresh.assert_not_called()
     mock_store.delete_secret.assert_not_called()
@@ -184,7 +195,7 @@ async def test_refresh_loop_deletes_orphaned_secrets(provider: GenericOAuth2Prov
     mock_store = AsyncMock()
     mock_store.read_token.return_value = None
 
-    await _run_loop_briefly({"test": provider}, mock_store, "test-ns")
+    await _run_loop_passes({"test": provider}, mock_store, "test-ns")
 
     mock_store.delete_orphaned_secrets.assert_called_with("test-ns", ("test-tokens", "test-access-token"))
 
@@ -233,7 +244,7 @@ async def test_refresh_loop_warns_on_scope_drift(
     mock_store.read_token.return_value = drifted_token
 
     with caplog.at_level("WARNING"):
-        await _run_loop_briefly({"test": provider}, mock_store, "test-ns")
+        await _run_loop_passes({"test": provider}, mock_store, "test-ns", passes=2)
 
     drift_warnings = [r for r in caplog.records if "Scope drift" in r.message]
     assert len(drift_warnings) == 1

@@ -46,6 +46,21 @@ ducktapePkgs
     name = "ducktape-buildbuddy-remote-runner-tools";
     paths = buildBuddyRunnerTools;
   };
+  # Host-side tools for pulling the private runner base image into the Nix
+  # store before building the Nix-assembled runner image.
+  runner-image-tools = pkgs.symlinkJoin {
+    name = "ducktape-runner-image-tools";
+    paths = [
+      pkgs.skopeo
+      pkgs.coreutils
+    ];
+  };
+  # Deterministic runner image assembly. The publishing workflow supplies the
+  # authenticated, digest-pinned base archive as DUCKTAPE_RUNNER_BASE_IMAGE.
+  buildbuddy-remote-runner-image = import ../../devinfra/buildbuddy_remote_runner/image.nix {
+    inherit pkgs;
+    runnerTools = self.packages.${system}.buildbuddy-remote-runner-tools;
+  };
   # Haku's agent closure: the single shared `.#devtools` plus agent
   # CLIs: fastmcp (`call`/`list --auth <bearer>`) for haku-console and
   # other MCP servers, himalaya for Haku's own mailbox, and tea for

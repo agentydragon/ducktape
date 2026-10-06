@@ -137,7 +137,12 @@ impl GraphFixture {
             }
             let out = self.command(&args);
             let stderr = String::from_utf8_lossy(&out.stderr);
-            assert!(!out.status.success(), "{args:?}: expected rejection");
+            // `debundle` exits 1 when it refuses an edit and clap exits 2 on a usage error; a
+            // panic exits 101 and is no refusal.
+            assert!(
+                matches!(out.status.code(), Some(1 | 2)),
+                "{args:?}: expected rejection: {stderr}"
+            );
             for diagnostic in diagnostics {
                 assert!(stderr.contains(diagnostic), "{args:?}: {stderr}");
             }

@@ -11,13 +11,14 @@ from aiquota.models import (
     ExtraSpend,
     FetchError,
     FetchSuccess,
+    PaidCredits,
     ProviderFetch,
     ProviderQuota,
     QuotaWindow,
     SuccessfulProviderFetch,
 )
 
-FIXTURE_NAMES = ("empty", "tints", "hot", "exhausted", "extra_enabled_not_burning", "stale_fallback")
+FIXTURE_NAMES = ("empty", "tints", "hot", "exhausted", "extra_enabled_not_burning", "stale_fallback", "paid_credits")
 PROVIDER_ORDER = ("claude", "codex", "zai")
 DEFAULT_NOW = datetime(2026, 1, 15, 12, 0, 0, tzinfo=UTC)
 
@@ -69,6 +70,7 @@ def _success(node: dict[str, Any]) -> FetchSuccess:
     return FetchSuccess(
         windows=[window for window in (_window(node.get("short")), _window(node.get("long"))) if window],
         extra_spend=_extra_spend(node.get("extraSpend")),
+        paid_credits=PaidCredits.model_validate(node["paidCredits"]) if node.get("paidCredits") is not None else None,
         available_reset_credits=node.get("availableResetCredits"),
         available_reset_credit_expiries=node.get("availableResetCreditExpiries", []),
     )

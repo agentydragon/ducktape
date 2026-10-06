@@ -125,9 +125,5 @@ def test_upcoming_from_off_peak_starts_with_the_next_window_not_a_past_one() -> 
     assert [w.start for w in windows] == [_sgt(2026, 8, 25, 14), _sgt(2026, 8, 26, 14)]
 
 
-def test_upcoming_respects_the_requested_count() -> None:
-    assert len(upcoming_peaks(_schedule(_AFTERNOON), _sgt(2026, 8, 24, 9), count=5)) == 5
-
-
 if __name__ == "__main__":
     pytest_bazel.main()

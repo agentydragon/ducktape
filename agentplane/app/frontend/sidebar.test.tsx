@@ -404,6 +404,7 @@ it("hides archived threads until the switch is toggled, and archives a thread fr
   if (!(toggle instanceof HTMLInputElement)) throw new Error("missing archived switch");
   await act(async () => toggle.click());
   expect(container.textContent).toContain("Old spike");
+  expect(container.querySelectorAll(".agentplane-thread-status-indicator[data-status='archived']")).toHaveLength(1);
 
   const archiveButton = container.querySelector('button[aria-label="Archive Active thread"]');
   if (!(archiveButton instanceof HTMLButtonElement)) throw new Error("missing archive button");
@@ -415,7 +416,30 @@ it("hides archived threads until the switch is toggled, and archives a thread fr
   expect((archiveCall?.[0] as Request).method).toBe("POST");
 });
 
-it.each([null, "turn-1"])("blocks archiving a live harness, idle or mid-turn (active turn %s)", async (turn) => {
+it("keeps the open Thread in the list while it is archived and the archived switch is off", async () => {
+  await render(
+    [
+      thread({ id: "t-1", sandbox: "demo-a1b2", session_id: "s-1", name: "Active thread" }),
+      thread({ id: "t-2", sandbox: "demo-a1b2", session_id: "s-2", name: "Open archive", archived: true }),
+      thread({ id: "t-3", sandbox: "demo-a1b2", session_id: "s-3", name: "Other archive", archived: true }),
+    ],
+    { "demo-a1b2": sandbox("demo-a1b2") },
+    { initialPath: "/threads/t-2" }
+  );
+
+  expect(row("Open archive").className).toContain("current");
+  expect(container.textContent).not.toContain("Other archive");
+  expect(container.textContent).toContain("Show archived (2)");
+
+  await act(async () => row("Active thread").click());
+  expect(container.textContent).not.toContain("Open archive");
+});
+
+it.each([
+  [{ active_turn_id: null }, "idle"],
+  [{ active_turn_id: "turn-1" }, "running"],
+  [{ last_turn_status: "TURN_STATUS_FAILED" }, "turn_error"],
+] as const)("blocks archiving a live harness, whatever its status: %o", async (overrides, kind) => {
   await render(
     [
       thread({
@@ -424,11 +448,12 @@ it.each([null, "turn-1"])("blocks archiving a live harness, idle or mid-turn (ac
         session_id: "s-1",
         name: "Live thread",
         harness_state: "HARNESS_STATE_RUNNING",
-        active_turn_id: turn,
+        ...overrides,
       }),
     ],
     { demo: sandbox("demo") }
   );
+  expect(container.querySelector(".agentplane-thread-status-indicator")?.getAttribute("data-status")).toBe(kind);
   const archiveButton = container.querySelector('button[aria-label="Stop harness before archiving Live thread"]');
   if (!(archiveButton instanceof HTMLButtonElement)) throw new Error("missing archive button");
   expect(archiveButton.disabled).toBe(true);

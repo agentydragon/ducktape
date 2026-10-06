@@ -34,14 +34,14 @@
 //!   heuristic) silently wins over a disagreeing lower-priority one.
 //! - **Target occupancy**: callers pass per-scope [`ScopeOccupancy`]
 //!   facts in [`SealValidation`]; seal rejects targets the scope already
-//!   binds. Explicit intents failing validation are hard errors carrying
-//!   the same messages the pre-ledger application-site checks raised
-//!   (`invalid chunk_renames spec`, `collides with an existing top-level
-//!   local`, `would be captured by a nested binding`, …). Heuristic
-//!   intents failing validation are dropped silently (over-suppression is
-//!   acceptable; capture is not). Import-induced intents are minted by
-//!   the ledger itself against the same occupancy, so a failure is an
-//!   internal invariant violation.
+//!   binds. Explicit intents failing validation are hard errors
+//!   ([`SealError::InvalidChunkRenames`], [`SealError::InvalidModuleRenames`],
+//!   [`SealError::ChunkRenamesCaptured`], [`SealError::ModuleRenamesCaptured`]).
+//!   Heuristic intents failing validation are dropped silently
+//!   (over-suppression is acceptable; capture is not). Import-induced
+//!   intents are minted by the ledger itself against the same occupancy,
+//!   so a failure is an internal invariant violation
+//!   ([`SealError::MintedTargetOccupied`]).
 //! - **Capture facts, not conservative sets**: capture is
 //!   reference-precise — a target bound in a nested scope is harmless
 //!   when the source is shadowed (or never referenced) inside that scope,
@@ -233,7 +233,6 @@ use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::fmt;
 
 use analysis::ModuleId;
-use anyhow::{Result, bail};
 use swc_atoms::Atom;
 use swc_common::Span;
 use swc_ecma_ast::Id;
@@ -385,8 +384,8 @@ pub enum ScopeOccupancy {
         /// withheld on the pre-seal application/preview walk of this
         /// scope's body: the target was shadowed at a reference of the
         /// un-shadowed source, so applying the rename would capture.
-        /// Seal turns these into the hard "would be captured by a
-        /// nested binding" error.
+        /// Seal turns these into [`SealError::ChunkRenamesCaptured`] or
+        /// [`SealError::ModuleRenamesCaptured`].
         captured: BTreeSet<(String, String)>,
     },
     /// `Function` scopes: the deriving subtree's name facts. Seal's
@@ -413,6 +412,184 @@ pub struct SealValidation {
     /// module's explicit + surviving free renames). `Function`-scope
     /// bound-source heuristic targets must avoid them.
     pub reserved: BTreeSet<String>,
+}
+
+/// Why [`RenameLedger::seal`] refused the collected intents. One variant per kind of refusal,
+/// each carrying every violation of its kind; `Display` is the diagnostic an author reads.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum SealError {
+    /// Same-priority intents disagree on a binding's target: one entry per `(scope, from)` group.
+    ConflictingIntents(Vec<IntentConflict>),
+    /// Explicit `chunk_renames` whose targets the chunk's entry body cannot take.
+    InvalidChunkRenames(Vec<ChunkRenameViolation>),
+    /// Explicit renames whose targets a module body, or the public-export namespace, cannot take.
+    /// `label` is the plan id of the module, or the chunk id for the public exports.
+    InvalidModuleRenames {
+        label: String,
+        violations: Vec<ModuleRenameViolation>,
+    },
+    /// Explicit or import-induced `chunk_renames` that a nested binding of the entry body of
+    /// `chunk` would capture, as `(source, target)` pairs.
+    ChunkRenamesCaptured {
+        chunk: String,
+        captured: BTreeSet<(String, String)>,
+    },
+    /// Explicit or import-induced renames that a nested binding of the body `label` would
+    /// capture, as `(source, target)` pairs.
+    ModuleRenamesCaptured {
+        label: String,
+        captured: BTreeSet<(String, String)>,
+    },
+    /// A ledger-minted target collides with a name occupied in `scope`: the caller seeded the
+    /// wrong occupancy, an internal bug rather than a spec error.
+    MintedTargetOccupied {
+        scope: RenameScope,
+        from: String,
+        to: String,
+    },
+}
+
+/// The intents of one `(scope, from)` group whose highest-priority proposals name different
+/// targets.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct IntentConflict {
+    pub scope: RenameScope,
+    pub from: String,
+    /// Each distinct target, with the contributors proposing it.
+    pub sides: Vec<ConflictSide>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ConflictSide {
+    pub to: String,
+    pub origins: BTreeSet<RenameOrigin>,
+}
+
+/// One explicit `chunk_renames` entry the entry body cannot take.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ChunkRenameViolation {
+    /// `to` is not a valid JS identifier.
+    NotAnIdentifier { from: String, to: String },
+    /// `to` is a top-level local of the entry body that is not itself being renamed away.
+    CollidesWithLocal { from: String, to: String },
+    /// `to` is already taken: by an earlier rename's target, or by a root binding that is itself
+    /// being renamed away.
+    DuplicatesTarget { from: String, to: String },
+}
+
+/// One explicit rename a module body cannot take.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ModuleRenameViolation {
+    /// `to` is a top-level binding of the module body that is not itself being renamed away.
+    CollidesWithBinding { from: String, to: String },
+    /// `to` is already the target of another rename in the module.
+    DuplicatesTarget { from: String, to: String },
+}
+
+fn bulleted<T: fmt::Display>(items: &[T]) -> String {
+    items
+        .iter()
+        .map(ToString::to_string)
+        .collect::<Vec<_>>()
+        .join("\n  - ")
+}
+
+impl fmt::Display for SealError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::ConflictingIntents(conflicts) => {
+                write!(
+                    f,
+                    "conflicting rename intents:\n  - {}",
+                    bulleted(conflicts)
+                )
+            }
+            Self::InvalidChunkRenames(violations) => {
+                write!(
+                    f,
+                    "invalid chunk_renames spec:\n  - {}",
+                    bulleted(violations)
+                )
+            }
+            Self::InvalidModuleRenames { label, violations } => write!(
+                f,
+                "invalid renames for module {label}:\n  - {}",
+                bulleted(violations)
+            ),
+            Self::ChunkRenamesCaptured { chunk, captured } => write!(
+                f,
+                "chunk_renames for chunk {chunk} would be captured by a nested binding: {captured:?}"
+            ),
+            Self::ModuleRenamesCaptured { label, captured } => write!(
+                f,
+                "renames for module {label} would be captured by a nested binding: {captured:?}"
+            ),
+            Self::MintedTargetOccupied { scope, from, to } => write!(
+                f,
+                "internal invariant violation: ledger-minted rename target {to} for binding {from} collides with an occupied name in {scope}; minting must claim from the scope's seeded taken set"
+            ),
+        }
+    }
+}
+
+impl std::error::Error for SealError {}
+
+impl fmt::Display for IntentConflict {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let sides = self
+            .sides
+            .iter()
+            .map(|ConflictSide { to, origins }| {
+                let origins = origins
+                    .iter()
+                    .map(ToString::to_string)
+                    .collect::<Vec<_>>()
+                    .join(", ");
+                format!("`{to}` (per {origins})")
+            })
+            .collect::<Vec<_>>()
+            .join(" vs ");
+        write!(
+            f,
+            "{}: binding `{}` renamed to {sides} at equal priority; \
+             same-priority contributors must agree",
+            self.scope, self.from,
+        )
+    }
+}
+
+impl fmt::Display for ChunkRenameViolation {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::NotAnIdentifier { from, to } => write!(
+                f,
+                "chunk_renames target {to} for binding {from} is not a valid JS identifier"
+            ),
+            Self::CollidesWithLocal { from, to } => write!(
+                f,
+                "chunk_renames target {to} for binding {from} collides with an existing top-level local"
+            ),
+            Self::DuplicatesTarget { from, to } => write!(
+                f,
+                "chunk_renames target {to} for binding {from} duplicates an earlier rename target"
+            ),
+        }
+    }
+}
+
+impl fmt::Display for ModuleRenameViolation {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::CollidesWithBinding { from, to } => write!(
+                f,
+                "rename of binding {from} to {to} collides with another top-level binding in the module body"
+            ),
+            Self::DuplicatesTarget { from, to } => write!(
+                f,
+                "rename of binding {from} to {to} duplicates another rename target in the module"
+            ),
+        }
+    }
 }
 
 /// Accumulates [`RenameIntent`]s during the collect phase and owns the
@@ -512,10 +689,9 @@ impl RenameLedger {
     ///
     /// Target validation runs per scope against `validation.occupancy`
     /// (see the module doc's "Seal validation" section): explicit
-    /// failures are hard errors reproducing the pre-ledger messages,
-    /// heuristic failures are silent drops, import-induced failures are
-    /// internal invariant violations.
-    pub fn seal(self, validation: &SealValidation) -> Result<SealedRenames> {
+    /// failures are hard errors, heuristic failures are silent drops,
+    /// import-induced failures are internal invariant violations.
+    pub fn seal(self, validation: &SealValidation) -> Result<SealedRenames, SealError> {
         let mut groups: BTreeMap<(RenameScope, Id), Vec<RenameIntent>> = BTreeMap::new();
         for intent in self.intents {
             groups
@@ -545,23 +721,17 @@ impl RenameLedger {
                 }
             }
             if by_target.len() > 1 {
-                let sides = by_target
-                    .iter()
-                    .map(|(to, origins)| {
-                        let origins = origins
-                            .iter()
-                            .map(|origin| origin.to_string())
-                            .collect::<Vec<_>>()
-                            .join(", ");
-                        format!("`{to}` (per {origins})")
-                    })
-                    .collect::<Vec<_>>()
-                    .join(" vs ");
-                conflicts.push(format!(
-                    "{scope}: binding `{}` renamed to {sides} at equal priority; \
-                     same-priority contributors must agree",
-                    from.0,
-                ));
+                conflicts.push(IntentConflict {
+                    scope,
+                    from: from.0.to_string(),
+                    sides: by_target
+                        .into_iter()
+                        .map(|(to, origins)| ConflictSide {
+                            to: to.to_string(),
+                            origins,
+                        })
+                        .collect(),
+                });
                 continue;
             }
             let to = by_target
@@ -574,10 +744,7 @@ impl RenameLedger {
                 .insert(from, ((*to).clone(), top_priority));
         }
         if !conflicts.is_empty() {
-            bail!(
-                "conflicting rename intents:\n  - {}",
-                conflicts.join("\n  - "),
-            );
+            return Err(SealError::ConflictingIntents(conflicts));
         }
 
         // Target validation, scope by scope. `Module` scopes validate
@@ -633,7 +800,7 @@ fn validate_body_scope(
     nested: &BTreeSet<String>,
     captured: &BTreeSet<(String, String)>,
     mut winners: BTreeMap<Id, (Atom, RenamePriority)>,
-) -> Result<BTreeMap<Id, (Atom, RenamePriority)>> {
+) -> Result<BTreeMap<Id, (Atom, RenamePriority)>, SealError> {
     let chunk_style = matches!(scope, RenameScope::Chunk);
     // Sources of explicit renames vacate their root-level slot: a target
     // equal to another explicit rename's source is allowed past the
@@ -648,7 +815,8 @@ fn validate_body_scope(
         .filter(|(_, (_, priority))| *priority == RenamePriority::Explicit)
         .map(|(from, _)| from.0.to_string())
         .collect();
-    let mut errors = Vec::new();
+    let mut chunk_violations = Vec::new();
+    let mut module_violations = Vec::new();
     // Chunk-style: grows with accepted targets so an earlier accepted
     // target occupies the name for later entries (sorted-by-source
     // order, matching the pre-ledger loop). Module-style: tracks rename
@@ -664,48 +832,37 @@ fn validate_body_scope(
         if *priority != RenamePriority::Explicit {
             continue;
         }
-        let from = from.0.as_ref();
-        let to = to.as_ref();
-        if chunk_style && !is_binding_identifier(to) {
-            errors.push(format!(
-                "chunk_renames target {to} for binding {from} is not a valid JS identifier",
-            ));
+        let from = from.0.to_string();
+        let to = to.to_string();
+        if chunk_style && !is_binding_identifier(&to) {
+            chunk_violations.push(ChunkRenameViolation::NotAnIdentifier { from, to });
             continue;
         }
         let occupied_for_collision = if chunk_style { &taken } else { root };
-        if to != from && occupied_for_collision.contains(to) && !vacated.contains(to) {
-            errors.push(if chunk_style {
-                format!(
-                    "chunk_renames target {to} for binding {from} collides with an existing top-level local",
-                )
+        if to != from && occupied_for_collision.contains(&to) && !vacated.contains(&to) {
+            if chunk_style {
+                chunk_violations.push(ChunkRenameViolation::CollidesWithLocal { from, to });
             } else {
-                format!(
-                    "rename of binding {from} to {to} collides with another top-level binding in the module body",
-                )
-            });
+                module_violations.push(ModuleRenameViolation::CollidesWithBinding { from, to });
+            }
             continue;
         }
-        if !taken.insert(to.to_string()) && to != from {
-            errors.push(if chunk_style {
-                format!(
-                    "chunk_renames target {to} for binding {from} duplicates an earlier rename target",
-                )
+        if !taken.insert(to.clone()) && to != from {
+            if chunk_style {
+                chunk_violations.push(ChunkRenameViolation::DuplicatesTarget { from, to });
             } else {
-                format!(
-                    "rename of binding {from} to {to} duplicates another rename target in the module",
-                )
-            });
-            continue;
+                module_violations.push(ModuleRenameViolation::DuplicatesTarget { from, to });
+            }
         }
     }
-    if !errors.is_empty() {
-        if chunk_style {
-            bail!("invalid chunk_renames spec:\n  - {}", errors.join("\n  - "));
-        }
-        bail!(
-            "invalid renames for module {label}:\n  - {}",
-            errors.join("\n  - "),
-        );
+    if !chunk_violations.is_empty() {
+        return Err(SealError::InvalidChunkRenames(chunk_violations));
+    }
+    if !module_violations.is_empty() {
+        return Err(SealError::InvalidModuleRenames {
+            label: label.to_string(),
+            violations: module_violations,
+        });
     }
     // Capture facts are reference-precise. Explicit and import-induced
     // renames retain their hard-error contract, while heuristic renames are
@@ -717,14 +874,18 @@ fn validate_body_scope(
         .map(|(from, (to, _))| (from.0.to_string(), to.to_string()))
         .collect();
     if !captured_non_heuristic.is_empty() {
-        if chunk_style {
-            bail!(
-                "chunk_renames for chunk {label} would be captured by a nested binding: {captured_non_heuristic:?}",
-            );
-        }
-        bail!(
-            "renames for module {label} would be captured by a nested binding: {captured_non_heuristic:?}",
-        );
+        let label = label.to_string();
+        return Err(if chunk_style {
+            SealError::ChunkRenamesCaptured {
+                chunk: label,
+                captured: captured_non_heuristic,
+            }
+        } else {
+            SealError::ModuleRenamesCaptured {
+                label,
+                captured: captured_non_heuristic,
+            }
+        });
     }
     winners.retain(|from, (to, priority)| {
         *priority != RenamePriority::Heuristic
@@ -740,10 +901,11 @@ fn validate_body_scope(
         if *priority == RenamePriority::ImportInduced
             && (root.contains(to.as_ref()) || nested.contains(to.as_ref()))
         {
-            bail!(
-                "internal invariant violation: ledger-minted rename target {to} for binding {} collides with an occupied name in {scope}; minting must claim from the scope's seeded taken set",
-                from.0,
-            );
+            return Err(SealError::MintedTargetOccupied {
+                scope: *scope,
+                from: from.0.to_string(),
+                to: to.to_string(),
+            });
         }
     }
     // Heuristic (free-source) target collisions: drop losers silently.
@@ -964,6 +1126,15 @@ mod tests {
     }
 
     fn body_occupancy(scope: RenameScope, root: &[&str], nested: &[&str]) -> SealValidation {
+        captured_occupancy(scope, root, nested, &[])
+    }
+
+    fn captured_occupancy(
+        scope: RenameScope,
+        root: &[&str],
+        nested: &[&str],
+        captured: &[(&str, &str)],
+    ) -> SealValidation {
         SealValidation {
             occupancy: BTreeMap::from([(
                 scope,
@@ -971,11 +1142,18 @@ mod tests {
                     label: "spec_x".to_string(),
                     root: names(root),
                     nested: names(nested),
-                    captured: BTreeSet::new(),
+                    captured: captured
+                        .iter()
+                        .map(|(from, to)| (from.to_string(), to.to_string()))
+                        .collect(),
                 },
             )]),
             reserved: BTreeSet::new(),
         }
+    }
+
+    fn seal_error(ledger: RenameLedger, validation: &SealValidation) -> SealError {
+        ledger.seal(validation).unwrap_err()
     }
 
     const A: RenameOrigin = RenameOrigin::Explicit {
@@ -1001,12 +1179,37 @@ mod tests {
         ledger.submit(intent(RenameScope::Chunk, "a", "second", B));
         ledger.submit(intent(RenameScope::Chunk, "b", "third", A));
         ledger.submit(intent(RenameScope::Chunk, "b", "fourth", B));
-        let message = ledger
-            .seal(&SealValidation::default())
-            .unwrap_err()
-            .to_string();
-        assert!(message.contains("binding `a`"), "{message}");
-        assert!(message.contains("binding `b`"), "{message}");
+        let conflict = |from: &str, sides: [(&str, RenameOrigin); 2]| IntentConflict {
+            scope: RenameScope::Chunk,
+            from: from.to_string(),
+            sides: sides
+                .into_iter()
+                .map(|(to, origin)| ConflictSide {
+                    to: to.to_string(),
+                    origins: BTreeSet::from([origin]),
+                })
+                .collect(),
+        };
+        let error = seal_error(ledger, &SealValidation::default());
+        assert_eq!(
+            error,
+            SealError::ConflictingIntents(vec![
+                conflict("a", [("first", A), ("second", B)]),
+                conflict("b", [("fourth", B), ("third", A)]),
+            ]),
+        );
+        // The rendered diagnostic names every target and both contributors.
+        let message = error.to_string();
+        for identifier in [
+            "first",
+            "second",
+            "third",
+            "fourth",
+            "contributor_a",
+            "contributor_b",
+        ] {
+            assert!(message.contains(identifier), "{identifier}: {message}");
+        }
     }
 
     #[test]
@@ -1051,21 +1254,25 @@ mod tests {
 
     #[test]
     fn hygiene_distinct_ids_are_distinct_keys() {
-        // Two bindings spelled the same but carrying different
-        // SyntaxContexts are different ledger keys — no conflict.
-        let other_ctxt = (Atom::from("a"), SyntaxContext::from_u32(7));
+        // Same sym, same scope, same priority, different targets: only the
+        // SyntaxContext keeps these two from being a conflict.
+        let scope = RenameScope::Module(ModuleId::logical(0));
+        let shadowing = (Atom::from("a"), SyntaxContext::from_u32(7));
         let mut ledger = RenameLedger::default();
-        ledger.submit(intent(RenameScope::Chunk, "a", "first", A));
+        ledger.submit(intent(scope, "a", "first", A));
         ledger.submit(RenameIntent {
-            scope: RenameScope::Module(ModuleId::logical(0)),
-            from: other_ctxt.clone(),
+            scope,
+            from: shadowing.clone(),
             to: Atom::from("second"),
             origin: B,
         });
         let sealed = ledger.seal(&SealValidation::default()).unwrap();
         assert_eq!(
-            sealed.scope_renames(&RenameScope::Module(ModuleId::logical(0))),
-            Some(BTreeMap::from([(other_ctxt, Atom::from("second"))])),
+            sealed.scope_renames(&scope),
+            Some(BTreeMap::from([
+                (id("a"), Atom::from("first")),
+                (shadowing, Atom::from("second")),
+            ])),
         );
     }
 
@@ -1107,14 +1314,15 @@ mod tests {
     fn chunk_explicit_target_colliding_with_root_binding_is_a_hard_error() {
         let mut ledger = RenameLedger::default();
         ledger.submit(intent(RenameScope::Chunk, "a", "delta", A));
-        let message = ledger
-            .seal(&body_occupancy(RenameScope::Chunk, &["a", "delta"], &[]))
-            .unwrap_err()
-            .to_string();
-        assert!(message.contains("invalid chunk_renames spec"), "{message}");
-        assert!(
-            message.contains("collides with an existing top-level local"),
-            "{message}"
+        assert_eq!(
+            seal_error(
+                ledger,
+                &body_occupancy(RenameScope::Chunk, &["a", "delta"], &[]),
+            ),
+            SealError::InvalidChunkRenames(vec![ChunkRenameViolation::CollidesWithLocal {
+                from: "a".to_string(),
+                to: "delta".to_string(),
+            }]),
         );
     }
 
@@ -1125,27 +1333,37 @@ mod tests {
         ledger.submit(intent(RenameScope::Chunk, "bravo", "delta", A));
         ledger.submit(intent(RenameScope::Chunk, "charlie", "shared", A));
         ledger.submit(intent(RenameScope::Chunk, "delta", "shared", A));
-        let message = ledger
-            .seal(&body_occupancy(
-                RenameScope::Chunk,
-                &["alpha", "bravo", "charlie", "delta"],
-                &[],
-            ))
-            .unwrap_err()
-            .to_string();
-        assert!(message.contains("not a valid JS identifier"), "{message}");
-        assert!(
-            message.contains("collides with an existing top-level local"),
-            "{message}"
-        );
-        assert!(
-            message.contains("duplicates an earlier rename target"),
-            "{message}"
+        // One violation per failing rename: `alpha`'s target is no identifier,
+        // `bravo`'s repeats `delta`, `delta`'s collides with the target
+        // `charlie` took, and `charlie` itself is accepted.
+        assert_eq!(
+            seal_error(
+                ledger,
+                &body_occupancy(
+                    RenameScope::Chunk,
+                    &["alpha", "bravo", "charlie", "delta"],
+                    &[],
+                ),
+            ),
+            SealError::InvalidChunkRenames(vec![
+                ChunkRenameViolation::NotAnIdentifier {
+                    from: "alpha".to_string(),
+                    to: "1-bad-ident".to_string(),
+                },
+                ChunkRenameViolation::DuplicatesTarget {
+                    from: "bravo".to_string(),
+                    to: "delta".to_string(),
+                },
+                ChunkRenameViolation::CollidesWithLocal {
+                    from: "delta".to_string(),
+                    to: "shared".to_string(),
+                },
+            ]),
         );
     }
 
     #[test]
-    fn chunk_chain_rename_onto_vacated_name_reports_duplicate() {
+    fn chunk_chain_rename_onto_vacated_name_is_rejected() {
         // Chain renames a→b, b→c at Chunk scope: `b`'s vacated root slot
         // routes the violation past the "collides" branch, but the
         // growing occupied set (which holds every root name) still
@@ -1153,13 +1371,15 @@ mod tests {
         let mut ledger = RenameLedger::default();
         ledger.submit(intent(RenameScope::Chunk, "a", "b", A));
         ledger.submit(intent(RenameScope::Chunk, "b", "c", A));
-        let message = ledger
-            .seal(&body_occupancy(RenameScope::Chunk, &["a", "b"], &[]))
-            .unwrap_err()
-            .to_string();
-        assert!(
-            message.contains("duplicates an earlier rename target"),
-            "{message}"
+        assert_eq!(
+            seal_error(
+                ledger,
+                &body_occupancy(RenameScope::Chunk, &["a", "b"], &[]),
+            ),
+            SealError::InvalidChunkRenames(vec![ChunkRenameViolation::DuplicatesTarget {
+                from: "a".to_string(),
+                to: "b".to_string(),
+            }]),
         );
     }
 
@@ -1189,36 +1409,78 @@ mod tests {
         let module = RenameScope::Module(ModuleId::logical(0));
         let mut ledger = RenameLedger::default();
         ledger.submit(intent(module, "a", "readable", A));
-        let message = ledger
-            .seal(&body_occupancy(module, &["a", "readable"], &[]))
-            .unwrap_err()
-            .to_string();
-        assert!(
-            message.contains("invalid renames for module spec_x"),
-            "{message}"
-        );
-        assert!(
-            message.contains(
-                "rename of binding a to readable collides with another top-level binding"
-            ),
-            "{message}"
+        assert_eq!(
+            seal_error(ledger, &body_occupancy(module, &["a", "readable"], &[])),
+            SealError::InvalidModuleRenames {
+                label: "spec_x".to_string(),
+                violations: vec![ModuleRenameViolation::CollidesWithBinding {
+                    from: "a".to_string(),
+                    to: "readable".to_string(),
+                }],
+            },
         );
     }
 
     #[test]
-    fn minted_target_colliding_with_occupancy_is_an_invariant_error() {
+    fn minted_target_colliding_with_occupancy_is_rejected() {
         // Mints come from the ledger's own taken set; a collision means
         // the caller seeded the wrong occupancy — an internal bug, not a
         // spec error.
         let mut ledger = RenameLedger::default();
         ledger.submit(intent(RenameScope::Chunk, "x", "x$1", MINT));
-        let message = ledger
-            .seal(&body_occupancy(RenameScope::Chunk, &["x", "x$1"], &[]))
-            .unwrap_err()
-            .to_string();
+        assert_eq!(
+            seal_error(
+                ledger,
+                &body_occupancy(RenameScope::Chunk, &["x", "x$1"], &[]),
+            ),
+            SealError::MintedTargetOccupied {
+                scope: RenameScope::Chunk,
+                from: "x".to_string(),
+                to: "x$1".to_string(),
+            },
+        );
+    }
+
+    #[test]
+    fn captured_explicit_renames_are_refused_and_captured_heuristics_dropped() {
+        let module = RenameScope::Module(ModuleId::logical(0));
+        let pair = BTreeSet::from([("a".to_string(), "b".to_string())]);
+
+        let mut ledger = RenameLedger::default();
+        ledger.submit(intent(RenameScope::Chunk, "a", "b", A));
+        assert_eq!(
+            seal_error(
+                ledger,
+                &captured_occupancy(RenameScope::Chunk, &["a"], &["b"], &[("a", "b")]),
+            ),
+            SealError::ChunkRenamesCaptured {
+                chunk: "spec_x".to_string(),
+                captured: pair.clone(),
+            },
+        );
+
+        let mut ledger = RenameLedger::default();
+        ledger.submit(intent(module, "a", "b", A));
+        assert_eq!(
+            seal_error(
+                ledger,
+                &captured_occupancy(module, &["a"], &["b"], &[("a", "b")]),
+            ),
+            SealError::ModuleRenamesCaptured {
+                label: "spec_x".to_string(),
+                captured: pair,
+            },
+        );
+
+        let mut ledger = RenameLedger::default();
+        ledger.submit(intent(module, "a", "b", HEURISTIC));
+        let sealed = ledger
+            .seal(&captured_occupancy(module, &["a"], &["b"], &[("a", "b")]))
+            .unwrap();
         assert!(
-            message.contains("internal invariant violation"),
-            "{message}"
+            sealed
+                .module_renames_by_name(ModuleId::logical(0))
+                .is_empty()
         );
     }
 

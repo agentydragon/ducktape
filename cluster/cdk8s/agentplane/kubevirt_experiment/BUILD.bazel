@@ -46,6 +46,7 @@ py_binary(
         "//agentplane/runner:protocol_pb2",
         "//util:kubernetes",
         "@pypi//cdk8s",
+        "@pypi//grpcio",
         "@pypi//kubernetes_asyncio",
         "@pypi//protobuf",
     ],

@@ -104,10 +104,16 @@ fn source_match_groups_cannot_be_split_by_assign_or_unassign() {
 
 #[test]
 fn rename_and_assign_refuse_collisions_with_all_binding_forms() {
-    for occupied in [
-        "members: [{selector: {binding: {name: b}}}]",
-        "members: [{name: b, selector: {binding: {name: c}}}]",
-        "source_matches: [{match: 'const c = 2;', bindings: [{local: c, name: b}]}]",
+    for (occupied, location) in [
+        ("members: [{selector: {binding: {name: b}}}]", "members[0]"),
+        (
+            "members: [{name: b, selector: {binding: {name: c}}}]",
+            "members[0]",
+        ),
+        (
+            "source_matches: [{match: 'const c = 2;', bindings: [{local: c, name: b}]}]",
+            "source_matches[0].bindings[0]",
+        ),
     ] {
         let source = if occupied.contains("name: c") || occupied.contains("local: c") {
             "const a = 1; const c = 2; console.log(a + c);"
@@ -125,7 +131,7 @@ fn rename_and_assign_refuse_collisions_with_all_binding_forms() {
             vec!["bindings", "rename", "a", "b"],
             vec!["bindings", "assign", "a:dest:b"],
         ] {
-            fixture.assert_rejected_unchanged(&args, &["name collision"]);
+            fixture.assert_rejected_unchanged(&args, &["name collision", location]);
         }
     }
 }

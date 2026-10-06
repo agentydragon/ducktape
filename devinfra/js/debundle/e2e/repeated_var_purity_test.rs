@@ -22,7 +22,7 @@ fn nested_var_reinitializer_does_not_let_split_drop_getter_ordering() {
     // stay ordered before that write. Splitting the lazy read into `before`
     // and the binding into `state` would otherwise create a link-order
     // dependency in the opposite direction and must be rejected.
-    expect_rejection(
+    expect_atomic_conflict_rejection(
         FixtureOpts::new(
             REPEATED_VAR_PURITY_ENTRY,
             vec![
@@ -31,7 +31,8 @@ fn nested_var_reinitializer_does_not_let_split_drop_getter_ordering() {
                 logical_module("after", &[Member::new("after")]),
             ],
         ),
-        &["atomic-factor-unit conflict", "cycle"],
+        &["before", "state"],
+        &[],
     );
 }
 

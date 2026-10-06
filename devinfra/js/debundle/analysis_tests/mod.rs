@@ -1024,3 +1024,24 @@ fn lazy_class_registration_cannot_suppress_an_eager_callback_source() {
         );
     }
 }
+
+/// One binding declared by several top-level statements is supported only when every site is a
+/// `var`; any other mix is refused, naming the binding and the first two sites.
+#[test]
+fn repeated_declaration_is_refused_unless_every_site_is_var() {
+    build_owner_graph(&analyze_facts(&parse("var pick = 1;\nvar pick = 2;"))).unwrap();
+    for source in [
+        "function pick() {}\nfunction pick() {}",
+        "var pick = 1;\nfunction pick() {}",
+    ] {
+        assert_eq!(
+            build_owner_graph(&analyze_facts(&parse(source))).unwrap_err(),
+            DuplicateTopLevelDeclaration {
+                binding: "pick".into(),
+                first: StatementOrdinal(0),
+                second: StatementOrdinal(1),
+            },
+            "{source}"
+        );
+    }
+}

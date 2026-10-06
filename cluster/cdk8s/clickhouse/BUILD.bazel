@@ -1,6 +1,6 @@
 # gazelle:ignore
 
-load("//devinfra/python:defs.bzl", "py_library")
+load("//devinfra/python:defs.bzl", "py_library", "py_test")
 
 package(default_visibility = ["//cluster/cdk8s:__pkg__"])
 
@@ -9,6 +9,7 @@ py_library(
     srcs = ["client.py"],
     visibility = [
         "//cluster/cdk8s:__pkg__",
+        "//cluster/cdk8s/agentplane:__pkg__",
         "//cluster/cdk8s/clickhouse:__pkg__",
         "//cluster/cdk8s/grafana:__pkg__",
         "//cluster/cdk8s/langfuse:__pkg__",
@@ -47,11 +48,13 @@ py_library(
     deps = [
         ":client",
         "//cluster/cdk8s:agent_access_profiles",
+        "//cluster/cdk8s:cilium",
         "//cluster/cdk8s:flux",
         "//cluster/cdk8s:manifest_roots",
         "//cluster/cdk8s:node_scheduling",
         "//cluster/cdk8s:public_coder_proxy",
         "//cluster/cdk8s:service_ref",
+        "//cluster/cdk8s/external_secrets:minted_secret",
         "//cluster/cdk8s/providers/clickhouse:clickhouseinstallation",
         "//cluster/cdk8s/providers/clickhouse:clickhousekeeperinstallation",
         "//cluster/cdk8s/providers/flux:kustomization",
@@ -73,5 +76,19 @@ py_library(
         "//cluster/cdk8s/providers/flux:helmrelease",
         "//cluster/cdk8s/providers/flux:kustomization",
         "@pypi//cdk8s",
+    ],
+)
+
+py_test(
+    name = "test_installation",
+    srcs = ["test_installation.py"],
+    data = ["@nodejs_linux_amd64//:bin/node"],
+    env = {"JSII_NODE": "$(rootpath @nodejs_linux_amd64//:bin/node)"},
+    deps = [
+        ":client",
+        ":installation",
+        "//:conftest",
+        "@pypi//cdk8s",
+        "@pypi//pytest_bazel",
     ],
 )

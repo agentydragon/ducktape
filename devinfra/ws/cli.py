@@ -14,6 +14,8 @@ from typing import Annotated
 
 import typer
 
+from util.agent_sandbox import CLAIMS_PLURAL
+
 NAMESPACE = "agent-workspaces"
 # Templates are LLM lanes (cluster/k8s/agents/agent-sandbox/): each has a
 # same-named SandboxTemplate + SandboxWarmPool. `ws templates` lists them.
@@ -70,7 +72,7 @@ def claim_manifest(name: str, ttl: str, now: datetime, template: str) -> dict:
 
 
 def _claims() -> list[dict]:
-    items: list[dict] = json.loads(_kubectl("get", "sandboxclaims", "-o", "json"))["items"]
+    items: list[dict] = json.loads(_kubectl("get", CLAIMS_PLURAL, "-o", "json"))["items"]
     return items
 
 

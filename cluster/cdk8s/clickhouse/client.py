@@ -54,6 +54,8 @@ ADMIN_CREDENTIALS = SecretRef(namespace=NAMESPACE, name="clickhouse-admin-creden
 # reflected, under the same name, into the namespace of the proxy that presents it.
 PUBLIC_CODER_USER = "public_coder_analytics"
 PUBLIC_CODER_CREDENTIALS = "clickhouse-public-coder-credentials"
+FINANCE_AGENT_USER = "finance_agent_aiquota"
+FINANCE_AGENT_CREDENTIALS = "clickhouse-finance-agent-credentials"
 
 IMAGE = (
     "clickhouse/clickhouse-server:26.8.3.105@sha256:d73903d1b61dfe825fc3810542f252966f33d3fd8efb3b3edcbbafb46b524b04"

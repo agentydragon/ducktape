@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import json
 from collections.abc import Sequence
 from typing import Any
 
@@ -12,7 +11,6 @@ from hamcrest.core.description import Description
 
 from agent_core.events import ToolCall, ToolCallOutput
 from agent_core.tool_provider import TextContent, ToolResult
-from openai_utils.model import FunctionCallItem
 
 # ------------------------
 # Tool result matchers
@@ -101,45 +99,3 @@ def assert_items_include_instances(items: Sequence[Any], *types: type[object]) -
         raise ValueError("at least one type is required")
     matchers = [instance_of(tp) for tp in types]
     assert_that(items, has_items(*matchers))
-
-
-# ------------------------
-# JSON argument matchers
-# ------------------------
-
-
-class HasJsonArguments(BaseMatcher[FunctionCallItem]):
-    """Matcher that checks FunctionCallItem has non-None arguments matching expected JSON."""
-
-    def __init__(self, expected: dict[str, Any]):
-        self.expected = expected
-
-    def _matches(self, item: Any) -> bool:
-        if not isinstance(item, FunctionCallItem):
-            return False
-        if item.arguments is None:
-            return False
-        try:
-            return bool(json.loads(item.arguments) == self.expected)
-        except json.JSONDecodeError, TypeError:
-            return False
-
-    def describe_to(self, description: Description) -> None:
-        description.append_text(f"FunctionCallItem with arguments matching {self.expected}")
-
-    def describe_mismatch(self, item: Any, mismatch_description: Description) -> None:
-        if not isinstance(item, FunctionCallItem):
-            mismatch_description.append_text(f"was {type(item).__name__}")
-        elif item.arguments is None:
-            mismatch_description.append_text("had None arguments")
-        else:
-            try:
-                actual = json.loads(item.arguments)
-                mismatch_description.append_text(f"arguments were {actual}")
-            except (json.JSONDecodeError, TypeError) as e:
-                mismatch_description.append_text(f"arguments were not valid JSON: {e}")
-
-
-def has_json_arguments(expected: dict[str, Any]) -> HasJsonArguments:
-    """Create matcher for FunctionCallItem with specific JSON arguments."""
-    return HasJsonArguments(expected)

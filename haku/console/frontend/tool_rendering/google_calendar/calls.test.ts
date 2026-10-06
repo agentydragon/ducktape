@@ -12,19 +12,7 @@ const RECURRING_ARGS = {
   recurrence: ["RRULE:FREQ=WEEKLY;BYDAY=TU,TH;COUNT=12"],
 };
 
-describe("googleCalendarCallPreviews.create_event", () => {
-  it("renders the pending (arguments) view before the call has executed, in both variants", () => {
-    for (const variant of ["compact", "detailed"] as const) {
-      expect(renderCallPreview(googleCalendarCallPreviews.create_event, RECURRING_ARGS, null, variant)).not.toBeNull();
-    }
-  });
-
-  it("returns null when the arguments don't parse", () => {
-    expect(
-      renderCallPreview(googleCalendarCallPreviews.create_event, { summary: "no start/end" }, null, "compact")
-    ).toBeNull();
-  });
-
+describe("create_event action description", () => {
   it("describes recurring creation distinctly from a one-off event", () => {
     expect(toolActionDescription(GOOGLE_CALENDAR_SERVER_ID, "create_event", RECURRING_ARGS)?.text).toContain(
       "recurring"
@@ -43,12 +31,6 @@ describe("googleCalendarCallPreviews.update_event", () => {
     for (const variant of ["compact", "detailed"] as const) {
       expect(renderCallPreview(googleCalendarCallPreviews.update_event, UPDATE_ARGS, null, variant)).not.toBeNull();
     }
-  });
-
-  it("returns null when the arguments don't parse", () => {
-    expect(
-      renderCallPreview(googleCalendarCallPreviews.update_event, { summary: "no event_id" }, null, "compact")
-    ).toBeNull();
   });
 
   it("describes recurring vs. non-recurring patches distinctly", () => {

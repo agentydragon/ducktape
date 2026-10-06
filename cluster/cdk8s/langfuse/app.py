@@ -246,7 +246,6 @@ def _values(storage: s3.PrivateBucket) -> dict[str, object]:
                 "ssl": False,
                 "autoMigrate": True,
             },
-            "clusterEnabled": True,
         },
         "redis": {
             "deploy": False,
@@ -271,8 +270,6 @@ def _values(storage: s3.PrivateBucket) -> dict[str, object]:
             "batchExport": {"prefix": "exports/"},
             "mediaUpload": {"prefix": "media/"},
         },
-        # Ingress disabled — using Gateway API HTTPRoute
-        "ingress": {"enabled": False},
     }
 
 

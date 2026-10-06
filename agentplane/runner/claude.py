@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 from collections.abc import Mapping
 from typing import TYPE_CHECKING
 from uuid import uuid4
@@ -28,15 +29,17 @@ from agentplane.native.claude import driver, facade, scenarios, wire
 from agentplane.native.claude.blocks import Block, TextBlock, ThinkingBlock, ToolResultBlock, ToolUseBlock, blocks_of
 from agentplane.protocol import event_pb2
 from agentplane.runner.adapter import HarnessAdapter
-from agentplane.runner.claude_history import read_history
+from agentplane.runner.claude_history import answered_message_ids, read_history
 from agentplane.runner.config import ClaudeLaunch
-from agentplane.runner.recovery import compare_item, observed_items
+from agentplane.runner.recovery import compare_item, observed_items, unknown_item, unknown_report
 
 # The generated protocol stubs' own stub chain, which the mypy aspect resolves for direct deps only.
 # gazelle:include_dep @pypi//protobuf
 
 if TYPE_CHECKING:
     from agentplane.runner.session import Frame, Session
+
+logger = logging.getLogger(__name__)
 
 
 class ClaudeAdapter(HarnessAdapter):
@@ -102,32 +105,71 @@ class ClaudeAdapter(HarnessAdapter):
 
     async def reconcile(self, turn_id: str, *, resumed: bool) -> event_pb2.ConversationReconciled:
         observed = await observed_items(self.session.journal, turn_id)
-        reason = "native continuation evidence is unavailable or unsupported"
+        undetermined: set[str] = set()
         if resumed:
             try:
                 recovered = await asyncio.to_thread(
                     read_history, self.session.native_directory / "claude", self._native_session_id
                 )
             except (OSError, ValueError) as error:
-                recovered = None
-                reason = f"cannot inspect native continuation: {error}"
+                return unknown_report(turn_id, observed, f"cannot inspect native continuation: {error}")
         else:
-            recovered = {key: item for key, item in observed.items() if item.completed}
+            # The process outlives an ordinary interruption and keeps what it completed, except
+            # thinking whose message has no other surviving block (`answered_message_ids`).
+            answered, unparsed = await self._answered_messages(turn_id)
+            recovered = {
+                key: item
+                for key, item in observed.items()
+                if item.completed and (item.kind != event_pb2.ITEM_KIND_REASONING or key.rsplit("#", 1)[0] in answered)
+            }
+            if unparsed:
+                # A line we could not read may be the frame that answered a thinking block, so thinking
+                # that would be absent for want of one is unknown.
+                undetermined = {
+                    key
+                    for key, item in observed.items()
+                    if item.completed and item.kind == event_pb2.ITEM_KIND_REASONING and key not in recovered
+                }
         decisions = []
         for item in observed.values():
-            if (
-                recovered is None
-                or item.kind == event_pb2.ITEM_KIND_REASONING
-                or (not resumed and item.kind == event_pb2.ITEM_KIND_TOOL_CALL and not item.completed)
-            ):
+            if not resumed and item.kind == event_pb2.ITEM_KIND_TOOL_CALL and not item.completed:
                 decisions.append(
-                    event_pb2.ItemRecovery(
-                        item_id=item.item_id, disposition=event_pb2.RECOVERY_DISPOSITION_UNKNOWN, reason=reason
+                    unknown_item(
+                        item.item_id,
+                        "Claude does not report whether it keeps a tool call interrupted before its result",
+                    )
+                )
+            elif item.item_id in undetermined:
+                decisions.append(
+                    unknown_item(
+                        item.item_id,
+                        "a native line of this turn could not be parsed, so whether another block of this message"
+                        " survived is unknown",
                     )
                 )
             else:
                 decisions.append(compare_item(item, recovered.get(item.item_id)))
         return event_pb2.ConversationReconciled(turn_id=turn_id, items=decisions)
+
+    async def _answered_messages(self, turn_id: str) -> tuple[set[str | None], bool]:
+        """The turn's messages with a surviving block beyond thinking, from its journaled assistant
+        frames: a tool call's item id carries no message id, so the items alone cannot say. Also
+        whether any native line could not be parsed, which leaves the answer incomplete."""
+        messages = []
+        unparsed = False
+        async for entry in self.session.journal.turn_events(turn_id):
+            native = entry.event.native
+            if native.direction != event_pb2.DIRECTION_FROM_HARNESS:
+                continue
+            try:
+                frame = wire.parse_frame(json.loads(native.line))
+            except ValueError:
+                logger.warning("turn %s: cannot parse a native line: %r", turn_id, native.line[:200], exc_info=True)
+                unparsed = True
+                continue
+            if isinstance(frame, wire.AssistantFrame):
+                messages.append((frame.message.id, frame.message.content))
+        return answered_message_ids(messages), unparsed
 
     async def submit(self, command_id: str, text: str) -> None:
         if not self.session.active_turn_id:

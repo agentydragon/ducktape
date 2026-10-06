@@ -23,13 +23,12 @@ pub fn load(path: &Path) -> Result<Rules> {
 mod tests {
     use super::*;
     use codex_execpolicy::{Decision, MatchOptions};
+    use std::io::Write;
 
     fn policy_from(text: &str) -> Policy {
-        let tmp = std::env::temp_dir().join("codex_execpolicy_audit_rules_test.txt");
-        std::fs::write(&tmp, text).unwrap();
-        let r = load(&tmp).unwrap();
-        let _ = std::fs::remove_file(&tmp);
-        r.0
+        let mut file = tempfile::NamedTempFile::new().unwrap();
+        file.write_all(text.as_bytes()).unwrap();
+        load(file.path()).unwrap().0
     }
 
     fn allows(policy: &Policy, argv: &[&str]) -> bool {

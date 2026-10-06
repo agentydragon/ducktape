@@ -10,10 +10,10 @@ py_binary(
     srcs = ["verify_dashboard.py"],
     data = [
         "//cluster/cdk8s/monitoring:dashboards",
-        "@playwright_browsers//:chromium-headless-shell",
+        "@chrome_headless_shell//:executable",
     ],
     env = {
-        "CHROMIUM_HEADLESS_SHELL": "$(rootpath @playwright_browsers//:chromium-headless-shell)",
+        "CHROMIUM_HEADLESS_SHELL": "$(rootpath @chrome_headless_shell//:executable)",
     },
     main = "verify_dashboard.py",
     deps = [

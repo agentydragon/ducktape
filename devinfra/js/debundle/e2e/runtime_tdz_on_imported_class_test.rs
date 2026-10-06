@@ -94,8 +94,5 @@ fn at_init_use_of_residual_class_is_rejected_to_avoid_tdz() {
     // multi-module SCC in I that contains a constraining edge is
     // unrealizable. Pipeline rejects with a cycle report instead
     // of emitting JS that would TDZ at runtime.
-    expect_rejection(
-        opts_for_fixture(),
-        &["unrealizable", "cycle", "tdz", "cannot access"],
-    );
+    expect_cycle_rejection(opts_for_fixture(), &["mod_logger"]);
 }

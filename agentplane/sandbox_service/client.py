@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import asyncio
-from collections.abc import Awaitable, Callable
+from collections.abc import Awaitable, Callable, Mapping
 from pathlib import Path
 from typing import Never
 
@@ -11,6 +11,7 @@ import grpc
 from google.protobuf.empty_pb2 import Empty
 from google.protobuf.message import Message
 
+from agentplane.grpc_options import grpc_channel_option_kvps
 from agentplane.protocol import command_pb2, event_log_pb2
 from agentplane.runner import protocol_pb2 as runner_pb2
 from agentplane.runner.errors import RunnerError, StreamClosedError
@@ -85,6 +86,7 @@ class SandboxServiceClient:
         request_timeout_s: float = 20,
         lifecycle_timeout_s: float = 310,
         follow_timeout_s: float = 960,
+        channel_options: Mapping[str, int | str] | None = None,
     ) -> None:
         if min(request_timeout_s, lifecycle_timeout_s, follow_timeout_s) <= 0:
             raise ValueError("timeouts must be positive")
@@ -94,6 +96,7 @@ class SandboxServiceClient:
         self.request_timeout_s = request_timeout_s
         self.lifecycle_timeout_s = lifecycle_timeout_s
         self.follow_timeout_s = follow_timeout_s
+        self._channel_options = channel_options
         self._channel: grpc.aio.Channel | None = None
         self._stub: protocol_pb2_grpc.SandboxServiceAsyncStub | None = None
 
@@ -101,7 +104,10 @@ class SandboxServiceClient:
     def stub(self) -> protocol_pb2_grpc.SandboxServiceAsyncStub:
         if self._stub is None:
             # No retry service config: uncertain mutations need domain-specific reconciliation.
-            self._channel = grpc.aio.insecure_channel(self.target, options=(("grpc.enable_retries", 0),))
+            self._channel = grpc.aio.insecure_channel(
+                self.target,
+                options=grpc_channel_option_kvps(self._channel_options, required={"grpc.enable_retries": 0}),
+            )
             self._stub = protocol_pb2_grpc.SandboxServiceStub(self._channel)
         return self._stub
 
@@ -155,7 +161,7 @@ class SandboxServiceClient:
     async def grant_egress(self, sandbox: Sandbox, policies: list[str]) -> str:
         destination = SandboxDestination(owner=sandbox.service_account, sandbox=sandbox.name, sandbox_uid=sandbox.uid)
         result = await self.unary(
-            self.stub.GrantEgress, protocol_pb2.GrantEgressRequest(destination=destination, policies=policies)
+            self.stub.GrantEgress, protocol_pb2.GrantEgressRequest(destination=destination, egress_policies=policies)
         )
         return result.binding_name
 

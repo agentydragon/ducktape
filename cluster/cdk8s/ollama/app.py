@@ -22,6 +22,7 @@ from external_secrets_crds.io.external_secrets import (
     ExternalSecretSpecTargetDeletionPolicy,
 )
 from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpecDeletionPolicy, KustomizationSpecHealthChecks
+from jinja2 import Environment, StrictUndefined
 
 from cluster.cdk8s import namespaces
 from cluster.cdk8s.external_secrets.minted_secret import mint_bearer_secret
@@ -39,6 +40,10 @@ from cluster.cdk8s.manifest_roots import GENERATED_ROOT
 from cluster.cdk8s.namespaces import Vpa
 from cluster.cdk8s.secret_ref import SecretRef
 from cluster.cdk8s.service_ref import Pods, Port, ServiceRef
+
+# Avoid colliding with this module's ollama Flux constructor.
+from model_catalog import ollama as models
+from util.bazel.runfiles import get_required_path, own_repo_rlocation
 
 OUTPUT_DIR = f"{GENERATED_ROOT}/ollama"
 _SOURCE_DIR = "cluster/cdk8s/ollama"
@@ -174,7 +179,7 @@ def _ollama_container() -> k8s.Container:
             k8s.EnvVar(name="NVIDIA_VISIBLE_DEVICES", value="all"),
             k8s.EnvVar(name="OLLAMA_KV_CACHE_TYPE", value="q8_0"),
             k8s.EnvVar(name="OLLAMA_FLASH_ATTENTION", value="1"),
-            k8s.EnvVar(name="OLLAMA_CONTEXT_LENGTH", value="131072"),
+            k8s.EnvVar(name="OLLAMA_CONTEXT_LENGTH", value=str(models.DEFAULT_NUM_CTX)),
             # Default 5m is shorter than a cold read of the 112GB qwen3.8-flash-next-q4
             # weights off HDD-backed lvm-proxmox-hdd; Ollama abandons the load attempt
             # (and does not retry) once this elapses.
@@ -453,6 +458,20 @@ def chart(app: App) -> Chart:
 
 def write_config_maps(root: Path) -> list[ConfigMapArgs]:
     """Write the ConfigMaps' payloads into `OUTPUT_DIR`; return the `configMapGenerator` entries."""
+    setup = root / OUTPUT_DIR / _SETUP_SCRIPT
+    setup.parent.mkdir(parents=True, exist_ok=True)
+    setup.write_text(
+        Environment(undefined=StrictUndefined, keep_trailing_newline=True)
+        .from_string(get_required_path(own_repo_rlocation(f"{_SOURCE_DIR}/{_SETUP_SCRIPT}.j2")).read_text())
+        .render(
+            qwen=models.QWEN_IQ4XS_128K,
+            qwen_256k=models.QWEN_IQ4XS_256K,
+            gpt_oss_20b=models.GPT_OSS_20B,
+            gpt_oss_120b=models.GPT_OSS_120B,
+            gemma4=models.GEMMA4,
+            embedding=models.QWEN_EMBEDDING,
+        )
+    )
     fixed_name = GeneratorOptions(disable_name_suffix_hash=True)
     return [
         ConfigMapArgs(
@@ -460,7 +479,7 @@ def write_config_maps(root: Path) -> list[ConfigMapArgs]:
             namespace=_NAMESPACE,
             options=fixed_name,
             files=[
-                copy_source_file(root, OUTPUT_DIR, f"{_SOURCE_DIR}/{_SETUP_SCRIPT}"),
+                _SETUP_SCRIPT,
                 copy_source_file(root, OUTPUT_DIR, f"{_SOURCE_DIR}/{_LINK_SCRIPT}"),
                 copy_source_file(root, OUTPUT_DIR, f"{_SOURCE_DIR}/qwen38-ssd-shards.tsv"),
                 copy_source_file(root, OUTPUT_DIR, f"{_SOURCE_DIR}/qwen38-ssd-derived-shards.tsv"),

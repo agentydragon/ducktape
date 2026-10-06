@@ -40,7 +40,6 @@ py_test(
         "//haku/console:tool_call_actor",
         "//x/google_mcp_server:gmail",
         "//x/google_mcp_server:google_calendar",
-        "@pypi//pydantic",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],

@@ -26,6 +26,7 @@ dependencies = [
     "structlog",
     "platformdirs>=4.11.8",
     "atomicwrites>=1.4.1",
+    "prometheus-client>=0.26.0",
 
     # Web frameworks
     "fastapi>=0.115.0",
@@ -36,14 +37,8 @@ dependencies = [
     # mcp/fastmcp v4 use httpx2 for SSE and no longer pull this in transitively;
     # agentplane's replication tests use it directly against a real httpx SSE client.
     "httpx-sse>=0.4.3",
-    # IDNA A-label canonicalization for exact-origin HTTP grants (haku/console).
-    "idna>=3.4",
     "websockets>=15.0",
     "apscheduler>=3.11.3",
-    # CRDT for the Study Casino multi-device sync (also indirectly pulled in
-    # by datalayer-pycrdt; pinned here as a direct dep so the casino doesn't
-    # depend on that transitive edge).
-    "pycrdt>=0.14,<0.15",
     "hass-client>=1.3.1",
     # Python cdk8s uses jsii to synthesize ordinary Kubernetes YAML.
     "cdk8s>=2.70.101,<3",
@@ -98,8 +93,6 @@ dependencies = [
     "pathspec",
     "canonicaljson>=1.6.0",
     "compact-json>=1.4.0",
-    "tomlkit",
-    "tomli>=2.0.0",
     "tomli-w>=1.0.0",
     # HCL parsing: cluster/validation/test_nebula_mesh.py parses ovh-nodes.tf
     # structurally instead of regex-scraping it. pygohcl wraps HashiCorp's Go HCL2
@@ -122,7 +115,6 @@ dependencies = [
     "PyGithub>=2.10.0",
 
     # Visualization
-    "plotnine>=0.13.0",
     "matplotlib>=3.11.2",
     "networkx>=3.0",
     "types-networkx",
@@ -130,8 +122,6 @@ dependencies = [
 
     # Jupyter
     "ipykernel>=7.3.0",
-    "jupyter-mcp-server>=0.23.0",
-    "jupyter-server>=2.21.0",
 
     # Matrix
     "mautrix>=0.20.0",
@@ -139,6 +129,7 @@ dependencies = [
 
     # Banking (plaid_utils)
     "plaid-python>=18.0.0",
+    "babel>=2.18.0",
 
     # wt (worktree)
     "colorama>=0.4",
@@ -160,12 +151,12 @@ dependencies = [
 
     # tana
     "mitmproxy>=12.2,<13",
-    "playwright>=1.45",
+    # Exact: the driver is tested against one Chromium, and `@chrome_headless_shell` in MODULE.bazel
+    # is that Chromium. Bump both together (MODULE.bazel says how).
+    "playwright==1.62.0",
 
     # ducktape-llm-common
     "humanize>=4.0.0",
-    "ruff>=0.16.7",
-    "pre-commit>=4.6.2",
 
     # finance
     "absl-py",
@@ -174,21 +165,17 @@ dependencies = [
     # unidiff
     "unidiff>=0.7.5",
 
-    # props
-    "vulture>=2.14",
-
     # llm/html
-    "markdown>=3.5.2",
     "markdown-it-py>=4.2.0",
-    "markdownify>=0.11.0",
-    "lxml>=6.1.3",
 
     # habitify
     "python-dotenv>=1.2.3",
 
+    # rl_finetune: the Wordle environment's word lists (>=3.9 for the JSON tagger models)
+    "nltk>=3.9",
+
     # ember
     "jupyter-client>=8.10.0",
-    "ipython>=9.17.1",
     "kubernetes>=32.0",
     "kubernetes-asyncio>=26.1",
 
@@ -197,7 +184,6 @@ dependencies = [
     # Claude tooling
     "opentelemetry-api>=1.20",
     "opentelemetry-sdk>=1.20",
-    "opentelemetry-exporter-otlp-proto-http>=1.20",
     "pyjwt>=2.14.0",
 
     "numpy>=2.5.3",
@@ -206,8 +192,8 @@ dependencies = [
     # devinfra visual-review publisher — RGBA decode + pixel diff.
     "Pillow",
 
-    # augur (financial-futures simulator) — DCC-GARCH market model uses arch
-    "arch>=7",
+    # augur (financial-futures simulator) — calibration's binomial confidence intervals
+    "statsmodels>=0.15.0",
     # augur — NumPyro PPL spike (a JAX-backed probabilistic programming
     # library); evaluating whether to fold the augur PredictiveSeriesModel /
     # ExogenousPathModel protocols behind a single generative-model API.
@@ -215,7 +201,6 @@ dependencies = [
     # augur — array dtype/shape annotations; mypy treats these as the underlying
     # array type, while optional runtime checking validates shapes during JAX tracing.
     "jaxtyping>=0.3.11",
-    "beartype>=0.22.9",
 
     # skills
     "asyncvnc>=1.3.0",
@@ -241,11 +226,6 @@ dependencies = [
     # {crewai,langgraph}.md): neither had a release compatible with mcp-sdk >=2.0 (crewai
     # requires mcp~=1.28.1; langchain-mcp-adapters requires mcp<2.0.0, tracked at
     # langchain-ai/langchain-mcp-adapters#578), which blocked the #5786 migration.
-
-    # cluster/k8s/litellm/app/test_openclaw_models.py parses .json5 config files directly.
-    # It rode in as crewai's transitive dependency until crewai was removed above -- pinned
-    # here explicitly now that nothing else pulls it in.
-    "json5",
 
     # git_commit_ai
     "mako>=1.3",
@@ -274,16 +254,8 @@ dependencies = [
     "hypothesis>=6.0",
     "pytest>=9.1.1",
     "pytest-asyncio>=1.4.0",
-    "pytest-timeout>=2.3",
-    "pytest-xdist>=3.0",
-    "pytest-mock>=3.10.0",
-    "pytest-env>=1.7.1",
-    "pytest-cov>=7.1.0",
-    "pytest-postgresql>=9.1,<10",
-    "pytest-playwright>=0.9.0",
     "pytest-bazel>=0.1.6",
     "pytest-httpx2>=1.0.0",
-    "pytest-shard>=0.1.2",
     "testcontainers[postgres]>=4.14.1",
     "respx>=0.22",
     "syrupy>=6.1.1",
@@ -297,12 +269,6 @@ dependencies = [
     "grpcio-tools>=1.84.0",
     "mypy-protobuf>=3.6",
 
-    # Connect RPC for the Agentplane app's browser-facing services: an ASGI server mounted on the
-    # existing origin, and its protoc plugin. Connecpy generates against Google's protobuf runtime,
-    # so the app keeps one message runtime for both its `_pb2` types and its RPCs.
-    "connecpy>=2.3.0",
-    "protoc-gen-connecpy>=2.3.0",
-
     # Type stubs for mypy
     "types-PyYAML",
     "types-requests",
@@ -310,7 +276,6 @@ dependencies = [
     "types-colorama",
     "types-Pygments",
     "types-python-dateutil",
-    "types-Markdown",
     "types-tabulate",
     "types-aiofiles",
     "types-psutil",
@@ -327,25 +292,6 @@ dependencies = [
     # fails because the runtime packages aren't otherwise in the pip lockfile.
     "paramiko",
     "pytz",
-
-    "litellm>=1.0.0",
-]
-
-# Override rfc3987-syntax with a fork that precompiles the Lark parser: one shared parser
-# instead of N, ~9x faster to import (0.8s -> 0.09s). It arrives transitively via jsonschema
-# under mcp/fastmcp, so most Python processes in this repo pay that import.
-# Pending upstream merge: https://github.com/willynilly/rfc3987-syntax/pull/11
-#
-# Gotcha, worth the paragraph because it cost eight months of the optimisation silently not
-# happening: this must be an archive URL pinned to a commit, and the fork must carry a version
-# PyPI does not serve. The lock is generated with hashes; uv cannot hash a git ref, and for a
-# URL whose name+version match a registry release it emits the *registry's* hashes, so the
-# download fails its checksum. A `[tool.uv.sources]` git entry plus a bare override therefore
-# resolved to plain PyPI 1.1.0 from 57d94a89c (2025-12-30, the commit that turned hashes on)
-# until this was fixed -- inert config that read as if the fork were in use.
-[tool.uv]
-override-dependencies = [
-    "rfc3987-syntax @ https://github.com/agentydragon/rfc3987-syntax/archive/048b953.tar.gz",
 ]
 
 # Tell setuptools this is not a package (just uv config)

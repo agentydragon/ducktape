@@ -1,5 +1,12 @@
 # GitOps Terraform TODOs
 
+- [ ] Rename `tf/gitops/dns-records` and its `Terraform` resource to reflect
+      its remaining job: Route 53 domain registration and nameserver delegation.
+      Keep the existing `dns_records` Postgres state schema and preserve the
+      registered domain during the resource handoff; update the Flux health
+      check, generated manifests, and DNS docs together. Verify the record
+      handoff has applied, then remove the obsolete `removed` blocks from the
+      module.
 - [ ] Now that the Authentik provider is on 2026.8, audit every
       `authentik_provider_oauth2`: declare the narrowest explicit `grant_types` set
       for each consumer instead of relying on Authentik defaults, then validate the

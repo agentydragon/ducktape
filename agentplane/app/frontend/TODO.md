@@ -5,7 +5,7 @@ Gaps to close if a workflow needs them; none is committed.
 ## Per-Action widget schemas generated from the servers' models
 
 The SSH `exec` widgets' zod schemas (`actions/rendering/ssh.tsx`) and the stored result in
-`visual/harness.tsx` mirror `x/ssh_mcp_server/server.py`'s `exec` signature and `ExecResult` by
+`harness/harness.tsx` mirror `x/ssh_mcp_server/server.py`'s `exec` signature and `ExecResult` by
 hand. The schemas are strict, so a field the server adds sends real results to the generic view
 while every test still passes. Consider generating them from the pydantic models, for example from
 the JSON Schema FastMCP publishes as the tool's `inputSchema` and `outputSchema`, converted to zod at
@@ -17,13 +17,10 @@ a field a harness adds sends every such call to the JSON view while the tests st
 
 ## Thread view UX
 
-- **Per-message evidence icon is always-on visual noise**: `EvidenceToggle` (`threads/thread_evidence.tsx`, the
-  magnifying-glass `IconZoomCode` button) renders unconditionally at every one of its 7 call sites, one per
-  message/entity, whether or not a reader is looking at that row. Consider a per-message overflow affordance
-  instead -- e.g. a vertical-dots button, shown only on hover (desktop) or tap (mobile), holding this and other
-  message-level debug actions. This would be its own menu, separate from the thread's topbar menu (`topbar.tsx`'s
-  `TopbarActions`, holding "Debug history" / "Shut down harness" / thread id) -- a per-message menu and a
-  per-thread menu, not one merged control, even though both would share the dots-icon pattern.
+- **Give block Markdown clear one-line summaries**: `Markdown`'s `singleLine` mode makes lists,
+  tables, and blockquotes inline, but removes list markers and flattens table cells without visible
+  separators; a blockquote also loses its quote cue. Choose compact separators and markers that keep
+  these structures readable in reasoning previews, while leaving the expanded Markdown unchanged.
 - **Reasoning disclosure toggle with nothing behind it**: the reasoning branch of `EntityCard`'s body
   (`threads/thread_cards.tsx`) wraps a reasoning item's text in `LazyBody`'s `RetainedDisclosure` -- a
   `<details>` (`threads/retained_disclosures.tsx`) whose body is shown only once expanded, though the window reads it
@@ -43,6 +40,10 @@ a field a harness adds sends every such call to the JSON view while the tests st
   alongside a sticky summary: draw a continuous vertical rail down the open block's left edge, clickable anywhere
   along its length to collapse -- reachable from wherever the reader has scrolled to, without depending on any
   one row staying pinned.
+- **Fold adjacent reasoning items inside mixed tool/reasoning runs**: `historyRows` groups consecutive tool calls and
+  reasoning items together, and opening a run currently shows each item separately. When reasoning items are
+  adjacent within a mixed run, fold each consecutive reasoning group into a nested disclosure whose collapsed line
+  joins their text and whose expanded body shows the original individual items in order.
 - **Consider squashing the "observation" naming layer**: not remembered as a deliberate design choice. `Event`
   (`protocol/event.proto`)'s payload is a `oneof` field literally named `observation`; that name then propagated
   outward into `runner/observation.py`'s `Observation` type, the archive/API layer

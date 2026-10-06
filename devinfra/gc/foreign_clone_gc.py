@@ -164,9 +164,10 @@ def classify_foreign_clone(
     blocking = next((item for item in classifications if not isinstance(item, PrunableWorktree)), None)
     if blocking is None:
         return PrunableForeignClone(clone, "every worktree it holds is prunable")
+    reason = f"{blocking.worktree.path}: {worktree_gc.describe_reason(blocking)}"
     if isinstance(blocking, RetainedWorktree):
-        return RetainedForeignClone(clone, f"{blocking.worktree.path}: {blocking.reason}")
-    return ReviewForeignClone(clone, f"{blocking.worktree.path}: {blocking.reason}")
+        return RetainedForeignClone(clone, reason)
+    return ReviewForeignClone(clone, reason)
 
 
 @dataclass(frozen=True, slots=True)

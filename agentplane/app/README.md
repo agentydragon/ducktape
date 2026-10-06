@@ -39,10 +39,10 @@ bbr test //agentplane/app/...
   fields.
 - Sandbox provisioning, grants, and runner control are owned by `../sandbox_service/` and reached
   through its authenticated gRPC client. The app retains read-only Kubernetes projections for UI updates.
-- `egress.py`: read-only policy/binding projections for the UI, with mutations delegated to Sandbox
+- `egress.py`: read-only egress-policy/binding projections for the UI, with mutations delegated to Sandbox
   Service. Bindings remain desired-state grants, with expiry/revocation per binding and Flux-owned
   bindings protected from app revocation ([composition](../docs/egress_composition.md)).
-  `decisions.py` reads the proxy's recent decisions; an unreachable proxy leaves policy views readable.
+  `decisions.py` reads the proxy's recent decisions; an unreachable proxy leaves egress-policy views readable.
 - `action_policy.py`: read-only binding views composed with Action Service's effective-policy answer.
   Launch grants and binding mutations belong to Sandbox Service, not this app or its preset catalog.
 - `threads/`: the app-owned PostgreSQL archive and presentation state for
@@ -94,7 +94,7 @@ bbr test //agentplane/app/...
   `:migrate`, which fails when the migrated schema differs from the models; the server itself
   never creates or checks tables at startup. `:image` and `:migration_image` are separate OCI targets.
 - `frontend/`: the React SPA on the repo's `ts_library` and esbuild toolchain, with the visual
-  scenarios under `frontend/visual/`.
+  scenarios under `frontend/harness/`.
 
 ## Live views
 
@@ -138,10 +138,11 @@ revised continuation content gets a new payload revision without changing the ob
 execution result. Original observations remain in the archive. The app does not infer recovery
 behavior from the harness type.
 
-The thread UI labels retained, revised, and unknown continuation state. Absent content is
-collapsed under "not retained in model context" and remains expandable. Revised tool content
-is labeled "Continuation output"; execution success/failure stays separate. Tool runs summarize
-recovery state even while collapsed, and interrupted items do not become streaming again when
+The thread UI badges revised and unknown continuation state; retained content, the ordinary
+outcome, and a succeeded tool call carry no badge. Absent content is collapsed under "not retained
+in model context" and remains expandable. Revised tool content is labeled "Continuation output";
+the execution outcome stays separate (a failure is badged, a success is not). Tool runs summarize
+their badges even while collapsed, and interrupted items do not become streaming again when
 a later turn starts.
 
 The retained-event SSE API reads committed PostgreSQL events on whichever replica receives
@@ -174,7 +175,7 @@ native harness recovery, or PostgreSQL host/storage loss.
 
 `test_thread_browser.py` loads the built SPA in hermetic Chromium against real application
 processes, PostgreSQL and Electric through a real HTTP/2 ingress. Only the runner source,
-Kubernetes and authentication boundaries are controlled. Its cases are split across four Bazel
+Kubernetes and authentication boundaries are controlled. Its cases are split across Bazel
 shards. Traces and screenshots are test artifacts; inspect the images as well as results.
 
 Coverage includes older-item streaming, selective bodies/debug, archived threads,
@@ -265,21 +266,25 @@ The retained snapshot stays navigable during an outage, with separate warnings f
 connection, stale Kubernetes watch, and disconnected database listener. A Thread's live dot
 requires fresh sources, a running Sandbox, and its last observed harness state; a stale persisted
 RUNNING state alone does not make a suspended or deleted Sandbox look live. The snapshot includes
-the feed's active turn so the sidebar and open-thread composer can use the same status-dot
-component. These are operational snapshots, not replacements for a Thread's runner Event prefix.
+the feed's active turn, and how the Thread's last completed turn ended (`last_turn_status`, read
+from the newest stored `turn_completed` entry through a partial index), so the sidebar and
+open-thread composer can use the same status-dot component. These are operational snapshots, not
+replacements for a Thread's runner Event prefix.
 
 Every status indicator is drawn from one table, `frontend/status_mark.ts`, which gives each thread
 and Sandbox status its icon component (a Tabler icon, or one of `custom_mark_icons.tsx`) and color,
 and each thread status also its favicon shape and tab-title glyph. The in-page glyph (`mark_glyph.tsx`)
 and the browser-tab favicon (`thread_favicon.ts`, which hand-draws its own SVG) only render what it
 says. A thread shows two green chevrons moving left to right in the page while a turn runs, a steady
-light blue dot when its harness is live and waiting, a gray power icon when its harness is down, a red
-dot when its runner feed failed, and a gray dot when nothing else is live. A Sandbox shows a light blue
+light blue dot when its harness is live and waiting, a red warning triangle instead of that dot while
+the last turn to complete failed, was lost or ended without a status (an interrupt does not count; the
+next turn to complete without an error brings the dot back), a gray power icon when its harness is
+down, a red dot when its runner feed failed, and a gray dot when nothing else is live. A Sandbox shows a light blue
 play icon when its Pod is ready, a yellow clock while it comes up, a gray pause when suspended, a red
 cross when failed, and a gray cross once deleted or ended.
 
 The favicon draws the same marks but never moves, and the tab title leads with a plain text glyph for
-the thread's status (`»` running, `●` idle, `⏻` harness down, `○` not live, `×` failed). A favicon is only seen in a
+the thread's status (`»` running, `●` idle, `!` last turn errored, `⏻` harness down, `○` not live, `×` failed). A favicon is only seen in a
 background tab, where browsers throttle timers, so both change on status events rather than on a clock.
 
 ## Shutdown
@@ -416,10 +421,10 @@ linked group becomes available is the Action Service's contract
 
 `GET /presets` publishes configured Sandbox presets and their inherited editable Thread defaults.
 `POST /sandboxes` keeps its no-preset shape and additionally accepts an optional preset: omitted
-fields inherit, while explicit policies and thread fields replace preset values. The Sandbox
+fields inherit, while explicit egress policy selections and thread fields replace preset values. The Sandbox
 annotation stores the preset name and only explicit thread edits, so later sessions resolve against
-the current configured default instead of freezing a copied form. `action_policy_sets` works as
-`policies` does: a preset pre-fills the pick, an explicit list replaces it (an empty one binds
+the current configured default instead of freezing a copied form. `action_policy_sets` works like
+the egress policy selection: a preset pre-fills the pick, an explicit list replaces it (an empty one binds
 nothing), and a launch without a preset may pick sets of its own. The launch writes one
 `ActionPolicyBinding` naming the picked sets for the new Sandbox; a set name the namespace does not
 hold is refused with 422 before the Sandbox exists, as an unknown egress policy is. The create form

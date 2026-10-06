@@ -25,7 +25,7 @@
 - pnpm workspace with per-project package.json files
 - aspect_rules_js for Bazel integration
 - Vite or esbuild via the Bazel rules, depending on the frontend
-- A React component harness with Puppeteer visual regression tests (props/frontend)
+- A React component harness with Playwright visual render-health tests (props/frontend)
 
 ## Decisions Made
 

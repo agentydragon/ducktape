@@ -1191,6 +1191,64 @@ mod tests {
         );
     }
 
+    // `docs/cli.md`, `docs/design.md` and the `debundle_intake` skill tell
+    // consumers to key on these wire names and the `status` spelling; the typed
+    // tests read the struct, so a serde rename would not reach them.
+    #[test]
+    fn blocked_proposal_serializes_the_keys_consumers_read() {
+        let a = residual_owner("a", 1, &["a"], 10);
+        let b = residual_owner("b", 2, &["b"], 10);
+        let graph = graph_of(
+            vec![a.clone(), b.clone()],
+            vec![owner_edge("e1", "a", "b", DepKind::EagerUse, true)],
+            vec![
+                atomic_unit_for("atomic:0", &[&a]),
+                atomic_unit_for("atomic:1", &[&b]),
+            ],
+            vec![],
+        );
+        let json = serde_json::to_value(propose(&graph, &no_claims(), 10_000).unwrap()).unwrap();
+        let proposal = |binding: &str| {
+            json["proposals"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .find(|p| p["binding_ids"] == serde_json::json!([binding]))
+                .unwrap_or_else(|| panic!("no proposal for `{binding}`: {json:#}"))
+        };
+        let (blocked, peelable) = (proposal("a"), proposal("b"));
+        assert_eq!(blocked["status"], "blocked_residual_dependency");
+        assert_eq!(peelable["status"], "peelable_now");
+        assert_eq!(blocked["owner_ids"], serde_json::json!(["a"]));
+        assert_eq!(
+            blocked["other_residual_cells_referenced"],
+            serde_json::json!([peelable["proposed_module_id"]]),
+        );
+    }
+
+    #[test]
+    fn extension_proposal_serializes_extension_owner_ids() {
+        let a = active_owner("a", 1, &["a"], 10, "ui/x");
+        let b = residual_owner("b", 2, &["b"], 5);
+        let graph = graph_of(
+            vec![a.clone(), b.clone()],
+            vec![owner_edge("e1", "b", "a", DepKind::EagerUse, true)],
+            vec![
+                atomic_unit_for("atomic:0", &[&b]),
+                atomic_unit_for("atomic:1", &[&a]),
+            ],
+            vec![atomic_edge("atomic_edge:0", "atomic:0", "atomic:1")],
+        );
+        let json =
+            serde_json::to_value(propose(&graph, &claims(&[("a", "ui/x")]), 10_000).unwrap())
+                .unwrap();
+        assert_eq!(json["proposals"][0]["extends_module_id"], "ui/x");
+        assert_eq!(
+            json["proposals"][0]["extension_owner_ids"],
+            serde_json::json!(["b"]),
+        );
+    }
+
     #[test]
     fn edges_to_active_modules_count_outgoing_to_active_claims() {
         let a = active_owner("a", 1, &["a"], 10, "ui/x");

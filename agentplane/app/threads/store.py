@@ -10,14 +10,17 @@ from datetime import datetime
 from uuid import UUID
 
 from google.protobuf.json_format import ParseDict
-from sqlalchemy import select
+from pydantic import JsonValue
+from sqlalchemy import Select, literal_column, select
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
+from sqlalchemy.orm import InstrumentedAttribute
 
 from agentplane.app.database_updates import Channel, notify
 from agentplane.app.threads.events.event_log import ThreadNotFoundError
 from agentplane.app.threads.models import Event, EventLog, FeedState, Thread
 from agentplane.app.threads.view.views import ThreadView
+from agentplane.protocol import event_log_pb2, event_pb2
 from agentplane.runner import protocol_pb2
 
 # The generated protocol stubs' own stub chain, which the mypy aspect resolves for direct deps only.
@@ -43,8 +46,9 @@ class ThreadStore:
         last_at = (
             select(Event.at).where(Event.thread_id == EventLog.id).order_by(Event.at.desc()).limit(1).scalar_subquery()
         )
+        last_turn = _last_turn_completed(EventLog.id).scalar_subquery()
         query = (
-            select(EventLog, Thread, last_cursor, last_at, FeedState.attached, FeedState.end)
+            select(EventLog, Thread, last_cursor, last_at, FeedState.attached, FeedState.end, last_turn)
             .outerjoin(Thread, Thread.id == EventLog.id)
             .outerjoin(FeedState, FeedState.thread_id == EventLog.id)
             .order_by(EventLog.created_at.desc())
@@ -57,8 +61,8 @@ class ThreadStore:
             query = query.where(Thread.archived.is_not(True))
         async with self._sessions() as session:
             return [
-                _view(log, thread, last_cursor, last_at, attached, end)
-                for log, thread, last_cursor, last_at, attached, end in await session.execute(query)
+                _view(log, thread, last_cursor, last_at, attached, end, last_turn)
+                for log, thread, last_cursor, last_at, attached, end, last_turn in await session.execute(query)
             ]
 
     async def get_thread(self, thread_id: UUID) -> ThreadView | None:
@@ -89,9 +93,20 @@ class ThreadStore:
         return view
 
 
+def _last_turn_completed(thread_id: UUID | InstrumentedAttribute[UUID]) -> Select[tuple[dict[str, JsonValue]]]:
+    """The thread's newest `turn_completed` entry. The kind is written inline rather than bound, so the
+    planner can match the partial index whatever the plan cache holds."""
+    return (
+        select(Event.payload)
+        .where(Event.thread_id == thread_id, Event.kind == literal_column("'turn_completed'"))
+        .order_by(Event.cursor.desc())
+        .limit(1)
+    )
+
+
 async def _last(
     session: AsyncSession, thread_id: UUID
-) -> tuple[int | None, datetime | None, dict[str, object] | None, dict[str, str] | None]:
+) -> tuple[int | None, datetime | None, dict[str, object] | None, dict[str, str] | None, dict[str, JsonValue] | None]:
     last_cursor = await session.scalar(
         select(Event.cursor).where(Event.thread_id == thread_id).order_by(Event.cursor.desc()).limit(1)
     )
@@ -104,6 +119,7 @@ async def _last(
         last_at,
         (state.attached if state is not None else None),
         (state.end if state is not None else None),
+        await session.scalar(_last_turn_completed(thread_id)),
     )
 
 
@@ -128,6 +144,7 @@ def _view(
     last_at: datetime | None,
     attached: dict[str, object] | None,
     end: dict[str, str] | None,
+    last_turn: dict[str, JsonValue] | None,
 ) -> ThreadView:
     attachment = ParseDict(attached, protocol_pb2.Attached()) if attached is not None else None
     harness_state = attachment.harness_state if attachment is not None else protocol_pb2.HARNESS_STATE_UNSPECIFIED
@@ -148,4 +165,10 @@ def _view(
         active_turn_id=(attachment.active_turn_id or None) if attachment is not None else None,
         feed_status=(None if attachment is None else "active" if end is None else "failed" if end else "ended"),
         reasoning_effort=attachment.spec.reasoning_effort if attachment is not None else None,
+        last_turn_status=None if last_turn is None else _turn_status(last_turn),
     )
+
+
+def _turn_status(payload: dict[str, JsonValue]) -> str:
+    """Parsed as the message it is: proto-JSON omits an UNSPECIFIED status, so it has no key to read."""
+    return event_pb2.TurnStatus.Name(ParseDict(payload, event_log_pb2.EventEntry()).event.turn_completed.status)

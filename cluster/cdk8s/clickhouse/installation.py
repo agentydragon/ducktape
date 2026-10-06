@@ -2,9 +2,9 @@
 three-member Keeper quorum, the client Service, ingress NetworkPolicies, the PodMonitor, and
 the secret-free diagnostics grant for Haku and public-coder.
 
-The users' credentials are hand-written `*.sops.yaml` Secrets beside the generated
-output; the generated `kustomization.yaml` lists them. Pod templates and volume claim templates are
-untyped in the operator's CRD schema, so they are plain dicts here.
+Existing users' credentials are hand-written `*.sops.yaml` Secrets beside the generated
+output; finance-agent's read-only password is minted in-cluster by ESO. Pod templates
+and volume claim templates are untyped in the operator's CRD schema, so they are plain dicts here.
 """
 
 from __future__ import annotations
@@ -47,8 +47,9 @@ from clickhouse_keeper_installation_crds.com.altinity.clickhouse_keeper import (
 from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpecHealthCheckExprs
 from prometheus_operator_podmonitor_crds.com.coreos.monitoring import PodMonitorSpecSelector
 
-from cluster.cdk8s import agent_access_profiles as access, node_scheduling, public_coder_proxy
+from cluster.cdk8s import agent_access_profiles as access, cilium, node_scheduling, public_coder_proxy
 from cluster.cdk8s.clickhouse import client
+from cluster.cdk8s.external_secrets.minted_secret import mint_bearer_secret
 from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 from cluster.cdk8s.providers.prometheus_operator.pod_monitor import Endpoint, PodMonitor
@@ -188,6 +189,14 @@ def _users() -> dict[str, object]:
             "GRANT SELECT ON aiquota.aiquota_windows",
             "GRANT SELECT ON aiquota.raw_http_observations",
         ],
+        # A distinct sandbox identity may read the typed history, not raw OAuth
+        # responses or ClickHouse's other tenants. POST query bodies bypass proxy
+        # path/method narrowing; the database's readonly profile is the barrier.
+        f"{client.FINANCE_AGENT_USER}/password": _password(client.FINANCE_AGENT_CREDENTIALS),
+        f"{client.FINANCE_AGENT_USER}/networks/ip": _ANY_ADDRESS,
+        f"{client.FINANCE_AGENT_USER}/profile": "readonly",
+        f"{client.FINANCE_AGENT_USER}/quota": "readonly",
+        f"{client.FINANCE_AGENT_USER}/grants/query": ["GRANT SELECT ON aiquota.aiquota_windows"],
     }
 
 
@@ -231,6 +240,13 @@ _SYSTEM_LOGS_XML = """\
 
 def clickhouse_chart(app: App) -> Chart:
     chart = Chart(app, "clickhouse", disable_resource_name_hashes=True)
+    mint_bearer_secret(
+        chart,
+        "finance-agent-password",
+        name=client.FINANCE_AGENT_CREDENTIALS,
+        namespace=client.NAMESPACE,
+        description="Read-only finance-agent access to typed AIQuota history; never mounted by a sandbox.",
+    )
     pod_template = "clickhouse"
     data_claim = "data"
     ClickHouseInstallation(
@@ -517,6 +533,12 @@ def networkpolicy_chart(app: App) -> Chart:
                     ports=_ports(client.HTTP.pod_port),
                 ),
                 k8s.NetworkPolicyIngressRule(
+                    from_=_from_namespace(
+                        cilium.AGENTPLANE_STAGING_PROXY.namespace, {"app.kubernetes.io/name": "agentplane-egress"}
+                    ),
+                    ports=_ports(client.HTTP.pod_port),
+                ),
+                k8s.NetworkPolicyIngressRule(
                     # Grafana Operator's generated Deployment uses app=grafana.
                     from_=_from_namespace("monitoring", {"app": "grafana"}),
                     ports=_ports(client.HTTP.pod_port, _METRICS.number),
@@ -597,7 +619,12 @@ def agent_diagnostics_rbac_chart(app: App) -> Chart:
 CHARTS = (agent_diagnostics_rbac_chart, keeper_chart, clickhouse_chart, service_chart, networkpolicy_chart)
 
 
-def clickhouse(chart: Chart, directory: RenderedDirectory, clickhouse_operator: Kustomization) -> Kustomization:
+def clickhouse(
+    chart: Chart,
+    directory: RenderedDirectory,
+    clickhouse_operator: Kustomization,
+    external_secrets_operator: Kustomization,
+) -> Kustomization:
     name = "clickhouse"
     return flux_kustomization(
         chart,
@@ -620,5 +647,8 @@ def clickhouse(chart: Chart, directory: RenderedDirectory, clickhouse_operator: 
                 in_progress="status.status != 'Completed' && status.status != 'Aborted'",
             ),
         ],
-        depends_on=[flux_kustomization_depends_on(clickhouse_operator)],
+        depends_on=[
+            flux_kustomization_depends_on(clickhouse_operator),
+            flux_kustomization_depends_on(external_secrets_operator),
+        ],
     )

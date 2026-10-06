@@ -158,7 +158,6 @@ def _synapse(scope: Construct) -> None:
             # Public server name - the hostname where Synapse is publicly accessible.
             # The chart derives public_baseurl as https://<publicServerName>.
             "publicServerName": HOSTNAME,
-            "resources": {"limits": {"cpu": "1000m", "memory": "2Gi"}, "requests": {"cpu": "200m", "memory": "512Mi"}},
             # Media store on distributed storage — the AGENTS.md default for app data
             # volumes, and RWX, so Synapse is not pinned to whichever node owns a local
             # directory. Supersedes the old idea of synapse-s3-storage-provider against
@@ -190,11 +189,7 @@ def _synapse(scope: Construct) -> None:
                 "existingSecret": "synapse-signing-key",
                 "existingSecretKey": "signing.key",
             },
-            "service": {
-                "type": "ClusterIP",
-                "port": SYNAPSE_HTTP.port.number,
-                "federation": {"enabled": True, "port": 8448},
-            },
+            "service": {"type": "ClusterIP", "port": SYNAPSE_HTTP.port.number},
             # PostgreSQL via external CNPG cluster (matrix-db)
             "postgresql": {"enabled": False},
             "externalPostgresql": {

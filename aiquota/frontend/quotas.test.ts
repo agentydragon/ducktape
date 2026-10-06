@@ -22,6 +22,7 @@ function provider(overrides: Partial<ProviderView>): ProviderView {
     last_output: { fetched_at: FETCHED_AT, result: { kind: "success", windows: [window()] } },
     last_success: null,
     currently_over_plan: false,
+    paid_credits_active: false,
     extra_status: "none",
     burn: null,
     ...overrides,

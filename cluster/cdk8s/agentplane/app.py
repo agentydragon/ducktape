@@ -101,15 +101,6 @@ def oidc_secret(namespace: str) -> SecretRef:
     return SecretRef(namespace=namespace, name="agentplane-oidc")
 
 
-def _runner_model_context_windows() -> dict[str, int]:
-    windows = {}
-    for route in RUNNER_CONTEXT_OVERRIDES:
-        if route.model.context_window is None:
-            raise ValueError(f"missing runner context override for {route.id}")
-        windows[route.id] = route.model.context_window
-    return windows
-
-
 class App(Construct):
     """ServiceAccounts, RBAC, the config ConfigMap, Deployment (+ migrate initContainer), Service,
     HTTPRoute, NetworkPolicy, optional PodDisruptionBudget, and the runner
@@ -460,7 +451,11 @@ class App(Construct):
                     # variable; the updated runner applies it when a model is listed.
                     SandboxTemplateSpecPodTemplateSpecContainersEnv(
                         name="AGENTPLANE_MODEL_CONTEXT_WINDOWS",
-                        value=json.dumps(_runner_model_context_windows(), sort_keys=True, separators=(",", ":")),
+                        value=json.dumps(
+                            {route.id: budget for route, budget in RUNNER_CONTEXT_OVERRIDES.items()},
+                            sort_keys=True,
+                            separators=(",", ":"),
+                        ),
                     ),
                     # On the container and not just on the harness children the runner spawns.
                     *sandbox_pod.egress_env(),

@@ -14,4 +14,5 @@ class Base(DeclarativeBase):
 
 def connect(database_url: str) -> AsyncEngine:
     # Lazy: no connection is made until a store first uses one.
-    return create_async_engine(database_url, pool_pre_ping=True, hide_parameters=True)
+    # Staging OOM: 74 sessions at 512 MiB, 67 idle.
+    return create_async_engine(database_url, pool_pre_ping=True, hide_parameters=True, pool_size=4, max_overflow=2)

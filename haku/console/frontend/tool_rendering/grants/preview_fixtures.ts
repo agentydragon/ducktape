@@ -1,0 +1,107 @@
+// `grants` preview fixtures: the only list of this server's preview cards. The `:previews` target
+// mounts them (`preview_harness.tsx`) and derives its screenshot scenarios from them
+// (`screenshot/emit_scenarios.mjs`). `RegisteredToolPreviewFixture` ties each (serverId, toolName,
+// args, result?) to the registry's real Zod schemas, so a stale id, argument, or result shape is a
+// type error.
+import type { RegisteredToolPreviewFixture } from "../index";
+import type { McpToolArgumentsFor } from "../../mcp_tool_schema";
+import type { McpToolResultFor } from "../../mcp_tool_result_schema";
+
+type CreateGrantItem = McpToolArgumentsFor<"grants", "create_grant">["grants"][number];
+type GrantView = McpToolResultFor<"grants", "revoke_grants">[number];
+
+const AGENT_DISPLAY_NAMES = { "10000000-0000-4000-8000-000000000001": "Haku agent" };
+const AGENT_PRINCIPAL = {
+  kind: "agent" as const,
+  agent_id: "10000000-0000-4000-8000-000000000001",
+};
+
+const KUBERNETES_ITEM: CreateGrantItem = {
+  scope: { kind: "namespaces" as const, namespaces: ["haku-sandbox", "haku-staging"] },
+  rules: [
+    { api_groups: [""], resources: ["pods"], verbs: ["get", "list"], resource_names: [] },
+    { api_groups: ["apps"], resources: ["deployments"], verbs: ["patch"] },
+  ],
+};
+
+// Keep these timestamps inside the shared visual clock's relative-date window. The screenshot
+// driver freezes now at 2025-02-01T12:00:00Z before this harness runs.
+const KUBERNETES_VIEW: GrantView = {
+  grant_id: "20000000-0000-4000-8000-000000000002",
+  owner_agent_id: "10000000-0000-4000-8000-000000000001",
+  principal: { kind: "agent" as const, agent_id: "10000000-0000-4000-8000-000000000001" },
+  source_tool_call_id: "tc_create_grant",
+  scope: KUBERNETES_ITEM.scope,
+  rules: KUBERNETES_ITEM.rules,
+  status: "active" as const,
+  created_at: "2025-01-27T10:00:00Z",
+  expires_at: "2025-01-27T11:00:00Z",
+};
+
+const ACCESS_PROFILE_KUBERNETES_VIEW: GrantView = {
+  ...KUBERNETES_VIEW,
+  grant_id: "20000000-0000-4000-8000-000000000005",
+  // The grant owner is deliberately different from the tool-call caller: ownership is not the
+  // access profile's Agent identity.
+  owner_agent_id: "90000000-0000-4000-8000-000000000009",
+  principal: { kind: "access_profile" as const, access_profile_id: "public-coder" },
+  status: "ended" as const,
+  ended_at: "2025-01-27T10:15:00Z",
+  end_reason: "probe complete",
+};
+
+export const PREVIEW_FIXTURES: (RegisteredToolPreviewFixture & { title: string })[] = [
+  {
+    title: "Create temporary Kubernetes grants",
+    serverId: "grants",
+    toolName: "create_grant",
+    args: { grants: [KUBERNETES_ITEM], duration_seconds: 3600, principal: AGENT_PRINCIPAL },
+    agentDisplayNames: AGENT_DISPLAY_NAMES,
+    result: [KUBERNETES_VIEW],
+  },
+  {
+    title: "End several Kubernetes grants (Agent)",
+    serverId: "grants",
+    toolName: "revoke_grants",
+    args: {
+      grant_ids: [KUBERNETES_VIEW.grant_id, "20000000-0000-4000-8000-000000000003"],
+      reason: "probe complete",
+    },
+    agentDisplayNames: AGENT_DISPLAY_NAMES,
+    result: [
+      {
+        ...KUBERNETES_VIEW,
+        status: "ended" as const,
+        ended_at: "2025-01-27T10:15:00Z",
+        end_reason: "probe complete",
+      },
+      ACCESS_PROFILE_KUBERNETES_VIEW,
+    ],
+  },
+  {
+    title: "End an owned Agent's grant (Operator)",
+    serverId: "grants",
+    toolName: "revoke_grants",
+    args: {
+      owner_agent_id: KUBERNETES_VIEW.owner_agent_id,
+      grant_ids: ["20000000-0000-4000-8000-000000000004"],
+      reason: "operator revoked",
+    },
+    agentDisplayNames: { [KUBERNETES_VIEW.owner_agent_id]: "Haku agent" },
+    result: [
+      {
+        grant_id: "20000000-0000-4000-8000-000000000004",
+        owner_agent_id: KUBERNETES_VIEW.owner_agent_id,
+        principal: { kind: "agent" as const, agent_id: KUBERNETES_VIEW.owner_agent_id },
+        source_tool_call_id: "tc_create_grant",
+        scope: KUBERNETES_ITEM.scope,
+        rules: KUBERNETES_ITEM.rules,
+        status: "ended" as const,
+        created_at: "2025-01-27T10:00:00Z",
+        expires_at: "2025-01-27T11:00:00Z",
+        ended_at: "2025-01-27T10:20:00Z",
+        end_reason: "operator revoked",
+      },
+    ],
+  },
+];

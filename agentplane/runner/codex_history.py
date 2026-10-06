@@ -34,11 +34,22 @@ class ModelMessage(BaseModel):
     content: list[MessageContent]
 
 
+class ReasoningSummaryPart(BaseModel):
+    text: str
+
+
+class ModelReasoning(BaseModel):
+    # Observed with Codex 0.152.0: the id of the app-server's reasoning item, so observed items match by it.
+    id: str
+    summary: list[ReasoningSummaryPart]
+
+
 def read_history(directory: Path, session_id: str, observed: dict[str, ObservedItem]) -> dict[str, ObservedItem] | None:
     paths = list((directory / "sessions").glob(f"**/*{session_id}.jsonl"))
     if len(paths) != 1:
         return None
     texts: dict[str, str] = {}
+    summaries: dict[str, str] = {}
     calls: set[str] = set()
     outputs: dict[str, str] = {}
     with paths[0].open() as source:
@@ -56,6 +67,9 @@ def read_history(directory: Path, session_id: str, observed: dict[str, ObservedI
                 case "message" if payload.get("role") == "assistant":
                     message = ModelMessage.model_validate(payload)
                     texts[message.id] = "".join(part.text for part in message.content)
+                case "reasoning":
+                    reasoning = ModelReasoning.model_validate(payload)
+                    summaries[reasoning.id] = "\n".join(part.text for part in reasoning.summary)
                 case "function_call":
                     call = FunctionCall.model_validate(payload)
                     calls.add(call.call_id)
@@ -76,6 +90,10 @@ def read_history(directory: Path, session_id: str, observed: dict[str, ObservedI
                     # Shell model results wrap the observed stdout in execution metadata.
                     output = item.output
                 recovered[item_id] = replace(item, output=output)
+        elif item.kind == event_pb2.ITEM_KIND_REASONING:
+            # Only a saved record vouches for reasoning; observing it complete does not.
+            if item_id in summaries:
+                recovered[item_id] = replace(item, text=summaries[item_id])
         elif item.completed:
             recovered[item_id] = item
     return recovered

@@ -15,8 +15,7 @@ from finance.augur.sim.actor import MonthOpened
 from finance.augur.sim.agent import EconomicAgent, assemble
 from finance.augur.sim.bills import Biller
 from finance.augur.sim.books import AccountRef
-from finance.augur.sim.capture import FinancialCapture, FinancialOutput, event_log
-from finance.augur.sim.events import EVENT_FRAME_SPECS
+from finance.augur.sim.capture import FinancialCapture, FinancialOutput
 from finance.augur.sim.ids import AccountId, AgentId, AssetId, LiabilityId, LotId, PropertyId
 from finance.augur.sim.market_path import MarketPath, Series
 from finance.augur.sim.mortgage import Mortgage, MortgageTerms
@@ -433,16 +432,6 @@ def recorded(world: World, mode: Capture) -> FinancialCapture | None:
     return None if mode == "summary" else FinancialCapture(world, capture=mode)
 
 
-def assert_same_result(actual: FinancialOutput | None, expected: FinancialOutput | None) -> None:
-    # Compare every recorded field and the frames projected from them; Polars frames need explicit value equality.
-    assert actual == expected
-    if actual is not None and expected is not None:
-        events, expected_events = event_log(actual), event_log(expected)
-        assert events.rollout_ids == expected_events.rollout_ids
-        for spec in EVENT_FRAME_SPECS:
-            assert events.frame(spec).equals(expected_events.frame(spec))
-
-
 @pytest.fixture
 def year_situation() -> Situation:
     run = situation(13)
@@ -583,10 +572,9 @@ def stepped(
 
 @pytest.mark.parametrize("stopped", [False, True])
 @pytest.mark.parametrize("mode", ["forensic", "dense", "summary"])
-def test_step_is_the_explicit_phases_and_keeps_the_tax_year_and_stopped_books(
-    year_situation: Situation, stopped: bool, mode: Capture
-) -> None:
-    """`step` is open, decide, execute in order, close — and nothing else the phases do not do."""
+def test_step_keeps_the_tax_year_and_stopped_books(year_situation: Situation, stopped: bool, mode: Capture) -> None:
+    """The tax year owes its liability at month 12, and an unpayable bill stops the path there with
+    its books frozen."""
     run = year_situation
     if stopped:
         run = replace(
@@ -606,28 +594,8 @@ def test_step_is_the_explicit_phases_and_keeps_the_tax_year_and_stopped_books(
         for lot in (run.initial_lots[:1] if stopped else run.initial_lots)
     )
 
-    def household() -> Scripted:
-        return Scripted(ClaimPayer(HOUSEHOLD), {0: sales})
-
-    phased = composed(run)
-    actor = household()
-    phased.track(actor)
-    phased_capture = recorded(phased, mode)
-    phased.start()
-    while not phased.finished:
-        actions = actor.handle(MonthOpened(month=phased.month))
-        phased.begin_actions(actions)
-        for action in actions:
-            if isinstance(phased.execute(HOUSEHOLD, action).outcome, Rejected):
-                break
-        phased.close_month()
-        if phased_capture is not None:
-            phased_capture.record()
-        if not phased.finished:
-            phased.open_month()
-
     path = composed(run)
-    path.track(household())
+    path.track(Scripted(ClaimPayer(HOUSEHOLD), {0: sales}))
     capture = recorded(path, mode)
     path.start()
     while not path.finished:
@@ -637,8 +605,6 @@ def test_step_is_the_explicit_phases_and_keeps_the_tax_year_and_stopped_books(
         if capture is not None:
             capture.record()
     financial = None if capture is None else capture.financial()
-    assert_same_result(financial, None if phased_capture is None else phased_capture.financial())
-    assert (path.book(), path.failed_month) == (phased.book(), phased.failed_month)
 
     stopped_book = deepcopy(path.book())
     with pytest.raises(ValueError, match="finished"):

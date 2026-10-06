@@ -21,7 +21,7 @@ from agentplane.action_service.operator_oidc import OperatorOidcSettings
 from agentplane.app.action_federation import DirectFederationSettings, FederatedOperatorActions
 from agentplane.app.action_policy import ActionPolicyInventory, ActionPolicyUnavailable, ActionPolicyView
 from agentplane.app.api import ModelCatalog, ModelOption, create_app
-from agentplane.app.conftest import TEST_REASONING_EFFORTS, Replica, stored_login
+from agentplane.app.conftest import stored_login
 from agentplane.app.database import connect
 from agentplane.app.database_updates import Channel, DatabaseUpdates
 from agentplane.app.decisions import DecisionsClient
@@ -48,6 +48,8 @@ from agentplane.app.operator_sessions import (
 )
 from agentplane.app.sandbox_models import sandbox_view
 from agentplane.app.shutdown import Drain
+from agentplane.app.testing.model_test_data import TEST_REASONING_EFFORTS
+from agentplane.app.testing.thread_test_support import Replica
 from agentplane.app.threads.bridge import RunnerBridge
 from agentplane.app.threads.events.event_log import EventLogStore
 from agentplane.app.threads.ingestion import Ingester, Ingestion

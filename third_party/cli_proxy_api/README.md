@@ -77,6 +77,9 @@ origin. Explicit management keys continue to work without browser cookies.
 Update each source revision and checksum, then rebase its feature patches. Refresh
 `go.mod`/`go.sum` from the patched backend, retaining the build module name, and
 refresh the isolated pnpm lock with Bazel-managed pnpm when frontend dependencies
-change. Recheck `patches/bazel.patch` against Gazelle's generated BUILD files.
+change. **Gotcha:** `go.mod` omits modules that no package the Bazel targets reach
+imports (gin's optional `sonic`, `jsoniter` and `go_json` JSON backends and their
+transitive modules); do not restore them from upstream's `go.mod`. Recheck
+`patches/bazel.patch` against Gazelle's generated BUILD files.
 Run the test suite and image build above. When upstream releases contain the
 features, update the source pins and remove the corresponding patches.

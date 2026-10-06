@@ -1,5 +1,6 @@
 import json
 import subprocess
+import sys
 from datetime import timedelta
 from pathlib import Path
 from uuid import UUID
@@ -12,6 +13,7 @@ from devinfra.pr_visuals.determinism import (
     Observation,
     Render,
     analyze,
+    main,
     observe,
     observe_targets,
     report,
@@ -118,8 +120,8 @@ def test_the_fleet_is_read_as_records_out_of_the_runner_s_own_progress() -> None
     stdout = (
         "Waiting for available remote runner...\n"
         "\x1b[90m2026-09-12 15:28:14.665 UTC \x1b[mSyncing existing repo...\n"
-        '\x1b[m{"type":"RULE","rule":{"name":"//aiquota/frontend:screenshots","ruleClass":"js_test"}}\n'
-        '{"type":"RULE","rule":{"name":"//props/frontend:visual","ruleClass":"js_test"}}\n'
+        '\x1b[m{"type":"RULE","rule":{"name":"//aiquota/frontend:screenshots","ruleClass":"py_test"}}\n'
+        '{"type":"RULE","rule":{"name":"//props/frontend:visual","ruleClass":"py_test"}}\n'
         "\x1b[32mINFO: \x1b[mElapsed time: 2.2s\n"
         "Remote run completed at 2026-09-12 15:28:20 UTC\n"
     )
@@ -137,7 +139,7 @@ def test_a_source_file_in_the_query_output_is_not_a_target_to_run() -> None:
     """Only rule records name something runnable; other record types are not the fleet."""
     stdout = (
         '{"type":"SOURCE_FILE","sourceFile":{"name":"//props/frontend:harness.mjs"}}\n'
-        '{"type":"RULE","rule":{"name":"//props/frontend:visual","ruleClass":"js_test"}}\n'
+        '{"type":"RULE","rule":{"name":"//props/frontend:visual","ruleClass":"py_test"}}\n'
     )
 
     def fake_run(command: list[str | Path], **_kwargs: object) -> subprocess.CompletedProcess[str]:
@@ -230,6 +232,53 @@ def test_a_target_that_did_not_pass_says_so_in_the_report() -> None:
     )
 
     assert "FLAKY, PASSED" in summary
+
+
+def _exit_status() -> int | str | None:
+    """What `main()` raises through `SystemExit`; `None` when it returns, which is exit status 0."""
+    try:
+        main()
+    except SystemExit as exited:
+        return exited.code
+    return None
+
+
+@pytest.mark.parametrize(
+    ("published_uris", "exit_code"),
+    [
+        pytest.param(["same", "same", "same"], None, id="reproducible"),
+        pytest.param(["first", "second", "third"], 1, id="drifted"),
+        pytest.param([None, "same", "same"], 1, id="missing from one run"),
+    ],
+)
+def test_the_exit_status_says_whether_every_render_was_reproducible(
+    monkeypatch: pytest.MonkeyPatch, published_uris: list[str | None], exit_code: int | None
+) -> None:
+    """A scheduled sweep reports on this status alone; the markdown only says which renders.
+
+    `published_uris` is what each run, in order, published for the one render: its content-addressed
+    URI, or `None` for a run that published nothing.
+    """
+    invocations: list[str] = []
+
+    def fake_run(command: list[str | Path], **_kwargs: object) -> subprocess.CompletedProcess[str]:
+        payload: object = None
+        match [str(part) for part in command]:
+            case ["bbr", "test", flag, *_]:
+                invocations.append(flag.removeprefix("--invocation_id="))
+            case ["bbapi", "artifact", "list", invocation, "--json"]:
+                uri = published_uris[invocations.index(invocation)]
+                payload = [] if uri is None else [_png("//ui:visual", "list.png", f"bytestream://{uri}")]
+            case ["bbapi", "target", _, "--json"]:
+                payload = {"targetGroups": [{"targets": [_test_row("//ui:visual", seconds=9.0)]}]}
+            case other:
+                raise AssertionError(f"unexpected command {other}")
+        return subprocess.CompletedProcess(command, 0, json.dumps(payload) if payload is not None else "", "")
+
+    monkeypatch.setattr(subprocess, "run", fake_run)
+    monkeypatch.setattr(sys, "argv", ["determinism", "--runs", str(len(published_uris)), "//ui:visual"])
+
+    assert _exit_status() == exit_code
 
 
 if __name__ == "__main__":

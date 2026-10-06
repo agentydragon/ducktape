@@ -2,7 +2,7 @@ from datetime import UTC, datetime
 
 import pytest_bazel
 
-from aiquota.models import AllQuotas, ExtraSpend, FetchSuccess, ProviderFetch, ProviderQuota, QuotaWindow
+from aiquota.models import AllQuotas, ExtraSpend, FetchSuccess, PaidCredits, ProviderFetch, ProviderQuota, QuotaWindow
 from aiquota.render.view_model import currently_over_plan, to_view
 
 if __name__ == "__main__":
@@ -16,11 +16,14 @@ def _fetch(
     short_window: QuotaWindow | None = None,
     long_window: QuotaWindow | None = None,
     extra_spend: ExtraSpend | None = None,
+    paid_credits: PaidCredits | None = None,
 ) -> ProviderFetch:
     return ProviderFetch(
         fetched_at=_NOW,
         result=FetchSuccess(
-            windows=[window for window in (short_window, long_window) if window], extra_spend=extra_spend
+            windows=[window for window in (short_window, long_window) if window],
+            extra_spend=extra_spend,
+            paid_credits=paid_credits,
         ),
     )
 
@@ -81,3 +84,17 @@ def test_extra_status_transitions() -> None:
     )
     statuses = {pv.provider: pv.extra_status for pv in to_view(quotas).providers}
     assert statuses == {"claude": "active", "codex": "informational", "zai": "none", "opus": "none"}
+
+
+def test_paid_credits_active_only_with_balance_and_exhausted_window() -> None:
+    window = QuotaWindow(used_percent=100, reset_seconds=1200, window_seconds=18000)
+    providers = [
+        ProviderQuota(provider=name, last_output=_fetch(short_window=window, paid_credits=PaidCredits(balance=balance)))
+        for name, balance in (("positive", "12.5"), ("empty", "0"))
+    ]
+    providers.append(ProviderQuota(provider="no_credits", last_output=_fetch(short_window=window)))
+    statuses = {
+        view.provider: view.paid_credits_active
+        for view in to_view(AllQuotas(providers=providers, fetched_at=_NOW)).providers
+    }
+    assert statuses == {"positive": True, "empty": False, "no_credits": False}

@@ -156,7 +156,7 @@ def _values() -> dict[str, object]:
             "livenessProbe": {"timeoutSeconds": 10, "periodSeconds": 15, "failureThreshold": 8},
             "readinessProbe": {"timeoutSeconds": 10},
             **_pod_env(),
-            "service": {"enabled": True, "type": "ClusterIP", "port": 80},
+            "service": {"type": "ClusterIP"},
             # Routed by the HTTPRoute below.
             "ingress": {"enabled": False},
             "resources": _SERVER_RESOURCES,
@@ -172,12 +172,7 @@ def _values() -> dict[str, object]:
         },
         # The external CNPG cluster in `db.py`.
         "postgresql": {"enabled": False},
-        # TODO: replace this chart-bundled Redis with an operator-managed
-        # RedisReplication (redis.redis.opstreelabs.in/v1beta2), as grocy and tana-mcp do.
-        # Then set redis.enabled: false and point Authentik at the operator-managed Valkey
-        # via AUTHENTIK_REDIS__HOST / AUTHENTIK_REDIS__PASSWORD.
-        "redis": {"enabled": True},
-        "serviceAccount": {"create": True, "name": "authentik"},
+        "serviceAccount": {"create": True},
     }
 
 

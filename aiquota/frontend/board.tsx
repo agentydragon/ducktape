@@ -40,6 +40,7 @@ import {
   type BurnStatus,
   type EffectiveQuota,
   type ExtraSpend,
+  type PaidCredits,
   type ProviderView,
   type QuotasView,
   type QuotaWindow,
@@ -67,6 +68,7 @@ function ProviderCard({ provider, now }: { provider: ProviderView; now: number }
   const quota = effectiveQuota(provider);
   const tint = providerTint(provider, quota, now);
   const overPlan = provider.currently_over_plan;
+  const paidCreditsActive = provider.paid_credits_active;
   return (
     <article className={`aiquota-card aiquota-tint-${tint}`} aria-label={`${provider.provider} quota`}>
       <header className="aiquota-card-head">
@@ -89,12 +91,15 @@ function ProviderCard({ provider, now }: { provider: ProviderView; now: number }
 
       {quota.error !== null && <p className="aiquota-error">{quota.error}</p>}
       {overPlan && <OverPlanStrip extra={quota.extraSpend} windows={quota.windows} now={now} />}
+      {quota.paidCredits && (
+        <PaidCreditsStrip credits={quota.paidCredits} active={paidCreditsActive} windows={quota.windows} now={now} />
+      )}
       {quota.resetCredits !== null && (
         <ResetCreditsStrip count={quota.resetCredits} expiries={quota.resetCreditExpiries} />
       )}
       {provider.burn && <BurnStrip burn={provider.burn} now={now} />}
 
-      {overPlan
+      {overPlan || paidCreditsActive
         ? null
         : quota.windows.length === 0
           ? quota.error === null && <p className="aiquota-empty">No quota data.</p>
@@ -245,6 +250,44 @@ function ResetCreditsStrip({ count, expiries }: { count: number; expiries: strin
       {expiries.length > 0 && <p className="aiquota-strip-note">Known expiries: {formatKnownExpiries(expiries)}</p>}
     </div>
   );
+}
+
+function PaidCreditsStrip({
+  credits,
+  active,
+  windows,
+  now,
+}: {
+  credits: PaidCredits;
+  active: boolean;
+  windows: QuotaWindow[];
+  now: number;
+}): JSX.Element {
+  const amount = credits.unlimited ? "unlimited credits" : formatCreditBalance(credits.balance);
+  return (
+    <div className={`aiquota-strip${active ? " aiquota-strip-over-plan" : ""}`}>
+      <p className="aiquota-strip-line">
+        {active ? "Using paid credits" : "Paid credits"} · {amount}
+      </p>
+      {active && (
+        <p className="aiquota-strip-note">
+          {windows
+            .map(
+              (window) =>
+                `${formatWindowLabel(window)}: ${displayUsedPercent(window)}% ↻ ${formatDuration(resetSeconds(window, now))}`
+            )
+            .join("   ")}
+        </p>
+      )}
+    </div>
+  );
+}
+
+function formatCreditBalance(raw: string | null | undefined): string {
+  if (raw == null) return "available";
+  const amount = Number(raw);
+  if (!Number.isFinite(amount)) return "available";
+  return `${new Intl.NumberFormat(undefined, { maximumFractionDigits: 0 }).format(amount)} credits left`;
 }
 
 /** Peak hours cost a multiple per token, so they belong beside the quota they drain. */

@@ -90,7 +90,7 @@ Flipping the toggle re-issues all certificates. The trust bundle follows via the
 
 ### DNS Delegation
 
-1. Route 53 is the authoritative DNS for `allegedly.works` (zone + records managed by Terraform)
+1. Route 53 is authoritative for `allegedly.works`. ExternalDNS manages public records; Terraform manages domain registration and nameserver delegation.
 2. cert-manager uses Route 53 DNS-01 solver for ACME challenges
 
 ### Ingress (Gateway API)

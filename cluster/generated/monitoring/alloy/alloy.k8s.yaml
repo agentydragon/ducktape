@@ -39,13 +39,6 @@ spec:
     controller:
       replicas: 1
       type: deployment
-    resources:
-      limits:
-        cpu: 500m
-        memory: 512Mi
-      requests:
-        cpu: 50m
-        memory: 128Mi
     serviceMonitor:
       enabled: true
 ---

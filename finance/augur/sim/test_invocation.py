@@ -65,6 +65,8 @@ def _run(compose: Callable[[int], World], rollout_ids: list[int], capture: Captu
 
 def test_each_path_keeps_its_own_cpi_and_selected_replay_matches_the_population() -> None:
     cpi = np.ones((3, HORIZON + 1))
+    # Path 1 starts at CPI 2, so its origin differs from the others' as well as its current level.
+    cpi[:, 0] = [1.0, 2.0, 1.0]
     cpi[:, 12:] = np.asarray([2.0, 1.0, 3.0])[:, None]
     series = level_series({InflationKey(): cpi}, rollout_count=3, horizon_months=HORIZON)
 
@@ -74,7 +76,7 @@ def test_each_path_keeps_its_own_cpi_and_selected_replay_matches_the_population(
     baseline = _run(compose, [0, 1, 2], "summary")
     assert [
         row.receipt.amount_paid for rollout in baseline.rollouts for row in rollout.summary.payments if row.month == 12
-    ] == [800, 400, 1200]
+    ] == [800, 200, 1200]
     replay = _run(compose, [2, 0], "forensic")
     assert [row.rollout_id for row in replay.rollouts] == [2, 0]
     assert [row.summary for row in replay.rollouts] == [baseline.rollouts[id_].summary for id_ in [2, 0]]

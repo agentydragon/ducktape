@@ -181,7 +181,7 @@ const PLACEHOLDER_PADDING_REM = 1.1;
  *
  * Latches on first intersection and stops observing: an editor that scrolls away stays mounted,
  * since tearing it down would lose the operator's own fold/scroll state within it. Where there is
- * no `IntersectionObserver` (jsdom under vitest) every block mounts immediately. */
+ * no `IntersectionObserver` every block mounts immediately. */
 function useNearViewport(): { ref: (node: HTMLDivElement | null) => void; near: boolean } {
   const [near, setNear] = useState(typeof IntersectionObserver === "undefined");
   const observerRef = useRef<IntersectionObserver | null>(null);

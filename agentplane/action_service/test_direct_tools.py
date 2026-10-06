@@ -35,7 +35,6 @@ from agentplane.action_service.catalog import (
     ActionIdentity,
     McpExecutorBinding,
 )
-from agentplane.action_service.conftest import ScriptedExecutor, lifespan_in_own_task
 from agentplane.action_service.connections import ConnectionAuthority, Grant, GrantBinding, NewConnection
 from agentplane.action_service.db import ActionStore, make_sessionmaker
 from agentplane.action_service.direct_tools import DIRECT_CALL_TITLE
@@ -48,7 +47,8 @@ from agentplane.action_service.policy_informer import PolicyIndex
 from agentplane.action_service.sandbox.binding import SandboxExecutorBinding
 from agentplane.action_service.sandbox.models import ExecResult
 from agentplane.action_service.service import ActionService
-from agentplane.action_service.test_fixtures.callers import OTHER, PERSONAL, TEST_NAMESPACE, admitted_callers
+from agentplane.action_service.testing.callers import OTHER, PERSONAL, TEST_NAMESPACE, admitted_callers
+from agentplane.action_service.testing.fixtures import ScriptedExecutor, lifespan_in_own_task
 from agentplane.action_service.updates import ActionUpdates
 from agentplane.workload_auth.principal import WorkloadPrincipalResolver
 from mcp_infra.exec.models import Exited
