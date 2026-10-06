@@ -198,6 +198,7 @@ function evidenceDisclosure(entity: ThreadEntity): string {
  * callback, committing the whole list's pending re-render mid-delivery (a "ResizeObserver loop"). */
 export function EvidenceToggle({ entity, style }: { entity: ThreadEntity; style?: CSSProperties }): JSX.Element {
   const [open, setOpen] = useRetainedDisclosure(evidenceDisclosure(entity));
+  if (open) return <></>;
   return (
     <ActionIcon
       size="xs"
@@ -232,5 +233,18 @@ export function revealEvidenceOnTap(event: MouseEvent<HTMLElement>): void {
 export function EvidencePanel({ threadId, entity }: { threadId: string; entity: ThreadEntity }): JSX.Element {
   const id = evidenceDisclosure(entity);
   const [open] = useRetainedDisclosure(id);
-  return open ? <EvidencePageView key={id} threadId={threadId} entity={entity} /> : <></>;
+  return open ? (
+    <RetainedDisclosure
+      id={id}
+      summary={
+        <Text size="xs" c="dimmed">
+          Evidence
+        </Text>
+      }
+    >
+      <EvidencePageView key={id} threadId={threadId} entity={entity} />
+    </RetainedDisclosure>
+  ) : (
+    <></>
+  );
 }

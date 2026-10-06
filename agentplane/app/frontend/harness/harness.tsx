@@ -995,7 +995,17 @@ function command(
   );
 }
 
-function standardRows(threadId: string, longReasoningPreview: boolean): Record<string, unknown>[] {
+const LONG_REASONING_BODY = Array.from(
+  { length: 18 },
+  (_, index) =>
+    `Pass ${index + 1}: I compare the stored body with the event projection, check each boundary for lost formatting, and keep the complete note available as ordinary Markdown. This section is deliberately long to exercise scrolling inside one disclosure.`
+).join("\n\n");
+
+function standardRows(
+  threadId: string,
+  longReasoningPreview: boolean,
+  longReasoningBody: boolean
+): Record<string, unknown>[] {
   const rows = [
     viewState(34, "turn-visual"),
     entity(
@@ -1019,11 +1029,13 @@ function standardRows(threadId: string, longReasoningPreview: boolean): Record<s
       20,
       "r-1",
       ItemKind.REASONING,
-      longReasoningPreview
-        ? "I will compare the projected row with its source payload. **The streamed body must retain its Markdown formatting** while the one-line preview clips what does not fit. I will verify the fetch path and expanded content before changing behavior. ".repeat(
-            2
-          )
-        : "I will inspect the repository structure, compare **the relevant implementation and tests**, then confirm which path preserves the existing behavior before proposing a change.",
+      longReasoningBody
+        ? LONG_REASONING_BODY
+        : longReasoningPreview
+          ? "I will compare the projected row with its source payload. **The streamed body must retain its Markdown formatting** while the one-line preview clips what does not fit. I will verify the fetch path and expanded content before changing behavior. ".repeat(
+              2
+            )
+          : "I will inspect the repository structure, compare **the relevant implementation and tests**, then confirm which path preserves the existing behavior before proposing a change.",
       { threadId }
     ),
     item(28, "m-1", ItemKind.ASSISTANT_TEXT, "I found the project files and the relevant tests.", { threadId }),
@@ -1358,7 +1370,8 @@ function codeFenceRows(threadId: string): Record<string, unknown>[] {
 function standaloneReasoningRows(
   threadId: string,
   longPreview: boolean,
-  codeFence: boolean
+  codeFence: boolean,
+  longBody: boolean
 ): Record<string, unknown>[] {
   const reasoning = codeFence
     ? [
@@ -1373,9 +1386,11 @@ function standaloneReasoningRows(
         "",
         "The complete implementation remains available when expanded.",
       ].join("\n")
-    : longPreview
-      ? "Weighing whether to **add a retry** or fix the root cause first. The latest results point toward the projection path, so I should verify it before changing client behavior."
-      : "Weighing which path to try next.";
+    : longBody
+      ? LONG_REASONING_BODY
+      : longPreview
+        ? "Weighing whether to **add a retry** or fix the root cause first. The latest results point toward the projection path, so I should verify it before changing client behavior."
+        : "Weighing which path to try next.";
   const rows = [
     viewState(24, null),
     entity(
@@ -1592,10 +1607,11 @@ function threadEntityRows(threadId: string): Record<string, unknown>[] {
     return standaloneReasoningRows(
       threadId,
       scenario.longReasoningPreview ?? false,
-      scenario.reasoningCodeFence ?? false
+      scenario.reasoningCodeFence ?? false,
+      scenario.longReasoningBody ?? false
     );
   if (threadId === THREADS[2].id || scenario.pendingCommands) return statesRows(threadId);
-  return standardRows(threadId, scenario.longReasoningPreview ?? false);
+  return standardRows(threadId, scenario.longReasoningPreview ?? false, scenario.longReasoningBody ?? false);
 }
 
 function threadScope(threadId: string): Record<string, string> {
@@ -2410,6 +2426,42 @@ if (scenario.openEvidence) {
     button.click();
   });
   openEvidence.observe(document, { childList: true, subtree: true });
+}
+
+if (scenario.openClampedBlocks) {
+  const openClamped = () => {
+    const unopened = [
+      ...document.querySelectorAll<HTMLButtonElement>(".agentplane-clamped-block button[aria-expanded='false']"),
+    ];
+    for (const button of unopened) button.click();
+    if (unopened.length === 0 && document.querySelector(".agentplane-clamped-block[data-expanded='true']")) {
+      openClampedBlocks.disconnect();
+    }
+  };
+  const openClampedBlocks = new MutationObserver(openClamped);
+  openClampedBlocks.observe(document, { childList: true, subtree: true });
+  openClamped();
+}
+
+if (scenario.scrollExpandedDisclosure) {
+  const scrollToStickyHeader = () => {
+    const history = document.querySelector<HTMLElement>('[aria-label="Thread history"]');
+    const target = document.querySelector<HTMLElement>(scenario.scrollExpandedDisclosure!);
+    if (!history || !target) return false;
+    const viewportTop = history.getBoundingClientRect().top;
+    const targetTop = target.getBoundingClientRect().top - viewportTop;
+    const requested = history.scrollTop + targetTop + 200;
+    history.scrollTop = Math.max(0, Math.min(history.scrollHeight - history.clientHeight, requested));
+    target.dataset.visualScrollComplete = "true";
+    return true;
+  };
+  const scrollDisclosure = new MutationObserver(() => {
+    if (scrollToStickyHeader()) scrollDisclosure.disconnect();
+  });
+  scrollDisclosure.observe(document, { childList: true, subtree: true });
+  requestAnimationFrame(() => {
+    if (scrollToStickyHeader()) scrollDisclosure.disconnect();
+  });
 }
 
 if (scenario.preselectReconnect) {

@@ -91,23 +91,6 @@
   list-style: none;
 }
 
-.agentplane-step-details > summary::-webkit-details-marker {
-  display: none;
-}
-
-.agentplane-step-details > summary::before {
-  flex: none;
-  width: 0;
-  height: 0;
-  border-block: 0.25em solid transparent;
-  border-inline-start: 0.35em solid currentColor;
-  content: "";
-}
-
-.agentplane-step-details[open] > summary::before {
-  transform: rotate(90deg);
-}
-
 .agentplane-step-summary {
   display: flex;
   min-width: 0;
@@ -150,8 +133,8 @@
 }
 
 .agentplane-step-details[open] > summary .agentplane-step-summary {
-  flex-wrap: wrap;
-  white-space: normal;
+  flex-wrap: nowrap;
+  white-space: nowrap;
 }
 
 /* The row's evidence icon is pinned to its card's corner, so the line stops short of it rather than

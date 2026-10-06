@@ -694,6 +694,28 @@
     "longReasoningPreview": true,
     "readySelectors": ["details.agentplane-step-details[open] > .agentplane-markdown"]
   },
+  "session_reasoning_sticky": {
+    "element": "#app",
+    "route": "/threads/5f1c4a2e-0000-4000-8000-000000000001",
+    "viewport": { "width": 1200, "height": 900 },
+    "outputName": "session-reasoning-sticky",
+    "standaloneReasoning": true,
+    "longReasoningBody": true,
+    "openReasoning": true,
+    "scrollExpandedDisclosure": "details.agentplane-step-details[open]",
+    "readySelectors": ["[data-visual-scroll-complete='true']", "details.agentplane-step-details[open]"]
+  },
+  "session_reasoning_sticky_phone": {
+    "element": "#app",
+    "route": "/threads/5f1c4a2e-0000-4000-8000-000000000001",
+    "viewport": { "width": 412, "height": 915, "deviceScaleFactor": 2.625 },
+    "outputName": "session-reasoning-sticky-phone",
+    "standaloneReasoning": true,
+    "longReasoningBody": true,
+    "openReasoning": true,
+    "scrollExpandedDisclosure": "details.agentplane-step-details[open]",
+    "readySelectors": ["[data-visual-scroll-complete='true']", "details.agentplane-step-details[open]"]
+  },
   "session_markdown_code_fence": {
     "element": "#app",
     "route": "/threads/5f1c4a2e-0000-4000-8000-000000000001",
@@ -854,6 +876,38 @@
       "[data-clamped=\"true\"]",
       "details.agentplane-step-details[open] .agentplane-code-block .cm-content"
     ]
+  },
+  "session_tool_output_sticky": {
+    "element": "#app",
+    "route": "/threads/5f1c4a2e-0000-4000-8000-000000000001",
+    "viewport": { "width": 1200, "height": 1100 },
+    "outputName": "session-tool-output-sticky",
+    "shellCalls": true,
+    "openToolPayloads": true,
+    "openClampedBlocks": true,
+    "scrollExpandedDisclosure": ".agentplane-clamped-block[data-label='Output'][data-expanded='true']",
+    "readySelectors": [
+      "[data-visual-scroll-complete='true']",
+      ".agentplane-disclosure-collapse button[aria-label='Collapse Output']",
+      "details.agentplane-step-details[open]"
+    ],
+    "captureViewport": true
+  },
+  "session_tool_output_sticky_phone": {
+    "element": "#app",
+    "route": "/threads/5f1c4a2e-0000-4000-8000-000000000001",
+    "viewport": { "width": 412, "height": 1100, "deviceScaleFactor": 2.625 },
+    "outputName": "session-tool-output-sticky-phone",
+    "shellCalls": true,
+    "openToolPayloads": true,
+    "openClampedBlocks": true,
+    "scrollExpandedDisclosure": ".agentplane-clamped-block[data-label='Output'][data-expanded='true']",
+    "readySelectors": [
+      "[data-visual-scroll-complete='true']",
+      ".agentplane-disclosure-collapse button[aria-label='Collapse Output']",
+      "details.agentplane-step-details[open]"
+    ],
+    "captureViewport": true
   },
   "session_evidence": {
     "element": "#app",

@@ -33,7 +33,12 @@ export function CommandCallView({
     <Stack gap={4}>
       {description && <Text size="sm">{description}</Text>}
       {target && <CodeBlock text={target} presentation="label" />}
-      <ClampedBlock maxHeightRem={COMMAND_MAX_HEIGHT_REM} lines={lineCount(command)} expansion={expansion}>
+      <ClampedBlock
+        maxHeightRem={COMMAND_MAX_HEIGHT_REM}
+        lines={lineCount(command)}
+        label="Command"
+        expansion={expansion}
+      >
         <CodeBlock text={command} language="bash" />
       </ClampedBlock>
       {notes.map((note) => (
@@ -69,7 +74,7 @@ export function OutputBlock({
           </Text>
         )}
       </Text>
-      <ClampedBlock maxHeightRem={OUTPUT_MAX_HEIGHT_REM} lines={lineCount(text)} expansion={expansion}>
+      <ClampedBlock maxHeightRem={OUTPUT_MAX_HEIGHT_REM} lines={lineCount(text)} label={name} expansion={expansion}>
         {/* A final newline ends the last line rather than starting an empty one. */}
         <HighlightedText text={text.replace(/\n$/, "")} />
       </ClampedBlock>

@@ -2,6 +2,7 @@ import { Code, Group, Stack, Text } from "@mantine/core";
 import type { JSX, ReactNode } from "react";
 
 import { serviceAccountKey } from "../client";
+import { Disclosure } from "../disclosure";
 import { JsonView } from "../json_view";
 import { RawSwitch } from "../raw_switch";
 import type { ActionRequestView } from "./client";
@@ -38,17 +39,20 @@ function ExternalGrantFields({ grant }: { grant: NonNullable<ActionRequestView["
 function RequestAuditDetails({ request }: { request: ActionRequestView }): JSX.Element {
   const grant = request.external_grant;
   return (
-    <details>
-      <Text component="summary" size="xs" c="dimmed" style={{ cursor: "pointer" }}>
-        {grant ? "Request & grant audit details" : "Request audit details"}
-      </Text>
+    <Disclosure
+      summary={
+        <Text component="span" size="xs" c="dimmed">
+          {grant ? "Request & grant audit details" : "Request audit details"}
+        </Text>
+      }
+    >
       <Stack gap={2} mt={4}>
         <Text size="xs" c="dimmed" style={{ overflowWrap: "anywhere" }}>
           Request <Code>{request.id}</Code>
         </Text>
         {grant && <ExternalGrantFields grant={grant} />}
       </Stack>
-    </details>
+    </Disclosure>
   );
 }
 

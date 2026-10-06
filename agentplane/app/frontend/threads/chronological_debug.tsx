@@ -9,6 +9,7 @@ import {
   type ArchivedObservationEntry,
   type ObservationPage,
 } from "../client";
+import { Disclosure } from "../disclosure";
 import { JsonView } from "../json_view";
 
 type PageRequest = { before?: string; after?: string };
@@ -49,16 +50,18 @@ function Observation({
 }): JSX.Element {
   const [expanded, setExpanded] = useState(false);
   return (
-    <details
-      data-debug-observation={observation.cursor}
+    <Disclosure
+      dataAttributes={{ "data-debug-observation": observation.cursor }}
       open={expanded}
-      onToggle={(event) => setExpanded(event.currentTarget.open)}
+      onOpenChange={setExpanded}
+      summary={
+        <>
+          Observation {observation.cursor} · {observation.kind}
+        </>
+      }
     >
-      <summary>
-        Observation {observation.cursor} · {observation.kind}
-      </summary>
-      {expanded && <ObservationEntry threadId={threadId} cursor={observation.cursor} />}
-    </details>
+      <ObservationEntry threadId={threadId} cursor={observation.cursor} />
+    </Disclosure>
   );
 }
 

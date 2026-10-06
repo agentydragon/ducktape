@@ -186,6 +186,7 @@ ts_library(
         ":actions_client",
         ":actions_rendering",
         ":client",
+        ":disclosure",
         ":json_view",
         ":raw_switch",
         "//:node_modules/@mantine/core",
@@ -284,6 +285,26 @@ ts_library(
     ],
 )
 
+js_library(
+    name = "disclosure_css",
+    srcs = ["disclosure.css"],
+)
+
+ts_library(
+    name = "disclosure",
+    srcs = [
+        "css.d.ts",
+        "disclosure.tsx",
+    ],
+    tsconfig = TSCONFIG,
+    deps = [
+        ":disclosure_css",
+        "//:node_modules/@mantine/core",
+        "//:node_modules/@types/react",
+        "//:node_modules/react",
+    ],
+)
+
 # A height-capped block whose clipped bottom shows the rest, and the shell command and output views
 # built on it that the SSH `exec` Action and the thread's shell tool calls share.
 ts_library(
@@ -291,6 +312,7 @@ ts_library(
     srcs = ["clamped_block.tsx"],
     tsconfig = TSCONFIG,
     deps = [
+        ":disclosure",
         "//:node_modules/@mantine/core",
         "//:node_modules/@types/react",
         "//:node_modules/react",

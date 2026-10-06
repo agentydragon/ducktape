@@ -35,7 +35,11 @@ describe("ClampedBlock", () => {
     expect(container.querySelector('[data-clamped="true"]')).toBeNull();
     expect(control(container, "Show all")).toBeUndefined();
 
-    await act(async () => control(container, "Show less")?.click());
+    expect(control(container, "Collapse")).toBeDefined();
+    expect(container.querySelector(".agentplane-disclosure-collapse")?.nextElementSibling?.textContent).toContain(
+      "test-content"
+    );
+    await act(async () => control(container, "Collapse")?.click());
     expect(container.querySelector('[data-clamped="true"]')).not.toBeNull();
   });
 
@@ -85,7 +89,7 @@ describe("ClampedBlock", () => {
     }
     const container = await mount(<Retained />);
     expect(container.querySelector('[data-clamped="true"]')).toBeNull();
-    expect(control(container, "Show less")).toBeDefined();
+    expect(control(container, "Collapse")).toBeDefined();
   });
 });
 

@@ -20,6 +20,7 @@ ts_library(
         "//:node_modules/@types/react",
         "//:node_modules/react",
         "//agentplane/app/frontend:client",
+        "//agentplane/app/frontend:disclosure",
         "//agentplane/app/frontend:json_view",
     ],
 )
@@ -185,6 +186,7 @@ ts_library(
     deps = [
         "//:node_modules/@types/react",
         "//:node_modules/react",
+        "//agentplane/app/frontend:disclosure",
     ],
 )
 
@@ -229,6 +231,7 @@ ts_library(
         "//:node_modules/@mantine/core",
         "//:node_modules/@types/react",
         "//:node_modules/react",
+        "//agentplane/app/frontend:disclosure",
     ],
 )
 

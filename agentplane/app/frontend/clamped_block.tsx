@@ -1,5 +1,7 @@
-import { Button, UnstyledButton } from "@mantine/core";
+import { UnstyledButton } from "@mantine/core";
 import { type JSX, type ReactNode, useLayoutEffect, useRef, useState } from "react";
+
+import { StickyCollapseControl } from "./disclosure";
 
 /** How many lines `text` has, a final newline ending its last line rather than starting another. */
 export function lineCount(text: string): number {
@@ -18,11 +20,14 @@ export function lineCount(text: string): number {
 export function ClampedBlock({
   maxHeightRem,
   lines,
+  label = "Expanded content",
   expansion,
   children,
 }: {
   maxHeightRem: number;
   lines?: number;
+  /** Short context for the sticky collapse control while expanded. */
+  label?: string;
   expansion?: readonly [boolean, (expanded: boolean) => void];
   children: ReactNode;
 }): JSX.Element {
@@ -45,7 +50,8 @@ export function ClampedBlock({
   }, [maxHeightRem]);
   const clipped = overflows && !expanded;
   return (
-    <div>
+    <div className="agentplane-clamped-block" data-expanded={expanded && overflows} data-label={label}>
+      {overflows && expanded && <StickyCollapseControl label={label} onCollapse={() => setExpanded(false)} />}
       <div
         data-clamped={clipped}
         style={{
@@ -77,11 +83,6 @@ export function ClampedBlock({
           </UnstyledButton>
         )}
       </div>
-      {overflows && expanded && (
-        <Button variant="subtle" size="compact-xs" mt={4} aria-expanded onClick={() => setExpanded(false)}>
-          Show less
-        </Button>
-      )}
     </div>
   );
 }

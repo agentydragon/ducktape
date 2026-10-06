@@ -436,6 +436,7 @@ function ToolCard({
                   <ClampedBlock
                     maxHeightRem={COMMAND_MAX_HEIGHT_REM}
                     lines={lineCount(argumentsBody)}
+                    label="Arguments"
                     expansion={input}
                   >
                     <HighlightedText text={argumentsBody} />

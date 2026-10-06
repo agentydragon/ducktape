@@ -1,5 +1,7 @@
 import { createContext, type JSX, type ReactNode, useContext, useMemo, useState } from "react";
 
+import { Disclosure } from "../disclosure";
+
 const MAX_RETAINED_DISCLOSURES = 128;
 
 interface DisclosureState {
@@ -50,9 +52,8 @@ export function RetainedDisclosure({
 }): JSX.Element {
   const [open, setOpen] = useRetainedDisclosure(id);
   return (
-    <details open={open} onToggle={(event) => setOpen(event.currentTarget.open)}>
-      <summary>{summary}</summary>
-      {open && children}
-    </details>
+    <Disclosure open={open} onOpenChange={setOpen} summary={summary}>
+      {children}
+    </Disclosure>
   );
 }

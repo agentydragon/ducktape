@@ -1,6 +1,8 @@
 import { Text } from "@mantine/core";
 import type { JSX, ReactNode, Ref } from "react";
 
+import { Disclosure } from "../disclosure";
+
 /** How a step stands, as its title shows it while the step is folded. A streaming step breathes; an
  * incomplete one, which nothing is working on, does not. */
 export type StepMark = "failed" | "streaming" | "incomplete";
@@ -65,14 +67,9 @@ export function StepLine({
   return (
     <div className="agentplane-step-row">
       {expandable ? (
-        <details
-          className="agentplane-step-details"
-          open={open}
-          onToggle={(event) => onOpenChange(event.currentTarget.open)}
-        >
-          <summary>{summary}</summary>
-          {open && children}
-        </details>
+        <Disclosure className="agentplane-step-details" open={open} onOpenChange={onOpenChange} summary={summary}>
+          {children}
+        </Disclosure>
       ) : (
         <div className="agentplane-step-static">{summary}</div>
       )}
