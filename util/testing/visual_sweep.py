@@ -277,6 +277,8 @@ async def capture_scenario(
             await assert_network_settled(page, context=output_name, timeout_ms=timeout_ms)
         for click in scenario.clicks:
             await page.click(click.selector, strict=True, timeout=timeout_ms)
+            if click.press is not None:
+                await page.keyboard.press(click.press)
             await _wait_for_selectors(
                 page, page_errors, click.expect_visible, state="visible", context=output_name, timeout_ms=timeout_ms
             )

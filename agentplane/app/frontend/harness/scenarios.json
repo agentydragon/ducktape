@@ -298,6 +298,7 @@
     "clicks": [
       {
         "selector": "label:text(\"Action policy sets\")",
+        "press": "ArrowDown",
         "expectVisible": ["[role=\"option\"]:visible:text(\"harness-reviews\")"],
         "expectHidden": ["[role=\"option\"]:visible:text(\"public-coder\")"]
       }
@@ -312,6 +313,7 @@
     "clicks": [
       {
         "selector": "label:text(\"Action policy sets\")",
+        "press": "ArrowDown",
         "expectVisible": ["[role=\"option\"]:visible:text(\"harness-reviews\")"],
         "expectHidden": ["[role=\"option\"]:visible:text(\"public-coder\")"]
       }
@@ -326,6 +328,7 @@
     "clicks": [
       {
         "selector": "label:text(\"Policies\")",
+        "press": "ArrowDown",
         "expectVisible": ["[role=\"option\"]:visible:text(\"pypi\")"],
         "expectHidden": ["[role=\"option\"]:visible:text(\"github-public\")"]
       }
@@ -340,6 +343,7 @@
     "clicks": [
       {
         "selector": "label:text(\"Policies\")",
+        "press": "ArrowDown",
         "expectVisible": ["[role=\"option\"]:visible:text(\"pypi\")"],
         "expectHidden": ["[role=\"option\"]:visible:text(\"github-public\")"]
       }
@@ -354,6 +358,7 @@
     "clicks": [
       {
         "selector": "label:text(\"Kubernetes grants\")",
+        "press": "ArrowDown",
         "expectVisible": ["[role=\"option\"]:visible:text(\"config-read\")"],
         "expectHidden": ["[role=\"option\"]:visible:text(\"workspace-read\")"]
       }
@@ -368,6 +373,7 @@
     "clicks": [
       {
         "selector": "label:text(\"Kubernetes grants\")",
+        "press": "ArrowDown",
         "expectVisible": ["[role=\"option\"]:visible:text(\"config-read\")"],
         "expectHidden": ["[role=\"option\"]:visible:text(\"workspace-read\")"]
       }
@@ -597,6 +603,7 @@
     "clicks": [
       {
         "selector": "label:text(\"Grant policies\")",
+        "press": "ArrowDown",
         "expectVisible": ["[role=\"option\"]:visible:text(\"pypi\")"]
       },
       {
@@ -614,6 +621,7 @@
     "clicks": [
       {
         "selector": "label:text(\"Grant policies\")",
+        "press": "ArrowDown",
         "expectVisible": ["[role=\"option\"]:visible:text(\"pypi\")"]
       },
       {

@@ -45,6 +45,9 @@ class Click(_TableModel):
             "land silently on a look-alike elsewhere on the page (`>> nth=0` says which one is meant)."
         )
     )
+    press: str | None = Field(
+        default=None, description="Keyboard key to press after the click, before checking what changed."
+    )
     expect_visible: list[str] = Field(
         default_factory=list, description="Selectors that must be visible once the click has taken effect."
     )
