@@ -70,7 +70,6 @@ flowchart TB
     PC_EGRESS_CREDENTIALS["Planned configuration<br/>public-coder's iron-proxy substitutions as EgressCredentials<br/>plus its dedicated ServiceAccount"]:::future
     PC_EGRESS["Capstone<br/>public-coder-agent egress migration<br/>proven equivalent, cut over, old proxy retired"]:::milestone
     ACCESS["Deferred design<br/>delegated vs brokered external access<br/>grants and revocation"]:::future
-    PUBLIC_MCP_ROUTE_ISOLATION["Remaining deployed security check<br/>operator REST and enrollment APIs<br/>unreachable through public MCP route"]:::future
     EGRESS_CHANGE["Deferred design<br/>agent-requested egress<br/>policy expansion"]:::future
     NOTIFICATION_ACTION_FEED["Notification source follow-up<br/>event-driven Action consumption<br/>replace idle history polling"]:::future
     NOTIFICATION_DEBOUNCE["Remaining deployed acceptance<br/>configurable runner-notice debounce<br/>real burst behavior"]:::active
@@ -194,12 +193,6 @@ The combined start composers require `NEWTHREAD_DURABLE` before promising “sub
 and walk away.” A browser-owned provisioning chain is not a correct intermediate
 version of that promise. Manual Sandbox creation and explicit open/resume remain
 available while combined start is deferred.
-
-### `PUBLIC_MCP_ROUTE_ISOLATION` — deployed route isolation
-
-**Remaining deployed acceptance:** verify operator REST and enrollment-management endpoints are
-unreachable through the public MCP route. Successful external-client execution does not establish
-this negative boundary. Keep the probe read-only and retain redacted route/status evidence.
 
 ### `EGRESS_CHANGE` — agent-requested egress policy expansion
 
