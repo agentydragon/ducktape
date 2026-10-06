@@ -272,6 +272,7 @@ export function SandboxList({ onOpen }: { onOpen: (name: string) => void }): JSX
         <MultiSelect
           label="Kubernetes grants"
           description="Roles bound to this sandbox's ServiceAccount"
+          hidePickedOptions
           data={kubernetesGrantOptions.map((grant) => ({
             value: grant.name,
             label: `${grant.name} · ${grant.kind} · ${grant.namespace ? `namespace ${grant.namespace}` : "cluster"} → ${grant.role_ref.kind}/${grant.role_ref.name}`,
