@@ -295,8 +295,8 @@ function AllowancePanel({ allowance }: { allowance: Allowance }) {
               {projected == null
                 ? "No reliable pace yet; the allowance balance above is still available."
                 : projected < 0
-                  ? "Projected shortfall before your next credit"
-                  : "Projected balance before your next credit"}
+                  ? "Shortfall at the current 7-day spend pace"
+                  : "At the current 7-day spend pace"}
             </Text>
             <Divider />
             <Text size="sm" fw={700}>
