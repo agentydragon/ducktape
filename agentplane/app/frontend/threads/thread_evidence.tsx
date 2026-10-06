@@ -98,9 +98,7 @@ function EvidenceFrames(props: { threadId: string; entity: ThreadEntity; observa
   return (
     <RetainedDisclosure
       id={id}
-      summary={
-        <span>Observation {props.observationCursor} raw frames</span>
-      }
+      summary={<span>Observation {props.observationCursor} raw frames</span>}
       summaryAside={
         <span className="agentplane-evidence-frames-debug">
           <ChronologicalDebugIcon observationCursor={props.observationCursor} />

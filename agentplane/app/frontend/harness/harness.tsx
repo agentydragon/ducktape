@@ -2332,9 +2332,7 @@ if (scenario.openMoreMenu) {
 function openRun(controls: HTMLButtonElement[]): void {
   controls
     .find(
-      (candidate) =>
-        candidate.textContent?.includes("tool call") &&
-        candidate.getAttribute("aria-expanded") !== "true"
+      (candidate) => candidate.textContent?.includes("tool call") && candidate.getAttribute("aria-expanded") !== "true"
     )
     ?.click();
 }
@@ -2369,7 +2367,9 @@ if (scenario.openSetup) {
 
 /** Opens each folded tool-call line inside the run, which mounts only once the run is open. */
 function openToolLines(): void {
-  for (const step of document.querySelectorAll<HTMLButtonElement>(".agentplane-step-details .agentplane-disclosure-summary")) {
+  for (const step of document.querySelectorAll<HTMLButtonElement>(
+    ".agentplane-step-details .agentplane-disclosure-summary"
+  )) {
     if (
       step.getAttribute("aria-expanded") !== "true" &&
       step.querySelector(".agentplane-step-title")?.textContent !== "Reasoning"

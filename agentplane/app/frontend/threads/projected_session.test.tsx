@@ -854,9 +854,13 @@ it("folds a run of tool calls and reasoning behind its summary until it is opene
 it("marks an unfinished run as streaming in the live turn, and as incomplete once that is over", async () => {
   const segments = [testItem(1, ItemKind.REASONING, { completion: null }), testItem(2, ItemKind.TOOL_CALL)];
   const [live] = await renderHistory(segments, true);
-  expect(live.querySelector('.agentplane-disclosure-summary [role="img"]')?.getAttribute("aria-label")).toBe("Streaming");
+  expect(live.querySelector('.agentplane-disclosure-summary [role="img"]')?.getAttribute("aria-label")).toBe(
+    "Streaming"
+  );
   const [retained] = await renderHistory(segments, false);
-  expect(retained.querySelector('.agentplane-disclosure-summary [role="img"]')?.getAttribute("aria-label")).toBe("Incomplete");
+  expect(retained.querySelector('.agentplane-disclosure-summary [role="img"]')?.getAttribute("aria-label")).toBe(
+    "Incomplete"
+  );
 });
 
 it("puts a live assistant-text cursor inline after its Markdown body", async () => {

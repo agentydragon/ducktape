@@ -56,12 +56,7 @@ export function ClampedBlock({
   return (
     <div className="agentplane-clamped-block" data-expanded={expanded && overflows} data-label={label}>
       {showStickyCollapse ? (
-        <StickyCollapseControl
-          label={label}
-          header={header}
-          expanded
-          onCollapse={() => setExpanded(false)}
-        />
+        <StickyCollapseControl label={label} header={header} expanded onCollapse={() => setExpanded(false)} />
       ) : (
         header
       )}

@@ -1,13 +1,5 @@
 import { Accordion, Button } from "@mantine/core";
-import {
-  createContext,
-  type JSX,
-  type ReactNode,
-  useContext,
-  useLayoutEffect,
-  useRef,
-  useState,
-} from "react";
+import { createContext, type JSX, type ReactNode, useContext, useLayoutEffect, useRef, useState } from "react";
 
 import "./disclosure.css";
 
