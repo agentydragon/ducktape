@@ -330,7 +330,7 @@
     "route": "/sandboxes?preset=public-coder",
     "viewport": { "width": 1200, "height": 900 },
     "outputName": "new-sandbox-policies",
-    "readySelectors": [".mantine-Pill-root"],
+    "readySelectors": [".mantine-Pill-root:has-text(\"github-public\")"],
     "clicks": [
       {
         "label": "Egress policies",
@@ -346,7 +346,7 @@
     "route": "/sandboxes?preset=public-coder",
     "viewport": { "width": 412, "height": 915, "deviceScaleFactor": 2.625 },
     "outputName": "new-sandbox-policies-phone",
-    "readySelectors": [".mantine-Pill-root"],
+    "readySelectors": [".mantine-Pill-root:has-text(\"github-public\")"],
     "clicks": [
       {
         "label": "Egress policies",
