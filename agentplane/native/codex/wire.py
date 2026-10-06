@@ -351,6 +351,7 @@ class ThreadResumeParams(Wire, OmitNone):
     thread_id: str
     base_instructions: str | None = None
     developer_instructions: str | None = None
+    exclude_turns: bool | None = None
 
 
 class ThreadResumeRequest(Wire):

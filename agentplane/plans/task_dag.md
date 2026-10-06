@@ -105,6 +105,7 @@ flowchart TB
     COMMAND_QUEUE_DECISION["Deferred decision<br/>accept commands while runner unavailable?<br/>current slice uses runner admission first"]:::decision
     CLAUDE_RECOVERY["Required evidence then implementation<br/>Claude execution before durable runner proof<br/>native correlation and safe recovery"]:::active
     CODEX_RECOVERY["Required evidence then implementation<br/>Codex execution before durable runner proof<br/>native correlation and safe recovery"]:::active
+    CODEX_RECOVERY_PROTOCOL["Deferred interoperability follow-up<br/>Codex reconciliation via documented app-server APIs<br/>replace private rollout inspection"]:::future
     SANDBOX_LIFECYCLE_DURABILITY["Planned lifecycle correctness<br/>retained state through suspension<br/>archive before managed storage deletion"]:::future
     SANDBOX_VM_ISOLATION["Deferred platform proof<br/>selectable KubeVirt execution environments<br/>guest runner, launcher proxy, resource isolation"]:::future
     THREAD_EVENT_CONTINUITY["Planned identity cutover<br/>one Thread journal across incarnations<br/>exclusive runner writer and retained state"]:::future
@@ -140,6 +141,7 @@ flowchart TB
     THREAD_EVENT_CONTINUITY --> THREAD_SUCCESSOR_DELIVERY
     CLAUDE_RECOVERY -. native continuation evidence .-> THREAD_SUCCESSOR_DELIVERY
     CODEX_RECOVERY -. native continuation evidence .-> THREAD_SUCCESSOR_DELIVERY
+    CODEX_RECOVERY -. required recovery evidence .-> CODEX_RECOVERY_PROTOCOL
     COMMAND_QUEUE_DECISION -. if app-first acceptance chosen .-> THREAD_COMMAND_DELIVERY
     THREAD_COMMAND_DELIVERY --> THREAD_OUTBOX_CUTOVER
     THREAD_OUTBOX_CUTOVER --> NEWTHREAD_DURABLE
@@ -762,6 +764,21 @@ Land the native evidence and resulting runner changes as independently reviewabl
 PRs, with real-process crash tests preserving command provenance. The same
 [recovery contract](../docs/thread_layering.md#command-protocol-intent-admission-then-outcome)
 applies; neither harness waits for the other's research to land its own proven change.
+
+### `CODEX_RECOVERY_PROTOCOL` — reconcile through documented app-server history APIs
+
+**Deferred interoperability improvement:** replace Agentplane's direct reads of Codex rollout
+records and their private format with documented app-server history APIs. Evaluate a metadata-only
+`thread/resume` followed by `thread/turns/list` and `thread/items/list` (or their supported stable
+equivalents); verify version and capability requirements and whether the returned fields support
+the existing retained / absent / revised / unknown decisions, including interrupted tool and
+reasoning items. Preserve command provenance and the rule that recovery never replays old side
+effects. Keep outcomes unknown where the public protocol cannot establish them, and record any
+upstream protocol gap instead of silently depending on internal rollout details.
+
+This follow-up changes the source Agentplane uses for reconciliation. The `excludeTurns` resume
+request only avoids returning the full transcript in a single native response; current recovery
+continues to inspect Codex's persisted history until this task is completed.
 
 ### `SANDBOX_LIFECYCLE_DURABILITY` — preserve state through suspension and deletion
 

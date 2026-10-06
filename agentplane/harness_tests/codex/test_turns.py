@@ -73,6 +73,8 @@ async def test_idle_resume_replays_the_thread_from_disk(codex: CodexHarness, ope
 
     async with codex.start(openai_responses, resume_thread_id=first.thread_id) as second:
         assert second.thread_id == first.thread_id
+        resume_response = next(frame for frame in second.native_frames() if frame.get("id") == "capture-2")
+        assert resume_response["result"]["thread"]["turns"] == []
         turn = await second.start_turn("Reply with exactly: IDLE_RESUME_OK")
 
         async with await openai_responses.await_next_request() as exchange:
