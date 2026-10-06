@@ -3,7 +3,7 @@
 import asyncio
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import override
 
 import grpc
@@ -41,6 +41,7 @@ class Resources:
     admission_timeout_s: float = 15
     follow_lease_s: float = 900
     lifecycle_timeout_s: float = 300
+    grpc_channel_options: dict[str, int | str] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
         if min(self.admission_timeout_s, self.follow_lease_s, self.lifecycle_timeout_s) <= 0:
@@ -105,7 +106,7 @@ class SandboxService(protocol_pb2_grpc.SandboxServiceServicer):
     async def runner(self, destination: SandboxDestination) -> AsyncIterator[tuple[RunnerClient, RunnerEndpoint]]:
         endpoint = await self.resources.destinations.resolve(destination)
         # TODO: runner RPC authentication/TLS. V1 relies on the deployment network boundary.
-        client = RunnerClient(endpoint.target)
+        client = RunnerClient(endpoint.target, channel_options=self.resources.grpc_channel_options)
         try:
             yield client, endpoint
         finally:
@@ -279,7 +280,7 @@ class SandboxService(protocol_pb2_grpc.SandboxServiceServicer):
                 if not destination.session_id:
                     raise ValueError("session ID is required")
                 endpoint = await self.resources.destinations.resolve(destination.sandbox)
-            client = RunnerClient(endpoint.target)
+            client = RunnerClient(endpoint.target, channel_options=self.resources.grpc_channel_options)
             try:
                 async with asyncio.timeout(self.resources.admission_timeout_s):
                     attachment = await client.attach(destination.session_id, after_cursor=request.follow.after_cursor)

@@ -32,6 +32,7 @@ from cluster.cdk8s.token_reviewer_rbac import token_reviewer_cluster_rbac
 from util.settings_contract import env_name
 
 NAME = "agentplane-notifications"
+SETTINGS_NAME = f"{NAME}-settings"
 WORKLOAD_CREDENTIAL = "agentplane-notifications-workload"
 _IMAGE = "git.allegedly.works/ducktape-ci/agentplane-notification-service"
 _LABELS = {"app.kubernetes.io/name": NAME}
@@ -67,7 +68,12 @@ class Notifications(Construct):
         deployment = Deployment(
             self,
             "deployment",
-            metadata=ApiObjectMetadata(name=NAME, namespace=env.namespace, labels=_LABELS),
+            metadata=ApiObjectMetadata(
+                name=NAME,
+                namespace=env.namespace,
+                labels=_LABELS,
+                annotations={"configmap.reloader.stakater.com/reload": SETTINGS_NAME},
+            ),
             pod_metadata=ApiObjectMetadata(labels=_LABELS),
             replicas=env.replicas.count,
             strategy=env.replicas.strategy,
@@ -86,7 +92,7 @@ class Notifications(Construct):
         settings = SettingsFile(
             self,
             "settings",
-            metadata=ApiObjectMetadata(name=f"{NAME}-settings", namespace=env.namespace),
+            metadata=ApiObjectMetadata(name=SETTINGS_NAME, namespace=env.namespace),
             model=Settings,
             path="/etc/agentplane-notifications/settings.yaml",
             content={
@@ -98,6 +104,7 @@ class Notifications(Construct):
                 },
                 "sandbox_service": {
                     "target": f"{sandboxes.fqdn}:{sandboxes.port.number}",
+                    "grpc_channel_options": env.app_config.grpc_channel_options,
                     "token_file": "/var/run/secrets/notifications/sandboxes",
                 },
                 "github": {"app_id": github.app_id} if github is not None else None,

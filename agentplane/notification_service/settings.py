@@ -43,6 +43,10 @@ class GitHubSettings(BaseModel):
 class SandboxServiceSettings(BaseModel):
     model_config = ConfigDict(extra="forbid", hide_input_in_errors=True)
     target: str = Field(description="Sandbox Service gRPC host:port for session access and runner commands.")
+    grpc_channel_options: dict[str, int | str] = Field(
+        default_factory=dict,
+        description="gRPC channel option names and integer/string values; overrides shared channel defaults.",
+    )
     token_file: Path = Field(
         description="Path to the rotating projected ServiceAccount token used to authenticate to Sandbox Service."
     )

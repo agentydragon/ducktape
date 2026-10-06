@@ -347,6 +347,7 @@ py_library(
     ],
     visibility = ["//cluster/cdk8s:__pkg__"],
     deps = [
+        "//agentplane:grpc_options",
         "//agentplane/app:action_federation",
         "//agentplane/app:api",
         "//agentplane/app:main",

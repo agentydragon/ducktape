@@ -3,13 +3,13 @@
 from __future__ import annotations
 
 import asyncio
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from types import TracebackType
 from typing import Self
 
 import grpc
 
-from agentplane.grpc_options import MAX_GRPC_RECEIVE_MESSAGE_BYTES
+from agentplane.grpc_options import grpc_channel_option_kvps
 from agentplane.protocol import command_pb2, event_log_pb2
 from agentplane.runner import protocol_pb2, protocol_pb2_grpc
 from agentplane.runner.errors import OpenTimeoutError, RunnerError, StreamClosedError
@@ -137,11 +137,12 @@ class Attachment:
 
 
 class RunnerClient:
-    def __init__(self, target: str, *, capture_history: bool = False) -> None:
+    def __init__(
+        self, target: str, *, capture_history: bool = False, channel_options: Mapping[str, int | str] | None = None
+    ) -> None:
         self._capture_history = capture_history
-        self._channel = grpc.aio.insecure_channel(
-            target, options=(("grpc.max_receive_message_length", MAX_GRPC_RECEIVE_MESSAGE_BYTES),)
-        )
+        self._channel_options = channel_options
+        self._channel = grpc.aio.insecure_channel(target, options=grpc_channel_option_kvps(self._channel_options))
         self._stub = protocol_pb2_grpc.RunnerStub(self._channel)
 
     async def attach(

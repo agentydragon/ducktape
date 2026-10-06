@@ -7,6 +7,10 @@ package(default_visibility = ["//agentplane:__subpackages__"])
 py_library(
     name = "grpc_options",
     srcs = ["grpc_options.py"],
+    visibility = [
+        "//agentplane:__subpackages__",
+        "//cluster/cdk8s/agentplane:__pkg__",
+    ],
 )
 
 py_library(

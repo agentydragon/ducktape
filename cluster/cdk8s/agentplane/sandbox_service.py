@@ -77,6 +77,7 @@ class SandboxService(Construct):
             kubernetes_grants=env.app_config.kubernetes_grants,
             kubernetes_binding_cleanup_namespaces=set(env.app_config.kubernetes_binding_cleanup_namespaces),
             kubernetes_cluster_binding_cleanup=env.app_config.kubernetes_cluster_binding_cleanup,
+            grpc_channel_options=env.app_config.grpc_channel_options,
         )
         config = SettingsFile(
             self,
@@ -98,7 +99,12 @@ class SandboxService(Construct):
         deployment = Deployment(
             self,
             "deployment",
-            metadata=ApiObjectMetadata(name=NAME, namespace=env.namespace, labels=_LABELS),
+            metadata=ApiObjectMetadata(
+                name=NAME,
+                namespace=env.namespace,
+                labels=_LABELS,
+                annotations={"configmap.reloader.stakater.com/reload": config.config_map.name},
+            ),
             pod_metadata=ApiObjectMetadata(labels=_LABELS),
             replicas=env.replicas.count,
             strategy=env.replicas.strategy,
