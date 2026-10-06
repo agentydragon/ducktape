@@ -82,9 +82,17 @@ function appendStreamingCursor(content: DocumentFragment): void {
     [...parent.childNodes]
       .reverse()
       .find((node) => node.nodeType !== Node.TEXT_NODE || Boolean(node.textContent?.trim())) ?? null;
+  const isFencedCode = (element: Element): boolean =>
+    element.tagName === "CODE" &&
+    element.parentElement?.tagName === "PRE" &&
+    element.classList.contains("agentplane-code-fence");
   let parent: ParentNode = content;
   let last = lastContentChild(content);
-  while (last instanceof Element && !INLINE_TAGS.has(last.tagName) && !VOID_TAGS.has(last.tagName)) {
+  while (
+    last instanceof Element &&
+    (!INLINE_TAGS.has(last.tagName) || isFencedCode(last)) &&
+    !VOID_TAGS.has(last.tagName)
+  ) {
     parent = last;
     const child = lastContentChild(last);
     if (!child) {
