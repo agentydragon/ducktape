@@ -62,7 +62,10 @@ PUBLIC_CODER_ACTION_POLICY_SETS = (
 )
 
 
-def config(action_federation: ActionFederationSettings | None = None) -> AppSettingsConfig:
+def config(
+    action_federation: ActionFederationSettings | None = None,
+    sandbox_service_grpc_channel_options: dict[str, int | str] | None = None,
+) -> AppSettingsConfig:
     cfg = settings(
         namespace=_NAMESPACE,
         # The staging key admits GPT-6 subscription routes, the full Antigravity lineup,
@@ -70,6 +73,7 @@ def config(action_federation: ActionFederationSettings | None = None) -> AppSett
         models=STAGING_APP_MODELS,
         thread_preset_codex_model=GPT6_LUNA_RESPONSES,
         action_federation=action_federation,
+        sandbox_service_grpc_channel_options=sandbox_service_grpc_channel_options,
         action_policy_sets=[*PUBLIC_CODER_ACTION_POLICY_SETS, GITHUB_IDENTITY_READS_SET, SSH_READS_SET],
         # Haku/Claude launch presets are paused; their renderer and setup script remain.
         kubernetes_grants={

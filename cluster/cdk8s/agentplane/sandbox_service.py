@@ -99,12 +99,7 @@ class SandboxService(Construct):
         deployment = Deployment(
             self,
             "deployment",
-            metadata=ApiObjectMetadata(
-                name=NAME,
-                namespace=env.namespace,
-                labels=_LABELS,
-                annotations={"configmap.reloader.stakater.com/reload": config.config_map.name},
-            ),
+            metadata=ApiObjectMetadata(name=NAME, namespace=env.namespace, labels=_LABELS),
             pod_metadata=ApiObjectMetadata(labels=_LABELS),
             replicas=env.replicas.count,
             strategy=env.replicas.strategy,

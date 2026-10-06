@@ -142,6 +142,9 @@ class AppSettingsConfig(BaseSettings):
         description="EgressPolicy names every new sandbox is granted before the caller's own picks: "
         "what no sandbox works without, the model endpoint above all.",
     )
+    sandbox_service_grpc_channel_options: dict[str, int | str] = Field(
+        default_factory=dict, description="gRPC channel options for the App's connection to Sandbox Service."
+    )
     egress_admin_url: str = Field(description="The egress proxy's admin port, serving /decisions.")
     # Last to retain the app config file's historical top-level key order.
     action_federation: ActionFederationSettings | None = None
@@ -269,6 +272,7 @@ async def async_main(settings: Settings) -> None:
             settings.sandbox_service_target,
             namespace=settings.sandbox_namespace,
             token_file=settings.sandbox_service_token_file,
+            channel_options=settings.sandbox_service_grpc_channel_options,
         )
         egress = EgressAccess(EgressReader(namespace=settings.namespace, custom_objects=custom_objects), inventory)
         # In the Sandbox's namespace, not the app's: that is where the Action Service matches a

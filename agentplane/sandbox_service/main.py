@@ -47,7 +47,8 @@ class Settings(BaseSettings):
     admission_timeout_s: float = Field(default=15, gt=0, le=60)
     follow_lease_s: float = Field(default=900, gt=0, le=900)
     runner_grpc_channel_options: dict[str, int | str] = Field(
-        default_factory=dict, description="gRPC channel options for the Sandbox Service's connections to runners."
+        default_factory=dict,
+        description="gRPC options for Sandbox Service-to-runner channels; receives retained journal events up to the configured limit.",
     )
     host: str = "0.0.0.0"
     port: int = Field(default=8080, ge=1, le=65535)

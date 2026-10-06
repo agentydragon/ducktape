@@ -15,7 +15,6 @@ from cilium_crds.io.cilium import CiliumNetworkPolicySpecEgress
 
 from agentplane.action_service.main import ActionServiceDeploymentSettings
 from agentplane.app.main import AppSettingsConfig
-from agentplane.grpc_options import DEFAULT_GRPC_CHANNEL_OPTION_KVPS
 from cluster.cdk8s.model_selections import HarnessRoutes
 
 
@@ -119,6 +118,8 @@ class Environment:
     replicas: ReplicaProfile
     # The ConfigMap-authored portion of agentplane/app/main.py's `Settings`.
     app_config: AppSettingsConfig
+    # Options for Sandbox Service's gRPC channel to the runner, authored into its ConfigMap.
+    runner_grpc_channel_options: Mapping[str, int | str]
     # Shared source for app settings and the follow-up ingress metadata projection.
     model_routes: HarnessRoutes
     db: DbProps
@@ -126,11 +127,6 @@ class Environment:
     egress: EgressProps
     app: AppProps
     actions: ActionsProps
-    # Options for Sandbox Service's gRPC channel to the runner, configurable independently of
-    # App and notification-service channels.
-    runner_grpc_channel_options: Mapping[str, int | str] = field(
-        default_factory=lambda: dict(DEFAULT_GRPC_CHANNEL_OPTION_KVPS)
-    )
     notifications_github: GitHubAppProps | None = None
     # Non-secret environment defaults shared by every SandboxTemplate workload container;
     # the common pod builder applies them, and the runner explicitly forwards these names to harnesses.

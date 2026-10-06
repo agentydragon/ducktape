@@ -44,6 +44,7 @@ from cluster.cdk8s.agentplane.environment import (
     LlmIngressProps,
     ReplicaProfile,
 )
+from cluster.cdk8s.agentplane.grpc_channel_config import LARGE_EVENT_GRPC_CHANNEL_OPTIONS
 from cluster.cdk8s.external_secrets.minted_secret import mint_bearer_secret
 from cluster.cdk8s.external_secrets.single_secret_store import single_secret_store
 from cluster.cdk8s.flux import Kustomization, flux_kustomization, flux_kustomization_depends_on_many
@@ -300,7 +301,10 @@ ENV = Environment(
         pdb_min_available=1,
     ),
     model_routes=STAGING_APP_MODELS,
-    app_config=staging_config.config(action_federation=_ACTION_FEDERATION),
+    app_config=staging_config.config(
+        action_federation=_ACTION_FEDERATION, sandbox_service_grpc_channel_options=LARGE_EVENT_GRPC_CHANNEL_OPTIONS
+    ),
+    runner_grpc_channel_options=LARGE_EVENT_GRPC_CHANNEL_OPTIONS,
     notifications_github=GitHubAppProps(app_id=5188971, secret_name="agentplane-github-app"),
     db=DbProps(instances=2),
     llm_ingress=LlmIngressProps(litellm_key_secret_name=_LITELLM_KEY_SECRET, log_llm_requests=True),
