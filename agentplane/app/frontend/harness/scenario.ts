@@ -48,6 +48,8 @@ export interface Scenario {
   historyPaged?: boolean;
   /** Once the preset's pick has landed as a pill, open the action policy sets dropdown. */
   openActionPolicySets?: boolean;
+  /** Once the preset's grant has landed as a pill, open the Kubernetes grants dropdown. */
+  openKubernetesGrants?: boolean;
   /** Click the phone-width hamburger once it mounts: the sidebar drawer has no route of its own. */
   openMobileSidebar?: boolean;
   threadlessSandbox?: boolean;

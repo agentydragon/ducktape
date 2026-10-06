@@ -1824,6 +1824,12 @@ routes.push(
         namespace: "agentplane-visual",
         role_ref: { kind: "Role", name: "workspace-reader" },
       },
+      {
+        name: "config-read",
+        kind: "RoleBinding",
+        namespace: "agentplane-visual",
+        role_ref: { kind: "Role", name: "config-reader" },
+      },
     ],
   ],
   ["GET", /^\/egress\/policies$/, () => POLICIES],
@@ -2439,6 +2445,20 @@ if (scenario.openActionPolicySets) {
     control.click();
   });
   openSets.observe(document, { childList: true, subtree: true });
+}
+if (scenario.openKubernetesGrants) {
+  // Show the remaining grants beside the preset's selected workspace-read grant.
+  const openGrants = new MutationObserver(() => {
+    const pill = [...document.querySelectorAll(".mantine-Pill-root")].find(
+      (node) => node.textContent?.trim() === "workspace-read"
+    );
+    const label = [...document.querySelectorAll("label")].find((node) => node.textContent === "Kubernetes grants");
+    const control = label?.control;
+    if (!pill || !(control instanceof HTMLInputElement)) return;
+    openGrants.disconnect();
+    control.click();
+  });
+  openGrants.observe(document, { childList: true, subtree: true });
 }
 if (scenario.checkComposerControls) {
   const checkControls = new MutationObserver(() => {

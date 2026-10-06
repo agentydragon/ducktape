@@ -305,6 +305,22 @@
     "readySelectors": [".mantine-Pill-root", "[role=\"listbox\"]"],
     "openActionPolicySets": true
   },
+  "new_sandbox_grants": {
+    "element": "#app",
+    "route": "/sandboxes?preset=public-coder",
+    "viewport": { "width": 1200, "height": 900 },
+    "outputName": "new-sandbox-grants",
+    "readySelectors": [".mantine-Pill-root", "[role=\"option\"]:text(\"config-read\")"],
+    "openKubernetesGrants": true
+  },
+  "new_sandbox_grants_phone": {
+    "element": "#app",
+    "route": "/sandboxes?preset=public-coder",
+    "viewport": { "width": 412, "height": 915, "deviceScaleFactor": 2.625 },
+    "outputName": "new-sandbox-grants-phone",
+    "readySelectors": [".mantine-Pill-root", "[role=\"option\"]:text(\"config-read\")"],
+    "openKubernetesGrants": true
+  },
   "actions_attention_composer_desktop": {
     "element": "#app",
     "route": "/threads/5f1c4a2e-0000-4000-8000-000000000001",
