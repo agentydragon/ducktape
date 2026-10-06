@@ -276,9 +276,12 @@ async def capture_scenario(
             # An interaction acts on a page whose first fetches have landed: its target may be replaced under it.
             await assert_network_settled(page, context=output_name, timeout_ms=timeout_ms)
         for click in scenario.clicks:
-            await page.click(click.selector, strict=True, timeout=timeout_ms)
+            target = (
+                page.get_by_label(click.label, exact=True) if click.label is not None else page.locator(click.selector)
+            )
+            await target.click(force=click.force, timeout=timeout_ms)
             if click.press is not None:
-                await page.keyboard.press(click.press)
+                await target.press(click.press, timeout=timeout_ms)
             await _wait_for_selectors(
                 page, page_errors, click.expect_visible, state="visible", context=output_name, timeout_ms=timeout_ms
             )

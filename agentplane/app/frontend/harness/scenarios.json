@@ -297,7 +297,8 @@
     "readySelectors": [".mantine-Pill-root"],
     "clicks": [
       {
-        "selector": "label:text(\"Action policy sets\")",
+        "label": "Action policy sets",
+        "force": true,
         "press": "ArrowDown",
         "expectVisible": ["[role=\"option\"]:visible:text(\"harness-reviews\")"],
         "expectHidden": ["[role=\"option\"]:visible:text(\"public-coder\")"]
@@ -312,7 +313,8 @@
     "readySelectors": [".mantine-Pill-root"],
     "clicks": [
       {
-        "selector": "label:text(\"Action policy sets\")",
+        "label": "Action policy sets",
+        "force": true,
         "press": "ArrowDown",
         "expectVisible": ["[role=\"option\"]:visible:text(\"harness-reviews\")"],
         "expectHidden": ["[role=\"option\"]:visible:text(\"public-coder\")"]
@@ -327,7 +329,8 @@
     "readySelectors": [".mantine-Pill-root"],
     "clicks": [
       {
-        "selector": "label:text(\"Policies\")",
+        "label": "Policies",
+        "force": true,
         "press": "ArrowDown",
         "expectVisible": ["[role=\"option\"]:visible:text(\"pypi\")"],
         "expectHidden": ["[role=\"option\"]:visible:text(\"github-public\")"]
@@ -342,7 +345,8 @@
     "readySelectors": [".mantine-Pill-root"],
     "clicks": [
       {
-        "selector": "label:text(\"Policies\")",
+        "label": "Policies",
+        "force": true,
         "press": "ArrowDown",
         "expectVisible": ["[role=\"option\"]:visible:text(\"pypi\")"],
         "expectHidden": ["[role=\"option\"]:visible:text(\"github-public\")"]
@@ -357,7 +361,8 @@
     "readySelectors": [".mantine-Pill-root"],
     "clicks": [
       {
-        "selector": "label:text(\"Kubernetes grants\")",
+        "label": "Kubernetes grants",
+        "force": true,
         "press": "ArrowDown",
         "expectVisible": ["[role=\"option\"]:visible:text(\"config-read\")"],
         "expectHidden": ["[role=\"option\"]:visible:text(\"workspace-read\")"]
@@ -372,7 +377,8 @@
     "readySelectors": [".mantine-Pill-root"],
     "clicks": [
       {
-        "selector": "label:text(\"Kubernetes grants\")",
+        "label": "Kubernetes grants",
+        "force": true,
         "press": "ArrowDown",
         "expectVisible": ["[role=\"option\"]:visible:text(\"config-read\")"],
         "expectHidden": ["[role=\"option\"]:visible:text(\"workspace-read\")"]
@@ -602,7 +608,8 @@
     "outputName": "sandbox-egress",
     "clicks": [
       {
-        "selector": "label:text(\"Grant policies\")",
+        "label": "Grant policies",
+        "force": true,
         "press": "ArrowDown",
         "expectVisible": ["[role=\"option\"]:visible:text(\"pypi\")"]
       },
@@ -620,7 +627,8 @@
     "outputName": "sandbox-egress-phone",
     "clicks": [
       {
-        "selector": "label:text(\"Grant policies\")",
+        "label": "Grant policies",
+        "force": true,
         "press": "ArrowDown",
         "expectVisible": ["[role=\"option\"]:visible:text(\"pypi\")"]
       },
