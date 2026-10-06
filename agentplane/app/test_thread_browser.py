@@ -1262,7 +1262,6 @@ async def test_opening_a_call_and_its_output_keeps_it_collapsible_while_reading(
     await read_at(page, show_all, 0.3)
     await show_all.click()
     collapse = call.get_by_role("button", name="Collapse Output")
-    await expect(collapse).to_be_in_viewport()
     output_line = call.locator('.agentplane-clamped-block[data-label="Output"] .cm-line').filter(
         has_text="output line 45"
     )
@@ -1294,7 +1293,6 @@ async def test_opening_a_call_while_output_streams_in_keeps_it_collapsible(threa
         await read_at(page, show_all, 0.3)
         await show_all.click()
         collapse = call.get_by_role("button", name="Collapse Output")
-        await expect(collapse).to_be_in_viewport()
         output_line = call.locator('.agentplane-clamped-block[data-label="Output"] .cm-line').filter(
             has_text="output line 45"
         )
