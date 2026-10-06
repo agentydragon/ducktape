@@ -16,7 +16,7 @@ import pytest_bazel
 from sqlalchemy import func, select, text, update
 from sqlalchemy.ext.asyncio import create_async_engine
 
-from agentplane.app.conftest import SPEC, Replica, event_entry
+from agentplane.app.testing.thread_test_support import SPEC, Replica, event_entry
 from agentplane.app.threads.events.event_log import EventLogStore, EventReplicationError, FeedEnd, FeedError
 from agentplane.app.threads.events.ingestion_lease import IngestionLease, IngestionLeaseLostError
 from agentplane.app.threads.ingestion import Ingestion, event_batches

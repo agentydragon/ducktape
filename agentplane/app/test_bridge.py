@@ -29,7 +29,7 @@ from tenacity import AsyncRetrying, retry_if_exception_type, stop_after_delay, w
 from agentplane.app.action_policy import ActionPolicyInventory
 from agentplane.app.api import ModelCatalog, ModelOption, create_app
 from agentplane.app.changes import Changes
-from agentplane.app.conftest import _CALL_REPORT, AGENT_AUTH, TEST_REASONING_EFFORTS
+from agentplane.app.conftest import _CALL_REPORT, AGENT_AUTH
 from agentplane.app.database import connect
 from agentplane.app.database_updates import Channel, DatabaseUpdates
 from agentplane.app.decisions import DecisionsClient
@@ -37,6 +37,7 @@ from agentplane.app.egress_access import EgressAccess
 from agentplane.app.identity import TokenReviewer
 from agentplane.app.live import LiveIndex
 from agentplane.app.operator_sessions import OperatorSessionStore
+from agentplane.app.testing.model_test_data import TEST_REASONING_EFFORTS
 from agentplane.app.threads.bridge import RunnerAdmissionTimeoutError, RunnerBridge
 from agentplane.app.threads.events.event_log import EventLogStore, FeedError
 from agentplane.app.threads.events.stream import follow

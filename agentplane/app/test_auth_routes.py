@@ -23,7 +23,7 @@ from starlette.routing import Route
 
 from agentplane.app.action_policy import ActionPolicyInventory
 from agentplane.app.api import ModelCatalog, ModelOption, create_app
-from agentplane.app.conftest import AGENT, AGENT_AUTH, AUDIENCE, STRANGER_AUTH, TEST_REASONING_EFFORTS
+from agentplane.app.conftest import AGENT, AGENT_AUTH, AUDIENCE, STRANGER_AUTH
 from agentplane.app.database_updates import DatabaseUpdates
 from agentplane.app.decisions import DecisionsClient
 from agentplane.app.egress_access import EgressAccess
@@ -31,6 +31,7 @@ from agentplane.app.identity import TokenReviewer
 from agentplane.app.live import LiveIndex
 from agentplane.app.oidc import OIDCSettings
 from agentplane.app.operator_sessions import BrowserSession, OperatorSessionStore
+from agentplane.app.testing.model_test_data import TEST_REASONING_EFFORTS
 from agentplane.app.threads.bridge import RunnerBridge
 from agentplane.app.threads.events.event_log import EventLogStore
 from agentplane.app.threads.store import ThreadStore

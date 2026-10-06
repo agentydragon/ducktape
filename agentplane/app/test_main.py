@@ -21,7 +21,7 @@ from tenacity import AsyncRetrying, retry_if_exception_type, stop_after_delay, w
 
 from agentplane.app.action_policy import ActionPolicyInventory
 from agentplane.app.api import ModelCatalog, ModelOption, create_app
-from agentplane.app.conftest import AGENT_AUTH, TEST_REASONING_EFFORTS
+from agentplane.app.conftest import AGENT_AUTH
 from agentplane.app.database_updates import DatabaseUpdates
 from agentplane.app.decisions import DecisionsClient
 from agentplane.app.egress_access import EgressAccess
@@ -31,6 +31,7 @@ from agentplane.app.main import AppServer, Settings, SpaFiles, serve_then_close
 from agentplane.app.oidc import load_settings
 from agentplane.app.operator_sessions import OperatorSessionStore
 from agentplane.app.shutdown import drain_of
+from agentplane.app.testing.model_test_data import TEST_REASONING_EFFORTS
 from agentplane.app.threads.bridge import RunnerBridge
 from agentplane.app.threads.events.event_log import EventLogStore
 from agentplane.app.threads.ingestion import Ingester

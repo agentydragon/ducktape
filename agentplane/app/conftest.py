@@ -5,14 +5,12 @@ from __future__ import annotations
 import re
 import secrets
 from collections.abc import AsyncIterator, Generator, Iterator
-from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any, cast
 
 import httpx
 import pytest
-from google.protobuf.timestamp_pb2 import Timestamp
 from kubernetes_asyncio.client import CoreV1Api
 from sqlalchemy import create_engine, text
 from sqlalchemy.engine import make_url
@@ -29,6 +27,7 @@ from agentplane.app.identity import TokenReviewer
 from agentplane.app.live import LiveIndex
 from agentplane.app.operator_sessions import BrowserSession, OperatorSession, OperatorSessionStore, SessionRow
 from agentplane.app.testing.egress_proxy import FakeEgressAdmin
+from agentplane.app.testing.thread_test_support import SPEC, Replica, event_entry
 from agentplane.app.threads.bridge import RunnerBridge
 from agentplane.app.threads.events.event_log import EventLogStore
 from agentplane.app.threads.events.ingestion_lease import IngestionLease
@@ -36,8 +35,6 @@ from agentplane.app.threads.ingestion import Ingester, Ingestion
 from agentplane.app.threads.sessions import SandboxSessions
 from agentplane.app.threads.store import ThreadStore
 from agentplane.app.threads.view.content import ContentStore
-from agentplane.protocol import event_log_pb2, event_pb2
-from agentplane.runner import protocol_pb2
 
 # The per-test database is created over psycopg, which SQLAlchemy loads from the URL scheme.
 # gazelle:include_dep @pypi//psycopg
@@ -160,16 +157,6 @@ async def database_updates(engine: AsyncEngine) -> AsyncIterator[DatabaseUpdates
         yield updates
 
 
-@dataclass(frozen=True)
-class Replica:
-    """Another app replica's stores, over its own connection pool on the same database."""
-
-    store: ThreadStore
-    event_logs: EventLogStore
-    ingestion: Ingestion
-    operator_sessions: OperatorSessionStore
-
-
 @pytest.fixture
 async def replica(db_url: str) -> AsyncIterator[Replica]:
     engine = connect(db_url)
@@ -199,26 +186,11 @@ async def stored_login(store: OperatorSessionStore, login: OperatorSession) -> S
     return SessionRow(store, row.id, idle=timedelta(hours=1), step=timedelta(minutes=5))
 
 
-SPEC = protocol_pb2.SessionSpec(
-    harness=protocol_pb2.HARNESS_CLAUDE, cwd="/state/work", model="test-model", reasoning_effort="low"
-)
-
-
 @pytest.fixture
 async def lease(ingestion: Ingestion) -> IngestionLease:
     lease = await ingestion.acquire("sb-1", timedelta(minutes=1))
     assert lease is not None
     return lease
-
-
-def event_entry(cursor: int, **observation: object) -> event_log_pb2.EventEntry:
-    """One runner event at `cursor`, timestamped from it so a thread's order is its cursor order."""
-    at = Timestamp()
-    at.FromDatetime(datetime(2026, 9, 2, 12, 0, tzinfo=UTC) + timedelta(seconds=cursor))
-    event = event_pb2.Event(at=at, **observation)  # type: ignore[arg-type]
-    return event_log_pb2.EventEntry(
-        cursor=cursor, origin=event_log_pb2.EventOrigin(source_id="test-runner", sequence=cursor), event=event
-    )
 
 
 @pytest.fixture
@@ -316,8 +288,6 @@ async def inventory(sandbox_endpoint: Endpoint) -> AsyncIterator[SandboxServiceC
 AUDIENCE = "agentplane-test"
 AGENT = f"system:serviceaccount:{NAMESPACE}:test-agent"
 AGENT_TOKEN = "test-agent-token"  # a test literal, not a real credential
-TEST_REASONING_EFFORTS = ("low", "medium", "high")
-
 AGENT_AUTH = {"Authorization": f"Bearer {AGENT_TOKEN}"}
 # A second ServiceAccount, whose tokens are every bit as valid as the agent's and which the app
 # accepts nothing from: what naming the subjects it does accept is for.

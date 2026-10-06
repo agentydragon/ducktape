@@ -51,6 +51,7 @@ py_test(
         ":ingestion_lease",
         "//:conftest",
         "//agentplane/app:conftest",
+        "//agentplane/app/testing:thread_test_support",
         "//agentplane/app/threads:ingestion",
         "//agentplane/protocol:event_pb2",
         "@pypi//protobuf",
