@@ -310,6 +310,7 @@ py_library(
         "//cluster/cdk8s:agent_access_profiles",
         "//cluster/cdk8s:cilium",
         "//cluster/cdk8s:external_creds",
+        "//cluster/cdk8s:public_coder_egress",
         "//cluster/cdk8s/providers/agentplane:action_policy_set",
         "//cluster/cdk8s/providers/agentplane:egress_binding",
         "//cluster/cdk8s/providers/agentplane:egress_policy",

@@ -27,7 +27,7 @@ from external_secrets_crds.io.external_secrets import (
 
 from agentplane.action_service.policies.resources import BindingSpec, PolicySetSpec
 from agentplane.action_service.sandbox.actions import SANDBOX_GROUP, SandboxAction
-from cluster.cdk8s import agent_access_profiles as access, cilium, external_creds, public_coder_egress
+from cluster.cdk8s import agent_access_profiles as access, cilium, external_creds
 from cluster.cdk8s.agentplane import app as app_component, dex, egress, testing
 from cluster.cdk8s.agentplane.app_settings import (
     ACTIVITYWATCH_READ_POLICY,
@@ -63,6 +63,7 @@ from cluster.cdk8s.providers.agentplane.egress_binding import EgressBinding
 from cluster.cdk8s.providers.agentplane.egress_policy import EgressPolicy
 from cluster.cdk8s.providers.cilium.network_policy import EgressRule, NetworkPolicy
 from cluster.cdk8s.providers.external_secrets.external_secret import ExternalSecret, remote_data
+from cluster.cdk8s.public_coder_egress import NAMESPACE, SERVICE_ACCOUNT
 
 _NAMESPACE = "agentplane-staging"
 _GITHUB_READS_SET = "github-reads"
@@ -917,9 +918,7 @@ def add_staging_action_policies(scope: Construct) -> None:
                 "description": "Auto-approves the reviewed public-coder repository reads for the OpenClaw ServiceAccount."
             },
         ),
-        subject=ActionPolicyBindingSpecSubject(
-            namespace=public_coder_egress.NAMESPACE, name=public_coder_egress.SERVICE_ACCOUNT
-        ),
+        subject=ActionPolicyBindingSpecSubject(namespace=NAMESPACE, name=SERVICE_ACCOUNT),
         policy_sets=[
             PUBLIC_GITHUB_READS_SET,
             PUBLIC_DUCKTAPE_READS_SET,
