@@ -411,6 +411,7 @@ py_library(
     name = "environment",
     srcs = ["environment.py"],
     deps = [
+        "//agentplane:grpc_options",
         "//agentplane/action_service:main",
         "//agentplane/app:main",
         "//cluster/cdk8s:model_selections",

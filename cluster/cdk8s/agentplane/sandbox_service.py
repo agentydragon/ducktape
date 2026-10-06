@@ -77,7 +77,7 @@ class SandboxService(Construct):
             kubernetes_grants=env.app_config.kubernetes_grants,
             kubernetes_binding_cleanup_namespaces=set(env.app_config.kubernetes_binding_cleanup_namespaces),
             kubernetes_cluster_binding_cleanup=env.app_config.kubernetes_cluster_binding_cleanup,
-            grpc_channel_options=env.app_config.grpc_channel_options,
+            runner_grpc_channel_options=dict(env.runner_grpc_channel_options),
         )
         config = SettingsFile(
             self,

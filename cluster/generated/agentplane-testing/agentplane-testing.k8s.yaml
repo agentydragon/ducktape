@@ -1926,7 +1926,7 @@ data:
     runner_port: 7000
     admission_timeout_s: 15
     follow_lease_s: 900
-    grpc_channel_options:
+    runner_grpc_channel_options:
       grpc.max_receive_message_length: 33554432
     host: 0.0.0.0
     port: 8080
@@ -2357,8 +2357,6 @@ data:
     default_policies:
       - basic
       - inference-experiments
-    grpc_channel_options:
-      grpc.max_receive_message_length: 33554432
     egress_admin_url: http://agentplane-egress-admin.agentplane-testing.svc:8081
     action_federation:
       mode: direct
@@ -3527,8 +3525,6 @@ subjects:
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  annotations:
-    configmap.reloader.stakater.com/reload: agentplane-notifications-settings
   labels:
     app.kubernetes.io/name: agentplane-notifications
   name: agentplane-notifications
@@ -3676,8 +3672,6 @@ data:
       token_file: /var/run/secrets/notifications/actions
     sandbox_service:
       target: agentplane-sandbox-service.agentplane-testing.svc.cluster.local:8080
-      grpc_channel_options:
-        grpc.max_receive_message_length: 33554432
       token_file: /var/run/secrets/notifications/sandboxes
 immutable: false
 ---

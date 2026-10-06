@@ -137,13 +137,19 @@ class Attachment:
 
 
 class RunnerClient:
-    def __init__(
-        self, target: str, *, capture_history: bool = False, channel_options: Mapping[str, int | str] | None = None
-    ) -> None:
+    def __init__(self, channel: grpc.aio.Channel, *, capture_history: bool = False) -> None:
+        """Wrap a channel; `close()` owns and closes the supplied channel."""
         self._capture_history = capture_history
-        self._channel_options = channel_options
-        self._channel = grpc.aio.insecure_channel(target, options=grpc_channel_option_kvps(self._channel_options))
+        self._channel = channel
         self._stub = protocol_pb2_grpc.RunnerStub(self._channel)
+
+    @classmethod
+    def connect(
+        cls, target: str, *, capture_history: bool = False, channel_options: Mapping[str, int | str] | None = None
+    ) -> Self:
+        """Create a client with a configured channel; direct construction accepts injected channels."""
+        channel = grpc.aio.insecure_channel(target, options=grpc_channel_option_kvps(channel_options))
+        return cls(channel, capture_history=capture_history)
 
     async def attach(
         self,

@@ -86,7 +86,7 @@ def sample_native(pid: int, directory: Path) -> NativeSample:
 @asynccontextmanager
 async def running_client(config: RunnerConfig) -> AsyncIterator[RunnerClient]:
     server, runner, port = await serve(config)
-    client = RunnerClient(f"127.0.0.1:{port}")
+    client = RunnerClient.connect(f"127.0.0.1:{port}")
     try:
         yield client
     finally:

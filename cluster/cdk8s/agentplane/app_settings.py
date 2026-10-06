@@ -11,7 +11,6 @@ from agentplane.app.action_federation import ActionFederationSettings
 from agentplane.app.api import ModelCatalog, ModelOption
 from agentplane.app.main import AppSettingsConfig
 from agentplane.app.presets import SandboxPreset, ThreadPreset
-from agentplane.grpc_options import DEFAULT_GRPC_CHANNEL_OPTION_KVPS
 from agentplane.runner.harness import Harness
 from agentplane.sandbox_service.kubernetes_grants import KubernetesGrant
 from cluster.cdk8s.model_selections import HarnessRoutes
@@ -65,16 +64,12 @@ def settings(
     thread_preset_codex_model: Route,
     action_federation: ActionFederationSettings | None = None,
     action_policy_sets: list[str] | None = None,
-    grpc_channel_options: dict[str, int | str] | None = None,
     haku_preset_model: Route | None = None,
     kubernetes_grants: dict[str, KubernetesGrant] | None = None,
     kubernetes_binding_cleanup_namespaces: list[str] | None = None,
     kubernetes_cluster_binding_cleanup: bool = False,
 ) -> AppSettingsConfig:
     return AppSettingsConfig(
-        grpc_channel_options=(
-            dict(DEFAULT_GRPC_CHANNEL_OPTION_KVPS) if grpc_channel_options is None else grpc_channel_options
-        ),
         models=ModelCatalog(
             models=[
                 ModelOption(

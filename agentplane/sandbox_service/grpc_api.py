@@ -11,6 +11,7 @@ from google.protobuf.empty_pb2 import Empty
 from google.protobuf.json_format import ParseError
 from kubernetes_asyncio import client as k8s_client
 
+from agentplane.grpc_options import grpc_channel_option_kvps
 from agentplane.protocol import event_log_pb2
 from agentplane.runner import protocol_pb2 as runner_pb2
 from agentplane.runner.client import RunnerClient
@@ -41,7 +42,7 @@ class Resources:
     admission_timeout_s: float = 15
     follow_lease_s: float = 900
     lifecycle_timeout_s: float = 300
-    grpc_channel_options: dict[str, int | str] = field(default_factory=dict)
+    runner_grpc_channel_options: dict[str, int | str] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
         if min(self.admission_timeout_s, self.follow_lease_s, self.lifecycle_timeout_s) <= 0:
@@ -94,6 +95,12 @@ class SandboxService(protocol_pb2_grpc.SandboxServiceServicer):
     def __init__(self, resources: Resources) -> None:
         self.resources = resources
 
+    def _runner_client(self, target: str) -> RunnerClient:
+        channel = grpc.aio.insecure_channel(
+            target, options=grpc_channel_option_kvps(self.resources.runner_grpc_channel_options)
+        )
+        return RunnerClient(channel)
+
     @asynccontextmanager
     async def request(
         self, context: grpc.aio.ServicerContext, *, timeout_s: float | None = None
@@ -106,7 +113,7 @@ class SandboxService(protocol_pb2_grpc.SandboxServiceServicer):
     async def runner(self, destination: SandboxDestination) -> AsyncIterator[tuple[RunnerClient, RunnerEndpoint]]:
         endpoint = await self.resources.destinations.resolve(destination)
         # TODO: runner RPC authentication/TLS. V1 relies on the deployment network boundary.
-        client = RunnerClient(endpoint.target, channel_options=self.resources.grpc_channel_options)
+        client = self._runner_client(endpoint.target)
         try:
             yield client, endpoint
         finally:
@@ -280,7 +287,7 @@ class SandboxService(protocol_pb2_grpc.SandboxServiceServicer):
                 if not destination.session_id:
                     raise ValueError("session ID is required")
                 endpoint = await self.resources.destinations.resolve(destination.sandbox)
-            client = RunnerClient(endpoint.target, channel_options=self.resources.grpc_channel_options)
+            client = self._runner_client(endpoint.target)
             try:
                 async with asyncio.timeout(self.resources.admission_timeout_s):
                     attachment = await client.attach(destination.session_id, after_cursor=request.follow.after_cursor)

@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import asyncio
-from collections.abc import Awaitable, Callable, Mapping
+from collections.abc import Awaitable, Callable
 from pathlib import Path
 from typing import Never
 
@@ -86,7 +86,6 @@ class SandboxServiceClient:
         request_timeout_s: float = 20,
         lifecycle_timeout_s: float = 310,
         follow_timeout_s: float = 960,
-        channel_options: Mapping[str, int | str] | None = None,
     ) -> None:
         if min(request_timeout_s, lifecycle_timeout_s, follow_timeout_s) <= 0:
             raise ValueError("timeouts must be positive")
@@ -96,7 +95,6 @@ class SandboxServiceClient:
         self.request_timeout_s = request_timeout_s
         self.lifecycle_timeout_s = lifecycle_timeout_s
         self.follow_timeout_s = follow_timeout_s
-        self._channel_options = channel_options
         self._channel: grpc.aio.Channel | None = None
         self._stub: protocol_pb2_grpc.SandboxServiceAsyncStub | None = None
 
@@ -105,8 +103,7 @@ class SandboxServiceClient:
         if self._stub is None:
             # No retry service config: uncertain mutations need domain-specific reconciliation.
             self._channel = grpc.aio.insecure_channel(
-                self.target,
-                options=grpc_channel_option_kvps(self._channel_options, required={"grpc.enable_retries": 0}),
+                self.target, options=grpc_channel_option_kvps(required={"grpc.enable_retries": 0})
             )
             self._stub = protocol_pb2_grpc.SandboxServiceStub(self._channel)
         return self._stub

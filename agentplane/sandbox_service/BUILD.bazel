@@ -423,6 +423,7 @@ py_library(
         ":provisioning",
         ":session_lifecycle",
         ":wire",
+        "//agentplane:grpc_options",
         "//agentplane:subjects",
         "//agentplane/protocol:event_log_pb2",
         "//agentplane/runner:client",

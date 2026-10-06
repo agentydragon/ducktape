@@ -858,7 +858,7 @@ async def test_thread_command_reports_id_conflict_after_runner_admitted_before_a
     original = command_pb2.Command(
         command_id="reused-before-copy", interrupt_turn=command_pb2.InterruptTurn(turn_id="first-target")
     )
-    client = RunnerClient(runner.target, capture_history=True)
+    client = RunnerClient.connect(runner.target, capture_history=True)
     try:
         attachment = await client.attach(SESSION, spec=spec)
         try:
@@ -1142,7 +1142,7 @@ async def test_semantic_feed_failure_survives_replica_reconcile(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """A new app owner cannot overwrite a rejected prefix's persisted failure with active."""
-    client = RunnerClient(runner.target, capture_history=True)
+    client = RunnerClient.connect(runner.target, capture_history=True)
     replica_engine = connect(db_url)
     replica_store, replica_event_logs = ThreadStore(replica_engine), EventLogStore(replica_engine)
     replica_updates = DatabaseUpdates(replica_engine.url)
@@ -1245,7 +1245,7 @@ async def test_ingestion_reports_truncated_replay_instead_of_normal_completion(
     spec: protocol_pb2.SessionSpec,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    client = RunnerClient(runner.target, capture_history=True)
+    client = RunnerClient.connect(runner.target, capture_history=True)
     try:
         attachment = await client.attach(SESSION, spec=spec)
         try:
@@ -1348,7 +1348,7 @@ async def test_inventory_change_discovers_existing_runner_session_without_browse
 
     monkeypatch.setattr(runners, "running", observed_running)
     ingester = Ingester(runners=runners, event_logs=event_logs, ingestion=ingestion)
-    client = RunnerClient(runner.target, capture_history=True)
+    client = RunnerClient.connect(runner.target, capture_history=True)
     try:
         async with await client.attach(SESSION, spec=spec):
             pass
