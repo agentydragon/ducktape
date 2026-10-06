@@ -256,6 +256,7 @@ export function SandboxList({ onOpen }: { onOpen: (name: string) => void }): JSX
         <MultiSelect
           label="Egress policies"
           description="What this sandbox may reach"
+          hidePickedOptions
           data={egressPolicies}
           value={form.egress_policies ?? []}
           onChange={(picked) => setForm({ ...form, egress_policies: picked })}
@@ -264,6 +265,7 @@ export function SandboxList({ onOpen }: { onOpen: (name: string) => void }): JSX
         <MultiSelect
           label="Action policy sets"
           description="What its harness may do without the operator"
+          hidePickedOptions
           data={policySets.map(policySetOption)}
           value={form.action_policy_sets ?? []}
           onChange={(picked) => setForm({ ...form, action_policy_sets: picked })}

@@ -240,6 +240,7 @@ function GrantEgressPolicies({
       <MultiSelect
         label="Grant egress policies"
         description="Added as a binding of its own; what this sandbox already has is untouched"
+        hidePickedOptions
         data={egressPolicies}
         value={picked}
         onChange={onPick}

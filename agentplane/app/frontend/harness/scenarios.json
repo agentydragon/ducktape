@@ -295,6 +295,7 @@
     "viewport": { "width": 1200, "height": 900 },
     "outputName": "new-sandbox",
     "readySelectors": [".mantine-Pill-root", "[role=\"listbox\"]"],
+    "hiddenSelectors": ["[role=\"option\"]:text(\"public-coder\")"],
     "openActionPolicySets": true
   },
   "new_sandbox_phone": {
@@ -303,7 +304,26 @@
     "viewport": { "width": 412, "height": 915, "deviceScaleFactor": 2.625 },
     "outputName": "new-sandbox-phone",
     "readySelectors": [".mantine-Pill-root", "[role=\"listbox\"]"],
+    "hiddenSelectors": ["[role=\"option\"]:text(\"public-coder\")"],
     "openActionPolicySets": true
+  },
+  "new_sandbox_policies": {
+    "element": "#app",
+    "route": "/sandboxes?preset=public-coder",
+    "viewport": { "width": 1200, "height": 900 },
+    "outputName": "new-sandbox-policies",
+    "readySelectors": [".mantine-Pill-root", "[role=\"option\"]:text(\"pypi\")"],
+    "hiddenSelectors": ["[role=\"option\"]:text(\"github-public\")"],
+    "openSandboxPolicies": true
+  },
+  "new_sandbox_policies_phone": {
+    "element": "#app",
+    "route": "/sandboxes?preset=public-coder",
+    "viewport": { "width": 412, "height": 915, "deviceScaleFactor": 2.625 },
+    "outputName": "new-sandbox-policies-phone",
+    "readySelectors": [".mantine-Pill-root", "[role=\"option\"]:text(\"pypi\")"],
+    "hiddenSelectors": ["[role=\"option\"]:text(\"github-public\")"],
+    "openSandboxPolicies": true
   },
   "new_sandbox_grants": {
     "element": "#app",
@@ -543,13 +563,35 @@
     "element": "#app",
     "route": "/sandboxes/ready-sandbox?tab=egress&rules=ready-sandbox-github-public",
     "viewport": { "width": 1200, "height": 900 },
-    "outputName": "sandbox-egress"
+    "outputName": "sandbox-egress",
+    "clicks": [
+      {
+        "selector": "role=combobox[name=\"Grant policies\"]",
+        "expectVisible": ["[role=\"option\"]:visible:text(\"pypi\")"]
+      },
+      {
+        "selector": "[role=\"option\"]:visible:text(\"pypi\")",
+        "expectVisible": [".mantine-Pill-root:text(\"pypi\")", "[role=\"option\"]:visible:text(\"github-public\")"],
+        "expectHidden": ["[role=\"option\"]:visible:text(\"pypi\")"]
+      }
+    ]
   },
   "sandbox_egress_phone": {
     "element": "#app",
     "route": "/sandboxes/ready-sandbox?tab=egress&rules=ready-sandbox-github-public",
     "viewport": { "width": 412, "height": 915, "deviceScaleFactor": 2.625 },
-    "outputName": "sandbox-egress-phone"
+    "outputName": "sandbox-egress-phone",
+    "clicks": [
+      {
+        "selector": "role=combobox[name=\"Grant policies\"]",
+        "expectVisible": ["[role=\"option\"]:visible:text(\"pypi\")"]
+      },
+      {
+        "selector": "[role=\"option\"]:visible:text(\"pypi\")",
+        "expectVisible": [".mantine-Pill-root:text(\"pypi\")", "[role=\"option\"]:visible:text(\"github-public\")"],
+        "expectHidden": ["[role=\"option\"]:visible:text(\"pypi\")"]
+      }
+    ]
   },
   "sandbox_status_raw": {
     "element": "#app",
