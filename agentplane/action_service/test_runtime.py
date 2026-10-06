@@ -273,9 +273,9 @@ async def test_main_serves_real_stdio_execution_and_closes_in_order(db_url: str,
     group = _group(
         {
             "transport": "stdio",
-            "command": sys.executable,
-            "args": [str(get_required_path("_main/agentplane/action_service/testing/fake_mcp_server.py"))],
-            "env": {**os.environ, "PYTHONPATH": os.pathsep.join(sys.path)},
+            "command": str(get_required_path("_main/agentplane/action_service/testing/fake_mcp_server")),
+            "args": [],
+            "env": dict(os.environ),
         }
     )
     settings = Settings(database_url=db_url, action_groups={"demo": group}, _cli_parse_args=False)

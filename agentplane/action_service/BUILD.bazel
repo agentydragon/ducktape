@@ -351,7 +351,7 @@ py_test(
     name = "test_mcp_executor",
     size = "medium",
     srcs = ["test_mcp_executor.py"],
-    data = ["//agentplane/action_service/testing:fake_mcp_server.py"],
+    data = ["//agentplane/action_service/testing:fake_mcp_server"],
     requires_docker = True,
     deps = [
         ":catalog",
@@ -462,7 +462,7 @@ py_test(
     name = "test_runtime",
     size = "medium",
     srcs = ["test_runtime.py"],
-    data = ["//agentplane/action_service/testing:fake_mcp_server.py"],
+    data = ["//agentplane/action_service/testing:fake_mcp_server"],
     requires_docker = True,
     deps = [
         ":api",
