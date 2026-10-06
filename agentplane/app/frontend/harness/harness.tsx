@@ -2454,11 +2454,11 @@ if (scenario.openKubernetesGrants) {
     );
     const label = [...document.querySelectorAll("label")].find((node) => node.textContent === "Kubernetes grants");
     const control = label?.control;
-    if (!pill || !(control instanceof HTMLInputElement)) return;
+    if (!pill || !(control instanceof HTMLInputElement) || control.disabled) return;
     openGrants.disconnect();
     control.click();
   });
-  openGrants.observe(document, { childList: true, subtree: true });
+  openGrants.observe(document, { attributes: true, attributeFilter: ["disabled"], childList: true, subtree: true });
 }
 if (scenario.checkComposerControls) {
   const checkControls = new MutationObserver(() => {
