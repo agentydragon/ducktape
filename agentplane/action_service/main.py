@@ -14,7 +14,7 @@ import httpx
 import uvicorn
 from kubernetes_asyncio import client as k8s_client, config as k8s_config
 from kubernetes_asyncio.client import ApiClient, AuthenticationV1Api, CoreV1Api, CustomObjectsApi
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, field_serializer, model_validator
 from pydantic_settings import BaseSettings, PydanticBaseSettingsSource, SettingsConfigDict, YamlConfigSettingsSource
 
 from agentplane.action_service.api import create_app
@@ -113,6 +113,11 @@ class ActionServiceDeploymentSettings(BaseModel):
     operator_oidc: OperatorOidcSettings
     policy_namespace: str
     caller_service_account_namespaces: frozenset[str]
+
+    @field_serializer("caller_service_account_namespaces", when_used="json")
+    def serialize_caller_service_account_namespaces(self, value: frozenset[str]) -> list[str]:
+        return sorted(value)
+
     direct_wait_seconds: float = Field(
         ge=0,
         allow_inf_nan=False,

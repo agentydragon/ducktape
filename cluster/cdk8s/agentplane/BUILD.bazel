@@ -557,6 +557,7 @@ py_test(
     env = {"JSII_NODE": "$(rootpath @nodejs_linux_amd64//:bin/node)"},
     deps = [
         ":conftest",
+        ":staging",
         "//:conftest",
         "@pypi//more_itertools",
         "@pypi//pytest",

@@ -9,6 +9,7 @@ import pytest
 import pytest_bazel
 from more_itertools import one
 
+from cluster.cdk8s.agentplane import staging
 from cluster.cdk8s.agentplane.conftest import NAMESPACES
 
 # REST, docs, health and consent live behind the Action API's own authentication, never on
@@ -25,6 +26,12 @@ _MCP_PROTOCOL_PATHS = {
     "/.well-known/oauth-authorization-server",
     "/.well-known/oauth-protected-resource/mcp",
 }
+
+
+def test_caller_service_account_namespaces_are_serialized_in_sorted_order() -> None:
+    settings = staging.ENV.actions.settings.model_dump(mode="json")
+
+    assert settings["caller_service_account_namespaces"] == ["agentplane-staging", "public-coder-agent"]
 
 
 @pytest.mark.parametrize("namespace", NAMESPACES)
