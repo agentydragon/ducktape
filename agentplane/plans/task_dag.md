@@ -107,6 +107,7 @@ flowchart TB
     CODEX_RECOVERY["Required evidence then implementation<br/>Codex execution before durable runner proof<br/>native correlation and safe recovery"]:::active
     CODEX_RECOVERY_PROTOCOL["Deferred interoperability follow-up<br/>Codex reconciliation via documented app-server APIs<br/>replace private rollout inspection"]:::future
     SANDBOX_LIFECYCLE_DURABILITY["Planned lifecycle correctness<br/>retained state through suspension<br/>archive before managed storage deletion"]:::future
+    RUNNER_IMAGE_ROLLOUT["Planned operator workflow<br/>upgrade the runner image on existing Sandboxes<br/>preserve Thread state and resume safely"]:::future
     SANDBOX_VM_ISOLATION["Deferred platform proof<br/>selectable KubeVirt execution environments<br/>guest runner, launcher proxy, resource isolation"]:::future
     THREAD_EVENT_CONTINUITY["Planned identity cutover<br/>one Thread journal across incarnations<br/>exclusive runner writer and retained state"]:::future
     THREAD_COMMAND_DELIVERY["Deferred backend<br/>app outbox delivery to existing runner<br/>only if app-first acceptance is chosen later"]:::future
@@ -792,6 +793,17 @@ unreachable runners at deletion, and incomplete recovery state. Storage inspecti
 and native evidence can proceed independently; full archive-preservation acceptance
 requires Event durability and app replication. Gate lifecycle automation on its own
 evidence without blocking ordinary messaging and UI work.
+
+### `RUNNER_IMAGE_ROLLOUT` — upgrade runner images on existing Sandboxes
+
+**Planned operator workflow:** a runner image version is recorded in each Sandbox CR's
+`podTemplate`, so updating the default image only affects newly created Sandboxes. Define
+and implement a supported way to move an existing Thread to a fixed runner image while
+preserving its Sandbox storage and native session state. First establish whether a safe
+manual recovery sequence is possible by quiescing or pausing the Sandbox, patching its
+stored image, and resuming it; make the eventual workflow smoother than hand-editing CRs.
+Specify writer fencing, interruption handling, and rollback, then verify that an existing
+Thread resumes on the fixed image without losing state or repeating side effects.
 
 ### `SANDBOX_VM_ISOLATION` — selectable VM-backed Sandbox isolation
 

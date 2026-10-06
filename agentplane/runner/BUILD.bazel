@@ -96,6 +96,7 @@ py_library(
     ],
     deps = [
         ":errors",
+        "//agentplane:grpc_options",
         "//agentplane/protocol:command_pb2",
         "//agentplane/protocol:event_log_pb2",
         "//agentplane/runner:protocol_pb2",

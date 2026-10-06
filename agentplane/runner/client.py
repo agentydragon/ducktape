@@ -9,6 +9,7 @@ from typing import Self
 
 import grpc
 
+from agentplane.grpc_options import MAX_GRPC_RECEIVE_MESSAGE_BYTES
 from agentplane.protocol import command_pb2, event_log_pb2
 from agentplane.runner import protocol_pb2, protocol_pb2_grpc
 from agentplane.runner.errors import OpenTimeoutError, RunnerError, StreamClosedError
@@ -138,7 +139,9 @@ class Attachment:
 class RunnerClient:
     def __init__(self, target: str, *, capture_history: bool = False) -> None:
         self._capture_history = capture_history
-        self._channel = grpc.aio.insecure_channel(target)
+        self._channel = grpc.aio.insecure_channel(
+            target, options=(("grpc.max_receive_message_length", MAX_GRPC_RECEIVE_MESSAGE_BYTES),)
+        )
         self._stub = protocol_pb2_grpc.RunnerStub(self._channel)
 
     async def attach(

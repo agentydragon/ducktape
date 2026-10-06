@@ -11,6 +11,7 @@ import grpc
 from google.protobuf.empty_pb2 import Empty
 from google.protobuf.message import Message
 
+from agentplane.grpc_options import MAX_GRPC_RECEIVE_MESSAGE_BYTES
 from agentplane.protocol import command_pb2, event_log_pb2
 from agentplane.runner import protocol_pb2 as runner_pb2
 from agentplane.runner.errors import RunnerError, StreamClosedError
@@ -101,7 +102,13 @@ class SandboxServiceClient:
     def stub(self) -> protocol_pb2_grpc.SandboxServiceAsyncStub:
         if self._stub is None:
             # No retry service config: uncertain mutations need domain-specific reconciliation.
-            self._channel = grpc.aio.insecure_channel(self.target, options=(("grpc.enable_retries", 0),))
+            self._channel = grpc.aio.insecure_channel(
+                self.target,
+                options=(
+                    ("grpc.enable_retries", 0),
+                    ("grpc.max_receive_message_length", MAX_GRPC_RECEIVE_MESSAGE_BYTES),
+                ),
+            )
             self._stub = protocol_pb2_grpc.SandboxServiceStub(self._channel)
         return self._stub
 
