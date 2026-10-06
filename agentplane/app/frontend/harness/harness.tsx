@@ -2430,10 +2430,21 @@ if (scenario.openClampedBlocks) {
       ...document.querySelectorAll<HTMLButtonElement>(".agentplane-clamped-block button[aria-expanded='false']"),
     ];
     for (const button of unopened) button.click();
-    if (unopened.length === 0 && document.querySelector(".agentplane-clamped-block[data-expanded='true']")) {
+    const toolLines = [
+      ...document.querySelectorAll<HTMLButtonElement>(".agentplane-step-details .agentplane-disclosure-summary"),
+    ];
+    const loading = document.querySelector(".agentplane-step-details [aria-busy='true']");
+    if (
+      unopened.length === 0 &&
+      toolLines.length > 0 &&
+      toolLines.every((button) => button.getAttribute("aria-expanded") === "true") &&
+      !loading
+    ) {
       openClampedBlocks.disconnect();
     }
   };
+  // Tool arguments and output bodies load independently. Keep watching after the first block opens
+  // so a later payload is expanded too.
   const openClampedBlocks = new MutationObserver(openClamped);
   openClampedBlocks.observe(document, { childList: true, subtree: true });
   openClamped();

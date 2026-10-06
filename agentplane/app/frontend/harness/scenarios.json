@@ -50,7 +50,11 @@
     "viewport": { "width": 1200, "height": 1100 },
     "recovery": "tools",
     "openRecoveryDetails": true,
-    "readySelectors": ["[aria-label=\"Retention unknown\"]", "details[open] details[open] .agentplane-code-block"],
+    "readySelectors": [
+      "[aria-label=\"Retention unknown\"]",
+      ".agentplane-step-details .agentplane-disclosure-summary[aria-expanded=\"true\"]",
+      ".agentplane-code-block"
+    ],
     "captureViewport": true
   },
   "session_recovery_tools_open_phone": {
@@ -59,7 +63,11 @@
     "viewport": { "width": 412, "height": 1100 },
     "recovery": "tools",
     "openRecoveryDetails": true,
-    "readySelectors": ["[aria-label=\"Retention unknown\"]", "details[open] details[open] .agentplane-code-block"],
+    "readySelectors": [
+      "[aria-label=\"Retention unknown\"]",
+      ".agentplane-step-details .agentplane-disclosure-summary[aria-expanded=\"true\"]",
+      ".agentplane-code-block"
+    ],
     "captureViewport": true
   },
   "session_recovery_quiet": {
@@ -77,7 +85,11 @@
     "viewport": { "width": 1200, "height": 800 },
     "recovery": "quiet",
     "openRecoveryDetails": true,
-    "readySelectors": ["[data-thread-anchor=\"50\"]", "details[open] details[open] .agentplane-code-block"],
+    "readySelectors": [
+      "[data-thread-anchor=\"50\"]",
+      ".agentplane-step-details .agentplane-disclosure-summary[aria-expanded=\"true\"]",
+      ".agentplane-code-block"
+    ],
     "captureViewport": true
   },
   "session_error": {
@@ -165,7 +177,7 @@
     "readySelectors": [":text(\"Setup stdout\")"],
     "captureViewport": true
   },
-  "session_interleaved_native_details": {
+  "session_interleaved_disclosures": {
     "element": "#app",
     "route": "/threads/5f1c4a2e-0000-4000-8000-000000000001",
     "viewport": { "width": 1200, "height": 1100 },
@@ -375,45 +387,45 @@
     "element": "#app",
     "route": "/actions",
     "viewport": { "width": 1200, "height": 1100 },
-    "readySelectors": ["details"]
+    "readySelectors": [".agentplane-disclosure-summary"]
   },
   "actions_phone": {
     "element": "#app",
     "route": "/actions",
     "viewport": { "width": 390, "height": 1100 },
-    "readySelectors": ["details"]
+    "readySelectors": [".agentplane-disclosure-summary"]
   },
   "actions_raw": {
     "element": "#app",
     "route": "/actions",
     "viewport": { "width": 1200, "height": 1100 },
-    "readySelectors": ["details", "input[type=\"checkbox\"]:checked"],
+    "readySelectors": [".agentplane-disclosure-summary", "input[type=\"checkbox\"]:checked"],
     "openRaw": true
   },
   "actions_history": {
     "element": "#app",
     "route": "/actions",
     "viewport": { "width": 1200, "height": 2560 },
-    "readySelectors": ["details", "img[src^=\"data:image/\"]"]
+    "readySelectors": [".agentplane-disclosure-summary", "img[src^=\"data:image/\"]"]
   },
   "actions_history_more": {
     "element": "#app",
     "route": "/actions",
     "viewport": { "width": 1200, "height": 1100 },
     "historyPaged": true,
-    "readySelectors": ["details", "[data-testid=\"action-history-load-more\"]"]
+    "readySelectors": [".agentplane-disclosure-summary", "[data-testid=\"action-history-load-more\"]"]
   },
   "actions_history_phone": {
     "element": "#app",
     "route": "/actions",
     "viewport": { "width": 390, "height": 3200 },
-    "readySelectors": ["details", "img[src^=\"data:image/\"]"]
+    "readySelectors": [".agentplane-disclosure-summary", "img[src^=\"data:image/\"]"]
   },
   "actions_history_raw": {
     "element": "#app",
     "route": "/actions",
     "viewport": { "width": 1200, "height": 3720 },
-    "readySelectors": ["details", "input[type=\"checkbox\"]:checked"],
+    "readySelectors": [".agentplane-disclosure-summary", "input[type=\"checkbox\"]:checked"],
     "openRaw": true
   },
   "actions_history_groups_unavailable": {
@@ -421,7 +433,7 @@
     "route": "/actions",
     "viewport": { "width": 1200, "height": 3760 },
     "actionGroupsUnavailable": true,
-    "readySelectors": ["details", "[role=\"alert\"]"]
+    "readySelectors": [".agentplane-disclosure-summary", "[role=\"alert\"]"]
   },
   "actions_hidden_codepoints": {
     "element": "#app",
@@ -683,7 +695,7 @@
     "outputName": "session-reasoning",
     "openReasoning": true,
     "longReasoningPreview": true,
-    "readySelectors": ["details.agentplane-step-details[open] > .agentplane-markdown"]
+    "readySelectors": [".agentplane-step-details .agentplane-disclosure-panel .agentplane-markdown"]
   },
   "session_reasoning_phone": {
     "element": "#app",
@@ -692,7 +704,7 @@
     "outputName": "session-reasoning-phone",
     "openReasoning": true,
     "longReasoningPreview": true,
-    "readySelectors": ["details.agentplane-step-details[open] > .agentplane-markdown"]
+    "readySelectors": [".agentplane-step-details .agentplane-disclosure-panel .agentplane-markdown"]
   },
   "session_reasoning_sticky": {
     "element": "#app",
@@ -704,7 +716,7 @@
     "openReasoning": true,
     "readySelectors": [
       "[aria-label='Thread history'][data-layout-settled='true']",
-      "details.agentplane-step-details[open]"
+      ".agentplane-step-details .agentplane-disclosure-summary[aria-expanded=\"true\"]"
     ],
     "scrollToBottom": "[aria-label='Thread history']"
   },
@@ -718,7 +730,7 @@
     "openReasoning": true,
     "readySelectors": [
       "[aria-label='Thread history'][data-layout-settled='true']",
-      "details.agentplane-step-details[open]"
+      ".agentplane-step-details .agentplane-disclosure-summary[aria-expanded=\"true\"]"
     ],
     "scrollToBottom": "[aria-label='Thread history']"
   },
@@ -745,7 +757,7 @@
     "outputName": "session-standalone-reasoning-preview",
     "standaloneReasoning": true,
     "longReasoningPreview": true,
-    "readySelectors": ["[data-thread-anchor=\"20\"] details.agentplane-step-details"]
+    "readySelectors": ["[data-thread-anchor=\"20\"] .agentplane-step-details .agentplane-disclosure-summary"]
   },
   "session_unfinished_reasoning": {
     "element": "#app",
@@ -773,7 +785,9 @@
     "standaloneReasoning": true,
     "longReasoningPreview": true,
     "openReasoning": true,
-    "readySelectors": ["[data-thread-anchor=\"20\"] details.agentplane-step-details[open] > .agentplane-markdown"]
+    "readySelectors": [
+      "[data-thread-anchor=\"20\"] .agentplane-step-details .agentplane-disclosure-panel .agentplane-markdown"
+    ]
   },
   "session_reasoning_code_fence": {
     "element": "#app",
@@ -802,7 +816,7 @@
     "reasoningCodeFence": true,
     "openReasoning": true,
     "readySelectors": [
-      "[data-thread-anchor=\"20\"] details.agentplane-step-details[open] > .agentplane-markdown .agentplane-code-block .cm-content"
+      "[data-thread-anchor=\"20\"] .agentplane-step-details .agentplane-disclosure-panel .agentplane-markdown .agentplane-code-block .cm-content"
     ]
   },
   "session_reasoning_code_fence_open_phone": {
@@ -814,7 +828,7 @@
     "reasoningCodeFence": true,
     "openReasoning": true,
     "readySelectors": [
-      "[data-thread-anchor=\"20\"] details.agentplane-step-details[open] > .agentplane-markdown .agentplane-code-block .cm-content"
+      "[data-thread-anchor=\"20\"] .agentplane-step-details .agentplane-disclosure-panel .agentplane-markdown .agentplane-code-block .cm-content"
     ]
   },
   "session_tool_payloads": {
@@ -825,7 +839,7 @@
     "openToolPayloads": true,
     "readySelectors": [
       ".agentplane-code-block .cm-content",
-      "details.agentplane-step-details[open] .agentplane-code-block"
+      ".agentplane-step-details .agentplane-disclosure-summary[aria-expanded=\"true\"]"
     ]
   },
   "session_tool_payloads_phone": {
@@ -836,7 +850,7 @@
     "openToolPayloads": true,
     "readySelectors": [
       ".agentplane-code-block .cm-content",
-      "details.agentplane-step-details[open] .agentplane-code-block"
+      ".agentplane-step-details .agentplane-disclosure-summary[aria-expanded=\"true\"]"
     ]
   },
   "session_shell_calls": {
@@ -846,7 +860,7 @@
     "outputName": "session-shell-calls",
     "shellCalls": true,
     "openRun": true,
-    "readySelectors": ["details.agentplane-step-details .agentplane-step-preview"],
+    "readySelectors": [".agentplane-step-details .agentplane-step-preview"],
     "captureViewport": true
   },
   "session_shell_calls_phone": {
@@ -856,7 +870,7 @@
     "outputName": "session-shell-calls-phone",
     "shellCalls": true,
     "openRun": true,
-    "readySelectors": ["details.agentplane-step-details .agentplane-step-preview"],
+    "readySelectors": [".agentplane-step-details .agentplane-step-preview"],
     "captureViewport": true
   },
   "session_shell_calls_open": {
@@ -868,7 +882,7 @@
     "openToolPayloads": true,
     "readySelectors": [
       "[data-clamped=\"true\"]",
-      "details.agentplane-step-details[open] .agentplane-code-block .cm-content"
+      ".agentplane-step-details .agentplane-disclosure-panel .agentplane-code-block .cm-content"
     ]
   },
   "session_shell_calls_open_phone": {
@@ -880,7 +894,7 @@
     "openToolPayloads": true,
     "readySelectors": [
       "[data-clamped=\"true\"]",
-      "details.agentplane-step-details[open] .agentplane-code-block .cm-content"
+      ".agentplane-step-details .agentplane-disclosure-panel .agentplane-code-block .cm-content"
     ]
   },
   "session_tool_output_sticky": {
@@ -894,7 +908,7 @@
     "readySelectors": [
       "[aria-label='Thread history'][data-layout-settled='true']",
       ".agentplane-disclosure-collapse button[aria-label='Collapse Output']",
-      "details.agentplane-step-details[open]"
+      ".agentplane-step-details .agentplane-disclosure-summary[aria-expanded=\"true\"]"
     ],
     "captureViewport": true,
     "scrollToBottom": "[aria-label='Thread history']"
@@ -910,7 +924,7 @@
     "readySelectors": [
       "[aria-label='Thread history'][data-layout-settled='true']",
       ".agentplane-disclosure-collapse button[aria-label='Collapse Output']",
-      "details.agentplane-step-details[open]"
+      ".agentplane-step-details .agentplane-disclosure-summary[aria-expanded=\"true\"]"
     ],
     "captureViewport": true,
     "scrollToBottom": "[aria-label='Thread history']"

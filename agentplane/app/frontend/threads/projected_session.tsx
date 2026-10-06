@@ -687,7 +687,7 @@ function VirtualizedHistory({
         // following, and adopts the place as it stands before the row moves. A history that does
         // not scroll has no place to lose, and goes on following as it grows.
         const element = event.currentTarget;
-        if (!(event.target instanceof Element) || !event.target.closest("summary, [aria-expanded]")) return;
+        if (!(event.target instanceof Element) || !event.target.closest("[aria-expanded]")) return;
         if (element.scrollHeight > element.clientHeight) {
           setFollowing(false, "disclosure-click");
           clickedAt.current = element.scrollTop;

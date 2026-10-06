@@ -43,8 +43,8 @@ export function StickyCollapseControl({
   );
 }
 
-/** Mantine accordion behavior with an optional controlled open state. All Agentplane disclosures
- * use this shell so their close affordance, keyboard behavior, and nested sticky positioning match. */
+/** A shared Mantine Accordion with optional controlled state. Its controls keep Mantine's styles,
+ * keyboard behavior, and chevron; the wrapper adds only sticky positioning and nested offsets. */
 export function Disclosure({
   summary,
   summaryAside,
@@ -95,17 +95,14 @@ export function Disclosure({
     <DisclosureStickyOffset.Provider value={parentTop + headerHeight}>
       <Accordion
         className={`agentplane-disclosure${className ? ` ${className}` : ""}`}
-        unstyled
         transitionDuration={0}
         keepMounted={keepMounted}
-        chevronPosition="left"
-        chevron={<span className="agentplane-disclosure-caret" aria-hidden="true" />}
+        keepMountedMode={keepMounted ? "display-none" : undefined}
         value={expanded ? "content" : null}
         onChange={(value) => setExpanded(value === "content")}
         classNames={{
           item: "agentplane-disclosure-item",
           control: "agentplane-disclosure-summary",
-          chevron: "agentplane-disclosure-chevron",
           label: "agentplane-disclosure-summary-content",
           panel: "agentplane-disclosure-panel",
           content: "agentplane-disclosure-content",

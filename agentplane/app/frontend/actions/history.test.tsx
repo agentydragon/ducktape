@@ -110,7 +110,7 @@ describe("ActionHistory", () => {
       node.textContent?.includes("test-exact-token")
     );
     if (!block) throw new Error("missing the arguments");
-    expect(block.closest("details, [aria-hidden='true'], [hidden]")).toBeNull();
+    expect(block.closest(".agentplane-disclosure-panel")).toBeNull();
   });
 
   it("renders the auto-approving policy when the Decision carries policy evidence", async () => {

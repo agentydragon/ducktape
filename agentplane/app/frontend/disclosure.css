@@ -4,7 +4,6 @@
 
 .agentplane-disclosure-item {
   min-width: 0;
-  border: 0;
 }
 
 .agentplane-disclosure-heading {
@@ -13,55 +12,14 @@
   box-sizing: border-box;
   display: flex;
   min-width: 0;
-  min-height: 2.25rem;
   align-items: center;
-  border-radius: var(--mantine-radius-xs);
   background: var(--mantine-color-body);
 }
 
 .agentplane-disclosure-summary {
-  box-sizing: border-box;
-  display: flex;
   width: 0;
   min-width: 0;
-  min-height: 2.25rem;
-  flex: 1;
-  align-items: center;
-  gap: var(--mantine-spacing-xs);
-  padding: var(--mantine-spacing-xs);
-  border: 0;
-  appearance: none;
-  background: transparent;
-  color: inherit;
-  font: inherit;
-  text-align: start;
-  cursor: pointer;
-}
-
-.agentplane-disclosure-summary:focus-visible {
-  outline: 2px solid var(--mantine-primary-color-filled);
-  outline-offset: 2px;
-}
-
-.agentplane-disclosure-chevron {
-  display: inline-flex;
-  width: 1rem;
-  height: 1rem;
-  flex: none;
-  align-items: center;
-  justify-content: center;
-}
-
-.agentplane-disclosure-caret {
-  width: 0;
-  height: 0;
-  border-block: 0.25em solid transparent;
-  border-inline-start: 0.35em solid currentColor;
-  transition: transform 100ms ease;
-}
-
-.agentplane-disclosure-summary[aria-expanded="true"] .agentplane-disclosure-caret {
-  transform: rotate(90deg);
+  flex: 1 1 0;
 }
 
 .agentplane-disclosure-summary-content {
@@ -72,7 +30,6 @@
 .agentplane-disclosure-heading[data-expanded="true"] {
   z-index: 3;
   border-bottom: 1px solid var(--mantine-color-default-border);
-  box-shadow: 0 2px 5px rgb(0 0 0 / 12%);
 }
 
 .agentplane-disclosure-panel,
@@ -105,10 +62,4 @@
   font-size: var(--mantine-font-size-xs);
   text-overflow: ellipsis;
   white-space: nowrap;
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .agentplane-disclosure-caret {
-    transition: none;
-  }
 }

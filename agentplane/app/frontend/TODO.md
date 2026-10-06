@@ -22,24 +22,12 @@ a field a harness adds sends every such call to the JSON view while the tests st
   separators; a blockquote also loses its quote cue. Choose compact separators and markers that keep
   these structures readable in reasoning previews, while leaving the expanded Markdown unchanged.
 - **Reasoning disclosure toggle with nothing behind it**: the reasoning branch of `EntityCard`'s body
-  (`threads/thread_cards.tsx`) wraps a reasoning item's text in `LazyBody`'s `RetainedDisclosure` -- a
-  `<details>` (`threads/retained_disclosures.tsx`) whose body is shown only once expanded, though the window reads it
+  (`threads/thread_cards.tsx`) wraps a reasoning item's text in `LazyBody`'s `RetainedDisclosure`
+  (`threads/retained_disclosures.tsx`) whose body is shown only once expanded, though the window reads it
   ahead -- whenever `entity.textRef` is non-null. A reasoning item can still resolve to empty text once that payload loads, and by then the toggle
   has already invited a click for nothing. Unlike the `textRef === null` case just below it (plain dimmed
   "Reasoning" text, no toggle at all), there's no cheap signal to suppress the toggle before the fetch
   resolves; worth figuring out one (e.g. from the fold/view layer) rather than always rendering it optimistically.
-- **Collapsing a long expanded block requires scrolling back up to its toggle**: `RetainedDisclosure`
-  (`threads/retained_disclosures.tsx`) is a plain `<details>`/`<summary>` -- opening a long one (a tool call or
-  reasoning step's `StepLine`, or `CollapsibleRows`'s "N tool call(s), N reasoning step(s)" run/lifecycle wrapper
-  in `threads/projected_session.tsx`) and scrolling down through its content scrolls the `<summary>` that collapses
-  it off the top of the screen, so collapsing means scrolling back up first -- and a long enough run (many tool
-  calls and reasoning steps spanning several screens) makes this worse, not just more of the same, since the
-  toggle can be scrolled arbitrarily far out of reach. One direction: keep the summary/toggle stuck to the
-  viewport top while its content is still in view, only releasing it once scrolled fully past -- would need a
-  custom sticky-summary treatment rather than the native `<details>` element as is. A second idea, instead of or
-  alongside a sticky summary: draw a continuous vertical rail down the open block's left edge, clickable anywhere
-  along its length to collapse -- reachable from wherever the reader has scrolled to, without depending on any
-  one row staying pinned.
 - **Fold adjacent reasoning items inside mixed tool/reasoning runs**: `historyRows` groups consecutive tool calls and
   reasoning items together, and opening a run currently shows each item separately. When reasoning items are
   adjacent within a mixed run, fold each consecutive reasoning group into a nested disclosure whose collapsed line

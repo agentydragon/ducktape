@@ -411,11 +411,15 @@ async def test_projection_epoch_replacement_retires_old_requests_and_preserves_d
         await expect(page.get_by_text("Test replaced prefix", exact=True)).to_be_visible(timeout=20_000)
         await expect(page.get_by_text("Test retained prefix", exact=True)).to_have_count(0)
         await expect(draft).to_have_value("Draft survives projection replacement")
-        await expect(page.locator('[data-thread-anchor="3"] details[open]')).to_have_count(0)
+        await expect(
+            page.locator('[data-thread-anchor="3"] .agentplane-disclosure-summary[aria-expanded="true"]')
+        ).to_have_count(0)
         release.set()
         async with asyncio.timeout(15):
             await finished.wait()
-        await expect(page.locator('[data-thread-anchor="3"] details[open]')).to_have_count(0)
+        await expect(
+            page.locator('[data-thread-anchor="3"] .agentplane-disclosure-summary[aria-expanded="true"]')
+        ).to_have_count(0)
         await expect(page.get_by_text("Test replaced prefix", exact=True)).to_be_visible()
 
         stale = await page.request.get(
@@ -520,7 +524,9 @@ async def test_projected_browser_streams_runner_events_and_loads_evidence_lazily
                 assert not any("/evidence" in url for url in requests)
                 first_card = page.locator(f'[data-thread-anchor="{first.cursor}"]')
                 await click_evidence(first_card)
-                frame_summary = first_card.locator("summary", has_text=f"Observation {observed.cursor} raw frames")
+                frame_summary = first_card.locator(
+                    ".agentplane-disclosure-summary", has_text=f"Observation {observed.cursor} raw frames"
+                )
                 await expect(frame_summary).to_be_visible()
                 # The label shares the disclosure marker's line instead of starting below it.
                 summary_box = await frame_summary.bounding_box()
@@ -547,8 +553,8 @@ async def test_projected_browser_streams_runner_events_and_loads_evidence_lazily
                 await expect(page.locator(f'[data-thread-anchor="{tool.cursor}"]')).to_have_count(0)
                 await run.get_by_text("1 tool call, 1 reasoning step", exact=True).click()
                 # A tool call is one line of its arguments; opened, it shows them as they stream in.
-                tool_line = run.locator("details.agentplane-step-details", has_text="test-tool")
-                await tool_line.locator("summary").click()
+                tool_line = run.locator(".agentplane-step-details", has_text="test-tool")
+                await tool_line.locator(".agentplane-disclosure-summary").click()
                 arguments = tool_line.locator(".agentplane-code-block")
                 await expect(arguments.get_by_text("{", exact=True)).to_be_visible()
                 source.append(
@@ -571,10 +577,10 @@ async def test_projected_browser_streams_runner_events_and_loads_evidence_lazily
                     )
                 )
                 await expect(tool_line.get_by_text("On-demand tool output", exact=True)).to_be_visible()
-                reasoning_details = run.locator("details.agentplane-step-details", has_text="Reasoning")
+                reasoning_details = run.locator(".agentplane-step-details", has_text="Reasoning")
                 await expect(reasoning_details).to_be_visible()
-                await reasoning_details.locator("summary").click()
-                expanded_reasoning = reasoning_details.locator(":scope > .agentplane-markdown")
+                await reasoning_details.locator(".agentplane-disclosure-summary").click()
+                expanded_reasoning = reasoning_details.locator(".agentplane-disclosure-panel .agentplane-markdown")
                 await expect(expanded_reasoning).to_contain_text("On-demand reasoning reaches past one line.")
                 await expect(expanded_reasoning.locator("strong").first).to_have_text("reaches")
                 await page.screenshot(path=undeclared_outputs_dir() / "projected-thread-expanded.png")
@@ -647,7 +653,7 @@ async def test_chronological_debug_is_lazy_paged_and_keeps_the_thread(
     assert not any(re.search(r"/observations/\d+", url) for url in requests)
     for entry in (source.entries[-4], stderr, checkpoint, last):
         record = dialog.locator(f'[data-debug-observation="{entry.cursor}"]')
-        await record.locator("summary").click()
+        await record.locator(".agentplane-disclosure-summary").click()
         frame = record.locator(".agentplane-code-block")
         await expect(frame).to_be_visible()
         assert json_format.Parse(await frame.inner_text(), event_log_pb2.EventEntry()) == entry
@@ -676,7 +682,7 @@ async def test_chronological_debug_is_lazy_paged_and_keeps_the_thread(
     await page.keyboard.press("Escape")
     await expect(dialog).to_have_count(0)
     await expect(draft).to_have_value("Draft survives debug inspection")
-    await expect(card.get_by_role("button", name="Evidence", exact=True)).to_have_attribute("aria-expanded", "true")
+    await expect(card.locator(".agentplane-evidence-toggle")).to_have_attribute("aria-expanded", "true")
 
     # Closing the drawer cancels an in-flight real archive response. A response released
     # afterwards must not repopulate the closed view or disturb the thread draft.
@@ -1194,7 +1200,7 @@ async def holding_still(page: Page, line: Locator, *, rest_first: bool = True) -
 
 def tool_call_in(run: Locator, name: str) -> tuple[Locator, Locator]:
     """A call in `run` and the card around it, whose top edge holds still as the call opens."""
-    selector = "details.agentplane-step-details"
+    selector = ".agentplane-step-details"
     call = run.locator(selector, has_text=f"Run tool {name}")
     card = run.locator(".mantine-Paper-root").filter(has=run.page.locator(selector, has_text=f"Run tool {name}")).last
     return call, card
@@ -1247,15 +1253,15 @@ async def test_opening_a_call_and_its_output_keeps_it_collapsible_while_reading(
         await read_at(page, run, 0.1)
 
     # A card gains border and padding as it opens, which moves its label; its top edge is the place.
-    summary = run.locator("summary").first
+    summary = run.locator(".agentplane-disclosure-summary").first
     async with holding_still(page, run):
         await summary.click()
-        await expect(run.locator("details.agentplane-step-details")).to_have_count(3)
+        await expect(run.locator(".agentplane-step-details")).to_have_count(3)
 
     call, card = tool_call_in(run, "a")
     show_all = call.get_by_role("button", name="Show all 60 lines")
     async with holding_still(page, card):
-        await call.locator("summary").first.click()
+        await call.locator(".agentplane-disclosure-summary").first.click()
         await expect(show_all).to_be_visible()
     await page.screenshot(path=undeclared_outputs_dir() / f"{request.node.name}-call-open.png")
 
@@ -1285,10 +1291,10 @@ async def test_opening_a_call_while_output_streams_in_keeps_it_collapsible(threa
     show_all = call.get_by_role("button", name="Show all 60 lines")
     async with output_streaming_in(thread_browser) as delivered:
         async with holding_still(page, run, rest_first=False):
-            await run.locator("summary").first.click()
+            await run.locator(".agentplane-disclosure-summary").first.click()
             await expect(call).to_be_visible()
         async with holding_still(page, card, rest_first=False):
-            await call.locator("summary").first.click()
+            await call.locator(".agentplane-disclosure-summary").first.click()
             await expect(show_all).to_be_visible()
         await read_at(page, show_all, 0.3)
         await show_all.click()
@@ -1323,7 +1329,12 @@ async def test_a_reader_away_from_the_end_of_a_live_thread_can_jump_back_to_it(
     await expect(jump).to_have_count(0)
 
     if leaving == "opening a row":
-        await history.locator("[data-thread-anchor]").filter(has_text="3 tool calls").locator("summary").first.click()
+        await (
+            history.locator("[data-thread-anchor]")
+            .filter(has_text="3 tool calls")
+            .locator(".agentplane-disclosure-summary")
+            .first.click()
+        )
     else:
         await wheel(page, -1500)
     await expect(jump).to_be_visible()
@@ -1448,9 +1459,11 @@ async def test_failed_turn_preserves_confirmed_input_and_allows_another_turn(
         await expect_archived_events(thread_browser.event_logs, thread.id, source.entries)
         lifecycle = page.locator(f'[data-thread-anchor="{failed.cursor}"]')
         await click_evidence(lifecycle)
-        raw_frames = lifecycle.locator("summary", has_text=f"Observation {failed.cursor} raw frames")
+        raw_frames = lifecycle.locator(
+            ".agentplane-disclosure-summary", has_text=f"Observation {failed.cursor} raw frames"
+        )
         await raw_frames.click()
-        frames_panel = raw_frames.locator("..")
+        frames_panel = raw_frames.locator("xpath=../..").locator(".agentplane-disclosure-panel")
         # CodeBlock mounts its editor only near the viewport, replacing its placeholder when it does.
         # The mobile disclosure can open below the visible region after reload, so scroll the panel
         # into view -- the placeholder is never the target, as it can be swapped out mid-action.
@@ -1693,7 +1706,7 @@ async def test_streamed_admission_survives_a_lost_http_reply_and_reload(thread_b
 
 async def click_evidence(scope: Locator) -> None:
     """Click the Evidence toggle under `scope` the way a reader reaches it: it shows while its item is hovered."""
-    toggle = scope.get_by_role("button", name="Evidence", exact=True)
+    toggle = scope.locator(".agentplane-evidence-toggle")
     await toggle.locator("xpath=ancestor::*[contains(@class, 'agentplane-evidence-owner')][1]").hover()
     await toggle.click()
 
