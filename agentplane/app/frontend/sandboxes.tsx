@@ -257,7 +257,7 @@ export function SandboxList({ onOpen }: { onOpen: (name: string) => void }): JSX
           label="Egress policies"
           description="What this sandbox may reach"
           hidePickedOptions
-          data={egressPolicies}
+          data={egressPolicies.filter((policy) => !(form.egress_policies ?? []).includes(policy))}
           value={form.egress_policies ?? []}
           onChange={(picked) => setForm({ ...form, egress_policies: picked })}
           style={{ flex: "1 1 12rem" }}
