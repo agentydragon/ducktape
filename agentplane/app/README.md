@@ -421,10 +421,10 @@ linked group becomes available is the Action Service's contract
 
 `GET /presets` publishes configured Sandbox presets and their inherited editable Thread defaults.
 `POST /sandboxes` keeps its no-preset shape and additionally accepts an optional preset: omitted
-fields inherit, while explicit policies and thread fields replace preset values. The Sandbox
+fields inherit, while explicit egress policy selections and thread fields replace preset values. The Sandbox
 annotation stores the preset name and only explicit thread edits, so later sessions resolve against
-the current configured default instead of freezing a copied form. `action_policy_sets` works as
-`policies` does: a preset pre-fills the pick, an explicit list replaces it (an empty one binds
+the current configured default instead of freezing a copied form. `action_policy_sets` works like
+the egress policy selection: a preset pre-fills the pick, an explicit list replaces it (an empty one binds
 nothing), and a launch without a preset may pick sets of its own. The launch writes one
 `ActionPolicyBinding` naming the picked sets for the new Sandbox; a set name the namespace does not
 hold is refused with 422 before the Sandbox exists, as an unknown egress policy is. The create form

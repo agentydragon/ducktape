@@ -292,14 +292,14 @@ class EgressGrant(BaseModel):
 @router.get("/{name}/egress")
 async def sandbox_egress(inventory: Inventory, egress: Egress, name: str) -> list[BindingView]:
     """What may leave the sandbox: the bindings naming the ServiceAccount it runs as, with their
-    policies as they resolve."""
+    egress policies as they resolve."""
     return await egress.bindings_for(sandbox_view(await inventory.get(name)).service_account)
 
 
 @router.post("/{name}/egress", status_code=status.HTTP_201_CREATED)
 async def grant_sandbox_egress(inventory: Inventory, egress: Egress, name: str, body: EgressGrant) -> BindingView:
-    """Grant policies to a sandbox already running: a new binding naming it, never an edit of one it
-    has, so this grant's expiry and revocation are its own."""
+    """Grant egress policies to a sandbox already running: a new binding naming it, never an edit of
+    one it has, so this grant's expiry and revocation are its own."""
     return await egress.grant(await inventory.get(name), body.policies)
 
 
@@ -314,7 +314,7 @@ egress_router = APIRouter(prefix="/egress", tags=["egress"])
 
 @egress_router.get("/policies")
 async def list_policies(egress: Egress) -> list[PolicyView]:
-    """The namespace's policies: what the create form offers to pick from."""
+    """The namespace's egress policies: what the create form offers to pick from."""
     return await egress.list_policies()
 
 

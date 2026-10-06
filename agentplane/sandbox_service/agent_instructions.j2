@@ -8,7 +8,7 @@ placeholder is recognised, and anything else reaches the destination unchanged o
 read, print, persist, or ask for substituted credentials.
 
 All protected network egress goes through the configured Agentplane egress proxy. The proxy checks
-the sandbox's active policy and substitutes an allowed placeholder with the real credential. Before
+the sandbox's active egress policy and substitutes an allowed placeholder with the real credential. Before
 using a protected service, ask what is currently allowed at
 {{ egress_api_url }}/v1/rules with Authorization: Bearer
 agentplane-credential-agentplane-workload; that API's OpenAPI schema is at

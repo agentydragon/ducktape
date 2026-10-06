@@ -1,7 +1,7 @@
 """App-owned form presets.
 
 A preset is only a convenient collection of values the operator may choose individually. Kubernetes
-and the runner receive the selected concrete template, policies, bootstrap source, and SessionSpec
+and the runner receive the selected concrete template, egress policies, bootstrap source, and SessionSpec
 fields, never a preset name to resolve later.
 """
 

@@ -206,8 +206,26 @@ path and does not block current credential-placeholder egress.
 “policy” or “policies” to mean egress policies, rename those terms to say “egress policy” or
 “egress policies” throughout the product. This includes UI labels, protocols, API/CRD and serialized
 field names, configuration and storage identifiers, and documentation, along with their clients,
-servers, and generated artifacts. Keep Action policy and Kubernetes RBAC terminology distinct;
-this task changes naming, not policy behavior or authority. Update producers and consumers together.
+servers, and generated artifacts. Keep Action policy and Kubernetes RBAC terminology distinct, and
+retain the native names of Kubernetes NetworkPolicy and Kyverno policy objects. This task changes
+naming, not policy behavior or authority. Update producers and consumers together.
+
+**Scan findings:** the app-facing fields are `NewSandbox.policies`, `SandboxPreset.policies`,
+`EgressGrant.policies`, and `BindingView.policies` / `missing_policies`; the recent egress-decision
+view also exposes `policy`. The egress proxy's rule and binding views expose `AgentEgressView.policies`
+and `bindings[].policies` / `missingPolicies`; generic egress model names such as `PolicyView`,
+`PolicySpec`, and internal `Index.policies` / `BindingResolution.policies` feed them. The Sandbox Service gRPC contract has
+`CreateSandboxRequest.policies` and `GrantEgressRequest.policies`. The Kubernetes boundary is
+`EgressBinding.spec.policies` (`BindingSpec.policies` in the model), supplied by the cdk8s provider.
+Runtime launch defaults use `default_policies` in both app and Sandbox Service settings. These paths
+also appear in the app's preset configuration and staging chart; regenerated output includes
+`cluster/schemas/agentplane.allegedly.works/` and `cluster/k8s/agentplane-staging/agentplane-staging.k8s.yaml`.
+This spans API, proxy, protobuf, CRD, config, and storage contracts: update every producer and
+consumer, then regenerate OpenAPI/protobuf/CRD schemas and rendered cluster config as appropriate.
+The egress decision record persists `policy` in `egress_decision`;
+renaming that column needs a new migration. The `/egress/policies` route is already explicit. This PR
+takes the low-risk UI label and nearby description pass; the serialized field and storage renames
+remain for the coordinated task.
 
 **Acceptance:** an audit finds no ambiguous generic policy names for egress policies across the
 Agentplane surfaces above; generated schemas reflect renamed fields, and tests cover the resulting

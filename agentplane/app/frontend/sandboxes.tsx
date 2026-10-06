@@ -85,8 +85,8 @@ export function SandboxList({ onOpen }: { onOpen: (name: string) => void }): JSX
   const [modelCatalog, setModelCatalog] = useState<ModelCatalog | null>(null);
   const modelOptions = thread.harness && modelCatalog ? modelsForHarness(modelCatalog, thread.harness) : [];
   const reasoningEfforts = modelOptions.find((option) => option.model === thread.model)?.reasoning_efforts ?? [];
-  // The namespace's policies; ticking some grants them to this sandbox alone.
-  const [policies, setPolicies] = useState<string[]>([]);
+  // The namespace's egress policies; ticking some grants them to this sandbox alone.
+  const [egressPolicies, setEgressPolicies] = useState<string[]>([]);
   const [templates, setTemplates] = useState<string[]>([]);
   // The namespace's action policy sets; a preset pre-fills the pick and the operator edits it.
   const [policySets, setPolicySets] = useState<ActionPolicySetView[]>([]);
@@ -132,9 +132,9 @@ export function SandboxList({ onOpen }: { onOpen: (name: string) => void }): JSX
 
   useEffect(() => {
     void (async () => {
-      const { data: policyViews, error: policyFailure } = await api.GET("/egress/policies");
+      const { data: egressPolicyViews, error: policyFailure } = await api.GET("/egress/policies");
       if (policyFailure) setError(displayableError(policyFailure));
-      else setPolicies(policyViews.map((policy) => policy.name));
+      else setEgressPolicies(egressPolicyViews.map((policy) => policy.name));
       const { data: setViews, error: setFailure } = await api.GET("/action-policy/sets");
       if (setFailure) setError(displayableError(setFailure));
       else setPolicySets(setViews);
@@ -254,9 +254,9 @@ export function SandboxList({ onOpen }: { onOpen: (name: string) => void }): JSX
           style={{ flex: "1 1 14rem" }}
         />
         <MultiSelect
-          label="Policies"
+          label="Egress policies"
           description="What this sandbox may reach"
-          data={policies}
+          data={egressPolicies}
           value={form.policies ?? []}
           onChange={(picked) => setForm({ ...form, policies: picked })}
           style={{ flex: "1 1 12rem" }}
