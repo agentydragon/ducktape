@@ -8,8 +8,8 @@ Authentik-protected browser UI and desktop clients. Card settings and the option
 share one `config.json` in the privately delivered `plaid-spend-private-config` Secret.
 
 The browser at `/` signs in through the confidential Authentik `plaid-spend-web` client. The server
-keeps OIDC tokens out of the browser and authenticates page, stylesheet, script, view, and event
-requests with a signed session cookie. The GNOME panel and `plaid-spend` CLI use the separate public
+keeps OIDC tokens out of the browser and authenticates page, stylesheet, script, view, configuration,
+and event requests with a signed session cookie. The GNOME panel and `plaid-spend` CLI use the separate public
 `plaid-spend-desktop` client and Bearer-token API. Both desktop clients read the same global card view
 and notification-backed event stream.
 
@@ -24,6 +24,8 @@ and notification-backed event stream.
   Configuration is global to the service, so every authorized identity sees the same view.
 - `GET /api/v1/web/view` and `GET /api/v1/web/events` are the browser UI's cookie-authenticated
   counterparts. They return the same schema and use the same live event stream.
+- `GET /api/v1/web/configuration` returns the settings currently loaded by the service for the
+  browser's read-only Configuration tab. It uses the signed web session and omits Plaid account IDs.
 
 The view shape is:
 

@@ -16,7 +16,7 @@ from fastapi import Depends, FastAPI, HTTPException, Request, status
 from fastapi.responses import FileResponse, Response, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 
-from finance.plaid.spend.models import SpendConfiguration, SpendView
+from finance.plaid.spend.models import SpendConfiguration, SpendConfigurationView, SpendView
 from finance.plaid.spend.service import SpendService
 from finance.plaid.spend.settings import SpendSettings
 from mcp_infra.oidc_principal import (
@@ -120,6 +120,10 @@ def create_app(settings: SpendSettings, *, service: SpendService) -> FastAPI:
     @app.get("/api/v1/web/view", response_model=SpendView)
     async def get_web_view(reader: SpendReader) -> SpendView:
         return await reader.read_view()
+
+    @app.get("/api/v1/web/configuration", response_model=SpendConfigurationView)
+    async def get_web_configuration(reader: SpendReader) -> SpendConfigurationView:
+        return reader.read_configuration()
 
     @app.get("/api/v1/events")
     async def events(request: Request, _principal: ApiPrincipal, reader: SpendReader) -> StreamingResponse:

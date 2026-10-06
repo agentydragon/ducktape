@@ -16,6 +16,7 @@ import {
   Paper,
   SimpleGrid,
   Stack,
+  Tabs,
   Text,
   Title,
 } from "@mantine/core";
@@ -69,6 +70,29 @@ type CardView = {
   last_synced_at: string | null;
 };
 type View = { cards: CardView[]; allowance: Allowance | null; generated_at: string | null };
+type SimpleRuleCondition =
+  | { type: "name_prefix"; field: "name" | "merchant_name"; prefix: string }
+  | { type: "name_contains"; field: "name" | "merchant_name"; substring: string }
+  | { type: "category_exact"; field: "pfc_primary" | "pfc_detailed"; value: string };
+type RuleCondition = SimpleRuleCondition | { type: "all_of"; conditions: SimpleRuleCondition[] };
+type ConfigurationRule = { condition: RuleCondition; kind: "flexible" | "fixed" | "excluded" };
+type ConfiguredCard = {
+  label: string;
+  enabled: boolean;
+  limit_minor_units: number | null;
+  alert_threshold_percent: number | null;
+};
+type SpendConfiguration = {
+  cards: ConfiguredCard[];
+  allowance: {
+    monthly_minor_units: number;
+    activation_at: string;
+    currency: string;
+    spending_account_count: number;
+    max_sync_age_hours: number;
+    rules: ConfigurationRule[];
+  } | null;
+};
 
 function money(value: number | null | undefined, currency: string | null, exact = false): string {
   if (value == null || !Number.isFinite(value)) return "Unavailable";
@@ -513,10 +537,165 @@ function SpendCard({ card }: { card: CardView }) {
   );
 }
 
+function ruleConditionText(condition: RuleCondition): string {
+  switch (condition.type) {
+    case "name_prefix":
+      return `${condition.field === "name" ? "Transaction name" : "Merchant name"} starts with “${condition.prefix}”`;
+    case "name_contains":
+      return `${condition.field === "name" ? "Transaction name" : "Merchant name"} contains “${condition.substring}”`;
+    case "category_exact":
+      return `${condition.field} equals ${condition.value}`;
+    case "all_of":
+      return condition.conditions.map(ruleConditionText).join(" AND ");
+  }
+}
+
+function ConfigurationPanel({
+  configuration,
+  loading,
+  error,
+}: {
+  configuration: SpendConfiguration | null;
+  loading: boolean;
+  error: string | null;
+}) {
+  const allowance = configuration?.allowance;
+  return (
+    <Stack gap="lg">
+      <Group justify="space-between" align="flex-start" gap="md">
+        <div>
+          <Title order={2} size="h3">
+            Configuration
+          </Title>
+          <Text size="sm" c="dimmed" mt="xs">
+            Read-only settings currently loaded by Plaid Spend. Account IDs are omitted; changes are made in the private
+            configuration and take effect after rollout.
+          </Text>
+        </div>
+        <Badge color="gray" variant="light">
+          Read only
+        </Badge>
+      </Group>
+      {error && (
+        <Alert color="red" title="Couldn't load configuration">
+          {error}
+        </Alert>
+      )}
+      {loading && !configuration && (
+        <Text size="sm" c="dimmed">
+          Loading configuration…
+        </Text>
+      )}
+      {configuration && (
+        <>
+          {allowance ? (
+            <Card component="section" aria-labelledby="configuration-allowance-title" withBorder radius="lg" p="lg">
+              <Stack gap="md">
+                <Title id="configuration-allowance-title" order={3} size="h4">
+                  Flexible allowance policy
+                </Title>
+                <SimpleGrid cols={{ base: 1, sm: 2, md: 4 }} spacing="md">
+                  <Metric
+                    label="MONTHLY ALLOWANCE"
+                    value={<Money value={allowance.monthly_minor_units} currency={allowance.currency} />}
+                  />
+                  <Metric label="START DATE" value={allowance.activation_at} />
+                  <Metric label="ACCOUNTS IN SCOPE" value={allowance.spending_account_count} />
+                  <Metric label="MAX SYNC AGE" value={`${allowance.max_sync_age_hours} hours`} />
+                </SimpleGrid>
+                <Divider />
+                <div>
+                  <Text fw={650} mb="sm">
+                    Classification rules
+                  </Text>
+                  <Stack gap="xs">
+                    {allowance.rules.map((rule, index) => {
+                      const kind =
+                        rule.kind === "fixed" ? "Mandatory" : rule.kind === "excluded" ? "Excluded" : "Flexible";
+                      const color = rule.kind === "fixed" ? "blue" : rule.kind === "excluded" ? "gray" : "teal";
+                      return (
+                        <Paper key={`${rule.kind}-${index}`} withBorder radius="md" p="sm">
+                          <Group align="flex-start" gap="sm" wrap="nowrap">
+                            <Text size="sm" c="dimmed" w={20} ta="right">
+                              {index + 1}.
+                            </Text>
+                            <Badge color={color} variant="light" style={{ flexShrink: 0 }}>
+                              {kind}
+                            </Badge>
+                            <Text size="sm" style={{ overflowWrap: "anywhere" }}>
+                              {ruleConditionText(rule.condition)}
+                            </Text>
+                          </Group>
+                        </Paper>
+                      );
+                    })}
+                  </Stack>
+                  <Text size="xs" c="dimmed" mt="sm">
+                    Rules are checked in order; the first matching rule applies. Unmatched purchases count as flexible.
+                  </Text>
+                </div>
+              </Stack>
+            </Card>
+          ) : (
+            <Alert color="yellow" title="No flexible allowance configured">
+              Card settings are still shown below.
+            </Alert>
+          )}
+          <section aria-labelledby="configuration-cards-title">
+            <Group justify="space-between" align="baseline">
+              <Title id="configuration-cards-title" order={3} size="h4">
+                Card settings
+              </Title>
+              <Text size="sm" c="dimmed">
+                {configuration.cards.length} configured
+              </Text>
+            </Group>
+            <Text size="xs" c="dimmed" mt="xs" mb="md">
+              Limits are shown in minor units of each account's currency.
+            </Text>
+            <SimpleGrid cols={{ base: 1, sm: 2 }} spacing="md">
+              {configuration.cards.map((card, index) => (
+                <Card key={`${card.label}-${index}`} withBorder radius="md" p="lg">
+                  <Stack gap="sm">
+                    <Group justify="space-between" align="flex-start" gap="sm">
+                      <Text fw={650} style={{ overflowWrap: "anywhere" }}>
+                        {card.label}
+                      </Text>
+                      <Badge color={card.enabled ? "teal" : "gray"} variant="light">
+                        {card.enabled ? "Enabled" : "Disabled"}
+                      </Badge>
+                    </Group>
+                    <Text size="sm">
+                      Card limit: {card.limit_minor_units == null ? "Not set" : card.limit_minor_units.toLocaleString()}
+                    </Text>
+                    <Text size="sm" c="dimmed">
+                      Alert threshold:{" "}
+                      {card.alert_threshold_percent == null ? "Not set" : `${card.alert_threshold_percent}%`}
+                    </Text>
+                  </Stack>
+                </Card>
+              ))}
+            </SimpleGrid>
+            {!configuration.cards.length && (
+              <Text size="sm" c="dimmed" mt="sm">
+                No cards configured.
+              </Text>
+            )}
+          </section>
+        </>
+      )}
+    </Stack>
+  );
+}
+
 function App() {
   const [view, setView] = useState<View | null>(null);
   const [state, setState] = useState("Connecting");
   const [error, setError] = useState<string | null>(null);
+  const [activeTab, setActiveTab] = useState<string | null>("spending");
+  const [configuration, setConfiguration] = useState<SpendConfiguration | null>(null);
+  const [configurationLoading, setConfigurationLoading] = useState(false);
+  const [configurationError, setConfigurationError] = useState<string | null>(null);
   useEffect(() => {
     let mounted = true;
     const load = async () => {
@@ -563,6 +742,35 @@ function App() {
       events.close();
     };
   }, []);
+  useEffect(() => {
+    if (activeTab !== "configuration" || configuration != null) return;
+    let mounted = true;
+    const load = async () => {
+      setConfigurationLoading(true);
+      setConfigurationError(null);
+      try {
+        const response = await fetch("/api/v1/web/configuration", {
+          cache: "no-store",
+          credentials: "same-origin",
+        });
+        if (response.status === 401) {
+          window.location.assign("/auth/login");
+          return;
+        }
+        if (!response.ok) throw new Error(`Configuration request returned ${response.status}`);
+        const data: SpendConfiguration = await response.json();
+        if (mounted) setConfiguration(data);
+      } catch (cause) {
+        if (mounted) setConfigurationError(cause instanceof Error ? cause.message : "Configuration request failed");
+      } finally {
+        if (mounted) setConfigurationLoading(false);
+      }
+    };
+    void load();
+    return () => {
+      mounted = false;
+    };
+  }, [activeTab, configuration]);
   const cards = view?.cards || [];
   return (
     <MantineProvider defaultColorScheme="light">
@@ -581,62 +789,77 @@ function App() {
         </Container>
       </Paper>
       <Container component="main" size="lg" py="xl">
-        <Stack gap="xl">
-          <Group justify="space-between" gap="md">
-            <Title order={1} size="h3">
-              Flexible spending
-            </Title>
-            <Badge color={state === "Live updates" ? "teal" : "gray"} variant="dot" aria-live="polite">
-              {state}
-            </Badge>
-          </Group>
-          {error && (
-            <Alert color="red" title="Couldn't refresh your view">
-              {error}. Showing the most recent data we have.
-            </Alert>
-          )}
-          {view?.allowance ? (
-            <AllowancePanel allowance={view.allowance} />
-          ) : (
-            <Alert color="yellow" title="No flexible allowance yet">
-              {view
-                ? "No allowance is configured. Card totals below are not a flexible-spend budget."
-                : "Loading your spending picture…"}
-            </Alert>
-          )}
-          <section aria-labelledby="cards-title">
-            <Group justify="space-between" align="baseline">
-              <Title order={2} id="cards-title" size="h3">
-                Card statements
-              </Title>
-              <Text size="sm" c="dimmed">
-                {cards.length} {cards.length === 1 ? "card" : "cards"}
-              </Text>
-            </Group>
-            <Text size="sm" c="dimmed" mt="xs" mb="md">
-              Statement cycles and card limits are not a flexible spending budget.
-            </Text>
-            <SimpleGrid cols={{ base: 1, sm: 2 }} spacing="md">
-              {cards.map((card, index) => (
-                <SpendCard card={card} key={`${card.account_name}-${index}`} />
-              ))}
-            </SimpleGrid>
-            {view && !cards.length && (
-              <Text size="sm" c="dimmed">
-                No cards configured.
-              </Text>
-            )}
-          </section>
-          <Divider />
-          <Group justify="space-between" gap="sm">
-            <Text size="xs" c="dimmed">
-              Advisory estimates, not bank controls. Review your accounts for decisions that matter.
-            </Text>
-            <Text size="xs" c="dimmed">
-              View updated {time(view?.generated_at)}
-            </Text>
-          </Group>
-        </Stack>
+        <Tabs value={activeTab} onChange={setActiveTab} keepMounted={false}>
+          <Tabs.List aria-label="Spend pages">
+            <Tabs.Tab value="spending">Spending</Tabs.Tab>
+            <Tabs.Tab value="configuration">Configuration</Tabs.Tab>
+          </Tabs.List>
+          <Tabs.Panel value="spending" pt="md">
+            <Stack gap="xl">
+              <Group justify="space-between" gap="md">
+                <Title order={1} size="h3">
+                  Flexible spending
+                </Title>
+                <Badge color={state === "Live updates" ? "teal" : "gray"} variant="dot" aria-live="polite">
+                  {state}
+                </Badge>
+              </Group>
+              {error && (
+                <Alert color="red" title="Couldn't refresh your view">
+                  {error}. Showing the most recent data we have.
+                </Alert>
+              )}
+              {view?.allowance ? (
+                <AllowancePanel allowance={view.allowance} />
+              ) : (
+                <Alert color="yellow" title="No flexible allowance yet">
+                  {view
+                    ? "No allowance is configured. Card totals below are not a flexible-spend budget."
+                    : "Loading your spending picture…"}
+                </Alert>
+              )}
+              <section aria-labelledby="cards-title">
+                <Group justify="space-between" align="baseline">
+                  <Title order={2} id="cards-title" size="h3">
+                    Card statements
+                  </Title>
+                  <Text size="sm" c="dimmed">
+                    {cards.length} {cards.length === 1 ? "card" : "cards"}
+                  </Text>
+                </Group>
+                <Text size="sm" c="dimmed" mt="xs" mb="md">
+                  Statement cycles and card limits are not a flexible spending budget.
+                </Text>
+                <SimpleGrid cols={{ base: 1, sm: 2 }} spacing="md">
+                  {cards.map((card, index) => (
+                    <SpendCard card={card} key={`${card.account_name}-${index}`} />
+                  ))}
+                </SimpleGrid>
+                {view && !cards.length && (
+                  <Text size="sm" c="dimmed">
+                    No cards configured.
+                  </Text>
+                )}
+              </section>
+              <Divider />
+              <Group justify="space-between" gap="sm">
+                <Text size="xs" c="dimmed">
+                  Advisory estimates, not bank controls. Review your accounts for decisions that matter.
+                </Text>
+                <Text size="xs" c="dimmed">
+                  View updated {time(view?.generated_at)}
+                </Text>
+              </Group>
+            </Stack>
+          </Tabs.Panel>
+          <Tabs.Panel value="configuration" pt="md">
+            <ConfigurationPanel
+              configuration={configuration}
+              loading={configurationLoading}
+              error={configurationError}
+            />
+          </Tabs.Panel>
+        </Tabs>
       </Container>
     </MantineProvider>
   );
