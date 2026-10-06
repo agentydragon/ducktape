@@ -153,7 +153,7 @@ it("inherits the preset model and replaces incompatible choices when the harness
   expect(options(container, "Model").map((node) => node.textContent)).toEqual(["Test Claude"]);
 });
 
-it("pre-fills the preset's policy sets and Kubernetes grants, shows role scope, and sends the picks", async () => {
+it("pre-fills the preset's policy sets and Kubernetes grants, hides picked sets, and sends the picks", async () => {
   const { container, onOpen } = await render();
   expect(input(container, "Action policy sets").value).toBe("");
   expect(container.textContent).toContain("test-reads");
@@ -161,10 +161,7 @@ it("pre-fills the preset's policy sets and Kubernetes grants, shows role scope, 
   expect(container.textContent).toContain("Role/workspace-reader");
   expect(container.textContent).toContain("namespace agentplane-test");
   await act(async () => input(container, "Action policy sets").click());
-  expect(options(container, "Action policy sets").map((node) => node.textContent)).toEqual([
-    "test-reads",
-    "test-broken · invalid",
-  ]);
+  expect(options(container, "Action policy sets").map((node) => node.textContent)).toEqual(["test-broken · invalid"]);
   await act(async () => input(container, "Action policy sets").click());
   const post = vi.spyOn(api, "POST").mockResolvedValue({ data: CREATED, response: new Response() } as never);
   await type(input(container, "Name"), "picked");

@@ -2440,9 +2440,11 @@ if (scenario.openActionPolicySets) {
     );
     const label = [...document.querySelectorAll("label")].find((node) => node.textContent === "Action policy sets");
     const control = label?.control;
-    if (!pill || !(control instanceof HTMLInputElement)) return;
+    const clickTarget =
+      control instanceof HTMLInputElement ? control.closest<HTMLElement>(".mantine-MultiSelect-input") : null;
+    if (!pill || !clickTarget) return;
     openSets.disconnect();
-    control.click();
+    clickTarget.click();
   });
   openSets.observe(document, { childList: true, subtree: true });
 }
@@ -2454,9 +2456,11 @@ if (scenario.openSandboxPolicies) {
     );
     const label = [...document.querySelectorAll("label")].find((node) => node.textContent === "Policies");
     const control = label?.control;
-    if (!pill || !(control instanceof HTMLInputElement)) return;
+    const clickTarget =
+      control instanceof HTMLInputElement ? control.closest<HTMLElement>(".mantine-MultiSelect-input") : null;
+    if (!pill || !clickTarget) return;
     openPolicies.disconnect();
-    control.click();
+    clickTarget.click();
   });
   openPolicies.observe(document, { childList: true, subtree: true });
 }
@@ -2468,9 +2472,11 @@ if (scenario.openKubernetesGrants) {
     );
     const label = [...document.querySelectorAll("label")].find((node) => node.textContent === "Kubernetes grants");
     const control = label?.control;
-    if (!pill || !(control instanceof HTMLInputElement) || control.disabled) return;
+    const clickTarget =
+      control instanceof HTMLInputElement ? control.closest<HTMLElement>(".mantine-MultiSelect-input") : null;
+    if (!pill || !(control instanceof HTMLInputElement) || control.disabled || !clickTarget) return;
     openGrants.disconnect();
-    control.click();
+    clickTarget.click();
   });
   openGrants.observe(document, { attributes: true, attributeFilter: ["disabled"], childList: true, subtree: true });
 }

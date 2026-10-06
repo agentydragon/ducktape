@@ -566,7 +566,7 @@
     "outputName": "sandbox-egress",
     "clicks": [
       {
-        "selector": "role=combobox[name=\"Grant policies\"]",
+        "selector": "div.mantine-MultiSelect-input",
         "expectVisible": ["[role=\"option\"]:visible:text(\"pypi\")"]
       },
       {
@@ -583,7 +583,7 @@
     "outputName": "sandbox-egress-phone",
     "clicks": [
       {
-        "selector": "role=combobox[name=\"Grant policies\"]",
+        "selector": "div.mantine-MultiSelect-input",
         "expectVisible": ["[role=\"option\"]:visible:text(\"pypi\")"]
       },
       {
