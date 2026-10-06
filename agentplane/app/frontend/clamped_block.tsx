@@ -52,15 +52,18 @@ export function ClampedBlock({
     return () => observer.disconnect();
   }, [maxHeightRem]);
   const clipped = overflows && !expanded;
+  const showStickyCollapse = overflows && expanded;
   return (
     <div className="agentplane-clamped-block" data-expanded={expanded && overflows} data-label={label}>
-      {(header !== undefined || (overflows && expanded)) && (
+      {showStickyCollapse ? (
         <StickyCollapseControl
           label={label}
           header={header}
-          expanded={overflows && expanded}
+          expanded
           onCollapse={() => setExpanded(false)}
         />
+      ) : (
+        header
       )}
       <div
         data-clamped={clipped}

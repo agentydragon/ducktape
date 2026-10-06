@@ -47,15 +47,14 @@ describe("ActionRequests", () => {
     for (const value of [grant.issuer, grant.client_id, grant.connection_id]) {
       expect(container.textContent).toContain(value);
     }
-    const details = container.querySelector("details");
-    const summary = details?.querySelector("summary");
-    if (!details || !summary) throw new Error("missing grant audit disclosure");
-    expect(details.open).toBe(false);
-    await act(async () => summary.click());
-    expect(details.open).toBe(true);
-    expect(details.textContent).toContain(grant.grant_id);
-    expect(details.textContent).toContain("Revision 7");
-    expect(details.textContent).toContain("Historical submission evidence");
+    const control = container.querySelector<HTMLButtonElement>(".agentplane-disclosure-summary");
+    if (!control) throw new Error("missing grant audit disclosure");
+    expect(control.getAttribute("aria-expanded")).toBe("false");
+    await act(async () => control.click());
+    expect(control.getAttribute("aria-expanded")).toBe("true");
+    expect(container.textContent).toContain(grant.grant_id);
+    expect(container.textContent).toContain("Revision 7");
+    expect(container.textContent).toContain("Historical submission evidence");
   });
 
   it.each([null, undefined])(
@@ -70,11 +69,11 @@ describe("ActionRequests", () => {
       expect(container.textContent).not.toContain("Authenticated external caller");
       // The request-id disclosure exists regardless of external_grant, but carries only the id --
       // no grant provenance to fold in without one.
-      const details = container.querySelector("details");
-      expect(details?.textContent).not.toContain("Authenticated external caller");
-      expect(details?.querySelector("summary")?.textContent).toBe("Request audit details");
-      expect(details?.open).toBe(false);
-      expect(details?.textContent).toContain(row.id);
+      const control = container.querySelector<HTMLButtonElement>(".agentplane-disclosure-summary");
+      expect(container.textContent).not.toContain("Authenticated external caller");
+      expect(control?.textContent).toBe("Request audit details");
+      expect(control?.getAttribute("aria-expanded")).toBe("false");
+      expect(container.textContent).toContain(row.id);
       expect(button(container, "Approve").disabled).toBe(false);
     }
   );

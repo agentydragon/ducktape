@@ -82,13 +82,10 @@
   flex: 1;
 }
 
-.agentplane-step-details > summary {
+.agentplane-step-details .agentplane-disclosure-summary {
   display: flex;
   min-width: 0;
   align-items: baseline;
-  gap: var(--mantine-spacing-xs);
-  cursor: pointer;
-  list-style: none;
 }
 
 .agentplane-step-summary {
@@ -113,7 +110,7 @@
   white-space: nowrap;
 }
 
-.agentplane-step-details[open] > summary .agentplane-step-preview {
+.agentplane-step-details .agentplane-disclosure-summary[aria-expanded="true"] .agentplane-step-preview {
   display: none;
 }
 
@@ -128,18 +125,18 @@
   align-items: center;
 }
 
-.agentplane-step-row:has(> .agentplane-step-controls) > .agentplane-step-details > summary {
+.agentplane-step-row:has(> .agentplane-step-controls) > .agentplane-step-details .agentplane-disclosure-summary {
   padding-inline-end: 6rem;
 }
 
-.agentplane-step-details[open] > summary .agentplane-step-summary {
+.agentplane-step-details .agentplane-disclosure-summary[aria-expanded="true"] .agentplane-step-summary {
   flex-wrap: nowrap;
   white-space: nowrap;
 }
 
 /* The row's evidence icon is pinned to its card's corner, so the line stops short of it rather than
    running under it. The disclosed content below keeps the full width. */
-.agentplane-step-details > summary,
+.agentplane-step-details .agentplane-disclosure-summary,
 .agentplane-step-static {
   padding-inline-end: 1.5rem;
 }

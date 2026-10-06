@@ -837,7 +837,7 @@ it("folds a run of tool calls and reasoning behind its summary until it is opene
     false,
     { "test-entity-2:text": "The plan is to **inspect** the evidence." }
   );
-  const summary = run.querySelector("summary")!;
+  const summary = run.querySelector(".agentplane-disclosure-summary")!;
   expect(summary.textContent).toContain("2 tool calls, 1 reasoning step");
   expect(summary.querySelector('[role="img"][aria-label="Failed"]')).not.toBeNull();
   expect(run.textContent).not.toContain("test-read");
@@ -854,9 +854,9 @@ it("folds a run of tool calls and reasoning behind its summary until it is opene
 it("marks an unfinished run as streaming in the live turn, and as incomplete once that is over", async () => {
   const segments = [testItem(1, ItemKind.REASONING, { completion: null }), testItem(2, ItemKind.TOOL_CALL)];
   const [live] = await renderHistory(segments, true);
-  expect(live.querySelector('summary [role="img"]')?.getAttribute("aria-label")).toBe("Streaming");
+  expect(live.querySelector('.agentplane-disclosure-summary [role="img"]')?.getAttribute("aria-label")).toBe("Streaming");
   const [retained] = await renderHistory(segments, false);
-  expect(retained.querySelector('summary [role="img"]')?.getAttribute("aria-label")).toBe("Incomplete");
+  expect(retained.querySelector('.agentplane-disclosure-summary [role="img"]')?.getAttribute("aria-label")).toBe("Incomplete");
 });
 
 it("puts a live assistant-text cursor inline after its Markdown body", async () => {
@@ -886,7 +886,7 @@ it("shows a lone reasoning step as its own reasoning block, and assistant text w
       "test-entity-2:text": "Test body of test-entity-2",
     }
   );
-  expect(reasoning.querySelector("details.agentplane-step-details")).toBeNull();
+  expect(reasoning.querySelector(".agentplane-step-details")).toBeNull();
   expect(reasoning.querySelector(".agentplane-step-title")?.textContent).toBe("Reasoning");
   expect(reasoning.textContent).toContain("Reasoning preview body");
   expect(answer.textContent).toContain("Test body of test-entity-2");
@@ -955,7 +955,7 @@ describe("recovery presentation", () => {
       false,
       { "test-entity-2:text": "Kept in context" }
     );
-    const summary = run.querySelector("summary")!;
+    const summary = run.querySelector(".agentplane-disclosure-summary")!;
     expect(summary.textContent).toContain("2 tool calls, 1 reasoning step");
     expect(badgeLabels(run)).toEqual([]);
 

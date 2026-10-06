@@ -1,5 +1,6 @@
 // @vitest-environment happy-dom
 
+import { MantineProvider } from "@mantine/core";
 import { act, type JSX } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, expect, it } from "vitest";
@@ -20,28 +21,27 @@ it("restores an open disclosure after its virtualized row remounts", async () =>
   const render = async (visible: boolean) =>
     act(async () =>
       root.render(
-        <RetainedDisclosureProvider>
-          {visible && (
-            <RetainedDisclosure id="item:tool:output" summary="Output">
-              <span>selected output</span>
-            </RetainedDisclosure>
-          )}
-        </RetainedDisclosureProvider>
+        <MantineProvider env="test">
+          <RetainedDisclosureProvider>
+            {visible && (
+              <RetainedDisclosure id="item:tool:output" summary="Output">
+                <span>selected output</span>
+              </RetainedDisclosure>
+            )}
+          </RetainedDisclosureProvider>
+        </MantineProvider>
       )
     );
 
   await render(true);
-  const details = container.querySelector("details")!;
-  await act(async () => {
-    details.open = true;
-    details.dispatchEvent(new Event("toggle"));
-  });
+  const control = container.querySelector<HTMLButtonElement>(".agentplane-disclosure-summary")!;
+  await act(async () => control.click());
   expect(container.textContent).toContain("selected output");
 
   await render(false);
-  expect(container.querySelector("details")).toBeNull();
+  expect(container.querySelector(".agentplane-disclosure")).toBeNull();
   await render(true);
-  expect(container.querySelector("details")?.open).toBe(true);
+  expect(container.querySelector(".agentplane-disclosure-summary")?.getAttribute("aria-expanded")).toBe("true");
   expect(container.textContent).toContain("selected output");
 });
 
@@ -64,9 +64,11 @@ it("restores a button-toggled disclosure after its virtualized row remounts", as
   const render = async (visible: boolean) =>
     act(async () =>
       root.render(
-        <RetainedDisclosureProvider>
-          {visible && <ButtonDisclosure id="item:message:evidence" />}
-        </RetainedDisclosureProvider>
+        <MantineProvider env="test">
+          <RetainedDisclosureProvider>
+            {visible && <ButtonDisclosure id="item:message:evidence" />}
+          </RetainedDisclosureProvider>
+        </MantineProvider>
       )
     );
   const press = async () => act(async () => container.querySelector("button")!.click());
@@ -93,29 +95,28 @@ it("evicts old disclosure choices and keeps a replacement source closed", async 
   const render = async (source: string, item: number) =>
     act(async () =>
       root.render(
-        <RetainedDisclosureProvider>
-          <RetainedDisclosure id={`${source}:epoch:${item}:evidence`} summary="Evidence">
-            <span data-retained-content>{`${source} evidence ${item}`}</span>
-          </RetainedDisclosure>
-        </RetainedDisclosureProvider>
+        <MantineProvider env="test">
+          <RetainedDisclosureProvider>
+            <RetainedDisclosure id={`${source}:epoch:${item}:evidence`} summary="Evidence">
+              <span data-retained-content>{`${source} evidence ${item}`}</span>
+            </RetainedDisclosure>
+          </RetainedDisclosureProvider>
+        </MantineProvider>
       )
     );
 
   for (let item = 0; item < 129; item++) {
     await render("original", item);
-    const details = container.querySelector("details")!;
-    await act(async () => {
-      details.open = true;
-      details.dispatchEvent(new Event("toggle"));
-    });
+    const control = container.querySelector<HTMLButtonElement>(".agentplane-disclosure-summary")!;
+    await act(async () => control.click());
     expect(container.querySelector("[data-retained-content]")?.textContent).toBe(`original evidence ${item}`);
   }
   await render("original", 0);
-  expect(container.querySelector("details")?.open).toBe(false);
+  expect(container.querySelector(".agentplane-disclosure-summary")?.getAttribute("aria-expanded")).toBe("false");
   expect(container.querySelector("[data-retained-content]")).toBeNull();
   await render("original", 128);
-  expect(container.querySelector("details")?.open).toBe(true);
+  expect(container.querySelector(".agentplane-disclosure-summary")?.getAttribute("aria-expanded")).toBe("true");
   await render("replacement", 128);
-  expect(container.querySelector("details")?.open).toBe(false);
+  expect(container.querySelector(".agentplane-disclosure-summary")?.getAttribute("aria-expanded")).toBe("false");
   expect(container.querySelector("[data-retained-content]")).toBeNull();
 });

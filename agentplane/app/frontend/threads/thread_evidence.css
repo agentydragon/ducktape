@@ -43,8 +43,11 @@
   right: 4px;
 }
 
-/* Floated, not flexed, to the summary's right edge: the label stays inline beside the disclosure
-   marker. */
+/* Keep the separate debug action next to its label without nesting a button inside the accordion
+   control button. */
 .agentplane-evidence-frames-debug {
-  float: right;
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  margin-inline-end: var(--mantine-spacing-xs);
 }

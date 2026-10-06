@@ -170,11 +170,9 @@ export function useOpenChronologicalDebug(): (cursor?: string) => void {
   return open;
 }
 
-/** Sits at the right of an observation's own row (its raw-frames disclosure summary, or the plain
+/** Sits at the right of an observation's own row (its raw-frames disclosure control, or the plain
  * text standing in for one) rather than as a separate full-row link below it. A native `title`, not
- * a Mantine `Tooltip`, matches `EvidenceToggle`'s reasoning in `thread_evidence.tsx`. Guards
- * against the default action when it renders inside a `<summary>`: without `preventDefault`, the
- * click would also toggle the enclosing `<details>`. */
+ * a Mantine `Tooltip`, matches `EvidenceToggle`'s reasoning in `thread_evidence.tsx`. */
 export function ChronologicalDebugIcon({ observationCursor }: { observationCursor: string }): JSX.Element {
   const open = useOpenChronologicalDebug();
   return (

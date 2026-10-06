@@ -1,42 +1,17 @@
-import { Button } from "@mantine/core";
-import { createContext, type CSSProperties, type JSX, type ReactNode, useContext, useState } from "react";
+import { Accordion, Button } from "@mantine/core";
+import {
+  createContext,
+  type JSX,
+  type ReactNode,
+  useContext,
+  useLayoutEffect,
+  useRef,
+  useState,
+} from "react";
 
 import "./disclosure.css";
 
-const DisclosureDepth = createContext(0);
-
-function depthStyle(depth: number): CSSProperties {
-  return { top: `${depth * 2.25}rem` };
-}
-
-export function useDisclosureDepth(): number {
-  return useContext(DisclosureDepth);
-}
-
-/** The common summary for expandable content. It stays at the top of the scrollport while the
- * disclosure is open, with nested headers stacked below their open parents. */
-export function DisclosureSummary({
-  children,
-  open,
-  depth,
-  className,
-}: {
-  children: ReactNode;
-  open: boolean;
-  depth: number;
-  className?: string;
-}): JSX.Element {
-  return (
-    <summary
-      className={`agentplane-disclosure-summary${className ? ` ${className}` : ""}`}
-      data-expanded={open}
-      style={depthStyle(depth)}
-    >
-      <span className="agentplane-disclosure-caret" aria-hidden="true" />
-      <div className="agentplane-disclosure-summary-content">{children}</div>
-    </summary>
-  );
-}
+const DisclosureStickyOffset = createContext(0);
 
 /** A sticky close affordance for expanded text that must stay mounted while clipped, such as a
  * command or tool output. */
@@ -53,12 +28,12 @@ export function StickyCollapseControl({
   onCollapse: () => void;
   className?: string;
 }): JSX.Element {
-  const depth = useDisclosureDepth();
+  const top = useContext(DisclosureStickyOffset);
   return (
     <div
       className={`agentplane-disclosure-collapse${className ? ` ${className}` : ""}`}
       data-expanded={expanded}
-      style={depthStyle(depth)}
+      style={{ top }}
     >
       <div className="agentplane-disclosure-collapse-label">{header ?? label}</div>
       {expanded && (
@@ -76,10 +51,11 @@ export function StickyCollapseControl({
   );
 }
 
-/** Native disclosure behavior with an optional controlled open state. All Agentplane disclosures
+/** Mantine accordion behavior with an optional controlled open state. All Agentplane disclosures
  * use this shell so their close affordance, keyboard behavior, and nested sticky positioning match. */
 export function Disclosure({
   summary,
+  summaryAside,
   children,
   open,
   defaultOpen = false,
@@ -89,6 +65,8 @@ export function Disclosure({
   keepMounted = false,
 }: {
   summary: ReactNode;
+  /** A separate header action, outside the accordion button. */
+  summaryAside?: ReactNode;
   children: ReactNode;
   open?: boolean;
   defaultOpen?: boolean;
@@ -98,27 +76,62 @@ export function Disclosure({
   /** Keep hidden content mounted when the caller relies on native selection/copy behavior. */
   keepMounted?: boolean;
 }): JSX.Element {
-  const depth = useDisclosureDepth();
+  const parentTop = useContext(DisclosureStickyOffset);
   const [localOpen, setLocalOpen] = useState(defaultOpen);
+  const [headerHeight, setHeaderHeight] = useState(0);
+  const headingRef = useRef<HTMLDivElement>(null);
   const expanded = open ?? localOpen;
   const setExpanded = (next: boolean) => {
     if (open === undefined) setLocalOpen(next);
     onOpenChange?.(next);
   };
 
+  useLayoutEffect(() => {
+    const heading = headingRef.current;
+    if (!heading) return;
+    const measure = () => {
+      const nextHeight = heading.getBoundingClientRect().height;
+      setHeaderHeight((current) => (Math.abs(current - nextHeight) < 0.5 ? current : nextHeight));
+    };
+    measure();
+    const observer = new ResizeObserver(measure);
+    observer.observe(heading);
+    return () => observer.disconnect();
+  }, []);
+
   return (
-    <DisclosureDepth.Provider value={depth + 1}>
-      <details
-        {...dataAttributes}
+    <DisclosureStickyOffset.Provider value={parentTop + headerHeight}>
+      <Accordion
         className={`agentplane-disclosure${className ? ` ${className}` : ""}`}
-        open={expanded}
-        onToggle={(event) => setExpanded(event.currentTarget.open)}
+        unstyled
+        transitionDuration={0}
+        keepMounted={keepMounted}
+        chevronPosition="left"
+        chevron={<span className="agentplane-disclosure-caret" aria-hidden="true" />}
+        value={expanded ? "content" : null}
+        onChange={(value) => setExpanded(value === "content")}
+        classNames={{
+          item: "agentplane-disclosure-item",
+          control: "agentplane-disclosure-summary",
+          chevron: "agentplane-disclosure-chevron",
+          label: "agentplane-disclosure-summary-content",
+          panel: "agentplane-disclosure-panel",
+          content: "agentplane-disclosure-content",
+        }}
       >
-        <DisclosureSummary open={expanded} depth={depth}>
-          {summary}
-        </DisclosureSummary>
-        {(expanded || keepMounted) && children}
-      </details>
-    </DisclosureDepth.Provider>
+        <Accordion.Item value="content" {...dataAttributes}>
+          <div
+            ref={headingRef}
+            className="agentplane-disclosure-heading"
+            data-expanded={expanded}
+            style={{ top: parentTop }}
+          >
+            <Accordion.Control>{summary}</Accordion.Control>
+            {summaryAside}
+          </div>
+          <Accordion.Panel>{(expanded || keepMounted) && children}</Accordion.Panel>
+        </Accordion.Item>
+      </Accordion>
+    </DisclosureStickyOffset.Provider>
   );
 }

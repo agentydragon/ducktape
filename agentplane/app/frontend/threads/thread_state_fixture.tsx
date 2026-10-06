@@ -152,9 +152,5 @@ export function badgeLabels(container: Element): string[] {
 }
 
 export async function toggle(summary: Element): Promise<void> {
-  const details = summary.parentElement as HTMLDetailsElement;
-  await act(async () => {
-    details.open = !details.open;
-    details.dispatchEvent(new Event("toggle"));
-  });
+  await act(async () => (summary as HTMLButtonElement).click());
 }

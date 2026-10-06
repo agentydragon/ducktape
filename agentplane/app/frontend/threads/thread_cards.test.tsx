@@ -57,15 +57,12 @@ function renderLifecycle(observation: string, event: Observation): Promise<HTMLD
   return renderCard(entity("lifecycle", state, {}), {});
 }
 
-async function disclose(container: HTMLElement, summary: string): Promise<HTMLDetailsElement> {
-  const control = [...container.querySelectorAll("summary")].find((element) => element.textContent === summary);
+async function disclose(container: HTMLElement, summary: string): Promise<void> {
+  const control = [...container.querySelectorAll(".agentplane-disclosure-summary")].find(
+    (element) => element.textContent === summary
+  );
   if (!control) throw new Error(`no ${summary} disclosure`);
-  const details = control.parentElement as HTMLDetailsElement;
-  await act(async () => {
-    details.open = true;
-    details.dispatchEvent(new Event("toggle"));
-  });
-  return details;
+  await toggle(control);
 }
 
 const PROSE = "Run **every** test\n- first";
@@ -140,7 +137,7 @@ describe("recovery presentation", () => {
       { "test-entity-1:output": "aborted" }
     );
     expect(badgeLabels(container).sort()).toEqual(["Interrupted", "Revised for continuation"]);
-    await toggle(container.querySelector("summary")!);
+    await toggle(container.querySelector(".agentplane-disclosure-summary")!);
     expect(container.textContent).toContain("Recovery content does not establish a tool execution outcome.");
     expect(container.textContent).toContain("Continuation output");
     expect(container.textContent).toContain("aborted");
@@ -158,7 +155,7 @@ describe("recovery presentation", () => {
       { "test-entity-1:output": "Created report.txt" }
     );
     expect(badgeLabels(container)).toEqual(["Revised for continuation"]);
-    await toggle(container.querySelector("summary")!);
+    await toggle(container.querySelector(".agentplane-disclosure-summary")!);
     expect(badgeLabels(container)).toEqual(["Revised for continuation"]);
   });
 
@@ -224,7 +221,7 @@ describe("an item the recovery left as it was", () => {
     expect(badgeLabels(container)).toEqual([]);
     expect(blankStatusWrappers(container)).toEqual([]);
 
-    await toggle(container.querySelector("summary")!);
+    await toggle(container.querySelector(".agentplane-disclosure-summary")!);
     expect(container.textContent).toContain("test-output");
     expect(badgeLabels(container)).toEqual([]);
     expect(blankStatusWrappers(container)).toEqual([]);
@@ -240,7 +237,7 @@ describe("an item the recovery left as it was", () => {
       ),
       bodies
     );
-    await toggle(container.querySelector("summary")!);
+    await toggle(container.querySelector(".agentplane-disclosure-summary")!);
     expect(badgeLabels(container)).toEqual(["Failed"]);
   });
 });
@@ -355,7 +352,7 @@ describe("tool call rows", () => {
       { command: COMMAND, description: "List every container", timeout: 5000 },
       "test-container\n"
     );
-    await toggle(container.querySelector("summary")!);
+    await toggle(container.querySelector(".agentplane-disclosure-summary")!);
     expect(container.textContent).toContain("List every container");
     expect(container.textContent).toContain("Timeout 5000 ms");
     const [command, output] = [...container.querySelectorAll(".agentplane-code-block")].map((block) =>
@@ -369,7 +366,7 @@ describe("tool call rows", () => {
   it("shows the JSON a command call holds in place of the command while Raw is on", async () => {
     const container = await renderTool("Bash", { command: "ls", description: "List files" });
     expect(container.querySelector('input[type="checkbox"]')).toBeNull();
-    await toggle(container.querySelector("summary")!);
+    await toggle(container.querySelector(".agentplane-disclosure-summary")!);
     // On the title line, outside its summary and apart from the content below it.
     const raw = container.querySelector<HTMLInputElement>(".agentplane-step-row > .agentplane-step-controls input")!;
     expect(raw.type).toBe("checkbox");
@@ -388,13 +385,13 @@ describe("tool call rows", () => {
     const container = await renderTool("Read", { file_path: "test-file" });
     expect(container.querySelector(".agentplane-step-title")?.textContent).toBe("Read");
     expect(lineOf(container)).toBe('{"file_path":"test-file"}');
-    await toggle(container.querySelector("summary")!);
+    await toggle(container.querySelector(".agentplane-disclosure-summary")!);
     expect(container.querySelector('input[type="checkbox"]')).toBeNull();
   });
 
   it("draws a Bash call it could not show whole as its JSON, with nothing to switch", async () => {
     const container = await renderTool("Bash", { command: "ls", test_extra: true });
-    await toggle(container.querySelector("summary")!);
+    await toggle(container.querySelector(".agentplane-disclosure-summary")!);
     expect(container.querySelector(".agentplane-code-block")?.textContent).toContain('"test_extra":true');
     expect(container.querySelector('input[type="checkbox"]')).toBeNull();
   });
@@ -420,7 +417,7 @@ describe("tool call rows", () => {
     expect(title.getAttribute("title")).toBe("Failed");
     expect(container.querySelector('[aria-label="Failed"]')).toBeNull();
 
-    await toggle(container.querySelector("summary")!);
+    await toggle(container.querySelector(".agentplane-disclosure-summary")!);
     expect(container.querySelector(".agentplane-step-title")?.getAttribute("style")).not.toContain("red");
     expect(container.querySelector('[aria-label="Failed"]')).not.toBeNull();
   });
@@ -454,7 +451,7 @@ describe("tool call rows", () => {
       expect(title().classList.contains("agentplane-step-title--streaming")).toBe(breathes);
       expect(container.querySelector(`[aria-label="${label}"]`)).toBeNull();
 
-      await toggle(container.querySelector("summary")!);
+      await toggle(container.querySelector(".agentplane-disclosure-summary")!);
       expect(title().getAttribute("style")).not.toContain("blue");
       expect(title().classList.contains("agentplane-step-title--streaming")).toBe(false);
       expect(container.querySelector(`[aria-label="${label}"]`)).not.toBeNull();
@@ -490,13 +487,13 @@ describe("tool call rows", () => {
         )
       );
     await show(true);
-    await toggle(container.querySelector("summary")!);
+    await toggle(container.querySelector(".agentplane-disclosure-summary")!);
     await act(async () => container.querySelector<HTMLInputElement>('input[type="checkbox"]')!.click());
 
     await show(false);
-    expect(container.querySelector("details")).toBeNull();
+    expect(container.querySelector(".agentplane-disclosure")).toBeNull();
     await show(true);
-    expect(container.querySelector("details")?.open).toBe(true);
+    expect(container.querySelector(".agentplane-disclosure-summary")?.getAttribute("aria-expanded")).toBe("true");
     expect(container.querySelector<HTMLInputElement>('input[type="checkbox"]')?.checked).toBe(true);
   });
 });
@@ -533,7 +530,7 @@ describe("a row whose body stopped loading", () => {
 describe("EntityCard", () => {
   it("renders a tool call's JSON arguments highlighted and its plain output verbatim, both as code", async () => {
     const container = await renderTool("Read", { file_path: "test-file", limit: 30 }, PROSE);
-    await toggle(container.querySelector("summary")!);
+    await toggle(container.querySelector(".agentplane-disclosure-summary")!);
 
     const [args, output] = container.querySelectorAll(".agentplane-code-block");
     expect(args.querySelector(".cm-editor")).not.toBeNull();

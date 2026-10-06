@@ -2302,11 +2302,12 @@ if (scenario.openDebug) {
       item.click();
       if (scenario.openDebug !== "stderr") return;
       const expandStderr = new MutationObserver(() => {
-        const row = document.querySelector<HTMLDetailsElement>('[data-debug-observation="31"]');
-        if (!row) return;
+        const control = document.querySelector<HTMLButtonElement>(
+          '[data-debug-observation="31"] .agentplane-disclosure-summary'
+        );
+        if (!control) return;
         expandStderr.disconnect();
-        row.open = true;
-        row.dispatchEvent(new Event("toggle", { bubbles: true }));
+        control.click();
       });
       expandStderr.observe(document, { childList: true, subtree: true });
     });
@@ -2328,25 +2329,24 @@ if (scenario.openMoreMenu) {
 }
 
 /** Opens the folded tool-call run, whose steps mount only once it is open. */
-function openRun(summaries: HTMLElement[]): void {
-  summaries
+function openRun(controls: HTMLButtonElement[]): void {
+  controls
     .find(
       (candidate) =>
         candidate.textContent?.includes("tool call") &&
-        candidate.parentElement instanceof HTMLDetailsElement &&
-        !candidate.parentElement.open
+        candidate.getAttribute("aria-expanded") !== "true"
     )
     ?.click();
 }
 
 if (scenario.openReasoning) {
   const openReasoning = new MutationObserver(() => {
-    const summaries = [...document.querySelectorAll("summary")];
-    const step = [...document.querySelectorAll<HTMLElement>("details.agentplane-step-details > summary")].find(
+    const controls = [...document.querySelectorAll<HTMLButtonElement>(".agentplane-disclosure-summary")];
+    const step = controls.find(
       (candidate) => candidate.querySelector(".agentplane-step-title")?.textContent === "Reasoning"
     );
     if (!step) {
-      openRun(summaries);
+      openRun(controls);
       return;
     }
     openReasoning.disconnect();
@@ -2357,7 +2357,7 @@ if (scenario.openReasoning) {
 
 if (scenario.openSetup) {
   const openSetup = new MutationObserver(() => {
-    const summary = [...document.querySelectorAll("summary")].find((candidate) =>
+    const summary = [...document.querySelectorAll<HTMLElement>(".agentplane-disclosure-summary")].find((candidate) =>
       candidate.textContent?.includes("Thread setup complete")
     );
     if (!summary) return;
@@ -2369,11 +2369,9 @@ if (scenario.openSetup) {
 
 /** Opens each folded tool-call line inside the run, which mounts only once the run is open. */
 function openToolLines(): void {
-  for (const step of document.querySelectorAll<HTMLElement>("details.agentplane-step-details > summary")) {
-    const details = step.parentElement;
+  for (const step of document.querySelectorAll<HTMLButtonElement>(".agentplane-step-details .agentplane-disclosure-summary")) {
     if (
-      details instanceof HTMLDetailsElement &&
-      !details.open &&
+      step.getAttribute("aria-expanded") !== "true" &&
       step.querySelector(".agentplane-step-title")?.textContent !== "Reasoning"
     )
       step.click();
@@ -2382,16 +2380,16 @@ function openToolLines(): void {
 
 if (scenario.openRun) {
   const openFoldedRun = new MutationObserver(() => {
-    const summaries = [...document.querySelectorAll("summary")];
-    openRun(summaries);
-    if (document.querySelector("details.agentplane-step-details")) openFoldedRun.disconnect();
+    const controls = [...document.querySelectorAll<HTMLButtonElement>(".agentplane-disclosure-summary")];
+    openRun(controls);
+    if (document.querySelector(".agentplane-step-details")) openFoldedRun.disconnect();
   });
   openFoldedRun.observe(document, { childList: true, subtree: true });
 }
 
 if (scenario.openToolPayloads) {
   const openToolPayloads = new MutationObserver(() => {
-    openRun([...document.querySelectorAll("summary")]);
+    openRun([...document.querySelectorAll<HTMLButtonElement>(".agentplane-disclosure-summary")]);
     openToolLines();
   });
   openToolPayloads.observe(document, { childList: true, subtree: true });
@@ -2399,13 +2397,11 @@ if (scenario.openToolPayloads) {
 
 if (scenario.openRecoveryDetails) {
   const openRecovery = new MutationObserver(() => {
-    const summaries = [...document.querySelectorAll("summary")];
-    openRun(summaries);
-    for (const summary of summaries) {
-      const details = summary.parentElement;
+    const controls = [...document.querySelectorAll<HTMLButtonElement>(".agentplane-disclosure-summary")];
+    openRun(controls);
+    for (const summary of controls) {
       if (
-        details instanceof HTMLDetailsElement &&
-        !details.open &&
+        summary.getAttribute("aria-expanded") !== "true" &&
         summary.textContent?.includes("not retained in model context")
       ) {
         summary.click();

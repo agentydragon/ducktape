@@ -44,15 +44,17 @@ export function useRetainedDisclosure(id: string | null): [boolean, (open: boole
 export function RetainedDisclosure({
   id,
   summary,
+  summaryAside,
   children,
 }: {
   id: string;
   summary: ReactNode;
+  summaryAside?: ReactNode;
   children: ReactNode;
 }): JSX.Element {
   const [open, setOpen] = useRetainedDisclosure(id);
   return (
-    <Disclosure open={open} onOpenChange={setOpen} summary={summary}>
+    <Disclosure open={open} onOpenChange={setOpen} summary={summary} summaryAside={summaryAside}>
       {children}
     </Disclosure>
   );
