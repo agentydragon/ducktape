@@ -48,9 +48,7 @@ class Click(_TableModel):
     )
     label: str | None = Field(default=None, description="Exact accessible label of the element to click.")
     force: bool = Field(default=False, description="Dispatch the click even if another element intercepts it.")
-    press: str | None = Field(
-        default=None, description="Keyboard key to press after the click, before checking what changed."
-    )
+    press: str | None = Field(default=None, description="Keyboard key to send to the target instead of clicking it.")
     expect_visible: list[str] = Field(
         default_factory=list, description="Selectors that must be visible once the click has taken effect."
     )

@@ -288,9 +288,10 @@ async def capture_scenario(
                     "xpath=ancestor::div[contains(concat(' ', normalize-space(@class), ' '), "
                     "' mantine-MultiSelect-input ')][1]"
                 )
-            await target.click(force=click.force, timeout=timeout_ms)
             if click.press is not None:
                 await press_target.press(click.press, timeout=timeout_ms)
+            else:
+                await target.click(force=click.force, timeout=timeout_ms)
             try:
                 await _wait_for_selectors(
                     page, page_errors, click.expect_visible, state="visible", context=output_name, timeout_ms=timeout_ms
