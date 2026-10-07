@@ -1390,7 +1390,7 @@ function standaloneReasoningRows(
     : longBody
       ? LONG_REASONING_BODY
       : longPreview
-        ? "The [projection path](https://example.test/projection) may explain this result. I should **verify it** before adding a retry or changing client behavior."
+        ? "The [projection path](https://example.test/projection) may explain this result. I should **verify it** before adding a retry or changing client behavior. The latest observations still disagree, so I need to compare the source payload with its projected row before changing the client."
         : "Weighing which path to try next.";
   const rows = [
     viewState(24, null),
