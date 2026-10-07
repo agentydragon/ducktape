@@ -43,12 +43,7 @@ from cluster.cdk8s.forgejo_images import SECRET_NAME, forgejo_images_creds_exter
 from cluster.cdk8s.generation import config_map_chart, copy_source_file
 from cluster.cdk8s.manifest_roots import PARKED_ROOT
 from cluster.cdk8s.namespaces import Vpa
-from cluster.cdk8s.openclaw_gateway import (
-    disabled_commands,
-    haku_console_mcp,
-    session_memory_hook,
-    trusted_proxy_gateway,
-)
+from cluster.cdk8s.openclaw_gateway import disabled_commands, session_memory_hook, trusted_proxy_gateway
 from cluster.cdk8s.parked import haku_openclaw_spike_proxy
 from cluster.cdk8s.providers.seaweedfs.bucket import Bucket, BucketAccess
 from cluster.cdk8s.providers.seaweedfs.s3_credentials import S3Credentials
@@ -120,7 +115,6 @@ def config() -> dict:
             allowed_origin="https://haku-openclaw-spike.allegedly.works", device_approve_scopes=["operator.admin"]
         ),
         "hooks": session_memory_hook(),
-        "mcp": haku_console_mcp(request_timeout_ms=60000),
         "plugins": {"entries": {"anthropic": {"enabled": True}}},
         "tools": {
             "allow": [
@@ -310,7 +304,6 @@ def _openclaw_container() -> k8s.Container:
             # its proxy-mediated OAuth token through the environment, so preserve that one
             # variable for the managed Claude CLI child process.
             _env("OPENCLAW_LIVE_CLI_BACKEND_PRESERVE_ENV", "CLAUDE_CODE_OAUTH_TOKEN"),
-            _env("HAKU_CONSOLE_TOKEN", "proxy-haku-console-placeholder"),
             _HAKU_GIT_USERNAME,
             _HAKU_GIT_PASSWORD,
             _GH_PAT,

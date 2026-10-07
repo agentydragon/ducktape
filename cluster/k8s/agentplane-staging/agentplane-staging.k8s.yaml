@@ -8662,7 +8662,6 @@ spec:
       credentialRef:
         name: github-pat
     - hosts:
-        - haku.allegedly.works
         - haku-kubeapi.allegedly.works
       credentialRef:
         name: public-coder-haku-console

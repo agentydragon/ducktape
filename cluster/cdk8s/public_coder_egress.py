@@ -24,7 +24,7 @@ from cluster.cdk8s.agentplane import actions, egress
 from cluster.cdk8s.agentplane.egress_credentials import EXTERNAL_CREDS_STORE, credential_external_secret
 from cluster.cdk8s.clickhouse import client
 from cluster.cdk8s.external_secrets.single_secret_store import single_secret_store
-from cluster.cdk8s.haku import console, kube_api_proxy
+from cluster.cdk8s.haku import kube_api_proxy
 from cluster.cdk8s.providers.agentplane.egress_binding import EgressBinding
 from cluster.cdk8s.providers.agentplane.egress_credential import EgressCredential, Source
 from cluster.cdk8s.providers.agentplane.egress_policy import EgressPolicy
@@ -171,8 +171,7 @@ def add_gateway_resources(
                 credential_ref=EgressPolicySpecRulesCredentialRef(name=GITHUB_CREDENTIAL),
             ),
             EgressPolicySpecRules(
-                hosts=[console.HOSTNAME, kube_api_proxy.HOSTNAME],
-                credential_ref=EgressPolicySpecRulesCredentialRef(name=HAKU_CREDENTIAL),
+                hosts=[kube_api_proxy.HOSTNAME], credential_ref=EgressPolicySpecRulesCredentialRef(name=HAKU_CREDENTIAL)
             ),
             EgressPolicySpecRules(
                 hosts=[client.HTTP.fqdn],

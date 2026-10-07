@@ -143,19 +143,6 @@ data:
           }
         }
       },
-      "mcp": {
-        "servers": {
-          "haku-console": {
-            "url": "https://haku.allegedly.works/mcp",
-            "transport": "streamable-http",
-            "supportsParallelToolCalls": true,
-            "requestTimeoutMs": 60000,
-            "headers": {
-              "Authorization": "Bearer ${HAKU_CONSOLE_TOKEN}"
-            }
-          }
-        }
-      },
       "plugins": {
         "entries": {
           "anthropic": {
@@ -305,8 +292,6 @@ spec:
               value: sk-ant-oat01-proxy-haku-openclaw-placeholder
             - name: OPENCLAW_LIVE_CLI_BACKEND_PRESERVE_ENV
               value: CLAUDE_CODE_OAUTH_TOKEN
-            - name: HAKU_CONSOLE_TOKEN
-              value: proxy-haku-console-placeholder
             - name: HAKU_GIT_USERNAME
               value: haku
             - name: HAKU_GIT_PASSWORD

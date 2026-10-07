@@ -152,7 +152,6 @@ def _openclaw_spike_iron_config() -> dict:
                             "api.anthropic.com",
                         ),
                         _substitution("HAKU_GIT_PASSWORD", "proxy-haku-forgejo-placeholder", "forgejo-http.forgejo"),
-                        _substitution("HAKU_CONSOLE_TOKEN", "proxy-haku-console-placeholder", "haku.allegedly.works"),
                         _substitution(
                             "GITHUB_TOKEN",
                             "proxy-github-placeholder",
@@ -191,7 +190,6 @@ def _openclaw_spike_proxy(chart: Chart) -> None:
             .key("CLAUDE_CODE_OAUTH_TOKEN")
             .env_var("CLAUDE_CODE_OAUTH_TOKEN"),
             SecretRef(namespace=NAME, name="haku-forgejo-git").key("password").env_var("HAKU_GIT_PASSWORD"),
-            SecretRef(namespace=NAME, name="haku-console-agent-api").key("token").env_var("HAKU_CONSOLE_TOKEN"),
             github_token.env_var("GITHUB_TOKEN"),
             # Rotated roughly every 44 days by agents/authentik-jwt-rotation, which commits the
             # Secret SOPS-encrypted straight into THIS namespace -- deliberately not via the

@@ -38,12 +38,7 @@ from cluster.cdk8s.generation import config_map_chart, write_charts
 from cluster.cdk8s.haku import console, kube_api_proxy
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 from cluster.cdk8s.namespaces import Vpa
-from cluster.cdk8s.openclaw_gateway import (
-    disabled_commands,
-    haku_console_mcp,
-    session_memory_hook,
-    trusted_proxy_gateway,
-)
+from cluster.cdk8s.openclaw_gateway import disabled_commands, session_memory_hook, trusted_proxy_gateway
 from cluster.cdk8s.providers.external_secrets.external_secret import ExternalSecret, remote_data
 from cluster.cdk8s.secret_ref import SecretRef
 from cluster.cdk8s.service_ref import Pods, Port, ServiceRef
@@ -250,7 +245,6 @@ def config() -> dict:
                 }
             }
         },
-        "mcp": haku_console_mcp(request_timeout_ms=70000),
         "plugins": {
             "entries": {
                 # Matrix is bundled into the image as a trusted plugin; loading a copy
@@ -427,9 +421,9 @@ def _openclaw_container() -> k8s.Container:
             # Authorization headers. See F7, F10, F16.
             _env("GITHUB_TOKEN", placeholder_of(public_coder_egress.GITHUB_CREDENTIAL)),
             _env("GH_PAT", placeholder_of(public_coder_egress.GITHUB_CREDENTIAL)),
-            # Non-secret Haku Console bearer placeholder. The real static-Agent credential exists
-            # only in Haku Console and this agent's Agentplane egress, which replaces this value only in
-            # Authorization headers sent to the exact haku.allegedly.works host.
+            # Non-secret Haku Kubernetes proxy bearer placeholder. The real static-Agent
+            # credential exists in Haku Console and Agentplane egress replaces this value only
+            # in Authorization headers sent to haku-kubeapi.allegedly.works.
             _env("HAKU_CONSOLE_TOKEN", placeholder_of(public_coder_egress.HAKU_CREDENTIAL)),
             # Native ClickHouse reader credentials for normalized and raw AIQuota history. This
             # is deliberately a non-secret placeholder: the Agentplane egress gateway swaps it only

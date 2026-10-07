@@ -39,7 +39,7 @@ from cluster.cdk8s.clickhouse import client
 from cluster.cdk8s.config_format import yaml_config
 from cluster.cdk8s.forgejo_images import SECRET_NAME, forgejo_images_creds_external_secret
 from cluster.cdk8s.generation import write_charts
-from cluster.cdk8s.haku import console, kube_api_proxy
+from cluster.cdk8s.haku import kube_api_proxy
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 from cluster.cdk8s.providers.cilium.network_policy import EgressRule, IngressRule, NetworkPolicy
 from cluster.cdk8s.providers.external_secrets.external_secret import ExternalSecret, remote_data
@@ -190,16 +190,13 @@ def _substitutions() -> list[dict]:
         {
             "source": {"type": "env", "var": _HAKU_CONSOLE_TOKEN_ENV},
             # The OpenClaw container can present this as a normal bearer but can never read the
-            # real credential. Scope replacement to Authorization on the exact console host.
+            # real credential. Scope replacement to Authorization on the Kubernetes proxy host.
             "replace": {"proxy_value": HAKU_CONSOLE_TOKEN_PLACEHOLDER, "match_headers": ["Authorization"]},
-            "rules": [
-                {"host": console.HOSTNAME},
-                # kubectl presents the same non-secret placeholder to the dedicated Haku proxy.
-                # The proxy authenticates this original Agent bearer with Console, then uses its
-                # own short-lived projected ServiceAccount credential upstream. The standing SAR
-                # group has no bearer credential and cannot be selected by this transform.
-                {"host": kube_api_proxy.HOSTNAME},
-            ],
+            # kubectl presents the same non-secret placeholder to the dedicated Haku proxy.
+            # The proxy authenticates this original Agent bearer with Console, then uses its
+            # own short-lived projected ServiceAccount credential upstream. The standing SAR
+            # group has no bearer credential and cannot be selected by this transform.
+            "rules": [{"host": kube_api_proxy.HOSTNAME}],
         },
         {
             "source": {"type": "env", "var": _CLICKHOUSE_PASSWORD_ENV},

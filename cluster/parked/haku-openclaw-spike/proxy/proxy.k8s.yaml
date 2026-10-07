@@ -95,15 +95,6 @@ data:
                 - host: forgejo-http.forgejo
             - source:
                 type: env
-                var: HAKU_CONSOLE_TOKEN
-              replace:
-                proxy_value: proxy-haku-console-placeholder
-                match_headers:
-                  - Authorization
-              rules:
-                - host: haku.allegedly.works
-            - source:
-                type: env
                 var: GITHUB_TOKEN
               replace:
                 proxy_value: proxy-github-placeholder
@@ -160,11 +151,6 @@ spec:
                 secretKeyRef:
                   key: password
                   name: haku-forgejo-git
-            - name: HAKU_CONSOLE_TOKEN
-              valueFrom:
-                secretKeyRef:
-                  key: token
-                  name: haku-console-agent-api
             - name: GITHUB_TOKEN
               valueFrom:
                 secretKeyRef:
