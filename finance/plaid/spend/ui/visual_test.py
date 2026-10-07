@@ -255,6 +255,7 @@ def dashboard_url() -> Iterator[str]:
                     pfc_primary="TRANSPORTATION",
                     pfc_detailed="TRANSPORTATION_SHIPPING",
                     merchant_category_code="4215",
+                    analysis_category_label="Document shipping",
                     counterparties=[
                         PlaidCounterparty(
                             name="Example Shipping",
@@ -329,6 +330,7 @@ def dashboard_url() -> Iterator[str]:
                     pfc_primary="TRAVEL",
                     pfc_detailed="TRAVEL_OTHER",
                     merchant_category_code=None,
+                    analysis_category_label="Holiday travel",
                 ),
             ],
         )
@@ -468,6 +470,8 @@ async def test_transaction_explanations_render(
     await rows.get_by_text("Example Cafe", exact=True).wait_for()
     assert await page.get_by_role("heading", name="Transactions", level=1).count() == 1
     assert await rows.get_by_text("Refund held", exact=True).count() == 1
+    assert await rows.get_by_text("Document shipping", exact=True).count() == 1
+    assert await rows.get_by_text("Holiday travel", exact=True).count() == 1
     assert await page.get_by_text("2 · $15", exact=True).count() == 1
     if width >= 992:
         assert await rows.locator("tbody tr").count() == 4
@@ -480,7 +484,7 @@ async def test_transaction_explanations_render(
     await page.get_by_text("Credit cycle", exact=True).click()
     await page.get_by_text("Allowance bridge", exact=True).wait_for()
     if width >= 992:
-        await page.get_by_role("button", name="Show details for UPS").click()
+        await rows.locator("tbody tr[data-transaction-row]").filter(has_text="UPS").click()
         assert await rows.locator("tbody tr").count() == 5
     else:
         await rows.get_by_role("button", name="UPS", exact=False).click()

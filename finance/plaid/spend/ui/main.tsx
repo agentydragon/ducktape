@@ -706,6 +706,10 @@ function classificationForRow(row: TransactionRow): { label: string; color: stri
   return { label: "Unmatched", color: "orange" };
 }
 
+function categoryForRow(row: TransactionRow): string {
+  return row.analysis_category_label || row.rule?.analysis_category || "No category inferred";
+}
+
 function CompactCounterparties({ counterparties }: { counterparties: TransactionRow["counterparties"] }) {
   if (!counterparties?.length) return null;
   return (
@@ -862,7 +866,8 @@ function TransactionDetails({ row, currency }: { row: TransactionRow; currency: 
           )}
           {row.rule.analysis_category && (
             <Text size="xs" c="dimmed">
-              Analysis category: {row.rule.analysis_category}
+              Analysis category: {categoryForRow(row)}
+              {row.analysis_category_label && ` (${row.rule.analysis_category})`}
             </Text>
           )}
           <Button component="a" href="#/configuration" variant="subtle" size="xs" w="fit-content" px={0}>
@@ -1070,10 +1075,9 @@ function TransactionsPanel({
                     <Table.Th>Date</Table.Th>
                     <Table.Th>Merchant</Table.Th>
                     <Table.Th>Account</Table.Th>
-                    <Table.Th>Classification</Table.Th>
+                    <Table.Th>Category</Table.Th>
                     <Table.Th ta="right">Amount</Table.Th>
                     <Table.Th ta="right">Allowance</Table.Th>
-                    <Table.Th>Details</Table.Th>
                   </Table.Tr>
                 </Table.Thead>
                 <Table.Tbody>
@@ -1082,10 +1086,26 @@ function TransactionsPanel({
                     const expanded = expandedRow === index;
                     return (
                       <Fragment key={`${row.date}-${row.account_label}-${index}`}>
-                        <Table.Tr>
+                        <Table.Tr
+                          data-transaction-row
+                          tabIndex={0}
+                          aria-label={`${expanded ? "Hide" : "Show"} details for ${row.merchant_name || row.name}`}
+                          aria-expanded={expanded}
+                          onClick={() => setExpandedRow(expanded ? null : index)}
+                          onKeyDown={(event) => {
+                            if (event.key === "Enter" || event.key === " ") {
+                              event.preventDefault();
+                              setExpandedRow(expanded ? null : index);
+                            }
+                          }}
+                          style={{ cursor: "pointer" }}
+                        >
                           <Table.Td style={{ whiteSpace: "nowrap" }}>{row.date}</Table.Td>
                           <Table.Td>
                             <Group gap="xs" wrap="nowrap">
+                              <Text component="span" size="sm" c="dimmed" aria-hidden="true">
+                                {expanded ? "▾" : "▸"}
+                              </Text>
                               <Stack gap={0} miw={0}>
                                 <Text size="sm" fw={650} style={{ overflowWrap: "anywhere" }}>
                                   {row.merchant_name || row.name}
@@ -1101,9 +1121,14 @@ function TransactionsPanel({
                           </Table.Td>
                           <Table.Td>{row.account_label}</Table.Td>
                           <Table.Td>
-                            <Badge size="sm" variant="light" color={classification.color}>
-                              {classification.label}
-                            </Badge>
+                            <Stack gap={2}>
+                              <Text size="sm" fw={600} style={{ overflowWrap: "anywhere" }}>
+                                {categoryForRow(row)}
+                              </Text>
+                              <Badge size="sm" variant="light" color={classification.color} w="fit-content">
+                                {classification.label}
+                              </Badge>
+                            </Stack>
                           </Table.Td>
                           <Table.Td ta="right" style={{ whiteSpace: "nowrap" }}>
                             {money(row.amount_minor_units, row.currency, true)}
@@ -1111,21 +1136,10 @@ function TransactionsPanel({
                           <Table.Td ta="right" style={{ whiteSpace: "nowrap" }}>
                             {row.allowance_minor_units === 0 ? "—" : money(row.allowance_minor_units, currency, true)}
                           </Table.Td>
-                          <Table.Td>
-                            <Button
-                              variant="subtle"
-                              size="compact-xs"
-                              aria-label={`${expanded ? "Hide" : "Show"} details for ${row.merchant_name || row.name}`}
-                              aria-expanded={expanded}
-                              onClick={() => setExpandedRow(expanded ? null : index)}
-                            >
-                              {expanded ? "Hide" : "Show"}
-                            </Button>
-                          </Table.Td>
                         </Table.Tr>
                         {expanded && (
                           <Table.Tr>
-                            <Table.Td colSpan={7}>
+                            <Table.Td colSpan={6}>
                               <TransactionDetails row={row} currency={currency} />
                             </Table.Td>
                           </Table.Tr>
@@ -1150,6 +1164,9 @@ function TransactionsPanel({
                             {row.merchant_name || row.name}
                           </Text>
                           <CompactCounterparties counterparties={row.counterparties} />
+                          <Text size="xs" c="dimmed" style={{ overflowWrap: "anywhere" }}>
+                            {categoryForRow(row)}
+                          </Text>
                           <Group gap="xs">
                             <Text size="xs" c="dimmed">
                               {row.date} · {row.account_label}

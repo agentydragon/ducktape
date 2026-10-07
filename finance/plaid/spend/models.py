@@ -259,6 +259,7 @@ class SpendTransactionRow(BaseModel):
     pfc_primary: str | None
     pfc_detailed: str | None
     merchant_category_code: str | None
+    analysis_category_label: str | None = None
     counterparties: list[PlaidCounterparty] = Field(default_factory=list)
     details: PlaidTransactionDetails = Field(default_factory=PlaidTransactionDetails)
 

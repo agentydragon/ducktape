@@ -376,6 +376,7 @@ class SpendService:
         card_cycle_starts = {card.account_id: card.cycle_start for card in view.cards}
         card_ids = {card.account_id for card in self._configuration.cards if card.enabled}
         allowance_ids = self._configuration.allowance.spending_account_ids if self._configuration.allowance else set()
+        category_labels = self._configuration.allowance.analysis_category_labels if self._configuration.allowance else {}
         for row in card_rows:
             details_by_key.setdefault((row["account_id"], row["transaction_id"]), _plaid_details(row["raw_json"]))
         labels.update({card.account_id: card.label for card in self._configuration.cards if card.enabled})
@@ -427,6 +428,9 @@ class SpendService:
                     pfc_primary=transaction.pfc_primary,
                     pfc_detailed=transaction.pfc_detailed,
                     merchant_category_code=transaction.merchant_category_code,
+                    analysis_category_label=category_labels.get(decision.rule.analysis_category)
+                    if decision and decision.rule and decision.rule.analysis_category
+                    else None,
                     counterparties=transaction.counterparties or [],
                     details=details,
                 )
