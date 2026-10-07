@@ -61,7 +61,7 @@ describe("ssh exec result", () => {
     const badge = container.querySelector(".mantine-Badge-root");
     expect(badge?.textContent).toBe("Exit 0");
     expect(badge?.getAttribute("style")).toContain("green");
-    expect(streams(container)).toEqual([["stdout", "test-output"]]);
+    expect(streams(container)).toEqual([["stdout · 1 line", "test-output"]]);
   });
 
   it("marks a failing exit code, and shows what the command wrote to stderr", async () => {
@@ -72,14 +72,14 @@ describe("ssh exec result", () => {
     expect(badge?.textContent).toBe("Exit 2");
     expect(badge?.getAttribute("style")).toContain("red");
     expect(streams(container)).toEqual([
-      ["stdout", "test-output"],
-      ["stderr", "test-error"],
+      ["stdout · 1 line", "test-output"],
+      ["stderr · 1 line", "test-error"],
     ]);
   });
 
   it("marks a stream the server truncated", async () => {
     const container = await drawn(renderResultPreview(execResultPreview, { ...VALUE, stdout_truncated: true }));
-    expect(streams(container)).toEqual([["stdout · truncated by the server", "test-output"]]);
+    expect(streams(container)).toEqual([["stdout · 1 line · truncated by the server", "test-output"]]);
   });
 
   it("clips a stream taller than its cap behind a button that shows all of it", async () => {
