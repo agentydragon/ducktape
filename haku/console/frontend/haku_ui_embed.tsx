@@ -12,13 +12,7 @@ import {
 import { type GeolocationOptions, type Outbound } from "@haku/console-bridge/protocol";
 
 import { isRoutePath, parseInbound, vetOpenLink } from "./bridge";
-import {
-  displayableError,
-  fetchPendingApprovals,
-  fetchToolCall,
-  launchRoutine,
-  type ToolCallRecord,
-} from "./client";
+import { displayableError, fetchPendingApprovals, fetchToolCall, launchRoutine, type ToolCallRecord } from "./client";
 import { ConfirmDialog, type Escalation } from "./confirm_dialog";
 import { ShellChrome } from "./shell_chrome";
 import { GEO_PERMISSION_DENIED, GeolocationWatcher, getGeolocation } from "./geolocation";
