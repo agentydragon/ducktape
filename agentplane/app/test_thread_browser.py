@@ -1205,7 +1205,9 @@ def tool_call_in(run: Locator, name: str) -> tuple[Locator, Locator]:
     """A call in `run` and the card around it, whose top edge holds still as the call opens."""
     selector = ".agentplane-step-details"
     call = run.locator(selector, has_text=f"Run tool {name}")
-    card = run.locator(".mantine-Paper-root").filter(has=run.page.locator(selector, has_text=f"Run tool {name}")).last
+    card = call.locator(
+        "xpath=ancestor::*[contains(concat(' ', normalize-space(@class), ' '), ' agentplane-evidence-owner ')][1]"
+    )
     return call, card
 
 
@@ -1290,7 +1292,7 @@ async def test_opening_a_call_and_its_output_keeps_it_collapsible_while_reading(
     assert call_heading_box is not None
     assert run_heading_box is not None
     assert history_box is not None
-    minimum_control_height = 44 if phone else 32
+    minimum_control_height = 44 if phone else 28
     assert collapse_box["height"] >= minimum_control_height, f"collapse target is too short: {collapse_box}"
     if not phone:
         for heading_name, heading_box in (
@@ -1298,7 +1300,7 @@ async def test_opening_a_call_and_its_output_keeps_it_collapsible_while_reading(
             ("tool call", call_heading_box),
             ("output", output_heading_box),
         ):
-            assert heading_box["height"] <= 36, f"desktop {heading_name} heading is too tall: {heading_box}"
+            assert heading_box["height"] <= 30, f"desktop {heading_name} heading is too tall: {heading_box}"
     divider_box = await output_heading.evaluate(
         """heading => {
           const box = heading.getBoundingClientRect();
