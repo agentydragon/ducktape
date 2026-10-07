@@ -957,15 +957,19 @@ function TransactionsPanel({
                           <Table.Td style={{ whiteSpace: "nowrap" }}>{row.date}</Table.Td>
                           <Table.Td>
                             <Group gap="xs" wrap="nowrap">
-                              <Text size="sm" fw={650} style={{ overflowWrap: "anywhere" }}>
-                                {row.merchant_name || row.name}
-                              </Text>
-                              {(row.counterparties?.length ?? 0) > 0 && (
-                                <Text size="xs" c="dimmed">
-                                  Counterparties:{" "}
-                                  {row.counterparties?.map((counterparty) => counterparty.name || "Unnamed").join(", ")}
+                              <Stack gap={0} miw={0}>
+                                <Text size="sm" fw={650} style={{ overflowWrap: "anywhere" }}>
+                                  {row.merchant_name || row.name}
                                 </Text>
-                              )}
+                                {(row.counterparties?.length ?? 0) > 0 && (
+                                  <Text size="xs" c="dimmed" lineClamp={1}>
+                                    Counterparties:{" "}
+                                    {row.counterparties
+                                      ?.map((counterparty) => counterparty.name || "Unnamed")
+                                      .join(", ")}
+                                  </Text>
+                                )}
+                              </Stack>
                               {row.pending && (
                                 <Badge size="xs" variant="light" color="yellow">
                                   Pending
