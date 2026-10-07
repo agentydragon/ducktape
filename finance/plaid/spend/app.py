@@ -25,7 +25,7 @@ from mcp_infra.oidc_principal import (
     OidcPrincipalVerificationUnavailableError,
     VerifiedOidcPrincipal,
 )
-from util.oidc_login import LoginConfig, install_login
+from util.oidc_login import LoginConfig, current_session_is_valid, install_login
 
 _UI_DIR = Path(__file__).resolve().parent / "ui" / "dist"
 
@@ -57,7 +57,14 @@ async def _spend_service(request: Request) -> SpendService:
     return cast(SpendService, request.app.state.spend_service)
 
 
-ApiPrincipal = Annotated[VerifiedOidcPrincipal, Depends(_require_api_principal)]
+async def _require_spend_access(request: Request) -> None:
+    if request.headers.get("authorization"):
+        await _require_api_principal(request)
+    elif not current_session_is_valid(request, cast(LoginConfig, request.app.state.web_login_config)):
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Not authenticated")
+
+
+SpendAccess = Annotated[None, Depends(_require_spend_access)]
 SpendReader = Annotated[SpendService, Depends(_spend_service)]
 
 
@@ -70,7 +77,8 @@ def _web_login_config(settings: SpendSettings) -> LoginConfig:
         session_seconds=settings.web_oidc_session_seconds,
         public_base_url=settings.web_oidc_public_base_url,
         cookie_name="plaid-spend-session",
-        public_paths={"/healthz", "/api/v1/view", "/api/v1/events"},
+        public_paths={"/healthz"},
+        auth_handled_paths={"/api/v1/view", "/api/v1/events", "/api/v1/configuration", "/api/v1/transactions"},
         signed_out_text="You are signed out of Plaid Spend.",
         session_created_log="Authentik session created for Plaid Spend",
         allowed_subject=None,
@@ -97,7 +105,9 @@ def create_app(settings: SpendSettings, *, service: SpendService, include_ui: bo
     app = FastAPI(title="Plaid Spend", docs_url=None, redoc_url=None, lifespan=lifespan)
     app.state.spend_service = service
     app.state.principal_resolver = resolver
-    install_login(app, _web_login_config(settings))
+    web_login_config = _web_login_config(settings)
+    app.state.web_login_config = web_login_config
+    install_login(app, web_login_config)
 
     @app.get("/healthz")
     async def healthz() -> dict[str, bool]:
@@ -116,33 +126,21 @@ def create_app(settings: SpendSettings, *, service: SpendService, include_ui: bo
         return Response(status_code=204)
 
     @app.get("/api/v1/view", response_model=SpendView)
-    async def get_view(_principal: ApiPrincipal, reader: SpendReader) -> SpendView:
+    async def get_view(_access: SpendAccess, reader: SpendReader) -> SpendView:
         return await reader.read_view()
 
-    @app.get("/api/v1/web/view", response_model=SpendView)
-    async def get_web_view(reader: SpendReader) -> SpendView:
-        return await reader.read_view()
-
-    @app.get("/api/v1/web/configuration", response_model=SpendConfigurationView)
-    async def get_web_configuration(reader: SpendReader) -> SpendConfigurationView:
+    @app.get("/api/v1/configuration", response_model=SpendConfigurationView)
+    async def get_configuration(_access: SpendAccess, reader: SpendReader) -> SpendConfigurationView:
         return reader.read_configuration()
 
-    @app.get("/api/v1/web/transactions", response_model=SpendTransactionsView)
-    async def get_web_transactions(
-        reader: SpendReader, window: Literal["7d", "30d", "cycle"] = "30d"
+    @app.get("/api/v1/transactions", response_model=SpendTransactionsView)
+    async def get_transactions(
+        _access: SpendAccess, reader: SpendReader, window: Literal["7d", "30d", "cycle"] = "30d"
     ) -> SpendTransactionsView:
         return await reader.read_transactions(window)
 
     @app.get("/api/v1/events")
-    async def events(request: Request, _principal: ApiPrincipal, reader: SpendReader) -> StreamingResponse:
-        return StreamingResponse(
-            _event_stream(request, reader),
-            media_type="text/event-stream",
-            headers={"Cache-Control": "no-cache, no-transform", "Connection": "keep-alive", "X-Accel-Buffering": "no"},
-        )
-
-    @app.get("/api/v1/web/events")
-    async def web_events(request: Request, reader: SpendReader) -> StreamingResponse:
+    async def events(request: Request, _access: SpendAccess, reader: SpendReader) -> StreamingResponse:
         return StreamingResponse(
             _event_stream(request, reader),
             media_type="text/event-stream",

@@ -24,13 +24,13 @@ and notification-backed event stream.
 - `GET /api/v1/events` sends an immediate `view` SSE event, then recomputes and sends a complete
   view after `plaid_spend_changed` notifications. Reconnects compute a new initial view; idle
   streams send comments as heartbeats.
-- Both endpoints require a Bearer access token from the Authentik `plaid-spend-desktop` OIDC client.
-  Configuration is global to the service, so every authorized identity sees the same view.
-- `GET /api/v1/web/view` and `GET /api/v1/web/events` are the browser UI's cookie-authenticated
-  counterparts. They return the same schema and use the same live event stream.
-- `GET /api/v1/web/configuration` returns the settings currently loaded by the service for the
-  browser's read-only Configuration tab. It uses the signed web session and omits Plaid account IDs.
-- `GET /api/v1/web/transactions?window=30d` supplies the read-only Transactions tab; `window` also
+- Each API route accepts either a Bearer access token from the Authentik `plaid-spend-desktop` OIDC
+  client or the browser's signed session cookie. Both methods reach the same handler; requests
+  without either valid credential receive 401. Configuration is global to the service, so every
+  authorized identity sees the same view.
+- `GET /api/v1/configuration` returns the settings currently loaded by the service for the
+  browser's read-only Configuration tab and omits Plaid account IDs.
+- `GET /api/v1/transactions?window=30d` supplies the read-only Transactions tab; `window` also
   accepts `7d` and `cycle`. It returns recent rows from allowance accounts and configured cards, with
   the first matched policy rule, the calculator's allowance and pace contributions, and each card
   row's statement-cycle contribution or exclusion reason. Account and transaction IDs are omitted.

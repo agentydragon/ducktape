@@ -8,12 +8,15 @@ import {
   Badge,
   Button,
   Card,
+  Center,
   Container,
   Divider,
+  Grid,
   Group,
   MantineProvider,
   NumberInput,
   Paper,
+  ScrollArea,
   SegmentedControl,
   SimpleGrid,
   Stack,
@@ -22,7 +25,6 @@ import {
   Title,
 } from "@mantine/core";
 import "@mantine/core/styles.css";
-import "./header.css";
 import type { components } from "./api/schema";
 
 type Windows = components["schemas"]["Windows"];
@@ -579,7 +581,7 @@ function ConfigurationPanel({
                             <Badge color={color} variant="light" style={{ flexShrink: 0 }}>
                               {label}
                             </Badge>
-                            <Stack gap={2} style={{ minWidth: 0 }}>
+                            <Stack gap={2} miw={0}>
                               <Text size="sm" style={{ overflowWrap: "anywhere" }}>
                                 {ruleConditionText(rule.condition)}
                               </Text>
@@ -706,9 +708,11 @@ function TransactionsPanel({
 }) {
   const [filter, setFilter] = useState<"all" | "review" | "effect">("all");
   const rows = transactions?.rows ?? [];
-  const shown = rows.filter((row) =>
-    filter === "review" ? isReviewRow(row) : filter === "effect" ? row.allowance_minor_units !== 0 : true
-  );
+  const shown = rows
+    .map((row, index) => ({ row, index }))
+    .filter(({ row }) =>
+      filter === "review" ? isReviewRow(row) : filter === "effect" ? row.allowance_minor_units !== 0 : true
+    );
   const allowance = transactions?.allowance;
   const currency = allowance?.currency ?? "USD";
   const m = (value: number | null | undefined) => <Money value={value} currency={currency} />;
@@ -834,13 +838,13 @@ function TransactionsPanel({
             </Text>
           )}
           <Accordion variant="separated" radius="md">
-            {shown.map((row, index) => {
+            {shown.map(({ row, index }) => {
               const classification = classificationForRow(row);
               return (
                 <Accordion.Item key={`${row.date}-${row.account_label}-${index}`} value={String(index)}>
                   <Accordion.Control>
                     <Group justify="space-between" gap="sm" wrap="nowrap">
-                      <Stack gap={2} style={{ minWidth: 0 }}>
+                      <Stack gap={2} miw={0}>
                         <Text fw={650} size="sm" style={{ overflowWrap: "anywhere" }}>
                           {row.merchant_name || row.name}
                         </Text>
@@ -952,7 +956,7 @@ function App() {
     let mounted = true;
     const load = async () => {
       try {
-        const response = await fetch("/api/v1/web/view", { cache: "no-store", credentials: "same-origin" });
+        const response = await fetch("/api/v1/view", { cache: "no-store", credentials: "same-origin" });
         if (response.status === 401) {
           window.location.assign("/auth/login");
           return;
@@ -971,7 +975,7 @@ function App() {
       }
     };
     void load();
-    const events = new EventSource("/api/v1/web/events");
+    const events = new EventSource("/api/v1/events");
     events.addEventListener("view", (event) => {
       try {
         if (mounted) {
@@ -1002,7 +1006,7 @@ function App() {
       setConfigurationLoading(true);
       setConfigurationError(null);
       try {
-        const response = await fetch("/api/v1/web/configuration", {
+        const response = await fetch("/api/v1/configuration", {
           cache: "no-store",
           credentials: "same-origin",
         });
@@ -1031,7 +1035,7 @@ function App() {
       setTransactionsLoading(true);
       setTransactionsError(null);
       try {
-        const response = await fetch(`/api/v1/web/transactions?window=${transactionWindow}`, {
+        const response = await fetch(`/api/v1/transactions?window=${transactionWindow}`, {
           cache: "no-store",
           credentials: "same-origin",
           signal: controller.signal,
@@ -1060,21 +1064,47 @@ function App() {
       <Tabs value={activeTab} onChange={setActiveTab} keepMounted={false} variant="pills" color="teal">
         <Paper component="header" radius={0} withBorder>
           <Container size="lg" py="xs">
-            <div className="spend-header-layout">
-              <Anchor href="/" size="lg" fw={700} c="var(--mantine-color-text)" underline="never">
-                Spend
-              </Anchor>
-              <Tabs.List aria-label="Spend pages" className="spend-header-navigation">
-                <Tabs.Tab value="spending">Spending</Tabs.Tab>
-                <Tabs.Tab value="transactions">Transactions</Tabs.Tab>
-                <Tabs.Tab value="configuration">Configuration</Tabs.Tab>
-              </Tabs.List>
-              <form action="/auth/logout" method="post" className="spend-header-signout">
-                <Button type="submit" variant="subtle" color="gray" size="sm">
-                  Sign out
-                </Button>
-              </form>
-            </div>
+            <Grid align="center" gap="xs">
+              <Grid.Col span={{ base: 6, xs: 4 }} order={1}>
+                <Anchor href="/" size="lg" fw={700} c="var(--mantine-color-text)" underline="never">
+                  Spend
+                </Anchor>
+              </Grid.Col>
+              <Grid.Col span={{ base: 12, xs: 4 }} order={{ base: 3, xs: 2 }}>
+                <ScrollArea type="auto" scrollbars="x" w="100%">
+                  <Center>
+                    <Tabs.List aria-label="Spend pages" miw="max-content">
+                      <Tabs.Tab value="spending" aria-label="Spending">
+                        <Text span visibleFrom="xs">
+                          Spending
+                        </Text>
+                        <Text span hiddenFrom="xs">
+                          Spend
+                        </Text>
+                      </Tabs.Tab>
+                      <Tabs.Tab value="transactions">Transactions</Tabs.Tab>
+                      <Tabs.Tab value="configuration" aria-label="Configuration">
+                        <Text span visibleFrom="xs">
+                          Configuration
+                        </Text>
+                        <Text span hiddenFrom="xs">
+                          Config
+                        </Text>
+                      </Tabs.Tab>
+                    </Tabs.List>
+                  </Center>
+                </ScrollArea>
+              </Grid.Col>
+              <Grid.Col span={{ base: 6, xs: 4 }} order={{ base: 2, xs: 3 }}>
+                <Group justify="flex-end">
+                  <form action="/auth/logout" method="post">
+                    <Button type="submit" variant="subtle" color="gray" size="sm">
+                      Sign out
+                    </Button>
+                  </form>
+                </Group>
+              </Grid.Col>
+            </Grid>
           </Container>
         </Paper>
         <Container component="main" size="lg" py="xl">

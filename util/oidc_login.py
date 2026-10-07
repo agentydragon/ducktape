@@ -67,6 +67,8 @@ class LoginConfig:
     session_created_log: str | None
     # The one `sub` admitted; None leaves admission to Authentik's application policy alone.
     allowed_subject: str | None
+    # Routes with their own required authentication dependency (for example, bearer or signed session).
+    auth_handled_paths: Set[str] = frozenset()
 
     @property
     def https(self) -> bool:
@@ -188,7 +190,7 @@ def _login_router(config: LoginConfig) -> APIRouter:
     return router
 
 
-def _current_session_is_valid(request: Request, config: LoginConfig) -> bool:
+def current_session_is_valid(request: Request, config: LoginConfig) -> bool:
     payload = request.session.get("user")
     if payload is None:
         return False
@@ -223,7 +225,9 @@ class RequireLoginMiddleware(BaseHTTPMiddleware):
             and request.headers.get("origin") != self.config.public_base_url
         ):
             return JSONResponse({"detail": "Request origin is not allowed"}, status_code=status.HTTP_403_FORBIDDEN)
-        if _current_session_is_valid(request, self.config):
+        if request.url.path in self.config.auth_handled_paths:
+            return await call_next(request)
+        if current_session_is_valid(request, self.config):
             return await call_next(request)
         if request.url.path.startswith("/api/") or request.method not in {"GET", "HEAD"}:
             return JSONResponse({"detail": "Not authenticated"}, status_code=status.HTTP_401_UNAUTHORIZED)

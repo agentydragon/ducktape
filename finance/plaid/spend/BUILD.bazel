@@ -77,7 +77,17 @@ py_test(
     deps = [
         ":app",
         ":conftest",
+        ":models",
+        ":service",
+        ":settings",
         "//:conftest",
+        "//mcp_infra:oidc_principal",
+        "//util:oidc_login",
+        "@pypi//httpx",
+        "@pypi//itsdangerous",
+        "@pypi//pydantic",
+        "@pypi//pytest",
+        "@pypi//pytest_asyncio",
         "@pypi//pytest_bazel",
     ],
 )
