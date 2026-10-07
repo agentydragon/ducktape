@@ -8543,9 +8543,75 @@
     }
   ],
   "recommendation_status": {
-    "cancellation": "mechanism confirmed in isolated GitHub experiment; production unmodified",
+    "cancellation": "Merged PR #9369; isolated grouping mechanism confirmed; production cancellation and savings unmeasured",
     "nix_combination": "limited evaluator CPU gain; defer until hosted validation with PR overrides",
     "browser_follow": "observed erroneous follow transition on active PR; candidate diagnosis, no repair validated",
     "extra_runner_capacity": "not supported by current queue evidence"
+  },
+  "cancellation_rollout": {
+    "pr": 9369,
+    "url": "https://github.com/agentydragon/ducktape/pull/9369",
+    "merged_at_utc": "2026-10-07T09:09:40Z",
+    "merge_commit": "d579a8f918881b4956564eda677d029426b900f4",
+    "group": "bazel-ci-${{ github.event.pull_request.number || github.ref }}",
+    "measurement_status": "All current report measurements predate merge; classify future runs by executed workflow revision",
+    "followup": [
+      "Cancellation lag and obsolete runner-seconds per replacement event",
+      "Replacement-head feedback and remote invocation termination",
+      "Same-repository PR, trusted fork and non-cancelling devel publication"
+    ]
+  },
+  "prior_effects_followup": {
+    "source_history_commit": "2a5caccf2b135081ec70c07882ea4f74e0fa7e04",
+    "evidence_url": "https://github.com/agentydragon/ducktape/blob/2a5caccf2b135081ec70c07882ea4f74e0fa7e04/evidence.json",
+    "status": "Historical statistics retained; comparable October 7 follow-up not performed",
+    "savings_seconds": [
+      {
+        "outcome": "Bazel checkout",
+        "median_saving": 10,
+        "approximate_95_percent_interval": [
+          9,
+          10.5
+        ],
+        "heads_before": 45,
+        "heads_after": 90
+      },
+      {
+        "outcome": "Wheel checkout",
+        "median_saving": 10,
+        "approximate_95_percent_interval": [
+          9,
+          10
+        ],
+        "heads_before": 43,
+        "heads_after": 90
+      },
+      {
+        "outcome": "Overall raw",
+        "median_saving": 27,
+        "approximate_95_percent_interval": [
+          -6,
+          65
+        ],
+        "heads_before": 262,
+        "heads_after": 60
+      },
+      {
+        "outcome": "Overall mix-adjusted",
+        "median_saving": 0,
+        "approximate_95_percent_interval": [
+          -34,
+          40
+        ],
+        "heads_before": 262,
+        "heads_after": 60
+      }
+    ],
+    "later_rollout_effects": "Whole-PR effects of #9134, #9157, #9164, #9180, #9194 remain unmeasured",
+    "comparability_limits": [
+      "Fork coverage differs",
+      "PR class precedence differs",
+      "Latest versus earliest passing attempt selection differs"
+    ]
   }
 }

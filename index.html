@@ -288,12 +288,12 @@
     <main>
       <div class="eyebrow">Ducktape · CI latency · 7 October 2026 UTC</div>
       <h1>
-        Most required checks finish in 2½ minutes.<br />Fix obsolete-run
-        cancellation first.
+        Sampled passing checks finish in 2½ minutes.<br />Cancellation change
+        merged; savings unmeasured.
       </h1>
       <p class="lead">
-        Current runner queues are short. The clearest low-cost correction is to
-        cancel Bazel work for superseded PR heads: six old jobs consumed
+        Current runner queues are short. PR #9369 changed Bazel cancellation to
+        group superseded heads by PR. Before that change, six old jobs consumed
         <strong>20.4 runner-minutes after replacement events</strong>. Longer
         feedback tails come from test execution and reruns. Buying more runner
         capacity is unsupported by this window.
@@ -327,26 +327,123 @@
         observable; neither is assigned a percentile.
       </p>
       <nav aria-label="Report navigation">
-        <a href="#decisions">Decisions</a><a href="#population">PR classes</a
-        ><a href="#cases">Case timelines</a><a href="#resources">Compute</a
+        <a href="#effects">Measured effects</a><a href="#decisions">Follow-up</a
+        ><a href="#population">PR classes</a><a href="#cases">Case timelines</a
+        ><a href="#resources">Compute</a
         ><a href="#methods">Evidence &amp; limits</a>
       </nav>
+      <section id="effects">
+        <h2>What the earlier fixes have demonstrated</h2>
+        <p>
+          The
+          <a
+            href="https://github.com/agentydragon/ducktape/blob/2a5caccf2b135081ec70c07882ea4f74e0fa7e04/index.html"
+            >prior reviewed report</a
+          >
+          already quantified these effects. They are historical estimates, not
+          new October 7 comparisons. Positive savings mean faster.
+        </p>
+        <div class="table-scroll" tabindex="0">
+          <table>
+            <thead>
+              <tr>
+                <th scope="col">Outcome</th>
+                <th scope="col">Median before → after</th>
+                <th scope="col">Saving; approximate 95% interval</th>
+                <th scope="col">Heads before → after</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>Bazel checkout</td>
+                <td>17s → 7s</td>
+                <td>10s; 9 to 10.5s</td>
+                <td>45 → 90</td>
+              </tr>
+              <tr>
+                <td>Wheel checkout</td>
+                <td>17s → 7s</td>
+                <td>10s; 9 to 10s</td>
+                <td>43 → 90</td>
+              </tr>
+              <tr>
+                <td>All passing feedback, raw</td>
+                <td>225s → 198s</td>
+                <td>27s; −6 to 65s</td>
+                <td>262 → 60</td>
+              </tr>
+              <tr>
+                <td>Feedback, adjusted for broad workload mix</td>
+                <td>198s → 198s</td>
+                <td>0s; −34 to 40s</td>
+                <td>262 → 60</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <p>
+          Checkout has a statistically clear observational improvement. Both
+          overall intervals include zero: the bundle's effect remains
+          inconclusive. Intervals resample PRs to account for multiple heads;
+          they do not remove cache, infrastructure or concurrent-code
+          confounding. The overall comparison uses October 1–4 versus October 5,
+          02:23–05:25 UTC, same-repository heads, and earliest passing
+          completion of four gates.
+        </p>
+        <p>
+          Browser sharding saved 70.5s on the critical path and retaining Bazel
+          saved 27.1s in controlled comparisons. Replication is insufficient for
+          population confidence intervals. These parallel/component savings
+          cannot be added into an overall PR saving.
+        </p>
+        <div class="callout">
+          <strong>The planned statistical follow-up remains incomplete.</strong>
+          This run collected newer data but did not perform the comparable
+          before/after analysis. Its 150s median includes forks, uses different
+          class precedence and selects latest passing attempts; comparing it
+          directly with the older medians would not establish improvement.
+        </div>
+        <p>
+          The earlier overall comparison predates the pytest aspect (#9134) and
+          setup/Nix changes (#9157, #9164, #9180, #9194). Their combined
+          whole-PR effect is still unmeasured. Follow-up should retain the
+          earlier baseline, harmonize trust paths, class rules and
+          earliest-passing clocks, verify executed rollout revisions, and
+          cluster uncertainty by PR. Report p50/p90, sample sizes,
+          failures/reruns, last-gate frequency and runner-minutes per head, with
+          cache/target differences where observable. Treat #9369 as a separate
+          later intervention. Visual publisher cost remains a separate outcome
+          from required-check feedback.
+        </p>
+      </section>
       <section id="decisions">
-        <h2>One small correction is ready to implement.</h2>
+        <h2>
+          Cancellation change landed; production effects need measurement.
+        </h2>
         <article>
           <div class="eyebrow">
-            1 · High mechanism confidence · Low effort · Capacity benefit
+            1 · Merged #9369 · Production savings unmeasured
           </div>
-          <h3>Key Bazel cancellation by PR identity, not head SHA.</h3>
+          <h3>Bazel cancellation now groups runs by PR identity.</h3>
           <p>
-            In <code>.github/workflows/bazel-ci.yml</code>, replace the group
-            expression <code>inputs.pr_head_sha || github.ref</code> with a
-            stable PR/ref identity, such as
-            <code>github.event.pull_request.number || github.ref</code>,
-            retaining the <code>bazel-ci-</code> prefix and existing
-            cancellation condition. Same-repository CI passes a new head SHA on
-            every push, so different heads currently cannot cancel each other.
-            Trusted forks already have an outer PR-number cancellation group.
+            <a href="https://github.com/agentydragon/ducktape/pull/9369"
+              >PR #9369</a
+            >
+            merged on 7 October at <strong>09:09:40 UTC</strong>, commit
+            <a
+              href="https://github.com/agentydragon/ducktape/commit/d579a8f918881b4956564eda677d029426b900f4"
+              >d579a8f91888</a
+            >. In <code>.github/workflows/bazel-ci.yml</code>, the group now
+            uses <code>github.event.pull_request.number || github.ref</code>,
+            with the existing prefix and cancellation condition retained. The
+            prior head-SHA group differed on every same-repository PR push.
+            Trusted forks already had an outer PR-number cancellation group.
+          </p>
+          <p>
+            <strong>Rollout boundary:</strong> all cohort and waste measurements
+            below precede this merge. Classify future runs by the workflow
+            revision actually executed; merge time alone does not prove a run
+            used the new grouping.
           </p>
           <p>
             Across 252 uncapped <code>pull_request</code> CI runs on 6–7
@@ -369,10 +466,14 @@
             kept the SHA-keyed job running to success and cancelled the
             stable-ref job; both replacement jobs succeeded. The replacement
             arrived near the first jobs’ end, so this establishes grouping
-            semantics, not a measured time saving. Before rolling out, exercise
-            a two-push PR, a trusted fork and a devel push; preserve
+            semantics, not a measured time saving. Production follow-up must
+            check a two-push PR, a trusted fork and a devel push, including
             exact-source verification, all four required contexts and
-            non-cancelling devel publication.
+            non-cancelling devel publication. Measure cancellation lag, obsolete
+            assigned runner-seconds per replacement event, replacement-head
+            feedback, and whether the remote BuildBuddy invocation stops.
+            Compare similar revision bursts and report event/PR counts; the six
+            historical jobs all belong to one PR.
           </p>
           <p>
             <a
@@ -1911,9 +2012,10 @@ bbapi execution INVOCATION --json</pre>
             first source is
             <code>378cc3ab5e015331be680c7f3a0ccc94eb98d4ef</code>, replacement
             <code>c0ea460f82724bd9e1c4eddc5fcbc0d53169601b</code>. Both new jobs
-            pass. Production CI workflows and scanning settings are unchanged.
-            This experiment does not validate cancellation of an already-running
-            remote Bazel invocation.
+            pass. The experiment itself changed no production policy; the later
+            production grouping change is recorded above. This experiment does
+            not validate cancellation of an already-running remote Bazel
+            invocation.
           </p>
         </details>
       </section>
