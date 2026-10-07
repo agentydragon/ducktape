@@ -11,7 +11,9 @@ ExternalSecret. Finance Flux has Secret-only permissions in its isolated namespa
 access in the app namespace. The canonical policy is
 `config/plaid-spend/spend-policy.yaml` in the private finance-agent repository.
 
-The browser at `/` signs in through the confidential Authentik `plaid-spend-web` client. The server
+The browser at `/` signs in through the confidential Authentik `plaid-spend-web` client. Its tabs use
+hash URLs (`/#/spending`, `/#/transactions`, and `/#/configuration`); the server only needs
+the root page route. The server
 keeps OIDC tokens out of the browser and authenticates page, stylesheet, script, view, configuration,
 and event requests with a signed session cookie. The GNOME panel and `plaid-spend` CLI use the separate public
 `plaid-spend-desktop` client and Bearer-token API. Both desktop clients read the same global card view

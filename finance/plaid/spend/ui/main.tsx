@@ -39,6 +39,13 @@ type TransactionRow = components["schemas"]["SpendTransactionRow"];
 type TransactionWindow = TransactionsView["window"];
 type RuleCondition = components["schemas"]["Rule"]["condition"];
 type RuleKind = components["schemas"]["Rule"]["kind"];
+type SpendTab = "spending" | "transactions" | "configuration";
+
+function tabForHash(hash: string): SpendTab {
+  if (hash === "#/transactions") return "transactions";
+  if (hash === "#/configuration") return "configuration";
+  return "spending";
+}
 
 const ruleKindDisplay = {
   fixed: { label: "Mandatory", color: "blue" },
@@ -699,15 +706,7 @@ function classificationForRow(row: TransactionRow): { label: string; color: stri
   return { label: "Unmatched", color: "orange" };
 }
 
-function TransactionDetails({
-  row,
-  currency,
-  onShowRule,
-}: {
-  row: TransactionRow;
-  currency: string;
-  onShowRule: () => void;
-}) {
+function TransactionDetails({ row, currency }: { row: TransactionRow; currency: string }) {
   const m = (value: number | null | undefined) => <Money value={value} currency={currency} />;
   return (
     <Stack gap="sm">
@@ -738,7 +737,7 @@ function TransactionDetails({
               Analysis category: {row.rule.analysis_category}
             </Text>
           )}
-          <Button variant="subtle" size="xs" w="fit-content" px={0} onClick={onShowRule}>
+          <Button component="a" href="#/configuration" variant="subtle" size="xs" w="fit-content" px={0}>
             View all rules
           </Button>
         </Stack>
@@ -772,14 +771,12 @@ function TransactionsPanel({
   error,
   window,
   onWindowChange,
-  onShowRule,
 }: {
   transactions: TransactionsView | null;
   loading: boolean;
   error: string | null;
   window: TransactionWindow;
   onWindowChange: (window: TransactionWindow) => void;
-  onShowRule: () => void;
 }) {
   const [filter, setFilter] = useState<"all" | "review" | "effect">("all");
   const [expandedRow, setExpandedRow] = useState<number | null>(null);
@@ -974,7 +971,7 @@ function TransactionsPanel({
                         {expanded && (
                           <Table.Tr>
                             <Table.Td colSpan={7}>
-                              <TransactionDetails row={row} currency={currency} onShowRule={onShowRule} />
+                              <TransactionDetails row={row} currency={currency} />
                             </Table.Td>
                           </Table.Tr>
                         )}
@@ -1023,7 +1020,7 @@ function TransactionsPanel({
                       </Group>
                     </Accordion.Control>
                     <Accordion.Panel>
-                      <TransactionDetails row={row} currency={currency} onShowRule={onShowRule} />
+                      <TransactionDetails row={row} currency={currency} />
                     </Accordion.Panel>
                   </Accordion.Item>
                 );
@@ -1040,7 +1037,7 @@ function App() {
   const [view, setView] = useState<View | null>(null);
   const [state, setState] = useState("Connecting");
   const [error, setError] = useState<string | null>(null);
-  const [activeTab, setActiveTab] = useState<string | null>("spending");
+  const [activeTab, setActiveTab] = useState<SpendTab>(() => tabForHash(window.location.hash));
   const [configuration, setConfiguration] = useState<SpendConfiguration | null>(null);
   const [configurationLoading, setConfigurationLoading] = useState(false);
   const [configurationError, setConfigurationError] = useState<string | null>(null);
@@ -1049,6 +1046,12 @@ function App() {
   const [transactionsLoading, setTransactionsLoading] = useState(false);
   const [transactionsError, setTransactionsError] = useState<string | null>(null);
   const [viewRevision, setViewRevision] = useState(0);
+  useEffect(() => {
+    if (!window.location.hash) window.history.replaceState(null, "", "#/spending");
+    const updateTab = () => setActiveTab(tabForHash(window.location.hash));
+    window.addEventListener("hashchange", updateTab);
+    return () => window.removeEventListener("hashchange", updateTab);
+  }, []);
   useEffect(() => {
     let mounted = true;
     const load = async () => {
@@ -1158,12 +1161,20 @@ function App() {
   const cards = view?.cards || [];
   return (
     <MantineProvider defaultColorScheme="auto">
-      <Tabs value={activeTab} onChange={setActiveTab} keepMounted={false} variant="pills" color="teal">
+      <Tabs
+        value={activeTab}
+        onChange={(tab) => {
+          if (tab) window.location.hash = `/${tab}`;
+        }}
+        keepMounted={false}
+        variant="pills"
+        color="teal"
+      >
         <Paper component="header" radius={0} withBorder>
           <Container size="lg" py="xs">
             <Grid align="center" gap="xs">
               <Grid.Col span={{ base: 6, xs: 4 }} order={1}>
-                <Anchor href="/" size="lg" fw={700} c="var(--mantine-color-text)" underline="never">
+                <Anchor href="#/spending" size="lg" fw={700} c="var(--mantine-color-text)" underline="never">
                   Spend
                 </Anchor>
               </Grid.Col>
@@ -1270,7 +1281,6 @@ function App() {
               error={transactionsError}
               window={transactionWindow}
               onWindowChange={setTransactionWindow}
-              onShowRule={() => setActiveTab("configuration")}
             />
           </Tabs.Panel>
           <Tabs.Panel value="configuration">
