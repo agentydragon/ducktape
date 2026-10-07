@@ -22,6 +22,8 @@ from util.testing.undeclared_outputs import undeclared_outputs_dir
 from util.testing.visual_scenarios import Scenario, load_scenarios
 from util.testing.visual_sweep import SweepConfig, capture_scenario
 
+# The shared Playwright driver is session-scoped; tests must run on its event loop, as the generic
+# visual sweep does. Asyncio auto mode handles discovery; this mark only aligns the loop scope.
 pytestmark = pytest.mark.asyncio(loop_scope="session")
 pytest_generate_tests = visual_sweep.pytest_generate_tests
 
