@@ -53,7 +53,9 @@ on:
 # pending run per group, so a merge burst costs the run in flight plus the newest commit's.
 # Cancelling push runs is what starved devel of images (see ci.yml).
 concurrency:
-  group: bazel-ci-${{ inputs.pr_head_sha || github.ref }}
+  # PR numbers stay stable across pushes, so a new head cancels the old run.
+  # Non-PR runs keep their branch ref as the group identity.
+  group: bazel-ci-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' || inputs.pr_head_sha != '' }}
 
 permissions:
