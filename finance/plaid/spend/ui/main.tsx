@@ -732,12 +732,12 @@ function App() {
   }, [activeTab, configuration]);
   const cards = view?.cards || [];
   return (
-    <MantineProvider defaultColorScheme="light">
-      <Tabs value={activeTab} onChange={setActiveTab} keepMounted={false} variant="pills" color="teal" size="sm">
+    <MantineProvider defaultColorScheme="auto">
+      <Tabs value={activeTab} onChange={setActiveTab} keepMounted={false} variant="pills" color="teal">
         <Paper component="header" radius={0} withBorder>
           <Container size="lg" py="sm">
             <Group justify="space-between" gap="xs" wrap="wrap">
-              <Anchor href="/" size="lg" fw={700} c="teal.9" underline="never">
+              <Anchor href="/" size="lg" fw={700} c="var(--mantine-color-text)" underline="never">
                 Spend
               </Anchor>
               <Tabs.List aria-label="Spend pages">
