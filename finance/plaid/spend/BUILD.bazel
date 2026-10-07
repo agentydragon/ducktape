@@ -87,7 +87,6 @@ py_test(
         "@pypi//itsdangerous",
         "@pypi//pydantic",
         "@pypi//pytest",
-        "@pypi//pytest_asyncio",
         "@pypi//pytest_bazel",
     ],
 )
