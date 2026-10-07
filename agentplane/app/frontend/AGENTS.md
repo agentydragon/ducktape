@@ -35,8 +35,9 @@ A row needs an `element`, a `route` and a `viewport`; `outputName`, `readySelect
 (`util/testing/visual_scenarios.py`) and the harness reads the route and fixture switches (`Scenario`
 in `harness/scenario.ts`). Use a named viewport: `desktop` (1200×900), `mobile` (412×915),
 or `small-mobile` (360×650). The shared definitions live in `util/testing/visual_scenarios.py`;
-Python browser tests use their `.size` property. Mobile captures include touch support and a 2.625
-device scale factor. `readySelectors` are Playwright selectors (`:text("...")`).
+Python browser tests use their `.size` property. Mobile captures use a 2.625 device scale factor;
+`mobile-touch` shares the mobile dimensions and enables touch for tap tests.
+`readySelectors` are Playwright selectors (`:text("...")`).
 Keep captures at real screen sizes: scroll to the subject or capture its component instead of
 inventing a taller viewport to fit more content. Explicit resizing belongs in tests of resize behavior.
 

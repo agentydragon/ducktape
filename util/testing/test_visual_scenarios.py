@@ -71,7 +71,7 @@ def test_a_viewport_states_only_what_differs_from_the_default() -> None:
 
 
 def test_named_mobile_viewport_supports_touch_scenes() -> None:
-    scenario = Scenario.model_validate({"element": "#app", "viewport": "mobile", "tap": "#button"})
+    scenario = Scenario.model_validate({"element": "#app", "viewport": "mobile-touch", "tap": "#button"})
 
     assert scenario.viewport.size == {"width": 412, "height": 915}
     assert scenario.viewport.has_touch

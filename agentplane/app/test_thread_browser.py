@@ -59,7 +59,7 @@ from agentplane.protocol import command_pb2, event_log_pb2, event_pb2
 from util.bazel.runfiles import get_required_path
 from util.testing.undeclared_outputs import undeclared_outputs_dir
 from util.testing.visual_review import upsert_review_asset
-from util.testing.visual_scenarios import DESKTOP, MOBILE, SMALL_MOBILE
+from util.testing.visual_scenarios import DESKTOP, MOBILE, SMALL_MOBILE, Viewport
 from util.visual_review import VisualReviewAsset
 
 # gazelle:include_dep @pypi//protobuf
@@ -634,13 +634,13 @@ async def test_projected_browser_streams_runner_events_and_loads_evidence_lazily
             await engine.dispose()
 
 
-@pytest.mark.parametrize("phone", [False, True])
+@pytest.mark.parametrize(
+    ("viewport", "viewport_name"), [(DESKTOP, "desktop"), (MOBILE, "phone")], ids=["desktop", "phone"]
+)
 async def test_chronological_debug_is_lazy_paged_and_keeps_the_thread(
-    thread_browser: ThreadBrowser, phone: bool
+    thread_browser: ThreadBrowser, viewport_name: str
 ) -> None:
     page, source = thread_browser.page, thread_browser.source
-    if phone:
-        await page.set_viewport_size(MOBILE.size)
     requests: list[str] = []
     page.on("request", lambda request: requests.append(request.url))
     for index in range(65):
@@ -677,11 +677,7 @@ async def test_chronological_debug_is_lazy_paged_and_keeps_the_thread(
         await expect(frame).to_be_visible()
         assert json_format.Parse(await frame.inner_text(), event_log_pb2.EventEntry()) == entry
         assert any(url.endswith(f"/observations/{entry.cursor}") for url in requests)
-    await _review_screenshot(
-        page,
-        f"thread-debug-{'phone' if phone else 'desktop'}.png",
-        f"Chronological debug on {'phone' if phone else 'desktop'}",
-    )
+    await _review_screenshot(page, f"thread-debug-{viewport_name}.png", f"Chronological debug on {viewport_name}")
     await dialog.get_by_role("button", name="Older observations", exact=True).click()
     await expect(observations).to_have_count(30)
     await expect(observations.last).to_have_attribute("data-debug-observation", str(last.cursor - 30))
@@ -808,13 +804,19 @@ async def test_sidebar_receives_rename_and_archive_from_another_app_replica(thre
 
 
 @pytest.mark.parametrize("raw", [False, True], ids=["normal", "raw"])
-@pytest.mark.parametrize("phone", [False, True], ids=["desktop", "phone"])
+@pytest.mark.parametrize(
+    ("viewport", "resized_viewport"),
+    [(DESKTOP, DESKTOP.model_copy(update={"height": SMALL_MOBILE.height})), (MOBILE, SMALL_MOBILE)],
+    ids=["desktop", "phone"],
+)
 async def test_thread_follows_bottom_until_reader_scrolls_up(
-    thread_browser: ThreadBrowser, raw: bool, phone: bool, request: pytest.FixtureRequest
+    thread_browser: ThreadBrowser,
+    raw: bool,
+    viewport: Viewport,
+    resized_viewport: Viewport,
+    request: pytest.FixtureRequest,
 ) -> None:
     page, source = thread_browser.page, thread_browser.source
-    if phone:
-        await page.set_viewport_size(MOBILE.size)
     thread_browser.opened.replay.set()
     await expect(page.get_by_text("Test retained prefix", exact=True)).to_be_visible()
     if raw:
@@ -860,7 +862,7 @@ async def test_thread_follows_bottom_until_reader_scrolls_up(
         )
     await expect(page.get_by_text("Test streaming paragraph 4", exact=True)).to_have_count(1)
     await expect_history_bottom(page)
-    await page.set_viewport_size({**(SMALL_MOBILE if phone else DESKTOP).size, "height": SMALL_MOBILE.height})
+    await page.set_viewport_size(resized_viewport.size)
     await expect_history_bottom(page)
     await page.screenshot(path=undeclared_outputs_dir() / f"{request.node.name}-following.png")
 
@@ -895,7 +897,7 @@ async def test_thread_follows_bottom_until_reader_scrolls_up(
     # an unwanted jump scheduled by that observer. No elapsed-time delay stands in for rendering.
     await frames(page)
     await expect_reading_anchor(page, reading_anchor)
-    await page.set_viewport_size({**(SMALL_MOBILE if phone else DESKTOP).size, "height": SMALL_MOBILE.height + 50})
+    await page.set_viewport_size({**resized_viewport.size, "height": resized_viewport.height + 50})
     await frames(page)
     await expect_reading_anchor(page, reading_anchor)
     # A late expansion above the reader can advance scrollTop through browser anchoring.
@@ -930,7 +932,7 @@ async def test_thread_follows_bottom_until_reader_scrolls_up(
     await expect(page.get_by_text("Test following again", exact=True)).to_have_count(1)
     await expect_history_bottom(page)
     # Increasing the viewport height must keep following too, including browser scroll clamping.
-    await page.set_viewport_size((MOBILE if phone else DESKTOP).size)
+    await page.set_viewport_size(viewport.size)
     await expect_history_bottom(page)
     await page.screenshot(path=undeclared_outputs_dir() / f"{request.node.name}-resumed.png")
 
@@ -1260,11 +1262,11 @@ async def test_the_history_is_not_settled_while_a_row_is_still_loading_its_text(
         await page.unroute("**/sync/chunks/**", hold_text)
 
 
-@pytest.mark.parametrize("phone", [False, True], ids=["desktop", "phone"])
-async def test_expanded_command_stays_collapsible(thread_browser: ThreadBrowser, phone: bool) -> None:
+@pytest.mark.parametrize(
+    ("viewport", "viewport_name"), [(DESKTOP, "desktop"), (MOBILE, "phone")], ids=["desktop", "phone"]
+)
+async def test_expanded_command_stays_collapsible(thread_browser: ThreadBrowser, viewport_name: str) -> None:
     page = thread_browser.page
-    if phone:
-        await page.set_viewport_size(MOBILE.size)
     await append_run_among_rows(thread_browser, below=8)
     history = page.get_by_role("region", name="Thread history", exact=True)
     run = history.locator("[data-thread-anchor]").filter(has_text="3 tool calls")
@@ -1275,7 +1277,6 @@ async def test_expanded_command_stays_collapsible(thread_browser: ThreadBrowser,
     command = call.locator('.agentplane-clamped-block[data-label="Command"]')
     show_all = command.get_by_role("button", name="Show all 24 lines", exact=True)
     collapse = command.get_by_role("button", name="Collapse Command", exact=True)
-    viewport = "phone" if phone else "desktop"
     for _ in range(2):
         await show_all.click()
         # Deliver layout/ResizeObserver callbacks: the old observer measured a detached node and
@@ -1284,25 +1285,33 @@ async def test_expanded_command_stays_collapsible(thread_browser: ThreadBrowser,
         await expect(command).to_have_attribute("data-expanded", "true")
         await read_at(page, command.locator(".cm-line").filter(has_text="echo command line 20"), 0.5)
         await expect(collapse).to_be_in_viewport()
-        await _review_screenshot(page, f"thread-command-expanded-{viewport}.png", f"Expanded command on {viewport}")
+        await _review_screenshot(
+            page, f"thread-command-expanded-{viewport_name}.png", f"Expanded command on {viewport_name}"
+        )
         await collapse.click()
         await frames(page)
         await expect(command.locator('[data-clamped="true"]')).to_have_count(1)
         await expect(show_all).to_be_visible()
         await expect(collapse).to_have_count(0)
         await expect(call.locator(".agentplane-disclosure-summary").first).to_have_attribute("aria-expanded", "true")
-        await _review_screenshot(page, f"thread-command-collapsed-{viewport}.png", f"Collapsed command on {viewport}")
+        await _review_screenshot(
+            page, f"thread-command-collapsed-{viewport_name}.png", f"Collapsed command on {viewport_name}"
+        )
 
 
 @pytest.mark.parametrize("following", [False, True], ids=["mid-thread", "following"])
-@pytest.mark.parametrize("phone", [False, True], ids=["desktop", "phone"])
+@pytest.mark.parametrize(
+    ("viewport", "viewport_name"), [(DESKTOP, "desktop"), (MOBILE, "phone")], ids=["desktop", "phone"]
+)
 async def test_opening_a_call_and_its_output_keeps_it_collapsible_while_reading(
-    thread_browser: ThreadBrowser, phone: bool, following: bool, request: pytest.FixtureRequest
+    thread_browser: ThreadBrowser,
+    viewport: Viewport,
+    viewport_name: str,
+    following: bool,
+    request: pytest.FixtureRequest,
 ) -> None:
     """Opening a run or call preserves its row; a long output stays collapsible while the reader scrolls it."""
     page = thread_browser.page
-    if phone:
-        await page.set_viewport_size(MOBILE.size)
     await append_run_among_rows(thread_browser, below=8 if following else 40)
     history = page.get_by_role("region", name="Thread history", exact=True)
     run = history.locator("[data-thread-anchor]").filter(has_text="3 tool calls")
@@ -1346,9 +1355,9 @@ async def test_opening_a_call_and_its_output_keeps_it_collapsible_while_reading(
     assert call_heading_box is not None
     assert run_heading_box is not None
     assert history_box is not None
-    minimum_control_height = 44 if phone else 28
+    minimum_control_height = 44 if viewport == MOBILE else 28
     assert collapse_box["height"] >= minimum_control_height, f"collapse target is too short: {collapse_box}"
-    if not phone:
+    if viewport == DESKTOP:
         for heading_name, heading_box in (
             ("run", run_heading_box),
             ("tool call", call_heading_box),
@@ -1391,8 +1400,8 @@ async def test_opening_a_call_and_its_output_keeps_it_collapsible_while_reading(
     )
     await _review_screenshot(
         page,
-        f"thread-output-{'phone' if phone else 'desktop'}-{'following' if following else 'reading'}.png",
-        f"Expanded tool output on {'phone' if phone else 'desktop'} while {'following' if following else 'reading'}",
+        f"thread-output-{viewport_name}-{'following' if following else 'reading'}.png",
+        f"Expanded tool output on {viewport_name} while {'following' if following else 'reading'}",
     )
     # At the true tail, collapsing a long block can shorten the history below its current scrollTop.
     # The browser must clamp to the new bottom; pixel-stable anchoring is asserted mid-thread, where
@@ -1448,16 +1457,14 @@ async def test_opening_a_call_while_output_streams_in_keeps_it_collapsible(threa
 
 
 @pytest.mark.parametrize("leaving", ["opening a row", "scrolling up"])
-@pytest.mark.parametrize("phone", [False, True], ids=["desktop", "phone"])
+@pytest.mark.parametrize("viewport", [DESKTOP, MOBILE], ids=["desktop", "phone"])
 async def test_a_reader_away_from_the_end_of_a_live_thread_can_jump_back_to_it(
-    thread_browser: ThreadBrowser, phone: bool, leaving: str, request: pytest.FixtureRequest
+    thread_browser: ThreadBrowser, leaving: str, request: pytest.FixtureRequest
 ) -> None:
     """The thread is running. A reader who has left its end, by scrolling up or by opening a row that
     grew past the view, is shown that they are not following it; one click returns to the end, and
     following resumes."""
     page = thread_browser.page
-    if phone:
-        await page.set_viewport_size(MOBILE.size)
     await append_run_among_rows(thread_browser, below=8)
     history = page.get_by_role("region", name="Thread history", exact=True)
     jump = page.get_by_role("button", name="Jump to latest")
@@ -1523,13 +1530,11 @@ async def expect_history_bottom(page: Page) -> None:
         ) from None
 
 
-@pytest.mark.parametrize("raw", [False, True], ids=["desktop-normal", "phone-raw"])
+@pytest.mark.parametrize(("viewport", "raw"), [(DESKTOP, False), (MOBILE, True)], ids=["desktop-normal", "phone-raw"])
 async def test_failed_turn_preserves_confirmed_input_and_allows_another_turn(
     thread_browser: ThreadBrowser, raw: bool, request: pytest.FixtureRequest
 ) -> None:
     page, source = thread_browser.page, thread_browser.source
-    if raw:
-        await page.set_viewport_size(MOBILE.size)
     thread_browser.opened.replay.set()
     await expect(page.get_by_text("Test retained prefix", exact=True)).to_be_visible()
     if raw:

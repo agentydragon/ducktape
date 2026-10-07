@@ -39,7 +39,8 @@ its ready selectors, the request fence, the fetch ledger and zero uncaught page 
   (`import SCENARIOS from "./scenarios.json"`) and the sweep reads it, so no scenario is listed twice;
   fields only the harness reads sit in the same object. The sweep's fields are in
   `util/testing/visual_scenarios.py`; `viewport` accepts the shared names `desktop`, `mobile`, and
-  `small-mobile`, or an explicit size object with `deviceScaleFactor` and `hasTouch`. A
+  `small-mobile` (`mobile-touch` adds touch to the same mobile size), or an explicit size object
+  with `deviceScaleFactor` and `hasTouch`. A
   scenario can name a `hover` or `tap` selector. The harness is loaded at `?page=<scenario>`; a
   scenario's `query` replaces that query string, for a harness keyed otherwise or one scene shown in
   several scenarios. `label` is the caption in PR visual review (the output name if unset), and the

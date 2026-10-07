@@ -48,9 +48,14 @@ class Viewport(_TableModel):
 
 
 DESKTOP = Viewport(width=1200, height=900)
-MOBILE = Viewport(width=412, height=915, device_scale_factor=2.625, has_touch=True)
-SMALL_MOBILE = Viewport(width=360, height=650, device_scale_factor=2.625, has_touch=True)
-VIEWPORTS = {"desktop": DESKTOP, "mobile": MOBILE, "small-mobile": SMALL_MOBILE}
+MOBILE = Viewport(width=412, height=915, device_scale_factor=2.625)
+SMALL_MOBILE = Viewport(width=360, height=650, device_scale_factor=2.625)
+VIEWPORTS = {
+    "desktop": DESKTOP,
+    "mobile": MOBILE,
+    "small-mobile": SMALL_MOBILE,
+    "mobile-touch": MOBILE.model_copy(update={"has_touch": True}),
+}
 
 
 class Click(_TableModel):
