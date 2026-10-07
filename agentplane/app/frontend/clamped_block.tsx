@@ -98,6 +98,7 @@ export function ClampedBlock({
           summary={header ?? label}
           summaryAside={
             <Button
+              className="agentplane-clamped-disclosure-action"
               variant="subtle"
               size="sm"
               aria-expanded={true}

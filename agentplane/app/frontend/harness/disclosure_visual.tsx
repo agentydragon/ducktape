@@ -201,8 +201,21 @@ export function DisclosureVisual({ stage }: { stage: DisclosureVisualStage }): J
           }
           break;
         }
-        case "nested-after-output":
         case "nested-output-collapsed": {
+          const outer = heading(".demo-outer .agentplane-disclosure-heading");
+          const inner = heading(".demo-inner .agentplane-disclosure-heading");
+          const output = heading(".demo-output .agentplane-disclosure-heading");
+          const parentStackHeight = rowHeight(outer) + rowHeight(inner);
+          scrollTo(output, parentStackHeight);
+          expectAt(outer, 0, "the outer Control");
+          expectAt(inner, rowHeight(outer), "the nested Control below the outer Control");
+          expectAt(output, parentStackHeight, "the collapsed output Control below both parents");
+          if (output.dataset.expanded !== "false") {
+            throw new Error(`Disclosure scene ${stage} should show the collapsed output Control`);
+          }
+          break;
+        }
+        case "nested-after-output": {
           const outer = heading(".demo-outer .agentplane-disclosure-heading");
           const inner = heading(".demo-inner .agentplane-disclosure-heading");
           const output = heading(".demo-output .agentplane-disclosure-heading");
