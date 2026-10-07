@@ -21,6 +21,7 @@ import {
   Title,
 } from "@mantine/core";
 import "@mantine/core/styles.css";
+import "./header.css";
 import type { components } from "./api/schema";
 
 type Windows = components["schemas"]["Windows"];
@@ -735,21 +736,21 @@ function App() {
     <MantineProvider defaultColorScheme="auto">
       <Tabs value={activeTab} onChange={setActiveTab} keepMounted={false} variant="pills" color="teal">
         <Paper component="header" radius={0} withBorder>
-          <Container size="lg" py="sm">
-            <Group justify="space-between" gap="xs" wrap="wrap">
+          <Container size="lg" py="xs">
+            <div className="spend-header-layout">
               <Anchor href="/" size="lg" fw={700} c="var(--mantine-color-text)" underline="never">
                 Spend
               </Anchor>
-              <Tabs.List aria-label="Spend pages">
+              <Tabs.List aria-label="Spend pages" className="spend-header-navigation">
                 <Tabs.Tab value="spending">Spending</Tabs.Tab>
                 <Tabs.Tab value="configuration">Configuration</Tabs.Tab>
               </Tabs.List>
-              <form action="/auth/logout" method="post">
+              <form action="/auth/logout" method="post" className="spend-header-signout">
                 <Button type="submit" variant="subtle" color="gray" size="sm">
                   Sign out
                 </Button>
               </form>
-            </Group>
+            </div>
           </Container>
         </Paper>
         <Container component="main" size="lg" py="xl">
