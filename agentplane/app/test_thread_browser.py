@@ -1252,17 +1252,16 @@ async def test_opening_a_call_and_its_output_keeps_it_collapsible_while_reading(
     else:
         await read_at(page, run, 0.1)
 
-    # Opening a disclosure changes its card decoration; keep the clicked control in place.
+    # A card gains border and padding as it opens, which moves its label; its top edge is the place.
     summary = run.locator(".agentplane-disclosure-summary").first
-    async with holding_still(page, summary):
+    async with holding_still(page, run):
         await summary.click()
         await expect(run.locator(".agentplane-step-details")).to_have_count(3)
 
     call, card = tool_call_in(run, "a")
     show_all = call.get_by_role("button", name="Show all 60 lines")
-    call_summary = call.locator(".agentplane-disclosure-summary").first
-    async with holding_still(page, call_summary):
-        await call_summary.click()
+    async with holding_still(page, card):
+        await call.locator(".agentplane-disclosure-summary").first.click()
         await expect(show_all).to_be_visible()
     await page.screenshot(path=undeclared_outputs_dir() / f"{request.node.name}-call-open.png")
 
@@ -1355,16 +1354,14 @@ async def test_opening_a_call_while_output_streams_in_keeps_it_collapsible(threa
     run = history.locator("[data-thread-anchor]").filter(has_text="3 tool calls")
     await read_at(page, run, 0.1)
 
-    call, _ = tool_call_in(run, "a")
+    call, card = tool_call_in(run, "a")
     show_all = call.get_by_role("button", name="Show all 60 lines")
     async with output_streaming_in(thread_browser) as delivered:
-        run_summary = run.locator(".agentplane-disclosure-summary").first
-        async with holding_still(page, run_summary, rest_first=False):
-            await run_summary.click()
+        async with holding_still(page, run, rest_first=False):
+            await run.locator(".agentplane-disclosure-summary").first.click()
             await expect(call).to_be_visible()
-        call_summary = call.locator(".agentplane-disclosure-summary").first
-        async with holding_still(page, call_summary, rest_first=False):
-            await call_summary.click()
+        async with holding_still(page, card, rest_first=False):
+            await call.locator(".agentplane-disclosure-summary").first.click()
             await expect(show_all).to_be_visible()
         await read_at(page, show_all, 0.3)
         await show_all.click()
