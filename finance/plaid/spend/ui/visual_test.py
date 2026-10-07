@@ -353,6 +353,39 @@ async def test_spending_decision_render(
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize(("width", "height"), [(1280, 960), (390, 844)])
+async def test_spending_decision_dark_theme(
+    page: Page, dashboard_url: str, width: int, height: int, tmp_path: Path
+) -> None:
+    errors: list[str] = []
+    page.on("pageerror", lambda exc: errors.append(str(exc)))
+    await page.emulate_media(color_scheme="dark")
+    await page.set_viewport_size({"width": width, "height": height})
+    await page.goto(dashboard_url, wait_until="domcontentloaded")
+    await page.get_by_role("heading", name="Where you stand").wait_for()
+    assert await page.locator("html").get_attribute("data-mantine-color-scheme") == "dark"
+    assert not errors
+    assert await page.evaluate("document.documentElement.scrollWidth <= window.innerWidth")
+    initial = tmp_path / f"dashboard-dark-{width}.png"
+    await page.screenshot(path=str(initial), full_page=True, animations="disabled")
+    retain_review_asset(initial, title="Spend decisions", label=f"{width}px dark theme", name=initial.name)
+
+    await page.get_by_label("Hypothetical flexible purchase").fill("100")
+    await page.get_by_text("Pace warning", exact=True).last.wait_for()
+    assert not errors
+    warning = tmp_path / f"dashboard-dark-{width}-warning.png"
+    await page.screenshot(path=str(warning), full_page=True, animations="disabled")
+    retain_review_asset(warning, title="Spend decisions", label=f"{width}px dark pace warning", name=warning.name)
+
+    await page.get_by_label("Hypothetical flexible purchase").fill("250")
+    await page.get_by_text("Over allowance", exact=True).last.wait_for()
+    assert not errors
+    exceeded = tmp_path / f"dashboard-dark-{width}-exceeded.png"
+    await page.screenshot(path=str(exceeded), full_page=True, animations="disabled")
+    retain_review_asset(exceeded, title="Spend decisions", label=f"{width}px dark over allowance", name=exceeded.name)
+
+
+@pytest.mark.asyncio
 async def test_new_allowance_has_no_fake_zero_pace(page: Page, dashboard_url: str, tmp_path: Path) -> None:
     await page.add_init_script("window.EventSource = class { addEventListener() {} close() {} }")
 
@@ -402,10 +435,13 @@ async def test_transaction_explanations_render(
     await page.set_viewport_size({"width": width, "height": height})
     await page.goto(dashboard_url, wait_until="domcontentloaded")
     await page.get_by_role("tab", name="Transactions").click()
-    await page.get_by_text("Example Cafe", exact=True).wait_for()
+    rows = page.get_by_role("table") if width >= 992 else page.locator(".mantine-Accordion-root")
+    await rows.get_by_text("Example Cafe", exact=True).wait_for()
     assert await page.get_by_role("heading", name="Transactions", level=1).count() == 1
-    assert await page.get_by_text("Refund held", exact=True).count() == 1
+    assert await rows.get_by_text("Refund held", exact=True).count() == 1
     assert await page.get_by_text("2 · $15", exact=True).count() == 1
+    if width >= 992:
+        assert await rows.locator("tbody tr").count() == 4
     assert not errors
     assert await page.evaluate("document.documentElement.scrollWidth <= window.innerWidth")
     image = tmp_path / f"transactions-{width}.png"
@@ -414,10 +450,14 @@ async def test_transaction_explanations_render(
 
     await page.get_by_text("Credit cycle", exact=True).click()
     await page.get_by_text("Allowance bridge", exact=True).wait_for()
-    await page.get_by_text("UPS", exact=True).click()
-    await page.get_by_text("Required document shipping for a synthetic example.").wait_for()
-    assert await page.get_by_text("Mandatory · outside allowance", exact=False).count() == 1
-    assert await page.get_by_text("Card statement: Counted in card cycle", exact=False).count() >= 1
+    if width >= 992:
+        await page.get_by_role("button", name="Show details for UPS").click()
+        assert await rows.locator("tbody tr").count() == 5
+    else:
+        await rows.get_by_role("button", name="UPS", exact=False).click()
+    await rows.get_by_text("Required document shipping for a synthetic example.").wait_for()
+    assert await rows.get_by_text("Mandatory · outside allowance", exact=False).count() == 1
+    assert await rows.get_by_text("Card statement: Counted in card cycle", exact=False).count() >= 1
     assert not errors
     assert await page.evaluate("document.documentElement.scrollWidth <= window.innerWidth")
     expanded = tmp_path / f"transactions-expanded-{width}.png"
@@ -426,8 +466,8 @@ async def test_transaction_explanations_render(
 
     await page.get_by_text("Review", exact=True).click()
     await page.get_by_text("Showing 2 of 4", exact=True).wait_for()
-    assert await page.get_by_text("UPS", exact=True).count() == 0
-    assert not await page.get_by_text("Confirm the purchase before netting this refund.").is_visible()
+    assert await rows.get_by_text("UPS", exact=True).count() == 0
+    assert not await rows.get_by_text("Confirm the purchase before netting this refund.").is_visible()
     assert not errors
     review = tmp_path / f"transactions-review-{width}.png"
     await page.screenshot(path=str(review), full_page=True, animations="disabled")
@@ -442,8 +482,9 @@ async def test_transaction_explanations_dark_theme(page: Page, dashboard_url: st
     await page.set_viewport_size({"width": 390, "height": 844})
     await page.goto(dashboard_url, wait_until="domcontentloaded")
     await page.get_by_role("tab", name="Transactions").click()
-    await page.get_by_text("Example Cafe", exact=True).wait_for()
-    await page.get_by_text("UPS", exact=True).click()
+    rows = page.locator(".mantine-Accordion-root")
+    await rows.get_by_text("Example Cafe", exact=True).wait_for()
+    await rows.get_by_role("button", name="UPS", exact=False).click()
     await page.get_by_text("Required document shipping for a synthetic example.").wait_for()
     assert not errors
     assert await page.evaluate("document.documentElement.scrollWidth <= window.innerWidth")

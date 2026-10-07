@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { Fragment, useEffect, useState } from "react";
 import type { ReactNode } from "react";
 import { createRoot } from "react-dom/client";
 import {
@@ -6,6 +6,7 @@ import {
   Alert,
   Anchor,
   Badge,
+  Box,
   Button,
   Card,
   Center,
@@ -20,6 +21,7 @@ import {
   SegmentedControl,
   SimpleGrid,
   Stack,
+  Table,
   Tabs,
   Text,
   Title,
@@ -152,7 +154,13 @@ function PurchaseCheck({ allowance }: { allowance: Allowance }) {
           hideControls
         />
         <Paper
-          bg={signal === "exceeded" ? "red.0" : signal === "warning" ? "yellow.0" : "gray.0"}
+          bg={
+            signal === "exceeded"
+              ? "var(--mantine-color-red-light)"
+              : signal === "warning"
+                ? "var(--mantine-color-yellow-light)"
+                : "var(--mantine-color-gray-light)"
+          }
           p="md"
           radius="md"
           aria-live="polite"
@@ -346,7 +354,7 @@ function AllowancePanel({ allowance }: { allowance: Allowance }) {
                 Your allowance rolls forward; it doesn't reset at month-end.
               </Text>
             </div>
-            <Paper bg="gray.0" p="md" radius="md">
+            <Paper bg="var(--mantine-color-gray-light)" p="md" radius="md">
               <Stack gap="sm">
                 <Group justify="space-between" gap="sm">
                   <Text size="sm">Monthly credit</Text>
@@ -691,6 +699,73 @@ function classificationForRow(row: TransactionRow): { label: string; color: stri
   return { label: "Unmatched", color: "orange" };
 }
 
+function TransactionDetails({
+  row,
+  currency,
+  onShowRule,
+}: {
+  row: TransactionRow;
+  currency: string;
+  onShowRule: () => void;
+}) {
+  const m = (value: number | null | undefined) => <Money value={value} currency={currency} />;
+  return (
+    <Stack gap="sm">
+      <Text size="sm">
+        <strong>Allowance:</strong>{" "}
+        {row.disposition
+          ? dispositionText[row.disposition]
+          : row.allowance_in_scope
+            ? "Unavailable"
+            : "Account outside allowance"}
+        .
+        {isReviewRow(row) &&
+          row.disposition === "counted" &&
+          " This charge is counted as flexible while its classification is reviewed."}
+      </Text>
+      {row.rule && (
+        <Stack gap={2}>
+          <Text size="sm">
+            <strong>Rule #{row.rule_number}:</strong> {ruleConditionText(row.rule.condition)}
+          </Text>
+          {row.rule.description && (
+            <Text size="sm" c="dimmed">
+              {row.rule.description}
+            </Text>
+          )}
+          {row.rule.analysis_category && (
+            <Text size="xs" c="dimmed">
+              Analysis category: {row.rule.analysis_category}
+            </Text>
+          )}
+          <Button variant="subtle" size="xs" w="fit-content" px={0} onClick={onShowRule}>
+            View all rules
+          </Button>
+        </Stack>
+      )}
+      <Divider />
+      <SimpleGrid cols={{ base: 1, sm: 2 }} spacing="xs">
+        <Text size="sm">
+          Allowance balance effect: {m(row.allowance_minor_units === 0 ? 0 : -row.allowance_minor_units)}
+        </Text>
+        <Text size="sm">7-day pace input: {m(row.trailing_7_pace_minor_units)}</Text>
+        <Text size="sm">30-day pace input: {m(row.trailing_30_pace_minor_units)}</Text>
+        <Text size="sm">
+          Card statement:{" "}
+          {row.statement_reason
+            ? `${statementText[row.statement_reason]} · ${money(row.statement_minor_units, row.currency, true)}`
+            : "Not a configured card"}
+        </Text>
+      </SimpleGrid>
+      <Text size="xs" c="dimmed">
+        Plaid name: {row.name} · merchant: {row.merchant_name || "Unknown"} · category:{" "}
+        {row.pfc_detailed || row.pfc_primary || "Unknown"} · merchant category code:{" "}
+        {row.merchant_category_code || "Unknown"}
+      </Text>
+    </Stack>
+  );
+}
+
 function TransactionsPanel({
   transactions,
   loading,
@@ -707,6 +782,7 @@ function TransactionsPanel({
   onShowRule: () => void;
 }) {
   const [filter, setFilter] = useState<"all" | "review" | "effect">("all");
+  const [expandedRow, setExpandedRow] = useState<number | null>(null);
   const rows = transactions?.rows ?? [];
   const shown = rows
     .map((row, index) => ({ row, index }))
@@ -837,102 +913,123 @@ function TransactionsPanel({
               No transactions match this period and filter.
             </Text>
           )}
-          <Accordion variant="separated" radius="md">
-            {shown.map(({ row, index }) => {
-              const classification = classificationForRow(row);
-              return (
-                <Accordion.Item key={`${row.date}-${row.account_label}-${index}`} value={String(index)}>
-                  <Accordion.Control>
-                    <Group justify="space-between" gap="sm" wrap="nowrap">
-                      <Stack gap={2} miw={0}>
-                        <Text fw={650} size="sm" style={{ overflowWrap: "anywhere" }}>
-                          {row.merchant_name || row.name}
-                        </Text>
-                        <Group gap="xs">
-                          <Text size="xs" c="dimmed">
-                            {row.date} · {row.account_label}
-                          </Text>
-                          {row.pending && (
-                            <Badge size="xs" variant="light" color="yellow">
-                              Pending
+          <Box visibleFrom="md">
+            <ScrollArea type="auto">
+              <Table miw={850} verticalSpacing="sm" horizontalSpacing="md" striped highlightOnHover withTableBorder>
+                <Table.Thead>
+                  <Table.Tr>
+                    <Table.Th>Date</Table.Th>
+                    <Table.Th>Merchant</Table.Th>
+                    <Table.Th>Account</Table.Th>
+                    <Table.Th>Classification</Table.Th>
+                    <Table.Th ta="right">Amount</Table.Th>
+                    <Table.Th ta="right">Allowance</Table.Th>
+                    <Table.Th>Details</Table.Th>
+                  </Table.Tr>
+                </Table.Thead>
+                <Table.Tbody>
+                  {shown.map(({ row, index }) => {
+                    const classification = classificationForRow(row);
+                    const expanded = expandedRow === index;
+                    return (
+                      <Fragment key={`${row.date}-${row.account_label}-${index}`}>
+                        <Table.Tr>
+                          <Table.Td style={{ whiteSpace: "nowrap" }}>{row.date}</Table.Td>
+                          <Table.Td>
+                            <Group gap="xs" wrap="nowrap">
+                              <Text size="sm" fw={650} style={{ overflowWrap: "anywhere" }}>
+                                {row.merchant_name || row.name}
+                              </Text>
+                              {row.pending && (
+                                <Badge size="xs" variant="light" color="yellow">
+                                  Pending
+                                </Badge>
+                              )}
+                            </Group>
+                          </Table.Td>
+                          <Table.Td>{row.account_label}</Table.Td>
+                          <Table.Td>
+                            <Badge size="sm" variant="light" color={classification.color}>
+                              {classification.label}
                             </Badge>
-                          )}
-                          <Badge size="xs" variant="light" color={classification.color}>
-                            {classification.label}
-                          </Badge>
-                        </Group>
-                      </Stack>
-                      <Stack gap={2} align="flex-end" style={{ flexShrink: 0 }}>
-                        <Text fw={700} size="sm">
-                          {money(row.amount_minor_units, row.currency, true)}
-                        </Text>
-                        <Text size="xs" c="dimmed">
-                          Allowance{" "}
-                          {row.allowance_minor_units === 0 ? "—" : money(row.allowance_minor_units, currency, true)}
-                        </Text>
-                      </Stack>
-                    </Group>
-                  </Accordion.Control>
-                  <Accordion.Panel>
-                    <Stack gap="sm">
-                      <Text size="sm">
-                        <strong>Allowance:</strong>{" "}
-                        {row.disposition
-                          ? dispositionText[row.disposition]
-                          : row.allowance_in_scope
-                            ? "Unavailable"
-                            : "Account outside allowance"}
-                        .
-                        {isReviewRow(row) &&
-                          row.disposition === "counted" &&
-                          " This charge is counted as flexible while its classification is reviewed."}
-                      </Text>
-                      {row.rule && (
-                        <Stack gap={2}>
-                          <Text size="sm">
-                            <strong>Rule #{row.rule_number}:</strong> {ruleConditionText(row.rule.condition)}
+                          </Table.Td>
+                          <Table.Td ta="right" style={{ whiteSpace: "nowrap" }}>
+                            {money(row.amount_minor_units, row.currency, true)}
+                          </Table.Td>
+                          <Table.Td ta="right" style={{ whiteSpace: "nowrap" }}>
+                            {row.allowance_minor_units === 0 ? "—" : money(row.allowance_minor_units, currency, true)}
+                          </Table.Td>
+                          <Table.Td>
+                            <Button
+                              variant="subtle"
+                              size="compact-xs"
+                              aria-label={`${expanded ? "Hide" : "Show"} details for ${row.merchant_name || row.name}`}
+                              aria-expanded={expanded}
+                              onClick={() => setExpandedRow(expanded ? null : index)}
+                            >
+                              {expanded ? "Hide" : "Show"}
+                            </Button>
+                          </Table.Td>
+                        </Table.Tr>
+                        {expanded && (
+                          <Table.Tr>
+                            <Table.Td colSpan={7}>
+                              <TransactionDetails row={row} currency={currency} onShowRule={onShowRule} />
+                            </Table.Td>
+                          </Table.Tr>
+                        )}
+                      </Fragment>
+                    );
+                  })}
+                </Table.Tbody>
+              </Table>
+            </ScrollArea>
+          </Box>
+          <Box hiddenFrom="md">
+            <Accordion variant="separated" radius="md">
+              {shown.map(({ row, index }) => {
+                const classification = classificationForRow(row);
+                return (
+                  <Accordion.Item key={`${row.date}-${row.account_label}-${index}`} value={String(index)}>
+                    <Accordion.Control>
+                      <Group justify="space-between" gap="sm" wrap="nowrap">
+                        <Stack gap={2} miw={0}>
+                          <Text fw={650} size="sm" style={{ overflowWrap: "anywhere" }}>
+                            {row.merchant_name || row.name}
                           </Text>
-                          {row.rule.description && (
-                            <Text size="sm" c="dimmed">
-                              {row.rule.description}
-                            </Text>
-                          )}
-                          {row.rule.analysis_category && (
+                          <Group gap="xs">
                             <Text size="xs" c="dimmed">
-                              Analysis category: {row.rule.analysis_category}
+                              {row.date} · {row.account_label}
                             </Text>
-                          )}
-                          <Button variant="subtle" size="xs" w="fit-content" px={0} onClick={onShowRule}>
-                            View all rules
-                          </Button>
+                            {row.pending && (
+                              <Badge size="xs" variant="light" color="yellow">
+                                Pending
+                              </Badge>
+                            )}
+                            <Badge size="xs" variant="light" color={classification.color}>
+                              {classification.label}
+                            </Badge>
+                          </Group>
                         </Stack>
-                      )}
-                      <Divider />
-                      <SimpleGrid cols={{ base: 1, sm: 2 }} spacing="xs">
-                        <Text size="sm">
-                          Allowance balance effect:{" "}
-                          {m(row.allowance_minor_units === 0 ? 0 : -row.allowance_minor_units)}
-                        </Text>
-                        <Text size="sm">7-day pace input: {m(row.trailing_7_pace_minor_units)}</Text>
-                        <Text size="sm">30-day pace input: {m(row.trailing_30_pace_minor_units)}</Text>
-                        <Text size="sm">
-                          Card statement:{" "}
-                          {row.statement_reason
-                            ? `${statementText[row.statement_reason]} · ${money(row.statement_minor_units, row.currency, true)}`
-                            : "Not a configured card"}
-                        </Text>
-                      </SimpleGrid>
-                      <Text size="xs" c="dimmed">
-                        Plaid name: {row.name} · merchant: {row.merchant_name || "Unknown"} · category:{" "}
-                        {row.pfc_detailed || row.pfc_primary || "Unknown"} · merchant category code:{" "}
-                        {row.merchant_category_code || "Unknown"}
-                      </Text>
-                    </Stack>
-                  </Accordion.Panel>
-                </Accordion.Item>
-              );
-            })}
-          </Accordion>
+                        <Stack gap={2} align="flex-end" style={{ flexShrink: 0 }}>
+                          <Text fw={700} size="sm">
+                            {money(row.amount_minor_units, row.currency, true)}
+                          </Text>
+                          <Text size="xs" c="dimmed">
+                            Allowance{" "}
+                            {row.allowance_minor_units === 0 ? "—" : money(row.allowance_minor_units, currency, true)}
+                          </Text>
+                        </Stack>
+                      </Group>
+                    </Accordion.Control>
+                    <Accordion.Panel>
+                      <TransactionDetails row={row} currency={currency} onShowRule={onShowRule} />
+                    </Accordion.Panel>
+                  </Accordion.Item>
+                );
+              })}
+            </Accordion>
+          </Box>
         </>
       )}
     </Stack>
