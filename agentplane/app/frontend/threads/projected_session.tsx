@@ -473,8 +473,13 @@ function VirtualizedHistory({
         ? rows.find((row) => row.entities[0].cursor.toString() === anchorRowElement.dataset.threadAnchor)
         : undefined;
       const clickedHeading = clickedTarget?.closest<HTMLElement>(".agentplane-disclosure-heading");
+      const stickyTop = clickedHeading ? Number.parseFloat(getComputedStyle(clickedHeading).top) : Number.NaN;
+      const headingOffset = clickedHeading ? clickedHeading.getBoundingClientRect().top - viewportTop : Number.NaN;
+      const clickedHeadingIsSticky = Number.isFinite(stickyTop) && Math.abs(headingOffset - stickyTop) <= 2;
       const anchorTarget =
-        clickedTarget && clickedRow?.contains(clickedTarget) && clickedHeading ? clickedTarget : anchorRowElement;
+        clickedTarget && clickedRow?.contains(clickedTarget) && clickedHeadingIsSticky
+          ? clickedTarget
+          : anchorRowElement;
       if (anchorRowElement && anchorRow && anchorTarget) {
         const anchor = {
           key: rowKey(anchorRow),
@@ -482,7 +487,7 @@ function VirtualizedHistory({
           ...(anchorTarget !== anchorRowElement ? { target: anchorTarget } : {}),
         };
         readingAnchor.current = anchor;
-        if (clickedTarget) stickyAnchorPending.current = clickedHeading ? anchor.key : null;
+        if (clickedTarget) stickyAnchorPending.current = clickedHeadingIsSticky ? anchor.key : null;
         historyTrace.record({ kind: "anchor", key: anchor.key, offset: anchor.offset });
       }
     },
