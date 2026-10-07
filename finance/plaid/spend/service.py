@@ -32,6 +32,10 @@ logger = logging.getLogger(__name__)
 
 _CHANNEL = "plaid_spend_changed"
 _CARD_PAYMENT_CATEGORY = "LOAN_PAYMENTS_CREDIT_CARD_PAYMENT"
+_COUNTERPARTIES_COLUMN = (
+    "CASE WHEN jsonb_typeof(t.raw_json->'counterparties') = 'array' "
+    "THEN (t.raw_json->'counterparties')::text ELSE '[]' END AS counterparties"
+)
 
 
 class SpendService:
@@ -196,12 +200,7 @@ class SpendService:
             if counted_accounts:
                 first_cycle_start = min(cycle_starts[row["account_id"]] for row in counted_accounts)
                 raw_column = "t.raw_json," if transaction_details is not None else ""
-                counterparties_column = (
-                    """CASE WHEN jsonb_typeof(t.raw_json->'counterparties') = 'array'
-                              THEN (t.raw_json->'counterparties')::text ELSE '[]' END AS counterparties,"""
-                    if transaction_details is not None
-                    else ""
-                )
+                counterparties_column = f"{_COUNTERPARTIES_COLUMN}," if transaction_details is not None else ""
                 transaction_rows = await connection.fetch(
                     f"""
                     SELECT t.account_id, t.transaction_id, t.date, t.amount, t.pending,
@@ -524,8 +523,7 @@ class SpendService:
                               {raw_column}
                               a.type AS account_type,
                               t.raw_json->>'merchant_category_code' AS merchant_category_code,
-                              CASE WHEN jsonb_typeof(t.raw_json->'counterparties') = 'array'
-                                   THEN (t.raw_json->'counterparties')::text ELSE '[]' END AS counterparties,
+                              {_COUNTERPARTIES_COLUMN},
                               COALESCE(t.iso_currency_code, t.raw_json->>'unofficial_currency_code') AS currency
                        FROM public.transactions t
                        JOIN public.accounts a ON a.account_id = t.account_id AND a.item_id = t.item_id
