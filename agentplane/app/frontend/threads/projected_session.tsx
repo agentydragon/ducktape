@@ -704,7 +704,9 @@ function VirtualizedHistory({
       onClick={revealEvidenceOnTap}
       onScroll={(event) => {
         const element = event.currentTarget;
-        if (element.scrollTop !== clickedAt.current) clickedAt.current = null;
+        // A disclosure's anchor restoration can emit scroll after the click handler ends. Keep
+        // the click guard through those programmatic corrections; only a later user gesture clears it.
+        if (captureNextScroll.current && element.scrollTop !== clickedAt.current) clickedAt.current = null;
         const followed = followPreviousBottom(element);
         recentBottoms.current = [element.scrollHeight - element.clientHeight];
         historyTrace.record({

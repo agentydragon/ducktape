@@ -1332,6 +1332,7 @@ async def test_opening_a_call_and_its_output_keeps_it_collapsible_while_reading(
     )
     await page.screenshot(path=undeclared_outputs_dir() / f"{request.node.name}-output-open.png")
     await collapse.click()
+    await expect(history).to_have_attribute("data-scroll-mode", "reading")
     await expect(collapse).to_have_attribute("aria-expanded", "false")
     await expect(output_line).to_be_hidden()
     await expect(call.locator(".agentplane-disclosure-summary").first).to_have_attribute("aria-expanded", "true")
