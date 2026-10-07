@@ -45,6 +45,7 @@ py_test(
     tags = ["visual"],
     deps = [
         "//:conftest",
+        "//finance/plaid/spend:allowance",
         "//finance/plaid/spend:conftest",
         "//finance/plaid/spend:models",
         "//util:playwright",

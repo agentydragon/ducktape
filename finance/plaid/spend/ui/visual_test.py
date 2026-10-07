@@ -9,6 +9,7 @@ from __future__ import annotations
 import asyncio
 import json
 from collections.abc import AsyncIterator, Iterator
+from datetime import date
 from pathlib import Path
 from typing import Any
 
@@ -19,7 +20,8 @@ from fastapi.responses import FileResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from playwright.async_api import Page, Route
 
-from finance.plaid.spend.models import SpendConfigurationView
+from finance.plaid.spend.allowance import AllOf, AmountSign, AnyOf, FieldExact, Kind, NamePrefix, Rule
+from finance.plaid.spend.models import AllowanceConfigurationView, CardConfigurationView, SpendConfigurationView
 from util.bazel.runfiles import get_required_path
 from util.testing.asgi import serve_app_sync
 from util.testing.visual_review import retain_review_asset
@@ -142,44 +144,37 @@ def dashboard_url() -> Iterator[str]:
 
     @app.get("/api/v1/web/configuration", response_model=SpendConfigurationView)
     def configuration() -> SpendConfigurationView:
-        return SpendConfigurationView.model_validate(
-            {
-                "cards": [
-                    {
-                        "label": "Example card",
-                        "enabled": True,
-                        "limit_minor_units": None,
-                        "alert_threshold_percent": None,
-                    }
+        return SpendConfigurationView(
+            cards=[
+                CardConfigurationView(
+                    label="Example card", enabled=True, limit_minor_units=None, alert_threshold_percent=None
+                )
+            ],
+            allowance=AllowanceConfigurationView(
+                monthly_minor_units=70000,
+                activation_at=date(2026, 10, 1),
+                currency="USD",
+                spending_account_count=1,
+                max_sync_age_hours=72,
+                rules=[
+                    Rule(
+                        condition=AllOf(
+                            conditions=[
+                                AmountSign(sign="negative"),
+                                AnyOf(
+                                    conditions=[
+                                        NamePrefix(field="name", prefix="EXAMPLE"),
+                                        FieldExact(field="mcc", value="5812"),
+                                    ]
+                                ),
+                            ]
+                        ),
+                        kind=Kind.REVIEW,
+                        analysis_category="refund_review",
+                        description="Unverified credit; inspect the earlier purchase before netting it.",
+                    )
                 ],
-                "allowance": {
-                    "monthly_minor_units": 70000,
-                    "activation_at": "2026-10-01",
-                    "currency": "USD",
-                    "spending_account_count": 1,
-                    "max_sync_age_hours": 72,
-                    "rules": [
-                        {
-                            "condition": {
-                                "type": "all_of",
-                                "conditions": [
-                                    {"type": "amount_sign", "sign": "negative"},
-                                    {
-                                        "type": "any_of",
-                                        "conditions": [
-                                            {"type": "name_prefix", "field": "name", "prefix": "EXAMPLE"},
-                                            {"type": "field_exact", "field": "mcc", "value": "5812"},
-                                        ],
-                                    },
-                                ],
-                            },
-                            "kind": "review",
-                            "analysis_category": "refund_review",
-                            "description": "Unverified credit; inspect the earlier purchase before netting it.",
-                        }
-                    ],
-                },
-            }
+            ),
         )
 
     app.mount("/static", StaticFiles(directory=_UI_DIR))
