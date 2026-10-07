@@ -481,8 +481,16 @@ function ruleConditionText(condition: RuleCondition): string {
       return `${condition.field} equals ${condition.value}`;
     case "amount_exact":
       return `Amount equals ${condition.value} USD`;
+    case "amount_sign":
+      return `Amount is ${condition.sign}`;
+    case "field_exact":
+      return `${condition.field} equals ${String(condition.value)}`;
+    case "any_of":
+      return condition.conditions.map(ruleConditionText).join(" OR ");
     case "all_of":
-      return condition.conditions.map(ruleConditionText).join(" AND ");
+      return condition.conditions
+        .map((part) => (part.type === "any_of" ? `(${ruleConditionText(part)})` : ruleConditionText(part)))
+        .join(" AND ");
   }
 }
 
@@ -547,8 +555,21 @@ function ConfigurationPanel({
                   <Stack gap="xs">
                     {allowance.rules.map((rule, index) => {
                       const kind =
-                        rule.kind === "fixed" ? "Mandatory" : rule.kind === "excluded" ? "Excluded" : "Flexible";
-                      const color = rule.kind === "fixed" ? "blue" : rule.kind === "excluded" ? "gray" : "teal";
+                        rule.kind === "fixed"
+                          ? "Mandatory"
+                          : rule.kind === "excluded"
+                            ? "Excluded"
+                            : rule.kind === "review"
+                              ? "Review"
+                              : "Flexible";
+                      const color =
+                        rule.kind === "fixed"
+                          ? "blue"
+                          : rule.kind === "excluded"
+                            ? "gray"
+                            : rule.kind === "review"
+                              ? "orange"
+                              : "teal";
                       return (
                         <Paper key={`${rule.kind}-${index}`} withBorder radius="md" p="sm">
                           <Group align="flex-start" gap="sm" wrap="nowrap">
