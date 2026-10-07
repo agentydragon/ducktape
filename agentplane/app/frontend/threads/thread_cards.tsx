@@ -757,12 +757,6 @@ export function CollapsibleCard({
       data-open={open}
       data-stable-inline-size={stableInlineSize || undefined}
       withBorder={open && !stableInlineSize}
-      style={{
-        position: "relative",
-        ...(stableInlineSize && {
-          boxShadow: open ? "inset 0 0 0 1px var(--mantine-color-default-border)" : undefined,
-        }),
-      }}
     >
       {children}
     </Paper>

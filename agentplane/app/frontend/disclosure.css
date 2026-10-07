@@ -11,6 +11,7 @@
 /* The card and its first control share an edge. Keep the control itself clickable through the
    card's padding, rather than painting a larger hover area around a smaller hit target. */
 .agentplane-collapsible-card {
+  position: relative;
   --agentplane-card-padding-inline: var(--mantine-spacing-xs);
   --agentplane-card-padding-block: var(--mantine-spacing-xs);
   padding-inline: var(--agentplane-card-padding-inline);
@@ -23,11 +24,16 @@
 }
 
 .agentplane-collapsible-card[data-stable-inline-size] {
-  --agentplane-card-padding-inline: var(--mantine-spacing-xs);
+  /* Reserve the border inside the existing padding budget, keeping both the content width and
+     the border stable while the heading paints to its edge. An inset shadow is covered by it. */
+  --agentplane-card-padding-inline: calc(var(--mantine-spacing-xs) - 1px);
+  --agentplane-card-padding-block: 1px;
+  border: 1px solid transparent;
 }
 
-.agentplane-collapsible-card[data-stable-inline-size][data-open="false"] {
-  --agentplane-card-padding-block: 2px;
+.agentplane-collapsible-card[data-stable-inline-size][data-open="true"] {
+  --agentplane-card-padding-block: calc(var(--mantine-spacing-sm) - 1px);
+  border-color: var(--mantine-color-default-border);
 }
 
 .agentplane-collapsible-card > .agentplane-disclosure,
