@@ -281,6 +281,7 @@ function VirtualizedHistory({
   // Keep a nested sticky row rendered while collapsing it can shrink the row out of the
   // virtual window. A later scroll gesture releases it.
   const [stickyAnchorKey, setStickyAnchorKey] = useState<string | null>(null);
+  const [stickyAnchorRevision, setStickyAnchorRevision] = useState(0);
   // Widened around a just-landed older page so every one of its rows mounts and measures in the
   // same pass, rather than progressively as scrolling reveals more of it -- each of *those* later
   // corrections is itself a visible, uncalled-for jump (see restoreAnchor/restoringScroll below).
@@ -475,12 +476,34 @@ function VirtualizedHistory({
           ...(anchorTarget !== anchorRowElement ? { target: anchorTarget } : {}),
         };
         readingAnchor.current = anchor;
-        if (clickedTarget) setStickyAnchorKey(clickedHeadingIsSticky ? anchor.key : null);
+        if (clickedTarget) {
+          setStickyAnchorKey(clickedHeadingIsSticky ? anchor.key : null);
+          if (clickedHeadingIsSticky) setStickyAnchorRevision((revision) => revision + 1);
+        }
         historyTrace.record({ kind: "anchor", key: anchor.key, offset: anchor.offset });
       }
     },
     [rows]
   );
+  useLayoutEffect(() => {
+    const anchor = readingAnchor.current;
+    const element = viewport.current;
+    const target = anchor?.target;
+    if (!anchor || anchor.key !== stickyAnchorKey || !element || !target?.isConnected) return;
+
+    // A nested disclosure can shrink its containing virtual row past the scroll position. Restore
+    // its sticky control in this commit, before the browser paints it clamped by that row's bottom.
+    cancelRestoration();
+    restoringAnchor.current = anchor.key;
+    const correction = target.getBoundingClientRect().top - element.getBoundingClientRect().top - anchor.offset;
+    element.scrollTop += correction;
+    restorationFrame.current = requestAnimationFrame(() => {
+      if (restoringAnchor.current === anchor.key) restoringAnchor.current = null;
+      restorationFrame.current = null;
+      publishMode();
+    });
+    publishMode();
+  }, [cancelRestoration, publishMode, stickyAnchorKey, stickyAnchorRevision]);
   const restoreAnchor = useEffectEvent((anchor: ReadingAnchor, awaitMeasurement = false) => {
     const index = anchorIndex(anchor.key);
     if (index < 0) return;
