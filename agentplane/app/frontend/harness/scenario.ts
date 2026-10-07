@@ -43,29 +43,14 @@ export interface Scenario {
    * whose sandbox the stale inventory lacks, it cannot say the sandbox was deleted.
    */
   wedgedWatch?: boolean;
-  /** Preselect an existing connection and service account: the reconnect review's opening state. */
-  preselectReconnect?: boolean;
-  /** Click the nav's Settings button once it mounts: the modal has no route of its own. */
-  openSettings?: boolean;
-  /** Flip every Raw switch as it mounts: no URL param toggles one. */
-  openRaw?: boolean;
-  /** Flip the sidebar's "Show archived" switch once it mounts: no URL param toggles it. */
-  showArchived?: boolean;
   /** Show failed Kubernetes grant provisioning in the Sandbox status summary. */
   grantError?: boolean;
   /** Show live pending Actions in the shell and thread composer. */
   pendingActions?: boolean;
-  /** Click the inline approval prompt's Review button once it mounts. */
-  openActionReview?: boolean;
   /** Make the SSH command taller than the inline review and scroll to its decisions. */
   longPendingAction?: boolean;
-  scrollActionReview?: boolean;
-  /** Assert phone composer controls and the topbar dot fit before capture. */
-  checkComposerControls?: boolean;
   /** Render a bounded first history page with a Load more control. */
   historyPaged?: boolean;
-  /** Click the phone-width hamburger once it mounts: the sidebar drawer has no route of its own. */
-  openMobileSidebar?: boolean;
   threadlessSandbox?: boolean;
   /** `disconnected` drops the sidebar's own stream after its first snapshot; `database-disconnected`
    * keeps it up but reports the server's database feed down. */
@@ -76,8 +61,6 @@ export interface Scenario {
   /** How long, in ms, the streams this scenario drops have been down when it renders. Without it
    * they have only just dropped, which shows nothing. */
   outageAge?: number;
-  /** Focus the sidebar's connection indicator once it shows, which opens its tooltip. */
-  openConnectionStatus?: boolean;
   /** Exercise the production scope and Electric shape synchronization boundary. `unavailable`
    * is a persistent initial service failure, unlike a retired epoch, whose 410 triggers a refresh;
    * `reconnecting` fails every live read of the thread's rows once they have loaded, which
@@ -92,28 +75,11 @@ export interface Scenario {
    * lost) still stands alone and breaks the group around it. */
   lifecycleGroup?: boolean;
   threadSetup?: boolean;
-  openSetup?: boolean;
-  /** Open the chronological archive drawer, the native-frame inspection surface. The projected
-   * view has no raw-event URL mode: its semantic entities stay identical while the drawer shows
-   * archive rows. */
-  openDebug?: "latest" | "stderr";
-  /** Open the composer's overflow "More" menu and leave it open, showing the thread id label
-   * alongside "Debug history" / "Shut down harness". */
-  openMoreMenu?: boolean;
-  /** Open the tool-call run once it mounts, then the reasoning step folded inside it. */
-  openReasoning?: boolean;
-  /** Open the folded tool-call run once it mounts, leaving the lines inside it as they are. */
-  openRun?: boolean;
   /** Shell tool calls as Claude and Codex record them, with a script and an output past their caps:
    * the model's description for Claude's Bash, the script without its `bash -lc` wrapper for Codex,
    * and a call still streaming its arguments. Opened, each is capped in height with its clipped
    * bottom to click for the rest. */
   shellCalls?: boolean;
-  /** Click the Evidence icon of the row at this thread anchor once it mounts: which rows show
-   * their evidence is not in the URL. The icon takes no space and shows on demand: under the
-   * pointer on a desktop (the sweep's `hover`), hung in the gutter beside the user's bubble and in
-   * the corner of a reply; on a touch screen (`tap`), once tapped. */
-  openEvidence?: string;
   /** One assistant message containing a fenced code block, rendered by the shared code widget. */
   markdownCodeFence?: boolean;
   /** Put bidi, zero-width, and control characters in SSH arguments and output for marker review:
@@ -126,8 +92,8 @@ export interface Scenario {
    * say its layout has come to rest. */
   streamingInterleaved?: boolean;
   /** A reasoning step with no neighboring tool call, so `historyRows` never folds it into a run and
-   * `EntityCard` renders it directly -- the standalone case, distinct from `openReasoning`'s
-   * reasoning-nested-inside-a-run-card one. Collapsed it reads as one plain dimmed line with no card
+   * `EntityCard` renders it directly -- the standalone case, distinct from reasoning nested inside
+   * a tool-run card. Collapsed it reads as one plain dimmed line with no card
    * chrome, like a collapsed run; opened it gets the card chrome (padding, border). */
   standaloneReasoning?: boolean;
   /** Put a fenced Python block in the standalone reasoning step to exercise its folded preview. */
@@ -148,7 +114,6 @@ export interface Scenario {
    * without the groups each result shows as its stored JSON. */
   actionGroupsUnavailable?: boolean;
   recovery?: "messages" | "tools" | "quiet";
-  openRecoveryDetails?: boolean;
   /** The idle thread's history ends in a failed turn, before or after the assistant's content. The
    * thread is named for it and carries it as its last completed turn, so its status mark is the turn
    * error's, in the sidebar and the topbar. */

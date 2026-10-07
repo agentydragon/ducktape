@@ -43,7 +43,6 @@ inventing a taller viewport to fit more content. Explicit resizing belongs in te
 
 If a state you changed isn't exercised by any existing scenario/fixture (`harness/harness.tsx`), add
 one rather than skipping the check — see `session_states` for the pattern (a fixture built
-specifically to exercise states the main fixture doesn't produce). Put interaction behavior in
-`test_visual_interactions.py`; the TypeScript harness owns fixture data and mounting. Some older
-scenes still use harness switches for clicks (`openReasoning`, `openEvidence`, `openDebug`, …);
-do not add another switch for an interaction that Playwright can perform.
+specifically to exercise states the main fixture doesn't produce). Put interaction behavior and
+readiness assertions in a named test in `test_visual_interactions.py`; the TypeScript harness owns
+fixture data and mounting. Do not add scene switches that click, focus, scroll, or inspect the DOM.
