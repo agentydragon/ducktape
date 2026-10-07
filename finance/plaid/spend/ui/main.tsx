@@ -101,7 +101,7 @@ function cardTitle(card: CardView): string {
 function spendPeriod(allowance: Allowance, periodId: AllowancePeriodId) {
   return allowance.spend_periods.find((report) => report.period.id === periodId);
 }
-function pacePeriod(allowance: Allowance, periodId: "rolling_7d" | "rolling_30d") {
+function pacePeriod(allowance: Allowance, periodId: AllowancePeriodId) {
   return allowance.recorded_pace_periods.find((report) => report.period.id === periodId);
 }
 type Signal = "normal" | "warning" | "exceeded";
@@ -263,9 +263,7 @@ function AllowancePanel({
     ? (allowance.spending_signal as Signal)
     : null;
   const cycleSpend = spendPeriod(allowance, "credit_cycle");
-  const estimatePeriodId: EstimatePeriodId =
-    allowance.forecast.basis_period.id === "rolling_30d" ? "rolling_30d" : "rolling_7d";
-  const selectedPace = pacePeriod(allowance, estimatePeriodId);
+  const selectedPace = pacePeriod(allowance, allowance.forecast.basis_period.id);
   const historyPeriods = [
     { id: "rolling_7d", label: "LAST 7 DAYS" },
     { id: "rolling_30d", label: "LAST 30 DAYS" },
@@ -329,11 +327,10 @@ function AllowancePanel({
               </Text>
             )}
             <Divider />
-            <Text size="sm" fw={700}>
-              Recorded flexible spending pace
-            </Text>
             <Group justify="space-between" gap="sm">
-              <Text size="sm">{estimatePeriodId === "rolling_7d" ? "7 days" : "30 days"}</Text>
+              <Text size="sm" fw={700}>
+                Recorded flexible spending pace
+              </Text>
               <Text size="sm" fw={700}>
                 {selectedPace?.observed_daily_minor_units == null ? (
                   "Warming up"
