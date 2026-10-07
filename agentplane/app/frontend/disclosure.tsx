@@ -55,7 +55,7 @@ function childStackPosition(parent: StickyStackPosition, rowHeight: number): Sti
   return {
     top: parent.top + rowHeight,
     zIndex: parent.zIndex - 1,
-    dividerBleed: "calc(var(--mantine-spacing-sm) + var(--mantine-spacing-md))",
+    dividerBleed: "calc(var(--agentplane-card-padding-inline, var(--mantine-spacing-sm)) + var(--mantine-spacing-md))",
   };
 }
 
