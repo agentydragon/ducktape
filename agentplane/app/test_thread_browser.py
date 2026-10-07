@@ -655,6 +655,9 @@ async def test_chronological_debug_is_lazy_paged_and_keeps_the_thread(
         record = dialog.locator(f'[data-debug-observation="{entry.cursor}"]')
         await record.locator(".agentplane-disclosure-summary").click()
         frame = record.locator(".agentplane-code-block")
+        code_or_placeholder = record.locator(".agentplane-code-block-placeholder, .agentplane-code-block")
+        await expect(code_or_placeholder).to_be_visible()
+        await code_or_placeholder.scroll_into_view_if_needed()
         await expect(frame).to_be_visible()
         assert json_format.Parse(await frame.inner_text(), event_log_pb2.EventEntry()) == entry
         assert any(url.endswith(f"/observations/{entry.cursor}") for url in requests)
@@ -1331,8 +1334,14 @@ async def test_opening_a_call_and_its_output_keeps_it_collapsible_while_reading(
         f"a parent heading obscured the output Disclosure control: {active_sticky_action}"
     )
     await page.screenshot(path=undeclared_outputs_dir() / f"{request.node.name}-output-open.png")
-    async with holding_still(page, collapse):
+    # At the true tail, collapsing a long block can shorten the history below its current scrollTop.
+    # The browser must clamp to the new bottom; pixel-stable anchoring is asserted mid-thread, where
+    # the history has room to preserve the clicked heading's position.
+    if following:
         await collapse.click()
+    else:
+        async with holding_still(page, collapse):
+            await collapse.click()
     await expect(history).to_have_attribute("data-scroll-mode", "reading")
     await expect(collapse).to_have_attribute("aria-expanded", "false")
     await expect(output_line).to_be_hidden()
