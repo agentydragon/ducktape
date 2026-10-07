@@ -32,17 +32,25 @@ import "@mantine/core/styles.css";
 import "./styles.css";
 import type { components } from "./api/schema";
 
-type Windows = components["schemas"]["Windows"];
 type Allowance = components["schemas"]["AllowanceView"];
 type CardView = components["schemas"]["CardView"];
 type View = components["schemas"]["SpendView"];
 type SpendConfiguration = components["schemas"]["SpendConfigurationView"];
 type TransactionsView = components["schemas"]["SpendTransactionsView"];
 type TransactionRow = components["schemas"]["SpendTransactionRow"];
-type TransactionWindow = TransactionsView["window"];
+type TransactionPeriodId = TransactionsView["requested_period_id"];
+type AllowancePeriodId = components["schemas"]["Period"]["id"];
 type RuleCondition = components["schemas"]["Rule"]["condition"];
 type RuleKind = components["schemas"]["Rule"]["kind"];
 type SpendTab = "spending" | "transactions" | "configuration";
+
+const periodLabels = {
+  credit_cycle: "Credit cycle",
+  calendar_month: "Calendar month",
+  year_to_date: "Year to date",
+  rolling_7d: "Last 7 days",
+  rolling_30d: "Last 30 days",
+} satisfies Record<AllowancePeriodId, string>;
 
 function tabForHash(hash: string): SpendTab {
   if (hash === "#/transactions") return "transactions";
@@ -89,6 +97,12 @@ function time(value: string | null | undefined): string {
 function cardTitle(card: CardView): string {
   return `${card.label || card.account_name || "Card"}${card.mask ? ` ···· ${card.mask}` : ""}`;
 }
+function spendPeriod(allowance: Allowance, periodId: AllowancePeriodId) {
+  return allowance.spend_periods.find((report) => report.period.id === periodId);
+}
+function pacePeriod(allowance: Allowance, periodId: "rolling_7d" | "rolling_30d") {
+  return allowance.recorded_pace_periods.find((report) => report.period.id === periodId);
+}
 type Signal = "normal" | "warning" | "exceeded";
 
 function signalFor(available: number, projected: number): Signal {
@@ -126,7 +140,7 @@ function PurchaseCheck({ allowance }: { allowance: Allowance }) {
   const cents = typeof purchase === "number" ? Math.round(purchase * 100) : NaN;
   const valid = typeof purchase === "number" && purchase >= 0 && Number.isSafeInteger(cents);
   const available = allowance.available_minor_units;
-  const projected = allowance.projected_cycle_end_minor_units;
+  const projected = allowance.forecast.projected_cycle_end_minor_units;
   const after = valid && available != null ? available - cents : null;
   const projectedAfter = valid && projected != null ? projected - cents : null;
   const signal =
@@ -228,11 +242,18 @@ function AllowancePanel({ allowance }: { allowance: Allowance }) {
   }
   const m = (value: number | null | undefined) => <Money value={value} currency={allowance.currency} />;
   const available = allowance.available_minor_units;
-  const projected = allowance.projected_cycle_end_minor_units;
+  const projected = allowance.forecast.projected_cycle_end_minor_units;
   const signal = ["normal", "warning", "exceeded"].includes(allowance.spending_signal)
     ? (allowance.spending_signal as Signal)
     : null;
-  const windows = allowance.windows_minor_units;
+  const cycleSpend = spendPeriod(allowance, "credit_cycle");
+  const weeklyPace = pacePeriod(allowance, "rolling_7d");
+  const historyPeriods = [
+    { id: "rolling_7d", label: "LAST 7 DAYS" },
+    { id: "rolling_30d", label: "LAST 30 DAYS" },
+    { id: "calendar_month", label: "CALENDAR MONTH" },
+    { id: "year_to_date", label: "THIS YEAR" },
+  ] as const;
 
   return (
     <Stack gap="lg">
@@ -293,26 +314,21 @@ function AllowancePanel({ allowance }: { allowance: Allowance }) {
             <Text size="sm" fw={700}>
               Recorded flexible spending pace
             </Text>
-            <Group justify="space-between" gap="sm">
-              <Text size="sm">7 days</Text>
-              <Text size="sm" fw={700}>
-                {allowance.trailing_7_observed_daily_minor_units == null ? (
-                  "Warming up"
-                ) : (
-                  <>{m(allowance.trailing_7_observed_daily_minor_units)} / day</>
-                )}
-              </Text>
-            </Group>
-            <Group justify="space-between" gap="sm">
-              <Text size="sm">30 days</Text>
-              <Text size="sm" fw={700}>
-                {allowance.trailing_30_observed_daily_minor_units == null ? (
-                  "Warming up"
-                ) : (
-                  <>{m(allowance.trailing_30_observed_daily_minor_units)} / day</>
-                )}
-              </Text>
-            </Group>
+            {(["rolling_7d", "rolling_30d"] as const).map((periodId) => {
+              const report = pacePeriod(allowance, periodId);
+              return (
+                <Group justify="space-between" gap="sm" key={periodId}>
+                  <Text size="sm">{periodId === "rolling_7d" ? "7 days" : "30 days"}</Text>
+                  <Text size="sm" fw={700}>
+                    {report?.observed_daily_minor_units == null ? (
+                      "Warming up"
+                    ) : (
+                      <>{m(report.observed_daily_minor_units)} / day</>
+                    )}
+                  </Text>
+                </Group>
+              );
+            })}
             <Text size="sm" c="dimmed">
               Provisional leash ~{m(Math.round((allowance.monthly_minor_units * 12) / 365.2425))} / day. This is
               spending capacity, not a sustainability target.
@@ -321,32 +337,32 @@ function AllowancePanel({ allowance }: { allowance: Allowance }) {
               Positive recorded purchases, including history before activation; unmatched purchases count as flexible.
               Earlier purchases inform pace but do not reduce available allowance. Plaid data may lag.
             </Text>
-            {allowance.trailing_7_unmatched_count != null && allowance.trailing_7_unmatched_count > 0 && (
+            {weeklyPace?.unmatched_charges && weeklyPace.unmatched_charges.count > 0 && (
               <Text size="xs" c="dimmed">
-                7d unmatched {allowance.trailing_7_unmatched_count} ({m(allowance.trailing_7_unmatched_minor_units)}) ·
-                counted as flexible.
+                7d unmatched {weeklyPace.unmatched_charges.count} ({m(weeklyPace.unmatched_charges.amount_minor_units)})
+                · counted as flexible.
               </Text>
             )}
             <Divider />
             <Group justify="space-between" gap="sm">
-              <Text size="sm">Pace used for estimate</Text>
+              <Text size="sm">Pace used for estimate ({periodLabels[allowance.forecast.basis_period.id]})</Text>
               <Text size="sm" fw={700}>
-                {allowance.trailing_7_daily_minor_units == null ? (
+                {allowance.forecast.daily_pace_minor_units == null ? (
                   "Warming up"
                 ) : (
-                  <>{m(allowance.trailing_7_daily_minor_units)} / day</>
+                  <>{m(allowance.forecast.daily_pace_minor_units)} / day</>
                 )}
               </Text>
             </Group>
             <Text size="xs" c="dimmed">
-              Uses positive flexible purchases over the last seven days, including before the allowance began; early
+              Uses positive flexible purchases in the selected period, including before the allowance began; early
               post-start bursts can increase the pace. Earlier purchases inform the estimate but do not reduce your
               available balance. Plaid data may lag.
             </Text>
-            {allowance.estimated_exhaustion_at && (
+            {allowance.forecast.estimated_exhaustion_at && (
               <Text size="sm">
                 Without future credits, this pace would use up the cushion around{" "}
-                <strong>{time(allowance.estimated_exhaustion_at)}</strong>.
+                <strong>{time(allowance.forecast.estimated_exhaustion_at)}</strong>.
               </Text>
             )}
           </Stack>
@@ -382,7 +398,7 @@ function AllowancePanel({ allowance }: { allowance: Allowance }) {
                 <Group justify="space-between" gap="sm">
                   <Text size="sm">Spent this cycle</Text>
                   <Text size="sm" fw={700}>
-                    - {m(windows?.current_credit_cycle_minor_units)}
+                    - {m(cycleSpend?.spend_minor_units)}
                   </Text>
                 </Group>
               </Stack>
@@ -418,22 +434,17 @@ function AllowancePanel({ allowance }: { allowance: Allowance }) {
                 all credits since activation, less posted and pending flexible spending.
               </Text>
               <SimpleGrid cols={{ base: 2, sm: 4 }} spacing="lg">
-                <Metric
-                  label="LAST 7 DAYS"
-                  value={m(windows?.trailing_7_days_minor_units)}
-                  detail="Since allowance start"
-                />
-                <Metric
-                  label="LAST 30 DAYS"
-                  value={m(windows?.trailing_30_days_minor_units)}
-                  detail="Since allowance start"
-                />
-                <Metric
-                  label="CALENDAR MONTH"
-                  value={m(windows?.calendar_month_minor_units)}
-                  detail="Since activation"
-                />
-                <Metric label="THIS YEAR" value={m(windows?.year_to_date_minor_units)} detail="Since activation" />
+                {historyPeriods.map(({ id, label }) => {
+                  const report = spendPeriod(allowance, id);
+                  return (
+                    <Metric
+                      key={id}
+                      label={label}
+                      value={m(report?.spend_minor_units)}
+                      detail={report ? `Counted from ${report.counted_from}` : undefined}
+                    />
+                  );
+                })}
               </SimpleGrid>
               <Text size="sm" c="dimmed">
                 {m(allowance.unmatched_refunds_minor_units)} of unlinked refunds are excluded from the balance. Oldest
@@ -453,7 +464,7 @@ function SpendCard({ card }: { card: CardView }) {
       ? "Limit exceeded"
       : card.alert_state === "warning"
         ? "Near limit"
-        : !card.statement_available && card.cycle_start
+        : card.statement_period.kind === "provisional"
           ? "First statement pending"
           : card.alert_state === "unavailable"
             ? "Unavailable"
@@ -479,7 +490,7 @@ function SpendCard({ card }: { card: CardView }) {
           <Money value={card.spend_minor_units} currency={card.currency} />
         </Text>
         <Text size="sm" c="dimmed">
-          {card.statement_available ? (
+          {card.statement_period.kind === "statement" ? (
             <>
               This statement
               {card.limit_minor_units != null && (
@@ -489,8 +500,8 @@ function SpendCard({ card }: { card: CardView }) {
                 </>
               )}
             </>
-          ) : card.cycle_start ? (
-            `Provisional card total since ${card.cycle_start}; statement date not yet reported. Includes purchases outside the allowance.`
+          ) : card.statement_period.kind === "provisional" ? (
+            `Provisional card total since ${card.statement_period.start}; statement date not yet reported. Includes purchases outside the allowance.`
           ) : (
             "Statement data unavailable"
           )}
@@ -573,7 +584,7 @@ function ConfigurationPanel({
                 <Title id="configuration-allowance-title" order={3} size="h4">
                   Flexible allowance policy
                 </Title>
-                <SimpleGrid cols={{ base: 1, sm: 2, md: 4 }} spacing="md">
+                <SimpleGrid cols={{ base: 1, sm: 2, md: 5 }} spacing="md">
                   <Metric
                     label="MONTHLY ALLOWANCE"
                     value={<Money value={allowance.monthly_minor_units} currency={allowance.currency} />}
@@ -581,6 +592,7 @@ function ConfigurationPanel({
                   <Metric label="START DATE" value={allowance.activation_at} />
                   <Metric label="ACCOUNTS IN SCOPE" value={allowance.spending_account_count} />
                   <Metric label="MAX SYNC AGE" value={`${allowance.max_sync_age_hours} hours`} />
+                  <Metric label="FORECAST BASIS" value={periodLabels[allowance.forecast_basis_period_id]} />
                 </SimpleGrid>
                 <Divider />
                 <div>
@@ -895,8 +907,11 @@ function TransactionDetails({ row, currency }: { row: TransactionRow; currency: 
         <Text size="sm">
           Allowance balance effect: {m(row.allowance_minor_units === 0 ? 0 : -row.allowance_minor_units)}
         </Text>
-        <Text size="sm">7-day pace input: {m(row.trailing_7_pace_minor_units)}</Text>
-        <Text size="sm">30-day pace input: {m(row.trailing_30_pace_minor_units)}</Text>
+        {row.pace_effects.map((effect) => (
+          <Text size="sm" key={effect.period_id}>
+            {periodLabels[effect.period_id]} pace input: {m(effect.amount_minor_units)}
+          </Text>
+        ))}
         <Text size="sm">
           Card statement:{" "}
           {row.statement_reason
@@ -941,14 +956,14 @@ function TransactionsPanel({
   transactions,
   loading,
   error,
-  window,
-  onWindowChange,
+  periodId,
+  onPeriodChange,
 }: {
   transactions: TransactionsView | null;
   loading: boolean;
   error: string | null;
-  window: TransactionWindow;
-  onWindowChange: (window: TransactionWindow) => void;
+  periodId: TransactionPeriodId;
+  onPeriodChange: (periodId: TransactionPeriodId) => void;
 }) {
   const [filter, setFilter] = useState<"all" | "review" | "effect">("all");
   const [expandedRow, setExpandedRow] = useState<number | null>(null);
@@ -961,8 +976,6 @@ function TransactionsPanel({
   const allowance = transactions?.allowance;
   const currency = allowance?.currency ?? "USD";
   const m = (value: number | null | undefined) => <Money value={value} currency={currency} />;
-  const reviewRows = rows.filter(isReviewRow);
-  const netAllowance = rows.reduce((sum, row) => sum + row.allowance_minor_units, 0);
 
   return (
     <Stack gap="lg">
@@ -983,12 +996,12 @@ function TransactionsPanel({
       <Group justify="space-between" align="end" gap="md">
         <SegmentedControl
           aria-label="Transaction period"
-          value={window}
-          onChange={(value) => onWindowChange(value as TransactionWindow)}
+          value={periodId}
+          onChange={(value) => onPeriodChange(value as TransactionPeriodId)}
           data={[
-            { label: "7 days", value: "7d" },
-            { label: "30 days", value: "30d" },
-            { label: "Credit cycle", value: "cycle" },
+            { label: "7 days", value: "rolling_7d" },
+            { label: "30 days", value: "rolling_30d" },
+            { label: "Credit cycle", value: "credit_cycle" },
           ]}
         />
         <SegmentedControl
@@ -1019,7 +1032,7 @@ function TransactionsPanel({
               {allowance?.note ?? "No flexible allowance is configured."} Card transactions may still appear below.
             </Alert>
           )}
-          {window === "cycle" && allowance?.status !== "active" && (
+          {transactions.period.id !== periodId && (
             <Text size="sm" c="dimmed">
               Showing the last 30 days because the credit cycle is unavailable.
             </Text>
@@ -1029,20 +1042,24 @@ function TransactionsPanel({
               <SimpleGrid cols={{ base: 1, sm: 3 }} spacing="md">
                 <Metric
                   label="TRANSACTIONS IN PERIOD"
-                  value={rows.length}
-                  detail={`Since ${transactions.window_start}`}
+                  value={transactions.summary.transaction_count}
+                  detail={`Since ${transactions.period.start}`}
                 />
                 <Metric
                   label="NET ALLOWANCE SPEND"
-                  value={allowance?.status === "active" ? m(netAllowance) : "Unavailable"}
+                  value={
+                    allowance?.status === "active"
+                      ? m(transactions.summary.net_allowance_spend_minor_units)
+                      : "Unavailable"
+                  }
                   detail="Positive charges less accepted refunds"
                 />
                 <Metric
                   label="NEEDS CLASSIFICATION"
                   value={
                     allowance?.status === "active"
-                      ? `${reviewRows.length} · ${money(
-                          reviewRows.reduce((sum, row) => sum + Math.max(0, row.allowance_minor_units), 0),
+                      ? `${transactions.summary.unmatched_charge_count} · ${money(
+                          transactions.summary.unmatched_charge_minor_units,
                           currency
                         )}`
                       : "Unavailable"
@@ -1050,7 +1067,7 @@ function TransactionsPanel({
                   detail="Unmatched charges count; held refunds do not"
                 />
               </SimpleGrid>
-              {window === "cycle" && allowance?.status === "active" && (
+              {periodId === "credit_cycle" && allowance?.status === "active" && (
                 <>
                   <Divider />
                   <Text size="sm" fw={650}>
@@ -1058,7 +1075,7 @@ function TransactionsPanel({
                   </Text>
                   <Text size="sm">
                     {m(allowance.prior_carry_minor_units)} carried + {m(allowance.monthly_minor_units)} monthly credit −{" "}
-                    {m(allowance.windows_minor_units?.current_credit_cycle_minor_units)} cycle spend ={" "}
+                    {m(spendPeriod(allowance, "credit_cycle")?.spend_minor_units)} cycle spend ={" "}
                     <strong>{m(allowance.available_minor_units)} available</strong>
                   </Text>
                   <Text size="xs" c="dimmed">
@@ -1222,7 +1239,7 @@ function App() {
   const [configurationLoading, setConfigurationLoading] = useState(false);
   const [configurationError, setConfigurationError] = useState<string | null>(null);
   const [transactions, setTransactions] = useState<TransactionsView | null>(null);
-  const [transactionWindow, setTransactionWindow] = useState<TransactionWindow>("30d");
+  const [transactionPeriodId, setTransactionPeriodId] = useState<TransactionPeriodId>("rolling_30d");
   const [transactionsLoading, setTransactionsLoading] = useState(false);
   const [transactionsError, setTransactionsError] = useState<string | null>(null);
   const [viewRevision, setViewRevision] = useState(0);
@@ -1315,7 +1332,7 @@ function App() {
       setTransactionsLoading(true);
       setTransactionsError(null);
       try {
-        const response = await fetch(`/api/v1/transactions?window=${transactionWindow}`, {
+        const response = await fetch(`/api/v1/transactions?period=${transactionPeriodId}`, {
           cache: "no-store",
           credentials: "same-origin",
           signal: controller.signal,
@@ -1337,7 +1354,7 @@ function App() {
     };
     void load();
     return () => controller.abort();
-  }, [activeTab, transactionWindow, viewRevision]);
+  }, [activeTab, transactionPeriodId, viewRevision]);
   const cards = view?.cards || [];
   return (
     <MantineProvider defaultColorScheme="auto">
@@ -1456,11 +1473,11 @@ function App() {
           </Tabs.Panel>
           <Tabs.Panel value="transactions">
             <TransactionsPanel
-              transactions={transactions?.window === transactionWindow ? transactions : null}
+              transactions={transactions?.requested_period_id === transactionPeriodId ? transactions : null}
               loading={transactionsLoading}
               error={transactionsError}
-              window={transactionWindow}
-              onWindowChange={setTransactionWindow}
+              periodId={transactionPeriodId}
+              onPeriodChange={setTransactionPeriodId}
             />
           </Tabs.Panel>
           <Tabs.Panel value="configuration">

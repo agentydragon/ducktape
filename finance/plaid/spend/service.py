@@ -8,24 +8,41 @@ import json
 import logging
 from datetime import UTC, date, datetime, timedelta
 from decimal import ROUND_HALF_UP, Decimal
-from typing import Literal
 
 import asyncpg
 from babel.numbers import get_currency_precision
 
-from finance.plaid.spend.allowance import AllowanceView, PaceAlert, Status, Transaction, TransactionDecision, calculate
+from finance.plaid.spend.allowance import (
+    AllowanceView,
+    Disposition,
+    ForecastView,
+    Kind,
+    PaceAlert,
+    Period,
+    PeriodId,
+    Status,
+    Transaction,
+    TransactionDecision,
+    TransactionPeriodId,
+    calculate,
+)
 from finance.plaid.spend.models import (
     AlertState,
     AllowanceConfigurationView,
     CardConfigurationView,
     CardView,
+    PaceEffect,
     PlaidTransactionDetails,
+    ProvisionalCardPeriod,
     SpendConfiguration,
     SpendConfigurationView,
     SpendTransactionRow,
     SpendTransactionsView,
     SpendView,
+    StatementCycle,
     StatementReason,
+    TransactionPeriodSummary,
+    UnavailableCardPeriod,
 )
 
 logger = logging.getLogger(__name__)
@@ -91,6 +108,7 @@ class SpendService:
                 currency=policy.currency,
                 spending_account_count=len(policy.spending_account_ids),
                 max_sync_age_hours=policy.max_sync_age_hours,
+                forecast_basis_period_id=policy.forecast_basis_period_id,
                 rules=policy.rules,
                 analysis_category_labels=policy.analysis_category_labels,
             )
@@ -261,7 +279,7 @@ class SpendService:
                         institution_name=account["institution_name"],
                         mask=account["mask"],
                         currency=account["currency"],
-                        cycle_start=None,
+                        statement_period=UnavailableCardPeriod(),
                         spend_minor_units=None,
                         posted_minor_units=None,
                         pending_minor_units=None,
@@ -270,7 +288,6 @@ class SpendService:
                         spend_percent=None,
                         alert_state=AlertState.UNAVAILABLE,
                         last_synced_at=_as_utc(account["last_synced_at"]),
-                        statement_available=False,
                     )
                 )
                 continue
@@ -331,7 +348,9 @@ class SpendService:
                     institution_name=account["institution_name"],
                     mask=account["mask"],
                     currency=account["currency"],
-                    cycle_start=cycle_start,
+                    statement_period=StatementCycle(start=cycle_start, through=today)
+                    if statement_available
+                    else ProvisionalCardPeriod(start=cycle_start, through=today),
                     spend_minor_units=spend_minor_units,
                     posted_minor_units=posted_minor_units,
                     pending_minor_units=pending_minor_units,
@@ -340,7 +359,6 @@ class SpendService:
                     spend_percent=spend_percent,
                     alert_state=alert_state,
                     last_synced_at=_as_utc(account["last_synced_at"]),
-                    statement_available=statement_available,
                 )
             )
         return SpendView(
@@ -352,7 +370,7 @@ class SpendService:
             dashboard_url=self._dashboard_url,
         )
 
-    async def read_transactions(self, window: Literal["7d", "30d", "cycle"] = "30d") -> SpendTransactionsView:
+    async def read_transactions(self, period: TransactionPeriodId = PeriodId.ROLLING_30D) -> SpendTransactionsView:
         decisions: list[TransactionDecision] = []
         labels: dict[str, str] = {}
         card_rows: list[asyncpg.Record] = []
@@ -366,14 +384,21 @@ class SpendService:
             transaction_details=details_by_key,
         )
         today = view.generated_at.date()
-        if window == "7d":
-            start = today - timedelta(days=6)
-        elif window == "cycle" and view.allowance is not None and view.allowance.status == Status.ACTIVE:
-            start = view.allowance.current_cycle_start or today
-        else:
-            start = today - timedelta(days=29)
+        cycle_report = (
+            next((report for report in view.allowance.spend_periods if report.period.id == PeriodId.CREDIT_CYCLE), None)
+            if view.allowance is not None
+            else None
+        )
+        actual_period_id = PeriodId.ROLLING_30D if period == PeriodId.CREDIT_CYCLE and cycle_report is None else period
+        report_period = Period.for_id(
+            PeriodId(actual_period_id), today, cycle_report.period.start if cycle_report else None
+        )
+        start = report_period.start
         card_currencies = {card.account_id: card.currency for card in view.cards}
-        card_cycle_starts = {card.account_id: card.cycle_start for card in view.cards}
+        card_cycle_starts = {
+            card.account_id: card.statement_period.start if card.statement_period.kind != "unavailable" else None
+            for card in view.cards
+        }
         card_ids = {card.account_id for card in self._configuration.cards if card.enabled}
         allowance_ids = self._configuration.allowance.spending_account_ids if self._configuration.allowance else set()
         category_labels = (
@@ -419,8 +444,14 @@ class SpendService:
                     rule_number=decision.rule_number if decision else None,
                     rule=decision.rule if decision else None,
                     allowance_minor_units=decision.allowance_minor_units if decision else 0,
-                    trailing_7_pace_minor_units=decision.trailing_7_pace_minor_units if decision else 0,
-                    trailing_30_pace_minor_units=decision.trailing_30_pace_minor_units if decision else 0,
+                    pace_effects=[
+                        PaceEffect(
+                            period_id=period_id,
+                            amount_minor_units=decision.pace_effects_minor_units.get(period_id, 0) if decision else 0,
+                        )
+                        for period_id in PeriodId
+                        if period_id.rolling_days is not None
+                    ],
                     statement_minor_units=statement[1]
                     if statement
                     else 0
@@ -462,8 +493,26 @@ class SpendService:
                 None,
             )
         rows.sort(key=lambda row: (row.date, abs(row.amount_minor_units)), reverse=True)
+        unmatched_rows = [
+            row
+            for row in rows
+            if row.allowance_in_scope
+            and row.disposition == Disposition.COUNTED
+            and row.amount_minor_units > 0
+            and (row.rule is None or row.rule.kind == Kind.REVIEW)
+        ]
         return SpendTransactionsView(
-            generated_at=view.generated_at, window=window, window_start=start, allowance=view.allowance, rows=rows
+            generated_at=view.generated_at,
+            requested_period_id=period,
+            period=report_period,
+            summary=TransactionPeriodSummary(
+                transaction_count=len(rows),
+                net_allowance_spend_minor_units=sum(row.allowance_minor_units for row in rows),
+                unmatched_charge_count=len(unmatched_rows),
+                unmatched_charge_minor_units=sum(row.allowance_minor_units for row in unmatched_rows),
+            ),
+            allowance=view.allowance,
+            rows=rows,
         )
 
     async def _read_allowance(
@@ -508,14 +557,15 @@ class SpendService:
                     review_minor_units=0,
                     review_transaction_count=0,
                     unmatched_refunds_minor_units=0,
-                    windows_minor_units=None,
-                    trailing_7_daily_minor_units=None,
-                    trailing_7_observed_daily_minor_units=None,
-                    trailing_30_observed_daily_minor_units=None,
-                    trailing_7_unmatched_count=None,
-                    trailing_7_unmatched_minor_units=None,
-                    estimated_exhaustion_at=None,
-                    alert_state=PaceAlert.UNAVAILABLE,
+                    spend_periods=[],
+                    recorded_pace_periods=[],
+                    forecast=ForecastView(
+                        basis_period=Period.for_id(policy.forecast_basis_period_id, now.date()),
+                        daily_pace_minor_units=None,
+                        projected_cycle_end_minor_units=None,
+                        estimated_exhaustion_at=None,
+                        alert_state=PaceAlert.UNAVAILABLE,
+                    ),
                     spending_signal=PaceAlert.UNAVAILABLE,
                     last_synced_at=last_synced,
                     note="Account coverage or sync freshness unavailable; do not rely on the allowance.",

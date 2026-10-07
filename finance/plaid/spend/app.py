@@ -9,13 +9,14 @@ import sys
 from collections.abc import AsyncGenerator, AsyncIterator
 from contextlib import asynccontextmanager
 from pathlib import Path
-from typing import Annotated, Literal, cast
+from typing import Annotated, cast
 
 import uvicorn
 from fastapi import Depends, FastAPI, HTTPException, Request, status
 from fastapi.responses import FileResponse, Response, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 
+from finance.plaid.spend.allowance import PeriodId, TransactionPeriodId
 from finance.plaid.spend.models import SpendConfigurationView, SpendTransactionsView, SpendView, load_configuration
 from finance.plaid.spend.service import SpendService
 from finance.plaid.spend.settings import SpendSettings
@@ -135,9 +136,9 @@ def create_app(settings: SpendSettings, *, service: SpendService, include_ui: bo
 
     @app.get("/api/v1/transactions", response_model=SpendTransactionsView)
     async def get_transactions(
-        _access: SpendAccess, reader: SpendReader, window: Literal["7d", "30d", "cycle"] = "30d"
+        _access: SpendAccess, reader: SpendReader, period: TransactionPeriodId = PeriodId.ROLLING_30D
     ) -> SpendTransactionsView:
-        return await reader.read_transactions(window)
+        return await reader.read_transactions(period)
 
     @app.get("/api/v1/events")
     async def events(request: Request, _access: SpendAccess, reader: SpendReader) -> StreamingResponse:

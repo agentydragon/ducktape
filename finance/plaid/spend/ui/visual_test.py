@@ -12,7 +12,6 @@ from collections.abc import AsyncIterator, Iterator
 from datetime import UTC, date, datetime
 from decimal import Decimal
 from pathlib import Path
-from typing import Any, Literal
 
 import pytest
 import pytest_bazel
@@ -23,27 +22,43 @@ from playwright.async_api import Page, Route
 
 from finance.plaid.spend.allowance import (
     AllOf,
+    AllowanceSpendPeriod,
     AllowanceView,
     AmountSign,
     AnyOf,
     Disposition,
     FieldExact,
+    ForecastView,
     Kind,
     NamePrefix,
+    PaceAlert,
+    Period,
+    PeriodId,
     PlaidCounterparty,
+    RecordedPacePeriod,
     Rule,
+    Status,
+    TransactionPeriodId,
+    UnmatchedCharges,
 )
 from finance.plaid.spend.models import (
+    AlertState,
     AllowanceConfigurationView,
     CardConfigurationView,
+    CardView,
+    PaceEffect,
     PlaidPaymentMeta,
     PlaidPersonalFinanceCategory,
     PlaidTransactionDetails,
     PlaidTransactionLocation,
+    ProvisionalCardPeriod,
     SpendConfigurationView,
     SpendTransactionRow,
     SpendTransactionsView,
+    SpendView,
+    StatementCycle,
     StatementReason,
+    TransactionPeriodSummary,
 )
 from util.bazel.runfiles import get_required_path
 from util.testing.asgi import serve_app_sync
@@ -64,102 +79,107 @@ def dashboard_url() -> Iterator[str]:
     def index() -> FileResponse:
         return FileResponse(_UI_DIR / "index.html")
 
-    @app.get("/api/v1/view")
-    def view(warmup: bool = False) -> dict:
-        payload: dict[str, Any] = {
-            "generated_at": "2026-10-15T12:00:00Z",
-            "allowance": {
-                "status": "active",
-                "note": None,
-                "currency": "USD",
-                "alert_state": "normal",
-                "spending_signal": "normal",
-                "monthly_minor_units": 70000,
-                "activation_at": "2026-10-01",
-                "current_cycle_start": "2026-10-01",
-                "available_minor_units": 20000,
-                "prior_carry_minor_units": 5000,
-                "posted_minor_units": 52500,
-                "pending_minor_units": 2500,
-                "review_minor_units": 1500,
-                "review_transaction_count": 2,
-                "unmatched_refunds_minor_units": 0,
-                "windows_minor_units": {
-                    "current_credit_cycle_minor_units": 55000,
-                    "trailing_7_days_minor_units": 8750,
-                    "trailing_30_days_minor_units": 50000,
-                    "calendar_month_minor_units": 55000,
-                    "year_to_date_minor_units": 55000,
-                },
-                "trailing_7_daily_minor_units": 1250,
-                "trailing_7_observed_daily_minor_units": 1250,
-                "trailing_30_observed_daily_minor_units": 1000,
-                "trailing_7_unmatched_count": 2,
-                "trailing_7_unmatched_minor_units": 300,
-                "projected_cycle_end_minor_units": 7500,
-                "next_credit_at": "2026-10-25T00:00:00Z",
-                "estimated_exhaustion_at": "2026-10-31T00:00:00Z",
-                "last_synced_at": "2026-10-15T11:00:00Z",
-            },
-            "cards": [
-                {
-                    "label": "Example card",
-                    "account_name": "Example card",
-                    "mask": "0000",
-                    "institution_name": "Sample Bank",
-                    "currency": "USD",
-                    "alert_state": "normal",
-                    "alert_threshold_percent": None,
-                    "spend_minor_units": 22000,
-                    "limit_minor_units": 100000,
-                    "spend_percent": 22,
-                    "pending_minor_units": 1000,
-                    "last_synced_at": "2026-10-15T11:00:00Z",
-                    "cycle_start": "2026-10-01",
-                    "statement_available": True,
-                },
-                {
-                    "label": "New example card",
-                    "account_name": "New example card",
-                    "mask": "1111",
-                    "institution_name": "Sample Credit Union",
-                    "currency": "USD",
-                    "alert_state": "unavailable",
-                    "spend_minor_units": 3900,
-                    "limit_minor_units": 100000,
-                    "pending_minor_units": 0,
-                    "last_synced_at": "2026-10-15T11:00:00Z",
-                    "cycle_start": "2026-10-10",
-                    "statement_available": False,
-                },
-            ],
+    def example_allowance(warmup: bool = False) -> AllowanceView:
+        today = date(2026, 10, 15)
+        activation = today if warmup else date(2026, 10, 1)
+        spend_amounts = {
+            PeriodId.CREDIT_CYCLE: 55000,
+            PeriodId.CALENDAR_MONTH: 55000,
+            PeriodId.YEAR_TO_DATE: 55000,
+            PeriodId.ROLLING_7D: 8750,
+            PeriodId.ROLLING_30D: 50000,
         }
-        if warmup:
-            payload["allowance"].update(
-                activation_at="2026-10-15",
-                available_minor_units=70000,
-                posted_minor_units=0,
-                pending_minor_units=0,
-                review_minor_units=0,
-                review_transaction_count=0,
-                prior_carry_minor_units=0,
-                alert_state="unavailable",
-                spending_signal="unavailable",
-                trailing_7_daily_minor_units=None,
-                trailing_7_observed_daily_minor_units=None,
-                trailing_30_observed_daily_minor_units=None,
-                trailing_7_unmatched_count=None,
-                trailing_7_unmatched_minor_units=None,
-                projected_cycle_end_minor_units=None,
-                estimated_exhaustion_at=None,
+        spend_periods = []
+        for period_id, amount in spend_amounts.items():
+            period = Period.for_id(period_id, today, activation)
+            spend_periods.append(
+                AllowanceSpendPeriod(
+                    period=period, counted_from=max(period.start, activation), spend_minor_units=0 if warmup else amount
+                )
             )
-            payload["allowance"]["windows_minor_units"] = dict.fromkeys(payload["allowance"]["windows_minor_units"], 0)
-        return payload
+        return AllowanceView(
+            status=Status.ACTIVE,
+            currency="USD",
+            monthly_minor_units=70000,
+            activation_at=activation,
+            available_minor_units=70000 if warmup else 20000,
+            next_credit_at=datetime(2026, 10, 25, tzinfo=UTC),
+            posted_minor_units=0 if warmup else 52500,
+            pending_minor_units=0 if warmup else 2500,
+            review_minor_units=0 if warmup else 1500,
+            review_transaction_count=0 if warmup else 2,
+            unmatched_refunds_minor_units=0,
+            spend_periods=spend_periods,
+            recorded_pace_periods=[
+                RecordedPacePeriod(
+                    period=Period.for_id(period_id, today),
+                    observed_daily_minor_units=None if warmup else observed,
+                    unmatched_charges=UnmatchedCharges(
+                        count=0 if warmup else 2, amount_minor_units=0 if warmup else 300
+                    ),
+                )
+                for period_id, observed in ((PeriodId.ROLLING_7D, 1250), (PeriodId.ROLLING_30D, 1000))
+            ],
+            forecast=ForecastView(
+                basis_period=Period.for_id(PeriodId.ROLLING_7D, today),
+                daily_pace_minor_units=None if warmup else 1250,
+                projected_cycle_end_minor_units=None if warmup else 7500,
+                estimated_exhaustion_at=None if warmup else datetime(2026, 10, 31, tzinfo=UTC),
+                alert_state=PaceAlert.UNAVAILABLE if warmup else PaceAlert.NORMAL,
+            ),
+            spending_signal=PaceAlert.UNAVAILABLE if warmup else PaceAlert.NORMAL,
+            last_synced_at=datetime(2026, 10, 15, 11, tzinfo=UTC),
+            prior_carry_minor_units=0 if warmup else 5000,
+        )
+
+    @app.get("/api/v1/view", response_model=SpendView)
+    def view(warmup: bool = False) -> SpendView:
+        synced = datetime(2026, 10, 15, 11, tzinfo=UTC)
+        return SpendView(
+            generated_at=datetime(2026, 10, 15, 12, tzinfo=UTC),
+            allowance=example_allowance(warmup),
+            cards=[
+                CardView(
+                    account_id="synthetic-card",
+                    label="Example card",
+                    account_name="Example card",
+                    mask="0000",
+                    institution_name="Sample Bank",
+                    currency="USD",
+                    statement_period=StatementCycle(start=date(2026, 10, 1), through=date(2026, 10, 15)),
+                    alert_state=AlertState.NORMAL,
+                    alert_threshold_percent=None,
+                    spend_minor_units=22000,
+                    limit_minor_units=100000,
+                    spend_percent=22,
+                    pending_minor_units=1000,
+                    posted_minor_units=21000,
+                    last_synced_at=synced,
+                ),
+                CardView(
+                    account_id="synthetic-new-card",
+                    label="New example card",
+                    account_name="New example card",
+                    mask="1111",
+                    institution_name="Sample Credit Union",
+                    currency="USD",
+                    statement_period=ProvisionalCardPeriod(start=date(2026, 10, 10), through=date(2026, 10, 15)),
+                    alert_state=AlertState.UNAVAILABLE,
+                    alert_threshold_percent=None,
+                    spend_minor_units=3900,
+                    limit_minor_units=100000,
+                    spend_percent=None,
+                    pending_minor_units=0,
+                    posted_minor_units=3900,
+                    last_synced_at=synced,
+                ),
+            ],
+        )
 
     @app.get("/api/v1/events")
     async def events() -> StreamingResponse:
         async def updates() -> AsyncIterator[str]:
-            yield f"event: view\ndata: {json.dumps(view())}\n\n"
+            yield f"event: view\ndata: {json.dumps(view().model_dump(mode='json'))}\n\n"
             while True:
                 await asyncio.sleep(60)
                 yield ": keepalive\n\n"
@@ -180,6 +200,7 @@ def dashboard_url() -> Iterator[str]:
                 currency="USD",
                 spending_account_count=1,
                 max_sync_age_hours=72,
+                forecast_basis_period_id=PeriodId.ROLLING_7D,
                 rules=[
                     Rule(
                         condition=AllOf(
@@ -202,137 +223,156 @@ def dashboard_url() -> Iterator[str]:
         )
 
     @app.get("/api/v1/transactions", response_model=SpendTransactionsView)
-    def transactions(window: Literal["7d", "30d", "cycle"] = "30d") -> SpendTransactionsView:
+    def transactions(period: TransactionPeriodId = PeriodId.ROLLING_30D) -> SpendTransactionsView:
+        today = date(2026, 10, 15)
+        rows = [
+            SpendTransactionRow(
+                date=date(2026, 10, 15),
+                account_label="Example card",
+                name="EXAMPLE CAFE PURCHASE",
+                merchant_name="Example Cafe",
+                amount_minor_units=1500,
+                currency="USD",
+                pending=True,
+                allowance_in_scope=True,
+                disposition=Disposition.COUNTED,
+                rule_number=None,
+                rule=None,
+                allowance_minor_units=1500,
+                pace_effects=[
+                    PaceEffect(period_id=period_id, amount_minor_units=1500)
+                    for period_id in (PeriodId.ROLLING_7D, PeriodId.ROLLING_30D)
+                ],
+                statement_minor_units=1500,
+                statement_reason=StatementReason.COUNTED,
+                pfc_primary="FOOD_AND_DRINK",
+                pfc_detailed="FOOD_AND_DRINK_COFFEE",
+                merchant_category_code="5812",
+            ),
+            SpendTransactionRow(
+                date=date(2026, 10, 14),
+                account_label="Example card",
+                name="UPS SHIPPING",
+                merchant_name="UPS",
+                amount_minor_units=1850,
+                currency="USD",
+                pending=False,
+                allowance_in_scope=True,
+                disposition=Disposition.FIXED,
+                rule_number=2,
+                rule=Rule(
+                    condition=NamePrefix(field="name", prefix="UPS"),
+                    kind=Kind.FIXED,
+                    analysis_category="shipping",
+                    description="Required document shipping for a synthetic example.",
+                ),
+                allowance_minor_units=0,
+                pace_effects=[
+                    PaceEffect(period_id=period_id, amount_minor_units=0)
+                    for period_id in (PeriodId.ROLLING_7D, PeriodId.ROLLING_30D)
+                ],
+                statement_minor_units=1850,
+                statement_reason=StatementReason.COUNTED,
+                pfc_primary="TRANSPORTATION",
+                pfc_detailed="TRANSPORTATION_SHIPPING",
+                merchant_category_code="4215",
+                analysis_category_label="Document shipping",
+                counterparties=[
+                    PlaidCounterparty(
+                        name="Example Shipping",
+                        type="merchant",
+                        confidence_level="HIGH",
+                        entity_id="synthetic-merchant",
+                        website="https://example.invalid/shipping",
+                    )
+                ],
+                details=PlaidTransactionDetails(
+                    account_id="synthetic-account",
+                    transaction_id="synthetic-transaction",
+                    amount=Decimal("18.50"),
+                    iso_currency_code="USD",
+                    original_description="EXAMPLE SHIPPING PAYMENT",
+                    authorized_date=date(2026, 10, 13),
+                    payment_channel="in store",
+                    location=PlaidTransactionLocation(city="Example City", region="CA", country="US"),
+                    payment_meta=PlaidPaymentMeta(reference_number="synthetic-reference"),
+                    personal_finance_category=PlaidPersonalFinanceCategory(
+                        primary="TRANSPORTATION", detailed="TRANSPORTATION_SHIPPING", confidence_level="HIGH"
+                    ),
+                ),
+            ),
+            SpendTransactionRow(
+                date=date(2026, 10, 13),
+                account_label="Example card",
+                name="EXAMPLE REFUND",
+                merchant_name=None,
+                amount_minor_units=-4200,
+                currency="USD",
+                pending=False,
+                allowance_in_scope=True,
+                disposition=Disposition.HELD_REFUND,
+                rule_number=1,
+                rule=Rule(
+                    condition=NamePrefix(field="name", prefix="EXAMPLE"),
+                    kind=Kind.REVIEW,
+                    description="Confirm the purchase before netting this refund.",
+                ),
+                allowance_minor_units=0,
+                pace_effects=[
+                    PaceEffect(period_id=period_id, amount_minor_units=0)
+                    for period_id in (PeriodId.ROLLING_7D, PeriodId.ROLLING_30D)
+                ],
+                statement_minor_units=-4200,
+                statement_reason=StatementReason.COUNTED,
+                pfc_primary="GENERAL_MERCHANDISE",
+                pfc_detailed="GENERAL_MERCHANDISE_OTHER",
+                merchant_category_code=None,
+            ),
+            SpendTransactionRow(
+                date=date(2026, 10, 2),
+                account_label="Example checking",
+                name="EXAMPLE TRAVEL PURCHASE",
+                merchant_name="Example Travel",
+                amount_minor_units=53500,
+                currency="USD",
+                pending=False,
+                allowance_in_scope=True,
+                disposition=Disposition.COUNTED,
+                rule_number=3,
+                rule=Rule(
+                    condition=NamePrefix(field="name", prefix="EXAMPLE TRAVEL"),
+                    kind=Kind.FLEXIBLE,
+                    analysis_category="travel",
+                    description="Synthetic discretionary trip purchase.",
+                ),
+                allowance_minor_units=53500,
+                pace_effects=[
+                    PaceEffect(
+                        period_id=period_id, amount_minor_units=53500 if period_id == PeriodId.ROLLING_30D else 0
+                    )
+                    for period_id in (PeriodId.ROLLING_7D, PeriodId.ROLLING_30D)
+                ],
+                statement_minor_units=None,
+                statement_reason=None,
+                pfc_primary="TRAVEL",
+                pfc_detailed="TRAVEL_OTHER",
+                merchant_category_code=None,
+                analysis_category_label="Holiday travel",
+            ),
+        ]
+        shown = [row for row in rows if row.date >= PeriodId(period).start(today, date(2026, 10, 1))]
         return SpendTransactionsView(
             generated_at=datetime(2026, 10, 15, 12, tzinfo=UTC),
-            window=window,
-            window_start={"7d": date(2026, 10, 9), "30d": date(2026, 9, 16), "cycle": date(2026, 10, 1)}[window],
-            allowance=AllowanceView.model_validate(view()["allowance"]),
-            rows=[
-                SpendTransactionRow(
-                    date=date(2026, 10, 15),
-                    account_label="Example card",
-                    name="EXAMPLE CAFE PURCHASE",
-                    merchant_name="Example Cafe",
-                    amount_minor_units=1500,
-                    currency="USD",
-                    pending=True,
-                    allowance_in_scope=True,
-                    disposition=Disposition.COUNTED,
-                    rule_number=None,
-                    rule=None,
-                    allowance_minor_units=1500,
-                    trailing_7_pace_minor_units=1500,
-                    trailing_30_pace_minor_units=1500,
-                    statement_minor_units=1500,
-                    statement_reason=StatementReason.COUNTED,
-                    pfc_primary="FOOD_AND_DRINK",
-                    pfc_detailed="FOOD_AND_DRINK_COFFEE",
-                    merchant_category_code="5812",
-                ),
-                SpendTransactionRow(
-                    date=date(2026, 10, 14),
-                    account_label="Example card",
-                    name="UPS SHIPPING",
-                    merchant_name="UPS",
-                    amount_minor_units=1850,
-                    currency="USD",
-                    pending=False,
-                    allowance_in_scope=True,
-                    disposition=Disposition.FIXED,
-                    rule_number=2,
-                    rule=Rule(
-                        condition=NamePrefix(field="name", prefix="UPS"),
-                        kind=Kind.FIXED,
-                        analysis_category="shipping",
-                        description="Required document shipping for a synthetic example.",
-                    ),
-                    allowance_minor_units=0,
-                    trailing_7_pace_minor_units=0,
-                    trailing_30_pace_minor_units=0,
-                    statement_minor_units=1850,
-                    statement_reason=StatementReason.COUNTED,
-                    pfc_primary="TRANSPORTATION",
-                    pfc_detailed="TRANSPORTATION_SHIPPING",
-                    merchant_category_code="4215",
-                    analysis_category_label="Document shipping",
-                    counterparties=[
-                        PlaidCounterparty(
-                            name="Example Shipping",
-                            type="merchant",
-                            confidence_level="HIGH",
-                            entity_id="synthetic-merchant",
-                            website="https://example.invalid/shipping",
-                        )
-                    ],
-                    details=PlaidTransactionDetails(
-                        account_id="synthetic-account",
-                        transaction_id="synthetic-transaction",
-                        amount=Decimal("18.50"),
-                        iso_currency_code="USD",
-                        original_description="EXAMPLE SHIPPING PAYMENT",
-                        authorized_date=date(2026, 10, 13),
-                        payment_channel="in store",
-                        location=PlaidTransactionLocation(city="Example City", region="CA", country="US"),
-                        payment_meta=PlaidPaymentMeta(reference_number="synthetic-reference"),
-                        personal_finance_category=PlaidPersonalFinanceCategory(
-                            primary="TRANSPORTATION", detailed="TRANSPORTATION_SHIPPING", confidence_level="HIGH"
-                        ),
-                    ),
-                ),
-                SpendTransactionRow(
-                    date=date(2026, 10, 13),
-                    account_label="Example card",
-                    name="EXAMPLE REFUND",
-                    merchant_name=None,
-                    amount_minor_units=-4200,
-                    currency="USD",
-                    pending=False,
-                    allowance_in_scope=True,
-                    disposition=Disposition.HELD_REFUND,
-                    rule_number=1,
-                    rule=Rule(
-                        condition=NamePrefix(field="name", prefix="EXAMPLE"),
-                        kind=Kind.REVIEW,
-                        description="Confirm the purchase before netting this refund.",
-                    ),
-                    allowance_minor_units=0,
-                    trailing_7_pace_minor_units=0,
-                    trailing_30_pace_minor_units=0,
-                    statement_minor_units=-4200,
-                    statement_reason=StatementReason.COUNTED,
-                    pfc_primary="GENERAL_MERCHANDISE",
-                    pfc_detailed="GENERAL_MERCHANDISE_OTHER",
-                    merchant_category_code=None,
-                ),
-                SpendTransactionRow(
-                    date=date(2026, 10, 2),
-                    account_label="Example checking",
-                    name="EXAMPLE TRAVEL PURCHASE",
-                    merchant_name="Example Travel",
-                    amount_minor_units=53500,
-                    currency="USD",
-                    pending=False,
-                    allowance_in_scope=True,
-                    disposition=Disposition.COUNTED,
-                    rule_number=3,
-                    rule=Rule(
-                        condition=NamePrefix(field="name", prefix="EXAMPLE TRAVEL"),
-                        kind=Kind.FLEXIBLE,
-                        analysis_category="travel",
-                        description="Synthetic discretionary trip purchase.",
-                    ),
-                    allowance_minor_units=53500,
-                    trailing_7_pace_minor_units=0,
-                    trailing_30_pace_minor_units=53500,
-                    statement_minor_units=None,
-                    statement_reason=None,
-                    pfc_primary="TRAVEL",
-                    pfc_detailed="TRAVEL_OTHER",
-                    merchant_category_code=None,
-                    analysis_category_label="Holiday travel",
-                ),
-            ],
+            requested_period_id=period,
+            period=Period.for_id(PeriodId(period), today, date(2026, 10, 1)),
+            summary=TransactionPeriodSummary(
+                transaction_count=len(shown),
+                net_allowance_spend_minor_units=sum(row.allowance_minor_units for row in shown),
+                unmatched_charge_count=1,
+                unmatched_charge_minor_units=1500,
+            ),
+            allowance=example_allowance(),
+            rows=shown,
         )
 
     app.mount("/static", StaticFiles(directory=_UI_DIR))
@@ -472,7 +512,7 @@ async def test_transaction_explanations_render(
     assert await rows.get_by_text("Refund held", exact=True).count() == 1
     assert await rows.get_by_text("Document shipping", exact=True).count() == 1
     assert await rows.get_by_text("Holiday travel", exact=True).count() == 1
-    assert await page.get_by_text("2 · $15", exact=True).count() == 1
+    assert await page.get_by_text("1 · $15", exact=True).count() == 1
     if width >= 992:
         assert await rows.locator("tbody tr").count() == 4
     assert not errors

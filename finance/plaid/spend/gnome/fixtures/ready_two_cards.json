@@ -10,7 +10,6 @@
         "institution_name": "Example Bank",
         "mask": "4821",
         "currency": "USD",
-        "cycle_start": "2026-09-17",
         "spend_minor_units": 12345,
         "posted_minor_units": 10000,
         "pending_minor_units": 2345,
@@ -19,7 +18,11 @@
         "spend_percent": 82.3,
         "alert_state": "warning",
         "last_synced_at": "2026-10-01T11:58:00Z",
-        "statement_available": true
+        "statement_period": {
+          "kind": "statement",
+          "start": "2026-09-17",
+          "through": "2026-10-01"
+        }
       },
       {
         "label": "Travel",
@@ -27,7 +30,6 @@
         "institution_name": "Example Bank",
         "mask": "9902",
         "currency": "USD",
-        "cycle_start": "2026-09-21",
         "spend_minor_units": 2600,
         "posted_minor_units": 2300,
         "pending_minor_units": 300,
@@ -36,7 +38,11 @@
         "spend_percent": 2.6,
         "alert_state": "normal",
         "last_synced_at": "2026-10-01T11:59:00Z",
-        "statement_available": true
+        "statement_period": {
+          "kind": "statement",
+          "start": "2026-09-21",
+          "through": "2026-10-01"
+        }
       }
     ]
   }

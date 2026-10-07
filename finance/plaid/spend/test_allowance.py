@@ -11,6 +11,7 @@ from pydantic import ValidationError
 from finance.plaid.spend.allowance import (
     AllOf,
     AllowancePolicy,
+    AllowanceView,
     AmountSign,
     AnyOf,
     CategoryExact,
@@ -19,6 +20,7 @@ from finance.plaid.spend.allowance import (
     NameContains,
     NamePrefix,
     PaceAlert,
+    PeriodId,
     Rule,
     Status,
     Transaction,
@@ -80,6 +82,22 @@ def view(rows=(), when=START):
     return calculate(policy(), list(rows), now=when, last_synced_at=when)
 
 
+def spend(report: AllowanceView, period_id: PeriodId) -> int:
+    return next(period.spend_minor_units for period in report.spend_periods if period.period.id == period_id)
+
+
+def pace(report: AllowanceView, period_id: PeriodId) -> int | None:
+    return next(
+        period.observed_daily_minor_units for period in report.recorded_pace_periods if period.period.id == period_id
+    )
+
+
+def unmatched(report: AllowanceView, period_id: PeriodId) -> tuple[int, int]:
+    period = next(period for period in report.recorded_pace_periods if period.period.id == period_id)
+    assert period.unmatched_charges is not None
+    return period.unmatched_charges.count, period.unmatched_charges.amount_minor_units
+
+
 def test_single_config_parses_cards_and_optional_allowance():
     assert SpendConfiguration.model_validate_json('{"cards":[]}').allowance is None
     config = SpendConfiguration.model_validate_json(
@@ -129,13 +147,12 @@ def test_carry_windows_and_early_pace():
     result = view([row("2026-01-31", 20), row("2026-02-28", 30)], when=now)
     assert result.available_minor_units == 15_000
     assert result.prior_carry_minor_units == 8_000
-    assert result.windows_minor_units is not None
-    assert result.windows_minor_units.current_credit_cycle_minor_units == 3_000
-    assert result.windows_minor_units.calendar_month_minor_units == 3_000
+    assert spend(result, PeriodId.CREDIT_CYCLE) == 3_000
+    assert spend(result, PeriodId.CALENDAR_MONTH) == 3_000
     assert result.next_credit_at == datetime(2026, 3, 31, tzinfo=UTC)
     fast = view([row("2026-01-31", 70)], when=START)
-    assert fast.alert_state == PaceAlert.WARNING
-    assert fast.estimated_exhaustion_at == START + (datetime(2026, 2, 1, tzinfo=UTC) - START) * (3 / 7)
+    assert fast.forecast.alert_state == PaceAlert.WARNING
+    assert fast.forecast.estimated_exhaustion_at == START + (datetime(2026, 2, 1, tzinfo=UTC) - START) * (3 / 7)
 
 
 def test_trailing_windows_include_exactly_seven_and_thirty_calendar_days():
@@ -143,11 +160,10 @@ def test_trailing_windows_include_exactly_seven_and_thirty_calendar_days():
     result = view(
         [row("2026-02-23", 10), row("2026-02-24", 20), row("2026-01-31", 30), row("2026-02-01", 40)], when=now
     )
-    assert result.windows_minor_units is not None
-    assert result.windows_minor_units.trailing_7_days_minor_units == 2_000
-    assert result.windows_minor_units.trailing_30_days_minor_units == 7_000
-    assert result.trailing_7_observed_daily_minor_units == 2_000 // 7
-    assert result.trailing_30_observed_daily_minor_units == 7_000 // 30
+    assert spend(result, PeriodId.ROLLING_7D) == 2_000
+    assert spend(result, PeriodId.ROLLING_30D) == 7_000
+    assert pace(result, PeriodId.ROLLING_7D) == 2_000 // 7
+    assert pace(result, PeriodId.ROLLING_30D) == 7_000 // 30
 
 
 def test_prior_purchases_inform_pace_without_importing_debt():
@@ -170,38 +186,37 @@ def test_prior_purchases_inform_pace_without_importing_debt():
     )
     assert result.available_minor_units == 10_000
     assert result.posted_minor_units == 0
-    assert result.windows_minor_units is not None
-    assert result.windows_minor_units.trailing_7_days_minor_units == 0
-    assert result.trailing_7_daily_minor_units == 1_000
-    assert result.trailing_7_observed_daily_minor_units == 1_000
-    assert result.trailing_30_observed_daily_minor_units == 12_000 // 30
-    assert result.alert_state == PaceAlert.WARNING
-    assert result.projected_cycle_end_minor_units == -18_000
+    assert spend(result, PeriodId.ROLLING_7D) == 0
+    assert result.forecast.daily_pace_minor_units == 1_000
+    assert pace(result, PeriodId.ROLLING_7D) == 1_000
+    assert pace(result, PeriodId.ROLLING_30D) == 12_000 // 30
+    assert result.forecast.alert_state == PaceAlert.WARNING
+    assert result.forecast.projected_cycle_end_minor_units == -18_000
 
 
 def test_monthly_observed_pace_warns_without_weekly_forecast_or_opening_debt():
     now = datetime(2026, 3, 2, tzinfo=UTC)
     result = calculate(policy(activation_at=now.date()), [row("2026-02-10", 200)], now=now, last_synced_at=now)
     assert result.available_minor_units == 10_000
-    assert result.trailing_7_observed_daily_minor_units is None
-    assert result.trailing_30_observed_daily_minor_units == 20_000 // 30
-    assert result.alert_state == PaceAlert.UNAVAILABLE
+    assert pace(result, PeriodId.ROLLING_7D) is None
+    assert pace(result, PeriodId.ROLLING_30D) == 20_000 // 30
+    assert result.forecast.alert_state == PaceAlert.UNAVAILABLE
     assert result.spending_signal == PaceAlert.WARNING
 
 
 def test_no_pace_until_history_or_a_full_week_of_zero_spend():
     opening = view()
     assert opening.available_minor_units == 10_000
-    assert opening.trailing_7_daily_minor_units is None
-    assert opening.trailing_7_observed_daily_minor_units is None
-    assert opening.trailing_30_observed_daily_minor_units is None
-    assert opening.projected_cycle_end_minor_units is None
-    assert opening.alert_state == PaceAlert.UNAVAILABLE
-    assert view(when=datetime(2026, 2, 5, tzinfo=UTC)).alert_state == PaceAlert.UNAVAILABLE
+    assert opening.forecast.daily_pace_minor_units is None
+    assert pace(opening, PeriodId.ROLLING_7D) is None
+    assert pace(opening, PeriodId.ROLLING_30D) is None
+    assert opening.forecast.projected_cycle_end_minor_units is None
+    assert opening.forecast.alert_state == PaceAlert.UNAVAILABLE
+    assert view(when=datetime(2026, 2, 5, tzinfo=UTC)).forecast.alert_state == PaceAlert.UNAVAILABLE
     mature = view(when=datetime(2026, 2, 6, tzinfo=UTC))
-    assert mature.trailing_7_daily_minor_units == 0
-    assert mature.trailing_7_observed_daily_minor_units == 0
-    assert mature.alert_state == PaceAlert.NORMAL
+    assert mature.forecast.daily_pace_minor_units == 0
+    assert pace(mature, PeriodId.ROLLING_7D) == 0
+    assert mature.forecast.alert_state == PaceAlert.NORMAL
 
 
 def test_pending_posted_transfer_and_unmatched_refund():
@@ -258,8 +273,7 @@ def test_private_rule_and_uncertain_purchases():
     assert uncertain.available_minor_units == 8_800
     assert uncertain.review_minor_units == 1_200
     assert uncertain.review_transaction_count == 1
-    assert uncertain.trailing_7_unmatched_count == 1
-    assert uncertain.trailing_7_unmatched_minor_units == 1_200
+    assert unmatched(uncertain, PeriodId.ROLLING_7D) == (1, 1_200)
     prior = calculate(
         policy(activation_at=START_DATE, rules=[name_rule("name", "RENT ONLY", Kind.FIXED)]),
         [row("2026-01-30", 12)],
@@ -268,8 +282,7 @@ def test_private_rule_and_uncertain_purchases():
     )
     assert prior.available_minor_units == 10_000
     assert prior.review_transaction_count == 0
-    assert prior.trailing_7_unmatched_count == 1
-    assert prior.trailing_7_unmatched_minor_units == 1_200
+    assert unmatched(prior, PeriodId.ROLLING_7D) == (1, 1_200)
     two_uncertain = view(
         [
             row("2026-01-31", 12, pfc_primary=None, pfc_detailed=None),
@@ -278,7 +291,7 @@ def test_private_rule_and_uncertain_purchases():
     )
     assert two_uncertain.review_minor_units == 1_500
     assert two_uncertain.review_transaction_count == 2
-    assert two_uncertain.trailing_7_unmatched_count == 2
+    assert unmatched(two_uncertain, PeriodId.ROLLING_7D)[0] == 2
     with pytest.raises(ValidationError):
         Rule.model_validate(
             {"condition": {"type": "name_prefix", "field": "pfc_primary", "prefix": "SHOPPING"}, "kind": "excluded"}

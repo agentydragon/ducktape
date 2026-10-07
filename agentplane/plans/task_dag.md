@@ -20,10 +20,12 @@ is an explicit temporary operational constraint, never an implicit correctness a
 
 Proposed execution order for the Thread correctness/UI track:
 
-- **P1, reported against deployed staging:** command-submission deadlines
-  (`ADMISSION_DEADLINE_BUDGET`, then `ADMISSION_UNCERTAIN_OUTCOME`). The staged submission
-  indicator (`SUBMISSION_STAGE_INDICATOR`) follows them and shares its test changes with
-  [#9063](https://github.com/agentydragon/ducktape/issues/9063).
+- **P1, reported against deployed staging:** reconcile uncertain command admission
+  (`ADMISSION_UNCERTAIN_OUTCOME`). Command POST now returns the runner's durable receipt
+  without waiting for app archival ([#9365](https://github.com/agentydragon/ducktape/pull/9365));
+  its deadline can still leave the client unsure whether admission happened. The staged submission
+  indicator (`SUBMISSION_STAGE_INDICATOR`) follows reconciliation and dispatch evidence, and shares
+  its test changes with [#9063](https://github.com/agentydragon/ducktape/issues/9063).
 - **P2:** browser-driven acceptance against the deployed cluster (`CLUSTER_BROWSER_ACCEPTANCE`)
   and driver-hosted tools (`DT`). Neither blocks the current API-level acceptance closure.
 - **Unranked future harness capabilities:** project skills and commands, web search, visual input,
@@ -97,7 +99,6 @@ flowchart TB
     UISHELL_NEWTHREAD_LANDING["Deferred combined UI<br/>sidebar '+' unscoped new-thread composer<br/>Sandbox/preset/model pickers + prompt"]:::future
     COMMAND_QUEUE_DECISION["Deferred decision<br/>accept commands while runner unavailable?<br/>current slice uses runner admission first"]:::decision
     ASYNC_PROTOCOL_AUDIT["Design decision<br/>audit long-lived request/response contracts<br/>ticket vs durable admission vs push"]:::decision
-    ADMISSION_DEADLINE_BUDGET["P1 reported failure<br/>submission waits bound on archive lag<br/>four coupled 15 s budgets, one setting"]:::active
     ADMISSION_UNCERTAIN_OUTCOME["Planned correctness<br/>unconfirmed submission reconciles<br/>not a failed send"]:::future
     COMMAND_DISPATCHED_EVENT["Missing observation<br/>runner handed the command to the harness<br/>journal-only today; needs an Event"]:::future
     SUBMISSION_STAGE_INDICATOR["Planned UI<br/>staged submission indicator<br/>which of five stages, not two strings"]:::future
@@ -136,7 +137,6 @@ flowchart TB
     CODEX_RECOVERY -. native continuation evidence .-> THREAD_SUCCESSOR_DELIVERY
     CODEX_RECOVERY -. required recovery evidence .-> CODEX_RECOVERY_PROTOCOL
     COMMAND_QUEUE_DECISION -. if app-first acceptance chosen .-> THREAD_COMMAND_DELIVERY
-    ADMISSION_DEADLINE_BUDGET --> ADMISSION_UNCERTAIN_OUTCOME
     ADMISSION_UNCERTAIN_OUTCOME --> SUBMISSION_STAGE_INDICATOR
     COMMAND_DISPATCHED_EVENT --> SUBMISSION_STAGE_INDICATOR
     THREAD_COMMAND_DELIVERY --> THREAD_OUTBOX_CUTOVER
@@ -543,11 +543,13 @@ Compare runner-first admission with a prompt ticket plus status lookup / existin
 a `202 Accepted` must not imply durable acceptance before an authority has committed it. An
 app-owned pending ticket/outbox while the runner is unavailable changes the availability promise
 and remains an explicit `COMMAND_QUEUE_DECISION`, not an incidental implementation detail.
-Specify semantics for a repeated command id with a changed payload, rejection vs still-unobserved,
-reload/reconnect, multi-replica delivery, and retention of ticket/status evidence. Record a design
-and independently dispatchable implementation/acceptance nodes _after discussion_; do not fold a
-protocol cutover into `ADMISSION_DEADLINE_BUDGET`'s timeout fix. The existing
-`ADMISSION_UNCERTAIN_OUTCOME` and `SUBMISSION_STAGE_INDICATOR` nodes remain distinct.
+The command POST now returns the runner's durable admission receipt without waiting for the
+archive ([#9365](https://github.com/agentydragon/ducktape/pull/9365)); do not reintroduce an
+archive wait while assessing Open/Resume and other long-lived requests. Specify semantics for a
+repeated command id with a changed payload, rejection vs still-unobserved, reload/reconnect,
+multi-replica delivery, and retention of ticket/status evidence. Record a design and independently
+dispatchable implementation/acceptance nodes _after discussion_. Keep
+`ADMISSION_UNCERTAIN_OUTCOME` and `SUBMISSION_STAGE_INDICATOR` distinct.
 
 ### `COMMAND_QUEUE_DECISION` — where submission becomes durable
 
@@ -561,46 +563,20 @@ sequence. Review them for independently useful changes to salvage into appropria
 slices; do not stack new work on their deferred queue design. Preserve the runner's
 own journal in either option.
 
-### `ADMISSION_DEADLINE_BUDGET` — one submission budget, bounded by ingest lag rather than failure
-
-**P1, reported against deployed staging:** submitting a message can answer
-`admission of command '…' was not confirmed within 15 seconds; outcome uncertain` after the runner
-already took the command. Four independent 15-second budgets gate one submission, and only moving
-them together helps:
-
-- `agentplane/app/threads/bridge.py` `COMMAND_ADMISSION_S`, the wait in `_wait_for_admission`. It is
-  not a runner round trip: it polls `ContentStore.admitted_command`, so it ends when the Ingester has
-  copied the runner's `CommandAdmitted` into the app archive — ingest lag, longest on a Thread whose
-  stream is busy delivering `TextDelta`/`ToolOutputDelta` for the turn already in progress.
-- The same file's `_archive_open`, which inlines its own 15 s wait for the Ingester to reach the
-  runner's `attached.last_cursor` on Open and Resume.
-- `agentplane/sandbox_service/main.py` `admission_timeout_s`, which `grpc_api.py` applies both as the
-  generic request deadline, as the `admit_running_command` budget and as the per-write timeout inside
-  `FollowSession`. It is one field doing three unrelated jobs, and its `le=60` makes the target below
-  unconfigurable.
-- `agentplane/app/frontend/client.ts` `COMMAND_TIMEOUT_MS`, a browser abort documented as sitting above
-  the server's sequential waits, so it inherits their size.
-
-Split submission out of `admission_timeout_s` — the SSE write timeout should stay short and the
-submit budget should not be its side effect — thread one named setting through the app and the
-Sandbox Service instead of four constants, and keep the browser abort above the server bound.
-Set it generously: a Codex harness inserts a steer only at an opportunity inside the turn, and on a
-local model that gap is long, workload-dependent and routinely dwarfs 15 seconds. Five minutes is
-the starting value, not a measured one; measure ingest lag on a busy Thread rather than guessing
-again.
-
 ### `ADMISSION_UNCERTAIN_OUTCOME` — an unconfirmed submission reconciles instead of failing
 
-A deadline on the archive wait means "not yet observed", not "the runner never received it"; the
-exception already says the outcome is uncertain, and
-[the command protocol](../docs/thread_layering.md#command-protocol-intent-admission-then-outcome)
-makes the absence of observed admission non-authoritative. Today the error reaches the composer as a
-failed send while the command may already be admitted and running. Turn the timeout into a
-non-terminal state: keep watching the archive for that immutable command, resolve through the
-Thread's existing push feed when it lands, and make any retry replay the same command —
-`RunnerBridge.command` already short-circuits on an archived admission, so no new recovery path is
-needed. Only an explicit runner refusal is a failure. Land after `ADMISSION_DEADLINE_BUDGET` so the
-reconciliation window is not simply a longer error message.
+Command POST now returns the runner's exact durable `CommandAdmitted` receipt without waiting
+for the app archive. The app's named runner-admission deadline can still expire after the runner
+has committed the command but before its receipt reaches the browser. A disconnect can leave the
+same uncertainty. Neither means the command failed. Today the composer surfaces the error as a
+failed send even if the command was admitted and running.
+
+Keep the locally saved immutable command and show a non-terminal, unconfirmed state; reconcile
+through the Thread's existing push feed when archival catches up. Any deliberate retry must use
+that same command id and payload: the app answers from the archive if present, and otherwise the
+runner deduplicates it. Distinguish a confirmed refusal from an unobserved result; do not claim
+admission, failure, or native effect from an elapsed deadline. Cover late runner receipt,
+archive lag, disconnect/reload, exact replay and changed-payload rejection in tests.
 
 ### `COMMAND_DISPATCHED_EVENT` — make "the runner sent this to the harness" an observation
 

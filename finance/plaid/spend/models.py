@@ -6,12 +6,21 @@ from datetime import date, datetime as datetime_type
 from decimal import Decimal
 from enum import StrEnum
 from pathlib import Path
-from typing import Literal
+from typing import Annotated, Literal
 
 import yaml
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
-from finance.plaid.spend.allowance import AllowancePolicy, AllowanceView, Disposition, PlaidCounterparty, Rule
+from finance.plaid.spend.allowance import (
+    AllowancePolicy,
+    AllowanceView,
+    Disposition,
+    Period,
+    PeriodId,
+    PlaidCounterparty,
+    Rule,
+    TransactionPeriodId,
+)
 
 
 class AlertState(StrEnum):
@@ -101,6 +110,7 @@ class AllowanceConfigurationView(BaseModel):
     currency: str
     spending_account_count: int
     max_sync_age_hours: int
+    forecast_basis_period_id: PeriodId
     rules: list[Rule]
     analysis_category_labels: dict[str, str] = Field(default_factory=dict)
 
@@ -114,6 +124,31 @@ class SpendConfigurationView(BaseModel):
     allowance: AllowanceConfigurationView | None
 
 
+class StatementCycle(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    kind: Literal["statement"] = "statement"
+    start: date
+    through: date
+
+
+class ProvisionalCardPeriod(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    kind: Literal["provisional"] = "provisional"
+    start: date
+    through: date
+
+
+class UnavailableCardPeriod(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    kind: Literal["unavailable"] = "unavailable"
+
+
+type CardPeriod = StatementCycle | ProvisionalCardPeriod | UnavailableCardPeriod
+
+
 class CardView(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
@@ -123,7 +158,7 @@ class CardView(BaseModel):
     institution_name: str | None
     mask: str | None
     currency: str
-    cycle_start: date | None
+    statement_period: Annotated[CardPeriod, Field(discriminator="kind")]
     spend_minor_units: int | None
     posted_minor_units: int | None
     pending_minor_units: int | None
@@ -132,7 +167,6 @@ class CardView(BaseModel):
     spend_percent: float | None
     alert_state: AlertState
     last_synced_at: datetime_type | None
-    statement_available: bool
 
 
 class SpendView(BaseModel):
@@ -235,6 +269,13 @@ class PlaidTransactionDetails(BaseModel):
     client_customization: PlaidClientCustomization | None = None
 
 
+class PaceEffect(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    period_id: PeriodId
+    amount_minor_units: int
+
+
 class SpendTransactionRow(BaseModel):
     """A read-only explanation plus named, typed Plaid source fields."""
 
@@ -252,8 +293,7 @@ class SpendTransactionRow(BaseModel):
     rule_number: int | None
     rule: Rule | None
     allowance_minor_units: int
-    trailing_7_pace_minor_units: int
-    trailing_30_pace_minor_units: int
+    pace_effects: list[PaceEffect]
     statement_minor_units: int | None
     statement_reason: StatementReason | None
     pfc_primary: str | None
@@ -264,11 +304,21 @@ class SpendTransactionRow(BaseModel):
     details: PlaidTransactionDetails = Field(default_factory=PlaidTransactionDetails)
 
 
+class TransactionPeriodSummary(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    transaction_count: int
+    net_allowance_spend_minor_units: int
+    unmatched_charge_count: int
+    unmatched_charge_minor_units: int
+
+
 class SpendTransactionsView(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
     generated_at: datetime_type
-    window: Literal["7d", "30d", "cycle"]
-    window_start: date
+    requested_period_id: TransactionPeriodId
+    period: Period
+    summary: TransactionPeriodSummary
     allowance: AllowanceView | None
     rows: list[SpendTransactionRow]
