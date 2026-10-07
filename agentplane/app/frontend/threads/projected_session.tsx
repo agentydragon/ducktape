@@ -346,7 +346,14 @@ function VirtualizedHistory({
       // A programmatic return to the old bottom can be delivered after a card grows. Preserve
       // it before restoring a stale reader anchor, while an explicit user gesture owns its scroll,
       // as does a restoration still settling.
-      if (captureNextScroll.current || restoringScroll() || element.scrollTop === clickedAt.current) return false;
+      if (
+        captureNextScroll.current ||
+        restoringScroll() ||
+        readingAnchor.current?.target?.isConnected ||
+        element.scrollTop === clickedAt.current
+      ) {
+        return false;
+      }
       if (!recentBottoms.current.some((bottom) => Math.abs(element.scrollTop - bottom) <= 2)) return false;
       setFollowing(true, "returned-to-previous-bottom");
       cancelRestoration();
@@ -431,6 +438,9 @@ function VirtualizedHistory({
   virtualizer.shouldAdjustScrollPositionOnItemSizeChange = () => false;
   const expectUserScroll = () => {
     setStickyAnchorKey(null);
+    if (readingAnchor.current?.target) {
+      readingAnchor.current = { key: readingAnchor.current.key, offset: readingAnchor.current.offset };
+    }
     if (captureNextScroll.current) return;
     captureNextScroll.current = true;
     scrolledSinceInput.current = false;
@@ -463,11 +473,8 @@ function VirtualizedHistory({
         ? rows.find((row) => row.entities[0].cursor.toString() === anchorRowElement.dataset.threadAnchor)
         : undefined;
       const clickedHeading = clickedTarget?.closest<HTMLElement>(".agentplane-disclosure-heading");
-      const stickyTop = clickedHeading ? Number.parseFloat(getComputedStyle(clickedHeading).top) : Number.NaN;
-      const headingOffset = clickedHeading ? clickedHeading.getBoundingClientRect().top - viewportTop : Number.NaN;
-      const clickedHeadingIsSticky = Number.isFinite(stickyTop) && Math.abs(headingOffset - stickyTop) <= 2;
       const anchorTarget =
-        clickedTarget && clickedRow?.contains(clickedTarget) && clickedHeadingIsSticky
+        clickedTarget && clickedRow?.contains(clickedTarget) && clickedHeading
           ? clickedTarget
           : anchorRowElement;
       if (anchorRowElement && anchorRow && anchorTarget) {
@@ -477,7 +484,7 @@ function VirtualizedHistory({
           ...(anchorTarget !== anchorRowElement ? { target: anchorTarget } : {}),
         };
         readingAnchor.current = anchor;
-        if (clickedTarget) stickyAnchorPending.current = clickedHeadingIsSticky ? anchor.key : null;
+        if (clickedTarget) stickyAnchorPending.current = clickedHeading ? anchor.key : null;
         historyTrace.record({ kind: "anchor", key: anchor.key, offset: anchor.offset });
       }
     },
