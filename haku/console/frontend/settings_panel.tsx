@@ -1,7 +1,7 @@
 import { Badge, Button, Group, Loader, Select, Stack, Table, Tabs, Text } from "@mantine/core";
 import { type JSX, useCallback, useEffect, useState, type ReactNode } from "react";
 
-import { useAsyncResource, type AsyncResource, type AsyncResourceLoader } from "./async_resource";
+import { useAsyncResource, type AsyncResource } from "./async_resource";
 import {
   fetchDeploymentInfo,
   displayableError,
@@ -15,7 +15,6 @@ import { GrantsPanel } from "./grants_panel";
 import { ExternalLink } from "./link";
 import { usePushNotifications, type PushState } from "./push_subscription";
 import { shortDate } from "./time";
-import { getMcpServerStatus, listMcpServers, type McpServerConnection, type McpServerProbe } from "./mcp_status_client";
 import { toastError, toastSuccess } from "./toast";
 
 type DeploymentVersion = {
@@ -132,58 +131,6 @@ function ResourcePanel<T>({
       {errorNotice}
       {body}
     </>
-  );
-}
-
-type McpServerView = {
-  connection: McpServerConnection;
-  probe: McpServerProbe | null;
-  checking: boolean;
-  error: string | null;
-};
-
-function McpServerRow({ view }: { view: McpServerView }) {
-  const state =
-    view.error || view.probe?.server.state.status === "degraded"
-      ? { label: "Unavailable", color: "red" }
-      : view.probe?.server.state.status === "alive"
-        ? { label: "Available", color: "teal" }
-        : { label: "Checking", color: "blue" };
-  const reason =
-    view.error ?? (view.probe?.server.state.status === "degraded" ? view.probe.server.state.degraded_reason : null);
-  const statusMarker = view.checking ? (
-    <Loader size={12} aria-label="Checking server status" />
-  ) : (
-    <span
-      className="haku-status-dot"
-      data-color={state.color}
-      role="img"
-      aria-label={state.label}
-      title={state.label}
-    />
-  );
-
-  return (
-    <Table.Tr>
-      <Table.Td data-slot="primary" className="haku-dense-primary">
-        <Group gap="xs" wrap="nowrap" className="haku-mcp-server-name">
-          {statusMarker}
-          <div className="haku-mcp-server-name-text">
-            <Text fw={600} size="sm">
-              {view.connection.server_id}
-            </Text>
-          </div>
-        </Group>
-      </Table.Td>
-      <Table.Td data-slot="secondary" className="haku-dense-secondary">
-        <Text size="sm">{state.label}</Text>
-        {reason && (
-          <Text size="xs" c="red">
-            {reason}
-          </Text>
-        )}
-      </Table.Td>
-    </Table.Tr>
   );
 }
 
@@ -350,12 +297,12 @@ function PushNotificationTable() {
   );
 }
 
-const SETTINGS_TABS = ["mcp", "agents", "grants", "notifications", "system"] as const;
+const SETTINGS_TABS = ["agents", "grants", "notifications", "system"] as const;
 type SettingsTab = (typeof SETTINGS_TABS)[number];
 
 export function settingsTabFromSearch(search: string): SettingsTab {
   const requested = new URLSearchParams(search).get("tab");
-  return SETTINGS_TABS.find((tab) => tab === requested) ?? "mcp";
+  return SETTINGS_TABS.find((tab) => tab === requested) ?? "agents";
 }
 
 function settingsTabFromLocation(): SettingsTab {
@@ -420,53 +367,20 @@ function SystemStatusTable({ deployment }: { deployment: DeploymentInfo }) {
 export function SettingsPanel(): JSX.Element {
   const [activeTab, setActiveTab] = useState<SettingsTab>(settingsTabFromLocation);
   const [savingAgentId, setSavingAgentId] = useState<string | null>(null);
-  const loadMcpServers = useCallback<AsyncResourceLoader<McpServerView[]>>(async (emit, previous) => {
-    const connections = await listMcpServers();
-    const previousViews = new Map(previous?.map((view) => [view.connection.server_id, view]));
-    let views: McpServerView[] = connections.map((connection) => ({
-      connection,
-      probe: previousViews.get(connection.server_id)?.probe ?? null,
-      checking: true,
-      error: null,
-    }));
-    emit(views);
-    await Promise.all(
-      connections.map(async (connection) => {
-        try {
-          const probe = await getMcpServerStatus(connection.server_id);
-          views = views.map((view) =>
-            view.connection.server_id === connection.server_id
-              ? { connection: probe.connection, probe, checking: false, error: null }
-              : view
-          );
-        } catch (e) {
-          const error = e instanceof Error ? e.message : String(e);
-          views = views.map((view) =>
-            view.connection.server_id === connection.server_id ? { ...view, checking: false, error } : view
-          );
-        }
-        emit(views);
-      })
-    );
-    return views;
-  }, []);
   const resourceOptions = (tab: SettingsTab, pollMs?: number) => ({
     enabled: activeTab === tab,
     pollMs,
     formatError: displayableError,
   });
-  const mcpResource = useAsyncResource(loadMcpServers, resourceOptions("mcp"));
   const agentsResource = useAsyncResource(listAgents, resourceOptions("agents"));
   const deploymentResource = useAsyncResource(fetchDeploymentInfo, resourceOptions("system"));
-  const refreshMcp = mcpResource.refresh;
   const refreshAgents = agentsResource.refresh;
   const refreshDeployment = deploymentResource.refresh;
   const agentAccessProfiles = agentsResource.data?.access_profiles ?? [];
   const refreshActiveTab = useCallback(() => {
-    if (activeTab === "mcp") return refreshMcp();
     if (activeTab === "agents") return refreshAgents();
     if (activeTab === "system") return refreshDeployment();
-  }, [activeTab, refreshAgents, refreshDeployment, refreshMcp]);
+  }, [activeTab, refreshAgents, refreshDeployment]);
   useEffect(() => {
     const restoreTab = () => setActiveTab(settingsTabFromLocation());
     window.addEventListener("popstate", restoreTab);
@@ -482,7 +396,7 @@ export function SettingsPanel(): JSX.Element {
     const tab = value as SettingsTab;
     setActiveTab(tab);
     const url = new URL(window.location.href);
-    if (tab === "mcp") url.searchParams.delete("tab");
+    if (tab === "agents") url.searchParams.delete("tab");
     else url.searchParams.set("tab", tab);
     window.history.replaceState(null, "", url);
   }
@@ -512,13 +426,7 @@ export function SettingsPanel(): JSX.Element {
   }
 
   const loading =
-    activeTab === "mcp"
-      ? mcpResource.loading
-      : activeTab === "agents"
-        ? agentsResource.loading
-        : activeTab === "system"
-          ? deploymentResource.loading
-          : false;
+    activeTab === "agents" ? agentsResource.loading : activeTab === "system" ? deploymentResource.loading : false;
 
   return (
     <Tabs
@@ -539,10 +447,6 @@ export function SettingsPanel(): JSX.Element {
           )}
         </div>
         <Tabs.List className="haku-settings-tabs-list" aria-label="Settings sections">
-          <Tabs.Tab value="mcp">
-            <span className="haku-settings-tab-long">MCP servers</span>
-            <span className="haku-settings-tab-short">MCP</span>
-          </Tabs.Tab>
           <Tabs.Tab value="agents">Agents</Tabs.Tab>
           <Tabs.Tab value="grants">
             <span className="haku-settings-tab-long">Grants</span>
@@ -556,30 +460,6 @@ export function SettingsPanel(): JSX.Element {
         </Tabs.List>
       </header>
       <div className="haku-page-scroll">
-        <Tabs.Panel value="mcp">
-          <ResourcePanel
-            title="MCP servers"
-            resource={mcpResource}
-            label="MCP servers"
-            emptyMessage="No MCP servers are configured."
-          >
-            {(views) => (
-              <DenseTable label="MCP servers">
-                <Table.Thead>
-                  <Table.Tr>
-                    <Table.Th>Server</Table.Th>
-                    <Table.Th>Status</Table.Th>
-                  </Table.Tr>
-                </Table.Thead>
-                <Table.Tbody>
-                  {views.map((view) => (
-                    <McpServerRow key={view.connection.server_id} view={view} />
-                  ))}
-                </Table.Tbody>
-              </DenseTable>
-            )}
-          </ResourcePanel>
-        </Tabs.Panel>
         <Tabs.Panel value="agents">
           <ResourcePanel
             title="Agents"

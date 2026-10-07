@@ -1,8 +1,8 @@
 """Operator **browser** authentication for haku-console (Authentik OIDC).
 
 The console authenticates the operator's browser itself via the Authentik authorization-code flow,
-storing the identity in a signed session cookie. `/mcp` accepts either that session (with an exact
-Origin check) or an Agent credential through MultiAuth's OIDCProxy/static-bearer path.
+storing the identity in a signed session cookie. Static Agent credentials are checked by the
+internal Kubernetes authorization endpoint; they do not authenticate to browser routes.
 
 `require_operator` guards the entire browser API (approvals, decisions, audit history, and account
 linking) with a DB-revalidated canonical Operator session.
@@ -10,7 +10,8 @@ linking) with a DB-revalidated canonical Operator session.
 The static SPA (served by nginx) stays public; on a 401 the frontend redirects to `/auth/login`,
 carrying the page it was on as `return_to` so re-authenticating does not lose the operator's place.
 Pending logins live in Postgres, not the session cookie — see `operator_login_flow.py`.
-`/mcp`, `/healthz`, and `/auth/*` are not under `/api/` and carry their own admission rules.
+`/healthz` and `/auth/*` are not under `/api/` and carry their own admission rules. `/mcp` is a
+retired-path tombstone that always returns 404.
 """
 
 from __future__ import annotations

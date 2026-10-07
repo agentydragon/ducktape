@@ -33,7 +33,6 @@ ts_library(
         "//:node_modules/zod",
         "//haku/console/frontend:code_block",
         "//haku/console/frontend:field",
-        "//haku/console/frontend:gmail_client",
         "//haku/console/frontend:icons",
         "//haku/console/frontend:link",
         "//haku/console/frontend:mcp_tool_schema",
@@ -56,7 +55,6 @@ ts_library(
         "//:node_modules/zod",
         "//haku/console/frontend:code_block",
         "//haku/console/frontend:field",
-        "//haku/console/frontend:gmail_client",
         "//haku/console/frontend:icons",
         "//haku/console/frontend:link",
         "//haku/console/frontend:mcp_tool_result_schema",
@@ -98,8 +96,7 @@ ts_library(
     deps = ["//haku/console/frontend/tool_rendering"],
 )
 
-# The esbuild entry the `:previews` target bundles into an IIFE: the fetch mock, then the mount of
-# the fixtures.
+# The esbuild entry the `:previews` target bundles into an IIFE: the fixtures and shared mount.
 ts_library(
     name = "preview_harness",
     srcs = ["preview_harness.tsx"],
@@ -107,27 +104,7 @@ ts_library(
     tsconfig = TSCONFIG,
     deps = [
         ":preview_fixtures",
-        ":preview_mock",
         "//haku/console/frontend/tool_rendering/screenshot:mount",
-    ],
-)
-
-ts_library(
-    name = "fixtures",
-    srcs = ["fixtures.ts"],
-    isolated_typecheck = True,
-    tsconfig = TSCONFIG,
-    deps = ["//haku/console/frontend:mcp_tool_result_schema"],
-)
-
-ts_library(
-    name = "preview_mock",
-    srcs = ["preview_mock.ts"],
-    isolated_typecheck = True,
-    tsconfig = TSCONFIG,
-    deps = [
-        ":fixtures",
-        "//haku/console/frontend/tool_rendering/screenshot:mcp_mock",
     ],
 )
 

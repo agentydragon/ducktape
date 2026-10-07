@@ -64,9 +64,9 @@ from util.testing.postgres_fixtures import start_postgres_container
 # gazelle:include_dep @pypi//asyncpg
 # gazelle:include_dep @pypi//psycopg
 
-# A default static agent so `create_app`'s require-a-/mcp-credential invariant is satisfied without
-# every test spelling one out — the real deploy always has the `haku` agent. Tests that exercise
-# agent auth pass their own `config_file` naming the agents (and bearer) they need.
+# A default static agent so each app fixture has an identity for internal authorization paths
+# without every test spelling one out. Tests that exercise Agent authority pass their own
+# `config_file` naming the identities and bearer credentials they need.
 _DEFAULT_AGENT_TOKEN = "default-agent-token"
 # The one access profile `make_client`'s default config defines and assigns its seeded static
 # agent; tests asserting profile identity import this rather than re-minting the literal.
@@ -380,9 +380,8 @@ def make_client(migrated_db_url: str, tmp_path: Path, monkeypatch: pytest.Monkey
     ) -> Iterator[TestClient]:
         # Every app uses production-shaped OIDC settings. `operator=True` presents an authenticated
         # signed session; false leaves the client anonymous for auth-boundary/static-agent tests.
-        # config_file defaults to the config naming the default static agent (so /mcp has a
-        # credential); a test overrides it by passing its own. haku_ui_url + database_url come from
-        # console_settings.
+        # config_file defaults to the config naming the default static agent; a test overrides it
+        # by passing its own. haku_ui_url + database_url come from console_settings.
         settings = console_settings(
             migrated_db_url,
             config_file=config_file if config_file is not None else default_config,

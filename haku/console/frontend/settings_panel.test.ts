@@ -13,9 +13,9 @@ function deployment(server: string | null, frontend: string | null): DeploymentI
 }
 
 describe("settingsTabFromSearch", () => {
-  it("honors a known tab and falls back to MCP servers for any other", () => {
+  it("honors a known tab and falls back to Agents for any other", () => {
     expect(settingsTabFromSearch("?tab=grants")).toBe("grants");
-    expect(settingsTabFromSearch("?tab=obsolete")).toBe("mcp");
+    expect(settingsTabFromSearch("?tab=obsolete")).toBe("agents");
   });
 });
 

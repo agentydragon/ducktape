@@ -50,7 +50,7 @@ from haku.console.identity.enrollment import (
     EnrollmentDecisionConflictError,
     ReconnectAgentDecision,
 )
-from haku.console.identity.fastmcp_adapter import (
+from haku.console.identity.oauth_grants import (
     AgentGrantAuthorityUnavailableError,
     AuthorizationCorrelation,
     AuthorizationRequest,

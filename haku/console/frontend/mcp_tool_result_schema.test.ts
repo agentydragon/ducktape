@@ -3,19 +3,6 @@ import { describe, expect, it } from "vitest";
 import { mcpToolResultSchema, type McpToolResultFor } from "./mcp_tool_result_schema";
 
 describe("generated MCP tool result schemas", () => {
-  it("parses a configured server's connection status", () => {
-    const result: McpToolResultFor<"haku-console", "list_mcp_servers"> = {
-      servers: [
-        {
-          server_id: "grants",
-          backend: { kind: "in_process", credential: { kind: "none" } },
-        },
-      ],
-    };
-    expect(mcpToolResultSchema("haku-console", "list_mcp_servers").safeParse(result).success).toBe(true);
-    expect(mcpToolResultSchema("haku-console", "list_mcp_servers").safeParse({}).success).toBe(false);
-  });
-
   it("parses a Draft resource and rejects one missing its id", () => {
     const draft: McpToolResultFor<"gmail", "drafts_create"> = {
       id: "r-7364618394",

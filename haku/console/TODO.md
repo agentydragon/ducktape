@@ -18,13 +18,11 @@ it when absent. Deliberately not done in the change that introduced push: the sh
 is the honest starting point, and which tools actually warrant divergence is worth learning from
 real notifications rather than guessing up front.
 
-## MCP server (`/mcp`) — deferred follow-ups
+## Agent records and approval history
 
-The `/mcp` server (`mcp/server.py`) now resolves canonical Operators, Agents, grants, and
-credential bindings through one authority, and derives each request's tool surface from that
-Agent's Operator connections. Settings lists the Operator's Agents and lets an OAuth Agent's
-auto-approval policy be reassigned among the roots `config.yaml` defines. The architecture is
-specified in <../../plans/oauth_architecture.md>. The next product slices are:
+The Agent-facing MCP protocol endpoint is retired. These remaining UI improvements concern
+persisted Agent identity and the operator's existing history/decision APIs; they do not add new
+MCP request submission.
 
 - **Fuller Agent detail** — `AgentView` carries name, status, credential kind/status, and the
   creation/activation/last-seen times. Client software, granted scopes, and reconnect history are
@@ -34,11 +32,6 @@ specified in <../../plans/oauth_architecture.md>. The next product slices are:
   them into tool-call rows or use them as authority.
 - **Agent lifecycle controls** — expose revoke/disable, rename/history, and tombstone/reconnect
   operations as vertical API + UI + audit-event slices.
-- **Author a policy in the UI** — reassignment picks among deploy-defined roots; composing a typed
-  structured policy in the console is what remains.
-- **Per-Agent tool surface** — derive request-time `list_tools` from the verified binding and
-  policy, with `tools/list_changed` on policy edits. Do not key authorization directly on an
-  unverified DCR `client_id`.
 
 ## Operator browser auth — parked remainders
 

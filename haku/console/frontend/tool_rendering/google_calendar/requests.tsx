@@ -1,15 +1,13 @@
-// Per-tool-type rendering for haku-console's in-process `google_calendar` MCP server (see
-// haku/console/tools/google_calendar.py). Falls back to the generic raw-JSON view
-// (approval_state.ts's argumentsJson) for anything that isn't shaped as expected. The zod
-// schema below is built from the FastMCP input schema advertised by tools/list. Execution-only
-// Pydantic cross-field validators may be stricter than that structural schema.
+// Per-tool-type rendering for stored calls to the remote Google Calendar server. Falls back to the
+// generic raw-JSON view (approval_state.ts's argumentsJson) for anything that isn't shaped as
+// expected. Its zod schema is generated from the backend Pydantic input schema. Execution-only
+// cross-field validators may be stricter than that structural schema.
 
-import { Loader, Stack } from "@mantine/core";
-import { type JSX, useEffect, useState } from "react";
+import { Stack } from "@mantine/core";
+import type { JSX } from "react";
 import { rrulestr } from "rrule";
 import type { z } from "zod";
 
-import { fetchCalendarSummary, type CalendarSummary } from "../../calendar_client";
 import { Field } from "../../field";
 import { BellIcon, CalendarIcon, ClockIcon, MapPinIcon, RepeatIcon, UsersIcon } from "../../icons";
 import { ExternalLink } from "../../link";
@@ -185,41 +183,19 @@ export function RecurrenceField({
   );
 }
 
-// A non-primary calendar's id is opaque; resolve its display name (linked into Google Calendar)
-// via the console read endpoint. On failure the raw id still renders, so the operator sees the
-// target either way.
+function calendarUrl(calendarId: string): string {
+  const bytes = new TextEncoder().encode(calendarId);
+  let binary = "";
+  for (const byte of bytes) binary += String.fromCharCode(byte);
+  return `https://calendar.google.com/calendar/u/0/r?cid=${encodeURIComponent(btoa(binary).replace(/=+$/, ""))}`;
+}
+
 function CalendarField({ calendarId }: { calendarId: string }) {
-  const [summary, setSummary] = useState<CalendarSummary | null>(null);
-  const [failed, setFailed] = useState(false);
-
-  useEffect(() => {
-    let alive = true;
-    setSummary(null);
-    setFailed(false);
-    fetchCalendarSummary(calendarId)
-      .then((result) => {
-        if (alive) setSummary(result);
-      })
-      .catch(() => {
-        if (alive) setFailed(true);
-      });
-    return () => {
-      alive = false;
-    };
-  }, [calendarId]);
-
   return (
     <Field icon={<CalendarIcon size={15} />} label="Calendar">
-      {summary ? (
-        <ExternalLink href={summary.html_link} size="sm">
-          {summary.summary}
-        </ExternalLink>
-      ) : failed ? (
-        // Name lookup failed (e.g. deleted calendar, wrong account) — fall back to the raw id.
-        <PreviewText span>{calendarId}</PreviewText>
-      ) : (
-        <Loader size="xs" />
-      )}
+      <ExternalLink href={calendarUrl(calendarId)} size="sm">
+        {calendarId}
+      </ExternalLink>
     </Field>
   );
 }

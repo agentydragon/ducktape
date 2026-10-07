@@ -1,9 +1,8 @@
-"""The MCP-server catalog and how to reach each entry.
+"""The configured in-process MCP backends used by the approval ledger.
 
-The console's deploy-time YAML names the MCP servers Haku may drive through the approval
-queue; this module models that config, looks entries up by id, and resolves each one to its
-registered in-process `FastMCP` builder. The tool-call application service and
-`McpServerDispatcher` (`approval`) build on this shared substrate.
+The deploy-time YAML names the configured backends. This module models that config, looks entries
+up by id, and resolves each one to its registered `FastMCP` builder. New protocol requests and
+catalog refresh are retired; the dispatcher uses this config to finish already-approved rows.
 """
 
 from __future__ import annotations
@@ -29,8 +28,7 @@ class McpServerNotFoundError(LookupError):
 
 
 class NoCredential(BaseModel):
-    """No backend credential: an in-process server that carries its own (e.g. `haku_routine`, which
-    holds the launch-routine secret) or otherwise needs none."""
+    """The in-process backend does not need a credential supplied by the dispatcher."""
 
     kind: Literal["none"] = "none"
 
@@ -121,9 +119,8 @@ type AutoApprovalPolicy = Annotated[
 class AccessProfile(BaseModel):
     """A deploy-reviewed capability bundle assigned to one durable Agent.
 
-    The profile deliberately gathers all durable Agent authority in one config catalog: its
-    current auto-approval policy and allowed in-process servers. Credential bindings authenticate
-    an Agent; they never independently select either capability.
+    The profile deliberately gathers all durable Agent authority in one config catalog. Credential
+    bindings authenticate an Agent; they never independently select either capability.
     """
 
     model_config = ConfigDict(extra="forbid")
@@ -174,11 +171,6 @@ class LoadedStaticAgent(BaseModel):
 
 
 class ConsoleConfigFile(BaseModel):
-    # Controls exposure of Console's own agent-facing /mcp HTTP endpoint (and its OAuth
-    # discovery routes), not the underlying tool-call/approval service used by the UI.
-    # Default on for existing deployments and tests; production can deliberately opt out.
-    mcp_server_enabled: bool = True
-
     mcp: ConsoleMcpConfig = Field(default_factory=ConsoleMcpConfig)
     auto_approval_policies: list[AutoApprovalPolicy] = Field(min_length=1)
     access_profiles: list[AccessProfile] = Field(min_length=1)

@@ -62,7 +62,8 @@ from haku.console.identity.enrollment import (
     ReconnectableAgent,
     ReconnectAgentDecision,
 )
-from haku.console.identity.fastmcp_adapter import (
+from haku.console.identity.naming import InvalidAgentNameError, NormalizedAgentName, normalize_agent_name
+from haku.console.identity.oauth_grants import (
     AgentGrantAuthorityUnavailableError,
     AuthorizationCorrelation,
     AuthorizationRequest,
@@ -74,7 +75,6 @@ from haku.console.identity.fastmcp_adapter import (
     GrantRejectedError,
     TokenFamilyEvidence,
 )
-from haku.console.identity.naming import InvalidAgentNameError, NormalizedAgentName, normalize_agent_name
 from haku.console.identity.operator_identity import (
     InactiveOperatorError,
     OperatorIdentityError,

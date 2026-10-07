@@ -1,8 +1,8 @@
 # haku/console — Haku's interactive console
 
-A FastAPI service serving the trusted Haku console as a React single-page app over JSON and MCP.
-The console is the operator-owned shell around Haku's cross-origin UI, the approval/audit boundary
-for privileged tools, and the home of the Agent authority that admits `/mcp` callers.
+A FastAPI service serving the trusted Haku console as a React single-page app over JSON and WebSockets.
+The console is the operator-owned shell around Haku's cross-origin UI, the approval/audit ledger
+for privileged tool calls, and the home of Agent identity used by the Kubernetes proxy.
 
 It runs in its own `haku-console` namespace, outside Haku's `haku-sandbox` authority and egress
 fence. That separation lets it hold credentials Haku may use only through reviewed, operator-gated
@@ -30,122 +30,36 @@ Origin admission, a tiny reviewed allowlist, trusted-shell confirmation showing 
 verbatim, and audit logging in a namespace Haku cannot read. The framed Haku UI can only request a
 launch through the Agent UI bridge; it cannot call the route or render the deciding control.
 
-This is transitional. `haku_routine.launch_routine` reaches the same routine through the standard
-MCP approval queue. Once haku-ui uses that path, the Agent UI bridge action and bespoke capability router can
-retire. There is no low-privilege console write tier: haku-ui writes its own state. Recall storage
-remains in the database during this rollout, but the Console no longer reads or writes it.
+This remains the routine launch path after removing the inactive `haku_routine` MCP wrapper. Once
+haku-ui uses the capability route, the Agent UI bridge action and bespoke capability router can
+retire. There is no low-privilege console write tier: haku-ui writes its own state.
 
-## MCP approval queue — authored tool calls, console-approved
+## Tool-call approval ledger
 
-`ToolCallApplicationService` is the actor-scoped lifecycle boundary. Agent callers enter through
-`mcp/server.py`; the operator browser enters through `mcp/approval.py`. The service owns the
-canonical `tool_call_id`, schema validation, reviewed auto-approval decision, audit row, waiting,
-execution, and result.
+The operator REST API (`/api/approvals/pending`, `/api/tool-calls`, and
+`POST /api/tool-calls/{tool_call_id}/decision`) remains active. It lists retained call records and
+allows already-pending work to be approved or denied; approved rows still execute through the
+configured in-process backend and record their result. The event WebSocket is only a lossy
+invalidation channel: REST remains authoritative.
 
-Invalid arguments to an owned in-process schema are persisted born-denied and returned immediately;
-lookup and discovery uncertainty fails closed to manual review. A queued call has exactly three
-exits:
-
-- the Operator approves it (`pending_approval` → `running`) or denies it (`denied`);
-- the submitting Agent withdraws its own still-pending request (`withdrawn`).
-
-Withdrawal records retraction, not human judgment and not deletion: the row persists in the audit
-ledger (`GET /api/tool-calls`) as `withdrawn` with its `withdrawal_reason`, so a prompt-injected
-Agent can pull an ask out of the approval queue before the Operator scrutinises it but cannot erase
-that it was made. It is scoped to the canonical Agent (a sibling Agent under the same Operator sees
-only `not found`), races approval under the row lock, and can only move work away from execution.
-Agents never receive an approval tool. Approved execution revalidates the exact credential binding recorded at
-submission, so queued work cannot transfer to a replacement credential.
-
-Every approved or denied call may carry one `decision_note`. For an Operator decision,
-`decision_operator_id` identifies the authenticated Operator; automatic decisions leave that field
-NULL, so an automatic denial's explanation and an Operator's note use the same neutral annotation
-without conflating their authorship. `auto_approval_evaluation` retains the policy evaluation detail.
-
-The browser reads pending calls and the audit ledger through `/api/approvals/pending` and
-`/api/tool-calls`; `POST /api/tool-calls/{tool_call_id}/decision` is exact-Origin-gated. The event
-WebSocket is only a lossy invalidation channel: REST remains authoritative.
-
-### MCP server (`/mcp`)
-
-The deployed Console sets `mcp_server_enabled: false`: its agent-facing `/mcp` endpoint and
-MCP OAuth discovery routes are not mounted. Local/test setups still default to enabled. This
-switch does not remove Console's underlying approval ledger, browser APIs, or Kubernetes RBAC;
-those have separate users and retirement decisions.
-
-`mcp/server.py` mounts one native MCP server for Agents and the trusted Operator frontend. Agents
-submit through `ToolCallApplicationService.submit_and_wait`. A DB-revalidated Operator session uses
-`execute_direct`, resolving downstream credentials in that Operator's context without creating an
-approval row; browser MCP requests still require the exact console Origin.
-
-Discovery is request-local and actor-scoped. The configured servers the actor's canonical Operator
-can reach — a server bound to a provider account needs that Operator's connection — are exposed in
-two forms:
-
-- an unconditionally auto-approved tool is a transparent pass-through with its upstream schema;
-- every other tool uses `{input, rationale, title?, wait_for_result_ms?}` and returns either the
-  terminal result or a non-terminal `tool_call_id`/approval-URL stub.
-
-`pending_approval` means the call remains queued after the requested wait; `running` means approval
-occurred but downstream execution has not finished. Agents resolve either with `get_tool_call` or
-`list_tool_calls`, and retract obsolete pending asks with `withdraw_tool_call`.
-
-`call_mcp_tool(server_id, tool_name, arguments?)` is the by-name fallback for tools absent from a
-client's original discovery snapshot. Its arguments are exactly the generated proxy's shape—raw
-upstream arguments for pass-through tools, the approval envelope otherwise. It shares dispatch,
-policy, validation, audit, and credential resolution with generated proxies, so naming a tool by
-parameter cannot bypass approval.
-
-`list_mcp_servers` is passive: configured catalog plus persisted connection state, with no token
-refresh or downstream call. `get_mcp_server_status` actively resolves credentials and probes one
-server, returning degraded stage/reason data instead of erasing the server. Status never includes
-access/refresh tokens or client secrets; a configured connection whose deploy-time client is absent
-reports `unprovisioned` rather than disappearing. Reflected `approval_mode` and `input_schema`
-describe the caller-visible proxy shape. Upstream `initialize.instructions` pass through rather than
-being restated here; tool descriptions carry the stub semantics because many clients do not display
-server instructions.
-
-Agent admission composes Haku's FastMCP OAuth adapter and configured static credentials through the
-same canonical authority. An explicit invalid bearer never falls back to an ambient browser cookie.
-FastMCP owns OAuth protocol machinery; Haku owns enrollment, durable authority, actor resolution,
-and the Postgres-backed state required by the accepted private seam. See
-<docs/agent_authority.md>.
-
-#### Catalog reconciliation
-
-`tools/list` is a snapshot read. `mcp/catalog_reconciler.py` builds one complete per-Operator
-generation before readiness and refreshes each configured server's snapshot on the process-wide
-interval. Provider-connection changes invalidate that Operator's generation across replicas through
-Postgres `LISTEN`/`NOTIFY`; a newly admitted Operator queues an immediate pass.
-
-Reflection builds each server without a credential, so a successful catalog is TTL-reused and
-single-flighted by server/config fingerprint across Operators. Failures publish a degraded snapshot
-with no callable proxies. Execution never treats a catalog snapshot as authority: it revalidates the
-actor binding and current credential.
+The Console's Agent-facing MCP endpoint, Operator browser MCP client, and OAuth discovery handlers
+are retired. New MCP calls cannot enter the ledger. Existing rows and their operator decisions stay
+in Postgres for audit and to let pending work drain safely.
 
 ### Canonical Agent authority and enrollment
 
 The canonical contract is <docs/agent_authority.md>. In short: `Operator`, `Agent`, credential
 bindings, grants, names, profiles, and tool-call principals are durable local identities; every
-Agent call records exact binding provenance; and browser enrollment must converge with the MCP-side
-principal before a binding becomes active. Access profiles independently own auto-approval and
-in-process-server grants; missing assignments fail closed.
-Agents submit/read only their own calls and never approve themselves.
+Agent call record keeps exact binding provenance; and browser enrollment must converge with the
+upstream Agent OAuth principal before a binding becomes active. Access profiles own auto-approval
+and in-process-server grants; missing assignments fail closed.
 
-### In-process MCP servers — no second deployment
+### In-process execution backend
 
-An `mcp.servers` entry names a registered in-process `FastMCP` instance; the console reaches no
-remote MCP server (those are Agentplane ActionGroups). `McpServerDispatcher` drives each one through
-an in-memory MCP client, while reviewed implementation code injects any credential only at
-execution. Startup rejects a credential kind the implementation did not declare.
-
-Built-ins are assembled in `mcp/in_process_servers.py`:
-
-- `haku_routine` launches the reviewed routine through ordinary approval.
-
-Gmail and Google Calendar are no longer in-process servers here: agents reach them through
-Agentplane's own `google-mcp` ActionGroup, which reuses the same tool implementations (now under
-`x/google_mcp_server/`) against a separately Airlock-minted Google credential.
+`mcp/in_process_servers.py` still registers the `grants` backend so previously approved rows can
+finish while the ledger drains. The Console no longer reflects or refreshes server catalogs, serves
+MCP requests, or makes browser-session reads through `/mcp`. The routine uses its separate audited
+`POST /api/capabilities/launch-routine` capability; its unused MCP wrapper was removed.
 
 The Console Recall reader, access policy, and `haku_index` tool were removed. The shared
 `haku/recall_index` package remains in use by Agentplane. This release retains the Console's Recall
@@ -155,9 +69,6 @@ The `sandbox` in-process MCP server is absent from the deployed catalog, along w
 access-profile grant, `agent_sandbox` configuration, and auto-approval policy. The Haku-specific
 template, warm pool, janitor, and Console sandbox Role/RoleBinding are gone from Flux output too. The
 generic Agent Sandbox constructs remain for other workspaces.
-
-The trusted frontend resolves opaque IDs by composing ordinary read tools. There are no parallel
-preview-only MCP tools or HTTP routes.
 
 ## Free-form UI — Haku's own UI, embedded
 
@@ -178,10 +89,6 @@ routine auto-approved traffic unless requested. The small page is deliberate: ea
 whole argument/result payloads, so hundreds of rows make a multi-megabyte response. A live event
 refreshes only the newest page and merges it over older pages; result/argument editors initialize
 near the viewport rather than for every retained row.
-
-Agent-facing reads are compact by default: `list_tool_calls` returns status summaries and
-`get_tool_call` returns the selected result. Their `fields` selector opts into whole opaque
-payloads; `get_tool_call(fields=[])` is the cheap status poll.
 
 ## Notifications — Web Push for pending approvals
 
@@ -208,7 +115,7 @@ Cluster topology and operations are owned by <../../cluster/k8s/haku/console/REA
 particular, that document is canonical for static/API routing, migration Jobs, rollout strategy,
 OAuth/client bootstrap, credentials, and placement. Keep the high-level
 boundary here: Haku cannot mutate or inspect the `haku-console` namespace; browser auth is
-app-owned; `/mcp` Agent auth and Operator browser auth are separate; every new top-level backend
+app-owned; operator browser auth is independent of the retired MCP endpoint; every new top-level backend
 prefix must also be routed by the static nginx shell; and API replicas overlap during a rollout, so
 stored and cross-replica contracts must tolerate adjacent releases.
 

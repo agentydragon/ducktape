@@ -1,25 +1,23 @@
-// Per-tool-type rendering for the remote `grocy-sf` MCP server (see grocy_mcp/README.md and
-// grocy_mcp/batch_tools.py). Anything not shaped as expected falls back to the generic raw-JSON
-// view: as with kubectl/requests.tsx, arguments are validated by the tool's own schema at execution
-// time, not at submission. Every approved call runs as the operator's own linked Grocy account
-// (operator_oauth).
+// Per-tool-type rendering for stored calls to the remote `grocy-sf` MCP server (see
+// grocy_mcp/README.md and grocy_mcp/batch_tools.py). Anything not shaped as expected falls back to
+// the generic raw-JSON view. These previews display stored arguments and never make a request to
+// Grocy.
 //
 // `product` / `location` / `qu` / `product_group` / `parent_product` / `shopping_list` arguments
-// accept either a name or a numeric ID (grocy_mcp's `GrocyClient` resolves either at execution
-// time); an ID alone renders poorly, so `useGrocyReferenceData` composes the server's MCP read tools
-// once per page and every row resolves through their results.
+// accept either a name or a numeric ID. Numeric IDs remain visible as IDs because stored approval
+// records do not carry the reference tables.
 //
 // `products_edit` renders an old→new diff, so the reference carries each product's *current* field
 // values (its `products` entries are full records, not just `{id, name}`); the widget looks the
-// edited product up by name/ID and resolves its old foreign keys through the same maps. While the
-// reference is still loading the old side is omitted and only the new value shows.
+// edited product up by name/ID and resolves its old foreign keys through the same maps when a
+// record includes reference data.
 
 import { Group, Stack } from "@mantine/core";
-import { Fragment, type ReactNode, useEffect, useState } from "react";
+import { Fragment, type ReactNode } from "react";
 import { z } from "zod";
 
 import { Field } from "../../field";
-import { fetchGrocyReferenceData, type GrocyReferenceData } from "../../grocy_client";
+import type { GrocyReferenceData } from "../../grocy_reference_data";
 import { mcpToolSchema, type McpToolArgumentsFor } from "../../mcp_tool_schema";
 import { definePreview, type ToolPreview } from "../entry";
 import { GROCY_SERVER_ID } from "../server_ids";
@@ -103,39 +101,18 @@ type ShoppingItem = ShoppingListItemsAddArgs["items"][number];
 // The clearable-field names, from the generated `clear_fields` element type.
 type EditProductField = NonNullable<EditProductItem["clear_fields"]>[number];
 
-// One product's current field values, as the reference carries them (see grocy_client.ts).
+// One product's current field values, as carried by optional reference data.
 type GrocyProduct = GrocyReferenceData["products"][number];
 
-// Fetched once per rendered preview; while loading (or on fetch failure) `resolveName`
-// falls back to `id=N` for numeric references — a name argument always renders as-is.
-function useGrocyReferenceData(): { reference: GrocyReferenceData | null; error: string | null } {
-  const [reference, setReference] = useState<GrocyReferenceData | null>(null);
-  const [error, setError] = useState<string | null>(null);
-
-  useEffect(() => {
-    let alive = true;
-    fetchGrocyReferenceData()
-      .then((result) => {
-        if (alive) setReference(result);
-      })
-      .catch((e: unknown) => {
-        if (alive) setError(e instanceof Error ? e.message : String(e));
-      });
-    return () => {
-      alive = false;
-    };
-  }, []);
-
-  return { reference, error };
-}
+// The retired Console MCP endpoint no longer supplies reference tables to previews.
+const previewReferenceData: GrocyReferenceData | null = null;
 
 function resolveName(items: { id: number; name: string }[] | undefined, value: string | number): string {
   if (typeof value === "string") return value;
   return items?.find((item) => item.id === value)?.name ?? `id=${value}`;
 }
 
-// Find the full current record for the edited product — a string arg is a name, a number an ID
-// (grocy_mcp accepts either). Undefined while the reference loads or if the name doesn't match.
+// Find the full current record for the edited product — a string arg is a name, a number an ID.
 function resolveProduct(products: GrocyProduct[] | undefined, value: string | number): GrocyProduct | undefined {
   return typeof value === "number" ? products?.find((p) => p.id === value) : products?.find((p) => p.name === value);
 }
@@ -163,14 +140,8 @@ function formatAmount(amount: number, qu: string | null | undefined): string {
   return `${amount}${qu ? ` ${qu}` : ""}`;
 }
 
-function GrocyReferenceLoadError({ error }: { error: string | null }) {
-  if (!error) return null;
-  return <PreviewText c="red">Couldn&apos;t resolve product/location names: {error}</PreviewText>;
-}
-
 // Shared skeleton for the item-list previews (stock add/consume, products create/edit, shopping
-// add): fetch the reference once, render the first few rows compact / all detailed with a
-// "… +N more" line, and surface a reference load error. `gap` sets the inter-row spacing (larger
+// add): render the first few rows compact / all detailed with a "… +N more" line. `gap` sets the inter-row spacing (larger
 // for multi-line rows). `renderRow` gets the reference and variant so a row can resolve names and
 // pick its own compact/detailed form.
 function GrocyItemsPreview<T>({
@@ -184,17 +155,15 @@ function GrocyItemsPreview<T>({
   gap: number;
   renderRow: (item: T, reference: GrocyReferenceData | null, variant: PreviewVariant) => ReactNode;
 }) {
-  const { reference, error } = useGrocyReferenceData();
   const shown = variant === "compact" ? items.slice(0, COMPACT_ITEM_LIMIT) : items;
   return (
     <Stack gap="xs">
       <Stack gap={gap}>
         {shown.map((item, i) => (
-          <Fragment key={i}>{renderRow(item, reference, variant)}</Fragment>
+          <Fragment key={i}>{renderRow(item, previewReferenceData, variant)}</Fragment>
         ))}
         <MoreLine count={items.length - shown.length} />
       </Stack>
-      <GrocyReferenceLoadError error={error} />
     </Stack>
   );
 }
@@ -435,7 +404,7 @@ function StockEntryEditPreview({ args, variant }: PreviewProps<StockEntryEditArg
 }
 
 function StockGetPreview({ args }: PreviewProps<StockGetArgs>) {
-  const { reference, error } = useGrocyReferenceData();
+  const reference = previewReferenceData;
   const products = (args.products ?? []).map((value) => resolveName(reference?.products, value));
   const locations = (args.locations ?? []).map((value) => resolveName(reference?.locations, value));
   return (
@@ -443,7 +412,6 @@ function StockGetPreview({ args }: PreviewProps<StockGetArgs>) {
       {products.length === 0 && locations.length === 0 && <PreviewText>All current stock</PreviewText>}
       {products.length > 0 && <Field label="Products">{products.join(", ")}</Field>}
       {locations.length > 0 && <Field label="Locations">{locations.join(", ")}</Field>}
-      <GrocyReferenceLoadError error={error} />
     </Stack>
   );
 }
@@ -649,7 +617,7 @@ function ProductsEditPreview({ args, variant }: PreviewProps<ProductsEditArgs>) 
 }
 
 function ShoppingListGetPreview({ args }: PreviewProps<ShoppingListGetArgs>) {
-  const { reference, error } = useGrocyReferenceData();
+  const reference = previewReferenceData;
   return (
     <Stack gap="xs">
       <PreviewText>
@@ -660,7 +628,6 @@ function ShoppingListGetPreview({ args }: PreviewProps<ShoppingListGetArgs>) {
           {resolveName(reference?.shopping_lists, args.shopping_list)}
         </PreviewText>
       </PreviewText>
-      <GrocyReferenceLoadError error={error} />
     </Stack>
   );
 }
@@ -747,7 +714,7 @@ function shoppingItemEditChanges(
 }
 
 function ShoppingListItemEditPreview({ args, variant }: PreviewProps<ShoppingListItemEditArgs>) {
-  const { reference, error } = useGrocyReferenceData();
+  const reference = previewReferenceData;
   const current = resolveShoppingItem(reference?.shopping_list_items, args.item_id);
   const changes = shoppingItemEditChanges(args, current);
   const shown = variant === "compact" ? changes.slice(0, 2) : changes;
@@ -760,7 +727,6 @@ function ShoppingListItemEditPreview({ args, variant }: PreviewProps<ShoppingLis
         ))}
         <MoreLine count={changes.length - shown.length} />
       </Stack>
-      <GrocyReferenceLoadError error={error} />
     </Stack>
   );
 }

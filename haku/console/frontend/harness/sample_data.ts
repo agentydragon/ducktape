@@ -2,7 +2,6 @@
 // (mock_api.ts). Kept separate so both share one source of truth.
 import { makeRecentToolCall, type RecentToolCall } from "../approval_state";
 import type { AiquotaView, DeploymentInfo, GrantListResponse, ToolCallRecord } from "../client";
-import type { McpServerConnection, McpServerProbe } from "../mcp_status_client";
 import type { RegisteredToolPreviewFixture } from "../tool_rendering/index";
 
 const STOCK_ADD_HISTORY_FIXTURE = {
@@ -207,35 +206,6 @@ export function sampleRecentToolCalls(nowMs: number): RecentToolCall[] {
   if (!recent) throw new Error(`Expected terminal screenshot fixture, got ${record.status}`);
   return [recent];
 }
-
-export const SAMPLE_MCP_SERVERS: McpServerConnection[] = [
-  {
-    server_id: "sandbox",
-    backend: { kind: "in_process", credential: { kind: "none" } },
-  },
-  {
-    server_id: "grants",
-    backend: { kind: "in_process", credential: { kind: "none" } },
-  },
-  {
-    server_id: "haku_routine",
-    backend: { kind: "in_process", credential: { kind: "none" } },
-  },
-];
-
-export const SAMPLE_MCP_PROBES: Record<string, McpServerProbe> = Object.fromEntries(
-  SAMPLE_MCP_SERVERS.map((connection) => [
-    connection.server_id,
-    {
-      connection,
-      server: {
-        server_id: connection.server_id,
-        title: connection.server_id,
-        state: { status: "alive" as const, tools: [] },
-      },
-    },
-  ])
-);
 
 export const SAMPLE_GRANTS: GrantListResponse = {
   grants: [

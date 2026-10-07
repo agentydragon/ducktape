@@ -1,15 +1,12 @@
-// Focused previews for the remote, operator-authenticated `tana` MCP server. The
-// desktop-backed server only receives opaque node ids, so the browser resolves names by calling
-// read_node through the console's same-origin Operator MCP session.
+// Focused previews for stored calls to the remote, operator-authenticated `tana` MCP server. Call
+// records contain opaque node IDs, so previews link those IDs directly without reading Tana.
 
 import { Group, Stack } from "@mantine/core";
-import { useEffect, useState } from "react";
 import type { z } from "zod";
 
 import { CodeBlock } from "../../code_block";
 import { Field } from "../../field";
 import { ExternalLink } from "../../link";
-import { fetchTanaNodePreviews, type TanaNodePreview } from "../../tana_client";
 import { definePreview, type ToolPreview } from "../entry";
 import { clampBlock, PreviewBadge, PreviewText, type PreviewProps } from "../vocabulary";
 import {
@@ -33,49 +30,20 @@ function tanaNodeUrl(nodeId: string): string {
   return `https://app.tana.inc?nodeid=${encodeURIComponent(nodeId)}`;
 }
 
-function useTanaNodePreviews(nodeIds: string[]): Record<string, TanaNodePreview> | null {
-  const [previews, setPreviews] = useState<Record<string, TanaNodePreview> | null>(null);
-  const key = [...new Set(nodeIds)].sort().join(",");
-
-  useEffect(() => {
-    let alive = true;
-    setPreviews(null);
-    fetchTanaNodePreviews(key === "" ? [] : key.split(",")).then(
-      (result) => {
-        if (alive) setPreviews(result);
-      },
-      () => {
-        if (alive) setPreviews({});
-      }
-    );
-    return () => {
-      alive = false;
-    };
-  }, [key]);
-
-  return previews;
-}
-
-function TanaNodeLink({ nodeId, previews }: { nodeId: string; previews: Record<string, TanaNodePreview> | null }) {
-  const preview = previews?.[nodeId];
-  return preview ? (
-    <ExternalLink href={tanaNodeUrl(nodeId)} size="sm">
-      {preview.name}
-    </ExternalLink>
-  ) : (
-    <PreviewText span className="haku-shell-mono" c="dimmed">
+function TanaNodeLink({ nodeId }: { nodeId: string }) {
+  return (
+    <ExternalLink href={tanaNodeUrl(nodeId)} size="sm" className="haku-shell-mono">
       {nodeId}
-    </PreviewText>
+    </ExternalLink>
   );
 }
 
 function ImportTanaPastePreview({ args, variant }: PreviewProps<ImportTanaPasteArgs>) {
-  const previews = useTanaNodePreviews([args.parentNodeId]);
   const content = variant === "compact" ? clampBlock(args.content, 3) : args.content;
   return (
     <Stack gap="xs">
       <Field label="Under">
-        <TanaNodeLink nodeId={args.parentNodeId} previews={previews} />
+        <TanaNodeLink nodeId={args.parentNodeId} />
       </Field>
       <CodeBlock value={content} />
     </Stack>
@@ -95,8 +63,7 @@ function GetOrCreateCalendarNodePreview({ args }: PreviewProps<GetOrCreateCalend
 }
 
 function TrashNodePreview({ args }: PreviewProps<TrashNodeArgs>) {
-  const previews = useTanaNodePreviews([args.nodeId]);
-  return <TanaNodeLink nodeId={args.nodeId} previews={previews} />;
+  return <TanaNodeLink nodeId={args.nodeId} />;
 }
 
 function EditOperation({ label, edit }: { label: string; edit: z.infer<typeof zEditOperation> }) {
@@ -120,10 +87,9 @@ function EditOperation({ label, edit }: { label: string; edit: z.infer<typeof zE
 }
 
 function EditNodePreview({ args }: PreviewProps<EditNodeArgs>) {
-  const previews = useTanaNodePreviews([args.nodeId]);
   return (
     <Stack gap="xs">
-      <TanaNodeLink nodeId={args.nodeId} previews={previews} />
+      <TanaNodeLink nodeId={args.nodeId} />
       {args.name && <EditOperation label="Name" edit={args.name} />}
       {args.description && <EditOperation label="Description" edit={args.description} />}
     </Stack>
@@ -131,24 +97,19 @@ function EditNodePreview({ args }: PreviewProps<EditNodeArgs>) {
 }
 
 function MoveNodePreview({ args }: PreviewProps<MoveNodeArgs>) {
-  const previews = useTanaNodePreviews(
-    [args.nodeId, args.targetNodeId, args.sourceParentId, args.referenceNodeId].filter(
-      (id): id is string => id !== undefined
-    )
-  );
   return (
     <Stack gap={4}>
       <Group gap={6}>
-        <TanaNodeLink nodeId={args.nodeId} previews={previews} />
+        <TanaNodeLink nodeId={args.nodeId} />
         <PreviewText c="dimmed">→</PreviewText>
-        <TanaNodeLink nodeId={args.targetNodeId} previews={previews} />
+        <TanaNodeLink nodeId={args.targetNodeId} />
       </Group>
       <Group gap={6}>
         <PreviewBadge variant="outline">{args.position}</PreviewBadge>
-        {args.referenceNodeId && <TanaNodeLink nodeId={args.referenceNodeId} previews={previews} />}
+        {args.referenceNodeId && <TanaNodeLink nodeId={args.referenceNodeId} />}
         {args.sourceParentId && (
           <PreviewText c="dimmed">
-            from <TanaNodeLink nodeId={args.sourceParentId} previews={previews} />
+            from <TanaNodeLink nodeId={args.sourceParentId} />
           </PreviewText>
         )}
         {args.keepSourceReference && <PreviewBadge variant="outline">keep reference</PreviewBadge>}
@@ -158,19 +119,18 @@ function MoveNodePreview({ args }: PreviewProps<MoveNodeArgs>) {
 }
 
 function SetFieldOptionPreview({ args }: PreviewProps<SetFieldOptionArgs>) {
-  const previews = useTanaNodePreviews([args.nodeId, args.attributeId, args.optionId]);
   return (
     <Stack gap="xs">
       <Field label="Node">
-        <TanaNodeLink nodeId={args.nodeId} previews={previews} />
+        <TanaNodeLink nodeId={args.nodeId} />
       </Field>
       <Field label="Field">
-        <TanaNodeLink nodeId={args.attributeId} previews={previews} />
+        <TanaNodeLink nodeId={args.attributeId} />
       </Field>
       <Field label="Option">
         <Group gap={6}>
           <PreviewBadge variant="outline">{args.mode}</PreviewBadge>
-          <TanaNodeLink nodeId={args.optionId} previews={previews} />
+          <TanaNodeLink nodeId={args.optionId} />
         </Group>
       </Field>
     </Stack>

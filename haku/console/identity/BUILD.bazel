@@ -76,30 +76,13 @@ py_library(
 )
 
 py_library(
-    name = "fastmcp_adapter",
-    srcs = ["fastmcp_adapter.py"],
-    deps = [
-        "//haku/console:tool_call_actor",
-        "//mcp_infra:oidc_principal",
-        "//mcp_infra:persistence",
-        "//mcp_infra/authentik_auth:fastmcp_proxy",
-        "@pypi//fastmcp_slim",
-        "@pypi//httpx2",
-        "@pypi//mcp",
-        "@pypi//mcp_types",
-        "@pypi//py_key_value_aio",
-        "@pypi//starlette",
-    ],
-)
-
-py_library(
     name = "authorization",
     srcs = ["authorization.py"],
     deps = [
         ":agent",
         ":enrollment",
-        ":fastmcp_adapter",
         ":naming",
+        ":oauth_grants",
         ":operator_identity",
         ":operator_identity_store",
         "//haku/console:database_schema",
@@ -114,27 +97,8 @@ py_library(
     srcs = ["agent_bearer_authority.py"],
     deps = [
         ":authorization",
-        ":fastmcp_adapter",
+        ":oauth_grants",
         "//haku/console:tool_call_actor",
-    ],
-)
-
-py_library(
-    name = "mcp_agent_auth",
-    srcs = ["mcp_agent_auth.py"],
-    deps = [
-        ":agent_bearer_authority",
-        ":authorization",
-        ":fastmcp_adapter",
-        ":operator_auth",
-        ":operator_identity_store",
-        "//haku/console:config",
-        "//haku/console:settings",
-        "//haku/console:tool_call_actor",
-        "//mcp_infra:persistence",
-        "//mcp_infra/authentik_auth:provider",
-        "@pypi//fastmcp_slim",
-        "@pypi//starlette",
     ],
 )
 
@@ -190,7 +154,7 @@ py_test(
         ":agent",
         ":authorization",
         ":enrollment",
-        ":fastmcp_adapter",
+        ":oauth_grants",
         ":operator_identity",
         ":operator_identity_store",
         "//:conftest",
@@ -204,26 +168,6 @@ py_test(
         "@pypi//pytest",
         "@pypi//pytest_bazel",
         "@pypi//sqlalchemy",
-    ],
-)
-
-py_test(
-    name = "test_fastmcp_adapter",
-    srcs = ["test_fastmcp_adapter.py"],
-    deps = [
-        ":fastmcp_adapter",
-        "//:conftest",
-        "//haku/console:conftest",
-        "//haku/console:tool_call_actor",
-        "//mcp_infra:oidc_principal",
-        "//mcp_infra/authentik_auth:fastmcp_proxy",
-        "@pypi//fastmcp_slim",
-        "@pypi//httpx2",
-        "@pypi//mcp",
-        "@pypi//mcp_types",
-        "@pypi//pytest",
-        "@pypi//pytest_bazel",
-        "@pypi//starlette",
     ],
 )
 
@@ -271,26 +215,8 @@ py_test(
     ],
 )
 
-py_test(
-    name = "test_mcp_agent_auth",
-    size = "medium",
-    srcs = ["test_mcp_agent_auth.py"],
-    deps = [
-        ":agent_bearer_authority",
-        ":authorization",
-        ":fastmcp_adapter",
-        ":mcp_agent_auth",
-        ":operator_identity_store",
-        "//:conftest",
-        "//haku/console:config",
-        "//haku/console:conftest",
-        "//haku/console:settings",
-        "//haku/console:tool_call_actor",
-        "//mcp_infra:persistence",
-        "//mcp_infra/authentik_auth:provider",
-        "@pypi//fastmcp_slim",
-        "@pypi//pydantic",
-        "@pypi//pytest",
-        "@pypi//pytest_bazel",
-    ],
+py_library(
+    name = "oauth_grants",
+    srcs = ["oauth_grants.py"],
+    deps = ["//haku/console:tool_call_actor"],
 )

@@ -337,19 +337,6 @@ data:
           }
         }
       },
-      "mcp": {
-        "servers": {
-          "haku-console": {
-            "url": "https://haku.allegedly.works/mcp",
-            "transport": "streamable-http",
-            "supportsParallelToolCalls": true,
-            "requestTimeoutMs": 70000,
-            "headers": {
-              "Authorization": "Bearer ${HAKU_CONSOLE_TOKEN}"
-            }
-          }
-        }
-      },
       "plugins": {
         "entries": {
           "matrix": {

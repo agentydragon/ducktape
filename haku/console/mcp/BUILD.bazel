@@ -13,26 +13,6 @@ py_library(
 )
 
 py_library(
-    name = "guidance",
-    srcs = ["guidance.py"],
-)
-
-py_library(
-    name = "mount",
-    srcs = ["mount.py"],
-    deps = ["@pypi//starlette"],
-)
-
-py_library(
-    name = "reflection_cache",
-    srcs = ["reflection_cache.py"],
-    deps = [
-        "@pypi//mcp",
-        "@pypi//mcp_types",
-    ],
-)
-
-py_library(
     name = "tool_call_service",
     srcs = ["tool_call_service.py"],
     deps = [
@@ -51,7 +31,6 @@ py_library(
     srcs = ["approval.py"],
     deps = [
         ":execution",
-        ":reflection_cache",
         ":tool_call_service",
         "//haku/console:database_schema",
         "//haku/console:mcp_config",
@@ -67,38 +46,6 @@ py_library(
         "@pypi//mcp_types",
         "@pypi//pydantic",
         "@pypi//sqlalchemy",
-    ],
-)
-
-py_library(
-    name = "catalog_reconciler",
-    srcs = ["catalog_reconciler.py"],
-    deps = [
-        ":approval",
-        ":reflection_cache",
-        "//haku/console:mcp_config",
-    ],
-)
-
-py_library(
-    name = "server",
-    srcs = ["server.py"],
-    deps = [
-        ":approval",
-        ":catalog_reconciler",
-        ":guidance",
-        ":tool_call_service",
-        "//haku/console:config",
-        "//haku/console:mcp_config",
-        "//haku/console:settings",
-        "//haku/console:tool_call_actor",
-        "//haku/console/auto_approval:registry",
-        "//haku/console/identity:fastmcp_adapter",
-        "@ducktape_haku//haku/console:tool_calls",
-        "@pypi//fastmcp_slim",
-        "@pypi//mcp",
-        "@pypi//mcp_types",
-        "@pypi//pydantic",
     ],
 )
 
@@ -120,7 +67,6 @@ py_library(
         ":in_process_server_access",
         "//haku/console:mcp_config",
         "//haku/console/tools:grants",
-        "//haku/console/tools:routine",
     ],
 )
 
@@ -129,17 +75,16 @@ py_library(
     srcs = ["export_tool_schemas.py"],
     deps = [
         ":in_process_servers",
-        ":server",
         "//grocy_mcp:batch_tools",
         "//grocy_mcp:client",
         "//grocy_mcp:mcp_types",
         "//haku/console/tools:grants",
         "//haku/console/tools:kubernetes",
+        "//haku/console/tools:routine",
         "//mcp_infra:request_scoped_openapi",
         "//x/google_mcp_server:gmail",
         "//x/google_mcp_server:google_calendar",
         "@pypi//fastmcp_slim",
-        "@pypi//pydantic",
     ],
 )
 
@@ -149,36 +94,6 @@ py_binary(
     name = "export_tool_schemas_bin",
     main_module = "haku.console.mcp.export_tool_schemas",
     deps = [":export_tool_schemas"],
-)
-
-py_test(
-    name = "test_reflection_cache",
-    srcs = ["test_reflection_cache.py"],
-    deps = [
-        ":reflection_cache",
-        "//:conftest",
-        "//haku/console:conftest",
-        "@pypi//mcp",
-        "@pypi//mcp_types",
-        "@pypi//pytest",
-        "@pypi//pytest_bazel",
-    ],
-)
-
-py_test(
-    name = "test_catalog_reconciler",
-    srcs = ["test_catalog_reconciler.py"],
-    deps = [
-        ":approval",
-        ":catalog_reconciler",
-        ":reflection_cache",
-        "//:conftest",
-        "//haku/console:conftest",
-        "//haku/console:mcp_config",
-        "@pypi//mcp",
-        "@pypi//mcp_types",
-        "@pypi//pytest_bazel",
-    ],
 )
 
 py_test(
@@ -213,7 +128,6 @@ py_test(
     deps = [
         ":approval",
         ":execution",
-        ":reflection_cache",
         ":tool_call_service",
         "//:conftest",
         "//haku/console:conftest",
@@ -232,44 +146,6 @@ py_test(
 )
 
 py_test(
-    name = "test_server",
-    size = "medium",
-    srcs = ["test_server.py"],
-    requires_docker = True,
-    deps = [
-        ":approval",
-        ":catalog_reconciler",
-        ":reflection_cache",
-        ":server",
-        ":tool_call_service",
-        "//:conftest",
-        "//haku/console:app",
-        "//haku/console:config",
-        "//haku/console:conftest",
-        "//haku/console:mcp_config",
-        "//haku/console:tool_call_actor",
-        "//haku/console/identity:operator_identity",
-        "//mcp_infra:persistence",
-        "//util:net",
-        "//util/testing:asgi",
-        "//util/testing:mock_oidc",
-        "//x/google_mcp_server:gmail",
-        "//x/google_mcp_server:google_calendar",
-        "@ducktape_haku//haku/console:tool_calls",
-        "@pypi//fastmcp_slim",
-        "@pypi//httpx",
-        "@pypi//jsonschema",
-        "@pypi//mcp",
-        "@pypi//mcp_types",
-        "@pypi//pydantic",
-        "@pypi//pytest",
-        "@pypi//pytest_bazel",
-        "@pypi//referencing",
-        "@pypi//sqlalchemy",
-    ],
-)
-
-py_test(
     name = "test_export_tool_schemas",
     size = "medium",
     srcs = ["test_export_tool_schemas.py"],
@@ -281,18 +157,5 @@ py_test(
         "@pypi//pytest",
         "@pypi//pytest_bazel",
         "@pypi//referencing",
-    ],
-)
-
-py_test(
-    name = "test_mount",
-    srcs = ["test_mount.py"],
-    deps = [
-        ":mount",
-        "//:conftest",
-        "//haku/console:conftest",
-        "@pypi//pytest",
-        "@pypi//pytest_bazel",
-        "@pypi//starlette",
     ],
 )

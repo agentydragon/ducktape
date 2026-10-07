@@ -8,8 +8,8 @@ The `console.k8s.yaml` and `kustomization.yaml` here are generated from
 in one Kustomization, emitted in the central Flux chart; `console_config.py` is the non-secret config
 the `haku-console-config` ConfigMap carries, rendered and checked through the console's
 own `Settings`). Regenerate per <../../../docs/cdk8s.md>. Hand-written beside them: the SOPS
-Secrets, `image-pins/`, and the two ConfigMaps
-carrying Flux image markers (`static-metadata.yaml`, `image-metadata.yaml`).
+Secrets, `image-pins/`, and the two ConfigMaps carrying Flux image markers
+(`static-metadata.yaml`, `image-metadata.yaml`).
 
 ## App-owned auth (the forward-auth outpost is retired)
 
@@ -17,24 +17,13 @@ The console authenticates its own surface instead of sitting behind the shared A
 proxy outpost. The HTTPRoute points `haku.allegedly.works` at the standalone static
 Service; its nginx proxies backend paths to the API Service. The retired `haku-dashboard`
 proxy provider and its deletion tombstone are gone.
-Two Authentik OAuth2 providers, minted by `tf/gitops/agent-machine-access` (application slugs
-`haku-console` for operator browser login and `haku-console-mcp` for the `/mcp` OIDCProxy
-upstream), write their client secrets + the operator session-signing secret into the
-`haku-console-oidc` Secret; single-user access is Authentik's application access policy.
-The MCP issuer/callback URL is derived from the console's canonical
-`HAKU_CONSOLE__PUBLIC_BASE_URL` plus `/mcp`; it is not separately configurable. Root
-`/.well-known/oauth-*` discovery points clients to those namespaced MCP OAuth endpoints, while
-operator browser OAuth remains under `/auth/*` with its own provider and session.
-The OIDCProxy's dynamic-client-registration + token state (shared across the two replicas) is
-backed by the console's own Postgres (`HAKU_CONSOLE__MCP_OAUTH__PERSISTENCE__KIND=postgres`,
-py-key-value's `PostgreSQLStore` auto-creating a `mcp_oauth_kv` table) — no separate valkey, unlike
-the grocy/tana MCP facades. Deviation from those facades: the operator browser login is the console's
-own app-native OIDC (not an outpost and not a separate SPA), so a 401 from `/api/*` bounces the
-browser to `/auth/login`.
+The operator browser-login provider is minted by `tf/gitops/agent-machine-access`; its credentials
+and the session-signing secret are mirrored into `haku-console-oidc`. The former Console MCP OAuth
+provider and `/mcp` protocol endpoint have been removed. nginx returns 404 for `/mcp` and its old
+OAuth discovery paths, while operator browser OAuth remains under `/auth/*`.
 
 **nginx ↔ app routing invariant.** The standalone `static` nginx Deployment serves
-the SPA and proxies the app's top-level backend prefixes (`/api`, `/healthz`, `/mcp`, `/auth`, and
-the `/.well-known/oauth-*` discovery docs) to the `haku-console` API Service; everything else is
+the SPA and proxies the app's top-level backend prefixes (`/api`, `/healthz`, and `/auth`; `/mcp` and its OAuth discovery paths return 404) to the `haku-console` API Service; everything else is
 the SPA catch-all. So a **new top-level backend prefix needs a matching `location` in
 `haku/console/default.conf.template`**, or it silently returns the SPA shell instead of reaching
 the app (the footgun that first bit `/mcp`). The static Deployment's
@@ -54,8 +43,9 @@ console share one Flux Kustomization, and a Kustomization applies its objects wi
 — so the API Deployment can be rolling while the migration Job is still running. Schema changes
 must therefore be compatible with both the outgoing and incoming code (see _Rolling release
 compatibility_ below, which the previous ordered-Kustomization layout already required). What
-the ordering does still hold for is _dependent Kustomizations_: `wait` plus the Job health
-checks keep anything with `dependsOn: haku-console` from reconciling until both Jobs succeed.
+the ordering does still hold for is _dependent Kustomizations_: `wait` plus the database and
+migration health checks keep anything with `dependsOn: haku-console` from reconciling until the
+database is ready and the migration Job succeeds.
 
 The Job has no Kubernetes API authority and is recreated only when its desired image or manifest
 changes (`kustomize.toolkit.fluxcd.io/force: enabled`). It has no TTL, and it retries
@@ -63,9 +53,8 @@ changes (`kustomize.toolkit.fluxcd.io/force: enabled`). It has no TTL, and it re
 beside it. Each attempt leaves its own Pod, so a genuine migration failure is still readable
 from the logs; it no longer fails after exactly one try. See `cluster/docs/troubleshooting.md` →
 “A Failed Job Wedges Its Flux Kustomization”. It temporarily uses the existing CNPG
-application-owner credential; splitting DDL ownership from runtime DML must first migrate the
-externally managed `mcp_oauth_kv` table and make a deliberate ownership/grant handoff for the
-live database.
+application-owner credential. The old `mcp_oauth_kv` table is retained through the rolling release;
+remove it only after outgoing replicas no longer initialize it.
 
 ## Rolling release compatibility
 

@@ -7,10 +7,8 @@ before the schemas reach the generated frontend catalogs; execution-only Python 
 still impose stricter cross-field rules. Two catalogs are emitted, selected by ``main()``'s
 ``--results`` flag: ``McpToolArguments`` and ``McpToolResults``.
 
-Beyond the console's own in-process servers (haku_routine, grants), the result catalog includes
-the console-native reflection tools directly from their Python response models, which keeps the
-trusted frontend's runtime validators identical to the MCP output contract without a
-database-backed console application or an HTTP status endpoint.
+The retired `haku_routine` request wrapper is represented by its Pydantic argument/result models
+so existing approval rows remain renderable. The grants backend is still reflected in-process.
 
 The exporter also reflects two servers that do not run in-process in haku-console: the **remote**
 ``grocy-sf`` server's custom batch tools, and ``gmail``/``google_calendar``, whose tool
@@ -35,24 +33,18 @@ from collections.abc import Mapping
 from typing import Any, cast
 
 from fastmcp import Client, FastMCP
-from pydantic import BaseModel
 
 from grocy_mcp.batch_tools import build_batch_tools_mcp
 from grocy_mcp.client import GrocyClient
 from grocy_mcp.mcp_types import ServerSettings
 from haku.console.mcp.in_process_servers import InProcessServerDependencies, build_in_process_servers
-from haku.console.mcp.server import SERVER_NAME, McpServerConnectionStatusResponse, McpServerProbeResponse
 from haku.console.tools.grants import GrantsToolsService
 from haku.console.tools.kubernetes import KubernetesToolsService
+from haku.console.tools.routine import LaunchRoutineArguments, LaunchRoutineResult
 from mcp_infra.request_scoped_openapi import borrowed_http_client_provider
 from x.google_mcp_server import gmail as gmail_tools, google_calendar as google_calendar_tools
 
 GROCY_SF_SERVER_ID = "grocy-sf"
-
-_CONSOLE_NATIVE_RESULT_MODELS: dict[str, type[BaseModel]] = {
-    "get_mcp_server_status": McpServerProbeResponse,
-    "list_mcp_servers": McpServerConnectionStatusResponse,
-}
 
 # grocy-sf is reflected only for the batch tools the console renders previews for; the rest of
 # its surface isn't used by the frontend and shouldn't gate schema generation.
@@ -142,21 +134,19 @@ def build_schema_servers() -> dict[str, FastMCP]:
     inert = _InertCollaborator()
     # `Any` is intentional at this reflection-only boundary: no collaborator may be
     # touched until a tool executes, and `_InertCollaborator` makes that invariant fail
-    # loudly if FastMCP ever changes its registration behavior. routine needs an inert
-    # launcher, and grants needs an inert grant/enrollment service plus an inert kubernetes
-    # authorization for its `kubernetes_can_i` tool.
+    # loudly if FastMCP ever changes its registration behavior. Grants needs an inert
+    # grant/enrollment service plus inert Kubernetes authorization.
     dependency: Any = inert
     servers = {
         server_id: registration.builder(None)
         for server_id, registration in build_in_process_servers(
             InProcessServerDependencies(
-                routine_launcher=dependency,
                 grants=GrantsToolsService(
                     kubernetes=dependency,
                     catalog=dependency,
                     agents=dependency,
                     can_i=KubernetesToolsService(authorization=dependency),
-                ),
+                )
             )
         ).items()
     }
@@ -164,8 +154,7 @@ def build_schema_servers() -> dict[str, FastMCP]:
         ServerSettings(grocy_url="https://grocy.invalid"),
         client_provider=borrowed_http_client_provider(cast(GrocyClient, inert)),
     )
-    # gmail/google_calendar build their own inert client from a None token, same as their
-    # haku-console in-process predecessors did.
+    # gmail/google_calendar build their own inert client from a None token.
     servers[gmail_tools.GMAIL_SERVER_ID] = gmail_tools.build_mcp(gmail_tools.build_gmail_client_from_token(None))
     servers[google_calendar_tools.GOOGLE_CALENDAR_SERVER_ID] = google_calendar_tools.build_mcp(
         google_calendar_tools.build_calendar_client_from_token(None)
@@ -325,6 +314,19 @@ async def build_mcp_tool_arguments_schema() -> dict[str, Any]:
             "required": list(tool_properties),
         }
 
+    routine_argument_schema = _frontend_schema(
+        LaunchRoutineArguments.model_json_schema(), "$.properties.haku_routine.properties.launch_routine"
+    )
+    # This schema is retained only for historical approval rows. Match the closed object shape
+    # formerly published by FastMCP even though the stored request model ignores extra fields.
+    routine_argument_schema["additionalProperties"] = False
+    server_properties["haku_routine"] = {
+        "type": "object",
+        "additionalProperties": False,
+        "properties": {"launch_routine": routine_argument_schema},
+        "required": ["launch_routine"],
+    }
+
     return {
         "$schema": _DRAFT_2020_12,
         "title": "McpToolArguments",
@@ -383,17 +385,15 @@ async def build_mcp_tool_results_schema() -> dict[str, Any]:
             "required": list(tool_properties),
         }
 
-    console_tool_properties = {
-        tool_name: _frontend_schema(
-            model.model_json_schema(mode="serialization"), f"$.properties.{SERVER_NAME}.properties.{tool_name}"
-        )
-        for tool_name, model in _CONSOLE_NATIVE_RESULT_MODELS.items()
-    }
-    server_properties[SERVER_NAME] = {
+    routine_result_schema = _frontend_schema(
+        LaunchRoutineResult.model_json_schema(mode="serialization"),
+        "$.properties.haku_routine.properties.launch_routine",
+    )
+    server_properties["haku_routine"] = {
         "type": "object",
         "additionalProperties": False,
-        "properties": console_tool_properties,
-        "required": list(console_tool_properties),
+        "properties": {"launch_routine": routine_result_schema},
+        "required": ["launch_routine"],
     }
 
     return {

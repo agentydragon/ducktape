@@ -27,11 +27,9 @@ emitted `.js`, and vitest runs the emitted `.test.js`.
 - `approvals_embed_page.tsx` — the small-window tool-approval surface. It reuses the approvals tab
   and shared tool-call cards without mounting navigation chrome or the cross-origin Haku UI iframe;
   Agent UI bridge-only location and screenshot approvals remain in the full shell.
-- `settings_panel.tsx` — the Settings page. It reads MCP-server reflection through
-  the console's Operator-authenticated MCP transport, validating each result against the
-  Python-generated MCP result-schema catalog, and hosts account connect/disconnect, per-Agent
-  auto-approval policy, Web Push registration, deployment commit links, and configured recall-index
-  freshness.
+- `settings_panel.tsx` — the Settings page for Agent access, grants, Web Push registration, and
+  deployment commit links. MCP server status and Console Recall freshness were removed with the
+  corresponding inactive deployment integrations.
 - `aiquota_panel.tsx` — the AI-quota side panel and its rail button. The quota rendering itself is
   aiquota's own `//aiquota/frontend:board`, fed by the payload `aiquota_proxy.py` fetches, so the
   console shows exactly what the standalone dashboard, the CLI and the GNOME popup show; the panel
@@ -60,8 +58,7 @@ emitted `.js`, and vitest runs the emitted `.test.js`.
 - `client.ts` — typed `openapi-fetch` client; the types come from the backend's
   OpenAPI schema (the `:schema` target runs `//haku/console:export_schema_bin`), so
   the Pydantic models are the single source of truth for the wire contract. Includes the
-  launch-routine helper, MCP approval queue helpers (`pending`, approve, deny), and
-  provider account-connection helpers.
+  launch-routine helper and approval/history helpers (`pending`, approve, deny).
 - `confirm_dialog.tsx` — trusted top-layer confirmations for Agent UI bridge launches, geolocation
   grants, off-whitelist opens, and MCP tool-call approvals.
 - `styles.src.css` — `@import`s Tailwind + `@mantine/core` CSS; compiled by

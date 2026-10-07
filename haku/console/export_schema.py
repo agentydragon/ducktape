@@ -3,9 +3,9 @@
 Driven by ``//haku/console/frontend:schema`` (``js_openapi_schema``) to generate
 ``api/schema.d.ts``. Only route/model definitions are needed; placeholder ``Settings``
 suffice and ``app.openapi()`` runs no startup work (the Postgres stores are constructed
-lazily, and no connection or migration happens outside ``app.main``). The ``/mcp`` server is
-mounted as an opaque ASGI sub-app, so it contributes no routes to the schema — it just needs a
-canonical placeholder static-Agent definition so ``create_app`` builds.
+lazily, and no connection or migration happens outside ``app.main``). Static-Agent definitions
+remain part of the app configuration for the internal Kubernetes authorization path, so this
+schema-only app supplies a canonical placeholder definition without connecting to Postgres.
 """
 
 from __future__ import annotations

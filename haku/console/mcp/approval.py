@@ -1,23 +1,16 @@
-"""Operator-approved MCP tool calls owned by haku-console.
+"""Operator approval and history routes for MCP tool calls stored by haku-console.
 
-This module contains the FastAPI/wire adapter, the current Postgres repository, and
-`McpServerDispatcher` — the one path from the console to its configured MCP servers, for
-both executing tool calls and reflecting catalogs. `ToolCallApplicationService` owns the
-actor-scoped lifecycle: calls run immediately only when reviewed policy matches; all
-others wait for an operator decision in trusted console chrome. The server catalog lives in
-`mcp_config`.
+The request protocol and catalog reflection are retired. This module keeps the REST approval and
+history API plus execution of already-approved rows while the ledger drains.
 """
 
 from __future__ import annotations
 
 import datetime
-import hashlib
-import logging
 import secrets
 from collections.abc import Collection, Mapping
 from dataclasses import dataclass
-from enum import StrEnum
-from typing import Annotated, Any, Literal, Never, TypeVar, cast
+from typing import Annotated, Any, Never, TypeVar, cast
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
@@ -41,7 +34,6 @@ from haku.console.identity.authorization import lock_active_agent_binding
 from haku.console.identity.operator_auth import OperatorActorDep
 from haku.console.identity.operator_identity import OperatorStatus
 from haku.console.mcp.execution import McpExecutionContext, mcp_execution_request_meta
-from haku.console.mcp.reflection_cache import ReflectedCatalog, ReflectionCache, ReflectionCacheKey
 from haku.console.mcp.tool_call_service import (
     ToolCallApplicationService,
     ToolCallExecutionAuthorization,
@@ -54,7 +46,6 @@ from haku.console.tool_call_actor import AgentActor, OperatorActor, RuntimeActor
 from haku.console.tool_calls import (
     AgentToolCallCaller,
     ApprovalDecisionRequest,
-    ApprovalMode,
     OperatorToolCallCaller,
     SubmitToolCallRequest,
     ToolCallCaller,
@@ -63,118 +54,9 @@ from haku.console.tool_calls import (
     ToolCallStatus,
 )
 
-logger = logging.getLogger(__name__)
-
-# Operator-only routes (reflection, approvals, decisions, and audit history). app.py guards this router with
+# Operator-only routes (approvals, decisions, and audit history). app.py guards this router with
 # `require_operator`.
 router = APIRouter(tags=["mcp-approval"])
-
-
-class ReflectionFailureStage(StrEnum):
-    CREDENTIAL_RESOLUTION = "credential_resolution"
-    TOOL_DISCOVERY = "tool_discovery"
-
-
-@dataclass(frozen=True)
-class DegradedReflection:
-    """A downstream server's tools couldn't be reflected right now — the *reason*, not a response
-    shape. `server_metadata_response` is the only place this becomes the `degraded` API shape."""
-
-    failure_stage: ReflectionFailureStage
-    degraded_reason: str
-
-
-# What one reflection attempt actually produced: the upstream tools and the server's own
-# `initialize` instructions, or why there aren't any. Internal consumers building proxy tools
-# (`_build_proxy_tool`) read the real upstream `mcp.types.Tool` directly — no separate mirror to
-# keep in sync as the proxy needs more of what the upstream tool declares.
-type ServerReflection = ReflectedCatalog | DegradedReflection
-
-
-class ToolMetadata(BaseModel):
-    """The curated, snake_case, wire-stable projection of one reflected tool — used only for the
-    `get_mcp_server_status`/`list_mcp_servers` API response, never as internal plumbing. Deliberately
-    narrower than `mcp.types.Tool`: that type allows arbitrary extra fields from the upstream server
-    (`model_config = ConfigDict(extra="allow")`) and uses camelCase, neither of which the console's
-    own API contract should inherit unfiltered from an untrusted third-party MCP server."""
-
-    name: str
-    title: str | None = None
-    description: str | None = None
-    input_schema: dict[str, Any] | None = Field(
-        default=None,
-        description=(
-            "The schema this proxy accepts for the tool, not the upstream tool's own schema: "
-            "enveloped when `approval_mode` is `approval_required`, in which case the upstream "
-            "schema is nested under `input`. This is the shape to send to `call_mcp_tool`."
-        ),
-    )
-    output_schema: dict[str, Any] | None = None
-    approval_mode: ApprovalMode | None = Field(
-        default=None,
-        description=(
-            "Which payload shape `input_schema` is, for the caller this reflection was performed "
-            "for. Null only where the reflection did not resolve a caller (a degraded projection)."
-        ),
-    )
-    annotations: mcp_types.ToolAnnotations | None = None
-    icons: list[mcp_types.Icon] | None = None
-
-
-class AliveServerState(BaseModel):
-    status: Literal["alive"] = "alive"
-    tools: list[ToolMetadata] = Field(default_factory=list)
-    instructions: str | None = Field(
-        default=None,
-        description=(
-            "The server's own guidance on how to use it, from its MCP `initialize` result. Null "
-            "when the server declares none. This proxy passes it through rather than restating it."
-        ),
-    )
-
-
-class DegradedServerState(BaseModel):
-    status: Literal["degraded"] = "degraded"
-    failure_stage: ReflectionFailureStage
-    degraded_reason: str
-
-
-type ServerState = Annotated[AliveServerState | DegradedServerState, Field(discriminator="status")]
-
-
-class ServerMetadata(BaseModel):
-    """The curated `get_mcp_server_status` response: identity (`server_id`/`title`) once, wrapping
-    whichever state reflection produced — never duplicated across an alive/degraded variant pair."""
-
-    server_id: str
-    title: str
-    state: ServerState
-
-
-def _tool_metadata(tool: mcp_types.Tool) -> ToolMetadata:
-    schema = tool.input_schema if isinstance(tool.input_schema, dict) else {}
-    return ToolMetadata(
-        name=tool.name,
-        title=tool.title,
-        description=tool.description,
-        input_schema=schema,
-        output_schema=tool.output_schema,
-        annotations=tool.annotations,
-        icons=tool.icons,
-    )
-
-
-def server_metadata_response(server_id: str, reflection: ServerReflection) -> ServerMetadata:
-    """Project a raw reflection result into the curated API response shape. The only caller is
-    `get_mcp_server_status`; every other reflection consumer works with `ServerReflection` directly."""
-    state: ServerState = (
-        DegradedServerState(failure_stage=reflection.failure_stage, degraded_reason=reflection.degraded_reason)
-        if isinstance(reflection, DegradedReflection)
-        else AliveServerState(
-            tools=[_tool_metadata(tool) for tool in reflection.tools], instructions=reflection.instructions
-        )
-    )
-    return ServerMetadata(server_id=server_id, title=server_id, state=state)
 
 
 class PendingApprovalsResponse(BaseModel):
@@ -744,25 +626,10 @@ class PostgresToolCallLedger:
 
 
 class McpServerDispatcher:
-    """Dispatches the console's calls to whichever configured MCP server they name.
+    """Execute approved calls through the configured in-process backend."""
 
-    Not itself a client — it owns the in-process registry, builds each entry's server, and drives a
-    `fastmcp.client.Client` per call. Executing and reflecting are the same dispatch differing only
-    in call and error policy: `execute` raises on tool error, while `metadata` degrades on any
-    failure so one broken server can't break the whole capabilities listing. Reflected catalogs are
-    reused for `catalog_cache_ttl_seconds`.
-    """
-
-    def __init__(
-        self,
-        in_process_servers: InProcessServers,
-        *,
-        # 0 still collapses concurrent reflections of one server; it disables only reuse across
-        # requests. See `reflection_cache`.
-        catalog_cache_ttl_seconds: float,
-    ) -> None:
+    def __init__(self, in_process_servers: InProcessServers) -> None:
         self._in_process = in_process_servers
-        self._catalogs = ReflectionCache(catalog_cache_ttl_seconds)
 
     async def execute(
         self,
@@ -772,7 +639,6 @@ class McpServerDispatcher:
         auth_token: str | None,
         execution_context: McpExecutionContext,
     ) -> dict[str, Any]:
-        # mode="legacy": see the matching comment on the _reflect() connection below.
         async with Client(_in_process_server(server, self._in_process, auth_token), mode="legacy") as client:
             result = await client.call_tool_mcp(
                 tool_name, arguments, meta=mcp_execution_request_meta(execution_context)
@@ -780,33 +646,6 @@ class McpServerDispatcher:
         if result.is_error:
             raise RuntimeError(_mcp_error_message(result))
         return _mcp_result_to_json(result)
-
-    async def metadata(self, server: McpServerEntry) -> ServerReflection:
-        try:
-            # A raise propagates out of the cache, so only successful catalogs are ever stored and
-            # a recovered server is retried on the next listing rather than staying degraded.
-            return await self._catalogs.reflect(_reflection_cache_key(server), lambda: self._reflect(server))
-        except Exception as e:
-            logger.warning("MCP tool discovery failed for %s", server.id, exc_info=True)
-            return DegradedReflection(failure_stage=ReflectionFailureStage.TOOL_DISCOVERY, degraded_reason=str(e))
-
-    async def _reflect(self, server: McpServerEntry) -> ReflectedCatalog:
-        # Reflection builds the server without a credential: `tools/list` never invokes a tool.
-        # mode="legacy": fastmcp v4 defaults to mode="auto", which against another v4 server
-        # adopts the modern server/discover era and leaves initialize_result (read below) None.
-        # Pin the handshake era this connection needs rather than reworking `instructions`
-        # onto the discover-era client properties.
-        async with Client(_in_process_server(server, self._in_process, None), mode="legacy") as client:
-            tools: list[mcp_types.Tool] = await client.list_tools()
-            # The handshake already happened on enter, so its result costs nothing extra here — the
-            # instructions were previously fetched and dropped on every single reflection.
-            return ReflectedCatalog(tools=tools, instructions=client.initialize_result.instructions)
-
-
-def _reflection_cache_key(server: McpServerEntry) -> ReflectionCacheKey:
-    return ReflectionCacheKey(
-        server_id=server.id, config_fingerprint=hashlib.sha256(server.model_dump_json().encode()).hexdigest()
-    )
 
 
 def _mcp_result_to_json(result: mcp_types.CallToolResult) -> dict[str, Any]:
@@ -830,10 +669,6 @@ def _raise_tool_call_http_error(
 ) -> Never:
     status_code = 409 if isinstance(error, ToolCallStateConflictError) else 404
     raise HTTPException(status_code=status_code, detail=str(error)) from error
-
-
-async def metadata_for_operator(*, server: McpServerEntry, dispatcher: McpServerDispatcher) -> ServerReflection:
-    return await dispatcher.metadata(server)
 
 
 @router.get("/api/tool-calls")

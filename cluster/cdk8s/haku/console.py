@@ -314,24 +314,6 @@ class Console(Construct):
                 # live request authority.
                 self._from_secret(oidc.key("operator_subject"), "static_agents", "haku", "operator_subject"),
                 self._from_secret(oidc.key("operator_subject"), "static_agents", "public_coder", "operator_subject"),
-                # Agent-facing MCP OAuth: an Authentik-backed OIDCProxy (DCR + PKCE) on /mcp,
-                # composed with the static bearers via MultiAuth. Provider and client secret are
-                # minted by tf/gitops/agent-machine-access (application slug haku-console-mcp);
-                # the public MCP URL is derived from public_base_url in-app.
-                (
-                    env_name(Settings, "mcp_oauth", "oidc_issuer"),
-                    EnvValue.from_value(f"{_AUTHENTIK}/application/o/haku-console-mcp/"),
-                ),
-                self._from_secret(oidc.key("mcp_client_id"), "mcp_oauth", "oidc_client_id"),
-                self._from_secret(oidc.key("mcp_client_secret"), "mcp_oauth", "oidc_client_secret"),
-                # DCR + token state shared across the replicas, in the console's own Postgres
-                # (py-key-value's PostgreSQLStore auto-creates its table). The asyncpg DSN, not
-                # the SQLAlchemy `+asyncpg` URL the ORM uses.
-                (env_name(Settings, "mcp_oauth", "persistence", "kind"), EnvValue.from_value("postgres")),
-                (
-                    env_name(Settings, "mcp_oauth", "persistence", "url"),
-                    EnvValue.from_value(f"postgresql://{_DB_AUTHORITY}"),
-                ),
                 # Operator browser login: the console authenticates the operator itself
                 # (authorization-code -> signed session cookie) with the provider tf/gitops/
                 # agent-machine-access mints under application slug haku-console. Required.
@@ -402,10 +384,8 @@ class Console(Construct):
             # compatibility before binding its port. Five minutes separates "still starting"
             # from "wedged".
             startup=Probe.from_tcp_socket(port=_API.pod_port, failure_threshold=60, period_seconds=Duration.seconds(5)),
-            # httpGet /healthz, not tcpSocket: the port stays open after FastMCP's
-            # StreamableHTTPSessionManager task group wedges (haku/console/identity/
-            # fastmcp_adapter.py, `mcp_session_manager_liveness`), so only /healthz notices a
-            # replica stuck 500ing every /mcp request.
+            # httpGet /healthz, not tcpSocket, so liveness detects an API process that accepts
+            # connections but can no longer serve its handlers.
             liveness=http_probe("/healthz", port=_API.pod_port, initial_delay_seconds=10, period_seconds=30),
             readiness=http_probe("/healthz", port=_API.pod_port, initial_delay_seconds=5, period_seconds=10),
             # The aspect py_binary launcher materializes its venv on the rootfs at startup.

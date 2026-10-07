@@ -11,7 +11,7 @@ from haku.console.identity.authorization import (
     StaticAgentRejectedError,
     fingerprint_static_token,
 )
-from haku.console.identity.fastmcp_adapter import AgentGrantAuthorityUnavailableError
+from haku.console.identity.oauth_grants import AgentGrantAuthorityUnavailableError
 from haku.console.tool_call_actor import AgentActor
 
 _STATIC_BINDING_CREDENTIAL_PREFIX = "haku-static-binding:"

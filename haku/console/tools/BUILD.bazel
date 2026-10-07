@@ -117,21 +117,7 @@ py_library(
     visibility = ["//haku/console:__subpackages__"],
     deps = [
         "//haku/console:config",
-        "@pypi//fastmcp_slim",
         "@pypi//httpx",
         "@pypi//pydantic",
-    ],
-)
-
-py_test(
-    name = "test_routine",
-    srcs = ["test_routine.py"],
-    deps = [
-        ":routine",
-        "//:conftest",
-        "//haku/console:conftest",
-        "@pypi//fastmcp_slim",
-        "@pypi//pytest",
-        "@pypi//pytest_bazel",
     ],
 )

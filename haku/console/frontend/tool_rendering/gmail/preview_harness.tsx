@@ -1,7 +1,5 @@
-// `gmail` preview screenshot entry — esbuild bundles this into the `:previews` IIFE: the
-// Gmail-only fetch stub, imported before the registry/widget graph reaches client.ts, then the
-// mount of this server's fixtures.
-import "./preview_mock";
+// `gmail` preview screenshot entry — esbuild bundles this into the `:previews` IIFE and mounts
+// this server's fixtures.
 
 import { mountPreviewCards } from "../screenshot/mount";
 

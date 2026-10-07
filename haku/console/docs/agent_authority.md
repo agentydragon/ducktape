@@ -1,10 +1,9 @@
 # Canonical Agent authority and enrollment
 
-The durable Postgres graph behind `/mcp`, and the ceremony that admits an interactive OAuth client
-to it. The console-side summary is <../README.md> § MCP server (`/mcp`); this is the contract in
-full. Code: all under `identity/` — the agent domain and routes (`agent.py`, `enrollment.py`,
-`enrollment_routes.py`, `naming.py`, `authorization.py`), admission (`mcp_agent_auth.py`), and the
-FastMCP composition adapter (`fastmcp_adapter.py`).
+The durable Postgres graph for Console Agent identities and the authorization records retained from
+the retired MCP OAuth flow. The Console's Agent-facing MCP protocol endpoint and FastMCP adapter
+have been removed; the remaining identity code supports configured Agents and Kubernetes proxy
+authorization. The operator browser login remains at `/auth/*`.
 
 Alembic revision `0081` is the single forward-only database baseline. It directly installs one
 graph shared by interactive OAuth and configured static Agents:
@@ -47,35 +46,14 @@ ToolCallPrincipal -> exactly one of operator_id | binding_id
   capabilities. A null or removed profile is fail-closed.
 
 The Console Recall integration and `recall_index_ids` profile field were removed. The database
-schema and indexed data remain during this rollout for compatibility with outgoing replicas.
+schema and data remain until a follow-up migration after the retiring image has converged.
 
-## Interactive enrollment
+## Retired MCP OAuth admission
 
-1. FastMCP validates client, redirect, resource, scopes, and S256 PKCE through its public
-   `authorize()` path.
-2. Haku reserves the exact public client/redirect/challenge tuple only as a temporal collision key
-   and creates a random `EnrollmentInteraction`.
-3. The browser independently logs into Haku through Authentik. Opening the page binds its verified
-   identity and canonical Operator to the interaction exactly once.
-4. The Operator explicitly denies or allows a required name and access profile for a new Agent,
-   or reconnects an existing owned Agent with a selected profile. This records intent but issues
-   no grant yet. The server offers the deployment-configured default profile; profile and policy
-   identifiers have no built-in meaning. Missing or removed profile assignments fail closed.
-5. FastMCP performs its untouched Authentik callback and creates the downstream code.
-6. At exchange, Haku verifies the MCP-side access-token principal and requires the same active
-   canonical Operator as the browser interaction. One locked transition creates the draft Agent
-   when needed plus its issuing binding and grant.
-7. FastMCP carries only opaque `grant_id` context through the token family. The first successfully
-   verified MCP tool request atomically activates the Agent and binding.
-8. Access load, transparent/explicit refresh, decisions, and execution revalidate the grant,
-   binding, Agent, and Operator. Local revoke remains authoritative even if best-effort upstream or
-   individual-token cleanup fails.
-
-The enrollment cookie is only a short-lived page/CSRF binding: path-scoped, `HttpOnly`,
-`SameSite=Lax`, and `Secure` in production. It contains no name, token, raw claim, or durable
-authority. The trusted Console SPA receives an escaped typed view model from same-origin APIs;
-decision endpoints enforce the browser binding and exact Origin before changing authority state.
-The browser surfaces themselves are in <oauth_browser_surfaces.md> § Agent enrollment in Settings.
+The Console no longer accepts MCP OAuth authorization, callback, or tool requests. Existing Agent,
+credential-binding, and grant rows remain durable; this rollout does not delete stored identity or
+tool-call data. The old DCR/token-state table also remains until after outgoing replicas have left,
+since they can still initialize it during the rolling deployment.
 
 ## The runtime actor
 
@@ -111,21 +89,6 @@ reconnection, Settings mutation, and static-Agent definition. Only pre-migration
 have a null assignment, which fails closed until an Operator selects a profile. Agents can
 submit/read only their own calls; Operators can read/decide all and only calls they own; Agents
 never approve themselves. Repository operations have no unscoped or `None` actor mode.
-
-## The FastMCP seam
-
-Haku supports one exact FastMCP version at a time. Two private seams cross it: `_code_store`
-read/delete during code exchange, and `install_operator_session_route_guard` patching the one
-FastMCP-constructed `/mcp` route wrapped in `RequireAuthMiddleware`, so a validated Operator
-browser session (an `HttpOnly` cookie, checked by Haku's own auth backend) can pass FastMCP's
-bearer-only guard while Agent and unauthenticated requests keep its original behavior unchanged
-(`haku/console/identity/fastmcp_adapter.py`'s `_HakuMcpRouteGuard`). Both assert the exact shape
-they depend on and raise instead of silently misrouting if FastMCP's internals no longer match.
-Protected claim, scope-translation, and transparent-refresh hooks are otherwise version-pinned.
-Neither seam replaces route construction, registration, transaction storage, callback, PKCE, or
-token issuance — they patch one already-constructed route's auth wrapper post hoc, not how FastMCP
-builds or registers it. Adapter compatibility and mounted enrollment/token/refresh/revocation tests
-are mandatory before a repin.
 
 ## The credential boundary
 

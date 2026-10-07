@@ -7,11 +7,6 @@ from typing import Self
 from urllib.parse import urlsplit
 
 from pydantic import AliasChoices, BaseModel, ConfigDict, Field, SecretStr, field_validator, model_validator
-from sqlalchemy.engine import make_url
-from sqlalchemy.exc import ArgumentError
-
-from mcp_infra.authentik_auth.config import AuthentikAuthConfig
-from mcp_infra.persistence import PostgresPersistence
 
 # The one environment variable read before the YAML source exists; every other setting is
 # `HAKU_CONSOLE__*` (`settings.Settings`).
@@ -23,11 +18,6 @@ CONFIG_FILE_ENV = "HAKU_CONSOLE_CONFIG_FILE"
 _FIRE_URL = "https://api.anthropic.com/v1/claude_code/routines/{id}/fire"
 _PAGE_URL = "https://claude.ai/code/routines/{id}"
 
-# Public path of the MCP resource. The outer console origin is the shared source of
-# truth; MCP OAuth derives its issuer/callback URLs from this path instead of accepting a second,
-# independently configurable public URL that can drift away from the actual mount.
-MCP_PATH = "/mcp"
-
 # The console's reserved SPA namespace (frontend/routing.ts's CONSOLE_ROOT_PATH). Trusted console
 # pages live under it; every other path belongs to the framed haku-ui.
 _CONSOLE_ROOT_PATH = "/_console"
@@ -36,32 +26,12 @@ _CONSOLE_ROOT_PATH = "/_console"
 def tool_call_console_url(console_base_url: str, tool_call_id: str) -> str:
     """The console URL that opens one tool call: the approvals drawer, that call expanded.
 
-    One definition, because three things must agree on it — the link the MCP server hands an agent
-    when its call becomes a promise, the deep link a push notification opens, and the SPA route
-    that resolves it. They previously did not: the advertised link was built from a second,
-    separately configured origin and pointed at `/tool-calls/<id>`, a path the console mirrors into
-    the haku-ui frame rather than one of its own pages.
+    One definition, because persisted call links, push notification links, and the SPA route that
+    resolves them must agree. The old advertised link used a second, separately configured origin
+    and pointed at `/tool-calls/<id>`, a path the console mirrors into the haku-ui frame rather than
+    one of its own pages.
     """
     return f"{console_base_url.rstrip('/')}{_CONSOLE_ROOT_PATH}/tool-calls/{tool_call_id}"
-
-
-def _postgres_connection_identity(raw_url: str) -> tuple[object, ...]:
-    """Return the authority-bearing parts of a Postgres URL, independent of its driver."""
-    try:
-        url = make_url(raw_url)
-    except ArgumentError as error:
-        raise ValueError("database URL must be a valid PostgreSQL URL") from error
-    if url.get_backend_name() != "postgresql":
-        raise ValueError("database URL must use PostgreSQL")
-    normalized_query = tuple(sorted((key, tuple(values)) for key, values in url.normalized_query.items()))
-    return (
-        url.username,
-        url.password,
-        url.host.lower() if url.host is not None else None,
-        url.port or 5432,
-        url.database,
-        normalized_query,
-    )
 
 
 class LaunchRoutineConfig(BaseModel):
@@ -87,7 +57,8 @@ class OperatorOidcConfig(BaseModel):
     """Authentik OIDC relying-party config for operator **browser** login.
 
     The console authenticates the operator's browser itself (Authentik authorization-code flow →
-    signed session cookie). Agent access to `/mcp` uses its own MultiAuth and is unaffected.
+    signed session cookie). The static Agent credentials are used by the internal Kubernetes
+    authorization proxy, independently of browser login.
     Reads `HAKU_CONSOLE__OPERATOR_OIDC__{ISSUER,CLIENT_ID,CLIENT_SECRET,SESSION_SECRET}`. The redirect
     URI is built from the top-level `public_base_url` + `/auth/callback`.
 
@@ -186,35 +157,6 @@ class KubernetesAuthorizationConfig(BaseModel):
         return normalized
 
 
-class McpOAuthConfig(BaseModel):
-    """Credentials for Haku's agent-facing OAuth authorization-server proxy.
-
-    Unlike the reusable ``AuthentikAuthConfig``, this Haku-specific config deliberately has no
-    ``public_base_url``. The public MCP URL is always ``Settings.public_base_url`` + ``/mcp``, so
-    the issuer, DCR endpoints, and callback cannot be configured for a different mount. Operator
-    login uses separate credentials and session state; only the canonical origin is shared. OAuth
-    always includes a shared Postgres client-state store. Haku already requires Postgres for its
-    domain state, and keeping the OAuth state in that same database lets an authority-changing
-    migration invalidate every old client/token family atomically. Process-local file and Valkey
-    persistence remain valid generic MCP infrastructure choices, but are not Haku deployment modes.
-    """
-
-    model_config = ConfigDict(frozen=True)
-
-    oidc_issuer: str
-    oidc_client_id: str
-    oidc_client_secret: SecretStr
-    persistence: PostgresPersistence
-
-    def as_authentik_auth_config(self, *, public_base_url: str) -> AuthentikAuthConfig:
-        return AuthentikAuthConfig(
-            oidc_issuer=self.oidc_issuer,
-            oidc_client_id=self.oidc_client_id,
-            oidc_client_secret=self.oidc_client_secret.get_secret_value(),
-            public_base_url=f"{public_base_url.rstrip('/')}{MCP_PATH}",
-        )
-
-
 class WebPushConfig(BaseModel):
     """VAPID identity for Web Push notifications of pending approvals (RFC 8292).
 
@@ -298,19 +240,6 @@ class ConsoleProcessConfig(BaseModel):
     # deployment wiring: it must leave margin below the deployment's own request timeout.
     max_wait_for_result_ms: int = Field(ge=5_000)
 
-    # The background reconciler refreshes every Operator's configured MCP catalogs this often.
-    # `tools/list` itself reads only the already-published in-memory generation, so reflection
-    # can never extend the client startup path. This is also the dispatcher's successful-reflection
-    # reuse window.
-    mcp_catalog_refresh_interval_seconds: float = Field(default=60.0, ge=5.0, le=900.0)
-
-    # OAuth for Agent admission to the MCP server: an Authentik-backed OIDCProxy handling MCP OAuth
-    # dance (DCR + PKCE) for claude.ai / the `claude` CLI, composed with the static agent bearer via
-    # MultiAuth. Reads HAKU_CONSOLE__MCP_OAUTH__{OIDC_ISSUER,OIDC_CLIENT_ID,OIDC_CLIENT_SECRET} plus
-    # HAKU_CONSOLE__MCP_OAUTH__PERSISTENCE__*; its public URL is derived from top-level
-    # public_base_url + MCP_PATH. Unset → the static bearer is the only accepted credential (no
-    # OAuth, and therefore no OAuth store).
-    mcp_oauth: McpOAuthConfig | None = None
     # Operator browser login (Authentik OIDC), replacing the proxy outpost. Required in every
     # harness, including development; tests use the repo's hermetic OIDC fixture.
     operator_oidc: OperatorOidcConfig
@@ -329,17 +258,4 @@ class ConsoleProcessConfig(BaseModel):
             or parsed.fragment
         ):
             raise ValueError("public_base_url must be a canonical http(s) origin without a path, query, or fragment")
-        return self
-
-    @model_validator(mode="after")
-    def _mcp_oauth_state_must_share_the_owned_database(self) -> Self:
-        if self.mcp_oauth is None:
-            return self
-        database_identity = _postgres_connection_identity(self.database_url.get_secret_value())
-        oauth_identity = _postgres_connection_identity(self.mcp_oauth.persistence.url)
-        if database_identity != oauth_identity:
-            raise ValueError(
-                "mcp_oauth.persistence must use the same Postgres host, port, database, "
-                "credentials, and options as database_url"
-            )
         return self

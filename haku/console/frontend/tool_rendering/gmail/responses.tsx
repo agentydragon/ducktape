@@ -1,16 +1,15 @@
-// Result rendering for the in-process `gmail` server (the argument-side widgets live in
+// Result rendering for stored calls to the remote Gmail server (the argument-side widgets live in
 // ./requests.tsx). Every Zod schema below is the FastMCP-advertised output schema for its tool,
 // generated in mcp_tool_result_schema.ts from tools/list: the Gmail API resource shapes
 // (gmail_api/messages.py's `Draft`/`Thread`/`Message`/`ThreadsListResponse`, camelCase wire
 // aliases) verbatim.
 
-import { Group, Loader, Stack } from "@mantine/core";
-import { type JSX, type ReactNode, useEffect, useState } from "react";
+import { Group, Stack } from "@mantine/core";
+import type { JSX, ReactNode } from "react";
 import type { z } from "zod";
 
 import { CodeBlock } from "../../code_block";
 import { Field } from "../../field";
-import { fetchGmailLabelNames, messageSubject } from "../../gmail_client";
 import { GmailIcon, MailIcon } from "../../icons";
 import { ExternalLink } from "../../link";
 import { mcpToolResultSchema, type McpToolResultFor } from "../../mcp_tool_result_schema";
@@ -90,38 +89,21 @@ export function CreateGmailDraftResultView({
   );
 }
 
-// A message/thread's `labelIds` are opaque ids; resolve display names via the read-only
-// `labels_list` tool, same composition `gmail_client.ts`'s `fetchGmailThreadPreviews` uses for
-// the `threads_modify_labels` preview. Fetched once per rendered widget; while loading (or on
-// failure) label pills fall back to the raw id.
-function useGmailLabelNames(): ReadonlyMap<string, string> | null {
-  const [names, setNames] = useState<ReadonlyMap<string, string> | null>(null);
-
-  useEffect(() => {
-    let alive = true;
-    fetchGmailLabelNames()
-      .then((result) => {
-        if (alive) setNames(result);
-      })
-      .catch((error: unknown) => {
-        console.warn("Could not resolve Gmail label names", error);
-      });
-    return () => {
-      alive = false;
-    };
-  }, []);
-
-  return names;
+// Gmail's Subject header is optional in historical result payloads.
+function messageSubject(
+  message:
+    { payload?: { headers?: { name?: string | null; value?: string | null }[] | null } | null } | null | undefined
+): string | null {
+  return message?.payload?.headers?.find((header) => header.name?.toLowerCase() === "subject")?.value ?? null;
 }
 
-function LabelPills({ labelIds, names }: { labelIds: string[]; names: ReadonlyMap<string, string> | null }) {
+function LabelPills({ labelIds }: { labelIds: string[] }) {
   if (labelIds.length === 0) return null;
-  if (!names) return <Loader size="xs" />;
   return (
     <Group gap={4}>
       {labelIds.map((id) => (
         <PreviewBadge key={id} variant="outline" color="gray">
-          {names.get(id) ?? id}
+          {id}
         </PreviewBadge>
       ))}
     </Group>
@@ -154,7 +136,6 @@ function GmailLink({ id, fw, children }: { id: string; fw?: number; children: Re
 }
 
 function GmailThreadResultView({ result, variant }: ResultPreviewProps<GmailThread>) {
-  const names = useGmailLabelNames();
   const detailed = variant === "detailed";
   const firstMessage = result.messages?.[0];
   const snippet = result.snippet ?? firstMessage?.snippet ?? "";
@@ -170,7 +151,7 @@ function GmailThreadResultView({ result, variant }: ResultPreviewProps<GmailThre
         </PreviewText>
       )}
       <Field icon={<MailIcon size={15} />} label={plural(result.messages?.length ?? 0, "message")}>
-        {detailed && <LabelPills labelIds={firstMessage?.labelIds ?? []} names={names} />}
+        {detailed && <LabelPills labelIds={firstMessage?.labelIds ?? []} />}
       </Field>
     </Stack>
   );
@@ -203,7 +184,6 @@ function GmailThreadsListResultView({ result, variant }: ResultPreviewProps<Gmai
 }
 
 function GmailMessageResultView({ result, variant }: ResultPreviewProps<GmailMessage>) {
-  const names = useGmailLabelNames();
   const detailed = variant === "detailed";
   const snippet = result.snippet ?? "";
   const body = detailed ? snippet : firstLines(snippet, 2).text;
@@ -217,7 +197,7 @@ function GmailMessageResultView({ result, variant }: ResultPreviewProps<GmailMes
           {body}
         </PreviewText>
       )}
-      {detailed && <LabelPills labelIds={result.labelIds ?? []} names={names} />}
+      {detailed && <LabelPills labelIds={result.labelIds ?? []} />}
     </Stack>
   );
 }

@@ -30,7 +30,6 @@ from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 from starlette.middleware.sessions import SessionMiddleware
 
 from haku.console import aiquota_proxy, capabilities
-from haku.console.config import MCP_PATH
 from haku.console.database_migrate import main as migration_main, verify_schema
 from haku.console.deployment import DeploymentInfo, build_deployment_info
 from haku.console.grants import routes as grant_routes
@@ -40,18 +39,11 @@ from haku.console.grants.kubernetes.authorization import KubernetesSubjectAccess
 from haku.console.grants.kubernetes.authorization_service import KubernetesAuthorizationService
 from haku.console.grants.kubernetes.repository import PostgresGrantRepository
 from haku.console.grants.kubernetes.service import GrantService
-from haku.console.identity import (
-    agent_bearer_authority,
-    enrollment_routes,
-    mcp_agent_auth,
-    operator_auth,
-    operator_login_flow,
-)
+from haku.console.identity import agent_bearer_authority, enrollment_routes, operator_auth, operator_login_flow
 from haku.console.identity.authorization import PostgresAgentAuthority, StaticAgentDefinition, fingerprint_static_token
-from haku.console.identity.fastmcp_adapter import HakuMcpActorResolver, install_operator_session_route_guard
 from haku.console.identity.operator_identity import OperatorIdentityTrust
 from haku.console.identity.operator_identity_store import PostgresOperatorIdentityStore
-from haku.console.mcp import approval, catalog_reconciler, mount, server, tool_call_service
+from haku.console.mcp import approval, tool_call_service
 from haku.console.mcp.in_process_servers import InProcessServerDependencies, build_in_process_servers
 from haku.console.mcp_config import (
     InProcessServers,
@@ -62,7 +54,7 @@ from haku.console.mcp_config import (
 from haku.console.models import ConfigResponse
 from haku.console.notifications import console_events, push, push_routes
 from haku.console.settings import Settings
-from haku.console.tools import grants as grants_tools, kubernetes as kubernetes_tools, routine as routine_tools
+from haku.console.tools import grants as grants_tools, kubernetes as kubernetes_tools
 
 # SessionMiddleware signs cookies with itsdangerous, imported inside starlette;
 # gazelle cannot see the dependency.
@@ -117,11 +109,8 @@ def _cache_control_for_path(path: str, status_code: int) -> str:
 
 
 def _operator_identity_trust(settings: Settings) -> OperatorIdentityTrust:
-    trusted_issuers = {settings.operator_oidc.issuer}
-    if settings.mcp_oauth is not None:
-        trusted_issuers.add(settings.mcp_oauth.oidc_issuer)
     return OperatorIdentityTrust(
-        trust_domain=settings.operator_identity.trust_domain, trusted_issuers=frozenset(trusted_issuers)
+        trust_domain=settings.operator_identity.trust_domain, trusted_issuers=frozenset({settings.operator_oidc.issuer})
     )
 
 
@@ -132,7 +121,7 @@ def create_app(
     static_agent_definitions: tuple[StaticAgentDefinition, ...] | None = None,
     in_process_servers: InProcessServers | None = None,
 ) -> FastAPI:
-    # Deploy-time console config file (non-secret): the MCP server catalog and static agents.
+    # Deploy-time console config file (non-secret): in-process tool policy and static agents.
     console_config = settings
     # Postgres is required: it backs the approval ledger and the operator OAuth token stores, all
     # always constructed. Construction is lazy (no connect); migrations run once at startup (app.main /
@@ -207,15 +196,6 @@ def create_app(
         agent_authority=agent_authority, static_credentials=static_credential_registry
     )
 
-    mcp_auth = mcp_agent_auth.build_auth(
-        settings,
-        agent_authority=agent_authority,
-        static_credentials=static_credential_registry,
-        operator_identity_store=operator_identity_store,
-        agent_bearer_authority=bearer_authority,
-    )
-    actor_resolver = HakuMcpActorResolver(agent_authority, static_actor_resolver=mcp_auth.static_actor_resolver)
-
     kubernetes_grants = GrantService(
         PostgresGrantRepository(db_sessions),
         max_lifetime=datetime.timedelta(seconds=console_config.kubernetes_grant_max_lifetime_seconds),
@@ -233,19 +213,12 @@ def create_app(
         else None
     )
 
-    # `haku_routine` fires the Haku claude-code-web routine as an approval-gated MCP tool (the
-    # standard queue), superseding the bespoke launch-routine capability tier. Same
-    # `launch_routine` config/secret; independent of the Google connection above.
-    routine_launcher = routine_tools.RoutineLauncher(settings.launch_routine) if settings.launch_routine else None
     if in_process_servers is None:
-        # Configured rather than switched on separately: `config.yaml` is where the server is
-        # listed and where the policy that lets an agent call it lives, and a boolean elsewhere
-        # could only ever disagree with it — a listed server with no builder fails the binding
-        # validation below.
+        # Keep the grants backend available to already-queued calls while the approval ledger
+        # drains. The agent-facing request endpoint and all new MCP submissions are retired.
         configured_server_ids = {entry.id for entry in console_config.mcp.servers.values()}
         in_process_servers = build_in_process_servers(
             InProcessServerDependencies(
-                routine_launcher=routine_launcher,
                 access_profiles=tuple(console_config.access_profiles),
                 # The `grants` server fronts Kubernetes grants plus the kubernetes SAR check
                 # (`kubernetes_can_i`, #4918), so it needs the kubernetes authorization service; it
@@ -263,18 +236,9 @@ def create_app(
             )
         )
     validate_in_process_server_bindings(console_config, in_process_servers)
-    # The console's one path out to its configured MCP servers. Executing a tool and reflecting a
-    # catalog are the same dispatch over the same transports, so they are one object: executing and
-    # reflecting are not separate roles with separate wiring.
-    dispatcher = approval.McpServerDispatcher(
-        in_process_servers, catalog_cache_ttl_seconds=settings.mcp_catalog_refresh_interval_seconds
-    )
-    catalogs = catalog_reconciler.OperatorCatalogReconciler(
-        servers=list(console_config.mcp.servers.values()),
-        dispatcher=dispatcher,
-        operator_ids=operator_identity_store.list_active_ids,
-        refresh_interval_seconds=settings.mcp_catalog_refresh_interval_seconds,
-    )
+    # Approved rows already in the ledger can still be executed while they drain. There is no
+    # MCP request surface to submit new rows or refresh server catalogs.
+    dispatcher = approval.McpServerDispatcher(in_process_servers)
     tool_calls = tool_call_service.ToolCallApplicationService(
         settings=settings,
         repository=tool_call_ledger,
@@ -284,22 +248,6 @@ def create_app(
         approval_notifier=approval_notifier,
     )
 
-    # The agent-facing MCP endpoint is separately switchable from the approval ledger and
-    # in-process catalog, which the browser still uses even when /mcp is disabled.
-    console_mcp_context = server.ConsoleMcpContext(
-        settings=settings, tool_calls=tool_calls, dispatcher=dispatcher, catalogs=catalogs
-    )
-
-    mcp_asgi = None
-    mcp_session_manager_health = mount.McpSessionManagerHealth()
-    if settings.mcp_server_enabled:
-        console_mcp = server.build_console_mcp(
-            console_mcp_context, auth=mcp_auth.provider, actor_resolver=actor_resolver
-        )
-        # Stateless HTTP keeps requests interchangeable across Console replicas.
-        mcp_asgi = console_mcp.http_app(path=MCP_PATH, stateless_http=True)
-        install_operator_session_route_guard(mcp_asgi, path=MCP_PATH)
-
     @asynccontextmanager
     async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
         static_definitions = (
@@ -308,19 +256,10 @@ def create_app(
             else await _resolve_static_agent_definitions()
         )
         await agent_authority.reconcile_static_agents(static_definitions)
-        async with agent_authority.expiry_maintenance(), catalogs.run():
+        async with agent_authority.expiry_maintenance():
             await console_event_hub.start()
             try:
-                # Pre-warm the OIDCProxy client-state store so the first OAuth request isn't slowed by a
-                # cold connect (see mcp_infra/oauth_facade/server.py). The OAuth variant always carries
-                # a concrete shared store; the static-only variant has no OAuth subsystem to initialize.
-                if isinstance(mcp_auth, mcp_agent_auth.OAuthMcpAuth):
-                    await mcp_auth.storage.setup()
-                if mcp_asgi is not None:
-                    async with mcp_asgi.lifespan(app):
-                        yield
-                else:
-                    yield
+                yield
             finally:
                 # Cancel in-flight approved-call executions (each marks its row cancelled) before the
                 # event hub they publish through is torn down.
@@ -330,13 +269,7 @@ def create_app(
                 await console_event_hub.aclose()
                 await approval_notifier.aclose()
 
-    # OAuth protected-resource and authorization-server discovery are origin-level RFC routes even
-    # though the operational MCP/OAuth handlers remain isolated under /mcp. FastMCP cannot infer an
-    # outer ASGI mount, so explicitly expose only its well-known routes here; the static-bearer-only
-    # provider returns no routes.
     app = FastAPI(title="Haku console", lifespan=_lifespan)
-    if settings.mcp_server_enabled:
-        app.router.routes.extend(mcp_auth.provider.get_well_known_routes(mcp_path=MCP_PATH))
     # The capability router reads settings off app.state (see haku.console.capabilities).
     app.state.settings = settings
     # Expose the shared database resources to internal dependencies and diagnostics; every store
@@ -350,7 +283,6 @@ def create_app(
     app.state.console_event_hub = console_event_hub
     app.state.in_process_servers = in_process_servers
     app.state.mcp_dispatcher = dispatcher
-    app.state.mcp_catalogs = catalogs
     app.state.push_subscription_store = push_subscription_store
     app.state.push_identity = push_identity
     app.state.kubernetes_authorization = kubernetes_authorization
@@ -376,10 +308,6 @@ def create_app(
 
     @app.get("/healthz")
     async def healthz() -> Response:
-        # See `mount.McpSessionManagerHealth`: a wedged /mcp session manager otherwise serves 500s
-        # forever without either probe noticing. Failing here lets Kubernetes recycle the pod.
-        if not mcp_session_manager_health.alive:
-            return JSONResponse({"status": "mcp_session_manager_dead"}, status_code=503)
         return JSONResponse({"status": "ok"})
 
     # Prometheus scrape target. Deliberately absent from default.conf.template's proxied
@@ -391,8 +319,7 @@ def create_app(
     async def metrics() -> Response:
         return Response(content=generate_latest(), media_type=CONTENT_TYPE_LATEST)
 
-    # The browser API is operator-only. Agents use /mcp; static bearer support there does not grant
-    # access to any /api/* route. The same endpoint separately recognizes the Operator session.
+    # The browser API is operator-only and recognizes the Operator session.
     operator_only = [Depends(operator_auth.require_operator), Depends(operator_auth.require_operator_mutation_origin)]
     app.include_router(capabilities.router, dependencies=operator_only)
     app.include_router(console_events.router, dependencies=operator_only)
@@ -438,15 +365,17 @@ def create_app(
         max_age=operator_auth.OPERATOR_SESSION_MAX_AGE_SECONDS,
     )
 
-    # MCP server (streamable HTTP), mounted after the API routers and before the SPA.
-    if mcp_asgi is not None:
-        mount.mount_mcp_app(app, path=MCP_PATH, mcp_app=mcp_asgi, health=mcp_session_manager_health)
-    else:
-        # Do not let the dev SPA fallback serve HTML for a retired protocol endpoint.
-        @app.api_route(MCP_PATH, methods=["GET", "POST", "DELETE"])
-        @app.api_route(f"{MCP_PATH}/{{path:path}}", methods=["GET", "POST", "DELETE"])
-        async def _disabled_mcp() -> Response:
-            return Response(status_code=404)
+    # Keep a tombstone so a direct-dev SPA fallback cannot serve HTML at the retired protocol
+    # endpoint. Production nginx returns the same 404 before proxying.
+    @app.api_route("/mcp", methods=["GET", "POST", "DELETE"])
+    @app.api_route("/mcp/{path:path}", methods=["GET", "POST", "DELETE"])
+    async def _retired_mcp() -> Response:
+        return Response(status_code=404)
+
+    @app.api_route("/.well-known/oauth", methods=["GET"])
+    @app.api_route("/.well-known/oauth/{path:path}", methods=["GET"])
+    async def _retired_mcp_oauth_discovery() -> Response:
+        return Response(status_code=404)
 
     # Optional direct local/dev fallback. Production serves the SPA from the
     # haku-console-static nginx image and leaves static_dir unset on this process.

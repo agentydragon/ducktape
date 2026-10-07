@@ -135,15 +135,13 @@ agent's: its canonical SOPS source is
 ExternalSecret syncs it into the proxy's namespace. Workstations decrypt the
 same source file directly through `ducktape.sopsEnv`.
 
-Haku Console privileged calls use the same mediated shape. Terraform generates a dedicated
-`public-coder-agent` static-Agent bearer and delivers it only to Haku Console and iron-proxy. The
-OpenClaw container sees `proxy-haku-console-placeholder`, which is replaced only in the
-`Authorization` header for `haku.allegedly.works`. Haku Console assigns this Agent the
-`public-coder` access profile, which auto-approves only the Agent's own `grants` reads and
-revocations. Every other downstream tool remains an operator-reviewed request, and the Agent
-bearer cannot approve requests. Haku Console serves no GitHub tools: GitHub goes through the
-proxy-mediated `agentydragon-agent` token directly; see <TOOLING.md> for the operational
-playbook.
+The Haku Console credential is used only by the Kubernetes authorization proxy. Terraform
+generates a dedicated `public-coder-agent` static-Agent bearer and delivers it to Haku Console and
+iron-proxy. The OpenClaw container sees `proxy-haku-console-placeholder`; iron-proxy replaces it in
+the `Authorization` header only for `haku-kubeapi.allegedly.works`. Haku Console checks the Agent's
+identity and Kubernetes policy before the proxy forwards an authorized request to the Kubernetes
+API. GitHub goes through the proxy-mediated `agentydragon-agent` token directly; see <TOOLING.md>
+for the operational playbook.
 
 The Matrix bot password is generated and retained by the existing Matrix user
 provisioner. It is stored in the Matrix namespace as a SOPS-managed Secret and

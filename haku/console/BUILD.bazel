@@ -17,12 +17,7 @@ exports_files(
 py_library(
     name = "config",
     srcs = ["config.py"],
-    deps = [
-        "//mcp_infra:persistence",
-        "//mcp_infra/authentik_auth:config",
-        "@pypi//pydantic",
-        "@pypi//sqlalchemy",
-    ],
+    deps = ["@pypi//pydantic"],
 )
 
 py_library(
@@ -197,7 +192,6 @@ py_library(
     deps = [
         ":aiquota_proxy",
         ":capabilities",
-        ":config",
         ":database_migrate",
         ":deployment",
         ":mcp_config",
@@ -213,24 +207,18 @@ py_library(
         "//haku/console/identity:agent_bearer_authority",
         "//haku/console/identity:authorization",
         "//haku/console/identity:enrollment_routes",
-        "//haku/console/identity:fastmcp_adapter",
-        "//haku/console/identity:mcp_agent_auth",
         "//haku/console/identity:operator_auth",
         "//haku/console/identity:operator_identity",
         "//haku/console/identity:operator_identity_store",
         "//haku/console/identity:operator_login_flow",
         "//haku/console/mcp:approval",
-        "//haku/console/mcp:catalog_reconciler",
         "//haku/console/mcp:in_process_servers",
-        "//haku/console/mcp:mount",
-        "//haku/console/mcp:server",
         "//haku/console/mcp:tool_call_service",
         "//haku/console/notifications:console_events",
         "//haku/console/notifications:push",
         "//haku/console/notifications:push_routes",
         "//haku/console/tools:grants",
         "//haku/console/tools:kubernetes",
-        "//haku/console/tools:routine",
         "@pypi//fastapi",
         "@pypi//itsdangerous",
         "@pypi//prometheus_client",
@@ -492,11 +480,8 @@ py_test(
     name = "test_settings",
     srcs = ["test_settings.py"],
     deps = [
-        ":config",
         ":conftest",
         "//:conftest",
-        "//mcp_infra:persistence",
-        "@pypi//pydantic",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],

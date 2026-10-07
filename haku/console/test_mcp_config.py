@@ -1,6 +1,4 @@
-"""`ConsoleConfigFile` cross-reference validation: policy cycles, duplicate MCP server ids and tool
-prefixes, duplicate static Agent ids, and the access profiles, Kubernetes authorization and
-in-process MCP servers that the config must declare."""
+"""`ConsoleConfigFile` cross-reference validation for Agent profiles and in-process servers."""
 
 from __future__ import annotations
 

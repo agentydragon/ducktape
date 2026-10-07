@@ -442,7 +442,6 @@ data:
         agent_id: 43a833f3-2b1c-4a04-9b8c-1df0cedfb79e
         display_name: public-coder-agent
         access_profile_id: public-coder
-    mcp_server_enabled: false
     mcp:
       servers:
         grants:
@@ -575,24 +574,6 @@ spec:
                   key: operator_subject
                   name: haku-console-oidc
                   optional: false
-            - name: HAKU_CONSOLE__MCP_OAUTH__OIDC_ISSUER
-              value: https://auth.allegedly.works/application/o/haku-console-mcp/
-            - name: HAKU_CONSOLE__MCP_OAUTH__OIDC_CLIENT_ID
-              valueFrom:
-                secretKeyRef:
-                  key: mcp_client_id
-                  name: haku-console-oidc
-                  optional: false
-            - name: HAKU_CONSOLE__MCP_OAUTH__OIDC_CLIENT_SECRET
-              valueFrom:
-                secretKeyRef:
-                  key: mcp_client_secret
-                  name: haku-console-oidc
-                  optional: false
-            - name: HAKU_CONSOLE__MCP_OAUTH__PERSISTENCE__KIND
-              value: postgres
-            - name: HAKU_CONSOLE__MCP_OAUTH__PERSISTENCE__URL
-              value: postgresql://$(HAKU_CONSOLE_DB_USER):$(HAKU_CONSOLE_DB_PASSWORD)@$(HAKU_CONSOLE_DB_HOST):$(HAKU_CONSOLE_DB_PORT)/$(HAKU_CONSOLE_DB_NAME)
             - name: HAKU_CONSOLE__OPERATOR_OIDC__ISSUER
               value: https://auth.allegedly.works/application/o/haku-console/
             - name: HAKU_CONSOLE__OPERATOR_OIDC__CLIENT_ID

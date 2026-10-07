@@ -19,9 +19,8 @@ from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 from haku.console.conftest import operator_id, write_config
 from haku.console.database_schema import Agent, CredentialBinding, StaticCredential
 from haku.console.identity.authorization import fingerprint_static_token
-from haku.console.mcp.approval import DegradedReflection, McpServerDispatcher, PostgresToolCallLedger
+from haku.console.mcp.approval import McpServerDispatcher, PostgresToolCallLedger
 from haku.console.mcp.execution import EXECUTION_CONTEXT_DEPENDENCY, McpExecutionContext, OperatorMcpExecutionCaller
-from haku.console.mcp.reflection_cache import ReflectedCatalog
 from haku.console.mcp.tool_call_service import ToolCallApplicationService
 from haku.console.mcp_config import (
     InProcessBackend,
@@ -166,9 +165,7 @@ _STATIC_AGENTS = {
 
 
 def _config(servers: list[dict[str, Any]]) -> dict[str, Any]:
-    """A console config dict for the given MCP servers, always carrying the `haku` static agent — a
-    console with no /mcp credential doesn't run (create_app raises), and the deploy always has it. So
-    the test app exercises the same required static MCP credential as the deployment."""
+    """A console config dict for the given MCP servers, carrying the deployed static Agent too."""
     return {
         "mcp": {"servers": {server["id"].replace("-", "_"): server for server in servers}},
         "static_agents": _STATIC_AGENTS,
@@ -207,7 +204,7 @@ def operator_client(make_operator_client: Callable[..., Any], console_app: dict[
 
 
 def _submit(client: TestClient, *, amount: int = 1) -> dict[str, Any]:
-    """Submit directly at the application boundary; agent admission is tested through `/mcp`."""
+    """Submit directly at the application boundary to exercise legacy-row draining."""
     app = cast(FastAPI, client.app)
 
     async def submit() -> Any:
@@ -712,7 +709,7 @@ async def test_audit_log_is_tenant_scoped_and_redacts_secrets(
 async def test_executor_dispatches_to_registered_in_process_server() -> None:
     builder = Mock(return_value=_build_test_mcp_server())
     registration = InProcessServerRegistration(builder=builder, credential_kind=InProcessCredentialKind.NONE)
-    executor = McpServerDispatcher({"google": registration}, catalog_cache_ttl_seconds=0.0)
+    executor = McpServerDispatcher({"google": registration})
     server = McpServerEntry(id="google", backend=InProcessBackend(credential=NoCredential()))
     context = McpExecutionContext(
         caller=OperatorMcpExecutionCaller(operator_id=UUID(int=42)),
@@ -732,7 +729,7 @@ async def test_executor_injects_trusted_context_into_a_stable_in_process_server(
     registration = InProcessServerRegistration(
         builder=lambda _token: server_instance, credential_kind=InProcessCredentialKind.NONE
     )
-    executor = McpServerDispatcher({"internal": registration}, catalog_cache_ttl_seconds=0.0)
+    executor = McpServerDispatcher({"internal": registration})
     server = McpServerEntry(id="internal", backend=InProcessBackend(credential=NoCredential()))
     operator_id = UUID(int=42)
 
@@ -753,7 +750,7 @@ async def test_executor_injects_trusted_context_into_a_stable_in_process_server(
 
 
 async def test_executor_raises_when_in_process_backend_is_not_registered() -> None:
-    executor = McpServerDispatcher({}, catalog_cache_ttl_seconds=0.0)
+    executor = McpServerDispatcher({})
     server = McpServerEntry(id="google", backend=InProcessBackend(credential=NoCredential()))
     with pytest.raises(RuntimeError):
         await executor.execute(
@@ -768,28 +765,6 @@ async def test_executor_raises_when_in_process_backend_is_not_registered() -> No
                 approval_policy_id=None,
             ),
         )
-
-
-async def test_dispatcher_reuses_a_reflected_catalog_within_the_ttl() -> None:
-    builder = Mock(return_value=_build_test_mcp_server())
-    registration = InProcessServerRegistration(builder=builder, credential_kind=InProcessCredentialKind.NONE)
-    dispatcher = McpServerDispatcher({"google": registration}, catalog_cache_ttl_seconds=3600.0)
-    server = McpServerEntry(id="google", backend=InProcessBackend(credential=NoCredential()))
-
-    first = await dispatcher.metadata(server)
-    second = await dispatcher.metadata(server)
-
-    assert isinstance(first, ReflectedCatalog)
-    assert isinstance(second, ReflectedCatalog)
-    assert {tool.name for tool in second.tools} == {tool.name for tool in first.tools}
-    builder.assert_called_once_with(None)
-
-
-async def test_dispatcher_degrades_when_in_process_backend_is_not_registered() -> None:
-    dispatcher = McpServerDispatcher({}, catalog_cache_ttl_seconds=0.0)
-    server = McpServerEntry(id="google", backend=InProcessBackend(credential=NoCredential()))
-    metadata = await dispatcher.metadata(server)
-    assert isinstance(metadata, DegradedReflection)
 
 
 if __name__ == "__main__":

@@ -131,7 +131,6 @@ data:
                 match_headers:
                   - Authorization
               rules:
-                - host: haku.allegedly.works
                 - host: haku-kubeapi.allegedly.works
             - source:
                 type: env

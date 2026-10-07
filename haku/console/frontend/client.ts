@@ -4,8 +4,8 @@ import type { components, paths } from "./api/schema";
 import { operatorLoginRedirectStarted, redirectToOperatorLogin } from "./operator_login";
 
 // Same-origin typed client (nginx serves this bundle and proxies /api). Types are generated from
-// the backend's OpenAPI schema: //haku/console/frontend:schema. Exported so the per-integration
-// client files (gmail_client.ts, grocy_client.ts) share this one instance.
+// the backend's OpenAPI schema: //haku/console/frontend:schema. Exported so every console API
+// surface shares this one instance.
 export const api: ReturnType<typeof createClient<paths>> = createClient<paths>({ baseUrl: "" });
 
 // App-owned operator auth: the /api/* guards answer 401 when there is no operator session, while
@@ -42,7 +42,7 @@ export type EnrollmentDecisionResponse =
 export type AiquotaView = components["schemas"]["AllQuotasView"];
 
 // FastAPI error responses are `{detail: string}`; surface that real reason, falling back when the
-// body isn't shaped that way. Shared with the per-integration client files.
+// body isn't shaped that way.
 export function errorDetail(error: unknown, fallback: string): string {
   if (error && typeof error === "object" && "detail" in error) {
     const { detail } = error as { detail: unknown };

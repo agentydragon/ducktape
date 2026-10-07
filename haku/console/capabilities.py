@@ -1,17 +1,16 @@
 """Capability tier: high-privilege actions the console performs that Haku cannot.
 
-This is the console's one privileged non-MCP surface: **same-origin gated**, **audited** to this
+This is the console's one privileged capability surface: **same-origin gated**, **audited** to this
 trusted namespace's logs (which Haku has no RBAC to read), and a small **PR-gated** allowlist.
 Today the one capability is `launch-routine`: firing the Haku "claude-code-web routine" with
 the bearer from the `haku-routine-launch-token` secret. The fire itself lives in
-`haku.console.tools.routine.RoutineLauncher` (shared with the `haku_routine` in-process MCP
-server); the bearer never leaves this process. See `haku/docs/security.md` → enforcement inventory,
+`haku.console.tools.routine.RoutineLauncher`; the bearer never leaves this process. See
+`haku/docs/security.md` → enforcement inventory,
 "Console privileged-action tier".
 
-CLEANUP(added 2026-07-11): Retire this whole launch-routine capability path (the endpoint +
-`LaunchRoutineRequest` + the `requestLaunch` Agent UI bridge action + the shell launch confirm) once
-haku-ui submits `launch_routine` through its backend to the standard approval queue (the
-`haku_routine` MCP server, `tools/routine.py`) and the `requestLaunch` verb is dropped.
+The `haku_routine` MCP wrapper was removed with the retired Console protocol endpoint. Keep this
+capability route until haku-ui can launch routines through a replacement path; then retire the
+endpoint, request model, Agent UI bridge action, and shell confirmation together.
 """
 
 from __future__ import annotations
@@ -46,8 +45,7 @@ async def launch_routine(
 ) -> LaunchRoutineResult:
     """Fire the Haku claude-code-web routine. Same-origin gated; the bearer stays server-side.
 
-    Superseded by the `haku_routine` MCP tool `launch_routine` (approval-queue gated); kept
-    while haku-ui still fires via the `requestLaunch` Agent UI bridge action (see the module tombstone)."""
+    Kept while haku-ui still fires via the `requestLaunch` Agent UI bridge action."""
     try:
         return await RoutineLauncher(config).launch(body.text if body else None)
     except RuntimeError as exc:
