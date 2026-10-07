@@ -101,5 +101,6 @@ py_wheel(
         ":package_init",
         "//finance/plaid/spend:allowance",
         "//finance/plaid/spend:models",
+        "//finance/plaid/spend:reporting",
     ],
 )
