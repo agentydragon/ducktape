@@ -58,10 +58,18 @@ from agentplane.app.threads.view.views import ThreadFeedErrorState, ThreadOperat
 from agentplane.protocol import command_pb2, event_log_pb2, event_pb2
 from util.bazel.runfiles import get_required_path
 from util.testing.undeclared_outputs import undeclared_outputs_dir
+from util.testing.visual_review import upsert_review_asset
+from util.visual_review import VisualReviewAsset
 
 # gazelle:include_dep @pypi//protobuf
 
 pytest_plugins = ("agentplane.app.testing.thread_browser",)
+
+
+async def _review_screenshot(page: Page, name: str, label: str) -> None:
+    output_dir = undeclared_outputs_dir()
+    await page.screenshot(path=output_dir / name)
+    upsert_review_asset(output_dir, title="Agentplane Thread browser", asset=VisualReviewAsset(path=name, label=label))
 
 
 @pytest.fixture
@@ -115,6 +123,7 @@ async def test_archived_thread_page_survives_deleted_sandbox_and_reload(
                 "Sandbox no longer exists. Showing archived Thread history; controls are disabled.", exact=True
             )
         ).to_be_visible()
+        await _review_screenshot(page, "thread-archived.png", "Archived Thread after reload")
         assert await event_logs.events(thread_id, limit=100) == thread_source.entries
 
 
@@ -584,7 +593,9 @@ async def test_projected_browser_streams_runner_events_and_loads_evidence_lazily
                 expanded_reasoning = reasoning_details.locator(".agentplane-disclosure-panel .agentplane-markdown")
                 await expect(expanded_reasoning).to_contain_text("On-demand reasoning reaches past one line.")
                 await expect(expanded_reasoning.locator("strong").first).to_have_text("reaches")
-                await page.screenshot(path=undeclared_outputs_dir() / "projected-thread-expanded.png")
+                await _review_screenshot(
+                    page, "thread-streamed-expanded.png", "Streamed Thread with tool call and reasoning open"
+                )
 
                 await page.reload()
                 await expect(
@@ -664,7 +675,11 @@ async def test_chronological_debug_is_lazy_paged_and_keeps_the_thread(
         await expect(frame).to_be_visible()
         assert json_format.Parse(await frame.inner_text(), event_log_pb2.EventEntry()) == entry
         assert any(url.endswith(f"/observations/{entry.cursor}") for url in requests)
-    await page.screenshot(path=undeclared_outputs_dir() / f"chronological-debug-{'phone' if phone else 'desktop'}.png")
+    await _review_screenshot(
+        page,
+        f"thread-debug-{'phone' if phone else 'desktop'}.png",
+        f"Chronological debug on {'phone' if phone else 'desktop'}",
+    )
     await dialog.get_by_role("button", name="Older observations", exact=True).click()
     await expect(observations).to_have_count(30)
     await expect(observations.last).to_have_attribute("data-debug-observation", str(last.cursor - 30))
@@ -1338,7 +1353,11 @@ async def test_opening_a_call_and_its_output_keeps_it_collapsible_while_reading(
     assert active_sticky_action == "true", (
         f"a parent heading obscured the output Disclosure control: {active_sticky_action}"
     )
-    await page.screenshot(path=undeclared_outputs_dir() / f"{request.node.name}-output-open.png")
+    await _review_screenshot(
+        page,
+        f"thread-output-{'phone' if phone else 'desktop'}-{'following' if following else 'reading'}.png",
+        f"Expanded tool output on {'phone' if phone else 'desktop'} while {'following' if following else 'reading'}",
+    )
     # At the true tail, collapsing a long block can shorten the history below its current scrollTop.
     # The browser must clamp to the new bottom; pixel-stable anchoring is asserted mid-thread, where
     # the history has room to preserve the clicked heading's position.
