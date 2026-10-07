@@ -64,6 +64,7 @@ export function StepLine({
       {trailing && <span className="agentplane-step-trailing">{trailing}</span>}
     </div>
   );
+  const openControls = expandable && open && controls && <div className="agentplane-step-controls">{controls}</div>;
   return (
     <div className="agentplane-step-row">
       {expandable ? (
@@ -73,6 +74,7 @@ export function StepLine({
           open={open}
           onOpenChange={onOpenChange}
           summary={summary}
+          summaryAside={openControls}
         >
           {children}
         </Disclosure>
@@ -80,7 +82,6 @@ export function StepLine({
         <div className="agentplane-step-static">{summary}</div>
       )}
       {aside}
-      {expandable && open && controls && <div className="agentplane-step-controls">{controls}</div>}
     </div>
   );
 }

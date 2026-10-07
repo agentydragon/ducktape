@@ -77,17 +77,15 @@ export function OutputBlock({
       summary={
         <Text className="agentplane-output-label" size="xs" c="dimmed">
           {name}
+          <Text span size="xs" c="dimmed">
+            {` · ${lines} ${lines === 1 ? "line" : "lines"}`}
+          </Text>
           {note && (
             <Text span size="xs" c="orange">
               {" "}
               · {note}
             </Text>
           )}
-        </Text>
-      }
-      summaryAside={
-        <Text component="span" size="xs" c="dimmed">
-          {lines} {lines === 1 ? "line" : "lines"}
         </Text>
       }
       open={open}

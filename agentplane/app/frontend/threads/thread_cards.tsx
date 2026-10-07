@@ -353,6 +353,7 @@ function DiscardedCard({ id, summary, children }: { id: string; summary: string;
     <CollapsibleCard open={open}>
       <RetainedDisclosure
         id={id}
+        dividerBoundary
         summary={
           <Text component="span" size="sm" c="dimmed">
             {summary}

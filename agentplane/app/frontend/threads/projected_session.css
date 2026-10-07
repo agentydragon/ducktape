@@ -114,19 +114,13 @@
   display: none;
 }
 
-/* Controls for the opened content sit at the end of the title line, short of the evidence icon. The
-   line gives them room, and lets its badges wrap rather than run under them. */
+/* Controls for opened content are siblings of the disclosure button, so they stay independently
+   clickable without covering the chevron. */
 .agentplane-step-controls {
-  position: absolute;
-  inset-block-start: 0;
-  inset-inline-end: 1.5rem;
+  flex: none;
   display: flex;
-  height: 1lh;
   align-items: center;
-}
-
-.agentplane-step-row:has(> .agentplane-step-controls) > .agentplane-step-details .agentplane-disclosure-summary {
-  padding-inline-end: 6rem;
+  white-space: nowrap;
 }
 
 .agentplane-step-details .agentplane-disclosure-summary[aria-expanded="true"] .agentplane-step-summary {

@@ -46,17 +46,26 @@ export function RetainedDisclosure({
   summary,
   summaryAside,
   defaultOpen,
+  dividerBoundary,
   children,
 }: {
   id: string;
   summary: ReactNode;
   summaryAside?: ReactNode;
   defaultOpen?: boolean;
+  /** Keep this disclosure's divider within its enclosing card edge. */
+  dividerBoundary?: boolean;
   children: ReactNode;
 }): JSX.Element {
   const [open, setOpen] = useRetainedDisclosure(id, defaultOpen);
   return (
-    <Disclosure open={open} onOpenChange={setOpen} summary={summary} summaryAside={summaryAside}>
+    <Disclosure
+      open={open}
+      onOpenChange={setOpen}
+      summary={summary}
+      summaryAside={summaryAside}
+      dividerBoundary={dividerBoundary}
+    >
       {children}
     </Disclosure>
   );
