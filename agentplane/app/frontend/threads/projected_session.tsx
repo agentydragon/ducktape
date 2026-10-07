@@ -629,7 +629,13 @@ function VirtualizedHistory({
       // user choice across the resize without interpreting arbitrary layout movement as intent.
       const pinned = followPreviousBottom(element) || atBottom.current;
       historyTrace.record({ kind: "resize", scrollTop: element.scrollTop, scrollHeight: element.scrollHeight, pinned });
-      if (pinned) element.scrollTop = element.scrollHeight;
+      if (pinned) {
+        element.scrollTop = element.scrollHeight;
+        // This component-owned bottom correction may dispatch its scroll event after another
+        // row measurement changes the bottom. Compare that event with the corrected position,
+        // not the stale position from the last scroll event.
+        previousScrollTop.current = element.scrollTop;
+      }
       // Content can resize while a wheel, touch, or key scroll is still settling. Its
       // measured rows do not describe the reader's final position yet; scrollend will
       // capture that position before a later resize restoration is eligible.
