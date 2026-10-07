@@ -16,7 +16,7 @@ from fastapi import Depends, FastAPI, HTTPException, Request, status
 from fastapi.responses import FileResponse, Response, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 
-from finance.plaid.spend.allowance import PeriodId, TransactionPeriodId
+from finance.plaid.spend.allowance import EstimatePeriodId, PeriodId, TransactionPeriodId
 from finance.plaid.spend.models import SpendConfigurationView, SpendTransactionsView, SpendView, load_configuration
 from finance.plaid.spend.service import SpendService
 from finance.plaid.spend.settings import SpendSettings
@@ -127,8 +127,10 @@ def create_app(settings: SpendSettings, *, service: SpendService, include_ui: bo
         return Response(status_code=204)
 
     @app.get("/api/v1/view", response_model=SpendView)
-    async def get_view(_access: SpendAccess, reader: SpendReader) -> SpendView:
-        return await reader.read_view()
+    async def get_view(
+        _access: SpendAccess, reader: SpendReader, estimate_period_id: EstimatePeriodId | None = None
+    ) -> SpendView:
+        return await reader.read_view(estimate_period_id=estimate_period_id)
 
     @app.get("/api/v1/configuration", response_model=SpendConfigurationView)
     async def get_configuration(_access: SpendAccess, reader: SpendReader) -> SpendConfigurationView:
@@ -141,9 +143,11 @@ def create_app(settings: SpendSettings, *, service: SpendService, include_ui: bo
         return await reader.read_transactions(period)
 
     @app.get("/api/v1/events")
-    async def events(request: Request, _access: SpendAccess, reader: SpendReader) -> StreamingResponse:
+    async def events(
+        request: Request, _access: SpendAccess, reader: SpendReader, estimate_period_id: EstimatePeriodId | None = None
+    ) -> StreamingResponse:
         return StreamingResponse(
-            _event_stream(request, reader),
+            _event_stream(request, reader, estimate_period_id),
             media_type="text/event-stream",
             headers={"Cache-Control": "no-cache, no-transform", "Connection": "keep-alive", "X-Accel-Buffering": "no"},
         )
@@ -151,7 +155,9 @@ def create_app(settings: SpendSettings, *, service: SpendService, include_ui: bo
     return app
 
 
-async def _event_stream(request: Request, service: SpendService) -> AsyncGenerator[str]:
+async def _event_stream(
+    request: Request, service: SpendService, estimate_period_id: EstimatePeriodId | None = None
+) -> AsyncGenerator[str]:
     queue = service.subscribe()
     initial_sent = False
     try:
@@ -166,7 +172,7 @@ async def _event_stream(request: Request, service: SpendService) -> AsyncGenerat
             if not service.listening.is_set():
                 continue
             revision = service.revision
-            view = await service.read_view()
+            view = await service.read_view(estimate_period_id=estimate_period_id)
             if service.listening.is_set() and service.revision == revision:
                 initial_sent = True
                 yield _sse_view(view)

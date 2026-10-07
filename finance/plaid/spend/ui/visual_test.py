@@ -27,6 +27,7 @@ from finance.plaid.spend.allowance import (
     AmountSign,
     AnyOf,
     Disposition,
+    EstimatePeriodId,
     FieldExact,
     ForecastView,
     Kind,
@@ -79,8 +80,9 @@ def dashboard_url() -> Iterator[str]:
     def index() -> FileResponse:
         return FileResponse(_UI_DIR / "index.html")
 
-    def example_allowance(warmup: bool = False) -> AllowanceView:
+    def example_allowance(warmup: bool = False, estimate_period_id: EstimatePeriodId | None = None) -> AllowanceView:
         today = date(2026, 10, 15)
+        estimate_period_id = estimate_period_id or PeriodId.ROLLING_7D
         activation = today if warmup else date(2026, 10, 1)
         spend_amounts = {
             PeriodId.CREDIT_CYCLE: 55000,
@@ -121,9 +123,13 @@ def dashboard_url() -> Iterator[str]:
                 for period_id, observed in ((PeriodId.ROLLING_7D, 1250), (PeriodId.ROLLING_30D, 1000))
             ],
             forecast=ForecastView(
-                basis_period=Period.for_id(PeriodId.ROLLING_7D, today),
-                daily_pace_minor_units=None if warmup else 1250,
-                projected_cycle_end_minor_units=None if warmup else 7500,
+                basis_period=Period.for_id(estimate_period_id, today),
+                daily_pace_minor_units=None
+                if warmup
+                else (1250 if estimate_period_id == PeriodId.ROLLING_7D else 1000),
+                projected_cycle_end_minor_units=None
+                if warmup
+                else (7500 if estimate_period_id == PeriodId.ROLLING_7D else 10000),
                 estimated_exhaustion_at=None if warmup else datetime(2026, 10, 31, tzinfo=UTC),
                 alert_state=PaceAlert.UNAVAILABLE if warmup else PaceAlert.NORMAL,
             ),
@@ -133,11 +139,11 @@ def dashboard_url() -> Iterator[str]:
         )
 
     @app.get("/api/v1/view", response_model=SpendView)
-    def view(warmup: bool = False) -> SpendView:
+    def view(warmup: bool = False, estimate_period_id: EstimatePeriodId | None = None) -> SpendView:
         synced = datetime(2026, 10, 15, 11, tzinfo=UTC)
         return SpendView(
             generated_at=datetime(2026, 10, 15, 12, tzinfo=UTC),
-            allowance=example_allowance(warmup),
+            allowance=example_allowance(warmup, estimate_period_id),
             cards=[
                 CardView(
                     account_id="synthetic-card",
@@ -177,9 +183,9 @@ def dashboard_url() -> Iterator[str]:
         )
 
     @app.get("/api/v1/events")
-    async def events() -> StreamingResponse:
+    async def events(estimate_period_id: EstimatePeriodId | None = None) -> StreamingResponse:
         async def updates() -> AsyncIterator[str]:
-            yield f"event: view\ndata: {json.dumps(view().model_dump(mode='json'))}\n\n"
+            yield f"event: view\ndata: {json.dumps(view(estimate_period_id=estimate_period_id).model_dump(mode='json'))}\n\n"
             while True:
                 await asyncio.sleep(60)
                 yield ": keepalive\n\n"

@@ -22,12 +22,13 @@ service publishes their generated schema at `/openapi.json`; the browser generat
 values calculated by the service are integer currency minor units. Original Plaid transaction amounts in the
 authenticated detail view remain decimal strings in major units.
 
-- `GET /api/v1/view` returns the card and allowance view.
+- `GET /api/v1/view` returns the card and allowance view. Optional `estimate_period_id=rolling_7d|rolling_30d`
+  selects the allowance forecast and spending signal; omission uses the policy default.
 - `GET /api/v1/transactions?period=rolling_30d` returns transaction explanations and a period summary. If a requested
   credit cycle is unavailable, the response identifies the actual `rolling_30d` period.
 - `GET /api/v1/configuration` returns the loaded policy for the read-only Configuration tab without Plaid account IDs.
-- `GET /api/v1/events` sends a complete `view` SSE event immediately and after `plaid_spend_changed` notifications; idle
-  streams send heartbeat comments.
+- `GET /api/v1/events` accepts the same optional estimate period and sends a complete `view` SSE event immediately and
+  after `plaid_spend_changed` notifications; idle streams send heartbeat comments.
 
 Each API route accepts the browser's signed session cookie or a Bearer token from the Authentik `plaid-spend-desktop`
 OIDC client. The same handler serves both. Configuration is global to the service, so every authorized identity sees the

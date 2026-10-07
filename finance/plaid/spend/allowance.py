@@ -61,6 +61,7 @@ class PeriodId(StrEnum):
 
 
 type TransactionPeriodId = Literal[PeriodId.CREDIT_CYCLE, PeriodId.ROLLING_7D, PeriodId.ROLLING_30D]
+type EstimatePeriodId = Literal[PeriodId.ROLLING_7D, PeriodId.ROLLING_30D]
 
 
 class Period(BaseModel):
@@ -428,6 +429,7 @@ def calculate(
     now: datetime,
     last_synced_at: datetime | None,
     decisions: list[TransactionDecision] | None = None,
+    estimate_period_id: EstimatePeriodId | None = None,
 ) -> AllowanceView:
     if now.utcoffset() is None:
         raise ValueError("now must be timezone-aware")
@@ -547,7 +549,7 @@ def calculate(
                 ),
             )
         )
-    forecast_basis = policy.forecast_basis_period_id
+    forecast_basis = estimate_period_id or policy.forecast_basis_period_id
     basis_days = forecast_basis.rolling_days
     assert basis_days is not None
     recent_positive = positive_by_period[forecast_basis]
@@ -572,17 +574,16 @@ def calculate(
         else PaceAlert.NORMAL
     )
     reference_rate = Decimal(policy.monthly_minor_units) * 12 / Decimal("365.2425")
+    basis_observed = next(
+        period.observed_daily_minor_units for period in recorded_pace_periods if period.period.id == forecast_basis
+    )
     signal = (
         PaceAlert.EXCEEDED
         if available <= 0
         else PaceAlert.WARNING
-        if alert == PaceAlert.WARNING
-        or any(
-            period.observed_daily_minor_units is not None and period.observed_daily_minor_units > reference_rate
-            for period in recorded_pace_periods
-        )
+        if alert == PaceAlert.WARNING or (basis_observed is not None and basis_observed > reference_rate)
         else PaceAlert.UNAVAILABLE
-        if all(period.observed_daily_minor_units is None for period in recorded_pace_periods)
+        if basis_observed is None
         else PaceAlert.NORMAL
     )
     current_cycle_spend = next(

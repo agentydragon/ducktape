@@ -194,14 +194,21 @@ def test_prior_purchases_inform_pace_without_importing_debt():
     assert result.forecast.projected_cycle_end_minor_units == -18_000
 
 
-def test_monthly_observed_pace_warns_without_weekly_forecast_or_opening_debt():
+def test_monthly_observed_pace_warns_when_selected_without_weekly_forecast_or_opening_debt():
     now = datetime(2026, 3, 2, tzinfo=UTC)
-    result = calculate(policy(activation_at=now.date()), [row("2026-02-10", 200)], now=now, last_synced_at=now)
+    selected_policy = policy(activation_at=now.date())
+    transactions = [row("2026-02-10", 200)]
+    result = calculate(selected_policy, transactions, now=now, last_synced_at=now)
     assert result.available_minor_units == 10_000
     assert pace(result, PeriodId.ROLLING_7D) is None
     assert pace(result, PeriodId.ROLLING_30D) == 20_000 // 30
     assert result.forecast.alert_state == PaceAlert.UNAVAILABLE
-    assert result.spending_signal == PaceAlert.WARNING
+    assert result.spending_signal == PaceAlert.UNAVAILABLE
+    monthly = calculate(
+        selected_policy, transactions, now=now, last_synced_at=now, estimate_period_id=PeriodId.ROLLING_30D
+    )
+    assert monthly.forecast.basis_period.id == PeriodId.ROLLING_30D
+    assert monthly.spending_signal == PaceAlert.WARNING
 
 
 def test_no_pace_until_history_or_a_full_week_of_zero_spend():

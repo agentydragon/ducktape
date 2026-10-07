@@ -40,6 +40,7 @@ type TransactionsView = components["schemas"]["SpendTransactionsView"];
 type TransactionRow = components["schemas"]["SpendTransactionRow"];
 type TransactionPeriodId = TransactionsView["requested_period_id"];
 type AllowancePeriodId = components["schemas"]["Period"]["id"];
+type EstimatePeriodId = Extract<AllowancePeriodId, "rolling_7d" | "rolling_30d">;
 type RuleCondition = components["schemas"]["Rule"]["condition"];
 type RuleKind = components["schemas"]["Rule"]["kind"];
 type SpendTab = "spending" | "transactions" | "configuration";
@@ -135,8 +136,15 @@ function Metric({ label, value, detail }: { label: string; value: ReactNode; det
   );
 }
 
-function PurchaseCheck({ allowance }: { allowance: Allowance }) {
-  const [purchase, setPurchase] = useState<number | string>("");
+function PurchaseCheck({
+  allowance,
+  purchase,
+  onPurchaseChange,
+}: {
+  allowance: Allowance;
+  purchase: number | string;
+  onPurchaseChange: (value: number | string) => void;
+}) {
   const cents = typeof purchase === "number" ? Math.round(purchase * 100) : NaN;
   const valid = typeof purchase === "number" && purchase >= 0 && Number.isSafeInteger(cents);
   const available = allowance.available_minor_units;
@@ -173,7 +181,7 @@ function PurchaseCheck({ allowance }: { allowance: Allowance }) {
           decimalScale={2}
           placeholder="Enter an amount"
           value={purchase}
-          onChange={setPurchase}
+          onChange={onPurchaseChange}
           inputMode="decimal"
           hideControls
         />
@@ -232,7 +240,15 @@ function PurchaseCheck({ allowance }: { allowance: Allowance }) {
   );
 }
 
-function AllowancePanel({ allowance }: { allowance: Allowance }) {
+function AllowancePanel({
+  allowance,
+  purchase,
+  onPurchaseChange,
+}: {
+  allowance: Allowance;
+  purchase: number | string;
+  onPurchaseChange: (value: number | string) => void;
+}) {
   if (allowance.status !== "active" || allowance.available_minor_units == null) {
     return (
       <Alert color="yellow" title="Allowance unavailable">
@@ -371,7 +387,7 @@ function AllowancePanel({ allowance }: { allowance: Allowance }) {
         </Paper>
       </SimpleGrid>
       <SimpleGrid cols={{ base: 1, sm: 2 }} spacing="lg">
-        <PurchaseCheck allowance={allowance} />
+        <PurchaseCheck allowance={allowance} purchase={purchase} onPurchaseChange={onPurchaseChange} />
         <Card component="section" aria-labelledby="cycle-title" withBorder radius="lg" padding="xl">
           <Stack gap="lg">
             <div>
@@ -601,7 +617,7 @@ function ConfigurationPanel({
                   <Metric label="START DATE" value={allowance.activation_at} />
                   <Metric label="ACCOUNTS IN SCOPE" value={allowance.spending_account_count} />
                   <Metric label="MAX SYNC AGE" value={`${allowance.max_sync_age_hours} hours`} />
-                  <Metric label="FORECAST BASIS" value={periodLabels[allowance.forecast_basis_period_id]} />
+                  <Metric label="DEFAULT ESTIMATE WINDOW" value={periodLabels[allowance.forecast_basis_period_id]} />
                 </SimpleGrid>
                 <Divider />
                 <div>
@@ -1248,6 +1264,8 @@ function App() {
   const [configurationLoading, setConfigurationLoading] = useState(false);
   const [configurationError, setConfigurationError] = useState<string | null>(null);
   const [transactions, setTransactions] = useState<TransactionsView | null>(null);
+  const [selectedEstimatePeriodId, setSelectedEstimatePeriodId] = useState<EstimatePeriodId | null>(null);
+  const [purchase, setPurchase] = useState<number | string>("");
   const [transactionPeriodId, setTransactionPeriodId] = useState<TransactionPeriodId>("rolling_30d");
   const [transactionsLoading, setTransactionsLoading] = useState(false);
   const [transactionsError, setTransactionsError] = useState<string | null>(null);
@@ -1260,9 +1278,10 @@ function App() {
   }, []);
   useEffect(() => {
     let mounted = true;
+    const estimateQuery = selectedEstimatePeriodId ? `?estimate_period_id=${selectedEstimatePeriodId}` : "";
     const load = async () => {
       try {
-        const response = await fetch("/api/v1/view", { cache: "no-store", credentials: "same-origin" });
+        const response = await fetch(`/api/v1/view${estimateQuery}`, { cache: "no-store", credentials: "same-origin" });
         if (response.status === 401) {
           window.location.assign("/auth/login");
           return;
@@ -1281,7 +1300,7 @@ function App() {
       }
     };
     void load();
-    const events = new EventSource("/api/v1/events");
+    const events = new EventSource(`/api/v1/events${estimateQuery}`);
     events.addEventListener("view", (event) => {
       try {
         if (mounted) {
@@ -1304,7 +1323,7 @@ function App() {
       mounted = false;
       events.close();
     };
-  }, []);
+  }, [selectedEstimatePeriodId]);
   useEffect(() => {
     if (activeTab !== "configuration" || configuration != null) return;
     let mounted = true;
@@ -1365,6 +1384,13 @@ function App() {
     return () => controller.abort();
   }, [activeTab, transactionPeriodId, viewRevision]);
   const cards = view?.cards || [];
+  const estimatePeriodId =
+    selectedEstimatePeriodId ??
+    (view?.allowance?.forecast.basis_period.id === "rolling_30d" ? "rolling_30d" : "rolling_7d");
+  const estimatePending =
+    selectedEstimatePeriodId != null &&
+    view?.allowance != null &&
+    view.allowance.forecast.basis_period.id !== selectedEstimatePeriodId;
   return (
     <MantineProvider defaultColorScheme="auto">
       <Tabs
@@ -1432,13 +1458,39 @@ function App() {
                   {state}
                 </Badge>
               </Group>
+              {view?.allowance && (
+                <Group justify="space-between" gap="sm">
+                  <Text size="sm" fw={600}>
+                    Estimate window
+                  </Text>
+                  <SegmentedControl
+                    aria-label="Estimate window"
+                    value={estimatePeriodId}
+                    onChange={(periodId) => {
+                      setError(null);
+                      setSelectedEstimatePeriodId(periodId as EstimatePeriodId);
+                    }}
+                    data={[
+                      { value: "rolling_7d", label: "Last 7 days" },
+                      { value: "rolling_30d", label: "Last 30 days" },
+                    ]}
+                  />
+                </Group>
+              )}
               {error && (
                 <Alert color="red" title="Couldn't refresh your view">
                   {error}. Showing the most recent data we have.
                 </Alert>
               )}
-              {view?.allowance ? (
-                <AllowancePanel allowance={view.allowance} />
+              {estimatePending ? (
+                <Alert
+                  color={error ? "red" : "blue"}
+                  title={error ? "Selected estimate unavailable" : "Updating estimate"}
+                >
+                  {error || `Calculating from ${periodLabels[estimatePeriodId].toLowerCase()} of purchases…`}
+                </Alert>
+              ) : view?.allowance ? (
+                <AllowancePanel allowance={view.allowance} purchase={purchase} onPurchaseChange={setPurchase} />
               ) : (
                 <Alert color="yellow" title="No flexible allowance yet">
                   {view

@@ -12,7 +12,7 @@ import pytest_bazel
 from itsdangerous import TimestampSigner
 from pydantic import SecretStr
 
-from finance.plaid.spend.allowance import Period, PeriodId, TransactionPeriodId
+from finance.plaid.spend.allowance import EstimatePeriodId, Period, PeriodId, TransactionPeriodId
 from finance.plaid.spend.app import _UI_DIR, _web_login_config, create_app
 from finance.plaid.spend.models import (
     SpendConfigurationView,
@@ -36,7 +36,8 @@ def test_ui_bundle() -> None:
 
 
 class _Reader:
-    async def read_view(self) -> SpendView:
+    async def read_view(self, *, estimate_period_id: EstimatePeriodId | None = None) -> SpendView:
+        del estimate_period_id
         return SpendView(generated_at=datetime(2026, 10, 15, tzinfo=UTC), cards=[])
 
     def read_configuration(self) -> SpendConfigurationView:

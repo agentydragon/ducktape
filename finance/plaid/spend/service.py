@@ -15,6 +15,7 @@ from babel.numbers import get_currency_precision
 from finance.plaid.spend.allowance import (
     AllowanceView,
     Disposition,
+    EstimatePeriodId,
     ForecastView,
     Kind,
     PaceAlert,
@@ -131,6 +132,7 @@ class SpendService:
     async def read_view(
         self,
         *,
+        estimate_period_id: EstimatePeriodId | None = None,
         allowance_decisions: list[TransactionDecision] | None = None,
         account_labels: dict[str, str] | None = None,
         card_transactions: list[asyncpg.Record] | None = None,
@@ -145,7 +147,7 @@ class SpendService:
                 generated_at=generated_at,
                 cards=[],
                 allowance=await self._read_allowance(
-                    generated_at, allowance_decisions, account_labels, transaction_details
+                    generated_at, allowance_decisions, account_labels, transaction_details, estimate_period_id
                 ),
                 dashboard_url=self._dashboard_url,
             )
@@ -176,7 +178,7 @@ class SpendService:
                     generated_at=generated_at,
                     cards=[],
                     allowance=await self._read_allowance(
-                        generated_at, allowance_decisions, account_labels, transaction_details
+                        generated_at, allowance_decisions, account_labels, transaction_details, estimate_period_id
                     ),
                     dashboard_url=self._dashboard_url,
                 )
@@ -365,7 +367,7 @@ class SpendService:
             generated_at=generated_at,
             cards=cards,
             allowance=await self._read_allowance(
-                generated_at, allowance_decisions, account_labels, transaction_details
+                generated_at, allowance_decisions, account_labels, transaction_details, estimate_period_id
             ),
             dashboard_url=self._dashboard_url,
         )
@@ -521,6 +523,7 @@ class SpendService:
         decisions: list[TransactionDecision] | None = None,
         account_labels: dict[str, str] | None = None,
         transaction_details: dict[tuple[str, str], PlaidTransactionDetails] | None = None,
+        estimate_period_id: EstimatePeriodId | None = None,
     ) -> AllowanceView | None:
         policy = self._configuration.allowance
         if policy is None:
@@ -560,7 +563,7 @@ class SpendService:
                     spend_periods=[],
                     recorded_pace_periods=[],
                     forecast=ForecastView(
-                        basis_period=Period.for_id(policy.forecast_basis_period_id, now.date()),
+                        basis_period=Period.for_id(estimate_period_id or policy.forecast_basis_period_id, now.date()),
                         daily_pace_minor_units=None,
                         projected_cycle_end_minor_units=None,
                         estimated_exhaustion_at=None,
@@ -601,6 +604,7 @@ class SpendService:
             now=now,
             last_synced_at=last_synced,
             decisions=decisions,
+            estimate_period_id=estimate_period_id,
         )
 
     def _require_pool(self) -> asyncpg.Pool:
