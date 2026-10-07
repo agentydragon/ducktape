@@ -37,14 +37,24 @@ rust:
 bun:
   version: 1.3.9
 java:
-  version: "Picked up JAVA_TOOL_OPTIONS: -Dhttp.proxyHost=21.0.0.103 -Dhttp.proxyPort=15004 -Dhttps.proxyHost=21.0.0.103 -Dhttps.proxyPort=15004 -Dhttp.proxyUser=REDACTED_CONTAINER_ID -Dhttp.proxyPassword=jwt_REDACTED -Dhttps.proxyUser=REDACTED_CONTAINER_ID -Dhttps.proxyPassword=jwt_REDACTED -Dhttp.nonProxyHosts=localhost|127.0.0.1|169.254.169.254|metadata.google.internal|*.svc.cluster.local|*.local|*.googleapis.com|*.google.com -Djdk.http.auth.tunneling.disabledSchemes= -Djdk.http.auth.proxying.disabledSchemes="
+  version:
+    "Picked up JAVA_TOOL_OPTIONS: -Dhttp.proxyHost=21.0.0.103 -Dhttp.proxyPort=15004 -Dhttps.proxyHost=21.0.0.103
+    -Dhttps.proxyPort=15004 -Dhttp.proxyUser=REDACTED_CONTAINER_ID -Dhttp.proxyPassword=jwt_REDACTED
+    -Dhttps.proxyUser=REDACTED_CONTAINER_ID -Dhttps.proxyPassword=jwt_REDACTED
+    -Dhttp.nonProxyHosts=localhost|127.0.0.1|169.254.169.254|metadata.google.internal|*.svc.cluster.local|*.local|*.googleapis.com|*.google.com
+    -Djdk.http.auth.tunneling.disabledSchemes= -Djdk.http.auth.proxying.disabledSchemes="
 php:
   version: "PHP 8.4.18 (cli) (built: Feb 13 2026 16:00:19) (NTS)"
 build_tools:
-  podman: 
-  buildah: 
+  podman:
+  buildah:
   composer: "Composer version 2.8.12 2025-09-19 13:41:59"
-  maven: "Picked up JAVA_TOOL_OPTIONS: -Dhttp.proxyHost=21.0.0.103 -Dhttp.proxyPort=15004 -Dhttps.proxyHost=21.0.0.103 -Dhttps.proxyPort=15004 -Dhttp.proxyUser=REDACTED_CONTAINER_ID -Dhttp.proxyPassword=jwt_REDACTED -Dhttps.proxyUser=REDACTED_CONTAINER_ID -Dhttps.proxyPassword=jwt_REDACTED -Dhttp.nonProxyHosts=localhost|127.0.0.1|169.254.169.254|metadata.google.internal|*.svc.cluster.local|*.local|*.googleapis.com|*.google.com -Djdk.http.auth.tunneling.disabledSchemes= -Djdk.http.auth.proxying.disabledSchemes="
+  maven:
+    "Picked up JAVA_TOOL_OPTIONS: -Dhttp.proxyHost=21.0.0.103 -Dhttp.proxyPort=15004 -Dhttps.proxyHost=21.0.0.103
+    -Dhttps.proxyPort=15004 -Dhttp.proxyUser=REDACTED_CONTAINER_ID -Dhttp.proxyPassword=jwt_REDACTED
+    -Dhttps.proxyUser=REDACTED_CONTAINER_ID -Dhttps.proxyPassword=jwt_REDACTED
+    -Dhttp.nonProxyHosts=localhost|127.0.0.1|169.254.169.254|metadata.google.internal|*.svc.cluster.local|*.local|*.googleapis.com|*.google.com
+    -Djdk.http.auth.tunneling.disabledSchemes= -Djdk.http.auth.proxying.disabledSchemes="
   gradle: Gradle 8.14.3
   golangci-lint: "golangci-lint has version 2.5.0 built with go1.25.1 from ff63786c on 2025-09-21T19:04:05Z"
   uv: uv 0.8.17
@@ -738,7 +748,7 @@ dpkg_packages:
   zlib1g: "1:1.3.dfsg-3.1ubuntu2.1"
   zlib1g-dev: "1:1.3.dfsg-3.1ubuntu2.1"
 npm_globals:
-  @anthropic-ai/claude-code: 2.1.42
+  "@anthropic-ai/claude-code": 2.1.42
   chromedriver: 145.0.1
   corepack: 0.34.0
   eslint: 10.0.0
@@ -760,7 +770,8 @@ claude_env_vars:
   CLAUDE_CODE_DEBUG: true
   CLAUDE_CODE_ENTRYPOINT: remote
   CLAUDE_CODE_ENVIRONMENT_RUNNER_VERSION: release-9f4ec76fbc-ext
-  CLAUDE_CODE_EXTRA_BODY: "{"metadata": {"user_id": "{\"user\": \"sandbox-gateway\", \"job\": \"claude_code_remote\"}"}}"
+  CLAUDE_CODE_EXTRA_BODY:
+    '{"metadata": {"user_id": "{\"user\": \"sandbox-gateway\", \"job\": \"claude_code_remote\"}"}}'
   CLAUDE_CODE_POST_FOR_SESSION_INGRESS_V2: true
   CLAUDE_CODE_PROXY_RESOLVES_HOSTS: true
   CLAUDE_CODE_REMOTE: true

@@ -22,6 +22,8 @@ import sys
 import tempfile
 from pathlib import Path
 
+import yaml
+
 
 def run(cmd: str, *, timeout: int = 10) -> str:
     """Run a shell command and return stripped stdout, or empty string on failure."""
@@ -204,26 +206,6 @@ def collect_binary_hashes() -> dict[str, str]:
     return {b: sha256_file(b) for b in binaries if Path(b).exists()}
 
 
-def yaml_dump(data: dict, indent: int = 0) -> str:
-    """Simple YAML serializer (no external deps beyond stdlib)."""
-    lines = []
-    prefix = "  " * indent
-    for key, value in data.items():
-        if isinstance(value, dict):
-            lines.append(f"{prefix}{key}:")
-            lines.append(yaml_dump(value, indent + 1))
-        elif isinstance(value, list):
-            lines.append(f"{prefix}{key}:")
-            lines.extend(f"{prefix}  - {item}" for item in value)
-        else:
-            # Quote strings with special chars
-            display = value
-            if isinstance(display, str) and any(c in display for c in ":#{}[]|>&*!%@"):
-                display = f'"{display}"'
-            lines.append(f"{prefix}{key}: {display}")
-    return "\n".join(lines)
-
-
 def capture_versions_yaml() -> str:
     """Capture all version info and return as YAML string."""
     captured = datetime.datetime.now(datetime.UTC).isoformat()
@@ -288,7 +270,7 @@ def capture_versions_yaml() -> str:
         f"# Captured: {captured}",
         "# Use 'bazel run //devinfra/claude/web_env/tools:capture_versions_bin -- --diff <prev>.yaml' to compare",
         "",
-        yaml_dump(data),
+        yaml.safe_dump(data, sort_keys=False, allow_unicode=True, width=120).rstrip("\n"),
     ]
     return "\n".join(lines)
 
