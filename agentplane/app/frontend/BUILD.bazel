@@ -1174,12 +1174,15 @@ vitest_config(
 # harness/scenarios.json, the PNGs published for PR visual review on the shared
 # //util/testing/frontend_visual machinery.
 #
-# The scenario table: read by the harness (the route and fixture switches of the scene `?page=`
-# names) and by the sweep (what to capture).
+# The fixture tables: the harness reads both to mount a scene by `?page=`. The generic sweep
+# captures scenarios.json; Python Playwright tests drive and capture interaction_scenarios.json.
 js_library(
     name = "visual_scenarios_json",
     testonly = True,
-    srcs = ["harness/scenarios.json"],
+    srcs = [
+        "harness/interaction_scenarios.json",
+        "harness/scenarios.json",
+    ],
 )
 
 ts_library(
@@ -1252,8 +1255,8 @@ filegroup(
     srcs = ["harness/bundle.css"],
 )
 
-# Every scenario in harness/scenarios.json, each on its own browser -- `shard_count` buys the
-# parallelism per-scenario targets used to give, without BUILD repeating the scenario list. Run one
+# Every scenario in both fixture tables, each on its own browser -- `shard_count` buys the
+# parallelism per-scenario targets used to give, without BUILD repeating the scene list. Run one
 # with `--test_filter=<scenario>`; see AGENTS.md.
 #
 # medium: a shard renders 20-21 scenarios, each on its own browser. The six shards took 32-59s in a
@@ -1267,13 +1270,26 @@ py_visual_test(
     size = "medium",
     assets = [
         "harness/index.html",
+        "harness/interaction_scenarios.json",
         ":visual_bundle_css",
     ],
     devtools_viewport = True,
     harness = ":visual_bundle_js",
     scenarios = "harness/scenarios.json",
     shard_count = 6,
+    test_module = "agentplane.app.frontend.test_visual_interactions",
+    test_srcs = ["test_visual_interactions.py"],
+    test_deps = [
+        "//util/testing:page_capture",
+        "//util/testing:undeclared_outputs",
+        "//util/testing:visual_scenarios",
+        "@pypi//playwright",
+        "@pypi//pytest",
+        "@pypi//pytest_asyncio",
+        "@pypi//pytest_bazel",
+    ],
     title = "Agentplane",
+    env = {"INTERACTION_SCENARIOS_PATH": "$(rlocationpath harness/interaction_scenarios.json)"},
 )
 
 js_test(

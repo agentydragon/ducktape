@@ -271,6 +271,8 @@ export function SandboxList({ onOpen }: { onOpen: (name: string) => void }): JSX
           onChange={(picked) => setForm({ ...form, action_policy_sets: picked })}
           style={{ flex: "1 1 12rem" }}
         />
+        {/* TODO: The selected workspace-read grant can horizontally overflow the phone launch form
+            when this selector opens; constrain its pill layout without shifting the page. */}
         <MultiSelect
           label="Kubernetes grants"
           description="Roles bound to this sandbox's ServiceAccount"

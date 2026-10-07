@@ -2373,19 +2373,6 @@ if (scenario.openSetup) {
   openSetup.observe(document, { childList: true, subtree: true });
 }
 
-/** Opens each folded tool-call line inside the run, which mounts only once the run is open. */
-function openToolLines(): void {
-  for (const step of document.querySelectorAll<HTMLButtonElement>(
-    ".agentplane-step-details .agentplane-disclosure-summary"
-  )) {
-    if (
-      step.getAttribute("aria-expanded") !== "true" &&
-      step.querySelector(".agentplane-step-title")?.textContent !== "Reasoning"
-    )
-      step.click();
-  }
-}
-
 if (scenario.openRun) {
   const openFoldedRun = new MutationObserver(() => {
     const controls = [...document.querySelectorAll<HTMLButtonElement>(".agentplane-disclosure-summary")];
@@ -2393,14 +2380,6 @@ if (scenario.openRun) {
     if (document.querySelector(".agentplane-step-details")) openFoldedRun.disconnect();
   });
   openFoldedRun.observe(document, { childList: true, subtree: true });
-}
-
-if (scenario.openToolPayloads) {
-  const openToolPayloads = new MutationObserver(() => {
-    openRun([...document.querySelectorAll<HTMLButtonElement>(".agentplane-disclosure-summary")]);
-    openToolLines();
-  });
-  openToolPayloads.observe(document, { childList: true, subtree: true });
 }
 
 if (scenario.openRecoveryDetails) {
@@ -2415,7 +2394,15 @@ if (scenario.openRecoveryDetails) {
         summary.click();
       }
     }
-    openToolLines();
+    for (const step of document.querySelectorAll<HTMLButtonElement>(
+      ".agentplane-step-details .agentplane-disclosure-summary"
+    )) {
+      if (
+        step.getAttribute("aria-expanded") !== "true" &&
+        step.querySelector(".agentplane-step-title")?.textContent !== "Reasoning"
+      )
+        step.click();
+    }
   });
   openRecovery.observe(document, { childList: true, subtree: true });
 }
@@ -2430,32 +2417,6 @@ if (scenario.openEvidence) {
     button.click();
   });
   openEvidence.observe(document, { childList: true, subtree: true });
-}
-
-if (scenario.openClampedBlocks) {
-  const openClamped = () => {
-    const unopened = [
-      ...document.querySelectorAll<HTMLButtonElement>(".agentplane-clamped-block button[aria-expanded='false']"),
-    ];
-    for (const button of unopened) button.click();
-    const toolLines = [
-      ...document.querySelectorAll<HTMLButtonElement>(".agentplane-step-details .agentplane-disclosure-summary"),
-    ];
-    const loading = document.querySelector(".agentplane-step-details [aria-busy='true']");
-    if (
-      unopened.length === 0 &&
-      toolLines.length > 0 &&
-      toolLines.every((button) => button.getAttribute("aria-expanded") === "true") &&
-      !loading
-    ) {
-      openClampedBlocks.disconnect();
-    }
-  };
-  // Tool arguments and output bodies load independently. Keep watching after the first block opens
-  // so a later payload is expanded too.
-  const openClampedBlocks = new MutationObserver(openClamped);
-  openClampedBlocks.observe(document, { childList: true, subtree: true });
-  openClamped();
 }
 
 if (scenario.preselectReconnect) {

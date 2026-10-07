@@ -1,7 +1,8 @@
-"""Capture every scenario of a harness page with Playwright: one `test_scenario` per scenario.
+"""Capture harness scenes with Playwright: one `test_scenario` per table row.
 
-Run by the `py_visual_test` macro (`frontend_visual/py_visual_test.bzl`), which names this module its
-`main_module` and sets the environment `SweepConfig` reads. The scenarios are the rows of a
+Run by the `py_visual_test` macro (`frontend_visual/py_visual_test.bzl`), either as its default main
+module or as a collected test in a package-owned main module. The macro sets the environment
+`SweepConfig` reads. The scenarios are the rows of a
 `scenarios.json` (`visual_scenarios`); each is rendered, gated, and published as
 `<outputName>-actual.png` (the suffix is the lane's choice) plus an entry in `visual-review.json`, for PR visual review
 (`devinfra/pr_visuals`). There are no checked-in baselines: a scenario passes when it renders healthily.
@@ -13,8 +14,9 @@ The harness page is a `file://` `index.html` beside its bundle, told its scene b
 The request fence allows nothing at all; the one thing it answers is a document the lane serves under a
 URL prefix (`served_documents`, for a shell that frames another origin).
 
-A scenario that needs driving first is driven with real input: its `clicks` in order, then
-`scrollToBottom`, each click naming what it must change.
+A simple scenario can use selector-based `clicks` and `scrollToBottom`. A package-owned Python
+test can name and drive an interaction-heavy scene, then call `capture_scenario` with its Playwright
+driver. Both paths share the screenshot and visual-review publication machinery.
 
 Selection is pytest's, which is what Bazel drives: `--test_filter=<scenario>` is `-k` (a scenario's
 name is its test id), and `shard_count` is `util.testing.sharding`, filter first, then shard.
@@ -31,7 +33,7 @@ from __future__ import annotations
 import json
 import os
 import sys
-from collections.abc import AsyncIterator, Iterable, Mapping
+from collections.abc import AsyncIterator, Awaitable, Callable, Iterable, Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Literal
@@ -41,7 +43,7 @@ import pytest
 import pytest_asyncio
 import pytest_bazel
 from more_itertools import one
-from playwright.async_api import Page, Playwright, Route, TimeoutError as PlaywrightTimeoutError, async_playwright
+from playwright.async_api import Page, Playwright, Route, async_playwright
 from pydantic import JsonValue, TypeAdapter
 
 from util.bazel.runfiles import get_required_path
@@ -215,6 +217,7 @@ async def capture_scenario(
     *,
     config: SweepConfig,
     output_dir: Path,
+    drive: Callable[[Page], Awaitable[None]] | None = None,
     timeout_ms: int = WAIT_TIMEOUT_MS,
 ) -> None:
     """Render one scenario on its own browser; raise, naming it, if it is not healthy."""
@@ -272,50 +275,18 @@ async def capture_scenario(
             font_status = await page.evaluate(_FONT_STATUS_JS, config.expected_font_family)
             if font_status != "loaded":
                 raise AssertionError(f"{output_name}: {config.expected_font_family} font did not load ({font_status})")
+        if drive is not None:
+            await assert_network_settled(page, context=output_name, timeout_ms=timeout_ms)
+            await drive(page)
+            await wait_for_stable(page)
         if scenario.clicks or scenario.scroll_to_bottom is not None:
             # An interaction acts on a page whose first fetches have landed: its target may be replaced under it.
             await assert_network_settled(page, context=output_name, timeout_ms=timeout_ms)
         for click in scenario.clicks:
-            if click.selector is not None:
-                target = page.locator(click.selector)
-                press_target = target
-            else:
-                assert click.label is not None
-                # TODO: Move this Mantine-specific interaction and diagnostics into the owning
-                # Python browser tests as the scenario DSL is replaced.
-                press_target = page.get_by_role("combobox", name=click.label, exact=True)
-                # Mantine's MultiSelect opens from its PillsInput wrapper's click handler; its
-                # labelled combobox input is read-only (and can be visually hidden).
-                target = press_target.locator(
-                    "xpath=ancestor::div[contains(concat(' ', normalize-space(@class), ' '), "
-                    "' mantine-MultiSelect-input ')][1]"
-                )
-            if click.press is not None:
-                await press_target.press(click.press, timeout=timeout_ms)
-            else:
-                await target.click(force=click.force, timeout=timeout_ms)
-            try:
-                await _wait_for_selectors(
-                    page, page_errors, click.expect_visible, state="visible", context=output_name, timeout_ms=timeout_ms
-                )
-            except PlaywrightTimeoutError as error:
-                state = await page.evaluate(
-                    """() => ({
-                      multiSelects: [...document.querySelectorAll('.mantine-MultiSelect-input')].map(root => ({
-                        expanded: root.getAttribute('data-expanded'),
-                        input: root.querySelector('[role="combobox"]')?.outerHTML,
-                        options: [...root.querySelectorAll('[role="option"]')].map(option => ({
-                          text: option.textContent,
-                          visible: option.getBoundingClientRect().width > 0 && getComputedStyle(option).visibility === 'visible',
-                        })),
-                      })),
-                      visibleOptions: [...document.querySelectorAll('[role="option"]')]
-                        .filter(option => option.getBoundingClientRect().width > 0 && getComputedStyle(option).visibility === 'visible')
-                        .map(option => option.textContent),
-                    })"""
-                )
-                error.add_note(f"{output_name}: state after click: {state}")
-                raise
+            await page.locator(click.selector).click(timeout=timeout_ms)
+            await _wait_for_selectors(
+                page, page_errors, click.expect_visible, state="visible", context=output_name, timeout_ms=timeout_ms
+            )
             await _wait_for_selectors(
                 page, page_errors, click.expect_hidden, state="hidden", context=output_name, timeout_ms=timeout_ms
             )

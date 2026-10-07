@@ -7,7 +7,7 @@ change (`threads/projected_session.tsx`, `threads/projected_session.css`, or any
 at a rendered PNG of every state you touched. Either of these satisfies that — the point is seeing
 the real pixels, not a specific mechanism for getting there:
 
-- **Wait for CI's `pr-visuals` comment** on the PR: it renders every `visual_*` scenario and posts
+- **Wait for CI's `pr-visuals` comment** on the PR: it renders every visual scenario and posts
   before/after/diff thumbnails automatically once pushed.
 - **Or run the scenario locally** — `bbr test //agentplane/app/frontend:visual
 --test_filter=<scenario> --noremote_accept_cached --nocache_test_results` — and download the PNG it
@@ -24,11 +24,13 @@ itself, not an animation's start/end frames — which visual tests disable anywa
 
 ## Adding a scenario
 
-`harness/scenarios.json` is the whole list — a row there is a target's worth of coverage, and BUILD
-names no scenario at all (it carries a `shard_count`, which needs no change when the table grows).
+The fixture tables are `harness/scenarios.json` for ordinary mounts and
+`harness/interaction_scenarios.json` for states driven by named tests in
+`test_visual_interactions.py`. The TypeScript harness reads both to choose the route and canned data;
+the Python tests own clicks, scrolls, assertions, and capture. BUILD names no individual scenario.
 A row needs an `element`, a `route` and a `viewport`; `outputName`, `readySelectors`,
 `captureViewport` and the fixture switches are per-row overrides. The sweep reads the capture fields
-(`util/testing/visual_scenarios.py`) and the harness the route and the fixture switches (`Scenario`
+(`util/testing/visual_scenarios.py`) and the harness reads the route and fixture switches (`Scenario`
 in `harness/scenario.ts`). JSON has no shared constants, so every phone row spells out a Pixel 6's
 CSS viewport (`{ "width": 412, "height": 915, "deviceScaleFactor": 2.625 }`). `readySelectors` are
 Playwright selectors (`:text("...")`). Heights are deliberate: a
@@ -37,7 +39,7 @@ test, and the input above it, in frame.
 
 If a state you changed isn't exercised by any existing scenario/fixture (`harness/harness.tsx`), add
 one rather than skipping the check — see `session_states` for the pattern (a fixture built
-specifically to exercise states the main fixture doesn't produce). A state behind a click (an open
-run, a row's evidence, the debug drawer) is a row switch on `Scenario` (`openReasoning`,
-`openEvidence`, `openDebug`, …) that `harness/harness.tsx` acts on once the view mounts — check the
-existing switches before adding one.
+specifically to exercise states the main fixture doesn't produce). Put interaction behavior in
+`test_visual_interactions.py`; the TypeScript harness owns fixture data and mounting. Some older
+scenes still use harness switches for clicks (`openReasoning`, `openEvidence`, `openDebug`, …);
+do not add another switch for an interaction that Playwright can perform.

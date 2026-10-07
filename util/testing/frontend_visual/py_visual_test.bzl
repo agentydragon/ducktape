@@ -1,8 +1,9 @@
 """How a package declares its Playwright visual-render sweep.
 
 One `py_visual_test` per frontend. The package contributes
-its harness page and a `scenarios.json`; the sweep (`//util/testing:visual_sweep`) is the test, so
-there is no Python in the package. The macro carries what no caller should have to know: the
+its harness page and a `scenarios.json`; the sweep (`//util/testing:visual_sweep`) is the default test.
+A package with interaction-heavy scenes can provide a Python main module that also collects the
+sweep. The macro carries what no caller should have to know: the
 environment the sweep reads, and the `visual` tag that lets the weekly determinism sweep and the PR
 visual job find these targets by query instead of by a hand-maintained roster.
 
@@ -27,6 +28,9 @@ def py_visual_test(
         base_href = None,
         page_url = None,
         served_documents = {},
+        test_module = None,
+        test_srcs = [],
+        test_deps = [],
         env = {},
         tags = [],
         **kwargs):
@@ -66,6 +70,10 @@ def py_visual_test(
       served_documents: URL prefix to the HTML file the request fence answers a request under it with,
         for a shell that frames another origin (the harness mocks that origin's document). Any other
         request still fails the scenario.
+      test_module: optional package-owned Python main module that collects the generic sweep test
+        and named interaction tests under the same visual target.
+      test_srcs: source files for `test_module`.
+      test_deps: direct dependencies of `test_module` beyond the generic sweep.
       devtools_viewport: emulate and capture each viewport over the DevTools protocol
         (`DevtoolsViewport`), so a lane keeps its published images byte-identical at a device scale
         factor where Playwright's own viewport differs.
@@ -109,7 +117,8 @@ def py_visual_test(
 
     py_test(
         name = name,
-        main_module = "util.testing.visual_sweep",
+        main_module = test_module or "util.testing.visual_sweep",
+        srcs = test_srcs,
         data = assets + stylesheets + served_documents.values() + [harness, scenarios] +
                ([fonts] if fonts != None else []),
         env = sweep_env,
@@ -117,6 +126,6 @@ def py_visual_test(
         deps = [
             "//:conftest",
             "//util/testing:visual_sweep",
-        ],
+        ] + test_deps,
         **kwargs
     )

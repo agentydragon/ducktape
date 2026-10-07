@@ -28,7 +28,7 @@ def test_scenarios_load_in_table_order_with_harness_only_fields_ignored(tmp_path
                 "hover": "#h",
                 "readyFrames": {"iframe.child": "main"},
                 "clicks": [
-                  {"label": "Open", "force": true, "press": "ArrowDown", "expectVisible": ["#panel"], "expectHidden": ["#spinner"]},
+                  {"selector": "#open", "expectVisible": ["#panel"], "expectHidden": ["#spinner"]},
                   {"selector": "#next", "expectHidden": ["#panel"]}
                 ],
                 "hiddenSelectors": [".loading"],
@@ -56,7 +56,7 @@ def test_scenarios_load_in_table_order_with_harness_only_fields_ignored(tmp_path
         hover="#h",
         ready_frames={"iframe.child": "main"},
         clicks=[
-            Click(label="Open", force=True, press="ArrowDown", expect_visible=["#panel"], expect_hidden=["#spinner"]),
+            Click(selector="#open", expect_visible=["#panel"], expect_hidden=["#spinner"]),
             Click(selector="#next", expect_hidden=["#panel"]),
         ],
         hidden_selectors=[".loading"],
@@ -88,9 +88,9 @@ def test_a_click_states_what_it_changes() -> None:
         Scenario.model_validate({"element": "#app", "clicks": [{"selector": "#open"}]})
 
 
-def test_a_click_has_exactly_one_target() -> None:
-    with pytest.raises(pydantic.ValidationError, match=r"must specify exactly one of selector or label"):
-        Click(selector="#open", label="Open", expect_visible=["#panel"])
+def test_a_click_names_a_selector() -> None:
+    with pytest.raises(pydantic.ValidationError, match="selector"):
+        Click.model_validate({"expectVisible": ["#panel"]})
 
 
 def test_window_globals_are_assigned_by_name_so_a_name_must_be_an_identifier() -> None:

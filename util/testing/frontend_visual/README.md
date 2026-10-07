@@ -73,12 +73,14 @@ its ready selectors, the request fence, the fetch ledger and zero uncaught page 
   `served_documents = {"https://framed.test/": "mock_framed.html"}` makes the request fence answer a
   request under that prefix with the file, and a scenario's `readyFrames` (`{"iframe.selector": "main"}`)
   waits for the frame and for a selector inside it. Any other request still fails the scenario.
-- **A scene is driven with real input.** A scenario's `clicks` run in order, each naming what it changes
+- **A simple scene can be driven with real input.** A scenario's selector-based `clicks` run in order, each naming what it changes
   (`expectVisible`, `expectHidden`) and each followed by the page settling and the pointer being parked
   at the page's corner, so a tooltip the click opened is not in the capture. A click must match exactly
   one element (`>> nth=0` picks one). `hiddenSelectors` are what must be gone before capture once the
   interactions are done (loaders, controls still arming), and `scrollToBottom` scrolls a scroller to its
-  end.
+  end. For interactions with application semantics or geometry assertions, put the fixture rows in
+  a separate table and write named Python Playwright tests. Pass each test's driver to
+  `capture_scenario`; it publishes screenshots through the same visual-review manifest.
 - **`devtools_viewport = True` emulates and captures the viewport over the DevTools protocol**
   (`DevtoolsViewport` in `page_capture.py`: `Emulation.setDeviceMetricsOverride`, and an unclipped
   `Page.captureScreenshot` for a `captureViewport` scenario). Playwright's own viewport rasterizes a few

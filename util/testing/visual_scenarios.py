@@ -12,8 +12,9 @@ A table whose rows enumerate data kept elsewhere (a fixture roster) is generated
 rather than copied. A harness loaded as an in-memory page has no URL query to read its scene from;
 the row's `windowGlobals` tell it instead.
 
-A scene that needs driving before it is the subject (a tab to open, a drawer to close) says so in its
-row, and the sweep drives it with real input: `clicks`, then `scrollToBottom`.
+A simple scene that needs driving before capture can use `clicks` and `scrollToBottom` in its row.
+An interaction-heavy scene can use a separate fixture table and a package-owned Python Playwright
+test that names its behavior and asserts the outcome before capture.
 """
 
 from __future__ import annotations
@@ -39,16 +40,12 @@ class Viewport(_TableModel):
 
 
 class Click(_TableModel):
-    selector: str | None = Field(
-        default=None,
+    selector: str = Field(
         description=(
             "Selector of the element to click. It must match exactly one element, so that a click cannot "
             "land silently on a look-alike elsewhere on the page (`>> nth=0` says which one is meant)."
         ),
     )
-    label: str | None = Field(default=None, description="Exact accessible label of the element to click.")
-    force: bool = Field(default=False, description="Dispatch the click even if another element intercepts it.")
-    press: str | None = Field(default=None, description="Keyboard key to send to the target instead of clicking it.")
     expect_visible: list[str] = Field(
         default_factory=list, description="Selectors that must be visible once the click has taken effect."
     )
@@ -58,8 +55,6 @@ class Click(_TableModel):
 
     @model_validator(mode="after")
     def _names_its_effect(self) -> Click:
-        if (self.selector is None) == (self.label is None):
-            raise ValueError(f"click {self!r} must specify exactly one of selector or label")
         # A click on the wrong element fails silently, and so does one whose effect arrives asynchronously
         # and never does: the scene still renders something plausible. The expectation is the click's proof.
         if not (self.expect_visible or self.expect_hidden):

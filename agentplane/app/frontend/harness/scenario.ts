@@ -1,12 +1,12 @@
 /**
- * What `harness.tsx` reads of a row of `scenarios.json`: the route it mounts and the fixture
- * variations that route alone does not express. One file, two readers -- the harness routes and
- * seeds from it, `//util/testing:visual_sweep` captures it (`util/testing/visual_scenarios.py`
- * describes the fields that are the sweep's: `element`, `viewport`, `readySelectors`, ...) -- so
- * BUILD names no scenario at all.
+ * What `harness.tsx` reads of a row in either fixture table: the route it mounts and the fixture
+ * variations that route alone does not express. Python captures from `scenarios.json` in the
+ * generic sweep and drives `interaction_scenarios.json` with named Playwright tests. BUILD names
+ * no individual scenario.
  */
 
 import table from "./scenarios.json";
+import interactionTable from "./interaction_scenarios.json";
 
 export type DisclosureVisualStage =
   | "collapsed"
@@ -104,8 +104,6 @@ export interface Scenario {
   openReasoning?: boolean;
   /** Open the folded tool-call run once it mounts, leaving the lines inside it as they are. */
   openRun?: boolean;
-  /** Open the tool-call run once it mounts, then each tool call's line inside it. */
-  openToolPayloads?: boolean;
   /** Shell tool calls as Claude and Codex record them, with a script and an output past their caps:
    * the model's description for Claude's Bash, the script without its `bash -lc` wrapper for Codex,
    * and a call still streaming its arguments. Opened, each is capped in height with its clipped
@@ -142,8 +140,6 @@ export interface Scenario {
   longReasoningPreview?: boolean;
   /** Give an expanded reasoning disclosure enough body content to scroll past its original header. */
   longReasoningBody?: boolean;
-  /** Expand the clamped command/output blocks in the thread fixture. */
-  openClampedBlocks?: boolean;
   pendingCommands?: "mixed" | "controls" | "outcomes";
   /** Answer a command POST as the app does when a runner misses its admission deadline. Without
    * this it stays unanswered, like one queued behind the browser's connection limit. */
@@ -159,5 +155,5 @@ export interface Scenario {
   failedTurn?: "before-content" | "after-content";
 }
 
-// The JSON module types a string field as `string`, not as the literal union `Scenario` names.
-export const SCENARIOS: Record<string, Scenario> = table as Record<string, Scenario>;
+// The JSON modules type string fields as `string`, not as the literal union `Scenario` names.
+export const SCENARIOS: Record<string, Scenario> = { ...table, ...interactionTable } as Record<string, Scenario>;
