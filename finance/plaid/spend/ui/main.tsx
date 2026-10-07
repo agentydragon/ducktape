@@ -717,16 +717,25 @@ function CompactCounterparties({ counterparties }: { counterparties: Transaction
 
 type PlaidFieldValue = string | number | null | undefined;
 
+function hasSuppliedValue(value: unknown): boolean {
+  if (value == null || value === "") return false;
+  if (Array.isArray(value)) return value.some(hasSuppliedValue);
+  if (typeof value === "object") return Object.values(value).some(hasSuppliedValue);
+  return true;
+}
+
 function PlaidFieldGroup({ title, fields }: { title: string; fields: Array<[string, PlaidFieldValue]> }) {
+  const supplied = fields.filter(([, value]) => hasSuppliedValue(value));
+  if (supplied.length === 0) return null;
   return (
     <Stack gap="xs">
       <Text size="sm" fw={650}>
         {title}
       </Text>
       <SimpleGrid cols={{ base: 1, sm: 2 }} spacing="xs">
-        {fields.map(([label, value]) => (
+        {supplied.map(([label, value]) => (
           <Text key={label} size="sm" style={{ overflowWrap: "anywhere" }}>
-            <strong>{label}:</strong> {value == null || value === "" ? "Not supplied" : value}
+            <strong>{label}:</strong> {value}
           </Text>
         ))}
       </SimpleGrid>
@@ -745,7 +754,7 @@ function PlaidSourceFields({ row }: { row: TransactionRow }) {
             Original amount and running balance are in major currency units. The table and allowance effects use integer
             minor units.
           </Text>
-          <ScrollArea h={320} type="auto">
+          {hasSuppliedValue(details) ? (
             <Stack gap="md">
               <PlaidFieldGroup
                 title="Source and merchant"
@@ -814,7 +823,11 @@ function PlaidSourceFields({ row }: { row: TransactionRow }) {
                 ]}
               />
             </Stack>
-          </ScrollArea>
+          ) : (
+            <Text size="sm" c="dimmed">
+              No additional Plaid fields supplied.
+            </Text>
+          )}
         </Accordion.Panel>
       </Accordion.Item>
     </Accordion>
