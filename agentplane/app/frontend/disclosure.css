@@ -47,6 +47,20 @@
   pointer-events: none;
 }
 
+@media (min-width: 48rem) {
+  .agentplane-disclosure-summary {
+    min-height: 2.25rem;
+  }
+
+  .agentplane-disclosure-summary-content {
+    padding-block: 0;
+  }
+
+  .agentplane-clamped-disclosure-action {
+    min-height: 2.25rem;
+  }
+}
+
 .agentplane-disclosure-panel,
 .agentplane-disclosure-content {
   min-width: 0;

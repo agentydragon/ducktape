@@ -1288,7 +1288,23 @@ async def test_opening_a_call_and_its_output_keeps_it_collapsible_while_reading(
     assert call_heading_box is not None
     assert run_heading_box is not None
     assert history_box is not None
-    assert collapse_box["height"] >= 44, f"collapse target is too short: {collapse_box}"
+    minimum_control_height = 44 if phone else 36
+    assert collapse_box["height"] >= minimum_control_height, f"collapse target is too short: {collapse_box}"
+    divider_box = await output_heading.evaluate(
+        """heading => {
+          const box = heading.getBoundingClientRect();
+          const divider = getComputedStyle(heading, "::after");
+          return { left: box.left + parseFloat(divider.left), right: box.right - parseFloat(divider.right) };
+        }"""
+    )
+    card_box = await card.bounding_box()
+    assert card_box is not None
+    assert abs(divider_box["left"] - card_box["x"]) <= 2, (
+        f"the output divider should reach the card's left edge: {divider_box=} {card_box=}"
+    )
+    assert abs(divider_box["right"] - (card_box["x"] + card_box["width"])) <= 2, (
+        f"the output divider should reach the card's right edge: {divider_box=} {card_box=}"
+    )
     assert abs(run_heading_box["y"] - history_box["y"]) <= 2, (
         f"the run heading should use the history's top sticky slot: {run_heading_box=} {history_box=}"
     )
