@@ -203,17 +203,18 @@ class SpendService:
             transaction_rows: list[asyncpg.Record] = []
             if counted_accounts:
                 first_cycle_start = min(cycle_starts[row["account_id"]] for row in counted_accounts)
+                raw_column = "t.raw_json," if transaction_payloads is not None else ""
                 transaction_rows = await connection.fetch(
-                    """
+                    f"""
                     SELECT t.account_id, t.transaction_id, t.date, t.amount, t.pending,
                            t.pending_transaction_id,
                            t.name, t.merchant_name, t.pfc_primary,
-                           t.raw_json,
+                           {raw_column}
                            t.raw_json->>'merchant_category_code' AS merchant_category_code,
                            COALESCE(t.iso_currency_code, t.raw_json->>'unofficial_currency_code') AS currency,
                            COALESCE(
                                t.pfc_detailed,
-                               t.raw_json #>> '{personal_finance_category,detailed}'
+                               t.raw_json #>> '{{personal_finance_category,detailed}}'
                            ) AS pfc_detailed
                     FROM public.transactions AS t
                     JOIN public.accounts AS a
@@ -515,11 +516,12 @@ class SpendService:
                 )
             rows = []
             if policy.activation_at <= now.date():
+                raw_column = "t.raw_json," if transaction_payloads is not None else ""
                 rows = await connection.fetch(
-                    """SELECT t.account_id, t.transaction_id, t.pending_transaction_id,
+                    f"""SELECT t.account_id, t.transaction_id, t.pending_transaction_id,
                               t.date, t.amount, t.pending, t.name, t.merchant_name,
                               t.pfc_primary, t.pfc_detailed,
-                              t.raw_json,
+                              {raw_column}
                               a.type AS account_type,
                               t.raw_json->>'merchant_category_code' AS merchant_category_code,
                               CASE WHEN jsonb_typeof(t.raw_json->'counterparties') = 'array'
