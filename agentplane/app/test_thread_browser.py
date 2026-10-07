@@ -791,11 +791,11 @@ async def test_sidebar_receives_rename_and_archive_from_another_app_replica(thre
     page = thread_browser.page
     thread_browser.opened.replay.set()
     sidebar = page.get_by_role("navigation", name="Threads", exact=True)
-    await expect(sidebar.get_by_text(SESSION, exact=True)).to_be_visible()
+    await expect(sidebar.get_by_text("Browser thread", exact=True)).to_be_visible()
     (thread,) = await thread_browser.store.list_threads(sandbox=SANDBOX)
     await thread_browser.store.rename(thread.id, "Test rename from another replica")
     await expect(sidebar.get_by_text("Test rename from another replica", exact=True)).to_be_visible()
-    await expect(sidebar.get_by_text(SESSION, exact=True)).to_have_count(0)
+    await expect(sidebar.get_by_text("Browser thread", exact=True)).to_have_count(0)
     await thread_browser.store.archive(thread.id)
     # The thread is open, so the sidebar keeps its row, now offering to unarchive it, though the archived
     # switch is off.
