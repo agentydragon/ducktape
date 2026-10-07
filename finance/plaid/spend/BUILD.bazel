@@ -43,6 +43,7 @@ py_library(
         ":models",
         "@pypi//asyncpg",
         "@pypi//babel",
+        "@pypi//pydantic",
     ],
 )
 
