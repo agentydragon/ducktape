@@ -13,7 +13,7 @@ from collections.abc import AsyncIterator, Awaitable, Callable
 import pytest
 import pytest_asyncio
 import pytest_bazel
-from playwright.async_api import FloatRect, Page, Playwright, async_playwright, expect
+from playwright.async_api import FloatRect, Locator, Page, Playwright, async_playwright, expect
 
 from util.bazel.runfiles import get_required_path
 from util.testing import visual_sweep
@@ -64,10 +64,25 @@ async def _capture(
     scenes: dict[str, Scenario],
     playwright_driver: Playwright,
     sweep_config: SweepConfig,
+    output_name: str | None = None,
 ) -> None:
+    scenario = scenes[name]
+    if output_name is not None:
+        scenario = scenario.model_copy(update={"output_name": output_name})
     await capture_scenario(
-        playwright_driver, name, scenes[name], config=sweep_config, output_dir=undeclared_outputs_dir(), drive=drive
+        playwright_driver, name, scenario, config=sweep_config, output_dir=undeclared_outputs_dir(), drive=drive
     )
+
+
+async def _in_viewport(target: Locator) -> None:
+    await expect(target).to_be_visible()
+    await expect(target).to_be_in_viewport(ratio=1)
+
+
+async def _focus(page: Page, target: Locator) -> None:
+    await target.evaluate("element => element.scrollIntoView({ block: 'center', inline: 'nearest' })")
+    await wait_for_stable(page)
+    await _in_viewport(target)
 
 
 async def _box(page: Page, selector: str) -> FloatRect:
@@ -363,6 +378,188 @@ async def test_output_heading_releases_after_content(
     )
 
 
+@pytest.mark.parametrize("scene", ["actions_history", "actions_history_phone"], ids=["desktop", "phone"])
+async def test_action_history_receipt(
+    scene: str, scenes: dict[str, Scenario], playwright_driver: Playwright, sweep_config: SweepConfig
+) -> None:
+    async def drive(page: Page) -> None:
+        receipt = page.get_by_text("list the test backup archive", exact=True)
+        await _focus(page, receipt)
+        await _in_viewport(page.get_by_text("History", exact=True))
+
+    await _capture(scene, drive, scenes=scenes, playwright_driver=playwright_driver, sweep_config=sweep_config)
+
+
+@pytest.mark.parametrize("scene", ["actions_history", "actions_history_phone"], ids=["desktop", "phone"])
+async def test_action_history_diagram(
+    scene: str, scenes: dict[str, Scenario], playwright_driver: Playwright, sweep_config: SweepConfig
+) -> None:
+    async def drive(page: Page) -> None:
+        image = page.locator('img[src^="data:image/"]').first
+        await _focus(page, image)
+        await _in_viewport(page.get_by_text("render the test diagram", exact=True))
+
+    await _capture(
+        scene,
+        drive,
+        scenes=scenes,
+        playwright_driver=playwright_driver,
+        sweep_config=sweep_config,
+        output_name=f"{scene}_diagram",
+    )
+
+
+async def test_action_history_raw_receipt(
+    scenes: dict[str, Scenario], playwright_driver: Playwright, sweep_config: SweepConfig
+) -> None:
+    async def drive(page: Page) -> None:
+        result = page.get_by_text("Result", exact=True).first
+        await expect(page.locator('input[type="checkbox"]:checked').first).to_be_attached()
+        await _focus(page, result)
+
+    await _capture(
+        "actions_history_raw", drive, scenes=scenes, playwright_driver=playwright_driver, sweep_config=sweep_config
+    )
+
+
+async def test_action_history_paging_control(
+    scenes: dict[str, Scenario], playwright_driver: Playwright, sweep_config: SweepConfig
+) -> None:
+    async def drive(page: Page) -> None:
+        load_more = page.get_by_test_id("action-history-load-more")
+        await expect(load_more).to_have_text("Load more")
+        await page.locator(".agentplane-shell-main").evaluate(
+            "element => { element.scrollTop = element.scrollHeight; }"
+        )
+        await wait_for_stable(page)
+        # The scroll extent can grow after the first move. Bring the control into view after
+        # that layout settles, then verify the final captured state.
+        await load_more.scroll_into_view_if_needed()
+        await wait_for_stable(page)
+        await _in_viewport(load_more)
+
+    await _capture(
+        "actions_history_more", drive, scenes=scenes, playwright_driver=playwright_driver, sweep_config=sweep_config
+    )
+
+
+@pytest.mark.parametrize("scene", ["mcp_servers", "mcp_servers_phone"], ids=["desktop", "phone"])
+async def test_mcp_servers_linked_and_expired(
+    scene: str, scenes: dict[str, Scenario], playwright_driver: Playwright, sweep_config: SweepConfig
+) -> None:
+    async def drive(page: Page) -> None:
+        await _in_viewport(page.locator('[data-mcp-server="linkage:example_docs"]').get_by_text("linked", exact=True))
+        await _in_viewport(
+            page.locator('[data-mcp-server="linkage:example_cluster"]').get_by_text("expired", exact=True)
+        )
+
+    await _capture(scene, drive, scenes=scenes, playwright_driver=playwright_driver, sweep_config=sweep_config)
+
+
+@pytest.mark.parametrize(
+    ("scene", "focus_key", "focus_state", "other_key", "other_state", "suffix"),
+    [
+        ("mcp_servers_phone", "linkage:example_pantry", "unlinked", "linkage:example_calendar", "degraded", "oauth"),
+        ("mcp_servers", "group:example_notes", "available", "group:example_mail", "connect_failed", "health"),
+        ("mcp_servers_phone", "group:example_notes", "available", "group:example_mail", "connect_failed", "health"),
+    ],
+    ids=["oauth-phone", "health-desktop", "health-phone"],
+)
+async def test_mcp_servers_lower_statuses(
+    scene: str,
+    focus_key: str,
+    focus_state: str,
+    other_key: str,
+    other_state: str,
+    suffix: str,
+    scenes: dict[str, Scenario],
+    playwright_driver: Playwright,
+    sweep_config: SweepConfig,
+) -> None:
+    async def drive(page: Page) -> None:
+        focused = page.locator(f'[data-mcp-server="{focus_key}"]').get_by_text(focus_state, exact=True)
+        await _focus(page, focused)
+        await _in_viewport(page.locator(f'[data-mcp-server="{other_key}"]').get_by_text(other_state, exact=True))
+        if scene == "mcp_servers":
+            # All lower states fit together at desktop width, so one focused image covers them.
+            await _in_viewport(
+                page.locator('[data-mcp-server="linkage:example_calendar"]').get_by_text("degraded", exact=True)
+            )
+            await _in_viewport(
+                page.locator('[data-mcp-server="linkage:example_pantry"]').get_by_text("unlinked", exact=True)
+            )
+
+    await _capture(
+        scene,
+        drive,
+        scenes=scenes,
+        playwright_driver=playwright_driver,
+        sweep_config=sweep_config,
+        output_name=f"{scene}_{suffix}",
+    )
+
+
+async def test_consent_reconnect_warning_phone(
+    scenes: dict[str, Scenario], playwright_driver: Playwright, sweep_config: SweepConfig
+) -> None:
+    async def drive(page: Page) -> None:
+        await _in_viewport(page.locator("[data-reconnect-review]").get_by_text("Replace authorization", exact=False))
+        await _in_viewport(page.get_by_text(re.compile("I confirm replacing this Connection")))
+
+    await _capture(
+        "consent_reconnect_phone", drive, scenes=scenes, playwright_driver=playwright_driver, sweep_config=sweep_config
+    )
+
+
+async def test_consent_reconnect_decision_phone(
+    scenes: dict[str, Scenario], playwright_driver: Playwright, sweep_config: SweepConfig
+) -> None:
+    async def drive(page: Page) -> None:
+        authorize = page.get_by_role("button", name="Authorize")
+        await _focus(page, authorize)
+        await _in_viewport(page.get_by_role("button", name="Deny"))
+        await expect(authorize).to_be_disabled()
+
+    await _capture(
+        "consent_reconnect_phone",
+        drive,
+        scenes=scenes,
+        playwright_driver=playwright_driver,
+        sweep_config=sweep_config,
+        output_name="consent_reconnect_phone_decision",
+    )
+
+
+@pytest.mark.parametrize("scene", ["session_recovery_tools_open", "session_recovery_tools_open_phone"])
+async def test_recovery_tool_lower_states(
+    scene: str, scenes: dict[str, Scenario], playwright_driver: Playwright, sweep_config: SweepConfig
+) -> None:
+    async def drive(page: Page) -> None:
+        await _in_viewport(page.get_by_text("Failed, still in context", exact=True))
+        await _in_viewport(page.locator('[aria-label="Retention unknown"]').last)
+
+    await _capture(scene, drive, scenes=scenes, playwright_driver=playwright_driver, sweep_config=sweep_config)
+
+
+@pytest.mark.parametrize("scene", ["session_recovery_tools_open", "session_recovery_tools_open_phone"])
+async def test_revised_recovery_tool_output(
+    scene: str, scenes: dict[str, Scenario], playwright_driver: Playwright, sweep_config: SweepConfig
+) -> None:
+    async def drive(page: Page) -> None:
+        output = page.locator(".agentplane-output-label").filter(has_text="Continuation output")
+        await _focus(page, output)
+        await _in_viewport(page.get_by_text("aborted", exact=True))
+
+    await _capture(
+        scene,
+        drive,
+        scenes=scenes,
+        playwright_driver=playwright_driver,
+        sweep_config=sweep_config,
+        output_name=f"{scene}_revised",
+    )
+
+
 async def _open_tool_run(page: Page) -> None:
     run = (
         page.locator(".agentplane-disclosure-summary[aria-expanded='false']")
@@ -410,6 +607,42 @@ async def test_open_tool_calls_and_output(
             await expect(page.locator("[data-clamped='true']").first).to_be_attached()
 
     await _capture(scene, drive, scenes=scenes, playwright_driver=playwright_driver, sweep_config=sweep_config)
+
+
+@pytest.mark.parametrize(
+    ("scene", "call_text", "tool", "suffix"),
+    [
+        ("session_shell_calls_open", "List every container and its status", "Bash", "claude"),
+        ("session_shell_calls_open_phone", "List every container and its status", "Bash", "claude"),
+        ("session_shell_calls_open", "Test Bank", "Shell", "codex"),
+        ("session_shell_calls_open_phone", "Test Bank", "Shell", "codex"),
+    ],
+    ids=["claude-desktop", "claude-phone", "codex-desktop", "codex-phone"],
+)
+async def test_shell_call_command_and_output(
+    scene: str,
+    call_text: str,
+    tool: str,
+    suffix: str,
+    scenes: dict[str, Scenario],
+    playwright_driver: Playwright,
+    sweep_config: SweepConfig,
+) -> None:
+    async def drive(page: Page) -> None:
+        await _open_tool_run(page)
+        call = page.locator(".agentplane-step-details").filter(has_text=call_text)
+        await expect(call.locator(".agentplane-step-title")).to_have_text(tool)
+        await _focus(page, call.locator(".agentplane-clamped-block[data-label='Command']"))
+        await _in_viewport(call.locator(".agentplane-output-label"))
+
+    await _capture(
+        scene,
+        drive,
+        scenes=scenes,
+        playwright_driver=playwright_driver,
+        sweep_config=sweep_config,
+        output_name=f"{scene}_{suffix}",
+    )
 
 
 @pytest.mark.parametrize(
