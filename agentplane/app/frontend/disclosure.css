@@ -71,7 +71,7 @@
   width: 0;
   min-width: 0;
   flex: 1 1 0;
-  min-height: calc(2.75rem + var(--agentplane-disclosure-edge-top, 0px));
+  min-height: 2.75rem;
   padding-block: 0;
   padding-inline: calc(var(--mantine-spacing-md) + var(--agentplane-disclosure-edge-inline, 0px));
   border-start-start-radius: inherit;
@@ -105,7 +105,7 @@
   /* Mantine's control has vertical padding of its own. Keep the desktop row compact even when its
      summary includes a status badge; retain natural growth if a summary wraps. */
   .agentplane-disclosure-heading > .agentplane-disclosure-summary {
-    min-height: calc(1.75rem + var(--agentplane-disclosure-edge-top, 0px));
+    min-height: 1.75rem;
     padding-block: 0;
   }
 
@@ -116,12 +116,6 @@
   .agentplane-clamped-disclosure-action {
     min-height: 2rem;
   }
-}
-
-/* The extra top padding is measured as part of the sticky heading, so nested headings still occupy
-   separate slots. Apply it after the compact desktop control's padding reset. */
-.agentplane-disclosure-heading > .agentplane-disclosure-summary {
-  padding-block-start: var(--agentplane-disclosure-edge-top, 0px);
 }
 
 .agentplane-disclosure-panel,
