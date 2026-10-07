@@ -8,9 +8,9 @@ from pathlib import Path
 from typing import Literal
 
 import yaml
-from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+from pydantic import BaseModel, ConfigDict, Field, JsonValue, field_validator, model_validator
 
-from finance.plaid.spend.allowance import AllowancePolicy, AllowanceView, Disposition, Rule
+from finance.plaid.spend.allowance import AllowancePolicy, AllowanceView, Disposition, PlaidCounterparty, Rule
 
 
 class AlertState(StrEnum):
@@ -52,12 +52,24 @@ class SpendConfiguration(BaseModel):
 
     cards: list[CardConfig]
     allowance: AllowancePolicy | None = None
+    account_labels: dict[str, str] = Field(default_factory=dict)
+
+    @field_validator("account_labels")
+    @classmethod
+    def _valid_account_labels(cls, labels: dict[str, str]) -> dict[str, str]:
+        if any(not account_id or not label.strip() or len(label.strip()) > 80 for account_id, label in labels.items()):
+            raise ValueError("account labels must be nonblank and at most 80 characters")
+        return {account_id: label.strip() for account_id, label in labels.items()}
 
     @model_validator(mode="after")
     def _unique_account_ids(self) -> SpendConfiguration:
         account_ids = [card.account_id for card in self.cards]
         if len(account_ids) != len(set(account_ids)):
             raise ValueError("cards must contain at most one item per account_id")
+        if any(account_id in account_ids for account_id in self.account_labels):
+            raise ValueError("account_labels must not duplicate a configured card label")
+        if self.account_labels.keys() - (self.allowance.spending_account_ids if self.allowance else set()):
+            raise ValueError("account_labels must refer to spending accounts")
         return self
 
 
@@ -131,7 +143,7 @@ class SpendView(BaseModel):
 
 
 class SpendTransactionRow(BaseModel):
-    """A read-only explanation of one Plaid transaction, without Plaid identifiers."""
+    """A read-only explanation plus the original Plaid transaction payload."""
 
     model_config = ConfigDict(extra="forbid", frozen=True)
 
@@ -154,6 +166,8 @@ class SpendTransactionRow(BaseModel):
     pfc_primary: str | None
     pfc_detailed: str | None
     merchant_category_code: str | None
+    counterparties: list[PlaidCounterparty] = Field(default_factory=list)
+    plaid: dict[str, JsonValue] = Field(default_factory=dict)
 
 
 class SpendTransactionsView(BaseModel):

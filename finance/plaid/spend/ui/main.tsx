@@ -10,6 +10,7 @@ import {
   Button,
   Card,
   Center,
+  Code,
   Container,
   Divider,
   Grid,
@@ -761,6 +762,28 @@ function TransactionDetails({ row, currency }: { row: TransactionRow; currency: 
         {row.pfc_detailed || row.pfc_primary || "Unknown"} · merchant category code:{" "}
         {row.merchant_category_code || "Unknown"}
       </Text>
+      {(row.counterparties?.length ?? 0) > 0 && (
+        <Stack gap={2}>
+          <Text size="sm" fw={650}>
+            Plaid counterparties
+          </Text>
+          {row.counterparties?.map((counterparty, index) => (
+            <Text key={index} size="sm">
+              {counterparty.name || "Unnamed"} · {counterparty.type || "Unknown type"}
+            </Text>
+          ))}
+        </Stack>
+      )}
+      <Accordion variant="contained">
+        <Accordion.Item value="plaid-fields">
+          <Accordion.Control>All Plaid fields</Accordion.Control>
+          <Accordion.Panel>
+            <ScrollArea h={320} type="auto">
+              <Code block>{JSON.stringify(row.plaid ?? {}, null, 2)}</Code>
+            </ScrollArea>
+          </Accordion.Panel>
+        </Accordion.Item>
+      </Accordion>
     </Stack>
   );
 }
@@ -937,6 +960,12 @@ function TransactionsPanel({
                               <Text size="sm" fw={650} style={{ overflowWrap: "anywhere" }}>
                                 {row.merchant_name || row.name}
                               </Text>
+                              {(row.counterparties?.length ?? 0) > 0 && (
+                                <Text size="xs" c="dimmed">
+                                  Counterparties:{" "}
+                                  {row.counterparties?.map((counterparty) => counterparty.name || "Unnamed").join(", ")}
+                                </Text>
+                              )}
                               {row.pending && (
                                 <Badge size="xs" variant="light" color="yellow">
                                   Pending
@@ -994,6 +1023,12 @@ function TransactionsPanel({
                           <Text fw={650} size="sm" style={{ overflowWrap: "anywhere" }}>
                             {row.merchant_name || row.name}
                           </Text>
+                          {(row.counterparties?.length ?? 0) > 0 && (
+                            <Text size="xs" c="dimmed">
+                              Counterparties:{" "}
+                              {row.counterparties?.map((counterparty) => counterparty.name || "Unnamed").join(", ")}
+                            </Text>
+                          )}
                           <Group gap="xs">
                             <Text size="xs" c="dimmed">
                               {row.date} · {row.account_label}
