@@ -119,6 +119,8 @@ rules keep positive purchases in provisional spending and the unmatched total, w
 negative credits remain separate from spending. Conditions can combine merchant or category matches,
 account type, merchant category code, counterparty type and name, and amount sign. Private analyses use the
 same ordered matcher and policy file as the app.
+Optional `allowance.analysis_category_labels` maps analysis-category codes to human-readable names.
+The Configuration API includes these names; labels do not affect rule matching or allowance accounting.
 
 ## Runtime settings
 

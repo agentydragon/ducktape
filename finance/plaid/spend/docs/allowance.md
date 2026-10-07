@@ -23,27 +23,29 @@ allowance:
     - example-checking-id
   currency: USD
   max_sync_age_hours: 72
+  analysis_category_labels:
+    fixed_housing: Housing
+    elastic_online_services: Online services
   rules:
     - condition:
         type: name_prefix
         field: name
         prefix: EXAMPLE RENT
       kind: fixed
-      analysis_category: fixed_housing_candidate
+      analysis_category: fixed_housing
     - condition:
         type: category_exact
         field: pfc_detailed
         value: EXAMPLE_TRANSFER_DETAIL
       kind: excluded
       analysis_category: excluded_transfer_or_fee
-  - condition:
-      type: name_prefix
-      field: name
-      prefix: EXAMPLE ONLINE
-    description: Example subscription; keep the classification reviewable.
-    kind: flexible
-      analysis_category: elastic_online_services_candidate
-      description: Optional plain-language context for people reviewing this rule.
+    - condition:
+        type: name_prefix
+        field: name
+        prefix: EXAMPLE ONLINE
+      kind: flexible
+      analysis_category: elastic_online_services
+      description: Example subscription; keep the classification reviewable.
 ```
 
 When `allowance` is present, it is active. Supply a required `activation_at` ISO date

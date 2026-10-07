@@ -92,6 +92,7 @@ class SpendService:
                 spending_account_count=len(policy.spending_account_ids),
                 max_sync_age_hours=policy.max_sync_age_hours,
                 rules=policy.rules,
+                analysis_category_labels=policy.analysis_category_labels,
             )
         return SpendConfigurationView(
             cards=[

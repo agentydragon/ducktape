@@ -102,6 +102,7 @@ class AllowanceConfigurationView(BaseModel):
     spending_account_count: int
     max_sync_age_hours: int
     rules: list[Rule]
+    analysis_category_labels: dict[str, str] = Field(default_factory=dict)
 
 
 class SpendConfigurationView(BaseModel):

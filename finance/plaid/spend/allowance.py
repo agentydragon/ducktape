@@ -10,7 +10,7 @@ from decimal import ROUND_HALF_UP, Decimal
 from enum import StrEnum
 from typing import Annotated, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, Json, TypeAdapter, ValidationError
+from pydantic import BaseModel, ConfigDict, Field, Json, TypeAdapter, ValidationError, field_validator
 
 
 class Kind(StrEnum):
@@ -149,6 +149,19 @@ class AllowancePolicy(BaseModel):
     currency: Literal["USD"] = "USD"
     rules: list[Rule] = Field(min_length=1)
     max_sync_age_hours: int = Field(default=72, ge=1, le=720)
+    analysis_category_labels: dict[str, str] = Field(
+        default_factory=dict, description="Optional display labels for rule analysis_category values."
+    )
+
+    @field_validator("analysis_category_labels")
+    @classmethod
+    def _valid_category_labels(cls, labels: dict[str, str]) -> dict[str, str]:
+        if any(
+            not category or category.strip() != category or not label.strip() or len(label.strip()) > 80
+            for category, label in labels.items()
+        ):
+            raise ValueError("analysis category keys must be nonblank; labels must be 1 to 80 characters")
+        return {category: label.strip() for category, label in labels.items()}
 
 
 class Transaction(BaseModel):
