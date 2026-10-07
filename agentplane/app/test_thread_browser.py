@@ -1277,9 +1277,8 @@ async def test_opening_a_call_and_its_output_keeps_it_collapsible_while_reading(
     await expect(collapse).to_be_in_viewport()
     await expect(collapse).to_have_attribute("aria-expanded", "true")
     collapse_box = await collapse.bounding_box()
-    output_heading_box = await call.locator(
-        ".agentplane-output-disclosure .agentplane-disclosure-heading"
-    ).bounding_box()
+    output_heading = call.locator(".agentplane-output-disclosure .agentplane-disclosure-heading")
+    output_heading_box = await output_heading.bounding_box()
     call_heading_box = await call.locator(".agentplane-disclosure-heading").first.bounding_box()
     run_heading_box = await run.locator(".agentplane-disclosure-heading").first.bounding_box()
     history_box = await history.bounding_box()
