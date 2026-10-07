@@ -1287,7 +1287,7 @@ async def test_opening_a_call_and_its_output_keeps_it_collapsible_while_reading(
     assert call_heading_box is not None
     assert run_heading_box is not None
     assert history_box is not None
-    minimum_control_height = 44 if phone else 32
+    minimum_control_height = 44 if phone else 34
     assert collapse_box["height"] >= minimum_control_height, f"collapse target is too short: {collapse_box}"
     if not phone:
         for heading_name, heading_box in (

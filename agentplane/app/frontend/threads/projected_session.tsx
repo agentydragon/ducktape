@@ -70,6 +70,8 @@ import {
 } from "../tab_metadata";
 import "./projected_session.css";
 
+type ReadingAnchor = { key: string; offset: number; target?: HTMLElement };
+
 /** A run of tool calls and reasoning steps, folded behind its summary until opened. */
 function CollapsibleRows({
   id,
@@ -275,7 +277,7 @@ function VirtualizedHistory({
   const restorationSize = useRef<number | null>(null);
   const previousCount = useRef(rows.length);
   const previousFirstKey = useRef<string | null>(null);
-  const readingAnchor = useRef<{ key: string; offset: number } | null>(null);
+  const readingAnchor = useRef<ReadingAnchor | null>(null);
   // Widened around a just-landed older page so every one of its rows mounts and measures in the
   // same pass, rather than progressively as scrolling reveals more of it -- each of *those* later
   // corrections is itself a visible, uncalled-for jump (see restoreAnchor/restoringScroll below).
@@ -345,7 +347,8 @@ function VirtualizedHistory({
     if (!anchor || !element || restoringAnchor.current !== anchor.key) return null;
     const row = anchorElement(anchor.key);
     if (!row) return null;
-    const correction = row.getBoundingClientRect().top - element.getBoundingClientRect().top - anchor.offset;
+    const anchorTarget = anchor.target?.isConnected ? anchor.target : row;
+    const correction = anchorTarget.getBoundingClientRect().top - element.getBoundingClientRect().top - anchor.offset;
     element.scrollTop += correction;
     return correction;
   }
@@ -433,22 +436,30 @@ function VirtualizedHistory({
       history.loadOlder();
   });
   const captureReadingAnchor = useCallback(
-    (element: HTMLDivElement) => {
+    (element: HTMLDivElement, clickedTarget?: HTMLElement) => {
       const viewportTop = element.getBoundingClientRect().top;
       const first = [...element.querySelectorAll<HTMLElement>("[data-thread-anchor]")].find(
         (candidate) => candidate.getBoundingClientRect().bottom > viewportTop
       );
-      const firstRow = first
-        ? rows.find((row) => row.entities[0].cursor.toString() === first.dataset.threadAnchor)
+      const clickedRow = clickedTarget?.closest<HTMLElement>("[data-thread-anchor]");
+      const anchorRowElement = clickedRow ?? first;
+      const anchorRow = anchorRowElement
+        ? rows.find((row) => row.entities[0].cursor.toString() === anchorRowElement.dataset.threadAnchor)
         : undefined;
-      if (first && firstRow) {
-        readingAnchor.current = { key: rowKey(firstRow), offset: first.getBoundingClientRect().top - viewportTop };
-        historyTrace.record({ kind: "anchor", ...readingAnchor.current });
+      const anchorTarget = clickedTarget && clickedRow?.contains(clickedTarget) ? clickedTarget : anchorRowElement;
+      if (anchorRowElement && anchorRow && anchorTarget) {
+        const anchor = {
+          key: rowKey(anchorRow),
+          offset: anchorTarget.getBoundingClientRect().top - viewportTop,
+          ...(anchorTarget !== anchorRowElement ? { target: anchorTarget } : {}),
+        };
+        readingAnchor.current = anchor;
+        historyTrace.record({ kind: "anchor", key: anchor.key, offset: anchor.offset });
       }
     },
     [rows]
   );
-  const restoreAnchor = useEffectEvent((anchor: { key: string; offset: number }, awaitMeasurement = false) => {
+  const restoreAnchor = useEffectEvent((anchor: ReadingAnchor, awaitMeasurement = false) => {
     const index = anchorIndex(anchor.key);
     if (index < 0) return;
     cancelRestoration();
@@ -458,7 +469,8 @@ function VirtualizedHistory({
       const element = viewport.current;
       const row = anchorElement(anchor.key);
       if (!element || !row) return null;
-      const currentOffset = row.getBoundingClientRect().top - element.getBoundingClientRect().top;
+      const anchorTarget = anchor.target?.isConnected ? anchor.target : row;
+      const currentOffset = anchorTarget.getBoundingClientRect().top - element.getBoundingClientRect().top;
       const correction = currentOffset - anchor.offset;
       element.scrollTop += correction;
       return correction;
@@ -688,12 +700,14 @@ function VirtualizedHistory({
         // following, and adopts the place as it stands before the row moves. A history that does
         // not scroll has no place to lose, and goes on following as it grows.
         const element = event.currentTarget;
-        if (!(event.target instanceof Element) || !event.target.closest("[aria-expanded]")) return;
+        if (!(event.target instanceof Element)) return;
+        const clickedTarget = event.target.closest<HTMLElement>("[aria-expanded]");
+        if (!clickedTarget) return;
         if (element.scrollHeight > element.clientHeight) {
           setFollowing(false, "disclosure-click");
           clickedAt.current = element.scrollTop;
         }
-        captureReadingAnchor(element);
+        captureReadingAnchor(element, clickedTarget);
         historyTrace.record({
           kind: "click",
           scrollTop: element.scrollTop,
