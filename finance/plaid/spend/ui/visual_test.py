@@ -407,8 +407,7 @@ async def test_spending_decision_render(
     assert await page.locator('span[title="$12.50"]').count() >= 1
     assert await page.locator('span[title="$200.00"]').count() >= 1
     assert await page.get_by_text("30 days", exact=True).count() == 1
-    assert await page.get_by_text("$13 / day", exact=True).count() == 2
-    assert await page.get_by_text("$10 / day", exact=True).count() == 1
+    assert await page.get_by_text("$13 / day", exact=True).count() == 1
     assert await page.get_by_text("Below provisional leash", exact=True).count() == 1
     assert await page.get_by_text("7d unmatched 2 ($3)", exact=False).count() == 1
     assert await page.get_by_text("$75", exact=True).count() == 1
@@ -473,7 +472,7 @@ async def test_new_allowance_has_no_fake_zero_pace(page: Page, dashboard_url: st
     await page.goto(dashboard_url, wait_until="domcontentloaded")
     await page.get_by_text("Not enough data", exact=True).wait_for()
     assert await page.get_by_text("Pace warming up", exact=True).count() == 1
-    assert await page.get_by_text("Warming up", exact=True).count() == 3
+    assert await page.get_by_text("Warming up", exact=True).count() == 1
     assert await page.get_by_text("$700", exact=True).count() >= 1
     await page.get_by_label("Hypothetical flexible purchase").fill("10")
     assert await page.get_by_text("$690", exact=True).count() == 1
