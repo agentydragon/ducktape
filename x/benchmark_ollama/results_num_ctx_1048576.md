@@ -1,9 +1,7 @@
 # Benchmark Results — OLLAMA_NUM_CTX=1048576
 
-Date: 2026-02-23
-Hardware: 2x NVIDIA RTX 5090 (64 GB VRAM total)
-Config: `OLLAMA_KV_CACHE_TYPE=q8_0`, `OLLAMA_FLASH_ATTENTION=1`, `OLLAMA_NUM_CTX=1048576`
-Endpoint: `https://litellm.allegedly.works/v1` (LiteLLM proxy)
+Date: 2026-02-23 Hardware: 2x NVIDIA RTX 5090 (64 GB VRAM total) Config: `OLLAMA_KV_CACHE_TYPE=q8_0`,
+`OLLAMA_FLASH_ATTENTION=1`, `OLLAMA_NUM_CTX=1048576` Endpoint: `https://litellm.allegedly.works/v1` (LiteLLM proxy)
 Seed: 42, time limit: 60s per config, NIAH samples: 8
 
 ## gpt-oss-20b-128k
@@ -53,9 +51,9 @@ Notes:
 
 ## Observations
 
-1. **OLLAMA_NUM_CTX=1048576 likely causes excessive KV cache preallocation**, degrading
-   both throughput and NIAH recall compared to the earlier OLLAMA_NUM_CTX=131072 benchmark
-   (which showed pp scaling from 3.5k to 133k t/s and perfect NIAH at 128k).
+1. **OLLAMA_NUM_CTX=1048576 likely causes excessive KV cache preallocation**, degrading both throughput and NIAH recall
+   compared to the earlier OLLAMA_NUM_CTX=131072 benchmark (which showed pp scaling from 3.5k to 133k t/s and perfect
+   NIAH at 128k).
 2. **120b outperforms 20b on NIAH** despite being 6x larger — better long-context capability.
 3. **Both models converge to ~1.5k t/s at 128k+** — likely memory-bandwidth bottleneck.
 4. **Sample counts are low** at large contexts (1 per size) due to 60s time limit.

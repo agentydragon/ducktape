@@ -22,8 +22,7 @@
         cmd: "xdg-mime default {{ item.item.desktop_file }} {{ item.item.mime_type }}"
       when:
         - item.item.desktop_file is defined
-        - item.rc == 0 and item.stdout.strip() != item.item.desktop_file
-          or item.rc != 0
+        - item.rc == 0 and item.stdout.strip() != item.item.desktop_file or item.rc != 0
       loop: "{{ gui_current_mime_associations.results }}"
       loop_control:
         label: "{{ item.item.mime_type }} -> {{ item.item.desktop_file | default('undefined') }}"

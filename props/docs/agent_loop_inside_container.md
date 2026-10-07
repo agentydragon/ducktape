@@ -2,9 +2,11 @@
 
 ## Overview
 
-All agent loops run inside Docker containers. Each container is a self-contained agent that talks to the LLM proxy, executes tools via subprocess, and writes results to Postgres.
+All agent loops run inside Docker containers. Each container is a self-contained agent that talks to the LLM proxy,
+executes tools via subprocess, and writes results to Postgres.
 
-**Benefit:** Critic developer agents can author entire agentic systems - arbitrary LLM pipelines, workflows, subagents, classifiers, loops, tool calls, analysis, dispatch. Not limited to append-only single-agent patterns.
+**Benefit:** Critic developer agents can author entire agentic systems - arbitrary LLM pipelines, workflows, subagents,
+classifiers, loops, tool calls, analysis, dispatch. Not limited to append-only single-agent patterns.
 
 ## Architecture
 
@@ -25,10 +27,16 @@ run_loop_agent()
 
 ### Key implementations
 
-- **Critic:** `props/agents/critic/main.py` — `DirectToolProvider` with exec, insert_issue, submit, report_failure tools. Entry point: `CMD ["/app/critic"]`.
-- **Grader:** `props/agents/grader/loop.py` — `DirectToolProvider` with exec, show_issue, show_tp/fp, insert_edges, fill_remaining, delete_edges, submit, report_failure tools. Snapshot grader mode via `props/agents/grader/main.py` with pg_notify.
-- **Critic-dev (optimizer/improver):** `props/agents/critic_dev/optimize/main.py`, `props/agents/critic_dev/improve/main.py` — `DirectToolProvider` with exec, start_critic, wait_until_graded_tool, submit, report_failure tools.
-- **Host scaffold:** `props/orchestration/agent_registry.py` — creates agent DB role, starts container, waits for exit, captures logs, determines status from exit code.
+- **Critic:** `props/agents/critic/main.py` — `DirectToolProvider` with exec, insert_issue, submit, report_failure
+  tools. Entry point: `CMD ["/app/critic"]`.
+- **Grader:** `props/agents/grader/loop.py` — `DirectToolProvider` with exec, show_issue, show_tp/fp, insert_edges,
+  fill_remaining, delete_edges, submit, report_failure tools. Snapshot grader mode via `props/agents/grader/main.py`
+  with pg_notify.
+- **Critic-dev (optimizer/improver):** `props/agents/critic_dev/optimize/main.py`,
+  `props/agents/critic_dev/improve/main.py` — `DirectToolProvider` with exec, start_critic, wait_until_graded_tool,
+  submit, report_failure tools.
+- **Host scaffold:** `props/orchestration/agent_registry.py` — creates agent DB role, starts container, waits for exit,
+  captures logs, determines status from exit code.
 
 ## Decisions
 
@@ -68,9 +76,8 @@ The LLM proxy is a separate service (`props/llm_proxy`) that reuses the backend 
 | Implementation    | LLM proxy routes at `/v1/responses`, `/v1/chat/completions`, and `/v1/messages` |
 | Port              | 8000                                                                            |
 
-The route an agent may call is determined by `model_metadata.api_shape`.
-`responses` models use `/v1/responses`, `chat_completions` models use
-`/v1/chat/completions`, and `anthropic` models use `/v1/messages`.
+The route an agent may call is determined by `model_metadata.api_shape`. `responses` models use `/v1/responses`,
+`chat_completions` models use `/v1/chat/completions`, and `anthropic` models use `/v1/messages`.
 
 ### Registry Proxy
 
@@ -103,8 +110,8 @@ The registry proxy is a separate service (`props/registry_proxy`) that reuses th
 4. Reject request with 429 if budget exceeded
 5. Child agents inherit remaining budget from parent
 
-Note: USD cost accounts for model pricing differences, cached input token discounts, etc.
-The `llm_run_costs` view joins `llm_requests` with `model_metadata` pricing table.
+Note: USD cost accounts for model pricing differences, cached input token discounts, etc. The `llm_run_costs` view joins
+`llm_requests` with `model_metadata` pricing table.
 
 **Timeout enforcement by agent_registry:**
 
@@ -161,12 +168,15 @@ The `llm_run_costs` view joins `llm_requests` with `model_metadata` pricing tabl
 - Uses `asyncio.Event` for coordinated wake/sleep, background `pg_listen` task
 - On context length exceeded: grader supervisor auto-restarts with fresh context
 
-**pg_notify permissions:** Grader uses its temp user credentials (`agent_{uuid}`) for LISTEN. PostgreSQL allows any connected user to LISTEN on any channel without special grants. Notifications include `snapshot_slug` in the payload; the grader filters to only process notifications for its snapshot.
+**pg_notify permissions:** Grader uses its temp user credentials (`agent_{uuid}`) for LISTEN. PostgreSQL allows any
+connected user to LISTEN on any channel without special grants. Notifications include `snapshot_slug` in the payload;
+the grader filters to only process notifications for its snapshot.
 
 **Single implementation, two modes:**
 
 - One-off (`GraderTypeConfig`): grades single critic run, has `submit` + `report_failure`
-- Snapshot (`SnapshotGraderTypeConfig`): grades all critiques for snapshot, `report_failure` only (no `submit` - drift handler controls sleep)
+- Snapshot (`SnapshotGraderTypeConfig`): grades all critiques for snapshot, `report_failure` only (no `submit` - drift
+  handler controls sleep)
 - Mode flag controls tool availability; all other tools identical
 
 **Grader Tools (DirectToolProvider):**
@@ -182,11 +192,14 @@ The `llm_run_costs` view joins `llm_requests` with `model_metadata` pricing tabl
 | `submit`         | `summary`                                         | `None`         | one-off | Finalize grading (validates no pending)     |
 | `report_failure` | `message`                                         | `None`         | both    | Report blocking error, exit                 |
 
-**Edge model:** Every `(critique_issue, matchable_gt_occurrence)` pair needs an edge. Credit 0.0-1.0 for both TPs and FPs. Use credit=0 for non-matches, >0 for matches (quality of match).
+**Edge model:** Every `(critique_issue, matchable_gt_occurrence)` pair needs an edge. Credit 0.0-1.0 for both TPs and
+FPs. Use credit=0 for non-matches, >0 for matches (quality of match).
 
-**Grader loop:** `DriftHandler.on_before_sample()` checks `grading_pending` view. Returns `Abort()` when empty → agent loop exits → outer loop sleeps on pg_notify → wakes and creates fresh agent context.
+**Grader loop:** `DriftHandler.on_before_sample()` checks `grading_pending` view. Returns `Abort()` when empty → agent
+loop exits → outer loop sleeps on pg_notify → wakes and creates fresh agent context.
 
-**Grader supervisor:** `props/orchestration/grader_supervisor.py` manages grader lifecycle — listens on `snapshot_created` channel, spawns one grader per snapshot, handles restarts.
+**Grader supervisor:** `props/orchestration/grader_supervisor.py` manages grader lifecycle — listens on
+`snapshot_created` channel, spawns one grader per snapshot, handles restarts.
 
 ### Subagent Spawning
 
@@ -200,7 +213,8 @@ The `llm_run_costs` view joins `llm_requests` with `model_metadata` pricing tabl
 | Limits          | No explicit concurrency/spawn limits; cost + timeout sufficient                 |
 | Wait helpers    | `wait_until_graded_tool` polls `grading_pending` view directly inside container |
 
-Critic-dev agents have `DirectToolProvider` tools that call the backend REST API for spawning and poll the database directly for grading status. No MCP required.
+Critic-dev agents have `DirectToolProvider` tools that call the backend REST API for spawning and poll the database
+directly for grading status. No MCP required.
 
 ```
 Backend                                 Container (critic-dev)
@@ -257,14 +271,12 @@ grading_pending view         ◄──────────  wait_until_grade
 
 ### Runtime Topologies
 
-Kubernetes production uses split services: backend/frontend, `props-llm-proxy`,
-`props-registry-proxy`, CNPG PostgreSQL, and Forgejo registry storage. The
-backend injects `OPENAI_BASE_URL=<llm_proxy_url>/v1` and `PROPS_REGISTRY_URL`
-into agent Pods.
+Kubernetes production uses split services: backend/frontend, `props-llm-proxy`, `props-registry-proxy`, CNPG PostgreSQL,
+and Forgejo registry storage. The backend injects `OPENAI_BASE_URL=<llm_proxy_url>/v1` and `PROPS_REGISTRY_URL` into
+agent Pods.
 
-The local Docker compose file is a lightweight development topology. Docker E2E
-fixtures start the split proxy services directly when they need production-like
-proxy behavior.
+The local Docker compose file is a lightweight development topology. Docker E2E fixtures start the split proxy services
+directly when they need production-like proxy behavior.
 
 - `postgres` (5433:5432) - on `props-internal` + `props-agents`
 - `registry` (5000:5000) - on `props-internal` + `default`
@@ -277,9 +289,7 @@ proxy behavior.
 
 ## Historical Notes
 
-Previous iterations used HTTP MCP servers (`CriticSubmitServer`,
-`GraderSubmitServer`, `PromptEvalServer`), an `events` table, host-side agent
-loops, backend-hosted LLM/registry routes, and DB-persisted container stdout /
-stderr. These were replaced by in-container `DirectToolProvider` tools, the
-standalone LLM and registry proxies, `llm_requests`, and Loki-backed container
-logs.
+Previous iterations used HTTP MCP servers (`CriticSubmitServer`, `GraderSubmitServer`, `PromptEvalServer`), an `events`
+table, host-side agent loops, backend-hosted LLM/registry routes, and DB-persisted container stdout / stderr. These were
+replaced by in-container `DirectToolProvider` tools, the standalone LLM and registry proxies, `llm_requests`, and
+Loki-backed container logs.

@@ -4,7 +4,9 @@ metadata:
   name: manifold-mcp
   namespace: manifold-mcp
   annotations:
-    description: "Authentik-gated Manifold MCP facade. Only agentydragon is allowed at the OAuth consent step (group binding in tf/gitops/agent-machine-access)."
+    description:
+      "Authentik-gated Manifold MCP facade. Only agentydragon is allowed at the OAuth consent step (group binding in
+      tf/gitops/agent-machine-access)."
 spec:
   parentRefs:
     - name: cluster-gateway

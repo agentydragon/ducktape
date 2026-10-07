@@ -1,8 +1,7 @@
 # Findings
 
-Numbered in discovery order across the whole programme and cited by number from
-cluster manifests, so the IDs are stable — which is why they are not contiguous
-within a file. Grouped here by subject.
+Numbered in discovery order across the whole programme and cited by number from cluster manifests, so the IDs are stable
+— which is why they are not contiguous within a file. Grouped here by subject.
 
 | #   | Finding                                                                         |                                           |
 | --- | ------------------------------------------------------------------------------- | ----------------------------------------- |
@@ -31,12 +30,10 @@ Also here: [rough edges, knowns and unknowns](rough_edges.md).
 
 ## The three that changed decisions
 
-- **F3** ruled out the operator entirely — its NetworkPolicy always emits an
-  unconditional 443 egress rule, and NetworkPolicies are unions of allows, so it
-  cannot be subtracted. That is why `public-coder-agent` is a plain Deployment.
-- **F7** explains why the agent could not authenticate to GitHub for weeks, and
-  **F10** shows the fix that supersedes it: the credential does not have to be in
-  the agent at all.
-- **F8** is the cautionary one. A broken TLS trust chain led the agent to disable
-  verification and carry on silently, which says more about designing for agents
-  than the CA bug does.
+- **F3** ruled out the operator entirely — its NetworkPolicy always emits an unconditional 443 egress rule, and
+  NetworkPolicies are unions of allows, so it cannot be subtracted. That is why `public-coder-agent` is a plain
+  Deployment.
+- **F7** explains why the agent could not authenticate to GitHub for weeks, and **F10** shows the fix that supersedes
+  it: the credential does not have to be in the agent at all.
+- **F8** is the cautionary one. A broken TLS trust chain led the agent to disable verification and carry on silently,
+  which says more about designing for agents than the CA bug does.

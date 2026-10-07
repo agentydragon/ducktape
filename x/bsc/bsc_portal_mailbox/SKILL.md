@@ -1,15 +1,16 @@
 # Task: Download all letter PDFs from Blue Shield of California Member Portal
 
-Navigate to the Blue Shield of California member portal message center and download all letter PDFs to `~/Downloads/bsc-letters/`.
+Navigate to the Blue Shield of California member portal message center and download all letter PDFs to
+`~/Downloads/bsc-letters/`.
 
-The user is already logged in. Start at:
-`https://www.blueshieldca.com/memberwebapp/connect/message-center/Inbox/`
+The user is already logged in. Start at: `https://www.blueshieldca.com/memberwebapp/connect/message-center/Inbox/`
 
 ---
 
 ## Overview
 
-The message center is a narrow Angular SPA. Letters arrive as inbox messages, each with a PDF attachment stored in a document management backend. There are two API calls needed:
+The message center is a narrow Angular SPA. Letters arrive as inbox messages, each with a PDF attachment stored in a
+document management backend. There are two API calls needed:
 
 1. **List API** — fetch all messages and their PDF filenames
 2. **Download API** — fetch each PDF as a binary blob
@@ -25,7 +26,8 @@ navigate to: https://www.blueshieldca.com/memberwebapp/connect/message-center/In
 wait 4 seconds
 ```
 
-This is critical. The page uses `XMLHttpRequest.prototype` overrides that **stack across SPA navigations**. A full reload resets them to native, preventing 2x/3x duplicate downloads later.
+This is critical. The page uses `XMLHttpRequest.prototype` overrides that **stack across SPA navigations**. A full
+reload resets them to native, preventing 2x/3x duplicate downloads later.
 
 **Verify the slate is clean before proceeding:**
 
@@ -38,7 +40,8 @@ XMLHttpRequest.prototype.send.toString().includes("[native code]");
 
 ## Step 2: Install a single XHR interceptor
 
-Install this **once and only once** after the clean reload. It does two things: captures the message list API response, and handles PDF downloads with a dedup guard.
+Install this **once and only once** after the clean reload. It does two things: captures the message list API response,
+and handles PDF downloads with a dedup guard.
 
 ```js
 const _origOpen = XMLHttpRequest.prototype.open;
@@ -198,14 +201,18 @@ userID: (empty string)
 
 - `folderName: ""` = all inbox letters. Use `"Sent"`, `"Archive"`, `"Trash"` for other folders.
 - `businessTransactionType`: use `"MESSAGE_ALL_READ"` for unfiltered inbox; `"MESSAGE_READ"` for filtered/other folders.
-- **Date filtering**: add `fromDate` and `toDate` to the filter object, format `"YYYYMMDD HH.MM.SS"` (e.g. `"20260101 00.00.00"` and `"20260331 23.59.00"`). Omit both keys entirely for no date filter.
-- The static JWT in `credentials.token` is not a secret auth token — real auth is via the session cookie. It does not rotate and can be captured once from any intercepted XHR.
-- `memberIdentifier`, `groupNumber`, `birthdate`: auto-discover by capturing the first real XHR the app makes to this endpoint (headers and response body contain all values).
+- **Date filtering**: add `fromDate` and `toDate` to the filter object, format `"YYYYMMDD HH.MM.SS"` (e.g.
+  `"20260101 00.00.00"` and `"20260331 23.59.00"`). Omit both keys entirely for no date filter.
+- The static JWT in `credentials.token` is not a secret auth token — real auth is via the session cookie. It does not
+  rotate and can be captured once from any intercepted XHR.
+- `memberIdentifier`, `groupNumber`, `birthdate`: auto-discover by capturing the first real XHR the app makes to this
+  endpoint (headers and response body contain all values).
 
 **Each message object in the response contains:**
 
 - `documentName` — the PDF filename (e.g. `AP_<documentId>_<timestamp>.pdf`) — this is what you need
-- `documentId`, `messageId`, `messageTime` (format: `"YYYYMMDD HH:MM:SS"`), `subjectText`, `folderName`, `unreadIndicator`
+- `documentId`, `messageId`, `messageTime` (format: `"YYYYMMDD HH:MM:SS"`), `subjectText`, `folderName`,
+  `unreadIndicator`
 
 ---
 
@@ -334,7 +341,9 @@ function downloadOne(filename) {
 POST /memberwebapp/reverseproxy-secured/v10/bsc/aip/api/bsc/gateway/es/documents/download
 ```
 
-Same headers as the list API, with the addition of `fileName: <documentName>`. Set `responseType = 'blob'`. Response is raw PDF binary. Chrome automatically creates the `bsc-letters/` subdirectory inside the default downloads folder when the `download` attribute contains a path.
+Same headers as the list API, with the addition of `fileName: <documentName>`. Set `responseType = 'blob'`. Response is
+raw PDF binary. Chrome automatically creates the `bsc-letters/` subdirectory inside the default downloads folder when
+the `download` attribute contains a path.
 
 ---
 
@@ -356,9 +365,12 @@ Same headers as the list API, with the addition of `fileName: <documentName>`. S
 
 ## Auto-discovery of unknown values
 
-If `birthdate`, the static JWT, or `memberID` are not known in advance: install the interceptor (Step 2) immediately after page load, then trigger the Sent → Inbox folder switch (Step 3). The interceptor will capture all header values from `this.__hdrs` and all member data from the response body automatically. Specifically:
+If `birthdate`, the static JWT, or `memberID` are not known in advance: install the interceptor (Step 2) immediately
+after page load, then trigger the Sent → Inbox folder switch (Step 3). The interceptor will capture all header values
+from `this.__hdrs` and all member data from the response body automatically. Specifically:
 
 - `birthdate`: captured in `this.__hdrs['birthdate']` when the app sends its own XHR
 - `memberID`: read from `window._msgData.responseBody.planMember.memberIdentifier`
 - `groupNumber`: read from `window._msgData.responseBody.planMember.groupNumber`
-- static JWT: captured in the parsed request body (`requestHeader.credentials.token`) of any intercepted call — store it and reuse it for all subsequent calls
+- static JWT: captured in the parsed request body (`requestHeader.credentials.token`) of any intercepted call — store it
+  and reuse it for all subsequent calls

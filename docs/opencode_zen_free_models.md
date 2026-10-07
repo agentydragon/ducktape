@@ -1,8 +1,7 @@
 # OpenCode Zen — Free LLM Proxy
 
-OpenCode (`github.com/anomalyco/opencode`) ships a free model proxy at
-`https://opencode.ai/zen/v1/`. No account, API key, or subscription required —
-auth is the literal string `"public"`.
+OpenCode (`github.com/anomalyco/opencode`) ships a free model proxy at `https://opencode.ai/zen/v1/`. No account, API
+key, or subscription required — auth is the literal string `"public"`.
 
 ## Available Free Models
 
@@ -50,8 +49,8 @@ Python: openai.chat.completions client, model="big-pickle".
 
 ## CI Considerations
 
-Usable headlessly — no interactive auth or browser flow needed. The OpenAI Chat
-Completions endpoint is the most universal choice for integration.
+Usable headlessly — no interactive auth or browser flow needed. The OpenAI Chat Completions endpoint is the most
+universal choice for integration.
 
 Risks for CI use:
 
@@ -59,6 +58,5 @@ Risks for CI use:
 - **Availability**: free tier with no SLA — not suitable for blocking CI gates
 - **Model churn**: free model list may change without notice
 
-Best suited for non-critical CI tasks: PR summary generation, commit message
-drafting, optional code review suggestions. Not for anything where a failure
-should block merges.
+Best suited for non-critical CI tasks: PR summary generation, commit message drafting, optional code review suggestions.
+Not for anything where a failure should block merges.

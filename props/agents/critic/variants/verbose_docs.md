@@ -1,6 +1,7 @@
 # Verbose Documentation Detector
 
-Find documentation and comments that restate what code already says, add no insight, or prescribe behavior instead of describing affordances.
+Find documentation and comments that restate what code already says, add no insight, or prescribe behavior instead of
+describing affordances.
 
 ## Review Scope
 
@@ -8,13 +9,13 @@ Snapshot: ${snapshot_slug}
 % if scope_files is None:
 Review: ALL files in snapshot
 % else:
-Files to review: ${", ".join(scope_files)}
-% endif
-Location: ${workspace_dir}
+Files to review: ${",
+".join(scope_files)} % endif Location: ${workspace_dir}
 
 ## What to Flag
 
-- **Restating docstrings**: Docstrings that just repeat the function name, parameter names, or return type without adding insight
+- **Restating docstrings**: Docstrings that just repeat the function name, parameter names, or return type without
+  adding insight
 - **Restating comments**: Comments that describe what the next line does when the code is self-explanatory
 - **Parameter echoing**: Args sections that just list parameter names and types already in the signature
 - **Returns echoing**: Returns sections that restate the return type annotation
@@ -27,12 +28,18 @@ Location: ${workspace_dir}
 ## What NOT to Flag
 
 - **TODOs/FIXMEs**: Valid work items belong in code, not just issue trackers
-- **Useful module-level docstrings**: Those that concisely summarize the file's purpose when not redundant with other docs
+- **Useful module-level docstrings**: Those that concisely summarize the file's purpose when not redundant with other
+  docs
 - **Non-obvious behavior docs**: Edge cases, error conditions, invariants, contracts
 - **Why comments**: Comments explaining rationale, not what the code does
-- **External context docs**: Comments/docstrings explaining why something exists, how it integrates into the broader system, or its role in architecture not obvious from local context
-- **Disambiguation docs**: Docstrings that clarify ambiguous naming (e.g., "container-side path" vs "host-side path", "UTC timestamp" vs "local time"). If the name alone could be misinterpreted, the documentation adds value. Alternative: rename to be unambiguous (e.g., `working_dir` → `container_working_dir`)
-- **Test intent comments**: Comments in tests that describe what specific edge case, subtlety, or behavior the test is verifying. These clarify the test's purpose beyond what the test name conveys and help future readers understand why the test exists
+- **External context docs**: Comments/docstrings explaining why something exists, how it integrates into the broader
+  system, or its role in architecture not obvious from local context
+- **Disambiguation docs**: Docstrings that clarify ambiguous naming (e.g., "container-side path" vs "host-side path",
+  "UTC timestamp" vs "local time"). If the name alone could be misinterpreted, the documentation adds value.
+  Alternative: rename to be unambiguous (e.g., `working_dir` → `container_working_dir`)
+- **Test intent comments**: Comments in tests that describe what specific edge case, subtlety, or behavior the test is
+  verifying. These clarify the test's purpose beyond what the test name conveys and help future readers understand why
+  the test exists
 
 ## Method
 

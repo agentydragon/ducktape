@@ -1,11 +1,12 @@
 # Playwright + Bazel Module Resolution Investigation
 
-Historical investigation: Props now uses a React + Mantine harness swept by the Python Playwright visual tests and no longer runs this Playwright-from-JS setup. The module-identity findings remain context for other Bazel frontends.
+Historical investigation: Props now uses a React + Mantine harness swept by the Python Playwright visual tests and no
+longer runs this Playwright-from-JS setup. The module-identity findings remain context for other Bazel frontends.
 
 ## Problem
 
-When running Playwright tests via Bazel using `playwright_bin.playwright_test` from aspect_rules_js,
-the test fails with:
+When running Playwright tests via Bazel using `playwright_bin.playwright_test` from aspect_rules_js, the test fails
+with:
 
 ```
 Error: Playwright Test did not expect test() to be called here.
@@ -18,11 +19,10 @@ The test works fine when run directly via `pnpm playwright test`.
 
 ## Root Cause
 
-The issue is **module identity mismatch**: the Playwright CLI runner and the test file's imports
-resolve `@playwright/test` to physically different module instances, even though they're the same
-version (1.57.0). Playwright's internal registry uses module identity to track test context, so
-when the test file's `test()` function is called, it's from a different module instance than what
-the runner set up.
+The issue is **module identity mismatch**: the Playwright CLI runner and the test file's imports resolve
+`@playwright/test` to physically different module instances, even though they're the same version (1.57.0). Playwright's
+internal registry uses module identity to track test context, so when the test file's `test()` function is called, it's
+from a different module instance than what the runner set up.
 
 ## Package Structure
 
@@ -38,8 +38,7 @@ The `@playwright/test/index.js` does:
 module.exports = require("playwright/test");
 ```
 
-This means `@playwright/test` and `playwright` must resolve to the same physical module for the
-registry to work.
+This means `@playwright/test` and `playwright` must resolve to the same physical module for the registry to work.
 
 ## How aspect_rules_js Structures node_modules
 
@@ -91,16 +90,16 @@ Playwright's transform system compiles this. The resolution depends on:
 2. The `props/frontend/node_modules` directory existing (even if it doesn't have @playwright)
 3. NODE_PATH settings
 
-The test file should find `@playwright/test` at `node_modules/@playwright/test` (the symlink),
-which points to the same physical location as the CLI uses. BUT Node.js caches modules by their
-**resolved filesystem path**, and symlinks can cause different cache keys.
+The test file should find `@playwright/test` at `node_modules/@playwright/test` (the symlink), which points to the same
+physical location as the CLI uses. BUT Node.js caches modules by their **resolved filesystem path**, and symlinks can
+cause different cache keys.
 
 ## Attempts Made
 
 ### Attempt 1: Move @playwright/test to workspace root package.json
 
-**Hypothesis**: If `@playwright/test` is only in root package.json (not `props/frontend/package.json`),
-both CLI and test file will use the same module.
+**Hypothesis**: If `@playwright/test` is only in root package.json (not `props/frontend/package.json`), both CLI and
+test file will use the same module.
 
 **Result**: Failed. Still got the module mismatch error.
 
@@ -192,16 +191,15 @@ This is hacky and may break IDE tooling.
 
 ### 3. Investigate patch_node_fs
 
-aspect_rules_js sets `JS_BINARY__PATCH_NODE_FS=1` by default. This patches Node's fs module to
-handle Bazel's symlink structure. This might be conflicting with Playwright's internal module
-resolution.
+aspect_rules_js sets `JS_BINARY__PATCH_NODE_FS=1` by default. This patches Node's fs module to handle Bazel's symlink
+structure. This might be conflicting with Playwright's internal module resolution.
 
 Try: `patch_node_fs = False` in the playwright_bin rule (if supported).
 
 ### 4. Use Native Playwright Install
 
-Instead of using aspect_rules_js npm packages, install Playwright browsers and package globally
-or use `rules_playwright` more directly.
+Instead of using aspect_rules_js npm packages, install Playwright browsers and package globally or use
+`rules_playwright` more directly.
 
 ### 5. Single-Process Approach
 
@@ -221,10 +219,10 @@ cd props/frontend && pnpm playwright test
 
 ## Key Insight
 
-The fundamental issue is that Playwright uses module identity (object reference equality) to track
-its internal state. When the test runner loads `@playwright/test` and sets up the test context,
-it expects test files to import from the _exact same module instance_. In Bazel's sandboxed
-environment with symlinked node_modules, achieving this module identity match is challenging.
+The fundamental issue is that Playwright uses module identity (object reference equality) to track its internal state.
+When the test runner loads `@playwright/test` and sets up the test context, it expects test files to import from the
+_exact same module instance_. In Bazel's sandboxed environment with symlinked node_modules, achieving this module
+identity match is challenging.
 
 ## References
 

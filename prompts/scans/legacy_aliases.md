@@ -14,7 +14,8 @@ Backward compatibility aliases that create duplicate names for the same entities
 - Trivial forwarder functions (see also: `trivial-forwarders.md`)
 - Comments/strings indicating temporary backward compatibility
 
-**Key principle**: Aliases should be removed by squashing to the canonical name. Temporary backward compatibility is acceptable during migration but should be cleaned up, not left indefinitely.
+**Key principle**: Aliases should be removed by squashing to the canonical name. Temporary backward compatibility is
+acceptable during migration but should be cleaned up, not left indefinitely.
 
 ## Examples
 
@@ -291,7 +292,8 @@ rg --type ts --type tsx 'export const \w+ = \([^)]*\) => \w+\('
 # Requires AST analysis or call graph tool
 ```
 
-**Note**: Function-level forwarders are covered comprehensively in `trivial-forwarders.md`. This scan focuses on non-function aliases (constants, imports, exports, properties).
+**Note**: Function-level forwarders are covered comprehensively in `trivial-forwarders.md`. This scan focuses on
+non-function aliases (constants, imports, exports, properties).
 
 ### Recommended Workflow
 
@@ -575,8 +577,7 @@ For each finding, apply the Decision Framework and categorize:
 ```markdown
 #### 1. TypeScript Function Name Aliases (stores_channels.ts)
 
-**File:** `adgn/src/adgn/agent/web/src/features/chat/stores_channels.ts`
-**Lines:** 45-46
+**File:** `adgn/src/adgn/agent/web/src/features/chat/stores_channels.ts` **Lines:** 45-46
 
 **Evidence:**
 
@@ -604,8 +605,7 @@ For each finding, apply the Decision Framework and categorize:
 ```markdown
 #### 2. Python Constant Alias (config.py)
 
-**File:** `adgn/src/adgn/config.py`
-**Line:** 23
+**File:** `adgn/src/adgn/config.py` **Line:** 23
 
 **Evidence:**
 
@@ -634,8 +634,7 @@ For each finding, apply the Decision Framework and categorize:
 ```markdown
 #### 3. Public API Backward Compatibility (client.py)
 
-**File:** `adgn/src/adgn/client.py`
-**Line:** 156
+**File:** `adgn/src/adgn/client.py` **Line:** 156
 
 **Evidence:**
 
@@ -663,8 +662,7 @@ For each finding, apply the Decision Framework and categorize:
 ```markdown
 #### 4. Migration in Progress (endpoints.py)
 
-**File:** `adgn/src/adgn/endpoints.py`
-**Line:** 12
+**File:** `adgn/src/adgn/endpoints.py` **Line:** 12
 
 **Evidence:**
 
@@ -716,16 +714,15 @@ rg --type md '\bOLD_NAME\b'
 
 ## Benefits of Removing Legacy Aliases
 
-✅ **Reduced cognitive load** - One canonical name to remember
-✅ **Easier refactoring** - Only one name to update when changing APIs
-✅ **Smaller codebase** - Less code to maintain
-✅ **Better IDE support** - Autocomplete shows one clear option
-✅ **Clearer intent** - No confusion about which name to use
-✅ **Easier onboarding** - New developers see canonical names only
+✅ **Reduced cognitive load** - One canonical name to remember ✅ **Easier refactoring** - Only one name to update when
+changing APIs ✅ **Smaller codebase** - Less code to maintain ✅ **Better IDE support** - Autocomplete shows one clear
+option ✅ **Clearer intent** - No confusion about which name to use ✅ **Easier onboarding** - New developers see
+canonical names only
 
 ## References
 
-- **Trivial Forwarders**: See `trivial-forwarders.md` for comprehensive function-level forwarder detection and decision framework
+- **Trivial Forwarders**: See `trivial-forwarders.md` for comprehensive function-level forwarder detection and decision
+  framework
 - **Trivial Forwarder Methods**: See `trivial-forwarder-methods.md` for method-level forwarders
 - **API Stability**: [Semantic Versioning](https://semver.org/) for managing breaking changes
 - **Deprecation Patterns**: [Python PEP 387](https://peps.python.org/pep-0387/) - Backwards Compatibility Policy

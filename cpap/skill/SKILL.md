@@ -1,27 +1,24 @@
 ---
 name: cpap
 description: >
-  Analyze CPAP sleep therapy data from the user's ResMed AirSense 11.
-  Read daily summaries (AHI, leak, pressure, compliance) and per-session
-  waveforms from EDF files in the private cpap-data Forgejo git repo. Use
-  when user asks about sleep quality, CPAP data, AHI, therapy compliance,
-  or sleep analysis.
+  Analyze CPAP sleep therapy data from the user's ResMed AirSense 11. Read daily summaries (AHI, leak, pressure,
+  compliance) and per-session waveforms from EDF files in the private cpap-data Forgejo git repo. Use when user asks
+  about sleep quality, CPAP data, AHI, therapy compliance, or sleep analysis.
 ---
 
 # CPAP Data Analysis
 
-Analyze ResMed AirSense 11 AutoSet CPAP data synced daily from an ez Share
-WiFi SD card into the private Forgejo repo `cpap-data/cpap-data`.
+Analyze ResMed AirSense 11 AutoSet CPAP data synced daily from an ez Share WiFi SD card into the private Forgejo repo
+`cpap-data/cpap-data`.
 
 ## Data access
 
-Clone `https://git.allegedly.works/cpap-data/cpap-data.git` (the secret's
-`repo_url` key) with the read-only `cpap-data-reader` credentials from the
-`cpap-data-git-read` Kubernetes secret (keys: `username`, `password`,
+Clone `https://git.allegedly.works/cpap-data/cpap-data.git` (the secret's `repo_url` key) with the read-only
+`cpap-data-reader` credentials from the `cpap-data-git-read` Kubernetes secret (keys: `username`, `password`,
 `repo_url`):
 
-- **Claude Code web**: read the reflected copy in `claude-sandbox` through the
-  connected Kubernetes MCP path: `kubectl -n claude-sandbox get secret cpap-data-git-read`.
+- **Claude Code web**: read the reflected copy in `claude-sandbox` through the connected Kubernetes MCP path:
+  `kubectl -n claude-sandbox get secret cpap-data-git-read`.
 - **Laptops** (admin kubeconfig): `kubectl -n cpap-sync get secret cpap-data-git-read`.
 
 ```bash
@@ -37,8 +34,7 @@ git clone --filter=blob:none --no-checkout https://git.allegedly.works/cpap-data
 git -C /tmp/cpap-data checkout main -- STR.EDF
 ```
 
-Checking out `DATALOG/<date>/` directories the same way fetches only those
-nights' blobs.
+Checking out `DATALOG/<date>/` directories the same way fetches only those nights' blobs.
 
 ### Directory structure on the card
 
@@ -56,17 +52,16 @@ nights' blobs.
         └── *_SA2.edf    SpO2 + pulse rate (if oximeter connected)
 ```
 
-Note: filenames on the card use 8.3 short names (e.g., `202604~1.EDF`).
-The long names above come from the card's XML API `<name>` field.
+Note: filenames on the card use 8.3 short names (e.g., `202604~1.EDF`). The long names above come from the card's XML
+API `<name>` field.
 
 ## EDF format overview
 
 EDF (European Data Format) is a simple binary format:
 
-1. **Main header** (256 bytes): version, patient, recording info, start date/time,
-   number of data records, record duration, number of signals.
-2. **Signal headers** (256 bytes per signal): label, units, physical/digital min/max,
-   samples per record.
+1. **Main header** (256 bytes): version, patient, recording info, start date/time, number of data records, record
+   duration, number of signals.
+2. **Signal headers** (256 bytes per signal): label, units, physical/digital min/max, samples per record.
 3. **Data records**: interleaved int16 samples for each signal.
 
 Physical value from digital: `phys_min + (digital - dig_min) * (phys_max - phys_min) / (dig_max - dig_min)`
@@ -103,8 +98,8 @@ The `Date` signal stores days since Unix epoch (1970-01-01). Key signals:
 
 ### stdlib parsing (no dependencies)
 
-For `STR.EDF` parsing, stdlib `struct` + `xml.etree.ElementTree` is sufficient.
-See `examples/parse_str_edf.py` for a complete implementation.
+For `STR.EDF` parsing, stdlib `struct` + `xml.etree.ElementTree` is sufficient. See `examples/parse_str_edf.py` for a
+complete implementation.
 
 ### pyedflib (recommended for waveforms)
 
@@ -122,22 +117,20 @@ for i, sh in enumerate(signal_headers):
 
 ### Other tools
 
-- **OSCAR** (Open Source CPAP Analysis Reporter): Desktop GUI for ResMed data analysis.
-  The gold standard for CPAP data visualization. https://www.sleepfiles.com/OSCAR/
-- **oscar-etl** (`pip install oscar-etl`): Python ETL for ResMed EDF files. Extracts
-  7 signals (pressure, leak, respiratory rate, tidal volume, minute ventilation, snore,
-  flow limitation). Auto-segments by mask-on periods.
-- **edf-importer** (https://github.com/tedpearson/edf-importer): Imports ResMed
-  AirSense 11 EDF files to InfluxDB/VictoriaMetrics for Grafana dashboards.
+- **OSCAR** (Open Source CPAP Analysis Reporter): Desktop GUI for ResMed data analysis. The gold standard for CPAP data
+  visualization. https://www.sleepfiles.com/OSCAR/
+- **oscar-etl** (`pip install oscar-etl`): Python ETL for ResMed EDF files. Extracts 7 signals (pressure, leak,
+  respiratory rate, tidal volume, minute ventilation, snore, flow limitation). Auto-segments by mask-on periods.
+- **edf-importer** (https://github.com/tedpearson/edf-importer): Imports ResMed AirSense 11 EDF files to
+  InfluxDB/VictoriaMetrics for Grafana dashboards.
 - **edfio** (`pip install edfio`): Modern pure-Python EDF reader, alternative to pyedflib.
 
 ## Recipes
 
 ### Parse STR.EDF daily summary
 
-See `examples/parse_str_edf.py`. This is a standalone stdlib-only script that reads
-`STR.EDF` and outputs a nightly summary table with AHI, usage, pressure, leaks,
-respiratory rate, and compliance stats.
+See `examples/parse_str_edf.py`. This is a standalone stdlib-only script that reads `STR.EDF` and outputs a nightly
+summary table with AHI, usage, pressure, leaks, respiratory rate, and compliance stats.
 
 Usage:
 
@@ -149,8 +142,8 @@ python3 examples/parse_str_edf.py /tmp/cpap-data/STR.EDF --days 14
 
 ### Read DATALOG waveforms with pyedflib
 
-See `examples/read_waveforms.py`. Reads a DATALOG session's BRP/PLD/EVE files and
-prints signal summaries (min, max, mean, duration).
+See `examples/read_waveforms.py`. Reads a DATALOG session's BRP/PLD/EVE files and prints signal summaries (min, max,
+mean, duration).
 
 ### Scaffolding for tests
 
@@ -160,7 +153,5 @@ All recipes assume:
 - `pyedflib` available (for waveform recipes only; STR.EDF parsing is stdlib-only)
 - EDF files accessible locally (checked out from the cpap-data repo or passed as arguments)
 
-Test fixtures use the public EDF test file from
-https://www.teuniz.net/edf_bdf_testfiles/test_generator_2_edfplus.zip (2.7 MB,
-12 signals, 600 records at 1s duration). This validates format parsing without
-requiring real CPAP data.
+Test fixtures use the public EDF test file from https://www.teuniz.net/edf_bdf_testfiles/test_generator_2_edfplus.zip
+(2.7 MB, 12 signals, 600 records at 1s duration). This validates format parsing without requiring real CPAP data.

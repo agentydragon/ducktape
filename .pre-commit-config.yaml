@@ -235,7 +235,9 @@ repos:
       # Block non-root pyproject.toml files — all Python packaging config must live in the root pyproject.toml.
       - id: no-subdir-pyproject-toml
         name: No sub-directory pyproject.toml files
-        entry: bash -c 'echo "Non-root pyproject.toml files are forbidden (use root pyproject.toml):" >&2; printf "  %s\n" "$@" >&2; exit 1' --
+        entry:
+          bash -c 'echo "Non-root pyproject.toml files are forbidden (use root pyproject.toml):" >&2; printf "  %s\n"
+          "$@" >&2; exit 1' --
         language: system
         files: "pyproject\\.toml$"
         exclude: "^pyproject\\.toml$"
@@ -283,10 +285,10 @@ repos:
       - id: kubeconform
         name: kubeconform (cluster)
         language: system
-        entry: kubeconform
-          -schema-location default
-          -schema-location 'cluster/schemas/{{.Group}}/{{.ResourceKind}}_{{.ResourceAPIVersion}}.json'
-          -schema-location 'https://raw.githubusercontent.com/datreeio/CRDs-catalog/main/{{.Group}}/{{.ResourceKind}}_{{.ResourceAPIVersion}}.json'
+        entry:
+          kubeconform -schema-location default -schema-location
+          'cluster/schemas/{{.Group}}/{{.ResourceKind}}_{{.ResourceAPIVersion}}.json' -schema-location
+          'https://raw.githubusercontent.com/datreeio/CRDs-catalog/main/{{.Group}}/{{.ResourceKind}}_{{.ResourceAPIVersion}}.json'
           -ignore-missing-schemas
         files: ^cluster/(k8s|generated|parked)/.*\.(yaml|yml)$
         exclude: |

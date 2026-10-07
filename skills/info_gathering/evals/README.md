@@ -1,7 +1,7 @@
 # Info-Gathering Skill: Evaluation Cases
 
-Each eval tests a different aspect of the info-gathering skill. See each eval's
-`README.md` for details on variants, running, and evaluation criteria.
+Each eval tests a different aspect of the info-gathering skill. See each eval's `README.md` for details on variants,
+running, and evaluation criteria.
 
 ## Evals
 
@@ -17,5 +17,4 @@ Each eval tests a different aspect of the info-gathering skill. See each eval's
 - CLI utilities (`add_common_args`, `output_dir_from_args`, etc.)
 - Result models (`RunSummary`, `LogEntry`)
 
-`docker_scratch.py` provides an ephemeral Docker container as a `ToolProvider`
-for agent scratch computation.
+`docker_scratch.py` provides an ephemeral Docker container as a `ToolProvider` for agent scratch computation.

@@ -1,8 +1,7 @@
 # E2E Test Secrets Fixture
 
-Test-only SOPS-encrypted secret files + age key used by the container E2E
-test at <../../container_e2e/test_container_e2e.py>. The test profile itself
-lives next to the test as `test_profile.yaml`.
+Test-only SOPS-encrypted secret files + age key used by the container E2E test at
+<../../container_e2e/test_container_e2e.py>. The test profile itself lives next to the test as `test_profile.yaml`.
 
 ## What's Here
 
@@ -17,15 +16,12 @@ lives next to the test as `test_profile.yaml`.
 
 ## Why Fake Encrypted Files?
 
-The container E2E test exercises the **real** `devinfra/secrets/web_env.sh`
-and the **real** kubeconfig writer against the **real** SOPS file paths —
-just with fake values encrypted by a test-only age key. This catches
-regressions in the secret flow (env script + daemon kubeconfig path) that a
-hand-rolled mock would miss.
+The container E2E test exercises the **real** `devinfra/secrets/web_env.sh` and the **real** kubeconfig writer against
+the **real** SOPS file paths — just with fake values encrypted by a test-only age key. This catches regressions in the
+secret flow (env script + daemon kubeconfig path) that a hand-rolled mock would miss.
 
-The paths are not all under `secrets/`. The BuildBuddy key is read from the
-shared cluster Secret, so its fixture is staged at that path and carries a k8s
-Secret's shape — including the nested `stringData` lookup.
+The paths are not all under `secrets/`. The BuildBuddy key is read from the shared cluster Secret, so its fixture is
+staged at that path and carries a k8s Secret's shape — including the nested `stringData` lookup.
 
 ## Regenerating
 
@@ -43,9 +39,8 @@ for f in alloy-otlp-bearer-token.yaml github-pat-agentydragon-agent.yaml \
 done
 ```
 
-`buildbuddy-api-key.sops.yaml` is a k8s Secret, so it also needs
-`encrypted_regex` — which `--age` alone cannot set. Point SOPS at a standalone
-config instead, so the repo's creation rules are not inherited:
+`buildbuddy-api-key.sops.yaml` is a k8s Secret, so it also needs `encrypted_regex` — which `--age` alone cannot set.
+Point SOPS at a standalone config instead, so the repo's creation rules are not inherited:
 
 ```bash
 cat > /tmp/fixture-sops.yaml <<CFG

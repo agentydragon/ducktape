@@ -10,28 +10,23 @@ Data fetched: 2026-01-24 from HuggingFace and benchmark sources. Updated 2026-01
 
 - **Qwen3-Coder has NO thinking mode** — that's a base model property, not a quantization issue.
 - **Qwen3-30B-A3B (original)** and **Qwen3-32B** support both thinking and tool use.
-- **Qwen3-30B-A3B-Thinking-2507** supports thinking + tool use, but vLLM drops
-  `reasoning_content` in multi-step tool calls (Qwen recommends Qwen-Agent client-side parsing).
-- Ollama has no tensor parallelism (only layer splitting), so vLLM is the only
-  option for real 2-GPU performance.
-- vLLM's Responses API is mature (v0.10.0+, incl. function tools, MCP, streaming).
-  Previous flakiness with gpt-oss was in early versions. LM Studio (v0.3.29+) and
-  Ollama (v0.13.3+) also support Responses API now. See "gpt-oss Inference Backend
-  Options" section for full comparison.
-- **Qwen3-Coder-30B has almost no published benchmarks** beyond SWE-Bench (51.6%).
-  No AIME, GPQA, Codeforces, or LiveCodeBench numbers. Tech report pending.
-- Qwen3-30B-A3B-Thinking-2507 is the strongest local Qwen3 variant on reasoning
-  benchmarks (AIME 85.0, GPQA 73.4, Codeforces 2044, LiveCodeBench 66.0).
-- **gpt-oss-120b does NOT fit on 2x 5090.** Weights are ~65 GB on disk (MXFP4),
-  exceeding 64 GB total VRAM. Community reports confirm: 2x 3090 (48 GB) OOMs,
-  3x 3090 (72 GB) works. The cookbook's "≥60GB" claim refers to single-GPU setups
+- **Qwen3-30B-A3B-Thinking-2507** supports thinking + tool use, but vLLM drops `reasoning_content` in multi-step tool
+  calls (Qwen recommends Qwen-Agent client-side parsing).
+- Ollama has no tensor parallelism (only layer splitting), so vLLM is the only option for real 2-GPU performance.
+- vLLM's Responses API is mature (v0.10.0+, incl. function tools, MCP, streaming). Previous flakiness with gpt-oss was
+  in early versions. LM Studio (v0.3.29+) and Ollama (v0.13.3+) also support Responses API now. See "gpt-oss Inference
+  Backend Options" section for full comparison.
+- **Qwen3-Coder-30B has almost no published benchmarks** beyond SWE-Bench (51.6%). No AIME, GPQA, Codeforces, or
+  LiveCodeBench numbers. Tech report pending.
+- Qwen3-30B-A3B-Thinking-2507 is the strongest local Qwen3 variant on reasoning benchmarks (AIME 85.0, GPQA 73.4,
+  Codeforces 2044, LiveCodeBench 66.0).
+- **gpt-oss-120b does NOT fit on 2x 5090.** Weights are ~65 GB on disk (MXFP4), exceeding 64 GB total VRAM. Community
+  reports confirm: 2x 3090 (48 GB) OOMs, 3x 3090 (72 GB) works. The cookbook's "≥60GB" claim refers to single-GPU setups
   like H100 80 GB where there's headroom for KV cache.
-- **2x 5090 doesn't unlock a qualitatively better model tier for agentic coding
-  (reasoning + tools).** The best agentic models at ~30B scale (gpt-oss-20b,
-  Qwen3-Coder-30B, Qwen3-30B-A3B) all fit on one GPU. The 70B class unlocked by
-  TP=2 is split: either tool calling (Llama 3.3 70B, Qwen2.5-72B) or reasoning
-  (DeepSeek-R1-Distill-Llama-70B), not both. Qwen3-32B FP8 has both but its AWQ
-  fits on one GPU anyway. Second GPU is most useful for running two models
+- **2x 5090 doesn't unlock a qualitatively better model tier for agentic coding (reasoning + tools).** The best agentic
+  models at ~30B scale (gpt-oss-20b, Qwen3-Coder-30B, Qwen3-30B-A3B) all fit on one GPU. The 70B class unlocked by TP=2
+  is split: either tool calling (Llama 3.3 70B, Qwen2.5-72B) or reasoning (DeepSeek-R1-Distill-Llama-70B), not both.
+  Qwen3-32B FP8 has both but its AWQ fits on one GPU anyway. Second GPU is most useful for running two models
   simultaneously or for extra KV cache / context length.
 
 ## Experiment Log
@@ -103,8 +98,8 @@ With TP=2, each GPU gets half the weights. Max per GPU: ~28 GB usable (leaving r
 
 ### How local models compare to OpenAI proprietary models
 
-Numbers from official model cards and announcements. gpt-oss has configurable
-reasoning effort (low/medium/high); "high" is most comparable to o-series models.
+Numbers from official model cards and announcements. gpt-oss has configurable reasoning effort (low/medium/high); "high"
+is most comparable to o-series models.
 
 **SWE-Bench Verified** (agentic coding — multi-turn, real GitHub issues):
 
@@ -180,13 +175,11 @@ reasoning effort (low/medium/high); "high" is most comparable to o-series models
 
 Note: gpt-oss LiveCodeBench numbers not published in model card.
 
-**Key takeaway**: gpt-oss-20b at high reasoning is comparable to o3-mini / early o3
-on math and coding. It's the strongest model that fits on a single RTX 5090. On
-SWE-Bench, it beats Qwen3-Coder-30B (60.7% vs 51.6%).
+**Key takeaway**: gpt-oss-20b at high reasoning is comparable to o3-mini / early o3 on math and coding. It's the
+strongest model that fits on a single RTX 5090. On SWE-Bench, it beats Qwen3-Coder-30B (60.7% vs 51.6%).
 
-**Caveat**: gpt-oss reasoning levels matter enormously. At low reasoning, gpt-oss-20b
-drops to GPT-4o territory on math (37% AIME). The "high" numbers require the model to
-spend many thinking tokens, consuming context and latency.
+**Caveat**: gpt-oss reasoning levels matter enormously. At low reasoning, gpt-oss-20b drops to GPT-4o territory on math
+(37% AIME). The "high" numbers require the model to spend many thinking tokens, consuming context and latency.
 
 Sources:
 
@@ -202,8 +195,8 @@ Sources:
 
 ## gpt-oss Inference Backend Options
 
-Researched 2026-01-27. gpt-oss is OpenAI's open-weight MoE model family (Apache 2.0,
-August 2025). Official repo: [github.com/openai/gpt-oss](https://github.com/openai/gpt-oss).
+Researched 2026-01-27. gpt-oss is OpenAI's open-weight MoE model family (Apache 2.0, August 2025). Official repo:
+[github.com/openai/gpt-oss](https://github.com/openai/gpt-oss).
 
 ### Backend Comparison
 
@@ -217,27 +210,27 @@ August 2025). Official repo: [github.com/openai/gpt-oss](https://github.com/open
 
 **Proxy adapters** (add Responses API on top of any Chat Completions backend):
 
-- [HuggingFace responses.js](https://github.com/huggingface/responses.js/) — Express.js,
-  full features incl. function tools, streaming, MCP
-- [LiteLLM](https://docs.litellm.ai/docs/response_api) — bridges `/responses` ↔
-  `/chat/completions`, works with any provider
+- [HuggingFace responses.js](https://github.com/huggingface/responses.js/) — Express.js, full features incl. function
+  tools, streaming, MCP
+- [LiteLLM](https://docs.litellm.ai/docs/response_api) — bridges `/responses` ↔ `/chat/completions`, works with any
+  provider
 
-**Verdict**: vLLM is the only backend with full Responses API + tensor parallelism.
-For single-GPU models like gpt-oss-20b (~14 GB), LM Studio is also a strong option
-(full Responses API, stateful, function tools, MCP, reasoning effort control).
+**Verdict**: vLLM is the only backend with full Responses API + tensor parallelism. For single-GPU models like
+gpt-oss-20b (~14 GB), LM Studio is also a strong option (full Responses API, stateful, function tools, MCP, reasoning
+effort control).
 
 ### What OpenAI / Codex Recommends
 
-- **Server/production**: vLLM (explicitly recommended). Install with `pip install vllm==0.10.1+gptoss`
-  or later, serve with `vllm serve openai/gpt-oss-20b`.
+- **Server/production**: vLLM (explicitly recommended). Install with `pip install vllm==0.10.1+gptoss` or later, serve
+  with `vllm serve openai/gpt-oss-20b`.
 - **Consumer/local**: Ollama (`ollama run gpt-oss-20b`) or LM Studio.
-- **Codex CLI**: Defaults to Ollama (`oss_provider = "ollama"` in `~/.codex/config.toml`),
-  but can point at any OpenAI-compatible endpoint.
+- **Codex CLI**: Defaults to Ollama (`oss_provider = "ollama"` in `~/.codex/config.toml`), but can point at any
+  OpenAI-compatible endpoint.
 
 ### Practical Setup for 2x RTX 5090
 
-gpt-oss-20b is ~14 GB quantized → fits easily on a **single** RTX 5090 (32 GB) with
-plenty of room for KV cache. TP=2 is unnecessary for this model.
+gpt-oss-20b is ~14 GB quantized → fits easily on a **single** RTX 5090 (32 GB) with plenty of room for KV cache. TP=2 is
+unnecessary for this model.
 
 #### Option A: Single-GPU vLLM (simplest, Responses API)
 

@@ -102,13 +102,10 @@ occurrences:
       adgn/src/adgn/openai_utils/model.py:
         - [218, 230]
     note: >-
-      Dead `_coerce_text` model_validator(mode="before") in AssistantMessageOut.
-      Coerces bare str or flat {"text": ...} dicts into {"parts": [...]}, but
-      every construction site already passes `parts=` explicitly (model.py:294,
-      :250, builders.py:28, tests). JSON deserialization also always includes
-      "parts" (serialized from valid instances). Neither coercion branch is
-      reachable. Leftover from legacy migration (see comment at line 297).
-      Delete.
+      Dead `_coerce_text` model_validator(mode="before") in AssistantMessageOut. Coerces bare str or flat {"text": ...}
+      dicts into {"parts": [...]}, but every construction site already passes `parts=` explicitly (model.py:294, :250,
+      builders.py:28, tests). JSON deserialization also always includes "parts" (serialized from valid instances).
+      Neither coercion branch is reachable. Leftover from legacy migration (see comment at line 297). Delete.
     critic_scopes_expected_to_recall:
       - - adgn/src/adgn/openai_utils/model.py
     match_file_restriction:

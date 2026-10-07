@@ -6,9 +6,12 @@
 
 ## Pattern Description
 
-Prefer functional patterns (list comprehensions, generator expressions, map/filter) over imperative loops with append/extend when building collections. Functional patterns are more concise, often faster, and communicate intent more clearly.
+Prefer functional patterns (list comprehensions, generator expressions, map/filter) over imperative loops with
+append/extend when building collections. Functional patterns are more concise, often faster, and communicate intent more
+clearly.
 
-**Key principle**: If you're just transforming or filtering items into a new list, use a comprehension or generator expression instead of a loop with append.
+**Key principle**: If you're just transforming or filtering items into a new list, use a comprehension or generator
+expression instead of a loop with append.
 
 ## Examples of Antipatterns
 
@@ -467,20 +470,15 @@ After refactoring, ensure:
 
 ## Benefits
 
-✅ **Conciseness** - 1-3 lines instead of 3-5 lines
-✅ **Clarity** - Intent is clearer ("build list from X")
-✅ **Performance** - Often faster (pre-allocation, less overhead)
-✅ **Immutability** - Less mutable state (no empty list initialization)
-✅ **Pythonic** - Idiomatic Python style
-✅ **Type inference** - Better for type checkers
+✅ **Conciseness** - 1-3 lines instead of 3-5 lines ✅ **Clarity** - Intent is clearer ("build list from X") ✅
+**Performance** - Often faster (pre-allocation, less overhead) ✅ **Immutability** - Less mutable state (no empty list
+initialization) ✅ **Pythonic** - Idiomatic Python style ✅ **Type inference** - Better for type checkers
 
 ## Anti-Benefits (When NOT to Use)
 
-❌ **Complex logic** - If logic doesn't fit 1-2 lines, keep loop
-❌ **Side effects** - If loop has I/O, mutations, use imperative
-❌ **Multiple outputs** - If building multiple collections, consider keeping loop
-❌ **Early termination** - If need to break/continue with complex conditions
-❌ **Debugging** - If you need to set breakpoints mid-loop
+❌ **Complex logic** - If logic doesn't fit 1-2 lines, keep loop ❌ **Side effects** - If loop has I/O, mutations, use
+imperative ❌ **Multiple outputs** - If building multiple collections, consider keeping loop ❌ **Early termination** -
+If need to break/continue with complex conditions ❌ **Debugging** - If you need to set breakpoints mid-loop
 
 ## Examples from Real Code
 

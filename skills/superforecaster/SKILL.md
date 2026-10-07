@@ -1,6 +1,9 @@
 ---
 name: superforecaster
-description: Make well-calibrated probability estimates using superforecasting methodology. Use when user asks about probability, likelihood, chance, odds, "will X happen", "when will X happen", "how much will X cost", "what could go wrong", failure modes, risk assessment, forecasting, or any question involving uncertainty and estimation.
+description:
+  Make well-calibrated probability estimates using superforecasting methodology. Use when user asks about probability,
+  likelihood, chance, odds, "will X happen", "when will X happen", "how much will X cost", "what could go wrong",
+  failure modes, risk assessment, forecasting, or any question involving uncertainty and estimation.
 ---
 
 # Superforecaster Skill
@@ -23,7 +26,8 @@ Questions have overlapping attributes. Mix and match these heuristics based on w
 
 - Fall back on reference class base rates
 - Ask user for specifics that affect the estimate
-- Example: "When will I get a job?" → ask: field, experience, how long since last job, actively applying?, then search: current hiring rates in that field, unemployment trends, typical job search duration by seniority
+- Example: "When will I get a job?" → ask: field, experience, how long since last job, actively applying?, then search:
+  current hiring rates in that field, unemployment trends, typical job search duration by seniority
 
 **Sparse data**:
 
@@ -89,7 +93,8 @@ Questions have overlapping attributes. Mix and match these heuristics based on w
 
 - Model the dependency structure (event tree, Bayesian network)
 - Simulate through the network
-- Example: "Will I be able to buy a house?" depends on savings, income trajectory, home prices, interest rates, down payment requirements—model jointly
+- Example: "Will I be able to buy a house?" depends on savings, income trajectory, home prices, interest rates, down
+  payment requirements—model jointly
 
 **Sequential/process**:
 
@@ -400,7 +405,8 @@ Write and run Python scripts when helpful. Use numpy, pandas, matplotlib.
 ### Example applications
 
 - **Timeline Monte Carlo**: Model phases as lognormal (captures right-skew delays), combine, plot distribution
-- **FIRE/Portfolio survival**: Bootstrap historical S&P returns, simulate 10k trajectories, report survival rate and percentiles
+- **FIRE/Portfolio survival**: Bootstrap historical S&P returns, simulate 10k trajectories, report survival rate and
+  percentiles
 - **Bayesian updates**: Compute posteriors from priors and likelihoods
 - **Sensitivity analysis**: Vary key parameters, show which dominate uncertainty
 - **Distribution visualization**: Histograms, CDFs, violin plots for communicating uncertainty
@@ -444,17 +450,20 @@ Output:
   Expected value: $540k (includes 40% chance of $0)
 ```
 
-**Correlation handling**: If X and Y are correlated (e.g., OpenAI valuation and probability of IPO both depend on AI market sentiment), model the common factor explicitly or use copulas.
+**Correlation handling**: If X and Y are correlated (e.g., OpenAI valuation and probability of IPO both depend on AI
+market sentiment), model the common factor explicitly or use copulas.
 
 ### Complex probability networks
 
-When a question involves interconnected uncertain variables, conditional dependencies, or state that evolves through stages—don't try to solve analytically. Model the network and simulate.
+When a question involves interconnected uncertain variables, conditional dependencies, or state that evolves through
+stages—don't try to solve analytically. Model the network and simulate.
 
 **Types of structures**:
 
 - **Sequential processes**: state evolves step-by-step (portfolio drawdown, disease progression, project phases)
 - **Event trees**: branching paths with probabilities at each node (immigration outcomes, startup funding rounds)
-- **Bayesian networks**: variables with conditional dependencies (diagnosis given symptoms, success given multiple factors)
+- **Bayesian networks**: variables with conditional dependencies (diagnosis given symptoms, success given multiple
+  factors)
 - **Queuing/waiting**: arrivals and processing with random timing (application processing, service times)
 
 **General approach**:

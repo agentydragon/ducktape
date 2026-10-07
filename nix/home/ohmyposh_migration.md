@@ -1,21 +1,23 @@
 # Oh-My-Posh Migration from Powerlevel10k
 
-**Date:** 2026-01-16
-**Working Directory:** `/home/agentydragon/code/ducktape/nix/home`
-**Git Branch:** `devel`
+**Date:** 2026-01-16 **Working Directory:** `/home/agentydragon/code/ducktape/nix/home` **Git Branch:** `devel`
 
 ## What We Accomplished
 
 ### Prompt Generator Selection
 
-Evaluated alternatives to Powerlevel10k for shell prompts. Key finding: **Starship cannot properly handle powerline separators with conditional segments** - when a conditional segment is hidden, the color chain breaks (see [starship#6218](https://github.com/starship/starship/issues/6218)).
+Evaluated alternatives to Powerlevel10k for shell prompts. Key finding: **Starship cannot properly handle powerline
+separators with conditional segments** - when a conditional segment is hidden, the color chain breaks (see
+[starship#6218](https://github.com/starship/starship/issues/6218)).
 
-**Oh-My-Posh selected** because it computes separator colors at render time based on `previousActiveSegment`, correctly handling hidden conditional segments.
+**Oh-My-Posh selected** because it computes separator colors at render time based on `previousActiveSegment`, correctly
+handling hidden conditional segments.
 
 ### Files Modified
 
 - **`nix/home/ohmyposh.json`** (created): Oh-My-Posh configuration
-  - Session segment with SSH-conditional display (line 17): `{{ if .SSHSession }}{{ .UserName }}@{{ .HostName }} {{ end }}`
+  - Session segment with SSH-conditional display (line 17):
+    `{{ if .SSHSession }}{{ .UserName }}@{{ .HostName }} {{ end }}`
   - Path with agnoster_short style
   - Git segment with status-based background colors
   - Right prompt: status, sudo, execution time, nix-shell, time
@@ -32,7 +34,8 @@ Evaluated alternatives to Powerlevel10k for shell prompts. Key finding: **Starsh
 
 ### Bugs Fixed
 
-1. **Incrementing integer on right prompt**: Caused by `RPROMPT = "%*"` in home.nix sessionVariables conflicting with Oh-My-Posh's rprompt. Fixed by `unset RPROMPT` in zsh-init.zsh.
+1. **Incrementing integer on right prompt**: Caused by `RPROMPT = "%*"` in home.nix sessionVariables conflicting with
+   Oh-My-Posh's rprompt. Fixed by `unset RPROMPT` in zsh-init.zsh.
 
 2. **Session segment always showing user@hostname**: Diagnosed as **stale cache** issue (see below).
 

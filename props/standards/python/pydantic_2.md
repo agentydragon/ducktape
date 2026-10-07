@@ -3,15 +3,20 @@ title: Target Pydantic 2 (no Pydantic 1 fallback)
 kind: outcome
 ---
 
-Code targets Pydantic v2 APIs only. Do not write dual‑support shims or fallbacks to Pydantic v1; do not import from `pydantic.v1`. Prefer v2 idioms for validation, configuration, and serialization.
+Code targets Pydantic v2 APIs only. Do not write dual‑support shims or fallbacks to Pydantic v1; do not import from
+`pydantic.v1`. Prefer v2 idioms for validation, configuration, and serialization.
 
 ## Acceptance criteria (checklist)
 
-- Use Pydantic v2 decorators and APIs (`field_validator`, `model_validator`, `computed_field`, `model_dump`, `model_dump_json`, `model_validate`)
-- Configuration uses v2 config objects (`ConfigDict` / `SettingsConfigDict`) via `model_config = ...` (not `class Config:`)
+- Use Pydantic v2 decorators and APIs (`field_validator`, `model_validator`, `computed_field`, `model_dump`,
+  `model_dump_json`, `model_validate`)
+- Configuration uses v2 config objects (`ConfigDict` / `SettingsConfigDict`) via `model_config = ...` (not
+  `class Config:`)
 - Settings come from `pydantic_settings.BaseSettings` (not `pydantic.BaseSettings`)
-- No compatibility code or fallbacks such as `try/except ImportError` switching between v1/v2 or `from pydantic import v1 as pydantic`
-- Do not use v1‑only features (`root_validator`, `validator` with classmethod semantics, `parse_obj`, `json()`/`dict()` in places where v2 equivalents exist)
+- No compatibility code or fallbacks such as `try/except ImportError` switching between v1/v2 or
+  `from pydantic import v1 as pydantic`
+- Do not use v1‑only features (`root_validator`, `validator` with classmethod semantics, `parse_obj`, `json()`/`dict()`
+  in places where v2 equivalents exist)
 
 ## Positive examples
 

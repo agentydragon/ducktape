@@ -1,7 +1,7 @@
 # Raw PVC Inventory
 
-PVCs not managed by CNPG or a Valkey/Redis operator. `Active` means at least
-one live pod mounted the PVC during the 2026-05-20 inventory refresh.
+PVCs not managed by CNPG or a Valkey/Redis operator. `Active` means at least one live pod mounted the PVC during the
+2026-05-20 inventory refresh.
 
 Last updated: 2026-05-20
 

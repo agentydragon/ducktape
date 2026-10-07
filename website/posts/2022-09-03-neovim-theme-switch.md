@@ -2,16 +2,14 @@
 title: Making Neovim's color scheme follow system light/dark preference on GNOME
 ---
 
-GNOME has a feature where there's a system-level setting for whether user
-prefers light or dark theme. This got added relatively recently (in [GNOME
-42][gnome-42]). Its intended use is so that apps can automatically adjust to match
-the user's preferences without hacks. Hacks like "read the current GTK theme
-and try to figure out whether it's light or dark based on some heuristic".
+GNOME has a feature where there's a system-level setting for whether user prefers light or dark theme. This got added
+relatively recently (in [GNOME 42][gnome-42]). Its intended use is so that apps can automatically adjust to match the
+user's preferences without hacks. Hacks like "read the current GTK theme and try to figure out whether it's light or
+dark based on some heuristic".
 
-Today I've managed to put together one annoying missing piece of personal infra.
-I've had `gnome-terminal` sorta-following the setting for a while, and tonight
-I've made [Neovim][neovim] also do that. To celebrate, I wanted to share how
-this works.
+Today I've managed to put together one annoying missing piece of personal infra. I've had `gnome-terminal`
+sorta-following the setting for a while, and tonight I've made [Neovim][neovim] also do that. To celebrate, I wanted to
+share how this works.
 
 <figure>
 <video controls loop autoplay style="max-width: 100%">
@@ -20,9 +18,8 @@ this works.
 <figcaption>GNOME Terminal and Neovim both following system theme</figcaption>
 </figure>
 
-All scripts copied here are in my [ducktape][ducktape] repo in
-[`dotfiles/local/bin`][ducktape-local-bin], where you can copy fork and improve
-to your heart's content. The Neovim part was added in [MR #81][mr-81].
+All scripts copied here are in my [ducktape][ducktape] repo in [`dotfiles/local/bin`][ducktape-local-bin], where you can
+copy fork and improve to your heart's content. The Neovim part was added in [MR #81][mr-81].
 
 Those are the dependencies:
 
@@ -34,28 +31,26 @@ pip install pynvim absl-py dbus-python
 
 ### Night Theme Switcher
 
-Install the [Night Theme Switcher][night-theme-switcher] GNOME extension.
-This extension lets you attach scripts to when the theme is changed.
+Install the [Night Theme Switcher][night-theme-switcher] GNOME extension. This extension lets you attach scripts to when
+the theme is changed.
 
 ### Light/dark scripts
 
-Create a pair of scripts, `set_light_theme` and `set_dark_theme`, put them
-wherever. Mine are currently in `~/.local/bin`.
+Create a pair of scripts, `set_light_theme` and `set_dark_theme`, put them wherever. Mine are currently in
+`~/.local/bin`.
 
 Point Night Theme Switcher to run those when the theme is changed.
 
 ## Neovim
 
-In my particular case, I like [Solarized colors][solarized], which I have
-everywhere I can (VSCode, Neovim, `gnome-terminal`, even this site - as of now).
-I use the [`vim-colors-solarized`][vim-colors-solarized] plugin which adds
-both light and dark variants, toggled by `set background=light` or `dark`.
+In my particular case, I like [Solarized colors][solarized], which I have everywhere I can (VSCode, Neovim,
+`gnome-terminal`, even this site - as of now). I use the [`vim-colors-solarized`][vim-colors-solarized] plugin which
+adds both light and dark variants, toggled by `set background=light` or `dark`.
 
 ### `init.vim`
 
-Open `~/.config/nvim/init.vim` and add this hunk somewhere near the top.
-It'll read the current setting from `gsettings` and update Vim's background to
-match.
+Open `~/.config/nvim/init.vim` and add this hunk somewhere near the top. It'll read the current setting from `gsettings`
+and update Vim's background to match.
 
 ```vim
 " Set color theme to light/dark based on current system preferences.
@@ -86,10 +81,8 @@ call UpdateThemeFromGnome()
 
 ### `update_nvim_theme_from_gnome`
 
-Create this script somewhere and `chmod +x` it.
-I named it `update_nvim_theme_from_gnome`.
-It'll use `pynvim` to connect to running Neovim instances and run the function
-we made above to update the background.
+Create this script somewhere and `chmod +x` it. I named it `update_nvim_theme_from_gnome`. It'll use `pynvim` to connect
+to running Neovim instances and run the function we made above to update the background.
 
 ```python
 #!/usr/bin/python
@@ -107,22 +100,19 @@ for dir in glob.glob('/tmp/nvim*'):
     nvim.command("call UpdateThemeFromGnome()")
 ```
 
-Update `set_light_theme` and `set_dark_theme` to call it. This will make it so
-that when you switch theme, it'll not just affect new Neovim instances, but also
-all currently running ones.
+Update `set_light_theme` and `set_dark_theme` to call it. This will make it so that when you switch theme, it'll not
+just affect new Neovim instances, but also all currently running ones.
 
-There's a TODO in there. Exercise for the reader I guess - I don't particularly
-care because I rarely run Neovim as `root`, but I expect this would crash
-and burn if there were Neovim running as any user other than you. Cause it would
+There's a TODO in there. Exercise for the reader I guess - I don't particularly care because I rarely run Neovim as
+`root`, but I expect this would crash and burn if there were Neovim running as any user other than you. Cause it would
 probably not let you write into that socket.
 
 ## GNOME Terminal
 
 I have another script for GNOME Terminal doing something similar.
 
-It assumes that you have a light and dark profile set up. Open GNOME Terminal
-preferences and note down the names of the profiles you wanna use in
-light/dark configurations
+It assumes that you have a light and dark profile set up. Open GNOME Terminal preferences and note down the names of the
+profiles you wanna use in light/dark configurations
 
 ### `switch_gnome_terminal_profile`
 
@@ -251,17 +241,14 @@ if __name__ == '__main__':
     app.run(main)
 ```
 
-This script expects a profile name or UUID in `--profile`, and when called,
-it'll update GNOME Terminal's settings to have that profile be the default.
-That will make any new terminal windows/tabs use that profile.
+This script expects a profile name or UUID in `--profile`, and when called, it'll update GNOME Terminal's settings to
+have that profile be the default. That will make any new terminal windows/tabs use that profile.
 
-Then it'll talk to GNOME Terminal over [dbus][dbus] and update the profile
-of each window. Unfortunately, this only updates the theme on windows that
-are currently active - i.e., not on background tabs. I've not yet figured out
-how to fix this - I've looked into [`gnome-terminal`'s source
-code][gnome-terminal-source] when I originally wrote the script, and I even
-faintly remember reporting this as an issue. Basically that the dbus interface
-should be a bit extended. If you know how to fix this, let me know.
+Then it'll talk to GNOME Terminal over [dbus][dbus] and update the profile of each window. Unfortunately, this only
+updates the theme on windows that are currently active - i.e., not on background tabs. I've not yet figured out how to
+fix this - I've looked into [`gnome-terminal`'s source code][gnome-terminal-source] when I originally wrote the script,
+and I even faintly remember reporting this as an issue. Basically that the dbus interface should be a bit extended. If
+you know how to fix this, let me know.
 
 Figuring this out took a while. [D-Feet][d-feet] has been useful for it.
 
@@ -269,18 +256,16 @@ Figuring this out took a while. [D-Feet][d-feet] has been useful for it.
   <img src="/static/2022-09-02-d-feet.png" alt="Screenshot of using D-Feet to poke GNOME Terminal" style="max-width: 100%">
 </figure>
 
-Generally, it's very questionable and broke for me at least once (because of
-something having to do with which particular knobs are in `gconf` vs `dconf`
-vs `gsettings`). Works for me on gnome-terminal 3.44.0. Caveat emptor.
+Generally, it's very questionable and broke for me at least once (because of something having to do with which
+particular knobs are in `gconf` vs `dconf` vs `gsettings`). Works for me on gnome-terminal 3.44.0. Caveat emptor.
 
-As with the other scripts in here, it's currently [in my ducktape
-repo][ducktape-switch] and if I update it later, it'll be reflected there.
+As with the other scripts in here, it's currently [in my ducktape repo][ducktape-switch] and if I update it later, it'll
+be reflected there.
 
 ## Putting it together
 
-Just make your `set_light_theme` and `set_dark_theme` scripts call the
-appropriate scripts for `gnome-terminal` and Neovim. Here's how they look for
-me:
+Just make your `set_light_theme` and `set_dark_theme` scripts call the appropriate scripts for `gnome-terminal` and
+Neovim. Here's how they look for me:
 
 ### `set_dark_theme`
 
@@ -298,12 +283,11 @@ switch_gnome_terminal_profile --profile='Solarized Light'
 update_nvim_theme_from_gnome
 ```
 
-Why is one on `PATH` and not the other? Tech debt in my personal infra.
-Deployment step of built artifacts isn't separated and my old scripts repo isn't
-yet merged into my [maximally glorious Ducktape monorepo][ducktape]. Sue me :P
+Why is one on `PATH` and not the other? Tech debt in my personal infra. Deployment step of built artifacts isn't
+separated and my old scripts repo isn't yet merged into my [maximally glorious Ducktape monorepo][ducktape]. Sue me :P
 
-Still, over time, I've made it a project to make the duct tape holding together
-my computer have a better CI setup than many commercial software projects :P
+Still, over time, I've made it a project to make the duct tape holding together my computer have a better CI setup than
+many commercial software projects :P
 
 <figure>
   <!-- TODO: technically a <video>. oh well. -->
@@ -312,11 +296,9 @@ my computer have a better CI setup than many commercial software projects :P
 
 ## Short update
 
-Oh also I'm now in San Francisco and at [OpenAI][openai], working on
-reinforcement learning. Long time, much news. Also [Copilot][copilot] is
-a thing and has surprised me very strongly by how good and useful it is.
-Sometime I'll be writing some sorta summary of last year or two, but today is
-not the day and this is not that blogpost.
+Oh also I'm now in San Francisco and at [OpenAI][openai], working on reinforcement learning. Long time, much news. Also
+[Copilot][copilot] is a thing and has surprised me very strongly by how good and useful it is. Sometime I'll be writing
+some sorta summary of last year or two, but today is not the day and this is not that blogpost.
 
 EDIT (2023-01-16): [How I got to OpenAI](/posts/2023-01-11-how-i-got-to-openai.html) is that blogpost.
 

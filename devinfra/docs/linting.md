@@ -66,8 +66,8 @@ bazel build //...
 bazel build --config=nolint //...
 ```
 
-`--config=nolint` also skips every other rule's validation actions, so use it only where
-that is wanted (as in <lockfiles.md>).
+`--config=nolint` also skips every other rule's validation actions, so use it only where that is wanted (as in
+<lockfiles.md>).
 
 Aspect definitions in `devinfra/lint/linters.bzl`:
 
@@ -117,9 +117,8 @@ Cluster and Terraform hooks run only on their own files:
 
 Terraform validation and linting are also covered by Bazel `tf_module` test targets (`rules_tf`).
 
-Cluster structural validation (kustomize builds, CRD layering, orphaned files, Flux
-dependencies, health checks, blueprint completeness) runs as the
-`//cluster/validation:test_*` Bazel test suite, not as a pre-commit hook.
+Cluster structural validation (kustomize builds, CRD layering, orphaned files, Flux dependencies, health checks,
+blueprint completeness) runs as the `//cluster/validation:test_*` Bazel test suite, not as a pre-commit hook.
 
 ## Version Management
 
@@ -136,7 +135,8 @@ Bazel uses managed versions:
 
 See `TODO.md` for tracked items. Current gaps:
 
-1. **Buildifier version drift risk**: Pre-commit uses the Nix-provided Buildifier, while Bazel uses its own pinned Buildifier version. Changes to one toolchain do not automatically update the other.
+1. **Buildifier version drift risk**: Pre-commit uses the Nix-provided Buildifier, while Bazel uses its own pinned
+   Buildifier version. Changes to one toolchain do not automatically update the other.
 
 2. **ESLint not in pre-commit**: JS/TS linting only runs in CI via Bazel aspects, not locally during commit.
 

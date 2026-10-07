@@ -1,18 +1,14 @@
 # Home Assistant API Proxy
 
-A FastAPI service that proxies the Home Assistant REST API with per-token,
-per-entity access control.
+A FastAPI service that proxies the Home Assistant REST API with per-token, per-entity access control.
 
 ## Why
 
-Home Assistant has a granular permission engine (per-entity, per-device,
-per-area, per-domain with read/control/edit actions), but tokens always inherit
-their user's full permissions. Only 3 hardcoded groups exist (admin, user,
-read-only) with no UI or API to create custom groups. The fine-grained policy
-system is largely unused.
+Home Assistant has a granular permission engine (per-entity, per-device, per-area, per-domain with read/control/edit
+actions), but tokens always inherit their user's full permissions. Only 3 hardcoded groups exist (admin, user,
+read-only) with no UI or API to create custom groups. The fine-grained policy system is largely unused.
 
-This proxy fills the gap: each proxy token gets its own policy specifying
-exactly which entities it can read or control.
+This proxy fills the gap: each proxy token gets its own policy specifying exactly which entities it can read or control.
 
 ## Policy Model
 
@@ -24,8 +20,7 @@ Policies are evaluated in priority order — first match wins:
 4. `domains` — entity ID prefix (`light.`, `switch.`, etc.)
 5. `all` — blanket fallback
 
-Each level maps to an `AccessRule` with `read` and `control` booleans
-(default: deny).
+Each level maps to an `AccessRule` with `read` and `control` booleans (default: deny).
 
 ## Proxied Endpoints
 
@@ -37,5 +32,4 @@ Each level maps to an `AccessRule` with `read` and `control` booleans
 | `GET /api/`, `/api/config`, `/api/services` | Pass-through (auth only)                    |
 | Everything else                             | Blocked (403)                               |
 
-Service calls without entity/device/area targets (e.g. `homeassistant.restart`)
-are blocked as admin-level operations.
+Service calls without entity/device/area targets (e.g. `homeassistant.restart`) are blocked as admin-level operations.

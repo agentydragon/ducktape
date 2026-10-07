@@ -4,7 +4,8 @@ Elaborations on the root <../../STYLE.md>. Do not duplicate rules already covere
 
 ## Module Organization
 
-- **Separate concerns**: Domain logic (Plan, Action) and view/display code (display_plan, summarize_plan) belong in separate modules.
+- **Separate concerns**: Domain logic (Plan, Action) and view/display code (display_plan, summarize_plan) belong in
+  separate modules.
 - **Name by purpose**: `plan.py` + `plan_display.py` is better than `core.py` containing both.
 
 ## Project-Specific Patterns

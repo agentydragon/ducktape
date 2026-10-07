@@ -1,71 +1,63 @@
 # Thread sync — what is left
 
-One Electric shape per thread, windowed by subset snapshots, is deployed:
-<../../docs/thread_view_sync.md>. What any implementation owes the browser, with the IDs cited
-below, is <../../docs/thread_sync_requirements.md>. This plan holds the work still open on the
-Electric design, and the path to trying a second implementation beside it.
+One Electric shape per thread, windowed by subset snapshots, is deployed: <../../docs/thread_view_sync.md>. What any
+implementation owes the browser, with the IDs cited below, is <../../docs/thread_sync_requirements.md>. This plan holds
+the work still open on the Electric design, and the path to trying a second implementation beside it.
 
-The Electric work goes as far as Electric goes without working against it. Where it cannot do what
-following an agent wants, the work stops and the mismatch goes in
-<../../docs/thread_sync_electric_limits.md>; those mismatches are what a second implementation
-would be for.
+The Electric work goes as far as Electric goes without working against it. Where it cannot do what following an agent
+wants, the work stops and the mismatch goes in <../../docs/thread_sync_electric_limits.md>; those mismatches are what a
+second implementation would be for.
 
 ## Open on the Electric design
 
-1. **Pending commands past the newest 200.** The pending subset returns the newest 200 with no
-   older page and no count, and the pending panel has no height cap, so on a phone it can squeeze
-   the history view to nothing. Porting means a subset form such as
-   `… pending = true AND entity_index < $1`, a load-older for it, and the cap. The design doc's
+1. **Pending commands past the newest 200.** The pending subset returns the newest 200 with no older page and no count,
+   and the pending panel has no height cap, so on a phone it can squeeze the history view to nothing. Porting means a
+   subset form such as `… pending = true AND entity_index < $1`, a load-older for it, and the cap. The design doc's
    "keyset page by admission cursor" describes the page that does not exist yet.
-2. **Electric's server memory** under history growth, a restart and a stalled reader is still an
-   adoption gate (<../../docs/thread_view_sync.md> § Server memory ownership). Probes exist on the
-   parked spike PR #7490 (`shape_history_memory_test`, `shape_stalled_reader_test`,
-   `shape_capacity_test`); they need rewriting against `testing/electric_service.py` and the thread
-   tables.
-3. **Compacting completed bodies (D5).** A body completed with the text that streamed keeps the
-   generation it streamed in: one chunk per appending batch and one manifest per revision.
-   Electric's behaviour is pinned (`test_electric_chunk_compaction.py`). Rewriting chunk 0 to the
-   whole text and deleting the rest in one transaction needs no client change, since the store
-   applies only inserts. Every follower of the field still receives the compacted text once, twice
-   under `replica=full`; that cost is Electric's (<../../docs/thread_sync_electric_limits.md>).
-   Dropping `replica=full` from the chunk shapes halves it, since nothing reads a chunk update's or
-   delete's values. **S1** for intermediate references needs the replaced chunks' lengths, which
-   `thread_payload_chunk` has no column for; without them a compacted body answers only its final
-   reference.
+2. **Electric's server memory** under history growth, a restart and a stalled reader is still an adoption gate
+   (<../../docs/thread_view_sync.md> § Server memory ownership). Probes exist on the parked spike PR #7490
+   (`shape_history_memory_test`, `shape_stalled_reader_test`, `shape_capacity_test`); they need rewriting against
+   `testing/electric_service.py` and the thread tables.
+3. **Compacting completed bodies (D5).** A body completed with the text that streamed keeps the generation it streamed
+   in: one chunk per appending batch and one manifest per revision. Electric's behaviour is pinned
+   (`test_electric_chunk_compaction.py`). Rewriting chunk 0 to the whole text and deleting the rest in one transaction
+   needs no client change, since the store applies only inserts. Every follower of the field still receives the
+   compacted text once, twice under `replica=full`; that cost is Electric's
+   (<../../docs/thread_sync_electric_limits.md>). Dropping `replica=full` from the chunk shapes halves it, since nothing
+   reads a chunk update's or delete's values. **S1** for intermediate references needs the replaced chunks' lengths,
+   which `thread_payload_chunk` has no column for; without them a compacted body answers only its final reference.
 4. **Measure it on `agentplane-testing`.**
    - The live log's traffic for a reader scrolled away from an active tail (**E5**).
-   - Shapes against `ELECTRIC_MAX_SHAPES`: one entity shape per thread, plus one per payload field
-     in use.
+   - Shapes against `ELECTRIC_MAX_SHAPES`: one entity shape per thread, plus one per payload field in use.
 
 ## Accepted browser-cache tradeoff (D6)
 
-The store retains loaded rows and bodies until the Thread closes; long content remains
-load-on-demand. The owner accepts this cache growth for now. Bounding browser cache state remains a
-desire, not an open Electric adoption gate. If resource pressure makes eviction worthwhile, the
-deferred design and evidence are in <../../docs/thread_view_sync.md#accepted-browser-cache-state-d6>.
+The store retains loaded rows and bodies until the Thread closes; long content remains load-on-demand. The owner accepts
+this cache growth for now. Bounding browser cache state remains a desire, not an open Electric adoption gate. If
+resource pressure makes eviction worthwhile, the deferred design and evidence are in
+<../../docs/thread_view_sync.md#accepted-browser-cache-state-d6>.
 
 ## A second implementation
 
-<seams.md> is where one plugs in, so several can live on `devel` at once and a deployment picks
-one. Whether to build one is for the measurements above to decide: if Electric meets them, a second
-implementation is an experiment rather than a replacement. The candidates:
+<seams.md> is where one plugs in, so several can live on `devel` at once and a deployment picks one. Whether to build
+one is for the measurements above to decide: if Electric meets them, a second implementation is an experiment rather
+than a replacement. The candidates:
 
-- <option_window_poll.md> — the client long-polls a range of positions and fetches bodies by
-  reference. The cheapest to build.
+- <option_window_poll.md> — the client long-polls a range of positions and fetches bodies by reference. The cheapest to
+  build.
 - <option_moving_window.md> — one watch over a range the client moves, paying only the difference.
 - <option_app_push.md> — the same delta, pushed over SSE.
 
-<prior_art/README.md> scores other systems against the requirements; Zero is the one to consider if
-a new engine becomes acceptable (**O4**).
+<prior_art/README.md> scores other systems against the requirements; Zero is the one to consider if a new engine becomes
+acceptable (**O4**).
 
-Before either windowed candidate trusts `since`, a test must pin that every mutation advances an
-entity's `revision_cursor`, a body change included, and that a thread's revisions become visible in
-commit order.
+Before either windowed candidate trusts `since`, a test must pin that every mutation advances an entity's
+`revision_cursor`, a body change included, and that a thread's revisions become visible in commit order.
 
 ### Fit
 
-`+` meets it, `~` meets it with work or a caveat, `−` fails it. Cells are judgements from the option
-files, not measurements. Rows where every column is `+` are left out.
+`+` meets it, `~` meets it with work or a caveat, `−` fails it. Cells are judgements from the option files, not
+measurements. Rows where every column is `+` are left out.
 
 | Req / desire             | Electric (deployed) | Window poll | Moving window | SSE push |
 | ------------------------ | ------------------- | ----------- | ------------- | -------- |
@@ -79,6 +71,6 @@ files, not measurements. Rows where every column is `+` are left out.
 | D1 no overlap re-sent    | +                   | −           | +             | +        |
 | D3 incremental           | +                   | +           | +             | ~        |
 
-The window poll's `−` cells are one omission — the client never says what it holds — and adding it
-is the moving window. Electric's `−` on D6 is the accepted browser-cache tradeoff above; its `~` on E5 is
+The window poll's `−` cells are one omission — the client never says what it holds — and adding it is the moving window.
+Electric's `−` on D6 is the accepted browser-cache tradeoff above; its `~` on E5 is
 <../../docs/thread_sync_electric_limits.md> § What does not.

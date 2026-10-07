@@ -1,17 +1,15 @@
 # FreeCAD Skill Evaluation
 
-Evaluation tasks for testing whether an LLM agent can use the FreeCAD skill
-to produce correct parametric CAD models from natural language specifications.
+Evaluation tasks for testing whether an LLM agent can use the FreeCAD skill to produce correct parametric CAD models
+from natural language specifications.
 
 ## Flow
 
-1. **Agent** receives `TASK.md` as the user prompt, with the FreeCAD skill
-   staged from `//skills/freecad` and bind-mounted into the container at `/skill`
-2. **Agent** uses MCP tools (`exec`, `read_image`) to run FreeCAD commands
-   inside a Docker container and inspect outputs
+1. **Agent** receives `TASK.md` as the user prompt, with the FreeCAD skill staged from `//skills/freecad` and
+   bind-mounted into the container at `/skill`
+2. **Agent** uses MCP tools (`exec`, `read_image`) to run FreeCAD commands inside a Docker container and inspect outputs
 3. **Agent** produces a `.FCStd` file in the workspace
-4. **Judge** (human or LLM) inspects the workspace files and transcript,
-   fills out `CHECKLIST.md`
+4. **Judge** (human or LLM) inspects the workspace files and transcript, fills out `CHECKLIST.md`
 
 ## Running
 

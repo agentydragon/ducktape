@@ -2,66 +2,54 @@
 
 ## Paused
 
-Public Coder OpenClaw is paused while model-limit ownership is being simplified.
-OpenClaw, its HTTP proxy, and sshpiper have zero replicas. The devbox VM is halted
-and its image restart controller is removed. This is a declarative pause, not
-a deletion of workload definitions, service endpoints, credentials, or model routes.
-The UI and dedicated devbox SSH endpoints are unavailable while paused.
+Public Coder OpenClaw is paused while model-limit ownership is being simplified. OpenClaw, its HTTP proxy, and sshpiper
+have zero replicas. The devbox VM is halted and its image restart controller is removed. This is a declarative pause,
+not a deletion of workload definitions, service endpoints, credentials, or model routes. The UI and dedicated devbox SSH
+endpoints are unavailable while paused.
 
-Keep the namespace and the existing Flux owners: state, diagnostics, SSH recordings,
-and devbox cache PVCs remain declared with unchanged names/specs. VolSync backups
-remain enabled, including their controller-owned cache PVC. Do not suspend or delete
-the Flux owners to pause the application; suspension alone leaves running pods up.
-Halting the devbox discards its ephemeral root disk, as a normal VM restart does;
-the separate cache PVC is retained.
+Keep the namespace and the existing Flux owners: state, diagnostics, SSH recordings, and devbox cache PVCs remain
+declared with unchanged names/specs. VolSync backups remain enabled, including their controller-owned cache PVC. Do not
+suspend or delete the Flux owners to pause the application; suspension alone leaves running pods up. Halting the devbox
+discards its ephemeral root disk, as a normal VM restart does; the separate cache PVC is retained.
 
-To resume, restore the three replica counts and the devbox run strategy, restore its
-image-restart opt-in/controller if desired, and restore Flux guest-readiness checks.
-Verify model budgets and credentials before resuming; do not recreate PVCs or change
-the embedding identity. The remainder of this document describes the retained setup.
+To resume, restore the three replica counts and the devbox run strategy, restore its image-restart opt-in/controller if
+desired, and restore Flux guest-readiness checks. Verify model budgets and credentials before resuming; do not recreate
+PVCs or change the embedding identity. The remainder of this document describes the retained setup.
 
 ## Kubernetes authorization path
 
-The Agent's kubeconfig points at `haku-kubeapi.allegedly.works` through its mandatory iron-proxy.
-The Agent presents a non-secret placeholder; iron substitutes the Agent's Haku bearer only for
-that hostname. The standalone Haku Kubernetes proxy authenticates the bearer with Console,
-evaluates the deploy-owned `public-coder` standing SAR subject, strips all caller credentials, and
-uses its own rotating projected ServiceAccount token upstream.
+The Agent's kubeconfig points at `haku-kubeapi.allegedly.works` through its mandatory iron-proxy. The Agent presents a
+non-secret placeholder; iron substitutes the Agent's Haku bearer only for that hostname. The standalone Haku Kubernetes
+proxy authenticates the bearer with Console, evaluates the deploy-owned `public-coder` standing SAR subject, strips all
+caller credentials, and uses its own rotating projected ServiceAccount token upstream.
 
-The synthetic, non-login `haku:access-profile:public-coder` group is the configured SAR
-identity. Console selects it only from the deploy-owned `public-coder` access-profile configuration;
-the caller cannot supply it. Console also includes Kubernetes's standard `system:authenticated`
-group after it authenticates the Agent bearer, preserving normal API discovery without pretending
-the subject is a ServiceAccount. `haku-kube-api-proxy` has an independent `cluster-admin` execution
-ceiling, usable only when Console authorizes each request through standing SAR or an active
-Agent-owned grant. This deliberately makes the inline Haku authorization path the temporary-access
-policy boundary for this personal cluster; the Agent still has no standing cluster-admin authority
-or direct kube-apiserver credential.
+The synthetic, non-login `haku:access-profile:public-coder` group is the configured SAR identity. Console selects it
+only from the deploy-owned `public-coder` access-profile configuration; the caller cannot supply it. Console also
+includes Kubernetes's standard `system:authenticated` group after it authenticates the Agent bearer, preserving normal
+API discovery without pretending the subject is a ServiceAccount. `haku-kube-api-proxy` has an independent
+`cluster-admin` execution ceiling, usable only when Console authorizes each request through standing SAR or an active
+Agent-owned grant. This deliberately makes the inline Haku authorization path the temporary-access policy boundary for
+this personal cluster; the Agent still has no standing cluster-admin authority or direct kube-apiserver credential.
 
-The proxy serves `watch` and log-follow alongside pod `exec` and `portforward`, and
-rejects upgrades other than those two. Every long-running request is reauthorized
-every five seconds and closes within the revalidation interval plus the Console
-authorization timeout after a grant is released or revoked.
-The standing group has no login credential or ServiceAccount token; only Console may evaluate it
-through SubjectAccessReview.
+The proxy serves `watch` and log-follow alongside pod `exec` and `portforward`, and rejects upgrades other than those
+two. Every long-running request is reauthorized every five seconds and closes within the revalidation interval plus the
+Console authorization timeout after a grant is released or revoked. The standing group has no login credential or
+ServiceAccount token; only Console may evaluate it through SubjectAccessReview.
 
-The `public-coder-agent-app` Flux Kustomization owns the namespace, application, proxy and
-SSH bastion. It gates admission on the Certificate, Bundle, ExternalSecret and Pipe providers;
-runtime credentials and services reconcile independently. It health-checks all three Deployments,
-the proxy root certificate and the Brave Search ExternalSecret. Devbox and backup remain separate.
-Rollback stays inside the Haku-mediated architecture by reverting the proxy/configuration change in
-Git; there is no direct reader-token path to restore.
+The `public-coder-agent-app` Flux Kustomization owns the namespace, application, proxy and SSH bastion. It gates
+admission on the Certificate, Bundle, ExternalSecret and Pipe providers; runtime credentials and services reconcile
+independently. It health-checks all three Deployments, the proxy root certificate and the Brave Search ExternalSecret.
+Devbox and backup remain separate. Rollback stays inside the Haku-mediated architecture by reverting the
+proxy/configuration change in Git; there is no direct reader-token path to restore.
 
-Promtail scrapes ordinary pod stdout/stderr from both the proxy and Console into Loki. The current
-Loki configuration enables compactor retention but sets no finite `retention_period`, so these
-records are not subject to age-based deletion. Proxy logs carry the decision ID plus canonical
-Kubernetes request attributes; Console logs map that decision to the Agent and grant, while the
-durable grant row maps the grant to its source ToolCall.
+Promtail scrapes ordinary pod stdout/stderr from both the proxy and Console into Loki. The current Loki configuration
+enables compactor retention but sets no finite `retention_period`, so these records are not subject to age-based
+deletion. Proxy logs carry the decision ID plus canonical Kubernetes request attributes; Console logs map that decision
+to the Agent and grant, while the durable grant row maps the grant to its source ToolCall.
 
-A second OpenClaw agent at <https://public-coder-agent.allegedly.works>, separate
-from the personal agent at `openclaw.allegedly.works`. Its job is opening pull
-requests against **public** repositories as `agentydragon-agent`, which has its
-own GitHub account and pushes to its own forks.
+A second OpenClaw agent at <https://public-coder-agent.allegedly.works>, separate from the personal agent at
+`openclaw.allegedly.works`. Its job is opening pull requests against **public** repositories as `agentydragon-agent`,
+which has its own GitHub account and pushes to its own forks.
 
 ## Layers
 
@@ -72,143 +60,111 @@ own GitHub account and pushes to its own forks.
 | `devbox/`   | KubeVirt build/test VM (Bazel/BuildBuddy/direnv), reached through `ssh` via `sshpiper/`                                                           |
 | `sshpiper/` | Terminating SSH bastion to the devbox — the Agent's key opens the piper, the piper's key opens `coder@public-coder-devbox` (<sshpiper/README.md>) |
 
-The repository-owned tooling and approval operating instructions are in <TOOLING.md>. They cover
-which local, GitHub, Kubernetes, Haku, and physical-host surfaces to prefer, how to inspect the live
-authority, and how to handle the approval lifecycle without unnecessary stalls.
+The repository-owned tooling and approval operating instructions are in <TOOLING.md>. They cover which local, GitHub,
+Kubernetes, Haku, and physical-host surfaces to prefer, how to inspect the live authority, and how to handle the
+approval lifecycle without unnecessary stalls.
 
-The agent also connects to Matrix as `@public-coder-agent:allegedly.works`.
-Matrix is an official plugin baked into the derivative OpenClaw gateway's
-trusted bundled-extension tree; loading it from an arbitrary config path would
-deny the state-store capability it needs before sync. The initial policy is
-deliberately DM-only and allowlisted to
-`@agentydragon:allegedly.works`; add explicit room policy/config before using
-it in group rooms.
+The agent also connects to Matrix as `@public-coder-agent:allegedly.works`. Matrix is an official plugin baked into the
+derivative OpenClaw gateway's trusted bundled-extension tree; loading it from an arbitrary config path would deny the
+state-store capability it needs before sync. The initial policy is deliberately DM-only and allowlisted to
+`@agentydragon:allegedly.works`; add explicit room policy/config before using it in group rooms.
 
 ## Egress model
 
 Two layers, and the split matters:
 
-1. **The app's `public-coder-agent-egress` NetworkPolicy is the enforcement.** The agent pod may
-   reach DNS, the proxy on 8080, and in-cluster LiteLLM on 4000. Nothing else.
-   The `HTTP_PROXY` variables in the Deployment are convenience — an agent that
-   unsets them does not gain egress, it loses its only route out.
-2. **The proxy's `allow-public-coder-agent-proxy-egress` policy is the allowlist.** Enforced by Cilium `toFQDNs` on
-   the _proxy's_ egress, not by proxy configuration, so a CONNECT to a
-   non-allowlisted host fails at the network layer. Every widening is a
-   reviewable diff in `cluster/cdk8s/public_coder_proxy.py`.
+1. **The app's `public-coder-agent-egress` NetworkPolicy is the enforcement.** The agent pod may reach DNS, the proxy on
+   8080, and in-cluster LiteLLM on 4000. Nothing else. The `HTTP_PROXY` variables in the Deployment are convenience — an
+   agent that unsets them does not gain egress, it loses its only route out.
+2. **The proxy's `allow-public-coder-agent-proxy-egress` policy is the allowlist.** Enforced by Cilium `toFQDNs` on the
+   _proxy's_ egress, not by proxy configuration, so a CONNECT to a non-allowlisted host fails at the network layer.
+   Every widening is a reviewable diff in `cluster/cdk8s/public_coder_proxy.py`.
 
-The model path never leaves the cluster: LiteLLM is reached directly, bypassing
-the proxy, via `NO_PROXY`.
+The model path never leaves the cluster: LiteLLM is reached directly, bypassing the proxy, via `NO_PROXY`.
 
 ## Devbox access
 
-`ssh devbox` reaches the VM as the unprivileged `coder` account through `sshpiper/`. It supports
-streamed interactive work and `scp`; PTY sessions are recorded as asciicasts.
+`ssh devbox` reaches the VM as the unprivileged `coder` account through `sshpiper/`. It supports streamed interactive
+work and `scp`; PTY sessions are recorded as asciicasts.
 
-SSH exists for the third row: a long build's output arrives as it happens rather than as a
-truncated result at the end. What it costs is the first two — a standing credential in place of
-per-call operator authority, and recordings in place of a durable per-command row. The credential
-split itself is preserved: the key in the Agent Pod authenticates to sshpiper and nothing else,
-and the key that opens the devbox exists only in the piper Pod. See <sshpiper/README.md>.
+SSH exists for the third row: a long build's output arrives as it happens rather than as a truncated result at the end.
+What it costs is the first two — a standing credential in place of per-call operator authority, and recordings in place
+of a durable per-command row. The credential split itself is preserved: the key in the Agent Pod authenticates to
+sshpiper and nothing else, and the key that opens the devbox exists only in the piper Pod. See <sshpiper/README.md>.
 
 ## Analytics reader
 
-The Haku Console `public-coder-agent` account has a dedicated native
-ClickHouse account, `public_coder_analytics`, for normalized and raw AIQuota
-history. The agent receives `CLICKHOUSE_PUBLIC_CODER_USER` and
-`CLICKHOUSE_PUBLIC_CODER_PASSWORD`, but the password is a non-secret Iron
-placeholder. A request to the private ClusterIP HTTP endpoint through the
-existing `HTTP_PROXY` causes Iron to replace it in Basic authentication; the
-agent never receives the actual password. The account is restricted to
-`SELECT` on `aiquota.aiquota_windows` and `aiquota.raw_http_observations`, the
-read-only ClickHouse profile/quota, and the proxy Pod is the only public-coder
-Pod allowed to reach ClickHouse on 8123. `NO_PROXY` deliberately names LiteLLM
-only, rather than all Service addresses, so ClickHouse cannot bypass Iron.
+The Haku Console `public-coder-agent` account has a dedicated native ClickHouse account, `public_coder_analytics`, for
+normalized and raw AIQuota history. The agent receives `CLICKHOUSE_PUBLIC_CODER_USER` and
+`CLICKHOUSE_PUBLIC_CODER_PASSWORD`, but the password is a non-secret Iron placeholder. A request to the private
+ClusterIP HTTP endpoint through the existing `HTTP_PROXY` causes Iron to replace it in Basic authentication; the agent
+never receives the actual password. The account is restricted to `SELECT` on `aiquota.aiquota_windows` and
+`aiquota.raw_http_observations`, the read-only ClickHouse profile/quota, and the proxy Pod is the only public-coder Pod
+allowed to reach ClickHouse on 8123. `NO_PROXY` deliberately names LiteLLM only, rather than all Service addresses, so
+ClickHouse cannot bypass Iron.
 
-The GitHub credential stays in the proxy pod. The agent sees only
-`proxy-github-placeholder`; iron-proxy replaces it in the authentication header
-and only on scoped GitHub hosts. Brave Search follows the same mediation model:
-the real API key exists only in the proxy Pod and is swapped into
-`X-Subscription-Token` only for `api.search.brave.com`. That key is not this
-agent's: its canonical SOPS source is
-`cluster/k8s/external-creds/brave-search-api-key.sops.yaml`, and an
-ExternalSecret syncs it into the proxy's namespace. Workstations decrypt the
-same source file directly through `ducktape.sopsEnv`.
+The GitHub credential stays in the proxy pod. The agent sees only `proxy-github-placeholder`; iron-proxy replaces it in
+the authentication header and only on scoped GitHub hosts. Brave Search follows the same mediation model: the real API
+key exists only in the proxy Pod and is swapped into `X-Subscription-Token` only for `api.search.brave.com`. That key is
+not this agent's: its canonical SOPS source is `cluster/k8s/external-creds/brave-search-api-key.sops.yaml`, and an
+ExternalSecret syncs it into the proxy's namespace. Workstations decrypt the same source file directly through
+`ducktape.sopsEnv`.
 
-The Haku Console credential is used only by the Kubernetes authorization proxy. Terraform
-generates a dedicated `public-coder-agent` static-Agent bearer and delivers it to Haku Console and
-iron-proxy. The OpenClaw container sees `proxy-haku-console-placeholder`; iron-proxy replaces it in
-the `Authorization` header only for `haku-kubeapi.allegedly.works`. Haku Console checks the Agent's
-identity and Kubernetes policy before the proxy forwards an authorized request to the Kubernetes
-API. GitHub goes through the proxy-mediated `agentydragon-agent` token directly; see <TOOLING.md>
-for the operational playbook.
+The Haku Console credential is used only by the Kubernetes authorization proxy. Terraform generates a dedicated
+`public-coder-agent` static-Agent bearer and delivers it to Haku Console and iron-proxy. The OpenClaw container sees
+`proxy-haku-console-placeholder`; iron-proxy replaces it in the `Authorization` header only for
+`haku-kubeapi.allegedly.works`. Haku Console checks the Agent's identity and Kubernetes policy before the proxy forwards
+an authorized request to the Kubernetes API. GitHub goes through the proxy-mediated `agentydragon-agent` token directly;
+see <TOOLING.md> for the operational playbook.
 
-The Matrix bot password is generated and retained by the existing Matrix user
-provisioner. It is stored in the Matrix namespace as a SOPS-managed Secret and
-reflected into `public-coder-agent`, where only iron-proxy consumes it. The
-OpenClaw container sends `proxy-matrix-password-placeholder` in its password
-login body; iron-proxy replaces it only on Synapse's login endpoint. The
-provisioner sets the password only when creating the account, so reconciliation
-does not revoke the bot's cached access token. The Matrix channel names the
-same iron-proxy Service explicitly in `channels.matrix.proxy`; the plugin's
-guarded fetch path uses that per-channel dispatcher rather than Node's generic
+The Matrix bot password is generated and retained by the existing Matrix user provisioner. It is stored in the Matrix
+namespace as a SOPS-managed Secret and reflected into `public-coder-agent`, where only iron-proxy consumes it. The
+OpenClaw container sends `proxy-matrix-password-placeholder` in its password login body; iron-proxy replaces it only on
+Synapse's login endpoint. The provisioner sets the password only when creating the account, so reconciliation does not
+revoke the bot's cached access token. The Matrix channel names the same iron-proxy Service explicitly in
+`channels.matrix.proxy`; the plugin's guarded fetch path uses that per-channel dispatcher rather than Node's generic
 proxy environment handling.
 
 ## Deviations worth knowing
 
-- **Plain `Deployment`, not `OpenClawInstance`.** The operator's generated
-  NetworkPolicy always contains an egress rule for 443/TCP with no destination
-  selector, and `spec.security.networkPolicy` exposes only additive fields
-  (`additionalEgress`, `allowedEgressCIDRs`) with no way to disable it. Since
-  Kubernetes NetworkPolicies are unions of allows, that rule cannot be
-  subtracted, and an operator-managed instance cannot be egress-confined. The
-  cost is losing `autoUpdate` and the CRD ergonomics.
-- **Blueprint-managed SSO provider**, against the stated preference for
-  Terraform in <../../../docs/sso.md>. Every proxy provider is a blueprint and
-  `embedded-outpost.yaml` owns outpost membership; a Terraform provider would
-  split one object graph across two owners. Moves with the rest under issue #987.
-- **Temporary commit-built iron-proxy image.** <../../../images/iron-proxy/>
-  and `.github/workflows/iron-proxy-image.yml` build upstream `v0.50.0`
-  (`5bd11ab`), the first stable release with the HTTP/2/gRPC MITM support
-  BuildBuddy needs, into the private Forgejo registry. Flux rolls the proxy to
-  that image after it is published. Whether to return to the official image is
-  the pinning decision in <../../../../plans/personal_agents/TODO.md>. The image
-  is shared with `haku-openclaw-spike-proxy`, so it is not owned
+- **Plain `Deployment`, not `OpenClawInstance`.** The operator's generated NetworkPolicy always contains an egress rule
+  for 443/TCP with no destination selector, and `spec.security.networkPolicy` exposes only additive fields
+  (`additionalEgress`, `allowedEgressCIDRs`) with no way to disable it. Since Kubernetes NetworkPolicies are unions of
+  allows, that rule cannot be subtracted, and an operator-managed instance cannot be egress-confined. The cost is losing
+  `autoUpdate` and the CRD ergonomics.
+- **Blueprint-managed SSO provider**, against the stated preference for Terraform in <../../../docs/sso.md>. Every proxy
+  provider is a blueprint and `embedded-outpost.yaml` owns outpost membership; a Terraform provider would split one
+  object graph across two owners. Moves with the rest under issue #987.
+- **Temporary commit-built iron-proxy image.** <../../../images/iron-proxy/> and
+  `.github/workflows/iron-proxy-image.yml` build upstream `v0.50.0` (`5bd11ab`), the first stable release with the
+  HTTP/2/gRPC MITM support BuildBuddy needs, into the private Forgejo registry. Flux rolls the proxy to that image after
+  it is published. Whether to return to the official image is the pinning decision in
+  <../../../../plans/personal_agents/TODO.md>. The image is shared with `haku-openclaw-spike-proxy`, so it is not owned
   here — it was first named for public-coder because this was its first consumer.
-- **`gateway.bind: lan`**, unlike the loopback-bound lab rig, because the outpost
-  reaches this pod over the cluster network. What makes that safe is
-  the app's `public-coder-agent-ingress` NetworkPolicy, which admits only the outpost's pods —
-  without it any pod could forge `x-authentik-username`.
+- **`gateway.bind: lan`**, unlike the loopback-bound lab rig, because the outpost reaches this pod over the cluster
+  network. What makes that safe is the app's `public-coder-agent-ingress` NetworkPolicy, which admits only the outpost's
+  pods — without it any pod could forge `x-authentik-username`.
 
 ## Known gaps
 
-- **Matrix token auth.** TODO: replace the password-body swap with a
-  proxy-held Matrix access token once the provisioner can mint and rotate one
-  without revoking Haku Console's independent session. For v1, the pinned
-  iron-proxy's `match_body` replacement keeps the password out of OpenClaw.
-- The egress NetworkPolicy's DNS rule has no destination selector, so port 53
-  reaches anywhere and DNS tunnelling is not prevented. Narrowing to kube-dns is
-  the obvious tightening; it is left as a follow-up so the first deployment
-  matches what was validated in the lab.
-- With `sandbox.mode: "off"` there is no isolation _inside_ the boundary: the
-  agent runs as the harness and can inspect its process environment. For
-  GitHub, that environment contains only the proxy placeholder; the real token
-  remains in iron-proxy. That is the accepted cost of not using OpenShell — see
-  <../../../../docs/personal_agents/findings/openshell.md> F1 for why OpenShell was not
-  used.
-- **PVC capacity enforcement.** `local-path-ovh-hdd` does not enforce requested
-  PVC sizes, so workspace growth can consume the worker disk beyond its claim.
-  Before treating this as durable agent storage, evaluate extending the
-  OpenEBS LVM provisioner to OVH workers and migrating this claim to a
-  size-enforcing LVM-backed StorageClass (or another quota-enforcing design).
-- **Runtime image closure.** Profile and reduce the OpenClaw image before its
-  next substantial expansion. It includes the gateway, Matrix plugin, and
-  formatter/pre-commit tooling. `devbox/` gives the agent a reachable dedicated
-  build environment through `ssh devbox`. The devbox's own root disk is an
-  ephemeral KubeVirt `containerDisk`, published automatically by
-  `.github/workflows/public-coder-devbox-image.yml` and kept current by Flux
-  image automation — no manual republish step, but also no persistent local
-  state (Bazel/BuildBuddy caches, checkouts) across an image update or restart.
-  Its NixOS, Home Manager, and image recipes live in
-  `openclaw/public_coder_agent/devbox/`; this directory keeps the deployment
-  manifests.
+- **Matrix token auth.** TODO: replace the password-body swap with a proxy-held Matrix access token once the provisioner
+  can mint and rotate one without revoking Haku Console's independent session. For v1, the pinned iron-proxy's
+  `match_body` replacement keeps the password out of OpenClaw.
+- The egress NetworkPolicy's DNS rule has no destination selector, so port 53 reaches anywhere and DNS tunnelling is not
+  prevented. Narrowing to kube-dns is the obvious tightening; it is left as a follow-up so the first deployment matches
+  what was validated in the lab.
+- With `sandbox.mode: "off"` there is no isolation _inside_ the boundary: the agent runs as the harness and can inspect
+  its process environment. For GitHub, that environment contains only the proxy placeholder; the real token remains in
+  iron-proxy. That is the accepted cost of not using OpenShell — see
+  <../../../../docs/personal_agents/findings/openshell.md> F1 for why OpenShell was not used.
+- **PVC capacity enforcement.** `local-path-ovh-hdd` does not enforce requested PVC sizes, so workspace growth can
+  consume the worker disk beyond its claim. Before treating this as durable agent storage, evaluate extending the
+  OpenEBS LVM provisioner to OVH workers and migrating this claim to a size-enforcing LVM-backed StorageClass (or
+  another quota-enforcing design).
+- **Runtime image closure.** Profile and reduce the OpenClaw image before its next substantial expansion. It includes
+  the gateway, Matrix plugin, and formatter/pre-commit tooling. `devbox/` gives the agent a reachable dedicated build
+  environment through `ssh devbox`. The devbox's own root disk is an ephemeral KubeVirt `containerDisk`, published
+  automatically by `.github/workflows/public-coder-devbox-image.yml` and kept current by Flux image automation — no
+  manual republish step, but also no persistent local state (Bazel/BuildBuddy caches, checkouts) across an image update
+  or restart. Its NixOS, Home Manager, and image recipes live in `openclaw/public_coder_agent/devbox/`; this directory
+  keeps the deployment manifests.

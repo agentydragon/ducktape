@@ -1,15 +1,24 @@
 # SWC ecosystem reuse
 
-What the debundler adopts from SWC, what it deliberately reimplements, and the
-evaluations behind both — recorded so the same investigations are not re-run.
+What the debundler adopts from SWC, what it deliberately reimplements, and the evaluations behind both — recorded so the
+same investigations are not re-run.
 
 ## Rejected: `swc_ecma_transforms_optimization::simplify::dce` for the strip sweep
 
-Replacing the vendor strip sweep (`sweep_unreachable_top_level` in `vendor/strip.rs`) with SWC's standalone DCE pass was evaluated and rejected as **unsound for this use case**. The strip sweep must delete _referenced, side-effectful_ swap-private statements — CJS module IIFEs, prototype wiring — that a conservative DCE retains precisely because they are referenced and side-effecting. Conversely, the sweep's split-brain and observable-effect gates (refusing to drop a statement still reachable from the residual chunk, or whose observable effect is not provably swap-private) are exactly the checks DCE lacks. Do not revisit without a design that covers both.
+Replacing the vendor strip sweep (`sweep_unreachable_top_level` in `vendor/strip.rs`) with SWC's standalone DCE pass was
+evaluated and rejected as **unsound for this use case**. The strip sweep must delete _referenced, side-effectful_
+swap-private statements — CJS module IIFEs, prototype wiring — that a conservative DCE retains precisely because they
+are referenced and side-effecting. Conversely, the sweep's split-brain and observable-effect gates (refusing to drop a
+statement still reachable from the residual chunk, or whose observable effect is not provably swap-private) are exactly
+the checks DCE lacks. Do not revisit without a design that covers both.
 
 ## Dead end: `swc_ecma_usage_analyzer`
 
-No longer a standalone crate — absorbed into `swc_ecma_minifier` as a `pub(crate)` module. The "do not use directly" warning is **architectural**, not just semver: it depends on the minifier's internal `Marks` system (`const_ann`, `noinline`, `pure`, `fake_block`, `top_level_ctxt`, `unresolved_mark`) and a `Storage` trait requiring ~20 minifier-specific methods (`prevent_inline`, `mark_as_exported`, `mark_used_as_callee`, `store_param_count`, `add_infects_to`, etc.). Cannot be used outside `swc_ecma_minifier` without forking.
+No longer a standalone crate — absorbed into `swc_ecma_minifier` as a `pub(crate)` module. The "do not use directly"
+warning is **architectural**, not just semver: it depends on the minifier's internal `Marks` system (`const_ann`,
+`noinline`, `pure`, `fake_block`, `top_level_ctxt`, `unresolved_mark`) and a `Storage` trait requiring ~20
+minifier-specific methods (`prevent_inline`, `mark_as_exported`, `mark_used_as_callee`, `store_param_count`,
+`add_infects_to`, etc.). Cannot be used outside `swc_ecma_minifier` without forking.
 
 ## Not worth replacing (domain-specific or unavailable)
 
@@ -25,7 +34,6 @@ No longer a standalone crate — absorbed into `swc_ecma_minifier` as a `pub(cra
 
 ## Adopted expression unwrapping
 
-Expression classifiers use `swc_ecma_ast::Expr::unwrap_parens` directly
-(same semantics as the removed local walker, verified in SWC 29.0.1).
-The separate `js_ast::strip_parens` transform mutates a whole module and is not
-interchangeable with this borrowed-expression accessor.
+Expression classifiers use `swc_ecma_ast::Expr::unwrap_parens` directly (same semantics as the removed local walker,
+verified in SWC 29.0.1). The separate `js_ast::strip_parens` transform mutates a whole module and is not interchangeable
+with this borrowed-expression accessor.

@@ -56,8 +56,8 @@
     - name: Remove Element.io repository
       ansible.builtin.apt_repository:
         repo: >-
-          deb [signed-by=/usr/share/keyrings/element-io-archive-keyring.gpg]
-          https://packages.element.io/debian/ default main
+          deb [signed-by=/usr/share/keyrings/element-io-archive-keyring.gpg] https://packages.element.io/debian/ default
+          main
         filename: element-io
         state: absent
     - name: Remove Element keyring

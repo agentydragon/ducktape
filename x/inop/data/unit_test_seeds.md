@@ -1,6 +1,7 @@
 # Grader Unit Test Seeds
 
-Perfect examples of code that violates multiple behavioral requirements simultaneously - excellent for testing grader accuracy.
+Perfect examples of code that violates multiple behavioral requirements simultaneously - excellent for testing grader
+accuracy.
 
 ## Seed Example 1: `log_openai_interaction` Function
 
@@ -22,9 +23,11 @@ def log_openai_interaction(session_id: str, test_case_name: str,
 
 **Violations Expected:**
 
-1. **EXCEPTION HANDLING**: ❌ Silent failure when `interaction_type` is invalid (typos like `"requets"`, unknown values like `"foo"`) - missing `else` clause to crash loudly
+1. **EXCEPTION HANDLING**: ❌ Silent failure when `interaction_type` is invalid (typos like `"requets"`, unknown values
+   like `"foo"`) - missing `else` clause to crash loudly
 2. **ENUM TYPES**: ❌ Uses string literals `"request"`/`"response"` instead of proper enum type
-3. **NULLABLE TYPES**: ❌ `error_message: Optional[str] = None` is meaningless for `"request"` interactions - None doesn't represent a sane state
+3. **NULLABLE TYPES**: ❌ `error_message: Optional[str] = None` is meaningless for `"request"` interactions - None
+   doesn't represent a sane state
 
 **Grader Test Cases:**
 
@@ -100,7 +103,8 @@ These examples should be used to:
 3. **Benchmark grader performance** - measure detection rates on known bad code
 4. **Regression testing** - ensure graders continue working as requirements evolve
 
-Each seed example demonstrates **multiple simultaneous violations** to test grader independence and comprehensive analysis.
+Each seed example demonstrates **multiple simultaneous violations** to test grader independence and comprehensive
+analysis.
 
 ## Seed Example 3: `MultiCriteriaOptimizer` Migration Anti-Pattern
 

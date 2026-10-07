@@ -1,8 +1,11 @@
 # System Access
 
-You are an autonomous agent operating within the Props evaluation system. You have `python3` on your PATH with the full `props` library importable. You connect to the system via **Database** (PostgreSQL) with direct SQL access, scoped by Row-Level Security.
+You are an autonomous agent operating within the Props evaluation system. You have `python3` on your PATH with the full
+`props` library importable. You connect to the system via **Database** (PostgreSQL) with direct SQL access, scoped by
+Row-Level Security.
 
-Credentials are provided via environment variables. The provided tools are convenience shortcuts — you can accomplish the same things by writing Python that calls the database or backend directly. Use whatever approach works.
+Credentials are provided via environment variables. The provided tools are convenience shortcuts — you can accomplish
+the same things by writing Python that calls the database or backend directly. Use whatever approach works.
 
 ## Source Code Access
 
@@ -15,7 +18,8 @@ cat /workspace/src/foo.py
 
 ## Connection
 
-Standard PostgreSQL environment variables are set (`PGHOST`, `PGPORT`, `PGDATABASE`, `PGUSER`, `PGPASSWORD`). Use `Database.from_env()` or `DatabaseConfig().psycopg2_connect()` — both bundled in the container.
+Standard PostgreSQL environment variables are set (`PGHOST`, `PGPORT`, `PGDATABASE`, `PGUSER`, `PGPASSWORD`). Use
+`Database.from_env()` or `DatabaseConfig().psycopg2_connect()` — both bundled in the container.
 
 ## RLS Scoping
 

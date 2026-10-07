@@ -1,11 +1,16 @@
 ---
 name: semantic_branch_pruner
-description: Audit and prune large sets of remote GitHub branches using branch-specific semantic evidence, linked successor or merged-work proof, calibrated estimates of the owner's deletion decision, a high-throughput HTML decision cockpit, and SHA-guarded deletion. Use when asked which branches are droppable, stale work should be reviewed, branches without PRs need ranking, a branch-cleanup report or cockpit is wanted, or an explicitly approved branch batch should be deleted.
+description:
+  Audit and prune large sets of remote GitHub branches using branch-specific semantic evidence, linked successor or
+  merged-work proof, calibrated estimates of the owner's deletion decision, a high-throughput HTML decision cockpit, and
+  SHA-guarded deletion. Use when asked which branches are droppable, stale work should be reviewed, branches without PRs
+  need ranking, a branch-cleanup report or cockpit is wanted, or an explicitly approved branch batch should be deleted.
 ---
 
 # Semantic Branch Pruner
 
-Reduce remote branch clutter without treating age, naming, or inactivity as proof. Separate semantic review from destructive execution.
+Reduce remote branch clutter without treating age, naming, or inactivity as proof. Separate semantic review from
+destructive execution.
 
 ## Establish the live inventory
 
@@ -17,7 +22,9 @@ Reduce remote branch clutter without treating age, naming, or inactivity as proo
 
 Reconcile every count: `all remote heads = protected + candidates`. Report exclusions explicitly.
 
-Use conservative mechanical evidence first. A branch whose tip is an ancestor of the default branch, an exact merged-PR head, or patch-equivalent to landed commits is a strong deletion candidate, but still preserve the evidence and wait for deletion authority.
+Use conservative mechanical evidence first. A branch whose tip is an ancestor of the default branch, an exact merged-PR
+head, or patch-equivalent to landed commits is a strong deletion candidate, but still preserve the evidence and wait for
+deletion authority.
 
 ## Review semantics branch by branch
 
@@ -31,21 +38,29 @@ Inspect every remaining candidate rather than applying a generic scoring formula
 - whether the owning subsystem or path was removed, migrated, or is now live elsewhere;
 - related stack branches, duplicate tips or trees, and intermediate checkpoints.
 
-Search the current implementation, not only commit subjects. Compare contracts and behavior: identical filenames or topics do not prove supersession, and renamed code can implement the exact objective.
+Search the current implementation, not only commit subjects. Compare contracts and behavior: identical filenames or
+topics do not prove supersession, and renamed code can implement the exact objective.
 
-Classify the residual delta with a small vocabulary such as `landed/successor`, `dead owner/path`, `duplicate/checkpoint`, `mostly subsumed`, `partial unique delta`, or `active/unknown`. Use topic clusters only for navigation.
+Classify the residual delta with a small vocabulary such as `landed/successor`, `dead owner/path`,
+`duplicate/checkpoint`, `mostly subsumed`, `partial unique delta`, or `active/unknown`. Use topic clusters only for
+navigation.
 
-Never use age, prefix, author, ahead/behind count, or topic membership as the primary rationale. When evidence is incomplete, retain for review.
+Never use age, prefix, author, ahead/behind count, or topic membership as the primary rationale. When evidence is
+incomplete, retain for review.
 
 ## Turn owner facts into premises
 
-Treat statements such as “this subsystem is dead,” “the migration is complete,” or “the replacement is live” as high-value owner evidence. Record the premise, verify its repository scope, and revisit related branches. Do not extend it to neighboring systems without evidence.
+Treat statements such as “this subsystem is dead,” “the migration is complete,” or “the replacement is live” as
+high-value owner evidence. Record the premise, verify its repository scope, and revisit related branches. Do not extend
+it to neighboring systems without evidence.
 
-Build a premise pack only after individual branch review. Store its exact membership in the report data. A pack compresses a shared decision; it must not manufacture the individual rationales or probabilities.
+Build a premise pack only after individual branch review. Store its exact membership in the report data. A pack
+compresses a shared decision; it must not manufacture the individual rationales or probabilities.
 
 ## Forecast the owner's deletion decision
 
-When probabilities are requested, estimate `P(owner chooses to delete this remote ref now)`, not code quality or abstract obsolescence.
+When probabilities are requested, estimate `P(owner chooses to delete this remote ref now)`, not code quality or
+abstract obsolescence.
 
 - Assign every probability from an individual semantic judgment.
 - Give a brief rationale.
@@ -53,21 +68,27 @@ When probabilities are requested, estimate `P(owner chooses to delete this remot
 - Use prior owner decisions and the overall deletion rate only as calibration checks.
 - Never silently fill missing branches with a family-level or age-based score.
 
-Keep a living epistemic note during a long review: resolution, evidence learned, owner premises, calibration, and remaining blind spots. Update it when feedback changes related judgments.
+Keep a living epistemic note during a long review: resolution, evidence learned, owner premises, calibration, and
+remaining blind spots. Update it when feedback changes related judgments.
 
 ## Present many decisions efficiently
 
-For a large inventory, produce an offline HTML cockpit rather than a flat prose dump. Read <references/cockpit_contract.md> before building it.
+For a large inventory, produce an offline HTML cockpit rather than a flat prose dump. Read
+<references/cockpit_contract.md> before building it.
 
-Always make the branch name a compare link from the default branch. Put branch-specific rationale and evidence in the row even when it belongs to a premise pack.
+Always make the branch name a compare link from the default branch. Put branch-specific rationale and evidence in the
+row even when it belongs to a premise pack.
 
 ## Interpret review decisions
 
-Treat `delete`, `keep`, and `review` as decisions about exact current refs. Export the selected branch names as JSON or a plain list for an auditable handoff.
+Treat `delete`, `keep`, and `review` as decisions about exact current refs. Export the selected branch names as JSON or
+a plain list for an auditable handoff.
 
-When the user approves a named premise pack, resolve membership from the exact current report artifact and enumerate it before deletion. Do not reconstruct pack membership heuristically.
+When the user approves a named premise pack, resolve membership from the exact current report artifact and enumerate it
+before deletion. Do not reconstruct pack membership heuristically.
 
-Probability thresholds, cockpit selections, candidate discovery, and an agent's `drop-now` label are not deletion authority. Delete only the exact branches the user explicitly approves.
+Probability thresholds, cockpit selections, candidate discovery, and an agent's `drop-now` label are not deletion
+authority. Delete only the exact branches the user explicitly approves.
 
 ## Delete with a live SHA guard
 
@@ -83,9 +104,11 @@ Immediately before each deletion:
 git push --force-with-lease=refs/heads/<branch>:<live-sha> origin :refs/heads/<branch>
 ```
 
-Never use an unguarded wildcard, a reconstructed prefix, or a stale SHA. A missing ref is a concurrent change to report, not a reason to broaden the command.
+Never use an unguarded wildcard, a reconstructed prefix, or a stale SHA. A missing ref is a concurrent change to report,
+not a reason to broaden the command.
 
-After the batch, fetch with prune, verify every named ref is absent, recount all categories, and regenerate the report once the batch settles. Distinguish deletions performed in this batch from concurrent remote changes.
+After the batch, fetch with prune, verify every named ref is absent, recount all categories, and regenerate the report
+once the batch settles. Distinguish deletions performed in this batch from concurrent remote changes.
 
 ## Hand off
 

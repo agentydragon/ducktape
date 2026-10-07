@@ -51,8 +51,8 @@
 
 ## Unreferenced `adgn/src/adgn/` subdirs (~10 MB, medium risk)
 
-Across 8 `adgn/`-era snapshots, most subdirs of `adgn/src/adgn/` have no issue references.
-Example from `2025-11-20-00` (only 3 of 12 subdirs referenced):
+Across 8 `adgn/`-era snapshots, most subdirs of `adgn/src/adgn/` have no issue references. Example from `2025-11-20-00`
+(only 3 of 12 subdirs referenced):
 
 | Subdir           | Size | Referenced? |
 | ---------------- | ---- | ----------- |
@@ -66,9 +66,8 @@ Example from `2025-11-20-00` (only 3 of 12 subdirs referenced):
 | `tools/`         | 28K  | No          |
 | `util/`          | 16K  | No          |
 
-**Caution:** These may be indirect dependencies (imported by files that ARE referenced).
-Needs per-snapshot import tracing before deleting. Each snapshot has ~1.5-2 MB prunable
-if imports are verified clean.
+**Caution:** These may be indirect dependencies (imported by files that ARE referenced). Needs per-snapshot import
+tracing before deleting. Each snapshot has ~1.5-2 MB prunable if imports are verified clean.
 
 ## Summary
 

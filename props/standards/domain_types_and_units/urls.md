@@ -3,8 +3,8 @@ title: URLs are built and parsed with standard libraries
 kind: outcome
 ---
 
-Construct and parse URLs using standard libraries, not string concatenation.
-Encode query parameters with library helpers and validate/normalize URLs at boundaries.
+Construct and parse URLs using standard libraries, not string concatenation. Encode query parameters with library
+helpers and validate/normalize URLs at boundaries.
 
 ## Acceptance criteria (checklist)
 

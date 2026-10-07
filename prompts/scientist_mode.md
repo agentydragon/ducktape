@@ -2,17 +2,21 @@
 
 ## Fuck This, We're Going Full Scientist Mode
 
-When you've been doing individual checks one by one for hours and getting nowhere, it's time to stop the trial-and-error bullshit and go full systematic scientist mode.
+When you've been doing individual checks one by one for hours and getting nowhere, it's time to stop the trial-and-error
+bullshit and go full systematic scientist mode.
 
 ## The Problem
 
-Individual checks one by one are inefficient, error-prone, and lead to missing critical information. Time to get systematic.
+Individual checks one by one are inefficient, error-prone, and lead to missing critical information. Time to get
+systematic.
 
 ## The Solution: Exhaustive Data Collection → Analysis → Fix Loop
 
 ### Phase 1: Comprehensive Information Gathering
 
-Put together a very exhaustive list of **all checks and information gathering** you could possibly want for information about this issue. Write a parallelized Python script with timeouts around all operations that collects under a common directory with timestamped subdirs full **unredacted, unfiltered outputs** of all diagnostic commands.
+Put together a very exhaustive list of **all checks and information gathering** you could possibly want for information
+about this issue. Write a parallelized Python script with timeouts around all operations that collects under a common
+directory with timestamped subdirs full **unredacted, unfiltered outputs** of all diagnostic commands.
 
 ### Phase 2: Scientific Method Loop - NO MANUAL CHECKS
 
@@ -25,8 +29,8 @@ Operate in the **"collect → analyze → update script → repeat until fixed"*
 5. **If you found the problem, try to fix it**
 6. **Repeat until fixed**
 
-**🚫 DO NOT DO MANUAL CHECKS ONCE**
-**✅ TEACH THE SCRIPT to do it automatically and run it forever into the future automatically all in ONE turnkey command**
+**🚫 DO NOT DO MANUAL CHECKS ONCE** **✅ TEACH THE SCRIPT to do it automatically and run it forever into the future
+automatically all in ONE turnkey command**
 
 ### Phase 3: Lab Notebook Documentation
 
@@ -70,7 +74,8 @@ debug/
 - **Graceful degradation** in absence of elevated privileges
 - **Use elevated privileges when available** to gather more comprehensive data
 - **Easily extensible** - add new checks as you discover more areas to investigate
-- **Progressive enhancement** - as you zoom in on ideas of what could be wrong, progressively update collection script to include automated checks for such conditions
+- **Progressive enhancement** - as you zoom in on ideas of what could be wrong, progressively update collection script
+  to include automated checks for such conditions
 - **Future-oriented maintenance** - treat as a longer-lived diagnostic tool that will evolve over time
 
 ### Source Code Investigation
@@ -79,14 +84,16 @@ Source code management:
 
 - **Clone only once** - source code dumps should not be re-done on every collection run
 - **Discover location first**: Before cloning, manually identify the idiomatic local location for source code
-- **Get user confirmation**: In the confirmation/plan stage, confirm with user where source code should be placed before starting clones
+- **Get user confirmation**: In the confirmation/plan stage, confirm with user where source code should be placed before
+  starting clones
 - Clone only one copy, preferring conventional system-wide mirror location
 - Try in order: 1. `/mnt/tankshare/code`, 2. `~/code` (whichever exists first)
 - Follow local conventions
 - Make sure you are looking at the right pinned versions (check deployed version vs source)
 - **Reuse existing clones** - check if repositories already exist before cloning
 
-**Avoid speculating/trial-and-error** - if you're working with open source, **just clone the damn code**. Go after the ground truth:
+**Avoid speculating/trial-and-error** - if you're working with open source, **just clone the damn code**. Go after the
+ground truth:
 
 - GitHub MCP server if enabled
 - GitHub API
@@ -148,7 +155,9 @@ Source code management:
 
 **GATHER ALL THE LOGS, TURN ON ALL THE KNOBS**
 
-**IMPORTANT**: Turning on debug logging and observability knobs is a **system mutation** that should be done **outside** the data collection script. Create a separate script for putting the system into high-observability mode, but document/automate this process.
+**IMPORTANT**: Turning on debug logging and observability knobs is a **system mutation** that should be done **outside**
+the data collection script. Create a separate script for putting the system into high-observability mode, but
+document/automate this process.
 
 **High-Observability Setup** (separate script/process):
 

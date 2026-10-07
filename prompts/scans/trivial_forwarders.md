@@ -8,7 +8,8 @@
 
 Functions that exist purely to forward calls without reducing complexity. These should be inlined at their usage sites.
 
-**Key principle**: Helper functions should exist IFF they make things LESS complex. If usage sites wouldn't be made longer or more complex by inlining the helper's body, the helper shouldn't exist.
+**Key principle**: Helper functions should exist IFF they make things LESS complex. If usage sites wouldn't be made
+longer or more complex by inlining the helper's body, the helper shouldn't exist.
 
 ## Examples: Should Inline
 
@@ -156,7 +157,8 @@ cat single_line_functions.json | jq '.by_file'
 4. **Legitimate reasons**: Protocol implementation, decorator target, backward compatibility
 5. **Decision**: Inline if doesn't reduce complexity, keep if legitimate architectural reason
 
-**Low precision expected (~20-30%)**: Many single-line functions are legitimate (facades, interface implementations, API boundaries). Agent must use judgment to distinguish trivial forwarders from legitimate simple functions.
+**Low precision expected (~20-30%)**: Many single-line functions are legitimate (facades, interface implementations, API
+boundaries). Agent must use judgment to distinguish trivial forwarders from legitimate simple functions.
 
 ---
 
@@ -635,8 +637,7 @@ For each finding, apply the Decision Framework and categorize:
 
 #### 1. SearchService Facade Methods
 
-**File:** `/path/to/search.py`
-**Lines:** 19-32
+**File:** `/path/to/search.py` **Lines:** 19-32
 
 **Evidence:** 5 methods that just forward to module functions
 
@@ -665,8 +666,7 @@ For each finding, apply the Decision Framework and categorize:
 
 #### 1. Django Template Tag Wrapper
 
-**File:** `/path/to/custom_tags.py`
-**Line:** 233-234
+**File:** `/path/to/custom_tags.py` **Line:** 233-234
 
 **Why flagged:** Single-line function forwarding to constructor
 
@@ -682,8 +682,7 @@ For each finding, apply the Decision Framework and categorize:
 
 #### 2. GnuCash Utility Wrapper
 
-**File:** `/path/to/gnucash_util.py`
-**Line:** 35-36
+**File:** `/path/to/gnucash_util.py` **Line:** 35-36
 
 **Why flagged:** Single-line wrapper around conversion function
 

@@ -1,15 +1,12 @@
 # Sketch: Hetzner VNC → MCP VNC Refactor
 
-Sketch for replacing the bespoke `WebSocketStreamAdapter` with standard
-components (unwebsockify + an off-the-shelf VNC MCP server) for full desktop
-control. Not scheduled for implementation.
+Sketch for replacing the bespoke `WebSocketStreamAdapter` with standard components (unwebsockify + an off-the-shelf VNC
+MCP server) for full desktop control. Not scheduled for implementation.
 
-The adapter it replaces is still in `../vnc_screenshot.py`, so the sketch is
-live, but the cluster is no longer a consumer: its Hetzner Cloud fleet was
-retired in 2026-05 (<../../../archive/2026_05_28_hcloud_retirement.md>). Weigh
-the work against whatever non-cluster Hetzner use remains. The MCP-server
-comparison below is a 2026-07 market snapshot and should be re-checked before
-being acted on.
+The adapter it replaces is still in `../vnc_screenshot.py`, so the sketch is live, but the cluster is no longer a
+consumer: its Hetzner Cloud fleet was retired in 2026-05 (<../../../archive/2026_05_28_hcloud_retirement.md>). Weigh the
+work against whatever non-cluster Hetzner use remains. The MCP-server comparison below is a 2026-07 market snapshot and
+should be re-checked before being acted on.
 
 ---
 
@@ -19,10 +16,12 @@ The current implementation (`vnc_screenshot.py`):
 
 1. Calls Hetzner API to get WebSocket URL + one-time password
 2. Connects to the WebSocket directly
-3. Uses a custom `WebSocketStreamAdapter` (~60 LOC) to bridge WebSocket message-oriented semantics to stream-oriented interface that asyncvnc expects
+3. Uses a custom `WebSocketStreamAdapter` (~60 LOC) to bridge WebSocket message-oriented semantics to stream-oriented
+   interface that asyncvnc expects
 4. Takes a screenshot via asyncvnc
 
-The custom adapter is inelegant - it buffers WebSocket messages and implements `readline()`, `read(n)`, `write()`, `drain()` to mimic asyncio.StreamReader/StreamWriter.
+The custom adapter is inelegant - it buffers WebSocket messages and implements `readline()`, `read(n)`, `write()`,
+`drain()` to mimic asyncio.StreamReader/StreamWriter.
 
 ---
 
@@ -37,7 +36,8 @@ The custom adapter is inelegant - it buffers WebSocket messages and implements `
 | volkan-m/vnc-mcp-server  |    ❌     |       ✅       | Has `vnc_connect(host, port, password)` tool |
 | mcvnc (PyPI)             |    ❌     |       ✅       | Has `vnc_connect(host, port, password)` tool |
 
-**Key finding**: None of the VNC MCP servers natively support WebSocket. All require a TCP connection. This is why unwebsockify is needed.
+**Key finding**: None of the VNC MCP servers natively support WebSocket. All require a TCP connection. This is why
+unwebsockify is needed.
 
 ### Details
 
@@ -89,7 +89,8 @@ The custom adapter is inelegant - it buffers WebSocket messages and implements `
 | WS→TCP proxy | Bridge WebSocket to TCP      | unwebsockify (jimparis/unwebsockify) |
 | VNC client   | Standard MCP server          | signal-slot/mcp-vnc (recommended)    |
 
-> **Note**: "unwebsockify" is the reverse of websockify - accepts TCP and connects to a WebSocket server. This is exactly our use case.
+> **Note**: "unwebsockify" is the reverse of websockify - accepts TCP and connects to a WebSocket server. This is
+> exactly our use case.
 >
 > **Important**: May need `--subproto binary` flag since Hetzner uses WebSocket binary subprotocol.
 

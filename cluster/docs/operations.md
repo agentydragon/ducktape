@@ -43,8 +43,8 @@ talosctl --endpoints <node> --nodes <node> reboot
 
 ### Remove Node
 
-Remove the node from the relevant OpenTofu topology, then `tofu apply`.
-Kubernetes node object will be cleaned up automatically.
+Remove the node from the relevant OpenTofu topology, then `tofu apply`. Kubernetes node object will be cleaned up
+automatically.
 
 ## System Diagnostics
 
@@ -70,8 +70,8 @@ See <bootstrap.md> for the issuer toggle mechanism. To switch:
 2. Commit and push
 3. Flux applies the regenerated manifests and cert-manager re-issues certificates automatically
 
-**Rate limit warning:** Each switch re-issues all certificates. Avoid rapid toggling
-(5 duplicate certs/domain/week on production LE).
+**Rate limit warning:** Each switch re-issues all certificates. Avoid rapid toggling (5 duplicate certs/domain/week on
+production LE).
 
 ## Troubleshooting
 
@@ -81,5 +81,5 @@ See <troubleshooting.md> for diagnostic commands and known issues.
 
 ### Privileged Ports (Port < 1024)
 
-Services binding to privileged ports (e.g., port 53) as non-root need
-`NET_BIND_SERVICE` capability with `drop: ["ALL"]` for PSS "restricted" compliance.
+Services binding to privileged ports (e.g., port 53) as non-root need `NET_BIND_SERVICE` capability with `drop: ["ALL"]`
+for PSS "restricted" compliance.

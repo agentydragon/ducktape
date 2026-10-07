@@ -1,10 +1,13 @@
 # Code Review Specimens Dataset
 
-Labeled code quality specimens used for training and evaluating LLM code review critics. Part of the `props/` evaluation system in the ducktape monorepo.
+Labeled code quality specimens used for training and evaluating LLM code review critics. Part of the `props/` evaluation
+system in the ducktape monorepo.
 
 ## Purpose
 
-Specimens are **frozen code states with labeled ground truth issues**, serving as training/evaluation data for behavior-cloning code review agents. Each specimen represents a snapshot of real code at a specific commit, annotated with:
+Specimens are **frozen code states with labeled ground truth issues**, serving as training/evaluation data for
+behavior-cloning code review agents. Each specimen represents a snapshot of real code at a specific commit, annotated
+with:
 
 - **True Positives (TPs)**: Real issues that should be caught by a competent code reviewer
 - **False Positives (FPs)**: Patterns that look wrong but are actually acceptable (intentional design choices)
@@ -34,7 +37,8 @@ props/specimens/
 
 Each snapshot directory contains:
 
-- **`BUILD.bazel`**: Metadata via `specimen_targets()` — slug, split, code source. Provenance (commit SHA, include/exclude) as comments.
+- **`BUILD.bazel`**: Metadata via `specimen_targets()` — slug, split, code source. Provenance (commit SHA,
+  include/exclude) as comments.
 - **Issue files** (`.yaml` in `issues/` directory): One file per logical issue type
 - **`code/`** (optional): Source code for local specimens
 
@@ -60,7 +64,8 @@ Key fields:
 - `rationale`: What's wrong and why (objective, factual description)
 - `should_flag`: `true` for real issues, `false` for false positives
 - `occurrences`: List of occurrence locations with file paths and line ranges
-- `critic_scopes_expected_to_recall`: Minimal file sets needed to detect this issue (used for per-file training examples)
+- `critic_scopes_expected_to_recall`: Minimal file sets needed to detect this issue (used for per-file training
+  examples)
 
 See <docs/format_spec.md> for detailed schema documentation.
 
@@ -82,7 +87,8 @@ This gives ~100+ training examples from 5 snapshots instead of just 5.
 
 ## Usage
 
-Specimens are loaded into the props database via sync. The `ADGN_PROPS_SPECIMENS_ROOT` environment variable (set by `props/.envrc`) points to this directory.
+Specimens are loaded into the props database via sync. The `ADGN_PROPS_SPECIMENS_ROOT` environment variable (set by
+`props/.envrc`) points to this directory.
 
 ```bash
 # Sync specimens to database
@@ -125,7 +131,8 @@ Current split distribution:
 6. **Train**: Use for critic optimization and prompt tuning
 7. **Evaluate**: Measure recall/precision on validation split
 
-**Important**: Specimens are **immutable once created**. Do not update issue files after fixes are made - create new snapshots if you want to capture improvements.
+**Important**: Specimens are **immutable once created**. Do not update issue files after fixes are made - create new
+snapshots if you want to capture improvements.
 
 ## Related Documentation
 

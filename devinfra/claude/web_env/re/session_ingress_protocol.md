@@ -2,23 +2,19 @@
 
 **Reverse engineered from:** `environment-manager` binary (Build ID: a6f96673, Go 1.25.7)
 
-> **Re-verified against Build ID `0b86a2a0` (`release-1186d93b9-ext`), 2026-07.**
-> The event payload types are **unchanged** in that release: every struct in the
-> session-ingress package has the same fields, json tags and byte offsets as in
-> the previous binary (`release-d84d76b7-ext`). Two corrections to this document
-> came out of that check, both of which were already wrong before:
+> **Re-verified against Build ID `0b86a2a0` (`release-1186d93b9-ext`), 2026-07.** The event payload types are
+> **unchanged** in that release: every struct in the session-ingress package has the same fields, json tags and byte
+> offsets as in the previous binary (`release-d84d76b7-ext`). Two corrections to this document came out of that check,
+> both of which were already wrong before:
 >
-> - The event envelope's identifier field is **`uuid`**, not `id`, and the
->   envelope carries far more than `{type, id, data}` — see the table below.
-> - `EnvManagerLogEventData`'s shape (`message`/`level`/`source`/`timestamp`/
->   `nanos`/`fields`) is **not** corroborated by any struct in either binary;
->   the only `nanos` json tag present belongs to `google.protobuf.Timestamp`.
->   Treat the `env_manager_log` example below as unverified.
+> - The event envelope's identifier field is **`uuid`**, not `id`, and the envelope carries far more than
+>   `{type, id, data}` — see the table below.
+> - `EnvManagerLogEventData`'s shape (`message`/`level`/`source`/`timestamp`/ `nanos`/`fields`) is **not** corroborated
+>   by any struct in either binary; the only `nanos` json tag present belongs to `google.protobuf.Timestamp`. Treat the
+>   `env_manager_log` example below as unverified.
 >
-> Field-level evidence (RTTI addresses) is in
-> <environment*manager/src/internal/api/session_ingress_types.go>.
-> The **session-context / task-run** wire format — a different contract that
-> \_did* change in this release — is in
+> Field-level evidence (RTTI addresses) is in <environment*manager/src/internal/api/session_ingress_types.go>. The
+> **session-context / task-run** wire format — a different contract that \_did* change in this release — is in
 > <environment_manager/src/internal/api/session_context_types.go>.
 
 **Base URL:** `https://api.anthropic.com`
@@ -274,9 +270,8 @@ https://api.anthropic.com/v2/session_ingress/session/session_01HCsnGQoHJrmVYVEWJ
 
 ### SessionIngressEvent
 
-Verified against Build ID `0b86a2a0` RTTI (`fHxyBOR9qvy.AIGJ5cph`, VMA
-`0x28eaa00`, size `0xc0`, 16 fields); identical in the previous binary
-(`viRrDTePbcGS.J4sedR`, VMA `0x247a760`).
+Verified against Build ID `0b86a2a0` RTTI (`fHxyBOR9qvy.AIGJ5cph`, VMA `0x28eaa00`, size `0xc0`, 16 fields); identical
+in the previous binary (`viRrDTePbcGS.J4sedR`, VMA `0x247a760`).
 
 ```go
 type SessionIngressEvent struct {
@@ -371,7 +366,8 @@ type ContentBlock struct {
 
 ## Security Notes
 
-1. **Token Storage:** Session ingress token stored at `/home/claude/.claude/remote/.session_ingress_token` (root-only readable, mode 0600)
+1. **Token Storage:** Session ingress token stored at `/home/claude/.claude/remote/.session_ingress_token` (root-only
+   readable, mode 0600)
 
 2. **Authentication:** All requests require valid Bearer token in Authorization header
 
@@ -453,15 +449,12 @@ curl -X POST \
 
 - Binary uses Go 1.25.6
 - HTTP client implements automatic retries via `RetryableHTTPDo`
-- OpenTelemetry trace propagation is configured but injection code not fully reconstructed.
-  **As of Build ID `0b86a2a0` those spans are actually exported**: the binary
-  gained a full OTLP **trace** pipeline (`otlptracehttp` -> `otlptrace.Exporter`
-  -> `sdk/trace.TracerProvider`), the observability service grew a `Tracer()`
-  method, and the backend's `OtlpEndpoints` call now returns three endpoints
-  (logs, metrics, traces) instead of two. Evidence and addresses:
-  <environment_manager/src/internal/o11y/otel_traces.go>. The propagation
-  carrier used for injection is `FKPKJ5B0zZ.nfjR4Fsm`
-  (`Get`/`Set`/`Keys` at `0x20156a0`/`0x20156e0`/`0x2015700`).
+- OpenTelemetry trace propagation is configured but injection code not fully reconstructed. **As of Build ID `0b86a2a0`
+  those spans are actually exported**: the binary gained a full OTLP **trace** pipeline (`otlptracehttp` ->
+  `otlptrace.Exporter` -> `sdk/trace.TracerProvider`), the observability service grew a `Tracer()` method, and the
+  backend's `OtlpEndpoints` call now returns three endpoints (logs, metrics, traces) instead of two. Evidence and
+  addresses: <environment_manager/src/internal/o11y/otel_traces.go>. The propagation carrier used for injection is
+  `FKPKJ5B0zZ.nfjR4Fsm` (`Get`/`Set`/`Keys` at `0x20156a0`/`0x20156e0`/`0x2015700`).
 - All timestamps use format: `"2006-01-02T15:04:05.000000000Z07:00"`
 - Session IDs are URL-escaped before inclusion in endpoint URLs
 - Response bodies are always read for error reporting, even if HTTP call succeeds

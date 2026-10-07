@@ -1,12 +1,11 @@
-rationale:
-  "These targets are only reached from Bazel tests in ducktape commit 995a1fce6410ec4a882d2e861b41423c8c839148, but
-  manual review found that they are product, deployable, validation, or runnable example code rather than test utilities.
-  Marking them testonly would hide the real problem.
+rationale: "These targets are only reached from Bazel tests in ducktape commit 995a1fce6410ec4a882d2e861b41423c8c839148,
+  but manual review found that they are product, deployable, validation, or runnable example code rather than test
+  utilities. Marking them testonly would hide the real problem.
 
 
-  Fix each occurrence by wiring it into the intended non-test Bazel binary, artifact, validation, packaging, or deployment
-  workflow. If a target has no intended non-test consumer, delete it instead of keeping a library that is only exercised by
-  tests."
+  Fix each occurrence by wiring it into the intended non-test Bazel binary, artifact, validation, packaging, or
+  deployment workflow. If a target has no intended non-test consumer, delete it instead of keeping a library that is
+  only exercised by tests."
 should_flag: true
 occurrences:
   - occurrence_id: occ-000
@@ -15,10 +14,10 @@ occurrences:
         - - 10
           - 10
     note:
-      "//cluster/k8s:cluster_all_files (filegroup); direct non-generated consumers: //cluster/validation:test_cluster_integration,
-      //cluster/validation:test_kyverno_policies. Verified as cluster validation input, not a test helper: either delete it
-      if stale or wire it into a Bazel cluster-validation target/workflow that duplicates the cluster validation already run
-      by ducktape-precommit."
+      "//cluster/k8s:cluster_all_files (filegroup); direct non-generated consumers:
+      //cluster/validation:test_cluster_integration, //cluster/validation:test_kyverno_policies. Verified as cluster
+      validation input, not a test helper: either delete it if stale or wire it into a Bazel cluster-validation
+      target/workflow that duplicates the cluster validation already run by ducktape-precommit."
     critic_scopes_expected_to_recall:
       - - cluster/k8s/BUILD.bazel
         - cluster/validation/BUILD.bazel
@@ -38,8 +37,8 @@ occurrences:
           - 10
     note:
       "//ember:data_files (filegroup); direct non-generated consumers: //ember:test_documentation_snippets. Verified as
-      product, deployable, validation, or example code that is only reached from tests; wire it into the intended production/artifact/validation
-      target or delete it if stale."
+      product, deployable, validation, or example code that is only reached from tests; wire it into the intended
+      production/artifact/validation target or delete it if stale."
     critic_scopes_expected_to_recall:
       - - ember/BUILD.bazel
     match_file_restriction:
@@ -50,10 +49,13 @@ occurrences:
         - - 6
           - 6
     note:
-      "//homeassistant/iaqi/custom_components/indoor_aqi:indoor_aqi (py_library); direct non-generated consumers: //homeassistant/iaqi/custom_components/indoor_aqi:test_config_flow,
-      //homeassistant/iaqi/custom_components/indoor_aqi:test_init, //homeassistant/iaqi/custom_components/indoor_aqi:test_sensor,
-      //homeassistant/iaqi/custom_components/indoor_aqi:test_sensor_simple. Verified as Home Assistant component code with no
-      settled deployment path; add at least a build/test target, or decide the packaging/deployment/release workflow."
+      "//homeassistant/iaqi/custom_components/indoor_aqi:indoor_aqi (py_library); direct non-generated consumers:
+      //homeassistant/iaqi/custom_components/indoor_aqi:test_config_flow,
+      //homeassistant/iaqi/custom_components/indoor_aqi:test_init,
+      //homeassistant/iaqi/custom_components/indoor_aqi:test_sensor,
+      //homeassistant/iaqi/custom_components/indoor_aqi:test_sensor_simple. Verified as Home Assistant component code
+      with no settled deployment path; add at least a build/test target, or decide the packaging/deployment/release
+      workflow."
     critic_scopes_expected_to_recall:
       - - homeassistant/iaqi/custom_components/indoor_aqi/BUILD.bazel
     match_file_restriction:
@@ -64,10 +66,11 @@ occurrences:
         - - 3
           - 3
     note:
-      "//inop/engine:models (py_library); direct non-generated consumers: //inop/engine:optimizer, //inop/grading:grader,
-      //inop/grading:strategies, //inop/io:task_loader, //inop/io:yaml_loader, //inop/prompting:prompt_engineer, //inop/prompting:summarizer,
-      //inop/prompting:truncation_utils, +6 more. Verified as product, deployable, validation, or example code that is only
-      reached from tests; wire it into the intended production/artifact/validation target or delete it if stale."
+      "//inop/engine:models (py_library); direct non-generated consumers: //inop/engine:optimizer,
+      //inop/grading:grader, //inop/grading:strategies, //inop/io:task_loader, //inop/io:yaml_loader,
+      //inop/prompting:prompt_engineer, //inop/prompting:summarizer, //inop/prompting:truncation_utils, +6 more.
+      Verified as product, deployable, validation, or example code that is only reached from tests; wire it into the
+      intended production/artifact/validation target or delete it if stale."
     critic_scopes_expected_to_recall:
       - - inop/engine/BUILD.bazel
         - inop/grading/BUILD.bazel
@@ -83,9 +86,9 @@ occurrences:
         - - 10
           - 10
     note:
-      "//inop/engine:optimizer (py_library); direct non-generated consumers: //inop:test_optimizer_two_iters. Verified as
-      product, deployable, validation, or example code that is only reached from tests; wire it into the intended production/artifact/validation
-      target or delete it if stale."
+      "//inop/engine:optimizer (py_library); direct non-generated consumers: //inop:test_optimizer_two_iters. Verified
+      as product, deployable, validation, or example code that is only reached from tests; wire it into the intended
+      production/artifact/validation target or delete it if stale."
     critic_scopes_expected_to_recall:
       - - inop/engine/BUILD.bazel
         - inop/BUILD.bazel
@@ -97,9 +100,9 @@ occurrences:
         - - 42
           - 42
     note:
-      "//inop/engine:runner_factory (py_library); direct non-generated consumers: //inop/engine:optimizer, //inop:test_optimizer_two_iters.
-      Verified as product, deployable, validation, or example code that is only reached from tests; wire it into the intended
-      production/artifact/validation target or delete it if stale."
+      "//inop/engine:runner_factory (py_library); direct non-generated consumers: //inop/engine:optimizer,
+      //inop:test_optimizer_two_iters. Verified as product, deployable, validation, or example code that is only reached
+      from tests; wire it into the intended production/artifact/validation target or delete it if stale."
     critic_scopes_expected_to_recall:
       - - inop/engine/BUILD.bazel
         - inop/BUILD.bazel
@@ -112,8 +115,8 @@ occurrences:
           - 3
     note:
       "//inop/grading:grader (py_library); direct non-generated consumers: //inop/engine:optimizer. Verified as product,
-      deployable, validation, or example code that is only reached from tests; wire it into the intended production/artifact/validation
-      target or delete it if stale."
+      deployable, validation, or example code that is only reached from tests; wire it into the intended
+      production/artifact/validation target or delete it if stale."
     critic_scopes_expected_to_recall:
       - - inop/grading/BUILD.bazel
         - inop/engine/BUILD.bazel
@@ -125,9 +128,9 @@ occurrences:
         - - 17
           - 17
     note:
-      "//inop/grading:strategies (py_library); direct non-generated consumers: //inop/grading:grader. Verified as product,
-      deployable, validation, or example code that is only reached from tests; wire it into the intended production/artifact/validation
-      target or delete it if stale."
+      "//inop/grading:strategies (py_library); direct non-generated consumers: //inop/grading:grader. Verified as
+      product, deployable, validation, or example code that is only reached from tests; wire it into the intended
+      production/artifact/validation target or delete it if stale."
     critic_scopes_expected_to_recall:
       - - inop/grading/BUILD.bazel
     match_file_restriction:
@@ -138,9 +141,9 @@ occurrences:
         - - 3
           - 3
     note:
-      "//inop/io:file_utils (py_library); direct non-generated consumers: //inop/runners:claude_runner, //inop/runners:openai_runner.
-      Verified as product, deployable, validation, or example code that is only reached from tests; wire it into the intended
-      production/artifact/validation target or delete it if stale."
+      "//inop/io:file_utils (py_library); direct non-generated consumers: //inop/runners:claude_runner,
+      //inop/runners:openai_runner. Verified as product, deployable, validation, or example code that is only reached
+      from tests; wire it into the intended production/artifact/validation target or delete it if stale."
     critic_scopes_expected_to_recall:
       - - inop/io/BUILD.bazel
         - inop/runners/BUILD.bazel
@@ -152,9 +155,9 @@ occurrences:
         - - 9
           - 9
     note:
-      "//inop/io:jsonl_logger (py_library); direct non-generated consumers: //inop/engine:optimizer, //inop:test_optimizer_two_iters.
-      Verified as product, deployable, validation, or example code that is only reached from tests; wire it into the intended
-      production/artifact/validation target or delete it if stale."
+      "//inop/io:jsonl_logger (py_library); direct non-generated consumers: //inop/engine:optimizer,
+      //inop:test_optimizer_two_iters. Verified as product, deployable, validation, or example code that is only reached
+      from tests; wire it into the intended production/artifact/validation target or delete it if stale."
     critic_scopes_expected_to_recall:
       - - inop/io/BUILD.bazel
         - inop/engine/BUILD.bazel
@@ -167,10 +170,10 @@ occurrences:
         - - 15
           - 15
     note:
-      "//inop/io:logging_utils (py_library); direct non-generated consumers: //inop/engine:optimizer, //inop/grading:grader,
-      //inop/io:yaml_loader, //inop/prompting:prompt_engineer, //inop/prompting:summarizer, //inop/runners:base, //inop:plots.
-      Verified as product, deployable, validation, or example code that is only reached from tests; wire it into the intended
-      production/artifact/validation target or delete it if stale."
+      "//inop/io:logging_utils (py_library); direct non-generated consumers: //inop/engine:optimizer,
+      //inop/grading:grader, //inop/io:yaml_loader, //inop/prompting:prompt_engineer, //inop/prompting:summarizer,
+      //inop/runners:base, //inop:plots. Verified as product, deployable, validation, or example code that is only
+      reached from tests; wire it into the intended production/artifact/validation target or delete it if stale."
     critic_scopes_expected_to_recall:
       - - inop/io/BUILD.bazel
         - inop/engine/BUILD.bazel
@@ -187,8 +190,8 @@ occurrences:
           - 22
     note:
       "//inop/io:task_loader (py_library); direct non-generated consumers: //inop/engine:optimizer. Verified as product,
-      deployable, validation, or example code that is only reached from tests; wire it into the intended production/artifact/validation
-      target or delete it if stale."
+      deployable, validation, or example code that is only reached from tests; wire it into the intended
+      production/artifact/validation target or delete it if stale."
     critic_scopes_expected_to_recall:
       - - inop/io/BUILD.bazel
         - inop/engine/BUILD.bazel
@@ -200,9 +203,9 @@ occurrences:
         - - 32
           - 32
     note:
-      "//inop/io:yaml_loader (py_library); direct non-generated consumers: //inop/engine:optimizer, //inop/grading:strategies.
-      Verified as product, deployable, validation, or example code that is only reached from tests; wire it into the intended
-      production/artifact/validation target or delete it if stale."
+      "//inop/io:yaml_loader (py_library); direct non-generated consumers: //inop/engine:optimizer,
+      //inop/grading:strategies. Verified as product, deployable, validation, or example code that is only reached from
+      tests; wire it into the intended production/artifact/validation target or delete it if stale."
     critic_scopes_expected_to_recall:
       - - inop/io/BUILD.bazel
         - inop/engine/BUILD.bazel
@@ -216,8 +219,8 @@ occurrences:
           - 14
     note:
       "//inop/prompting:pe_controller (py_library); direct non-generated consumers: //inop/engine:optimizer. Verified as
-      product, deployable, validation, or example code that is only reached from tests; wire it into the intended production/artifact/validation
-      target or delete it if stale."
+      product, deployable, validation, or example code that is only reached from tests; wire it into the intended
+      production/artifact/validation target or delete it if stale."
     critic_scopes_expected_to_recall:
       - - inop/prompting/BUILD.bazel
         - inop/engine/BUILD.bazel
@@ -229,9 +232,10 @@ occurrences:
         - - 24
           - 24
     note:
-      "//inop/prompting:prompt_engineer (py_library); direct non-generated consumers: //inop/engine:optimizer, //inop/prompting:summarizer,
-      //inop:prompt_feedback_mcp. Verified as product, deployable, validation, or example code that is only reached from tests;
-      wire it into the intended production/artifact/validation target or delete it if stale."
+      "//inop/prompting:prompt_engineer (py_library); direct non-generated consumers: //inop/engine:optimizer,
+      //inop/prompting:summarizer, //inop:prompt_feedback_mcp. Verified as product, deployable, validation, or example
+      code that is only reached from tests; wire it into the intended production/artifact/validation target or delete it
+      if stale."
     critic_scopes_expected_to_recall:
       - - inop/prompting/BUILD.bazel
         - inop/engine/BUILD.bazel
@@ -244,9 +248,9 @@ occurrences:
         - - 34
           - 34
     note:
-      "//inop/prompting:summarizer (py_library); direct non-generated consumers: //inop/engine:optimizer. Verified as product,
-      deployable, validation, or example code that is only reached from tests; wire it into the intended production/artifact/validation
-      target or delete it if stale."
+      "//inop/prompting:summarizer (py_library); direct non-generated consumers: //inop/engine:optimizer. Verified as
+      product, deployable, validation, or example code that is only reached from tests; wire it into the intended
+      production/artifact/validation target or delete it if stale."
     critic_scopes_expected_to_recall:
       - - inop/prompting/BUILD.bazel
         - inop/engine/BUILD.bazel
@@ -258,9 +262,10 @@ occurrences:
         - - 3
           - 3
     note:
-      "//inop/prompting:truncation_utils (py_library); direct non-generated consumers: //inop/engine:optimizer, //inop/grading:strategies,
-      //inop/prompting:summarizer, //inop:test_file_truncation. Verified as product, deployable, validation, or example code
-      that is only reached from tests; wire it into the intended production/artifact/validation target or delete it if stale."
+      "//inop/prompting:truncation_utils (py_library); direct non-generated consumers: //inop/engine:optimizer,
+      //inop/grading:strategies, //inop/prompting:summarizer, //inop:test_file_truncation. Verified as product,
+      deployable, validation, or example code that is only reached from tests; wire it into the intended
+      production/artifact/validation target or delete it if stale."
     critic_scopes_expected_to_recall:
       - - inop/prompting/BUILD.bazel
         - inop/engine/BUILD.bazel
@@ -274,10 +279,10 @@ occurrences:
         - - 3
           - 3
     note:
-      "//inop/runners:base (py_library); direct non-generated consumers: //inop/engine:runner_factory, //inop/runners:claude_runner,
-      //inop/runners:openai_runner, //inop:test_optimizer_two_iters. Verified as product, deployable, validation, or example
-      code that is only reached from tests; wire it into the intended production/artifact/validation target or delete it if
-      stale."
+      "//inop/runners:base (py_library); direct non-generated consumers: //inop/engine:runner_factory,
+      //inop/runners:claude_runner, //inop/runners:openai_runner, //inop:test_optimizer_two_iters. Verified as product,
+      deployable, validation, or example code that is only reached from tests; wire it into the intended
+      production/artifact/validation target or delete it if stale."
     critic_scopes_expected_to_recall:
       - - inop/runners/BUILD.bazel
         - inop/engine/BUILD.bazel
@@ -291,8 +296,8 @@ occurrences:
           - 13
     note:
       "//inop/runners:claude_runner (py_library); direct non-generated consumers: //inop/engine:runner_factory. Verified
-      as product, deployable, validation, or example code that is only reached from tests; wire it into the intended production/artifact/validation
-      target or delete it if stale."
+      as product, deployable, validation, or example code that is only reached from tests; wire it into the intended
+      production/artifact/validation target or delete it if stale."
     critic_scopes_expected_to_recall:
       - - inop/runners/BUILD.bazel
         - inop/engine/BUILD.bazel
@@ -304,9 +309,9 @@ occurrences:
         - - 27
           - 27
     note:
-      "//inop/runners:containerized_claude (py_library); direct non-generated consumers: //inop/runners:claude_runner. Verified
-      as product, deployable, validation, or example code that is only reached from tests; wire it into the intended production/artifact/validation
-      target or delete it if stale."
+      "//inop/runners:containerized_claude (py_library); direct non-generated consumers: //inop/runners:claude_runner.
+      Verified as product, deployable, validation, or example code that is only reached from tests; wire it into the
+      intended production/artifact/validation target or delete it if stale."
     critic_scopes_expected_to_recall:
       - - inop/runners/BUILD.bazel
     match_file_restriction:
@@ -318,8 +323,8 @@ occurrences:
           - 39
     note:
       "//inop/runners:openai_runner (py_library); direct non-generated consumers: //inop/engine:runner_factory. Verified
-      as product, deployable, validation, or example code that is only reached from tests; wire it into the intended production/artifact/validation
-      target or delete it if stale."
+      as product, deployable, validation, or example code that is only reached from tests; wire it into the intended
+      production/artifact/validation target or delete it if stale."
     critic_scopes_expected_to_recall:
       - - inop/runners/BUILD.bazel
         - inop/engine/BUILD.bazel
@@ -331,10 +336,11 @@ occurrences:
         - - 41
           - 41
     note:
-      "//inop:config (py_library); direct non-generated consumers: //inop/engine:optimizer, //inop/grading:grader, //inop/grading:strategies,
-      //inop/prompting:truncation_utils, //inop:conftest, //inop:model_factory, //inop:test_config, //inop:test_optimizer_two_iters.
-      Verified as product, deployable, validation, or example code that is only reached from tests; wire it into the intended
-      production/artifact/validation target or delete it if stale."
+      "//inop:config (py_library); direct non-generated consumers: //inop/engine:optimizer, //inop/grading:grader,
+      //inop/grading:strategies, //inop/prompting:truncation_utils, //inop:conftest, //inop:model_factory,
+      //inop:test_config, //inop:test_optimizer_two_iters. Verified as product, deployable, validation, or example code
+      that is only reached from tests; wire it into the intended production/artifact/validation target or delete it if
+      stale."
     critic_scopes_expected_to_recall:
       - - inop/BUILD.bazel
         - inop/engine/BUILD.bazel
@@ -349,8 +355,8 @@ occurrences:
           - 52
     note:
       "//inop:model_factory (py_library); direct non-generated consumers: //inop/engine:optimizer. Verified as product,
-      deployable, validation, or example code that is only reached from tests; wire it into the intended production/artifact/validation
-      target or delete it if stale."
+      deployable, validation, or example code that is only reached from tests; wire it into the intended
+      production/artifact/validation target or delete it if stale."
     critic_scopes_expected_to_recall:
       - - inop/BUILD.bazel
         - inop/engine/BUILD.bazel
@@ -362,9 +368,9 @@ occurrences:
         - - 67
           - 67
     note:
-      "//inop:plots (py_library); direct non-generated consumers: //inop/engine:optimizer. Verified as product, deployable,
-      validation, or example code that is only reached from tests; wire it into the intended production/artifact/validation
-      target or delete it if stale."
+      "//inop:plots (py_library); direct non-generated consumers: //inop/engine:optimizer. Verified as product,
+      deployable, validation, or example code that is only reached from tests; wire it into the intended
+      production/artifact/validation target or delete it if stale."
     critic_scopes_expected_to_recall:
       - - inop/BUILD.bazel
         - inop/engine/BUILD.bazel
@@ -376,9 +382,9 @@ occurrences:
         - - 28
           - 28
     note:
-      "//inop:prompt_feedback_mcp (py_library); direct non-generated consumers: //inop/engine:optimizer. Verified as product,
-      deployable, validation, or example code that is only reached from tests; wire it into the intended production/artifact/validation
-      target or delete it if stale."
+      "//inop:prompt_feedback_mcp (py_library); direct non-generated consumers: //inop/engine:optimizer. Verified as
+      product, deployable, validation, or example code that is only reached from tests; wire it into the intended
+      production/artifact/validation target or delete it if stale."
     critic_scopes_expected_to_recall:
       - - inop/BUILD.bazel
         - inop/engine/BUILD.bazel
@@ -390,10 +396,11 @@ occurrences:
         - - 3
           - 3
     note:
-      "//x/claude_linter_v2/diff:categorizer (py_library); direct non-generated consumers: //x/claude_linter_v2/diff:intelligence,
-      //x/claude_linter_v2:test_diff_intelligence, //x/claude_linter_v2:test_diff_intelligence_edge_cases. Verified as product,
-      deployable, validation, or example code that is only reached from tests; wire it into the intended production/artifact/validation
-      target or delete it if stale."
+      "//x/claude_linter_v2/diff:categorizer (py_library); direct non-generated consumers:
+      //x/claude_linter_v2/diff:intelligence, //x/claude_linter_v2:test_diff_intelligence,
+      //x/claude_linter_v2:test_diff_intelligence_edge_cases. Verified as product, deployable, validation, or example
+      code that is only reached from tests; wire it into the intended production/artifact/validation target or delete it
+      if stale."
     critic_scopes_expected_to_recall:
       - - x/claude_linter_v2/diff/BUILD.bazel
         - x/claude_linter_v2/BUILD.bazel
@@ -405,9 +412,10 @@ occurrences:
         - - 13
           - 13
     note:
-      "//x/claude_linter_v2/diff:intelligence (py_library); direct non-generated consumers: //x/claude_linter_v2:test_diff_intelligence,
-      //x/claude_linter_v2:test_diff_intelligence_edge_cases. Verified as product, deployable, validation, or example code that
-      is only reached from tests; wire it into the intended production/artifact/validation target or delete it if stale."
+      "//x/claude_linter_v2/diff:intelligence (py_library); direct non-generated consumers:
+      //x/claude_linter_v2:test_diff_intelligence, //x/claude_linter_v2:test_diff_intelligence_edge_cases. Verified as
+      product, deployable, validation, or example code that is only reached from tests; wire it into the intended
+      production/artifact/validation target or delete it if stale."
     critic_scopes_expected_to_recall:
       - - x/claude_linter_v2/diff/BUILD.bazel
         - x/claude_linter_v2/BUILD.bazel
@@ -419,9 +427,10 @@ occurrences:
         - - 25
           - 25
     note:
-      "//x/claude_linter_v2/diff:parser (py_library); direct non-generated consumers: //x/claude_linter_v2/diff:categorizer,
-      //x/claude_linter_v2/diff:intelligence, //x/claude_linter_v2:test_diff_intelligence, //x/claude_linter_v2:test_diff_intelligence_edge_cases.
-      Verified as product, deployable, validation, or example code that is only reached from tests; wire it into the intended
+      "//x/claude_linter_v2/diff:parser (py_library); direct non-generated consumers:
+      //x/claude_linter_v2/diff:categorizer, //x/claude_linter_v2/diff:intelligence,
+      //x/claude_linter_v2:test_diff_intelligence, //x/claude_linter_v2:test_diff_intelligence_edge_cases. Verified as
+      product, deployable, validation, or example code that is only reached from tests; wire it into the intended
       production/artifact/validation target or delete it if stale."
     critic_scopes_expected_to_recall:
       - - x/claude_linter_v2/diff/BUILD.bazel
@@ -434,9 +443,9 @@ occurrences:
         - - 4
           - 4
     note:
-      "//x/dbus_fast_example:dbus_fast_example (py_library); direct non-generated consumers: //x/dbus_fast_example:test_example.
-      Verified as runnable DBus example code; a Bazel py_binary wrapper appears feasible, so wire it as a working binary instead
-      of leaving only the test path."
+      "//x/dbus_fast_example:dbus_fast_example (py_library); direct non-generated consumers:
+      //x/dbus_fast_example:test_example. Verified as runnable DBus example code; a Bazel py_binary wrapper appears
+      feasible, so wire it as a working binary instead of leaving only the test path."
     critic_scopes_expected_to_recall:
       - - x/dbus_fast_example/BUILD.bazel
     match_file_restriction:

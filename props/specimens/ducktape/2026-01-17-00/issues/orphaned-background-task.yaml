@@ -15,9 +15,8 @@ occurrences:
       wt/server/wt_server.py:
         - [301, 301]
     note: >-
-      self._initial_status_task overwrites previous task on each new worktree.
-      Earlier tasks become orphaned with no error handling. Should use a set
-      with done-callback cleanup pattern.
+      self._initial_status_task overwrites previous task on each new worktree. Earlier tasks become orphaned with no
+      error handling. Should use a set with done-callback cleanup pattern.
     critic_scopes_expected_to_recall:
       - - wt/server/wt_server.py
     match_file_restriction:

@@ -2,14 +2,14 @@
 
 ## Summary
 
-When adding a SCSI disk with `serial` set to a running VM via the `bpg/proxmox` Terraform
-provider, Proxmox hot-plugs the disk via QMP `device_add` **without** the serial parameter.
-The guest OS sees the disk but `/dev/disk/by-id/scsi-0QEMU_QEMU_HARDDISK_<serial>` symlink
-uses the `device_id` (e.g., `drive-scsi30`) instead of the custom serial string.
+When adding a SCSI disk with `serial` set to a running VM via the `bpg/proxmox` Terraform provider, Proxmox hot-plugs
+the disk via QMP `device_add` **without** the serial parameter. The guest OS sees the disk but
+`/dev/disk/by-id/scsi-0QEMU_QEMU_HARDDISK_<serial>` symlink uses the `device_id` (e.g., `drive-scsi30`) instead of the
+custom serial string.
 
-A full VM stop/start is required for the custom serial to appear in the QEMU command line.
-However, even then, `virtio-scsi-single` uses `device_id=drive-scsi<N>` as the by-id
-identifier, making the custom `serial` attribute effectively useless for disk identification.
+A full VM stop/start is required for the custom serial to appear in the QEMU command line. However, even then,
+`virtio-scsi-single` uses `device_id=drive-scsi<N>` as the by-id identifier, making the custom `serial` attribute
+effectively useless for disk identification.
 
 ## Observed behavior
 
@@ -32,14 +32,14 @@ This is stable because we pin the disk to a fixed SCSI slot (`interface = "scsi3
 
 ## Impact
 
-Talos Linux `machine.disks` config using `/dev/disk/by-id/...` paths with custom serial
-fails on boot if you use the serial string. Use the `drive-scsi<N>` device_id path instead.
+Talos Linux `machine.disks` config using `/dev/disk/by-id/...` paths with custom serial fails on boot if you use the
+serial string. Use the `drive-scsi<N>` device_id path instead.
 
 ## TODO
 
-- [ ] Check if the `device_id` overriding `serial` in by-id naming is intentional QEMU
-      behavior or a Proxmox-specific issue
+- [ ] Check if the `device_id` overriding `serial` in by-id naming is intentional QEMU behavior or a Proxmox-specific
+      issue
 - [ ] Consider reporting to `bpg/proxmox` that `serial` is not included in QMP hot-add
       (<https://github.com/bpg/terraform-provider-proxmox/issues>)
-- [ ] Consider reporting to Proxmox that `device_id` takes precedence over `serial` for
-      SCSI disk identification in the guest
+- [ ] Consider reporting to Proxmox that `device_id` takes precedence over `serial` for SCSI disk identification in the
+      guest

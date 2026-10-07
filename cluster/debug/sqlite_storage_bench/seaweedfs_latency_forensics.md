@@ -2,21 +2,18 @@
 
 Status: observed 2026-07-07.
 
-This note explains why SQLite over `seaweedfs-ovh-ssd` was slow in the
-20260707 SQLite storage benchmark, using live link measurements, SeaweedFS
-source inspection, and a targeted SQLite phase timing probe.
+This note explains why SQLite over `seaweedfs-ovh-ssd` was slow in the 20260707 SQLite storage benchmark, using live
+link measurements, SeaweedFS source inspection, and a targeted SQLite phase timing probe.
 
 ## Question
 
-The confusing result was that `seaweedfs-ovh-ssd` behaved worse than local HDD
-for several SQLite write workloads. The specific question was whether the result
-was explained by bandwidth limits, Nebula/inter-node latency, SeaweedFS
+The confusing result was that `seaweedfs-ovh-ssd` behaved worse than local HDD for several SQLite write workloads. The
+specific question was whether the result was explained by bandwidth limits, Nebula/inter-node latency, SeaweedFS
 round-trips, or something else.
 
 ## Current Topology
 
-The original benchmark scheduled every SeaweedFS-backed SQLite job on
-`ovh-ns103656`.
+The original benchmark scheduled every SeaweedFS-backed SQLite job on `ovh-ns103656`.
 
 Relevant live placement during the follow-up investigation:
 
@@ -39,14 +36,13 @@ Physical rack notes from `cluster/cdk8s/seaweedfs/cluster.py`:
 | `ovh-ns104952` | `H108B01` |
 | `ovh-ns104963` | `H108B01` |
 
-So the writer was not on the SSD rack. The two SSD nodes are same-rack with each
-other, but the SQLite writer was in `H109B04` while SSD volume and metadata DB
-traffic went to `H108B01`.
+So the writer was not on the SSD rack. The two SSD nodes are same-rack with each other, but the SQLite writer was in
+`H109B04` while SSD volume and metadata DB traffic went to `H108B01`.
 
 ## Measured Links
 
-Measurements were made from temporary `nicolaka/netshoot:v0.13` pods and from
-the actual SeaweedFS CSI mount pod on `ovh-ns103656`.
+Measurements were made from temporary `nicolaka/netshoot:v0.13` pods and from the actual SeaweedFS CSI mount pod on
+`ovh-ns103656`.
 
 ### RTT From Writer Side
 
@@ -77,8 +73,8 @@ Longer 100-sample pings from a pod pinned to `ovh-ns103656`:
 | `ovh-ns104952` | `147.135.104.5`  | `0.149/0.351/2.251/0.239 ms`  |
 | `ovh-ns104963` | `147.135.104.16` | `0.159/0.334/2.193/0.275 ms`  |
 
-Nebula/internal addressing was several times slower and much spikier than the
-public OVH path, but still around 1 ms average rather than tens of milliseconds.
+Nebula/internal addressing was several times slower and much spikier than the public OVH path, but still around 1 ms
+average rather than tens of milliseconds.
 
 ### Filer To Metadata DB
 
@@ -89,8 +85,7 @@ From pods pinned to the filer nodes:
 | `ovh-ns103711` | DB primary pod `10.244.0.79` | `0.242/1.434/15.381/2.516 ms` |
 | `ovh-ns102453` | DB primary pod `10.244.0.79` | `0.287/1.055/10.917/1.632 ms` |
 
-This matters because SeaweedFS filer metadata writes are in the SQLite fsync
-critical path.
+This matters because SeaweedFS filer metadata writes are in the SQLite fsync critical path.
 
 ### Throughput
 
@@ -100,29 +95,26 @@ critical path.
 0.00-10.03 sec  532 MBytes  444 Mbits/sec receiver
 ```
 
-The same run had many TCP retransmits, so the path is not clean. Still, the
-available throughput is orders of magnitude higher than the SQLite write rate
-observed through SeaweedFS:
+The same run had many TCP retransmits, so the path is not clean. Still, the available throughput is orders of magnitude
+higher than the SQLite write rate observed through SeaweedFS:
 
 | Workload                                      | Approx data |         Time |  Effective rate |
 | --------------------------------------------- | ----------: | -----------: | --------------: |
 | `seaweedfs-ovh-ssd` `activitywatch_batch_100` |   ~12.4 MiB |        ~50 s |       ~2 Mbit/s |
 | `seaweedfs-ovh-ssd` WAL checkpoint            |     ~14 MiB | ~0.45-0.68 s | ~170-260 Mbit/s |
 
-The slow write workloads are therefore latency/serialization bound, not raw
-bandwidth bound.
+The slow write workloads are therefore latency/serialization bound, not raw bandwidth bound.
 
 ## SQLite Phase Timing Probe
 
-A temporary Kubernetes job was run on `seaweedfs-ovh-ssd`, scheduled to
-`ovh-ns103656`, to split a 100-row transaction into:
+A temporary Kubernetes job was run on `seaweedfs-ovh-ssd`, scheduled to `ovh-ns103656`, to split a 100-row transaction
+into:
 
 - Python/SQLite row execution time.
 - `conn.commit()` time.
 - explicit `PRAGMA wal_checkpoint(TRUNCATE)` time.
 
-The workload used `journal_mode=WAL`, `synchronous=FULL`, and 120 transactions
-of 100 rows.
+The workload used `journal_mode=WAL`, `synchronous=FULL`, and 120 transactions of 100 rows.
 
 | Mode                              | Execute p50 | Execute p95 | Commit p50 | Commit p95 | Commit max |                   Explicit checkpoint |
 | --------------------------------- | ----------: | ----------: | ---------: | ---------: | ---------: | ------------------------------------: |
@@ -131,10 +123,9 @@ of 100 rows.
 
 The row work is sub-millisecond. The wait is in commit/fsync and checkpoint.
 
-The default auto-checkpoint run had its slowest commits at transactions
-`19, 38, 57, 76, 95, 114`. Each slow commit coincided with a WAL size around
-4.3 MiB, matching SQLite's default `wal_autocheckpoint=1000` threshold. That
-explains the large p95/max write latencies in the original benchmark.
+The default auto-checkpoint run had its slowest commits at transactions `19, 38, 57, 76, 95, 114`. Each slow commit
+coincided with a WAL size around 4.3 MiB, matching SQLite's default `wal_autocheckpoint=1000` threshold. That explains
+the large p95/max write latencies in the original benchmark.
 
 ## SeaweedFS Source Path
 
@@ -149,8 +140,8 @@ The relevant source path was inspected from those tags.
 CSI mount setup:
 
 - `seaweedfs-csi-driver/pkg/driver/mounter.go`
-- CSI runs `weed mount` with `-filer=...`, `-cacheDir=...`, and StorageClass
-  parameters such as `diskType` -> `-disk` and `replication` -> `-replication`.
+- CSI runs `weed mount` with `-filer=...`, `-cacheDir=...`, and StorageClass parameters such as `diskType` -> `-disk`
+  and `replication` -> `-replication`.
 
 SeaweedFS FUSE write/fsync:
 
@@ -160,10 +151,8 @@ SeaweedFS FUSE write/fsync:
 
 Important behavior:
 
-- FUSE `Write` queues dirty pages; it does not necessarily synchronously hit the
-  network for every SQLite write.
-- FUSE `Fsync` is explicit and synchronous; it calls
-  `doFlush(..., allowAsync=false)`.
+- FUSE `Write` queues dirty pages; it does not necessarily synchronously hit the network for every SQLite write.
+- FUSE `Fsync` is explicit and synchronous; it calls `doFlush(..., allowAsync=false)`.
 - `doFlush` flushes dirty pages, then flushes metadata to the filer.
 
 Data flush:
@@ -191,8 +180,7 @@ The metadata path does:
 
 1. Mount process sends `CreateEntry` to a filer.
 2. Filer updates the chunk list/attributes in its metadata store.
-3. The current metadata store is `postgres2`, backed by the
-   `seaweedfs-filer-db-ssd` CNPG cluster.
+3. The current metadata store is `postgres2`, backed by the `seaweedfs-filer-db-ssd` CNPG cluster.
 
 ## Live SeaweedFS Metrics
 
@@ -216,13 +204,12 @@ SSD volume server histograms:
 | `POST`            | `10.244.3.203` |             ~1.6 ms |
 | `writeToReplicas` | `10.244.3.203` |             ~1.9 ms |
 
-These are cluster-wide cumulative metrics, not isolated to the temporary probe,
-but the magnitudes match the RTT and commit-time decomposition.
+These are cluster-wide cumulative metrics, not isolated to the temporary probe, but the magnitudes match the RTT and
+commit-time decomposition.
 
 ## Causal Model
 
-For SQLite with `synchronous=FULL`, one normal WAL commit on
-`seaweedfs-ovh-ssd` is roughly:
+For SQLite with `synchronous=FULL`, one normal WAL commit on `seaweedfs-ovh-ssd` is roughly:
 
 1. SQLite appends WAL data.
 2. SQLite calls fsync/fdatasync during `COMMIT`.
@@ -242,38 +229,30 @@ Minimum network crossings for a small dirty commit include:
 - writer/mount -> filer for metadata
 - filer -> Postgres primary
 
-The measured links are individually short, mostly around 1 ms over the pod or
-Nebula paths. But the operations are serialized, run through FUSE/userspace,
-perform HTTP/gRPC work, touch SeaweedFS volume metadata, and persist filer
-metadata through Postgres. Stacking these costs produces the observed
-`seaweedfs-ovh-ssd` commit floor around 18-22 ms and p95 around 50-70 ms before
-checkpoint effects.
+The measured links are individually short, mostly around 1 ms over the pod or Nebula paths. But the operations are
+serialized, run through FUSE/userspace, perform HTTP/gRPC work, touch SeaweedFS volume metadata, and persist filer
+metadata through Postgres. Stacking these costs produces the observed `seaweedfs-ovh-ssd` commit floor around 18-22 ms
+and p95 around 50-70 ms before checkpoint effects.
 
-When SQLite's default WAL auto-checkpoint fires, the commit also performs
-checkpoint work against the main DB file. On SeaweedFS this means additional
-dirty-data and metadata flushes over the same distributed path. That raises
-commit p95 into 100 ms+ territory and explains the 1-2 second max phases seen in
-the larger original benchmark.
+When SQLite's default WAL auto-checkpoint fires, the commit also performs checkpoint work against the main DB file. On
+SeaweedFS this means additional dirty-data and metadata flushes over the same distributed path. That raises commit p95
+into 100 ms+ territory and explains the 1-2 second max phases seen in the larger original benchmark.
 
 ## What The Link Speeds Do And Do Not Explain
 
 The link measurements explain the observed behavior this way:
 
-- Raw bandwidth is not the primary limit for ordinary write transactions. The
-  measured path could move hundreds of Mbit/s, while SQLite-through-SeaweedFS
-  write workloads achieved only a few Mbit/s.
-- Nebula/internal routing adds real latency and jitter compared with public
-  OVH addressing. In the sample, public RTTs were about `0.3 ms`, while
-  Nebula/pod paths were often `0.7-1.5 ms` average with occasional `5-15 ms`
-  spikes.
-- That extra RTT/jitter hurts because SQLite commits are synchronous and
-  SeaweedFS fsync stacks several network operations.
-- Nebula alone is not enough to explain 20-70 ms commits. The larger cause is
-  SeaweedFS's distributed FUSE/fsync path plus SQLite's WAL checkpoint behavior.
+- Raw bandwidth is not the primary limit for ordinary write transactions. The measured path could move hundreds of
+  Mbit/s, while SQLite-through-SeaweedFS write workloads achieved only a few Mbit/s.
+- Nebula/internal routing adds real latency and jitter compared with public OVH addressing. In the sample, public RTTs
+  were about `0.3 ms`, while Nebula/pod paths were often `0.7-1.5 ms` average with occasional `5-15 ms` spikes.
+- That extra RTT/jitter hurts because SQLite commits are synchronous and SeaweedFS fsync stacks several network
+  operations.
+- Nebula alone is not enough to explain 20-70 ms commits. The larger cause is SeaweedFS's distributed FUSE/fsync path
+  plus SQLite's WAL checkpoint behavior.
 
-The practical result is that a same-datacenter SeaweedFS path can be acceptable
-for blobs, object-like workloads, backups, and RWX convenience, but it is a poor
-substrate for hot SQLite databases that rely on frequent durable commits.
+The practical result is that a same-datacenter SeaweedFS path can be acceptable for blobs, object-like workloads,
+backups, and RWX convenience, but it is a poor substrate for hot SQLite databases that rely on frequent durable commits.
 
 ## Methodology To Reproduce
 
@@ -303,9 +282,8 @@ substrate for hot SQLite databases that rely on frequent durable commits.
        echo "$ip"; ping -q -c 20 -i 0.1 "$ip" | tail -n 2; done'
    ```
 
-4. Create temporary netshoot pods pinned to relevant nodes for longer RTT,
-   tracepath, mtr, and iperf probes. Avoid `hostNetwork` in baseline namespaces;
-   PodSecurity may block it.
+4. Create temporary netshoot pods pinned to relevant nodes for longer RTT, tracepath, mtr, and iperf probes. Avoid
+   `hostNetwork` in baseline namespaces; PodSecurity may block it.
 
 5. Measure overlay throughput with `iperf3`:
 
@@ -345,7 +323,6 @@ substrate for hot SQLite databases that rely on frequent durable commits.
 
 ## Recommendation
 
-Keep hot SQLite databases on node-local storage, preferably
-`local-path-ovh-ssd`, and back them up or export them to replicated/object
-storage asynchronously. Do not use SeaweedFS CSI as the primary filesystem for
-SQLite databases that need low-latency durable commits.
+Keep hot SQLite databases on node-local storage, preferably `local-path-ovh-ssd`, and back them up or export them to
+replicated/object storage asynchronously. Do not use SeaweedFS CSI as the primary filesystem for SQLite databases that
+need low-latency durable commits.

@@ -17,23 +17,20 @@ networking.modemmanager.enable = true;
 
 ## SIM Inventory (2026-04-30)
 
-Physical micro-SIM (Google Fi data-only kit) is in slot 1, active. eUICC
-(slot 2) is empty (all profiles deleted after the eSIM throttling
-investigation — see <foxflss_wwan.md>).
+Physical micro-SIM (Google Fi data-only kit) is in slot 1, active. eUICC (slot 2) is empty (all profiles deleted after
+the eSIM throttling investigation — see <foxflss_wwan.md>).
 
 | Slot | Type     | ICCID                         | Provider  | Status                              |
 | ---- | -------- | ----------------------------- | --------- | ----------------------------------- |
 | 1    | physical | `8901240270139815559`         | Google Fi | **active**, registered, throttled\* |
 | 2    | eSIM     | (none — all profiles deleted) | —         | empty                               |
 
-\* Modem registers on Google Fi (operator `310260`) but TCP throughput
-is capped at ~7.3 KB/s by carrier QoS because the modem IMEI is not
-yet registered on the Fi account. ICMP and signaling are unaffected.
-See `modem.md` "Lift the Google Fi QoS throttle" TODO.
+\* Modem registers on Google Fi (operator `310260`) but TCP throughput is capped at ~7.3 KB/s by carrier QoS because the
+modem IMEI is not yet registered on the Fi account. ICMP and signaling are unaffected. See `modem.md` "Lift the Google
+Fi QoS throttle" TODO.
 
-Active slot is set via `mbimcli --ms-set-device-slot-mappings=0`
-(0-indexed; 0 = physical, 1 = eSIM). Switch requires `systemctl stop
-ModemManager` first; safe with WiFi up.
+Active slot is set via `mbimcli --ms-set-device-slot-mappings=0` (0-indexed; 0 = physical, 1 = eSIM). Switch requires
+`systemctl stop ModemManager` first; safe with WiFi up.
 
 To activate a profile from a QR code (`LPA:1$<server>$<code>`):
 
@@ -43,21 +40,19 @@ sudo mmcli -m 0 -e --esim-activation-code='LPA:1$<server>$<code>'
 
 ## FCC Lock — SOLVED (2026-04-18)
 
-The Foxconn DW5934e has an FCC lock that prevents software radio activation.
-Without unlocking, ModemManager reports `power state: low` and the software radio
-stays OFF.
+The Foxconn DW5934e has an FCC lock that prevents software radio activation. Without unlocking, ModemManager reports
+`power state: low` and the software radio stays OFF.
 
 ### Root cause
 
-The modem requires an FCC unlock handshake before the software radio can be turned on.
-This must happen **every time the modem powers on** (boot, PCI rescan, resume).
+The modem requires an FCC unlock handshake before the software radio can be turned on. This must happen **every time the
+modem powers on** (boot, PCI rescan, resume).
 
 ### What works: FoxFlss binary
 
-The closed-source `FoxFlss` binary from
-[foxconn-pc/fii_linux](https://github.com/foxconn-pc/fii_linux) (v1.0.15) performs the
-FCC unlock. It communicates via the MBIM proxy (needs ModemManager running) and reads
-the system SKU via `dmidecode` to verify platform support (SKU `0D67` is supported).
+The closed-source `FoxFlss` binary from [foxconn-pc/fii_linux](https://github.com/foxconn-pc/fii_linux) (v1.0.15)
+performs the FCC unlock. It communicates via the MBIM proxy (needs ModemManager running) and reads the system SKU via
+`dmidecode` to verify platform support (SKU `0D67` is supported).
 
 **Dependencies**: only glibc + `dmidecode` on PATH.
 
@@ -74,10 +69,10 @@ After step 5, the modem registers on Google Fi (5G NR, 92% signal observed).
 
 ### What doesn't work
 
-- **libqmi DMS commands** (`--dms-foxconn-set-fcc-authentication`): SDX72 rejects all
-  DMS Foxconn extensions with `WmsInvalidMessageId`. The DMS path is SDX55-only.
-- **libqmi FOX service** (`--fox-set-fcc-authentication`): Needs libqmi >= 1.38.0.
-  nixpkgs has 1.36.0 (only `--fox-noop` and `--fox-get-firmware-version`).
+- **libqmi DMS commands** (`--dms-foxconn-set-fcc-authentication`): SDX72 rejects all DMS Foxconn extensions with
+  `WmsInvalidMessageId`. The DMS path is SDX55-only.
+- **libqmi FOX service** (`--fox-set-fcc-authentication`): Needs libqmi >= 1.38.0. nixpkgs has 1.36.0 (only `--fox-noop`
+  and `--fox-get-firmware-version`).
 - `mbimcli --set-radio-state=on` — doesn't persist
 - `rfkill unblock wwan` — WWAN not listed in rfkill
 - `mmcli -m 0 --reset` — radio stays off
@@ -85,26 +80,22 @@ After step 5, the modem registers on Google Fi (5G NR, 92% signal observed).
 
 ### Completed
 
-- ~~**Declarative NixOS setup**~~: Done. See <../../../../nix/nixos/hosts/rugged/foxconn-wwan.nix>.
-  FoxFlss packaged, wired as MM `fcc-unlock.d` script, declarative NM profile
-  with IPv6 temporarily disabled during the Fi MTU/PMTUD investigation and
-  IPv4 failover (metric 1050).
-- ~~**NM connection**~~: Done. Declarative "Google Fi" profile via
-  `networking.networkmanager.ensureProfiles`. The observed sub-1280 result was
-  IPv4-only; native Fi IPv6 remains untested while the profile requests IPv4.
-  See <../network.md>.
+- ~~**Declarative NixOS setup**~~: Done. See <../../../../nix/nixos/hosts/rugged/foxconn-wwan.nix>. FoxFlss packaged,
+  wired as MM `fcc-unlock.d` script, declarative NM profile with IPv6 temporarily disabled during the Fi MTU/PMTUD
+  investigation and IPv4 failover (metric 1050).
+- ~~**NM connection**~~: Done. Declarative "Google Fi" profile via `networking.networkmanager.ensureProfiles`. The
+  observed sub-1280 result was IPv4-only; native Fi IPv6 remains untested while the profile requests IPv4. See
+  <../network.md>.
 
 ### Remaining work
 
-- **Cold boot verification**: FCC unlock + auto-connect has only been tested
-  after `nixos-rebuild switch`. Verify it works from a cold boot.
-- **Suspend/resume**: `mhi_pci_suspend` returns EBUSY (-16). FoxFlss v1.0.9+
-  has `--test-quick-suspend-resume` for MM, and the fii_linux repo includes
-  `mm-suspend-resume-options.conf`. Needs investigation.
-- **libqmi 1.38.0**: Once nixpkgs updates (or via overlay), the FCC unlock
-  could use `qmicli --fox-set-fcc-authentication` instead of the closed-source
-  binary. The FOX service (0xE3) works on this modem (confirmed:
-  `--fox-get-firmware-version` returns `FDE2.F0.0.0.1.2.TO.003.062`).
+- **Cold boot verification**: FCC unlock + auto-connect has only been tested after `nixos-rebuild switch`. Verify it
+  works from a cold boot.
+- **Suspend/resume**: `mhi_pci_suspend` returns EBUSY (-16). FoxFlss v1.0.9+ has `--test-quick-suspend-resume` for MM,
+  and the fii_linux repo includes `mm-suspend-resume-options.conf`. Needs investigation.
+- **libqmi 1.38.0**: Once nixpkgs updates (or via overlay), the FCC unlock could use
+  `qmicli --fox-set-fcc-authentication` instead of the closed-source binary. The FOX service (0xE3) works on this modem
+  (confirmed: `--fox-get-firmware-version` returns `FDE2.F0.0.0.1.2.TO.003.062`).
 
 ### Google Fi APN
 

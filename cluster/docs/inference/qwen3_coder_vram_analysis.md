@@ -15,9 +15,11 @@ Qwen3-Coder only comes in **two sizes**, both MoE (Mixture of Experts):
 | **Qwen3-Coder-30B-A3B**   | 30.5B        | 3.3B          | 262K                    |
 | **Qwen3-Coder-480B-A35B** | 480B         | 35B           | 262K (extendable to 1M) |
 
-Both are MoE models, meaning only a fraction of parameters are active per forward pass. This affects memory for weights but **not** for KV cache.
+Both are MoE models, meaning only a fraction of parameters are active per forward pass. This affects memory for weights
+but **not** for KV cache.
 
-Sources: [QwenLM/Qwen3-Coder GitHub](https://github.com/QwenLM/Qwen3-Coder), [Qwen Blog](https://qwenlm.github.io/blog/qwen3-coder/)
+Sources: [QwenLM/Qwen3-Coder GitHub](https://github.com/QwenLM/Qwen3-Coder),
+[Qwen Blog](https://qwenlm.github.io/blog/qwen3-coder/)
 
 ## Available Quantizations
 
@@ -129,7 +131,8 @@ KV cache per token = 2 × num_layers × num_kv_heads × head_dim × bytes_per_el
 | Q8_0         | 32 GB      | 29 GB       | **151K tokens**       | **302K tokens**      |
 | FP16         | 61 GB      | 0 GB        | ❌ No room            | ❌ No room           |
 
-**Key finding**: With Q4_K_M, you can nearly max out the native 262K context with FP8 KV cache, or get 218K with FP16 KV.
+**Key finding**: With Q4_K_M, you can nearly max out the native 262K context with FP8 KV cache, or get 218K with FP16
+KV.
 
 ## Practical Recommendations
 
@@ -142,13 +145,12 @@ KV cache: ~23 GB available per GPU
 Max context: 131K+ tokens
 ```
 
-AWQ 4-bit quantization reduces weights by ~4x while maintaining quality.
-This is the **only way to run full context on 2x 5090 with vLLM**.
+AWQ 4-bit quantization reduces weights by ~4x while maintaining quality. This is the **only way to run full context on
+2x 5090 with vLLM**.
 
-**⚠️ No Thinking Mode**: Qwen3-Coder does not support thinking mode. This is a base model
-property — Qwen3-Coder was post-trained with Agent RL only, without thinking mode fusion.
-No Qwen3-Coder variant (bf16, FP8, AWQ, etc.) has thinking. For thinking + tool use,
-use the original Qwen3-30B-A3B instead.
+**⚠️ No Thinking Mode**: Qwen3-Coder does not support thinking mode. This is a base model property — Qwen3-Coder was
+post-trained with Agent RL only, without thinking mode fusion. No Qwen3-Coder variant (bf16, FP8, AWQ, etc.) has
+thinking. For thinking + tool use, use the original Qwen3-30B-A3B instead.
 
 ```bash
 # Start vLLM with AWQ model
@@ -215,7 +217,8 @@ Offload KV cache or some layers to system RAM:
 
 ### 4. Sliding Window / Sparse Attention
 
-Some inference engines support sliding window attention where only recent N tokens get full attention. Check if your inference engine supports this for Qwen3.
+Some inference engines support sliding window attention where only recent N tokens get full attention. Check if your
+inference engine supports this for Qwen3.
 
 ### 5. Use the 480B via API/Cloud
 
@@ -238,7 +241,8 @@ vLLM logs:
 WARNING: Custom allreduce is disabled because your platform lacks GPU P2P capability
 ```
 
-**Impact**: Without GPU Peer-to-Peer communication, tensor parallelism requires CPU-mediated data transfer between GPUs. This adds significant memory overhead for staging buffers.
+**Impact**: Without GPU Peer-to-Peer communication, tensor parallelism requires CPU-mediated data transfer between GPUs.
+This adds significant memory overhead for staging buffers.
 
 ### Actual Memory Usage (vLLM, HF weights)
 
@@ -275,7 +279,8 @@ Non-KV cache memory:    30.06 GiB  ← exceeds budget by 0.27 GiB
 
 **Root cause**: The model + overhead uses 30.06 GiB per GPU, but 0.95 utilization only allows 29.79 GiB.
 
-**FP8 KV cache didn't help** because the bottleneck is fixed overhead (weights + activations), not KV cache size. The -0.27 GiB deficit occurs before any KV cache is allocated.
+**FP8 KV cache didn't help** because the bottleneck is fixed overhead (weights + activations), not KV cache size. The
+-0.27 GiB deficit occurs before any KV cache is allocated.
 
 ## Forensic Analysis: Why 28.51 GiB Weights Per GPU?
 
@@ -327,7 +332,8 @@ vLLM needs for operations:
   - KV cache:            ??? (nothing left)
 ```
 
-**The bf16 model is simply too large** for 32 GB GPUs. At 0.95 utilization (29.79 GiB), we exceed the budget by 0.27 GiB before any KV cache is allocated.
+**The bf16 model is simply too large** for 32 GB GPUs. At 0.95 utilization (29.79 GiB), we exceed the budget by 0.27 GiB
+before any KV cache is allocated.
 
 ### Solution: Quantized Weights
 
@@ -402,7 +408,9 @@ For model tables, experiment log, and download status, see <model_download_histo
 
 The bf16 model (61 GB) is too large for 2x 32GB GPUs even with TP=2.
 
-**VM Passthrough note**: Without GPU P2P, vLLM disables custom allreduce (faster inter-GPU communication). This slightly increases latency but doesn't affect memory. The real issue is that bf16 weights (28.5 GB/GPU) leave no room for KV cache on 32 GB GPUs. AWQ quantization solves this by reducing weights to ~8.5 GB/GPU.
+**VM Passthrough note**: Without GPU P2P, vLLM disables custom allreduce (faster inter-GPU communication). This slightly
+increases latency but doesn't affect memory. The real issue is that bf16 weights (28.5 GB/GPU) leave no room for KV
+cache on 32 GB GPUs. AWQ quantization solves this by reducing weights to ~8.5 GB/GPU.
 
 ## Real-World AWQ Performance (2026-01-24)
 
@@ -551,7 +559,8 @@ docker run -d --name vllm \
 
 **The default `max-num-seqs=256` causes OOM during warmup.**
 
-vLLM warms up the sampler with `max-num-seqs` dummy requests. With 256 sequences at 262K context, this exceeds memory. Lowering to 32 fixes it.
+vLLM warms up the sampler with `max-num-seqs` dummy requests. With 256 sequences at 262K context, this exceeds memory.
+Lowering to 32 fixes it.
 
 Error without fix:
 

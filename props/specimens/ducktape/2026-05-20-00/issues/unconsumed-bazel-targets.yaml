@@ -60,7 +60,9 @@ occurrences:
     files:
       devinfra/claude/hook_daemon/session_start/BUILD.bazel:
         - [85, 85]
-    note: "//devinfra/claude/hook_daemon/session_start:conftest (py_library); no direct non-generated consumers; already testonly=true"
+    note:
+      "//devinfra/claude/hook_daemon/session_start:conftest (py_library); no direct non-generated consumers; already
+      testonly=true"
     critic_scopes_expected_to_recall:
       - ["devinfra/claude/hook_daemon/session_start/BUILD.bazel"]
     match_file_restriction:
@@ -69,7 +71,9 @@ occurrences:
     files:
       devinfra/claude/hook_daemon/testing/BUILD.bazel:
         - [16, 16]
-    note: "//devinfra/claude/hook_daemon/testing:session_start_helpers (py_library); no direct non-generated consumers; already testonly=true"
+    note:
+      "//devinfra/claude/hook_daemon/testing:session_start_helpers (py_library); no direct non-generated consumers;
+      already testonly=true"
     critic_scopes_expected_to_recall:
       - ["devinfra/claude/hook_daemon/testing/BUILD.bazel"]
     match_file_restriction:
@@ -78,7 +82,9 @@ occurrences:
     files:
       devinfra/claude/web_env/re/environment_manager/src/internal/envtype/anthropic/BUILD.bazel:
         - [3, 3]
-    note: "//devinfra/claude/web_env/re/environment_manager/src/internal/envtype/anthropic:anthropic (go_library); no direct non-generated consumers"
+    note:
+      "//devinfra/claude/web_env/re/environment_manager/src/internal/envtype/anthropic:anthropic (go_library); no direct
+      non-generated consumers"
     critic_scopes_expected_to_recall:
       - ["devinfra/claude/web_env/re/environment_manager/src/internal/envtype/anthropic/BUILD.bazel"]
     match_file_restriction:
@@ -87,7 +93,9 @@ occurrences:
     files:
       devinfra/claude/web_env/re/environment_manager/src/internal/envtype/byoc/BUILD.bazel:
         - [3, 3]
-    note: "//devinfra/claude/web_env/re/environment_manager/src/internal/envtype/byoc:byoc (go_library); no direct non-generated consumers"
+    note:
+      "//devinfra/claude/web_env/re/environment_manager/src/internal/envtype/byoc:byoc (go_library); no direct
+      non-generated consumers"
     critic_scopes_expected_to_recall:
       - ["devinfra/claude/web_env/re/environment_manager/src/internal/envtype/byoc/BUILD.bazel"]
     match_file_restriction:
@@ -96,7 +104,9 @@ occurrences:
     files:
       devinfra/claude/web_env/re/environment_manager/src/internal/mcp/servers/codesign/BUILD.bazel:
         - [3, 3]
-    note: "//devinfra/claude/web_env/re/environment_manager/src/internal/mcp/servers/codesign:codesign (go_library); no direct non-generated consumers"
+    note:
+      "//devinfra/claude/web_env/re/environment_manager/src/internal/mcp/servers/codesign:codesign (go_library); no
+      direct non-generated consumers"
     critic_scopes_expected_to_recall:
       - ["devinfra/claude/web_env/re/environment_manager/src/internal/mcp/servers/codesign/BUILD.bazel"]
     match_file_restriction:
@@ -105,7 +115,9 @@ occurrences:
     files:
       devinfra/claude/web_env/re/environment_manager/src/internal/tunnel/actions/deploy/BUILD.bazel:
         - [3, 3]
-    note: "//devinfra/claude/web_env/re/environment_manager/src/internal/tunnel/actions/deploy:deploy (go_library); no direct non-generated consumers"
+    note:
+      "//devinfra/claude/web_env/re/environment_manager/src/internal/tunnel/actions/deploy:deploy (go_library); no
+      direct non-generated consumers"
     critic_scopes_expected_to_recall:
       - ["devinfra/claude/web_env/re/environment_manager/src/internal/tunnel/actions/deploy/BUILD.bazel"]
     match_file_restriction:
@@ -114,7 +126,9 @@ occurrences:
     files:
       devinfra/claude/web_env/re/environment_manager/src/internal/tunnel/actions/snapshot/BUILD.bazel:
         - [3, 3]
-    note: "//devinfra/claude/web_env/re/environment_manager/src/internal/tunnel/actions/snapshot:snapshot (go_library); no direct non-generated consumers"
+    note:
+      "//devinfra/claude/web_env/re/environment_manager/src/internal/tunnel/actions/snapshot:snapshot (go_library); no
+      direct non-generated consumers"
     critic_scopes_expected_to_recall:
       - ["devinfra/claude/web_env/re/environment_manager/src/internal/tunnel/actions/snapshot/BUILD.bazel"]
     match_file_restriction:
@@ -123,7 +137,9 @@ occurrences:
     files:
       devinfra/claude/web_env/re/environment_manager/src/internal/tunnel/actions/status/BUILD.bazel:
         - [3, 3]
-    note: "//devinfra/claude/web_env/re/environment_manager/src/internal/tunnel/actions/status:status (go_library); no direct non-generated consumers"
+    note:
+      "//devinfra/claude/web_env/re/environment_manager/src/internal/tunnel/actions/status:status (go_library); no
+      direct non-generated consumers"
     critic_scopes_expected_to_recall:
       - ["devinfra/claude/web_env/re/environment_manager/src/internal/tunnel/actions/status/BUILD.bazel"]
     match_file_restriction:
@@ -132,7 +148,9 @@ occurrences:
     files:
       devinfra/claude/web_env/re/environment_manager/src/internal/tunnel/BUILD.bazel:
         - [3, 3]
-    note: "//devinfra/claude/web_env/re/environment_manager/src/internal/tunnel:tunnel (go_library); no direct non-generated consumers"
+    note:
+      "//devinfra/claude/web_env/re/environment_manager/src/internal/tunnel:tunnel (go_library); no direct non-generated
+      consumers"
     critic_scopes_expected_to_recall:
       - ["devinfra/claude/web_env/re/environment_manager/src/internal/tunnel/BUILD.bazel"]
     match_file_restriction:
@@ -168,7 +186,8 @@ occurrences:
     files:
       devinfra/js/debundle/live_proxy/BUILD.bazel:
         - [9, 9]
-    note: "//devinfra/js/debundle/live_proxy:browser_load_test_entry_point (filegroup); no direct non-generated consumers"
+    note:
+      "//devinfra/js/debundle/live_proxy:browser_load_test_entry_point (filegroup); no direct non-generated consumers"
     critic_scopes_expected_to_recall:
       - ["devinfra/js/debundle/live_proxy/BUILD.bazel"]
     match_file_restriction:
@@ -177,7 +196,9 @@ occurrences:
     files:
       devinfra/js/debundle/skills/debundle_architect/BUILD.bazel:
         - [3, 3]
-    note: "//devinfra/js/debundle/skills/debundle_architect:debundle_architect (filegroup); no direct non-generated consumers"
+    note:
+      "//devinfra/js/debundle/skills/debundle_architect:debundle_architect (filegroup); no direct non-generated
+      consumers"
     critic_scopes_expected_to_recall:
       - ["devinfra/js/debundle/skills/debundle_architect/BUILD.bazel"]
     match_file_restriction:
@@ -186,7 +207,9 @@ occurrences:
     files:
       devinfra/js/debundle/skills/debundle_architect/BUILD.bazel:
         - [3, 3]
-    note: "//devinfra/js/debundle/skills/debundle_architect:debundle_architect_skill_spec (py_library); no direct non-generated consumers"
+    note:
+      "//devinfra/js/debundle/skills/debundle_architect:debundle_architect_skill_spec (py_library); no direct
+      non-generated consumers"
     critic_scopes_expected_to_recall:
       - ["devinfra/js/debundle/skills/debundle_architect/BUILD.bazel"]
     match_file_restriction:
@@ -204,7 +227,9 @@ occurrences:
     files:
       devinfra/js/debundle/skills/debundle_intake/BUILD.bazel:
         - [3, 3]
-    note: "//devinfra/js/debundle/skills/debundle_intake:debundle_intake_skill_spec (py_library); no direct non-generated consumers"
+    note:
+      "//devinfra/js/debundle/skills/debundle_intake:debundle_intake_skill_spec (py_library); no direct non-generated
+      consumers"
     critic_scopes_expected_to_recall:
       - ["devinfra/js/debundle/skills/debundle_intake/BUILD.bazel"]
     match_file_restriction:
@@ -213,7 +238,9 @@ occurrences:
     files:
       devinfra/js/debundle/skills/debundle_integrator/BUILD.bazel:
         - [3, 3]
-    note: "//devinfra/js/debundle/skills/debundle_integrator:debundle_integrator (filegroup); no direct non-generated consumers"
+    note:
+      "//devinfra/js/debundle/skills/debundle_integrator:debundle_integrator (filegroup); no direct non-generated
+      consumers"
     critic_scopes_expected_to_recall:
       - ["devinfra/js/debundle/skills/debundle_integrator/BUILD.bazel"]
     match_file_restriction:
@@ -222,7 +249,9 @@ occurrences:
     files:
       devinfra/js/debundle/skills/debundle_integrator/BUILD.bazel:
         - [3, 3]
-    note: "//devinfra/js/debundle/skills/debundle_integrator:debundle_integrator_skill_spec (py_library); no direct non-generated consumers"
+    note:
+      "//devinfra/js/debundle/skills/debundle_integrator:debundle_integrator_skill_spec (py_library); no direct
+      non-generated consumers"
     critic_scopes_expected_to_recall:
       - ["devinfra/js/debundle/skills/debundle_integrator/BUILD.bazel"]
     match_file_restriction:
@@ -231,7 +260,9 @@ occurrences:
     files:
       devinfra/js/debundle/skills/debundle_lane_worker/BUILD.bazel:
         - [3, 3]
-    note: "//devinfra/js/debundle/skills/debundle_lane_worker:debundle_lane_worker (filegroup); no direct non-generated consumers"
+    note:
+      "//devinfra/js/debundle/skills/debundle_lane_worker:debundle_lane_worker (filegroup); no direct non-generated
+      consumers"
     critic_scopes_expected_to_recall:
       - ["devinfra/js/debundle/skills/debundle_lane_worker/BUILD.bazel"]
     match_file_restriction:
@@ -240,7 +271,9 @@ occurrences:
     files:
       devinfra/js/debundle/skills/debundle_lane_worker/BUILD.bazel:
         - [3, 3]
-    note: "//devinfra/js/debundle/skills/debundle_lane_worker:debundle_lane_worker_skill_spec (py_library); no direct non-generated consumers"
+    note:
+      "//devinfra/js/debundle/skills/debundle_lane_worker:debundle_lane_worker_skill_spec (py_library); no direct
+      non-generated consumers"
     critic_scopes_expected_to_recall:
       - ["devinfra/js/debundle/skills/debundle_lane_worker/BUILD.bazel"]
     match_file_restriction:
@@ -249,7 +282,9 @@ occurrences:
     files:
       devinfra/js/debundle/skills/debundle_mint_names/BUILD.bazel:
         - [3, 3]
-    note: "//devinfra/js/debundle/skills/debundle_mint_names:debundle_mint_names (filegroup); no direct non-generated consumers"
+    note:
+      "//devinfra/js/debundle/skills/debundle_mint_names:debundle_mint_names (filegroup); no direct non-generated
+      consumers"
     critic_scopes_expected_to_recall:
       - ["devinfra/js/debundle/skills/debundle_mint_names/BUILD.bazel"]
     match_file_restriction:
@@ -258,7 +293,9 @@ occurrences:
     files:
       devinfra/js/debundle/skills/debundle_mint_names/BUILD.bazel:
         - [3, 3]
-    note: "//devinfra/js/debundle/skills/debundle_mint_names:debundle_mint_names_skill_spec (py_library); no direct non-generated consumers"
+    note:
+      "//devinfra/js/debundle/skills/debundle_mint_names:debundle_mint_names_skill_spec (py_library); no direct
+      non-generated consumers"
     critic_scopes_expected_to_recall:
       - ["devinfra/js/debundle/skills/debundle_mint_names/BUILD.bazel"]
     match_file_restriction:
@@ -267,7 +304,9 @@ occurrences:
     files:
       devinfra/js/debundle/skills/debundle_orchestrator/BUILD.bazel:
         - [3, 3]
-    note: "//devinfra/js/debundle/skills/debundle_orchestrator:debundle_orchestrator (filegroup); no direct non-generated consumers"
+    note:
+      "//devinfra/js/debundle/skills/debundle_orchestrator:debundle_orchestrator (filegroup); no direct non-generated
+      consumers"
     critic_scopes_expected_to_recall:
       - ["devinfra/js/debundle/skills/debundle_orchestrator/BUILD.bazel"]
     match_file_restriction:
@@ -276,7 +315,9 @@ occurrences:
     files:
       devinfra/js/debundle/skills/debundle_orchestrator/BUILD.bazel:
         - [3, 3]
-    note: "//devinfra/js/debundle/skills/debundle_orchestrator:debundle_orchestrator_skill_spec (py_library); no direct non-generated consumers"
+    note:
+      "//devinfra/js/debundle/skills/debundle_orchestrator:debundle_orchestrator_skill_spec (py_library); no direct
+      non-generated consumers"
     critic_scopes_expected_to_recall:
       - ["devinfra/js/debundle/skills/debundle_orchestrator/BUILD.bazel"]
     match_file_restriction:
@@ -285,7 +326,9 @@ occurrences:
     files:
       devinfra/js/debundle/skills/debundle_plan_work/BUILD.bazel:
         - [3, 3]
-    note: "//devinfra/js/debundle/skills/debundle_plan_work:debundle_plan_work (filegroup); no direct non-generated consumers"
+    note:
+      "//devinfra/js/debundle/skills/debundle_plan_work:debundle_plan_work (filegroup); no direct non-generated
+      consumers"
     critic_scopes_expected_to_recall:
       - ["devinfra/js/debundle/skills/debundle_plan_work/BUILD.bazel"]
     match_file_restriction:
@@ -294,7 +337,9 @@ occurrences:
     files:
       devinfra/js/debundle/skills/debundle_plan_work/BUILD.bazel:
         - [3, 3]
-    note: "//devinfra/js/debundle/skills/debundle_plan_work:debundle_plan_work_skill_spec (py_library); no direct non-generated consumers"
+    note:
+      "//devinfra/js/debundle/skills/debundle_plan_work:debundle_plan_work_skill_spec (py_library); no direct
+      non-generated consumers"
     critic_scopes_expected_to_recall:
       - ["devinfra/js/debundle/skills/debundle_plan_work/BUILD.bazel"]
     match_file_restriction:
@@ -591,7 +636,8 @@ occurrences:
     files:
       skills/hetzner_vnc_screenshot/BUILD.bazel:
         - [23, 23]
-    note: "//skills/hetzner_vnc_screenshot:hetzner_vnc_screenshot_skill_spec (py_library); no direct non-generated consumers"
+    note:
+      "//skills/hetzner_vnc_screenshot:hetzner_vnc_screenshot_skill_spec (py_library); no direct non-generated consumers"
     critic_scopes_expected_to_recall:
       - ["skills/hetzner_vnc_screenshot/BUILD.bazel"]
     match_file_restriction:

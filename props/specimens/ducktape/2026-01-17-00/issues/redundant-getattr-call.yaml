@@ -17,8 +17,8 @@ occurrences:
       llm/ducktape_llm_common/ducktape_llm_common/claude_code_api.py:
         - [135, 155]
     note: >-
-      v: Any too imprecise - extract union type alias, use in signature, replace getattr
-      with direct .tool_name access after narrowing
+      v: Any too imprecise - extract union type alias, use in signature, replace getattr with direct .tool_name access
+      after narrowing
     critic_scopes_expected_to_recall:
       - - llm/ducktape_llm_common/ducktape_llm_common/claude_code_api.py
     match_file_restriction:

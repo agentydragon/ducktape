@@ -1,23 +1,18 @@
 # Artifact drafts: Haku on Managed Agents (self-hosted)
 
-First-cut, copy-pasteable drafts of the artifacts in the
-[migration plan](managed_agents.md) (its "Artifacts to build" section).
-**Status: partially superseded.** The component landed in
+First-cut, copy-pasteable drafts of the artifacts in the [migration plan](managed_agents.md) (its "Artifacts to build"
+section). **Status: partially superseded.** The component landed in
 [`haku/runtime/x/managed_agent/self_hosted/`](../runtime/x/managed_agent/self_hosted/README.md) using an
-**ant-all-the-way** approach (no `anthropic` Python SDK — see that README for
-why). The control-plane YAML (§§1–3) and the vault wiring (§3) carry over; the
-SDK worker (§4) is replaced by `ant beta:worker poll`, and the Python supervisor
-(§5) is **deferred** in favor of a scheduled deployment (`haku.deployment.yaml`).
-Field names flagged for verification are not fully pinned in the skill docs —
-confirm against `ant <cmd> --help` before relying on them.
+**ant-all-the-way** approach (no `anthropic` Python SDK — see that README for why). The control-plane YAML (§§1–3) and
+the vault wiring (§3) carry over; the SDK worker (§4) is replaced by `ant beta:worker poll`, and the Python supervisor
+(§5) is **deferred** in favor of a scheduled deployment (`haku.deployment.yaml`). Field names flagged for verification
+are not fully pinned in the skill docs — confirm against `ant <cmd> --help` before relying on them.
 
-The runtime choice itself (A vs B vs C) remains open — see
-[runtime_options.md](runtime_options.md). The `self_hosted/` code is an evaluation
-prototype of the B path, not a commitment to it.
+The runtime choice itself (A vs B vs C) remains open — see [runtime_options.md](runtime_options.md). The `self_hosted/`
+code is an evaluation prototype of the B path, not a commitment to it.
 
-Naming below assumes: base manual baked into the worker image at `/opt/haku`
-(the PLAN's image model — base ships by image rebuild, reconciliation is against
-the image's pinned version); `haku-state` cloned at runtime to
+Naming below assumes: base manual baked into the worker image at `/opt/haku` (the PLAN's image model — base ships by
+image rebuild, reconciliation is against the image's pinned version); `haku-state` cloned at runtime to
 `/workspace/haku-state`; agent working dir `/workspace`.
 
 ## 1. Environment (`haku.environment.yaml`)
@@ -36,9 +31,8 @@ ENV_ID=$(ant beta:environments create < haku.environment.yaml --transform id -r)
 
 ## 2. Agent (`haku.agent.yaml`)
 
-Thin `system` (a pointer to the baked manual — behavior stays single-sourced in
-`haku/base/`); the full toolset auto-allowed (the Pod is the trust boundary); one
-`mcp_toolset` for haku-console's aggregated MCP catalog to start.
+Thin `system` (a pointer to the baked manual — behavior stays single-sourced in `haku/base/`); the full toolset
+auto-allowed (the Pod is the trust boundary); one `mcp_toolset` for haku-console's aggregated MCP catalog to start.
 
 ```yaml
 name: haku
@@ -73,9 +67,8 @@ AGENT_ID=$(ant beta:agents create < haku.agent.yaml --transform id -r)
 
 ## 3. Vault + the haku-console credential
 
-One vault holds MCP creds; haku-console's aggregated `/mcp` is gated by the static
-bearer Haku already has reflected into `haku-sandbox` (`haku-console-agent-api`).
-The token is piped via stdin (never on argv).
+One vault holds MCP creds; haku-console's aggregated `/mcp` is gated by the static bearer Haku already has reflected
+into `haku-sandbox` (`haku-console-agent-api`). The token is piped via stdin (never on argv).
 
 ```sh
 VAULT_ID=$(ant beta:vaults create --name haku-mcp --transform id -r)
@@ -94,15 +87,14 @@ auth:
 YAML
 ```
 
-The vault is attached per session via `vault_ids` (see the supervisor). This
-superseded the original per-source `tana-mcp-ro` facade + `static_bearer` sketch
-this section described: routing through console's own approval-gated catalog
-needed no per-source facade or Authentik OIDC upgrade at all.
+The vault is attached per session via `vault_ids` (see the supervisor). This superseded the original per-source
+`tana-mcp-ro` facade + `static_bearer` sketch this section described: routing through console's own approval-gated
+catalog needed no per-source facade or Authentik OIDC upgrade at all.
 
 ## 4. Worker image
 
-Image contents (becomes a Bazel `oci_image` per
-<../../cluster/docs/container-images.md>; shown as a Dockerfile for clarity):
+Image contents (becomes a Bazel `oci_image` per <../../cluster/docs/container-images.md>; shown as a Dockerfile for
+clarity):
 
 ```dockerfile
 # Runs in haku-sandbox as non-root, behind haku-egress-proxy egress.
@@ -124,9 +116,8 @@ WORKDIR /workspace
 ENTRYPOINT ["/opt/haku/entrypoint.sh"]
 ```
 
-`entrypoint.sh` — the same bootstrap steps as
-`haku/runtime/claude_web_env/bootstrap.sh`, retargeted to `/workspace` (factor the shared
-logic into one script when this lands):
+`entrypoint.sh` — the same bootstrap steps as `haku/runtime/claude_web_env/bootstrap.sh`, retargeted to `/workspace`
+(factor the shared logic into one script when this lands):
 
 ```bash
 #!/usr/bin/env bash
@@ -155,8 +146,7 @@ git -C "$state_dir" config user.email haku@allegedly.works
 exec python3 /opt/haku/worker.py
 ```
 
-`worker.py` — the always-on self-hosted worker (the loop runs at Anthropic; this
-just executes tool calls in the Pod):
+`worker.py` — the always-on self-hosted worker (the loop runs at Anthropic; this just executes tool calls in the Pod):
 
 ```python
 import asyncio
@@ -184,9 +174,9 @@ if __name__ == "__main__":
 
 ## 5. Supervisor (`supervisor.py`)
 
-Owns **exactly one live session**, exposes a wake endpoint (Forgejo webhook +
-manual), runs the schedule, and keeps a lossless event stream so it knows when a
-session died. Skeleton — the load-bearing control flow, not production-hardened:
+Owns **exactly one live session**, exposes a wake endpoint (Forgejo webhook + manual), runs the schedule, and keeps a
+lossless event stream so it knows when a session died. Skeleton — the load-bearing control flow, not
+production-hardened:
 
 ```python
 import asyncio
@@ -280,24 +270,21 @@ async def _shutdown() -> None:
         await app.state.scheduler
 ```
 
-Notes: a real version needs SSE reconnect-on-drop (re-run the history+stream
-overlap), the post-idle status-write race guard before any cleanup, and webhook
-HMAC verification — all documented patterns. The idle handler deliberately
-**keeps the stream open** so the session stays warm; it only drops `_session_id`
-on a true terminal so the next wake recreates and re-orients from `haku-state`.
+Notes: a real version needs SSE reconnect-on-drop (re-run the history+stream overlap), the post-idle status-write race
+guard before any cleanup, and webhook HMAC verification — all documented patterns. The idle handler deliberately **keeps
+the stream open** so the session stays warm; it only drops `_session_id` on a true terminal so the next wake recreates
+and re-orients from `haku-state`.
 
 ## 6. k8s wiring (`cluster/k8s/haku/`)
 
 Two Deployments in `haku-sandbox`, secrets split by trust:
 
-- **`haku-managed-agent`** — the worker image; mounts only `ANTHROPIC_ENVIRONMENT_KEY`
-  (+ `ANTHROPIC_ENVIRONMENT_ID`) and the `K8S_*` env the existing profile uses to
-  materialize the haku JWT kubeconfig. Non-root, behind `haku-egress-proxy`, scoped
-  RBAC + quota — unchanged perimeter.
-- **`haku-supervisor`** — the supervisor; mounts the org-scoped
-  `ANTHROPIC_API_KEY` (**kept off the worker host** so agent tool calls can't read
-  it) and `HAKU_{AGENT,ENVIRONMENT,VAULT}_ID`. Exposes `/wake`; a Forgejo webhook
-  on `haku-state` and a manual button both POST it.
+- **`haku-managed-agent`** — the worker image; mounts only `ANTHROPIC_ENVIRONMENT_KEY` (+ `ANTHROPIC_ENVIRONMENT_ID`)
+  and the `K8S_*` env the existing profile uses to materialize the haku JWT kubeconfig. Non-root, behind
+  `haku-egress-proxy`, scoped RBAC + quota — unchanged perimeter.
+- **`haku-supervisor`** — the supervisor; mounts the org-scoped `ANTHROPIC_API_KEY` (**kept off the worker host** so
+  agent tool calls can't read it) and `HAKU_{AGENT,ENVIRONMENT,VAULT}_ID`. Exposes `/wake`; a Forgejo webhook on
+  `haku-state` and a manual button both POST it.
 
 Worker Deployment, abbreviated:
 
@@ -334,7 +321,5 @@ spec:
 2. `ant beta:vaults create` + the haku-console credential → `VAULT_ID`.
 3. `ant beta:agents create` → `AGENT_ID`.
 4. Build + push the worker image; deploy `haku-managed-agent` (env key + `ENV_ID`).
-5. Deploy `haku-supervisor` (API key + the three IDs); point a Forgejo webhook at
-   `/wake`.
-6. `POST /wake` once by hand → watch the session live in Console
-   (`platform.claude.com/workspaces/default/sessions`).
+5. Deploy `haku-supervisor` (API key + the three IDs); point a Forgejo webhook at `/wake`.
+6. `POST /wake` once by hand → watch the session live in Console (`platform.claude.com/workspaces/default/sessions`).

@@ -1,11 +1,9 @@
 # Inference settings audit, September 26
 
-The completed Q4 and active IQ4 runs use the same agent/sampling settings. This audit
-does not change either run. Evidence: copied launch/job configs, saved `/props`,
-native sampler logs, served chat template, installed Harbor source and Q4's saved
-message history. The [Qwen model card](https://huggingface.co/Qwen/Qwen3.8-Flash-Next#best-practices)
-and [Unsloth guide](https://unsloth.ai/docs/models/qwen3.8-next#recommended-settings)
-were checked on September 26.
+The completed Q4 and active IQ4 runs use the same agent/sampling settings. This audit does not change either run.
+Evidence: copied launch/job configs, saved `/props`, native sampler logs, served chat template, installed Harbor source
+and Q4's saved message history. The [Qwen model card](https://huggingface.co/Qwen/Qwen3.8-Flash-Next#best-practices) and
+[Unsloth guide](https://unsloth.ai/docs/models/qwen3.8-next#recommended-settings) were checked on September 26.
 
 ## Effective behavior
 
@@ -25,50 +23,39 @@ were checked on September 26.
 | Speculation / MTP                         | None                                                   | Ordinary decoding.                                                                                      |
 | Model loading                             | mmap, lazy embeddings, partial CPU placement           | SSD/page-cache behavior matters; layer count does not establish complete GPU residency.                 |
 
-The sampling differences are concrete, but this run cannot establish whether they
-helped or hurt quality. The output cap is a local memory/time trade-off, not the
-model card's suggested allowance for a 1M-context deployment.
+The sampling differences are concrete, but this run cannot establish whether they helped or hurt quality. The output cap
+is a local memory/time trade-off, not the model card's suggested allowance for a 1M-context deployment.
 
 ## Reasoning-history evidence
 
 Installed Harbor 0.23.0:
 
-- `agents/terminus_2/terminus_2.py`: `Terminus2Options.interleaved_thinking=False`;
-  passes the option into `Chat`.
-- `llms/chat.py`: appends role/content; adds `llm_response.reasoning_content` only
-  when interleaved thinking is enabled.
-- Q4 `result.json.agent_result.metadata.all_messages`: 73 assistant messages,
-  zero reasoning-content fields and zero embedded think tags. This is the final
-  active history after compaction, not the entire rollout.
-- Main/subagent trajectories save reasoning separately. Saving it in an artifact
-  does not send it to the next request.
-- Served Jinja reads `message.reasoning_content` and defaults `preserve_thinking`
-  to true. The template cannot restore missing content.
+- `agents/terminus_2/terminus_2.py`: `Terminus2Options.interleaved_thinking=False`; passes the option into `Chat`.
+- `llms/chat.py`: appends role/content; adds `llm_response.reasoning_content` only when interleaved thinking is enabled.
+- Q4 `result.json.agent_result.metadata.all_messages`: 73 assistant messages, zero reasoning-content fields and zero
+  embedded think tags. This is the final active history after compaction, not the entire rollout.
+- Main/subagent trajectories save reasoning separately. Saving it in an artifact does not send it to the next request.
+- Served Jinja reads `message.reasoning_content` and defaults `preserve_thinking` to true. The template cannot restore
+  missing content.
 
-Source SHA256 for `llms/chat.py`:
-`cb986e957a8d0239d7a1d0b7d700efbba249684d56bda9f908d5cb3d6f580ed1`.
-Served template SHA256:
-`12827f24b742ea4e80cdc12dbcf9622227056b9f797252a3149263d4f9aaadce`.
-Other source hashes are in each run's `harbor-source-sha256.txt`.
-Artifacts: `/tmp/wyrm2-qwen38-q4-20260926/` and `/tmp/wyrm2-qwen38-iq4-20260926/`.
+Source SHA256 for `llms/chat.py`: `cb986e957a8d0239d7a1d0b7d700efbba249684d56bda9f908d5cb3d6f580ed1`. Served template
+SHA256: `12827f24b742ea4e80cdc12dbcf9622227056b9f797252a3149263d4f9aaadce`. Other source hashes are in each run's
+`harbor-source-sha256.txt`. Artifacts: `/tmp/wyrm2-qwen38-q4-20260926/` and `/tmp/wyrm2-qwen38-iq4-20260926/`.
 
-Visible analysis/plan and tool observations remain in history. Enabling internal
-reasoning history could improve continuity or reduce repeated analysis, but also
-fills context faster and changes compaction frequency. Test it separately.
+Visible analysis/plan and tool observations remain in history. Enabling internal reasoning history could improve
+continuity or reduce repeated analysis, but also fills context faster and changes compaction frequency. Test it
+separately.
 
 ## Next settings experiments
 
 1. Finish the current IQ4/Q4 comparison unchanged.
-2. On the chosen quant, compare current sampling with explicitly supplied
-   `temperature=1.0`, `top_p=0.95`, `top_k=20`, `min_p=0.0`, neutral penalties.
-   Record a new configuration rather than relabeling historical results.
-3. Separately test Harbor `interleaved_thinking=true` and template
-   `preserve_thinking=true`. Inspect the outgoing next-turn request and prompt
-   count before a long task. Include summary/Q&A paths; flags alone are not proof.
-4. Keep the 32K cap initially. If truncation recurs, test a larger output allowance
-   with corresponding input/compaction reserves rather than silently removing it.
-5. Compare medium reasoning after these checks. Faster responses need not mean
-   faster correct task completion.
+2. On the chosen quant, compare current sampling with explicitly supplied `temperature=1.0`, `top_p=0.95`, `top_k=20`,
+   `min_p=0.0`, neutral penalties. Record a new configuration rather than relabeling historical results.
+3. Separately test Harbor `interleaved_thinking=true` and template `preserve_thinking=true`. Inspect the outgoing
+   next-turn request and prompt count before a long task. Include summary/Q&A paths; flags alone are not proof.
+4. Keep the 32K cap initially. If truncation recurs, test a larger output allowance with corresponding input/compaction
+   reserves rather than silently removing it.
+5. Compare medium reasoning after these checks. Faster responses need not mean faster correct task completion.
 
-No change above is a demonstrated improvement. This audit made no model requests;
-the active server and copied recipe remain unchanged.
+No change above is a demonstrated improvement. This audit made no model requests; the active server and copied recipe
+remain unchanged.

@@ -13,8 +13,7 @@ occurrences:
       inop/runners/claude_runner.py:
         - [214, 216]
     note: >-
-      print(f"Error cleaning up workspace: {e}") should use self.logger.error()
-      with structured extra fields.
+      print(f"Error cleaning up workspace: {e}") should use self.logger.error() with structured extra fields.
     critic_scopes_expected_to_recall:
       - - inop/runners/claude_runner.py
     match_file_restriction:

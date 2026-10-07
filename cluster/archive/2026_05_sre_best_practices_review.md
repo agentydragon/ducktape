@@ -1,24 +1,20 @@
 # SRE Best Practices Review: Cluster Assessment
 
-**Date**: 2026-02-14
-**Scope**: Full comparison of current cluster architecture against modern Kubernetes best practices
+**Date**: 2026-02-14 **Scope**: Full comparison of current cluster architecture against modern Kubernetes best practices
 
-> **Note (2026-04-19)**: This review was written when secrets ran on Vault+ESO. Vault has
-> since been decommissioned (see <../docs/decisions.md> § "Secrets: SOPS SSOT"); all references to Vault
-> in this document describe the pre-migration architecture and SLO targets that no longer
-> apply.
+> **Note (2026-04-19)**: This review was written when secrets ran on Vault+ESO. Vault has since been decommissioned (see
+> <../docs/decisions.md> § "Secrets: SOPS SSOT"); all references to Vault in this document describe the pre-migration
+> architecture and SLO targets that no longer apply.
 
 ---
 
 ## Executive Summary
 
-The cluster is well-architected for a personal/small-team infrastructure project. The
-three-layer Terraform bootstrap, Flux GitOps DAG with 83 kustomizations, Vault-backed
-secret management, and comprehensive validation tooling are all aligned with professional
-SRE practices. The documentation is thorough and the lessons-learned corpus is valuable.
+The cluster is well-architected for a personal/small-team infrastructure project. The three-layer Terraform bootstrap,
+Flux GitOps DAG with 83 kustomizations, Vault-backed secret management, and comprehensive validation tooling are all
+aligned with professional SRE practices. The documentation is thorough and the lessons-learned corpus is valuable.
 
-However, several areas need attention — one urgently. The sections below are ordered by
-priority.
+However, several areas need attention — one urgently. The sections below are ordered by priority.
 
 ---
 
@@ -32,23 +28,20 @@ priority.
 
 **Risk**: Low (mitigated)
 
-All TF roots consolidated into a single root at `cluster/terraform/main/` with PG backend
-(CNPG `tofu-state-db`, schema `main`, 2 replicas on VPS `local-path`). Backup CronJob
-writes `pg_dump` to `proxmox-csi-retain` PVC every 6 hours. Persistent-auth resources have
-`lifecycle { prevent_destroy = true }` in the merged root.
+All TF roots consolidated into a single root at `cluster/terraform/main/` with PG backend (CNPG `tofu-state-db`, schema
+`main`, 2 replicas on VPS `local-path`). Backup CronJob writes `pg_dump` to `proxmox-csi-retain` PVC every 6 hours.
+Persistent-auth resources have `lifecycle { prevent_destroy = true }` in the merged root.
 
-**Remaining consideration**: The PG backend lives in the cluster that the state bootstraps.
-If the cluster is completely lost and the PG backup PVC is also lost, state would need to be
-reconstructed. The backup CronJob mitigates this for normal operations. For catastrophic
-recovery, consider additional off-cluster backup (rclone to encrypted cloud, S3 with
+**Remaining consideration**: The PG backend lives in the cluster that the state bootstraps. If the cluster is completely
+lost and the PG backup PVC is also lost, state would need to be reconstructed. The backup CronJob mitigates this for
+normal operations. For catastrophic recovery, consider additional off-cluster backup (rclone to encrypted cloud, S3 with
 OpenTofu [native state encryption](https://opentofu.org/docs/language/state/encryption/)).
 
 ---
 
 ## 3. Backup and Disaster Recovery: None Exists
 
-**Risk**: High
-**Current state**: No etcd backups, no PVC backups, no Velero
+**Risk**: High **Current state**: No etcd backups, no PVC backups, no Velero
 
 ### What Needs Backup
 
@@ -61,9 +54,8 @@ OpenTofu [native state encryption](https://opentofu.org/docs/language/state/encr
 
 ### Recommendations
 
-**etcd snapshots**: Deploy [talos-backup](https://github.com/siderolabs/talos-backup)
-(official Siderolabs tool). Runs as a CronJob, takes etcd snapshots via Talos API,
-encrypts with `age`, pushes to S3-compatible storage.
+**etcd snapshots**: Deploy [talos-backup](https://github.com/siderolabs/talos-backup) (official Siderolabs tool). Runs
+as a CronJob, takes etcd snapshots via Talos API, encrypts with `age`, pushes to S3-compatible storage.
 
 **Application data (PVCs)**: Deploy [Velero](https://velero.io/) with scheduled backups:
 
@@ -75,27 +67,23 @@ encrypts with `age`, pushes to S3-compatible storage.
 
 Velero integrates with both Proxmox CSI (via CSI snapshots) and Hetzner CSI.
 
-**Backup testing**: Backups that have never been restored are hopes, not backups.
-Schedule quarterly restore drills. A `scripts/test-restore.sh` that validates backup
-integrity would be valuable.
+**Backup testing**: Backups that have never been restored are hopes, not backups. Schedule quarterly restore drills. A
+`scripts/test-restore.sh` that validates backup integrity would be valuable.
 
 ---
 
 ## 4. Network Policies: Currently Open
 
-**Risk**: Medium
-**Current state**: No Cilium NetworkPolicies. All pods can communicate freely.
+**Risk**: Medium **Current state**: No Cilium NetworkPolicies. All pods can communicate freely.
 
 ### Best Practice: Default-Deny with Identity-Based Policies
 
-Every namespace should have a default-deny policy, with explicit allow rules for
-required traffic. Cilium supports this natively with `CiliumNetworkPolicy` CRDs
-that operate on workload identity rather than IP addresses.
+Every namespace should have a default-deny policy, with explicit allow rules for required traffic. Cilium supports this
+natively with `CiliumNetworkPolicy` CRDs that operate on workload identity rather than IP addresses.
 
 ### Implementation Path
 
-1. **Enable Hubble** (already deployed at `hubble.allegedly.works`) to observe current
-   traffic flows
+1. **Enable Hubble** (already deployed at `hubble.allegedly.works`) to observe current traffic flows
 2. **Generate baseline policies** from observed traffic using `hubble observe`
 3. **Deploy default-deny** in audit mode first (Cilium supports policy audit mode)
 4. **Enforce** after validating no legitimate traffic is blocked
@@ -115,8 +103,7 @@ that operate on workload identity rather than IP addresses.
 
 ## 5. Observability Gaps
 
-**Risk**: Medium
-**Current state**: Prometheus + Grafana + Loki deployed. ntfy.sh notifications configured.
+**Risk**: Medium **Current state**: Prometheus + Grafana + Loki deployed. ntfy.sh notifications configured.
 
 ### What's Good
 
@@ -136,16 +123,14 @@ Prometheus → Alertmanager → ntfy-alertmanager bridge → ntfy.sh → phone
 ```
 
 Deploy [alertmanager-ntfy](https://github.com/alexbakker/alertmanager-ntfy) or
-[ntfy-alertmanager](https://hub.xenrox.net/~xenrox/ntfy-alertmanager/) as a bridge.
-Supports priority levels, action buttons (create silence, open Prometheus), and
-severity-based routing.
+[ntfy-alertmanager](https://hub.xenrox.net/~xenrox/ntfy-alertmanager/) as a bridge. Supports priority levels, action
+buttons (create silence, open Prometheus), and severity-based routing.
 
 #### 5b. SLO-Based Alerting
 
-Currently no SLO/SLI definitions. Adopt [Pyrra](https://github.com/pyrra-dev/pyrra)
-or [Sloth](https://github.com/slok/sloth) to define SLOs declaratively. These tools
-auto-generate multi-window, multi-burn-rate alerts (Google SRE methodology) from simple
-SLO definitions.
+Currently no SLO/SLI definitions. Adopt [Pyrra](https://github.com/pyrra-dev/pyrra) or
+[Sloth](https://github.com/slok/sloth) to define SLOs declaratively. These tools auto-generate multi-window,
+multi-burn-rate alerts (Google SRE methodology) from simple SLO definitions.
 
 Start with:
 
@@ -155,22 +140,21 @@ Start with:
 
 #### 5c. Golden Signals Dashboards
 
-Every service should have a dashboard showing the [four golden signals](https://sre.google/sre-book/monitoring-distributed-systems/):
-latency, traffic, errors, saturation. Import Grafana dashboard
-[#21073](https://grafana.com/grafana/dashboards/21073-monitoring-golden-signals/) as a
-starting point.
+Every service should have a dashboard showing the
+[four golden signals](https://sre.google/sre-book/monitoring-distributed-systems/): latency, traffic, errors,
+saturation. Import Grafana dashboard [#21073](https://grafana.com/grafana/dashboards/21073-monitoring-golden-signals/)
+as a starting point.
 
 #### 5d. Distributed Tracing (Lower Priority)
 
-Consider [Grafana Tempo](https://grafana.com/oss/tempo/) for distributed tracing —
-natural fit with the existing Grafana + Loki stack. Object-storage backed, cheaper than
-Jaeger. Enables correlated logs-to-traces via trace IDs.
+Consider [Grafana Tempo](https://grafana.com/oss/tempo/) for distributed tracing — natural fit with the existing
+Grafana + Loki stack. Object-storage backed, cheaper than Jaeger. Enables correlated logs-to-traces via trace IDs.
 
 #### 5e. Dependency Visualization
 
-Deploy [Capacitor](https://fluxcd.io/blog/2024/02/introducing-capacitor/) — the official
-Flux GUI. Provides a reconciliation graph showing how Flux objects relate and a dependency
-view showing the `dependsOn` DAG. Lightweight single-pod deployment.
+Deploy [Capacitor](https://fluxcd.io/blog/2024/02/introducing-capacitor/) — the official Flux GUI. Provides a
+reconciliation graph showing how Flux objects relate and a dependency view showing the `dependsOn` DAG. Lightweight
+single-pod deployment.
 
 ---
 
@@ -180,8 +164,9 @@ view showing the `dependsOn` DAG. Lightweight single-pod deployment.
 
 **Current state**: No Pod Security Standards enforcement.
 
-Apply namespace labels to enforce the [Restricted profile](https://kubernetes.io/docs/concepts/security/pod-security-standards/)
-on all application namespaces:
+Apply namespace labels to enforce the
+[Restricted profile](https://kubernetes.io/docs/concepts/security/pod-security-standards/) on all application
+namespaces:
 
 ```yaml
 metadata:
@@ -191,38 +176,34 @@ metadata:
     pod-security.kubernetes.io/warn: restricted
 ```
 
-System namespaces (`kube-system`, `csi-proxmox`, `cilium`) need `privileged`.
-Start with `warn` mode on application namespaces, then promote to `enforce`.
+System namespaces (`kube-system`, `csi-proxmox`, `cilium`) need `privileged`. Start with `warn` mode on application
+namespaces, then promote to `enforce`.
 
 ### 6b. Kyverno: Audit → Enforce
 
-The cluster has Kyverno deployed in Audit mode with a `require-gitops` ClusterPolicy
-(already noted in `plan.md`). Switch to `Enforce` after validation. This prevents
-manual `kubectl apply` of resources that should be GitOps-managed.
+The cluster has Kyverno deployed in Audit mode with a `require-gitops` ClusterPolicy (already noted in `plan.md`).
+Switch to `Enforce` after validation. This prevents manual `kubectl apply` of resources that should be GitOps-managed.
 
 ### 6c. Image Supply Chain
 
 No image signing or verification exists. The modern stack:
 
-1. **Sign images in CI** with [cosign](https://github.com/sigstore/cosign) (keyless via
-   GitHub Actions OIDC)
+1. **Sign images in CI** with [cosign](https://github.com/sigstore/cosign) (keyless via GitHub Actions OIDC)
 2. **Verify in admission** with Kyverno `verifyImages` policies
 3. **SBOM generation** with Trivy/Syft, attached to images in OCI registry
 
-For the cluster's purposes, enforcing that all images come from known registries
-(`ghcr.io`, `docker.io`, `registry.allegedly.works`) via Kyverno is a pragmatic
-first step.
+For the cluster's purposes, enforcing that all images come from known registries (`ghcr.io`, `docker.io`,
+`registry.allegedly.works`) via Kyverno is a pragmatic first step.
 
 ### 6d. Runtime Security (Lower Priority)
 
-Consider [Tetragon](https://tetragon.io/) — Cilium's eBPF-based runtime security tool.
-Can detect and block suspicious syscalls, file access, and network connections at the
-kernel level. Natural complement to the existing Cilium stack.
+Consider [Tetragon](https://tetragon.io/) — Cilium's eBPF-based runtime security tool. Can detect and block suspicious
+syscalls, file access, and network connections at the kernel level. Natural complement to the existing Cilium stack.
 
 ### 6e. API Server Access Restriction
 
-The Kubernetes API (port 6443) is currently open to `0.0.0.0/0` in Hetzner firewall
-rules (noted in `plan.md` as TODO). Restrict to:
+The Kubernetes API (port 6443) is currently open to `0.0.0.0/0` in Hetzner firewall rules (noted in `plan.md` as TODO).
+Restrict to:
 
 - Admin IPs (Nebula mesh)
 - Inter-node CIDRs
@@ -232,19 +213,17 @@ rules (noted in `plan.md` as TODO). Restrict to:
 
 ## 7. Resource Management
 
-**Current state**: Most deployments have `requests` and `limits` set (good). No
-`ResourceQuota` or `LimitRange` on namespaces.
+**Current state**: Most deployments have `requests` and `limits` set (good). No `ResourceQuota` or `LimitRange` on
+namespaces.
 
 ### Resource Management Recommendations
 
-- **LimitRange per namespace**: Set default requests/limits so pods without explicit
-  resource specs don't consume unbounded resources
-- **ResourceQuota per namespace**: Prevent any single namespace from consuming the
-  entire cluster
+- **LimitRange per namespace**: Set default requests/limits so pods without explicit resource specs don't consume
+  unbounded resources
+- **ResourceQuota per namespace**: Prevent any single namespace from consuming the entire cluster
 - **VPA in recommendation mode**: Deploy the Vertical Pod Autoscaler or
-  [Goldilocks](https://github.com/FairwindsOps/goldilocks) to get right-sizing
-  recommendations. Given fixed-cost infrastructure (Hetzner VPS + Proxmox), this is
-  more about contention prevention than cost optimization.
+  [Goldilocks](https://github.com/FairwindsOps/goldilocks) to get right-sizing recommendations. Given fixed-cost
+  infrastructure (Hetzner VPS + Proxmox), this is more about contention prevention than cost optimization.
 
 ---
 
@@ -252,8 +231,8 @@ rules (noted in `plan.md` as TODO). Restrict to:
 
 ### 8a. Runbooks
 
-Alerts should link to runbooks. The `docs/troubleshooting.md` is good but could be
-structured as individual runbook files (one per alert/issue) with standardized sections:
+Alerts should link to runbooks. The `docs/troubleshooting.md` is good but could be structured as individual runbook
+files (one per alert/issue) with standardized sections:
 
 ```markdown
 ## Alert: <name>
@@ -271,8 +250,8 @@ structured as individual runbook files (one per alert/issue) with standardized s
 
 ### 8b. Incident Post-Mortems
 
-The `lessons_learned/` directory serves this purpose well (7 entries). Formalize with a
-template: timeline, root cause, detection gap, fix, prevention. Already mostly there.
+The `lessons_learned/` directory serves this purpose well (7 entries). Formalize with a template: timeline, root cause,
+detection gap, fix, prevention. Already mostly there.
 
 ### 8c. Change Management
 
@@ -281,27 +260,24 @@ Currently: edit → commit → push → Flux reconciles. No review gate.
 Consider:
 
 - **Branch protection** on `devel` with required PR reviews for infrastructure changes
-- **Flux `Receiver`** + GitHub webhook for instant reconciliation on push (currently
-  polling at 1-minute intervals, noted as TODO in `plan.md`)
-- **Flagger** for progressive delivery of application changes (canary analysis with
-  Prometheus metrics, auto-rollback on error rate spikes). Natural fit with the Flux
-  ecosystem.
+- **Flux `Receiver`** + GitHub webhook for instant reconciliation on push (currently polling at 1-minute intervals,
+  noted as TODO in `plan.md`)
+- **Flagger** for progressive delivery of application changes (canary analysis with Prometheus metrics, auto-rollback on
+  error rate spikes). Natural fit with the Flux ecosystem.
 
 ---
 
 ## 9. tofu-controller: Known Operational Fragility
 
-**Current state**: 62 Terraform modules managed by tofu-controller in-cluster. Known
-issues include the TLS secret cache desync bug (startup GC deletes all secrets),
-runner pod crashes causing state loss, and Authentik token overwrites from state
-regeneration.
+**Current state**: 62 Terraform modules managed by tofu-controller in-cluster. Known issues include the TLS secret cache
+desync bug (startup GC deletes all secrets), runner pod crashes causing state loss, and Authentik token overwrites from
+state regeneration.
 
 ### Assessment
 
-tofu-controller is the weakest link in the operational chain. The three documented
-bugs (TLS cache desync, Authentik token overwrite, runner crashes) all stem from the
-same architectural issue: running Terraform as ephemeral pods with in-cluster state
-is fragile.
+tofu-controller is the weakest link in the operational chain. The three documented bugs (TLS cache desync, Authentik
+token overwrite, runner crashes) all stem from the same architectural issue: running Terraform as ephemeral pods with
+in-cluster state is fragile.
 
 ### Alternatives to Evaluate
 
@@ -316,14 +292,12 @@ is fragile.
 
 For the current scale (62 modules, single operator), the pragmatic path is:
 
-1. **Short-term**: Keep tofu-controller with documented workarounds. Add `cas = 0`
-   (check-and-set) on all write-once `vault_kv_secret_v2` resources to prevent
-   silent overwrites.
-2. **Medium-term**: Evaluate Crossplane for new modules. Crossplane Compositions
-   could replace the SSO blueprint pattern with continuous reconciliation and no
-   state file management.
-3. **Long-term**: Migrate tofu-controller modules to Crossplane as the provider
-   ecosystem matures (Authentik, PowerDNS, Vault providers exist).
+1. **Short-term**: Keep tofu-controller with documented workarounds. Add `cas = 0` (check-and-set) on all write-once
+   `vault_kv_secret_v2` resources to prevent silent overwrites.
+2. **Medium-term**: Evaluate Crossplane for new modules. Crossplane Compositions could replace the SSO blueprint pattern
+   with continuous reconciliation and no state file management.
+3. **Long-term**: Migrate tofu-controller modules to Crossplane as the provider ecosystem matures (Authentik, PowerDNS,
+   Vault providers exist).
 
 ---
 
@@ -331,8 +305,8 @@ For the current scale (62 modules, single operator), the pragmatic path is:
 
 ### What's Excellent
 
-- **Layered documentation** (bootstrap.md, operations.md, troubleshooting.md, plan.md,
-  secrets.md) with clear separation of concerns
+- **Layered documentation** (bootstrap.md, operations.md, troubleshooting.md, plan.md, secrets.md) with clear separation
+  of concerns
 - **Lessons learned** corpus with root cause analysis
 - **AGENTS.md** with detailed agent instructions, anti-patterns, and debugging processes
 - **Validation tooling** (4 Python scripts, pre-commit hooks, Bazel integration)
@@ -341,14 +315,12 @@ For the current scale (62 modules, single operator), the pragmatic path is:
 ### What Could Improve
 
 - **Runbook-per-alert structure** (see 8a above)
-- **Architecture decision records (ADRs)**: The `plan.md` has some architectural
-  decisions inline. Consider extracting to numbered ADR files (`docs/adr/`) for
-  easier reference and historical tracking
-- **Dependency graph visualization**: Generate and commit a Mermaid diagram of the
-  Flux kustomization DAG. Update automatically in CI or via a script.
-- **Bootstrap timing documentation**: The timing reference table in AGENTS.md is
-  valuable. Consider adding expected timing to bootstrap.py output so operators
-  know when to worry.
+- **Architecture decision records (ADRs)**: The `plan.md` has some architectural decisions inline. Consider extracting
+  to numbered ADR files (`docs/adr/`) for easier reference and historical tracking
+- **Dependency graph visualization**: Generate and commit a Mermaid diagram of the Flux kustomization DAG. Update
+  automatically in CI or via a script.
+- **Bootstrap timing documentation**: The timing reference table in AGENTS.md is valuable. Consider adding expected
+  timing to bootstrap.py output so operators know when to worry.
 
 ---
 

@@ -37,11 +37,9 @@ def hello():
 
 ## Definition Lists (Markdown Extra extension)
 
-Term 1
-: Definition of term 1
+Term 1 : Definition of term 1
 
-Term 2
-: Definition of term 2
+Term 2 : Definition of term 2
 
 ## Auto TOC (GitLab extension)
 
@@ -60,13 +58,11 @@ Term 2
 
 ## Blockquotes
 
-> This is a quote.
-> It can span multiple lines.
+> This is a quote. It can span multiple lines.
 
 ## Admonitions (GitHub extension)
 
-> [!NOTE]
-> This is a note.
+> [!NOTE] This is a note.
 
 ## Math (extension)
 

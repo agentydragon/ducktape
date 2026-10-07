@@ -1,9 +1,8 @@
 # GNOME Shell Keybindings
 
-Pop Shell on GNOME 49, horizontal workspaces. Configured in
-`gnome-shell-keybindings.nix`, based on Pop Shell's
-[configure.sh](https://github.com/pop-os/shell/blob/master_noble/scripts/configure.sh)
-adapted for horizontal workspaces.
+Pop Shell on GNOME 49, horizontal workspaces. Configured in `gnome-shell-keybindings.nix`, based on Pop Shell's
+[configure.sh](https://github.com/pop-os/shell/blob/master_noble/scripts/configure.sh) adapted for horizontal
+workspaces.
 
 ## Window Focus (Pop Shell, hjkl only)
 

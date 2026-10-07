@@ -42,20 +42,18 @@ spec:
                   type: array
                   items:
                     description: >-
-                      One typed evaluator: `type` selects the kind, and each kind admits exactly
-                      the fields its `oneOf` branch names.
+                      One typed evaluator: `type` selects the kind, and each kind admits exactly the fields its `oneOf`
+                      branch names.
                     type: object
                     required: [type, actions]
                     properties:
                       type:
                         description: >-
-                          The evaluator. `exact_actions` matches by Action name alone;
-                          `argument_schema` also requires the arguments to satisfy `schema`;
-                          `github_repository` requires a GitHub MCP call to target
-                          `owner`/`repository`; `github_public_repository` requires it to
-                          target a repository an unauthenticated GitHub lookup confirms public;
-                          `home_assistant_entity_control` requires a Home Assistant service call to
-                          target exactly one of `entities` with a service listed for it.
+                          The evaluator. `exact_actions` matches by Action name alone; `argument_schema` also requires
+                          the arguments to satisfy `schema`; `github_repository` requires a GitHub MCP call to target
+                          `owner`/`repository`; `github_public_repository` requires it to target a repository an
+                          unauthenticated GitHub lookup confirms public; `home_assistant_entity_control` requires a Home
+                          Assistant service call to target exactly one of `entities` with a service listed for it.
                         type: string
                         enum:
                           - exact_actions
@@ -75,8 +73,8 @@ spec:
                             minLength: 1
                       schema:
                         description: >-
-                          A JSON Schema the arguments must satisfy, with plain JSON Schema
-                          semantics: `properties` alone never implies presence; use `required`.
+                          A JSON Schema the arguments must satisfy, with plain JSON Schema semantics: `properties` alone
+                          never implies presence; use `required`.
                         type: object
                         x-kubernetes-preserve-unknown-fields: true
                       owner:
@@ -89,8 +87,8 @@ spec:
                         minLength: 1
                       entities:
                         description: >-
-                          Home Assistant entity ids, each with the services a call may use on it;
-                          nothing else is matched.
+                          Home Assistant entity ids, each with the services a call may use on it; nothing else is
+                          matched.
                         type: object
                         minProperties: 1
                         additionalProperties:

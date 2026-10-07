@@ -10,8 +10,8 @@ occurrences:
       inop/test_optimizer_two_iters.py:
         - [52, 53]
     note: >-
-      getattr(choice, 'name', None) on ToolChoice union - should use
-      isinstance(choice, ToolChoiceFunction) then choice.name
+      getattr(choice, 'name', None) on ToolChoice union - should use isinstance(choice, ToolChoiceFunction) then
+      choice.name
     critic_scopes_expected_to_recall:
       - - inop/test_optimizer_two_iters.py
     match_file_restriction:
@@ -32,8 +32,8 @@ occurrences:
       agent_core/agent.py:
         - [256, 257]
     note: >-
-      except AttributeError after isinstance(block, TextContent) check -
-      TextContent.text is required, AttributeError impossible here
+      except AttributeError after isinstance(block, TextContent) check - TextContent.text is required, AttributeError
+      impossible here
     critic_scopes_expected_to_recall:
       - - agent_core/agent.py
     match_file_restriction:
@@ -59,8 +59,8 @@ occurrences:
         - [44, 44]
         - [46, 49]
     note: >-
-      Multiple defensive getattr on typed MCP results - is_error, type, mimeType, data
-      are all typed attributes. Use direct access after isinstance for content types.
+      Multiple defensive getattr on typed MCP results - is_error, type, mimeType, data are all typed attributes. Use
+      direct access after isinstance for content types.
     critic_scopes_expected_to_recall:
       - - mcp_starter/test_server.py
     match_file_restriction:
@@ -72,10 +72,9 @@ occurrences:
         - [258, 261]
         - [266, 270]
     note: >-
-      Unnecessary except AttributeError for event.sender - nio.Event.sender is required
-      field (dataclass field with init=False, set in __post_init__). MegolmEvent inherits
-      from Event, sender guaranteed. Line 255 accesses event.sender directly for
-      RoomMessageText.
+      Unnecessary except AttributeError for event.sender - nio.Event.sender is required field (dataclass field with
+      init=False, set in __post_init__). MegolmEvent inherits from Event, sender guaranteed. Line 255 accesses
+      event.sender directly for RoomMessageText.
     critic_scopes_expected_to_recall:
       - - ember/matrix_client.py
     match_file_restriction:

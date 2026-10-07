@@ -1,6 +1,8 @@
 ---
 name: cnpg_region_switch
-description: Migrate a single-instance CNPG PostgreSQL cluster between regions or region-pinned storage classes via streaming replication with sub-second downtime
+description:
+  Migrate a single-instance CNPG PostgreSQL cluster between regions or region-pinned storage classes via streaming
+  replication with sub-second downtime
 ---
 
 # CNPG Cross-Region Migration
@@ -32,4 +34,5 @@ Key steps:
 - Both clusters must use the same PostgreSQL image version
 - Promotion is irreversible (standalone replica pattern)
 - Namespace must have quota for ≥6 services during migration (3 per cluster)
-- Region and storage-class names are deployment-specific — see `cluster/docs/cnpg_conventions.md` for the current CNPG profiles and region-pinning rules
+- Region and storage-class names are deployment-specific — see `cluster/docs/cnpg_conventions.md` for the current CNPG
+  profiles and region-pinning rules

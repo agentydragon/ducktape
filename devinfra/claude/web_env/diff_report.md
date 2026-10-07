@@ -43,8 +43,8 @@
 
 ## Exclusion Pattern Utilization
 
-100 patterns excluded 562,197 paths (562,197 attributed to specific patterns). 7 patterns matched 0 paths.
-Ratio: 20.0x patterns per real diff.
+100 patterns excluded 562,197 paths (562,197 attributed to specific patterns). 7 patterns matched 0 paths. Ratio: 20.0x
+patterns per real diff.
 
 ### `skip_paths` (28 patterns, 523,997 hits, 2 unused)
 

@@ -1,14 +1,12 @@
 # Firecracker Dev VMs
 
-Warm Firecracker microVMs on wyrm2 for Claude Code development. See
-<DESIGN.md> for architecture, prior art, and decisions.
+Warm Firecracker microVMs on wyrm2 for Claude Code development. See <DESIGN.md> for architecture, prior art, and
+decisions.
 
-> **Not to be confused with BuildBuddy's Firecracker VMs.** `bbr` runs Bazel
-> on BuildBuddy's infrastructure, which also uses Firecracker for workload
-> isolation (configured via `recycle-runner`, `remote-snapshot-save-policy`,
-> etc. in `devinfra/bbr.json`). That is entirely BB-managed infrastructure.
-> This directory is a separate, local Firecracker setup on wyrm2 for running
-> Claude Code dev sessions.
+> **Not to be confused with BuildBuddy's Firecracker VMs.** `bbr` runs Bazel on BuildBuddy's infrastructure, which also
+> uses Firecracker for workload isolation (configured via `recycle-runner`, `remote-snapshot-save-policy`, etc. in
+> `devinfra/bbr.json`). That is entirely BB-managed infrastructure. This directory is a separate, local Firecracker
+> setup on wyrm2 for running Claude Code dev sessions.
 
 ## Components
 
@@ -24,10 +22,9 @@ Warm Firecracker microVMs on wyrm2 for Claude Code development. See
 
 ## Quick Start
 
-The in-cluster deployment is archived (`deploy/` is no longer wired into
-`cluster/k8s/kustomization.yaml`) — nothing is deployed to `claude-sandbox`
-right now. To revive it, re-add a Flux Kustomization pointing at `./deploy`
-(see `props/deploy/flux-kustomization.yaml` for the shape).
+The in-cluster deployment is archived (`deploy/` is no longer wired into `cluster/k8s/kustomization.yaml`) — nothing is
+deployed to `claude-sandbox` right now. To revive it, re-add a Flux Kustomization pointing at `./deploy` (see
+`props/deploy/flux-kustomization.yaml` for the shape).
 
 ```bash
 # Provision base rootfs on wyrm2 (requires Nix + LVM thin pool)
@@ -63,8 +60,7 @@ The NixOS rootfs includes (via `bazel-dev.nix`):
 
 ## Snapshot/Restore
 
-Firecracker supports snapshotting VM memory + CPU state to disk and
-restoring from it in ~28ms. A "warm" snapshot with a hot Bazel JVM +
-Skyframe cache would make queries take ~0.3s instead of ~15s cold.
+Firecracker supports snapshotting VM memory + CPU state to disk and restoring from it in ~28ms. A "warm" snapshot with a
+hot Bazel JVM + Skyframe cache would make queries take ~0.3s instead of ~15s cold.
 
 See `manager/snapshots.py` and `manager/clients.py` for the implementation.

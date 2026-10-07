@@ -1,12 +1,10 @@
 # `ws` — disposable agent workspaces
 
-> The standalone `agent-workspaces` namespace is retired. This client is retained
-> for revival; use Agentplane for new work. See
-> [the parked workspace](../../cluster/parked/agent-workspaces/README.md).
+> The standalone `agent-workspaces` namespace is retired. This client is retained for revival; use Agentplane for new
+> work. See [the parked workspace](../../cluster/parked/agent-workspaces/README.md).
 
-CLI for the agent workspaces in <../../cluster/k8s/agents/agent-sandbox/>: claim a
-pre-warmed sandbox, shell in, extend, dispose. Thin wrapper over `kubectl`
-against `SandboxClaim`s in `agent-workspaces` — auth is whatever kubeconfig
+CLI for the agent workspaces in <../../cluster/k8s/agents/agent-sandbox/>: claim a pre-warmed sandbox, shell in, extend,
+dispose. Thin wrapper over `kubectl` against `SandboxClaim`s in `agent-workspaces` — auth is whatever kubeconfig
 `kubectl` resolves (the namespace is operator-only).
 
 ```bash
@@ -24,9 +22,8 @@ ws rm --all
 Run via Bazel (`bb run //devinfra/ws -- ls`) or alias it:
 `alias ws='bazel run --ui_event_filters=-info --noshow_progress //devinfra/ws --'`.
 
-Shells are persistent: `sh` attaches to (or creates) the pod's `main` tmux
-session, so dropped connections and repeated `ws sh` land in the same shell.
+Shells are persistent: `sh` attaches to (or creates) the pod's `main` tmux session, so dropped connections and repeated
+`ws sh` land in the same shell.
 
-Gotcha this tool exists to hide: warm-pool adoption keeps the sandbox's
-pool-generated name — the claim's `status.sandbox.name` is the pod handle, not
-the claim name. `ws` resolves it for you.
+Gotcha this tool exists to hide: warm-pool adoption keeps the sandbox's pool-generated name — the claim's
+`status.sandbox.name` is the pod handle, not the claim name. `ws` resolves it for you.

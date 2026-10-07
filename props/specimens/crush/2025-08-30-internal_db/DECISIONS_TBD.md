@@ -1,6 +1,7 @@
 # Decisions — To Be Decided (TBD)
 
-This file tracks small refactors or style changes we’ve identified but haven’t decided to apply yet. Each item includes context and a proposed rewrite for later review.
+This file tracks small refactors or style changes we’ve identified but haven’t decided to apply yet. Each item includes
+context and a proposed rewrite for later review.
 
 ---
 
@@ -8,7 +9,8 @@ This file tracks small refactors or style changes we’ve identified but haven�
 
 - File: `internal/lsp/watcher/watcher.go` (constructor: `NewWorkspaceWatcher`)
 - Status: TBD — deduplication/cleanup; no behavior change
-- Rationale: Avoid duplicated `cfg != nil`/`config.Get()` and co-locate `WatchMode` / `RecursiveMaxWatchedDirs` reads into one block. Line count is roughly unchanged but reduces repetition and keeps related config in one place.
+- Rationale: Avoid duplicated `cfg != nil`/`config.Get()` and co-locate `WatchMode` / `RecursiveMaxWatchedDirs` reads
+  into one block. Line count is roughly unchanged but reduces repetition and keeps related config in one place.
 
 Before
 
@@ -56,5 +58,7 @@ if mode == "recursive" && maxDirs <= 0 {
 
 Notes
 
-- This doesn’t reduce nesting dramatically, but it removes duplicated `cfg != nil`/Get and groups related config usage, which can help future edits.
-- The magic constants (`5000`, `"recursive"`) are covered by the separate “magic constants should be named” finding in README.
+- This doesn’t reduce nesting dramatically, but it removes duplicated `cfg != nil`/Get and groups related config usage,
+  which can help future edits.
+- The magic constants (`5000`, `"recursive"`) are covered by the separate “magic constants should be named” finding in
+  README.

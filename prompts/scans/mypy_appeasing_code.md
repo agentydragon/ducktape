@@ -6,7 +6,8 @@
 
 ## Pattern Description
 
-Code written solely to satisfy mypy without adding semantic value. Often indicates misunderstanding of library types or unnecessary type manipulation.
+Code written solely to satisfy mypy without adding semantic value. Often indicates misunderstanding of library types or
+unnecessary type manipulation.
 
 ## Examples of Antipatterns
 
@@ -72,7 +73,8 @@ Often these patterns appear because:
 
 ## Before Assuming Types Are Bad: Research Library Improvements
 
-When you find mypy-appeasing code, **always research if there's a better solution** before accepting the cast/workaround:
+When you find mypy-appeasing code, **always research if there's a better solution** before accepting the
+cast/workaround:
 
 ### 1. Check for Type Stubs Packages
 

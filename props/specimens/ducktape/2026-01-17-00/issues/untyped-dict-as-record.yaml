@@ -15,9 +15,8 @@ occurrences:
         - [161, 161]
         - [174, 174]
     note: >-
-      dict[str, Any] used for function info record with known keys (name, file, line,
-      is_async, statement, decorators, signature). Define a dataclass SingleLineFunction
-      and use throughout.
+      dict[str, Any] used for function info record with known keys (name, file, line, is_async, statement, decorators,
+      signature). Define a dataclass SingleLineFunction and use throughout.
     critic_scopes_expected_to_recall:
       - - prompts/scans/scan_single_line_functions.py
     match_file_restriction:
@@ -28,8 +27,8 @@ occurrences:
       prompts/scans/scan_single_line_functions.py:
         - [173, 179]
     note: >-
-      Manual dict grouping pattern - use defaultdict(list) instead of checking key
-      existence and initializing empty list.
+      Manual dict grouping pattern - use defaultdict(list) instead of checking key existence and initializing empty
+      list.
     critic_scopes_expected_to_recall:
       - - prompts/scans/scan_single_line_functions.py
     match_file_restriction:
@@ -50,8 +49,8 @@ occurrences:
         - [108, 108]
         - [151, 151]
     note: >-
-      dict[str, Any] used for Literal record (value, line, file) and Symbol record (name,
-      line, file, type). Use Pydantic models since output is JSON-serialized.
+      dict[str, Any] used for Literal record (value, line, file) and Symbol record (name, line, file, type). Use
+      Pydantic models since output is JSON-serialized.
     critic_scopes_expected_to_recall:
       - - prompts/scans/scan_string_literals.py
     match_file_restriction:
@@ -67,8 +66,8 @@ occurrences:
         - [113, 113]
         - [115, 115]
     note: >-
-      dict[str, Any] used for error handling issue records (line, col, etc). Define
-      Pydantic models: HandlerIssue, FileIssues, ScanResult.
+      dict[str, Any] used for error handling issue records (line, col, etc). Define Pydantic models: HandlerIssue,
+      FileIssues, ScanResult.
     critic_scopes_expected_to_recall:
       - - prompts/scans/scan_error_handling.py
     match_file_restriction:
@@ -95,8 +94,8 @@ occurrences:
         - [31, 31]
         - [52, 52]
     note: >-
-      dict[str, Any] used for comment records (line, comment, context_before,
-      context_after, type). Define Pydantic model: CommentInfo.
+      dict[str, Any] used for comment records (line, comment, context_before, context_after, type). Define Pydantic
+      model: CommentInfo.
     critic_scopes_expected_to_recall:
       - - prompts/scans/scan_comments.py
     match_file_restriction:

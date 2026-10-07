@@ -1,10 +1,13 @@
 # AI Autosuggest Daemon for zsh (Spec)
 
-Implement an AI-backed autosuggestion system for zsh that integrates cleanly with `zsh-autosuggestions` via a custom strategy, backed by a local daemon that queries an LLM (OpenAI initially). The goals are low latency, zero-stall typing, safety, and easy opt-in/out.
+Implement an AI-backed autosuggestion system for zsh that integrates cleanly with `zsh-autosuggestions` via a custom
+strategy, backed by a local daemon that queries an LLM (OpenAI initially). The goals are low latency, zero-stall typing,
+safety, and easy opt-in/out.
 
 ## High-Level Requirements
 
-- Provide command-line autosuggestions inline (gray text) via `zsh-autosuggestions` using a custom strategy `ai` that sets `typeset -g suggestion` to a full line beginning with `$BUFFER` (plugin renders only the suffix).
+- Provide command-line autosuggestions inline (gray text) via `zsh-autosuggestions` using a custom strategy `ai` that
+  sets `typeset -g suggestion` to a full line beginning with `$BUFFER` (plugin renders only the suffix).
 - Non-blocking UX: Never block typing. Suggestions appear opportunistically under latency budgets.
 - Robustness: One daemon per user; lazy-start and self-heal on crash; secure socket permissions.
 - Safety: Strict prefix-only completions, short timeouts, simple redaction of recent history.
@@ -16,9 +19,11 @@ Implement an AI-backed autosuggestion system for zsh that integrates cleanly wit
 
 - Implement `_zsh_autosuggest_strategy_ai` per zsh-autosuggestions’ strategy contract:
   - Input: called with `$1=$BUFFER` (current line/prefix).
-  - Output: set `typeset -g suggestion` to the full suggested line (must start with `$1`), or leave it unset if no suggestion.
+  - Output: set `typeset -g suggestion` to the full suggested line (must start with `$1`), or leave it unset if no
+    suggestion.
 - Guardrails: check `AI_AUTOSUGGEST` and deps; skip if `${#BUFFER} < $AI_SUGGEST_MIN_PREFIX_LEN` or `$NO_AI_SUGGEST`.
-- Daemon use: ensure daemon is healthy once per shell; send `suggest` (cwd, buffer, recent) over the UNIX socket; enforce client min-interval; return immediately (non-blocking).
+- Daemon use: ensure daemon is healthy once per shell; send `suggest` (cwd, buffer, recent) over the UNIX socket;
+  enforce client min-interval; return immediately (non-blocking).
 
 2. Daemon process (Python 3.11+, `asyncio`)
 
@@ -40,9 +45,11 @@ Implement an AI-backed autosuggestion system for zsh that integrates cleanly wit
     - Enforce per-client rate limit (>=1200 ms between backend calls).
     - LRU cache keyed on `(model, cwd, prefix_hash, recent_hash)` with TTL (default 300s).
     - Redact trivial secrets from `recent` (emails, tokens-ish patterns, URLs with query) before sending to LLM.
-    - Compose a minimal prompt: cwd, recent (truncated), buffer, and a hard instruction to return exactly one zsh command that begins with `buffer`; otherwise return nothing.
+    - Compose a minimal prompt: cwd, recent (truncated), buffer, and a hard instruction to return exactly one zsh
+      command that begins with `buffer`; otherwise return nothing.
     - Timeout after `timeout_ms` and return `ok:true, reason:"no_suggestion"`.
-    - On success, return `{ok:true, suggestion, suffix, latency_ms, cache_hit, ttl_ms}` with `suffix = suggestion[len(buffer):]`.
+    - On success, return `{ok:true, suggestion, suffix, latency_ms, cache_hit, ttl_ms}` with
+      `suffix = suggestion[len(buffer):]`.
     - On error, return `{ok:false, code, message}`.
 
 3. OpenAI adapter
@@ -57,9 +64,11 @@ Implement an AI-backed autosuggestion system for zsh that integrates cleanly wit
 - Function `ensure_ai_daemon_running` in zsh:
   - Socket dir `~/.cache/ai_suggest` 0700; PID/log files there.
   - If socket exists: attempt `ping` with 200 ms timeout; if ok, return.
-  - Lock dir to serialize startup; if held, wait up to 500 ms for ping; if still down, treat as stale and attempt a clean restart.
+  - Lock dir to serialize startup; if held, wait up to 500 ms for ping; if still down, treat as stale and attempt a
+    clean restart.
   - Start daemon: `(setsid nohup python3 -m ai_suggest.daemon >"$LOG" 2>&1 & echo $! >"$PID") </dev/null`
-  - Poll ping up to ~10x50 ms; on success, done; else kill PID, remove socket, release lock, return (no-suggest this time).
+  - Poll ping up to ~10x50 ms; on success, done; else kill PID, remove socket, release lock, return (no-suggest this
+    time).
 
 5. CLI helpers (optional)
 
@@ -84,10 +93,14 @@ Implement an AI-backed autosuggestion system for zsh that integrates cleanly wit
 - Provider contract:
   - Set a global variable `suggestion` (e.g., `typeset -g suggestion=...`) with a full line that must begin with `$1`.
   - If no valid suggestion, do not set `suggestion` (or unset it). The core will ignore non-matching values.
-- Rendering by plugin: it sets `POSTDISPLAY="${suggestion#$BUFFER}"` and highlights via `region_highlight` using `ZSH_AUTOSUGGEST_HIGHLIGHT_STYLE`.
-- Acceptance widgets exposed by plugin: `autosuggest-accept`, `autosuggest-partial-accept`, `autosuggest-execute`, `autosuggest-clear`, etc. You may `bindkey` these; your strategy does not handle acceptance.
-- Strategy selection: `ZSH_AUTOSUGGEST_STRATEGY=(ai history completion ...)` — first provider setting a valid `suggestion` wins.
-- Async behavior: with `ZSH_AUTOSUGGEST_USE_ASYNC=1`, the plugin fetches suggestions off-thread and then updates `POSTDISPLAY` on arrival.
+- Rendering by plugin: it sets `POSTDISPLAY="${suggestion#$BUFFER}"` and highlights via `region_highlight` using
+  `ZSH_AUTOSUGGEST_HIGHLIGHT_STYLE`.
+- Acceptance widgets exposed by plugin: `autosuggest-accept`, `autosuggest-partial-accept`, `autosuggest-execute`,
+  `autosuggest-clear`, etc. You may `bindkey` these; your strategy does not handle acceptance.
+- Strategy selection: `ZSH_AUTOSUGGEST_STRATEGY=(ai history completion ...)` — first provider setting a valid
+  `suggestion` wins.
+- Async behavior: with `ZSH_AUTOSUGGEST_USE_ASYNC=1`, the plugin fetches suggestions off-thread and then updates
+  `POSTDISPLAY` on arrival.
 
 ## Socket Protocol (NDJSON)
 
@@ -144,7 +157,8 @@ Implement an AI-backed autosuggestion system for zsh that integrates cleanly wit
 
 ## Prompting Guidance
 
-- System: "You are a shell assistant. Output ONE zsh command only, no explanations. The output MUST begin with the exact `Current buffer` string and be a completion of it. If you cannot complete safely, output nothing."
+- System: "You are a shell assistant. Output ONE zsh command only, no explanations. The output MUST begin with the exact
+  `Current buffer` string and be a completion of it. If you cannot complete safely, output nothing."
 - User: include `PWD`, last N redacted commands, and `Current buffer:` followed by the buffer.
 
 ## Performance Targets
@@ -162,7 +176,8 @@ Implement an AI-backed autosuggestion system for zsh that integrates cleanly wit
 - Minimal installer/runner: `python3 -m ai_suggest.daemon`
 - zsh snippet:
   - `_zsh_autosuggest_strategy_ai` + `ensure_ai_daemon_running` + env config
-  - Does not block; strategy sets `typeset -g suggestion` (full line starting with `$BUFFER`); plugin renders suffix via `POSTDISPLAY`
+  - Does not block; strategy sets `typeset -g suggestion` (full line starting with `$BUFFER`); plugin renders suffix via
+    `POSTDISPLAY`
 - README with setup & troubleshooting; tests for the protocol and backend adapter.
 
 ## Nice-to-haves (later)

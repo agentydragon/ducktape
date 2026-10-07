@@ -1,6 +1,7 @@
 # Scan: Walrus Operator (`:=`) Opportunities
 
-**Goal**: Identify patterns that benefit from the walrus operator - avoiding duplicate computation/lookup while keeping scope tight.
+**Goal**: Identify patterns that benefit from the walrus operator - avoiding duplicate computation/lookup while keeping
+scope tight.
 
 ## When Walrus Wins
 
@@ -18,7 +19,8 @@ The walrus operator is valuable when you need to **use a value AND test/process 
 4. **Regex match + use groups** - Match once, use groups if matched
 5. **List comprehension filter** - Filter on transformed value, keep transform
 
-**Key insight**: Walrus prevents duplicate work (computation/lookup) while keeping variable scope tight to where it's used.
+**Key insight**: Walrus prevents duplicate work (computation/lookup) while keeping variable scope tight to where it's
+used.
 
 ## Detection Strategy
 
@@ -26,7 +28,8 @@ The walrus operator is valuable when you need to **use a value AND test/process 
 
 - This scan is **required** - do not skip this step
 - You **must** read and process ALL walrus candidate output using your intelligence
-- High recall required, high precision NOT required (~10-30% precision expected) - you determine which benefit from walrus
+- High recall required, high precision NOT required (~10-30% precision expected) - you determine which benefit from
+  walrus
 - Review each for: variable scope, duplicate work, readability improvement
 - Prevents lazy analysis by forcing examination of ALL test-and-use patterns
 
@@ -255,11 +258,10 @@ return compute()
 
 These patterns can be detected with high recall (>80%) using the grep commands above:
 
-✅ **dict.get() + if/while** - Pattern: `if x.get(` or `x = d.get(); if x:`
-✅ **while with pre-fetch** - Pattern: `x = f(); while x:`
-✅ **re.match/search in if** - Pattern: `if re.match(` then body uses match
-✅ **Assignment + if/while** - Pattern: `x = compute(); if x:` or `while x:`
-⚠️ **List comprehension** - Pattern: `[f(x) for x in ... if f(x)]` - needs manual inspection
+✅ **dict.get() + if/while** - Pattern: `if x.get(` or `x = d.get(); if x:` ✅ **while with pre-fetch** - Pattern:
+`x = f(); while x:` ✅ **re.match/search in if** - Pattern: `if re.match(` then body uses match ✅ **Assignment +
+if/while** - Pattern: `x = compute(); if x:` or `while x:` ⚠️ **List comprehension** - Pattern:
+`[f(x) for x in ... if f(x)]` - needs manual inspection
 
 **Expected precision**: 10-30% (many false positives, but that's okay - agent reviews all candidates)
 

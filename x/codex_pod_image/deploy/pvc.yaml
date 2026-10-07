@@ -4,7 +4,9 @@ metadata:
   name: codex-workspace
   namespace: codex-pod
   annotations:
-    description: "Persistent /workspace (work tree + codex state) for the codex pod. HOME is baked into the image, so this is only the work dir."
+    description:
+      "Persistent /workspace (work tree + codex state) for the codex pod. HOME is baked into the image, so this is only
+      the work dir."
 spec:
   accessModes:
     - ReadWriteOnce

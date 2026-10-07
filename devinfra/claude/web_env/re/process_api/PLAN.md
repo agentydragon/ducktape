@@ -13,9 +13,8 @@
 
 ## RE Status by Module
 
-`edebff2c verified` means the module's strings and structural evidence were
-checked against this binary. `offsets` says whether the `Decompiled from 0x...`
-annotations in the source point at this binary.
+`edebff2c verified` means the module's strings and structural evidence were checked against this binary. `offsets` says
+whether the `Decompiled from 0x...` annotations in the source point at this binary.
 
 | Module                 | Status            | Offsets          | Notes                                                               |
 | ---------------------- | ----------------- | ---------------- | ------------------------------------------------------------------- |
@@ -35,37 +34,27 @@ annotations in the source point at this binary.
 
 ## Open Items
 
-- [ ] `trace.rs` — recover the module. Evidence available: source-path panic
-      locations at `.data.rel.ro` 0x4211f0 / 0x421208 / 0x421220, the
-      `##TRACE##` marker at 0x4211e0, the `TraceEventMsg` fields
-      (`process`, `host`, `sph`, `cat`, `dur_us`) and the `trace_emitted` /
-      `trace_outcome` `ProcessInfo` fields. The `cpu_timeout` trace-outcome
+- [ ] `trace.rs` — recover the module. Evidence available: source-path panic locations at `.data.rel.ro` 0x4211f0 /
+      0x421208 / 0x421220, the `##TRACE##` marker at 0x4211e0, the `TraceEventMsg` fields (`process`, `host`, `sph`,
+      `cat`, `dur_us`) and the `trace_emitted` / `trace_outcome` `ProcessInfo` fields. The `cpu_timeout` trace-outcome
       label is at 0x39a886.
-- [ ] `ws_compression.rs` — decompile the `ZSTD_compressStream2` /
-      `ZSTD_decompressStream` pumps (0x1bd5c0..0x1bf1bf and the decode arm
-      inlined at 0x14c460..0x14dbb0), and identify the GOT slots 0x42bf58 /
-      0x42bfa0 (both called as `(ctx, 1, 0)`).
-- [ ] `firecracker_init.rs` CA fan-out — decompile the helper bodies; in
-      particular the Chromium managed-policy JSON schema, which has no
-      distinguishing key string in `.rodata`.
-- [ ] `main.rs` — identify where the surviving-task count read at
-      `0x98(%r13)` (fn 0x154810) comes from.
-- [ ] Re-anchor the remaining stale offsets (`cgroup.rs`, `oom_killer.rs`,
-      `adopter.rs`, `state.rs`, `platform/unix/mod.rs`, most of
-      `control_server.rs`).
+- [ ] `ws_compression.rs` — decompile the `ZSTD_compressStream2` / `ZSTD_decompressStream` pumps (0x1bd5c0..0x1bf1bf and
+      the decode arm inlined at 0x14c460..0x14dbb0), and identify the GOT slots 0x42bf58 / 0x42bfa0 (both called as
+      `(ctx, 1, 0)`).
+- [ ] `firecracker_init.rs` CA fan-out — decompile the helper bodies; in particular the Chromium managed-policy JSON
+      schema, which has no distinguishing key string in `.rodata`.
+- [ ] `main.rs` — identify where the surviving-task count read at `0x98(%r13)` (fn 0x154810) comes from.
+- [ ] Re-anchor the remaining stale offsets (`cgroup.rs`, `oom_killer.rs`, `adopter.rs`, `state.rs`,
+      `platform/unix/mod.rs`, most of `control_server.rs`).
 - [ ] Behavioral test harness.
 
 ## Method Notes
 
-- rustc 1.95 packs `format_args!` into a byte template: length-prefixed literal
-  chunks, `0xc0` placeholder markers, `0x00` terminator. A no-argument
-  formatted call passes `(len << 1) | 1` in the argument slot instead of a
-  pointer — that is why `panic!("literal")` sites show odd immediates such as
-  `$0x35` for a 26-character message.
-- Serde `FIELDS` arrays live in `.data.rel.ro` as `(ptr, len)` pairs; the
-  pointers arrive as `R_X86_64_RELATIVE` relocations, so `readelf -r` plus the
-  adjacent length word recovers field names in declaration order. This is the
-  most reliable way to diff wire structs between builds.
-- Function boundaries on this stripped binary come from the set of `call`
-  targets in `objdump -d` output; that is exact enough for the small helpers
-  and approximate for async state machines, which are one giant function each.
+- rustc 1.95 packs `format_args!` into a byte template: length-prefixed literal chunks, `0xc0` placeholder markers,
+  `0x00` terminator. A no-argument formatted call passes `(len << 1) | 1` in the argument slot instead of a pointer —
+  that is why `panic!("literal")` sites show odd immediates such as `$0x35` for a 26-character message.
+- Serde `FIELDS` arrays live in `.data.rel.ro` as `(ptr, len)` pairs; the pointers arrive as `R_X86_64_RELATIVE`
+  relocations, so `readelf -r` plus the adjacent length word recovers field names in declaration order. This is the most
+  reliable way to diff wire structs between builds.
+- Function boundaries on this stripped binary come from the set of `call` targets in `objdump -d` output; that is exact
+  enough for the small helpers and approximate for async state machines, which are one giant function each.

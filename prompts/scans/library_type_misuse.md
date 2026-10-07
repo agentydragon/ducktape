@@ -6,12 +6,13 @@
 
 ## Pattern Description
 
-Using casts, hasattr, getattr, or other dynamic patterns when the library actually provides proper static types. Often caused by not reading the actual library source code.
+Using casts, hasattr, getattr, or other dynamic patterns when the library actually provides proper static types. Often
+caused by not reading the actual library source code.
 
 ## The Core Problem
 
-**Assumption**: "The library probably doesn't have good types, so I'll cast/check at runtime"
-**Reality**: Modern Python libraries (OpenAI SDK, Pydantic, etc.) have excellent type annotations
+**Assumption**: "The library probably doesn't have good types, so I'll cast/check at runtime" **Reality**: Modern Python
+libraries (OpenAI SDK, Pydantic, etc.) have excellent type annotations
 
 ## Examples of Misuse
 

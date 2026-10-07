@@ -1,13 +1,12 @@
 # Ember
 
-Containerised LLM agent (`emberd`) that watches Matrix rooms and responds via
-OpenAI tool calls. See <plan/SPEC.md> for the full specification and
-<docs/agent_ontology.md> for vocabulary.
+Containerised LLM agent (`emberd`) that watches Matrix rooms and responds via OpenAI tool calls. See <plan/SPEC.md> for
+the full specification and <docs/agent_ontology.md> for vocabulary.
 
 ## Kubernetes
 
-Credentials are projected into `/var/run/ember/secrets/` (Matrix token, Gitea
-token, OpenAI key). Rotate by reapplying the Helm charts:
+Credentials are projected into `/var/run/ember/secrets/` (Matrix token, Gitea token, OpenAI key). Rotate by reapplying
+the Helm charts:
 
 ```bash
 helm upgrade matrix k8s/helm/matrix-stack -n matrix -f k8s/helm/matrix-stack/values.yaml
@@ -66,9 +65,8 @@ emberd
 # EMBER_CONFIG_FILE=${PWD}/ember.toml uvicorn x.ember.app:create_app --factory --reload
 ```
 
-On k3s, the OpenAI API key is supplied via the projected secret file rather than
-an environment variable; the env var export above is only required for local
-development.
+On k3s, the OpenAI API key is supplied via the projected secret file rather than an environment variable; the env var
+export above is only required for local development.
 
 With that running you can:
 
@@ -76,6 +74,5 @@ With that running you can:
 - `curl -X POST http://127.0.0.1:8000/control/restart`
 - `curl -X POST http://127.0.0.1:8000/control/shutdown`
 
-The agent uses `run_shell_command` for replies (no other tool surfaces in v0).
-Room membership is sourced live from the homeserver on startup; the runtime
-accepts invites from `matrix.admin_user_id`.
+The agent uses `run_shell_command` for replies (no other tool surfaces in v0). Room membership is sourced live from the
+homeserver on startup; the runtime accepts invites from `matrix.admin_user_id`.

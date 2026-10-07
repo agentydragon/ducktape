@@ -4,72 +4,70 @@
 
 The Python statusline package dependencies are declared in **two places** that must stay in sync:
 
-1. **Wheel `requires`**: `//devinfra/claude/statusline:claude_statusline_wheel` in `devinfra/claude/statusline/BUILD.bazel`
-2. **Nix `propagatedBuildInputs`**: `claude-statusline` in `nix/packages/default.nix`; `claude-hook` is the Rust dispatcher
+1. **Wheel `requires`**: `//devinfra/claude/statusline:claude_statusline_wheel` in
+   `devinfra/claude/statusline/BUILD.bazel`
+2. **Nix `propagatedBuildInputs`**: `claude-statusline` in `nix/packages/default.nix`; `claude-hook` is the Rust
+   dispatcher
 
-When adding or removing a runtime dependency, update **both** lists. A mismatch causes `ModuleNotFoundError` when `claude-statusline` starts in whichever environment has the stale list. Both files have `SYNC:` comments pointing to each other.
+When adding or removing a runtime dependency, update **both** lists. A mismatch causes `ModuleNotFoundError` when
+`claude-statusline` starts in whichever environment has the stale list. Both files have `SYNC:` comments pointing to
+each other.
 
 ## bb CLI Source
 
-The `bb` CLI is open source at <https://github.com/buildbuddy-io/buildbuddy>. Remote Bazel logic lives in `cli/remotebazel/remotebazel.go` and `cli/storage/storage.go`. When debugging `bb remote` behavior (remote selection, flag semantics, git config keys), read the source directly.
+The `bb` CLI is open source at <https://github.com/buildbuddy-io/buildbuddy>. Remote Bazel logic lives in
+`cli/remotebazel/remotebazel.go` and `cli/storage/storage.go`. When debugging `bb remote` behavior (remote selection,
+flag semantics, git config keys), read the source directly.
 
 ## Agent Instructions
 
 - **Rust hook daemon logs** (includes session start): `/tmp/claude-hd/<session_id>/daemon.log`
-- **Rust hook daemon stderr log** (check this first for SessionStart crashes): `/tmp/claude-hd/<session_id>/daemon.err.log`
-- **Hook daemon startup failure marker** (written when the dispatcher couldn't reach the daemon at all): `/tmp/claude-hd/<session_id>/startup_failure.json`
-- **Platform detection**: Claude Code sessions (web and CLI-managed remote) run on Firecracker microVMs (ext4 root, real Linux kernel; `--firecracker-init` on the PID 1 cmdline). The Rust session start hook detects Firecracker only to size Bazel's JVM heap. See <web_env/docs/container_spec.md> for specs and IO benchmarks. If that Firecracker marker is absent in a live web/remote session, stop and report platform drift instead of applying old container-runtime workarounds.
+- **Rust hook daemon stderr log** (check this first for SessionStart crashes):
+  `/tmp/claude-hd/<session_id>/daemon.err.log`
+- **Hook daemon startup failure marker** (written when the dispatcher couldn't reach the daemon at all):
+  `/tmp/claude-hd/<session_id>/startup_failure.json`
+- **Platform detection**: Claude Code sessions (web and CLI-managed remote) run on Firecracker microVMs (ext4 root, real
+  Linux kernel; `--firecracker-init` on the PID 1 cmdline). The Rust session start hook detects Firecracker only to size
+  Bazel's JVM heap. See <web_env/docs/container_spec.md> for specs and IO benchmarks. If that Firecracker marker is
+  absent in a live web/remote session, stop and report platform drift instead of applying old container-runtime
+  workarounds.
 
 ## Container Lifecycle — Reverse-Engineered Source
 
-Anthropic's `environment-manager` binary (Go, garble-obfuscated) is partially
-reverse-engineered under <web_env/re/environment_manager/>. **The RE is
-incomplete and may be wrong in places — treat it as a starting point, not
-ground truth.** When running inside a Claude Code web session you can pull
-the live binary from the container and cross-check it against the committed
-RE (or update the RE if it's drifted). Read this before speculating about
-when/how session-start-adjacent things fire. Specifically:
+Anthropic's `environment-manager` binary (Go, garble-obfuscated) is partially reverse-engineered under
+<web_env/re/environment_manager/>. **The RE is incomplete and may be wrong in places — treat it as a starting point, not
+ground truth.** When running inside a Claude Code web session you can pull the live binary from the container and
+cross-check it against the committed RE (or update the RE if it's drifted). Read this before speculating about when/how
+session-start-adjacent things fire. Specifically:
 
-- **Which hook points fire on which session modes** (`new` / `resume` /
-  `resume-cached` / `setup-only`): see
-  <web_env/re/environment_manager/src/internal/envtype/anthropic/anthropic.go>
-  `Initialize()`. Steps 1–2 (install languages, clone sources) are gated on
-  `isNewOrSetup`. Step 3 (init script / `web_setup.sh`) is gated on
-  `isNewOrSetup` — **both `resume` and `resume-cached` skip the init script**.
-  **`resume-cached` exits early** and does NOT run Steps 4–6. Steps 4–6
-  (`claude --init-only` which fires SessionStart hooks, skill bootstrap, hook
-  bootstrap) run for `new` and `resume` modes only. `setup-only` runs the init
-  script and exits partway through the subsequent steps.
+- **Which hook points fire on which session modes** (`new` / `resume` / `resume-cached` / `setup-only`): see
+  <web_env/re/environment_manager/src/internal/envtype/anthropic/anthropic.go> `Initialize()`. Steps 1–2 (install
+  languages, clone sources) are gated on `isNewOrSetup`. Step 3 (init script / `web_setup.sh`) is gated on
+  `isNewOrSetup` — **both `resume` and `resume-cached` skip the init script**. **`resume-cached` exits early** and does
+  NOT run Steps 4–6. Steps 4–6 (`claude --init-only` which fires SessionStart hooks, skill bootstrap, hook bootstrap)
+  run for `new` and `resume` modes only. `setup-only` runs the init script and exits partway through the subsequent
+  steps.
 
-  **Unverified against Build ID `0b86a2a0` — re-check before relying on the
-  details.** The gating above was established on an earlier binary. In the
-  current one the `anthropic` envtype is garbled package `CWddODOS8sH` (see
-  <web_env/re/environment_manager/degarble_map.md>) and its `Initialize` grew
-  from 103 to 157 symbols, but what changed has not been established — the
-  mode gating may well still hold exactly as described.
+  **Unverified against Build ID `0b86a2a0` — re-check before relying on the details.** The gating above was established
+  on an earlier binary. In the current one the `anthropic` envtype is garbled package `CWddODOS8sH` (see
+  <web_env/re/environment_manager/degarble_map.md>) and its `Initialize` grew from 103 to 157 symbols, but what changed
+  has not been established — the mode gating may well still hold exactly as described.
 
-  What is established: `Initialize` now wraps seven phases in identical timing
-  closures that call into the o11y package and `Duration.Milliseconds`. The old
-  binary had none, so this is the new `startup_timing` / `phase_start_ms`
-  telemetry being added around the existing sequence. Seven timed phases is
-  **not** evidence of a seventh lifecycle step — the instrumentation need not
-  partition the steps one-to-one.
+  What is established: `Initialize` now wraps seven phases in identical timing closures that call into the o11y package
+  and `Duration.Milliseconds`. The old binary had none, so this is the new `startup_timing` / `phase_start_ms` telemetry
+  being added around the existing sequence. Seven timed phases is **not** evidence of a seventh lifecycle step — the
+  instrumentation need not partition the steps one-to-one.
 
-  Addresses here are per-build: garble re-randomizes every symbol, so a VMA
-  never survives a version bump. Re-derive addresses with `gosymtab` (recipe in
-  <web_env/re/environment_manager/README.md>) rather than carrying them forward.
+  Addresses here are per-build: garble re-randomizes every symbol, so a VMA never survives a version bump. Re-derive
+  addresses with `gosymtab` (recipe in <web_env/re/environment_manager/README.md>) rather than carrying them forward.
 
-- **`process_api` (PID 1) lifecycle**, WebSocket ports, orphan monitor, OOM killers:
-  <web_env/re/process_api/README.md>.
-- **CLI flags and env vars** that tune the above:
-  <web_env/re/SETUP_FLAGS_INVENTORY.md>.
+- **`process_api` (PID 1) lifecycle**, WebSocket ports, orphan monitor, OOM killers: <web_env/re/process_api/README.md>.
+- **CLI flags and env vars** that tune the above: <web_env/re/SETUP_FLAGS_INVENTORY.md>.
 
-If something in the lifecycle is unclear, grep
-`devinfra/claude/web_env/re/environment_manager/src/` for the function name
-or error string before opening an issue — there's likely already a decompiled
-source file with line-annotated binary offsets. If the RE looks wrong or
-stale, pull the live binary from the web container and verify against it
-before assuming the RE is authoritative.
+If something in the lifecycle is unclear, grep `devinfra/claude/web_env/re/environment_manager/src/` for the function
+name or error string before opening an issue — there's likely already a decompiled source file with line-annotated
+binary offsets. If the RE looks wrong or stale, pull the live binary from the web container and verify against it before
+assuming the RE is authoritative.
 
 ## Debugging Commands
 
@@ -90,8 +88,6 @@ claude-hook --version
 jq -r '.pins["claude-hook"].url, .pins["claude-statusline"].url' nix/artifact-pins.json
 ```
 
-If the installed profile is stale, re-run `bash devinfra/claude/web_setup.sh`
-to refresh its `.#devtools` closure, which includes both `claude-hook` and
-`claude-statusline`. See
-<docs/web-setup-debug.md> "Pin drift on persistent rootfs" for the underlying
-cause.
+If the installed profile is stale, re-run `bash devinfra/claude/web_setup.sh` to refresh its `.#devtools` closure, which
+includes both `claude-hook` and `claude-statusline`. See <docs/web-setup-debug.md> "Pin drift on persistent rootfs" for
+the underlying cause.

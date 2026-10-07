@@ -1,8 +1,7 @@
 # Baseplate Evaluation Checklist
 
-Open the agent's FCStd in the FreeCAD container and inspect it (run
-FreeCAD Python to check geometry, constraints, parametric behavior).
-Review any rendered images/SVGs the agent produced in the workspace.
+Open the agent's FCStd in the FreeCAD container and inspect it (run FreeCAD Python to check geometry, constraints,
+parametric behavior). Review any rendered images/SVGs the agent produced in the workspace.
 
 ## Script execution
 
@@ -11,14 +10,13 @@ Review any rendered images/SVGs the agent produced in the workspace.
 ## Sketch quality
 
 - [ ] Sketch is fully constrained (`fully_constrained: true` in inspection)
-- [ ] Dimensional constraints are bound to spreadsheet via expressions
-      (`expression_count` > 0, expressions reference spreadsheet aliases)
+- [ ] Dimensional constraints are bound to spreadsheet via expressions (`expression_count` > 0, expressions reference
+      spreadsheet aliases)
 
 ## Spreadsheet
 
-- [ ] Spreadsheet exists with named aliases for all 7 spec dimensions
-      (plate width/height, corner radius, hole diameter, hole inset,
-      slot width, slot height)
+- [ ] Spreadsheet exists with named aliases for all 7 spec dimensions (plate width/height, corner radius, hole diameter,
+      hole inset, slot width, slot height)
 - [ ] Default values match spec (200, 120, 10, 8, 20, 40, 15)
 
 ## Geometry (from `inspection.json` features + rendered images)
@@ -37,8 +35,8 @@ To test: change the plate-width spreadsheet cell to 250 and recompute. Check:
 - [ ] Right-side holes shift rightward
 - [ ] Slot remains centered
 
-_(The inspector dumps all geometry; the judge performs this test manually
-or the parametric check can be scripted separately.)_
+_(The inspector dumps all geometry; the judge performs this test manually or the parametric check can be scripted
+separately.)_
 
 ## TechDraw
 

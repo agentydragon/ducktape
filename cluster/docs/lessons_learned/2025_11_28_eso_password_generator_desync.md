@@ -1,23 +1,19 @@
 # ESO Password Generator Desynchronization
 
-> **HISTORICAL (infra changed since 2025-11-28).** Vault was decommissioned
-> 2026-04-19 (secrets are now SOPS-managed; see <../decisions.md> § "Secrets: SOPS SSOT"),
-> and Terraform state moved off the old `tfstate-default-*` k8s secrets into the
-> `tofu-state-db` CNPG cluster with the kubernetes-backend migration. The
-> `kubectl exec -n vault vault-0 -- vault kv get` diagnostic below references the
-> retired Vault deployment and no longer applies; this write-up is preserved for
-> its analysis of the ESO Password generator desync.
+> **HISTORICAL (infra changed since 2025-11-28).** Vault was decommissioned 2026-04-19 (secrets are now SOPS-managed;
+> see <../decisions.md> § "Secrets: SOPS SSOT"), and Terraform state moved off the old `tfstate-default-*` k8s secrets
+> into the `tofu-state-db` CNPG cluster with the kubernetes-backend migration. The
+> `kubectl exec -n vault vault-0 -- vault kv get` diagnostic below references the retired Vault deployment and no longer
+> applies; this write-up is preserved for its analysis of the ESO Password generator desync.
 
-**Date**: 2025-11-28
-**Status**: Resolved (Vault SSOT migration in progress)
+**Date**: 2025-11-28 **Status**: Resolved (Vault SSOT migration in progress)
 
 ## Root Cause
 
-ESO Password generators (`generators.external-secrets.io/v1alpha1 Password`) are
-**stateless** — they generate a fresh random password on every `refreshInterval` sync,
-independent of any source of truth. When applications persist credentials at init time
-(PostgreSQL writes password to DB, Authentik Bootstrap Job writes token once), the
-persisted value and the K8s Secret diverge after the first refresh.
+ESO Password generators (`generators.external-secrets.io/v1alpha1 Password`) are **stateless** — they generate a fresh
+random password on every `refreshInterval` sync, independent of any source of truth. When applications persist
+credentials at init time (PostgreSQL writes password to DB, Authentik Bootstrap Job writes token once), the persisted
+value and the K8s Secret diverge after the first refresh.
 
 ## Affected Systems
 
@@ -30,8 +26,8 @@ Two independent sources for the same client secret:
 
 Result: Authentik knows password A, application uses password B → "invalid client credentials".
 
-**Fix**: Replace ESO Password generators with Vault data sources (Terraform generates once →
-Vault stores → ESO reads stable value). Commit 05b5e5e.
+**Fix**: Replace ESO Password generators with Vault data sources (Terraform generates once → Vault stores → ESO reads
+stable value). Commit 05b5e5e.
 
 ### Init-Time Persistence Pattern
 
@@ -41,19 +37,16 @@ Applications that write secrets to database on first boot:
 - **Authentik PostgreSQL password**: Set on DB creation via env var
 - **Authentik Bootstrap token**: Job writes to DB once, Job is immutable
 
-When ESO refreshes the K8s Secret with a new value, the database still has the old one.
-Restarting the pod picks up the new secret but doesn't ALTER the DB password.
+When ESO refreshes the K8s Secret with a new value, the database still has the old one. Restarting the pod picks up the
+new secret but doesn't ALTER the DB password.
 
-**Fix (Phase 0)**: Changed refresh intervals to 8760h (1 year) to stop regeneration.
-Commit eaaf4b1.
+**Fix (Phase 0)**: Changed refresh intervals to 8760h (1 year) to stop regeneration. Commit eaaf4b1.
 
-**Fix (Phase 1)**: Stakater Reloader auto-restarts pods when secrets change. Handles
-90% of cases (service-to-service auth, API keys consumed by pods). Does NOT fix
-init-time persistence.
+**Fix (Phase 1)**: Stakater Reloader auto-restarts pods when secrets change. Handles 90% of cases (service-to-service
+auth, API keys consumed by pods). Does NOT fix init-time persistence.
 
-**Fix (Phase 2)**: Migrate Password generators to Vault KV sources. Terraform generates
-once → stores in Vault → ESO reads stable value. Completed for: PowerDNS API key,
-Authentik API token, Harbor admin password.
+**Fix (Phase 2)**: Migrate Password generators to Vault KV sources. Terraform generates once → stores in Vault → ESO
+reads stable value. Completed for: PowerDNS API key, Authentik API token, Harbor admin password.
 
 ## Dependency Chain
 
@@ -68,17 +61,16 @@ ESO Password Generator (stateless, regenerates every refresh)
 
 ## Key Lessons
 
-1. **ESO Password generators don't read — they generate** — every sync produces a new
-   random value. They are NOT idempotent sources of truth.
-2. **Never use Password generators for credentials managed by Terraform** — if Terraform
-   creates an OIDC provider with password A, the ExternalSecret must read A from Vault,
-   not generate independent password B.
-3. **Never use Password generators for database init passwords** — the DB persists the
-   first password; regenerating creates an irreconcilable split.
-4. **Correct pattern**: Terraform generates → stores in Vault KV → ESO reads from Vault.
-   Single source of truth, stable across syncs.
-5. **Stakater Reloader is necessary but insufficient** — handles pod-level secret
-   consumption but cannot fix init-time persistence (ALTER USER, recreate Job).
+1. **ESO Password generators don't read — they generate** — every sync produces a new random value. They are NOT
+   idempotent sources of truth.
+2. **Never use Password generators for credentials managed by Terraform** — if Terraform creates an OIDC provider with
+   password A, the ExternalSecret must read A from Vault, not generate independent password B.
+3. **Never use Password generators for database init passwords** — the DB persists the first password; regenerating
+   creates an irreconcilable split.
+4. **Correct pattern**: Terraform generates → stores in Vault KV → ESO reads from Vault. Single source of truth, stable
+   across syncs.
+5. **Stakater Reloader is necessary but insufficient** — handles pod-level secret consumption but cannot fix init-time
+   persistence (ALTER USER, recreate Job).
 
 ## Diagnosis
 

@@ -12,8 +12,8 @@ occurrences:
       wt/server/worktree_service.py:
         - [130, 131]
     note: >-
-      contextlib.suppress(Exception) wraps shutil.rmtree(..., ignore_errors=True).
-      The suppress is redundant since ignore_errors already handles all errors.
+      contextlib.suppress(Exception) wraps shutil.rmtree(..., ignore_errors=True). The suppress is redundant since
+      ignore_errors already handles all errors.
     critic_scopes_expected_to_recall:
       - - wt/server/worktree_service.py
     match_file_restriction:

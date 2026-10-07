@@ -291,8 +291,7 @@
         # CLEANUP(added 2026-03-31): Remove once a pve-kernel containing the
         # RHBZ#2448303 fix (AMD Idle HLT Intercept) ships and atlas runs it.
         content: >-
-          root=ZFS=rpool/ROOT/pve-1 boot=zfs amd_iommu=on iommu=pt
-          pcie_aspm=off ahci.mobile_lpm_policy=1 clearcpuid=510
+          root=ZFS=rpool/ROOT/pve-1 boot=zfs amd_iommu=on iommu=pt pcie_aspm=off ahci.mobile_lpm_policy=1 clearcpuid=510
           default_hugepagesz=1G hugepagesz=1G hugepages=96
         mode: "0644"
         backup: true
@@ -402,7 +401,9 @@
     - name: Prevent D3cold on RTX 5090 GPUs via udev
       ansible.builtin.copy:
         dest: /etc/udev/rules.d/99-vfio-gpu-no-d3cold.rules
-        content: 'ACTION=="add", SUBSYSTEM=="pci", ATTR{vendor}=="0x10de", ATTR{device}=="0x2b85", ATTR{power/control}="on", ATTR{d3cold_allowed}="0"'
+        content:
+          'ACTION=="add", SUBSYSTEM=="pci", ATTR{vendor}=="0x10de", ATTR{device}=="0x2b85", ATTR{power/control}="on",
+          ATTR{d3cold_allowed}="0"'
         mode: "0644"
       notify: Reload udev rules
       tags: [gpu_passthrough, vfio]

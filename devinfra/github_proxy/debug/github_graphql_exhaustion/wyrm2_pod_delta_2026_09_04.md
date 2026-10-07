@@ -1,10 +1,9 @@
 # wyrm2 pod delta across the 2026-09-04 restart
 
-Captured from the previous boot's kubelet journal before it rotates. wyrm2 was down
-09:59:58–10:12 UTC across a quota reset, and that hour used 70 GraphQL points against
-~10,500 in nine of the previous ten — the partition result in
-<earlier_investigation.md>. This records what actually went away
-with the node, since "wyrm2 offline" removed its pods as well as its host processes.
+Captured from the previous boot's kubelet journal before it rotates. wyrm2 was down 09:59:58–10:12 UTC across a quota
+reset, and that hour used 70 GraphQL points against ~10,500 in nine of the previous ten — the partition result in
+<earlier_investigation.md>. This records what actually went away with the node, since "wyrm2 offline" removed its pods
+as well as its host processes.
 
 ```text
 pods known to kubelet, prev boot 01:30-03:00 PDT: 101
@@ -66,24 +65,20 @@ local-path-storage/helper-pod-delete-pvc-c06b6933-66d7-4b71-b2cb-e69ee492190d
 
 ## What stands out
 
-**Twelve `haku-runtime-sandbox/codex-*` pods**, against one now. They are owned by
-`Sandbox` resources, so they died with the node and were not rescheduled — unlike the
-tf-runners, which are ephemeral per-reconcile, or `github-exporter`, which moved to
-optiplex. A Codex agent authenticates through the ChatGPT Codex Connector GitHub App,
-which acts as the user and spends the user's GraphQL budget, and would appear as
-neither a `claude` process nor a `gh` invocation.
+**Twelve `haku-runtime-sandbox/codex-*` pods**, against one now. They are owned by `Sandbox` resources, so they died
+with the node and were not rescheduled — unlike the tf-runners, which are ephemeral per-reconcile, or `github-exporter`,
+which moved to optiplex. A Codex agent authenticates through the ChatGPT Codex Connector GitHub App, which acts as the
+user and spends the user's GraphQL budget, and would appear as neither a `claude` process nor a `gh` invocation.
 
-**And then cleared, by wiring.** The `haku-public-coder-codex` SandboxTemplate mounts no
-GitHub credential: only an `OPENAI_API_KEY` placeholder and the egress-proxy CA. GitHub
-access goes through haku-console's egress fence, which injects `haku-egress-github-token`
-— an ESO pull of `github-agentydragon-agent`, the separate bot account. That account's
-GraphQL bucket peaked at **0 used over 14 hours**. A codex sandbox calling GitHub spends
-the agent's quota, and the agent spent nothing.
+**And then cleared, by wiring.** The `haku-public-coder-codex` SandboxTemplate mounts no GitHub credential: only an
+`OPENAI_API_KEY` placeholder and the egress-proxy CA. GitHub access goes through haku-console's egress fence, which
+injects `haku-egress-github-token` — an ESO pull of `github-agentydragon-agent`, the separate bot account. That
+account's GraphQL bucket peaked at **0 used over 14 hours**. A codex sandbox calling GitHub spends the agent's quota,
+and the agent spent nothing.
 
-The delta is still worth having recorded — it is the largest thing that went away with
-the node — but it does not explain the burn, and the burn recurred at 13:03 UTC with one
-codex sandbox running while the unfiltered recorder saw no GitHub traffic from wyrm2 at
-all.
+The delta is still worth having recorded — it is the largest thing that went away with the node — but it does not
+explain the burn, and the burn recurred at 13:03 UTC with one codex sandbox running while the unfiltered recorder saw no
+GitHub traffic from wyrm2 at all.
 
-Also gone: `haku-sandbox/{haku,ci,ci-log}`, the `agentplane-staging/accept-*` probes,
-twelve tf-runners (expected — ephemeral), and eight `local-path-storage` helper pods.
+Also gone: `haku-sandbox/{haku,ci,ci-log}`, the `agentplane-staging/accept-*` probes, twelve tf-runners (expected —
+ephemeral), and eight `local-path-storage` helper pods.

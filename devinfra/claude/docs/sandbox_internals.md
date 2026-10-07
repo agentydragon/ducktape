@@ -1,14 +1,13 @@
 # Claude Code Sandbox Internals
 
 How the Bash sandbox works on Linux, based on the
-[sandbox-runtime](https://github.com/anthropic-experimental/sandbox-runtime)
-source and the leaked Claude Code v2.1.88 source tree.
+[sandbox-runtime](https://github.com/anthropic-experimental/sandbox-runtime) source and the leaked Claude Code v2.1.88
+source tree.
 
 ## Mechanism
 
-Every sandboxed Bash command is wrapped in a
-[bubblewrap](https://github.com/containers/bubblewrap) (`bwrap`) invocation.
-`bwrap` is a lightweight unprivileged container tool that uses Linux namespaces.
+Every sandboxed Bash command is wrapped in a [bubblewrap](https://github.com/containers/bubblewrap) (`bwrap`)
+invocation. `bwrap` is a lightweight unprivileged container tool that uses Linux namespaces.
 
 A command like `ls /tmp` becomes roughly:
 
@@ -33,9 +32,8 @@ bwrap --new-session --die-with-parent \
 
 ### 1. Filesystem (allow-only writes)
 
-The root filesystem is mounted read-only (`--ro-bind / /`). Specific paths
-are then overlaid with read-write binds (`--bind`). The write allowlist is
-built from:
+The root filesystem is mounted read-only (`--ro-bind / /`). Specific paths are then overlaid with read-write binds
+(`--bind`). The write allowlist is built from:
 
 - `.` (current working directory)
 - Claude temp dir (`/tmp/claude`)
@@ -52,22 +50,18 @@ Dangerous files get `/dev/null` mounted over them (mandatory deny):
 - Claude dirs: `.claude/commands/`, `.claude/agents/`, `.claude/skills/`
 - Settings: `.claude/settings.json`, `.claude/settings.local.json`
 
-Source: `sandbox-adapter.ts` (`convertToSandboxRuntimeConfig`),
-`sandbox-runtime/dist/sandbox/sandbox-utils.js` (`DANGEROUS_FILES`,
-`getDangerousDirectories`).
+Source: `sandbox-adapter.ts` (`convertToSandboxRuntimeConfig`), `sandbox-runtime/dist/sandbox/sandbox-utils.js`
+(`DANGEROUS_FILES`, `getDangerousDirectories`).
 
 ### 2. Network (namespace isolation + proxy filtering)
 
-`--unshare-net` creates a completely isolated network namespace — no
-interfaces exist, not even loopback (initially). Inside the namespace:
+`--unshare-net` creates a completely isolated network namespace — no interfaces exist, not even loopback (initially).
+Inside the namespace:
 
-1. `socat` bridges are started, forwarding TCP ports to Unix sockets that
-   reach the host
-2. The Unix sockets connect to an HTTP proxy and a SOCKS5 proxy running in
-   the Claude Code host process
+1. `socat` bridges are started, forwarding TCP ports to Unix sockets that reach the host
+2. The Unix sockets connect to an HTTP proxy and a SOCKS5 proxy running in the Claude Code host process
 3. The proxies apply domain-based filtering (allowlist/denylist)
-4. `HTTP_PROXY`/`HTTPS_PROXY` env vars point commands at the internal socat
-   listeners
+4. `HTTP_PROXY`/`HTTPS_PROXY` env vars point commands at the internal socat listeners
 
 This means network access is:
 
@@ -75,28 +69,22 @@ This means network access is:
 - **Domain-filtered**: only allowed domains pass through
 - **Not deep-inspected**: domain fronting can bypass filters
 
-Source: `sandbox-manager.ts` (`filterNetworkRequest`),
-`linux-sandbox-utils.ts` (`initializeLinuxNetworkBridge`).
+Source: `sandbox-manager.ts` (`filterNetworkRequest`), `linux-sandbox-utils.ts` (`initializeLinuxNetworkBridge`).
 
 ### 3. Unix sockets (seccomp BPF)
 
-A seccomp BPF filter blocks `socket(AF_UNIX, ...)` syscalls, preventing
-sandboxed commands from creating new Unix sockets (which could bypass the
-network proxy by talking to host services directly).
+A seccomp BPF filter blocks `socket(AF_UNIX, ...)` syscalls, preventing sandboxed commands from creating new Unix
+sockets (which could bypass the network proxy by talking to host services directly).
 
 The filter is applied in two stages:
 
-1. **Outer bwrap** (no seccomp): creates namespaces, starts socat processes
-   (socat needs Unix sockets to bridge)
-2. **`apply-seccomp`** (seccomp active): applies BPF filter, then `exec`s
-   the user command
+1. **Outer bwrap** (no seccomp): creates namespaces, starts socat processes (socat needs Unix sockets to bridge)
+2. **`apply-seccomp`** (seccomp active): applies BPF filter, then `exec`s the user command
 
-Pre-built static binaries for x64 and arm64 live in
-`vendor/seccomp/`. The filter does NOT block operations on inherited FDs —
-only new socket creation.
+Pre-built static binaries for x64 and arm64 live in `vendor/seccomp/`. The filter does NOT block operations on inherited
+FDs — only new socket creation.
 
-Source: `linux-sandbox-utils.ts` (`wrapCommandWithSandboxLinux`),
-`generate-seccomp-filter.ts`.
+Source: `linux-sandbox-utils.ts` (`wrapCommandWithSandboxLinux`), `generate-seccomp-filter.ts`.
 
 ## Environment Differences (Sandboxed vs Unsandboxed)
 
@@ -126,14 +114,12 @@ Both end up in bwrap's `--bind` (read-write) list, but they differ in scope:
 | `additionalDirectories`         | Yes           | Yes (treated as working directory)       |
 | `sandbox.filesystem.allowWrite` | Yes           | No (file tools need separate permission) |
 
-Use `sandbox.filesystem.allowWrite` for paths that only Bash needs to write
-(caches, build artifacts). Use `additionalDirectories` for paths that are
-actual working directories (code repos).
+Use `sandbox.filesystem.allowWrite` for paths that only Bash needs to write (caches, build artifacts). Use
+`additionalDirectories` for paths that are actual working directories (code repos).
 
 ## References
 
-- <https://github.com/anthropic-experimental/sandbox-runtime> — open-source
-  sandbox runtime
+- <https://github.com/anthropic-experimental/sandbox-runtime> — open-source sandbox runtime
 - `/home/agentydragon/code/claude-code-sourcemap/restored-src/src/utils/sandbox/`
   - Claude Code adapter layer (from v2.1.88 source map leak)
 - `/home/agentydragon/code/claude-code-sourcemap/restored-src/node_modules/@anthropic-ai/sandbox-runtime/dist/sandbox/`

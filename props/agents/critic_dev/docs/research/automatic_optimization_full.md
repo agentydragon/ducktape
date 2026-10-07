@@ -2,7 +2,9 @@
 
 ## Overview
 
-Automatic prompt optimization uses LLMs to iteratively improve prompts through generate-test-refine loops. Unlike manual prompt engineering, these systems leverage LLMs' own language understanding to explore the prompt space and discover effective formulations.
+Automatic prompt optimization uses LLMs to iteratively improve prompts through generate-test-refine loops. Unlike manual
+prompt engineering, these systems leverage LLMs' own language understanding to explore the prompt space and discover
+effective formulations.
 
 ## Core Approaches
 
@@ -46,7 +48,8 @@ Automatic prompt optimization uses LLMs to iteratively improve prompts through g
 
 **Paper:** "Large Language Models as Optimizers" (Yang et al., Google DeepMind 2023)
 
-**Key idea:** LLMs can optimize prompts through natural language feedback, treating prompt optimization as a meta-learning problem.
+**Key idea:** LLMs can optimize prompts through natural language feedback, treating prompt optimization as a
+meta-learning problem.
 
 **Workflow:**
 
@@ -144,14 +147,14 @@ Automatic prompt optimization uses LLMs to iteratively improve prompts through g
 
 **Relevance to our project:**
 
-- The retired GEPA prototype explored this approach, but its compositional assumptions did not fit a monolithic critic prompt
+- The retired GEPA prototype explored this approach, but its compositional assumptions did not fit a monolithic critic
+  prompt
 - The current critic-dev optimizer keeps the useful generate-evaluate-refine loop without the framework dependency
 - Key insight: Reflection quality determines optimization effectiveness
 
 ### Common Patterns Across Approaches
 
-**1. Generate-Evaluate-Refine Loop:**
-All systems follow this pattern:
+**1. Generate-Evaluate-Refine Loop:** All systems follow this pattern:
 
 ```
 while not converged:
@@ -160,8 +163,7 @@ while not converged:
     feedback = analyze_performance(scores)
 ```
 
-**2. Natural Language Feedback:**
-Feedback to the LLM is in natural language (not gradients):
+**2. Natural Language Feedback:** Feedback to the LLM is in natural language (not gradients):
 
 - "This prompt missed 20% of issues in file X"
 - "Prompt A found dead code but missed duplication"
@@ -172,14 +174,12 @@ Feedback to the LLM is in natural language (not gradients):
 - **Train:** Use for iterative refinement (can inspect results)
 - **Valid:** Use for final evaluation (held-out, measures generalization)
 
-**4. Multi-Objective Optimization:**
-Often optimize for multiple metrics:
+**4. Multi-Objective Optimization:** Often optimize for multiple metrics:
 
 - Primary: task performance (accuracy, recall)
 - Secondary: efficiency (latency, cost), reliability (low variance)
 
-**5. Bootstrapping:**
-Start from reasonable baseline (not random):
+**5. Bootstrapping:** Start from reasonable baseline (not random):
 
 - Hand-written prompts
 - Prompts from similar tasks
@@ -483,16 +483,20 @@ Combine neural (LLM) and symbolic (formal rules) approaches:
 
 - **APE:** Zhou et al., "Large Language Models Are Human-Level Prompt Engineers" (ICLR 2023)
 - **OPRO:** Yang et al., "Large Language Models as Optimizers" (Google DeepMind 2023)
-- **DSPy:** Khattab et al., "DSPy: Compiling Declarative Language Model Calls into Self-Improving Pipelines" (Stanford NLP 2023)
-- **MIPROv2:** Opsahl-Ong et al., "Optimizing Instructions and Demonstrations for Multi-Stage Language Model Programs" (Stanford NLP 2024)
-- **PromptBreeder:** Fernando et al., "Promptbreeder: Self-Referential Self-Improvement Via Prompt Evolution" (Google DeepMind 2023)
+- **DSPy:** Khattab et al., "DSPy: Compiling Declarative Language Model Calls into Self-Improving Pipelines" (Stanford
+  NLP 2023)
+- **MIPROv2:** Opsahl-Ong et al., "Optimizing Instructions and Demonstrations for Multi-Stage Language Model Programs"
+  (Stanford NLP 2024)
+- **PromptBreeder:** Fernando et al., "Promptbreeder: Self-Referential Self-Improvement Via Prompt Evolution" (Google
+  DeepMind 2023)
 
 ### Frameworks
 
 - **DSPy:** <https://github.com/stanfordnlp/dspy> - Modular prompt optimization
 - **Guidance:** <https://github.com/guidance-ai/guidance> - Constrained generation for prompts
 - **LangChain:** <https://python.langchain.com/docs/modules/prompts/> - Prompt templates and chains
-- **HELM:** <https://crfm.stanford.edu/helm/> - Holistic evaluation of language models (includes prompt optimization benchmarks)
+- **HELM:** <https://crfm.stanford.edu/helm/> - Holistic evaluation of language models (includes prompt optimization
+  benchmarks)
 
 ## Summary: Key Takeaways
 
@@ -502,6 +506,8 @@ Combine neural (LLM) and symbolic (formal rules) approaches:
 4. **Train/valid split essential:** Prevent overfitting by testing on held-out data
 5. **Statistical rigor matters:** Use LCB, watch variance, require sufficient sample size
 6. **Hybrid approach best:** Combine human domain knowledge with automated exploration
-7. **Framework fit matters:** Keep reflection-based iteration, but avoid framework machinery whose compositional assumptions do not fit the critic prompt
+7. **Framework fit matters:** Keep reflection-based iteration, but avoid framework machinery whose compositional
+   assumptions do not fit the critic prompt
 
-**Meta-lesson:** Prompt optimization is itself an optimization problem. Use the right tools (evolutionary search, reflection LMs, statistical rigor) to explore the prompt space efficiently.
+**Meta-lesson:** Prompt optimization is itself an optimization problem. Use the right tools (evolutionary search,
+reflection LMs, statistical rigor) to explore the prompt space efficiently.

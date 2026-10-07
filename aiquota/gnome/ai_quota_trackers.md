@@ -13,7 +13,8 @@
 ### brainusage
 
 - **Source**: <https://github.com/AltairInglorious/brainusage>
-- Tracks both **Claude (Anthropic)** and **Codex (OpenAI)** usage with color-coded progress bars and desktop notifications.
+- Tracks both **Claude (Anthropic)** and **Codex (OpenAI)** usage with color-coded progress bars and desktop
+  notifications.
 - Less polished, but covers both providers.
 
 ### CodexBar
@@ -25,7 +26,8 @@
 ### ChatGPT / OpenAI subscription quota
 
 - No dedicated GNOME Shell extension found for **ChatGPT subscription quota** (the "X messages left" type limit).
-- OpenAI's rate-limit and usage APIs don't expose subscription-level quota in a way that maps cleanly to a top-bar indicator.
+- OpenAI's rate-limit and usage APIs don't expose subscription-level quota in a way that maps cleanly to a top-bar
+  indicator.
 
 ---
 
@@ -75,17 +77,24 @@ programs.gnome-shell = {
 };
 ```
 
-Check if it's in `nixpkgs` first: `nix search nixpkgs claude-code-usage`. If not, you'd need to package it manually via `pkgs.buildEnv` / `fetchFromGitHub` in an overlay.
+Check if it's in `nixpkgs` first: `nix search nixpkgs claude-code-usage`. If not, you'd need to package it manually via
+`pkgs.buildEnv` / `fetchFromGitHub` in an overlay.
 
 ### Adding a prompt segment
 
-For **Oh-My-Posh**, a `command` segment can run an arbitrary shell command and display its output. You could add a segment to `nix/home/shell/oh-my-posh.nix` that calls a script reading `~/.claude/usage/` data and emitting a usage fraction.
+For **Oh-My-Posh**, a `command` segment can run an arbitrary shell command and display its output. You could add a
+segment to `nix/home/shell/oh-my-posh.nix` that calls a script reading `~/.claude/usage/` data and emitting a usage
+fraction.
 
-For **Powerlevel10k**, add a custom `p10k_prompt_segment` function in `p10k.zsh` and wire it into `POWERLEVEL9K_RIGHT_PROMPT_ELEMENTS`.
+For **Powerlevel10k**, add a custom `p10k_prompt_segment` function in `p10k.zsh` and wire it into
+`POWERLEVEL9K_RIGHT_PROMPT_ELEMENTS`.
 
-Both approaches require a fast data source — the local Claude Code usage files are suitable since they're read-only filesystem access with no network round-trip.
+Both approaches require a fast data source — the local Claude Code usage files are suitable since they're read-only
+filesystem access with no network round-trip.
 
 ### What to watch out for
 
-- **Claude Code quota** (from local files) ≠ **Anthropic API billing quota** (from the API). The GNOME extension and most CLI tools track the former (token windows, not invoice limits).
-- OpenAI subscription quota ("ChatGPT Plus messages remaining") is not exposed via any public API; scraping the web UI is fragile.
+- **Claude Code quota** (from local files) ≠ **Anthropic API billing quota** (from the API). The GNOME extension and
+  most CLI tools track the former (token windows, not invoice limits).
+- OpenAI subscription quota ("ChatGPT Plus messages remaining") is not exposed via any public API; scraping the web UI
+  is fragile.

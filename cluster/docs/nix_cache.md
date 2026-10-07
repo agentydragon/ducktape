@@ -1,32 +1,28 @@
 # Nix Binary Cache (Attic)
 
-Attic server at `cache.allegedly.works`, backed by PostgreSQL (CNPG) for
-metadata and a SeaweedFS S3 bucket for NAR chunk storage. Manifests in
-`k8s/nix-cache/`.
+Attic server at `cache.allegedly.works`, backed by PostgreSQL (CNPG) for metadata and a SeaweedFS S3 bucket for NAR
+chunk storage. Manifests in `k8s/nix-cache/`.
 
 ## Architecture
 
 - **Server**: `ghcr.io/zhaofengli/attic:latest` (busybox-based Rust image)
-- **Database**: CNPG cluster `attic-db` (2 instances, OVH-HA, hdd tier via the
-  deprecated `local-path-ovh` alias)
-- **Cache storage**: SeaweedFS S3 bucket `attic` (`seaweedfs-s3.seaweedfs:8333`), replicated `001` across OVH volume servers
+- **Database**: CNPG cluster `attic-db` (2 instances, OVH-HA, hdd tier via the deprecated `local-path-ovh` alias)
+- **Cache storage**: SeaweedFS S3 bucket `attic` (`seaweedfs-s3.seaweedfs:8333`), replicated `001` across OVH volume
+  servers
 - **Caches** (priority 41, ED25519 keypairs supplied from SOPS — see Bootstrap):
   - `main` — private; ducktape CI's general-purpose cache (flake outputs)
   - `gaffer` — private; gaffer-private CI's cache (drivefs and friends)
-  - `public` — anonymous-readable (`is_public: true`); carries the Claude Code
-    web/Haku and pre-commit CI bootstrap closures (`devtools`/`precommit`/`bb`/
-    `bbr`/`bbapi`/`agent-haku`/`devShells.default`) — see "Public bootstrap cache" below
-- **Trusted public keys** (consumer side): `nix/attic-pubkeys.json`, consumed
-  by both `nix/nixos/modules/attic-substituter.nix` and the `nix-attic-push`
-  CI workflow. Generated from `cache-keys.sops.yaml` (see Bootstrap below) —
-  that SOPS file is the real source of truth.
+  - `public` — anonymous-readable (`is_public: true`); carries the Claude Code web/Haku and pre-commit CI bootstrap
+    closures (`devtools`/`precommit`/`bb`/ `bbr`/`bbapi`/`agent-haku`/`devShells.default`) — see "Public bootstrap
+    cache" below
+- **Trusted public keys** (consumer side): `nix/attic-pubkeys.json`, consumed by both
+  `nix/nixos/modules/attic-substituter.nix` and the `nix-attic-push` CI workflow. Generated from `cache-keys.sops.yaml`
+  (see Bootstrap below) — that SOPS file is the real source of truth.
 
-Caches are created by the bootstrap Job in `cluster/k8s/nix-cache/`, with the
-signing keypair supplied from `cache-keys.sops.yaml` rather than server-generated.
-Re-running the Job is idempotent: GET the cache config first, only POST when
-missing. Because the keypair is supplied and stable, a full cluster wipe no
-longer invalidates trust or requires updating consumer pubkeys — the recreated
-cache signs with the same key as before.
+Caches are created by the bootstrap Job in `cluster/k8s/nix-cache/`, with the signing keypair supplied from
+`cache-keys.sops.yaml` rather than server-generated. Re-running the Job is idempotent: GET the cache config first, only
+POST when missing. Because the keypair is supplied and stable, a full cluster wipe no longer invalidates trust or
+requires updating consumer pubkeys — the recreated cache signs with the same key as before.
 
 ## Secrets
 
@@ -36,100 +32,75 @@ cache signs with the same key as before.
 | `attic-cache-keys` | SOPS (`k8s/nix-cache/cache-keys.sops.yaml`) | Per-cache ED25519 signing keypairs, one `nix key generate-secret` string per cache name. |
 | `attic-db-app`     | CNPG-generated                              | PostgreSQL connection URI                                                                |
 
-Tokens (admin, per-host readers, CI writers) are HS256 JWTs signed with the
-`attic-jwt-token` secret. Reader/writer tokens are auto-rotated by the
-`attic-jwt-rotation` CronJob (`cluster/cdk8s/nix_cache/attic.py`; its
-`ROTATOR_CONFIG` is serialized as the `rotators.yaml` key in the
-`attic-rotators-config` ConfigMap). The generated config, its
-`attic-jwt-rotator` ServiceAccount, and the bootstrap Job that reuses it apply
-in one ordered pass, rather than deadlocking across two Kustomizations depending
-on each other. Admin tokens are minted ad hoc via `kubectl exec`.
+Tokens (admin, per-host readers, CI writers) are HS256 JWTs signed with the `attic-jwt-token` secret. Reader/writer
+tokens are auto-rotated by the `attic-jwt-rotation` CronJob (`cluster/cdk8s/nix_cache/attic.py`; its `ROTATOR_CONFIG` is
+serialized as the `rotators.yaml` key in the `attic-rotators-config` ConfigMap). The generated config, its
+`attic-jwt-rotator` ServiceAccount, and the bootstrap Job that reuses it apply in one ordered pass, rather than
+deadlocking across two Kustomizations depending on each other. Admin tokens are minted ad hoc via `kubectl exec`.
 
-Cache **signing** keypairs — distinct from the JWT signing secret — are sourced
-from `attic-cache-keys` (mounted into the bootstrap Job at
-`/secrets/cache-keys/<cache-name>`) and supplied to attic's cache-config API on
-creation, rather than left to attic's own `Generate` option. This trades
-attic's "never extracted" default for keys that survive a wipe of the Postgres
-DB they'd otherwise live in exclusively.
+Cache **signing** keypairs — distinct from the JWT signing secret — are sourced from `attic-cache-keys` (mounted into
+the bootstrap Job at `/secrets/cache-keys/<cache-name>`) and supplied to attic's cache-config API on creation, rather
+than left to attic's own `Generate` option. This trades attic's "never extracted" default for keys that survive a wipe
+of the Postgres DB they'd otherwise live in exclusively.
 
 ## Bootstrap
 
-The bootstrap Job in `cluster/k8s/nix-cache/` runs on every Flux
-reconcile of the `nix-cache` Kustomization (`job.yaml`'s
-`kustomize.toolkit.fluxcd.io/force: enabled` recreates it on every change so it
-always re-runs). It mints a 5-minute admin JWT via `kubectl exec deploy/attic
--- atticadm`, then for each `--cache`/`--public-cache` arg
-(`cluster/rotators/attic_jwt_rotation/rotate.py`'s `bootstrap-caches`
-subcommand — the previous shell-script implementation this doc used to
-describe is gone):
+The bootstrap Job in `cluster/k8s/nix-cache/` runs on every Flux reconcile of the `nix-cache` Kustomization
+(`job.yaml`'s `kustomize.toolkit.fluxcd.io/force: enabled` recreates it on every change so it always re-runs). It mints
+a 5-minute admin JWT via `kubectl exec deploy/attic -- atticadm`, then for each `--cache`/`--public-cache` arg
+(`cluster/rotators/attic_jwt_rotation/rotate.py`'s `bootstrap-caches` subcommand — the previous shell-script
+implementation this doc used to describe is gone):
 
 1. `GET /_api/v1/cache-config/<name>` — exists?
-2. If 200: log "exists", skip (existing caches are never reconfigured — flipping
-   `is_public`, or swapping in a different signing key, on one needs a direct
-   API call, not this command).
-3. If 4xx: `POST /_api/v1/cache-config/<name>` with a body carrying the cache's
-   key from `--keypair-dir` (mounted `attic-cache-keys` Secret) when present:
+2. If 200: log "exists", skip (existing caches are never reconfigured — flipping `is_public`, or swapping in a different
+   signing key, on one needs a direct API call, not this command).
+3. If 4xx: `POST /_api/v1/cache-config/<name>` with a body carrying the cache's key from `--keypair-dir` (mounted
+   `attic-cache-keys` Secret) when present:
    `{"keypair":{"Keypair":"<name>:<base64>"},"is_public":<bool>,"store_dir":"/nix/store","priority":41,"upstream_cache_key_names":[]}`
-   — or `{"keypair":"Generate",...}` for a cache with no file under
-   `--keypair-dir`. `is_public` is `true` only for `--public-cache` args
-   (currently just `public`).
+   — or `{"keypair":"Generate",...}` for a cache with no file under `--keypair-dir`. `is_public` is `true` only for
+   `--public-cache` args (currently just `public`).
 
 ### Adding a new cache
 
 1. Generate a keypair: `nix key generate-secret --key-name <cache>`.
-2. Add it to `cluster/k8s/nix-cache/cache-keys.sops.yaml` (`sops <file>` to edit
-   in place; an operator's age key is required — this repo's machine-level keys
-   are encryption-only for cluster secrets, see AGENTS.md § SOPS) and add
+2. Add it to `cluster/k8s/nix-cache/cache-keys.sops.yaml` (`sops <file>` to edit in place; an operator's age key is
+   required — this repo's machine-level keys are encryption-only for cluster secrets, see AGENTS.md § SOPS) and add
    `--cache=<cache>` / `--public-cache=<cache>` to `job.yaml`'s args.
 3. Regenerate `nix/attic-pubkeys.json` from the same file:
-   `bazel run //cluster/rotators/attic_jwt_rotation:sync_pubkeys_bin -- sync`
-   (also needs that operator decrypt access — deliberately not something the
-   in-cluster bootstrap Job or its container image can do, see
-   `rotate.py`'s module docstring). Until this runs, Nix refuses anything
-   substituted from the new cache on signature-verification grounds even
-   though the substituter is configured.
-4. Flux reconciles the bootstrap Job, which creates the cache with the
-   supplied key on its next run.
+   `bazel run //cluster/rotators/attic_jwt_rotation:sync_pubkeys_bin -- sync` (also needs that operator decrypt access —
+   deliberately not something the in-cluster bootstrap Job or its container image can do, see `rotate.py`'s module
+   docstring). Until this runs, Nix refuses anything substituted from the new cache on signature-verification grounds
+   even though the substituter is configured.
+4. Flux reconciles the bootstrap Job, which creates the cache with the supplied key on its next run.
 
 ## Public bootstrap cache
 
-`main` and `gaffer` are both private (reader JWT required), which is fine for
-every consumer except one: a fresh Claude Code web session's **first**
-`nix profile install` runs as the environment-manager init script, before any
-session credential (not just the Attic reader JWT — nothing session-scoped)
-reaches it. Against a private-only cache that request 401s, Nix disables the
-substituter, and the session builds ~42 devtools derivations from source
-(~8 minutes) instead of substituting ~490 already-built paths (~1.4 GiB).
-Root-caused and tracked as `claude-web-cold-start-attic-cache-2026-07` in
-Haku's state.
+`main` and `gaffer` are both private (reader JWT required), which is fine for every consumer except one: a fresh Claude
+Code web session's **first** `nix profile install` runs as the environment-manager init script, before any session
+credential (not just the Attic reader JWT — nothing session-scoped) reaches it. Against a private-only cache that
+request 401s, Nix disables the substituter, and the session builds ~42 devtools derivations from source (~8 minutes)
+instead of substituting ~490 already-built paths (~1.4 GiB). Root-caused and tracked as
+`claude-web-cold-start-attic-cache-2026-07` in Haku's state.
 
-Fix: a third cache, **`public`** (`is_public: true`, anonymous reads, no JWT
-needed ever), carrying the web/Haku and pre-commit CI bootstrap closures —
-`devtools`/`precommit`/`bb`/`bbr`/`bbapi`/`agent-haku`/`devShells.default` — pushed
-alongside the existing `main` push by
-`devinfra/ci/nix_attic_build_and_push.sh` (same content, deduped by NAR hash;
-cheap). `devinfra/claude/web_setup.sh` lists `public` before `main` in
-`extra-substituters`, so the very first install substitutes anonymously and
-every later one still gets `main`+`gaffer` once authenticated. `main`/`gaffer`
-stay exactly as private as before — `public` is a strict addition, not a
-downgrade of either.
+Fix: a third cache, **`public`** (`is_public: true`, anonymous reads, no JWT needed ever), carrying the web/Haku and
+pre-commit CI bootstrap closures — `devtools`/`precommit`/`bb`/`bbr`/`bbapi`/`agent-haku`/`devShells.default` — pushed
+alongside the existing `main` push by `devinfra/ci/nix_attic_build_and_push.sh` (same content, deduped by NAR hash;
+cheap). `devinfra/claude/web_setup.sh` lists `public` before `main` in `extra-substituters`, so the very first install
+substitutes anonymously and every later one still gets `main`+`gaffer` once authenticated. `main`/`gaffer` stay exactly
+as private as before — `public` is a strict addition, not a downgrade of either.
 
-**Rollout after adding a cache:** (1) follow "Adding a new cache" above
-(generate + SOPS-seal a keypair, regenerate `nix/attic-pubkeys.json`, let Flux
-create it); (2) update token scopes in `ROTATOR_CONFIG` in
-`cluster/cdk8s/nix_cache/attic.py` (e.g. give a writer JWT `push: [main,
-public]`) and run `bb run //cluster/cdk8s:generate_manifests`. After Flux applies
-the generated config, the next hourly `attic-jwt-rotation` run re-mints tokens
-whose stamped `pull_unencrypted` / `push_unencrypted` scope differs from the
-configured scope; it does not wait for token staleness; (3) run
-`nix-attic-push.yml` (push to `devel` or
+**Rollout after adding a cache:** (1) follow "Adding a new cache" above (generate + SOPS-seal a keypair, regenerate
+`nix/attic-pubkeys.json`, let Flux create it); (2) update token scopes in `ROTATOR_CONFIG` in
+`cluster/cdk8s/nix_cache/attic.py` (e.g. give a writer JWT `push: [main, public]`) and run
+`bb run //cluster/cdk8s:generate_manifests`. After Flux applies the generated config, the next hourly
+`attic-jwt-rotation` run re-mints tokens whose stamped `pull_unencrypted` / `push_unencrypted` scope differs from the
+configured scope; it does not wait for token staleness; (3) run `nix-attic-push.yml` (push to `devel` or
 `workflow_dispatch`) so CI pushes the new cache's closures for the first time.
 
 ## CI Push
 
-Both ducktape and gaffer-private CI push to their respective caches. Writer
-JWTs auto-rotated by the cluster (1-year validity; re-mint on <24h remaining
-or on pull/push scope drift vs. `ROTATOR_CONFIG` in
+Both ducktape and gaffer-private CI push to their respective caches. Writer JWTs auto-rotated by the cluster (1-year
+validity; re-mint on <24h remaining or on pull/push scope drift vs. `ROTATOR_CONFIG` in
 `cluster/cdk8s/nix_cache/attic.py`):
 
 | Repo           | Workflow                               | Cache            | Reads token from                                                         |
@@ -137,65 +108,53 @@ or on pull/push scope drift vs. `ROTATOR_CONFIG` in
 | ducktape       | `.github/workflows/nix-attic-push.yml` | `main`, `public` | `secrets/ci/attic-main-writer.sops.yaml`                                 |
 | gaffer-private | `.github/workflows/nix-attic-push.yml` | `gaffer`         | `secrets/ci/attic-gaffer-writer.sops.yaml` (sparse-cloned from ducktape) |
 
-Both files are encrypted with the CI age key, already on both repos as
-`SOPS_AGE_KEY` (synced by `tf/gitops/github-secrets-sync/main.tf`).
+Both files are encrypted with the CI age key, already on both repos as `SOPS_AGE_KEY` (synced by
+`tf/gitops/github-secrets-sync/main.tf`).
 
 ## Private-binary isolation (drivefs/drivectl)
 
-`drivefs` (the Google Drive binary) and `drivectl` must stay in the restricted
-`gaffer` cache and **never** land in the broadly-readable `main` cache. The boundary that
-enforces this is the **narinfo**: each cache signs and serves its own narinfos,
-gated by per-cache JWT scope. `main` and `gaffer` physically share the one
-`attic` S3 bucket of content-addressed chunks, but chunks are useless without
-the gaffer narinfo (NAR hash → ordered chunk list), so narinfo scoping is the
-real access boundary even though chunk bytes coexist.
+`drivefs` (the Google Drive binary) and `drivectl` must stay in the restricted `gaffer` cache and **never** land in the
+broadly-readable `main` cache. The boundary that enforces this is the **narinfo**: each cache signs and serves its own
+narinfos, gated by per-cache JWT scope. `main` and `gaffer` physically share the one `attic` S3 bucket of
+content-addressed chunks, but chunks are useless without the gaffer narinfo (NAR hash → ordered chunk list), so narinfo
+scoping is the real access boundary even though chunk bytes coexist.
 
-The leak it guards against: `nix/home/modules/google-drive.nix`, when
-`services.google-drive.enable = true` (wyrm2, rugged), pulls `drivefs` and
-`drivectl` via
-`builtins.fetchClosure` from `gaffer` into the local store **at eval time**. If a
-closure containing them were pushed to `main`, their narinfos would land in
-`main`, pullable by anyone with `main:pull`.
+The leak it guards against: `nix/home/modules/google-drive.nix`, when `services.google-drive.enable = true` (wyrm2,
+rugged), pulls `drivefs` and `drivectl` via `builtins.fetchClosure` from `gaffer` into the local store **at eval time**.
+If a closure containing them were pushed to `main`, their narinfos would land in `main`, pullable by anyone with
+`main:pull`.
 
-So `devinfra/ci/nix_attic_build_and_push.sh` forces google-drive **off** for any
-config that enables it before pushing to `main`, detected by reading the
-`services.google-drive.enable` bool (cheap; it does not fetch `drivefs`, which
-lives behind `config = lib.mkIf cfg.enable`):
+So `devinfra/ci/nix_attic_build_and_push.sh` forces google-drive **off** for any config that enables it before pushing
+to `main`, detected by reading the `services.google-drive.enable` bool (cheap; it does not fetch `drivefs`, which lives
+behind `config = lib.mkIf cfg.enable`):
 
-- NixOS hosts: for each home-manager user reading `enable = true` (wyrm2,
-  rugged), `extendModules` injects
+- NixOS hosts: for each home-manager user reading `enable = true` (wyrm2, rugged), `extendModules` injects
   `home-manager.sharedModules += { services.google-drive.enable = mkForce false; }`.
 - Home configs: the same check on the config directly (none enable it today).
 
-Configs where the option is absent or false build as-is — they can't reference
-`drivefs`, and injecting an undeclared option would error. Crucially this covers
-configs that have **home-manager but not the google-drive module** (`bazel-test`'s
-`root` user; the standalone `claude-web` profile): the bool read errors → treated
-as not-enabled → built untouched.
+Configs where the option is absent or false build as-is — they can't reference `drivefs`, and injecting an undeclared
+option would error. Crucially this covers configs that have **home-manager but not the google-drive module**
+(`bazel-test`'s `root` user; the standalone `claude-web` profile): the bool read errors → treated as not-enabled → built
+untouched.
 
-With it off, `config = lib.mkIf cfg.enable {…}` never references those private
-packages, so they are never fetched and never enter a pushed closure. Real hosts
-deploy with google-drive **on**: `nixos-rebuild switch` pulls `drivefs` and
-`drivectl` straight from `gaffer` (their reader JWT carries `--pull gaffer`) and
-rebuilds only the cheap home-manager generation diff.
+With it off, `config = lib.mkIf cfg.enable {…}` never references those private packages, so they are never fetched and
+never enter a pushed closure. Real hosts deploy with google-drive **on**: `nixos-rebuild switch` pulls `drivefs` and
+`drivectl` straight from `gaffer` (their reader JWT carries `--pull gaffer`) and rebuilds only the cheap home-manager
+generation diff.
 
-**Invariant:** the override targets exactly the configs whose
-`services.google-drive.enable` reads `true`, so a new google-drive host is covered
-automatically and a config that lacks the module is never mis-targeted (the bug
-that the earlier "force off everywhere with home-manager" approach hit on
-`bazel-test`).
+**Invariant:** the override targets exactly the configs whose `services.google-drive.enable` reads `true`, so a new
+google-drive host is covered automatically and a config that lacks the module is never mis-targeted (the bug that the
+earlier "force off everywhere with home-manager" approach hit on `bazel-test`).
 
-**Storage-layer follow-up (not done):** for defense-in-depth — so even a broad
-`attic`-bucket reader key (SeaweedFS `claude-reader`, which holds `Read:attic`)
-can't touch `drivefs` chunks — `gaffer` would need its **own S3 bucket** with
+**Storage-layer follow-up (not done):** for defense-in-depth — so even a broad `attic`-bucket reader key (SeaweedFS
+`claude-reader`, which holds `Read:attic`) can't touch `drivefs` chunks — `gaffer` would need its **own S3 bucket** with
 separate credentials. The narinfo boundary above is the current line of defense.
 
 ## Pulling (Machines and Users)
 
-Substituter wiring is via `ducktape.attic-substituter.enable` in
-`nix/nixos/modules/attic-substituter.nix`. It renders `/run/secrets/rendered/attic-netrc`
-from a per-host SOPS reader JWT (`secrets/hosts/<host>-attic.yaml`,
-auto-rotated) and points the daemon's `nix.settings.netrc-file` at it.
+Substituter wiring is via `ducktape.attic-substituter.enable` in `nix/nixos/modules/attic-substituter.nix`. It renders
+`/run/secrets/rendered/attic-netrc` from a per-host SOPS reader JWT (`secrets/hosts/<host>-attic.yaml`, auto-rotated)
+and points the daemon's `nix.settings.netrc-file` at it.
 
 ```nix
 ducktape.attic-substituter = {
@@ -204,21 +163,18 @@ ducktape.attic-substituter = {
 };
 ```
 
-Home Manager's `ducktape.attic` module decrypts the same per-host SOPS file for
-the machine's user and renders `~/.config/nix/attic-netrc`. Its `nix.settings`
-adds both private substituters and their trusted public keys. This user-level
-copy is required because `builtins.fetchClosure` opens its explicit cache URL
-from the evaluating process rather than relying only on the daemon's root-only
-netrc. Atlas is not NixOS, so it has only this Home Manager side.
+Home Manager's `ducktape.attic` module decrypts the same per-host SOPS file for the machine's user and renders
+`~/.config/nix/attic-netrc`. Its `nix.settings` adds both private substituters and their trusted public keys. This
+user-level copy is required because `builtins.fetchClosure` opens its explicit cache URL from the evaluating process
+rather than relying only on the daemon's root-only netrc. Atlas is not NixOS, so it has only this Home Manager side.
 
-The reader token is minted with `--pull main --pull gaffer`, so one per-host JWT
-unlocks both caches for the daemon and the machine's user without a second
-user-specific Attic credential.
+The reader token is minted with `--pull main --pull gaffer`, so one per-host JWT unlocks both caches for the daemon and
+the machine's user without a second user-specific Attic credential.
 
 ## Environment Variables
 
-Attic uses serde defaults for env var fallback — values must be **absent** from
-`server.toml` for the env var to take effect (TOML values always win).
+Attic uses serde defaults for env var fallback — values must be **absent** from `server.toml` for the env var to take
+effect (TOML values always win).
 
 | Env Var                                  | TOML Field                              | Source                   |
 | ---------------------------------------- | --------------------------------------- | ------------------------ |
@@ -227,16 +183,12 @@ Attic uses serde defaults for env var fallback — values must be **absent** fro
 
 ## Known Issues
 
-The Attic image is busybox-based (no bash on PATH for runc startup, no
-default `/tmp`); the bootstrap Job runs the rotator image
-(`git.allegedly.works/ducktape-ci/attic-jwt-rotation`) instead, kubectl-execing into
-the live attic pod to mint JWTs and curling the REST API for cache CRUD.
+The Attic image is busybox-based (no bash on PATH for runc startup, no default `/tmp`); the bootstrap Job runs the
+rotator image (`git.allegedly.works/ducktape-ci/attic-jwt-rotation`) instead, kubectl-execing into the live attic pod to
+mint JWTs and curling the REST API for cache CRUD.
 
-The previous incarnation of this repo had a plaintext private signing key
-checked into `cluster/terraform/main/nix-cache-key.json`. The cache it
-described was never actually created in attic, so the leaked key never
-signed any live closures; it has been deleted and the matching pubkey
-removed from `trusted-public-keys`. The `main` cache's current keypair is
-unrelated, supplied from `cache-keys.sops.yaml` (see Bootstrap above) — SOPS
-encryption is the intended way private key material lives in this repo,
-unlike that earlier plaintext leak.
+The previous incarnation of this repo had a plaintext private signing key checked into
+`cluster/terraform/main/nix-cache-key.json`. The cache it described was never actually created in attic, so the leaked
+key never signed any live closures; it has been deleted and the matching pubkey removed from `trusted-public-keys`. The
+`main` cache's current keypair is unrelated, supplied from `cache-keys.sops.yaml` (see Bootstrap above) — SOPS
+encryption is the intended way private key material lives in this repo, unlike that earlier plaintext leak.

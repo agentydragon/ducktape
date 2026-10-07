@@ -1,35 +1,29 @@
 # enforce-bazel-tests
 
-Pre-commit hook that verifies Bazel tests affected by staged
-changes are cached and passing before allowing a commit.
+Pre-commit hook that verifies Bazel tests affected by staged changes are cached and passing before allowing a commit.
 
 ## How it works
 
-`enforce_bazel_tests.py` discovers staged files via pygit2, converts them to
-Bazel source labels, and finds affected test targets through a two-step query:
+`enforce_bazel_tests.py` discovers staged files via pygit2, converts them to Bazel source labels, and finds affected
+test targets through a two-step query:
 
-1. **Validate labels** (~1s warm): `kind("source file", //pkg_a:* + //pkg_b:*)`
-   filters out files that exist on disk but aren't declared in any BUILD srcs.
-2. **Find affected tests** (~3s warm):
-   `kind(".*_test", rdeps(<universe>, set(<labels>)))` with
-   `--universe_scope` excluding broken packages (`_EXCLUDED_PACKAGES`). An exclusion
-   naming a sub-package (`x/<pkg>`) expands its parent directory into individual
-   sub-packages, so only that one is excluded.
+1. **Validate labels** (~1s warm): `kind("source file", //pkg_a:* + //pkg_b:*)` filters out files that exist on disk but
+   aren't declared in any BUILD srcs.
+2. **Find affected tests** (~3s warm): `kind(".*_test", rdeps(<universe>, set(<labels>)))` with `--universe_scope`
+   excluding broken packages (`_EXCLUDED_PACKAGES`). An exclusion naming a sub-package (`x/<pkg>`) expands its parent
+   directory into individual sub-packages, so only that one is excluded.
 
-Then runs `bazel test --check_tests_up_to_date` on the affected targets
-(no execution — just checks the local action cache). Requires
-`--remote_download_minimal` in `.bazelrc` for RBE
+Then runs `bazel test --check_tests_up_to_date` on the affected targets (no execution — just checks the local action
+cache). Requires `--remote_download_minimal` in `.bazelrc` for RBE
 ([bazel#3978](https://github.com/bazelbuild/bazel/issues/3978)).
 
-The core logic lives in `find_affected_tests()`, which takes candidate
-`BazelLabel`s and returns affected test `BazelLabel`s. Both the hook and
-the benchmark use it.
+The core logic lives in `find_affected_tests()`, which takes candidate `BazelLabel`s and returns affected test
+`BazelLabel`s. Both the hook and the benchmark use it.
 
 ## Environment variable guard
 
-The hook is guarded by `DUCKTAPE_PRECOMMIT_ENFORCE_BAZEL_TESTS=1` (default off).
-The Claude Code hook profiles pin it to `0`, so agent sessions never gate a
-commit on a local test run — they open the PR and let CI run the tests
+The hook is guarded by `DUCKTAPE_PRECOMMIT_ENFORCE_BAZEL_TESTS=1` (default off). The Claude Code hook profiles pin it to
+`0`, so agent sessions never gate a commit on a local test run — they open the PR and let CI run the tests
 (<../../../AGENTS.md> § Before Hand-off).
 
 ## Components
@@ -46,16 +40,14 @@ bazel run //devinfra/precommit/enforce_bazel_tests:bench_bin
 bazel run //devinfra/precommit/enforce_bazel_tests:bench_bin -- --profile  # with Bazel JSON trace profiles
 ```
 
-Uses a separate `--output_base` so cold-start measurements don't conflict
-with the parent `bazel run` server. Propagates session bazelrc startup flags
-(proxy, TLS CA) to the bench's separate Bazel server. Results (stdout/stderr,
-elapsed times, target lists) are saved to `/tmp/enforce_bazel_tests_bench/runs/<timestamp>/`.
+Uses a separate `--output_base` so cold-start measurements don't conflict with the parent `bazel run` server. Propagates
+session bazelrc startup flags (proxy, TLS CA) to the bench's separate Bazel server. Results (stdout/stderr, elapsed
+times, target lists) are saved to `/tmp/enforce_bazel_tests_bench/runs/<timestamp>/`.
 
 ## Benchmark results (2026-04-01, Bazel 8.6.0, older web environment)
 
-Target file: `util/bazel/workspace.py` (`//util/bazel:workspace.py`).
-Detailed profile analysis: <debug/warm_query_profile.md> for the warm path,
-<debug/cold_start_profile.md> for the cold-start critical path.
+Target file: `util/bazel/workspace.py` (`//util/bazel:workspace.py`). Detailed profile analysis:
+<debug/warm_query_profile.md> for the warm path, <debug/cold_start_profile.md> for the cold-start critical path.
 
 ### Cold start (server shut down before each query)
 
@@ -82,28 +74,24 @@ Detailed profile analysis: <debug/warm_query_profile.md> for the warm path,
 
 ### Notes
 
-- The first cold query is ~29s (JVM startup 11.6s + full module extension
-  eval ~7s). Subsequent cold queries are ~11s (JVM startup only; on-disk
-  repo cache persists across restarts).
-- The first warm query pays ~6s for module extension evaluation (pip 3.4s,
-  npm 2.2s, go_sdk 1.1s). Subsequent warm queries skip this entirely.
-- Subsequent warm queries are ~0.3s, dominated by `fsvc.getDirtyKeys`
-  (filesystem diff scanning, ~0.25s). Actual query evaluation is 13–33ms.
-- **`rdeps(//..., ...)` is unusable** (~34s cold) because `//...`
-  transitively loads broken external packages (gymnasium).
-- Scoped queries return fewer targets (297/412 vs 305/429) because
-  `_EXCLUDED_PACKAGES` filters out the broken packages.
+- The first cold query is ~29s (JVM startup 11.6s + full module extension eval ~7s). Subsequent cold queries are ~11s
+  (JVM startup only; on-disk repo cache persists across restarts).
+- The first warm query pays ~6s for module extension evaluation (pip 3.4s, npm 2.2s, go_sdk 1.1s). Subsequent warm
+  queries skip this entirely.
+- Subsequent warm queries are ~0.3s, dominated by `fsvc.getDirtyKeys` (filesystem diff scanning, ~0.25s). Actual query
+  evaluation is 13–33ms.
+- **`rdeps(//..., ...)` is unusable** (~34s cold) because `//...` transitively loads broken external packages
+  (gymnasium).
+- Scoped queries return fewer targets (297/412 vs 305/429) because `_EXCLUDED_PACKAGES` filters out the broken packages.
 
 ## Known issues from development
 
-- **Files not in BUILD srcs** cause query errors. Fixed by validating
-  labels with `kind("source file", ...)` before the rdeps query.
-- **`//...` universe loads broken external deps** (gymnasium, pygobject).
-  Fixed by constructing a scoped universe that excludes `_EXCLUDED_PACKAGES`.
-- **`//...` is slow for rdeps** (~21s warm). `--universe_scope` brings it
-  to ~3s.
-- **Root package label `//:*`** rejected by Bazel ("empty target name").
-  Use `//:all` instead.
-- **`bazel-*` convenience symlinks** in the repo root were traversed by
-  `build_universe()`, causing `no targets found beneath 'bazel-ducktape'`
-  errors in scoped queries. Fixed by filtering entries starting with `bazel-`.
+- **Files not in BUILD srcs** cause query errors. Fixed by validating labels with `kind("source file", ...)` before the
+  rdeps query.
+- **`//...` universe loads broken external deps** (gymnasium, pygobject). Fixed by constructing a scoped universe that
+  excludes `_EXCLUDED_PACKAGES`.
+- **`//...` is slow for rdeps** (~21s warm). `--universe_scope` brings it to ~3s.
+- **Root package label `//:*`** rejected by Bazel ("empty target name"). Use `//:all` instead.
+- **`bazel-*` convenience symlinks** in the repo root were traversed by `build_universe()`, causing
+  `no targets found beneath 'bazel-ducktape'` errors in scoped queries. Fixed by filtering entries starting with
+  `bazel-`.

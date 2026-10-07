@@ -1,15 +1,15 @@
 # Claude Code session export
 
-Downloads the full event log of every Claude Code cloud session (web, mobile, desktop-cloud, routines) on a
-claude.ai account, archived sessions included, into a local archive.
+Downloads the full event log of every Claude Code cloud session (web, mobile, desktop-cloud, routines) on a claude.ai
+account, archived sessions included, into a local archive.
 
 No official export covers these: the account data export documents no Code sessions, and the Compliance API
-[excludes Claude Code cloud sessions](https://platform.claude.com/docs/en/manage-claude/compliance-sessions).
-This reads the private API `claude.ai/code` and the Claude Code CLI use, authenticated as you
-([docs/api.md](docs/api.md)). It can break without notice, and the consumer terms may restrict automated access.
+[excludes Claude Code cloud sessions](https://platform.claude.com/docs/en/manage-claude/compliance-sessions). This reads
+the private API `claude.ai/code` and the Claude Code CLI use, authenticated as you ([docs/api.md](docs/api.md)). It can
+break without notice, and the consumer terms may restrict automated access.
 
-Read-only against the API (`GET` only). `export` writes files on your machine; `sync` writes only to the database
-you give it.
+Read-only against the API (`GET` only). `export` writes files on your machine; `sync` writes only to the database you
+give it.
 
 ## Run
 
@@ -27,15 +27,15 @@ Open the printed URL in a browser signed in to the account and approve. The brow
 `http://localhost:54545/callback`, so it must reach the machine running `pair`; otherwise forward the port
 (`ssh -L 54545:localhost:54545 host`, or `kubectl port-forward` to a pod).
 
-The 0600 credential file holds an access token (valid for 8 hours) that the tool refreshes itself. **Give the file
-one owning process**: every refresh returns a new refresh token, which the tool writes back before using it, so
-pointing this tool at `~/.claude/.credentials.json` would make it and Claude Code invalidate each other.
+The 0600 credential file holds an access token (valid for 8 hours) that the tool refreshes itself. **Give the file one
+owning process**: every refresh returns a new refresh token, which the tool writes back before using it, so pointing
+this tool at `~/.claude/.credentials.json` would make it and Claude Code invalidate each other.
 
 `--scope` (repeatable) narrows the grant; the default is `user:profile user:sessions:claude_code`. That is enough to
 list sessions and read events, and the Messages API refuses such a grant, so it cannot spend inference quota. The
-sessions scope very likely still permits creating and steering cloud sessions, so treat the file as a credential. If
-the authorize page ever refuses the default, retry with the set Claude Code itself requests: `--scope user:profile
---scope user:inference --scope user:sessions:claude_code --scope user:mcp_servers --scope user:file_upload`.
+sessions scope very likely still permits creating and steering cloud sessions, so treat the file as a credential. If the
+authorize page ever refuses the default, retry with the set Claude Code itself requests:
+`--scope user:profile --scope user:inference --scope user:sessions:claude_code --scope user:mcp_servers --scope user:file_upload`.
 
 **Cookie.** In a browser signed in to claude.ai: DevTools → Application → Cookies → `https://claude.ai`. Copy
 `sessionKey` (HttpOnly, so `document.cookie` does not show it) and `lastActiveOrg`.
@@ -63,9 +63,9 @@ bb run //devinfra/claude/session_export:export_sessions_bin -- export --credenti
 Measured on one account with the cookie: 1,531 sessions, 5.2 M events (median session 702, largest 275 k), 3.0 GB
 gzipped, about 30 minutes at the default `--workers 3`. Disk is the constraint, not the network.
 
-Resumable: rerun the same command after an interruption or failure. Finished sessions are skipped; a session is
-exported again if it was live when exported or has new events since. The first error aborts the run.
-`--limit-sessions N` and `--ids a,b` select a subset for a trial run.
+Resumable: rerun the same command after an interruption or failure. Finished sessions are skipped; a session is exported
+again if it was live when exported or has new events since. The first error aborts the run. `--limit-sessions N` and
+`--ids a,b` select a subset for a trial run.
 
 ### 4. Verify
 
@@ -73,9 +73,9 @@ exported again if it was live when exported or has new events since. The first e
 bb run //devinfra/claude/session_export:export_sessions_bin -- verify --out ~/claude-sessions
 ```
 
-Re-reads every file and fails, listing each problem, unless `sequence_num` runs `1..N` without a gap and `N`
-matches the manifest for every session in the index. Needs a full export, not a subset. A session that was live
-during the export is reported; rerun step 3 to catch up.
+Re-reads every file and fails, listing each problem, unless `sequence_num` runs `1..N` without a gap and `N` matches the
+manifest for every session in the index. Needs a full export, not a subset. A session that was live during the export is
+reported; rerun step 3 to catch up.
 
 ### 5. Retire the credential
 
@@ -83,26 +83,25 @@ during the export is reported; rerun step 3 to catch up.
 shred -u ~/.claude-session-export.json   # or ~/.claude-ai-cookie
 ```
 
-For the cookie, also log out of all devices (claude.ai → Settings → Account), which invalidates the `sessionKey`.
-No way to revoke an OAuth grant is known; whether logging out of all devices does is untested.
+For the cookie, also log out of all devices (claude.ai → Settings → Account), which invalidates the `sessionKey`. No way
+to revoke an OAuth grant is known; whether logging out of all devices does is untested.
 
 ## Sync to Postgres
 
 `sync` keeps a PostgreSQL database level with every session instead of writing an archive: the first cycle backfills,
 later ones read what changed. It needs an OAuth credential from `pair` and the connection string in
 `SESSION_SYNC_DATABASE_URL`. Schema, cycle semantics and the `json`/`jsonb` choice: [docs/sync.md](docs/sync.md).
-`serve` adds a login-protected UI with separate `/sessions` and `/sync` pages for browsing synced sessions and
-managing pairing/status, for a deployment where nothing can listen on the loopback port ([docs/serve.md](docs/serve.md)).
-The session transcript groups adjacent tool work behind short disclosures, keeps messages visible, and collapses
-thinking and successful turn metadata. Small chronological event strips between transcript rows provide every loaded
-record, including runner/hook traffic: click a dot for an event or a short batch, or the event count for the whole strip.
+`serve` adds a login-protected UI with separate `/sessions` and `/sync` pages for browsing synced sessions and managing
+pairing/status, for a deployment where nothing can listen on the loopback port ([docs/serve.md](docs/serve.md)). The
+session transcript groups adjacent tool work behind short disclosures, keeps messages visible, and collapses thinking
+and successful turn metadata. Small chronological event strips between transcript rows provide every loaded record,
+including runner/hook traffic: click a dot for an event or a short batch, or the event count for the whole strip.
 Session summaries identified by routine metadata are marked **Routine run** in the activity-sorted list, with the
-routine ID when available.
-The **Events** button opens all loaded events together. Both inspectors filter by kind/subtype or search complete
-event data; expand a row for its full JSON envelope and payload. Load older events to inspect additional history.
-The sync follows recently active sessions over the server's event streams between cycles ([docs/sync.md](docs/sync.md)
-§ Live following). The browser follows committed mirror changes across web replicas. In the cluster:
-[docs/deploy.md](docs/deploy.md).
+routine ID when available. The **Events** button opens all loaded events together. Both inspectors filter by
+kind/subtype or search complete event data; expand a row for its full JSON envelope and payload. Load older events to
+inspect additional history. The sync follows recently active sessions over the server's event streams between cycles
+([docs/sync.md](docs/sync.md) § Live following). The browser follows committed mirror changes across web replicas. In
+the cluster: [docs/deploy.md](docs/deploy.md).
 
 ## Archive
 

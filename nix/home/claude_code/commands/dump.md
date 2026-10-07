@@ -12,7 +12,8 @@ Session continuity beyond Claude Code's built-in session restoration:
 - Handoff to future agents
 - Historical record of incomplete work
 
-**Different from /followups:** This captures "what did we discuss, what's not finished" — not speculative "what could you do next".
+**Different from /followups:** This captures "what did we discuss, what's not finished" — not speculative "what could
+you do next".
 
 ## Scope
 
@@ -64,7 +65,8 @@ Keep concise — point to existing docs rather than repeating.
 3. If working on specific component → place nearby
 4. Otherwise → project root
 
-**Naming:** Short topic summary, 2-4 words, lowercase-with-hyphens (e.g., `bundle-refactor.md`). No dates unless multiple dumps of same topic.
+**Naming:** Short topic summary, 2-4 words, lowercase-with-hyphens (e.g., `bundle-refactor.md`). No dates unless
+multiple dumps of same topic.
 
 ## Implementation Notes
 

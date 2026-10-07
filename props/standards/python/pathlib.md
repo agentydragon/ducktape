@@ -3,7 +3,8 @@ title: Use pathlib for path manipulation
 kind: outcome
 ---
 
-Agent-edited Python uses pathlib for filesystem paths and joins; it does not use `os.path.*` or manual string concatenation for paths.
+Agent-edited Python uses pathlib for filesystem paths and joins; it does not use `os.path.*` or manual string
+concatenation for paths.
 
 ## Acceptance criteria (checklist)
 
@@ -11,8 +12,10 @@ Agent-edited Python uses pathlib for filesystem paths and joins; it does not use
 - Path joins use `/` operator or `Path(..., ...)`, not `os.path.join`
 - File I/O uses Path methods (`read_text`, `write_text`, `read_bytes`, `open`) instead of bare `open` on string paths
 - No manual string concatenation for paths
-- Function parameters/returns that represent filesystem paths use `pathlib.Path` (preferred) or `os.PathLike[str]` for interoperability
-- CLI arguments that represent filesystem paths are parsed/typed as `pathlib.Path` via argparse (e.g., `parser.add_argument("--out", type=Path)`), not raw `str`
+- Function parameters/returns that represent filesystem paths use `pathlib.Path` (preferred) or `os.PathLike[str]` for
+  interoperability
+- CLI arguments that represent filesystem paths are parsed/typed as `pathlib.Path` via argparse (e.g.,
+  `parser.add_argument("--out", type=Path)`), not raw `str`
 
 ## Positive examples
 

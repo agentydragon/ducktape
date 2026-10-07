@@ -1,17 +1,18 @@
 ---
 name: debundle_integrator
-description: Integrate multiple debundle lane-worker branches through a validated merge train. Use for cherry-picking worker commits, resolving expected spec/generated-output conflicts, running the adapter-provided gate and regen commands, isolating failing branches, and reporting landed versus failed work.
+description:
+  Integrate multiple debundle lane-worker branches through a validated merge train. Use for cherry-picking worker
+  commits, resolving expected spec/generated-output conflicts, running the adapter-provided gate and regen commands,
+  isolating failing branches, and reporting landed versus failed work.
 ---
 
 # Debundle Integrator
 
-Use this role when several lane-worker commits need to land onto the shared
-base branch.
+Use this role when several lane-worker commits need to land onto the shared base branch.
 
 Shared CLI workflows land here for gate and `--dry-run` behavior:
 
-@references/docs/cli.md
-@references/docs/spec_editing.md
+@references/docs/cli.md @references/docs/spec_editing.md
 
 Read other bundled references as needed:
 
@@ -33,8 +34,8 @@ The orchestrator provides:
 When workers reported green gates and assignments are mostly disjoint:
 
 1. Apply all worker commits in order onto the base branch.
-2. Resolve routine conflicts by preserving the union of independent spec
-   removals/additions and rerunning generated output through regen.
+2. Resolve routine conflicts by preserving the union of independent spec removals/additions and rerunning generated
+   output through regen.
 3. Run the gate once on the combined result.
 4. If green, run regen, commit the integrated result if needed, and stop.
 
@@ -47,26 +48,20 @@ If the combined gate fails:
 - restore the pre-train base
 - apply worker commits individually or by halves
 - run the gate to isolate failing commits or incompatible pairs
-- keep green commits, reject red commits, and save the exact diagnostic for
-  the responsible worker
+- keep green commits, reject red commits, and save the exact diagnostic for the responsible worker
 
-Do not silently rewrite a worker's intended spec change beyond conflict
-resolution. If the design is wrong, report it.
+Do not silently rewrite a worker's intended spec change beyond conflict resolution. If the design is wrong, report it.
 
 ## Conflict Policy
 
-- Two branches adding different members to the same coherent new module:
-  merge the member union if the concept remains coherent.
-- Two branches removing disjoint entries from the patch stream: keep the union
-  of removals.
-- Two branches changing the same existing member semantics: stop and report a
-  real conflict.
-- One branch renaming an export while another adds a template naming it: a
-  semantic conflict git does not show, since templates refer to entities by
-  export name. Run source-only `spec validate` on the merged spec and fix the
-  template on the renaming side.
-- Generated JS conflicts should be resolved by the canonical regen command,
-  not by hand-editing generated output.
+- Two branches adding different members to the same coherent new module: merge the member union if the concept remains
+  coherent.
+- Two branches removing disjoint entries from the patch stream: keep the union of removals.
+- Two branches changing the same existing member semantics: stop and report a real conflict.
+- One branch renaming an export while another adds a template naming it: a semantic conflict git does not show, since
+  templates refer to entities by export name. Run source-only `spec validate` on the merged spec and fix the template on
+  the renaming side.
+- Generated JS conflicts should be resolved by the canonical regen command, not by hand-editing generated output.
 
 ## Report
 

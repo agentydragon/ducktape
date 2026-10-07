@@ -1,26 +1,26 @@
 ---
 name: update_container_re
-description: Update the Claude Code web container reverse engineering effort. Detects changed binaries, captures new references, runs parallel RE subagents for bindiff/decompilation, updates container snapshot/diff, and refreshes all documentation.
+description:
+  Update the Claude Code web container reverse engineering effort. Detects changed binaries, captures new references,
+  runs parallel RE subagents for bindiff/decompilation, updates container snapshot/diff, and refreshes all
+  documentation.
 argument-hint: "[--detect-only] [--skip-re] [--skip-diff]"
 allowed-tools: Bash, Read, Grep, Glob, Edit, Write, Agent, WebSearch, WebFetch
 ---
 
 # Claude Code Web Container RE Update
 
-Complete procedure for updating the reverse engineering effort when the live
-container has changed. This covers binary updates, full disassembly-based
-reverse engineering of deltas, container reconstruction diffing, and
-documentation refresh.
+Complete procedure for updating the reverse engineering effort when the live container has changed. This covers binary
+updates, full disassembly-based reverse engineering of deltas, container reconstruction diffing, and documentation
+refresh.
 
 **Argument:** `$ARGUMENTS` — optional flags to limit scope.
 
 **Directory:** `devinfra/claude/web_env/` in the repo root.
 
-**Prerequisite:** Phases 1-3 (detection, binary capture, metadata) require
-running inside a Claude Code web container with access to the live binaries.
-Phase 5 (container build) works from **any machine** with Docker and network
-access — it fetches packages from pinned Ubuntu snapshot archives via
-`fetch_debs.py`, not dpkg-repack.
+**Prerequisite:** Phases 1-3 (detection, binary capture, metadata) require running inside a Claude Code web container
+with access to the live binaries. Phase 5 (container build) works from **any machine** with Docker and network access —
+it fetches packages from pinned Ubuntu snapshot archives via `fetch_debs.py`, not dpkg-repack.
 
 ---
 
@@ -43,8 +43,8 @@ echo "process_api: live=$LIVE_PA_HASH ref=$REF_PA_HASH"
 /usr/local/bin/environment-manager --version 2>&1
 ```
 
-If hashes match, the binaries haven't changed — skip binary RE and go to
-Phase 5 (container diff) to check for package/config changes only.
+If hashes match, the binaries haven't changed — skip binary RE and go to Phase 5 (container diff) to check for
+package/config changes only.
 
 Extract key properties of changed binaries:
 
@@ -114,10 +114,9 @@ env | grep -E '^(CLAUDE|CODESIGN|MCP_)' | sort \
 
 ## Phase 3: Update RE Source In-Place
 
-RE source lives directly under `re/process_api/src/` and
-`re/environment_manager/src/` (flat layout — no BuildID subdirectories).
-The current Build ID is documented in each binary's `README.md` and
-`PLAN.md`, not encoded in directory names.
+RE source lives directly under `re/process_api/src/` and `re/environment_manager/src/` (flat layout — no BuildID
+subdirectories). The current Build ID is documented in each binary's `README.md` and `PLAN.md`, not encoded in directory
+names.
 
 ```bash
 NEW_EM_BUILDID=$(readelf -n /tmp/env-manager-new | grep 'Build ID' | awk '{print substr($NF,1,8)}')
@@ -134,13 +133,12 @@ echo "process_api: $NEW_PA_BUILDID"
 
 ## Phase 4: Parallel RE Subagents
 
-**Launch two parallel subagents** — one per changed binary. Each works in
-isolation (ideally in a worktree) to avoid conflicts.
+**Launch two parallel subagents** — one per changed binary. Each works in isolation (ideally in a worktree) to avoid
+conflicts.
 
 ### Subagent 1: environment-manager (Go with DWARF)
 
-The Go binary ships with full debug info. Use `go tool objdump` for actual
-disassembly — not string-level guessing.
+The Go binary ships with full debug info. Use `go tool objdump` for actual disassembly — not string-level guessing.
 
 **Census (run in parallel within subagent):**
 
@@ -178,8 +176,7 @@ strings "$BIN" | sort -u > /tmp/em-new-strings.txt
 
 ### Subagent 2: process_api (Stripped Rust)
 
-The Rust binary is stripped — no symbols, no debug info. Must use Ghidra
-headless or detailed `objdump -d` analysis.
+The Rust binary is stripped — no symbols, no debug info. Must use Ghidra headless or detailed `objdump -d` analysis.
 
 **Census:**
 
@@ -200,8 +197,7 @@ strings "$BIN" | grep '/build/src/'
 strings "$BIN" | grep -E '^--(addr|port|max|block|fire|cgr|mem|cpu|oom|control)'
 ```
 
-**Decompilation:** Use Ghidra headless if available, otherwise careful
-`objdump -d` analysis:
+**Decompilation:** Use Ghidra headless if available, otherwise careful `objdump -d` analysis:
 
 1. Map functions via string cross-references (panic paths → source files)
 2. For each new function: read actual decompiled C pseudocode
@@ -226,8 +222,7 @@ Update the Dockerfile if the version diff (Phase 2b) revealed changes:
 - **Node.js/Bun versions**: Update download URLs
 - **npm globals**: Update version pins
 - **Go versions**: Update download URLs
-- **APT packages**: Update `live-dpkg-versions.txt` and optionally advance
-  `SNAPSHOT_DATE` in `fetch_debs.py`
+- **APT packages**: Update `live-dpkg-versions.txt` and optionally advance `SNAPSHOT_DATE` in `fetch_debs.py`
 
 Then fetch packages and rebuild:
 
@@ -239,8 +234,8 @@ bazel run //devinfra/claude/web_env/tools:fetch_debs
 bazel run //devinfra/claude/web_env/tools:build_and_diff
 ```
 
-Review `diff_report.md`. Update `exclusions.yaml` if new runtime artifacts
-need exclusion. Commit `diff_report.md` with the new diff summary.
+Review `diff_report.md`. Update `exclusions.yaml` if new runtime artifacts need exclusion. Commit `diff_report.md` with
+the new diff summary.
 
 ---
 
@@ -284,15 +279,12 @@ Commit together:
 - **Parallel subagents** for independent binary RE work.
 - **Verify results** — builds compile, strings match, functions covered.
 - **Delta-focused** — don't rewrite unchanged code, focus on what changed.
-- **Flat RE directories** — source lives under `re/<binary>/src/`, Build ID is
-  documented in README.md/PLAN.md headers, not encoded in directory names.
-  Previous versions are preserved in git history.
-- **Update references only where you edit.** Don't mass-replace Build ID strings
-  across all files. Only update the Build ID marker in files where you actually
-  change the RE source or documentation to match the new binary.
-- **Documentation shows current state only.** READMEs should describe the current
-  binary version without historical change summaries or diff sections.
-  Don't accumulate change history in PLAN.md — keep a single current status.
+- **Flat RE directories** — source lives under `re/<binary>/src/`, Build ID is documented in README.md/PLAN.md headers,
+  not encoded in directory names. Previous versions are preserved in git history.
+- **Update references only where you edit.** Don't mass-replace Build ID strings across all files. Only update the Build
+  ID marker in files where you actually change the RE source or documentation to match the new binary.
+- **Documentation shows current state only.** READMEs should describe the current binary version without historical
+  change summaries or diff sections. Don't accumulate change history in PLAN.md — keep a single current status.
 
 See `/reverse_engineer` skill for the detailed binary RE methodology.
 
@@ -300,9 +292,8 @@ See `/reverse_engineer` skill for the detailed binary RE methodology.
 
 ## Appendix: Docker Build Proxy Pitfalls
 
-The gVisor sandbox requires an egress proxy for all network access. Docker
-build containers don't inherit host env vars, so the proxy must be passed via
-`--build-arg http_proxy=... --build-arg https_proxy=...`.
+The gVisor sandbox requires an egress proxy for all network access. Docker build containers don't inherit host env vars,
+so the proxy must be passed via `--build-arg http_proxy=... --build-arg https_proxy=...`.
 
 **Critical issue: SHELL wrapper + eval + proxy URLs.**
 
@@ -312,14 +303,13 @@ The Dockerfile uses a logging SHELL wrapper:
 SHELL ["/bin/bash", "-c", "exec 3>&2; set -euo pipefail; trap '...' ERR; exec > /tmp/build-step.log 2>&1; eval \"$0\""]
 ```
 
-This wrapper uses `eval "$0"` to execute the actual RUN command. When the proxy
-URL contains special characters (JWT tokens with `=`, `+`, `/`, `@`), eval can
-corrupt the URL or prevent APT from parsing the proxy config correctly. Symptoms:
-`apt-get update` fails with "Temporary failure resolving" even though the proxy
-IS reachable (verified via `docker run`).
+This wrapper uses `eval "$0"` to execute the actual RUN command. When the proxy URL contains special characters (JWT
+tokens with `=`, `+`, `/`, `@`), eval can corrupt the URL or prevent APT from parsing the proxy config correctly.
+Symptoms: `apt-get update` fails with "Temporary failure resolving" even though the proxy IS reachable (verified via
+`docker run`).
 
-**Fix: Use plain bash shell for APT-setup layers.** Before any RUN that writes
-APT proxy configuration or runs `apt-get update`, switch to:
+**Fix: Use plain bash shell for APT-setup layers.** Before any RUN that writes APT proxy configuration or runs
+`apt-get update`, switch to:
 
 ```dockerfile
 SHELL ["/bin/bash", "-euo", "pipefail", "-c"]
@@ -332,13 +322,11 @@ printf 'Acquire::http::Proxy "%s";\nAcquire::https::Proxy "%s";\n' \
   "${http_proxy:-}" "${https_proxy:-}" > /etc/apt/apt.conf.d/01proxy
 ```
 
-**Docker cache key behavior:** Docker excludes predefined proxy build-arg names
-(`http_proxy`, `https_proxy`, etc.) from cache keys. This means layer caching
-is preserved across sessions with different proxy JWTs. However, it also means
-changing the RUN instruction text is the only way to bust cache for these layers
-— clearing with `docker builder prune --all -f` is the nuclear option.
+**Docker cache key behavior:** Docker excludes predefined proxy build-arg names (`http_proxy`, `https_proxy`, etc.) from
+cache keys. This means layer caching is preserved across sessions with different proxy JWTs. However, it also means
+changing the RUN instruction text is the only way to bust cache for these layers — clearing with
+`docker builder prune --all -f` is the nuclear option.
 
-**APT version alignment:** The snapshot date pins packages to a specific point
-in time, but the base image may have newer package versions. Use
-`apt-get dist-upgrade --allow-downgrades` to align before installing `-dev`
-packages, which have strict version dependencies on their library counterparts.
+**APT version alignment:** The snapshot date pins packages to a specific point in time, but the base image may have
+newer package versions. Use `apt-get dist-upgrade --allow-downgrades` to align before installing `-dev` packages, which
+have strict version dependencies on their library counterparts.

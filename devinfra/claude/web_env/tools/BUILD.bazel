@@ -26,6 +26,7 @@ py_binary(
 py_library(
     name = "capture_versions",
     srcs = ["capture_versions.py"],
+    deps = ["@pypi//pyyaml"],
 )
 
 py_binary(

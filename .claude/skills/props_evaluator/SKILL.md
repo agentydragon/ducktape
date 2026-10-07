@@ -1,13 +1,15 @@
 ---
 name: props_evaluator
-description: Operate the live props cluster as evaluator — fetch credentials from k8s, call the API at props.allegedly.works, trigger critic/grader runs, and inspect results.
+description:
+  Operate the live props cluster as evaluator — fetch credentials from k8s, call the API at props.allegedly.works,
+  trigger critic/grader runs, and inspect results.
 allowed-tools: Bash, Read, Grep, Glob, WebFetch, Task
 ---
 
 # Props Evaluator Access
 
-Operate the production props deployment at `https://props.allegedly.works` using
-evaluator credentials retrieved from the cluster.
+Operate the production props deployment at `https://props.allegedly.works` using evaluator credentials retrieved from
+the cluster.
 
 ## Credentials
 
@@ -38,8 +40,8 @@ Health check: `GET /health` → `{"status":"ok"}`
 
 ### Access by caller role
 
-All `/api/gt/*` and `/api/stats/*` endpoints use per-caller RLS via the caller's
-Postgres credentials — there is no agent-type gate at the HTTP layer.
+All `/api/gt/*` and `/api/stats/*` endpoints use per-caller RLS via the caller's Postgres credentials — there is no
+agent-type gate at the HTTP layer.
 
 | Caller                | `/api/gt/*`            | `/api/stats/*`         | `/api/runs/*` |
 | --------------------- | ---------------------- | ---------------------- | ------------- |

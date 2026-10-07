@@ -90,8 +90,7 @@ jobs:
 
       - name: Save Ansible Galaxy roles cache
         if: >-
-          always() &&
-          steps.changed-files.outputs.needs_ansible_roles == 'true' &&
+          always() && steps.changed-files.outputs.needs_ansible_roles == 'true' &&
           steps.cache-ansible-roles-restore.outputs.cache-hit != 'true'
         uses: actions/cache/save@v6
         with:

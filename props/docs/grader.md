@@ -4,7 +4,8 @@ Persistent graders that continuously reconcile grading state with ground truth.
 
 ## Concept: Reconciliation Loop
 
-Snapshot graders follow the **Kubernetes controller pattern** — a reconciliation loop that drives actual state toward desired state:
+Snapshot graders follow the **Kubernetes controller pattern** — a reconciliation loop that drives actual state toward
+desired state:
 
 ```
 Desired State: grading_pending is empty (all critique/GT pairs have edges)
@@ -29,7 +30,8 @@ The reconciliation loop **transparently handles ground truth changes**:
 2. **GT removal**: CASCADE DELETE removes stale edges → no stale data
 3. **GT modification**: Old edges deleted, new pairs appear in pending → grader re-grades
 
-No explicit versioning needed. The `grading_edges` table IS the checkpoint — graders can restart at any time and resume from `grading_pending`.
+No explicit versioning needed. The `grading_edges` table IS the checkpoint — graders can restart at any time and resume
+from `grading_pending`.
 
 ## Architecture
 

@@ -1,12 +1,10 @@
 # Design: Resource Capability Tokens for Agent Collaboration
 
-> **Archived — superseded schema.** This document predates the unified
-> `agent_runs` table. The separate `critic_runs`, `grader_runs`, and
-> `prompt_optimization_runs` tables described here were replaced by a single
-> `agent_runs` table with `type_config` JSONB. Some concepts (capability tokens,
-> RLS patterns) are still worth reading; the schema details are not. The current
-> architecture is <../agent_loop_inside_container.md>. Nothing in the repo links
-> here — it is kept as background, not as a plan.
+> **Archived — superseded schema.** This document predates the unified `agent_runs` table. The separate `critic_runs`,
+> `grader_runs`, and `prompt_optimization_runs` tables described here were replaced by a single `agent_runs` table with
+> `type_config` JSONB. Some concepts (capability tokens, RLS patterns) are still worth reading; the schema details are
+> not. The current architecture is <../agent_loop_inside_container.md>. Nothing in the repo links here — it is kept as
+> background, not as a plan.
 
 ## Summary
 
@@ -91,8 +89,7 @@ CREATE INDEX idx_agent_grants_grantee_target_cap ON agent_grants(grantee_agent_i
 - `(grantor=PO, grantee=PO, target=critic, capability='send_messages')` → PO can send messages to critic
 - `(grantor=PO, grantee=PO, target=critic, capability='administer_grants')` → PO can grant others access to critic
 
-**Automatic grants on spawn:**
-When agent A spawns agent B, create:
+**Automatic grants on spawn:** When agent A spawns agent B, create:
 
 - `(grantor=A, grantee=A, target=B, capability='read_transcript')`
 - `(grantor=A, grantee=A, target=B, capability='send_messages')`
@@ -171,7 +168,8 @@ async def grant_access(input: GrantAccessInput) -> GrantAccessOutput:
 
 ### Messages (Typed, Immutable Data Blobs)
 
-Agents communicate via **typed messages** stored in DB. Messages are immutable, addressable by UUID, enabling zero-copy data passing between agents.
+Agents communicate via **typed messages** stored in DB. Messages are immutable, addressable by UUID, enabling zero-copy
+data passing between agents.
 
 ```sql
 CREATE TABLE messages (
@@ -457,7 +455,8 @@ async def agent_loop(agent_id: UUID):
 **Example flow:**
 
 1. PO spawns critic: `critic_id = spawn_agent(type='critic', ...)`
-2. PO creates input message: `input_msg = upsert_message(schema_type='plaintext', content={'text': 'analyze this code'})`
+2. PO creates input message:
+   `input_msg = upsert_message(schema_type='plaintext', content={'text': 'analyze this code'})`
 3. PO sends to critic: `send_message(agent_id=critic_id, message_id=input_msg.message_id)` → returns immediately
 4. PO polls via SQL: `SELECT id FROM messages WHERE in_reply_to = :input_msg_id` (loop until found, or timeout)
 5. Critic wakes up, sees "📬 Message received" notification in transcript

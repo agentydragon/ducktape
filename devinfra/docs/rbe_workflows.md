@@ -1,17 +1,15 @@
 # Why no workflow needs `--remote_executor=""`
 
-`--remote_executor=""` is **never required for correctness** — every workflow in
-this repo runs on RBE. The root `AGENTS.md` rule ("RBE is the expected default — do
-not disable it") holds for all of these.
+`--remote_executor=""` is **never required for correctness** — every workflow in this repo runs on RBE. The root
+`AGENTS.md` rule ("RBE is the expected default — do not disable it") holds for all of these.
 
 The mechanics the table cites:
 
-- **Module-extension mechanic**: module extensions (repo rules) always run locally
-  on the Bazel client — RBE executes spawn actions, not repository rules — so
-  repins and lock updates are local by definition; `--remote_executor=""` changes
-  nothing about them.
-- **`bazel run` mechanic**: the produced binary always runs locally (that's how it
-  writes the source tree); its _build_ still uses RBE.
+- **Module-extension mechanic**: module extensions (repo rules) always run locally on the Bazel client — RBE executes
+  spawn actions, not repository rules — so repins and lock updates are local by definition; `--remote_executor=""`
+  changes nothing about them.
+- **`bazel run` mechanic**: the produced binary always runs locally (that's how it writes the source tree); its _build_
+  still uses RBE.
 
 | Workflow                                           | Why `--remote_executor=""` is NOT needed                                                                                                                                                                                                |
 | -------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |

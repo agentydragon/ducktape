@@ -1,7 +1,7 @@
 # bb-box: BuildBuddy VM wrapper
 
-Wrapper around `bb box create` / `bb execute` for spinning up persistent VMs on
-BuildBuddy executors with configurable CPU, memory, and disk.
+Wrapper around `bb box create` / `bb execute` for spinning up persistent VMs on BuildBuddy executors with configurable
+CPU, memory, and disk.
 
 ## Quick start
 
@@ -24,16 +24,16 @@ bb ssh my-dev-box
 
 ## How it works
 
-1. `bb box create <name>` starts a Firecracker VM with an SSH server inside,
-   connected via WireGuard tunnel through BuildBuddy's gateway.
-2. With a name, the runner is recycled (`recycle-runner=true`) — reconnecting
-   within the grace period resumes the same VM with filesystem state intact.
+1. `bb box create <name>` starts a Firecracker VM with an SSH server inside, connected via WireGuard tunnel through
+   BuildBuddy's gateway.
+2. With a name, the runner is recycled (`recycle-runner=true`) — reconnecting within the grace period resumes the same
+   VM with filesystem state intact.
 3. Without a name, the VM is ephemeral.
 
 ### Sizing
 
-`bb box create` doesn't expose CPU/memory/disk flags, so the script falls back
-to `bb execute` when non-default sizing is requested. In execute mode it:
+`bb box create` doesn't expose CPU/memory/disk flags, so the script falls back to `bb execute` when non-default sizing
+is requested. In execute mode it:
 
 - Uploads the local `bb` binary as the action input
 - Runs `bb ssh-server` inside the executor with the requested exec properties
@@ -77,10 +77,9 @@ bb execute \
 
 ## Limitations
 
-- **Grace period**: Max 5 minutes after all SSH connections close. The VM is
-  reclaimed after that — reconnect within the window to keep it alive.
+- **Grace period**: Max 5 minutes after all SSH connections close. The VM is reclaimed after that — reconnect within the
+  window to keep it alive.
 - **Idle timeout**: Max 5 minutes of SSH inactivity before the session is closed.
 - **No port forwarding**: The WireGuard tunnel only carries SSH traffic.
-- **`bb box create` sizing**: The upstream `bb box create` command doesn't expose
-  CPU/memory/disk flags. The script works around this by using `bb execute` when
-  custom sizing is requested.
+- **`bb box create` sizing**: The upstream `bb box create` command doesn't expose CPU/memory/disk flags. The script
+  works around this by using `bb execute` when custom sizing is requested.

@@ -3,7 +3,8 @@ title: No unnecessary nesting (combine trivial guards)
 kind: outcome
 ---
 
-Trivial nested guards without else blocks are combined into a single condition; use logical conjunction (and/or) and the walrus operator to bind intermediate values when needed.
+Trivial nested guards without else blocks are combined into a single condition; use logical conjunction (and/or) and the
+walrus operator to bind intermediate values when needed.
 
 ## Acceptance criteria (checklist)
 

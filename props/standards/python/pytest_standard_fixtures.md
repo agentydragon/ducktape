@@ -3,16 +3,17 @@ title: Use pytest's standard fixtures for temp dirs and monkeypatching
 kind: outcome
 ---
 
-Pytest-based tests use standard built-ins for temporary paths and patching instead of hand-rolling.
-Use `tmp_path` (or `tmp_path_factory` for broader scope), not raw `tempfile`/manual cleanup.
-Use `monkeypatch` for environment, cwd and sys path changes.
+Pytest-based tests use standard built-ins for temporary paths and patching instead of hand-rolling. Use `tmp_path` (or
+`tmp_path_factory` for broader scope), not raw `tempfile`/manual cleanup. Use `monkeypatch` for environment, cwd and sys
+path changes.
 
 ## Acceptance criteria (checklist)
 
 - Temporary filesystem:
   - Use `tmp_path` for per-test temporary directories; construct paths with `/` and `Path` APIs
   - Use `tmp_path_factory` for module/session-scoped directories when needed
-  - Do not use raw `tempfile.mkdtemp/NamedTemporaryFile` unless code under test specifically requires it (document why `tmp_path` cannot be used)
+  - Do not use raw `tempfile.mkdtemp/NamedTemporaryFile` unless code under test specifically requires it (document why
+    `tmp_path` cannot be used)
 - Process state:
   - Use `monkeypatch.chdir(tmp_path)` to set working directory (no hand-rolled cwd context managers)
   - Use `monkeypatch.setenv/monkeypatch.delenv` for environment variables (no direct `os.environ[...] = ...` in tests)
@@ -25,7 +26,8 @@ Use `monkeypatch` for environment, cwd and sys path changes.
 ## Forbidden
 
 - Hand-rolled cwd managers/context managers; use `monkeypatch.chdir(tmp_path)`
-- Home-grown temp dir helpers or manual `tempfile` + cleanup; use `tmp_path`/`tmp_path_factory` or document why that would not work
+- Home-grown temp dir helpers or manual `tempfile` + cleanup; use `tmp_path`/`tmp_path_factory` or document why that
+  would not work
 - Home-rolled env mutation; use `monkeypatch.setenv` or `unittest.mock.patch.dict`
 
 ## Positive examples
@@ -98,9 +100,10 @@ def test_writes_file():
 
 ## Exceptions
 
-- When testing code that explicitly consumes `py.path` objects, `tmpdir` can be used.
-  Prefer migrating the code under test to `pathlib.Path` and `tmp_path` when feasible.
-- If third-party API requires raw `tempfile` handles (e.g., needs a real OS-level fd), document the reason and keep the scope minimal
+- When testing code that explicitly consumes `py.path` objects, `tmpdir` can be used. Prefer migrating the code under
+  test to `pathlib.Path` and `tmp_path` when feasible.
+- If third-party API requires raw `tempfile` handles (e.g., needs a real OS-level fd), document the reason and keep the
+  scope minimal
 
 ## See also
 

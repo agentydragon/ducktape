@@ -10,9 +10,8 @@
 
 @docs/AGENTS.md
 
-Runtime agent prompt templates live in <agents/docs/> and
-<agents/critic_dev/authoring_agents.md.mako>. Do not `@`-transclude them here;
-the critic and grader prompt templates include the runtime docs they need.
+Runtime agent prompt templates live in <agents/docs/> and <agents/critic_dev/authoring_agents.md.mako>. Do not
+`@`-transclude them here; the critic and grader prompt templates include the runtime docs they need.
 
 ## Database Migrations (Alembic)
 
@@ -23,11 +22,13 @@ the critic and grader prompt templates include the runtime docs they need.
 - RLS policies: managed in `db/setup.py` via `enable_rls()` (not in migrations)
 - RLS helper functions: created in migrations (they're schema)
 
-**CASCADE WARNING:** `DROP VIEW ... CASCADE` drops all dependents. Before writing such a migration: query `pg_depend` to list ALL dependent views, recreate them in dependency order, and re-grant permissions.
+**CASCADE WARNING:** `DROP VIEW ... CASCADE` drops all dependents. Before writing such a migration: query `pg_depend` to
+list ALL dependent views, recreate them in dependency order, and re-grant permissions.
 
 ## Agent Database Roles
 
-Agents get persistent PostgreSQL roles with RLS-scoped access. Passwords are deterministic (HMAC-SHA256 of salt + agent_run_id).
+Agents get persistent PostgreSQL roles with RLS-scoped access. Passwords are deterministic (HMAC-SHA256 of salt +
+agent_run_id).
 
 - Username pattern: `agent_{agent_run_id}`
 - `current_agent_run_id()` extracts ID from username for RLS policies
@@ -43,8 +44,10 @@ Do not use MCP I/O types (`CriticSubmitPayload`, `ReportedIssue`, etc.) in datab
 
 ## Service Management
 
-**Never start services manually** (no raw `uvicorn`, no manual postgres). Use `docker compose` as described in README.md.
+**Never start services manually** (no raw `uvicorn`, no manual postgres). Use `docker compose` as described in
+README.md.
 
 ## Database Safety
 
-**NEVER run `props db recreate` without the user's explicit agreement.** It drops ALL data including expensively-collected agent rollouts.
+**NEVER run `props db recreate` without the user's explicit agreement.** It drops ALL data including
+expensively-collected agent rollouts.

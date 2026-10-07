@@ -12,7 +12,8 @@ Quick switching between git worktrees with copy-on-write for rapid prototyping.
 
 ## Requirements
 
-Python 3.14+, `gitstatusd` (Bazel provides via `//third_party/gitstatusd` for tests; for non-Bazel, install separately or set `gitstatusd_path` in config).
+Python 3.14+, `gitstatusd` (Bazel provides via `//third_party/gitstatusd` for tests; for non-Bazel, install separately
+or set `gitstatusd_path` in config).
 
 ## Usage
 
@@ -35,9 +36,11 @@ Install shell function: `eval "$(python -m x.wt.shell.install)"`
 - **Daemon**: GitHub API, git status queries, auto-starts when needed
 - **Handlers** (`handlers.py`): pure functions with explicit deps
 
-**Shell integration** uses fd3: CLI writes shell commands to fd3, shell function executes them after CLI exits. Exit codes: 0=success (execute), 1=uncontrolled error (skip), 2=controlled error (execute safe recovery).
+**Shell integration** uses fd3: CLI writes shell commands to fd3, shell function executes them after CLI exits. Exit
+codes: 0=success (execute), 1=uncontrolled error (skip), 2=controlled error (execute safe recovery).
 
-**Path preservation**: detects relative position, maintains same path in target worktree, walks up directory tree if path doesn't exist.
+**Path preservation**: detects relative position, maintains same path in target worktree, walks up directory tree if
+path doesn't exist.
 
 ## Configuration
 
@@ -51,7 +54,8 @@ upstream_branch: main # Required
 github_repo: owner/repo # Optional; omit to disable GitHub integration
 ```
 
-Optional: `log_operations`, `cow_method` (auto|reflink|copy|rsync), `hydrate_worktrees`, `github_repo`, `gitstatusd_path`, `post_creation_script`, `post_creation_timeout`.
+Optional: `log_operations`, `cow_method` (auto|reflink|copy|rsync), `hydrate_worktrees`, `github_repo`,
+`gitstatusd_path`, `post_creation_script`, `post_creation_timeout`.
 
 ### Post-creation hook FD behavior
 

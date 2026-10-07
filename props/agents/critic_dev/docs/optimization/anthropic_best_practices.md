@@ -16,7 +16,8 @@ Give relevant context without overwhelming. Summarize key concepts, reference do
 
 ### 4. Effective Examples
 
-Quality > quantity. Show diverse cases including edge cases. Demonstrate reasoning, not just inputs/outputs. 3-5 examples is often enough.
+Quality > quantity. Show diverse cases including edge cases. Demonstrate reasoning, not just inputs/outputs. 3-5
+examples is often enough.
 
 ### 5. Role-Setting
 
@@ -40,8 +41,8 @@ Test on real examples, identify failure modes, add instructions to address them.
 
 ### 10. Leverage Strengths
 
-Models excel at: pattern matching, explaining reasoning, following step-by-step instructions.
-Models struggle with: exact counting, complex arithmetic (use tools), very long consistent outputs.
+Models excel at: pattern matching, explaining reasoning, following step-by-step instructions. Models struggle with:
+exact counting, complex arithmetic (use tools), very long consistent outputs.
 
 ## Claude-Specific
 

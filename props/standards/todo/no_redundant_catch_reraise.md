@@ -1,11 +1,11 @@
 # Property: No Redundant Catch-and-Reraise
 
-**Status:** Heuristic flag for agent consideration
-**Kind:** outcome
+**Status:** Heuristic flag for agent consideration **Kind:** outcome
 
 ## Pattern
 
-Try/except that immediately re-raises the same exception without adding context, logging, or translation is often unnecessary and can be removed for clarity.
+Try/except that immediately re-raises the same exception without adding context, logging, or translation is often
+unnecessary and can be removed for clarity.
 
 ## Example
 

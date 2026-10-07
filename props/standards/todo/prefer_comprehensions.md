@@ -1,11 +1,11 @@
 # Property: Prefer Comprehensions for Simple Filter/Map
 
-**Status:** Planned
-**Kind:** outcome
+**Status:** Planned **Kind:** outcome
 
 ## Predicate
 
-For simple, readable cases, prefer list/set/dict comprehensions (and generator expressions) over loops that only append/continue or build trivial maps.
+For simple, readable cases, prefer list/set/dict comprehensions (and generator expressions) over loops that only
+append/continue or build trivial maps.
 
 ## Acceptance Criteria (Draft)
 

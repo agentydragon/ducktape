@@ -1,8 +1,6 @@
 # Nix Install Profiling — Container (x86_64-linux)
 
-**Date**: 2026-03-22
-**Nix version installed**: 2.34.2
-**Platform**: x86_64-linux container (running as root)
+**Date**: 2026-03-22 **Nix version installed**: 2.34.2 **Platform**: x86_64-linux container (running as root)
 **Installer**: Official nixos.org single-user installer (`--no-daemon`)
 
 ## Results Summary
@@ -27,15 +25,16 @@
 ## Gotchas in a Root Container
 
 - The official installer warns: _"installing Nix as root is not supported by this script"_
-- Running as root without a `nixbld` group causes failure at the profile installation step.
-  **Fix**: create the group and users before running the installer:
+- Running as root without a `nixbld` group causes failure at the profile installation step. **Fix**: create the group
+  and users before running the installer:
   ```bash
   groupadd nixbld
   for i in $(seq 1 32); do
     useradd -g nixbld -G nixbld -M -N -r -s /sbin/nologin nixbld$i
   done
   ```
-- The hostname resolution warning (`unable to resolve host (none)`) from `sudo mkdir /nix` is harmless if `/nix` already exists and is writable.
+- The hostname resolution warning (`unable to resolve host (none)`) from `sudo mkdir /nix` is harmless if `/nix` already
+  exists and is writable.
 
 ## Network Traffic
 
@@ -55,9 +54,9 @@ Tarball: 24.4 MB compressed → 591 MB on disk ≈ **24× expansion**
 | zstd snapshot, minimal (no nixpkgs)       | 35 MB        | 0.5s         | faster but requires CI to build+ship the snapshot |
 | `nix copy` binary cache (closure only)    | ~122 MB      | ~1–2s        | no Nix needed at eval time, just import           |
 
-The zstd snapshot and binary cache approaches were prototyped but discarded in favour of the
-official installer: the installer requires no hosted artifact, and ~21s is acceptable for a
-one-time web session setup. The main cost is disk I/O (unpacking), not network (~1s download).
+The zstd snapshot and binary cache approaches were prototyped but discarded in favour of the official installer: the
+installer requires no hosted artifact, and ~21s is acceptable for a one-time web session setup. The main cost is disk
+I/O (unpacking), not network (~1s download).
 
 ## Nix Profile Location
 

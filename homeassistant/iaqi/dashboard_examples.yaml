@@ -67,16 +67,10 @@
 - type: markdown
   title: Air Quality Status
   content: >
-    {% set iaqi = states('sensor.rais_room_aqi') | float %}
-    {% set level = state_attr('sensor.rais_room_aqi', 'level') %}
-    {% set color = state_attr('sensor.rais_room_aqi', 'color') %}
-    {% set bottlenecks = state_attr('sensor.rais_room_aqi', 'bottleneck_string') %}
+    {% set iaqi = states('sensor.rais_room_aqi') | float %} {% set level = state_attr('sensor.rais_room_aqi', 'level')
+    %} {% set color = state_attr('sensor.rais_room_aqi', 'color') %} {% set bottlenecks =
+    state_attr('sensor.rais_room_aqi', 'bottleneck_string') %}
 
     ## Overall: {{ level }} ({{ iaqi }})
 
-    {% if bottlenecks %}
-    ### Current bottlenecks:
-    {{ bottlenecks }}
-    {% else %}
-    ### No bottlenecks detected
-    {% endif %}
+    {% if bottlenecks %} ### Current bottlenecks: {{ bottlenecks }} {% else %} ### No bottlenecks detected {% endif %}

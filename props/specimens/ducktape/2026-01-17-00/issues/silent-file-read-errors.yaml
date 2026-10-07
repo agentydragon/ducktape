@@ -14,8 +14,8 @@ occurrences:
       inop/io/file_utils.py:
         - [148, 155]
     note: >-
-      except (ValueError, OSError): continue silently ignores file read errors.
-      Should log at warning level to surface the problem.
+      except (ValueError, OSError): continue silently ignores file read errors. Should log at warning level to surface
+      the problem.
     critic_scopes_expected_to_recall:
       - - inop/io/file_utils.py
     match_file_restriction:

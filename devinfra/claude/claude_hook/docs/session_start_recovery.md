@@ -1,27 +1,24 @@
 # Session Start Hook Recovery
 
-Use this when a Claude Code session shows setup failures such as certificate
-errors, `bazel: command not found`, missing BuildBuddy credentials, or
-`Unable to resolve host remote.buildbuddy.io`.
+Use this when a Claude Code session shows setup failures such as certificate errors, `bazel: command not found`, missing
+BuildBuddy credentials, or `Unable to resolve host remote.buildbuddy.io`.
 
-Do not bypass proxy or certificate failures with `--noverify`,
-`SSL_VERIFY=false`, or similar. The durable fix is to recover the session-start
-hook path.
+Do not bypass proxy or certificate failures with `--noverify`, `SSL_VERIFY=false`, or similar. The durable fix is to
+recover the session-start hook path.
 
 ## `bb`/`bbr` TLS (PKIX) failures on CCR remote-execution sessions
 
-If `bb`/`bbr` fail every repository fetch with `PKIX path building failed` while
-`bazelisk` works, this is **not** a session-start-hook failure — it's the CCR agent
-proxy's boot-time Java-truststore seed losing a race with `ca-certificates-java`, so
-`/etc/bazel.bazelrc` never gets written and `bb`/`bbr` fall back to the JDK cacerts. Heal
-it (idempotent, already run by `web_setup.sh`):
+If `bb`/`bbr` fail every repository fetch with `PKIX path building failed` while `bazelisk` works, this is **not** a
+session-start-hook failure — it's the CCR agent proxy's boot-time Java-truststore seed losing a race with
+`ca-certificates-java`, so `/etc/bazel.bazelrc` never gets written and `bb`/`bbr` fall back to the JDK cacerts. Heal it
+(idempotent, already run by `web_setup.sh`):
 
 ```bash
 bash devinfra/claude/heal_ccr_bazel_trust.sh
 ```
 
-Root cause, detection, and the "same command succeeds now" proof:
-<../../docs/ccr_bazel_truststore_race.md>. Do not disable TLS verification.
+Root cause, detection, and the "same command succeeds now" proof: <../../docs/ccr_bazel_truststore_race.md>. Do not
+disable TLS verification.
 
 ## Check The Live Session
 
@@ -63,8 +60,7 @@ bazelisk info
 
 ## Re-Trigger SessionStart
 
-If the daemon is alive but the env file is missing or incomplete, re-trigger
-`SessionStart` on the existing daemon:
+If the daemon is alive but the env file is missing or incomplete, re-trigger `SessionStart` on the existing daemon:
 
 ```bash
 LIVE=<live_session_id>
@@ -102,14 +98,12 @@ EOF
 chmod 600 "$SD/sessionstart-hook-0.sh"
 ```
 
-This is only a temporary debugging environment; it does not recreate the Rust
-daemon, mailbox, background tasks, or shims. If manual recovery is needed in a
-real session, report that the session-start hook is broken.
+This is only a temporary debugging environment; it does not recreate the Rust daemon, mailbox, background tasks, or
+shims. If manual recovery is needed in a real session, report that the session-start hook is broken.
 
 ## Stale Install
 
-If the installed hook binary or Python statusline is behind the repo pin, rerun
-the setup path:
+If the installed hook binary or Python statusline is behind the repo pin, rerun the setup path:
 
 ```bash
 bash devinfra/claude/web_setup.sh

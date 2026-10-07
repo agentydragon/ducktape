@@ -1,7 +1,7 @@
 # Agentplane runner
 
-A gRPC service that runs one native harness per session, Claude Code or Codex, and exposes both
-through one protocol. The contract is in <SPEC.md>; the wire definition is `protocol.proto`.
+A gRPC service that runs one native harness per session, Claude Code or Codex, and exposes both through one protocol.
+The contract is in <SPEC.md>; the wire definition is `protocol.proto`.
 
 ```sh
 bbr test //agentplane/runner/...
@@ -9,140 +9,122 @@ bbr test //agentplane/runner/...
 
 ## Layout
 
-- `protocol.proto`: the contract. Its messages (`protocol_pb2`) are generated through standard
-  `proto_library` and `py_proto_library` rules; the service-only `protocol_pb2_grpc` module uses
-  the narrow `py_grpc_service_library` fallback in `devinfra/python/grpc.bzl` with the pinned
-  `grpcio-tools` and `mypy-protobuf` plugins.
-- `service.py`: the `Attach` RPC, session lookup, and `serve()`; `main.py` is the process entry
-  point, configured by flags and credentialed from its environment.
-- `session.py`: one session's harness process and derived state; `store.py` the session metadata
-  and durable directory creation.
-- `journal.py`: one SQLite database per durable runner session. SQLAlchemy/aiosqlite transactions
-  commit command admission/outcome state with their exact protobuf `EventEntry` bytes. Coalesced
-  receipts link all originating commands to one Event in the same transaction. Publication and
-  follower wakeup happen after commit; storage failure or cancelled commit stops the writer until
-  recovery. `observation.py` maps harness-neutral observations to the generated Event vocabulary.
-- `harness_process.py`: one native harness child, its pipes, line framing, and exit; no protocol
-  knowledge. `harness_supervisor.rs` retains the state-owner descriptor across runner death,
-  forwards shutdown to the native process group, and reaps the native leader.
-- `config.py`: the runner-owned launch configuration, one `*Launch` per harness (binary, endpoint,
-  credential) under `RunnerConfig`; none of it crosses the protocol.
-- `initialization.py`: the durable, replayable log of the one bootstrap initialization a sandbox
-  may select.
-- `claude.py`, `codex.py`: the adapters, one per harness, behind `adapter.py`. They parse frames
-  with the wire models and reuse the frame constructors and launch configuration in
-  <../native/README.md>.
-- `client.py`: a typed client over one attachment plus `list_sessions`, used by the tests and
-  meant for the Agentplane service.
+- `protocol.proto`: the contract. Its messages (`protocol_pb2`) are generated through standard `proto_library` and
+  `py_proto_library` rules; the service-only `protocol_pb2_grpc` module uses the narrow `py_grpc_service_library`
+  fallback in `devinfra/python/grpc.bzl` with the pinned `grpcio-tools` and `mypy-protobuf` plugins.
+- `service.py`: the `Attach` RPC, session lookup, and `serve()`; `main.py` is the process entry point, configured by
+  flags and credentialed from its environment.
+- `session.py`: one session's harness process and derived state; `store.py` the session metadata and durable directory
+  creation.
+- `journal.py`: one SQLite database per durable runner session. SQLAlchemy/aiosqlite transactions commit command
+  admission/outcome state with their exact protobuf `EventEntry` bytes. Coalesced receipts link all originating commands
+  to one Event in the same transaction. Publication and follower wakeup happen after commit; storage failure or
+  cancelled commit stops the writer until recovery. `observation.py` maps harness-neutral observations to the generated
+  Event vocabulary.
+- `harness_process.py`: one native harness child, its pipes, line framing, and exit; no protocol knowledge.
+  `harness_supervisor.rs` retains the state-owner descriptor across runner death, forwards shutdown to the native
+  process group, and reaps the native leader.
+- `config.py`: the runner-owned launch configuration, one `*Launch` per harness (binary, endpoint, credential) under
+  `RunnerConfig`; none of it crosses the protocol.
+- `initialization.py`: the durable, replayable log of the one bootstrap initialization a sandbox may select.
+- `claude.py`, `codex.py`: the adapters, one per harness, behind `adapter.py`. They parse frames with the wire models
+  and reuse the frame constructors and launch configuration in <../native/README.md>.
+- `client.py`: a typed client over one attachment plus `list_sessions`, used by the tests and meant for the Agentplane
+  service.
 
 ## Tests
 
-Each test is one interaction script written against the client and run against both harnesses;
-the parametrized `model` fixture is the only place that knows the model API dialect. Harness
-fixtures live in `testing/`: `scripted_model.py` is the neutral vocabulary (`Text`, `Reasoning`,
-`ShellCall`, and the request markers), `claude_model.py` and `codex_model.py` speak the two
-dialects, and `launches.py` wires the pinned binaries to a scripted upstream. `test_restart.py`
-runs the runner as its own process so a crash takes its harnesses with it. No test here runs the
-image (<image.nix>), which carries nixpkgs' harnesses rather than these pinned ones; its header
-says what to run after a bump.
+Each test is one interaction script written against the client and run against both harnesses; the parametrized `model`
+fixture is the only place that knows the model API dialect. Harness fixtures live in `testing/`: `scripted_model.py` is
+the neutral vocabulary (`Text`, `Reasoning`, `ShellCall`, and the request markers), `claude_model.py` and
+`codex_model.py` speak the two dialects, and `launches.py` wires the pinned binaries to a scripted upstream.
+`test_restart.py` runs the runner as its own process so a crash takes its harnesses with it. No test here runs the image
+(<image.nix>), which carries nixpkgs' harnesses rather than these pinned ones; its header says what to run after a bump.
 
-`test_journal.py` gates real SQLite commits and injects failure/cancellation before or after commit,
-checking transaction visibility, atomic coalesced receipts, immutable ids, and replay without cursor
-reuse. `test_session.py` drives the stdout reader with a scripted process: a burst commits once, a
-lone line does not wait for more, and nothing is written to the harness or handed to a request
-before the frames it follows commit. `test_journal_process.py` kills a real writer and replays its
-exact published prefix from a new process; `test_restart.py` also exercises the real runner and
-both native harnesses. These are not physical power-loss tests. `test_store.py` retains a separate
-fsync-boundary storage image for session metadata and directory discovery.
+`test_journal.py` gates real SQLite commits and injects failure/cancellation before or after commit, checking
+transaction visibility, atomic coalesced receipts, immutable ids, and replay without cursor reuse. `test_session.py`
+drives the stdout reader with a scripted process: a burst commits once, a lone line does not wait for more, and nothing
+is written to the harness or handed to a request before the frames it follows commit. `test_journal_process.py` kills a
+real writer and replays its exact published prefix from a new process; `test_restart.py` also exercises the real runner
+and both native harnesses. These are not physical power-loss tests. `test_store.py` retains a separate fsync-boundary
+storage image for session metadata and directory discovery.
 
 ## Native continuation evidence
 
-`recovery.py` reconstructs observed item content from the journal's indexed turn boundaries.
-The adapters compare it with native continuation evidence and emit `ConversationReconciled`;
-the app only folds that neutral report.
+`recovery.py` reconstructs observed item content from the journal's indexed turn boundaries. The adapters compare it
+with native continuation evidence and emit `ConversationReconciled`; the app only folds that neutral report.
 
-- `claude_history.py` walks the persisted main parent chain, correlates split assistant blocks,
-  and removes what Claude's resume loader removes: messages with an unresolved tool call, then a
-  message holding only thinking once no other entry of its message id is left, so thinking
-  before a tool that never answered is not replayed even though the transcript holds it. Ordinary
-  interrupts use the native terminal item observations, and the same rule for thinking from the
-  turn's journaled assistant frames: a completed thinking block is retained only if another block
-  of its message was written, and thinking that would otherwise be absent is unknown when a native
-  line of the turn could not be parsed. Compacted or missing history and unfinished live tool outcomes
-  remain unknown. The reader is tested against Claude Code 2.1.252.
-- `codex_history.py` reads model `response_item` records, not the app-server's reconstructed
-  turn-item projection, which can omit an unresolved call still sent to the model. In Codex
-  0.157.0, `core/src/tasks/mod.rs` flushes the interrupted-turn marker before the terminal
-  notification and then flushes that event; `core/src/context_manager/normalize.rs` supplies
-  `aborted` for a call with no output. The reader
-  reports this synthetic content as a revision without creating an execution result. A reasoning
-  item matches the saved `reasoning` record carrying its app-server id, and is absent without one.
-  Unmodeled tools, compacted history, and rollback remain unknown.
+- `claude_history.py` walks the persisted main parent chain, correlates split assistant blocks, and removes what
+  Claude's resume loader removes: messages with an unresolved tool call, then a message holding only thinking once no
+  other entry of its message id is left, so thinking before a tool that never answered is not replayed even though the
+  transcript holds it. Ordinary interrupts use the native terminal item observations, and the same rule for thinking
+  from the turn's journaled assistant frames: a completed thinking block is retained only if another block of its
+  message was written, and thinking that would otherwise be absent is unknown when a native line of the turn could not
+  be parsed. Compacted or missing history and unfinished live tool outcomes remain unknown. The reader is tested against
+  Claude Code 2.1.252.
+- `codex_history.py` reads model `response_item` records, not the app-server's reconstructed turn-item projection, which
+  can omit an unresolved call still sent to the model. In Codex 0.157.0, `core/src/tasks/mod.rs` flushes the
+  interrupted-turn marker before the terminal notification and then flushes that event;
+  `core/src/context_manager/normalize.rs` supplies `aborted` for a call with no output. The reader reports this
+  synthetic content as a revision without creating an execution result. A reasoning item matches the saved `reasoning`
+  record carrying its app-server id, and is absent without one. Unmodeled tools, compacted history, and rollback remain
+  unknown.
 
-Unreadable, malformed, or unsupported native evidence produces an explicit unknown report.
-These readers depend on the pinned native formats and must be checked with the app-level recovery
-matrix when upgrading a harness. The matrix covers interrupt, graceful shutdown/resume, and
-process-group kill/resume at three gates: streaming text, tool execution, and streaming after a
-completed tool. The mock reads tool results throughout each request, including older user messages.
-Both harnesses retain the tested completed results; the earlier last-message-only mock falsely
-suggested Claude lost them.
+Unreadable, malformed, or unsupported native evidence produces an explicit unknown report. These readers depend on the
+pinned native formats and must be checked with the app-level recovery matrix when upgrading a harness. The matrix covers
+interrupt, graceful shutdown/resume, and process-group kill/resume at three gates: streaming text, tool execution, and
+streaming after a completed tool. The mock reads tool results throughout each request, including older user messages.
+Both harnesses retain the tested completed results; the earlier last-message-only mock falsely suggested Claude lost
+them.
 
 ## SQLite storage
 
 The connection uses `journal_mode=DELETE` and `synchronous=EXTRA`; publication relies on SQLite's
-[durable rollback-journal commits](https://sqlite.org/pragma.html#pragma_synchronous) and storage honoring sync.
-An async lock owns each complete transaction; the driver's per-statement queue alone does not.
-Explicit `BEGIN IMMEDIATE` reserves the writer before reading ids/cursors; no transaction spans
-harness or network I/O. One retained connection serves the existing single runner-session writer.
-That SQLite transaction is not the native-execution fence: a runner owns its whole retained state
-directory through a nonblocking lifetime lock on the fixed `.agentplane-runner-owner` inode before
-opening a journal, listening, or launching a harness. A contender exits before it can serve state.
-The lock's open descriptor is inherited by the native-process supervisor. If the runner dies, that
-supervisor terminates and reaps the native harness process group while retaining the descriptor, so
-the replacement cannot start until native work is fenced. A child that remains in the group keeps
-the inherited lock even after its harness leader exits. See <SPEC.md#durability-and-restart> for
-the supported-storage and escaped-process boundary.
+[durable rollback-journal commits](https://sqlite.org/pragma.html#pragma_synchronous) and storage honoring sync. An
+async lock owns each complete transaction; the driver's per-statement queue alone does not. Explicit `BEGIN IMMEDIATE`
+reserves the writer before reading ids/cursors; no transaction spans harness or network I/O. One retained connection
+serves the existing single runner-session writer. That SQLite transaction is not the native-execution fence: a runner
+owns its whole retained state directory through a nonblocking lifetime lock on the fixed `.agentplane-runner-owner`
+inode before opening a journal, listening, or launching a harness. A contender exits before it can serve state. The
+lock's open descriptor is inherited by the native-process supervisor. If the runner dies, that supervisor terminates and
+reaps the native harness process group while retaining the descriptor, so the replacement cannot start until native work
+is fenced. A child that remains in the group keeps the inherited lock even after its harness leader exits. See
+<SPEC.md#durability-and-restart> for the supported-storage and escaped-process boundary.
 
-The stdout reader commits in groups (`Journal.batch`): the lines one pipe read delivered and the
-Events derived from them share a transaction, so a burst of output costs one commit rather than one
-per Event. It commits early before writing to the harness, so the record precedes the write, and
-before waiting on the session lock.
+The stdout reader commits in groups (`Journal.batch`): the lines one pipe read delivered and the Events derived from
+them share a transaction, so a burst of output costs one commit rather than one per Event. It commits early before
+writing to the harness, so the record precedes the write, and before waiting on the session lock.
 
-The adapter's `on_frame`, called by the reader in frame order, records every Event derived from the
-harness's output, and each such Event names its Native sources. A command whose effect a reply
-proves (Codex's `turn/start`, Claude's `set_model`) keeps what the reply means under the request's
-native id before sending it, and `on_frame` records the effect when the reply arrives. The requester
-still waits for the reply, only to dispatch normal commands one at a time; it gets the reply once
-the batch recording it and its translation commits.
+The adapter's `on_frame`, called by the reader in frame order, records every Event derived from the harness's output,
+and each such Event names its Native sources. A command whose effect a reply proves (Codex's `turn/start`, Claude's
+`set_model`) keeps what the reply means under the request's native id before sending it, and `on_frame` records the
+effect when the reply arrives. The requester still waits for the reply, only to dispatch normal commands one at a time;
+it gets the reply once the batch recording it and its translation commits.
 
-Keep `journal.sqlite` and any recovery journal together on the surviving state volume. The checked-in
-staging/testing templates mount `/state` from `local-path-ovh-hdd` PVCs. Network filesystems
-and deleting the only state volume are not supported recovery paths. That node-local `ReadWriteOnce`
-mount is the required ownership assumption; RWO alone does not prevent two processes on its node
-from opening it. Session metadata and native resume files remain beside the database. There is no
-JSONL reader or old-data migration.
+Keep `journal.sqlite` and any recovery journal together on the surviving state volume. The checked-in staging/testing
+templates mount `/state` from `local-path-ovh-hdd` PVCs. Network filesystems and deleting the only state volume are not
+supported recovery paths. That node-local `ReadWriteOnce` mount is the required ownership assumption; RWO alone does not
+prevent two processes on its node from opening it. Session metadata and native resume files remain beside the database.
+There is no JSONL reader or old-data migration.
 
 ### Bounded session history
 
-The SQLite journal stores a recovery checkpoint in the same transaction as each event.
-Opening a session reads that checkpoint and validates the last event, without decoding
-historical frames. Attachments query exclusive-cursor pages of 128 events on the retained journal
-connection under its transaction lock, limited to the published cursor. A cancelled attachment
-waits for its read session to close before releasing that lock to a native callback. A slow
-attachment retains one page.
-Completed command IDs and debug checkpoint identities are looked up by their indexed
-keys rather than retained in process-lifetime sets. Outstanding commands remain in memory.
+The SQLite journal stores a recovery checkpoint in the same transaction as each event. Opening a session reads that
+checkpoint and validates the last event, without decoding historical frames. Attachments query exclusive-cursor pages of
+128 events on the retained journal connection under its transaction lock, limited to the published cursor. A cancelled
+attachment waits for its read session to close before releasing that lock to a native callback. A slow attachment
+retains one page. Completed command IDs and debug checkpoint identities are looked up by their indexed keys rather than
+retained in process-lifetime sets. Outstanding commands remain in memory.
 
-This changes the disposable journal schema: recreate old staging runner state rather than
-replaying it into a compatibility checkpoint. The native harness's own history and memory
-usage are separate from the runner journal's bounds.
+This changes the disposable journal schema: recreate old staging runner state rather than replaying it into a
+compatibility checkpoint. The native harness's own history and memory usage are separate from the runner journal's
+bounds.
 
-Historical adapter item identities and Claude per-message block counts use connection-local
-SQLite temporary tables with `temp_store=FILE` and a 2 MiB temporary page cache. Each adapter
-instance has its own scope, preserving reset-on-new-harness behavior. These lookup tables are
-scratch state: they disappear when the journal connection closes and are not recovery evidence.
-The current Claude message's block map and unconfirmed inputs remain in memory.
+Historical adapter item identities and Claude per-message block counts use connection-local SQLite temporary tables with
+`temp_store=FILE` and a 2 MiB temporary page cache. Each adapter instance has its own scope, preserving
+reset-on-new-harness behavior. These lookup tables are scratch state: they disappear when the journal connection closes
+and are not recovery evidence. The current Claude message's block map and unconfirmed inputs remain in memory.
 
-The Python `RunnerClient` tracks its consumed cursor without retaining every received event.
-Tests that inspect an attachment's complete `seen` history explicitly enable
-`capture_history=True`; application clients use the bounded default.
+The Python `RunnerClient` tracks its consumed cursor without retaining every received event. Tests that inspect an
+attachment's complete `seen` history explicitly enable `capture_history=True`; application clients use the bounded
+default.

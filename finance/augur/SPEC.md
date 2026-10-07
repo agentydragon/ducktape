@@ -1,260 +1,204 @@
 # Augur — Specification
 
-Augur is a financial simulator. An experiment supplies a financial situation,
-loads or samples possible market paths, applies executable policies, and examines
-outcome distributions and individual financial histories. The house-buying app
+Augur is a financial simulator. An experiment supplies a financial situation, loads or samples possible market paths,
+applies executable policies, and examines outcome distributions and individual financial histories. The house-buying app
 is one consumer, not the definition of the library.
 
-This document describes current behavior and its limits. Broader capability
-requirements live in <sim/REQUIREMENTS.md>; implementation responsibilities are
-described in <sim/DESIGN.md> and the module documentation.
+This document describes current behavior and its limits. Broader capability requirements live in <sim/REQUIREMENTS.md>;
+implementation responsibilities are described in <sim/DESIGN.md> and the module documentation.
 
 ## Preparation and market inputs
 
-`World` (`sim/`) is the world of simulated economic actors: households,
-counterparties, taxes and settlement. Exogenous models (`model/`, `x/models/`) are the
-part of reality Augur does not model as actors: markets, prices, rates and inflation.
-Exogenous models sample their trajectories first, and those paths are then piped into
-the `World`. The effect runs one way only: actors never affect the exogenous paths.
+`World` (`sim/`) is the world of simulated economic actors: households, counterparties, taxes and settlement. Exogenous
+models (`model/`, `x/models/`) are the part of reality Augur does not model as actors: markets, prices, rates and
+inflation. Exogenous models sample their trajectories first, and those paths are then piped into the `World`. The effect
+runs one way only: actors never affect the exogenous paths.
 
-Experiments choose datasets, models, fitting, sampling and product construction;
-execution consumes already supplied paths. Forecast-only evaluation does not require
-simulator instrument declarations. Sharing a model does not imply it supports every
-instrument or that its forecasts are adequate for a particular decision. Fitted
-market models are experimental (`x/models/`); core supplies historical replay and
-the market-path and instrument-pricing infrastructure.
+Experiments choose datasets, models, fitting, sampling and product construction; execution consumes already supplied
+paths. Forecast-only evaluation does not require simulator instrument declarations. Sharing a model does not imply it
+supports every instrument or that its forecasts are adequate for a particular decision. Fitted market models are
+experimental (`x/models/`); core supplies historical replay and the market-path and instrument-pricing infrastructure.
 
-A caller declares its month-0 facts on a `World` (`declare_*`, `hold_lot`, `hold_bond`,
-`track`) as keyword arguments of exact integer money, alongside resolved tax rules and
-integer paths. There is no scenario object or compile step between the two. Execution does not reread the caller's
-inputs or load evidence/tax configuration. Missing or non-finite required paths reject;
-they are not synthesized as zero observations. Ordinary public-security and
-home-value prices are positive. Prices used exclusively by reduced-form TLH
-portfolios may be zero, allowing worthless exposure to be liquidated; negative
-prices are invalid. Per-unit security distributions may explicitly be zero.
+A caller declares its month-0 facts on a `World` (`declare_*`, `hold_lot`, `hold_bond`, `track`) as keyword arguments of
+exact integer money, alongside resolved tax rules and integer paths. There is no scenario object or compile step between
+the two. Execution does not reread the caller's inputs or load evidence/tax configuration. Missing or non-finite
+required paths reject; they are not synthesized as zero observations. Ordinary public-security and home-value prices are
+positive. Prices used exclusively by reduced-form TLH portfolios may be zero, allowing worthless exposure to be
+liquidated; negative prices are invalid. Per-unit security distributions may explicitly be zero.
 
-A supplied return series must be interpreted according to its product
-construction. The existing total-return equity proxy is not a taxable
-price-plus-dividend model. Current held dated-bond principal is not a tradable
-market quote. Product/tax assumptions must remain explicit.
+A supplied return series must be interpreted according to its product construction. The existing total-return equity
+proxy is not a taxable price-plus-dividend model. Current held dated-bond principal is not a tradable market quote.
+Product/tax assumptions must remain explicit.
 
-Identical prepared paths and ordered decisions produce reproducible financial
-results. Original `rollout_id` values survive result selection/reordering;
-an array position is not another identity. A policy's random choices and memory
+Identical prepared paths and ordered decisions produce reproducible financial results. Original `rollout_id` values
+survive result selection/reordering; an array position is not another identity. A policy's random choices and memory
 belong to its caller and must also be reproduced for a selected replay.
 
-Rolling-origin forecast reports retain individual origins and non-finite scores.
-Their descriptive means do not establish IID uncertainty or significance when
-history and targets overlap. Matching prediction-market quotes is distinct from
-out-of-sample predictive quality.
+Rolling-origin forecast reports retain individual origins and non-finite scores. Their descriptive means do not
+establish IID uncertainty or significance when history and targets overlap. Matching prediction-market quotes is
+distinct from out-of-sample predictive quality.
 
 ## Common policy and session contract
 
-There is one policy shape: a batch of active actor/path observations produces a
-keyed batch of ordered action lists. A single-path `World` tracks one
-`EconomicAgent`, whose state lives on the instance, and its `step()` invokes that
-agent's `decide` once per month; the batch session runs the same mechanics over
-several worlds for a caller-owned batch policy. The experiment owns the loop. The
-world holds present state only: each component keeps what it needs to compute later
-months plus this month's outcomes, and no capture mode, subject actor or history.
-Whoever wants a series reads state between steps; the batch session records the
-summary and trace its `Finished` promises, and the app records its own projections. Scalar authoring adapters use that same interface; there is no
-separate native spending-amount or allocation-weight callback API.
+There is one policy shape: a batch of active actor/path observations produces a keyed batch of ordered action lists. A
+single-path `World` tracks one `EconomicAgent`, whose state lives on the instance, and its `step()` invokes that agent's
+`decide` once per month; the batch session runs the same mechanics over several worlds for a caller-owned batch policy.
+The experiment owns the loop. The world holds present state only: each component keeps what it needs to compute later
+months plus this month's outcomes, and no capture mode, subject actor or history. Whoever wants a series reads state
+between steps; the batch session records the summary and trace its `Finished` promises, and the app records its own
+projections. Scalar authoring adapters use that same interface; there is no separate native spending-amount or
+allocation-weight callback API.
 
-The action session supports one decision-making household with scripted
-counterparties, public securities, reduced-form TLH portfolios, cash, due claims
-and held dated bonds, and services a mortgage that exists at month zero as a
-tracked contract. It does not support household housing purchases or PE actions:
-a world still runs those from configured strategies declared on it
-(`World.declare_housing`'s scripted lifecycle, `World.declare_tender_policy`), which
-are not an alternative executable policy interface.
+The action session supports one decision-making household with scripted counterparties, public securities, reduced-form
+TLH portfolios, cash, due claims and held dated bonds, and services a mortgage that exists at month zero as a tracked
+contract. It does not support household housing purchases or PE actions: a world still runs those from configured
+strategies declared on it (`World.declare_housing`'s scripted lifecycle, `World.declare_tender_policy`), which are not
+an alternative executable policy interface.
 
 For each active path, the common session:
 
-1. Applies scheduled financial events and component market updates, then lets each
-   counterparty (bills, mortgages, property tax, the tax authority) demand what is
-   due this month. TLH advances before investor operations, including scheduled
-   ones.
-2. Posts each actor its mail for the month, once: every emitter's statement, its
-   typed dues and last month's receipts.
+1. Applies scheduled financial events and component market updates, then lets each counterparty (bills, mortgages,
+   property tax, the tax authority) demand what is due this month. TLH advances before investor operations, including
+   scheduled ones.
+2. Posts each actor its mail for the month, once: every emitter's statement, its typed dues and last month's receipts.
 3. Executes the submitted actions in caller order.
-4. Stops on rejection or remaining unpaid claims, otherwise closes the month
-   and prepares the next decision.
+4. Stops on rejection or remaining unpaid claims, otherwise closes the month and prepares the next decision.
 
-An actor's mail covers its current owned accounts, public lots/basis, TLH statements,
-declared empty holding pools and their current prices, due claims, held dated-bond
-facts, current/origin CPI when modeled, and, for an enrolled taxpayer, its tax
-records: the open year's income by source, realized short- and long-term gains so
-far, the capital-loss carryforward, and year-close assessments not yet settled.
-Missing CPI or tax records is explicit. It does not expose another actor's private
-books, future realized paths or a future tax assessment as a current liability. Statements are copies; nothing an
-actor receives can mutate canonical books.
+An actor's mail covers its current owned accounts, public lots/basis, TLH statements, declared empty holding pools and
+their current prices, due claims, held dated-bond facts, current/origin CPI when modeled, and, for an enrolled taxpayer,
+its tax records: the open year's income by source, realized short- and long-term gains so far, the capital-loss
+carryforward, and year-close assessments not yet settled. Missing CPI or tax records is explicit. It does not expose
+another actor's private books, future realized paths or a future tax assessment as a current liability. Statements are
+copies; nothing an actor receives can mutate canonical books.
 
-Exact lot sales, quantity purchases, cash transfers, claim payments and chosen
-consumption are economic requests. Helpers may propose funding or rebalancing
-actions, but execution does not invent trades, reorder sells before buys, cut
-spending, or call policy again within the month. Current cash execution is
-immediate; it does not model real settlement delays or implicit credit.
+Exact lot sales, quantity purchases, cash transfers, claim payments and chosen consumption are economic requests.
+Helpers may propose funding or rebalancing actions, but execution does not invent trades, reorder sells before buys, cut
+spending, or call policy again within the month. Current cash execution is immediate; it does not model real settlement
+delays or implicit credit.
 
 ## Accounting and failure
 
-Execution owns cash, positions, liabilities, gain/income facts and settlement.
-Monetary journal entries balance and apply atomically. Amounts, quantities and
-rounding have explicit fixed-point conventions.
+Execution owns cash, positions, liabilities, gain/income facts and settlement. Monetary journal entries balance and
+apply atomically. Amounts, quantities and rounding have explicit fixed-point conventions.
 
-A rejected action changes none of that action's financial state. Earlier
-successful actions remain; its rollout stops without executing later actions or
-future policy calls. An unpaid due claim is a separate stop cause. Invalid batch
-routing/input and arithmetic/accounting defects are errors, not investment ruin.
-Other paths are independent.
+A rejected action changes none of that action's financial state. Earlier successful actions remain; its rollout stops
+without executing later actions or future policy calls. An unpaid due claim is a separate stop cause. Invalid batch
+routing/input and arithmetic/accounting defects are errors, not investment ruin. Other paths are independent.
 
-A claim fixes its recipient, due amount and financial effect; the actor selects
-a permitted funding account. Occurrence identity is separate from its label.
-Chosen consumption is distinct from claims, taxes and own-account transfers.
-An unfunded consumption request does not itself create contractual debt.
+A claim fixes its recipient, due amount and financial effect; the actor selects a permitted funding account. Occurrence
+identity is separate from its label. Chosen consumption is distinct from claims, taxes and own-account transfers. An
+unfunded consumption request does not itself create contractual debt.
 
-Bare actor transfers require owned, declared, funded cash and cannot assign tax
-character. Scheduled cashflows retain their declared income/deduction treatment;
-their unconditional source debits may make a scripted counterparty negative.
+Bare actor transfers require owned, declared, funded cash and cannot assign tax character. Scheduled cashflows retain
+their declared income/deduction treatment; their unconditional source debits may make a scripted counterparty negative.
 That convention grants no overdraft permission to actor actions.
 
-Trade execution validates account, lot, ownership and quantity without silently
-selecting another lot or reducing an exact order. Sales consume the selected
-lots' actual basis, including residual basis on full disposal. Acquisition basis
-comes from the actual settled purchase. FIFO is a caller's selection rule, not
-the only possible exact-lot request.
+Trade execution validates account, lot, ownership and quantity without silently selecting another lot or reducing an
+exact order. Sales consume the selected lots' actual basis, including residual basis on full disposal. Acquisition basis
+comes from the actual settled purchase. FIFO is a caller's selection rule, not the only possible exact-lot request.
 
-An opening lot supplies its exact remaining total cost basis in integer currency
-quanta. That total need not divide into currency-quantized per-unit
-amounts. Imports, execution and recorded lot state retain the total without
-deriving and re-quantizing a per-unit basis; sales apportion it and full
-liquidation consumes the remainder.
+An opening lot supplies its exact remaining total cost basis in integer currency quanta. That total need not divide into
+currency-quantized per-unit amounts. Imports, execution and recorded lot state retain the total without deriving and
+re-quantizing a per-unit basis; sales apportion it and full liquidation consumes the remainder.
 
-The world settles each payment on its own. The app household submits a full
-payment for every due claim in observed order, so a claim its cash cannot cover
-is rejected after the earlier ones settle.
+The world settles each payment on its own. The app household submits a full payment for every due claim in observed
+order, so a claim its cash cannot cover is rejected after the earlier ones settle.
 
-A reduced-form TLH portfolio owns its internal holdings and adjusted basis in
-Python. The household observes its value and reported tax basis, and chooses
-contributions, gross-cash withdrawals or liquidation. Modeled losses reduce the
-same basis later consumed by redemptions; new contributions do not inherit prior
-loss adjustments. Component value is counted once in household wealth.
-Canonical accounting settles its financial effects and determines household tax.
-A portfolio owns its whole (owner, account, index) slot: that account cannot also hold
-lots or a pool of the index it tracks.
-The approximation does not reconstruct constituent trades or establish statutory
-TLH fidelity. A month's harvest stands even if a later payment that month fails.
-Its statement also says whether it accepts a contribution at the current mark: at a
-zero index mark it does not, though its value and basis need not tell it from an empty
-portfolio.
-The app reports such a portfolio by value, basis and holding-period cohorts, never
-as a holding with units or a unit price. A funding target names it by its portfolio id,
-as a sleeve of its own apart from any lots of the index it tracks, and draws on it in
-money.
-Model and numerical conventions: <sim/tlh.py>.
+A reduced-form TLH portfolio owns its internal holdings and adjusted basis in Python. The household observes its value
+and reported tax basis, and chooses contributions, gross-cash withdrawals or liquidation. Modeled losses reduce the same
+basis later consumed by redemptions; new contributions do not inherit prior loss adjustments. Component value is counted
+once in household wealth. Canonical accounting settles its financial effects and determines household tax. A portfolio
+owns its whole (owner, account, index) slot: that account cannot also hold lots or a pool of the index it tracks. The
+approximation does not reconstruct constituent trades or establish statutory TLH fidelity. A month's harvest stands even
+if a later payment that month fails. Its statement also says whether it accepts a contribution at the current mark: at a
+zero index mark it does not, though its value and basis need not tell it from an empty portfolio. The app reports such a
+portfolio by value, basis and holding-period cohorts, never as a holding with units or a unit price. A funding target
+names it by its portfolio id, as a sleeve of its own apart from any lots of the index it tracks, and draws on it in
+money. Model and numerical conventions: <sim/tlh.py>.
 
 ## Declared housing and private-equity capabilities and limits
 
-A declared housing table supports property purchase/ownership, mortgages, carrying
-costs, rent/occupancy changes and disposal; a private holding brings its issuer's
-liquidity events. These are not yet callable housing/PE actions in the common
-session. Changing a policy does not make an existing contract cease to exist.
+A declared housing table supports property purchase/ownership, mortgages, carrying costs, rent/occupancy changes and
+disposal; a private holding brings its issuer's liquidity events. These are not yet callable housing/PE actions in the
+common session. Changing a policy does not make an existing contract cease to exist.
 
-Mortgage installments, interest and payoff reconcile to the outstanding principal
-in the liability ledger. Servicing state and reporting do not maintain independent
-authoritative loan balances. An unpaid installment does not count as paid interest.
+Mortgage installments, interest and payoff reconcile to the outstanding principal in the liability ledger. Servicing
+state and reporting do not maintain independent authoritative loan balances. An unpaid installment does not count as
+paid interest.
 
-Property valuation grows the nominal purchase price by the supplied home-value
-path since purchase. Pre-purchase index changes do not alter the purchase anchor.
-Sale costs, loan payoff and tax basis are separate; no property sale is implied
-merely by reaching the horizon.
+Property valuation grows the nominal purchase price by the supplied home-value path since purchase. Pre-purchase index
+changes do not alter the purchase anchor. Sale costs, loan payoff and tax basis are separate; no property sale is
+implied merely by reaching the horizon.
 
-Property tax follows the parcel's situs, a tax rate area in the jurisdiction tree. Its assessed
-value is the price at purchase, grown on each January lien date by the Board of Equalization's
-inflation factor, or for a lien year it has not published by the modeled CPI's change capped at
-2%, and raised by completed construction at its cost. A fiscal year's secured bill is the 1% base
-plus the rate area's voter-approved debt rate on the value enrolled on its lien date, less the
-homeowners' exemption when the owner lived there then, paid in monthly twelfths; a fiscal year
-after the rate area's last published one keeps that year's debt rate. San Francisco and mainland
-Vallejo (Solano County rate area 007000) are the rate areas shipped. Where a purchase names the
-seller's assessed value, its fiscal year is billed on that value plus a supplemental bill on the
-increase, prorated by R&TC 75.41's factor. Supplemental bills on new construction, Proposition 8
-reductions, special districts and the two installment dates are not modeled.
+Property tax follows the parcel's situs, a tax rate area in the jurisdiction tree. Its assessed value is the price at
+purchase, grown on each January lien date by the Board of Equalization's inflation factor, or for a lien year it has not
+published by the modeled CPI's change capped at 2%, and raised by completed construction at its cost. A fiscal year's
+secured bill is the 1% base plus the rate area's voter-approved debt rate on the value enrolled on its lien date, less
+the homeowners' exemption when the owner lived there then, paid in monthly twelfths; a fiscal year after the rate area's
+last published one keeps that year's debt rate. San Francisco and mainland Vallejo (Solano County rate area 007000) are
+the rate areas shipped. Where a purchase names the seller's assessed value, its fiscal year is billed on that value plus
+a supplemental bill on the increase, prorated by R&TC 75.41's factor. Supplemental bills on new construction,
+Proposition 8 reductions, special districts and the two installment dates are not modeled.
 
-A purchase or sale pays each level's transfer tax on the whole consideration, seller-paid unless
-the caller gives the buyer a share; the owner's share is billed by the parcel's authority. A
-property's basis is its price plus the buyer's closing costs and share of transfer tax, divided
-between land and building by the declared land fraction; a sale's amount realized is its value
-less commissions, escrow and title, and the seller's share of transfer tax.
+A purchase or sale pays each level's transfer tax on the whole consideration, seller-paid unless the caller gives the
+buyer a share; the owner's share is billed by the parcel's authority. A property's basis is its price plus the buyer's
+closing costs and share of transfer tax, divided between land and building by the declared land fraction; a sale's
+amount realized is its value less commissions, escrow and title, and the seller's share of transfer tax.
 
-PE paths distinguish marks, voluntary opportunities, eligibility/capacity,
-liquidity blocks and forced sale/recovery. A stated recovery cashout is a total
-for the remaining position, not a per-unit quote; proceeds and disposed basis
-reconcile to it. Compulsory recovery still depends on a declared tender policy. It does not yet guarantee policy-independent compulsory
-events or require explicit responses to every voluntary opportunity.
+PE paths distinguish marks, voluntary opportunities, eligibility/capacity, liquidity blocks and forced sale/recovery. A
+stated recovery cashout is a total for the remaining position, not a per-unit quote; proceeds and disposed basis
+reconcile to it. Compulsory recovery still depends on a declared tender policy. It does not yet guarantee
+policy-independent compulsory events or require explicit responses to every voluntary opportunity.
 
-Taxes are settled financial consequences, not a terminal-wealth haircut.
-Supplied rules and declared supported classifications determine assessments and
-payments. This is not a tax-return preparation service or proof of complete
-statutory coverage. Managed-account heuristics, unsupported distribution character,
-law-year/residency gaps and housing-basis limitations must not be presented as
-validated fidelity. Adding a jurisdiction can require mechanics, not merely data.
+Taxes are settled financial consequences, not a terminal-wealth haircut. Supplied rules and declared supported
+classifications determine assessments and payments. This is not a tax-return preparation service or proof of complete
+statutory coverage. Managed-account heuristics, unsupported distribution character, law-year/residency gaps and
+housing-basis limitations must not be presented as validated fidelity. Adding a jurisdiction can require mechanics, not
+merely data.
 
-The supported tax scope is US federal plus California for a single filer resident
-in the US, holding equity funds, US Treasury and municipal bond funds, municipal
-and direct bonds and managed tax-loss-harvesting portfolios in taxable accounts. Qualified-dividend character, the net
-investment income tax, the mortgage-interest deduction and the owner's ad-valorem property tax
-(itemized against the standard deduction: federally within the SALT cap, in California
-uncapped; a rented share is a rental expense, and transfer tax is never itemized) belong to it;
-charitable deductions do not.
-Future years hold current law flat, either in nominal dollars or with the amounts
-statute indexes following the modeled CPI, as the composition declares, and estimated
-tax and the true-up are paid on schedule without penalties: explicit assumptions, not
-forecasts. A distribution declared as qualified dividends is
-taxed at the federal long-term capital-gain rates and as ordinary income in California;
-the declaration is trusted without a holding-period test. Interest has one of three tax
-characters: Treasury, municipal (naming the state whose obligation it is) or taxable. Each
-jurisdiction's rules list the characters it exempts: federally every state's municipal
-interest, in California Treasury and California municipal interest. A fund's declared split
-of its payout across these characters is trusted the same way. The code does not yet cover
-this scope: NIIT's net investment income leaves out net rental income and the investment
-deductions IRS Form 8960 allows; the bundled tables are 2024 law; a taxpayer starts with no
-year-to-date income, gains or payments; the SALT cap has no income phase-out; estimated payments are equal quarters of one
-aggregate prior-year amount rather than per-jurisdiction schedules; fund capital-gain and
-return-of-capital distributions are not processed; and one capital-loss carryforward serves
-every jurisdiction.
+The supported tax scope is US federal plus California for a single filer resident in the US, holding equity funds, US
+Treasury and municipal bond funds, municipal and direct bonds and managed tax-loss-harvesting portfolios in taxable
+accounts. Qualified-dividend character, the net investment income tax, the mortgage-interest deduction and the owner's
+ad-valorem property tax (itemized against the standard deduction: federally within the SALT cap, in California uncapped;
+a rented share is a rental expense, and transfer tax is never itemized) belong to it; charitable deductions do not.
+Future years hold current law flat, either in nominal dollars or with the amounts statute indexes following the modeled
+CPI, as the composition declares, and estimated tax and the true-up are paid on schedule without penalties: explicit
+assumptions, not forecasts. A distribution declared as qualified dividends is taxed at the federal long-term
+capital-gain rates and as ordinary income in California; the declaration is trusted without a holding-period test.
+Interest has one of three tax characters: Treasury, municipal (naming the state whose obligation it is) or taxable. Each
+jurisdiction's rules list the characters it exempts: federally every state's municipal interest, in California Treasury
+and California municipal interest. A fund's declared split of its payout across these characters is trusted the same
+way. The code does not yet cover this scope: NIIT's net investment income leaves out net rental income and the
+investment deductions IRS Form 8960 allows; the bundled tables are 2024 law; a taxpayer starts with no year-to-date
+income, gains or payments; the SALT cap has no income phase-out; estimated payments are equal quarters of one aggregate
+prior-year amount rather than per-jurisdiction schedules; fund capital-gain and return-of-capital distributions are not
+processed; and one capital-loss carryforward serves every jurisdiction.
 
 ## Outputs and observation boundaries
 
-Typed common results retain original path IDs, request/claim/component/account
-identities, attempted receipts, canonical tax facts and exact stopped/ending books.
-Optional detailed capture includes books, journal and columnar events; compact
-capture does not require those histories. Missing capture is not zero activity.
-A domain the experiment did not declare (bonds, housing, managed portfolios,
-private equity, distributions) is absent from its books and detailed capture, not
+Typed common results retain original path IDs, request/claim/component/account identities, attempted receipts, canonical
+tax facts and exact stopped/ending books. Optional detailed capture includes books, journal and columnar events; compact
+capture does not require those histories. Missing capture is not zero activity. A domain the experiment did not declare
+(bonds, housing, managed portfolios, private equity, distributions) is absent from its books and detailed capture, not
 present and empty.
 
-A stopped event month has a closing book valued at its already-observed marks,
-not at an unobserved future price. Post-stop months are unobserved. Selected
-replay agrees with the common results on the same inputs and fresh policy state.
+A stopped event month has a closing book valued at its already-observed marks, not at an unobserved future price.
+Post-stop months are unobserved. Selected replay agrees with the common results on the same inputs and fresh policy
+state.
 
-Policy intentions, attempted requests, actual paid consumption, sale proceeds
-and taxes are distinct quantities. Product shortfall sums unpaid due claims and
-valid attempted consumption gaps; malformed actions and unattempted consumption
-do not invent money shortfalls. Their stop causes remain visible.
+Policy intentions, attempted requests, actual paid consumption, sale proceeds and taxes are distinct quantities. Product
+shortfall sums unpaid due claims and valid attempted consumption gaps; malformed actions and unattempted consumption do
+not invent money shortfalls. Their stop causes remain visible.
 
-Held-bond principal disappears when redemption is processed and cash replaces it;
-future coupons or indexed proceeds are not current spendable cash. Par/indexed
-principal capture does not establish off-par trading or full TIPS tax treatment.
+Held-bond principal disappears when redemption is processed and cash replaces it; future coupons or indexed proceeds are
+not current spendable cash. Par/indexed principal capture does not establish off-par trading or full TIPS tax treatment.
 
-The product API provides selected metric fans and per-path detail. Wealth
-terminal distributions use completed horizons; monthly fans use that month's
-observed population, not eventual survivors. Unobserved values are null. Selected
-stopped paths retain their actual closing books. Projections reject unsupported
-or uncaptured holdings instead of inventing zero values.
+The product API provides selected metric fans and per-path detail. Wealth terminal distributions use completed horizons;
+monthly fans use that month's observed population, not eventual survivors. Unobserved values are null. Selected stopped
+paths retain their actual closing books. Projections reject unsupported or uncaptured holdings instead of inventing zero
+values.
 
-Selected detail is sampled/simulated on request without a server rollout cache.
-The browser discards obsolete selected detail and ignores stale responses;
-displayed scenario fans remain separate request state. No general optimizer,
-strategic multi-agent economy, cross-border tax model, partial-payment recovery
-or broker settlement-delay system is implied.
+Selected detail is sampled/simulated on request without a server rollout cache. The browser discards obsolete selected
+detail and ignores stale responses; displayed scenario fans remain separate request state. No general optimizer,
+strategic multi-agent economy, cross-border tax model, partial-payment recovery or broker settlement-delay system is
+implied.

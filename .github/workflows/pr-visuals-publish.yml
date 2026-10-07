@@ -30,8 +30,7 @@ permissions:
 jobs:
   announce:
     if: >-
-      github.event.action == 'in_progress' &&
-      (
+      github.event.action == 'in_progress' && (
         (github.event.workflow_run.event == 'pull_request' &&
          github.event.workflow_run.head_repository.full_name == github.repository) ||
         (github.event.workflow_run.event == 'pull_request_target' &&
@@ -72,8 +71,7 @@ jobs:
   # run cannot manufacture one.
   publish:
     if: >-
-      github.event.action == 'completed' &&
-      (
+      github.event.action == 'completed' && (
         (github.event.workflow_run.event == 'pull_request' &&
          github.event.workflow_run.head_repository.full_name == github.repository) ||
         (github.event.workflow_run.event == 'pull_request_target' &&
@@ -110,7 +108,9 @@ jobs:
           HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
           # PR run → its OWNER:BRANCH, from which the publisher looks up the PR and its
           # base commit. Passed through the environment alone: a branch name is free text.
-          PR_HEAD_REF: ${{ github.event.workflow_run.event != 'push' && format('{0}:{1}', github.event.workflow_run.head_repository.owner.login, github.event.workflow_run.head_branch) || '' }}
+          PR_HEAD_REF:
+            ${{ github.event.workflow_run.event != 'push' && format('{0}:{1}',
+            github.event.workflow_run.head_repository.owner.login, github.event.workflow_run.head_branch) || '' }}
           CI_CONCLUSION: ${{ github.event.workflow_run.conclusion }}
           CI_RUN_URL: ${{ github.event.workflow_run.html_url }}
         run: |

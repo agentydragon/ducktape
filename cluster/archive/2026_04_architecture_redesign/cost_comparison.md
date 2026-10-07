@@ -23,13 +23,13 @@ Plus home infrastructure (free aside from electricity):
 | RAM     | 4 GB            | 16 GB (8×2)                |
 | Storage | 80 GB           | 320 GB (160×2)             |
 
-4× the CPU, RAM, and storage for roughly the same price. Even after the CPX41 upgrade (~$73/mo), 16 vCPU / 32 GB RAM / 480 GB storage still beats Linode per-dollar.
+4× the CPU, RAM, and storage for roughly the same price. Even after the CPX41 upgrade (~$73/mo), 16 vCPU / 32 GB RAM /
+480 GB storage still beats Linode per-dollar.
 
 ## Hetzner HIL Availability (checked 2026-04-01)
 
-CPX31/41/51 no longer available at HIL for new provisioning. Existing
-nodes are grandfathered. In-place resize via `hcloud` provider is
-possible (`keep_disk = true`, brief downtime per node).
+CPX31/41/51 no longer available at HIL for new provisioning. Existing nodes are grandfathered. In-place resize via
+`hcloud` provider is possible (`keep_disk = true`, brief downtime per node).
 
 | Server    | vCPU | RAM   | Type            | EUR/mo | Available |
 | --------- | ---- | ----- | --------------- | ------ | --------- |

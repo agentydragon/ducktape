@@ -1,6 +1,7 @@
 # Interactive Cluster Verification Workflow
 
-**Purpose:** Guide interactive verification and integration of clustered unknown issues from critic runs into specimen issue files.
+**Purpose:** Guide interactive verification and integration of clustered unknown issues from critic runs into specimen
+issue files.
 
 ## Prerequisites: Research Phase (MUST be completed before interactive verification)
 
@@ -18,10 +19,10 @@
 
 **Output:** Enriched verification data file (`verification_order_enriched.json`) with all research completed.
 
-**Why:** The interactive session should present pre-researched information immediately, not do live code reading. This saves context switching during verification and ensures all proposals are based on actual code inspection.
+**Why:** The interactive session should present pre-researched information immediately, not do live code reading. This
+saves context switching during verification and ensures all proposals are based on actual code inspection.
 
-**How to run research phase:**
-Use the Task tool to spawn a research agent that processes all clusters:
+**How to run research phase:** Use the Task tool to spawn a research agent that processes all clusters:
 
 - Reads `verification_order.json` and `analysis_input.json`
 - For each cluster: reads actual code, identifies line ranges, proposes framing
@@ -30,7 +31,8 @@ Use the Task tool to spawn a research agent that processes all clusters:
 
 ## Context
 
-You are helping verify clustered unknown issues from a clustering run. The issues were flagged by critic agents but have not yet been integrated into canonical specimen issue files.
+You are helping verify clustered unknown issues from a clustering run. The issues were flagged by critic agents but have
+not yet been integrated into canonical specimen issue files.
 
 **Input data location:** `runs/cluster/20251205_234403/`
 

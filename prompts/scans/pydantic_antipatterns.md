@@ -107,7 +107,8 @@ rg --type py "\[\"(name|description|criteria|score|rationale|status|type)\"\]"
 
 ## Pattern 4: Dicts/Serialized Forms Outside Serialization Boundaries
 
-**CRITICAL PRINCIPLE**: Dicts and serialized forms (JSON, dict[str, Any]) should **ONLY** appear at **serialization/deserialization boundaries** (request/response handling, file I/O, database I/O).
+**CRITICAL PRINCIPLE**: Dicts and serialized forms (JSON, dict[str, Any]) should **ONLY** appear at
+**serialization/deserialization boundaries** (request/response handling, file I/O, database I/O).
 
 **Anywhere else in the codebase, dicts are SUSPECT and should be INVESTIGATED THOROUGHLY.**
 
@@ -207,7 +208,8 @@ class CacheEntry(BaseModel):
 └─────────────────────────────────────────────────┘
 ```
 
-**Key principle**: "Parse, don't validate" - convert untyped data to typed models as soon as possible, keep typed representation throughout internal logic.
+**Key principle**: "Parse, don't validate" - convert untyped data to typed models as soon as possible, keep typed
+representation throughout internal logic.
 
 ### Why This Matters
 

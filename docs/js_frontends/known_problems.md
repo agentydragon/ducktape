@@ -4,11 +4,17 @@ These notes cover Bazel and pnpm integration issues that can affect JavaScript f
 
 ## 1. Playwright Module Identity Issue
 
-**Symptom**: Playwright crashes with "Playwright Test did not expect test() to be called here" and mentions "two different versions of @playwright/test".
+**Symptom**: Playwright crashes with "Playwright Test did not expect test() to be called here" and mentions "two
+different versions of @playwright/test".
 
-**Root Cause**: Playwright uses JavaScript object identity to track test context state. The `playwright_bin.playwright_test` rule from aspect_rules_js creates a runner that loads `@playwright/test` from the Bazel package store. When the test file imports `@playwright/test`, it resolves to a different module instance due to how pnpm workspaces create separate node_modules symlink trees per workspace member.
+**Root Cause**: Playwright uses JavaScript object identity to track test context state. The
+`playwright_bin.playwright_test` rule from aspect_rules_js creates a runner that loads `@playwright/test` from the Bazel
+package store. When the test file imports `@playwright/test`, it resolves to a different module instance due to how pnpm
+workspaces create separate node_modules symlink trees per workspace member.
 
-**Why It Matters**: Even though both resolve to the same package version, they are different JavaScript module instances. Playwright's internal state tracking breaks when `test()` is called from a different module instance than the one the runner initialized.
+**Why It Matters**: Even though both resolve to the same package version, they are different JavaScript module
+instances. Playwright's internal state tracking breaks when `test()` is called from a different module instance than the
+one the runner initialized.
 
 **Attempted Fixes That Failed**:
 
@@ -21,12 +27,15 @@ These notes cover Bazel and pnpm integration issues that can affect JavaScript f
 
 **Symptom**: Tools fail with "Cannot find package 'X'" when running in sandbox.
 
-**Root Cause**: Most JS build rules use `chdir = package_name()` to run tools in the project subdirectory (e.g., `props/frontend/`). This is needed because:
+**Root Cause**: Most JS build rules use `chdir = package_name()` to run tools in the project subdirectory (e.g.,
+`props/frontend/`). This is needed because:
 
 - Config files use relative paths (`./src`, `./dist`)
 - Tools look for `node_modules` relative to cwd
 
-When we flatten the pnpm workspace (single package.json at root, no workspace members), the `npm_link_all_packages` rule only creates node_modules at the root level. When the sandbox runs with chdir to a subdirectory, there's no node_modules there.
+When we flatten the pnpm workspace (single package.json at root, no workspace members), the `npm_link_all_packages` rule
+only creates node_modules at the root level. When the sandbox runs with chdir to a subdirectory, there's no node_modules
+there.
 
 **The Tension**:
 
@@ -35,20 +44,26 @@ When we flatten the pnpm workspace (single package.json at root, no workspace me
 
 ## 3. Version Duplication Across package.json Files
 
-**Symptom**: Same dependency declared in both root package.json and workspace member package.json files, potentially with different versions.
+**Symptom**: Same dependency declared in both root package.json and workspace member package.json files, potentially
+with different versions.
 
-**Root Cause**: pnpm workspaces require each project to declare its own dependencies. The root package.json may also have shared deps. This creates:
+**Root Cause**: pnpm workspaces require each project to declare its own dependencies. The root package.json may also
+have shared deps. This creates:
 
 - Maintenance burden (update in multiple places)
 - Risk of version drift
 - Confusion about source of truth
 
-**aspect_rules_js Behavior**: The `npm_translate_lock` rule reads the lockfile and creates Bazel targets. It expects workspace member package.json files if the lockfile references workspace packages.
+**aspect_rules_js Behavior**: The `npm_translate_lock` rule reads the lockfile and creates Bazel targets. It expects
+workspace member package.json files if the lockfile references workspace packages.
 
 ## 4. aspect_rules_js Workspace Detection
 
-**Symptom**: Bazel fails with "expected pnpm-workspace.yaml to exist since the pnpm-lock.yaml file contains workspace packages".
+**Symptom**: Bazel fails with "expected pnpm-workspace.yaml to exist since the pnpm-lock.yaml file contains workspace
+packages".
 
-**Root Cause**: aspect_rules_js parses pnpm-lock.yaml and detects workspace package references in the `importers` section. If it finds entries other than `.` (root), it requires pnpm-workspace.yaml to exist.
+**Root Cause**: aspect_rules_js parses pnpm-lock.yaml and detects workspace package references in the `importers`
+section. If it finds entries other than `.` (root), it requires pnpm-workspace.yaml to exist.
 
-**Implication**: Can't just delete pnpm-workspace.yaml without regenerating the lockfile from scratch. The lockfile and workspace config must be consistent.
+**Implication**: Can't just delete pnpm-workspace.yaml without regenerating the lockfile from scratch. The lockfile and
+workspace config must be consistent.

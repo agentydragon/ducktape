@@ -1,15 +1,12 @@
 # budget
 
-Plaid transaction classifier answering "what does my monthly spending actually
-look like, and how much can I afford to change it?" Reads live data from the
-Plaid mirror DB, classifies transactions into named buckets, groups related
-buckets into families (e.g. medical: charges + insurance reimbursements) that
-show inflows and outflows side by side instead of force-netting, and surfaces
-lumpy one-offs separately.
+Plaid transaction classifier answering "what does my monthly spending actually look like, and how much can I afford to
+change it?" Reads live data from the Plaid mirror DB, classifies transactions into named buckets, groups related buckets
+into families (e.g. medical: charges + insurance reimbursements) that show inflows and outflows side by side instead of
+force-netting, and surfaces lumpy one-offs separately.
 
-Consumers: augur's API server serves it at `/api/budget/*` for the frontend's
-`Budget` tab (<../augur/api/server.py>), and the Beancount exporter
-(<../beancount_export/>) renders the same classification as a ledger.
+Consumers: augur's API server serves it at `/api/budget/*` for the frontend's `Budget` tab (<../augur/api/server.py>),
+and the Beancount exporter (<../beancount_export/>) renders the same classification as a ledger.
 
 ## Architecture
 
@@ -23,16 +20,13 @@ Consumers: augur's API server serves it at `/api/budget/*` for the frontend's
 
 ## What lives in ducktape vs gaffer-private
 
-**ducktape (public):** The framework — this package (schemas, the condition DSL
-and rule kinds, the SQL read model), plus augur's `/api/budget/*` endpoints and
-frontend tab. No rule _content_ ships in the framework; every rule lives in the
-deployment's config.
+**ducktape (public):** The framework — this package (schemas, the condition DSL and rule kinds, the SQL read model),
+plus augur's `/api/budget/*` endpoints and frontend tab. No rule _content_ ships in the framework; every rule lives in
+the deployment's config.
 
-**gaffer-private (private):** The actual `budget:` config block in the
-deployment's `Config` YAML, listing the user's specific merchants (medical
-providers, therapist, landlord), Plaid account IDs to include, and bucket
-overrides. Augur and the Beancount exporter both load it from that YAML; the
-framework knows nothing about it until the YAML is read.
+**gaffer-private (private):** The actual `budget:` config block in the deployment's `Config` YAML, listing the user's
+specific merchants (medical providers, therapist, landlord), Plaid account IDs to include, and bucket overrides. Augur
+and the Beancount exporter both load it from that YAML; the framework knows nothing about it until the YAML is read.
 
 ## Adding a `budget:` section to your augur config
 
@@ -101,9 +95,8 @@ budget:
 
 ## Running the dev server against your live cluster data
 
-The dev script lives in **gaffer-private**, not ducktape, because the real
-budget config and trained model artifacts live there. From the gaffer-private
-repo root (inside the nix devshell):
+The dev script lives in **gaffer-private**, not ducktape, because the real budget config and trained model artifacts
+live there. From the gaffer-private repo root (inside the nix devshell):
 
 ```bash
 ./gaffer_augur/dev_against_prod.sh
@@ -114,8 +107,7 @@ The script:
 1. Reads creds from Secret `plaid-mcp/plaid-mcp-db-readonly`
 2. Port-forwards `svc/plaid-mcp-db-rw` → `localhost:15432`
 3. Exports `AUGUR_PLAID_DATABASE_URL` pointing at the forward
-4. Runs `bazelisk run //gaffer_augur:backend_dev` (which has the trained PE
-   artifacts and the private `config.yaml` already wired as data deps)
+4. Runs `bazelisk run //gaffer_augur:backend_dev` (which has the trained PE artifacts and the private `config.yaml`
+   already wired as data deps)
 
-When the active `Config` has no `budget:` section, `/api/budget/*` returns
-400 and the Budget tab shows that error.
+When the active `Config` has no `budget:` section, `/api/budget/*` returns 400 and the Budget tab shows that error.

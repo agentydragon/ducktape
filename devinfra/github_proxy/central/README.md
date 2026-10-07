@@ -1,9 +1,8 @@
 # Central GitHub-observation HTTPS proxy
 
 Runtime source only; deployment and secret ownership live under `cluster/k8s/`.
-`main_bin --config /run/github-api-proxy/config.json` starts an HTTPS forward proxy
-and a separate private HTTP metrics listener. The image entrypoint accepts the same
-`--config` argument. Bazel targets: `image`, `load`, `tests`.
+`main_bin --config /run/github-api-proxy/config.json` starts an HTTPS forward proxy and a separate private HTTP metrics
+listener. The image entrypoint accepts the same `--config` argument. Bazel targets: `image`, `load`, `tests`.
 
 ```json
 {
@@ -19,70 +18,53 @@ and a separate private HTTP metrics listener. The image entrypoint accepts the s
 }
 ```
 
-Each credential directory contains `username` and `password` files. IDs match
-`[a-z][a-z0-9_-]{0,31}`; duplicates across directories are rejected and the
-combined set is limited to 64 clients. Generate independent high-entropy passwords.
-Credential and certificate changes take effect on restart. Mounted certificate/key
-pairs are checked; the interception certificate must be a CA. Private working PEMs
-are written under `confdir`; no new interception identity is generated.
+Each credential directory contains `username` and `password` files. IDs match `[a-z][a-z0-9_-]{0,31}`; duplicates across
+directories are rejected and the combined set is limited to 64 clients. Generate independent high-entropy passwords.
+Credential and certificate changes take effect on restart. Mounted certificate/key pairs are checked; the interception
+certificate must be a CA. Private working PEMs are written under `confdir`; no new interception identity is generated.
 
-Defaults: proxy `0.0.0.0:8080`, private metrics `0.0.0.0:9090`, exact cloud GitHub
-batch POST block enabled. Override with `listen_host`, `listen_port`, `metrics_host`,
-`metrics_port`, and `block_cloud_github_batch`. `upstream_ca_file` optionally supplies
-an explicit upstream trust bundle; otherwise normal system trust applies. Outer
-TLS always serves the dedicated proxy certificate, including for unexpected SNI;
-only inner destination TLS uses the interception CA. No TLS verification is disabled.
+Defaults: proxy `0.0.0.0:8080`, private metrics `0.0.0.0:9090`, exact cloud GitHub batch POST block enabled. Override
+with `listen_host`, `listen_port`, `metrics_host`, `metrics_port`, and `block_cloud_github_batch`. `upstream_ca_file`
+optionally supplies an explicit upstream trust bundle; otherwise normal system trust applies. Outer TLS always serves
+the dedicated proxy certificate, including for unexpected SNI; only inner destination TLS uses the interception CA. No
+TLS verification is disabled.
 
-The mitigation answers authenticated `POST` requests to
-`https://claude.ai/v1/code/github/batch-branch-status` with HTTP 429 and
-`Retry-After: 3600`; caller query parameters do not bypass the match. Other routes
-remain unaffected. Set `block_cloud_github_batch=false` centrally to disable it;
-host relays have no mitigation policy. Blocking can leave branch/PR status stale
-and is containment, not a repair of the upstream poller.
+The mitigation answers authenticated `POST` requests to `https://claude.ai/v1/code/github/batch-branch-status` with HTTP
+429 and `Retry-After: 3600`; caller query parameters do not bypass the match. Other routes remain unaffected. Set
+`block_cloud_github_batch=false` centrally to disable it; host relays have no mitigation policy. Blocking can leave
+branch/PR status stale and is containment, not a repair of the upstream poller.
 
-CONNECT and absolute-form HTTP require Basic authentication inside outer TLS.
-CONNECT caches only the validated client ID on that client connection; independent
-HTTP requests authenticate separately. Missing/wrong/duplicate credentials and
-plaintext transport are rejected before any upstream dial. Proxy authorization
-headers and legacy `metadata.proxyauth` are removed before forwarding and again at
-every raw serialization boundary, including errors and shutdown. Authenticated
-`GET http://mitm.it/` is a constant readiness response with no upstream request or
-CA content; the ordinary onboarding application is disabled.
+CONNECT and absolute-form HTTP require Basic authentication inside outer TLS. CONNECT caches only the validated client
+ID on that client connection; independent HTTP requests authenticate separately. Missing/wrong/duplicate credentials and
+plaintext transport are rejected before any upstream dial. Proxy authorization headers and legacy `metadata.proxyauth`
+are removed before forwarding and again at every raw serialization boundary, including errors and shutdown.
+Authenticated `GET http://mitm.it/` is a constant readiness response with no upstream request or CA content; the
+ordinary onboarding application is disabled.
 
-Only public web-origin ports 80 and 443 can be dialed. Every DNS answer must be
-globally routable and neither a special/transition address nor an address of the
-proxy hostname; mixed public/private answer sets fail closed. Resolution failures
-also fail closed. The runtime's event loop checks the actual numeric socket target
-against that connection task's validated DNS answers, rejecting any change before
-connect. Mitmproxy retains the logical hostname for connection reuse and upstream
-TLS identity. Starting the proxy without its guarded event loop is rejected. Deployment egress
-policy adds another boundary; it does not replace these checks. There is no runtime
-option for private origins. Synthetic tests alone redirect validated public IPs to
-loopback fixtures.
+Only public web-origin ports 80 and 443 can be dialed. Every DNS answer must be globally routable and neither a
+special/transition address nor an address of the proxy hostname; mixed public/private answer sets fail closed.
+Resolution failures also fail closed. The runtime's event loop checks the actual numeric socket target against that
+connection task's validated DNS answers, rejecting any change before connect. Mitmproxy retains the logical hostname for
+connection reuse and upstream TLS identity. Starting the proxy without its guarded event loop is rejected. Deployment
+egress policy adds another boundary; it does not replace these checks. There is no runtime option for private origins.
+Synthetic tests alone redirect validated public IPs to loopback fixtures.
 
-Raw flows and incremental session metadata append to private files without rotation
-or deletion. `text/event-stream` responses forward headers and chunks immediately:
-waiting for EOF would stall long-lived Claude subscriptions. Mitmproxy retains
-streamed bodies in memory for the normal terminal-flow capture; this is not an
-incremental SSE recorder, and interrupted streams may lack captured body data.
-Raw capture remains sensitive application data despite proxy-password
-redaction. The `session_ws_metadata.py` addon follows the limited schema in
-`devinfra/github_api_capture/README.md`. A write failure increments
-`github_api_proxy_capture_write_failures_total{channel}` and emits a fixed error
-message, but it does not make the proxy fail readiness: forwarding is the
-service's primary function, while capture is an important observation side
-effect. Failed raw flows are not queued indefinitely in memory. The
-capture-failure metric and alert report observation loss, and metrics remain
-available while the exact cloud endpoint block remains active. Inspect
-incomplete capture data and the storage path before any controlled restart; a
-restart is a recovery/inspection action, not a prerequisite for serving traffic.
+Raw flows and incremental session metadata append to private files without rotation or deletion. `text/event-stream`
+responses forward headers and chunks immediately: waiting for EOF would stall long-lived Claude subscriptions. Mitmproxy
+retains streamed bodies in memory for the normal terminal-flow capture; this is not an incremental SSE recorder, and
+interrupted streams may lack captured body data. Raw capture remains sensitive application data despite proxy-password
+redaction. The `session_ws_metadata.py` addon follows the limited schema in `devinfra/github_api_capture/README.md`. A
+write failure increments `github_api_proxy_capture_write_failures_total{channel}` and emits a fixed error message, but
+it does not make the proxy fail readiness: forwarding is the service's primary function, while capture is an important
+observation side effect. Failed raw flows are not queued indefinitely in memory. The capture-failure metric and alert
+report observation loss, and metrics remain available while the exact cloud endpoint block remains active. Inspect
+incomplete capture data and the storage path before any controlled restart; a restart is a recovery/inspection action,
+not a prerequisite for serving traffic.
 
-`/metrics` exposes bounded configured-client/route/status request counters,
-authentication outcomes, explicit observed GraphQL cost sums, and cost-observation
-coverage. It never labels queries, URLs, headers, credentials, or unknown client names.
-Only nonnegative integer `data.rateLimit.cost` contributes; rate-header differences
-never do. Missing, invalid, compressed, unavailable, and over-1-MiB cost bodies are
-explicit coverage gaps, not zero-cost observations. HTTP 200 and Claude cloud routes
-do not prove upstream GitHub success or cost. Keep metrics/health private via the
-deployment's network boundary. Request diagnostics are suppressed; retained captures
-and bounded metrics are the observation channels.
+`/metrics` exposes bounded configured-client/route/status request counters, authentication outcomes, explicit observed
+GraphQL cost sums, and cost-observation coverage. It never labels queries, URLs, headers, credentials, or unknown client
+names. Only nonnegative integer `data.rateLimit.cost` contributes; rate-header differences never do. Missing, invalid,
+compressed, unavailable, and over-1-MiB cost bodies are explicit coverage gaps, not zero-cost observations. HTTP 200 and
+Claude cloud routes do not prove upstream GitHub success or cost. Keep metrics/health private via the deployment's
+network boundary. Request diagnostics are suppressed; retained captures and bounded metrics are the observation
+channels.

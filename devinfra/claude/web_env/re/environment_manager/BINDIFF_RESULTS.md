@@ -1,36 +1,31 @@
 # Binary Diff Results: 64bc4dc1 vs 495ea204
 
-Comparison of old (`64bc4dc1`, 49.8 MB, `release-9f4ec76fbc-ext`) and new
-(`495ea204`, 51.9 MB, `release-d84d76b7-ext`) environment-manager binaries.
-Both are garble-obfuscated, stripped ELF x86-64.
+Comparison of old (`64bc4dc1`, 49.8 MB, `release-9f4ec76fbc-ext`) and new (`495ea204`, 51.9 MB, `release-d84d76b7-ext`)
+environment-manager binaries. Both are garble-obfuscated, stripped ELF x86-64.
 
 ## Method
 
-Full string extraction from both binaries (`strings -n 6`), followed by:
-JSON field tag comparison, struct layout extraction from Go type reflection,
-CamelCase identifier extraction from garble concatenation blobs, targeted
-keyword searches, and `--help` output comparison.
+Full string extraction from both binaries (`strings -n 6`), followed by: JSON field tag comparison, struct layout
+extraction from Go type reflection, CamelCase identifier extraction from garble concatenation blobs, targeted keyword
+searches, and `--help` output comparison.
 
 ## Summary
 
-The 495ea204 binary is an incremental update over 64bc4dc1. The changes are
-modest: one JSON field added, two fields removed from the V1 StartupContext
-struct, a new `RecordLongRunningStep` instrumentation feature, and several
-minor identifier additions/removals. No CLI flag changes, no API endpoint
-changes, no new commands.
+The 495ea204 binary is an incremental update over 64bc4dc1. The changes are modest: one JSON field added, two fields
+removed from the V1 StartupContext struct, a new `RecordLongRunningStep` instrumentation feature, and several minor
+identifier additions/removals. No CLI flag changes, no API endpoint changes, no new commands.
 
 ## CLI Help Output: UNCHANGED
 
-All four commands (`--help`, `task-run --help`, `orchestrator --help`,
-`setup --help`) produce **identical output** between old and new binaries.
-No new flags, no removed flags, no changed defaults.
+All four commands (`--help`, `task-run --help`, `orchestrator --help`, `setup --help`) produce **identical output**
+between old and new binaries. No new flags, no removed flags, no changed defaults.
 
 The binary name in help is still `environment-runner`.
 
 ## V1 StartupContext: `custom_system_prompt` and `append_system_prompt` REMOVED
 
-**This is the most significant change.** The V1 session context struct lost
-two fields that were present in the old binary.
+**This is the most significant change.** The V1 session context struct lost two fields that were present in the old
+binary.
 
 | Field                  | Old (64bc4dc1) | New (495ea204) |
 | ---------------------- | -------------- | -------------- |
@@ -54,12 +49,11 @@ claude_code_args, mcp_config, use_sandbox_gateway_config,
 environment_variables, use_code_sessions, outcomes, cwd
 ```
 
-**Note:** The V0 Session struct still has both `custom_system_prompt` and
-`append_system_prompt`. These fields were only removed from V1.
+**Note:** The V0 Session struct still has both `custom_system_prompt` and `append_system_prompt`. These fields were only
+removed from V1.
 
-**Impact on RE:** The V1 input parser no longer reads system prompt overrides
-from the startup context. System prompts may now be managed differently in V1
-mode (perhaps via the API or MCP config instead of the startup context JSON).
+**Impact on RE:** The V1 input parser no longer reads system prompt overrides from the startup context. System prompts
+may now be managed differently in V1 mode (perhaps via the API or MCP config instead of the startup context JSON).
 
 ## V0 Session Context: UNCHANGED
 
@@ -89,8 +83,8 @@ One new JSON field tag appears in the new binary:
 | ------------ | ---------------------------------------------------------- |
 | `mount_path` | New field (appears alongside `WriteOnly` in struct layout) |
 
-The `filestore_url`, `filesystem_id`, and `jwt` fields from the previous
-64bc4dc1 diff remain present in both binaries (they were already in 64bc4dc1).
+The `filestore_url`, `filesystem_id`, and `jwt` fields from the previous 64bc4dc1 diff remain present in both binaries
+(they were already in 64bc4dc1).
 
 ## New Go Identifiers (from garble concatenation blobs)
 
@@ -122,24 +116,22 @@ The `filestore_url`, `filesystem_id`, and `jwt` fields from the previous
 
 ## Instrumentation Changes
 
-The `RecordLongRunningStep` feature is the largest code addition by reference
-count. The old binary had 51 references to `RecordLongRunning*` patterns; the
-new has 86. The `LongRunningStep` string appears 46 times in the new binary
-vs 0 in the old. This suggests a new step-level instrumentation system for
-tracking long-running operations during session execution.
+The `RecordLongRunningStep` feature is the largest code addition by reference count. The old binary had 51 references to
+`RecordLongRunning*` patterns; the new has 86. The `LongRunningStep` string appears 46 times in the new binary vs 0 in
+the old. This suggests a new step-level instrumentation system for tracking long-running operations during session
+execution.
 
 ## Feature Removals
 
 ### `SanitizeOutput`: REMOVED
 
-`SanitizeOutput` had 8 string references in the old binary and 0 in the new.
-This was likely an output sanitization feature that has been removed or
-replaced with a different mechanism.
+`SanitizeOutput` had 8 string references in the old binary and 0 in the new. This was likely an output sanitization
+feature that has been removed or replaced with a different mechanism.
 
 ### `PriorityWorkData`: REMOVED
 
-`PriorityWorkData` had 1 reference in the old binary and 0 in the new. This
-may indicate a change in how work priority is represented.
+`PriorityWorkData` had 1 reference in the old binary and 0 in the new. This may indicate a change in how work priority
+is represented.
 
 ## Binary Size
 
@@ -150,10 +142,9 @@ may indicate a change in how work priority is represented.
 
 ## API Endpoint Changes
 
-No changes detected. API endpoint paths are fully garble-obfuscated in both
-binaries (they appear in garbled runtime strings, not as plain paths). The
-`--help` output confirms the same endpoints: `/v1/environments/whoami`,
-`work/poll`, `work/{wid}/ack`, `work/{wid}/heartbeat`, `work/{wid}/stop`.
+No changes detected. API endpoint paths are fully garble-obfuscated in both binaries (they appear in garbled runtime
+strings, not as plain paths). The `--help` output confirms the same endpoints: `/v1/environments/whoami`, `work/poll`,
+`work/{wid}/ack`, `work/{wid}/heartbeat`, `work/{wid}/stop`.
 
 ## File Paths: UNCHANGED
 
@@ -170,19 +161,17 @@ Both binaries reference Go 1.23.5 and Go 1.24.0 (for runtime symlinking).
 
 ## Dependency Changes
 
-No visible Go module dependency additions or removals. OTel semantic
-convention attributes are unchanged between versions.
+No visible Go module dependency additions or removals. OTel semantic convention attributes are unchanged between
+versions.
 
 ## Sandbox Configuration: UNCHANGED
 
-The `enableWeakerNestedSandbox` field remains in both binaries. The
-`use_sandbox_gateway_config` field is present in both V0 and V1 structs
-in both versions.
+The `enableWeakerNestedSandbox` field remains in both binaries. The `use_sandbox_gateway_config` field is present in
+both V0 and V1 structs in both versions.
 
 ## npm Package References: UNCHANGED
 
-Both binaries embed the same `$schema` reference to
-`https://json.schemastore.org/claude-code-settings.json`.
+Both binaries embed the same `$schema` reference to `https://json.schemastore.org/claude-code-settings.json`.
 
 ## Confidence Assessment
 

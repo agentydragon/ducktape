@@ -6,7 +6,10 @@ metadata:
   labels:
     app.kubernetes.io/name: osm-mcp
   annotations:
-    description: "osmmcp (github.com/NERVsystems/osmmcp): geocoding via Nominatim, routing via OSRM, place lookup via Overpass — all public, anonymous, read-only APIs. No secret, no per-operator identity, so unlike every other MCP deployment here it is not OAuth-fronted: reachable only from haku-console's namespace via CiliumNetworkPolicy."
+    description:
+      "osmmcp (github.com/NERVsystems/osmmcp): geocoding via Nominatim, routing via OSRM, place lookup via Overpass —
+      all public, anonymous, read-only APIs. No secret, no per-operator identity, so unlike every other MCP deployment
+      here it is not OAuth-fronted: reachable only from haku-console's namespace via CiliumNetworkPolicy."
     reloader.stakater.com/auto: "true"
 spec:
   replicas: 1

@@ -1,9 +1,8 @@
 # Code Scan Prompts
 
-Prompt definitions for targeted code-quality scans: each file defines one scan —
-what to look for, what counts as a finding, and what to leave alone. Run one by
-pointing an agent at the scan file and a target tree. House style for findings
-lives in <../../STYLE.md>; these scans operationalize specific rules from it.
+Prompt definitions for targeted code-quality scans: each file defines one scan — what to look for, what counts as a
+finding, and what to leave alone. Run one by pointing an agent at the scan file and a target tree. House style for
+findings lives in <../../STYLE.md>; these scans operationalize specific rules from it.
 
 | Scan                                | Looks for                                          |
 | ----------------------------------- | -------------------------------------------------- |

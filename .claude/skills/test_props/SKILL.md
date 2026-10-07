@@ -1,17 +1,18 @@
 ---
 name: test_props
-description: Manual live props deployment testing — sets up Podman infrastructure (postgres, registry, backend) and runs real agent containers. NOT for standard Bazel tests (use `bazel test //props/...` for those).
+description:
+  Manual live props deployment testing — sets up Podman infrastructure (postgres, registry, backend) and runs real agent
+  containers. NOT for standard Bazel tests (use `bazel test //props/...` for those).
 allowed-tools: Bash, Read, Grep, Glob, Edit, Write, WebFetch, Task
 ---
 
 # Test Props Live Deployment
 
-Knowledge base for manually running the props critic and grader evaluation stack.
-Covers infrastructure setup, database lifecycle, agent image push, running critics,
-grading, and exporting results.
+Knowledge base for manually running the props critic and grader evaluation stack. Covers infrastructure setup, database
+lifecycle, agent image push, running critics, grading, and exporting results.
 
-**Not for standard tests** — use `bazel test //props/...` for unit, integration, and
-e2e Bazel tests. This skill is for manual live deployment and evaluation runs.
+**Not for standard tests** — use `bazel test //props/...` for unit, integration, and e2e Bazel tests. This skill is for
+manual live deployment and evaluation runs.
 
 For evaluation workflow background:
 
@@ -58,9 +59,8 @@ export PGDATABASE=eval_results
 
 ### Fresh schema
 
-`db recreate` drops all schema objects (tables, views, functions, policies), then
-runs Alembic migrations to recreate the schema from scratch and syncs model
-metadata. **Does not sync specimens.**
+`db recreate` drops all schema objects (tables, views, functions, policies), then runs Alembic migrations to recreate
+the schema from scratch and syncs model metadata. **Does not sync specimens.**
 
 ```bash
 PGHOST=127.0.0.1 PGPORT=5433 PGUSER=postgres \
@@ -71,12 +71,11 @@ bazel run //props/cli:cli -- db recreate --yes
 
 ### Migrations and specimen sync via backend lifespan
 
-When `auto_migrate = true` is set in the config file, the backend runs
-`alembic upgrade head` on startup (idempotent — only applies pending migrations).
+When `auto_migrate = true` is set in the config file, the backend runs `alembic upgrade head` on startup (idempotent —
+only applies pending migrations).
 
-When `auto_sync_specimens = true` is set, the backend scans `/specimens` and syncs
-all specimens on startup. Before starting the backend, symlink the repo's specimens
-directory:
+When `auto_sync_specimens = true` is set, the backend scans `/specimens` and syncs all specimens on startup. Before
+starting the backend, symlink the repo's specimens directory:
 
 ```bash
 ln -sf "$(git rev-parse --show-toplevel)/props/specimens" /specimens
@@ -89,8 +88,8 @@ The `config.ollama.toml` in this skill directory enables both flags.
 To continue from a saved dump (e.g., from a previous session):
 
 1. Recreate schema (via `db recreate`).
-2. Sync specimens — start backend with `auto_sync_specimens = true` (and the `/specimens`
-   symlink in place), or run `bazel run //props/cli:cli -- db sync-specimen` per specimen.
+2. Sync specimens — start backend with `auto_sync_specimens = true` (and the `/specimens` symlink in place), or run
+   `bazel run //props/cli:cli -- db sync-specimen` per specimen.
 3. Import the dump:
 
 ```bash
@@ -103,8 +102,8 @@ zstd -dc props/docs/local_llm_evaluation/results.sql.zst \
   | psql --set ON_ERROR_STOP=on -d eval_results
 ```
 
-The dump excludes ground-truth tables (snapshots, file_sets, true_positives, etc.)
-that come from specimens. Specimens must be in the DB before importing.
+The dump excludes ground-truth tables (snapshots, file_sets, true_positives, etc.) that come from specimens. Specimens
+must be in the DB before importing.
 
 ## Backend Startup
 
@@ -165,9 +164,8 @@ bazel-bin/props/backend/backend_bin serve > /tmp/backend.log 2>&1 &
 
 ## Push Agent Images
 
-Push images to the **registry proxy** (port 8000), not the upstream registry
-(port 5050). The proxy records agent definitions; the grader supervisor
-listens for grader tag changes.
+Push images to the **registry proxy** (port 8000), not the upstream registry (port 5050). The proxy records agent
+definitions; the grader supervisor listens for grader tag changes.
 
 Set up Docker auth for the registry proxy:
 
@@ -191,13 +189,12 @@ bazel run //props/agents/critic:push
 bazel run //props/agents/grader:push
 ```
 
-These push to `localhost:8000/<type>:latest`. The grader supervisor starts grader
-containers automatically when the grader image is pushed.
+These push to `localhost:8000/<type>:latest`. The grader supervisor starts grader containers automatically when the
+grader image is pushed.
 
 ## Running Critics
 
-Get the admin token and run a critic via the API. The call blocks until the
-critic container exits.
+Get the admin token and run a critic via the API. The call blocks until the critic container exits.
 
 ```bash
 PG_PASSWORD=$(cat props/.devenv/state/pg_password)
@@ -254,13 +251,12 @@ psql -c "SELECT COUNT(*) FROM grading_pending WHERE critique_run_id = '<critic_r
 
 ## Grader Supervisor
 
-The `GraderSupervisor` is enabled by `grader_model` in the config file. It starts
-automatically when the backend starts and listens for `grader_definition_changed`
-pg_notify events. When a grader image is pushed, it (re)starts grader containers
-for all active snapshots.
+The `GraderSupervisor` is enabled by `grader_model` in the config file. It starts automatically when the backend starts
+and listens for `grader_definition_changed` pg_notify events. When a grader image is pushed, it (re)starts grader
+containers for all active snapshots.
 
-Graders run continuously, watching for new critic runs to grade. After a critic
-completes, the grader picks up the new reported issues and creates `grading_edges`.
+Graders run continuously, watching for new critic runs to grade. After a critic completes, the grader picks up the new
+reported issues and creates `grading_edges`.
 
 If graders don't appear after pushing the image, check:
 
@@ -269,9 +265,8 @@ If graders don't appear after pushing the image, check:
 
 ## Exporting Results
 
-Export run results (excluding ground-truth and infrastructure tables) for import
-in a future session. The export excludes specimen data (snapshots, file_sets,
-true_positives, etc.) since those come from specimens on import.
+Export run results (excluding ground-truth and infrastructure tables) for import in a future session. The export
+excludes specimen data (snapshots, file_sets, true_positives, etc.) since those come from specimens on import.
 
 ```bash
 # For ollama/local LLM evaluation:
@@ -295,8 +290,8 @@ pg_dump eval_results \
   && zstd --rm --ultra -22 props/docs/local_llm_evaluation/results.sql
 ```
 
-`llm_requests` stores full conversation transcripts (O(N²) growth across turns).
-zstd compresses cross-row redundancy far better than per-row gzip.
+`llm_requests` stores full conversation transcripts (O(N²) growth across turns). zstd compresses cross-row redundancy
+far better than per-row gzip.
 
 ## Troubleshooting
 
@@ -318,8 +313,8 @@ insecure = true
 
 ### Password issues
 
-Use hex-only passwords in `props/.devenv/state/pg_password` (no `/`, `+`, `=`
-characters that break asyncpg DSN parsing).
+Use hex-only passwords in `props/.devenv/state/pg_password` (no `/`, `+`, `=` characters that break asyncpg DSN
+parsing).
 
 ### Ollama API key
 
@@ -332,13 +327,10 @@ kubectl get secret ollama-api-key -n claude-sandbox \
 
 ## Key Architecture Points
 
-- **Registry proxy**: Integrated into the backend. Push images to port 8000
-  (backend), which proxies to port 5050 (upstream registry) and records agent
-  definitions.
-- **Grader supervisor**: Listens for `grader_definition_changed` pg_notify.
-  When a grader tag is pushed, all grader containers are (re)started.
-- **Agent containers**: Run with host networking, per-agent PostgreSQL roles,
-  and RLS-scoped database access.
-- **Model config**: `config.ollama.toml` (this skill directory) configures
-  `gpt-oss:20b` via the remote LiteLLM cluster at `litellm.allegedly.works`.
-  The cluster serves the model with 131072-token context (`OLLAMA_NUM_CTX=131072`).
+- **Registry proxy**: Integrated into the backend. Push images to port 8000 (backend), which proxies to port 5050
+  (upstream registry) and records agent definitions.
+- **Grader supervisor**: Listens for `grader_definition_changed` pg_notify. When a grader tag is pushed, all grader
+  containers are (re)started.
+- **Agent containers**: Run with host networking, per-agent PostgreSQL roles, and RLS-scoped database access.
+- **Model config**: `config.ollama.toml` (this skill directory) configures `gpt-oss:20b` via the remote LiteLLM cluster
+  at `litellm.allegedly.works`. The cluster serves the model with 131072-token context (`OLLAMA_NUM_CTX=131072`).

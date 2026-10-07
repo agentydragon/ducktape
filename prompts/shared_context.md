@@ -3,8 +3,10 @@
 ## Philosophy
 
 - **Type safety without ugliness**: Python's type system should enhance code clarity, not obscure it
-- **Trust library types**: Well-typed libraries (OpenAI SDK, Pydantic, etc.) provide excellent types - use them as intended
-- **Read the source**: When uncertain about types, read the actual library source code to understand intended usage patterns
+- **Trust library types**: Well-typed libraries (OpenAI SDK, Pydantic, etc.) provide excellent types - use them as
+  intended
+- **Read the source**: When uncertain about types, read the actual library source code to understand intended usage
+  patterns
 - **Fail fast**: Prefer methods that raise exceptions over getters that hide errors
 - **No redundancy**: Every line of code should add value; remove trivial wrappers and obvious documentation
 

@@ -1,38 +1,32 @@
 # Authentik Terraform State Lifecycle Coupling
 
-> **HISTORICAL (infra changed since 2026-02-18).** Vault was decommissioned
-> 2026-04-19 (secrets are now SOPS-managed; see <../decisions.md> § "Secrets: SOPS SSOT"),
-> and Terraform state moved off the old `tfstate-default-*` k8s secrets into the
-> `tofu-state-db` CNPG cluster (one schema per `Terraform` CR) with the
-> kubernetes-backend migration. The `tfstate-default-*` secret deletions and the
-> Vault `auth disable` step below are **no longer applicable**. For the current
-> teardown/recovery procedure see <../troubleshooting.md> § "Resource ID Desync
-> After Wiping a Backing Datastore". The analysis below is preserved as the
-> original incident write-up.
+> **HISTORICAL (infra changed since 2026-02-18).** Vault was decommissioned 2026-04-19 (secrets are now SOPS-managed;
+> see <../decisions.md> § "Secrets: SOPS SSOT"), and Terraform state moved off the old `tfstate-default-*` k8s secrets
+> into the `tofu-state-db` CNPG cluster (one schema per `Terraform` CR) with the kubernetes-backend migration. The
+> `tfstate-default-*` secret deletions and the Vault `auth disable` step below are **no longer applicable**. For the
+> current teardown/recovery procedure see <../troubleshooting.md> § "Resource ID Desync After Wiping a Backing
+> Datastore". The analysis below is preserved as the original incident write-up.
 
-**Date**: 2026-02-18
-**Status**: Resolved (manual state wipe + documentation)
+**Date**: 2026-02-18 **Status**: Resolved (manual state wipe + documentation)
 
 ## Root Cause
 
-tofu-controller stores Terraform state as K8s secrets (`tfstate-default-*` in flux-system).
-These secrets have **no lifecycle coupling** to the backend they manage. When Authentik's
-database is wiped (HelmRelease + PVC deleted), all 11 SSO Terraform modules' state secrets
-become stale — they reference Authentik resource PKs/UUIDs that no longer exist.
+tofu-controller stores Terraform state as K8s secrets (`tfstate-default-*` in flux-system). These secrets have **no
+lifecycle coupling** to the backend they manage. When Authentik's database is wiped (HelmRelease + PVC deleted), all 11
+SSO Terraform modules' state secrets become stale — they reference Authentik resource PKs/UUIDs that no longer exist.
 
 On reconciliation against the fresh Authentik instance:
 
 1. Terraform reads stale state → tries to refresh resources by PK → gets 404
 2. Provider marks resources for recreation (Authentik provider issue #104 fix)
 3. Multiple modules apply simultaneously against the fresh DB
-4. Partial applies create resources but crash before saving state (runner timeout, TLS
-   cache desync, or resource conflicts from parallel creates)
+4. Partial applies create resources but crash before saving state (runner timeout, TLS cache desync, or resource
+   conflicts from parallel creates)
 5. Next retry reads partially-saved state → tries to create resources that already exist
 6. **"already exists" errors cascade** — each module fails independently
 
-The result is cross-contamination: one module's provider gets assigned to another module's
-application, creating an inconsistent SSO configuration that requires manual cleanup of
-every conflicting resource in the Authentik API.
+The result is cross-contamination: one module's provider gets assigned to another module's application, creating an
+inconsistent SSO configuration that requires manual cleanup of every conflicting resource in the Authentik API.
 
 ## The Three-Layer Cascade
 
@@ -58,8 +52,7 @@ LAYER 3: Partial Apply Failures Cascade
 
 ## Affected Terraform State Secrets
 
-All secrets in `flux-system` namespace matching `tfstate-default-authentik-blueprint-*`
-plus related modules:
+All secrets in `flux-system` namespace matching `tfstate-default-authentik-blueprint-*` plus related modules:
 
 | Secret                                         | Terraform Module      | Authentik Resources                  |
 | ---------------------------------------------- | --------------------- | ------------------------------------ |
@@ -74,21 +67,18 @@ plus related modules:
 | `tfstate-default-grafana-sso`                  | `sso/grafana`         | OAuth2 provider, application         |
 | `tfstate-default-vault-oidc-auth`              | `sso/vault-oidc-auth` | Vault OIDC auth backend              |
 
-**Also affected (but different)**: `tfstate-default-authentik-token` and
-`tfstate-default-authentik-passwords` generate secrets stored in Vault. These are protected
-by `cas = 0` (Check-And-Set) — Vault rejects overwrites. Only delete these state secrets
-during a full cluster rebuild where Vault is also wiped.
+**Also affected (but different)**: `tfstate-default-authentik-token` and `tfstate-default-authentik-passwords` generate
+secrets stored in Vault. These are protected by `cas = 0` (Check-And-Set) — Vault rejects overwrites. Only delete these
+state secrets during a full cluster rebuild where Vault is also wiped.
 
 ## Resolution
 
 ### When Tearing Down Authentik (HelmRelease + PVC Delete)
 
-> **HISTORICAL — do not run.** This procedure targets the retired
-> `tfstate-default-*` k8s secret backend and a live Vault. For the current
-> equivalent, follow <../troubleshooting.md> § "Resource ID Desync After Wiping a
-> Backing Datastore" (state now lives in the `tofu-state-db` CNPG cluster; there
-> is no Vault `auth disable` step). The block is kept verbatim for narrative
-> continuity. Steps 3 (`tfstate-default-*` secret deletion) and 4 (Vault
+> **HISTORICAL — do not run.** This procedure targets the retired `tfstate-default-*` k8s secret backend and a live
+> Vault. For the current equivalent, follow <../troubleshooting.md> § "Resource ID Desync After Wiping a Backing
+> Datastore" (state now lives in the `tofu-state-db` CNPG cluster; there is no Vault `auth disable` step). The block is
+> kept verbatim for narrative continuity. Steps 3 (`tfstate-default-*` secret deletion) and 4 (Vault
 > `auth disable oidc/`) no longer apply.
 
 ```bash
@@ -145,9 +135,8 @@ done
 
 ### When Rebuilding the Full Cluster (Bootstrap)
 
-During a full `tofu destroy` → `bazel run //cluster:bootstrap` cycle, all K8s secrets
-(including `tfstate-default-*`) are destroyed with the cluster. No manual cleanup needed —
-the bootstrap creates everything from scratch.
+During a full `tofu destroy` → `bazel run //cluster:bootstrap` cycle, all K8s secrets (including `tfstate-default-*`)
+are destroyed with the cluster. No manual cleanup needed — the bootstrap creates everything from scratch.
 
 ## Why This Can't Be Automated (Yet)
 
@@ -161,30 +150,27 @@ the bootstrap creates everything from scratch.
 
 ## Alternatives Considered
 
-**Authentik native blueprints** (`state: present`): Idempotent YAML config mounted as
-ConfigMaps into Authentik worker. No external state — blueprints re-apply every 60 minutes.
-Eliminates the TF state coupling entirely. **Limitation**: can't manage Vault secrets or
-cross-service orchestration. Could work for simple resources (users, flows, brands) while
+**Authentik native blueprints** (`state: present`): Idempotent YAML config mounted as ConfigMaps into Authentik worker.
+No external state — blueprints re-apply every 60 minutes. Eliminates the TF state coupling entirely. **Limitation**:
+can't manage Vault secrets or cross-service orchestration. Could work for simple resources (users, flows, brands) while
 keeping Terraform for OIDC providers that need Vault integration.
 
-**Crossplane provider**: Continuous reconciliation from K8s CRDs. Would detect missing
-resources and recreate them. **Limitation**: no Crossplane provider for Authentik exists.
+**Crossplane provider**: Continuous reconciliation from K8s CRDs. Would detect missing resources and recreate them.
+**Limitation**: no Crossplane provider for Authentik exists.
 
-**Authentik K8s operator**: Official feature request (issue #5675) confirmed but unassigned,
-no timeline. Would provide CRD-based management with proper reconciliation.
+**Authentik K8s operator**: Official feature request (issue #5675) confirmed but unassigned, no timeline. Would provide
+CRD-based management with proper reconciliation.
 
 ## Key Lessons
 
-1. **tofu-controller TF state is an implicit dependency on the managed backend** — when
-   the backend is wiped, state must be wiped too. This coupling is not declared anywhere
-   in the Flux dependency graph.
-2. **11 independent Terraform modules = 11 independent failure points** — each module's
-   state references the same Authentik instance. A single backend wipe invalidates all of
-   them simultaneously, and parallel reconciliation causes cross-contamination.
-3. **Partial applies are the worst failure mode** — resources created in Authentik but not
-   recorded in TF state require manual API cleanup. "Already exists" errors don't
-   self-resolve because the resource is real but stateless.
-4. **The Authentik flow API uses slugs for DELETE, not UUIDs** — discovered during manual
-   cleanup. `DELETE /api/v3/flows/instances/{slug}/` works; UUID-based DELETE returns 404.
-5. **Suspend before wiping state** — if Terraform resources are active during state
-   deletion, runners may partially apply and recreate stale state before cleanup completes.
+1. **tofu-controller TF state is an implicit dependency on the managed backend** — when the backend is wiped, state must
+   be wiped too. This coupling is not declared anywhere in the Flux dependency graph.
+2. **11 independent Terraform modules = 11 independent failure points** — each module's state references the same
+   Authentik instance. A single backend wipe invalidates all of them simultaneously, and parallel reconciliation causes
+   cross-contamination.
+3. **Partial applies are the worst failure mode** — resources created in Authentik but not recorded in TF state require
+   manual API cleanup. "Already exists" errors don't self-resolve because the resource is real but stateless.
+4. **The Authentik flow API uses slugs for DELETE, not UUIDs** — discovered during manual cleanup.
+   `DELETE /api/v3/flows/instances/{slug}/` works; UUID-based DELETE returns 404.
+5. **Suspend before wiping state** — if Terraform resources are active during state deletion, runners may partially
+   apply and recreate stale state before cleanup completes.

@@ -6,7 +6,10 @@ metadata:
   labels:
     app.kubernetes.io/name: postscanmail-mcp
   annotations:
-    description: "Authentik-gated PostScan Mail MCP. Two long-running containers in the same network namespace: a Python FastMCP sidecar that wraps the PostScan Mail REST API as Streamable HTTP on localhost:8080, and the shared mcp-oauth-facade fronting it with OIDCProxy. Only agentydragon is allowed at the OAuth consent step."
+    description:
+      "Authentik-gated PostScan Mail MCP. Two long-running containers in the same network namespace: a Python FastMCP
+      sidecar that wraps the PostScan Mail REST API as Streamable HTTP on localhost:8080, and the shared
+      mcp-oauth-facade fronting it with OIDCProxy. Only agentydragon is allowed at the OAuth consent step."
     reloader.stakater.com/auto: "true"
 spec:
   replicas: 1

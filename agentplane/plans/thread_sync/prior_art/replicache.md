@@ -2,15 +2,15 @@
 
 Read 2026-09-23.
 
-- **Status: maintenance mode.** From replicache.dev: "Replicache is now in maintenance mode. We have open-sourced the code
-  and no longer charge for its use. … We will continue to support Replicache, but won't add new features. Existing
+- **Status: maintenance mode.** From replicache.dev: "Replicache is now in maintenance mode. We have open-sourced the
+  code and no longer charge for its use. … We will continue to support Replicache, but won't add new features. Existing
   users should migrate to Zero as they are able." Zero's client "uses replicache under the hood" (rocicorp/mono README).
 - **Latest release: `replicache@15.3.0`, published 2025-07-02** (npm registry `time`). There has been no release since.
 - **License is inconsistent.** On `main` of rocicorp/mono, the source is Apache-2.0 (root `LICENSE`, and
   `packages/replicache/package.json` says `"license": "Apache-2.0"`). The published 15.3.0 tarball still ships a
-  `LICENSE` pointing at the 2022 Terms of Service, and its tag's `package.json` has `"license": "https://roci.dev/terms.html"`.
-  `licenseKey`: "Replicache no longer uses a license key. This option is now ignored". No npm release yet carries
-  the Apache license.
+  `LICENSE` pointing at the 2022 Terms of Service, and its tag's `package.json` has
+  `"license": "https://roci.dev/terms.html"`. `licenseKey`: "Replicache no longer uses a license key. This option is now
+  ignored". No npm release yet carries the Apache license.
 - **Size, measured from 15.3.0 `out/`:** the client bundle is 99.8 KB minified, 31.2 KB gzip. The server side is
   entirely ours ("BYOB"), and plain JSON-over-POST suits FastAPI.
 
@@ -21,28 +21,28 @@ Read 2026-09-23.
   with `kvStore: "mem"`.
 - **Pull.** `POST pullURL {pullVersion, clientGroupID, cookie, profileID, schemaVersion}` returns
   `{cookie, lastMutationIDChanges, patch}`. `patch` is a list of `put` (the whole value), `del` and `clear`. It is
-  applied in one transaction and revealed atomically. There is no append or partial-value op, and no pagination
-  of a pull response.
+  applied in one transaction and revealed atomically. There is no append or partial-value op, and no pagination of a
+  pull response.
 - **The cookie** is opaque to the client and server-minted: any JSON that is orderable itself, or that carries an
   `order` field. It is the client's only stated position.
-- **The server decides the content.** The pull handler computes the client view, and the protocol has no field
-  for a client-declared query. The documented way to let the client steer it is to _sync the query as data_: a
-  `/control/<user>/query` entity that a mutator changes and the pull handler reads. `pullURL` and `puller` are
-  also runtime-settable in the public API, so the parameters can travel on the URL. That route is our design,
-  not a documented pattern.
+- **The server decides the content.** The pull handler computes the client view, and the protocol has no field for a
+  client-declared query. The documented way to let the client steer it is to _sync the query as data_: a
+  `/control/<user>/query` entity that a mutator changes and the pull handler reads. `pullURL` and `puller` are also
+  runtime-settable in the public API, so the parameters can travel on the URL. That route is our design, not a
+  documented pattern.
 - **Diff strategies** decide how a pull computes the patch:
   - **Reset** re-sends everything every time.
   - **Global version** and **per-space version** send rows with `lastModifiedVersion > cookie`. The docs rate them
     "Partial sync: 👎🏼 Difficult".
-  - **Row version** is the one that handles partial sync. The server stores a **CVR** per pull response: a map from
-    each key the client holds to its version, stored under a random id that goes into the cookie. The next pull
-    loads the prior CVR, reads `(id, version)` for the _current_ extent, and diffs the two. It `put`s keys that are
-    new or whose version rose, and `del`s keys that dropped out.
+  - **Row version** is the one that handles partial sync. The server stores a **CVR** per pull response: a map from each
+    key the client holds to its version, stored under a random id that goes into the cookie. The next pull loads the
+    prior CVR, reads `(id, version)` for the _current_ extent, and diffs the two. It `put`s keys that are new or whose
+    version rose, and `del`s keys that dropped out.
 - **Poke.** A contentless hint over any pubsub channel (SSE, WebSocket, Pusher) that makes the client call `pull()`.
-  - Pulls are serialised. From the 15.3.0 source, not the docs: `maxConnections=1`, and the default `minDelayMs`
-    is 30 ms, so bursts of pokes coalesce into one pull.
-  - The experimental `rep.poke({baseCookie, pullResponse})` pushes a patch with no request, but "This method is
-    under development and its semantics will change."
+  - Pulls are serialised. From the 15.3.0 source, not the docs: `maxConnections=1`, and the default `minDelayMs` is 30
+    ms, so bursts of pokes coalesce into one pull.
+  - The experimental `rep.poke({baseCookie, pullResponse})` pushes a patch with no request, but "This method is under
+    development and its semantics will change."
 - **Push** sends mutations `{clientID, id, name, args}`. The server must commit their effects and the client's
   `lastMutationID` in the same transaction. The client rebases its pending mutations onto each pulled snapshot.
 - **Versioning.** A `schemaVersion` the server rejects gets a `VersionNotSupported` response. The client then calls
@@ -101,13 +101,13 @@ Every row below assumes the **row-version** strategy. It is the only one the doc
 | D2  | ~       | Bodies in the client view are one mechanism with a parameter (the extent). The docs' out-of-band blob path is exactly the seam D2 warns against.                                                                                            | [BLOBS] "there is no guarantee that the blobs stays consistend with the state of Replicache"                                                                                                |
 | D3  | ~       | The protocol can be adopted incrementally: a pull endpoint and cookie semantics with our own client. Adopting the library moves UI reads onto Replicache subscriptions, which lands whole.                                                  | `inferred`                                                                                                                                                                                  |
 
-**Per-tab windows are the real friction.** The extent belongs to the client group (the profile and `name`), not to
-a tab. [RV] says: "Changing the pull query in one tab changes it for other tabs that are sharing the same Replicache.
-Without coordination, this could result in two tabs “fighting” over the current query." [PULL] says: "Make sure that
-the client view is not a function of the client ID." A per-tab window therefore needs one of two things:
+**Per-tab windows are the real friction.** The extent belongs to the client group (the profile and `name`), not to a
+tab. [RV] says: "Changing the pull query in one tab changes it for other tabs that are sharing the same Replicache.
+Without coordination, this could result in two tabs “fighting” over the current query." [PULL] says: "Make sure that the
+client view is not a function of the client ID." A per-tab window therefore needs one of two things:
 
-- a per-tab `name` (`${user}:${thread}:${tab}`), which gives a separate client group and IndexedDB database per
-  tab and loses cross-tab sharing; or
+- a per-tab `name` (`${user}:${thread}:${tab}`), which gives a separate client group and IndexedDB database per tab and
+  loses cross-tab sharing; or
 - accepting one window per profile per `name`.
 
 ## What we would build vs get
@@ -130,25 +130,24 @@ the client view is not a function of the client ID." A per-tab window therefore 
    - Read `(key, revision_cursor)` for the extent: entity rows plus the body keys the selection names.
    - Diff against the CVR and fetch the changed rows.
    - Return `put` / `del` and a cookie `{order, cvrID}`.
-2. **A CVR store** in Postgres or Redis, with a TTL, and a strictly increasing `order` per client group.
-   Alternatively, a stateless variant (below).
+2. **A CVR store** in Postgres or Redis, with a TTL, and a strictly increasing `order` per client group. Alternatively,
+   a stateless variant (below).
 3. **A key design:**
    - `e/<thread>/<zero-padded entity_index>` for metadata and references
-   - `b/<ref>/<field>` for bodies, which are immutable per reference, so a revision is a new key rather than a
-     re-put
+   - `b/<ref>/<field>` for bodies, which are immutable per reference, so a revision is a new key rather than a re-put
    - streaming bodies chunked into immutable keys to avoid E5's whole-value re-put
 4. **A poke channel:** SSE per thread, fanned out across replicas with Postgres LISTEN/NOTIFY.
 5. **Window movement:** set `rep.pullURL` to the new `want` and `content`, then `rep.pull()`. Plus the per-tab `name`
    decision above.
 
-**The stateless variant is not documented; it follows from the cookie type.** The cookie may be any JSON with an
-`order` field, so it can carry `{order, epoch, have, through}`. The server then computes the
-<../option_moving_window.md> delta (want∖have whole, want∩have with `revision_cursor > through`, `del` for have∖want),
-and no CVR is stored. That fixes O1 and O2.
+**The stateless variant is not documented; it follows from the cookie type.** The cookie may be any JSON with an `order`
+field, so it can carry `{order, epoch, have, through}`. The server then computes the <../option_moving_window.md> delta
+(want∖have whole, want∩have with `revision_cursor > through`, `del` for have∖want), and no CVR is stored. That fixes O1
+and O2.
 
 It inherits Replicache's own warning against watermarks ([GV] § "Why Not Use Last-Modified?"): it is correct only if
-`revision_cursor` becomes visible in commit order, per thread. A cursor assigned before commit by concurrent writers
-can be skipped forever. **The same caveat applies to <../option_moving_window.md>'s `since`**, and a test should pin it.
+`revision_cursor` becomes visible in commit order, per thread. A cursor assigned before commit by concurrent writers can
+be skipped forever. **The same caveat applies to <../option_moving_window.md>'s `since`**, and a test should pin it.
 
 **What Replicache does not give us:**
 
@@ -159,8 +158,8 @@ can be skipped forever. **The same caveat applies to <../option_moving_window.md
 - zero-request streaming (E3), except through an experimental API
 - shared per-conversation server state (O1)
 
-**Net.** Replicache's _protocol_ (row-version CVR diff, or the stateless-cookie variant) is a documented, proven way
-to get D1, E4, S4 and P7. Its _library_ mostly adds machinery we do not need, from a project in maintenance mode.
+**Net.** Replicache's _protocol_ (row-version CVR diff, or the stateless-cookie variant) is a documented, proven way to
+get D1, E4, S4 and P7. Its _library_ mostly adds machinery we do not need, from a project in maintenance mode.
 
 ## Sources
 
@@ -171,10 +170,10 @@ to get D1, E4, S4 and P7. Its _library_ mostly adds machinery we do not need, fr
 - `https://doc.replicache.dev/howto/{launch,blobs,source-access}`, `…/examples/{todo,repliear}`
 - `https://doc.replicache.dev/api/classes/Replicache`, `…/api/interfaces/{ReplicacheOptions,RequestOptions}`,
   `…/api/type-aliases/{Cookie,Poke,Puller,UpdateNeededReason}`
-- https://registry.npmjs.org/replicache — versions and dates; the 15.3.0 tarball was inspected for `LICENSE`, size
-  and defaults
-- `https://raw.githubusercontent.com/rocicorp/mono/main/{README.md,LICENSE,packages/replicache/package.json}`, the
-  same `package.json` at tag `replicache/v15.3.0`, and `rocicorp/replicache/main/README.md`
+- https://registry.npmjs.org/replicache — versions and dates; the 15.3.0 tarball was inspected for `LICENSE`, size and
+  defaults
+- `https://raw.githubusercontent.com/rocicorp/mono/main/{README.md,LICENSE,packages/replicache/package.json}`, the same
+  `package.json` at tag `replicache/v15.3.0`, and `rocicorp/replicache/main/README.md`
 - `https://raw.githubusercontent.com/rocicorp/todo-row-versioning/main/{README.md,server/src/pull.ts,server/src/cvr.ts,server/src/data.ts}`
 - https://raw.githubusercontent.com/rocicorp/zero-docs/main/contents/docs/sync.mdx — "The predecessor to Zero"
 - https://rocicorp.dev/terms — the 2022 Terms of Service the npm `LICENSE` points to
@@ -184,5 +183,5 @@ to get D1, E4, S4 and P7. Its _library_ mostly adds machinery we do not need, fr
 
 - The Notion releases page (https://replicache.notion.site/Replicache-Releases-f86ffef7f72f46ca9b597d5081e05b88)
   rendered empty.
-- https://github.com/rocicorp/replicache/releases returned 403 through the proxy. Its WebFetch summary gave
-  implausible dates and was discarded, so release dates come from the npm registry only.
+- https://github.com/rocicorp/replicache/releases returned 403 through the proxy. Its WebFetch summary gave implausible
+  dates and was discarded, so release dates come from the npm registry only.

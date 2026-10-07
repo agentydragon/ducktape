@@ -6,7 +6,8 @@ Mirror upstream GitHub releases locally so assets survive upstream deletion.
 
 ### Gitea / Forgejo mirror mode
 
-Set a repo as a "mirror" with a pull interval. Automatically syncs branches, tags, releases, and attached release assets. Provides a browseable web UI. Heaviest option but turnkey.
+Set a repo as a "mirror" with a pull interval. Automatically syncs branches, tags, releases, and attached release
+assets. Provides a browseable web UI. Heaviest option but turnkey.
 
 ### Cron + `gh release download`
 
@@ -18,7 +19,8 @@ Run on a timer. Lightest approach — just files on disk. No web UI, no metadata
 
 ### `github-backup` (Python)
 
-CLI tool that archives releases, issues, PRs, wikis, comments to disk. More metadata than raw `gh` but still cron-driven, no web UI.
+CLI tool that archives releases, issues, PRs, wikis, comments to disk. More metadata than raw `gh` but still
+cron-driven, no web UI.
 
 ### Object storage + script
 

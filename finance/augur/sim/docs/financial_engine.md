@@ -1,50 +1,43 @@
 # Python financial execution
 
-Augur has one canonical Python financial world, implemented in
-<../world.py>. The common action session and the configured application runner
-share that world; they retain their explicit policy and timing differences.
-There is no native extension, backend selector, or alternate financial evaluator.
+Augur has one canonical Python financial world, implemented in <../world.py>. The common action session and the
+configured application runner share that world; they retain their explicit policy and timing differences. There is no
+native extension, backend selector, or alternate financial evaluator.
 
 ## Responsibilities
 
-- <../money.py> implements checked integer money, quantity arithmetic, and exact
-  half-away-from-zero rounding. <../ledger.py> owns balanced postings.
-- <../accounting.py>, <../holdings.py>, <../payments.py>, and <../claims.py> own
-  income recording, lot basis, trade/payment settlement, and due claims.
-- <../tax_year.py> holds each taxpayer's annual facts; <../tax_authority.py> closes
-  the year under the supplied rules (<../tax.py>), records liabilities, and resets
-  annual state to its carryover. Existing supported tax scope is unchanged.
-- <../held_bonds.py>, <../property.py>, and <../private_equity.py> preserve the
-  existing contract cashflows and lifecycle mechanics.
-- <../tlh.py> owns private TLH cohorts and basis; <../mortgage.py> owns servicing
-  state. Outstanding mortgage principal has one authority: the ledger.
-- <../capture.py>, <../books.py>, <../results.py>, and <../events.py> project
-  recorded financial facts, not a replayed or independently computed book.
+- <../money.py> implements checked integer money, quantity arithmetic, and exact half-away-from-zero rounding.
+  <../ledger.py> owns balanced postings.
+- <../accounting.py>, <../holdings.py>, <../payments.py>, and <../claims.py> own income recording, lot basis,
+  trade/payment settlement, and due claims.
+- <../tax_year.py> holds each taxpayer's annual facts; <../tax_authority.py> closes the year under the supplied rules
+  (<../tax.py>), records liabilities, and resets annual state to its carryover. Existing supported tax scope is
+  unchanged.
+- <../held_bonds.py>, <../property.py>, and <../private_equity.py> preserve the existing contract cashflows and
+  lifecycle mechanics.
+- <../tlh.py> owns private TLH cohorts and basis; <../mortgage.py> owns servicing state. Outstanding mortgage principal
+  has one authority: the ledger.
+- <../capture.py>, <../books.py>, <../results.py>, and <../events.py> project recorded financial facts, not a replayed
+  or independently computed book.
 
 ## Preserved invariants
 
-Every posted journal entry balances. Validation precedes compound mutation;
-rejected investor requests do not partly change lots, cash, tax facts, or
-component state. Earlier successful actions survive a later rejected action.
-Lot disposals conserve units and consume exact residual basis at final liquidation.
+Every posted journal entry balances. Validation precedes compound mutation; rejected investor requests do not partly
+change lots, cash, tax facts, or component state. Earlier successful actions survive a later rejected action. Lot
+disposals conserve units and consume exact residual basis at final liquidation.
 
-Actor observations are account-scoped and use only the current mark. Independent
-rollouts do not share mutable financial state. Stopped paths retain their actual
-last observed books without reading future prices or receiving later actions.
+Actor observations are account-scoped and use only the current mark. Independent rollouts do not share mutable financial
+state. Stopped paths retain their actual last observed books without reading future prices or receiving later actions.
 Capture cannot execute an additional financial step.
 
-The common action session accepts caller-ordered economic requests and stops a
-path on rejection or unpaid due claims; a tracked household on `World.step()` does
-the same one month at a time. Neither interface silently gains housing/PE or
+The common action session accepts caller-ordered economic requests and stops a path on rejection or unpaid due claims; a
+tracked household on `World.step()` does the same one month at a time. Neither interface silently gains housing/PE or
 multi-taxpayer capabilities beyond what a world declares.
 
 ## Evidence and entrypoints
 
-Financial acceptance suites live beside the code in <../>, over shared cases in
-<../testing/>. Product and
-experiment callers use the same Python world.
+Financial acceptance suites live beside the code in <../>, over shared cases in <../testing/>. Product and experiment
+callers use the same Python world.
 
-Use <../session.py> for ordinary batch actions, a tracked `EconomicAgent` on
-`World.step()` for a household that decides each month.
-See <execution_boundary.md>, <money_representation.md>, and
-<../../product/docs/metrics.md>.
+Use <../session.py> for ordinary batch actions, a tracked `EconomicAgent` on `World.step()` for a household that decides
+each month. See <execution_boundary.md>, <money_representation.md>, and <../../product/docs/metrics.md>.

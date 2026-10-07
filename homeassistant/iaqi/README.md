@@ -1,6 +1,7 @@
 # Indoor Air Quality Index (IAQI) Component for Home Assistant
 
-Calculates an Indoor Air Quality Index (IAQI) from multiple air quality sensors. IAQI ranges from 0-100, where 100 is excellent air and 0 is severely polluted.
+Calculates an Indoor Air Quality Index (IAQI) from multiple air quality sensors. IAQI ranges from 0-100, where 100 is
+excellent air and 0 is severely polluted.
 
 ## Features
 
@@ -51,24 +52,18 @@ Calculates an Indoor Air Quality Index (IAQI) from multiple air quality sensors.
 
 ### Supported Pollutant Types
 
-|------|-------------|
-| `co2` | Carbon Dioxide |
-| `voc` | Volatile Organic Compounds |
-| `pm1` | Particulate Matter 1μm |
-| `pm10` | Particulate Matter 10μm |
-| `pm25` | Particulate Matter 2.5μm |
-| `nox` | Nitrogen Oxides |
-| `co` | Carbon Monoxide |
-| `o3` | Ozone |
-| `ch2o` | Formaldehyde |
+|------|-------------| | `co2` | Carbon Dioxide | | `voc` | Volatile Organic Compounds | | `pm1` | Particulate Matter
+1μm | | `pm10` | Particulate Matter 10μm | | `pm25` | Particulate Matter 2.5μm | | `nox` | Nitrogen Oxides | | `co` |
+Carbon Monoxide | | `o3` | Ozone | | `ch2o` | Formaldehyde |
 
 ## How it Works
 
-IAQI is calculated using the approach described by [Atmotube](https://atmotube.com/atmocube-support/indoor-air-quality-index-iaqi):
+IAQI is calculated using the approach described by
+[Atmotube](https://atmotube.com/atmocube-support/indoor-air-quality-index-iaqi):
 
-For each pollutant, calculate a sub-index from 0-100 by linear interpolation between defined breakpoints
-Overall IAQI is the minimum (worst) of all sub-indices.
-Highlighted "bottleneck" pollutants are those with IAQI component values close to the minimum.
+For each pollutant, calculate a sub-index from 0-100 by linear interpolation between defined breakpoints Overall IAQI is
+the minimum (worst) of all sub-indices. Highlighted "bottleneck" pollutants are those with IAQI component values close
+to the minimum.
 
 ## Attributes
 
@@ -89,13 +84,17 @@ The sensor exposes the following attributes:
 
 ### Test Setup with pytest_homeassistant_custom_component
 
-The tests use `pytest_homeassistant_custom_component` for Home Assistant fixtures (`hass`, `enable_custom_integrations`, etc.). Running these tests under Bazel requires two workarounds in `conftest.py`:
+The tests use `pytest_homeassistant_custom_component` for Home Assistant fixtures (`hass`, `enable_custom_integrations`,
+etc.). Running these tests under Bazel requires two workarounds in `conftest.py`:
 
 **1. Custom component discovery path**
 
-The plugin includes its own `custom_components` namespace package. When it loads, `custom_components.__path__` only points to the plugin's `testing_config/custom_components/` directory. HA's loader uses this path to discover integrations, so without intervention, it can't find `indoor_aqi`.
+The plugin includes its own `custom_components` namespace package. When it loads, `custom_components.__path__` only
+points to the plugin's `testing_config/custom_components/` directory. HA's loader uses this path to discover
+integrations, so without intervention, it can't find `indoor_aqi`.
 
-Fix: The `auto_enable_custom_integrations` fixture adds our `custom_components` directory to `custom_components.__path__`:
+Fix: The `auto_enable_custom_integrations` fixture adds our `custom_components` directory to
+`custom_components.__path__`:
 
 ```python
 cc_path = str(config_dir / "custom_components")
@@ -105,9 +104,12 @@ if cc_path not in custom_components.__path__:
 
 **2. Recorder patching order**
 
-The plugin patches HA's recorder module at load time and asserts that `homeassistant.components.recorder.util` isn't already imported. Some HA modules (`homeassistant.setup`, `homeassistant.config_entries`) trigger recorder loading as a side effect.
+The plugin patches HA's recorder module at load time and asserts that `homeassistant.components.recorder.util` isn't
+already imported. Some HA modules (`homeassistant.setup`, `homeassistant.config_entries`) trigger recorder loading as a
+side effect.
 
-If test files have top-level imports of these modules, they execute during pytest collection (before the plugin loads), causing the assertion to fail.
+If test files have top-level imports of these modules, they execute during pytest collection (before the plugin loads),
+causing the assertion to fail.
 
 Fix: Use lazy imports inside test functions for heavyweight HA modules:
 

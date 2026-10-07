@@ -1,6 +1,7 @@
 # Specimens Format Specification
 
-Technical reference for the specimens dataset format. This document defines the canonical structure for snapshots, issues, and related metadata.
+Technical reference for the specimens dataset format. This document defines the canonical structure for snapshots,
+issues, and related metadata.
 
 ## Overview
 
@@ -16,7 +17,9 @@ See <../README.md> for the directory layout with concrete examples.
 
 ## Snapshot Metadata (BUILD.bazel)
 
-Each snapshot has a `BUILD.bazel` file that calls `specimen_targets()` from `//props/specimens:defs.bzl`. This defines the specimen's `slug`, `split`, and code source. Source provenance (commit SHA, include/exclude paths) is captured as natural language comments.
+Each snapshot has a `BUILD.bazel` file that calls `specimen_targets()` from `//props/specimens:defs.bzl`. This defines
+the specimen's `slug`, `split`, and code source. Source provenance (commit SHA, include/exclude paths) is captured as
+natural language comments.
 
 ### Structure
 
@@ -50,8 +53,10 @@ specimen_targets(
   - `train`: Training data (full access to labels and execution traces)
   - `valid`: Validation data (can evaluate, but cannot read labels)
   - `test`: Test data (reserved for final holdout evaluation)
-- **`code_srcs`** (label list, required): Source code files — `glob(["code/**/*"])` for local, external repo label for remote
-- **Provenance comments** (optional): Natural language comments capturing source commit SHA, included/excluded paths for traceability
+- **`code_srcs`** (label list, required): Source code files — `glob(["code/**/*"])` for local, external repo label for
+  remote
+- **Provenance comments** (optional): Natural language comments capturing source commit SHA, included/excluded paths for
+  traceability
 
 ## Issue File Format (YAML)
 
@@ -267,7 +272,8 @@ The `match_file_restriction` field is a **hard constraint** on where graders can
 
 ### Semantics
 
-- **`null`/omitted (unrestricted)**: Critique can match from any file. This is the default when we haven't determined the closed set of valid reporting files, or for issues that aren't bound to specific files.
+- **`null`/omitted (unrestricted)**: Critique can match from any file. This is the default when we haven't determined
+  the closed set of valid reporting files, or for issues that aren't bound to specific files.
 - **Non-empty list (file-restricted)**: Grader may only give credit if the critique flagged overlapping files.
 
 ### Why This Is Separate from `critic_scopes_expected_to_recall`
@@ -307,7 +313,10 @@ occurrences:
 
 ### Dead Code Note
 
-For dead code issues, `match_file_restriction` is typically the dead file itself — the issue _is_ in that file regardless of how it's detected. However, `critic_scopes_expected_to_recall` may include other files: when existing code duplicates logic that the dead helper would simplify, a reviewer of those files could discover the dead code by searching for existing helpers. The two fields diverge in this case:
+For dead code issues, `match_file_restriction` is typically the dead file itself — the issue _is_ in that file
+regardless of how it's detected. However, `critic_scopes_expected_to_recall` may include other files: when existing code
+duplicates logic that the dead helper would simplify, a reviewer of those files could discover the dead code by
+searching for existing helpers. The two fields diverge in this case:
 
 ```yaml
 # Dead helper that would DRY up existing code
@@ -326,7 +335,8 @@ occurrences:
 
 ## Detection Standard (`critic_scopes_expected_to_recall`)
 
-The key question for `critic_scopes_expected_to_recall`: **"If I gave a high-quality critic this file set to review, and they failed to find this issue, would that be a failure on their part?"**
+The key question for `critic_scopes_expected_to_recall`: **"If I gave a high-quality critic this file set to review, and
+they failed to find this issue, would that be a failure on their part?"**
 
 ### What "reviewing files" includes:
 
@@ -457,7 +467,8 @@ class FalsePositiveOccurrence(BaseModel):
 ### Multi-occurrence Issues
 
 - All occurrences MUST have `note` field when there are multiple occurrences
-- If total unique files across ALL occurrences > 1, EVERY occurrence must have explicit `critic_scopes_expected_to_recall`
+- If total unique files across ALL occurrences > 1, EVERY occurrence must have explicit
+  `critic_scopes_expected_to_recall`
 
 ## File Naming
 

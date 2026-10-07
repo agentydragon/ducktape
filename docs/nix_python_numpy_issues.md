@@ -2,7 +2,8 @@
 
 ## Problem Summary
 
-When using Nix-managed Python with virtual environments (venv) and installing NumPy/Pandas via pip/uv, the packages fail to import due to missing shared libraries. This is a common issue when mixing Nix's Python with PyPI binary wheels.
+When using Nix-managed Python with virtual environments (venv) and installing NumPy/Pandas via pip/uv, the packages fail
+to import due to missing shared libraries. This is a common issue when mixing Nix's Python with PyPI binary wheels.
 
 ## Environment Details
 
@@ -63,7 +64,8 @@ ImportError: Error importing numpy: you should not try to import numpy from
 
 ## Root Cause
 
-PyPI wheels are compiled against standard Linux library locations (`/usr/lib`, `/lib`), but Nix stores libraries in `/nix/store/...`. When pip/uv installs these wheels, they can't find the required shared libraries at runtime.
+PyPI wheels are compiled against standard Linux library locations (`/usr/lib`, `/lib`), but Nix stores libraries in
+`/nix/store/...`. When pip/uv installs these wheels, they can't find the required shared libraries at runtime.
 
 ## Solutions Attempted
 
@@ -164,9 +166,8 @@ These tools automatically handle binary patching when building Python projects w
 
 ## Lessons Learned
 
-Known Nix-community issue (PyPI binary wheels assume FHS library paths; standard
-fixes are nix-ld / fix-python / FHS envs, tool-agnostic — not a uv problem). Our
-escape hatch: pyenv-built Python, which links against system libraries.
+Known Nix-community issue (PyPI binary wheels assume FHS library paths; standard fixes are nix-ld / fix-python / FHS
+envs, tool-agnostic — not a uv problem). Our escape hatch: pyenv-built Python, which links against system libraries.
 
 ## Working .envrc (Current Solution)
 

@@ -4,7 +4,8 @@ This tool re-executes search nodes from Tana JSON exports to analyze and compare
 
 ## Overview
 
-Tana exports contain search nodes with their results frozen at export time. This tool parses the search expressions and re-executes them against the node store to:
+Tana exports contain search nodes with their results frozen at export time. This tool parses the search expressions and
+re-executes them against the node store to:
 
 - Understand search semantics
 - Compare stored vs current results

@@ -3,8 +3,7 @@ title: Byte sizes use explicit units and a single source of truth
 kind: outcome
 ---
 
-Represent byte counts with explicit units.
-Prefer typed wrappers or clear suffixes when primitives are used.
+Represent byte counts with explicit units. Prefer typed wrappers or clear suffixes when primitives are used.
 
 ## Acceptance criteria (checklist)
 

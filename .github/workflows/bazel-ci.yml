@@ -41,10 +41,9 @@ on:
     outputs:
       bazel_invocation_ids:
         description: >
-          The Bazel invocations this run performed. Publish planners read what
-          these built — output digests, per-target test verdicts — rather than
-          rebuilding the same targets. Empty when the job did not run, which
-          callers must treat as "prove nothing", not "nothing changed".
+          The Bazel invocations this run performed. Publish planners read what these built — output digests, per-target
+          test verdicts — rather than rebuilding the same targets. Empty when the job did not run, which callers must
+          treat as "prove nothing", not "nothing changed".
         value: ${{ jobs.bazel-ci.outputs.bazel_invocation_ids }}
   workflow_dispatch:
 

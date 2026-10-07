@@ -2,7 +2,9 @@
 description: Verify documentation claims against actual code, finding and fixing stale or incorrect docs
 ---
 
-Systematically verify that documentation, comments, and docstrings accurately describe the actual codebase behavior. This is NOT a heuristic grep sweep - it requires actually reading, understanding, and cross-referencing documentation claims against real code.
+Systematically verify that documentation, comments, and docstrings accurately describe the actual codebase behavior.
+This is NOT a heuristic grep sweep - it requires actually reading, understanding, and cross-referencing documentation
+claims against real code.
 
 ## What This Command Does
 
@@ -184,8 +186,7 @@ Verification:
 
 > <quoted claim>
 
-**Actual:**
-<what the code actually does, with file:line references>
+**Actual:** <what the code actually does, with file:line references>
 
 **Evidence:**
 
@@ -195,8 +196,7 @@ Verification:
 ```
 ````
 
-**Suggested fix:**
-<proposed correction to documentation>
+**Suggested fix:** <proposed correction to documentation>
 
 ---
 

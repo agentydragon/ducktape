@@ -1,18 +1,16 @@
 # Haku self-hosted worker bring-up — RCA / gotchas (2026-06-23)
 
-First real activation of the in-cluster `haku-worker` (Managed Agents Runtime B,
-`ant beta:worker poll` in `haku-sandbox`). Activation surfaced a chain of
-independent failures, each masking the next. Recorded so we don't re-debug.
+First real activation of the in-cluster `haku-worker` (Managed Agents Runtime B, `ant beta:worker poll` in
+`haku-sandbox`). Activation surfaced a chain of independent failures, each masking the next. Recorded so we don't
+re-debug.
 
 ## Headline bug (upstream `ant`): empty tool output → session deadlock
 
-**Symptom:** a session reaches `running`, the model emits a tool call, then sits
-at `status: idle` forever (Console shows a spinner on that tool call); no
-`user.tool_result` is ever delivered.
+**Symptom:** a session reaches `running`, the model emits a tool call, then sits at `status: idle` forever (Console
+shows a spinner on that tool call); no `user.tool_result` is ever delivered.
 
-**Root cause:** when a tool produces **empty output**, `ant beta:worker poll`
-POSTs a tool result whose `content[0].text` is the empty string. The API rejects
-it and the worker gives up:
+**Root cause:** when a tool produces **empty output**, `ant beta:worker poll` POSTs a tool result whose
+`content[0].text` is the empty string. The API rejects it and the worker gives up:
 
 ```
 ERROR tool result send hit permanent 4xx; not retrying
@@ -21,61 +19,46 @@ ERROR tool result send hit permanent 4xx; not retrying
   dispatched tool=bash is_error=false posted=false
 ```
 
-The 400 is treated as permanent → not retried → result never lands → the session
-deadlocks on that tool. **Any** tool call whose result text is empty triggers it:
-a command with empty stdout that exits 0 (`cd`, `… | head` with no input,
+The 400 is treated as permanent → not retried → result never lands → the session deadlocks on that tool. **Any** tool
+call whose result text is empty triggers it: a command with empty stdout that exits 0 (`cd`, `… | head` with no input,
 `grep -q`), etc.
 
-**Confirmed in source** (repos cloned in `~/code`: `anthropic-cli`,
-`anthropic-sdk-go`). `ant` 1.12.1 is a Go binary built on `anthropic-sdk-go`
-**v1.50.1** (`anthropic-cli/go.mod`); its worker is `pkg/cmd/worker.go`, using
-the SDK's `tools/agenttoolset`. The deadlock is the SDK's, not `ant`-CLI-specific:
+**Confirmed in source** (repos cloned in `~/code`: `anthropic-cli`, `anthropic-sdk-go`). `ant` 1.12.1 is a Go binary
+built on `anthropic-sdk-go` **v1.50.1** (`anthropic-cli/go.mod`); its worker is `pkg/cmd/worker.go`, using the SDK's
+`tools/agenttoolset`. The deadlock is the SDK's, not `ant`-CLI-specific:
 
-- `anthropic-sdk-go tools/agenttoolset/agenttoolset.go:145 textResult(s)` builds
-  `BetaTextBlockParam{Text: s}` with **no empty guard** — `s==""` → `Text:""` →
-  the 400 above. **Identical in `v1.50.1` (shipped) and `main`** (the
-  `v1.50.1..main` diff touches none of this) — so it is unfixed upstream, and the
-  Go SDK `EnvironmentWorker` would deadlock the same way. Cloud sandboxes must
-  guard empty results server-side; the self-hosted worker doesn't.
-- The bash tool (`tools/agenttoolset/bash.go`) is **not** at fault: it wraps each
-  command as `{ <cmd>\n} </dev/null 2>&1; printf '\n<sentinel>%d\n' $?` — it
-  merges stderr (`2>&1`) and captures the real exit code. So a stderr-only,
-  non-zero command yields non-empty output + `is_error=true` (no 400). Our empty
-  result was a **genuinely empty stdout, exit 0** — not a capture/PTY/egress
-  failure.
+- `anthropic-sdk-go tools/agenttoolset/agenttoolset.go:145 textResult(s)` builds `BetaTextBlockParam{Text: s}` with **no
+  empty guard** — `s==""` → `Text:""` → the 400 above. **Identical in `v1.50.1` (shipped) and `main`** (the
+  `v1.50.1..main` diff touches none of this) — so it is unfixed upstream, and the Go SDK `EnvironmentWorker` would
+  deadlock the same way. Cloud sandboxes must guard empty results server-side; the self-hosted worker doesn't.
+- The bash tool (`tools/agenttoolset/bash.go`) is **not** at fault: it wraps each command as
+  `{ <cmd>\n} </dev/null 2>&1; printf '\n<sentinel>%d\n' $?` — it merges stderr (`2>&1`) and captures the real exit
+  code. So a stderr-only, non-zero command yields non-empty output + `is_error=true` (no 400). Our empty result was a
+  **genuinely empty stdout, exit 0** — not a capture/PTY/egress failure.
 
 **Exact trigger we hit** (base-sync, session `sesn_01U9fwo…`): the agent ran
-`git -C /workspace/ducktape log --oneline <pin>..HEAD -- haku/base haku/run.md 2>/dev/null | head -20`.
-The `--depth 1` clone lacked `<pin>` → git `fatal` → **suppressed by the agent's
-own `2>/dev/null`** → `head` got empty stdin → empty stdout, **exit 0** (head's
-code) → `is_error=false`, empty text → 400 → deadlock. So it was a real
-empty-output command, masked by the agent's `2>/dev/null | head`.
+`git -C /workspace/ducktape log --oneline <pin>..HEAD -- haku/base haku/run.md 2>/dev/null | head -20`. The `--depth 1`
+clone lacked `<pin>` → git `fatal` → **suppressed by the agent's own `2>/dev/null`** → `head` got empty stdin → empty
+stdout, **exit 0** (head's code) → `is_error=false`, empty text → 400 → deadlock. So it was a real empty-output command,
+masked by the agent's `2>/dev/null | head`.
 
 - Present in `ant` **1.12.1** (latest release, 2026-06-10) — no upgrade fixes it.
 - **Upstream issue (ours):
-  [anthropics/anthropic-sdk-go#377](https://github.com/anthropics/anthropic-sdk-go/issues/377)**
-  — filed in the repo that owns the buggy code (`tools/agenttoolset` +
-  `lib/environments`; `anthropic-cli` has issues disabled). Fix ask: `textResult`
-  / the worker must send a placeholder like `(no output)` for empty results.
-- Prior report
-  [anthropics/claude-code#65395](https://github.com/anthropics/claude-code/issues/65395)
-  (vs `ant` v1.9.0) was accurate but **bot-auto-closed as a duplicate of the
-  unrelated [#29447](https://github.com/anthropics/claude-code/issues/29447)** (a
-  compaction `tool_use`/`tool_result` mismatch — a different 400). #377 explains
-  why that dedup is wrong and that the bug persists on 1.12.1 / sdk-v1.50.1.
-- Diagnose by turning on `ANT_DEBUG=1` (worker Deployment env → global `ant
---debug`); the `tool result send hit permanent 4xx` line is the tell. Without
-  it the worker only logs `claimed work`.
+  [anthropics/anthropic-sdk-go#377](https://github.com/anthropics/anthropic-sdk-go/issues/377)** — filed in the repo
+  that owns the buggy code (`tools/agenttoolset` + `lib/environments`; `anthropic-cli` has issues disabled). Fix ask:
+  `textResult` / the worker must send a placeholder like `(no output)` for empty results.
+- Prior report [anthropics/claude-code#65395](https://github.com/anthropics/claude-code/issues/65395) (vs `ant` v1.9.0)
+  was accurate but **bot-auto-closed as a duplicate of the unrelated
+  [#29447](https://github.com/anthropics/claude-code/issues/29447)** (a compaction `tool_use`/`tool_result` mismatch — a
+  different 400). #377 explains why that dedup is wrong and that the bug persists on 1.12.1 / sdk-v1.50.1.
+- Diagnose by turning on `ANT_DEBUG=1` (worker Deployment env → global `ant --debug`); the
+  `tool result send hit permanent 4xx` line is the tell. Without it the worker only logs `claimed work`.
 - **Mitigations / fixes (in order of robustness):**
-  1. **Patch + build a custom `ant`** from `~/code/anthropic-cli` +
-     `anthropic-sdk-go` with the one-line empty guard in `textResult` — fully
-     robust; cost: maintenance + the repos are `no-license` (all rights
-     reserved).
-  2. **Reduce triggers**: full-enough clone so base-sync's `git log` resolves
-     (done: `--shallow-since="1 week ago"`); instruct Haku to never emit empty
-     stdout (`… || echo '(none)'`, avoid `2>/dev/null | head`). Fragile.
-  3. A `/bin/bash` wrapper can't help cleanly: the bash tool drives a persistent
-     interactive PTY shell, not `bash -c`.
+  1. **Patch + build a custom `ant`** from `~/code/anthropic-cli` + `anthropic-sdk-go` with the one-line empty guard in
+     `textResult` — fully robust; cost: maintenance + the repos are `no-license` (all rights reserved).
+  2. **Reduce triggers**: full-enough clone so base-sync's `git log` resolves (done: `--shallow-since="1 week ago"`);
+     instruct Haku to never emit empty stdout (`… || echo '(none)'`, avoid `2>/dev/null | head`). Fragile.
+  3. A `/bin/bash` wrapper can't help cleanly: the bash tool drives a persistent interactive PTY shell, not `bash -c`.
 
 ## The full chain (all fixed unless noted)
 
@@ -97,109 +80,84 @@ empty-output command, masked by the agent's `2>/dev/null | head`.
 ## Diagnostic recipes
 
 - **Worker debug logs:** the Python `worker.py` logs to stderr at `INFO`
-  (`kubectl logs deploy/haku-managed-agent -n haku-sandbox` — the Deployment was
-  renamed from `haku-worker`); the SDK's worker logs poll/claim/dispatch under the
-  `anthropic` logger.
-  (Historical, on the old `ant` worker: `ANT_DEBUG=1` → `ant --debug`, whose
-  `tool result send hit permanent 4xx` line was the empty-output tell.)
-- **Session timeline (control plane, org key):**
-  `ant beta:sessions:events list <sid>` — `agent.tool_use` vs `user.tool_result`
-  (match on `tool_use_id`); an unmatched `tool_use` is the stuck one. `is_error`
-  shows tool-level failures.
-- **Queue stats** (`ant beta:environments:work stats`) and **drain**
-  (`ant beta:environments:work stop --work-id`) need an org key with scope
-  `org:external_poll_sessions`; a plain `ant auth` OAuth token 400s/403s these.
-  Terminating a session does **not** drain its queued work item.
-- **`kubectl exec` into the worker:** PATH isn't set (no activation) — use
-  absolute `/sw/bin/...` or `export PATH=/sw/bin`. The launcher the pod runs is
-  `/sw/bin/haku-managed-agent-run`; the `haku-worker-*` names in the table above are
-  the ones in use at the time and no longer exist.
+  (`kubectl logs deploy/haku-managed-agent -n haku-sandbox` — the Deployment was renamed from `haku-worker`); the SDK's
+  worker logs poll/claim/dispatch under the `anthropic` logger. (Historical, on the old `ant` worker: `ANT_DEBUG=1` →
+  `ant --debug`, whose `tool result send hit permanent 4xx` line was the empty-output tell.)
+- **Session timeline (control plane, org key):** `ant beta:sessions:events list <sid>` — `agent.tool_use` vs
+  `user.tool_result` (match on `tool_use_id`); an unmatched `tool_use` is the stuck one. `is_error` shows tool-level
+  failures.
+- **Queue stats** (`ant beta:environments:work stats`) and **drain** (`ant beta:environments:work stop --work-id`) need
+  an org key with scope `org:external_poll_sessions`; a plain `ant auth` OAuth token 400s/403s these. Terminating a
+  session does **not** drain its queued work item.
+- **`kubectl exec` into the worker:** PATH isn't set (no activation) — use absolute `/sw/bin/...` or
+  `export PATH=/sw/bin`. The launcher the pod runs is `/sw/bin/haku-managed-agent-run`; the `haku-worker-*` names in the
+  table above are the ones in use at the time and no longer exist.
 
 ## Temporary settings to revert
 
-- `haku.agent.yaml` model is **Sonnet** (`TEMP(debugging)`); switch to
-  `claude-opus-5` and re-pin the deployment.
+- `haku.agent.yaml` model is **Sonnet** (`TEMP(debugging)`); switch to `claude-opus-5` and re-pin the deployment.
 - ~~`ANT_DEBUG=1`~~ — gone with the `ant` worker; `worker.py` logs at `INFO`.
-- mitmproxy `ignore_hosts` is a keeper, but has a `TODO` to tighten (currently
-  passes all of `api.anthropic.com`).
+- mitmproxy `ignore_hosts` is a keeper, but has a `TODO` to tighten (currently passes all of `api.anthropic.com`).
 
 ## `ant` is an independent implementation (not Claude Code)
 
-Checked whether `ant beta:worker poll` delegates tool execution to the `claude`
-Claude Code CLI (whose bash harness guards empty output, captures stderr, etc.)
-or reimplements the toolset. **It reimplements it.** `ant` is a statically
-linked Go binary (`anthropic-sdk-go`); its strings show a native in-process tool
-runner (`session-tool-runner`, `agent_toolset_20260401`, its own `start bash
-pty` + `TERM=dumb` runner, `[output truncated]`, native `glob`/`grep`) and **no
-`claude` CLI invocation** anywhere.
+Checked whether `ant beta:worker poll` delegates tool execution to the `claude` Claude Code CLI (whose bash harness
+guards empty output, captures stderr, etc.) or reimplements the toolset. **It reimplements it.** `ant` is a statically
+linked Go binary (`anthropic-sdk-go`); its strings show a native in-process tool runner (`session-tool-runner`,
+`agent_toolset_20260401`, its own `start bash pty` + `TERM=dumb` runner, `[output truncated]`, native `glob`/`grep`) and
+**no `claude` CLI invocation** anywhere.
 
-Implication for "switch to the SDK that runs Claude Code": there isn't one. The
-Managed Agents **SDK** `EnvironmentWorker` (Python/TS/Go) is _also_ an
-independent reimplementation of the same `agent_toolset_20260401` — not Claude
-Code. So switching SDKs does **not** buy Claude Code's harness. But the toolsets
-are **hand-rolled per language and not consistent with each other**, and that is
-the lever: the empty-output→400 guard exists in the **Python and TypeScript**
-SDKs but **not** the Go one.
+Implication for "switch to the SDK that runs Claude Code": there isn't one. The Managed Agents **SDK**
+`EnvironmentWorker` (Python/TS/Go) is _also_ an independent reimplementation of the same `agent_toolset_20260401` — not
+Claude Code. So switching SDKs does **not** buy Claude Code's harness. But the toolsets are **hand-rolled per language
+and not consistent with each other**, and that is the lever: the empty-output→400 guard exists in the **Python and
+TypeScript** SDKs but **not** the Go one.
 
 ## Resolution (2026-06-25): switch the worker to the Python SDK
 
-We replaced `ant` (Go) with `worker.py` on the official **anthropic Python SDK**.
-The empty-result deadlock is **Go-specific**, confirmed in source (repos cloned
-in `~/code`):
+We replaced `ant` (Go) with `worker.py` on the official **anthropic Python SDK**. The empty-result deadlock is
+**Go-specific**, confirmed in source (repos cloned in `~/code`):
 
-- **Go (buggy):** `anthropic-sdk-go tools/agenttoolset/agenttoolset.go:145
-textResult(s)` → `BetaTextBlockParam{Text: s}`, no empty guard → the 400.
-- **Python (guarded):** `anthropic-sdk-python
-src/anthropic/lib/tools/_beta_session_runner.py:235` bridges a tool's string
-  result with `content or "(no output)"` (and the block-list path / final
-  fallback likewise default to `"(no output)"`). So an empty tool result becomes
-  `(no output)` — no 400, no deadlock. The TS SDK guards it too.
+- **Go (buggy):** `anthropic-sdk-go tools/agenttoolset/agenttoolset.go:145 textResult(s)` →
+  `BetaTextBlockParam{Text: s}`, no empty guard → the 400.
+- **Python (guarded):** `anthropic-sdk-python src/anthropic/lib/tools/_beta_session_runner.py:235` bridges a tool's
+  string result with `content or "(no output)"` (and the block-list path / final fallback likewise default to
+  `"(no output)"`). So an empty tool result becomes `(no output)` — no 400, no deadlock. The TS SDK guards it too.
 
-Why not just bump the **Bazel** lockfile to a guarded `anthropic`: we can't.
-`agent-framework-anthropic` (used by `haku/runtime/agent`) hard-pins
-`anthropic<0.80.1,>=0.80.0` on **every** release through the latest
-(`1.0.0b260618`, checked 2026-06-25) — and the Managed Agents worker lib
-(`anthropic.lib.environments`) only landed ~0.111. So the worker's `anthropic`
-0.111 is pinned **independently in `nixos.nix`** (a `python3` override on the
-worker closure only), and `worker.py` is a baked script excluded from Bazel —
-not in the shared lockfile. See `nixos.nix` + `worker.py` + the local
-`BUILD.bazel`.
+Why not just bump the **Bazel** lockfile to a guarded `anthropic`: we can't. `agent-framework-anthropic` (used by
+`haku/runtime/agent`) hard-pins `anthropic<0.80.1,>=0.80.0` on **every** release through the latest (`1.0.0b260618`,
+checked 2026-06-25) — and the Managed Agents worker lib (`anthropic.lib.environments`) only landed ~0.111. So the
+worker's `anthropic` 0.111 is pinned **independently in `nixos.nix`** (a `python3` override on the worker closure only),
+and `worker.py` is a baked script excluded from Bazel — not in the shared lockfile. See `nixos.nix` + `worker.py` + the
+local `BUILD.bazel`.
 
-The Go artifacts are **kept** for possible future use: the `anthropic-cli`
-package stays in `nix/packages/` and the devshell (just no longer baked into the
-worker image), and the upstream issue
-[anthropic-sdk-go#377](https://github.com/anthropics/anthropic-sdk-go/issues/377)
-tracks a Go-side fix. If `#377` lands and the Bazel-lockfile pin ever frees up,
-revisiting a Go worker (or re-unifying on the SDK lockfile) is open.
+The Go artifacts are **kept** for possible future use: the `anthropic-cli` package stays in `nix/packages/` and the
+devshell (just no longer baked into the worker image), and the upstream issue
+[anthropic-sdk-go#377](https://github.com/anthropics/anthropic-sdk-go/issues/377) tracks a Go-side fix. If `#377` lands
+and the Bazel-lockfile pin ever frees up, revisiting a Go worker (or re-unifying on the SDK lockfile) is open.
 
-Tiers we considered but didn't need: reimplementing the toolset against the SDK
-worker protocol (the `tools=` factory hook accepts custom `BetaTool`s — useful
-only for Claude-Code-grade behavior like spill-large-output-to-file, which the
-stock toolset lacks), or a from-scratch poll/heartbeat/lease loop (heavy; the
-protocol is beta and churning — `worker.go` is ~526 LOC of lease subtlety).
+Tiers we considered but didn't need: reimplementing the toolset against the SDK worker protocol (the `tools=` factory
+hook accepts custom `BetaTool`s — useful only for Claude-Code-grade behavior like spill-large-output-to-file, which the
+stock toolset lacks), or a from-scratch poll/heartbeat/lease loop (heavy; the protocol is beta and churning —
+`worker.go` is ~526 LOC of lease subtlety).
 
 ## Current state & next steps (as of 2026-06-23)
 
-**Working:** worker runs the closure unprivileged; claims sessions; executes
-read/bash/kubectl/git with the agent on Sonnet v2; the mitmproxy passthrough
-fixed the session-stream deadlock; a full scan pass ran with 0 tool errors until
-it hit the empty-`git log` deadlock.
+**Working:** worker runs the closure unprivileged; claims sessions; executes read/bash/kubectl/git with the agent on
+Sonnet v2; the mitmproxy passthrough fixed the session-stream deadlock; a full scan pass ran with 0 tool errors until it
+hit the empty-`git log` deadlock.
 
-**Landed on `devel`:** all 12 fixes above (image diffID, closure-direct runtime,
-`/bin/bash`, `/home/haku`, Forgejo mirror + `.netrc` host, mitmproxy passthrough,
-relative-path prompt, `--shallow-since="1 week ago"`). Agent updated to v2
-(Sonnet) and the deployment re-pinned to it via `ant`.
+**Landed on `devel`:** all 12 fixes above (image diffID, closure-direct runtime, `/bin/bash`, `/home/haku`, Forgejo
+mirror + `.netrc` host, mitmproxy passthrough, relative-path prompt, `--shallow-since="1 week ago"`). Agent updated to
+v2 (Sonnet) and the deployment re-pinned to it via `ant`.
 
 **Pending / open:**
 
-- Deploy + verify the `--shallow-since` image (commit `1ac0930196`) — confirm
-  base-sync's `git log <pin>..HEAD` now returns non-empty and the session
-  completes (commits `haku-state`).
-- ~~**Empty-result→400 deadlock is unfixed**~~ — superseded two days later by the
-  Python-SDK switch above; the Go-side fix is still open upstream as
-  [anthropic-sdk-go#377](https://github.com/anthropics/anthropic-sdk-go/issues/377),
-  which only matters if a Go worker is ever revisited.
-- Manual, non-turnkey prereq: bump the Forgejo `agentydragon/ducktape` mirror.
-  The `haku` read-collaborator grants are Terraform-managed in
-  `tf/gitops/forgejo-agentydragon-repos`.
+- Deploy + verify the `--shallow-since` image (commit `1ac0930196`) — confirm base-sync's `git log <pin>..HEAD` now
+  returns non-empty and the session completes (commits `haku-state`).
+- ~~**Empty-result→400 deadlock is unfixed**~~ — superseded two days later by the Python-SDK switch above; the Go-side
+  fix is still open upstream as [anthropic-sdk-go#377](https://github.com/anthropics/anthropic-sdk-go/issues/377), which
+  only matters if a Go worker is ever revisited.
+- Manual, non-turnkey prereq: bump the Forgejo `agentydragon/ducktape` mirror. The `haku` read-collaborator grants are
+  Terraform-managed in `tf/gitops/forgejo-agentydragon-repos`.
 - Revert the temporary settings above once stable.

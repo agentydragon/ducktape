@@ -70,18 +70,17 @@ The Nix config at `nix/home/codex/default.nix` sets up profiles for both backend
 
 ## Known Issues
 
-1. **vLLM Responses API broken for multi-turn**: vLLM's `/v1/responses` endpoint
-   mishandles GPT-OSS harmony format on turn 2+ (reasoning_text parsing fails).
-   Tracked in [vllm#28262](https://github.com/vllm-project/vllm/issues/28262).
-   Workaround: use Chat Completions API (`wire_api = "chat"` in Codex config).
-   Single-turn `/v1/responses` calls work fine.
+1. **vLLM Responses API broken for multi-turn**: vLLM's `/v1/responses` endpoint mishandles GPT-OSS harmony format on
+   turn 2+ (reasoning_text parsing fails). Tracked in [vllm#28262](https://github.com/vllm-project/vllm/issues/28262).
+   Workaround: use Chat Completions API (`wire_api = "chat"` in Codex config). Single-turn `/v1/responses` calls work
+   fine.
 2. **vLLM streaming bugs**: Tool calls may be missing when `stream=True`.
 3. **Ollama tool calling**: May have different behavior than vLLM.
 
 ## TODO
 
-- Try [chutesai/responses-proxy](https://github.com/chutesai/responses-proxy)
-  as a Responses→Chat Completions translator in front of vLLM.
+- Try [chutesai/responses-proxy](https://github.com/chutesai/responses-proxy) as a Responses→Chat Completions translator
+  in front of vLLM.
 - Try SGLang or TensorRT-LLM as alternative backends (may have working Responses API).
 - Try GPT-OSS-120B with `--tensor-parallel-size 2` across both RTX 5090s (needs ~56-80GB, have 64GB).
 - Re-test vLLM Responses API after vllm#28262 is fixed.

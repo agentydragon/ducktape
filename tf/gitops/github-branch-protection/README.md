@@ -1,7 +1,6 @@
 # GitHub Branch Protection
 
-This Terraform module manages branch protection for
-`agentydragon/ducktape` through a `github_repository_ruleset` on
+This Terraform module manages branch protection for `agentydragon/ducktape` through a `github_repository_ruleset` on
 `refs/heads/devel` and `refs/heads/main`.
 
 ## Current Rules
@@ -13,62 +12,49 @@ This Terraform module manages branch protection for
   - `Gazelle diff`
   - `Build artifacts + imports check`
 - Deletion, force-push, and non-linear history are blocked.
-- Pull requests are required so required checks can run, but the solo-repo
-  review count is zero.
+- Pull requests are required so required checks can run, but the solo-repo review count is zero.
 
-The module runs from Flux at `cluster/generated/github-tf/` and
-authenticates with `flux-system/github-secrets-sync-pat`. That PAT needs
-GitHub Administration read/write because GitHub exposes rulesets under the
-repository-administration API.
+The module runs from Flux at `cluster/generated/github-tf/` and authenticates with
+`flux-system/github-secrets-sync-pat`. That PAT needs GitHub Administration read/write because GitHub exposes rulesets
+under the repository-administration API.
 
 ## Bypass Actors
 
-- `RepositoryRole=admin` (`actor_id = 5`): owner pushes and in-cluster
-  automations that still push as the owner via PAT.
-- `Integration=ducktape-automation` (`actor_id = 3590331`): workflows and Flux
-  GitRepository writers that mint installation tokens for the
-  `ducktape-automation` GitHub App.
+- `RepositoryRole=admin` (`actor_id = 5`): owner pushes and in-cluster automations that still push as the owner via PAT.
+- `Integration=ducktape-automation` (`actor_id = 3590331`): workflows and Flux GitRepository writers that mint
+  installation tokens for the `ducktape-automation` GitHub App.
 
-Use the App bypass for automation that must push directly to protected
-branches. The built-in `github-actions` integration is not available as a
-bypass actor on personal-account repositories, which is why the dedicated App
-exists. App identifiers, permissions, and key rotation live in
-`secrets/ducktape_automation.README.md`.
+Use the App bypass for automation that must push directly to protected branches. The built-in `github-actions`
+integration is not available as a bypass actor on personal-account repositories, which is why the dedicated App exists.
+App identifiers, permissions, and key rotation live in `secrets/ducktape_automation.README.md`.
 
 ## GitHub Plan Limits
 
-`enforcement = "evaluate"` is GitHub Enterprise-only for this account. Applying
-that dry-run mode returned:
+`enforcement = "evaluate"` is GitHub Enterprise-only for this account. Applying that dry-run mode returned:
 
 ```text
 422 "Enforcement evaluate option is not supported on this plan. Please upgrade to Enterprise"
 ```
 
-The ruleset therefore went straight to `active` after verifying the exact
-required-check contexts against a real PR head and reusing bypass actors from
-the previously active main-only ruleset.
+The ruleset therefore went straight to `active` after verifying the exact required-check contexts against a real PR head
+and reusing bypass actors from the previously active main-only ruleset.
 
-`agentydragon/gaffer-private` is not protected by this module. On GitHub Free,
-branch protection for private repositories is unavailable for both modern
-rulesets and classic branch protection; both APIs returned:
+`agentydragon/gaffer-private` is not protected by this module. On GitHub Free, branch protection for private
+repositories is unavailable for both modern rulesets and classic branch protection; both APIs returned:
 
 ```text
 403 Upgrade to GitHub Pro or make this repository public to enable this feature.
 ```
 
-Protecting `gaffer-private/main` requires upgrading the account to GitHub Pro
-or making the repository public. Until then, it relies on repository write
-access control plus the `ducktape-automation` App for GitOps writes.
+Protecting `gaffer-private/main` requires upgrading the account to GitHub Pro or making the repository public. Until
+then, it relies on repository write access control plus the `ducktape-automation` App for GitOps writes.
 
 ## Remaining Cleanup
 
-- The ruleset now requires all four independent PR merge gates. `Gazelle diff`
-  catches generated BUILD-file drift, while `Build artifacts + imports check`
-  (the `Nix wheel check` workflow's job name; see
-  <../../../.github/workflows/nix-wheel-check.yml>) catches Nix artifact and
-  import drift.
-- Verify whether GitHub Secret Protection covers push protection on private
-  personal-account repos now, then enable or explicitly reject it for
-  `gaffer-private`.
-- Retire the Flux bootstrap git secret/deploy key for `agentydragon/ducktape`
-  if the root GitRepository moves to GitHub App auth.
+- The ruleset now requires all four independent PR merge gates. `Gazelle diff` catches generated BUILD-file drift, while
+  `Build artifacts + imports check` (the `Nix wheel check` workflow's job name; see
+  <../../../.github/workflows/nix-wheel-check.yml>) catches Nix artifact and import drift.
+- Verify whether GitHub Secret Protection covers push protection on private personal-account repos now, then enable or
+  explicitly reject it for `gaffer-private`.
+- Retire the Flux bootstrap git secret/deploy key for `agentydragon/ducktape` if the root GitRepository moves to GitHub
+  App auth.

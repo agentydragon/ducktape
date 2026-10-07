@@ -1,279 +1,235 @@
 # Haku TODO
 
-Project-level TODOs for Haku. Design rationale lives in `PLAN.md`; this is the
-actionable checklist. Remove entries once done. Component-specific detail stays in the
-component checklist rather than being copied here: haku-console's tool/API backlog is
-<console/TODO.md>, while the remaining OAuth/identity rationale and sequencing is
+Project-level TODOs for Haku. Design rationale lives in `PLAN.md`; this is the actionable checklist. Remove entries once
+done. Component-specific detail stays in the component checklist rather than being copied here: haku-console's tool/API
+backlog is <console/TODO.md>, while the remaining OAuth/identity rationale and sequencing is
 <../plans/oauth_architecture.md>.
 
 ## Immediate correctness and security
 
-- **Make independent haku-console rollouts skew-safe.** Do not bundle the server image, static
-  image, and live config into a bespoke atomic promotion unit. Define and test compatibility across
-  one rollout window instead: deploy readers before writers for config changes; make server API
-  additions available before the static frontend consumes them; remove old fields/endpoints only
-  after every consumer has moved. CI should exercise the server against the current and next config
-  shapes and the frontend against its supported server contract. Revisit the current `Recreate`
-  strategy so a failed replacement does not discard the last serving version. The 2026-07-14
-  authority cutover is the regression case: new config restarted the old incompatible server and
-  caused an outage until image automation caught up.
-- **Prove retry-safe tool-call admission.** Add fault injection for "the durable admission commit
-  succeeded, the HTTP/MCP response was lost, and the caller retried." Specify and implement a
-  caller-visible idempotency key scoped by canonical Operator and Agent binding if the current path
-  can create two executions. Preserve the exact binding generation in the deduplication boundary.
-- **Recover tool calls stranded in `RUNNING` without guessing their external outcome.** Add fault
-  injection for a pod/process loss both after the `RUNNING` commit but before backend execution and
-  after backend success but before terminal persistence. Specify an explicit unknown-outcome state
-  plus attempt/lease ownership, surface stale calls to the Operator, and reconcile them without
-  blindly retrying non-idempotent tools. A timeout alone must not turn an unknown external outcome
-  into either success, failure, or a second execution.
-- **Add public-client abuse controls if public DCR remains enabled.** Bound enrollment and
-  registration attempts with Haku-side rate limits and transaction quotas. FastMCP continues to
-  own protocol validation and TTLs; Haku owns enrollment interaction and activation limits.
+- **Make independent haku-console rollouts skew-safe.** Do not bundle the server image, static image, and live config
+  into a bespoke atomic promotion unit. Define and test compatibility across one rollout window instead: deploy readers
+  before writers for config changes; make server API additions available before the static frontend consumes them;
+  remove old fields/endpoints only after every consumer has moved. CI should exercise the server against the current and
+  next config shapes and the frontend against its supported server contract. Revisit the current `Recreate` strategy so
+  a failed replacement does not discard the last serving version. The 2026-07-14 authority cutover is the regression
+  case: new config restarted the old incompatible server and caused an outage until image automation caught up.
+- **Prove retry-safe tool-call admission.** Add fault injection for "the durable admission commit succeeded, the
+  HTTP/MCP response was lost, and the caller retried." Specify and implement a caller-visible idempotency key scoped by
+  canonical Operator and Agent binding if the current path can create two executions. Preserve the exact binding
+  generation in the deduplication boundary.
+- **Recover tool calls stranded in `RUNNING` without guessing their external outcome.** Add fault injection for a
+  pod/process loss both after the `RUNNING` commit but before backend execution and after backend success but before
+  terminal persistence. Specify an explicit unknown-outcome state plus attempt/lease ownership, surface stale calls to
+  the Operator, and reconcile them without blindly retrying non-idempotent tools. A timeout alone must not turn an
+  unknown external outcome into either success, failure, or a second execution.
+- **Add public-client abuse controls if public DCR remains enabled.** Bound enrollment and registration attempts with
+  Haku-side rate limits and transaction quotas. FastMCP continues to own protocol validation and TTLs; Haku owns
+  enrollment interaction and activation limits.
 
 ## Agent and Operator product work
 
-The canonical authority/enrollment cutover and migration squash are complete. These are product
-slices over the deployed schema, not another identity migration:
+The canonical authority/enrollment cutover and migration squash are complete. These are product slices over the deployed
+schema, not another identity migration:
 
-- **Connected Agents:** ship an Operator-scoped API and trusted-console UI showing canonical Agent
-  name/status, safe client metadata, scopes, binding generations, creation time, last-authenticated
-  time, and reconnect history. Do not call inactivity "disconnected" or expose secrets/raw OAuth
-  metadata. The existing schema is sufficient for this slice; do not block it on schema cleanup.
-- **Agent-filtered tool-call history:** add an optional canonical `agent_id` backend filter and UI
-  control. Apply authenticated `operator_id` first and Agent scope second. A foreign Agent UUID
-  returns an empty result rather than revealing existence.
-- **Lifecycle controls:** stage Operator-owned revoke/disable, rename, and tombstone/reconnect
-  history as separate API + UI + audit slices. Distinguish revoking one binding/grant from disabling
-  the Agent and all usable bindings. Keep names required, normalized, and globally unique; decide
-  whether rename history is a product requirement before adding another reservation/audit table.
-- **`tools/list_changed` when an Agent's policy changes:** the policy graph is already per-Agent and
-  config-driven (`console/auto_approval.py`'s registry over the `auto_approval_policies` and
-  per-agent `auto_approval_policy:` keys in `cluster/cdk8s/haku/console_config.py`), and an Operator
-  can reassign an OAuth Agent's policy in Settings. What is missing is the notification: a connected
-  client enumerated its tool surface once, so an edit that moves a tool between pass-through and
-  approval-wrapped does not reach it until it reconnects.
+- **Connected Agents:** ship an Operator-scoped API and trusted-console UI showing canonical Agent name/status, safe
+  client metadata, scopes, binding generations, creation time, last-authenticated time, and reconnect history. Do not
+  call inactivity "disconnected" or expose secrets/raw OAuth metadata. The existing schema is sufficient for this slice;
+  do not block it on schema cleanup.
+- **Agent-filtered tool-call history:** add an optional canonical `agent_id` backend filter and UI control. Apply
+  authenticated `operator_id` first and Agent scope second. A foreign Agent UUID returns an empty result rather than
+  revealing existence.
+- **Lifecycle controls:** stage Operator-owned revoke/disable, rename, and tombstone/reconnect history as separate API +
+  UI + audit slices. Distinguish revoking one binding/grant from disabling the Agent and all usable bindings. Keep names
+  required, normalized, and globally unique; decide whether rename history is a product requirement before adding
+  another reservation/audit table.
+- **`tools/list_changed` when an Agent's policy changes:** the policy graph is already per-Agent and config-driven
+  (`console/auto_approval.py`'s registry over the `auto_approval_policies` and per-agent `auto_approval_policy:` keys in
+  `cluster/cdk8s/haku/console_config.py`), and an Operator can reassign an OAuth Agent's policy in Settings. What is
+  missing is the notification: a connected client enumerated its tool surface once, so an edit that moves a tool between
+  pass-through and approval-wrapped does not reach it until it reconnects.
 
 ## Console and authority consolidation
 
-- After the Connected Agents read contract provides evidence about which joins really hurt,
-  simplify the authority schema: remove the deferred name-reservation ownership cycle and
-  speculative client-software fields, consider the relational `operator_id`-or-`binding_id`
-  discriminated union directly on tool calls, remove deployment-only `secret_reference`, and prune
-  redundant trigger functions while retaining genuine cross-row security invariants. This is a
-  deliberate migration, not a five-second cleanup.
+- After the Connected Agents read contract provides evidence about which joins really hurt, simplify the authority
+  schema: remove the deferred name-reservation ownership cycle and speculative client-software fields, consider the
+  relational `operator_id`-or-`binding_id` discriminated union directly on tool calls, remove deployment-only
+  `secret_reference`, and prune redundant trigger functions while retaining genuine cross-row security invariants. This
+  is a deliberate migration, not a five-second cleanup.
 
 ## Google connection ownership and Airlock
 
-- **Decide `haku_routine` ownership independently.** The Google singleton decision does not define
-  whether every Operator should share one routine launcher. Specify whether the launcher is a
-  global Haku capability or an Operator-owned downstream resource before relying on it in a
-  multi-Operator console.
+- **Decide `haku_routine` ownership independently.** The Google singleton decision does not define whether every
+  Operator should share one routine launcher. Specify whether the launcher is a global Haku capability or an
+  Operator-owned downstream resource before relying on it in a multi-Operator console.
 
 ## Cross-cutting OAuth/Auth infrastructure
 
-- **Keep Airlock credential-only while it remains:** it may own provider consent, refresh-token
-  custody, and access-token publication. Do not add MCP ingress, tool execution, agent policy, or
-  an operator-approval queue back to it; those are Haku Console responsibilities.
-- **Typed auth configuration:** replace optional-heavy incoming/outgoing auth configurations with
-  role-specific discriminated models and typed scope domains, atomically per consumer. Keep
-  credentialed-facade and identity-delegation constructors separate.
-- **Shared browser OIDC helper:** extract only genuinely common Authlib/Starlette relying-party
-  behavior from Haku and Props. Migrate Study Casino away from username authority to a local UUID
-  plus exact `(issuer, subject)` identity.
-- **Singular Authentik ownership:** inventory remaining provider/application/controller ownership,
-  assign shared mappings one controller, update `cluster/docs/mcp_oauth_authentik_notes.md`, and add
-  drift checks.
+- **Keep Airlock credential-only while it remains:** it may own provider consent, refresh-token custody, and
+  access-token publication. Do not add MCP ingress, tool execution, agent policy, or an operator-approval queue back to
+  it; those are Haku Console responsibilities.
+- **Typed auth configuration:** replace optional-heavy incoming/outgoing auth configurations with role-specific
+  discriminated models and typed scope domains, atomically per consumer. Keep credentialed-facade and
+  identity-delegation constructors separate.
+- **Shared browser OIDC helper:** extract only genuinely common Authlib/Starlette relying-party behavior from Haku and
+  Props. Migrate Study Casino away from username authority to a local UUID plus exact `(issuer, subject)` identity.
+- **Singular Authentik ownership:** inventory remaining provider/application/controller ownership, assign shared
+  mappings one controller, update `cluster/docs/mcp_oauth_authentik_notes.md`, and add drift checks.
 
 ## New read-only sources to wire
 
-Each follows the same pattern: a read-only credential or filter facade reachable
-from `haku-sandbox`, plus a source guide in haku-state (and any reusable technique
-as a pass in its `procedures/`).
+Each follows the same pattern: a read-only credential or filter facade reachable from `haku-sandbox`, plus a source
+guide in haku-state (and any reusable technique as a pass in its `procedures/`).
 
-- **Cluster Forgejo repos** — read access to `ducktape` and `gaffer-private`
-  if/when they're migrated or mirrored to the cluster Forgejo: grant the `haku`
-  Forgejo user read, add a repo-activity playbook (open PRs/issues/review
-  requests needing attention). `gaffer-private` stays private.
-- **ActivityWatch** — read-only access to activity-tracking data once it's ready
-  (currently suspended; see `cluster/` ActivityWatch). Useful for time-use
-  patterns and "what changed in your routine" reasoning (e.g. cross-referencing
-  CPAP weekend leakage with weekend activity).
-- **Google scopes** — the airlock grant now carries Gmail, Calendar, Drive
-  (+ activity), Contacts, Docs, Sheets, Slides, Tasks, and YouTube read-only.
-  Re-consent at airlock's OAuth Providers page after adding scopes for the live
-  token to pick them up (the Drift row flags what's missing). Google **Keep** is
-  not pursuable on this account — its API is Workspace-only and this is a personal
-  Google account — so `keep_notes` stays an illustrative example only. Further
+- **Cluster Forgejo repos** — read access to `ducktape` and `gaffer-private` if/when they're migrated or mirrored to the
+  cluster Forgejo: grant the `haku` Forgejo user read, add a repo-activity playbook (open PRs/issues/review requests
+  needing attention). `gaffer-private` stays private.
+- **ActivityWatch** — read-only access to activity-tracking data once it's ready (currently suspended; see `cluster/`
+  ActivityWatch). Useful for time-use patterns and "what changed in your routine" reasoning (e.g. cross-referencing CPAP
+  weekend leakage with weekend activity).
+- **Google scopes** — the airlock grant now carries Gmail, Calendar, Drive (+ activity), Contacts, Docs, Sheets, Slides,
+  Tasks, and YouTube read-only. Re-consent at airlock's OAuth Providers page after adding scopes for the live token to
+  pick them up (the Drift row flags what's missing). Google **Keep** is not pursuable on this account — its API is
+  Workspace-only and this is a personal Google account — so `keep_notes` stays an illustrative example only. Further
   read-only Google scopes light up the same way as added.
 
 ## Mutating-tool sources behind agentplane
 
-A source whose MCP server exposes mutating tools doesn't need a separate read-only filter
-facade: wire the full server as an agentplane ActionGroup (`cluster/cdk8s/agentplane/staging.py`)
-and let action policy filter it — reads go in a policy set bound to `claude-ai`
-(`actions_staging_policies.py`), and every mutating/paid/destructive call waits for operator
-approval. Backend authentication (a static bearer, or the operator's OAuth linkage) is separate
-from that tool policy.
+A source whose MCP server exposes mutating tools doesn't need a separate read-only filter facade: wire the full server
+as an agentplane ActionGroup (`cluster/cdk8s/agentplane/staging.py`) and let action policy filter it — reads go in a
+policy set bound to `claude-ai` (`actions_staging_policies.py`), and every mutating/paid/destructive call waits for
+operator approval. Backend authentication (a static bearer, or the operator's OAuth linkage) is separate from that tool
+policy.
 
 ## Autonomous write capabilities
 
-Haku's current contract has free tools plus approval-gated tool-call requests. This section is for
-new **free/autonomous** write tools: capabilities Haku may exercise without per-call operator
-approval because the server-side boundary makes them safe by construction. Wiring one on is still a
-doctrine change, not just a config line.
+Haku's current contract has free tools plus approval-gated tool-call requests. This section is for new
+**free/autonomous** write tools: capabilities Haku may exercise without per-call operator approval because the
+server-side boundary makes them safe by construction. Wiring one on is still a doctrine change, not just a config line.
 
 ## Wiring / hardening
 
-- **Pin the finance agent's permissions as a subset of Haku's, then close the BuildBuddy gap.**
-  Intent is in `cluster/docs/agent_rbac.md` (Haku directs the finance agent; the finance preset is a
-  weaker subset with its own Forgejo identity). Kubernetes already holds at resolved-permission level
-  (`test_agent_permission_superset_and_finance_parity`; adding `assert not uncovered(finance, haku)`
-  there states it directly). Still to cover: the two presets' egress policies and action policy sets,
-  compared by what they allow rather than by name. Known divergence: the finance preset has the
-  `buildbuddy` egress policy and Haku does not; give it to Haku or drop it from finance. Also decide
-  whether the finance preset's GitHub read action sets (public repos, `ducktape`, its fork,
-  `gaffer-private`) stay, since both presets already hold the `github-agentydragon-agent` PAT policy.
+- **Pin the finance agent's permissions as a subset of Haku's, then close the BuildBuddy gap.** Intent is in
+  `cluster/docs/agent_rbac.md` (Haku directs the finance agent; the finance preset is a weaker subset with its own
+  Forgejo identity). Kubernetes already holds at resolved-permission level
+  (`test_agent_permission_superset_and_finance_parity`; adding `assert not uncovered(finance, haku)` there states it
+  directly). Still to cover: the two presets' egress policies and action policy sets, compared by what they allow rather
+  than by name. Known divergence: the finance preset has the `buildbuddy` egress policy and Haku does not; give it to
+  Haku or drop it from finance. Also decide whether the finance preset's GitHub read action sets (public repos,
+  `ducktape`, its fork, `gaffer-private`) stay, since both presets already hold the `github-agentydragon-agent` PAT
+  policy.
 
-- **Verify the JWT mint** — confirm the `authentik-jwt-rotation` CronJob produces
-  `secrets/haku-k8s-jwt.yaml` (the `client_credentials`-as-`haku-k8s` flow with
-  `expected_group: haku`). The web home's whole kubectl path depends on it.
-- **Haku LiteLLM key** — `tf/gitops/litellm-api-key` → a `haku-sandbox` secret
-  for attribution / budget / kill-switch, if routing model calls through LiteLLM.
-- **Tighten egress** — narrow the `haku-sandbox` CCNP `toEntities: cluster` to
-  only Haku's named in-cluster sources (the gap `claude-sandbox` also accepts).
-- **Haku's agentplane principal is named `claude-ai`.** With haku-console being decommissioned,
-  Haku runs as a claude.ai/code agent whose agentplane-staging MCP connection authenticates as the
-  `claude-ai` ServiceAccount, so Haku's credentials (`forgejo-haku`, `haku-mailbox`) and the reads
-  it relies on are bound there (`cluster/cdk8s/agentplane/actions_staging_policies.py`). The name
-  describes the client connection, not the agent: any other claude.ai/code agent run through the
-  same connection is Haku as far as agentplane can tell. Not pressing while Haku is the only agent
-  on that connection. When it matters: connect the same MCP server again as a separate claude.ai
-  connection bound to its own ServiceAccount, one per agent, and move the Haku-owned bindings to
-  Haku's.
+- **Verify the JWT mint** — confirm the `authentik-jwt-rotation` CronJob produces `secrets/haku-k8s-jwt.yaml` (the
+  `client_credentials`-as-`haku-k8s` flow with `expected_group: haku`). The web home's whole kubectl path depends on it.
+- **Haku LiteLLM key** — `tf/gitops/litellm-api-key` → a `haku-sandbox` secret for attribution / budget / kill-switch,
+  if routing model calls through LiteLLM.
+- **Tighten egress** — narrow the `haku-sandbox` CCNP `toEntities: cluster` to only Haku's named in-cluster sources (the
+  gap `claude-sandbox` also accepts).
+- **Haku's agentplane principal is named `claude-ai`.** With haku-console being decommissioned, Haku runs as a
+  claude.ai/code agent whose agentplane-staging MCP connection authenticates as the `claude-ai` ServiceAccount, so
+  Haku's credentials (`forgejo-haku`, `haku-mailbox`) and the reads it relies on are bound there
+  (`cluster/cdk8s/agentplane/actions_staging_policies.py`). The name describes the client connection, not the agent: any
+  other claude.ai/code agent run through the same connection is Haku as far as agentplane can tell. Not pressing while
+  Haku is the only agent on that connection. When it matters: connect the same MCP server again as a separate claude.ai
+  connection bound to its own ServiceAccount, one per agent, and move the Haku-owned bindings to Haku's.
 
 ## Console — operator-facing dashboard
 
-The console design + action model live in `console/README.md`; the free-form-UI
-contract in `console/docs/containment.md`. (The launch-routine button itself
-has shipped on the capability tier — see the README.)
+The console design + action model live in `console/README.md`; the free-form-UI contract in
+`console/docs/containment.md`. (The launch-routine button itself has shipped on the capability tier — see the README.)
 
-- **Finish moving launch off the capability tier onto MCP approvals.** The `haku_routine`
-  in-process MCP server (`console/tools/routine.py`, tool `launch_routine`) now fires the
-  routine through the standard approval queue; the bespoke `capabilities.py` launch path and
-  the `requestLaunch` bridge verb are kept only for the transition. Remaining:
-  1. **haku-state:** migrate haku-ui to submit a `launch_routine` tool call through its backend
-     (the path it already uses for other tool calls) instead of posting `requestLaunch` over the
-     bridge; drop its `requestLaunch` usage + its own launch dialog (the approval drawer renders
-     the prompt now).
-  2. **ducktape:** once haku-ui is migrated, delete the launch-routine capability endpoint +
-     `LaunchRoutineRequest`, the `requestLaunch`/`launchResult` bridge protocol verbs
-     (`haku/shared/bridge_protocol/`), and the shell's launch `ConfirmDialog` branch; relocate the
-     shared `GET /api/capabilities/csrf` endpoint (used by the approval + operator-auth flows) so
-     `capabilities.py` can be removed.
-- **Recent routine executions + one-in-flight guard.** A read-only panel listing recent
-  runs of the claude-code-web routine (status, start time, link), and a guard that blocks
-  a second launch while one is in flight so a stray click can't fan out sessions. Both
-  need a routine-runs **listing** API — **none is known to exist** for `claude_code`
-  routines (only `/fire`), so until one surfaces the interim affordance is the deep-link
-  to the routine's `claude.ai/code` page (already surfaced in the console). When a listing
-  API exists, build the panel and adopt the `anthropic` Python SDK for the Anthropic calls
-  (migrating the launch POST onto it).
-- **Canned per-fire routine instructions.** The launch dialog now supports ad-hoc per-run
-  `text`; consider adding quick buttons for common instructions (e.g. "scan Gmail now",
-  "CPAP check", "triage open PRs"). Reuses the launch button's existing bearer + egress
-  perimeter. Docs: code.claude.com/docs/en/routines.
+- **Finish moving launch off the capability tier onto MCP approvals.** The `haku_routine` in-process MCP server
+  (`console/tools/routine.py`, tool `launch_routine`) now fires the routine through the standard approval queue; the
+  bespoke `capabilities.py` launch path and the `requestLaunch` bridge verb are kept only for the transition. Remaining:
+  1. **haku-state:** migrate haku-ui to submit a `launch_routine` tool call through its backend (the path it already
+     uses for other tool calls) instead of posting `requestLaunch` over the bridge; drop its `requestLaunch` usage + its
+     own launch dialog (the approval drawer renders the prompt now).
+  2. **ducktape:** once haku-ui is migrated, delete the launch-routine capability endpoint + `LaunchRoutineRequest`, the
+     `requestLaunch`/`launchResult` bridge protocol verbs (`haku/shared/bridge_protocol/`), and the shell's launch
+     `ConfirmDialog` branch; relocate the shared `GET /api/capabilities/csrf` endpoint (used by the approval +
+     operator-auth flows) so `capabilities.py` can be removed.
+- **Recent routine executions + one-in-flight guard.** A read-only panel listing recent runs of the claude-code-web
+  routine (status, start time, link), and a guard that blocks a second launch while one is in flight so a stray click
+  can't fan out sessions. Both need a routine-runs **listing** API — **none is known to exist** for `claude_code`
+  routines (only `/fire`), so until one surfaces the interim affordance is the deep-link to the routine's
+  `claude.ai/code` page (already surfaced in the console). When a listing API exists, build the panel and adopt the
+  `anthropic` Python SDK for the Anthropic calls (migrating the launch POST onto it).
+- **Canned per-fire routine instructions.** The launch dialog now supports ad-hoc per-run `text`; consider adding quick
+  buttons for common instructions (e.g. "scan Gmail now", "CPAP check", "triage open PRs"). Reuses the launch button's
+  existing bearer + egress perimeter. Docs: code.claude.com/docs/en/routines.
 
 ## Managed Agents runtimes — per-runtime TODOs
 
-Runtime-specific TODOs live with each runtime (the agent loop runs at Anthropic;
-the runtimes differ in where the sandbox runs — see
-<runtime/x/managed_agent/README.md>):
+Runtime-specific TODOs live with each runtime (the agent loop runs at Anthropic; the runtimes differ in where the
+sandbox runs — see <runtime/x/managed_agent/README.md>):
 
-- **Self-hosted worker (Runtime B)** — operator activation to go live:
-  <runtime/x/managed_agent/self_hosted/README.md> and its bring-up RCA.
-- **Anthropic-hosted cloud** — **PARKED (2026-07-04)**: the cloud control-plane
-  objects were deleted at Anthropic and `cluster/parked/cloud-agent-tf` is
-  suspended; see <runtime/x/managed_agent/anthropic_hosted/README.md> for the reason
+- **Self-hosted worker (Runtime B)** — operator activation to go live: <runtime/x/managed_agent/self_hosted/README.md>
+  and its bring-up RCA.
+- **Anthropic-hosted cloud** — **PARKED (2026-07-04)**: the cloud control-plane objects were deleted at Anthropic and
+  `cluster/parked/cloud-agent-tf` is suspended; see <runtime/x/managed_agent/anthropic_hosted/README.md> for the reason
   and the resume decision. Per-runtime TODO (mostly moot until resumed):
   <runtime/x/managed_agent/anthropic_hosted/TODO.md>.
 
 ## Later (post-v0)
 
-- **In-cluster runtime** — realized as `runtime/agent` (Runtime C, MAF
-  self-hosted loop) and `runtime/x/managed_agent/self_hosted` (Runtime B, Managed
-  Agents self-hosted worker; remaining wiring in its per-runtime TODO above). The
-  old `haku-scanner` image + CronJob idea is superseded.
-- **haku-traces** — push Claude Code transcripts to a store separate from
-  `haku-state` for replayability. Prefer `OTEL_LOG_RAW_API_BODIES=file:<dir>` over
-  parsing transcript JSONL: untruncated bodies as JSON plus a `body_ref` join key
-  back to the Loki events — see
-  [transcript collection](../devinfra/claude/plans/transcript_collection.md) § _Raw API bodies_.
-  If the loop ever runs on the **Claude Agent SDK**, a second mechanism exists: a
-  `SessionStore` adapter (`session_store` on `ClaudeAgentOptions`; `append`/`load` required,
+- **In-cluster runtime** — realized as `runtime/agent` (Runtime C, MAF self-hosted loop) and
+  `runtime/x/managed_agent/self_hosted` (Runtime B, Managed Agents self-hosted worker; remaining wiring in its
+  per-runtime TODO above). The old `haku-scanner` image + CronJob idea is superseded.
+- **haku-traces** — push Claude Code transcripts to a store separate from `haku-state` for replayability. Prefer
+  `OTEL_LOG_RAW_API_BODIES=file:<dir>` over parsing transcript JSONL: untruncated bodies as JSON plus a `body_ref` join
+  key back to the Loki events — see [transcript collection](../devinfra/claude/plans/transcript_collection.md) § _Raw
+  API bodies_. If the loop ever runs on the **Claude Agent SDK**, a second mechanism exists: a `SessionStore` adapter
+  (`session_store` on `ClaudeAgentOptions`; `append`/`load` required,
   `list_sessions`/`list_session_summaries`/`delete`/`list_subkeys` optional) — docs:
-  <https://code.claude.com/docs/en/agent-sdk/session-storage>. **Deliberately not done
-  first:** the adapter runs _inside_ the sandbox, so pointing it at the console's Postgres
-  would give a deliberately fenced pod egress to — and credentials for — a database outside
-  its perimeter. That trades the force-proxy fence for convenience. The direction to explore
-  instead is inverting it: the sandbox keeps writing local JSONL
-  (`$CLAUDE_CONFIG_DIR/projects/<encoded-cwd>/<session-id>.jsonl`) and the console _pulls_,
-  or the transcript ships out over the MCP path that is already permitted. Worth knowing
-  before building either way: the store is a best-effort **mirror** of the local file, not a
-  replacement (a dropped batch surfaces only as a `{type:"system", subtype:"mirror_error"}`
-  message, so it needs handling if "all transcripts" is the goal); retries can re-deliver, so
-  dedupe on `entry.uuid`; `load()` returns the full raw history including pre-compaction turns
-  that `get_session_messages_from_store()` has already collapsed into a summary; and it refuses
-  to combine with `persist_session=False` or file checkpointing. A conformance suite ships in
-  the package (`claude_agent_sdk.testing.run_session_store_conformance`), so an adapter is
-  testable without any Anthropic credentials.
-- **A memory-flush trigger.** Nothing currently nudges Haku to write durable notes
-  into `haku-state` before compaction — it runs on model goodwill, unlike OpenClaw's
-  pre-compaction flush (a silent turn reminding the agent to save to memory files).
-  Claude Code's `PreCompact` hook cannot reproduce it: it can block compaction or
-  return `additionalContext`, but that lands _after_ compaction and it cannot make
-  the agent take a turn. Two primitives that can: a **`Stop` hook** (can block the
-  stop and inject `additionalContext`, so needs gating — e.g. only when `haku-state`
-  has no commit this session), or a **`type: "agent"` hook on `PreCompact`** that
-  extracts to `haku-state` out-of-band without spending the main session's context.
-  Note `type: "command"` hooks are unsupported in Claude Code web, so this must be
-  `http` / `agent` / `prompt` / `mcp_tool` — an `http` or `mcp_tool` hook against
-  haku-console keeps the logic in reviewed code. Works on Runtime A today; not
-  coupled to the runtime question. Under the Agent SDK this is simpler still —
-  hooks there are in-process callbacks and Python has both `PreCompact` and `Stop`
-  (see <docs/agent_sdk_runtime.md>).
+  <https://code.claude.com/docs/en/agent-sdk/session-storage>. **Deliberately not done first:** the adapter runs
+  _inside_ the sandbox, so pointing it at the console's Postgres would give a deliberately fenced pod egress to — and
+  credentials for — a database outside its perimeter. That trades the force-proxy fence for convenience. The direction
+  to explore instead is inverting it: the sandbox keeps writing local JSONL
+  (`$CLAUDE_CONFIG_DIR/projects/<encoded-cwd>/<session-id>.jsonl`) and the console _pulls_, or the transcript ships out
+  over the MCP path that is already permitted. Worth knowing before building either way: the store is a best-effort
+  **mirror** of the local file, not a replacement (a dropped batch surfaces only as a
+  `{type:"system", subtype:"mirror_error"}` message, so it needs handling if "all transcripts" is the goal); retries can
+  re-deliver, so dedupe on `entry.uuid`; `load()` returns the full raw history including pre-compaction turns that
+  `get_session_messages_from_store()` has already collapsed into a summary; and it refuses to combine with
+  `persist_session=False` or file checkpointing. A conformance suite ships in the package
+  (`claude_agent_sdk.testing.run_session_store_conformance`), so an adapter is testable without any Anthropic
+  credentials.
+- **A memory-flush trigger.** Nothing currently nudges Haku to write durable notes into `haku-state` before compaction —
+  it runs on model goodwill, unlike OpenClaw's pre-compaction flush (a silent turn reminding the agent to save to memory
+  files). Claude Code's `PreCompact` hook cannot reproduce it: it can block compaction or return `additionalContext`,
+  but that lands _after_ compaction and it cannot make the agent take a turn. Two primitives that can: a **`Stop` hook**
+  (can block the stop and inject `additionalContext`, so needs gating — e.g. only when `haku-state` has no commit this
+  session), or a **`type: "agent"` hook on `PreCompact`** that extracts to `haku-state` out-of-band without spending the
+  main session's context. Note `type: "command"` hooks are unsupported in Claude Code web, so this must be `http` /
+  `agent` / `prompt` / `mcp_tool` — an `http` or `mcp_tool` hook against haku-console keeps the logic in reviewed code.
+  Works on Runtime A today; not coupled to the runtime question. Under the Agent SDK this is simpler still — hooks there
+  are in-process callbacks and Python has both `PreCompact` and `Stop` (see <docs/agent_sdk_runtime.md>).
 - **Auto-sync the Forgejo ducktape mirror, and decide whether agents may PR against it** —
-  `forgejo-http.forgejo:3000/haku/ducktape.git` exists but is not automatically mirrored, and
-  measured 3 commits behind `devel` (`97a23895` vs `a4c497f7`) on 2026-07-25. The sandbox
-  bootstrap therefore clones ducktape from **GitHub** instead, which works fine and is always
-  current, so nothing is blocked on this — but a stale in-cluster mirror is a trap for anyone
-  who reaches for it (base-sync against it silently under-reports contract changes). Either
-  mirror it on a schedule/webhook and point the bootstrap at it, or delete it so it can't be
-  picked up by mistake. The open design question is whether agents should be able to open PRs
-  against the in-cluster copy at all, and how those would flow back to GitHub.
-- **Harmonize the Forgejo host** — the same Forgejo is reached under two names and
-  every consumer has to know which: `forgejo-http.forgejo` in-cluster (git clones,
-  the `ducktape_haku` bzlmod `git_override`) and `git.allegedly.works` publicly
-  (the CLI's REST readers, `tools/ci_wait.sh`). Credentials, `.netrc` entries, and
-  `NO_PROXY` all have to be written twice, and a missing second entry fails as a
-  bare 404 (`haku read --source cpap` in the sandbox, 2026-07-24). Pick one name
-  that resolves both inside and outside the cluster and collapse the duplication.
-- **tier-2 execution** — haku-owned execution behind stronger gating, only if
-  handoff-via-prompt proves too slow for routine actions.
-- **Precise effort/cost model** — today effort budgeting is a rough heuristic
-  (operator value-of-time anchor in `memory/` vs. a hand-wavy "tokens loosely track
-  cost" proxy; see haku-state's effort-budgeting guidance). Make it concrete: actual
-  per-run token/$ accounting (e.g. from LiteLLM/Langfuse), a real estimate of model
-  cost (e.g. Opus 4.8 per-token), and a defensible mapping from "agent effort" to
-  "value of the operator's time" so Haku can decide research depth on more than a vibe.
-- **Narrow the sandbox's GitHub grant, and make it steerable at runtime** — the Claude
-  sandbox now reaches GitHub as `agentydragon-agent`, and that grant is all-or-nothing: the
-  egress proxy substitutes the PAT for any request to `github.com` / `api.github.com` /
-  `codeload.github.com`, so every repo the account can touch is in scope for the whole
-  session. Two wants, roughly independent. **Per-repo scoping:** the proxy already sees the
-  request path, so a rule could allow `agentydragon/ducktape` and refuse the rest — the
-  cheaper half, and it turns a standing grant into a reviewable list. A GitHub App
-  installation token scoped to selected repositories would enforce it at the far end instead,
-  which is stronger and more work. **Runtime control:** being able to widen or revoke what
-  the proxy permits mid-session, rather than only by editing a manifest and rolling the pod —
-  the same shape as the approval queue, applied to egress rather than to tool calls.
+  `forgejo-http.forgejo:3000/haku/ducktape.git` exists but is not automatically mirrored, and measured 3 commits behind
+  `devel` (`97a23895` vs `a4c497f7`) on 2026-07-25. The sandbox bootstrap therefore clones ducktape from **GitHub**
+  instead, which works fine and is always current, so nothing is blocked on this — but a stale in-cluster mirror is a
+  trap for anyone who reaches for it (base-sync against it silently under-reports contract changes). Either mirror it on
+  a schedule/webhook and point the bootstrap at it, or delete it so it can't be picked up by mistake. The open design
+  question is whether agents should be able to open PRs against the in-cluster copy at all, and how those would flow
+  back to GitHub.
+- **Harmonize the Forgejo host** — the same Forgejo is reached under two names and every consumer has to know which:
+  `forgejo-http.forgejo` in-cluster (git clones, the `ducktape_haku` bzlmod `git_override`) and `git.allegedly.works`
+  publicly (the CLI's REST readers, `tools/ci_wait.sh`). Credentials, `.netrc` entries, and `NO_PROXY` all have to be
+  written twice, and a missing second entry fails as a bare 404 (`haku read --source cpap` in the sandbox, 2026-07-24).
+  Pick one name that resolves both inside and outside the cluster and collapse the duplication.
+- **tier-2 execution** — haku-owned execution behind stronger gating, only if handoff-via-prompt proves too slow for
+  routine actions.
+- **Precise effort/cost model** — today effort budgeting is a rough heuristic (operator value-of-time anchor in
+  `memory/` vs. a hand-wavy "tokens loosely track cost" proxy; see haku-state's effort-budgeting guidance). Make it
+  concrete: actual per-run token/$ accounting (e.g. from LiteLLM/Langfuse), a real estimate of model cost (e.g. Opus 4.8
+  per-token), and a defensible mapping from "agent effort" to "value of the operator's time" so Haku can decide research
+  depth on more than a vibe.
+- **Narrow the sandbox's GitHub grant, and make it steerable at runtime** — the Claude sandbox now reaches GitHub as
+  `agentydragon-agent`, and that grant is all-or-nothing: the egress proxy substitutes the PAT for any request to
+  `github.com` / `api.github.com` / `codeload.github.com`, so every repo the account can touch is in scope for the whole
+  session. Two wants, roughly independent. **Per-repo scoping:** the proxy already sees the request path, so a rule
+  could allow `agentydragon/ducktape` and refuse the rest — the cheaper half, and it turns a standing grant into a
+  reviewable list. A GitHub App installation token scoped to selected repositories would enforce it at the far end
+  instead, which is stronger and more work. **Runtime control:** being able to widen or revoke what the proxy permits
+  mid-session, rather than only by editing a manifest and rolling the pod — the same shape as the approval queue,
+  applied to egress rather than to tool calls.

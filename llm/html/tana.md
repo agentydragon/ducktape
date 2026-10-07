@@ -6,24 +6,22 @@ title: Tana, Tana Paste and the /tana command
 
 Tana is a personal knowledge management tool I use.
 
-To insert formatted content into it, the right way is to use the bespoke
-Tana Paste format. It looks similar to Markdown, but is quite finicky. Make sure
-you follow these instructions carefully.
+To insert formatted content into it, the right way is to use the bespoke Tana Paste format. It looks similar to
+Markdown, but is quite finicky. Make sure you follow these instructions carefully.
 
 ## `/tana` command
 
-When I give you the `/tana` (or `/tanapaste`) command, that's me asking you to present
-whatever I invoked it on in Tana Paste format, and put the Tana Paste into a fenced code
-block for easy copy-paste. See rest of this document for details.
+When I give you the `/tana` (or `/tanapaste`) command, that's me asking you to present whatever I invoked it on in Tana
+Paste format, and put the Tana Paste into a fenced code block for easy copy-paste. See rest of this document for
+details.
 
-When invoked standalone without added arguments/context, assume it means "give me the
-thing you just showed me but formatted as Tana Paste".
+When invoked standalone without added arguments/context, assume it means "give me the thing you just showed me but
+formatted as Tana Paste".
 
 ## Tana Paste format
 
-When giving me content to insert into Tana, write it in Tana Paste format.
-Read <https://tana.inc/docs/tana-paste> to make sure you get the format right.
-Make sure to include the `%%tana%%` at the top.
+When giving me content to insert into Tana, write it in Tana Paste format. Read <https://tana.inc/docs/tana-paste> to
+make sure you get the format right. Make sure to include the `%%tana%%` at the top.
 
 ### Syntax
 
@@ -67,16 +65,14 @@ Make sure to include the `%%tana%%` at the top.
 
 ### Tables
 
-You may render a node as a table by appending `%%view:table%%` to the
-end of the text of the _root node_ of the table.
-This "annotation" belongs _only_ at the end of the node's own text - it does not
-function like a HTML tag, you do not close it.
+You may render a node as a table by appending `%%view:table%%` to the end of the text of the _root node_ of the table.
+This "annotation" belongs _only_ at the end of the node's own text - it does not function like a HTML tag, you do not
+close it.
 
-Tables will render with each child node as a row, and each attribute defined in any row as a column
-(even if the attribute is not defined in all rows). Child nodes of rows that are _not_ attributes
-will be rendered initially collapsed. Such child nodes are the best place to put details that
-are too verbose or detailed to put into an "overview display" of the table, but which we still
-want to include. Tana has easy affordances for expanding and collapsing them.
+Tables will render with each child node as a row, and each attribute defined in any row as a column (even if the
+attribute is not defined in all rows). Child nodes of rows that are _not_ attributes will be rendered initially
+collapsed. Such child nodes are the best place to put details that are too verbose or detailed to put into an "overview
+display" of the table, but which we still want to include. Tana has easy affordances for expanding and collapsing them.
 
 For example:
 
@@ -140,16 +136,16 @@ Attributes may also contain nested content, like this:
 Such nested content also has easy collapse/expand affordances. One good use of that is to include optional detail.
 (Nested content is also allowed in attributes outside of tables.)
 
-To enable you to create appropriate columns, you _are_ allowed to make up appropriate new attributes
-for tables. But this still does NOT involve using any new supertags.
+To enable you to create appropriate columns, you _are_ allowed to make up appropriate new attributes for tables. But
+this still does NOT involve using any new supertags.
 
 #### Don't create orphan attributes
 
-When presenting a table, only use attributes that will be present and have a value on at least most rows.
-DO NOT define one-off attributes that are only present on one row. Each attribute you use induces a _whole new
-column_ whether it's used in all rows or jus one. If you create a table with a lot of one-off attributes, the
-table will be very wide, almost entirely empty, and hard to read and not useful as it destroys the whole
-benefit of presenting data with horizontal and vertical correspondence.
+When presenting a table, only use attributes that will be present and have a value on at least most rows. DO NOT define
+one-off attributes that are only present on one row. Each attribute you use induces a _whole new column_ whether it's
+used in all rows or jus one. If you create a table with a lot of one-off attributes, the table will be very wide, almost
+entirely empty, and hard to read and not useful as it destroys the whole benefit of presenting data with horizontal and
+vertical correspondence.
 
 For example, this is BAD:
 
@@ -192,11 +188,10 @@ Because it would render roughly like this:
 
 _Some_ possible options to fix this include:
 
-- Placing content that is particular to only a couple rows/free-text _and_ should be visible in the table
-  without opening disclosure widgets (e.g., "autopilot", "questionable legal status") in a separate attribute
-  that may mix multiple semantic elements - let's say `Notes::`.
-- Or for context that's fine to put under a disclosure widget, just use non-attribute child nodes
-  of the row.
+- Placing content that is particular to only a couple rows/free-text _and_ should be visible in the table without
+  opening disclosure widgets (e.g., "autopilot", "questionable legal status") in a separate attribute that may mix
+  multiple semantic elements - let's say `Notes::`.
+- Or for context that's fine to put under a disclosure widget, just use non-attribute child nodes of the row.
 
 For example, this is BETTER:
 
@@ -241,8 +236,8 @@ This will render like this:
 
 Here are some supertags in my knowledge base and attributes you should use on them.
 
-Make sure that all root nodes created by you are tagged with `#chatgpt`.
-Most of the time, try to wrap your content in 1 top level root node.
+Make sure that all root nodes created by you are tagged with `#chatgpt`. Most of the time, try to wrap your content in 1
+top level root node.
 
 ### `#issue`
 
@@ -293,7 +288,8 @@ Do not create new `#hotlist`'s.
 
 ### `#3dmodel`
 
-Use this for 3D models for 3D printing, or lasercut designs. Only for those that actually already exist uploaded somewhere online, e.g. on Printables, 3axis.co, ...
+Use this for 3D models for 3D printing, or lasercut designs. Only for those that actually already exist uploaded
+somewhere online, e.g. on Printables, 3axis.co, ...
 
 ```
 %%tana%%
@@ -306,17 +302,18 @@ Use this for 3D models for 3D printing, or lasercut designs. Only for those that
     - [[Electronics]]
 ```
 
-Every value of `Model tags::` has the `#3dmodeltag` supertag.
-Some existing ones include: `[[Laser cutting]]` `[[Electronics]]` `[[Mounting]]` `[[Organization]]` `[[Household]]` `[[Animal]]` `[[Components]]`.
-Feel free to suggest and use new `#3dmodeltag`s.
+Every value of `Model tags::` has the `#3dmodeltag` supertag. Some existing ones include: `[[Laser cutting]]`
+`[[Electronics]]` `[[Mounting]]` `[[Organization]]` `[[Household]]` `[[Animal]]` `[[Components]]`. Feel free to suggest
+and use new `#3dmodeltag`s.
 
 ## DO NOT use `#supertags` I didn't explicitly tell you about
 
-In Tana, `#foo` does NOT mean just "a kind of loose semantic tag grouping related things". In Tana, the `#foo` syntax is a "supertag", and those define
-a sort of _schemaa_ - a _type system_. As such, DO NOT lightly use any supertags I did not explicitly tell you about.
+In Tana, `#foo` does NOT mean just "a kind of loose semantic tag grouping related things". In Tana, the `#foo` syntax is
+a "supertag", and those define a sort of _schemaa_ - a _type system_. As such, DO NOT lightly use any supertags I did
+not explicitly tell you about.
 
-Feel free to _suggest_ supertags that might be useful but OUTSIDE any Tana Paste code blocks, because that make my KB get spammed with new supertags
-I don't want if I copy-paste that.
+Feel free to _suggest_ supertags that might be useful but OUTSIDE any Tana Paste code blocks, because that make my KB
+get spammed with new supertags I don't want if I copy-paste that.
 
 For example, DO NOT do this:
 

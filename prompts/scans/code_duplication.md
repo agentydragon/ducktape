@@ -13,11 +13,13 @@ Codebases accumulate duplicated code across all domains:
 - **Utilities**: Similar helper functions with slight variations
 - **Configuration**: Duplicated setup/teardown patterns
 
-This scan identifies opportunities to extract shared implementations to reduce maintenance burden and improve consistency.
+This scan identifies opportunities to extract shared implementations to reduce maintenance burden and improve
+consistency.
 
 ## Core Principle
 
-**DRY (Don't Repeat Yourself) matters**: While local clarity sometimes justifies duplication, systematic patterns should be factored into shared implementations.
+**DRY (Don't Repeat Yourself) matters**: While local clarity sometimes justifies duplication, systematic patterns should
+be factored into shared implementations.
 
 **Balance**: Prefer local clarity over premature abstraction, but extract when:
 
@@ -28,7 +30,8 @@ This scan identifies opportunities to extract shared implementations to reduce m
 
 ## Test Code Duplication (Primary Focus)
 
-Test code is particularly prone to duplication. While test clarity sometimes justifies local duplication, systematic patterns should be factored into shared fixtures, conftest.py helpers, or custom matchers.
+Test code is particularly prone to duplication. While test clarity sometimes justifies local duplication, systematic
+patterns should be factored into shared fixtures, conftest.py helpers, or custom matchers.
 
 ## Pattern 1: Duplicated Fixtures
 
@@ -242,8 +245,8 @@ def test_user_validation():
 - Real instances are self-documenting (IDE autocomplete, type hints)
 - Tests become integration-like (closer to production behavior)
 
-**When to mock**: Only mock classes with behavior (services, clients, I/O)
-**When NOT to mock**: Never mock pure data containers (Pydantic, dataclasses, NamedTuple, TypedDict)
+**When to mock**: Only mock classes with behavior (services, clients, I/O) **When NOT to mock**: Never mock pure data
+containers (Pydantic, dataclasses, NamedTuple, TypedDict)
 
 ## Pattern 5: Duplicated Parameterization
 
@@ -762,10 +765,8 @@ def v2_user():
 
 ## Benefits
 
-✅ **Reduced maintenance**: Fix bugs/update patterns in one place
-✅ **Consistency**: All tests use same setup/assertion patterns
-✅ **Discoverability**: Easier to find existing test helpers
-✅ **Less code**: Fewer lines to read and maintain
+✅ **Reduced maintenance**: Fix bugs/update patterns in one place ✅ **Consistency**: All tests use same setup/assertion
+patterns ✅ **Discoverability**: Easier to find existing test helpers ✅ **Less code**: Fewer lines to read and maintain
 ✅ **Better signal-to-noise**: Test logic stands out from boilerplate
 
 ## References

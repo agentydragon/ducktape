@@ -1,13 +1,11 @@
 # Claude Code Hook Environment Resolution
 
-**Source**: Live binary analysis of `/opt/claude-code/bin/claude` v2.1.42
-(compiled Bun/Node.js SEA binary, ~228 MB).
+**Source**: Live binary analysis of `/opt/claude-code/bin/claude` v2.1.42 (compiled Bun/Node.js SEA binary, ~228 MB).
 
 ## How Hooks Get Their Environment
 
-Claude Code command hooks are spawned via Node.js `child_process.spawn()` with
-an explicitly constructed `env` object. The relevant function is `Gd$` in the
-minified bundle.
+Claude Code command hooks are spawned via Node.js `child_process.spawn()` with an explicitly constructed `env` object.
+The relevant function is `Gd$` in the minified bundle.
 
 ### Environment Construction
 
@@ -54,8 +52,8 @@ child_process.spawn(command, [], { env, cwd, shell: true });
 
 ### Key Insight: PATH Comes from `process.env`
 
-The hook subprocess inherits `process.env` from the Claude Code Node.js process.
-This is the environment that `environment-manager` set when spawning `claude`.
+The hook subprocess inherits `process.env` from the Claude Code Node.js process. This is the environment that
+`environment-manager` set when spawning `claude`.
 
 The `process.env.PATH` at Claude startup is:
 
@@ -65,8 +63,8 @@ The `process.env.PATH` at Claude startup is:
 /usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 ```
 
-This PATH is set by the container image and inherited through:
-`process_api` → `environment-manager` → `claude` → hook subprocess.
+This PATH is set by the container image and inherited through: `process_api` → `environment-manager` → `claude` → hook
+subprocess.
 
 ### Shell Snapshot (Bash Tool) is Different
 
@@ -84,14 +82,14 @@ child_process.execFile(shellPath, ["-c", "-l", snapshotScript], {
 });
 ```
 
-The `-l` flag makes it a **login shell**, which sources `/etc/profile`,
-`/etc/profile.d/*.sh`, and `~/.profile`/`~/.bashrc`. So PATH modifications
-in profile scripts ARE picked up by the Bash tool but NOT by command hooks.
+The `-l` flag makes it a **login shell**, which sources `/etc/profile`, `/etc/profile.d/*.sh`, and
+`~/.profile`/`~/.bashrc`. So PATH modifications in profile scripts ARE picked up by the Bash tool but NOT by command
+hooks.
 
 ### `CLAUDE_CODE_SHELL_PREFIX` — Undocumented Command Wrapper
 
-If the env var `CLAUDE_CODE_SHELL_PREFIX` is set, **both hook commands and Bash
-tool commands** are wrapped via `formatShellPrefixCommand()`:
+If the env var `CLAUDE_CODE_SHELL_PREFIX` is set, **both hook commands and Bash tool commands** are wrapped via
+`formatShellPrefixCommand()`:
 
 **Hooks** (`utils/hooks.ts`):
 
@@ -109,8 +107,8 @@ if (process.env.CLAUDE_CODE_SHELL_PREFIX) {
 }
 ```
 
-**`formatShellPrefixCommand`** (`utils/bash/shellPrefix.ts`) splits the prefix
-on the last ` -` to separate the executable from flags:
+**`formatShellPrefixCommand`** (`utils/bash/shellPrefix.ts`) splits the prefix on the last ` -` to separate the
+executable from flags:
 
 - `"/path/to/wrapper.sh"` → `'/path/to/wrapper.sh' '<command>'`
 - `"/usr/bin/bash -c"` → `'/usr/bin/bash' -c '<command>'`
@@ -121,20 +119,19 @@ Can be set via env var or `settings.json`:
 { "env": { "CLAUDE_CODE_SHELL_PREFIX": "/path/to/wrapper.sh" } }
 ```
 
-Also applies to MCP server commands (`services/mcp/client.ts`). Not applied on
-PowerShell. Undocumented and may change.
+Also applies to MCP server commands (`services/mcp/client.ts`). Not applied on PowerShell. Undocumented and may change.
 
 ### Session Environment Scripts
 
-For `SessionStart`/`Setup`/`CwdChanged`/`FileChanged` hooks, Claude Code
-provides a `CLAUDE_ENV_FILE` path. Hooks can write shell exports to this file:
+For `SessionStart`/`Setup`/`CwdChanged`/`FileChanged` hooks, Claude Code provides a `CLAUDE_ENV_FILE` path. Hooks can
+write shell exports to this file:
 
 ```bash
 echo 'export PATH="/my/custom/bin:$PATH"' >> "$CLAUDE_ENV_FILE"
 ```
 
-These exports are **only** consumed by the Bash tool (via the session env
-sourcing chain), NOT by subsequent hook invocations.
+These exports are **only** consumed by the Bash tool (via the session env sourcing chain), NOT by subsequent hook
+invocations.
 
 The session env script loading path:
 
@@ -152,21 +149,17 @@ These are sorted and sourced in order before each Bash tool command.
 
 ### Method 1: Install to Existing PATH (Recommended)
 
-Put binaries in `/root/.local/bin` or `/usr/local/bin` — already on PATH
-for both hooks and Bash tool.
+Put binaries in `/root/.local/bin` or `/usr/local/bin` — already on PATH for both hooks and Bash tool.
 
 ### Method 2: Modify `process.env` Before Claude Starts
 
-The setup script (init_script) runs before `environment-manager` launches
-Claude. If you can get `environment-manager` to propagate PATH changes to
-Claude's process.env, hooks would inherit them. However,
-`environment-manager` constructs Claude's env from its own `process.env`,
-and the init script runs as a separate child process — env changes don't
+The setup script (init_script) runs before `environment-manager` launches Claude. If you can get `environment-manager`
+to propagate PATH changes to Claude's process.env, hooks would inherit them. However, `environment-manager` constructs
+Claude's env from its own `process.env`, and the init script runs as a separate child process — env changes don't
 propagate back.
 
-The `environment_variables` field in the anthropic config **can** inject
-env vars into the session, but it's controlled by the sandbox-gateway API,
-not by the user's setup script.
+The `environment_variables` field in the anthropic config **can** inject env vars into the session, but it's controlled
+by the sandbox-gateway API, not by the user's setup script.
 
 ### Method 3: Wrapper Script
 
@@ -183,13 +176,13 @@ This works because hooks are spawned with `shell: true`.
 
 ### Method 4: CLAUDE_ENV_FILE (SessionStart Only → Bash Tool Only)
 
-Write PATH exports to `$CLAUDE_ENV_FILE` in a SessionStart hook. This
-affects subsequent Bash tool commands but NOT other hook invocations.
+Write PATH exports to `$CLAUDE_ENV_FILE` in a SessionStart hook. This affects subsequent Bash tool commands but NOT
+other hook invocations.
 
 ## Scrubbed Environment Variables
 
-When `CLAUDE_CODE_SUBPROCESS_ENV_SCRUB` is set, these keys are removed
-from subprocess environments (hooks and Bash tool):
+When `CLAUDE_CODE_SUBPROCESS_ENV_SCRUB` is set, these keys are removed from subprocess environments (hooks and Bash
+tool):
 
 - `ANTHROPIC_API_KEY`, `CLAUDE_CODE_OAUTH_TOKEN`, `ANTHROPIC_AUTH_TOKEN`
 - `ANTHROPIC_FOUNDRY_API_KEY`, `ANTHROPIC_CUSTOM_HEADERS`
@@ -205,6 +198,5 @@ Also removes `INPUT_<key>` variants of each.
 
 ## Upstream Proxy Environment
 
-The `registerUpstreamProxyEnvFn()` mechanism allows injecting proxy env vars
-into all subprocesses. In Claude Code web, this merges fresh JWT proxy
-credentials into the environment. The proxy env overrides `process.env` values.
+The `registerUpstreamProxyEnvFn()` mechanism allows injecting proxy env vars into all subprocesses. In Claude Code web,
+this merges fresh JWT proxy credentials into the environment. The proxy env overrides `process.env` values.

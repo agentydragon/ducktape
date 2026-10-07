@@ -4,7 +4,10 @@ metadata:
   name: osm-mcp-ingress
   namespace: osm-mcp
   annotations:
-    description: "Default-deny ingress for osm-mcp. Unlike every other MCP deployment in this cluster, there is no Gateway HTTPRoute and no Authentik OAuth fronting it — osmmcp holds no secret and serves no PII (public OSM data only), so the only gate is this NetworkPolicy: reachable exclusively from haku-console's namespace."
+    description:
+      "Default-deny ingress for osm-mcp. Unlike every other MCP deployment in this cluster, there is no Gateway
+      HTTPRoute and no Authentik OAuth fronting it — osmmcp holds no secret and serves no PII (public OSM data only), so
+      the only gate is this NetworkPolicy: reachable exclusively from haku-console's namespace."
 spec:
   endpointSelector:
     matchLabels:

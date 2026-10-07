@@ -2,8 +2,8 @@
 
 This directory contains code that runs **inside agent containers only**.
 
-Code here is packaged into OCI images and executed in isolated Docker containers.
-It should NOT be imported by orchestration, backend, or other host-side code.
+Code here is packaged into OCI images and executed in isolated Docker containers. It should NOT be imported by
+orchestration, backend, or other host-side code.
 
 ## Structure
 
@@ -14,5 +14,5 @@ It should NOT be imported by orchestration, backend, or other host-side code.
 
 ## Boundary Enforcement
 
-Bazel tests in `props/BUILD.bazel` verify that host-side code (`orchestration/`,
-`backend/`, `core/`) does not depend on this directory.
+Bazel tests in `props/BUILD.bazel` verify that host-side code (`orchestration/`, `backend/`, `core/`) does not depend on
+this directory.

@@ -84,8 +84,8 @@ docker compose down             # Stop infrastructure
 docker compose logs -f postgres # View logs
 ```
 
-For frontend hot-reload during development, use `frontend:dev` instead of the
-compose backend (starts its own backend + esbuild watch):
+For frontend hot-reload during development, use `frontend:dev` instead of the compose backend (starts its own backend +
+esbuild watch):
 
 ```bash
 docker compose up -d postgres registry     # Infra only (no backend)
@@ -117,13 +117,14 @@ bazelisk run //props/cli -- db restore <backup_file>
 
 Specimens live in `props/specimens/` (previously a [separate repository](https://github.com/agentydragon/specimens)).
 
-Specimens are frozen code states with labeled issues (true positives and false positives) used for training and evaluating the LLM critic. The dataset includes:
+Specimens are frozen code states with labeled issues (true positives and false positives) used for training and
+evaluating the LLM critic. The dataset includes:
 
 - Per-snapshot directories with `BUILD.bazel` (slug, split via `specimen_targets()`) and issue files (`.yaml`)
 - Each snapshot's `BUILD.bazel` defines the code source and train/valid/test split
 
-The `ADGN_PROPS_SPECIMENS_ROOT` environment variable is set automatically by direnv (`.envrc`) to
-`props/specimens/`. See <specimens/docs/authoring_guide.md> for the format spec.
+The `ADGN_PROPS_SPECIMENS_ROOT` environment variable is set automatically by direnv (`.envrc`) to `props/specimens/`.
+See <specimens/docs/authoring_guide.md> for the format spec.
 
 ## Evaluation Workflow
 
@@ -136,13 +137,11 @@ Grading is automatic via snapshot graders. See <docs/training_strategy.md> for d
 
 ## Cluster Deployment
 
-Props has one canonical deployment package under `props/deploy/`. It is a Kustomize
-package containing the namespace, database, secrets, RBAC, and application resources.
-The retired Forgejo Terraform files remain under `props/deploy/forgejo/` for state
-and cleanup provenance, but are intentionally not included in this package. Flux
-registers that package through the parked declaration at
-`props/deploy/flux-kustomization.yaml`. To revive Props, restore that declaration to
-the root Flux bundle and set `suspend: false` there.
+Props has one canonical deployment package under `props/deploy/`. It is a Kustomize package containing the namespace,
+database, secrets, RBAC, and application resources. The retired Forgejo Terraform files remain under
+`props/deploy/forgejo/` for state and cleanup provenance, but are intentionally not included in this package. Flux
+registers that package through the parked declaration at `props/deploy/flux-kustomization.yaml`. To revive Props,
+restore that declaration to the root Flux bundle and set `suspend: false` there.
 
 ### Components
 
@@ -172,7 +171,8 @@ Controlled by `PropsConfig` toggles in `config.toml` (mounted via ConfigMap):
 
 ### PostgreSQL Backup
 
-A daily CronJob (`backup.enabled: true`) runs `pg_dump | gzip` to a PVC, with configurable retention (`backup.retention.days`). Manual trigger:
+A daily CronJob (`backup.enabled: true`) runs `pg_dump | gzip` to a PVC, with configurable retention
+(`backup.retention.days`). Manual trigger:
 
 ```bash
 kubectl create job --from=cronjob/props-backup props-backup-test -n props
@@ -180,16 +180,15 @@ kubectl create job --from=cronjob/props-backup props-backup-test -n props
 
 ### Registry Proxy
 
-The registry proxy manifests remain in the dormant deployment package as revival
-scaffolding, but the Forgejo registry tenant's package content and upstream
-credential wiring were intentionally retired. Re-enabling this path requires
+The registry proxy manifests remain in the dormant deployment package as revival scaffolding, but the Forgejo registry
+tenant's package content and upstream credential wiring were intentionally retired. Re-enabling this path requires
 restoring that integration deliberately.
 
-The remaining `props-registry-pull` Secret wiring is derived from the CNPG
-`props-db-app` credentials. The registry is configured with
-`REGISTRY_HTTP_RELATIVEURLS=true` so blob upload `Location` headers use relative
-URLs (required for external clients going through the Gateway API proxy).
+The remaining `props-registry-pull` Secret wiring is derived from the CNPG `props-db-app` credentials. The registry is
+configured with `REGISTRY_HTTP_RELATIVEURLS=true` so blob upload `Location` headers use relative URLs (required for
+external clients going through the Gateway API proxy).
 
 ## GitHub Copilot Agent Setup
 
-See `.github/workflows/copilot-setup-steps.yml` for automated environment setup (env vars, network config). Uses `props-agents` Docker network (no HTTP proxy, unlike Claude hooks which use `host` network).
+See `.github/workflows/copilot-setup-steps.yml` for automated environment setup (env vars, network config). Uses
+`props-agents` Docker network (no HTTP proxy, unlike Claude hooks which use `host` network).

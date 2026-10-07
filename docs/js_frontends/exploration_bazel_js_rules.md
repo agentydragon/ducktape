@@ -2,7 +2,8 @@
 
 ## Overview
 
-This document surveys Bazel rulesets for JavaScript/TypeScript development, focusing on dependency management, module resolution, workspace support, and linting integration. The repository now has four independent React frontends.
+This document surveys Bazel rulesets for JavaScript/TypeScript development, focusing on dependency management, module
+resolution, workspace support, and linting integration. The repository now has four independent React frontends.
 
 ---
 
@@ -75,7 +76,8 @@ npm.npm_translate_lock(
 #### Known Limitations & Issues
 
 1. **Module Identity Mismatch (Critical - Affects Playwright/Multi-Instance Packages)**
-   - When a package like `@playwright/test` re-exports from `playwright`, symlink resolution can cause the same module to be loaded with different filesystem paths
+   - When a package like `@playwright/test` re-exports from `playwright`, symlink resolution can cause the same module
+     to be loaded with different filesystem paths
    - Node.js caches modules by resolved path, not by identity
    - This breaks packages that use module identity for internal state (e.g., Playwright's test registry)
    - Documented in ducktape investigation: `props/frontend/docs/playwright_bazel_investigation.md`
@@ -138,7 +140,8 @@ The ducktape repository currently uses aspect_rules_js for:
 - **study_casino frontend** (React): browser frontend
 - **rspcache admin_ui** (React): Vite build
 
-Bundling and dev servers work across these projects. Props renders its visual harness with the Python Playwright sweep; the Playwright module-identity issue (#1) remains relevant for projects that run Playwright from JS.
+Bundling and dev servers work across these projects. Props renders its visual harness with the Python Playwright sweep;
+the Playwright module-identity issue (#1) remains relevant for projects that run Playwright from JS.
 
 ---
 
@@ -333,7 +336,8 @@ All maintained by Aspect Build, all layer on aspect_rules_js:
 
 ### Fundamental Challenge
 
-Bazel keeps outputs in a distinct output tree (bazel-out), separate from sources. Node.js naturally looks in the same directory tree. This causes friction.
+Bazel keeps outputs in a distinct output tree (bazel-out), separate from sources. Node.js naturally looks in the same
+directory tree. This causes friction.
 
 ### aspect_rules_js Approach: Output Tree Working Directory
 
@@ -387,7 +391,8 @@ Given the current architecture (4 React frontends):
 - **TypeScript:** `aspect_rules_ts` (ts_project rule)
 - **Bundling:** Bazel-managed Vite or esbuild, selected per frontend
 - **Linting:** `aspect_rules_lint` with ESLint + Prettier aspects
-- **Browser binary:** a pinned Chrome for Testing headless shell (`@chrome_headless_shell` in `MODULE.bazel`) for the Playwright tests
+- **Browser binary:** a pinned Chrome for Testing headless shell (`@chrome_headless_shell` in `MODULE.bazel`) for the
+  Playwright tests
 - **Framework tooling:** Let the selected bundler and framework tools handle framework-specific requirements
 
 ### For Your Specific Issues

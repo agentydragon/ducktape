@@ -24,7 +24,8 @@ A comment or docstring is useless if it:
 
 ## Overview
 
-Python code should be self-documenting through clear naming and structure. Documentation is valuable only when it provides context, rationale, or non-obvious information that cannot be expressed in code.
+Python code should be self-documenting through clear naming and structure. Documentation is valuable only when it
+provides context, rationale, or non-obvious information that cannot be expressed in code.
 
 This scan targets both **comments** and **docstrings** - the same principles apply to both.
 

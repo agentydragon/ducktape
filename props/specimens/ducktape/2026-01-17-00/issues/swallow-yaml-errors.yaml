@@ -21,8 +21,8 @@ occurrences:
       cluster/scripts/validate_kustomizations.py:
         - [95, 97]
     note: >-
-      except Exception: pass swallows all errors including bugs in processing loop; should
-      catch yaml.YAMLError only, log visibly, and narrow scope to just yaml.safe_load_all
+      except Exception: pass swallows all errors including bugs in processing loop; should catch yaml.YAMLError only,
+      log visibly, and narrow scope to just yaml.safe_load_all
     critic_scopes_expected_to_recall:
       - - cluster/scripts/validate_kustomizations.py
     match_file_restriction:

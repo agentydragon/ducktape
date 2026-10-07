@@ -16,8 +16,11 @@ Minimal client patterns for working with IPLD/IPFS heads and DAG nodes from Pyth
 
 ## Host/state‑manager role (writes under approval)
 
-- Ingest proposals: accept CAR bytes; `dag/import`; collect root CIDs from NDJSON; validate ancestry (`new_root` descends from `base`)
-- Advance heads (CAS): read current Heads via IPNS; build a new Heads `{prev: old_heads_cid, branches[branch]=new_root}`; `dag/put` (dag‑cbor), `pin/add`, `name/publish` with the agent’s IPNS key
+- Ingest proposals: accept CAR bytes; `dag/import`; collect root CIDs from NDJSON; validate ancestry (`new_root`
+  descends from `base`)
+- Advance heads (CAS): read current Heads via IPNS; build a new Heads
+  `{prev: old_heads_cid, branches[branch]=new_root}`; `dag/put` (dag‑cbor), `pin/add`, `name/publish` with the agent’s
+  IPNS key
 - Export checkpoints: `dag/export?arg=<cid>` to produce CAR bundles for backups/mirroring
 
 ## Typed models (suggested)
@@ -38,8 +41,10 @@ Minimal client patterns for working with IPLD/IPFS heads and DAG nodes from Pyth
 
 ## Concurrency
 
-- Treat head updates as CAS: resolve current Heads; require `prev == expected_old_heads_cid`; on conflict, rebase/merge and retry
+- Treat head updates as CAS: resolve current Heads; require `prev == expected_old_heads_cid`; on conflict, rebase/merge
+  and retry
 
 ## Sidecar option
 
-- For a higher‑level SDK, use a tiny Node (ipfs-http-client) or Go (go‑ipfs‑api) sidecar exposing: `dag_put/get`, `car_import/export`, `pin_add`, `name_publish/resolve`, `advance_heads_cas` — then call from Python
+- For a higher‑level SDK, use a tiny Node (ipfs-http-client) or Go (go‑ipfs‑api) sidecar exposing: `dag_put/get`,
+  `car_import/export`, `pin_add`, `name_publish/resolve`, `advance_heads_cas` — then call from Python

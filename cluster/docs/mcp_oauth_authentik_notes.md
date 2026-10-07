@@ -1,16 +1,13 @@
 # MCP + OAuth + Authentik: What We Learned
 
-Historical notes from building the now-retired in-cluster MCP server
-(`kubectl-sandbox-mcp`) that authenticated MCP clients via Authentik and scoped any caller —
-including cluster admins — down to sandbox-level Kubernetes permissions.
+Historical notes from building the now-retired in-cluster MCP server (`kubectl-sandbox-mcp`) that authenticated MCP
+clients via Authentik and scoped any caller — including cluster admins — down to sandbox-level Kubernetes permissions.
 
 ## Goal
 
-Let anyone (including a cluster admin) connect to an MCP server from
-Claude.ai / Claude Code, authenticate via the Authentik consent screen,
-and get Kubernetes access **scoped to the `kubectl-sandbox-users` group
-only** — no privilege escalation, even if the authenticating user has
-cluster-admin elsewhere.
+Let anyone (including a cluster admin) connect to an MCP server from Claude.ai / Claude Code, authenticate via the
+Authentik consent screen, and get Kubernetes access **scoped to the `kubectl-sandbox-users` group only** — no privilege
+escalation, even if the authenticating user has cluster-admin elsewhere.
 
 ## Final architecture (what we actually shipped)
 
@@ -33,9 +30,8 @@ kube-apiserver
   │ 8. RBAC enforces sandbox-only permissions
 ```
 
-**Key insight**: the scoping happens **at token-issue time in Authentik**,
-not via any exchange or intermediary. The access token handed to the user
-_already_ has only the sandbox group in it.
+**Key insight**: the scoping happens **at token-issue time in Authentik**, not via any exchange or intermediary. The
+access token handed to the user _already_ has only the sandbox group in it.
 
 ## The MCP OAuth flow (as the spec defines it)
 
@@ -44,8 +40,8 @@ The MCP spec expects:
 1. Client connects to MCP server, gets 401 + `WWW-Authenticate: Bearer`
 2. Client fetches `/.well-known/oauth-protected-resource` on the MCP server
 3. Client fetches `/.well-known/oauth-authorization-server` on the OAuth server
-4. Client does **Dynamic Client Registration (RFC 7591)** — POST to
-   `registration_endpoint` to register itself as a fresh OAuth client
+4. Client does **Dynamic Client Registration (RFC 7591)** — POST to `registration_endpoint` to register itself as a
+   fresh OAuth client
 5. Client does OAuth `authorization_code` flow (browser consent)
 6. Client exchanges code for access token
 
@@ -55,43 +51,35 @@ The MCP spec expects:
 
 ### Hairpin + CiliumNetworkPolicy
 
-- `auth.allegedly.works` DNS resolves to the VPS IPs running the Cilium
-  Gateway with `hostNetwork`.
-- When a pod sends traffic to those IPs, the packet hairpins through the
-  Gateway on the same node. Routing itself works fine.
-- **But**: Authentik has a CiliumNetworkPolicy that only allows ingress
-  from specific namespaces (`authentik`, `flux-system`, `monitoring`, etc.).
-  When the hairpinned traffic reaches Authentik, Cilium evaluates the CNP
-  at pod-to-pod level and rejects it because the source namespace
-  (`kubectl-sandbox-mcp`) isn't in `fromEndpoints`.
+- `auth.allegedly.works` DNS resolves to the VPS IPs running the Cilium Gateway with `hostNetwork`.
+- When a pod sends traffic to those IPs, the packet hairpins through the Gateway on the same node. Routing itself works
+  fine.
+- **But**: Authentik has a CiliumNetworkPolicy that only allows ingress from specific namespaces (`authentik`,
+  `flux-system`, `monitoring`, etc.). When the hairpinned traffic reaches Authentik, Cilium evaluates the CNP at
+  pod-to-pod level and rejects it because the source namespace (`kubectl-sandbox-mcp`) isn't in `fromEndpoints`.
 - **Fix**: add the MCP namespaces to the `server-ingress` CNP in `authentik`.
 
 ### Detour: in-cluster Authentik URL
 
-We first tried using `http://authentik-server.authentik.svc.cluster.local/...`
-as the `authorization_url`. It bypassed hairpin routing, but the
-`openid-configuration` response from Authentik embeds the configured
-issuer URL (including authorize/token endpoints), which would be the
-in-cluster URL — broken for external MCP clients. Reverted to the
+We first tried using `http://authentik-server.authentik.svc.cluster.local/...` as the `authorization_url`. It bypassed
+hairpin routing, but the `openid-configuration` response from Authentik embeds the configured issuer URL (including
+authorize/token endpoints), which would be the in-cluster URL — broken for external MCP clients. Reverted to the
 external URL after fixing the CNP.
 
 ### kubernetes-mcp-server v0.0.60 well-known proxy bug
 
-The server proxies `/.well-known/*` requests from the MCP client upstream
-to Authentik. Authentik returns 404 HTML for
-`/.well-known/oauth-authorization-server` (it only implements
-`openid-configuration`). v0.0.60 blindly tried to JSON-decode the HTML
-and returned 500 to the client.
+The server proxies `/.well-known/*` requests from the MCP client upstream to Authentik. Authentik returns 404 HTML for
+`/.well-known/oauth-authorization-server` (it only implements `openid-configuration`). v0.0.60 blindly tried to
+JSON-decode the HTML and returned 500 to the client.
 
-Fixed upstream in v0.0.63. The in-cluster MCP deployments now use the
-upstream `ghcr.io/containers/kubernetes-mcp-server:v0.0.63` image directly.
+Fixed upstream in v0.0.63. The in-cluster MCP deployments now use the upstream
+`ghcr.io/containers/kubernetes-mcp-server:v0.0.63` image directly.
 
 ### The DCR problem
 
-**Authentik does NOT support Dynamic Client Registration** as of 2026-04.
-See [goauthentik/authentik#8751](https://github.com/goauthentik/authentik/issues/8751)
-— feature request, milestone 2026.8.0, not shipped. Authentik's
-`openid-configuration` has no `registration_endpoint`.
+**Authentik does NOT support Dynamic Client Registration** as of 2026-04. See
+[goauthentik/authentik#8751](https://github.com/goauthentik/authentik/issues/8751) — feature request, milestone
+2026.8.0, not shipped. Authentik's `openid-configuration` has no `registration_endpoint`.
 
 Claude Code's MCP SDK refuses to proceed without DCR:
 
@@ -99,45 +87,36 @@ Claude Code's MCP SDK refuses to proceed without DCR:
 SDK auth failed: Incompatible auth server: does not support dynamic client registration
 ```
 
-**Workaround**: Claude Code supports pre-configured OAuth clients via
-`--client-id` (+ optional `--client-secret`, `--callback-port`). The MCP
-server config provides the client_id; Claude Code uses it directly
-instead of registering dynamically.
+**Workaround**: Claude Code supports pre-configured OAuth clients via `--client-id` (+ optional `--client-secret`,
+`--callback-port`). The MCP server config provides the client_id; Claude Code uses it directly instead of registering
+dynamically.
 
 ### Detour: client secret distribution problem
 
-We first set up the Authentik OAuth2 provider as `client_type =
-confidential`, which meant every user had to supply a client_secret to
-`claude mcp add --client-secret`. The secret is shared across all users,
-making rotation awkward and exfiltration from any one user's config
-compromises all.
+We first set up the Authentik OAuth2 provider as `client_type = confidential`, which meant every user had to supply a
+client_secret to `claude mcp add --client-secret`. The secret is shared across all users, making rotation awkward and
+exfiltration from any one user's config compromises all.
 
-**Analysis**: the client secret adds essentially zero real security in
-MCP's model because:
+**Analysis**: the client secret adds essentially zero real security in MCP's model because:
 
-- The callback URL is `localhost:<port>`. An attacker with the secret
-  still can't receive the auth code — it goes to the victim's localhost.
+- The callback URL is `localhost:<port>`. An attacker with the secret still can't receive the auth code — it goes to the
+  victim's localhost.
 - PKCE protects the auth code from interception.
-- Authentik's redirect_uri allowlist blocks phishing to attacker-
-  controlled URIs.
+- Authentik's redirect_uri allowlist blocks phishing to attacker- controlled URIs.
 
-**Fix**: make the user-facing OAuth2 provider `client_type = public`.
-PKCE is still enforced (it's required by the MCP SDK), but no secret is
-needed. Users just pass `--client-id`.
+**Fix**: make the user-facing OAuth2 provider `client_type = public`. PKCE is still enforced (it's required by the MCP
+SDK), but no secret is needed. Users just pass `--client-id`.
 
 ### Token exchange doesn't work with Authentik either
 
-**Original plan**: Use RFC 8693 token exchange. Caller authenticates
-with their real groups; the pod exchanges that token via Authentik's
-token endpoint for one scoped to `kubectl-sandbox-users`. Requires a
-separate confidential "exchange client" in Authentik.
+**Original plan**: Use RFC 8693 token exchange. Caller authenticates with their real groups; the pod exchanges that
+token via Authentik's token endpoint for one scoped to `kubectl-sandbox-users`. Requires a separate confidential
+"exchange client" in Authentik.
 
-**kubernetes-mcp-server supports RFC 8693** via
-`token_exchange_strategy = "rfc8693"`, sending
+**kubernetes-mcp-server supports RFC 8693** via `token_exchange_strategy = "rfc8693"`, sending
 `grant_type=urn:ietf:params:oauth:grant-type:token-exchange` to Authentik.
 
-**But Authentik doesn't implement that grant type.** Its
-`grant_types_supported` is:
+**But Authentik doesn't implement that grant type.** Its `grant_types_supported` is:
 
 ```text
 [authorization_code, refresh_token, implicit, client_credentials,
@@ -146,19 +125,16 @@ separate confidential "exchange client" in Authentik.
 
 No `token-exchange`. Result: `unsupported_grant_type` at tool-call time.
 
-The existing Grocy pattern uses a _different_ exchange:
-`grant_type=client_credentials` with `client_assertion_type=jwt-bearer`
-and the user's JWT as `client_assertion`. The request-scoped dependency
-and `AuthentikTokenExchanger` in <../../mcp_infra/authentik_auth/token_exchange.py>
-implement it. But kubernetes-mcp-server doesn't speak that dialect, and
-writing a FastMCP wrapper around it is a significant rewrite.
+The existing Grocy pattern uses a _different_ exchange: `grant_type=client_credentials` with
+`client_assertion_type=jwt-bearer` and the user's JWT as `client_assertion`. The request-scoped dependency and
+`AuthentikTokenExchanger` in <../../mcp_infra/authentik_auth/token_exchange.py> implement it. But kubernetes-mcp-server
+doesn't speak that dialect, and writing a FastMCP wrapper around it is a significant rewrite.
 
 ## The real fix: scope at token-issue time
 
-Instead of scoping _after_ Authentik hands out a token, scope it
-_during_ token issue: use an Authentik **custom scope mapping** that
-overrides the `groups` claim to a fixed `["kubectl-sandbox-users"]`
-regardless of who the authenticating user is.
+Instead of scoping _after_ Authentik hands out a token, scope it _during_ token issue: use an Authentik **custom scope
+mapping** that overrides the `groups` claim to a fixed `["kubectl-sandbox-users"]` regardless of who the authenticating
+user is.
 
 ```hcl
 resource "authentik_property_mapping_provider_scope" "kubectl_sandbox_fixed_groups" {
@@ -180,10 +156,8 @@ resource "authentik_provider_oauth2" "kubectl_sandbox_scoped" {
 }
 ```
 
-The last mapping overrides the `groups` claim from `profile`. Even if an
-admin user logs in, their issued token has `groups=["kubectl-sandbox-users"]`
-and nothing else. Pass it through to kube-apiserver; sandbox-only RBAC
-applies.
+The last mapping overrides the `groups` claim from `profile`. Even if an admin user logs in, their issued token has
+`groups=["kubectl-sandbox-users"]` and nothing else. Pass it through to kube-apiserver; sandbox-only RBAC applies.
 
 **This is dramatically simpler than the exchange approach**:
 
@@ -203,26 +177,21 @@ applies.
 - `cluster_auth_mode = passthrough` — forward caller's JWT to kube-apiserver
 - `cluster_auth_mode = kubeconfig` — use pod's own SA (ignore caller token)
 - `cluster_provider_strategy = in-cluster` — use in-cluster kubeconfig lookup
-- `token_exchange_strategy = rfc8693` — (we don't use this; Authentik
-  doesn't support the grant type)
+- `token_exchange_strategy = rfc8693` — (we don't use this; Authentik doesn't support the grant type)
 
 ## kube-apiserver AuthenticationConfiguration
 
-The API server only validates JWTs from issuers declared in
-`AuthenticationConfiguration` (see `cluster/terraform/main/infrastructure.tf`).
-Each Authentik provider needs an entry: issuer URL + audiences +
-claim mappings (prefix for username and groups).
+The API server only validates JWTs from issuers declared in `AuthenticationConfiguration` (see
+`cluster/terraform/main/infrastructure.tf`). Each Authentik provider needs an entry: issuer URL + audiences + claim
+mappings (prefix for username and groups).
 
-Our prefix: `oidc-ksbx-groups:`. So a token claim
-`groups=["kubectl-sandbox-users"]` becomes k8s group
-`oidc-ksbx-groups:kubectl-sandbox-users`. Existing RoleBindings target
-that prefixed group.
+Our prefix: `oidc-ksbx-groups:`. So a token claim `groups=["kubectl-sandbox-users"]` becomes k8s group
+`oidc-ksbx-groups:kubectl-sandbox-users`. Existing RoleBindings target that prefixed group.
 
 ## Current state
 
-The scoped `kubectl-sandbox-mcp` endpoint and its dedicated Authentik provider
-have been retired. `kubectl-machine-mcp` is also parked. The remaining Kubernetes
-MCP endpoint is:
+The scoped `kubectl-sandbox-mcp` endpoint and its dedicated Authentik provider have been retired. `kubectl-machine-mcp`
+is also parked. The remaining Kubernetes MCP endpoint is:
 
 | Name                      | Transport | Auth                                    | Permissions                         |
 | ------------------------- | --------- | --------------------------------------- | ----------------------------------- |
@@ -230,20 +199,16 @@ MCP endpoint is:
 
 ### `claude.ai` web (Custom Connectors)
 
-Claude.ai's hosted app also requires a pre-configured client_id since
-Authentik doesn't do DCR. Its callback URL is fixed,
-`https://claude.ai/api/mcp/auth_callback`, and the provider's `allowed_redirect_uris` must list
-it. In the Custom Connectors UI, give the server's `/mcp` URL and the provider's client ID, and
-leave the client secret empty (public client, PKCE).
+Claude.ai's hosted app also requires a pre-configured client_id since Authentik doesn't do DCR. Its callback URL is
+fixed, `https://claude.ai/api/mcp/auth_callback`, and the provider's `allowed_redirect_uris` must list it. In the Custom
+Connectors UI, give the server's `/mcp` URL and the provider's client ID, and leave the client secret empty (public
+client, PKCE).
 
 ## Followups
 
-- [ ] Watch for Authentik DCR release (2026.8.0?); once shipped, we can
-      switch to DCR and remove the pre-configured client setup (though
-      the current setup is arguably fine forever)
-- [ ] Consider a FastMCP wrapper pattern for future MCP servers that
-      want DCR — `mcp_infra/authentik_auth/provider.py` provides
-      `build_authentik_auth`, while `mcp_infra/authentik_auth/token_exchange.py` provides
-      `AuthentikTokenExchanger` plus the
-      request-scoped dependency that implements DCR in-server and
-      Authentik-flavored JWT-bearer token exchange
+- [ ] Watch for Authentik DCR release (2026.8.0?); once shipped, we can switch to DCR and remove the pre-configured
+      client setup (though the current setup is arguably fine forever)
+- [ ] Consider a FastMCP wrapper pattern for future MCP servers that want DCR — `mcp_infra/authentik_auth/provider.py`
+      provides `build_authentik_auth`, while `mcp_infra/authentik_auth/token_exchange.py` provides
+      `AuthentikTokenExchanger` plus the request-scoped dependency that implements DCR in-server and Authentik-flavored
+      JWT-bearer token exchange

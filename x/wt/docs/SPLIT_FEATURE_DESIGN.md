@@ -2,7 +2,8 @@
 
 ## Overview
 
-A new feature for `wt` that allows splitting large PRs by moving files from the current branch to a new worktree. This addresses the common scenario where a PR grows too large and needs to be split into smaller, more reviewable chunks.
+A new feature for `wt` that allows splitting large PRs by moving files from the current branch to a new worktree. This
+addresses the common scenario where a PR grows too large and needs to be split into smaller, more reviewable chunks.
 
 ## Motivation
 

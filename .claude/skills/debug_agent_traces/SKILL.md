@@ -1,14 +1,16 @@
 ---
 name: debug_agent_traces
-description: Debug props agent traces. Read LLM request/response history, parse tool calls, and "speak with dead" — resurrect a past agent conversation to ask follow-up questions about its decisions.
+description:
+  Debug props agent traces. Read LLM request/response history, parse tool calls, and "speak with dead" — resurrect a
+  past agent conversation to ask follow-up questions about its decisions.
 argument-hint: "<agent_run_id or question>"
 allowed-tools: Bash, Read, Grep, Glob, Edit, Write, WebFetch, Task
 ---
 
 # Debug Agent Traces
 
-Debug props agent behavior by reading their LLM traces from the database and
-optionally resurrecting past conversations to ask follow-up questions.
+Debug props agent behavior by reading their LLM traces from the database and optionally resurrecting past conversations
+to ask follow-up questions.
 
 **Argument:** `$ARGUMENTS`
 
@@ -57,8 +59,8 @@ ORDER BY created_at;
 
 LLM requests/responses use **OpenAI Responses API** format:
 
-- `request_body` has keys: `input` (conversation array), `model`, `tools`,
-  `instructions` (sometimes null — check `input[0]` for system message)
+- `request_body` has keys: `input` (conversation array), `model`, `tools`, `instructions` (sometimes null — check
+  `input[0]` for system message)
 - `response_body` has key: `output` (array of response items)
 
 **Input items** have `role`:
@@ -102,23 +104,19 @@ SELECT request_body::text, response_body::text
 FROM llm_requests WHERE id = <turn_id>;
 ```
 
-Save to files and parse with Python to inspect the full conversation context,
-tools available, and model's response.
+Save to files and parse with Python to inspect the full conversation context, tools available, and model's response.
 
 ### 5. Speak With Dead (Resurrect Conversation)
 
-Resurrect a past agent conversation to ask follow-up questions. This sends the
-agent's original conversation prefix (up to a chosen turn) plus a new question
-to the same model, getting back the agent's perspective.
+Resurrect a past agent conversation to ask follow-up questions. This sends the agent's original conversation prefix (up
+to a chosen turn) plus a new question to the same model, getting back the agent's perspective.
 
 **Steps:**
 
-1. **Pick the turn** — find the `llm_requests.id` at or after the decision
-   you want to ask about.
+1. **Pick the turn** — find the `llm_requests.id` at or after the decision you want to ask about.
 
-2. **Extract the conversation prefix** — the `request_body.input` array
-   contains all turns up to that point. The `response_body.output` array
-   contains the model's response for that turn.
+2. **Extract the conversation prefix** — the `request_body.input` array contains all turns up to that point. The
+   `response_body.output` array contains the model's response for that turn.
 
 3. **Build the resurrection request:**
 
@@ -174,17 +172,15 @@ to the same model, getting back the agent's perspective.
                    print(c["text"])
    ```
 
-4. **Include full context** — for best results, include all turns up to and
-   including the turn of interest. The model needs the same context it had
-   when making the decision.
+4. **Include full context** — for best results, include all turns up to and including the turn of interest. The model
+   needs the same context it had when making the decision.
 
 **Shortcut: include ALL turns up to turn N:**
 
-Rather than manually stitching, you can reconstruct the full conversation from
-sequential `llm_requests` rows. Each `request_body.input` for turn N+1
-contains all of turn N's prefix + turn N's response + any new tool results.
-So the **last request_body before or at your target turn** already has the
-full prefix. Just append that turn's response and your question.
+Rather than manually stitching, you can reconstruct the full conversation from sequential `llm_requests` rows. Each
+`request_body.input` for turn N+1 contains all of turn N's prefix + turn N's response + any new tool results. So the
+**last request_body before or at your target turn** already has the full prefix. Just append that turn's response and
+your question.
 
 ```python
 # To ask about turn 58's decision:
@@ -247,13 +243,12 @@ ORDER BY created_at;
 
 ## Tips
 
-- **Turn IDs are sequential** — lower `llm_requests.id` = earlier in the
-  conversation. Use `ORDER BY created_at` to see chronological order.
-- **The last request has the longest input** — each turn appends to the
-  conversation, so `input_tokens` grows monotonically.
-- **Reasoning models** (o-series, etc.) will have `reasoning` items in output
-  with `summary` arrays showing chain-of-thought.
-- **gpt-4.1-mini** is the default grader model — it doesn't produce reasoning
-  traces but is fast and cheap.
-- **For speak-with-dead**, using the same model preserves behavior fidelity.
-  Using a stronger model may give better explanations but different reasoning.
+- **Turn IDs are sequential** — lower `llm_requests.id` = earlier in the conversation. Use `ORDER BY created_at` to see
+  chronological order.
+- **The last request has the longest input** — each turn appends to the conversation, so `input_tokens` grows
+  monotonically.
+- **Reasoning models** (o-series, etc.) will have `reasoning` items in output with `summary` arrays showing
+  chain-of-thought.
+- **gpt-4.1-mini** is the default grader model — it doesn't produce reasoning traces but is fast and cheap.
+- **For speak-with-dead**, using the same model preserves behavior fidelity. Using a stronger model may give better
+  explanations but different reasoning.

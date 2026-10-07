@@ -1,34 +1,27 @@
 # Gemma 4 on rugged
 
-**Dates tested**: 2026-06-05 through 2026-06-06 local
-**Host**: rugged, Intel Lunar Lake, Arc 130V/140V iGPU, Intel AI Boost NPU,
-30GiB RAM
+**Dates tested**: 2026-06-05 through 2026-06-06 local **Host**: rugged, Intel Lunar Lake, Arc 130V/140V iGPU, Intel AI
+Boost NPU, 30GiB RAM
 
-**LiteRT-LM patch status rechecked**: 2026-09-13 against package version
-`0.17.0` (the current PyPI release checked, and the version pinned below).
+**LiteRT-LM patch status rechecked**: 2026-09-13 against package version `0.17.0` (the current PyPI release checked, and
+the version pinned below).
 
 ## Takeaways
 
-- Google does have its own runtime path: **LiteRT-LM**. Its direct CLI and
-  benchmark path is the best Gemma 4 path tested here today, because the
-  official E2B `.litertlm` model runs on rugged's Arc GPU and supports
-  LiteRT-LM speculative decoding. It is now packaged locally as `.#litert-lm`.
-- LiteRT-LM's OpenAI-compatible `serve` mode exists and can run both CPU and
-  GPU requests. Upstream 0.17.0 does not expose the Gemma 4 speculative
-  decoding/MTP flag in `serve`, but the local Nix package now carries a small
-  patch that threads the existing engine option through as
-  `serve --enable-speculative-decoding=true`. With that patch, GPU streaming
-  returned a clean `ok` and the verbose logs showed `TF_LITE_MTP_DRAFTER`.
-- The patched `serve` path is still not a good OpenCode backend on rugged yet:
-  CPU prefill is too slow at agent-context sizes, and the OpenAI handler still
-  ignores normal completion controls such as `max_tokens`, `max_completion_tokens`,
+- Google does have its own runtime path: **LiteRT-LM**. Its direct CLI and benchmark path is the best Gemma 4 path
+  tested here today, because the official E2B `.litertlm` model runs on rugged's Arc GPU and supports LiteRT-LM
+  speculative decoding. It is now packaged locally as `.#litert-lm`.
+- LiteRT-LM's OpenAI-compatible `serve` mode exists and can run both CPU and GPU requests. Upstream 0.17.0 does not
+  expose the Gemma 4 speculative decoding/MTP flag in `serve`, but the local Nix package now carries a small patch that
+  threads the existing engine option through as `serve --enable-speculative-decoding=true`. With that patch, GPU
+  streaming returned a clean `ok` and the verbose logs showed `TF_LITE_MTP_DRAFTER`.
+- The patched `serve` path is still not a good OpenCode backend on rugged yet: CPU prefill is too slow at agent-context
+  sizes, and the OpenAI handler still ignores normal completion controls such as `max_tokens`, `max_completion_tokens`,
   and `stop`.
-- **Ollama is supported, but not Google's only or primary edge runtime**. It is
-  useful as a local API/server interface. Upstream `ollama-vulkan` 0.30.5 from
-  `nixpkgs-master` now runs beside the older rugged IPEX/Ollama service.
-- **OpenVINO on Linux is working on this machine**, but Gemma 4 is not usable on
-  the existing llama.cpp OpenVINO/NPU image yet. The model loads and offloads to
-  OpenVINO, then fails on prompt compute with a tensor shape mismatch.
+- **Ollama is supported, but not Google's only or primary edge runtime**. It is useful as a local API/server interface.
+  Upstream `ollama-vulkan` 0.30.5 from `nixpkgs-master` now runs beside the older rugged IPEX/Ollama service.
+- **OpenVINO on Linux is working on this machine**, but Gemma 4 is not usable on the existing llama.cpp OpenVINO/NPU
+  image yet. The model loads and offloads to OpenVINO, then fails on prompt compute with a tensor shape mismatch.
 
 Official references:
 
@@ -60,19 +53,16 @@ Official references:
 
 ## Model sizes worth trying next
 
-Rugged has 30GiB total RAM and the Arc iGPU borrows from that same pool, so
-"fits" means weights plus KV cache plus Vulkan/OpenCL/runtime overhead. Treat
-the published model size as a lower bound, and test new models at 16k or 32k
-context before trying their full advertised 128k/256k context windows. The
-OpenCode prompt observed here was already about 20.6k tokens before user
-content, so anything intended for OpenCode should be validated at at least 32k.
+Rugged has 30GiB total RAM and the Arc iGPU borrows from that same pool, so "fits" means weights plus KV cache plus
+Vulkan/OpenCL/runtime overhead. Treat the published model size as a lower bound, and test new models at 16k or 32k
+context before trying their full advertised 128k/256k context windows. The OpenCode prompt observed here was already
+about 20.6k tokens before user content, so anything intended for OpenCode should be validated at at least 32k.
 
 Sources checked on 2026-06-06: LiteRT-LM Hugging Face model cards for
 <https://huggingface.co/litert-community/gemma-4-E2B-it-litert-lm>,
 <https://huggingface.co/litert-community/gemma-4-E4B-it-litert-lm>, and
-<https://huggingface.co/litert-community/gemma-4-12B-it-litert-lm>, plus the
-Ollama `gemma4` tag list at <https://ollama.com/library/gemma4/tags>. These
-tags were changing daily, so refresh sizes before large downloads.
+<https://huggingface.co/litert-community/gemma-4-12B-it-litert-lm>, plus the Ollama `gemma4` tag list at
+<https://ollama.com/library/gemma4/tags>. These tags were changing daily, so refresh sizes before large downloads.
 
 | Candidate                                            | Published size / context | Fit read on rugged                                                          | Why try or skip                                                                                                                                        |
 | ---------------------------------------------------- | ------------------------ | --------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------ |
@@ -89,44 +79,36 @@ tags were changing daily, so refresh sizes before large downloads.
 
 Practical next sequence:
 
-1. LiteRT-LM E4B at GPU 32k with `--enable-speculative-decoding=true`, to see if
-   a slightly stronger MTP-capable model behaves better than E2B.
+1. LiteRT-LM E4B at GPU 32k with `--enable-speculative-decoding=true`, to see if a slightly stronger MTP-capable model
+   behaves better than E2B.
 2. LiteRT-LM 12B at GPU 32k, if quality matters more than MTP.
-3. Ollama `gemma4:12b-it-qat` at 16k or 32k direct HTTP, then OpenCode only if
-   the direct prompt path is stable.
-4. 26B A4B QAT only as a low-context fit experiment, not as a default agent
-   backend on this 30GiB machine.
+3. Ollama `gemma4:12b-it-qat` at 16k or 32k direct HTTP, then OpenCode only if the direct prompt path is stable.
+4. 26B A4B QAT only as a low-context fit experiment, not as a default agent backend on this 30GiB machine.
 
 ## Current Nix wiring
 
-- `flake.nix` has a shared `nixpkgs-master` input for packages newer than
-  unstable. The old narrower `nixpkgs-ollama` idea was folded into this.
-- <../../../../nix/packages/litert-lm.nix> packages `litert-lm-api==0.17.0`,
-  `litert-lm-builder==0.17.0`, and `litert-lm==0.17.0` from PyPI. The native
-  wheel is auto-patched against nixpkgs `vulkan-loader`.
-- <../../../../nix/packages/litert-lm-serve-speculative-decoding.patch> locally patches
-  `litert-lm serve` to expose `--enable-speculative-decoding=true` and pass it
-  to `litert_lm.Engine(...)`.
-- <../../../../nix/home/hosts/rugged.nix> puts `ducktapePackages.litert-lm` on rugged's
-  user PATH and enables the rugged-only OpenCode provider.
-- <../../../../nix/nixos/hosts/rugged/local_llm_arc.nix> keeps the old IPEX/Ollama
-  container on `127.0.0.1:11434`, pinned by digest instead of mutable `latest`.
-- The same NixOS module runs upstream `ollama-vulkan` from `nixpkgs-master` on
-  `127.0.0.1:11436`, with separate model storage under
-  `/var/lib/local-llm/ollama-upstream`.
-- That upstream Ollama service sets `OLLAMA_IGPU_ENABLE=1` so the integrated
-  Lunar Lake GPU is used, and `OLLAMA_CONTEXT_LENGTH=131072` so
-  OpenAI-compatible clients get the model's advertised context by default.
-- <../../../../nix/home/opencode/default.nix> exposes rugged-only OpenCode providers for
-  both local Gemma 4 server paths: provider `rugged` for upstream Ollama/Vulkan
-  and provider `rugged-litert` for LiteRT-LM serve.
+- `flake.nix` has a shared `nixpkgs-master` input for packages newer than unstable. The old narrower `nixpkgs-ollama`
+  idea was folded into this.
+- <../../../../nix/packages/litert-lm.nix> packages `litert-lm-api==0.17.0`, `litert-lm-builder==0.17.0`, and
+  `litert-lm==0.17.0` from PyPI. The native wheel is auto-patched against nixpkgs `vulkan-loader`.
+- <../../../../nix/packages/litert-lm-serve-speculative-decoding.patch> locally patches `litert-lm serve` to expose
+  `--enable-speculative-decoding=true` and pass it to `litert_lm.Engine(...)`.
+- <../../../../nix/home/hosts/rugged.nix> puts `ducktapePackages.litert-lm` on rugged's user PATH and enables the
+  rugged-only OpenCode provider.
+- <../../../../nix/nixos/hosts/rugged/local_llm_arc.nix> keeps the old IPEX/Ollama container on `127.0.0.1:11434`,
+  pinned by digest instead of mutable `latest`.
+- The same NixOS module runs upstream `ollama-vulkan` from `nixpkgs-master` on `127.0.0.1:11436`, with separate model
+  storage under `/var/lib/local-llm/ollama-upstream`.
+- That upstream Ollama service sets `OLLAMA_IGPU_ENABLE=1` so the integrated Lunar Lake GPU is used, and
+  `OLLAMA_CONTEXT_LENGTH=131072` so OpenAI-compatible clients get the model's advertised context by default.
+- <../../../../nix/home/opencode/default.nix> exposes rugged-only OpenCode providers for both local Gemma 4 server
+  paths: provider `rugged` for upstream Ollama/Vulkan and provider `rugged-litert` for LiteRT-LM serve.
 
 ## LiteRT-LM
 
-`litert-lm` is not packaged in pinned nixpkgs or nixpkgs master as either a
-top-level package or `python313Packages.litert-lm` at the time tested.
-`nixpkgs-master` does contain `python313Packages.ai-edge-litert`, but that is
-the lower-level LiteRT runtime, not the LiteRT-LM CLI/API package set used here.
+`litert-lm` is not packaged in pinned nixpkgs or nixpkgs master as either a top-level package or
+`python313Packages.litert-lm` at the time tested. `nixpkgs-master` does contain `python313Packages.ai-edge-litert`, but
+that is the lower-level LiteRT runtime, not the LiteRT-LM CLI/API package set used here.
 
 The local flake packages the three Google PyPI wheels directly:
 
@@ -134,13 +116,11 @@ The local flake packages the three Google PyPI wheels directly:
 - `litert-lm-builder==0.17.0`
 - `litert-lm==0.17.0`
 
-The native API wheel contains `liblitert-lm.so`; the local derivation patches it
-against nixpkgs `vulkan-loader`, so no `LD_LIBRARY_PATH` is needed for Vulkan.
-The local CLI wheel is also patched so `litert-lm serve` can pass
-`enable_speculative_decoding` to the engine, matching the already-supported
-direct `litert-lm run` flag. After
-`sudo nixos-rebuild switch --flake '.#rugged'`, `litert-lm` is on the user PATH
-via <../../../../nix/home/hosts/rugged.nix>. From the checkout:
+The native API wheel contains `liblitert-lm.so`; the local derivation patches it against nixpkgs `vulkan-loader`, so no
+`LD_LIBRARY_PATH` is needed for Vulkan. The local CLI wheel is also patched so `litert-lm serve` can pass
+`enable_speculative_decoding` to the engine, matching the already-supported direct `litert-lm run` flag. After
+`sudo nixos-rebuild switch --flake '.#rugged'`, `litert-lm` is on the user PATH via
+<../../../../nix/home/hosts/rugged.nix>. From the checkout:
 
 ```bash
 nix build .#litert-lm
@@ -169,8 +149,7 @@ env \
 
 Result: returned `ok`.
 
-`--backend=gpu` works through Vulkan. It logs this warning, but text inference
-still succeeds:
+`--backend=gpu` works through Vulkan. It logs this warning, but text inference still succeeds:
 
 ```text
 INFO: Failed to load OpenCL library with dlopen: libOpenCL.so: cannot open shared object file: No such file or directory. Trying ICD loader.
@@ -178,9 +157,8 @@ INFO: Failed to load OpenCL library with dlopen: libOpenCL.so: cannot open share
 
 ### LiteRT-LM OpenAI-compatible server
 
-`litert-lm serve` exposes an OpenAI-compatible local API. Google's current docs
-say it serves `/v1/models` and `/v1/chat/completions` on port `9379` by default
-and accepts this local extension in the `model` field:
+`litert-lm serve` exposes an OpenAI-compatible local API. Google's current docs say it serves `/v1/models` and
+`/v1/chat/completions` on port `9379` by default and accepts this local extension in the `model` field:
 
 ```text
 model_id[,backend][,max_tokens]
@@ -196,8 +174,7 @@ HOME=/tmp/litert-lm-home \
   gemma4-e2b-it
 ```
 
-Then run the server. Use the local Nix patch's speculative-decoding flag for
-Gemma 4 MTP-capable GPU serving:
+Then run the server. Use the local Nix patch's speculative-decoding flag for Gemma 4 MTP-capable GPU serving:
 
 ```bash
 HOME=/tmp/litert-lm-home \
@@ -247,61 +224,52 @@ Server-mode results from 2026-06-06 local:
 | `gemma4-e2b-it,gpu` with `stop: ["3"]`                            | ignored the stop sequence                                                                                        |
 | `gemma4-e2b-it,gpu` streaming chat with local MTP serve patch     | returned clean SSE: assistant role, content `ok`, `finish_reason: stop`, `[DONE]`                                |
 
-One earlier `gemma4-e2b-it,gpu` serve run exited with code 139 and the kernel
-logged `.litert-lm-wrap` segfaults. A later controlled run did **not** reproduce
-the segfault across GPU -> CPU -> GPU and 4k -> 32k GPU reinitialization, so the
-segfault is a real observed hazard but not the primary reproducible blocker.
+One earlier `gemma4-e2b-it,gpu` serve run exited with code 139 and the kernel logged `.litert-lm-wrap` segfaults. A
+later controlled run did **not** reproduce the segfault across GPU -> CPU -> GPU and 4k -> 32k GPU reinitialization, so
+the segfault is a real observed hazard but not the primary reproducible blocker.
 
 The original upstream server MTP gap was:
 
-- Upstream `serve` has no `--enable-speculative-decoding` flag. The installed
-  `serve_util.py` constructs `litert_lm.Engine(...)` without
-  `enable_speculative_decoding`, while `run.py` passes it through. Verbose GPU
-  serve logs confirm `enable_speculative_decoding: false`.
+- Upstream `serve` has no `--enable-speculative-decoding` flag. The installed `serve_util.py` constructs
+  `litert_lm.Engine(...)` without `enable_speculative_decoding`, while `run.py` passes it through. Verbose GPU serve
+  logs confirm `enable_speculative_decoding: false`.
 
-The local Nix patch fixes that gap by adding the flag to `serve`, storing it on
-the `LiteRTLMServer`, and passing it through to `litert_lm.Engine(...)`. A
-patched verbose GPU serve run confirmed `enable_speculative_decoding: true` and
-loaded `TF_LITE_MTP_DRAFTER`. On shutdown, the patched server logged 3 drafted
-tokens, 3 verified tokens, and MTP success rate 1 for the tiny `ok` smoke test.
+The local Nix patch fixes that gap by adding the flag to `serve`, storing it on the `LiteRTLMServer`, and passing it
+through to `litert_lm.Engine(...)`. A patched verbose GPU serve run confirmed `enable_speculative_decoding: true` and
+loaded `TF_LITE_MTP_DRAFTER`. On shutdown, the patched server logged 3 drafted tokens, 3 verified tokens, and MTP
+success rate 1 for the tiny `ok` smoke test.
 
 #### Patch retirement recheck (2026-09-13)
 
-Keep <../../../../nix/packages/litert-lm-serve-speculative-decoding.patch>. The pinned
-`0.17.0` package still lacks a `serve`-level speculative-decoding override, as
-does the current upstream `serve` implementation. Upstream PR #2828 adds the
-option to `run` and `benchmark` only; it does not supersede this patch. Upstream
-issue #1930 is the closest tracker and remains open.
+Keep <../../../../nix/packages/litert-lm-serve-speculative-decoding.patch>. The pinned `0.17.0` package still lacks a
+`serve`-level speculative-decoding override, as does the current upstream `serve` implementation. Upstream PR #2828 adds
+the option to `run` and `benchmark` only; it does not supersede this patch. Upstream issue #1930 is the closest tracker
+and remains open.
 
-`nix build .#litert-lm --no-link --print-out-paths --accept-flake-config`
-passed and the patch applied to the `0.17.0` package. A subsequent
-`litert-lm serve --help` smoke test did not reach Click because the built
-Python 3.14 application loaded a Python 3.13 NumPy extension; treat that as a
-separate packaging defect, not evidence that the patch is removable.
+`nix build .#litert-lm --no-link --print-out-paths --accept-flake-config` passed and the patch applied to the `0.17.0`
+package. A subsequent `litert-lm serve --help` smoke test did not reach Click because the built Python 3.14 application
+loaded a Python 3.13 NumPy extension; treat that as a separate packaging defect, not evidence that the patch is
+removable.
 
-Retire the patch only after a released LiteRT-LM version provides equivalent
-`serve`-level override semantics (whether named `--enable-speculative-decoding`
-or the newer upstream spelling), and the rugged command plus actual MTP
-inference have been revalidated.
+Retire the patch only after a released LiteRT-LM version provides equivalent `serve`-level override semantics (whether
+named `--enable-speculative-decoding` or the newer upstream spelling), and the rugged command plus actual MTP inference
+have been revalidated.
 
-For OpenCode, advertise `gemma4-e2b-it,gpu,32000` rather than `...,131072`.
-The server accepts `...,131072`, but this specific `.litertlm` artifact reports
-`magic_number=32003,target_number=32000` and falls back to 32000 internally.
-That makes 32000 the practical full context for this LiteRT-LM path on rugged.
+For OpenCode, advertise `gemma4-e2b-it,gpu,32000` rather than `...,131072`. The server accepts `...,131072`, but this
+specific `.litertlm` artifact reports `magic_number=32003,target_number=32000` and falls back to 32000 internally. That
+makes 32000 the practical full context for this LiteRT-LM path on rugged.
 
 The remaining reproducible server blockers for OpenCode are:
 
-- The OpenAI handler parses sampler fields such as `temperature`, but does not
-  parse or enforce `max_tokens`, `max_completion_tokens`, or `stop`.
-- The OpenAI `tools` envelope is accepted, but the small Gemma 4 E2B GPU server
-  path produced long nonsense from a tiny tool-bearing request. Treat tool use as
-  unvalidated even though the JSON/SSE transport shape is valid.
+- The OpenAI handler parses sampler fields such as `temperature`, but does not parse or enforce `max_tokens`,
+  `max_completion_tokens`, or `stop`.
+- The OpenAI `tools` envelope is accepted, but the small Gemma 4 E2B GPU server path produced long nonsense from a tiny
+  tool-bearing request. Treat tool use as unvalidated even though the JSON/SSE transport shape is valid.
 
-Conclusion: the API envelope and MTP-backed GPU serving are viable for smoke
-tests with the local Nix patch, but `litert-lm serve` is not a good OpenCode
-backend on rugged yet because output limits/stops and tool behavior are still
-wrong. Direct `litert-lm run --backend=gpu --enable-speculative-decoding=true`
-remains the best LiteRT-LM path for one-off local prompts and benchmarks.
+Conclusion: the API envelope and MTP-backed GPU serving are viable for smoke tests with the local Nix patch, but
+`litert-lm serve` is not a good OpenCode backend on rugged yet because output limits/stops and tool behavior are still
+wrong. Direct `litert-lm run --backend=gpu --enable-speculative-decoding=true` remains the best LiteRT-LM path for
+one-off local prompts and benchmarks.
 
 ### Benchmarks
 
@@ -328,22 +296,19 @@ env \
 | CPU     | false                | 128 / 64              | 135.04 tok/s  | 17.81 tok/s  | 1.15s     | 1.00s |
 | GPU     | true, Nix pkg        | 128 / 64              | 91.81 tok/s   | 31.89 tok/s  | 20.14s    | 1.43s |
 
-Short-run interpretation: MTP/speculative decoding helps prefill and time to
-first token on this model; decode throughput was roughly equal, slightly better
-on the longer sample. The Nix package row was a packaging smoke benchmark that
-redownloaded/cold-initialized the artifact, so compare it mainly as "the Nix
-package works" rather than as a tuned performance run.
+Short-run interpretation: MTP/speculative decoding helps prefill and time to first token on this model; decode
+throughput was roughly equal, slightly better on the longer sample. The Nix package row was a packaging smoke benchmark
+that redownloaded/cold-initialized the artifact, so compare it mainly as "the Nix package works" rather than as a tuned
+performance run.
 
 ### LiteRT-LM NPU status
 
-Upstream LiteRT-LM now documents Intel OpenVINO NPU support and explicitly
-lists a Gemma4-2B LunarLake `.litertlm` artifact with 4096 context. Intel also
-describes LiteRT/OpenVINO NPU support for Intel Core Ultra across Windows and
+Upstream LiteRT-LM now documents Intel OpenVINO NPU support and explicitly lists a Gemma4-2B LunarLake `.litertlm`
+artifact with 4096 context. Intel also describes LiteRT/OpenVINO NPU support for Intel Core Ultra across Windows and
 Linux.
 
 That is not the path tested above. The local PyPI/Nix CLI run with the generic
-`litert-community/gemma-4-E2B-it-litert-lm` artifact did **not** use rugged's
-Linux NPU:
+`litert-community/gemma-4-E2B-it-litert-lm` artifact did **not** use rugged's Linux NPU:
 
 ```bash
 litert-lm run ... --backend=npu
@@ -355,16 +320,14 @@ fails with:
 RuntimeError: NPU is supported only for Intel OpenVINO on Windows. It is expected to install the 'openvino' package and have an NPU available.
 ```
 
-Interpretation: rugged's **type** of NPU is in the upstream target set now, but
-we have not yet nixified or tested the Intel dispatch build plus the
-LunarLake-specific `.litertlm` model. See <llm_npu.md> for the older OpenVINO
-container path.
+Interpretation: rugged's **type** of NPU is in the upstream target set now, but we have not yet nixified or tested the
+Intel dispatch build plus the LunarLake-specific `.litertlm` model. See <llm_npu.md> for the older OpenVINO container
+path.
 
 ## Ollama
 
-Ollama is not Google's LiteRT runtime. It is an API/server/model-management
-layer backed by llama.cpp/ggml-style runtimes. For Gemma 4 here, that means
-GGUF/QAT model artifacts and Ollama's Vulkan backend rather than Google's
+Ollama is not Google's LiteRT runtime. It is an API/server/model-management layer backed by llama.cpp/ggml-style
+runtimes. For Gemma 4 here, that means GGUF/QAT model artifacts and Ollama's Vulkan backend rather than Google's
 `.litertlm` format.
 
 The existing rugged service is the IPEX-LLM Ollama container from
@@ -377,20 +340,16 @@ curl http://127.0.0.1:11434/api/version
 
 Gemma 4 pulls fail there with "model requires newer Ollama".
 
-Pinned nixpkgs had Ollama `0.21.1`; nixpkgs master had `0.30.5`; upstream
-GitHub latest was `v0.30.6` at the time tested. Rugged now has a dedicated
-`nixpkgs-master` flake input wired through
-<../../../../nix/nixos/hosts/rugged/local_llm_arc.nix>. It runs upstream `ollama-vulkan` on
-`127.0.0.1:11436`, beside the IPEX/Ollama service on `127.0.0.1:11434`.
+Pinned nixpkgs had Ollama `0.21.1`; nixpkgs master had `0.30.5`; upstream GitHub latest was `v0.30.6` at the time
+tested. Rugged now has a dedicated `nixpkgs-master` flake input wired through
+<../../../../nix/nixos/hosts/rugged/local_llm_arc.nix>. It runs upstream `ollama-vulkan` on `127.0.0.1:11436`, beside
+the IPEX/Ollama service on `127.0.0.1:11434`.
 
-After `nix flake update` on 2026-06-05 local, refreshed `nixpkgs` still had
-Ollama `0.21.1` and refreshed `nixpkgs-unstable` had Ollama `0.24.0`. A
-temporary Ollama `0.24.0` server on `127.0.0.1:11437` rejected
-`gemma4:e2b-it-qat` with "requires a newer version of Ollama", so the
-`nixpkgs-master` pin is still needed for Gemma 4.
+After `nix flake update` on 2026-06-05 local, refreshed `nixpkgs` still had Ollama `0.21.1` and refreshed
+`nixpkgs-unstable` had Ollama `0.24.0`. A temporary Ollama `0.24.0` server on `127.0.0.1:11437` rejected
+`gemma4:e2b-it-qat` with "requires a newer version of Ollama", so the `nixpkgs-master` pin is still needed for Gemma 4.
 
-A temporary `0.30.5` Nix server could pull and run the smaller QAT model, but
-it saw CPU only in the ad-hoc test:
+A temporary `0.30.5` Nix server could pull and run the smaller QAT model, but it saw CPU only in the ad-hoc test:
 
 ```bash
 nix shell github:NixOS/nixpkgs/master#ollama -c env \
@@ -408,34 +367,32 @@ curl -sS --fail-with-body -X POST http://127.0.0.1:11436/api/generate \
   -d '{"model":"gemma4:e2b-it-qat","prompt":"Reply with exactly: ok","stream":false,"options":{"temperature":0,"num_predict":8}}'
 ```
 
-Result: returned `ok`. Server logs showed CPU-only inference and about 20 tok/s
-for the two generated tokens after model load.
+Result: returned `ok`. Server logs showed CPU-only inference and about 20 tok/s for the two generated tokens after model
+load.
 
-First post-switch check: upstream Ollama `0.30.5` started successfully on
-`11436` and detected the Intel Vulkan device, then logged:
+First post-switch check: upstream Ollama `0.30.5` started successfully on `11436` and detected the Intel Vulkan device,
+then logged:
 
 ```text
 dropping integrated GPU; to enable, set OLLAMA_IGPU_ENABLE=1
 ```
 
-After setting `OLLAMA_IGPU_ENABLE=1` and switching again, upstream Ollama now
-selects the Lunar Lake Vulkan iGPU:
+After setting `OLLAMA_IGPU_ENABLE=1` and switching again, upstream Ollama now selects the Lunar Lake Vulkan iGPU:
 
 ```text
 inference compute id=GPU-... library=Vulkan variant=v12 name="Intel(R) Graphics (LNL)"
 ```
 
-The persistent upstream model directory is separate from the temporary
-experiment. Gemma 4 E2B QAT has been pulled there:
+The persistent upstream model directory is separate from the temporary experiment. Gemma 4 E2B QAT has been pulled
+there:
 
 ```bash
 OLLAMA_HOST=127.0.0.1:11436 ollama pull gemma4:e2b-it-qat
 OLLAMA_HOST=127.0.0.1:11436 ollama run gemma4:e2b-it-qat
 ```
 
-The first persistent request after service restart loaded the model in about
-29.6s. For visible output through the HTTP API, use `/api/chat` with
-`"think": false`:
+The first persistent request after service restart loaded the model in about 29.6s. For visible output through the HTTP
+API, use `/api/chat` with `"think": false`:
 
 ```bash
 curl -sS --fail-with-body -X POST http://127.0.0.1:11436/api/chat \
@@ -450,25 +407,24 @@ Warm-ish persistent Ollama/Vulkan timings:
 | `think:false`, 16 output tokens | 67.39 tok/s  | 22.21 tok/s  | 0.75s         | Visible chat response |
 | `think:false`, 82 output tokens | 116.29 tok/s | 22.02 tok/s  | 0.76s         | Visible chat response |
 
-The model metadata advertises `gemma4.context_length = 131072`. A direct
-`/api/chat` request with `options.num_ctx = 131072` successfully loaded and
-returned `ok` on rugged. Ollama logs confirmed:
+The model metadata advertises `gemma4.context_length = 131072`. A direct `/api/chat` request with
+`options.num_ctx = 131072` successfully loaded and returned `ok` on rugged. Ollama logs confirmed:
 
 ```text
 slot load_model: ... new slot, n_ctx = 131072
 slot update_slots: ... n_ctx_slot = 131072
 ```
 
-That high-context reload took about 56.8s total for a tiny prompt on the test
-run; the steady-state decode after load was still fine.
+That high-context reload took about 56.8s total for a tiny prompt on the test run; the steady-state decode after load
+was still fine.
 
-`/api/generate` without `think:false` can return an empty visible `response`
-while still spending tokens; prefer `/api/chat` for quick manual checks.
+`/api/generate` without `think:false` can return an empty visible `response` while still spending tokens; prefer
+`/api/chat` for quick manual checks.
 
 ### OpenCode
 
-Rugged Home Manager enables two Gemma 4 OpenCode providers in
-<../../../../nix/home/opencode/default.nix>. After switching:
+Rugged Home Manager enables two Gemma 4 OpenCode providers in <../../../../nix/home/opencode/default.nix>. After
+switching:
 
 ```text
 /model
@@ -487,8 +443,8 @@ Provider details:
 - model: `gemma4:e2b-it-qat`
 - context limit: `131072`
 
-For the manual LiteRT-LM server on `127.0.0.1:9379`, first import the model
-into the normal user registry if needed, then start:
+For the manual LiteRT-LM server on `127.0.0.1:9379`, first import the model into the normal user registry if needed,
+then start:
 
 ```bash
 litert-lm import \
@@ -516,25 +472,20 @@ Provider details:
 - context limit: `32000`
 - MTP: enabled by the patched `litert-lm serve --enable-speculative-decoding=true`
 
-As of 2026-06-06 local, both rugged providers should be treated as experimental
-for OpenCode. Small direct prompts work. Ollama/Vulkan's first OpenCode request
-was about 20.6k prompt tokens with system instructions, tools, and skills, and
-that was large enough to crash the Vulkan runner with `vk::DeviceLostError` /
-`unexpected EOF`. LiteRT-LM's GPU serve path now works with MTP for tiny
-OpenAI-compatible requests at 32k context, but the handler still ignores output
+As of 2026-06-06 local, both rugged providers should be treated as experimental for OpenCode. Small direct prompts work.
+Ollama/Vulkan's first OpenCode request was about 20.6k prompt tokens with system instructions, tools, and skills, and
+that was large enough to crash the Vulkan runner with `vk::DeviceLostError` / `unexpected EOF`. LiteRT-LM's GPU serve
+path now works with MTP for tiny OpenAI-compatible requests at 32k context, but the handler still ignores output
 limits/stops and tool behavior is not validated.
 
-TODO: if this is useful beyond rugged itself, expose the local server through an
-authenticated in-cluster route and move the provider out of the rugged-only
-Home Manager option.
+TODO: if this is useful beyond rugged itself, expose the local server through an authenticated in-cluster route and move
+the provider out of the rugged-only Home Manager option.
 
-The current Ollama MTP tag `gemma4:31b-coding-mtp-bf16` is about 64GB, so it was
-not attempted on this 30GiB machine.
+The current Ollama MTP tag `gemma4:31b-coding-mtp-bf16` is about 64GB, so it was not attempted on this 30GiB machine.
 
 ## OpenVINO NPU
 
-The existing Linux OpenVINO path is the Docker image from <llm_npu.md>:
-`llama-openvino:server`.
+The existing Linux OpenVINO path is the Docker image from <llm_npu.md>: `llama-openvino:server`.
 
 The downloaded Ollama QAT GGUF was reused directly:
 
@@ -569,52 +520,43 @@ Retrying with the known OpenVINO single-session settings:
 --env=GGML_OPENVINO_STATEFUL_EXECUTION=1 ... -np 1
 ```
 
-changed the context shape (`n_seq_max = 1`, `kv_unified = false`) but did not
-become ready; it stayed at `srv load_model: initializing slots, n_slots = 1`
-while using about one CPU and 11.7GiB RSS.
+changed the context shape (`n_seq_max = 1`, `kv_unified = false`) but did not become ready; it stayed at
+`srv load_model: initializing slots, n_slots = 1` while using about one CPU and 11.7GiB RSS.
 
-Conclusion: OpenVINO Linux works on rugged, but the current llama.cpp OpenVINO
-backend does not yet handle Gemma 4 E2B QAT's prompt/KV shape correctly on this
-NPU path.
+Conclusion: OpenVINO Linux works on rugged, but the current llama.cpp OpenVINO backend does not yet handle Gemma 4 E2B
+QAT's prompt/KV shape correctly on this NPU path.
 
 ### Nix-native OpenVINO status
 
-Pinned nixpkgs OpenVINO is `2025.2.1`; nixpkgs master has `2026.2.0`. Both were
-checked against the Intel container. The nixpkgs builds include:
+Pinned nixpkgs OpenVINO is `2025.2.1`; nixpkgs master has `2026.2.0`. Both were checked against the Intel container. The
+nixpkgs builds include:
 
 - `libopenvino_intel_npu_plugin.so`
 - NPU headers such as `openvino/runtime/intel_npu/level_zero/level_zero.hpp`
 
-They do **not** include `libopenvino_intel_npu_compiler.so`, which is present in
-the Intel OpenVINO bundle used by `llama-openvino:server`. That makes a native
-Nix package possible, but not just "build llama.cpp against nixpkgs#openvino"
-unless the NPU compiler library is packaged or otherwise supplied.
+They do **not** include `libopenvino_intel_npu_compiler.so`, which is present in the Intel OpenVINO bundle used by
+`llama-openvino:server`. That makes a native Nix package possible, but not just "build llama.cpp against
+nixpkgs#openvino" unless the NPU compiler library is packaged or otherwise supplied.
 
 ## Current recommendation
 
 For Gemma 4 E2B on rugged today:
 
-1. Use **LiteRT-LM GPU with speculative decoding** for Google's supported direct
-   local runtime path and MTP.
-2. Use **Ollama 0.30.x Vulkan** for small local API checks. It works on the
-   Intel iGPU for tiny prompts, but it is not yet stable for OpenCode-sized
-   Gemma 4 prompts on rugged.
-3. Use **LiteRT-LM serve CPU** only as a protocol/debug fallback. It speaks the
-   right OpenAI-compatible API, but large prompt prefill is too slow for normal
-   agent use.
-4. Investigate **LiteRT-LM Intel OpenVINO NPU** separately using the upstream
-   LunarLake-specific `.litertlm` artifact and Intel dispatch build. This is
-   the most plausible route to actually using rugged's NPU for Gemma 4.
-5. Keep **OpenVINO NPU** for older small GGUF models; revisit Gemma 4 after
-   llama.cpp/OpenVINO updates.
+1. Use **LiteRT-LM GPU with speculative decoding** for Google's supported direct local runtime path and MTP.
+2. Use **Ollama 0.30.x Vulkan** for small local API checks. It works on the Intel iGPU for tiny prompts, but it is not
+   yet stable for OpenCode-sized Gemma 4 prompts on rugged.
+3. Use **LiteRT-LM serve CPU** only as a protocol/debug fallback. It speaks the right OpenAI-compatible API, but large
+   prompt prefill is too slow for normal agent use.
+4. Investigate **LiteRT-LM Intel OpenVINO NPU** separately using the upstream LunarLake-specific `.litertlm` artifact
+   and Intel dispatch build. This is the most plausible route to actually using rugged's NPU for Gemma 4.
+5. Keep **OpenVINO NPU** for older small GGUF models; revisit Gemma 4 after llama.cpp/OpenVINO updates.
 
 Durable Nix followups:
 
-- If LiteRT-LM stays useful, consider upstreaming the local `litert-lm` Python
-  package set to nixpkgs. `ai-edge-litert` alone is not enough for this CLI path.
-- Nixify or otherwise package the upstream LiteRT-LM Intel NPU path: fetch the
-  LunarLake-specific `.litertlm`, build/include the Intel OpenVINO dispatch
-  library, and test `Backend.NPU()` independently from the generic PyPI CLI path.
-- Nixify the working `llama-openvino:server` path once the target model set is
-  clear. If the goal is an exact NPU-capable replacement, also package the Intel
-  OpenVINO bundle's NPU compiler library or use a pinned OCI image.
+- If LiteRT-LM stays useful, consider upstreaming the local `litert-lm` Python package set to nixpkgs. `ai-edge-litert`
+  alone is not enough for this CLI path.
+- Nixify or otherwise package the upstream LiteRT-LM Intel NPU path: fetch the LunarLake-specific `.litertlm`,
+  build/include the Intel OpenVINO dispatch library, and test `Backend.NPU()` independently from the generic PyPI CLI
+  path.
+- Nixify the working `llama-openvino:server` path once the target model set is clear. If the goal is an exact
+  NPU-capable replacement, also package the Intel OpenVINO bundle's NPU compiler library or use a pinned OCI image.

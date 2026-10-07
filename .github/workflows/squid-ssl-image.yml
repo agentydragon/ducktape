@@ -74,7 +74,9 @@ jobs:
 
       - name: Log in to Forgejo registry
         if: github.event_name == 'push'
-        run: echo "$FORGEJO_IMAGES_PASSWORD" | docker login git.allegedly.works -u "$FORGEJO_IMAGES_USERNAME" --password-stdin
+        run:
+          echo "$FORGEJO_IMAGES_PASSWORD" | docker login git.allegedly.works -u "$FORGEJO_IMAGES_USERNAME"
+          --password-stdin
 
       - name: Push image
         if: github.event_name == 'push'

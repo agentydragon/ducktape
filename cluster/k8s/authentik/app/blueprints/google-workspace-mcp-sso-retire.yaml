@@ -2,7 +2,8 @@ version: 1
 metadata:
   name: Retire Google Workspace MCP SSO
   labels:
-    blueprints.goauthentik.io/description: "Delete the decommissioned Google Workspace MCP application and proxy provider"
+    blueprints.goauthentik.io/description:
+      "Delete the decommissioned Google Workspace MCP application and proxy provider"
 
 entries:
   - model: authentik_core.application

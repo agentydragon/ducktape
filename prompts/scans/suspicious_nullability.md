@@ -6,23 +6,29 @@
 
 ## Pattern Description
 
-Nullability (`T | None`) that is misused, propagated through too many layers, or semantically impossible. Nullability should be handled **exactly once** at the optionality branch point, not nested at N levels.
+Nullability (`T | None`) that is misused, propagated through too many layers, or semantically impossible. Nullability
+should be handled **exactly once** at the optionality branch point, not nested at N levels.
 
-**Key principle**: Handle None at boundaries, not in business logic. Functions deep in the call stack should work with non-None values.
+**Key principle**: Handle None at boundaries, not in business logic. Functions deep in the call stack should work with
+non-None values.
 
 ## Fix Philosophy: Propagate Non-Nullability Upward
 
-**CRITICAL**: When you find `assert x is not None`, the fix is usually NOT to keep the assertion or add type: ignore comments. Instead:
+**CRITICAL**: When you find `assert x is not None`, the fix is usually NOT to keep the assertion or add type: ignore
+comments. Instead:
 
 1. **Question the type declaration**: Why is `x` typed as `T | None` in the first place?
 2. **Propagate non-nullability upward**: Change the type signature so `x` is `T`, not `T | None`
-3. **Handle None at the source**: If a value comes from a nullable source, handle the None case there, then pass non-None values downstream
+3. **Handle None at the source**: If a value comes from a nullable source, handle the None case there, then pass
+   non-None values downstream
 
 **Common mistake**: Treating assertions as "necessary for mypy" and leaving nullable types everywhere.
 
-**Correct approach**: Fix the root cause by making the type system reflect reality - if a value is never actually None in practice, it shouldn't be typed as nullable.
+**Correct approach**: Fix the root cause by making the type system reflect reality - if a value is never actually None
+in practice, it shouldn't be typed as nullable.
 
-**Important**: Suspicious nullability often points to a **design problem**, not just a typing problem. You usually cannot fix it by changing 1-2 annotations. Instead, you may need to:
+**Important**: Suspicious nullability often points to a **design problem**, not just a typing problem. You usually
+cannot fix it by changing 1-2 annotations. Instead, you may need to:
 
 - Refactor data flow to handle None at boundaries
 - Restructure function call chains to eliminate None propagation
@@ -138,7 +144,8 @@ validate_schema_bad(conn, config.database)  # None check #3
 # ... 497 more None checks scattered across the codebase
 ```
 
-**The fix**: Restructure so optionality is handled at the boundary (loading the config), then everything downstream works with complete, non-None values.
+**The fix**: Restructure so optionality is handled at the boundary (loading the config), then everything downstream
+works with complete, non-None values.
 
 ### Example: Before (Wrong Approach)
 
@@ -172,7 +179,8 @@ def process_container(container: Container) -> None:
     use_container_id(container_id)  # No assertion needed!
 ```
 
-**Better**: Create a type-narrowing helper that returns non-None type, propagating non-nullability to all downstream code.
+**Better**: Create a type-narrowing helper that returns non-None type, propagating non-nullability to all downstream
+code.
 
 ## Examples of Antipatterns
 
@@ -768,8 +776,7 @@ mypy --strict path/to/file.py
 
 ## Benefits
 
-✅ **Clearer contracts** - Function signature shows what's truly required
-✅ **Fewer None checks** - Business logic works with non-None values
-✅ **Better error messages** - Fail at boundary with context, not deep in call stack
-✅ **Type safety** - mypy catches missing None handling at call sites
-✅ **Easier debugging** - None handled at optionality branch, not scattered everywhere
+✅ **Clearer contracts** - Function signature shows what's truly required ✅ **Fewer None checks** - Business logic
+works with non-None values ✅ **Better error messages** - Fail at boundary with context, not deep in call stack ✅
+**Type safety** - mypy catches missing None handling at call sites ✅ **Easier debugging** - None handled at optionality
+branch, not scattered everywhere

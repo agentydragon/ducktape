@@ -3,7 +3,8 @@ title: Modern type hints (PEP 604 unions, builtin generics)
 kind: outcome
 ---
 
-Agent-edited Python uses modern typing: builtin generics (e.g., `list[int]`) and PEP 604 unions (`A | B`), not legacy `typing.List`, `typing.Dict`, `typing.Union`, or `typing.Optional`.
+Agent-edited Python uses modern typing: builtin generics (e.g., `list[int]`) and PEP 604 unions (`A | B`), not legacy
+`typing.List`, `typing.Dict`, `typing.Union`, or `typing.Optional`.
 
 ## Acceptance criteria (checklist)
 

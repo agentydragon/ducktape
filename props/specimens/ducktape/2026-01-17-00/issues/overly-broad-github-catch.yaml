@@ -16,9 +16,8 @@ occurrences:
       wt/server/github_client.py:
         - [54, 60]
     note: >-
-      except Exception catches all errors including programming bugs. At most,
-      should catch (github.GithubException, github.BadAttributeException,
-      requests.RequestException) - not bare Exception.
+      except Exception catches all errors including programming bugs. At most, should catch (github.GithubException,
+      github.BadAttributeException, requests.RequestException) - not bare Exception.
     critic_scopes_expected_to_recall:
       - - wt/server/github_client.py
     match_file_restriction:

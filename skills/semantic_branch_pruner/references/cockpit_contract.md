@@ -25,15 +25,19 @@ Keep one current record per branch with at least:
 }
 ```
 
-Derived overlap metrics may help triage, but keep them visibly secondary to `rationale` and `evidence_links`. Reject missing or duplicate branch rows, and reject a judgment inventory that does not exactly match the live candidate inventory.
+Derived overlap metrics may help triage, but keep them visibly secondary to `rationale` and `evidence_links`. Reject
+missing or duplicate branch rows, and reject a judgment inventory that does not exactly match the live candidate
+inventory.
 
 ## Rationale quality
 
 Good rationales identify the objective and its disposition:
 
 - “The branch's credential rotation landed in PR #123; compare shows only the pre-merge formulation.”
-- “The implementation targets the removed `old_service/`; current code uses `new_service/handler.py` from commit `abc123`.”
-- “This is an intermediate stack checkpoint; its unique commits are contained in the later sibling branch and the final behavior is on the default branch.”
+- “The implementation targets the removed `old_service/`; current code uses `new_service/handler.py` from commit
+  `abc123`.”
+- “This is an intermediate stack checkpoint; its unique commits are contained in the later sibling branch and the final
+  behavior is on the default branch.”
 
 Reject rationales such as “old,” “probably Claude work,” “many commits behind,” or “looks merged.”
 
@@ -50,7 +54,8 @@ Include:
 - search and filters for topic, diffstate, lane, pack, and decision;
 - export of exact delete names and complete decision JSON.
 
-If showing “forecasted objections,” calculate `sum(1 - P(delete))` for the selected set and label it as a calibration aid, not an independence claim or guarantee.
+If showing “forecasted objections,” calculate `sum(1 - P(delete))` for the selected set and label it as a calibration
+aid, not an independence claim or guarantee.
 
 ## Interaction invariants
 
@@ -61,6 +66,8 @@ Changing one row's decision must not eject the user from the current context. Pr
 - scroll position across rerender;
 - decisions for branches that remain in the inventory.
 
-Do not carry decisions onto a different SHA unnoticed. Key persisted state by repository and inventory version, or surface SHA changes before reusing it.
+Do not carry decisions onto a different SHA unnoticed. Key persisted state by repository and inventory version, or
+surface SHA changes before reusing it.
 
-Keep deletion outside the HTML. The cockpit reviews and exports decisions; the agent separately revalidates live refs and executes guarded Git commands.
+Keep deletion outside the HTML. The cockpit reviews and exports decisions; the agent separately revalidates live refs
+and executes guarded Git commands.

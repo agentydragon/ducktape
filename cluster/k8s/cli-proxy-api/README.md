@@ -1,18 +1,15 @@
 # CLIProxyAPI
 
-[CLIProxyAPI](https://github.com/router-for-me/CLIProxyAPI) is the gateway that lets
-**Claude Code run on ChatGPT/Codex subscription models** (GPT-6 Astra, GPT-5.6-sol, …). It speaks
-Anthropic `/v1/messages` to Claude Code and the ChatGPT Codex backend upstream, and —
-unlike LiteLLM's `/v1/messages` bridge (BerriAI/litellm#25429) and claude-code-router —
-**translates tool calls correctly** (`function_call` → `tool_use`). It goes direct to
-`chatgpt.com/backend-api/codex`, holding its own Claude and Codex OAuth sessions.
+[CLIProxyAPI](https://github.com/router-for-me/CLIProxyAPI) is the gateway that lets **Claude Code run on ChatGPT/Codex
+subscription models** (GPT-6 Astra, GPT-5.6-sol, …). It speaks Anthropic `/v1/messages` to Claude Code and the ChatGPT
+Codex backend upstream, and — unlike LiteLLM's `/v1/messages` bridge (BerriAI/litellm#25429) and claude-code-router —
+**translates tool calls correctly** (`function_call` → `tool_use`). It goes direct to `chatgpt.com/backend-api/codex`,
+holding its own Claude and Codex OAuth sessions.
 
-The `codex-claude` wrapper points Claude Code at the main LiteLLM proxy
-(`litellm.allegedly.works`), which fronts CLIProxyAPI as its `codex-*` upstream
-(see `cluster/cdk8s/litellm/test_config.py`). The laptop and agent-box consumers
-authenticate to LiteLLM with the shared `codex-clients` virtual key; codex-pod has a
-separate GPT-6-only Messages key. The client key below is now consumed only by the main
-LiteLLM pod (ESO-mirrored into `litellm`).
+The `codex-claude` wrapper points Claude Code at the main LiteLLM proxy (`litellm.allegedly.works`), which fronts
+CLIProxyAPI as its `codex-*` upstream (see `cluster/cdk8s/litellm/test_config.py`). The laptop and agent-box consumers
+authenticate to LiteLLM with the shared `codex-clients` virtual key; codex-pod has a separate GPT-6-only Messages key.
+The client key below is now consumed only by the main LiteLLM pod (ESO-mirrored into `litellm`).
 
 ## Models
 
@@ -22,32 +19,31 @@ LiteLLM pod (ESO-mirrored into `litellm`).
 - main: `gpt-6-astra`
 - background/Haiku tier: `gpt-6-luna` (the small 6 — `sol` is overkill for titles etc.)
 
-Reasoning effort is driven by Claude Code's `effortLevel` setting and forwarded to Codex
-`reasoning.effort` (not a model-slug suffix).
+Reasoning effort is driven by Claude Code's `effortLevel` setting and forwarded to Codex `reasoning.effort` (not a
+model-slug suffix).
 
-The deployed CLIProxyAPI v7.2.135 discovered `gpt-6-astra` and completed live
-tool-call probes on both `/v1/responses` (`function_call`) and `/v1/messages`
-(`tool_use`) on 2026-09-05. Its remote model catalog makes Astra usable even
-though that binary predates the model's release.
+The deployed CLIProxyAPI v7.2.135 discovered `gpt-6-astra` and completed live tool-call probes on both `/v1/responses`
+(`function_call`) and `/v1/messages` (`tool_use`) on 2026-09-05. Its remote model catalog makes Astra usable even though
+that binary predates the model's release.
 
 ## One-time setup: Codex OAuth login
 
-CLIProxyAPI needs its own Codex session. Once per PVC (the token is refreshed in place
-afterward), run the device login against the running pod:
+CLIProxyAPI needs its own Codex session. Once per PVC (the token is refreshed in place afterward), run the device login
+against the running pod:
 
 ```bash
 kubectl -n cli-proxy-api exec -it deploy/cli-proxy-api -- \
   ./CLIProxyAPI -codex-device-login -no-browser -config /config/config.yaml
 ```
 
-Open the printed URL, enter the code, approve with the ChatGPT account. CLIProxyAPI writes
-`/data/auth/auth.json` (PVC) and its file watcher loads it without a restart. The PVC
-persists the token across pod restarts; the auto-refresh worker (15m) keeps it valid.
+Open the printed URL, enter the code, approve with the ChatGPT account. CLIProxyAPI writes `/data/auth/auth.json` (PVC)
+and its file watcher loads it without a restart. The PVC persists the token across pod restarts; the auto-refresh worker
+(15m) keeps it valid.
 
 ## One-time setup: Claude OAuth login
 
-Run this only when adding or re-authenticating the Claude subscription. Keep the
-callback local: do not publish port `54545` through the Service or public route.
+Run this only when adding or re-authenticating the Claude subscription. Keep the callback local: do not publish port
+`54545` through the Service or public route.
 
 In one terminal, forward the callback port to the pod:
 
@@ -63,86 +59,73 @@ kubectl -n cli-proxy-api exec -it deploy/cli-proxy-api -- \
   -oauth-callback-port 54545 -config /config/config.yaml
 ```
 
-Open the printed Anthropic authorization URL in the local browser and finish
-the login. Anthropic redirects to `http://localhost:54545/callback`; the
-port-forward delivers that callback to the process in the pod. CLIProxyAPI
-writes the Claude auth file, including its refresh token, under `/data/auth`.
-The normal server process watches that directory and then owns future refreshes.
+Open the printed Anthropic authorization URL in the local browser and finish the login. Anthropic redirects to
+`http://localhost:54545/callback`; the port-forward delivers that callback to the process in the pod. CLIProxyAPI writes
+the Claude auth file, including its refresh token, under `/data/auth`. The normal server process watches that directory
+and then owns future refreshes.
 
-Verify the new account appears in the management UI's auth-file list. The packaged
-image is distroless, so shell commands such as `sh` and `find` are unavailable.
+Verify the new account appears in the management UI's auth-file list. The packaged image is distroless, so shell
+commands such as `sh` and `find` are unavailable.
 
-AIQuota has no fallback token path; this keeps the quota service from
-maintaining two Claude credential owners.
+AIQuota has no fallback token path; this keeps the quota service from maintaining two Claude credential owners.
 
-AIQuota uses the management API's opaque `auth_index` only because the current
-`/api-call` contract requires it for `$TOKEN$` substitution. It never reads or
-stores the auth file or either OAuth token.
+AIQuota uses the management API's opaque `auth_index` only because the current `/api-call` contract requires it for
+`$TOKEN$` substitution. It never reads or stores the auth file or either OAuth token.
 
 ## Remote recovery (SSO-gated web UI)
 
-The Codex/Claude OAuth sessions above periodically die (OpenAI/Anthropic invalidate the
-refresh token) and previously could only be recovered by the interactive `kubectl exec`
-device-login flow, which needs a machine with cluster access — not a phone. CLIProxyAPI's
-own [management API](https://help.router-for.me/management/api) already covers this:
-`GET /v0/management/{codex,anthropic,antigravity}-auth-url` returns a provider login URL
-plus a `state`; `GET /v0/management/get-auth-status?state=...` polls it; `GET`/`POST
-/v0/management/oauth-callback` completes it (unauthenticated, since it only carries the
-provider's redirect). The rest of the management API and the bundled web UI it serves at
-`/management.html` on the same port ride along.
+The Codex/Claude OAuth sessions above periodically die (OpenAI/Anthropic invalidate the refresh token) and previously
+could only be recovered by the interactive `kubectl exec` device-login flow, which needs a machine with cluster access —
+not a phone. CLIProxyAPI's own [management API](https://help.router-for.me/management/api) already covers this:
+`GET /v0/management/{codex,anthropic,antigravity}-auth-url` returns a provider login URL plus a `state`;
+`GET /v0/management/get-auth-status?state=...` polls it; `GET`/`POST /v0/management/oauth-callback` completes it
+(unauthenticated, since it only carries the provider's redirect). The rest of the management API and the bundled web UI
+it serves at `/management.html` on the same port ride along.
 
-Open [the management UI](https://cli-proxy-api-admin.allegedly.works/management.html)
-and choose **Sign in with SSO**. The Gateway routes directly to CLIProxyAPI, which
-uses Authentik OIDC and a secure browser session cookie. Both the Authentik
-application policy and the backend subject allowlist restrict access to
-`agentydragon`. No management key needs to be copied into the browser.
+Open [the management UI](https://cli-proxy-api-admin.allegedly.works/management.html) and choose **Sign in with SSO**.
+The Gateway routes directly to CLIProxyAPI, which uses Authentik OIDC and a secure browser session cookie. Both the
+Authentik application policy and the backend subject allowlist restrict access to `agentydragon`. No management key
+needs to be copied into the browser.
 
-The confidential provider and reflected `cli-proxy-api-admin-oidc` Secret are owned
-by `tf/gitops/sso-providers/provider_cli_proxy_api_admin.tf`. The provider uses
-`sub_mode = "user_id"`, so the backend allowlist contains the owner's numeric
-Authentik ID. Its strict callback is
+The confidential provider and reflected `cli-proxy-api-admin-oidc` Secret are owned by
+`tf/gitops/sso-providers/provider_cli_proxy_api_admin.tf`. The provider uses `sub_mode = "user_id"`, so the backend
+allowlist contains the owner's numeric Authentik ID. Its strict callback is
 `https://cli-proxy-api-admin.allegedly.works/v0/management/callback`.
 
-Sessions last at most one hour or the ID token's remaining lifetime. Restarting the
-single replica revokes them. Logout clears the local session; it does not log the
-browser out of Authentik. Expired sessions offer login again.
+Sessions last at most one hour or the ID token's remaining lifetime. Restarting the single replica revokes them. Logout
+clears the local session; it does not log the browser out of Authentik. Expired sessions offer login again.
 
-`MANAGEMENT_PASSWORD` remains enabled for AIQuota's direct management-key access.
-The existing client key protects model requests, including direct LiteLLM traffic.
-The `cli-proxy-api.allegedly.works` hostname only routes `/v1` model requests.
+`MANAGEMENT_PASSWORD` remains enabled for AIQuota's direct management-key access. The existing client key protects model
+requests, including direct LiteLLM traffic. The `cli-proxy-api.allegedly.works` hostname only routes `/v1` model
+requests.
 
 ## Patched image
 
 `@ducktape_cli_proxy_api//:image` builds the backend and bundled management UI;
-`//third_party/cli_proxy_api_tests:tests` checks the patches and boots the packaged
-container. Patches live in `third_party/cli_proxy_api/` for eventual upstream
-submission. CI publishes `git.allegedly.works/ducktape-ci/cli-proxy-api`; Flux tracks
-its `devel-*` tags. The bundled UI is immutable and cannot be replaced by the
-upstream panel updater.
+`//third_party/cli_proxy_api_tests:tests` checks the patches and boots the packaged container. Patches live in
+`third_party/cli_proxy_api/` for eventual upstream submission. CI publishes
+`git.allegedly.works/ducktape-ci/cli-proxy-api`; Flux tracks its `devel-*` tags. The bundled UI is immutable and cannot
+be replaced by the upstream panel updater.
 
-The namespace's `forgejo-images-creds` pull Secret belongs to the aiquota chart
-(`cluster/cdk8s/aiquota.py`). A Forgejo outage prevents uncached replacement
-image pulls but does not interrupt a running process.
+The namespace's `forgejo-images-creds` pull Secret belongs to the aiquota chart (`cluster/cdk8s/aiquota.py`). A Forgejo
+outage prevents uncached replacement image pulls but does not interrupt a running process.
 
 ## Secrets
 
-- `client-key.sops.yaml` — SSOT of the client key. ESO renders it into
-  `cli-proxy-api-config/config.yaml` for CLIProxyAPI and mirrors it into `litellm` as
-  `CLIPROXY_CLIENT_KEY` for the `codex-*` upstream. Laptop and agent-box use the scoped
-  `codex-clients` LiteLLM virtual key; codex-pod uses a GPT-6-only key.
-- The `cli-proxy-api-config` ExternalSecret (`cluster/cdk8s/cli_proxy_api/cli_proxy_api.py`) —
-  plaintext CLIProxyAPI configuration template. It includes three bounded
-  stream bootstrap retries, which retry a failed upstream stream only before any response bytes
-  have been sent to the caller.
-- `management-key.sops.yaml` — SOPS-managed key shared only by CLIProxyAPI's
-  management endpoint and the in-cluster aiquota CLIProxyAPI integration.
+- `client-key.sops.yaml` — SSOT of the client key. ESO renders it into `cli-proxy-api-config/config.yaml` for
+  CLIProxyAPI and mirrors it into `litellm` as `CLIPROXY_CLIENT_KEY` for the `codex-*` upstream. Laptop and agent-box
+  use the scoped `codex-clients` LiteLLM virtual key; codex-pod uses a GPT-6-only key.
+- The `cli-proxy-api-config` ExternalSecret (`cluster/cdk8s/cli_proxy_api/cli_proxy_api.py`) — plaintext CLIProxyAPI
+  configuration template. It includes three bounded stream bootstrap retries, which retry a failed upstream stream only
+  before any response bytes have been sent to the caller.
+- `management-key.sops.yaml` — SOPS-managed key shared only by CLIProxyAPI's management endpoint and the in-cluster
+  aiquota CLIProxyAPI integration.
 
 Rotate the client key: generate a new value and update `client-key.sops.yaml` only, then push.
 
 ## Session ownership (rotation)
 
-CLIProxyAPI holds and refreshes **dedicated** Claude and Codex OAuth sessions. LiteLLM owns no
-subscription OAuth credential or auth PVC: its `chatgpt/*` routes proxy model traffic to
-CLIProxyAPI with an API key, while its `anthropic-api/*` routes use the separate Anthropic API
-key and its `anthropic-max20/*` routes use the Claude subscription session. This keeps AIQuota
-from mounting or writing the CLIProxyAPI PVC.
+CLIProxyAPI holds and refreshes **dedicated** Claude and Codex OAuth sessions. LiteLLM owns no subscription OAuth
+credential or auth PVC: its `chatgpt/*` routes proxy model traffic to CLIProxyAPI with an API key, while its
+`anthropic-api/*` routes use the separate Anthropic API key and its `anthropic-max20/*` routes use the Claude
+subscription session. This keeps AIQuota from mounting or writing the CLIProxyAPI PVC.

@@ -35,8 +35,7 @@ services:
       - ${HOME}/.combo_mcp/gitea:/data
     entrypoint: ["/bin/sh", "-lc"]
     command: >
-      set -e;
-      /usr/local/bin/gitea admin user create --admin \
+      set -e; /usr/local/bin/gitea admin user create --admin \
         --username "${GITEA_ADMIN_USERNAME:-admin}" \
         --password "${GITEA_ADMIN_PASSWORD:-changeme}" \
         --email "${GITEA_ADMIN_EMAIL:-admin@local}" \

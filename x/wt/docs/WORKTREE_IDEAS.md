@@ -1,10 +1,13 @@
 # Worktree System Design Evolution
 
-This document captures the vision for evolving `wt` from a single-repository worktree manager into a comprehensive multi-repository development environment. The design emphasizes simplicity in the immediate term while laying foundations for more sophisticated workflows.
+This document captures the vision for evolving `wt` from a single-repository worktree manager into a comprehensive
+multi-repository development environment. The design emphasizes simplicity in the immediate term while laying
+foundations for more sophisticated workflows.
 
 ## Current State (Completed Rationalization)
 
-The configuration system has been fully rationalized into a clean, predictable system using `WT_DIR`-based configuration.
+The configuration system has been fully rationalized into a clean, predictable system using `WT_DIR`-based
+configuration.
 
 ### Configuration System
 
@@ -14,17 +17,24 @@ Single configuration approach:
 2. `$WT_DIR/config.yaml` contains explicit configuration with no defaults
 3. All paths are explicit and validated upfront during Configuration.resolve()
 
-Configuration and daemon state live under the configured `WT_DIR` location, providing clean separation between configuration storage and git repository location. This eliminates confusion around multiple config sources and provides flexible deployment options.
+Configuration and daemon state live under the configured `WT_DIR` location, providing clean separation between
+configuration storage and git repository location. This eliminates confusion around multiple config sources and provides
+flexible deployment options.
 
 ## Multi-Repository Vision
 
-The long-term vision transforms `wt` into a global development environment manager. Instead of managing worktrees for one repository, it becomes a coordinator for all your development work across multiple repositories.
+The long-term vision transforms `wt` into a global development environment manager. Instead of managing worktrees for
+one repository, it becomes a coordinator for all your development work across multiple repositories.
 
 ### Global Daemon Architecture
 
-A single global daemon will manage all repositories and their worktrees from `~/.wt/` (overridable via `WT_DIR` for testing). This daemon maintains a registry of known repositories and provides fast status across your entire development workspace.
+A single global daemon will manage all repositories and their worktrees from `~/.wt/` (overridable via `WT_DIR` for
+testing). This daemon maintains a registry of known repositories and provides fast status across your entire development
+workspace.
 
-The global configuration at `~/.wt/config.toml` will define repository mappings, default behaviors, and global settings like GitHub refresh intervals. Per-repository state will be cached under `~/.wt/repos/{repo-name}/` but managed centrally.
+The global configuration at `~/.wt/config.toml` will define repository mappings, default behaviors, and global settings
+like GitHub refresh intervals. Per-repository state will be cached under `~/.wt/repos/{repo-name}/` but managed
+centrally.
 
 ### Intelligent Command Resolution
 
@@ -35,7 +45,8 @@ Commands will support both explicit repository specification and intelligent con
 - `wt other-project/branch-name` - repository/worktree syntax
 - When inside a worktree, commands operate on that repository by default
 
-This creates a natural workflow where you can quickly jump between different projects while maintaining the speed and convenience of worktree-based development.
+This creates a natural workflow where you can quickly jump between different projects while maintaining the speed and
+convenience of worktree-based development.
 
 ### Structured Development Directories
 
@@ -68,11 +79,14 @@ The multi-repo system will support repository-level operations that feel natural
 
 ### One Branch = One Worktree
 
-The fundamental principle remains: enforce strict mapping between branches and worktrees. This prevents the cognitive overhead of tracking which branch is checked out where and enables powerful file-system-level operations between branches.
+The fundamental principle remains: enforce strict mapping between branches and worktrees. This prevents the cognitive
+overhead of tracking which branch is checked out where and enables powerful file-system-level operations between
+branches.
 
 ### Filesystem as Interface
 
-Operations like "move file from branch A to branch B" become literal `mv` commands between worktrees. This transforms abstract git operations into concrete filesystem operations that are easier to reason about and automate.
+Operations like "move file from branch A to branch B" become literal `mv` commands between worktrees. This transforms
+abstract git operations into concrete filesystem operations that are easier to reason about and automate.
 
 ## Implementation Phases
 
@@ -89,33 +103,44 @@ Operations like "move file from branch A to branch B" become literal `mv` comman
 
 ### 🔄 Phase 2: Complete Daemon Migration (In Progress)
 
-Move remaining worktree create/delete operations to daemon while maintaining the global daemon foundation work. Path operations have been successfully moved to server authority.
+Move remaining worktree create/delete operations to daemon while maintaining the global daemon foundation work. Path
+operations have been successfully moved to server authority.
 
 ### 📋 Phase 3: Global Foundation
 
-Introduce global daemon architecture while maintaining backward compatibility. The global daemon will coordinate multiple single-repository instances, gradually centralizing state management and cross-repository operations.
+Introduce global daemon architecture while maintaining backward compatibility. The global daemon will coordinate
+multiple single-repository instances, gradually centralizing state management and cross-repository operations.
 
 ### 🚀 Phase 4: Advanced Multi-Repository Features
 
-Add sophisticated features like structured directory management, repository cloning operations, and cross-repository workflows. These features will build on the solid foundation established in earlier phases.
+Add sophisticated features like structured directory management, repository cloning operations, and cross-repository
+workflows. These features will build on the solid foundation established in earlier phases.
 
 ## Technical Implementation Details
 
 ### MCP Integration Strategy
 
-All worktrees will inherit MCP server configurations from `~/.claude.json`, drawing from the master environment to avoid breaking during development. Future versions may support per-worktree MCP configurations or jailed Claude instances that operate within specific worktree contexts.
+All worktrees will inherit MCP server configurations from `~/.claude.json`, drawing from the master environment to avoid
+breaking during development. Future versions may support per-worktree MCP configurations or jailed Claude instances that
+operate within specific worktree contexts.
 
 ### Safety and Process Management
 
-Enhanced `wt rm` will use `lsof` or similar tools to detect active processes in worktrees before deletion. Git status checks and branch merge verification will prevent accidental loss of work. The system will provide clear feedback about what operations are safe and what might be destructive.
+Enhanced `wt rm` will use `lsof` or similar tools to detect active processes in worktrees before deletion. Git status
+checks and branch merge verification will prevent accidental loss of work. The system will provide clear feedback about
+what operations are safe and what might be destructive.
 
 ### Performance Optimizations
 
-The system will use copy-on-write reflinks where supported for faster worktree hydration. Daemon health monitoring will continuously attempt to start `gitstatusd` processes where needed, reporting availability through a health RPC that clients can check to provide appropriate user feedback.
+The system will use copy-on-write reflinks where supported for faster worktree hydration. Daemon health monitoring will
+continuously attempt to start `gitstatusd` processes where needed, reporting availability through a health RPC that
+clients can check to provide appropriate user feedback.
 
 ### Integration Ecosystem
 
-IDE integration will generate appropriate workspace files (VS Code, etc.) for each worktree. Terminal integration will support intelligent shell prompts and directory jumping. The system will integrate cleanly with existing git workflows while encouraging the worktree-based approach.
+IDE integration will generate appropriate workspace files (VS Code, etc.) for each worktree. Terminal integration will
+support intelligent shell prompts and directory jumping. The system will integrate cleanly with existing git workflows
+while encouraging the worktree-based approach.
 
 # Template Command System (Future Bikeshedding Paradise)
 
@@ -188,4 +213,5 @@ wt merge-back <x>               # Merge worktree back to master and cleanup
 
 ## Note to Future Self
 
-Remember: The goal is building a productivity tool for ML research, not a programming language. Ship the practical version first, then maybe explore the beautiful abstractions when they solve real problems we actually encounter.
+Remember: The goal is building a productivity tool for ML research, not a programming language. Ship the practical
+version first, then maybe explore the beautiful abstractions when they solve real problems we actually encounter.

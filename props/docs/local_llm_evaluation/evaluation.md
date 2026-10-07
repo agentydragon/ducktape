@@ -1,20 +1,20 @@
 # Running Props Evaluation with a Local LLM
 
-End-to-end procedure for running the props critic and grader against committed
-specimen snapshots using an open-weight LLM.
+End-to-end procedure for running the props critic and grader against committed specimen snapshots using an open-weight
+LLM.
 
 See <benchmarks.md> for model performance data.
 
 ## Remote Ollama Cluster (Recommended)
 
-The repo ships a `config.ollama.toml` in `.claude/skills/test_props/` that
-points to the shared LiteLLM cluster at `litellm.allegedly.works`. The cluster
-runs `gpt-oss:20b` with `OLLAMA_NUM_CTX=131072` (128k context).
+The repo ships a `config.ollama.toml` in `.claude/skills/test_props/` that points to the shared LiteLLM cluster at
+`litellm.allegedly.works`. The cluster runs `gpt-oss:20b` with `OLLAMA_NUM_CTX=131072` (128k context).
 
 **Prerequisites:**
 
 - A running props stack — see the `test_props` skill for infrastructure setup
-- `OLLAMA_API_KEY` from k8s: `kubectl get secret ollama-api-key -n claude-sandbox -o jsonpath='{.data.api-key}' | base64 -d`
+- `OLLAMA_API_KEY` from k8s:
+  `kubectl get secret ollama-api-key -n claude-sandbox -o jsonpath='{.data.api-key}' | base64 -d`
 
 Start the backend with the Ollama config:
 
@@ -41,15 +41,13 @@ For running inference locally rather than via the cluster, use `llama-server`.
 | gpt-oss-20b | `unsloth/gpt-oss-20b-GGUF` | 10.8 GiB |      ~12 GiB | ~12 t/s | untested     |
 | Qwen3-8B    | `unsloth/Qwen3-8B-GGUF`    |  4.7 GiB |       ~6 GiB |  ~9 t/s | works        |
 
-**Recommendation**: Qwen3-8B fits comfortably in the 21 GiB environment and
-leaves headroom for all services. gpt-oss-20b is faster at generation but
-tight on RAM.
+**Recommendation**: Qwen3-8B fits comfortably in the 21 GiB environment and leaves headroom for all services.
+gpt-oss-20b is faster at generation but tight on RAM.
 
 ### Memory Estimates (Qwen3-8B)
 
-Model weights: ~4.7 GB. Process overhead (compute buffers, allocator): ~3.5 GB.
-The remaining budget goes to the KV cache, whose size depends on context length
-and cache quantization (`-ctk`/`-ctv` flags).
+Model weights: ~4.7 GB. Process overhead (compute buffers, allocator): ~3.5 GB. The remaining budget goes to the KV
+cache, whose size depends on context length and cache quantization (`-ctk`/`-ctv` flags).
 
 Qwen3-8B KV cache: 36 layers, 8 GQA heads, 128 head dim.
 
@@ -60,11 +58,9 @@ Qwen3-8B KV cache: 36 layers, 8 GQA heads, 128 head dim.
 |        16384 |  2.25 GB |   1.12 GB |   0.56 GB |       8.8 GB |
 |        32768 |  4.50 GB |   2.25 GB |   1.12 GB |       9.3 GB |
 
-With q4_0 KV cache (`-ctk q4_0 -ctv q4_0`), the full 32K native context fits
-comfortably under the 15 GB `process_api` kill threshold (~9.3 GB measured).
-The critic agent's system prompt and tool definitions consume ~2K tokens, so
-4096 total context is too small for useful code analysis. **Use 32768** (the
-model's full native context window).
+With q4_0 KV cache (`-ctk q4_0 -ctv q4_0`), the full 32K native context fits comfortably under the 15 GB `process_api`
+kill threshold (~9.3 GB measured). The critic agent's system prompt and tool definitions consume ~2K tokens, so 4096
+total context is too small for useful code analysis. **Use 32768** (the model's full native context window).
 
 ### Step 1: Download and Start llama-server
 
@@ -78,13 +74,13 @@ curl -L -H "Accept: application/octet-stream" \
 tar -xzf /tmp/benchmark/llama-server.tar.gz -C /tmp/benchmark
 ```
 
-> **Note**: `curl -sL | tar` fails because GitHub redirects to a different
-> domain. Download to a file first, then extract.
+> **Note**: `curl -sL | tar` fails because GitHub redirects to a different domain. Download to a file first, then
+> extract.
 
 ### Step 2: Download the GGUF Model
 
-Download to `/tmp` (disk-backed), **not** `/dev/shm` (tmpfs). Files on `/dev/shm`
-are evicted when the process that mmapped them exits.
+Download to `/tmp` (disk-backed), **not** `/dev/shm` (tmpfs). Files on `/dev/shm` are evicted when the process that
+mmapped them exits.
 
 ```bash
 # Option A: Qwen3-8B (recommended — 4.7 GiB, leaves RAM headroom)
@@ -122,8 +118,8 @@ Wait for health: `curl -s http://127.0.0.1:11434/health`
 - `--no-warmup --cache-ram 0` — skip KV cache pre-allocation to save RAM
 - `--parallel 1` — single slot (one request at a time)
 
-The model name reported by `/v1/models` is the GGUF filename (e.g.,
-`Qwen3-8B-Q4_K_M.gguf`). This must match `upstream_model` in the config.
+The model name reported by `/v1/models` is the GGUF filename (e.g., `Qwen3-8B-Q4_K_M.gguf`). This must match
+`upstream_model` in the config.
 
 ### Step 4: Configure the Props Backend for Local LLM
 
@@ -135,15 +131,13 @@ cp props/docs/local_llm_evaluation/props_config.toml /tmp/props-ollama-config.to
 
 The config defines:
 
-1. **`grader_model`**: Enables the `GraderSupervisor` (auto-grades after each
-   critic finishes)
-2. **Upstream** (`[upstreams.ollama]`): llama-server on port 11434. `api_key_env`
-   points to a dummy env var (llama-server ignores API keys)
-3. **Custom model** (`[[models]]`): Zero pricing (local inference is free).
-   `upstream_model` must match the GGUF filename from `/v1/models`
+1. **`grader_model`**: Enables the `GraderSupervisor` (auto-grades after each critic finishes)
+2. **Upstream** (`[upstreams.ollama]`): llama-server on port 11434. `api_key_env` points to a dummy env var
+   (llama-server ignores API keys)
+3. **Custom model** (`[[models]]`): Zero pricing (local inference is free). `upstream_model` must match the GGUF
+   filename from `/v1/models`
 
-Pass `PROPS_CONFIG_FILE=/tmp/props-ollama-config.toml` and
-`OLLAMA_DUMMY_KEY=dummy` when starting the backend.
+Pass `PROPS_CONFIG_FILE=/tmp/props-ollama-config.toml` and `OLLAMA_DUMMY_KEY=dummy` when starting the backend.
 
 ## Running a Critic
 
@@ -165,13 +159,11 @@ curl -s -X POST "http://localhost:8000/api/runs/critic" \
 
 `budget_usd=0.0` — local models have zero cost.
 
-Monitor and wait for grading as described in
-<../openai_evaluation/evaluation.md> ("Running Critics" section).
+Monitor and wait for grading as described in <../openai_evaluation/evaluation.md> ("Running Critics" section).
 
 ## Exporting Results
 
-Same procedure as OpenAI evaluation — see
-<../openai_evaluation/evaluation.md> ("Exporting Results" section), adjusting
+Same procedure as OpenAI evaluation — see <../openai_evaluation/evaluation.md> ("Exporting Results" section), adjusting
 the output path:
 
 ```bash
@@ -199,11 +191,9 @@ pg_dump eval_results \
 
 ### GGUF file vanishes after llama-server exits
 
-Files on `/dev/shm` (tmpfs) are backed by RAM. When the process that mmapped
-the file exits, the kernel may reclaim the pages. Always store GGUF files on
-`/tmp` (disk-backed), not `/dev/shm`.
+Files on `/dev/shm` (tmpfs) are backed by RAM. When the process that mmapped the file exits, the kernel may reclaim the
+pages. Always store GGUF files on `/tmp` (disk-backed), not `/dev/shm`.
 
 ### llama-server download: `curl -sL | tar` fails
 
-GitHub release asset downloads redirect to a different domain. Download to a
-file first, then extract.
+GitHub release asset downloads redirect to a different domain. Download to a file first, then extract.

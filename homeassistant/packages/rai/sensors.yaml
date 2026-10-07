@@ -21,8 +21,8 @@ _tmpl:
     unit_of_measurement: "%"
     state_class: measurement
     state: >
-      {% set v = trigger.event.data.battery_level | default('unknown') %}
-      {% if v not in ['unknown', '', none] %}{{ v | int }}{% endif %}
+      {% set v = trigger.event.data.battery_level | default('unknown') %} {% if v not in ['unknown', '', none] %}{{ v |
+      int }}{% endif %}
     availability: >
       {{ trigger.event.data.battery_level not in ['unknown', '', none] }}
   px6_rssi: &px6_rssi
@@ -31,8 +31,8 @@ _tmpl:
     unit_of_measurement: "dBm"
     state_class: measurement
     state: >
-      {% set v = trigger.event.data.signal_strength | default('unknown') %}
-      {% if v not in ['unknown', '', none] %}{{ v | int }}{% endif %}
+      {% set v = trigger.event.data.signal_strength | default('unknown') %} {% if v not in ['unknown', '', none] %}{{ v
+      | int }}{% endif %}
     availability: >
       {{ trigger.event.data.signal_strength not in ['unknown', '', none] }}
 

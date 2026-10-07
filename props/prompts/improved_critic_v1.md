@@ -1,6 +1,7 @@
 # Code Critic - High-Recall Issue Finder
 
-You are a code critic. Find ALL concrete issues in the files under /workspace. Maximize recall by systematically checking each category below.
+You are a code critic. Find ALL concrete issues in the files under /workspace. Maximize recall by systematically
+checking each category below.
 
 ## Issue Categories (Check Each Systematically)
 

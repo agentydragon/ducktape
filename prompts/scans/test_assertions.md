@@ -6,7 +6,8 @@
 
 ## Overview
 
-Tests using plain `assert` statements miss opportunities for better error messages, expressivity, and composability that PyHamcrest matchers provide.
+Tests using plain `assert` statements miss opportunities for better error messages, expressivity, and composability that
+PyHamcrest matchers provide.
 
 ## Core Principle
 
@@ -87,7 +88,8 @@ def test_parse_creates_valid_change():
 - Can match subset of properties
 - Intent is clear: Parse produces these exact changes. Concise, complete.
 
-**Rule**: When `has_properties()` lists ALL fields of a class with exact values, use plain `==` instead - it's simpler and clearer. **For full object comparison, prefer plain `==`**.
+**Rule**: When `has_properties()` lists ALL fields of a class with exact values, use plain `==` instead - it's simpler
+and clearer. **For full object comparison, prefer plain `==`**.
 
 ```python
 # BAD: has_properties with all fields and exact values
@@ -165,7 +167,8 @@ assert_that(statuses, all_of(
 ))
 ```
 
-**Principle**: In tests, usually don't care if result is `list` vs `tuple` vs `set` - just care about the content. Don't assert `instance_of(list)` unless the specific collection type matters to the contract.
+**Principle**: In tests, usually don't care if result is `list` vs `tuple` vs `set` - just care about the content. Don't
+assert `instance_of(list)` unless the specific collection type matters to the contract.
 
 ## Pattern 3: Collection Assertions
 
@@ -242,11 +245,13 @@ assert_that(result, has_properties(
 ))
 ```
 
-**Rule**: Use plain `==` for exact full object comparison, `has_properties()` when you need matchers or partial matching.
+**Rule**: Use plain `==` for exact full object comparison, `has_properties()` when you need matchers or partial
+matching.
 
 ## Pattern 7: Nested Object Matching (Real Codebase Examples)
 
-PyHamcrest's true power shows when validating deeply nested structures. Here are patterns from the actual codebase that showcase composable matchers:
+PyHamcrest's true power shows when validating deeply nested structures. Here are patterns from the actual codebase that
+showcase composable matchers:
 
 ### Example 1: Nested has_properties for Complex Messages
 
@@ -529,7 +534,8 @@ rg --type py '^[[:space:]]*assert ' --glob "test_*.py" --glob "*_test.py" | wc -
 **What to review for each assertion:**
 
 1. **Field-by-field checks**: Multiple `assert obj.field ==` for same object (use plain `==` or `has_properties()`)
-2. **Collection operations**: `assert len()`, `assert x in`, `assert x[0] ==` (use `has_length()`, `has_item()`, matchers)
+2. **Collection operations**: `assert len()`, `assert x in`, `assert x[0] ==` (use `has_length()`, `has_item()`,
+   matchers)
 3. **Type checks**: `assert isinstance()` (use `instance_of()` for better error messages)
 4. **String operations**: `assert "x" in str`, `assert str.startswith()` (use `contains_string()`, `starts_with()`)
 5. **Numeric comparisons**: `assert x > y`, `assert x >= y` (use `greater_than()`, `greater_than_or_equal_to()`)
@@ -537,7 +543,8 @@ rg --type py '^[[:space:]]*assert ' --glob "test_*.py" --glob "*_test.py" | wc -
 
 **Process ALL output**: Read each assertion, use your judgment to identify which would benefit from PyHamcrest matchers.
 
-**Key decision**: For full object comparison with exact values, prefer plain `==`. Use `has_properties()` only for partial matching or composed matchers.
+**Key decision**: For full object comparison with exact values, prefer plain `==`. Use `has_properties()` only for
+partial matching or composed matchers.
 
 ---
 
@@ -570,7 +577,8 @@ rg --type py "assert \w+ [><]=" --glob "test_*.py"
 rg --type py "has_properties\(" --glob "test_*.py" -A10
 ```
 
-**Important**: Grep patterns find candidates for manual review. Don't trust them blindly. Read the actual code to understand context and determine if changes make sense.
+**Important**: Grep patterns find candidates for manual review. Don't trust them blindly. Read the actual code to
+understand context and determine if changes make sense.
 
 ## References
 

@@ -6,7 +6,8 @@
 
 ## Pattern Description
 
-Plain classes with boilerplate `__init__` methods that just assign parameters to instance variables, when they should use `@dataclass` or Pydantic `BaseModel` for automatic field handling.
+Plain classes with boilerplate `__init__` methods that just assign parameters to instance variables, when they should
+use `@dataclass` or Pydantic `BaseModel` for automatic field handling.
 
 ## Core Principle
 

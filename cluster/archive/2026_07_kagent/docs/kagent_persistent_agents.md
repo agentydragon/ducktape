@@ -1,18 +1,15 @@
 # Persistent AI Agents Platform Plan
 
-> **Superseded / archived (2026-07-21).** Kagent was suspended and later retired: it lacks tool-call
-> output truncation, so a single large MCP response (`kubectl get events`, full
-> pod listings) dumps enough text into the event history that the next request
-> exceeds z.ai's per-prompt cap (error `1261`), killing the session — too fragile
-> for cluster-ops use. The Vault secret backend referenced below was decommissioned
-> 2026-04-19, and the `devbot` manifests are orphaned. This file is retained only
-> as the historical design record. See <../README.md> for the retirement decision and
+> **Superseded / archived (2026-07-21).** Kagent was suspended and later retired: it lacks tool-call output truncation,
+> so a single large MCP response (`kubectl get events`, full pod listings) dumps enough text into the event history that
+> the next request exceeds z.ai's per-prompt cap (error `1261`), killing the session — too fragile for cluster-ops use.
+> The Vault secret backend referenced below was decommissioned 2026-04-19, and the `devbot` manifests are orphaned. This
+> file is retained only as the historical design record. See <../README.md> for the retirement decision and
 > <operational_findings.md> for the original operational findings.
 
-> **Note (2026-05-17)**: This plan was written when Vault was the secret SSOT.
-> Vault has since been decommissioned (see <../../../docs/decisions.md> § "Secrets: SOPS SSOT");
-> replace any `vault-backend` ClusterSecretStore references below with SOPS-managed
-> secrets when implementing.
+> **Note (2026-05-17)**: This plan was written when Vault was the secret SSOT. Vault has since been decommissioned (see
+> <../../../docs/decisions.md> § "Secrets: SOPS SSOT"); replace any `vault-backend` ClusterSecretStore references below
+> with SOPS-managed secrets when implementing.
 
 ## Vision
 
@@ -274,8 +271,8 @@ spec:
   timeout: 30s
 ```
 
-**Note:** Each agent gets its own RemoteMCPServer CRD pointing to that agent's desktop service.
-The MCP server runs as a sidecar in the desktop pod (see section 4 below).
+**Note:** Each agent gets its own RemoteMCPServer CRD pointing to that agent's desktop service. The MCP server runs as a
+sidecar in the desktop pod (see section 4 below).
 
 ### 4. Agent's Private Desktop
 
@@ -688,9 +685,8 @@ helm install databot ./charts/kagent-agent \
 
 ### Phase 0: Research & Planning ✅ Complete
 
-Architecture designed, `computer-control-mcp` verified locally on Pop!\_OS (all tools:
-screenshot, mouse, keyboard, OCR). K8s manifests and Dockerfiles created in
-`k8s/agents/devbot/`. Kagent platform reviewed.
+Architecture designed, `computer-control-mcp` verified locally on Pop!\_OS (all tools: screenshot, mouse, keyboard,
+OCR). K8s manifests and Dockerfiles created in `k8s/agents/devbot/`. Kagent platform reviewed.
 
 ### Phase 1: CLI-Only Prototype
 
@@ -704,9 +700,8 @@ screenshot, mouse, keyboard, OCR). K8s manifests and Dockerfiles created in
 
 ### Phase 2: Add Visual Capabilities
 
-**Note:** Kagent kustomizations (`kagent-{namespace,secrets}` and `kagent`) are
-currently **suspended** in Flux. Kagent is not actively deployed. Resume Phase 2 by
-unsuspending these kustomizations.
+**Note:** Kagent kustomizations (`kagent-{namespace,secrets}` and `kagent`) are currently **suspended** in Flux. Kagent
+is not actively deployed. Resume Phase 2 by unsuspending these kustomizations.
 
 - [ ] Unsuspend Kagent kustomizations and verify platform is running
 - [ ] Test Kagent UI at <https://kagent.allegedly.works>
@@ -844,68 +839,54 @@ unsuspending these kustomizations.
 
 ### Multi-Agent Orchestration (CrewAI)
 
-**When:** After single-agent architecture is proven
-**Why:** Complex tasks requiring collaboration between specialized agents
-**What:** Kagent supports CrewAI integration for multi-agent workflows
-**Reference:** <https://github.com/kagent-dev/kagent/tree/main/python/packages/kagent-crewai>
-**Features:**
+**When:** After single-agent architecture is proven **Why:** Complex tasks requiring collaboration between specialized
+agents **What:** Kagent supports CrewAI integration for multi-agent workflows **Reference:**
+<https://github.com/kagent-dev/kagent/tree/main/python/packages/kagent-crewai> **Features:**
 
 - Agent crews with defined roles (researcher, writer, analyst)
 - Task delegation between agents
 - Hierarchical agent structures
-- Shared context and memory
-  **Use Cases:**
+- Shared context and memory **Use Cases:**
 - Research crew (searcher + analyzer + writer)
 - DevOps crew (planner + implementer + tester)
 - Complex workflows requiring specialized expertise per step
 
 ### OpenTelemetry Integration
 
-**When:** After agents are deployed in production
-**Why:** Trace agent tool calls, observe decision paths, debug failures
-**What:** Add OpenTelemetry to cluster + Kagent agent traces
-**Benefits:**
+**When:** After agents are deployed in production **Why:** Trace agent tool calls, observe decision paths, debug
+failures **What:** Add OpenTelemetry to cluster + Kagent agent traces **Benefits:**
 
 - Trace agent → LLM → tool call chains
 - Visualize agent reasoning paths
 - Identify bottlenecks (slow tools, LLM latency)
 - Debug multi-agent coordination
-- Performance optimization data
-  **Implementation:**
+- Performance optimization data **Implementation:**
 - Deploy OpenTelemetry Collector in cluster
 - Configure Kagent agents with OTEL exporters
 - Jaeger or Tempo for trace storage
-- Grafana for visualization
-  **Integration:** Ties into cluster observability stack (Prometheus, Loki, Grafana)
+- Grafana for visualization **Integration:** Ties into cluster observability stack (Prometheus, Loki, Grafana)
   **Reference:** docs/plan.md observability section
 
 ### Agent Sandbox Integration
 
-**When:** After basic architecture is stable
-**Why:** Stronger isolation, pre-warmed pools, sub-second cold starts
-**What:** Replace Deployment with Agent Sandbox CRD
-**Reference:** kubernetes-sigs/agent-sandbox
+**When:** After basic architecture is stable **Why:** Stronger isolation, pre-warmed pools, sub-second cold starts
+**What:** Replace Deployment with Agent Sandbox CRD **Reference:** kubernetes-sigs/agent-sandbox
 
 ### StatefulSet for Desktop
 
-**When:** If pod restart data loss becomes problematic
-**Why:** Stable pod identity, ordered deployment
-**What:** Change desktop Deployment → StatefulSet
-**Trade-off:** More complexity, slower rollouts
+**When:** If pod restart data loss becomes problematic **Why:** Stable pod identity, ordered deployment **What:** Change
+desktop Deployment → StatefulSet **Trade-off:** More complexity, slower rollouts
 
 ### Proxmox VM Backend
 
-**When:** If K8s pods prove insufficient for isolation
-**Why:** Full VM isolation, traditional desktop environment
-**What:** Terraform-managed VMs, MCP server in K8s connects to VMs
-**Trade-off:** Higher resource usage, slower provisioning
+**When:** If K8s pods prove insufficient for isolation **Why:** Full VM isolation, traditional desktop environment
+**What:** Terraform-managed VMs, MCP server in K8s connects to VMs **Trade-off:** Higher resource usage, slower
+provisioning
 
 ### Guacamole Integration
 
-**When:** Need web-based monitoring/debugging of agent desktops
-**Why:** View agent desktop in browser without VNC client
-**What:** Deploy Guacamole + Authentik RAC
-**Reference:** docs/plan.md Guacamole section
+**When:** Need web-based monitoring/debugging of agent desktops **Why:** View agent desktop in browser without VNC
+client **What:** Deploy Guacamole + Authentik RAC **Reference:** docs/plan.md Guacamole section
 
 ## Known Limitations & Trade-offs
 

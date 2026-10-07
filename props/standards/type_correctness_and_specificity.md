@@ -3,19 +3,19 @@ title: Type correctness and specificity
 kind: behavior
 ---
 
-Code is correctly and precisely typed.
-Declared types reflect the actual values passed, returned, and assigned.
-Types are neither too narrow nor too wide.
-Unions reflect real control‑flow possibilities.
-Prefer concrete types over `Any`.
+Code is correctly and precisely typed. Declared types reflect the actual values passed, returned, and assigned. Types
+are neither too narrow nor too wide. Unions reflect real control‑flow possibilities. Prefer concrete types over `Any`.
 Factor complex type expressions into named aliases.
 
 ## Acceptance criteria
 
-- All assigned, returned, and passed values are members of their declared types. Static checks pass under chosen type checker where applicable.
+- All assigned, returned, and passed values are members of their declared types. Static checks pass under chosen type
+  checker where applicable.
 - Types are not too narrow: no value violates its declared type at runtime or under static analysis.
-- Types are not too wide: if a declaration uses a union (e.g., `A | B`), there must be a live, reachable code path producing/accepting each variant. Remove dead variants.
-- Avoid `Any` when a reasonably precise type is feasible (e.g., `Callable[[X], Y] | Z`, concrete container element types, `Protocol`, `TypedDict` or generics).
+- Types are not too wide: if a declaration uses a union (e.g., `A | B`), there must be a live, reachable code path
+  producing/accepting each variant. Remove dead variants.
+- Avoid `Any` when a reasonably precise type is feasible (e.g., `Callable[[X], Y] | Z`, concrete container element
+  types, `Protocol`, `TypedDict` or generics).
 - When interfaces use complex unions/algebraic types, use a type alias to keep signatures readable and DRY.
 - Optionality is explicit: use `T | None` if and only if `None` is a real, reachable case.
 - Avoid silencing type errors with blanket casts/ignores; fix the underlying types or add precise, documented narrows.

@@ -4,7 +4,8 @@ This guide explains how to author ground truth issues (true positives and false 
 
 ## File Format
 
-Ground truth issues are stored as YAML files in the specimen `issues/` directory. Each file represents one logical issue with one or more occurrences.
+Ground truth issues are stored as YAML files in the specimen `issues/` directory. Each file represents one logical issue
+with one or more occurrences.
 
 ## Basic Structure
 
@@ -23,7 +24,8 @@ occurrences:
 
 ## Specifying Line Ranges
 
-The `files` field maps file paths to line specifications. All line numbers are 1-based (first line is 1). Ranges are inclusive on both ends.
+The `files` field maps file paths to line specifications. All line numbers are 1-based (first line is 1). Ranges are
+inclusive on both ends.
 
 ### Supported Formats
 

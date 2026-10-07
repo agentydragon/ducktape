@@ -1,21 +1,18 @@
 # Cluster Decision Record
 
-Standing decisions, invariants, and retirement records for the cluster — each
-entry states the decision or constraint as it binds today. Open work lives in
-<plan.md>.
+Standing decisions, invariants, and retirement records for the cluster — each entry states the decision or constraint as
+it binds today. Open work lives in <plan.md>.
 
 ## CNI: Cilium with VXLAN
 
-VXLAN tunnel mode (UDP 8472). OVH and Proxmox nodes are not on the same L2; native
-routing fails. The full network layering and MTU model (pod 1370 → Cilium VXLAN →
-`nebula1` 1420 → `eno1` 1500, including the Cilium-`MTU`-is-underlay gotcha) lives in
-<network.md>.
+VXLAN tunnel mode (UDP 8472). OVH and Proxmox nodes are not on the same L2; native routing fails. The full network
+layering and MTU model (pod 1370 → Cilium VXLAN → `nebula1` 1420 → `eno1` 1500, including the Cilium-`MTU`-is-underlay
+gotcha) lives in <network.md>.
 
 ## Storage Strategy
 
-Public-critical services run on distributed services (SeaweedFS, CNPG
-Postgres) backed by OVH storage; storage-heavy services that tolerate home
-downtime use Proxmox storage.
+Public-critical services run on distributed services (SeaweedFS, CNPG Postgres) backed by OVH storage; storage-heavy
+services that tolerate home downtime use Proxmox storage.
 
 | Location | Services                                                               | Rationale                                         |
 | -------- | ---------------------------------------------------------------------- | ------------------------------------------------- |
@@ -23,56 +20,47 @@ downtime use Proxmox storage.
 | Home     | Ollama                                                                 | Storage-heavy, tolerates downtime                 |
 | OVH      | SeaweedFS, attic-db, Forgejo, Nix cache chunks + Loki/Mimir/Tempo (S3) | Replicated across the OVH nodes (HDD ×3, NVMe ×3) |
 
-CNPG: individual clusters per app. Two sanctioned profiles: OVH-HA (2 instances
-pinned `zone: hil-ovh`, on `local-path-ovh` or `local-path-ovh-ssd`) and
-Proxmox-single (1 instance, `local-path`). See <cnpg_conventions.md>. Known
-deviation: `study-casino-db` runs 3 instances across OVH nodes.
+CNPG: individual clusters per app. Two sanctioned profiles: OVH-HA (2 instances pinned `zone: hil-ovh`, on
+`local-path-ovh` or `local-path-ovh-ssd`) and Proxmox-single (1 instance, `local-path`). See <cnpg_conventions.md>.
+Known deviation: `study-casino-db` runs 3 instances across OVH nodes.
 
 ## Control-plane scheduling
 
-OVH Talos control-plane nodes carry the default
-`node-role.kubernetes.io/control-plane:NoSchedule` taint. A workload may tolerate
-that taint only as an explicit, owner-reviewed overflow exception in its GitOps
-manifest. The exception uses `operator: Exists` with `effect: NoSchedule`; it does
-not add a `NoExecute` toleration and does not remove the node taint.
+OVH Talos control-plane nodes carry the default `node-role.kubernetes.io/control-plane:NoSchedule` taint. A workload may
+tolerate that taint only as an explicit, owner-reviewed overflow exception in its GitOps manifest. The exception uses
+`operator: Exists` with `effect: NoSchedule`; it does not add a `NoExecute` toleration and does not remove the node
+taint.
 
-The taint is the primary guard; the soft affinity below matters only for workloads
-that explicitly tolerate control-plane scheduling.
+The taint is the primary guard; the soft affinity below matters only for workloads that explicitly tolerate
+control-plane scheduling.
 
 An overflow exception must satisfy all of these rules:
 
 - Keep the workload's OVH `region`/`zone` placement constraints explicit.
-- Prefer non-control-plane nodes with soft node affinity on
-  `node-role.kubernetes.io/control-plane` / `DoesNotExist`, so control planes are
-  used only when ordinary worker placement cannot fit.
-- Do not use `local-path-*`, `hostPath`, or `emptyDir` volumes. Those write to the
-  node-local system disk and can still add noisy-neighbor I/O to etcd, even though
-  all current OVH control-plane system disks are NVMe. Prefer stateless workloads or
-  SeaweedFS-backed application PVCs instead.
-- Record the workload-specific rationale next to the manifest's toleration and
-  review any generated child pod template as part of the same change.
+- Prefer non-control-plane nodes with soft node affinity on `node-role.kubernetes.io/control-plane` / `DoesNotExist`, so
+  control planes are used only when ordinary worker placement cannot fit.
+- Do not use `local-path-*`, `hostPath`, or `emptyDir` volumes. Those write to the node-local system disk and can still
+  add noisy-neighbor I/O to etcd, even though all current OVH control-plane system disks are NVMe. Prefer stateless
+  workloads or SeaweedFS-backed application PVCs instead.
+- Record the workload-specific rationale next to the manifest's toleration and review any generated child pod template
+  as part of the same change.
 
-This is a scheduling fallback, not a general invitation to place application
-workloads on control planes. The Langfuse web/worker pods, Paperless app,
-cli-proxy-api, Gatus, study-casino, and grocy-mcp-server are explicit exceptions
-because their manifests use no local-path, hostPath, or emptyDir storage.
+This is a scheduling fallback, not a general invitation to place application workloads on control planes. The Langfuse
+web/worker pods, Paperless app, cli-proxy-api, Gatus, study-casino, and grocy-mcp-server are explicit exceptions because
+their manifests use no local-path, hostPath, or emptyDir storage.
 
-**Deviation: cli-proxy-api skips the soft non-control-plane node-affinity
-preference.** Its footprint (100m-1 CPU, 128Mi-512Mi memory, proxy-only network
-I/O, no local storage) is light enough that control planes are meant to be
-ordinary candidates for it, not last resort: it is a single-writer,
-Recreate-strategy pod whose Codex OAuth refresh session cannot tolerate the
-descheduler's `LowNodeUtilization` evictions (roughly every 15 minutes, driven
-by the zone's two ordinary workers running hot), and a soft preference away from
-control planes would keep steering the scheduler's replacement pod back onto
-those same contended workers — recreating the churn this exception exists to
-fix. It still keeps the hard taint toleration and the no-local-storage rule.
+**Deviation: cli-proxy-api skips the soft non-control-plane node-affinity preference.** Its footprint (100m-1 CPU,
+128Mi-512Mi memory, proxy-only network I/O, no local storage) is light enough that control planes are meant to be
+ordinary candidates for it, not last resort: it is a single-writer, Recreate-strategy pod whose Codex OAuth refresh
+session cannot tolerate the descheduler's `LowNodeUtilization` evictions (roughly every 15 minutes, driven by the zone's
+two ordinary workers running hot), and a soft preference away from control planes would keep steering the scheduler's
+replacement pod back onto those same contended workers — recreating the churn this exception exists to fix. It still
+keeps the hard taint toleration and the no-local-storage rule.
 
 ## OVH-Only Resilience Invariants
 
-**Rule**: These services MUST work with OVH only (Proxmox completely down). No
-Proxmox-pinned storage (`lvm-proxmox-*`, `local-path-proxmox`) or Proxmox-pinned
-workloads.
+**Rule**: These services MUST work with OVH only (Proxmox completely down). No Proxmox-pinned storage (`lvm-proxmox-*`,
+`local-path-proxmox`) or Proxmox-pinned workloads.
 
 | Service   | Status | Storage            | Notes                                                                                                             |
 | --------- | ------ | ------------------ | ----------------------------------------------------------------------------------------------------------------- |
@@ -82,8 +70,8 @@ workloads.
 | Authentik | OK     | OVH hdd tier       | CNPG `authentik-db-ovh` (OVH-HA); server + worker pinned to OVH                                                   |
 | Grafana   | OK     | OVH hdd tier       | CNPG `grafana-db-ovh` (OVH-HA); grafana-operator managed, JWT auth, no admin creds dependency                     |
 
-The DB manifests still name `local-path-ovh` — the deprecated alias re-pinned to
-the hdd tier (<cnpg_conventions.md> § R2).
+The DB manifests still name `local-path-ovh` — the deprecated alias re-pinned to the hdd tier (<cnpg_conventions.md> §
+R2).
 
 **Compliance checklist** for critical-path changes:
 
@@ -92,136 +80,100 @@ the hdd tier (<cnpg_conventions.md> § R2).
 3. Can schedule on OVH nodes
 4. All upstream dependencies also pass 1-3
 
-**Proxmox-dependent services** (tolerate downtime by design): Ollama,
-ActivityWatch (central store on wyrm2, `local-path-proxmox`; device-side
-importers buffer and re-push through downtime), and — both currently suspended —
-BuildBuddy executor and InvenTree. Not the Nix cache: attic runs pinned to
-`hil-ovh`, `attic-db` is CNPG OVH-HA, and chunks live in OVH SeaweedFS S3.
+**Proxmox-dependent services** (tolerate downtime by design): Ollama, ActivityWatch (central store on wyrm2,
+`local-path-proxmox`; device-side importers buffer and re-push through downtime), and — both currently suspended —
+BuildBuddy executor and InvenTree. Not the Nix cache: attic runs pinned to `hil-ovh`, `attic-db` is CNPG OVH-HA, and
+chunks live in OVH SeaweedFS S3.
 
 ### Proxmox CSI removed (2026-07-16)
 
-Proxmox CSI (`proxmox-csi-retain`) is gone. Two reasons: it hotplugs each PV as a
-virtual SCSI disk onto the VM, capping PVs-per-node (`max-volume-attachments = 29`) —
-too low, and OpenEBS LVM has no such limit; and only one k8s node runs on Proxmox any
-more, so there is no reshuffling of PVCs between Proxmox nodes for a CSI to serve
-(there was, when Proxmox hosted several nodes). It had also started crash-looping after
-the network topology change broke its path to the Proxmox API, and with a single
-physical Proxmox host LVM-local storage has the same failure domain anyway. Rationale
-and full context: <lessons_learned/2026_07_16_disable_proxmox_csi.md>. All consumers
-now use `lvm-proxmox-hdd`.
+Proxmox CSI (`proxmox-csi-retain`) is gone. Two reasons: it hotplugs each PV as a virtual SCSI disk onto the VM, capping
+PVs-per-node (`max-volume-attachments = 29`) — too low, and OpenEBS LVM has no such limit; and only one k8s node runs on
+Proxmox any more, so there is no reshuffling of PVCs between Proxmox nodes for a CSI to serve (there was, when Proxmox
+hosted several nodes). It had also started crash-looping after the network topology change broke its path to the Proxmox
+API, and with a single physical Proxmox host LVM-local storage has the same failure domain anyway. Rationale and full
+context: <lessons_learned/2026_07_16_disable_proxmox_csi.md>. All consumers now use `lvm-proxmox-hdd`.
 
-The `lifecycle { ignore_changes = [disk] }` rule on the wyrm2 VM is back since
-2026-08-05 (tombstoned in `terraform/main/proxmox-vms.tf`): two orphaned CSI-era disks
-(scsi1/scsi2) remain attached to the VM, and letting tofu reconcile the incomplete disk
-state would remap live disks. Deliberately detach them, then delete the rule so the
+The `lifecycle { ignore_changes = [disk] }` rule on the wyrm2 VM is back since 2026-08-05 (tombstoned in
+`terraform/main/proxmox-vms.tf`): two orphaned CSI-era disks (scsi1/scsi2) remain attached to the VM, and letting tofu
+reconcile the incomplete disk state would remap live disks. Deliberately detach them, then delete the rule so the
 declared `disk` blocks become authoritative again.
 
 ## Public Exposure: hostNetwork Gateway, No LB/VIP
 
-**Decision**: the public `cluster-gateway` runs Cilium Gateway API in
-`gatewayAPI.hostNetwork.enabled` mode — Envoy binds 80/443 directly on the OVH
-nodes, and Route 53 wildcard/apex records point at those node IPs. There is no
-provider `LoadBalancer`/VIP. Setting `Gateway.spec.addresses` to static node
-IPs is not a substitute for one: it would not add failover or change internet
-routing.
+**Decision**: the public `cluster-gateway` runs Cilium Gateway API in `gatewayAPI.hostNetwork.enabled` mode — Envoy
+binds 80/443 directly on the OVH nodes, and Route 53 wildcard/apex records point at those node IPs. There is no provider
+`LoadBalancer`/VIP. Setting `Gateway.spec.addresses` to static node IPs is not a substitute for one: it would not add
+failover or change internet routing.
 
-(Historical: upstream
-[cilium/cilium#42786](https://github.com/cilium/cilium/issues/42786) left
-hostNetwork Gateways reporting `Programmed=False`/`AddressNotAssigned` while
-traffic worked, so Gateway status was suppressed from alerting for months;
-fixed by [cilium/cilium#46350](https://github.com/cilium/cilium/pull/46350),
-picked up here with the 1.19.6 upgrade (#4912) — Gateway status is trustworthy
-again.)
+(Historical: upstream [cilium/cilium#42786](https://github.com/cilium/cilium/issues/42786) left hostNetwork Gateways
+reporting `Programmed=False`/`AddressNotAssigned` while traffic worked, so Gateway status was suppressed from alerting
+for months; fixed by [cilium/cilium#46350](https://github.com/cilium/cilium/pull/46350), picked up here with the 1.19.6
+upgrade (#4912) — Gateway status is trustworthy again.)
 
-Revisit if we introduce a normal external exposure layer: with Route 53
-pointing directly at node IPs, a downed node's share of packets is simply lost
-until the record set is edited — the hostNetwork shape has no failover and
-cannot provide it. More normal Cilium exposure models, if we decide to leave
-hostNetwork mode:
+Revisit if we introduce a normal external exposure layer: with Route 53 pointing directly at node IPs, a downed node's
+share of packets is simply lost until the record set is edited — the hostNetwork shape has no failover and cannot
+provide it. More normal Cilium exposure models, if we decide to leave hostNetwork mode:
 
-1. Provider-managed load balancer: public OVH LB IP -> Kubernetes
-   `LoadBalancer`/`NodePort` Service -> Cilium service handling -> Envoy ->
-   backends. This is the ordinary "intermediate entity" model: the provider owns
-   the routed public IP and health/failover behavior.
-2. Provider-routed or floating VIPs: OVH Additional IP / routed address block ->
-   Cilium `CiliumLoadBalancerIPPool` assigns Service IPs -> Cilium BGP or L2
-   announcement advertises them. LB-IPAM only allocates IPs; it does not make
-   arbitrary public addresses reachable unless the provider network routes them
-   to us.
-3. External LB to NodePort: a provider or self-hosted load balancer targets node
-   ports, while Cilium still handles the in-cluster service path.
+1. Provider-managed load balancer: public OVH LB IP -> Kubernetes `LoadBalancer`/`NodePort` Service -> Cilium service
+   handling -> Envoy -> backends. This is the ordinary "intermediate entity" model: the provider owns the routed public
+   IP and health/failover behavior.
+2. Provider-routed or floating VIPs: OVH Additional IP / routed address block -> Cilium `CiliumLoadBalancerIPPool`
+   assigns Service IPs -> Cilium BGP or L2 announcement advertises them. LB-IPAM only allocates IPs; it does not make
+   arbitrary public addresses reachable unless the provider network routes them to us.
+3. External LB to NodePort: a provider or self-hosted load balancer targets node ports, while Cilium still handles the
+   in-cluster service path.
 
-If we move to one of these, disable `gatewayAPI.hostNetwork.enabled` and let the
-generated Gateway Service be the externally exposed object.
+If we move to one of these, disable `gatewayAPI.hostNetwork.enabled` and let the generated Gateway Service be the
+externally exposed object.
 
 ## Secrets: SOPS SSOT
 
-All secrets are SOPS (age-encrypted in git, decrypted by Flux). ESO is still installed
-but only with the Kubernetes provider, mirroring a small number of secrets
-cross-namespace — rotator-published tokens out of `flux-system`, shared agent
-credentials out of `claude-sandbox`, Airlock OAuth tokens, CLIProxyAPI keys (stores in
-`generated/external-secrets/config/`). Stakater Reloader restarts pods on changes. Vault was
-decommissioned 2026-04-19: much higher bootstrap operational complexity, raft being
-annoying on a 3-replica Vault, and its extra features not actually helping — SOPS + ESO
-and friends are enough.
+All secrets are SOPS (age-encrypted in git, decrypted by Flux). ESO is still installed but only with the Kubernetes
+provider, mirroring a small number of secrets cross-namespace — rotator-published tokens out of `flux-system`, shared
+agent credentials out of `claude-sandbox`, Airlock OAuth tokens, CLIProxyAPI keys (stores in
+`generated/external-secrets/config/`). Stakater Reloader restarts pods on changes. Vault was decommissioned 2026-04-19:
+much higher bootstrap operational complexity, raft being annoying on a 3-replica Vault, and its extra features not
+actually helping — SOPS + ESO and friends are enough.
 
 ## cdk8s Adoption for Cluster Manifests
 
-Some Flux Kustomizations' manifests are generated by Python cdk8s instead of
-hand-written, committed to `devel` under `cluster/generated` (fully generated
-directories) or beside hand-written files in `cluster/k8s` — no separate publish
-branch. Convert at
-Kustomization-directory granularity; CI pins generated output to committed output
-via a `py_test` snapshot check; SOPS-encrypted secrets always stay hand-written.
-Full design (the one-writer-per-byte-range principle, the `image-pins/` mechanism
-for live Flux image automation, typed-vs-hand-rolled construct status): <cdk8s.md>.
+Some Flux Kustomizations' manifests are generated by Python cdk8s instead of hand-written, committed to `devel` under
+`cluster/generated` (fully generated directories) or beside hand-written files in `cluster/k8s` — no separate publish
+branch. Convert at Kustomization-directory granularity; CI pins generated output to committed output via a `py_test`
+snapshot check; SOPS-encrypted secrets always stay hand-written. Full design (the one-writer-per-byte-range principle,
+the `image-pins/` mechanism for live Flux image automation, typed-vs-hand-rolled construct status): <cdk8s.md>.
 Generator conventions: <../cdk8s/AGENTS.md>.
 
 ## Google OAuth Client redirect URIs (blocked upstream)
 
-The Google Cloud OAuth client backing Authentik's "Sign in with Google"
-source (client_id `230253529789-…`, referenced from
-`tf/gitops/sso-providers/source_google.tf`) is hand-managed in the
-GCP Console. In principle each forward-auth app has its own callback
-URI (`https://<app>.allegedly.works/source/oauth/callback/google/`)
-that would need appending to the client's Authorized redirect URIs by
-hand, `redirect_uri_mismatch` being the failure mode. The behaviour
-itself is intentional in Authentik
-(<https://github.com/goauthentik/authentik/issues/19883> closed as
-not-planned); standalone proxy outposts run flows on the proxied
-domain. Domain-Level forward-auth would centralise the callback but
-sacrifices per-app group restrictions
-(<https://docs.goauthentik.io/add-secure-apps/providers/proxy/forward_auth/>),
-which is the entire reason for using forward-auth here.
+The Google Cloud OAuth client backing Authentik's "Sign in with Google" source (client_id `230253529789-…`, referenced
+from `tf/gitops/sso-providers/source_google.tf`) is hand-managed in the GCP Console. In principle each forward-auth app
+has its own callback URI (`https://<app>.allegedly.works/source/oauth/callback/google/`) that would need appending to
+the client's Authorized redirect URIs by hand, `redirect_uri_mismatch` being the failure mode. The behaviour itself is
+intentional in Authentik (<https://github.com/goauthentik/authentik/issues/19883> closed as not-planned); standalone
+proxy outposts run flows on the proxied domain. Domain-Level forward-auth would centralise the callback but sacrifices
+per-app group restrictions (<https://docs.goauthentik.io/add-secure-apps/providers/proxy/forward_auth/>), which is the
+entire reason for using forward-auth here.
 
-**Observed in practice**: the per-app URIs have not been registered,
-yet auth-proxied services keep working, with only occasional strange
-Authentik errors. **Hypothesis** for the gap: flows normally run on
-`auth.allegedly.works` against an existing Authentik session, so the
-proxied-domain Google callback is rarely exercised; a fresh Google
-sign-in started on a proxied domain is the case expected to fail with
-`redirect_uri_mismatch`, and the occasional odd errors may be this
+**Observed in practice**: the per-app URIs have not been registered, yet auth-proxied services keep working, with only
+occasional strange Authentik errors. **Hypothesis** for the gap: flows normally run on `auth.allegedly.works` against an
+existing Authentik session, so the proxied-domain Google callback is rarely exercised; a fresh Google sign-in started on
+a proxied domain is the case expected to fail with `redirect_uri_mismatch`, and the occasional odd errors may be this
 surfacing.
 
-**Why this isn't behind GitOps yet:** Web Application OAuth 2.0
-Client IDs in GCP have no public CRUD API
-(<https://issuetracker.google.com/issues/116182848>, filed 2018),
-hence no Terraform resource
-(<https://github.com/hashicorp/terraform-provider-google/issues/6074>).
-`google_iap_client` is IAP-only; `google_iam_oauth_client` is
-Workforce Identity Federation-only — neither covers the type of
-client in use. Migrating to one of those products to unblock GitOps
-is a much larger lift than the manual click.
+**Why this isn't behind GitOps yet:** Web Application OAuth 2.0 Client IDs in GCP have no public CRUD API
+(<https://issuetracker.google.com/issues/116182848>, filed 2018), hence no Terraform resource
+(<https://github.com/hashicorp/terraform-provider-google/issues/6074>). `google_iap_client` is IAP-only;
+`google_iam_oauth_client` is Workforce Identity Federation-only — neither covers the type of client in use. Migrating to
+one of those products to unblock GitOps is a much larger lift than the manual click.
 
 Hit list when this changes:
 
-- [ ] Watch <https://issuetracker.google.com/issues/116182848> for a
-      public OAuth-client management API. When it lands and the
-      Terraform provider gains a resource, move the client and its
-      redirect URIs to TF.
-- [ ] Until then: when a per-app callback URI is added by hand, record
-      it in the app's commit message so future audits can rebuild the
-      list from git.
+- [ ] Watch <https://issuetracker.google.com/issues/116182848> for a public OAuth-client management API. When it lands
+      and the Terraform provider gains a resource, move the client and its redirect URIs to TF.
+- [ ] Until then: when a per-app callback URI is added by hand, record it in the app's commit message so future audits
+      can rebuild the list from git.
 
 ## Kubeconfig Endpoints (Current State)
 
@@ -232,109 +184,88 @@ Hit list when this changes:
 | TF state / `cluster/.envrc`   | `api.allegedly.works:6443` | `terraform/main/kubeconfig`, written by OpenTofu |
 | `~/.kube/config` (wyrm2)      | `localhost:7445`           | Via local haproxy                                |
 
-Claude Code web uses `kubeapi.allegedly.works:443`, which terminates publicly
-trusted TLS and forwards bearer authentication to the API server. Direct admin
-access uses `api.allegedly.works:6443` and preserves client-certificate authentication.
+Claude Code web uses `kubeapi.allegedly.works:443`, which terminates publicly trusted TLS and forwards bearer
+authentication to the API server. Direct admin access uses `api.allegedly.works:6443` and preserves client-certificate
+authentication.
 
 ## OpenTofu State Backend
 
-All 6 former TF roots consolidated into a single root at `cluster/terraform/main/` with
-PG backend (CNPG `tofu-state-db-ovh`, schema `main`, OVH hdd tier via the
-deprecated `local-path-ovh` alias). State
-backups have been absent since the backup CronJob's removal 2026-06-01; restoring them
-(CNPG replication or scheduled backups) is
+All 6 former TF roots consolidated into a single root at `cluster/terraform/main/` with PG backend (CNPG
+`tofu-state-db-ovh`, schema `main`, OVH hdd tier via the deprecated `local-path-ovh` alias). State backups have been
+absent since the backup CronJob's removal 2026-06-01; restoring them (CNPG replication or scheduled backups) is
 [#4900](https://github.com/agentydragon/ducktape/issues/4900).
 
-All in-cluster tofu-controller `Terraform` CRs also use the PG backend (one schema per CR
-in the same `tofu-state-db-ovh` cluster; reflector mirrors PG creds into `flux-system`).
-PG advisory locks auto-release on runner-pod death — no more stale-Lease problem.
+All in-cluster tofu-controller `Terraform` CRs also use the PG backend (one schema per CR in the same
+`tofu-state-db-ovh` cluster; reflector mirrors PG creds into `flux-system`). PG advisory locks auto-release on
+runner-pod death — no more stale-Lease problem.
 
-Zero `terraform_remote_state` dependencies — everything is in the same root. Persistent-auth
-resources have `lifecycle { prevent_destroy = true }`. Bootstrap uses targeted applies
-(`-target`) instead of separate directories. Single `proxmox` provider using
-`PROXMOX_VE_API_TOKEN` env var (`root@pam`).
+Zero `terraform_remote_state` dependencies — everything is in the same root. Persistent-auth resources have
+`lifecycle { prevent_destroy = true }`. Bootstrap uses targeted applies (`-target`) instead of separate directories.
+Single `proxmox` provider using `PROXMOX_VE_API_TOKEN` env var (`root@pam`).
 
-**Access**: From k8s workers (wyrm2, rugged), `.envrc` auto-detects ClusterIP and connects
-directly — no port-forward. From non-workers, fall back to `kubectl port-forward`.
+**Access**: From k8s workers (wyrm2, rugged), `.envrc` auto-detects ClusterIP and connects directly — no port-forward.
+From non-workers, fall back to `kubectl port-forward`.
 
 ## GitHub Webhook Reconciliation
 
-Flux `Receiver` at `flux-webhook.allegedly.works`. GitHub webhook registered by
-`flux-webhook-token` Terraform (`github_repository_webhook.flux_receiver`).
+Flux `Receiver` at `flux-webhook.allegedly.works`. GitHub webhook registered by `flux-webhook-token` Terraform
+(`github_repository_webhook.flux_receiver`).
 
 ## InvenTree API Token Provisioning
 
-Via the `inventree-token-provisioner` image
-(`cluster/archive/inventree_token_provisioner/`), run as a Job plus a weekly
-renewal CronJob: admin credentials -> InvenTree REST API -> get-or-create the
-`sandbox-agent` user, issue a named API token, write the `inventree-api-token`
-Secret in the `inventree` namespace; an ESO `ClusterExternalSecret` mirrors it
-into `claude-sandbox`. Renews when fewer than 30 days remain. Decommissioned
-together with InvenTree; the provisioner source remains available if the app is
-revived, but its CI image target is archived rather than published automatically.
+Via the `inventree-token-provisioner` image (`cluster/archive/inventree_token_provisioner/`), run as a Job plus a weekly
+renewal CronJob: admin credentials -> InvenTree REST API -> get-or-create the `sandbox-agent` user, issue a named API
+token, write the `inventree-api-token` Secret in the `inventree` namespace; an ESO `ClusterExternalSecret` mirrors it
+into `claude-sandbox`. Renews when fewer than 30 days remain. Decommissioned together with InvenTree; the provisioner
+source remains available if the app is revived, but its CI image target is archived rather than published automatically.
 
 ## CPU limits policy (VPA)
 
-For workloads with expensive cold starts (Python/JVM),
-use `"controlledValues":"RequestsOnly"` so VPA only sets CPU requests and never
-adds a CPU limit. CFS CPU limits are a hard rate limiter enforced by cgroups
-regardless of node load — a pod capped at 60m gets 60ms/s of CPU even on a
-completely idle node. Removing the CPU limit lets cold-start bursts use idle
-capacity; when the node is contended, CFS shares CPU proportionally to requests
-(compressible resource — no pod is killed). Memory limits remain useful
-(`RequestsAndLimits`) since memory is incompressible.
+For workloads with expensive cold starts (Python/JVM), use `"controlledValues":"RequestsOnly"` so VPA only sets CPU
+requests and never adds a CPU limit. CFS CPU limits are a hard rate limiter enforced by cgroups regardless of node load
+— a pod capped at 60m gets 60ms/s of CPU even on a completely idle node. Removing the CPU limit lets cold-start bursts
+use idle capacity; when the node is contended, CFS shares CPU proportionally to requests (compressible resource — no pod
+is killed). Memory limits remain useful (`RequestsAndLimits`) since memory is incompressible.
 
-See the facade Deployment in `cluster/cdk8s/tana_mcp.py` for a working example
-(fastmcp takes ~6 CPU-seconds to import; at 60m limit this costs 100s wall time).
+See the facade Deployment in `cluster/cdk8s/tana_mcp.py` for a working example (fastmcp takes ~6 CPU-seconds to import;
+at 60m limit this costs 100s wall time).
 
 ## Dropped Services
 
-- **Capacitor** (2026-03-22): Removed. `ghcr.io/gimlet-io/capacitor-next` requires a
-  proprietary license key despite the Apache 2.0 source license — the license check is
-  injected in Gimlet's private build pipeline, not in the published source. Weave GitOps
-  (the main alternative with dep graph visualization) has had no stable release since
-  2023-12-06. Use Headlamp + `flux` CLI instead.
-- **ARC (GitHub Actions runner)**: decommissioned 2026-04-11; manifests deleted
-  2026-08-05 (#3773).
-- **Harbor**: parked 2026-06-02 (#1822); manifests archived under `x/harbor/` (#3967);
-  deleted 2026-08-27 after #4856. Mostly a registry for props, which use the Forgejo
-  registry; the replacement track is the `oci-cache` lighter-registry item in <plan.md>.
-- **Kagent** (2026-07-21): Retired after noisy MCP results repeatedly exceeded the z.ai
-  prompt limit and killed sessions. Kagent had no client-side tool-output budget, and its
-  between-turn compaction could not prevent a single turn from overflowing context. See
-  <../archive/2026_07_kagent/README.md>.
-- **OpenClaw gateway / OpenShell** (2026-07-31): manifests deleted rather than parked.
-  The gateway was unused and wedged (no exec traffic, idle orphaned sandboxes), and the
-  operator could not be egress-confined (`docs/personal_agents/findings/` F3). OpenClaw
-  as an agent runtime is alive: `public-coder-agent` (the reference agent — its own
-  OpenClaw build, `git.allegedly.works/ducktape-ci/public-coder-agent`, plain Deployment,
-  `sandbox.mode: "off"`) remains active. The separate `haku-openclaw-spike` was later
-  retired; see [Haku OpenClaw spike retirement](#haku-openclaw-spike-retirement).
-  The former `openclaw-gateway` and `openclaw-sandbox` namespaces were retired after their
-  retained credentials moved to `agents/shared-secrets`; see
-  <../archive/2026_08_openclaw_namespace_retirement.md>.
-  Evaluated alternatives: `docs/personal_agents/verdicts.md`.
-- **LiteLLM ChatGPT sub-instance** (`litellm-chatgpt`, deleted 2026-08-06): a second
-  LiteLLM Deployment holding its own ChatGPT/Codex OAuth session on a PVC, serving the
-  `*-chatgpt` models over the Responses API; superseded by
-  [CLIProxyAPI](../k8s/cli-proxy-api/README.md). [#3198] had already isolated it so an
-  expired token could not crashloop the main proxy; what retired it was
-  re-authentication: LiteLLM has no in-place login, so every new token meant an
-  interactive `codex login`, reshaping into LiteLLM's flat `auth.json`, a SOPS commit,
-  and an init-container guard to replace the PVC copy — a guard wrong twice ([#3199];
-  2026-08-06, ~3h crashloop) because it could only test the file's shape, never whether
-  the credential works. **Lesson**: a credential that rotates on use and can only be
-  minted interactively does not belong in a checked-in secret. CLIProxyAPI logs in
-  against the running pod (`-codex-device-login`), keeps the session alive with a
-  refresh worker, and never puts the upstream OAuth session in git. The `*-chatgpt`
-  model names survived the swap: LiteLLM served them over CLIProxyAPI's native
-  `/v1/responses` (`openai/` passthrough, not a bridge), so the baked configs pinning
-  those names (<../images/agent-workspace/codex-config.toml>,
-  <../../x/codex_pod_image/home.nix>, `oai_lane_models` in
-  <../../tf/gitops/litellm-keys/main.tf>) needed no rebuild, and the `codex-*` entries
-  stayed on `anthropic/` → `/v1/messages` for Claude Code. [#4823] later renamed the
-  lanes to `chatgpt/oai-responses/*` / `chatgpt/ant-messages/*` and retired both
-  legacy name families.
+- **Capacitor** (2026-03-22): Removed. `ghcr.io/gimlet-io/capacitor-next` requires a proprietary license key despite the
+  Apache 2.0 source license — the license check is injected in Gimlet's private build pipeline, not in the published
+  source. Weave GitOps (the main alternative with dep graph visualization) has had no stable release since 2023-12-06.
+  Use Headlamp + `flux` CLI instead.
+- **ARC (GitHub Actions runner)**: decommissioned 2026-04-11; manifests deleted 2026-08-05 (#3773).
+- **Harbor**: parked 2026-06-02 (#1822); manifests archived under `x/harbor/` (#3967); deleted 2026-08-27 after #4856.
+  Mostly a registry for props, which use the Forgejo registry; the replacement track is the `oci-cache` lighter-registry
+  item in <plan.md>.
+- **Kagent** (2026-07-21): Retired after noisy MCP results repeatedly exceeded the z.ai prompt limit and killed
+  sessions. Kagent had no client-side tool-output budget, and its between-turn compaction could not prevent a single
+  turn from overflowing context. See <../archive/2026_07_kagent/README.md>.
+- **OpenClaw gateway / OpenShell** (2026-07-31): manifests deleted rather than parked. The gateway was unused and wedged
+  (no exec traffic, idle orphaned sandboxes), and the operator could not be egress-confined
+  (`docs/personal_agents/findings/` F3). OpenClaw as an agent runtime is alive: `public-coder-agent` (the reference
+  agent — its own OpenClaw build, `git.allegedly.works/ducktape-ci/public-coder-agent`, plain Deployment,
+  `sandbox.mode: "off"`) remains active. The separate `haku-openclaw-spike` was later retired; see
+  [Haku OpenClaw spike retirement](#haku-openclaw-spike-retirement). The former `openclaw-gateway` and
+  `openclaw-sandbox` namespaces were retired after their retained credentials moved to `agents/shared-secrets`; see
+  <../archive/2026_08_openclaw_namespace_retirement.md>. Evaluated alternatives: `docs/personal_agents/verdicts.md`.
+- **LiteLLM ChatGPT sub-instance** (`litellm-chatgpt`, deleted 2026-08-06): a second LiteLLM Deployment holding its own
+  ChatGPT/Codex OAuth session on a PVC, serving the `*-chatgpt` models over the Responses API; superseded by
+  [CLIProxyAPI](../k8s/cli-proxy-api/README.md). [#3198] had already isolated it so an expired token could not crashloop
+  the main proxy; what retired it was re-authentication: LiteLLM has no in-place login, so every new token meant an
+  interactive `codex login`, reshaping into LiteLLM's flat `auth.json`, a SOPS commit, and an init-container guard to
+  replace the PVC copy — a guard wrong twice ([#3199]; 2026-08-06, ~3h crashloop) because it could only test the file's
+  shape, never whether the credential works. **Lesson**: a credential that rotates on use and can only be minted
+  interactively does not belong in a checked-in secret. CLIProxyAPI logs in against the running pod
+  (`-codex-device-login`), keeps the session alive with a refresh worker, and never puts the upstream OAuth session in
+  git. The `*-chatgpt` model names survived the swap: LiteLLM served them over CLIProxyAPI's native `/v1/responses`
+  (`openai/` passthrough, not a bridge), so the baked configs pinning those names
+  (<../images/agent-workspace/codex-config.toml>, <../../x/codex_pod_image/home.nix>, `oai_lane_models` in
+  <../../tf/gitops/litellm-keys/main.tf>) needed no rebuild, and the `codex-*` entries stayed on `anthropic/` →
+  `/v1/messages` for Claude Code. [#4823] later renamed the lanes to `chatgpt/oai-responses/*` /
+  `chatgpt/ant-messages/*` and retired both legacy name families.
 
   [#3198]: https://github.com/agentydragon/ducktape/pull/3198
   [#3199]: https://github.com/agentydragon/ducktape/pull/3199
@@ -342,189 +273,145 @@ See the facade Deployment in `cluster/cdk8s/tana_mcp.py` for a working example
 
 ## Parked application manifests
 
-These applications remain in Git for possible revival, but are not actively reconciled.
-Their Flux Kustomizations are either retained as suspended declarations with the
-`ducktape.org/parked` annotation or removed from the active root bundle, as noted below.
-Non-ducktape-owned manifests stay under `cluster/parked/<name>/`; ducktape-owned
-manifests stay with their project under `deploy/` (see <../AGENTS.md> § "Parked
-(non-ducktape-owned) application manifests").
+These applications remain in Git for possible revival, but are not actively reconciled. Their Flux Kustomizations are
+either retained as suspended declarations with the `ducktape.org/parked` annotation or removed from the active root
+bundle, as noted below. Non-ducktape-owned manifests stay under `cluster/parked/<name>/`; ducktape-owned manifests stay
+with their project under `deploy/` (see <../AGENTS.md> § "Parked (non-ducktape-owned) application manifests").
 
-- **postscanmail-mcp**: `cluster/parked/postscanmail-mcp/` — decommissioned; its
-  ducktape-owned source (`x/postscanmail_mcp_server/`) stays live and unparked, only
-  the k8s manifests moved. Its Flux Kustomization is removed from the active bundle;
-  the manifests remain for manual revival. Its Authentik OAuth Terraform resources
-  and CI image publishing are removed, while the source and tests remain available.
-  Keep the active Authentik `state: absent` blueprint until tofu has reconciled the
-  Terraform deletion and a later Authentik blueprint reconciliation confirms the
-  application and provider are absent; remove that tombstone in a follow-up PR.
-- **kubectl-machine-mcp**: `cluster/parked/kubectl-machine-mcp/` — decommissioned
-  with the managed-agent consumers that used it. Its Flux Kustomization is removed
-  from the active bundle; manifests remain for manual revival.
-- **Haku cloud agent**: `cluster/parked/cloud-agent-tf/` — Anthropic-hosted Managed
-  Agent; its control-plane objects were deleted at Anthropic on 2026-09-30 and the
-  cluster Kustomization remains suspended. The HCL root and design docs live under
-  `haku/runtime/x/managed_agent/` with the parked runtime component.
-- **Haku managed agent**: `haku/runtime/x/managed_agent/self_hosted/deploy/` — the
-  self-hosted in-cluster worker (Runtime B), parked by operator request. Its Flux
-  Kustomization remains suspended; automatic image
-  build/publish is removed and its NixOS system is omitted from Attic targets, while
-  the flake output stays available for deliberate manual builds. Suspension does not
-  delete resources applied earlier.
-  Its `haku-forgejo-tea.sops.yaml` secret served a
-  second consumer (`haku-ci`'s KEDA scaler via Reflector) unrelated to the worker
-  itself, so it was split into its own small active Kustomization at
-  `cluster/k8s/haku/forgejo-tea/` rather than parked with the rest.
-- **Paperless**: `cluster/parked/paperless/` — decommissioned; third-party
-  (`ghcr.io/paperless-ngx/paperless-ngx`), no ducktape source.
-- **Firecrawl**: `cluster/parked/firecrawl/` — its namespace, database, and app
-  declarations remain in Git.
-- **OpenHands**: `cluster/parked/openhands/` — experimental and not currently used;
-  its namespace, secrets, sandbox, and app declarations remain in Git.
-- **Tandoor**: `cluster/parked/tandoor/` — replaced by Grocy; its three Flux
-  Kustomizations are removed from the active bundle. Namespace, database, and app
-  manifests remain in Git for possible manual revival.
-- **Browsertrix**: `cluster/parked/browsertrix/` — decommissioned; its revival
-  package remains in Git.
-- **ArchiveBox**: `cluster/parked/archivebox/` — decommissioned; its revival
-  package remains in Git.
-- **Google Workspace MCP**: `cluster/parked/google-workspace-mcp/` — decommissioned;
-  its revival package remains in Git.
-- **egress-proxy-rugged**: `cluster/parked/egress-proxy-rugged/` — decommissioned;
-  its configuration remains in Git.
-- **InvenTree**: `cluster/parked/inventree/` — decommissioned; its four Flux
-  Kustomizations are removed from the active bundle, and the revival package remains in Git.
-- **Authelia**: `cluster/parked/authelia/` — decommissioned SSO alternative
-  experiment; its Flux Kustomization is removed from the active bundle and manifests
-  remain for manual revival. Authentik is the active SSO provider.
-- **agent-box**: `cluster/parked/agent-box/` — inactive while the unschedulable
-  legacy VM is retired; the VM and its local disk stay untouched until explicitly
-  deleted.
+- **postscanmail-mcp**: `cluster/parked/postscanmail-mcp/` — decommissioned; its ducktape-owned source
+  (`x/postscanmail_mcp_server/`) stays live and unparked, only the k8s manifests moved. Its Flux Kustomization is
+  removed from the active bundle; the manifests remain for manual revival. Its Authentik OAuth Terraform resources and
+  CI image publishing are removed, while the source and tests remain available. Keep the active Authentik
+  `state: absent` blueprint until tofu has reconciled the Terraform deletion and a later Authentik blueprint
+  reconciliation confirms the application and provider are absent; remove that tombstone in a follow-up PR.
+- **kubectl-machine-mcp**: `cluster/parked/kubectl-machine-mcp/` — decommissioned with the managed-agent consumers that
+  used it. Its Flux Kustomization is removed from the active bundle; manifests remain for manual revival.
+- **Haku cloud agent**: `cluster/parked/cloud-agent-tf/` — Anthropic-hosted Managed Agent; its control-plane objects
+  were deleted at Anthropic on 2026-09-30 and the cluster Kustomization remains suspended. The HCL root and design docs
+  live under `haku/runtime/x/managed_agent/` with the parked runtime component.
+- **Haku managed agent**: `haku/runtime/x/managed_agent/self_hosted/deploy/` — the self-hosted in-cluster worker
+  (Runtime B), parked by operator request. Its Flux Kustomization remains suspended; automatic image build/publish is
+  removed and its NixOS system is omitted from Attic targets, while the flake output stays available for deliberate
+  manual builds. Suspension does not delete resources applied earlier. Its `haku-forgejo-tea.sops.yaml` secret served a
+  second consumer (`haku-ci`'s KEDA scaler via Reflector) unrelated to the worker itself, so it was split into its own
+  small active Kustomization at `cluster/k8s/haku/forgejo-tea/` rather than parked with the rest.
+- **Paperless**: `cluster/parked/paperless/` — decommissioned; third-party (`ghcr.io/paperless-ngx/paperless-ngx`), no
+  ducktape source.
+- **Firecrawl**: `cluster/parked/firecrawl/` — its namespace, database, and app declarations remain in Git.
+- **OpenHands**: `cluster/parked/openhands/` — experimental and not currently used; its namespace, secrets, sandbox, and
+  app declarations remain in Git.
+- **Tandoor**: `cluster/parked/tandoor/` — replaced by Grocy; its three Flux Kustomizations are removed from the active
+  bundle. Namespace, database, and app manifests remain in Git for possible manual revival.
+- **Browsertrix**: `cluster/parked/browsertrix/` — decommissioned; its revival package remains in Git.
+- **ArchiveBox**: `cluster/parked/archivebox/` — decommissioned; its revival package remains in Git.
+- **Google Workspace MCP**: `cluster/parked/google-workspace-mcp/` — decommissioned; its revival package remains in Git.
+- **egress-proxy-rugged**: `cluster/parked/egress-proxy-rugged/` — decommissioned; its configuration remains in Git.
+- **InvenTree**: `cluster/parked/inventree/` — decommissioned; its four Flux Kustomizations are removed from the active
+  bundle, and the revival package remains in Git.
+- **Authelia**: `cluster/parked/authelia/` — decommissioned SSO alternative experiment; its Flux Kustomization is
+  removed from the active bundle and manifests remain for manual revival. Authentik is the active SSO provider.
+- **agent-box**: `cluster/parked/agent-box/` — inactive while the unschedulable legacy VM is retired; the VM and its
+  local disk stay untouched until explicitly deleted.
 - **gecko**: `cluster/parked/gecko/` — same legacy-VM retirement hold as agent-box.
-- **BuildBuddy Executor**: `cluster/parked/buildbuddy-executor/` — scaled to 0;
-  Proxmox-pinned, and atlas/wyrm2 being back (both returned 2026-08) removes that
-  blocker — re-enable when needed.
-- **sdr**: `cluster/parked/sdr/` — suspended pending the radio re-set-up
-  post-relocation (not unblocked by atlas/wyrm2 returning).
-- **manifold-mcp**: `cluster/parked/manifold-mcp/` — decommissioned; third-party npm
-  MCP server (`bmorphism/manifold-mcp-server`), ducktape's OCI build wrapper
-  (`third_party/manifold_mcp_server/`) stays live and unparked. Its Flux Kustomization
-  is removed from the active bundle; manifests remain for manual revival. Its API-key
-  Secret had been Reflector-mirrored into an `augur` namespace defined in the separate
-  `gaffer-private` repo. That namespace is now absent, so no current in-cluster consumer
-  remains; the secret manifest stays parked.
-- **osm-mcp**: `cluster/parked/osm-mcp/` — decommissioned; its Flux Kustomization
-  is removed from the active bundle. The third-party Go MCP server
-  (`github.com/NERVsystems/osmmcp`) build wrapper (`third_party/osmmcp/`) stays live
-  and unparked. Already unwired from haku-console's tool config since 2026-07-19
-  (routing-profile bug), so it had no live consumer.
-- **codex-nix-pod, codex-nix-image-pod, codex-nix-pvc-uid-pod**:
-  `cluster/parked/<name>/` — three successive Codex-in-a-pod experiments, previously
-  under `cluster/k8s/agents/x/`; none were wired into root or Flux-reconciled (pure
-  manual-`kubectl apply` spikes). **codex-pod**: `x/codex_pod_image/deploy/` — its
-  manifests now live beside their ducktape-owned Nix image source; it was Flux-wired
-  once, but its Flux Kustomization had already been retired. The image source remains
-  in place for possible revival, though its flake evaluation currently fails. Its two
-  SOPS Secret manifests remain parked at `cluster/parked/codex-pod/`; replace
-  them with runtime-managed credentials before reactivation.
-- **budget (Fava)**: `cluster/parked/budget/` — decommissioned read-only Beancount
-  ledger viewer. Its `budget` namespace remains active at
-  `cluster/generated/forgejo/budget-namespace/` because it holds the ESO copy of the ledger's
-  git credentials (`budget-ledger-git-creds`). The underlying ledger data (a Forgejo git
-  repo provisioned by `tf/gitops/budget-ledger/`) is untouched. Its Authentik
-  SSO blueprint was tombstoned (`fava-sso-retire.yaml`, replacing `fava-sso.yaml`) per
-  <sso.md> § "Deleting Authentik providers or applications".
-- **augur-evidence**: `cluster/parked/augur-evidence/` — retired Forgejo evidence
-  repository provisioning and Flux package. The repository and credentials are retained;
-  the market roster is kept at `finance/scraper/market-roster.yaml` for a future revival.
-- **docker-ci**: `cluster/parked/docker-ci/` — decommissioned despite backing
-  `loom/gym`'s on-demand forecasting-eval Job (`loom/gym/k8s/eval-job.yaml`); parked at
-  operator request, accepting that an eval run needs reviving it first.
-- **haku-dispatch**: `cluster/parked/haku-dispatch/` — only the Flux Kustomization
-  pointer moved (it was already `spec.suspend: true`); the ducktape-owned manifests it
-  deploys (`haku/x/dispatch/deploy/`) stay untouched, per the usual ducktape-owned-code
-  exemption below. Operator request: the pointer itself moves under `parked/` and out
-  of root `kustomization.yaml` regardless.
+- **BuildBuddy Executor**: `cluster/parked/buildbuddy-executor/` — scaled to 0; Proxmox-pinned, and atlas/wyrm2 being
+  back (both returned 2026-08) removes that blocker — re-enable when needed.
+- **sdr**: `cluster/parked/sdr/` — suspended pending the radio re-set-up post-relocation (not unblocked by atlas/wyrm2
+  returning).
+- **manifold-mcp**: `cluster/parked/manifold-mcp/` — decommissioned; third-party npm MCP server
+  (`bmorphism/manifold-mcp-server`), ducktape's OCI build wrapper (`third_party/manifold_mcp_server/`) stays live and
+  unparked. Its Flux Kustomization is removed from the active bundle; manifests remain for manual revival. Its API-key
+  Secret had been Reflector-mirrored into an `augur` namespace defined in the separate `gaffer-private` repo. That
+  namespace is now absent, so no current in-cluster consumer remains; the secret manifest stays parked.
+- **osm-mcp**: `cluster/parked/osm-mcp/` — decommissioned; its Flux Kustomization is removed from the active bundle. The
+  third-party Go MCP server (`github.com/NERVsystems/osmmcp`) build wrapper (`third_party/osmmcp/`) stays live and
+  unparked. Already unwired from haku-console's tool config since 2026-07-19 (routing-profile bug), so it had no live
+  consumer.
+- **codex-nix-pod, codex-nix-image-pod, codex-nix-pvc-uid-pod**: `cluster/parked/<name>/` — three successive
+  Codex-in-a-pod experiments, previously under `cluster/k8s/agents/x/`; none were wired into root or Flux-reconciled
+  (pure manual-`kubectl apply` spikes). **codex-pod**: `x/codex_pod_image/deploy/` — its manifests now live beside their
+  ducktape-owned Nix image source; it was Flux-wired once, but its Flux Kustomization had already been retired. The
+  image source remains in place for possible revival, though its flake evaluation currently fails. Its two SOPS Secret
+  manifests remain parked at `cluster/parked/codex-pod/`; replace them with runtime-managed credentials before
+  reactivation.
+- **budget (Fava)**: `cluster/parked/budget/` — decommissioned read-only Beancount ledger viewer. Its `budget` namespace
+  remains active at `cluster/generated/forgejo/budget-namespace/` because it holds the ESO copy of the ledger's git
+  credentials (`budget-ledger-git-creds`). The underlying ledger data (a Forgejo git repo provisioned by
+  `tf/gitops/budget-ledger/`) is untouched. Its Authentik SSO blueprint was tombstoned (`fava-sso-retire.yaml`,
+  replacing `fava-sso.yaml`) per <sso.md> § "Deleting Authentik providers or applications".
+- **augur-evidence**: `cluster/parked/augur-evidence/` — retired Forgejo evidence repository provisioning and Flux
+  package. The repository and credentials are retained; the market roster is kept at
+  `finance/scraper/market-roster.yaml` for a future revival.
+- **docker-ci**: `cluster/parked/docker-ci/` — decommissioned despite backing `loom/gym`'s on-demand forecasting-eval
+  Job (`loom/gym/k8s/eval-job.yaml`); parked at operator request, accepting that an eval run needs reviving it first.
+- **haku-dispatch**: `cluster/parked/haku-dispatch/` — only the Flux Kustomization pointer moved (it was already
+  `spec.suspend: true`); the ducktape-owned manifests it deploys (`haku/x/dispatch/deploy/`) stay untouched, per the
+  usual ducktape-owned-code exemption below. Operator request: the pointer itself moves under `parked/` and out of root
+  `kustomization.yaml` regardless.
 
-**Wayback cache**: `loom/wayback/deploy/` — decommissioned by operator request, but this
-is ducktape-owned code (`loom/wayback/cache/`), so its parked Flux declaration stays
-colocated with its source rather than moving to `cluster/parked/`. Same for
-**props**: `props/deploy/` — suspended 2026-08-20 for a temporary teardown, ducktape-owned
+**Wayback cache**: `loom/wayback/deploy/` — decommissioned by operator request, but this is ducktape-owned code
+(`loom/wayback/cache/`), so its parked Flux declaration stays colocated with its source rather than moving to
+`cluster/parked/`. Same for **props**: `props/deploy/` — suspended 2026-08-20 for a temporary teardown, ducktape-owned
 code, not part of this convention.
 
-**Why `cluster/parked/`, not `archive/` or `x/`.** `archive/` (root README.md
-§ Conventions) already means something else — curated historical-lesson docs, explicitly
-"not a parking lot." `x/` (same section) is a maturity axis — "experimental, in-flux,
-hasn't stabilized" — not a run-state axis; before this convention, `cluster/k8s/x/` held
-only decommissioned apps with nothing actually experimental in it, and didn't cover the
-flat-top-level cases (`egress-proxy-rugged/`, `inventree/`) at all. `parked` reuses the
-vocabulary the `ducktape.org/parked` annotation already had.
+**Why `cluster/parked/`, not `archive/` or `x/`.** `archive/` (root README.md § Conventions) already means something
+else — curated historical-lesson docs, explicitly "not a parking lot." `x/` (same section) is a maturity axis —
+"experimental, in-flux, hasn't stabilized" — not a run-state axis; before this convention, `cluster/k8s/x/` held only
+decommissioned apps with nothing actually experimental in it, and didn't cover the flat-top-level cases
+(`egress-proxy-rugged/`, `inventree/`) at all. `parked` reuses the vocabulary the `ducktape.org/parked` annotation
+already had.
 
 ### Haku OpenClaw spike retirement
 
-The Haku OpenClaw compatibility spike is decommissioned, including its namespace
-and PVCs. Its app, backup, and dedicated Iron proxy generators and manifests are
-retained under `cluster/cdk8s/parked/` and `cluster/parked/haku-openclaw-spike/`.
-Haku sandbox, the Haku CI mitmproxy, and public coder are not decommissioned.
+The Haku OpenClaw compatibility spike is decommissioned, including its namespace and PVCs. Its app, backup, and
+dedicated Iron proxy generators and manifests are retained under `cluster/cdk8s/parked/` and
+`cluster/parked/haku-openclaw-spike/`. Haku sandbox, the Haku CI mitmproxy, and public coder are not decommissioned.
 
-The old app owner used `deletionPolicy: Orphan`; retirement first reconciled that
-same Flux Kustomization against an empty manifest set to prune its inventory.
-Live checks on 2026-10-02 at 20:03 UTC confirmed an empty inventory and deletion of
-the namespace, PVCs, backup Flux owner, and dedicated proxy Deployment. The follow-up
-removes the temporary empty owner/directory and the SeaweedFS tenant grant.
-Historical SeaweedFS/Restic backup storage retains its `Retain` policy; physical
-backing storage was not audited as part of these checks.
+The old app owner used `deletionPolicy: Orphan`; retirement first reconciled that same Flux Kustomization against an
+empty manifest set to prune its inventory. Live checks on 2026-10-02 at 20:03 UTC confirmed an empty inventory and
+deletion of the namespace, PVCs, backup Flux owner, and dedicated proxy Deployment. The follow-up removes the temporary
+empty owner/directory and the SeaweedFS tenant grant. Historical SeaweedFS/Restic backup storage retains its `Retain`
+policy; physical backing storage was not audited as part of these checks.
 
 ## Retire standalone agent workspaces and Claude compute (2026-10-02)
 
-Park the standalone Codex namespace and Claude's shared mitmproxy, preserving
-rendered manifests, image pins and revival instructions under
-`cluster/parked/{agent-workspaces,agents-mitmproxy}` and retaining their generators.
-Existing Flux owners first reconciled empty directories to prune live resources.
-Live checks on 2026-10-02 at 21:57 UTC confirmed both owners Ready on the #8806
-merge (`93ee322b`), empty inventories, absent namespaces/Pods, and no workspace
-PVCs. The follow-up removes the verified-empty retirement owners and directories.
-The unclaimed Codex warm workspace's PVC data loss was explicitly operator-approved;
-physical backing storage was not audited or securely erased by these checks.
+Park the standalone Codex namespace and Claude's shared mitmproxy, preserving rendered manifests, image pins and revival
+instructions under `cluster/parked/{agent-workspaces,agents-mitmproxy}` and retaining their generators. Existing Flux
+owners first reconciled empty directories to prune live resources. Live checks on 2026-10-02 at 21:57 UTC confirmed both
+owners Ready on the #8806 merge (`93ee322b`), empty inventories, absent namespaces/Pods, and no workspace PVCs. The
+follow-up removes the verified-empty retirement owners and directories. The unclaimed Codex warm workspace's PVC data
+loss was explicitly operator-approved; physical backing storage was not audited or securely erased by these checks.
 
-Keep `claude-sandbox` as an identity/credential home for external sessions, with a
-zero Pod quota and deny-all egress instead of an active compute lane. Shared agent
-roles and credential delivery remain active. Disable only Claude's proxy injection
-and retire its traffic-viewer SSO. Haku's proxy/CI/apps, public coder's workloads and
-proxy, and the shared sandbox controller used by Agentplane remain unchanged.
-Public coder's Iron-to-Agentplane migration is a separate change, now partially deployed
-as recorded below.
+Keep `claude-sandbox` as an identity/credential home for external sessions, with a zero Pod quota and deny-all egress
+instead of an active compute lane. Shared agent roles and credential delivery remain active. Disable only Claude's proxy
+injection and retire its traffic-viewer SSO. Haku's proxy/CI/apps, public coder's workloads and proxy, and the shared
+sandbox controller used by Agentplane remain unchanged. Public coder's Iron-to-Agentplane migration is a separate
+change, now partially deployed as recorded below.
 
 ## Remaining agent proxy migrations (2026-10-03)
 
-The selected direction is **Agentplane egress**, not adopting Iron as a new Haku Console
-adapter. [#5140](https://github.com/agentydragon/ducktape/issues/5140) owns the remaining
-consumer inventory and retirement checklist.
-[#5306](https://github.com/agentydragon/ducktape/issues/5306) retains the historical Iron
-adapter investigation; carry forward relevant security/protocol requirements rather
-than treating that proposal as the implementation plan.
+The selected direction is **Agentplane egress**, not adopting Iron as a new Haku Console adapter.
+[#5140](https://github.com/agentydragon/ducktape/issues/5140) owns the remaining consumer inventory and retirement
+checklist. [#5306](https://github.com/agentydragon/ducktape/issues/5306) retains the historical Iron adapter
+investigation; carry forward relevant security/protocol requirements rather than treating that proposal as the
+implementation plan.
 
 - **Public-coder OpenClaw:** preparation #8849 and cutover #8850 are merged. The
-  [cutover runbook](public_coder_openclaw_egress.md) records healthy Pod/Flux observations,
-  the reported offline session-database migration prerequisite, and the outstanding
-  acceptance checks. [#8857](https://github.com/agentydragon/ducktape/issues/8857) tracks
-  completion; readiness alone does not prove working sessions or credential substitution.
-- **Public-coder devbox:** stays on Iron, with its storage, credentials, proxy aliases
-  and trust intact. [#8856](https://github.com/agentydragon/ducktape/issues/8856) owns the
-  VM-compatible relay/identity design and migration. Do not assume KubeVirt needs a
-  hook/webhook before evaluating a supported placement and lifecycle.
-- **Other Haku sandbox/CI/egress consumers:** require fresh inventory and an explicit
-  keep/migrate/consolidate/park decision under #5140. The public-coder migration does
-  not authorize deleting them. Previously retired/parked workloads above stay retired;
-  retain generators and the `claude-sandbox` identity/credential home.
+  [cutover runbook](public_coder_openclaw_egress.md) records healthy Pod/Flux observations, the reported offline
+  session-database migration prerequisite, and the outstanding acceptance checks.
+  [#8857](https://github.com/agentydragon/ducktape/issues/8857) tracks completion; readiness alone does not prove
+  working sessions or credential substitution.
+- **Public-coder devbox:** stays on Iron, with its storage, credentials, proxy aliases and trust intact.
+  [#8856](https://github.com/agentydragon/ducktape/issues/8856) owns the VM-compatible relay/identity design and
+  migration. Do not assume KubeVirt needs a hook/webhook before evaluating a supported placement and lifecycle.
+- **Other Haku sandbox/CI/egress consumers:** require fresh inventory and an explicit keep/migrate/consolidate/park
+  decision under #5140. The public-coder migration does not authorize deleting them. Previously retired/parked workloads
+  above stay retired; retain generators and the `claude-sandbox` identity/credential home.
 
-Gateways may have upstream egress that sandboxed workloads must not have. Preserve
-Cilium/network-policy confinement, per-workload identity, scoped credential substitution
-and fail-closed behavior regardless of relay topology. Placement in staging egress
-infrastructure does not grant staging application/operator access.
+Gateways may have upstream egress that sandboxed workloads must not have. Preserve Cilium/network-policy confinement,
+per-workload identity, scoped credential substitution and fail-closed behavior regardless of relay topology. Placement
+in staging egress infrastructure does not grant staging application/operator access.
 
-Remove Iron workloads and obsolete service, credential-mirror, trust, injection, RBAC
-and network-policy wiring only after the last consumer **and rollback dependency** are
-gone. Preserve shared/canonical credentials and obtain specific approval for any further
-PVC/data loss. Verify live Flux pruning/resource removal instead of equating a manifest
-change with decommissioning. Record changing task status in the linked issues rather
-than duplicating their checklists here.
+Remove Iron workloads and obsolete service, credential-mirror, trust, injection, RBAC and network-policy wiring only
+after the last consumer **and rollback dependency** are gone. Preserve shared/canonical credentials and obtain specific
+approval for any further PVC/data loss. Verify live Flux pruning/resource removal instead of equating a manifest change
+with decommissioning. Record changing task status in the linked issues rather than duplicating their checklists here.

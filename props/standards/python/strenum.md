@@ -3,9 +3,11 @@ title: Use StrEnum for string‑valued enums (Python)
 kind: outcome
 ---
 
-Python enums with string values are declared with `enum.StrEnum` (Python 3.11+) rather than `class X(str, Enum)` or plain `Enum` with string literals.
+Python enums with string values are declared with `enum.StrEnum` (Python 3.11+) rather than `class X(str, Enum)` or
+plain `Enum` with string literals.
 
-Rationale: StrEnum members are both strings and enums, so they interoperate with APIs/serialization/JSON/DB that expect `str` without leaking `.value` into calling code, while still enforcing a closed set of allowed values.
+Rationale: StrEnum members are both strings and enums, so they interoperate with APIs/serialization/JSON/DB that expect
+`str` without leaking `.value` into calling code, while still enforcing a closed set of allowed values.
 
 ## Acceptance criteria (checklist)
 

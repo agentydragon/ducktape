@@ -15,7 +15,8 @@ Tests never touch production data: they run against their own databases.
 ### Test Databases: `props_test_<test id>`
 
 - **Purpose**: Integration tests only
-- **FREELY DROP/RECREATE**: Each test gets its own database inside a session-scoped Testcontainers PostgreSQL container (`props/testing/fixtures/db.py`)
+- **FREELY DROP/RECREATE**: Each test gets its own database inside a session-scoped Testcontainers PostgreSQL container
+  (`props/testing/fixtures/db.py`)
 - **Connection**: Provided by the fixtures, not environment variables
 
 ## Setup
@@ -68,8 +69,8 @@ Tests never touch production data: they run against their own databases.
 - **Passwords**: Deterministic (HMAC-SHA256 of salt + agent_run_id)
 - **Implementation**: See `ensure_agent_role()` in `orchestration/agent_credentials.py`
 
-Type-specific access is controlled entirely by RLS policies based on `agent_runs.type_config`,
-not by different roles or username patterns.
+Type-specific access is controlled entirely by RLS policies based on `agent_runs.type_config`, not by different roles or
+username patterns.
 
 ## Running Tests
 

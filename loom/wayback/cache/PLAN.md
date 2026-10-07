@@ -2,11 +2,9 @@
 
 Last trimmed: 2026-06-12.
 
-Status: parked as of 2026-09-14. The shared `wayback-cache` deployment is
-suspended and its SeaweedFS replay bucket was explicitly emptied and deleted.
-The source, tests, and deployment manifests remain parked for a future
-revival; the parked package now keeps its storage definitions beside the app
-in `loom/wayback/deploy/`.
+Status: parked as of 2026-09-14. The shared `wayback-cache` deployment is suspended and its SeaweedFS replay bucket was
+explicitly emptied and deleted. The source, tests, and deployment manifests remain parked for a future revival; the
+parked package now keeps its storage definitions beside the app in `loom/wayback/deploy/`.
 
 Companions:
 
@@ -17,29 +15,25 @@ Companions:
 
 ## Service Contract
 
-The cache service is an Internet-Archive-shaped, write-through archive cache.
-It serves the Wayback paths the eval already uses:
+The cache service is an Internet-Archive-shaped, write-through archive cache. It serves the Wayback paths the eval
+already uses:
 
 - `GET /wayback/available?url=...&timestamp=...`
 - `GET /cdx/search/cdx?...`
 - `GET /web/<timestamp><modifier>/<original-url>`
 
-On a local hit, it serves stored metadata and replay bodies. On a miss, it
-acquires the needed IA object, validates it against Loom's as-of semantics,
-stores the result, and serves from that stored record.
+On a local hit, it serves stored metadata and replay bodies. On a miss, it acquires the needed IA object, validates it
+against Loom's as-of semantics, stores the result, and serves from that stored record.
 
-The per-agent proxy remains the policy layer. It intercepts natural
-web URLs, enforces `WAYBACK_AS_OF`, rejects future captures, emits evidence
-manifests, and points at this service as `WAYBACK_UPSTREAM` /
-`WAYBACK_AVAILABILITY_UPSTREAM`.
+The per-agent proxy remains the policy layer. It intercepts natural web URLs, enforces `WAYBACK_AS_OF`, rejects future
+captures, emits evidence manifests, and points at this service as `WAYBACK_UPSTREAM` / `WAYBACK_AVAILABILITY_UPSTREAM`.
 
 Non-goals:
 
 - no Save Page Now from eval traffic;
 - no bulk IA mirror;
 - no attempt to enumerate or prefetch the agent URL universe;
-- no full `pywb` / `OutbackCDX` dependency unless future clients need broader
-  compatibility.
+- no full `pywb` / `OutbackCDX` dependency unless future clients need broader compatibility.
 
 ## Current Architecture
 
@@ -47,49 +41,41 @@ Storage is semantic, not opaque HTTP cache files.
 
 - Replay identity is `(capture_ts, modifier, canonical_original_url)`.
 - Replay bodies live in SeaweedFS S3, keyed by content hash.
-- CNPG Postgres is authoritative for replay records, Availability/CDX metadata,
-  fill locks, fill queue rows, and fill-change notifications.
-- A DB metadata row must not commit before its referenced blob exists. If an S3
-  write succeeds and the DB commit fails, the result is an orphan blob that can
-  be garbage-collected later.
-- Replay bodies over the configured cap, default 10 MiB, are classified as
-  `body_too_large`; they are not retried as transient IA failures.
+- CNPG Postgres is authoritative for replay records, Availability/CDX metadata, fill locks, fill queue rows, and
+  fill-change notifications.
+- A DB metadata row must not commit before its referenced blob exists. If an S3 write succeeds and the DB commit fails,
+  the result is an orphan blob that can be garbage-collected later.
+- Replay bodies over the configured cap, default 10 MiB, are classified as `body_too_large`; they are not retried as
+  transient IA failures.
 
 The deployment is split into two roles:
 
-- `wayback-cache` input pods accept agent/proxy HTTP, serve cache hits, enqueue
-  cache misses, and wait up to the configured queue budget for a stored result.
-- `wayback-cache-filler` pods claim due fill queue rows and perform IA egress.
-  They are spread across OVH nodes so cold IA fills can use distinct node
-  egress IPs.
+- `wayback-cache` input pods accept agent/proxy HTTP, serve cache hits, enqueue cache misses, and wait up to the
+  configured queue budget for a stored result.
+- `wayback-cache-filler` pods claim due fill queue rows and perform IA egress. They are spread across OVH nodes so cold
+  IA fills can use distinct node egress IPs.
 
-Postgres queue rows deduplicate identical cold misses across input pods. Idle
-fillers and input waiters use `LISTEN/NOTIFY` so a newly enqueued fill or a
-completed fill wakes peers immediately instead of relying on polling.
+Postgres queue rows deduplicate identical cold misses across input pods. Idle fillers and input waiters use
+`LISTEN/NOTIFY` so a newly enqueued fill or a completed fill wakes peers immediately instead of relying on polling.
 
-Runtime settings are loaded from typed YAML mounted at
-`/etc/wayback-cache/config.yaml`. Secrets remain env-backed by name: DB URL,
-S3 access key, S3 secret key, and optional bearer token.
+Runtime settings are loaded from typed YAML mounted at `/etc/wayback-cache/config.yaml`. Secrets remain env-backed by
+name: DB URL, S3 access key, S3 secret key, and optional bearer token.
 
 IA acquisition is endpoint-aware:
 
-- Availability, CDX, and replay have separate adaptive in-flight limiters in
-  each pod. This is intentional while pod placement is tied to node egress IP:
-  one node/IP getting throttled should not globally stop other node/IPs.
-- Queue waits are bounded by `queue_wait_seconds` in the mounted config
-  (default 60s).
+- Availability, CDX, and replay have separate adaptive in-flight limiters in each pod. This is intentional while pod
+  placement is tied to node egress IP: one node/IP getting throttled should not globally stop other node/IPs.
+- Queue waits are bounded by `queue_wait_seconds` in the mounted config (default 60s).
 - Over-budget waits return `503 + Retry-After`.
-- Transient IA failures (`502`, `503`, `504`, timeouts, connection resets,
-  explicit rate-limit signals) lower endpoint concurrency and set backoff.
-- Archived `4xx/5xx` responses with `Memento-Datetime` are historical content;
-  IA/cache `4xx/5xx` without `Memento-Datetime` are transient or stable-negative
-  signals, not replay content.
-- Metrics expose endpoint limit, in-flight count, queue length/wait, backoff
-  seconds, acquisition attempts/failures, upstream status, and hit/miss shape.
+- Transient IA failures (`502`, `503`, `504`, timeouts, connection resets, explicit rate-limit signals) lower endpoint
+  concurrency and set backoff.
+- Archived `4xx/5xx` responses with `Memento-Datetime` are historical content; IA/cache `4xx/5xx` without
+  `Memento-Datetime` are transient or stable-negative signals, not replay content.
+- Metrics expose endpoint limit, in-flight count, queue length/wait, backoff seconds, acquisition attempts/failures,
+  upstream status, and hit/miss shape.
 
-The limiter implementation now uses cancellation-safe RAII permits. Dropped or
-wedged acquisitions release `in_flight` without recording a false health sample.
-Failures are counted by endpoint, reason, and upstream status so queue timeout
+The limiter implementation now uses cancellation-safe RAII permits. Dropped or wedged acquisitions release `in_flight`
+without recording a false health sample. Failures are counted by endpoint, reason, and upstream status so queue timeout
 can be separated from upstream timeout/backoff.
 
 ## First Eval Finding
@@ -99,55 +85,46 @@ First cold eval against the replacement service:
 - date: 2026-06-12;
 - job: `claude-sandbox/loom-gym-eval`;
 - target: `http://wayback-cache.wayback-cache.svc.cluster.local:8080`;
-- model/config: `glm-4.5`, `--task-filter manifold-`, `--max-samples 8`,
-  old `message_limit=80`;
+- model/config: `glm-4.5`, `--task-filter manifold-`, `--max-samples 8`, old `message_limit=80`;
 - result: 15 submitted answers out of 33, 18 no-answer / `nan`;
 - mean proper loss over submitted samples: 1.218;
 - driver summary: 1,084 served-fetch mentions, `855x 503`, `5x 403`;
 - wall time: 2:22:15.
 
-This proved the write-through plumbing but did not improve the eval. The visible
-failure mode shifted from direct IA replay refusals to cache-service `503`
-backpressure and slow cold acquisition.
+This proved the write-through plumbing but did not improve the eval. The visible failure mode shifted from direct IA
+replay refusals to cache-service `503` backpressure and slow cold acquisition.
 
-Important diagnosis: the high-error URLs generally were archived. In the worst
-sample (`scotus-upholds-trump-tariffs`), the archive DB already had
-Availability `200` and replay `200` rows for all six unique fetched sites at or
-before the task's `2026-01-10` clamp. Availability for
-`http://www.reuters.com/` returned quickly, while the equivalent CDX miss waited
-about 60s and returned `503 archive acquisition is backing off`. At that point
-CDX limit and in-flight were both 1, so fresh CDX misses could spend the whole
-queue budget waiting for the single slot.
+Important diagnosis: the high-error URLs generally were archived. In the worst sample (`scotus-upholds-trump-tariffs`),
+the archive DB already had Availability `200` and replay `200` rows for all six unique fetched sites at or before the
+task's `2026-01-10` clamp. Availability for `http://www.reuters.com/` returned quickly, while the equivalent CDX miss
+waited about 60s and returned `503 archive acquisition is backing off`. At that point CDX limit and in-flight were both
+1, so fresh CDX misses could spend the whole queue budget waiting for the single slot.
 
-The run predates the current eval harness defaults: `--message-limit 1000` and
-Inspect summary compaction via `--compaction-threshold-tokens 115000`. The
-rerun below shows those harness changes eliminated no-answer samples, but cache
-warmth alone is unlikely to fix the core issue because agents choose new URLs
-dynamically.
+The run predates the current eval harness defaults: `--message-limit 1000` and Inspect summary compaction via
+`--compaction-threshold-tokens 115000`. The rerun below shows those harness changes eliminated no-answer samples, but
+cache warmth alone is unlikely to fix the core issue because agents choose new URLs dynamically.
 
 ## Second Eval Finding
 
-Rerun after the input/filler split, proxy `503 + Retry-After` handling, limiter
-RAII, and eval harness `message_limit=1000` / compaction defaults:
+Rerun after the input/filler split, proxy `503 + Retry-After` handling, limiter RAII, and eval harness
+`message_limit=1000` / compaction defaults:
 
 - date: 2026-06-12;
 - job: `claude-sandbox/loom-gym-eval`;
 - Langfuse session: `loom-gym-20260612T105627Z`;
 - target: `http://wayback-cache.wayback-cache.svc.cluster.local:8080`;
-- model/config: `glm-4.5`, `--task-filter manifold-`, `--max-samples 4`,
-  `--message-limit 1000`, `--compaction-threshold-tokens 115000`;
+- model/config: `glm-4.5`, `--task-filter manifold-`, `--max-samples 4`, `--message-limit 1000`,
+  `--compaction-threshold-tokens 115000`;
 - result: 33 scored answers out of 33, `0` no-answer, `0` `nan`;
 - mean proper loss: 1.164;
 - wall time: 2:39:58;
-- model usage: 31,759,673 tokens total
-  (`I=1,318,383`, `CR=29,916,020`, `O=525,270`, `CW=0`);
+- model usage: 31,759,673 tokens total (`I=1,318,383`, `CR=29,916,020`, `O=525,270`, `CW=0`);
 - driver upstream-error summary from sample metadata: `500x 503`, `20x 403`.
 
-The run still saw many archive failures, but the failures no longer translated
-into no-answer samples. Agents were able to continue and submit every answer.
+The run still saw many archive failures, but the failures no longer translated into no-answer samples. Agents were able
+to continue and submit every answer.
 
-Post-rollout filler logs, covering the tail of the run after the separate filler
-Deployment was reconciled:
+Post-rollout filler logs, covering the tail of the run after the separate filler Deployment was reconciled:
 
 | filler pod | claimed |    CDX | Availability | Replay | completed | retryable | upstream fetch timeout | limiter queue timeout | upstream transient |
 | ---------- | ------: | -----: | -----------: | -----: | --------: | --------: | ---------------------: | --------------------: | -----------------: |
@@ -160,66 +137,50 @@ Deployment was reconciled:
 
 Interpretation:
 
-- Postgres leasing spread work across all five filler pods; this was not a
-  single-hot-worker problem.
+- Postgres leasing spread work across all five filler pods; this was not a single-hot-worker problem.
 - CDX remained the dominant fill class and the dominant retry source.
-- Queue timeouts and upstream timeouts both mattered. The service needs both
-  endpoint limiter tuning and better visibility into input-side wait time before
-  raising concurrency broadly.
-- Availability and replay were materially healthier than CDX in this window,
-  so endpoint-specific concurrency/backoff remains the right shape.
+- Queue timeouts and upstream timeouts both mattered. The service needs both endpoint limiter tuning and better
+  visibility into input-side wait time before raising concurrency broadly.
+- Availability and replay were materially healthier than CDX in this window, so endpoint-specific concurrency/backoff
+  remains the right shape.
 
 ## Active Next Steps
 
-1. Verify the deployed input/filler queue + limiter behavior in the live
-   service.
+1. Verify the deployed input/filler queue + limiter behavior in the live service.
    - Reprobe the known bad CDX path.
    - Burst cold CDX and replay misses.
    - Confirm `wayback_cache_limiter_in_flight{endpoint="cdx"}` returns to 0.
-   - Confirm
-     `wayback_cache_acquisition_failures_total{endpoint,reason,status}`
-     separates limiter queue timeout from upstream retry/backoff.
-   - Confirm input-side fill waits are visible in
-     `wayback_cache_input_fill_wait_duration_seconds`.
-2. Tune filler concurrency if cache-side `503` remains dominant. CDX staying at
-   low concurrency protects IA but serializes cold misses enough to hurt the
-   agent loop.
-3. Keep proxy retry/wait behavior covered: `503 + Retry-After` should
-   be an enforced wait while the proxy has budget, and an agent-visible failure
-   only after waiting would exceed that budget.
+   - Confirm `wayback_cache_acquisition_failures_total{endpoint,reason,status}` separates limiter queue timeout from
+     upstream retry/backoff.
+   - Confirm input-side fill waits are visible in `wayback_cache_input_fill_wait_duration_seconds`.
+2. Tune filler concurrency if cache-side `503` remains dominant. CDX staying at low concurrency protects IA but
+   serializes cold misses enough to hurt the agent loop.
+3. Keep proxy retry/wait behavior covered: `503 + Retry-After` should be an enforced wait while the proxy has budget,
+   and an agent-visible failure only after waiting would exceed that budget.
 
 ## Hardening Backlog
 
-- Add validated Availability fallback to CDX inside the cache service if we
-  want timestamp selection to live in the service rather than in the proxy.
-- Add alias rows for IA canonicalization redirects and equivalent replay URL
-  spellings.
-- Decide whether filler pods should stay as an OVH-spread Deployment, become a
-  DaemonSet, or run on roaming nodes once node/IP policy is clearer.
-- Decide `wayback-archive-db` backup/failover policy before moving from a
-  single CNPG instance to the OVH-HA profile.
-- Rename the remaining stateful `archive` names in a migration-safe follow-up:
-  GHCR image / Flux image policy, CNPG database and generated secret, and
-  SeaweedFS bucket plus S3 identity.
-- Rename internal Rust `Archive*` type/function names to `Cache*` once it is
-  worth the churn; the externally visible source layout, env vars, and metrics
-  already use cache naming.
+- Add validated Availability fallback to CDX inside the cache service if we want timestamp selection to live in the
+  service rather than in the proxy.
+- Add alias rows for IA canonicalization redirects and equivalent replay URL spellings.
+- Decide whether filler pods should stay as an OVH-spread Deployment, become a DaemonSet, or run on roaming nodes once
+  node/IP policy is clearer.
+- Decide `wayback-archive-db` backup/failover policy before moving from a single CNPG instance to the OVH-HA profile.
+- Rename the remaining stateful `archive` names in a migration-safe follow-up: GHCR image / Flux image policy, CNPG
+  database and generated secret, and SeaweedFS bucket plus S3 identity.
+- Rename internal Rust `Archive*` type/function names to `Cache*` once it is worth the churn; the externally visible
+  source layout, env vars, and metrics already use cache naming.
 - Add orphan-blob garbage collection.
 - Decide refresh/TTL policy for Availability/CDX metadata and stable negatives.
 - Add HEAD or Range support only if a direct client needs it; the eval does not.
 
 ## Acceptance Criteria
 
-- Multiple replay URL spellings for the same capture map to one stored replay
-  record.
-- Concurrent identical semantic misses produce one due fill queue row and one
-  claimed filler attempt at a time.
-- A repeated eval run reuses captures filled by previous runs without touching
-  IA for those captures.
-- IA `502/503/504`, connection resets, and timeouts are not cached as archive
-  content.
-- Archived `404/500` pages with `Memento-Datetime` are cached and served as
-  historical content.
+- Multiple replay URL spellings for the same capture map to one stored replay record.
+- Concurrent identical semantic misses produce one due fill queue row and one claimed filler attempt at a time.
+- A repeated eval run reuses captures filled by previous runs without touching IA for those captures.
+- IA `502/503/504`, connection resets, and timeouts are not cached as archive content.
+- Archived `404/500` pages with `Memento-Datetime` are cached and served as historical content.
 - Availability results after `WAYBACK_AS_OF` are rejected or fall back to CDX.
 - Direct CDX requests cannot reveal captures after `WAYBACK_AS_OF`.
 - Backoff state is visible in metrics and propagated as `503 + Retry-After`.

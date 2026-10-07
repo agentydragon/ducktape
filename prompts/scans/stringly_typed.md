@@ -125,7 +125,9 @@ cat string_literals_scan.json | jq '.overlaps'
 cat string_literals_scan.json | jq '.literal_histogram["completed"]'
 ```
 
-**Key insight from overlaps**: When you see both a string literal `"status"` and a symbol name `status` appearing frequently, this strongly suggests the code is using strings where it should use an enum. The overlap section surfaces these cases automatically.
+**Key insight from overlaps**: When you see both a string literal `"status"` and a symbol name `status` appearing
+frequently, this strongly suggests the code is using strings where it should use an enum. The overlap section surfaces
+these cases automatically.
 
 **What to review in histogram:**
 
@@ -134,11 +136,13 @@ cat string_literals_scan.json | jq '.literal_histogram["completed"]'
 3. **Overlaps**: Literal/symbol matches indicate stringly-typed patterns
 4. **Related groups**: Multiple literals that seem related (e.g., "queued", "completed", "failed")
 
-**Process ALL high-frequency output**: Focus on literals appearing 5+ times, use judgment to identify categorical values (not messages/URLs/IDs).
+**Process ALL high-frequency output**: Focus on literals appearing 5+ times, use judgment to identify categorical values
+(not messages/URLs/IDs).
 
 ---
 
-**Primary Method**: Manual code reading - understand the domain, look for repeated categorical strings. Read code to understand which strings represent categorical values vs messages/IDs/etc.
+**Primary Method**: Manual code reading - understand the domain, look for repeated categorical strings. Read code to
+understand which strings represent categorical values vs messages/IDs/etc.
 
 **Automated Preprocessing AFTER Step 0** (discovers candidates, NOT definitive):
 
@@ -185,7 +189,8 @@ rg --type py "(status|type|kind|mode|state)\s*=\s*\"([^\"]+)\"" -o | sort | uniq
 4. Create enums for related value groups
 5. Search codebase for specific enum values to replace
 
-**Warning**: Automated tools are preprocessing only. String "error" appears everywhere - manual judgment determines if it's an enum candidate or just a message.
+**Warning**: Automated tools are preprocessing only. String "error" appears everywhere - manual judgment determines if
+it's an enum candidate or just a message.
 
 ## Fix Strategy
 
@@ -328,11 +333,9 @@ rg --type py "(status|type|kind|mode|state)\s*=\s*\"([^\"]+)\"" -o | sort | uniq
 
 ## Benefits
 
-✅ **Type safety** - Typos caught at type-check time, not runtime
-✅ **Autocomplete** - IDE shows all valid values
-✅ **Documentation** - Enum definition documents all possible values
-✅ **Refactoring** - Rename enum value, all usages update
-✅ **Exhaustiveness** - Type checker ensures you handle all cases
+✅ **Type safety** - Typos caught at type-check time, not runtime ✅ **Autocomplete** - IDE shows all valid values ✅
+**Documentation** - Enum definition documents all possible values ✅ **Refactoring** - Rename enum value, all usages
+update ✅ **Exhaustiveness** - Type checker ensures you handle all cases
 
 ## Examples from rspcache
 

@@ -1,53 +1,46 @@
 # Zero (Rocicorp) against the requirements
 
-- **Status:** GA. "As of March 2026, Zero is generally available and fully-supported" (1.0.0 on npm
-  2026-03-24). Latest stable is **1.9.0 (2026-08-14)**, with 1.10/1.11 canaries published daily.
-  The roadmap is "largely responsive": bug fixes and performance, few new features.
-- **License:** Apache-2.0 for the client and server ("no plans to ever change the licensing of the
-  core product"). Hosted Cloud Zero is the business model.
-- **Runtime:** the server is Node ≥22 (`rocicorp/zero:1.9.0` image). Clients must be TypeScript.
-  Upstream must be Postgres ≥15 with `wal_level=logical`. Recommended for datasets under ~100 GB.
-- Read on 2026-09-23 from zero.rocicorp.dev (`<page>.md`) and rocicorp/mono `main` @ `a86e4668`.
-  No page 404'd. `gh api` was refused for rocicorp/mono in this session, so source came from
-  raw.githubusercontent.com and a sparse clone.
+- **Status:** GA. "As of March 2026, Zero is generally available and fully-supported" (1.0.0 on npm 2026-03-24). Latest
+  stable is **1.9.0 (2026-08-14)**, with 1.10/1.11 canaries published daily. The roadmap is "largely responsive": bug
+  fixes and performance, few new features.
+- **License:** Apache-2.0 for the client and server ("no plans to ever change the licensing of the core product").
+  Hosted Cloud Zero is the business model.
+- **Runtime:** the server is Node ≥22 (`rocicorp/zero:1.9.0` image). Clients must be TypeScript. Upstream must be
+  Postgres ≥15 with `wal_level=logical`. Recommended for datasets under ~100 GB.
+- Read on 2026-09-23 from zero.rocicorp.dev (`<page>.md`) and rocicorp/mono `main` @ `a86e4668`. No page 404'd. `gh api`
+  was refused for rocicorp/mono in this session, so source came from raw.githubusercontent.com and a sparse clone.
 
 ## Protocol model
 
-- **Transport.** The browser runs a `Zero` client with a local store (IndexedDB, or
-  `kvStore:'mem'`). It opens **one WebSocket straight to a zero-cache view-syncer**, which is
-  public on port 4848. Our app is not on that path: zero-cache calls it back over HTTP.
-- **Unit of sync:** a named query plus its args (`defineQuery`). The server keeps state per
-  **client group**, meaning all tabs of one browser profile, which share one CVR.
-- **Who decides content.** For each new query, zero-cache POSTs `name` and `args` to our
-  `ZERO_QUERY_URL`, batched as an array. It forwards cookies (`ZERO_QUERY_FORWARD_COOKIES`) or a
-  bearer token. Our endpoint authenticates the caller, validates the args, and returns a ZQL
-  **AST** or an app error. zero-cache runs that AST, never the client's own. The wire protocol
-  still accepts a raw client AST, but with no legacy permissions deployed it "default[s] to not
-  allowing any rows to be selected" (`zero-cache/src/auth/read-authorizer.ts`).
-- **Data path.** One replication-manager owns a logical slot on a publication and keeps a SQLite
-  replica. There can be N view-syncers, each holding its own copy of that replica, restored
-  through Litestream from S3 in a multi-node setup. A view-syncer hydrates each query into an
-  in-memory IVM pipeline **per client group**, then advances it on every replicated transaction.
-- **CVR (client view record)** lives in Postgres (`ZERO_CVR_DB`). Table `cvr.rows` holds one
-  record per synced row per client group: `rowVersion`, `patchVersion`, and
-  `refCounts {queryHash: n}`.
-  - The server sends "pokes" of row `put`/`del` patches, stamped with a CVR version. The client
-    acknowledges by cookie.
-  - Any patch whose `toVersion` is at or below the client's `baseVersion` is skipped
-    (`client-handler.ts:279`). A row that is already present and unchanged keeps its old
-    `patchVersion` (`cvr.ts:998`).
-  - These two rules together are how Zero dedupes rows across overlapping queries and on
-    reconnect.
-- **Rows are sent whole.** ZQL has no column projection. The only way to narrow columns is the
-  Postgres publication's column list, which applies to the whole app, not per reader.
-- **Query lifetime.** A query stays active while it is in use. After that it keeps syncing for
-  its `ttl` (default `5m`, maximum `10m`) and is then evicted. Rows that no remaining query
-  references get `del` patches.
-- **Status per query:** `unknown` (local data only), `complete` (server result received), or
-  `error` (the transform failed).
-- **Writes.** Mutators run optimistically on the client. zero-cache then POSTs them to
-  `ZERO_MUTATE_URL`, which applies them to Postgres and records the mutation ID. Replication
-  carries the result back, and the client rolls back its optimistic effects.
+- **Transport.** The browser runs a `Zero` client with a local store (IndexedDB, or `kvStore:'mem'`). It opens **one
+  WebSocket straight to a zero-cache view-syncer**, which is public on port 4848. Our app is not on that path:
+  zero-cache calls it back over HTTP.
+- **Unit of sync:** a named query plus its args (`defineQuery`). The server keeps state per **client group**, meaning
+  all tabs of one browser profile, which share one CVR.
+- **Who decides content.** For each new query, zero-cache POSTs `name` and `args` to our `ZERO_QUERY_URL`, batched as an
+  array. It forwards cookies (`ZERO_QUERY_FORWARD_COOKIES`) or a bearer token. Our endpoint authenticates the caller,
+  validates the args, and returns a ZQL **AST** or an app error. zero-cache runs that AST, never the client's own. The
+  wire protocol still accepts a raw client AST, but with no legacy permissions deployed it "default[s] to not allowing
+  any rows to be selected" (`zero-cache/src/auth/read-authorizer.ts`).
+- **Data path.** One replication-manager owns a logical slot on a publication and keeps a SQLite replica. There can be N
+  view-syncers, each holding its own copy of that replica, restored through Litestream from S3 in a multi-node setup. A
+  view-syncer hydrates each query into an in-memory IVM pipeline **per client group**, then advances it on every
+  replicated transaction.
+- **CVR (client view record)** lives in Postgres (`ZERO_CVR_DB`). Table `cvr.rows` holds one record per synced row per
+  client group: `rowVersion`, `patchVersion`, and `refCounts {queryHash: n}`.
+  - The server sends "pokes" of row `put`/`del` patches, stamped with a CVR version. The client acknowledges by cookie.
+  - Any patch whose `toVersion` is at or below the client's `baseVersion` is skipped (`client-handler.ts:279`). A row
+    that is already present and unchanged keeps its old `patchVersion` (`cvr.ts:998`).
+  - These two rules together are how Zero dedupes rows across overlapping queries and on reconnect.
+- **Rows are sent whole.** ZQL has no column projection. The only way to narrow columns is the Postgres publication's
+  column list, which applies to the whole app, not per reader.
+- **Query lifetime.** A query stays active while it is in use. After that it keeps syncing for its `ttl` (default `5m`,
+  maximum `10m`) and is then evicted. Rows that no remaining query references get `del` patches.
+- **Status per query:** `unknown` (local data only), `complete` (server result received), or `error` (the transform
+  failed).
+- **Writes.** Mutators run optimistically on the client. zero-cache then POSTs them to `ZERO_MUTATE_URL`, which applies
+  them to Postgres and records the mutation ID. Replication carries the result back, and the client rolls back its
+  optimistic effects.
 
 ## Fit
 
@@ -95,18 +88,15 @@
 
 **Deployment.** This replaces Electric in the end state.
 
-- zero-cache as a replication-manager (1 replica, with a PVC or emptyDir) plus view-syncers
-  (N ≥ 2, ClientIP stickiness, ~10 min startup grace, fast-IOPS volume).
+- zero-cache as a replication-manager (1 replica, with a PVC or emptyDir) plus view-syncers (N ≥ 2, ClientIP stickiness,
+  ~10 min startup grace, fast-IOPS volume).
 - A Litestream bucket (S3-compatible); multi-node requires one.
-- `ZERO_CVR_DB` and `ZERO_CHANGE_DB` behind a pooler; `ZERO_UPSTREAM_DB` must be a direct
-  connection.
+- `ZERO_CVR_DB` and `ZERO_CHANGE_DB` behind a pooler; `ZERO_UPSTREAM_DB` must be a direct connection.
 - An explicit publication limited to the fold tables and columns, via `ZERO_APP_PUBLICATIONS`.
-- Event-trigger rights for zero-cache, i.e. a superuser role. Without it, "any schema change
-  triggers a full reset".
-- Settings: `ZERO_ENABLE_CRUD_MUTATIONS=false`, `ZERO_QUERY_API_KEY`,
-  `ZERO_AUTH_REVALIDATE_INTERVAL_SECONDS`, and telemetry off.
-- `wal_level=logical` and `REPLICA IDENTITY FULL` already exist for Electric (`inferred` from
-  migration `0005`).
+- Event-trigger rights for zero-cache, i.e. a superuser role. Without it, "any schema change triggers a full reset".
+- Settings: `ZERO_ENABLE_CRUD_MUTATIONS=false`, `ZERO_QUERY_API_KEY`, `ZERO_AUTH_REVALIDATE_INTERVAL_SECONDS`, and
+  telemetry off.
+- `wal_level=logical` and `REPLICA IDENTITY FULL` already exist for Electric (`inferred` from migration `0005`).
 
 **Python backend.** This is the part the docs under-specify.
 
@@ -116,47 +106,44 @@
   3. clamp ranges;
   4. emit **Zero AST JSON** using server-side table and column names;
   5. return `{kind:'QueryResponse', queries, userID}`.
-- The docs say other languages are possible. But the documented body leaves out the
-  `['transform', […]]` envelope and lists error kinds `app|zero|http`, while the source has
-  `app|parse` (`zero-protocol/src/custom-queries.ts`, `zero-server/src/queries/process-queries.ts`).
-  So: follow the source, pin the Zero version, and add a contract test against a real zero-cache.
-- Commands stay on our existing path. Porting them to mutators would need an undocumented Python
-  push protocol.
+- The docs say other languages are possible. But the documented body leaves out the `['transform', […]]` envelope and
+  lists error kinds `app|zero|http`, while the source has `app|parse` (`zero-protocol/src/custom-queries.ts`,
+  `zero-server/src/queries/process-queries.ts`). So: follow the source, pin the Zero version, and add a contract test
+  against a real zero-cache.
+- Commands stay on our existing path. Porting them to mutators would need an undocumented Python push protocol.
 
 **Schema.**
 
-- A hand-written `schema.ts` that mirrors our Alembic tables. Zero's generators cover only
-  Drizzle and Prisma.
-- Add scalar correlation columns so an entity can relate to _its_ chunk generation (for example
-  `text_generation`), because refs are JSONB and ZQL has neither JSON filters nor
-  non-equality joins.
+- A hand-written `schema.ts` that mirrors our Alembic tables. Zero's generators cover only Drizzle and Prisma.
+- Add scalar correlation columns so an entity can relate to _its_ chunk generation (for example `text_generation`),
+  because refs are JSONB and ZQL has neither JSON filters nor non-equality joins.
 - Add `entity_index` as a column.
 - Our column types (text, bigint, bool, jsonb) and compound primary keys are all supported.
 
 **Client.**
 
 - `@rocicorp/zero` and its React bindings.
-- A TypeScript copy of each query definition. The client runs it locally for instant results;
-  the server version may differ, so it is duplicated logic.
-- Cookie auth needs zero-cache on a subdomain, a root-`Domain` cookie, and `SameSite=Lax`. The
-  docs warn against `SameSite=None` because of cross-site WebSocket hijacking.
-- Bundle size is not documented. The npm package unpacks to 8.6 MB including server code, so the
-  real client size is unmeasured.
+- A TypeScript copy of each query definition. The client runs it locally for instant results; the server version may
+  differ, so it is duplicated logic.
+- Cookie auth needs zero-cache on a subdomain, a root-`Domain` cookie, and `SameSite=Lax`. The docs warn against
+  `SameSite=None` because of cross-site WebSocket hijacking.
+- Bundle size is not documented. The npm package unpacks to 8.6 MB including server code, so the real client size is
+  unmeasured.
 
 **C3 and C2 caveats.**
 
-- A staging reset now also means wiping the replica. From llms.txt: "Resetting the database …
-  requires also deleting the SQLite replica and restarting zero-cache".
-- Meeting the letter of C2 means putting a WebSocket reverse proxy in our app in front of
-  zero-cache. That is undocumented and adds nothing to authorization, because every read already
-  goes through our transform.
+- A staging reset now also means wiping the replica. From llms.txt: "Resetting the database … requires also deleting the
+  SQLite replica and restarting zero-cache".
+- Meeting the letter of C2 means putting a WebSocket reverse proxy in our app in front of zero-cache. That is
+  undocumented and adds nothing to authorization, because every read already goes through our transform.
 
 ## Sources
 
 - `https://zero.rocicorp.dev/docs/{introduction,status,release-notes,release-notes/1.9,release-notes/1.5,release-notes/1.0,open-source,when-to-use,sync,cloud-zero}`
 - `https://zero.rocicorp.dev/docs/{queries,auth,zql,mutators,schema,connection,self-host,zero-cache-config,postgres-support,connecting-to-postgres,debug/inspector}`
 - https://zero.rocicorp.dev/llms.txt
-- https://registry.npmjs.org/@rocicorp%2Fzero and https://registry.npmjs.org/@rocicorp%2Fzero-virtual (versions, dates, license)
+- https://registry.npmjs.org/@rocicorp%2Fzero and https://registry.npmjs.org/@rocicorp%2Fzero-virtual (versions, dates,
+  license)
 - https://github.com/rocicorp/zero-virtual (README)
 - rocicorp/mono @ `a86e4668`, fetched as `https://raw.githubusercontent.com/rocicorp/mono/main/packages/…`:
   - `zero-cache/src/services/view-syncer/{cvr.ts,client-handler.ts,view-syncer.ts,schema/cvr.ts}`

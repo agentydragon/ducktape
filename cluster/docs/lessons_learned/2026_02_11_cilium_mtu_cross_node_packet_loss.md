@@ -1,73 +1,61 @@
 # MTU Misconfiguration: Cross-Node Packet Loss During Bootstrap
 
-**Date**: 2026-02-11
-**Status**: Resolved
+**Date**: 2026-02-11 **Status**: Resolved
 
 ## Root Cause
 
-The Cilium Helm chart defines the MTU parameter as **uppercase** `MTU`. Our config used
-lowercase `mtu: 1370`, which was silently ignored, leaving pod interfaces at the default
-MTU of 1500.
+The Cilium Helm chart defines the MTU parameter as **uppercase** `MTU`. Our config used lowercase `mtu: 1370`, which was
+silently ignored, leaving pod interfaces at the default MTU of 1500.
 
-With VXLAN (50 bytes) + KubeSpan WireGuard (80 bytes) double encapsulation, the effective
-maximum payload without fragmentation is `1500 - 130 = 1370` bytes. At pod MTU 1500,
-VXLAN-encapsulated packets exceeded the WireGuard interface MTU (1420), forcing kernel
-fragmentation. UDP fragments traversing NAT/middleboxes between Hetzner VPS and home
-Proxmox were intermittently dropped.
+With VXLAN (50 bytes) + KubeSpan WireGuard (80 bytes) double encapsulation, the effective maximum payload without
+fragmentation is `1500 - 130 = 1370` bytes. At pod MTU 1500, VXLAN-encapsulated packets exceeded the WireGuard interface
+MTU (1420), forcing kernel fragmentation. UDP fragments traversing NAT/middleboxes between Hetzner VPS and home Proxmox
+were intermittently dropped.
 
 ## Key Symptoms
 
 - Bootstrap stalled at ~18/64 Ready kustomizations for >20 minutes
-- Kyverno webhook TLS handshake timeouts on cross-node API server calls:
-  `TLS handshake error from 10.244.0.75: EOF`
-- Three HelmReleases (tofu-controller, trust-manager, ingress-nginx) entered permanent
-  `RetriesExceeded` state — default `install.remediation.retries: 0` meant a single
-  transient failure was terminal
+- Kyverno webhook TLS handshake timeouts on cross-node API server calls: `TLS handshake error from 10.244.0.75: EOF`
+- Three HelmReleases (tofu-controller, trust-manager, ingress-nginx) entered permanent `RetriesExceeded` state — default
+  `install.remediation.retries: 0` meant a single transient failure was terminal
 - 10-30% TCP connection failure rate between VPS and Proxmox nodes
-- IP fragmentation counters (`ReasmFails` in `/proc/net/snmp`) showed hundreds of
-  reassembly failures
+- IP fragmentation counters (`ReasmFails` in `/proc/net/snmp`) showed hundreds of reassembly failures
 
 ## What We Tried (Failed)
 
 These approaches masked symptoms but didn't fix the root cause:
 
-1. **`endpointRoutes.enabled: true`** — Non-default Cilium option. Talos/KubeSpan docs
-   warn against it ("asymmetric routing").
-2. **`hostServices.enabled: true`** — Redundant with `kubeProxyReplacement: true`,
-   potential KubeSpan interaction.
-3. **`bpf.hostLegacyRouting: true`** — Workaround for a problem caused by `bpf.masquerade`,
-   which we don't enable. Added complexity without fixing the underlying MTU issue.
-4. **DNS workarounds** — `forwardKubeDNSToHost: false`, explicit `nameservers: [1.1.1.1, 8.8.8.8]`,
-   hardcoded CoreDNS upstream. These bypassed HostDNS but the real DNS failures were
-   caused by cross-node packet loss, not DNS configuration.
-5. **Adding `dependsOn: kyverno`** to affected kustomizations — Ensured ordering but
-   didn't prevent webhook timeouts since the networking issue was intermittent, not
-   a race condition.
+1. **`endpointRoutes.enabled: true`** — Non-default Cilium option. Talos/KubeSpan docs warn against it ("asymmetric
+   routing").
+2. **`hostServices.enabled: true`** — Redundant with `kubeProxyReplacement: true`, potential KubeSpan interaction.
+3. **`bpf.hostLegacyRouting: true`** — Workaround for a problem caused by `bpf.masquerade`, which we don't enable. Added
+   complexity without fixing the underlying MTU issue.
+4. **DNS workarounds** — `forwardKubeDNSToHost: false`, explicit `nameservers: [1.1.1.1, 8.8.8.8]`, hardcoded CoreDNS
+   upstream. These bypassed HostDNS but the real DNS failures were caused by cross-node packet loss, not DNS
+   configuration.
+5. **Adding `dependsOn: kyverno`** to affected kustomizations — Ensured ordering but didn't prevent webhook timeouts
+   since the networking issue was intermittent, not a race condition.
 
 ## What Fixed It
 
-1. **`MTU: 1370` (uppercase) in `cilium-values.yaml`** — Eliminated IP fragmentation at
-   the WireGuard interface. Zero fragmentation: pod (1370) + VXLAN (50) = 1420 fits
-   WireGuard MTU, + WireGuard (80) = 1500 fits eth0.
-2. **Stripped Cilium to Talos-recommended defaults** — Removed `endpointRoutes`,
-   `hostServices`, `bpf.hostLegacyRouting`, and every other non-default option Talos
-   docs warn against with KubeSpan; kept required ones (ipam, kubeProxyReplacement,
-   securityContext, cgroup, hubble).
-3. **Reverted DNS to defaults** — `forwardKubeDNSToHost: true` (default), no explicit
-   nameservers, CoreDNS using `/etc/resolv.conf`. Works correctly with default Cilium
-   (no eBPF host routing).
+1. **`MTU: 1370` (uppercase) in `cilium-values.yaml`** — Eliminated IP fragmentation at the WireGuard interface. Zero
+   fragmentation: pod (1370) + VXLAN (50) = 1420 fits WireGuard MTU, + WireGuard (80) = 1500 fits eth0.
+2. **Stripped Cilium to Talos-recommended defaults** — Removed `endpointRoutes`, `hostServices`,
+   `bpf.hostLegacyRouting`, and every other non-default option Talos docs warn against with KubeSpan; kept required ones
+   (ipam, kubeProxyReplacement, securityContext, cgroup, hubble).
+3. **Reverted DNS to defaults** — `forwardKubeDNSToHost: true` (default), no explicit nameservers, CoreDNS using
+   `/etc/resolv.conf`. Works correctly with default Cilium (no eBPF host routing).
 
 ## Additional Mitigations Applied
 
 These don't fix the root cause but provide defense in depth:
 
-- **HelmRelease install retries** — `install.remediation.retries: 3` on all 27 HelmReleases.
-  Prevents a single transient failure from permanently blocking the dependency chain.
-- **Kyverno HA** — 3 replicas on control plane nodes with topology spread constraints.
-  Ensures every API server has a local Kyverno pod, eliminating cross-node webhook calls.
-- **ClusterIP readiness gate** — `verify_clusterip_routing()` in `bootstrap.py` creates
-  a busybox pod on each node and runs `nslookup kubernetes.default.svc` to verify Cilium
-  BPF service maps are populated before deploying Flux.
+- **HelmRelease install retries** — `install.remediation.retries: 3` on all 27 HelmReleases. Prevents a single transient
+  failure from permanently blocking the dependency chain.
+- **Kyverno HA** — 3 replicas on control plane nodes with topology spread constraints. Ensures every API server has a
+  local Kyverno pod, eliminating cross-node webhook calls.
+- **ClusterIP readiness gate** — `verify_clusterip_routing()` in `bootstrap.py` creates a busybox pod on each node and
+  runs `nslookup kubernetes.default.svc` to verify Cilium BPF service maps are populated before deploying Flux.
 
 ## Diagnostic Checklist
 
@@ -139,13 +127,13 @@ kubectl run dnstest --image=docker.io/library/busybox --rm -it --restart=Never -
 
 ## Key Lessons
 
-1. **Helm values are case-sensitive** — always verify the exact key name with
-   `helm show values <chart> | grep -i <key>` when setting MTU or similar parameters.
-2. **Cilium + KubeSpan: stick to defaults** — Talos docs explicitly warn that non-default
-   Cilium options cause "asymmetric routing" with KubeSpan.
-3. **Flux default `retries: 0` is dangerous for bootstrap** — any transient failure
-   becomes permanent. Always set `install.remediation.retries: 3`.
-4. **Cilium health != ClusterIP readiness** — Agent-to-agent health probes pass before
-   BPF service maps are populated. Verify actual ClusterIP routing before deploying workloads.
-5. **IP fragmentation is silent** — No errors in logs, just intermittent connection failures.
-   Check `/proc/net/snmp` fragmentation counters when debugging flaky cross-node connectivity.
+1. **Helm values are case-sensitive** — always verify the exact key name with `helm show values <chart> | grep -i <key>`
+   when setting MTU or similar parameters.
+2. **Cilium + KubeSpan: stick to defaults** — Talos docs explicitly warn that non-default Cilium options cause
+   "asymmetric routing" with KubeSpan.
+3. **Flux default `retries: 0` is dangerous for bootstrap** — any transient failure becomes permanent. Always set
+   `install.remediation.retries: 3`.
+4. **Cilium health != ClusterIP readiness** — Agent-to-agent health probes pass before BPF service maps are populated.
+   Verify actual ClusterIP routing before deploying workloads.
+5. **IP fragmentation is silent** — No errors in logs, just intermittent connection failures. Check `/proc/net/snmp`
+   fragmentation counters when debugging flaky cross-node connectivity.

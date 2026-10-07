@@ -1,4 +1,5 @@
-- Anki mini-format-pack: disabled - seems I deleted my fork (`addon_id: 295889520`, `https://github.com/agentydragon/mini-format-pack`)
+- Anki mini-format-pack: disabled - seems I deleted my fork (`addon_id: 295889520`,
+  `https://github.com/agentydragon/mini-format-pack`)
 - Chrome remote desktop
 - disable screensaver and desktop effects on VMs
 - GitLab runner

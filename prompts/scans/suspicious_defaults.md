@@ -6,9 +6,12 @@
 
 ## Pattern Description
 
-Using `or` operators to provide default values (like `x or {}`, `x or ""`) often masks underlying type safety issues. These patterns suggest that the API internally allows `None` but then quietly coerces it to a different "null value" at runtime, creating a mismatch between the type signature and actual behavior.
+Using `or` operators to provide default values (like `x or {}`, `x or ""`) often masks underlying type safety issues.
+These patterns suggest that the API internally allows `None` but then quietly coerces it to a different "null value" at
+runtime, creating a mismatch between the type signature and actual behavior.
 
-**Key principle**: If a value can be `None`, the type signature should reflect that. If it cannot be `None`, don't use defensive `or` defaults.
+**Key principle**: If a value can be `None`, the type signature should reflect that. If it cannot be `None`, don't use
+defensive `or` defaults.
 
 ## Examples of Antipatterns
 
@@ -519,8 +522,7 @@ mypy --strict path/to/file.py
 
 ## Benefits
 
-✅ **Type safety** - Type annotations match runtime behavior
-✅ **Explicit intent** - Clear when None is acceptable vs needs conversion
-✅ **Catches bugs** - Type checker finds places where None handling is missing
-✅ **Better APIs** - Clear contracts about what's required vs optional
-✅ **Upstream bug detection** - Find cases where library types are wrong
+✅ **Type safety** - Type annotations match runtime behavior ✅ **Explicit intent** - Clear when None is acceptable vs
+needs conversion ✅ **Catches bugs** - Type checker finds places where None handling is missing ✅ **Better APIs** -
+Clear contracts about what's required vs optional ✅ **Upstream bug detection** - Find cases where library types are
+wrong

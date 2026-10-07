@@ -4,9 +4,9 @@
 
 **Git fixtures are the single source of truth for ALL test data.**
 
-Never create synthetic ORM models (Snapshot, TruePositive, FalsePositive, Example) directly in
-tests. Depend on `synced_db` to seed the DB from the git-tracked fixtures in
-`testing/fixtures/testdata/specimens/`, and query examples/TPs/FPs from it.
+Never create synthetic ORM models (Snapshot, TruePositive, FalsePositive, Example) directly in tests. Depend on
+`synced_db` to seed the DB from the git-tracked fixtures in `testing/fixtures/testdata/specimens/`, and query
+examples/TPs/FPs from it.
 
 ## Available Git Fixtures
 
@@ -35,8 +35,10 @@ Located in `testing/fixtures/testdata/specimens/`:
 ## High-value fixtures (testing/fixtures/)
 
 - **Scopes** (scopes.py): `subtract_file_example`, `all_files_scope`.
-- **Ground truth** (ground_truth.py): `example_subtract_orm` (1 TP occurrence), `example_multi_tp_orm` (multi-TP), `tp_occurrence_single`, `fp_id`, `fp_occurrence_id`.
-- **Runs** (runs.py): `make_fake_critic_run`, `make_fake_grader_run`, `make_fake_grader_run_with_credit`; snapshot fixtures `test_snapshot`, `test_validation_snapshot`.
+- **Ground truth** (ground_truth.py): `example_subtract_orm` (1 TP occurrence), `example_multi_tp_orm` (multi-TP),
+  `tp_occurrence_single`, `fp_id`, `fp_occurrence_id`.
+- **Runs** (runs.py): `make_fake_critic_run`, `make_fake_grader_run`, `make_fake_grader_run_with_credit`; snapshot
+  fixtures `test_snapshot`, `test_validation_snapshot`.
 - **E2E** (e2e_container.py): `e2e_stack` for Docker-based integration tests with full stack.
 - **Database** (db.py): `synced_db`, `synced_test_session` for DB fixtures.
 

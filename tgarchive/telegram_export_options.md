@@ -4,7 +4,8 @@ When you want to export only specific groups/channels, not your entire Telegram 
 
 ## API Credentials (prerequisite for all options below except built-in takeout)
 
-Credentials and provisioning instructions live in <../secrets/shared/telegram-api.yaml> (SOPS-encrypted). Run `sops -d secrets/shared/telegram-api.yaml` to read them, or `sops edit ...` to rotate.
+Credentials and provisioning instructions live in <../secrets/shared/telegram-api.yaml> (SOPS-encrypted). Run
+`sops -d secrets/shared/telegram-api.yaml` to read them, or `sops edit ...` to rotate.
 
 ## Recommended: tg-archive
 

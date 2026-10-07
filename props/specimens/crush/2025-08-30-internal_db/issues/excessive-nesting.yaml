@@ -27,8 +27,8 @@ occurrences:
     files:
       internal/lsp/client.go:
         - [425, 435]
-    note: "openKeyConfigFiles: when a file does not exist, use continue to skip rather than nesting the rest of the
-      body."
+    note:
+      "openKeyConfigFiles: when a file does not exist, use continue to skip rather than nesting the rest of the body."
     critic_scopes_expected_to_recall:
       - - internal/lsp/client.go
     match_file_restriction:
@@ -46,8 +46,8 @@ occurrences:
     files:
       internal/shell/shell.go:
         - [183, 201]
-    note: "ArgumentsBlocker: guard with continue when args length is insufficient rather than nesting the matching
-      body."
+    note:
+      "ArgumentsBlocker: guard with continue when args length is insufficient rather than nesting the matching body."
     critic_scopes_expected_to_recall:
       - - internal/shell/shell.go
     match_file_restriction:

@@ -2,7 +2,8 @@
 
 ## Rendering
 
-- [ ] Custom Rich renderables (replace `Table.grid()` workarounds with `__rich_measure__`/`__rich_console__` for proper width distribution)
+- [ ] Custom Rich renderables (replace `Table.grid()` workarounds with `__rich_measure__`/`__rich_console__` for proper
+      width distribution)
 - [ ] Compact large numbers (e.g., `+123k`)
 - [ ] Adaptive tree indent (1-3 spaces based on terminal width; coordinate with path collapsing and bar width)
 
@@ -16,7 +17,8 @@
 
 ## Rename Support
 
-Currently renames show as separate add/delete. Use `git diff -M --numstat` to detect renames and display as `new.py <- old.py` at destination path. Edge case: renames crossing diff scope boundary.
+Currently renames show as separate add/delete. Use `git diff -M --numstat` to detect renames and display as
+`new.py <- old.py` at destination path. Edge case: renames crossing diff scope boundary.
 
 ## Other
 

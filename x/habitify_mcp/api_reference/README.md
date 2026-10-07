@@ -72,12 +72,13 @@ The script will:
 4. Deliberately generate and document expected error cases
 5. Save all API interactions (both successful and deliberate errors) as reference files
 
-The script follows a "fail fast" philosophy - it expects certain operations to succeed and certain errors to occur exactly as expected.
-If anything deviates from these expectations, the script will exit with an error code.
+The script follows a "fail fast" philosophy - it expects certain operations to succeed and certain errors to occur
+exactly as expected. If anything deviates from these expectations, the script will exit with an error code.
 
 ## Security Note
 
-API key is automatically masked in saved files, showing only first and last 4 characters. The full API key is never saved to disk.
+API key is automatically masked in saved files, showing only first and last 4 characters. The full API key is never
+saved to disk.
 
 ## Confirmed Working API Endpoints
 
@@ -102,10 +103,12 @@ Invalid habit IDs (`/habits/invalid-id`, `/status/invalid-id`) return **500** (n
 
 ## Date Format Requirements
 
-Per the [official docs](https://docs.habitify.me/date-format), all date-dependent endpoints require ISO-8601 with an explicit timezone offset: `YYYY-MM-DDThh:mm:ss±hh:mm` (URL-encoded in query params). Confirmed by testing:
+Per the [official docs](https://docs.habitify.me/date-format), all date-dependent endpoints require ISO-8601 with an
+explicit timezone offset: `YYYY-MM-DDThh:mm:ss±hh:mm` (URL-encoded in query params). Confirmed by testing:
 
 - ✅ **Works**: `2023-05-21T00:00:00+00:00`
-- ❌ **Fails**: `2023-05-21T00:00:00Z`, `2023-05-21`, `2023-05-21T00:00:00` — the `Z` shorthand and bare-date/no-timezone forms are all rejected
+- ❌ **Fails**: `2023-05-21T00:00:00Z`, `2023-05-21`, `2023-05-21T00:00:00` — the `Z` shorthand and
+  bare-date/no-timezone forms are all rejected
 - ❌ **Fails**: omitting the date parameter (412 Precondition Failed)
 
 ```python
@@ -120,6 +123,8 @@ status_url = f"/status/{habit_id}?target_date={encoded_date}"
 
 ## Habits With and Without Values
 
-Value-tracking habits (e.g. "Drink 8 glasses of water") accept an optional `value` param on `PUT /status/{id}` (e.g. `"value": 8.0`); completion-only habits (e.g. "Meditate") omit it. Either kind can be set to "skipped"/"failed" without a value.
+Value-tracking habits (e.g. "Drink 8 glasses of water") accept an optional `value` param on `PUT /status/{id}` (e.g.
+`"value": 8.0`); completion-only habits (e.g. "Meditate") omit it. Either kind can be set to "skipped"/"failed" without
+a value.
 
 See individual reference files for detailed request and response structures.

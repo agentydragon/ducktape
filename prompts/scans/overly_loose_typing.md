@@ -6,9 +6,11 @@
 
 ## Pattern Description
 
-Functions with suspiciously loose type annotations that indicate "I don't know what this is" or "I gave up on types". These are footguns that allow garbage data to propagate through the system.
+Functions with suspiciously loose type annotations that indicate "I don't know what this is" or "I gave up on types".
+These are footguns that allow garbage data to propagate through the system.
 
-**Key principle**: Types should be as specific as possible. `Any`, `object`, `dict[str, Any]` are danger flags that indicate unclear data contracts.
+**Key principle**: Types should be as specific as possible. `Any`, `object`, `dict[str, Any]` are danger flags that
+indicate unclear data contracts.
 
 ## Examples of Antipatterns
 
@@ -532,7 +534,8 @@ def api_call(data: dict[str, Any]) -> Response:
 api_call(json.loads(json_string))  # Clear: deserialize then call
 ```
 
-**Reason**: Your API should have ONE clear contract, even if underlying library is permissive. Force callers to be explicit about what they're passing.
+**Reason**: Your API should have ONE clear contract, even if underlying library is permissive. Force callers to be
+explicit about what they're passing.
 
 ## Validation
 
@@ -547,8 +550,6 @@ mypy --strict path/to/file.py
 
 ## Benefits
 
-✅ **Type safety** - Catch bugs at development time, not runtime
-✅ **Better IDE support** - Autocomplete knows what fields exist
-✅ **Self-documenting** - Types show what data is expected
-✅ **Easier refactoring** - Type checker catches all usages
-✅ **Prevents footguns** - Can't pass garbage data anymore
+✅ **Type safety** - Catch bugs at development time, not runtime ✅ **Better IDE support** - Autocomplete knows what
+fields exist ✅ **Self-documenting** - Types show what data is expected ✅ **Easier refactoring** - Type checker catches
+all usages ✅ **Prevents footguns** - Can't pass garbage data anymore

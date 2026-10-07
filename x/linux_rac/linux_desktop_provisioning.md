@@ -1,6 +1,7 @@
 # Linux Desktop VM Provisioning (Manual Steps)
 
-These commands produce the `linux-desktop-01` virtual machine on `atlas` (Proxmox). Run them manually before applying the Ansible playbook.
+These commands produce the `linux-desktop-01` virtual machine on `atlas` (Proxmox). Run them manually before applying
+the Ansible playbook.
 
 1. **Clone from template**
 
@@ -36,8 +37,7 @@ These commands produce the `linux-desktop-01` virtual machine on `atlas` (Proxmo
    sleep 60
    ```
 
-5. **Inventory entry**
-   Add the host to `ansible/inventory.yaml` (or use `--limit`):
+5. **Inventory entry** Add the host to `ansible/inventory.yaml` (or use `--limit`):
 
    ```yaml
    linux_desktop:
@@ -50,7 +50,8 @@ These commands produce the `linux-desktop-01` virtual machine on `atlas` (Proxmo
 
 6. **Install the RAC SSH public key**
 
-   Helm now renders the Guacamole SSH key into a ConfigMap. Pull it once the cluster has applied the chart and drop it into `authorized_keys` for the login user:
+   Helm now renders the Guacamole SSH key into a ConfigMap. Pull it once the cluster has applied the chart and drop it
+   into `authorized_keys` for the login user:
 
    ```bash
    kubectl -n authentik get configmap linux-desktop-rac-ssh-public-key \

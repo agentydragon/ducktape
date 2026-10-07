@@ -2,7 +2,9 @@
 
 ## Overview
 
-Meta-prompting is an architectural pattern where a "conductor" LLM orchestrates multiple specialized "expert" LLMs to solve complex tasks. The conductor breaks down problems, delegates subtasks to appropriate experts, and synthesizes results.
+Meta-prompting is an architectural pattern where a "conductor" LLM orchestrates multiple specialized "expert" LLMs to
+solve complex tasks. The conductor breaks down problems, delegates subtasks to appropriate experts, and synthesizes
+results.
 
 ## Core Concepts
 
@@ -223,6 +225,8 @@ OpenAI documented a meta-prompting approach to prompt optimization:
 4. Evaluator tests on validation set
 5. Loop until performance converges
 
-**Key insight:** Multiple specialized agents outperform single "improve this prompt" agent because each agent focuses on one aspect (generation, critique, refinement, evaluation) rather than trying to do everything.
+**Key insight:** Multiple specialized agents outperform single "improve this prompt" agent because each agent focuses on
+one aspect (generation, critique, refinement, evaluation) rather than trying to do everything.
 
-**Relevance:** Our prompt optimizer agent combines these roles, but the principle holds - break the task into phases (analyze failures, diagnose root causes, propose improvements, test hypotheses).
+**Relevance:** Our prompt optimizer agent combines these roles, but the principle holds - break the task into phases
+(analyze failures, diagnose root causes, propose improvements, test hypotheses).

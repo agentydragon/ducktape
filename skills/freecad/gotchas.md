@@ -43,9 +43,8 @@
 
 ## Sanity-checking view directions
 
-After creating a `DrawViewPart`, verify the visible edges match what you expect for that
-viewing direction. Common mistake: `Direction=(0,0,-1)` looks at the bottom of the part, not
-the top. `Direction=(0,0,1)` looks down at the top.
+After creating a `DrawViewPart`, verify the visible edges match what you expect for that viewing direction. Common
+mistake: `Direction=(0,0,-1)` looks at the bottom of the part, not the top. `Direction=(0,0,1)` looks down at the top.
 
 Log the edge count and types, then cross-check against the part's geometry:
 
@@ -57,38 +56,41 @@ log(f"{view.Name}: {len(vis)} edges, {len(circles)} circles")
 # through-holes, the direction is probably inverted.
 ```
 
-For each view, mentally enumerate which features should be visible from that direction and
-verify the edge list matches. Missing expected features = wrong direction or occluded geometry.
+For each view, mentally enumerate which features should be visible from that direction and verify the edge list matches.
+Missing expected features = wrong direction or occluded geometry.
 
 ## Dimension label positioning
 
 **The origin for `dim.X`/`dim.Y` depends on the dimension type:**
 
 - **Linear dims** (`DistanceX`, `DistanceY`, `Distance`): offsets from the **view center**.
-- **Diameter/Radius dims**: offsets from the **circle center**. `dim.Y = 0` gives a horizontal
-  leader; `dim.X > 0` places the label to the right of the circle.
+- **Diameter/Radius dims**: offsets from the **circle center**. `dim.Y = 0` gives a horizontal leader; `dim.X > 0`
+  places the label to the right of the circle.
 
-**Do not hardcode label positions from model dimensions.** The mapping from model space to
-TechDraw view space depends on `Direction`, `XDirection`, and `Scale`. For linear dims, compute
-positions from the actual projected edge/vertex coordinates returned by `getVisibleEdges()` /
-`getVertexBySelection()`.
+**Do not hardcode label positions from model dimensions.** The mapping from model space to TechDraw view space depends
+on `Direction`, `XDirection`, and `Scale`. For linear dims, compute positions from the actual projected edge/vertex
+coordinates returned by `getVisibleEdges()` / `getVertexBySelection()`.
 
 ## Visual inspection checklist
 
-After generating a TechDraw export, **always render the PDF and visually inspect** before
-updating golden files or declaring success. Also check FreeCAD stderr for warnings:
+After generating a TechDraw export, **always render the PDF and visually inspect** before updating golden files or
+declaring success. Also check FreeCAD stderr for warnings:
 
-- `DVD::getDimValue - <name> - 2D references are corrupt` — dimension has invalid references,
-  will render with tiny/zero-length leader lines. Fix the `References2D`.
-- `True dimension has no 3D References` — `References3D` didn't persist after recompute.
-  Use `References2D` with projected edges instead.
+- `DVD::getDimValue - <name> - 2D references are corrupt` — dimension has invalid references, will render with
+  tiny/zero-length leader lines. Fix the `References2D`.
+- `True dimension has no 3D References` — `References3D` didn't persist after recompute. Use `References2D` with
+  projected edges instead.
 
 Visual checks:
 
 - **Text overlapping geometry** — dimension labels sitting on top of edges or other labels
-- **Text on dimension lines** — especially vertical dimensions where horizontal text can land directly on the arrow line; offset text away from the line
+- **Text on dimension lines** — especially vertical dimensions where horizontal text can land directly on the arrow
+  line; offset text away from the line
 - **Extension line overshoot** — lines extending well beyond the geometry they reference
 - **Cramped or cut-off labels** — text too close to drawing edges or clipped by the viewport
-- **Tiny leader arrows** — dimension reads the correct value but the arrows span near-zero distance, meaning the 2D reference doesn't anchor to visible geometry
-- **Dimension on wrong view** — place dimensions on views where the measured feature has a clear projected outline. Check FreeCAD stderr for `2D references are corrupt` warnings
-- **Diagonal leader lines** — diameter/radius leaders should be horizontal or at a clean angle. If diagonal, the `dim.Y` doesn't match the circle center's projected y-coordinate
+- **Tiny leader arrows** — dimension reads the correct value but the arrows span near-zero distance, meaning the 2D
+  reference doesn't anchor to visible geometry
+- **Dimension on wrong view** — place dimensions on views where the measured feature has a clear projected outline.
+  Check FreeCAD stderr for `2D references are corrupt` warnings
+- **Diagonal leader lines** — diameter/radius leaders should be horizontal or at a clean angle. If diagonal, the `dim.Y`
+  doesn't match the circle center's projected y-coordinate

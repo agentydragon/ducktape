@@ -1,12 +1,10 @@
 ## Interactive Mode (Long-Running FreeCAD)
 
-For iterative work — exploring geometry, debugging dimensions, quick experiments — use a
-persistent FreeCAD instance with an XML-RPC server. State persists across calls: documents,
-objects, and variables survive between commands.
+For iterative work — exploring geometry, debugging dimensions, quick experiments — use a persistent FreeCAD instance
+with an XML-RPC server. State persists across calls: documents, objects, and variables survive between commands.
 
-Uses the [neka-nat/freecad-mcp](https://github.com/neka-nat/freecad-mcp) addon which
-starts an XML-RPC server on port 9875 inside FreeCAD. Claude drives it via stdlib
-`xmlrpc.client` (zero dependencies).
+Uses the [neka-nat/freecad-mcp](https://github.com/neka-nat/freecad-mcp) addon which starts an XML-RPC server on port
+9875 inside FreeCAD. Claude drives it via stdlib `xmlrpc.client` (zero dependencies).
 
 ### When to use interactive vs standalone scripts
 
@@ -78,11 +76,10 @@ print(f\"Objects: {[o.Name for o in doc.Objects]}\")
 "
 ```
 
-The `execute_code` response is `{"success": bool, "message": str}`. The `message` includes
-captured stdout from `print()` calls in the code.
+The `execute_code` response is `{"success": bool, "message": str}`. The `message` includes captured stdout from
+`print()` calls in the code.
 
-Variables and documents persist across calls — a second `execute_code` can reference objects
-created in the first.
+Variables and documents persist across calls — a second `execute_code` can reference objects created in the first.
 
 ### Capturing and viewing screenshots
 
@@ -97,13 +94,12 @@ print('Screenshot saved')
 "
 ```
 
-Then use `Read(file_path="/tmp/freecad_view.png")` to view the image. The Read tool renders
-images natively — this closes the feedback loop: send code, view result, adjust, repeat.
+Then use `Read(file_path="/tmp/freecad_view.png")` to view the image. The Read tool renders images natively — this
+closes the feedback loop: send code, view result, adjust, repeat.
 
 **View options** for `get_active_screenshot(view_name, width, height, focus_object)`:
 
-- `view_name`: `"Isometric"`, `"Front"`, `"Top"`, `"Right"`, `"Back"`, `"Left"`, `"Bottom"`,
-  `"Dimetric"`, `"Trimetric"`
+- `view_name`: `"Isometric"`, `"Front"`, `"Top"`, `"Right"`, `"Back"`, `"Left"`, `"Bottom"`, `"Dimetric"`, `"Trimetric"`
 - `focus_object`: object name to zoom to, or `""` for fit-all
 
 ### Other XML-RPC methods
@@ -118,13 +114,13 @@ s.get_object("DocName", "ObjName") # → {"Name": ..., "Properties": ...}
 
 ### Gotchas
 
-- **Wireframe only under Xvfb**: screenshots render as wireframe (no GPU for OpenGL
-  shading). Wireframe is sufficient for checking geometry topology and dimensions.
+- **Wireframe only under Xvfb**: screenshots render as wireframe (no GPU for OpenGL shading). Wireframe is sufficient
+  for checking geometry topology and dimensions.
 - **Port 9875 is hardcoded** in the addon — only one FreeCAD instance per machine.
-- **Wayland override**: must unset `WAYLAND_DISPLAY` and set `QT_QPA_PLATFORM=xcb` when
-  the host desktop uses Wayland, otherwise FreeCAD connects to Wayland instead of Xvfb.
-- **Settings path**: `$FREECAD_USER_HOME/freecad_mcp_settings.json` (directly in the user
-  home directory, not in `.config/FreeCAD/`).
+- **Wayland override**: must unset `WAYLAND_DISPLAY` and set `QT_QPA_PLATFORM=xcb` when the host desktop uses Wayland,
+  otherwise FreeCAD connects to Wayland instead of Xvfb.
+- **Settings path**: `$FREECAD_USER_HOME/freecad_mcp_settings.json` (directly in the user home directory, not in
+  `.config/FreeCAD/`).
 
 ### Shutdown
 
