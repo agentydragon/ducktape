@@ -26,6 +26,7 @@ import {
   Text,
   Title,
 } from "@mantine/core";
+import { IconChevronDown, IconChevronRight } from "@tabler/icons-react";
 import "@mantine/core/styles.css";
 import type { components } from "./api/schema";
 
@@ -1103,9 +1104,9 @@ function TransactionsPanel({
                           <Table.Td style={{ whiteSpace: "nowrap" }}>{row.date}</Table.Td>
                           <Table.Td>
                             <Group gap="xs" wrap="nowrap">
-                              <Text component="span" size="sm" c="dimmed" aria-hidden="true">
-                                {expanded ? "▾" : "▸"}
-                              </Text>
+                              <Box c="dimmed" aria-hidden="true">
+                                {expanded ? <IconChevronDown size={16} /> : <IconChevronRight size={16} />}
+                              </Box>
                               <Stack gap={0} miw={0}>
                                 <Text size="sm" fw={650} style={{ overflowWrap: "anywhere" }}>
                                   {row.merchant_name || row.name}
