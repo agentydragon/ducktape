@@ -10,7 +10,7 @@ from decimal import ROUND_HALF_UP, Decimal
 from enum import StrEnum
 from typing import Annotated, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, Json, TypeAdapter, ValidationError, field_validator
+from pydantic import BaseModel, ConfigDict, Field, Json, TypeAdapter, ValidationError, field_validator, model_validator
 
 
 class Kind(StrEnum):
@@ -147,6 +147,23 @@ class AmountSign(BaseModel):
     sign: Literal["negative", "zero", "positive"]
 
 
+class DateRange(BaseModel):
+    """Inclusive Plaid transaction-date bounds for a historical or one-off match."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+    type: Literal["date_range"] = "date_range"
+    start: date | None = Field(default=None, description="Inclusive first Plaid transaction date to match.")
+    end: date | None = Field(default=None, description="Inclusive last Plaid transaction date to match.")
+
+    @model_validator(mode="after")
+    def _valid_bounds(self) -> DateRange:
+        if self.start is None and self.end is None:
+            raise ValueError("date range requires a start or end")
+        if self.start is not None and self.end is not None and self.start > self.end:
+            raise ValueError("date range start must not be after end")
+        return self
+
+
 class FieldExact(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
     type: Literal["field_exact"] = "field_exact"
@@ -194,7 +211,7 @@ _COUNTERPARTIES_JSON = TypeAdapter(Json[list[PlaidCounterparty]])
 
 
 type SimpleCondition = (
-    NamePrefix | NameContains | CategoryExact | AmountExact | AmountSign | FieldExact | CounterpartyExact
+    NamePrefix | NameContains | CategoryExact | AmountExact | AmountSign | DateRange | FieldExact | CounterpartyExact
 )
 
 
@@ -357,6 +374,20 @@ def matches_fields(fields: Transaction | Mapping[str, object], condition: Condit
             return False
         return (
             number < 0 if condition.sign == "negative" else number > 0 if condition.sign == "positive" else number == 0
+        )
+    if isinstance(condition, DateRange):
+        actual = value("date")
+        if isinstance(actual, datetime):
+            actual = actual.date()
+        elif isinstance(actual, str):
+            try:
+                actual = date.fromisoformat(actual)
+            except ValueError:
+                return False
+        return (
+            isinstance(actual, date)
+            and (condition.start is None or actual >= condition.start)
+            and (condition.end is None or actual <= condition.end)
         )
     if isinstance(condition, FieldExact):
         actual = value(condition.field)

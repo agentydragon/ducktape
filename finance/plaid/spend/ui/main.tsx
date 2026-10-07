@@ -527,6 +527,13 @@ function ruleConditionText(condition: RuleCondition): string {
       return `Amount equals ${condition.value} USD`;
     case "amount_sign":
       return `Amount is ${condition.sign}`;
+    case "date_range":
+      if (condition.start && condition.end)
+        return condition.start === condition.end
+          ? `Date is ${condition.start}`
+          : `Date is from ${condition.start} through ${condition.end}`;
+      if (condition.start) return `Date is on or after ${condition.start}`;
+      return `Date is on or before ${condition.end}`;
     case "field_exact":
       return `${condition.field === "merchant_category_code" ? "Merchant category code" : condition.field} equals ${String(condition.value)}`;
     case "counterparty_exact":

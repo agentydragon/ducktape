@@ -46,6 +46,9 @@ allowance:
       description: Example subscription; keep the classification reviewable.
 ```
 
+An inclusive `date_range` condition accepts `start`, `end`, or both as ISO dates. Combine it with a merchant condition
+and, when needed, `amount_exact` in an `all_of` rule to limit a historical classification without a Plaid transaction ID.
+
 When `allowance` is present, it is active. Supply a required `activation_at` ISO date (YYYY-MM-DD) as the stable
 credit-cycle anchor; null or omission is invalid. To disable the allowance, omit the entire `allowance` object. Plaid
 supplies only transaction **dates**, not trustworthy purchase times: activation uses the full UTC date, and a purchase
