@@ -1108,8 +1108,8 @@ function TransactionsPanel({
                               <Box c="dimmed" aria-hidden="true">
                                 {expanded ? <IconChevronDown size={16} /> : <IconChevronRight size={16} />}
                               </Box>
-                              <Stack gap={0} miw={0}>
-                                <Text size="sm" fw={650} style={{ overflowWrap: "anywhere" }}>
+                              <Stack gap={0} miw={0} maw={320}>
+                                <Text size="sm" fw={650} lineClamp={1} title={row.merchant_name || row.name}>
                                   {row.merchant_name || row.name}
                                 </Text>
                                 <CompactCounterparties counterparties={row.counterparties} />
@@ -1161,8 +1161,8 @@ function TransactionsPanel({
                   <Accordion.Item key={`${row.date}-${row.account_label}-${index}`} value={String(index)}>
                     <Accordion.Control>
                       <Group justify="space-between" gap="sm" wrap="nowrap">
-                        <Stack gap={2} miw={0}>
-                          <Text fw={650} size="sm" style={{ overflowWrap: "anywhere" }}>
+                        <Stack gap={2} miw={0} style={{ flex: "1 1 0" }}>
+                          <Text fw={650} size="sm" lineClamp={1} title={row.merchant_name || row.name}>
                             {row.merchant_name || row.name}
                           </Text>
                           <CompactCounterparties counterparties={row.counterparties} />
