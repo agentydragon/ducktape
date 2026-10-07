@@ -32,17 +32,25 @@ import "@mantine/core/styles.css";
 import "./styles.css";
 import type { components } from "./api/schema";
 
-type Allowance = components["schemas"]["AllowanceReportView"];
-type CardView = components["schemas"]["CardReportView"];
-type View = components["schemas"]["SpendReportView"];
+type Allowance = components["schemas"]["AllowanceView"];
+type CardView = components["schemas"]["CardView"];
+type View = components["schemas"]["SpendView"];
 type SpendConfiguration = components["schemas"]["SpendConfigurationView"];
-type TransactionsView = components["schemas"]["SpendTransactionsReportView"];
-type TransactionRow = components["schemas"]["SpendTransactionReportRow"];
+type TransactionsView = components["schemas"]["SpendTransactionsView"];
+type TransactionRow = components["schemas"]["SpendTransactionRow"];
 type TransactionPeriodId = TransactionsView["requested_period_id"];
 type AllowancePeriodId = components["schemas"]["Period"]["id"];
 type RuleCondition = components["schemas"]["Rule"]["condition"];
 type RuleKind = components["schemas"]["Rule"]["kind"];
 type SpendTab = "spending" | "transactions" | "configuration";
+
+const periodLabels = {
+  credit_cycle: "Credit cycle",
+  calendar_month: "Calendar month",
+  year_to_date: "Year to date",
+  rolling_7d: "Last 7 days",
+  rolling_30d: "Last 30 days",
+} satisfies Record<AllowancePeriodId, string>;
 
 function tabForHash(hash: string): SpendTab {
   if (hash === "#/transactions") return "transactions";
@@ -337,7 +345,7 @@ function AllowancePanel({ allowance }: { allowance: Allowance }) {
             )}
             <Divider />
             <Group justify="space-between" gap="sm">
-              <Text size="sm">Pace used for estimate</Text>
+              <Text size="sm">Pace used for estimate ({periodLabels[allowance.forecast.basis_period.id]})</Text>
               <Text size="sm" fw={700}>
                 {allowance.forecast.daily_pace_minor_units == null ? (
                   "Warming up"
@@ -347,7 +355,7 @@ function AllowancePanel({ allowance }: { allowance: Allowance }) {
               </Text>
             </Group>
             <Text size="xs" c="dimmed">
-              Uses positive flexible purchases over the last seven days, including before the allowance began; early
+              Uses positive flexible purchases in the selected period, including before the allowance began; early
               post-start bursts can increase the pace. Earlier purchases inform the estimate but do not reduce your
               available balance. Plaid data may lag.
             </Text>
@@ -576,7 +584,7 @@ function ConfigurationPanel({
                 <Title id="configuration-allowance-title" order={3} size="h4">
                   Flexible allowance policy
                 </Title>
-                <SimpleGrid cols={{ base: 1, sm: 2, md: 4 }} spacing="md">
+                <SimpleGrid cols={{ base: 1, sm: 2, md: 5 }} spacing="md">
                   <Metric
                     label="MONTHLY ALLOWANCE"
                     value={<Money value={allowance.monthly_minor_units} currency={allowance.currency} />}
@@ -584,6 +592,7 @@ function ConfigurationPanel({
                   <Metric label="START DATE" value={allowance.activation_at} />
                   <Metric label="ACCOUNTS IN SCOPE" value={allowance.spending_account_count} />
                   <Metric label="MAX SYNC AGE" value={`${allowance.max_sync_age_hours} hours`} />
+                  <Metric label="FORECAST BASIS" value={periodLabels[allowance.forecast_basis_period_id]} />
                 </SimpleGrid>
                 <Divider />
                 <div>

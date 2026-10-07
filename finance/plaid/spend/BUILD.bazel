@@ -7,8 +7,8 @@ py_library(
     name = "app",
     srcs = ["app.py"],
     deps = [
+        ":allowance",
         ":models",
-        ":reporting",
         ":service",
         ":settings",
         "//mcp_infra:oidc_principal",
@@ -33,17 +33,6 @@ py_library(
         ":allowance",
         "@pypi//pydantic",
         "@pypi//pyyaml",
-    ],
-)
-
-py_library(
-    name = "reporting",
-    srcs = ["reporting.py"],
-    visibility = ["//finance/plaid/spend:__subpackages__"],
-    deps = [
-        ":allowance",
-        ":models",
-        "@pypi//pydantic",
     ],
 )
 
@@ -87,6 +76,7 @@ py_test(
     srcs = ["test_ui.py"],
     data = ["//finance/plaid/spend/ui:bundle"],
     deps = [
+        ":allowance",
         ":app",
         ":conftest",
         ":models",

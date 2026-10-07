@@ -15,7 +15,7 @@ import pytest_asyncio
 from sqlalchemy.engine import make_url
 
 from finance.plaid.db.link_store import PlaidLinkStorage
-from finance.plaid.spend.allowance import AllowancePolicy, CategoryExact, Kind, Rule, Status
+from finance.plaid.spend.allowance import AllowancePolicy, CategoryExact, Kind, PeriodId, Rule, Status
 from finance.plaid.spend.app import _event_stream
 from finance.plaid.spend.models import AlertState, CardConfig, SpendConfiguration
 from finance.plaid.spend.service import SpendService
@@ -153,9 +153,11 @@ async def test_read_view_uses_statement_cycle_and_normalizes_transactions(
     finally:
         await service.close()
     early_card, late_card = view.cards
-    assert early_card.cycle_start == early_cycle_start
+    assert early_card.statement_period.kind == "statement"
+    assert early_card.statement_period.start == early_cycle_start
     assert early_card.spend_minor_units == 0
-    assert late_card.cycle_start == late_cycle_start
+    assert late_card.statement_period.kind == "statement"
+    assert late_card.statement_period.start == late_cycle_start
     assert late_card.posted_minor_units == 3_134
     assert late_card.pending_minor_units == 750
     assert late_card.spend_minor_units == 3_884
@@ -193,14 +195,14 @@ async def test_card_without_statement_reports_observed_spend_not_a_statement_cyc
         await service.close()
     cards = {card.account_id: card for card in view.cards}
     first, empty = cards["card-first"], cards["card-empty"]
-    assert first.cycle_start == start  # first observed transaction, not a statement boundary
-    assert first.statement_available is False
+    assert first.statement_period.kind == "provisional"
+    assert first.statement_period.start == start  # first observed transaction, not a statement boundary
     assert first.posted_minor_units == 3_900
     assert first.pending_minor_units == 0  # superseded by posted
     assert first.spend_minor_units == 3_900
     assert first.spend_percent is None
     assert first.alert_state == AlertState.UNAVAILABLE
-    assert empty.cycle_start is None
+    assert empty.statement_period.kind == "unavailable"
     assert empty.spend_minor_units is None
 
 
@@ -266,11 +268,14 @@ async def test_prior_purchases_are_queried_for_pace_but_not_balance(
         await service.close()
     assert allowance is not None
     assert allowance.available_minor_units == 10_000
-    assert allowance.trailing_7_observed_daily_minor_units == 1_000
-    assert allowance.trailing_30_observed_daily_minor_units == 10_000 // 30
-    assert allowance.trailing_7_daily_minor_units == 1_000
-    assert allowance.windows_minor_units is not None
-    assert allowance.windows_minor_units.trailing_7_days_minor_units == 0
+    observed = {report.period.id: report.observed_daily_minor_units for report in allowance.recorded_pace_periods}
+    assert observed[PeriodId.ROLLING_7D] == 1_000
+    assert observed[PeriodId.ROLLING_30D] == 10_000 // 30
+    assert allowance.forecast.daily_pace_minor_units == 1_000
+    assert (
+        next(report.spend_minor_units for report in allowance.spend_periods if report.period.id == PeriodId.ROLLING_7D)
+        == 0
+    )
 
 
 class _ConnectedRequest:

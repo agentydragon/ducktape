@@ -32,6 +32,88 @@ class PaceAlert(StrEnum):
     UNAVAILABLE = "unavailable"
 
 
+class PeriodId(StrEnum):
+    CREDIT_CYCLE = "credit_cycle"
+    CALENDAR_MONTH = "calendar_month"
+    YEAR_TO_DATE = "year_to_date"
+    ROLLING_7D = "rolling_7d"
+    ROLLING_30D = "rolling_30d"
+
+    @property
+    def rolling_days(self) -> int | None:
+        return {self.ROLLING_7D: 7, self.ROLLING_30D: 30}.get(self)
+
+    def start(self, today: date, cycle_start: date | None = None) -> date:
+        match self:
+            case PeriodId.CREDIT_CYCLE:
+                if cycle_start is None:
+                    raise ValueError("credit-cycle period requires a cycle start")
+                return cycle_start
+            case PeriodId.CALENDAR_MONTH:
+                return today.replace(day=1)
+            case PeriodId.YEAR_TO_DATE:
+                return date(today.year, 1, 1)
+            case PeriodId.ROLLING_7D | PeriodId.ROLLING_30D:
+                days = self.rolling_days
+                assert days is not None
+                return today - timedelta(days=days - 1)
+        raise ValueError(f"unsupported period: {self}")
+
+
+type TransactionPeriodId = Literal[PeriodId.CREDIT_CYCLE, PeriodId.ROLLING_7D, PeriodId.ROLLING_30D]
+
+
+class Period(BaseModel):
+    """Inclusive calendar dates for a spend, pace, or forecast report."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    id: PeriodId
+    start: date
+    end: date
+
+    @classmethod
+    def for_id(cls, period_id: PeriodId, today: date, cycle_start: date | None = None) -> Period:
+        return cls(id=period_id, start=period_id.start(today, cycle_start), end=today)
+
+
+class UnmatchedCharges(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    count: int
+    amount_minor_units: int
+
+
+class AllowanceSpendPeriod(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    period: Period
+    counted_from: date = Field(description="Allowance spend starts no earlier than activation.")
+    spend_minor_units: int
+
+
+class RecordedPacePeriod(BaseModel):
+    """Positive recorded purchases can include history before allowance activation."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    period: Period
+    observed_daily_minor_units: int | None
+    unmatched_charges: UnmatchedCharges | None = None
+
+
+class ForecastView(BaseModel):
+    """Burst-adjusted estimate with the period that supplied its purchase history."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    basis_period: Period
+    daily_pace_minor_units: int | None
+    projected_cycle_end_minor_units: int | None
+    estimated_exhaustion_at: datetime | None
+    alert_state: PaceAlert
+
+
 class NamePrefix(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
     type: Literal["name_prefix"] = "name_prefix"
@@ -149,6 +231,7 @@ class AllowancePolicy(BaseModel):
     currency: Literal["USD"] = "USD"
     rules: list[Rule] = Field(min_length=1)
     max_sync_age_hours: int = Field(default=72, ge=1, le=720)
+    forecast_basis_period_id: PeriodId = PeriodId.ROLLING_7D
     analysis_category_labels: dict[str, str] = Field(
         default_factory=dict, description="Optional display labels for rule analysis_category values."
     )
@@ -162,6 +245,13 @@ class AllowancePolicy(BaseModel):
         ):
             raise ValueError("analysis category keys must be nonblank; labels must be 1 to 80 characters")
         return {category: label.strip() for category, label in labels.items()}
+
+    @field_validator("forecast_basis_period_id")
+    @classmethod
+    def _rolling_forecast_basis(cls, period_id: PeriodId) -> PeriodId:
+        if period_id.rolling_days is None:
+            raise ValueError("forecast basis must be a rolling period")
+        return period_id
 
 
 class Transaction(BaseModel):
@@ -207,16 +297,7 @@ class TransactionDecision:
     rule: Rule | None
     disposition: Disposition
     allowance_minor_units: int
-    trailing_7_pace_minor_units: int
-    trailing_30_pace_minor_units: int
-
-
-class Windows(BaseModel):
-    current_credit_cycle_minor_units: int
-    calendar_month_minor_units: int
-    year_to_date_minor_units: int
-    trailing_7_days_minor_units: int
-    trailing_30_days_minor_units: int
+    pace_effects_minor_units: dict[PeriodId, int]
 
 
 class AllowanceView(BaseModel):
@@ -225,7 +306,6 @@ class AllowanceView(BaseModel):
     currency: str
     monthly_minor_units: int
     activation_at: date
-    current_cycle_start: date | None = None
     available_minor_units: int | None
     next_credit_at: datetime | None
     posted_minor_units: int
@@ -233,25 +313,13 @@ class AllowanceView(BaseModel):
     review_minor_units: int
     review_transaction_count: int
     unmatched_refunds_minor_units: int
-    windows_minor_units: Windows | None = Field(
-        description="Spend after the configured start date in each reporting window; null when unavailable."
-    )
-    trailing_7_daily_minor_units: int | None
-    # Recorded positive purchases, including preactivation history, divided by the full window.
-    # Separate from the short-window burst-sensitive pace used for forecasting.
-    trailing_7_observed_daily_minor_units: int | None
-    trailing_30_observed_daily_minor_units: int | None
-    trailing_7_unmatched_count: int | None
-    trailing_7_unmatched_minor_units: int | None
-    estimated_exhaustion_at: datetime | None = Field(
-        description="Projected at trailing seven-day positive purchase pace, ignoring future credits; null if no recent spend."
-    )
-    alert_state: PaceAlert
+    spend_periods: list[AllowanceSpendPeriod]
+    recorded_pace_periods: list[RecordedPacePeriod]
+    forecast: ForecastView
     spending_signal: PaceAlert
     last_synced_at: datetime | None
     note: str | None = None
     prior_carry_minor_units: int = 0
-    projected_cycle_end_minor_units: int | None = None
 
 
 def month_anniversary(start: datetime, months: int) -> datetime:
@@ -348,13 +416,13 @@ def calculate(
     }
     # Keep each included purchase once, with its category and posting state.
     included: list[Purchase] = []
-    recent_positive = 0
-    monthly_positive = 0
-    weekly_unmatched_count = 0
-    weekly_unmatched_minor_units = 0
+    rolling_periods = tuple(period_id for period_id in PeriodId if period_id.rolling_days is not None)
+    today = now.date()
+    rolling_starts = {period_id: period_id.start(today) for period_id in rolling_periods}
+    positive_by_period = dict.fromkeys(rolling_periods, 0)
+    unmatched_count_by_period = dict.fromkeys(rolling_periods, 0)
+    unmatched_minor_units_by_period = dict.fromkeys(rolling_periods, 0)
     unmatched = 0
-    pace_start = (now - timedelta(days=6)).date()
-    monthly_pace_start = (now - timedelta(days=29)).date()
 
     def record(
         transaction: Transaction,
@@ -362,8 +430,7 @@ def calculate(
         disposition: Disposition,
         *,
         allowance_minor_units: int = 0,
-        trailing_7_pace_minor_units: int = 0,
-        trailing_30_pace_minor_units: int = 0,
+        pace_effects_minor_units: dict[PeriodId, int] | None = None,
     ) -> None:
         if decisions is not None:
             decisions.append(
@@ -373,13 +440,12 @@ def calculate(
                     rule=rule,
                     disposition=disposition,
                     allowance_minor_units=allowance_minor_units,
-                    trailing_7_pace_minor_units=trailing_7_pace_minor_units,
-                    trailing_30_pace_minor_units=trailing_30_pace_minor_units,
+                    pace_effects_minor_units=pace_effects_minor_units or dict.fromkeys(rolling_periods, 0),
                 )
             )
 
     for transaction in transactions:
-        if not min(start.date(), monthly_pace_start) <= transaction.date <= now.date():
+        if not min(start.date(), *rolling_starts.values()) <= transaction.date <= today:
             continue
         if transaction.pending and (transaction.account_id, transaction.transaction_id) in superseded:
             record(transaction, None, Disposition.SUPERSEDED_PENDING)
@@ -398,15 +464,15 @@ def calculate(
                 unmatched += -amount
             record(transaction, rule, Disposition.HELD_REFUND)
             continue
-        pace_7 = max(0, amount) if transaction.date >= pace_start else 0
-        pace_30 = max(0, amount) if transaction.date >= monthly_pace_start else 0
-        if transaction.date >= pace_start:
-            recent_positive += pace_7
-            if (rule is None or rule.kind == Kind.REVIEW) and amount > 0:
-                weekly_unmatched_count += 1
-                weekly_unmatched_minor_units += amount
-        if transaction.date >= monthly_pace_start:
-            monthly_positive += pace_30
+        pace_effects = {
+            period_id: max(0, amount) if transaction.date >= period_start else 0
+            for period_id, period_start in rolling_starts.items()
+        }
+        for period_id, effect in pace_effects.items():
+            positive_by_period[period_id] += effect
+            if effect and (rule is None or rule.kind == Kind.REVIEW):
+                unmatched_count_by_period[period_id] += 1
+                unmatched_minor_units_by_period[period_id] += effect
         if transaction.date >= start.date():
             included.append(
                 Purchase(
@@ -418,37 +484,50 @@ def calculate(
             rule,
             Disposition.COUNTED if transaction.date >= start.date() else Disposition.PACE_ONLY,
             allowance_minor_units=amount if transaction.date >= start.date() else 0,
-            trailing_7_pace_minor_units=pace_7,
-            trailing_30_pace_minor_units=pace_30,
+            pace_effects_minor_units=pace_effects,
         )
 
     posted = sum(p.minor_units for p in included if not p.transaction.pending)
     pending = sum(p.minor_units for p in included if p.transaction.pending)
     review = sum(p.minor_units for p in included if p.needs_review and p.minor_units > 0)
     cycle_start = month_anniversary(start, credits - 1).date()
-    windows = Windows(
-        current_credit_cycle_minor_units=sum(p.minor_units for p in included if p.transaction.date >= cycle_start),
-        calendar_month_minor_units=sum(
-            p.minor_units for p in included if p.transaction.date >= now.date().replace(day=1)
-        ),
-        year_to_date_minor_units=sum(p.minor_units for p in included if p.transaction.date >= date(now.year, 1, 1)),
-        trailing_7_days_minor_units=sum(
-            p.minor_units for p in included if p.transaction.date >= (now - timedelta(days=6)).date()
-        ),
-        trailing_30_days_minor_units=sum(
-            p.minor_units for p in included if p.transaction.date >= (now - timedelta(days=29)).date()
-        ),
-    )
-    elapsed_days = min(7, (now.date() - start.date()).days + 1)
-    since_start_positive = sum(max(0, p.minor_units) for p in included if p.transaction.date >= pace_start)
-    observed_weekly = recent_positive // 7 if recent_positive else (0 if elapsed_days >= 7 else None)
-    observed_monthly = (
-        monthly_positive // 30 if monthly_positive else (0 if (now.date() - start.date()).days >= 29 else None)
+    spend_periods = [
+        AllowanceSpendPeriod(
+            period=period,
+            counted_from=max(period.start, policy.activation_at),
+            spend_minor_units=sum(p.minor_units for p in included if p.transaction.date >= period.start),
+        )
+        for period in (Period.for_id(period_id, today, cycle_start) for period_id in PeriodId)
+    ]
+    days_since_start = (today - start.date()).days + 1
+    recorded_pace_periods: list[RecordedPacePeriod] = []
+    for period_id in rolling_periods:
+        days = period_id.rolling_days
+        assert days is not None
+        positive = positive_by_period[period_id]
+        observed = positive // days if positive else 0 if days_since_start >= days else None
+        recorded_pace_periods.append(
+            RecordedPacePeriod(
+                period=Period.for_id(period_id, today),
+                observed_daily_minor_units=observed,
+                unmatched_charges=UnmatchedCharges(
+                    count=unmatched_count_by_period[period_id],
+                    amount_minor_units=unmatched_minor_units_by_period[period_id],
+                ),
+            )
+        )
+    forecast_basis = policy.forecast_basis_period_id
+    basis_days = forecast_basis.rolling_days
+    assert basis_days is not None
+    recent_positive = positive_by_period[forecast_basis]
+    elapsed_days = min(basis_days, days_since_start)
+    since_start_positive = sum(
+        max(0, p.minor_units) for p in included if p.transaction.date >= rolling_starts[forecast_basis]
     )
     # History can inform the pace without becoming an opening allowance debt.
-    # Early post-start bursts should not disappear into the seven-day average.
-    daily = max(recent_positive // 7, since_start_positive // elapsed_days) if recent_positive else None
-    if daily is None and elapsed_days == 7:
+    # Early post-start bursts should not disappear into the full-window average.
+    daily = max(recent_positive // basis_days, since_start_positive // elapsed_days) if recent_positive else None
+    if daily is None and elapsed_days == basis_days:
         daily = 0
     available = credits * policy.monthly_minor_units - posted - pending
     projected_end = available - daily * max(1, (next_credit.date() - now.date()).days) if daily is not None else None
@@ -467,18 +546,22 @@ def calculate(
         if available <= 0
         else PaceAlert.WARNING
         if alert == PaceAlert.WARNING
-        or (observed_weekly is not None and observed_weekly > reference_rate)
-        or (observed_monthly is not None and observed_monthly > reference_rate)
+        or any(
+            period.observed_daily_minor_units is not None and period.observed_daily_minor_units > reference_rate
+            for period in recorded_pace_periods
+        )
         else PaceAlert.UNAVAILABLE
-        if observed_weekly is None and observed_monthly is None
+        if all(period.observed_daily_minor_units is None for period in recorded_pace_periods)
         else PaceAlert.NORMAL
+    )
+    current_cycle_spend = next(
+        report.spend_minor_units for report in spend_periods if report.period.id == PeriodId.CREDIT_CYCLE
     )
     return AllowanceView(
         status=Status.ACTIVE,
         currency=policy.currency,
         monthly_minor_units=policy.monthly_minor_units,
         activation_at=policy.activation_at,
-        current_cycle_start=cycle_start,
         available_minor_units=available,
         next_credit_at=next_credit,
         posted_minor_units=posted,
@@ -486,17 +569,16 @@ def calculate(
         review_minor_units=review,
         review_transaction_count=sum(1 for p in included if p.needs_review and p.minor_units > 0),
         unmatched_refunds_minor_units=unmatched,
-        windows_minor_units=windows,
-        trailing_7_daily_minor_units=daily,
-        trailing_7_observed_daily_minor_units=observed_weekly,
-        trailing_30_observed_daily_minor_units=observed_monthly,
-        trailing_7_unmatched_count=weekly_unmatched_count,
-        trailing_7_unmatched_minor_units=weekly_unmatched_minor_units,
-        estimated_exhaustion_at=now + timedelta(days=max(0, available) / daily) if daily else None,
-        alert_state=alert,
+        spend_periods=spend_periods,
+        recorded_pace_periods=recorded_pace_periods,
+        forecast=ForecastView(
+            basis_period=Period.for_id(forecast_basis, today),
+            daily_pace_minor_units=daily,
+            projected_cycle_end_minor_units=projected_end,
+            estimated_exhaustion_at=now + timedelta(days=max(0, available) / daily) if daily else None,
+            alert_state=alert,
+        ),
         spending_signal=signal,
         last_synced_at=last_synced_at,
-        prior_carry_minor_units=(credits - 1) * policy.monthly_minor_units
-        - (posted + pending - windows.current_credit_cycle_minor_units),
-        projected_cycle_end_minor_units=projected_end,
+        prior_carry_minor_units=(credits - 1) * policy.monthly_minor_units - (posted + pending - current_cycle_spend),
     )

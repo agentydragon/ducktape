@@ -16,15 +16,8 @@ from fastapi import Depends, FastAPI, HTTPException, Request, status
 from fastapi.responses import FileResponse, Response, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 
-from finance.plaid.spend.models import SpendConfigurationView, load_configuration
-from finance.plaid.spend.reporting import (
-    TRANSACTION_WINDOWS,
-    SpendReportView,
-    SpendTransactionsReportView,
-    TransactionPeriodId,
-    project_transactions,
-    project_view,
-)
+from finance.plaid.spend.allowance import PeriodId, TransactionPeriodId
+from finance.plaid.spend.models import SpendConfigurationView, SpendTransactionsView, SpendView, load_configuration
 from finance.plaid.spend.service import SpendService
 from finance.plaid.spend.settings import SpendSettings
 from mcp_infra.oidc_principal import (
@@ -133,19 +126,19 @@ def create_app(settings: SpendSettings, *, service: SpendService, include_ui: bo
     async def favicon() -> Response:
         return Response(status_code=204)
 
-    @app.get("/api/v1/view", response_model=SpendReportView)
-    async def get_view(_access: SpendAccess, reader: SpendReader) -> SpendReportView:
-        return project_view(await reader.read_view())
+    @app.get("/api/v1/view", response_model=SpendView)
+    async def get_view(_access: SpendAccess, reader: SpendReader) -> SpendView:
+        return await reader.read_view()
 
     @app.get("/api/v1/configuration", response_model=SpendConfigurationView)
     async def get_configuration(_access: SpendAccess, reader: SpendReader) -> SpendConfigurationView:
         return reader.read_configuration()
 
-    @app.get("/api/v1/transactions", response_model=SpendTransactionsReportView)
+    @app.get("/api/v1/transactions", response_model=SpendTransactionsView)
     async def get_transactions(
-        _access: SpendAccess, reader: SpendReader, period: TransactionPeriodId = "rolling_30d"
-    ) -> SpendTransactionsReportView:
-        return project_transactions(await reader.read_transactions(TRANSACTION_WINDOWS[period]), period)
+        _access: SpendAccess, reader: SpendReader, period: TransactionPeriodId = PeriodId.ROLLING_30D
+    ) -> SpendTransactionsView:
+        return await reader.read_transactions(period)
 
     @app.get("/api/v1/events")
     async def events(request: Request, _access: SpendAccess, reader: SpendReader) -> StreamingResponse:
@@ -176,12 +169,12 @@ async def _event_stream(request: Request, service: SpendService) -> AsyncGenerat
             view = await service.read_view()
             if service.listening.is_set() and service.revision == revision:
                 initial_sent = True
-                yield _sse_view(project_view(view))
+                yield _sse_view(view)
     finally:
         service.unsubscribe(queue)
 
 
-def _sse_view(view: SpendReportView) -> str:
+def _sse_view(view: SpendView) -> str:
     data = json.dumps(view.model_dump(mode="json"), separators=(",", ":"), ensure_ascii=False)
     return f"event: view\ndata: {data}\n\n"
 

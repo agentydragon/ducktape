@@ -16,8 +16,8 @@ from dbus_next.aio import MessageBus
 from dbus_next.constants import MessageType
 from dbus_next.errors import DBusError
 
-from finance.plaid.spend.allowance import Status
-from finance.plaid.spend.reporting import AllowanceReportView, CardReportView, SpendReportView
+from finance.plaid.spend.allowance import AllowanceView, Status
+from finance.plaid.spend.models import CardView, SpendView
 
 BUS_NAME = "works.allegedly.PlaidSpend"
 OBJECT_PATH = "/works/allegedly/PlaidSpend"
@@ -89,7 +89,7 @@ def _format_money(minor_units: int | None, currency: str | None) -> str:
     return format_currency(rounded, code, currency_format, locale="en_US", currency_digits=False)
 
 
-def _card_title(card: CardReportView) -> str:
+def _card_title(card: CardView) -> str:
     title = card.label or card.account_name or "Card"
     if mask := card.mask:
         title += f" ···· {mask}"
@@ -102,7 +102,7 @@ def _format_timestamp(value: datetime | None) -> str:
     return value.isoformat().replace("+00:00", "Z") if value else "unknown"
 
 
-def _format_allowance(allowance: AllowanceReportView) -> str:
+def _format_allowance(allowance: AllowanceView) -> str:
     lines = ["", "Flexible allowance · advisory, not a bank limit"]
     if allowance.status != Status.ACTIVE:
         lines.append(f"  Status: {allowance.status}")
@@ -133,6 +133,7 @@ def _format_allowance(allowance: AllowanceReportView) -> str:
         lines.append(f"  7d unmatched: {unmatched.count} ({_format_money(unmatched.amount_minor_units, currency)})")
     lines.append("  Leash capacity is not a sustainability target; unmatched purchases count as flexible.")
     lines.append("  History before activation informs pace but not the available balance.")
+    lines.append(f"  Forecast basis: {allowance.forecast.basis_period.id.replace('_', ' ')}")
     lines.append(f"  Forecast signal: {allowance.forecast.alert_state.replace('_', ' ')}")
     lines.append(
         f"  Estimated balance before next credit: {_format_money(allowance.forecast.projected_cycle_end_minor_units, currency)}"
@@ -150,7 +151,7 @@ def _format_allowance(allowance: AllowanceReportView) -> str:
     return "\n".join(lines)
 
 
-def _format_view(view: SpendReportView, status: str, last_error: str) -> str:
+def _format_view(view: SpendView, status: str, last_error: str) -> str:
     lines: list[str] = []
     cards = view.cards
     if view.allowance:
@@ -243,7 +244,7 @@ async def _run(command: str, json_output: bool) -> None:
             if last_error:
                 print(last_error)
         else:
-            print(_format_view(SpendReportView.model_validate(view), status, last_error))
+            print(_format_view(SpendView.model_validate(view), status, last_error))
     finally:
         bus.disconnect()
 
