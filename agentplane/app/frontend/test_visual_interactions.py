@@ -656,9 +656,12 @@ async def test_phone_composer_controls_fit(
 async def test_actions_raw_switches(
     scenes: dict[str, Scenario], playwright_driver: Playwright, sweep_config: SweepConfig
 ) -> None:
-    await _capture(
-        "actions_raw", _open_raw_switches, scenes=scenes, playwright_driver=playwright_driver, sweep_config=sweep_config
-    )
+    async def drive(page: Page) -> None:
+        await _open_raw_switches(page)
+        raw_switches = page.locator("label").filter(has_text=re.compile(r"^Raw$"))
+        await _focus(page, raw_switches.last)
+
+    await _capture("actions_raw", drive, scenes=scenes, playwright_driver=playwright_driver, sweep_config=sweep_config)
 
 
 @pytest.mark.parametrize("scene", ["sandbox_status_raw", "sandbox_status_raw_phone"], ids=["desktop", "phone"])
@@ -681,6 +684,8 @@ async def test_connections_settings_modal(
             await page.get_by_role("button", name="Toggle navigation").click()
         await page.get_by_role("button", name="Settings").click()
         await expect(page.locator("[data-connection-id]").first).to_be_visible()
+        if scene == "connections_phone":
+            await page.mouse.move(0, 0)
 
     await _capture(scene, drive, scenes=scenes, playwright_driver=playwright_driver, sweep_config=sweep_config)
 
