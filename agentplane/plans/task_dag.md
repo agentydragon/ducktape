@@ -27,7 +27,8 @@ Proposed execution order for the Thread correctness/UI track:
 - **P2:** browser-driven acceptance against the deployed cluster (`CLUSTER_BROWSER_ACCEPTANCE`)
   and driver-hosted tools (`DT`). Neither blocks the current API-level acceptance closure.
 - **Unranked future harness capabilities:** project skills and commands, web search, visual input,
-  native subagents, interactive controls, project hooks/plugins, and prompt suggestions. The
+  native subagents, interactive controls, project hooks/plugins, prompt suggestions, and a Claude
+  RemoteIO transport evaluation. The
   existing P2 item `DT` is included below as a cross-reference and keeps its current priority; it
   covers Action-backed tools and background-work control. The new candidates are an inventory, not
   an execution order or a priority claim against the rest of this DAG. Their win/work estimates are
@@ -76,6 +77,7 @@ flowchart TB
     HARNESS_WEB_SEARCH["Unranked candidate<br/>routed web search<br/>source evidence in Thread"]:::future
     HARNESS_VISUAL_INPUT["Unranked candidate<br/>image attachments and visual input<br/>composer, protocol, storage, replay"]:::future
     HARNESS_MANUAL_COMPACTION["Unranked future control<br/>user-triggered harness compaction<br/>from the frontend"]:::future
+    CLAUDE_REMOTE_IO_EVAL["Unranked transport evaluation<br/>Claude RemoteIO through egress proxy<br/>compare with stream-json"]:::decision
     HARNESS_INTERACTIVE_CONTROLS["Unranked candidate<br/>questions and permission decisions<br/>durable park, answer, recovery"]:::future
     HARNESS_PROJECT_HOOKS["Unranked candidate<br/>trusted project hooks<br/>bounded execution and control replies"]:::future
     HARNESS_PLUGINS["Unranked candidate<br/>project plugins and skill packages<br/>source trust and capability grants"]:::future
@@ -345,6 +347,9 @@ needs evidence that work does not already provide.
   Claude driver MCP and Codex dynamic tools, plus the existing list/status and per-task stop floor
   for background work. Reuse Action Service decisions, execution, and idempotency; it
   remains deferred pending a named consumer. See [driver tools and background work](driver_tools_and_background.md).
+- **`CLAUDE_REMOTE_IO_EVAL` — unranked decision:** Compare Claude RemoteIO with `stream-json`,
+  prove the scoped egress interception and runner-owned bridge, and measure compaction-summary
+  visibility before choosing an implementation. See [Claude RemoteIO transport](claude_remote_io.md).
 - **`HARNESS_INTERACTIVE_CONTROLS` — high win, high work:** Support questions and permission
   requests that park a turn, survive reconnect/restart, accept or reject a durable decision, and
   resume safely. Keep user decisions distinct from Action Service authorization.

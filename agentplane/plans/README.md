@@ -20,6 +20,7 @@ execution sequence. This is a priority decision, not a technical dependency.
   harness-capability candidates, deployed acceptance, UI/history, and native recovery
 - [Durable SSH-backed processes](ssh_durable_processes.md) — deferred systemd-backed host daemon for processes that outlive an SSH connection
 - [Driver-provided tools and background work](driver_tools_and_background.md) — deferred seam that must reuse the Action contracts
+- [Claude RemoteIO transport](claude_remote_io.md) — evaluate an optional `--sdk-url` bridge through Agentplane egress, including compaction-summary value and recovery gates
 - [Agent access to external systems](external_access.md) — deferred delegated-versus-brokered access choices
 - [Profiles](profiles.md) — broader capability profiles remain deferred
 - [KubeVirt execution environments](kubevirt_environments.md) — selectable VM environments, guest runner,
