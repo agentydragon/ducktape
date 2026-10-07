@@ -56,7 +56,9 @@ export function ClampedBlock({
     return () => observer.disconnect();
   }, [content, maxHeightRem]);
   const clipped = overflows && !expanded;
-  const showStickyCollapse = overflows && expanded;
+  // Expansion is user state. CodeMirror briefly measures shorter while mounting inside the
+  // sticky shell; removing that shell on shrink would remount it in a resize loop.
+  const showStickyCollapse = expanded;
   const body = (
     <div
       data-clamped={clipped}
@@ -92,7 +94,7 @@ export function ClampedBlock({
   );
 
   return (
-    <div className="agentplane-clamped-block" data-expanded={expanded && overflows} data-label={label}>
+    <div className="agentplane-clamped-block" data-expanded={expanded} data-label={label}>
       {/* TODO: Keep the content at a stable React position when toggling the sticky shell so
           CodeMirror state and selection survive expansion. */}
       {showStickyCollapse && stickyCollapse ? (

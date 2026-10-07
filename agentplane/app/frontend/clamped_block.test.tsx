@@ -36,6 +36,18 @@ describe("ClampedBlock", () => {
     expect(container.querySelector("button")).toBeNull();
   });
 
+  it("keeps expanded content collapsible when its height shrinks", async () => {
+    let height = 1000;
+    vi.spyOn(HTMLElement.prototype, "offsetHeight", "get").mockImplementation(() => height);
+    const container = await mount(<ClampedBlock maxHeightRem={10}>test-content</ClampedBlock>);
+    height = 40;
+    await act(async () => control(container, "Show all")?.click());
+    expect(control(container, "Collapse Expanded content")).toBeDefined();
+    await act(async () => control(container, "Collapse Expanded content")?.click());
+    expect(control(container, "Collapse Expanded content")).toBeUndefined();
+    expect(container.querySelector('[data-expanded="true"]')).toBeNull();
+  });
+
   it("clips content past its cap, keeping all of it in the document, until the bottom is clicked", async () => {
     contentHeight(1000);
     const container = await mount(<ClampedBlock maxHeightRem={10}>test-content</ClampedBlock>);
