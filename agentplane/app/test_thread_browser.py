@@ -505,6 +505,7 @@ async def test_projected_browser_streams_runner_events_and_loads_evidence_lazily
         event_logs, content = EventLogStore(engine), ContentStore(engine)
         try:
             thread = await event_logs.open(SANDBOX, SESSION, source.attached.spec)
+            await ThreadStore(engine).rename(thread, "Streamed thread")
             async with (
                 source.serve() as runner_port,
                 app_process(

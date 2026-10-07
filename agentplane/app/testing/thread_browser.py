@@ -131,6 +131,7 @@ async def thread_browser(
 ) -> AsyncIterator[ThreadBrowser]:
     source = thread_source
     thread_id = await event_logs.open(SANDBOX, SESSION, source.attached.spec)
+    await store.rename(thread_id, "Browser thread")
     directory = get_required_path("_main/agentplane/app/frontend/dist/index.html").parent
     async with (
         source.serve() as runner_port,
