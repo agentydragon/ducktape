@@ -66,6 +66,16 @@ primitive/no-substitution templates are admitted; object/unknown/effectful
 substitutions, a shadowed `String`, another tag, and computed `String["raw"]`
 remain rejected. `RegExp` handling is unaffected.
 
+## `PURE_STATIC_PROPS` — disposal symbols
+
+`Symbol.dispose` and `Symbol.asyncDispose` are well-known Symbol values, just
+like `Symbol.iterator`. ECMA-262 §20.4.2.1 and §20.4.2.3 specify each as a
+non-writable, non-configurable own data property of the intrinsic `Symbol`
+constructor. Under A11, reading either property executes no user code and
+returns a primitive Symbol suitable for a computed class method key. A
+shadowed `Symbol` receiver still fails the whitelist check. See the
+[Symbol constructor specification](https://tc39.es/ecma262/multipage/fundamental-objects.html#sec-properties-of-the-symbol-constructor).
+
 ## `PURE_STATIC_FUNCTION_REFS` — reads vs calls
 
 This table whitelists static-property _reads_ of function-valued built-ins

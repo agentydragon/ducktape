@@ -621,6 +621,13 @@ fn classify_class_computed_keys_require_safe_primitive_keys() {
     // Primitive and well-known-symbol keys are safe.
     assert!((classify("class { ['m']() {} }")).is_pure());
     assert!((classify("class { [Symbol.iterator]() {} }")).is_pure());
+    assert!((classify("class { [Symbol.dispose]() {} }")).is_pure());
+    assert!((classify("class { [Symbol.asyncDispose]() {} }")).is_pure());
+    assert!(!(classify_with_module(
+        "const Symbol = { dispose: io() };",
+        "class { [Symbol.dispose]() {} }"
+    ))
+    .is_pure());
     assert!((classify("class { ['x'] = io(); }")).is_pure()); // instance init is lazy
 }
 

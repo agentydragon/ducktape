@@ -48,6 +48,8 @@ pub(crate) const PURE_STATIC_PROPS: &[(&str, &str)] = &[
     ("Number", "NaN"),
     ("Symbol", "iterator"),
     ("Symbol", "asyncIterator"),
+    ("Symbol", "dispose"),
+    ("Symbol", "asyncDispose"),
     ("Symbol", "toStringTag"),
     ("Symbol", "toPrimitive"),
     ("Symbol", "hasInstance"),
