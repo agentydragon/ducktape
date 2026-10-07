@@ -12,12 +12,40 @@ check result and diagnostic log become available to agents watching PR updates?
 Where do runner time and remote compute go, what blocks the user-visible critical
 path, and what changes offer the best payoff for the least cost/risk? Use reviewed
 snapshots and their commit history on the canonical [`ci-latency-history` branch](https://github.com/agentydragon/ducktape/tree/ci-latency-history)
-as _hypotheses and historical examples_, not conclusions about current CI. Keep
+as an existing investigation to continue, with historical measurements and conclusions
+checked against current CI. Keep
 working reports and measurement snapshots out of `devel`; publish each reviewed
 run as the latest snapshot on the history branch (below). `cihealth` covers
 release/pin currency and failed CI more broadly. No Mimir metric, Shapley
 calculation, or dashboard is required for a useful report; propose
 instrumentation only when it closes a decision-relevant evidence gap.
+
+## Start from the previous investigation
+
+Before selecting new cohorts, collecting fresh measurements or choosing experiments,
+fetch the canonical history branch and create a separate worktree at its tip. Read
+the **complete latest report**, including expandable sections, and its manifest.
+Inspect the supporting evidence for its substantive findings and experiments. Read
+in bounded chunks when necessary: headings, search hits, truncated output and the
+opening summary are insufficient. Follow relevant earlier snapshots when the latest
+report omits the context or evidence needed to understand prior work.
+
+Build a working inventory of:
+
+- Findings and measurements, with their windows, source revisions, populations,
+  clocks and limits on comparison.
+- Experiments and interventions: what was tried, what passed or failed, what was
+  rejected and why, what landed, and whether its expected benefit was measured.
+- Unresolved diagnoses, pending decisions and promised follow-ups, with the evidence
+  or changed conditions needed to advance them.
+
+Use this inventory to choose the next investigation. Follow up on landed changes
+whose effects remain unmeasured and unresolved questions that available evidence
+can now answer. Reuse prior methods and artifacts where appropriate. Explain what
+changed before repeating an experiment or reviving a rejected recommendation.
+New incidents may change priorities; explicitly defer lower-priority prior work
+with a reason. If historical access is incomplete, state what was read and what is
+missing rather than claiming a complete baseline review.
 
 ## Investigate, don't just run a recipe
 
@@ -271,7 +299,10 @@ The reader opens `index.html` in a browser to quickly understand **how CI is
 doing, what matters, and what decisions or actions follow**. Author actual,
 standalone HTML using your judgment about the findings. Do not wrap raw Markdown
 in HTML. There is no prescribed template, section order, dashboard, or mandatory
-chart collection: let the diagnosis determine the presentation.
+chart collection: let the diagnosis determine the presentation. Inspect the existing
+report's structure and retain useful explanations, comparisons and evidence navigation
+as you revise it. Reorganization must preserve the reader's ability to understand and
+follow up on still-relevant prior work.
 
 A prolonged failure caused by an exhausted quota should lead with the incident,
 its impact, the evidence for the cause, and the decision needed to restore service.
@@ -312,6 +343,17 @@ history snapshot. Keep full API payloads, logs and profiles local unless a durab
 reviewed fixture needs them. Publish small relevant excerpts and direct
 job/invocation URLs in the report.
 
+Before publishing, compare the proposed report against the prior-work inventory.
+Account for each substantive prior finding, experiment and open follow-up: updated
+with new evidence, retained as relevant historical context, resolved or superseded
+with evidence, or explicitly deferred with a reason and next step. Keep a concise
+explanation of still-relevant results and unresolved work in the current report,
+with commit-pinned links to earlier reports and evidence for the detail. Git history
+alone is not sufficient continuity if readers must rediscover what was learned or
+what remains to do. Label retained measurements with their original window and
+source; keep them distinct from the new sample. Remove obsolete detail once its
+disposition is clear, rather than accumulating every earlier report verbatim.
+
 Re-evaluate recommendations against current YAML and GitHub settings. Already-landed
 changes leave the recommendation list. If ongoing monitoring is warranted,
 propose only decision-relevant Mimir metrics with bounded labels, collection
@@ -343,10 +385,9 @@ explicitly labeled _historical_ copy of the former maintained report, not a fres
 cdk8s comparison. Read it as a baseline for **methodology**, not proof of current
 performance.
 
-For each run, fetch the canonical history branch and create a separate worktree
-at its tip. Compare previous snapshots from earlier commits, along with their
-windows, workload mixes and coverage. Collect fresh evidence and read the current
-workflow/path filters and BuildBuddy profiles. Pin the actual inspected devel SHA
+Use the history worktree and baseline review established at the start of the run.
+Collect fresh evidence and read the current workflow/path filters and BuildBuddy
+profiles. Pin the actual inspected devel SHA
 (do not use a merge SHA, PR head or the history branch's HEAD). Publish into the
 history worktree root:
 
