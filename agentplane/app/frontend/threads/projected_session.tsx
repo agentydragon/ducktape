@@ -473,10 +473,7 @@ function VirtualizedHistory({
         ? rows.find((row) => row.entities[0].cursor.toString() === anchorRowElement.dataset.threadAnchor)
         : undefined;
       const clickedHeading = clickedTarget?.closest<HTMLElement>(".agentplane-disclosure-heading");
-      const anchorTarget =
-        clickedTarget && clickedRow?.contains(clickedTarget) && clickedHeading
-          ? clickedTarget
-          : anchorRowElement;
+      const anchorTarget = clickedTarget && clickedRow?.contains(clickedTarget) && clickedHeading ? clickedTarget : anchorRowElement;
       if (anchorRowElement && anchorRow && anchorTarget) {
         const anchor = {
           key: rowKey(anchorRow),
