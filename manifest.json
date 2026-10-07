@@ -1,53 +1,9 @@
 {
-  "source_devel_commit": "d44921d55c759da6c3f1d32ebc2c265077791c9b",
-  "window_start_utc": "2026-10-01T00:00:00Z",
-  "window_end_utc": "2026-10-05T05:35:31Z",
-  "published_at_utc": "2026-10-05T09:57:57.518279+00:00",
+  "source_devel_commit": "787817a16ec2e9c812793e11364f6f9cc7b868ac",
+  "window_start_utc": "2026-10-05T00:00:00Z",
+  "window_end_utc": "2026-10-07T08:32:00Z",
+  "published_at_utc": "2026-10-07T08:58:42.397995+00:00",
   "attribution": "not collected",
-  "implementation_followup_at_utc": "2026-10-05T01:01:01.119432+00:00",
-  "critical_path_followup": {
-    "recorded_at_utc": "2026-10-05T01:40:55.052121+00:00",
-    "source_devel_commit": "c8da83bc382db8d3c49a440cf57a74a34b935825",
-    "ci_run_creation_window_utc": [
-      "2026-10-05T00:03:52Z",
-      "2026-10-05T00:57:42Z"
-    ],
-    "kind": "Focused mechanism investigation and controlled spikes; original baseline window retained",
-    "implementation_recorded_at_utc": "2026-10-05T05:27:12.995374+00:00"
-  },
-  "retained_baseline": {
-    "source_devel_commit": "8b1c35555d93acd6afce5718c1002ce14960d85f",
-    "window_start_utc": "2026-10-01T00:00:00Z",
-    "window_end_utc": "2026-10-04T21:15:00Z"
-  },
-  "early_effects": {
-    "comparison_ends_utc": "2026-10-05T05:25:00Z",
-    "kind": "Early observational component and required-gate comparison; earlier baseline and mechanism experiments retained"
-  },
-  "expanded_baseline": {
-    "recorded_at_utc": "2026-10-05T06:24:07.350759+00:00",
-    "candidate_history_start_utc": "2026-10-01T00:00:00Z",
-    "eligible_source_boundary": "473688a18c",
-    "first_passing_run_utc": "2026-10-01T22:32:33Z",
-    "later_creation_window_utc": [
-      "2026-10-05T02:23:00Z",
-      "2026-10-05T05:25:00Z"
-    ]
-  },
-  "github_container_spike": {
-    "recorded_at_utc": "2026-10-05T09:16:31.588713+00:00",
-    "source_commit": "bdf3d49a82068ab9c32d5e89d818401170c62086",
-    "run_url": "https://github.com/agentydragon/ducktape/actions/runs/37288152412",
-    "kind": "Focused prepared-container comparison; preceding population cohorts retained as earlier evidence."
-  },
-  "container_closure_trim": {
-    "recorded_at_utc": "2026-10-05T09:57:57.518279+00:00",
-    "source_commit": "adf57c19587ec75839e50499c3d7e125c4b07e22",
-    "repeat_commit": "345a17dff3f318fcec3ac8f99c8e426b041b7fe2",
-    "run_urls": [
-      "https://github.com/agentydragon/ducktape/actions/runs/37289839299",
-      "https://github.com/agentydragon/ducktape/actions/runs/37291744634",
-      "https://github.com/agentydragon/ducktape/actions/runs/37293002970"
-    ]
-  }
+  "updated_at_utc": "2026-10-07T09:35:10.182323+00:00",
+  "update_scope": "Record merged #9369 and retain prior effect estimates; observation window unchanged; no post-merge measurements"
 }
