@@ -261,7 +261,13 @@ export function DisclosureVisual({ stage }: { stage: DisclosureVisualStage }): J
                     </Text>
                   ) : (
                     LONG_COPY.map((paragraph, index) => (
-                      <Text key={index} component="p" data-demo-target={index === 6 ? "long-paragraph" : undefined} size="sm" m={0}>
+                      <Text
+                        key={index}
+                        component="p"
+                        data-demo-target={index === 6 ? "long-paragraph" : undefined}
+                        size="sm"
+                        m={0}
+                      >
                         {paragraph}
                       </Text>
                     ))

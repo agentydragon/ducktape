@@ -7,9 +7,7 @@
       "height": 900
     },
     "outputName": "new-sandbox",
-    "readySelectors": [
-      ".mantine-Pill-root"
-    ]
+    "readySelectors": [".mantine-Pill-root"]
   },
   "new_sandbox_phone": {
     "element": "#app",
@@ -20,9 +18,7 @@
       "deviceScaleFactor": 2.625
     },
     "outputName": "new-sandbox-phone",
-    "readySelectors": [
-      ".mantine-Pill-root"
-    ]
+    "readySelectors": [".mantine-Pill-root"]
   },
   "new_sandbox_policies": {
     "element": "#app",
@@ -32,9 +28,7 @@
       "height": 900
     },
     "outputName": "new-sandbox-policies",
-    "readySelectors": [
-      ".mantine-Pill-root:has-text(\"github-public\")"
-    ]
+    "readySelectors": [".mantine-Pill-root:has-text(\"github-public\")"]
   },
   "new_sandbox_policies_phone": {
     "element": "#app",
@@ -45,9 +39,7 @@
       "deviceScaleFactor": 2.625
     },
     "outputName": "new-sandbox-policies-phone",
-    "readySelectors": [
-      ".mantine-Pill-root:has-text(\"github-public\")"
-    ]
+    "readySelectors": [".mantine-Pill-root:has-text(\"github-public\")"]
   },
   "new_sandbox_grants": {
     "element": "#app",
@@ -57,9 +49,7 @@
       "height": 900
     },
     "outputName": "new-sandbox-grants",
-    "readySelectors": [
-      ".mantine-Pill-root"
-    ]
+    "readySelectors": [".mantine-Pill-root"]
   },
   "new_sandbox_grants_phone": {
     "element": "#app",
@@ -70,9 +60,7 @@
       "deviceScaleFactor": 2.625
     },
     "outputName": "new-sandbox-grants-phone",
-    "readySelectors": [
-      ".mantine-Pill-root"
-    ]
+    "readySelectors": [".mantine-Pill-root"]
   },
   "sandbox_egress": {
     "element": "#app",
@@ -101,9 +89,7 @@
       "height": 1300
     },
     "outputName": "session-tool-payloads",
-    "readySelectors": [
-      ".agentplane-disclosure-summary"
-    ]
+    "readySelectors": [".agentplane-disclosure-summary"]
   },
   "session_tool_payloads_phone": {
     "element": "#app",
@@ -114,9 +100,7 @@
       "deviceScaleFactor": 2.625
     },
     "outputName": "session-tool-payloads-phone",
-    "readySelectors": [
-      ".agentplane-disclosure-summary"
-    ]
+    "readySelectors": [".agentplane-disclosure-summary"]
   },
   "session_shell_calls_open": {
     "element": "#app",
@@ -127,9 +111,7 @@
     },
     "outputName": "session-shell-calls-open",
     "shellCalls": true,
-    "readySelectors": [
-      ".agentplane-disclosure-summary"
-    ]
+    "readySelectors": [".agentplane-disclosure-summary"]
   },
   "session_shell_calls_open_phone": {
     "element": "#app",
@@ -141,9 +123,7 @@
     },
     "outputName": "session-shell-calls-open-phone",
     "shellCalls": true,
-    "readySelectors": [
-      ".agentplane-disclosure-summary"
-    ]
+    "readySelectors": [".agentplane-disclosure-summary"]
   },
   "session_tool_output_sticky": {
     "element": "#app",
@@ -154,9 +134,7 @@
     },
     "outputName": "session-tool-output-sticky",
     "shellCalls": true,
-    "readySelectors": [
-      ".agentplane-disclosure-summary"
-    ],
+    "readySelectors": [".agentplane-disclosure-summary"],
     "captureViewport": true
   },
   "session_tool_output_sticky_phone": {
@@ -169,9 +147,7 @@
     },
     "outputName": "session-tool-output-sticky-phone",
     "shellCalls": true,
-    "readySelectors": [
-      ".agentplane-disclosure-summary"
-    ],
+    "readySelectors": [".agentplane-disclosure-summary"],
     "captureViewport": true
   },
   "disclosure_component_phone_collapsed": {
@@ -184,9 +160,7 @@
     },
     "outputName": "disclosure-component-phone-collapsed",
     "disclosureVisual": "collapsed",
-    "readySelectors": [
-      ".demo-main .agentplane-disclosure-summary[aria-expanded='false']"
-    ],
+    "readySelectors": [".demo-main .agentplane-disclosure-summary[aria-expanded='false']"],
     "captureViewport": true
   },
   "disclosure_component_phone_short_expanded": {
@@ -199,9 +173,7 @@
     },
     "outputName": "disclosure-component-phone-short-expanded",
     "disclosureVisual": "short-expanded",
-    "readySelectors": [
-      ".demo-main .agentplane-disclosure-summary[aria-expanded='true']"
-    ],
+    "readySelectors": [".demo-main .agentplane-disclosure-summary[aria-expanded='true']"],
     "captureViewport": true
   },
   "disclosure_component_phone_long_top": {
@@ -214,9 +186,7 @@
     },
     "outputName": "disclosure-component-phone-long-top",
     "disclosureVisual": "long-top",
-    "readySelectors": [
-      ".demo-main .agentplane-disclosure-summary[aria-expanded='true']"
-    ],
+    "readySelectors": [".demo-main .agentplane-disclosure-summary[aria-expanded='true']"],
     "captureViewport": true
   },
   "disclosure_component_phone_long_scrolled": {
@@ -229,9 +199,7 @@
     },
     "outputName": "disclosure-component-phone-long-scrolled",
     "disclosureVisual": "long-scrolled",
-    "readySelectors": [
-      ".demo-main .agentplane-disclosure-heading[data-expanded='true']"
-    ],
+    "readySelectors": [".demo-main .agentplane-disclosure-heading[data-expanded='true']"],
     "captureViewport": true
   },
   "disclosure_component_phone_after_disclosure": {
@@ -244,9 +212,7 @@
     },
     "outputName": "disclosure-component-phone-after-disclosure",
     "disclosureVisual": "after-disclosure",
-    "readySelectors": [
-      "[data-disclosure-visual-stage='after-disclosure']"
-    ],
+    "readySelectors": ["[data-disclosure-visual-stage='after-disclosure']"],
     "captureViewport": true
   },
   "disclosure_component_phone_nested_child_scrolled": {
@@ -259,9 +225,7 @@
     },
     "outputName": "disclosure-component-phone-nested-child-scrolled",
     "disclosureVisual": "nested-child-scrolled",
-    "readySelectors": [
-      ".demo-inner .agentplane-disclosure-heading[data-expanded='true']"
-    ],
+    "readySelectors": [".demo-inner .agentplane-disclosure-heading[data-expanded='true']"],
     "captureViewport": true
   },
   "disclosure_component_phone_nested_after_child": {
@@ -274,9 +238,7 @@
     },
     "outputName": "disclosure-component-phone-nested-after-child",
     "disclosureVisual": "nested-after-child",
-    "readySelectors": [
-      ".demo-outer .agentplane-disclosure-heading[data-expanded='true']"
-    ],
+    "readySelectors": [".demo-outer .agentplane-disclosure-heading[data-expanded='true']"],
     "captureViewport": true
   },
   "disclosure_component_phone_nested_parent_only": {
@@ -289,10 +251,7 @@
     },
     "outputName": "disclosure-component-phone-nested-parent-only",
     "disclosureVisual": "nested-parent-only-scrolled",
-    "readySelectors": [
-      ".demo-outer .agentplane-disclosure-heading",
-      ".demo-inner .agentplane-disclosure-heading"
-    ],
+    "readySelectors": [".demo-outer .agentplane-disclosure-heading", ".demo-inner .agentplane-disclosure-heading"],
     "captureViewport": true
   },
   "disclosure_component_phone_nested_after_outer": {
@@ -305,10 +264,7 @@
     },
     "outputName": "disclosure-component-phone-nested-after-outer",
     "disclosureVisual": "nested-after-outer",
-    "readySelectors": [
-      ".demo-outer .agentplane-disclosure-heading",
-      ".demo-inner .agentplane-disclosure-heading"
-    ],
+    "readySelectors": [".demo-outer .agentplane-disclosure-heading", ".demo-inner .agentplane-disclosure-heading"],
     "captureViewport": true
   },
   "disclosure_component_phone_nested_wrapped_headings": {
@@ -321,10 +277,7 @@
     },
     "outputName": "disclosure-component-phone-nested-wrapped-headings",
     "disclosureVisual": "nested-wrapped-headings",
-    "readySelectors": [
-      ".demo-outer .agentplane-disclosure-heading",
-      ".demo-inner .agentplane-disclosure-heading"
-    ],
+    "readySelectors": [".demo-outer .agentplane-disclosure-heading", ".demo-inner .agentplane-disclosure-heading"],
     "captureViewport": true
   },
   "disclosure_component_phone_nested_expanded_output": {

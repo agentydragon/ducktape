@@ -44,7 +44,7 @@ class Click(_TableModel):
         description=(
             "Selector of the element to click. It must match exactly one element, so that a click cannot "
             "land silently on a look-alike elsewhere on the page (`>> nth=0` says which one is meant)."
-        ),
+        )
     )
     expect_visible: list[str] = Field(
         default_factory=list, description="Selectors that must be visible once the click has taken effect."

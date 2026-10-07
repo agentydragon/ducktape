@@ -1274,11 +1274,10 @@ py_visual_test(
         ":visual_bundle_css",
     ],
     devtools_viewport = True,
+    env = {"INTERACTION_SCENARIOS_PATH": "$(rlocationpath harness/interaction_scenarios.json)"},
     harness = ":visual_bundle_js",
     scenarios = "harness/scenarios.json",
     shard_count = 6,
-    test_module = "agentplane.app.frontend.test_visual_interactions",
-    test_srcs = ["test_visual_interactions.py"],
     test_deps = [
         "//util/testing:page_capture",
         "//util/testing:undeclared_outputs",
@@ -1288,8 +1287,9 @@ py_visual_test(
         "@pypi//pytest_asyncio",
         "@pypi//pytest_bazel",
     ],
+    test_module = "agentplane.app.frontend.test_visual_interactions",
+    test_srcs = ["test_visual_interactions.py"],
     title = "Agentplane",
-    env = {"INTERACTION_SCENARIOS_PATH": "$(rlocationpath harness/interaction_scenarios.json)"},
 )
 
 js_test(
