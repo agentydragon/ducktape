@@ -282,6 +282,7 @@ function VirtualizedHistory({
   // virtual window. A later scroll gesture releases it.
   const [stickyAnchorKey, setStickyAnchorKey] = useState<string | null>(null);
   const [stickyAnchorRevision, setStickyAnchorRevision] = useState(0);
+  const stickyAnchorPending = useRef<string | null>(null);
   // Widened around a just-landed older page so every one of its rows mounts and measures in the
   // same pass, rather than progressively as scrolling reveals more of it -- each of *those* later
   // corrections is itself a visible, uncalled-for jump (see restoreAnchor/restoringScroll below).
@@ -476,10 +477,7 @@ function VirtualizedHistory({
           ...(anchorTarget !== anchorRowElement ? { target: anchorTarget } : {}),
         };
         readingAnchor.current = anchor;
-        if (clickedTarget) {
-          setStickyAnchorKey(clickedHeadingIsSticky ? anchor.key : null);
-          if (clickedHeadingIsSticky) setStickyAnchorRevision((revision) => revision + 1);
-        }
+        if (clickedTarget) stickyAnchorPending.current = clickedHeadingIsSticky ? anchor.key : null;
         historyTrace.record({ kind: "anchor", key: anchor.key, offset: anchor.offset });
       }
     },
@@ -761,7 +759,14 @@ function VirtualizedHistory({
           clientHeight: element.clientHeight,
         });
       }}
-      onClick={revealEvidenceOnTap}
+      onClick={(event) => {
+        revealEvidenceOnTap(event);
+        const key = stickyAnchorPending.current;
+        stickyAnchorPending.current = null;
+        if (key === null) return;
+        setStickyAnchorKey(key);
+        setStickyAnchorRevision((revision) => revision + 1);
+      }}
       onScroll={(event) => {
         const element = event.currentTarget;
         // A disclosure's anchor restoration can emit scroll after the click handler ends. Keep
