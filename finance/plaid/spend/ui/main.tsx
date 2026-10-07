@@ -485,6 +485,8 @@ function ruleConditionText(condition: RuleCondition): string {
       return `Amount is ${condition.sign}`;
     case "field_exact":
       return `${condition.field} equals ${String(condition.value)}`;
+    case "counterparty_exact":
+      return `${condition.counterparty_type} counterparty is “${condition.name}”`;
     case "any_of":
       return condition.conditions.map(ruleConditionText).join(" OR ");
     case "all_of":

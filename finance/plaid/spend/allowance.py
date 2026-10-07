@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import calendar
+import json
 from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import UTC, date, datetime, timedelta
@@ -68,11 +69,20 @@ class AmountSign(BaseModel):
 class FieldExact(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
     type: Literal["field_exact"] = "field_exact"
-    field: Literal["name", "merchant_name", "account_type", "mcc", "delivery_marketplace"]
+    field: Literal["name", "merchant_name", "account_type", "mcc"]
     value: str | bool
 
 
-type SimpleCondition = NamePrefix | NameContains | CategoryExact | AmountExact | AmountSign | FieldExact
+class CounterpartyExact(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+    type: Literal["counterparty_exact"] = "counterparty_exact"
+    counterparty_type: str = Field(min_length=1)
+    name: str = Field(min_length=1)
+
+
+type SimpleCondition = (
+    NamePrefix | NameContains | CategoryExact | AmountExact | AmountSign | FieldExact | CounterpartyExact
+)
 
 
 class AnyOf(BaseModel):
@@ -126,7 +136,7 @@ class Transaction(BaseModel):
     currency: str | None
     account_type: str | None = None
     mcc: str | None = None
-    delivery_marketplace: bool | None = None
+    counterparties: str | list[dict[str, object]] | None = None
 
 
 @dataclass(frozen=True)
@@ -223,6 +233,21 @@ def matches_fields(fields: Mapping[str, object] | object, condition: Condition) 
         if isinstance(actual, str) and isinstance(condition.value, str):
             return actual.casefold() == condition.value.casefold()
         return actual == condition.value
+    if isinstance(condition, CounterpartyExact):
+        counterparties = value("counterparties")
+        if isinstance(counterparties, str):
+            try:
+                counterparties = json.loads(counterparties)
+            except json.JSONDecodeError:
+                return False
+        return isinstance(counterparties, list) and any(
+            isinstance(counterparty, Mapping)
+            and isinstance(counterparty.get("type"), str)
+            and counterparty["type"].casefold() == condition.counterparty_type.casefold()
+            and isinstance(counterparty.get("name"), str)
+            and counterparty["name"].casefold() == condition.name.casefold()
+            for counterparty in counterparties
+        )
     name = value(condition.field)
     if name is None:
         return False

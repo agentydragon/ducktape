@@ -99,7 +99,7 @@ four Plaid source tables needed to compute the view; it does not store or write 
 Allowance rules are evaluated in order; the first match determines the classification. `review`
 rules keep positive purchases in provisional spending and the unmatched total, while unverified
 negative credits remain separate from spending. Conditions can combine merchant or category matches,
-account type, merchant category code, delivery marketplace, and amount sign. Private analyses use the
+account type, merchant category code, counterparty type and name, and amount sign. Private analyses use the
 same ordered matcher and policy file as the app.
 
 ## Runtime settings

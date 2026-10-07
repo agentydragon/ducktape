@@ -354,11 +354,7 @@ class SpendService:
                               t.pfc_primary, t.pfc_detailed,
                               a.type AS account_type,
                               t.raw_json->>'merchant_category_code' AS mcc,
-                              EXISTS (SELECT 1 FROM jsonb_array_elements(
-                                  CASE WHEN jsonb_typeof(t.raw_json->'counterparties') = 'array'
-                                       THEN t.raw_json->'counterparties' ELSE '[]'::jsonb END) cp
-                                  WHERE cp->>'type' = 'marketplace'
-                                    AND lower(cp->>'name') IN ('doordash', 'uber eats')) AS delivery_marketplace,
+                              COALESCE(t.raw_json->'counterparties', '[]'::jsonb)::text AS counterparties,
                               COALESCE(t.iso_currency_code, t.raw_json->>'unofficial_currency_code') AS currency
                        FROM public.transactions t
                        JOIN public.accounts a ON a.account_id = t.account_id AND a.item_id = t.item_id
