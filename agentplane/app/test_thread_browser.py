@@ -1312,8 +1312,8 @@ async def test_opening_a_call_and_its_output_keeps_it_collapsible_while_reading(
     await collapse.click()
     await expect(collapse).to_have_attribute("aria-expanded", "false")
     await expect(output_line).to_be_hidden()
-    await collapse.click()
-    await expect(output_line).to_be_visible()
+    await expect(call.locator(".agentplane-disclosure-summary").first).to_have_attribute("aria-expanded", "true")
+    await expect(run.locator(".agentplane-disclosure-summary").first).to_have_attribute("aria-expanded", "true")
 
 
 async def test_opening_a_call_while_output_streams_in_keeps_it_collapsible(thread_browser: ThreadBrowser) -> None:

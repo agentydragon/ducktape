@@ -130,6 +130,7 @@ ts_library(
         "//:node_modules/react",
         "//agentplane/app/frontend:actions_affordance",
         "//agentplane/app/frontend:client",
+        "//agentplane/app/frontend:disclosure",
         "//agentplane/app/frontend:live",
         "//agentplane/app/frontend:sandbox_status",
         "//agentplane/app/frontend:status_mark",

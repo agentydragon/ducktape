@@ -57,6 +57,7 @@ import { historyTrace, LayoutSettle, type FollowReason } from "./history_trace";
 import { rememberRowHeight, rememberedRowHeight } from "./history_sizes";
 import { ThreadTitle } from "./thread_title";
 import { ThreadStatusIndicator } from "../thread_status_indicator";
+import { DISCLOSURE_STICKY_Z_INDEX } from "../disclosure";
 import { snapshotFresh, threadStatusFromSnapshot } from "../thread_status";
 import { sandboxReady, sandboxSummary } from "../sandbox_status";
 import { TopbarActions, TopbarTitle } from "../topbar";
@@ -799,7 +800,7 @@ function VirtualizedHistory({
             position: "sticky",
             bottom: 0,
             height: 0,
-            zIndex: 1,
+            zIndex: DISCLOSURE_STICKY_Z_INDEX + 1,
             display: "flex",
             justifyContent: "center",
             alignItems: "flex-end",

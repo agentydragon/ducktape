@@ -9,7 +9,9 @@ interface StickyStackPosition {
   zIndex: number;
 }
 
-const StickyStackContext = createContext<StickyStackPosition>({ top: 0, zIndex: 100 });
+export const DISCLOSURE_STICKY_Z_INDEX = 100;
+
+const StickyStackContext = createContext<StickyStackPosition>({ top: 0, zIndex: DISCLOSURE_STICKY_Z_INDEX });
 
 function useStickyRowHeight() {
   const [element, setElement] = useState<HTMLDivElement | null>(null);
