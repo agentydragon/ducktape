@@ -8,7 +8,7 @@ Skills are built by Bazel (`skill_package` macro in `defs.bzl`) — each skill i
 its own `.skill` zip (`//skills/<name>:<name>_skill`). CI publishes each one as a
 separate `skill-<name>` GitHub release artifact (see the registry below).
 
-**Local machines**: `flake.nix` fetches every `skill-*` pin and assembles them
+**Local machines**: `flake.nix` fetches each Nix-enabled `skill-*` pin and assembles them
 into one flat directory of `<name>/` subdirs (`skills-tar`). `nix/home/skills.nix`
 then creates Home Manager `home.file` entries for each configured agent home
 (`~/.claude/skills/`, `~/.gemini/skills/`, `~/.codex/skills/`, etc.).
@@ -22,18 +22,22 @@ preinstalled default skills.
 ## Skill registry
 
 `skills_registry.json` is the hand-written source of truth for which skills are
-built, released, pinned, and deployed. Each entry names a skill and how it maps
-to Bazel/release/pin identifiers:
+built and released. Each entry names a skill and maps it to Bazel and release
+identifiers, with an optional Nix deployment setting:
 
 - `name` — the skill (also the `.skill` subdir and its `~/.claude/skills/` dir)
 - `pkg` — its release/tag/pin name, always `skill-<name>`
 - `target` / `output` — the `skill_package` archive target and its `bb-out/` path
 - `filename` — the release asset, always `<name>.skill`
+- `nix` — optional; set to `false` to release the skill without pinning or
+  deploying it through Nix. Defaults to `true`.
 
 Consumed by `.github/workflows/release.yml` (release matrix),
-`devinfra/ci/artifacts.py` (pin sync), and `flake.nix` / `nix/packages/default.nix`
-(Nix assembly). A skill that has a `skill_package` but no registry entry simply
-isn't released or deployed — a valid state, not an error.
+`devinfra/ci/artifacts.py` (Nix pin sync), and `flake.nix` /
+`nix/packages/default.nix` (Nix assembly). The `nix` field controls only pinning
+and Nix deployment; a disabled skill is still built and released. A skill that
+has a `skill_package` but no registry entry simply isn't released or deployed —
+a valid state, not an error.
 
 ## Adding a skill
 
@@ -44,8 +48,9 @@ isn't released or deployed — a valid state, not an error.
    enforces the current Codex frontmatter limit.
 2. Create `skills/<name>/BUILD.bazel` using `skill_package(name, srcs)`
 3. To ship it, add an entry to `skills_registry.json` (see the fields above).
-4. After CI publishes the `skill-<name>` release, `sync-pins` seeds the pin in
-   `nix/artifact-pins.json`; then run `home-manager switch`.
+4. After CI publishes the `skill-<name>` release, `sync-pins` seeds a pin in
+   `nix/artifact-pins.json` unless the registry sets `nix` to `false`; then run
+   `home-manager switch` for Nix-enabled skills.
 
 Nix assembly skips registered skills without an artifact pin. This lets the
 first merged release publish a new skill before `sync-pins` seeds its pin.

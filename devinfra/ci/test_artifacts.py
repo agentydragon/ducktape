@@ -12,11 +12,12 @@ def test_artifacts_are_derived_from_release_metadata() -> None:
     skills = json.loads(skills_registry_path().read_text())["skills"]
 
     assert len(artifacts) == len(ARTIFACTS)
-    assert set(artifacts) == set(targets) | {skill["pkg"] for skill in skills}
+    nix_skills = [skill for skill in skills if skill.get("nix", True)]
+    assert set(artifacts) == set(targets) | {skill["pkg"] for skill in nix_skills}
     for pkg, target in targets.items():
         assert artifacts[pkg].filename == Path(target.output).name
         assert artifacts[pkg].release_tag_prefix == target.release
-    for skill in skills:
+    for skill in nix_skills:
         assert artifacts[skill["pkg"]].filename == skill["filename"]
 
 

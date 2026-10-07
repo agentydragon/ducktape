@@ -160,7 +160,9 @@
       skillsUnpacked =
         let
           registry = builtins.fromJSON (builtins.readFile ./skills/skills_registry.json);
-          skills = builtins.filter (skill: builtins.hasAttr "skill-${skill.name}" artifacts) registry.skills;
+          skills = builtins.filter (
+            skill: (skill.nix or true) && builtins.hasAttr "skill-${skill.name}" artifacts
+          ) registry.skills;
         in
         pkgs.runCommand "skills" { nativeBuildInputs = [ pkgs.libarchive ]; } (
           "mkdir $out\n"

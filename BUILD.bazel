@@ -286,7 +286,6 @@ py_package(
     name = "ducktape_pkg",
     packages = [
         "agent_core",
-        "cluster.skills.hetzner_vnc_screenshot",
         "cluster.skills.proxmox_vm",
         "devinfra.gc",
         "devinfra.ws",
@@ -309,7 +308,6 @@ py_package(
         "//difftree:cli",
         "//git_commit_ai:git_commit_ai_lib",
         "//gmail_archiver:main",
-        "//cluster/skills/hetzner_vnc_screenshot:vnc_screenshot",
         "//cluster/skills/proxmox_vm:vm_interact",
         "//devinfra/gc:workspace_gc",
         "//devinfra/ws:cli",
@@ -325,7 +323,6 @@ py_wheel(
             "git-commit-ai = git_commit_ai.cli:main",
             "difftree = difftree.cli:main",
             "gmail-archiver = gmail_archiver.main:app",
-            "hetzner-vnc-screenshot = cluster.skills.hetzner_vnc_screenshot.vnc_screenshot:app",
             "vm-interact = cluster.skills.proxmox_vm.vm_interact:app",
             "ws = devinfra.ws.cli:main",
         ],
@@ -359,10 +356,7 @@ py_wheel(
         "python-dateutil",
         "pyyaml",
         # skills deps
-        "asyncvnc>=1.3.0",
-        "hcloud>=2.0.0",
         "pillow>=10.0.0",
-        "websockets>=15.0",
         "ducktape-util",
         # workspace-gc deps
         "humanize>=4.0.0",

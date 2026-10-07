@@ -77,14 +77,18 @@ class Artifact(BaseModel, frozen=True):
 
 
 def _skill_artifacts() -> list[Artifact]:
-    """One Artifact per deployable skill, from skills/skills_registry.json.
+    """One pin-managed Artifact per Nix-enabled skill in the registry.
 
     Each skill releases independently as `skill-<name>-<hash>` carrying a single
-    `<name>.skill` asset, and pins under the `skill-<name>` key in
+    `<name>.skill` asset. Nix-enabled skills also get a `skill-<name>` pin in
     artifact-pins.json.
     """
     registry = json.loads(skills_registry_path().read_text())
-    return [Artifact(pkg=s["pkg"], filename=s["filename"]) for s in registry["skills"]]
+    return [
+        Artifact(pkg=s["pkg"], filename=s["filename"])
+        for s in registry["skills"]
+        if s.get("nix", True)
+    ]
 
 
 def _release_artifacts() -> list[Artifact]:

@@ -40,7 +40,8 @@
       "pkg": "skill-hetzner_vnc_screenshot",
       "target": "//cluster/skills/hetzner_vnc_screenshot:hetzner_vnc_screenshot_skill",
       "output": "bb-out/bazel-out/k8-fastbuild/bin/cluster/skills/hetzner_vnc_screenshot/hetzner_vnc_screenshot.skill",
-      "filename": "hetzner_vnc_screenshot.skill"
+      "filename": "hetzner_vnc_screenshot.skill",
+      "nix": false
     },
     {
       "name": "proxmox_vm",

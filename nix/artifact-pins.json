@@ -60,10 +60,6 @@
       "url": "https://github.com/agentydragon/ducktape/releases/download/skill-flux_reconcile_audit-173ec315f57b/flux_reconcile_audit.skill",
       "sha256": "Fz7DFfV70NYlrUti+Yli+AoqEvOPF51z2B/00sjciGM="
     },
-    "skill-hetzner_vnc_screenshot": {
-      "url": "https://github.com/agentydragon/ducktape/releases/download/skill-hetzner_vnc_screenshot-5b3ad6fd0489/hetzner_vnc_screenshot.skill",
-      "sha256": "WzrW/QSJ5JDZjysdObQSLZLSxAvkVaqaFnCrGkivHEg="
-    },
     "skill-proxmox_vm": {
       "url": "https://github.com/agentydragon/ducktape/releases/download/skill-proxmox_vm-ef9676d0a96e/proxmox_vm.skill",
       "sha256": "75Z20KluoDj4kwQanWM2WZb5G9qC06JMRKJrrx/HieM="

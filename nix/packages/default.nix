@@ -184,8 +184,6 @@ let
   # Python packages not in nixpkgs (used as propagatedBuildInputs)
   compact-json = pkgs.callPackage ./compact-json.nix { };
   pyrage = pkgs.callPackage ./pyrage.nix { };
-  keysymdef = pkgs.callPackage ./keysymdef.nix { };
-  asyncvnc = pkgs.callPackage ./asyncvnc.nix { inherit keysymdef; };
   ducktape-util = mkWheel {
     pname = "ducktape-util";
     description = "Shared utility library (util.bazel, util.fs, etc.)";
@@ -352,7 +350,6 @@ rec {
       "difftree.cli"
       "git_commit_ai.cli"
       "gmail_archiver.main"
-      "cluster.skills.hetzner_vnc_screenshot.vnc_screenshot"
       "cluster.skills.proxmox_vm.vm_interact"
       "devinfra.gc.output_base_gc"
       "devinfra.ws.cli"
@@ -387,11 +384,8 @@ rec {
       python-dateutil
       pyyaml
       compact-json
-      # skills deps (hetzner-vnc-screenshot, proxmox_vm)
-      hcloud
+      # skills deps (proxmox_vm)
       pillow
-      websockets
-      asyncvnc
       ducktape-util
     ];
   };
@@ -529,7 +523,7 @@ rec {
     let
       registry = builtins.fromJSON (builtins.readFile ../../skills/skills_registry.json);
       skillList = builtins.filter (
-        skill: builtins.hasAttr "skill-${skill.name}" artifacts
+        skill: (skill.nix or true) && builtins.hasAttr "skill-${skill.name}" artifacts
       ) registry.skills;
     in
     pkgs.runCommand "claude-hooks-skills" { nativeBuildInputs = [ pkgs.libarchive ]; } (
