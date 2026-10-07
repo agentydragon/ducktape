@@ -21,8 +21,11 @@ and notification-backed event stream.
 
 ## API
 
-- `GET /api/v1/view` returns the configured enabled card aggregates. Money values are integer minor
-  currency units; no transactions or Plaid credentials are returned.
+- `GET /api/v1/view` returns configured enabled card aggregates and the optional flexible allowance.
+  Allowance spend and recorded pace use typed period reports with inclusive dates; forecast values
+  are separate. Each card has a discriminated `statement_period` (`statement`, `provisional`, or
+  `unavailable`). Money values are integer minor currency units; no transactions or Plaid
+  credentials are returned.
 - `GET /api/v1/events` sends an immediate `view` SSE event, then recomputes and sends a complete
   view after `plaid_spend_changed` notifications. Reconnects compute a new initial view; idle
   streams send comments as heartbeats.
@@ -32,9 +35,10 @@ and notification-backed event stream.
   authorized identity sees the same view.
 - `GET /api/v1/configuration` returns the settings currently loaded by the service for the
   browser's read-only Configuration tab and omits Plaid account IDs.
-- `GET /api/v1/transactions?window=30d` supplies the read-only Transactions tab; `window` also
-  accepts `7d` and `cycle`. It returns recent rows from allowance accounts and configured cards, with
-  the first matched policy rule, the calculator's allowance and pace contributions, and each card
+- `GET /api/v1/transactions?period=rolling_30d` supplies the read-only Transactions tab; `period`
+  also accepts `rolling_7d` and `credit_cycle`. It returns the requested and actual period, a
+  server-computed period summary, and recent rows from allowance accounts and configured cards, with
+  the first matched policy rule, the calculator's allowance and period-keyed pace contributions, and each card
   row's statement-cycle contribution or exclusion reason. Each row exposes parsed Plaid
   counterparties and named, typed Plaid Transactions fields in `details` for the authenticated
   detail view. The details include Plaid account and transaction IDs and the original Plaid amount
@@ -42,7 +46,7 @@ and notification-backed event stream.
   minor units. Unknown source fields are omitted. The compact row uses configured display names
   instead of identifiers.
   An unavailable allowance leaves classifications unavailable; an unavailable credit cycle falls
-  back to a 30-day transaction window.
+  back to a 30-day transaction period, reported with its actual period ID and dates.
 
 The view shape is:
 
@@ -57,7 +61,7 @@ The view shape is:
       "institution_name": "Bank name",
       "mask": "1234",
       "currency": "USD",
-      "cycle_start": "2026-09-01",
+      "statement_period": { "kind": "statement", "start": "2026-09-01", "through": "2026-09-30" },
       "spend_minor_units": 34218,
       "posted_minor_units": 30000,
       "pending_minor_units": 4218,
@@ -65,19 +69,21 @@ The view shape is:
       "alert_threshold_percent": 80,
       "spend_percent": 34.218,
       "alert_state": "normal",
-      "last_synced_at": "2026-09-30T11:58:00Z",
-      "statement_available": true
+      "last_synced_at": "2026-09-30T11:58:00Z"
     }
   ]
 }
 ```
 
-Null cycle totals indicate no statement date; `institution_name` and `mask` may be null. Minor units
+Null card totals and an `unavailable` statement period indicate no usable date; a `provisional`
+period starts with the first recorded transaction and is not a statement cycle. `institution_name`
+and `mask` may be null. Minor units
 follow the currency's ISO precision (for example, USD cents and JPY whole yen).
 
 The statement cycle starts the day after the latest credit-liability snapshot's
 `last_statement_issue_date`. A missing date leaves cycle and spend values null and marks the card
-unavailable; the service does not substitute calendar-month bounds. Posted and pending amounts are
+unavailable unless it can report a separately marked provisional total since the first transaction;
+the service does not substitute calendar-month bounds. Posted and pending amounts are
 summed separately, pending rows superseded by a posted transaction are dropped, removed rows and
 credit-card payment transactions are excluded, and transactions with an explicit different currency
 are not included. Refunds retain Plaid's negative sign. Spend percentage uses the configured limit;

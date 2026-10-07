@@ -61,15 +61,15 @@ calendar days, applies the same fixed/excluded/flexible rules and pending
 replacement handling, and considers positive flexible purchases from before the
 activation date. This history is **never imported as opening debt**; the current-cycle,
 trailing 7/30-day, calendar and year _spend totals_ still start at activation. The
-separate `trailing_7_observed_daily_minor_units` and `trailing_30_observed_daily_minor_units`
+separate `recorded_pace_periods` for `rolling_7d` and `rolling_30d`
 are positive recorded purchases in the respective full calendar-day windows divided
-by 7 and 30 (null on startup without pace evidence). `trailing_7_daily_minor_units`
+by 7 and 30 (null on startup without pace evidence). `forecast.daily_pace_minor_units`
 is the existing, potentially higher, early-burst-sensitive projection pace; do not
 present it as the literal seven-day average. Web, GNOME and CLI show both observed
 rates against the same approximate monthly-credit-equivalent daily reference;
 `spending_signal` compares those rates and the existing forecast against that
 **provisional allowance**, not a sustainability guarantee.
-`trailing_7_unmatched_count` and `trailing_7_unmatched_minor_units` count
+The `rolling_7d` pace report's `unmatched_charges` count and amount count
 positive, default-flexible purchases in the pace lookback, including before
 activation; this is separate from the postactivation review tally. Plaid's
 transaction date (not an exact swipe timestamp) defines membership in each

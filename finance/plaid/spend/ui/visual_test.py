@@ -12,7 +12,7 @@ from collections.abc import AsyncIterator, Iterator
 from datetime import UTC, date, datetime
 from decimal import Decimal
 from pathlib import Path
-from typing import Any, Literal
+from typing import Any
 
 import pytest
 import pytest_bazel
@@ -43,7 +43,16 @@ from finance.plaid.spend.models import (
     SpendConfigurationView,
     SpendTransactionRow,
     SpendTransactionsView,
+    SpendView,
     StatementReason,
+)
+from finance.plaid.spend.reporting import (
+    TRANSACTION_WINDOWS,
+    SpendReportView,
+    SpendTransactionsReportView,
+    TransactionPeriodId,
+    project_transactions,
+    project_view,
 )
 from util.bazel.runfiles import get_required_path
 from util.testing.asgi import serve_app_sync
@@ -64,8 +73,7 @@ def dashboard_url() -> Iterator[str]:
     def index() -> FileResponse:
         return FileResponse(_UI_DIR / "index.html")
 
-    @app.get("/api/v1/view")
-    def view(warmup: bool = False) -> dict:
+    def legacy_view_payload(warmup: bool = False) -> dict:
         payload: dict[str, Any] = {
             "generated_at": "2026-10-15T12:00:00Z",
             "allowance": {
@@ -103,6 +111,7 @@ def dashboard_url() -> Iterator[str]:
             },
             "cards": [
                 {
+                    "account_id": "synthetic-card",
                     "label": "Example card",
                     "account_name": "Example card",
                     "mask": "0000",
@@ -114,11 +123,13 @@ def dashboard_url() -> Iterator[str]:
                     "limit_minor_units": 100000,
                     "spend_percent": 22,
                     "pending_minor_units": 1000,
+                    "posted_minor_units": 21000,
                     "last_synced_at": "2026-10-15T11:00:00Z",
                     "cycle_start": "2026-10-01",
                     "statement_available": True,
                 },
                 {
+                    "account_id": "synthetic-new-card",
                     "label": "New example card",
                     "account_name": "New example card",
                     "mask": "1111",
@@ -128,6 +139,9 @@ def dashboard_url() -> Iterator[str]:
                     "spend_minor_units": 3900,
                     "limit_minor_units": 100000,
                     "pending_minor_units": 0,
+                    "posted_minor_units": 3900,
+                    "alert_threshold_percent": None,
+                    "spend_percent": None,
                     "last_synced_at": "2026-10-15T11:00:00Z",
                     "cycle_start": "2026-10-10",
                     "statement_available": False,
@@ -156,10 +170,14 @@ def dashboard_url() -> Iterator[str]:
             payload["allowance"]["windows_minor_units"] = dict.fromkeys(payload["allowance"]["windows_minor_units"], 0)
         return payload
 
+    @app.get("/api/v1/view", response_model=SpendReportView)
+    def view(warmup: bool = False) -> SpendReportView:
+        return project_view(SpendView.model_validate(legacy_view_payload(warmup)))
+
     @app.get("/api/v1/events")
     async def events() -> StreamingResponse:
         async def updates() -> AsyncIterator[str]:
-            yield f"event: view\ndata: {json.dumps(view())}\n\n"
+            yield f"event: view\ndata: {json.dumps(view().model_dump(mode='json'))}\n\n"
             while True:
                 await asyncio.sleep(60)
                 yield ": keepalive\n\n"
@@ -201,13 +219,14 @@ def dashboard_url() -> Iterator[str]:
             ),
         )
 
-    @app.get("/api/v1/transactions", response_model=SpendTransactionsView)
-    def transactions(window: Literal["7d", "30d", "cycle"] = "30d") -> SpendTransactionsView:
-        return SpendTransactionsView(
+    @app.get("/api/v1/transactions", response_model=SpendTransactionsReportView)
+    def transactions(period: TransactionPeriodId = "rolling_30d") -> SpendTransactionsReportView:
+        window = TRANSACTION_WINDOWS[period]
+        legacy = SpendTransactionsView(
             generated_at=datetime(2026, 10, 15, 12, tzinfo=UTC),
             window=window,
             window_start={"7d": date(2026, 10, 9), "30d": date(2026, 9, 16), "cycle": date(2026, 10, 1)}[window],
-            allowance=AllowanceView.model_validate(view()["allowance"]),
+            allowance=AllowanceView.model_validate(legacy_view_payload()["allowance"]),
             rows=[
                 SpendTransactionRow(
                     date=date(2026, 10, 15),
@@ -334,6 +353,7 @@ def dashboard_url() -> Iterator[str]:
                 ),
             ],
         )
+        return project_transactions(legacy, period)
 
     app.mount("/static", StaticFiles(directory=_UI_DIR))
     with serve_app_sync(app) as url:
@@ -472,7 +492,7 @@ async def test_transaction_explanations_render(
     assert await rows.get_by_text("Refund held", exact=True).count() == 1
     assert await rows.get_by_text("Document shipping", exact=True).count() == 1
     assert await rows.get_by_text("Holiday travel", exact=True).count() == 1
-    assert await page.get_by_text("2 · $15", exact=True).count() == 1
+    assert await page.get_by_text("1 · $15", exact=True).count() == 1
     if width >= 992:
         assert await rows.locator("tbody tr").count() == 4
     assert not errors

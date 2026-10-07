@@ -16,8 +16,8 @@ from dbus_next.aio import MessageBus
 from dbus_next.constants import MessageType
 from dbus_next.errors import DBusError
 
-from finance.plaid.spend.allowance import AllowanceView, Status
-from finance.plaid.spend.models import CardView, SpendView
+from finance.plaid.spend.allowance import Status
+from finance.plaid.spend.reporting import AllowanceReportView, CardReportView, SpendReportView
 
 BUS_NAME = "works.allegedly.PlaidSpend"
 OBJECT_PATH = "/works/allegedly/PlaidSpend"
@@ -89,7 +89,7 @@ def _format_money(minor_units: int | None, currency: str | None) -> str:
     return format_currency(rounded, code, currency_format, locale="en_US", currency_digits=False)
 
 
-def _card_title(card: CardView) -> str:
+def _card_title(card: CardReportView) -> str:
     title = card.label or card.account_name or "Card"
     if mask := card.mask:
         title += f" ···· {mask}"
@@ -102,7 +102,7 @@ def _format_timestamp(value: datetime | None) -> str:
     return value.isoformat().replace("+00:00", "Z") if value else "unknown"
 
 
-def _print_allowance(allowance: AllowanceView) -> None:
+def _print_allowance(allowance: AllowanceReportView) -> None:
     print("\nFlexible allowance · advisory, not a bank limit")
     if allowance.status != Status.ACTIVE:
         print(f"  Status: {allowance.status}")
@@ -113,33 +113,35 @@ def _print_allowance(allowance: AllowanceView) -> None:
     currency = allowance.currency
     print(f"  Available: {_format_money(allowance.available_minor_units, currency)}")
     print(f"  Monthly credit: {_format_money(allowance.monthly_minor_units, currency)}")
-    windows = allowance.windows_minor_units
-    spent = windows.current_credit_cycle_minor_units if windows else None
+    spent = next(
+        (report.spend_minor_units for report in allowance.spend_periods if report.period.id == "credit_cycle"), None
+    )
     print(f"  Spent this credit cycle: {_format_money(spent, currency)}")
     print(f"  Pending (included): {_format_money(allowance.pending_minor_units, currency)}")
     print(f"  Provisional leash signal: {allowance.spending_signal.replace('_', ' ')}")
-    print(
-        f"  7-day recorded flexible pace: {_format_money(allowance.trailing_7_observed_daily_minor_units, currency)}/day"
-    )
-    print(
-        f"  30-day recorded flexible pace: {_format_money(allowance.trailing_30_observed_daily_minor_units, currency)}/day"
-    )
+    for period_id, label in (("rolling_7d", "7-day"), ("rolling_30d", "30-day")):
+        report = next((report for report in allowance.recorded_pace_periods if report.period.id == period_id), None)
+        print(
+            f"  {label} recorded flexible pace: "
+            f"{_format_money(report.observed_daily_minor_units if report else None, currency)}/day"
+        )
     daily_reference = round(allowance.monthly_minor_units * 12 / 365.2425)
     print(f"  Provisional leash rate: ~{_format_money(daily_reference, currency)}/day")
-    if allowance.trailing_7_unmatched_count:
-        print(
-            f"  7d unmatched: {allowance.trailing_7_unmatched_count} "
-            f"({_format_money(allowance.trailing_7_unmatched_minor_units, currency)})"
-        )
+    weekly = next((report for report in allowance.recorded_pace_periods if report.period.id == "rolling_7d"), None)
+    unmatched = weekly.unmatched_charges if weekly else None
+    if unmatched and unmatched.count:
+        print(f"  7d unmatched: {unmatched.count} ({_format_money(unmatched.amount_minor_units, currency)})")
     print("  Leash capacity is not a sustainability target; unmatched purchases count as flexible.")
     print("  History before activation informs pace but not the available balance.")
-    print(f"  Forecast signal: {allowance.alert_state.replace('_', ' ')}")
+    print(f"  Forecast signal: {allowance.forecast.alert_state.replace('_', ' ')}")
     print(
-        f"  Estimated balance before next credit: {_format_money(allowance.projected_cycle_end_minor_units, currency)}"
+        f"  Estimated balance before next credit: {_format_money(allowance.forecast.projected_cycle_end_minor_units, currency)}"
     )
     print(f"  Next credit: {_format_timestamp(allowance.next_credit_at)}")
     exhaustion = (
-        _format_timestamp(allowance.estimated_exhaustion_at) if allowance.estimated_exhaustion_at else "no recent spend"
+        _format_timestamp(allowance.forecast.estimated_exhaustion_at)
+        if allowance.forecast.estimated_exhaustion_at
+        else "no recent spend"
     )
     print(f"  Projected exhaustion (no future credits): {exhaustion}")
     print(f"  Oldest account sync: {_format_timestamp(allowance.last_synced_at)}")
@@ -147,7 +149,7 @@ def _print_allowance(allowance: AllowanceView) -> None:
         print(f"  {allowance.note}")
 
 
-def _print_view(view: SpendView, status: str, last_error: str) -> None:
+def _print_view(view: SpendReportView, status: str, last_error: str) -> None:
     cards = view.cards
     if view.allowance:
         _print_allowance(view.allowance)
@@ -169,10 +171,12 @@ def _print_view(view: SpendView, status: str, last_error: str) -> None:
     for card in cards:
         currency = card.currency
         print(f"\n{_card_title(card)}")
-        if card.cycle_start and card.statement_available:
-            print(f"  Statement cycle starts: {card.cycle_start.isoformat()}")
-        elif card.cycle_start:
-            print(f"  Since first recorded transaction: {card.cycle_start.isoformat()} (statement date unavailable)")
+        if card.statement_period.kind == "statement":
+            print(f"  Statement cycle starts: {card.statement_period.start.isoformat()}")
+        elif card.statement_period.kind == "provisional":
+            print(
+                f"  Since first recorded transaction: {card.statement_period.start.isoformat()} (statement date unavailable)"
+            )
         else:
             print("  Statement cycle: unavailable")
 
@@ -180,7 +184,11 @@ def _print_view(view: SpendView, status: str, last_error: str) -> None:
         limit = "no limit set" if card.limit_minor_units is None else _format_money(card.limit_minor_units, currency)
         percent = card.spend_percent
         percent_text = f" · {percent:.1f}%" if isinstance(percent, int | float) else ""
-        print(f"  Spend: {spend} / {limit}{percent_text}" if card.statement_available else f"  Recorded spend: {spend}")
+        print(
+            f"  Spend: {spend} / {limit}{percent_text}"
+            if card.statement_period.kind == "statement"
+            else f"  Recorded spend: {spend}"
+        )
 
         posted = card.posted_minor_units
         pending = card.pending_minor_units
@@ -232,7 +240,7 @@ async def _run(command: str, json_output: bool) -> None:
             if last_error:
                 print(last_error)
         else:
-            _print_view(SpendView.model_validate(view), status, last_error)
+            _print_view(SpendReportView.model_validate(view), status, last_error)
     finally:
         bus.disconnect()
 

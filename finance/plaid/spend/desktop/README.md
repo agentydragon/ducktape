@@ -25,9 +25,9 @@ The CLI reads the same view and status over the session D-Bus interface as the p
 
 ## Wire contract
 
-The client calls `GET /api/v1/view` and `GET /api/v1/events` on the configured HTTPS API base. Both use `Authorization: Bearer <access-token>`. The event endpoint must use `text/event-stream`; its initial snapshot and subsequent notifications are full JSON views under the `view` event name. Each view is expected to be an object with `generated_at` and `cards` fields. A card uses the server-computed fields `label`, `account_name`, `institution_name`, `mask`, `currency`, `cycle_start`, `spend_minor_units`, `posted_minor_units`, `pending_minor_units`, `limit_minor_units`, `alert_threshold_percent`, `spend_percent`, `alert_state`, `last_synced_at`, and `statement_available`.
+The client calls `GET /api/v1/view` and `GET /api/v1/events` on the configured HTTPS API base. Both use `Authorization: Bearer <access-token>`. The event endpoint must use `text/event-stream`; its initial snapshot and subsequent notifications are full JSON views under the `view` event name. Each view is expected to be an object with `generated_at` and `cards` fields. A card has a discriminated `statement_period` (`statement`, `provisional`, or `unavailable`) and server-computed spend, pending, limit, percentage, alert, and sync fields.
 
-When present, the `allowance` object supplies the available balance, monthly credit, current-cycle spend, pending spend, pace alert, projected cycle-end balance, next credit and sync time; unavailable allowance states are shown without inventing a balance. Money fields use the currency's minor unit. `spend_percent` and `alert_state` are rendered as supplied; the desktop client does not calculate alerts or spend. Null spend and cycle fields render as unavailable.
+When present, the `allowance` object supplies the available balance, monthly credit, period-keyed spend and recorded pace, unmatched charge totals, a separate forecast, next credit and sync time; unavailable allowance states are shown without inventing a balance. Money fields use the currency's minor unit. `spend_percent` and `alert_state` are rendered as supplied; the desktop client does not calculate alerts or spend. Null spend and unavailable periods render as unavailable.
 
 ## Login and credentials
 

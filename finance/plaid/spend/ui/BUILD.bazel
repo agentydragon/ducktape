@@ -59,6 +59,7 @@ py_test(
         "//finance/plaid/spend:allowance",
         "//finance/plaid/spend:conftest",
         "//finance/plaid/spend:models",
+        "//finance/plaid/spend:reporting",
         "//util:playwright",
         "//util/bazel:runfiles",
         "//util/testing:asgi",

@@ -8,6 +8,7 @@ py_library(
     srcs = ["app.py"],
     deps = [
         ":models",
+        ":reporting",
         ":service",
         ":settings",
         "//mcp_infra:oidc_principal",
@@ -32,6 +33,16 @@ py_library(
         ":allowance",
         "@pypi//pydantic",
         "@pypi//pyyaml",
+    ],
+)
+
+py_library(
+    name = "reporting",
+    srcs = ["reporting.py"],
+    deps = [
+        ":allowance",
+        ":models",
+        "@pypi//pydantic",
     ],
 )
 

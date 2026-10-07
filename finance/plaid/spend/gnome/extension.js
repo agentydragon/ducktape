@@ -69,6 +69,11 @@ function cardTitle(card) {
   return card.mask ? `${base} ···· ${card.mask}` : base;
 }
 
+function periodReport(allowance, field, periodId) {
+  const reports = allowance?.[field];
+  return Array.isArray(reports) ? reports.find((report) => report?.period?.id === periodId) : null;
+}
+
 function cardAlert(card) {
   switch (card.alert_state) {
     case "warning":
@@ -78,7 +83,7 @@ function cardAlert(card) {
     case "exceeded":
       return "Limit exceeded";
     case "unavailable":
-      return !card.statement_available && card.cycle_start
+      return card.statement_period?.kind === "provisional"
         ? "First statement not yet reported"
         : "Alert state unavailable";
     case "normal":
@@ -95,7 +100,7 @@ function totalLabel(view) {
   );
   if (cards.length === 1) return formatMoney(cards[0].spend_minor_units, cards[0].currency);
   // Do not add a provisional since-first-transaction total to statement-cycle totals.
-  if (cards.some((card) => !card.statement_available)) return `${cards.length} cards`;
+  if (cards.some((card) => card.statement_period?.kind !== "statement")) return `${cards.length} cards`;
 
   const currencies = new Set(available.map((card) => (card.currency || "USD").toUpperCase()));
   if (available.length > 0 && currencies.size === 1) {
@@ -375,14 +380,15 @@ const PlaidSpendIndicator = GObject.registerClass(
             `plaid-spend-${signal.level}`
           );
           this._addReadOnly(
-            `7d ${formatDaily(allowance.trailing_7_observed_daily_minor_units, allowance.currency)} · ` +
-              `30d ${formatDaily(allowance.trailing_30_observed_daily_minor_units, allowance.currency)}`
+            `7d ${formatDaily(periodReport(allowance, "recorded_pace_periods", "rolling_7d")?.observed_daily_minor_units, allowance.currency)} · ` +
+              `30d ${formatDaily(periodReport(allowance, "recorded_pace_periods", "rolling_30d")?.observed_daily_minor_units, allowance.currency)}`
           );
           const daily = Math.round((Number(allowance.monthly_minor_units) * 12) / 365.2425);
           this._addReadOnly(`Leash ~${formatDaily(daily, allowance.currency)}`, "plaid-spend-caption");
-          if (allowance.trailing_7_unmatched_count > 0)
+          const unmatched = periodReport(allowance, "recorded_pace_periods", "rolling_7d")?.unmatched_charges;
+          if (unmatched?.count > 0)
             this._addReadOnly(
-              `7d unmatched ${allowance.trailing_7_unmatched_count} (${formatMoney(allowance.trailing_7_unmatched_minor_units, allowance.currency)})`,
+              `7d unmatched ${unmatched.count} (${formatMoney(unmatched.amount_minor_units, allowance.currency)})`,
               "plaid-spend-caution"
             );
           if (allowance.last_synced_at)
@@ -408,13 +414,16 @@ const PlaidSpendIndicator = GObject.registerClass(
             card.limit_minor_units == null ? "no limit set" : formatMoney(card.limit_minor_units, card.currency);
           const percent = card.spend_percent == null ? "" : ` · ${Number(card.spend_percent).toFixed(1)}%`;
           this._addReadOnly(
-            card.statement_available ? `Spend: ${spend} / ${limit}${percent}` : `Recorded spend: ${spend}`
+            card.statement_period?.kind === "statement"
+              ? `Spend: ${spend} / ${limit}${percent}`
+              : `Recorded spend: ${spend}`
           );
-          const cycle = card.statement_available
-            ? `Cycle starts ${card.cycle_start}`
-            : card.cycle_start
-              ? `Since first recorded transaction ${card.cycle_start} · statement date unavailable`
-              : "Statement cycle unavailable";
+          const cycle =
+            card.statement_period?.kind === "statement"
+              ? `Cycle starts ${card.statement_period.start}`
+              : card.statement_period?.kind === "provisional"
+                ? `Since first recorded transaction ${card.statement_period.start} · statement date unavailable`
+                : "Statement cycle unavailable";
           this._addReadOnly(cycle);
           this._addReadOnly(cardAlert(card));
           this._addReadOnly(`Last synced ${formatTimestamp(card.last_synced_at)}`);
