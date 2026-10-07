@@ -49,8 +49,11 @@
 }
 
 @media (min-width: 48rem) {
-  .agentplane-disclosure-summary {
+  /* Mantine's control has vertical padding of its own. Keep the desktop row compact even when its
+     summary includes a status badge; retain natural growth if a summary wraps. */
+  .agentplane-disclosure-heading > .agentplane-disclosure-summary {
     min-height: 1.75rem;
+    padding-block: 0;
   }
 
   .agentplane-disclosure-summary-content {
