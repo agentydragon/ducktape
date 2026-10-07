@@ -1772,6 +1772,8 @@ async def test_reload_redelivers_an_unsaved_command_with_its_original_identity(t
     await expect_pending_message_bubble(page, command.submit_input.text)
     await expect(page.get_by_text("Saved locally · awaiting admission", exact=True)).to_have_count(0)
     await expect(page.get_by_role("button", name="Retry", exact=True)).to_have_count(0)
+    # The command receipt can arrive before its admission event is replicated into the app.
+    await expect_projected_cursor(page, source.entries[-1].cursor)
     admissions = [
         entry.event.command_admitted.command
         for entry in await thread_browser.event_logs.events(thread.id, limit=100)
