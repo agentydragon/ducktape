@@ -1,0 +1,21 @@
+name: CI latency concurrency experiment
+on:
+  push:
+    branches: [analysis/ci-latency-concurrency-20261007]
+permissions:
+  contents: read
+jobs:
+  current:
+    runs-on: ubuntu-latest
+    concurrency:
+      group: latency-spike-head-${{ github.sha }}
+      cancel-in-progress: true
+    steps:
+      - run: sleep 45
+  proposed:
+    runs-on: ubuntu-latest
+    concurrency:
+      group: latency-spike-ref-${{ github.ref }}
+      cancel-in-progress: true
+    steps:
+      - run: sleep 45
