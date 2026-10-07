@@ -733,27 +733,27 @@ function App() {
   const cards = view?.cards || [];
   return (
     <MantineProvider defaultColorScheme="light">
-      <Paper component="header" radius={0} withBorder>
-        <Container size="lg" py="sm">
-          <Group justify="space-between">
-            <Anchor href="/" size="lg" fw={700} c="teal.9" underline="never">
-              Spend
-            </Anchor>
-            <form action="/auth/logout" method="post">
-              <Button type="submit" variant="subtle" color="gray" size="sm">
-                Sign out
-              </Button>
-            </form>
-          </Group>
-        </Container>
-      </Paper>
-      <Container component="main" size="lg" py="xl">
-        <Tabs value={activeTab} onChange={setActiveTab} keepMounted={false}>
-          <Tabs.List aria-label="Spend pages">
-            <Tabs.Tab value="spending">Spending</Tabs.Tab>
-            <Tabs.Tab value="configuration">Configuration</Tabs.Tab>
-          </Tabs.List>
-          <Tabs.Panel value="spending" pt="md">
+      <Tabs value={activeTab} onChange={setActiveTab} keepMounted={false} variant="pills" color="teal" size="sm">
+        <Paper component="header" radius={0} withBorder>
+          <Container size="lg" py="sm">
+            <Group justify="space-between" gap="xs" wrap="wrap">
+              <Anchor href="/" size="lg" fw={700} c="teal.9" underline="never">
+                Spend
+              </Anchor>
+              <Tabs.List aria-label="Spend pages">
+                <Tabs.Tab value="spending">Spending</Tabs.Tab>
+                <Tabs.Tab value="configuration">Configuration</Tabs.Tab>
+              </Tabs.List>
+              <form action="/auth/logout" method="post">
+                <Button type="submit" variant="subtle" color="gray" size="sm">
+                  Sign out
+                </Button>
+              </form>
+            </Group>
+          </Container>
+        </Paper>
+        <Container component="main" size="lg" py="xl">
+          <Tabs.Panel value="spending">
             <Stack gap="xl">
               <Group justify="space-between" gap="md">
                 <Title order={1} size="h3">
@@ -811,15 +811,15 @@ function App() {
               </Group>
             </Stack>
           </Tabs.Panel>
-          <Tabs.Panel value="configuration" pt="md">
+          <Tabs.Panel value="configuration">
             <ConfigurationPanel
               configuration={configuration}
               loading={configurationLoading}
               error={configurationError}
             />
           </Tabs.Panel>
-        </Tabs>
-      </Container>
+        </Container>
+      </Tabs>
     </MantineProvider>
   );
 }
