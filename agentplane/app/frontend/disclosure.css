@@ -171,3 +171,14 @@
   > .agentplane-disclosure-content {
   padding-inline: 0;
 }
+
+/* A card panel has no additional inline padding. Its immediate nested heading therefore only
+   crosses the card inset; deeper panels reset this variable and retain their own inset. */
+.agentplane-collapsible-card > .agentplane-disclosure > .agentplane-disclosure-item > .agentplane-disclosure-panel,
+.agentplane-collapsible-card
+  > .agentplane-step-row
+  > .agentplane-disclosure
+  > .agentplane-disclosure-item
+  > .agentplane-disclosure-panel {
+  --agentplane-disclosure-edge-divider: var(--agentplane-card-padding-inline);
+}

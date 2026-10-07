@@ -226,6 +226,19 @@ async def test_realistic_rollout_call(
         await call.locator(".agentplane-disclosure-summary").first.click()
         output = call.locator(".agentplane-clamped-block[data-label='Output']")
         await expect(output).to_be_attached()
+        heading = call.locator(
+            ".agentplane-output-disclosure > .agentplane-disclosure-item > .agentplane-disclosure-heading"
+        )
+        divider_edges = await heading.evaluate(
+            dedent("""element => {
+                const heading = element.getBoundingClientRect();
+                const divider = getComputedStyle(element, '::after');
+                const card = element.closest('.agentplane-collapsible-card').getBoundingClientRect();
+                return [heading.left + parseFloat(divider.left) - card.left,
+                        card.right - heading.right + parseFloat(divider.right)];
+            }""")
+        )
+        assert all(abs(edge) <= 1 for edge in divider_edges), f"output divider escaped its card: {divider_edges}"
         if expanded_output:
             await _focus(page, output)
             await output.get_by_role("button", name=re.compile(r"^Show all")).click()
