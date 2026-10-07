@@ -1,3 +1,5 @@
+/* TODO: Reduce accumulated padding, borders, and heading chrome in nested disclosures, especially
+   short outputs on phones, while preserving usable touch targets. */
 .agentplane-disclosure {
   min-width: 0;
 }

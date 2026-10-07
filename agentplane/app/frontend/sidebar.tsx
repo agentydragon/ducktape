@@ -198,6 +198,8 @@ function ThreadRow({
   ]
     .filter(Boolean)
     .join(" ");
+  // TODO: Archive's Enter/Space events also trigger row navigation. Use sibling controls or scope
+  // the row's keyboard handler to events targeting the row itself.
   return (
     <div
       className={className}

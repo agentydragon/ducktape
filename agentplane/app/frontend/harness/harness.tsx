@@ -2280,6 +2280,7 @@ window.EventSource = HarnessEventSource as unknown as typeof EventSource;
 const { outageAge } = scenario;
 if (outageAge !== undefined) streamRegistry.now = () => Date.now() + outageAge;
 
+// TODO: Move scene driving and readiness checks to Python Playwright; keep TS scenario fixtures as data.
 if (scenario.openConnectionStatus) {
   // Focus opens the indicator's tooltip, as it does for a keyboard or touch reader. Every stream is
   // off until its first frame, so the one to open is the indicator for a stream that has dropped.

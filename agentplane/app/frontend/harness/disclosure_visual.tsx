@@ -84,6 +84,7 @@ export function DisclosureVisual({ stage }: { stage: DisclosureVisualStage }): J
   const outputParagraph = useRef<HTMLParagraphElement>(null);
   const outputFollowingParagraph = useRef<HTMLParagraphElement>(null);
 
+  // TODO: Move stage scrolling and geometry checks to Python Playwright.
   useLayoutEffect(() => {
     const viewport = scroll.current;
     if (!viewport) return;

@@ -1,5 +1,5 @@
 import { Button, UnstyledButton } from "@mantine/core";
-import { type JSX, type ReactNode, useLayoutEffect, useRef, useState } from "react";
+import { type JSX, type ReactNode, useLayoutEffect, useState } from "react";
 
 import { Disclosure } from "./disclosure";
 
@@ -39,10 +39,11 @@ export function ClampedBlock({
 }): JSX.Element {
   const local = useState(false);
   const [expanded, setExpanded] = expansion ?? local;
-  const content = useRef<HTMLDivElement>(null);
+  const [content, setContent] = useState<HTMLDivElement | null>(null);
   const [overflows, setOverflows] = useState(false);
   useLayoutEffect(() => {
-    const element = content.current;
+    // Adding or removing the sticky shell replaces this node. Observe the mounted instance.
+    const element = content;
     if (!element) return;
     // The content's own height, measured outside the clipping box, against the cap in pixels.
     const measure = () => {
@@ -53,7 +54,7 @@ export function ClampedBlock({
     const observer = new ResizeObserver(measure);
     observer.observe(element);
     return () => observer.disconnect();
-  }, [maxHeightRem]);
+  }, [content, maxHeightRem]);
   const clipped = overflows && !expanded;
   const showStickyCollapse = overflows && expanded;
   const body = (
@@ -65,7 +66,7 @@ export function ClampedBlock({
         ...(clipped && { maxHeight: `${maxHeightRem}rem` }),
       }}
     >
-      <div ref={content}>{children}</div>
+      <div ref={setContent}>{children}</div>
       {clipped && (
         <UnstyledButton
           aria-expanded={false}
@@ -92,6 +93,8 @@ export function ClampedBlock({
 
   return (
     <div className="agentplane-clamped-block" data-expanded={expanded && overflows} data-label={label}>
+      {/* TODO: Keep the content at a stable React position when toggling the sticky shell so
+          CodeMirror state and selection survive expansion. */}
       {showStickyCollapse && stickyCollapse ? (
         <Disclosure
           className="agentplane-clamped-disclosure"

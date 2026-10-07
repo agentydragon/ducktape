@@ -293,6 +293,7 @@ function ReasoningPreview({
             {error ? "Preview unavailable" : "Loading preview…"}
           </Text>
         ) : (
+          // TODO: Keep preview Markdown noninteractive or render links outside the disclosure button.
           <Markdown source={body} singleLine />
         )
       }

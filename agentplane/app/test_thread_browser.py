@@ -63,6 +63,9 @@ from util.testing.undeclared_outputs import undeclared_outputs_dir
 
 pytest_plugins = ("agentplane.app.testing.thread_browser",)
 
+# TODO: Register representative Python browser screenshots with upsert_review_asset so the PR
+# visual publisher discovers them; standalone PNGs in undeclared outputs are not sufficient.
+
 
 @pytest.fixture
 async def db_url(electric: ElectricService) -> str:
@@ -1241,6 +1244,41 @@ async def test_the_history_is_not_settled_while_a_row_is_still_loading_its_text(
     finally:
         release.set()
         await page.unroute("**/sync/chunks/**", hold_text)
+
+
+@pytest.mark.parametrize("phone", [False, True], ids=["desktop", "phone"])
+async def test_expanded_command_stays_collapsible(
+    thread_browser: ThreadBrowser, phone: bool, request: pytest.FixtureRequest
+) -> None:
+    page = thread_browser.page
+    if phone:
+        await page.set_viewport_size({"width": 412, "height": 915})
+    await append_run_among_rows(thread_browser, below=8)
+    history = page.get_by_role("region", name="Thread history", exact=True)
+    run = history.locator("[data-thread-anchor]").filter(has_text="3 tool calls")
+    await read_at(page, run, 0.1)
+    await run.locator(".agentplane-disclosure-summary").first.click()
+    call, _ = tool_call_in(run, "a")
+    await call.locator(".agentplane-disclosure-summary").first.click()
+    command = call.locator('.agentplane-clamped-block[data-label="Command"]')
+    show_all = command.get_by_role("button", name="Show all 24 lines", exact=True)
+    collapse = command.get_by_role("button", name="Collapse Command", exact=True)
+    for cycle in range(2):
+        await show_all.click()
+        # Deliver layout/ResizeObserver callbacks: the old observer measured a detached node and
+        # removed the collapse control after the first render of the expanded block.
+        await frames(page)
+        await expect(command).to_have_attribute("data-expanded", "true")
+        await read_at(page, command.locator(".cm-line").filter(has_text="echo command line 20"), 0.5)
+        await expect(collapse).to_be_in_viewport()
+        await page.screenshot(path=undeclared_outputs_dir() / f"{request.node.name}-{cycle}-expanded.png")
+        await collapse.click()
+        await frames(page)
+        await expect(command.locator('[data-clamped="true"]')).to_have_count(1)
+        await expect(show_all).to_be_visible()
+        await expect(collapse).to_have_count(0)
+        await expect(call.locator(".agentplane-disclosure-summary").first).to_have_attribute("aria-expanded", "true")
+        await page.screenshot(path=undeclared_outputs_dir() / f"{request.node.name}-{cycle}-collapsed.png")
 
 
 @pytest.mark.parametrize("following", [False, True], ids=["mid-thread", "following"])

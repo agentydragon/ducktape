@@ -33,6 +33,7 @@ function required(value: string | undefined, name: string): string {
 /** Nothing selected: the sidebar carries the Threads list, so the landing pane just points at it. */
 function ThreadsLanding(): JSX.Element {
   const navigate = useNavigate();
+  // TODO: Give the "open Sandboxes" link an href so it is keyboard focusable.
   return (
     <Stack align="center" justify="center" h="100%">
       <Text c="dimmed">
@@ -59,6 +60,7 @@ function ConsentRoute(): JSX.Element {
 function SandboxRoute(): JSX.Element {
   const name = required(useParams().name, "name");
   const navigate = useNavigate();
+  // TODO: Key by name so launch-form instructions, harness, model, and effort reset between sandboxes.
   return (
     <SandboxPage
       name={name}

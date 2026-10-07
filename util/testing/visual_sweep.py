@@ -281,6 +281,8 @@ async def capture_scenario(
                 press_target = target
             else:
                 assert click.label is not None
+                # TODO: Move this Mantine-specific interaction and diagnostics into the owning
+                # Python browser tests as the scenario DSL is replaced.
                 press_target = page.get_by_role("combobox", name=click.label, exact=True)
                 # Mantine's MultiSelect opens from its PillsInput wrapper's click handler; its
                 # labelled combobox input is read-only (and can be visually hidden).
