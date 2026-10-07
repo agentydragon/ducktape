@@ -464,7 +464,7 @@ async def test_transaction_explanations_render(
     await page.set_viewport_size({"width": width, "height": height})
     await page.goto(dashboard_url, wait_until="domcontentloaded")
     await page.get_by_role("tab", name="Transactions").click()
-    rows = page.get_by_role("table") if width >= 992 else page.locator(".mantine-Accordion-root")
+    rows = page.get_by_role("table") if width >= 992 else page.locator(".mantine-Accordion-root").first
     await rows.get_by_text("Example Cafe", exact=True).wait_for()
     assert await page.get_by_role("heading", name="Transactions", level=1).count() == 1
     assert await rows.get_by_text("Refund held", exact=True).count() == 1
