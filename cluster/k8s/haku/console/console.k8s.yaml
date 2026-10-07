@@ -457,7 +457,7 @@ kind: Deployment
 metadata:
   annotations:
     configmap.reloader.stakater.com/reload: config
-    secret.reloader.stakater.com/reload: aiquota-api-bearer-haku-console,haku-console-agent-api,haku-console-oidc,haku-console-public-coder-agent,haku-console-web-push-vapid,haku-routine-launch-token
+    secret.reloader.stakater.com/reload: haku-console-agent-api,haku-console-oidc,haku-console-public-coder-agent,haku-console-web-push-vapid,haku-routine-launch-token
   labels:
     app.kubernetes.io/name: haku-console
   name: haku-console
@@ -489,14 +489,6 @@ spec:
                 configMapKeyRef:
                   key: image-tag
                   name: image-metadata
-            - name: HAKU_CONSOLE__AIQUOTA_URL
-              value: http://aiquota-api.cli-proxy-api.svc.cluster.local:8080
-            - name: HAKU_CONSOLE__AIQUOTA_BEARER_TOKEN
-              valueFrom:
-                secretKeyRef:
-                  key: bearer-token
-                  name: aiquota-api-bearer-haku-console
-                  optional: false
             - name: HAKU_CONSOLE__LAUNCH_ROUTINE__ROUTINE_ID
               value: trig_0158pCMU1XBhoALBWikwSyK4
             - name: HAKU_CONSOLE__LAUNCH_ROUTINE__TOKEN

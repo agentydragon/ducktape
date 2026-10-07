@@ -143,11 +143,6 @@ AGENTPLANE_STAGING_BEARER = BearerMirror(
 
 BEARER_MIRRORS = (
     PUBLIC_CODER_BEARER,
-    BearerMirror(
-        consumer="haku-console",
-        namespace="haku-console",
-        description="Shared AIQuota API bearer mirrored only to the Haku Console backend.",
-    ),
     # Haku's runtimes outside the egress fence (the Claude Code web home, plain kubectl) read
     # /v1/quotas directly with no per-call approval.
     BearerMirror(

@@ -626,28 +626,11 @@ ts_library(
 )
 
 ts_library(
-    name = "aiquota_panel",
-    srcs = ["aiquota_panel.tsx"],
-    isolated_typecheck = True,
-    tsconfig = TSCONFIG,
-    deps = [
-        ":client",
-        ":icons",
-        ":time",
-        "//:node_modules/@mantine/core",
-        "//:node_modules/@types/react",
-        "//:node_modules/react",
-        "//aiquota/frontend:board",
-    ],
-)
-
-ts_library(
     name = "shell_chrome",
     srcs = ["shell_chrome.tsx"],
     isolated_typecheck = True,
     tsconfig = TSCONFIG,
     deps = [
-        ":aiquota_panel",
         ":approval_state",
         ":client",
         ":code_block",
@@ -899,8 +882,6 @@ js_run_binary(
     srcs = [
         "styles.src.css",
         ":tailwind_content_index",
-        # `@import`ed by styles.src.css: the quota board renders inside the console's shell.
-        "//aiquota/frontend:board_css",
     ],
     outs = ["generated/styles.css"],
     args = [

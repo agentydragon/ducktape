@@ -30,11 +30,6 @@ emitted `.js`, and vitest runs the emitted `.test.js`.
 - `settings_panel.tsx` — the Settings page for Agent access, grants, Web Push registration, and
   deployment commit links. MCP server status and Console Recall freshness were removed with the
   corresponding inactive deployment integrations.
-- `aiquota_panel.tsx` — the AI-quota side panel and its rail button. The quota rendering itself is
-  aiquota's own `//aiquota/frontend:board`, fed by the payload `aiquota_proxy.py` fetches, so the
-  console shows exactly what the standalone dashboard, the CLI and the GNOME popup show; the panel
-  frame, loading/error states and rail summary stay here. `styles.src.css` `@import`s the board's
-  stylesheet, which is class-prefixed and palette-scoped so it cannot restyle the console.
 - `open_external.ts` — `openExternal(url)`: opens a link in a new tab with the opener
   severed, shared by the embed shell (the `openLink` Agent UI bridge action) and the settings panel
   (the account-link popup).

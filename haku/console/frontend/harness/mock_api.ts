@@ -3,7 +3,7 @@
 // module that captures `globalThis.fetch` (openapi-fetch does so when client.ts builds its
 // client) — harness.tsx imports this first. Paired with the `base_href` of the `:screenshots`
 // py_visual_test so the relative "/api/…" URL parses in the origin-less in-memory page.
-import { SAMPLE_DEPLOYMENT, SAMPLE_GRANTS, SAMPLE_PENDING, SAMPLE_TOOL_CALLS, sampleAiquota } from "./sample_data";
+import { SAMPLE_DEPLOYMENT, SAMPLE_GRANTS, SAMPLE_PENDING, SAMPLE_TOOL_CALLS } from "./sample_data";
 import { mockOperatorMcpFetch } from "../tool_rendering/screenshot/mcp_mock";
 import { ensureLedger, recordViolation, tracked } from "../tool_rendering/screenshot/visual_network_ledger";
 import { GOOGLE_CALENDAR_MCP_FIXTURES } from "../tool_rendering/google_calendar/fixtures";
@@ -105,7 +105,6 @@ async function respond(input: RequestInfo | URL, init: RequestInit | undefined, 
     });
   }
   if (url.includes("/api/deployment")) return jsonResponse(SAMPLE_DEPLOYMENT);
-  if (url.includes("/api/aiquota/quotas")) return jsonResponse(sampleAiquota(Date.now()));
   // Push is configured and one *other* device is enrolled. The headless browser has no real
   // subscription, so "this browser" renders Off while the second device fills the per-device list.
   if (url.includes("/api/push/config")) return jsonResponse({ application_server_key: "BEl62iUYgUivxIkv69yViEuiBIa" });

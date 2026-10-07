@@ -222,11 +222,6 @@ class ConsoleProcessConfig(BaseModel):
     # single-underscore environment name while ordinary settings use HAKU_CONSOLE__*.
     config_file: Path = Field(validation_alias=AliasChoices("config_file", CONFIG_FILE_ENV))
 
-    # Optional operator-only proxy to the internal aiquota service. The browser never sees this
-    # bearer token; the console fetches quota snapshots server-side.
-    aiquota_url: str | None = None
-    aiquota_bearer_token: SecretStr | None = None
-
     # Shared haku-console Postgres database. Required: it holds the MCP approval audit/result
     # ledger and the operator OAuth token stores — the console does not run without them. Both
     # stores are always constructed; migrations are applied once at startup (see app.main).

@@ -21,7 +21,6 @@ def close_approvals: {
 # the production shell around the mocked Haku UI.
 {
   "console": {width: 1200, height: 800, closeApprovals: true, frame: true},
-  "aiquota": {width: 1200, height: 800},
   "console-drawer": {width: 1200, height: 800, frame: true},
   "console-mobile": {width: 390, height: 760, frame: true},
   "not-found": {width: 900, height: 600, closeApprovals: true, ready: [":text('Page not found')"], frame: true},

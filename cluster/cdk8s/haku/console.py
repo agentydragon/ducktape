@@ -249,14 +249,6 @@ class Console(Construct):
         return dict(
             [
                 (env_name(Settings, "image_tag"), EnvValue.from_config_map(image_metadata, _IMAGE_TAG_KEY)),
-                (
-                    env_name(Settings, "aiquota_url"),
-                    EnvValue.from_value("http://aiquota-api.cli-proxy-api.svc.cluster.local:8080"),
-                ),
-                self._from_secret(
-                    SecretRef(namespace=NAMESPACE, name="aiquota-api-bearer-haku-console").key("bearer-token"),
-                    "aiquota_bearer_token",
-                ),
                 # Capability tier: the launch-routine action. The console builds both the fire
                 # URL and the claude.ai/code deep-link from this routine (trigger) id; the bearer
                 # lives only in this namespace, so Haku cannot read it.

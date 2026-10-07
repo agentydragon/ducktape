@@ -1,7 +1,7 @@
 // Deterministic sample data for the screenshot scenes (harness.tsx) and the API stub
 // (mock_api.ts). Kept separate so both share one source of truth.
 import { makeRecentToolCall, type RecentToolCall } from "../approval_state";
-import type { AiquotaView, DeploymentInfo, GrantListResponse, ToolCallRecord } from "../client";
+import type { DeploymentInfo, GrantListResponse, ToolCallRecord } from "../client";
 import type { RegisteredToolPreviewFixture } from "../tool_rendering/index";
 
 const STOCK_ADD_HISTORY_FIXTURE = {
@@ -305,78 +305,3 @@ export const SAMPLE_DEPLOYMENT: DeploymentInfo = {
     source_commit_url: "https://github.com/agentydragon/ducktape/commit/bfad4bf",
   },
 };
-
-/**
- * Quota state relative to the caller's clock, like `sampleRecentToolCalls` above: the board
- * draws a window's elapsed fraction from `reset_at` against now, so absolute timestamps would
- * render as a countdown hundreds of days long under the harness's frozen clock.
- */
-export function sampleAiquota(nowMs: number): AiquotaView {
-  const at = (secondsFromNow: number): string => new Date(nowMs + secondsFromNow * 1000).toISOString();
-  const fetchedAt = at(-30);
-  return {
-    fetched_at: fetchedAt,
-    providers: [
-      {
-        provider: "Anthropic",
-        last_output: {
-          fetched_at: fetchedAt,
-          result: {
-            kind: "success",
-            windows: [
-              {
-                name: "5-hour",
-                display: true,
-                used_percent: 61,
-                reset_seconds: 10_800,
-                window_seconds: 18_000,
-                reset_at: at(10_800),
-              },
-              {
-                name: "7-day",
-                display: true,
-                used_percent: 34,
-                reset_seconds: 345_600,
-                window_seconds: 604_800,
-                reset_at: at(345_600),
-              },
-            ],
-            extra_spend: { is_enabled: true, monthly_limit_usd: 100, used_usd: 18.42, utilization: 18.42 },
-          },
-        },
-        last_success: null,
-        currently_over_plan: false,
-        paid_credits_active: false,
-        extra_status: "informational",
-        burn: null,
-      },
-      {
-        provider: "OpenAI",
-        last_output: {
-          fetched_at: at(-90),
-          result: {
-            kind: "success",
-            windows: [
-              {
-                name: "3-hour",
-                display: true,
-                used_percent: 87,
-                reset_seconds: 5_400,
-                window_seconds: 10_800,
-                reset_at: at(5_400),
-              },
-            ],
-            extra_spend: null,
-            available_reset_credits: 2,
-            available_reset_credit_expiries: [at(21 * 86_400)],
-          },
-        },
-        last_success: null,
-        currently_over_plan: false,
-        paid_credits_active: false,
-        extra_status: "none",
-        burn: null,
-      },
-    ],
-  };
-}

@@ -1,11 +1,6 @@
 @import "tailwindcss";
 @import "@mantine/core/styles.css";
 @import "@mantine/notifications/styles.css";
-/* The AI-quota board, rendered in the side panel. Its classes are all `aiquota-` prefixed and
-   its palette is scoped to `.aiquota-scope`, so it neither restyles the console nor reads the
-   console's tokens. Source: aiquota/frontend/board.css. */
-@import "../../../aiquota/frontend/board.css";
-
 /* Tailwind v4 scans the class names listed in this generated index (see BUILD:
    tailwind_content_index) so utility classes used in the .tsx survive the build. */
 @source "./tailwind_content.txt";
@@ -1175,51 +1170,4 @@
     left: calc(100% + 4px);
     width: calc(100vw - 64px);
   }
-}
-
-.haku-aiquota-rail-button {
-  position: relative;
-  overflow: visible;
-}
-
-.haku-aiquota-rail-glyph {
-  display: block;
-}
-
-.haku-aiquota-rail-meter {
-  position: absolute;
-  right: 4px;
-  bottom: 3px;
-  left: 4px;
-  height: 3px;
-  overflow: hidden;
-  border-radius: 999px;
-  background: var(--haku-border);
-}
-
-.haku-aiquota-rail-meter > span {
-  display: block;
-  height: 100%;
-  border-radius: inherit;
-  background: currentColor;
-  transition: width 180ms ease;
-}
-
-.haku-aiquota-rail-meter-red {
-  color: var(--mantine-color-red-6);
-}
-
-.haku-aiquota-rail-meter-yellow {
-  color: var(--mantine-color-yellow-6);
-}
-
-.haku-aiquota-rail-meter-teal {
-  color: var(--mantine-color-teal-6);
-}
-
-.haku-aiquota-panel {
-  flex: 1 1 auto;
-  min-height: 0;
-  overflow: auto;
-  padding: 1rem;
 }

@@ -29,7 +29,7 @@ from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 from starlette.middleware.sessions import SessionMiddleware
 
-from haku.console import aiquota_proxy, capabilities
+from haku.console import capabilities
 from haku.console.database_migrate import main as migration_main, verify_schema
 from haku.console.deployment import DeploymentInfo, build_deployment_info
 from haku.console.grants import routes as grant_routes
@@ -327,10 +327,6 @@ def create_app(
     app.include_router(grant_routes.router, dependencies=operator_only)
     app.include_router(enrollment_routes.operator_router, dependencies=operator_only)
     app.include_router(push_routes.router, dependencies=operator_only)
-    app.include_router(
-        aiquota_proxy.build_router(url=settings.aiquota_url, bearer_token=settings.aiquota_bearer_token),
-        dependencies=operator_only,
-    )
     app.include_router(enrollment_routes.entry_router)
     # Machine-to-machine, bearer-forwarding contract for the separate Kubernetes proxy. The
     # endpoint remains fail-closed unless configured SAR authorization is present.
