@@ -6,7 +6,7 @@ import pytest
 import pytest_bazel
 
 from finance.plaid.spend.allowance import AllowanceView, PaceAlert, Status, Windows
-from finance.plaid.spend.desktop.cli import _format_money, _print_view
+from finance.plaid.spend.desktop.cli import _format_money, _format_view
 from finance.plaid.spend.models import AlertState, CardView, SpendView
 from finance.plaid.spend.reporting import project_view
 
@@ -72,11 +72,10 @@ def sample_allowance(status: Status = Status.ACTIVE) -> AllowanceView:
     )
 
 
-def test_prints_active_allowance_and_cards(capsys: pytest.CaptureFixture[str]) -> None:
-    _print_view(
+def test_formats_active_allowance_and_cards() -> None:
+    output = _format_view(
         project_view(SpendView(generated_at=NOW, cards=[sample_card()], allowance=sample_allowance())), "ready", ""
     )
-    output = capsys.readouterr().out
     assert "Available: USD 88" in output
     assert "Monthly credit: USD 100" in output
     assert "Spent this credit cycle: USD 12" in output
@@ -92,20 +91,18 @@ def test_prints_active_allowance_and_cards(capsys: pytest.CaptureFixture[str]) -
     assert "Sample card" in output
 
 
-def test_prints_unavailable_allowance_without_inventing_balance(capsys: pytest.CaptureFixture[str]) -> None:
-    _print_view(
+def test_formats_unavailable_allowance_without_inventing_balance() -> None:
+    output = _format_view(
         project_view(SpendView(generated_at=NOW, cards=[], allowance=sample_allowance(Status.UNAVAILABLE))), "ready", ""
     )
-    output = capsys.readouterr().out
     assert "Status: unavailable" in output
     assert "do not rely on the allowance" in output
     assert "Available:" not in output
     assert "No card data is available." in output
 
 
-def test_without_allowance_keeps_existing_card_output(capsys: pytest.CaptureFixture[str]) -> None:
-    _print_view(project_view(SpendView(generated_at=NOW, cards=[sample_card()])), "ready", "")
-    output = capsys.readouterr().out
+def test_without_allowance_keeps_existing_card_output() -> None:
+    output = _format_view(project_view(SpendView(generated_at=NOW, cards=[sample_card()])), "ready", "")
     assert "Sample card" in output
     assert "Spend: USD 12" in output
     assert "Flexible allowance" not in output
