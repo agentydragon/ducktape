@@ -19,6 +19,7 @@ from fastapi.responses import FileResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from playwright.async_api import Page, Route
 
+from finance.plaid.spend.models import SpendConfigurationView
 from util.bazel.runfiles import get_required_path
 from util.testing.asgi import serve_app_sync
 from util.testing.visual_review import retain_review_asset
@@ -139,40 +140,47 @@ def dashboard_url() -> Iterator[str]:
 
         return StreamingResponse(updates(), media_type="text/event-stream")
 
-    @app.get("/api/v1/web/configuration")
-    def configuration() -> dict:
-        return {
-            "cards": [
-                {"label": "Example card", "enabled": True, "limit_minor_units": None, "alert_threshold_percent": None}
-            ],
-            "allowance": {
-                "monthly_minor_units": 70000,
-                "activation_at": "2026-10-01",
-                "currency": "USD",
-                "spending_account_count": 1,
-                "max_sync_age_hours": 72,
-                "rules": [
+    @app.get("/api/v1/web/configuration", response_model=SpendConfigurationView)
+    def configuration() -> SpendConfigurationView:
+        return SpendConfigurationView.model_validate(
+            {
+                "cards": [
                     {
-                        "condition": {
-                            "type": "all_of",
-                            "conditions": [
-                                {"type": "amount_sign", "sign": "negative"},
-                                {
-                                    "type": "any_of",
-                                    "conditions": [
-                                        {"type": "name_prefix", "field": "name", "prefix": "EXAMPLE"},
-                                        {"type": "field_exact", "field": "mcc", "value": "5812"},
-                                    ],
-                                },
-                            ],
-                        },
-                        "kind": "review",
-                        "analysis_category": "refund_review",
-                        "description": "Unverified credit; inspect the earlier purchase before netting it.",
+                        "label": "Example card",
+                        "enabled": True,
+                        "limit_minor_units": None,
+                        "alert_threshold_percent": None,
                     }
                 ],
-            },
-        }
+                "allowance": {
+                    "monthly_minor_units": 70000,
+                    "activation_at": "2026-10-01",
+                    "currency": "USD",
+                    "spending_account_count": 1,
+                    "max_sync_age_hours": 72,
+                    "rules": [
+                        {
+                            "condition": {
+                                "type": "all_of",
+                                "conditions": [
+                                    {"type": "amount_sign", "sign": "negative"},
+                                    {
+                                        "type": "any_of",
+                                        "conditions": [
+                                            {"type": "name_prefix", "field": "name", "prefix": "EXAMPLE"},
+                                            {"type": "field_exact", "field": "mcc", "value": "5812"},
+                                        ],
+                                    },
+                                ],
+                            },
+                            "kind": "review",
+                            "analysis_category": "refund_review",
+                            "description": "Unverified credit; inspect the earlier purchase before netting it.",
+                        }
+                    ],
+                },
+            }
+        )
 
     app.mount("/static", StaticFiles(directory=_UI_DIR))
     with serve_app_sync(app) as url:

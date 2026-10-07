@@ -46,6 +46,7 @@ py_test(
     deps = [
         "//:conftest",
         "//finance/plaid/spend:conftest",
+        "//finance/plaid/spend:models",
         "//util:playwright",
         "//util/bazel:runfiles",
         "//util/testing:asgi",
