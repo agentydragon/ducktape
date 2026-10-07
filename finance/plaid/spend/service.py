@@ -353,7 +353,7 @@ class SpendService:
                               t.date, t.amount, t.pending, t.name, t.merchant_name,
                               t.pfc_primary, t.pfc_detailed,
                               a.type AS account_type,
-                              t.raw_json->>'merchant_category_code' AS mcc,
+                              t.raw_json->>'merchant_category_code' AS merchant_category_code,
                               COALESCE(t.raw_json->'counterparties', '[]'::jsonb)::text AS counterparties,
                               COALESCE(t.iso_currency_code, t.raw_json->>'unofficial_currency_code') AS currency
                        FROM public.transactions t

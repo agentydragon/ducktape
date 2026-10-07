@@ -164,7 +164,7 @@ def dashboard_url() -> Iterator[str]:
                                 AnyOf(
                                     conditions=[
                                         NamePrefix(field="name", prefix="EXAMPLE"),
-                                        FieldExact(field="mcc", value="5812"),
+                                        FieldExact(field="merchant_category_code", value="5812"),
                                     ]
                                 ),
                             ]

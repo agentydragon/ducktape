@@ -484,7 +484,7 @@ function ruleConditionText(condition: RuleCondition): string {
     case "amount_sign":
       return `Amount is ${condition.sign}`;
     case "field_exact":
-      return `${condition.field} equals ${String(condition.value)}`;
+      return `${condition.field === "merchant_category_code" ? "Merchant category code" : condition.field} equals ${String(condition.value)}`;
     case "counterparty_exact":
       return `${condition.counterparty_type} counterparty is “${condition.name}”`;
     case "any_of":

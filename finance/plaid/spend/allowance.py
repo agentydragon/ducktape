@@ -69,7 +69,7 @@ class AmountSign(BaseModel):
 class FieldExact(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
     type: Literal["field_exact"] = "field_exact"
-    field: Literal["name", "merchant_name", "account_type", "mcc"]
+    field: Literal["name", "merchant_name", "account_type", "merchant_category_code"]
     value: str | bool
 
 
@@ -135,7 +135,7 @@ class Transaction(BaseModel):
     pfc_detailed: str | None
     currency: str | None
     account_type: str | None = None
-    mcc: str | None = None
+    merchant_category_code: str | None = None
     counterparties: str | list[dict[str, object]] | None = None
 
 

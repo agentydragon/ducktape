@@ -313,7 +313,12 @@ def test_review_rule_uses_shared_conditions_and_preserves_uncertainty():
         condition=AllOf(
             conditions=[
                 AmountSign(sign="positive"),
-                AnyOf(conditions=[FieldExact(field="mcc", value="5812"), NamePrefix(field="name", prefix="CAFE")]),
+                AnyOf(
+                    conditions=[
+                        FieldExact(field="merchant_category_code", value="5812"),
+                        NamePrefix(field="name", prefix="CAFE"),
+                    ]
+                ),
             ]
         ),
         kind=Kind.REVIEW,
@@ -322,7 +327,7 @@ def test_review_rule_uses_shared_conditions_and_preserves_uncertainty():
     assert Rule.model_validate(review.model_dump()) == review
     with pytest.raises(ValidationError, match="Unable to extract tag"):
         Rule.model_validate({"condition": {"sign": "positive"}, "kind": "review"})
-    purchase = row("2026-01-31", 20).model_copy(update={"mcc": "5812"})
+    purchase = row("2026-01-31", 20).model_copy(update={"merchant_category_code": "5812"})
     assert matching_rule(purchase, [review]) == review
     result = calculate(policy(rules=[review]), [purchase], now=START, last_synced_at=START)
     assert result.available_minor_units == 8_000
