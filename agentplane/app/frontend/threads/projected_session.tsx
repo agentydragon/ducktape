@@ -93,7 +93,7 @@ function CollapsibleRows({
   return (
     <CollapsibleCard open={open}>
       <RetainedDisclosure id={id} summary={summary}>
-        <Stack gap={steps ? 2 : "xs"} mt={steps ? 2 : "xs"} className={steps ? "agentplane-run-steps" : undefined}>
+        <Stack gap={steps ? 0 : "xs"} className={steps ? "agentplane-run-steps" : undefined}>
           {entities.map((entity) => (
             <EntityCard key={entity.entityId} threadId={threadId} entity={entity} live={live(entity)} />
           ))}

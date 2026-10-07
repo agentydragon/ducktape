@@ -635,5 +635,14 @@
     "realisticRollout": "reported",
     "captureViewport": true,
     "readySelectors": ["[aria-label='Thread history'][data-layout-settled='true']"]
+  },
+  "realistic_rollout_desktop_dark": {
+    "element": "#app",
+    "route": "/threads/5f1c4a2e-0000-4000-8000-000000000001",
+    "viewport": "desktop",
+    "realisticRollout": "completed",
+    "captureViewport": true,
+    "readySelectors": ["[aria-label='Thread history'][data-layout-settled='true']"],
+    "colorScheme": "dark"
   }
 }

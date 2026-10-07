@@ -1,8 +1,15 @@
 # Disclosure layout review
 
 Chromium review at devel `3fbd3297d4`, with staging-derived geometry fixtures and
-an operator-supplied 836×896 dark-theme screenshot. No production styling changes
-are included in this branch.
+an operator-supplied 836×896 dark-theme screenshot. The findings below describe that baseline. This branch now implements the
+approved changes: aligned step labels, centered chevrons, no singleton item rules,
+one panel/card inset per level, and controls that cover their card edges. The
+implementation includes the hover changes originally proposed in PR #9393.
+
+Permanent captures include light/dark desktop overviews and expanded runs, phone
+views, expanded calls, and scrolled output. Their PNGs are published by the PR
+visual-review bot; they are not checked-in pixel baselines. The expanded-run test
+also asserts that plain and expandable step labels share the same left edge.
 
 ## Findings
 
@@ -31,7 +38,7 @@ are included in this branch.
   The staging CSS served during the review has the same relevant shell padding
   and step-control alignment rules as this revision.
 
-## Recommended changes
+## Approved changes
 
 1. Give interactive and plain steps one text origin. Center the outer chevron
    while retaining baseline alignment inside the title/preview row.
@@ -42,8 +49,7 @@ are included in this branch.
    final selector might be.
 3. Give each nesting level one owner for horizontal padding. Reduce stacked
    card/panel insets, preserve mobile hit areas, and make the row's hover control
-   cover its own spacing. Reconcile this with the card-edge hover changes in PR
-   #9393 instead of adding another independent padding rule.
+   cover its own spacing. This shares the card-edge variables from PR #9393.
 
 The screenshots do not justify a speculative width or scrollbar-gutter change.
 Removing borders alone leaves the label alignment and accumulated padding issues.
@@ -63,13 +69,13 @@ safe text preserves approximate layout geometry. These are not verbatim transcri
 or evidence of semantic realism in the replacement commands. Both excerpts contain
 completed items, even though the reported thread also had an active feed.
 
-Python owns all interaction and capture steps. Three fixture entries reuse the
-existing desktop/mobile viewport presets. Thirteen captures cover overview,
+Python owns all interaction and capture steps. Four fixture entries reuse the
+existing desktop/mobile viewport presets. Sixteen captures cover overview,
 expanded run start/end, expanded call, and scrolling through long output. Geometry
 JSON is emitted with the screenshots. The border-removal variants use temporary
 Playwright CSS injection and are not permanent test behavior.
 
-## Validation
+## Baseline comparison validation
 
 All 13 permanent capture cases passed across the full run and focused rerun:
 

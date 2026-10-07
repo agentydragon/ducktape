@@ -144,7 +144,15 @@ async def _rollout_geometry(page: Page, state: str) -> None:
     (undeclared_outputs_dir() / f"{scene}-{state}-geometry.json").write_text(json.dumps(geometry, indent=2))
 
 
-@pytest.mark.parametrize("scene", ["realistic_rollout_desktop", "realistic_rollout_mobile", "reported_rollout_desktop"])
+@pytest.mark.parametrize(
+    "scene",
+    [
+        "realistic_rollout_desktop",
+        "realistic_rollout_desktop_dark",
+        "realistic_rollout_mobile",
+        "reported_rollout_desktop",
+    ],
+)
 async def test_realistic_rollout_overview(
     scene: str, scenes: dict[str, Scenario], playwright_driver: Playwright, sweep_config: SweepConfig
 ) -> None:
@@ -158,7 +166,15 @@ async def test_realistic_rollout_overview(
     )
 
 
-@pytest.mark.parametrize("scene", ["realistic_rollout_desktop", "realistic_rollout_mobile", "reported_rollout_desktop"])
+@pytest.mark.parametrize(
+    "scene",
+    [
+        "realistic_rollout_desktop",
+        "realistic_rollout_desktop_dark",
+        "realistic_rollout_mobile",
+        "reported_rollout_desktop",
+    ],
+)
 @pytest.mark.parametrize("position", ["start", "end"])
 async def test_realistic_rollout_run(
     scene: str, position: str, scenes: dict[str, Scenario], playwright_driver: Playwright, sweep_config: SweepConfig
@@ -167,6 +183,14 @@ async def test_realistic_rollout_run(
         await _rollout_start(page)
         await _open_run(page)
         steps = page.locator(".agentplane-run-steps").first
+        if position == "start":
+            static_title = await steps.locator(".agentplane-step-static .agentplane-step-title").first.bounding_box()
+            disclosure_title = await steps.locator(
+                ".agentplane-step-details .agentplane-step-title"
+            ).first.bounding_box()
+            assert static_title is not None
+            assert disclosure_title is not None
+            assert abs(static_title["x"] - disclosure_title["x"]) <= 1, "plain and expandable steps must align"
         target = steps.locator(":scope > *").first if position == "start" else steps.locator(":scope > *").last
         await _focus(page, target)
         await target.hover()

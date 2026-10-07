@@ -25,7 +25,7 @@ export const DISCLOSURE_STICKY_Z_INDEX = 100;
 const StickyStackContext = createContext<StickyStackPosition>({
   top: 0,
   zIndex: DISCLOSURE_STICKY_Z_INDEX,
-  dividerBleed: "var(--mantine-spacing-sm)",
+  dividerBleed: "var(--mantine-spacing-xs)",
 });
 
 function useStickyRowHeight() {
@@ -55,7 +55,7 @@ function childStackPosition(parent: StickyStackPosition, rowHeight: number): Sti
   return {
     top: parent.top + rowHeight,
     zIndex: parent.zIndex - 1,
-    dividerBleed: "calc(var(--agentplane-card-padding-inline, var(--mantine-spacing-sm)) + var(--mantine-spacing-md))",
+    dividerBleed: "calc(var(--agentplane-card-padding-inline, var(--mantine-spacing-xs)) + var(--mantine-spacing-xs))",
   };
 }
 
@@ -122,7 +122,7 @@ export function Disclosure({
               top: stackPosition.top,
               zIndex: stackPosition.zIndex,
               "--agentplane-disclosure-divider-bleed": dividerBoundary
-                ? "var(--agentplane-disclosure-edge-divider, var(--mantine-spacing-sm))"
+                ? "var(--agentplane-disclosure-edge-divider, var(--mantine-spacing-xs))"
                 : `var(--agentplane-disclosure-edge-divider, ${stackPosition.dividerBleed})`,
             } as CSSProperties
           }

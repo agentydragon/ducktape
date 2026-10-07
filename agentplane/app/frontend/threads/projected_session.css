@@ -85,7 +85,7 @@
 .agentplane-step-details .agentplane-disclosure-summary {
   display: flex;
   min-width: 0;
-  align-items: baseline;
+  align-items: center;
 }
 
 .agentplane-step-summary {
