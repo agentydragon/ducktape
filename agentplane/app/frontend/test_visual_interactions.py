@@ -953,9 +953,7 @@ async def test_standalone_reasoning_opens(
         if "code_fence" in scene:
             await expect(reasoning.locator(".agentplane-code-block .cm-content")).to_be_attached()
         else:
-            await expect(
-                reasoning.locator('a[href="https://example.test/projection"]')
-            ).to_have_text("projection path")
+            await expect(reasoning.locator('a[href="https://example.test/projection"]')).to_have_text("projection path")
 
     await _capture(scene, drive, scenes=scenes, playwright_driver=playwright_driver, sweep_config=sweep_config)
 
