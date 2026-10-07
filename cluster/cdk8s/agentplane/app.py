@@ -411,7 +411,9 @@ class App(Construct):
         # container env below is where they are written once and everything in the Pod
         # agrees -- a harness child by this passthrough, anything else by inheritance.
         # Deployment-wide workload defaults share the same allowlist and are added by
-        # sandbox_pod.workload_environment when the container is built.
+        # sandbox_pod.workload_environment when the container is built. Names the image owns are
+        # listed separately, on --harness-inherit-env, so this invocation forwards them without
+        # repeating a value the deployment has no business choosing.
         harness_env = list(
             dict.fromkeys(
                 ["HOME", "PATH", *self.env.sandbox_workload_env, *(var.name for var in sandbox_pod.egress_env())]
@@ -434,6 +436,8 @@ class App(Construct):
         ]
         for entry in harness_env:
             args.extend(["--harness-env", entry])
+        for name in self.env.harness_inherited_env:
+            args.extend(["--harness-inherit-env", name])
         return SandboxTemplateSpecPodTemplateSpecContainers(
             name="runner",
             image=f"{_RUNNER_IMAGE}:{_PLACEHOLDER_TAG}",

@@ -131,3 +131,10 @@ class Environment:
     # Non-secret environment defaults shared by every SandboxTemplate workload container;
     # the common pod builder applies them, and the runner explicitly forwards these names to harnesses.
     sandbox_workload_env: Mapping[str, str] = field(default_factory=lambda: {"TZ": "America/Los_Angeles"})
+    # Names whose value the sandbox *image* owns and the runner hands to its harness children through
+    # --harness-inherit-env. The deployment names them and sets no value, so the image stays the only
+    # place a value is written. Needed because a harness child starts from the runner's declared
+    # environment and nothing else: a name left off the list reaches no child however the image is set.
+    # TZDIR is the case that motivated this: nixpkgs' glibc looks for zoneinfo under its own store
+    # path, which holds none, so without it `TZ=America/Los_Angeles` silently means UTC.
+    harness_inherited_env: Sequence[str] = ("TZDIR",)

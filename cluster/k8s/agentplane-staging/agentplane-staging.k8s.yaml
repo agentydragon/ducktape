@@ -4306,6 +4306,8 @@ spec:
             - REQUESTS_CA_BUNDLE
             - --harness-env
             - KUBECONFIG
+            - --harness-inherit-env
+            - TZDIR
           env:
             - name: LITELLM_URL
               value: http://agentplane-llm-ingress.agentplane-staging.svc.cluster.local:8080

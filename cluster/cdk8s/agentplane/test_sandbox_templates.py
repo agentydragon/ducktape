@@ -55,6 +55,9 @@ def test_all_sandbox_workloads_use_shared_environment_defaults(
     runner = next(template for template in templates if template["metadata"]["name"] == "agentplane-runner")
     args = runner["spec"]["podTemplate"]["spec"]["containers"][0]["args"]
     assert any(args[index : index + 2] == ["--harness-env", "TZ"] for index in range(len(args) - 1))
+    # TZDIR's value belongs to the sandbox image, but a harness child starts from only what the
+    # runner declares, so the runner has to name it: left off, the child reads every TZ as UTC.
+    assert any(args[index : index + 2] == ["--harness-inherit-env", "TZDIR"] for index in range(len(args) - 1))
 
 
 def test_sandbox_sidecars_project_the_notifications_audience(
