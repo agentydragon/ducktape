@@ -1252,16 +1252,17 @@ async def test_opening_a_call_and_its_output_keeps_it_collapsible_while_reading(
     else:
         await read_at(page, run, 0.1)
 
-    # A card gains border and padding as it opens, which moves its label; its top edge is the place.
+    # Opening a disclosure changes its card decoration; keep the clicked control in place.
     summary = run.locator(".agentplane-disclosure-summary").first
-    async with holding_still(page, run):
+    async with holding_still(page, summary):
         await summary.click()
         await expect(run.locator(".agentplane-step-details")).to_have_count(3)
 
     call, card = tool_call_in(run, "a")
     show_all = call.get_by_role("button", name="Show all 60 lines")
-    async with holding_still(page, card):
-        await call.locator(".agentplane-disclosure-summary").first.click()
+    call_summary = call.locator(".agentplane-disclosure-summary").first
+    async with holding_still(page, call_summary):
+        await call_summary.click()
         await expect(show_all).to_be_visible()
     await page.screenshot(path=undeclared_outputs_dir() / f"{request.node.name}-call-open.png")
 
@@ -1287,7 +1288,7 @@ async def test_opening_a_call_and_its_output_keeps_it_collapsible_while_reading(
     assert call_heading_box is not None
     assert run_heading_box is not None
     assert history_box is not None
-    minimum_control_height = 44 if phone else 34
+    minimum_control_height = 44 if phone else 32
     assert collapse_box["height"] >= minimum_control_height, f"collapse target is too short: {collapse_box}"
     if not phone:
         for heading_name, heading_box in (
@@ -1331,12 +1332,20 @@ async def test_opening_a_call_and_its_output_keeps_it_collapsible_while_reading(
         f"a parent heading obscured the output Disclosure control: {active_sticky_action}"
     )
     await page.screenshot(path=undeclared_outputs_dir() / f"{request.node.name}-output-open.png")
-    await collapse.click()
+    async with holding_still(page, collapse):
+        await collapse.click()
     await expect(history).to_have_attribute("data-scroll-mode", "reading")
     await expect(collapse).to_have_attribute("aria-expanded", "false")
     await expect(output_line).to_be_hidden()
     await expect(call.locator(".agentplane-disclosure-summary").first).to_have_attribute("aria-expanded", "true")
     await expect(run.locator(".agentplane-disclosure-summary").first).to_have_attribute("aria-expanded", "true")
+    for heading in (
+        run.locator(".agentplane-disclosure-heading").first,
+        call.locator(".agentplane-disclosure-heading").first,
+        call.locator(".agentplane-output-disclosure .agentplane-disclosure-heading"),
+    ):
+        await expect(heading).to_be_in_viewport()
+    await page.screenshot(path=undeclared_outputs_dir() / f"{request.node.name}-output-collapsed.png")
 
 
 async def test_opening_a_call_while_output_streams_in_keeps_it_collapsible(thread_browser: ThreadBrowser) -> None:
@@ -1346,14 +1355,16 @@ async def test_opening_a_call_while_output_streams_in_keeps_it_collapsible(threa
     run = history.locator("[data-thread-anchor]").filter(has_text="3 tool calls")
     await read_at(page, run, 0.1)
 
-    call, card = tool_call_in(run, "a")
+    call, _ = tool_call_in(run, "a")
     show_all = call.get_by_role("button", name="Show all 60 lines")
     async with output_streaming_in(thread_browser) as delivered:
-        async with holding_still(page, run, rest_first=False):
-            await run.locator(".agentplane-disclosure-summary").first.click()
+        run_summary = run.locator(".agentplane-disclosure-summary").first
+        async with holding_still(page, run_summary, rest_first=False):
+            await run_summary.click()
             await expect(call).to_be_visible()
-        async with holding_still(page, card, rest_first=False):
-            await call.locator(".agentplane-disclosure-summary").first.click()
+        call_summary = call.locator(".agentplane-disclosure-summary").first
+        async with holding_still(page, call_summary, rest_first=False):
+            await call_summary.click()
             await expect(show_all).to_be_visible()
         await read_at(page, show_all, 0.3)
         await show_all.click()

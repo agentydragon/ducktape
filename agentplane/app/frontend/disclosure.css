@@ -50,7 +50,7 @@
 
 @media (min-width: 48rem) {
   .agentplane-disclosure-summary {
-    min-height: 2.125rem;
+    min-height: 2rem;
   }
 
   .agentplane-disclosure-summary-content {
@@ -58,7 +58,7 @@
   }
 
   .agentplane-clamped-disclosure-action {
-    min-height: 2.125rem;
+    min-height: 2rem;
   }
 }
 
