@@ -31,6 +31,27 @@
   min-height: 2.75rem;
 }
 
+.agentplane-clamped-block[data-expanded="false"] > .agentplane-clamped-disclosure
+  > .agentplane-disclosure-item
+  > .agentplane-disclosure-heading {
+  display: none;
+}
+
+.agentplane-clamped-block[data-expanded="false"] > .agentplane-clamped-disclosure
+  > .agentplane-disclosure-item {
+  border: 0;
+}
+
+.agentplane-clamped-block[data-expanded="false"] > .agentplane-clamped-disclosure
+  > .agentplane-disclosure-item
+  > .agentplane-disclosure-panel,
+.agentplane-clamped-block[data-expanded="false"] > .agentplane-clamped-disclosure
+  > .agentplane-disclosure-item
+  > .agentplane-disclosure-panel
+  > .agentplane-disclosure-content {
+  padding: 0;
+}
+
 .agentplane-disclosure-summary-content {
   min-width: 0;
   flex: 1;

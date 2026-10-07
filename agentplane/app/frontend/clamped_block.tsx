@@ -42,10 +42,9 @@ export function ClampedBlock({
   const [content, setContent] = useState<HTMLDivElement | null>(null);
   const [overflows, setOverflows] = useState(false);
   useLayoutEffect(() => {
-    // Adding or removing the sticky shell replaces this node. Observe the mounted instance.
     const element = content;
     if (!element) return;
-    // The content's own height, measured outside the clipping box, against the cap in pixels.
+    // Measure the content outside its clipping box against the cap in pixels.
     const measure = () => {
       const remPx = parseFloat(getComputedStyle(document.documentElement).fontSize) || 16;
       setOverflows(element.offsetHeight > maxHeightRem * remPx + 1);
@@ -57,7 +56,7 @@ export function ClampedBlock({
   }, [content, maxHeightRem]);
   const clipped = overflows && !expanded;
   // Expansion is user state. CodeMirror briefly measures shorter while mounting inside the
-  // sticky shell; removing that shell on shrink would remount it in a resize loop.
+  // sticky shell; retain its collapse control through that transient measurement.
   const showStickyCollapse = expanded;
   const body = (
     <div
@@ -95,31 +94,32 @@ export function ClampedBlock({
 
   return (
     <div className="agentplane-clamped-block" data-expanded={expanded} data-label={label}>
-      {/* TODO: Keep the content at a stable React position when toggling the sticky shell so
-          CodeMirror state and selection survive expansion. */}
-      {showStickyCollapse && stickyCollapse ? (
-        <Disclosure
-          className="agentplane-clamped-disclosure"
-          summary={header ?? label}
-          summaryAside={
-            <Button
-              className="agentplane-clamped-disclosure-action"
-              variant="subtle"
-              size="sm"
-              aria-expanded={true}
-              aria-label={`Collapse ${label}`}
-              onClick={() => setExpanded(false)}
-            >
-              Collapse {label}
-            </Button>
-          }
-          open
-          onOpenChange={(open) => {
-            if (!open) setExpanded(false);
-          }}
-        >
-          {body}
-        </Disclosure>
+      {stickyCollapse ? (
+        <>
+          {!showStickyCollapse && header}
+          <Disclosure
+            className="agentplane-clamped-disclosure"
+            summary={header ?? label}
+            summaryAside={
+              showStickyCollapse ? (
+                <Button
+                  className="agentplane-clamped-disclosure-action"
+                  variant="subtle"
+                  size="sm"
+                  aria-expanded={true}
+                  aria-label={`Collapse ${label}`}
+                  onClick={() => setExpanded(false)}
+                >
+                  Collapse {label}
+                </Button>
+              ) : null
+            }
+            open={true}
+            onOpenChange={setExpanded}
+          >
+            {body}
+          </Disclosure>
+        </>
       ) : (
         <>
           {header}

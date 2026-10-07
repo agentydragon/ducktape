@@ -1277,22 +1277,68 @@ async def test_expanded_command_stays_collapsible(thread_browser: ThreadBrowser,
     command = call.locator('.agentplane-clamped-block[data-label="Command"]')
     show_all = command.get_by_role("button", name="Show all 24 lines", exact=True)
     collapse = command.get_by_role("button", name="Collapse Command", exact=True)
+    await read_at(page, show_all, 0.3)
+    editor = await command.locator(".cm-editor").element_handle()
+    assert editor is not None
+
+    async def select_command_line(line_text: str) -> None:
+        line = command.locator(".cm-line").filter(has_text=line_text)
+        await expect(line).to_have_count(1)
+        await line.evaluate(
+            """line => {
+                const range = document.createRange();
+                range.selectNodeContents(line);
+                const selection = window.getSelection();
+                if (!selection) throw new Error("the document has no text selection");
+                selection.removeAllRanges();
+                selection.addRange(range);
+            }"""
+        )
+        assert await page.evaluate("() => window.getSelection()?.toString()") == line_text
+
     for _ in range(2):
+        await select_command_line("echo command line 0")
         await show_all.click()
         # Deliver layout/ResizeObserver callbacks: the old observer measured a detached node and
         # removed the collapse control after the first render of the expanded block.
         await frames(page)
         await expect(command).to_have_attribute("data-expanded", "true")
+        assert await editor.evaluate("node => node.isConnected"), "expanding remounted the CodeMirror editor"
+        assert await page.evaluate("() => window.getSelection()?.toString()") == "echo command line 0"
         await read_at(page, command.locator(".cm-line").filter(has_text="echo command line 20"), 0.5)
         await expect(collapse).to_be_in_viewport()
+        await select_command_line("echo command line 20")
         await _review_screenshot(
             page, f"thread-command-expanded-{viewport_name}.png", f"Expanded command on {viewport_name}"
         )
         await collapse.click()
         await frames(page)
+        assert await editor.evaluate("node => node.isConnected"), "collapsing remounted the CodeMirror editor"
+        assert await page.evaluate("() => window.getSelection()?.toString()") == "echo command line 20"
         await expect(command.locator('[data-clamped="true"]')).to_have_count(1)
         await expect(show_all).to_be_visible()
         await expect(collapse).to_have_count(0)
+        nested_heading_display = await command.evaluate(
+            """block => {
+                const panel = block.querySelector(
+                    ".agentplane-clamped-disclosure .agentplane-disclosure-content"
+                );
+                if (!panel) throw new Error("clamped disclosure panel is missing");
+                const nested = document.createElement("div");
+                nested.className = "agentplane-disclosure";
+                const item = document.createElement("div");
+                item.className = "agentplane-disclosure-item";
+                const heading = document.createElement("div");
+                heading.className = "agentplane-disclosure-heading";
+                item.append(heading);
+                nested.append(item);
+                panel.append(nested);
+                const display = getComputedStyle(heading).display;
+                nested.remove();
+                return display;
+            }"""
+        )
+        assert nested_heading_display == "flex", "collapsed ClampedBlock styles hid a nested disclosure heading"
         await expect(call.locator(".agentplane-disclosure-summary").first).to_have_attribute("aria-expanded", "true")
         await _review_screenshot(
             page, f"thread-command-collapsed-{viewport_name}.png", f"Collapsed command on {viewport_name}"

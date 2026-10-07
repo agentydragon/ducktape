@@ -33,7 +33,8 @@ describe("ClampedBlock", () => {
     contentHeight(40);
     const container = await mount(<ClampedBlock maxHeightRem={10}>test-content</ClampedBlock>);
     expect(container.querySelector('[data-clamped="true"]')).toBeNull();
-    expect(container.querySelector("button")).toBeNull();
+    expect(control(container, "Show all")).toBeUndefined();
+    expect(control(container, "Collapse Expanded content")).toBeUndefined();
   });
 
   it("keeps expanded content collapsible when its height shrinks", async () => {
@@ -45,7 +46,7 @@ describe("ClampedBlock", () => {
     expect(control(container, "Collapse Expanded content")).toBeDefined();
     await act(async () => control(container, "Collapse Expanded content")?.click());
     expect(control(container, "Collapse Expanded content")).toBeUndefined();
-    expect(container.querySelector('[data-expanded="true"]')).toBeNull();
+    expect(container.querySelector('.agentplane-clamped-block[data-expanded="true"]')).toBeNull();
   });
 
   it("clips content past its cap, keeping all of it in the document, until the bottom is clicked", async () => {
@@ -73,7 +74,10 @@ describe("ClampedBlock", () => {
       </ClampedBlock>
     );
     expect(container.querySelector(".agentplane-output-label")?.textContent).toBe("Output");
-    expect(container.querySelector(".agentplane-clamped-disclosure")).toBeNull();
+    expect(container.querySelector(".agentplane-clamped-disclosure")).not.toBeNull();
+    expect(container.querySelector(".agentplane-clamped-disclosure .agentplane-output-label")?.textContent).toBe(
+      "Output"
+    );
     await act(async () => control(container, "Show all")?.click());
     expect(container.querySelector(".agentplane-clamped-disclosure .agentplane-output-label")?.textContent).toBe(
       "Output"
