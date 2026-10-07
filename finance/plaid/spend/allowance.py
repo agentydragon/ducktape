@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import calendar
-import json
 from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import UTC, date, datetime, timedelta
@@ -11,7 +10,7 @@ from decimal import ROUND_HALF_UP, Decimal
 from enum import StrEnum
 from typing import Annotated, Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, Json, TypeAdapter, ValidationError
 
 
 class Kind(StrEnum):
@@ -80,6 +79,15 @@ class CounterpartyExact(BaseModel):
     name: str = Field(min_length=1)
 
 
+class PlaidCounterparty(BaseModel):
+    model_config = ConfigDict(extra="ignore", frozen=True)
+    type: str | None = None
+    name: str | None = None
+
+
+_COUNTERPARTIES_JSON = TypeAdapter(Json[list[PlaidCounterparty]])
+
+
 type SimpleCondition = (
     NamePrefix | NameContains | CategoryExact | AmountExact | AmountSign | FieldExact | CounterpartyExact
 )
@@ -136,7 +144,7 @@ class Transaction(BaseModel):
     currency: str | None
     account_type: str | None = None
     merchant_category_code: str | None = None
-    counterparties: str | list[dict[str, object]] | None = None
+    counterparties: Json[list[PlaidCounterparty]] | None = None
 
 
 @dataclass(frozen=True)
@@ -194,7 +202,7 @@ def month_anniversary(start: datetime, months: int) -> datetime:
     return start.replace(year=year, month=month, day=min(start.day, calendar.monthrange(year, month)[1]))
 
 
-def matches(transaction: Transaction, condition: Condition) -> bool:
+def matches(transaction: Transaction | Mapping[str, object], condition: Condition) -> bool:
     return matches_fields(transaction, condition)
 
 
@@ -237,15 +245,15 @@ def matches_fields(fields: Mapping[str, object] | object, condition: Condition) 
         counterparties = value("counterparties")
         if isinstance(counterparties, str):
             try:
-                counterparties = json.loads(counterparties)
-            except json.JSONDecodeError:
+                counterparties = _COUNTERPARTIES_JSON.validate_python(counterparties)
+            except ValidationError:
                 return False
         return isinstance(counterparties, list) and any(
-            isinstance(counterparty, Mapping)
-            and isinstance(counterparty.get("type"), str)
-            and counterparty["type"].casefold() == condition.counterparty_type.casefold()
-            and isinstance(counterparty.get("name"), str)
-            and counterparty["name"].casefold() == condition.name.casefold()
+            isinstance(counterparty, PlaidCounterparty)
+            and isinstance(counterparty.type, str)
+            and counterparty.type.casefold() == condition.counterparty_type.casefold()
+            and isinstance(counterparty.name, str)
+            and counterparty.name.casefold() == condition.name.casefold()
             for counterparty in counterparties
         )
     name = value(condition.field)
@@ -256,7 +264,7 @@ def matches_fields(fields: Mapping[str, object] | object, condition: Condition) 
     return isinstance(name, str) and condition.substring.casefold() in name.casefold()
 
 
-def matching_rule(transaction: Transaction, rules: list[Rule]) -> Rule | None:
+def matching_rule(transaction: Transaction | Mapping[str, object], rules: list[Rule]) -> Rule | None:
     return next((rule for rule in rules if matches(transaction, rule.condition)), None)
 
 
