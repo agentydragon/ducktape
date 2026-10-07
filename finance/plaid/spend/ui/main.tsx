@@ -263,6 +263,9 @@ function AllowancePanel({
     ? (allowance.spending_signal as Signal)
     : null;
   const cycleSpend = spendPeriod(allowance, "credit_cycle");
+  const estimatePeriodId: EstimatePeriodId =
+    allowance.forecast.basis_period.id === "rolling_30d" ? "rolling_30d" : "rolling_7d";
+  const selectedPace = pacePeriod(allowance, estimatePeriodId);
   const historyPeriods = [
     { id: "rolling_7d", label: "LAST 7 DAYS" },
     { id: "rolling_30d", label: "LAST 30 DAYS" },
@@ -329,21 +332,16 @@ function AllowancePanel({
             <Text size="sm" fw={700}>
               Recorded flexible spending pace
             </Text>
-            {(["rolling_7d", "rolling_30d"] as const).map((periodId) => {
-              const report = pacePeriod(allowance, periodId);
-              return (
-                <Group justify="space-between" gap="sm" key={periodId}>
-                  <Text size="sm">{periodId === "rolling_7d" ? "7 days" : "30 days"}</Text>
-                  <Text size="sm" fw={700}>
-                    {report?.observed_daily_minor_units == null ? (
-                      "Warming up"
-                    ) : (
-                      <>{m(report.observed_daily_minor_units)} / day</>
-                    )}
-                  </Text>
-                </Group>
-              );
-            })}
+            <Group justify="space-between" gap="sm">
+              <Text size="sm">{estimatePeriodId === "rolling_7d" ? "7 days" : "30 days"}</Text>
+              <Text size="sm" fw={700}>
+                {selectedPace?.observed_daily_minor_units == null ? (
+                  "Warming up"
+                ) : (
+                  <>{m(selectedPace.observed_daily_minor_units)} / day</>
+                )}
+              </Text>
+            </Group>
             <Text size="sm" c="dimmed">
               Provisional leash ~{m(Math.round((allowance.monthly_minor_units * 12) / 365.2425))} / day. This is
               spending capacity, not a sustainability target.
@@ -361,21 +359,9 @@ function AllowancePanel({
                 </Text>
               ) : null;
             })}
-            <Divider />
-            <Group justify="space-between" gap="sm">
-              <Text size="sm">Pace used for estimate ({periodLabels[allowance.forecast.basis_period.id]})</Text>
-              <Text size="sm" fw={700}>
-                {allowance.forecast.daily_pace_minor_units == null ? (
-                  "Warming up"
-                ) : (
-                  <>{m(allowance.forecast.daily_pace_minor_units)} / day</>
-                )}
-              </Text>
-            </Group>
             <Text size="xs" c="dimmed">
-              Uses positive flexible purchases in the selected period, including before the allowance began; early
-              post-start bursts can increase the pace. Earlier purchases inform the estimate but do not reduce your
-              available balance. Plaid data may lag.
+              The estimate may use a higher daily pace when purchases since the allowance began are concentrated in
+              fewer days.
             </Text>
             {allowance.forecast.estimated_exhaustion_at && (
               <Text size="sm">
@@ -1471,8 +1457,8 @@ function App() {
                       setSelectedEstimatePeriodId(periodId as EstimatePeriodId);
                     }}
                     data={[
-                      { value: "rolling_7d", label: "Last 7 days" },
-                      { value: "rolling_30d", label: "Last 30 days" },
+                      { value: "rolling_7d", label: "7 days" },
+                      { value: "rolling_30d", label: "30 days" },
                     ]}
                   />
                 </Group>
