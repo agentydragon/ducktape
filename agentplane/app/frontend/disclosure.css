@@ -17,10 +17,12 @@
 }
 
 .agentplane-disclosure-summary {
+  box-sizing: border-box;
   width: 0;
   min-width: 0;
   flex: 1 1 0;
   min-height: 2.75rem;
+  padding-block: var(--mantine-spacing-xs);
 }
 
 .agentplane-clamped-disclosure-action {
@@ -34,7 +36,15 @@
 
 .agentplane-disclosure-heading[data-expanded="true"] {
   z-index: 3;
-  border-bottom: 1px solid var(--mantine-color-default-border);
+}
+
+.agentplane-disclosure-heading[data-expanded="true"]::after {
+  position: absolute;
+  inset-block-end: 0;
+  inset-inline: calc(0px - var(--agentplane-disclosure-divider-bleed));
+  border-block-end: 1px solid var(--mantine-color-default-border);
+  content: "";
+  pointer-events: none;
 }
 
 .agentplane-disclosure-panel,

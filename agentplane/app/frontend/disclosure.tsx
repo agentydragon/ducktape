@@ -1,5 +1,14 @@
 import { Accordion } from "@mantine/core";
-import { createContext, type JSX, type ReactNode, useCallback, useContext, useLayoutEffect, useState } from "react";
+import {
+  createContext,
+  type CSSProperties,
+  type JSX,
+  type ReactNode,
+  useCallback,
+  useContext,
+  useLayoutEffect,
+  useState,
+} from "react";
 
 import "./disclosure.css";
 
@@ -7,11 +16,17 @@ interface StickyStackPosition {
   top: number;
   /** Higher rows paint over descendants as they leave their containing disclosure. */
   zIndex: number;
+  /** The divider bleeds through this disclosure's panel padding to the outer card edge. */
+  dividerBleed: string;
 }
 
 export const DISCLOSURE_STICKY_Z_INDEX = 100;
 
-const StickyStackContext = createContext<StickyStackPosition>({ top: 0, zIndex: DISCLOSURE_STICKY_Z_INDEX });
+const StickyStackContext = createContext<StickyStackPosition>({
+  top: 0,
+  zIndex: DISCLOSURE_STICKY_Z_INDEX,
+  dividerBleed: "var(--mantine-spacing-sm)",
+});
 
 function useStickyRowHeight() {
   const [element, setElement] = useState<HTMLDivElement | null>(null);
@@ -37,7 +52,11 @@ function useStickyRowHeight() {
 }
 
 function childStackPosition(parent: StickyStackPosition, rowHeight: number): StickyStackPosition {
-  return { top: parent.top + rowHeight, zIndex: parent.zIndex - 1 };
+  return {
+    top: parent.top + rowHeight,
+    zIndex: parent.zIndex - 1,
+    dividerBleed: `calc(${parent.dividerBleed} + var(--mantine-spacing-md))`,
+  };
 }
 
 /** A shared Mantine Accordion with optional controlled state. Its controls keep Mantine's styles,
@@ -95,7 +114,13 @@ export function Disclosure({
           ref={headingRef}
           className="agentplane-disclosure-heading"
           data-expanded={expanded}
-          style={{ top: stackPosition.top, zIndex: stackPosition.zIndex }}
+          style={
+            {
+              top: stackPosition.top,
+              zIndex: stackPosition.zIndex,
+              "--agentplane-disclosure-divider-bleed": stackPosition.dividerBleed,
+            } as CSSProperties
+          }
         >
           <Accordion.Control>{summary}</Accordion.Control>
           {summaryAside}
