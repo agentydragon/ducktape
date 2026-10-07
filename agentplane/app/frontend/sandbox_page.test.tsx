@@ -3,12 +3,13 @@ import { MantineProvider } from "@mantine/core";
 import { TEST_REASONING_EFFORTS, testModelCatalog } from "./test_model_catalog";
 import { act } from "react";
 import { createRoot } from "react-dom/client";
-import { MemoryRouter } from "react-router";
+import { Link, MemoryRouter, Route, Routes } from "react-router";
 import { afterAll, afterEach, expect, it, vi, type Mock } from "vitest";
 
 import type { SandboxView, ThreadView } from "./client";
 import type * as LiveModule from "./live";
 import type { Live, SandboxSnapshot } from "./live";
+import { SandboxRoute } from "./app";
 import { SandboxPage } from "./sandbox_page";
 
 const fetchMock = vi.hoisted(() => {
@@ -100,18 +101,24 @@ function thread(overrides: Partial<ThreadView> & Pick<ThreadView, "id" | "sessio
 async function render(
   sessions: (request: Request) => Promise<Response>,
   threadActions: (request: Request) => Promise<Response> = async () => new Response(null, { status: 204 }),
-  claudePaused = false
+  claudePaused = false,
+  routeNavigation = false
 ): Promise<ReturnType<typeof vi.fn>> {
   fetchMock.mockImplementation((request: Request) => {
     const path = new URL(request.url).pathname;
     if (path === "/models") {
       const models = [{ model: "test-model", display_name: "Test Model", reasoning_efforts: TEST_REASONING_EFFORTS }];
-      return Promise.resolve(Response.json(testModelCatalog(claudePaused ? [] : models, claudePaused ? models : [])));
+      const codexModels = routeNavigation
+        ? [{ model: "codex-model", display_name: "Codex Model", reasoning_efforts: TEST_REASONING_EFFORTS }]
+        : [];
+      return Promise.resolve(
+        Response.json(testModelCatalog(claudePaused ? [] : models, claudePaused ? models : codexModels))
+      );
     }
-    if (path === "/egress/policies" || path === "/sandboxes/startup-test/egress/decisions") {
+    if (path === "/egress/policies" || /^\/sandboxes\/(startup-test|other-test)\/egress\/decisions$/.test(path)) {
       return Promise.resolve(Response.json([]));
     }
-    if (path.startsWith("/sandboxes/startup-test/sessions")) return sessions(request);
+    if (/^\/sandboxes\/(startup-test|other-test)\/sessions/.test(path)) return sessions(request);
     if (/^\/threads\/[^/]+\/(un)?archive$/.test(path)) return threadActions(request);
     throw new Error(`Unexpected request: ${request.method} ${path}`);
   });
@@ -122,8 +129,17 @@ async function render(
   await act(async () =>
     root.render(
       <MantineProvider env="test">
-        <MemoryRouter>
-          <SandboxPage name="startup-test" onBack={vi.fn()} onOpenThread={onOpenThread} />
+        <MemoryRouter initialEntries={routeNavigation ? ["/sandboxes/startup-test"] : undefined}>
+          {routeNavigation ? (
+            <>
+              <Link to="/sandboxes/other-test">Other sandbox</Link>
+              <Routes>
+                <Route path="/sandboxes/:name" element={<SandboxRoute />} />
+              </Routes>
+            </>
+          ) : (
+            <SandboxPage name="startup-test" onBack={vi.fn()} onOpenThread={onOpenThread} />
+          )}
         </MemoryRouter>
       </MantineProvider>
     )
@@ -156,6 +172,33 @@ async function choose(label: string, value: string): Promise<void> {
   if (!option) throw new Error(`Missing ${value} option`);
   await act(async () => option.click());
 }
+
+it("resets the launch form when navigating directly between sandbox routes", async () => {
+  await render(async () => Response.json([]), undefined, false, true);
+  await choose("Harness", "Codex");
+  expect(labeledInput("Model").value).toBe("Codex Model");
+  await choose("Reasoning effort", "medium");
+  const instructions = [...container.querySelectorAll("label")].find(
+    (node) => node.textContent === "Standing instructions"
+  )?.control;
+  if (!(instructions instanceof HTMLTextAreaElement)) throw new Error("Missing instructions field");
+  await act(async () => {
+    instructions.value = "Only for startup-test";
+    instructions.dispatchEvent(new Event("input", { bubbles: true }));
+  });
+  expect(instructions.value).toBe("Only for startup-test");
+
+  await act(async () => container.querySelector<HTMLAnchorElement>('a[href="/sandboxes/other-test"]')!.click());
+
+  expect(labeledInput("Harness").value).toBe("Claude");
+  expect(labeledInput("Model").value).toBe("Test Model");
+  expect(labeledInput("Reasoning effort").value).toBe("low");
+  const nextInstructions = [...container.querySelectorAll("label")].find(
+    (node) => node.textContent === "Standing instructions"
+  )?.control;
+  expect(nextInstructions).toBeInstanceOf(HTMLTextAreaElement);
+  expect((nextInstructions as HTMLTextAreaElement).value).toBe("");
+});
 
 /** The JSON body of the first POST the page made to the sessions endpoint. */
 async function postedBody(sessions: Mock<(request: Request) => Promise<Response>>) {

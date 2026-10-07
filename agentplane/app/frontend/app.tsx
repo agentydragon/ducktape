@@ -57,12 +57,12 @@ function ConsentRoute(): JSX.Element {
   return <ConnectionConsent key={handle} handle={handle} />;
 }
 
-function SandboxRoute(): JSX.Element {
+export function SandboxRoute(): JSX.Element {
   const name = required(useParams().name, "name");
   const navigate = useNavigate();
-  // TODO: Key by name so launch-form instructions, harness, model, and effort reset between sandboxes.
   return (
     <SandboxPage
+      key={name}
       name={name}
       onBack={() => void navigate("/sandboxes")}
       onOpenThread={(threadId) => void navigate(`/threads/${encodeURIComponent(threadId)}`)}

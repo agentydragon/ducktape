@@ -908,6 +908,7 @@ agentplane_vitest_test(
     name = "sandbox_page_test",
     srcs = ["sandbox_page.test.tsx"],
     deps = [
+        ":app",
         ":client",
         ":live",
         ":sandbox_page",
