@@ -354,7 +354,8 @@ class SpendService:
                               t.pfc_primary, t.pfc_detailed,
                               a.type AS account_type,
                               t.raw_json->>'merchant_category_code' AS merchant_category_code,
-                              COALESCE(t.raw_json->'counterparties', '[]'::jsonb)::text AS counterparties,
+                              CASE WHEN jsonb_typeof(t.raw_json->'counterparties') = 'array'
+                                   THEN (t.raw_json->'counterparties')::text ELSE '[]' END AS counterparties,
                               COALESCE(t.iso_currency_code, t.raw_json->>'unofficial_currency_code') AS currency
                        FROM public.transactions t
                        JOIN public.accounts a ON a.account_id = t.account_id AND a.item_id = t.item_id

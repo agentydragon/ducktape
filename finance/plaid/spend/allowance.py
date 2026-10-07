@@ -202,11 +202,7 @@ def month_anniversary(start: datetime, months: int) -> datetime:
     return start.replace(year=year, month=month, day=min(start.day, calendar.monthrange(year, month)[1]))
 
 
-def matches(transaction: Transaction | Mapping[str, object], condition: Condition) -> bool:
-    return matches_fields(transaction, condition)
-
-
-def matches_fields(fields: Mapping[str, object] | object, condition: Condition) -> bool:
+def matches_fields(fields: Transaction | Mapping[str, object], condition: Condition) -> bool:
     """Match policy conditions against a mapping or a runtime model object."""
 
     def value(field: str) -> object | None:
@@ -265,7 +261,7 @@ def matches_fields(fields: Mapping[str, object] | object, condition: Condition) 
 
 
 def matching_rule(transaction: Transaction | Mapping[str, object], rules: list[Rule]) -> Rule | None:
-    return next((rule for rule in rules if matches(transaction, rule.condition)), None)
+    return next((rule for rule in rules if matches_fields(transaction, rule.condition)), None)
 
 
 def calculate(
