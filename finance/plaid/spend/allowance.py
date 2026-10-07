@@ -79,10 +79,33 @@ class CounterpartyExact(BaseModel):
     name: str = Field(min_length=1)
 
 
+class PlaidCounterpartyBacs(BaseModel):
+    model_config = ConfigDict(extra="ignore", frozen=True)
+    account: str | None = None
+    sort_code: str | None = None
+
+
+class PlaidCounterpartyInternational(BaseModel):
+    model_config = ConfigDict(extra="ignore", frozen=True)
+    iban: str | None = None
+    bic: str | None = None
+
+
+class PlaidCounterpartyNumbers(BaseModel):
+    model_config = ConfigDict(extra="ignore", frozen=True)
+    bacs: PlaidCounterpartyBacs | None = None
+    international: PlaidCounterpartyInternational | None = None
+
+
 class PlaidCounterparty(BaseModel):
     model_config = ConfigDict(extra="ignore", frozen=True)
     type: str | None = None
     name: str | None = None
+    entity_id: str | None = None
+    website: str | None = None
+    logo_url: str | None = None
+    confidence_level: str | None = None
+    account_numbers: PlaidCounterpartyNumbers | None = None
 
 
 _COUNTERPARTIES_JSON = TypeAdapter(Json[list[PlaidCounterparty]])

@@ -35,10 +35,12 @@ and notification-backed event stream.
 - `GET /api/v1/transactions?window=30d` supplies the read-only Transactions tab; `window` also
   accepts `7d` and `cycle`. It returns recent rows from allowance accounts and configured cards, with
   the first matched policy rule, the calculator's allowance and pace contributions, and each card
-  row's statement-cycle contribution or exclusion reason. Each row exposes Plaid counterparties
-  and the complete original Plaid transaction payload in `plaid` for the authenticated detail view;
-  this payload can contain Plaid account and transaction IDs. The compact row uses configured
-  display names instead of those identifiers.
+  row's statement-cycle contribution or exclusion reason. Each row exposes parsed Plaid
+  counterparties and named, typed Plaid Transactions fields in `details` for the authenticated
+  detail view. The details include Plaid account and transaction IDs and the original Plaid amount
+  in major currency units as a decimal string; calculated amounts in the compact row remain integer
+  minor units. Unknown source fields are omitted. The compact row uses configured display names
+  instead of identifiers.
   An unavailable allowance leaves classifications unavailable; an unavailable credit cycle falls
   back to a 30-day transaction window.
 

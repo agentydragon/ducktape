@@ -2,13 +2,14 @@
 
 from __future__ import annotations
 
-from datetime import date, datetime
+from datetime import date, datetime as datetime_type
+from decimal import Decimal
 from enum import StrEnum
 from pathlib import Path
 from typing import Literal
 
 import yaml
-from pydantic import BaseModel, ConfigDict, Field, JsonValue, field_validator, model_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from finance.plaid.spend.allowance import AllowancePolicy, AllowanceView, Disposition, PlaidCounterparty, Rule
 
@@ -129,21 +130,112 @@ class CardView(BaseModel):
     alert_threshold_percent: int | None
     spend_percent: float | None
     alert_state: AlertState
-    last_synced_at: datetime | None
+    last_synced_at: datetime_type | None
     statement_available: bool
 
 
 class SpendView(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
-    generated_at: datetime
+    generated_at: datetime_type
     cards: list[CardView]
     allowance: AllowanceView | None = None
     dashboard_url: str | None = None
 
 
+class PlaidTransactionLocation(BaseModel):
+    """Plaid's location fields for a transaction at a physical location."""
+
+    model_config = ConfigDict(extra="ignore", frozen=True)
+
+    address: str | None = None
+    city: str | None = None
+    region: str | None = None
+    postal_code: str | None = None
+    country: str | None = None
+    lat: float | None = None
+    lon: float | None = None
+    store_number: str | None = None
+
+
+class PlaidPaymentMeta(BaseModel):
+    """Plaid's inter-bank transfer metadata."""
+
+    model_config = ConfigDict(extra="ignore", frozen=True)
+
+    reference_number: str | None = None
+    ppd_id: str | None = None
+    payee: str | None = None
+    by_order_of: str | None = None
+    payer: str | None = None
+    payment_method: str | None = None
+    payment_processor: str | None = None
+    reason: str | None = None
+
+
+class PlaidPersonalFinanceCategory(BaseModel):
+    model_config = ConfigDict(extra="ignore", frozen=True)
+
+    primary: str | None = None
+    detailed: str | None = None
+    confidence_level: str | None = None
+    version: str | None = None
+
+
+class PlaidBusinessFinanceCategory(BaseModel):
+    model_config = ConfigDict(extra="ignore", frozen=True)
+
+    primary: str | None = None
+    detailed: str | None = None
+    confidence_level: str | None = None
+
+
+class PlaidClientCustomization(BaseModel):
+    model_config = ConfigDict(extra="ignore", frozen=True)
+
+    custom_entity_id: str | None = None
+
+
+class PlaidTransactionDetails(BaseModel):
+    """Named Plaid Transaction fields not already in the compact row.
+
+    Source: https://github.com/plaid/plaid-openapi/blob/master/2020-09-14.yml
+    Optional defaults accommodate historical records and fields an institution omitted.
+    """
+
+    model_config = ConfigDict(extra="ignore", frozen=True)
+
+    account_id: str | None = None
+    transaction_id: str | None = None
+    pending_transaction_id: str | None = None
+    amount: Decimal | None = Field(default=None, description="Original Plaid amount in major currency units.")
+    iso_currency_code: str | None = None
+    unofficial_currency_code: str | None = None
+    account_owner: str | None = None
+    check_number: str | None = None
+    category: list[str] | None = None
+    category_id: str | None = None
+    original_description: str | None = None
+    authorized_date: date | None = None
+    authorized_datetime: datetime_type | None = None
+    datetime: datetime_type | None = None
+    payment_channel: str | None = None
+    payment_meta: PlaidPaymentMeta | None = None
+    location: PlaidTransactionLocation | None = None
+    personal_finance_category: PlaidPersonalFinanceCategory | None = None
+    business_finance_category: PlaidBusinessFinanceCategory | None = None
+    transaction_type: str | None = None
+    transaction_code: str | None = None
+    logo_url: str | None = None
+    website: str | None = None
+    merchant_entity_id: str | None = None
+    personal_finance_category_icon_url: str | None = None
+    running_balance: Decimal | None = Field(default=None, description="Plaid-reported balance in major currency units.")
+    client_customization: PlaidClientCustomization | None = None
+
+
 class SpendTransactionRow(BaseModel):
-    """A read-only explanation plus the original Plaid transaction payload."""
+    """A read-only explanation plus named, typed Plaid source fields."""
 
     model_config = ConfigDict(extra="forbid", frozen=True)
 
@@ -167,13 +259,13 @@ class SpendTransactionRow(BaseModel):
     pfc_detailed: str | None
     merchant_category_code: str | None
     counterparties: list[PlaidCounterparty] = Field(default_factory=list)
-    plaid: dict[str, JsonValue] = Field(default_factory=dict)
+    details: PlaidTransactionDetails = Field(default_factory=PlaidTransactionDetails)
 
 
 class SpendTransactionsView(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
-    generated_at: datetime
+    generated_at: datetime_type
     window: Literal["7d", "30d", "cycle"]
     window_start: date
     allowance: AllowanceView | None

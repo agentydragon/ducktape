@@ -10,6 +10,7 @@ import asyncio
 import json
 from collections.abc import AsyncIterator, Iterator
 from datetime import UTC, date, datetime
+from decimal import Decimal
 from pathlib import Path
 from typing import Any, Literal
 
@@ -29,11 +30,16 @@ from finance.plaid.spend.allowance import (
     FieldExact,
     Kind,
     NamePrefix,
+    PlaidCounterparty,
     Rule,
 )
 from finance.plaid.spend.models import (
     AllowanceConfigurationView,
     CardConfigurationView,
+    PlaidPaymentMeta,
+    PlaidPersonalFinanceCategory,
+    PlaidTransactionDetails,
+    PlaidTransactionLocation,
     SpendConfigurationView,
     SpendTransactionRow,
     SpendTransactionsView,
@@ -249,6 +255,29 @@ def dashboard_url() -> Iterator[str]:
                     pfc_primary="TRANSPORTATION",
                     pfc_detailed="TRANSPORTATION_SHIPPING",
                     merchant_category_code="4215",
+                    counterparties=[
+                        PlaidCounterparty(
+                            name="Example Shipping",
+                            type="merchant",
+                            confidence_level="HIGH",
+                            entity_id="synthetic-merchant",
+                            website="https://example.invalid/shipping",
+                        )
+                    ],
+                    details=PlaidTransactionDetails(
+                        account_id="synthetic-account",
+                        transaction_id="synthetic-transaction",
+                        amount=Decimal("18.50"),
+                        iso_currency_code="USD",
+                        original_description="EXAMPLE SHIPPING PAYMENT",
+                        authorized_date=date(2026, 10, 13),
+                        payment_channel="in store",
+                        location=PlaidTransactionLocation(city="Example City", region="CA", country="US"),
+                        payment_meta=PlaidPaymentMeta(reference_number="synthetic-reference"),
+                        personal_finance_category=PlaidPersonalFinanceCategory(
+                            primary="TRANSPORTATION", detailed="TRANSPORTATION_SHIPPING", confidence_level="HIGH"
+                        ),
+                    ),
                 ),
                 SpendTransactionRow(
                     date=date(2026, 10, 13),
@@ -456,8 +485,16 @@ async def test_transaction_explanations_render(
     else:
         await rows.get_by_role("button", name="UPS", exact=False).click()
     await rows.get_by_text("Required document shipping for a synthetic example.").wait_for()
+    assert await rows.get_by_text("Counterparties: Example Shipping", exact=True).count() == 1
+    assert await rows.get_by_text("Example Shipping · merchant", exact=True).count() == 1
     assert await rows.get_by_text("Mandatory · outside allowance", exact=False).count() == 1
     assert await rows.get_by_text("Card statement: Counted in card cycle", exact=False).count() >= 1
+    await rows.get_by_role("button", name="Plaid source fields").click()
+    await rows.get_by_text("Plaid amount (major units): 18.50", exact=True).wait_for()
+    assert await rows.get_by_text("Original description: EXAMPLE SHIPPING PAYMENT", exact=True).count() == 1
+    assert await rows.get_by_text("City: Example City", exact=True).count() == 1
+    assert await rows.get_by_text("Reference number: synthetic-reference", exact=True).count() == 1
+    assert await rows.get_by_text("Personal detail: TRANSPORTATION_SHIPPING", exact=True).count() == 1
     assert not errors
     assert await page.evaluate("document.documentElement.scrollWidth <= window.innerWidth")
     expanded = tmp_path / f"transactions-expanded-{width}.png"
