@@ -122,8 +122,8 @@ export function Disclosure({
               top: stackPosition.top,
               zIndex: stackPosition.zIndex,
               "--agentplane-disclosure-divider-bleed": dividerBoundary
-                ? "var(--mantine-spacing-sm)"
-                : stackPosition.dividerBleed,
+                ? "var(--agentplane-disclosure-edge-divider, var(--mantine-spacing-sm))"
+                : `var(--agentplane-disclosure-edge-divider, ${stackPosition.dividerBleed})`,
             } as CSSProperties
           }
         >

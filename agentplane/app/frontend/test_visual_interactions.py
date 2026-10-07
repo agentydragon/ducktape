@@ -610,6 +610,76 @@ async def test_open_tool_calls_and_output(
 
 
 @pytest.mark.parametrize(
+    ("scene", "viewport_name"), [("session_shell_calls_open", "desktop"), ("session_shell_calls_open_phone", "phone")]
+)
+@pytest.mark.parametrize("state", ["collapsed-hover", "expanded-hover", "tool-hover", "expanded-focus"])
+async def test_disclosure_control_reaches_card_edges(
+    scene: str,
+    viewport_name: str,
+    state: str,
+    scenes: dict[str, Scenario],
+    playwright_driver: Playwright,
+    sweep_config: SweepConfig,
+) -> None:
+    async def drive(page: Page) -> None:
+        if state != "collapsed-hover":
+            await _open_tool_run(page)
+        if state == "tool-hover":
+            control = (
+                page.locator(".agentplane-step-details")
+                .filter(has=page.locator(".agentplane-step-title:text-is('Bash')"))
+                .locator(".agentplane-disclosure-summary")
+                .first
+            )
+        else:
+            control = page.locator(".agentplane-disclosure-summary").filter(has_text="tool calls").first
+        if state == "tool-hover":
+            await _focus(page, control)
+        else:
+            # A sticky control can already be visible while its card's top is far above the
+            # viewport. Show the card's real rounded corners for this coverage check and capture.
+            await page.locator('[aria-label="Thread history"]').evaluate("el => { el.scrollTop = 0; }")
+            await wait_for_stable(page)
+            await _in_viewport(control)
+        card = control.locator("xpath=ancestor::*[@data-open][1]")
+        control_box = await control.bounding_box()
+        card_box = await card.bounding_box()
+        assert control_box is not None
+        assert card_box is not None
+        # Allow the card's one-pixel border. The top and both sides belong to the actual control,
+        # including the area that used to be inert padding around its rectangular hover fill.
+        assert abs(control_box["x"] - card_box["x"]) <= 1
+        assert abs(control_box["y"] - card_box["y"]) <= 1
+        assert abs(control_box["x"] + control_box["width"] - card_box["x"] - card_box["width"]) <= 1
+        assert await control.evaluate("el => parseFloat(getComputedStyle(el).borderTopLeftRadius)") > 0
+        assert await control.evaluate(
+            """el => {
+                const r = el.getBoundingClientRect();
+                return [[r.x + 5, r.y + 2], [r.right - 5, r.y + 2]].every(([x, y]) =>
+                    el.contains(document.elementFromPoint(x, y)));
+            }"""
+        )
+        if state == "expanded-focus":
+            await control.focus()
+            await page.keyboard.press("Tab")
+            await page.keyboard.press("Shift+Tab")
+            await expect(control).to_be_focused()
+            assert await control.evaluate("el => el.matches(':focus-visible')")
+        else:
+            await control.hover(position={"x": 5, "y": 2})
+            assert await control.evaluate("el => el.matches(':hover')")
+
+    await _capture(
+        scene,
+        drive,
+        scenes=scenes,
+        playwright_driver=playwright_driver,
+        sweep_config=sweep_config,
+        output_name=f"disclosure-{state}-{viewport_name}",
+    )
+
+
+@pytest.mark.parametrize(
     ("scene", "call_text", "tool", "suffix"),
     [
         ("session_shell_calls_open", "List every container and its status", "Bash", "claude"),

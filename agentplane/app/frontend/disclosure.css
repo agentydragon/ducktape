@@ -8,6 +8,44 @@
   min-width: 0;
 }
 
+/* The card and its first control share an edge. Keep the control itself clickable through the
+   card's padding, rather than painting a larger hover area around a smaller hit target. */
+.agentplane-collapsible-card {
+  --agentplane-card-padding-inline: var(--mantine-spacing-xs);
+  --agentplane-card-padding-block: var(--mantine-spacing-xs);
+  padding-inline: var(--agentplane-card-padding-inline);
+  padding-block: var(--agentplane-card-padding-block);
+}
+
+.agentplane-collapsible-card[data-open="true"] {
+  --agentplane-card-padding-inline: var(--mantine-spacing-sm);
+  --agentplane-card-padding-block: var(--mantine-spacing-sm);
+}
+
+.agentplane-collapsible-card[data-stable-inline-size] {
+  --agentplane-card-padding-inline: var(--mantine-spacing-xs);
+}
+
+.agentplane-collapsible-card[data-stable-inline-size][data-open="false"] {
+  --agentplane-card-padding-block: 2px;
+}
+
+.agentplane-collapsible-card > .agentplane-disclosure,
+.agentplane-collapsible-card > .agentplane-step-row > .agentplane-disclosure {
+  --agentplane-disclosure-edge-inline: var(--agentplane-card-padding-inline);
+  --agentplane-disclosure-edge-divider: 0px;
+}
+
+/* Evidence toggles are absolutely positioned; recovery notes and other preceding content are not.
+   Only a heading at the top of the card should reach its rounded top corners. */
+.agentplane-collapsible-card > .agentplane-disclosure:nth-child(1 of :not(.agentplane-evidence-toggle)),
+.agentplane-collapsible-card
+  > .agentplane-step-row:nth-child(1 of :not(.agentplane-evidence-toggle))
+  > .agentplane-disclosure {
+  --agentplane-disclosure-edge-top: var(--agentplane-card-padding-block);
+  --agentplane-disclosure-edge-radius: var(--paper-radius, var(--mantine-radius-default));
+}
+
 .agentplane-disclosure-heading {
   position: sticky;
   z-index: 2;
@@ -16,6 +54,10 @@
   min-width: 0;
   align-items: center;
   background: var(--mantine-color-body);
+  margin-inline: calc(0px - var(--agentplane-disclosure-edge-inline, 0px));
+  margin-block-start: calc(0px - var(--agentplane-disclosure-edge-top, 0px));
+  border-start-start-radius: var(--agentplane-disclosure-edge-radius, 0px);
+  border-start-end-radius: var(--agentplane-disclosure-edge-radius, 0px);
 }
 
 .agentplane-disclosure-summary {
@@ -23,8 +65,11 @@
   width: 0;
   min-width: 0;
   flex: 1 1 0;
-  min-height: 2.75rem;
+  min-height: calc(2.75rem + var(--agentplane-disclosure-edge-top, 0px));
   padding-block: 0;
+  padding-inline: calc(var(--mantine-spacing-md) + var(--agentplane-disclosure-edge-inline, 0px));
+  border-start-start-radius: inherit;
+  border-start-end-radius: inherit;
 }
 
 .agentplane-clamped-disclosure-action {
@@ -54,7 +99,7 @@
   /* Mantine's control has vertical padding of its own. Keep the desktop row compact even when its
      summary includes a status badge; retain natural growth if a summary wraps. */
   .agentplane-disclosure-heading > .agentplane-disclosure-summary {
-    min-height: 1.75rem;
+    min-height: calc(1.75rem + var(--agentplane-disclosure-edge-top, 0px));
     padding-block: 0;
   }
 
@@ -67,8 +112,21 @@
   }
 }
 
+/* The extra top padding is measured as part of the sticky heading, so nested headings still occupy
+   separate slots. Apply it after the compact desktop control's padding reset. */
+.agentplane-disclosure-heading > .agentplane-disclosure-summary {
+  padding-block-start: var(--agentplane-disclosure-edge-top, 0px);
+}
+
 .agentplane-disclosure-panel,
 .agentplane-disclosure-content {
   min-width: 0;
   overflow: visible;
+}
+
+.agentplane-disclosure-panel {
+  --agentplane-disclosure-edge-inline: 0px;
+  --agentplane-disclosure-edge-top: 0px;
+  --agentplane-disclosure-edge-radius: 0px;
+  --agentplane-disclosure-edge-divider: initial;
 }

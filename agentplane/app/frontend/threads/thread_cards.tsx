@@ -753,15 +753,13 @@ export function CollapsibleCard({
 }): JSX.Element {
   return (
     <Paper
-      className={className}
+      className={`agentplane-collapsible-card${className ? ` ${className}` : ""}`}
       data-open={open}
-      // A folded step line is one line, so it needs little more than the line.
-      p={open ? "sm" : stableInlineSize ? 2 : "xs"}
+      data-stable-inline-size={stableInlineSize || undefined}
       withBorder={open && !stableInlineSize}
       style={{
         position: "relative",
         ...(stableInlineSize && {
-          paddingInline: "var(--mantine-spacing-xs)",
           boxShadow: open ? "inset 0 0 0 1px var(--mantine-color-default-border)" : undefined,
         }),
       }}
