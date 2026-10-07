@@ -16,7 +16,7 @@ export type PreviewFixture = {
   title: string;
   serverId: string;
   toolName: string;
-  args: object;
+  args: Record<string, unknown>;
   // The tool's raw return value for a finished call; absent = the call renders as pending. The
   // per-server fixture types this against its result widget's schema (RegisteredToolPreviewFixture);
   // the harness widens it here and wraps it into the stored envelope at render time.
@@ -42,7 +42,6 @@ const noop = () => {};
 
 export function PreviewCard({ fixture, variant }: { fixture: PreviewFixture; variant: PreviewVariant }): ReactNode {
   const { title, serverId, toolName, args, result, agentDisplayNames } = fixture;
-  const argumentsRecord = args as Record<string, unknown>;
   // A sample with a result renders as a finished OK call (so the result body shows); one without
   // stays pending, like the approvals panel's cards. The fixture carries the tool's raw return;
   // wrap it into the stored CallToolResult envelope the card renders.
@@ -60,7 +59,7 @@ export function PreviewCard({ fixture, variant }: { fixture: PreviewFixture; var
     status: finished ? "ok" : "pending_approval",
     created_at: "2026-07-11T12:00:00Z",
     updated_at: "2026-07-11T12:00:00Z",
-    arguments: argumentsRecord,
+    arguments: args,
     rationale: "Sample rationale for the operator.",
     title,
     result: storedResult,
@@ -84,7 +83,7 @@ export function PreviewCard({ fixture, variant }: { fixture: PreviewFixture; var
           >
             <ToolCallCard
               fields={fields}
-              args={argumentsRecord}
+              args={args}
               variant={variant}
               onVariantChange={noop}
               status={finished ? "ok" : "pending_approval"}

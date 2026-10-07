@@ -137,10 +137,57 @@ ts_library(
 )
 
 ts_library(
-    name = "grocy_reference_data",
-    srcs = ["grocy_reference_data.ts"],
+    name = "mcp_client",
+    srcs = ["mcp_client.ts"],
     isolated_typecheck = True,
     tsconfig = TSCONFIG,
+    deps = [
+        ":client",
+        ":mcp_result",
+        ":operator_login",
+        "//:node_modules/@modelcontextprotocol/sdk",
+    ],
+)
+
+ts_library(
+    name = "calendar_client",
+    srcs = ["calendar_client.ts"],
+    isolated_typecheck = True,
+    tsconfig = TSCONFIG,
+    deps = [
+        ":mcp_client",
+        ":mcp_tool_result_schema",
+    ],
+)
+
+ts_library(
+    name = "gmail_client",
+    srcs = ["gmail_client.ts"],
+    isolated_typecheck = True,
+    tsconfig = TSCONFIG,
+    deps = [
+        ":mcp_client",
+        ":mcp_tool_result_schema",
+    ],
+)
+
+ts_library(
+    name = "grocy_client",
+    srcs = ["grocy_client.ts"],
+    isolated_typecheck = True,
+    tsconfig = TSCONFIG,
+    deps = [
+        ":mcp_client",
+        "//:node_modules/zod",
+    ],
+)
+
+ts_library(
+    name = "tana_client",
+    srcs = ["tana_client.ts"],
+    isolated_typecheck = True,
+    tsconfig = TSCONFIG,
+    deps = [":mcp_client"],
 )
 
 ts_library(
@@ -797,10 +844,13 @@ filegroup(
         "app.tsx",
         "approval_state.ts",
         "approvals_embed_page.tsx",
+        "calendar_client.ts",
         "client.ts",
         "confirm_dialog.tsx",
         "field.tsx",
+        "gmail_client.ts",
         "grants_panel.tsx",
+        "grocy_client.ts",
         "haku_ui_embed.tsx",
         "icons.tsx",
         "index.html",
@@ -811,6 +861,7 @@ filegroup(
         "routing.ts",
         "settings_panel.tsx",
         "shell_chrome.tsx",
+        "tana_client.ts",
         "theme.ts",
         "toast.ts",
         "tool_arguments_field.tsx",
@@ -914,6 +965,9 @@ ts_library(
         "//:node_modules/react",
         "//:node_modules/react-dom",
         "//haku/console/frontend/tool_rendering",
+        "//haku/console/frontend/tool_rendering/google_calendar:fixtures",
+        "//haku/console/frontend/tool_rendering/grocy:fixtures",
+        "//haku/console/frontend/tool_rendering/screenshot:mcp_mock",
         "//haku/console/frontend/tool_rendering/screenshot:visual_network_ledger",
     ],
 )
@@ -1047,6 +1101,16 @@ haku_vitest_test(
 )
 
 haku_vitest_test(
+    name = "calendar_client_test",
+    srcs = ["calendar_client.test.ts"],
+    isolated_typecheck = True,
+    deps = [
+        ":calendar_client",
+        "//:node_modules/vitest",
+    ],
+)
+
+haku_vitest_test(
     name = "client_test",
     srcs = ["client.test.ts"],
     isolated_typecheck = True,
@@ -1076,6 +1140,17 @@ haku_vitest_test(
     isolated_typecheck = True,
     deps = [
         ":geolocation",
+        "//:node_modules/vitest",
+    ],
+)
+
+haku_vitest_test(
+    name = "gmail_client_test",
+    srcs = ["gmail_client.test.ts"],
+    isolated_typecheck = True,
+    deps = [
+        ":gmail_client",
+        ":mcp_tool_result_schema",
         "//:node_modules/vitest",
     ],
 )
@@ -1180,6 +1255,16 @@ haku_vitest_test(
     isolated_typecheck = True,
     deps = [
         ":shell_chrome",
+        "//:node_modules/vitest",
+    ],
+)
+
+haku_vitest_test(
+    name = "tana_client_test",
+    srcs = ["tana_client.test.ts"],
+    isolated_typecheck = True,
+    deps = [
+        ":tana_client",
         "//:node_modules/vitest",
     ],
 )

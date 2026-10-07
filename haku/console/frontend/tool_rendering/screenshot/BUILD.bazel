@@ -5,8 +5,9 @@ package(default_visibility = ["//visibility:public"])
 
 TSCONFIG = "//haku/console/frontend:tsconfig"
 
-# Shared preview-screenshot harness. Each server package owns its fixtures beside its widgets;
-# `emit_scenarios` derives a server's scenario table from those fixtures.
+# Shared preview-screenshot harness. `mcp_mock.ts` owns only the JSON-RPC transport simulation;
+# each server package owns its fixtures and tiny installer beside its widgets. `emit_scenarios`
+# derives a server's scenario table from its fixtures (see `preview_screenshots`).
 js_binary(
     name = "emit_scenarios",
     entry_point = "emit_scenarios.mjs",
@@ -17,6 +18,14 @@ ts_library(
     srcs = ["visual_network_ledger.ts"],
     isolated_typecheck = True,
     tsconfig = TSCONFIG,
+)
+
+ts_library(
+    name = "mcp_mock",
+    srcs = ["mcp_mock.ts"],
+    isolated_typecheck = True,
+    tsconfig = TSCONFIG,
+    deps = [":visual_network_ledger"],
 )
 
 ts_library(

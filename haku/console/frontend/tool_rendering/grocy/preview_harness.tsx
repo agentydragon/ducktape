@@ -1,6 +1,7 @@
 // `grocy-sf` preview screenshot entry — esbuild bundles this into the `:previews` IIFE: the
 // Grocy-only fetch stub, imported before the registry/widget graph reaches client.ts, then the
 // mount of this server's fixtures.
+import "./preview_mock";
 
 import { mountPreviewCards } from "../screenshot/mount";
 

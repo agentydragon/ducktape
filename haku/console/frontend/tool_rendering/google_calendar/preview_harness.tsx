@@ -1,5 +1,7 @@
-// `google_calendar` preview screenshot entry — esbuild bundles this into the `:previews` IIFE and
-// mounts this server's fixtures.
+// `google_calendar` preview screenshot entry — esbuild bundles this into the `:previews` IIFE:
+// the Calendar-only MCP stub, imported before the registry/widget graph reaches client.ts, then
+// the mount of this server's fixtures.
+import "./preview_mock";
 
 import { mountPreviewCards } from "../screenshot/mount";
 

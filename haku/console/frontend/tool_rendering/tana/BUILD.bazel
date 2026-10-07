@@ -43,6 +43,7 @@ ts_library(
         "//haku/console/frontend:code_block",
         "//haku/console/frontend:field",
         "//haku/console/frontend:link",
+        "//haku/console/frontend:tana_client",
         "//haku/console/frontend/tool_rendering:entry",
         "//haku/console/frontend/tool_rendering:server_ids",
         "//haku/console/frontend/tool_rendering:variant",
@@ -81,7 +82,26 @@ ts_library(
     tsconfig = TSCONFIG,
     deps = [
         ":preview_fixtures",
+        ":preview_mock",
         "//haku/console/frontend/tool_rendering/screenshot:mount",
+    ],
+)
+
+ts_library(
+    name = "fixtures",
+    srcs = ["fixtures.ts"],
+    isolated_typecheck = True,
+    tsconfig = TSCONFIG,
+)
+
+ts_library(
+    name = "preview_mock",
+    srcs = ["preview_mock.ts"],
+    isolated_typecheck = True,
+    tsconfig = TSCONFIG,
+    deps = [
+        ":fixtures",
+        "//haku/console/frontend/tool_rendering/screenshot:mcp_mock",
     ],
 )
 

@@ -32,7 +32,7 @@ ts_library(
         "//:node_modules/react",
         "//:node_modules/zod",
         "//haku/console/frontend:field",
-        "//haku/console/frontend:grocy_reference_data",
+        "//haku/console/frontend:grocy_client",
         "//haku/console/frontend:mcp_tool_schema",
         "//haku/console/frontend/tool_rendering:entry",
         "//haku/console/frontend/tool_rendering:server_ids",
@@ -101,7 +101,27 @@ ts_library(
     tsconfig = TSCONFIG,
     deps = [
         ":preview_fixtures",
+        ":preview_mock",
         "//haku/console/frontend/tool_rendering/screenshot:mount",
+    ],
+)
+
+ts_library(
+    name = "fixtures",
+    srcs = ["fixtures.ts"],
+    isolated_typecheck = True,
+    tsconfig = TSCONFIG,
+    deps = ["//haku/console/frontend:grocy_client"],
+)
+
+ts_library(
+    name = "preview_mock",
+    srcs = ["preview_mock.ts"],
+    isolated_typecheck = True,
+    tsconfig = TSCONFIG,
+    deps = [
+        ":fixtures",
+        "//haku/console/frontend/tool_rendering/screenshot:mcp_mock",
     ],
 )
 
