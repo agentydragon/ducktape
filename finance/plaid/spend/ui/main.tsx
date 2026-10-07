@@ -909,7 +909,7 @@ function TransactionDetails({ row, currency }: { row: TransactionRow; currency: 
         </Text>
         {row.pace_effects.map((effect) => (
           <Text size="sm" key={effect.period_id}>
-            {effect.period_id === "rolling_7d" ? "7-day" : "30-day"} pace input: {m(effect.amount_minor_units)}
+            {periodLabels[effect.period_id]} pace input: {m(effect.amount_minor_units)}
           </Text>
         ))}
         <Text size="sm">
