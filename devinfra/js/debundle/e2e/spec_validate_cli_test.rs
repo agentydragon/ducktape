@@ -86,6 +86,46 @@ export { renderCard };
 
     let text = run_spec_validate(&fixture.spec_path, &["--format", "text"]);
     assert!(text.status.success(), "stderr={}", text.stderr);
+
+    let strict = run_spec_validate(
+        &fixture.spec_path,
+        &["--format", "json", "--fail-on-outcomes"],
+    );
+    assert!(strict.status.success(), "stderr={}", strict.stderr);
+}
+
+#[test]
+fn validate_strict_mode_reports_all_outcomes_before_failing() {
+    let fixture = write_validate_fixture_spec(mixed_selector_failure_fixture());
+    let out = run_spec_validate(
+        &fixture.spec_path,
+        &["--format", "json", "--fail-on-outcomes"],
+    );
+    assert!(!out.status.success(), "stdout:\n{}", out.stdout);
+    assert!(
+        out.stderr.contains("validation found selector errors"),
+        "{}",
+        out.stderr
+    );
+    let report: Value = serde_json::from_str(&out.stdout).unwrap();
+    assert_eq!(
+        report["counts"],
+        json!({"no_match": 1, "ambiguous": 1, "duplicate_claim": 1})
+    );
+}
+
+#[test]
+fn validate_source_only_strict_mode_preserves_ndjson_report() {
+    let fixture = write_source_only_validate_fixture();
+    let out = run_source_only_validate(
+        &fixture.modules_root,
+        &fixture.source_file,
+        &["--format", "ndjson", "--fail-on-outcomes"],
+    );
+    assert!(!out.status.success(), "stdout:\n{}", out.stdout);
+    let summary: Value = serde_json::from_str(out.stdout.lines().last().unwrap()).unwrap();
+    assert_eq!(summary["section"], "summary");
+    assert_eq!(summary["counts"], json!({"no_match": 1, "ambiguous": 1}));
 }
 
 #[test]

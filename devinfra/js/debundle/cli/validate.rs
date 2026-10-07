@@ -49,6 +49,11 @@ pub struct ValidateArgs {
     #[arg(long, value_enum)]
     pub format: Option<OutputFormat>,
 
+    /// Exit nonzero after emitting the report if any selector outcome is an error.
+    /// Warnings, including resolution by elimination, do not fail validation.
+    #[arg(long)]
+    pub fail_on_outcomes: bool,
+
     /// Tree-shaped modules root to source-preflight without a full transform spec.
     #[arg(long = "modules")]
     pub modules_root: Option<std::path::PathBuf>,
@@ -68,16 +73,27 @@ pub struct ValidateArgs {
 
 pub fn run_validate_cmd(args: ValidateArgs) -> Result<()> {
     let format = OutputFormat::resolve(args.format);
+    let fail_on_outcomes = args.fail_on_outcomes;
     let report = if args.source_only_requested() {
         js_ast::with_swc_globals(|| run_source_only_validate(&args))?
     } else {
         run_spec_validate(args)?
     };
     if format == OutputFormat::Ndjson {
-        return emit_validate_ndjson(&report);
+        emit_validate_ndjson(&report)?;
+    } else {
+        print_report(&report, format, |report, buf| report.render_text(buf, None))
+            .context("writing validate output")?;
     }
-    print_report(&report, format, |report, buf| report.render_text(buf, None))
-        .context("writing validate output")
+    if fail_on_outcomes
+        && report
+            .outcomes
+            .iter()
+            .any(|outcome| outcome.severity() == Severity::Error)
+    {
+        bail!("validation found selector errors");
+    }
+    Ok(())
 }
 
 fn run_spec_validate(args: ValidateArgs) -> Result<SelectorOutcomeReport> {
