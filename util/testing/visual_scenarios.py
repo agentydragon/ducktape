@@ -21,10 +21,13 @@ from __future__ import annotations
 
 import re
 from pathlib import Path
-from typing import Literal
+from typing import TYPE_CHECKING, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, JsonValue, RootModel, field_validator, model_validator
 from pydantic.alias_generators import to_camel
+
+if TYPE_CHECKING:
+    from playwright.async_api import ViewportSize
 
 
 class _TableModel(BaseModel):
@@ -37,6 +40,17 @@ class Viewport(_TableModel):
     height: int = Field(default=800, description="CSS pixels.")
     device_scale_factor: float = Field(default=1, description="Device pixels per CSS pixel.")
     has_touch: bool = Field(default=False, description="Touch events, which a `tap` scenario needs.")
+
+    @property
+    def size(self) -> ViewportSize:
+        """Playwright's size argument for creating or resizing a page."""
+        return {"width": self.width, "height": self.height}
+
+
+DESKTOP = Viewport(width=1200, height=900)
+MOBILE = Viewport(width=412, height=915, device_scale_factor=2.625, has_touch=True)
+SMALL_MOBILE = Viewport(width=360, height=650, device_scale_factor=2.625, has_touch=True)
+VIEWPORTS = {"desktop": DESKTOP, "mobile": MOBILE, "small-mobile": SMALL_MOBILE}
 
 
 class Click(_TableModel):
@@ -73,6 +87,16 @@ class Scenario(_TableModel):
         )
     )
     viewport: Viewport = Field(default_factory=Viewport)
+
+    @field_validator("viewport", mode="before")
+    @classmethod
+    def _viewport_preset(cls, value: object) -> object:
+        if isinstance(value, str):
+            if value not in VIEWPORTS:
+                raise ValueError(f"unknown viewport preset {value!r}; expected one of {list(VIEWPORTS)}")
+            return VIEWPORTS[value]
+        return value
+
     output_name: str | None = Field(
         default=None, description="Filename stem of the published PNG; the scenario name if unset."
     )

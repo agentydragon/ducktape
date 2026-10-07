@@ -70,6 +70,19 @@ def test_a_viewport_states_only_what_differs_from_the_default() -> None:
     assert scenario.viewport == Viewport(width=1200, height=1500)
 
 
+def test_named_mobile_viewport_supports_touch_scenes() -> None:
+    scenario = Scenario.model_validate({"element": "#app", "viewport": "mobile", "tap": "#button"})
+
+    assert scenario.viewport.size == {"width": 412, "height": 915}
+    assert scenario.viewport.has_touch
+    assert scenario.viewport.device_scale_factor == 2.625
+
+
+def test_unknown_viewport_preset_fails_instead_of_using_default() -> None:
+    with pytest.raises(pydantic.ValidationError, match="unknown viewport preset 'moblie'"):
+        Scenario.model_validate({"element": "#app", "viewport": "moblie"})
+
+
 def test_every_scenario_states_its_element(tmp_path: Path) -> None:
     table = tmp_path / "scenarios.json"
     table.write_text('{"no_element": {"readySelectors": ["#a"]}}')

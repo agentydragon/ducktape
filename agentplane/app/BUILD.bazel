@@ -949,6 +949,7 @@ py_test(
         "//util/bazel:runfiles",
         "//util/testing:undeclared_outputs",
         "//util/testing:visual_review",
+        "//util/testing:visual_scenarios",
         "@pypi//playwright",
         "@pypi//protobuf",
         "@pypi//pytest",

@@ -152,6 +152,7 @@ py_library(
         "//util/bazel:runfiles",
         "//util/testing:frontend_visual",
         "//util/testing:undeclared_outputs",
+        "//util/testing:visual_scenarios",
         "@pypi//playwright",
         "@pypi//protobuf",
         "@pypi//pytest",

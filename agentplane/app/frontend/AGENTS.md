@@ -33,11 +33,12 @@ Filter ordinary scenes by JSON scenario name, and interaction scenes by Python t
 A row needs an `element`, a `route` and a `viewport`; `outputName`, `readySelectors`,
 `captureViewport` and the fixture switches are per-row overrides. The sweep reads the capture fields
 (`util/testing/visual_scenarios.py`) and the harness reads the route and fixture switches (`Scenario`
-in `harness/scenario.ts`). JSON has no shared constants, so every phone row spells out a Pixel 6's
-CSS viewport (`{ "width": 412, "height": 915, "deviceScaleFactor": 2.625 }`). `readySelectors` are
-Playwright selectors (`:text("...")`). Heights are deliberate: a
-thread's history follows its bottom, so a row's viewport must be tall enough to keep the card under
-test, and the input above it, in frame.
+in `harness/scenario.ts`). Use a named viewport: `desktop` (1200×900), `mobile` (412×915),
+or `small-mobile` (360×650). The shared definitions live in `util/testing/visual_scenarios.py`;
+Python browser tests use their `.size` property. Mobile captures include touch support and a 2.625
+device scale factor. `readySelectors` are Playwright selectors (`:text("...")`).
+Keep captures at real screen sizes: scroll to the subject or capture its component instead of
+inventing a taller viewport to fit more content. Explicit resizing belongs in tests of resize behavior.
 
 If a state you changed isn't exercised by any existing scenario/fixture (`harness/harness.tsx`), add
 one rather than skipping the check — see `session_states` for the pattern (a fixture built

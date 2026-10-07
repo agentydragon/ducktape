@@ -2,113 +2,75 @@
   "new_sandbox": {
     "element": "#app",
     "route": "/sandboxes?preset=public-coder",
-    "viewport": {
-      "width": 1200,
-      "height": 900
-    },
+    "viewport": "desktop",
     "outputName": "new-sandbox",
     "readySelectors": [".mantine-Pill-root"]
   },
   "new_sandbox_phone": {
     "element": "#app",
     "route": "/sandboxes?preset=public-coder",
-    "viewport": {
-      "width": 412,
-      "height": 915,
-      "deviceScaleFactor": 2.625
-    },
+    "viewport": "mobile",
     "outputName": "new-sandbox-phone",
     "readySelectors": [".mantine-Pill-root"]
   },
   "new_sandbox_policies": {
     "element": "#app",
     "route": "/sandboxes?preset=public-coder",
-    "viewport": {
-      "width": 1200,
-      "height": 900
-    },
+    "viewport": "desktop",
     "outputName": "new-sandbox-policies",
     "readySelectors": [".mantine-Pill-root:has-text(\"github-public\")"]
   },
   "new_sandbox_policies_phone": {
     "element": "#app",
     "route": "/sandboxes?preset=public-coder",
-    "viewport": {
-      "width": 412,
-      "height": 915,
-      "deviceScaleFactor": 2.625
-    },
+    "viewport": "mobile",
     "outputName": "new-sandbox-policies-phone",
     "readySelectors": [".mantine-Pill-root:has-text(\"github-public\")"]
   },
   "new_sandbox_grants": {
     "element": "#app",
     "route": "/sandboxes?preset=public-coder",
-    "viewport": {
-      "width": 1200,
-      "height": 900
-    },
+    "viewport": "desktop",
     "outputName": "new-sandbox-grants",
     "readySelectors": [".mantine-Pill-root"]
   },
   "new_sandbox_grants_phone": {
     "element": "#app",
     "route": "/sandboxes?preset=public-coder",
-    "viewport": {
-      "width": 412,
-      "height": 915,
-      "deviceScaleFactor": 2.625
-    },
+    "viewport": "mobile",
     "outputName": "new-sandbox-grants-phone",
     "readySelectors": [".mantine-Pill-root"]
   },
   "sandbox_egress": {
     "element": "#app",
     "route": "/sandboxes/ready-sandbox?tab=egress&rules=ready-sandbox-github-public",
-    "viewport": {
-      "width": 1200,
-      "height": 900
-    },
+    "viewport": "desktop",
     "outputName": "sandbox-egress"
   },
   "sandbox_egress_phone": {
     "element": "#app",
     "route": "/sandboxes/ready-sandbox?tab=egress&rules=ready-sandbox-github-public",
-    "viewport": {
-      "width": 412,
-      "height": 915,
-      "deviceScaleFactor": 2.625
-    },
+    "viewport": "mobile",
     "outputName": "sandbox-egress-phone"
   },
   "session_tool_payloads": {
     "element": "#app",
     "route": "/threads/5f1c4a2e-0000-4000-8000-000000000001",
-    "viewport": {
-      "width": 1200,
-      "height": 1300
-    },
+    "viewport": "desktop",
     "outputName": "session-tool-payloads",
     "readySelectors": [".agentplane-disclosure-summary"]
   },
   "session_tool_payloads_phone": {
     "element": "#app",
     "route": "/threads/5f1c4a2e-0000-4000-8000-000000000001",
-    "viewport": {
-      "width": 412,
-      "height": 1500,
-      "deviceScaleFactor": 2.625
-    },
+    "viewport": "mobile",
     "outputName": "session-tool-payloads-phone",
     "readySelectors": [".agentplane-disclosure-summary"]
   },
   "session_shell_calls_open": {
     "element": "#app",
     "route": "/threads/5f1c4a2e-0000-4000-8000-000000000001",
-    "viewport": {
-      "width": 1200,
-      "height": 1700
-    },
+    "viewport": "desktop",
     "outputName": "session-shell-calls-open",
     "shellCalls": true,
     "readySelectors": [".agentplane-disclosure-summary"]
@@ -116,11 +78,7 @@
   "session_shell_calls_open_phone": {
     "element": "#app",
     "route": "/threads/5f1c4a2e-0000-4000-8000-000000000001",
-    "viewport": {
-      "width": 412,
-      "height": 2400,
-      "deviceScaleFactor": 2.625
-    },
+    "viewport": "mobile",
     "outputName": "session-shell-calls-open-phone",
     "shellCalls": true,
     "readySelectors": [".agentplane-disclosure-summary"]
@@ -128,10 +86,7 @@
   "session_tool_output_sticky": {
     "element": "#app",
     "route": "/threads/5f1c4a2e-0000-4000-8000-000000000001",
-    "viewport": {
-      "width": 1200,
-      "height": 1100
-    },
+    "viewport": "desktop",
     "outputName": "session-tool-output-sticky",
     "shellCalls": true,
     "readySelectors": [".agentplane-disclosure-summary"],
@@ -140,11 +95,7 @@
   "session_tool_output_sticky_phone": {
     "element": "#app",
     "route": "/threads/5f1c4a2e-0000-4000-8000-000000000001",
-    "viewport": {
-      "width": 412,
-      "height": 1100,
-      "deviceScaleFactor": 2.625
-    },
+    "viewport": "mobile",
     "outputName": "session-tool-output-sticky-phone",
     "shellCalls": true,
     "readySelectors": [".agentplane-disclosure-summary"],
@@ -153,11 +104,7 @@
   "disclosure_component_phone_collapsed": {
     "element": "#shot",
     "route": "/",
-    "viewport": {
-      "width": 412,
-      "height": 915,
-      "deviceScaleFactor": 2.625
-    },
+    "viewport": "mobile",
     "outputName": "disclosure-component-phone-collapsed",
     "disclosureVisual": "collapsed",
     "readySelectors": [".demo-main .agentplane-disclosure-summary[aria-expanded='false']"],
@@ -166,11 +113,7 @@
   "disclosure_component_phone_short_expanded": {
     "element": "#shot",
     "route": "/",
-    "viewport": {
-      "width": 412,
-      "height": 915,
-      "deviceScaleFactor": 2.625
-    },
+    "viewport": "mobile",
     "outputName": "disclosure-component-phone-short-expanded",
     "disclosureVisual": "short-expanded",
     "readySelectors": [".demo-main .agentplane-disclosure-summary[aria-expanded='true']"],
@@ -179,11 +122,7 @@
   "disclosure_component_phone_long_top": {
     "element": "#shot",
     "route": "/",
-    "viewport": {
-      "width": 412,
-      "height": 915,
-      "deviceScaleFactor": 2.625
-    },
+    "viewport": "mobile",
     "outputName": "disclosure-component-phone-long-top",
     "disclosureVisual": "long-top",
     "readySelectors": [".demo-main .agentplane-disclosure-summary[aria-expanded='true']"],
@@ -192,11 +131,7 @@
   "disclosure_component_phone_long_scrolled": {
     "element": "#shot",
     "route": "/",
-    "viewport": {
-      "width": 412,
-      "height": 915,
-      "deviceScaleFactor": 2.625
-    },
+    "viewport": "mobile",
     "outputName": "disclosure-component-phone-long-scrolled",
     "disclosureVisual": "long-scrolled",
     "readySelectors": [".demo-main .agentplane-disclosure-heading[data-expanded='true']"],
@@ -205,11 +140,7 @@
   "disclosure_component_phone_after_disclosure": {
     "element": "#shot",
     "route": "/",
-    "viewport": {
-      "width": 412,
-      "height": 915,
-      "deviceScaleFactor": 2.625
-    },
+    "viewport": "mobile",
     "outputName": "disclosure-component-phone-after-disclosure",
     "disclosureVisual": "after-disclosure",
     "readySelectors": ["[data-disclosure-visual-stage='after-disclosure']"],
@@ -218,11 +149,7 @@
   "disclosure_component_phone_nested_child_scrolled": {
     "element": "#shot",
     "route": "/",
-    "viewport": {
-      "width": 412,
-      "height": 915,
-      "deviceScaleFactor": 2.625
-    },
+    "viewport": "mobile",
     "outputName": "disclosure-component-phone-nested-child-scrolled",
     "disclosureVisual": "nested-child-scrolled",
     "readySelectors": [".demo-inner .agentplane-disclosure-heading[data-expanded='true']"],
@@ -231,11 +158,7 @@
   "disclosure_component_phone_nested_after_child": {
     "element": "#shot",
     "route": "/",
-    "viewport": {
-      "width": 412,
-      "height": 915,
-      "deviceScaleFactor": 2.625
-    },
+    "viewport": "mobile",
     "outputName": "disclosure-component-phone-nested-after-child",
     "disclosureVisual": "nested-after-child",
     "readySelectors": [".demo-outer .agentplane-disclosure-heading[data-expanded='true']"],
@@ -244,11 +167,7 @@
   "disclosure_component_phone_nested_parent_only": {
     "element": "#shot",
     "route": "/",
-    "viewport": {
-      "width": 412,
-      "height": 915,
-      "deviceScaleFactor": 2.625
-    },
+    "viewport": "mobile",
     "outputName": "disclosure-component-phone-nested-parent-only",
     "disclosureVisual": "nested-parent-only-scrolled",
     "readySelectors": [".demo-outer .agentplane-disclosure-heading", ".demo-inner .agentplane-disclosure-heading"],
@@ -257,11 +176,7 @@
   "disclosure_component_phone_nested_after_outer": {
     "element": "#shot",
     "route": "/",
-    "viewport": {
-      "width": 412,
-      "height": 915,
-      "deviceScaleFactor": 2.625
-    },
+    "viewport": "mobile",
     "outputName": "disclosure-component-phone-nested-after-outer",
     "disclosureVisual": "nested-after-outer",
     "readySelectors": [".demo-outer .agentplane-disclosure-heading", ".demo-inner .agentplane-disclosure-heading"],
@@ -270,11 +185,7 @@
   "disclosure_component_phone_nested_wrapped_headings": {
     "element": "#shot",
     "route": "/",
-    "viewport": {
-      "width": 412,
-      "height": 915,
-      "deviceScaleFactor": 2.625
-    },
+    "viewport": "mobile",
     "outputName": "disclosure-component-phone-nested-wrapped-headings",
     "disclosureVisual": "nested-wrapped-headings",
     "readySelectors": [".demo-outer .agentplane-disclosure-heading", ".demo-inner .agentplane-disclosure-heading"],
@@ -283,11 +194,7 @@
   "disclosure_component_phone_nested_expanded_output": {
     "element": "#shot",
     "route": "/",
-    "viewport": {
-      "width": 412,
-      "height": 915,
-      "deviceScaleFactor": 2.625
-    },
+    "viewport": "mobile",
     "outputName": "disclosure-component-phone-nested-expanded-output",
     "disclosureVisual": "nested-expanded-output",
     "readySelectors": [
@@ -300,11 +207,7 @@
   "disclosure_component_phone_nested_before_output": {
     "element": "#shot",
     "route": "/",
-    "viewport": {
-      "width": 412,
-      "height": 915,
-      "deviceScaleFactor": 2.625
-    },
+    "viewport": "mobile",
     "outputName": "disclosure-component-phone-nested-before-output",
     "disclosureVisual": "nested-before-output",
     "readySelectors": [
@@ -317,11 +220,7 @@
   "disclosure_component_phone_nested_after_output": {
     "element": "#shot",
     "route": "/",
-    "viewport": {
-      "width": 412,
-      "height": 915,
-      "deviceScaleFactor": 2.625
-    },
+    "viewport": "mobile",
     "outputName": "disclosure-component-phone-nested-after-output",
     "disclosureVisual": "nested-after-output",
     "readySelectors": [
@@ -334,11 +233,7 @@
   "disclosure_component_phone_nested_output_collapsed": {
     "element": "#shot",
     "route": "/",
-    "viewport": {
-      "width": 412,
-      "height": 915,
-      "deviceScaleFactor": 2.625
-    },
+    "viewport": "mobile",
     "outputName": "disclosure-component-phone-nested-output-collapsed",
     "disclosureVisual": "nested-output-collapsed",
     "readySelectors": [

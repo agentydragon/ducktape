@@ -120,8 +120,8 @@ export interface Scenario {
    * all should be readable as labeled CodeMirror markers in the specialized command/result preview. */
   hiddenCodepoints?: boolean;
   /** Interleave completed assistant text, folded tool/reasoning runs, and streaming assistant text.
-   * Captured as the thread pane alone at 572px: the default sidebar is 240px, so an 812px viewport
-   * leaves the pane that wide. The history's "Jump to latest" control follows an IntersectionObserver
+   * Captured as the thread pane alone in the desktop viewport.
+   * The history's "Jump to latest" control follows an IntersectionObserver
    * that reports a frame or two after the layout moves, so the scenario waits for the history to
    * say its layout has come to rest. */
   streamingInterleaved?: boolean;

@@ -28,6 +28,7 @@ from agentplane.protocol import event_log_pb2, event_pb2
 from util.bazel.runfiles import get_required_path
 from util.testing.frontend_visual import CONTAINER_BASE_BROWSER_ARGS, chromium_executable
 from util.testing.undeclared_outputs import undeclared_outputs_dir
+from util.testing.visual_scenarios import DESKTOP
 
 # gazelle:include_dep @pypi//protobuf
 
@@ -50,7 +51,7 @@ async def page(
             args=[*CONTAINER_BASE_BROWSER_ARGS, f"--ignore-certificate-errors-spki-list={certificate.spki}"],
         )
         try:
-            async with await browser.new_context(viewport={"width": 1280, "height": 900}) as context:
+            async with await browser.new_context(viewport=DESKTOP.size) as context:
                 await context.add_init_script(path=history_probe.script_path())
                 await context.add_init_script(path=get_required_path("_main/agentplane/app/testing/thread_page.js"))
                 await context.tracing.start(screenshots=True, snapshots=True, sources=True)

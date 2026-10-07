@@ -242,7 +242,10 @@ py_library(
     name = "visual_scenarios",
     srcs = ["visual_scenarios.py"],
     visibility = ["//visibility:public"],
-    deps = ["@pypi//pydantic"],
+    deps = [
+        "@pypi//playwright",
+        "@pypi//pydantic",
+    ],
 )
 
 py_library(

@@ -59,6 +59,7 @@ from agentplane.protocol import command_pb2, event_log_pb2, event_pb2
 from util.bazel.runfiles import get_required_path
 from util.testing.undeclared_outputs import undeclared_outputs_dir
 from util.testing.visual_review import upsert_review_asset
+from util.testing.visual_scenarios import DESKTOP, MOBILE, SMALL_MOBILE
 from util.visual_review import VisualReviewAsset
 
 # gazelle:include_dep @pypi//protobuf
@@ -292,7 +293,7 @@ async def test_returning_to_a_thread_reads_only_what_changed_while_the_reader_wa
 
         history = page.get_by_role("region", name="Thread history", exact=True)
         # A short viewport mounts few of the window's rows, whose bodies a reader's view reads on mounting.
-        await page.set_viewport_size({"width": 1280, "height": 300})
+        await page.set_viewport_size({**DESKTOP.size, "height": 300})
         await page.goto(f"{ingress.url}/#/threads/{threads[0]}")
         await expect(page.get_by_text("Thread 0 message 129", exact=True)).to_be_visible()
         # Before the reader scrolls: the window reads the bodies of every row it holds (its 90 rows hold 89
@@ -301,7 +302,7 @@ async def test_returning_to_a_thread_reads_only_what_changed_while_the_reader_wa
             while _bodies_read(of(threads[0])) < 60:
                 await chunks_read.wait()
                 chunks_read.clear()
-        await page.set_viewport_size({"width": 1280, "height": 900})
+        await page.set_viewport_size(DESKTOP.size)
         await history.hover()
         async with page.expect_request(lambda request: _older_page_bound(request) is not None):
             await page.mouse.wheel(0, -10_000)
@@ -639,7 +640,7 @@ async def test_chronological_debug_is_lazy_paged_and_keeps_the_thread(
 ) -> None:
     page, source = thread_browser.page, thread_browser.source
     if phone:
-        await page.set_viewport_size({"width": 390, "height": 844})
+        await page.set_viewport_size(MOBILE.size)
     requests: list[str] = []
     page.on("request", lambda request: requests.append(request.url))
     for index in range(65):
@@ -813,7 +814,7 @@ async def test_thread_follows_bottom_until_reader_scrolls_up(
 ) -> None:
     page, source = thread_browser.page, thread_browser.source
     if phone:
-        await page.set_viewport_size({"width": 412, "height": 915})
+        await page.set_viewport_size(MOBILE.size)
     thread_browser.opened.replay.set()
     await expect(page.get_by_text("Test retained prefix", exact=True)).to_be_visible()
     if raw:
@@ -859,7 +860,7 @@ async def test_thread_follows_bottom_until_reader_scrolls_up(
         )
     await expect(page.get_by_text("Test streaming paragraph 4", exact=True)).to_have_count(1)
     await expect_history_bottom(page)
-    await page.set_viewport_size({"width": 360 if phone else 800, "height": 650})
+    await page.set_viewport_size({**(SMALL_MOBILE if phone else DESKTOP).size, "height": SMALL_MOBILE.height})
     await expect_history_bottom(page)
     await page.screenshot(path=undeclared_outputs_dir() / f"{request.node.name}-following.png")
 
@@ -894,7 +895,7 @@ async def test_thread_follows_bottom_until_reader_scrolls_up(
     # an unwanted jump scheduled by that observer. No elapsed-time delay stands in for rendering.
     await frames(page)
     await expect_reading_anchor(page, reading_anchor)
-    await page.set_viewport_size({"width": 360 if phone else 800, "height": 700})
+    await page.set_viewport_size({**(SMALL_MOBILE if phone else DESKTOP).size, "height": SMALL_MOBILE.height + 50})
     await frames(page)
     await expect_reading_anchor(page, reading_anchor)
     # A late expansion above the reader can advance scrollTop through browser anchoring.
@@ -929,7 +930,7 @@ async def test_thread_follows_bottom_until_reader_scrolls_up(
     await expect(page.get_by_text("Test following again", exact=True)).to_have_count(1)
     await expect_history_bottom(page)
     # Increasing the viewport height must keep following too, including browser scroll clamping.
-    await page.set_viewport_size({"width": 412 if phone else 1280, "height": 900})
+    await page.set_viewport_size((MOBILE if phone else DESKTOP).size)
     await expect_history_bottom(page)
     await page.screenshot(path=undeclared_outputs_dir() / f"{request.node.name}-resumed.png")
 
@@ -1234,7 +1235,7 @@ async def test_the_history_is_not_settled_while_a_row_is_still_loading_its_text(
     """A row is in before its text and grows when the text arrives, so a history that said it had
     settled in between would move its rows after saying they were at rest."""
     page = thread_browser.page
-    await page.set_viewport_size({"width": 412, "height": 915})
+    await page.set_viewport_size(MOBILE.size)
     release = asyncio.Event()
 
     async def hold_text(route: Route) -> None:
@@ -1263,7 +1264,7 @@ async def test_the_history_is_not_settled_while_a_row_is_still_loading_its_text(
 async def test_expanded_command_stays_collapsible(thread_browser: ThreadBrowser, phone: bool) -> None:
     page = thread_browser.page
     if phone:
-        await page.set_viewport_size({"width": 412, "height": 915})
+        await page.set_viewport_size(MOBILE.size)
     await append_run_among_rows(thread_browser, below=8)
     history = page.get_by_role("region", name="Thread history", exact=True)
     run = history.locator("[data-thread-anchor]").filter(has_text="3 tool calls")
@@ -1301,7 +1302,7 @@ async def test_opening_a_call_and_its_output_keeps_it_collapsible_while_reading(
     """Opening a run or call preserves its row; a long output stays collapsible while the reader scrolls it."""
     page = thread_browser.page
     if phone:
-        await page.set_viewport_size({"width": 412, "height": 915})
+        await page.set_viewport_size(MOBILE.size)
     await append_run_among_rows(thread_browser, below=8 if following else 40)
     history = page.get_by_role("region", name="Thread history", exact=True)
     run = history.locator("[data-thread-anchor]").filter(has_text="3 tool calls")
@@ -1456,7 +1457,7 @@ async def test_a_reader_away_from_the_end_of_a_live_thread_can_jump_back_to_it(
     following resumes."""
     page = thread_browser.page
     if phone:
-        await page.set_viewport_size({"width": 412, "height": 915})
+        await page.set_viewport_size(MOBILE.size)
     await append_run_among_rows(thread_browser, below=8)
     history = page.get_by_role("region", name="Thread history", exact=True)
     jump = page.get_by_role("button", name="Jump to latest")
@@ -1528,7 +1529,7 @@ async def test_failed_turn_preserves_confirmed_input_and_allows_another_turn(
 ) -> None:
     page, source = thread_browser.page, thread_browser.source
     if raw:
-        await page.set_viewport_size({"width": 412, "height": 915})
+        await page.set_viewport_size(MOBILE.size)
     thread_browser.opened.replay.set()
     await expect(page.get_by_text("Test retained prefix", exact=True)).to_be_visible()
     if raw:
