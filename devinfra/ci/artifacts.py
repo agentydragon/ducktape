@@ -84,11 +84,7 @@ def _skill_artifacts() -> list[Artifact]:
     artifact-pins.json.
     """
     registry = json.loads(skills_registry_path().read_text())
-    return [
-        Artifact(pkg=s["pkg"], filename=s["filename"])
-        for s in registry["skills"]
-        if s.get("nix", True)
-    ]
+    return [Artifact(pkg=s["pkg"], filename=s["filename"]) for s in registry["skills"] if s.get("nix", True)]
 
 
 def _release_artifacts() -> list[Artifact]:
