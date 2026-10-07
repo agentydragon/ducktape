@@ -1,4 +1,4 @@
-import { Fragment, useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 import type { ReactNode } from "react";
 import { createRoot } from "react-dom/client";
 import {
@@ -29,6 +29,7 @@ import {
 import IconChevronDown from "@tabler/icons-react/dist/esm/icons/IconChevronDown.mjs";
 import IconChevronRight from "@tabler/icons-react/dist/esm/icons/IconChevronRight.mjs";
 import "@mantine/core/styles.css";
+import "./styles.css";
 import type { components } from "./api/schema";
 
 type Windows = components["schemas"]["Windows"];
@@ -721,6 +722,18 @@ function CompactCounterparties({ counterparties }: { counterparties: Transaction
   );
 }
 
+function TransactionTitle({ row }: { row: TransactionRow }) {
+  const title = row.merchant_name || row.name;
+  return (
+    <>
+      <Text size="sm" fw={650} lineClamp={1} title={title}>
+        {title}
+      </Text>
+      <CompactCounterparties counterparties={row.counterparties} />
+    </>
+  );
+}
+
 type PlaidFieldValue = string | number | null | undefined;
 
 function hasSuppliedValue(value: unknown): boolean {
@@ -1071,7 +1084,7 @@ function TransactionsPanel({
           )}
           <Box visibleFrom="md">
             <ScrollArea type="auto">
-              <Table miw={850} verticalSpacing="sm" horizontalSpacing="md" striped highlightOnHover withTableBorder>
+              <Table miw={850} verticalSpacing="sm" horizontalSpacing="md" withTableBorder>
                 <Table.Thead>
                   <Table.Tr>
                     <Table.Th>Date</Table.Th>
@@ -1082,74 +1095,69 @@ function TransactionsPanel({
                     <Table.Th ta="right">Allowance</Table.Th>
                   </Table.Tr>
                 </Table.Thead>
-                <Table.Tbody>
-                  {shown.map(({ row, index }) => {
-                    const classification = classificationForRow(row);
-                    const expanded = expandedRow === index;
-                    return (
-                      <Fragment key={`${row.date}-${row.account_label}-${index}`}>
-                        <Table.Tr
-                          data-transaction-row
-                          tabIndex={0}
-                          aria-label={`${expanded ? "Hide" : "Show"} details for ${row.merchant_name || row.name}`}
-                          aria-expanded={expanded}
-                          onClick={() => setExpandedRow(expanded ? null : index)}
-                          onKeyDown={(event) => {
-                            if (event.key === "Enter" || event.key === " ") {
-                              event.preventDefault();
-                              setExpandedRow(expanded ? null : index);
-                            }
-                          }}
-                          style={{ cursor: "pointer" }}
-                        >
-                          <Table.Td style={{ whiteSpace: "nowrap" }}>{row.date}</Table.Td>
-                          <Table.Td>
-                            <Group gap="xs" wrap="nowrap">
-                              <Box c="dimmed" aria-hidden="true">
-                                {expanded ? <IconChevronDown size={16} /> : <IconChevronRight size={16} />}
-                              </Box>
-                              <Stack gap={0} miw={0} maw={320}>
-                                <Text size="sm" fw={650} lineClamp={1} title={row.merchant_name || row.name}>
-                                  {row.merchant_name || row.name}
-                                </Text>
-                                <CompactCounterparties counterparties={row.counterparties} />
-                              </Stack>
-                              {row.pending && (
-                                <Badge size="xs" variant="light" color="yellow">
-                                  Pending
-                                </Badge>
-                              )}
-                            </Group>
-                          </Table.Td>
-                          <Table.Td>{row.account_label}</Table.Td>
-                          <Table.Td>
-                            <Stack gap={2}>
-                              <Text size="sm" fw={600} style={{ overflowWrap: "anywhere" }}>
-                                {categoryForRow(row)}
-                              </Text>
-                              <Badge size="sm" variant="light" color={classification.color} w="fit-content">
-                                {classification.label}
-                              </Badge>
+                {shown.map(({ row, index }) => {
+                  const classification = classificationForRow(row);
+                  const expanded = expandedRow === index;
+                  return (
+                    <Table.Tbody className="transaction-rows" key={`${row.date}-${row.account_label}-${index}`}>
+                      <Table.Tr
+                        data-transaction-row
+                        tabIndex={0}
+                        aria-label={`${expanded ? "Hide" : "Show"} details for ${row.merchant_name || row.name}`}
+                        aria-expanded={expanded}
+                        onClick={() => setExpandedRow(expanded ? null : index)}
+                        onKeyDown={(event) => {
+                          if (event.key === "Enter" || event.key === " ") {
+                            event.preventDefault();
+                            setExpandedRow(expanded ? null : index);
+                          }
+                        }}
+                        style={{ cursor: "pointer" }}
+                      >
+                        <Table.Td style={{ whiteSpace: "nowrap" }}>{row.date}</Table.Td>
+                        <Table.Td>
+                          <Group gap="xs" wrap="nowrap">
+                            <Box c="dimmed" aria-hidden="true">
+                              {expanded ? <IconChevronDown size={16} /> : <IconChevronRight size={16} />}
+                            </Box>
+                            <Stack gap={0} miw={0} maw={320}>
+                              <TransactionTitle row={row} />
                             </Stack>
-                          </Table.Td>
-                          <Table.Td ta="right" style={{ whiteSpace: "nowrap" }}>
-                            {money(row.amount_minor_units, row.currency, true)}
-                          </Table.Td>
-                          <Table.Td ta="right" style={{ whiteSpace: "nowrap" }}>
-                            {row.allowance_minor_units === 0 ? "—" : money(row.allowance_minor_units, currency, true)}
+                            {row.pending && (
+                              <Badge size="xs" variant="light" color="yellow">
+                                Pending
+                              </Badge>
+                            )}
+                          </Group>
+                        </Table.Td>
+                        <Table.Td>{row.account_label}</Table.Td>
+                        <Table.Td>
+                          <Stack gap={2}>
+                            <Text size="sm" fw={600} style={{ overflowWrap: "anywhere" }}>
+                              {categoryForRow(row)}
+                            </Text>
+                            <Badge size="sm" variant="light" color={classification.color} w="fit-content">
+                              {classification.label}
+                            </Badge>
+                          </Stack>
+                        </Table.Td>
+                        <Table.Td ta="right" style={{ whiteSpace: "nowrap" }}>
+                          {money(row.amount_minor_units, row.currency, true)}
+                        </Table.Td>
+                        <Table.Td ta="right" style={{ whiteSpace: "nowrap" }}>
+                          {row.allowance_minor_units === 0 ? "—" : money(row.allowance_minor_units, currency, true)}
+                        </Table.Td>
+                      </Table.Tr>
+                      {expanded && (
+                        <Table.Tr>
+                          <Table.Td colSpan={6}>
+                            <TransactionDetails row={row} currency={currency} />
                           </Table.Td>
                         </Table.Tr>
-                        {expanded && (
-                          <Table.Tr>
-                            <Table.Td colSpan={6}>
-                              <TransactionDetails row={row} currency={currency} />
-                            </Table.Td>
-                          </Table.Tr>
-                        )}
-                      </Fragment>
-                    );
-                  })}
-                </Table.Tbody>
+                      )}
+                    </Table.Tbody>
+                  );
+                })}
               </Table>
             </ScrollArea>
           </Box>
@@ -1162,10 +1170,7 @@ function TransactionsPanel({
                     <Accordion.Control>
                       <Group justify="space-between" gap="sm" wrap="nowrap">
                         <Stack gap={2} miw={0} style={{ flex: "1 1 0" }}>
-                          <Text fw={650} size="sm" lineClamp={1} title={row.merchant_name || row.name}>
-                            {row.merchant_name || row.name}
-                          </Text>
-                          <CompactCounterparties counterparties={row.counterparties} />
+                          <TransactionTitle row={row} />
                           <Text size="xs" c="dimmed" style={{ overflowWrap: "anywhere" }}>
                             {categoryForRow(row)}
                           </Text>

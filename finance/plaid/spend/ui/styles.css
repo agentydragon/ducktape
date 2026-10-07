@@ -1,0 +1,7 @@
+.transaction-rows:nth-of-type(even) > tr {
+  background-color: var(--mantine-color-gray-light);
+}
+
+.transaction-rows:hover > tr {
+  background-color: var(--mantine-color-default-hover);
+}

@@ -1,3 +1,4 @@
+load("@aspect_rules_js//js:defs.bzl", "js_library")
 load("@aspect_rules_ts//ts:defs.bzl", "ts_config")
 load("//devinfra/js:openapi.bzl", "js_openapi_schema")
 load("//devinfra/js:spa_bundle.bzl", "spa_bundle")
@@ -15,6 +16,11 @@ js_openapi_schema(
     generator = "//finance/plaid/spend:export_schema_bin",
 )
 
+js_library(
+    name = "styles",
+    srcs = ["styles.css"],
+)
+
 ts_library(
     name = "main",
     srcs = [
@@ -24,6 +30,7 @@ ts_library(
     tsconfig = ":tsconfig",
     deps = [
         ":schema",
+        ":styles",
         "//:node_modules/@mantine/core",
         "//:node_modules/@tabler/icons-react",
         "//:node_modules/@types/react",
