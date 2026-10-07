@@ -3,7 +3,6 @@
 //
 const config = {
   printWidth: 120,
-  proseWrap: "always",
   tabWidth: 2,
   useTabs: false,
   semi: true,
