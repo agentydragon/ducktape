@@ -13,11 +13,12 @@ from sqlalchemy import create_engine, select, text
 from sqlalchemy.engine import make_url
 
 from haku.console.database_schema import metadata
-from haku.recall_index.schema import Base as RecallIndexBase
 
 # SQLAlchemy loads the psycopg dialect at runtime via the `postgresql+psycopg://`
 # URL scheme; nothing imports it directly, so Gazelle cannot see the dependency.
 # gazelle:include_dep @pypi//psycopg
+# Alembic imports migration modules dynamically, including their frozen schema types.
+# gazelle:include_dep //haku/recall_index:schema
 
 _MIGRATIONS_DIR = Path(__file__).parent / "migrations"
 
@@ -54,9 +55,8 @@ def verify_schema_for_connection(conn: Any) -> None:
     serves as Ready. `.tables` rather than `.sorted_tables`: creation order is irrelevant for these
     reads and sorting warns about deliberate mutually dependent Agent foreign keys.
     """
-    for owned in (metadata, RecallIndexBase.metadata):
-        for table in owned.tables.values():
-            conn.execute(select(table).limit(0))
+    for table in metadata.tables.values():
+        conn.execute(select(table).limit(0))
 
 
 def sync_database_url(database_url: str) -> str:

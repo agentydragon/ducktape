@@ -1,7 +1,7 @@
 """The Haku Console API and its public shell: the API Deployment (reviewed FastAPI code) with
 its ServiceAccount, RBAC, config ConfigMap, Service and ServiceMonitor; the separate
 `static` nginx Deployment/Service the public HTTPRoute reaches, which proxies
-backend paths to the API; and the Job granting the indexer role its object privileges.
+backend paths to the API.
 
 Trust boundary: the console runs in its OWN `haku-console` namespace, not haku-sandbox. As
 reviewed/released ducktape code it sits outside Haku's RBAC (Haku cannot read its secrets or
@@ -17,7 +17,7 @@ carries the Flux marker a generated file cannot.
 
 from __future__ import annotations
 
-from cdk8s import ApiObject, ApiObjectMetadata, Duration, JsonPatch, Size
+from cdk8s import ApiObjectMetadata, Duration, Size
 from cdk8s_plus_34 import (
     ApiResource,
     ClusterRole,
@@ -33,7 +33,6 @@ from cdk8s_plus_34 import (
     EnvValue,
     ImagePullPolicy,
     ISecret,
-    Job,
     LabelSelector,
     MemoryResources,
     PercentOrAbsolute,
@@ -41,7 +40,6 @@ from cdk8s_plus_34 import (
     PodSecurityContextProps,
     Probe,
     Protocol,
-    RestartPolicy,
     Role,
     RoleBinding,
     RolePolicyRule,
@@ -101,12 +99,6 @@ STATIC_METADATA_CONFIG_MAP = "static-metadata"
 IMAGE_METADATA_CONFIG_MAP = "image-metadata"
 _IMAGE_TAG_KEY = "image-tag"
 _STATIC_METADATA_DIR = "/etc/haku-console/static-metadata"
-# kustomize builds it from indexer-role.sql; a changed script re-hashes the name, and the
-# Job's `force` annotation recreates it.
-INDEXER_SQL_CONFIG_MAP = "haku-console-db-indexer-sql"
-_INDEXER_SQL_DIR = "/sql"
-_INDEXER_PROVISIONER_NAME = "db-indexer-provisioner"
-_INDEXER_PROVISIONER_LABEL = "haku-console-db-indexer-provisioner"
 _AUTHENTIK = "https://auth.allegedly.works"
 
 _DB_ENV = {
@@ -135,8 +127,7 @@ def database_env(scope: Construct) -> dict[str, EnvValue]:
 
 
 class Console(Construct):
-    """The API and static-shell Deployments with everything they need, plus the indexer
-    provisioner Job."""
+    """The API and static-shell Deployments with everything they need."""
 
     def __init__(self, scope: Construct, id: str) -> None:
         super().__init__(scope, id)
@@ -167,7 +158,6 @@ class Console(Construct):
         self._add_service_monitor()
         self._add_static()
         self._add_http_route()
-        self._add_indexer_provisioner()
 
     def _add_rbac(self, service_account: ServiceAccount) -> None:
         # SubjectAccessReview is advisory only: it cannot mutate cluster state and gives the
@@ -529,62 +519,4 @@ class Console(Construct):
             hostnames=[HOSTNAME],
             backend=_STATIC,
             timeout="360s",
-        )
-
-    def _add_indexer_provisioner(self) -> None:
-        """Applies indexer-role.sql's object GRANTs for `haku_indexer`. The role itself is
-        CNPG-managed (database.py); the grants need the recall_index schema, which the
-        migration Job creates in this same Kustomization with nothing sequencing the two --
-        so this retries until that schema exists. Each attempt keeps its own Pod, so a real
-        SQL error is still readable. No TTL: the TTL controller deleting a finished Job would
-        make Flux recreate and re-run it on schedule."""
-        job = Job(
-            self,
-            "indexer-provisioner",
-            metadata=ApiObjectMetadata(
-                name=_INDEXER_PROVISIONER_NAME,
-                namespace=NAMESPACE,
-                annotations={
-                    "description": (
-                        "Applies the object GRANTs for haku_indexer (indexer-role.sql). The role itself is "
-                        "managed declaratively by CNPG (haku-console-db managed.roles); this runs in the app "
-                        "layer because the recall_index schema exists only after the migration Job."
-                    ),
-                    "kustomize.toolkit.fluxcd.io/force": "enabled",
-                },
-            ),
-            pod_metadata=ApiObjectMetadata(labels={"app.kubernetes.io/name": _INDEXER_PROVISIONER_LABEL}),
-            select=False,
-            backoff_limit=10,
-            active_deadline=Duration.minutes(20),
-            restart_policy=RestartPolicy.NEVER,
-            automount_service_account_token=False,
-        )
-        container = job.add_container(
-            name="psql",
-            image="ghcr.io/cloudnative-pg/postgresql:18.6-system-trixie",
-            image_pull_policy=ImagePullPolicy.IF_NOT_PRESENT,
-            command=["psql"],
-            args=["--set=ON_ERROR_STOP=1", "-f", f"{_INDEXER_SQL_DIR}/indexer-role.sql"],
-            # As the database owner: object-level GRANTs need owner privileges, not superuser.
-            env_variables={
-                "PGUSER": database.POSTGRES.app_secret.key("username").env_value(self, "indexer-db-username"),
-                "PGPASSWORD": database.POSTGRES.app_secret.key("password").env_value(self, "indexer-db-password"),
-                "PGHOST": EnvValue.from_value(database.POSTGRES.rw.host),
-                "PGDATABASE": EnvValue.from_value(database.DATABASE),
-            },
-            resources=ContainerResources(
-                cpu=CpuResources(request=Cpu.millis(10)),
-                memory=MemoryResources(request=Size.mebibytes(32), limit=Size.mebibytes(128)),
-            ),
-            # Writable: its root filesystem writes are unaudited.
-            security_context=ContainerSecurityContextProps(read_only_root_filesystem=False),
-        )
-        sql = ConfigMap.from_config_map_name(self, "indexer-sql-ref", INDEXER_SQL_CONFIG_MAP)
-        container.mount(_INDEXER_SQL_DIR, Volume.from_config_map(self, "indexer-sql-volume", sql), read_only=True)
-        pod_policy.place(job, node_scheduling.HIL_OVH)
-        pod_policy.harden(job)
-        # cdk8s-plus's Container has no terminationMessagePolicy option.
-        ApiObject.of(job).add_json_patch(
-            JsonPatch.add("/spec/template/spec/containers/0/terminationMessagePolicy", "FallbackToLogsOnError")
         )

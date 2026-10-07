@@ -120,10 +120,11 @@ through the transport. Three things it needs:
 - **Unlabelled is highest, so it fails closed.** Every session predating the column has no tier
   and must read as top-tier — unreadable by anything lower — rather than as "unclassified,
   therefore fine".
-- **Semantic search was where this bit first, and is currently disabled.** The deployed console no
-  longer registers `haku_index`, grants Recall indexes, or runs index-maintenance workers. The
-  retained implementation and database data can be re-enabled only after the profile and tier
-  boundaries are reviewed together. <../recall_index/README.md> § Read scoping still names the
+- **Semantic search was where this bit first, and the Console integration is retired.** Its
+  reader, authorization, MCP tool, and indexer role are removed. The Recall schema and indexed data
+  remain during the rollout, and the shared implementation remains in use by Agentplane. Re-enabling
+  Console search requires reviewing the profile and tier boundaries together.
+  <../recall_index/README.md> § Read scoping still names the
   condition for revisiting: "the moment a second operator or a room Haku should not see exists,
   ranked retrieval is where that leaks first". A drilldown makes reading another conversation
   deliberate — you have to name the session; ranked retrieval surfaces it by accident, at the top

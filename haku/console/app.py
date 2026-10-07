@@ -25,7 +25,6 @@ import uvicorn
 from fastapi import Depends, FastAPI, Request, Response
 from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
-from openai import AsyncOpenAI
 from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 from starlette.middleware.sessions import SessionMiddleware
@@ -62,12 +61,8 @@ from haku.console.mcp_config import (
 )
 from haku.console.models import ConfigResponse
 from haku.console.notifications import console_events, push, push_routes
-from haku.console.recall_index_reader import PostgresIndexSearcher
 from haku.console.settings import Settings
 from haku.console.tools import grants as grants_tools, kubernetes as kubernetes_tools, routine as routine_tools
-from haku.console.tools.recall_index import HAKU_INDEX_SERVER_ID
-from haku.recall_index.config import EmbedderConfig
-from haku.recall_index.openai_embedder import OpenAIEmbedder
 
 # SessionMiddleware signs cookies with itsdangerous, imported inside starlette;
 # gazelle cannot see the dependency.
@@ -119,14 +114,6 @@ def _cache_control_for_path(path: str, status_code: int) -> str:
     if path.startswith(("/api/", "/mcp", "/auth/", "/.well-known/", "/metrics")) or path == "/healthz":
         return NO_STORE_CACHE_CONTROL
     return APP_SHELL_CACHE_CONTROL
-
-
-def _embedder(config: EmbedderConfig, *, timeout: float) -> OpenAIEmbedder:
-    return OpenAIEmbedder(
-        AsyncOpenAI(base_url=config.base_url, api_key=config.api_key.get_secret_value(), timeout=timeout),
-        model=config.model,
-        query_instruction=config.query_instruction,
-    )
 
 
 def _operator_identity_trust(settings: Settings) -> OperatorIdentityTrust:
@@ -256,29 +243,10 @@ def create_app(
         # could only ever disagree with it — a listed server with no builder fails the binding
         # validation below.
         configured_server_ids = {entry.id for entry in console_config.mcp.servers.values()}
-        index_searcher = None
-        if HAKU_INDEX_SERVER_ID in configured_server_ids:
-            if settings.embedder is None:
-                raise ValueError(
-                    f"MCP server {HAKU_INDEX_SERVER_ID!r} is configured but no embedder is: "
-                    "search embeds its query, so it cannot run without one"
-                )
-            # A database reader only: this process runs no source or embedding maintenance (the
-            # haku-indexer worker that did was removed; last commit with it: 74b464467), so
-            # search serves whatever index state was last committed. The request-path timeout
-            # applies: a search embeds one query and should fail rather than hang.
-            index_searcher = PostgresIndexSearcher(
-                db_sessions,
-                _embedder(settings.embedder, timeout=settings.embedder.timeout_seconds),
-                indexes=tuple(console_config.recall_indexes.values()),
-                budget=settings.recall_index.chunk_budget,
-            )
         in_process_servers = build_in_process_servers(
             InProcessServerDependencies(
                 routine_launcher=routine_launcher,
-                index=index_searcher,
-                recall_access_profiles=tuple(console_config.access_profiles),
-                configured_recall_index_ids=tuple(index.index_id for index in console_config.recall_indexes.values()),
+                access_profiles=tuple(console_config.access_profiles),
                 # The `grants` server fronts Kubernetes grants plus the kubernetes SAR check
                 # (`kubernetes_can_i`, #4918), so it needs the kubernetes authorization service; it
                 # registers only when that is configured (as it always is in the deployed config).

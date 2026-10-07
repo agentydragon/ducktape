@@ -54,12 +54,12 @@ The browser login flow is fixed in #3516/#3519 except for:
   nothing in the SPA calls it, and it clears only the console session — not Authentik's — so a
   manual logout silently re-logs-in on the next 401. Needs RP-initiated logout to be meaningful.
 
-## Recall indexing is disabled
+## Retained Console Recall database
 
-The deployed console intentionally leaves Recall index configuration, the `haku_index` MCP server,
-and index-maintenance workers unwired. The `recall_index` database schema and data remain for a
-future re-enable; restore source/embedding workers and review catalog/access-profile exposure
-together when that work resumes.
+The Console Recall reader, access policy, indexer worker, and its dedicated DB role provisioning
+were removed. Keep the existing schema, indexed data, and pgvector extension until older replicas
+that validate the Recall ORM have left. Then add a forward migration to drop the Console-owned
+Recall schema and extension. The shared `haku/recall_index` library remains in use by Agentplane.
 
 ## Small cleanups
 

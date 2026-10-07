@@ -8,8 +8,7 @@ The `console.k8s.yaml` and `kustomization.yaml` here are generated from
 in one Kustomization, emitted in the central Flux chart; `console_config.py` is the non-secret config
 the `haku-console-config` ConfigMap carries, rendered and checked through the console's
 own `Settings`). Regenerate per <../../../docs/cdk8s.md>. Hand-written beside them: the SOPS
-Secrets, `indexer-role.sql` (a `configMapGenerator` input, so a changed script re-hashes
-the ConfigMap and recreates the provisioner Job), `image-pins/`, and the two ConfigMaps
+Secrets, `image-pins/`, and the two ConfigMaps
 carrying Flux image markers (`static-metadata.yaml`, `image-metadata.yaml`).
 
 ## App-owned auth (the forward-auth outpost is retired)
@@ -93,14 +92,13 @@ that release boundary.
 Stored values and cross-replica payloads have the analogous adjacent-release rule; the reader/writer
 vocabulary policy remains in <../../../../haku/console/README.md> § Vocabularies across a roll.
 
-## Recall indexing is currently unwired
+## Retired Console Recall integration
 
-The deployed console does not register the `haku_index` MCP server, grant Recall indexes to any
-access profile, or run source/embedding maintenance workers. This stops indexing and keeps retained
-indexes out of connected MCP-client catalogs. The `recall_index` schema/data and the narrow
-`haku_indexer` database role remain in place for now; no migration drops them. Re-enabling Recall
-must restore the catalog, access-profile grants, and maintenance workers as one reviewed change;
-the `haku-indexer` worker code was removed, and `74b464467` is the last commit with it.
+The Console reader, in-process Recall tool, indexer grant provisioner, and indexer credentials were
+removed. Its Recall schema, data, and vector extension remain in Postgres through this rollout:
+the outgoing API version still maps and validates the schema at startup. A follow-up migration can
+drop them only after this retiring image has converged. The shared `haku/recall_index` library
+remains used by Agentplane.
 
 ## `haku-console-github-mcp-client-credentials` belongs to agentplane-staging
 

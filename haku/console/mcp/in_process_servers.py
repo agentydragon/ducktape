@@ -1,8 +1,8 @@
 """Canonical construction of haku-console's same-process MCP servers.
 
-The registry holds *builders* (`InProcessServers`): routine and index are credential-free, built
-lazily from deploy-time collaborators. Trusted caller context for the profile-scoped servers
-travels in MCP request metadata. See `execution.McpExecutionContext`.
+The registry holds *builders* (`InProcessServers`): routine and grants are credential-free, built
+lazily from deploy-time collaborators. Trusted caller context for profile-scoped servers travels
+in MCP request metadata. See `execution.McpExecutionContext`.
 """
 
 from __future__ import annotations
@@ -10,7 +10,6 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 import haku.console.tools.grants as grants_tools
-import haku.console.tools.recall_index as recall_index_tools
 import haku.console.tools.routine as routine_tools
 from haku.console.mcp.in_process_server_access import InProcessServerAccessPolicy
 from haku.console.mcp_config import (
@@ -20,7 +19,6 @@ from haku.console.mcp_config import (
     InProcessServers,
     const_in_process_server,
 )
-from haku.console.recall_index_access import RecallIndexAccessPolicy
 
 
 @dataclass(frozen=True, slots=True)
@@ -31,33 +29,20 @@ class InProcessServerDependencies:
     """
 
     routine_launcher: routine_tools.RoutineLauncher | None = None
-    # The semantic index over haku-state's files — set only when `config.yaml` lists the server,
-    # which is also what requires an embedder to be configured.
-    index: recall_index_tools.IndexSearcher | None = None
+    access_profiles: tuple[AccessProfile, ...] = ()
     # The unified grant server fronting every grant domain (kubernetes | http) plus the kubernetes
     # SAR check (`kubernetes_can_i`) — one server, no separate `kubernetes` server (#4918).
     grants: grants_tools.GrantsToolsService | None = None
-    recall_access_profiles: tuple[AccessProfile, ...] = ()
-    configured_recall_index_ids: tuple[str, ...] = ()
 
 
 def build_in_process_servers(dependencies: InProcessServerDependencies) -> InProcessServers:
     """Build the per-call builder for every configured in-process server."""
 
-    recall_access = RecallIndexAccessPolicy(
-        dependencies.recall_access_profiles, configured_index_ids=dependencies.configured_recall_index_ids
-    )
-    in_process_access = InProcessServerAccessPolicy(dependencies.recall_access_profiles)
+    in_process_access = InProcessServerAccessPolicy(dependencies.access_profiles)
     servers: InProcessServers = {}
     if dependencies.routine_launcher is not None:
         servers[routine_tools.HAKU_ROUTINE_SERVER_ID] = const_in_process_server(
             routine_tools.build_mcp(dependencies.routine_launcher)
-        )
-    if (index := dependencies.index) is not None:
-        servers[recall_index_tools.HAKU_INDEX_SERVER_ID] = InProcessServerRegistration(
-            builder=lambda _token: recall_index_tools.build_mcp(index, access=recall_access),
-            credential_kind=InProcessCredentialKind.NONE,
-            authorizer=recall_access.authorize_index_tool,
         )
     if (grants := dependencies.grants) is not None:
         servers[grants_tools.GRANTS_SERVER_ID] = InProcessServerRegistration(

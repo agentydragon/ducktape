@@ -158,107 +158,15 @@ is selected by any Cilium policy, and the CCNPs that exist are scoped to other n
 `endpointSelector`. Adding an ingress policy to `ollama` later would need this flow allowed
 explicitly.
 
-## An index nobody consults is not memory
+## Console integration retired
 
-An agent that _can_ search does not thereby search. It answers from the context in front of it,
-which is the one place the answer reliably is not, and a tool it never reaches for is
-indistinguishable from a tool that does not exist. So recall is prompted in the `search` tool's
-own description (<../console/tools/recall_index.py>), which states it as a step rather than an
-affordance and names the question types that trigger it — prior work, decisions, dates, people,
-preferences, commitments, anything asked for earlier. A tool description is what a model actually
-reads; a server's `instructions` frequently are not surfaced by the client at all, which is why
-recall is prompted there and not left to server instructions alone.
+The `haku/console` Recall reader, authorization policy, MCP tool wrapper, and database schema
+verification were removed. The shared package remains used by Agentplane's indexing code.
 
-**A search that found nothing must be reported as a search that found nothing**, not as absence
-and not as silence. That is the failure the whole surface exists to prevent, and it is also why a
-behind corpus attaches its status to the result.
-
-The wording is deliberately close to OpenClaw's `memory-core` prompt section, which is the one
-comparable thing in reach and has had far more exposure to real sessions than this has.
-
-## Dormant console integration
-
-The implementation below remains available for a future deployment, but the current haku-console
-catalog intentionally does not register `haku_index`, and no index-maintenance workers run. The
-database schema and retained data stay in place until a separate data-retirement decision.
-
-## When enabled in the console
-
-- **Schema ownership.** `store.ensure_schema` creates the extension, schema, and tables for the
-  tests, which own their whole database. An enabled deployment gets them from the console's Alembic
-  baseline — the console's CNPG cluster is the home.
-- **The MCP tool surface.** `haku_index` (<../console/tools/recall_index.py>) is an in-process
-  FastMCP server in haku-console: one `search` with optional `index_ids` (omitted means every
-  configured index), plus `index_status`.
-
-  **`index_status` answers before there is anything to search.** It reports `remote_commit` —
-  what the last sweep saw on the branch, recorded on every tick including the ones that decide
-  there is nothing to do — alongside `indexed_commit`, which is null until a first sync has
-  completed, and `embedded_chunks`, which climbs while one is running. The three together say
-  which of "never configured", "never reached the repository", "indexing right now" and "behind
-  by a commit" is true. That distinction is not hypothetical: on 2026-08-15 the corpus sat empty
-  for an hour while the status surface returned a bare `null`, and diagnosing it took a psql
-  session against the production database.
-
-  Both facts live in one `git_sync_state` row rather than two tables: they are two things about
-  the same branch, every reader wants both, and "is the index behind" should be a comparison
-  within a row. The indexed half is nullable because it becomes true later, and a check keeps it
-  all-or-nothing so a commit can never be recorded without the regime it was indexed under.
-
-  **A search over an index that is behind carries the status back with it**, in `SearchResults.index`,
-  rather than relying on the caller to go ask. Being told to check a second tool before
-  believing an empty result only works on a caller that reads an empty result as suspicious,
-  which is exactly the caller that does not need telling. What rides along is the whole status
-  object and not a `stale: true` flag, because the useful question is _by how much_: four
-  files waiting is a different answer from a tip that is nine commits behind.
-
-  **Search returns each matching indexed chunk by default, plus its pointer.** Set
-  `include_content=false` to return provenance only. A Git hit always carries the index id, path,
-  commit, and blob sha. The chunk is useful retrieval context, not an authoritative replacement
-  for the source: callers that need a whole Git file read it through that source's reader. A
-  second whole-source reader in this server would be a second answer to "what does this file
-  say", and the two would drift.
-
-  Listing the server in `cluster/cdk8s/haku/console_config.py` is what builds it — a configured
-  server with no builder fails `validate_in_process_server_bindings` at startup — and the console
-  refuses to start if it is listed with no embedder configured, since search embeds its query and
-  cannot run without somewhere to do that. When re-enabled, the catalog and access-profile policy
-  must be restored together.
-
-- **The `vector` extension — not an image build.** pgvector is untrusted, so `CREATE EXTENSION`
-  needs superuser and the migration (running as `approval_store`) cannot do it — hence a CNPG
-  `Database` CR (<../../cluster/k8s/haku/console/db/approval-store-database.yaml>) declaring the
-  extension, adopting the database `bootstrap.initdb` created, with `databaseReclaimPolicy: retain`
-  so deleting the file can never drop the console's database. pgvector 0.8.1 already ships in
-  `ghcr.io/cloudnative-pg/postgresql:18.1-system-trixie`, the image the console's CNPG cluster
-  runs, so nothing had to be rebuilt.
-
-  The migration that builds the derived schema assumes the extension is there. If it is not, the
-  migration fails, the new replica never becomes Ready, and `maxUnavailable: 0` leaves the running
-  version serving — so a change to either side wants the `Database` CR reconciled first.
-
-- **Sync when enabled.** Nothing drives `sync.sync` or `embedding_sync.embed_pending` now. The
-  `haku-indexer` worker that did (`haku/console/indexer.py` over `haku/console/recall_index_sync.py`,
-  deployed as per-index `chunk` Deployments plus a shared `embed` one) was removed; `74b464467` is
-  the last commit with it. The console process only reads the committed index state for search and
-  status, so index maintenance failing or rolling never touches the console's own availability.
-  `sync.sync` takes no lock: the removed worker held a per-index Postgres advisory lock around it,
-  so a driver needs its own per-index exclusion. The embedding drain needs no such leadership:
-  every batch is claimed `FOR UPDATE SKIP LOCKED`, so concurrent drains split the queue instead of
-  electing one worker.
-
-  **The git tick should be an `ls-remote`, not a fetch.** One round trip returns refs and no
-  objects, so the common case — nothing moved — costs almost nothing and can be asked often. The
-  gate is `sync.is_current`, the same predicate the sync itself early-outs on, because it must
-  compare the source regime: a chunker change has to re-materialize a tip that never moved, while a
-  new embedding model is handled independently by the model-specific embedding queue.
-
-  Git credentials are per-index: `haku-state` uses **Haku's own Forgejo account** (operator,
-  2026-08-15), so a future indexer worker would hold something that could write haku-state even
-  though nothing in it does. `ducktape-public` needs none: it clones the canonical public GitHub
-  remote anonymously. The credential cost is recorded where it is paid: when enabled,
-  `tf/gitops/haku-state/main.tf` reflects the Secret into `haku-console`, and the worker's
-  Deployment consumes it.
+The Console Recall schema, indexed data, and `vector` extension stay in its database during this
+rollout because the outgoing Console version maps and validates those tables at startup. A later
+release can drop that retained schema after the retiring image has fully converged. No Console
+worker or request path reads or writes the retained index now.
 
 ## Not here yet
 

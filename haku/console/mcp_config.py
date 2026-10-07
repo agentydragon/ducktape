@@ -12,7 +12,6 @@ import re
 from collections.abc import Callable
 from dataclasses import dataclass
 from enum import StrEnum
-from pathlib import Path
 from typing import Annotated, Any, Literal
 from uuid import UUID
 
@@ -22,7 +21,6 @@ from pydantic import BaseModel, ConfigDict, Field, SecretStr, field_validator, m
 from haku.console.config import KubernetesAuthorizationConfig
 from haku.console.identity.naming import normalize_agent_name
 from haku.console.tool_call_actor import RuntimeActor
-from haku.recall_index.config import ConfiguredRecallIndex, GitRecallIndexDefinition
 from mcp_infra.prefix import MCPMountPrefix
 
 
@@ -58,7 +56,6 @@ class ConsoleMcpConfig(BaseModel):
 
 
 type AutoApprovalPolicyId = Annotated[str, Field(min_length=1, pattern=r"^[a-z][a-z0-9_-]*$")]
-type RecallIndexId = Annotated[str, Field(min_length=1, pattern=r"^[a-z][a-z0-9-]*$")]
 type InProcessServerId = Annotated[str, Field(min_length=1, pattern=r"^[a-z][a-z0-9_-]*$")]
 
 
@@ -125,18 +122,16 @@ class AccessProfile(BaseModel):
     """A deploy-reviewed capability bundle assigned to one durable Agent.
 
     The profile deliberately gathers all durable Agent authority in one config catalog: its
-    current auto-approval policy and the logical Recall indexes it may later search. Credential
-    bindings authenticate an Agent; they never independently select either capability.
+    current auto-approval policy and allowed in-process servers. Credential bindings authenticate
+    an Agent; they never independently select either capability.
     """
 
     model_config = ConfigDict(extra="forbid")
 
     id: str = Field(min_length=1, pattern=r"^[a-z][a-z0-9_-]*$")
     auto_approval_policy: AutoApprovalPolicyId
-    recall_index_ids: set[RecallIndexId] = Field(default_factory=set)
     # Explicit access to credential-free in-process servers whose data is held by Console itself.
-    # This is independent from auto-approval (whether a call skips review) and Recall access
-    # (whether a particular index can be searched).
+    # This is independent from auto-approval (whether a call skips review).
     in_process_server_ids: set[InProcessServerId] = Field(default_factory=set)
 
 
@@ -185,17 +180,10 @@ class ConsoleConfigFile(BaseModel):
     mcp_server_enabled: bool = True
 
     mcp: ConsoleMcpConfig = Field(default_factory=ConsoleMcpConfig)
-    # libgit2 does not inherit Python/OpenSSL environment variables. Configure its process-wide
-    # trust store explicitly before any HTTPS recall source is cloned or fetched.
-    git_ca_bundle: Path = Path("/etc/ssl/certs/ca-certificates.crt")
     auto_approval_policies: list[AutoApprovalPolicy] = Field(min_length=1)
     access_profiles: list[AccessProfile] = Field(min_length=1)
     default_access_profile_id: str = Field(min_length=1, pattern=r"^[a-z][a-z0-9_-]*$")
     static_agents: dict[str, StaticAgentEntry] = Field(default_factory=dict)
-    # Declared source configuration, not a harness convention. This is intentionally in the
-    # deploy-owned non-secret catalog: adding a new source is a reviewed Git change, and matching
-    # credentials remain environment references on that entry.
-    recall_indexes: dict[str, ConfiguredRecallIndex] = Field(default_factory=dict)
     # Standing Kubernetes policy is selected by the same deploy-managed access profile that owns
     # the Agent's other durable authority. Unset keeps the internal proxy endpoint fail-closed.
     kubernetes_authorization: KubernetesAuthorizationConfig | None = None
@@ -226,19 +214,6 @@ class ConsoleConfigFile(BaseModel):
 
     @model_validator(mode="after")
     def _require_unique_identity(self) -> ConsoleConfigFile:
-        index_ids: set[str] = set()
-        mirror_paths: set[str] = set()
-        for slot, index in self.recall_indexes.items():
-            if not re.fullmatch(r"[a-z][a-z0-9_]*", slot):
-                raise ValueError(f"invalid recall index slot {slot!r}")
-            if index.index_id in index_ids:
-                raise ValueError(f"duplicate recall index id {index.index_id!r}")
-            index_ids.add(index.index_id)
-            if isinstance(index, GitRecallIndexDefinition):
-                mirror_path = str(index.mirror_path)
-                if mirror_path in mirror_paths:
-                    raise ValueError(f"multiple Git recall indexes share mirror path {mirror_path!r}")
-                mirror_paths.add(mirror_path)
         server_ids: set[str] = set()
         server_prefixes: set[MCPMountPrefix] = set()
         for slot, server in self.mcp.servers.items():
@@ -324,17 +299,10 @@ class ConsoleConfigFile(BaseModel):
                     f"{sorted(unknown_kubernetes_profiles)!r}"
                 )
 
-        configured_recall_indexes = {index.index_id for index in self.recall_indexes.values()}
         configured_in_process_servers = {server.id for server in self.mcp.servers.values()}
         if "kubernetes" in configured_in_process_servers and self.kubernetes_authorization is None:
             raise ValueError("the Kubernetes in-process server requires Kubernetes authorization configuration")
         for profile in profiles.values():
-            unknown_recall_indexes = set(profile.recall_index_ids) - configured_recall_indexes
-            if unknown_recall_indexes:
-                raise ValueError(
-                    f"access profile {profile.id!r} references unknown Recall indexes "
-                    f"{sorted(unknown_recall_indexes)!r}"
-                )
             if unknown_in_process_servers := set(profile.in_process_server_ids) - configured_in_process_servers:
                 raise ValueError(
                     f"access profile {profile.id!r} references unknown in-process MCP servers "

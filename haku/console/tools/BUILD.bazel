@@ -16,36 +16,6 @@ package(default_visibility = ["//haku/console:__subpackages__"])
 # hooks, so its absence changes nothing else.
 
 py_library(
-    name = "recall_index",
-    srcs = ["recall_index.py"],
-    visibility = ["//haku/console:__subpackages__"],
-    deps = [
-        "//haku/console:recall_index_access",
-        "//haku/console/mcp:execution",
-        "@pypi//fastmcp_slim",
-        "@pypi//pydantic",
-    ],
-)
-
-py_test(
-    name = "test_recall_index",
-    srcs = ["test_recall_index.py"],
-    deps = [
-        ":recall_index",
-        "//:conftest",
-        "//haku/console:conftest",
-        "//haku/console:mcp_config",
-        "//haku/console:recall_index_access",
-        "//haku/console:tool_call_actor",
-        "//haku/console/grants:principal",
-        "//haku/console/mcp:execution",
-        "@pypi//fastmcp_slim",
-        "@pypi//pytest",
-        "@pypi//pytest_bazel",
-    ],
-)
-
-py_library(
     name = "grants",
     srcs = ["grants.py"],
     visibility = ["//haku/console:__subpackages__"],

@@ -119,9 +119,7 @@ py_library(
     deps = [
         ":in_process_server_access",
         "//haku/console:mcp_config",
-        "//haku/console:recall_index_access",
         "//haku/console/tools:grants",
-        "//haku/console/tools:recall_index",
         "//haku/console/tools:routine",
     ],
 )
@@ -196,7 +194,6 @@ py_test(
         "//haku/console:conftest",
         "//haku/console:database_schema",
         "//haku/console:mcp_config",
-        "//haku/console:recall_index_access",
         "//haku/console:tool_call_actor",
         "//haku/console/grants:principal",
         "//haku/console/identity:agent",

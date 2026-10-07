@@ -10,7 +10,6 @@ from pydantic import AliasChoices, BaseModel, ConfigDict, Field, SecretStr, fiel
 from sqlalchemy.engine import make_url
 from sqlalchemy.exc import ArgumentError
 
-from haku.recall_index.config import EmbedderConfig, RecallIndexSettings
 from mcp_infra.authentik_auth.config import AuthentikAuthConfig
 from mcp_infra.persistence import PostgresPersistence
 
@@ -304,12 +303,6 @@ class ConsoleProcessConfig(BaseModel):
     # can never extend the client startup path. This is also the dispatcher's successful-reflection
     # reuse window.
     mcp_catalog_refresh_interval_seconds: float = Field(default=60.0, ge=5.0, le=900.0)
-
-    # Required when the config file lists the `haku_index` server, and unused otherwise: the
-    # console refuses to start with search configured and nowhere to embed a query.
-    embedder: EmbedderConfig | None = None
-    # One configuration feeds every index reader and writer; HAKU_CONSOLE__RECALL_INDEX__CHUNK_BUDGET__*.
-    recall_index: RecallIndexSettings = Field(default_factory=RecallIndexSettings)
 
     # OAuth for Agent admission to the MCP server: an Authentik-backed OIDCProxy handling MCP OAuth
     # dance (DCR + PKCE) for claude.ai / the `claude` CLI, composed with the static agent bearer via

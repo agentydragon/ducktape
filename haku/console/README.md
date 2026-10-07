@@ -33,7 +33,7 @@ launch through the Agent UI bridge; it cannot call the route or render the decid
 This is transitional. `haku_routine.launch_routine` reaches the same routine through the standard
 MCP approval queue. Once haku-ui uses that path, the Agent UI bridge action and bespoke capability router can
 retire. There is no low-privilege console write tier: haku-ui writes its own state. Recall storage
-remains in the database for now, but it is not wired into the deployed console.
+remains in the database during this rollout, but the Console no longer reads or writes it.
 
 ## MCP approval queue — authored tool calls, console-approved
 
@@ -147,10 +147,9 @@ Gmail and Google Calendar are no longer in-process servers here: agents reach th
 Agentplane's own `google-mcp` ActionGroup, which reuses the same tool implementations (now under
 `x/google_mcp_server/`) against a separately Airlock-minted Google credential.
 
-Recall indexing is currently disabled in deployment. The `recall_index` database schema and data
-remain available for a future re-enable, but the deployed catalog registers no `haku_index` server,
-access profiles grant no Recall indexes, and no index-maintenance workers run. Connected MCP clients
-therefore do not discover or read the retained indexes.
+The Console Recall reader, access policy, and `haku_index` tool were removed. The shared
+`haku/recall_index` package remains in use by Agentplane. This release retains the Console's Recall
+tables, indexed data, and `vector` extension: older replicas validate that schema during rollout.
 
 The `sandbox` in-process MCP server is absent from the deployed catalog, along with its
 access-profile grant, `agent_sandbox` configuration, and auto-approval policy. The Haku-specific

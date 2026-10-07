@@ -38,16 +38,16 @@ ToolCallPrincipal -> exactly one of operator_id | binding_id
   capability bundle. Its authority dimensions are independent and default-deny: an auto-approval
   policy decides whether a permitted call skips review; `in_process_server_ids` grants
   credential-free Console-held servers;
-  `allowed_harnesses` grants launchable harness kinds. A server grant is not Recall access and
-  neither is auto-approval. `can_read_profiles` is the reviewed, acyclic conversation-visibility
-  graph: `conversation_read_access` derives each caller's transitive read closure and both the
-  `haku_conversations` drilldown and any future Recall chat search enforce it against the
-  conversation's pinned `access_profile_id`. It grants information visibility only, never any
+  `allowed_harnesses` grants launchable harness kinds. A server grant does not grant other
+  capabilities, and neither does auto-approval. `can_read_profiles` is the reviewed, acyclic
+  conversation-visibility graph: `conversation_read_access` derives each caller's transitive read
+  closure and the `haku_conversations` drilldown enforces it against the conversation's pinned
+  `access_profile_id`. It grants information visibility only, never any
   other capability. Credential bindings authenticate an Agent and never select any of these
   capabilities. A null or removed profile is fail-closed.
 
-The deployed console currently has no Recall MCP server or index grants. The `recall_index_ids`
-model field remains reserved for a future re-enable alongside the retained database schema.
+The Console Recall integration and `recall_index_ids` profile field were removed. The database
+schema and indexed data remain during this rollout for compatibility with outgoing replicas.
 
 ## Interactive enrollment
 

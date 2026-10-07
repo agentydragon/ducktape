@@ -18,7 +18,6 @@ py_library(
     name = "config",
     srcs = ["config.py"],
     deps = [
-        "//haku/recall_index:config",
         "//mcp_infra:persistence",
         "//mcp_infra/authentik_auth:config",
         "@pypi//pydantic",
@@ -33,7 +32,6 @@ py_library(
         ":config",
         ":tool_call_actor",
         "//haku/console/identity:naming",
-        "//haku/recall_index:config",
         "//mcp_infra:prefix",
         "@pypi//fastmcp_slim",
         "@pypi//pydantic",
@@ -63,31 +61,6 @@ py_test(
         ":deployment",
         "//:conftest",
         "@pypi//pytest_bazel",
-    ],
-)
-
-py_library(
-    name = "recall_index_reader",
-    srcs = ["recall_index_reader.py"],
-    deps = [
-        "//haku/console/tools:recall_index",
-        "//haku/recall_index:chunking",
-        "//haku/recall_index:config",
-        "//haku/recall_index:embedder",
-        "//haku/recall_index:schema",
-        "//haku/recall_index:store",
-        "@pypi//sqlalchemy",
-    ],
-)
-
-py_library(
-    name = "recall_index_access",
-    srcs = ["recall_index_access.py"],
-    deps = [
-        ":mcp_config",
-        ":tool_call_actor",
-        "//haku/console/grants:principal",
-        "//haku/console/mcp:execution",
     ],
 )
 
@@ -229,7 +202,6 @@ py_library(
         ":deployment",
         ":mcp_config",
         ":models",
-        ":recall_index_reader",
         ":settings",
         "//haku/console/grants:catalog",
         "//haku/console/grants:routes",
@@ -258,13 +230,9 @@ py_library(
         "//haku/console/notifications:push_routes",
         "//haku/console/tools:grants",
         "//haku/console/tools:kubernetes",
-        "//haku/console/tools:recall_index",
         "//haku/console/tools:routine",
-        "//haku/recall_index:config",
-        "//haku/recall_index:openai_embedder",
         "@pypi//fastapi",
         "@pypi//itsdangerous",
-        "@pypi//openai",
         "@pypi//prometheus_client",
         "@pypi//sqlalchemy",
         "@pypi//starlette",

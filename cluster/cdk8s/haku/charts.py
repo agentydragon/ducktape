@@ -3,9 +3,8 @@ Kubernetes API proxy -- shared by manifest generation and tests (synthesized in 
 via `cdk8s.Testing`).
 
 The database and migration used to be Kustomizations of their own, ordered ahead of the
-console by `dependsOn`. One Kustomization has no such ordering, so the two Jobs in here
-retry until their preconditions hold (migration.py, `_add_indexer_provisioner`)
-rather than relying on the layer beneath them already being Ready.
+console by `dependsOn`. One Kustomization has no such ordering, so the migration Job retries
+until its preconditions hold rather than relying on the layer beneath it already being Ready.
 """
 
 from __future__ import annotations
@@ -18,13 +17,7 @@ from flux_kustomize.io.fluxcd.toolkit.kustomize import (
 
 from cluster.cdk8s import namespaces
 from cluster.cdk8s.fleet_rules import add_fleet_rules
-from cluster.cdk8s.flux import (
-    ConfigMapArgs,
-    Kustomization,
-    RenderedDirectory,
-    flux_kustomization,
-    flux_kustomization_depends_on_many,
-)
+from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on_many
 from cluster.cdk8s.forgejo import secret_copy
 from cluster.cdk8s.forgejo_images import forgejo_images_creds_external_secret
 from cluster.cdk8s.generation import CNPG_DATABASE_READY
@@ -40,7 +33,7 @@ NAME = console.NAME
 NAMESPACE = console.NAMESPACE
 PATH = f"{HAND_WRITTEN_ROOT}/haku/console"
 # Long enough for the slowest cold path -- CNPG bootstrapping a fresh two-instance Cluster,
-# then the migration and the GRANTs converging on their retries behind it.
+# then the migration converging on its retries behind it.
 TIMEOUT = "20m"
 
 # Hand-written files the root Kustomization lists beside the generated one.
@@ -52,10 +45,6 @@ EXTRA_RESOURCES = (
     "web-push-vapid.sops.yaml",
     "static-metadata.yaml",
     "image-metadata.yaml",
-)
-
-CONFIG_MAP_GENERATOR = (
-    ConfigMapArgs(name=console.INDEXER_SQL_CONFIG_MAP, namespace=console.NAMESPACE, files=["indexer-role.sql"]),
 )
 
 
@@ -102,8 +91,7 @@ def haku_console(
         # This one Kustomization owns the CNPG Cluster's PVCs; pruning on deletion
         # would take the console's approval ledger with them.
         deletion_policy=KustomizationSpecDeletionPolicy.ORPHAN,
-        # The two Jobs gate every dependent Kustomization: nothing downstream
-        # reconciles until the schema is migrated and the indexer GRANTs applied.
+        # Nothing downstream reconciles until CNPG accepts connections.
         health_check_exprs=[
             KustomizationSpecHealthCheckExprs(
                 api_version="postgresql.cnpg.io/v1", kind="Database", current=CNPG_DATABASE_READY

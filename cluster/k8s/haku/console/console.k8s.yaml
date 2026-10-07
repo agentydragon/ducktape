@@ -108,43 +108,6 @@ spec:
           reflector.v1.k8s.emberstack.com/reflection-auto-enabled: "true"
           reflector.v1.k8s.emberstack.com/reflection-auto-namespaces: haku-sandbox,haku-egress-proxy
 ---
-apiVersion: generators.external-secrets.io/v1alpha1
-kind: Password
-metadata:
-  name: haku-console-db-indexer-generator
-  namespace: haku-console
-spec:
-  allowRepeat: true
-  digits: 8
-  length: 40
-  noUpper: false
-  symbols: 0
----
-apiVersion: external-secrets.io/v1
-kind: ExternalSecret
-metadata:
-  name: haku-console-db-indexer
-  namespace: haku-console
-spec:
-  dataFrom:
-    - sourceRef:
-        generatorRef:
-          apiVersion: generators.external-secrets.io/v1alpha1
-          kind: Password
-          name: haku-console-db-indexer-generator
-  refreshInterval: 8760h
-  target:
-    name: haku-console-db-indexer
-    template:
-      data:
-        DATABASE_URL: postgresql+asyncpg://haku_indexer:{{ .password }}@haku-console-db-rw.haku-console.svc:5432/approval_store
-        password: "{{ .password }}"
-        username: haku_indexer
-      metadata:
-        labels:
-          cnpg.io/reload: "true"
-      type: kubernetes.io/basic-auth
----
 apiVersion: postgresql.cnpg.io/v1
 kind: Cluster
 metadata:
@@ -164,14 +127,6 @@ spec:
       owner: approval_store
   imageName: ghcr.io/cloudnative-pg/postgresql:18.1-system-trixie
   instances: 2
-  managed:
-    roles:
-      - comment: "haku-indexer worker: recall_index schema read/write (see cluster/k8s/haku/console/indexer-role.sql)"
-        ensure: present
-        login: true
-        name: haku_indexer
-        passwordSecret:
-          name: haku-console-db-indexer
   monitoring:
     enablePodMonitor: true
   probes:
@@ -917,86 +872,6 @@ spec:
       timeouts:
         backendRequest: 360s
         request: 360s
----
-apiVersion: batch/v1
-kind: Job
-metadata:
-  annotations:
-    description: Applies the object GRANTs for haku_indexer (indexer-role.sql). The role itself is managed declaratively by CNPG (haku-console-db managed.roles); this runs in the app layer because the recall_index schema exists only after the migration Job.
-    kustomize.toolkit.fluxcd.io/force: enabled
-  name: db-indexer-provisioner
-  namespace: haku-console
-spec:
-  activeDeadlineSeconds: 1200
-  backoffLimit: 10
-  template:
-    metadata:
-      labels:
-        app.kubernetes.io/name: haku-console-db-indexer-provisioner
-        cdk8s.io/metadata.addr: haku-console-console-indexer-provisioner-c807e4ac
-    spec:
-      automountServiceAccountToken: false
-      containers:
-        - args:
-            - --set=ON_ERROR_STOP=1
-            - -f
-            - /sql/indexer-role.sql
-          command:
-            - psql
-          env:
-            - name: PGUSER
-              valueFrom:
-                secretKeyRef:
-                  key: username
-                  name: haku-console-db-app
-            - name: PGPASSWORD
-              valueFrom:
-                secretKeyRef:
-                  key: password
-                  name: haku-console-db-app
-            - name: PGHOST
-              value: haku-console-db-rw.haku-console.svc
-            - name: PGDATABASE
-              value: approval_store
-          image: ghcr.io/cloudnative-pg/postgresql:18.6-system-trixie
-          imagePullPolicy: IfNotPresent
-          name: psql
-          resources:
-            limits:
-              memory: 128Mi
-            requests:
-              cpu: 10m
-              memory: 32Mi
-          securityContext:
-            allowPrivilegeEscalation: false
-            capabilities:
-              drop:
-                - ALL
-            privileged: false
-            readOnlyRootFilesystem: false
-            runAsNonRoot: true
-          terminationMessagePolicy: FallbackToLogsOnError
-          volumeMounts:
-            - mountPath: /sql
-              name: configmap-haku-console-db-indexer-sql
-              readOnly: true
-      dnsPolicy: ClusterFirst
-      hostNetwork: false
-      nodeSelector:
-        topology.kubernetes.io/zone: hil-ovh
-      restartPolicy: Never
-      securityContext:
-        fsGroupChangePolicy: Always
-        runAsNonRoot: true
-        seccompProfile:
-          type: RuntimeDefault
-      setHostnameAsFQDN: false
-      shareProcessNamespace: false
-      terminationGracePeriodSeconds: 30
-      volumes:
-        - configMap:
-            name: haku-console-db-indexer-sql
-          name: configmap-haku-console-db-indexer-sql
 ---
 apiVersion: cert-manager.io/v1
 kind: Certificate

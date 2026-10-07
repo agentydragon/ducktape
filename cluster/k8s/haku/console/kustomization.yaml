@@ -9,8 +9,3 @@ resources:
   - image-metadata.yaml
 components:
   - ./image-pins
-configMapGenerator:
-  - name: haku-console-db-indexer-sql
-    namespace: haku-console
-    files:
-      - indexer-role.sql

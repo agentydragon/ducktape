@@ -10,7 +10,7 @@ from collections.abc import AsyncIterator, Awaitable, Callable
 from dataclasses import replace
 from pathlib import Path
 from types import SimpleNamespace
-from typing import Any, Never
+from typing import Any
 from uuid import UUID, uuid4
 
 import pytest
@@ -32,16 +32,12 @@ from haku.console.mcp.tool_call_service import (
     ToolCallStateConflictError,
 )
 from haku.console.mcp_config import (
-    AccessProfile,
     InProcessBackend,
-    InProcessCredentialKind,
-    InProcessServerRegistration,
     InProcessServers,
     McpServerEntry,
     McpServerNotFoundError,
     NoCredential,
 )
-from haku.console.recall_index_access import RecallIndexAccessPolicy
 from haku.console.tool_call_actor import AgentActor, OperatorActor, RuntimeActor
 from haku.console.tool_calls import (
     ApprovalDecision,
@@ -371,65 +367,6 @@ async def test_operator_direct_execution_has_no_ledger_or_invalidation_side_effe
 
     with pytest.raises(OperatorActorRequiredError, match="operator actor required"):
         await service.execute_direct(req=_request(owner="agent"), actor=actors["aa1"])
-
-
-async def test_recall_index_authorizer_denies_argument_escalation_before_submission(
-    *,
-    actors: dict[str, RuntimeActor],
-    executor: _RecordingExecutor,
-    ledger: _RecordingLedger,
-    migrated_db_url: str,
-    notifier: _RecordingApprovalNotifier,
-    publisher: _RecordingInvalidationPublisher,
-    tmp_path: Path,
-) -> None:
-    """The caller identity is trusted; an MCP argument can never add another logical index."""
-    stored_agent = actors["aa1"]
-    assert isinstance(stored_agent, AgentActor)
-    actor = replace(stored_agent, access_profile_id="public-coder")
-    access = RecallIndexAccessPolicy(
-        (AccessProfile(id="public-coder", auto_approval_policy="manual", recall_index_ids={"ducktape-public"}),),
-        configured_index_ids=("ducktape-public",),
-    )
-
-    def unexpected_builder(_: str | None) -> Never:
-        raise AssertionError("an unauthorized request must not build an MCP server")
-
-    service = _service(
-        database_url=migrated_db_url,
-        tmp_path=tmp_path,
-        ledger=ledger,
-        publisher=publisher,
-        executor=executor,
-        notifier=notifier,
-        servers=[{"id": "haku_index", "backend": {"kind": "in_process", "credential": {"kind": "none"}}}],
-        in_process_servers={
-            "haku_index": InProcessServerRegistration(
-                builder=unexpected_builder,
-                credential_kind=InProcessCredentialKind.NONE,
-                authorizer=access.authorize_index_tool,
-            )
-        },
-    )
-
-    record = await service.submit_and_wait(
-        req=SubmitToolCallRequest(
-            server_id="haku_index",
-            tool_name="search",
-            arguments={"query": "private state", "index_id": "haku-state"},
-            rationale="attempted index escalation",
-            wait_for_ms=0,
-        ),
-        actor=actor,
-    )
-
-    assert (record.status, record.decision_note, record.decision_operator_id) == (
-        ToolCallStatus.DENIED,
-        "recall index access denied",
-        None,
-    )
-    assert executor.executions == []
-    assert notifier.pending == []
 
 
 async def test_two_operator_two_agent_authorization_matrix(
