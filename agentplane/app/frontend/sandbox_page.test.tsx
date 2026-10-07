@@ -177,15 +177,17 @@ it("resets the launch form when navigating directly between sandbox routes", asy
   await render(async () => Response.json([]), undefined, false, true);
   await choose("Harness", "Codex");
   expect(labeledInput("Model").value).toBe("Codex Model");
-  await choose("Reasoning effort", "medium");
   const instructions = [...container.querySelectorAll("label")].find(
     (node) => node.textContent === "Standing instructions"
   )?.control;
   if (!(instructions instanceof HTMLTextAreaElement)) throw new Error("Missing instructions field");
+  const setTextareaValue = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value")?.set;
+  if (!setTextareaValue) throw new Error("Missing native textarea value setter");
   await act(async () => {
-    instructions.value = "Only for startup-test";
+    setTextareaValue.call(instructions, "Only for startup-test");
     instructions.dispatchEvent(new Event("input", { bubbles: true }));
   });
+  await choose("Reasoning effort", "medium");
   expect(instructions.value).toBe("Only for startup-test");
 
   await act(async () => container.querySelector<HTMLAnchorElement>('a[href="/sandboxes/other-test"]')!.click());
