@@ -67,7 +67,13 @@ export function StepLine({
   return (
     <div className="agentplane-step-row">
       {expandable ? (
-        <Disclosure className="agentplane-step-details" open={open} onOpenChange={onOpenChange} summary={summary}>
+        <Disclosure
+          className="agentplane-step-details"
+          dividerBoundary
+          open={open}
+          onOpenChange={onOpenChange}
+          summary={summary}
+        >
           {children}
         </Disclosure>
       ) : (

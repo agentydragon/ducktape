@@ -55,7 +55,7 @@ function childStackPosition(parent: StickyStackPosition, rowHeight: number): Sti
   return {
     top: parent.top + rowHeight,
     zIndex: parent.zIndex - 1,
-    dividerBleed: `calc(${parent.dividerBleed} + var(--mantine-spacing-md))`,
+    dividerBleed: "calc(var(--mantine-spacing-sm) + var(--mantine-spacing-md))",
   };
 }
 
@@ -71,6 +71,7 @@ export function Disclosure({
   className,
   dataAttributes,
   keepMounted = false,
+  dividerBoundary = false,
 }: {
   summary: ReactNode;
   /** A separate header action, outside the accordion button. */
@@ -83,6 +84,8 @@ export function Disclosure({
   dataAttributes?: Record<string, string>;
   /** Keep hidden content mounted when the caller relies on native selection/copy behavior. */
   keepMounted?: boolean;
+  /** Align nested dividers to this disclosure's enclosing card edge. */
+  dividerBoundary?: boolean;
 }): JSX.Element {
   const stackPosition = useContext(StickyStackContext);
   const [headingRef, headingHeight] = useStickyRowHeight();
@@ -118,7 +121,9 @@ export function Disclosure({
             {
               top: stackPosition.top,
               zIndex: stackPosition.zIndex,
-              "--agentplane-disclosure-divider-bleed": stackPosition.dividerBleed,
+              "--agentplane-disclosure-divider-bleed": dividerBoundary
+                ? "var(--mantine-spacing-sm)"
+                : stackPosition.dividerBleed,
             } as CSSProperties
           }
         >
