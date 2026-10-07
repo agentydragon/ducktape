@@ -89,7 +89,11 @@ describe("ssh exec result", () => {
     expect(container.querySelector('[data-clamped="true"]')).not.toBeNull();
     await act(async () => showAll?.click());
     expect(container.querySelector('[data-clamped="true"]')).toBeNull();
-    expect(container.textContent).toContain("Collapse");
+    expect(
+      container
+        .querySelector(".agentplane-output-disclosure .agentplane-disclosure-summary")
+        ?.getAttribute("aria-expanded")
+    ).toBe("true");
   });
 
   it("says how many lines a clipped stream has", async () => {

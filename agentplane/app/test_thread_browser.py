@@ -1267,7 +1267,7 @@ async def test_opening_a_call_and_its_output_keeps_it_collapsible_while_reading(
 
     await read_at(page, show_all, 0.3)
     await show_all.click()
-    collapse = call.get_by_role("button", name="Collapse Output")
+    collapse = call.locator(".agentplane-output-disclosure .agentplane-disclosure-summary")
     output_line = call.locator('.agentplane-clamped-block[data-label="Output"] .cm-line').filter(
         has_text="output line 45"
     )
@@ -1275,41 +1275,45 @@ async def test_opening_a_call_and_its_output_keeps_it_collapsible_while_reading(
     await expect(output_line).to_be_visible()
     await read_at(page, output_line, 0.5)
     await expect(collapse).to_be_in_viewport()
-    await expect(collapse).to_have_text("Collapse Output")
+    await expect(collapse).to_have_attribute("aria-expanded", "true")
     collapse_box = await collapse.bounding_box()
-    sticky_bar_box = await call.locator(
-        '.agentplane-clamped-block[data-label="Output"] > .agentplane-disclosure-collapse'
+    output_heading_box = await call.locator(
+        ".agentplane-output-disclosure .agentplane-disclosure-heading"
     ).bounding_box()
+    call_heading_box = await call.locator(".agentplane-disclosure-heading").first.bounding_box()
     run_heading_box = await run.locator(".agentplane-disclosure-heading").first.bounding_box()
     history_box = await history.bounding_box()
     assert collapse_box is not None
-    assert sticky_bar_box is not None
+    assert output_heading_box is not None
+    assert call_heading_box is not None
     assert run_heading_box is not None
     assert history_box is not None
     assert collapse_box["height"] >= 44, f"collapse target is too short: {collapse_box}"
-    covers_heading_left = sticky_bar_box["x"] <= run_heading_box["x"] + 1
-    covers_heading_right = (
-        sticky_bar_box["x"] + sticky_bar_box["width"] >= run_heading_box["x"] + run_heading_box["width"] - 1
+    assert abs(run_heading_box["y"] - history_box["y"]) <= 2, (
+        f"the run heading should use the history's top sticky slot: {run_heading_box=} {history_box=}"
     )
-    assert covers_heading_left, (
-        f"the active collapse bar should cover the summary's left edge: {sticky_bar_box=}, {run_heading_box=}"
+    assert abs(call_heading_box["y"] - (run_heading_box["y"] + run_heading_box["height"])) <= 2, (
+        f"the tool-call heading should stack below the run heading: {call_heading_box=} {run_heading_box=}"
     )
-    assert covers_heading_right, (
-        f"the active collapse bar should cover the summary's right edge: {sticky_bar_box=}, {run_heading_box=}"
+    assert abs(output_heading_box["y"] - (call_heading_box["y"] + call_heading_box["height"])) <= 2, (
+        f"the output heading should stack below the tool-call heading: {output_heading_box=} {call_heading_box=}"
     )
-    assert abs(collapse_box["y"] - history_box["y"]) <= 2, (
-        f"the active collapse control should use the history's top sticky slot: {collapse_box=} {history_box=}"
+    assert abs(collapse_box["y"] - output_heading_box["y"]) <= 2, (
+        f"the output accordion control should occupy its sticky heading row: {collapse_box=} {output_heading_box=}"
     )
     active_sticky_action = await page.evaluate(
-        """point => document.elementFromPoint(point.x, point.y)?.closest('button')?.getAttribute('aria-label')""",
+        """point => document.elementFromPoint(point.x, point.y)?.closest('button')?.getAttribute('aria-expanded')""",
         {"x": collapse_box["x"] + collapse_box["width"] / 2, "y": collapse_box["y"] + collapse_box["height"] / 2},
     )
-    assert active_sticky_action == "Collapse Output", (
-        f"another sticky row obscured the active action: {active_sticky_action}"
+    assert active_sticky_action == "true", (
+        f"a parent heading obscured the output Disclosure control: {active_sticky_action}"
     )
     await page.screenshot(path=undeclared_outputs_dir() / f"{request.node.name}-output-open.png")
     await collapse.click()
-    await expect(show_all).to_be_visible()
+    await expect(collapse).to_have_attribute("aria-expanded", "false")
+    await expect(output_line).to_be_hidden()
+    await collapse.click()
+    await expect(output_line).to_be_visible()
 
 
 async def test_opening_a_call_while_output_streams_in_keeps_it_collapsible(thread_browser: ThreadBrowser) -> None:
@@ -1330,7 +1334,7 @@ async def test_opening_a_call_while_output_streams_in_keeps_it_collapsible(threa
             await expect(show_all).to_be_visible()
         await read_at(page, show_all, 0.3)
         await show_all.click()
-        collapse = call.get_by_role("button", name="Collapse Output")
+        collapse = call.locator(".agentplane-output-disclosure .agentplane-disclosure-summary")
         output_line = call.locator('.agentplane-clamped-block[data-label="Output"] .cm-line').filter(
             has_text="output line 45"
         )
@@ -1339,7 +1343,7 @@ async def test_opening_a_call_while_output_streams_in_keeps_it_collapsible(threa
         await read_at(page, output_line, 0.5)
         await expect(collapse).to_be_in_viewport()
         await collapse.click()
-        await expect(show_all).to_be_visible()
+        await expect(collapse).to_have_attribute("aria-expanded", "false")
     assert len(delivered) >= 3, "the tail's output was not arriving while the call was opened"
 
 

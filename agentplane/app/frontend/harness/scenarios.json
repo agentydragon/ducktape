@@ -907,8 +907,8 @@
     "openClampedBlocks": true,
     "readySelectors": [
       "[aria-label='Thread history'][data-layout-settled='true']",
-      ".agentplane-disclosure-collapse button[aria-label='Collapse Command']",
-      ".agentplane-disclosure-collapse button[aria-label='Collapse Output']",
+      ".agentplane-clamped-disclosure button[aria-label='Collapse Command']",
+      ".agentplane-output-disclosure .agentplane-disclosure-summary[aria-expanded='true']",
       ".agentplane-step-details .agentplane-disclosure-summary[aria-expanded=\"true\"]"
     ],
     "captureViewport": true,
@@ -924,8 +924,8 @@
     "openClampedBlocks": true,
     "readySelectors": [
       "[aria-label='Thread history'][data-layout-settled='true']",
-      ".agentplane-disclosure-collapse button[aria-label='Collapse Command']",
-      ".agentplane-disclosure-collapse button[aria-label='Collapse Output']",
+      ".agentplane-clamped-disclosure button[aria-label='Collapse Command']",
+      ".agentplane-output-disclosure .agentplane-disclosure-summary[aria-expanded='true']",
       ".agentplane-step-details .agentplane-disclosure-summary[aria-expanded=\"true\"]"
     ],
     "captureViewport": true,
