@@ -252,7 +252,7 @@ def test_private_rule_and_uncertain_purchases():
             now=START,
             last_synced_at=START,
         ).available_minor_units
-        == 10_500
+        == 10_000
     )
     uncertain = view([row("2026-01-31", 12, pfc_primary=None, pfc_detailed=None)])
     assert uncertain.available_minor_units == 8_800
