@@ -498,7 +498,7 @@ function ToolCard({
                   </Text>
                 ))
               }
-              trailing={itemStatus([entity], live, !opened)}
+              trailing={itemStatus([entity], live, !opened, opened)}
               aside={
                 args?.error && (
                   <button className="agentplane-step-retry" onClick={args.retry} type="button">
@@ -616,7 +616,7 @@ export function EntityCard({
             <ReasoningPreview
               reference={entity.textRef}
               mark={reasoningMark}
-              status={status}
+              status={itemStatus([entity], live, false, true)}
               open={reasoningOpen}
               overflows={reasoningOverflows}
               setOpen={setReasoningOpen}
@@ -685,13 +685,29 @@ function statusBadges(items: ThreadEntity[], live: boolean, titleMarked: boolean
  * never completed in the retained history.
  *
  * `titleMarked` leaves out the Failed and Streaming/Incomplete badges, for a line whose title shows them. */
-export function itemStatus(items: ThreadEntity[], live: boolean, titleMarked = false): JSX.Element | null {
+function compactStatusLabel(label: string): string {
+  switch (label) {
+    case "Revised for continuation":
+      return "Revised";
+    case "Retention unknown":
+      return "Unknown";
+    default:
+      return label;
+  }
+}
+
+export function itemStatus(
+  items: ThreadEntity[],
+  live: boolean,
+  titleMarked = false,
+  compactLabels = false
+): JSX.Element | null {
   const badges = statusBadges(items, live, titleMarked);
   return badges.length === 0 ? null : (
     <>
       {badges.map(({ label, color }) => (
-        <Badge key={label} color={color} role="img" aria-label={label}>
-          {label}
+        <Badge key={label} color={color} role="img" aria-label={label} title={label}>
+          {compactLabels ? compactStatusLabel(label) : label}
         </Badge>
       ))}
     </>

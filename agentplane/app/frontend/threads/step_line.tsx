@@ -39,8 +39,7 @@ export function StepLine({
   trailing?: ReactNode;
   /** Beside the line, outside its disclosure. */
   aside?: ReactNode;
-  /** Controls for the disclosed content, at the end of the line while it is open. Outside the
-   * summary, so using one does not toggle the disclosure. */
+  /** Controls that change the disclosed content, kept outside the sticky summary. */
   controls?: ReactNode;
   expandable: boolean;
   open: boolean;
@@ -74,8 +73,8 @@ export function StepLine({
           open={open}
           onOpenChange={onOpenChange}
           summary={summary}
-          summaryAside={openControls}
         >
+          {openControls}
           {children}
         </Disclosure>
       ) : (

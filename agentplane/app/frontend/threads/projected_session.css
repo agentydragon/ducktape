@@ -114,13 +114,12 @@
   display: none;
 }
 
-/* Controls for opened content are siblings of the disclosure button, so they stay independently
-   clickable without covering the chevron. */
+/* Controls change the displayed details; keep them with that content so the sticky disclosure
+   button keeps the full row for its title and chevron. */
 .agentplane-step-controls {
-  flex: none;
   display: flex;
   align-items: center;
-  white-space: nowrap;
+  justify-content: flex-end;
 }
 
 .agentplane-step-details .agentplane-disclosure-summary[aria-expanded="true"] .agentplane-step-summary {

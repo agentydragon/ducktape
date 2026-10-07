@@ -142,6 +142,7 @@ describe("recovery presentation", () => {
     expect(container.textContent).toContain("Continuation output");
     expect(container.textContent).toContain("aborted");
     expect(badgeLabels(container).sort()).toEqual(["Interrupted", "Revised for continuation"]);
+    expect(container.querySelector('[aria-label="Revised for continuation"]')?.textContent).toBe("Revised");
   });
 
   it("badges a revised tool call that did succeed only as revised", async () => {
@@ -367,8 +368,8 @@ describe("tool call rows", () => {
     const container = await renderTool("Bash", { command: "ls", description: "List files" });
     expect(container.querySelector('input[type="checkbox"]')).toBeNull();
     await toggle(container.querySelector(".agentplane-disclosure-summary")!);
-    // On the title line, outside its summary and apart from the content below it.
-    const raw = container.querySelector<HTMLInputElement>(".agentplane-step-row > .agentplane-step-controls input")!;
+    // In the disclosed content, outside the sticky summary and above the details.
+    const raw = container.querySelector<HTMLInputElement>(".agentplane-step-details .agentplane-step-controls input")!;
     expect(raw.type).toBe("checkbox");
     const firstBlock = () => container.querySelector(".agentplane-code-block")?.textContent;
     expect(firstBlock()).toBe("ls");
