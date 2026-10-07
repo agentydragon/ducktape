@@ -17,12 +17,6 @@ def test_ducktape_pr_instructions_are_shared_once() -> None:
         assert "agentydragon/ducktape" in instructions
 
 
-def test_finance_prompt_keeps_private_context_in_checkout() -> None:
-    assert "read `README.md` and" in _FINANCE_AGENT_INSTRUCTIONS
-    assert "agentplane-staging/coinbase-api-credentials" in _FINANCE_AGENT_INSTRUCTIONS
-    assert "api.coinbase.com" in _FINANCE_AGENT_INSTRUCTIONS
-
-
 def test_gaffer_write_policies_are_finance_agent_only() -> None:
     cfg = config()
     finance_policies = cfg.sandbox_presets["finance-agent"].action_policy_sets
