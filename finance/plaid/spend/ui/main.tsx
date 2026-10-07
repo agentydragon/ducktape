@@ -29,6 +29,14 @@ type CardView = components["schemas"]["CardView"];
 type View = components["schemas"]["SpendView"];
 type SpendConfiguration = components["schemas"]["SpendConfigurationView"];
 type RuleCondition = components["schemas"]["Rule"]["condition"];
+type RuleKind = components["schemas"]["Rule"]["kind"];
+
+const ruleKindDisplay = {
+  fixed: { label: "Mandatory", color: "blue" },
+  excluded: { label: "Excluded", color: "gray" },
+  review: { label: "Review", color: "orange" },
+  flexible: { label: "Flexible", color: "teal" },
+} satisfies Record<RuleKind, { label: string; color: string }>;
 
 function money(value: number | null | undefined, currency: string | null, exact = false): string {
   if (value == null || !Number.isFinite(value)) return "Unavailable";
@@ -556,22 +564,7 @@ function ConfigurationPanel({
                   </Text>
                   <Stack gap="xs">
                     {allowance.rules.map((rule, index) => {
-                      const kind =
-                        rule.kind === "fixed"
-                          ? "Mandatory"
-                          : rule.kind === "excluded"
-                            ? "Excluded"
-                            : rule.kind === "review"
-                              ? "Review"
-                              : "Flexible";
-                      const color =
-                        rule.kind === "fixed"
-                          ? "blue"
-                          : rule.kind === "excluded"
-                            ? "gray"
-                            : rule.kind === "review"
-                              ? "orange"
-                              : "teal";
+                      const { label, color } = ruleKindDisplay[rule.kind];
                       return (
                         <Paper key={`${rule.kind}-${index}`} withBorder radius="md" p="sm">
                           <Group align="flex-start" gap="sm" wrap="nowrap">
@@ -579,7 +572,7 @@ function ConfigurationPanel({
                               {index + 1}.
                             </Text>
                             <Badge color={color} variant="light" style={{ flexShrink: 0 }}>
-                              {kind}
+                              {label}
                             </Badge>
                             <Stack gap={2} style={{ minWidth: 0 }}>
                               <Text size="sm" style={{ overflowWrap: "anywhere" }}>
