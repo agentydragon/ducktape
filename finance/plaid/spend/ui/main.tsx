@@ -247,7 +247,6 @@ function AllowancePanel({ allowance }: { allowance: Allowance }) {
     ? (allowance.spending_signal as Signal)
     : null;
   const cycleSpend = spendPeriod(allowance, "credit_cycle");
-  const weeklyPace = pacePeriod(allowance, "rolling_7d");
   const historyPeriods = [
     { id: "rolling_7d", label: "LAST 7 DAYS" },
     { id: "rolling_30d", label: "LAST 30 DAYS" },
@@ -337,12 +336,15 @@ function AllowancePanel({ allowance }: { allowance: Allowance }) {
               Positive recorded purchases, including history before activation; unmatched purchases count as flexible.
               Earlier purchases inform pace but do not reduce available allowance. Plaid data may lag.
             </Text>
-            {weeklyPace?.unmatched_charges && weeklyPace.unmatched_charges.count > 0 && (
-              <Text size="xs" c="dimmed">
-                7d unmatched {weeklyPace.unmatched_charges.count} ({m(weeklyPace.unmatched_charges.amount_minor_units)})
-                · counted as flexible.
-              </Text>
-            )}
+            {(["rolling_7d", "rolling_30d"] as const).map((periodId) => {
+              const unmatched = pacePeriod(allowance, periodId)?.unmatched_charges;
+              return unmatched && unmatched.count > 0 ? (
+                <Text size="xs" c="dimmed" key={periodId}>
+                  {periodId === "rolling_7d" ? "7d" : "30d"} unmatched {unmatched.count} (
+                  {m(unmatched.amount_minor_units)}) · counted as flexible.
+                </Text>
+              ) : null;
+            })}
             <Divider />
             <Group justify="space-between" gap="sm">
               <Text size="sm">Pace used for estimate ({periodLabels[allowance.forecast.basis_period.id]})</Text>

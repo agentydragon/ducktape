@@ -119,18 +119,19 @@ def _format_allowance(allowance: AllowanceView) -> str:
     lines.append(f"  Spent this credit cycle: {_format_money(spent, currency)}")
     lines.append(f"  Pending (included): {_format_money(allowance.pending_minor_units, currency)}")
     lines.append(f"  Provisional leash signal: {allowance.spending_signal.replace('_', ' ')}")
-    for period_id, label in (("rolling_7d", "7-day"), ("rolling_30d", "30-day")):
+    for period_id, label, short_label in (("rolling_7d", "7-day", "7d"), ("rolling_30d", "30-day", "30d")):
         report = next((report for report in allowance.recorded_pace_periods if report.period.id == period_id), None)
         lines.append(
             f"  {label} recorded flexible pace: "
             f"{_format_money(report.observed_daily_minor_units if report else None, currency)}/day"
         )
+        unmatched = report.unmatched_charges if report else None
+        if unmatched and unmatched.count:
+            lines.append(
+                f"  {short_label} unmatched: {unmatched.count} ({_format_money(unmatched.amount_minor_units, currency)})"
+            )
     daily_reference = round(allowance.monthly_minor_units * 12 / 365.2425)
     lines.append(f"  Provisional leash rate: ~{_format_money(daily_reference, currency)}/day")
-    weekly = next((report for report in allowance.recorded_pace_periods if report.period.id == "rolling_7d"), None)
-    unmatched = weekly.unmatched_charges if weekly else None
-    if unmatched and unmatched.count:
-        lines.append(f"  7d unmatched: {unmatched.count} ({_format_money(unmatched.amount_minor_units, currency)})")
     lines.append("  Leash capacity is not a sustainability target; unmatched purchases count as flexible.")
     lines.append("  History before activation informs pace but not the available balance.")
     lines.append(f"  Forecast basis: {allowance.forecast.basis_period.id.replace('_', ' ')}")

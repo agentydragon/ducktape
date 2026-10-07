@@ -66,7 +66,7 @@ monthly-credit-equivalent daily reference; `spending_signal` compares those rate
 amount count positive, default-flexible purchases in the pace lookback, including before activation; this is separate
 from the postactivation review tally. Plaid's transaction date (not an exact swipe timestamp) defines membership in each
 window. A newly linked account with a short historical backfill can understate observed pace; show sync freshness, not a
-promise of comprehensive coverage.
+promise of comprehensive coverage. CLI, web and GNOME show both rolling windows' unmatched counts and summed amounts.
 
 Configured account IDs should cover **all accounts used for purchases** (credit and checking/debit); otherwise this is
 not a reliable allowance. If an account is missing, inactive, or its sync exceeds `max_sync_age_hours`, the allowance

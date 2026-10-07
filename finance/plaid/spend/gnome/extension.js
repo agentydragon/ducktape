@@ -385,12 +385,17 @@ const PlaidSpendIndicator = GObject.registerClass(
           );
           const daily = Math.round((Number(allowance.monthly_minor_units) * 12) / 365.2425);
           this._addReadOnly(`Leash ~${formatDaily(daily, allowance.currency)}`, "plaid-spend-caption");
-          const unmatched = periodReport(allowance, "recorded_pace_periods", "rolling_7d")?.unmatched_charges;
-          if (unmatched?.count > 0)
-            this._addReadOnly(
-              `7d unmatched ${unmatched.count} (${formatMoney(unmatched.amount_minor_units, allowance.currency)})`,
-              "plaid-spend-caution"
-            );
+          for (const [periodId, label] of [
+            ["rolling_7d", "7d"],
+            ["rolling_30d", "30d"],
+          ]) {
+            const unmatched = periodReport(allowance, "recorded_pace_periods", periodId)?.unmatched_charges;
+            if (unmatched?.count > 0)
+              this._addReadOnly(
+                `${label} unmatched ${unmatched.count} (${formatMoney(unmatched.amount_minor_units, allowance.currency)})`,
+                "plaid-spend-caution"
+              );
+          }
           if (allowance.last_synced_at)
             this._addReadOnly(`Sync ${formatSyncAge(allowance.last_synced_at)} ago`, "plaid-spend-caption");
         } else this._addReadOnly(allowance.note || "Allowance unavailable; check connection");
