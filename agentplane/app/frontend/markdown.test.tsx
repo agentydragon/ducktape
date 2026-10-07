@@ -59,6 +59,18 @@ describe("Markdown", () => {
     expect(link?.textContent).toBe("a link");
   });
 
+  it("keeps preview link text inert while expanded Markdown links remain navigable", async () => {
+    const source = "Read [the **source**](https://example.test/details) before continuing.";
+    const preview = await render(source, false, true);
+    expect(preview.querySelector("a, button, input, select, textarea")).toBeNull();
+    expect(preview.querySelector("span")?.textContent).toContain("the source");
+
+    const expanded = await rerender(source);
+    const link = expanded.querySelector("a");
+    expect(link?.getAttribute("href")).toBe("https://example.test/details");
+    expect(link?.textContent).toBe("the source");
+  });
+
   it("appends the streaming cursor inline to the final Markdown paragraph", async () => {
     const rendered = await render("The answer is still being written.", true);
     const paragraph = rendered.querySelector(".agentplane-markdown p");

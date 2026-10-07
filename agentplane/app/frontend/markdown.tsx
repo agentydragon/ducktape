@@ -175,6 +175,9 @@ function toReactNode(node: ChildNode, key: string, singleLine: boolean): ReactNo
       .map((attribute) => [attribute.name === "class" ? "className" : attribute.name, attribute.value])
   );
   const children = [...node.childNodes].map((child, index) => toReactNode(child, `${key}.${index}`, singleLine));
+  // The one-line form is shown inside a disclosure button. Keep link text, but do not nest a
+  // navigable anchor in that button; the expanded Markdown still renders the real link.
+  if (singleLine && node.tagName === "A") return createElement("span", { key }, ...children);
   // This key stays fixed as text changes, so React reuses the cursor DOM node through streaming.
   const renderedNode = createElement(
     node.tagName.toLowerCase(),

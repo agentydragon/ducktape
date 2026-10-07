@@ -658,7 +658,9 @@
     "outputName": "session-standalone-reasoning-preview",
     "standaloneReasoning": true,
     "longReasoningPreview": true,
-    "readySelectors": ["[data-thread-anchor=\"20\"] .agentplane-step-details .agentplane-disclosure-summary"]
+    "readySelectors": [
+      "[data-thread-anchor=\"20\"] .agentplane-step-details .agentplane-disclosure-summary:not(:has(a))"
+    ]
   },
   "session_unfinished_reasoning": {
     "element": "#app",
@@ -687,7 +689,7 @@
     "longReasoningPreview": true,
     "openReasoning": true,
     "readySelectors": [
-      "[data-thread-anchor=\"20\"] .agentplane-step-details .agentplane-disclosure-panel .agentplane-markdown"
+      "[data-thread-anchor=\"20\"] .agentplane-step-details .agentplane-disclosure-panel .agentplane-markdown a[href=\"https://example.test/projection\"]"
     ]
   },
   "session_reasoning_code_fence": {
