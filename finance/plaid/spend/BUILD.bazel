@@ -39,6 +39,7 @@ py_library(
 py_library(
     name = "reporting",
     srcs = ["reporting.py"],
+    visibility = ["//finance/plaid/spend:__subpackages__"],
     deps = [
         ":allowance",
         ":models",
