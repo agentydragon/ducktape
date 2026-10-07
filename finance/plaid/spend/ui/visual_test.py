@@ -139,6 +139,41 @@ def dashboard_url() -> Iterator[str]:
 
         return StreamingResponse(updates(), media_type="text/event-stream")
 
+    @app.get("/api/v1/web/configuration")
+    def configuration() -> dict:
+        return {
+            "cards": [
+                {"label": "Example card", "enabled": True, "limit_minor_units": None, "alert_threshold_percent": None}
+            ],
+            "allowance": {
+                "monthly_minor_units": 70000,
+                "activation_at": "2026-10-01",
+                "currency": "USD",
+                "spending_account_count": 1,
+                "max_sync_age_hours": 72,
+                "rules": [
+                    {
+                        "condition": {
+                            "type": "all_of",
+                            "conditions": [
+                                {"type": "amount_sign", "sign": "negative"},
+                                {
+                                    "type": "any_of",
+                                    "conditions": [
+                                        {"type": "name_prefix", "field": "name", "prefix": "EXAMPLE"},
+                                        {"type": "field_exact", "field": "mcc", "value": "5812"},
+                                    ],
+                                },
+                            ],
+                        },
+                        "kind": "review",
+                        "analysis_category": "refund_review",
+                        "description": "Unverified credit; inspect the earlier purchase before netting it.",
+                    }
+                ],
+            },
+        }
+
     app.mount("/static", StaticFiles(directory=_UI_DIR))
     with serve_app_sync(app) as url:
         yield url
@@ -206,6 +241,25 @@ async def test_new_allowance_has_no_fake_zero_pace(page: Page, dashboard_url: st
     image = tmp_path / "dashboard-warmup.png"
     await page.screenshot(path=str(image), full_page=True, animations="disabled")
     retain_review_asset(image, title="Spend decisions", label="New allowance warming up", name=image.name)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(("width", "height"), [(1280, 960), (390, 844)])
+async def test_review_rule_configuration_render(
+    page: Page, dashboard_url: str, width: int, height: int, tmp_path: Path
+) -> None:
+    errors: list[str] = []
+    page.on("pageerror", lambda exc: errors.append(str(exc)))
+    await page.set_viewport_size({"width": width, "height": height})
+    await page.goto(dashboard_url, wait_until="domcontentloaded")
+    await page.get_by_role("tab", name="Configuration").click()
+    await page.get_by_text("Unverified credit; inspect the earlier purchase before netting it.").wait_for()
+    assert await page.get_by_text("Review", exact=True).count() == 1
+    assert await page.get_by_text("Amount is negative AND (Transaction name starts with", exact=False).count() == 1
+    assert not errors
+    image = tmp_path / f"configuration-review-{width}.png"
+    await page.screenshot(path=str(image), full_page=True, animations="disabled")
+    retain_review_asset(image, title="Spend configuration", label=f"{width}px review rule", name=image.name)
 
 
 if __name__ == "__main__":

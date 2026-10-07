@@ -34,40 +34,40 @@ class PaceAlert(StrEnum):
 
 class NamePrefix(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
-    type: Literal["name_prefix"]
+    type: Literal["name_prefix"] = "name_prefix"
     field: Literal["name", "merchant_name"]
     prefix: str = Field(min_length=2)
 
 
 class NameContains(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
-    type: Literal["name_contains"]
+    type: Literal["name_contains"] = "name_contains"
     field: Literal["name", "merchant_name"]
     substring: str = Field(min_length=2)
 
 
 class CategoryExact(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
-    type: Literal["category_exact"]
+    type: Literal["category_exact"] = "category_exact"
     field: Literal["pfc_primary", "pfc_detailed"]
     value: str = Field(min_length=2)
 
 
 class AmountExact(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
-    type: Literal["amount_exact"]
+    type: Literal["amount_exact"] = "amount_exact"
     value: str = Field(pattern=r"^\d+(\.\d{1,4})?$")
 
 
 class AmountSign(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
-    type: Literal["amount_sign"]
+    type: Literal["amount_sign"] = "amount_sign"
     sign: Literal["negative", "zero", "positive"]
 
 
 class FieldExact(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
-    type: Literal["field_exact"]
+    type: Literal["field_exact"] = "field_exact"
     field: Literal["name", "merchant_name", "account_type", "mcc", "delivery_marketplace"]
     value: str | bool
 
@@ -77,13 +77,13 @@ type SimpleCondition = NamePrefix | NameContains | CategoryExact | AmountExact |
 
 class AnyOf(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
-    type: Literal["any_of"]
+    type: Literal["any_of"] = "any_of"
     conditions: list[Annotated[SimpleCondition, Field(discriminator="type")]] = Field(min_length=2)
 
 
 class AllOf(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
-    type: Literal["all_of"]
+    type: Literal["all_of"] = "all_of"
     conditions: list[Annotated[SimpleCondition | AnyOf, Field(discriminator="type")]] = Field(min_length=2)
 
 

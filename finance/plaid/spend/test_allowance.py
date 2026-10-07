@@ -33,11 +33,11 @@ START_DATE = date(2026, 1, 31)
 
 
 def category_rule(field: Literal["pfc_primary", "pfc_detailed"], value: str, kind: Kind) -> Rule:
-    return Rule(condition=CategoryExact(type="category_exact", field=field, value=value), kind=kind)
+    return Rule(condition=CategoryExact(field=field, value=value), kind=kind)
 
 
 def name_rule(field: Literal["name", "merchant_name"], prefix: str, kind: Kind) -> Rule:
-    return Rule(condition=NamePrefix(type="name_prefix", field=field, prefix=prefix), kind=kind)
+    return Rule(condition=NamePrefix(field=field, prefix=prefix), kind=kind)
 
 
 def policy(*, activation_at: date = START_DATE, rules: list[Rule] | None = None) -> AllowancePolicy:
@@ -286,20 +286,13 @@ def test_private_rule_and_uncertain_purchases():
     assert policy().spending_account_ids == {"card-1"}
 
 
-if __name__ == "__main__":
-    import pytest_bazel
-
-    pytest_bazel.main()
-
-
 def test_compound_wire_rule_matches_only_named_beneficiary_and_wire_category():
     rule = Rule(
         condition=AllOf(
-            type="all_of",
             conditions=[
-                NameContains(type="name_contains", field="name", substring="EXAMPLE BROKER"),
-                CategoryExact(type="category_exact", field="pfc_detailed", value="TRANSFER_OUT_WIRE"),
-            ],
+                NameContains(field="name", substring="EXAMPLE BROKER"),
+                CategoryExact(field="pfc_detailed", value="TRANSFER_OUT_WIRE"),
+            ]
         ),
         kind=Kind.EXCLUDED,
     )
@@ -312,28 +305,23 @@ def test_compound_wire_rule_matches_only_named_beneficiary_and_wire_category():
     assert matching_rule(wire.model_copy(update={"name": "WIRE BENEFICIARY: OTHER BROKER"}), [rule]) is None
     assert calculate(policy(rules=[rule]), [wire], now=START, last_synced_at=START).available_minor_units == 10_000
     with pytest.raises(ValidationError):
-        AllOf(type="all_of", conditions=[NameContains(type="name_contains", field="name", substring="XX")])
+        AllOf(conditions=[NameContains(field="name", substring="XX")])
 
 
 def test_review_rule_uses_shared_conditions_and_preserves_uncertainty():
     review = Rule(
         condition=AllOf(
-            type="all_of",
             conditions=[
-                AmountSign(type="amount_sign", sign="positive"),
-                AnyOf(
-                    type="any_of",
-                    conditions=[
-                        FieldExact(type="field_exact", field="mcc", value="5812"),
-                        NamePrefix(type="name_prefix", field="name", prefix="CAFE"),
-                    ],
-                ),
-            ],
+                AmountSign(sign="positive"),
+                AnyOf(conditions=[FieldExact(field="mcc", value="5812"), NamePrefix(field="name", prefix="CAFE")]),
+            ]
         ),
         kind=Kind.REVIEW,
         analysis_category="food_review",
     )
     assert Rule.model_validate(review.model_dump()) == review
+    with pytest.raises(ValidationError, match="Unable to extract tag"):
+        Rule.model_validate({"condition": {"sign": "positive"}, "kind": "review"})
     purchase = row("2026-01-31", 20).model_copy(update={"mcc": "5812"})
     assert matching_rule(purchase, [review]) == review
     result = calculate(policy(rules=[review]), [purchase], now=START, last_synced_at=START)
@@ -344,7 +332,7 @@ def test_review_rule_uses_shared_conditions_and_preserves_uncertainty():
 
 
 def test_reviewed_negative_credit_is_not_spending_or_income():
-    review = Rule(condition=AmountSign(type="amount_sign", sign="negative"), kind=Kind.REVIEW)
+    review = Rule(condition=AmountSign(sign="negative"), kind=Kind.REVIEW)
     result = calculate(policy(rules=[review]), [row("2026-01-31", -5)], now=START, last_synced_at=START)
     assert result.available_minor_units == 10_000
     assert result.unmatched_refunds_minor_units == 500
