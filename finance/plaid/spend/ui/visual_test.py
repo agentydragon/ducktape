@@ -409,7 +409,7 @@ async def test_spending_decision_render(
     assert await page.get_by_text("30 days", exact=True).count() == 1
     assert await page.get_by_text("$13 / day", exact=True).count() == 1
     assert await page.get_by_text("Below provisional leash", exact=True).count() == 1
-    assert await page.get_by_text("7d unmatched 2 ($3)", exact=False).count() == 1
+    assert await page.get_by_text("Unmatched in selected window: 2 ($3)", exact=False).count() == 1
     assert await page.get_by_text("$75", exact=True).count() == 1
     assert await page.get_by_text("Provisional card total since", exact=False).count() == 1
     assert await page.get_by_text("Includes purchases outside the allowance", exact=False).count() == 1

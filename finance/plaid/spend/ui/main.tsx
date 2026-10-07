@@ -264,6 +264,7 @@ function AllowancePanel({
     : null;
   const cycleSpend = spendPeriod(allowance, "credit_cycle");
   const selectedPace = pacePeriod(allowance, allowance.forecast.basis_period.id);
+  const unmatched = selectedPace?.unmatched_charges;
   const historyPeriods = [
     { id: "rolling_7d", label: "LAST 7 DAYS" },
     { id: "rolling_30d", label: "LAST 30 DAYS" },
@@ -347,15 +348,12 @@ function AllowancePanel({
               Positive recorded purchases, including history before activation; unmatched purchases count as flexible.
               Earlier purchases inform pace but do not reduce available allowance. Plaid data may lag.
             </Text>
-            {(["rolling_7d", "rolling_30d"] as const).map((periodId) => {
-              const unmatched = pacePeriod(allowance, periodId)?.unmatched_charges;
-              return unmatched && unmatched.count > 0 ? (
-                <Text size="xs" c="dimmed" key={periodId}>
-                  {periodId === "rolling_7d" ? "7d" : "30d"} unmatched {unmatched.count} (
-                  {m(unmatched.amount_minor_units)}) · counted as flexible.
-                </Text>
-              ) : null;
-            })}
+            {unmatched && unmatched.count > 0 && (
+              <Text size="xs" c="dimmed">
+                Unmatched in selected window: {unmatched.count} ({m(unmatched.amount_minor_units)}) · counted as
+                flexible.
+              </Text>
+            )}
             <Text size="xs" c="dimmed">
               The estimate may use a higher daily pace when purchases since the allowance began are concentrated in
               fewer days.
