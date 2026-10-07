@@ -611,5 +611,29 @@
     "viewport": "desktop",
     "pendingCommands": "mixed",
     "captureViewport": true
+  },
+  "realistic_rollout_desktop": {
+    "element": "#app",
+    "route": "/threads/5f1c4a2e-0000-4000-8000-000000000001",
+    "viewport": "desktop",
+    "realisticRollout": "completed",
+    "captureViewport": true,
+    "readySelectors": ["[aria-label='Thread history'][data-layout-settled='true']"]
+  },
+  "realistic_rollout_mobile": {
+    "element": "#app",
+    "route": "/threads/5f1c4a2e-0000-4000-8000-000000000001",
+    "viewport": "mobile",
+    "realisticRollout": "completed",
+    "captureViewport": true,
+    "readySelectors": ["[aria-label='Thread history'][data-layout-settled='true']"]
+  },
+  "reported_rollout_desktop": {
+    "element": "#app",
+    "route": "/threads/5f1c4a2e-0000-4000-8000-000000000001",
+    "viewport": "desktop",
+    "realisticRollout": "reported",
+    "captureViewport": true,
+    "readySelectors": ["[aria-label='Thread history'][data-layout-settled='true']"]
   }
 }

@@ -1184,6 +1184,8 @@ js_library(
     testonly = True,
     srcs = [
         "harness/interaction_scenarios.json",
+        "harness/realistic_rollout.json",
+        "harness/reported_rollout.json",
         "harness/scenarios.json",
     ],
 )
@@ -1218,6 +1220,7 @@ ts_library(
         ":test_model_catalog",
         ":theme",
         ":visual_scenario",
+        ":visual_scenarios_json",
         "//:node_modules/@bufbuild/protobuf",
         "//:node_modules/@mantine/core",
         "//:node_modules/@types/react",

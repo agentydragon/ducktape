@@ -32,6 +32,8 @@ import { SCENARIOS, type Scenario } from "./scenario";
 import { LocalCommands } from "../threads/local_commands";
 import { streamRegistry } from "../stream_status";
 import { ThemeProvider } from "../theme";
+import rollout from "./realistic_rollout.json";
+import reportedRollout from "./reported_rollout.json";
 
 /** Resolved before any fixture is built: the scenario's fields are what the fixtures vary on. */
 function resolveScenario(): Scenario {
@@ -565,6 +567,14 @@ function withFailedTurn(thread: ThreadView): ThreadView {
 }
 
 function scenarioThread(thread: ThreadView): ThreadView {
+  if (scenario.realisticRollout && thread.session_id === "s-1")
+    return {
+      ...thread,
+      name: scenario.realisticRollout === "reported" ? "Reported thread excerpt" : "Completed diagnostic run",
+      harness: "HARNESS_CODEX",
+      active_turn_id: null,
+      last_turn_status: "TURN_STATUS_COMPLETED",
+    };
   if (scenario.endedAttachment) return withEndedAttachment(thread);
   return scenario.failedTurn ? withFailedTurn(thread) : thread;
 }
@@ -1594,6 +1604,7 @@ function recoveryRows(threadId: string): Record<string, unknown>[] {
 }
 
 function threadEntityRows(threadId: string): Record<string, unknown>[] {
+  if (scenario.realisticRollout) return realisticRolloutRows(threadId);
   if (scenario.recovery) return recoveryRows(threadId);
   if (scenario.shellCalls) return shellCallRows(threadId);
   if (scenario.endedAttachment) return endedAttachmentRows(threadId);
@@ -1613,6 +1624,48 @@ function threadEntityRows(threadId: string): Record<string, unknown>[] {
     );
   if (threadId === THREADS[2].id || scenario.pendingCommands) return statesRows(threadId);
   return standardRows(threadId, scenario.longReasoningPreview ?? false, scenario.longReasoningBody ?? false);
+}
+
+function realisticRolloutRows(threadId: string): Record<string, unknown>[] {
+  const entries = scenario.realisticRollout === "reported" ? reportedRollout : rollout;
+  const rows = entries.map((entry, index) => {
+    const cursor = index + 1;
+    const id = `rollout-${cursor}`;
+    const turn = `rollout-turn-${entry.turn}`;
+    if (entry.kind === "input") {
+      if (entry.text === null) throw new Error("Rollout input requires text");
+      return entity(
+        "confirmed_input",
+        id,
+        cursor,
+        { harness_message_id: id, origin_command_ids: [] },
+        { thread_id: threadId, turn_id: turn, input_ref: payload(cursor, id, "confirmed_input", entry.text) }
+      );
+    }
+    let kind: ItemKind;
+    switch (entry.kind) {
+      case "tool":
+        kind = ItemKind.TOOL_CALL;
+        break;
+      case "reasoning":
+        kind = ItemKind.REASONING;
+        break;
+      case "assistant":
+        kind = ItemKind.ASSISTANT_TEXT;
+        break;
+      default:
+        throw new Error(`Unknown rollout item kind: ${entry.kind}`);
+    }
+    return item(cursor, id, kind, entry.text, {
+      threadId,
+      turn,
+      tool: entry.tool ?? undefined,
+      arguments: entry.arguments ?? undefined,
+      output: entry.output ?? undefined,
+      failed: entry.failed,
+    });
+  });
+  return [{ ...viewState(entries.length, null), thread_id: threadId }, ...rows];
 }
 
 function threadScope(threadId: string): Record<string, string> {

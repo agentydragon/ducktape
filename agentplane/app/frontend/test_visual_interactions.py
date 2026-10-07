@@ -6,9 +6,11 @@ assertion for a real UI behavior, then uses the shared visual capture and review
 
 from __future__ import annotations
 
+import json
 import os
 import re
 from collections.abc import AsyncIterator, Awaitable, Callable
+from textwrap import dedent
 
 import pytest
 import pytest_asyncio
@@ -110,6 +112,120 @@ async def _open_run(page: Page) -> None:
     )
     await run.click()
     await expect(page.locator(".agentplane-step-details").first).to_be_visible()
+
+
+async def _rollout_start(page: Page) -> None:
+    history = page.get_by_role("region", name="Thread history")
+    await expect(history).to_have_attribute("data-layout-settled", "true")
+    await history.evaluate("element => { element.scrollTop = 0; }")
+    await wait_for_stable(page)
+    await _rollout_geometry(page, "overview")
+
+
+async def _rollout_geometry(page: Page, state: str) -> None:
+    scene = await page.evaluate("new URL(location.href).searchParams.get('page')")
+    geometry = await page.evaluate(
+        dedent("""() => {
+      const box = element => {
+        const rect = element.getBoundingClientRect();
+        const style = getComputedStyle(element);
+        return { left: rect.left, right: rect.right, top: rect.top, bottom: rect.bottom,
+          clientWidth: element.clientWidth, scrollWidth: element.scrollWidth,
+          scrollLeft: element.scrollLeft, paddingLeft: style.paddingLeft, paddingRight: style.paddingRight };
+      };
+      const history = document.querySelector('[aria-label="Thread history"]');
+      return {
+        shell: box(document.querySelector('.agentplane-shell-main-content')),
+        history: box(history),
+        rows: [...history.querySelectorAll('[data-thread-anchor]')].map(box)
+      };
+    }""")
+    )
+    (undeclared_outputs_dir() / f"{scene}-{state}-geometry.json").write_text(json.dumps(geometry, indent=2))
+
+
+@pytest.mark.parametrize("scene", ["realistic_rollout_desktop", "realistic_rollout_mobile", "reported_rollout_desktop"])
+async def test_realistic_rollout_overview(
+    scene: str, scenes: dict[str, Scenario], playwright_driver: Playwright, sweep_config: SweepConfig
+) -> None:
+    await _capture(
+        scene,
+        _rollout_start,
+        scenes=scenes,
+        playwright_driver=playwright_driver,
+        sweep_config=sweep_config,
+        output_name=f"{scene.replace('_', '-')}-overview",
+    )
+
+
+@pytest.mark.parametrize("scene", ["realistic_rollout_desktop", "realistic_rollout_mobile", "reported_rollout_desktop"])
+@pytest.mark.parametrize("position", ["start", "end"])
+async def test_realistic_rollout_run(
+    scene: str, position: str, scenes: dict[str, Scenario], playwright_driver: Playwright, sweep_config: SweepConfig
+) -> None:
+    async def drive(page: Page) -> None:
+        await _rollout_start(page)
+        await _open_run(page)
+        steps = page.locator(".agentplane-run-steps").first
+        target = steps.locator(":scope > *").first if position == "start" else steps.locator(":scope > *").last
+        await _focus(page, target)
+        await target.hover()
+        await _rollout_geometry(page, f"run-{position}")
+
+    await _capture(
+        scene,
+        drive,
+        scenes=scenes,
+        playwright_driver=playwright_driver,
+        sweep_config=sweep_config,
+        output_name=f"{scene.replace('_', '-')}-run-{position}",
+    )
+
+
+@pytest.mark.parametrize("viewport", ["desktop", "mobile"])
+@pytest.mark.parametrize("expanded_output", [False, True], ids=["call", "output-scrolled"])
+async def test_realistic_rollout_call(
+    viewport: str,
+    expanded_output: bool,
+    scenes: dict[str, Scenario],
+    playwright_driver: Playwright,
+    sweep_config: SweepConfig,
+) -> None:
+    async def drive(page: Page) -> None:
+        await _rollout_start(page)
+        await _open_run(page)
+        call = (
+            page.locator(".agentplane-run-steps .agentplane-step-details")
+            .filter(has=page.locator(".agentplane-step-title:text-is('Shell')"))
+            .nth(1)
+        )
+        await call.locator(".agentplane-disclosure-summary").first.click()
+        output = call.locator(".agentplane-clamped-block[data-label='Output']")
+        await expect(output).to_be_attached()
+        if expanded_output:
+            await _focus(page, output)
+            await output.get_by_role("button", name=re.compile(r"^Show all")).click()
+            await expect(output).to_have_attribute("data-expanded", "true")
+            await output.evaluate(
+                dedent("""element => {
+                  const history = element.closest('[aria-label="Thread history"]');
+                  history.scrollTop += element.getBoundingClientRect().top - history.getBoundingClientRect().top + 300;
+                }""")
+            )
+            await wait_for_stable(page)
+            await expect(call.locator(".agentplane-output-label")).to_be_in_viewport()
+        else:
+            await _focus(page, call.locator(".agentplane-clamped-block[data-label='Command']"))
+        await page.mouse.move(0, 0)
+
+    await _capture(
+        f"realistic_rollout_{viewport}",
+        drive,
+        scenes=scenes,
+        playwright_driver=playwright_driver,
+        sweep_config=sweep_config,
+        output_name=f"realistic-rollout-{viewport}-{'output-scrolled' if expanded_output else 'call'}",
+    )
 
 
 async def _open_recovery_details(page: Page) -> None:

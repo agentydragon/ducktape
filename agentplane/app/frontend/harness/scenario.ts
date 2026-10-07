@@ -25,6 +25,8 @@ export type DisclosureVisualStage =
   | "nested-output-collapsed";
 
 export interface Scenario {
+  /** Sanitized staging-derived run, preserving the sequence and relative sizes of its items. */
+  realisticRollout?: "completed" | "reported";
   /** Mount the isolated shared-disclosure phone scene instead of the full app. */
   disclosureVisual?: DisclosureVisualStage;
   /** Offer Codex only while retaining existing Claude threads. */
