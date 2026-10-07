@@ -1,3 +1,5 @@
+# The visual macro collects this test module under :visual so its PNGs keep the same gallery identity.
+# gazelle:exclude test_visual_interactions.py
 load("@aspect_rules_esbuild//esbuild:defs.bzl", "esbuild")
 load("@aspect_rules_js//js:defs.bzl", "js_library", "js_test")
 load("@aspect_rules_ts//ts:defs.bzl", "ts_config")
