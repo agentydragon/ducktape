@@ -49,10 +49,10 @@ pub struct ValidateArgs {
     #[arg(long, value_enum)]
     pub format: Option<OutputFormat>,
 
-    /// Exit nonzero after emitting the report if any selector outcome is an error.
-    /// Warnings, including resolution by elimination, do not fail validation.
+    /// Emit the diagnostic report without failing for selector errors.
+    /// By default, error outcomes cause a nonzero exit after the full report.
     #[arg(long)]
-    pub fail_on_outcomes: bool,
+    pub report_only: bool,
 
     /// Tree-shaped modules root to source-preflight without a full transform spec.
     #[arg(long = "modules")]
@@ -73,7 +73,7 @@ pub struct ValidateArgs {
 
 pub fn run_validate_cmd(args: ValidateArgs) -> Result<()> {
     let format = OutputFormat::resolve(args.format);
-    let fail_on_outcomes = args.fail_on_outcomes;
+    let report_only = args.report_only;
     let report = if args.source_only_requested() {
         js_ast::with_swc_globals(|| run_source_only_validate(&args))?
     } else {
@@ -85,7 +85,7 @@ pub fn run_validate_cmd(args: ValidateArgs) -> Result<()> {
         print_report(&report, format, |report, buf| report.render_text(buf, None))
             .context("writing validate output")?;
     }
-    if fail_on_outcomes
+    if !report_only
         && report
             .outcomes
             .iter()
@@ -106,10 +106,10 @@ fn run_spec_validate(args: ValidateArgs) -> Result<SelectorOutcomeReport> {
     let capture = tempfile::tempdir().context("creating selector-diagnostics capture dir")?;
     // The keep-going pass writes the per-chunk reports *and then* fails the
     // pipeline at the end with the collected findings — that rejection is the
-    // contract for `debundle run`. `validate` treats the findings as data, not a
-    // tool failure: when the run produced reports, we emit them and exit zero;
-    // only a run that errored *without* producing any report is a real failure
-    // (bad spec path, parse error, …).
+    // contract for `debundle run`. When reports exist, `validate` emits them
+    // before deciding its exit status in `run_validate_cmd`; only a pass that
+    // errored without producing a report fails here (bad spec path, parse
+    // error, …).
     let pass = run_transform_cli(
         &cli,
         TransformRunOptions {

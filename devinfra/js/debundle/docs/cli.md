@@ -186,9 +186,10 @@ preflight mode (`--modules` plus `--source-file` or `--source-root
 the same resolve as `run`. How its outcomes differ from the pipeline's:
 <../SPEC.md> § Outcomes; also, a name pin on a binding the chunk does not
 declare is `no_match` in this mode but an unmatched claim in `run`.
-By default, selector findings are report data and `validate` exits zero.
-Pass `--fail-on-outcomes` to exit nonzero after printing the complete report
-when any outcome has error severity; warnings do not fail this check.
+`validate` prints the complete report, then exits nonzero if any outcome has
+error severity. Warnings do not fail validation. Pass `--report-only` to keep
+the report but exit zero for selector errors, for example when collecting
+diagnostics across several chunks.
 
 Each group of interacting selectors is one CP-SAT solve inside the `debundle`
 process (<selector_resolution.md> § The solver) — in `run`, `validate`, and in

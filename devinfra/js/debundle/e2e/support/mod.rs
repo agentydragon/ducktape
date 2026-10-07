@@ -339,8 +339,8 @@ pub fn write_validate_fixture_spec(opts: FixtureOpts<'_>) -> ValidateFixture {
     }
 }
 
-/// `debundle spec validate --spec --format json` over `opts`, parsed; panics on a
-/// non-zero exit.
+/// `debundle spec validate --spec --report-only --format json` over `opts`, parsed;
+/// panics on a non-zero exit.
 pub fn validate_json(opts: FixtureOpts<'_>) -> Value {
     let fixture = write_validate_fixture_spec(opts);
     let out = run_spec_validate(&fixture.spec_path, &["--format", "json"]);
@@ -360,14 +360,15 @@ pub fn outcomes(report: &Value) -> &[Value] {
         .unwrap_or_else(|| panic!("outcomes must be an array: {report:#}"))
 }
 
-/// Run `debundle spec validate --spec <path> <extra_args>` and return its
-/// captured stdio + exit status.
+/// Run `debundle spec validate --spec <path> --report-only <extra_args>` and
+/// return its captured stdio + exit status.
 pub fn run_spec_validate(spec_path: &Path, extra_args: &[&str]) -> CommandResult {
     let bin = debundler_path();
     command_result(
         Command::new(&bin)
             .args(["spec", "validate", "--spec"])
             .arg(spec_path)
+            .arg("--report-only")
             .args(extra_args)
             .output()
             .unwrap_or_else(|e| panic!("spawn debundler {}: {e}", bin.display())),
@@ -870,8 +871,8 @@ fn command_result(output: std::process::Output) -> CommandResult {
     }
 }
 
-/// `debundle spec validate --modules <modules_root> --source-file <source_file>`:
-/// the source-only preflight.
+/// `debundle spec validate --modules <modules_root> --source-file <source_file>
+/// --report-only`: the source-only diagnostic preflight.
 pub fn run_source_only_validate(
     modules_root: &Path,
     source_file: &Path,
@@ -883,6 +884,7 @@ pub fn run_source_only_validate(
         .arg(modules_root)
         .arg("--source-file")
         .arg(source_file)
+        .arg("--report-only")
         .args(extra_args)
         .output()
         .unwrap_or_else(|e| panic!("spawn debundler {}: {e}", bin.display()));
