@@ -53,6 +53,77 @@
     "viewport": "mobile",
     "outputName": "sandbox-egress-phone"
   },
+  "actions_history": {
+    "element": "#app",
+    "route": "/actions",
+    "viewport": "desktop",
+    "readySelectors": [".agentplane-disclosure-summary", "img[src^=\"data:image/\"]"]
+  },
+  "actions_history_more": {
+    "element": "#app",
+    "route": "/actions",
+    "viewport": "desktop",
+    "historyPaged": true,
+    "readySelectors": [".agentplane-disclosure-summary", "[data-testid=\"action-history-load-more\"]"]
+  },
+  "actions_history_phone": {
+    "element": "#app",
+    "route": "/actions",
+    "viewport": "mobile",
+    "readySelectors": [".agentplane-disclosure-summary", "img[src^=\"data:image/\"]"]
+  },
+  "actions_history_raw": {
+    "element": "#app",
+    "route": "/actions",
+    "viewport": "desktop",
+    "readySelectors": [".agentplane-disclosure-summary", "input[type=\"checkbox\"]:checked"],
+    "openRaw": true
+  },
+  "mcp_servers": {
+    "element": "#app",
+    "route": "/mcp-servers",
+    "viewport": "desktop",
+    "readySelectors": ["[data-mcp-server]"]
+  },
+  "mcp_servers_phone": {
+    "element": "#app",
+    "route": "/mcp-servers",
+    "viewport": "mobile",
+    "readySelectors": ["[data-mcp-server]"]
+  },
+  "consent_reconnect_phone": {
+    "element": "#app",
+    "route": "/connection-enrollments/test-only-opaque-handle",
+    "viewport": "mobile",
+    "readySelectors": ["[data-reconnect-review]"],
+    "preselectReconnect": true
+  },
+  "session_recovery_tools_open": {
+    "element": "#app",
+    "route": "/threads/5f1c4a2e-0000-4000-8000-000000000001",
+    "viewport": "desktop",
+    "recovery": "tools",
+    "openRecoveryDetails": true,
+    "readySelectors": [
+      "[aria-label=\"Retention unknown\"]",
+      ".agentplane-step-details .agentplane-disclosure-summary[aria-expanded=\"true\"]",
+      ".agentplane-code-block"
+    ],
+    "captureViewport": true
+  },
+  "session_recovery_tools_open_phone": {
+    "element": "#app",
+    "route": "/threads/5f1c4a2e-0000-4000-8000-000000000001",
+    "viewport": "mobile",
+    "recovery": "tools",
+    "openRecoveryDetails": true,
+    "readySelectors": [
+      "[aria-label=\"Retention unknown\"]",
+      ".agentplane-step-details .agentplane-disclosure-summary[aria-expanded=\"true\"]",
+      ".agentplane-code-block"
+    ],
+    "captureViewport": true
+  },
   "session_tool_payloads": {
     "element": "#app",
     "route": "/threads/5f1c4a2e-0000-4000-8000-000000000001",
