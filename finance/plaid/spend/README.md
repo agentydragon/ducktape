@@ -30,6 +30,12 @@ and notification-backed event stream.
   counterparts. They return the same schema and use the same live event stream.
 - `GET /api/v1/web/configuration` returns the settings currently loaded by the service for the
   browser's read-only Configuration tab. It uses the signed web session and omits Plaid account IDs.
+- `GET /api/v1/web/transactions?window=30d` supplies the read-only Transactions tab; `window` also
+  accepts `7d` and `cycle`. It returns recent rows from allowance accounts and configured cards, with
+  the first matched policy rule, the calculator's allowance and pace contributions, and each card
+  row's statement-cycle contribution or exclusion reason. Account and transaction IDs are omitted.
+  An unavailable allowance leaves classifications unavailable; an unavailable credit cycle falls
+  back to a 30-day transaction window.
 
 The view shape is:
 

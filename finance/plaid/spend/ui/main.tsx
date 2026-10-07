@@ -14,6 +14,7 @@ import {
   MantineProvider,
   NumberInput,
   Paper,
+  SegmentedControl,
   SimpleGrid,
   Stack,
   Tabs,
@@ -29,6 +30,9 @@ type Allowance = components["schemas"]["AllowanceView"];
 type CardView = components["schemas"]["CardView"];
 type View = components["schemas"]["SpendView"];
 type SpendConfiguration = components["schemas"]["SpendConfigurationView"];
+type TransactionsView = components["schemas"]["SpendTransactionsView"];
+type TransactionRow = components["schemas"]["SpendTransactionRow"];
+type TransactionWindow = TransactionsView["window"];
 type RuleCondition = components["schemas"]["Rule"]["condition"];
 type RuleKind = components["schemas"]["Rule"]["kind"];
 
@@ -648,6 +652,289 @@ function ConfigurationPanel({
   );
 }
 
+const dispositionText = {
+  counted: "Counted in allowance",
+  pace_only: "Pace only · before allowance start",
+  fixed: "Mandatory · outside allowance",
+  excluded: "Excluded from allowance",
+  held_refund: "Refund held for review",
+  superseded_pending: "Pending version replaced by posted charge",
+  other_currency: "Different currency · outside allowance",
+} satisfies Record<NonNullable<TransactionRow["disposition"]>, string>;
+
+const statementText = {
+  counted: "Counted in card cycle",
+  outside_cycle: "Outside current card cycle",
+  superseded_pending: "Pending version replaced by posted charge",
+  card_payment: "Card payment excluded from card spend",
+  other_currency: "Different currency excluded from card spend",
+  unavailable: "Card cycle unavailable",
+} satisfies Record<NonNullable<TransactionRow["statement_reason"]>, string>;
+
+function isReviewRow(row: TransactionRow): boolean {
+  return (
+    row.allowance_in_scope &&
+    ((row.disposition === "counted" && (row.rule == null || row.rule.kind === "review")) ||
+      row.disposition === "held_refund")
+  );
+}
+
+function classificationForRow(row: TransactionRow): { label: string; color: string } {
+  if (row.disposition === "held_refund") return { label: "Refund held", color: "orange" };
+  if (row.disposition === "superseded_pending") return { label: "Superseded", color: "gray" };
+  if (row.disposition === "other_currency") return { label: "Other currency", color: "gray" };
+  if (row.rule) return ruleKindDisplay[row.rule.kind];
+  if (!row.allowance_in_scope) return { label: "Outside allowance", color: "gray" };
+  if (row.disposition === null) return { label: "Unavailable", color: "gray" };
+  return { label: "Unmatched", color: "orange" };
+}
+
+function TransactionsPanel({
+  transactions,
+  loading,
+  error,
+  window,
+  onWindowChange,
+  onShowRule,
+}: {
+  transactions: TransactionsView | null;
+  loading: boolean;
+  error: string | null;
+  window: TransactionWindow;
+  onWindowChange: (window: TransactionWindow) => void;
+  onShowRule: () => void;
+}) {
+  const [filter, setFilter] = useState<"all" | "review" | "effect">("all");
+  const rows = transactions?.rows ?? [];
+  const shown = rows.filter((row) =>
+    filter === "review" ? isReviewRow(row) : filter === "effect" ? row.allowance_minor_units !== 0 : true
+  );
+  const allowance = transactions?.allowance;
+  const currency = allowance?.currency ?? "USD";
+  const m = (value: number | null | undefined) => <Money value={value} currency={currency} />;
+  const reviewRows = rows.filter(isReviewRow);
+  const netAllowance = rows.reduce((sum, row) => sum + row.allowance_minor_units, 0);
+
+  return (
+    <Stack gap="lg">
+      <Group justify="space-between" align="flex-start" gap="md">
+        <div>
+          <Title order={1} size="h3">
+            Transactions
+          </Title>
+          <Text size="sm" c="dimmed" mt="xs">
+            Recent Plaid transactions and the decisions behind your allowance and card totals. Positive amounts are
+            charges; negative amounts are credits.
+          </Text>
+        </div>
+        <Badge color="gray" variant="light">
+          Read only
+        </Badge>
+      </Group>
+      <Group justify="space-between" align="end" gap="md">
+        <SegmentedControl
+          aria-label="Transaction period"
+          value={window}
+          onChange={(value) => onWindowChange(value as TransactionWindow)}
+          data={[
+            { label: "7 days", value: "7d" },
+            { label: "30 days", value: "30d" },
+            { label: "Credit cycle", value: "cycle" },
+          ]}
+        />
+        <SegmentedControl
+          aria-label="Transaction filter"
+          value={filter}
+          onChange={(value) => setFilter(value as typeof filter)}
+          data={[
+            { label: "All", value: "all" },
+            { label: "Review", value: "review" },
+            { label: "Allowance effect", value: "effect" },
+          ]}
+        />
+      </Group>
+      {error && (
+        <Alert color="red" title="Couldn't load transactions">
+          {error}
+        </Alert>
+      )}
+      {loading && (
+        <Text size="sm" c="dimmed">
+          Refreshing transactions…
+        </Text>
+      )}
+      {transactions && (
+        <>
+          {allowance?.status !== "active" && (
+            <Alert color="yellow" title="Allowance classification unavailable">
+              {allowance?.note ?? "No flexible allowance is configured."} Card transactions may still appear below.
+            </Alert>
+          )}
+          {window === "cycle" && allowance?.status !== "active" && (
+            <Text size="sm" c="dimmed">
+              Showing the last 30 days because the credit cycle is unavailable.
+            </Text>
+          )}
+          <Paper withBorder radius="lg" p="lg">
+            <Stack gap="md">
+              <SimpleGrid cols={{ base: 1, sm: 3 }} spacing="md">
+                <Metric
+                  label="TRANSACTIONS IN PERIOD"
+                  value={rows.length}
+                  detail={`Since ${transactions.window_start}`}
+                />
+                <Metric
+                  label="NET ALLOWANCE SPEND"
+                  value={allowance?.status === "active" ? m(netAllowance) : "Unavailable"}
+                  detail="Positive charges less accepted refunds"
+                />
+                <Metric
+                  label="NEEDS CLASSIFICATION"
+                  value={
+                    allowance?.status === "active"
+                      ? `${reviewRows.length} · ${money(
+                          reviewRows.reduce((sum, row) => sum + Math.max(0, row.allowance_minor_units), 0),
+                          currency
+                        )}`
+                      : "Unavailable"
+                  }
+                  detail="Unmatched charges count; held refunds do not"
+                />
+              </SimpleGrid>
+              {window === "cycle" && allowance?.status === "active" && (
+                <>
+                  <Divider />
+                  <Text size="sm" fw={650}>
+                    Allowance bridge
+                  </Text>
+                  <Text size="sm">
+                    {m(allowance.prior_carry_minor_units)} carried + {m(allowance.monthly_minor_units)} monthly credit −{" "}
+                    {m(allowance.windows_minor_units?.current_credit_cycle_minor_units)} cycle spend ={" "}
+                    <strong>{m(allowance.available_minor_units)} available</strong>
+                  </Text>
+                  <Text size="xs" c="dimmed">
+                    Cycle spend includes pending charges. A held refund does not restore the allowance until matched by
+                    an explicit rule. The card statement uses a separate cycle and may include mandatory purchases.
+                  </Text>
+                </>
+              )}
+            </Stack>
+          </Paper>
+          <Group justify="space-between" align="baseline" gap="sm">
+            <Text size="sm" c="dimmed">
+              Showing {shown.length} of {rows.length}
+            </Text>
+            <Text size="xs" c="dimmed">
+              View updated {time(transactions.generated_at)} · oldest allowance sync {time(allowance?.last_synced_at)}
+            </Text>
+          </Group>
+          {shown.length === 0 && (
+            <Text size="sm" c="dimmed">
+              No transactions match this period and filter.
+            </Text>
+          )}
+          <Accordion variant="separated" radius="md">
+            {shown.map((row, index) => {
+              const classification = classificationForRow(row);
+              return (
+                <Accordion.Item key={`${row.date}-${row.account_label}-${index}`} value={String(index)}>
+                  <Accordion.Control>
+                    <Group justify="space-between" gap="sm" wrap="nowrap">
+                      <Stack gap={2} style={{ minWidth: 0 }}>
+                        <Text fw={650} size="sm" style={{ overflowWrap: "anywhere" }}>
+                          {row.merchant_name || row.name}
+                        </Text>
+                        <Group gap="xs">
+                          <Text size="xs" c="dimmed">
+                            {row.date} · {row.account_label}
+                          </Text>
+                          {row.pending && (
+                            <Badge size="xs" variant="light" color="yellow">
+                              Pending
+                            </Badge>
+                          )}
+                          <Badge size="xs" variant="light" color={classification.color}>
+                            {classification.label}
+                          </Badge>
+                        </Group>
+                      </Stack>
+                      <Stack gap={2} align="flex-end" style={{ flexShrink: 0 }}>
+                        <Text fw={700} size="sm">
+                          {money(row.amount_minor_units, row.currency, true)}
+                        </Text>
+                        <Text size="xs" c="dimmed">
+                          Allowance{" "}
+                          {row.allowance_minor_units === 0 ? "—" : money(row.allowance_minor_units, currency, true)}
+                        </Text>
+                      </Stack>
+                    </Group>
+                  </Accordion.Control>
+                  <Accordion.Panel>
+                    <Stack gap="sm">
+                      <Text size="sm">
+                        <strong>Allowance:</strong>{" "}
+                        {row.disposition
+                          ? dispositionText[row.disposition]
+                          : row.allowance_in_scope
+                            ? "Unavailable"
+                            : "Account outside allowance"}
+                        .
+                        {isReviewRow(row) &&
+                          row.disposition === "counted" &&
+                          " This charge is counted as flexible while its classification is reviewed."}
+                      </Text>
+                      {row.rule && (
+                        <Stack gap={2}>
+                          <Text size="sm">
+                            <strong>Rule #{row.rule_number}:</strong> {ruleConditionText(row.rule.condition)}
+                          </Text>
+                          {row.rule.description && (
+                            <Text size="sm" c="dimmed">
+                              {row.rule.description}
+                            </Text>
+                          )}
+                          {row.rule.analysis_category && (
+                            <Text size="xs" c="dimmed">
+                              Analysis category: {row.rule.analysis_category}
+                            </Text>
+                          )}
+                          <Button variant="subtle" size="xs" w="fit-content" px={0} onClick={onShowRule}>
+                            View all rules
+                          </Button>
+                        </Stack>
+                      )}
+                      <Divider />
+                      <SimpleGrid cols={{ base: 1, sm: 2 }} spacing="xs">
+                        <Text size="sm">
+                          Allowance balance effect:{" "}
+                          {m(row.allowance_minor_units === 0 ? 0 : -row.allowance_minor_units)}
+                        </Text>
+                        <Text size="sm">7-day pace input: {m(row.trailing_7_pace_minor_units)}</Text>
+                        <Text size="sm">30-day pace input: {m(row.trailing_30_pace_minor_units)}</Text>
+                        <Text size="sm">
+                          Card statement:{" "}
+                          {row.statement_reason
+                            ? `${statementText[row.statement_reason]} · ${money(row.statement_minor_units, row.currency, true)}`
+                            : "Not a configured card"}
+                        </Text>
+                      </SimpleGrid>
+                      <Text size="xs" c="dimmed">
+                        Plaid name: {row.name} · merchant: {row.merchant_name || "Unknown"} · category:{" "}
+                        {row.pfc_detailed || row.pfc_primary || "Unknown"} · merchant category code:{" "}
+                        {row.merchant_category_code || "Unknown"}
+                      </Text>
+                    </Stack>
+                  </Accordion.Panel>
+                </Accordion.Item>
+              );
+            })}
+          </Accordion>
+        </>
+      )}
+    </Stack>
+  );
+}
+
 function App() {
   const [view, setView] = useState<View | null>(null);
   const [state, setState] = useState("Connecting");
@@ -656,6 +943,11 @@ function App() {
   const [configuration, setConfiguration] = useState<SpendConfiguration | null>(null);
   const [configurationLoading, setConfigurationLoading] = useState(false);
   const [configurationError, setConfigurationError] = useState<string | null>(null);
+  const [transactions, setTransactions] = useState<TransactionsView | null>(null);
+  const [transactionWindow, setTransactionWindow] = useState<TransactionWindow>("30d");
+  const [transactionsLoading, setTransactionsLoading] = useState(false);
+  const [transactionsError, setTransactionsError] = useState<string | null>(null);
+  const [viewRevision, setViewRevision] = useState(0);
   useEffect(() => {
     let mounted = true;
     const load = async () => {
@@ -686,6 +978,7 @@ function App() {
           setView(JSON.parse(event.data));
           setError(null);
           setState("Live updates");
+          setViewRevision((revision) => revision + 1);
         }
       } catch (cause) {
         if (mounted) setError(cause instanceof Error ? cause.message : "Could not read live update");
@@ -731,6 +1024,36 @@ function App() {
       mounted = false;
     };
   }, [activeTab, configuration]);
+  useEffect(() => {
+    if (activeTab !== "transactions") return;
+    const controller = new AbortController();
+    const load = async () => {
+      setTransactionsLoading(true);
+      setTransactionsError(null);
+      try {
+        const response = await fetch(`/api/v1/web/transactions?window=${transactionWindow}`, {
+          cache: "no-store",
+          credentials: "same-origin",
+          signal: controller.signal,
+        });
+        if (response.status === 401) {
+          window.location.assign("/auth/login");
+          return;
+        }
+        if (!response.ok) throw new Error(`Transactions request returned ${response.status}`);
+        const data: TransactionsView = await response.json();
+        if (!controller.signal.aborted) setTransactions(data);
+      } catch (cause) {
+        if (!controller.signal.aborted) {
+          setTransactionsError(cause instanceof Error ? cause.message : "Transactions request failed");
+        }
+      } finally {
+        if (!controller.signal.aborted) setTransactionsLoading(false);
+      }
+    };
+    void load();
+    return () => controller.abort();
+  }, [activeTab, transactionWindow, viewRevision]);
   const cards = view?.cards || [];
   return (
     <MantineProvider defaultColorScheme="auto">
@@ -743,6 +1066,7 @@ function App() {
               </Anchor>
               <Tabs.List aria-label="Spend pages" className="spend-header-navigation">
                 <Tabs.Tab value="spending">Spending</Tabs.Tab>
+                <Tabs.Tab value="transactions">Transactions</Tabs.Tab>
                 <Tabs.Tab value="configuration">Configuration</Tabs.Tab>
               </Tabs.List>
               <form action="/auth/logout" method="post" className="spend-header-signout">
@@ -811,6 +1135,16 @@ function App() {
                 </Text>
               </Group>
             </Stack>
+          </Tabs.Panel>
+          <Tabs.Panel value="transactions">
+            <TransactionsPanel
+              transactions={transactions?.window === transactionWindow ? transactions : null}
+              loading={transactionsLoading}
+              error={transactionsError}
+              window={transactionWindow}
+              onWindowChange={setTransactionWindow}
+              onShowRule={() => setActiveTab("configuration")}
+            />
           </Tabs.Panel>
           <Tabs.Panel value="configuration">
             <ConfigurationPanel

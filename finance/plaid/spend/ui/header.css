@@ -8,6 +8,8 @@
 .spend-header-navigation {
   grid-column: 2;
   justify-self: center;
+  max-width: 100%;
+  overflow-x: auto;
 }
 
 .spend-header-signout {

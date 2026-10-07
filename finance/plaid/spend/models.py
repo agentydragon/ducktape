@@ -5,17 +5,27 @@ from __future__ import annotations
 from datetime import date, datetime
 from enum import StrEnum
 from pathlib import Path
+from typing import Literal
 
 import yaml
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
-from finance.plaid.spend.allowance import AllowancePolicy, AllowanceView, Rule
+from finance.plaid.spend.allowance import AllowancePolicy, AllowanceView, Disposition, Rule
 
 
 class AlertState(StrEnum):
     NORMAL = "normal"
     WARNING = "warning"
     EXCEEDED = "exceeded"
+    UNAVAILABLE = "unavailable"
+
+
+class StatementReason(StrEnum):
+    COUNTED = "counted"
+    OUTSIDE_CYCLE = "outside_cycle"
+    SUPERSEDED_PENDING = "superseded_pending"
+    CARD_PAYMENT = "card_payment"
+    OTHER_CURRENCY = "other_currency"
     UNAVAILABLE = "unavailable"
 
 
@@ -118,3 +128,39 @@ class SpendView(BaseModel):
     cards: list[CardView]
     allowance: AllowanceView | None = None
     dashboard_url: str | None = None
+
+
+class SpendTransactionRow(BaseModel):
+    """A read-only explanation of one Plaid transaction, without Plaid identifiers."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    date: date
+    account_label: str
+    name: str
+    merchant_name: str | None
+    amount_minor_units: int
+    currency: str
+    pending: bool
+    allowance_in_scope: bool
+    disposition: Disposition | None
+    rule_number: int | None
+    rule: Rule | None
+    allowance_minor_units: int
+    trailing_7_pace_minor_units: int
+    trailing_30_pace_minor_units: int
+    statement_minor_units: int | None
+    statement_reason: StatementReason | None
+    pfc_primary: str | None
+    pfc_detailed: str | None
+    merchant_category_code: str | None
+
+
+class SpendTransactionsView(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    generated_at: datetime
+    window: Literal["7d", "30d", "cycle"]
+    window_start: date
+    allowance: AllowanceView | None
+    rows: list[SpendTransactionRow]

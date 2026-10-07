@@ -9,14 +9,14 @@ import sys
 from collections.abc import AsyncGenerator, AsyncIterator
 from contextlib import asynccontextmanager
 from pathlib import Path
-from typing import Annotated, cast
+from typing import Annotated, Literal, cast
 
 import uvicorn
 from fastapi import Depends, FastAPI, HTTPException, Request, status
 from fastapi.responses import FileResponse, Response, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 
-from finance.plaid.spend.models import SpendConfigurationView, SpendView, load_configuration
+from finance.plaid.spend.models import SpendConfigurationView, SpendTransactionsView, SpendView, load_configuration
 from finance.plaid.spend.service import SpendService
 from finance.plaid.spend.settings import SpendSettings
 from mcp_infra.oidc_principal import (
@@ -126,6 +126,12 @@ def create_app(settings: SpendSettings, *, service: SpendService, include_ui: bo
     @app.get("/api/v1/web/configuration", response_model=SpendConfigurationView)
     async def get_web_configuration(reader: SpendReader) -> SpendConfigurationView:
         return reader.read_configuration()
+
+    @app.get("/api/v1/web/transactions", response_model=SpendTransactionsView)
+    async def get_web_transactions(
+        reader: SpendReader, window: Literal["7d", "30d", "cycle"] = "30d"
+    ) -> SpendTransactionsView:
+        return await reader.read_transactions(window)
 
     @app.get("/api/v1/events")
     async def events(request: Request, _principal: ApiPrincipal, reader: SpendReader) -> StreamingResponse:
