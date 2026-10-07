@@ -6,7 +6,8 @@
 
 ## Core Principle
 
-**Naming clarity should scale with identifier lifespan**: The longer an identifier lives and the broader its scope, the more readable and unambiguous its name must be.
+**Naming clarity should scale with identifier lifespan**: The longer an identifier lives and the broader its scope, the
+more readable and unambiguous its name must be.
 
 | Lifespan                    | Examples                           | Naming Requirements                                                     |
 | --------------------------- | ---------------------------------- | ----------------------------------------------------------------------- |
@@ -123,7 +124,8 @@ cls, self              # Standard Python conventions
 
 ## Antipattern 2: Vague Identifiers
 
-Field names should be **explicit and self-documenting within their usage context**. This is **semantic analysis**, not pattern matching.
+Field names should be **explicit and self-documenting within their usage context**. This is **semantic analysis**, not
+pattern matching.
 
 ### BAD: Generic container + vague field
 
@@ -541,7 +543,9 @@ from cache.redis import RedisDistributedInMemoryCache  # Redundant!
 from cache.redis import Cache  # Clear from import path
 ```
 
-**Principle**: Leverage the import path and module name to avoid redundantly long class names. When you import `from kubernetes_client import Config`, the context is clear. Avoid Java-style `KubernetesClientConfigurationSettings` when `Config` suffices given the module context.
+**Principle**: Leverage the import path and module name to avoid redundantly long class names. When you import
+`from kubernetes_client import Config`, the context is clear. Avoid Java-style `KubernetesClientConfigurationSettings`
+when `Config` suffices given the module context.
 
 ### ✓ Single entity of type in scope
 
@@ -562,12 +566,10 @@ e, exc                   # Exception in short except blocks
 
 ## Benefits
 
-✅ **Readability** - Code is self-documenting
-✅ **Maintainability** - New contributors understand code faster
-✅ **Searchability** - Full words easier to grep than abbreviations
-✅ **IDE support** - Better autocomplete with full names
-✅ **Consistency** - Follows Google Python Style Guide
-✅ **Scalability** - Naming clarity grows with identifier importance
+✅ **Readability** - Code is self-documenting ✅ **Maintainability** - New contributors understand code faster ✅
+**Searchability** - Full words easier to grep than abbreviations ✅ **IDE support** - Better autocomplete with full
+names ✅ **Consistency** - Follows Google Python Style Guide ✅ **Scalability** - Naming clarity grows with identifier
+importance
 
 ---
 

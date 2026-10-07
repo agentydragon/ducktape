@@ -1,37 +1,31 @@
 # Replacing `agent_core` with a standard agent interface
 
-> **Archived — the evaluation was carried out.** props production agents run on
-> Microsoft Agent Framework today: `props/agents/af/` holds the client, loop,
-> middleware, tools, and exec tool (`client.py` states outright that it replaces
-> `agent_core`'s `create_bound_model_from_env`), and `props/agents/critic/main.py`
-> imports from it. `agent-framework-{core,openai,anthropic}` are pinned in
-> `pyproject.toml`. `agent_core` survives in props only as a test-mock library
-> (`//agent_core/testing:responses`) and outside props under `x/`. Kept for the
-> comparison of alternatives and the middleware-mapping reasoning; it is not a
-> current plan.
+> **Archived — the evaluation was carried out.** props production agents run on Microsoft Agent Framework today:
+> `props/agents/af/` holds the client, loop, middleware, tools, and exec tool (`client.py` states outright that it
+> replaces `agent_core`'s `create_bound_model_from_env`), and `props/agents/critic/main.py` imports from it.
+> `agent-framework-{core,openai,anthropic}` are pinned in `pyproject.toml`. `agent_core` survives in props only as a
+> test-mock library (`//agent_core/testing:responses`) and outside props under `x/`. Kept for the comparison of
+> alternatives and the middleware-mapping reasoning; it is not a current plan.
 
-**Status:** evaluation / design note, written before the migration
-**Date:** 2026-06-07
+**Status:** evaluation / design note, written before the migration **Date:** 2026-06-07
 
 ## Goal
 
-`agent_core` is our in-house agent loop. The question: can props move off it onto a
-standard, less-custom interface — primarily **Microsoft Agent Framework (MAF)**, the
-`agent-framework` Python package (1.0 GA April 2026) — and what's easy vs. hard?
+`agent_core` is our in-house agent loop. The question: can props move off it onto a standard, less-custom interface —
+primarily **Microsoft Agent Framework (MAF)**, the `agent-framework` Python package (1.0 GA April 2026) — and what's
+easy vs. hard?
 
-Short answer: the tool layer and model layer port almost directly. The control loop —
-which is where props put all its bespoke behavior — also maps well, because MAF 1.0 exposes
-a **three-layer middleware** model (agent / function / **chat**), and chat middleware runs
-**once per model call inside the tool-calling loop**. There's no hard blocker: the behaviors
-that don't reduce to middleware (notably "keep going after the model emits a plain text
-answer", reminder-on-text) reduce to a plain outer `while` loop over `agent.run()` on a
-persistent thread — arguably cleaner than `agent_core`'s in-loop handler injection.
+Short answer: the tool layer and model layer port almost directly. The control loop — which is where props put all its
+bespoke behavior — also maps well, because MAF 1.0 exposes a **three-layer middleware** model (agent / function /
+**chat**), and chat middleware runs **once per model call inside the tool-calling loop**. There's no hard blocker: the
+behaviors that don't reduce to middleware (notably "keep going after the model emits a plain text answer",
+reminder-on-text) reduce to a plain outer `while` loop over `agent.run()` on a persistent thread — arguably cleaner than
+`agent_core`'s in-loop handler injection.
 
 ## Scope / blast radius
 
-At the time of this evaluation, `agent_core` had two consumers: **props** and a
-now-retired experimental editor agent. Within props, the live (non-test,
-non-specimen) surface was small and concentrated — **7 files**:
+At the time of this evaluation, `agent_core` had two consumers: **props** and a now-retired experimental editor agent.
+Within props, the live (non-test, non-specimen) surface was small and concentrated — **7 files**:
 
 | File                                                      | What it uses                                                                                                            |
 | --------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------- |
@@ -41,8 +35,8 @@ non-specimen) surface was small and concentrated — **7 files**:
 | `props/agents/runtime.py`                                 | model binding (`create_bound_model_from_env`), prompt rendering                                                         |
 | Retired GEPA adapter                                      | drove critic/grader runs through the legacy agent loop                                                                  |
 
-Plus ~14 test files using `agent_core.testing` (mock model / fixtures). The
-`props/specimens/**` hits are frozen snapshot copies of the old `adgn` codebase — not live.
+Plus ~14 test files using `agent_core.testing` (mock model / fixtures). The `props/specimens/**` hits are frozen
+snapshot copies of the old `adgn` codebase — not live.
 
 ## What props actually uses from `agent_core`
 
@@ -60,45 +54,43 @@ agent.process_message(SystemMessage.text(system_prompt))
 await agent.run()
 ```
 
-The load-bearing abstraction is the **handler / `on_before_sample` → `LoopDecision`** hook.
-Each handler observes events (`on_tool_call_event`, `on_assistant_text_event`, …) and, before
-each model sample, returns a decision: `NoAction`, `InjectItems(items, tool_policy)`, `Abort`,
-or `Compact`. All of props' control logic lives there:
+The load-bearing abstraction is the **handler / `on_before_sample` → `LoopDecision`** hook. Each handler observes events
+(`on_tool_call_event`, `on_assistant_text_event`, …) and, before each model sample, returns a decision: `NoAction`,
+`InjectItems(items, tool_policy)`, `Abort`, or `Compact`. All of props' control logic lives there:
 
-- **Reminder-on-text** (`RedirectOnTextMessageHandler`): model emitted prose instead of a tool
-  call → inject a reminder and force tools next turn.
-- **Terminate-on-tool** (`AbortIf` + the `submit` / `report_failure` tools flipping `exit_state`):
-  end the loop when a specific tool fires.
-- **Async out-of-band injection** (grader): drain pending `pg_notify` and inject as a batched
-  `UserMessage` before the next sample.
-- **Dynamic tool policy** (`ToolPolicy` = `AllowAnyToolOrTextMessage` / `RequireAnyTool` /
-  `ForbidAllTools` / `RequireSpecific`) → per-turn `tool_choice`.
-- Plus observability (`LoggingHandler` / `TranscriptHandler`), turn caps (`MaxTurnsHandler`),
-  and context compaction (`CompactionHandler`, threshold + keep-recent-N).
+- **Reminder-on-text** (`RedirectOnTextMessageHandler`): model emitted prose instead of a tool call → inject a reminder
+  and force tools next turn.
+- **Terminate-on-tool** (`AbortIf` + the `submit` / `report_failure` tools flipping `exit_state`): end the loop when a
+  specific tool fires.
+- **Async out-of-band injection** (grader): drain pending `pg_notify` and inject as a batched `UserMessage` before the
+  next sample.
+- **Dynamic tool policy** (`ToolPolicy` = `AllowAnyToolOrTextMessage` / `RequireAnyTool` / `ForbidAllTools` /
+  `RequireSpecific`) → per-turn `tool_choice`.
+- Plus observability (`LoggingHandler` / `TranscriptHandler`), turn caps (`MaxTurnsHandler`), and context compaction
+  (`CompactionHandler`, threshold + keep-recent-N).
 
 ## MAF current surface (verified, Python 1.0, April 2026)
 
 Relevant primitives:
 
 - **Agent + chat client**: `Agent(client=<ChatClient>, instructions=…, tools=[…], middleware=[…])`,
-  `await agent.run(messages)`. Chat clients: `OpenAIChatClient`, `AzureOpenAIChatClient`,
-  `FoundryChatClient`, etc.
-- **Tools**: plain Python callables decorated with `@tool`, params typed via
-  `Annotated[T, Field(description=…)]` (auto JSON-schema). MCP tools via dedicated tool classes.
-- **Three middleware layers** (function-based, class-based, or `@agent_middleware` / `@function_middleware`
-  / `@chat_middleware` decorators), each mutating a shared context then awaiting `call_next()`:
-  - **Agent middleware** — `AgentContext`: `messages` (mutable), `result` (mutable), `options`,
-    `session`, `metadata`, `function_invocation_kwargs`. Wraps the whole run.
-  - **Function middleware** — `FunctionInvocationContext`: `function`, `arguments`, `result`
-    (mutable). Wraps each tool call. Can **terminate the loop** (`.Terminate` / `MiddlewareTermination`).
-  - **Chat middleware** — `ChatContext`: `messages` (mutable), `options` (mutable, incl. `tool_choice`),
-    `result` (mutable). **Runs for _each_ model call inside the tool-calling loop**, including the
-    calls that send tool results back.
-- **Termination / override**: any middleware can set `context.result` and raise `MiddlewareTermination`,
-  or just not call `call_next()`.
-- **Compaction**: experimental `agent_framework._compaction` — `ToolResultCompactionStrategy`
-  (collapse all but the newest tool-call group) and an LLM **summarization** strategy, surfaced as a
-  `CompactionProvider` (an `AIContextProvider`).
+  `await agent.run(messages)`. Chat clients: `OpenAIChatClient`, `AzureOpenAIChatClient`, `FoundryChatClient`, etc.
+- **Tools**: plain Python callables decorated with `@tool`, params typed via `Annotated[T, Field(description=…)]` (auto
+  JSON-schema). MCP tools via dedicated tool classes.
+- **Three middleware layers** (function-based, class-based, or `@agent_middleware` / `@function_middleware` /
+  `@chat_middleware` decorators), each mutating a shared context then awaiting `call_next()`:
+  - **Agent middleware** — `AgentContext`: `messages` (mutable), `result` (mutable), `options`, `session`, `metadata`,
+    `function_invocation_kwargs`. Wraps the whole run.
+  - **Function middleware** — `FunctionInvocationContext`: `function`, `arguments`, `result` (mutable). Wraps each tool
+    call. Can **terminate the loop** (`.Terminate` / `MiddlewareTermination`).
+  - **Chat middleware** — `ChatContext`: `messages` (mutable), `options` (mutable, incl. `tool_choice`), `result`
+    (mutable). **Runs for _each_ model call inside the tool-calling loop**, including the calls that send tool results
+    back.
+- **Termination / override**: any middleware can set `context.result` and raise `MiddlewareTermination`, or just not
+  call `call_next()`.
+- **Compaction**: experimental `agent_framework._compaction` — `ToolResultCompactionStrategy` (collapse all but the
+  newest tool-call group) and an LLM **summarization** strategy, surfaced as a `CompactionProvider` (an
+  `AIContextProvider`).
 - Built-in OpenTelemetry tracing.
 
 ## Feature-by-feature mapping
@@ -122,10 +114,10 @@ Relevant primitives:
 
 ## Reminder-on-text is just an outer loop
 
-`RedirectOnTextMessageHandler` keeps going when the model answers in prose instead of calling a tool.
-MAF's tool-calling loop **terminates** when the model returns no tool calls — that _is_ its natural end
-state. But there's no need to keep the redirect _inside_ one `run()`: MAF persists conversation state
-in an `AgentThread`/session across `run()` calls, so props just owns a plain outer loop:
+`RedirectOnTextMessageHandler` keeps going when the model answers in prose instead of calling a tool. MAF's tool-calling
+loop **terminates** when the model returns no tool calls — that _is_ its natural end state. But there's no need to keep
+the redirect _inside_ one `run()`: MAF persists conversation state in an `AgentThread`/session across `run()` calls, so
+props just owns a plain outer loop:
 
 ```python
 thread = agent.get_new_thread()
@@ -136,59 +128,58 @@ while not exit_state.should_exit:                 # set by the submit/report_fai
         await agent.run(TEXT_OUTPUT_REMINDER, thread=thread)  # re-prompt; force tools via ChatOptions/chat middleware
 ```
 
-This is actually _cleaner_ than `agent_core`'s in-loop handler injection: the continue/stop decision
-is ordinary control flow in props, and MAF's `run()` handles each tool-calling burst. Terminate-on-tool
-stays a function-middleware concern (the terminal tool sets `exit_state`; middleware ends that `run()`).
-So none of props' control behaviors is a hard blocker — they're middleware shims plus this outer loop.
+This is actually _cleaner_ than `agent_core`'s in-loop handler injection: the continue/stop decision is ordinary control
+flow in props, and MAF's `run()` handles each tool-calling burst. Terminate-on-tool stays a function-middleware concern
+(the terminal tool sets `exit_state`; middleware ends that `run()`). So none of props' control behaviors is a hard
+blocker — they're middleware shims plus this outer loop.
 
 ## Suggested migration shape
 
-1. **Port `critic` first** — it's the simplest (no async injection, terminate-on-tool, one reminder).
-   Prove the pattern: tools via `@tool`, an outer run loop for reminder-on-text, chat middleware to
-   force `tool_choice`, function middleware for terminate-on-`submit`/`report_failure` + size caps,
-   and a chat-middleware (or custom client) wrap for the proxy/budget.
-2. **Adapter seam**: introduce a thin props-side interface (`build_agent(...) -> run()`), implement
-   it on MAF, and keep the agents coded against the seam — so `grader` and
-   `critic_dev` migrate independently and we can A/B against the `agent_core`
-   implementation.
+1. **Port `critic` first** — it's the simplest (no async injection, terminate-on-tool, one reminder). Prove the pattern:
+   tools via `@tool`, an outer run loop for reminder-on-text, chat middleware to force `tool_choice`, function
+   middleware for terminate-on-`submit`/`report_failure` + size caps, and a chat-middleware (or custom client) wrap for
+   the proxy/budget.
+2. **Adapter seam**: introduce a thin props-side interface (`build_agent(...) -> run()`), implement it on MAF, and keep
+   the agents coded against the seam — so `grader` and `critic_dev` migrate independently and we can A/B against the
+   `agent_core` implementation.
 3. **`grader`** next (async `pg_notify` injection → chat middleware mutating `messages`).
 4. **`critic_dev`** + compaction last (depends on `_compaction` maturity).
 5. Replace `agent_core.testing` usage with a MAF mock chat client as each agent moves.
 
-This also incidentally widens model options: MAF's chat-client ecosystem makes the **Anthropic-shaped
-z.ai path** (the union-tool-input escape hatch from the GLM-4.6 work — see
-<../../../docs/zai_api.md> and `agent_core/test_zai_chat_adapter_live.py`) easier to adopt than in
-`agent_core`, which today only has OpenAI Responses + Chat Completions adapters.
+This also incidentally widens model options: MAF's chat-client ecosystem makes the **Anthropic-shaped z.ai path** (the
+union-tool-input escape hatch from the GLM-4.6 work — see <../../../docs/zai_api.md> and
+`agent_core/test_zai_chat_adapter_live.py`) easier to adopt than in `agent_core`, which today only has OpenAI
+Responses + Chat Completions adapters.
 
 ## Open questions (resolve with a short spike before committing)
 
-- Confirm an `AgentThread`/session **persists full history across separate `agent.run()` calls** so
-  the outer reminder-on-text loop continues the same conversation (this underpins the migration shape).
-- Confirm chat middleware can **mutate `context.options.tool_choice`** and **inject into
-  `context.messages`** and have it take effect on that same model call (the docs strongly imply it;
-  verify empirically).
-- Confirm function-middleware **`Terminate` after the tool returns** leaves chat history consistent
-  for our terminal tools.
-- Validate `_compaction` (experimental) covers our "threshold + keep-recent-N" need, or whether we
-  keep a custom compaction provider.
-- Does MAF ship a first-class **Anthropic / non-OpenAI** chat client (for the z.ai Anthropic shape),
-  or do we wrap one?
+- Confirm an `AgentThread`/session **persists full history across separate `agent.run()` calls** so the outer
+  reminder-on-text loop continues the same conversation (this underpins the migration shape).
+- Confirm chat middleware can **mutate `context.options.tool_choice`** and **inject into `context.messages`** and have
+  it take effect on that same model call (the docs strongly imply it; verify empirically).
+- Confirm function-middleware **`Terminate` after the tool returns** leaves chat history consistent for our terminal
+  tools.
+- Validate `_compaction` (experimental) covers our "threshold + keep-recent-N" need, or whether we keep a custom
+  compaction provider.
+- Does MAF ship a first-class **Anthropic / non-OpenAI** chat client (for the z.ai Anthropic shape), or do we wrap one?
 
 ## Alternatives (if MAF doesn't fit)
 
 - **OpenAI Agents SDK** — similar tools + handoffs + guardrails; loop also framework-owned.
 - **Pydantic AI** — strong typed-tool ergonomics; lighter control-loop hooks.
-- **Raw OpenAI/Anthropic SDK loop** — least magic; basically what `agent_core` is, minus the custom
-  abstractions. Lowest dependency, highest in-house maintenance.
+- **Raw OpenAI/Anthropic SDK loop** — least magic; basically what `agent_core` is, minus the custom abstractions. Lowest
+  dependency, highest in-house maintenance.
 
-MAF is the best fit on paper because its per-model-call **chat middleware** + **function-middleware
-termination** line up almost exactly with the `on_before_sample`/`LoopDecision` and `AbortIf` patterns
-props already uses.
+MAF is the best fit on paper because its per-model-call **chat middleware** + **function-middleware termination** line
+up almost exactly with the `on_before_sample`/`LoopDecision` and `AbortIf` patterns props already uses.
 
 ## Sources
 
 - [Agent Framework overview](https://learn.microsoft.com/en-us/agent-framework/overview/)
-- [Agent middleware](https://learn.microsoft.com/en-us/agent-framework/agents/middleware/) (agent / function / chat contexts, per-model-call chat middleware, `MiddlewareTermination`)
-- [Compaction](https://learn.microsoft.com/en-us/agent-framework/agents/conversations/compaction) (`ToolResultCompactionStrategy`, summarization, `CompactionProvider`)
-- [Python 2026 significant changes](https://learn.microsoft.com/en-us/agent-framework/support/upgrade/python-2026-significant-changes) (FunctionInvocation outermost; chat middleware per model call)
+- [Agent middleware](https://learn.microsoft.com/en-us/agent-framework/agents/middleware/) (agent / function / chat
+  contexts, per-model-call chat middleware, `MiddlewareTermination`)
+- [Compaction](https://learn.microsoft.com/en-us/agent-framework/agents/conversations/compaction)
+  (`ToolResultCompactionStrategy`, summarization, `CompactionProvider`)
+- [Python 2026 significant changes](https://learn.microsoft.com/en-us/agent-framework/support/upgrade/python-2026-significant-changes)
+  (FunctionInvocation outermost; chat middleware per model call)
 - [microsoft/agent-framework](https://github.com/microsoft/agent-framework)

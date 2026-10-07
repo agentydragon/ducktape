@@ -3,16 +3,18 @@ title: Time and duration use rich time types
 kind: outcome
 ---
 
-Represent timestamps and durations with semantically rich time types rather than raw numbers.
-Convert primitive epoch values at boundaries and keep a single, consistent internal representation.
+Represent timestamps and durations with semantically rich time types rather than raw numbers. Convert primitive epoch
+values at boundaries and keep a single, consistent internal representation.
 
 ## Acceptance criteria (checklist)
 
-- Timestamps use timezone‑aware datetime objects (Python) or `time.Time` (Go) internally; no raw epoch ints/floats in core logic
+- Timestamps use timezone‑aware datetime objects (Python) or `time.Time` (Go) internally; no raw epoch ints/floats in
+  core logic
 - Durations/timeouts use `datetime.timedelta` (Python) or `time.Duration` (Go); avoid float/int seconds in internals
 - Boundary handling:
   - Convert inbound epochs (e.g., Unix seconds/millis) to rich types immediately at the edge
-  - When primitives are unavoidable, names carry explicit unit suffixes (e.g., `created_at_unix_ms`, `deadline_unix_sec`)
+  - When primitives are unavoidable, names carry explicit unit suffixes (e.g., `created_at_unix_ms`,
+    `deadline_unix_sec`)
 - Logs/docs include units and derive labels from the same source of truth (constants)
 - Do not mix different time bases in one calculation
 
@@ -77,5 +79,7 @@ if elapsedSec > timeoutSec { /* ... */ }
 
 ## Exceptions
 
-- Interfacing with protocols/DBs that represent time numerically is allowed at boundaries; convert immediately to internal rich types
-- Performance‑critical tight loops may use numerics when justified and documented; conversions must stay localized and lossless for the use case
+- Interfacing with protocols/DBs that represent time numerically is allowed at boundaries; convert immediately to
+  internal rich types
+- Performance‑critical tight loops may use numerics when justified and documented; conversions must stay localized and
+  lossless for the use case

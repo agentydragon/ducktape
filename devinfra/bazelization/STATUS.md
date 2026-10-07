@@ -2,7 +2,8 @@
 
 ## Vision
 
-Fully Bazel-managed repository: `bazel build //...`, `bazel test //...`, `bazel lint //...` cover everything. No direct tool invocations outside Bazel. All container images via rules_oci. Single dependency source per language.
+Fully Bazel-managed repository: `bazel build //...`, `bazel test //...`, `bazel lint //...` cover everything. No direct
+tool invocations outside Bazel. All container images via rules_oci. Single dependency source per language.
 
 ### What Stays Outside Bazel
 
@@ -12,7 +13,11 @@ Fully Bazel-managed repository: `bazel build //...`, `bazel test //...`, `bazel 
 
 ## Current State (February 2026)
 
-6 of 8 success criteria met. Python at 95.6% Bazel coverage (990/1036 files), Rust at 100%, Terraform at 100% (76/76 modules). All linters integrated into `bazel lint //...` (ruff, mypy, clippy/rustfmt, eslint, buildifier, yamllint). 12 Docker images migrated to rules_oci. Flat package layout with colocated tests is the norm. Single root `pyproject.toml` remains (tool config only). Pre-commit framework handles git hooks; Claude Code session hooks handle proxy setup for web sessions.
+6 of 8 success criteria met. Python at 95.6% Bazel coverage (990/1036 files), Rust at 100%, Terraform at 100% (76/76
+modules). All linters integrated into `bazel lint //...` (ruff, mypy, clippy/rustfmt, eslint, buildifier, yamllint). 12
+Docker images migrated to rules_oci. Flat package layout with colocated tests is the norm. Single root `pyproject.toml`
+remains (tool config only). Pre-commit framework handles git hooks; Claude Code session hooks handle proxy setup for web
+sessions.
 
 Run `bazel run //devinfra/orphans:find_orphans_bin` to list orphaned files.
 
@@ -20,11 +25,13 @@ Run `bazel run //devinfra/orphans:find_orphans_bin` to list orphaned files.
 
 ### High Priority
 
-- **Unified check command (Phase 3)**: Create `bazel check //...` that runs all linters + type checkers. Simplify pre-commit to single command. Update CI to use it.
+- **Unified check command (Phase 3)**: Create `bazel check //...` that runs all linters + type checkers. Simplify
+  pre-commit to single command. Update CI to use it.
 
 ### Lower Priority
 
-- **Package consolidation**: Small experimental packages could move into `hack/` monolith. Keep packages separate when they have different deployment targets or dependency sets.
+- **Package consolidation**: Small experimental packages could move into `hack/` monolith. Keep packages separate when
+  they have different deployment targets or dependency sets.
 - **Remove `check-ast` pre-commit hook**: Redundant with `bazel build`.
 
 ### Intentionally Not Bazelized
@@ -36,7 +43,8 @@ Run `bazel run //devinfra/orphans:find_orphans_bin` to list orphaned files.
 | `finance/gnucash_util.py`                                               | Requires system gnucash library |
 | Shell scripts (CI, entrypoints, deployment, Nix-managed, tool wrappers) | Various — see categories below  |
 
-Shell script categories: CI/Ansible (`.github/scripts/`, `ansible/scripts/`), Docker entrypoints, deployment scripts (`llm/deploy.sh`, etc.), Nix-managed (`nix/home/**/*.sh`), Bazel test helpers (`devinfra/lint/run_*.sh`).
+Shell script categories: CI/Ansible (`.github/scripts/`, `ansible/scripts/`), Docker entrypoints, deployment scripts
+(`llm/deploy.sh`, etc.), Nix-managed (`nix/home/**/*.sh`), Bazel test helpers (`devinfra/lint/run_*.sh`).
 
 ### Manual Targets (require special environment)
 
@@ -69,8 +77,11 @@ bazel run //devinfra/lint:buildifier       # Format BUILD files
 | buildifier | `devinfra/lint/BUILD.bazel`    | `bazel run //devinfra/lint:buildifier`      |
 | nixfmt     | N/A                            | Pre-commit hook only                        |
 
-Ruff uses a custom `rules_multitool` lockfile (`devinfra/lockfile.json`) to override the older version bundled in `aspect_rules_lint`. Mypy uses upstream `rules_mypy` v0.41.0 with its `mypy_cli` macro, `follow_imports = silent`, global `ignore_missing_imports = False`, and targeted per-module overrides.
+Ruff uses a custom `rules_multitool` lockfile (`devinfra/lockfile.json`) to override the older version bundled in
+`aspect_rules_lint`. Mypy uses upstream `rules_mypy` v0.41.0 with its `mypy_cli` macro, `follow_imports = silent`,
+global `ignore_missing_imports = False`, and targeted per-module overrides.
 
 ### Hook Lifecycle
 
-**Git pre-commit** (via `.pre-commit-config.yaml`): safety checks, syntax validation, Ansible check, Bazel format/lint, ruff autofix, markdownlint, kubeconform, nixfmt.
+**Git pre-commit** (via `.pre-commit-config.yaml`): safety checks, syntax validation, Ansible check, Bazel format/lint,
+ruff autofix, markdownlint, kubeconform, nixfmt.

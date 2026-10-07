@@ -1,6 +1,7 @@
 # ComfyUI Setup for Chromafur Alpha (FLUX.1-dev Fine-tune)
 
-This guide covers setting up ComfyUI to run Chromafur Alpha, a furry art fine-tune of FLUX.1-dev, on a system with 2x RTX 5090 (64GB total VRAM).
+This guide covers setting up ComfyUI to run Chromafur Alpha, a furry art fine-tune of FLUX.1-dev, on a system with 2x
+RTX 5090 (64GB total VRAM).
 
 ## Quick Start (TL;DR)
 
@@ -183,7 +184,8 @@ After installing, restart ComfyUI and use Manager to install other nodes easily.
 
 Install via ComfyUI-Manager after it's set up:
 
-1. **ComfyUI-GGUF** - If you want to use the GGUF quantized versions of Chromafur (for lower VRAM usage, though you have plenty)
+1. **ComfyUI-GGUF** - If you want to use the GGUF quantized versions of Chromafur (for lower VRAM usage, though you have
+   plenty)
 2. **ComfyUI Essentials** - Quality of life improvements
 3. **x-flux-comfyui** - XLabs FLUX extensions (LoRA, ControlNet support)
 

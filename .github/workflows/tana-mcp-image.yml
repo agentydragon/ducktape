@@ -39,7 +39,9 @@ jobs:
 
       - name: Login to Forgejo registry
         shell: bash
-        run: echo "$FORGEJO_IMAGES_PASSWORD" | docker login git.allegedly.works -u "$FORGEJO_IMAGES_USERNAME" --password-stdin
+        run:
+          echo "$FORGEJO_IMAGES_PASSWORD" | docker login git.allegedly.works -u "$FORGEJO_IMAGES_USERNAME"
+          --password-stdin
 
       - name: Build and push
         uses: docker/build-push-action@v7

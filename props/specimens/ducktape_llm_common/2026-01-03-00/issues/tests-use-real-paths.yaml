@@ -41,7 +41,9 @@ occurrences:
         - [154, 154]
         - [158, 158]
         - [181, 181]
-    note: "All 5 test functions accept tmp_path but never use it; violations use hardcoded /test/file.py instead of tmp_path-based paths"
+    note:
+      "All 5 test functions accept tmp_path but never use it; violations use hardcoded /test/file.py instead of
+      tmp_path-based paths"
     critic_scopes_expected_to_recall:
       - [tests/claude_linter_v2/test_stop_hook_quality_gate.py]
     match_file_restriction:

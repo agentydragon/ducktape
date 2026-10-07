@@ -3,15 +3,20 @@ title: Use yield fixtures for teardown
 kind: outcome
 ---
 
-Resources that require teardown should be provided via pytest yield fixtures; this is REQUIRED once the same setup/teardown appears in more than one test, otherwise recommended. Teardown must run in a `finally` block guarding the `yield`.
+Resources that require teardown should be provided via pytest yield fixtures; this is REQUIRED once the same
+setup/teardown appears in more than one test, otherwise recommended. Teardown must run in a `finally` block guarding the
+`yield`.
 
 ## Acceptance criteria (checklist)
 
-- Yield fixtures are used for any resource needing teardown when the pattern is used in 2+ tests; single-use may inline cleanup, but prefer a yield fixture for clarity/reuse.
+- Yield fixtures are used for any resource needing teardown when the pattern is used in 2+ tests; single-use may inline
+  cleanup, but prefer a yield fixture for clarity/reuse.
 - Teardown lives in a `finally:` after the `yield`, ensuring cleanup on errors/failures and partial setups.
 - No duplicated setup/teardown code across tests; factor into a fixture instead of copy/paste try/finally blocks.
-- Prefer yield fixtures over `request.addfinalizer` for readability; use `addfinalizer` only when teardown must be registered conditionally or multiple independent cleanups are required.
-- Fixture scope is chosen intentionally (function/module/session) and matches the resource lifetime; teardown corresponds to that scope.
+- Prefer yield fixtures over `request.addfinalizer` for readability; use `addfinalizer` only when teardown must be
+  registered conditionally or multiple independent cleanups are required.
+- Fixture scope is chosen intentionally (function/module/session) and matches the resource lifetime; teardown
+  corresponds to that scope.
 
 ## Positive examples
 

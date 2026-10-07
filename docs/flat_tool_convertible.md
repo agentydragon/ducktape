@@ -1,8 +1,7 @@
 # FlatTool → plain FastMCP: convertible tools
 
-Tools using `.flat_model()` whose input models only have basic typed fields with
-`Field(description=...)` and defaults. These could be plain FastMCP `@mcp.tool`
-functions with `Annotated[T, "description"]` parameters instead.
+Tools using `.flat_model()` whose input models only have basic typed fields with `Field(description=...)` and defaults.
+These could be plain FastMCP `@mcp.tool` functions with `Annotated[T, "description"]` parameters instead.
 
 ## Convertible (11 tools)
 
@@ -21,8 +20,8 @@ functions with `Annotated[T, "description"]` parameters instead.
 
 ## Not convertible (18 tools)
 
-Require FlatTool for: nested models, `Field(ge=, le=, min_length=, pattern=)`,
-`ConfigDict(extra="forbid")`, custom methods, or enum schema generation.
+Require FlatTool for: nested models, `Field(ge=, le=, min_length=, pattern=)`, `ConfigDict(extra="forbid")`, custom
+methods, or enum schema generation.
 
 | File                                       | Tool                       | Reason                                                        |
 | ------------------------------------------ | -------------------------- | ------------------------------------------------------------- |

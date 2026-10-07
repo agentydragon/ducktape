@@ -2,13 +2,18 @@
 
 ## Overview
 
-This guide explains how to author issue files for code review snapshots. Snapshots are frozen code states with labeled issues used as training/evaluation data for the LLM critic.
+This guide explains how to author issue files for code review snapshots. Snapshots are frozen code states with labeled
+issues used as training/evaluation data for the LLM critic.
 
-**For the broader context** on how snapshots fit into the training strategy (per-file examples, `critic_scopes_expected_to_recall` filtering, optimization approaches), see [Training Strategy](../../docs/training_strategy.md).
+**For the broader context** on how snapshots fit into the training strategy (per-file examples,
+`critic_scopes_expected_to_recall` filtering, optimization approaches), see
+[Training Strategy](../../docs/training_strategy.md).
 
 ## File Structure
 
-See <../README.md> for the directory layout. Issue files use descriptive slugs (lowercase with hyphens), not numerical indices. **Prefer shorter names when meaning is preserved** — slugs should be 0-30 characters. See <format_spec.md> for canonical slug names.
+See <../README.md> for the directory layout. Issue files use descriptive slugs (lowercase with hyphens), not numerical
+indices. **Prefer shorter names when meaning is preserved** — slugs should be 0-30 characters. See <format_spec.md> for
+canonical slug names.
 
 ## Critical: Snapshots are Frozen Code States
 
@@ -74,7 +79,8 @@ When a snapshot bundle is created with `include: [adgn/]`, the hydrated snapshot
 
 3. **Use paths as they appear** in the hydrated bundle - include all directory prefixes from the `include` patterns.
 
-**Common mistake:** Writing issue files for `ducktape/` snapshots without the `adgn/` prefix when the bundle includes `adgn/`.
+**Common mistake:** Writing issue files for `ducktape/` snapshots without the `adgn/` prefix when the bundle includes
+`adgn/`.
 
 ### 3. Issue File Templates
 
@@ -112,7 +118,10 @@ occurrences:
       - [src/persist.py]
 ```
 
-**Note on `critic_scopes_expected_to_recall`:** This field specifies which minimal file sets are needed to detect the issue. It's used to generate focused training examples per-file rather than only full-snapshot reviews. See [Training Strategy](../../docs/training_strategy.md) for details on how this enables the per-file examples approach and tighter optimization feedback loops.
+**Note on `critic_scopes_expected_to_recall`:** This field specifies which minimal file sets are needed to detect the
+issue. It's used to generate focused training examples per-file rather than only full-snapshot reviews. See
+[Training Strategy](../../docs/training_strategy.md) for details on how this enables the per-file examples approach and
+tighter optimization feedback loops.
 
 **Multiple occurrences (with notes):**
 
@@ -142,7 +151,8 @@ occurrences:
 
 **Rationale vs Occurrence Notes:**
 
-Rationale can be specific—include file names, line numbers, concrete details. The `note` field exists to **distinguish multiple occurrences** of the same issue type.
+Rationale can be specific—include file names, line numbers, concrete details. The `note` field exists to **distinguish
+multiple occurrences** of the same issue type.
 
 - **Single occurrence:** Rationale contains all details. No note needed.
 - **Multiple occurrences:** Rationale describes the shared pattern. Notes identify each instance.
@@ -199,27 +209,36 @@ occurrences:
 
 **False Positive Rationale Format:**
 
-The rationale should explain why something that LOOKS like a problem is actually acceptable. Typical structure (not a strict template):
+The rationale should explain why something that LOOKS like a problem is actually acceptable. Typical structure (not a
+strict template):
 
 **Pattern:** "Critics might say X is bad because Y, but our ground truth is that it's acceptable because Z."
 
 - **X** = What was flagged (describe the pattern critics noticed)
 - **Y** = Why it looks problematic (the critic's reasoning)
-- **Z** = Why it's actually fine (your reasoning: intentional choice, acceptable trade-off, makes sense with context, etc.)
+- **Z** = Why it's actually fine (your reasoning: intentional choice, acceptable trade-off, makes sense with context,
+  etc.)
 
-The exact phrasing can vary - the key is to acknowledge what looks problematic while explaining why it's actually acceptable.
+The exact phrasing can vary - the key is to acknowledge what looks problematic while explaining why it's actually
+acceptable.
 
 **Examples:**
 
-- "Critics might flag this duplication as a DRY violation because the validation logic is repeated. However, our ground truth is that this is acceptable because each validation context has slightly different error handling requirements and merging them would reduce clarity."
-- "Critics might say this type annotation is missing because the function signature has no return type. However, our ground truth is that it's acceptable because this is a decorator that preserves the wrapped function's type, and explicit annotation would be less accurate than the inferred type."
-- "Some critics flagged this as a resource leak, but this is intentional - the handle lifetime is managed by the parent context manager which ensures cleanup in its `__exit__` method."
+- "Critics might flag this duplication as a DRY violation because the validation logic is repeated. However, our ground
+  truth is that this is acceptable because each validation context has slightly different error handling requirements
+  and merging them would reduce clarity."
+- "Critics might say this type annotation is missing because the function signature has no return type. However, our
+  ground truth is that it's acceptable because this is a decorator that preserves the wrapped function's type, and
+  explicit annotation would be less accurate than the inferred type."
+- "Some critics flagged this as a resource leak, but this is intentional - the handle lifetime is managed by the parent
+  context manager which ensures cleanup in its `__exit__` method."
 
 ### 4. Detection Standard for `critic_scopes_expected_to_recall`
 
 See format_spec.md for line range formats and auto-inference rules.
 
-**The key question:** "If I gave a high-quality critic this file set to review, and they failed to find this issue, would that be a failure on their part?"
+**The key question:** "If I gave a high-quality critic this file set to review, and they failed to find this issue,
+would that be a failure on their part?"
 
 **What "reviewing a file" includes:**
 
@@ -296,17 +315,23 @@ Examples:
 
 **Dead code with potential callers:**
 
-Dead code issues have two possible fixes: (1) delete the dead code, or (2) wire it up where it should be used. When existing code _should_ be calling the dead helper (i.e., there's duplicated/manual logic that the helper would simplify), the dead code is also detectable from those caller files — a reviewer seeing the manual logic would search for existing helpers and discover the unused one.
+Dead code issues have two possible fixes: (1) delete the dead code, or (2) wire it up where it should be used. When
+existing code _should_ be calling the dead helper (i.e., there's duplicated/manual logic that the helper would
+simplify), the dead code is also detectable from those caller files — a reviewer seeing the manual logic would search
+for existing helpers and discover the unused one.
 
 - Dead helper with no plausible callers → detect from the dead file only
 - Dead helper that would DRY up existing code → detect from both the dead file AND files that should call it
-- `match_file_restriction` still includes only the dead file (the issue _is_ in the dead file), but `critic_scopes_expected_to_recall` can include caller files as alternative detection scopes
+- `match_file_restriction` still includes only the dead file (the issue _is_ in the dead file), but
+  `critic_scopes_expected_to_recall` can include caller files as alternative detection scopes
 
-When the plausible fix is "wire it up," note this in the occurrence's `note` field so graders understand the dual-fix nature (e.g., "Dead helper; `cli.py` lines 80-95 duplicate this logic and should call it instead").
+When the plausible fix is "wire it up," note this in the occurrence's `note` field so graders understand the dual-fix
+nature (e.g., "Dead helper; `cli.py` lines 80-95 duplicate this logic and should call it instead").
 
 ### 5. Setting `match_file_restriction` (Optional)
 
-**Purpose:** This field is a grading optimization. When set, critiques that report issues only in files OUTSIDE this set are skipped during matching (assumed non-match without semantic comparison).
+**Purpose:** This field is a grading optimization. When set, critiques that report issues only in files OUTSIDE this set
+are skipped during matching (assumed non-match without semantic comparison).
 
 **Relationship to `critic_scopes_expected_to_recall`:**
 
@@ -326,7 +351,8 @@ These are independent. An issue detectable from file A might be validly reported
 - When unsure about the complete set of valid reporting locations
 - Issues with dual framing (e.g., "X calls missing method" vs "Y is missing method callers expect")
 
-**Validation test:** Can you produce a valid critique phrasing that accurately describes this issue but tags a file outside the set?
+**Validation test:** Can you produce a valid critique phrasing that accurately describes this issue but tags a file
+outside the set?
 
 - **If yes** → the set is too narrow, expand it or use NULL
 - **If no** → the set is safe to use
@@ -354,7 +380,8 @@ match_file_restriction:
 
 **Antipattern - splitting producer/consumer issues:**
 
-Don't split a single logical issue into separate occurrences by file with narrow `match_file_restriction`. Example of what NOT to do:
+Don't split a single logical issue into separate occurrences by file with narrow `match_file_restriction`. Example of
+what NOT to do:
 
 ```yaml
 # WRONG: Split into two occurrences with narrow sets
@@ -371,7 +398,8 @@ occurrences:
     match_file_restriction: [status_shared.py] # TOO NARROW
 ```
 
-This fails because a critique like "status_shared.py has dead code because runtime.py passes False" could validly tag either file. Instead, merge into one occurrence:
+This fails because a critique like "status_shared.py has dead code because runtime.py passes False" could validly tag
+either file. Instead, merge into one occurrence:
 
 ```yaml
 # CORRECT: Single occurrence with both files
@@ -419,7 +447,8 @@ Each issue file should describe ONE logical problem type, which may occur in mul
 
 #### Obvious Pareto Improvements (Minimal Rationale)
 
-When the issue is an unambiguous improvement with no cost, just state what's wrong. Don't explain why the fix is better—any experienced engineer knows.
+When the issue is an unambiguous improvement with no cost, just state what's wrong. Don't explain why the fix is
+better—any experienced engineer knows.
 
 **Heuristics for "obviously better" (all else equal):**
 
@@ -502,7 +531,8 @@ rationale: |
 
 ### 8. Issues Must Be Standalone
 
-**Never reference other issues by name, ID, or number.** Each issue file must be understandable in isolation—assume readers cannot see other issues in the snapshot.
+**Never reference other issues by name, ID, or number.** Each issue file must be understandable in isolation—assume
+readers cannot see other issues in the snapshot.
 
 **Wrong:**
 
@@ -569,7 +599,8 @@ rationale: |
 
 ### 11. Verifiable External References
 
-**When referencing specific tools, APIs, or implementation details, provide verifiable links. Well-known frameworks/standards don't need URLs.**
+**When referencing specific tools, APIs, or implementation details, provide verifiable links. Well-known
+frameworks/standards don't need URLs.**
 
 **DO need URLs:**
 
@@ -585,14 +616,17 @@ rationale: |
 
 ### 12. Code Citation Guidelines
 
-**IMPORTANT**: Do NOT include long code blocks in rationale. Readers have snapshot code open - cite file paths and line ranges, briefly summarize what's there.
+**IMPORTANT**: Do NOT include long code blocks in rationale. Readers have snapshot code open - cite file paths and line
+ranges, briefly summarize what's there.
 
-- Brief summary: "Button styles duplicated across 6 components (AgentsSidebar lines 355-360, GlobalApprovalsList lines 118-146, etc.)"
+- Brief summary: "Button styles duplicated across 6 components (AgentsSidebar lines 355-360, GlobalApprovalsList lines
+  118-146, etc.)"
 - Short example (3-5 lines) when illustrating pattern
 - Avoid long blocks (10+ lines) copied from source
 - Assume reader can look up exact code at cited lines
 
-**Per-range context:** Notes are supported at the occurrence level. For per-range context within an occurrence, use YAML comments:
+**Per-range context:** Notes are supported at the occurrence level. For per-range context within an occurrence, use YAML
+comments:
 
 ```yaml
 files:

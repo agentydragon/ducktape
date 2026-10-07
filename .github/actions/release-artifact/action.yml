@@ -25,11 +25,9 @@ inputs:
     default: ""
   bazel_flags:
     description: >
-      Extra bazel flags appended to both build invocations (unstamped and
-      stamped). Use for per-artifact compilation_mode or rustc_flags
-      overrides — e.g. `-c opt --@rules_rust//:extra_rustc_flag=-Cdebuginfo=1`
-      for an artifact that should ship as an optimized binary instead of
-      the workflow's default fastbuild.
+      Extra bazel flags appended to both build invocations (unstamped and stamped). Use for per-artifact
+      compilation_mode or rustc_flags overrides — e.g. `-c opt --@rules_rust//:extra_rustc_flag=-Cdebuginfo=1` for an
+      artifact that should ship as an optimized binary instead of the workflow's default fastbuild.
     required: false
     default: ""
 

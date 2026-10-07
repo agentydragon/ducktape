@@ -14,9 +14,8 @@ Hosted on my VPS.
 
 # Develop
 
-`//website` is a nested Bazel module (its own `MODULE.bazel`), listed in the
-root `.bazelignore` so the root workspace doesn't need `rules_haskell` /
-GHC just to expand `//...`. Build the site from inside this directory:
+`//website` is a nested Bazel module (its own `MODULE.bazel`), listed in the root `.bazelignore` so the root workspace
+doesn't need `rules_haskell` / GHC just to expand `//...`. Build the site from inside this directory:
 
 ```bash
 cd website

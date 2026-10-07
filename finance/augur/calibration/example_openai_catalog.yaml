@@ -54,19 +54,18 @@ metadata:
   # annual_public_market_probability=0.07 hazard, absorbing, 6-month lockup. Monthly
   # granularity; deadlines round to month index.
   valuation_caveat: >
-    augur does NOT model company valuation: the structured model emits a per-UNIT mark
-    with no shares or market-cap concept (the only market-cap value lives in the
-    separate trained artifact's scale_prior, used internally as a soft-cap penalty, not
-    exposed). Valuation markets are therefore SURFACED, not scored. A constant-shares
-    eyeball proxy market_cap ~= mark * (current_market_cap_usd / current_mark_usd) ~=
-    mark * 5.213e8 exists but dilution is unmodeled, so it is not an apples-to-apples metric.
+    augur does NOT model company valuation: the structured model emits a per-UNIT mark with no shares or market-cap
+    concept (the only market-cap value lives in the separate trained artifact's scale_prior, used internally as a
+    soft-cap penalty, not exposed). Valuation markets are therefore SURFACED, not scored. A constant-shares eyeball
+    proxy market_cap ~= mark * (current_market_cap_usd / current_mark_usd) ~= mark * 5.213e8 exists but dilution is
+    unmodeled, so it is not an apples-to-apples metric.
 
   field_semantics: >
-    resolution_deadline = the date the YES condition must occur by (the model maps it to a month
-    index for the IPO-correlate context). The market's title/question, verbatim resolution
-    criterion, outcome_type, close_date, and live price are NOT stored here -- all are fetched live
-    from the platform at scoring time (Market.title / .rules / .probability), so they can never
-    drift. This catalog carries stable IDs, mappings, resolution_deadline, and notes only.
+    resolution_deadline = the date the YES condition must occur by (the model maps it to a month index for the
+    IPO-correlate context). The market's title/question, verbatim resolution criterion, outcome_type, close_date, and
+    live price are NOT stored here -- all are fetched live from the platform at scoring time (Market.title / .rules /
+    .probability), so they can never drift. This catalog carries stable IDs, mappings, resolution_deadline, and notes
+    only.
 
 markets:
   # ============================================================================
@@ -104,7 +103,9 @@ markets:
     mappability: exact
     mapping: { kind: ipo_by_date, issuer: openai, by_date: "2030-01-01" }
     # exact (within 120-month horizon).
-    notes: "Market page has NO resolution-criteria text (empty description); classified from the title. Confirm intended semantics."
+    notes:
+      "Market page has NO resolution-criteria text (empty description); classified from the title. Confirm intended
+      semantics."
 
   - manifold_id: Csgc56pdZc
     # question: "Will OpenAI go public in 2026?"
@@ -223,9 +224,9 @@ markets:
     issuer: openai
     correlate_strength: strong
     reason: >
-      Binary IPO-before-2027 market; overlaps the exact Kalshi monthly series and
-      Manifold ipo_by_date markets for the same deadline. Surfaced for cross-platform
-      price comparison, not scored (the exact monthly markets are scored instead).
+      Binary IPO-before-2027 market; overlaps the exact Kalshi monthly series and Manifold ipo_by_date markets for the
+      same deadline. Surfaced for cross-platform price comparison, not scored (the exact monthly markets are scored
+      instead).
     notes: "OI ~77K, last_price 0.85. Highest-volume Kalshi IPO market."
 
   - platform: polymarket
@@ -237,8 +238,8 @@ markets:
     issuer: openai
     correlate_strength: strong
     reason: >
-      Polymarket binary IPO-before-2027. Same rationale as the Kalshi correlate:
-      surfaced for cross-platform price comparison, not scored.
+      Polymarket binary IPO-before-2027. Same rationale as the Kalshi correlate: surfaced for cross-platform price
+      comparison, not scored.
     notes: "Polymarket IPOs before 2027 series. YES price ~73%."
 
   # ============================================================================
@@ -280,9 +281,9 @@ markets:
     correlate_of: mark_per_unit_trajectory
     correlate_strength: strong
     reason: >
-      augur does not model company valuation -- only a per-UNIT mark, with no shares or
-      market-cap concept. A constant-shares proxy (mark * external shares) maps mark to
-      a cap, but dilution is unmodeled, so this is surfaced for the reader, not scored.
+      augur does not model company valuation -- only a per-UNIT mark, with no shares or market-cap concept. A
+      constant-shares proxy (mark * external shares) maps mark to a cap, but dilution is unmodeled, so this is surfaced
+      for the reader, not scored.
     # not scored: augur does not model company valuation.
     notes: "Criterion evaluates valuation ON Jan 1, 2027 (title says 'end of 2027')."
 
@@ -294,9 +295,9 @@ markets:
     issuer: openai
     correlate_strength: strong
     reason: >
-      The IPO-by-2026 leg is exactly modeled (PUBLIC_MARKET_OPEN), but the >=$1T
-      market-cap conjunct needs a valuation augur does not model. Surfaced, not scored;
-      calibration shows P(IPO by 2026) as the related clean signal (augur_context).
+      The IPO-by-2026 leg is exactly modeled (PUBLIC_MARKET_OPEN), but the >=$1T market-cap conjunct needs a valuation
+      augur does not model. Surfaced, not scored; calibration shows P(IPO by 2026) as the related clean signal
+      (augur_context).
     # IPO-timing leg is exact; the valuation conjunct is not scored.
 
   # ============================================================================
@@ -310,8 +311,8 @@ markets:
     issuer: openai
     correlate_strength: strong
     reason: >
-      Resolves on a SEC Form S-1 FILING, not a completed IPO. The sim has no filing
-      event; P(PUBLIC_MARKET_OPEN by D) is a lower-bound leading-correlate.
+      Resolves on a SEC Form S-1 FILING, not a completed IPO. The sim has no filing event; P(PUBLIC_MARKET_OPEN by D) is
+      a lower-bound leading-correlate.
     # approx: filing vs completion gap; no distinct filing event in the sim.
     notes: "High liquidity (5100), strong signal -- valuable correlate even though not exact."
 
@@ -323,9 +324,8 @@ markets:
     issuer: openai
     correlate_strength: moderate
     reason: >
-      Resolution hinges on the going-public MECHANISM (direct listing / SPAC / merger,
-      EXCLUDING a traditional S-1 IPO). PUBLIC_MARKET_OPEN is mechanism-agnostic, so it
-      relates to but does not equal this market (the non-IPO slice).
+      Resolution hinges on the going-public MECHANISM (direct listing / SPAC / merger, EXCLUDING a traditional S-1 IPO).
+      PUBLIC_MARKET_OPEN is mechanism-agnostic, so it relates to but does not equal this market (the non-IPO slice).
     # approx: sim cannot split IPO vs non-IPO mechanism.
 
   - manifold_id: ugRnhOtcqN
@@ -335,8 +335,8 @@ markets:
     correlate_of: mark_per_unit_trajectory
     correlate_strength: weak
     reason: >
-      Revenue threshold. The sim has no revenue channel; the per-unit mark path is at
-      best a loose growth proxy. Surfaced for context, not scored.
+      Revenue threshold. The sim has no revenue channel; the per-unit mark path is at best a loose growth proxy.
+      Surfaced for context, not scored.
     # weak/indirect: augur models neither revenue nor valuation.
 
   - manifold_id: mQB5gkPdsaqoQdaAlMoL
@@ -345,7 +345,8 @@ markets:
     mappability: correlate
     correlate_of: mark_per_unit_trajectory
     correlate_strength: weak
-    reason: "Revenue threshold; augur models neither revenue nor valuation. Near-certain (~0.99) so low information anyway."
+    reason:
+      "Revenue threshold; augur models neither revenue nor valuation. Near-certain (~0.99) so low information anyway."
     # weak/indirect; market near-certain, low information.
     notes: "Empty description; classified from title."
 
@@ -356,8 +357,8 @@ markets:
     correlate_of: legal_event
     correlate_strength: weak
     reason: >
-      Government nationalization / control. The sim's LEGAL_IMPAIRMENT event (severe
-      legal, ~0.05%/yr) is the nearest signal but is not nationalization. Weak correlate.
+      Government nationalization / control. The sim's LEGAL_IMPAIRMENT event (severe legal, ~0.05%/yr) is the nearest
+      signal but is not nationalization. Weak correlate.
     # weak: LEGAL_IMPAIRMENT is rare legal-severity, not nationalization specifically.
 
   - manifold_id: x7ZzkewbkjWtnz3eGFg1
@@ -367,9 +368,8 @@ markets:
     correlate_of: mark_per_unit_trajectory
     correlate_strength: moderate
     reason: >
-      Relative valuation (OpenAI vs Microsoft). augur models neither a company valuation
-      for OpenAI (only a per-unit mark) nor Microsoft's cap, and 2040 exceeds the
-      120-month horizon (~2036). Surfaced, not scored.
+      Relative valuation (OpenAI vs Microsoft). augur models neither a company valuation for OpenAI (only a per-unit
+      mark) nor Microsoft's cap, and 2040 exceeds the 120-month horizon (~2036). Surfaced, not scored.
     # not scored: no valuation, no comparator, beyond horizon.
 
   # ============================================================================
@@ -380,8 +380,8 @@ markets:
     resolution_deadline: "2026-12-31"
     mappability: unmappable
     reason: >
-      Governance / leadership (CEO tenure). The sim models marks and
-      liquidity/legal/collapse events -- nothing about leadership.
+      Governance / leadership (CEO tenure). The sim models marks and liquidity/legal/collapse events -- nothing about
+      leadership.
     # not computable; no governance state in the sim.
     notes: "Empty description; classified from title."
 
@@ -395,7 +395,9 @@ markets:
     resolution_deadline: "2026-12-31"
     mappability: exact
     mapping: { kind: level_at_date, series: "security:SPY", threshold: 7500, direction: above, at_date: "2026-12-31" }
-    notes: "Point-in-time threshold on the security:SPY channel; p_model = share of rollouts with anchored security:SPY >= 7500 at 2026-12-31."
+    notes:
+      "Point-in-time threshold on the security:SPY channel; p_model = share of rollouts with anchored security:SPY >=
+      7500 at 2026-12-31."
 
   # CPI YoY: augur emits a monthly inflation index; YoY needs the index 12 months before
   # `at_date`. The path starts at model_anchor_date, so a 2026 year-ending date looks back
@@ -424,7 +426,9 @@ markets:
     resolution_deadline: "2026-06-30"
     mappability: exact
     mapping: { kind: level_by_date, series: "security:btc", threshold: 100000, direction: above, by_date: "2026-06-30" }
-    notes: "Ever-by-date (touch) on security:btc: p_model = share of rollouts whose anchored BTC path reaches 100k by the deadline."
+    notes:
+      "Ever-by-date (touch) on security:btc: p_model = share of rollouts whose anchored BTC path reaches 100k by the
+      deadline."
 
 # Categorical (multinomial) bucket families: mutually-exclusive ranges over one level series
 # at a single date, scored as one multinomial D_KL(market ‖ model).

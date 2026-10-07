@@ -7,8 +7,8 @@ metadata:
     app.kubernetes.io/name: firecracker-manager
   annotations:
     description: >-
-      Firecracker VM manager. Creates VM pods (PVC + pod), then drives
-      boot/restore via the Firecracker API proxy on each pod.
+      Firecracker VM manager. Creates VM pods (PVC + pod), then drives boot/restore via the Firecracker API proxy on
+      each pod.
 spec:
   replicas: 1
   strategy:

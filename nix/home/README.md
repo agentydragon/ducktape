@@ -23,7 +23,8 @@ This directory follows a pattern separating **generic modules** from **personal 
 
 ### Generic Modules (`programs/`)
 
-Generic home-manager-style modules that follow upstream conventions and could potentially be contributed to nixpkgs. See <programs/README.md> for details.
+Generic home-manager-style modules that follow upstream conventions and could potentially be contributed to nixpkgs. See
+<programs/README.md> for details.
 
 - **No personal configuration embedded** - modules expose options, personal integrations provide values
 - **Upstream-compatible conventions** - follow nixpkgs `programs.*` patterns

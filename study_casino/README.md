@@ -1,11 +1,9 @@
 # study_casino
 
-Single-user habit-tracking "casino" — study for a session, earn credits,
-gamble those credits in the casino for tokens, then spend tokens on
-self-chosen prizes. Credits → tokens is one-way (via the casino or an
-explicit conversion), so winnings can never be re-gambled. Frontend is
-a React PWA installable on Windows (Edge/Chrome) and iPhone (Safari →
-Add to Home Screen).
+Single-user habit-tracking "casino" — study for a session, earn credits, gamble those credits in the casino for tokens,
+then spend tokens on self-chosen prizes. Credits → tokens is one-way (via the casino or an explicit conversion), so
+winnings can never be re-gambled. Frontend is a React PWA installable on Windows (Edge/Chrome) and iPhone (Safari → Add
+to Home Screen).
 
 Lives at <https://casino.allegedly.works>.
 
@@ -52,26 +50,22 @@ Lives at <https://casino.allegedly.works>.
 
 ## Auth
 
-OIDC Authorization Code flow (confidential client). The backend (`auth.py`)
-handles `/auth/login` → Authentik → `/auth/callback`, then issues an
-HMAC-signed session cookie. Per-user state is scoped by `user_id` in the
-shared Postgres database. Authentik resources (OAuth2 provider, application,
-policy bindings) are managed by TF at
+OIDC Authorization Code flow (confidential client). The backend (`auth.py`) handles `/auth/login` → Authentik →
+`/auth/callback`, then issues an HMAC-signed session cookie. Per-user state is scoped by `user_id` in the shared
+Postgres database. Authentik resources (OAuth2 provider, application, policy bindings) are managed by TF at
 `tf/gitops/sso-providers/provider_study_casino.tf`.
 
-Usernames listed in `STUDY_CASINO_ADMIN_USERS` (comma-separated) have
-admin privileges: they can manage prize catalogs for other users via
-`/admin/*` endpoints. Non-admin users cannot create or delete prizes,
-even their own — admins curate the catalog. Anyone can still redeem
-prizes against their own token balance.
+Usernames listed in `STUDY_CASINO_ADMIN_USERS` (comma-separated) have admin privileges: they can manage prize catalogs
+for other users via `/admin/*` endpoints. Non-admin users cannot create or delete prizes, even their own — admins curate
+the catalog. Anyone can still redeem prizes against their own token balance.
 
 ## State
 
-Canonical state is a small relational schema in Postgres (CNPG `study-casino-db`),
-shared-schema with rows scoped by `user_id`:
+Canonical state is a small relational schema in Postgres (CNPG `study-casino-db`), shared-schema with rows scoped by
+`user_id`:
 
-Credit amounts are integer **millicredits** (credit value × 1000) in every
-column and wire field (`*_millis`); tokens and wagers are whole integers.
+Credit amounts are integer **millicredits** (credit value × 1000) in every column and wire field (`*_millis`); tokens
+and wagers are whole integers.
 
 | Table               | Purpose                                                                         |
 | ------------------- | ------------------------------------------------------------------------------- |
@@ -87,9 +81,8 @@ column and wire field (`*_millis`); tokens and wagers are whole integers.
 | `state_snapshots`   | JSON dumps before `/actions/import` / `/actions/reset`.                         |
 | `blackjack_hands`   | In-flight hand state between deal and settlement.                               |
 
-`GET /state` returns a JSON view of `balance` + `sessions` + `prizes` +
-`prize_log`. The frontend caches this and refetches on every successful
-action and on every WebSocket `state_changed` ping.
+`GET /state` returns a JSON view of `balance` + `sessions` + `prizes` + `prize_log`. The frontend caches this and
+refetches on every successful action and on every WebSocket `state_changed` ping.
 
 ## Wire surface
 
@@ -115,33 +108,26 @@ WS   /ws                             — broadcasts {"type":"state_changed"} to 
                                         tab of the same user after a successful action
 ```
 
-The active study-session timer (start / pause / resume / cancel) lives in
-client `localStorage`; the server only learns about it when the user calls
-`/actions/session/complete`. Every action carries a `client_action_id` —
-retried calls return the original `ledger_events` row without replaying
-the mutation.
+The active study-session timer (start / pause / resume / cancel) lives in client `localStorage`; the server only learns
+about it when the user calls `/actions/session/complete`. Every action carries a `client_action_id` — retried calls
+return the original `ledger_events` row without replaying the mutation.
 
-`game_events` is the queryable casino history. Pre-2026-05-07 rows have
-`source="client_reported"` (legacy direct settlements) and
-`source="server_resolved"` rows are written from this point forward.
-Pre-cutover `ledger_events` rows with `source="legacy_client_sync"`
-similarly remain readable; both sets of literals are kept in `events.py`
-so historical rows still deserialize.
+`game_events` is the queryable casino history. Pre-2026-05-07 rows have `source="client_reported"` (legacy direct
+settlements) and `source="server_resolved"` rows are written from this point forward. Pre-cutover `ledger_events` rows
+with `source="legacy_client_sync"` similarly remain readable; both sets of literals are kept in `events.py` so
+historical rows still deserialize.
 
-Casino RNG is deterministic and audit-logged for new server-resolved actions.
-The DB stores seed material plus each random call's parameters and result; the
-versioned `STUDY_CASINO_RNG_SECRET` stays outside the DB and is needed to replay
-the HMAC-SHA256 stream.
+Casino RNG is deterministic and audit-logged for new server-resolved actions. The DB stores seed material plus each
+random call's parameters and result; the versioned `STUDY_CASINO_RNG_SECRET` stays outside the DB and is needed to
+replay the HMAC-SHA256 stream.
 
 ## Validation
 
-DB CHECK constraints + Pydantic field validators police the rules:
-`balance.credits ≥ 0`, `balance.tokens ≥ 0`, `prizes.cost > 0`,
-`sessions.subject` non-empty, etc. A mutator that would violate a CHECK
-raises an SQLAlchemy `IntegrityError` at commit; the surrounding
-`run_server_action` transaction rolls back. A mutator that explicitly
-raises `ActionRejectedError("rule", "message")` produces a 409 with the
-structured detail (e.g., `rule="insufficient_credits"`).
+DB CHECK constraints + Pydantic field validators police the rules: `balance.credits ≥ 0`, `balance.tokens ≥ 0`,
+`prizes.cost > 0`, `sessions.subject` non-empty, etc. A mutator that would violate a CHECK raises an SQLAlchemy
+`IntegrityError` at commit; the surrounding `run_server_action` transaction rolls back. A mutator that explicitly raises
+`ActionRejectedError("rule", "message")` produces a 409 with the structured detail (e.g.,
+`rule="insufficient_credits"`).
 
 ## Build
 

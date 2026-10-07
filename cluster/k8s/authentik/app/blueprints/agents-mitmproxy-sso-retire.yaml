@@ -2,7 +2,8 @@ version: 1
 metadata:
   name: Retire Agents Mitmproxy SSO
   labels:
-    blueprints.goauthentik.io/description: "Delete the parked agent mitmproxy traffic viewer application and proxy provider"
+    blueprints.goauthentik.io/description:
+      "Delete the parked agent mitmproxy traffic viewer application and proxy provider"
 
 entries:
   - model: authentik_core.application

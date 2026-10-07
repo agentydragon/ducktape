@@ -2,7 +2,8 @@
 
 @README.md
 
-From context, you should see that we are working with some particular piece of code, and gathering issues that are present in it.
+From context, you should see that we are working with some particular piece of code, and gathering issues that are
+present in it.
 
 ## Canonical issues format (YAML)
 
@@ -17,7 +18,8 @@ We have:
 - **Canonical issues** in `issues/*.yaml` where we gather:
   - canonical descriptions of issues I've validated (should_flag: true),
   - canonical negatives (should_flag: false).
-- A bunch of other **gathered issue files** in the same directory (freeform). They are unverified and may include duplicates.
+- A bunch of other **gathered issue files** in the same directory (freeform). They are unverified and may include
+  duplicates.
 
 ## Main loop
 
@@ -29,10 +31,10 @@ Start by explaining your understanding of the context:
 
 Ask me to confirm that your understanding is correct.
 
-Once we're in sync, read each **gathered issue file** and present to me each issue it contains.
-For each gathered issue:
+Once we're in sync, read each **gathered issue file** and present to me each issue it contains. For each gathered issue:
 
-1. Describe it and show the subject code (include multiple examples if repeated). Include code before (with the issue) and a sketched "after" when helpful. Do not write to files yet.
+1. Describe it and show the subject code (include multiple examples if repeated). Include code before (with the issue)
+   and a sketched "after" when helpful. Do not write to files yet.
 
 2. I will decide the disposition:
 
@@ -49,4 +51,5 @@ For each gathered issue:
 
    If it's a duplicate or invalid: mark it as such and do not add to canon.
 
-3. After handling an issue, remove duplicates of the handled issue from the gathered files (or mark as merged) and proceed.
+3. After handling an issue, remove duplicates of the handled issue from the gathered files (or mark as merged) and
+   proceed.

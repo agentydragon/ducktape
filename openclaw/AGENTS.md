@@ -2,67 +2,51 @@
 
 ## Version bumps
 
-A bump is not just the version string: **2026.8.1 took the public-coder agent down
-for ~5 hours across four independent failures**, three of which shared one shape —
-startup detects a pending state migration and hard-fails, only `doctor` performs
-it, and `doctor` refuses to run under Nix. Full diagnosis and the recovery
-runbook: <debug/2026_8_1_recovery/README.md>.
+A bump is not just the version string: **2026.8.1 took the public-coder agent down for ~5 hours across four independent
+failures**, three of which shared one shape — startup detects a pending state migration and hard-fails, only `doctor`
+performs it, and `doctor` refuses to run under Nix. Full diagnosis and the recovery runbook:
+<debug/2026_8_1_recovery/README.md>.
 
-Before bumping, read the upstream release notes for **state migrations and
-retired config keys**, and expect a maintenance window for any instance whose
-state predates the release.
+Before bumping, read the upstream release notes for **state migrations and retired config keys**, and expect a
+maintenance window for any instance whose state predates the release.
 
-- **Both images move together.** They share `gateway.nix`, so a bump lands in
-  public-coder and the Haku spike at once. Build both before merging; each has its
-  own image workflow and its own deployment to recover if the bump goes wrong.
-- **An instance cannot repair itself.** `assertConfigWriteAllowedInCurrentMode`
-  aborts `doctor --fix` whenever `OPENCLAW_NIX_MODE=1`, which the wrapper sets. If
-  a release adds a state migration, the gateway refuses to start until it runs and
-  the only tool that runs it refuses to start too. Recovery is a one-off Job with
-  `OPENCLAW_NIX_MODE=0` — and `""` will not do, because `--set-default` expands to
-  `${OPENCLAW_NIX_MODE:-1}`.
-- **Retired config keys are ignored silently.** They keep reading as if they still
-  apply while the behaviour they suppressed comes back — this is how the Control UI
-  started demanding device pairing. Run `openclaw doctor` after a bump and act on
-  "Legacy config keys detected".
-- **`postInstall` does not run.** nix-openclaw supplies a complete custom
-  `installPhase` and never calls `runHook postInstall`, so a hook added there is
-  skipped in silence: the build succeeds having done nothing. Append to
-  `installPhase`. A fail-closed check placed in `postInstall` passes vacuously,
-  which is worse than no check.
-- **The dist patches fail closed, so a bump breaks the image build loudly.**
-  <patches/openclaw-2026.9.5-dist.patch> rewrites hardcoded upstream constants
-  into environment reads and Nix-specific behaviour, matching exact paths and
-  source context rather than silently accepting a changed release. When a
-  release moves one of those lines the build stops with a patch failure, which
-  is the design: re-find the construct in the new dist and update the
-  release-specific patch. Never relax a match to make a bump pass -- the
-  patched behaviour silently reverts to upstream's.
-- Each dist hunk is a downstream Nix/runtime contract, not automatically an
-  upstream bug. Retire a hunk only when the upstream release exposes equivalent
-  behavior and both images pass the affected Nix-mode, plugin, and startup checks.
-- **Verify the built artifact, not the expression.** The `stage_acpx` edge case
-  was invisible until the derivation was actually built and its output inspected;
-  local simulation of the upstream tarball missed it, because the real tree has
-  content the tarball does not. The pinned nix-openclaw installer now makes
-  `dist-runtime` a symlink to `dist`, so do not reintroduce a downstream copy or
-  link workaround unless a future upstream change regresses that invariant.
+- **Both images move together.** They share `gateway.nix`, so a bump lands in public-coder and the Haku spike at once.
+  Build both before merging; each has its own image workflow and its own deployment to recover if the bump goes wrong.
+- **An instance cannot repair itself.** `assertConfigWriteAllowedInCurrentMode` aborts `doctor --fix` whenever
+  `OPENCLAW_NIX_MODE=1`, which the wrapper sets. If a release adds a state migration, the gateway refuses to start until
+  it runs and the only tool that runs it refuses to start too. Recovery is a one-off Job with `OPENCLAW_NIX_MODE=0` —
+  and `""` will not do, because `--set-default` expands to `${OPENCLAW_NIX_MODE:-1}`.
+- **Retired config keys are ignored silently.** They keep reading as if they still apply while the behaviour they
+  suppressed comes back — this is how the Control UI started demanding device pairing. Run `openclaw doctor` after a
+  bump and act on "Legacy config keys detected".
+- **`postInstall` does not run.** nix-openclaw supplies a complete custom `installPhase` and never calls
+  `runHook postInstall`, so a hook added there is skipped in silence: the build succeeds having done nothing. Append to
+  `installPhase`. A fail-closed check placed in `postInstall` passes vacuously, which is worse than no check.
+- **The dist patches fail closed, so a bump breaks the image build loudly.** <patches/openclaw-2026.9.5-dist.patch>
+  rewrites hardcoded upstream constants into environment reads and Nix-specific behaviour, matching exact paths and
+  source context rather than silently accepting a changed release. When a release moves one of those lines the build
+  stops with a patch failure, which is the design: re-find the construct in the new dist and update the release-specific
+  patch. Never relax a match to make a bump pass -- the patched behaviour silently reverts to upstream's.
+- Each dist hunk is a downstream Nix/runtime contract, not automatically an upstream bug. Retire a hunk only when the
+  upstream release exposes equivalent behavior and both images pass the affected Nix-mode, plugin, and startup checks.
+- **Verify the built artifact, not the expression.** The `stage_acpx` edge case was invisible until the derivation was
+  actually built and its output inspected; local simulation of the upstream tarball missed it, because the real tree has
+  content the tarball does not. The pinned nix-openclaw installer now makes `dist-runtime` a symlink to `dist`, so do
+  not reintroduce a downstream copy or link workaround unless a future upstream change regresses that invariant.
 
 ## Verifying a rollout
 
-There are no probes on these Deployments, so `1/1 Running` means only that a
-process exists. A crash-looping gateway and one that starts but never binds both
-read as healthy. Confirm a listener on the gateway port and an HTTP response:
+There are no probes on these Deployments, so `1/1 Running` means only that a process exists. A crash-looping gateway and
+one that starts but never binds both read as healthy. Confirm a listener on the gateway port and an HTTP response:
 
 ```bash
 kubectl -n <ns> exec <pod> -c openclaw -- sh -c \
   'cat /proc/net/tcp /proc/net/tcp6 | grep -c 4965'   # 18789 == 0x4965
 ```
 
-An HTTP 403 from inside the pod is the gateway's own auth response and means it is
-serving; `000` means nothing is listening.
+An HTTP 403 from inside the pod is the gateway's own auth response and means it is serving; `000` means nothing is
+listening.
 
-**Manually suspending a Flux Kustomization does not hold.** These Kustomization
-objects are themselves reconciled by `flux-system`, which clears `spec.suspend`
-and restores `replicas: 1` within a reconcile interval. Scale down and work
+**Manually suspending a Flux Kustomization does not hold.** These Kustomization objects are themselves reconciled by
+`flux-system`, which clears `spec.suspend` and restores `replicas: 1` within a reconcile interval. Scale down and work
 promptly rather than relying on a suspend.

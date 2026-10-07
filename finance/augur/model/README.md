@@ -1,7 +1,7 @@
 # Market paths and product construction
 
-Load/select historical windows (or sample paths from an experimental model such as
-`x/models/structural_macro.py`), then choose products:
+Load/select historical windows (or sample paths from an experimental model such as `x/models/structural_macro.py`), then
+choose products:
 
 ```python
 from finance.augur.model.bond_fund import BondFundSpec
@@ -17,25 +17,20 @@ for maturity in (2.0, 8.0):
     )
 ```
 
-`market_paths.py` defines the concrete rate/spread, CPI and optional equity-index
-inputs used here. Corporate yields are explicit available observations, not a
-Treasury-spread fallback. `product_paths.py` constructs the existing bond-fund and
-total-return equity proxies without loading, sampling or tax settlement. This is
-not a universal product/model interface. The configured providers still compose
-both steps for callers wanting their configured product bundle.
+`market_paths.py` defines the concrete rate/spread, CPI and optional equity-index inputs used here. Corporate yields are
+explicit available observations, not a Treasury-spread fallback. `product_paths.py` constructs the existing bond-fund
+and total-return equity proxies without loading, sampling or tax settlement. This is not a universal product/model
+interface. The configured providers still compose both steps for callers wanting their configured product bundle.
 
-Preserving existing outputs isolates this boundary change; it does not make the
-current approximations a correctness oracle or a compatibility requirement.
-Financial corrections can land independently with independently justified tests.
+Preserving existing outputs isolates this boundary change; it does not make the current approximations a correctness
+oracle or a compatibility requirement. Financial corrections can land independently with independently justified tests.
 
-Inputs to the fitted VECM and state-space models (`x/models/`) carry dated
-`ExogenousObservedPoint` records (`conditioning.py`) with actual source units. Evidence loaders choose each factor's anchor explicitly;
-runtime providers never search source-name fallbacks. Auxiliary observations and
-return/calibration provenance are separate from those anchors. Monthly observations
-use the month's first day as their existing period label, not a claimed daily quote.
-State-space conditioning must use the fitted factor's units; an index-point anchor
-is not silently replaced by a dollar value. These input records do not change the
-models' statistical dynamics or resolve product price/payout semantics.
+Inputs to the fitted VECM and state-space models (`x/models/`) carry dated `ExogenousObservedPoint` records
+(`conditioning.py`) with actual source units. Evidence loaders choose each factor's anchor explicitly; runtime providers
+never search source-name fallbacks. Auxiliary observations and return/calibration provenance are separate from those
+anchors. Monthly observations use the month's first day as their existing period label, not a claimed daily quote.
+State-space conditioning must use the fitted factor's units; an index-point anchor is not silently replaced by a dollar
+value. These input records do not change the models' statistical dynamics or resolve product price/payout semantics.
 
 Offline checks:
 
@@ -43,5 +38,5 @@ Offline checks:
 bbr test //finance/augur/model:test_market_paths //finance/augur/model:test_product_paths
 ```
 
-The [PE model conventions](../docs/private_equity_model.md) describe the existing
-valuation/issuance modes and their limits.
+The [PE model conventions](../docs/private_equity_model.md) describe the existing valuation/issuance modes and their
+limits.

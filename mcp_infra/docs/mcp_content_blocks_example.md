@@ -28,7 +28,8 @@ This is **exactly** what the resources server needs if we remove windowing:
 
 ## The Broader Insight
 
-MCP tools can return **content blocks** (TextContent, ImageContent, EmbeddedResource, etc.) directly in their results, not just structured JSON. This allows tools to return rich, multimodal data without custom wrapper types.
+MCP tools can return **content blocks** (TextContent, ImageContent, EmbeddedResource, etc.) directly in their results,
+not just structured JSON. This allows tools to return rich, multimodal data without custom wrapper types.
 
 ## Current Approach (With Windowing)
 
@@ -447,9 +448,11 @@ async def read(server: str, uri: str) -> list[mcp_types.EmbeddedResource]:
 
 ## References
 
-- **MCP Spec - Content Types**: <https://spec.modelcontextprotocol.io/specification/2024-11-05/basic/types/#content-types>
+- **MCP Spec - Content Types**:
+  <https://spec.modelcontextprotocol.io/specification/2024-11-05/basic/types/#content-types>
   - `TextContent`, `ImageContent`, `AudioContent`, `EmbeddedResource`
-- **MCP Spec - Resource Contents**: <https://spec.modelcontextprotocol.io/specification/2024-11-05/server/resources/#resource-contents>
+- **MCP Spec - Resource Contents**:
+  <https://spec.modelcontextprotocol.io/specification/2024-11-05/server/resources/#resource-contents>
   - `TextResourceContents`, `BlobResourceContents` (both have `uri` field)
 - **FastMCP Tool Returns**: Tools can return Pydantic models, dicts, lists, or raw MCP types
 - **Tool Results**: `CallToolResult.content` is a list of content blocks

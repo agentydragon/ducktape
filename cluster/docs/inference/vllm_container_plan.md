@@ -132,7 +132,8 @@ nvidia-smi
 
 ## Why AWQ?
 
-The bf16 model (61 GB total) requires 28.5 GB per GPU with TP=2, leaving only 2.85 GiB for KV cache and activations on 32 GB GPUs. This causes OOM at any meaningful context length.
+The bf16 model (61 GB total) requires 28.5 GB per GPU with TP=2, leaving only 2.85 GiB for KV cache and activations on
+32 GB GPUs. This causes OOM at any meaningful context length.
 
 AWQ 4-bit quantization reduces weights to ~7.6 GB per GPU, leaving ~23 GB for KV cache = 131K+ context.
 

@@ -1,26 +1,21 @@
 # Artifact drafts: Haku on a provider-agnostic loop (Runtime C)
 
-Status: **sketches**, not landed code. Companion to
-[runtime_options.md](runtime_options.md) (Runtime C); pairs with
-[managed_agents_artifacts.md](managed_agents_artifacts.md) (Runtime B) so both
-runtimes are equally concrete before choosing. Framework shown: **Pydantic AI**
-on the in-cluster **LiteLLM**. Graduates into a real `haku/runtime/agent/` component once
-chosen. Kwarg/import names marked _(verify)_ move between Pydantic AI 1.x
-releases — pin a version and check.
+Status: **sketches**, not landed code. Companion to [runtime_options.md](runtime_options.md) (Runtime C); pairs with
+[managed_agents_artifacts.md](managed_agents_artifacts.md) (Runtime B) so both runtimes are equally concrete before
+choosing. Framework shown: **Pydantic AI** on the in-cluster **LiteLLM**. Graduates into a real `haku/runtime/agent/`
+component once chosen. Kwarg/import names marked _(verify)_ move between Pydantic AI 1.x releases — pin a version and
+check.
 
-**One repo-side path in these sketches has since moved.** They bake Haku's manual and run
-procedure out of ducktape (`COPY haku/base`, `COPY haku/run.md`, and the system prompt pointing at
-`/opt/haku/base/instructions.md`). #3951 deleted both: the manual lives in the `haku-state` repo
-now, which this runtime already clones to `/workspace/haku-state`, so the image bakes nothing and
-the prompt points there instead. The remaining Managed Agents SSOT moved with that parked
-component to `haku/runtime/x/managed_agent/agent_shared.yaml`.
+**One repo-side path in these sketches has since moved.** They bake Haku's manual and run procedure out of ducktape
+(`COPY haku/base`, `COPY haku/run.md`, and the system prompt pointing at `/opt/haku/base/instructions.md`). #3951
+deleted both: the manual lives in the `haku-state` repo now, which this runtime already clones to
+`/workspace/haku-state`, so the image bakes nothing and the prompt points there instead. The remaining Managed Agents
+SSOT moved with that parked component to `haku/runtime/x/managed_agent/agent_shared.yaml`.
 
-**Shape vs Runtime B:** there is no Anthropic-run loop and no separate worker —
-the agent loop runs in **your** process, so B's "worker + supervisor + session"
-collapse into **one** in-cluster service. MCP auth is in-process (pass the bearer
-header straight to the client; no vault, no public-facade requirement — the
-in-cluster loop can reach in-cluster MCP servers directly). The model goes
-through LiteLLM, so the provider is a config knob and only LiteLLM holds provider
+**Shape vs Runtime B:** there is no Anthropic-run loop and no separate worker — the agent loop runs in **your** process,
+so B's "worker + supervisor + session" collapse into **one** in-cluster service. MCP auth is in-process (pass the bearer
+header straight to the client; no vault, no public-facade requirement — the in-cluster loop can reach in-cluster MCP
+servers directly). The model goes through LiteLLM, so the provider is a config knob and only LiteLLM holds provider
 keys.
 
 ## 1. The agent (`haku_agent.py`)
@@ -98,15 +93,13 @@ async def run_command(ctx: RunContext[Deps], command: str) -> str:
     return out.decode()[-20000:]    # tail, to keep tool results bounded
 ```
 
-`bash` + the Tana MCP toolset cover Haku's surface today; add more MCP toolsets
-(grocy, google) the same way, or keep reaching them via `bash`/curl
-as now. Note this is the C advantage over B: no vault and no public-facade
-requirement — an in-cluster loop can call an in-cluster MCP Service directly.
+`bash` + the Tana MCP toolset cover Haku's surface today; add more MCP toolsets (grocy, google) the same way, or keep
+reaching them via `bash`/curl as now. Note this is the C advantage over B: no vault and no public-facade requirement —
+an in-cluster loop can call an in-cluster MCP Service directly.
 
 ## 2. The supervisor / wake endpoint (`supervisor.py`)
 
-No session to keep alive or reconnect (the loop is in-process), so "wake" is just
-`agent.run()` under a lock.
+No session to keep alive or reconnect (the loop is in-process), so "wake" is just `agent.run()` under a lock.
 
 ```python
 import asyncio
@@ -157,16 +150,14 @@ async def _shutdown() -> None:
         await app.state.sched
 ```
 
-Crash-survivability here is "re-orient from `haku-state` on restart" (cheap, since
-the scan is incremental via bookmarks). If you want true checkpointed resume of an
-in-flight run, that's the point where **Dapr Agents** or a Pydantic AI
-durable-execution integration (DBOS/Temporal) would slot in instead of this
-hand-rolled loop.
+Crash-survivability here is "re-orient from `haku-state` on restart" (cheap, since the scan is incremental via
+bookmarks). If you want true checkpointed resume of an in-flight run, that's the point where **Dapr Agents** or a
+Pydantic AI durable-execution integration (DBOS/Temporal) would slot in instead of this hand-rolled loop.
 
 ## 3. Container + entrypoint
 
-Runtime B's image minus the Anthropic worker: bake base, reuse `bootstrap.sh`
-(kubeconfig + clone state), then run uvicorn.
+Runtime B's image minus the Anthropic worker: bake base, reuse `bootstrap.sh` (kubeconfig + clone state), then run
+uvicorn.
 
 ```dockerfile
 FROM python:3.14-slim
@@ -186,8 +177,8 @@ WORKDIR /workspace
 ENTRYPOINT ["/opt/haku/entrypoint.sh"]
 ```
 
-`entrypoint.sh` is the same bootstrap as Runtime B (materialize kubeconfig from
-the JWT, write `~/.netrc`, clone `haku-state` to `/workspace/haku-state`), then:
+`entrypoint.sh` is the same bootstrap as Runtime B (materialize kubeconfig from the JWT, write `~/.netrc`, clone
+`haku-state` to `/workspace/haku-state`), then:
 
 ```bash
 exec uvicorn supervisor:app --host 0.0.0.0 --port 8080
@@ -195,8 +186,8 @@ exec uvicorn supervisor:app --host 0.0.0.0 --port 8080
 
 ## 4. k8s wiring (`cluster/k8s/haku/`)
 
-A single `haku-agent` Deployment (no worker/supervisor split), in `haku-sandbox`,
-non-root, behind `haku-egress-proxy`, scoped RBAC — same perimeter as today.
+A single `haku-agent` Deployment (no worker/supervisor split), in `haku-sandbox`, non-root, behind `haku-egress-proxy`,
+scoped RBAC — same perimeter as today.
 
 ```yaml
 apiVersion: apps/v1
@@ -231,23 +222,19 @@ Plus a `Service` and a Forgejo webhook on `haku-state` → `POST /wake`.
 ## What's different from Runtime B
 
 - **One process, not three** — no Anthropic loop, no worker, no session supervisor.
-- **MCP auth in-process** — bearer header straight to the client; no vault, no
-  public-facade requirement; in-cluster MCP Services reachable directly.
-- **Provider is a config knob** (LiteLLM); attribution + traces via
-  LiteLLM + Langfuse (the keys never leave LiteLLM).
+- **MCP auth in-process** — bearer header straight to the client; no vault, no public-facade requirement; in-cluster MCP
+  Services reachable directly.
+- **Provider is a config knob** (LiteLLM); attribution + traces via LiteLLM + Langfuse (the keys never leave LiteLLM).
 - **No Console** — observe in Langfuse.
-- **Crash-resume** = re-orient from `haku-state` (or adopt Dapr/durable-exec for
-  true checkpointing).
+- **Crash-resume** = re-orient from `haku-state` (or adopt Dapr/durable-exec for true checkpointing).
 
 ## Open questions / verify
 
-- Pydantic AI 1.x specifics: `toolsets=` vs `mcp_servers=`, the MCP lifecycle
-  context manager (`async with haku` vs `run_mcp_servers()`), and the
-  `OpenAIModel`/`OpenAIProvider` import paths. Pin a version.
-- The in-cluster LiteLLM Service DNS, and that Haku's virtual key is registered
-  for the model strings used (`anthropic/...`, `zai/glm-...`).
-- Warm `message_history` (cost: re-send history each wake, mostly cache-read) vs.
-  stateless re-orient (cost: re-read `haku-state` each wake; cheap — git is
-  incremental via bookmarks). Default to stateless; git is the memory.
-- Read-only stays structural (mitmproxy egress + read-only creds + scoped RBAC) —
-  unchanged from today; the loop owning provider keys doesn't widen Haku's reach.
+- Pydantic AI 1.x specifics: `toolsets=` vs `mcp_servers=`, the MCP lifecycle context manager (`async with haku` vs
+  `run_mcp_servers()`), and the `OpenAIModel`/`OpenAIProvider` import paths. Pin a version.
+- The in-cluster LiteLLM Service DNS, and that Haku's virtual key is registered for the model strings used
+  (`anthropic/...`, `zai/glm-...`).
+- Warm `message_history` (cost: re-send history each wake, mostly cache-read) vs. stateless re-orient (cost: re-read
+  `haku-state` each wake; cheap — git is incremental via bookmarks). Default to stateless; git is the memory.
+- Read-only stays structural (mitmproxy egress + read-only creds + scoped RBAC) — unchanged from today; the loop owning
+  provider keys doesn't widen Haku's reach.

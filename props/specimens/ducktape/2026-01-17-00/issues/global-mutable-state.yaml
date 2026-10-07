@@ -16,9 +16,8 @@ occurrences:
         - [90, 90]
         - [127, 127]
     note: >-
-      score_tracker = ScoreEvolutionTracker() and cost_tracker = CostTracker()
-      are module-level mutable singletons. Should be instance variables on a
-      class or passed explicitly to avoid shared mutable state.
+      score_tracker = ScoreEvolutionTracker() and cost_tracker = CostTracker() are module-level mutable singletons.
+      Should be instance variables on a class or passed explicitly to avoid shared mutable state.
     critic_scopes_expected_to_recall:
       - - inop/engine/optimizer.py
     match_file_restriction:

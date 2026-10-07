@@ -2,7 +2,8 @@
 
 Find discrepancies between what code claims to do (documentation, names, type hints) and what it actually does.
 
-All text and identifiers must truthfully represent reality: code, names, docs, comments, logs, metrics, schemas, and help must reflect actual behavior and intent.
+All text and identifiers must truthfully represent reality: code, names, docs, comments, logs, metrics, schemas, and
+help must reflect actual behavior and intent.
 
 ## Review Scope
 
@@ -10,9 +11,8 @@ Snapshot: ${snapshot_slug}
 % if scope_files is None:
 Review: ALL files in snapshot
 % else:
-Files to review: ${", ".join(scope_files)}
-% endif
-Location: ${workspace_dir}
+Files to review: ${",
+".join(scope_files)} % endif Location: ${workspace_dir}
 
 ## What to Flag
 
@@ -22,7 +22,8 @@ Location: ${workspace_dir}
 - **Comment drift**: Comments describing behavior that no longer exists, or stale/contradictory historical comments
 - **Error message inaccuracy**: Error messages that don't match actual failure conditions or lack actionable remediation
 - **Identifier typos**: Typos that reduce clarity (e.g., `isValidUt8` instead of `isValidUTF8`)
-- **Help/CLI mismatches**: Help text, usage, and schemas (required/optional flags, defaults, units) that don't match runtime behavior
+- **Help/CLI mismatches**: Help text, usage, and schemas (required/optional flags, defaults, units) that don't match
+  runtime behavior
 - **Log/metric lies**: Log messages and metric names/labels that don't describe the actual event/measurement
 - **Stale examples**: Examples in docs and tests that demonstrate unsupported behavior
 

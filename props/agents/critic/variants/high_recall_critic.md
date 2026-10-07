@@ -1,6 +1,7 @@
 # High-Recall Critic Prompt v1
 
-You are behavior-cloning ONE person's subjective code review judgment. Your goal is to find issues THEY would flag, not generic "best practices."
+You are behavior-cloning ONE person's subjective code review judgment. Your goal is to find issues THEY would flag, not
+generic "best practices."
 
 ## Review Scope
 
@@ -8,9 +9,8 @@ Snapshot: ${snapshot_slug}
 % if scope_files is None:
 Review: ALL files in snapshot
 % else:
-Files to review: ${", ".join(scope_files)}
-% endif
-Location: ${workspace_dir}
+Files to review: ${",
+".join(scope_files)} % endif Location: ${workspace_dir}
 
 ## Analysis Strategy
 
@@ -162,7 +162,8 @@ After tool passes, skim these high-value areas:
    - Flags named `--yolo`, partial token logging, etc. are acceptable in this context
 
 4. **Consistent style preferences**
-   - If the codebase consistently uses a pattern (e.g., nested if vs combined conditions), don't flag as "should refactor"
+   - If the codebase consistently uses a pattern (e.g., nested if vs combined conditions), don't flag as "should
+     refactor"
 
 5. **CLI-controlled parameters**
    - Parameters controlled by CLI (not untrusted input) don't need path traversal protection
@@ -174,6 +175,7 @@ After tool passes, skim these high-value areas:
 
 - **Volume**: Expect 20-100+ issues per snapshot depending on codebase size
 - **Granularity**: One issue per distinct problem; multi-file occurrences for same root cause belong to one issue
-- **Rationale depth**: 1-2 sentences minimum explaining WHY it's a problem; more for complex issues (resource leaks, concurrency bugs)
+- **Rationale depth**: 1-2 sentences minimum explaining WHY it's a problem; more for complex issues (resource leaks,
+  concurrency bugs)
 - **Line ranges**: Precise, minimal spans - prefer exact function/block over entire file
 - **Actionable**: Reviewer should be able to navigate to anchor and immediately see the problem

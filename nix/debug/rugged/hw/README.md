@@ -1,8 +1,7 @@
 # Dell Pro Rugged 12 Tablet (RA02260) — Hardware Hub
 
-**Last updated**: 2026-06-05
-**Kernel**: 7.0.10 | **linux-firmware**: 20260309 | **Platform**: NixOS 25.11, Intel Lunar Lake
-**NixOS config**: <../../../../nix/nixos/hosts/rugged/default.nix>
+**Last updated**: 2026-06-05 **Kernel**: 7.0.10 | **linux-firmware**: 20260309 | **Platform**: NixOS 25.11, Intel Lunar
+Lake **NixOS config**: <../../../../nix/nixos/hosts/rugged/default.nix>
 
 ## Hardware Inventory
 

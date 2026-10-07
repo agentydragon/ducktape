@@ -3,11 +3,9 @@ metadata:
   name: SSO - Default authentication customizations
   labels:
     blueprints.goauthentik.io/description: >
-      Patches built-in Authentik stages so every app using
-      default-authentication-flow (which is all of them) gets the
-      "Sign in with Google" button, doesn't require MFA for users
-      who haven't enrolled, and keeps the resulting session for 30
-      days instead of only until the browser session ends.
+      Patches built-in Authentik stages so every app using default-authentication-flow (which is all of them) gets the
+      "Sign in with Google" button, doesn't require MFA for users who haven't enrolled, and keeps the resulting session
+      for 30 days instead of only until the browser session ends.
 
 # The custom-authentication-flow that this directory used to define
 # (together with a no-MFA binding set and a brand flow_authentication

@@ -6,15 +6,18 @@
 
 ## Pattern Description
 
-Type checker suppressions (`# type: ignore`, `# noqa`) silence warnings without fixing underlying issues. Most can be eliminated through proper typing, revealing and preventing bugs.
+Type checker suppressions (`# type: ignore`, `# noqa`) silence warnings without fixing underlying issues. Most can be
+eliminated through proper typing, revealing and preventing bugs.
 
 **Key principle**: The goal is NOT just to remove type: ignore comments, but to improve the code. Use this hierarchy:
 
 1. **BEST**: Clean code with no hacks for the type checker (proper types, refactoring, library upgrades)
-2. **GOOD**: Type assertions/narrowing that make the type checker happy (`cast()`, `isinstance()`, `assert`, `getattr()`)
+2. **GOOD**: Type assertions/narrowing that make the type checker happy (`cast()`, `isinstance()`, `assert`,
+   `getattr()`)
 3. **ACCEPTABLE**: Well-documented `type: ignore` with a clear explanation of why it's necessary
 
-Every suppression should either be eliminated through better code design, replaced with type assertions, or—if truly unavoidable—documented with a clear reason why it must remain.
+Every suppression should either be eliminated through better code design, replaced with type assertions, or—if truly
+unavoidable—documented with a clear reason why it must remain.
 
 ## Why Suppressions Are Problematic
 
@@ -204,7 +207,8 @@ rg --type py '# mypy:' -B 2 -A 1 --line-number
 4. **Type Narrowing**: Use `isinstance()`, `assert`, or `hasattr()` checks
 5. **Legitimate Suppressions**: AST visitors, monkey-patching, library limitations (keep with docs)
 
-**Process ALL output**: Read each suppression, use your judgment to identify which can be fixed using the hierarchy below.
+**Process ALL output**: Read each suppression, use your judgment to identify which can be fixed using the hierarchy
+below.
 
 **Fix Hierarchy (BEST → ACCEPTABLE)**:
 
@@ -249,7 +253,8 @@ For each suppression found, apply this hierarchy:
    - If legitimately needed: Add detailed comment explaining why
    - Examples: Monkey-patching, library limitations, AST visitor pattern
 
-**Priority**: Always prefer improving the code over adding type assertions, and prefer type assertions over keeping suppressions.
+**Priority**: Always prefer improving the code over adding type assertions, and prefer type assertions over keeping
+suppressions.
 
 ## Common Legitimate Suppressions
 

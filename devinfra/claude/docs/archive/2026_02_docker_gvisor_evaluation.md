@@ -1,13 +1,10 @@
 # Docker Evaluation Results — gVisor era (archived)
 
-**Date:** 2026-02-17 (archived 2026-06-10)
-**Environment:** Claude Code container with gVisor sandbox
+**Date:** 2026-02-17 (archived 2026-06-10) **Environment:** Claude Code container with gVisor sandbox
 
-> **Archived**: Claude Code sessions moved to Firecracker microVMs with a
-> real kernel; none of the workarounds below apply there. See the
-> [current Docker guidance](../docker_evaluation_results.md). Kept because the
-> workarounds are still correct _on actual gVisor hosts_, should one ever
-> reappear.
+> **Archived**: Claude Code sessions moved to Firecracker microVMs with a real kernel; none of the workarounds below
+> apply there. See the [current Docker guidance](../docker_evaluation_results.md). Kept because the workarounds are
+> still correct _on actual gVisor hosts_, should one ever reappear.
 
 ## Executive Summary
 
@@ -104,10 +101,12 @@ docker build --network=host -t image-name .
 
 1. **~~DNS in build containers~~** - SOLVED
    - Initial error: `DNS: transient error (try again later)` / `Temporary failure resolving 'archive.ubuntu.com'`
-   - Root cause: the TLS-inspecting egress proxy intercepts outbound connections; containers don't have the proxy's CA cert and can't authenticate
+   - Root cause: the TLS-inspecting egress proxy intercepts outbound connections; containers don't have the proxy's CA
+     cert and can't authenticate
    - Alpine `apk` reports "DNS error" when TLS validation fails (misleading error message)
    - Ubuntu `apt-get` reports "Temporary failure resolving" for the same reason
-   - **Solution for docker build**: pass proxy env vars as build args — BuildKit forwards them automatically to RUN steps:
+   - **Solution for docker build**: pass proxy env vars as build args — BuildKit forwards them automatically to RUN
+     steps:
      ```bash
      docker build --network=host \
        --build-arg HTTP_PROXY="$HTTP_PROXY" \
@@ -124,7 +123,9 @@ docker build --network=host -t image-name .
        -e https_proxy="$https_proxy" \
        ubuntu:24.04 apt-get update
      ```
-   - Note: `--build-arg` and `-e` work differently. `--build-arg` in docker build sets build-time variables handled by BuildKit. `-e` in docker run sets runtime environment variables. For `docker build`, use `--build-arg`; for `docker run`, use `-e`.
+   - Note: `--build-arg` and `-e` work differently. `--build-arg` in docker build sets build-time variables handled by
+     BuildKit. `-e` in docker run sets runtime environment variables. For `docker build`, use `--build-arg`; for
+     `docker run`, use `-e`.
    - Alpine solution: `apk --no-check-certificate add ...` (skips TLS) — works but bypasses cert validation
    - Ubuntu `apt-get` solution: pass proxy env vars via `--build-arg` as above
 

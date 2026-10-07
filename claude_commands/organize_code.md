@@ -4,7 +4,8 @@ description: Find violations of /code structure and propose cleanup operations
 
 # Organize /code Directory Structure
 
-You are tasked with auditing and organizing the `/code` directory to ensure it follows the `domain.tld/org/repo` convention defined in `/code/CLAUDE.md`.
+You are tasked with auditing and organizing the `/code` directory to ensure it follows the `domain.tld/org/repo`
+convention defined in `/code/CLAUDE.md`.
 
 ## Task Overview
 
@@ -70,8 +71,7 @@ For each violation, propose ONE of these operations:
 # Update symlink: ln -sf /code/{domain}/{org}/{repo} ~/code/{dir}
 ```
 
-**Option B: Delete and reclone**
-If the local copy seems stale or has issues:
+**Option B: Delete and reclone** If the local copy seems stale or has issues:
 
 ```bash
 # Find the git remote URL
@@ -80,16 +80,14 @@ If the local copy seems stale or has issues:
 # Create symlink: ln -sf /code/{domain}/{org}/{repo} ~/code/{dir}
 ```
 
-**Option C: Move to local/**
-For projects without remotes:
+**Option C: Move to local/** For projects without remotes:
 
 ```bash
 # Move: mv /code/{dir} /code/local/{owner}/{dir}
 # Update symlink: ln -sf /code/local/{owner}/{dir} ~/code/{dir}
 ```
 
-**Option D: Delete if duplicate/stale**
-If a proper version exists elsewhere
+**Option D: Delete if duplicate/stale** If a proper version exists elsewhere
 
 ### 5. Present Plan
 

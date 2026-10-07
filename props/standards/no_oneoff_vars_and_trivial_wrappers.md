@@ -3,14 +3,21 @@ title: No one-off variables or trivial pass-through wrappers
 kind: outcome
 ---
 
-Agent-edited code does not introduce single-use "one-off" variables that merely forward into the next call without adding non‑obvious value, and does not add pass‑through functions whose only behavior is to immediately call another function and return its result without a visible reason (e.g., boundary, adaptation, validation).
+Agent-edited code does not introduce single-use "one-off" variables that merely forward into the next call without
+adding non‑obvious value, and does not add pass‑through functions whose only behavior is to immediately call another
+function and return its result without a visible reason (e.g., boundary, adaptation, validation).
 
 ## Acceptance criteria (checklist)
 
-- Single-use variables that simply forward into the next call are inlined, unless they convey non‑obvious meaning, are reused, or materially improve readability
-- Functions that only call another function and return its result are absent, unless they add visible value (e.g., input normalization/validation, signature adaptation, dependency boundary, retries/backoff, structured logging/metrics, deprecation shim) and the reason is evident
-- Test helpers/wrappers are acceptable when they encapsulate setup defaults or fixtures; public API adapters are acceptable when they adapt names/types/contracts (documented inline)
-- Facade pass-throughs that stabilize an architectural boundary (e.g., App facade methods) are acceptable even if currently thin; include a brief docstring/comment stating the boundary and intent
+- Single-use variables that simply forward into the next call are inlined, unless they convey non‑obvious meaning, are
+  reused, or materially improve readability
+- Functions that only call another function and return its result are absent, unless they add visible value (e.g., input
+  normalization/validation, signature adaptation, dependency boundary, retries/backoff, structured logging/metrics,
+  deprecation shim) and the reason is evident
+- Test helpers/wrappers are acceptable when they encapsulate setup defaults or fixtures; public API adapters are
+  acceptable when they adapt names/types/contracts (documented inline)
+- Facade pass-throughs that stabilize an architectural boundary (e.g., App facade methods) are acceptable even if
+  currently thin; include a brief docstring/comment stating the boundary and intent
 
 ## Negative examples (violations)
 

@@ -4,7 +4,9 @@ Database connections using agent credentials for RLS enforcement.
 
 ## Overview
 
-When an agent authenticates to the backend with their Postgres credentials (`agent_{uuid}`), the backend uses those credentials for the database connection. This leverages PostgreSQL RLS policies directly, removing the need to duplicate access control logic in Python.
+When an agent authenticates to the backend with their Postgres credentials (`agent_{uuid}`), the backend uses those
+credentials for the database connection. This leverages PostgreSQL RLS policies directly, removing the need to duplicate
+access control logic in Python.
 
 ## Connection Types
 

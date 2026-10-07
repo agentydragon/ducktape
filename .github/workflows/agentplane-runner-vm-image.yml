@@ -67,8 +67,7 @@ jobs:
   resolve-merge-commit:
     name: Resolve PR merge commit
     if: >-
-      github.event_name == 'pull_request_target' &&
-      github.event.pull_request.head.repo.full_name != github.repository
+      github.event_name == 'pull_request_target' && github.event.pull_request.head.repo.full_name != github.repository
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
@@ -94,8 +93,7 @@ jobs:
   image:
     needs: [resolve-merge-commit]
     if: >-
-      always() &&
-      (github.event_name != 'pull_request_target' || needs.resolve-merge-commit.outputs.sha != '') &&
+      always() && (github.event_name != 'pull_request_target' || needs.resolve-merge-commit.outputs.sha != '') &&
       (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)
     uses: ./.github/workflows/nix-containerdisk-publish.yml
     with:

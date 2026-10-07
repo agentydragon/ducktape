@@ -4,48 +4,56 @@ title: Model of continuous asset growth
 
 <a href="https://colab.research.google.com/github/agentydragon/agentydragon.github.io/blob/devel/notebooks/2019-09-02-continuous-asset-growth.ipynb" target="_parent"><img src="https://colab.research.google.com/assets/colab-badge.svg" alt="Open In Colab"/></a>
 
-FIRE stands for financial independence/early retirement.
-The point is to save and invest money, and pay yourself a salary from the interest, eventually becoming independent on other sources of inocme.
+FIRE stands for financial independence/early retirement. The point is to save and invest money, and pay yourself a
+salary from the interest, eventually becoming independent on other sources of inocme.
 
 There is a relationship between:
 
 - How much you have invested
-- The interest your investment makes. (The widely cited "[Trinity study](https://en.wikipedia.org/wiki/Trinity_study)" suggests 4% as a "safe withdrawal rate".)
+- The interest your investment makes. (The widely cited "[Trinity study](https://en.wikipedia.org/wiki/Trinity_study)"
+  suggests 4% as a "safe withdrawal rate".)
 - The salary you pay yourself
 - How long your savings last for you
 
-I have a program named worthy ([on Github](https://github.com/agentydragon/worthy)) that tracks my net worth and models when will I be financially independent under various assumptions. Here I describe the slightly fancy math behind a
-more accurate model for this relationship I finished implementing today.
+I have a program named worthy ([on Github](https://github.com/agentydragon/worthy)) that tracks my net worth and models
+when will I be financially independent under various assumptions. Here I describe the slightly fancy math behind a more
+accurate model for this relationship I finished implementing today.
 
 I am probably rediscovering Financial Mathematics 101 ¯\\\_(ツ)\_/¯
 
 # The questions
 
 - The **"how much" question**: _I want to pay myself 1000 USD. My stocks grow 4% per year. How much money do I need?_
-- The **"how long until" question**: _I have 100 000 USD and save 3000 USD per month. How long until I have 200 000 USD?_
+- The **"how long until" question**: _I have 100 000 USD and save 3000 USD per month. How long until I have 200 000
+  USD?_
 
 # First shot
 
 Previously the tool's model was very basic, and answered the two questions as follows:
 
-- _I want to pay myself 1000 USD per month. My stocks grow 4% per year. How much money do I need?_
-  Well, the 4% you get per year should cover the yearly costs, so $1000 / (1.04 ^ {1/12} - 1) \approx306\ 000$ USD.
-- _I have 100 000 USD and save 3000 USD per month. How long until I have the 306 000 USD that you said I need?_
-  That I modelled linearly, with just $ (306000 - 100000) / (3000/\text{month}) \approx 69\ \text{months}$.
+- _I want to pay myself 1000 USD per month. My stocks grow 4% per year. How much money do I need?_ Well, the 4% you get
+  per year should cover the yearly costs, so $1000 / (1.04 ^ {1/12} - 1) \approx306\ 000$ USD.
+- _I have 100 000 USD and save 3000 USD per month. How long until I have the 306 000 USD that you said I need?_ That I
+  modelled linearly, with just $ (306000 - 100000) / (3000/\text{month}) \approx 69\ \text{months}$.
 
 # Problems
 
 # Assuming infinite retirement time
 
-If you pay yourself a monthly salary of $ \\$1000 $ and your monthly interest is $ \\$1000 $, your money will last forever, beyond your (likely) lifespan. If you are fine with retiring with $ \\$0 $, you can pay yourself a bit more than just the $ \\$1000$ interest.
+If you pay yourself a monthly salary of $ \\$1000 $ and your monthly interest is $ \\$1000 $, your money will last
+forever, beyond your (likely) lifespan. If you are fine with retiring with $ \\$0
+$, you can pay yourself a bit more than just the $ \\$1000$ interest.
 
 # Ignoring growth while saving
 
-"Take how much money I need - how much I have, divide by monthly savings" ignores that the money I saved up so far also earn interest, before I'm done saving. It's too pessimistic.
+"Take how much money I need - how much I have, divide by monthly savings" ignores that the money I saved up so far also
+earn interest, before I'm done saving. It's too pessimistic.
 
 # Stand aside, I know differential equations
 
-Let's model the depletion of your money as a function $f$, which will map number of years since retirement to the amount of money. You start with some initial amount $f(0)$. If we pretend you withdraw the salary for a year and add interest once yearly, we'd get:
+Let's model the depletion of your money as a function $f$, which will map number of years since retirement to the amount
+of money. You start with some initial amount $f(0)$. If we pretend you withdraw the salary for a year and add interest
+once yearly, we'd get:
 
 $$
 f(x+1) = f(x) + i\cdot f(x) - c
@@ -65,10 +73,12 @@ $$
 f'(x) = i'\cdot f(x) - c'
 $$
 
-(Where $i'$ plays _sorta_ the same role as $i$ - except it's not equal to $i$. For now let's pretend it's some unknown variable. Its relationship to $i$ will eventually pop out.)
+(Where $i'$ plays _sorta_ the same role as $i$ - except it's not equal to $i$. For now let's pretend it's some unknown
+variable. Its relationship to $i$ will eventually pop out.)
 
-[Wikipedia's Ordinary differential equations article](https://en.wikipedia.org/wiki/Ordinary_differential_equation) says that if $dy/dx = F(y)$, then the solution is \\(x=\\int^{y}{\\frac {d\\lambda }{F(\\lambda )}}+C\\).
-In our case, we have $F:x\mapsto ix-c'$, so:
+[Wikipedia's Ordinary differential equations article](https://en.wikipedia.org/wiki/Ordinary_differential_equation) says
+that if $dy/dx = F(y)$, then the solution is \\(x=\\int^{y}{\\frac {d\\lambda }{F(\\lambda )}}+C\\). In our case, we
+have $F:x\mapsto ix-c'$, so:
 
 $$x = \int^{f(x)}{\frac{1}{i'\lambda-c'} d\lambda}+C \stackrel{\text{Wolfram Alpha}}{=} \frac{\log(i'f(x)-c')}{i'} + C$$
 
@@ -80,11 +90,11 @@ i'f(x)-c' = \exp(i'(x-C)) \\
 f(x) = \frac{\exp(i'(x-C)) + c'}{i'}
 $$
 
-So, magic happened and I pulled the general form of $f(x)$ out of a hat. We know what are the $i$ and $c$ values when we assumed interest and costs happen only once yearly.
+So, magic happened and I pulled the general form of $f(x)$ out of a hat. We know what are the $i$ and $c$ values when we
+assumed interest and costs happen only once yearly.
 
-What about $i'$?
-Let's guess it.
-If we had no yearly costs (so $c=c'=0$), we wanted to have $f$ growing at a constant rate, gaining $i$ in interest per year:
+What about $i'$? Let's guess it. If we had no yearly costs (so $c=c'=0$), we wanted to have $f$ growing at a constant
+rate, gaining $i$ in interest per year:
 
 $$
 f(x+1) / f(x) = 1+i
@@ -117,7 +127,9 @@ $$
 f(x) = \frac{\exp(\log(1+i)(x-C)) + c}{\log(1+i)} = \frac{(1+i)^{x-C} + c}{\log(1+i)}
 $$
 
-$C$ mediates a multiplicative factor before $(1+i)^x$. $C$ is just _some constant that makes the function work with the $f(0)$ boundary condition_. Instead of wiggling the $C$, we can instead wiggle $C_2=(1+i)^-C$, which is the actual multiplicative factor, and relabel $C_2$ as $C$. (It's an abuse of notation, but an OK one. \*handwave\*)
+$C$ mediates a multiplicative factor before $(1+i)^x$. $C$ is just _some constant that makes the function work with the
+$f(0)$ boundary condition_. Instead of wiggling the $C$, we can instead wiggle $C_2=(1+i)^-C$, which is the actual
+multiplicative factor, and relabel $C_2$ as $C$. (It's an abuse of notation, but an OK one. \*handwave\*)
 
 $$
 f(x) = C \cdot (1+i)^{x} + \frac{c}{\log(1+i)}
@@ -168,9 +180,11 @@ And it gives:
     after 9 years, got: 12814.368806706276
     after 10 years, got: 1088.512347280921
 
-Cool, it seems to be giving reasonable results. But our two questions were: _how much money do I need to pay myself a given salary_ and _how long until I save up the money I need_.
+Cool, it seems to be giving reasonable results. But our two questions were: _how much money do I need to pay myself a
+given salary_ and _how long until I save up the money I need_.
 
-Let's instead first solve another question: _if I have 100 000 USD and spend 1000 USD per month, how long will it last me_.
+Let's instead first solve another question: _if I have 100 000 USD and spend 1000 USD per month, how long will it last
+me_.
 
 For that, we just need to invert the familiar function:
 
@@ -199,18 +213,24 @@ Cool, this matches what the Python $f(x)$ predicted above - after 10 years, it w
 
 # Answering the _how long_ question
 
-To answer the question "if I now have 100 000 USD collecting 4% interest per year and put in 1000 USD per month, how long until I have 306 000 USD", we can use the same procedure - just plug in a target $f(x)=306\ 000$ instead of zero and set a negative $c$ to represent savings instead of costs. Details left as homework for the curious reader.
+To answer the question "if I now have 100 000 USD collecting 4% interest per year and put in 1000 USD per month, how
+long until I have 306 000 USD", we can use the same procedure - just plug in a target $f(x)=306\ 000$ instead of zero
+and set a negative $c$ to represent savings instead of costs. Details left as homework for the curious reader.
 
 If you're curious about the Go code, see
 [this commit](https://github.com/agentydragon/worthy/commit/c48ded40640cda8e3851fd0b2a9512f95ae89997).
 
 # Answering the _how much_ question
 
-As a reminder, the "how much" question asks: _if I want to pay myself a salary of 1000 USD per month, how much money do I need_. Previously, I solved that with saying "the interest should cover all the costs", which resulted in an investment that would last _forever_ (a _perpetuity_). But now have a function that models an investment under conditions of withdrawing (or saving) money, and we can use that to model with a finite time horizon, and get a better estimate.
+As a reminder, the "how much" question asks: _if I want to pay myself a salary of 1000 USD per month, how much money do
+I need_. Previously, I solved that with saying "the interest should cover all the costs", which resulted in an
+investment that would last _forever_ (a _perpetuity_). But now have a function that models an investment under
+conditions of withdrawing (or saving) money, and we can use that to model with a finite time horizon, and get a better
+estimate.
 
-Say that we know that we are 40 years old and want our money to run out on our 100th birthday. So, after $x=60$ years
-of paying ourselves, say, 1000 USD per month (so the yearly costs $c=12000$), we want to have $f(x)=0$.
-How much initial money $f(0)$ do we need for that stunt of precious timing?
+Say that we know that we are 40 years old and want our money to run out on our 100th birthday. So, after $x=60$ years of
+paying ourselves, say, 1000 USD per month (so the yearly costs $c=12000$), we want to have $f(x)=0$. How much initial
+money $f(0)$ do we need for that stunt of precious timing?
 
 Okay, from above, we know:
 
@@ -250,4 +270,6 @@ print(f0)
 
 Cool!
 
-Recalling the numbers in the first section, the first algorithm which assumed an infinite horizon prescribed 306 000 USD for that situation ("1000 USD per month at 4% interest rate"). This more precise estimate cut 30 000 USD from the number :)
+Recalling the numbers in the first section, the first algorithm which assumed an infinite horizon prescribed 306 000 USD
+for that situation ("1000 USD per month at 4% interest rate"). This more precise estimate cut 30 000 USD from the number
+:)

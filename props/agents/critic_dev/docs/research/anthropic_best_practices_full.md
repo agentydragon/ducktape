@@ -2,13 +2,15 @@
 
 ## Overview
 
-Anthropic has published extensive guidance on effective prompt engineering for Claude models, emphasizing structured prompts, explicit instructions, and context engineering. These principles generalize well to other LLMs.
+Anthropic has published extensive guidance on effective prompt engineering for Claude models, emphasizing structured
+prompts, explicit instructions, and context engineering. These principles generalize well to other LLMs.
 
 ## Core Principles
 
 ### 1. Be Clear and Direct
 
-**Principle:** Explicitly state what you want the model to do. Don't rely on the model to infer intent from vague instructions.
+**Principle:** Explicitly state what you want the model to do. Don't rely on the model to infer intent from vague
+instructions.
 
 **Good:**
 
@@ -23,11 +25,13 @@ List each finding with file path and line number.
 Take a look at this code and see if anything seems off.
 ```
 
-**Why it matters:** Models perform better when the task is precisely defined. Ambiguity leads to inconsistent outputs and requires the model to guess intent.
+**Why it matters:** Models perform better when the task is precisely defined. Ambiguity leads to inconsistent outputs
+and requires the model to guess intent.
 
 ### 2. Use Structured Prompts
 
-**Principle:** Organize prompts with clear sections, headers, and delimiters. Use XML tags, Markdown headers, or other structure to separate concerns.
+**Principle:** Organize prompts with clear sections, headers, and delimiters. Use XML tags, Markdown headers, or other
+structure to separate concerns.
 
 **Pattern:**
 
@@ -69,8 +73,8 @@ Take a look at this code and see if anything seems off.
 - **Domain context:** Specialized knowledge the model might lack
 - **Constraint context:** What NOT to do, edge cases to handle
 
-**Anti-pattern:** Dumping entire documentation into the prompt
-**Better approach:** Summarize key concepts, link to details if needed
+**Anti-pattern:** Dumping entire documentation into the prompt **Better approach:** Summarize key concepts, link to
+details if needed
 
 ### 4. Use Examples Effectively
 
@@ -95,12 +99,12 @@ Take a look at this code and see if anything seems off.
 **Effective role-setting:**
 
 ```markdown
-You are an expert code reviewer with 10 years of experience in Python.
-You prioritize semantic issues (correctness, maintainability) over style.
-You understand the difference between intentional patterns and mistakes.
+You are an expert code reviewer with 10 years of experience in Python. You prioritize semantic issues (correctness,
+maintainability) over style. You understand the difference between intentional patterns and mistakes.
 ```
 
-**Why it matters:** Role-setting activates relevant knowledge and biases the model toward appropriate outputs (e.g., "expert" vs "beginner" affects verbosity and assumptions).
+**Why it matters:** Role-setting activates relevant knowledge and biases the model toward appropriate outputs (e.g.,
+"expert" vs "beginner" affects verbosity and assumptions).
 
 ### 6. Specify Output Format Explicitly
 
@@ -111,16 +115,12 @@ You understand the difference between intentional patterns and mistakes.
 ```markdown
 ## Output Format
 
-Return a JSON object with this structure:
-{
-"issues": [
-{"type": "dead_code", "file": "foo.py", "line": 42, "description": "..."}
-],
-"summary": "Found 3 issues: 2 dead imports, 1 unused variable"
-}
+Return a JSON object with this structure: { "issues": [ {"type": "dead_code", "file": "foo.py", "line": 42,
+"description": "..."} ], "summary": "Found 3 issues: 2 dead imports, 1 unused variable" }
 ```
 
-**Why it matters:** Prevents the model from choosing its own format, enables automated parsing, ensures consistent outputs across runs.
+**Why it matters:** Prevents the model from choosing its own format, enables automated parsing, ensures consistent
+outputs across runs.
 
 ### 7. Handle Ambiguity Explicitly
 
@@ -136,7 +136,8 @@ When you encounter duplication:
 - If unsure, flag with "UNSURE:" prefix for human review
 ```
 
-**Why it matters:** Reduces variance, makes outputs more deterministic, helps the model handle edge cases without guessing.
+**Why it matters:** Reduces variance, makes outputs more deterministic, helps the model handle edge cases without
+guessing.
 
 ### 8. Use Chain-of-Thought for Complex Reasoning
 
@@ -154,7 +155,8 @@ Before flagging an issue, explain your reasoning:
 Then provide the structured issue report.
 ```
 
-**Why it matters:** Improves reasoning quality (model catches its own errors), provides interpretability, helps debug when outputs are wrong.
+**Why it matters:** Improves reasoning quality (model catches its own errors), provides interpretability, helps debug
+when outputs are wrong.
 
 ### 9. Iterate Based on Observed Failures
 
@@ -191,7 +193,8 @@ Then provide the structured issue report.
 - Complex multi-step arithmetic (use calculator tools)
 - Maintaining perfect consistency over very long outputs
 
-**Implication:** Design prompts that play to strengths (e.g., "analyze this code and explain issues" not "count the exact number of characters on line 42").
+**Implication:** Design prompts that play to strengths (e.g., "analyze this code and explain issues" not "count the
+exact number of characters on line 42").
 
 ## Claude-Specific Considerations
 
@@ -203,7 +206,8 @@ Claude models (particularly Claude 3+) support large context windows (100K+ toke
 - **Long-range dependencies:** Find cross-file patterns without external tools
 - **Rich examples:** Include multiple diverse examples without truncation
 
-**Best practice:** Structure long contexts with clear delimiters (XML tags, Markdown sections) so the model can navigate efficiently.
+**Best practice:** Structure long contexts with clear delimiters (XML tags, Markdown sections) so the model can navigate
+efficiently.
 
 ### Reasoning Models (Claude 4+)
 
@@ -233,21 +237,28 @@ Claude is trained with Constitutional AI (harmlessness, helpfulness, honesty). I
 
 **How these principles apply to our project:**
 
-1. **Structured prompts:** Our rewritten prompt optimizer system prompt uses clear sections (Mission, Strategic Principles, Toolkit, Problem Space)
+1. **Structured prompts:** Our rewritten prompt optimizer system prompt uses clear sections (Mission, Strategic
+   Principles, Toolkit, Problem Space)
 
-2. **Explicit instructions:** We removed vague advice ("be creative") and added concrete guidance (test on full-snapshot train before validation)
+2. **Explicit instructions:** We removed vague advice ("be creative") and added concrete guidance (test on full-snapshot
+   train before validation)
 
-3. **Context engineering:** We provide strategic context (two-distribution problem, why baseline is low) without overwhelming with API documentation
+3. **Context engineering:** We provide strategic context (two-distribution problem, why baseline is low) without
+   overwhelming with API documentation
 
 4. **Expert role-setting:** We frame the optimizer as an "expert prompt engineer" not a novice needing hand-holding
 
-5. **Output expectations:** We clarify the optimizer should produce prompt text files and use specific tools (upsert_prompt, run_critic_on_example)
+5. **Output expectations:** We clarify the optimizer should produce prompt text files and use specific tools
+   (upsert_prompt, run_critic_on_example)
 
-6. **Iterative refinement:** We emphasize data-driven iteration (analyze failures → diagnose → iterate) rather than fixed plans
+6. **Iterative refinement:** We emphasize data-driven iteration (analyze failures → diagnose → iterate) rather than
+   fixed plans
 
-7. **Leverage capabilities:** We encourage the optimizer to write custom analysis scripts (playing to Python/SQL strengths) rather than trying to do everything via tool calls
+7. **Leverage capabilities:** We encourage the optimizer to write custom analysis scripts (playing to Python/SQL
+   strengths) rather than trying to do everything via tool calls
 
-**Key takeaway:** Effective prompts are clear, structured, context-rich, and empirically refined. They assume appropriate expertise level and provide frameworks rather than step-by-step procedures.
+**Key takeaway:** Effective prompts are clear, structured, context-rich, and empirically refined. They assume
+appropriate expertise level and provide frameworks rather than step-by-step procedures.
 
 ## References
 
@@ -365,4 +376,5 @@ Be concise and brief.
 9. **Iteration:** Test empirically, diagnose failures, refine
 10. **Play to strengths:** Leverage what models do well, use tools for the rest
 
-**Meta-principle:** Prompt engineering is empirical, not theoretical. Write a reasonable first draft based on principles, then iterate based on observed behavior.
+**Meta-principle:** Prompt engineering is empirical, not theoretical. Write a reasonable first draft based on
+principles, then iterate based on observed behavior.

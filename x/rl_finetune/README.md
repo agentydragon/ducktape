@@ -1,18 +1,16 @@
 # RL Fine-tuning Experiments
 
-Fine-tune open-source LLMs with GRPO (Group Relative Policy Optimization) on
-agentic tasks.
+Fine-tune open-source LLMs with GRPO (Group Relative Policy Optimization) on agentic tasks.
 
 ## Wordle (hello-world)
 
-Train Qwen3-1.7B to play Wordle via multi-step tool calling. Uses TRL's
-`environment_factory` with the TextArena Wordle environment.
+Train Qwen3-1.7B to play Wordle via multi-step tool calling. Uses TRL's `environment_factory` with the TextArena Wordle
+environment.
 
 ### Two-GPU server mode (recommended)
 
-`trl` is not on `PATH` — `wordle_train.py` is a PEP 723 inline-deps script,
-so its `trl` install lives in a hash-named uv cache env. Spawn the server
-through `uv run --with` so we don't have to chase that path:
+`trl` is not on `PATH` — `wordle_train.py` is a PEP 723 inline-deps script, so its `trl` install lives in a hash-named
+uv cache env. Spawn the server through `uv run --with` so we don't have to chase that path:
 
 ```bash
 # Terminal 1: vLLM inference on GPU 0
@@ -25,8 +23,7 @@ CUDA_VISIBLE_DEVICES=0 uv run --no-project \
 CUDA_VISIBLE_DEVICES=1 uv run wordle_train.py
 ```
 
-Health checks once the server is up: `curl http://localhost:8000/health/`
-returns `{"status":"ok"}`.
+Health checks once the server is up: `curl http://localhost:8000/health/` returns `{"status":"ok"}`.
 
 ### Single-GPU colocate mode
 
@@ -36,13 +33,11 @@ uv run wordle_train.py --colocate
 
 ### Reasoning mode
 
-Qwen3 thinking mode is enabled with `--think`. In TRL, `--max-completion-length`
-is the total rollout budget across the multi-turn tool loop, not a per-guess
-budget, so thinking mode needs much more completion budget than non-reasoning
+Qwen3 thinking mode is enabled with `--think`. In TRL, `--max-completion-length` is the total rollout budget across the
+multi-turn tool loop, not a per-guess budget, so thinking mode needs much more completion budget than non-reasoning
 mode.
 
-For a one-GPU vLLM server plus one-GPU trainer setup that gives Wordle enough
-room for six thinking/tool rounds:
+For a one-GPU vLLM server plus one-GPU trainer setup that gives Wordle enough room for six thinking/tool rounds:
 
 ```bash
 # Terminal 1: vLLM inference on GPU 0
@@ -71,10 +66,9 @@ python bench.py --suite thinking --report-only
 python bench.py --suite thinking --probes think_8192_mem075 --max-steps 1
 ```
 
-The current best measured probe is `think_8192_mem075`: 16k vLLM context,
-8192-token rollout budget, vLLM peak about 27.4 GiB, trainer peak about
-29.8 GiB, median six Wordle feedback rounds, and 14.1% clipped completions.
-See `runs/reasoning_bench/results.md` for the measured table and caveats.
+The current best measured probe is `think_8192_mem075`: 16k vLLM context, 8192-token rollout budget, vLLM peak about
+27.4 GiB, trainer peak about 29.8 GiB, median six Wordle feedback rounds, and 14.1% clipped completions. See
+`runs/reasoning_bench/results.md` for the measured table and caveats.
 
 ### Monitor
 

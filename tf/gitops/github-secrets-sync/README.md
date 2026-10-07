@@ -1,9 +1,8 @@
 # GitHub Secrets Sync PAT
 
-`github-secrets-sync-pat` is a fine-grained GitHub PAT. Its canonical encrypted
-Secret is `external-creds/github-agentydragon.sops.yaml` in `ducktape-flux`.
-External Secrets Operator creates namespace-local `github-secrets-sync-pat`
-copies for the approved consumers.
+`github-secrets-sync-pat` is a fine-grained GitHub PAT. Its canonical encrypted Secret is
+`external-creds/github-agentydragon.sops.yaml` in `ducktape-flux`. External Secrets Operator creates namespace-local
+`github-secrets-sync-pat` copies for the approved consumers.
 
 The token should be scoped to selected repositories:
 
@@ -23,28 +22,23 @@ Required repository permissions:
 
 `Metadata: read` is implicit for fine-grained PATs.
 
-This shared PAT is deliberately broad because it backs several small GitOps
-modules and token-rotation jobs. If those ownership boundaries need to tighten,
-split this into purpose-specific PATs instead of removing individual permissions
+This shared PAT is deliberately broad because it backs several small GitOps modules and token-rotation jobs. If those
+ownership boundaries need to tighten, split this into purpose-specific PATs instead of removing individual permissions
 from the shared token.
 
-The source grants explicitly approve `flux-system`, `agents-infra`, and
-`nix-cache`. Each namespace owns its `external-creds-reader` ServiceAccount and
-ExternalSecret; Reflector is not part of this credential's distribution path.
+The source grants explicitly approve `flux-system`, `agents-infra`, and `nix-cache`. Each namespace owns its
+`external-creds-reader` ServiceAccount and ExternalSecret; Reflector is not part of this credential's distribution path.
 
-`PROPS_REGISTRY_URL` existed in GitHub before Terraform owned it, so
-`tf/gitops/github-secrets-sync/main.tf` includes an import block for
-`ducktape:PROPS_REGISTRY_URL`. Keep that import block until the resource is
-present in tofu-controller's remote state.
+`PROPS_REGISTRY_URL` existed in GitHub before Terraform owned it, so `tf/gitops/github-secrets-sync/main.tf` includes an
+import block for `ducktape:PROPS_REGISTRY_URL`. Keep that import block until the resource is present in
+tofu-controller's remote state.
 
-The `FORGEJO_IMAGES_USERNAME` and `FORGEJO_IMAGES_PASSWORD` secrets for
-`gaffer-private` come from the canonical `forgejo-images/forgejo-images-creds`
-Secret. Do not copy those values into GitHub manually. The Terraform reads that
-Secret through `data "kubernetes_secret"`; until it exists the plan fails and
-tofu-controller retries.
+The `FORGEJO_IMAGES_USERNAME` and `FORGEJO_IMAGES_PASSWORD` secrets for `gaffer-private` come from the canonical
+`forgejo-images/forgejo-images-creds` Secret. Do not copy those values into GitHub manually. The Terraform reads that
+Secret through `data "kubernetes_secret"`; until it exists the plan fails and tofu-controller retries.
 
-If the `github-secrets-sync` Terraform starts failing, check the
-accepted-permission header for the failing endpoint before broadening the token:
+If the `github-secrets-sync` Terraform starts failing, check the accepted-permission header for the failing endpoint
+before broadening the token:
 
 ```bash
 TOKEN=$(kubectl -n flux-system get secret github-secrets-sync-pat \

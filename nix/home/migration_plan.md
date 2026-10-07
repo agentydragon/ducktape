@@ -2,10 +2,9 @@
 
 ## Current State
 
-Nix home-manager (flakes, nixpkgs 25.11) manages user-level configuration.
-NixOS hosts inline home-manager through `nixos-rebuild`; standalone
-`homeConfigurations` remain for non-NixOS and test-only hosts. Ansible handles
-system-level setup on non-NixOS machines (apt packages, services, udev rules).
+Nix home-manager (flakes, nixpkgs 25.11) manages user-level configuration. NixOS hosts inline home-manager through
+`nixos-rebuild`; standalone `homeConfigurations` remain for non-NixOS and test-only hosts. Ansible handles system-level
+setup on non-NixOS machines (apt packages, services, udev rules).
 
 ### Deployment
 
@@ -24,8 +23,7 @@ home-manager switch --impure --flake ~/code/ducktape#atlas
 
 ### Per-Host Status
 
-Ansible-role columns cross-checked against the playbooks (`ansible/{gpd,vps,atlas}.yaml`)
-and `ansible/roles/`.
+Ansible-role columns cross-checked against the playbooks (`ansible/{gpd,vps,atlas}.yaml`) and `ansible/roles/`.
 
 | Host         | Nix status          | Ansible roles                                 | Notes                                           |
 | ------------ | ------------------- | --------------------------------------------- | ----------------------------------------------- |
@@ -62,9 +60,8 @@ and `ansible/roles/`.
 
 ### GPD Migration
 
-GPD is the last host using the `legacy_gui` role. It duplicates what Nix already
-provides (GUI apps, GNOME extensions, nerd fonts). Once GPD runs `home-manager
-switch`, remove the legacy role from `gpd.yaml` and delete:
+GPD is the last host using the `legacy_gui` role. It duplicates what Nix already provides (GUI apps, GNOME extensions,
+nerd fonts). Once GPD runs `home-manager switch`, remove the legacy role from `gpd.yaml` and delete:
 
 - `ansible/roles/legacy_gui`
 
@@ -86,8 +83,10 @@ switch`, remove the legacy role from `gpd.yaml` and delete:
 
 ### From Atlas Deployment (Debian/Proxmox)
 
-1. **Shell initialization**: Debian's `/etc/profile` resets PATH unconditionally, breaking Nix paths — don't source `/etc/profile` in `.shellrc`
-2. **Installation cleanup**: Failed root installations leave artifacts (backup files, nixbld users/groups, `/nix` directory) that block reinstalls
+1. **Shell initialization**: Debian's `/etc/profile` resets PATH unconditionally, breaking Nix paths — don't source
+   `/etc/profile` in `.shellrc`
+2. **Installation cleanup**: Failed root installations leave artifacts (backup files, nixbld users/groups, `/nix`
+   directory) that block reinstalls
 3. **Multi-user setup**: Requires `NIX_REMOTE=daemon` for proper operation
 
 ## Rollback

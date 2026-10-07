@@ -1,16 +1,18 @@
 ---
 name: lint_audit
-description: "Audit and improve linter/checker configuration across any repo and language. Discovers languages, proposes useful checks to enable with real examples, creates PRs for approved checks, documents rejected ones. Also fixes misconfigurations, updates outdated versions, removes stale exclusions, and proposes tightenings."
+description:
+  "Audit and improve linter/checker configuration across any repo and language. Discovers languages, proposes useful
+  checks to enable with real examples, creates PRs for approved checks, documents rejected ones. Also fixes
+  misconfigurations, updates outdated versions, removes stale exclusions, and proposes tightenings."
 argument-hint: "[focus area, e.g. 'python', 'security', 'all']"
 ---
 
 # Lint Audit
 
-Comprehensive linter/checker audit for any repository. Discovers what's in use,
-proposes improvements, and implements approved changes as individual PRs.
+Comprehensive linter/checker audit for any repository. Discovers what's in use, proposes improvements, and implements
+approved changes as individual PRs.
 
-**Argument:** `$ARGUMENTS` (optional focus area — a language, category like
-"security", or "all" for everything)
+**Argument:** `$ARGUMENTS` (optional focus area — a language, category like "security", or "all" for everything)
 
 ## Phase 1: Discovery
 
@@ -20,7 +22,8 @@ Gather the full picture before proposing anything.
 
 Scan the repo root for:
 
-- **Python**: `pyproject.toml`, `ruff.toml`, `.flake8`, `setup.cfg`, `mypy.ini`, `.mypy.ini`, `pyrightconfig.json`, `pylintrc`
+- **Python**: `pyproject.toml`, `ruff.toml`, `.flake8`, `setup.cfg`, `mypy.ini`, `.mypy.ini`, `pyrightconfig.json`,
+  `pylintrc`
 - **JavaScript/TypeScript**: `eslint.config.*`, `.eslintrc.*`, `tsconfig.json`, `biome.json`, `prettier.config.*`
 - **Rust**: `Cargo.toml`, `clippy.toml`, `.clippy.toml`, `rustfmt.toml`
 - **Go**: `golangci.yml`, `.golangci.yml`
@@ -45,18 +48,18 @@ For each linter found:
 1. **Read the config** to understand what's enabled, ignored, and per-file-ignored
 2. **Check for documented exclusions** — comments explaining why rules are off
 3. **Check for version pins** — are they current?
-4. **Verify every suppression against the code it targets** — any config that
-   disables, weakens, or overrides default checker behavior for a subset of code
-   must be validated against that code. This applies across ALL checkers and
-   languages. The principle: if the reason for the suppression no longer exists
-   in the code, the suppression is stale and should be removed.
+4. **Verify every suppression against the code it targets** — any config that disables, weakens, or overrides default
+   checker behavior for a subset of code must be validated against that code. This applies across ALL checkers and
+   languages. The principle: if the reason for the suppression no longer exists in the code, the suppression is stale
+   and should be removed.
 
-   For each suppression found, grep/run the affected files to confirm the
-   suppressed pattern still exists. Types of suppressions to check:
+   For each suppression found, grep/run the affected files to confirm the suppressed pattern still exists. Types of
+   suppressions to check:
 
    **Rule-level exclusions** (all checkers):
    - ruff `per-file-ignores`, `ignore` list → run the rule on those files, 0 violations = stale
-   - mypy `ignore_errors`, `ignore_missing_imports` per-module → check if the package/module still has the stated problem
+   - mypy `ignore_errors`, `ignore_missing_imports` per-module → check if the package/module still has the stated
+     problem
    - eslint per-file rule disables, inline `// eslint-disable` → check if the triggering pattern still exists
    - clippy `#[allow(...)]` attributes → run the lint on that code
    - shellcheck `# shellcheck disable=` directives → check if the flagged pattern remains
@@ -70,12 +73,15 @@ For each linter found:
    - Environment-specific plugins → verify the framework is used in that directory
 
    **Broad exclusions** (all checkers):
-   - Entire directories excluded from linting → check if the directory still contains the kind of code that justified exclusion
-   - `exclude` patterns in ruff.toml, mypy.ini, `.pre-commit-config.yaml` → verify the excluded paths still exist and still need exclusion
+   - Entire directories excluded from linting → check if the directory still contains the kind of code that justified
+     exclusion
+   - `exclude` patterns in ruff.toml, mypy.ini, `.pre-commit-config.yaml` → verify the excluded paths still exist and
+     still need exclusion
 
    Report every stale suppression in Category A.
 
-5. **Check for misconfigurations** — duplicate entries, conflicting settings, invalid TOML/YAML, rules that don't exist in the current version
+5. **Check for misconfigurations** — duplicate entries, conflicting settings, invalid TOML/YAML, rules that don't exist
+   in the current version
 6. **Find existing cleanup PRs** — search open PRs for lint/check-related changes
 
 ### 1c. Find candidate checks
@@ -85,26 +91,26 @@ For each linter, enumerate rules/checks that are:
 - Available in the installed version but not enabled
 - Not already documented as intentionally excluded
 
-For each candidate, count actual violations in the repo. Skip candidates with 0 violations (mention them as "free guardrails" separately).
+For each candidate, count actual violations in the repo. Skip candidates with 0 violations (mention them as "free
+guardrails" separately).
 
 ## Phase 2: Present findings
 
-Organize findings into categories, presented to the user in descending order of
-value:
+Organize findings into categories, presented to the user in descending order of value:
 
 ### Category A: Misconfigurations and staleness
 
 - Version bumps available (current vs latest)
 - Invalid/duplicate config entries
-- Stale suppressions (any rule exclusion, per-file ignore, inline disable, directory
-  exclusion, or config override whose justification no longer holds — verified by running
-  the suppressed check or grepping for the pattern that motivated it)
+- Stale suppressions (any rule exclusion, per-file ignore, inline disable, directory exclusion, or config override whose
+  justification no longer holds — verified by running the suppressed check or grepping for the pattern that motivated
+  it)
 - Conflicting settings between tools
 
 ### Category B: Free guardrails
 
-Checks with 0 current violations that can be enabled as pure guardrails (no code
-changes needed). List them all — these are always worth enabling.
+Checks with 0 current violations that can be enabled as pure guardrails (no code changes needed). List them all — these
+are always worth enabling.
 
 ### Category C: Checks worth enabling
 
@@ -124,8 +130,7 @@ For each candidate check with violations, present:
 {fixed code}
 ````
 
-**Example 2** — `path/to/other.py:87`:
-...
+**Example 2** — `path/to/other.py:87`: ...
 
 **Effort:** {Low/Medium/High} — {auto-fixable? mechanical? needs judgment?}
 

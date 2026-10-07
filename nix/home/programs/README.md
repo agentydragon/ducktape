@@ -1,6 +1,7 @@
 # Generic Home-Manager Modules
 
-This directory contains **generic home-manager-style modules** that follow upstream conventions and could potentially be contributed to nixpkgs.
+This directory contains **generic home-manager-style modules** that follow upstream conventions and could potentially be
+contributed to nixpkgs.
 
 ## Design Principles
 

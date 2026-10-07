@@ -26,19 +26,17 @@ Gui.showMainWindow()
           QDialog::exec()          ← BLOCKS: modal event loop waiting for button click
 ```
 
-`isCurrentVersionKnown()` returns `false` when the FreeCAD versioned config directory
-(e.g. `~/.local/share/FreeCAD/1.0`) does not exist. On a fresh container/RBE worker, it
-doesn't exist. `QDialog::exec()` then starts a blocking modal event loop waiting for the
-user to click a migration dialog — which is **invisible** on the offscreen platform.
-Nobody clicks it. The process hangs forever.
+`isCurrentVersionKnown()` returns `false` when the FreeCAD versioned config directory (e.g.
+`~/.local/share/FreeCAD/1.0`) does not exist. On a fresh container/RBE worker, it doesn't exist. `QDialog::exec()` then
+starts a blocking modal event loop waiting for the user to click a migration dialog — which is **invisible** on the
+offscreen platform. Nobody clicks it. The process hangs forever.
 
-This is why `showMainWindow()` never returns under `QT_QPA_PLATFORM=offscreen` on a
-fresh environment: it blocks before it can return to the Python caller.
+This is why `showMainWindow()` never returns under `QT_QPA_PLATFORM=offscreen` on a fresh environment: it blocks before
+it can return to the Python caller.
 
 ## Why xvfb-run Works
 
-With `xvfb-run` providing a real X11 display (`xcb` platform), the dialog becomes
-visible. Either:
+With `xvfb-run` providing a real X11 display (`xcb` platform), the dialog becomes visible. Either:
 
 - The RBE Docker image already has the versioned config directory (dialog is skipped), or
 - Qt's event loop processes the dialog correctly on the real X11 display
@@ -62,8 +60,8 @@ import pathlib
 pathlib.Path.home().joinpath(".local/share/FreeCAD/1.0").mkdir(parents=True, exist_ok=True)
 ```
 
-Alternatively, set `FREECAD_USER_HOME` to a path with `usingCustomDirectories()` returning
-`true`, which causes `DlgVersionMigrator::exec()` to return `0` immediately:
+Alternatively, set `FREECAD_USER_HOME` to a path with `usingCustomDirectories()` returning `true`, which causes
+`DlgVersionMigrator::exec()` to return `0` immediately:
 
 ```bash
 FREECAD_USER_HOME=/tmp/freecad-home xvfb-run -a freecadcmd script.py
@@ -71,8 +69,8 @@ FREECAD_USER_HOME=/tmp/freecad-home xvfb-run -a freecadcmd script.py
 
 ## Current Solution
 
-We use `xvfb-run -a freecadcmd` (see `conftest.py:freecad_headless`). This sidesteps the
-offscreen hang. The root cause fix above is a fallback if xvfb is unavailable.
+We use `xvfb-run -a freecadcmd` (see `conftest.py:freecad_headless`). This sidesteps the offscreen hang. The root cause
+fix above is a fallback if xvfb is unavailable.
 
 ## References
 

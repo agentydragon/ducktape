@@ -2,7 +2,8 @@
 
 ## Overview
 
-`wt` follows a **clean client-server architecture** with explicit dependency injection and clear separation between client operations and daemon-handled services.
+`wt` follows a **clean client-server architecture** with explicit dependency injection and clear separation between
+client operations and daemon-handled services.
 
 ## Directory Structure
 

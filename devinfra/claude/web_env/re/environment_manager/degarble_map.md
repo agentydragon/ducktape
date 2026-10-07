@@ -1,45 +1,36 @@
 # Garbled package map — environment-manager `0b86a2a0`
 
-`environment-manager` is built with [garble](https://github.com/burrowers/garble),
-which rewrites every non-stdlib package and identifier name to a random token.
-The mapping below recovers what those tokens mean.
+`environment-manager` is built with [garble](https://github.com/burrowers/garble), which rewrites every non-stdlib
+package and identifier name to a random token. The mapping below recovers what those tokens mean.
 
-**The map is per-build.** Garble derives names from a build seed, so the tokens
-here apply only to Build ID `0b86a2a0dbc9411eb18435e1c56822b0156f90fe`. A new
-binary needs the map rebuilt — the method is stable, the names are not. (For
-scale: the previous binary called the `cmd` package `FgSB6rLPg` and cobra
-`QHh5pCW`; this one calls them `qqGXzsqMa` and `iY5hxRroU`.)
+**The map is per-build.** Garble derives names from a build seed, so the tokens here apply only to Build ID
+`0b86a2a0dbc9411eb18435e1c56822b0156f90fe`. A new binary needs the map rebuilt — the method is stable, the names are
+not. (For scale: the previous binary called the `cmd` package `FgSB6rLPg` and cobra `QHh5pCW`; this one calls them
+`qqGXzsqMa` and `iY5hxRroU`.)
 
 ## How the map is derived
 
 Garble cannot rename everything, and each surviving name is a fingerprint:
 
-1. **Method names required for interface satisfaction survive.** A type that
-   implements `io.Writer` must still have a method literally called `Write`, or
-   the interface check fails at runtime. So `ServeHTTP`, `RoundTrip`,
-   `MarshalJSON`, `ForceFlush`, `Collect` and friends all remain in the clear.
-   This is the single highest-signal source: it identifies both third-party
-   packages (by their well-known interfaces) and application packages (by their
-   own internal interfaces).
-2. **Stdlib package paths survive** — `internal/abi`, `runtime`, `sync`, `math`
-   are untouched, so anything _not_ matching a stdlib path is app or vendor code.
-3. **String literals cross-reference to functions.** See `xrefs` in the RE
-   toolchain notes below.
+1. **Method names required for interface satisfaction survive.** A type that implements `io.Writer` must still have a
+   method literally called `Write`, or the interface check fails at runtime. So `ServeHTTP`, `RoundTrip`, `MarshalJSON`,
+   `ForceFlush`, `Collect` and friends all remain in the clear. This is the single highest-signal source: it identifies
+   both third-party packages (by their well-known interfaces) and application packages (by their own internal
+   interfaces).
+2. **Stdlib package paths survive** — `internal/abi`, `runtime`, `sync`, `math` are untouched, so anything _not_
+   matching a stdlib path is app or vendor code.
+3. **String literals cross-reference to functions.** See `xrefs` in the RE toolchain notes below.
 
 Recovering the names at all requires rebuilding the symbol table first; see
-`//skills/reverse_engineer/examples:gosymtab` and the "Defeating Obfuscation"
-section of the `reverse_engineer` skill.
+`//skills/reverse_engineer/examples:gosymtab` and the "Defeating Obfuscation" section of the `reverse_engineer` skill.
 
 ### What does not work: recovering file boundaries
 
-`.gopclntab` carries a file table (95,432 entries here) and `PCToLine` maps
-each function to its source file, which looks like a free recovery of the
-package's file layout. It isn't. Garble randomizes the filename per function,
-not per file, so obfuscated packages report roughly one "file" per two
-functions — `TaVHwGAw` claims 358 source files for 827 functions. Stdlib
-packages, which garble leaves alone, group correctly for comparison
-(`runtime/proc.go` holds 201 functions). Treat any per-file grouping of app
-code as an artifact; group by package and by receiver type instead.
+`.gopclntab` carries a file table (95,432 entries here) and `PCToLine` maps each function to its source file, which
+looks like a free recovery of the package's file layout. It isn't. Garble randomizes the filename per function, not per
+file, so obfuscated packages report roughly one "file" per two functions — `TaVHwGAw` claims 358 source files for 827
+functions. Stdlib packages, which garble leaves alone, group correctly for comparison (`runtime/proc.go` holds 201
+functions). Treat any per-file grouping of app code as an artifact; group by package and by receiver type instead.
 
 ## Application packages
 
@@ -62,20 +53,16 @@ These are the reverse-engineering targets — the Anthropic module
 | `kItfsbt_`     | ~60   | Source/repo descriptor                | `GetDirectory`, `GetType`, `IsRepository`, `IsHermeticMode`, `UsesWorkspaceRootCwd`, `Validate`                                                                                                                             |
 | `JGHtMM`       | ~50   | Output tailer                         | `IsRunning`, `Lines`                                                                                                                                                                                                        |
 
-`CWddODOS8sH` and `WOoacuN0` expose the same initialisation surface
-(`SetStartupContext`, `SetSessionMode`, `InitSteps`, `Initialize`,
-`GetClaudeEnvironmentVariables`) because they are the **two `envtype`
-implementations**, not a package and a wrapper:
+`CWddODOS8sH` and `WOoacuN0` expose the same initialisation surface (`SetStartupContext`, `SetSessionMode`, `InitSteps`,
+`Initialize`, `GetClaudeEnvironmentVariables`) because they are the **two `envtype` implementations**, not a package and
+a wrapper:
 
-- `CWddODOS8sH` = `internal/envtype/anthropic` — its `Initialize` is 17,616
-  disassembly lines and references `setup_script`, `clone`, and the language
-  install targets `golang`/`node`/`nodejs`/`python`.
-- `WOoacuN0` = `internal/envtype/byoc` — 4,589 lines, and `WOoacuN0.BJymDLy7`
-  compares against the literal `byoc`.
+- `CWddODOS8sH` = `internal/envtype/anthropic` — its `Initialize` is 17,616 disassembly lines and references
+  `setup_script`, `clone`, and the language install targets `golang`/`node`/`nodejs`/`python`.
+- `WOoacuN0` = `internal/envtype/byoc` — 4,589 lines, and `WOoacuN0.BJymDLy7` compares against the literal `byoc`.
 
-The `byoc` literal is recovered from an inline comparison, not from `strings`:
-it is an instruction operand, which `-literals` cannot encrypt. See
-`//skills/reverse_engineer/examples:inline_strings`.
+The `byoc` literal is recovered from an inline comparison, not from `strings`: it is an instruction operand, which
+`-literals` cannot encrypt. See `//skills/reverse_engineer/examples:inline_strings`.
 
 ## Third-party and stdlib-adjacent packages
 
@@ -107,17 +94,14 @@ Identified from well-known interface methods and characteristic string literals.
 | `_mIPuq8cdJd`                                      | DNS message parsing                        |
 | `daI_d2D7`                                         | `os` file layer                            |
 
-Both JSON Schema entries are genuinely separate libraries, and both arrive
-transitively through mcp-go. `qsgTku7Q` is pinned to santhosh-tekuri/jsonschema
-v6 by the struct tag `json:"AbsoluteKeywordLocation,omitempty"` — the capital
-`A` is a quirk of v6's `output.go` that no other Go library shares — plus its
-embedded `metaschemas/` tree and the `urn:mem:metaschema` URN. `Bo9xYr` is
-google/jsonschema-go, identified by `ApplyDefaults`/`CloneSchemas`/`Resolve`
-and the unexported field `resolvedRef`.
+Both JSON Schema entries are genuinely separate libraries, and both arrive transitively through mcp-go. `qsgTku7Q` is
+pinned to santhosh-tekuri/jsonschema v6 by the struct tag `json:"AbsoluteKeywordLocation,omitempty"` — the capital `A`
+is a quirk of v6's `output.go` that no other Go library shares — plus its embedded `metaschemas/` tree and the
+`urn:mem:metaschema` URN. `Bo9xYr` is google/jsonschema-go, identified by `ApplyDefaults`/`CloneSchemas`/`Resolve` and
+the unexported field `resolvedRef`.
 
-`invopop/jsonschema`, present in the previous binary, is **gone**: its only
-consumer of `wk8/go-ordered-map/v2` (`Oldest`/`Newest`/`GetPair`/`AddPairs`)
-appears in the old binary and in neither package of the new one.
+`invopop/jsonschema`, present in the previous binary, is **gone**: its only consumer of `wk8/go-ordered-map/v2`
+(`Oldest`/`Newest`/`GetPair`/`AddPairs`) appears in the old binary and in neither package of the new one.
 
 ## Reproducing the map
 

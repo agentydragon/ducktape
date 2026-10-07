@@ -7,7 +7,9 @@ metadata:
     app.kubernetes.io/name: authentik-mcp-poc
     app.kubernetes.io/component: server
   annotations:
-    description: "FastMCP server with OIDCProxy wrapping Authentik; forwards the caller's JWT to the whoami backend via the Authentik proxy outpost."
+    description:
+      "FastMCP server with OIDCProxy wrapping Authentik; forwards the caller's JWT to the whoami backend via the
+      Authentik proxy outpost."
     reloader.stakater.com/auto: "true"
 spec:
   replicas: 1

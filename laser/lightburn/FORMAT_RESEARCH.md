@@ -6,9 +6,12 @@
 - [LightBurn forum — LBRN or LBRN2 XML file documentation](https://forum.lightburnsoftware.com/t/lbrn-or-lbrn2-xml-file-docuumentation/42317)
 - [nuCarve — LightBurn LBRN vs. LBRN2 file formats](https://nucarve.com/lightburn-file-format-lbrn-lbrn2/)
 - [nuCarve — Documenting the LightBurn file format: what's in a shape](https://nucarve.com/lightburn-file-format-whats-in-a-shape/)
-- [GitHub — MarcinZukowski/lightburn-tester](https://github.com/MarcinZukowski/lightburn-tester) — cloned to `refs/lightburn-tester/` for detailed study
-- [GitHub — jlucaso1/lbrn2-to-svg](https://github.com/jlucaso1/lbrn2-to-svg) — TypeScript lbrn2 parser, cloned to `refs/lbrn2-to-svg/`
-- [GitHub — makerspace-gt/lightburn-settings](https://github.com/makerspace-gt/lightburn-settings) — real-world `.lbrn` example files
+- [GitHub — MarcinZukowski/lightburn-tester](https://github.com/MarcinZukowski/lightburn-tester) — cloned to
+  `refs/lightburn-tester/` for detailed study
+- [GitHub — jlucaso1/lbrn2-to-svg](https://github.com/jlucaso1/lbrn2-to-svg) — TypeScript lbrn2 parser, cloned to
+  `refs/lbrn2-to-svg/`
+- [GitHub — makerspace-gt/lightburn-settings](https://github.com/makerspace-gt/lightburn-settings) — real-world `.lbrn`
+  example files
 
 ## Format Overview
 
@@ -19,12 +22,12 @@ LightBurn saves projects as XML in two related formats:
 | Legacy  | `.lbrn`   | `"0"`           | Path shapes use verbose `<V>`/`<P>` children          |
 | Current | `.lbrn2`  | `"1"`           | Path shapes use compact `VertList`/`PrimList` strings |
 
-**Key fact**: `Rect` and `Text` shape elements are **identical** between `.lbrn` and `.lbrn2`.
-Only `Path` shapes differ. Since we only use `Rect` and `Text`, both formats are equivalent for
-our purposes. We target `.lbrn2` (`FormatVersion="1"`) as it is the current default.
+**Key fact**: `Rect` and `Text` shape elements are **identical** between `.lbrn` and `.lbrn2`. Only `Path` shapes
+differ. Since we only use `Rect` and `Text`, both formats are equivalent for our purposes. We target `.lbrn2`
+(`FormatVersion="1"`) as it is the current default.
 
-The schema is officially undocumented by LightBurn Software. All knowledge below comes from
-reverse-engineering example files and community resources.
+The schema is officially undocumented by LightBurn Software. All knowledge below comes from reverse-engineering example
+files and community resources.
 
 ## File Structure
 
@@ -83,8 +86,8 @@ reverse-engineering example files and community resources.
 | `MirrorX`        | `"True"`   | Machine X-axis mirror setting              |
 | `MirrorY`        | `"True"`   | Machine Y-axis mirror setting              |
 
-`MirrorX`/`MirrorY` are machine-specific settings saved in the file. They reflect the homing
-position of the laser head and do not change how coordinates are interpreted in the file.
+`MirrorX`/`MirrorY` are machine-specific settings saved in the file. They reflect the homing position of the laser head
+and do not change how coordinates are interpreted in the file.
 
 ## Coordinate System
 
@@ -118,8 +121,8 @@ y' = b*x + d*y + f
 
 **Rect**: `(e, f)` is the **centre** of the rectangle.
 
-**Text**: `(e, f)` is the **anchor point** of the text, with `Ah`/`Av` controlling which corner/edge
-of the text bounding box the anchor maps to (see Text section below).
+**Text**: `(e, f)` is the **anchor point** of the text, with `Ah`/`Av` controlling which corner/edge of the text
+bounding box the anchor maps to (see Text section below).
 
 ## CutSetting Element
 
@@ -207,14 +210,14 @@ Each `<CutSetting>` defines one laser layer (colour). Shapes reference their lay
 
 Layer index 0 is conventionally used for text/annotations at low power.
 
-LightBurn supports up to **30 layers** (indices 0–29). Files with more than 30 `<CutSetting>`
-elements produce undefined behaviour in the UI.
+LightBurn supports up to **30 layers** (indices 0–29). Files with more than 30 `<CutSetting>` elements produce undefined
+behaviour in the UI.
 
 ### Sublayers
 
-A `<CutSetting>` may contain one or more `<SubLayer>` child elements. Sublayers execute
-additional passes on the **same shapes** with different cut parameters — shapes still reference
-only the parent `CutIndex`. Sublayers do not count toward the 30-layer limit.
+A `<CutSetting>` may contain one or more `<SubLayer>` child elements. Sublayers execute additional passes on the **same
+shapes** with different cut parameters — shapes still reference only the parent `CutIndex`. Sublayers do not count
+toward the 30-layer limit.
 
 ```xml
 <CutSetting type="Cut">
@@ -286,8 +289,8 @@ only the parent `CutIndex`. Sublayers do not count toward the 30-layer limit.
 
 Format: `"family,-1,pixelSize,styleHint,weight,italic,underline,strikeOut,fixedPitch,kerning"`
 
-This is Qt's `QFont::toString()` format. LightBurn uses the `H` attribute for actual rendered
-height in mm; the `pixelSize` field in the font string is largely ignored.
+This is Qt's `QFont::toString()` format. LightBurn uses the `H` attribute for actual rendered height in mm; the
+`pixelSize` field in the font string is largely ignored.
 
 | Field        | Typical value | Notes                                   |
 | ------------ | ------------- | --------------------------------------- |
@@ -348,5 +351,5 @@ Rotate a text label 90° CCW (reads bottom-to-top, standard Y-axis label orienta
 | [lightburn-tester](https://github.com/MarcinZukowski/lightburn-tester) | Python     | —        | `.lbrn` | Parametric test grid generator (fill/engrave focus); uses template prologue/epilogue |
 | [lbrn2-to-svg](https://github.com/jlucaso1/lbrn2-to-svg)               | TypeScript | `.lbrn2` | —       | Reads lbrn2, converts to SVG; handles Rect, Ellipse, Path, Text, Bitmap              |
 
-No existing Python writer for `.lbrn2` with Z-offset / z-per-pass / kerf support was found.
-The `lightburn-tester` project is the closest match and informed this implementation.
+No existing Python writer for `.lbrn2` with Z-offset / z-per-pass / kerf support was found. The `lightburn-tester`
+project is the closest match and informed this implementation.

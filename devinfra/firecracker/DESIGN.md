@@ -13,13 +13,13 @@ Claude Code web sessions run inside Anthropic's Firecracker VMs with:
 - Session start overhead: ~13s (proxy setup, Bazel warmup, env config)
 - Disk fills up from accumulated session Bazel caches (2-12G each)
 
-Builds execute remotely via BuildBuddy RBE — the local VM is effectively
-just an expensive JVM host. Profiling data: <devinfra/precommit/enforce_bazel_tests/debug/>.
+Builds execute remotely via BuildBuddy RBE — the local VM is effectively just an expensive JVM host. Profiling data:
+<devinfra/precommit/enforce_bazel_tests/debug/>.
 
 ## Goal
 
-Run Firecracker microVMs on wyrm2 (bare metal NixOS, 32 CPU, 94G RAM, KVM,
-2x RTX 5090) that Claude Code sessions can SSH into. VMs have:
+Run Firecracker microVMs on wyrm2 (bare metal NixOS, 32 CPU, 94G RAM, KVM, 2x RTX 5090) that Claude Code sessions can
+SSH into. VMs have:
 
 - Internet access (for git clone, BCR fetches, BuildBuddy RBE)
 - Bazel + Python 3.14 + full build toolchain
@@ -69,9 +69,8 @@ Run Firecracker microVMs on wyrm2 (bare metal NixOS, 32 CPU, 94G RAM, KVM,
 
 ### Storage: LVM thin provisioning via OpenEBS LVM LocalPV
 
-All VM storage lives on a single LVM thin pool on wyrm2. OpenEBS LVM
-LocalPV is a lightweight CSI driver (single DaemonSet) that wraps LVM
-commands. Two volume modes from the same VG:
+All VM storage lives on a single LVM thin pool on wyrm2. OpenEBS LVM LocalPV is a lightweight CSI driver (single
+DaemonSet) that wraps LVM commands. Two volume modes from the same VG:
 
 | Resource     | volumeMode   | Provisioning             | Why                                                                                                                                                               |
 | ------------ | ------------ | ------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -80,19 +79,17 @@ commands. Two volume modes from the same VG:
 
 #### Why rootfs is Block but snapshots are Filesystem
 
-Firecracker's drive API (`PUT /drives/{id}`) accepts `path_on_host` as
-either a regular file or a block device — both work.
+Firecracker's drive API (`PUT /drives/{id}`) accepts `path_on_host` as either a regular file or a block device — both
+work.
 
 Firecracker's snapshot API does **not** work with block devices:
 
-- **Create** (`PUT /snapshot/create`): calls `ftruncate()` to size the
-  memory file → `EINVAL` on block devices.
-- **Load** (`PUT /snapshot/load`): calls `file.metadata().len()` which
-  returns 0 for block devices → fails size check before reaching `mmap`.
+- **Create** (`PUT /snapshot/create`): calls `ftruncate()` to size the memory file → `EINVAL` on block devices.
+- **Load** (`PUT /snapshot/load`): calls `file.metadata().len()` which returns 0 for block devices → fails size check
+  before reaching `mmap`.
 
-The actual I/O (write, mmap MAP_PRIVATE) would work on block devices —
-it's only the Rust file metadata + truncation assumptions that break.
-(Source: `firecracker/src/vmm/src/vstate/vm.rs` snapshot_memory_to_file,
+The actual I/O (write, mmap MAP_PRIVATE) would work on block devices — it's only the Rust file metadata + truncation
+assumptions that break. (Source: `firecracker/src/vmm/src/vstate/vm.rs` snapshot_memory_to_file,
 `src/vmm/src/vstate/memory.rs` snapshot_file.)
 
 #### PVC lifecycle
@@ -123,28 +120,24 @@ DELETE /vms/{id} → deletes pod + all per-VM PVCs
 
 #### Fork-resume (one snapshot → N VMs)
 
-Each restored VM gets its own CoW clone of the snapshot PVC — no PVC
-sharing between VMs. LVM thin snapshots are instant and CoW at the
-block level, so N restores from one snapshot create N thin LVs that
-share physical extents until written.
+Each restored VM gets its own CoW clone of the snapshot PVC — no PVC sharing between VMs. LVM thin snapshots are instant
+and CoW at the block level, so N restores from one snapshot create N thin LVs that share physical extents until written.
 
-Inside the guest, Firecracker mmaps the memory file with `MAP_PRIVATE`
-(CoW at the page level). Each VM gets its own dirty pages while sharing
-the base memory via the LVM thin snapshot underneath.
+Inside the guest, Firecracker mmaps the memory file with `MAP_PRIVATE` (CoW at the page level). Each VM gets its own
+dirty pages while sharing the base memory via the LVM thin snapshot underneath.
 
 #### Base rootfs provisioning
 
-The NixOS rootfs is built via Nix on wyrm2 (which has the repo and Nix
-available). No OCI wrapping — just `nix build` + `dd` to the base LV:
+The NixOS rootfs is built via Nix on wyrm2 (which has the repo and Nix available). No OCI wrapping — just `nix build` +
+`dd` to the base LV:
 
 ```bash
 ./devinfra/firecracker/provision-rootfs.sh
 ```
 
-The script builds `.#fc-dev-rootfs` (fetches from binary cache if
-available), finds the ext4 image in the output, and `dd`s it into the
-base LV. Re-run when Nix config changes. The rootfs updates infrequently
-(kernel, NixOS modules, toolchain packages).
+The script builds `.#fc-dev-rootfs` (fetches from binary cache if available), finds the ext4 image in the output, and
+`dd`s it into the base LV. Re-run when Nix config changes. The rootfs updates infrequently (kernel, NixOS modules,
+toolchain packages).
 
 #### Setup
 
@@ -155,9 +148,8 @@ base LV. Re-run when Nix config changes. The rootfs updates infrequently
 
 ### Guest init: process_api via initramfs
 
-Anthropic's `process_api` is a ~3.3MB static Rust binary that serves as
-PID 1 in Claude Code web Firecracker VMs. Full reverse-engineered source
-(5,752 lines, 10 modules) at <devinfra/claude/web_env/re/process_api/>.
+Anthropic's `process_api` is a ~3.3MB static Rust binary that serves as PID 1 in Claude Code web Firecracker VMs. Full
+reverse-engineered source (5,752 lines, 10 modules) at <devinfra/claude/web_env/re/process_api/>.
 
 We use it as our guest init, following Anthropic's architecture:
 
@@ -194,40 +186,34 @@ VM pod entrypoint (host side)
 
 **Two filesystem images:**
 
-1. **Initramfs** (~5MB cpio): contains just `process_api` as `/init`.
-   Built as a cpio archive, baked into the VM pod OCI image. The kernel
-   unpacks it into tmpfs at boot. After pivot_root the tmpfs is freed.
+1. **Initramfs** (~5MB cpio): contains just `process_api` as `/init`. Built as a cpio archive, baked into the VM pod OCI
+   image. The kernel unpacks it into tmpfs at boot. After pivot_root the tmpfs is freed.
 
-2. **NixOS rootfs** (~2-4GB ext4): full dev environment. Exposed to
-   guest as `/dev/vda` via Firecracker's drive API. Delivery mechanism
-   is an open decision (see Storage section).
+2. **NixOS rootfs** (~2-4GB ext4): full dev environment. Exposed to guest as `/dev/vda` via Firecracker's drive API.
+   Delivery mechanism is an open decision (see Storage section).
 
 **What process_api provides:**
 
-- **Process execution over WebSocket**: spawn processes, forward I/O as
-  binary frames, reattachable sessions that survive disconnects
+- **Process execution over WebSocket**: spawn processes, forward I/O as binary frames, reattachable sessions that
+  survive disconnects
 - **vsock + TCP + UDS transports**: same protocol over any transport
-- **HTTP control server**: `/health`, `/shutdown`, `/fs_freeze`,
-  `/fs_thaw`, `/mount_root` (snapstart — apply per-session config on
-  snapshot restore)
+- **HTTP control server**: `/health`, `/shutdown`, `/fs_freeze`, `/fs_thaw`, `/mount_root` (snapstart — apply
+  per-session config on snapshot restore)
 - **Cgroup v1/v2 resource limits**: per-process memory/OOM monitoring
 - **JWT auth**: Ed25519-verified tokens (optional — accepts all if no key)
 
-**Trade-off**: proprietary binary we can't rebuild. If a Firecracker or
-kernel update breaks compatibility, fallback is reimplementing the subset
-we need (vsock readiness + command exec + fs_freeze/thaw) as a custom
-agent. The RE source serves as the spec.
+**Trade-off**: proprietary binary we can't rebuild. If a Firecracker or kernel update breaks compatibility, fallback is
+reimplementing the subset we need (vsock readiness + command exec + fs_freeze/thaw) as a custom agent. The RE source
+serves as the spec.
 
-**SSH remains available** in the NixOS rootfs for interactive access from
-Claude Code sessions. process_api handles the machine-to-machine control
-plane (readiness, process exec, snapshot coordination).
+**SSH remains available** in the NixOS rootfs for interactive access from Claude Code sessions. process_api handles the
+machine-to-machine control plane (readiness, process exec, snapshot coordination).
 
 ### Pod-per-VM
 
-Each Firecracker VM runs as its own k8s pod. The pod is infrastructure-only
-(Firecracker process + networking + port proxies). The manager service is
-the VMM brain — it creates pods, drives boot/restore via the FC API proxy,
-and tracks VM state.
+Each Firecracker VM runs as its own k8s pod. The pod is infrastructure-only (Firecracker process + networking + port
+proxies). The manager service is the VMM brain — it creates pods, drives boot/restore via the FC API proxy, and tracks
+VM state.
 
 ```
 Claude Code session (Anthropic Firecracker VM)
@@ -277,8 +263,8 @@ Claude Code session (Anthropic Firecracker VM)
 
 ### Command execution
 
-Claude Code drives the VM via **process_api's WebSocket API** (port 2024),
-the same protocol Anthropic uses in their own Claude Code web VMs:
+Claude Code drives the VM via **process_api's WebSocket API** (port 2024), the same protocol Anthropic uses in their own
+Claude Code web VMs:
 
 1. Manager creates VM pod, waits for process_api `/health` to respond
 2. Manager returns WebSocket connection info (pod IP + port) to caller
@@ -286,11 +272,11 @@ the same protocol Anthropic uses in their own Claude Code web VMs:
 4. Sends `CreateProcess` with command, args, env, uid/gid, timeout
 5. process_api spawns the process, streams stdout/stderr as binary frames
 6. Client sends stdin, signals (SIGINT, SIGTERM)
-7. Sessions are **reattachable** — if the WebSocket disconnects, the
-   process keeps running. Client reconnects with `ProcessConnection`.
+7. Sessions are **reattachable** — if the WebSocket disconnects, the process keeps running. Client reconnects with
+   `ProcessConnection`.
 
-SSH remains available in the NixOS guest for interactive/ad-hoc access,
-but the primary machine-to-machine interface is the WebSocket API.
+SSH remains available in the NixOS guest for interactive/ad-hoc access, but the primary machine-to-machine interface is
+the WebSocket API.
 
 ### Networking
 
@@ -302,25 +288,21 @@ Each VM pod gets a CNI-assigned IP. Inside the pod, the entrypoint:
 4. Guest gets an IP on the TAP subnet, routes through pod's `eth0`
 5. process_api listens on TCP :2024 (WebSocket) and :2025 (HTTP control)
 
-Claude Code sessions reach VMs via `kubectl port-forward` to the VM pod
-(port 2024 for WebSocket, port 22 for SSH).
+Claude Code sessions reach VMs via `kubectl port-forward` to the VM pod (port 2024 for WebSocket, port 22 for SSH).
 
 ### Authentication
 
-Manager service uses bearer token auth. Token stored as k8s Secret in
-`claude-sandbox`, available to Claude Code sessions via the existing
-kubeconfig (ServiceAccount `claude-code-web` has Secret read access).
+Manager service uses bearer token auth. Token stored as k8s Secret in `claude-sandbox`, available to Claude Code
+sessions via the existing kubeconfig (ServiceAccount `claude-code-web` has Secret read access).
 
-process_api supports optional JWT auth (Ed25519). With no key configured
-it accepts all tokens — sufficient for our single-user trusted setup.
-Can be hardened later by injecting an auth key via the manager config.
+process_api supports optional JWT auth (Ed25519). With no key configured it accepts all tokens — sufficient for our
+single-user trusted setup. Can be hardened later by injecting an auth key via the manager config.
 
 ### Snapshot/Restore
 
-Firecracker's snapshot API (`PUT /snapshot/create`, `PUT /snapshot/load`)
-captures full VM state (memory + vCPU registers + device state). Restore
-uses `userfaultfd` lazy memory loading — pages are demand-faulted from the
-snapshot file, achieving ~28ms restore time.
+Firecracker's snapshot API (`PUT /snapshot/create`, `PUT /snapshot/load`) captures full VM state (memory + vCPU
+registers + device state). Restore uses `userfaultfd` lazy memory loading — pages are demand-faulted from the snapshot
+file, achieving ~28ms restore time.
 
 Workflow:
 
@@ -347,45 +329,39 @@ Post-restore, Bazel queries take ~0.3s (warm Skyframe) instead of ~15s.
 
 ### Anthropic's Snapstart
 
-Anthropic's own `process_api` (reverse-engineered in
-`devinfra/claude/web_env/re/process_api/`) implements this exact pattern:
+Anthropic's own `process_api` (reverse-engineered in `devinfra/claude/web_env/re/process_api/`) implements this exact
+pattern:
 
-- **Template mode**: Boot VM, run full init, write `"SNAPSTART_READY\n"` to
-  serial port. Host snapshots the frozen VM.
-- **Resume mode**: Restore snapshot, thaw filesystem (FITHAW ioctl), call
-  `POST /mount_root` to apply per-session config (mounts, env vars).
+- **Template mode**: Boot VM, run full init, write `"SNAPSTART_READY\n"` to serial port. Host snapshots the frozen VM.
+- **Resume mode**: Restore snapshot, thaw filesystem (FITHAW ioctl), call `POST /mount_root` to apply per-session config
+  (mounts, env vars).
 - Communication via vsock + Unix domain sockets.
 
-This validates the architecture — Anthropic uses warm VM pools in production
-for Claude Code web.
+This validates the architecture — Anthropic uses warm VM pools in production for Claude Code web.
 
 ### ForgeVM
 
-Go binary orchestrating Firecracker sandboxes with 28ms snapshot restore.
-Built for AI agent code execution. Uses vsock + custom guest agent (author
-regrets not using gRPC). Memory-efficient: 50 VMs from one snapshot share
-most pages via CoW. Not k8s-native, no published GitHub repo yet.
+Go binary orchestrating Firecracker sandboxes with 28ms snapshot restore. Built for AI agent code execution. Uses
+vsock + custom guest agent (author regrets not using gRPC). Memory-efficient: 50 VMs from one snapshot share most pages
+via CoW. Not k8s-native, no published GitHub repo yet.
 
-Source: [DEV Community writeup](https://dev.to/adwitiya/how-i-built-sandboxes-that-boot-in-28ms-using-firecracker-snapshots-i0k)
+Source:
+[DEV Community writeup](https://dev.to/adwitiya/how-i-built-sandboxes-that-boot-in-28ms-using-firecracker-snapshots-i0k)
 
 ### vHive
 
-Research framework (Edinburgh/NTU) for serverless experimentation.
-Most mature open-source Firecracker snapshot implementation on k8s
-(via Knative). Supports their REAP mechanism — records guest memory
-working set and proactively prefetches on restore (reduces page fault
-overhead by 95%). Research-grade, not production infra. Requires owning
-the entire k8s cluster.
+Research framework (Edinburgh/NTU) for serverless experimentation. Most mature open-source Firecracker snapshot
+implementation on k8s (via Knative). Supports their REAP mechanism — records guest memory working set and proactively
+prefetches on restore (reduces page fault overhead by 95%). Research-grade, not production infra. Requires owning the
+entire k8s cluster.
 
 Source: [github.com/vhive-serverless/vHive](https://github.com/vhive-serverless/vHive)
 
 ### Kata Containers
 
-Production k8s runtime supporting Firecracker as a VMM backend. But
-snapshot/restore within Kata+Firecracker is not first-class — the
-VM cache feature works mainly with QEMU/Cloud Hypervisor. The
-Kata+Firecracker stack is reported as difficult to configure (devmapper
-snapshotter requirements, stale docs).
+Production k8s runtime supporting Firecracker as a VMM backend. But snapshot/restore within Kata+Firecracker is not
+first-class — the VM cache feature works mainly with QEMU/Cloud Hypervisor. The Kata+Firecracker stack is reported as
+difficult to configure (devmapper snapshotter requirements, stale docs).
 
 ### Rejected Alternatives
 
@@ -399,13 +375,12 @@ snapshotter requirements, stale docs).
 
 ### firecracker-containerd
 
-AWS's containerd integration. Provides the devmapper snapshotter for
-exposing container images as block devices to Firecracker VMs. However,
-snapshot/restore of VMs is not exposed through containerd's API — you'd
-need to call the Firecracker socket directly. In maintenance mode.
+AWS's containerd integration. Provides the devmapper snapshotter for exposing container images as block devices to
+Firecracker VMs. However, snapshot/restore of VMs is not exposed through containerd's API — you'd need to call the
+Firecracker socket directly. In maintenance mode.
 
-We don't need the containerd integration because we're not running OCI
-containers inside Firecracker — we're running a NixOS guest directly.
+We don't need the containerd integration because we're not running OCI containers inside Firecracker — we're running a
+NixOS guest directly.
 
 ## Key Decisions
 
@@ -451,5 +426,4 @@ wyrm2: 32 CPU, 94G RAM. Current usage: 19% CPU, 19% memory.
 | Device plugin    | 50m         | 64Mi           | 1     |
 | **Total**        | ~6.2        | ~12.3Gi        | 3-5   |
 
-Fits comfortably within wyrm2's capacity and the claude-sandbox
-ResourceQuota (8 CPU, 16Gi, 20 pods).
+Fits comfortably within wyrm2's capacity and the claude-sandbox ResourceQuota (8 CPU, 16Gi, 20 pods).

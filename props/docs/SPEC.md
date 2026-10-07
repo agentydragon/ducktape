@@ -10,17 +10,26 @@ SPEC.md is append-only. TODO.md files in each component track implementation pro
 
 ### Show Over Retell
 
-Agent prompts should **reference readable sources** rather than duplicating information that the agent can read at runtime. Agents can read and understand Python source code. They don't have the entire props library and backend in their container, but they can inspect how the bundled modules they depend on are implemented.
+Agent prompts should **reference readable sources** rather than duplicating information that the agent can read at
+runtime. Agents can read and understand Python source code. They don't have the entire props library and backend in
+their container, but they can inspect how the bundled modules they depend on are implemented.
 
 **Prefer:**
 
-> You can use the `run_critic` tool to ask the backend to run a critic agent. Read `props.agents.critic_dev.eval_client` to find its implementation details so you can do advanced operations (e.g., multiple critic runs in parallel).
+> You can use the `run_critic` tool to ask the backend to run a critic agent. Read `props.agents.critic_dev.eval_client`
+> to find its implementation details so you can do advanced operations (e.g., multiple critic runs in parallel).
 
 **Avoid:**
 
-> The `run_critic` tool accepts these arguments: `definition_id` (str), `example` (ExampleSpec, which is a discriminated union of WholeSnapshotExample with fields kind="whole_snapshot" and snapshot_slug, or SingleFileSetExample with fields kind="file_set", snapshot_slug, and files_hash), `timeout_seconds` (int), `budget_usd` (float). It returns a RunCriticResponse with critic_run_id (str). To run multiple critics in parallel, use asyncio.gather(...). [30 more lines of API details]
+> The `run_critic` tool accepts these arguments: `definition_id` (str), `example` (ExampleSpec, which is a discriminated
+> union of WholeSnapshotExample with fields kind="whole_snapshot" and snapshot_slug, or SingleFileSetExample with fields
+> kind="file_set", snapshot_slug, and files_hash), `timeout_seconds` (int), `budget_usd` (float). It returns a
+> RunCriticResponse with critic_run_id (str). To run multiple critics in parallel, use asyncio.gather(...). [30 more
+> lines of API details]
 
-**Why:** The agent can `inspect.getsource()` the module and read the exact same information with full type signatures, docstrings, and implementation context. Retelling it in the prompt wastes tokens and creates a maintenance burden — the prompt drifts out of sync with the code.
+**Why:** The agent can `inspect.getsource()` the module and read the exact same information with full type signatures,
+docstrings, and implementation context. Retelling it in the prompt wastes tokens and creates a maintenance burden — the
+prompt drifts out of sync with the code.
 
 **Apply this to:**
 
@@ -38,7 +47,9 @@ Agent prompts should **reference readable sources** rather than duplicating info
 
 ### Tool Schema via Pydantic Metadata
 
-Tool behavior, field semantics, and argument constraints should be defined in Pydantic `Field(description=...)` on the tool argument models, not re-described in system prompts. The OpenAI API forwards these descriptions to the model automatically.
+Tool behavior, field semantics, and argument constraints should be defined in Pydantic `Field(description=...)` on the
+tool argument models, not re-described in system prompts. The OpenAI API forwards these descriptions to the model
+automatically.
 
 **Where to put tool documentation:**
 
@@ -47,23 +58,30 @@ Tool behavior, field semantics, and argument constraints should be defined in Py
 - **Workflow guidance** (when to use which tool, in what order) → system prompt
 - **Constraints not in the schema** (RLS, budget enforcement, network topology) → system prompt
 
-System prompts should describe _what the agent should accomplish_ and _workflow sequences_, not _what each tool argument means_.
+System prompts should describe _what the agent should accomplish_ and _workflow sequences_, not _what each tool argument
+means_.
 
 ### Exec Tool and Python Runtime
 
-All agent containers must provide a working `python3` (or `python`) command at a simple path — not a deeply nested runfiles path. This Python must have the `props` library (and its dependencies) on the import path.
+All agent containers must provide a working `python3` (or `python`) command at a simple path — not a deeply nested
+runfiles path. This Python must have the `props` library (and its dependencies) on the import path.
 
 **Requirements:**
 
 - `exec(["python3", "-c", "import props; ..."])` must work from any agent container
-- `exec(["python3", "-c", "import inspect, props.agents.runtime; print(inspect.getsource(props.agents.runtime))"])` must print the module source
+- `exec(["python3", "-c", "import inspect, props.agents.runtime; print(inspect.getsource(props.agents.runtime))"])` must
+  print the module source
 - Agents should be told to use `python3` for source inspection, not given container-specific paths
 
-**Testing:** An E2E test must verify that the exec tool can import and inspect props source code. This validates that the "show over retell" principle actually works — if an agent prompt says "read `props.foo.bar` for details", the agent must be able to do so.
+**Testing:** An E2E test must verify that the exec tool can import and inspect props source code. This validates that
+the "show over retell" principle actually works — if an agent prompt says "read `props.foo.bar` for details", the agent
+must be able to do so.
 
 ### Agent Autonomy
 
-Agents have a set of convenience tools (exec, insert_issue, run_critic, etc.) but they are not limited to these tools. They can freely use `python3` to write scripts, query the database directly, call the backend API via HTTP, or build their own helper tools inside their container.
+Agents have a set of convenience tools (exec, insert_issue, run_critic, etc.) but they are not limited to these tools.
+They can freely use `python3` to write scripts, query the database directly, call the backend API via HTTP, or build
+their own helper tools inside their container.
 
 **What matters is the goal**, not the method:
 
@@ -71,11 +89,14 @@ Agents have a set of convenience tools (exec, insert_issue, run_critic, etc.) bu
 - **Graders**: create grading edges that correctly match critique issues against ground truth
 - **Critic-dev agents**: produce new critic definitions with improved evaluated metrics
 
-The provided tools are convenience shortcuts, not constraints. An agent can accomplish the same things by writing Python that calls the database or backend directly. Prompts should tell agents: "You can use the `run_critic` tool, or read `props.agents.critic_dev.eval_client` and call the backend API directly from Python — whatever works."
+The provided tools are convenience shortcuts, not constraints. An agent can accomplish the same things by writing Python
+that calls the database or backend directly. Prompts should tell agents: "You can use the `run_critic` tool, or read
+`props.agents.critic_dev.eval_client` and call the backend API directly from Python — whatever works."
 
 ### What Agents Need to Know
 
-Each agent type needs sufficient documentation and tooling in its prompt. The table below summarizes capabilities by agent type:
+Each agent type needs sufficient documentation and tooling in its prompt. The table below summarizes capabilities by
+agent type:
 
 | Capability                                     | Critic     | Grader     | Critic-dev                |
 | ---------------------------------------------- | ---------- | ---------- | ------------------------- |
@@ -97,7 +118,8 @@ Critic-dev agents perform the full definition development loop:
 3. **Push** new definitions by digest (`crane mutate --append` + `crane push`)
 4. **Run** critics via `run_critic` tool (blocks until exit)
 5. **Wait** for grading via `wait_until_graded_tool` (polls until complete)
-6. **Read** grading data from SQL views (`recall_by_definition_split_kind`, `recall_by_definition_example`, `tp_occurrence_credits`)
+6. **Read** grading data from SQL views (`recall_by_definition_split_kind`, `recall_by_definition_example`,
+   `tp_occurrence_credits`)
 7. **Read** snapshot source code and ground truth to understand what critics should find
 
 ---
@@ -285,7 +307,8 @@ On success, shows a link to the launched agent run.
 
 Shows critique run's reported issues overlaid on snapshot files:
 
-- Each critique issue shows: issue ID, matched ground truth (if any) via grading_edges, credit received, grading rationale
+- Each critique issue shows: issue ID, matched ground truth (if any) via grading_edges, credit received, grading
+  rationale
 - Visual distinction:
   - **Critique issues with TP match**: Blue left border
   - **Critique issues with FP match**: Orange left border
@@ -301,7 +324,8 @@ Shows critique run's reported issues overlaid on snapshot files:
 
 ### Issue Rollup Statistics
 
-- **At Issue Level**: total occurrences, per-occurrence % runs with credit > 0, mean credit, distribution, best/worst performing occurrence
+- **At Issue Level**: total occurrences, per-occurrence % runs with credit > 0, mean credit, distribution, best/worst
+  performing occurrence
 - **At File Level**: total TPs/FPs, average detection rate
 - **At Snapshot Level**: overall recall statistics, per-file breakdown
 
@@ -364,12 +388,10 @@ Shows critique run's reported issues overlaid on snapshot files:
 
 Two parallel auth paths share the backend:
 
-- **Machine clients** (agents, CI `docker login`/crane, evaluator scripts) send
-  base64 Postgres credentials as a Bearer/Basic token. Identity and Row-Level
-  Security derive from the Postgres role (`auth.py`).
-- **Browser users** sign in via Authentik OIDC (`GET /auth/login` →
-  `/auth/callback`), establishing a signed session cookie. A successful SSO login
-  maps to admin access only; evaluator/agent roles stay token-based. Enabled when
+- **Machine clients** (agents, CI `docker login`/crane, evaluator scripts) send base64 Postgres credentials as a
+  Bearer/Basic token. Identity and Row-Level Security derive from the Postgres role (`auth.py`).
+- **Browser users** sign in via Authentik OIDC (`GET /auth/login` → `/auth/callback`), establishing a signed session
+  cookie. A successful SSO login maps to admin access only; evaluator/agent roles stay token-based. Enabled when
   `PROPS_OIDC_ISSUER` is set — otherwise the dashboard is token-only.
 - `GET /auth/me` — current SSO user (`{email}`) or 401; `GET /auth/logout` — clear session.
 

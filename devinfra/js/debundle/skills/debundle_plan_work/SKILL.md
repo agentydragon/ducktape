@@ -1,30 +1,28 @@
 ---
 name: debundle_plan_work
-description: Plan and inspect generic JS debundle spec work using read-only `debundle` queries. Use when an agent needs to turn owner_graph.json plus a modules tree into dispatchable module extraction work, query atomic-DAG and coverage status, inspect graph/source context, or decide what debundle spec edits should be made. Generic to any debundle target.
+description:
+  Plan and inspect generic JS debundle spec work using read-only `debundle` queries. Use when an agent needs to turn
+  owner_graph.json plus a modules tree into dispatchable module extraction work, query atomic-DAG and coverage status,
+  inspect graph/source context, or decide what debundle spec edits should be made. Generic to any debundle target.
 ---
 
 # Debundle Plan Work
 
-Use this skill to plan read-only debundling work from the current
-`owner_graph.json` and spec `modules/` tree. The output is evidence for
-spec edits; this skill does not mutate YAML itself.
+Use this skill to plan read-only debundling work from the current `owner_graph.json` and spec `modules/` tree. The
+output is evidence for spec edits; this skill does not mutate YAML itself.
 
 ## Shared CLI Workflows
 
-@references/docs/cli.md
-@references/docs/selectors.md
-@references/docs/spec_editing.md
+@references/docs/cli.md @references/docs/selectors.md @references/docs/spec_editing.md
 
 ## Setup Notes
 
-Find the debundle output and spec modules directory for the target.
-Export the standard env vars as shown in the shared guide. In a consuming
-Bazel repo, use the external `@ducktape` label; inside the debundler repo,
-drop the repository prefix.
+Find the debundle output and spec modules directory for the target. Export the standard env vars as shown in the shared
+guide. In a consuming Bazel repo, use the external `@ducktape` label; inside the debundler repo, drop the repository
+prefix.
 
-If `bazelisk run @ducktape//...` has Bazel server or output-download
-trouble in a consuming repo, build the CLI with an isolated output base
-and run the built binary directly:
+If `bazelisk run @ducktape//...` has Bazel server or output-download trouble in a consuming repo, build the CLI with an
+isolated output base and run the built binary directly:
 
 ```bash
 bazelisk --output_base=/tmp/debundle-cli-bazel \
@@ -34,31 +32,22 @@ bazelisk --output_base=/tmp/debundle-cli-bazel \
 
 ## Planning Loop
 
-- Start with `graph-summary` for orientation, then `modules propose`
-  for dispatchable candidate work.
+- Start with `graph-summary` for orientation, then `modules propose` for dispatchable candidate work.
 - For selector-stabilization planning, run
-  `debundle spec selector-debt --group-module-depth N --min-score 70 --format json`
-  before proposing worker lanes. Use the grouped rows to choose large,
-  coherent module-family peels, then give workers explicit `--item` lists or
-  scoped `--module` / `--module-prefix` selectors for
-  `debundle spec synthesize-selectors`.
-- Hold planned selector work to `references/docs/selectors.md` § The contract and
-  the ladder: prefer lanes that land minimized selectors.
-- Use `coverage` and `atoms` when current YAML or atomic-unit closure is
-  the question.
+  `debundle spec selector-debt --group-module-depth N --min-score 70 --format json` before proposing worker lanes. Use
+  the grouped rows to choose large, coherent module-family peels, then give workers explicit `--item` lists or scoped
+  `--module` / `--module-prefix` selectors for `debundle spec synthesize-selectors`.
+- Hold planned selector work to `references/docs/selectors.md` § The contract and the ladder: prefer lanes that land
+  minimized selectors.
+- Use `coverage` and `atoms` when current YAML or atomic-unit closure is the question.
 - Use `describe` and `show-source` before recommending any assignment.
-- Treat `modules propose` output as planning evidence. Which reviewed rows
-  `bindings assign --batch` takes, and what the rest need:
-  `references/docs/cli.md` § `--batch` JSON format.
+- Treat `modules propose` output as planning evidence. Which reviewed rows `bindings assign --batch` takes, and what the
+  rest need: `references/docs/cli.md` § `--batch` JSON format.
 
-Prefer these commands over grepping generated output. The owner graph is
-the source of truth for cycle gates and residual dependencies; the embedded
-atomic DAG is the source of truth for indivisible move units. The proposal
-queue is a heuristic projection from that DAG, not a serialized fact from
-`debundle run`.
+Prefer these commands over grepping generated output. The owner graph is the source of truth for cycle gates and
+residual dependencies; the embedded atomic DAG is the source of truth for indivisible move units. The proposal queue is
+a heuristic projection from that DAG, not a serialized fact from `debundle run`.
 
-Selector planning should also record tooling gaps. If `synthesize-selectors`
-skips a large repeated shape, produces selectors that are too exact, or cannot
-express a concise stable anchor, recommend a Ducktape feature/fix before
-assigning many manual YAML edits; never plan lanes that hand-transcribe exact
-long generated selectors.
+Selector planning should also record tooling gaps. If `synthesize-selectors` skips a large repeated shape, produces
+selectors that are too exact, or cannot express a concise stable anchor, recommend a Ducktape feature/fix before
+assigning many manual YAML edits; never plan lanes that hand-transcribe exact long generated selectors.

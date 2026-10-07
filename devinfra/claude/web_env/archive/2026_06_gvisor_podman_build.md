@@ -1,14 +1,11 @@
 # Archived: gVisor-era podman/9p build procedure (2026-06)
 
-Historical note. Until 2026-06, Claude Code web sessions ran under gVisor (9p
-root, no bridge networking, UID mapping). The container was built with
-`podman build` and inspected via `podman create` + `podman mount` because
-`podman run` did not work under gVisor. podman/buildah/fuse-overlayfs are no
-longer in the container; the canonical build path is now
+Historical note. Until 2026-06, Claude Code web sessions ran under gVisor (9p root, no bridge networking, UID mapping).
+The container was built with `podman build` and inspected via `podman create` + `podman mount` because `podman run` did
+not work under gVisor. podman/buildah/fuse-overlayfs are no longer in the container; the canonical build path is now
 `bazel run //devinfra/claude/web_env/tools:build_and_diff_bin` (see <../AGENTS.md>).
 
-This file preserves the obsolete procedure for reference only. **Do not run it
-on Firecracker sessions.**
+This file preserves the obsolete procedure for reference only. **Do not run it on Firecracker sessions.**
 
 ## Quick Start (obsolete)
 
@@ -51,8 +48,8 @@ bazel run //devinfra/claude/web_env/tools:diff_manifests_bin -- \
 
 ## Storage Driver Choice (obsolete)
 
-The gVisor sandbox root filesystem was **9p** (30 GB), which is slow and lacks xattr.
-podman storage was always put on **tmpfs** — ~10x faster, 315 GB of space.
+The gVisor sandbox root filesystem was **9p** (30 GB), which is slow and lacks xattr. podman storage was always put on
+**tmpfs** — ~10x faster, 315 GB of space.
 
 | Driver           | Config                              | Layer caching | Layer limit | Speed                    |
 | ---------------- | ----------------------------------- | ------------- | ----------- | ------------------------ |

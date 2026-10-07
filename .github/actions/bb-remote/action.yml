@@ -25,38 +25,32 @@ description: Run a Bazel command via bb remote with RBE enabled
 inputs:
   args:
     description: >
-      Bazel subcommand and arguments (e.g. 'build //...' or 'run //target').
-      Mutually exclusive with `script`.
+      Bazel subcommand and arguments (e.g. 'build //...' or 'run //target'). Mutually exclusive with `script`.
 
-      GOTCHA: these are placed BEFORE `--config=rbe --config=ci`, and Bazel's
-      last-one-wins ordering means anything those configs set silently overrides
-      what you pass here. `--remote_download_outputs=toplevel` used to be passed
-      by four callers and never took effect once — the build log says so:
-      "option '--remote_download_minimal' (source expanded from --config=rbe) was
-      expanded and now overrides the explicit option
+      GOTCHA: these are placed BEFORE `--config=rbe --config=ci`, and Bazel's last-one-wins ordering means anything
+      those configs set silently overrides what you pass here. `--remote_download_outputs=toplevel` used to be passed by
+      four callers and never took effect once — the build log says so: "option '--remote_download_minimal' (source
+      expanded from --config=rbe) was expanded and now overrides the explicit option
       --remote_download_outputs=toplevel". Use `script` when you need a flag to win.
 
-      Note also that this flag would not have controlled what reaches the GitHub
-      runner even if it had applied: `bb`'s post-run download resolves outputs
-      from the invocation's build events and fetches them from CAS, independently
-      of what Bazel materialized on the runner VM.
+      Note also that this flag would not have controlled what reaches the GitHub runner even if it had applied: `bb`'s
+      post-run download resolves outputs from the invocation's build events and fetches them from CAS, independently of
+      what Bazel materialized on the runner VM.
     required: false
     default: ""
   script:
     description: >
-      Shell script to run on the BB runner instead of a single Bazel command.
-      Mutually exclusive with `args`. $RBE_CONTAINER_IMAGE is forwarded to the runner
-      so the script can build remote-default-exec-properties dynamically.
+      Shell script to run on the BB runner instead of a single Bazel command. Mutually exclusive with `args`.
+      $RBE_CONTAINER_IMAGE is forwarded to the runner so the script can build remote-default-exec-properties
+      dynamically.
     required: false
     default: ""
   env_overrides:
     description: >
-      Newline-separated KEY=VALUE pairs forwarded to the runner via
-      x-buildbuddy-platform.env-overrides. Only still used by the
-      props-agents job in .github/workflows/push-images.yml, which pushes
-      to the private props registry from inside the BB runner VM. The GHCR
-      push path (the matrix in the same workflow) downloads OCI layouts to
-      the runner and calls `crane push` directly, so it doesn't need this.
+      Newline-separated KEY=VALUE pairs forwarded to the runner via x-buildbuddy-platform.env-overrides. Only still used
+      by the props-agents job in .github/workflows/push-images.yml, which pushes to the private props registry from
+      inside the BB runner VM. The GHCR push path (the matrix in the same workflow) downloads OCI layouts to the runner
+      and calls `crane push` directly, so it doesn't need this.
     required: false
     default: ""
   runner_container_image:
@@ -65,9 +59,8 @@ inputs:
     default: ""
   rbe_container_image:
     description: >
-      Override the RBE container image for remote actions (e.g. ghcr.io/.../rbe-container-image:sha).
-      When set, passes --remote_default_exec_properties=container-image to
-      override the pinned image from image_pins.json.
+      Override the RBE container image for remote actions (e.g. ghcr.io/.../rbe-container-image:sha). When set, passes
+      --remote_default_exec_properties=container-image to override the pinned image from image_pins.json.
     required: false
     default: ""
   disk_bytes:
@@ -84,24 +77,20 @@ inputs:
     default: ""
   linkage_roles:
     description: >
-      Optional comma-separated role names for child Bazel invocations in the
-      emitted linkage JSON, e.g. "test,build".
+      Optional comma-separated role names for child Bazel invocations in the emitted linkage JSON, e.g. "test,build".
     required: false
     default: ""
   bazel_invocation_ids:
     description: >
-      Optional comma-separated Bazel invocation ids for linkage. These must be
-      supplied by the caller; the linkage step never extracts invocation ids
-      from command logs.
+      Optional comma-separated Bazel invocation ids for linkage. These must be supplied by the caller; the linkage step
+      never extracts invocation ids from command logs.
     required: false
     default: ""
   run_from_commit:
     description: >
-      If set, passes --run_from_commit=<sha>: the runner checks out that exact commit
-      and skips workspace patch sync entirely. Only safe when the workspace is a clean
-      checkout of that commit (the patch path's "drops uncommitted changes" caveat
-      doesn't apply). See .github/workflows/bazel-ci.yml and
-      devinfra/docs/bb_remote_internals.md.
+      If set, passes --run_from_commit=<sha>: the runner checks out that exact commit and skips workspace patch sync
+      entirely. Only safe when the workspace is a clean checkout of that commit (the patch path's "drops uncommitted
+      changes" caveat doesn't apply). See .github/workflows/bazel-ci.yml and devinfra/docs/bb_remote_internals.md.
     required: false
     default: ""
 
@@ -114,9 +103,8 @@ outputs:
     value: ${{ steps.bb-remote.outputs.linkage_json_path }}
   bazel_invocation_ids:
     description: >
-      Comma-separated BuildBuddy invocation ids of the Bazel builds this step ran.
-      A later job can read what those builds produced — output digests, per-target
-      test verdicts — instead of building the same targets again.
+      Comma-separated BuildBuddy invocation ids of the Bazel builds this step ran. A later job can read what those
+      builds produced — output digests, per-target test verdicts — instead of building the same targets again.
     value: ${{ steps.bb-remote.outputs.bazel_invocation_ids }}
 
 runs:

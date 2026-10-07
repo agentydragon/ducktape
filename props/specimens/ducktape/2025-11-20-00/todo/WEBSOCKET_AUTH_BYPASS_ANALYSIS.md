@@ -12,7 +12,9 @@
 
 ## The Problem
 
-The management UI advertises token-authenticated access, but the `/ws/mcp` WebSocket endpoint is completely unauthenticated. Anyone who can reach the server can open the management WebSocket without a token, undermining the access controls the UI advertises.
+The management UI advertises token-authenticated access, but the `/ws/mcp` WebSocket endpoint is completely
+unauthenticated. Anyone who can reach the server can open the management WebSocket without a token, undermining the
+access controls the UI advertises.
 
 ### Inspection Commands
 
@@ -83,7 +85,8 @@ class BaseHTTPMiddleware:
         await response(scope, receive, send)
 ```
 
-**WebSocket handshakes use `scope['type'] == 'websocket'`**, so they skip the `dispatch()` method entirely and go straight to the app.
+**WebSocket handshakes use `scope['type'] == 'websocket'`**, so they skip the `dispatch()` method entirely and go
+straight to the app.
 
 ### The WebSocket Handler
 
@@ -323,8 +326,7 @@ Reasoning:
 - Internal networks where not all users should have admin access
 - Multi-tenant scenarios where token-based isolation is expected
 
-**Mitigation:**
-Until fixed, restrict network access to the management UI port via firewall rules.
+**Mitigation:** Until fixed, restrict network access to the management UI port via firewall rules.
 
 ## Issue File Status
 

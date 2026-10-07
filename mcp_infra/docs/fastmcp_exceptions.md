@@ -3,7 +3,8 @@
 ## Rules
 
 - **Expected failures**: raise `ToolError("actionable message for LLM")` from `fastmcp.exceptions`
-- **Unexpected failures**: let them bubble. FastMCP catches and returns as MCP errors (`isError=true`). Server stays healthy.
+- **Unexpected failures**: let them bubble. FastMCP catches and returns as MCP errors (`isError=true`). Server stays
+  healthy.
 - **No blanket try/except** in tool bodies
 - **No discriminated unions for OK/ERR** -- use `ToolError` for errors, return value for success
 

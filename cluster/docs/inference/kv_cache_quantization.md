@@ -29,7 +29,8 @@ This document summarizes research on the performance and quality implications of
 
 - ~2x memory reduction for KV cache
 - Enables 2-3x larger batch sizes on H100 machines
-- [vLLM](https://docs.vllm.ai/en/latest/features/quantization/quantized_kvcache/): "Approximately double the amount of space for KV cache allocation"
+- [vLLM](https://docs.vllm.ai/en/latest/features/quantization/quantized_kvcache/): "Approximately double the amount of
+  space for KV cache allocation"
 
 ### INT8 KV Cache
 
@@ -87,7 +88,8 @@ This document summarizes research on the performance and quality implications of
 - **For Llama and Mistral models:** Up to 2% accuracy drop
 - Enables 2.6x less peak memory usage
 - **LongBench:** KIVI-2 average 44.27 vs 16-bit 44.52 (Llama2-7B)
-- **Caution:** Later research (KITTY) found KIVI-K2V2 "consistently yields significantly lower accuracy than the FP16 baseline across all evaluated tasks"
+- **Caution:** Later research (KITTY) found KIVI-K2V2 "consistently yields significantly lower accuracy than the FP16
+  baseline across all evaluated tasks"
 
 ## Model/Architecture Robustness
 
@@ -103,7 +105,8 @@ Larger models are generally more robust to KV cache quantization.
 
 [Qwen3 Quantization Study](https://arxiv.org/html/2505.02214v1):
 
-> "Compared to prior results on LLaMA3, Qwen3 exhibits more pronounced performance degradation under low-bit quantization (3 bits or fewer)."
+> "Compared to prior results on LLaMA3, Qwen3 exhibits more pronounced performance degradation under low-bit
+> quantization (3 bits or fewer)."
 
 **Reason:** Qwen3's advanced pre-training produces less parameter redundancy, making it more sensitive to quantization.
 
@@ -123,7 +126,8 @@ Models using aggressive Grouped Query Attention (GQA) may be more sensitive to K
 
 [KVLinC](https://arxiv.org/html/2510.05373):
 
-> "The Key cache generally exhibits higher norms than the Value cache, making it more sensitive to uniform quantization."
+> "The Key cache generally exhibits higher norms than the Value cache, making it more sensitive to uniform
+> quantization."
 
 [Llama3.3-70B experiments](https://arxiv.org/html/2502.15075v1):
 
@@ -144,9 +148,11 @@ Models using aggressive Grouped Query Attention (GQA) may be more sensitive to K
 
 [KVQuant](https://arxiv.org/abs/2401.18079):
 
-> "Quantizing Keys pre-RoPE further improves perplexity by 0.82 for 3-bit LLaMA-7B, as it mitigates the disruptive effect of RoPE on channel magnitudes."
+> "Quantizing Keys pre-RoPE further improves perplexity by 0.82 for 3-bit LLaMA-7B, as it mitigates the disruptive
+> effect of RoPE on channel magnitudes."
 
-**Why it works:** RoPE applies rotations that mix pairs of channels with different magnitudes, disrupting outlier patterns.
+**Why it works:** RoPE applies rotations that mix pairs of channels with different magnitudes, disrupting outlier
+patterns.
 
 ### Offline vs Online Calibration
 
@@ -160,13 +166,15 @@ Offline calibration works well for per-channel quantization of keys.
 
 [NVIDIA Blog](https://developer.nvidia.com/blog/optimizing-inference-for-long-context-and-large-batch-sizes-with-nvfp4-kv-cache):
 
-> "NVFP4's more granular block scaling and higher precision E4M3 FP8 scaling factors together allow for lower quantization error during the dequantization step."
+> "NVFP4's more granular block scaling and higher precision E4M3 FP8 scaling factors together allow for lower
+> quantization error during the dequantization step."
 
 ### Outlier Handling
 
 [KVQuant](https://arxiv.org/abs/2401.18079):
 
-> "Removing just 1% of numerical outliers using per-vector thresholds leads to an additional 0.19 perplexity reduction for 3-bit LLaMA-7B."
+> "Removing just 1% of numerical outliers using per-vector thresholds leads to an additional 0.19 perplexity reduction
+> for 3-bit LLaMA-7B."
 
 Techniques like Dense-and-Sparse quantization isolate outliers for separate handling.
 
@@ -196,13 +204,15 @@ Techniques like Dense-and-Sparse quantization isolate outliers for separate hand
 
 [vLLM vs TensorRT-LLM comparison](https://blog.squeezebits.com/vllm-vs-tensorrtllm-8-kv-cache-quantization-35079):
 
-> "For vLLM, FP8 KV cache did not improve throughput; in fact, it slightly degraded throughput in prefill-heavy scenarios."
+> "For vLLM, FP8 KV cache did not improve throughput; in fact, it slightly degraded throughput in prefill-heavy
+> scenarios."
 
 **Note:** Some implementations lack fused dequantization + attention kernels, limiting latency benefits.
 
 [TensorRT-LLM](https://blog.squeezebits.com/vllm-vs-tensorrtllm-8-kv-cache-quantization-35079):
 
-> "KV cache quantization provided up to 1.09x and 1.45x throughput improvement at prefill-heavy and decode-heavy scenarios, respectively."
+> "KV cache quantization provided up to 1.09x and 1.45x throughput improvement at prefill-heavy and decode-heavy
+> scenarios, respectively."
 
 ## Practical Recommendations
 

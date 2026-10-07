@@ -1,7 +1,7 @@
 # BuildBuddy Integration
 
-The rc ownership and RBE execution contract live in
-<bazel_configuration.md>. This page records only environment-specific setup.
+The rc ownership and RBE execution contract live in <bazel_configuration.md>. This page records only
+environment-specific setup.
 
 ## Setup Chain
 

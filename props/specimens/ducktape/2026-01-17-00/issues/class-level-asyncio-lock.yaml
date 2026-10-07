@@ -19,8 +19,8 @@ occurrences:
       wt/client/wt_client.py:
         - [106, 106]
     note: >-
-      Class-level asyncio.Lock() provides false assurance of preventing multiple
-      daemon starts. Needs OS-level coordination (flock, atomic PID file) instead.
+      Class-level asyncio.Lock() provides false assurance of preventing multiple daemon starts. Needs OS-level
+      coordination (flock, atomic PID file) instead.
     critic_scopes_expected_to_recall:
       - - wt/client/wt_client.py
     match_file_restriction:

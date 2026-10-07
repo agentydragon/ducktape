@@ -163,7 +163,8 @@ def _is_ancestor_of(repo: pygit2.Repository, ancestor: pygit2.Oid, descendant: p
     return repo.descendant_of(descendant, ancestor)
 ```
 
-**Rule**: If the helper function body is just a single library call with no logic, it's probably unnecessary. Use the library directly.
+**Rule**: If the helper function body is just a single library call with no logic, it's probably unnecessary. Use the
+library directly.
 
 ## Quick API Reference
 

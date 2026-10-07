@@ -6,15 +6,16 @@
 
 ## FastMCP Documentation References
 
-FastMCP automatically generates JSON schemas from Pydantic models and exposes them to MCP clients.
-Understanding how FastMCP works is essential for effective documentation.
+FastMCP automatically generates JSON schemas from Pydantic models and exposes them to MCP clients. Understanding how
+FastMCP works is essential for effective documentation.
 
 **Official Resources:**
 
 - [FastMCP Documentation](https://gofastmcp.com/)
 - [FastMCP GitHub](https://github.com/jlowin/fastmcp)
 - [Tools Documentation](https://gofastmcp.com/servers/tools) - Parameter metadata and Field usage
-- [Complex Inputs Example](https://github.com/jlowin/fastmcp/blob/main/examples/complex_inputs.py) - Pydantic models with validation
+- [Complex Inputs Example](https://github.com/jlowin/fastmcp/blob/main/examples/complex_inputs.py) - Pydantic models
+  with validation
 
 **Key FastMCP Behaviors:**
 
@@ -83,8 +84,8 @@ def process_image(
     # Implementation...
 ```
 
-The same principle applies to **response models**. When your tool returns a Pydantic model,
-FastMCP generates an output schema from that model, including Field descriptions.
+The same principle applies to **response models**. When your tool returns a Pydantic model, FastMCP generates an output
+schema from that model, including Field descriptions.
 
 ### Bad Example
 
@@ -104,8 +105,8 @@ class MyToolResponse(BaseModel):
 - LLM agents use these descriptions to understand field purpose
 - No ambiguity about field formats, usage patterns, or relationships
 
-**Per FastMCP docs**: "FastMCP handles schema generation from type hints and docstrings."
-Field descriptions extend this with field-level documentation.
+**Per FastMCP docs**: "FastMCP handles schema generation from type hints and docstrings." Field descriptions extend this
+with field-level documentation.
 
 **Detection**:
 
@@ -323,8 +324,10 @@ fd -e py "server\.py$" mcp_infra/ adgn/mcp/
 - [FastMCP Official Documentation](https://gofastmcp.com/)
 - [FastMCP GitHub Repository](https://github.com/jlowin/fastmcp)
 - [Tools - Parameter Metadata](https://gofastmcp.com/servers/tools#parameter-metadata) - Official guide to Field usage
-- [Complex Inputs Example](https://github.com/jlowin/fastmcp/blob/main/examples/complex_inputs.py) - Pydantic validation patterns
-- [Memory Example](https://github.com/jlowin/fastmcp/blob/main/examples/memory.py) - Real-world usage with Field descriptions
+- [Complex Inputs Example](https://github.com/jlowin/fastmcp/blob/main/examples/complex_inputs.py) - Pydantic validation
+  patterns
+- [Memory Example](https://github.com/jlowin/fastmcp/blob/main/examples/memory.py) - Real-world usage with Field
+  descriptions
 
 ### Related Resources
 

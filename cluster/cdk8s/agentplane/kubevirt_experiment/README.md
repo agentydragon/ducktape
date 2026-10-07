@@ -1,30 +1,28 @@
 # KubeVirt launcher prototype
 
-This directory contains opt-in platform admission and disposable KubeVirt experiments. The
-runner guest CLI uses direct, UID-checked KubeVirt operations; it does not enable VM environments
-in staging/testing or add a production Sandbox Service provider, app API, or proto kind.
+This directory contains opt-in platform admission and disposable KubeVirt experiments. The runner guest CLI uses direct,
+UID-checked KubeVirt operations; it does not enable VM environments in staging/testing or add a production Sandbox
+Service provider, app API, or proto kind.
 
 ## Code map and boundary
 
 - [`policy.py`](policy.py): launcher admission and relay token mounts.
 - [`setup.py`](setup.py): disposable namespace, quotas, ESO pull secret, and synthetic gateway.
 - [`vm.py`](vm.py): Fedora and runner VM fixtures.
-- [`token_review_gateway.py`](token_review_gateway.py) and
-  [`runtime_model_gateway.py`](runtime_model_gateway.py): synthetic relay destinations.
+- [`token_review_gateway.py`](token_review_gateway.py) and [`runtime_model_gateway.py`](runtime_model_gateway.py):
+  synthetic relay destinations.
 
-Use a dedicated namespace for these KubeVirt workloads and separately restrict direct Pod/VM/VMI
-writes; labels and owner references alone do not establish authority. Neither gateway implements
-production credential substitution, destination authorization, TLS interception, or CONNECT.
-Runner inputs, commands, probes, and cleanup are in the
+Use a dedicated namespace for these KubeVirt workloads and separately restrict direct Pod/VM/VMI writes; labels and
+owner references alone do not establish authority. Neither gateway implements production credential substitution,
+destination authorization, TLS interception, or CONNECT. Runner inputs, commands, probes, and cleanup are in the
 [`runtime acceptance guide`](runtime_acceptance.md); guest build and measured findings are in
 [`runtime.md`](runtime.md).
 
 ## Reproduce
 
-Use an isolated namespace and two small VMs. Never use an existing environment's VM
-or state disks. Load the repository's Nix devshell and use Bazel outside the sandbox.
-The renderer creates a narrowly scoped ESO store and reader role in `forgejo-images`;
-ESO provisions the pull secret. No token is copied through a script or terminal.
+Use an isolated namespace and two small VMs. Never use an existing environment's VM or state disks. Load the
+repository's Nix devshell and use Bazel outside the sandbox. The renderer creates a narrowly scoped ESO store and reader
+role in `forgejo-images`; ESO provisions the pull secret. No token is copied through a script or terminal.
 
 ```bash
 ns=agentplane-vm-prototype-20261003
@@ -51,9 +49,8 @@ vm_uid=$(kubectl -n "$ns" get vm "$name" -o jsonpath='{.metadata.uid}')
 kubectl -n "$ns" patch vm "$name" --type=merge -p '{"spec":{"runStrategy":"Always"}}'
 ```
 
-Keep setup and VM outputs separate: applying a VM fixture again sets it to Halted.
-The renderer deliberately requires the live UID instead of guessing an owner.
-Before probing, wait for both VMIs and relay containers to become ready.
+Keep setup and VM outputs separate: applying a VM fixture again sets it to Halted. The renderer deliberately requires
+the live UID instead of guessing an owner. Before probing, wait for both VMIs and relay containers to become ready.
 
 ```bash
 pod=$(kubectl -n "$ns" get pod -l kubevirt.io/domain=vm-a -o jsonpath='{.items[0].metadata.name}')
@@ -68,15 +65,14 @@ curl -i -x http://10.0.2.1:3128 http://synthetic.invalid/probe
 curl -i http://prototype-gateway.agentplane-vm-prototype-20261003.svc.cluster.local:8888/probe
 ```
 
-Check direct internet/peer relay denial, real token rotation without a relay restart,
-caller-forgery rejection using server dry-run, and a fresh Pod UID after stop/start.
-Do not print the projected bearer token. Issuance/expiry timestamps and reviewed
-account/Pod UID are sufficient evidence. Stop the port-forward when done.
+Check direct internet/peer relay denial, real token rotation without a relay restart, caller-forgery rejection using
+server dry-run, and a fresh Pod UID after stop/start. Do not print the projected bearer token. Issuance/expiry
+timestamps and reviewed account/Pod UID are sufficient evidence. Stop the port-forward when done.
 
 ## Cleanup
 
-Only delete this experiment's named resources. The test root disks are ephemeral;
-there are no user state PVCs in this fixture.
+Only delete this experiment's named resources. The test root disks are ephemeral; there are no user state PVCs in this
+fixture.
 
 ```bash
 kubectl delete namespace "$ns" --wait=false
@@ -89,12 +85,10 @@ rm /tmp/agentplane-vm-prototype-key /tmp/agentplane-vm-prototype-key.pub
 
 ## Checks and limits
 
-Run `bbr test //cluster/cdk8s/agentplane/kubevirt_experiment:test_policy` for real Kyverno CLI
-mutation/reinvocation and negative admission checks. The test mocks API responses;
-it still executes the UID, account, caller, and mount predicates. Live evidence is
-recorded in [the experiment log](../../../../agentplane/debug/kubevirt/evidence.md).
+Run `bbr test //cluster/cdk8s/agentplane/kubevirt_experiment:test_policy` for real Kyverno CLI mutation/reinvocation and
+negative admission checks. The test mocks API responses; it still executes the UID, account, caller, and mount
+predicates. Live evidence is recorded in [the experiment log](../../../../agentplane/debug/kubevirt/evidence.md).
 
-This does not stop shared Kyverno to test `failurePolicy: Fail`, or exercise production
-credential substitution/CONNECT. The runner acceptance guide exercises gRPC, native-session
-recovery, setup probes, stop/start, and root-image replacement on a disposable guest. Nothing here
-promises live migration or node-loss recovery.
+This does not stop shared Kyverno to test `failurePolicy: Fail`, or exercise production credential substitution/CONNECT.
+The runner acceptance guide exercises gRPC, native-session recovery, setup probes, stop/start, and root-image
+replacement on a disposable guest. Nothing here promises live migration or node-loss recovery.

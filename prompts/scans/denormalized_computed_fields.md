@@ -2,7 +2,8 @@
 
 ## Problem
 
-Data structures should not contain both canonical data and derived/computed data. If a field can be computed from other fields (i.e., `bar = f(foo)`), it should not be stored alongside the original data.
+Data structures should not contain both canonical data and derived/computed data. If a field can be computed from other
+fields (i.e., `bar = f(foo)`), it should not be stored alongside the original data.
 
 ## Why This Matters
 
@@ -42,7 +43,8 @@ class LogEntry(BaseModel):
     date: str  # YYYY-MM-DD format - clients format as needed
 ```
 
-**Rationale**: Date formatting is presentation logic. APIs should return canonical formats (ISO 8601, YYYY-MM-DD) and let clients format for display.
+**Rationale**: Date formatting is presentation logic. APIs should return canonical formats (ISO 8601, YYYY-MM-DD) and
+let clients format for display.
 
 ### Pattern 3: Computed Aggregations
 
@@ -64,7 +66,8 @@ class PaginatedResult(BaseModel):
     page_size: int
 ```
 
-**Rationale**: If all items are returned, count is redundant. Only include `total_count` when it provides information not available from the items (e.g., pagination).
+**Rationale**: If all items are returned, count is redundant. Only include `total_count` when it provides information
+not available from the items (e.g., pagination).
 
 ### Pattern 4: Intermediate Conversions
 
@@ -79,7 +82,8 @@ class PaginatedResult(BaseModel):
 # Client uses: date string directly
 ```
 
-**Rationale**: Converting string → date object → string is pointless. Use the API's native format unless there's a compelling reason to convert.
+**Rationale**: Converting string → date object → string is pointless. Use the API's native format unless there's a
+compelling reason to convert.
 
 ## Detection Strategy
 
@@ -157,9 +161,11 @@ return StatusResult(status=status, date=date_str)
 2. **Server-side data**: If computation requires data not available to clients
 3. **Backward compatibility**: When removing would break existing clients (use deprecation)
 4. **Pagination metadata**: `total_count` when returning partial results
-5. **Derived measurements**: When the computation involves domain logic (e.g., "days_until_due" from a complex business rule)
+5. **Derived measurements**: When the computation involves domain logic (e.g., "days_until_due" from a complex business
+   rule)
 
 ## References
 
 - [API Design: Avoid Denormalization](https://apisyouwonthate.com/blog/guessing-api-http-status-codes)
-- [Pydantic Computed Fields](https://docs.pydantic.dev/latest/concepts/computed_fields/) - Use sparingly, only when truly needed
+- [Pydantic Computed Fields](https://docs.pydantic.dev/latest/concepts/computed_fields/) - Use sparingly, only when
+  truly needed

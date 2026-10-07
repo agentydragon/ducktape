@@ -1,126 +1,88 @@
 # Debundler — Design
 
-> Summary of the design: the debundler takes a bundler-emitted
-> ESM chunk and a path-first logical-module spec, and emits a
-> multi-module ESM bundle observationally equivalent to the
-> input. The primitive analysis product is an owner graph: nodes
-> are top-level owners/statements, and edges are "this owner uses
-> that binding" plus source-order side-effect constraints. A spec
-> is an assignment from owners/bindings to output destinations.
-> The validator quotients the owner graph by that assignment to
-> derive the imports graph `I` plus side-effect ordering graph
-> `S` and runs a two-pass realizability gate: Pass 1 rejects any
-> cycle among the constraining edges (at-init reads and `S`);
-> Pass 2 accepts a cycle that also runs through lazy reads only if
-> an ESM evaluation simulator, run over the emitted import order,
-> proves every constraining edge's target evaluates before its
-> source. The emit is source-order: each logical module's body is
-> its assigned statements in original chunk order, with explicit
-> `import` / `export` declarations. There is no init-wrapper
-> machinery, no closure pass, no implicit binding pulls — every
-> owned binding is named explicitly in the spec, and `Imported`
-> bindings flow through `FactorizationInputs.bindings` /
-> `BindingKind::Imported`, carrying the single re-exporting module
-> and public name that claimed it. Anonymous (empty-`declared`)
-> top-level statements have no name to address as a member; a
-> parallel `anonymous_statements` selector list addresses each by
-> a `source_match` shape template. They co-move with their
-> named-binding companions when the closure requires it, but the
-> spec is still explicit — the author writes the selector, no
-> closure pass infers it.
+> Summary of the design: the debundler takes a bundler-emitted ESM chunk and a path-first logical-module spec, and emits
+> a multi-module ESM bundle observationally equivalent to the input. The primitive analysis product is an owner graph:
+> nodes are top-level owners/statements, and edges are "this owner uses that binding" plus source-order side-effect
+> constraints. A spec is an assignment from owners/bindings to output destinations. The validator quotients the owner
+> graph by that assignment to derive the imports graph `I` plus side-effect ordering graph `S` and runs a two-pass
+> realizability gate: Pass 1 rejects any cycle among the constraining edges (at-init reads and `S`); Pass 2 accepts a
+> cycle that also runs through lazy reads only if an ESM evaluation simulator, run over the emitted import order, proves
+> every constraining edge's target evaluates before its source. The emit is source-order: each logical module's body is
+> its assigned statements in original chunk order, with explicit `import` / `export` declarations. There is no
+> init-wrapper machinery, no closure pass, no implicit binding pulls — every owned binding is named explicitly in the
+> spec, and `Imported` bindings flow through `FactorizationInputs.bindings` / `BindingKind::Imported`, carrying the
+> single re-exporting module and public name that claimed it. Anonymous (empty-`declared`) top-level statements have no
+> name to address as a member; a parallel `anonymous_statements` selector list addresses each by a `source_match` shape
+> template. They co-move with their named-binding companions when the closure requires it, but the spec is still
+> explicit — the author writes the selector, no closure pass infers it.
 
 ## Mission
 
-Ducktape's debundler takes a single ESM chunk produced by a bundler
-(no internal module boundaries, statements in a linear evaluation
-order) and recovers a multi-module ESM bundle along human-meaningful
-boundaries described by a spec. The recovered bundle must be
-observationally equivalent to the input chunk and must be a normal
-ESM bundle that consumers can import, mock, or swap without
-scaffolding.
+Ducktape's debundler takes a single ESM chunk produced by a bundler (no internal module boundaries, statements in a
+linear evaluation order) and recovers a multi-module ESM bundle along human-meaningful boundaries described by a spec.
+The recovered bundle must be observationally equivalent to the input chunk and must be a normal ESM bundle that
+consumers can import, mock, or swap without scaffolding.
 
-A bundler erases module boundaries; the debundler reconstructs them.
-This design treats reconstruction as a **graph quotient and
-scheduling problem**. The flat chunk gives us a total order over
-top-level owners/statements and a granular use graph between them.
-The spec assigns owners to output destinations. Collapsing all
-owners with the same destination yields a module dep graph; the
-validator checks that this quotient graph admits an ESM evaluation
-order observationally equivalent to the input.
+A bundler erases module boundaries; the debundler reconstructs them. This design treats reconstruction as a **graph
+quotient and scheduling problem**. The flat chunk gives us a total order over top-level owners/statements and a granular
+use graph between them. The spec assigns owners to output destinations. Collapsing all owners with the same destination
+yields a module dep graph; the validator checks that this quotient graph admits an ESM evaluation order observationally
+equivalent to the input.
 
 ## Shared `var` declaration sites
 
-A module-scoped `var` has one binding cell and can have several declaration
-sites, including loop heads and conditional blocks. Statement facts retain each
-site's declared binding identity, its `var` kind, and its initializer writes.
-Bare redeclarations are not runtime writes. Binding lookup uses the first site
-as a representative only after collecting and validating every site.
+A module-scoped `var` has one binding cell and can have several declaration sites, including loop heads and conditional
+blocks. Statement facts retain each site's declared binding identity, its `var` kind, and its initializer writes. Bare
+redeclarations are not runtime writes. Binding lookup uses the first site as a representative only after collecting and
+validating every site.
 
-`CoDeclaration` edges join the representative and every other site in both
-directions. The atomic graph and both realizability gates therefore require all
-sites to share one destination. The original AST statements remain intact and
+`CoDeclaration` edges join the representative and every other site in both directions. The atomic graph and both
+realizability gates therefore require all sites to share one destination. The original AST statements remain intact and
 are emitted once in source order; assigning the binding claims every site.
 
-Initializers of shared bindings participate in side-effect ordering even when
-their expressions are pure. Additional source-order edges sequence eager reads,
-writes, and promoted at-init observations of each shared cell, including pure
-read expressions. This prevents moving an observer across a later initializer.
-Unresolved-call analysis joins all declaration sites when following possible
-function values. Value-specific purity inference must account for all sites.
+Initializers of shared bindings participate in side-effect ordering even when their expressions are pure. Additional
+source-order edges sequence eager reads, writes, and promoted at-init observations of each shared cell, including pure
+read expressions. This prevents moving an observer across a later initializer. Unresolved-call analysis joins all
+declaration sites when following possible function values. Value-specific purity inference must account for all sites.
 
 ## Soundness over completeness
 
-The debundler's contract: **any spec the validator accepts must emit a
-debundled bundle that runs correctly.** Over-restriction — rejecting a
-spec that would in fact have produced a working output — is an
-acceptable failure mode; the user can rework the spec, or we can loosen
-the validator. Under-restriction — accepting a spec that produces a
+The debundler's contract: **any spec the validator accepts must emit a debundled bundle that runs correctly.**
+Over-restriction — rejecting a spec that would in fact have produced a working output — is an acceptable failure mode;
+the user can rework the spec, or we can loosen the validator. Under-restriction — accepting a spec that produces a
 broken bundle — is a soundness violation and is not acceptable.
 
-This governs every static analysis the validator runs: purity
-classification, side-effect graph construction, top-level-await
-detection, dependency-graph cycles.
+This governs every static analysis the validator runs: purity classification, side-effect graph construction,
+top-level-await detection, dependency-graph cycles.
 
 ### Conditionally-correct optimizations
 
-Soundness does not require every inference to hold for arbitrary JS. An
-inference may be **conditionally correct** — sound only when the input
-satisfies a checkable precondition — provided the implementation:
+Soundness does not require every inference to hold for arbitrary JS. An inference may be **conditionally correct** —
+sound only when the input satisfies a checkable precondition — provided the implementation:
 
-1. Checks the precondition on the specific statements or chunks it
-   would fire on, and
-2. Falls back to the strictly-conservative path (the one already known
-   sound) when the precondition fails.
+1. Checks the precondition on the specific statements or chunks it would fire on, and
+2. Falls back to the strictly-conservative path (the one already known sound) when the precondition fails.
 
-Example: dataflow-aware S-chain emission (`graph/`). Per-statement
-write/read summaries assume the statement contains no `with`, no direct
-`eval`, no computed-key `globalThis` access, no `Function` constructor —
-constructs that would invalidate static reasoning about which cells the
-statement touches. Each impure statement carries a
-`dataflow_summarizable` bit; statements failing the check fall back to
-the unconditional adjacent-impure S-edge.
+Example: dataflow-aware S-chain emission (`graph/`). Per-statement write/read summaries assume the statement contains no
+`with`, no direct `eval`, no computed-key `globalThis` access, no `Function` constructor — constructs that would
+invalidate static reasoning about which cells the statement touches. Each impure statement carries a
+`dataflow_summarizable` bit; statements failing the check fall back to the unconditional adjacent-impure S-edge.
 
-This is deliberate. The real inputs (production bundler output) are
-well-behaved and admit precise reasoning even though generic JS does not.
-Document each such optimization with the precondition it requires, where the
-check lives, and the fallback path.
+This is deliberate. The real inputs (production bundler output) are well-behaved and admit precise reasoning even though
+generic JS does not. Document each such optimization with the precondition it requires, where the check lives, and the
+fallback path.
 
 ## ESM execution model (the constraints)
 
-ESM module evaluation is more constrained than ad-hoc discussion
-admits. Pinning the rules down once:
+ESM module evaluation is more constrained than ad-hoc discussion admits. Pinning the rules down once:
 
-1. **Imports are linked before evaluation.** All transitively
-   reachable modules are parsed and have their bindings allocated
-   before any module body runs. The `import` line at the top of
-   each module is a declaration of a dep, not a runtime statement.
-2. **Module evaluation order is a topological sort of the dep
-   graph.** For a DAG, deepest-first. Deterministic for non-cyclic
-   graphs.
-3. **For cycles, ESM evaluates one member at a time, in reverse-DFS
-   from the entry.** The "first" member to evaluate sees the
-   others' exports in their _partially-initialized_ state. The
-   exact partial state depends on the binding kind:
+1. **Imports are linked before evaluation.** All transitively reachable modules are parsed and have their bindings
+   allocated before any module body runs. The `import` line at the top of each module is a declaration of a dep, not a
+   runtime statement.
+2. **Module evaluation order is a topological sort of the dep graph.** For a DAG, deepest-first. Deterministic for
+   non-cyclic graphs.
+3. **For cycles, ESM evaluates one member at a time, in reverse-DFS from the entry.** The "first" member to evaluate
+   sees the others' exports in their _partially-initialized_ state. The exact partial state depends on the binding kind:
 
    | Binding kind            | State before its declaration line runs                                     |
    | ----------------------- | -------------------------------------------------------------------------- |
@@ -130,69 +92,51 @@ admits. Pinning the rules down once:
    | `class X { ... }`       | TDZ; **not hoisted**; reads (including `extends X`) throw `ReferenceError` |
    | `import { X } from ...` | Live binding to the target's binding; whatever the target currently holds  |
 
-4. **Side-effecting top-level statements run when their module's
-   body reaches them.** Module bodies run once per program; no way
-   to re-run. The order across modules is determined by the
-   topological evaluation order, **not** by the source order of the
-   original flat chunk.
-5. **The entry module's body runs last** — every transitive
-   dependency evaluates first.
+4. **Side-effecting top-level statements run when their module's body reaches them.** Module bodies run once per
+   program; no way to re-run. The order across modules is determined by the topological evaluation order, **not** by the
+   source order of the original flat chunk.
+5. **The entry module's body runs last** — every transitive dependency evaluates first.
 
 Two consequences are central to debundling:
 
-- **Reads at module-top are time-sensitive.** They see whatever is
-  set at the moment they execute. In a cycle, that may be undefined
-  or TDZ.
-- **Reads inside function bodies, method bodies, class instance-
-  field initializers, etc. are time-deferred.** They see whatever
-  is set at the moment the function/method is _called_, typically
-  much later in program time.
+- **Reads at module-top are time-sensitive.** They see whatever is set at the moment they execute. In a cycle, that may
+  be undefined or TDZ.
+- **Reads inside function bodies, method bodies, class instance- field initializers, etc. are time-deferred.** They see
+  whatever is set at the moment the function/method is _called_, typically much later in program time.
 
 ## Definitions
 
 ### Bindings, names, and keys
 
-A _binding_ is a named slot in a chunk's top-level lexical scope. Two
-syntactic positions introduce a binding into that scope:
+A _binding_ is a named slot in a chunk's top-level lexical scope. Two syntactic positions introduce a binding into that
+scope:
 
-1. **Declaration**: `var X = ...`, `let X = ...`, `const X = ...`,
-   `function X(){}`, `class X{}` introduce `X` as a _declared
-   binding_. The value lives in this chunk; we own it.
-2. **Import specifier**: `import { Y as X } from "<other-chunk>"`
-   introduces `X` as an _imported binding_. `X` is a local alias
-   for an export of another chunk; the value lives elsewhere.
+1. **Declaration**: `var X = ...`, `let X = ...`, `const X = ...`, `function X(){}`, `class X{}` introduce `X` as a
+   _declared binding_. The value lives in this chunk; we own it.
+2. **Import specifier**: `import { Y as X } from "<other-chunk>"` introduces `X` as an _imported binding_. `X` is a
+   local alias for an export of another chunk; the value lives elsewhere.
 
-Within a single chunk's top-level scope, a name `X` is introduced
-_at most once_ — JavaScript rejects duplicate top-level
-declarations, and a redeclaration through an import is a
-SyntaxError. So the pair `(chunk_id, name)` is a one-to-one
-identifier for a binding.
+Within a single chunk's top-level scope, a name `X` is introduced _at most once_ — JavaScript rejects duplicate
+top-level declarations, and a redeclaration through an import is a SyntaxError. So the pair `(chunk_id, name)` is a
+one-to-one identifier for a binding.
 
-That pair is the conceptual _binding key_ at repo/tool boundaries.
-Inside a single chunk analysis, the chunk is already contextual, so
-the in-memory representation keys bindings by SWC's
-`Id = (Atom, SyntaxContext)` — the hygiene-aware identity the
-resolver pass mints (`graph/`, `facts/`). Reports and specs spell
-bindings by name (`Atom`-only on the wire; see
-`docs/wire_format.md`); internal owner graph edges, owner
-declarations, and per-chunk indexes clone `Id`s into `BTreeMap` /
-`BTreeSet` keys.
+That pair is the conceptual _binding key_ at repo/tool boundaries. Inside a single chunk analysis, the chunk is already
+contextual, so the in-memory representation keys bindings by SWC's `Id = (Atom, SyntaxContext)` — the hygiene-aware
+identity the resolver pass mints (`graph/`, `facts/`). Reports and specs spell bindings by name (`Atom`-only on the
+wire; see `docs/wire_format.md`); internal owner graph edges, owner declarations, and per-chunk indexes clone `Id`s into
+`BTreeMap` / `BTreeSet` keys.
 
-An interned binding table (dense indices instead of cloned `Id` keys)
-is not implemented; adopt it only if profiling shows the binding-keyed graph
-paths as a material cost.
+An interned binding table (dense indices instead of cloned `Id` keys) is not implemented; adopt it only if profiling
+shows the binding-keyed graph paths as a material cost.
 
-Names are stable across the readability rename pass. The rename
-pass changes the _emitted_ identifier in the destination module's
-text; it does not change what a binding _is_. The schedule keys
-on the original (scrambled) source-chunk local; the rename pass
-applies as a final post-processing step that reads
-`PlannedModule.rename_map` and rewrites the emitted source.
+Names are stable across the readability rename pass. The rename pass changes the _emitted_ identifier in the destination
+module's text; it does not change what a binding _is_. The schedule keys on the original (scrambled) source-chunk local;
+the rename pass applies as a final post-processing step that reads `PlannedModule.rename_map` and rewrites the emitted
+source.
 
 ### Two binding kinds
 
-A binding's _kind_ records which of the two introducing positions
-made it, plus the metadata downstream stages need:
+A binding's _kind_ records which of the two introducing positions made it, plus the metadata downstream stages need:
 
 ```rust
 pub enum BindingKind {
@@ -222,122 +166,82 @@ pub enum BindingKind {
 }
 ```
 
-Distinguishing the two kinds in the data model is what gives
-the validator and emitter a single source of truth for binding
-ownership: an `Owned` entry says "this logical module
-contributes this binding to the chunk's namespace"; an
-`Imported` entry says "this binding originates elsewhere; this
-module re-exports it." Without the distinction the spec needs a
-parallel side-channel to express re-export semantics.
+Distinguishing the two kinds in the data model is what gives the validator and emitter a single source of truth for
+binding ownership: an `Owned` entry says "this logical module contributes this binding to the chunk's namespace"; an
+`Imported` entry says "this binding originates elsewhere; this module re-exports it." Without the distinction the spec
+needs a parallel side-channel to express re-export semantics.
 
 ### Statements
 
-Let the input _chunk_ be a sequence of top-level statements
-`S_1, ..., S_n` in source order. Let the spec be a partial map
-`owner: binding → ModuleId` (over bindings of kind `Owned`);
-bindings without an explicit owner default to the _residual_
-module (a synthesized `PlannedModule` with `residual: true` that
-holds whatever is left over).
+Let the input _chunk_ be a sequence of top-level statements `S_1, ..., S_n` in source order. Let the spec be a partial
+map `owner: binding → ModuleId` (over bindings of kind `Owned`); bindings without an explicit owner default to the
+_residual_ module (a synthesized `PlannedModule` with `residual: true` that holds whatever is left over).
 
 For each statement `S`:
 
-- **`declared(S) ⊆ Bindings`** — top-level identifiers introduced
-  by `S`. `var X`, `let X`, `const X`, `function X`, `class X`, and
-  `import { X }` each declare `X`. Comma-list var-decls declare
-  every name.
-- **`reads_at_init(S) ⊆ Bindings`** — bindings whose values are
-  read during `S`'s evaluation, _excluding_ references inside
-  function/method bodies, instance class-field initializers,
-  getter/setter bodies, and other lazy syntactic positions.
-  Including: `extends`-clauses, decorator expressions, computed
-  property keys, default-export expressions, RHS of var
-  declarators, `static` field initializers, static blocks.
-- **`reads_lazy(S) ⊆ Bindings`** — bindings referenced from `S`'s
-  syntactic span but only at the lazy positions
-  `reads_at_init(S)` excludes (function/method bodies, instance
-  class-field initializers, getter/setter bodies). The two sets
-  are disjoint and complete: every cross-module reference in `S`
-  belongs to exactly one. The full reference set is
+- **`declared(S) ⊆ Bindings`** — top-level identifiers introduced by `S`. `var X`, `let X`, `const X`, `function X`,
+  `class X`, and `import { X }` each declare `X`. Comma-list var-decls declare every name.
+- **`reads_at_init(S) ⊆ Bindings`** — bindings whose values are read during `S`'s evaluation, _excluding_ references
+  inside function/method bodies, instance class-field initializers, getter/setter bodies, and other lazy syntactic
+  positions. Including: `extends`-clauses, decorator expressions, computed property keys, default-export expressions,
+  RHS of var declarators, `static` field initializers, static blocks.
+- **`reads_lazy(S) ⊆ Bindings`** — bindings referenced from `S`'s syntactic span but only at the lazy positions
+  `reads_at_init(S)` excludes (function/method bodies, instance class-field initializers, getter/setter bodies). The two
+  sets are disjoint and complete: every cross-module reference in `S` belongs to exactly one. The full reference set is
   `reads(S) = reads_at_init(S) ∪ reads_lazy(S)`.
-- **`has_side_effect(S) ∈ {true, false}`** — whether `S`'s
-  evaluation has externally-observable side effects beyond binding
-  declaration. Pure `function X() {}` and `class X {}` (no static
-  init) are side-effect-free. `const X = computed()` has the side
-  effects of `computed()`. Bare expressions are side-effecting by
-  default.
+- **`has_side_effect(S) ∈ {true, false}`** — whether `S`'s evaluation has externally-observable side effects beyond
+  binding declaration. Pure `function X() {}` and `class X {}` (no static init) are side-effect-free.
+  `const X = computed()` has the side effects of `computed()`. Bare expressions are side-effecting by default.
 
 The spec induces, for each statement:
 
-- **`home(S) ∈ Modules`** — the module a statement is emitted
-  into. For statements with `declared(S) ≠ ∅`, `home(S)` is the
-  spec's `owner` of any name in `declared(S)`. (We require all
-  names in `declared(S)` to share an owner; comma-list var-decls
-  with split owners are split into separate var-decls before this
-  step.) For statements with `declared(S) = ∅` (bare expressions,
-  side-effecting statements), `home(S)` defaults to the residual
-  module **unless** the spec claims `S` via an
-  `anonymous_statements` shape selector on some logical module
-  (see §"Anonymous-statement selectors"); a single shape-selector
-  match overrides the default and routes `S` into the claiming
-  module.
+- **`home(S) ∈ Modules`** — the module a statement is emitted into. For statements with `declared(S) ≠ ∅`, `home(S)` is
+  the spec's `owner` of any name in `declared(S)`. (We require all names in `declared(S)` to share an owner; comma-list
+  var-decls with split owners are split into separate var-decls before this step.) For statements with `declared(S) = ∅`
+  (bare expressions, side-effecting statements), `home(S)` defaults to the residual module **unless** the spec claims
+  `S` via an `anonymous_statements` shape selector on some logical module (see §"Anonymous-statement selectors"); a
+  single shape-selector match overrides the default and routes `S` into the claiming module.
 
 ## Owner graph
 
-The lowest-level scheduling object is the **owner graph**. It is
-independent of any particular logical-module spec.
+The lowest-level scheduling object is the **owner graph**. It is independent of any particular logical-module spec.
 
-An _owner_ is a top-level unit that will move as a unit during
-emission: a function declaration, class declaration, single
-var-declarator after comma-list splitting, import declaration
-specifier, or residual side-effect statement. The implementation
-preserves this as a first-class data structure and side output.
+An _owner_ is a top-level unit that will move as a unit during emission: a function declaration, class declaration,
+single var-declarator after comma-list splitting, import declaration specifier, or residual side-effect statement. The
+implementation preserves this as a first-class data structure and side output.
 
 The micro owner graph is a directed, labeled graph `G = (V, E)`:
 
-- **Vertices:** owners in source order. A declaration owner carries
-  `declared`, source location, kind, and any readable rename/spec
-  metadata. A residual side-effect owner may have no declared
-  binding.
-- **Read edges:** `O -> O_b` for every binding `b` read by owner
-  `O`, where `O_b` is the owner that declares `b` (the import
-  declaration, for an imported binding). The edge carries
-  `binding`, `edge_kind` (`eager_use` or `lazy_use`), and the source
-  statement ordinal.
-- **Rebind edges:** `eager_rebind`, `lazy_rebind` or `deferred_rebind`
-  from an owner that assigns a binding to the owner that declares it.
-- **Co-declaration edges:** `co_declaration` in both directions between sites
-  declaring one shared `var` binding, requiring one destination.
-- **Local-effect edges:** `local_effect` from a statement whose modeled
-  mutation is local to a target owner (A10).
-- **Side-effect order edges:** potential `O₂ -> O₁` (`sequenced`) constraints
-  when both owners have side-effecting top-level evaluation and
-  `O₁` appears before `O₂` in the source chunk. After assignment
-  they become `S` edges only when their endpoints land in different
-  destinations.
+- **Vertices:** owners in source order. A declaration owner carries `declared`, source location, kind, and any readable
+  rename/spec metadata. A residual side-effect owner may have no declared binding.
+- **Read edges:** `O -> O_b` for every binding `b` read by owner `O`, where `O_b` is the owner that declares `b` (the
+  import declaration, for an imported binding). The edge carries `binding`, `edge_kind` (`eager_use` or `lazy_use`), and
+  the source statement ordinal.
+- **Rebind edges:** `eager_rebind`, `lazy_rebind` or `deferred_rebind` from an owner that assigns a binding to the owner
+  that declares it.
+- **Co-declaration edges:** `co_declaration` in both directions between sites declaring one shared `var` binding,
+  requiring one destination.
+- **Local-effect edges:** `local_effect` from a statement whose modeled mutation is local to a target owner (A10).
+- **Side-effect order edges:** potential `O₂ -> O₁` (`sequenced`) constraints when both owners have side-effecting
+  top-level evaluation and `O₁` appears before `O₂` in the source chunk. After assignment they become `S` edges only
+  when their endpoints land in different destinations.
 
 The owner graph is the right abstraction for tooling:
 
-- "Can this thing be peeled?" is a proposed reassignment of one or
-  more owner vertices.
-- "What else must move with it?" is a candidate-construction
-  question over owner-level read, write, and side-effect edges. The
-  answer is not proof by itself; the resulting assignment must still
-  be checked by the same quotient validator as a handwritten spec.
-- "Why did this fail?" should point at owner-level edges first, then
-  at the derived module edge they induced.
+- "Can this thing be peeled?" is a proposed reassignment of one or more owner vertices.
+- "What else must move with it?" is a candidate-construction question over owner-level read, write, and side-effect
+  edges. The answer is not proof by itself; the resulting assignment must still be checked by the same quotient
+  validator as a handwritten spec.
+- "Why did this fail?" should point at owner-level edges first, then at the derived module edge they induced.
 
-The emitted module graph is a **quotient** of this graph: choose a
-destination function `dest(owner)` from spec assignments (defaulting
-to the residual module), merge owners with the same destination, drop
-intra-destination edges, and aggregate all cross-destination edge
-reasons.
+The emitted module graph is a **quotient** of this graph: choose a destination function `dest(owner)` from spec
+assignments (defaulting to the residual module), merge owners with the same destination, drop intra-destination edges,
+and aggregate all cross-destination edge reasons.
 
 ## Module dep graphs as quotients
 
-The materializer validates three directed graphs derived from the
-owner graph quotient. Each captures a different scheduling
-constraint; the realizability theorem (next section) is stated over
-their union.
+The materializer validates three directed graphs derived from the owner graph quotient. Each captures a different
+scheduling constraint; the realizability theorem (next section) is stated over their union.
 
 The vertex set in every case is
 
@@ -345,144 +249,101 @@ The vertex set in every case is
 V = Modules
 ```
 
-— the set of logical modules, including the synthesized residual module
-that holds unowned bindings. Other chunks are not vertices: a cross-chunk
-import is an `Imported` binding of an import-declaration owner.
+— the set of logical modules, including the synthesized residual module that holds unowned bindings. Other chunks are
+not vertices: a cross-chunk import is an `Imported` binding of an import-declaration owner.
 
 ### I — the imports graph (the linker's view)
 
-The graph the **ESM linker** actually walks. One edge per emitted
-`import` directive.
+The graph the **ESM linker** actually walks. One edge per emitted `import` directive.
 
 - **Vertices:** `V = Modules`.
-- **Edges:** `(M, M') ∈ E_I` iff some statement `S` with
-  `home(S) = M` references a binding `b` with `owner(b) = M' ≠ M`,
-  in **any syntactic position** — at-init (`extends b`,
-  `const x = b + 1`, computed property key, decorator expression,
-  default-export expression, RHS of var declarators, static field
-  initializers, static blocks) or lazy (function body, method
-  body, instance class field initializer, getter/setter body).
+- **Edges:** `(M, M') ∈ E_I` iff some statement `S` with `home(S) = M` references a binding `b` with
+  `owner(b) = M' ≠ M`, in **any syntactic position** — at-init (`extends b`, `const x = b + 1`, computed property key,
+  decorator expression, default-export expression, RHS of var declarators, static field initializers, static blocks) or
+  lazy (function body, method body, instance class field initializer, getter/setter body).
 
-Each edge of `I` corresponds to exactly one
-`import { b } from "<M'>"` line in the emitted source of `M`.
-For acyclic `I` the linker computes a topological order, and that
-order is the module evaluation order. The realizability gate judges `I`
-together with `S`.
+Each edge of `I` corresponds to exactly one `import { b } from "<M'>"` line in the emitted source of `M`. For acyclic
+`I` the linker computes a topological order, and that order is the module evaluation order. The realizability gate
+judges `I` together with `S`.
 
 ### R — the at-init read sub-graph (TDZ-relevant subset)
 
 Same shape as `I` but restricted to `reads_at_init`.
 
 - **Vertices:** `V = Modules`.
-- **Edges:** `(M, M') ∈ E_R` iff some statement `S` with
-  `home(S) = M` reads a binding `b` with `owner(b) = M' ≠ M` and
+- **Edges:** `(M, M') ∈ E_R` iff some statement `S` with `home(S) = M` reads a binding `b` with `owner(b) = M' ≠ M` and
   `b ∈ reads_at_init(S)`.
 
-The `reads_at_init(S)` predicate is defined under
-[Statements](#statements) — it admits eager positions and rejects
-lazy ones.
+The `reads_at_init(S)` predicate is defined under [Statements](#statements) — it admits eager positions and rejects lazy
+ones.
 
-`R ⊆ I` strictly: every at-init read is a read, but lazy reads
-contribute to `I` only. `R`'s edges record which cross-module
-references would TDZ if the linker chose a wrong evaluation
-order. `R` is not checked on its own — every `R` cycle is also an
-`I` cycle, and Pass 1 checks the constraining subgraph `R ∪ S` — but `R`
-shows up in the realizability proof as the sub-graph whose acyclicity
-guarantees no at-init read sees TDZ once the linker has linearized `I`.
+`R ⊆ I` strictly: every at-init read is a read, but lazy reads contribute to `I` only. `R`'s edges record which
+cross-module references would TDZ if the linker chose a wrong evaluation order. `R` is not checked on its own — every
+`R` cycle is also an `I` cycle, and Pass 1 checks the constraining subgraph `R ∪ S` — but `R` shows up in the
+realizability proof as the sub-graph whose acyclicity guarantees no at-init read sees TDZ once the linker has linearized
+`I`.
 
 ### S — the side-effect order graph
 
-Source-order ordering constraints between side-effecting
-statements that happen to land in different modules. Independent
-of imports.
+Source-order ordering constraints between side-effecting statements that happen to land in different modules.
+Independent of imports.
 
 - **Vertices:** `V = Modules`.
-- **Edges:** `(M, M') ∈ E_S` iff there exist statements `S₁`, `S₂`
-  in the source chunk with `S₁.ordinal < S₂.ordinal`,
-  `has_side_effect(S₁)`, `has_side_effect(S₂)`,
-  `home(S₁) = M'`, `home(S₂) = M`, and `M ≠ M'`.
+- **Edges:** `(M, M') ∈ E_S` iff there exist statements `S₁`, `S₂` in the source chunk with `S₁.ordinal < S₂.ordinal`,
+  `has_side_effect(S₁)`, `has_side_effect(S₂)`, `home(S₁) = M'`, `home(S₂) = M`, and `M ≠ M'`.
 
-Edge `(M, M')` reads "`M`'s body must observe `M'`'s
-side-effecting work as already complete" — equivalently, `M'`
+Edge `(M, M')` reads "`M`'s body must observe `M'`'s side-effecting work as already complete" — equivalently, `M'`
 evaluates before `M`.
 
-An `S` edge carries no binding, so the emitter realizes it as a
-side-effect-only `import "./<M'>.js"` in `M` (a phantom import) unless `M`
-already imports a binding from `M'` or `M'` is the residual module. The
-materializer orders those imports so the linker's DFS lands on a
-linearization of the constraining edges ("Lemma 2: entry-side import
-ordering"); acyclicity of the constraining subgraph `R ∪ S` guarantees one
-exists. The gate's I-graph (`ChunkConstrainingEdgeSet::i_successors`)
-therefore holds every non-rebind cross-module edge, `I` and `S` alike.
+An `S` edge carries no binding, so the emitter realizes it as a side-effect-only `import "./<M'>.js"` in `M` (a phantom
+import) unless `M` already imports a binding from `M'` or `M'` is the residual module. The materializer orders those
+imports so the linker's DFS lands on a linearization of the constraining edges ("Lemma 2: entry-side import ordering");
+acyclicity of the constraining subgraph `R ∪ S` guarantees one exists. The gate's I-graph
+(`ChunkConstrainingEdgeSet::i_successors`) therefore holds every non-rebind cross-module edge, `I` and `S` alike.
 
 #### Emission modes
 
-`S` is materialised at owner level (`emit_s_chain` in `graph/build.rs`) and
-the chunk spec picks one of two modes via
+`S` is materialised at owner level (`emit_s_chain` in `graph/build.rs`) and the chunk spec picks one of two modes via
 `chunk_analysis_options.<chunk_id>.dataflow_aware_s_chain`:
 
-- **Strict chain** (default): for each impure top-level statement,
-  emit one `Sequenced` edge to the immediately previous impure
-  statement. This is the transitive reduction of the total order
-  over impure statements; it preserves reachability and all SCCs
-  while keeping the owner-edge count linear. Soundest path —
-  every realizable schedule satisfies it.
+- **Strict chain** (default): for each impure top-level statement, emit one `Sequenced` edge to the immediately previous
+  impure statement. This is the transitive reduction of the total order over impure statements; it preserves
+  reachability and all SCCs while keeping the owner-edge count linear. Soundest path — every realizable schedule
+  satisfies it.
 
-- **Dataflow-aware** (opt-in): per-statement `(writes, reads)`
-  effect summaries (`StatementEffectSummary` in `facts/statement_facts.rs`)
-  drive the emission. For each impure statement `curr`, emit
-  `Sequenced(curr → prev)` when `prev` is the most recent prior
-  writer of a cell in `curr.reads ∪ curr.writes`
-  (read-after-write / write-after-write), and when `prev` read a
-  cell `curr` writes since that cell's last write
-  (write-after-read — without it a later writer could be
-  scheduled before an earlier reader). Soundness follows because
-  any swap of two consecutive impure statements with disjoint
-  cells is unobservable to any third party.
+- **Dataflow-aware** (opt-in): per-statement `(writes, reads)` effect summaries (`StatementEffectSummary` in
+  `facts/statement_facts.rs`) drive the emission. For each impure statement `curr`, emit `Sequenced(curr → prev)` when
+  `prev` is the most recent prior writer of a cell in `curr.reads ∪ curr.writes` (read-after-write / write-after-write),
+  and when `prev` read a cell `curr` writes since that cell's last write (write-after-read — without it a later writer
+  could be scheduled before an earlier reader). Soundness follows because any swap of two consecutive impure statements
+  with disjoint cells is unobservable to any third party.
 
-  Effect cells are binding-storage cells (rebinds + identifier
-  reads) and static-key `<global>.<prop>` cells, where `<global>`
-  is any unshadowed global-object alias (`globalThis`, `window`,
-  `self`, `frames`, `top`), all one object: `window.tag` and
-  `globalThis.tag` are one cell. A chunk-top declaration or import
-  of an alias name disables its global treatment chunk-wide. The mode is **conditionally correct**
-  (see "Conditionally-correct optimizations" above):
-  statements containing a shape that defeats static cell tracking
-  flip `dataflow_summarizable=false` and fall back to a strict
-  S-edge against every prior impure owner (also acting as an
-  opaque barrier for later statements). The bail shapes are:
-  - any at-init call, `new`, optional call, or tagged template the
-    purity classifier does not prove `Pure` — I/O (`console.log`)
-    is not a cell, callee bodies may write global props the
-    depth-0 cell recorder can't see, and indirect `eval`
-    (`(0, eval)(...)`) executes arbitrary writes. Classifier-Pure
-    calls are exempt: `Pure` guarantees no observable writes and
-    no global-prop reads, and binding-cell ordering is enforced by
-    binding edges + rebind co-location rather than the S-chain.
-    A chunk may opt into the author-trusted
-    `trusted_dataflow_summaries` refinement to let this class of
-    opaque calls/news use the syntactic dataflow summary anyway;
-    shapes that defeat write-cell extraction outright still force
-    conservative barriers regardless of that flag;
-  - member writes through a tracked binding (`obj.x = 1`,
-    `obj.x++`, destructuring targets containing member
-    expressions) — aliasing makes the written heap cell
-    unattributable;
-  - `with`, `Function(...)` / `new Function(...)`, computed-key
-    `<global>[<expr>]`, `defineProperty` on the global object,
-    `new Proxy(<global>, ...)`;
-  - statements tainted by a global-object alias escape: a bare
-    `globalThis`/`window`/... used as a _value_ (`const g =
-globalThis`) marks the bindings it flows into (transitively,
-    to a fixpoint) as suspects, and every statement reading a
-    suspect bails — `g.tag` touches the same cells as
-    `globalThis.tag` but the summary only sees `Binding(g)`.
+  Effect cells are binding-storage cells (rebinds + identifier reads) and static-key `<global>.<prop>` cells, where
+  `<global>` is any unshadowed global-object alias (`globalThis`, `window`, `self`, `frames`, `top`), all one object:
+  `window.tag` and `globalThis.tag` are one cell. A chunk-top declaration or import of an alias name disables its global
+  treatment chunk-wide. The mode is **conditionally correct** (see "Conditionally-correct optimizations" above):
+  statements containing a shape that defeats static cell tracking flip `dataflow_summarizable=false` and fall back to a
+  strict S-edge against every prior impure owner (also acting as an opaque barrier for later statements). The bail
+  shapes are:
+  - any at-init call, `new`, optional call, or tagged template the purity classifier does not prove `Pure` — I/O
+    (`console.log`) is not a cell, callee bodies may write global props the depth-0 cell recorder can't see, and
+    indirect `eval` (`(0, eval)(...)`) executes arbitrary writes. Classifier-Pure calls are exempt: `Pure` guarantees no
+    observable writes and no global-prop reads, and binding-cell ordering is enforced by binding edges + rebind
+    co-location rather than the S-chain. A chunk may opt into the author-trusted `trusted_dataflow_summaries` refinement
+    to let this class of opaque calls/news use the syntactic dataflow summary anyway; shapes that defeat write-cell
+    extraction outright still force conservative barriers regardless of that flag;
+  - member writes through a tracked binding (`obj.x = 1`, `obj.x++`, destructuring targets containing member
+    expressions) — aliasing makes the written heap cell unattributable;
+  - `with`, `Function(...)` / `new Function(...)`, computed-key `<global>[<expr>]`, `defineProperty` on the global
+    object, `new Proxy(<global>, ...)`;
+  - statements tainted by a global-object alias escape: a bare `globalThis`/`window`/... used as a _value_
+    (`const g = globalThis`) marks the bindings it flows into (transitively, to a fixpoint) as suspects, and every
+    statement reading a suspect bails — `g.tag` touches the same cells as `globalThis.tag` but the summary only sees
+    `Binding(g)`.
 
-  The bit is `dataflow_summarizable` in `facts/statement_facts.rs`. Only the
-  bailing statements pay the conservative cost, so the mode is safe
-  on chunks mixing audited and unaudited code, but call-heavy
-  top-level code gains little: every statement with an unproven call
-  is chained.
+  The bit is `dataflow_summarizable` in `facts/statement_facts.rs`. Only the bailing statements pay the conservative
+  cost, so the mode is safe on chunks mixing audited and unaudited code, but call-heavy top-level code gains little:
+  every statement with an unproven call is chained.
 
 ### Relationship
 
@@ -493,922 +354,599 @@ I  ∪  S            the full constraint graph
 
 ## Realizability primitive
 
-Clauses 2 and 3 of the validity predicate ("Valid peels and atomic
-modules") — no cross-destination rebinding write, and the two-pass gate of
-"Lemma 2: entry-side import ordering" — have exactly **one** implementation,
-in the `gate` crate (`realizability/`). Every code path that asks "is this
-destination assignment realizable?" reaches it through the same primitive:
+Clauses 2 and 3 of the validity predicate ("Valid peels and atomic modules") — no cross-destination rebinding write, and
+the two-pass gate of "Lemma 2: entry-side import ordering" — have exactly **one** implementation, in the `gate` crate
+(`realizability/`). Every code path that asks "is this destination assignment realizable?" reaches it through the same
+primitive:
 
 > `check_realizability(owner_graph, partition) → RealizabilityVerdict`
 
-The verdict lists the unrealizable SCCs (each an `SccDiagnosis`, rejected as
-`MutualConstrainingCycle` or `EsmEvaluationTdz`) and the cross-destination
-rebinds, with owner-edge provenance. An empty verdict means the partition is
-realizable. Clause 1 (importability) is emit policy and not part of the
-verdict ("Emit-side responsibilities").
+The verdict lists the unrealizable SCCs (each an `SccDiagnosis`, rejected as `MutualConstrainingCycle` or
+`EsmEvaluationTdz`) and the cross-destination rebinds, with owner-edge provenance. An empty verdict means the partition
+is realizable. Clause 1 (importability) is emit policy and not part of the verdict ("Emit-side responsibilities").
 
 The predicate has two forms:
 
-1. **The pure function `check_realizability`**, `O(N + M)` per call. The
-   validator (`validate_factorization`) calls it on the spec's actual
-   partition; a non-empty verdict stops materialization.
-2. **`RealizabilityIndex`**, a stateful index over a working partition for
-   callers that ask many hypothetical questions — the peel kernel
-   (`peel/quotient.rs`). Its only mutator, `apply`, commits a
-   `PartitionDelta`, updating quotient edge buckets and graph adjacency only
-   for the owner edges incident to the moved owners. Speculative moves never
-   mutate it: they go through a non-mutating overlay of the same state, since
-   the `CondensationOrder` union-find cannot be rolled back and reverting a
-   move that merged SCCs costs an `O(|V| + |E|)` rebuild.
+1. **The pure function `check_realizability`**, `O(N + M)` per call. The validator (`validate_factorization`) calls it
+   on the spec's actual partition; a non-empty verdict stops materialization.
+2. **`RealizabilityIndex`**, a stateful index over a working partition for callers that ask many hypothetical questions
+   — the peel kernel (`peel/quotient.rs`). Its only mutator, `apply`, commits a `PartitionDelta`, updating quotient edge
+   buckets and graph adjacency only for the owner edges incident to the moved owners. Speculative moves never mutate it:
+   they go through a non-mutating overlay of the same state, since the `CondensationOrder` union-find cannot be rolled
+   back and reverting a move that merged SCCs costs an `O(|V| + |E|)` rebuild.
 
-Differential tests (`realizability/tests.rs`,
-`peel/gate_differential_test.rs`) assert that the two forms agree.
+Differential tests (`realizability/tests.rs`, `peel/gate_differential_test.rs`) assert that the two forms agree.
 
 ### Invariant: no bespoke parallel walks
 
-No production code answers the validity question by walking the owner graph or
-the quotient with its own algorithm: two algorithms drift, one shared
-implementation cannot. A caller that needs a verdict over a hypothetical
-partition asks the index. Adjacent diagnostics may read the verdict's
-owner-edge provenance, but the validity decision goes through the primitive
-only.
+No production code answers the validity question by walking the owner graph or the quotient with its own algorithm: two
+algorithms drift, one shared implementation cannot. A caller that needs a verdict over a hypothetical partition asks the
+index. Adjacent diagnostics may read the verdict's owner-edge provenance, but the validity decision goes through the
+primitive only.
 
 ### Peel planner unification
 
-The peel proposer's kernel (`QuotientGraph` in `peel/quotient.rs`) decides
-every merge with the same primitive as the materializer. It must not
-reimplement the gate over a JSON `OwnerGraphReport` projection: a
-constraining-only projection drops `LazyUse` edges and becomes blind to
-asymmetric `(eager forward, lazy back)` I-cycles that the
+The peel proposer's kernel (`QuotientGraph` in `peel/quotient.rs`) decides every merge with the same primitive as the
+materializer. It must not reimplement the gate over a JSON `OwnerGraphReport` projection: a constraining-only projection
+drops `LazyUse` edges and becomes blind to asymmetric `(eager forward, lazy back)` I-cycles that the
 `EsmEvaluationSimulator` pass catches.
 
-1. `OwnerGraph::from_report` rebuilds the typed IR from the report, with every
-   edge (constraining and lazy) and its original `DepKind`.
-2. `QuotientGraph::from_report` keeps that `OwnerGraph` and builds a
-   `RealizabilityIndex` over the class projection: each class is one
-   `ModuleId`, except that classes made only of residual-destined owners
-   (and not anchored to an existing module) share the residual
-   `ModuleId::logical(0)`. Every committed mutation — `contract`, the
-   `is_pre_existing_module` promotion in `set_class_pre_existing_module` —
-   applies the matching `PartitionDelta::MoveOwners` to the index.
-3. The speculative queries — the boolean `merge_preserves_invariants` and the
-   evidence-producing `would_be_cycles_after_contract` — are one evaluation
-   through the index's tier ladder (below). `realizability_verdict()` reads the
-   index's maintained verdict.
+1. `OwnerGraph::from_report` rebuilds the typed IR from the report, with every edge (constraining and lazy) and its
+   original `DepKind`.
+2. `QuotientGraph::from_report` keeps that `OwnerGraph` and builds a `RealizabilityIndex` over the class projection:
+   each class is one `ModuleId`, except that classes made only of residual-destined owners (and not anchored to an
+   existing module) share the residual `ModuleId::logical(0)`. Every committed mutation — `contract`, the
+   `is_pre_existing_module` promotion in `set_class_pre_existing_module` — applies the matching
+   `PartitionDelta::MoveOwners` to the index.
+3. The speculative queries — the boolean `merge_preserves_invariants` and the evidence-producing
+   `would_be_cycles_after_contract` — are one evaluation through the index's tier ladder (below).
+   `realizability_verdict()` reads the index's maintained verdict.
 
 #### Cost and the tier ladder
 
-A from-scratch `check_realizability` call is `O(|V| + |E|)`; asking it per
-merge candidate would make a seeding pass `O(|V|² · |E|)`. The persistent
-index instead maintains the constraining-edge graph SCC state, the I-graph
-adjacency, the `EsmEvaluationSimulator` per-pair bucket, and the cross-rebind
-set incrementally.
+A from-scratch `check_realizability` call is `O(|V| + |E|)`; asking it per merge candidate would make a seeding pass
+`O(|V|² · |E|)`. The persistent index instead maintains the constraining-edge graph SCC state, the I-graph adjacency,
+the `EsmEvaluationSimulator` per-pair bucket, and the cross-rebind set incrementally.
 
-A speculative merge enters the index's tier ladder
-(`ladder_decision_after_moving_owners_touching`) with the merge's post-state
-`ModuleId` (`projected_winner_module_after_merge`) and the `±edge` overlay
-from `compute_merge_deltas`. Each tier either decides — provably equal to the
-full `check_realizability` verdict, restricted to diagnoses touching the
+A speculative merge enters the index's tier ladder (`ladder_decision_after_moving_owners_touching`) with the merge's
+post-state `ModuleId` (`projected_winner_module_after_merge`) and the `±edge` overlay from `compute_merge_deltas`. Each
+tier either decides — provably equal to the full `check_realizability` verdict, restricted to diagnoses touching the
 post-merge module — or escalates:
 
-- **Tier 0 — delta-free short-circuit.** No deltas (both classes
-  already project to the post-merge module, e.g. merges inside the
-  gate-residual pile): post-state == pre-state, so accept iff the
-  cached pre-state touching verdict is clean.
-- **Tier 1 — constraining condensation order.** A maintained
-  `CondensationOrder` over the module-level constraining graph (a
-  union-find of SCC membership plus a Pearce–Kelly topological
-  order over the condensation DAG): reject iff the post-merge
-  module's constraining SCC is multi-module — an `O(α)` find, or,
-  when the overlay adds an adjacency pair, a cone-bounded DFS over
-  the overlay-patched effective adjacency — or a clause-2
-  cross-rebind touches it. A tier-1
-  reject is exactly the `MutualConstrainingCycle` clause of the
-  full verdict; a pass establishes Pass 1 is clean and escalates.
-- **Entry-last guard.** Before any I-SCC vacuity shortcut, reject an
-  effective constraining edge into residual that touches the queried module.
-  Entry evaluates last, including when its implicit import is the only return
-  edge. This reads the maintained edge counts plus the overlay delta; it does
-  not add universal fan-out to the I-condensation.
-- **Tier 2 — I-graph condensation order.** A second
-  `CondensationOrder` over the I-graph (constraining ∪ lazy): if
-  the post-merge module's I-SCC is not multi-module, or contains
-  no effective constraining pair, Pass 2 is vacuous — accept.
-  When the overlay removes an edge internal to a multi-module
-  I-SCC (the one case where the maintained union-find is
-  stale-coarse), the order answers through its exact bidirectional
-  reachability fallback (`exact_multi_scc`); a multi-module verdict
-  then has `OverlayGraphView::scc_containing` materialize the I-SCC
-  for the constraining-pair check.
-- **Tier 3 — scoped ESM simulator.** The shared
-  `EsmEvaluationSimulator` over the overlay-patched I-SCC: reject
-  iff any TDZ pair. This is the same code `check_realizability`'s
-  Pass 2 executes — drift is impossible by construction.
+- **Tier 0 — delta-free short-circuit.** No deltas (both classes already project to the post-merge module, e.g. merges
+  inside the gate-residual pile): post-state == pre-state, so accept iff the cached pre-state touching verdict is clean.
+- **Tier 1 — constraining condensation order.** A maintained `CondensationOrder` over the module-level constraining
+  graph (a union-find of SCC membership plus a Pearce–Kelly topological order over the condensation DAG): reject iff the
+  post-merge module's constraining SCC is multi-module — an `O(α)` find, or, when the overlay adds an adjacency pair, a
+  cone-bounded DFS over the overlay-patched effective adjacency — or a clause-2 cross-rebind touches it. A tier-1 reject
+  is exactly the `MutualConstrainingCycle` clause of the full verdict; a pass establishes Pass 1 is clean and escalates.
+- **Entry-last guard.** Before any I-SCC vacuity shortcut, reject an effective constraining edge into residual that
+  touches the queried module. Entry evaluates last, including when its implicit import is the only return edge. This
+  reads the maintained edge counts plus the overlay delta; it does not add universal fan-out to the I-condensation.
+- **Tier 2 — I-graph condensation order.** A second `CondensationOrder` over the I-graph (constraining ∪ lazy): if the
+  post-merge module's I-SCC is not multi-module, or contains no effective constraining pair, Pass 2 is vacuous — accept.
+  When the overlay removes an edge internal to a multi-module I-SCC (the one case where the maintained union-find is
+  stale-coarse), the order answers through its exact bidirectional reachability fallback (`exact_multi_scc`); a
+  multi-module verdict then has `OverlayGraphView::scc_containing` materialize the I-SCC for the constraining-pair
+  check.
+- **Tier 3 — scoped ESM simulator.** The shared `EsmEvaluationSimulator` over the overlay-patched I-SCC: reject iff any
+  TDZ pair. This is the same code `check_realizability`'s Pass 2 executes — drift is impossible by construction.
 
-The tiers are short-circuits whose skip conditions are theorems
-about the predicate, not a second decision procedure. The boolean
-gate is the ladder with evidence materialization elided;
-`would_be_cycles_after_contract` is the same ladder, materializing
-owner-level evidence (through the index's non-mutating
-`verdict_after_moving_owners_touching` overlay) only on a reject —
-one entry point, two output shapes. Each query reads SCCs touching
-the hypothetical destination only — `O(|cone|)`, not
-`O(|V| + |E|)`. Speculative deltas are single-target by
-construction: a merge contracts two classes into one, so
-`compute_merge_deltas` only ever emits `MoveOwners` deltas
-targeting the single post-merge module; the ladder dispatch asserts
-this invariant, and a future non-merge speculative mutation must
-implement a multi-target overlay deliberately rather than inherit
-the merge path.
+The tiers are short-circuits whose skip conditions are theorems about the predicate, not a second decision procedure.
+The boolean gate is the ladder with evidence materialization elided; `would_be_cycles_after_contract` is the same
+ladder, materializing owner-level evidence (through the index's non-mutating `verdict_after_moving_owners_touching`
+overlay) only on a reject — one entry point, two output shapes. Each query reads SCCs touching the hypothetical
+destination only — `O(|cone|)`, not `O(|V| + |E|)`. Speculative deltas are single-target by construction: a merge
+contracts two classes into one, so `compute_merge_deltas` only ever emits `MoveOwners` deltas targeting the single
+post-merge module; the ladder dispatch asserts this invariant, and a future non-merge speculative mutation must
+implement a multi-target overlay deliberately rather than inherit the merge path.
 
 #### References
 
-The incremental realizability path draws on the following lines of
-research; cited here so the trade-offs in "Cost and the tier
-ladder" and "Why not Pearce-Kelly verbatim" can be cross-checked
-against the primary sources.
+The incremental realizability path draws on the following lines of research; cited here so the trade-offs in "Cost and
+the tier ladder" and "Why not Pearce-Kelly verbatim" can be cross-checked against the primary sources.
 
-- **Bender, Fineman, Gilbert, Tarjan.** _Incremental Cycle
-  Detection, Topological Ordering, and Strong Component
-  Maintenance._ ACM Transactions on Algorithms 12(2):14, 2015. The
-  BFGT amortized bound for arc-insertion cycle detection.
-  ([arXiv:1105.2397](https://arxiv.org/abs/1105.2397))
-- **Pearce, Kelly.** _A Dynamic Topological Sort Algorithm for
-  Directed Acyclic Graphs._ ACM Journal of Experimental
-  Algorithmics 12, 2007. The "PK" algorithm for online topological
-  order under edge insertion.
-- **Fähndrich, Foster, Su, Aiken.** _Partial Online Cycle
-  Elimination in Inclusion Constraint Graphs._ PLDI 1998. Localized
-  bounded-cone cycle elimination in pointer-analysis constraint
-  graphs — the structural closest match to the kernel's
-  contraction-driven primitive.
-- **Hardekopf, Lin.** _The Ant and the Grasshopper: Fast and
-  Accurate Pointer Analysis for Millions of Lines of Code._ PLDI
-  2007 (with subsequent 2009 work on lazy / hybrid cycle detection).
-  Practical scaling of constraint-graph cycle elimination.
+- **Bender, Fineman, Gilbert, Tarjan.** _Incremental Cycle Detection, Topological Ordering, and Strong Component
+  Maintenance._ ACM Transactions on Algorithms 12(2):14, 2015. The BFGT amortized bound for arc-insertion cycle
+  detection. ([arXiv:1105.2397](https://arxiv.org/abs/1105.2397))
+- **Pearce, Kelly.** _A Dynamic Topological Sort Algorithm for Directed Acyclic Graphs._ ACM Journal of Experimental
+  Algorithmics 12, 2007. The "PK" algorithm for online topological order under edge insertion.
+- **Fähndrich, Foster, Su, Aiken.** _Partial Online Cycle Elimination in Inclusion Constraint Graphs._ PLDI 1998.
+  Localized bounded-cone cycle elimination in pointer-analysis constraint graphs — the structural closest match to the
+  kernel's contraction-driven primitive.
+- **Hardekopf, Lin.** _The Ant and the Grasshopper: Fast and Accurate Pointer Analysis for Millions of Lines of Code._
+  PLDI 2007 (with subsequent 2009 work on lazy / hybrid cycle detection). Practical scaling of constraint-graph cycle
+  elimination.
 
 #### Why not Pearce–Kelly verbatim
 
-The literature on incremental SCC maintenance — Pearce & Kelly's
-online topological order plus Bender, Fineman, Gilbert, and Tarjan's
-work (BFGT) — solves cycle detection under arc **insertion** with
-single-edge insertion as the user primitive. The peel proposer's
-primitive is **contraction** (vertex identification): a merge fuses
-two classes' incident edges and may collapse multiple
-constraining-edge cycles to single classes that get dropped. Naive
-"reinsert every loser-incident edge into the winner" simulations
-match Pearce–Kelly's insertion model but waste work — the merge can
-also delete edges (intra-class self-loops, cycles that shrink to a
-single class). The persistent index instead maintains the maintained
-quotient adjacency directly via `IncrementalQuotient::add/remove_current_edge`,
-which is structurally closer to the bounded-cone local-search
-algorithms from pointer-analysis literature (Fähndrich–Foster–
-Su–Aiken; Hardekopf–Lin).
+The literature on incremental SCC maintenance — Pearce & Kelly's online topological order plus Bender, Fineman, Gilbert,
+and Tarjan's work (BFGT) — solves cycle detection under arc **insertion** with single-edge insertion as the user
+primitive. The peel proposer's primitive is **contraction** (vertex identification): a merge fuses two classes' incident
+edges and may collapse multiple constraining-edge cycles to single classes that get dropped. Naive "reinsert every
+loser-incident edge into the winner" simulations match Pearce–Kelly's insertion model but waste work — the merge can
+also delete edges (intra-class self-loops, cycles that shrink to a single class). The persistent index instead maintains
+the maintained quotient adjacency directly via `IncrementalQuotient::add/remove_current_edge`, which is structurally
+closer to the bounded-cone local-search algorithms from pointer-analysis literature (Fähndrich–Foster– Su–Aiken;
+Hardekopf–Lin).
 
-Pearce–Kelly's core does survive — as the heart of the
-`gate` crate's `CondensationOrder` (window Kahn, epoch
-visited-marks), re-keyed from kernel classes to condensation
-nodes of the index's maintained module graphs, with a union-find
-for SCC membership so the PK order lives over a structure that
-stays a DAG by construction even when the underlying graph is
-cyclic. Insertion monotonicity — edge insertion only ever coarsens
-the SCC partition — is what licenses a plain non-rollbackable
-union-find instead of full dynamic-SCC machinery (kernel-side index
-mutation is commit-only); a committed removal internal to an SCC
-marks the structure stale and the next query rebuilds it rather than
-splitting eagerly.
+Pearce–Kelly's core does survive — as the heart of the `gate` crate's `CondensationOrder` (window Kahn, epoch
+visited-marks), re-keyed from kernel classes to condensation nodes of the index's maintained module graphs, with a
+union-find for SCC membership so the PK order lives over a structure that stays a DAG by construction even when the
+underlying graph is cyclic. Insertion monotonicity — edge insertion only ever coarsens the SCC partition — is what
+licenses a plain non-rollbackable union-find instead of full dynamic-SCC machinery (kernel-side index mutation is
+commit-only); a committed removal internal to an SCC marks the structure stale and the next query rebuilds it rather
+than splitting eagerly.
 
-The kernel itself maintains **no** decision-making derived order or
-cycle state: the gate ladder lives inside the index ("Cost and the
-tier ladder" above), so the "no bespoke parallel walks" invariant
-holds here too — one source of truth for accept/reject.
-`rank_candidate`'s cycle-reduction key byte reads the same
-maintained condensation through an `O(α)` union-find probe
-(`modules_share_constraining_multi_scc`) instead of an advisory
-cache.
+The kernel itself maintains **no** decision-making derived order or cycle state: the gate ladder lives inside the index
+("Cost and the tier ladder" above), so the "no bespoke parallel walks" invariant holds here too — one source of truth
+for accept/reject. `rank_candidate`'s cycle-reduction key byte reads the same maintained condensation through an `O(α)`
+union-find probe (`modules_share_constraining_multi_scc`) instead of an advisory cache.
 
 ## At-init call promotion
 
-A function body's lazy reads/rebinds fire at module-init from the
-perspective of any caller that invokes the function at-init. The owner
-graph carries promoted `EagerUse` edges from at-init callers to the
-transitive closure of their callees' lazy reads and rebinds, so the
-primitive's clause-3 verdict is sound for the canonical
-`console.log(readB())` shape (top-level call whose body crosses a module
-boundary).
+A function body's lazy reads/rebinds fire at module-init from the perspective of any caller that invokes the function
+at-init. The owner graph carries promoted `EagerUse` edges from at-init callers to the transitive closure of their
+callees' lazy reads and rebinds, so the primitive's clause-3 verdict is sound for the canonical `console.log(readB())`
+shape (top-level call whose body crosses a module boundary).
 
-The promotion runs once in `build_owner_graph_with` and is
-partition-independent: intra-module promoted edges are dropped by the
-quotient automatically, so the same promoted owner graph drives
-hypothetical planner partitions and the validator's actual one.
+The promotion runs once in `build_owner_graph_with` and is partition-independent: intra-module promoted edges are
+dropped by the quotient automatically, so the same promoted owner graph drives hypothetical planner partitions and the
+validator's actual one.
 
-**Algorithm.** `promote_at_init_calls` builds the call graph among
-chunk-declared, resolvable callees from first-order lazy calls, takes its
-SCCs, and closes each SCC's first-order lazy reads and rebinds over its
-successor SCCs in reverse topological order. Then for each callee C in an
-at-init statement S's `calls.eager`, it emits promoted edges from S's owner to
-every owner declaring a binding in C's closure. Rebind targets are promoted
-as `EagerUse` too, an order constraint only: write legality is enforced by the
-direct `LazyRebind` / `DeferredRebind` edge at the write site.
+**Algorithm.** `promote_at_init_calls` builds the call graph among chunk-declared, resolvable callees from first-order
+lazy calls, takes its SCCs, and closes each SCC's first-order lazy reads and rebinds over its successor SCCs in reverse
+topological order. Then for each callee C in an at-init statement S's `calls.eager`, it emits promoted edges from S's
+owner to every owner declaring a binding in C's closure. Rebind targets are promoted as `EagerUse` too, an order
+constraint only: write legality is enforced by the direct `LazyRebind` / `DeferredRebind` edge at the write site.
 
-**Hoisted-target filter.** Promoted reads filter out targets whose
-owner is a `FnDecl` — function declarations are hoisted at Phase-1
-module instantiation, so reading them from another module never
-observes a TDZ. Without this filter, mutual recursion across modules
-(`function even(){odd()}` / `function odd(){even()}` split into
-mod_a / mod_b) would spuriously close a constraining-edge cycle that
-isn't actually unrealizable at runtime.
+**Hoisted-target filter.** Promoted reads filter out targets whose owner is a `FnDecl` — function declarations are
+hoisted at Phase-1 module instantiation, so reading them from another module never observes a TDZ. Without this filter,
+mutual recursion across modules (`function even(){odd()}` / `function odd(){even()}` split into mod_a / mod_b) would
+spuriously close a constraining-edge cycle that isn't actually unrealizable at runtime.
 
-**Per-statement dedup.** A single at-init call to a function with N
-transitive lazy reads would otherwise emit N edges from the caller
-statement, and multiple at-init calls in the same statement would
-multiply that. The promotion pass dedupes per `(caller, target-owner)`
-pair, keeping the per-statement cost bounded by the
-transitive closure size rather than (closure × call-sites).
+**Per-statement dedup.** A single at-init call to a function with N transitive lazy reads would otherwise emit N edges
+from the caller statement, and multiple at-init calls in the same statement would multiply that. The promotion pass
+dedupes per `(caller, target-owner)` pair, keeping the per-statement cost bounded by the transitive closure size rather
+than (closure × call-sites).
 
-**Resolvable callees.** A callee is precisely resolvable iff its
-binding is declared _directly as a function value_ (`function f`,
-single-declarator `const f = () => ...`, exported forms) and is
-never rebound anywhere in the chunk. Only resolvable callees feed
-the precise first-order closure above.
+**Resolvable callees.** A callee is precisely resolvable iff its binding is declared _directly as a function value_
+(`function f`, single-declarator `const f = () => ...`, exported forms) and is never rebound anywhere in the chunk. Only
+resolvable callees feed the precise first-order closure above.
 
-**Unresolved-callee fallback.** Every other at-init call shape —
-member calls (`api.read()`), aliases (`const g = readB; g()`),
-IIFEs, optional-chain calls, tagged templates, conditional or
-rebound function bindings, and calls into resolvable functions
-whose own first-order bodies contain such calls — takes a
-conservative fallback (`UnresolvedCallFallback` in `graph/build.rs`). The
-fallback's premise: whatever function value the call invokes must
-have reached the call site through a binding the call expression
-mentions (callee root, arguments, computed keys) or through an
-inline function expression at the call. Each such root owner is
-expanded to the **full lazy closure** of every owner reachable from
-it through the chunk's read graph (eager + lazy reads), and the
-calling statement gets promoted `EagerUse` edges to every collected
-target — rebind targets included (order-only: write legality is
-separately enforced by the direct `LazyRebind`/`DeferredRebind`
-edge from the statement lexically containing the write).
-Fallback edges sourced in residual are dropped at partition
-projection: residual is the ESM DFS root and evaluates last, so an
-at-init call from residual code cannot observe a TDZ, and the
-emitter emits no entry-side phantom imports the gate could
+**Unresolved-callee fallback.** Every other at-init call shape — member calls (`api.read()`), aliases
+(`const g = readB; g()`), IIFEs, optional-chain calls, tagged templates, conditional or rebound function bindings, and
+calls into resolvable functions whose own first-order bodies contain such calls — takes a conservative fallback
+(`UnresolvedCallFallback` in `graph/build.rs`). The fallback's premise: whatever function value the call invokes must
+have reached the call site through a binding the call expression mentions (callee root, arguments, computed keys) or
+through an inline function expression at the call. Each such root owner is expanded to the **full lazy closure** of
+every owner reachable from it through the chunk's read graph (eager + lazy reads), and the calling statement gets
+promoted `EagerUse` edges to every collected target — rebind targets included (order-only: write legality is separately
+enforced by the direct `LazyRebind`/`DeferredRebind` edge from the statement lexically containing the write). Fallback
+edges sourced in residual are dropped at partition projection: residual is the ESM DFS root and evaluates last, so an
+at-init call from residual code cannot observe a TDZ, and the emitter emits no entry-side phantom imports the gate could
 otherwise assume.
 
-**Audited callback-storage APIs.** Member-specific
-`no_sync_callback_members` hints narrow only the fallback roots for
-calls like `registry.register(fn)` or `state.set({ onDone() {} })`
-where the audited API stores callback-like arguments without
-synchronously invoking them. Receiver, callee, and non-callback
-arguments still evaluate and still feed normal read/rebind/effect
-summaries; the call also remains impure for S-chain ordering unless a
-separate purity hint applies. The hint suppresses the conservative
-"the callback may have run now" edge for inline functions, object
-literals containing functions, and first-order argument callbacks.
+**Audited callback-storage APIs.** Member-specific `no_sync_callback_members` hints narrow only the fallback roots for
+calls like `registry.register(fn)` or `state.set({ onDone() {} })` where the audited API stores callback-like arguments
+without synchronously invoking them. Receiver, callee, and non-callback arguments still evaluate and still feed normal
+read/rebind/effect summaries; the call also remains impure for S-chain ordering unless a separate purity hint applies.
+The hint suppresses the conservative "the callback may have run now" edge for inline functions, object literals
+containing functions, and first-order argument callbacks.
 
-**Residual limitations.** The fallback (and promotion generally)
-does not model function values that reach a call site through:
+**Residual limitations.** The fallback (and promotion generally) does not model function values that reach a call site
+through:
 
-- global/object property stashes (`globalThis.f = readB;` …
-  `globalThis.f()`),
-- rebound bindings (`let g; g = readB; g();` — the rebind forces
-  co-location of the rebinder with `g`'s declarer, but the flowed
-  value's closure is not followed),
-- parameters of chunk-declared functions
-  (`function h(cb) { cb(); } h(readB);`),
+- global/object property stashes (`globalThis.f = readB;` … `globalThis.f()`),
+- rebound bindings (`let g; g = readB; g();` — the rebind forces co-location of the rebinder with `g`'s declarer, but
+  the flowed value's closure is not followed),
+- parameters of chunk-declared functions (`function h(cb) { cb(); } h(readB);`),
 - `new` expressions (constructor bodies are not promoted), or
 - other chunks (imports are outside single-chunk analysis).
 
-These are documented preconditions on the input bundle, not
-checked invariants — a bundle using one of these shapes to fire a
-TDZ-able cross-module read at init can be accepted and break at
-runtime. There is no separate validator safety net behind the
-promotion pass.
+These are documented preconditions on the input bundle, not checked invariants — a bundle using one of these shapes to
+fire a TDZ-able cross-module read at init can be accepted and break at runtime. There is no separate validator safety
+net behind the promotion pass.
 
 ## Lemma 2: entry-side import ordering
 
-Clause 3's Pass 1 (no multi-module SCC in the constraining-edge
-subgraph of `Q`) admits mixed cycles in the imports graph `I` — cycles
-whose back-edges are `LazyUse`. For the ESM linker to actually evaluate
-these without TDZ, the entry module's `import` directives must be emitted
-in a specific source order so that depth-first link traversal lands on a
-Phase-2 evaluation order matching the constraining-edge linearization;
-Pass 2 (below) checks that it does.
+Clause 3's Pass 1 (no multi-module SCC in the constraining-edge subgraph of `Q`) admits mixed cycles in the imports
+graph `I` — cycles whose back-edges are `LazyUse`. For the ESM linker to actually evaluate these without TDZ, the entry
+module's `import` directives must be emitted in a specific source order so that depth-first link traversal lands on a
+Phase-2 evaluation order matching the constraining-edge linearization; Pass 2 (below) checks that it does.
 
-The materializer computes the source-import order on
-`esm_import_order::EsmImportOrder` (held by `ChunkFactorization`)
+The materializer computes the source-import order on `esm_import_order::EsmImportOrder` (held by `ChunkFactorization`)
 to drive this. The algorithm:
 
 1. Compute SCCs of the full quotient `I ∪ S` via Tarjan.
-2. Each SCC is assigned a dependency rank = the minimum
-   `linker_position` of its members. `linker_position` itself comes
-   from a toposort of the **constraining-edge subgraph** (which is
-   acyclic per clause 3, even when `I ∪ S` is cyclic).
-3. Sort all modules by `(SCC dep rank ascending, intra-SCC
-linker_position DESCENDING)`.
+2. Each SCC is assigned a dependency rank = the minimum `linker_position` of its members. `linker_position` itself comes
+   from a toposort of the **constraining-edge subgraph** (which is acyclic per clause 3, even when `I ∪ S` is cyclic).
+3. Sort all modules by `(SCC dep rank ascending, intra-SCC linker_position DESCENDING)`.
 
-For acyclic shapes every SCC is a singleton, so the within-SCC
-reverse is a no-op and the order matches `linker_order`
-(dependency-first source). For cyclic-I shapes the within-SCC
-reverse is load-bearing: ESM Phase-2 evaluates by recursing into
-imports before running the module's own init, so DFS into the
-FIRST imported SCC member traverses the cycle and finalizes its
-constraining dependency LAST in post-order. Reversing within the
-SCC means the dependent is imported first; DFS unwinds through the
-dependency; post-order evaluates dependency first.
+For acyclic shapes every SCC is a singleton, so the within-SCC reverse is a no-op and the order matches `linker_order`
+(dependency-first source). For cyclic-I shapes the within-SCC reverse is load-bearing: ESM Phase-2 evaluates by
+recursing into imports before running the module's own init, so DFS into the FIRST imported SCC member traverses the
+cycle and finalizes its constraining dependency LAST in post-order. Reversing within the SCC means the dependent is
+imported first; DFS unwinds through the dependency; post-order evaluates dependency first.
 
-For the canonical
-[mod_a (lazy → mod_b) + mod_b (eager → mod_a)] case the algorithm
-produces entry imports `[mod_b, mod_a]` so the linker DFS visits
-mod_b → mod_a → mod_b (cycle no-op) and evaluates mod_a first, then
-mod_b. mod_b's at-init read of A succeeds.
+For the canonical [mod_a (lazy → mod_b) + mod_b (eager → mod_a)] case the algorithm produces entry imports
+`[mod_b, mod_a]` so the linker DFS visits mod_b → mod_a → mod_b (cycle no-op) and evaluates mod_a first, then mod_b.
+mod_b's at-init read of A succeeds.
 
-**Asymmetric-I-cycle gating: a runtime-DFS simulator.** Lemma 2's
-reversal trick only rescues an asymmetric I-cycle when
-ECMA-262's actual evaluation DFS, run over the materializer's
-import-order choices, lands every constraining edge's target
-strictly before its source. Two facts about the emitted structure
-decide that:
+**Asymmetric-I-cycle gating: a runtime-DFS simulator.** Lemma 2's reversal trick only rescues an asymmetric I-cycle when
+ECMA-262's actual evaluation DFS, run over the materializer's import-order choices, lands every constraining edge's
+target strictly before its source. Two facts about the emitted structure decide that:
 
-1. **The entry imports every logical module.** The emitted entry
-   file carries one `import` directive per plan — named imports
-   for binding-owning plans, side-effect-only
-   `import "./<plan>.js";` for binding-less plans (anonymous-
-   statement-only modules) — in `source_import_position` order.
-   ESM DFS therefore always enters a non-residual SCC at its
-   most-dependent member (Lemma 2's intra-SCC reversal) before
-   any mediator's dependency-first imports can reach it. This is
-   why a non-residual mediator reaching into an SCC does NOT
-   reject: the entry's own import of the SCC's dependent wins
-   the race (pinned by
-   `e2e/mediator_reaches_asymmetric_cycle_test` and
+1. **The entry imports every logical module.** The emitted entry file carries one `import` directive per plan — named
+   imports for binding-owning plans, side-effect-only `import "./<plan>.js";` for binding-less plans (anonymous-
+   statement-only modules) — in `source_import_position` order. ESM DFS therefore always enters a non-residual SCC at
+   its most-dependent member (Lemma 2's intra-SCC reversal) before any mediator's dependency-first imports can reach it.
+   This is why a non-residual mediator reaching into an SCC does NOT reject: the entry's own import of the SCC's
+   dependent wins the race (pinned by `e2e/mediator_reaches_asymmetric_cycle_test` and
    `e2e/asymmetric_non_residual_cycle_test`).
-2. **Residual in the cycle, with a constraining edge whose
-   target is residual, always TDZs.** Residual is the ESM DFS
-   root — post-order evaluates every other cycle member first,
-   then residual. A constraining read of residual's
-   `class`/`const`/`let` bindings TDZs. ESM hoists every
-   `import` above any statement, so no source-order trick fixes
+2. **Residual in the cycle, with a constraining edge whose target is residual, always TDZs.** Residual is the ESM DFS
+   root — post-order evaluates every other cycle member first, then residual. A constraining read of residual's
+   `class`/`const`/`let` bindings TDZs. ESM hoists every `import` above any statement, so no source-order trick fixes
    it.
 
-The realizability primitive (`check_realizability` and the
-matching `IncrementalQuotient::verdict*` helpers) makes the
+The realizability primitive (`check_realizability` and the matching `IncrementalQuotient::verdict*` helpers) makes the
 verdict by:
 
-1. Pass 1: Tarjan over the constraining-edge subgraph. Any
-   multi-module SCC there is a mutual-eager cycle that no source
+1. Pass 1: Tarjan over the constraining-edge subgraph. Any multi-module SCC there is a mutual-eager cycle that no source
    order can satisfy. Reject.
-2. Pass 2: Tarjan over the full I-graph (constraining ∪ lazy).
-   For every multi-module SCC carrying at least one constraining
-   edge, run an in-process **ESM evaluation simulator** rooted at
-   residual:
-   - At residual, fan out to EVERY module in the I-graph (the
-     entry's universal per-plan imports), in entry-import order
-     (`EsmImportOrder::sort_entry_imports` — Lemma 2's intra-SCC
-     reverse of constraining linker order).
-   - At every other module, visit its I-successors in
-     module-import order (`EsmImportOrder::sort_module_imports`
-     — dependency-first toposort of the constraining subgraph,
-     `ModuleId` tie-break).
-   - Walk DFS; record each module's post-order index when its
-     body would evaluate.
-   - For each constraining edge `(M, X)` inside the SCC, demand
-     `post_order[X] < post_order[M]`. Any violation = TDZ at
+2. Pass 2: Tarjan over the full I-graph (constraining ∪ lazy). For every multi-module SCC carrying at least one
+   constraining edge, run an in-process **ESM evaluation simulator** rooted at residual:
+   - At residual, fan out to EVERY module in the I-graph (the entry's universal per-plan imports), in entry-import order
+     (`EsmImportOrder::sort_entry_imports` — Lemma 2's intra-SCC reverse of constraining linker order).
+   - At every other module, visit its I-successors in module-import order (`EsmImportOrder::sort_module_imports` —
+     dependency-first toposort of the constraining subgraph, `ModuleId` tie-break).
+   - Walk DFS; record each module's post-order index when its body would evaluate.
+   - For each constraining edge `(M, X)` inside the SCC, demand `post_order[X] < post_order[M]`. Any violation = TDZ at
      runtime → reject the SCC.
 
-The source I-graph omits entry's implicit imports of every emitted module.
-Independently of its SCCs, reject every constraining dependency **into entry**:
-entry evaluates last, so that dependency cannot be satisfied. The pure reference,
-committed/overlay verdicts and boolean tier ladder all enforce this guard and
-report the offending owner edges as `EsmEvaluationTdz`. There is no need to inflate
-the maintained I-graph with universal entry fan-out: a violated pair targeting
-any non-entry ancestor already has a return path in the source I-graph and is
-covered by its ordinary SCC check.
+The source I-graph omits entry's implicit imports of every emitted module. Independently of its SCCs, reject every
+constraining dependency **into entry**: entry evaluates last, so that dependency cannot be satisfied. The pure
+reference, committed/overlay verdicts and boolean tier ladder all enforce this guard and report the offending owner
+edges as `EsmEvaluationTdz`. There is no need to inflate the maintained I-graph with universal entry fan-out: a violated
+pair targeting any non-entry ancestor already has a return path in the source I-graph and is covered by its ordinary SCC
+check.
 
-Pure-lazy I-cycles (no constraining edge inside the SCC) skip
-pass 2's simulator and pass. The simulator and the emitter share
-ONE ordering implementation — `esm_import_order::EsmImportOrder`,
-built from the canonical `ChunkConstrainingEdgeSet` — so the
-import order the gate simulates is structurally the order
-`lowering::lower_chunk` emits: the entry's import list and every
-module's merged intra-chunk import list (cross-module binding
-imports, phantom side-effect imports, and the residual-entry
-import, interleaved by one sort) come from the same two sort
-rules the simulator's DFS uses for its neighbor order. A spec
-accepted by the gate is one the emitted ESM bundle actually
+Pure-lazy I-cycles (no constraining edge inside the SCC) skip pass 2's simulator and pass. The simulator and the emitter
+share ONE ordering implementation — `esm_import_order::EsmImportOrder`, built from the canonical
+`ChunkConstrainingEdgeSet` — so the import order the gate simulates is structurally the order `lowering::lower_chunk`
+emits: the entry's import list and every module's merged intra-chunk import list (cross-module binding imports, phantom
+side-effect imports, and the residual-entry import, interleaved by one sort) come from the same two sort rules the
+simulator's DFS uses for its neighbor order. A spec accepted by the gate is one the emitted ESM bundle actually
 evaluates without TDZ.
 
-Because Lemma 2 is implemented in the materializer and the
-gate's simulator decides asymmetric I-SCCs precisely, the
-validator (`validate_factorization` in
-`validation.rs`) and read-only planner
-checks share the realizability primitive's verdict — a
-`peelable_now` proposal is a peel the gate accepts and Node will
-execute correctly at runtime (the contract pinned by
-`e2e/lemma_two_rescued_asymmetric_cycle_test`,
-`e2e/mediator_reaches_asymmetric_cycle_test`, and
+Because Lemma 2 is implemented in the materializer and the gate's simulator decides asymmetric I-SCCs precisely, the
+validator (`validate_factorization` in `validation.rs`) and read-only planner checks share the realizability primitive's
+verdict — a `peelable_now` proposal is a peel the gate accepts and Node will execute correctly at runtime (the contract
+pinned by `e2e/lemma_two_rescued_asymmetric_cycle_test`, `e2e/mediator_reaches_asymmetric_cycle_test`, and
 `e2e/runtime_tdz_on_imported_class_test`).
 
 ## The realizability theorem
 
-> **Theorem (correctness).** Under assumptions A1–A11, if the realizability
-> gate accepts a spec, the source-order emit construction below produces a
-> multi-module ESM bundle observationally equivalent to the input chunk.
+> **Theorem (correctness).** Under assumptions A1–A11, if the realizability gate accepts a spec, the source-order emit
+> construction below produces a multi-module ESM bundle observationally equivalent to the input chunk.
 >
-> **Gate.** The gate accepts iff no rebinding write crosses a module boundary
-> (clause 2) and the quotient's I-graph passes both passes of clause 3
-> ("Lemma 2: entry-side import ordering"):
+> **Gate.** The gate accepts iff no rebinding write crosses a module boundary (clause 2) and the quotient's I-graph
+> passes both passes of clause 3 ("Lemma 2: entry-side import ordering"):
 >
-> 1. **Pass 1.** The constraining-edge subgraph (`R ∪ S`) has no multi-module
->    SCC.
-> 2. **Pass 2.** In every multi-module SCC of the full I-graph (constraining ∪
->    lazy) that contains a constraining edge, the ESM evaluation simulator
->    evaluates each constraining edge's target before its source under the
->    emitted import order.
+> 1. **Pass 1.** The constraining-edge subgraph (`R ∪ S`) has no multi-module SCC.
+> 2. **Pass 2.** In every multi-module SCC of the full I-graph (constraining ∪ lazy) that contains a constraining edge,
+>    the ESM evaluation simulator evaluates each constraining edge's target before its source under the emitted import
+>    order.
 >
-> A cycle with no constraining edge (every cross-module edge lazy) is accepted
-> without simulation.
+> A cycle with no constraining edge (every cross-module edge lazy) is accepted without simulation.
 >
-> **Implementation.** The implementation computes per-statement
-> facts, builds the owner graph, then quotients that graph by the
-> spec's destination assignment to derive the module dep graph. Each
-> cross-module edge keeps owner-level provenance: the triggering
-> statement, optional binding, and whether the reason is an at-init
-> read, lazy read, or side-effect-order constraint. Diagnostics can
-> explain both the module-level cycle and the lower-level owner edges
-> that induced it.
+> **Implementation.** The implementation computes per-statement facts, builds the owner graph, then quotients that graph
+> by the spec's destination assignment to derive the module dep graph. Each cross-module edge keeps owner-level
+> provenance: the triggering statement, optional binding, and whether the reason is an at-init read, lazy read, or
+> side-effect-order constraint. Diagnostics can explain both the module-level cycle and the lower-level owner edges that
+> induced it.
 
-Here "spec assignment" means whatever the validator sees: every
-declared binding either has an explicit `owner` from the spec or
-defaults to the residual module (see [Spec explicitness
-and diagnostics](#spec-explicitness-and-diagnostics)).
-There is no implicit transformation between the spec and the
-assignment the theorem reasons about.
+Here "spec assignment" means whatever the validator sees: every declared binding either has an explicit `owner` from the
+spec or defaults to the residual module (see [Spec explicitness and diagnostics](#spec-explicitness-and-diagnostics)).
+There is no implicit transformation between the spec and the assignment the theorem reasons about.
 
 ### Why two passes
 
-The validator builds the I-graph — every cross-module edge the emitter
-realizes as an `import` directive, at-init or lazy, plus the `S` edges — and
-judges it in two passes. Two weaker gates would be wrong:
+The validator builds the I-graph — every cross-module edge the emitter realizes as an `import` directive, at-init or
+lazy, plus the `S` edges — and judges it in two passes. Two weaker gates would be wrong:
 
-1. **Pass 1 alone (`R ∪ S` acyclic).** A cycle in `I` whose constraining
-   projection is acyclic still affects the linker: lazy reads emit `import`
-   directives that the linker's DFS follows. Two modules that import each
-   other — one direction at-init, the other lazy — have acyclic `R` but cyclic
-   `I`; whether the at-init read TDZs depends on which member the DFS enters
-   first, that is, on the emitted import order. Pass 2 simulates that order.
-2. **Rejecting every I-cycle that contains a constraining edge.** Lemma 2
-   steers the DFS into the cycle at its dependent member, so the dependency
-   evaluates first, and Pass 2 accepts the cycles where that works. Rejecting
-   all of them would force colocation of bindings whose only relationship is
-   an eager read one way and a lazy reference back.
+1. **Pass 1 alone (`R ∪ S` acyclic).** A cycle in `I` whose constraining projection is acyclic still affects the linker:
+   lazy reads emit `import` directives that the linker's DFS follows. Two modules that import each other — one direction
+   at-init, the other lazy — have acyclic `R` but cyclic `I`; whether the at-init read TDZs depends on which member the
+   DFS enters first, that is, on the emitted import order. Pass 2 simulates that order.
+2. **Rejecting every I-cycle that contains a constraining edge.** Lemma 2 steers the DFS into the cycle at its dependent
+   member, so the dependency evaluates first, and Pass 2 accepts the cycles where that works. Rejecting all of them
+   would force colocation of bindings whose only relationship is an eager read one way and a lazy reference back.
 
-A cycle whose every cross-module edge is lazy needs neither pass to fail: no
-read fires until every member has finished evaluating, so rejecting it would
-over-restrict.
+A cycle whose every cross-module edge is lazy needs neither pass to fail: no read fires until every member has finished
+evaluating, so rejecting it would over-restrict.
 
 ### Conditions on the input chunk (assumptions A1–A11)
 
-The proof below reasons about ECMA-262 module evaluation under a
-specific JS subset. If the input chunk falls outside this subset,
-the proof does not apply and the materializer's correctness
-contract holds only by happenstance. The subset is what real
-production bundlers (esbuild, rollup, webpack with `output.module:
-true`) emit by default, so it covers the Svelte/SvelteKit
-output, the Vite ecosystem, and most React/Vue/Angular SPAs.
+The proof below reasons about ECMA-262 module evaluation under a specific JS subset. If the input chunk falls outside
+this subset, the proof does not apply and the materializer's correctness contract holds only by happenstance. The subset
+is what real production bundlers (esbuild, rollup, webpack with `output.module: true`) emit by default, so it covers the
+Svelte/SvelteKit output, the Vite ecosystem, and most React/Vue/Angular SPAs.
 
-- **A1. No `eval` at module-top reading cross-module bindings
-  dynamically.** `eval` opens an arbitrary read into the lexical
-  scope at the call site; the static analyzer cannot see what it
-  references; `I` would be incomplete. **Enforced (partially)**: the
-  input-chunk admission scan (`chunk_admission`, run by
-  `chunk_analysis::compute_chunk_analysis` next to the A2 bail)
-  rejects direct `eval(...)` and seq-indirect `(0, eval)(...)` calls
-  at module top level (looking through parens and comma sequences to
-  the callee), with the offending statement ordinal in the
-  diagnostic. Function-body `eval` and aliased `eval`
-  (`const e = eval`) remain unchecked — see §"Coverage gaps".
-- **A2. No top-level `await` in any emitted module.** TLA changes
-  the linker's evaluation algorithm to AsyncCycleRoot semantics
-  (TC39 §16.2.1.5.4 + §16.2.1.5.5). The proof's reverse-DFS
-  argument doesn't apply unmodified — async modules form their own
-  ordering hazards, and a cycle through two async modules has
-  semantics this design has not analyzed. **Enforced**: the TLA
-  scan runs inside fact analysis (`analyze_chunk` /
-  `facts::analyze_chunk_structural` records the first module-top
-  `AwaitExpr`, excluding lazy positions like
-  function/arrow/method/getter/setter bodies and instance class
-  fields), and `chunk_analysis::compute_chunk_analysis` `bail!`s
-  with the offending statement ordinal as soon as fact analysis
-  returns — before any quotient or lowering work. Production
-  chunks we target are TLA-free in practice; the rejection turns
-  the assumption into a verified precondition.
-- **A3. No `import()` of debundled internal modules.** Dynamic
-  imports of vendor / route chunks are fine — the proof treats
-  those as black-box leaves with their own evaluation. Internal
-  dynamic imports would route around the static `import` graph,
-  invalidating `I` as a complete picture. **Enforced (partially)**:
-  the admission scan resolves every string-literal `import(...)`
-  specifier through the artifact indexes (the same resolution the
-  specifier rewriter uses) and rejects, at any depth, specifiers
-  that resolve back into the chunk being debundled — `I` is the
-  per-chunk graph, so "internal" means same-chunk; other artifact
-  chunks stay black-box leaves per the sentence above (a
-  same-chunk-only rule also avoids over-flagging code-splitting
-  bundlers, whose route-chunk `import()` thunks are everywhere).
-  Non-literal specifiers in eager (module-top) position are also
-  rejected — soundness over completeness: the target cannot be
-  proven external. Non-literal specifiers in lazy positions are
-  allowed and remain a documented residual gap (only `Lit::Str`
-  counts as literal, matching `prepare_js_chunks` and the
-  pass-through emission rewriter in `vendor/passthrough.rs`).
-- **A4. No `with` blocks.** Banned in strict mode (which ESM is
-  by spec). **Enforced (at parse)**: even with the parser's
-  `no_early_errors: true` TypeScript syntax, `with` surfaces as a
-  recoverable parse error and `js_ast` fails chunk loading on any
-  recovered error, naming the strict-mode violation. Pinned by
-  `e2e/chunk_admission_test.rs::with_block_is_rejected_at_parse`;
-  no separate admission check is needed.
-- **A5. No reflection on module namespaces during evaluation.**
-  No `Function.prototype.toString` reads of cross-module bodies
-  whose result depends on evaluation order; no `Reflect`-based
-  property descriptor inspection on the module namespace object
-  during link; no `import.meta` introspection that depends on
-  order. (Standard `import.meta.url` is fine.) **Enforced
-  (minimally)**: the admission scan rejects only the cheap,
-  low-false-positive sub-shape — `import.meta` use at module top
-  level beyond `import.meta.url` (named props like
-  `import.meta.env`, computed `import.meta[...]`, and bare
-  `import.meta` as a value). The other A5 sub-shapes
-  (`Function.prototype.toString` reads, `Reflect` descriptor
-  inspection, lazy-position `import.meta`) are deliberately
-  unchecked: a precise analysis would over-flag mainstream
-  bundles, which is the worse failure mode here. They remain
-  input-shape contracts — see §"Coverage gaps".
-- **A6. The input chunk runs to completion in the original
-  bundler's load.** Observational equivalence has no baseline if
-  the input chunk itself diverges, hangs, or throws during
-  evaluation.
-- **A7. Multi-chunk DAG.** Vendor / cross-chunk imports form a
-  DAG with user chunks not below vendor. The multi-chunk lift
-  unions every chunk's `I` and `S`; the same theorem applies to
-  the union iff every chunk satisfies A1–A6 and the union graph
-  is acyclic.
-- **A8. Whitelisted globals are not shadowed at chunk top level.**
-  `S`-edge construction consults a small purity whitelist —
-  `Math.PI`, `Number.isNaN(...)`, `Boolean(...)`, etc. — that
-  classifies certain built-in property reads and calls as `Pure`.
-  Soundness depends on those names referring to the global
-  built-ins; if a chunk re-declares any of them at module top
-  level (`const Math = userland; …; Math.PI`), the call dispatches
-  through the user-bound value, which can fire arbitrary code.
-  The validator's classifier consults a `compute_shadowed_globals`
-  pass and falls the whitelist back to `Unknown` for any
-  shadowed name, so a chunk that does shadow remains sound (just
-  conservatively over-restricted). The "no shadowing" form
-  documented here is the _unrestricted-whitelist_ version: chunks
-  that satisfy A8 reach the precise S-edge classification; chunks
-  that violate it still validate correctly, with strictly more
-  S edges than necessary.
+- **A1. No `eval` at module-top reading cross-module bindings dynamically.** `eval` opens an arbitrary read into the
+  lexical scope at the call site; the static analyzer cannot see what it references; `I` would be incomplete. **Enforced
+  (partially)**: the input-chunk admission scan (`chunk_admission`, run by `chunk_analysis::compute_chunk_analysis` next
+  to the A2 bail) rejects direct `eval(...)` and seq-indirect `(0, eval)(...)` calls at module top level (looking
+  through parens and comma sequences to the callee), with the offending statement ordinal in the diagnostic.
+  Function-body `eval` and aliased `eval` (`const e = eval`) remain unchecked — see §"Coverage gaps".
+- **A2. No top-level `await` in any emitted module.** TLA changes the linker's evaluation algorithm to AsyncCycleRoot
+  semantics (TC39 §16.2.1.5.4 + §16.2.1.5.5). The proof's reverse-DFS argument doesn't apply unmodified — async modules
+  form their own ordering hazards, and a cycle through two async modules has semantics this design has not analyzed.
+  **Enforced**: the TLA scan runs inside fact analysis (`analyze_chunk` / `facts::analyze_chunk_structural` records the
+  first module-top `AwaitExpr`, excluding lazy positions like function/arrow/method/getter/setter bodies and instance
+  class fields), and `chunk_analysis::compute_chunk_analysis` `bail!`s with the offending statement ordinal as soon as
+  fact analysis returns — before any quotient or lowering work. Production chunks we target are TLA-free in practice;
+  the rejection turns the assumption into a verified precondition.
+- **A3. No `import()` of debundled internal modules.** Dynamic imports of vendor / route chunks are fine — the proof
+  treats those as black-box leaves with their own evaluation. Internal dynamic imports would route around the static
+  `import` graph, invalidating `I` as a complete picture. **Enforced (partially)**: the admission scan resolves every
+  string-literal `import(...)` specifier through the artifact indexes (the same resolution the specifier rewriter uses)
+  and rejects, at any depth, specifiers that resolve back into the chunk being debundled — `I` is the per-chunk graph,
+  so "internal" means same-chunk; other artifact chunks stay black-box leaves per the sentence above (a same-chunk-only
+  rule also avoids over-flagging code-splitting bundlers, whose route-chunk `import()` thunks are everywhere).
+  Non-literal specifiers in eager (module-top) position are also rejected — soundness over completeness: the target
+  cannot be proven external. Non-literal specifiers in lazy positions are allowed and remain a documented residual gap
+  (only `Lit::Str` counts as literal, matching `prepare_js_chunks` and the pass-through emission rewriter in
+  `vendor/passthrough.rs`).
+- **A4. No `with` blocks.** Banned in strict mode (which ESM is by spec). **Enforced (at parse)**: even with the
+  parser's `no_early_errors: true` TypeScript syntax, `with` surfaces as a recoverable parse error and `js_ast` fails
+  chunk loading on any recovered error, naming the strict-mode violation. Pinned by
+  `e2e/chunk_admission_test.rs::with_block_is_rejected_at_parse`; no separate admission check is needed.
+- **A5. No reflection on module namespaces during evaluation.** No `Function.prototype.toString` reads of cross-module
+  bodies whose result depends on evaluation order; no `Reflect`-based property descriptor inspection on the module
+  namespace object during link; no `import.meta` introspection that depends on order. (Standard `import.meta.url` is
+  fine.) **Enforced (minimally)**: the admission scan rejects only the cheap, low-false-positive sub-shape —
+  `import.meta` use at module top level beyond `import.meta.url` (named props like `import.meta.env`, computed
+  `import.meta[...]`, and bare `import.meta` as a value). The other A5 sub-shapes (`Function.prototype.toString` reads,
+  `Reflect` descriptor inspection, lazy-position `import.meta`) are deliberately unchecked: a precise analysis would
+  over-flag mainstream bundles, which is the worse failure mode here. They remain input-shape contracts — see §"Coverage
+  gaps".
+- **A6. The input chunk runs to completion in the original bundler's load.** Observational equivalence has no baseline
+  if the input chunk itself diverges, hangs, or throws during evaluation.
+- **A7. Multi-chunk DAG.** Vendor / cross-chunk imports form a DAG with user chunks not below vendor. The multi-chunk
+  lift unions every chunk's `I` and `S`; the same theorem applies to the union iff every chunk satisfies A1–A6 and the
+  union graph is acyclic.
+- **A8. Whitelisted globals are not shadowed at chunk top level.** `S`-edge construction consults a small purity
+  whitelist — `Math.PI`, `Number.isNaN(...)`, `Boolean(...)`, etc. — that classifies certain built-in property reads and
+  calls as `Pure`. Soundness depends on those names referring to the global built-ins; if a chunk re-declares any of
+  them at module top level (`const Math = userland; …; Math.PI`), the call dispatches through the user-bound value,
+  which can fire arbitrary code. The validator's classifier consults a `compute_shadowed_globals` pass and falls the
+  whitelist back to `Unknown` for any shadowed name, so a chunk that does shadow remains sound (just conservatively
+  over-restricted). The "no shadowing" form documented here is the _unrestricted-whitelist_ version: chunks that satisfy
+  A8 reach the precise S-edge classification; chunks that violate it still validate correctly, with strictly more S
+  edges than necessary.
 
-  The whitelist itself is admission-restricted: every entry must
-  fire no user-defined code on any argument value (no `ToNumber` /
-  `ToString` / `ToPrimitive` coercion paths, no iterator protocol,
-  no proxy traps, no own-property `[[Get]]`, no mutation). See
-  <purity_soundness.md> "Admission rule: PURE_STATIC_CALLS" for the contract that
-  governs adding new entries; soundness is preserved iff the
-  contract is preserved.
+  The whitelist itself is admission-restricted: every entry must fire no user-defined code on any argument value (no
+  `ToNumber` / `ToString` / `ToPrimitive` coercion paths, no iterator protocol, no proxy traps, no own-property
+  `[[Get]]`, no mutation). See <purity_soundness.md> "Admission rule: PURE_STATIC_CALLS" for the contract that governs
+  adding new entries; soundness is preserved iff the contract is preserved.
 
-- **A9. Spec-declared purity annotations are author-trusted.** The
-  spec format admits optional per-member `purity:` values that
-  assert a named binding has a specific side-effect contract the
-  static classifier will not re-derive.
+- **A9. Spec-declared purity annotations are author-trusted.** The spec format admits optional per-member `purity:`
+  values that assert a named binding has a specific side-effect contract the static classifier will not re-derive.
 
-  `purity: "pure"` asserts that calls to the bound function value
-  have no observable side effects. The validator does not re-verify
-  the function body — the annotation is an explicit author override
-  that wins over both the inferred classification and A8's
-  shadowing fallback. Used when the function body is too dynamic
-  for static analysis (dynamic dispatch, dynamic property access)
-  but the author knows by construction that the binding is pure.
+  `purity: "pure"` asserts that calls to the bound function value have no observable side effects. The validator does
+  not re-verify the function body — the annotation is an explicit author override that wins over both the inferred
+  classification and A8's shadowing fallback. Used when the function body is too dynamic for static analysis (dynamic
+  dispatch, dynamic property access) but the author knows by construction that the binding is pure.
 
-  `purity: "pure_new"` asserts the analogous constructor contract:
-  `new BoundClass(...)` has no observable side effects beyond
-  evaluating its constructor arguments. The analyzer still classifies
-  every argument expression normally; impure arguments keep the
-  surrounding `new` expression side-effecting. The annotation does
-  not make plain `BoundClass(...)` calls pure.
+  `purity: "pure_new"` asserts the analogous constructor contract: `new BoundClass(...)` has no observable side effects
+  beyond evaluating its constructor arguments. The analyzer still classifies every argument expression normally; impure
+  arguments keep the surrounding `new` expression side-effecting. The annotation does not make plain `BoundClass(...)`
+  calls pure.
 
-  An incorrect annotation can produce a buggy debundle the same way
-  an incorrect spec selector can — soundness shifts to the spec
-  author. See <purity_soundness.md> "Declared purity".
+  An incorrect annotation can produce a buggy debundle the same way an incorrect spec selector can — soundness shifts to
+  the spec author. See <purity_soundness.md> "Declared purity".
 
-  `chunk_export_purity.<chunk>.pure_exports` is the cross-module form
-  of the same contract, addressed to the **defining** chunk rather than
-  a consumer: it asserts that calls to the named exports of that chunk
-  have no observable side effects. The cross-module purity oracle seeds
-  these as pinned-`Pure` axioms (exempt from fixpoint demotion) and
-  propagates them to every importing chunk, so a vendor factory that the
-  static classifier cannot bless — or cannot even see as a chunk-top
-  function (interop re-export) — is asserted once where the audited code
-  lives instead of at each call site. Same author-trust contract;
-  dangling assertions (no such analyzed export) warn and are ignored.
+  `chunk_export_purity.<chunk>.pure_exports` is the cross-module form of the same contract, addressed to the
+  **defining** chunk rather than a consumer: it asserts that calls to the named exports of that chunk have no observable
+  side effects. The cross-module purity oracle seeds these as pinned-`Pure` axioms (exempt from fixpoint demotion) and
+  propagates them to every importing chunk, so a vendor factory that the static classifier cannot bless — or cannot even
+  see as a chunk-top function (interop re-export) — is asserted once where the audited code lives instead of at each
+  call site. Same author-trust contract; dangling assertions (no such analyzed export) warn and are ignored.
 
-  `chunk_export_purity.<chunk>.pure_members` is the member-call form, for
-  CJS-interop namespace exports whose factories are reached as member
-  calls at the importer (`ns.forwardRef(...)`). Keyed `export name →
-member names`, it projects onto each importing chunk's local binding
-  for that export and feeds the same member-call trust arm as a spec
-  member's `declared_pure_members` — so React's `forwardRef`/`memo`
-  reached through a default/namespace import are blessed once on the
-  defining vendor chunk.
+  `chunk_export_purity.<chunk>.pure_members` is the member-call form, for CJS-interop namespace exports whose factories
+  are reached as member calls at the importer (`ns.forwardRef(...)`). Keyed `export name → member names`, it projects
+  onto each importing chunk's local binding for that export and feeds the same member-call trust arm as a spec member's
+  `declared_pure_members` — so React's `forwardRef`/`memo` reached through a default/namespace import are blessed once
+  on the defining vendor chunk.
 
-  `chunk_export_purity.<chunk>.fluent_exports` is the **deep** form, for
-  builder/fluent APIs whose chain receivers are call _results_ rather
-  than bindings — `z.object({...}).optional().describe(...)`. Every
-  binding-keyed surface above is structurally unable to reach link 2+
-  of such a chain (there is no binding to key on). A fluent assertion
-  makes the export a deep-purity root: static member reads and calls on
-  it, and on every value transitively derived from it through such
-  reads/calls, are pure — with call arguments still classified normally
-  at every link, so an impure argument anywhere in the chain keeps the
-  statement impure. The trust also closes over importer-side
-  `const X = <fluent chain>` derivations (`const Base = z.object(...)`,
-  later `Base.extend(...)`), `const` only since a `let`/`var` cell can
-  be rebound to an untrusted value. Computed members and `new` break
-  the chain conservatively. The contract is intentionally broad — it
-  covers the API's whole transitive fluent surface, including methods
-  that run author-registered callbacks (a schema's `.parse`) — so it is
-  only sound for exports whose derived-value methods are all
-  side-effect-free when invoked at module top level and whose values
-  the program does not monkey-patch. Same author-trust posture and
-  dangling-assertion handling as the two forms above.
+  `chunk_export_purity.<chunk>.fluent_exports` is the **deep** form, for builder/fluent APIs whose chain receivers are
+  call _results_ rather than bindings — `z.object({...}).optional().describe(...)`. Every binding-keyed surface above is
+  structurally unable to reach link 2+ of such a chain (there is no binding to key on). A fluent assertion makes the
+  export a deep-purity root: static member reads and calls on it, and on every value transitively derived from it
+  through such reads/calls, are pure — with call arguments still classified normally at every link, so an impure
+  argument anywhere in the chain keeps the statement impure. The trust also closes over importer-side
+  `const X = <fluent chain>` derivations (`const Base = z.object(...)`, later `Base.extend(...)`), `const` only since a
+  `let`/`var` cell can be rebound to an untrusted value. Computed members and `new` break the chain conservatively. The
+  contract is intentionally broad — it covers the API's whole transitive fluent surface, including methods that run
+  author-registered callbacks (a schema's `.parse`) — so it is only sound for exports whose derived-value methods are
+  all side-effect-free when invoked at module top level and whose values the program does not monkey-patch. Same
+  author-trust posture and dangling-assertion handling as the two forms above.
 
-- **A10. Spec-declared local-effect annotations are
-  author-trusted.** The spec format also admits an optional
-  per-member `effect:` field for named helper bindings whose
-  top-level calls have a known, narrow mutation shape that ordinary
-  expression purity cannot infer. The first admitted value is
-  `effect: typescript_decorate_helper`, for esbuild/TypeScript
-  `__decorate`-style helpers:
+- **A10. Spec-declared local-effect annotations are author-trusted.** The spec format also admits an optional per-member
+  `effect:` field for named helper bindings whose top-level calls have a known, narrow mutation shape that ordinary
+  expression purity cannot infer. The first admitted value is `effect: typescript_decorate_helper`, for
+  esbuild/TypeScript `__decorate`-style helpers:
 
   ```js
   Ro([Z], C.prototype, "visible", 2);
   Ro([ClassDecorator], C);
   ```
 
-  This annotation does **not** assert that the call is pure. It
-  asserts a more precise effect: for recognized call shapes, the
-  call's only modeled mutation is local to the target class/prototype
-  owner. The analyzer therefore emits a target-local owner edge from
-  the decorator-application statement to the class owner and suppresses
-  the otherwise-global side-effect-order edge for that statement. The
-  target-local edge is an atomic colocation constraint: the helper
-  application and the target owner must move together, and source order
-  still keeps the application after the class declaration inside the
-  same emitted module.
+  This annotation does **not** assert that the call is pure. It asserts a more precise effect: for recognized call
+  shapes, the call's only modeled mutation is local to the target class/prototype owner. The analyzer therefore emits a
+  target-local owner edge from the decorator-application statement to the class owner and suppresses the
+  otherwise-global side-effect-order edge for that statement. The target-local edge is an atomic colocation constraint:
+  the helper application and the target owner must move together, and source order still keeps the application after the
+  class declaration inside the same emitted module.
 
-  The annotation is intentionally shape-checked. If the callee is not
-  the annotated binding, if the target class/prototype binding cannot
-  be resolved, or if the call uses an unsupported shape, the analyzer
-  falls back to ordinary conservative side-effect classification. An
-  incorrect annotation can produce a buggy debundle, so it carries the
-  same review burden as `purity: "pure"`; the difference is that the
-  trusted claim is local target mutation, not absence of effects.
+  The annotation is intentionally shape-checked. If the callee is not the annotated binding, if the target
+  class/prototype binding cannot be resolved, or if the call uses an unsupported shape, the analyzer falls back to
+  ordinary conservative side-effect classification. An incorrect annotation can produce a buggy debundle, so it carries
+  the same review burden as `purity: "pure"`; the difference is that the trusted claim is local target mutation, not
+  absence of effects.
 
-  `chunk_analysis_options.<chunk>.local_property_effects` is the
-  chunk-wide structural sibling of the same idea, for plain
-  data-property annotation writes rather than helper calls: a whole
-  statement of the shape `X.prop = <pure-rhs>;` (or a comma-sequence of
-  such), where every member-path segment is a static non-`__proto__`
-  name and `X` is a chunk-top declared binding, is classified as a
-  local effect on `X` instead of a globally-ordered side effect — the
-  React `C.displayName = "…"` / `C.defaultProps = {…}` idiom. The
-  statement gets the same target-local co-location edge as the
-  decorator helper (it cannot be split away from `X`'s declaration) and
-  leaves the side-effect chain. Anything outside the shape — compound
-  assignment, computed non-literal key, impure RHS, a write through an
-  import — keeps conservative classification. The flag's soundness
-  precondition (no cross-destination top-level read of an annotated
-  binding's properties textually before the write) is documented on the
-  spec field (`spec::OwnerGraphOptions::local_property_effects`) and is the author's audit obligation, like every entry in
-  this section.
+  `chunk_analysis_options.<chunk>.local_property_effects` is the chunk-wide structural sibling of the same idea, for
+  plain data-property annotation writes rather than helper calls: a whole statement of the shape `X.prop = <pure-rhs>;`
+  (or a comma-sequence of such), where every member-path segment is a static non-`__proto__` name and `X` is a chunk-top
+  declared binding, is classified as a local effect on `X` instead of a globally-ordered side effect — the React
+  `C.displayName = "…"` / `C.defaultProps = {…}` idiom. The statement gets the same target-local co-location edge as the
+  decorator helper (it cannot be split away from `X`'s declaration) and leaves the side-effect chain. Anything outside
+  the shape — compound assignment, computed non-literal key, impure RHS, a write through an import — keeps conservative
+  classification. The flag's soundness precondition (no cross-destination top-level read of an annotated binding's
+  properties textually before the write) is documented on the spec field
+  (`spec::OwnerGraphOptions::local_property_effects`) and is the author's audit obligation, like every entry in this
+  section.
 
-- **A11. Intrinsic integrity: the chunk runs with unmodified
-  built-in prototypes and intrinsics.** Every purity-whitelist
-  admission argument cites ECMA-262 behavior of the _standard_
-  built-ins: `Set.prototype.add` doing SameValueZero,
-  `Array.prototype[Symbol.iterator]` being the built-in array
-  iterator, `Object.prototype.toString` firing no user code, a
-  plain constructor's `prototype` being an own data property. If
-  code that runs before the chunk pollutes those prototypes
-  (`Set.prototype.add = function () { globalThis.boom = 1; … }`,
-  replacing `Array.prototype[Symbol.iterator]`, installing
-  `Object.prototype[Symbol.toPrimitive]`), a `Pure`-classified
-  statement like `new Set(["a"])` fires user code, S edges drop,
-  and the theorem's ordering claim no longer holds. Unlike A8
-  (chunk-top shadowing), this is **not** detected — pollution can
-  live in another chunk, a vendor bundle, or host code, outside
-  what the analyzer sees. Production bundles we target don't
-  monkey-patch intrinsics; the assumption is relied on by
-  observation, like A6. (Membrane/zone-style frameworks that DO
-  patch intrinsics would need the affected whitelist entries
-  disabled for soundness.)
+- **A11. Intrinsic integrity: the chunk runs with unmodified built-in prototypes and intrinsics.** Every
+  purity-whitelist admission argument cites ECMA-262 behavior of the _standard_ built-ins: `Set.prototype.add` doing
+  SameValueZero, `Array.prototype[Symbol.iterator]` being the built-in array iterator, `Object.prototype.toString`
+  firing no user code, a plain constructor's `prototype` being an own data property. If code that runs before the chunk
+  pollutes those prototypes (`Set.prototype.add = function () { globalThis.boom = 1; … }`, replacing
+  `Array.prototype[Symbol.iterator]`, installing `Object.prototype[Symbol.toPrimitive]`), a `Pure`-classified statement
+  like `new Set(["a"])` fires user code, S edges drop, and the theorem's ordering claim no longer holds. Unlike A8
+  (chunk-top shadowing), this is **not** detected — pollution can live in another chunk, a vendor bundle, or host code,
+  outside what the analyzer sees. Production bundles we target don't monkey-patch intrinsics; the assumption is relied
+  on by observation, like A6. (Membrane/zone-style frameworks that DO patch intrinsics would need the affected whitelist
+  entries disabled for soundness.)
 
-A1–A5 are statically checkable per chunk, each enforced to the
-strength stated on its bullet above (A1/A3/A5 by the `chunk_admission`
-scan, A2 by the TLA scan, A4 at parse). The admission scan is on by
-default for every materialized chunk; for audited corpora a spec can
-disable individual checks per chunk via
-`chunk_analysis_options.<chunk>.admission_overrides`
-(`[a1_eval, a3_dynamic_import, a5_import_meta]`) — every overridden
-violation is named in a notice (one line per check and violation,
-listing the statements it covers), and overrides that no longer
-suppress anything are reported as redundant. A6, A7, and A11 are relied on by
-observation of the target bundles; A8 degrades soundly per its
-bullet; A9 and A10 are satisfied by spec review.
+A1–A5 are statically checkable per chunk, each enforced to the strength stated on its bullet above (A1/A3/A5 by the
+`chunk_admission` scan, A2 by the TLA scan, A4 at parse). The admission scan is on by default for every materialized
+chunk; for audited corpora a spec can disable individual checks per chunk via
+`chunk_analysis_options.<chunk>.admission_overrides` (`[a1_eval, a3_dynamic_import, a5_import_meta]`) — every overridden
+violation is named in a notice (one line per check and violation, listing the statements it covers), and overrides that
+no longer suppress anything are reported as redundant. A6, A7, and A11 are relied on by observation of the target
+bundles; A8 degrades soundly per its bullet; A9 and A10 are satisfied by spec review.
 
 ### Lemmas
 
-Each lemma is stated then proved succinctly; together they
-support the theorem.
+Each lemma is stated then proved succinctly; together they support the theorem.
 
-**Lemma 1 (Linker order is post-order over `I`).**
-Under A1–A4 + A7 with acyclic `I`, ECMA-262's `Cyclic Module
-Record` evaluation algorithm — specifically `InnerModuleEvaluation`
-(TC39 §16.2.1.5.4) — evaluates modules in some post-order DFS
-linearization of `I`, rooted at the entry module.
+**Lemma 1 (Linker order is post-order over `I`).** Under A1–A4 + A7 with acyclic `I`, ECMA-262's `Cyclic Module Record`
+evaluation algorithm — specifically `InnerModuleEvaluation` (TC39 §16.2.1.5.4) — evaluates modules in some post-order
+DFS linearization of `I`, rooted at the entry module.
 
-_Proof._ TC39 §16.2.1.5.4, `InnerModuleEvaluation`, step 9:
-"For each String required of module.[[RequestedModules]], do …
-Perform ? InnerModuleEvaluation(requiredModule, …)" before
-executing the module's own body. Each `RequestedModule` is one
-of `module`'s `import` directives. By construction (the emit
-loop above), `module`'s `import` directives correspond exactly
-to the outgoing edges of `module` in `I`. The recursive call
-visits each requested module before returning, and each module
-runs its body after the recursive calls return — that's
-post-order DFS. Acyclic `I` ensures every recursive descent
-terminates without revisiting a still-evaluating module. ∎
+_Proof._ TC39 §16.2.1.5.4, `InnerModuleEvaluation`, step 9: "For each String required of module.[[RequestedModules]], do
+… Perform ? InnerModuleEvaluation(requiredModule, …)" before executing the module's own body. Each `RequestedModule` is
+one of `module`'s `import` directives. By construction (the emit loop above), `module`'s `import` directives correspond
+exactly to the outgoing edges of `module` in `I`. The recursive call visits each requested module before returning, and
+each module runs its body after the recursive calls return — that's post-order DFS. Acyclic `I` ensures every recursive
+descent terminates without revisiting a still-evaluating module. ∎
 
-**Lemma 2 (Author-side import-order steering).**
-The materializer's emit construction authors each emitted
-module's `import` directive list in an order that makes ECMA-262
-reach a chosen topological linearization `L` of `I` rooted at
+**Lemma 2 (Author-side import-order steering).** The materializer's emit construction authors each emitted module's
+`import` directive list in an order that makes ECMA-262 reach a chosen topological linearization `L` of `I` rooted at
 the entry.
 
-_Proof._ The DFS in `InnerModuleEvaluation` visits requested
-modules in `[[RequestedModules]]` order — i.e. the syntactic order
-of `import` directives in the source. The materializer emits each
-module's source; it controls every module's `import` order. For
-target `L`: at each module `M` with successors `{M'_1, …, M'_k}`
-in `I`, sort the import list so that the earliest-in-`L` successor
-appears first (DFS goes deepest into the first import). The
-resulting DFS post-order is `L`. ∎
+_Proof._ The DFS in `InnerModuleEvaluation` visits requested modules in `[[RequestedModules]]` order — i.e. the
+syntactic order of `import` directives in the source. The materializer emits each module's source; it controls every
+module's `import` order. For target `L`: at each module `M` with successors `{M'_1, …, M'_k}` in `I`, sort the import
+list so that the earliest-in-`L` successor appears first (DFS goes deepest into the first import). The resulting DFS
+post-order is `L`. ∎
 
-**Implementation.** `esm_import_order::EsmImportOrder` (held on
-`ChunkFactorization`, see "Lemma 2: entry-side import ordering"
-above) computes `L` from the constraining-edge subgraph's toposort,
-reversed within each `I ∪ S` SCC so that the cycle dependent is
-imported first and DFS unwinds through the dependency.
-`lowering::lower_chunk` sorts entry's emitted `import` directives
-with `sort_entry_imports` and every module's merged intra-chunk
-import list with `sort_module_imports`; the realizability gate's
-evaluation simulator applies the same two sorts to its DFS neighbor
-order, so the simulated linker order and the emitted one cannot
-diverge. The validator rejects any spec the primitive's tightened
-clause-3 rule does not accept, so every spec the materializer
-reaches `lower_chunk` for has an `L` Lemma 2 can realize.
+**Implementation.** `esm_import_order::EsmImportOrder` (held on `ChunkFactorization`, see "Lemma 2: entry-side import
+ordering" above) computes `L` from the constraining-edge subgraph's toposort, reversed within each `I ∪ S` SCC so that
+the cycle dependent is imported first and DFS unwinds through the dependency. `lowering::lower_chunk` sorts entry's
+emitted `import` directives with `sort_entry_imports` and every module's merged intra-chunk import list with
+`sort_module_imports`; the realizability gate's evaluation simulator applies the same two sorts to its DFS neighbor
+order, so the simulated linker order and the emitted one cannot diverge. The validator rejects any spec the primitive's
+tightened clause-3 rule does not accept, so every spec the materializer reaches `lower_chunk` for has an `L` Lemma 2 can
+realize.
 
-The remaining principled gap is the `(at-init forward, lazy back)`
-shape **where residual itself is a cycle member**. Lemma 2's
-"unwind through the dependency" fails there — residual is the ESM
-DFS root, so post-order evaluates every other cycle member first,
-and a constraining read into residual TDZs. The primitive's
-tightened rule rejects this shape outright (see the residual-in-
-cycle carve-out under "Lemma 2: entry-side import ordering"); the
-emitter never sees one.
+The remaining principled gap is the `(at-init forward, lazy back)` shape **where residual itself is a cycle member**.
+Lemma 2's "unwind through the dependency" fails there — residual is the ESM DFS root, so post-order evaluates every
+other cycle member first, and a constraining read into residual TDZs. The primitive's tightened rule rejects this shape
+outright (see the residual-in- cycle carve-out under "Lemma 2: entry-side import ordering"); the emitter never sees one.
 
-**Lemma 3 (At-init read correctness).**
-Under any evaluation order `L` respecting `I`, every at-init read
-in module `M` of binding `b` owned by module `M' ≠ M` sees `b`
-initialized at the moment of the read.
+**Lemma 3 (At-init read correctness).** Under any evaluation order `L` respecting `I`, every at-init read in module `M`
+of binding `b` owned by module `M' ≠ M` sees `b` initialized at the moment of the read.
 
-_Proof._ The emit places at-init read of `b` in `M`'s body. By
-the definition of `R`, this read contributes edge
-`(M, M') ∈ E_R ⊆ E_I`. `L` respects `I`, so `M'` evaluates fully
-before any line of `M`'s body runs. `M'` evaluating fully
-includes `b`'s declaring statement (by the source-order invariant
-within `M'`); `b` is initialized when `M`'s read of it fires. ∎
+_Proof._ The emit places at-init read of `b` in `M`'s body. By the definition of `R`, this read contributes edge
+`(M, M') ∈ E_R ⊆ E_I`. `L` respects `I`, so `M'` evaluates fully before any line of `M`'s body runs. `M'` evaluating
+fully includes `b`'s declaring statement (by the source-order invariant within `M'`); `b` is initialized when `M`'s read
+of it fires. ∎
 
-**Lemma 4 (Lazy-read correctness).**
-Under any `L` respecting `I`, every lazy cross-module read fires
-after its target binding is initialized.
+**Lemma 4 (Lazy-read correctness).** Under any `L` respecting `I`, every lazy cross-module read fires after its target
+binding is initialized.
 
-_Proof._ Lazy reads are syntactically inside function bodies,
-method bodies, getter/setter bodies, or instance class-field
-initializers. ECMA-262 §10.2.1 (`OrdinaryFunctionCreate`) creates
-the function object with `[[Environment]]` capturing the lexical
-environment at definition time, but the function body does not
-execute until the function is _called_. By Lemma 1's post-order
-property, `M`'s body finishes evaluating (defining `M`'s
-functions) before any module that imports `M` evaluates and
-references `M`'s exports. Any caller of `M`'s function — entry
-top-level code, another module's function call, etc. — runs
-strictly after `L` has reached the caller's module. By Lemma 3
-analog (the I-edge from caller's module to `M'` exists because
-the function body references `b ∈ M'`), `M'` is fully evaluated
-by the time the lazy read fires. ∎
+_Proof._ Lazy reads are syntactically inside function bodies, method bodies, getter/setter bodies, or instance
+class-field initializers. ECMA-262 §10.2.1 (`OrdinaryFunctionCreate`) creates the function object with `[[Environment]]`
+capturing the lexical environment at definition time, but the function body does not execute until the function is
+_called_. By Lemma 1's post-order property, `M`'s body finishes evaluating (defining `M`'s functions) before any module
+that imports `M` evaluates and references `M`'s exports. Any caller of `M`'s function — entry top-level code, another
+module's function call, etc. — runs strictly after `L` has reached the caller's module. By Lemma 3 analog (the I-edge
+from caller's module to `M'` exists because the function body references `b ∈ M'`), `M'` is fully evaluated by the time
+the lazy read fires. ∎
 
-**Lemma 5 (Side-effect ordering).**
-Under any `L` respecting `I ∪ S`, for every source-order pair of
-side-effecting statements `(S₁, S₂)` with `S₁.ordinal <
-S₂.ordinal` and `home(S₁) ≠ home(S₂)`, `S₁` fires before `S₂`.
+**Lemma 5 (Side-effect ordering).** Under any `L` respecting `I ∪ S`, for every source-order pair of side-effecting
+statements `(S₁, S₂)` with `S₁.ordinal < S₂.ordinal` and `home(S₁) ≠ home(S₂)`, `S₁` fires before `S₂`.
 
-_Proof._ By the definition of `S`, the pair `(S₁, S₂)` introduces
-edge `(home(S₂), home(S₁)) ∈ E_S`. `L` respects `S`, so
-`home(S₁)` precedes `home(S₂)` in `L`. Each module's body runs
-to completion before the next, so `S₁` (in `home(S₁)`) fires
-before `S₂` (in `home(S₂)`). Same-module side-effect order is
-preserved by the source-order invariant. ∎
+_Proof._ By the definition of `S`, the pair `(S₁, S₂)` introduces edge `(home(S₂), home(S₁)) ∈ E_S`. `L` respects `S`,
+so `home(S₁)` precedes `home(S₂)` in `L`. Each module's body runs to completion before the next, so `S₁` (in `home(S₁)`)
+fires before `S₂` (in `home(S₂)`). Same-module side-effect order is preserved by the source-order invariant. ∎
 
 ### Theorem and proof
 
-**Theorem (correctness).** Under assumptions A1–A11, if the realizability
-gate accepts a spec (Pass 1 and Pass 2 above), the source-order emit
-construction produces a multi-module ESM bundle whose observation-trace
-under ECMA-262 evaluation is identical to the input chunk's evaluation.
+**Theorem (correctness).** Under assumptions A1–A11, if the realizability gate accepts a spec (Pass 1 and Pass 2 above),
+the source-order emit construction produces a multi-module ESM bundle whose observation-trace under ECMA-262 evaluation
+is identical to the input chunk's evaluation.
 
-_Proof._ Pass 1 makes the constraining subgraph `R ∪ S` acyclic, so it
-admits a topological linearization `L`. The full graph `I` may have
-additional cycles. A cycle whose cross-module edges are all lazy is sound
-for lazy reads regardless of which member the DFS enters first (Lemma 4). A
-cycle that also carries constraining edges is accepted only by Pass 2, which
-fixes the evaluation order the emitted imports produce and checks that every
-constraining edge's target evaluates before its source. By Lemma 2 we author
-each emitted module's import directive list to make ECMA-262 produce a
-linker order respecting both `R` and `S`. By Lemmas 3 and 4 every binding
-read in the emitted bundle sees an initialized value identical to the input
-chunk's read at the same source ordinal. By Lemma 5 every side-effecting
-statement fires in the same relative order as in the input chunk. By the
-emit's same-module source-order invariant, statements within a module fire
-in their original source ordinal order. The observation-trace of the emitted
-bundle is therefore identical to the input chunk's. ∎
+_Proof._ Pass 1 makes the constraining subgraph `R ∪ S` acyclic, so it admits a topological linearization `L`. The full
+graph `I` may have additional cycles. A cycle whose cross-module edges are all lazy is sound for lazy reads regardless
+of which member the DFS enters first (Lemma 4). A cycle that also carries constraining edges is accepted only by Pass 2,
+which fixes the evaluation order the emitted imports produce and checks that every constraining edge's target evaluates
+before its source. By Lemma 2 we author each emitted module's import directive list to make ECMA-262 produce a linker
+order respecting both `R` and `S`. By Lemmas 3 and 4 every binding read in the emitted bundle sees an initialized value
+identical to the input chunk's read at the same source ordinal. By Lemma 5 every side-effecting statement fires in the
+same relative order as in the input chunk. By the emit's same-module source-order invariant, statements within a module
+fire in their original source ordinal order. The observation-trace of the emitted bundle is therefore identical to the
+input chunk's. ∎
 
-Scope of the argument: Lemmas 3–5 are stated for evaluation orders `L`
-respecting `I`. An I-SCC that carries both constraining and lazy edges has no
-such `L`; for it the conclusion rests on the simulator reproducing the
-ECMA-262 evaluation order under the emitted import order (both consume
-`EsmImportOrder`; `e2e/simulator_node_differential_sweep_test` compares the
-simulated order against Node), not on a proof in this document.
+Scope of the argument: Lemmas 3–5 are stated for evaluation orders `L` respecting `I`. An I-SCC that carries both
+constraining and lazy edges has no such `L`; for it the conclusion rests on the simulator reproducing the ECMA-262
+evaluation order under the emitted import order (both consume `EsmImportOrder`;
+`e2e/simulator_node_differential_sweep_test` compares the simulated order against Node), not on a proof in this
+document.
 
 ### Coverage gaps (what the proof does NOT cover)
 
-The proof above is a sufficient-condition theorem under A1–A11.
-It does not establish:
+The proof above is a sufficient-condition theorem under A1–A11. It does not establish:
 
-- **Top-level await (A2 violation).** Async modules use a
-  different evaluation algorithm (`InnerModuleEvaluation` returns
-  a Promise; cyclic async-module groups have AsyncCycleRoot
-  semantics). A separate proof would be needed; instead the
-  materializer refuses TLA chunks explicitly (the chunk-analysis bail
-  described under A2 above).
-- **Dynamic eval / reflection bypassing the static graph (A1, A5
-  violations).** The `I` graph is incomplete in this case;
-  cycle-freeness in `I` doesn't imply cycle-freeness in the
-  actual evaluation graph. The admission scan rejects the
-  module-top shapes (direct / seq-indirect `eval` calls,
-  non-`url` `import.meta` use, eager non-literal `import()`),
-  but cannot rule out the rest statically. The shapes that remain
-  pure input-shape contracts on the bundler:
-  - `eval` in function bodies and other lazy positions — A1's
-    wording only bans module-top eval, but a lazy direct `eval`
-    still reads its lexical scope dynamically when the enclosing
-    function is called after the split, and the split may have
-    moved the bindings it names into other modules.
-  - aliased eval (`const e = eval; e(...)`) and `eval` reached
-    through any value flow.
-  - non-literal dynamic-import specifiers in lazy positions,
-    which could resolve to an internal module at runtime.
-  - `Function.prototype.toString` reads of cross-module bodies
-    and `Reflect`-based descriptor inspection of namespace
-    objects (the fuzzier A5 sub-shapes; checking them cheaply
-    without over-flagging mainstream bundles is not possible).
-- **Cross-chunk imports through CommonJS interop.** ECMA-262's
-  evaluation rules don't apply to CJS modules; a CJS module's
-  `module.exports` mutation can fire mid-evaluation in arbitrary
-  order. We require vendor chunks to be ESM (production corpora we target satisfy this).
-- **Lazy-only cycles** are _accepted_ by the realizability gate (Pass 2
-  skips an I-SCC with no constraining edge): the linker walks `I` and picks
-  some evaluation order for the cycle, every module finishes evaluating with
-  all bindings assigned, and the lazy reads only fire later (after `L`'s
-  call-sites run). The architectural-fragility worry — a future edit
-  promoting a lazy read to at-init — is judged by the gate the moment the new
-  constraining edge enters the SCC.
+- **Top-level await (A2 violation).** Async modules use a different evaluation algorithm (`InnerModuleEvaluation`
+  returns a Promise; cyclic async-module groups have AsyncCycleRoot semantics). A separate proof would be needed;
+  instead the materializer refuses TLA chunks explicitly (the chunk-analysis bail described under A2 above).
+- **Dynamic eval / reflection bypassing the static graph (A1, A5 violations).** The `I` graph is incomplete in this
+  case; cycle-freeness in `I` doesn't imply cycle-freeness in the actual evaluation graph. The admission scan rejects
+  the module-top shapes (direct / seq-indirect `eval` calls, non-`url` `import.meta` use, eager non-literal `import()`),
+  but cannot rule out the rest statically. The shapes that remain pure input-shape contracts on the bundler:
+  - `eval` in function bodies and other lazy positions — A1's wording only bans module-top eval, but a lazy direct
+    `eval` still reads its lexical scope dynamically when the enclosing function is called after the split, and the
+    split may have moved the bindings it names into other modules.
+  - aliased eval (`const e = eval; e(...)`) and `eval` reached through any value flow.
+  - non-literal dynamic-import specifiers in lazy positions, which could resolve to an internal module at runtime.
+  - `Function.prototype.toString` reads of cross-module bodies and `Reflect`-based descriptor inspection of namespace
+    objects (the fuzzier A5 sub-shapes; checking them cheaply without over-flagging mainstream bundles is not possible).
+- **Cross-chunk imports through CommonJS interop.** ECMA-262's evaluation rules don't apply to CJS modules; a CJS
+  module's `module.exports` mutation can fire mid-evaluation in arbitrary order. We require vendor chunks to be ESM
+  (production corpora we target satisfy this).
+- **Lazy-only cycles** are _accepted_ by the realizability gate (Pass 2 skips an I-SCC with no constraining edge): the
+  linker walks `I` and picks some evaluation order for the cycle, every module finishes evaluating with all bindings
+  assigned, and the lazy reads only fire later (after `L`'s call-sites run). The architectural-fragility worry — a
+  future edit promoting a lazy read to at-init — is judged by the gate the moment the new constraining edge enters the
+  SCC.
 
 ### Worked example: cycle through a lazy back-edge
 
-A spec that is acyclic in `R` alone but cyclic in `I` once lazy back-edges
-are counted:
+A spec that is acyclic in `R` alone but cyclic in `I` once lazy back-edges are counted:
 
 ```text
 mod_a:                                      mod_b:
@@ -1417,163 +955,113 @@ mod_a:                                      mod_b:
   // lazy read of B closes the I-cycle mod_a → mod_b
 ```
 
-The residual module calls `readB()` at top level and re-exports `A`, `B` and
-`readB`.
+The residual module calls `readB()` at top level and re-exports `A`, `B` and `readB`.
 
-The constraining subgraph holds only `(mod_b, mod_a)` and is acyclic, so
-Pass 1 passes, but the lazy `readB` body emits `import { B } from "./mod_b"`
-in `mod_a`, so `I` has the cycle `{mod_a, mod_b}`. Its outcome depends on the
-linker's DFS order: entering `mod_a` first would evaluate `mod_b` first, and
-`const B = A + "-postfix"` would run while `A` is in TDZ. The emitter avoids
-that: the entry imports every module with the SCC's dependent first
-(`[mod_b, mod_a]`, Lemma 2), so the DFS runs `entry → mod_b → mod_a → mod_b`
-(cycle, no-op), `mod_a` evaluates first, and `mod_b` sees `A` initialized.
-Pass 2's simulator reproduces that order and accepts; the e2e test
-`lemma_two_rescued_asymmetric_cycle_test`
-(<../e2e/lemma_two_rescued_asymmetric_cycle_test.rs>) runs the emitted bundle
+The constraining subgraph holds only `(mod_b, mod_a)` and is acyclic, so Pass 1 passes, but the lazy `readB` body emits
+`import { B } from "./mod_b"` in `mod_a`, so `I` has the cycle `{mod_a, mod_b}`. Its outcome depends on the linker's DFS
+order: entering `mod_a` first would evaluate `mod_b` first, and `const B = A + "-postfix"` would run while `A` is in
+TDZ. The emitter avoids that: the entry imports every module with the SCC's dependent first (`[mod_b, mod_a]`, Lemma 2),
+so the DFS runs `entry → mod_b → mod_a → mod_b` (cycle, no-op), `mod_a` evaluates first, and `mod_b` sees `A`
+initialized. Pass 2's simulator reproduces that order and accepts; the e2e test
+`lemma_two_rescued_asymmetric_cycle_test` (<../e2e/lemma_two_rescued_asymmetric_cycle_test.rs>) runs the emitted bundle
 of the same shape under Node.
 
-Pass 2 rejects the same cycle shape when the target of the constraining edge
-is the residual module: residual is the DFS root, so it evaluates last and a
-constraining read into it TDZs (<../e2e/pass_two_tdz_cut_diagnosis_test.rs>,
-<../e2e/runtime_tdz_on_imported_class_test.rs>). The realizable fix is then
-to colocate the read's binding with its reader. This is the canonical
-**spec-induced atom** in the sense of §"Two classes of atom" below: the
-owner-level read graph is a DAG, but the spec's choice to split the two
-bindings makes the module-level `I ∪ S` cyclic. The validator's `CycleReport`
-names the exact binding pair (with the binding-pair-blame
-`render_cycle_summary` format), so the diagnostic points the spec author
-directly at "{A, B} must co-locate."
+Pass 2 rejects the same cycle shape when the target of the constraining edge is the residual module: residual is the DFS
+root, so it evaluates last and a constraining read into it TDZs (<../e2e/pass_two_tdz_cut_diagnosis_test.rs>,
+<../e2e/runtime_tdz_on_imported_class_test.rs>). The realizable fix is then to colocate the read's binding with its
+reader. This is the canonical **spec-induced atom** in the sense of §"Two classes of atom" below: the owner-level read
+graph is a DAG, but the spec's choice to split the two bindings makes the module-level `I ∪ S` cyclic. The validator's
+`CycleReport` names the exact binding pair (with the binding-pair-blame `render_cycle_summary` format), so the
+diagnostic points the spec author directly at "{A, B} must co-locate."
 
-The namespace-aggregator form of a rejected split is in
-<../e2e/namespace_aggregator_split_tdz_test.rs>.
+The namespace-aggregator form of a rejected split is in <../e2e/namespace_aggregator_split_tdz_test.rs>.
 
 ### Why a static gate, not a runtime check
 
-The gating rule is enforced **statically** by the validator. The
-materializer either emits a bundle the gate accepts — observationally
-equivalent by the theorem above — or refuses with cycle evidence. There is
-no runtime check, no init-wrapper safety net, no per-load TDZ guard. By
-construction, the emitter never produces JavaScript that the ESM linker has
-to puzzle through a cyclic at-init read graph for. If the spec describes an
-unrealizable split, the spec is wrong; we report the cycle and let the author
-fix it.
+The gating rule is enforced **statically** by the validator. The materializer either emits a bundle the gate accepts —
+observationally equivalent by the theorem above — or refuses with cycle evidence. There is no runtime check, no
+init-wrapper safety net, no per-load TDZ guard. By construction, the emitter never produces JavaScript that the ESM
+linker has to puzzle through a cyclic at-init read graph for. If the spec describes an unrealizable split, the spec is
+wrong; we report the cycle and let the author fix it.
 
-This is the contract the user-visible artifact relies on. Any
-escape hatch — accepting constraining-cyclic specs that happen to work in
-testing, or deferring cycle detection to runtime — gives back
-the property that "an emitted bundle from this materializer is,
-by inspection of its module graph alone, free of TDZ and
-side-effect-ordering hazards."
+This is the contract the user-visible artifact relies on. Any escape hatch — accepting constraining-cyclic specs that
+happen to work in testing, or deferring cycle detection to runtime — gives back the property that "an emitted bundle
+from this materializer is, by inspection of its module graph alone, free of TDZ and side-effect-ordering hazards."
 
 ### Multi-chunk extension
 
-The theorem is stated for a single chunk. Real bundles have many chunks
-(entry, code-split routes, vendor bundles), each with its own logical-module
-split. A cross-chunk dependency is an `Imported` binding of the importing
-chunk, not a vertex of any chunk's owner graph.
+The theorem is stated for a single chunk. Real bundles have many chunks (entry, code-split routes, vendor bundles), each
+with its own logical-module split. A cross-chunk dependency is an `Imported` binding of the importing chunk, not a
+vertex of any chunk's owner graph.
 
-The natural lift — union every chunk's I-graph, with `Imported` bindings
-contributing cross-chunk edges, and require the union to pass the gate — is
-not implemented: `validate_factorization` takes one chunk's owner graph, so a
-cycle among user chunks (two code-split chunks importing each other) is
-outside its view. In practice vendor chunks are leaves — they don't import
-from us — so they add no edges into user chunks; a vendor chunk that
-re-exports something from a user chunk is a bundler-configuration problem,
-not a spec problem.
+The natural lift — union every chunk's I-graph, with `Imported` bindings contributing cross-chunk edges, and require the
+union to pass the gate — is not implemented: `validate_factorization` takes one chunk's owner graph, so a cycle among
+user chunks (two code-split chunks importing each other) is outside its view. In practice vendor chunks are leaves —
+they don't import from us — so they add no edges into user chunks; a vendor chunk that re-exports something from a user
+chunk is a bundler-configuration problem, not a spec problem.
 
 ### Pipeline split (chunk analysis / materialization)
 
-The per-chunk pipeline is two halves with sharply different
-dependencies:
+The per-chunk pipeline is two halves with sharply different dependencies:
 
-- **Chunk analysis** (spec-independent): parse → per-statement facts →
-  owner graph → structural atomic units. Pure function of
-  `(source bytes, analysis hints, OwnerGraphOptions)`. The composer
-  is `chunk_analysis::compute_chunk_analysis`, returning a
-  `chunk_analysis::ChunkAnalysisOutput` — distinct from the `gate`
-  crate's `FactorizationInputs` — that bundles `ChunkFactAnalysis` (facts +
-  top-level-await detection + redundant-hint warnings) with the
-  `OwnerGraphAndUnits` derived from those facts.
-- **Materialization** (spec-dependent): assemble the partition from the
-  spec's binding claims, run the realizability gate, lower to ESM. This is
-  `lowering::materialize_logical_modules`; per chunk it runs
-  `prepare_logical_chunk`, then `resolve_prepared_chunks` (selector
-  resolution, joint across chunks), then `finish_logical_chunk` (chunk
-  analysis, partition assembly, the gate, lowering).
+- **Chunk analysis** (spec-independent): parse → per-statement facts → owner graph → structural atomic units. Pure
+  function of `(source bytes, analysis hints, OwnerGraphOptions)`. The composer is
+  `chunk_analysis::compute_chunk_analysis`, returning a `chunk_analysis::ChunkAnalysisOutput` — distinct from the `gate`
+  crate's `FactorizationInputs` — that bundles `ChunkFactAnalysis` (facts + top-level-await detection + redundant-hint
+  warnings) with the `OwnerGraphAndUnits` derived from those facts.
+- **Materialization** (spec-dependent): assemble the partition from the spec's binding claims, run the realizability
+  gate, lower to ESM. This is `lowering::materialize_logical_modules`; per chunk it runs `prepare_logical_chunk`, then
+  `resolve_prepared_chunks` (selector resolution, joint across chunks), then `finish_logical_chunk` (chunk analysis,
+  partition assembly, the gate, lowering).
 
-The materializer is the composition of both, and chunk analysis is computed
-in memory at one call site in `finish_logical_chunk`. The boundary is
-explicit without committing the pipeline to cross-process fact reuse. If
-future work tries to cache chunk analysis across processes, it must first
-solve SWC hygiene replay for pre-filter facts; see
+The materializer is the composition of both, and chunk analysis is computed in memory at one call site in
+`finish_logical_chunk`. The boundary is explicit without committing the pipeline to cross-process fact reuse. If future
+work tries to cache chunk analysis across processes, it must first solve SWC hygiene replay for pre-filter facts; see
 `docs/wire_format.md` and `docs/lessons_learned/cross_process_stage_b.md`.
 
-The reason to call this out: every diagnostic in §"Two classes of
-atom" lives in materialization (it depends on the spec's quotient), but
-its inputs all come from chunk analysis. Refactors that move work
-between the two halves must respect the boundary — anything
-spec-dependent cannot move into chunk analysis; anything that only
-depends on source bytes should not stay in materialization.
+The reason to call this out: every diagnostic in §"Two classes of atom" lives in materialization (it depends on the
+spec's quotient), but its inputs all come from chunk analysis. Refactors that move work between the two halves must
+respect the boundary — anything spec-dependent cannot move into chunk analysis; anything that only depends on source
+bytes should not stay in materialization.
 
 ### Two classes of atom
 
-A spec is unrealizable when its assignment forces a _constraining
-cycle_ somewhere — but constraints live at two different levels of
-the graph, and the validator surfaces them through two separate
-diagnostic paths. They differ only in _where_ the cycle appears
-(owner level vs module-quotient level), not in _what_ the proof
-requires. Both reject the same broad property: "some pair (or set)
-of bindings is forced to co-locate, and the spec splits them."
+A spec is unrealizable when its assignment forces a _constraining cycle_ somewhere — but constraints live at two
+different levels of the graph, and the validator surfaces them through two separate diagnostic paths. They differ only
+in _where_ the cycle appears (owner level vs module-quotient level), not in _what_ the proof requires. Both reject the
+same broad property: "some pair (or set) of bindings is forced to co-locate, and the spec splits them."
 
 | Atom class       | Where the cycle lives                                                 | Detector                                         | Diagnostic                                                                                                   |
 | ---------------- | --------------------------------------------------------------------- | ------------------------------------------------ | ------------------------------------------------------------------------------------------------------------ |
 | **Structural**   | SCC of `G_atomic` on the **owner graph** — independent of any spec    | `compute_atomic_units`                           | `AtomicUnitConflict` — names the unit's owners + the modules the spec routes them to + the `DepKind` causes  |
 | **Spec-induced** | SCC of `I ∪ S` on the **module quotient** under the spec's assignment | `check_realizability` + `validate_factorization` | `CycleReport` — names the binding pair(s) on each cut edge, the source and target modules, and the edge kind |
 
-`G_atomic` over owners is acyclic-by-quotient on the chunker's
-original output: bundlers can't emit JavaScript that TDZs at runtime
-(the bundle ran for someone). So every owner-level SCC of
-constraining edges (`EagerUse`, `Sequenced`, `EagerRebind`,
-`LazyRebind`, `DeferredRebind`, `CoDeclaration`, `LocalEffect`) reflects a
-_colocation invariant the bundler relied on_. (`DeferredRebind` —
-a rebind nested ≥2 closures deep or past an `await` — joins
-`G_atomic` bidirectionally like the other rebinds because ESM
-imports are read-only whenever the write fires, but it does NOT
-constrain init order: it is excluded from the constraining-edge
-subgraph the realizability gate and the I-graph use.) Any spec assignment that routes the unit's
-owners to different modules is invalid — `assemble_partition`
-detects this before the materializer touches the quotient. **No
-information about the spec is required to identify a structural
-atom**: it is a property of the source bytes plus the analyzer's
-edge classification.
+`G_atomic` over owners is acyclic-by-quotient on the chunker's original output: bundlers can't emit JavaScript that TDZs
+at runtime (the bundle ran for someone). So every owner-level SCC of constraining edges (`EagerUse`, `Sequenced`,
+`EagerRebind`, `LazyRebind`, `DeferredRebind`, `CoDeclaration`, `LocalEffect`) reflects a _colocation invariant the
+bundler relied on_. (`DeferredRebind` — a rebind nested ≥2 closures deep or past an `await` — joins `G_atomic`
+bidirectionally like the other rebinds because ESM imports are read-only whenever the write fires, but it does NOT
+constrain init order: it is excluded from the constraining-edge subgraph the realizability gate and the I-graph use.)
+Any spec assignment that routes the unit's owners to different modules is invalid — `assemble_partition` detects this
+before the materializer touches the quotient. **No information about the spec is required to identify a structural
+atom**: it is a property of the source bytes plus the analyzer's edge classification.
 
-A **spec-induced atom** is one level up. Each owner may be in its
-own structural atom (singleton), and the _module quotient under the
-spec's assignment_ may still close a cycle through them. The
-worked example in §"Worked example: cycle through a lazy back-edge"
-is exactly this shape: the binding-level read graph is a DAG, but
-the spec's choice to put `B` and `readB` in different modules makes
-the module-level `I ∪ S` graph cyclic (and unrealizable whenever
-Pass 2 proves a TDZ). The fix is identical in
-_shape_ — co-locate the bindings — but the _unit being preserved_ is
-defined by the spec's quotient, not the source bytes.
+A **spec-induced atom** is one level up. Each owner may be in its own structural atom (singleton), and the _module
+quotient under the spec's assignment_ may still close a cycle through them. The worked example in §"Worked example:
+cycle through a lazy back-edge" is exactly this shape: the binding-level read graph is a DAG, but the spec's choice to
+put `B` and `readB` in different modules makes the module-level `I ∪ S` graph cyclic (and unrealizable whenever Pass 2
+proves a TDZ). The fix is identical in _shape_ — co-locate the bindings — but the _unit being preserved_ is defined by
+the spec's quotient, not the source bytes.
 
-Why two paths in the implementation: structural conflicts can be
-caught with no module quotient ever built — it's an `O(|V| + |E|)`
-SCC computation on the owner graph that produces a clean blame
-("these owners can never split"). Spec-induced cycles require the
-quotient (because they're about the assignment) and produce a more
-nuanced blame (which _binding pairs_ on which _cut edges_ close the
-cycle, after `petgraph::algo::greedy_feedback_arc_set` picks the
-cheapest cut to break).
+Why two paths in the implementation: structural conflicts can be caught with no module quotient ever built — it's an
+`O(|V| + |E|)` SCC computation on the owner graph that produces a clean blame ("these owners can never split").
+Spec-induced cycles require the quotient (because they're about the assignment) and produce a more nuanced blame (which
+_binding pairs_ on which _cut edges_ close the cycle, after `petgraph::algo::greedy_feedback_arc_set` picks the cheapest
+cut to break).
 
-Both diagnostics name the implicated bindings at the source level,
-not the module level. A large SCC closing through one
-constraining `(mod_A, mod_B)` edge surfaces as "binding `a` in
-`mod_A` reads binding `b` in `mod_B` at-init; move them together,"
-not "you have a cycle of many modules." See
-[validation.rs::render_cycle_summary](../validation.rs) for the
+Both diagnostics name the implicated bindings at the source level, not the module level. A large SCC closing through one
+constraining `(mod_A, mod_B)` edge surfaces as "binding `a` in `mod_A` reads binding `b` in `mod_B` at-init; move them
+together," not "you have a cycle of many modules." See [validation.rs::render_cycle_summary](../validation.rs) for the
 binding-pair blame format.
 
 ### Corollary: the role of the validator
@@ -1606,147 +1094,104 @@ validate: realizability gate (Pass 1, then Pass 2) over the quotient
 emit (source-order)
 ```
 
-Both rejections write the same kind of sidecar evidence — the owner
-graph and the conflicts/cycles report under `reports/tree/<chunk>/`
-— so spec authors can drill down to specific bindings + statements
-regardless of which atom class caught the spec.
+Both rejections write the same kind of sidecar evidence — the owner graph and the conflicts/cycles report under
+`reports/tree/<chunk>/` — so spec authors can drill down to specific bindings + statements regardless of which atom
+class caught the spec.
 
-A spec that passes validation is _guaranteed_ to emit correctly
-under the source-order strategy described in the proof, given A1–A11. There is
-no class of accepted-input that the validator may emit incorrectly
-(modulo cleanly-defined precision of `reads_at_init` and
-`has_side_effect`). The validator may reject specs that are in fact
-realizable when analysis is conservative; that is the intended
-failure mode. Those rejections should come with owner-level evidence
+A spec that passes validation is _guaranteed_ to emit correctly under the source-order strategy described in the proof,
+given A1–A11. There is no class of accepted-input that the validator may emit incorrectly (modulo cleanly-defined
+precision of `reads_at_init` and `has_side_effect`). The validator may reject specs that are in fact realizable when
+analysis is conservative; that is the intended failure mode. Those rejections should come with owner-level evidence
 showing which graph edges made the split unverifiable.
 
 ### Layered mental model
 
 Five layers, bottom-up:
 
-1. **Owner graph** — fine-grained program facts (`graph/`).
-   One vertex per top-level owner; edges record `EagerUse`,
-   `LazyUse`, `EagerRebind`, `LazyRebind`, `DeferredRebind`,
-   `CoDeclaration`, `Sequenced`, and the local-effect edges that target-local
-   mutation produces. Each
-   edge records whether it constrains init/materialization order.
-2. **Atomic graph** — SCC condensation of the constraining-edge
-   subgraph of the owner graph; a DAG of atomic units
-   (`compute_atomic_units`). Each unit is the smallest set of
-   owners a valid module assignment may not split. Surfaced in
-   `owner_graph.json.atomic_graph`.
-3. **Spec partition** — the author's current assignment of owners
-   to modules (the spec's `members:` + `anonymous_statements:`
-   plus the residual default).
-4. **Module quotient** — the owner graph projected onto the spec's
-   partition. Cross-module edges are the realizability evidence
-   `check_realizability` operates on.
-5. **Module proposals** — DAG-derived advisory recommendations
-   computed by the proposer (`debundle modules propose`) over
-   `atomic_graph`. **Not** emitted by `debundle run`; they are a
-   read-only planner projection.
+1. **Owner graph** — fine-grained program facts (`graph/`). One vertex per top-level owner; edges record `EagerUse`,
+   `LazyUse`, `EagerRebind`, `LazyRebind`, `DeferredRebind`, `CoDeclaration`, `Sequenced`, and the local-effect edges
+   that target-local mutation produces. Each edge records whether it constrains init/materialization order.
+2. **Atomic graph** — SCC condensation of the constraining-edge subgraph of the owner graph; a DAG of atomic units
+   (`compute_atomic_units`). Each unit is the smallest set of owners a valid module assignment may not split. Surfaced
+   in `owner_graph.json.atomic_graph`.
+3. **Spec partition** — the author's current assignment of owners to modules (the spec's `members:` +
+   `anonymous_statements:` plus the residual default).
+4. **Module quotient** — the owner graph projected onto the spec's partition. Cross-module edges are the realizability
+   evidence `check_realizability` operates on.
+5. **Module proposals** — DAG-derived advisory recommendations computed by the proposer (`debundle modules propose`)
+   over `atomic_graph`. **Not** emitted by `debundle run`; they are a read-only planner projection.
 
-When debugging planner output, start with the atomic unit. If an
-assignment would split a unit, the assignment is wrong regardless
-of how plausible the binding names look. If a proposal is too
-broad, inspect the atomic-DAG edges that close it and decide
-whether the edge classification is too conservative or whether the
-larger module is genuinely required.
+When debugging planner output, start with the atomic unit. If an assignment would split a unit, the assignment is wrong
+regardless of how plausible the binding names look. If a proposal is too broad, inspect the atomic-DAG edges that close
+it and decide whether the edge classification is too conservative or whether the larger module is genuinely required.
 
 ### Factor assembly inside `debundle run`
 
-The spec's explicit claims are resolved against the owner graph in
-`factor_assembly.rs`. The rules are deliberately strict:
+The spec's explicit claims are resolved against the owner graph in `factor_assembly.rs`. The rules are deliberately
+strict:
 
-- Two different logical modules may not claim owners from the same
-  atomic unit.
-- A module claim that only covers part of an atomic unit is a
-  conflict, not an implicit request to move the rest.
+- Two different logical modules may not claim owners from the same atomic unit.
+- A module claim that only covers part of an atomic unit is a conflict, not an implicit request to move the rest.
 - Unclaimed owners default to the synthesized residual module.
-- The materializer consumes only the final explicit partition; it
-  does not silently co-move extra owners on behalf of the author.
+- The materializer consumes only the final explicit partition; it does not silently co-move extra owners on behalf of
+  the author.
 
-If the explicit partition is inconsistent, `debundle run` rejects
-and emits diagnostic side outputs (`cycles.json` or
+If the explicit partition is inconsistent, `debundle run` rejects and emits diagnostic side outputs (`cycles.json` or
 `atomic_unit_conflicts.json` under `reports/tree/<chunk-id>/`).
 
 ## Spec explicitness and diagnostics
 
-A tempting design for spec ergonomics is an _automatic closure
-pass_: when the spec assigns binding `A` to module `M` and `A`'s
-init reads `B`, the closure silently assigns `B → M` too (unless
-`B` is already claimed). The author names just the bindings they
-care about and the system fills in transitive deps.
+A tempting design for spec ergonomics is an _automatic closure pass_: when the spec assigns binding `A` to module `M`
+and `A`'s init reads `B`, the closure silently assigns `B → M` too (unless `B` is already claimed). The author names
+just the bindings they care about and the system fills in transitive deps.
 
 The trade-off doesn't pay off in practice:
 
-1. **Spec stops being the source of truth.** What bindings end up
-   in module `M` depends on a heuristic the author can't see at
-   spec-edit time.
-2. **Splitting co-pulled bindings is fighting a heuristic.** If
-   `A` and `B` are co-pulled by closure but the author wants them
-   in different modules, they have to write an explicit
-   counter-claim somewhere. The "fight" is invisible — you can't
-   read the spec and tell what's a counter-claim.
-3. **Cycles introduced by closure are invisible at spec time.**
-   The spec author never wrote down that two modules `module_a`
-   and `module_b` would end up reading each other's bindings;
-   the closure produced that coupling, and the cycle only shows
-   up at runtime.
-4. **No spec-size win at the limit.** When every binding has a
-   meaningful name, the spec already enumerates every binding.
-   Adding ownership info per binding is the same
-   `O(num_bindings)` size — closure isn't saving spec size,
-   just hiding which binding ended up where.
+1. **Spec stops being the source of truth.** What bindings end up in module `M` depends on a heuristic the author can't
+   see at spec-edit time.
+2. **Splitting co-pulled bindings is fighting a heuristic.** If `A` and `B` are co-pulled by closure but the author
+   wants them in different modules, they have to write an explicit counter-claim somewhere. The "fight" is invisible —
+   you can't read the spec and tell what's a counter-claim.
+3. **Cycles introduced by closure are invisible at spec time.** The spec author never wrote down that two modules
+   `module_a` and `module_b` would end up reading each other's bindings; the closure produced that coupling, and the
+   cycle only shows up at runtime.
+4. **No spec-size win at the limit.** When every binding has a meaningful name, the spec already enumerates every
+   binding. Adding ownership info per binding is the same `O(num_bindings)` size — closure isn't saving spec size, just
+   hiding which binding ended up where.
 
-**Design rule.** The spec is fully explicit. Every owned binding
-has its `owner` named in the spec or defaults to
-the residual module. Empty-`declared` (anonymous) statements
-default to the residual module unless explicitly claimed by a logical
-module's `anonymous_statements` shape selector. There is no
-implicit pulling: when an atomic unit or planner proposal includes
-anonymous statements, the spec author copies their source into
-`anonymous_statements` (one entry per claimed statement); the
-materializer never silently co-moves an anonymous statement into a peeled module.
-When a chunk has no explicit logical modules, `inline_in_entry` keeps the
-whole statement sequence in the entry; `catchall_file` places named and
-anonymous statements together in the catchall. Their ordering edges are
-internal to that destination and cannot create a module cycle.
+**Design rule.** The spec is fully explicit. Every owned binding has its `owner` named in the spec or defaults to the
+residual module. Empty-`declared` (anonymous) statements default to the residual module unless explicitly claimed by a
+logical module's `anonymous_statements` shape selector. There is no implicit pulling: when an atomic unit or planner
+proposal includes anonymous statements, the spec author copies their source into `anonymous_statements` (one entry per
+claimed statement); the materializer never silently co-moves an anonymous statement into a peeled module. When a chunk
+has no explicit logical modules, `inline_in_entry` keeps the whole statement sequence in the entry; `catchall_file`
+places named and anonymous statements together in the catchall. Their ordering edges are internal to that destination
+and cannot create a module cycle.
 
-The owner graph is the explicit replacement for hidden closure. It
-records the fine-grained "this owner uses that owner" relation before
-any module-level quotienting. Diagnostics are projections of that
-graph: validation cycles explain why the current explicit assignment
-is not realizable, `atomic_graph` records which owner sets are
-indivisible, and the read-only query surface (`debundle modules
-propose`, `atoms`, `coverage`, `describe`, `show-source`, `scc`,
-`cluster`, `graph-summary`) can rank or annotate DAG-derived proposals. None of those projections silently assign bindings on
+The owner graph is the explicit replacement for hidden closure. It records the fine-grained "this owner uses that owner"
+relation before any module-level quotienting. Diagnostics are projections of that graph: validation cycles explain why
+the current explicit assignment is not realizable, `atomic_graph` records which owner sets are indivisible, and the
+read-only query surface (`debundle modules propose`, `atoms`, `coverage`, `describe`, `show-source`, `scc`, `cluster`,
+`graph-summary`) can rank or annotate DAG-derived proposals. None of those projections silently assign bindings on
 behalf of the spec author.
 
-Each materialized chunk has reports under `reports/tree/<chunk_id>/`.
-`owner_graph.json` carries the detailed owner graph, current module quotient,
-and embedded atomic DAG. Compact validation status is folded into
-`chunk.json`; `cycles.json` and `atomic_unit_conflicts.json` are emitted only
-for rejection cases.
+Each materialized chunk has reports under `reports/tree/<chunk_id>/`. `owner_graph.json` carries the detailed owner
+graph, current module quotient, and embedded atomic DAG. Compact validation status is folded into `chunk.json`;
+`cycles.json` and `atomic_unit_conflicts.json` are emitted only for rejection cases.
 
-When an output emitter materializes executable JavaScript, root reports live
-under `reports/` and per-file/per-directory reports are mirrored under
-`reports/tree/` next to the chunk reports. `reports/output.json` and
-`reports/tree/<chunk_id>/chunk.json` include `output_metrics` computed from the
-exact rendered JS written to disk: total bytes/lines/files, top-level entry
-bytes/lines/files, named-module bytes/lines/files, residual module
-bytes/lines/files, and the largest JS sinks. Peeling tools should use these
-fields for progress reporting instead of rescanning output trees.
+When an output emitter materializes executable JavaScript, root reports live under `reports/` and per-file/per-directory
+reports are mirrored under `reports/tree/` next to the chunk reports. `reports/output.json` and
+`reports/tree/<chunk_id>/chunk.json` include `output_metrics` computed from the exact rendered JS written to disk: total
+bytes/lines/files, top-level entry bytes/lines/files, named-module bytes/lines/files, residual module bytes/lines/files,
+and the largest JS sinks. Peeling tools should use these fields for progress reporting instead of rescanning output
+trees.
 
-The mirrored `reports/tree/**/index.json` files project the semantic
-owner/module dependency graph onto recursive emitted-directory boundaries. They
-report incoming/outgoing edge counts by dependency kind plus full symbol and
-file attribution maps. A symbol key has the form
-`<target_file>#<export_or_binding_name>`; binding-less edges such as
-`sequenced` contribute to edge-kind and file counts but not symbol maps. Uses
-within the same directory do not count against that directory boundary. Use
-these reports to judge hierarchy encapsulation and leaky subtree boundaries;
-use the owner graph and source bodies for drill-down.
+The mirrored `reports/tree/**/index.json` files project the semantic owner/module dependency graph onto recursive
+emitted-directory boundaries. They report incoming/outgoing edge counts by dependency kind plus full symbol and file
+attribution maps. A symbol key has the form `<target_file>#<export_or_binding_name>`; binding-less edges such as
+`sequenced` contribute to edge-kind and file counts but not symbol maps. Uses within the same directory do not count
+against that directory boundary. Use these reports to judge hierarchy encapsulation and leaky subtree boundaries; use
+the owner graph and source bodies for drill-down.
 
 ### Workflow
 
@@ -1755,296 +1200,216 @@ use the owner graph and source bodies for drill-down.
    - **Cycles** in the explicit-only assignment, if any.
    - **Atomic-unit conflicts** when the spec splits an indivisible unit.
    - **Atomic DAG facts** in `owner_graph.json` for planning the next peel.
-3. Spec author resolves: first fix any validation cycles or atomic-unit
-   conflicts; then use `debundle modules propose`, `atoms`, `coverage`,
-   `describe`, and `show-source` to choose explicit owner sets for new
-   spec modules with good public names.
-4. Re-run validator. Iterate until validation is green and the
-   residual contains only intentionally generated or low-value noise.
+3. Spec author resolves: first fix any validation cycles or atomic-unit conflicts; then use `debundle modules propose`,
+   `atoms`, `coverage`, `describe`, and `show-source` to choose explicit owner sets for new spec modules with good
+   public names.
+4. Re-run validator. Iterate until validation is green and the residual contains only intentionally generated or
+   low-value noise.
 
-The spec is now fully explicit. The validator is a one-shot
-predicate: "given this spec, is the bundle realizable?" — no
+The spec is now fully explicit. The validator is a one-shot predicate: "given this spec, is the bundle realizable?" — no
 implicit transformation in the middle.
 
 ## Atomic DAG Planner Data
 
-The same owner graph drives the next-spec workflow. A pipeline that
-only reports whether the current spec passed forces spec authors into
-speculative edit/build/test loops. `debundle run` therefore emits the
-atomic-unit DAG in `owner_graph.json`, and the top-level read-only
-queries (`debundle modules propose`, `atoms`, `coverage`, `describe`,
-`show-source`, `scc`, `cluster`, `graph-summary`) compute advisory
-views from that stable graph.
+The same owner graph drives the next-spec workflow. A pipeline that only reports whether the current spec passed forces
+spec authors into speculative edit/build/test loops. `debundle run` therefore emits the atomic-unit DAG in
+`owner_graph.json`, and the top-level read-only queries (`debundle modules propose`, `atoms`, `coverage`, `describe`,
+`show-source`, `scc`, `cluster`, `graph-summary`) compute advisory views from that stable graph.
 
-<peel_proposer.md> is the current-state implementation note for how
-`modules propose` builds and greedily extends its quotient before
-rendering proposal rows.
+<peel_proposer.md> is the current-state implementation note for how `modules propose` builds and greedily extends its
+quotient before rendering proposal rows.
 
 `debundle modules propose` labels each proposal owner set with a status:
 
-- **`peelable_now`** — this closed atomic-DAG owner set has no outgoing
-  constraining edges into other residual cells; it can be promoted on
-  its own.
-- **`blocked_residual_dependency`** — the cell reads other residual
-  cells (`edges_to_other_residual_cells > 0`); promoting it alone would
-  route those reads through `residual_entry`, so the referenced cells
-  must land first or together.
+- **`peelable_now`** — this closed atomic-DAG owner set has no outgoing constraining edges into other residual cells; it
+  can be promoted on its own.
+- **`blocked_residual_dependency`** — the cell reads other residual cells (`edges_to_other_residual_cells > 0`);
+  promoting it alone would route those reads through `residual_entry`, so the referenced cells must land first or
+  together.
 
-`landable_today` derives from the same predicate as the status (plus
-anonymous-statement addressability): it is `true` only for
-`peelable_now` proposals whose anonymous owners are all addressable.
-A `blocked_residual_dependency` proposal is never `landable_today` —
-`bindings assign --batch` rejects it; grow the closure so the
-referenced cells land together, or co-locate them manually, first.
+`landable_today` derives from the same predicate as the status (plus anonymous-statement addressability): it is `true`
+only for `peelable_now` proposals whose anonymous owners are all addressable. A `blocked_residual_dependency` proposal
+is never `landable_today` — `bindings assign --batch` rejects it; grow the closure so the referenced cells land
+together, or co-locate them manually, first.
 
-Classes whose spec-edit size exceeds `--size-cap-lines` are not
-proposals at all — they surface as diagnostics with reason
-`exceeds_size_cap`.
+Classes whose spec-edit size exceeds `--size-cap-lines` are not proposals at all — they surface as diagnostics with
+reason `exceeds_size_cap`.
 
-The important invariant is that the proposal queue is a projection over
-`atomic_graph`, not a separate fact emitted by the transform pipeline.
-Ordinary `debundle run` emits owner facts, module quotient facts, and the
-atomic DAG; the read-only query surface ranks and groups those facts for
-authoring workflows.
+The important invariant is that the proposal queue is a projection over `atomic_graph`, not a separate fact emitted by
+the transform pipeline. Ordinary `debundle run` emits owner facts, module quotient facts, and the atomic DAG; the
+read-only query surface ranks and groups those facts for authoring workflows.
 
 ### Detailed graph side output
 
-The transform also writes a detailed graph side output, separate from
-compact validation errors. This is the data source for analysis
-scripts, notebooks, and repo-specific peel skills. It is emitted on
-both success and validation rejection, because useful graph data often
-exists precisely when the current assignment is not yet realizable.
+The transform also writes a detailed graph side output, separate from compact validation errors. This is the data source
+for analysis scripts, notebooks, and repo-specific peel skills. It is emitted on both success and validation rejection,
+because useful graph data often exists precisely when the current assignment is not yet realizable.
 
-The detailed output is machine-readable, typed, and debundler-owned:
-per chunk, the owner vertices/edges, quotient projections for the
-current assignment, and the `atomic_graph`. The field-level shape is
-the serde schema (`OwnerGraphReport` and siblings in
-<../reports/schema.rs>); this doc does not mirror it. New fields can
-be added without changing the underlying graph transform. Do not add
-top-level `kind` or `schema_version` fields just to mimic an external
-compatibility scheme.
+The detailed output is machine-readable, typed, and debundler-owned: per chunk, the owner vertices/edges, quotient
+projections for the current assignment, and the `atomic_graph`. The field-level shape is the serde schema
+(`OwnerGraphReport` and siblings in <../reports/schema.rs>); this doc does not mirror it. New fields can be added
+without changing the underlying graph transform. Do not add top-level `kind` or `schema_version` fields just to mimic an
+external compatibility scheme.
 
-Keep this side output high fidelity. It is allowed to be larger than
-stderr and larger than a human-facing report. The compact console
-error should summarize the failed SCC and point at the side-output
-paths; downstream tooling should read the files.
+Keep this side output high fidelity. It is allowed to be larger than stderr and larger than a human-facing report. The
+compact console error should summarize the failed SCC and point at the side-output paths; downstream tooling should read
+the files.
 
 ### Valid peels and atomic modules
 
-Let `dest: V -> D` assign every owner vertex to an output
-destination. The quotient graph `Q = G / dest` merges all owners
-with the same destination, drops intra-destination edges, and keeps
-the labels/provenance on every cross-destination edge.
+Let `dest: V -> D` assign every owner vertex to an output destination. The quotient graph `Q = G / dest` merges all
+owners with the same destination, drops intra-destination edges, and keeps the labels/provenance on every
+cross-destination edge.
 
-A cross-destination read edge is **importable** iff the provider can
-be named by an emitted ESM import from the consumer destination:
-the provider is already in an external chunk, is exported by a
-logical module, is an imported binding being re-exported, lives in
-the residual entry (the emitter auto-exports residual entry bindings
-on demand — see "Emit-side responsibilities" below), or moves with
-the consumer. There is no first-class "binding is private to entry"
-spec contract: any top-level declaration in entry is fair game for a
-moved module to read, and the materializer grows entry's export
-list to cover such reads.
+A cross-destination read edge is **importable** iff the provider can be named by an emitted ESM import from the consumer
+destination: the provider is already in an external chunk, is exported by a logical module, is an imported binding being
+re-exported, lives in the residual entry (the emitter auto-exports residual entry bindings on demand — see "Emit-side
+responsibilities" below), or moves with the consumer. There is no first-class "binding is private to entry" spec
+contract: any top-level declaration in entry is fair game for a moved module to read, and the materializer grows entry's
+export list to cover such reads.
 
-A cross-destination **rebinding write** is never importable. ESM
-imports are live for reads but read-only in the importing module, so
-an owner that assigns `a` must stay in the same destination as the
-owner that declares `a` unless the emitter grows a separate
-live-mutation bridge for that binding.
+A cross-destination **rebinding write** is never importable. ESM imports are live for reads but read-only in the
+importing module, so an owner that assigns `a` must stay in the same destination as the owner that declares `a` unless
+the emitter grows a separate live-mutation bridge for that binding.
 
-Call an edge **constraining** when it is an at-init read or a
-side-effect-order edge. Rebinding write edges are stricter than
-constraining read/order edges: they invalidate any cross-destination
-assignment, even when acyclic. Lazy read edges are
-non-constraining: they still contribute imports, but a cycle made
-entirely of lazy read edges is realizable.
+Call an edge **constraining** when it is an at-init read or a side-effect-order edge. Rebinding write edges are stricter
+than constraining read/order edges: they invalidate any cross-destination assignment, even when acyclic. Lazy read edges
+are non-constraining: they still contribute imports, but a cycle made entirely of lazy read edges is realizable.
 
 A destination assignment is **valid** iff:
 
 1. Every cross-destination read edge in `Q` is importable.
 2. No cross-destination rebinding write edge remains in `Q`.
-3. The I-graph of `Q` passes the two-pass gate ("Lemma 2: entry-side import
-   ordering"): its constraining-edge subgraph — `Q` with every `LazyUse`
-   cross edge dropped — has no multi-module SCC (Pass 1), and in every
-   multi-module SCC of the full I-graph that contains a constraining edge the
-   ESM evaluation simulator evaluates each constraining edge's target before
-   its source (Pass 2). Pure lazy-read import cycles are realizable because
-   ESM evaluates the lazy side without observing a TDZ on the eager side.
+3. The I-graph of `Q` passes the two-pass gate ("Lemma 2: entry-side import ordering"): its constraining-edge subgraph —
+   `Q` with every `LazyUse` cross edge dropped — has no multi-module SCC (Pass 1), and in every multi-module SCC of the
+   full I-graph that contains a constraining edge the ESM evaluation simulator evaluates each constraining edge's target
+   before its source (Pass 2). Pure lazy-read import cycles are realizable because ESM evaluates the lazy side without
+   observing a TDZ on the eager side.
 
-Clauses 2 and 3 are what the "Realizability primitive" section above defines
-as the single shared implementation; clause 1 is emit policy ("Emit-side
-responsibilities"). The validator and planner checks all consume the same
-primitive — none of them re-implement the predicate.
+Clauses 2 and 3 are what the "Realizability primitive" section above defines as the single shared implementation; clause
+1 is emit policy ("Emit-side responsibilities"). The validator and planner checks all consume the same primitive — none
+of them re-implement the predicate.
 
-A peel is just a proposed destination assignment for an owner set.
-The peel is valid exactly when the resulting assignment is valid by
-the definition above. Invalid peels have three primary explanations:
-a non-importable read crosses the cut, a rebinding write crosses the
-cut, or a quotient SCC keeps a constraining cycle or a simulated TDZ.
+A peel is just a proposed destination assignment for an owner set. The peel is valid exactly when the resulting
+assignment is valid by the definition above. Invalid peels have three primary explanations: a non-importable read
+crosses the cut, a rebinding write crosses the cut, or a quotient SCC keeps a constraining cycle or a simulated TDZ.
 
-This definition is intentionally a predicate over a complete
-destination assignment, not a single graph-factorization trick. Some
-relations are true equivalence constraints:
+This definition is intentionally a predicate over a complete destination assignment, not a single graph-factorization
+trick. Some relations are true equivalence constraints:
 
 - Rebinding edges force colocation because ESM imports are read-only.
-- SCCs of at-init/side-effect constraints can force colocation when a
-  split would leave a constraining edge inside a quotient SCC.
+- SCCs of at-init/side-effect constraints can force colocation when a split would leave a constraining edge inside a
+  quotient SCC.
 
 Other relations are not equivalence constraints:
 
-- A directed at-init read `A -> B` does not mean `A` and `B` must
-  colocate. It can be satisfied by an import when the quotient stays
-  realizable.
-- A lazy read never constrains evaluation order, but it still emits an
-  import, so it still takes part in the I-cycles that Pass 2 judges.
-- A side-effect-order edge is an ordering constraint, not a value
-  dependency. It may be satisfiable by the chosen module evaluation
-  order, or it may participate in an unrealizable quotient SCC.
-- A target-local effect edge, such as a recognized TypeScript
-  `__decorate` helper call mutating `C.prototype`, is not a global
-  side-effect-order relation. It is a local mutation relation between
-  the anonymous application statement and the target owner. It must
-  force colocation with that target, but it must not glue the target
-  to every unrelated side-effecting owner that happens to appear
-  before or after it in source order.
+- A directed at-init read `A -> B` does not mean `A` and `B` must colocate. It can be satisfied by an import when the
+  quotient stays realizable.
+- A lazy read never constrains evaluation order, but it still emits an import, so it still takes part in the I-cycles
+  that Pass 2 judges.
+- A side-effect-order edge is an ordering constraint, not a value dependency. It may be satisfiable by the chosen module
+  evaluation order, or it may participate in an unrealizable quotient SCC.
+- A target-local effect edge, such as a recognized TypeScript `__decorate` helper call mutating `C.prototype`, is not a
+  global side-effect-order relation. It is a local mutation relation between the anonymous application statement and the
+  target owner. It must force colocation with that target, but it must not glue the target to every unrelated
+  side-effecting owner that happens to appear before or after it in source order.
 
-So "factorize the graph" is not the problem statement. The problem is:
-construct owner sets whose induced destination assignment is valid under
-the same static semantics as materialization. The graph is the data
-structure used to compute that proof.
+So "factorize the graph" is not the problem statement. The problem is: construct owner sets whose induced destination
+assignment is valid under the same static semantics as materialization. The graph is the data structure used to compute
+that proof.
 
 ### Emit-side responsibilities: refuse to emit invalid JS by construction
 
-The validity predicate above leaves one degree of freedom: which
-residual entry bindings are surfaced as ESM exports of entry. The
-materializer (`materialize_logical_modules`) owns that decision and
-makes it **per emit pass**, not as a static property the planner
-must predict.
+The validity predicate above leaves one degree of freedom: which residual entry bindings are surfaced as ESM exports of
+entry. The materializer (`materialize_logical_modules`) owns that decision and makes it **per emit pass**, not as a
+static property the planner must predict.
 
-Concretely: when a moved module body references a top-level
-declaration that lives in the residual entry but isn't yet on
-entry's `export {...}` list, the emit step grows the export list to
-include it (see `auto_grown_residual_exports` in `lowering/exports.rs`).
-The moved module then imports the binding from entry via a normal ESM
-`import { name } from "../entry.js"`. Source-level exports are not
-clobbered: the auto-grow only adds names that the upstream source
-didn't already export.
+Concretely: when a moved module body references a top-level declaration that lives in the residual entry but isn't yet
+on entry's `export {...}` list, the emit step grows the export list to include it (see `auto_grown_residual_exports` in
+`lowering/exports.rs`). The moved module then imports the binding from entry via a normal ESM
+`import { name } from "../entry.js"`. Source-level exports are not clobbered: the auto-grow only adds names that the
+upstream source didn't already export.
 
 This decoupling is load-bearing for two reasons:
 
-1. **The planner never models the emit policy.** Asking the planner
-   to predict "will the materializer accept this peel after its
-   export-growth pass?" forces a duplicate implementation of the export
-   logic on the planner side and
-   creates an SSOT drift hazard the moment the emit policy
-   evolves. Keeping the planner concerned with the
-   importability/cycle/rebind predicates _only_ means a peel that
-   passes the planner's check is always materializable.
-2. **There is no "binding is private to entry" spec contract.** Any
-   top-level entry declaration is implicitly exportable when a
-   peeled module needs to read it. Spec authors who want a binding
-   to stay strictly internal must keep it inside a logical module
-   (or refuse to peel any consumer that would read it from entry).
+1. **The planner never models the emit policy.** Asking the planner to predict "will the materializer accept this peel
+   after its export-growth pass?" forces a duplicate implementation of the export logic on the planner side and creates
+   an SSOT drift hazard the moment the emit policy evolves. Keeping the planner concerned with the
+   importability/cycle/rebind predicates _only_ means a peel that passes the planner's check is always materializable.
+2. **There is no "binding is private to entry" spec contract.** Any top-level entry declaration is implicitly exportable
+   when a peeled module needs to read it. Spec authors who want a binding to stay strictly internal must keep it inside
+   a logical module (or refuse to peel any consumer that would read it from entry).
 
 The materializer's bail-on-missing-export message
-(`"moved module references residual entry binding(s) … not
-exported by entry"`) is therefore an internal invariant check: if
-the auto-grow pass missed a name, that's a bug to fix in
-`auto_grown_residual_exports`, not a verdict the spec author can
-work around. A truly absent reference (binding declared nowhere in
-the chunk) was already a runtime `ReferenceError` in the upstream
-source and remains one in the debundled output — emit doesn't try
-to invent a binding it can't resolve.
+(`"moved module references residual entry binding(s) … not exported by entry"`) is therefore an internal invariant
+check: if the auto-grow pass missed a name, that's a bug to fix in `auto_grown_residual_exports`, not a verdict the spec
+author can work around. A truly absent reference (binding declared nowhere in the chunk) was already a runtime
+`ReferenceError` in the upstream source and remains one in the debundled output — emit doesn't try to invent a binding
+it can't resolve.
 
 ### Factorization proposals
 
-`factorize` (`debundle modules propose`) proposes module assignments for code
-that currently lives in the residual surface. Its output has the same
-correctness contract as a handwritten YAML edit. The algorithm — a seed
-quotient, then lazy-priority-queue greedy contraction with every merge gated
-by the realizability primitive — is described in <peel_proposer.md>.
+`factorize` (`debundle modules propose`) proposes module assignments for code that currently lives in the residual
+surface. Its output has the same correctness contract as a handwritten YAML edit. The algorithm — a seed quotient, then
+lazy-priority-queue greedy contraction with every merge gated by the realizability primitive — is described in
+<peel_proposer.md>.
 
-- A **proposal** is an owner set plus destination assignment that is already
-  proven valid.
-- A **diagnostic** may describe why a class did not become a proposal. It is
-  never presented as a module assignment the author can land.
+- A **proposal** is an owner set plus destination assignment that is already proven valid.
+- A **diagnostic** may describe why a class did not become a proposal. It is never presented as a module assignment the
+  author can land.
 
 Every emitted proposal satisfies:
 
 1. It corresponds to a concrete destination assignment.
-2. The assignment passes the realizability primitive: no cross-destination
-   rebinding write and no unrealizable quotient SCC. (Residual dependencies and
-   anonymous-statement addressability, which decide `landable_today`, are
-   reported separately.)
-3. The proof is static and local to the owner graph. It does not rely on
-   emitting JS, running a browser, or observing production-scale behavior.
+2. The assignment passes the realizability primitive: no cross-destination rebinding write and no unrealizable quotient
+   SCC. (Residual dependencies and anonymous-statement addressability, which decide `landable_today`, are reported
+   separately.)
+3. The proof is static and local to the owner graph. It does not rely on emitting JS, running a browser, or observing
+   production-scale behavior.
 
-The generator may be conservative and miss valid modules. It may not emit an
-invalid module as a proposal:
+The generator may be conservative and miss valid modules. It may not emit an invalid module as a proposal:
 
 > `factorize` emits only certified proposals.
 
-Local-effect annotations belong in the shared analysis layer, not in
-factorize-specific code. Once the analyzer turns a recognized decorator helper
-call into a target-local owner edge, the materializer rejects a handwritten
-split of the class and decorator statement, the atomic DAG records the
-required unit, and the proposer never splits it either. No consumer gets to
-reinterpret `effect:` independently.
+Local-effect annotations belong in the shared analysis layer, not in factorize-specific code. Once the analyzer turns a
+recognized decorator helper call into a target-local owner edge, the materializer rejects a handwritten split of the
+class and decorator statement, the atomic DAG records the required unit, and the proposer never splits it either. No
+consumer gets to reinterpret `effect:` independently.
 
 ### Pipeline trajectory
 
 The pipeline (`pipeline.rs`) is a fixed composition over three layers:
 
-- **Classify (input space).** Load + prepare (one parallel per-chunk
-  parse computing shallow program facts), then one read-only vendor
-  resolution pass (`build_vendor_resolution_plan`) that validates every
-  `vendor` mark, resolves boundary mappings / swap targets / per-symbol
-  tables, and runs the plan-time consumer gate before anything is
-  written. Spec selectors always match prepare-time input-space ASTs;
-  nothing mutates them.
-- **Plan.** Lowering plans plus the `VendorResolutionPlan` as the
-  single resolution oracle for import construction — both lowering's
-  per-plan directive construction and the emission-time rewriting of
-  non-lowered files consult it.
-- **Emit.** `materialize_logical_modules` is the single artifact
-  mutation wave; `apply_emission_rewrites` then performs the
-  pass-through directive rewrite (specifier canonicalization,
-  boundary-rename mapping, partial-swap consumer surgery) and computes
-  each partially-swapped vendor chunk's residual (self-rewrite + strip)
-  as one function body. Fully-swapped chunks are an emission-set
-  exclusion, not an artifact removal; wrappers / facades / manifests
-  are emission outputs.
+- **Classify (input space).** Load + prepare (one parallel per-chunk parse computing shallow program facts), then one
+  read-only vendor resolution pass (`build_vendor_resolution_plan`) that validates every `vendor` mark, resolves
+  boundary mappings / swap targets / per-symbol tables, and runs the plan-time consumer gate before anything is written.
+  Spec selectors always match prepare-time input-space ASTs; nothing mutates them.
+- **Plan.** Lowering plans plus the `VendorResolutionPlan` as the single resolution oracle for import construction —
+  both lowering's per-plan directive construction and the emission-time rewriting of non-lowered files consult it.
+- **Emit.** `materialize_logical_modules` is the single artifact mutation wave; `apply_emission_rewrites` then performs
+  the pass-through directive rewrite (specifier canonicalization, boundary-rename mapping, partial-swap consumer
+  surgery) and computes each partially-swapped vendor chunk's residual (self-rewrite + strip) as one function body.
+  Fully-swapped chunks are an emission-set exclusion, not an artifact removal; wrappers / facades / manifests are
+  emission outputs.
 
-The emission boundary is `EmissionFiles`: lowering finalizes lowered and
-pass-through chunk files into this owned output set; cross-chunk import
-naturalization, vendor emission rewrites, dead-import/export pruning and
-final export validation run against that set, then tree/harness writers read
-it. Its output-path indexes are built once after lowering changes entry and
-module paths and retained across body-only passes behind an indexed-layout
-check. No disk reparse or pipeline splice into the prepared input artifact
-occurs. `EmissionFiles` currently uses `ChunkBundle` internally as the file
-container for existing transformation helpers; that does not change which
-phase owns the files.
+The emission boundary is `EmissionFiles`: lowering finalizes lowered and pass-through chunk files into this owned output
+set; cross-chunk import naturalization, vendor emission rewrites, dead-import/export pruning and final export validation
+run against that set, then tree/harness writers read it. Its output-path indexes are built once after lowering changes
+entry and module paths and retained across body-only passes behind an indexed-layout check. No disk reparse or pipeline
+splice into the prepared input artifact occurs. `EmissionFiles` currently uses `ChunkBundle` internally as the file
+container for existing transformation helpers; that does not change which phase owns the files.
 
 ## Anonymous-statement selectors
 
-Binding selectors (<selectors.md>) address an `Owned` binding by name.
-Anonymous (empty-`declared`) statements have no name; they are
-side-effect IIFEs, decorator applications like
-`decorate([dec], $g.prototype, "items", 2);`, runtime init bridges, and
-similar bare expressions/statements. Empirically, a closure that
-peels a hub-class binding frequently must co-move several such
-statements — they apply decorators to the class prototype, register
-instrumentation hooks, push configuration through helper functions — and an
-algorithmic refinement (treating "fire-and-forget" preludes as
-non-constraining) does not cover them: most are not preludes,
-they semantically belong with the class.
+Binding selectors (<selectors.md>) address an `Owned` binding by name. Anonymous (empty-`declared`) statements have no
+name; they are side-effect IIFEs, decorator applications like `decorate([dec], $g.prototype, "items", 2);`, runtime init
+bridges, and similar bare expressions/statements. Empirically, a closure that peels a hub-class binding frequently must
+co-move several such statements — they apply decorators to the class prototype, register instrumentation hooks, push
+configuration through helper functions — and an algorithmic refinement (treating "fire-and-forget" preludes as
+non-constraining) does not cover them: most are not preludes, they semantically belong with the class.
 
-The spec addresses these statements with an
-`anonymous_statements: [...]` list on the same `LogicalModule` as
-the named members, where each entry carries a `source_match` template
-of the target statement:
+The spec addresses these statements with an `anonymous_statements: [...]` list on the same `LogicalModule` as the named
+members, where each entry carries a `source_match` template of the target statement:
 
 ```yaml
 feature/state:
@@ -2059,82 +1424,60 @@ feature/state:
         decorate([dec], $g.prototype, "isReady", 2);
 ```
 
-When a decorator application matches an annotated
-`effect: typescript_decorate_helper`, the owner graph records it as a
-target-local effect on the class/prototype binding. That makes the
-anonymous statement a required companion of the class owner for
-materialization and factorize. The author still
-materializes it with `anonymous_statements:` because it has no binding
-name, but the atomic-unit closure that contains the class also covers
-the anon owner, so a proposal containing the class also contains the
-anonymous owner (listed under `anonymous_statement_owner_ids`, or
-`extension_owner_ids` when it extends an existing module) and the
-proposer never proposes the class alone.
+When a decorator application matches an annotated `effect: typescript_decorate_helper`, the owner graph records it as a
+target-local effect on the class/prototype binding. That makes the anonymous statement a required companion of the class
+owner for materialization and factorize. The author still materializes it with `anonymous_statements:` because it has no
+binding name, but the atomic-unit closure that contains the class also covers the anon owner, so a proposal containing
+the class also contains the anonymous owner (listed under `anonymous_statement_owner_ids`, or `extension_owner_ids` when
+it extends an existing module) and the proposer never proposes the class alone.
 
-The unannotated case — `__decorate(...)`, `register(...)`, and
-target-mutating `Foo.x = ...` installs that the analyzer cannot tag
-as target-local because no helper annotation matches — relies on a
-separate route. The proposer's greedy contraction merges a residual
-class into an existing active module when the realizability gate accepts
-the merge, and the merged owners surface as an extension
-(`extends_module_id`, `extension_owner_ids`). The consumer of the proposal
-reads owner shape (named bindings vs anonymous statements) to decide whether
-to write a `members:` or `anonymous_statements:` entry into the extended
-module's yaml.
+The unannotated case — `__decorate(...)`, `register(...)`, and target-mutating `Foo.x = ...` installs that the analyzer
+cannot tag as target-local because no helper annotation matches — relies on a separate route. The proposer's greedy
+contraction merges a residual class into an existing active module when the realizability gate accepts the merge, and
+the merged owners surface as an extension (`extends_module_id`, `extension_owner_ids`). The consumer of the proposal
+reads owner shape (named bindings vs anonymous statements) to decide whether to write a `members:` or
+`anonymous_statements:` entry into the extended module's yaml.
 
 ### Resolution
 
-An anonymous-statement entry is an entity of the joint selector program
-(<../SPEC.md>). Its `source_match.match` is a shape-matcher template — holes
-and alpha-renaming as in any `source_match`; a bare `match:`, as above, keeps
-identifiers exact — and the entry takes exactly one of the top-level
-statements it matches, jointly with every other entity: `all_different` keeps
-two entries, from any modules or trees, off one statement. No place is `no_match`; several assignments are `ambiguous`, never
-settled by source order. Authoring: <selectors.md> § Anonymous side-effect
+An anonymous-statement entry is an entity of the joint selector program (<../SPEC.md>). Its `source_match.match` is a
+shape-matcher template — holes and alpha-renaming as in any `source_match`; a bare `match:`, as above, keeps identifiers
+exact — and the entry takes exactly one of the top-level statements it matches, jointly with every other entity:
+`all_different` keeps two entries, from any modules or trees, off one statement. No place is `no_match`; several
+assignments are `ambiguous`, never settled by source order. Authoring: <selectors.md> § Anonymous side-effect
 statements.
 
-The exactly-one contract is what keeps these entries safe. An anonymous
-statement has no declaration-site identity, only its shape, so a selector that
-silently accepted a different statement after an upstream change would move the
-wrong code while the spec still validated. Holes widen what a template matches,
-but an unintended match must still be the only one to be taken; otherwise it
-surfaces as `ambiguous` at validation time.
+The exactly-one contract is what keeps these entries safe. An anonymous statement has no declaration-site identity, only
+its shape, so a selector that silently accepted a different statement after an upstream change would move the wrong code
+while the spec still validated. Holes widen what a template matches, but an unintended match must still be the only one
+to be taken; otherwise it surfaces as `ambiguous` at validation time.
 
 ### Constraints on the selector source
 
 - The `match` source must parse as JS through the same parser the chunk used.
-- An entry claims exactly one top-level statement; a template whose match
-  covers several statements is `invalid`.
+- An entry claims exactly one top-level statement; a template whose match covers several statements is `invalid`.
 
 ### Why shape rather than line/column
 
-The target application's bundle is delivered minified and prettified for analysis;
-neither line nor column is stable across re-prettifies or
-upstream releases. The shape selector survives both: the
-prettifier reformats whitespace but preserves AST structure, and
-upstream changes that touch the statement's content surface as a
-zero-match diagnostic the spec author can fix.
+The target application's bundle is delivered minified and prettified for analysis; neither line nor column is stable
+across re-prettifies or upstream releases. The shape selector survives both: the prettifier reformats whitespace but
+preserves AST structure, and upstream changes that touch the statement's content surface as a zero-match diagnostic the
+spec author can fix.
 
 ### Claimed anonymous owners in the partition
 
-An owner with no declared binding belongs to the residual module unless a
-module claims it through `anonymous_statements`.
-`factor_assembly::compute_owner_claims` resolves those claims (each module's
-`anonymous_statement_ordinals`) into the partition that
-`ChunkFactorization::build_with` quotients by, so the gate sees the module dep
-graph the materializer will emit. Without that resolution, an anon owner with a
-constraining in-edge from a peeled named owner would create a fake
-cross-module edge, and the validator would reject a spec whose closure the
+An owner with no declared binding belongs to the residual module unless a module claims it through
+`anonymous_statements`. `factor_assembly::compute_owner_claims` resolves those claims (each module's
+`anonymous_statement_ordinals`) into the partition that `ChunkFactorization::build_with` quotients by, so the gate sees
+the module dep graph the materializer will emit. Without that resolution, an anon owner with a constraining in-edge from
+a peeled named owner would create a fake cross-module edge, and the validator would reject a spec whose closure the
 materializer would emit correctly.
 
 ## Comma-list var-decls with split owners
 
-The spec's `owner` is a function from binding name to module.
-Comma-list var-decls (`const A = e1, B = e2, C = e3`) declare
-multiple bindings at once; the spec can assign them to different
-modules. Before any of the per-statement reasoning in this doc
-applies, the materializer rewrites such a comma-list into
-separate single-binding declarations:
+The spec's `owner` is a function from binding name to module. Comma-list var-decls (`const A = e1, B = e2, C = e3`)
+declare multiple bindings at once; the spec can assign them to different modules. Before any of the per-statement
+reasoning in this doc applies, the materializer rewrites such a comma-list into separate single-binding declarations:
 
 ```
 const A = e1, B = e2, C = e3
@@ -2144,23 +1487,17 @@ const B = e2;
 const C = e3;
 ```
 
-The split is semantically transparent within a single module —
-all three statements run in source order regardless of whether
-they're written as one comma-list or three separate
-declarations. After splitting, each declaration has a single
-declared binding, the spec's `owner` map is well-defined per
-statement, and `home(S)` resolves cleanly.
+The split is semantically transparent within a single module — all three statements run in source order regardless of
+whether they're written as one comma-list or three separate declarations. After splitting, each declaration has a single
+declared binding, the spec's `owner` map is well-defined per statement, and `home(S)` resolves cleanly.
 
-The rewrite must happen _before_ statement-fact analysis. Each
-split-out statement gets its own ordinal (in source order); each
-gets its own `reads_at_init` and `has_side_effect`. The dep
-graph captures any cross-declarator reads (e.g. `C = A.x`'s read
-of `A`) automatically.
+The rewrite must happen _before_ statement-fact analysis. Each split-out statement gets its own ordinal (in source
+order); each gets its own `reads_at_init` and `has_side_effect`. The dep graph captures any cross-declarator reads (e.g.
+`C = A.x`'s read of `A`) automatically.
 
 ### Spec surface
 
-The spec selects a single declarator from a comma-list by naming
-the bound identifier as a member. Example, given source
+The spec selects a single declarator from a comma-list by naming the bound identifier as a member. Example, given source
 `const a = 1, b = 2, c = 3;`:
 
 ```yaml
@@ -2174,275 +1511,183 @@ logical_modules:
       members: [{ selector: { binding: { name: c } } }]
 ```
 
-emits three modules — each declaring exactly its claimed
-declarator with the original kind (`const`/`let`/`var`) and any
-`export` directive preserved. Unclaimed siblings stay in the
-residual module as a (possibly single-declarator) comma-list.
-Source-order side effects across declarators are preserved by the
-ESM linker, which evaluates the destination modules in source
-order. See <../e2e/comma_list_owner_split_test.rs> for the full
-shape matrix.
+emits three modules — each declaring exactly its claimed declarator with the original kind (`const`/`let`/`var`) and any
+`export` directive preserved. Unclaimed siblings stay in the residual module as a (possibly single-declarator)
+comma-list. Source-order side effects across declarators are preserved by the ESM linker, which evaluates the
+destination modules in source order. See <../e2e/comma_list_owner_split_test.rs> for the full shape matrix.
 
-**Destructuring declarators are atomic.** `const { x, y } = obj`
-is one declarator binding two names; the lowerer's
-`split_var_decl` moves it as one unit. Claiming any one of its
-bindings (e.g. `x`) pulls every sibling (`y`) into the same
-module — sibling bindings join their claimed module with their
-local name as the export name. Claiming siblings into different
-modules is rejected with an explicit error from
-`pull_destructure_siblings`.
+**Destructuring declarators are atomic.** `const { x, y } = obj` is one declarator binding two names; the lowerer's
+`split_var_decl` moves it as one unit. Claiming any one of its bindings (e.g. `x`) pulls every sibling (`y`) into the
+same module — sibling bindings join their claimed module with their local name as the export name. Claiming siblings
+into different modules is rejected with an explicit error from `pull_destructure_siblings`.
 
 ## Cycle resolution
 
-When the gate rejects a spec, the author must remove the constraining cross
-edge from the quotient SCC. In spec-only work, that usually means:
+When the gate rejects a spec, the author must remove the constraining cross edge from the quotient SCC. In spec-only
+work, that usually means:
 
-**Colocate the constraining owner endpoints.** Move the owner that
-performs the at-init read or side-effecting work together with the
-owner it depends on. Once both endpoints share a destination, that
-edge disappears from the quotient.
+**Colocate the constraining owner endpoints.** Move the owner that performs the at-init read or side-effecting work
+together with the owner it depends on. Once both endpoints share a destination, that edge disappears from the quotient.
 
-Rewriting source so the constraining read becomes lazy can also help, but the
-debundler normally does not rewrite program structure. Lazy read edges still
-emit import directives and still participate in `I`, so the cycle that is left
+Rewriting source so the constraining read becomes lazy can also help, but the debundler normally does not rewrite
+program structure. Lazy read edges still emit import directives and still participate in `I`, so the cycle that is left
 behind is judged by Pass 2.
 
-`render_cycle_summary` (<../validation.rs>) names the binding pairs to
-colocate, per blocking SCC.
+`render_cycle_summary` (<../validation.rs>) names the binding pairs to colocate, per blocking SCC.
 
 ## Architecture
 
-The transform is a fixed data flow over explicit artifact phases:
-input loading produces loaded chunk data; preparation produces the
-parsed/prepared chunk artifact consumed by the vendor plan,
-logical materialization, emission rewrites, and output emission. The
-pipeline should not grow a second mutable "state" object parallel to
-those phase outputs.
+The transform is a fixed data flow over explicit artifact phases: input loading produces loaded chunk data; preparation
+produces the parsed/prepared chunk artifact consumed by the vendor plan, logical materialization, emission rewrites, and
+output emission. The pipeline should not grow a second mutable "state" object parallel to those phase outputs.
 
-The flat transform spec is YAML decoded directly into typed serde
-structures. It carries inputs, declarative data maps, and optional
-output configs; it is not an operation list and has no top-level
-`kind`/`schema_version` compatibility envelope. Report fields and
-stage names use the same default snake_case serde names as the Rust
-types, so emitted diagnostics do not maintain a second hand-written
-string vocabulary.
+The flat transform spec is YAML decoded directly into typed serde structures. It carries inputs, declarative data maps,
+and optional output configs; it is not an operation list and has no top-level `kind`/`schema_version` compatibility
+envelope. Report fields and stage names use the same default snake_case serde names as the Rust types, so emitted
+diagnostics do not maintain a second hand-written string vocabulary.
 
-Some downstream repos keep a higher-level authoring tree where YAML
-files are laid out like the eventual emitted JavaScript modules. That
-shape is a debundler-owned authoring layer: `debundle` compiles it
-into the same typed flat transform spec in memory, then runs the fixed
-pipeline below. The owner-graph reports are the bridge: they expose
-source owner ids, readable member names, destinations, and the atomic
-DAG so authoring tools can mostly project and filter
-debundler facts instead of re-analyzing JavaScript or private repo
-YAML conventions.
+Some downstream repos keep a higher-level authoring tree where YAML files are laid out like the eventual emitted
+JavaScript modules. That shape is a debundler-owned authoring layer: `debundle` compiles it into the same typed flat
+transform spec in memory, then runs the fixed pipeline below. The owner-graph reports are the bridge: they expose source
+owner ids, readable member names, destinations, and the atomic DAG so authoring tools can mostly project and filter
+debundler facts instead of re-analyzing JavaScript or private repo YAML conventions.
 
-The authoritative stage sequence — which stages exist, which module
-implements each, and when each runs — is the fixed composition in
-`run_transform_cli` (<../pipeline.rs>); this doc does not
-mirror it. The shape to know: spec load/validate → chunk load/prepare
-(one parallel per-chunk SWC parse) → artifact indexes → the read-only
-`build_vendor_resolution_plan` → `materialize_logical_modules` (the only
-lowering stage) → `apply_emission_rewrites` →
-`validate_emitted_exports` (duplicate-public-export tripwire) →
-optional tree/harness outputs.
+The authoritative stage sequence — which stages exist, which module implements each, and when each runs — is the fixed
+composition in `run_transform_cli` (<../pipeline.rs>); this doc does not mirror it. The shape to know: spec
+load/validate → chunk load/prepare (one parallel per-chunk SWC parse) → artifact indexes → the read-only
+`build_vendor_resolution_plan` → `materialize_logical_modules` (the only lowering stage) → `apply_emission_rewrites` →
+`validate_emitted_exports` (duplicate-public-export tripwire) → optional tree/harness outputs.
 
-Within `materialize_logical_modules`, analysis (chunk AST scan,
-statement facts, owner-graph construction — <../lowering/chunk_ast.rs>,
-<../facts/mod.rs>, <../graph/>) feeds the stages that carry design
-invariants:
+Within `materialize_logical_modules`, analysis (chunk AST scan, statement facts, owner-graph construction —
+<../lowering/chunk_ast.rs>, <../facts/mod.rs>, <../graph/>) feeds the stages that carry design invariants:
 
-1. **Binding assignment** → a per-binding `ModuleId`
-   (`BindingKind::Owned`) from the spec's explicit member list. Bindings
-   with no spec entry default to the residual module; nothing pulls
-   implicitly. (See [Spec explicitness](#spec-explicitness-and-diagnostics).)
-2. **Quotient + validation** (<../graph/>, <../realizability/mod.rs>,
-   <../validation.rs>) — collapses owners by destination, aggregates edge
-   reasons, and runs the realizability gate over the result; a rejection
-   aborts the pipeline with the cycle evidence.
-3. **Diagnostics projections** — cycle evidence, atomic-unit conflicts,
-   and atomic graph reports are projections of the same owner graph +
-   quotient, not separate heuristic analyses.
-4. **Source-order emission** — each module's body in source order;
-   cross-module imports + source-chunk re-imports; `export { ... }`.
-   No init wrappers. Import-directive ordering comes from the shared
-   `esm_import_order::EsmImportOrder` (the same object the
-   realizability gate's evaluation simulator consults): the entry
-   imports every logical module — side-effect-only for binding-less
-   plans — in entry-import order, and each module's intra-chunk
-   imports (binding, phantom side-effect, residual-entry) form one
-   merged list in module-import order.
+1. **Binding assignment** → a per-binding `ModuleId` (`BindingKind::Owned`) from the spec's explicit member list.
+   Bindings with no spec entry default to the residual module; nothing pulls implicitly. (See
+   [Spec explicitness](#spec-explicitness-and-diagnostics).)
+2. **Quotient + validation** (<../graph/>, <../realizability/mod.rs>, <../validation.rs>) — collapses owners by
+   destination, aggregates edge reasons, and runs the realizability gate over the result; a rejection aborts the
+   pipeline with the cycle evidence.
+3. **Diagnostics projections** — cycle evidence, atomic-unit conflicts, and atomic graph reports are projections of the
+   same owner graph + quotient, not separate heuristic analyses.
+4. **Source-order emission** — each module's body in source order; cross-module imports + source-chunk re-imports;
+   `export { ... }`. No init wrappers. Import-directive ordering comes from the shared
+   `esm_import_order::EsmImportOrder` (the same object the realizability gate's evaluation simulator consults): the
+   entry imports every logical module — side-effect-only for binding-less plans — in entry-import order, and each
+   module's intra-chunk imports (binding, phantom side-effect, residual-entry) form one merged list in module-import
+   order.
 
-Treat those stages as a functional data flow. Analysis produces
-immutable facts; assignment is explicit input; quotienting derives a
-validated schedule; emission consumes that schedule. Avoid designs
-where emission discovers new graph edges or silently mutates the
-assignment, because that reintroduces hidden closure behavior and
-makes diagnostics disagree with emitted output.
+Treat those stages as a functional data flow. Analysis produces immutable facts; assignment is explicit input;
+quotienting derives a validated schedule; emission consumes that schedule. Avoid designs where emission discovers new
+graph edges or silently mutates the assignment, because that reintroduces hidden closure behavior and makes diagnostics
+disagree with emitted output.
 
 ## Vendor chunk swapping
 
-The `vendor` spec map classifies chunks as vendor code at one of four
-levels: `suppress` (annotation only — the chunk and its callers pass
-through byte-identical), `boundary_rename` (rewrite caller imports
-from vendor-local names to the vendor's public export names),
-`swap` (replace the whole chunk with an upstream npm package), and
-`partial_swap` / `bundled_partial_swap` (swap a subset of the chunk's
-exports against upstream packages and strip the swapped bodies from
-the residual chunk). Soundness edges that are deliberate contracts
-rather than missing features are documented here.
+The `vendor` spec map classifies chunks as vendor code at one of four levels: `suppress` (annotation only — the chunk
+and its callers pass through byte-identical), `boundary_rename` (rewrite caller imports from vendor-local names to the
+vendor's public export names), `swap` (replace the whole chunk with an upstream npm package), and `partial_swap` /
+`bundled_partial_swap` (swap a subset of the chunk's exports against upstream packages and strip the swapped bodies from
+the residual chunk). Soundness edges that are deliberate contracts rather than missing features are documented here.
 
 ### Full swap: callers are proxy/import-map-dependent
 
-`level: swap` excludes the vendor chunk from the **emission set** —
-nothing removes it from the artifact, and the owner graph never
-contained vendor chunks; `write_js_tree`, harness emission, the
-emit-shape check, and the chunk reports skip it, and a wrapper module
-is written in its place. Caller imports of the excluded chunk are
-**intentionally left dangling** in the plain `write_js_tree` output:
-the live-proxy / import-map layer (<../live_proxy/>) resolves the
-dangling chunk specifier to the swapped package at serve time. The
-plain emitted tree is therefore not directly runnable under bare Node
-when a full swap is configured. Pinned by
-`full_swap_with_caller_keeps_dangling_chunk_import_for_live_proxy`
-in <../e2e/vendor_swap_test.rs>.
+`level: swap` excludes the vendor chunk from the **emission set** — nothing removes it from the artifact, and the owner
+graph never contained vendor chunks; `write_js_tree`, harness emission, the emit-shape check, and the chunk reports skip
+it, and a wrapper module is written in its place. Caller imports of the excluded chunk are **intentionally left
+dangling** in the plain `write_js_tree` output: the live-proxy / import-map layer (<../live_proxy/>) resolves the
+dangling chunk specifier to the swapped package at serve time. The plain emitted tree is therefore not directly runnable
+under bare Node when a full swap is configured. Pinned by
+`full_swap_with_caller_keeps_dangling_chunk_import_for_live_proxy` in <../e2e/vendor_swap_test.rs>.
 
 ### Partial swap: consumer rewrites and the consumer gates
 
-Per-symbol partial swaps rewrite two consumer shapes — named
-`ImportDecl` specifiers and `export { x } from "<chunk>"` re-exports
-of swapped names (`kind: named` / `default` / `namespace`) — at two
-application sites driven by the same `VendorResolutionPlan` oracle:
-lowering's import construction for materialized module bodies, and
-the pass-through emission rewriter for files emitted without
-lowering. Shapes with no live rewrite — `import * as M` namespace
-imports of the chunk, `export *` from the chunk, re-exports of
-`kind: member` symbols or bundled-swap symbols, and any rewrite-needing
-consumer inside a hands-off `suppress`-marked chunk — are rejected by
-the **plan-time consumer gate**
-(`vendor/plan.rs::validate_consumer_shapes`) before any output is
-written.
+Per-symbol partial swaps rewrite two consumer shapes — named `ImportDecl` specifiers and `export { x } from "<chunk>"`
+re-exports of swapped names (`kind: named` / `default` / `namespace`) — at two application sites driven by the same
+`VendorResolutionPlan` oracle: lowering's import construction for materialized module bodies, and the pass-through
+emission rewriter for files emitted without lowering. Shapes with no live rewrite — `import * as M` namespace imports of
+the chunk, `export *` from the chunk, re-exports of `kind: member` symbols or bundled-swap symbols, and any
+rewrite-needing consumer inside a hands-off `suppress`-marked chunk — are rejected by the **plan-time consumer gate**
+(`vendor/plan.rs::validate_consumer_shapes`) before any output is written.
 
-A second, post-strip scan (`validate_partial_swap_consumers` in
-<../vendor/mod.rs>) re-checks every retained file of the
-post-materialize artifact and bails on any surviving reference to the
-stripped export surface. It is load-bearing, not a redundant
-tripwire: lowering can synthesize consumer directives inside
-materialized module bodies (`BindingKind::Imported` re-export
-imports, `export … from` re-exports in moved bodies) that have no
-live rewrite at the construction site and that the plan-time gate —
-which enumerates input-space directives — cannot see. Retiring it
-requires construction-site coverage plus fixtures first (see
-ARCHITECTURE_BACKLOG.md "Post-strip consumer scan retirement
-condition").
+A second, post-strip scan (`validate_partial_swap_consumers` in <../vendor/mod.rs>) re-checks every retained file of the
+post-materialize artifact and bails on any surviving reference to the stripped export surface. It is load-bearing, not a
+redundant tripwire: lowering can synthesize consumer directives inside materialized module bodies
+(`BindingKind::Imported` re-export imports, `export … from` re-exports in moved bodies) that have no live rewrite at the
+construction site and that the plan-time gate — which enumerates input-space directives — cannot see. Retiring it
+requires construction-site coverage plus fixtures first (see ARCHITECTURE_BACKLOG.md "Post-strip consumer scan
+retirement condition").
 
-Over-restriction is the accepted failure mode for both gates: a
-namespace consumer that happens to read only non-swapped members is
-still rejected, because per-member usage is not analyzed.
+Over-restriction is the accepted failure mode for both gates: a namespace consumer that happens to read only non-swapped
+members is still rejected, because per-member usage is not analyzed.
 
 ### Deliberate split-brain bypasses in the strip pass
 
-The strip pass bails on "split-brain" items — top-level items
-reachable both from the residual chunk's exports and from a swapped
-package's bodies, where stripping would leave the residual and the
-upstream package each holding half of a shared value. Two bypasses
-deliberately weaken that bail:
+The strip pass bails on "split-brain" items — top-level items reachable both from the residual chunk's exports and from
+a swapped package's bodies, where stripping would leave the residual and the upstream package each holding half of a
+shared value. Two bypasses deliberately weaken that bail:
 
-- **Multi-package items**: the split-brain bail fires only when the
-  item is reachable from exactly **one** swapped package
-  (`packages.len() == 1` in <../vendor/strip.rs>). An item shared by
-  two or more swapped packages has no single upstream home, so it is
-  retained in the residual chunk and effectively duplicated relative
-  to the upstream packages.
-- **Shareable helpers**: items classified `shareable_helper`
-  (syntactically stateless shapes — function declarations,
-  primitive-literal consts, function-valued consts, intrinsic
-  aliases, Vite preload-map cells) are exempt from the split-brain
-  bail and may be duplicated between the residual chunk and the
-  upstream package.
+- **Multi-package items**: the split-brain bail fires only when the item is reachable from exactly **one** swapped
+  package (`packages.len() == 1` in <../vendor/strip.rs>). An item shared by two or more swapped packages has no single
+  upstream home, so it is retained in the residual chunk and effectively duplicated relative to the upstream packages.
+- **Shareable helpers**: items classified `shareable_helper` (syntactically stateless shapes — function declarations,
+  primitive-literal consts, function-valued consts, intrinsic aliases, Vite preload-map cells) are exempt from the
+  split-brain bail and may be duplicated between the residual chunk and the upstream package.
 
-Both bypasses share the same rationale and the same risk. Rationale:
-duplicating a stateless value is observationally harmless, and
-bailing would reject many real specs. Risk: if a "helper" actually
-carries state (a memo cache, a registry object, a closure over a
-mutable cell — or a multi-package item holding module-level state),
-duplication forks that state — the residual chunk and the upstream
-package each get their own instance, and identity checks or cache
-coherence between them silently break. The `shareable_helper`
-classifier is syntactic and cannot see state hidden behind a
+Both bypasses share the same rationale and the same risk. Rationale: duplicating a stateless value is observationally
+harmless, and bailing would reject many real specs. Risk: if a "helper" actually carries state (a memo cache, a registry
+object, a closure over a mutable cell — or a multi-package item holding module-level state), duplication forks that
+state — the residual chunk and the upstream package each get their own instance, and identity checks or cache coherence
+between them silently break. The `shareable_helper` classifier is syntactic and cannot see state hidden behind a
 function value; treat new classifier shapes with suspicion.
 
 ### Wrapper re-exports are init-time snapshots, not live bindings
 
-The full-swap wrapper shapes (`named_from_default`,
-`named_from_module_default`, `named_from_json_default` in
-<../vendor/wrappers.rs>) emit `export const <name> = <default>.<name>;`
-/ `export const <name> = <default>;` statements. These evaluate
-**once at wrapper-module init**. Real ESM named exports are live
-bindings; the wrapper's are snapshots. This is a documented
-precondition on the upstream package: its default export's
-properties must not be reassigned after module init, and consumers
-must not rely on live-binding semantics for the wrapped names.
-(JSON wrappers are immune — JSON modules are inert data.)
+The full-swap wrapper shapes (`named_from_default`, `named_from_module_default`, `named_from_json_default` in
+<../vendor/wrappers.rs>) emit `export const <name> = <default>.<name>;` / `export const <name> = <default>;` statements.
+These evaluate **once at wrapper-module init**. Real ESM named exports are live bindings; the wrapper's are snapshots.
+This is a documented precondition on the upstream package: its default export's properties must not be reassigned after
+module init, and consumers must not rely on live-binding semantics for the wrapped names. (JSON wrappers are immune —
+JSON modules are inert data.)
 
-`named_from_module_default` additionally requires each non-`default`
-vendor export to be a **verified alias** of the chunk's own `default`
-export — i.e. the chunk binds the name to the same local as its
-`default` (`export { x as default, x as alias }`). This rejects a
-chunk that exports an unrelated binding (`export { x as default, y as
-other }`), which would otherwise silently re-export the package
-default under `other`. A chunk that re-exports the package default
-under a single minified name with no `default` export of its own
-(`export { Ft as c }`, as Vite emits for a default-only re-export)
-cannot be verified from the chunk alone. For that case the swap mark
-carries `default_export_aliases: [<name>...]`, an author-asserted list
-admitted as verified aliases — the author is responsible for
-confirming the binding really is the package default (e.g. by its
-runtime identity/version).
+`named_from_module_default` additionally requires each non-`default` vendor export to be a **verified alias** of the
+chunk's own `default` export — i.e. the chunk binds the name to the same local as its `default`
+(`export { x as default, x as alias }`). This rejects a chunk that exports an unrelated binding
+(`export { x as default, y as other }`), which would otherwise silently re-export the package default under `other`. A
+chunk that re-exports the package default under a single minified name with no `default` export of its own
+(`export { Ft as c }`, as Vite emits for a default-only re-export) cannot be verified from the chunk alone. For that
+case the swap mark carries `default_export_aliases: [<name>...]`, an author-asserted list admitted as verified aliases —
+the author is responsible for confirming the binding really is the package default (e.g. by its runtime
+identity/version).
 
 ## Unmatched spec claims
 
-A `logical_modules` member whose binding selector names no top-level
-declaration in the chunk is recorded as an `UnmatchedSpecClaim`
-(<../lowering/materialize/plan_builder.rs>); lowering continues as if the
-member were absent, so the claim neither moves the binding nor adds an export.
-After emit, vendor swaps and reports — so the generated tree and every
-chunk's offenders are available — the pipeline fails with the full list across
-chunks (<../pipeline.rs>): the named binding fell into the residual sweep and
-the destination module is one export short.
+A `logical_modules` member whose binding selector names no top-level declaration in the chunk is recorded as an
+`UnmatchedSpecClaim` (<../lowering/materialize/plan_builder.rs>); lowering continues as if the member were absent, so
+the claim neither moves the binding nor adds an export. After emit, vendor swaps and reports — so the generated tree and
+every chunk's offenders are available — the pipeline fails with the full list across chunks (<../pipeline.rs>): the
+named binding fell into the residual sweep and the destination module is one export short.
 
-A module whose members are all `import_specifier` claims owns no bindings and
-emits a re-export-only file (re-imports and re-exports, no owned code).
+A module whose members are all `import_specifier` claims owns no bindings and emits a re-export-only file (re-imports
+and re-exports, no owned code).
 
 ## Invariants
 
 The implementation must maintain:
 
-1. **Identity.** Each binding has exactly one canonical module
-   owner. Every consumer reads it through the same import chain
-   so `instanceof` and identity comparisons survive splitting.
-2. **Source-order within a module.** Statements emit in their
-   original source ordinals. If two statements `S` and `T` share
-   a module and `S.ordinal < T.ordinal`, `S` precedes `T` in the
-   emitted module body.
-3. **Comma-list integrity.** A `const A = …, B = …, C = …` whose
-   declarators are split across modules is broken into
-   per-declarator var-decls _before_ the source-order emit, so
-   each declarator can be independently moved. Splitting must
-   preserve the original initialization order across the
-   resulting separate statements.
-4. **Live-binding propagation.** Cross-module imports use the
-   provider's exported name (after the readability rename pass);
-   consumer-side locals may be aliased but always reference the
-   live binding so reassignments by the provider are visible.
-5. **No runtime ordering scaffolding.** The emit produces no
-   `__dt_generated_init__*` symbols, no idempotency flags, no
-   manual init-call sequences. ESM's natural evaluation order
-   carries the load.
-6. **Static schedule check is total.** The validator inspects
-   _every_ statement and _every_ read — at-init **and** lazy —
-   so the I-graph it judges matches the linker's view. There is no
-   opt-out path that bypasses the dep graph.
+1. **Identity.** Each binding has exactly one canonical module owner. Every consumer reads it through the same import
+   chain so `instanceof` and identity comparisons survive splitting.
+2. **Source-order within a module.** Statements emit in their original source ordinals. If two statements `S` and `T`
+   share a module and `S.ordinal < T.ordinal`, `S` precedes `T` in the emitted module body.
+3. **Comma-list integrity.** A `const A = …, B = …, C = …` whose declarators are split across modules is broken into
+   per-declarator var-decls _before_ the source-order emit, so each declarator can be independently moved. Splitting
+   must preserve the original initialization order across the resulting separate statements.
+4. **Live-binding propagation.** Cross-module imports use the provider's exported name (after the readability rename
+   pass); consumer-side locals may be aliased but always reference the live binding so reassignments by the provider are
+   visible.
+5. **No runtime ordering scaffolding.** The emit produces no `__dt_generated_init__*` symbols, no idempotency flags, no
+   manual init-call sequences. ESM's natural evaluation order carries the load.
+6. **Static schedule check is total.** The validator inspects _every_ statement and _every_ read — at-init **and** lazy
+   — so the I-graph it judges matches the linker's view. There is no opt-out path that bypasses the dep graph.
 
 ## Unrealizable splits
 
@@ -2461,14 +1706,11 @@ const C = "c";
 const D = wrap(C);
 ```
 
-With `{A, D}` in `mod_x` and `{B, C}` in `mod_y`, `B = wrap(A)` reads `A` at
-init (`mod_y → mod_x`) and `D = wrap(C)` reads `C` at init
-(`mod_x → mod_y`). Both edges constrain init order, so Pass 1 finds the SCC
-`{mod_x, mod_y}`; no import order satisfies both reads
-(<../e2e/realizability_test.rs>, `cyclic_spec_is_rejected_with_clear_error`).
+With `{A, D}` in `mod_x` and `{B, C}` in `mod_y`, `B = wrap(A)` reads `A` at init (`mod_y → mod_x`) and `D = wrap(C)`
+reads `C` at init (`mod_x → mod_y`). Both edges constrain init order, so Pass 1 finds the SCC `{mod_x, mod_y}`; no
+import order satisfies both reads (<../e2e/realizability_test.rs>, `cyclic_spec_is_rejected_with_clear_error`).
 
-Resolution: colocate `A` with `B` or `C` with `D`, so one of the cross edges
-disappears.
+Resolution: colocate `A` with `B` or `C` with `D`, so one of the cross edges disappears.
 
 ### Class extends across a cycle
 
@@ -2480,17 +1722,13 @@ class A { … }
 class B extends A { … }
 ```
 
-`mod_b → mod_a` is a constraining edge: the `extends` clause reads `A` at
-init, and class declarations are TDZ-prone. If `mod_a` also reads anything
-owned by `mod_b` at module top, the cycle is mutual and Pass 1 rejects it. If
-`mod_a`'s read is lazy (inside a function body), the cycle is asymmetric and
-Pass 2 decides: it accepts when the emitted import order evaluates `mod_a`
-before `mod_b`, and rejects when `mod_a` is the residual module, which as the
-DFS root evaluates last — `class B extends A` would throw
-`ReferenceError: Cannot access 'A' before initialization`.
+`mod_b → mod_a` is a constraining edge: the `extends` clause reads `A` at init, and class declarations are TDZ-prone. If
+`mod_a` also reads anything owned by `mod_b` at module top, the cycle is mutual and Pass 1 rejects it. If `mod_a`'s read
+is lazy (inside a function body), the cycle is asymmetric and Pass 2 decides: it accepts when the emitted import order
+evaluates `mod_a` before `mod_b`, and rejects when `mod_a` is the residual module, which as the DFS root evaluates last
+— `class B extends A` would throw `ReferenceError: Cannot access 'A' before initialization`.
 
-Resolution: colocate `A` and `B`, or remove the cross edge that closes the
-cycle.
+Resolution: colocate `A` and `B`, or remove the cross edge that closes the cycle.
 
 ### Computed property key reading another module
 
@@ -2502,28 +1740,22 @@ const m = { kind: "K1" };
 const table = { [m.kind]: value };
 ```
 
-`mod_b → mod_a` is a constraining edge through the computed key. Computed keys
-aren't special: they read identifiers at init like any other expression, and
-the dep graph captures that read without special-case logic. If the spec also
-gives `mod_a` an at-init read of something in `mod_b`, the cycle is mutual and
-rejected.
+`mod_b → mod_a` is a constraining edge through the computed key. Computed keys aren't special: they read identifiers at
+init like any other expression, and the dep graph captures that read without special-case logic. If the spec also gives
+`mod_a` an at-init read of something in `mod_b`, the cycle is mutual and rejected.
 
 ## FactorizationInputs + ChunkFactorization: owner graph plus quotient
 
-The runtime data structures the validator and emitter both consume are a pair:
-the `gate` crate's per-chunk `FactorizationInputs` (inputs + IR; distinct from
-`chunk_analysis::ChunkAnalysisOutput`, the spec-independent composer output) and a
-`ChunkFactorization` wrapping it (partition + derived realizability views).
-Together they carry the chunk's statement facts, the binding catalogue, the
-explicit logical modules, the owner graph, and the module dep graph derived by
-quotienting that owner graph under the spec assignment.
+The runtime data structures the validator and emitter both consume are a pair: the `gate` crate's per-chunk
+`FactorizationInputs` (inputs + IR; distinct from `chunk_analysis::ChunkAnalysisOutput`, the spec-independent composer
+output) and a `ChunkFactorization` wrapping it (partition + derived realizability views). Together they carry the
+chunk's statement facts, the binding catalogue, the explicit logical modules, the owner graph, and the module dep graph
+derived by quotienting that owner graph under the spec assignment.
 
-Statement facts feed the owner graph (stored on `FactorizationInputs`), and the
-module dep graph is a quotient of that owner graph under the current spec
-assignment (stored on `ChunkFactorization`).
+Statement facts feed the owner graph (stored on `FactorizationInputs`), and the module dep graph is a quotient of that
+owner graph under the current spec assignment (stored on `ChunkFactorization`).
 
-Both are keyed per-chunk; the chunk is contextual within the
-analysis, so binding keys collapse to just `name`.
+Both are keyed per-chunk; the chunk is contextual within the analysis, so binding keys collapse to just `name`.
 
 Conceptually, the analysis + factorization carry:
 
@@ -2532,194 +1764,130 @@ Conceptually, the analysis + factorization carry:
 - the binding catalogue;
 - logical modules from the spec;
 - the owner graph;
-- the module dep graph `I ∪ S`, derived by quotienting the owner
-  graph by the spec's owner-to-destination assignment.
+- the module dep graph `I ∪ S`, derived by quotienting the owner graph by the spec's owner-to-destination assignment.
 
 Everything downstream needs is here:
 
-- `home(stmt)`: for statements with `declared(stmt) ≠ ∅`, look
-  up any declared name in `bindings` — its `Owned.module` is
-  `home`. For statements with empty `declared`, `home` is the
-  residual module unless a module claims the statement through
-  `anonymous_statements`.
-- "What owners/statements live in module M" =
-  `owner_graph.nodes.filter(dest(owner) == M)`.
-- "What does M export" = bindings whose `Owned.module == M`
-  (under their original or rename-pass-rewritten name) plus
-  bindings whose `Imported.re_exporter == M` (under
-  `Imported.public_name`).
+- `home(stmt)`: for statements with `declared(stmt) ≠ ∅`, look up any declared name in `bindings` — its `Owned.module`
+  is `home`. For statements with empty `declared`, `home` is the residual module unless a module claims the statement
+  through `anonymous_statements`.
+- "What owners/statements live in module M" = `owner_graph.nodes.filter(dest(owner) == M)`.
+- "What does M export" = bindings whose `Owned.module == M` (under their original or rename-pass-rewritten name) plus
+  bindings whose `Imported.re_exporter == M` (under `Imported.public_name`).
 - "What imports does M need" =
   - For each owner-level read edge from an owner with `dest == M`:
     - If `b` is `Owned { module: other }`: `import b from <other>`.
-    - If `b` is `Imported { imported_from, imported_name, .. }`:
-      `import { imported_name as b } from <imported_from>`.
-- "What can be peeled without backtracking" = candidate assignments
-  whose owner-graph quotient validates, whose cross-destination reads
-  are importable, and whose rebinding writes stay inside one
-  destination.
+    - If `b` is `Imported { imported_from, imported_name, .. }`: `import { imported_name as b } from <imported_from>`.
+- "What can be peeled without backtracking" = candidate assignments whose owner-graph quotient validates, whose
+  cross-destination reads are importable, and whose rebinding writes stay inside one destination.
 
-The reason to make `BindingKind` explicit (rather than
-collapsing imports into the same `Owned` map):
+The reason to make `BindingKind` explicit (rather than collapsing imports into the same `Owned` map):
 
-**Re-export semantics aren't ownership.** A logical module that
-re-exports `import { Y as X } from "<vendor>"` does not own
-`X` — modifying our spec to "claim" `X` should not rename `Y`
-in the vendor chunk; it should emit a re-export in our logical
-module. A flat binding → module map conflates these
-two cases; tagging via `Owned` vs `Imported` keeps them
-distinct. The validator additionally rejects duplicate claims
-of either kind, so each imported binding has exactly one
-re-exporter (a consumer that wants a different local name
-aliases at its own import site instead of authoring a separate
+**Re-export semantics aren't ownership.** A logical module that re-exports `import { Y as X } from "<vendor>"` does not
+own `X` — modifying our spec to "claim" `X` should not rename `Y` in the vendor chunk; it should emit a re-export in our
+logical module. A flat binding → module map conflates these two cases; tagging via `Owned` vs `Imported` keeps them
+distinct. The validator additionally rejects duplicate claims of either kind, so each imported binding has exactly one
+re-exporter (a consumer that wants a different local name aliases at its own import site instead of authoring a separate
 re-export module).
 
 ### Rejected: one partition-optional chunk IR
 
-Folding `ChunkFactorization` into `FactorizationInputs` as one IR with optional
-partition state looks like it removes a layer, but the two-layer shape is
-already in place: `FactorizationInputs` is the partition-free IR, `ChunkFactorization`
-adds the applied partition, and `validate()` derives `FactorizationReport` from
-it. Removing the `Arc<FactorizationInputs>` boundary touches the whole
-materializer/emitter path for no behavior change, so the layers stay.
+Folding `ChunkFactorization` into `FactorizationInputs` as one IR with optional partition state looks like it removes a
+layer, but the two-layer shape is already in place: `FactorizationInputs` is the partition-free IR, `ChunkFactorization`
+adds the applied partition, and `validate()` derives `FactorizationReport` from it. Removing the
+`Arc<FactorizationInputs>` boundary touches the whole materializer/emitter path for no behavior change, so the layers
+stay.
 
 ### Identifiers are typed, not stringly-typed
 
-A string that identifies a thing of a known kind gets a newtype; untyped
-`String` is reserved for free-form text (error messages, log lines, the
-actual JavaScript identifier _as text_). The identifier types live in
-<../ids.rs> and <../graph/>: `ChunkId` (an index interned by `ChunkTable`),
-`LogicalModuleIndex`, `ModuleId` (a `LogicalModuleIndex` wrapper — the
-in-process module handle), `StatementOrdinal`, `OwnerId` and `OwnerEdgeId`. A
-module's public identity is `spec::ModulePath`, never a `ModuleId`
-(<wire_format.md>). Artifact metadata follows the same rule: `FileRole` is a
-typed enum (`entry`, `module`, `runtime` in JSON via snake_case serde). Do not
-encode known roles as raw strings, generic maps, or compatibility-only JSON
-fields.
+A string that identifies a thing of a known kind gets a newtype; untyped `String` is reserved for free-form text (error
+messages, log lines, the actual JavaScript identifier _as text_). The identifier types live in <../ids.rs> and
+<../graph/>: `ChunkId` (an index interned by `ChunkTable`), `LogicalModuleIndex`, `ModuleId` (a `LogicalModuleIndex`
+wrapper — the in-process module handle), `StatementOrdinal`, `OwnerId` and `OwnerEdgeId`. A module's public identity is
+`spec::ModulePath`, never a `ModuleId` (<wire_format.md>). Artifact metadata follows the same rule: `FileRole` is a
+typed enum (`entry`, `module`, `runtime` in JSON via snake_case serde). Do not encode known roles as raw strings,
+generic maps, or compatibility-only JSON fields.
 
 ## Known sharp edges
 
 ### Side effects we can't see locally
 
-`reads_at_init(S)` only catches local-name reads. These ordering
-constraints are real but invisible to the analyzer:
+`reads_at_init(S)` only catches local-name reads. These ordering constraints are real but invisible to the analyzer:
 
-- `globalThis.X = ...` / `window.X = ...` writes that another
-  module reads via `globalThis.X`. Module A "sets" the value, B
-  "reads" it; the dep graph has no edge.
+- `globalThis.X = ...` / `window.X = ...` writes that another module reads via `globalThis.X`. Module A "sets" the
+  value, B "reads" it; the dep graph has no edge.
 - `eval(some_string)` running arbitrary code at init.
 - `new Function(...)` likewise.
-- Mutations to objects passed across imports
-  (`vendor.someConfig.foo = bar` — `vendor.someConfig` was
-  imported, the mutation is observable).
+- Mutations to objects passed across imports (`vendor.someConfig.foo = bar` — `vendor.someConfig` was imported, the
+  mutation is observable).
 
-The conservative `has_side_effect = true` for any function call
-catches _some_ of these cases (it forces a side-effect-order
-edge), but won't catch e.g. two pure-looking modules where one
-quietly writes a global and the other reads it. The validator
-will accept a spec that produces wrong observable behaviour at
-runtime.
+The conservative `has_side_effect = true` for any function call catches _some_ of these cases (it forces a
+side-effect-order edge), but won't catch e.g. two pure-looking modules where one quietly writes a global and the other
+reads it. The validator will accept a spec that produces wrong observable behaviour at runtime.
 
-Mitigation: the conservative side-effect classification is
-already there; bundled output rarely depends on these patterns,
-because bundlers can't preserve them across boundaries either.
-If a real spec ever exhibits this, the response is to surface it
-as a known spec-author-side limitation.
+Mitigation: the conservative side-effect classification is already there; bundled output rarely depends on these
+patterns, because bundlers can't preserve them across boundaries either. If a real spec ever exhibits this, the response
+is to surface it as a known spec-author-side limitation.
 
 ## Open design questions
 
-These are unresolved precision issues. Each is worth its own
-exploration before crossing the relevant phase.
+These are unresolved precision issues. Each is worth its own exploration before crossing the relevant phase.
 
-1. **Local-effect annotation coverage.** The
-   `effect: typescript_decorate_helper` annotation is deliberately
-   narrow. It covers the
-   TypeScript helper shapes currently seen in bundled output:
-   property/method decorators on `C.prototype` and class decorators on
-   `C`. Calls with spread arguments, computed/optional targets, or
-   unresolved targets must remain ordinary conservative side effects.
-   Future helper forms need one test per admitted shape before they are
-   added.
-2. **Lazy-position completeness.** `reads_at_init` is implemented
-   as a visitor that descends into eager positions and stops at
-   lazy positions (<../facts/lazy_boundary.rs>). Function, arrow, method,
-   getter/setter and constructor bodies and instance class-field initializers
-   are lazy; `extends` clauses, decorator expressions, computed member keys,
-   static fields and static blocks are eager. Open: an exhaustive table of unit
-   tests for these, plus default-parameter values (ECMA-262 evaluates them on
-   call), object-literal getter/setter bodies, and dynamic `import()`
-   arguments.
-3. **Claim-all selectors for `anonymous_statements`.** An entry claims
-   exactly one statement, holes or not. Letting one entry claim every match of
-   a pattern (`decorate([ANYTHING], $g.prototype, ANYTHING, ANYTHING);` for
-   every decorator application on `$g.prototype`) would collapse N
-   near-identical entries into one, but gives up the exactly-one contract that
-   makes an unintended match loud. Deferred until a real spec demands it.
-4. **Constraining-graph-sink refinement.** Some anonymous
-   statements (Sentry debug-id IIFE, Vite modulepreload polyfill)
-   are sinks in the constraining edge graph: they have side
-   effects but no observable cross-binding deps. An s-edge from
-   a peeled named owner to such a sink could be exempted as
-   non-constraining, letting the named owner peel without an
-   `anonymous_statements` co-mover. Empirically this would cover only a small
-   fraction of the blocked bindings; the rest still need anon
-   selectors because their companions (decorator applications,
-   semantic init bridges) are not sinks. Worth tracking but
-   not blocking.
+1. **Local-effect annotation coverage.** The `effect: typescript_decorate_helper` annotation is deliberately narrow. It
+   covers the TypeScript helper shapes currently seen in bundled output: property/method decorators on `C.prototype` and
+   class decorators on `C`. Calls with spread arguments, computed/optional targets, or unresolved targets must remain
+   ordinary conservative side effects. Future helper forms need one test per admitted shape before they are added.
+2. **Lazy-position completeness.** `reads_at_init` is implemented as a visitor that descends into eager positions and
+   stops at lazy positions (<../facts/lazy_boundary.rs>). Function, arrow, method, getter/setter and constructor bodies
+   and instance class-field initializers are lazy; `extends` clauses, decorator expressions, computed member keys,
+   static fields and static blocks are eager. Open: an exhaustive table of unit tests for these, plus default-parameter
+   values (ECMA-262 evaluates them on call), object-literal getter/setter bodies, and dynamic `import()` arguments.
+3. **Claim-all selectors for `anonymous_statements`.** An entry claims exactly one statement, holes or not. Letting one
+   entry claim every match of a pattern (`decorate([ANYTHING], $g.prototype, ANYTHING, ANYTHING);` for every decorator
+   application on `$g.prototype`) would collapse N near-identical entries into one, but gives up the exactly-one
+   contract that makes an unintended match loud. Deferred until a real spec demands it.
+4. **Constraining-graph-sink refinement.** Some anonymous statements (Sentry debug-id IIFE, Vite modulepreload polyfill)
+   are sinks in the constraining edge graph: they have side effects but no observable cross-binding deps. An s-edge from
+   a peeled named owner to such a sink could be exempted as non-constraining, letting the named owner peel without an
+   `anonymous_statements` co-mover. Empirically this would cover only a small fraction of the blocked bindings; the rest
+   still need anon selectors because their companions (decorator applications, semantic init bridges) are not sinks.
+   Worth tracking but not blocking.
 
 ## What this design does not solve
 
-- **Intentional cyclic init semantics.** If the original chunk
-  _relied_ on partial-eval state during a cyclic load (a rare
-  but legal pattern), the input is inherently un-debundle-able
-  into clean ESM modules. The realizability gate would surface
-  the cycle; the resolution is to leave that subset of bindings
-  as residual rather than fight ESM semantics.
-- **Choosing module boundaries.** The debundler executes the
-  spec; it does not author it. Higher-level analysis tools
-  (React component detection, big-string clustering, scrambled-
-  identifier statistics) help the human author write better
-  specs, but the spec is still chosen by humans.
-- **Identifier readability and cross-chunk imports.** Spec-assigned
-  readable names apply to the defining logical module and its intra-chunk
-  imports. When that binding is already part of its chunk's public export
-  surface, lowering retains the old export and adds the readable name as a
-  second export of the same binding. Processed named-import consumers may use
-  that alias and rename only the import local through `RenameLedger`; unsafe
-  collisions and nested capture conservatively keep the original import.
-  External chunks, dynamic imports and namespace imports continue to use the
-  legacy export name. This is an emission compatibility rule, not a scheduling
-  rewrite.
+- **Intentional cyclic init semantics.** If the original chunk _relied_ on partial-eval state during a cyclic load (a
+  rare but legal pattern), the input is inherently un-debundle-able into clean ESM modules. The realizability gate would
+  surface the cycle; the resolution is to leave that subset of bindings as residual rather than fight ESM semantics.
+- **Choosing module boundaries.** The debundler executes the spec; it does not author it. Higher-level analysis tools
+  (React component detection, big-string clustering, scrambled- identifier statistics) help the human author write
+  better specs, but the spec is still chosen by humans.
+- **Identifier readability and cross-chunk imports.** Spec-assigned readable names apply to the defining logical module
+  and its intra-chunk imports. When that binding is already part of its chunk's public export surface, lowering retains
+  the old export and adds the readable name as a second export of the same binding. Processed named-import consumers may
+  use that alias and rename only the import local through `RenameLedger`; unsafe collisions and nested capture
+  conservatively keep the original import. External chunks, dynamic imports and namespace imports continue to use the
+  legacy export name. This is an emission compatibility rule, not a scheduling rewrite.
 
 ## File references
 
-Entry points (the rest of the tree hangs off these; per-concern file
-rosters live in the directories, not here):
+Entry points (the rest of the tree hangs off these; per-concern file rosters live in the directories, not here):
 
 - <../pipeline.rs> — fixed transform composition.
 - <../facts/> — `StatementFacts` analyzer (<../facts/analyze.rs>).
-- <../graph/> — owner graph, `ModuleQuotient`, and the canonical I-graph
-  builders.
+- <../graph/> — owner graph, `ModuleQuotient`, and the canonical I-graph builders.
 - <../realizability/mod.rs> — the realizability gate (`check_realizability`).
-- <../validation.rs> — `validate_factorization`: renders the verdict as cycle
-  reports.
+- <../validation.rs> — `validate_factorization`: renders the verdict as cycle reports.
 - <../lowering/> — main splitting transform.
 - <../atomic_units.rs> — owner-level hard colocation units.
 
 ## Conventions for updating this doc
 
-- This is the **canonical design source.** When a design choice
-  changes (because we learn something new, hit a constraint, or
-  pivot), update this doc _first_ and only then change the code
-  to match. Code that disagrees with the doc is a bug — either
-  in the code or in the doc. Decide which and bring them back in
-  sync.
-- Keep sections phrased as current contract. Planned work belongs in
-  `TODO.md` or `plans/`, and completed phase logs in Git history and
-  dedicated lessons-learned notes.
-- Open design questions go in <#open-design-questions>. Once
-  resolved, move the resolution into the body of the doc and
+- This is the **canonical design source.** When a design choice changes (because we learn something new, hit a
+  constraint, or pivot), update this doc _first_ and only then change the code to match. Code that disagrees with the
+  doc is a bug — either in the code or in the doc. Decide which and bring them back in sync.
+- Keep sections phrased as current contract. Planned work belongs in `TODO.md` or `plans/`, and completed phase logs in
+  Git history and dedicated lessons-learned notes.
+- Open design questions go in <#open-design-questions>. Once resolved, move the resolution into the body of the doc and
   delete the question.
-- Keep the proof intact. The realizability theorem is the
-  foundation; if a future change breaks the theorem (e.g.
-  introduces an emit strategy that bypasses it), the proof
-  needs revision and any dependent claims need re-checking.
+- Keep the proof intact. The realizability theorem is the foundation; if a future change breaks the theorem (e.g.
+  introduces an emit strategy that bypasses it), the proof needs revision and any dependent claims need re-checking.

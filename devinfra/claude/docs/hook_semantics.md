@@ -1,8 +1,7 @@
 # Claude Code hook semantics
 
-Upstream Claude Code hook behavior that the hook daemon's models and guards
-depend on, established by auditing the upstream source (2026-05). Fine detail
-may drift with upstream releases — re-verify against the current binary before
+Upstream Claude Code hook behavior that the hook daemon's models and guards depend on, established by auditing the
+upstream source (2026-05). Fine detail may drift with upstream releases — re-verify against the current binary before
 relying on it, starting from the files below.
 
 ## Key upstream source files
@@ -20,42 +19,39 @@ relying on it, starting from the files below.
 
 Upstream splits hooks into two execution paths:
 
-**REPL hooks** — run during the model conversation loop. `systemMessage` is
-injected as a `hook_system_message` attachment the model reads.
+**REPL hooks** — run during the model conversation loop. `systemMessage` is injected as a `hook_system_message`
+attachment the model reads.
 
-**Non-REPL hooks** — run outside the loop (startup, shutdown, filesystem events).
-`systemMessage` goes to UI notification callback only; model never sees it.
+**Non-REPL hooks** — run outside the loop (startup, shutdown, filesystem events). `systemMessage` goes to UI
+notification callback only; model never sees it.
 
-Non-REPL hooks: SessionStart, SessionEnd, Setup, CwdChanged, FileChanged,
-InstructionsLoaded, WorktreeCreate, WorktreeRemove, ConfigChange.
+Non-REPL hooks: SessionStart, SessionEnd, Setup, CwdChanged, FileChanged, InstructionsLoaded, WorktreeCreate,
+WorktreeRemove, ConfigChange.
 
 Everything else is REPL.
 
-Upstream code path: REPL → `executeHooks()` yields messages into conversation.
-Non-REPL → `executeHooksOutsideREPL()` returns `HookOutsideReplResult`.
+Upstream code path: REPL → `executeHooks()` yields messages into conversation. Non-REPL → `executeHooksOutsideREPL()`
+returns `HookOutsideReplResult`.
 
-Our guard: `server.py` raises `AssertionError` if `system_message` is set on a
-non-REPL hook output.
+Our guard: `server.py` raises `AssertionError` if `system_message` is set on a non-REPL hook output.
 
 ## Async hooks
 
 Three flavors upstream:
 
-1. **Config-based async** (`"async": true` in hook config) — process is
-   backgrounded immediately, returns empty output, no conversation effect.
+1. **Config-based async** (`"async": true` in hook config) — process is backgrounded immediately, returns empty output,
+   no conversation effect.
 
-2. **Runtime async** (hook emits `{"async": true}` as first stdout line) —
-   dynamically decides to go async. Registered in `AsyncHookRegistry`.
+2. **Runtime async** (hook emits `{"async": true}` as first stdout line) — dynamically decides to go async. Registered
+   in `AsyncHookRegistry`.
 
-3. **`asyncRewake`** (`"asyncRewake": true` in hook config) — background
-   process that on exit code 2 calls `enqueuePendingNotification()` to inject
-   a single `task-notification` into the command queue. One-shot: one process
+3. **`asyncRewake`** (`"asyncRewake": true` in hook config) — background process that on exit code 2 calls
+   `enqueuePendingNotification()` to inject a single `task-notification` into the command queue. One-shot: one process
    exit → one message. Bypasses `AsyncHookRegistry` entirely.
 
 ## Message injection mechanisms
 
-No HTTP/UDS listener for arbitrary message injection. All paths into the
-conversation:
+No HTTP/UDS listener for arbitrary message injection. All paths into the conversation:
 
 | Mechanism                 | Auth                | How                                                           |
 | ------------------------- | ------------------- | ------------------------------------------------------------- |
@@ -66,8 +62,8 @@ conversation:
 | MCP channel notifications | MCP server config   | Allowlisted MCP servers push notifications                    |
 | Our session mailbox       | In-process only     | `session.post_message()` flushed on next REPL hook            |
 
-Bridge and DirectConnect are not usable from local processes in web containers
-(require Anthropic OAuth / SDK auth respectively).
+Bridge and DirectConnect are not usable from local processes in web containers (require Anthropic OAuth / SDK auth
+respectively).
 
 ## Hook types (settings.json)
 
@@ -78,19 +74,18 @@ Bridge and DirectConnect are not usable from local processes in web containers
 | `agent`   | Agentic verifier                |
 | `http`    | HTTP POST to URL                |
 
-Plus internal-only **function hooks** (`addFunctionHook()`) — in-process
-TypeScript callbacks, session-scoped, ephemeral. Not user-configurable.
+Plus internal-only **function hooks** (`addFunctionHook()`) — in-process TypeScript callbacks, session-scoped,
+ephemeral. Not user-configurable.
 
-No native MCP-as-hook-callback support. `http` type is the closest workaround
-(MCP server implements a plain webhook endpoint).
+No native MCP-as-hook-callback support. `http` type is the closest workaround (MCP server implements a plain webhook
+endpoint).
 
 ## PreToolUse permission semantics
 
-- `permissionDecision: 'allow'` does NOT bypass settings.json deny/ask rules.
-  `checkRuleBasedPermissions()` still runs. Deny wins over hook allow.
+- `permissionDecision: 'allow'` does NOT bypass settings.json deny/ask rules. `checkRuleBasedPermissions()` still runs.
+  Deny wins over hook allow.
 - Multiple hooks: **deny > ask > allow** precedence.
-- `updatedInput` without `permissionDecision` → passthrough (modifies input,
-  normal permission flow still applies).
+- `updatedInput` without `permissionDecision` → passthrough (modifies input, normal permission flow still applies).
 - `updatedInput` with `deny` → silently dropped.
 - `updatedInput` + `allow` satisfies `requiresUserInteraction` (headless escape hatch).
 
@@ -115,10 +110,9 @@ No native MCP-as-hook-callback support. `http` type is the closest workaround
 | `--continue`           | No — restores old                       | No (skipped)        | —           |
 
 - **Only `/clear` generates a new session ID.** Old ID saved as `parentSessionId`.
-- **Compaction** keeps the same session ID and transcript file. The `'compact'`
-  source is informational. Our daemon observed Setup vs SessionStart having
-  mismatched IDs during compaction — this is a Claude Code bug, not design.
-- **Resume** from a new Claude instance: process generates a fresh UUID at
-  startup, then `switchSession()` overwrites it with the old ID before hooks fire.
-- **Transcripts**: `~/.claude/sessions/<sessionId>.jsonl`. Metadata (title, tags)
-  appended to end of same file. No separate metadata store.
+- **Compaction** keeps the same session ID and transcript file. The `'compact'` source is informational. Our daemon
+  observed Setup vs SessionStart having mismatched IDs during compaction — this is a Claude Code bug, not design.
+- **Resume** from a new Claude instance: process generates a fresh UUID at startup, then `switchSession()` overwrites it
+  with the old ID before hooks fire.
+- **Transcripts**: `~/.claude/sessions/<sessionId>.jsonl`. Metadata (title, tags) appended to end of same file. No
+  separate metadata store.

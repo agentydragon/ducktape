@@ -1,18 +1,15 @@
 # sops-nix: container activation without systemd
 
-> **Archived 2026-08-16, not a current plan.** Written 2026-04-19, never acted on.
-> Its own conclusion was Option D — do nothing — and the trigger it named for
-> revisiting ("when Docker mTLS goes live") has since gone the other way:
-> `secrets/docker-ci/client-key.sops.pem` no longer exists in the repo. The
-> `devinfra/claude/claude_hook/web_env.sh` rows in the tables below also name a file
-> that has been removed. Kept for the options analysis (A-D, with the closure-size
-> reasoning) and the secret inventory, both of which would otherwise be redone from
-> scratch; read the inventory as a 2026-04 snapshot, not as current state.
+> **Archived 2026-08-16, not a current plan.** Written 2026-04-19, never acted on. Its own conclusion was Option D — do
+> nothing — and the trigger it named for revisiting ("when Docker mTLS goes live") has since gone the other way:
+> `secrets/docker-ci/client-key.sops.pem` no longer exists in the repo. The `devinfra/claude/claude_hook/web_env.sh`
+> rows in the tables below also name a file that has been removed. Kept for the options analysis (A-D, with the
+> closure-size reasoning) and the secret inventory, both of which would otherwise be redone from scratch; read the
+> inventory as a 2026-04 snapshot, not as current state.
 
 ## Problem
 
-The BuildBuddy API key is decrypted and templated into a bazelrc in **three
-independent implementations**:
+The BuildBuddy API key is decrypted and templated into a bazelrc in **three independent implementations**:
 
 | Consumer                                                        | Decryption                                                         | Templating                                           | Key source                                         |
 | --------------------------------------------------------------- | ------------------------------------------------------------------ | ---------------------------------------------------- | -------------------------------------------------- |
@@ -26,24 +23,21 @@ All three produce the same credential-scoped output:
 common:rbe --remote_header=x-buildbuddy-api-key=<decrypted key>
 ```
 
-Repository policy owns RBE selection; see
-<../devinfra/docs/bazel_configuration.md>.
+Repository policy owns RBE selection; see <../devinfra/docs/bazel_configuration.md>.
 
-Goal: define "decrypt this secret and produce this config file" once, and reuse
-the same definition in home-manager and in the Claude Code web container (no
-systemd, no init).
+Goal: define "decrypt this secret and produce this config file" once, and reuse the same definition in home-manager and
+in the Claude Code web container (no systemd, no init).
 
 ### Kubeconfig (claude-sandbox)
 
 There are **two distinct kubeconfigs**:
 
-1. **Cluster admin kubeconfig** (`secrets/shared/kubeconfig.yaml`) — full admin
-   access via client cert+key. Used only on local machines via home-manager
-   sops-nix (`nix/home/modules/kubeconfig.nix`), decrypted verbatim to
-   `~/.kube/config`. Not relevant to dedup.
+1. **Cluster admin kubeconfig** (`secrets/shared/kubeconfig.yaml`) — full admin access via client cert+key. Used only on
+   local machines via home-manager sops-nix (`nix/home/modules/kubeconfig.nix`), decrypted verbatim to `~/.kube/config`.
+   Not relevant to dedup.
 
-2. **claude-sandbox service account kubeconfig** (`secrets/claude-web-k8s-jwt.yaml`)
-   — scoped SA token. Used in **both** environments:
+2. **claude-sandbox service account kubeconfig** (`secrets/claude-web-k8s-jwt.yaml`) — scoped SA token. Used in **both**
+   environments:
 
 | Consumer                   | Environment | Invocation                                          | Key source                                                       |
 | -------------------------- | ----------- | --------------------------------------------------- | ---------------------------------------------------------------- |
@@ -51,23 +45,19 @@ There are **two distinct kubeconfigs**:
 | retired local MCP launcher | Web         | Same launcher                                       | `SOPS_AGE_KEY` env var from Claude Code UI                       |
 | `web_env.sh` bg command    | Web         | `kubeconfig.py --write ~/.kube/config`              | `SOPS_AGE_KEY` env var                                           |
 
-All three go through `kubeconfig.py` → `build_kubeconfig()`, so the
-generation logic is **already deduplicated** in Python. The complexity is in
-runtime parameters the builder injects:
+All three go through `kubeconfig.py` → `build_kubeconfig()`, so the generation logic is **already deduplicated** in
+Python. The complexity is in runtime parameters the builder injects:
 
 - `proxy-url` — from `get_proxy_url()`, only set on web (egress proxy)
-- `certificate-authority-data` — from session CA bundle or system CAs
-  (web needs the MITM CA; CLI doesn't)
-- `server`, `service_account`, `namespace` — from the profile's `k8s:` block
-  (same in both profiles today)
+- `certificate-authority-data` — from session CA bundle or system CAs (web needs the MITM CA; CLI doesn't)
+- `server`, `service_account`, `namespace` — from the profile's `k8s:` block (same in both profiles today)
 
-This is runtime logic that **can't** be a static sops-nix template — the CA
-bundle and proxy URL are determined at session start time, not at Nix eval time.
+This is runtime logic that **can't** be a static sops-nix template — the CA bundle and proxy URL are determined at
+session start time, not at Nix eval time.
 
-However, the _decryption_ step (`sops -d --extract` of the SA token) is the
-same pattern as BuildBuddy. If we had a shared "decrypt secret X from sops file
-Y" primitive, `kubeconfig.py` could consume the decrypted token from
-a known path instead of calling `sops` itself.
+However, the _decryption_ step (`sops -d --extract` of the SA token) is the same pattern as BuildBuddy. If we had a
+shared "decrypt secret X from sops file Y" primitive, `kubeconfig.py` could consume the decrypted token from a known
+path instead of calling `sops` itself.
 
 ### Dedup candidates
 
@@ -76,22 +66,18 @@ Two categories:
 **Simple decrypt+template** (same output everywhere, dedup straightforward):
 
 - **BuildBuddy API key** (3 implementations, all produce the same bazelrc)
-- Potentially `attic_token`, `HF_TOKEN`, `ANTHROPIC_API_KEY` if the web
-  container ever needs them
+- Potentially `attic_token`, `HF_TOKEN`, `ANTHROPIC_API_KEY` if the web container ever needs them
 
 **Decrypt only** (consumer needs the raw secret, applies its own runtime logic):
 
-- **claude-sandbox k8s token** — already deduplicated at the generation layer
-  (`kubeconfig.py`), but the decryption step (`sops -d`) could be
-  shared with a "materialize decrypted secrets to known paths" primitive
-- **Docker mTLS client key** (currently disabled, commented out in
-  `_common.sh`). When enabled: `secrets/docker-ci/client-key.sops.pem` is
-  decrypted, base64-encoded, and exported as `DUCKTAPE_DOCKER_CLIENT_KEY`.
-  The `docker_mtls` pytest fixture (`util/testing/docker_mtls.py`) decodes it
-  at test time and assembles a cert dir with the key + public certs from
-  runfiles (`ca.pem`, `client-cert.pem`). This is another "decrypt to known
-  path/env var" case — the secret is a raw PEM, not a templated config file.
-  Would benefit from a shared decryption primitive once docker-ci goes live
+- **claude-sandbox k8s token** — already deduplicated at the generation layer (`kubeconfig.py`), but the decryption step
+  (`sops -d`) could be shared with a "materialize decrypted secrets to known paths" primitive
+- **Docker mTLS client key** (currently disabled, commented out in `_common.sh`). When enabled:
+  `secrets/docker-ci/client-key.sops.pem` is decrypted, base64-encoded, and exported as `DUCKTAPE_DOCKER_CLIENT_KEY`.
+  The `docker_mtls` pytest fixture (`util/testing/docker_mtls.py`) decodes it at test time and assembles a cert dir with
+  the key + public certs from runfiles (`ca.pem`, `client-cert.pem`). This is another "decrypt to known path/env var"
+  case — the secret is a raw PEM, not a templated config file. Would benefit from a shared decryption primitive once
+  docker-ci goes live
 
 ## How sops-nix activation works
 
@@ -108,15 +94,13 @@ The activation is a one-liner:
 sops-install-secrets -ignore-passwd /nix/store/...-manifest.json
 ```
 
-The systemd user service (`sops-nix.service`, `Type=oneshot`,
-`WantedBy=default.target`) just runs this. No systemd dependency in the binary
-itself.
+The systemd user service (`sops-nix.service`, `Type=oneshot`, `WantedBy=default.target`) just runs this. No systemd
+dependency in the binary itself.
 
 ### What's NOT exposed
 
-The manifest path and activation script derivation are **internal** to the
-sops-nix module — not accessible as `config.*` attributes. The only way to
-reach them is indirectly via
+The manifest path and activation script derivation are **internal** to the sops-nix module — not accessible as
+`config.*` attributes. The only way to reach them is indirectly via
 `config.systemd.user.services.sops-nix.Service.ExecStart`.
 
 `config.sops.package` gives you the `sops-install-secrets` binary.
@@ -125,9 +109,8 @@ reach them is indirectly via
 
 ### Option A: Extract activation script from HM eval
 
-Do a standalone home-manager evaluation for the container, import the shared
-secret/template module, and fish the activation script out of the systemd
-service:
+Do a standalone home-manager evaluation for the container, import the shared secret/template module, and fish the
+activation script out of the systemd service:
 
 ```nix
 let
@@ -145,13 +128,11 @@ in
 
 Run at container entrypoint before the main process.
 
-**Pro:** exact same behavior as desktop, full template support, single source of
-truth for secret+template definitions.
+**Pro:** exact same behavior as desktop, full template support, single source of truth for secret+template definitions.
 
-**Con:** depends on HM module internals (`ExecStart` path). Pulls in a full HM
-evaluation — closure likely includes nixpkgs and various HM dependencies even
-though we only need a Go binary + a JSON file. **Startup latency risk for Claude
-Code web.**
+**Con:** depends on HM module internals (`ExecStart` path). Pulls in a full HM evaluation — closure likely includes
+nixpkgs and various HM dependencies even though we only need a Go binary + a JSON file. **Startup latency risk for
+Claude Code web.**
 
 ### Option B: Build the manifest directly
 
@@ -185,22 +166,18 @@ in
   ''
 ```
 
-**Pro:** small closure (just the Go binary + manifest + encrypted sops file).
-No HM dependency.
+**Pro:** small closure (just the Go binary + manifest + encrypted sops file). No HM dependency.
 
-**Con:** manifest schema is undocumented and may change across sops-nix
-versions. Placeholder hashes must be computed to match what
-`sops-install-secrets` expects. Home-manager and container definitions are
-structurally similar but not literally shared — they'd be two Nix expressions
-consuming the same source-of-truth data (secret file path, YAML key, template
-content).
+**Con:** manifest schema is undocumented and may change across sops-nix versions. Placeholder hashes must be computed to
+match what `sops-install-secrets` expects. Home-manager and container definitions are structurally similar but not
+literally shared — they'd be two Nix expressions consuming the same source-of-truth data (secret file path, YAML key,
+template content).
 
 ### Option C: Thin wrapper around `sops` CLI
 
-Skip `sops-install-secrets` entirely. Write a small script (shell or Python)
-that does `sops -d --extract` + template substitution. The template content
-and secret metadata are defined once in Nix and consumed by both HM (via
-sops-nix module) and the container script.
+Skip `sops-install-secrets` entirely. Write a small script (shell or Python) that does `sops -d --extract` + template
+substitution. The template content and secret metadata are defined once in Nix and consumed by both HM (via sops-nix
+module) and the container script.
 
 ```nix
 # Shared definition (consumed by both)
@@ -216,51 +193,45 @@ secretDefs = {
 };
 ```
 
-Home-manager module translates `secretDefs` → `sops.secrets` + `sops.templates`.
-Container gets a script that iterates `secretDefs`, runs `sops -d --extract`,
-and does string substitution.
+Home-manager module translates `secretDefs` → `sops.secrets` + `sops.templates`. Container gets a script that iterates
+`secretDefs`, runs `sops -d --extract`, and does string substitution.
 
-**Pro:** minimal closure (`sops` CLI is already installed in the web container
-via `web_setup.sh`). Template content shared. No manifest schema dependency.
+**Pro:** minimal closure (`sops` CLI is already installed in the web container via `web_setup.sh`). Template content
+shared. No manifest schema dependency.
 
-**Con:** two different activation mechanisms (sops-nix vs custom script) — but
-the secret/template _definitions_ are shared, which is the part that actually
-drifts. `sops` CLI is slower than `sops-install-secrets` (spawns a process per
+**Con:** two different activation mechanisms (sops-nix vs custom script) — but the secret/template _definitions_ are
+shared, which is the part that actually drifts. `sops` CLI is slower than `sops-install-secrets` (spawns a process per
 secret vs one pass), but irrelevant for a handful of secrets.
 
 ### Option D: Do nothing
 
-The current state has three implementations but they're all ~5 lines each and
-the template is trivial (`common:rbe --remote_header=...`). The risk of drift is
-low for a single secret. The complexity of any dedup solution may not pay for
-itself until there are more shared secrets.
+The current state has three implementations but they're all ~5 lines each and the template is trivial
+(`common:rbe --remote_header=...`). The risk of drift is low for a single secret. The complexity of any dedup solution
+may not pay for itself until there are more shared secrets.
 
 **Pro:** zero effort, no new abstraction.
 
-**Con:** if more secrets get added (and there are already several —
-`attic_token`, `ANTHROPIC_API_KEY`, `HF_TOKEN`, etc.), the drift risk grows.
+**Con:** if more secrets get added (and there are already several — `attic_token`, `ANTHROPIC_API_KEY`, `HF_TOKEN`,
+etc.), the drift risk grows.
 
 ## Closure size concern
 
-Claude Code web containers download their Nix closure at session start. A
-large closure = slower startup.
+Claude Code web containers download their Nix closure at session start. A large closure = slower startup.
 
 - **Option A** (full HM eval): likely pulls significant nixpkgs closure. Bad.
-- **Option B** (`sops-install-secrets` only): the Go binary is statically
-  linked (~15MB). Closure = binary + manifest + encrypted sops files. Small.
+- **Option B** (`sops-install-secrets` only): the Go binary is statically linked (~15MB). Closure = binary + manifest +
+  encrypted sops files. Small.
 - **Option C** (`sops` CLI): already installed. Zero additional closure.
-- The `sops` CLI binary is already present in the web container (installed by
-  `web_setup.sh` via devShell). So Option C adds nothing to the closure.
+- The `sops` CLI binary is already present in the web container (installed by `web_setup.sh` via devShell). So Option C
+  adds nothing to the closure.
 
 ## Age key in the container
 
-The web container receives `SOPS_AGE_KEY` as an env var (set in the Claude
-Code web UI, inherited by hook daemon). Both `sops` CLI and
-`sops-install-secrets` respect this env var. No file mount needed.
+The web container receives `SOPS_AGE_KEY` as an env var (set in the Claude Code web UI, inherited by hook daemon). Both
+`sops` CLI and `sops-install-secrets` respect this env var. No file mount needed.
 
-Home-manager uses `~/.ssh/id_ed25519` (age via SSH key). The shared definition
-would need to parameterize the key source — but that's already inherently
-separate (HM sets `sops.age.sshKeyPaths`, container sets `SOPS_AGE_KEY` env).
+Home-manager uses `~/.ssh/id_ed25519` (age via SSH key). The shared definition would need to parameterize the key source
+— but that's already inherently separate (HM sets `sops.age.sshKeyPaths`, container sets `SOPS_AGE_KEY` env).
 
 ## Full secret inventory
 
@@ -294,23 +265,19 @@ separate (HM sets `sops.age.sshKeyPaths`, container sets `SOPS_AGE_KEY` env).
 
 ### Overlap analysis
 
-Only **`BUILDBUDDY_API_KEY`** is truly duplicated across web and HM (same SOPS
-file, same key, same output — 3 independent implementations). The k8s token
-uses the same `sops -d` pattern but produces fundamentally different output
-(HM: admin kubeconfig verbatim; web: scoped SA kubeconfig with runtime
-proxy/CA injection). `OTEL_BEARER_TOKEN` comes from k8s, not SOPS.
+Only **`BUILDBUDDY_API_KEY`** is truly duplicated across web and HM (same SOPS file, same key, same output — 3
+independent implementations). The k8s token uses the same `sops -d` pattern but produces fundamentally different output
+(HM: admin kubeconfig verbatim; web: scoped SA kubeconfig with runtime proxy/CA injection). `OTEL_BEARER_TOKEN` comes
+from k8s, not SOPS.
 
-Most HM secrets (SSH keys, talosconfig, attic) are local-machine-only and have
-no web counterpart. The `sopsEnv` secrets (`HF_TOKEN`, `HABITIFY_API_KEY`,
-`ANTHROPIC_API_KEY`, `OPENAI_API_KEY`) are not currently needed in web sessions.
+Most HM secrets (SSH keys, talosconfig, attic) are local-machine-only and have no web counterpart. The `sopsEnv` secrets
+(`HF_TOKEN`, `HABITIFY_API_KEY`, `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`) are not currently needed in web sessions.
 
 ## Current recommendation
 
-**Option C** is the sweet spot if this is worth doing at all: share the
-secret/template _definitions_ in Nix, use sops-nix for HM activation and a
-thin `sops -d` script for the container. Zero additional closure, `sops` is
-already installed.
+**Option C** is the sweet spot if this is worth doing at all: share the secret/template _definitions_ in Nix, use
+sops-nix for HM activation and a thin `sops -d` script for the container. Zero additional closure, `sops` is already
+installed.
 
-**Option D** (do nothing) is fine given that only BuildBuddy is truly
-duplicated today. Revisit when Docker mTLS goes live or more secrets need
-sharing.
+**Option D** (do nothing) is fine given that only BuildBuddy is truly duplicated today. Revisit when Docker mTLS goes
+live or more secrets need sharing.

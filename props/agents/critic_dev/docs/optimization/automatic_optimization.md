@@ -60,9 +60,11 @@ Don't just look at accuracy numbers. Analyze:
 
 1. **Baseline-driven:** Always compare to current best validation recall. Any improvement → new baseline.
 
-2. **Two-distribution problem:** Train has mixed difficulty (single-file, multi-file, full-snapshot). Valid is ONLY full-snapshot (hardest). Test on full-snapshot train as proxy before validation.
+2. **Two-distribution problem:** Train has mixed difficulty (single-file, multi-file, full-snapshot). Valid is ONLY
+   full-snapshot (hardest). Test on full-snapshot train as proxy before validation.
 
-3. **Rich diagnostics:** Use `llm_requests` payloads and run logs for model/tool traces. Tool call sequences tell you where the critic got stuck.
+3. **Rich diagnostics:** Use `llm_requests` payloads and run logs for model/tool traces. Tool call sequences tell you
+   where the critic got stuck.
 
 4. **Statistical rigor:** Small validation set = high variance. Use LCB to rank prompts.
 

@@ -1,105 +1,87 @@
 # Selector resolution: specification
 
-What `debundle` guarantees when it places spec entities in a bundle chunk. How to
-write selectors: <docs/selectors.md>. How it is implemented:
-`docs/selector_resolution.md`.
+What `debundle` guarantees when it places spec entities in a bundle chunk. How to write selectors: <docs/selectors.md>.
+How it is implemented: `docs/selector_resolution.md`.
 
 ## Entities
 
-An **entity** is one thing a spec places in a chunk: a module member, a
-`source_matches[].bindings[]` entry, or an `anonymous_statements[]` entry. Each
-entity's selector names the places it may occupy: a top-level declaration (by the
+An **entity** is one thing a spec places in a chunk: a module member, a `source_matches[].bindings[]` entry, or an
+`anonymous_statements[]` entry. Each entity's selector names the places it may occupy: a top-level declaration (by the
 minified binding it declares) or one top-level statement.
 
-An entity is scoped to its module's chunk, and only that chunk's places are its
-candidates. In a tree spec, each module tree names the chunk its modules are
-scoped to; several trees may name the same chunk, and their modules then share
-it as if authored in one tree.
+An entity is scoped to its module's chunk, and only that chunk's places are its candidates. In a tree spec, each module
+tree names the chunk its modules are scoped to; several trees may name the same chunk, and their modules then share it
+as if authored in one tree.
 
 ## Repeated `var` declarations
 
-Repeated declarations of the same module-scoped `var` denote one binding.
-Selecting or renaming that binding applies to every declaration site, including
-sites inside top-level control flow. A structural selector may identify it from
-any of those sites. Its declarations must share one output module; initializers,
-reads, and mutations retain their observable order. A bare redeclaration does
-not reset the binding. Other duplicate declaration combinations remain unsupported.
-Owner-based relational selectors inspect facts on each statement site; they do
-not union those facts across all redeclarations. Binding selectors canonicalize
-to the first declaration site, so relations composed with them cannot inspect
-later sites' facts. Control-flow statements containing `var` move intact; all
-bindings they declare must be assigned to the same destination.
+Repeated declarations of the same module-scoped `var` denote one binding. Selecting or renaming that binding applies to
+every declaration site, including sites inside top-level control flow. A structural selector may identify it from any of
+those sites. Its declarations must share one output module; initializers, reads, and mutations retain their observable
+order. A bare redeclaration does not reset the binding. Other duplicate declaration combinations remain unsupported.
+Owner-based relational selectors inspect facts on each statement site; they do not union those facts across all
+redeclarations. Binding selectors canonicalize to the first declaration site, so relations composed with them cannot
+inspect later sites' facts. Control-flow statements containing `var` move intact; all bindings they declare must be
+assigned to the same destination.
 
 ## Matching
 
-Only the shape matcher decides where a `source_match` template matches. A
-template matches a place when their syntax trees are equal up to:
+Only the shape matcher decides where a `source_match` template matches. A template matches a place when their syntax
+trees are equal up to:
 
-- **holes** — `ANYTHING`, `EXPR`, `STMT`, `STMT_LIST`, `DECLARATORS`, `SEQ_EXPRS` and
-  the other hole keywords of <docs/selectors.md> match any subtree of their kind;
-- **alpha-renaming** — binding and value identifiers match any identifier,
-  consistently within their lexical scope.
+- **holes** — `ANYTHING`, `EXPR`, `STMT`, `STMT_LIST`, `DECLARATORS`, `SEQ_EXPRS` and the other hole keywords of
+  <docs/selectors.md> match any subtree of their kind;
+- **alpha-renaming** — binding and value identifiers match any identifier, consistently within their lexical scope.
 
-A **free** identifier, one the template uses but never declares, is not always
-alpha-renamed. In order, it is:
+A **free** identifier, one the template uses but never declares, is not always alpha-renamed. In order, it is:
 
 1. a hole keyword;
-2. a **reference** to the spec entity exported under that name: by the
-   template's own module if it exports one, else by the one other module that
-   does. A name several other modules export makes the template `invalid`;
-3. an unshadowed **global** (`Object`, `window`, `console`, …) if the chunk
-   neither declares nor imports that name at top level: it matches only itself;
+2. a **reference** to the spec entity exported under that name: by the template's own module if it exports one, else by
+   the one other module that does. A name several other modules export makes the template `invalid`;
+3. an unshadowed **global** (`Object`, `window`, `console`, …) if the chunk neither declares nor imports that name at
+   top level: it matches only itself;
 4. otherwise alpha-renamed.
 
-A place matches a reference only where the free name binds, throughout the
-match, the one chunk identifier the referenced entity takes, whichever selector
-pins that entity. A reference to an entity whose own selector fails before the
-joint solve (`no_match`, `too_broad`, `invalid`) alpha-renames.
+A place matches a reference only where the free name binds, throughout the match, the one chunk identifier the
+referenced entity takes, whichever selector pins that entity. A reference to an entity whose own selector fails before
+the joint solve (`no_match`, `too_broad`, `invalid`) alpha-renames.
 
-A `source_matches[]` binding may claim a free identifier of its template
-instead of a declaration (**pinning by use site**). Its entity is the top-level
-declaration that identifier binds to, throughout the match; a match where it
-binds no top-level declaration, or different identifiers in different scopes,
-is not a place of that entity. A claimed free identifier is the entity's own
-binding, never a reference or a global. A claim of free identifiers only does
-not claim the matched statement.
+A `source_matches[]` binding may claim a free identifier of its template instead of a declaration (**pinning by use
+site**). Its entity is the top-level declaration that identifier binds to, throughout the match; a match where it binds
+no top-level declaration, or different identifiers in different scopes, is not a place of that entity. A claimed free
+identifier is the entity's own binding, never a reference or a global. A claim of free identifiers only does not claim
+the matched statement.
 
-An anonymous statement written with a bare `match:` rather than `source_match:`
-skips alpha-renaming: its identifiers must equal the chunk's. Literals,
-operators, member property names, object keys and tree structure are
-significant. Relational selectors (`cross_ref`, `reads_member`, …) match through
-facts derived from the chunk, not through templates.
+An anonymous statement written with a bare `match:` rather than `source_match:` skips alpha-renaming: its identifiers
+must equal the chunk's. Literals, operators, member property names, object keys and tree structure are significant.
+Relational selectors (`cross_ref`, `reads_member`, …) match through facts derived from the chunk, not through templates.
 
 ## Local selector explanations
 
-`inspect-source` labels the parsed file's top-level statements and original
-locations. `spec match-selector --explain --statements` compares one inline or
-authored selector against the entire selected range using its structural
-matching semantics. It reports a local match, mismatch, unsupported comparison,
-or diagnostic limit. An inconclusive comparison is not a mismatch.
+`inspect-source` labels the parsed file's top-level statements and original locations.
+`spec match-selector --explain --statements` compares one inline or authored selector against the entire selected range
+using its structural matching semantics. It reports a local match, mismatch, unsupported comparison, or diagnostic
+limit. An inconclusive comparison is not a mismatch.
 
-This operation does not establish uniqueness, enforce ownership/all-different,
-or resolve references to other spec exports. Loading a selector from a spec
-preserves its matching mode and claimed bindings without solving other entries.
+This operation does not establish uniqueness, enforce ownership/all-different, or resolve references to other spec
+exports. Loading a selector from a spec preserves its matching mode and claimed bindings without solving other entries.
 Local match results are distinct from resolved assignment outcomes.
 
 ## Assignment
 
-Every chunk's entities form one program. Each entity takes exactly one of its
-matched places, jointly with every other entity:
+Every chunk's entities form one program. Each entity takes exactly one of its matched places, jointly with every other
+entity:
 
-- no two entities claim the same place, whichever modules or trees they come
-  from;
+- no two entities claim the same place, whichever modules or trees they come from;
 - a relational selector holds between the places its entities take;
 - a template's references agree with the places their entities take.
 
-The answer is the **unique** assignment satisfying these. An assignment that
-holds only for some solutions of the joint problem is not an answer.
+The answer is the **unique** assignment satisfying these. An assignment that holds only for some solutions of the joint
+problem is not an answer.
 
 ## Outcomes
 
-Every entity gets exactly one outcome, in one record format shared by `run`,
-`spec validate` and `spec match-selector`:
+Every entity gets exactly one outcome, in one record format shared by `run`, `spec validate` and `spec match-selector`:
 
 | Outcome                                   | Meaning                                                                                                                                                                                    | Severity |
 | ----------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | -------- |
@@ -116,56 +98,43 @@ Every entity gets exactly one outcome, in one record format shared by `run`,
 | `invalid`                                 | its selector does not parse, uses an unsupported construct, or its matches do not map to places                                                                                            | error    |
 | `undecided`                               | the solver stopped before deciding it                                                                                                                                                      | error    |
 
-An `ambiguous` outcome's `differentiators` give each listed place that has one
-a stable anchor the other listed places lack: a literal, object key, class
-member, member-path call, declaration kind or arity, in the place's own
-statement or else in the statement adjacent to it. A place with none is not
-listed there, and the report says when no place has one.
+An `ambiguous` outcome's `differentiators` give each listed place that has one a stable anchor the other listed places
+lack: a literal, object key, class member, member-path call, declaration kind or arity, in the place's own statement or
+else in the statement adjacent to it. A place with none is not listed there, and the report says when no place has one.
 
-A contradiction affects only its group of interacting entities. Every member
-reports `unsatisfiable`, with `group` naming the group's first entity as a
-chunk-local identifier. An optional `witness` names distinct selector claims
-and their complete candidate-owner union, with fewer owners than claims.
-This proves an ownership conflict but need not be minimal. Each owner records
-its post-split ordinal, original source statement index, and matched bindings.
-Witness members participate in that conflict; other group members remain
-blocked. Without a witness, the group remains infeasible and the diagnostic
-states that no smaller ownership witness was found within diagnostic limits.
-Independent groups resolve normally.
+A contradiction affects only its group of interacting entities. Every member reports `unsatisfiable`, with `group`
+naming the group's first entity as a chunk-local identifier. An optional `witness` names distinct selector claims and
+their complete candidate-owner union, with fewer owners than claims. This proves an ownership conflict but need not be
+minimal. Each owner records its post-split ordinal, original source statement index, and matched bindings. Witness
+members participate in that conflict; other group members remain blocked. Without a witness, the group remains
+infeasible and the diagnostic states that no smaller ownership witness was found within diagnostic limits. Independent
+groups resolve normally.
 
-`run` and `spec validate` in both modes give each entity the same outcome. The
-edit gate and `describe` resolve only `source_matches[]` entries and anonymous
-statements, without the spec's other members, and give those entities the same
-outcome except that one unique only because a relational member claimed its
-other places is `ambiguous` to them, and a template reference to any other
-member alpha-renames there. Only the pipeline
-(`run`, `spec validate --spec`) reports `duplicate_claim`. `spec match-selector`
-resolves its selector as a spec of one entity, so a selector resolved by
+`run` and `spec validate` in both modes give each entity the same outcome. The edit gate and `describe` resolve only
+`source_matches[]` entries and anonymous statements, without the spec's other members, and give those entities the same
+outcome except that one unique only because a relational member claimed its other places is `ambiguous` to them, and a
+template reference to any other member alpha-renames there. Only the pipeline (`run`, `spec validate --spec`) reports
+`duplicate_claim`. `spec match-selector` resolves its selector as a spec of one entity, so a selector resolved by
 elimination or by its references in a spec is `ambiguous` there.
 
 ## Modes
 
-- **Keep-going** (the default): every outcome is reported, entities with an
-  error outcome stay unclaimed, and a chunk with any error outcome fails once
-  all of its outcomes are reported. Every chunk is reported; the run fails
-  with the first failing chunk in chunk-id order.
-- **Fail-fast** (`--fail-fast`): the first error outcome stops the run. Outcomes
-  come in a fixed order: every chunk's duplicate claims, then every chunk's
-  resolved outcomes, chunks in chunk-id order.
+- **Keep-going** (the default): every outcome is reported, entities with an error outcome stay unclaimed, and a chunk
+  with any error outcome fails once all of its outcomes are reported. Every chunk is reported; the run fails with the
+  first failing chunk in chunk-id order.
+- **Fail-fast** (`--fail-fast`): the first error outcome stops the run. Outcomes come in a fixed order: every chunk's
+  duplicate claims, then every chunk's resolved outcomes, chunks in chunk-id order.
 
 Warnings never stop a run.
 
 ## Readable names and the chunk public surface
 
-`name:` on a member and the name assigned to `source_matches[].bindings[]`
-name the spec-owned binding in its logical module. If the source chunk already
-exports that binding, emitted output keeps the original chunk export name and
-adds the spec name as a second export of the same binding. The two ESM export
-names are live aliases; existing consumers therefore remain compatible.
+`name:` on a member and the name assigned to `source_matches[].bindings[]` name the spec-owned binding in its logical
+module. If the source chunk already exports that binding, emitted output keeps the original chunk export name and adds
+the spec name as a second export of the same binding. The two ESM export names are live aliases; existing consumers
+therefore remain compatible.
 
-Named imports in other processed chunks may import the readable alias and bind
-it locally under that readable name. This import-local change is conservative:
-a collision with an existing or nested binding, an ambiguous alias, or an
-unprocessed importer leaves the old import form unchanged. Dynamic imports and
-namespace imports continue to use the original minified export names. Bindings
-without a spec-assigned name are not changed by this cross-chunk pass.
+Named imports in other processed chunks may import the readable alias and bind it locally under that readable name. This
+import-local change is conservative: a collision with an existing or nested binding, an ambiguous alias, or an
+unprocessed importer leaves the old import form unchanged. Dynamic imports and namespace imports continue to use the
+original minified export names. Bindings without a spec-assigned name are not changed by this cross-chunk pass.

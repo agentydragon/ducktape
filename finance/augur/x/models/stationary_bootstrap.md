@@ -1,18 +1,16 @@
 # `stationary_bootstrap` — resampling the replay's record
 
-`StationaryBootstrapModel` (<stationary_bootstrap.py>) resamples the `MacroHistory` record that
-core historical replay (<../../model/historical_windows.py>) replays whole. The module docstring
-states the conventions a result depends on.
+`StationaryBootstrapModel` (<stationary_bootstrap.py>) resamples the `MacroHistory` record that core historical replay
+(<../../model/historical_windows.py>) replays whole. The module docstring states the conventions a result depends on.
 
 ## What it promises
 
-The record is resampled in blocks of consecutive months, drawn jointly across every series, at
-a caller-chosen mean block length and any horizon, including one longer than the record. Every
-month after the opening is one record month's rates and index growth, so the support is the
-record's: a path can recombine its worst episodes but never exceed its worst month. At a block
-seam every rate moves between two historical levels within a month, and bond funds price that
-move. A rollout depends only on its seed, not on the batch or the horizon, and provenance names
-the record's span, the mean block length and the seeds.
+The record is resampled in blocks of consecutive months, drawn jointly across every series, at a caller-chosen mean
+block length and any horizon, including one longer than the record. Every month after the opening is one record month's
+rates and index growth, so the support is the record's: a path can recombine its worst episodes but never exceed its
+worst month. At a block seam every rate moves between two historical levels within a month, and bond funds price that
+move. A rollout depends only on its seed, not on the batch or the horizon, and provenance names the record's span, the
+mean block length and the seeds.
 
 ## Use
 

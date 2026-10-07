@@ -1,6 +1,7 @@
 # Twenty Questions Framework Comparison
 
-Reimplementation of the Twenty Questions eval game across 7 agent frameworks to compare developer experience and ergonomics.
+Reimplementation of the Twenty Questions eval game across 7 agent frameworks to compare developer experience and
+ergonomics.
 
 ## The Game
 

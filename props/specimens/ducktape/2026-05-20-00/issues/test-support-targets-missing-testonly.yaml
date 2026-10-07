@@ -1,11 +1,10 @@
-rationale:
-  "These targets are only reached from Bazel tests in ducktape commit 995a1fce6410ec4a882d2e861b41423c8c839148, and
-  manual review found that they are test support rather than product/library API. They are not covered by package(default_testonly
-  = True), so the intended test-only contract is implicit.
+rationale: "These targets are only reached from Bazel tests in ducktape commit 995a1fce6410ec4a882d2e861b41423c8c839148,
+  and manual review found that they are test support rather than product/library API. They are not covered by
+  package(default_testonly = True), so the intended test-only contract is implicit.
 
 
-  Fix by marking the target or its package testonly. For data/policy fixtures that are only used by tests, prefer moving the
-  files under a testdata/ or testing package and setting the package-level test-only default there."
+  Fix by marking the target or its package testonly. For data/policy fixtures that are only used by tests, prefer moving
+  the files under a testdata/ or testing package and setting the package-level test-only default there."
 should_flag: true
 occurrences:
   - occurrence_id: occ-000
@@ -14,11 +13,13 @@ occurrences:
         - - 163
           - 163
     note:
-      "//airlock/frontend:harness_js (filegroup); direct non-generated consumers: //airlock/frontend:visual_BackendsPage,
-      //airlock/frontend:visual_BackendsPage_dark, //airlock/frontend:visual_BackendsPage_mobile, //airlock/frontend:visual_BackendsPage_mobile_dark,
-      //airlock/frontend:visual_DetailPage, //airlock/frontend:visual_DetailPage_dark, //airlock/frontend:visual_DetailPage_mobile,
-      //airlock/frontend:visual_DetailPage_mobile_dark, +8 more. Verified as test support, fixture data, a harness, stub, conftest,
-      or other test-only helper; mark the target/package testonly if it stays in this shape."
+      "//airlock/frontend:harness_js (filegroup); direct non-generated consumers:
+      //airlock/frontend:visual_BackendsPage, //airlock/frontend:visual_BackendsPage_dark,
+      //airlock/frontend:visual_BackendsPage_mobile, //airlock/frontend:visual_BackendsPage_mobile_dark,
+      //airlock/frontend:visual_DetailPage, //airlock/frontend:visual_DetailPage_dark,
+      //airlock/frontend:visual_DetailPage_mobile, //airlock/frontend:visual_DetailPage_mobile_dark, +8 more. Verified
+      as test support, fixture data, a harness, stub, conftest, or other test-only helper; mark the target/package
+      testonly if it stays in this shape."
     critic_scopes_expected_to_recall:
       - - airlock/frontend/BUILD.bazel
     match_file_restriction:
@@ -29,11 +30,13 @@ occurrences:
         - - 168
           - 168
     note:
-      "//airlock/frontend:visual_test_assets (filegroup); direct non-generated consumers: //airlock/frontend:visual_BackendsPage,
-      //airlock/frontend:visual_BackendsPage_dark, //airlock/frontend:visual_BackendsPage_mobile, //airlock/frontend:visual_BackendsPage_mobile_dark,
-      //airlock/frontend:visual_DetailPage, //airlock/frontend:visual_DetailPage_dark, //airlock/frontend:visual_DetailPage_mobile,
-      //airlock/frontend:visual_DetailPage_mobile_dark, +8 more. Verified as test support, fixture data, a harness, stub, conftest,
-      or other test-only helper; mark the target/package testonly if it stays in this shape."
+      "//airlock/frontend:visual_test_assets (filegroup); direct non-generated consumers:
+      //airlock/frontend:visual_BackendsPage, //airlock/frontend:visual_BackendsPage_dark,
+      //airlock/frontend:visual_BackendsPage_mobile, //airlock/frontend:visual_BackendsPage_mobile_dark,
+      //airlock/frontend:visual_DetailPage, //airlock/frontend:visual_DetailPage_dark,
+      //airlock/frontend:visual_DetailPage_mobile, //airlock/frontend:visual_DetailPage_mobile_dark, +8 more. Verified
+      as test support, fixture data, a harness, stub, conftest, or other test-only helper; mark the target/package
+      testonly if it stays in this shape."
     critic_scopes_expected_to_recall:
       - - airlock/frontend/BUILD.bazel
     match_file_restriction:
@@ -44,9 +47,10 @@ occurrences:
         - - 21
           - 21
     note:
-      "//devinfra/claude/testdata/test_workspace:workspace_files (filegroup); direct non-generated consumers: //devinfra/claude/hook_daemon/session_start/container_e2e:test_container_e2e.
-      Verified as test support, fixture data, a harness, stub, conftest, or other test-only helper; mark the target/package
-      testonly if it stays in this shape."
+      "//devinfra/claude/testdata/test_workspace:workspace_files (filegroup); direct non-generated consumers:
+      //devinfra/claude/hook_daemon/session_start/container_e2e:test_container_e2e. Verified as test support, fixture
+      data, a harness, stub, conftest, or other test-only helper; mark the target/package testonly if it stays in this
+      shape."
     critic_scopes_expected_to_recall:
       - - devinfra/claude/testdata/test_workspace/BUILD.bazel
         - devinfra/claude/hook_daemon/session_start/container_e2e/BUILD.bazel
@@ -58,12 +62,14 @@ occurrences:
         - - 76
           - 76
     note:
-      "//devinfra/claude:conftest (py_library); direct non-generated consumers: //devinfra/claude/claude_api/hooks:test_hook_output_serialization,
-      //devinfra/claude/claude_api/hooks:test_session_start_serialization, //devinfra/claude/claude_api:test_schema_equivalence,
-      //devinfra/claude/claude_api:test_tool_input_models, //devinfra/claude/hook_daemon/session_start/container_e2e:test_container_e2e,
-      //devinfra/claude/hook_daemon:test_bg_output, //devinfra/claude/hook_daemon:test_ensure_daemon, //devinfra/claude/hook_daemon:test_hook_daemon,
-      +4 more. Verified as test support, fixture data, a harness, stub, conftest, or other test-only helper; mark the target/package
-      testonly if it stays in this shape."
+      "//devinfra/claude:conftest (py_library); direct non-generated consumers:
+      //devinfra/claude/claude_api/hooks:test_hook_output_serialization,
+      //devinfra/claude/claude_api/hooks:test_session_start_serialization,
+      //devinfra/claude/claude_api:test_schema_equivalence, //devinfra/claude/claude_api:test_tool_input_models,
+      //devinfra/claude/hook_daemon/session_start/container_e2e:test_container_e2e,
+      //devinfra/claude/hook_daemon:test_bg_output, //devinfra/claude/hook_daemon:test_ensure_daemon,
+      //devinfra/claude/hook_daemon:test_hook_daemon, +4 more. Verified as test support, fixture data, a harness, stub,
+      conftest, or other test-only helper; mark the target/package testonly if it stays in this shape."
     critic_scopes_expected_to_recall:
       - - devinfra/claude/BUILD.bazel
         - devinfra/claude/claude_api/hooks/BUILD.bazel
@@ -79,12 +85,16 @@ occurrences:
         - - 5
           - 5
     note:
-      "//devinfra/js/debundle/e2e:support (rust_library); direct non-generated consumers: //devinfra/js/debundle/e2e:accepted_spec_runs_under_node_test,
-      //devinfra/js/debundle/e2e:anonymous_statement_test, //devinfra/js/debundle/e2e:at_init_promotion_fndecl_direct_read_test,
-      //devinfra/js/debundle/e2e:at_init_promotion_nested_closure_test, //devinfra/js/debundle/e2e:at_init_promotion_post_await_test,
-      //devinfra/js/debundle/e2e:at_init_s_chain_dataflow_test, //devinfra/js/debundle/e2e:auto_grown_export_alias_collision_test,
-      //devinfra/js/debundle/e2e:chunk_rename_cross_module_test, +29 more. Verified as test support, fixture data, a harness,
-      stub, conftest, or other test-only helper; mark the target/package testonly if it stays in this shape."
+      "//devinfra/js/debundle/e2e:support (rust_library); direct non-generated consumers:
+      //devinfra/js/debundle/e2e:accepted_spec_runs_under_node_test,
+      //devinfra/js/debundle/e2e:anonymous_statement_test,
+      //devinfra/js/debundle/e2e:at_init_promotion_fndecl_direct_read_test,
+      //devinfra/js/debundle/e2e:at_init_promotion_nested_closure_test,
+      //devinfra/js/debundle/e2e:at_init_promotion_post_await_test,
+      //devinfra/js/debundle/e2e:at_init_s_chain_dataflow_test,
+      //devinfra/js/debundle/e2e:auto_grown_export_alias_collision_test,
+      //devinfra/js/debundle/e2e:chunk_rename_cross_module_test, +29 more. Verified as test support, fixture data, a
+      harness, stub, conftest, or other test-only helper; mark the target/package testonly if it stays in this shape."
     critic_scopes_expected_to_recall:
       - - devinfra/js/debundle/e2e/BUILD.bazel
     match_file_restriction:
@@ -95,9 +105,9 @@ occurrences:
         - - 3
           - 3
     note:
-      "//git_commit_ai/testing:git_repo_utils (py_library); direct non-generated consumers: //git_commit_ai:conftest, //git_commit_ai:test_cli.
-      Verified as test support, fixture data, a harness, stub, conftest, or other test-only helper; mark the target/package
-      testonly if it stays in this shape."
+      "//git_commit_ai/testing:git_repo_utils (py_library); direct non-generated consumers: //git_commit_ai:conftest,
+      //git_commit_ai:test_cli. Verified as test support, fixture data, a harness, stub, conftest, or other test-only
+      helper; mark the target/package testonly if it stays in this shape."
     critic_scopes_expected_to_recall:
       - - git_commit_ai/testing/BUILD.bazel
         - git_commit_ai/BUILD.bazel
@@ -109,9 +119,9 @@ occurrences:
         - - 29
           - 29
     note:
-      "//llm/mcp/habitify:testing_models (py_library); direct non-generated consumers: //llm/mcp/habitify:conftest. Verified
-      as test support, fixture data, a harness, stub, conftest, or other test-only helper; mark the target/package testonly
-      if it stays in this shape."
+      "//llm/mcp/habitify:testing_models (py_library); direct non-generated consumers: //llm/mcp/habitify:conftest.
+      Verified as test support, fixture data, a harness, stub, conftest, or other test-only helper; mark the
+      target/package testonly if it stays in this shape."
     critic_scopes_expected_to_recall:
       - - llm/mcp/habitify/BUILD.bazel
     match_file_restriction:
@@ -122,11 +132,13 @@ occurrences:
         - - 189
           - 189
     note:
-      "//mcp_infra/exec:matchers (py_library); direct non-generated consumers: //editor_agent/host:test_editor_e2e_steps,
-      //props/agents/critic:test_e2e, //props/agents/critic_dev/improve:test_e2e, //props/agents/critic_dev/optimize:test_e2e,
-      //props/agents/critic_dev/recipes:test_build_critic_e2e, //props/agents/critic_dev/recipes:test_recipes, //props/agents/critic_dev/testing:mocks,
-      //props/agents/critic_dev:test_e2e. Verified as test support, fixture data, a harness, stub, conftest, or other test-only
-      helper; mark the target/package testonly if it stays in this shape."
+      "//mcp_infra/exec:matchers (py_library); direct non-generated consumers:
+      //editor_agent/host:test_editor_e2e_steps, //props/agents/critic:test_e2e,
+      //props/agents/critic_dev/improve:test_e2e, //props/agents/critic_dev/optimize:test_e2e,
+      //props/agents/critic_dev/recipes:test_build_critic_e2e, //props/agents/critic_dev/recipes:test_recipes,
+      //props/agents/critic_dev/testing:mocks, //props/agents/critic_dev:test_e2e. Verified as test support, fixture
+      data, a harness, stub, conftest, or other test-only helper; mark the target/package testonly if it stays in this
+      shape."
     critic_scopes_expected_to_recall:
       - - mcp_infra/exec/BUILD.bazel
         - editor_agent/host/BUILD.bazel
@@ -144,9 +156,9 @@ occurrences:
         - - 17
           - 17
     note:
-      "//mcp_infra/testing:exec_stubs (py_library); direct non-generated consumers: //mcp_infra/exec:test_bwrap, //mcp_infra/exec:test_direct,
-      //mcp_infra/exec:test_seatbelt. Verified as test support, fixture data, a harness, stub, conftest, or other test-only
-      helper; mark the target/package testonly if it stays in this shape."
+      "//mcp_infra/testing:exec_stubs (py_library); direct non-generated consumers: //mcp_infra/exec:test_bwrap,
+      //mcp_infra/exec:test_direct, //mcp_infra/exec:test_seatbelt. Verified as test support, fixture data, a harness,
+      stub, conftest, or other test-only helper; mark the target/package testonly if it stays in this shape."
     critic_scopes_expected_to_recall:
       - - mcp_infra/testing/BUILD.bazel
         - mcp_infra/exec/BUILD.bazel
@@ -158,11 +170,12 @@ occurrences:
         - - 30
           - 30
     note:
-      "//mcp_infra/testing:fixtures (py_library); direct non-generated consumers: //agent_core:conftest, //editor_agent/host:conftest,
-      //git_commit_ai/git_ro:conftest, //git_commit_ai:conftest, //mcp_infra/compositor:conftest, //mcp_infra/compositor:test_admin,
-      //mcp_infra/compositor:test_inproc_server_storage, //mcp_infra/compositor:test_lifecycle, +10 more. Verified as test support,
-      fixture data, a harness, stub, conftest, or other test-only helper; mark the target/package testonly if it stays in this
-      shape."
+      "//mcp_infra/testing:fixtures (py_library); direct non-generated consumers: //agent_core:conftest,
+      //editor_agent/host:conftest, //git_commit_ai/git_ro:conftest, //git_commit_ai:conftest,
+      //mcp_infra/compositor:conftest, //mcp_infra/compositor:test_admin,
+      //mcp_infra/compositor:test_inproc_server_storage, //mcp_infra/compositor:test_lifecycle, +10 more. Verified as
+      test support, fixture data, a harness, stub, conftest, or other test-only helper; mark the target/package testonly
+      if it stays in this shape."
     critic_scopes_expected_to_recall:
       - - mcp_infra/testing/BUILD.bazel
         - agent_core/BUILD.bazel
@@ -184,10 +197,11 @@ occurrences:
         - - 54
           - 54
     note:
-      "//mcp_infra/testing:notifications (py_library); direct non-generated consumers: //mcp_infra/resources:test_list_resources_null_filters,
-      //mcp_infra/resources:test_subscribe, //mcp_infra/testing:fixtures, //x/agent_server/mcp/chat:test_server, //x/agent_server/mcp:test_notifications_envelope.
-      Verified as test support, fixture data, a harness, stub, conftest, or other test-only helper; mark the target/package
-      testonly if it stays in this shape."
+      "//mcp_infra/testing:notifications (py_library); direct non-generated consumers:
+      //mcp_infra/resources:test_list_resources_null_filters, //mcp_infra/resources:test_subscribe,
+      //mcp_infra/testing:fixtures, //x/agent_server/mcp/chat:test_server,
+      //x/agent_server/mcp:test_notifications_envelope. Verified as test support, fixture data, a harness, stub,
+      conftest, or other test-only helper; mark the target/package testonly if it stays in this shape."
     critic_scopes_expected_to_recall:
       - - mcp_infra/testing/BUILD.bazel
         - mcp_infra/resources/BUILD.bazel
@@ -201,11 +215,12 @@ occurrences:
         - - 44
           - 44
     note:
-      "//mcp_infra:_markers (py_library); direct non-generated consumers: //mcp_infra/exec:test_seatbelt, //mcp_infra/seatbelt:conftest,
-      //mcp_infra/seatbelt:test_allow_all, //mcp_infra/seatbelt:test_allow_root_deny_users, //mcp_infra/seatbelt:test_basic_env_and_python,
-      //mcp_infra/seatbelt:test_compile_allow_all, //mcp_infra/seatbelt:test_default_deny_validate_and_abort, //mcp_infra/seatbelt:test_default_deny_widening,
-      +6 more. Verified as test support, fixture data, a harness, stub, conftest, or other test-only helper; mark the target/package
-      testonly if it stays in this shape."
+      "//mcp_infra:_markers (py_library); direct non-generated consumers: //mcp_infra/exec:test_seatbelt,
+      //mcp_infra/seatbelt:conftest, //mcp_infra/seatbelt:test_allow_all,
+      //mcp_infra/seatbelt:test_allow_root_deny_users, //mcp_infra/seatbelt:test_basic_env_and_python,
+      //mcp_infra/seatbelt:test_compile_allow_all, //mcp_infra/seatbelt:test_default_deny_validate_and_abort,
+      //mcp_infra/seatbelt:test_default_deny_widening, +6 more. Verified as test support, fixture data, a harness, stub,
+      conftest, or other test-only helper; mark the target/package testonly if it stays in this shape."
     critic_scopes_expected_to_recall:
       - - mcp_infra/BUILD.bazel
         - mcp_infra/exec/BUILD.bazel
@@ -218,10 +233,10 @@ occurrences:
         - - 17
           - 17
     note:
-      "//openai_utils/testing:openai_mock (py_library); direct non-generated consumers: //agent_core:conftest, //agent_core:test_message_processing,
-      //agent_core:test_tool_execution, //props/testing/fixtures:e2e, //x/agent_server/e2e:test_abort, //x/agent_server/notifications:test_flow.
-      Verified as test support, fixture data, a harness, stub, conftest, or other test-only helper; mark the target/package
-      testonly if it stays in this shape."
+      "//openai_utils/testing:openai_mock (py_library); direct non-generated consumers: //agent_core:conftest,
+      //agent_core:test_message_processing, //agent_core:test_tool_execution, //props/testing/fixtures:e2e,
+      //x/agent_server/e2e:test_abort, //x/agent_server/notifications:test_flow. Verified as test support, fixture data,
+      a harness, stub, conftest, or other test-only helper; mark the target/package testonly if it stays in this shape."
     critic_scopes_expected_to_recall:
       - - openai_utils/testing/BUILD.bazel
         - agent_core/BUILD.bazel
@@ -236,9 +251,9 @@ occurrences:
         - - 27
           - 27
     note:
-      "//openai_utils/testing:strict_mode_models (py_library); direct non-generated consumers: //openai_utils:test_pydantic_strict_mode_lib.
-      Verified as test support, fixture data, a harness, stub, conftest, or other test-only helper; mark the target/package
-      testonly if it stays in this shape."
+      "//openai_utils/testing:strict_mode_models (py_library); direct non-generated consumers:
+      //openai_utils:test_pydantic_strict_mode_lib. Verified as test support, fixture data, a harness, stub, conftest,
+      or other test-only helper; mark the target/package testonly if it stays in this shape."
     critic_scopes_expected_to_recall:
       - - openai_utils/testing/BUILD.bazel
         - openai_utils/BUILD.bazel
@@ -250,12 +265,16 @@ occurrences:
         - - 168
           - 168
     note:
-      "//props/frontend:harness_js (filegroup); direct non-generated consumers: //props/frontend/src/components/stats:visual_CoverageHeatmap,
-      //props/frontend/src/components/stats:visual_DistributionChartRecall, //props/frontend/src/components/stats:visual_DistributionChartTP,
-      //props/frontend/src/components/stats:visual_OccurrenceStatsTable, //props/frontend/src/components:visual_DefinitionDetail,
-      //props/frontend/src/components:visual_FileViewerAnnotated, //props/frontend/src/components:visual_FileViewerGroundTruth,
-      //props/frontend/src/components:visual_LLMRequests, +4 more. Verified as test support, fixture data, a harness, stub,
-      conftest, or other test-only helper; mark the target/package testonly if it stays in this shape."
+      "//props/frontend:harness_js (filegroup); direct non-generated consumers:
+      //props/frontend/src/components/stats:visual_CoverageHeatmap,
+      //props/frontend/src/components/stats:visual_DistributionChartRecall,
+      //props/frontend/src/components/stats:visual_DistributionChartTP,
+      //props/frontend/src/components/stats:visual_OccurrenceStatsTable,
+      //props/frontend/src/components:visual_DefinitionDetail,
+      //props/frontend/src/components:visual_FileViewerAnnotated,
+      //props/frontend/src/components:visual_FileViewerGroundTruth, //props/frontend/src/components:visual_LLMRequests,
+      +4 more. Verified as test support, fixture data, a harness, stub, conftest, or other test-only helper; mark the
+      target/package testonly if it stays in this shape."
     critic_scopes_expected_to_recall:
       - - props/frontend/BUILD.bazel
         - props/frontend/src/components/stats/BUILD.bazel
@@ -269,12 +288,16 @@ occurrences:
         - - 194
           - 194
     note:
-      "//props/frontend:visual_test_assets (filegroup); direct non-generated consumers: //props/frontend/src/components/stats:visual_CoverageHeatmap,
-      //props/frontend/src/components/stats:visual_DistributionChartRecall, //props/frontend/src/components/stats:visual_DistributionChartTP,
-      //props/frontend/src/components/stats:visual_OccurrenceStatsTable, //props/frontend/src/components:visual_DefinitionDetail,
-      //props/frontend/src/components:visual_FileViewerAnnotated, //props/frontend/src/components:visual_FileViewerGroundTruth,
-      //props/frontend/src/components:visual_LLMRequests, +4 more. Verified as test support, fixture data, a harness, stub,
-      conftest, or other test-only helper; mark the target/package testonly if it stays in this shape."
+      "//props/frontend:visual_test_assets (filegroup); direct non-generated consumers:
+      //props/frontend/src/components/stats:visual_CoverageHeatmap,
+      //props/frontend/src/components/stats:visual_DistributionChartRecall,
+      //props/frontend/src/components/stats:visual_DistributionChartTP,
+      //props/frontend/src/components/stats:visual_OccurrenceStatsTable,
+      //props/frontend/src/components:visual_DefinitionDetail,
+      //props/frontend/src/components:visual_FileViewerAnnotated,
+      //props/frontend/src/components:visual_FileViewerGroundTruth, //props/frontend/src/components:visual_LLMRequests,
+      +4 more. Verified as test support, fixture data, a harness, stub, conftest, or other test-only helper; mark the
+      target/package testonly if it stays in this shape."
     critic_scopes_expected_to_recall:
       - - props/frontend/BUILD.bazel
         - props/frontend/src/components/stats/BUILD.bazel
@@ -288,9 +311,9 @@ occurrences:
         - - 19
           - 19
     note:
-      "//skills/cpap/examples:generate_test_edf (py_library); direct non-generated consumers: //skills/cpap:test_parse_str_edf.
-      Verified as test support, fixture data, a harness, stub, conftest, or other test-only helper; mark the target/package
-      testonly if it stays in this shape."
+      "//skills/cpap/examples:generate_test_edf (py_library); direct non-generated consumers:
+      //skills/cpap:test_parse_str_edf. Verified as test support, fixture data, a harness, stub, conftest, or other
+      test-only helper; mark the target/package testonly if it stays in this shape."
     critic_scopes_expected_to_recall:
       - - skills/cpap/examples/BUILD.bazel
         - skills/cpap/BUILD.bazel
@@ -302,10 +325,13 @@ occurrences:
         - - 22
           - 22
     note:
-      "//skills/info_gathering/evals/twenty_questions/x/shared:conftest (py_library); direct non-generated consumers: //skills/info_gathering/evals/twenty_questions/x/agent_framework:test_twenty_questions,
-      //skills/info_gathering/evals/twenty_questions/x/langgraph:test_twenty_questions, //skills/info_gathering/evals/twenty_questions/x/openai_agents:test_twenty_questions,
-      //skills/info_gathering/evals/twenty_questions/x/pydantic_ai:test_twenty_questions. Verified as test support, fixture
-      data, a harness, stub, conftest, or other test-only helper; mark the target/package testonly if it stays in this shape."
+      "//skills/info_gathering/evals/twenty_questions/x/shared:conftest (py_library); direct non-generated consumers:
+      //skills/info_gathering/evals/twenty_questions/x/agent_framework:test_twenty_questions,
+      //skills/info_gathering/evals/twenty_questions/x/langgraph:test_twenty_questions,
+      //skills/info_gathering/evals/twenty_questions/x/openai_agents:test_twenty_questions,
+      //skills/info_gathering/evals/twenty_questions/x/pydantic_ai:test_twenty_questions. Verified as test support,
+      fixture data, a harness, stub, conftest, or other test-only helper; mark the target/package testonly if it stays
+      in this shape."
     critic_scopes_expected_to_recall:
       - - skills/info_gathering/evals/twenty_questions/x/shared/BUILD.bazel
         - skills/info_gathering/evals/twenty_questions/x/agent_framework/BUILD.bazel
@@ -320,9 +346,11 @@ occurrences:
         - - 27
           - 27
     note:
-      "//skills/info_gathering/evals:replay_client (py_library); direct non-generated consumers: //skills/info_gathering/evals/function_learning:test_function_learning,
-      //skills/info_gathering/evals/twenty_questions/x/agent_framework:test_twenty_questions. Verified as test support, fixture
-      data, a harness, stub, conftest, or other test-only helper; mark the target/package testonly if it stays in this shape."
+      "//skills/info_gathering/evals:replay_client (py_library); direct non-generated consumers:
+      //skills/info_gathering/evals/function_learning:test_function_learning,
+      //skills/info_gathering/evals/twenty_questions/x/agent_framework:test_twenty_questions. Verified as test support,
+      fixture data, a harness, stub, conftest, or other test-only helper; mark the target/package testonly if it stays
+      in this shape."
     critic_scopes_expected_to_recall:
       - - skills/info_gathering/evals/BUILD.bazel
         - skills/info_gathering/evals/function_learning/BUILD.bazel
@@ -335,12 +363,16 @@ occurrences:
         - - 64
           - 64
     note:
-      "//skills:skill_frontmatter_test_lib (py_library); direct non-generated consumers: //devinfra/js/debundle/skills/debundle_architect:debundle_architect_frontmatter_test,
-      //devinfra/js/debundle/skills/debundle_intake:debundle_intake_frontmatter_test, //devinfra/js/debundle/skills/debundle_integrator:debundle_integrator_frontmatter_test,
-      //devinfra/js/debundle/skills/debundle_lane_worker:debundle_lane_worker_frontmatter_test, //devinfra/js/debundle/skills/debundle_mint_names:debundle_mint_names_frontmatter_test,
-      //devinfra/js/debundle/skills/debundle_orchestrator:debundle_orchestrator_frontmatter_test, //devinfra/js/debundle/skills/debundle_plan_work:debundle_plan_work_frontmatter_test,
-      //skills/backtrace:backtrace_frontmatter_test, +25 more. Verified as test support, fixture data, a harness, stub, conftest,
-      or other test-only helper; mark the target/package testonly if it stays in this shape."
+      "//skills:skill_frontmatter_test_lib (py_library); direct non-generated consumers:
+      //devinfra/js/debundle/skills/debundle_architect:debundle_architect_frontmatter_test,
+      //devinfra/js/debundle/skills/debundle_intake:debundle_intake_frontmatter_test,
+      //devinfra/js/debundle/skills/debundle_integrator:debundle_integrator_frontmatter_test,
+      //devinfra/js/debundle/skills/debundle_lane_worker:debundle_lane_worker_frontmatter_test,
+      //devinfra/js/debundle/skills/debundle_mint_names:debundle_mint_names_frontmatter_test,
+      //devinfra/js/debundle/skills/debundle_orchestrator:debundle_orchestrator_frontmatter_test,
+      //devinfra/js/debundle/skills/debundle_plan_work:debundle_plan_work_frontmatter_test,
+      //skills/backtrace:backtrace_frontmatter_test, +25 more. Verified as test support, fixture data, a harness, stub,
+      conftest, or other test-only helper; mark the target/package testonly if it stays in this shape."
     critic_scopes_expected_to_recall:
       - - skills/BUILD.bazel
         - devinfra/js/debundle/skills/debundle_architect/BUILD.bazel
@@ -371,11 +403,13 @@ occurrences:
         - - 36
           - 36
     note:
-      "//util/testing/frontend_visual:fonts (filegroup); direct non-generated consumers: //airlock/frontend:visual_BackendsPage,
-      //airlock/frontend:visual_BackendsPage_dark, //airlock/frontend:visual_BackendsPage_mobile, //airlock/frontend:visual_BackendsPage_mobile_dark,
-      //airlock/frontend:visual_DetailPage, //airlock/frontend:visual_DetailPage_dark, //airlock/frontend:visual_DetailPage_mobile,
-      //airlock/frontend:visual_DetailPage_mobile_dark, +21 more. Verified as test support, fixture data, a harness, stub, conftest,
-      or other test-only helper; mark the target/package testonly if it stays in this shape."
+      "//util/testing/frontend_visual:fonts (filegroup); direct non-generated consumers:
+      //airlock/frontend:visual_BackendsPage, //airlock/frontend:visual_BackendsPage_dark,
+      //airlock/frontend:visual_BackendsPage_mobile, //airlock/frontend:visual_BackendsPage_mobile_dark,
+      //airlock/frontend:visual_DetailPage, //airlock/frontend:visual_DetailPage_dark,
+      //airlock/frontend:visual_DetailPage_mobile, //airlock/frontend:visual_DetailPage_mobile_dark, +21 more. Verified
+      as test support, fixture data, a harness, stub, conftest, or other test-only helper; mark the target/package
+      testonly if it stays in this shape."
     critic_scopes_expected_to_recall:
       - - util/testing/frontend_visual/BUILD.bazel
         - airlock/frontend/BUILD.bazel
@@ -391,11 +425,13 @@ occurrences:
         - - 52
           - 52
     note:
-      "//util/testing/frontend_visual:fonts_conf (filegroup); direct non-generated consumers: //airlock/frontend:visual_BackendsPage,
-      //airlock/frontend:visual_BackendsPage_dark, //airlock/frontend:visual_BackendsPage_mobile, //airlock/frontend:visual_BackendsPage_mobile_dark,
-      //airlock/frontend:visual_DetailPage, //airlock/frontend:visual_DetailPage_dark, //airlock/frontend:visual_DetailPage_mobile,
-      //airlock/frontend:visual_DetailPage_mobile_dark, +22 more. Verified as test support, fixture data, a harness, stub, conftest,
-      or other test-only helper; mark the target/package testonly if it stays in this shape."
+      "//util/testing/frontend_visual:fonts_conf (filegroup); direct non-generated consumers:
+      //airlock/frontend:visual_BackendsPage, //airlock/frontend:visual_BackendsPage_dark,
+      //airlock/frontend:visual_BackendsPage_mobile, //airlock/frontend:visual_BackendsPage_mobile_dark,
+      //airlock/frontend:visual_DetailPage, //airlock/frontend:visual_DetailPage_dark,
+      //airlock/frontend:visual_DetailPage_mobile, //airlock/frontend:visual_DetailPage_mobile_dark, +22 more. Verified
+      as test support, fixture data, a harness, stub, conftest, or other test-only helper; mark the target/package
+      testonly if it stays in this shape."
     critic_scopes_expected_to_recall:
       - - util/testing/frontend_visual/BUILD.bazel
         - airlock/frontend/BUILD.bazel
@@ -412,11 +448,13 @@ occurrences:
         - - 8
           - 8
     note:
-      "//util/testing/frontend_visual:visual_test_lib (js_library); direct non-generated consumers: //airlock/frontend:visual_BackendsPage,
-      //airlock/frontend:visual_BackendsPage_dark, //airlock/frontend:visual_BackendsPage_mobile, //airlock/frontend:visual_BackendsPage_mobile_dark,
-      //airlock/frontend:visual_DetailPage, //airlock/frontend:visual_DetailPage_dark, //airlock/frontend:visual_DetailPage_mobile,
-      //airlock/frontend:visual_DetailPage_mobile_dark, +21 more. Verified as test support, fixture data, a harness, stub, conftest,
-      or other test-only helper; mark the target/package testonly if it stays in this shape."
+      "//util/testing/frontend_visual:visual_test_lib (js_library); direct non-generated consumers:
+      //airlock/frontend:visual_BackendsPage, //airlock/frontend:visual_BackendsPage_dark,
+      //airlock/frontend:visual_BackendsPage_mobile, //airlock/frontend:visual_BackendsPage_mobile_dark,
+      //airlock/frontend:visual_DetailPage, //airlock/frontend:visual_DetailPage_dark,
+      //airlock/frontend:visual_DetailPage_mobile, //airlock/frontend:visual_DetailPage_mobile_dark, +21 more. Verified
+      as test support, fixture data, a harness, stub, conftest, or other test-only helper; mark the target/package
+      testonly if it stays in this shape."
     critic_scopes_expected_to_recall:
       - - util/testing/frontend_visual/BUILD.bazel
         - airlock/frontend/BUILD.bazel
@@ -432,10 +470,10 @@ occurrences:
         - - 5
           - 5
     note:
-      "//wt/testing:asserts (py_library); direct non-generated consumers: //wt/client:test_cli_click_integration, //wt/e2e:test_status_output,
-      //wt/integration:test_integration_cli_daemon, //wt/integration:test_integration_cli_output_format. Verified as test support,
-      fixture data, a harness, stub, conftest, or other test-only helper; mark the target/package testonly if it stays in this
-      shape."
+      "//wt/testing:asserts (py_library); direct non-generated consumers: //wt/client:test_cli_click_integration,
+      //wt/e2e:test_status_output, //wt/integration:test_integration_cli_daemon,
+      //wt/integration:test_integration_cli_output_format. Verified as test support, fixture data, a harness, stub,
+      conftest, or other test-only helper; mark the target/package testonly if it stays in this shape."
     critic_scopes_expected_to_recall:
       - - wt/testing/BUILD.bazel
         - wt/client/BUILD.bazel
@@ -450,8 +488,8 @@ occurrences:
           - 11
     note:
       "//wt/testing:config_factory (py_library); direct non-generated consumers: //wt/testing:conftest. Verified as test
-      support, fixture data, a harness, stub, conftest, or other test-only helper; mark the target/package testonly if it stays
-      in this shape."
+      support, fixture data, a harness, stub, conftest, or other test-only helper; mark the target/package testonly if
+      it stays in this shape."
     critic_scopes_expected_to_recall:
       - - wt/testing/BUILD.bazel
     match_file_restriction:
@@ -462,10 +500,10 @@ occurrences:
         - - 22
           - 22
     note:
-      "//wt/testing:data (py_library); direct non-generated consumers: //wt/e2e:test_path_watcher_integration, //wt/testing:config_factory,
-      //wt/testing:conftest, //wt/testing:git_helpers, //wt/testing:mock_factory, //wt/testing:repo_factory. Verified as test
-      support, fixture data, a harness, stub, conftest, or other test-only helper; mark the target/package testonly if it stays
-      in this shape."
+      "//wt/testing:data (py_library); direct non-generated consumers: //wt/e2e:test_path_watcher_integration,
+      //wt/testing:config_factory, //wt/testing:conftest, //wt/testing:git_helpers, //wt/testing:mock_factory,
+      //wt/testing:repo_factory. Verified as test support, fixture data, a harness, stub, conftest, or other test-only
+      helper; mark the target/package testonly if it stays in this shape."
     critic_scopes_expected_to_recall:
       - - wt/testing/BUILD.bazel
         - wt/e2e/BUILD.bazel
@@ -477,10 +515,10 @@ occurrences:
         - - 28
           - 28
     note:
-      "//wt/testing:git_helpers (py_library); direct non-generated consumers: //wt/e2e:test_copy_dirty_state, //wt/e2e:test_path_watcher_integration,
-      //wt/e2e:test_real_integration, //wt/e2e:test_real_workflow, //wt/e2e:test_status_dynamic_index, //wt/e2e:test_worktree_branches.
-      Verified as test support, fixture data, a harness, stub, conftest, or other test-only helper; mark the target/package
-      testonly if it stays in this shape."
+      "//wt/testing:git_helpers (py_library); direct non-generated consumers: //wt/e2e:test_copy_dirty_state,
+      //wt/e2e:test_path_watcher_integration, //wt/e2e:test_real_integration, //wt/e2e:test_real_workflow,
+      //wt/e2e:test_status_dynamic_index, //wt/e2e:test_worktree_branches. Verified as test support, fixture data, a
+      harness, stub, conftest, or other test-only helper; mark the target/package testonly if it stays in this shape."
     critic_scopes_expected_to_recall:
       - - wt/testing/BUILD.bazel
         - wt/e2e/BUILD.bazel
@@ -492,9 +530,9 @@ occurrences:
         - - 37
           - 37
     note:
-      "//wt/testing:mock_factory (py_library); direct non-generated consumers: //wt/testing:conftest. Verified as test support,
-      fixture data, a harness, stub, conftest, or other test-only helper; mark the target/package testonly if it stays in this
-      shape."
+      "//wt/testing:mock_factory (py_library); direct non-generated consumers: //wt/testing:conftest. Verified as test
+      support, fixture data, a harness, stub, conftest, or other test-only helper; mark the target/package testonly if
+      it stays in this shape."
     critic_scopes_expected_to_recall:
       - - wt/testing/BUILD.bazel
     match_file_restriction:
@@ -505,9 +543,9 @@ occurrences:
         - - 51
           - 51
     note:
-      "//wt/testing:repo_factory (py_library); direct non-generated consumers: //wt/testing:conftest. Verified as test support,
-      fixture data, a harness, stub, conftest, or other test-only helper; mark the target/package testonly if it stays in this
-      shape."
+      "//wt/testing:repo_factory (py_library); direct non-generated consumers: //wt/testing:conftest. Verified as test
+      support, fixture data, a harness, stub, conftest, or other test-only helper; mark the target/package testonly if
+      it stays in this shape."
     critic_scopes_expected_to_recall:
       - - wt/testing/BUILD.bazel
     match_file_restriction:
@@ -518,10 +556,11 @@ occurrences:
         - - 60
           - 60
     note:
-      "//wt/testing:utils (py_library); direct non-generated consumers: //wt/e2e:test_github_pr_display_real, //wt/e2e:test_path_watcher_integration,
-      //wt/e2e:test_real_integration, //wt/e2e:test_real_workflow, //wt/e2e:test_status_dynamic_index, //wt/e2e:test_status_output,
-      //wt/testing:conftest. Verified as test support, fixture data, a harness, stub, conftest, or other test-only helper; mark
-      the target/package testonly if it stays in this shape."
+      "//wt/testing:utils (py_library); direct non-generated consumers: //wt/e2e:test_github_pr_display_real,
+      //wt/e2e:test_path_watcher_integration, //wt/e2e:test_real_integration, //wt/e2e:test_real_workflow,
+      //wt/e2e:test_status_dynamic_index, //wt/e2e:test_status_output, //wt/testing:conftest. Verified as test support,
+      fixture data, a harness, stub, conftest, or other test-only helper; mark the target/package testonly if it stays
+      in this shape."
     critic_scopes_expected_to_recall:
       - - wt/testing/BUILD.bazel
         - wt/e2e/BUILD.bazel
@@ -533,9 +572,9 @@ occurrences:
         - - 7
           - 7
     note:
-      "//x/agent_server/policies:approve_all (py_library); direct non-generated consumers: //x/agent_server:conftest. Verified
-      as an agent-server policy fixture currently used only by tests; mark it testonly and consider moving policy files under
-      testdata/ or a testing package."
+      "//x/agent_server/policies:approve_all (py_library); direct non-generated consumers: //x/agent_server:conftest.
+      Verified as an agent-server policy fixture currently used only by tests; mark it testonly and consider moving
+      policy files under testdata/ or a testing package."
     critic_scopes_expected_to_recall:
       - - x/agent_server/policies/BUILD.bazel
         - x/agent_server/BUILD.bazel
@@ -547,9 +586,9 @@ occurrences:
         - - 29
           - 29
     note:
-      "//x/agent_server/policies:loader (py_library); direct non-generated consumers: //x/agent_server:conftest. Verified
-      as the test-only policy loader for those fixtures; mark it testonly and consider moving policy files under testdata/ or
-      a testing package."
+      "//x/agent_server/policies:loader (py_library); direct non-generated consumers: //x/agent_server:conftest.
+      Verified as the test-only policy loader for those fixtures; mark it testonly and consider moving policy files
+      under testdata/ or a testing package."
     critic_scopes_expected_to_recall:
       - - x/agent_server/policies/BUILD.bazel
         - x/agent_server/BUILD.bazel
@@ -561,9 +600,9 @@ occurrences:
         - - 252
           - 252
     note:
-      "//x/auragon_study_casino/frontend:visual_harness_js (filegroup); direct non-generated consumers: //x/auragon_study_casino/frontend:visual_main_page.
-      Verified as test support, fixture data, a harness, stub, conftest, or other test-only helper; mark the target/package
-      testonly if it stays in this shape."
+      "//x/auragon_study_casino/frontend:visual_harness_js (filegroup); direct non-generated consumers:
+      //x/auragon_study_casino/frontend:visual_main_page. Verified as test support, fixture data, a harness, stub,
+      conftest, or other test-only helper; mark the target/package testonly if it stays in this shape."
     critic_scopes_expected_to_recall:
       - - x/auragon_study_casino/frontend/BUILD.bazel
     match_file_restriction:
@@ -574,11 +613,13 @@ occurrences:
         - - 29
           - 29
     note:
-      "//x/claude_linter_v2:conftest (py_library); direct non-generated consumers: //x/claude_linter_v2:test_diff_intelligence,
-      //x/claude_linter_v2:test_diff_intelligence_edge_cases, //x/claude_linter_v2:test_integration, //x/claude_linter_v2:test_mcp_tools,
-      //x/claude_linter_v2:test_modular_config, //x/claude_linter_v2:test_multiline_predicates, //x/claude_linter_v2:test_stop_hook_fresh_scan,
-      //x/claude_linter_v2:test_stop_hook_quality_gate. Verified as test support, fixture data, a harness, stub, conftest, or
-      other test-only helper; mark the target/package testonly if it stays in this shape."
+      "//x/claude_linter_v2:conftest (py_library); direct non-generated consumers:
+      //x/claude_linter_v2:test_diff_intelligence, //x/claude_linter_v2:test_diff_intelligence_edge_cases,
+      //x/claude_linter_v2:test_integration, //x/claude_linter_v2:test_mcp_tools,
+      //x/claude_linter_v2:test_modular_config, //x/claude_linter_v2:test_multiline_predicates,
+      //x/claude_linter_v2:test_stop_hook_fresh_scan, //x/claude_linter_v2:test_stop_hook_quality_gate. Verified as test
+      support, fixture data, a harness, stub, conftest, or other test-only helper; mark the target/package testonly if
+      it stays in this shape."
     critic_scopes_expected_to_recall:
       - - x/claude_linter_v2/BUILD.bazel
     match_file_restriction:
@@ -589,9 +630,9 @@ occurrences:
         - - 5
           - 5
     note:
-      "//x/gatelet/server/tests:activitywatch_sample (py_library); direct non-generated consumers: //x/gatelet/server/endpoints:test_activitywatch.
-      Verified as test support, fixture data, a harness, stub, conftest, or other test-only helper; mark the target/package
-      testonly if it stays in this shape."
+      "//x/gatelet/server/tests:activitywatch_sample (py_library); direct non-generated consumers:
+      //x/gatelet/server/endpoints:test_activitywatch. Verified as test support, fixture data, a harness, stub,
+      conftest, or other test-only helper; mark the target/package testonly if it stays in this shape."
     critic_scopes_expected_to_recall:
       - - x/gatelet/server/tests/BUILD.bazel
         - x/gatelet/server/endpoints/BUILD.bazel
@@ -603,10 +644,12 @@ occurrences:
         - - 11
           - 11
     note:
-      "//x/gatelet/server/tests:utils (py_library); direct non-generated consumers: //x/gatelet/server/auth:test_key_auth,
-      //x/gatelet/server/endpoints:test_webhook_receive, //x/gatelet/server/endpoints:test_webhook_view, //x/gatelet/server:conftest,
-      //x/gatelet/server:test_report_battery, //x/gatelet/server:test_report_event. Verified as test support, fixture data,
-      a harness, stub, conftest, or other test-only helper; mark the target/package testonly if it stays in this shape."
+      "//x/gatelet/server/tests:utils (py_library); direct non-generated consumers:
+      //x/gatelet/server/auth:test_key_auth, //x/gatelet/server/endpoints:test_webhook_receive,
+      //x/gatelet/server/endpoints:test_webhook_view, //x/gatelet/server:conftest,
+      //x/gatelet/server:test_report_battery, //x/gatelet/server:test_report_event. Verified as test support, fixture
+      data, a harness, stub, conftest, or other test-only helper; mark the target/package testonly if it stays in this
+      shape."
     critic_scopes_expected_to_recall:
       - - x/gatelet/server/tests/BUILD.bazel
         - x/gatelet/server/auth/BUILD.bazel

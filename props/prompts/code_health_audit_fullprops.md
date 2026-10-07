@@ -8,13 +8,18 @@ Goal
 
 How To Work
 
-- Read‑only analysis; do not modify files. You may run read‑only tools (linters, type‑checkers, complexity/duplication scanners) if available, but your judgment must follow the written rules below.
+- Read‑only analysis; do not modify files. You may run read‑only tools (linters, type‑checkers, complexity/duplication
+  scanners) if available, but your judgment must follow the written rules below.
 - Apply properties strictly by their wording. Do not stretch or infer beyond what a definition actually states.
-- Cite precise anchors for evidence (file:line or file:start‑end, 1‑based). For many similar cases, use one short rationale plus a compact list of anchors.
+- Cite precise anchors for evidence (file:line or file:start‑end, 1‑based). For many similar cases, use one short
+  rationale plus a compact list of anchors.
 
 Broader Smells and Structural Anti‑Patterns
 
-- Duplication/drift; excess complexity; least‑power violations; dynamic attribute footguns; swallowing errors; wrong‑direction dependencies; cross‑layer coupling; private reach‑through; brittle exception detection; always‑on heavy deps; protocol leakage; duplicate mechanisms; barrel imports hiding real deps; typing/contract issues; logging/diagnostics gaps; testing gaps.
+- Duplication/drift; excess complexity; least‑power violations; dynamic attribute footguns; swallowing errors;
+  wrong‑direction dependencies; cross‑layer coupling; private reach‑through; brittle exception detection; always‑on
+  heavy deps; protocol leakage; duplicate mechanisms; barrel imports hiding real deps; typing/contract issues;
+  logging/diagnostics gaps; testing gaps.
 
 Deliverables (print exactly these sections)
 
@@ -33,19 +38,25 @@ title: Consistent naming and notation
 kind: outcome
 ---
 
-Adopt one clear naming/notation convention per project (or per package) and apply it uniformly. Avoid mixing file/identifier patterns that describe the same concept with different names or layouts.
+Adopt one clear naming/notation convention per project (or per package) and apply it uniformly. Avoid mixing
+file/identifier patterns that describe the same concept with different names or layouts.
 
 ## Acceptance criteria (checklist)
 
-- Test files follow a single, consistent convention across the project (or per top-level package), e.g., `pkg/test_foo.py` (preferred) or `pkg/foo_test.py`; do not mix patterns within the same scope.
+- Test files follow a single, consistent convention across the project (or per top-level package), e.g.,
+  `pkg/test_foo.py` (preferred) or `pkg/foo_test.py`; do not mix patterns within the same scope.
 - Choose one test location strategy and stick to it for a given project/package:
   - Co-located: `src/<pkg>/tests/test_*.py`
-  - Central: `tests/<pkg>/test_*.py`
-    Mixing both within the same project/package is a violation.
-- Directory placement is consistent: keep related tests together under their package/module (e.g., `my_service/test_*.py`, `other_service/test_*.py`), not scattered across differently named paths.
-- File names use one tokenization scheme consistently (e.g., underscores, no intermix of custom affixes/orderings like `test_pkg_run_bar.py` vs `test_pkg_baz.py`).
-- Avoid parallel synonyms for the same concept in names (e.g., `interface` vs `protocol` vs `facade`) unless distinctions are intentional and documented; prefer one obvious name. See also: [Renames must pay rent](./no-random-renames.md).
-- Exceptions (legacy pockets, third‑party layout) must be isolated and documented in a short comment or contributing guide; new files conform to the chosen convention.
+  - Central: `tests/<pkg>/test_*.py` Mixing both within the same project/package is a violation.
+- Directory placement is consistent: keep related tests together under their package/module (e.g.,
+  `my_service/test_*.py`, `other_service/test_*.py`), not scattered across differently named paths.
+- File names use one tokenization scheme consistently (e.g., underscores, no intermix of custom affixes/orderings like
+  `test_pkg_run_bar.py` vs `test_pkg_baz.py`).
+- Avoid parallel synonyms for the same concept in names (e.g., `interface` vs `protocol` vs `facade`) unless
+  distinctions are intentional and documented; prefer one obvious name. See also:
+  [Renames must pay rent](./no-random-renames.md).
+- Exceptions (legacy pockets, third‑party layout) must be isolated and documented in a short comment or contributing
+  guide; new files conform to the chosen convention.
 
 ## Positive examples
 
@@ -110,7 +121,8 @@ tests/foo/test_baz.py   # ❌ mixed conventions
 
 - Pick one convention per project; consider documenting it in CONTRIBUTING.md; use linters/review to keep it consistent.
 - Consistency reduces cognitive load and speeds navigation/grep.
-- Related properties: [Renames must pay rent](./no-random-renames.md), [Self‑describing names](./self-describing-names.md).
+- Related properties: [Renames must pay rent](./no-random-renames.md),
+  [Self‑describing names](./self-describing-names.md).
 
 ````
 
@@ -303,12 +315,15 @@ position = position + step  # *boom* - nothing prevents unit logic error
 
 ## Exceptions
 
-- Protocol/file format boundaries that mandate specific units (for example, Fahrenheit, centimeters) may use those units at the edge; convert immediately to canonical units internally
-- Short-lived locals immediately involved in a conversion expression may omit suffixes when unit is obvious and enforced by surrounding typed context
+- Protocol/file format boundaries that mandate specific units (for example, Fahrenheit, centimeters) may use those units
+  at the edge; convert immediately to canonical units internally
+- Short-lived locals immediately involved in a conversion expression may omit suffixes when unit is obvious and enforced
+  by surrounding typed context
 
 ## Guidance
 
-- Prefer SI base units internally (meters, seconds, kilograms, celsius/kelvin) and well-known derived units where conventional (m/s)
+- Prefer SI base units internally (meters, seconds, kilograms, celsius/kelvin) and well-known derived units where
+  conventional (m/s)
 - Centralize conversions behind helpers to avoid copy/paste and drift
 - If dealing with many physical quantities, adopt a unit library (for example, Pint) to make unit errors unrepresentable
 
@@ -396,8 +411,10 @@ if elapsedSec > timeoutSec { /* ... */ }
 
 ## Exceptions
 
-- Interfacing with protocols/DBs that represent time numerically is allowed at boundaries; convert immediately to internal rich types
-- Performance‑critical tight loops may use numerics when justified and documented; conversions must stay localized and lossless for the use case
+- Interfacing with protocols/DBs that represent time numerically is allowed at boundaries; convert immediately to
+  internal rich types
+- Performance‑critical tight loops may use numerics when justified and documented; conversions must stay localized and
+  lossless for the use case
 
 ````
 
@@ -666,8 +683,11 @@ fd = os.open("out.txt", os.O_WRONLY | os.O_CREAT)  # ❌ prefer Path("out.txt").
 
 ## Notes
 
-- Principle of least power: pick the simplest construct that expresses intent safely; only escalate when there’s a clear, documented need.
-- Scope: this property targets patterns that increase risk (silent failures, implicit behavior, needless power) when safer alternatives exist. Pure style modernizations (e.g., using `A | B` over `Union[A, B]`) live under [Modern Python idioms](./modern-python-idioms.md) and are not “sus” on their own.
+- Principle of least power: pick the simplest construct that expresses intent safely; only escalate when there’s a
+  clear, documented need.
+- Scope: this property targets patterns that increase risk (silent failures, implicit behavior, needless power) when
+  safer alternatives exist. Pure style modernizations (e.g., using `A | B` over `Union[A, B]`) live under
+  [Modern Python idioms](./modern-python-idioms.md) and are not “sus” on their own.
 - These are heuristics; exceptions exist, but require a short inline rationale.
 - Related properties: see cross‑links above for exact rules and exceptions.
 
@@ -728,10 +748,8 @@ grep -R "pattern" src/ | wc -l
 ## Negative examples (plaintext tokens, missing links)
 
 ```markdown
-Run some-script.sh with --dry-run=true.
-The FooClass exposes foo_method(...) in src/svc/main.py.
-Logs are archived to gs://my-bucket/logs/2025-08-27/.
-See https://example.com/docs/tooling for details.
+Run some-script.sh with --dry-run=true. The FooClass exposes foo_method(...) in src/svc/main.py. Logs are archived to
+gs://my-bucket/logs/2025-08-27/. See https://example.com/docs/tooling for details.
 ```
 
 ### Dunder/underscore pitfalls
@@ -947,8 +965,8 @@ def handle(x: Bar | Baz | Quux) -> str:
 
 ## Exceptions
 
-- Intentional extension points (plugin hooks, abstract interfaces) may appear unused locally but must be referenced by a registry, entry‑points, or configuration.
-  Keep a short comment or link to the registry proving reachability:
+- Intentional extension points (plugin hooks, abstract interfaces) may appear unused locally but must be referenced by a
+  registry, entry‑points, or configuration. Keep a short comment or link to the registry proving reachability:
 
   ```python
   def plugin_has_no_references_in_python():
@@ -966,8 +984,8 @@ def handle(x: Bar | Baz | Quux) -> str:
 
 ## Guidance
 
-- Use local reasoning and established invariants. If a branch is obviously unreachable, delete it.
-  When unsure, search references, check feature flags/config, and document the invariant you rely on.
+- Use local reasoning and established invariants. If a branch is obviously unreachable, delete it. When unsure, search
+  references, check feature flags/config, and document the invariant you rely on.
 - Prefer strengthening invariants and validations over keeping speculative fallback branches
 
 ````
@@ -1234,9 +1252,11 @@ processor = server       # ❌ misleading name; not a processor
 
 ## Notes
 
-- Renames should “pay rent”: resolve a collision, remove ambiguity, or increase semantic precision. Otherwise, keep the original name.
+- Renames should “pay rent”: resolve a collision, remove ambiguity, or increase semantic precision. Otherwise, keep the
+  original name.
 - When you must rename for semantics, migrate fully to the new name in that scope; do not keep both alive.
-- Cross‑refs: [No one‑off vars](./no-oneoff-vars-and-trivial-wrappers.md), [Self‑describing names](./self-describing-names.md), and [Truthfulness](./truthfulness.md).
+- Cross‑refs: [No one‑off vars](./no-oneoff-vars-and-trivial-wrappers.md),
+  [Self‑describing names](./self-describing-names.md), and [Truthfulness](./truthfulness.md).
 
 ````
 
@@ -1471,9 +1491,12 @@ __all__ = [name for name in globals() if not name.startswith("_")]
 
 ## Notes
 
-- Public API curation belongs at the package root **init**.py of a real library/SDK with versioning; everywhere else, keep imports explicit to preserve clear dependencies and call sites.
-- Re‑exports should be rare, selective, and documented; wildcard exports and convenience barrels hinder traceability and refactoring.
-- Related properties: [Imports at the top](./imports-top.md), [Truthfulness](../truthfulness.md) (comments must reflect real intent), [Consistent naming and notation](../consistent-naming-and-notation.md).
+- Public API curation belongs at the package root **init**.py of a real library/SDK with versioning; everywhere else,
+  keep imports explicit to preserve clear dependencies and call sites.
+- Re‑exports should be rare, selective, and documented; wildcard exports and convenience barrels hinder traceability and
+  refactoring.
+- Related properties: [Imports at the top](./imports-top.md), [Truthfulness](../truthfulness.md) (comments must reflect
+  real intent), [Consistent naming and notation](../consistent-naming-and-notation.md).
 
 ````
 
@@ -1512,8 +1535,11 @@ send(u.email)
 
 ## Exceptions (rare, deliberate)
 
-- Only when names truly arrive dynamically (e.g., plugin entrypoints specified as "package.module:function"), and only at explicit boundaries; prefer a registry/mapping over attribute probing. If used, keep scope narrow and document why direct access is impossible.
-- Never use dynamic attribute probing to guess between multiple names; design types to make invalid states unrepresentable.
+- Only when names truly arrive dynamically (e.g., plugin entrypoints specified as "package.module:function"), and only
+  at explicit boundaries; prefer a registry/mapping over attribute probing. If used, keep scope narrow and document why
+  direct access is impossible.
+- Never use dynamic attribute probing to guess between multiple names; design types to make invalid states
+  unrepresentable.
 
 ## Negative examples
 
@@ -1600,12 +1626,16 @@ import logging
 
 ## Exceptions (narrow, justified)
 
-Verified presence of certain listed unusual cases may justify a local import, but only with a verifiable AND accurate inline comment explaining the reason:
+Verified presence of certain listed unusual cases may justify a local import, but only with a verifiable AND accurate
+inline comment explaining the reason:
 
-- Import cycle: comment must specifically describe the cycle a module-level import would create; prefer refactoring to remove the cycle when feasible.
-- Heavy import: the module must be measurably expensive at import time and the localized import must materially reduce startup cost.
-- Dynamic plugin/entrypoint or hot-reload: the behavior truly requires runtime import.
-  Do not apply an exception if the module is already imported at the top elsewhere, the cost is negligible, or the cycle can be eliminated with a small refactor.
+- Import cycle: comment must specifically describe the cycle a module-level import would create; prefer refactoring to
+  remove the cycle when feasible.
+- Heavy import: the module must be measurably expensive at import time and the localized import must materially reduce
+  startup cost.
+- Dynamic plugin/entrypoint or hot-reload: the behavior truly requires runtime import. Do not apply an exception if the
+  module is already imported at the top elsewhere, the cost is negligible, or the cycle can be eliminated with a small
+  refactor.
 
 ### Import cycle
 
@@ -1705,7 +1735,9 @@ def compute_now():
 
 ## Cross-references
 
-- [Truthfulness](../truthfulness.md): misleading "avoid cycle"/"heavy import" comments are untruthful when no cycle/heaviness exists; moving imports into functions can also misrepresent real dependency structure. Keep comments and structure honest about why an exception is taken.
+- [Truthfulness](../truthfulness.md): misleading "avoid cycle"/"heavy import" comments are untruthful when no
+  cycle/heaviness exists; moving imports into functions can also misrepresent real dependency structure. Keep comments
+  and structure honest about why an exception is taken.
 
 ````
 
@@ -1805,8 +1837,10 @@ def f(x: Union[int, str]) -> int:  # ❌ prefer int | str
 
 ## Notes
 
-- Readability first: prefer these idioms when they clarify intent and reduce noise; if an operator would obscure meaning in a complex expression, a named helper or method call can be acceptable.
-- Related properties: [Walrus operator](./walrus.md), [String affixes](./str-affixes.md), [Type hints](./type-hints.md), [Pathlib usage](./pathlib.md).
+- Readability first: prefer these idioms when they clarify intent and reduce noise; if an operator would obscure meaning
+  in a complex expression, a named helper or method call can be acceptable.
+- Related properties: [Walrus operator](./walrus.md), [String affixes](./str-affixes.md), [Type hints](./type-hints.md),
+  [Pathlib usage](./pathlib.md).
 
 ````
 
@@ -1892,8 +1926,11 @@ process(payload)
 
 ## Exceptions (narrow)
 
-- Mocking is acceptable when the object cannot be constructed in tests without heavy external state (e.g., real DB connection, complex binary handles) and when the test specifically targets the interaction contract; keep mocks minimal and focused on the boundary.
-- For non‑plain fields that are impractical to instantiate (e.g., embedded OS handles), provide small fakes implementing only the required interface.
+- Mocking is acceptable when the object cannot be constructed in tests without heavy external state (e.g., real DB
+  connection, complex binary handles) and when the test specifically targets the interaction contract; keep mocks
+  minimal and focused on the boundary.
+- For non‑plain fields that are impractical to instantiate (e.g., embedded OS handles), provide small fakes implementing
+  only the required interface.
 
 ## See also
 
@@ -2014,8 +2051,11 @@ except Exception:  # ❌ should catch FileNotFoundError if ignoring that case on
 
 ## Exceptions (narrow)
 
-- Legitimate no‑op outcomes should use APIs that encode the no‑op instead of exceptions (e.g., `mkdir(exist_ok=True)`, `dict.get`, idempotent delete with specific `FileNotFoundError` catch). If you must catch, catch only the specific exception and include a short rationale.
-- At true outer boundaries (HTTP handlers, main loops), a broad catch may be used to convert to an error response — must log with full context (`logger.exception`) and avoid continuing in a corrupted state.
+- Legitimate no‑op outcomes should use APIs that encode the no‑op instead of exceptions (e.g., `mkdir(exist_ok=True)`,
+  `dict.get`, idempotent delete with specific `FileNotFoundError` catch). If you must catch, catch only the specific
+  exception and include a short rationale.
+- At true outer boundaries (HTTP handlers, main loops), a broad catch may be used to convert to an error response — must
+  log with full context (`logger.exception`) and avoid continuing in a corrupted state.
 
 ## See also
 
@@ -2401,9 +2441,10 @@ def test_writes_file():
 
 ## Exceptions
 
-- When testing code that explicitly consumes `py.path` objects, `tmpdir` can be used.
-  Prefer migrating the code under test to `pathlib.Path` and `tmp_path` when feasible.
-- If third-party API requires raw `tempfile` handles (e.g., needs a real OS-level fd), document the reason and keep the scope minimal
+- When testing code that explicitly consumes `py.path` objects, `tmpdir` can be used. Prefer migrating the code under
+  test to `pathlib.Path` and `tmp_path` when feasible.
+- If third-party API requires raw `tempfile` handles (e.g., needs a real OS-level fd), document the reason and keep the
+  scope minimal
 
 ## See also
 
@@ -2866,8 +2907,10 @@ if result is not None:
 
 ## Clarifications
 
-- Apply this rule only to collapse a redundant two-step "assign, then immediately check" into a single `if` with `:=` when it improves clarity.
-- Do not introduce throwaway bindings (e.g., `_ := ...`) just to satisfy the rule; either bind to a meaningful name you reuse, or write the condition directly.
+- Apply this rule only to collapse a redundant two-step "assign, then immediately check" into a single `if` with `:=`
+  when it improves clarity.
+- Do not introduce throwaway bindings (e.g., `_ := ...`) just to satisfy the rule; either bind to a meaningful name you
+  reuse, or write the condition directly.
 
 ## Dict error checks
 
@@ -3004,10 +3047,16 @@ let feature: boolean = true; // bad (bare noun)
 
 ## Notes
 
-- Prefer domain types where available (timedelta/Duration/Instant/etc.). When primitives are unavoidable, encode units in the name.
-- Booleans: past-participle adjectives are often fine because they read as a state (enabled, accepted, archived, verified). Use is*/has* when a noun would otherwise be ambiguous (is_admin, has_license).
-- Pragmatic exception in legacy codebases: if a code path is uniformly using weak types (e.g., string paths or epoch integers) and your small change would only introduce noise by converting in/out without internal benefit, it’s acceptable to stick to the prevailing type for that narrow change. Favor module/function boundaries that convert once at input and once at output when you can extract real benefits internally.
-- This property focuses on unambiguous naming for primitives. Additional properties may separately enforce: use of time/money types; currency units; angle units (deg/rad); and rate units (per_second, per_minute).
+- Prefer domain types where available (timedelta/Duration/Instant/etc.). When primitives are unavoidable, encode units
+  in the name.
+- Booleans: past-participle adjectives are often fine because they read as a state (enabled, accepted, archived,
+  verified). Use is*/has* when a noun would otherwise be ambiguous (is_admin, has_license).
+- Pragmatic exception in legacy codebases: if a code path is uniformly using weak types (e.g., string paths or epoch
+  integers) and your small change would only introduce noise by converting in/out without internal benefit, it’s
+  acceptable to stick to the prevailing type for that narrow change. Favor module/function boundaries that convert once
+  at input and once at output when you can extract real benefits internally.
+- This property focuses on unambiguous naming for primitives. Additional properties may separately enforce: use of
+  time/money types; currency units; angle units (deg/rad); and rate units (per_second, per_minute).
 
 ````
 
@@ -3171,7 +3220,8 @@ func Handle(m map[string]any) error {  // too loose
 Notes
 
 - Use map‑like types only for inherently key/value domains (headers, labels), short‑lived and close to their origin
-- When introducing a model on an existing loose interface, convert once at the boundary; avoid churn by bouncing between loose and strict forms inside the same flow
+- When introducing a model on an existing loose interface, convert once at the boundary; avoid churn by bouncing between
+  loose and strict forms inside the same flow
 
 ````
 

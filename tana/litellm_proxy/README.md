@@ -1,8 +1,7 @@
 # Tana LiteLLM Provider
 
-This package is a small LiteLLM custom provider for Tana's internal
-`llmProxy` endpoint. It is intended as a development/demo integration, not as a
-stable public Tana API.
+This package is a small LiteLLM custom provider for Tana's internal `llmProxy` endpoint. It is intended as a
+development/demo integration, not as a stable public Tana API.
 
 ## Usage
 
@@ -38,13 +37,13 @@ bazelisk run //tana/litellm_proxy:demo_bin -- \
   --tool-demo
 ```
 
-The model prefix before the first slash is LiteLLM's custom provider name. The
-provider strips `tana/` and sends the remainder as Tana's `options.model`.
+The model prefix before the first slash is LiteLLM's custom provider name. The provider strips `tana/` and sends the
+remainder as Tana's `options.model`.
 
 ## Authentication
 
-The provider exchanges a Firebase refresh token for a Firebase ID token, then
-uses that ID token as `Authorization: Bearer <id-token>` when calling:
+The provider exchanges a Firebase refresh token for a Firebase ID token, then uses that ID token as
+`Authorization: Bearer <id-token>` when calling:
 
 ```text
 POST https://app.tana.inc/functions/llmProxy
@@ -59,44 +58,34 @@ For direct `TanaProxyClient` use, refresh token lookup order:
 
 The LiteLLM model entries configure Tana through normal `litellm_params`:
 
-- `api_key: os.environ/TANA_FIREBASE_REFRESH_TOKEN` supplies the Firebase
-  refresh token. LiteLLM resolves that reference and passes it to the custom
-  provider as `api_key`.
-- `api_base` selects the Tana Functions base URL and `timeout` sets the request
-  timeout.
-- `firebase_api_key` is a non-secret value in `litellm_params`. The provider
-  also accepts custom context and warning settings such as `tana_user_context`
-  and `tana_tool_user_context`. LiteLLM passes these to the handler in
-  `optional_params`; the adapter consumes and removes them before forwarding
-  generation options to Tana.
+- `api_key: os.environ/TANA_FIREBASE_REFRESH_TOKEN` supplies the Firebase refresh token. LiteLLM resolves that reference
+  and passes it to the custom provider as `api_key`.
+- `api_base` selects the Tana Functions base URL and `timeout` sets the request timeout.
+- `firebase_api_key` is a non-secret value in `litellm_params`. The provider also accepts custom context and warning
+  settings such as `tana_user_context` and `tana_tool_user_context`. LiteLLM passes these to the handler in
+  `optional_params`; the adapter consumes and removes them before forwarding generation options to Tana.
 
-The adapter exchanges the refresh token for a Firebase ID token and caches
-only that short-lived ID token. The resigner owns and refreshes the Secret; this
-adapter deliberately does not adopt or persist rotated Firebase refresh tokens
-from the Secure Token response. Direct `TanaProxyClient` use retains the lookup
-order above for local tools such as `probe_models.py`.
+The adapter exchanges the refresh token for a Firebase ID token and caches only that short-lived ID token. The resigner
+owns and refreshes the Secret; this adapter deliberately does not adopt or persist rotated Firebase refresh tokens from
+the Secure Token response. Direct `TanaProxyClient` use retains the lookup order above for local tools such as
+`probe_models.py`.
 
-In the cluster deployment, this Secret is optional at LiteLLM startup. Without
-it, the proxy still starts and serves other providers; Tana model requests fail
-until the credential is available. ESO copies the Secret from `tana-mcp` every
-10 minutes, and the Deployment watches Secret changes, so the copy's return or
-rotation restarts LiteLLM with the current value. Flux does not gate LiteLLM
-reconciliation on Tana-MCP readiness.
+In the cluster deployment, this Secret is optional at LiteLLM startup. Without it, the proxy still starts and serves
+other providers; Tana model requests fail until the credential is available. ESO copies the Secret from `tana-mcp` every
+10 minutes, and the Deployment watches Secret changes, so the copy's return or rotation restarts LiteLLM with the
+current value. Flux does not gate LiteLLM reconciliation on Tana-MCP readiness.
 
-The local fallback secret is `tana-mcp/tana-firebase-refresh-token`, key
-`refresh_token`, matching the in-cluster Tana MCP setup. Treat that as a
-development convenience, not the deployed LiteLLM proxy path.
+The local fallback secret is `tana-mcp/tana-firebase-refresh-token`, key `refresh_token`, matching the in-cluster Tana
+MCP setup. Treat that as a development convenience, not the deployed LiteLLM proxy path.
 
-The default `userContext` is `Generic AI Query`, one of the labels observed in
-the Tana client. The live endpoint rejects arbitrary labels during request
-validation. Treat it as a Tana action/accounting label, not as LLM prompt
+The default `userContext` is `Generic AI Query`, one of the labels observed in the Tana client. The live endpoint
+rejects arbitrary labels during request validation. Treat it as a Tana action/accounting label, not as LLM prompt
 content; model input goes in `args.messages`.
 
 ## LiteLLM Mapping
 
-The provider maps basic OpenAI-style chat fields onto Tana's request shape.
-OpenAI/LiteLLM `messages` are always sent as Tana `args.messages` envelopes;
-the provider does not collapse chat into a single prompt string.
+The provider maps basic OpenAI-style chat fields onto Tana's request shape. OpenAI/LiteLLM `messages` are always sent as
+Tana `args.messages` envelopes; the provider does not collapse chat into a single prompt string.
 
 | LiteLLM/OpenAI option                  | Tana option                     |
 | -------------------------------------- | ------------------------------- |
@@ -111,17 +100,16 @@ the provider does not collapse chat into a single prompt string.
 | `tools`                                | `llmProxyNext.dynamicTools`     |
 | `stream=True`                          | `isStreaming: true`             |
 
-Message normalization preserves message boundaries and maps common OpenAI/AI SDK
-aliases into the Tana core-message shape:
+Message normalization preserves message boundaries and maps common OpenAI/AI SDK aliases into the Tana core-message
+shape:
 
 - message and content-block `provider_options` become `providerOptions`
 - content blocks with `type: "input_text"` become Tana `type: "text"` blocks
 - assistant `tool_calls` become `content` blocks with `type: "tool-call"`
 - OpenAI `tool` messages become `content` blocks with `type: "tool-result"`
 
-When `tools` are present, the provider switches to `llmProxyNext`, sends
-source-observed `userContext: "Ask Tana"`, and maps OpenAI function tools to
-Tana client-runtime dynamic tools:
+When `tools` are present, the provider switches to `llmProxyNext`, sends source-observed `userContext: "Ask Tana"`, and
+maps OpenAI function tools to Tana client-runtime dynamic tools:
 
 ```json
 {
@@ -133,13 +121,10 @@ Tana client-runtime dynamic tools:
 }
 ```
 
-Returned Tana `toolCalls` are converted back into OpenAI-style
-`message.tool_calls`. The provider does not execute tools locally; callers
-should execute the returned function calls and continue the chat themselves.
+Returned Tana `toolCalls` are converted back into OpenAI-style `message.tool_calls`. The provider does not execute tools
+locally; callers should execute the returned function calls and continue the chat themselves.
 
-For `stream=True`, the provider returns LiteLLM streaming chunks. Plain text
-streaming parses Tana `data: {"type":"text-delta",...}` and AI SDK-style
-`0:"..."` records. Tool streaming parses `llmProxyNext` tool-input events into
-OpenAI-style `delta.tool_calls`; Tana can emit an initial empty `{}` tool
-argument delta before the full JSON arguments, and the demo merges those deltas
-before printing.
+For `stream=True`, the provider returns LiteLLM streaming chunks. Plain text streaming parses Tana
+`data: {"type":"text-delta",...}` and AI SDK-style `0:"..."` records. Tool streaming parses `llmProxyNext` tool-input
+events into OpenAI-style `delta.tool_calls`; Tana can emit an initial empty `{}` tool argument delta before the full
+JSON arguments, and the demo merges those deltas before printing.

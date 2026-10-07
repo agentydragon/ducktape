@@ -31,9 +31,8 @@ on:
         default: ""
       bazel_invocation_ids:
         description: >
-          Comma-separated BuildBuddy invocation ids from bazel-ci, whose build
-          event stream says what this commit produced. Empty means the planner
-          can prove nothing and releases everything.
+          Comma-separated BuildBuddy invocation ids from bazel-ci, whose build event stream says what this commit
+          produced. Empty means the planner can prove nothing and releases everything.
         required: false
         type: string
         default: ""

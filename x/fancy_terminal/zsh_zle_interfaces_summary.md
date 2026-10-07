@@ -1,6 +1,7 @@
 # Zsh ZLE Interfaces Used by Inline Autosuggestion Plugins (Summary)
 
-This file lists only the Zsh/ZLE facilities a plugin can rely on to implement inline “ghost text” suggestions, independent of any specific plugin.
+This file lists only the Zsh/ZLE facilities a plugin can rely on to implement inline “ghost text” suggestions,
+independent of any specific plugin.
 
 ## Line editor state (read/write)
 
@@ -28,7 +29,8 @@ This file lists only the Zsh/ZLE facilities a plugin can rely on to implement in
 ## Asynchronous I/O integration
 
 - `zle -F <fd> <handler>`: register a readable‑FD callback; deliver async suggestion results without blocking typing
-- `zmodload zsh/zpty`; `zpty …`: spawn a child on a pty and converse with it (commonly used to query the completion engine safely)
+- `zmodload zsh/zpty`; `zpty …`: spawn a child on a pty and converse with it (commonly used to query the completion
+  engine safely)
 - `zmodload zsh/system`; `$sysparams[…]`: low‑level system parameters when needed
 - `zmodload zsh/parameter`: exposes additional special parameters/functions
 

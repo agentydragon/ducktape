@@ -46,7 +46,8 @@
 | **Configurable TTL**                     | No                      | Yes                       |
 | **HA configurations**                    | No                      | Yes                       |
 
-**Critical blocker:** Self-hosted Firecracker RBE requires Enterprise license. FOSS can self-host the app server only — executor pool is Enterprise-only.
+**Critical blocker:** Self-hosted Firecracker RBE requires Enterprise license. FOSS can self-host the app server only —
+executor pool is Enterprise-only.
 
 ## Enterprise Feature Relevance
 
@@ -80,7 +81,8 @@ License key stored in Kubernetes Secret (SOPS-encrypted recommended).
 - [BuildFarm](https://buildfarm.io/) — open-source RBE
 - [BuildGrid](https://buildgrid.io/) — open-source RBE
 
-BuildBuddy's Firecracker + snapshot/resume is the most sophisticated option. Building custom executors (implementing the Bazel RBE protocol yourself) is extremely complex and not recommended.
+BuildBuddy's Firecracker + snapshot/resume is the most sophisticated option. Building custom executors (implementing the
+Bazel RBE protocol yourself) is extremely complex and not recommended.
 
 ---
 
@@ -192,7 +194,8 @@ helm install buildbuddy buildbuddy/buildbuddy-enterprise \
   --values buildbuddy-values.yaml
 ```
 
-FOSS on-prem app server (no executor pool): `gcr.io/flame-public/buildbuddy-app-onprem:latest`, StatefulSet with 10 GiB PVC, ports HTTP (8080) + gRPC (1985).
+FOSS on-prem app server (no executor pool): `gcr.io/flame-public/buildbuddy-app-onprem:latest`, StatefulSet with 10 GiB
+PVC, ports HTTP (8080) + gRPC (1985).
 
 ## Enabling Firecracker on Executors
 
@@ -293,7 +296,8 @@ sh_test(
 )
 ```
 
-First action boots a fresh Firecracker VM and starts Docker. Subsequent actions with matching `exec_properties` resume from a warm snapshot.
+First action boots a fresh Firecracker VM and starts Docker. Subsequent actions with matching `exec_properties` resume
+from a warm snapshot.
 
 ### Docker-in-Firecracker
 
@@ -326,7 +330,8 @@ docker exec pg-server psql -U postgres testdb -f test.sql
 | **RAM**     | 4 GiB   | 8-16 GiB (accounts for VM overhead) |
 | **Storage** | 10 GiB  | 50 GiB (for snapshots)              |
 
-Memory overhead: VM image (~2-4 GiB) + running VM memory (4-8 GiB) + snapshot storage (full RAM + disk, ~66 GiB for 16 GiB RAM + 50 GiB disk).
+Memory overhead: VM image (~2-4 GiB) + running VM memory (4-8 GiB) + snapshot storage (full RAM + disk, ~66 GiB for 16
+GiB RAM + 50 GiB disk).
 
 ## System Configuration
 
@@ -451,9 +456,11 @@ GitLab runners and BuildBuddy executors authenticate via tokens, not SSO. SSO ap
 ## Phase 1: Parallel Operations
 
 1. **Keep existing active:** GitHub Actions running, BuildBuddy Cloud active, GHA-runners in cluster
-2. **Deploy new components:** GitLab FOSS (Helm via Flux), BuildBuddy Enterprise (Helm in cluster), GitLab Runner (1-2 replicas), BuildBuddy Executors (1-2 replicas with Firecracker)
+2. **Deploy new components:** GitLab FOSS (Helm via Flux), BuildBuddy Enterprise (Helm in cluster), GitLab Runner (1-2
+   replicas), BuildBuddy Executors (1-2 replicas with Firecracker)
 3. **Configure Authentik SSO:** Create OAuth2/OIDC provider for GitLab; optional reverse proxy for BuildBuddy
-4. **Test pilots:** Point single GHA workflow to GitLab Runner; point single Bazel target to BuildBuddy self-hosted executor; verify Firecracker, Docker-in-FC, runner recycling
+4. **Test pilots:** Point single GHA workflow to GitLab Runner; point single Bazel target to BuildBuddy self-hosted
+   executor; verify Firecracker, Docker-in-FC, runner recycling
 
 ## Phase 2: Workflow Migration
 
@@ -478,7 +485,8 @@ GitLab runners and BuildBuddy executors authenticate via tokens, not SSO. SSO ap
 ## Phase 5: Cutover
 
 1. Disable GitHub workflows, remove GHA-runners deployment, clean up GitHub secrets
-2. Remove `BUILDBUDDY_API_KEY` from secrets, confirm all `.bazelrc` point to self-hosted executor, cancel BuildBuddy Cloud subscription
+2. Remove `BUILDBUDDY_API_KEY` from secrets, confirm all `.bazelrc` point to self-hosted executor, cancel BuildBuddy
+   Cloud subscription
 
 ---
 
@@ -556,7 +564,8 @@ Managed CI, self-hosted builds. Benefit: get Firecracker isolation without CI mi
 
 ### Option C: FOSS App + Cloud Executors
 
-Deploy FOSS BuildBuddy app server in cluster (data locality), use BuildBuddy Cloud executors (Firecracker available). FOSS license only, but still per-invocation billing. Hybrid complexity.
+Deploy FOSS BuildBuddy app server in cluster (data locality), use BuildBuddy Cloud executors (Firecracker available).
+FOSS license only, but still per-invocation billing. Hybrid complexity.
 
 ### Option D: Gradual Cutover
 
@@ -564,9 +573,12 @@ Start with pilot deployments (1-2 workflows/targets), migrate incrementally, kee
 
 ## Recommended Path
 
-**Near-term (stay with BuildBuddy Cloud):** Already working. Firecracker available experimentally. No additional licensing cost. Add Authentik reverse proxy for SSO if needed.
+**Near-term (stay with BuildBuddy Cloud):** Already working. Firecracker available experimentally. No additional
+licensing cost. Add Authentik reverse proxy for SSO if needed.
 
-**Future (evaluate Enterprise):** Request quote from BuildBuddy. Compare Enterprise license + infrastructure costs (3+ executors @ 16 GiB RAM) vs current BuildBuddy Cloud monthly billing. Factor in maintenance time vs managed service. Self-host if monthly cloud cost exceeds break-even.
+**Future (evaluate Enterprise):** Request quote from BuildBuddy. Compare Enterprise license + infrastructure costs (3+
+executors @ 16 GiB RAM) vs current BuildBuddy Cloud monthly billing. Factor in maintenance time vs managed service.
+Self-host if monthly cloud cost exceeds break-even.
 
 ---
 

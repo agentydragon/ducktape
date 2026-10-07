@@ -1,14 +1,13 @@
 # Agent-Facing Documentation
 
-Agent-facing documentation (templates baked into container images) lives in
-`props/agents/docs/`. See <../agents/docs/>.
+Agent-facing documentation (templates baked into container images) lives in `props/agents/docs/`. See <../agents/docs/>.
 
 This directory (`props/docs/`) contains **developer-facing** documentation only.
 
 ## Include Hierarchy Rule
 
-**If template A includes template B via `include_doc()`, template A must NOT call
-`describe_relation()` for tables already described in B.**
+**If template A includes template B via `include_doc()`, template A must NOT call `describe_relation()` for tables
+already described in B.**
 
 Example violation:
 
@@ -34,8 +33,8 @@ Templates use these helpers (defined in `props/agents/runtime.py`):
 
 **Audience:** The agent running in a container, not developers reading source code.
 
-**How docs reach agents:** Agent main loops use `render_system_prompt()` to render Mako
-templates. Output goes to the agent's system prompt.
+**How docs reach agents:** Agent main loops use `render_system_prompt()` to render Mako templates. Output goes to the
+agent's system prompt.
 
 **Example - wrong:**
 

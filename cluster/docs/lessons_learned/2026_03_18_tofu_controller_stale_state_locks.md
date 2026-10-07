@@ -1,29 +1,26 @@
 # tofu-controller Stale State Locks After Controller Restart
 
-**Date**: 2026-03-18
-**Status**: Unresolved (stale locks require manual cleanup)
+**Date**: 2026-03-18 **Status**: Unresolved (stale locks require manual cleanup)
 
 ## Root Cause
 
-When the tofu-controller deployment is restarted (via `kubectl rollout restart` or any
-pod template change), runner pods that are mid-plan hold terraform state locks stored as
-`coordination.k8s.io/v1 Lease` objects. These locks are never released because:
+When the tofu-controller deployment is restarted (via `kubectl rollout restart` or any pod template change), runner pods
+that are mid-plan hold terraform state locks stored as `coordination.k8s.io/v1 Lease` objects. These locks are never
+released because:
 
-1. **Runner pods have no `ownerReferences`** — they are standalone pods, not owned by
-   the controller deployment. They survive controller restarts as orphans.
-2. **TLS cache desync** (see <2025_11_19_tofu_controller_tls_cache_desync.md>): the new
-   controller pod runs startup GC, deletes all TLS secrets, and regenerates new ones.
-   Orphaned runners from the old controller have stale TLS certs — gRPC communication
-   between new controller and old runners fails.
-3. **No gRPC = no lock release**: lock release happens via the controller's gRPC call
-   chain (runner reports success → controller tells runner to release → runner releases
-   lock → controller deletes runner). With TLS mismatch, this chain never executes.
-4. **tofu-controller has no stale lock detection**: it never checks whether the
-   lock-holding pod (identified by `Who: runner@xxx-tf-runner` in the Lease annotation)
-   still exists. It never invokes `tofu force-unlock`.
+1. **Runner pods have no `ownerReferences`** — they are standalone pods, not owned by the controller deployment. They
+   survive controller restarts as orphans.
+2. **TLS cache desync** (see <2025_11_19_tofu_controller_tls_cache_desync.md>): the new controller pod runs startup GC,
+   deletes all TLS secrets, and regenerates new ones. Orphaned runners from the old controller have stale TLS certs —
+   gRPC communication between new controller and old runners fails.
+3. **No gRPC = no lock release**: lock release happens via the controller's gRPC call chain (runner reports success →
+   controller tells runner to release → runner releases lock → controller deletes runner). With TLS mismatch, this chain
+   never executes.
+4. **tofu-controller has no stale lock detection**: it never checks whether the lock-holding pod (identified by
+   `Who: runner@xxx-tf-runner` in the Lease annotation) still exists. It never invokes `tofu force-unlock`.
 
-The result is a permanent deadlock: new runners can't acquire the lock, the controller
-keeps retrying every 15s, and the lock persists until manually cleared.
+The result is a permanent deadlock: new runners can't acquire the lock, the controller keeps retrying every 15s, and the
+lock persists until manually cleared.
 
 ## Incident Timeline (2026-03-12 → 2026-03-18)
 
@@ -39,27 +36,22 @@ Three `kubectl rollout restart` commands were issued against the tofu-controller
 | Mar 13–17    | Runners stagger lock acquisition (15m reconcile intervals) |
 | Mar 18       | 21 of 24 Terraform resources stuck on stale locks          |
 
-The restart on Mar 12 killed the rev 3 controller pod while runners were in-flight.
-Orphaned runners held locks, died without releasing them, and the new controller's
-runners have been failing against those locks for 5+ days.
+The restart on Mar 12 killed the rev 3 controller pod while runners were in-flight. Orphaned runners held locks, died
+without releasing them, and the new controller's runners have been failing against those locks for 5+ days.
 
 ### Why 3 of 24 succeeded
 
-- `alloy-otlp-bearer-token`, `ollama-direct-token`: created after the last restart (no
-  prior lock)
-- `harbor-proxy-cache`: runner completed fast enough to release its lock before the
-  restart killed anything
+- `alloy-otlp-bearer-token`, `ollama-direct-token`: created after the last restart (no prior lock)
+- `harbor-proxy-cache`: runner completed fast enough to release its lock before the restart killed anything
 
 ## Affected Resources
 
-21 Terraform resources stuck with `error acquiring the state lock`. These block a
-cascade of ~60 Flux Kustomizations that depend on secrets managed by these Terraform
-modules (Authentik, Harbor, Gitea, Ollama, PowerDNS, etc.).
+21 Terraform resources stuck with `error acquiring the state lock`. These block a cascade of ~60 Flux Kustomizations
+that depend on secrets managed by these Terraform modules (Authentik, Harbor, Gitea, Ollama, PowerDNS, etc.).
 
 ## Lock Mechanism
 
-The terraform `kubernetes` backend stores locks as Lease objects in the same namespace
-as the tfstate secrets:
+The terraform `kubernetes` backend stores locks as Lease objects in the same namespace as the tfstate secrets:
 
 ```yaml
 Lease: lock-tfstate-default-{name}
@@ -70,8 +62,8 @@ Lease: lock-tfstate-default-{name}
       "Who":"runner@{name}-tf-runner","Created":"..."}
 ```
 
-A lock is held when `spec.holderIdentity` is non-empty. Releasing the lock clears
-`holderIdentity` (the Lease object itself persists).
+A lock is held when `spec.holderIdentity` is non-empty. Releasing the lock clears `holderIdentity` (the Lease object
+itself persists).
 
 ## Diagnosis
 
@@ -99,8 +91,8 @@ kubectl get pods -n flux-system -l app.kubernetes.io/name=tf-runner --no-headers
 
 ## Resolution
 
-Delete the stale lock Leases. The underlying tfstate secrets and Vault data are
-unaffected — the runners just need to successfully run `tofu plan` once.
+Delete the stale lock Leases. The underlying tfstate secrets and Vault data are unaffected — the runners just need to
+successfully run `tofu plan` once.
 
 ```bash
 # Option 1: Delete all lock Leases (safest — Leases are recreated on next lock)
@@ -153,32 +145,26 @@ kubectl get terraform -n flux-system -o name | \
 
 ### Upstream bug: no stale lock cleanup
 
-tofu-controller should detect stale locks by checking whether the lock-holding pod
-still exists. If `Who: runner@xxx-tf-runner` references a pod that no longer exists,
-the controller should force-unlock (delete the Lease `holderIdentity`). This is a
-straightforward check: parse the `Who` field, query the pod, force-unlock if not found.
+tofu-controller should detect stale locks by checking whether the lock-holding pod still exists. If
+`Who: runner@xxx-tf-runner` references a pod that no longer exists, the controller should force-unlock (delete the Lease
+`holderIdentity`). This is a straightforward check: parse the `Who` field, query the pod, force-unlock if not found.
 
-Related upstream issue: the controller also lacks `ownerReferences` on runner pods,
-which would let Kubernetes garbage-collect orphaned runners when the controller pod
-dies. Adding owner references would not fix the lock problem directly (the lock is in
-a Lease, not the pod), but would prevent orphaned runners from interfering.
+Related upstream issue: the controller also lacks `ownerReferences` on runner pods, which would let Kubernetes
+garbage-collect orphaned runners when the controller pod dies. Adding owner references would not fix the lock problem
+directly (the lock is in a Lease, not the pod), but would prevent orphaned runners from interfering.
 
 ## Key Lessons
 
-1. **Terraform state locks via Kubernetes Leases have no TTL** — unlike etcd leases or
-   database advisory locks, K8s Lease objects persist until explicitly cleared. There is
-   no automatic expiration.
-2. **tofu-controller has no force-unlock mechanism** — it doesn't check if the lock
-   holder pod still exists, doesn't invoke `tofu force-unlock`, and doesn't attempt to
-   clear stale Leases. The `force: true` field on the Terraform CRD forces re-plan/apply
-   but does not force-unlock.
-3. **Runner pods are fire-and-forget** — no `ownerReferences`, no finalizers, no cleanup
-   hooks. If the controller loses track of a runner, the runner's side effects (locks)
-   persist indefinitely.
-4. **Controller restarts are not safe** — the combination of TLS cache desync (breaks
-   gRPC to old runners) and no stale lock detection makes any controller restart
-   potentially destructive. Three restarts in 4 days caused 5+ days of broken GitOps.
+1. **Terraform state locks via Kubernetes Leases have no TTL** — unlike etcd leases or database advisory locks, K8s
+   Lease objects persist until explicitly cleared. There is no automatic expiration.
+2. **tofu-controller has no force-unlock mechanism** — it doesn't check if the lock holder pod still exists, doesn't
+   invoke `tofu force-unlock`, and doesn't attempt to clear stale Leases. The `force: true` field on the Terraform CRD
+   forces re-plan/apply but does not force-unlock.
+3. **Runner pods are fire-and-forget** — no `ownerReferences`, no finalizers, no cleanup hooks. If the controller loses
+   track of a runner, the runner's side effects (locks) persist indefinitely.
+4. **Controller restarts are not safe** — the combination of TLS cache desync (breaks gRPC to old runners) and no stale
+   lock detection makes any controller restart potentially destructive. Three restarts in 4 days caused 5+ days of
+   broken GitOps.
 5. **The restartedAt annotation is the smoking gun** — `kubectl rollout restart` writes
-   `kubectl.kubernetes.io/restartedAt` to the pod template, creating a new ReplicaSet
-   even though nothing else changed. Check RS annotations to identify restart-induced
-   rollouts.
+   `kubectl.kubernetes.io/restartedAt` to the pod template, creating a new ReplicaSet even though nothing else changed.
+   Check RS annotations to identify restart-induced rollouts.

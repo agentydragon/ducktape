@@ -2,8 +2,8 @@
 
 Started: 2026-05-05.
 
-Goal: run a real Qwen3-1.7B GRPO Wordle training run in thinking mode, using the
-best measured two-GPU config from the reasoning-mode benchmark.
+Goal: run a real Qwen3-1.7B GRPO Wordle training run in thinking mode, using the best measured two-GPU config from the
+reasoning-mode benchmark.
 
 ## Launch config
 
@@ -42,9 +42,8 @@ CUDA_VISIBLE_DEVICES=1 uv run wordle_train.py \
   --metrics-out /tmp/wordle_thinking_train_metrics.json
 ```
 
-Effective GRPO shape: `num_generations=8`, `per_device_train_batch_size=1`,
-`gradient_accumulation_steps=64`, so the effective batch remains 64 rollouts per
-optimizer step.
+Effective GRPO shape: `num_generations=8`, `per_device_train_batch_size=1`, `gradient_accumulation_steps=64`, so the
+effective batch remains 64 rollouts per optimizer step.
 
 ## Startup snapshot
 
@@ -65,9 +64,8 @@ GPU snapshot:
 |   0 | vLLM server |   5,536 MiB |   32,607 MiB |  73% |
 |   1 | trainer     |   8,762 MiB |   32,607 MiB |   0% |
 
-`/tmp/wordle_thinking_train_metrics.json` did not exist at startup snapshot
-time. That file is written only after `trainer.train()` returns, so live
-monitoring should use tensorboard/completion parquet files until the run exits.
+`/tmp/wordle_thinking_train_metrics.json` did not exist at startup snapshot time. That file is written only after
+`trainer.train()` returns, so live monitoring should use tensorboard/completion parquet files until the run exits.
 
 Known live output paths:
 
@@ -77,8 +75,8 @@ Known live output paths:
 
 ## Why this config
 
-The reasoning-mode benchmark in `runs/reasoning_bench/results.md` found this to
-be the best measured fit/performance point so far:
+The reasoning-mode benchmark in `runs/reasoning_bench/results.md` found this to be the best measured fit/performance
+point so far:
 
 | metric                    | `think_8192_mem075` |
 | ------------------------- | ------------------: |
@@ -92,36 +90,31 @@ be the best measured fit/performance point so far:
 | tool call frequency       |               4.891 |
 | mean unique valid guesses |               3.047 |
 
-The 4096-token reasoning probe still clipped 78.1% of completions, so 8192 is
-the first measured budget that leaves enough room for most thinking/tool-loop
-rollouts to terminate normally. Trainer-side GPU peak was close to the 32 GiB
-card limit, so this run keeps the conservative `batch-size=1`,
-`num-generations=8`, and gradient checkpointing settings.
+The 4096-token reasoning probe still clipped 78.1% of completions, so 8192 is the first measured budget that leaves
+enough room for most thinking/tool-loop rollouts to terminate normally. Trainer-side GPU peak was close to the 32 GiB
+card limit, so this run keeps the conservative `batch-size=1`, `num-generations=8`, and gradient checkpointing settings.
 
 ## Current interpretation
 
-`max_completion_length` is the total multi-turn rollout budget across thinking,
-assistant tool calls, tool responses, and post-tool continuation. It is not a
-per-guess budget.
+`max_completion_length` is the total multi-turn rollout budget across thinking, assistant tool calls, tool responses,
+and post-tool continuation. It is not a per-guess budget.
 
-TRL's `completions/clipped_ratio` marks completions whose final generated token
-is not EOS/PAD. In the tool loop, TRL can also truncate post-tool continuation
-to fit the total rollout budget and can stop adding tool responses when doing so
-would exceed the configured limits.
+TRL's `completions/clipped_ratio` marks completions whose final generated token is not EOS/PAD. In the tool loop, TRL
+can also truncate post-tool continuation to fit the total rollout budget and can stop adding tool responses when doing
+so would exceed the configured limits.
 
-In text samples from the 8192 reasoning probe, the remaining failures were not
-only context exhaustion. Representative failures included:
+In text samples from the 8192 reasoning probe, the remaining failures were not only context exhaustion. Representative
+failures included:
 
 - actual tool feedback being followed by hallucinated prior guesses/feedback;
 - final-answer prose after one or a few real tool calls;
 - invalid words or invalid-length guesses;
 - repeated guesses;
-- model-authored transcript-looking tags, which make raw regex counts of
-  `<tool_response>` unreliable unless cross-checked with environment metrics.
+- model-authored transcript-looking tags, which make raw regex counts of `<tool_response>` unreliable unless
+  cross-checked with environment metrics.
 
-The most important behavioral metric is therefore the environment-side signal
-(`metric_unique_guesses`, invalid-word/length counts, win rate), not just literal
-tag counts in the saved completion text.
+The most important behavioral metric is therefore the environment-side signal (`metric_unique_guesses`,
+invalid-word/length counts, win rate), not just literal tag counts in the saved completion text.
 
 ## Useful checks
 
@@ -144,8 +137,8 @@ Final metrics, after the training process exits:
 jq . /tmp/wordle_thinking_train_metrics.json
 ```
 
-Early sample reading should inspect actual text, not only aggregate counters.
-The benchmark parquet sample that motivated this note was:
+Early sample reading should inspect actual text, not only aggregate counters. The benchmark parquet sample that
+motivated this note was:
 
 ```bash
 uv run --with pandas --with pyarrow python - <<'PY'

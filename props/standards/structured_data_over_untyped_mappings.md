@@ -4,27 +4,38 @@ kind: outcome
 ---
 
 Code uses structured, typed data models for domain payloads and API surfaces rather than ad‑hoc "bag‑of‑whatever" maps.
-Avoid `dict[str, Any]`/`Mapping[str, Any]`, `Record<string, unknown>`, `map[string]any`, etc. for application data; prefer
-Pydantic models, dataclasses + TypedDicts, TS interfaces/types, Go structs, Java records/POJOs, with proper (de)serialization.
+Avoid `dict[str, Any]`/`Mapping[str, Any]`, `Record<string, unknown>`, `map[string]any`, etc. for application data;
+prefer Pydantic models, dataclasses + TypedDicts, TS interfaces/types, Go structs, Java records/POJOs, with proper
+(de)serialization.
 
 ## Acceptance criteria (checklist)
 
-- No new function parameters/returns are untyped or loosely typed maps for domain data (e.g., `dict[str, Any]`, `Mapping[str, Any]`, `Record<string, unknown>`, `map[string]any`)
+- No new function parameters/returns are untyped or loosely typed maps for domain data (e.g., `dict[str, Any]`,
+  `Mapping[str, Any]`, `Record<string, unknown>`, `map[string]any`)
 - Enumerations: when a field has one of N possible options, use a proper enum — not a bare primitive
-  - Python: `enum.StrEnum` (3.11+) for string‑valued enums; plain `Enum` for non‑string values. See [Use StrEnum for string‑valued enums](python/strenum.md)
+  - Python: `enum.StrEnum` (3.11+) for string‑valued enums; plain `Enum` for non‑string values. See
+    [Use StrEnum for string‑valued enums](python/strenum.md)
   - TypeScript: string literal unions (preferred) or `enum` with a runtime schema (e.g., zod) for external input
   - Go: define a named type with `const ( ... iota )` values; add `MarshalJSON/UnmarshalJSON` when serializing
   - Java: `enum` for closed sets
 - Define concrete schemas for domain payloads:
-  - Python: `pydantic.BaseModel` (preferred) or `TypedDict` for simple shapes; dataclasses when value semantics are desired (add explicit serde at boundaries)
+  - Python: `pydantic.BaseModel` (preferred) or `TypedDict` for simple shapes; dataclasses when value semantics are
+    desired (add explicit serde at boundaries)
   - TypeScript: `interface`/`type` with a runtime schema (zod/io‑ts) when validating external input
   - Go: `struct` with `json` tags
   - Java: records/POJOs with Jackson/Moshi/Gson annotations as needed
-- Validation happens at boundaries: parse external JSON into the structured type (e.g., `Model.model_validate(data)`, `z.parse(data)`, `json.Unmarshal(...)`, `ObjectMapper.readValue(...)`)
-- Serialization uses library methods (`model_dump(_json)`, `JSON.stringify(value)`, `json.Marshal`, `ObjectMapper.writeValueAsString`) — do not hand‑assemble nested maps
-- Temporary map‑like collections are acceptable for inherently map‑shaped data (e.g., HTTP headers/query params, logging contexts); document invariants and normalize to a model ASAP if they cross module boundaries
-- Prefer precise fields over opaque blobs; avoid passing through arbitrary `extra` unless explicitly modeled and justified
-- Related: keep types precise and explicit; see [type correctness and specificity](./type_correctness_and_specificity.md) and [forbid dynamic attribute access](python/forbid_dynamic_attrs.md); Python should also [target Pydantic 2](python/pydantic_2.md)
+- Validation happens at boundaries: parse external JSON into the structured type (e.g., `Model.model_validate(data)`,
+  `z.parse(data)`, `json.Unmarshal(...)`, `ObjectMapper.readValue(...)`)
+- Serialization uses library methods (`model_dump(_json)`, `JSON.stringify(value)`, `json.Marshal`,
+  `ObjectMapper.writeValueAsString`) — do not hand‑assemble nested maps
+- Temporary map‑like collections are acceptable for inherently map‑shaped data (e.g., HTTP headers/query params, logging
+  contexts); document invariants and normalize to a model ASAP if they cross module boundaries
+- Prefer precise fields over opaque blobs; avoid passing through arbitrary `extra` unless explicitly modeled and
+  justified
+- Related: keep types precise and explicit; see
+  [type correctness and specificity](./type_correctness_and_specificity.md) and
+  [forbid dynamic attribute access](python/forbid_dynamic_attrs.md); Python should also
+  [target Pydantic 2](python/pydantic_2.md)
 
 ## Positive examples
 
@@ -156,4 +167,5 @@ func Handle(m map[string]any) error {  // too loose
 Notes
 
 - Use map‑like types only for inherently key/value domains (headers, labels), short‑lived and close to their origin
-- When introducing a model on an existing loose interface, convert once at the boundary; avoid churn by bouncing between loose and strict forms inside the same flow
+- When introducing a model on an existing loose interface, convert once at the boundary; avoid churn by bouncing between
+  loose and strict forms inside the same flow

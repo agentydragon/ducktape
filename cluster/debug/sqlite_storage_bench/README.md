@@ -2,9 +2,8 @@
 
 Status: completed 2026-07-07.
 
-This report answers [ducktape#2959](https://github.com/agentydragon/ducktape/issues/2959):
-whether SQLite-backed applications such as ActivityWatch and Grocy should run on
-node-local OVH storage or SeaweedFS CSI volumes.
+This report answers [ducktape#2959](https://github.com/agentydragon/ducktape/issues/2959): whether SQLite-backed
+applications such as ActivityWatch and Grocy should run on node-local OVH storage or SeaweedFS CSI volumes.
 
 ## Method
 
@@ -14,9 +13,8 @@ The benchmark assets live in this debug directory. Run from the repo devshell:
 cluster/debug/sqlite_storage_bench/run_bench.sh
 ```
 
-The runner creates a disposable `sqlite-storage-bench` namespace, applies the
-Kustomize `configMapGenerator` containing the benchmark script, then runs one
-Kubernetes Job at a time. Each run gets a fresh PVC and the Job/PVC are deleted
+The runner creates a disposable `sqlite-storage-bench` namespace, applies the Kustomize `configMapGenerator` containing
+the benchmark script, then runs one Kubernetes Job at a time. Each run gets a fresh PVC and the Job/PVC are deleted
 before the next run.
 
 Storage classes:
@@ -28,22 +26,19 @@ Storage classes:
 | `seaweedfs-ovh-ssd`  | SeaweedFS CSI with `diskType=ssd`              |
 | `seaweedfs-ovh`      | Default SeaweedFS CSI class, HDD/bulk baseline |
 
-The workload uses Python's stdlib SQLite binding, `journal_mode=WAL`, and
-`synchronous=FULL`. It records node, mount, kernel, SQLite version, disk free
-space, Kubernetes object snapshots, and raw JSONL logs.
+The workload uses Python's stdlib SQLite binding, `journal_mode=WAL`, and `synchronous=FULL`. It records node, mount,
+kernel, SQLite version, disk free space, Kubernetes object snapshots, and raw JSONL logs.
 
 ## Run
 
 Run ID: `20260707T002921Z`
 
-Follow-up latency forensics: <seaweedfs_latency_forensics.md>. The aggregated
-findings are the tables below; the per-run `results/` summaries were removed
-2026-08 (git history). Generated manifests, raw pod logs, and per-run summary
-tables are all reproducible: `run_bench.sh` for a fresh run,
-`summarize_results.py` for the tables.
+Follow-up latency forensics: <seaweedfs_latency_forensics.md>. The aggregated findings are the tables below; the per-run
+`results/` summaries were removed 2026-08 (git history). Generated manifests, raw pod logs, and per-run summary tables
+are all reproducible: `run_bench.sh` for a fresh run, `summarize_results.py` for the tables.
 
-All 20 runs completed: 4 StorageClasses x 5 repeats. Each run used a fresh PVC,
-and the Job/PVC were deleted before the next run.
+All 20 runs completed: 4 StorageClasses x 5 repeats. Each run used a fresh PVC, and the Job/PVC were deleted before the
+next run.
 
 Pod placement:
 
@@ -54,24 +49,20 @@ Pod placement:
 | `seaweedfs-ovh-ssd`  | `ovh-ns103656` x5                    |
 | `seaweedfs-ovh`      | `ovh-ns103656` x5                    |
 
-The SeaweedFS runs mounted `/data` through `fuse.seaweedfs`; local-path runs
-mounted XFS on the node-local data disk.
+The SeaweedFS runs mounted `/data` through `fuse.seaweedfs`; local-path runs mounted XFS on the node-local data disk.
 
-Interpretation caveat: this benchmark does not isolate SeaweedFS disk media from
-SeaweedFS network/topology effects. All SeaweedFS client pods landed on
-`ovh-ns103656`. That node also runs an HDD SeaweedFS volume server
-(`seaweedfs-volume-hdd-2`), while the SSD SeaweedFS volume servers run only on
-`ovh-ns104952` and `ovh-ns104963`. The `seaweedfs-ovh-ssd` class therefore
-necessarily exercised remote volume-server I/O over the same OVH inter-node path
-suspected in [#2917](https://github.com/agentydragon/ducktape/issues/2917).
-The result should be read as "SeaweedFS SSD, as currently deployed and reached
-from this client placement, is poor for SQLite", not as proof that the SSD media
+Interpretation caveat: this benchmark does not isolate SeaweedFS disk media from SeaweedFS network/topology effects. All
+SeaweedFS client pods landed on `ovh-ns103656`. That node also runs an HDD SeaweedFS volume server
+(`seaweedfs-volume-hdd-2`), while the SSD SeaweedFS volume servers run only on `ovh-ns104952` and `ovh-ns104963`. The
+`seaweedfs-ovh-ssd` class therefore necessarily exercised remote volume-server I/O over the same OVH inter-node path
+suspected in [#2917](https://github.com/agentydragon/ducktape/issues/2917). The result should be read as "SeaweedFS SSD,
+as currently deployed and reached from this client placement, is poor for SQLite", not as proof that the SSD media
 itself is slower than the HDD media.
 
 ## Results
 
-Values below aggregate the five repeat-level measurements for each class. For
-latency rows, units are milliseconds. For throughput rows, units are inserts/sec.
+Values below aggregate the five repeat-level measurements for each class. For latency rows, units are milliseconds. For
+throughput rows, units are inserts/sec.
 
 ### Fsync-heavy writes
 
@@ -86,8 +77,7 @@ latency rows, units are milliseconds. For throughput rows, units are inserts/sec
 
 ### ActivityWatch-shaped writes
 
-The `activitywatch_batch_100` workload inserts 100k timestamped event rows in
-transactions of 100.
+The `activitywatch_batch_100` workload inserts 100k timestamped event rows in transactions of 100.
 
 | StorageClass         | inserts/sec repeat p50 | write p95 repeat p50 | write p95 repeat p95 | write max repeat max |
 | -------------------- | ---------------------: | -------------------: | -------------------: | -------------------: |
@@ -98,8 +88,7 @@ transactions of 100.
 
 ### Grocy-shaped writes
 
-The `grocy_batch_100` workload inserts 100k indexed rows with small JSON/text
-payloads in transactions of 100.
+The `grocy_batch_100` workload inserts 100k indexed rows with small JSON/text payloads in transactions of 100.
 
 | StorageClass         | inserts/sec repeat p50 | write p95 repeat p50 | write p95 repeat p95 | write max repeat max |
 | -------------------- | ---------------------: | -------------------: | -------------------: | -------------------: |
@@ -110,8 +99,7 @@ payloads in transactions of 100.
 
 ### Reads and reopen/checkpoint
 
-The 1M-row query workload shows indexed query latency plus the cost to close and
-reopen the DB before a count query.
+The 1M-row query workload shows indexed query latency plus the cost to close and reopen the DB before a count query.
 
 | StorageClass         | 1M time-range p95 repeat p50 | 1M time-range p95 repeat p95 | 1M close/reopen repeat p50 | WAL checkpoint repeat p50 |
 | -------------------- | ---------------------------: | ---------------------------: | -------------------------: | ------------------------: |
@@ -122,33 +110,26 @@ reopen the DB before a count query.
 
 ## Recommendation
 
-Use `local-path-ovh-ssd` for ActivityWatch's query/write SQLite DB. It is the
-only class with consistently low fsync latency, high insert throughput, sub-10 ms
-close/reopen, and ~1 ms WAL checkpoint latency. The tradeoff is node-local
-availability: the volume is stranded if that node is down, so pair it with
-backups/export replication rather than pretending SeaweedFS is equivalent
-durable SQLite storage.
+Use `local-path-ovh-ssd` for ActivityWatch's query/write SQLite DB. It is the only class with consistently low fsync
+latency, high insert throughput, sub-10 ms close/reopen, and ~1 ms WAL checkpoint latency. The tradeoff is node-local
+availability: the volume is stranded if that node is down, so pair it with backups/export replication rather than
+pretending SeaweedFS is equivalent durable SQLite storage.
 
-Use `local-path-ovh-ssd` for Grocy if the operational goal is snappy UI and
-predictable writes. `local-path-ovh-hdd` is acceptable for a lower-value Grocy
-instance if SSD capacity is scarce: its Grocy-shaped p95 write latency was ~25-32
-ms, but max batch latency reached ~0.7 s and throughput was ~30x lower than SSD.
+Use `local-path-ovh-ssd` for Grocy if the operational goal is snappy UI and predictable writes. `local-path-ovh-hdd` is
+acceptable for a lower-value Grocy instance if SSD capacity is scarce: its Grocy-shaped p95 write latency was ~25-32 ms,
+but max batch latency reached ~0.7 s and throughput was ~30x lower than SSD.
 
-Avoid both `seaweedfs-ovh-ssd` and `seaweedfs-ovh` for hot SQLite DBs in the
-current topology. They are acceptable only for low-write, low-risk SQLite apps
-where occasional multi-second stalls are tolerable. The replicated/RWX property
-is real, but it comes through a FUSE/network path whose SQLite-visible behavior
-is poor: p95 durable write latency was ~40-70 ms, ActivityWatch-shaped batch
-p95s were hundreds of ms, max write phases hit ~1-2 s, default SeaweedFS
-produced a 21 s autocommit outlier, and close/reopen on 1M rows took ~6-9 s.
-Because the SSD SeaweedFS runs were remote from the client node, this benchmark
-is also evidence that the current SeaweedFS SSD placement does not overcome the
-suspected inter-node bottleneck tracked in #2917.
+Avoid both `seaweedfs-ovh-ssd` and `seaweedfs-ovh` for hot SQLite DBs in the current topology. They are acceptable only
+for low-write, low-risk SQLite apps where occasional multi-second stalls are tolerable. The replicated/RWX property is
+real, but it comes through a FUSE/network path whose SQLite-visible behavior is poor: p95 durable write latency was
+~40-70 ms, ActivityWatch-shaped batch p95s were hundreds of ms, max write phases hit ~1-2 s, default SeaweedFS produced
+a 21 s autocommit outlier, and close/reopen on 1M rows took ~6-9 s. Because the SSD SeaweedFS runs were remote from the
+client node, this benchmark is also evidence that the current SeaweedFS SSD placement does not overcome the suspected
+inter-node bottleneck tracked in #2917.
 
-For replicated availability, prefer an alternate architecture instead of putting
-hot SQLite directly on SeaweedFS: application-level export/sync, VolSync/restic
-backups from local-path to SeaweedFS/object storage, or migrating the workload to
-a replicated database where the app supports it.
+For replicated availability, prefer an alternate architecture instead of putting hot SQLite directly on SeaweedFS:
+application-level export/sync, VolSync/restic backups from local-path to SeaweedFS/object storage, or migrating the
+workload to a replicated database where the app supports it.
 
-No real aw-server-rust import smoke was run. The benchmark used synthetic
-ActivityWatch-shaped durable SQLite workloads plus Grocy-shaped indexed rows.
+No real aw-server-rust import smoke was run. The benchmark used synthetic ActivityWatch-shaped durable SQLite workloads
+plus Grocy-shaped indexed rows.

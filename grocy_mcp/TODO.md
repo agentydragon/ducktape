@@ -1,90 +1,68 @@
 ## Mark wholly failed batch tool calls as MCP errors
 
-Batch tools currently catch per-item exceptions and return structured
-`{"kind": "error", ...}` values, so FastMCP treats the overall call as successful
-and does not set MCP `CallToolResult.isError`. Preserve normal successful results
-for partial failures, but when every item fails, return/raise the appropriate
-FastMCP tool error so clients receive the protocol-level error marker as well as
-an actionable error message. Cover total failure, partial failure, and single-item
-failure with tests that assert the MCP `isError` value.
+Batch tools currently catch per-item exceptions and return structured `{"kind": "error", ...}` values, so FastMCP treats
+the overall call as successful and does not set MCP `CallToolResult.isError`. Preserve normal successful results for
+partial failures, but when every item fails, return/raise the appropriate FastMCP tool error so clients receive the
+protocol-level error marker as well as an actionable error message. Cover total failure, partial failure, and
+single-item failure with tests that assert the MCP `isError` value.
 
 ## Finish the `<entity>_<verb>` rename
 
-The first pass renamed the CRUD / stock / shopping-list families. The
-remainder needs a bit more care:
+The first pass renamed the CRUD / stock / shopping-list families. The remainder needs a bit more care:
 
-- **Stock views** — `get_expiring_stock`, `get_below_minimum_stock`,
-  `get_expired_stock`, `list_volatile_stock`. `stock_expiring_list` etc.
-  works mechanically but "stock views keyed on a query" doesn't feel like
-  a true entity; a separate "queries" namespace
-  (`stock_query_expiring` / `stock_query_expired` / …) or grouping under
-  `volatile_stock_*` might read better. Decide before renaming.
-- **Singletons** — `get_system_info`, `get_db_changed_time`,
-  `get_current_user`. These are zero-argument reads on singleton
-  resources; dropping the verb (`system_info`, `db_changed_time`,
-  `current_user`) reads more naturally as MCP resources than as tools.
-- **Product stock helpers** (OpenAPI) — `get_product_stock`,
-  `open_product_stock`, `transfer_product_stock` (already disabled). The
-  `<entity>_<verb>` rename is mechanical (`product_stock_get`,
-  `product_stock_open`) but the `product_stock` name implies it's a
-  standalone entity, which it isn't — it's a derived view over
-  `stock_entries` filtered by product. Worth thinking about whether to
-  promote to a batch tool that groups with `stock_*`.
+- **Stock views** — `get_expiring_stock`, `get_below_minimum_stock`, `get_expired_stock`, `list_volatile_stock`.
+  `stock_expiring_list` etc. works mechanically but "stock views keyed on a query" doesn't feel like a true entity; a
+  separate "queries" namespace (`stock_query_expiring` / `stock_query_expired` / …) or grouping under `volatile_stock_*`
+  might read better. Decide before renaming.
+- **Singletons** — `get_system_info`, `get_db_changed_time`, `get_current_user`. These are zero-argument reads on
+  singleton resources; dropping the verb (`system_info`, `db_changed_time`, `current_user`) reads more naturally as MCP
+  resources than as tools.
+- **Product stock helpers** (OpenAPI) — `get_product_stock`, `open_product_stock`, `transfer_product_stock` (already
+  disabled). The `<entity>_<verb>` rename is mechanical (`product_stock_get`, `product_stock_open`) but the
+  `product_stock` name implies it's a standalone entity, which it isn't — it's a derived view over `stock_entries`
+  filtered by product. Worth thinking about whether to promote to a batch tool that groups with `stock_*`.
 
 ## Consider per-test container isolation for e2e tests
 
-Tests currently share a session-scoped Grocy container and use uuid
-suffixes to avoid name collisions. Container startup is ~25-30s
-(LinuxServer image runs s6-overlay + nginx + PHP + SQLite migrations),
-so function-scoped containers would make the suite too slow.
+Tests currently share a session-scoped Grocy container and use uuid suffixes to avoid name collisions. Container startup
+is ~25-30s (LinuxServer image runs s6-overlay + nginx + PHP + SQLite migrations), so function-scoped containers would
+make the suite too slow.
 
 Options to explore:
 
-- Lighter Grocy container image (skip nginx/s6, run PHP built-in server
-  directly against a fresh SQLite DB).
+- Lighter Grocy container image (skip nginx/s6, run PHP built-in server directly against a fresh SQLite DB).
 - Grocy's built-in demo-mode reset endpoint (if one exists).
 - Per-test database reset via direct SQLite file swap.
 
 ## Per-turn eval logging
 
-`agent.run()` is a black box — no per-turn callbacks in
-agent_framework. Replace with a manual conversation loop (like
-`skills/info_gathering/evals/function_learning/function_learning.py`)
-to log timestamps, token counts, and tool call names on every LLM
-turn. This would let us see which tool calls are slow and where time
-is spent during eval runs.
+`agent.run()` is a black box — no per-turn callbacks in agent_framework. Replace with a manual conversation loop (like
+`skills/info_gathering/evals/function_learning/function_learning.py`) to log timestamps, token counts, and tool call
+names on every LLM turn. This would let us see which tool calls are slow and where time is spent during eval runs.
 
 ## File upstream Grocy bug for AddProduct freezer-branch default_best_before_days
 
-`StockService::AddProduct` (services/StockService.php:157 in v4.6.0)
-guards its freezer branch with
-`default_best_before_days_after_freezing >= -1` — which is true for the
-schema default 0 — so adding a product to a freezer location with no
-configured `default_best_before_days_after_freezing` ignores
-`default_best_before_days` and stores BBD=today. The sibling
-`TransferProduct` branch uses the correct guard (`> 0 || == -1`).
+`StockService::AddProduct` (services/StockService.php:157 in v4.6.0) guards its freezer branch with
+`default_best_before_days_after_freezing >= -1` — which is true for the schema default 0 — so adding a product to a
+freezer location with no configured `default_best_before_days_after_freezing` ignores `default_best_before_days` and
+stores BBD=today. The sibling `TransferProduct` branch uses the correct guard (`> 0 || == -1`).
 
-Our `stock_add` computes the BBD client-side via
-`_compute_default_bbd` in batch_tools.py to paper over this; a
-regression test (`test_stock_add_applies_default_best_before_days`, case 3) locks the desired behavior in. Once an upstream fix ships in a
-pinned Grocy release, drop the `is_freezer` / product-row lookup from
-the AddItem branch and let Grocy fill the default itself.
+Our `stock_add` computes the BBD client-side via `_compute_default_bbd` in batch_tools.py to paper over this; a
+regression test (`test_stock_add_applies_default_best_before_days`, case 3) locks the desired behavior in. Once an
+upstream fix ships in a pinned Grocy release, drop the `is_freezer` / product-row lookup from the AddItem branch and let
+Grocy fill the default itself.
 
-Action: file an issue (and ideally a PR) at
-https://github.com/grocy/grocy showing the inconsistency between
-AddProduct (lines 157-167) and TransferProduct (lines 1331-1341).
+Action: file an issue (and ideally a PR) at https://github.com/grocy/grocy showing the inconsistency between AddProduct
+(lines 157-167) and TransferProduct (lines 1331-1341).
 
 ## File upstream Grocy PR for missing entity-schema properties
 
-`fix_openapi_spec.py::patch_product_schema` downstream-patches 12 writable
-product columns that Grocy's hand-maintained `grocy.openapi.json` has never
-picked up since migrations 0207/0210/0219 added them (2022–2023). Upstream
-spec has similar gaps on `Location` (no `active`, no `is_freezer`),
-`QuantityUnit` (no `active`), `ShoppingListItem` (no `qu_id`, no `done`),
-and is missing `ShoppingList`, `ProductGroup`, `Recipe` entirely.
+`fix_openapi_spec.py::patch_product_schema` downstream-patches 12 writable product columns that Grocy's hand-maintained
+`grocy.openapi.json` has never picked up since migrations 0207/0210/0219 added them (2022–2023). Upstream spec has
+similar gaps on `Location` (no `active`, no `is_freezer`), `QuantityUnit` (no `active`), `ShoppingListItem` (no `qu_id`,
+no `done`), and is missing `ShoppingList`, `ProductGroup`, `Recipe` entirely.
 
-Action: file an issue + PR against https://github.com/grocy/grocy adding
-the missing properties and the three missing schemas. Maintainer (berrnd)
-has accepted similar drift fixes (#1451, #1967, #2198, #2694). Once a
-Grocy release shipping the upstream fix is pinned in `MODULE.bazel`,
-remove the corresponding downstream patches from `fix_openapi_spec.py`.
+Action: file an issue + PR against https://github.com/grocy/grocy adding the missing properties and the three missing
+schemas. Maintainer (berrnd) has accepted similar drift fixes (#1451, #1967, #2198, #2694). Once a Grocy release
+shipping the upstream fix is pinned in `MODULE.bazel`, remove the corresponding downstream patches from
+`fix_openapi_spec.py`.

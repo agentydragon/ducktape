@@ -4,11 +4,15 @@ Purpose: Human-labeled examples to train pattern recognition for safe `match_fil
 
 ## Key Semantic Distinction
 
-**`critic_scopes_expected_to_recall`**: TRAINING SIGNAL. Some known files such that IF a critic is shown these files, THEN we want it to catch this issue. NOT exhaustive - does not enumerate all possible detection sources.
+**`critic_scopes_expected_to_recall`**: TRAINING SIGNAL. Some known files such that IF a critic is shown these files,
+THEN we want it to catch this issue. NOT exhaustive - does not enumerate all possible detection sources.
 
-**`match_file_restriction`**: GRADING OPTIMIZATION. Restricts which critique outputs can match this occurrence. If set, a critique reporting issues only in files OUTSIDE this set will be skipped during matching (assumed non-match without semantic comparison).
+**`match_file_restriction`**: GRADING OPTIMIZATION. Restricts which critique outputs can match this occurrence. If set,
+a critique reporting issues only in files OUTSIDE this set will be skipped during matching (assumed non-match without
+semantic comparison).
 
-- **NULL** = allow matching from any file. Conservative default when we haven't determined the closed set, OR for genuinely cross-cutting issues.
+- **NULL** = allow matching from any file. Conservative default when we haven't determined the closed set, OR for
+  genuinely cross-cutting issues.
 - **Non-empty set (≥1 file)** = we know the closed set; skip matching if critique's files don't overlap.
 - **Empty set** = INVALID. Not allowed.
 
@@ -43,7 +47,8 @@ Can you produce a valid critique phrasing that accurately describes this issue b
 - **critic_scopes_expected_to_recall:** `[[server.py]]`
 - **Issue:** Pinned server tracking uses separate `_pinned_servers` set instead of `pinned: bool` field in `_MountState`
 - **Proposed value:** `[adgn/src/adgn/mcp/compositor/server.py]`
-- **Reasoning:** `_MountState` exists in the same server.py. Someone reading just this file has sufficient context to verify. Error is fully contained to this file.
+- **Reasoning:** `_MountState` exists in the same server.py. Someone reading just this file has sufficient context to
+  verify. Error is fully contained to this file.
 
 ### 3. unnecessary-cyclic-dependency / occ-0
 
@@ -52,14 +57,16 @@ Can you produce a valid critique phrasing that accurately describes this issue b
 - **critic_scopes_expected_to_recall:** `[[core.py]]`
 - **Issue:** `PlannedAction` and `Plan` reference `Planner` type but only use `planner.name`. Creates cyclic dependency.
 - **Proposed value:** `[gmail_archiver/core.py]`
-- **Reasoning:** PlannedAction, Plan, and Action all exist in this file. The cyclical dependency is fully realized within this file. No other file hits it.
+- **Reasoning:** PlannedAction, Plan, and Action all exist in this file. The cyclical dependency is fully realized
+  within this file. No other file hits it.
 
 ### 4. mcp-tool-comments-not-descriptions / occ-1
 
 - **File:** `ducktape/2025-12-04-00/issues/mcp-tool-comments-not-descriptions.yaml`
 - **files:** `adgn/src/adgn/mcp/exec/seatbelt.py` (lines 52-53)
 - **critic_scopes_expected_to_recall:** `[[seatbelt.py]]`
-- **Issue:** Comment explaining `env` field semantics on MCP tool input model should be `Field(description="...")` instead
+- **Issue:** Comment explaining `env` field semantics on MCP tool input model should be `Field(description="...")`
+  instead
 - **Proposed value:** `[adgn/src/adgn/mcp/exec/seatbelt.py]`
 - **Reasoning:** This issue could not be found by anyone not looking at the source code of this class.
 
@@ -68,7 +75,8 @@ Can you produce a valid critique phrasing that accurately describes this issue b
 - **File:** `ducktape/2025-09-03-00/issues/inline-oneoff-command.yaml`
 - **files:** `llm/adgn_llm/src/adgn_llm/mini_codex/mcp_manager.py` (lines 61-71)
 - **critic_scopes_expected_to_recall:** `[[mcp_manager.py]]`
-- **Issue:** Variables `shell`, `args_for_shell`, `env` are assigned then immediately passed to `StdioServerParameters()`. Should inline.
+- **Issue:** Variables `shell`, `args_for_shell`, `env` are assigned then immediately passed to
+  `StdioServerParameters()`. Should inline.
 - **Proposed value:** `[llm/adgn_llm/src/adgn_llm/mini_codex/mcp_manager.py]`
 - **Reasoning:** Encapsulated to this specific function. No external context needed.
 
@@ -102,8 +110,10 @@ Can you produce a valid critique phrasing that accurately describes this issue b
 - **File:** `ducktape/2025-12-04-00/issues/dead-constants-runs-context.yaml`
 - **files:** `runs_context.py` (15-19)
 - **critic_scopes_expected_to_recall:** `[[runs_context.py]]` (singleton)
-- **Issue:** Constants like `EVENTS_JSONL` defined but unused; strings hardcoded in cluster_unknowns.py, cli_app/shared.py, etc.
-- **Why NOT OK:** Despite singleton `critic_scopes_expected_to_recall`, a valid critique could flag the hardcoded strings in cluster_unknowns.py etc. The issue spans multiple files conceptually.
+- **Issue:** Constants like `EVENTS_JSONL` defined but unused; strings hardcoded in cluster_unknowns.py,
+  cli_app/shared.py, etc.
+- **Why NOT OK:** Despite singleton `critic_scopes_expected_to_recall`, a valid critique could flag the hardcoded
+  strings in cluster_unknowns.py etc. The issue spans multiple files conceptually.
 
 ### 3. abort-method-not-implemented / occ-0
 
@@ -114,7 +124,8 @@ Can you produce a valid critique phrasing that accurately describes this issue b
 - **Why NOT OK:** Despite singleton `critic_scopes_expected_to_recall`, a valid critique has dual framing:
   - Tag agents.py: "This calls .abort() which doesn't exist"
   - Tag agent.py: "MiniCodex is missing abort() that callers expect"
-- **Key insight:** Detection source ≠ valid reporting targets. Both files in `files:` are valid places to report this issue.
+- **Key insight:** Detection source ≠ valid reporting targets. Both files in `files:` are valid places to report this
+  issue.
 
 ### 4. has-inflight-always-false (original structure)
 

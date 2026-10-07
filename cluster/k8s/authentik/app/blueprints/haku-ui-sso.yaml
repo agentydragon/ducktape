@@ -2,7 +2,8 @@ version: 1
 metadata:
   name: SSO - Haku UI
   labels:
-    blueprints.goauthentik.io/description: "Haku-authored UI (runs in haku-sandbox) proxy provider, application, and single-user access binding"
+    blueprints.goauthentik.io/description:
+      "Haku-authored UI (runs in haku-sandbox) proxy provider, application, and single-user access binding"
 
 entries:
   - model: authentik_providers_proxy.proxyprovider
@@ -27,7 +28,8 @@ entries:
     attrs:
       name: Haku UI
       provider: !KeyOf haku-ui-provider
-      meta_description: "Haku's own UI service — agent-authored, runs in haku-sandbox, embedded in the Haku console iframe"
+      meta_description:
+        "Haku's own UI service — agent-authored, runs in haku-sandbox, embedded in the Haku console iframe"
       meta_launch_url: "https://haku-ui.allegedly.works"
       open_in_new_tab: true
 

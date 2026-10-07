@@ -6,19 +6,16 @@
 
 - NixOS module: <../../../../nix/nixos/hosts/rugged/ipu7-camera.nix> (enabled)
 - `snapshot` works (with `GSK_RENDERER=gl`).
-- PipeWire camera portal (`org.freedesktop.portal.Camera`) is active and
-  `IsCameraPresent=true`. WirePlumber exposes PipeWire node 97 ("Built-in Front
-  Camera") via `api.libcamera.source`.
+- PipeWire camera portal (`org.freedesktop.portal.Camera`) is active and `IsCameraPresent=true`. WirePlumber exposes
+  PipeWire node 97 ("Built-in Front Camera") via `api.libcamera.source`.
 - **Chrome 147 works** with: `NIXOS_OZONE_WL=1` (native Wayland, not XWayland)
-  - `--enable-features=WebRtcPipeWireCamera`. Without these, Chrome falls back to
-    raw V4L2 `/dev/video*` nodes which are non-functional (IPU7 needs libcamera ISP).
-    The feature flag is `WebRtcPipeWireCamera` (not `PipeWireCamera`).
-- Known issue: green tint from uncalibrated sensor. Needs color correction matrix
-  in `/usr/share/libcamera/ipa/simple/uncalibrated.yaml`.
-- **Zoom 6.6**: uses raw V4L2 only for camera (PipeWire support is screen-sharing only).
-  Shows "ipu7" (raw V4L2 node), all black. Confirmed by `strings` on binary: camera uses
-  `/dev/video%u`, no `AccessCamera` portal calls in Zoom's own code (only in embedded
-  Chromium `libcef.so`). No indication Zoom is working on PipeWire camera support.
+  - `--enable-features=WebRtcPipeWireCamera`. Without these, Chrome falls back to raw V4L2 `/dev/video*` nodes which are
+    non-functional (IPU7 needs libcamera ISP). The feature flag is `WebRtcPipeWireCamera` (not `PipeWireCamera`).
+- Known issue: green tint from uncalibrated sensor. Needs color correction matrix in
+  `/usr/share/libcamera/ipa/simple/uncalibrated.yaml`.
+- **Zoom 6.6**: uses raw V4L2 only for camera (PipeWire support is screen-sharing only). Shows "ipu7" (raw V4L2 node),
+  all black. Confirmed by `strings` on binary: camera uses `/dev/video%u`, no `AccessCamera` portal calls in Zoom's own
+  code (only in embedded Chromium `libcef.so`). No indication Zoom is working on PipeWire camera support.
 
 **Next steps**:
 
@@ -65,6 +62,5 @@ Can also be wired as a systemd user service (see git history for a prior version
 
 ## Vulkan crash
 
-GTK4 apps (including `snapshot`) segfault with `VK_ERROR_DEVICE_LOST`
-on Lunar Lake. Workaround: `GSK_RENDERER=gl`. TODO in `default.nix` to add to
-`environment.sessionVariables`.
+GTK4 apps (including `snapshot`) segfault with `VK_ERROR_DEVICE_LOST` on Lunar Lake. Workaround: `GSK_RENDERER=gl`. TODO
+in `default.nix` to add to `environment.sessionVariables`.

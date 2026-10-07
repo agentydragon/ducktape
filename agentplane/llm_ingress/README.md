@@ -1,17 +1,15 @@
 # Agentplane LLM workload ingress
 
-This is the authenticated Sandbox-facing hop in front of the existing LiteLLM deployment. The
-central egress proxy substitutes the caller's already-authenticated Pod-bound workload token into
-an ordinary `Authorization: Bearer` header. This service resolves that bearer with the shared
-`WorkloadPrincipalAuthenticator`, removes it, and forwards the request to LiteLLM with one
-server-held virtual key.
+This is the authenticated Sandbox-facing hop in front of the existing LiteLLM deployment. The central egress proxy
+substitutes the caller's already-authenticated Pod-bound workload token into an ordinary `Authorization: Bearer` header.
+This service resolves that bearer with the shared `WorkloadPrincipalAuthenticator`, removes it, and forwards the request
+to LiteLLM with one server-held virtual key.
 
-The forwarded byte body, status, error body, and streamed chunks are not translated. Verified
-identity is attached only through LiteLLM's documented `x-litellm-spend-logs-metadata` JSON header
-(deployed `litellm/litellm:1.100.0`, the `tana-litellm-proxy` image, `tana/litellm_proxy/BUILD.bazel`). That version
-consumes the header (`_get_spend_logs_metadata_from_request_headers`) in its common request
-setup used by both native `/v1/messages` and `/v1/responses`, including their streaming paths. The
-authoritative metadata object is:
+The forwarded byte body, status, error body, and streamed chunks are not translated. Verified identity is attached only
+through LiteLLM's documented `x-litellm-spend-logs-metadata` JSON header (deployed `litellm/litellm:1.100.0`, the
+`tana-litellm-proxy` image, `tana/litellm_proxy/BUILD.bazel`). That version consumes the header
+(`_get_spend_logs_metadata_from_request_headers`) in its common request setup used by both native `/v1/messages` and
+`/v1/responses`, including their streaming paths. The authoritative metadata object is:
 
 ```json
 {
@@ -25,17 +23,15 @@ authoritative metadata object is:
 }
 ```
 
-Incoming LiteLLM metadata/customer/agent headers and Agentplane/Sandbox/Pod/Agent/Thread identity
-headers are removed before this object is stamped. Request bodies remain provider-native and are
-never identity evidence; a caller's body `metadata`, Agent, Thread, Pod, or Sandbox fields cannot
-replace the server-stamped object.
+Incoming LiteLLM metadata/customer/agent headers and Agentplane/Sandbox/Pod/Agent/Thread identity headers are removed
+before this object is stamped. Request bodies remain provider-native and are never identity evidence; a caller's body
+`metadata`, Agent, Thread, Pod, or Sandbox fields cannot replace the server-stamped object.
 
-The workload bearer is sent only to Kubernetes TokenReview. The LiteLLM virtual key is sent only on
-the internal LiteLLM hop. Neither credential is logged, placed in errors, returned to callers, or
-mounted into a runner or harness container.
+The workload bearer is sent only to Kubernetes TokenReview. The LiteLLM virtual key is sent only on the internal LiteLLM
+hop. Neither credential is logged, placed in errors, returned to callers, or mounted into a runner or harness container.
 
 For targeted debugging, set `log_llm_requests: true` in the ingress settings (or
-`AGENTPLANE_LLM_INGRESS_LOG_LLM_REQUESTS=true`). The ingress logs each request body and every raw
-response chunk with a per-request ID and chunk number, plus whether the stream completed. This can
-include prompts, reasoning, generated text, and tool arguments; keep it disabled by default and
-restrict access and retention while enabled. Authorization and other request headers are not logged.
+`AGENTPLANE_LLM_INGRESS_LOG_LLM_REQUESTS=true`). The ingress logs each request body and every raw response chunk with a
+per-request ID and chunk number, plus whether the stream completed. This can include prompts, reasoning, generated text,
+and tool arguments; keep it disabled by default and restrict access and retention while enabled. Authorization and other
+request headers are not logged.

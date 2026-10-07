@@ -1,7 +1,6 @@
 # Claude Code Web Environment Discovery
 
-Documented from a live session on 2026-07-31; binary version table updated
-2026-09-12.
+Documented from a live session on 2026-07-31; binary version table updated 2026-09-12.
 
 ## Binary Versions
 
@@ -10,26 +9,19 @@ Documented from a live session on 2026-07-31; binary version table updated
 | `process_api` (PID 1) | `edebff2c`         | see `re/process_api/` (stale — see note below) |
 | `environment-manager` | none in this build | `release-ba76006550-ext`                       |
 
-`environment-manager` is garble-obfuscated with `-literals` (release channel,
-31.2 MB uncompressed as of `release-ba76006550-ext`, down from 58.6 MB in
-`release-1186d93b9-ext`): symbol names randomized, no DWARF, and string
-constants encrypted so the binary's own help text is absent from `strings`
-output. Both are defeated — `re/environment_manager/README.md` documents how
-to get full disassembly and to recover the encrypted literals. The RE source
-under `re/environment_manager/src/` still reflects `0b86a2a0`
-(`release-1186d93b9-ext`) and has not been reconciled against
-`release-ba76006550-ext` yet; see `re/TODO.md`.
+`environment-manager` is garble-obfuscated with `-literals` (release channel, 31.2 MB uncompressed as of
+`release-ba76006550-ext`, down from 58.6 MB in `release-1186d93b9-ext`): symbol names randomized, no DWARF, and string
+constants encrypted so the binary's own help text is absent from `strings` output. Both are defeated —
+`re/environment_manager/README.md` documents how to get full disassembly and to recover the encrypted literals. The RE
+source under `re/environment_manager/src/` still reflects `0b86a2a0` (`release-1186d93b9-ext`) and has not been
+reconciled against `release-ba76006550-ext` yet; see `re/TODO.md`.
 
-**`process_api` could not be recaptured in the 2026-09-12 pass**:
-`/proc/1/exe` and `/proc/1/mem` both return `EACCES` for root with full
-capabilities (`cap_sys_ptrace` included), on a genuine Firecracker kernel (not
-a gVisor-synthesized `/proc` — confirmed via `/proc/version`). `/proc/1/maps`
-and `/proc/1/smaps_rollup` remain readable and show the binary still fully
-mapped (matches the documented ~4.4 MB size), so this is a real kernel-level
-ptrace-access block on reading PID 1's own memory/executable from inside the
-session it supervises, not a stale reference or a tooling gap. The existing
-`edebff2c` reference and RE source are unverified against whatever
-`process_api` build is live now.
+**`process_api` could not be recaptured in the 2026-09-12 pass**: `/proc/1/exe` and `/proc/1/mem` both return `EACCES`
+for root with full capabilities (`cap_sys_ptrace` included), on a genuine Firecracker kernel (not a gVisor-synthesized
+`/proc` — confirmed via `/proc/version`). `/proc/1/maps` and `/proc/1/smaps_rollup` remain readable and show the binary
+still fully mapped (matches the documented ~4.4 MB size), so this is a real kernel-level ptrace-access block on reading
+PID 1's own memory/executable from inside the session it supervises, not a stale reference or a tooling gap. The
+existing `edebff2c` reference and RE source are unverified against whatever `process_api` build is live now.
 
 ## Table of Contents
 
@@ -61,11 +53,9 @@ PID 1: /process_api --firecracker-init \
 
 **Binary**: `/process_api` (Rust, ELF 64-bit, static-pie linked, stripped)
 
-As of 2026-03-16, the binary uses `--firecracker-init` mode, which adds a
-full VM init system (mount root, pivot_root, networking, FUSE, rclone) before
-starting the WebSocket listener. The `--cpu-shares`, `--memory-limit-bytes`,
-and `--oom-polling-period-ms` flags are no longer passed on the command line
-in the current container invocation.
+As of 2026-03-16, the binary uses `--firecracker-init` mode, which adds a full VM init system (mount root, pivot_root,
+networking, FUSE, rclone) before starting the WebSocket listener. The `--cpu-shares`, `--memory-limit-bytes`, and
+`--oom-polling-period-ms` flags are no longer passed on the command line in the current container invocation.
 
 **Help output**:
 
@@ -87,8 +77,8 @@ Options:
 **Purpose**:
 
 - Acts as container init (PID 1)
-- In `--firecracker-init` mode: mounts root filesystem, sets up networking,
-  configures FUSE, mounts rclone tools, then spawns the main process
+- In `--firecracker-init` mode: mounts root filesystem, sets up networking, configures FUSE, mounts rclone tools, then
+  spawns the main process
 - Exposes WebSocket API on port 2024
 - Manages container resources (memory limits, CPU shares via cgroups)
 - Handles OOM conditions
@@ -141,9 +131,8 @@ Options:
 
 ### Environment Inheritance
 
-The proxy environment variables are set at the **container level** (injected before PID 1
-starts) and inherited by every process in the tree above (`process_api` → `/bin/sh` →
-`environment-manager` → `claude` → bash shells).
+The proxy environment variables are set at the **container level** (injected before PID 1 starts) and inherited by every
+process in the tree above (`process_api` → `/bin/sh` → `environment-manager` → `claude` → bash shells).
 
 ## Sandbox Runtime Settings
 
@@ -172,7 +161,8 @@ Version: `release-ba76006550-ext`
 
 ### Overview
 
-The environment-runner is an Anthropic-built Go binary that orchestrates Claude Code sessions in containerized environments. It handles the complete lifecycle from session initialization to cleanup.
+The environment-runner is an Anthropic-built Go binary that orchestrates Claude Code sessions in containerized
+environments. It handles the complete lifecycle from session initialization to cleanup.
 
 ### Help Output
 
@@ -316,8 +306,7 @@ Flags:
 
 ### preload-claude Subcommand
 
-Pre-boots a Claude Code process so a later `task-run` can claim it warm rather
-than paying cold-start cost:
+Pre-boots a Claude Code process so a later `task-run` can claim it warm rather than paying cold-start cost:
 
 ```
 $ environment-manager preload-claude --help
@@ -331,11 +320,10 @@ Flags:
   -h, --help                 help for preload-claude
 ```
 
-The spare/claim path is instrumented with `claude_code.spare.claim_miss` ("Cold
-spawn instead of warm-spare claim, attributed by reason") and
-`claude_code.spare.spawn_to_claim_window_ms` ("Wall-clock from spare spawn/adopt
-to Claim (the overlap window W)"). Both metric descriptions were recovered from
-the binary's encrypted literals, not from documentation.
+The spare/claim path is instrumented with `claude_code.spare.claim_miss` ("Cold spawn instead of warm-spare claim,
+attributed by reason") and `claude_code.spare.spawn_to_claim_window_ms` ("Wall-clock from spare spawn/adopt to Claim
+(the overlap window W)"). Both metric descriptions were recovered from the binary's encrypted literals, not from
+documentation.
 
 ### setup Subcommand
 
@@ -509,11 +497,13 @@ claude (PID 43-44)
     FD 4: OAuth access token
 ```
 
-Tokens are delivered via pipes and consumed once. After the initial read, the pipe FDs show as connected to pipes but contain no remaining data.
+Tokens are delivered via pipes and consumed once. After the initial read, the pipe FDs show as connected to pipes but
+contain no remaining data.
 
 #### Token Extraction Procedure
 
-Since tokens are consumed from pipes and not stored in files, they can be extracted from the `environment-manager` process memory:
+Since tokens are consumed from pipes and not stored in files, they can be extracted from the `environment-manager`
+process memory:
 
 ```bash
 # 1. Find environment-manager PID (the Go binary, not the shell wrapper)
@@ -635,13 +625,13 @@ http://container_{container_id}:jwt_{JWT_TOKEN}@21.0.0.127:15004
 
 **Proxy Configuration Source**:
 
-The proxy URL (with embedded JWT) is **injected by the container runtime** into PID 1's
-environment before the container starts. Key implications:
+The proxy URL (with embedded JWT) is **injected by the container runtime** into PID 1's environment before the container
+starts. Key implications:
 
 1. **Static for session lifetime** - The URL never changes after container start
 2. **No refresh mechanism** - There's no API to get a new token
-3. **Inherited by all processes** - All child processes inherit the env vars (see the
-   Environment Inheritance tree under Container Init Process)
+3. **Inherited by all processes** - All child processes inherit the env vars (see the Environment Inheritance tree under
+   Container Init Process)
 4. **4-hour validity** - Token expires 4 hours after container start
 
 **Programmatic Access**:
@@ -665,8 +655,8 @@ For tools that don't natively support proxy env vars (e.g., Bazel), the proxy UR
    echo "$HTTP_PROXY" > /tmp/anthropic-proxy-url
    ```
 
-**Note**: The proxy URL is constant for the session duration. Reading from `HTTP_PROXY` on
-each tool invocation is safe and reliable - there's no race condition.
+**Note**: The proxy URL is constant for the session duration. Reading from `HTTP_PROXY` on each tool invocation is safe
+and reliable - there's no race condition.
 
 **Environment Variables** (all point to same proxy):
 
@@ -785,8 +775,8 @@ $ curl -s -X POST http://localhost:$CODESIGN_MCP_PORT/mcp \
   -d '{"jsonrpc": "2.0", "method": "initialize", "params": {"protocolVersion": "2024-11-05", "capabilities": {}, "clientInfo": {"name": "probe", "version": "1.0"}}, "id": 1}'
 ```
 
-Returns `protocolVersion` `2024-11-05`, `capabilities.tools.listChanged: true`, and
-`serverInfo` `{ name: codesign, version: 1.0.0 }`.
+Returns `protocolVersion` `2024-11-05`, `capabilities.tools.listChanged: true`, and `serverInfo`
+`{ name: codesign, version: 1.0.0 }`.
 
 ### Protocol: List Tools
 
@@ -829,7 +819,8 @@ $ curl -s -X POST http://localhost:$CODESIGN_MCP_PORT/mcp \
 
 ### Purpose
 
-The codesign MCP server allows the agent to make **signed git commits** without exposing the private signing key. The key stays in the MCP server; only the signing operation is exposed.
+The codesign MCP server allows the agent to make **signed git commits** without exposing the private signing key. The
+key stays in the MCP server; only the signing operation is exposed.
 
 ## Claude Configuration
 
@@ -909,7 +900,8 @@ exit 0
 
 ### Session Start Hook Skill
 
-Located at `~/.claude/skills/session-start-hook/SKILL.md`, teaches how to create SessionStart hooks for dependency installation in new repositories.
+Located at `~/.claude/skills/session-start-hook/SKILL.md`, teaches how to create SessionStart hooks for dependency
+installation in new repositories.
 
 ## Environment Variables
 
@@ -1115,8 +1107,7 @@ Git commits are signed using a bridge between git's GPG interface and the MCP co
 
 ### code-sign Binary
 
-**Location**: `/tmp/code-sign`
-**Type**: Compiled Go binary (ELF 64-bit)
+**Location**: `/tmp/code-sign` **Type**: Compiled Go binary (ELF 64-bit)
 
 **Purpose**: Bridges git's SSH signing protocol to the MCP codesign server:
 
@@ -1174,13 +1165,14 @@ File descriptors 3 and 4 contain auth tokens but are:
 - Not inherited by child processes
 - Not readable from other processes
 
-Probes confirming the table above: `claude -p` hangs with no `ANTHROPIC_API_KEY`; a direct
-`POST /v1/messages` returns an `authentication_error` ("invalid x-api-key"); reading the
-parent's FD 3/4 yields nothing (the pipes are already drained).
+Probes confirming the table above: `claude -p` hangs with no `ANTHROPIC_API_KEY`; a direct `POST /v1/messages` returns
+an `authentication_error` ("invalid x-api-key"); reading the parent's FD 3/4 yields nothing (the pipes are already
+drained).
 
 #### Conclusion
 
-The `Task` tool is the **only path** to spawn subagents. It routes through the official claude infrastructure which handles auth, resource limits, and tool permissions. This is intentional security design.
+The `Task` tool is the **only path** to spawn subagents. It routes through the official claude infrastructure which
+handles auth, resource limits, and tool permissions. This is intentional security design.
 
 ## Architecture Summary
 
@@ -1240,10 +1232,9 @@ The `Task` tool is the **only path** to spawn subagents. It routes through the o
 
 ## Inference Protocol (Messages API)
 
-The Claude CLI inside the container speaks the **standard Anthropic Messages API**
-(`model`, `max_tokens`, `messages`, `tools`, `stream: true`; tool results returned as
-standard `tool_result` content blocks in a follow-up user message) over the WebSocket
-connection. The only environment-specific parts are the WebSocket envelope, auth header, and
+The Claude CLI inside the container speaks the **standard Anthropic Messages API** (`model`, `max_tokens`, `messages`,
+`tools`, `stream: true`; tool results returned as standard `tool_result` content blocks in a follow-up user message)
+over the WebSocket connection. The only environment-specific parts are the WebSocket envelope, auth header, and
 heartbeat documented below.
 
 ### Streaming Response Events
@@ -1261,8 +1252,8 @@ When `stream: true`, the API returns Server-Sent Events (SSE) with these event t
 | `ping`                | Keep-alive                                               |
 | `error`               | Error occurred                                           |
 
-Content arrives as `text_delta` (assistant text) or `input_json_delta` (tool-call arguments
-streamed as partial JSON); `message_delta` carries the `stop_reason` (`end_turn`, `tool_use`).
+Content arrives as `text_delta` (assistant text) or `input_json_delta` (tool-call arguments streamed as partial JSON);
+`message_delta` carries the `stop_reason` (`end_turn`, `tool_use`).
 
 ### WebSocket Wrapper
 
@@ -1318,20 +1309,18 @@ The architecture deliberately prevents unauthorized inference requests:
 
 ### Token Single-Use Constraint
 
-The Session Ingress token (`sk-ant-si-...`) is **single-use per WebSocket connection**:
-reconnecting with the same token is rejected with HTTP 401. Once the active claude process
-establishes its WebSocket, no other process can connect with the same token.
+The Session Ingress token (`sk-ant-si-...`) is **single-use per WebSocket connection**: reconnecting with the same token
+is rejected with HTTP 401. Once the active claude process establishes its WebSocket, no other process can connect with
+the same token.
 
 ### Stdin Injection (Theoretical)
 
-Writing to claude's stdin via `/proc/{pid}/fd/0` is technically possible (the CLI reads
-stream-json), but does not bypass authentication:
+Writing to claude's stdin via `/proc/{pid}/fd/0` is technically possible (the CLI reads stream-json), but does not
+bypass authentication:
 
 1. Messages queue in the pipe buffer until claude reads them
-2. The exact stream-json format includes UUIDs and other required fields, so malformed
-   messages are rejected
-3. The WebSocket connection is already established — injecting stdin does not open a new
-   authenticated channel
+2. The exact stream-json format includes UUIDs and other required fields, so malformed messages are rejected
+3. The WebSocket connection is already established — injecting stdin does not open a new authenticated channel
 
 ### Verified Local Services
 
@@ -1358,21 +1347,19 @@ Can we hijack the existing authenticated WebSocket connection?
 
 **Detailed findings:**
 
-1. **Socket FDs are protected**: opening a socket FD under `/proc/{claude_pid}/fd/` returns
-   `ENXIO` — the kernel refuses to re-open it.
-2. **TLS 1.3 encryption**: even with socket access, traffic is encrypted (cipher
-   `TLS_AES_256_GCM_SHA384`), no `SSLKEYLOGFILE` is set, and session keys were not found in a
-   heap dump.
-3. **ptrace access works** (ptrace_scope=1, running as root), but raw socket I/O bypasses
-   TLS (sends garbage); hijacking would require locating OpenSSL's `SSL` structure pointer and
-   calling `SSL_write()` with the correct context.
-4. **Finding the SSL context is the blocker**: `SSL_write`/`SSL_read` resolve in the Node.js
-   binary, but the live `SSL*` for the WebSocket lives in V8's managed heap, not the C heap —
-   heap-scanned candidates all returned `-1` from `SSL_get_fd()`. The WebSocket URL itself is
-   recoverable from memory (`wss://api.anthropic.com/v1/session_ingress/ws/{session_id}`).
-5. **Syscall interception (ptrace)** can catch `write()`, but the data is already
-   TLS-encrypted; `SSL_write` is a library call, not a syscall, so reaching the plaintext
-   would need a gdb breakpoint on `SSL_write` — which again requires the `SSL*` context first.
+1. **Socket FDs are protected**: opening a socket FD under `/proc/{claude_pid}/fd/` returns `ENXIO` — the kernel refuses
+   to re-open it.
+2. **TLS 1.3 encryption**: even with socket access, traffic is encrypted (cipher `TLS_AES_256_GCM_SHA384`), no
+   `SSLKEYLOGFILE` is set, and session keys were not found in a heap dump.
+3. **ptrace access works** (ptrace_scope=1, running as root), but raw socket I/O bypasses TLS (sends garbage); hijacking
+   would require locating OpenSSL's `SSL` structure pointer and calling `SSL_write()` with the correct context.
+4. **Finding the SSL context is the blocker**: `SSL_write`/`SSL_read` resolve in the Node.js binary, but the live `SSL*`
+   for the WebSocket lives in V8's managed heap, not the C heap — heap-scanned candidates all returned `-1` from
+   `SSL_get_fd()`. The WebSocket URL itself is recoverable from memory
+   (`wss://api.anthropic.com/v1/session_ingress/ws/{session_id}`).
+5. **Syscall interception (ptrace)** can catch `write()`, but the data is already TLS-encrypted; `SSL_write` is a
+   library call, not a syscall, so reaching the plaintext would need a gdb breakpoint on `SSL_write` — which again
+   requires the `SSL*` context first.
 
 ### Security Conclusion
 

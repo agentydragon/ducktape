@@ -4,7 +4,9 @@ metadata:
   name: postscanmail-mcp
   namespace: postscanmail-mcp
   annotations:
-    description: "Authentik-gated PostScan Mail MCP facade. Only agentydragon is allowed at the OAuth consent step (group binding in tf/gitops/agent-machine-access)."
+    description:
+      "Authentik-gated PostScan Mail MCP facade. Only agentydragon is allowed at the OAuth consent step (group binding
+      in tf/gitops/agent-machine-access)."
 spec:
   parentRefs:
     - name: cluster-gateway

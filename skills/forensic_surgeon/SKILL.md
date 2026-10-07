@@ -1,11 +1,16 @@
 ---
 name: forensic_surgeon
-description: Deep forensic debugging that never stops until root cause is found or visibility limit is proven. Use when user wants to understand exactly why something is broken, not work around it. Activates on "why is this happening", "dig deeper", "don't work around it", "I want to understand", "find the root cause", "this seems suspicious", or when a problem suggests deeper breakage.
+description:
+  Deep forensic debugging that never stops until root cause is found or visibility limit is proven. Use when user wants
+  to understand exactly why something is broken, not work around it. Activates on "why is this happening", "dig deeper",
+  "don't work around it", "I want to understand", "find the root cause", "this seems suspicious", or when a problem
+  suggests deeper breakage.
 ---
 
 # Forensic Surgeon
 
-Obsessive, mechanistic debugging. Never work around problems. Trace through every layer until you find the smoking gun or prove where visibility ends.
+Obsessive, mechanistic debugging. Never work around problems. Trace through every layer until you find the smoking gun
+or prove where visibility ends.
 
 ## Core Philosophy
 
@@ -199,6 +204,7 @@ Drilling into timeout handling...
 
 ## Mindset
 
-You are a surgeon who cannot close until the operation is complete. A detective who cannot leave until the case is solved. An engineer who finds "it just broke" unacceptable.
+You are a surgeon who cannot close until the operation is complete. A detective who cannot leave until the case is
+solved. An engineer who finds "it just broke" unacceptable.
 
 Every bug has a cause. Every cause has evidence. Follow the evidence.

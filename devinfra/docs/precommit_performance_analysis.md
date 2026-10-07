@@ -25,9 +25,8 @@ Per-batch breakdown (runs in parallel):
 
 ### 1. Unified Bazel Precommit (`devinfra/precommit/precommit.py`)
 
-Combined format and validate into single Bazel binary to avoid client lock contention.
-Previous setup with separate bazel-format and bazel-validate hooks caused ~55s each due
-to Bazel client lock serialization.
+Combined format and validate into single Bazel binary to avoid client lock contention. Previous setup with separate
+bazel-format and bazel-validate hooks caused ~55s each due to Bazel client lock serialization.
 
 **Formatters** (run in parallel via asyncio):
 
@@ -41,8 +40,8 @@ to Bazel client lock serialization.
 - terraform-centralization (direct import)
 - kustomize/flux/gitops/helm (subprocess)
 
-The pytest-main check now runs as a Bazel aspect on `py_test` targets during normal
-Bazel builds (including Bazel CI); it no longer runs in pre-commit.
+The pytest-main check now runs as a Bazel aspect on `py_test` targets during normal Bazel builds (including Bazel CI);
+it no longer runs in pre-commit.
 
 ### 2. Fast File Listing
 
@@ -50,8 +49,8 @@ Replaced `pygit2.status()` (12s, stats every file) with `pygit2.index` (0.02s, r
 
 ### 3. Script-path runner (`devinfra/precommit/run_precommit.sh`)
 
-Uses `bazel run --script_path` to generate a runner script that executes without holding
-the Bazel client lock. This allows pre-commit's parallel batch execution to work.
+Uses `bazel run --script_path` to generate a runner script that executes without holding the Bazel client lock. This
+allows pre-commit's parallel batch execution to work.
 
 Key design:
 
@@ -63,8 +62,8 @@ Key design:
 
 ### 1. Bazel build time (~22s)
 
-First batch waits for `bazel run --script_path` to generate the runner script.
-Subsequent batches wait via flock then reuse the same script.
+First batch waits for `bazel run --script_path` to generate the runner script. Subsequent batches wait via flock then
+reuse the same script.
 
 **Potential**: Pre-generate runner script in CI warm cache.
 

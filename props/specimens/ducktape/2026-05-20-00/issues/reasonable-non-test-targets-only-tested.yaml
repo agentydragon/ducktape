@@ -1,13 +1,12 @@
-rationale:
-  'These targets are false positives for the "only reached from tests" heuristic. Each target currently has only
-  test reachability inside the pinned ducktape snapshot, but manual review found that it is reasonable to keep it non-testonly:
-  it is public or reusable API, externally consumed tooling, skill/example content packaged outside this Bazel reachability
-  query, a third-party/tool wrapper, or already-tested plugin/example code whose deployment path is intentionally outside
-  this specific target graph check.
+rationale: 'These targets are false positives for the "only reached from tests" heuristic. Each target currently has
+  only test reachability inside the pinned ducktape snapshot, but manual review found that it is reasonable to keep it
+  non-testonly: it is public or reusable API, externally consumed tooling, skill/example content packaged outside this
+  Bazel reachability query, a third-party/tool wrapper, or already-tested plugin/example code whose deployment path is
+  intentionally outside this specific target graph check.
 
 
-  A critic should not report these occurrences as missing testonly and should not ask for deletion solely because the current
-  in-repo Bazel reverse dependencies are tests.'
+  A critic should not report these occurrences as missing testonly and should not ask for deletion solely because the
+  current in-repo Bazel reverse dependencies are tests.'
 should_flag: false
 occurrences:
   - occurrence_id: occ-000
@@ -16,9 +15,9 @@ occurrences:
         - - 203
           - 203
     note:
-      "//augur/sim:projections (py_library); direct non-generated consumers: //augur/sim:projections_test. False positive:
-      this target is reasonable to leave non-testonly despite only having in-repo test reachability in this snapshot; it is
-      API/example/tooling/packaged content with plausible non-test or external use."
+      "//augur/sim:projections (py_library); direct non-generated consumers: //augur/sim:projections_test. False
+      positive: this target is reasonable to leave non-testonly despite only having in-repo test reachability in this
+      snapshot; it is API/example/tooling/packaged content with plausible non-test or external use."
     match_file_restriction:
       - augur/sim/BUILD.bazel
     relevant_files:
@@ -30,8 +29,8 @@ occurrences:
           - 230
     note:
       "//augur/sim:replay (py_library); direct non-generated consumers: //augur/sim:simulate_test. False positive: this
-      target is reasonable to leave non-testonly despite only having in-repo test reachability in this snapshot; it is API/example/tooling/packaged
-      content with plausible non-test or external use."
+      target is reasonable to leave non-testonly despite only having in-repo test reachability in this snapshot; it is
+      API/example/tooling/packaged content with plausible non-test or external use."
     match_file_restriction:
       - augur/sim/BUILD.bazel
     relevant_files:
@@ -42,9 +41,10 @@ occurrences:
         - - 3
           - 3
     note:
-      "//devinfra/claude/claude_api:tool_input_models (py_library); direct non-generated consumers: //devinfra/claude/claude_api:test_tool_input_models.
-      False positive: this target is reasonable to leave non-testonly despite only having in-repo test reachability in this
-      snapshot; it is API/example/tooling/packaged content with plausible non-test or external use."
+      "//devinfra/claude/claude_api:tool_input_models (py_library); direct non-generated consumers:
+      //devinfra/claude/claude_api:test_tool_input_models. False positive: this target is reasonable to leave
+      non-testonly despite only having in-repo test reachability in this snapshot; it is API/example/tooling/packaged
+      content with plausible non-test or external use."
     match_file_restriction:
       - devinfra/claude/claude_api/BUILD.bazel
     relevant_files:
@@ -55,9 +55,10 @@ occurrences:
         - - 3
           - 3
     note:
-      "//finance/worthy/homebank:homebank (go_library); direct non-generated consumers: //finance/worthy/homebank:homebank_test.
-      False positive: this target is reasonable to leave non-testonly despite only having in-repo test reachability in this
-      snapshot; it is API/example/tooling/packaged content with plausible non-test or external use."
+      "//finance/worthy/homebank:homebank (go_library); direct non-generated consumers:
+      //finance/worthy/homebank:homebank_test. False positive: this target is reasonable to leave non-testonly despite
+      only having in-repo test reachability in this snapshot; it is API/example/tooling/packaged content with plausible
+      non-test or external use."
     match_file_restriction:
       - finance/worthy/homebank/BUILD.bazel
     relevant_files:
@@ -68,10 +69,10 @@ occurrences:
         - - 3
           - 3
     note:
-      "//mcp_infra/compositor:admin (py_library); direct non-generated consumers: //mcp_infra/compositor:test_admin, //mcp_infra/compositor:test_inproc_server_storage,
-      //mcp_infra/compositor:test_lifecycle. False positive: this target is reasonable to leave non-testonly despite only having
-      in-repo test reachability in this snapshot; it is API/example/tooling/packaged content with plausible non-test or external
-      use."
+      "//mcp_infra/compositor:admin (py_library); direct non-generated consumers: //mcp_infra/compositor:test_admin,
+      //mcp_infra/compositor:test_inproc_server_storage, //mcp_infra/compositor:test_lifecycle. False positive: this
+      target is reasonable to leave non-testonly despite only having in-repo test reachability in this snapshot; it is
+      API/example/tooling/packaged content with plausible non-test or external use."
     match_file_restriction:
       - mcp_infra/compositor/BUILD.bazel
     relevant_files:
@@ -82,9 +83,10 @@ occurrences:
         - - 120
           - 120
     note:
-      "//mcp_infra/exec:bwrap (py_library); direct non-generated consumers: //inop/runners:openai_runner, //mcp_infra/exec:test_bwrap,
-      //mcp_infra/testing:exec_stubs. False positive: this target is reasonable to leave non-testonly despite only having in-repo
-      test reachability in this snapshot; it is API/example/tooling/packaged content with plausible non-test or external use."
+      "//mcp_infra/exec:bwrap (py_library); direct non-generated consumers: //inop/runners:openai_runner,
+      //mcp_infra/exec:test_bwrap, //mcp_infra/testing:exec_stubs. False positive: this target is reasonable to leave
+      non-testonly despite only having in-repo test reachability in this snapshot; it is API/example/tooling/packaged
+      content with plausible non-test or external use."
     match_file_restriction:
       - mcp_infra/exec/BUILD.bazel
     relevant_files:
@@ -97,9 +99,10 @@ occurrences:
         - - 101
           - 101
     note:
-      "//mcp_infra/exec:seatbelt (py_library); direct non-generated consumers: //mcp_infra/exec:test_seatbelt, //mcp_infra/testing:exec_stubs.
-      False positive: this target is reasonable to leave non-testonly despite only having in-repo test reachability in this
-      snapshot; it is API/example/tooling/packaged content with plausible non-test or external use."
+      "//mcp_infra/exec:seatbelt (py_library); direct non-generated consumers: //mcp_infra/exec:test_seatbelt,
+      //mcp_infra/testing:exec_stubs. False positive: this target is reasonable to leave non-testonly despite only
+      having in-repo test reachability in this snapshot; it is API/example/tooling/packaged content with plausible
+      non-test or external use."
     match_file_restriction:
       - mcp_infra/exec/BUILD.bazel
     relevant_files:
@@ -111,11 +114,13 @@ occurrences:
         - - 17
           - 17
     note:
-      "//mcp_infra/seatbelt:runner (py_library); direct non-generated consumers: //mcp_infra/exec:seatbelt, //mcp_infra/seatbelt:conftest,
-      //mcp_infra/seatbelt:test_allow_all, //mcp_infra/seatbelt:test_allow_root_deny_users, //mcp_infra/seatbelt:test_basic_env_and_python,
-      //mcp_infra/seatbelt:test_default_deny_validate_and_abort, //mcp_infra/seatbelt:test_default_deny_widening, //mcp_infra/seatbelt:test_minimal_true,
-      +4 more. False positive: this target is reasonable to leave non-testonly despite only having in-repo test reachability
-      in this snapshot; it is API/example/tooling/packaged content with plausible non-test or external use."
+      "//mcp_infra/seatbelt:runner (py_library); direct non-generated consumers: //mcp_infra/exec:seatbelt,
+      //mcp_infra/seatbelt:conftest, //mcp_infra/seatbelt:test_allow_all,
+      //mcp_infra/seatbelt:test_allow_root_deny_users, //mcp_infra/seatbelt:test_basic_env_and_python,
+      //mcp_infra/seatbelt:test_default_deny_validate_and_abort, //mcp_infra/seatbelt:test_default_deny_widening,
+      //mcp_infra/seatbelt:test_minimal_true, +4 more. False positive: this target is reasonable to leave non-testonly
+      despite only having in-repo test reachability in this snapshot; it is API/example/tooling/packaged content with
+      plausible non-test or external use."
     match_file_restriction:
       - mcp_infra/seatbelt/BUILD.bazel
     relevant_files:
@@ -127,9 +132,10 @@ occurrences:
         - - 27
           - 27
     note:
-      "//mcp_infra/seatbelt:validate (py_library); direct non-generated consumers: //mcp_infra/seatbelt:test_default_deny_validate_and_abort.
-      False positive: this target is reasonable to leave non-testonly despite only having in-repo test reachability in this
-      snapshot; it is API/example/tooling/packaged content with plausible non-test or external use."
+      "//mcp_infra/seatbelt:validate (py_library); direct non-generated consumers:
+      //mcp_infra/seatbelt:test_default_deny_validate_and_abort. False positive: this target is reasonable to leave
+      non-testonly despite only having in-repo test reachability in this snapshot; it is API/example/tooling/packaged
+      content with plausible non-test or external use."
     match_file_restriction:
       - mcp_infra/seatbelt/BUILD.bazel
     relevant_files:
@@ -140,10 +146,10 @@ occurrences:
         - - 111
           - 111
     note:
-      "//openai_utils:text_extraction (py_library); direct non-generated consumers: //inop/prompting:summarizer, //props/agents/grader:test_notification_handler,
-      //x/agent_server/notifications:test_handler. False positive: this target is reasonable to leave non-testonly despite only
-      having in-repo test reachability in this snapshot; it is API/example/tooling/packaged content with plausible non-test
-      or external use."
+      "//openai_utils:text_extraction (py_library); direct non-generated consumers: //inop/prompting:summarizer,
+      //props/agents/grader:test_notification_handler, //x/agent_server/notifications:test_handler. False positive: this
+      target is reasonable to leave non-testonly despite only having in-repo test reachability in this snapshot; it is
+      API/example/tooling/packaged content with plausible non-test or external use."
     match_file_restriction:
       - openai_utils/BUILD.bazel
     relevant_files:
@@ -157,9 +163,10 @@ occurrences:
         - - 8
           - 8
     note:
-      "//skills/cpap/examples:parse_str_edf (py_library); direct non-generated consumers: //skills/cpap:test_parse_str_edf.
-      False positive: this target is reasonable to leave non-testonly despite only having in-repo test reachability in this
-      snapshot; it is API/example/tooling/packaged content with plausible non-test or external use."
+      "//skills/cpap/examples:parse_str_edf (py_library); direct non-generated consumers:
+      //skills/cpap:test_parse_str_edf. False positive: this target is reasonable to leave non-testonly despite only
+      having in-repo test reachability in this snapshot; it is API/example/tooling/packaged content with plausible
+      non-test or external use."
     match_file_restriction:
       - skills/cpap/examples/BUILD.bazel
     relevant_files:
@@ -171,10 +178,11 @@ occurrences:
         - - 18
           - 18
     note:
-      "//skills/freecad/examples/bearing_block:build (py_library); direct non-generated consumers: //skills/freecad/examples/bearing_block:test_bearing_block,
-      //skills/freecad/examples/bearing_block:test_debug_renderers. False positive: this target is reasonable to leave non-testonly
-      despite only having in-repo test reachability in this snapshot; it is API/example/tooling/packaged content with plausible
-      non-test or external use."
+      "//skills/freecad/examples/bearing_block:build (py_library); direct non-generated consumers:
+      //skills/freecad/examples/bearing_block:test_bearing_block,
+      //skills/freecad/examples/bearing_block:test_debug_renderers. False positive: this target is reasonable to leave
+      non-testonly despite only having in-repo test reachability in this snapshot; it is API/example/tooling/packaged
+      content with plausible non-test or external use."
     match_file_restriction:
       - skills/freecad/examples/bearing_block/BUILD.bazel
     relevant_files:
@@ -185,10 +193,11 @@ occurrences:
         - - 27
           - 27
     note:
-      "//skills/freecad/examples/bearing_block:build_techdraw (py_library); direct non-generated consumers: //skills/freecad/examples/bearing_block:test_bearing_block,
-      //skills/freecad/examples/bearing_block:test_debug_renderers. False positive: this target is reasonable to leave non-testonly
-      despite only having in-repo test reachability in this snapshot; it is API/example/tooling/packaged content with plausible
-      non-test or external use."
+      "//skills/freecad/examples/bearing_block:build_techdraw (py_library); direct non-generated consumers:
+      //skills/freecad/examples/bearing_block:test_bearing_block,
+      //skills/freecad/examples/bearing_block:test_debug_renderers. False positive: this target is reasonable to leave
+      non-testonly despite only having in-repo test reachability in this snapshot; it is API/example/tooling/packaged
+      content with plausible non-test or external use."
     match_file_restriction:
       - skills/freecad/examples/bearing_block/BUILD.bazel
     relevant_files:
@@ -199,9 +208,10 @@ occurrences:
         - - 13
           - 13
     note:
-      "//skills/freecad/examples/bracket:parametric_sketch (py_library); direct non-generated consumers: //skills/freecad/examples/bracket:test_parametric_sketch.
-      False positive: this target is reasonable to leave non-testonly despite only having in-repo test reachability in this
-      snapshot; it is API/example/tooling/packaged content with plausible non-test or external use."
+      "//skills/freecad/examples/bracket:parametric_sketch (py_library); direct non-generated consumers:
+      //skills/freecad/examples/bracket:test_parametric_sketch. False positive: this target is reasonable to leave
+      non-testonly despite only having in-repo test reachability in this snapshot; it is API/example/tooling/packaged
+      content with plausible non-test or external use."
     match_file_restriction:
       - skills/freecad/examples/bracket/BUILD.bazel
     relevant_files:
@@ -212,9 +222,10 @@ occurrences:
         - - 13
           - 13
     note:
-      "//skills/freecad/examples/compound:build (py_library); direct non-generated consumers: //skills/freecad/examples/compound:test_compound.
-      False positive: this target is reasonable to leave non-testonly despite only having in-repo test reachability in this
-      snapshot; it is API/example/tooling/packaged content with plausible non-test or external use."
+      "//skills/freecad/examples/compound:build (py_library); direct non-generated consumers:
+      //skills/freecad/examples/compound:test_compound. False positive: this target is reasonable to leave non-testonly
+      despite only having in-repo test reachability in this snapshot; it is API/example/tooling/packaged content with
+      plausible non-test or external use."
     match_file_restriction:
       - skills/freecad/examples/compound/BUILD.bazel
     relevant_files:
@@ -225,9 +236,10 @@ occurrences:
         - - 11
           - 11
     note:
-      "//skills/freecad/examples/cube_with_hole:build (py_library); direct non-generated consumers: //skills/freecad/examples/cube_with_hole:test_render_3d.
-      False positive: this target is reasonable to leave non-testonly despite only having in-repo test reachability in this
-      snapshot; it is API/example/tooling/packaged content with plausible non-test or external use."
+      "//skills/freecad/examples/cube_with_hole:build (py_library); direct non-generated consumers:
+      //skills/freecad/examples/cube_with_hole:test_render_3d. False positive: this target is reasonable to leave
+      non-testonly despite only having in-repo test reachability in this snapshot; it is API/example/tooling/packaged
+      content with plausible non-test or external use."
     match_file_restriction:
       - skills/freecad/examples/cube_with_hole/BUILD.bazel
     relevant_files:
@@ -238,10 +250,11 @@ occurrences:
         - - 26
           - 26
     note:
-      "//skills/freecad/examples:export_page (py_library); direct non-generated consumers: //skills/freecad/examples/bearing_block:test_bearing_block,
-      //skills/freecad/examples/bracket:test_parametric_sketch, //skills/freecad/examples/compound:test_compound. False positive:
-      this target is reasonable to leave non-testonly despite only having in-repo test reachability in this snapshot; it is
-      API/example/tooling/packaged content with plausible non-test or external use."
+      "//skills/freecad/examples:export_page (py_library); direct non-generated consumers:
+      //skills/freecad/examples/bearing_block:test_bearing_block,
+      //skills/freecad/examples/bracket:test_parametric_sketch, //skills/freecad/examples/compound:test_compound. False
+      positive: this target is reasonable to leave non-testonly despite only having in-repo test reachability in this
+      snapshot; it is API/example/tooling/packaged content with plausible non-test or external use."
     match_file_restriction:
       - skills/freecad/examples/BUILD.bazel
     relevant_files:
@@ -255,12 +268,13 @@ occurrences:
         - - 17
           - 17
     note:
-      "//skills/freecad/examples:freecad_helpers (py_library); direct non-generated consumers: //skills/freecad/examples/bearing_block:build_techdraw,
-      //skills/freecad/examples/bracket:parametric_sketch, //skills/freecad/examples/compound:build, //skills/freecad/examples/cube_with_hole:build,
-      //skills/freecad/examples:export_page, //skills/freecad/examples:render_debug_edges, //skills/freecad/examples:render_debug_faces,
-      //skills/freecad/examples:render_fcstd, +1 more. False positive: this target is reasonable to leave non-testonly despite
-      only having in-repo test reachability in this snapshot; it is API/example/tooling/packaged content with plausible non-test
-      or external use."
+      "//skills/freecad/examples:freecad_helpers (py_library); direct non-generated consumers:
+      //skills/freecad/examples/bearing_block:build_techdraw, //skills/freecad/examples/bracket:parametric_sketch,
+      //skills/freecad/examples/compound:build, //skills/freecad/examples/cube_with_hole:build,
+      //skills/freecad/examples:export_page, //skills/freecad/examples:render_debug_edges,
+      //skills/freecad/examples:render_debug_faces, //skills/freecad/examples:render_fcstd, +1 more. False positive:
+      this target is reasonable to leave non-testonly despite only having in-repo test reachability in this snapshot; it
+      is API/example/tooling/packaged content with plausible non-test or external use."
     match_file_restriction:
       - skills/freecad/examples/BUILD.bazel
     relevant_files:
@@ -275,9 +289,10 @@ occurrences:
         - - 56
           - 56
     note:
-      "//skills/freecad/examples:render_debug_edges (py_library); direct non-generated consumers: //skills/freecad/examples/bearing_block:test_debug_renderers.
-      False positive: this target is reasonable to leave non-testonly despite only having in-repo test reachability in this
-      snapshot; it is API/example/tooling/packaged content with plausible non-test or external use."
+      "//skills/freecad/examples:render_debug_edges (py_library); direct non-generated consumers:
+      //skills/freecad/examples/bearing_block:test_debug_renderers. False positive: this target is reasonable to leave
+      non-testonly despite only having in-repo test reachability in this snapshot; it is API/example/tooling/packaged
+      content with plausible non-test or external use."
     match_file_restriction:
       - skills/freecad/examples/BUILD.bazel
     relevant_files:
@@ -289,9 +304,10 @@ occurrences:
         - - 66
           - 66
     note:
-      "//skills/freecad/examples:render_debug_faces (py_library); direct non-generated consumers: //skills/freecad/examples/bearing_block:test_debug_renderers.
-      False positive: this target is reasonable to leave non-testonly despite only having in-repo test reachability in this
-      snapshot; it is API/example/tooling/packaged content with plausible non-test or external use."
+      "//skills/freecad/examples:render_debug_faces (py_library); direct non-generated consumers:
+      //skills/freecad/examples/bearing_block:test_debug_renderers. False positive: this target is reasonable to leave
+      non-testonly despite only having in-repo test reachability in this snapshot; it is API/example/tooling/packaged
+      content with plausible non-test or external use."
     match_file_restriction:
       - skills/freecad/examples/BUILD.bazel
     relevant_files:
@@ -303,9 +319,10 @@ occurrences:
         - - 36
           - 36
     note:
-      "//skills/freecad/examples:render_fcstd (py_library); direct non-generated consumers: //skills/freecad/examples/cube_with_hole:test_render_3d.
-      False positive: this target is reasonable to leave non-testonly despite only having in-repo test reachability in this
-      snapshot; it is API/example/tooling/packaged content with plausible non-test or external use."
+      "//skills/freecad/examples:render_fcstd (py_library); direct non-generated consumers:
+      //skills/freecad/examples/cube_with_hole:test_render_3d. False positive: this target is reasonable to leave
+      non-testonly despite only having in-repo test reachability in this snapshot; it is API/example/tooling/packaged
+      content with plausible non-test or external use."
     match_file_restriction:
       - skills/freecad/examples/BUILD.bazel
     relevant_files:
@@ -317,9 +334,10 @@ occurrences:
         - - 46
           - 46
     note:
-      "//skills/freecad/examples:render_multi_angle (py_library); direct non-generated consumers: //skills/freecad/examples/bearing_block:test_bearing_block.
-      False positive: this target is reasonable to leave non-testonly despite only having in-repo test reachability in this
-      snapshot; it is API/example/tooling/packaged content with plausible non-test or external use."
+      "//skills/freecad/examples:render_multi_angle (py_library); direct non-generated consumers:
+      //skills/freecad/examples/bearing_block:test_bearing_block. False positive: this target is reasonable to leave
+      non-testonly despite only having in-repo test reachability in this snapshot; it is API/example/tooling/packaged
+      content with plausible non-test or external use."
     match_file_restriction:
       - skills/freecad/examples/BUILD.bazel
     relevant_files:
@@ -331,9 +349,10 @@ occurrences:
         - - 76
           - 76
     note:
-      "//skills/freecad/examples:verify_fcstd_load (py_library); direct non-generated consumers: //skills/freecad/examples/bearing_block:test_bearing_block.
-      False positive: this target is reasonable to leave non-testonly despite only having in-repo test reachability in this
-      snapshot; it is API/example/tooling/packaged content with plausible non-test or external use."
+      "//skills/freecad/examples:verify_fcstd_load (py_library); direct non-generated consumers:
+      //skills/freecad/examples/bearing_block:test_bearing_block. False positive: this target is reasonable to leave
+      non-testonly despite only having in-repo test reachability in this snapshot; it is API/example/tooling/packaged
+      content with plausible non-test or external use."
     match_file_restriction:
       - skills/freecad/examples/BUILD.bazel
     relevant_files:
@@ -346,11 +365,12 @@ occurrences:
           - 4
     note:
       "//third_party/gitstatusd:gitstatusd (filegroup); direct non-generated consumers: //wt/e2e:test_copy_dirty_state,
-      //wt/e2e:test_github_pr_display_real, //wt/e2e:test_github_pr_display_variants, //wt/e2e:test_manual_delete_then_create,
-      //wt/e2e:test_path_watcher_integration, //wt/e2e:test_post_creation_python_script, //wt/e2e:test_post_creation_script,
-      //wt/e2e:test_post_creation_script_failure_streaming, +9 more. False positive: this target is reasonable to leave non-testonly
-      despite only having in-repo test reachability in this snapshot; it is API/example/tooling/packaged content with plausible
-      non-test or external use."
+      //wt/e2e:test_github_pr_display_real, //wt/e2e:test_github_pr_display_variants,
+      //wt/e2e:test_manual_delete_then_create, //wt/e2e:test_path_watcher_integration,
+      //wt/e2e:test_post_creation_python_script, //wt/e2e:test_post_creation_script,
+      //wt/e2e:test_post_creation_script_failure_streaming, +9 more. False positive: this target is reasonable to leave
+      non-testonly despite only having in-repo test reachability in this snapshot; it is API/example/tooling/packaged
+      content with plausible non-test or external use."
     match_file_restriction:
       - third_party/gitstatusd/BUILD.bazel
     relevant_files:
@@ -364,9 +384,10 @@ occurrences:
         - - 99
           - 99
     note:
-      "//util:json_schema (py_library); direct non-generated consumers: //devinfra/claude/claude_api:test_schema_equivalence.
-      False positive: this target is reasonable to leave non-testonly despite only having in-repo test reachability in this
-      snapshot; it is API/example/tooling/packaged content with plausible non-test or external use."
+      "//util:json_schema (py_library); direct non-generated consumers:
+      //devinfra/claude/claude_api:test_schema_equivalence. False positive: this target is reasonable to leave
+      non-testonly despite only having in-repo test reachability in this snapshot; it is API/example/tooling/packaged
+      content with plausible non-test or external use."
     match_file_restriction:
       - util/BUILD.bazel
     relevant_files:
@@ -378,9 +399,9 @@ occurrences:
         - - 9
           - 9
     note:
-      "//wt/shell:install (py_library); direct non-generated consumers: //wt/testing:conftest. False positive: this target
-      is reasonable to leave non-testonly despite only having in-repo test reachability in this snapshot; it is API/example/tooling/packaged
-      content with plausible non-test or external use."
+      "//wt/shell:install (py_library); direct non-generated consumers: //wt/testing:conftest. False positive: this
+      target is reasonable to leave non-testonly despite only having in-repo test reachability in this snapshot; it is
+      API/example/tooling/packaged content with plausible non-test or external use."
     match_file_restriction:
       - wt/shell/BUILD.bazel
     relevant_files:
@@ -392,9 +413,9 @@ occurrences:
         - - 4
           - 4
     note:
-      "//x/flake8_early_bailout:flake8_early_bailout (py_library); direct non-generated consumers: //x/flake8_early_bailout:test_early_bailout.
-      False positive: the flake8 plugin module is already exercised by a Bazel test, and Bazel deployment for flake8 plugins
-      is intentionally not settled here."
+      "//x/flake8_early_bailout:flake8_early_bailout (py_library); direct non-generated consumers:
+      //x/flake8_early_bailout:test_early_bailout. False positive: the flake8 plugin module is already exercised by a
+      Bazel test, and Bazel deployment for flake8 plugins is intentionally not settled here."
     match_file_restriction:
       - x/flake8_early_bailout/BUILD.bazel
     relevant_files:

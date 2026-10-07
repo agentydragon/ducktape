@@ -6,7 +6,8 @@
 
 ## Overview
 
-Code that should be methods (class/instance) but is implemented as freestanding functions. Indicates missing object-oriented structure.
+Code that should be methods (class/instance) but is implemented as freestanding functions. Indicates missing
+object-oriented structure.
 
 ## Pattern 1: Factory Functions Should Be Classmethods
 
@@ -279,12 +280,9 @@ rg --type py "def.*\(.*db.*key.*response_id" --type py
 
 ## Benefits
 
-✅ **Discoverability** - IDE shows methods when typing `instance.`
-✅ **Cohesion** - Related data and behavior in one place
-✅ **Encapsulation** - Implementation details hidden
-✅ **Shorter call sites** - Don't repeat instance fields
-✅ **Clear ownership** - Obvious which class owns the behavior
-✅ **Inheritance** - Subclasses can override behavior
+✅ **Discoverability** - IDE shows methods when typing `instance.` ✅ **Cohesion** - Related data and behavior in one
+place ✅ **Encapsulation** - Implementation details hidden ✅ **Shorter call sites** - Don't repeat instance fields ✅
+**Clear ownership** - Obvious which class owns the behavior ✅ **Inheritance** - Subclasses can override behavior
 
 ## When Freestanding Functions ARE Appropriate
 

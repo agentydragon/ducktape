@@ -19,7 +19,9 @@ occurrences:
     files:
       agent_server/test_mcp_integration.py:
         - [1, 55]
-    note: "Integration tests mounting mcp_infra exec servers via agent_server compositor — tests both packages, not exclusively mcp_infra"
+    note:
+      "Integration tests mounting mcp_infra exec servers via agent_server compositor — tests both packages, not
+      exclusively mcp_infra"
     critic_scopes_expected_to_recall:
       - [agent_server/test_mcp_integration.py]
     match_file_restriction:

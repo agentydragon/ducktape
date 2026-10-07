@@ -2,51 +2,43 @@
 
 Last trimmed: 2026-07-05.
 
-Status: the Ducktape-side binary release path exists. `debundle` is in the
-release matrix, release metadata is emitted, and the Nix artifact package is
-defined. This plan now tracks only the remaining Gaffer-side synchronization
-work.
+Status: the Ducktape-side binary release path exists. `debundle` is in the release matrix, release metadata is emitted,
+and the Nix artifact package is defined. This plan now tracks only the remaining Gaffer-side synchronization work.
 
-Gaffer-local pinning notes live in
-`../gaffer-private/tana/re/DUCKTAPE_PINNING.md`.
+Gaffer-local pinning notes live in `../gaffer-private/tana/re/DUCKTAPE_PINNING.md`.
 
-**No Ducktape-side work remains**, and Ducktape cannot observe whether the Gaffer
-side has landed. Manual syncs have been done and their gates passed; which pin
-Gaffer currently carries is a fact about Gaffer, so it is tracked there rather than
-restated here where it silently goes stale. The remaining value in this file is the
-workflow shape and validation gate below.
+**No Ducktape-side work remains**, and Ducktape cannot observe whether the Gaffer side has landed. Manual syncs have
+been done and their gates passed; which pin Gaffer currently carries is a fact about Gaffer, so it is tracked there
+rather than restated here where it silently goes stale. The remaining value in this file is the workflow shape and
+validation gate below.
 
 ## Current Ducktape State
 
 Ducktape publishes the Linux amd64 debundler as a normal release artifact:
 
-- `.github/workflows/release.yml` has a `pkg: debundle` matrix row for
-  `//devinfra/js/debundle:debundle`.
+- `.github/workflows/release.yml` has a `pkg: debundle` matrix row for `//devinfra/js/debundle:debundle`.
 - `devinfra/ci/artifacts.py` registers the `debundle` release artifact.
-- Release metadata is covered by `devinfra/ci/test_release_metadata.py`; Gaffer
-  can read `debundle.release.json` to recover the source commit, platform, binary
-  name, and hash.
-- `nix/packages/default.nix` exposes the pinned artifact as the `debundle`
-  package once `nix/artifact-pins.json` has a release pin.
+- Release metadata is covered by `devinfra/ci/test_release_metadata.py`; Gaffer can read `debundle.release.json` to
+  recover the source commit, platform, binary name, and hash.
+- `nix/packages/default.nix` exposes the pinned artifact as the `debundle` package once `nix/artifact-pins.json` has a
+  release pin.
 
-The original compile-cost problem is therefore solved on the producer side:
-Gaffer no longer needs a Ducktape change to consume a released binary.
+The original compile-cost problem is therefore solved on the producer side: Gaffer no longer needs a Ducktape change to
+consume a released binary.
 
 ## Remaining Gaffer Work
 
 Gaffer currently has two independent Ducktape pins:
 
-- `@ducktape` source via `archive_override(...)`, used for Starlark rules,
-  generated runfiles, and the source-built debundler target.
-- `@ducktape_debundle_bin` via `http_file(...)`, the released debundler binary
-  selected with Gaffer's `--config=released-debundler`.
+- `@ducktape` source via `archive_override(...)`, used for Starlark rules, generated runfiles, and the source-built
+  debundler target.
+- `@ducktape_debundle_bin` via `http_file(...)`, the released debundler binary selected with Gaffer's
+  `--config=released-debundler`.
 
-The remaining automation should update those pins deliberately, not by fetching
-"latest" during Bazel evaluation.
+The remaining automation should update those pins deliberately, not by fetching "latest" during Bazel evaluation.
 
-Manual repins are acceptable while this automation is absent, but they should be
-treated as the reference workflow the script is expected to encode: update both
-pins together, run the Gaffer gates, and land a reviewed Gaffer PR.
+Manual repins are acceptable while this automation is absent, but they should be treated as the reference workflow the
+script is expected to encode: update both pins together, run the Gaffer gates, and land a reviewed Gaffer PR.
 
 ## Sync Workflow Shape
 
@@ -54,23 +46,20 @@ Add a Gaffer workflow or checked-in script that:
 
 1. Finds the newest non-prerelease `agentydragon/ducktape` `debundle-*` release.
 2. Downloads `debundle.release.json` and the binary asset.
-3. Updates Gaffer's `MODULE.bazel` `archive_override(module_name = "ducktape")`
-   to the Ducktape commit that produced the binary.
-4. Updates `http_file(name = "ducktape_debundle_bin")` to the matching release
-   binary URL and integrity.
-5. Updates any Gaffer workflow `DUCKTAPE_REF` constants only when those workflow
-   tool pins are intentionally supposed to move with the source pin.
+3. Updates Gaffer's `MODULE.bazel` `archive_override(module_name = "ducktape")` to the Ducktape commit that produced the
+   binary.
+4. Updates `http_file(name = "ducktape_debundle_bin")` to the matching release binary URL and integrity.
+5. Updates any Gaffer workflow `DUCKTAPE_REF` constants only when those workflow tool pins are intentionally supposed to
+   move with the source pin.
 6. Refreshes Bazel locks as needed.
-7. Opens or updates a PR whose body calls out that the Ducktape source pin and
-   debundle binary pin moved together.
+7. Opens or updates a PR whose body calls out that the Ducktape source pin and debundle binary pin moved together.
 
-Keep the mutation logic in a script, not only inline YAML, so it can be run and
-tested locally against fixtures.
+Keep the mutation logic in a script, not only inline YAML, so it can be run and tested locally against fixtures.
 
 ## Validation Gate
 
-The first automated Gaffer PR should run one BuildBuddy remote gate broad enough
-to cover both debundling and other important Ducktape consumers:
+The first automated Gaffer PR should run one BuildBuddy remote gate broad enough to cover both debundling and other
+important Ducktape consumers:
 
 ```sh
 git lfs install --local
@@ -85,20 +74,18 @@ bazel test --keep_going --config=rbe --config=ci \
   //x/augur/...
 ```
 
-Start with manual review. Enable auto-merge only after several successful
-cycles and only if the PR changes the expected pin and lock files.
+Start with manual review. Enable auto-merge only after several successful cycles and only if the PR changes the expected
+pin and lock files.
 
 ## Decoupling Options
 
-The first sync can move Ducktape source and the binary together. Longer term,
-decouple them only if the coarse pin starts blocking unrelated Gaffer work:
+The first sync can move Ducktape source and the binary together. Longer term, decouple them only if the coarse pin
+starts blocking unrelated Gaffer work:
 
 - keep `@ducktape` source pinned independently for Starlark and shared rules;
 - keep `@ducktape_debundle_bin` as a separate binary pin;
-- publish a small `rules_debundle` artifact containing only `pipeline.bzl` and
-  required Starlark helpers;
-- vendor the small Starlark rule into Gaffer if it stabilizes and stops sharing
-  useful implementation pressure with Ducktape.
+- publish a small `rules_debundle` artifact containing only `pipeline.bzl` and required Starlark helpers;
+- vendor the small Starlark rule into Gaffer if it stabilizes and stops sharing useful implementation pressure with
+  Ducktape.
 
-Delete this plan once the Gaffer sync workflow is implemented and its operating
-contract is documented in Gaffer.
+Delete this plan once the Gaffer sync workflow is implemented and its operating contract is documented in Gaffer.

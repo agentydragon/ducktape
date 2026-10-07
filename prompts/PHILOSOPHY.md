@@ -2,9 +2,11 @@
 
 ## Core Principle
 
-**Goal: Find ALL instances of the issue (100% recall). Use automated tools strategically to gather candidates, then verify with appropriate level of scrutiny.**
+**Goal: Find ALL instances of the issue (100% recall). Use automated tools strategically to gather candidates, then
+verify with appropriate level of scrutiny.**
 
-All scan prompts in this directory follow a common philosophy: combine automated discovery with intelligent verification to achieve comprehensive cleanup.
+All scan prompts in this directory follow a common philosophy: combine automated discovery with intelligent verification
+to achieve comprehensive cleanup.
 
 ## The Real Goal: 100% Recall
 
@@ -152,13 +154,16 @@ Prompts are instructions to agents/LLMs, so address the reader directly:
 
 ## Mandatory vs Optional Automated Scans
 
-**Principle**: Prompts should specify when automated scans are MANDATORY vs OPTIONAL to force agents to gather concrete candidates rather than being lazy.
+**Principle**: Prompts should specify when automated scans are MANDATORY vs OPTIONAL to force agents to gather concrete
+candidates rather than being lazy.
 
 ### When to Make Scans MANDATORY
 
 **Requirement**: Every scan prompt should have at least one mandatory scan step (or more).
 
-**Goal**: Mandatory steps should achieve **high recall** (ideally include all true positives), even if precision is low. The purpose is to surface ALL files and locations that need checking, preventing the agent from checking 3 files and declaring "done" when there are actually 20 more.
+**Goal**: Mandatory steps should achieve **high recall** (ideally include all true positives), even if precision is low.
+The purpose is to surface ALL files and locations that need checking, preventing the agent from checking 3 files and
+declaring "done" when there are actually 20 more.
 
 Automated scans should be **required as the first step** when:
 
@@ -166,7 +171,8 @@ Automated scans should be **required as the first step** when:
    - Tool can find most or all instances of the pattern (even with false positives)
    - Agent gets a comprehensive list of candidates to review
    - **Example**: `grep "cast("` finds ALL cast() calls (100% recall, high precision)
-   - **Example**: AST scan for single-return functions finds ALL trivial forwarder candidates (100% recall, 30% precision after filtering)
+   - **Example**: AST scan for single-return functions finds ALL trivial forwarder candidates (100% recall, 30%
+     precision after filtering)
    - **Language**: "MANDATORY Step 0: Run scan to find ALL candidates"
 
 2. **Prevents "I checked a few files" laziness**
@@ -180,10 +186,12 @@ Automated scans should be **required as the first step** when:
    - Scan outputs specific line numbers/files for ALL candidates
    - Agent reviews concrete instances rather than guessing where to look
    - Prevents "I read a few files" when pattern exists in many more
-   - **Example**: `scan_comments.py` outputs all 200 comments with line numbers - agent must review all, not guess where comments might be
+   - **Example**: `scan_comments.py` outputs all 200 comments with line numbers - agent must review all, not guess where
+     comments might be
    - **Language**: "This step is required to surface all locations requiring review"
 
-**Key insight**: Mandatory scans force the agent to confront the full scope of work. Even if the scan has 50% false positives, it ensures the agent knows about all 20 files that need checking, not just the 3 they happened to look at.
+**Key insight**: Mandatory scans force the agent to confront the full scope of work. Even if the scan has 50% false
+positives, it ensures the agent knows about all 20 files that need checking, not just the 3 they happened to look at.
 
 ### When to Make Scans RECOMMENDED
 
@@ -252,10 +260,12 @@ Automated scans should be **mentioned as hints only** when:
 **Current state** (as of 2025): Most scan prompts treat all automation as optional/recommended. This should be updated:
 
 - ✅ **Keep optional**: Patterns where scan doesn't prevent lazy analysis (naming, verbosity judgment)
-- ⚠️ **Should be mandatory**: Scans that surface concrete candidates to force review (error handling, comments, dataclass candidates)
+- ⚠️ **Should be mandatory**: Scans that surface concrete candidates to force review (error handling, comments,
+  dataclass candidates)
 - ⚠️ **Should be recommended**: Scans that save time but agent would search anyway (grep patterns for specific APIs)
 
-**Key criterion**: Does making this scan mandatory force the agent to consider specific candidates it might otherwise skip?
+**Key criterion**: Does making this scan mandatory force the agent to consider specific candidates it might otherwise
+skip?
 
 ## Scan Prompt Structure
 

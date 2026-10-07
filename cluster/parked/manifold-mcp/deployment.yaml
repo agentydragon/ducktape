@@ -6,7 +6,11 @@ metadata:
   labels:
     app.kubernetes.io/name: manifold-mcp
   annotations:
-    description: "Authentik-gated Manifold Markets MCP. Pod has two long-running containers in the same network namespace: a sidecar that wraps the stdio-only bmorphism/manifold-mcp-server as Streamable HTTP on localhost:8080 (via supergateway), and the shared mcp-oauth-facade fronting it with OIDCProxy. Only agentydragon is allowed at the OAuth consent step."
+    description:
+      "Authentik-gated Manifold Markets MCP. Pod has two long-running containers in the same network namespace: a
+      sidecar that wraps the stdio-only bmorphism/manifold-mcp-server as Streamable HTTP on localhost:8080 (via
+      supergateway), and the shared mcp-oauth-facade fronting it with OIDCProxy. Only agentydragon is allowed at the
+      OAuth consent step."
     reloader.stakater.com/auto: "true"
 spec:
   replicas: 1

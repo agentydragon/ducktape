@@ -1,6 +1,7 @@
 # Window Management Shortcuts (Live System)
 
-Inventory of GNOME window management keybindings on rugged (NixOS, GNOME Shell 49.2), queried from live dconf/gsettings on 2026-03-16.
+Inventory of GNOME window management keybindings on rugged (NixOS, GNOME Shell 49.2), queried from live dconf/gsettings
+on 2026-03-16.
 
 **Source column legend:**
 
@@ -16,9 +17,13 @@ Extensions are managed via home-manager's `programs.gnome-shell.extensions` modu
 - Populates `dconf.settings."org/gnome/shell".enabled-extensions`
 - Sets `disable-user-extensions = false`
 
-Extension declarations are distributed across modules (home.nix, solarized.nix, host files). This works because home-manager's `gvariant` type **merges arrays across modules** — when multiple files set `enabled-extensions`, the lists are concatenated (see `modules/lib/types.nix` in home-manager source, the `gvariant` merge function delegates to `listOf` merge for array types).
+Extension declarations are distributed across modules (home.nix, solarized.nix, host files). This works because
+home-manager's `gvariant` type **merges arrays across modules** — when multiple files set `enabled-extensions`, the
+lists are concatenated (see `modules/lib/types.nix` in home-manager source, the `gvariant` merge function delegates to
+`listOf` merge for array types).
 
-Extension-specific dconf settings (pop-shell gaps, nightthemeswitcher commands, etc.) remain as raw `dconf.settings` in their respective modules.
+Extension-specific dconf settings (pop-shell gaps, nightthemeswitcher commands, etc.) remain as raw `dconf.settings` in
+their respective modules.
 
 ## Enabled GNOME Extensions
 
@@ -54,7 +59,8 @@ Only these keys have dconf overrides (from `nix/home/modules/gnome-shell-keybind
 | `pop-monitor-up`            | `[]`       | `['<Super><Shift><Ctrl>Up', ...]`   | cleared        |
 | `pop-monitor-down`          | `[]`       | `['<Super><Shift><Ctrl>Down', ...]` | cleared        |
 
-All other Pop Shell keybindings are at **schema defaults** (no dconf entry). Schema file: `~/.nix-profile/share/gnome-shell/extensions/pop-shell@system76.com/schemas/org.gnome.shell.extensions.pop-shell.gschema.xml`.
+All other Pop Shell keybindings are at **schema defaults** (no dconf entry). Schema file:
+`~/.nix-profile/share/gnome-shell/extensions/pop-shell@system76.com/schemas/org.gnome.shell.extensions.pop-shell.gschema.xml`.
 
 ## Pop Shell Keybindings (schema defaults, all active)
 
@@ -67,7 +73,8 @@ All other Pop Shell keybindings are at **schema defaults** (no dconf entry). Sch
 | `Super+Up` / `Super+KP_Up` / `Super+k`       | Focus up    | `focus-up`    | schema default |
 | `Super+Right` / `Super+KP_Right` / `Super+l` | Focus right | `focus-right` | schema default |
 
-**Note:** `Super+h` and `Super+l` are intercepted by GNOME (minimize, lock screen) before Pop Shell sees them. See Conflicts section.
+**Note:** `Super+h` and `Super+l` are intercepted by GNOME (minimize, lock screen) before Pop Shell sees them. See
+Conflicts section.
 
 ### Global Toggles
 
@@ -147,9 +154,13 @@ All values from live `gsettings list-recursively`. Source is schema default unle
 
 ### Workspace Navigation
 
-Configured in `nix/home/modules/gnome-shell-keybindings.nix`. Workspaces are dynamic (`org.gnome.mutter dynamic-workspaces = true`), made **vertical** by V-Shell extension, and only on primary monitor (`workspaces-only-on-primary = true`).
+Configured in `nix/home/modules/gnome-shell-keybindings.nix`. Workspaces are dynamic
+(`org.gnome.mutter dynamic-workspaces = true`), made **vertical** by V-Shell extension, and only on primary monitor
+(`workspaces-only-on-primary = true`).
 
-GNOME Shell 49 checks workspace orientation at runtime (`js/ui/windowManager.js:1798-1805`): with `layout_columns === -1` (horizontal, default), only left/right bindings work; with `layout_rows === -1` (vertical, set by V-Shell), only up/down work. V-Shell must be enabled for up/down bindings to function.
+GNOME Shell 49 checks workspace orientation at runtime (`js/ui/windowManager.js:1798-1805`): with
+`layout_columns === -1` (horizontal, default), only left/right bindings work; with `layout_rows === -1` (vertical, set
+by V-Shell), only up/down work. V-Shell must be enabled for up/down bindings to function.
 
 | Shortcut              | Action                  | gsettings key              | Source         |
 | --------------------- | ----------------------- | -------------------------- | -------------- |
@@ -162,7 +173,8 @@ GNOME Shell 49 checks workspace orientation at runtime (`js/ui/windowManager.js:
 | `Super+Shift+Home`    | Move window to ws 1     | `move-to-workspace-1`      | dconf override |
 | `Super+Shift+End`     | Move window to last ws  | `move-to-workspace-last`   | dconf override |
 
-Cleared (set to `[]`): `switch-to-workspace-left`, `switch-to-workspace-right`, `move-to-workspace-left`, `move-to-workspace-right`, `switch-to-workspace-2` through `12`, `move-to-workspace-2` through `12`.
+Cleared (set to `[]`): `switch-to-workspace-left`, `switch-to-workspace-right`, `move-to-workspace-left`,
+`move-to-workspace-right`, `switch-to-workspace-2` through `12`, `move-to-workspace-2` through `12`.
 
 ### Move to Monitor
 
@@ -182,7 +194,10 @@ Cleared (set to `[]`): `switch-to-workspace-left`, `switch-to-workspace-right`, 
 
 ### Cleared WM Keybindings
 
-These are set to `[]` on live system: `always-on-top`, `lower`, `maximize-horizontally`, `maximize-vertically`, `move-to-center`, `move-to-corner-*`, `move-to-side-*`, `panel-main-menu`, `raise`, `raise-or-lower`, `set-spew-mark`, `show-desktop`, `switch-windows`, `switch-windows-backward`, `toggle-above`, `toggle-fullscreen`, `toggle-on-all-workspaces`.
+These are set to `[]` on live system: `always-on-top`, `lower`, `maximize-horizontally`, `maximize-vertically`,
+`move-to-center`, `move-to-corner-*`, `move-to-side-*`, `panel-main-menu`, `raise`, `raise-or-lower`, `set-spew-mark`,
+`show-desktop`, `switch-windows`, `switch-windows-backward`, `toggle-above`, `toggle-fullscreen`,
+`toggle-on-all-workspaces`.
 
 ## Mutter Keybindings (`org.gnome.mutter.keybindings`)
 
@@ -223,7 +238,8 @@ dconf path: `/org/gnome/settings-daemon/plugins/media-keys/custom-keybindings/`
 
 ## Conflicts (observed on live system)
 
-Every `Super+<key>` that appears in both Pop Shell schemas and a GNOME/Mutter/media-keys binding is listed below. "Winner" is based on observed behavior where confirmed, or best guess where not yet tested.
+Every `Super+<key>` that appears in both Pop Shell schemas and a GNOME/Mutter/media-keys binding is listed below.
+"Winner" is based on observed behavior where confirmed, or best guess where not yet tested.
 
 | Shortcut      | Pop Shell binding        | GNOME/Mutter/media-keys binding        | Winner (observed)                                                  |
 | ------------- | ------------------------ | -------------------------------------- | ------------------------------------------------------------------ |

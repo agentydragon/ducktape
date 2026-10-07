@@ -1,22 +1,20 @@
 # frontend_visual
 
-Shared infrastructure for visual render-health tests. Every lane runs on the Python/Playwright path
-(`py_visual_test`; `frontend_visual.py`, `visual_sweep.py`); see [The Python sweep](#the-python-sweep).
+Shared infrastructure for visual render-health tests. Every lane runs on the Python/Playwright path (`py_visual_test`;
+`frontend_visual.py`, `visual_sweep.py`); see [The Python sweep](#the-python-sweep).
 
-They drive one browser: the Chrome for Testing headless shell `@chrome_headless_shell`
-(MODULE.bazel), whose executable a test finds in the runfiles of `//util/testing:frontend_visual`.
-Its version is pinned to the Chromium of the `playwright==1.62.0` driver in `pyproject.toml`;
-MODULE.bazel says how to bump the two together.
+They drive one browser: the Chrome for Testing headless shell `@chrome_headless_shell` (MODULE.bazel), whose executable
+a test finds in the runfiles of `//util/testing:frontend_visual`. Its version is pinned to the Chromium of the
+`playwright==1.62.0` driver in `pyproject.toml`; MODULE.bazel says how to bump the two together.
 
-There are no checked-in pixel baselines: these tests gate render health (the
-harness loads, the scenario mounts, zero uncaught page errors) and publish the
-rendered PNG for PR visual review instead — see
+There are no checked-in pixel baselines: these tests gate render health (the harness loads, the scenario mounts, zero
+uncaught page errors) and publish the rendered PNG for PR visual review instead — see
 `devinfra/pr_visuals/plans/goldens_to_pr_visuals.md`.
 
 ## The Python sweep
 
-`py_visual_test` (`py_visual_test.bzl`) sweeps a table of scenarios on Playwright and pytest. A package supplies its harness page and a `scenarios.json`; the test is
-`//util/testing:visual_sweep`, so there is no Python in the package.
+`py_visual_test` (`py_visual_test.bzl`) sweeps a table of scenarios on Playwright and pytest. A package supplies its
+harness page and a `scenarios.json`; the test is `//util/testing:visual_sweep`, so there is no Python in the package.
 
 ```python
 py_visual_test(
@@ -32,160 +30,134 @@ py_visual_test(
 )
 ```
 
-Each scenario is published as `<outputName>-actual.png` and an entry in `visual-review.json`, gated on
-its ready selectors, the request fence, the fetch ledger and zero uncaught page errors. Specifics:
+Each scenario is published as `<outputName>-actual.png` and an entry in `visual-review.json`, gated on its ready
+selectors, the request fence, the fetch ledger and zero uncaught page errors. Specifics:
 
 - **The table is `scenarios.json`**, pure data. The TypeScript harness imports it
-  (`import SCENARIOS from "./scenarios.json"`) and the sweep reads it, so no scenario is listed twice;
-  fields only the harness reads sit in the same object. The sweep's fields are in
-  `util/testing/visual_scenarios.py`; `viewport` accepts the shared names `desktop`, `mobile`, and
-  `small-mobile` (`mobile-touch` adds touch to the same mobile size), or an explicit size object
-  with `deviceScaleFactor` and `hasTouch`. A
-  scenario can name a `hover` or `tap` selector. The harness is loaded at `?page=<scenario>`; a
-  scenario's `query` replaces that query string, for a harness keyed otherwise or one scene shown in
-  several scenarios. `label` is the caption in PR visual review (the output name if unset), and the
-  PNG is `<outputName>-actual.png` unless the macro's `output_suffix` says otherwise. A table whose
-  rows derive from data the harness already consumes is generated from it at build time, not copied.
-- **A scenario is a pytest test**, `test_scenario[<name>]`, so Bazel's test report has one case per
-  scenario. `--test_filter` is pytest's `-k`: a case-insensitive match that also sees the file name.
-  Shards deal scenarios out by position, filter first (`util/testing/sharding.py`), and a filter that
-  matches nothing fails.
-- **A named font must be declared as well as loaded.** With `fonts` and `font_family`, each scenario
-  asserts that an `@font-face` declares the family and that it loaded. `document.fonts.check` alone
-  is true for a family nothing declares, so a stylesheet that never
-  arrived passes it and the page renders in the fallback font. The assertion is made of the mounted,
-  painted scene: a face loads only once laid-out text uses it, which on a loaded worker is after
+  (`import SCENARIOS from "./scenarios.json"`) and the sweep reads it, so no scenario is listed twice; fields only the
+  harness reads sit in the same object. The sweep's fields are in `util/testing/visual_scenarios.py`; `viewport` accepts
+  the shared names `desktop`, `mobile`, and `small-mobile` (`mobile-touch` adds touch to the same mobile size), or an
+  explicit size object with `deviceScaleFactor` and `hasTouch`. A scenario can name a `hover` or `tap` selector. The
+  harness is loaded at `?page=<scenario>`; a scenario's `query` replaces that query string, for a harness keyed
+  otherwise or one scene shown in several scenarios. `label` is the caption in PR visual review (the output name if
+  unset), and the PNG is `<outputName>-actual.png` unless the macro's `output_suffix` says otherwise. A table whose rows
+  derive from data the harness already consumes is generated from it at build time, not copied.
+- **A scenario is a pytest test**, `test_scenario[<name>]`, so Bazel's test report has one case per scenario.
+  `--test_filter` is pytest's `-k`: a case-insensitive match that also sees the file name. Shards deal scenarios out by
+  position, filter first (`util/testing/sharding.py`), and a filter that matches nothing fails.
+- **A named font must be declared as well as loaded.** With `fonts` and `font_family`, each scenario asserts that an
+  `@font-face` declares the family and that it loaded. `document.fonts.check` alone is true for a family nothing
+  declares, so a stylesheet that never arrived passes it and the page renders in the fallback font. The assertion is
+  made of the mounted, painted scene: a face loads only once laid-out text uses it, which on a loaded worker is after
   the navigation's network idle.
-- **A fresh browser per scenario**, not one per shard. Launch and close cost about 0.1s on the RBE
-  worker, and what one scenario renders cannot then depend on the scenarios that ran before it.
-- **An element is captured to the nearest pixel**, not outward as Playwright's own element screenshot
-  would (a `#app` 1630.4px tall publishes 1630 rows, not 1631). An element taller than the viewport is
-  captured whole.
+- **A fresh browser per scenario**, not one per shard. Launch and close cost about 0.1s on the RBE worker, and what one
+  scenario renders cannot then depend on the scenarios that ran before it.
+- **An element is captured to the nearest pixel**, not outward as Playwright's own element screenshot would (a `#app`
+  1630.4px tall publishes 1630 rows, not 1631). An element taller than the viewport is captured whole.
 - **A page can be assembled in memory** instead of being a `file://` `index.html` beside the bundle:
-  `py_visual_test(inline_page = True, stylesheets = [...], base_href = ...)` inlines the bundle, the
-  stylesheets and `DISABLE_ANIMATIONS_CSS` into a document loaded with `set_content`. Such a page has no
-  URL query, so a scenario's `windowGlobals` assign the `window` values that tell the harness which scene
-  it is, and the request fence allows nothing at all. `harness` may then be an esbuild `output_dir`.
-  A page of no origin has no `localStorage` and nothing to resolve its own URL against: a harness that needs
-  either sets `page_url`, which serves the document at that URL (the fence answers the navigation with it)
-  instead of loading it with `set_content`.
-  `haku/console/frontend/tool_rendering/screenshot` is the example, its table generated at build time from
-  each server's fixtures.
+  `py_visual_test(inline_page = True, stylesheets = [...], base_href = ...)` inlines the bundle, the stylesheets and
+  `DISABLE_ANIMATIONS_CSS` into a document loaded with `set_content`. Such a page has no URL query, so a scenario's
+  `windowGlobals` assign the `window` values that tell the harness which scene it is, and the request fence allows
+  nothing at all. `harness` may then be an esbuild `output_dir`. A page of no origin has no `localStorage` and nothing
+  to resolve its own URL against: a harness that needs either sets `page_url`, which serves the document at that URL
+  (the fence answers the navigation with it) instead of loading it with `set_content`.
+  `haku/console/frontend/tool_rendering/screenshot` is the example, its table generated at build time from each server's
+  fixtures.
 - **A shell that frames another origin** serves that origin's document from the harness:
-  `served_documents = {"https://framed.test/": "mock_framed.html"}` makes the request fence answer a
-  request under that prefix with the file, and a scenario's `readyFrames` (`{"iframe.selector": "main"}`)
-  waits for the frame and for a selector inside it. Any other request still fails the scenario.
-- **A simple scene can be driven with real input.** A scenario's selector-based `clicks` run in order, each naming what it changes
-  (`expectVisible`, `expectHidden`) and each followed by the page settling and the pointer being parked
-  at the page's corner, so a tooltip the click opened is not in the capture. A click must match exactly
-  one element (`>> nth=0` picks one). `hiddenSelectors` are what must be gone before capture once the
-  interactions are done (loaders, controls still arming), and `scrollToBottom` scrolls a scroller to its
-  end. For interactions with application semantics or geometry assertions, put the fixture rows in
-  a separate table and write named Python Playwright tests. Pass each test's driver to
-  `capture_scenario`; it publishes screenshots through the same visual-review manifest.
-- **`devtools_viewport = True` emulates and captures the viewport over the DevTools protocol**
-  (`DevtoolsViewport` in `page_capture.py`: `Emulation.setDeviceMetricsOverride`, and an unclipped
-  `Page.captureScreenshot` for a `captureViewport` scenario). Playwright's own viewport rasterizes a few
-  pixels differently at some device scale factors (identical at 1 and 2; 1.5, 2.625 and 3 differ), so a
-  lane at such a scale whose published images must not change turns it on. Off by default.
+  `served_documents = {"https://framed.test/": "mock_framed.html"}` makes the request fence answer a request under that
+  prefix with the file, and a scenario's `readyFrames` (`{"iframe.selector": "main"}`) waits for the frame and for a
+  selector inside it. Any other request still fails the scenario.
+- **A simple scene can be driven with real input.** A scenario's selector-based `clicks` run in order, each naming what
+  it changes (`expectVisible`, `expectHidden`) and each followed by the page settling and the pointer being parked at
+  the page's corner, so a tooltip the click opened is not in the capture. A click must match exactly one element
+  (`>> nth=0` picks one). `hiddenSelectors` are what must be gone before capture once the interactions are done
+  (loaders, controls still arming), and `scrollToBottom` scrolls a scroller to its end. For interactions with
+  application semantics or geometry assertions, put the fixture rows in a separate table and write named Python
+  Playwright tests. Pass each test's driver to `capture_scenario`; it publishes screenshots through the same
+  visual-review manifest.
+- **`devtools_viewport = True` emulates and captures the viewport over the DevTools protocol** (`DevtoolsViewport` in
+  `page_capture.py`: `Emulation.setDeviceMetricsOverride`, and an unclipped `Page.captureScreenshot` for a
+  `captureViewport` scenario). Playwright's own viewport rasterizes a few pixels differently at some device scale
+  factors (identical at 1 and 2; 1.5, 2.625 and 3 differ), so a lane at such a scale whose published images must not
+  change turns it on. Off by default.
 - **Selectors are Playwright's** (`:text("...")`, `>> nth=0`); `readySelectors` wait for presence.
-- **The target is not `visual` if the harness lives in a `visual/` directory.** A `py_test`'s
-  executable is `<package>/<name>`, which collides with that directory's outputs. Keep the target name
-  and call the directory `harness/`.
+- **The target is not `visual` if the harness lives in a `visual/` directory.** A `py_test`'s executable is
+  `<package>/<name>`, which collides with that directory's outputs. Keep the target name and call the directory
+  `harness/`.
 
 ## Screenshot target: element, not viewport
 
-A scenario's `element` is a required CSS selector — there is no default, so every
-scenario states explicitly which of the two cases it is:
+A scenario's `element` is a required CSS selector — there is no default, so every scenario states explicitly which of
+the two cases it is:
 
-- **`element: "#app"`** — the scenario is a genuine full page or full app (nav,
-  header, the works). A full-page/viewport-shaped screenshot is the correct
-  capture here.
-- **`element: "#shot"`** (by convention) — the scenario's real subject is a
-  single component (a toast, a modal, a chart, a card) pulled out of its normal
-  page for isolated testing. The harness must mount it inside a wrapper with
-  that id, sized to the component's own content, and the test screenshots only
-  that wrapper.
+- **`element: "#app"`** — the scenario is a genuine full page or full app (nav, header, the works). A
+  full-page/viewport-shaped screenshot is the correct capture here.
+- **`element: "#shot"`** (by convention) — the scenario's real subject is a single component (a toast, a modal, a chart,
+  a card) pulled out of its normal page for isolated testing. The harness must mount it inside a wrapper with that id,
+  sized to the component's own content, and the test screenshots only that wrapper.
 
-Getting this wrong looks like: wrapping a small component in an artificial
-`minHeight: "100vh"` box and hand-picking a viewport size to roughly match it,
-then screenshotting the whole page. That produces a PNG that's mostly empty
-background, and the "roughly match it" viewport is a guess that goes stale the
-first time the component's real size changes. See
-<https://github.com/agentydragon/ducktape/pull/3343> for the original instance
-of this bug and fix.
+Getting this wrong looks like: wrapping a small component in an artificial `minHeight: "100vh"` box and hand-picking a
+viewport size to roughly match it, then screenshotting the whole page. That produces a PNG that's mostly empty
+background, and the "roughly match it" viewport is a guess that goes stale the first time the component's real size
+changes. See <https://github.com/agentydragon/ducktape/pull/3343> for the original instance of this bug and fix.
 
-If the single component has a real production container that owns its width
-(a dashboard grid cell, a fixed-width panel column), render it inside that
-actual container/class in the harness — not a synthetic hardcoded width — so
-the screenshot tracks the true CSS instead of a number that can drift from it.
+If the single component has a real production container that owns its width (a dashboard grid cell, a fixed-width panel
+column), render it inside that actual container/class in the harness — not a synthetic hardcoded width — so the
+screenshot tracks the true CSS instead of a number that can drift from it.
 
 ## Font ownership
 
-Generic CSS families (`serif`, `sans-serif`, `monospace`, and `system-ui`) resolve through
-Chromium's seeded profile preferences and deterministic font flags. The browser environment
-owns that mapping; visual harnesses must not inject a blanket `font-family` rule.
+Generic CSS families (`serif`, `sans-serif`, `monospace`, and `system-ui`) resolve through Chromium's seeded profile
+preferences and deterministic font flags. The browser environment owns that mapping; visual harnesses must not inject a
+blanket `font-family` rule.
 
-An application that intentionally uses a named font owns its font asset and `@font-face` rule.
-Fetch a pinned external asset through Bazel when practical, bundle it with the application, and
-pass the asset plus `font_family` to `py_visual_test`. This keeps named
-typography in the product's normal CSS while keeping generic-family determinism independent of
-the page cascade.
+An application that intentionally uses a named font owns its font asset and `@font-face` rule. Fetch a pinned external
+asset through Bazel when practical, bundle it with the application, and pass the asset plus `font_family` to
+`py_visual_test`. This keeps named typography in the product's normal CSS while keeping generic-family determinism
+independent of the page cascade.
 
 ## Waiting for a scene
 
-Every scenario takes `readySelectors`: the scene's own readiness conditions, waited for
-before the capture. `wait_for_stable` (fonts applied, images decoded, a frame
-painted) knows nothing about a scene's content, so anything that arrives after
-mount — a mocked fetch's result, a lazily-mounted component — needs a selector
-that exists only once it has arrived. A scene with nothing arriving after mount
-passes none. A scene whose page throws while the mount wait or one of these is
-pending fails with that error (`PageErrors.wait_for`), not with the
-wait's timeout.
+Every scenario takes `readySelectors`: the scene's own readiness conditions, waited for before the capture.
+`wait_for_stable` (fonts applied, images decoded, a frame painted) knows nothing about a scene's content, so anything
+that arrives after mount — a mocked fetch's result, a lazily-mounted component — needs a selector that exists only once
+it has arrived. A scene with nothing arriving after mount passes none. A scene whose page throws while the mount wait or
+one of these is pending fails with that error (`PageErrors.wait_for`), not with the wait's timeout.
 
-There is no delay option to fall back on: a fixed wait is too short on a loaded
-runner and pure dead time on every run that did not need it, and it hides what is
-being awaited (STYLE.md § Waiting). A scene with nothing to wait on is an app to
-fix — give the view a `data-` attribute or class it sets when it has its data —
-not a timer to tune.
+There is no delay option to fall back on: a fixed wait is too short on a loaded runner and pure dead time on every run
+that did not need it, and it hides what is being awaited (STYLE.md § Waiting). A scene with nothing to wait on is an app
+to fix — give the view a `data-` attribute or class it sets when it has its data — not a timer to tune.
 
 ## Wait bounds
 
-Every wait takes `WAIT_TIMEOUT_MS` from `page_capture.py` — both navigations, the
-mount wait, `assertNetworkSettled`, and any condition a scenario adds. One bound
-in one place; why that number is at its declaration.
+Every wait takes `WAIT_TIMEOUT_MS` from `page_capture.py` — both navigations, the mount wait, `assertNetworkSettled`,
+and any condition a scenario adds. One bound in one place; why that number is at its declaration.
 
-Don't put a literal next to a `waitFor*` call. The 5s that used to sit on the
-mount wait was already ~60x the slowest healthy mount, and a loaded RBE worker
-still outran it — reporting an arbitrary elapsed time rather than that the page
+Don't put a literal next to a `waitFor*` call. The 5s that used to sit on the mount wait was already ~60x the slowest
+healthy mount, and a loaded RBE worker still outran it — reporting an arbitrary elapsed time rather than that the page
 never mounted.
 
 ## Verifying determinism
 
-A harness "passing" only proves it rendered — it says nothing about whether two
-runs of the identical commit produce identical pixels. A scene that's still
-animating or still waiting on a mocked async fetch at the moment of capture
-produces exactly this: it looks the same to a human but differs by a few pixels
-between runs, showing up as a misleadingly-labeled "X% changed" diff in PR visual
-review. See <https://github.com/agentydragon/ducktape/pull/3478> and
-<https://github.com/agentydragon/ducktape/pull/3481> for three real instances
-(an unguarded Mantine CSS animation, and two mocked-fetch races against a fixed
-delay).
+A harness "passing" only proves it rendered — it says nothing about whether two runs of the identical commit produce
+identical pixels. A scene that's still animating or still waiting on a mocked async fetch at the moment of capture
+produces exactly this: it looks the same to a human but differs by a few pixels between runs, showing up as a
+misleadingly-labeled "X% changed" diff in PR visual review. See <https://github.com/agentydragon/ducktape/pull/3478> and
+<https://github.com/agentydragon/ducktape/pull/3481> for three real instances (an unguarded Mantine CSS animation, and
+two mocked-fetch races against a fixed delay).
 
-To check a harness is actually deterministic, don't just eyeball the PNGs — run
-it repeatedly with fresh (non-cached) execution and compare BuildBuddy's artifact
-content digests, which needs nothing downloaded:
+To check a harness is actually deterministic, don't just eyeball the PNGs — run it repeatedly with fresh (non-cached)
+execution and compare BuildBuddy's artifact content digests, which needs nothing downloaded:
 
 ```bash
 bb run //devinfra/pr_visuals:determinism_bin -- --runs 5 //path/to:target
 ```
 
-Two runs is the minimum and rarely enough: all three instances above are races
-that fire intermittently, and one that fires one time in five looks perfectly
-stable across a pair. The same sweep runs weekly over every visual target
+Two runs is the minimum and rarely enough: all three instances above are races that fire intermittently, and one that
+fires one time in five looks perfectly stable across a pair. The same sweep runs weekly over every visual target
 (`.github/workflows/visual-determinism.yml`) and can be dispatched on demand.
 
-If they differ, `deterministic_browser_context` (`frontend_visual.py`) has already closed off
-rendering-level jitter (pinned browser font preferences, font rasterization, the frozen clock), but not
-a page that's still loading: the sweep navigates with `wait_until="networkidle"` for exactly this reason,
-rather than `"load"`, which returns as soon as the initial HTML parses regardless of in-flight fetches.
+If they differ, `deterministic_browser_context` (`frontend_visual.py`) has already closed off rendering-level jitter
+(pinned browser font preferences, font rasterization, the frozen clock), but not a page that's still loading: the sweep
+navigates with `wait_until="networkidle"` for exactly this reason, rather than `"load"`, which returns as soon as the
+initial HTML parses regardless of in-flight fetches.

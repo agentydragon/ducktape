@@ -6,7 +6,8 @@ Research on state-of-the-art furry/anthro NSFW image generation models for self-
 
 ## Executive Summary
 
-With 2x RTX 5090s, you have exceptional hardware that can run any current image generation model at full precision. The best options are:
+With 2x RTX 5090s, you have exceptional hardware that can run any current image generation model at full precision. The
+best options are:
 
 1. **Best Overall:** Pony Diffusion V6 XL or its derivatives (Midgard Pony, AutismMix Pony)
 2. **Best for Furry Focus:** Nova Furry XL, Ratatoskr, or E621 Rising XL

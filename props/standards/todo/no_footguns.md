@@ -1,11 +1,12 @@
 # Property: No Footguns (Clear, Unambiguous Outputs)
 
-**Status:** Planned
-**Kind:** behavior
+**Status:** Planned **Kind:** behavior
 
 ## Predicate
 
-Outputs must be clear, correct, and unambiguous; when multiple accounting modes exist (e.g., first-match vs all-matches), the chosen mode must be explicitly surfaced in output/docs; avoid misleading displays (e.g., hard-coded extension lists diverging from constants).
+Outputs must be clear, correct, and unambiguous; when multiple accounting modes exist (e.g., first-match vs
+all-matches), the chosen mode must be explicitly surfaced in output/docs; avoid misleading displays (e.g., hard-coded
+extension lists diverging from constants).
 
 ## Acceptance Criteria (Draft)
 

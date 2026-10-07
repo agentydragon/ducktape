@@ -1,8 +1,10 @@
 # Standards (On Hold)
 
-This directory contains property definitions and coding standards that were previously used for property-driven evaluation.
+This directory contains property definitions and coding standards that were previously used for property-driven
+evaluation.
 
-**Current status:** Standards-based evaluation is on hold. The current workflow focuses on human-identified canonical issues in `props/specimens/`, used to evaluate and select critic agents based on fitness scores.
+**Current status:** Standards-based evaluation is on hold. The current workflow focuses on human-identified canonical
+issues in `props/specimens/`, used to evaluate and select critic agents based on fitness scores.
 
 ## Directory Contents
 

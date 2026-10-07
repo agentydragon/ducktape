@@ -1,6 +1,7 @@
 # PyHamcrest Reference Guide
 
-PyHamcrest is a framework for writing matcher objects, allowing you to declaratively define "match" rules. This guide covers common usage patterns and examples.
+PyHamcrest is a framework for writing matcher objects, allowing you to declaratively define "match" rules. This guide
+covers common usage patterns and examples.
 
 ## Installation
 

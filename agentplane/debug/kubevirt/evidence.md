@@ -1,8 +1,8 @@
 # Platform experiment: 2026-10-03 UTC
 
-Environment: disposable `agentplane-vm-prototype-20261003`; KubeVirt v1.8.2,
-Kyverno v1.19.1, KVM worker `ovh-ns103711`. Existing Agentplane namespaces and
-existing VMs were untouched. Guest root image is pinned in the [reproduction guide](../../../cluster/cdk8s/agentplane/kubevirt_experiment/README.md).
+Environment: disposable `agentplane-vm-prototype-20261003`; KubeVirt v1.8.2, Kyverno v1.19.1, KVM worker `ovh-ns103711`.
+Existing Agentplane namespaces and existing VMs were untouched. Guest root image is pinned in the
+[reproduction guide](../../../cluster/cdk8s/agentplane/kubevirt_experiment/README.md).
 
 | Probe                            | Observed result                                                                                                                                                                                                         |
 | -------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -18,20 +18,19 @@ existing VMs were untouched. Guest root image is pinned in the [reproduction gui
 | Token rotation                   | Token `iat` advanced from `1790997779` to `1790998269` (600-second lifetime). Guest requests still authenticated with the same Pod UID; no relay restart.                                                               |
 | Registry access                  | ESO produced the prototype pull secret through a separate namespace-restricted store and named-secret reader. No credential value was read by the experiment.                                                           |
 
-[Remote tests and library checks](https://app.buildbuddy.io/invocation/89a45a52-c74d-45e9-a921-f267b2089a9d)
-passed: reinvocation equality; forged caller, stale VMI/VM UID, wrong account owner;
-compute/init/ephemeral token-mount rejection. This run checked the policy, VM fixture,
-and setup libraries with the repository's lint/type aspects.
+[Remote tests and library checks](https://app.buildbuddy.io/invocation/89a45a52-c74d-45e9-a921-f267b2089a9d) passed:
+reinvocation equality; forged caller, stale VMI/VM UID, wrong account owner; compute/init/ephemeral token-mount
+rejection. This run checked the policy, VM fixture, and setup libraries with the repository's lint/type aspects.
 
-The identity endpoint is a TokenReview fixture, not the production egress gateway.
-These results do not establish credential substitution, CONNECT/TLS, runner gRPC,
-persistent state recovery, guest resource isolation, or an actual admission outage.
+The identity endpoint is a TokenReview fixture, not the production egress gateway. These results do not establish
+credential substitution, CONNECT/TLS, runner gRPC, persistent state recovery, guest resource isolation, or an actual
+admission outage.
 
 After stop/start, the recreated relay's request was reviewed with the new Pod UID
-`01ef282b-ed21-4f28-b632-119c9d3a5e8a`. The disposable namespace, policy, ESO store,
-reviewer role/binding, and named registry reader role/binding were removed after
-these probes; namespace deletion completed. No persistent user disks were involved.
+`01ef282b-ed21-4f28-b632-119c9d3a5e8a`. The disposable namespace, policy, ESO store, reviewer role/binding, and named
+registry reader role/binding were removed after these probes; namespace deletion completed. No persistent user disks
+were involved.
 
-The move into `cluster/cdk8s/agentplane/kubevirt_experiment/` produced byte-identical
-manifests. [Moved-package tests and library checks](https://app.buildbuddy.io/invocation/1c522e22-48b0-4ea9-85b3-45bad4883964)
-also passed.
+The move into `cluster/cdk8s/agentplane/kubevirt_experiment/` produced byte-identical manifests.
+[Moved-package tests and library checks](https://app.buildbuddy.io/invocation/1c522e22-48b0-4ea9-85b3-45bad4883964) also
+passed.

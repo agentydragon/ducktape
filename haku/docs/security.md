@@ -1,313 +1,252 @@
 # Haku — security model
 
-The one document that states Haku's threat model, every enforcement mechanism, and the
-invariants an editor must preserve. Everything here is enforced **outside the agent**;
-Haku's instructions describe the perimeter, they never implement it. Detailed rationale
-lives at the linked sources — this doc is the index and the contract, per the repo's
+The one document that states Haku's threat model, every enforcement mechanism, and the invariants an editor must
+preserve. Everything here is enforced **outside the agent**; Haku's instructions describe the perimeter, they never
+implement it. Detailed rationale lives at the linked sources — this doc is the index and the contract, per the repo's
 "deviations, not re-explanations" rule.
 
 ## Threat model
 
-- **Haku is assumed adversarial.** Prompt injection through any readable source (an email
-  body, a Tana note, a transaction memo, a Drive file) can invoke anything Haku can invoke.
-  Consequently everything Haku authors inherits that trust level: the `haku-state` repo, the
-  haku-ui backend, and — critically — **haku-ui frontend JS running in the operator's
-  browser**.
-- **Trusted:** the operator; reviewed ducktape code (the console, Haku's deploy config, the
-  cluster manifests); the Kubernetes control plane and Authentik.
-- **The operator's browser is a security-relevant execution surface**: it runs adversarial
-  (Haku-authored) code with the operator's network vantage, fenced only by what the platform
-  and operator-owned headers enforce (see _Browser-side exfiltration_).
+- **Haku is assumed adversarial.** Prompt injection through any readable source (an email body, a Tana note, a
+  transaction memo, a Drive file) can invoke anything Haku can invoke. Consequently everything Haku authors inherits
+  that trust level: the `haku-state` repo, the haku-ui backend, and — critically — **haku-ui frontend JS running in the
+  operator's browser**.
+- **Trusted:** the operator; reviewed ducktape code (the console, Haku's deploy config, the cluster manifests); the
+  Kubernetes control plane and Authentik.
+- **The operator's browser is a security-relevant execution surface**: it runs adversarial (Haku-authored) code with the
+  operator's network vantage, fenced only by what the platform and operator-owned headers enforce (see _Browser-side
+  exfiltration_).
 
 ## Doctrine
 
-**The container is the trust boundary**: enforcement at
-the credential / RBAC / network / proxy perimeter, never by in-agent permission rules — Haku's
-runtimes run `--dangerously-skip-permissions` _because_ the perimeter is what limits it.
-Operator-owned sources are read-only by construction, in order of preference: (1) scope the
-upstream credential, (2) front with a read-only MCP facade, (3) lock egress. Haku-owned write
-surfaces use Haku's own principal and are scoped to that surface; their canonical inventory is
-`haku-state` `SOUL.md` → _Hard boundaries_. Haku is **its own principal** everywhere
-(attribution, independent revocation, bounded blast radius).
+**The container is the trust boundary**: enforcement at the credential / RBAC / network / proxy perimeter, never by
+in-agent permission rules — Haku's runtimes run `--dangerously-skip-permissions` _because_ the perimeter is what limits
+it. Operator-owned sources are read-only by construction, in order of preference: (1) scope the upstream credential, (2)
+front with a read-only MCP facade, (3) lock egress. Haku-owned write surfaces use Haku's own principal and are scoped to
+that surface; their canonical inventory is `haku-state` `SOUL.md` → _Hard boundaries_. Haku is **its own principal**
+everywhere (attribution, independent revocation, bounded blast radius).
 
-**Egress fences bound _direct_ exfil, not _laundered_ exfil.** The network proxy stops a
-prompt-injected Haku opening a socket to an arbitrary host; it does **not** stop Haku smuggling
-data through a _legitimately-allowlisted write path_ — a git push, a CI publish, an MCP write. Those
-are bounded not by the proxy but by **where the write lands**: `haku-state` is private
-(operator-only — a commit is not exfil), ducktape is operator-reviewed (trusted; see threat model),
-the haku-ui frontend is CSP/iframe-fenced (_Browser-side exfiltration_, below). So **every new write
-path is evaluated against its destination's trust independently of the egress allowlist** — a path
-that lets Haku-authored content reach a surface an adversary can read _without operator review_
-(a public CI artifact, a public cache, a world-readable bucket) is an exfil channel even when every
-network hop is allowlisted. The browser-exfil section is the worked instance of this principle for
-one channel; the same test applies to any build/publish/write path added to a Haku runtime.
+**Egress fences bound _direct_ exfil, not _laundered_ exfil.** The network proxy stops a prompt-injected Haku opening a
+socket to an arbitrary host; it does **not** stop Haku smuggling data through a _legitimately-allowlisted write path_ —
+a git push, a CI publish, an MCP write. Those are bounded not by the proxy but by **where the write lands**:
+`haku-state` is private (operator-only — a commit is not exfil), ducktape is operator-reviewed (trusted; see threat
+model), the haku-ui frontend is CSP/iframe-fenced (_Browser-side exfiltration_, below). So **every new write path is
+evaluated against its destination's trust independently of the egress allowlist** — a path that lets Haku-authored
+content reach a surface an adversary can read _without operator review_ (a public CI artifact, a public cache, a
+world-readable bucket) is an exfil channel even when every network hop is allowlisted. The browser-exfil section is the
+worked instance of this principle for one channel; the same test applies to any build/publish/write path added to a Haku
+runtime.
 
-A second destination class is in design rather than enforced: **another agent, at another model
-provider**. Handing a lower-trust agent context is a write path to that provider, so it is the same
-test asked of a different endpoint. Nothing here enforces it today —
-<../plans/information_trust_tiers.md> holds the sketch.
+A second destination class is in design rather than enforced: **another agent, at another model provider**. Handing a
+lower-trust agent context is a write path to that provider, so it is the same test asked of a different endpoint.
+Nothing here enforces it today — <../plans/information_trust_tiers.md> holds the sketch.
 
 ## Enforcement inventory
 
-Each entry states what the mechanism bounds, then its source of truth. Cite entries by
-their heading, never by position — positions change as entries come and go.
+Each entry states what the mechanism bounds, then its source of truth. Cite entries by their heading, never by position
+— positions change as entries come and go.
 
 ### Console SAR group `haku:access-profile:haku`
 
-Durable Haku Agent/access-profile standing identity; deploy-selected after Agent
-authentication, with the same RBAC as Haku's OIDC and runtime identities.
-Source of truth: <../console/mcp_config.py>, <../../cluster/cdk8s/haku/console_config.py>,
-Kubernetes RoleBindings under <../../cluster/k8s/>.
+Durable Haku Agent/access-profile standing identity; deploy-selected after Agent authentication, with the same RBAC as
+Haku's OIDC and runtime identities. Source of truth: <../console/mcp_config.py>,
+<../../cluster/cdk8s/haku/console_config.py>, Kubernetes RoleBindings under <../../cluster/k8s/>.
 
 ### OIDC group `oidc-ksbx-groups:haku`
 
-Direct Authentik/OIDC Haku identity; retained for clients that authenticate to
-kube-apiserver themselves.
-Source of truth: `secrets/haku-k8s-jwt.yaml` + kube-apiserver `AuthenticationConfiguration`.
+Direct Authentik/OIDC Haku identity; retained for clients that authenticate to kube-apiserver themselves. Source of
+truth: `secrets/haku-k8s-jwt.yaml` + kube-apiserver `AuthenticationConfiguration`.
 
 ### `haku-sandbox-admin` Role
 
-Full Kubernetes CRUD in `haku-sandbox` only — an explicit resource allowlist with **no**
-`httproutes`/`gateways`; Kubernetes writes nowhere else.
-Source of truth: <../../cluster/cdk8s/haku/rbac.py>.
+Full Kubernetes CRUD in `haku-sandbox` only — an explicit resource allowlist with **no** `httproutes`/`gateways`;
+Kubernetes writes nowhere else. Source of truth: <../../cluster/cdk8s/haku/rbac.py>.
 
 ### `cluster-diagnostics-reader` + `logs-configmaps-reader`
 
-Cluster-wide read-only object/status; logs+configmaps only in infra namespaces via
-per-namespace bindings (no secrets, no app-content namespaces).
-Source of truth: <../../cluster/docs/agent_rbac.md>.
+Cluster-wide read-only object/status; logs+configmaps only in infra namespaces via per-namespace bindings (no secrets,
+no app-content namespaces). Source of truth: <../../cluster/docs/agent_rbac.md>.
 
 ### Kyverno `restrict-agent-gateway-routes`
 
-Agents cannot create public routes even if RBAC ever drifted.
-Source of truth: <../../cluster/cdk8s/kyverno/policies.py>.
+Agents cannot create public routes even if RBAC ever drifted. Source of truth:
+<../../cluster/cdk8s/kyverno/policies.py>.
 
 ### `haku-egress-proxy` egress fence
 
-On `haku-sandbox` **and** `haku-ci` (agent-authored build compute), which share one
-allowlist chokepoint; currently mitmproxy. Pod egress to the public internet is
-allowlisted at L3/L4 only — mitmproxy terminates TLS but enforces no host list of its
-own, so the Cilium `toFQDNs` policy is the whole fence (an L7 allowlist is what
-iron-proxy adds, and these pods are not on it yet). In-cluster and node-IP destinations
-(all of `*.allegedly.works`) are deliberately unfenced via `toEntities: cluster`; those
-services authenticate their own callers.
-Source of truth: <../../cluster/k8s/agents/haku-egress-proxy/>, <../../cluster/cdk8s/haku_ci/>.
+On `haku-sandbox` **and** `haku-ci` (agent-authored build compute), which share one allowlist chokepoint; currently
+mitmproxy. Pod egress to the public internet is allowlisted at L3/L4 only — mitmproxy terminates TLS but enforces no
+host list of its own, so the Cilium `toFQDNs` policy is the whole fence (an L7 allowlist is what iron-proxy adds, and
+these pods are not on it yet). In-cluster and node-IP destinations (all of `*.allegedly.works`) are deliberately
+unfenced via `toEntities: cluster`; those services authenticate their own callers. Source of truth:
+<../../cluster/k8s/agents/haku-egress-proxy/>, <../../cluster/cdk8s/haku_ci/>.
 
 ### Operator-source credentials reflected into `haku-sandbox`
 
-Operator-owned data sources are read-only by construction (Plaid RO SQL user,
-all-`.readonly` Google token); Haku-owned write credentials are separately scoped to the
-canonical hard-rule inventory.
-Source of truth: `haku-state` `SOUL.md` → _Hard boundaries_.
+Operator-owned data sources are read-only by construction (Plaid RO SQL user, all-`.readonly` Google token); Haku-owned
+write credentials are separately scoped to the canonical hard-rule inventory. Source of truth: `haku-state` `SOUL.md` →
+_Hard boundaries_.
 
 ### Retired Console Sandbox MCP
 
-The former in-process `sandbox` server provisioned claims and ran bounded commands in a
-Haku-specific warm pool. It is absent from the deployed catalog, and its Haku-specific
-template, pool, janitor, and Console Role/RoleBinding are no longer active. The generic
-Agent Sandbox constructs remain active for other workspace users.
+The former in-process `sandbox` server provisioned claims and ran bounded commands in a Haku-specific warm pool. It is
+absent from the deployed catalog, and its Haku-specific template, pool, janitor, and Console Role/RoleBinding are no
+longer active. The generic Agent Sandbox constructs remain active for other workspace users.
 
 ### Agent-facing `withdraw_tool_call` (`/mcp`)
 
-An Agent may retract **its own** still-pending call to the terminal `withdrawn` status —
-the one console-native mutation on the `/mcp` surface, and it strictly narrows what a
-call can do: pending → terminal, never toward execution, only for calls that Agent
-itself queued, and there is still no decision tool an OAuth caller could self-approve
-with. Withdrawal is an audit fact, not a delete: a prompt-injected Agent can pull an
-attempt out of the operator's approval queue before it is scrutinised, but cannot erase
-the record of it, and approval and withdrawal serialise under the row lock, so a
-withdrawal cannot cancel a call the operator already approved. Detail:
-<../console/README.md> § _MCP approval queue_.
-Source of truth: <../console/mcp/server.py>, <../console/mcp/tool_call_service.py>,
-<../console/README.md>.
+An Agent may retract **its own** still-pending call to the terminal `withdrawn` status — the one console-native mutation
+on the `/mcp` surface, and it strictly narrows what a call can do: pending → terminal, never toward execution, only for
+calls that Agent itself queued, and there is still no decision tool an OAuth caller could self-approve with. Withdrawal
+is an audit fact, not a delete: a prompt-injected Agent can pull an attempt out of the operator's approval queue before
+it is scrutinised, but cannot erase the record of it, and approval and withdrawal serialise under the row lock, so a
+withdrawal cannot cancel a call the operator already approved. Detail: <../console/README.md> § _MCP approval queue_.
+Source of truth: <../console/mcp/server.py>, <../console/mcp/tool_call_service.py>, <../console/README.md>.
 
 ### Operator-owned base vs. canonical autonomous-write inventory
 
-Haku's hard rules live in `haku-state`, which Haku writes, so **the rules are not the
-enforcement** — RBAC, the egress fence and the approval queue are. ducktape no longer
-carries a copy: it holds Haku's runtime entrypoints and deploy config, not its
-definition.
-Source of truth: `haku-state` `SOUL.md` → _Hard boundaries_.
+Haku's hard rules live in `haku-state`, which Haku writes, so **the rules are not the enforcement** — RBAC, the egress
+fence and the approval queue are. ducktape no longer carries a copy: it holds Haku's runtime entrypoints and deploy
+config, not its definition. Source of truth: `haku-state` `SOUL.md` → _Hard boundaries_.
 
 ### Authentik proxy route to haku-ui
 
-Single-user policy binding, operator-owned. Nobody but the signed-in operator reaches
-haku-ui, regardless of haku-state content — auth sits **in front of** the app, outside
-Haku's write scope.
-Source of truth: <../../cluster/cdk8s/authentik/proxy_routes.py>,
-<../../cluster/k8s/authentik/app/blueprints/haku-ui-sso.yaml>.
+Single-user policy binding, operator-owned. Nobody but the signed-in operator reaches haku-ui, regardless of haku-state
+content — auth sits **in front of** the app, outside Haku's write scope. Source of truth:
+<../../cluster/cdk8s/authentik/proxy_routes.py>, <../../cluster/k8s/authentik/app/blueprints/haku-ui-sso.yaml>.
 
 ### Console iframe containment
 
-The trusted shell frames Haku's UI cross-origin and owns the boundary: iframe `sandbox`
-(no `allow-popups`/`allow-top-navigation`), no `allow="geolocation"` or
-`allow="display-capture"` (the shell serves `Permissions-Policy: geolocation=(self),
-display-capture=(self)`), console CSP `frame-src`, the `openLink` scheme gate +
-operator-owned host whitelist + off-whitelist confirm, and shell-owned standing consent
-grants for geolocation (`requestGeolocation` one-shot + `startGeolocationWatch` stream)
-and screenshot capture (`requestScreenshot`), with every live watch/capture stream held
-by the shell. Agent UI cannot reach the launch bearer, open windows, read or
-continuously track the operator's location, capture the screen, or navigate the operator
-anywhere unvetted; the shell reads/captures only under an operator grant it can
-withdraw, and holds every stream so the operator can stop it.
-Source of truth: <../console/docs/containment.md>.
+The trusted shell frames Haku's UI cross-origin and owns the boundary: iframe `sandbox` (no
+`allow-popups`/`allow-top-navigation`), no `allow="geolocation"` or `allow="display-capture"` (the shell serves
+`Permissions-Policy: geolocation=(self), display-capture=(self)`), console CSP `frame-src`, the `openLink` scheme gate +
+operator-owned host whitelist + off-whitelist confirm, and shell-owned standing consent grants for geolocation
+(`requestGeolocation` one-shot + `startGeolocationWatch` stream) and screenshot capture (`requestScreenshot`), with
+every live watch/capture stream held by the shell. Agent UI cannot reach the launch bearer, open windows, read or
+continuously track the operator's location, capture the screen, or navigate the operator anywhere unvetted; the shell
+reads/captures only under an operator grant it can withdraw, and holds every stream so the operator can stop it. Source
+of truth: <../console/docs/containment.md>.
 
 ### Console privileged-action tier
 
-Agent-originated privileged actions (`launch-routine`, approval-gated MCP calls) require
-a genuine Operator gesture on trusted chrome: exact-Origin admission + server-side
-secrets/API token + **top-layer `<dialog>` confirm**, audited and result-owned in
-`haku-console` (a namespace Haku cannot read). Agent UI/backend can only _request_.
-Trusted console code may also issue direct, no-ledger MCP calls under the DB-revalidated
-Operator session; exact Origin keeps that authority out of the framed agent UI.
-Source of truth: <../console/README.md>.
+Agent-originated privileged actions (`launch-routine`, approval-gated MCP calls) require a genuine Operator gesture on
+trusted chrome: exact-Origin admission + server-side secrets/API token + **top-layer `<dialog>` confirm**, audited and
+result-owned in `haku-console` (a namespace Haku cannot read). Agent UI/backend can only _request_. Trusted console code
+may also issue direct, no-ledger MCP calls under the DB-revalidated Operator session; exact Origin keeps that authority
+out of the framed agent UI. Source of truth: <../console/README.md>.
 
 ### CiliumNetworkPolicy `ingress` in `haku-sandbox`
 
-Namespace-wide: ingress admitted only from `haku-sandbox` itself and the Authentik
-outpost (supersedes the per-service policies, PR #3645). Forward-auth identity headers
-(`X-authentik-username`) can't be forged by other in-cluster callers — operator intent
-written to haku-state is genuine. Intra-namespace traffic (sandboxes→haku-ui,
-haku-ui→jupyter) flows freely: sandboxes run at Haku's own privilege and already hold
-its git credential, so this grants nothing they lack. `haku-console`, the privileged
-surface, lives outside the namespace and is untouched.
-Source of truth: <../../cluster/cdk8s/haku/namespace.py>.
+Namespace-wide: ingress admitted only from `haku-sandbox` itself and the Authentik outpost (supersedes the per-service
+policies, PR #3645). Forward-auth identity headers (`X-authentik-username`) can't be forged by other in-cluster callers
+— operator intent written to haku-state is genuine. Intra-namespace traffic (sandboxes→haku-ui, haku-ui→jupyter) flows
+freely: sandboxes run at Haku's own privilege and already hold its git credential, so this grants nothing they lack.
+`haku-console`, the privileged surface, lives outside the namespace and is untouched. Source of truth:
+<../../cluster/cdk8s/haku/namespace.py>.
 
 ### Audit trails
 
-Every Haku proposal/decision is a git commit; LLM calls route through LiteLLM
-(attribution, budget, kill-switch) with Langfuse traces; capability invocations log in
-`haku-console`.
-Source of truth: <../runtime/agent/config.py> (LiteLLM routing) + <../console/README.md>
-(capability audit).
+Every Haku proposal/decision is a git commit; LLM calls route through LiteLLM (attribution, budget, kill-switch) with
+Langfuse traces; capability invocations log in `haku-console`. Source of truth: <../runtime/agent/config.py> (LiteLLM
+routing) + <../console/README.md> (capability audit).
 
 ### Mailbox perimeter
 
-Only operator mail whose envelope sender passes SPF and the operator-owned whitelist (in
-the Stalwart provisioning plan) reaches Haku's inbox. Haku is a mail user via
-audience-pinned Authentik OIDC bearer only — no password, no admin credential in its
-reach — and the server is receive-only, so a prompt-injected Haku can manage its mailbox
-but not the server, the whitelist, or any outbound mail (no submission service).
-Source of truth: <../../cluster/k8s/haku/mailbox/SPEC.md>.
+Only operator mail whose envelope sender passes SPF and the operator-owned whitelist (in the Stalwart provisioning plan)
+reaches Haku's inbox. Haku is a mail user via audience-pinned Authentik OIDC bearer only — no password, no admin
+credential in its reach — and the server is receive-only, so a prompt-injected Haku can manage its mailbox but not the
+server, the whitelist, or any outbound mail (no submission service). Source of truth:
+<../../cluster/k8s/haku/mailbox/SPEC.md>.
 
 ## Browser-side exfiltration (channel inventory)
 
-Adversarial haku-ui JS in the operator's browser holds personal data (haku-state content,
-live source reads). Channels out, and what fences each:
+Adversarial haku-ui JS in the operator's browser holds personal data (haku-state content, live source reads). Channels
+out, and what fences each:
 
-**Navigate the visible window to `evil.example/?d=…`** — **blocked structurally**:
-console CSP `frame-src` governs all nested-context navigations (incl. form submits); the
-iframe sandbox has no `allow-popups`/`allow-top-navigation`; the only exit is
-`openLink`, which is scheme-gated and whitelist/confirm-gated. **This is why the console
-must stay the top-level window** — a top-level haku-ui could always navigate itself to a
-data-bearing third-party URL; no web-platform mechanism blocks that from outside the app
-(CSP `navigate-to` never shipped).
+**Navigate the visible window to `evil.example/?d=…`** — **blocked structurally**: console CSP `frame-src` governs all
+nested-context navigations (incl. form submits); the iframe sandbox has no `allow-popups`/`allow-top-navigation`; the
+only exit is `openLink`, which is scheme-gated and whitelist/confirm-gated. **This is why the console must stay the
+top-level window** — a top-level haku-ui could always navigate itself to a data-bearing third-party URL; no web-platform
+mechanism blocks that from outside the app (CSP `navigate-to` never shipped).
 
-**Silent subresource beacons (`fetch`/`<img>`/`sendBeacon`/WebSocket) to a third
-party** — **blocked by the operator-injected CSP** on the haku-ui `HTTPRoute`
-(`ResponseHeaderModifier` sets `connect-src 'self'`, `img-src 'self' data:`, … — the
-same mechanism <../../cluster/cdk8s/authentik/app.py> uses on `auth.allegedly.works`). Subresource loads
-obey the _document's own_ CSP, which Haku serves — so the fence must be injected at the
-route, the only public door, where `set` overrides anything Haku's backend sends. The
-policy deliberately relaxes **execution**, not destinations (JupyterLab, served under
-`/jupyter/*`, needs `'unsafe-eval'`, `blob:` workers/images, explicit same-host `wss:`):
-every allowed
-destination stays self/same-document, so the third-party beacon fence is unchanged, at
-the accepted residual that a string-to-eval gadget in the SPA or a dependency would let
-rendered external text execute directly (no prompt-injection step, no git commit, no CSP
-tripwire) — bounded by the destination fence. The full decision rationale (operator,
-2026-08-01) lives in <../../cluster/cdk8s/authentik/proxy_routes.py>.
+**Silent subresource beacons (`fetch`/`<img>`/`sendBeacon`/WebSocket) to a third party** — **blocked by the
+operator-injected CSP** on the haku-ui `HTTPRoute` (`ResponseHeaderModifier` sets `connect-src 'self'`,
+`img-src 'self' data:`, … — the same mechanism <../../cluster/cdk8s/authentik/app.py> uses on `auth.allegedly.works`).
+Subresource loads obey the _document's own_ CSP, which Haku serves — so the fence must be injected at the route, the
+only public door, where `set` overrides anything Haku's backend sends. The policy deliberately relaxes **execution**,
+not destinations (JupyterLab, served under `/jupyter/*`, needs `'unsafe-eval'`, `blob:` workers/images, explicit
+same-host `wss:`): every allowed destination stays self/same-document, so the third-party beacon fence is unchanged, at
+the accepted residual that a string-to-eval gadget in the SPA or a dependency would let rendered external text execute
+directly (no prompt-injection step, no git commit, no CSP tripwire) — bounded by the destination fence. The full
+decision rationale (operator, 2026-08-01) lives in <../../cluster/cdk8s/authentik/proxy_routes.py>.
 
-**WebRTC data channels to a third party (bypass `connect-src`)** — **open — accepted
-residual** (see Known gaps). The CSP3 `webrtc 'block'` directive is in the injected
-policy but **no current browser enforces it**: Chromium dropped it (Chromium 141 logs
-`Unrecognized Content-Security-Policy directive 'webrtc'` — verified 2026-07-02);
-Firefox/Safari never shipped it. Kept as future-proofing. Bounded like all iframe
-channels: haku-ui only holds data Haku can already read (the reflected read-only source
-credentials; haku-state content), and exploiting it takes a prompt-injected Haku plus
-the operator's browser on the console.
+**WebRTC data channels to a third party (bypass `connect-src`)** — **open — accepted residual** (see Known gaps). The
+CSP3 `webrtc 'block'` directive is in the injected policy but **no current browser enforces it**: Chromium dropped it
+(Chromium 141 logs `Unrecognized Content-Security-Policy directive 'webrtc'` — verified 2026-07-02); Firefox/Safari
+never shipped it. Kept as future-proofing. Bounded like all iframe channels: haku-ui only holds data Haku can already
+read (the reflected read-only source credentials; haku-state content), and exploiting it takes a prompt-injected Haku
+plus the operator's browser on the console.
 
-**haku-ui backend egress** — fenced by the `haku-egress-proxy` allowlist (enforcement
-inventory above).
+**haku-ui backend egress** — fenced by the `haku-egress-proxy` allowlist (enforcement inventory above).
 
-**Data in URLs to whitelisted hosts (`claude.ai`, `github.com`, …) via `openLink`** —
-**accepted residual**: the handoff use-case requires it; whitelist hosts are
-semi-trusted.
+**Data in URLs to whitelisted hosts (`claude.ai`, `github.com`, …) via `openLink`** — **accepted residual**: the handoff
+use-case requires it; whitelist hosts are semi-trusted.
 
-**Operator geolocation (incl. continuous tracking)** — **not readable by the frame**;
-the shell reads it — and holds any live `watchPosition` stream — only under a
-per-operator standing consent grant with shell-owned Stop/Withdraw controls. Once
-granted, location (a live stream, under tracking) is a datum the adversarial frame
-holds, exfiltratable only via the other accepted residuals above (whitelisted
-`openLink`, WebRTC); bounded by the explicit grant and the shell-held,
-one-click-stoppable watch. Contract: <../console/docs/containment.md> →
-`requestGeolocation`.
+**Operator geolocation (incl. continuous tracking)** — **not readable by the frame**; the shell reads it — and holds any
+live `watchPosition` stream — only under a per-operator standing consent grant with shell-owned Stop/Withdraw controls.
+Once granted, location (a live stream, under tracking) is a datum the adversarial frame holds, exfiltratable only via
+the other accepted residuals above (whitelisted `openLink`, WebRTC); bounded by the explicit grant and the shell-held,
+one-click-stoppable watch. Contract: <../console/docs/containment.md> → `requestGeolocation`.
 
-**Operator screenshot capture** — **not readable by the frame**; the shell captures —
-and holds the one live `getDisplayMedia` stream — only under its own standing grant,
-ended by shell Stop/Withdraw or the browser-native "Stop sharing". A captured screenshot
-is a bounded one-shot datum (not a continuous stream), exfiltratable only via the same
+**Operator screenshot capture** — **not readable by the frame**; the shell captures — and holds the one live
+`getDisplayMedia` stream — only under its own standing grant, ended by shell Stop/Withdraw or the browser-native "Stop
+sharing". A captured screenshot is a bounded one-shot datum (not a continuous stream), exfiltratable only via the same
 accepted residuals. Contract: <../console/docs/containment.md> → `requestScreenshot`.
 
-**Consent-confirmed navigations** — working as designed: the confirm shows the full URL;
-the operator is the gate.
+**Consent-confirmed navigations** — working as designed: the confirm shows the full URL; the operator is the gate.
 
-**Covert channels (timing, DNS tricks)** — out of scope; the goal is closing practical
-bulk channels.
+**Covert channels (timing, DNS tricks)** — out of scope; the goal is closing practical bulk channels.
 
 ## Invariants — preserve these when changing anything
 
-1. Never add `httproutes`/`gateways` (or `networkpolicies`) to Haku's Role; never weaken the
-   Kyverno route denylist.
-2. Every credential for an operator-owned source reflected into `haku-sandbox` is read-only.
-   A Haku-owned write credential must be scoped to its surface and named in the canonical base
-   hard-rule inventory; any other write capability requires its own closure-style server (the
-   credential stays behind a console server entry, as with `kubectl-passthrough-mcp` above) and
-   an inventory update. In particular, `haku-mail-token` may mutate only the contents of Haku's
-   `haku@allegedly.works` mailbox; it grants neither outbound mail nor server administration.
-3. The console renders **no** Haku-authored content. No haku-state credential is reflected into
-   the haku-console namespace while Recall indexing is disabled; the
-   litmus test for console code: _does it hold a secret, perform a privileged action, or
-   define the trust boundary?_ If not, it belongs to Haku.
-4. Consent moments happen on trusted top-level/top-layer shell surfaces only (the capability
-   confirm, the approval drawer for MCP tool calls and geolocation grants, the `openLink`
-   off-whitelist confirm, and the OS notification the console's own service worker renders for a
-   pending tool call). Never move a confirm into agent-embeddable chrome; a persistent "trust
-   badge" is not a control — and the console panel that withdraws a grant is not one either (it only
-   reduces privilege).
-   The Web Push notification qualifies on the same terms as the others, and only on those terms:
-   the OS renders it, its Approve/Deny buttons are defined in reviewed console code
-   (`haku/console/frontend/sw.ts`), and acting on one is a same-origin credentialed fetch to
-   `POST /api/tool-calls/{id}/decision` under the operator's own Authentik session. The push
-   message itself carries no authority — intercepting one approves nothing. This is precisely why
-   approval notifications may not be delegated to a third-party notification service (ntfy,
-   Telegram, …) with action buttons: those would have to carry a deciding credential inside a
-   message on a server outside the trust boundary. Notification _body_ text is agent-influenced
-   (a tool call's title and rationale), which is acceptable because it is display-only — but the
-   buttons must never be derived from it.
+1. Never add `httproutes`/`gateways` (or `networkpolicies`) to Haku's Role; never weaken the Kyverno route denylist.
+2. Every credential for an operator-owned source reflected into `haku-sandbox` is read-only. A Haku-owned write
+   credential must be scoped to its surface and named in the canonical base hard-rule inventory; any other write
+   capability requires its own closure-style server (the credential stays behind a console server entry, as with
+   `kubectl-passthrough-mcp` above) and an inventory update. In particular, `haku-mail-token` may mutate only the
+   contents of Haku's `haku@allegedly.works` mailbox; it grants neither outbound mail nor server administration.
+3. The console renders **no** Haku-authored content. No haku-state credential is reflected into the haku-console
+   namespace while Recall indexing is disabled; the litmus test for console code: _does it hold a secret, perform a
+   privileged action, or define the trust boundary?_ If not, it belongs to Haku.
+4. Consent moments happen on trusted top-level/top-layer shell surfaces only (the capability confirm, the approval
+   drawer for MCP tool calls and geolocation grants, the `openLink` off-whitelist confirm, and the OS notification the
+   console's own service worker renders for a pending tool call). Never move a confirm into agent-embeddable chrome; a
+   persistent "trust badge" is not a control — and the console panel that withdraws a grant is not one either (it only
+   reduces privilege). The Web Push notification qualifies on the same terms as the others, and only on those terms: the
+   OS renders it, its Approve/Deny buttons are defined in reviewed console code (`haku/console/frontend/sw.ts`), and
+   acting on one is a same-origin credentialed fetch to `POST /api/tool-calls/{id}/decision` under the operator's own
+   Authentik session. The push message itself carries no authority — intercepting one approves nothing. This is
+   precisely why approval notifications may not be delegated to a third-party notification service (ntfy, Telegram, …)
+   with action buttons: those would have to carry a deciding credential inside a message on a server outside the trust
+   boundary. Notification _body_ text is agent-influenced (a tool call's title and rationale), which is acceptable
+   because it is display-only — but the buttons must never be derived from it.
 5. The `openLink` host whitelist lives in the shell (ducktape), never in haku-state.
-6. **The console stays the outer window.** Do not make haku-ui top-level: exfiltration
-   containment (navigation channel above) depends on the embedding. Evaluated and rejected
-   2026-07-01 (haku-state `plans/url-topology.md`).
-7. Auth for haku-ui sits in operator-owned Authentik/route objects (_Authentik proxy route to
-   haku-ui_ above) — never in haku-state-served code.
-8. If haku-state ever vendors third-party content, re-examine every "haku-state is
-   single-author, so rendering it live is safe" assumption (garden MDX eval).
+6. **The console stays the outer window.** Do not make haku-ui top-level: exfiltration containment (navigation channel
+   above) depends on the embedding. Evaluated and rejected 2026-07-01 (haku-state `plans/url-topology.md`).
+7. Auth for haku-ui sits in operator-owned Authentik/route objects (_Authentik proxy route to haku-ui_ above) — never in
+   haku-state-served code.
+8. If haku-state ever vendors third-party content, re-examine every "haku-state is single-author, so rendering it live
+   is safe" assumption (garden MDX eval).
 
 ## Known gaps (tracked)
 
-- **WebRTC exfiltration from adversarial haku-ui JS is not browser-blockable today** —
-  the `webrtc 'block'` CSP directive is unenforced in all current browsers (channel
-  inventory above), and no other web-platform mechanism fences WebRTC from outside the
-  app. Revisit if Chromium re-ships the directive or a Permissions-Policy equivalent
-  lands.
-- **Verify the injected haku-ui CSP after each deploy-affecting change** — confirm the
-  header lands on live `haku-ui.allegedly.works` responses and the SPA + in-iframe SSO
-  still work (Haku item `haku-ui-browser-exfil-csp-gap-2026` tracks the initial
-  verification).
-- **Gateway `allowedRoutes` still `from: All`** — belt-and-suspenders tightening deferred,
-  fenced meanwhile by the Kyverno `restrict-agent-gateway-routes` policy; see
-  `cluster/k8s/TODO.md`.
-- **Tool inputs/outputs flow to the model provider's control plane** regardless of sandbox
-  location — inherent to using hosted models; acknowledged in
-  <../runtime/x/managed_agent/anthropic_hosted/README.md>.
+- **WebRTC exfiltration from adversarial haku-ui JS is not browser-blockable today** — the `webrtc 'block'` CSP
+  directive is unenforced in all current browsers (channel inventory above), and no other web-platform mechanism fences
+  WebRTC from outside the app. Revisit if Chromium re-ships the directive or a Permissions-Policy equivalent lands.
+- **Verify the injected haku-ui CSP after each deploy-affecting change** — confirm the header lands on live
+  `haku-ui.allegedly.works` responses and the SPA + in-iframe SSO still work (Haku item
+  `haku-ui-browser-exfil-csp-gap-2026` tracks the initial verification).
+- **Gateway `allowedRoutes` still `from: All`** — belt-and-suspenders tightening deferred, fenced meanwhile by the
+  Kyverno `restrict-agent-gateway-routes` policy; see `cluster/k8s/TODO.md`.
+- **Tool inputs/outputs flow to the model provider's control plane** regardless of sandbox location — inherent to using
+  hosted models; acknowledged in <../runtime/x/managed_agent/anthropic_hosted/README.md>.

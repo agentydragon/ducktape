@@ -1,6 +1,7 @@
 # Flag Propagation & Control Flow Detector
 
-Find issues where boolean flags or control flow states are unnecessarily threaded through code, and where control flow can be simplified.
+Find issues where boolean flags or control flow states are unnecessarily threaded through code, and where control flow
+can be simplified.
 
 ## Review Scope
 
@@ -8,15 +9,16 @@ Snapshot: ${snapshot_slug}
 % if scope_files is None:
 Review: ALL files in snapshot
 % else:
-Files to review: ${", ".join(scope_files)}
-% endif
-Location: ${workspace_dir}
+Files to review: ${",
+".join(scope_files)} % endif Location: ${workspace_dir}
 
 ## What to Flag
 
-- **Redundant flag passing**: Flags passed down call chains but only checked at the end (consider early bailout or separate code paths)
+- **Redundant flag passing**: Flags passed down call chains but only checked at the end (consider early bailout or
+  separate code paths)
 - **Flag threading**: Boolean parameters that could be replaced by separate functions or early returns
-- **Unnecessary state tracking**: Variables that track state already implicit in control flow (e.g., error flags set but checked later)
+- **Unnecessary state tracking**: Variables that track state already implicit in control flow (e.g., error flags set but
+  checked later)
 - **Complex flag combinations**: Multiple boolean flags where enum or strategy pattern would be clearer
 - **One-off flag variables**: Flags assigned once and immediately passed to the next call without adding value
 - **Nested trivial guards**: Multiple `if` statements that should be combined with `and`/`or` or use early bailout
@@ -229,5 +231,6 @@ Focus on cases where:
 
 ## Notes on Application
 
-- If target CLI requires a local daemon, document how to start/stop it offline and expected log/socket locations; otherwise skip daemon flows
+- If target CLI requires a local daemon, document how to start/stop it offline and expected log/socket locations;
+  otherwise skip daemon flows
 - Provide sample fixtures/config if specific flows require inputs (no secrets)

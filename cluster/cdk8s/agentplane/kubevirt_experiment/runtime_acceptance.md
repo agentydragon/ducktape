@@ -1,15 +1,15 @@
 # Runner VM acceptance
 
-Use [`runtime_acceptance.py`](runtime_acceptance.py) for the disposable guest lifecycle. Its
-KubeVirt operations are fixture-local; it does not call the production Sandbox Service. Read
-VM, VMI, and Pod identity plus raw `.status` with `inspect`.
+Use [`runtime_acceptance.py`](runtime_acceptance.py) for the disposable guest lifecycle. Its KubeVirt operations are
+fixture-local; it does not call the production Sandbox Service. Read VM, VMI, and Pod identity plus raw `.status` with
+`inspect`.
 
 ## Inputs and setup
 
-Use a unique `agentplane-vm-prototype-*` namespace, digest-pinned relay and runner images, a
-storage class and node that can run the VM, and an ESO-created `forgejo-images-creds` Secret.
-The trust ConfigMap must contain `ca-certificates.crt` and passwordless `ca-certificates.p12`.
-The guest kubeconfig has no credential; this fixture does not test guest Kubernetes access.
+Use a unique `agentplane-vm-prototype-*` namespace, digest-pinned relay and runner images, a storage class and node that
+can run the VM, and an ESO-created `forgejo-images-creds` Secret. The trust ConfigMap must contain `ca-certificates.crt`
+and passwordless `ca-certificates.p12`. The guest kubeconfig has no credential; this fixture does not test guest
+Kubernetes access.
 
 Set these values from the image build and the cluster's existing trust-manager Bundle:
 
@@ -32,8 +32,8 @@ bb run //cluster/cdk8s/agentplane/kubevirt_experiment:main -- --namespace "$ns" 
 kubectl apply -f "$out/launcher-admission.k8s.yaml"
 ```
 
-Copy the existing public trust-manager ConfigMap output into the namespace. Preserve `binaryData`
-for the PKCS#12 file; do not copy its Secret or private key.
+Copy the existing public trust-manager ConfigMap output into the namespace. Preserve `binaryData` for the PKCS#12 file;
+do not copy its Secret or private key.
 
 ```bash
 kubectl get configmap agentplane-testing-egress-ca -n agentplane-testing -o json \
@@ -44,9 +44,8 @@ kubectl get configmap agentplane-testing-egress-ca -n agentplane-testing -o json
 
 ## Create and exercise
 
-Create emits JSON lines for VM creation and readiness. Save the created VM identity; its status is
-raw KubeVirt status. The VM starts only after blank-disk ownership/input checks so
-WaitForFirstConsumer storage can bind through the VMI.
+Create emits JSON lines for VM creation and readiness. Save the created VM identity; its status is raw KubeVirt status.
+The VM starts only after blank-disk ownership/input checks so WaitForFirstConsumer storage can bind through the VMI.
 
 ```bash
 create_output=$(bb run //cluster/cdk8s/agentplane/kubevirt_experiment:runtime_acceptance -- create \
@@ -59,8 +58,8 @@ vm=$(jq -rs 'map(select(.action == "created"))[-1].vm.identity.name' <<<"$create
 vm_uid=$(jq -rs 'map(select(.action == "created"))[-1].vm.identity.uid' <<<"$create_output")
 ```
 
-Run the printed port-forward in another terminal. `initialize` verifies the guest RPC and retires
-the one-shot disk-format permission after success.
+Run the printed port-forward in another terminal. `initialize` verifies the guest RPC and retires the one-shot
+disk-format permission after success.
 
 ```bash
 target=localhost:17000
@@ -96,11 +95,11 @@ bb run //cluster/cdk8s/agentplane/kubevirt_experiment:runtime_acceptance -- setu
   --setup-script-file /tmp/agentplane-vm-setup-probe.sh --expect-output SETUP_PROBE_OK
 ```
 
-For interruption recovery, use `resume --namespace "$ns" --name "$vm" --uid "$vm_uid"` after
-the exact VMI has been deleted.
+For interruption recovery, use `resume --namespace "$ns" --name "$vm" --uid "$vm_uid"` after the exact VMI has been
+deleted.
 
-Root replacement requires the VM UID, `runStrategy: Halted`, and no VMI; it patches only the root
-containerDisk image. Halt and wait for VMI deletion before calling it:
+Root replacement requires the VM UID, `runStrategy: Halted`, and no VMI; it patches only the root containerDisk image.
+Halt and wait for VMI deletion before calling it:
 
 ```bash
 kubectl -n "$ns" patch vm "$vm" --type=merge -p '{"spec":{"runStrategy":"Halted"}}'
@@ -113,9 +112,9 @@ bb run //cluster/cdk8s/agentplane/kubevirt_experiment:runtime_acceptance -- resu
 
 ## Cleanup and limits
 
-VM deletion leaves state/workspace DataVolumes and PVCs. Delete them only after saving evidence and
-deciding their data is disposable, then delete the namespace and experiment's cluster-scoped
-policy, secret store, reviewer role/binding, and Forgejo reader role/binding.
+VM deletion leaves state/workspace DataVolumes and PVCs. Delete them only after saving evidence and deciding their data
+is disposable, then delete the namespace and experiment's cluster-scoped policy, secret store, reviewer role/binding,
+and Forgejo reader role/binding.
 
 ```bash
 kubectl -n "$ns" patch vm "$vm" --type=merge -p '{"spec":{"runStrategy":"Halted"}}'
@@ -130,8 +129,8 @@ kubectl delete clusterrole,clusterrolebinding "$ns-reviewer" --ignore-not-found
 kubectl -n forgejo-images delete role,rolebinding "$ns-reader" --ignore-not-found
 ```
 
-The direct driver and trust-store boot path have not yet been rerun live; recorded evidence uses an
-earlier driver and image. The model fixture returns deterministic text and uses TokenReview for the
-relay identity. It does not validate production credential substitution, destination authorization,
-TLS interception, or CONNECT. Recorded runtime findings and measured limits are in
+The direct driver and trust-store boot path have not yet been rerun live; recorded evidence uses an earlier driver and
+image. The model fixture returns deterministic text and uses TokenReview for the relay identity. It does not validate
+production credential substitution, destination authorization, TLS interception, or CONNECT. Recorded runtime findings
+and measured limits are in
 [`agentplane/debug/kubevirt/runtime-20261003.md`](../../../../agentplane/debug/kubevirt/runtime-20261003.md).

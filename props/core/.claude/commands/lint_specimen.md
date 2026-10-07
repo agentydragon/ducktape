@@ -10,13 +10,15 @@ Read the specimens documentation first:
 
 Lint a specimen directory (and its files) against the authoring rules defined in the specimens repository documentation.
 
-**CRITICAL: Examine ALL issues in the specimen, not just a sample.** Unless explicitly instructed to examine only specific issues, the linter must check every `issues/*.yaml` file in the specimen.
+**CRITICAL: Examine ALL issues in the specimen, not just a sample.** Unless explicitly instructed to examine only
+specific issues, the linter must check every `issues/*.yaml` file in the specimen.
 
 Report only lints/errors and offer concrete fix suggestions. Do not modify files without explicit user approval.
 
 ## Single source of truth
 
-Do not duplicate requirement lists here. The linter MUST read the authoring guide at runtime and derive all rules from it.
+Do not duplicate requirement lists here. The linter MUST read the authoring guide at runtime and derive all rules from
+it.
 
 Read `props/specimens/docs/quality_checklist.md` for the pre-commit verification checklist.
 
@@ -39,7 +41,8 @@ A textual report of all violations with:
 1. Read authoring guide and extract checklist
 2. Identify target specimen directory
 3. Validate structure and files
-4. **Use `props snapshot exec <slug> -- <command>` for ALL interactions with the hydrated specimen** to ensure proper isolation and correct specimen hydration
+4. **Use `props snapshot exec <slug> -- <command>` for ALL interactions with the hydrated specimen** to ensure proper
+   isolation and correct specimen hydration
 5. **Check EVERY issue file in `issues/*.yaml`** (not just a sample):
    - Parse YAML
    - **Verify ONE logical problem per file** (Authoring Guide §3):
@@ -53,7 +56,8 @@ A textual report of all violations with:
    - Validate against schema
    - Check for unnecessary code blocks (use verbal descriptions when sufficient)
    - Verify external references are verifiable when needed:
-     - **Do need URLs**: Specific tools/packages (e.g., npm packages, PyPI packages), APIs, commit references (full SHA or GitHub permalink), project-specific components/SDKs
+     - **Do need URLs**: Specific tools/packages (e.g., npm packages, PyPI packages), APIs, commit references (full SHA
+       or GitHub permalink), project-specific components/SDKs
      - **Don't need URLs**: Well-known frameworks/standards (e.g., React, Tailwind CSS, PostgreSQL, Python, pytest)
    - Verify rationale only references snapshot state (no historical context)
    - Ensure issue is standalone (no dependencies on other issues or non-captured files)
@@ -61,11 +65,13 @@ A textual report of all violations with:
 7. Emit violations with references and suggested fixes
 8. Ask user to confirm which fixes to apply
 
-**Note:** Unless the user explicitly asks to examine only specific issues (e.g., "lint issues 001-005"), you must check all issue files in the specimen.
+**Note:** Unless the user explicitly asks to examine only specific issues (e.g., "lint issues 001-005"), you must check
+all issue files in the specimen.
 
 ## Interaction with Specimens
 
-**CRITICAL**: Always use `props snapshot exec <slug> -- <command>` when you need to interact with the hydrated specimen code:
+**CRITICAL**: Always use `props snapshot exec <slug> -- <command>` when you need to interact with the hydrated specimen
+code:
 
 - Reading files from the specimen
 - Running tools against the specimen code

@@ -2,10 +2,9 @@
 
 Generated 2026-03-24. Total closure: **538.4 MiB**.
 
-This is a historical snapshot from before the Python statusline and Rust hook
-were exposed as separate `claude-statusline` and `claude-hook` packages. Its
-`claude-hooks` dependency graph and Python 3.13 closure measurements are not
-the current `.#devtools` package layout.
+This is a historical snapshot from before the Python statusline and Rust hook were exposed as separate
+`claude-statusline` and `claude-hook` packages. Its `claude-hooks` dependency graph and Python 3.13 closure measurements
+are not the current `.#devtools` package layout.
 
 Regenerate with: `devinfra/claude/docs/devtools-closure-size.sh`
 
@@ -79,10 +78,10 @@ devtools (symlinkJoin)
 
 ## Stripping verdict
 
-All `.so` files and ELF binaries are **already stripped** by nixpkgs (`strip --strip-unneeded`).
-`file` reports "not stripped" because `.symtab` is present (required for dynamic linking),
-but there are zero `.debug_*` sections. Measured savings from `strip`: **0 bytes** across
-all top libs (libicudata, libgrpc, libprotoc, libpython, libcrypto, libstdc++, gh, bbapi).
+All `.so` files and ELF binaries are **already stripped** by nixpkgs (`strip --strip-unneeded`). `file` reports "not
+stripped" because `.symtab` is present (required for dynamic linking), but there are zero `.debug_*` sections. Measured
+savings from `strip`: **0 bytes** across all top libs (libicudata, libgrpc, libprotoc, libpython, libcrypto, libstdc++,
+gh, bbapi).
 
 ## Waste breakdown
 
@@ -98,8 +97,8 @@ Headers and dev packages that are build-time artifacts, not needed at runtime:
 | 2.0 MiB | `grpc/include/`                  | `claude-hooks` → `kubernetes` |
 | 2.4 MiB | `python3/include/`               | stdlib                        |
 
-**Fix**: Override `grpc` to depend on `re2` runtime output instead of `re2-dev`. The
-dev→runtime leak starts at re2-dev referencing icu4c-dev.
+**Fix**: Override `grpc` to depend on `re2` runtime output instead of `re2-dev`. The dev→runtime leak starts at re2-dev
+referencing icu4c-dev.
 
 ### Locale/i18n data (~40 MiB)
 
@@ -111,14 +110,13 @@ dev→runtime leak starts at re2-dev referencing icu4c-dev.
 | 4.5 MiB | `gettext/share/locale`                      |
 |  ~4 MiB | various (grep, sed, xz, gdbm, libidn2, ...) |
 
-**Fix**: Override `git-minimal` with `installFlags = ["NO_GETTEXT=1"]` or use a
-locale-stripped git. Override glibc with `allLocales = false`.
+**Fix**: Override `git-minimal` with `installFlags = ["NO_GETTEXT=1"]` or use a locale-stripped git. Override glibc with
+`allLocales = false`.
 
 ### `pre-commit` transitive deps (~23 MiB)
 
-`pre-commit` is a `propagatedBuildInput` of `claude-hooks`, so its entire Python dep
-tree (pytest, virtualenv, pygments) leaks into the closure. Pre-commit is a CLI tool,
-not a library import.
+`pre-commit` is a `propagatedBuildInput` of `claude-hooks`, so its entire Python dep tree (pytest, virtualenv, pygments)
+leaks into the closure. Pre-commit is a CLI tool, not a library import.
 
 **Fix**: Move `pre-commit` out of `propagatedBuildInputs` in `claude-hooks.nix`. Either:
 
@@ -127,16 +125,16 @@ not a library import.
 
 ### `gettext` full package (18.4 MiB, only ~1 MiB needed)
 
-Git only needs `libintl.so` at runtime. The closure includes the full gettext with
-`xgettext` (8.3 MiB), `msgfmt`, locale data (4.5 MiB), and build libraries.
+Git only needs `libintl.so` at runtime. The closure includes the full gettext with `xgettext` (8.3 MiB), `msgfmt`,
+locale data (4.5 MiB), and build libraries.
 
-**Fix**: Override `git-minimal` to depend on `gettext.lib` output (just `libintl`)
-instead of the full `gettext` package.
+**Fix**: Override `git-minimal` to depend on `gettext.lib` output (just `libintl`) instead of the full `gettext`
+package.
 
 ### `bash-interactive` (7.1 MiB, redundant)
 
-Plain `bash` (1.8 MiB) is already in the closure. `bash-interactive` adds readline
-support and 5.6 MiB of locale data. Pulled by `git-minimal`.
+Plain `bash` (1.8 MiB) is already in the closure. `bash-interactive` adds readline support and 5.6 MiB of locale data.
+Pulled by `git-minimal`.
 
 **Fix**: Override `git-minimal` to reference `bash` instead of `bash-interactive`.
 

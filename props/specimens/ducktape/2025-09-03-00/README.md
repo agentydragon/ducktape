@@ -10,8 +10,9 @@
 
 ## TODO: Follow-ups
 
-- [ ] `git_commit_ai/cli.py:L497` — Likely false positive; confirm and either document the exception pattern or add a clarifying property.
-      GAP: Define conditions distinguishing acceptable patterns from swallowers; update specimen once decided.
+- [ ] `git_commit_ai/cli.py:L497` — Likely false positive; confirm and either document the exception pattern or add a
+      clarifying property. GAP: Define conditions distinguishing acceptable patterns from swallowers; update specimen
+      once decided.
 
 - [ ] URL construction style and deduplication
   - Multiple places assemble `http://127.0.0.1:{port}` for document/runtime URLs:

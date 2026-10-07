@@ -2,7 +2,9 @@
 
 ## Overview
 
-This document analyzes how Tana exports search nodes and their query semantics in JSON format. The analysis is based on examining real search nodes from Tana exports to understand what information is preserved and how queries could be reconstructed.
+This document analyzes how Tana exports search nodes and their query semantics in JSON format. The analysis is based on
+examining real search nodes from Tana exports to understand what information is preserved and how queries could be
+reconstructed.
 
 ## 1. Core Search Node Properties
 
@@ -225,7 +227,9 @@ With this structure, you can fully reconstruct:
 
 ### Limitations
 
-The main limitation is that these are **static snapshots** - the search results are frozen at export time and won't update dynamically. The search expression is preserved, but would need to be re-executed against current data to get fresh results.
+The main limitation is that these are **static snapshots** - the search results are frozen at export time and won't
+update dynamically. The search expression is preserved, but would need to be re-executed against current data to get
+fresh results.
 
 ## Conclusion
 
@@ -236,4 +240,5 @@ Tana's JSON export format preserves complete search semantics through a well-str
 - System nodes representing operators and types
 - Association maps for result metadata
 
-This architecture allows for full reconstruction of search queries while maintaining a clean separation between search definitions and their results.
+This architecture allows for full reconstruction of search queries while maintaining a clean separation between search
+definitions and their results.

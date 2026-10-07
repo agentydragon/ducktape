@@ -6,9 +6,8 @@ Small Talos k8s cluster with GitOps and HTTPS.
 - Machines: Talos on OVH Kimsufi bare metal plus NixOS/Proxmox workers, configured with OpenTofu
 - Ingress: Cilium Gateway API (Envoy hostNetwork on every Cilium node; public DNS points to OVH)
 - CNI: Cilium VXLAN (infrastructure-managed, not GitOps)
-- Secrets: SOPS (age-encrypted in git, decrypted by Flux). ESO with the Kubernetes
-  provider mirrors a few secrets cross-namespace. Vault was decommissioned 2026-04-19
-  (why: <docs/decisions.md> § "Secrets: SOPS SSOT").
+- Secrets: SOPS (age-encrypted in git, decrypted by Flux). ESO with the Kubernetes provider mirrors a few secrets
+  cross-namespace. Vault was decommissioned 2026-04-19 (why: <docs/decisions.md> § "Secrets: SOPS SSOT").
 
 ## Prerequisites
 
@@ -30,8 +29,8 @@ See <docs/bootstrap.md> for full setup.
 - Domain: `*.allegedly.works` (AWS Route 53, DNS-01 challenges, dual LE issuers)
 - HTTPS: Internet → OVH bare metal:443 → Cilium Envoy (Gateway API) → backend pods
 - Nebula: encrypted mesh overlay (UDP 4242, lighthouses + relays on OVH nodes)
-- MTU stack: pod 1370 → Cilium VXLAN → `nebula1` 1420 → `eno1` 1500. See
-  <docs/network.md> for the layering, encapsulation, and MTU model.
+- MTU stack: pod 1370 → Cilium VXLAN → `nebula1` 1420 → `eno1` 1500. See <docs/network.md> for the layering,
+  encapsulation, and MTU model.
 - Kubeconfig patched post-bootstrap to `api.allegedly.works`
 
 ### Node Types
@@ -46,24 +45,21 @@ See <docs/bootstrap.md> for full setup.
 | `iguana`                                       | NixOS laptop     | `roaming` | Often offline    | ThinkPad X1 Extreme              |
 | `rugged`                                       | NixOS laptop     | `roaming` | Often offline    | Dell Rugged 12                   |
 
-Region labels are `topology.kubernetes.io/region`. Roaming nodes are laptops that
-join/leave the cluster frequently. `rugged` has taint
-`node-role.kubernetes.io/roaming=true:NoSchedule`. Do not schedule workloads that
-require persistent availability on roaming nodes.
+Region labels are `topology.kubernetes.io/region`. Roaming nodes are laptops that join/leave the cluster frequently.
+`rugged` has taint `node-role.kubernetes.io/roaming=true:NoSchedule`. Do not schedule workloads that require persistent
+availability on roaming nodes.
 
-Changing how many roaming nodes exist also requires raising `maxUnavailable` on
-the DaemonSets that schedule onto them — `//cluster/cdk8s/monitoring:test_roaming_daemonset_capacity`
-fails with the details when it doesn't. See <docs/mesh_membership.md> § Roaming
-k8s nodes.
+Changing how many roaming nodes exist also requires raising `maxUnavailable` on the DaemonSets that schedule onto them —
+`//cluster/cdk8s/monitoring:test_roaming_daemonset_capacity` fails with the details when it doesn't. See
+<docs/mesh_membership.md> § Roaming k8s nodes.
 
-Mesh roster (every Nebula peer, including non-k8s hosts like `atlas`, `pixel6`)
-lives in `nebula-mesh.json` at the repo root. To add or remove a node, see
-<docs/mesh_membership.md>.
+Mesh roster (every Nebula peer, including non-k8s hosts like `atlas`, `pixel6`) lives in `nebula-mesh.json` at the repo
+root. To add or remove a node, see <docs/mesh_membership.md>.
 
 ## Services
 
-Key services (curated — this table is not the SSOT; the full set is the
-HTTPRoutes under `k8s/` and `k8s/authentik/proxy-routes/`):
+Key services (curated — this table is not the SSOT; the full set is the HTTPRoutes under `k8s/` and
+`k8s/authentik/proxy-routes/`):
 
 | Service        | URL                               | Purpose                 |
 | -------------- | --------------------------------- | ----------------------- |
@@ -80,9 +76,8 @@ Credentials: `get-passwords` (requires direnv in cluster directory).
 
 ## Storage
 
-All storage is region-local — no cross-site synchronous replication. Key
-classes below (curated — SSOT is the `StorageClass` manifests under `k8s/`,
-e.g. `k8s/{local-path-provisioner,openebs-lvm}/`, plus CSI Helm values):
+All storage is region-local — no cross-site synchronous replication. Key classes below (curated — SSOT is the
+`StorageClass` manifests under `k8s/`, e.g. `k8s/{local-path-provisioner,openebs-lvm}/`, plus CSI Helm values):
 
 | StorageClass          | Provisioner            | Region    | Notes                                                                                                                 |
 | --------------------- | ---------------------- | --------- | --------------------------------------------------------------------------------------------------------------------- |
@@ -96,14 +91,13 @@ e.g. `k8s/{local-path-provisioner,openebs-lvm}/`, plus CSI Helm values):
 | `lvm-proxmox-ssd`     | OpenEBS LVM CSI        | `proxmox` | NVMe thin provisioning                                                                                                |
 | `lvm-proxmox-hdd`     | OpenEBS LVM CSI        | `proxmox` | HDD thin provisioning                                                                                                 |
 
-OpenEBS LVM is constrained to nodes
-with the `openebs-proxmox-ssd` / `openebs-proxmox-hdd` volume groups (currently Proxmox nodes only).
-CNPG database placement (OVH-HA vs Proxmox-single) follows <docs/cnpg_conventions.md>.
+OpenEBS LVM is constrained to nodes with the `openebs-proxmox-ssd` / `openebs-proxmox-hdd` volume groups (currently
+Proxmox nodes only). CNPG database placement (OVH-HA vs Proxmox-single) follows <docs/cnpg_conventions.md>.
 
 ## GPU (NVIDIA)
 
-wyrm2 (NixOS, 2x RTX 5090) provides `nvidia.com/gpu` resources; GPU pods need
-`runtimeClassName: nvidia`. Runtime stack and key files: <docs/gpu.md>.
+wyrm2 (NixOS, 2x RTX 5090) provides `nvidia.com/gpu` resources; GPU pods need `runtimeClassName: nvidia`. Runtime stack
+and key files: <docs/gpu.md>.
 
 ## Failure Modes
 
@@ -115,27 +109,22 @@ wyrm2 (NixOS, 2x RTX 5090) provides `nvidia.com/gpu` resources; GPU pods need
 
 ### OVH-Only Resilience Invariants
 
-DNS (AWS Route 53) and the public website must keep working/recovering with OVH
-only (no Proxmox) — so they must not depend on Proxmox-pinned storage
-(`lvm-proxmox-*`, `local-path-proxmox`) or Proxmox-pinned nodes. Full invariant set
-and compliance checklist:
-<docs/decisions.md> § "OVH-Only Resilience Invariants".
+DNS (AWS Route 53) and the public website must keep working/recovering with OVH only (no Proxmox) — so they must not
+depend on Proxmox-pinned storage (`lvm-proxmox-*`, `local-path-proxmox`) or Proxmox-pinned nodes. Full invariant set and
+compliance checklist: <docs/decisions.md> § "OVH-Only Resilience Invariants".
 
 ## SSO (Authentik)
 
-Applications use Authentik through Terraform-managed OIDC/proxy providers and a
-shrinking set of blueprint-managed proxy providers. See <docs/sso.md> for the ownership
-split, secret flow, NetworkPolicy template, and tombstone rules.
+Applications use Authentik through Terraform-managed OIDC/proxy providers and a shrinking set of blueprint-managed proxy
+providers. See <docs/sso.md> for the ownership split, secret flow, NetworkPolicy template, and tombstone rules.
 
 ## ActivityWatch
 
-Revived 2026-08-26. Each device runs a small importer that reads its own aw-server over
-REST and pushes into the central one over a bearer-gated write route — the repo-owned,
-idempotent replacement for the `aw-sync`/Syncthing transport that could not produce a
-canonical central dataset. The central store, bearer API routes, and Authentik-protected
-human UI are live; rugged, wyrm2, iguana, and atlas are configured as device importers.
-Design and remaining transport hardening: <docs/activitywatch/README.md> and
-<docs/activitywatch/revival-plan.md>.
+Revived 2026-08-26. Each device runs a small importer that reads its own aw-server over REST and pushes into the central
+one over a bearer-gated write route — the repo-owned, idempotent replacement for the `aw-sync`/Syncthing transport that
+could not produce a canonical central dataset. The central store, bearer API routes, and Authentik-protected human UI
+are live; rugged, wyrm2, iguana, and atlas are configured as device importers. Design and remaining transport hardening:
+<docs/activitywatch/README.md> and <docs/activitywatch/revival-plan.md>.
 
 ## Repository Structure
 
@@ -163,8 +152,8 @@ cluster/
 
 ## Let's Encrypt Rate Limits
 
-5 duplicate certs/week per domain (rolling 7-day window). Each destroy→bootstrap cycle
-requests fresh certificates. Controlled by `LETSENCRYPT_ISSUER` in `cdk8s/cert_manager/config.py`.
+5 duplicate certs/week per domain (rolling 7-day window). Each destroy→bootstrap cycle requests fresh certificates.
+Controlled by `LETSENCRYPT_ISSUER` in `cdk8s/cert_manager/config.py`.
 
-**Note:** The legacy VPS at `agentydragon.com` is separate infrastructure not involved in
-this cluster (see <docs/plan.md>).
+**Note:** The legacy VPS at `agentydragon.com` is separate infrastructure not involved in this cluster (see
+<docs/plan.md>).

@@ -44,8 +44,7 @@ occurrences:
           - 99
         - - 101
           - 102
-    note: attach/detach default to None, then reassigned with `attach or {}` and `detach if detach is not None else
-      []`
+    note: attach/detach default to None, then reassigned with `attach or {}` and `detach if detach is not None else []`
     critic_scopes_expected_to_recall:
       - - adgn/src/adgn/agent/persist/sqlite.py
   - occurrence_id: occ-3

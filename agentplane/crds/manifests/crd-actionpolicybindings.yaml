@@ -44,9 +44,9 @@ spec:
               properties:
                 subject:
                   description: >-
-                    The ServiceAccount this binding grants to: what the caller's Pod runs as, or
-                    what an external OAuth Connection acts as. Every caller proving that account is
-                    this subject, so bind only an account dedicated to one.
+                    The ServiceAccount this binding grants to: what the caller's Pod runs as, or what an external OAuth
+                    Connection acts as. Every caller proving that account is this subject, so bind only an account
+                    dedicated to one.
                   type: object
                   required: [namespace, name]
                   properties:

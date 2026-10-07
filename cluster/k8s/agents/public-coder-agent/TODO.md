@@ -1,15 +1,13 @@
 # Public Coder TODO
 
-Remaining follow-ups from the OpenClaw 2026.8.1 bump (#5369). The four failures
-that took the agent down are resolved; the items below are the recurring errors
-and recovery loose ends that still need an explicit decision. Diagnosis and the
-recovery runbook:
-<../../../../openclaw/debug/2026_8_1_recovery/README.md>.
+Remaining follow-ups from the OpenClaw 2026.8.1 bump (#5369). The four failures that took the agent down are resolved;
+the items below are the recurring errors and recovery loose ends that still need an explicit decision. Diagnosis and the
+recovery runbook: <../../../../openclaw/debug/2026_8_1_recovery/README.md>.
 
 ## No system agent, so two subsystems fail every minute
 
-`agents.defaults.systemAgent.agentId` is unset, which a multi-agent config does
-not infer. Two consequences, both logged once a minute:
+`agents.defaults.systemAgent.agentId` is unset, which a multi-agent config does not infer. Two consequences, both logged
+once a minute:
 
 ```text
 [plugins] memory-core: dreaming cron reconcile failed: Agent-less cron job has no
@@ -20,38 +18,33 @@ not infer. Two consequences, both logged once a minute:
   agents.defaults.heartbeat.agentId or agents.defaults.systemAgent.agentId is set.
 ```
 
-- [ ] Decide the system agent (`coder` is the Matrix-bound primary and the
-      obvious candidate) and set it in `app/openclaw.json5`. Confirm afterwards
-      that dreaming cron reconciles and heartbeats actually run — heartbeats have
-      been off since the bump, so nothing has been exercising them.
+- [ ] Decide the system agent (`coder` is the Matrix-bound primary and the obvious candidate) and set it in
+      `app/openclaw.json5`. Confirm afterwards that dreaming cron reconciles and heartbeats actually run — heartbeats
+      have been off since the bump, so nothing has been exercising them.
 
 ## Stale and retired config keys
 
 Doctor reports these on every run:
 
-- [ ] `mcp.apps.sandboxOrigin` unset while `gateway.auth.mode` is
-      `trusted-proxy`. Widget and MCP-app frames render from the gateway port + 1
-      sandbox listener, which the outpost does not route today, so those frames
-      cannot load. Either route that port or set a dedicated origin.
+- [ ] `mcp.apps.sandboxOrigin` unset while `gateway.auth.mode` is `trusted-proxy`. Widget and MCP-app frames render from
+      the gateway port + 1 sandbox listener, which the outpost does not route today, so those frames cannot load. Either
+      route that port or set a dedicated origin.
 
 ## State PVC root ownership is not durable
 
-`doctor --fix` failed with `EPERM: operation not permitted, fchmod` until the PVC
-root was chowned to `1000:1000`; it had been left `root:root` (mode 777) by the
-earlier one-off restore. That EPERM killed doctor before it reached the deferred
-session-store migration, and nothing in the error named the directory.
+`doctor --fix` failed with `EPERM: operation not permitted, fchmod` until the PVC root was chowned to `1000:1000`; it
+had been left `root:root` (mode 777) by the earlier one-off restore. That EPERM killed doctor before it reached the
+deferred session-store migration, and nothing in the error named the directory.
 
-The Deployment sets `fsGroup: 1000`, so normal provisioning should not reproduce
-it — this looks like an artifact of restoring by hand.
+The Deployment sets `fsGroup: 1000`, so normal provisioning should not reproduce it — this looks like an artifact of
+restoring by hand.
 
-- [ ] If this claim is ever restored manually again, chown the PVC root as part
-      of the restore rather than discovering it through a doctor failure.
+- [ ] If this claim is ever restored manually again, chown the PVC root as part of the restore rather than discovering
+      it through a doctor failure.
 
 ## Upstream bugs to file
 
-- [ ] openclaw: `migrateHistoricalTranscriptDirectives` is not gated on
-      `doctorOnlyStateMigrations`, so gateway startup runs a migration that
-      depends on a doctor-only step and can only ever throw. Combined with
-      `assertConfigWriteAllowedInCurrentMode` refusing `doctor --fix` whenever
-      `OPENCLAW_NIX_MODE=1`, a Nix install carrying pre-2026.8.1 agent state
-      cannot start and cannot repair itself.
+- [ ] openclaw: `migrateHistoricalTranscriptDirectives` is not gated on `doctorOnlyStateMigrations`, so gateway startup
+      runs a migration that depends on a doctor-only step and can only ever throw. Combined with
+      `assertConfigWriteAllowedInCurrentMode` refusing `doctor --fix` whenever `OPENCLAW_NIX_MODE=1`, a Nix install
+      carrying pre-2026.8.1 agent state cannot start and cannot repair itself.

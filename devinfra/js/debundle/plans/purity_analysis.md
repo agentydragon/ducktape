@@ -1,26 +1,23 @@
 # Recursive Purity Backlog
 
-Design follow-ups for <../TODO.md>, not a separate priority queue. This note
-tracks reusable debundler purity-analysis work. It excludes
-corpus-specific owner ids, bundle paths, and spec cleanup notes.
+Design follow-ups for <../TODO.md>, not a separate priority queue. This note tracks reusable debundler purity-analysis
+work. It excludes corpus-specific owner ids, bundle paths, and spec cleanup notes.
 
 ## Remaining Generic Follow-Ups
 
 ### Statement-Level Purity Override
 
-`purity: pure` on a member is callsite-oriented: it says calls to that binding
-are safe. It does not assert that the binding's own owner statement is pure.
+`purity: pure` on a member is callsite-oriented: it says calls to that binding are safe. It does not assert that the
+binding's own owner statement is pure.
 
-A separate statement-level override, tentatively `owner_purity: pure`, would
-let an author assert that a specific owner statement is safe when the analyzer
-cannot prove it. This should remain rare. Prefer analyzer improvements for
-common expression families.
+A separate statement-level override, tentatively `owner_purity: pure`, would let an author assert that a specific owner
+statement is safe when the analyzer cannot prove it. This should remain rare. Prefer analyzer improvements for common
+expression families.
 
 ### Redundant-Hint Guardrail
 
-The redundant-hint side output can support a CI or pre-commit check that fails
-on new redundant `purity: pure` hints except for an allowlist of intentional
-overrides. This is prevention, not analysis.
+The redundant-hint side output can support a CI or pre-commit check that fails on new redundant `purity: pure` hints
+except for an allowlist of intentional overrides. This is prevention, not analysis.
 
 ## Design Principle
 
@@ -38,10 +35,8 @@ the classifier should prove purity from the leaves upward:
 - constructing a `Set` additionally requires the classifier's constructor and iterable preconditions
 - helper calls need the applicable body/argument and binding-resolution proof
 
-These are proof obligations, not proposed blanket whitelist rules. A pure
-expression can evaluate to an object with an effectful iterator or getter.
-The exact admission rules and intrinsic-integrity assumption are documented in
+These are proof obligations, not proposed blanket whitelist rules. A pure expression can evaluate to an object with an
+effectful iterator or getter. The exact admission rules and intrinsic-integrity assumption are documented in
 <../docs/purity_soundness.md>.
 
-Manual overrides are for genuinely safe-but-not-provable cases, not for normal
-helper chains.
+Manual overrides are for genuinely safe-but-not-provable cases, not for normal helper chains.

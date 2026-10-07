@@ -3,19 +3,21 @@ title: No dead code (incl. unreachable logic and test‑only prod code)
 kind: outcome
 ---
 
-There should be no dead production code: no unused symbols or unreachable branches live in production directories.
-Prod code exercised only in tests is either relocated to explicit test helpers (preferred), or clearly marked as test-only.
-If established invariants or type reasoning make a branch impossible, delete it.
-Any formally-dead "should never happen" branches only contain an immediate `assert` or `TypeError`.
+There should be no dead production code: no unused symbols or unreachable branches live in production directories. Prod
+code exercised only in tests is either relocated to explicit test helpers (preferred), or clearly marked as test-only.
+If established invariants or type reasoning make a branch impossible, delete it. Any formally-dead "should never happen"
+branches only contain an immediate `assert` or `TypeError`.
 
 ## Acceptance criteria (checklist)
 
 - Unused symbols (functions, classes, variables, constants) are removed
-- Unreachable branches (by invariants/types) are removed; if a "can't happen" guard is desired, keep at most an `assert` or `TypeError`.
+- Unreachable branches (by invariants/types) are removed; if a "can't happen" guard is desired, keep at most an `assert`
+  or `TypeError`.
 - Switches/if‑chains do not include arms for states that cannot occur given the function’s contract
 - Mutually exclusive guards and redundant checks are collapsed (no `if a and not a`, `if a: return; ... if a: ...`)
 - Code only invoked from tests is clearly marked as such (`MakeTestFooObject`, `test_helpers.py`, ...)
-- Feature‑flag or compatibility shims only allowed when actually referenced; stale flags/shims are removed once disabled across environments
+- Feature‑flag or compatibility shims only allowed when actually referenced; stale flags/shims are removed once disabled
+  across environments
 
 ## Negative examples
 
@@ -112,8 +114,8 @@ def handle(x: Bar | Baz | Quux) -> str:
 
 ## Exceptions
 
-- Intentional extension points (plugin hooks, abstract interfaces) may appear unused locally but must be referenced by a registry, entry‑points, or configuration.
-  Keep a short comment or link to the registry proving reachability:
+- Intentional extension points (plugin hooks, abstract interfaces) may appear unused locally but must be referenced by a
+  registry, entry‑points, or configuration. Keep a short comment or link to the registry proving reachability:
 
   ```python
   def plugin_has_no_references_in_python():
@@ -131,6 +133,6 @@ def handle(x: Bar | Baz | Quux) -> str:
 
 ## Guidance
 
-- Use local reasoning and established invariants. If a branch is obviously unreachable, delete it.
-  When unsure, search references, check feature flags/config, and document the invariant you rely on.
+- Use local reasoning and established invariants. If a branch is obviously unreachable, delete it. When unsure, search
+  references, check feature flags/config, and document the invariant you rely on.
 - Prefer strengthening invariants and validations over keeping speculative fallback branches

@@ -1,6 +1,7 @@
 ## Critic Developer System Access
 
-In addition to database access, you also connect to the **Backend HTTP API** at `PROPS_BACKEND_URL` for evaluation orchestration and the **registry proxy** at `PROPS_REGISTRY_URL` for agent image pushes.
+In addition to database access, you also connect to the **Backend HTTP API** at `PROPS_BACKEND_URL` for evaluation
+orchestration and the **registry proxy** at `PROPS_REGISTRY_URL` for agent image pushes.
 
 ### Source Code Access
 
@@ -30,11 +31,14 @@ python3 -c "from props.db.snapshot_io import fetch_snapshot_to_path; from props.
 
 [^1]: VALID/TEST access restricted to prevent overfitting. See the Evaluation Flow section below for details.
 
-**Note:** `agent_definitions` rows are created automatically when you push images to the registry proxy at `PROPS_REGISTRY_URL` — no manual INSERT needed. Do not derive the registry host from `PROPS_BACKEND_URL`.
+**Note:** `agent_definitions` rows are created automatically when you push images to the registry proxy at
+`PROPS_REGISTRY_URL` — no manual INSERT needed. Do not derive the registry host from `PROPS_BACKEND_URL`.
 
 ### Stats API
 
-The backend exposes stats endpoints at `$PROPS_BACKEND_URL/api/stats/` that aggregate metrics across runs. These use your agent credentials (RLS-scoped). Read the full OpenAPI schema at `$PROPS_BACKEND_URL/openapi.json` for request/response types.
+The backend exposes stats endpoints at `$PROPS_BACKEND_URL/api/stats/` that aggregate metrics across runs. These use
+your agent credentials (RLS-scoped). Read the full OpenAPI schema at `$PROPS_BACKEND_URL/openapi.json` for
+request/response types.
 
 | Endpoint                          | Purpose                                                        |
 | --------------------------------- | -------------------------------------------------------------- |
@@ -50,10 +54,13 @@ Example:
 curl -u "$PGUSER:$PGPASSWORD" "$PROPS_BACKEND_URL/api/stats/occurrences?split=train&sort_by=mean_credit&sort_dir=asc&limit=20"
 ```
 
-These endpoints aggregate data from `tp_occurrence_credits` and `recall_by_definition_split_kind` views. You can also query these views directly via SQL if you need custom aggregations.
+These endpoints aggregate data from `tp_occurrence_credits` and `recall_by_definition_split_kind` views. You can also
+query these views directly via SQL if you need custom aggregations.
 
 ### Monitoring Grading Status
 
-Monitor grading via the `grading_pending` view — it shows all `(critique_issue, ground_truth_occurrence)` pairs needing edges. Grading is complete when no rows remain for a given critique run.
+Monitor grading via the `grading_pending` view — it shows all `(critique_issue, ground_truth_occurrence)` pairs needing
+edges. Grading is complete when no rows remain for a given critique run.
 
-Use the `wait_until_graded_tool` tool or `wait_until_graded()` from `props.agents.critic_dev.grading` for programmatic polling.
+Use the `wait_until_graded_tool` tool or `wait_until_graded()` from `props.agents.critic_dev.grading` for programmatic
+polling.

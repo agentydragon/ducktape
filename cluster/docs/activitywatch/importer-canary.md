@@ -6,17 +6,17 @@ Captured during the first live pull-only importer canary on 2026-07-21 UTC.
 
 ## Status
 
-The canary failed correctness gates. Keep both the Flux Kustomization
-`activitywatch` and CronJob `activitywatch-importer` suspended.
+The canary failed correctness gates. Keep both the Flux Kustomization `activitywatch` and CronJob
+`activitywatch-importer` suspended.
 
-The central ActivityWatch database was empty before the canary. It now contains partial,
-non-canonical imports and must be rebuilt before another test. The canary Job completed
-successfully from Kubernetes' perspective; that only means the process exited zero.
+The central ActivityWatch database was empty before the canary. It now contains partial, non-canonical imports and must
+be rebuilt before another test. The canary Job completed successfully from Kubernetes' perspective; that only means the
+process exited zero.
 
 ## Frozen source set
 
-Syncthing was scaled to zero before the source snapshot. The inbox contained four
-canonical databases and no conflict copies:
+Syncthing was scaled to zero before the source snapshot. The inbox contained four canonical databases and no conflict
+copies:
 
 | Source directory                       | Device | Pre-canary SHA-256                                                 |
 | -------------------------------------- | ------ | ------------------------------------------------------------------ |
@@ -34,9 +34,8 @@ aw-sync --host activitywatch-write.activitywatch.svc.cluster.local \
 
 ## Finding 1: pull-only mutates the inbox
 
-The logs showed schema migrations on all four remote databases. Every source hash changed.
-The process also created `/sync-inbox/activitywatch-cluster/test.db`, even though the
-selected mode was pull-only.
+The logs showed schema migrations on all four remote databases. Every source hash changed. The process also created
+`/sync-inbox/activitywatch-cluster/test.db`, even though the selected mode was pull-only.
 
 | Path                        | Post-canary SHA-256                                                |
 | --------------------------- | ------------------------------------------------------------------ |
@@ -48,34 +47,29 @@ selected mode was pull-only.
 
 Cause in the pinned upstream implementation:
 
-- `sync_run` unconditionally calls `setup_local_remote`, which creates
-  `<sync-dir>/<local-device-id>/test.db`;
+- `sync_run` unconditionally calls `setup_local_remote`, which creates `<sync-dir>/<local-device-id>/test.db`;
 - remote files are opened through `Datastore::new`;
 - the datastore worker opens SQLite read-write, enables WAL, and runs migrations.
 
-A receive-only Syncthing folder does not make these writes harmless. Syncthing preserves
-receiver-local modifications as conflicts when a peer supplies a different version.
+A receive-only Syncthing folder does not make these writes harmless. Syncthing preserves receiver-local modifications as
+conflicts when a peer supplies a different version.
 
 ## Finding 2: browser provenance collides
 
-Both rugged and wyrm2 have bucket `aw-watcher-web-chrome_localhost` with hostname
-`localhost`. Pull constructs the destination ID from bucket hostname, not from the
-source database directory.
+Both rugged and wyrm2 have bucket `aw-watcher-web-chrome_localhost` with hostname `localhost`. Pull constructs the
+destination ID from bucket hostname, not from the source database directory.
 
-Rugged was processed first and created
-`aw-watcher-web-chrome_localhost-synced-from-localhost` with 16,389 events. Wyrm2 then
-targeted the same destination, resumed from rugged's newest timestamp, and reported
-already up to date. None of wyrm2's 2,609 browser rows were imported into a distinct
-device bucket.
+Rugged was processed first and created `aw-watcher-web-chrome_localhost-synced-from-localhost` with 16,389 events. Wyrm2
+then targeted the same destination, resumed from rugged's newest timestamp, and reported already up to date. None of
+wyrm2's 2,609 browser rows were imported into a distinct device bucket.
 
 ## Finding 3: desktop staging databases are already amplified
 
-The Syncthing files are aw-sync staging databases produced by repeated desktop
-`--mode push` runs. They are not byte-for-byte snapshots of each desktop's authoritative
-aw-server SQLite database.
+The Syncthing files are aw-sync staging databases produced by repeated desktop `--mode push` runs. They are not
+byte-for-byte snapshots of each desktop's authoritative aw-server SQLite database.
 
-Counts below were queried from the frozen pre-canary files. `distinct exact` is the
-number of distinct `(starttime,endtime,data)` tuples.
+Counts below were queried from the frozen pre-canary files. `distinct exact` is the number of distinct
+`(starttime,endtime,data)` tuples.
 
 | Device | Bucket  |   Rows | Distinct starts | Distinct exact |
 | ------ | ------- | -----: | --------------: | -------------: |
@@ -92,14 +86,13 @@ number of distinct `(starttime,endtime,data)` tuples.
 | atlas  | AFK     | 84,814 |             229 |          4,738 |
 | atlas  | tmux    |     78 |              78 |             78 |
 
-Atlas AFK alone contains 80,076 rows beyond its 4,738 distinct exact tuples. This is the
-concrete amplified input behind the earlier unexpectedly rapid database growth; importing
-it also provides a direct explanation for the server's unexpected memory pressure.
+Atlas AFK alone contains 80,076 rows beyond its 4,738 distinct exact tuples. This is the concrete amplified input behind
+the earlier unexpectedly rapid database growth; importing it also provides a direct explanation for the server's
+unexpected memory pressure.
 
-The canary wrote 18,398 Atlas AFK events to the central server, not 84,814. That reduction
-does not make the result canonical; it remains greater than the source's distinct exact
-tuples. The exact reduction mechanism has not been traced, and aw-sync exposes no explicit
-deduplication contract that would make 18,398 the expected result.
+The canary wrote 18,398 Atlas AFK events to the central server, not 84,814. That reduction does not make the result
+canonical; it remains greater than the source's distinct exact tuples. The exact reduction mechanism has not been
+traced, and aw-sync exposes no explicit deduplication contract that would make 18,398 the expected result.
 
 ## Central result
 
@@ -123,41 +116,35 @@ The central server contained these counts after the canary:
 
 ## Restoration and subsequent conflicts
 
-Before restarting Syncthing, the generated cluster database was deleted and all four
-canonical paths were restored from the frozen pre-canary files. Their hashes matched the
-pre-canary table exactly.
+Before restarting Syncthing, the generated cluster database was deleted and all four canonical paths were restored from
+the frozen pre-canary files. Their hashes matched the pre-canary table exactly.
 
-After Syncthing restarted, rugged and wyrm2 supplied newer canonical versions while the
-receiver had locally restored older files. Syncthing preserved the restored versions as:
+After Syncthing restarted, rugged and wyrm2 supplied newer canonical versions while the receiver had locally restored
+older files. Syncthing preserved the restored versions as:
 
 | Conflict                                                                             | SHA-256                                                            |
 | ------------------------------------------------------------------------------------ | ------------------------------------------------------------------ |
 | `15c10090-44ad-4ed6-963f-9b66e35d2055/test.sync-conflict-20260721-035404-PATWINW.db` | `3cc9658fa89587557c6284aad138b667429cecb64d95f6dde3526e4ed348e567` |
 | `a1627407-d5d1-4481-be32-b9a9906d1b5f/test.sync-conflict-20260721-035430-QKSEM74.db` | `3ef2fda85a33467ba6a4a36f3e28d8afa09034d02c2175f04b9d42de2c6c313a` |
 
-Those hashes exactly match the frozen pre-canary sources. These two conflicts are therefore
-an expected consequence of the manual receiver-side restoration, not evidence of another
-Syncthing index reset. They still block the importer by design and should be deleted only
-after this evidence is retained.
+Those hashes exactly match the frozen pre-canary sources. These two conflicts are therefore an expected consequence of
+the manual receiver-side restoration, not evidence of another Syncthing index reset. They still block the importer by
+design and should be deleted only after this evidence is retained.
 
 ## Requirements for the next design
 
 Do not enable scheduled ingestion until a replacement passes all of these gates:
 
-1. Export from each desktop is idempotent across repeated runs and does not amplify
-   heartbeat updates.
-2. Each source has a stable repo-managed identity; `localhost` bucket metadata cannot
-   merge histories from different devices.
+1. Export from each desktop is idempotent across repeated runs and does not amplify heartbeat updates.
+2. Each source has a stable repo-managed identity; `localhost` bucket metadata cannot merge histories from different
+   devices.
 3. Cluster ingestion opens source snapshots read-only and creates no files beside them.
 4. Source hashes remain unchanged across a frozen import.
 5. A second import of the same frozen inputs adds zero events.
-6. The central counts and representative event ranges match a documented canonicalization
-   rule.
+6. The central counts and representative event ranges match a documented canonicalization rule.
 7. Conflict files make the importer fail closed.
 
 Two implementation directions remain plausible; neither is selected by this note:
 
-- repair/fork aw-sync to provide the missing read-only, source-origin, and idempotency
-  semantics;
-- replace aw-sync transport with consistent snapshots of each real desktop SQLite DB plus
-  a small repo-owned importer.
+- repair/fork aw-sync to provide the missing read-only, source-origin, and idempotency semantics;
+- replace aw-sync transport with consistent snapshots of each real desktop SQLite DB plus a small repo-owned importer.

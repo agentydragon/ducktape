@@ -2,7 +2,8 @@
 
 ![](stonks.png)
 
-Personal net worth tracker in Rust. Aggregates assets from multiple sources, converts to a common currency, and runs FIRE (financial independence / early retirement) modeling.
+Personal net worth tracker in Rust. Aggregates assets from multiple sources, converts to a common currency, and runs
+FIRE (financial independence / early retirement) modeling.
 
 Configuration lives in `~/.config/worthy/config.yaml`.
 
@@ -93,7 +94,8 @@ modelling:
    - Add a new "Activity Flex Query"
    - Select fields in: Account Information, Cash Report, Open Positions, Net Stock Position Summary
    - Copy the query ID -> use as `query_id` in config
-3. Enable the Flex web service ([IB docs](https://guides.interactivebrokers.com/am/am/reports/flex_web_service_version_3.htm)):
+3. Enable the Flex web service
+   ([IB docs](https://guides.interactivebrokers.com/am/am/reports/flex_web_service_version_3.htm)):
    - Account settings -> "Account Reporting" -> "Flex Web Service" -> enable and save
    - Copy the generated token -> use as `token` in config
 

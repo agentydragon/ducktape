@@ -1,23 +1,20 @@
 # Headscale: Single Replica Only (No HA)
 
-**Archived — the cluster no longer runs Headscale.** Tailscale/Headscale was the
-first of three mesh iterations; the mesh is Nebula now
-(<../docs/roaming_laptop_worker.md> § Historical Notes, `nebula-mesh.json`), and
-no Headscale namespace or manifest exists. Kept because the upstream analysis
-below is what you would need if a Tailscale/Headscale control plane is ever
-reconsidered — e.g. option B of <../docs/plans/vm_ssh_exposure.md>.
+**Archived — the cluster no longer runs Headscale.** Tailscale/Headscale was the first of three mesh iterations; the
+mesh is Nebula now (<../docs/roaming_laptop_worker.md> § Historical Notes, `nebula-mesh.json`), and no Headscale
+namespace or manifest exists. Kept because the upstream analysis below is what you would need if a Tailscale/Headscale
+control plane is ever reconsidered — e.g. option B of <../docs/plans/vm_ssh_exposure.md>.
 
-**Date**: 2026-03-07
-**Status**: Permanent architectural constraint of Headscale upstream
+**Date**: 2026-03-07 **Status**: Permanent architectural constraint of Headscale upstream
 
 ## Summary
 
-Headscale cannot run with multiple replicas. It is architected as a single-process
-application with extensive in-memory state that serves as the authoritative data plane.
-The database is used for persistence/durability only, not as a shared coordination layer.
+Headscale cannot run with multiple replicas. It is architected as a single-process application with extensive in-memory
+state that serves as the authoritative data plane. The database is used for persistence/durability only, not as a shared
+coordination layer.
 
-We previously ran 2 replicas and hit OIDC split-brain — this was the expected symptom
-of a deeper architectural limitation.
+We previously ran 2 replicas and hit OIDC split-brain — this was the expected symptom of a deeper architectural
+limitation.
 
 ## In-Memory State Inventory
 
@@ -49,20 +46,19 @@ All references are to the Headscale source at `/code/github.com/juanfont/headsca
 
 ## OIDC Flow (Why It Breaks)
 
-1. `RegisterHandler()` generates random `state` + `nonce`, stores `RegistrationInfo` in
-   in-memory cache keyed by `state` (replica A)
+1. `RegisterHandler()` generates random `state` + `nonce`, stores `RegistrationInfo` in in-memory cache keyed by `state`
+   (replica A)
 2. Sets `state` as HTTP cookie, redirects to OIDC provider (Authentik)
 3. Provider redirects back to `OIDCCallbackHandler()` — load balancer may route to replica B
 4. Replica B calls `getRegistrationIDFromState()` → cache miss → **auth fails**
-5. Even with sticky sessions, the `Registered` channel signal is in-process — the node's
-   long-poll connection on a different replica would never receive it
+5. Even with sticky sessions, the `Registered` channel signal is in-process — the node's long-poll connection on a
+   different replica would never receive it
 
 ## PostgreSQL Backend
 
-PostgreSQL is supported (`database.type: postgres` in config) but explicitly "highly
-discouraged" (config comments, `docs/about/faq.md` lines 108-121). It's in maintenance
-mode — bugs fixed but no active development. Even with PostgreSQL as a shared database,
-multi-replica still fails because the DB is not used as a coordination layer.
+PostgreSQL is supported (`database.type: postgres` in config) but explicitly "highly discouraged" (config comments,
+`docs/about/faq.md` lines 108-121). It's in maintenance mode — bugs fixed but no active development. Even with
+PostgreSQL as a shared database, multi-replica still fails because the DB is not used as a coordination layer.
 
 ## What Would Be Required for HA
 
@@ -74,8 +70,8 @@ Making Headscale multi-replica would require:
 - Adding a consensus protocol for primary route election
 - Replacing in-process channels with a pub/sub system for map update notifications
 
-This is essentially a rewrite of the core control plane. The project describes itself as
-implementing "a single Tailscale network, suitable for personal use" — HA is not a goal.
+This is essentially a rewrite of the core control plane. The project describes itself as implementing "a single
+Tailscale network, suitable for personal use" — HA is not a goal.
 
 ## Recommendation
 

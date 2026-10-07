@@ -3,13 +3,15 @@ title: Pass Path objects to PathLike APIs (no str())
 kind: outcome
 ---
 
-Agent-edited code does not cast `pathlib.Path` (or other PathLike) to `str` when calling APIs that accept path-like objects; it passes the `Path` directly.
+Agent-edited code does not cast `pathlib.Path` (or other PathLike) to `str` when calling APIs that accept path-like
+objects; it passes the `Path` directly.
 
 ## Acceptance criteria (checklist)
 
 - No `str(path)` when the target API accepts `os.PathLike`
 - `Path` (or any `os.PathLike`) is passed directly to the API
-- This applies across subprocess program/args, filesystem APIs, and archive/logging constructors commonly used in Python 3.8+
+- This applies across subprocess program/args, filesystem APIs, and archive/logging constructors commonly used in Python
+  3.8+
 
 ## Common APIs that accept PathLike (non-exhaustive)
 

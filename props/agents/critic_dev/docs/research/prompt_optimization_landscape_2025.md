@@ -2,9 +2,12 @@
 
 ## Summary
 
-This document summarizes research into state-of-the-art prompt optimization frameworks and their applicability to **monolithic prompt optimization with expensive evaluation** (specifically: optimizing a code review critic system prompt using complex codebase examples).
+This document summarizes research into state-of-the-art prompt optimization frameworks and their applicability to
+**monolithic prompt optimization with expensive evaluation** (specifically: optimizing a code review critic system
+prompt using complex codebase examples).
 
-**Key finding**: Most research frameworks assume cheap evaluation and simple examples. For expensive evaluation on complex structured data, simpler agent-based approaches may be more appropriate than sophisticated frameworks.
+**Key finding**: Most research frameworks assume cheap evaluation and simple examples. For expensive evaluation on
+complex structured data, simpler agent-based approaches may be more appropriate than sophisticated frameworks.
 
 ## Frameworks Evaluated
 
@@ -136,7 +139,9 @@ program = {
 - Positive critique for already-good prompts ("what's working well?")
 - Expert identity generation
 
-**Verdict**: Best suited for single-prompt optimization among evaluated frameworks, but **fundamentally incompatible** with complex/expensive evaluation. The core innovation (rapid mutation + evaluation cycles) doesn't work when evaluation costs minutes and dollars.
+**Verdict**: Best suited for single-prompt optimization among evaluated frameworks, but **fundamentally incompatible**
+with complex/expensive evaluation. The core innovation (rapid mutation + evaluation cycles) doesn't work when evaluation
+costs minutes and dollars.
 
 ---
 
@@ -174,7 +179,8 @@ program = {
 - The gradient metaphor (feedback → update direction)
 - Focus on quality refinement over rapid exploration
 
-**Verdict**: More appropriate than GEPA/DSPy/PromptWizard for expensive evaluation, but still assumes more iteration budget than we have.
+**Verdict**: More appropriate than GEPA/DSPy/PromptWizard for expensive evaluation, but still assumes more iteration
+budget than we have.
 
 ---
 
@@ -465,7 +471,8 @@ for iteration in range(budget // cost_per_eval):
 
 1. **Generate seed prompts**:
    - Ask LLM to generate 5 different approaches to the same task
-   - "Write a critic prompt focusing on: (1) dead code, (2) duplication, (3) architecture, (4) testing, (5) comprehensive"
+   - "Write a critic prompt focusing on: (1) dead code, (2) duplication, (3) architecture, (4) testing, (5)
+     comprehensive"
    - Evaluate all, keep best 3 as starting population
 
 2. **Structured improvement prompts**:
@@ -489,17 +496,23 @@ for iteration in range(budget // cost_per_eval):
 
 ## Key Takeaways
 
-1. **Your problem is unusual**: Expensive evaluation + complex examples + monolithic prompt. Research frameworks don't target this.
+1. **Your problem is unusual**: Expensive evaluation + complex examples + monolithic prompt. Research frameworks don't
+   target this.
 
-2. **Your current approach is sound**: Agent-based improvement with database access is more appropriate than frameworks designed for rapid iteration.
+2. **Your current approach is sound**: Agent-based improvement with database access is more appropriate than frameworks
+   designed for rapid iteration.
 
-3. **Low-hanging fruit**: Add population tracking and subsample validation. These are simple enhancements with clear benefits.
+3. **Low-hanging fruit**: Add population tracking and subsample validation. These are simple enhancements with clear
+   benefits.
 
-4. **Don't force framework fit**: GEPA/DSPy/PromptWizard make assumptions that don't hold for your use case. Using them would mean fighting the framework.
+4. **Don't force framework fit**: GEPA/DSPy/PromptWizard make assumptions that don't hold for your use case. Using them
+   would mean fighting the framework.
 
-5. **Simple can be better**: A well-instrumented simple approach (LLM improves prompt based on failures) beats a sophisticated framework that doesn't fit.
+5. **Simple can be better**: A well-instrumented simple approach (LLM improves prompt based on failures) beats a
+   sophisticated framework that doesn't fit.
 
-6. **Your advantage is data**: Rich failure analysis from database is unique. Frameworks can't leverage this. Your agent can.
+6. **Your advantage is data**: Rich failure analysis from database is unique. Frameworks can't leverage this. Your agent
+   can.
 
 ---
 
@@ -507,7 +520,8 @@ for iteration in range(budget // cost_per_eval):
 
 - [The Prompt Report](https://arxiv.org/abs/2406.06608): Comprehensive survey (58+ techniques, updated Feb 2025)
 - [Systematic Survey of Automatic Prompt Optimization](https://arxiv.org/abs/2502.16923) (Feb 2025)
-- [Does Automated Prompt Engineering Scale to Complex Tasks?](https://www.tensorzero.com/blog/from-ner-to-agents-does-automated-prompt-engineering-scale-to-complex-tasks/) - TensorZero analysis showing benefits diminish with complexity
+- [Does Automated Prompt Engineering Scale to Complex Tasks?](https://www.tensorzero.com/blog/from-ner-to-agents-does-automated-prompt-engineering-scale-to-complex-tasks/) -
+  TensorZero analysis showing benefits diminish with complexity
 - [PromptWizard Microsoft Research Blog](https://www.microsoft.com/en-us/research/blog/promptwizard-the-future-of-prompt-optimization-through-feedback-driven-self-evolving-prompts/)
 - [Beyond Prompt Engineering: TextGrad and DSPy](https://medium.com/@adnanmasood/beyond-prompt-engineering-how-llm-optimization-frameworks-like-textgrad-and-dspy-are-building-the-6790d3bf0b34)
 
@@ -526,4 +540,5 @@ for iteration in range(budget // cost_per_eval):
 
 ---
 
-**Recommendation**: Enhance your current `run_improvement_agent` with population tracking and subsample validation. This gives you the benefits of systematic exploration without the complexity and misfit of research frameworks.
+**Recommendation**: Enhance your current `run_improvement_agent` with population tracking and subsample validation. This
+gives you the benefits of systematic exploration without the complexity and misfit of research frameworks.

@@ -15,9 +15,8 @@ occurrences:
         - [372, 376]
         - [569, 571]
     note: >-
-      rollouts_per_task, max_parallel_rollouts, tasks_per_iteration defined on
-      OptimizeArgs but not passed to OptimizeMcpArgs in optimize_prompts().
-      main() sets them at lines 569-571 but values are ignored.
+      rollouts_per_task, max_parallel_rollouts, tasks_per_iteration defined on OptimizeArgs but not passed to
+      OptimizeMcpArgs in optimize_prompts(). main() sets them at lines 569-571 but values are ignored.
     critic_scopes_expected_to_recall:
       - - inop/engine/optimizer.py
     match_file_restriction:

@@ -1,19 +1,18 @@
 ---
 name: session_logs
-description: Discover and read the complete current Claude Code or Codex CLI conversation, including user turns, nearby agent context, tool activity, and compaction boundaries.
+description:
+  Discover and read the complete current Claude Code or Codex CLI conversation, including user turns, nearby agent
+  context, tool activity, and compaction boundaries.
 ---
 
 # Session transcript recovery
 
-Use this skill when a task depends on what the user said earlier, when `/followups`
-needs to find loose threads, or when the in-context conversation may have been
-compacted. The harness transcript is the durable source for the conversation.
+Use this skill when a task depends on what the user said earlier, when `/followups` needs to find loose threads, or when
+the in-context conversation may have been compacted. The harness transcript is the durable source for the conversation.
 
-The procedure is intentionally local and read-only. Find the transcript belonging
-to this agent's own harness, then read every human/user turn together with the two
-preceding assistant/agent messages. Use the result as conversation context; do not
-only inspect the last few turns or trust a compaction summary to preserve the
-original problem.
+The procedure is intentionally local and read-only. Find the transcript belonging to this agent's own harness, then read
+every human/user turn together with the two preceding assistant/agent messages. Use the result as conversation context;
+do not only inspect the last few turns or trust a compaction summary to preserve the original problem.
 
 ## Paved commands
 
@@ -27,39 +26,30 @@ conversation.py [--max-display-text-length N] [--no-strip-agents-md]
                [claude|codex] [TRANSCRIPT.jsonl]
 ```
 
-`conversation.py` prints every user window in chronological order. Each window
-contains up to two preceding assistant messages. Each user or assistant message
-is capped at 1,000 characters by default; longer text is cut in the middle and
-marked with an instruction for requesting a larger display. Pass
-`--max-display-text-length N` for a different cap (`N` must be at least 100).
-The transcript is still scanned in full, and compaction markers are still
-preserved. Do not pipe it through `head`, `tail`, or a truncating pager when
-doing the recovery pass. For a large transcript, read the output in sequential
-chunks and verify the final user message number.
+`conversation.py` prints every user window in chronological order. Each window contains up to two preceding assistant
+messages. Each user or assistant message is capped at 1,000 characters by default; longer text is cut in the middle and
+marked with an instruction for requesting a larger display. Pass `--max-display-text-length N` for a different cap (`N`
+must be at least 100). The transcript is still scanned in full, and compaction markers are still preserved. Do not pipe
+it through `head`, `tail`, or a truncating pager when doing the recovery pass. For a large transcript, read the output
+in sequential chunks and verify the final user message number.
 
-For `/followups`, first check whether this context already contains either a
-full transcript recovery or a clean zero-compaction analysis. Reuse that state
-unless a newer compaction occurred. Otherwise run `analyze_session.py` before
-printing the conversation. When it reports `Compactions: 0` and
-`Malformed records skipped: 0`, skip `conversation.py`: no recorded compaction
-has removed earlier context. If compaction markers are present, read the full
-conversation once unless it was already recovered after the latest marker in
-this context. If malformed records were skipped, the scan is incomplete and
-the no-compaction shortcut is unsafe; report that the visible transcript may
-be incomplete.
+For `/followups`, first check whether this context already contains either a full transcript recovery or a clean
+zero-compaction analysis. Reuse that state unless a newer compaction occurred. Otherwise run `analyze_session.py` before
+printing the conversation. When it reports `Compactions: 0` and `Malformed records skipped: 0`, skip `conversation.py`:
+no recorded compaction has removed earlier context. If compaction markers are present, read the full conversation once
+unless it was already recovered after the latest marker in this context. If malformed records were skipped, the scan is
+incomplete and the no-compaction shortcut is unsafe; report that the visible transcript may be incomplete.
 
-For routine followups, keep the default Codex filtering enabled. Do not pass
-`--no-strip-*`; the omitted harness-injected blocks are intentionally excluded.
+For routine followups, keep the default Codex filtering enabled. Do not pass `--no-strip-*`; the omitted
+harness-injected blocks are intentionally excluded.
 
-For Codex transcripts, harness-injected AGENTS.md instructions, environment
-context, and selected skill instructions are omitted by default using
-`internal_chat_message_metadata_passthrough.content_item_kinds`. Ordinary user
-text is retained. Pass `--no-strip-agents-md`,
-`--no-strip-environment-context`, or `--no-strip-skill-instructions` to include
+For Codex transcripts, harness-injected AGENTS.md instructions, environment context, and selected skill instructions are
+omitted by default using `internal_chat_message_metadata_passthrough.content_item_kinds`. Ordinary user text is
+retained. Pass `--no-strip-agents-md`, `--no-strip-environment-context`, or `--no-strip-skill-instructions` to include
 one of those categories. These options do not change Claude transcript output.
 
-When running from a checkout rather than an installed package, use
-`skills/session_logs` in place of the installed skill directory below.
+When running from a checkout rather than an installed package, use `skills/session_logs` in place of the installed skill
+directory below.
 
 ### Claude Code 2.1.260
 
@@ -71,14 +61,11 @@ CLAUDE_SESSION=$(~/.claude/skills/session_logs/find_current_session.py claude)
 ~/.claude/skills/session_logs/conversation.py claude "$CLAUDE_SESSION"
 ```
 
-Claude stores project transcripts as JSONL under
-`~/.claude/projects/<pwd-with-slashes-replaced-by-dashes>/`. Root session files
-are the conversation; `subagents/` files are separate agent conversations and
-must not be substituted for the current session. In Claude Code 2.1.260,
-human text is in `type: "user"` entries whose content is a string or text block;
-`tool_result` entries, task notifications, and system reminders are harness
-traffic rather than user turns. Compaction is recorded as
-`type: "system", subtype: "compact_boundary"` in the same JSONL file.
+Claude stores project transcripts as JSONL under `~/.claude/projects/<pwd-with-slashes-replaced-by-dashes>/`. Root
+session files are the conversation; `subagents/` files are separate agent conversations and must not be substituted for
+the current session. In Claude Code 2.1.260, human text is in `type: "user"` entries whose content is a string or text
+block; `tool_result` entries, task notifications, and system reminders are harness traffic rather than user turns.
+Compaction is recorded as `type: "system", subtype: "compact_boundary"` in the same JSONL file.
 
 ### Codex CLI 0.154.0
 
@@ -90,36 +77,29 @@ CODEX_SESSION=$(~/.codex/skills/session_logs/find_current_session.py codex)
 ~/.codex/skills/session_logs/conversation.py codex "$CODEX_SESSION"
 ```
 
-Codex stores transcripts as
-`~/.codex/sessions/YYYY/MM/DD/rollout-*.jsonl`. The current CLI exports
-`CODEX_THREAD_ID` (also accepted: `CODEX_SESSION_ID`); the canonical parent
-filename ends in that id. Approval flows can create a smaller paired JSONL file
-with the same session id, so the helper selects the larger parent transcript.
-Codex user turns are `response_item` records with
-`payload.type: "message", payload.role: "user"`; do not also read
-`event_msg` `user_message` records because they duplicate those turns. Codex
-compaction is `event_msg.payload.type: "context_compacted"` in the same file.
-The `content_item_kinds` metadata parallels `payload.content` and identifies
-harness-injected blocks so the conversation helper can omit them by default.
+Codex stores transcripts as `~/.codex/sessions/YYYY/MM/DD/rollout-*.jsonl`. The current CLI exports `CODEX_THREAD_ID`
+(also accepted: `CODEX_SESSION_ID`); the canonical parent filename ends in that id. Approval flows can create a smaller
+paired JSONL file with the same session id, so the helper selects the larger parent transcript. Codex user turns are
+`response_item` records with `payload.type: "message", payload.role: "user"`; do not also read `event_msg`
+`user_message` records because they duplicate those turns. Codex compaction is
+`event_msg.payload.type: "context_compacted"` in the same file. The `content_item_kinds` metadata parallels
+`payload.content` and identifies harness-injected blocks so the conversation helper can omit them by default.
 
-If the session-id environment variable is missing or the helper reports an
-ambiguous candidate, inspect `analyze_session.py` output and choose the file
-whose session id, working directory, and activity match this agent. Never guess
-from a post-compaction summary alone.
+If the session-id environment variable is missing or the helper reports an ambiguous candidate, inspect
+`analyze_session.py` output and choose the file whose session id, working directory, and activity match this agent.
+Never guess from a post-compaction summary alone.
 
 ## Using the recovered conversation
 
 After running `conversation.py`:
 
-1. Read all emitted user windows, including the first one and everything after
-   every compaction marker.
-2. Use the two preceding agent messages to understand what each user turn was
-   responding to. Treat an absent preceding message at the beginning as normal.
-3. Reconstruct the original problem, pivots, explicit requests, unanswered
-   questions, promises, and work that was discussed but not completed.
-4. Use that reconstruction as an input to loose-thread and followup analysis.
-   Do not silently discard a thread just because the current context no longer
-   contains it.
+1. Read all emitted user windows, including the first one and everything after every compaction marker.
+2. Use the two preceding agent messages to understand what each user turn was responding to. Treat an absent preceding
+   message at the beginning as normal.
+3. Reconstruct the original problem, pivots, explicit requests, unanswered questions, promises, and work that was
+   discussed but not completed.
+4. Use that reconstruction as an input to loose-thread and followup analysis. Do not silently discard a thread just
+   because the current context no longer contains it.
 
 ## Other queries
 
@@ -130,7 +110,6 @@ For a compact inventory rather than the full conversation:
 ~/.claude/skills/session_logs/analyze_session.py claude
 ```
 
-Pass an explicit transcript path to either helper when reviewing an older
-session. The scripts distinguish the two JSONL schemas and count actual user
-turns, agent messages, tool calls, and compaction markers without relying on
-raw `grep` counts.
+Pass an explicit transcript path to either helper when reviewing an older session. The scripts distinguish the two JSONL
+schemas and count actual user turns, agent messages, tool calls, and compaction markers without relying on raw `grep`
+counts.

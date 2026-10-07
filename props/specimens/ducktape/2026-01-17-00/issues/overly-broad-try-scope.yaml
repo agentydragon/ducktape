@@ -11,9 +11,8 @@ occurrences:
       prompts/scans/scan_single_line_functions.py:
         - [150, 158]
     note: >-
-      except (SyntaxError, UnicodeDecodeError) guards L154-156 (extractor logic) but only
-      L151 (read_text) and L153 (ast.parse) can raise these. Extractor bugs would be
-      silently swallowed. Narrow the try block.
+      except (SyntaxError, UnicodeDecodeError) guards L154-156 (extractor logic) but only L151 (read_text) and L153
+      (ast.parse) can raise these. Extractor bugs would be silently swallowed. Narrow the try block.
     critic_scopes_expected_to_recall:
       - - prompts/scans/scan_single_line_functions.py
     match_file_restriction:
@@ -24,8 +23,8 @@ occurrences:
       prompts/scans/scan_string_literals.py:
         - [98, 105]
     note: >-
-      except (SyntaxError, UnicodeDecodeError) guards L101-103 (extractor logic) but only
-      L99 (read_text) and L100 (ast.parse) can raise these. Narrow the try block.
+      except (SyntaxError, UnicodeDecodeError) guards L101-103 (extractor logic) but only L99 (read_text) and L100
+      (ast.parse) can raise these. Narrow the try block.
     critic_scopes_expected_to_recall:
       - - prompts/scans/scan_string_literals.py
     match_file_restriction:
@@ -36,8 +35,8 @@ occurrences:
       prompts/scans/scan_error_handling.py:
         - [88, 110]
     note: >-
-      except (SyntaxError, UnicodeDecodeError) guards L93-107 (analyzer logic) but only
-      L90 (read_text) and L91 (ast.parse) can raise these.
+      except (SyntaxError, UnicodeDecodeError) guards L93-107 (analyzer logic) but only L90 (read_text) and L91
+      (ast.parse) can raise these.
     critic_scopes_expected_to_recall:
       - - prompts/scans/scan_error_handling.py
     match_file_restriction:
@@ -48,8 +47,8 @@ occurrences:
       prompts/scans/scan_dataclass_candidates.py:
         - [87, 99]
     note: >-
-      except (SyntaxError, UnicodeDecodeError) guards L93-96 (analyzer logic) but only
-      L89 (read_text) and L91 (ast.parse) can raise these.
+      except (SyntaxError, UnicodeDecodeError) guards L93-96 (analyzer logic) but only L89 (read_text) and L91
+      (ast.parse) can raise these.
     critic_scopes_expected_to_recall:
       - - prompts/scans/scan_dataclass_candidates.py
     match_file_restriction:
@@ -60,8 +59,8 @@ occurrences:
       prompts/scans/scan_manual_serde.py:
         - [113, 127]
     note: >-
-      except (SyntaxError, UnicodeDecodeError) guards L118-124 (analyzer logic) but only
-      L115 (read_text) and L116 (ast.parse) can raise these.
+      except (SyntaxError, UnicodeDecodeError) guards L118-124 (analyzer logic) but only L115 (read_text) and L116
+      (ast.parse) can raise these.
     critic_scopes_expected_to_recall:
       - - prompts/scans/scan_manual_serde.py
     match_file_restriction:

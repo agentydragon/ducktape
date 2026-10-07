@@ -22,7 +22,9 @@ occurrences:
       nix/home/codex/default.nix:
         - [156, 156]
         - [162, 164]
-    note: "`exit 0` (and `set -euo pipefail`) in a home-manager activation snippet abort/alter the whole concatenated activation, not just this codex merge step — skipping linkGeneration/reloadSystemd"
+    note:
+      "`exit 0` (and `set -euo pipefail`) in a home-manager activation snippet abort/alter the whole concatenated
+      activation, not just this codex merge step — skipping linkGeneration/reloadSystemd"
     critic_scopes_expected_to_recall:
       - ["nix/home/codex/default.nix"]
     match_file_restriction:

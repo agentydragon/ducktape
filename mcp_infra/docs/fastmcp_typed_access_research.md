@@ -1,16 +1,21 @@
 # FastMCP Typed Access Research
 
-> **Status:** Research complete. Recommendations adopted -- see `EnhancedFastMCP` subclass pattern in `mcp_infra/enhanced/`.
+> **Status:** Research complete. Recommendations adopted -- see `EnhancedFastMCP` subclass pattern in
+> `mcp_infra/enhanced/`.
 
 ## Problem
 
-Tool/resource access in FastMCP is string-based (`tool_manager.get_tool(name)`). This means tool names and resource URIs are scattered string literals, invisible to mypy and IDE refactoring.
+Tool/resource access in FastMCP is string-based (`tool_manager.get_tool(name)`). This means tool names and resource URIs
+are scattered string literals, invisible to mypy and IDE refactoring.
 
 ## Key Findings
 
-1. **FastMCP has no built-in typed tool access.** Tools are stored in `ToolManager._tools: dict[str, Tool]`, keyed by string name.
-2. **Standard Python features suffice** -- subclassing, class variables, and type annotations provide typed access without framework changes.
-3. **"Steps constructed before servers exist"** is a pervasive pattern (tests, policy eval, prompts), so class-level constants are required alongside instance attributes.
+1. **FastMCP has no built-in typed tool access.** Tools are stored in `ToolManager._tools: dict[str, Tool]`, keyed by
+   string name.
+2. **Standard Python features suffice** -- subclassing, class variables, and type annotations provide typed access
+   without framework changes.
+3. **"Steps constructed before servers exist"** is a pervasive pattern (tests, policy eval, prompts), so class-level
+   constants are required alongside instance attributes.
 
 ## Recommended Patterns
 

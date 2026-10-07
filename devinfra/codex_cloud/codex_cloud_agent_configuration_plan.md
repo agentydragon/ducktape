@@ -6,12 +6,16 @@ _Last updated: 2026-04-27_
 
 Primary source: OpenAI Codex Cloud docs and changelog.
 
-- Codex Cloud runs tasks in an isolated container, checks out the requested branch/SHA, runs setup, then runs the agent loop.
-- Setup scripts run in a different shell session than the agent loop; shell exports from setup do not automatically carry into agent shell unless persisted (for example via shell startup files).
+- Codex Cloud runs tasks in an isolated container, checks out the requested branch/SHA, runs setup, then runs the agent
+  loop.
+- Setup scripts run in a different shell session than the agent loop; shell exports from setup do not automatically
+  carry into agent shell unless persisted (for example via shell startup files).
 - Environment variables configured in the Codex environment are available for the whole task (setup + agent).
 - Secrets are available during setup, then removed before the agent phase.
-- Setup has internet by default; agent internet is controlled by environment internet policy (off by default with explicit allow/deny options).
-- Container caching keeps setup state for up to 12 hours. Follow-up tasks may resume cached state, and cache is invalidated by setup/maintenance script changes and env/secret changes.
+- Setup has internet by default; agent internet is controlled by environment internet policy (off by default with
+  explicit allow/deny options).
+- Container caching keeps setup state for up to 12 hours. Follow-up tasks may resume cached state, and cache is
+  invalidated by setup/maintenance script changes and env/secret changes.
 
 References:
 
@@ -23,7 +27,8 @@ References:
 
 ## 2.1 What OpenAI docs clearly say
 
-- `.codex/config.toml` and `hooks.json` are documented as Codex config surfaces (config layers include user and project `.codex` paths).
+- `.codex/config.toml` and `hooks.json` are documented as Codex config surfaces (config layers include user and project
+  `.codex` paths).
 - Hook docs define events, matcher semantics, and configuration format.
 - AGENTS.md is explicitly documented and is used for repository-specific instructions.
 
@@ -36,13 +41,16 @@ References:
 
 ## 2.2 What is _not_ clearly documented for Cloud
 
-I could not find explicit OpenAI documentation stating that delegated Cloud runs execute project/user `hooks.json` from `.codex` inside the Cloud container.
+I could not find explicit OpenAI documentation stating that delegated Cloud runs execute project/user `hooks.json` from
+`.codex` inside the Cloud container.
 
-Cloud environment docs document setup + maintenance scripts + AGENTS.md + internet policy. They do not explicitly mention hook execution in Cloud runtime.
+Cloud environment docs document setup + maintenance scripts + AGENTS.md + internet policy. They do not explicitly
+mention hook execution in Cloud runtime.
 
 ### Conclusion (confidence: medium)
 
-- **Documented, supported, and reliable for Cloud**: setup script, maintenance script, env vars, secrets (setup-only), AGENTS.md, internet policy.
+- **Documented, supported, and reliable for Cloud**: setup script, maintenance script, env vars, secrets (setup-only),
+  AGENTS.md, internet policy.
 - **Not explicitly confirmed for Cloud delegated runtime**: `.codex/hooks.json` execution.
 - Treat hooks in Cloud as **unknown/unsupported until validated experimentally**.
 
@@ -61,9 +69,11 @@ Reference:
 
 ## 2.4 Additional online signals checked
 
-- OpenAI Codex open-source issue traffic around hooks is predominantly tagged/phrased as **CLI** behavior and feature requests (event coverage, matcher semantics, platform parity), not Cloud runtime guarantees.
+- OpenAI Codex open-source issue traffic around hooks is predominantly tagged/phrased as **CLI** behavior and feature
+  requests (event coverage, matcher semantics, platform parity), not Cloud runtime guarantees.
 - I did not find an OpenAI source that positively states: \"Cloud delegated tasks execute `.codex/hooks.json`\".
-- Therefore, for Cloud planning in this repo, hooks should be considered experimental until empirically validated in our own environment.
+- Therefore, for Cloud planning in this repo, hooks should be considered experimental until empirically validated in our
+  own environment.
 
 References:
 
@@ -76,7 +86,8 @@ References:
 From this repository's AGENTS/README and current infra:
 
 - Build/test convention is Bazel via `bbr` wrapper for remote execution.
-- Session setup breakage (cert/proxy/buildbuddy bootstrap) should be treated as a hard failure and recovered before proceeding.
+- Session setup breakage (cert/proxy/buildbuddy bootstrap) should be treated as a hard failure and recovered before
+  proceeding.
 - SOPS behavior depends on running from repo context and having `SOPS_AGE_KEY` available.
 - Canonical local developer environment is Nix-based (`flake.nix`, home-manager, codex module under `nix/home/codex`).
 - Existing repo script `devinfra/setup_buildbuddy.sh` configures BuildBuddy based on `BUILDBUDDY_API_KEY`.
@@ -91,7 +102,8 @@ References:
 
 ## 4) Practical configuration plan for Codex Cloud in this repo
 
-Goal: make Codex Cloud behave as close as feasible to our canonical Nix/devshell workflows, while remaining robust when hooks are unavailable.
+Goal: make Codex Cloud behave as close as feasible to our canonical Nix/devshell workflows, while remaining robust when
+hooks are unavailable.
 
 ## 4.1 Baseline environment shape (recommended)
 
@@ -108,8 +120,7 @@ Goal: make Codex Cloud behave as close as feasible to our canonical Nix/devshell
    - any stable non-sensitive flags
 5. **Secrets / decryption inputs**:
    - no direct `BUILDBUDDY_API_KEY` environment injection required
-   - `SOPS_AGE_KEY` available so setup/maintenance can decrypt
-     `cluster/k8s/external-creds/buildbuddy-api-key.sops.yaml`
+   - `SOPS_AGE_KEY` available so setup/maintenance can decrypt `cluster/k8s/external-creds/buildbuddy-api-key.sops.yaml`
    - any additional tokens needed only to install/private-fetch during setup
 6. **Internet policy**:
    - start with allowlist mode, minimum domains required for setup/package fetch + repo infra endpoints.
@@ -155,11 +166,9 @@ Because Cloud hook execution is not explicitly documented:
 
 ### SOPS specifics
 
-- Provide `SOPS_AGE_KEY` via environment configuration so setup/maintenance and
-  agent tasks can decrypt as needed.
-- Use SOPS decryption of encrypted files under repo paths (for example the
-  BuildBuddy key) rather than duplicating raw secret values into environment
-  config fields.
+- Provide `SOPS_AGE_KEY` via environment configuration so setup/maintenance and agent tasks can decrypt as needed.
+- Use SOPS decryption of encrypted files under repo paths (for example the BuildBuddy key) rather than duplicating raw
+  secret values into environment config fields.
 - Ensure decryption paths respect repository-relative creation rules.
 
 ## 5) Reachable knobs checklist (Cloud-first)

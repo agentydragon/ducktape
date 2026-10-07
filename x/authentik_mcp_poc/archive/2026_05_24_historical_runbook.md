@@ -1,17 +1,14 @@
 # authentik_mcp_poc — historical operational runbook
 
-> This is the operational runbook for the POC as it ran before archival on
-> 2026-05-24. It is no longer reconciled by Flux; the manifests and Tofu
-> module are parked under `x/authentik_mcp_poc/cluster/` and
-> `x/authentik_mcp_poc/tf/`. Treat the commands and cluster-state checks
-> below as a record of how it worked, not as live operations — see
+> This is the operational runbook for the POC as it ran before archival on 2026-05-24. It is no longer reconciled by
+> Flux; the manifests and Tofu module are parked under `x/authentik_mcp_poc/cluster/` and `x/authentik_mcp_poc/tf/`.
+> Treat the commands and cluster-state checks below as a record of how it worked, not as live operations — see
 > <../README.md> to revive it.
 
 ## Required moving parts
 
-Every component below has to line up for this POC to work. Missing or wrong on
-any of them produces a specific, localized failure that's easy to mistake for
-something else — each row lists what you get if it's broken.
+Every component below has to line up for this POC to work. Missing or wrong on any of them produces a specific,
+localized failure that's easy to mistake for something else — each row lists what you get if it's broken.
 
 | #   | Component                                             | Where                                                                           | What it does                                                                                                                                                                                                                                                                                                                                                                   | Failure mode if missing                                                               |
 | --- | ----------------------------------------------------- | ------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------- |
@@ -107,10 +104,9 @@ claude mcp add --transport http authentik-mcp-poc \
   https://authentik-mcp-poc.allegedly.works/mcp
 ```
 
-Then `/mcp` → Connect → click through the Authentik consent screen → run the
-`whoami_via_backend` tool. The response body contains your Authentik username
-and email (from the outpost headers) plus a `secret_message` proving the
-outpost let the request through.
+Then `/mcp` → Connect → click through the Authentik consent screen → run the `whoami_via_backend` tool. The response
+body contains your Authentik username and email (from the outpost headers) plus a `secret_message` proving the outpost
+let the request through.
 
 ## Building and pushing
 
@@ -126,10 +122,9 @@ bbr test  //x/authentik_mcp_poc/...
 
 ## Verification in the cluster
 
-After Flux has reconciled the three layers in order — `authentik-mcp-poc-namespace`
-(just the namespace), `authentik-mcp-poc-tf` (Authentik providers + K8s secret),
-and `authentik-mcp-poc` (the app Deployments) — you can poke at the running
-stack with:
+After Flux has reconciled the three layers in order — `authentik-mcp-poc-namespace` (just the namespace),
+`authentik-mcp-poc-tf` (Authentik providers + K8s secret), and `authentik-mcp-poc` (the app Deployments) — you can poke
+at the running stack with:
 
 ```bash
 # 1. Terraform CRD applied, providers exist, secret written.
@@ -159,8 +154,7 @@ curl -i https://authentik-mcp-poc-backend.allegedly.works/whoami
 
 ### End-to-end test result
 
-Run on 2026-04-13 against the live cluster after all twelve components
-were in place:
+Run on 2026-04-13 against the live cluster after all twelve components were in place:
 
 ```json
 {
@@ -176,22 +170,17 @@ were in place:
 }
 ```
 
-For the full forensic trace of how we got there (three wrong turns along
-the way), see <../NOTES.md>.
+For the full forensic trace of how we got there (three wrong turns along the way), see <../NOTES.md>.
 
 ## Things this POC intentionally skips
 
-- **No request signing, no audience-split tokens per backend.** We exchange
-  once per tool call for a single backend. A multi-backend fanout would need
-  N exchanges, one per backend's `client_id`.
-- **No NetworkPolicy on the backend.** In production the backend port should
-  only be reachable from the outpost so direct in-cluster calls can't bypass
-  forward-auth. For the POC we rely on the hostname/outpost coupling —
-  anyone inside the cluster could still curl the Service directly.
-- **No scope-based RBAC in the MCP server.** There's one tool and it runs
-  for any authenticated user. The `authentik Admins` policy binding on the
-  Authentik Application is the only gate.
-- **No proxy-provider client_secret.** The JWT assertion IS the
-  authentication for the client_credentials grant (see NOTES.md §5), so
-  we don't need to ship the backend proxy provider's auto-generated
-  client_secret into the MCP server pod.
+- **No request signing, no audience-split tokens per backend.** We exchange once per tool call for a single backend. A
+  multi-backend fanout would need N exchanges, one per backend's `client_id`.
+- **No NetworkPolicy on the backend.** In production the backend port should only be reachable from the outpost so
+  direct in-cluster calls can't bypass forward-auth. For the POC we rely on the hostname/outpost coupling — anyone
+  inside the cluster could still curl the Service directly.
+- **No scope-based RBAC in the MCP server.** There's one tool and it runs for any authenticated user. The
+  `authentik Admins` policy binding on the Authentik Application is the only gate.
+- **No proxy-provider client_secret.** The JWT assertion IS the authentication for the client_credentials grant (see
+  NOTES.md §5), so we don't need to ship the backend proxy provider's auto-generated client_secret into the MCP server
+  pod.

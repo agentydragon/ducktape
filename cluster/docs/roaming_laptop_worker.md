@@ -1,23 +1,20 @@
 # Roaming Laptop Worker Node
 
-**Status**: Implemented (2026-03). rugged (Dell Rugged 12) joined as roaming
-worker via `nix/nixos/hosts/rugged/` + `k8s-worker.nix` + `nebula.nix`.
-Nebula mesh with OVH lighthouses/relays solves the double-NAT hole-punching
-problem that made KubeSpan unreliable. See
-`lessons_learned/nebula_mesh_migration_tombstone.md` for the full history.
+**Status**: Implemented (2026-03). rugged (Dell Rugged 12) joined as roaming worker via `nix/nixos/hosts/rugged/` +
+`k8s-worker.nix` + `nebula.nix`. Nebula mesh with OVH lighthouses/relays solves the double-NAT hole-punching problem
+that made KubeSpan unreliable. See `lessons_learned/nebula_mesh_migration_tombstone.md` for the full history.
 
-Remaining validation: test double-NAT passthrough and relay with real workloads
-such as rugged behind a mobile hotspot or restrictive corporate NAT while pods
-produce cross-node traffic.
+Remaining validation: test double-NAT passthrough and relay with real workloads such as rugged behind a mobile hotspot
+or restrictive corporate NAT while pods produce cross-node traffic.
 
 ## How It Works
 
 NixOS laptop joins the Talos k8s cluster as a worker without VMs:
 
-- **`nebula.nix`** — joins the Nebula mesh (UDP 4242). OVH lighthouses provide
-  peer discovery; relay mode handles double-NAT when hole-punching fails.
-- **`k8s-worker.nix`** — containerd + kubelet, haproxy on `localhost:7445`
-  load-balancing across control plane Nebula IPs, sops-nix for credentials.
+- **`nebula.nix`** — joins the Nebula mesh (UDP 4242). OVH lighthouses provide peer discovery; relay mode handles
+  double-NAT when hole-punching fails.
+- **`k8s-worker.nix`** — containerd + kubelet, haproxy on `localhost:7445` load-balancing across control plane Nebula
+  IPs, sops-nix for credentials.
 - **Cilium agent** runs as a DaemonSet, VXLAN encapsulated inside Nebula.
 
 Key files:
@@ -39,11 +36,11 @@ Key files:
 
 ## Scheduling
 
-Taint `node-role.kubernetes.io/roaming=true:NoSchedule`, labels
-`topology.kubernetes.io/region=roaming`, `node.kubernetes.io/role=roaming`.
+Taint `node-role.kubernetes.io/roaming=true:NoSchedule`, labels `topology.kubernetes.io/region=roaming`,
+`node.kubernetes.io/role=roaming`.
 
-**Good fit**: BuildBuddy executors, batch ML/LLM jobs, CI runners, dev/test workloads.
-**Avoid**: StatefulSets, PVCs, ingress, anything in the OVH-only resilience invariant.
+**Good fit**: BuildBuddy executors, batch ML/LLM jobs, CI runners, dev/test workloads. **Avoid**: StatefulSets, PVCs,
+ingress, anything in the OVH-only resilience invariant.
 
 ## Intermittent Connectivity
 
@@ -54,19 +51,18 @@ Taint `node-role.kubernetes.io/roaming=true:NoSchedule`, labels
 
 ## Known Gotchas
 
-- **API endpoint**: Cilium uses `k8sServiceHost: localhost`, `k8sServicePort: 7445`.
-  Talos nodes use KubePrism; NixOS workers use haproxy.
+- **API endpoint**: Cilium uses `k8sServiceHost: localhost`, `k8sServicePort: 7445`. Talos nodes use KubePrism; NixOS
+  workers use haproxy.
 - **Cilium `SYS_MODULE`**: Pre-load `sch_ingress` etc. on non-Talos nodes.
 - **Kubelet version**: Must be within 1 minor version of the cluster.
-- **Kubelet label restrictions**: `node-role.kubernetes.io/*` labels rejected by
-  kubelet — use `node.kubernetes.io/role` instead. Taints are fine.
+- **Kubelet label restrictions**: `node-role.kubernetes.io/*` labels rejected by kubelet — use `node.kubernetes.io/role`
+  instead. Taints are fine.
 
 ## Historical Notes
 
 This plan went through three networking iterations:
 
 1. Tailscale/Headscale (second WireGuard mesh, required DaemonSet)
-2. KubeSpan/kubespand (reimplemented Talos KubeSpan for Linux — failed on
-   double-NAT, no relay capability). See
+2. KubeSpan/kubespand (reimplemented Talos KubeSpan for Linux — failed on double-NAT, no relay capability). See
    `lessons_learned/nebula_mesh_migration_tombstone.md`.
 3. Nebula mesh (current) — lighthouses + relays solve double-NAT reliably.

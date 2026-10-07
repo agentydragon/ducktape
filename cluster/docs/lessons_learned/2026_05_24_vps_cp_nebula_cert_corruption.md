@@ -1,76 +1,58 @@
 # VPS CP Nebula cert corruption — etcd partition during worker decommission
 
-**Date**: 2026-05-24
-**Severity**: Cluster-wide API degradation (~45 min)
-**Status**: Resolved
+**Date**: 2026-05-24 **Severity**: Cluster-wide API degradation (~45 min) **Status**: Resolved
 
 ## Summary
 
-A routine `talos-vps-worker-0` decommission via `tofu apply` triggered a Talos
-machine-config refresh on `talos-vps-cp-0` and `talos-vps-cp-1` (because removing
-the worker changed the `nebula_static_host_map`). The refresh embedded the local
-per-node Nebula cert/key files into the new `ExtensionServiceConfig` document
-and pushed it to both CPs. Those local files had been silently poisoned 12 days
-earlier by a buggy cert-recovery script and contained the CA cert (with leading
-indent) where the per-node `host.crt` should have been. Nebula refused to load,
-the etcd mesh lost peer reachability across the VPS↔Kimsufi boundary, and the
-kube-apiserver lost its etcd leader.
+A routine `talos-vps-worker-0` decommission via `tofu apply` triggered a Talos machine-config refresh on
+`talos-vps-cp-0` and `talos-vps-cp-1` (because removing the worker changed the `nebula_static_host_map`). The refresh
+embedded the local per-node Nebula cert/key files into the new `ExtensionServiceConfig` document and pushed it to both
+CPs. Those local files had been silently poisoned 12 days earlier by a buggy cert-recovery script and contained the CA
+cert (with leading indent) where the per-node `host.crt` should have been. Nebula refused to load, the etcd mesh lost
+peer reachability across the VPS↔Kimsufi boundary, and the kube-apiserver lost its etcd leader.
 
-Recovery: regenerated fresh per-node Nebula keypairs locally, hand-built a
-multi-doc machine-config (running `v1alpha1` + `HostnameConfig` unchanged, only
-the nebula `ExtensionServiceConfig` patched), and pushed it via
-`talosctl apply-config --mode=try` then `--mode=auto` to both CPs. Nebula came
-back up, etcd quorum reconvened, k8s API recovered.
+Recovery: regenerated fresh per-node Nebula keypairs locally, hand-built a multi-doc machine-config (running
+`v1alpha1` + `HostnameConfig` unchanged, only the nebula `ExtensionServiceConfig` patched), and pushed it via
+`talosctl apply-config --mode=try` then `--mode=auto` to both CPs. Nebula came back up, etcd quorum reconvened, k8s API
+recovered.
 
 ## Timeline (PT)
 
-- **2026-04-25 02:15** — First Talos config applied to vps-cp-0/cp-1. Embedded
-  Nebula host.crt/host.key contained the correct per-node certs (whatever
-  `nebula-cert sign` had produced into `cluster/terraform/main/nebula-certs/`
-  at that point). Cluster runs normally for ~30 days.
-- **2026-05-13 16:01** — Re-keying of `secrets/nebula/ca.sops.key` (admin-only).
-  The first OVH Kimsufi worker is added; `local_file.nebula_ca_crt` and
-  `null_resource.nebula_node_cert["talos-kimsufi-worker-0..."]` are written.
+- **2026-04-25 02:15** — First Talos config applied to vps-cp-0/cp-1. Embedded Nebula host.crt/host.key contained the
+  correct per-node certs (whatever `nebula-cert sign` had produced into `cluster/terraform/main/nebula-certs/` at that
+  point). Cluster runs normally for ~30 days.
+- **2026-05-13 16:01** — Re-keying of `secrets/nebula/ca.sops.key` (admin-only). The first OVH Kimsufi worker is added;
+  `local_file.nebula_ca_crt` and `null_resource.nebula_node_cert["talos-kimsufi-worker-0..."]` are written.
 - **2026-05-13 16:15** — From a fresh machine (`rugged`), `tofu apply` needs the
-  `cluster/terraform/main/nebula-certs/*.{crt,key}` files locally. An ad-hoc
-  Python script `/tmp/claude/extract_nebula.py` is written to extract them from
-  the embedded `machine_configuration_input` in TF state. **Two bugs in the
-  script silently produce poisoned files** (details below). The 5 poisoned
-  files: `talos-{vps-cp-0,vps-cp-1,pve-cp-0,vps-worker-0,vps-worker-1}.crt|key`.
-  Documented in
+  `cluster/terraform/main/nebula-certs/*.{crt,key}` files locally. An ad-hoc Python script
+  `/tmp/claude/extract_nebula.py` is written to extract them from the embedded `machine_configuration_input` in TF
+  state. **Two bugs in the script silently produce poisoned files** (details below). The 5 poisoned files:
+  `talos-{vps-cp-0,vps-cp-1,pve-cp-0,vps-worker-0,vps-worker-1}.crt|key`. Documented in
   [`2026_05_13_provisioning_ovh_kimsufi.md`](2026_05_13_provisioning_ovh_kimsufi.md) §4b.
-- **2026-05-13 → 2026-05-24** — Cluster runs fine. Talos config version 1 on
-  each VPS CP still has the correct certs from 04-25; nothing triggers a config
-  re-push for the VPS CPs, so the poisoned local files are never consulted.
-- **2026-05-24 18:42** — `tofu apply` to destroy `hcloud_server.vps["vps_worker0"]`
-  (worker decommission). The apply also recomputes
-  `talos_machine_configuration_apply.vps["vps0"]` and `["vps1"]` because the
-  `nebula_static_host_map` lost the `10.42.0.11` entry → embedded
-  ExtensionServiceConfig changes → new Talos config v2 pushed to both VPS CPs.
+- **2026-05-13 → 2026-05-24** — Cluster runs fine. Talos config version 1 on each VPS CP still has the correct certs
+  from 04-25; nothing triggers a config re-push for the VPS CPs, so the poisoned local files are never consulted.
+- **2026-05-24 18:42** — `tofu apply` to destroy `hcloud_server.vps["vps_worker0"]` (worker decommission). The apply
+  also recomputes `talos_machine_configuration_apply.vps["vps0"]` and `["vps1"]` because the `nebula_static_host_map`
+  lost the `10.42.0.11` entry → embedded ExtensionServiceConfig changes → new Talos config v2 pushed to both VPS CPs.
 - **2026-05-24 18:42** — Nebula on both VPS CPs starts crash-looping with
-  `unmarshaling pki.key /usr/local/etc/nebula/host.key: input did not contain a
-valid PEM encoded block`. Mesh loses VPS↔Kimsufi connectivity. etcd peers
-  unreachable. `kubectl` starts returning `etcdserver: no leader`.
-- **2026-05-24 19:00** — Diagnosis: `talosctl get extensionserviceconfig nebula
--o yaml` on vps-cp-0 shows `host.crt`/`host.key` with 8-space leading indent
-  on every PEM body line. Local files at
-  `cluster/terraform/main/nebula-certs/talos-vps-cp-*.crt` are identical to
-  `ca.crt` (decoded as `isCa=true name="allegedly.works"`) with 8-space indent.
-- **2026-05-24 19:35** — `nebula-cert sign` produces fresh keypairs locally
-  for cp-0/cp-1 against the unchanged CA. Hand-built multi-doc Talos config
-  splices the running v1alpha1+HostnameConfig docs byte-for-byte with a
-  patched ExtensionServiceConfig (only `host.crt` and `host.key` differ).
-  `talosctl apply-config --dry-run` confirms only the cert/key change.
-- **2026-05-24 19:38** — Apply on cp-0 with `--mode=try` (120s rollback).
-  `ext-nebula` returns to `Running`, etcd `HEALTH OK` 56s later. Committed
-  with `--mode=auto`. cp-1 applied directly with `--mode=auto`.
-- **2026-05-24 19:42** — `etcd members` shows 3-member quorum (cp-0, cp-1,
-  kimsufi-cp-0), `kubectl get nodes` works, recovery complete.
+  `unmarshaling pki.key /usr/local/etc/nebula/host.key: input did not contain a valid PEM encoded block`. Mesh loses
+  VPS↔Kimsufi connectivity. etcd peers unreachable. `kubectl` starts returning `etcdserver: no leader`.
+- **2026-05-24 19:00** — Diagnosis: `talosctl get extensionserviceconfig nebula -o yaml` on vps-cp-0 shows
+  `host.crt`/`host.key` with 8-space leading indent on every PEM body line. Local files at
+  `cluster/terraform/main/nebula-certs/talos-vps-cp-*.crt` are identical to `ca.crt` (decoded as
+  `isCa=true name="allegedly.works"`) with 8-space indent.
+- **2026-05-24 19:35** — `nebula-cert sign` produces fresh keypairs locally for cp-0/cp-1 against the unchanged CA.
+  Hand-built multi-doc Talos config splices the running v1alpha1+HostnameConfig docs byte-for-byte with a patched
+  ExtensionServiceConfig (only `host.crt` and `host.key` differ). `talosctl apply-config --dry-run` confirms only the
+  cert/key change.
+- **2026-05-24 19:38** — Apply on cp-0 with `--mode=try` (120s rollback). `ext-nebula` returns to `Running`, etcd
+  `HEALTH OK` 56s later. Committed with `--mode=auto`. cp-1 applied directly with `--mode=auto`.
+- **2026-05-24 19:42** — `etcd members` shows 3-member quorum (cp-0, cp-1, kimsufi-cp-0), `kubectl get nodes` works,
+  recovery complete.
 
 ## Root cause
 
-The local cert-extraction script `/tmp/claude/extract_nebula.py` (written
-2026-05-13 16:15 PT) had two compounding bugs:
+The local cert-extraction script `/tmp/claude/extract_nebula.py` (written 2026-05-13 16:15 PT) had two compounding bugs:
 
 ````python
 # Bug 1: non-greedy regex matches the FIRST PEM CERTIFICATE block in each

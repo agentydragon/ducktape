@@ -1,10 +1,9 @@
 # codex-nix-pod spike
 
-Experimental, manually applied pod for testing a Codex-like agent environment as a
-normal Kubernetes pod with a writable persistent Nix store.
+Experimental, manually applied pod for testing a Codex-like agent environment as a normal Kubernetes pod with a writable
+persistent Nix store.
 
-This is deliberately under `agents/x/` and is not referenced by any Flux
-`Kustomization`.
+This is deliberately under `agents/x/` and is not referenced by any Flux `Kustomization`.
 
 ## Apply
 
@@ -26,5 +25,5 @@ mkdir -p ~/.config/direnv
 nix shell nixpkgs#nix-direnv -c bash -lc 'echo "source $(dirname "$(realpath "$(which nix-direnv)")")/../share/nix-direnv/direnvrc" > ~/.config/direnv/direnvrc'
 ```
 
-Then put a checkout under `/workspace/ducktape`, run `direnv allow`, and verify
-that `.envrc` realizes the repo devshell onto the persistent `/nix` volume.
+Then put a checkout under `/workspace/ducktape`, run `direnv allow`, and verify that `.envrc` realizes the repo devshell
+onto the persistent `/nix` volume.

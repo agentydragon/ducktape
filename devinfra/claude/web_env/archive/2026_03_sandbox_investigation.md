@@ -1,7 +1,7 @@
 # Claude Code Web Sandbox Investigation
 
-Precise characterization of the gVisor sandbox environment used by Claude Code
-web sessions, with focus on container build capabilities and storage drivers.
+Precise characterization of the gVisor sandbox environment used by Claude Code web sessions, with focus on container
+build capabilities and storage drivers.
 
 ## Runtime Identity
 
@@ -15,9 +15,8 @@ web sessions, with focus on container build capabilities and storage drivers.
 | CPU                 | 16 cores                                                             |
 | Memory              | 21 GiB                                                               |
 
-gVisor emulates Linux kernel 4.4.0 but supports many newer syscalls. The kernel
-version string is hardcoded and does not reflect the actual gVisor release
-version. The `dmesg` output includes humorous fake boot messages ("Adversarially
+gVisor emulates Linux kernel 4.4.0 but supports many newer syscalls. The kernel version string is hardcoded and does not
+reflect the actual gVisor release version. The `dmesg` output includes humorous fake boot messages ("Adversarially
 training Redcode AI...", "Preparing for the zombie uprising...").
 
 ## Filesystem Layout
@@ -30,8 +29,8 @@ training Redcode AI...", "Preparing for the zombie uprising...").
 | `/proc`     | proc             | —      | gVisor-emulated procfs                    |
 | `/sys`      | sysfs            | —      | Limited sysfs                             |
 
-The 9p filesystem is the primary I/O bottleneck. It supports symlinks, hardlinks,
-and standard POSIX operations, but **does not support extended attributes (xattr)**.
+The 9p filesystem is the primary I/O bottleneck. It supports symlinks, hardlinks, and standard POSIX operations, but
+**does not support extended attributes (xattr)**.
 
 ## Capabilities
 
@@ -57,8 +56,7 @@ Granted (bitmask `0xa82c35fb`):
 | `CAP_AUDIT_WRITE`      | granted                            |
 | `CAP_SETFCAP`          | granted                            |
 
-Notable absences: `CAP_DAC_READ_SEARCH`, `CAP_SYS_MODULE`, `CAP_SYS_RAWIO`,
-`CAP_SYS_RESOURCE`, `CAP_SYS_TIME`.
+Notable absences: `CAP_DAC_READ_SEARCH`, `CAP_SYS_MODULE`, `CAP_SYS_RAWIO`, `CAP_SYS_RESOURCE`, `CAP_SYS_TIME`.
 
 ## Namespace Support
 
@@ -74,8 +72,7 @@ All Linux namespace types are functional via `unshare()`:
 | `CLONE_NEWIPC`    | works  |
 | `CLONE_NEWCGROUP` | works  |
 
-This is why podman/buildah can run container builds (they use `CLONE_NEWNS`
-and `CLONE_NEWUSER`).
+This is why podman/buildah can run container builds (they use `CLONE_NEWNS` and `CLONE_NEWUSER`).
 
 ## Syscall Support
 
@@ -102,24 +99,20 @@ and `CLONE_NEWUSER`).
 
 ## Kernel Keyring Quota Limit
 
-**Status: FIXED** — The `crun-gvisor-wrapper` now injects `--no-new-keyring` to
-prevent keyring creation entirely. Builds with 100+ RUN steps work without
-hitting quota limits.
+**Status: FIXED** — The `crun-gvisor-wrapper` now injects `--no-new-keyring` to prevent keyring creation entirely.
+Builds with 100+ RUN steps work without hitting quota limits.
 
 ### Background
 
-gVisor imposes a **per-session kernel keyring quota** (~60-70 keyrings). By
-default, crun creates a new session keyring for each container. Without the fix,
-this would limit Dockerfile builds to ~60 RUN steps per session.
+gVisor imposes a **per-session kernel keyring quota** (~60-70 keyrings). By default, crun creates a new session keyring
+for each container. Without the fix, this would limit Dockerfile builds to ~60 RUN steps per session.
 
-**Why crun creates keyrings**: The Linux kernel keyring provides credential
-isolation — secrets stored in a container's keyring are inaccessible to other
-containers. crun uses `keyctl(KEYCTL_JOIN_SESSION_KEYRING)` to create a new
-session keyring when starting each container.
+**Why crun creates keyrings**: The Linux kernel keyring provides credential isolation — secrets stored in a container's
+keyring are inaccessible to other containers. crun uses `keyctl(KEYCTL_JOIN_SESSION_KEYRING)` to create a new session
+keyring when starting each container.
 
-**The fix**: The `--no-new-keyring` flag tells crun to skip keyring creation
-and inherit the parent's session keyring. Our `crun-gvisor-wrapper` injects
-this flag for all `crun create` and `crun run` invocations.
+**The fix**: The `--no-new-keyring` flag tells crun to skip keyring creation and inherit the parent's session keyring.
+Our `crun-gvisor-wrapper` injects this flag for all `crun create` and `crun run` invocations.
 
 ### Historical Context (before fix)
 
@@ -174,9 +167,9 @@ From `/proc/filesystems`:
 - Layer deduplication: only diffs stored per layer, 8 MB for alpine vs full copy
 - Layer caching works: unchanged steps reuse cached layers instantly
 
-**Layer count limit**: The kernel imposes a **4096 byte (1 page)** limit on the
-`mount()` options string. The overlay `lowerdir` option lists all lower layer paths,
-and each layer adds `{graphroot}/overlay/l/{26-char-symlink}:` to this string.
+**Layer count limit**: The kernel imposes a **4096 byte (1 page)** limit on the `mount()` options string. The overlay
+`lowerdir` option lists all lower layer paths, and each layer adds `{graphroot}/overlay/l/{26-char-symlink}:` to this
+string.
 
 Empirically verified limits (2026-02-03):
 
@@ -190,14 +183,12 @@ With typical containers/storage graphroot paths:
 - Fixed overhead: ~268 bytes (lowerdir= prefix, upperdir=, workdir=)
 - Practical max: ~47-50 layers per overlay stack
 
-**containers/storage behavior**: Layers are deduplicated across images. Multiple
-Dockerfile builds share common base layers in the `l/` directory. A 90-step build
-may succeed because it shares layers with previous builds, keeping the total unique
-layer count within limits.
+**containers/storage behavior**: Layers are deduplicated across images. Multiple Dockerfile builds share common base
+layers in the `l/` directory. A 90-step build may succeed because it shares layers with previous builds, keeping the
+total unique layer count within limits.
 
-**Workaround** (if hitting limit): Multi-stage builds reset the overlay stack. Each
-`FROM` instruction starts a fresh layer stack. Alternatively, use `--squash` to
-flatten layers (loses caching benefits).
+**Workaround** (if hitting limit): Multi-stage builds reset the overlay stack. Each `FROM` instruction starts a fresh
+layer stack. Alternatively, use `--squash` to flatten layers (loses caching benefits).
 
 Configuration:
 
@@ -245,8 +236,8 @@ No block devices, no loop devices, no `/dev/mapper`.
 
 ## BuildKit Cache Mounts
 
-Podman 4.1.1+ supports BuildKit-style `RUN --mount=type=cache` syntax natively
-(no separate BuildKit daemon needed). However, under gVisor:
+Podman 4.1.1+ supports BuildKit-style `RUN --mount=type=cache` syntax natively (no separate BuildKit daemon needed).
+However, under gVisor:
 
 | Feature                 | Status | Notes                                 |
 | ----------------------- | ------ | ------------------------------------- |
@@ -254,25 +245,23 @@ Podman 4.1.1+ supports BuildKit-style `RUN --mount=type=cache` syntax natively
 | Multiple cache mounts   | fails  | Exit status 100 with gVisor           |
 | `sharing=locked` option | fails  | gVisor doesn't support this mode      |
 
-**Workaround**: Use separate RUN instructions for each cache mount, or combine
-directories under a single mount target.
+**Workaround**: Use separate RUN instructions for each cache mount, or combine directories under a single mount target.
 
 ## Implications for Container Builds
 
-1. **Always store on tmpfs**, not 9p. Mount a new exec-enabled tmpfs and point
-   `CONTAINERS_STORAGE_CONF` there. This gives 315 GB space and ~10x faster I/O.
-2. **For Dockerfiles with >54 layers**: Use VFS on tmpfs with `--layers=false`.
-   Layer caching via overlay hits the mount option page size limit at ~54 layers.
-3. **For Dockerfiles with <54 layers**: Use overlay on tmpfs for layer caching.
-   Multi-stage builds can keep each stage under the limit.
-4. **Cache mounts work with limitations**: Single `--mount=type=cache` works,
-   but multiple mounts in one RUN fail under gVisor.
-5. **Cannot use `podman run`** — crun fails opening `/proc/self/setgroups` inside
-   nested containers. Use the `crun-gvisor-wrapper` which injects
-   `run.oci.keep_original_groups=1` annotation. For inspection, use
+1. **Always store on tmpfs**, not 9p. Mount a new exec-enabled tmpfs and point `CONTAINERS_STORAGE_CONF` there. This
+   gives 315 GB space and ~10x faster I/O.
+2. **For Dockerfiles with >54 layers**: Use VFS on tmpfs with `--layers=false`. Layer caching via overlay hits the mount
+   option page size limit at ~54 layers.
+3. **For Dockerfiles with <54 layers**: Use overlay on tmpfs for layer caching. Multi-stage builds can keep each stage
+   under the limit.
+4. **Cache mounts work with limitations**: Single `--mount=type=cache` works, but multiple mounts in one RUN fail under
+   gVisor.
+5. **Cannot use `podman run`** — crun fails opening `/proc/self/setgroups` inside nested containers. Use the
+   `crun-gvisor-wrapper` which injects `run.oci.keep_original_groups=1` annotation. For inspection, use
    `podman create` + `podman mount` instead.
-6. **`--format=docker`** is needed because buildah's default `RUN` output causes
-   SIGPIPE under gVisor when the build pipe closes
+6. **`--format=docker`** is needed because buildah's default `RUN` output causes SIGPIPE under gVisor when the build
+   pipe closes
 7. **`--network=host`** is required (no bridge networking in gVisor)
-8. **No docker/buildx/BuildKit**: Only podman + buildah available. buildx is a
-   Docker CLI plugin requiring BuildKit daemon — not compatible with podman.
+8. **No docker/buildx/BuildKit**: Only podman + buildah available. buildx is a Docker CLI plugin requiring BuildKit
+   daemon — not compatible with podman.

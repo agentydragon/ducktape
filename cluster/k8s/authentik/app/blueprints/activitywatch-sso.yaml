@@ -2,7 +2,8 @@ version: 1
 metadata:
   name: SSO - ActivityWatch
   labels:
-    blueprints.goauthentik.io/description: "ActivityWatch read-only web UI proxy provider, application, and single-user access binding"
+    blueprints.goauthentik.io/description:
+      "ActivityWatch read-only web UI proxy provider, application, and single-user access binding"
 
 entries:
   - model: authentik_providers_proxy.proxyprovider

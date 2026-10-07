@@ -1,6 +1,9 @@
 # Canonical Agent DAG Schema (Backend‑Agnostic)
 
-This file defines the logical, storage‑agnostic schema for representing an agent’s state and history in a graph. It captures types, events, nodes/edges, and invariants derived from the current adgn repo (approval policy runtime, runtime/exec, MCP, OpenAI Responses API). Any backend (Git+JSONL, property graph, IPLD, SQL/Dolt, TerminusDB) should project to/from these shapes without loss.
+This file defines the logical, storage‑agnostic schema for representing an agent’s state and history in a graph. It
+captures types, events, nodes/edges, and invariants derived from the current adgn repo (approval policy runtime,
+runtime/exec, MCP, OpenAI Responses API). Any backend (Git+JSONL, property graph, IPLD, SQL/Dolt, TerminusDB) should
+project to/from these shapes without loss.
 
 ## Conventions
 
@@ -22,20 +25,25 @@ This file defines the logical, storage‑agnostic schema for representing an age
 
 - Functional core, imperative shell
   - Core: immutable facts (events, snapshots, heads) in a DAG for time‑travel and forks.
-  - Shell: effect handlers/controllers that attempt to realize intents in the real world; they may fail, retry, or vanish.
+  - Shell: effect handlers/controllers that attempt to realize intents in the real world; they may fail, retry, or
+    vanish.
 - Spec vs status (controller/operator pattern)
   - Spec: intents/desired state (e.g., plan to run a tool, fork with a resource plan).
-  - Status: observed outcomes (tool_result, liveness, snapshot_created). Reconciliation loops converge status toward spec.
+  - Status: observed outcomes (tool_result, liveness, snapshot_created). Reconciliation loops converge status toward
+    spec.
 - Event taxonomy
-  - Intents (spec), Observations (status), Transitions (interruptions/substitutions), Provenance (derived‑from/summarizes/restores‑to).
+  - Intents (spec), Observations (status), Transitions (interruptions/substitutions), Provenance
+    (derived‑from/summarizes/restores‑to).
 - Idempotency and correlation
   - Stable ids for commands/events; idempotent handlers; correlate request→response chains.
 - Sagas/compensations
-  - On failure, record compensations (e.g., unpin on failed publish). Prefer level‑based reconciliation over edge‑triggers.
+  - On failure, record compensations (e.g., unpin on failed publish). Prefer level‑based reconciliation over
+    edge‑triggers.
 - Liveness and leases
   - Treat liveness as advisory; only events/snapshots are durable. Leases expire and must be re‑acquired.
 - Fork/time‑travel policy (per resource)
-  - keep | snapshot | discard, chosen by capabilities/cost. Non‑restorable/imperative resources can be kept by a single branch, snapshotted (if supported), or discarded.
+  - keep | snapshot | discard, chosen by capabilities/cost. Non‑restorable/imperative resources can be kept by a single
+    branch, snapshotted (if supported), or discarded.
 
 ## Enumerations
 
@@ -72,7 +80,8 @@ Capabilities (set of strings)
 
 Scope and leases
 
-- `scope` associates resources with `{agent_id, run_id, session_id}`; leases/liveness are advisory and non‑deterministic.
+- `scope` associates resources with `{agent_id, run_id, session_id}`; leases/liveness are advisory and
+  non‑deterministic.
 
 ## Core logical types
 
@@ -156,7 +165,8 @@ Resource lifecycle
 - `ResourceLivenessProbe` (Event: `resource_liveness_probe`)
   - `event_id`, `ts`, `resource_ref`: NodeId (Resource), `status`: ResourceLiveness
 - `RestoreAttempted` (Event: `restore_attempted`)
-  - `event_id`, `ts`, `agent_id`, `snapshot_ref`: NodeId (Snapshot), `outcome`: `ok` | `unsupported` | `error`, `new_resource_ref?`: NodeId (Resource)
+  - `event_id`, `ts`, `agent_id`, `snapshot_ref`: NodeId (Snapshot), `outcome`: `ok` | `unsupported` | `error`,
+    `new_resource_ref?`: NodeId (Resource)
 
 Approval policy
 
@@ -259,14 +269,20 @@ Runs and snapshots
 
 - Idempotence: event ids derive from canonical JSON; re‑emitting identical events yields the same `EventId`.
 - Full payloads: no redaction or MIME/size limits in the canonical model (backends may impose practical limits).
-- Ancestry: per‑run event streams are linear; linkability ensured via `RUN_HAS_EVENT.seq` and optional `parent` pointers in event payloads when available.
+- Ancestry: per‑run event streams are linear; linkability ensured via `RUN_HAS_EVENT.seq` and optional `parent` pointers
+  in event payloads when available.
 - Correlation: related actions share a `correlation_id` (e.g., `model_request` ↔ `model_response` ↔ tool chain).
 - Approval policy:
-  - Active policy is a program (stdin→stdout JSON) stored behind the MCP resource `resource://approval-policy/policy.py`.
+  - Active policy is a program (stdin→stdout JSON) stored behind the MCP resource
+    `resource://approval-policy/policy.py`.
   - Activation is represented by a `policy_activated` event and a Policy node updated to `kind=active`.
-- Volumes/resources: payloads of volumes are not stored in the graph; represent lineage via `Resource` nodes and `ExtRef` snapshots only.
-- Imperative resources: when `imperative=true` or capabilities omit `restore`, forks must choose `keep` (single branch), `snapshot` (if supported) or `discard`. Attempting `restore` on such resources yields `restore_attempted` with `outcome=unsupported`.
-- Subresources: use `HAS_SUBRESOURCE` to decompose complex resources (e.g., container → filesystem volume, network namespace) and make fork decisions per subpart.
+- Volumes/resources: payloads of volumes are not stored in the graph; represent lineage via `Resource` nodes and
+  `ExtRef` snapshots only.
+- Imperative resources: when `imperative=true` or capabilities omit `restore`, forks must choose `keep` (single branch),
+  `snapshot` (if supported) or `discard`. Attempting `restore` on such resources yields `restore_attempted` with
+  `outcome=unsupported`.
+- Subresources: use `HAS_SUBRESOURCE` to decompose complex resources (e.g., container → filesystem volume, network
+  namespace) and make fork decisions per subpart.
 - Liveness: liveness probes are advisory; only snapshots and events are durable.
 
 ## Minimal JSON examples (illustrative)

@@ -1,8 +1,6 @@
 # Session Dump: Kernel 6.18 AMD KVM Stall Investigation
 
-**Date**: 2026-03-25 through 2026-03-31
-**Branch**: `devel`
-**Working directory**: `/home/agentydragon/code/ducktape`
+**Date**: 2026-03-25 through 2026-03-31 **Branch**: `devel` **Working directory**: `/home/agentydragon/code/ducktape`
 
 ## What Was Done
 
@@ -20,14 +18,17 @@ Started with Chrome `ERR_NETWORK_CHANGED` on wyrm2, traced through:
 
 ### Key Findings
 
-- **Guest side**: Kernel 6.18 adds TSA (Transient Scheduler Attack) mitigation for AMD Zen KVM guests, forcing VERW instruction before every `sti; hlt`. Not present in 6.12.
-- **Host side**: `INTERCEPT_IDLE_HLT` (new in 6.15) missing from `svm_exit_handlers_fastpath` — always takes slow path. Confirmed code asymmetry.
+- **Guest side**: Kernel 6.18 adds TSA (Transient Scheduler Attack) mitigation for AMD Zen KVM guests, forcing VERW
+  instruction before every `sti; hlt`. Not present in 6.12.
+- **Host side**: `INTERCEPT_IDLE_HLT` (new in 6.15) missing from `svm_exit_handlers_fastpath` — always takes slow path.
+  Confirmed code asymmetry.
 - **NMI "unknown reason 30"**: Harmless — KVM injects NMIs via V_NMI but QEMU port 0x61 never indicates source.
 - Arch Linux kernel 6.19.8 guest appeared stable but **NOT verified via dmesg** (couldn't login).
 
 ### Cluster Outage (2026-03-30)
 
-Removing pve-cp-0 during debugging → 2-member etcd → VPS OOM (no NoSchedule taint) → nebula tunnel broke → full cluster outage. Recovered by rebooting + cordoning VPS nodes.
+Removing pve-cp-0 during debugging → 2-member etcd → VPS OOM (no NoSchedule taint) → nebula tunnel broke → full cluster
+outage. Recovered by rebooting + cordoning VPS nodes.
 
 ### Files Created/Modified
 
@@ -55,8 +56,7 @@ Key commits (latest first):
 
 ### 1. Atlas reboot with `clearcpuid=510` — NOT DONE
 
-`ansible/atlas.yaml` has `clearcpuid=510` in kernel cmdline and `halt_poll_ns=0` in modprobe.d.
-Need to:
+`ansible/atlas.yaml` has `clearcpuid=510` in kernel cmdline and `halt_poll_ns=0` in modprobe.d. Need to:
 
 ```bash
 cd ansible && ansible-playbook atlas.yaml --tags gpu_passthrough,iommu,kvm -l atlas
@@ -71,13 +71,13 @@ cd ansible && ansible-playbook atlas.yaml --tags gpu_passthrough,iommu,kvm -l at
 - Fedora 42: unreachable in batch mode despite working in manual single-VM test
 - Arch: doesn't boot with OVMF
 
-**Needs**: debug Fedora cloud-init in batch, or build custom NixOS test images with
-controllable kernel versions (user suggestion).
+**Needs**: debug Fedora cloud-init in batch, or build custom NixOS test images with controllable kernel versions (user
+suggestion).
 
 ### 3. pve-cp-0 stalling on current host
 
-VM 10000 exists and is running Talos v1.12.3 but stalling (halt_poll_ns=0 applied but
-clearcpuid=510 not yet — requires host reboot). Currently a stally 3rd etcd member.
+VM 10000 exists and is running Talos v1.12.3 but stalling (halt_poll_ns=0 applied but clearcpuid=510 not yet — requires
+host reboot). Currently a stally 3rd etcd member.
 
 ### 4. VPS nodes still cordoned
 
@@ -90,8 +90,8 @@ Do this after pve-cp-0 is stable (post-reboot).
 
 ### 5. NoSchedule taints for VPS nodes — NOT DONE (#5361)
 
-VPS CPs lack `NoSchedule` taints. During the outage, workload pods OOMed them.
-Need to add taints in TF config patches for VPS nodes.
+VPS CPs lack `NoSchedule` taints. During the outage, workload pods OOMed them. Need to add taints in TF config patches
+for VPS nodes.
 
 ### 6. Upstream bug reports — NOT FILED
 
@@ -101,9 +101,8 @@ Need to add taints in TF config patches for VPS nodes.
 
 ### 7. Nebula stale tunnel — NOT FILED
 
-After lighthouse reboot, non-lighthouse peers don't re-handshake.
-See `debug/nebula-stale-tunnel-after-lighthouse-reboot.md`.
-File at <https://github.com/slackhq/nebula/issues>
+After lighthouse reboot, non-lighthouse peers don't re-handshake. See
+`debug/nebula-stale-tunnel-after-lighthouse-reboot.md`. File at <https://github.com/slackhq/nebula/issues>
 
 ## Context for Successor
 

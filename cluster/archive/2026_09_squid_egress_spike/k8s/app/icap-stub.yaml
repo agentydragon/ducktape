@@ -18,7 +18,8 @@ metadata:
     app.kubernetes.io/name: icap-stub
   annotations:
     reloader.stakater.com/auto: "true"
-    description: Stub ICAP REQMOD service answering the Squid-side adaptation questions before haku-console grows a real one.
+    description:
+      Stub ICAP REQMOD service answering the Squid-side adaptation questions before haku-console grows a real one.
 spec:
   replicas: 1
   selector:

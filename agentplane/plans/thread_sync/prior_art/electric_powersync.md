@@ -1,64 +1,58 @@
 # Prior art, verified: ElectricSQL and PowerSync
 
 Read 2026-09-23 from the docs' source repos: `electric-sql/electric` @ `bb39742` (2026-09-09),
-`powersync-ja/powersync-docs` @ `fe0415e` (2026-09-22) and `TanStack/db` @ `6907244` (2026-09-23), with
-the relevant Electric server and TanStack DB source checked where the docs were silent. Each cited
-URL resolves (HTTP 200). `electric-sql.com` now answers 301 → `electric.ax`, and Electric's docs moved
-under `/docs/sync/…`. Evidence marked `inferred` is my reading, not something a document states.
+`powersync-ja/powersync-docs` @ `fe0415e` (2026-09-22) and `TanStack/db` @ `6907244` (2026-09-23), with the relevant
+Electric server and TanStack DB source checked where the docs were silent. Each cited URL resolves (HTTP 200).
+`electric-sql.com` now answers 301 → `electric.ax`, and Electric's docs moved under `/docs/sync/…`. Evidence marked
+`inferred` is my reading, not something a document states.
 
 ## A. ElectricSQL
 
-- **Latest:** `electricsql/electric:1.8.1`, Docker Hub 2026-09-07 (canary 2026-09-09). This is what we
-  deploy. `@electric-sql/client` 1.5.28 (2026-09-09), `@tanstack/electric-db-collection` 0.4.10
-  (2026-09-14). License Apache-2.0 for both the server and the client.
-- **Company:** "Electric is joining Databricks" (blog, 2026-08-11): "Everything Electric has previously
-  open sourced stays open source", and "Electric Cloud is winding down." Releases have continued
-  since (1.8.0 on 09-01, 1.8.1 on 09-07). The roadmap is now tied to Neon/Lakebase, which is a
-  maturity risk to weigh against O4 and D3.
+- **Latest:** `electricsql/electric:1.8.1`, Docker Hub 2026-09-07 (canary 2026-09-09). This is what we deploy.
+  `@electric-sql/client` 1.5.28 (2026-09-09), `@tanstack/electric-db-collection` 0.4.10 (2026-09-14). License Apache-2.0
+  for both the server and the client.
+- **Company:** "Electric is joining Databricks" (blog, 2026-08-11): "Everything Electric has previously open sourced
+  stays open source", and "Electric Cloud is winding down." Releases have continued since (1.8.0 on 09-01, 1.8.1 on
+  09-07). The roadmap is now tied to Neon/Lakebase, which is a maturity risk to weigh against O4 and D3.
 
 ### Protocol model
 
-- A shape is `(table, where+params, columns, replica, log mode)`. Server source:
-  `comparable/1` = `{table, pk, where, selected_columns, …, replica, log_mode}`. It is immutable:
-  "Shape definitions are currently immutable."
-- A shape is one server-side log, addressed by `offset` and `handle`. It is shared by every reader
-  whose definition matches, resumed with `offset=<last>&handle=<H>`, and followed live by long-poll or
-  SSE (`live_sse=true`).
-- `log=changes_only` "skips creating an initial snapshot". `offset=now` returns the current
-  continuation offset and no data.
-- **Subset snapshots** (since 1.1.12) are one-shot reads of a narrower slice of an existing shape,
-  sent as POST with `{where, params, order_by, limit, offset}` (GET `subset__*` is legacy). The server
-  combines them as `WHERE {main_shape_where} AND ({subset_where})`. It runs them directly against
-  Postgres with "same columns as the base shape" (`querying.ex`), because a subset has no `columns`
-  parameter. Each response ends with `snapshot-end {xmin, xmax, xip_list}`, which the client uses to
-  skip live-log changes the snapshot already contains.
-- **So one stable shape per thread can serve a narrow tail and then further pages.** Use
-  `changes_only`, then `offset=now`, then a subset (`entity_index DESC LIMIT n`), then live. Scrolling
-  back is another subset for the range not yet held. The shape's predicate never moves.
-- **The live log still carries every change in the whole shape.** It is not narrowed to the subsets
-  a client has loaded. TanStack: "On-demand streams can observe updates outside their loaded subsets;
-  unknown partial rows are ignored."
-- **TanStack DB `syncMode`:** `eager` | `on-demand` | `progressive`. `on-demand` maps each live
-  query's `loadSubset(where, orderBy, limit, cursor)` to `stream.requestSnapshot`. When the window
-  grows it sends a cursor (`whereFrom` = rows past the last held boundary, plus a `whereCurrent`
-  tie query), so paging an ordered or limited query fetches only the new rows. **A moved window with
-  a different `where` re-fetches the overlap.** `DeduplicatedLoadSubset` "Deduplicates exact
-  canonical demands without inferring broader coverage". Before each subset it also forces the live
-  poll to reconnect.
-- **Auth pattern:** a proxy pins `table`, `where` and `queryable_columns` (new in 1.6.10). A client
-  subset "can only narrow results, never widen them", and it may not contain subqueries.
+- A shape is `(table, where+params, columns, replica, log mode)`. Server source: `comparable/1` =
+  `{table, pk, where, selected_columns, …, replica, log_mode}`. It is immutable: "Shape definitions are currently
+  immutable."
+- A shape is one server-side log, addressed by `offset` and `handle`. It is shared by every reader whose definition
+  matches, resumed with `offset=<last>&handle=<H>`, and followed live by long-poll or SSE (`live_sse=true`).
+- `log=changes_only` "skips creating an initial snapshot". `offset=now` returns the current continuation offset and no
+  data.
+- **Subset snapshots** (since 1.1.12) are one-shot reads of a narrower slice of an existing shape, sent as POST with
+  `{where, params, order_by, limit, offset}` (GET `subset__*` is legacy). The server combines them as
+  `WHERE {main_shape_where} AND ({subset_where})`. It runs them directly against Postgres with "same columns as the base
+  shape" (`querying.ex`), because a subset has no `columns` parameter. Each response ends with
+  `snapshot-end {xmin, xmax, xip_list}`, which the client uses to skip live-log changes the snapshot already contains.
+- **So one stable shape per thread can serve a narrow tail and then further pages.** Use `changes_only`, then
+  `offset=now`, then a subset (`entity_index DESC LIMIT n`), then live. Scrolling back is another subset for the range
+  not yet held. The shape's predicate never moves.
+- **The live log still carries every change in the whole shape.** It is not narrowed to the subsets a client has loaded.
+  TanStack: "On-demand streams can observe updates outside their loaded subsets; unknown partial rows are ignored."
+- **TanStack DB `syncMode`:** `eager` | `on-demand` | `progressive`. `on-demand` maps each live query's
+  `loadSubset(where, orderBy, limit, cursor)` to `stream.requestSnapshot`. When the window grows it sends a cursor
+  (`whereFrom` = rows past the last held boundary, plus a `whereCurrent` tie query), so paging an ordered or limited
+  query fetches only the new rows. **A moved window with a different `where` re-fetches the overlap.**
+  `DeduplicatedLoadSubset` "Deduplicates exact canonical demands without inferring broader coverage". Before each subset
+  it also forces the live poll to reconnect.
+- **Auth pattern:** a proxy pins `table`, `where` and `queryable_columns` (new in 1.6.10). A client subset "can only
+  narrow results, never widen them", and it may not contain subqueries.
 - **Operations:**
-  - Storage is `MEMORY` or `FAST_FILE` only, holding shape logs on local disk with SQLite metadata.
-    There is **no Postgres- or object-storage shape backend**.
-  - Electric runs as a "single active instance" per replication stream, held by an advisory lock.
-    Read scaling means a CDN or caching proxy with request collapsing, or separate instances that
-    each have their own slot and storage behind sticky sessions.
+  - Storage is `MEMORY` or `FAST_FILE` only, holding shape logs on local disk with SQLite metadata. There is **no
+    Postgres- or object-storage shape backend**.
+  - Electric runs as a "single active instance" per replication stream, held by an advisory lock. Read scaling means a
+    CDN or caching proxy with request collapsing, or separate instances that each have their own slot and storage behind
+    sticky sessions.
   - `ELECTRIC_MAX_SHAPES` defaults to unlimited. The limit of 1024 is our own setting.
 
-**Design scored below:** one `changes_only` shape per thread for entities, one per thread per content
-`field` over the chunk table (for P8), and one control shape per thread. The tail and every scrolled-
-back page are subset snapshots. All live traffic flows over the shared per-thread logs through SSE,
-and our proxy authorizes each request and caps `limit`.
+**Design scored below:** one `changes_only` shape per thread for entities, one per thread per content `field` over the
+chunk table (for P8), and one control shape per thread. The tail and every scrolled- back page are subset snapshots. All
+live traffic flows over the shared per-thread logs through SSE, and our proxy authorizes each request and caps `limit`.
 
 | ID  | V   | Reason                                                                                                                                | Evidence                                                                                                                                          |
 | --- | --- | ------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -92,57 +86,51 @@ and our proxy authorizes each request and caps `limit`.
 
 ### Operating it
 
-1. **Scaling:** there is no Postgres- or object-storage shape backend.
-   `ELECTRIC_STORAGE` ∈ {`MEMORY`, `FAST_FILE`}. Shared NFS/EFS storage is supported, with
-   `ELECTRIC_SHAPE_DB_EXCLUSIVE_MODE=true`.
-2. **Company status:** Electric is now at Databricks, and Electric Cloud is winding down. A lead,
-   out of scope here: Electric now also ships **Durable Streams**, an Apache-2.0, append-only,
-   offset-addressed HTTP stream protocol aimed at "agent loops". It is not a Postgres sync engine.
+1. **Scaling:** there is no Postgres- or object-storage shape backend. `ELECTRIC_STORAGE` ∈ {`MEMORY`, `FAST_FILE`}.
+   Shared NFS/EFS storage is supported, with `ELECTRIC_SHAPE_DB_EXCLUSIVE_MODE=true`.
+2. **Company status:** Electric is now at Databricks, and Electric Cloud is winding down. A lead, out of scope here:
+   Electric now also ships **Durable Streams**, an Apache-2.0, append-only, offset-addressed HTTP stream protocol aimed
+   at "agent loops". It is not a Postgres sync engine.
 
 ## B. PowerSync
 
-- **Latest:** `journeyapps/powersync-service:1.26.1` (Docker Hub 2026-09-14). `@powersync/web` 2.4.1
-  (2026-09-23), which runs SQLite in the browser.
-- **License:** the service is FSL-1.1-ALv2. It is source-available with a "Competing Use" exclusion,
-  and each release becomes Apache-2.0 "on the second anniversary". The client SDKs are Apache-2.0.
-- **Maturity:** Open Edition GA. Postgres source GA. **Sync Streams GA**; Sync Rules are now "Legacy".
-  Postgres bucket storage GA. Storage v4 (incremental reprocessing, S3) is Beta.
+- **Latest:** `journeyapps/powersync-service:1.26.1` (Docker Hub 2026-09-14). `@powersync/web` 2.4.1 (2026-09-23), which
+  runs SQLite in the browser.
+- **License:** the service is FSL-1.1-ALv2. It is source-available with a "Competing Use" exclusion, and each release
+  becomes Apache-2.0 "on the second anniversary". The client SDKs are Apache-2.0.
+- **Maturity:** Open Edition GA. Postgres source GA. **Sync Streams GA**; Sync Rules are now "Legacy". Postgres bucket
+  storage GA. Storage v4 (incremental reprocessing, S3) is Beta.
 
 ### Protocol model
 
-- **Streams.** Server YAML defines Sync Streams, SQL-like queries that "select the tables and columns
-  to sync". A client subscribes at runtime with **subscription parameters**
-  (`db.syncStream('s', {thread, page}).subscribe()`). Several subscriptions to one stream with
-  different values need no reconnect.
-- **Buckets.** Each stream compiles to buckets, "one bucket for each unique value of its filter".
-  They are precomputed at replication time, cover all data rather than only subscribed data, and are
-  shared by every client with the same values. A bucket "is always synced as a whole".
-- **Parameters are equality-only.** "parameter-based filtering is limited to equality checks (`=`,
-  `IN`, `IS NULL`) — range operators like `>`, `<`, `>=`, or `<=` are not supported on parameters."
-  A client cannot ask for `entity_index BETWEEN 50 AND 150`. It can ask for `page IN [1,2]`, given
-  a stored page column (or a row-side expression; the docs use
-  `substring(updated_at,1,10) = subscription.parameter('date')`).
-- **Wire protocol.** There is one long-lived HTTP stream or WebSocket per client. The client sends
-  "A list of current buckets that the client has, and the latest operation ID in each". The server
-  streams checkpoint → per-bucket ops from those IDs → checkpoint complete, and resumes from there
-  after any interruption.
-- **Consistency.** Per-bucket checksums are checked at every checkpoint, and a mismatch deletes and
-  re-downloads the bucket. The client applies data only at complete checkpoints, and "Different
-  tables and buckets are all included in the same consistent checkpoint".
-- **Priorities (0–3).** Higher-priority buckets are applied before the whole checkpoint completes.
-  This is how a tail could beat history (P1/S3).
-- **Unsubscribe.** "Data continues syncing for the TTL duration, then is removed". The default TTL is
-  24 h.
-- **Bucket history.** A bucket is an op history (`PUT`/`REMOVE`). A new client downloads everything
-  since the last compaction, which a daily or hourly `compact` job produces. Of the MOVE step: "This does
-  not reduce the number of operations to download".
-- **Auth.** The app's `fetchCredentials()` returns a JWT and the PowerSync URL. The **browser then
-  talks to the PowerSync Service directly**, and rows are scoped by `auth.*` claims and subqueries in
-  stream SQL. This is Electric's "gatekeeper" pattern: the app authorizes at token issuance, not per
-  read.
+- **Streams.** Server YAML defines Sync Streams, SQL-like queries that "select the tables and columns to sync". A client
+  subscribes at runtime with **subscription parameters** (`db.syncStream('s', {thread, page}).subscribe()`). Several
+  subscriptions to one stream with different values need no reconnect.
+- **Buckets.** Each stream compiles to buckets, "one bucket for each unique value of its filter". They are precomputed
+  at replication time, cover all data rather than only subscribed data, and are shared by every client with the same
+  values. A bucket "is always synced as a whole".
+- **Parameters are equality-only.** "parameter-based filtering is limited to equality checks (`=`, `IN`, `IS NULL`) —
+  range operators like `>`, `<`, `>=`, or `<=` are not supported on parameters." A client cannot ask for
+  `entity_index BETWEEN 50 AND 150`. It can ask for `page IN [1,2]`, given a stored page column (or a row-side
+  expression; the docs use `substring(updated_at,1,10) = subscription.parameter('date')`).
+- **Wire protocol.** There is one long-lived HTTP stream or WebSocket per client. The client sends "A list of current
+  buckets that the client has, and the latest operation ID in each". The server streams checkpoint → per-bucket ops from
+  those IDs → checkpoint complete, and resumes from there after any interruption.
+- **Consistency.** Per-bucket checksums are checked at every checkpoint, and a mismatch deletes and re-downloads the
+  bucket. The client applies data only at complete checkpoints, and "Different tables and buckets are all included in
+  the same consistent checkpoint".
+- **Priorities (0–3).** Higher-priority buckets are applied before the whole checkpoint completes. This is how a tail
+  could beat history (P1/S3).
+- **Unsubscribe.** "Data continues syncing for the TTL duration, then is removed". The default TTL is 24 h.
+- **Bucket history.** A bucket is an op history (`PUT`/`REMOVE`). A new client downloads everything since the last
+  compaction, which a daily or hourly `compact` job produces. Of the MOVE step: "This does not reduce the number of
+  operations to download".
+- **Auth.** The app's `fetchCredentials()` returns a JWT and the PowerSync URL. The **browser then talks to the
+  PowerSync Service directly**, and rows are scoped by `auth.*` claims and subqueries in stream SQL. This is Electric's
+  "gatekeeper" pattern: the app authorizes at token issuance, not per read.
 
-**Design scored below.** Two streams, both keyed by `(thread, page)` from a stored page column and
-gated by an `auth.user_id()` subquery on thread membership:
+**Design scored below.** Two streams, both keyed by `(thread, page)` from a stored page column and gated by an
+`auth.user_id()` subquery on thread membership:
 
 - `entities`
 - `content` with `field = subscription.parameter('field')` (P8)
@@ -181,20 +169,19 @@ A thread-meta stream carries `latest_page` and `view_state`.
 
 ### Answers to the specific questions
 
-- **Runtime parameters:** yes, via subscription parameters (GA). **Index range:** no; only equality or
-  `IN` over a precomputed page key.
-- **Moving without re-downloading (D1):** yes at page granularity. Buckets are identified by
-  parameter values, and the client reports its op ID per bucket.
-- **Partial window in browser SQLite:** yes. Only subscribed buckets are held. Paging back means
-  subscribing to page `k-1`.
-- **C2:** the model is "app issues a token whose claims scope the buckets", plus server-side SQL
-  filters. It meets the app-decides clause at token issue, and the pull-volume clause through the
-  bucket limit. It fails "no browser reaches a sync engine directly", and authorization lives in
-  PowerSync's YAML rather than the app. Revocation waits for token expiry. A per-request authorizing
-  proxy would have to parse the WebSocket or HTTP-stream sync request; that is not documented
-  (inferred).
-- **Self-hosting:** Postgres needs logical replication and a `powersync` publication. Bucket storage
-  is MongoDB or Postgres, and S3 is Beta.
+- **Runtime parameters:** yes, via subscription parameters (GA). **Index range:** no; only equality or `IN` over a
+  precomputed page key.
+- **Moving without re-downloading (D1):** yes at page granularity. Buckets are identified by parameter values, and the
+  client reports its op ID per bucket.
+- **Partial window in browser SQLite:** yes. Only subscribed buckets are held. Paging back means subscribing to page
+  `k-1`.
+- **C2:** the model is "app issues a token whose claims scope the buckets", plus server-side SQL filters. It meets the
+  app-decides clause at token issue, and the pull-volume clause through the bucket limit. It fails "no browser reaches a
+  sync engine directly", and authorization lives in PowerSync's YAML rather than the app. Revocation waits for token
+  expiry. A per-request authorizing proxy would have to parse the WebSocket or HTTP-stream sync request; that is not
+  documented (inferred).
+- **Self-hosting:** Postgres needs logical replication and a `powersync` publication. Bucket storage is MongoDB or
+  Postgres, and S3 is Beta.
 
 ## Sources
 
@@ -210,18 +197,15 @@ A thread-meta stream carries `latest_page` and `view_state`.
 - https://hub.docker.com/r/electricsql/electric/tags, npm `@electric-sql/client`
 - https://tanstack.com/db/latest/docs/collections/electric-collection; `TanStack/db`
   `packages/electric-db-collection/src/electric.ts`, `packages/db/src/query/subset-dedupe.ts` @ `6907244`
-- https://tanstack.com/blog/tanstack-db-0.5-query-driven-sync (Nov 2025: "only fetches the delta").
-  This is superseded by the exact-key dedupe in current source.
+- https://tanstack.com/blog/tanstack-db-0.5-query-driven-sync (Nov 2025: "only fetches the delta"). This is superseded
+  by the exact-key dedupe in current source.
 - https://docs.powersync.com/sync/streams/overview, /sync/streams/parameters, /sync/streams/client-usage
 - https://docs.powersync.com/sync/advanced/sync-data-by-time (equality-only parameters)
 - https://docs.powersync.com/sync/supported-sql
-- https://docs.powersync.com/architecture/powersync-protocol, /architecture/consistency,
-  /architecture/powersync-service
-- https://docs.powersync.com/maintenance-ops/self-hosting/deployment-architecture,
-  /maintenance-ops/compacting-buckets
+- https://docs.powersync.com/architecture/powersync-protocol, /architecture/consistency, /architecture/powersync-service
+- https://docs.powersync.com/maintenance-ops/self-hosting/deployment-architecture, /maintenance-ops/compacting-buckets
 - https://docs.powersync.com/resources/performance-and-limits, /resources/feature-status
 - https://docs.powersync.com/configuration/auth/overview
-- https://hub.docker.com/r/journeyapps/powersync-service/tags; `powersync-service` `LICENSE`
-  (FSL-1.1-ALv2)
-- Unreachable: `api.github.com` and `github.com` HTML (proxy 403), so GitHub release pages were not
-  read. Versions and dates come from Docker Hub and npm.
+- https://hub.docker.com/r/journeyapps/powersync-service/tags; `powersync-service` `LICENSE` (FSL-1.1-ALv2)
+- Unreachable: `api.github.com` and `github.com` HTML (proxy 403), so GitHub release pages were not read. Versions and
+  dates come from Docker Hub and npm.

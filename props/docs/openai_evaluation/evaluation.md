@@ -1,20 +1,20 @@
 # Running Props Evaluation with the OpenAI API
 
-End-to-end procedure for running the props critic and grader against committed
-specimen snapshots using the OpenAI Responses API (e.g., `gpt-5-mini`).
+End-to-end procedure for running the props critic and grader against committed specimen snapshots using the OpenAI
+Responses API (e.g., `gpt-5-mini`).
 
 See <../local_llm_evaluation/evaluation.md> for the local LLM variant.
 
 ## Prerequisites
 
-- A running props stack: PostgreSQL, OCI registry, backend with agent images
-  pushed. The `/test_props setup` skill automates this.
+- A running props stack: PostgreSQL, OCI registry, backend with agent images pushed. The `/test_props setup` skill
+  automates this.
 - `OPENAI_API_KEY` environment variable set with a valid OpenAI key
 
 ## OpenAI-Specific Configuration
 
-Declare both the OpenAI upstream and every model that may use it in the config
-file. Props has no implicit direct-OpenAI fallback:
+Declare both the OpenAI upstream and every model that may use it in the config file. Props has no implicit direct-OpenAI
+fallback:
 
 ```toml
 [upstreams.openai]
@@ -36,9 +36,8 @@ The upstream URL must include `/v1`: the LLM proxy appends `/responses`.
 
 ## Running Critics
 
-Start with file-set examples — they are faster and cheaper than whole-snapshot
-runs. These examples have the most TP occurrences directly in scope (counted
-via `critic_scopes_expected_to_recall` subset join):
+Start with file-set examples — they are faster and cheaper than whole-snapshot runs. These examples have the most TP
+occurrences directly in scope (counted via `critic_scopes_expected_to_recall` subset join):
 
 | Rank | Snapshot                       | Files                                                        | `files_hash`                       | TPs | Occurrences |
 | ---- | ------------------------------ | ------------------------------------------------------------ | ---------------------------------- | --- | ----------- |
@@ -80,21 +79,19 @@ curl -s -X POST 'http://localhost:8000/api/runs/critic' \
   }'
 ```
 
-The `GraderSupervisor` (enabled by `grader_model` in the config) automatically
-grades each critic's output after it finishes. Monitor with:
+The `GraderSupervisor` (enabled by `grader_model` in the config) automatically grades each critic's output after it
+finishes. Monitor with:
 
 ```bash
 psql -c "SELECT agent_run_id, type_config->>'agent_type' AS type, model, status,
          container_exit_code FROM agent_runs ORDER BY created_at"
 ```
 
-Wait until both critic and grader runs show `status = 'exited'` with
-`container_exit_code = 0`.
+Wait until both critic and grader runs show `status = 'exited'` with `container_exit_code = 0`.
 
 ## Exporting Results
 
-Export run results (excluding ground truth and infrastructure tables) for
-another session to import:
+Export run results (excluding ground truth and infrastructure tables) for another session to import:
 
 ```bash
 pg_dump eval_results \
@@ -117,25 +114,22 @@ pg_dump eval_results \
   && zstd --rm --ultra -22 props/docs/openai_evaluation/results.sql
 ```
 
-Uses plain SQL format piped through zstd. The `llm_requests` table stores full
-conversation transcripts that grow O(N^2) across agent turns — zstd compresses
-the cross-row redundancy far better than pg_dump's per-row gzip (197 KB vs
-6 MB for the same data).
+Uses plain SQL format piped through zstd. The `llm_requests` table stores full conversation transcripts that grow O(N^2)
+across agent turns — zstd compresses the cross-row redundancy far better than pg_dump's per-row gzip (197 KB vs 6 MB for
+the same data).
 
-Exports: `agent_definitions`, `agent_runs`, `reported_issues`,
-`reported_issue_occurrences`, `grading_edges`, `issue_clusters`,
-`issue_cluster_members`, `llm_requests`.
+Exports: `agent_definitions`, `agent_runs`, `reported_issues`, `reported_issue_occurrences`, `grading_edges`,
+`issue_clusters`, `issue_cluster_members`, `llm_requests`.
 
 ## Importing Results
 
 To continue from an exported dump in a new session:
 
-1. Set up a running props stack (PostgreSQL infrastructure, schema, and specimens).
-   The schema is created by `db recreate` (or `auto_migrate = true` in the config).
-   Specimens must be synced before importing (via `auto_sync_specimens = true` in
-   the config with `/specimens` symlinked to `props/specimens`, or via
-   `bazel run //props/cli:cli -- db sync-specimen` per specimen). The dump excludes
-   specimen tables — they must be present in the DB for FK consistency.
+1. Set up a running props stack (PostgreSQL infrastructure, schema, and specimens). The schema is created by
+   `db recreate` (or `auto_migrate = true` in the config). Specimens must be synced before importing (via
+   `auto_sync_specimens = true` in the config with `/specimens` symlinked to `props/specimens`, or via
+   `bazel run //props/cli:cli -- db sync-specimen` per specimen). The dump excludes specimen tables — they must be
+   present in the DB for FK consistency.
 2. Import:
 
 ```bash
@@ -143,5 +137,5 @@ zstd -dc props/docs/openai_evaluation/results.sql.zst \
   | psql --set ON_ERROR_STOP=on -d eval_results
 ```
 
-The circular FKs (`agent_runs` <-> `agent_definitions`) are `DEFERRABLE
-INITIALLY DEFERRED`, so insert order doesn't matter.
+The circular FKs (`agent_runs` <-> `agent_definitions`) are `DEFERRABLE INITIALLY DEFERRED`, so insert order doesn't
+matter.

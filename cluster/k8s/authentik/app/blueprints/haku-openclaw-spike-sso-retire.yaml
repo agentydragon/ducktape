@@ -2,7 +2,8 @@ version: 1
 metadata:
   name: Retire Haku OpenClaw Spike SSO
   labels:
-    blueprints.goauthentik.io/description: "Delete the decommissioned Haku OpenClaw spike application and proxy provider"
+    blueprints.goauthentik.io/description:
+      "Delete the decommissioned Haku OpenClaw spike application and proxy provider"
 
 entries:
   - model: authentik_core.application

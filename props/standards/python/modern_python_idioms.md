@@ -3,14 +3,17 @@ title: Prefer modern Python idioms (operators, types)
 kind: outcome
 ---
 
-Use modern Python 3.11+ idioms that improve clarity and brevity: dict merge operators, set operators, PEP 604 union types, and related conveniences. Prefer these over legacy patterns.
+Use modern Python 3.11+ idioms that improve clarity and brevity: dict merge operators, set operators, PEP 604 union
+types, and related conveniences. Prefer these over legacy patterns.
 
 ## Acceptance criteria (checklist)
 
 - Dictionaries:
-  - Use merge and update operators (PEP 584): `a | b` and `a |= b` (right side wins on key conflicts). Avoid `{**a, **b}` or manual loops for merging.
+  - Use merge and update operators (PEP 584): `a | b` and `a |= b` (right side wins on key conflicts). Avoid
+    `{**a, **b}` or manual loops for merging.
 - Sets:
-  - Use operator forms for set algebra: `|` (union), `&` (intersection), `-` (difference), `^` (symmetric difference), and their in‑place variants `|=`, `&=`, `-=`, `^=`. Avoid verbose method chains when simple operators suffice.
+  - Use operator forms for set algebra: `|` (union), `&` (intersection), `-` (difference), `^` (symmetric difference),
+    and their in‑place variants `|=`, `&=`, `-=`, `^=`. Avoid verbose method chains when simple operators suffice.
 - Type hints:
   - Use union types with `|` (PEP 604): `A | B | C` instead of `Union[A, B, C]`.
   - Prefer `Self`/`from __future__ import annotations` patterns as needed (see [Type hints](./type_hints.md)).
@@ -20,7 +23,8 @@ Use modern Python 3.11+ idioms that improve clarity and brevity: dict merge oper
 - Strings:
   - Prefer `str.removeprefix/suffix` over slicing for safety and intent (see [String affixes](./str_affixes.md)).
 - Pattern matching:
-  - Consider `match/case` for simple tag dispatch or structural cases when it improves readability over long `if/elif` chains.
+  - Consider `match/case` for simple tag dispatch or structural cases when it improves readability over long `if/elif`
+    chains.
 
 ## Positive examples
 
@@ -91,5 +95,7 @@ def f(x: Union[int, str]) -> int:  # ❌ prefer int | str
 
 ## Notes
 
-- Readability first: prefer these idioms when they clarify intent and reduce noise; if an operator would obscure meaning in a complex expression, a named helper or method call can be acceptable.
-- Related properties: [Walrus operator](./walrus.md), [String affixes](./str_affixes.md), [Type hints](./type_hints.md), [Pathlib usage](./pathlib.md).
+- Readability first: prefer these idioms when they clarify intent and reduce noise; if an operator would obscure meaning
+  in a complex expression, a named helper or method call can be acceptable.
+- Related properties: [Walrus operator](./walrus.md), [String affixes](./str_affixes.md), [Type hints](./type_hints.md),
+  [Pathlib usage](./pathlib.md).

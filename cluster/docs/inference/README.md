@@ -2,84 +2,66 @@
 
 ## Goal
 
-Two RTX 5090s on `wyrm2`. The point of this directory is to figure out
-**how to make them do useful work for me** — and to keep doing so as
-models, configs, and tasks evolve. Three things to decide:
+Two RTX 5090s on `wyrm2`. The point of this directory is to figure out **how to make them do useful work for me** — and
+to keep doing so as models, configs, and tasks evolve. Three things to decide:
 
-1. **Which models** — quality on jobs that matter (AI-powered coding;
-   reverse engineering, see <../../../skills/reverse_engineer/>; FreeCAD,
-   see <../../../skills/freecad/>; reasoning tasks generally).
-2. **Which inference config** — backend (Ollama, vLLM, …), quant,
-   parallelism, context — for speed and usability.
-3. **Which jobs / proxies** — usually off-the-shelf Inspect AI tasks
-   (AIME, HumanEval+, GPQA, …) since most things we care about have a
-   close-enough proxy already implemented. Custom tasks are a separate
-   track when no off-the-shelf eval matches.
+1. **Which models** — quality on jobs that matter (AI-powered coding; reverse engineering, see
+   <../../../skills/reverse_engineer/>; FreeCAD, see <../../../skills/freecad/>; reasoning tasks generally).
+2. **Which inference config** — backend (Ollama, vLLM, …), quant, parallelism, context — for speed and usability.
+3. **Which jobs / proxies** — usually off-the-shelf Inspect AI tasks (AIME, HumanEval+, GPQA, …) since most things we
+   care about have a close-enough proxy already implemented. Custom tasks are a separate track when no off-the-shelf
+   eval matches.
 
-Each eval gives us two signals at once: how good a model is at a task,
-and how the inference config holds up under it.
+Each eval gives us two signals at once: how good a model is at a task, and how the inference config holds up under it.
 
 ## Hub layout
 
-Docs hub for LLM inference on the cluster. Notes that should outlive any
-one deployment go here; reusable service scripts live with the workload
-(`cluster/cdk8s/ollama/`, `x/local_llm/`), while exact experimental drivers live
-with their dated run records.
+Docs hub for LLM inference on the cluster. Notes that should outlive any one deployment go here; reusable service
+scripts live with the workload (`cluster/cdk8s/ollama/`, `x/local_llm/`), while exact experimental drivers live with
+their dated run records.
 
 ## What's here
 
-- <PLAN.md> — active program for mapping agent-capable models across context,
-  quality, latency, conventional GPU serving, and exotic RAM/SSD/CPU-offload
-  runtimes on `wyrm2`. Owns the measurement conventions and the experiment order.
-- <results.md> — hand-maintained comparison table of current configurations,
-  with source/trust marks on every number.
-- <backend_comparison.md> — feature/format/API matrix across llama.cpp, Ollama,
-  vLLM, SGLang, TensorRT-LLM, and the rest. Includes current cluster state
-  and migration path. Decision document for picking what to run on wyrm2.
-- <vllm_history.md> — distilled lessons from the prior wyrm2-host vLLM work
-  (Qwen3-Coder OOM saga, AWQ + FP8 KV cache + `--max-num-seqs 32` fix). Read
-  before re-attempting vLLM in cluster.
-- <benchmarks.md> — legacy configuration and measurement register plus runner
-  notes. Historical evidence, frozen; current numbers live in <results.md>.
-- <runs/2026-07-14_glm52_colibri/README.md> — reproducible wyrm2 host run of
-  GLM-5.2 through Colibri's disk-streamed MoE runtime, including the pinned
-  flake, checkpoint gate, run scripts, measurements, and experiment verdict.
-- <qwen3_coder_vram_analysis.md> — full VRAM math, debug logs, profiler
-  output. Source data for `vllm_history.md`.
-- <vllm_container_plan.md> — home-manager systemd-user service plan that
-  ran vLLM on wyrm2.
+- <PLAN.md> — active program for mapping agent-capable models across context, quality, latency, conventional GPU
+  serving, and exotic RAM/SSD/CPU-offload runtimes on `wyrm2`. Owns the measurement conventions and the experiment
+  order.
+- <results.md> — hand-maintained comparison table of current configurations, with source/trust marks on every number.
+- <backend_comparison.md> — feature/format/API matrix across llama.cpp, Ollama, vLLM, SGLang, TensorRT-LLM, and the
+  rest. Includes current cluster state and migration path. Decision document for picking what to run on wyrm2.
+- <vllm_history.md> — distilled lessons from the prior wyrm2-host vLLM work (Qwen3-Coder OOM saga, AWQ + FP8 KV cache +
+  `--max-num-seqs 32` fix). Read before re-attempting vLLM in cluster.
+- <benchmarks.md> — legacy configuration and measurement register plus runner notes. Historical evidence, frozen;
+  current numbers live in <results.md>.
+- <runs/2026-07-14_glm52_colibri/README.md> — reproducible wyrm2 host run of GLM-5.2 through Colibri's disk-streamed MoE
+  runtime, including the pinned flake, checkpoint gate, run scripts, measurements, and experiment verdict.
+- <qwen3_coder_vram_analysis.md> — full VRAM math, debug logs, profiler output. Source data for `vllm_history.md`.
+- <vllm_container_plan.md> — home-manager systemd-user service plan that ran vLLM on wyrm2.
 - <kv_cache_quantization.md> — KV cache dtype research (FP16 vs FP8 vs Q8).
 - <model_download_history.md> — model search log and download status.
-- <reasoning_vs_agentic_coding.md> — model selection research for the
-  reasoning vs coding-agent tradeoff.
-- <TODO.md> — prioritized next-steps list, ranked by information gain
-  toward the goal above.
+- <reasoning_vs_agentic_coding.md> — model selection research for the reasoning vs coding-agent tradeoff.
+- <TODO.md> — prioritized next-steps list, ranked by information gain toward the goal above.
 
 ## Current state
 
-As checked September 27, cluster **Ollama 0.34.4 / GGUF on wyrm2** serves
-Qwen3.8-Flash-Next IQ4_XS from the SSD-backed PV while retaining its HDD registry
-and other models. The [September 27 run](runs/2026-09-27_ollama_ssd/README.md)
-records 128K and 256K serving checks, including a successful 145K history; full
-256K input and concurrent serving remain untested. Host experiment containers have
-been stopped. Pause Ollama through GitOps before resuming exclusive GPU experiments;
-retain its PVC. The [September SSD run](runs/2026-09-24_qwen38_ssd/README.md)
-records the earlier host Qwen3.8 experiments and launch commands. The July
-`runs/` records include Kubernetes vLLM experiments, while host launchers live
-in `x/local_llm/`. The dated backend matrix is in <backend_comparison.md>.
+As checked September 27, cluster **Ollama 0.34.4 / GGUF on wyrm2** serves Qwen3.8-Flash-Next IQ4_XS from the SSD-backed
+PV while retaining its HDD registry and other models. The [September 27 run](runs/2026-09-27_ollama_ssd/README.md)
+records 128K and 256K serving checks, including a successful 145K history; full 256K input and concurrent serving remain
+untested. Host experiment containers have been stopped. Pause Ollama through GitOps before resuming exclusive GPU
+experiments; retain its PVC. The [September SSD run](runs/2026-09-24_qwen38_ssd/README.md) records the earlier host
+Qwen3.8 experiments and launch commands. The July `runs/` records include Kubernetes vLLM experiments, while host
+launchers live in `x/local_llm/`. The dated backend matrix is in <backend_comparison.md>.
 
 ## Tracking
 
-Add new lessons here as we accumulate them. When investigating a specific
-incident or migration, write a focused doc and link it from this README.
+Add new lessons here as we accumulate them. When investigating a specific incident or migration, write a focused doc and
+link it from this README.
 
 ## Next work
 
-The active program prioritizes coding capability, including GPU/RAM offload and
-SSD-streamed models. Keep model-card quality separate from local quantized
-agent results; E1–E5 are completed historical baselines. Each run is a `runs/<run-id>/` directory (manifests/scripts + a
-README with the numbers); current comparisons land in <results.md>. Persistent
-individual tasks remain in <TODO.md>.
+The active program prioritizes coding capability, including GPU/RAM offload and SSD-streamed models. Keep model-card
+quality separate from local quantized agent results; E1–E5 are completed historical baselines. Each run is a
+`runs/<run-id>/` directory (manifests/scripts + a README with the numbers); current comparisons land in <results.md>.
+Persistent individual tasks remain in <TODO.md>.
 
 ## See also
 

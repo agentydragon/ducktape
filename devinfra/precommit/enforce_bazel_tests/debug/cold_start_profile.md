@@ -1,8 +1,7 @@
 # Cold-Start Query Profile Analysis (2026-04-01)
 
-Bazel 8.6.0, ext4 filesystem, gVisor sandbox.
-Query: `kind(".*_test", //...)` from a fully shut-down server.
-Wall clock: **15.4s** (429 targets found).
+Bazel 8.6.0, ext4 filesystem, gVisor sandbox. Query: `kind(".*_test", //...)` from a fully shut-down server. Wall clock:
+**15.4s** (429 targets found).
 
 ## Critical path
 
@@ -26,22 +25,19 @@ Wall clock: **15.4s** (429 targets found).
 
 ### Why only 15s instead of 29s?
 
-The previous benchmark showed ~29s for the first cold query because that was
-the very first query on a fresh `--output_base` (no on-disk repo cache).
-This run reuses a warm on-disk cache from earlier bench runs — Bazel doesn't
-need to re-download module source archives, only re-fetch MODULE.bazel files
-from BCR and re-evaluate module extensions.
+The previous benchmark showed ~29s for the first cold query because that was the very first query on a fresh
+`--output_base` (no on-disk repo cache). This run reuses a warm on-disk cache from earlier bench runs — Bazel doesn't
+need to re-download module source archives, only re-fetch MODULE.bazel files from BCR and re-evaluate module extensions.
 
 ## Phase 1: JVM startup (1.4s)
 
-The Bazel client launches the server JVM. The 1.4s here vs 11.6s in the
-first-ever cold start is because the JVM class data sharing (CDS) archive
-and installation are already warm on disk.
+The Bazel client launches the server JVM. The 1.4s here vs 11.6s in the first-ever cold start is because the JVM class
+data sharing (CDS) archive and installation are already warm on disk.
 
 ## Phase 2: Module resolution from BCR (3.6s)
 
-Bazel's first Skyframe evaluation fetches MODULE.bazel files from the
-Bazel Central Registry (BCR) to resolve the module dependency graph:
+Bazel's first Skyframe evaluation fetches MODULE.bazel files from the Bazel Central Registry (BCR) to resolve the module
+dependency graph:
 
 | Module                   | Fetch time |
 | ------------------------ | ---------- |
@@ -53,15 +49,13 @@ Bazel Central Registry (BCR) to resolve the module dependency graph:
 | `bazel_lib@3.0.0-beta.1` | 0.08s      |
 | (many more, overlapping) | ...        |
 
-These are **network I/O bound** — sequential HTTP GETs to
-`bcr.bazel.build` through the auth proxy. Many are parallelized by
-Skyframe but the dependency chain between modules creates serialization.
+These are **network I/O bound** — sequential HTTP GETs to `bcr.bazel.build` through the auth proxy. Many are
+parallelized by Skyframe but the dependency chain between modules creates serialization.
 
 ## Phase 3: Query evaluation (9.4s)
 
-The second Skyframe evaluation runs the actual query. This evaluates
-module extensions, fetches external repositories, loads BUILD files,
-and evaluates the `kind(".*_test", ...)` filter.
+The second Skyframe evaluation runs the actual query. This evaluates module extensions, fetches external repositories,
+loads BUILD files, and evaluates the `kind(".*_test", ...)` filter.
 
 ### Module extension evaluation
 
@@ -73,9 +67,8 @@ and evaluates the `kind(".*_test", ...)` filter.
 | `python.bzl%python`      | ~0.6s     | `_get_toolchain_config`    |
 | `go_deps`                | ~0.6s     | `sums_from_go_mod`         |
 
-These are **CPU-bound** Starlark execution — parsing lockfiles
-(requirements_bazel.txt, pnpm-lock.yaml, go.sum) and generating
-repository rule declarations for each dependency.
+These are **CPU-bound** Starlark execution — parsing lockfiles (requirements_bazel.txt, pnpm-lock.yaml, go.sum) and
+generating repository rule declarations for each dependency.
 
 ### Repository fetching (parallelized)
 
@@ -86,10 +79,8 @@ repository rule declarations for each dependency.
 | other     | 101   | 4.9s            | 0.049s       |
 | **Total** | 3042  | 130.8s          | 0.043s       |
 
-The 130.8s of aggregated time runs in parallel across Skyframe threads,
-compressing into the ~9.4s wall time. Each npm link repo creates a
-symlink-tree workspace directory — this is **I/O-bound** (filesystem
-operations on ext4).
+The 130.8s of aggregated time runs in parallel across Skyframe threads, compressing into the ~9.4s wall time. Each npm
+link repo creates a symlink-tree workspace directory — this is **I/O-bound** (filesystem operations on ext4).
 
 ### Package loading (parallelized)
 
@@ -99,9 +90,8 @@ operations on ext4).
 | Aggregated time | 60.3s                                            |
 | Slowest package | 0.44s (`props/specimens/ducktape/2025-11-26-00`) |
 
-Package loading runs in parallel with repo fetching. Each package
-parses its BUILD file and evaluates macros (Starlark). The `specimens`
-packages are slow due to large `glob()` patterns matching many files.
+Package loading runs in parallel with repo fetching. Each package parses its BUILD file and evaluates macros (Starlark).
+The `specimens` packages are slow due to large `glob()` patterns matching many files.
 
 ## Resource utilization
 

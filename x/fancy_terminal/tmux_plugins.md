@@ -58,7 +58,8 @@ set -g @resurrect-strategy-vim  'session'
 Notes
 
 - Prefix defaults to Ctrl-b; if you change it, most plugins just work but some keyhints assume the default.
-- Resurrect can restore panes and commands; for long-running servers, consider supervising via your usual tools rather than restore-on-start.
+- Resurrect can restore panes and commands; for long-running servers, consider supervising via your usual tools rather
+  than restore-on-start.
 - If a plugin misbehaves, comment it out, reload (prefix r), then prefix Alt-u to uninstall via TPM.
 
 Troubleshooting

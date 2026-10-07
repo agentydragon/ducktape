@@ -1,24 +1,20 @@
 # environment-manager Reverse Engineering
 
-Analysis and reconstruction of Anthropic's `environment-manager` binary — the
-Go-based orchestration service that manages Claude Code web container sessions.
+Analysis and reconstruction of Anthropic's `environment-manager` binary — the Go-based orchestration service that
+manages Claude Code web container sessions.
 
-> **The binary is garble-obfuscated, including `-literals`.** Symbol names are
-> randomized, `go version -m` returns "unknown", there is no DWARF, and string
-> constants are encrypted so the binary's own help text does not appear in
-> `strings` output. All of that is defeated — see [Working with the binary](#working-with-the-binary).
-> Full function-level disassembly is available; RE does **not** need to fall
-> back to string analysis.
+> **The binary is garble-obfuscated, including `-literals`.** Symbol names are randomized, `go version -m` returns
+> "unknown", there is no DWARF, and string constants are encrypted so the binary's own help text does not appear in
+> `strings` output. All of that is defeated — see [Working with the binary](#working-with-the-binary). Full
+> function-level disassembly is available; RE does **not** need to fall back to string analysis.
 
 ## Target Binary
 
-The reconstructed source under `src/` reflects the binary described in this
-table (`0b86a2a0`, `release-1186d93b9-ext`). A newer live build,
-`release-ba76006550-ext`, was captured to `reference/environment-manager.gz`
-on 2026-09-12 and is **not yet reconciled** — see `../TODO.md`. That build
-ships with **no ELF Build ID note at all** (`readelf -n` finds nothing),
-where every prior build had one; the table below stays pinned to `0b86a2a0`
-until the reconstruction pass runs against the new build.
+The reconstructed source under `src/` reflects the binary described in this table (`0b86a2a0`, `release-1186d93b9-ext`).
+A newer live build, `release-ba76006550-ext`, was captured to `reference/environment-manager.gz` on 2026-09-12 and is
+**not yet reconciled** — see `../TODO.md`. That build ships with **no ELF Build ID note at all** (`readelf -n` finds
+nothing), where every prior build had one; the table below stays pinned to `0b86a2a0` until the reconstruction pass runs
+against the new build.
 
 | Property           | Value                                                                                                                      |
 | ------------------ | -------------------------------------------------------------------------------------------------------------------------- |
@@ -36,9 +32,8 @@ until the reconstruction pass runs against the new build.
 
 ## Working with the binary
 
-Garble strips the ELF symbol table, so `go tool objdump` and `go tool nm` both
-refuse the binary outright. Rebuild the symbol table first — then the entire
-standard toolchain works, including call-target resolution:
+Garble strips the ELF symbol table, so `go tool objdump` and `go tool nm` both refuse the binary outright. Rebuild the
+symbol table first — then the entire standard toolchain works, including call-target resolution:
 
 ```bash
 bazel run //skills/reverse_engineer/examples:gosymtab -- \
@@ -47,8 +42,8 @@ go tool nm /tmp/em.sym | grep TaVHwGAw
 go tool objdump -s '^main\.main$' /tmp/em.sym
 ```
 
-String constants are encrypted, so anchoring on `strings` output does not work.
-Recover them by letting the binary decrypt them and reading its memory:
+String constants are encrypted, so anchoring on `strings` output does not work. Recover them by letting the binary
+decrypt them and reading its memory:
 
 ```bash
 gdb -batch -nx -ex 'set pagination off' -ex 'set confirm off' \
@@ -57,30 +52,25 @@ gdb -batch -nx -ex 'set pagination off' -ex 'set confirm off' \
 strings -n 4 core | sort -u > decrypted.txt   # core is ~1.8 GB; delete it after
 ```
 
-Package and identifier names are randomized per build. <degarble_map.md> maps
-the garbled tokens for this Build ID back to real packages, and explains how to
-regenerate the map for a future binary.
+Package and identifier names are randomized per build. <degarble_map.md> maps the garbled tokens for this Build ID back
+to real packages, and explains how to regenerate the map for a future binary.
 
-Both techniques, and the pitfalls in each, are documented in the
-`reverse_engineer` skill under "Defeating Obfuscation".
+Both techniques, and the pitfalls in each, are documented in the `reverse_engineer` skill under "Defeating Obfuscation".
 
 ## Binary Name vs CLI Name
 
-The binary is named `environment-manager` on disk but the Cobra root command
-is `environment-runner`. All CLI examples in strings use `environment-runner`.
+The binary is named `environment-manager` on disk but the Cobra root command is `environment-runner`. All CLI examples
+in strings use `environment-runner`.
 
 ## Source Tree
 
-The original Go module lives at
-`github.com/anthropics/anthropic/api-go/environment-manager`.
+The original Go module lives at `github.com/anthropics/anthropic/api-go/environment-manager`.
 
-The file layout below came from DWARF debug info in a much older build that
-shipped with symbols; current binaries have none, and garble randomizes
-filenames per function so the real layout is no longer recoverable (see
-<degarble*map.md>). Treat the \_file names* as historical and the _package
-structure_ as current — package boundaries and their contents are re-verified
-against each binary via the recovered symbol table. Entries marked `REMOVED`
-are confirmed absent from the current binary.
+The file layout below came from DWARF debug info in a much older build that shipped with symbols; current binaries have
+none, and garble randomizes filenames per function so the real layout is no longer recoverable (see <degarble*map.md>).
+Treat the \_file names* as historical and the _package structure_ as current — package boundaries and their contents are
+re-verified against each binary via the recovered symbol table. Entries marked `REMOVED` are confirmed absent from the
+current binary.
 
 ```
 main.go                                         # Entry point: Cobra root command + Version
@@ -219,8 +209,8 @@ The binary exposes five subcommands via Cobra:
 
 ### `environment-runner setup`
 
-Installs Claude Code, Sandbox Runtime, and language runtimes. Does NOT start
-a session — use `orchestrator` or `task-run` for that.
+Installs Claude Code, Sandbox Runtime, and language runtimes. Does NOT start a session — use `orchestrator` or
+`task-run` for that.
 
 ```
 environment-runner setup [flags]
@@ -237,8 +227,8 @@ Flags:
 
 ### `environment-runner orchestrator`
 
-Runs the full session lifecycle: setup, lease management, session orchestration,
-graceful shutdown. This is the primary entry point in production containers.
+Runs the full session lifecycle: setup, lease management, session orchestration, graceful shutdown. This is the primary
+entry point in production containers.
 
 ```
 environment-runner orchestrator [flags]
@@ -268,8 +258,8 @@ Flags:
 
 ### `environment-runner task-run`
 
-Executes a single task received via stdin. Used by `orchestrator` as the
-default execute hook, or can be invoked directly.
+Executes a single task received via stdin. Used by `orchestrator` as the default execute hook, or can be invoked
+directly.
 
 ```
 environment-runner task-run [flags]
@@ -301,8 +291,7 @@ Makes a single poll request for work.
 
 ### `environment-runner preload-claude`
 
-Pre-boots a Claude Code process ("a spare") so that a later `task-run` can claim
-it instead of paying cold-start cost.
+Pre-boots a Claude Code process ("a spare") so that a later `task-run` can claim it instead of paying cold-start cost.
 
 ```text
 Pre-boot a Claude Code spare for a later task-run to claim
@@ -315,15 +304,14 @@ Flags:
   -h, --help                 help for preload-claude
 ```
 
-The claim path is instrumented with two metrics recovered from the binary:
-`claude_code.spare.spawn_to_claim_window_ms` ("Wall-clock from spare
-spawn/adopt to Claim (the overlap window W)") and `claude_code.spare.claim_miss`
-("Cold spawn instead of warm-spare claim, attributed by reason").
+The claim path is instrumented with two metrics recovered from the binary: `claude_code.spare.spawn_to_claim_window_ms`
+("Wall-clock from spare spawn/adopt to Claim (the overlap window W)") and `claude_code.spare.claim_miss` ("Cold spawn
+instead of warm-spare claim, attributed by reason").
 
 ### `environment-runner print-sandbox-settings`
 
-Prints default sandbox configuration as JSON to stdout. Output is byte-identical
-to the previous binary; see `reference/sandbox-settings.json`.
+Prints default sandbox configuration as JSON to stdout. Output is byte-identical to the previous binary; see
+`reference/sandbox-settings.json`.
 
 ### `environment-runner completion`
 
@@ -381,14 +369,12 @@ The orchestrator is the central loop:
 3. **Session loop**: Wait for work → process session → report results → repeat
 4. **Shutdown**: Graceful on SIGTERM/SIGINT, kill processes, release lease
 
-The `manager` package ties together environment type, sources, Claude execution,
-MCP servers, and tunnel registration.
+The `manager` package ties together environment type, sources, Claude execution, MCP servers, and tunnel registration.
 
 ### Process Execution (`internal/process/`)
 
-Communicates with `process_api` over WebSocket (port 2024) to spawn and manage
-child processes. Uses the same protocol documented in
-<../process_api/README.md>.
+Communicates with `process_api` over WebSocket (port 2024) to spawn and manage child processes. Uses the same protocol
+documented in <../process_api/README.md>.
 
 Key functions:
 
@@ -408,8 +394,8 @@ Key functions:
 ### Source Management (`internal/sources/`, `internal/gitproxy/`)
 
 - **Git handler**: Clone repositories, fetch updates, checkout branches
-- **Git proxy**: HTTP server implementing Git smart protocol, with JWT auth
-  from GitHub App tokens. Validates git paths, sanitizes errors.
+- **Git proxy**: HTTP server implementing Git smart protocol, with JWT auth from GitHub App tokens. Validates git paths,
+  sanitizes errors.
 - **Source processing**: Iterate over session sources, clone/fetch each
 
 ### Sandbox (`internal/sandbox/`)
@@ -421,53 +407,47 @@ Key functions:
 
 ### Tunnel System (`internal/tunnel/`)
 
-Bidirectional HTTP/WebSocket tunneling using gRPC + protobuf
-(`anthropic.sessions.tunnel.v1alpha`):
+Bidirectional HTTP/WebSocket tunneling using gRPC + protobuf (`anthropic.sessions.tunnel.v1alpha`):
 
 - **Client**: WebSocket + gRPC tunnel client
 - **HTTP handler**: Forward HTTP requests from tunnel to local services
 - **WS handler**: Forward WebSocket connections through tunnel
-- **Deploy action**: Deployment through tunnel using filestore-based mechanism
-  (`filestore_url`, `filesystem_id` fields). **Note:** Vercel and Antspace
-  backends were removed.
+- **Deploy action**: Deployment through tunnel using filestore-based mechanism (`filestore_url`, `filesystem_id`
+  fields). **Note:** Vercel and Antspace backends were removed.
 - **Snapshot action**: Project state snapshot (file listings, git status)
 - **Status action**: Health check (port validation, "ok" response)
 
-Protobuf messages: `HTTPTunnelRequest`, `HTTPTunnelResponseChunk`,
-`HTTPTunnelResponseHeaders`, `WSTunnelOpen`, `WSTunnelClose`,
-`WSTunnelMessage`, `WSTunnelOpened`, `WSTunnelError`.
+Protobuf messages: `HTTPTunnelRequest`, `HTTPTunnelResponseChunk`, `HTTPTunnelResponseHeaders`, `WSTunnelOpen`,
+`WSTunnelClose`, `WSTunnelMessage`, `WSTunnelOpened`, `WSTunnelError`.
 
 ### MCP Servers (`internal/mcp/`)
 
 - **Registry**: Register/unregister MCP servers with Claude Code
 - **Base server**: Common MCP server infrastructure (using `mcp-go` v0.37.0)
 - **Code-sign server**: GPG/SSH code signing via MCP tool calls
-- **Supabase server**: REMOVED in 495ea204 (was: database provisioning,
-  migrations, function deploy, type generation)
+- **Supabase server**: REMOVED in 495ea204 (was: database provisioning, migrations, function deploy, type generation)
 
 ### Authentication (`internal/auth/`)
 
-- `AuthContext`: Holds API token (Anthropic), OAuth token, session ID,
-  session ingress token. **Note:** Vercel deploy token, Antspace control plane
-  URL + auth token, and Supabase credentials were removed.
+- `AuthContext`: Holds API token (Anthropic), OAuth token, session ID, session ingress token. **Note:** Vercel deploy
+  token, Antspace control plane URL + auth token, and Supabase credentials were removed.
 - `GitHubSourceAuthProvider`: GitHub App authentication for source repos
 
 ### Environment Types (`internal/envtype/`)
 
 Two environment types:
 
-- **`anthropic`**: Anthropic-managed infrastructure. Copies install scripts
-  from embedded filesystem, manages language installations.
-- **`byoc`**: Bring Your Own Cloud. Customer-managed infrastructure with
-  custom auth round-tripper (`containProvideAuthRoundTripper`).
+- **`anthropic`**: Anthropic-managed infrastructure. Copies install scripts from embedded filesystem, manages language
+  installations.
+- **`byoc`**: Bring Your Own Cloud. Customer-managed infrastructure with custom auth round-tripper
+  (`containProvideAuthRoundTripper`).
 
 ### Observability (`internal/o11y/`)
 
 Dual exporter: OpenTelemetry (OTLP HTTP) + DataDog StatsD.
 
-Metrics include: `env_manager.claude_install`, `env_manager.language_setup`,
-`env_manager.env_init`, `claude_code_start`, `claude_code_end`,
-`orchestrator.timeout.count`, `tunnel_connect_start`,
+Metrics include: `env_manager.claude_install`, `env_manager.language_setup`, `env_manager.env_init`,
+`claude_code_start`, `claude_code_end`, `orchestrator.timeout.count`, `tunnel_connect_start`,
 `tunnel_connect_retry_wait`, `heartbeat_successful`.
 
 ### Pod Monitor (`internal/podmonitor/`)
@@ -482,8 +462,7 @@ Lease-based container lifecycle:
 
 ### Language Install Scripts
 
-Three bash scripts embedded via Go `embed.FS` in
-`internal/envtype/anthropic/install_scripts/`:
+Three bash scripts embedded via Go `embed.FS` in `internal/envtype/anthropic/install_scripts/`:
 
 | Script                       | Purpose                                    |
 | ---------------------------- | ------------------------------------------ |
@@ -491,14 +470,12 @@ Three bash scripts embedded via Go `embed.FS` in
 | `install_node.sh` (3.3 KB)   | Set up Node.js version symlinks            |
 | `install_go.sh` (6.8 KB)     | Set up Go version symlinks and environment |
 
-These scripts configure language runtimes that are pre-installed in the
-container image (under `/opt/nodeNN/`, `/usr/local/goX.Y.Z/`, etc.) by
-creating appropriate symlinks.
+These scripts configure language runtimes that are pre-installed in the container image (under `/opt/nodeNN/`,
+`/usr/local/goX.Y.Z/`, etc.) by creating appropriate symlinks.
 
 ### Claude Code Hook Templates
 
-The binary contains embedded templates for session-start and stop hooks
-(the "session-start hook skill"), including:
+The binary contains embedded templates for session-start and stop hooks (the "session-start hook skill"), including:
 
 - `stop-hook-baku.sh` — checks for Vite dev server errors and uncommitted changes
 - `stop-hook-git-check.sh` — checks for uncommitted/unpushed changes
@@ -506,8 +483,8 @@ The binary contains embedded templates for session-start and stop hooks
 
 ### Cobra Shell Completions
 
-Full shell completion scripts for bash, zsh, fish, and PowerShell are embedded
-via Cobra's built-in completion generation.
+Full shell completion scripts for bash, zsh, fish, and PowerShell are embedded via Cobra's built-in completion
+generation.
 
 ## Dependencies
 
@@ -561,9 +538,8 @@ Extracted from strings and function analysis:
 
 ## Artifacts
 
-The `495ea204` binary is garble-obfuscated — Go tooling cannot extract module
-info, symbols, or DWARF. Runtime probing and string analysis are the only
-available RE methods:
+The `495ea204` binary is garble-obfuscated — Go tooling cannot extract module info, symbols, or DWARF. Runtime probing
+and string analysis are the only available RE methods:
 
 ```bash
 # Runtime behavior (still works despite obfuscation)
@@ -598,9 +574,8 @@ strings devinfra/claude/web_env/reference/environment-manager | sort -u
 
 ## Reconstruction Status
 
-Source under `src/` was derived from the `a6f96673` DWARF-extracted
-reconstruction. A binary diff between versions revealed significant code
-changes — the source contains dead code that must be removed:
+Source under `src/` was derived from the `a6f96673` DWARF-extracted reconstruction. A binary diff between versions
+revealed significant code changes — the source contains dead code that must be removed:
 
 **Removed in 495ea204 (confirmed via binary diff):**
 
@@ -617,5 +592,4 @@ changes — the source contains dead code that must be removed:
 
 **Unchanged:** V0/V1 session context structs, CLI flags, sandbox settings, API endpoints.
 
-See `BINDIFF_RESULTS.md` for full analysis and `PLAN.md` for
-detailed status.
+See `BINDIFF_RESULTS.md` for full analysis and `PLAN.md` for detailed status.

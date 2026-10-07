@@ -1,24 +1,21 @@
 # Setup Flags Inventory — Proprietary Binaries
 
-Complete reverse engineering of all CLI flags, environment variables, and
-configuration options for both proprietary Claude Code web container binaries.
-Covers when and how each flag is consumed during startup and session lifecycle.
+Complete reverse engineering of all CLI flags, environment variables, and configuration options for both proprietary
+Claude Code web container binaries. Covers when and how each flag is consumed during startup and session lifecycle.
 
-**Source of truth**: `--help` output from the live binaries (Build IDs below).
-Reconstructed source provides call-path details.
+**Source of truth**: `--help` output from the live binaries (Build IDs below). Reconstructed source provides call-path
+details.
 
-> **Stale**: captured against binaries two builds behind the sibling RE docs
-> (which track Build ID `0b86a2a0`); regenerate via the `update_container_re`
-> skill before relying on flag details.
+> **Stale**: captured against binaries two builds behind the sibling RE docs (which track Build ID `0b86a2a0`);
+> regenerate via the `update_container_re` skill before relying on flag details.
 
 ---
 
 ## Binary 1: `process_api` (Rust, stripped)
 
-**Build ID**: `810fd3a49330ce58ff678d539a91723adfda88a8`
-**Framework**: `clap 4.5.20` (derive macro, `#[derive(Parser)]`)
-**Env var convention**: Each `--flag-name` has a corresponding `SCREAMING_SNAKE`
-env var via `#[arg(env = "...")]`.
+**Build ID**: `810fd3a49330ce58ff678d539a91723adfda88a8` **Framework**: `clap 4.5.20` (derive macro,
+`#[derive(Parser)]`) **Env var convention**: Each `--flag-name` has a corresponding `SCREAMING_SNAKE` env var via
+`#[arg(env = "...")]`.
 
 ### CLI Flags
 
@@ -45,8 +42,8 @@ env var via `#[arg(env = "...")]`.
 
 #### `--firecracker-init`
 
-**When**: Checked immediately after CLI parse, **before** the async runtime starts.
-**Path**: `main()` → `if cli.firecracker_init` → `firecracker_init::run_firecracker_init()`
+**When**: Checked immediately after CLI parse, **before** the async runtime starts. **Path**: `main()` →
+`if cli.firecracker_init` → `firecracker_init::run_firecracker_init()`
 
 Full init sequence (synchronous, blocking):
 
@@ -65,17 +62,14 @@ Full init sequence (synchronous, blocking):
 13. Drop `CAP_SYS_RESOURCE`
 14. Write `/proc/sys/vm/drop_caches`
 
-**Snapstart mode**: If `/mount_config.json` doesn't exist at boot, enters snapstart
-template mode and signals `SNAPSTART_READY`. The mount config is then supplied via
-`POST /mount_root` on the control server.
+**Snapstart mode**: If `/mount_config.json` doesn't exist at boot, enters snapstart template mode and signals
+`SNAPSTART_READY`. The mount config is then supplied via `POST /mount_root` on the control server.
 
-Also sets `mount_root_enabled = true` on the control server, enabling the
-`POST /mount_root` endpoint.
+Also sets `mount_root_enabled = true` on the control server, enabling the `POST /mount_root` endpoint.
 
 #### `--addr` / `--listen-uds` / `--dial-uds` / `--listen-vsock-port`
 
-**When**: After cgroup setup, after control server start.
-**Path**: `main()` → priority resolution:
+**When**: After cgroup setup, after control server start. **Path**: `main()` → priority resolution:
 
 1. `--listen-vsock-port` → `run_vsock_ws_listener()` (binds `VsockListener`, validates CID==2)
 2. `--dial-uds` → `run_dial_uds_ws_listener()` (dials out to host-side UDS bridge)
@@ -87,47 +81,41 @@ All three paths feed connections into the same `io::handle_ws_connection()`.
 
 #### `--control-server-addr` / `--control-vsock-port`
 
-**When**: After cgroup setup, before WebSocket listener.
-**Path**: `main()` →
+**When**: After cgroup setup, before WebSocket listener. **Path**: `main()` →
 
 - TCP: `control_server::start_control_server(addr, ..., mount_root_enabled)`
 - Vsock: `control_server::start_vsock_control_server(port, ..., mount_root_enabled)`
 - Neither: SIGINT handler enabled instead
 
-**Mutual exclusion**: When a control server is configured, SIGINT handler is disabled.
-Shutdown is driven by `POST /shutdown` on the control server.
+**Mutual exclusion**: When a control server is configured, SIGINT handler is disabled. Shutdown is driven by
+`POST /shutdown` on the control server.
 
 #### `--memory-limit-bytes`
 
-**When**: After cgroup setup, spawns container OOM monitor task.
-**Path**: `main()` → `if let Some(memory_limit) = cli.memory_limit_bytes` →
-`tokio::spawn(oom_killer::container_oom_monitor(...))`
+**When**: After cgroup setup, spawns container OOM monitor task. **Path**: `main()` →
+`if let Some(memory_limit) = cli.memory_limit_bytes` → `tokio::spawn(oom_killer::container_oom_monitor(...))`
 
 Also passed to every `io::handle_ws_connection()` for per-connection context.
 
 #### `--oom-polling-period-ms`
 
-**When**: Converted to `Duration` and passed to OOM monitor and all WS connection handlers.
-**Path**: `Duration::from_millis(cli.oom_polling_period_ms)` → both
-`container_oom_monitor()` and `handle_ws_connection()`.
+**When**: Converted to `Duration` and passed to OOM monitor and all WS connection handlers. **Path**:
+`Duration::from_millis(cli.oom_polling_period_ms)` → both `container_oom_monitor()` and `handle_ws_connection()`.
 
 #### `--cpu-shares`
 
-**When**: After cgroup setup.
-**Path**: `main()` → `cgroup::set_cpu_shares(&controller.base_path, controller.version, shares)`
+**When**: After cgroup setup. **Path**: `main()` →
+`cgroup::set_cpu_shares(&controller.base_path, controller.version, shares)`
 
 #### `--cgroupv2`
 
-**When**: During cgroup setup.
-**Path**: `main()` → `cgroup::setup_cgroup(cli.cgroupv2)` — forces v2 path regardless
-of auto-detection.
+**When**: During cgroup setup. **Path**: `main()` → `cgroup::setup_cgroup(cli.cgroupv2)` — forces v2 path regardless of
+auto-detection.
 
 #### `--block-local-connections`
 
-**When**: During WebSocket accept loop.
-**Path**: For TCP: checks `is_local_ip(&remote_addr.ip())` on each connection.
-For vsock: checks `peer_cid != 2` (host-only).
-Control server: **always** rejects local IPs regardless of this flag.
+**When**: During WebSocket accept loop. **Path**: For TCP: checks `is_local_ip(&remote_addr.ip())` on each connection.
+For vsock: checks `peer_cid != 2` (host-only). Control server: **always** rejects local IPs regardless of this flag.
 
 ### Live Container Invocation
 
@@ -142,10 +130,9 @@ Control server: **always** rejects local IPs regardless of this flag.
 
 ## Binary 2: `environment-manager` (Go, garble-obfuscated)
 
-**Build ID**: `495ea204294a4d78ef9d6d3ef7cd2d433486514b`
-**Version**: `release-d84d76b7-ext` (via `-ldflags -X main.Version`)
-**Framework**: `cobra v1.9.1` + `pflag`
-**Binary name**: `environment-manager` on disk, `environment-runner` as CLI name
+**Build ID**: `495ea204294a4d78ef9d6d3ef7cd2d433486514b` **Version**: `release-d84d76b7-ext` (via
+`-ldflags -X main.Version`) **Framework**: `cobra v1.9.1` + `pflag` **Binary name**: `environment-manager` on disk,
+`environment-runner` as CLI name
 
 ### Global Flags
 
@@ -173,9 +160,12 @@ Pre-installs dependencies for orchestrator mode. Does NOT start a session.
 1. `parseLogLevel(logLevel)` → `logger.CreateLoggerWithFileOutput(level)`
 2. If not both skipped: `runPreflightChecks()` → `checkNpmAvailable()` (runs `npm --version`)
 3. `loadServiceKey(serviceKeyFile)` — reads file, falls back to `ENVIRONMENT_SERVICE_KEY` env var
-4. If service key: `runAPIHealthcheck()` → `orchestrator.NewWhoamiClient()` → `GetIdentity()` → calls `/v1/environments/whoami`
-5. If `!skipClaudeCode`: `installClaudeCode()` → `claude.InstallOrUpdateClaudeCode()` → `npm install -g @anthropic-ai/claude-code@<version>`
-6. If `!skipSandboxRuntime`: `installSandboxRuntime()` → `sandbox.InstallSandboxRuntime()` → `npm install -g @anthropic-ai/sandbox-runtime@<version>`
+4. If service key: `runAPIHealthcheck()` → `orchestrator.NewWhoamiClient()` → `GetIdentity()` → calls
+   `/v1/environments/whoami`
+5. If `!skipClaudeCode`: `installClaudeCode()` → `claude.InstallOrUpdateClaudeCode()` →
+   `npm install -g @anthropic-ai/claude-code@<version>`
+6. If `!skipSandboxRuntime`: `installSandboxRuntime()` → `sandbox.InstallSandboxRuntime()` →
+   `npm install -g @anthropic-ai/sandbox-runtime@<version>`
 
 ### Subcommand: `orchestrator`
 
@@ -424,8 +414,8 @@ environment-manager task-run --session=<id> --input-format=v1
 
 ## RE Source vs Binary Discrepancies
 
-All previously identified discrepancies have been resolved. The reconstructed
-source in `src/cmd/` now matches the live binary's `--help` output.
+All previously identified discrepancies have been resolved. The reconstructed source in `src/cmd/` now matches the live
+binary's `--help` output.
 
 Previously fixed discrepancies (for historical reference):
 

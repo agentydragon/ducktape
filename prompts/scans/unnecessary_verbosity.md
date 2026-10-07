@@ -6,11 +6,13 @@
 
 ## Overview
 
-Code that is longer than necessary without improving readability, maintainability, or clarity. The goal is conciseness without sacrificing understanding.
+Code that is longer than necessary without improving readability, maintainability, or clarity. The goal is conciseness
+without sacrificing understanding.
 
 ## Core Principle
 
-**Eliminate intermediate variables that don't add clarity.** If a variable is assigned once and used once immediately after, it's likely unnecessary unless it significantly improves readability.
+**Eliminate intermediate variables that don't add clarity.** If a variable is assigned once and used once immediately
+after, it's likely unnecessary unless it significantly improves readability.
 
 ## Pattern 1: Single-Assignment Variables
 
@@ -132,7 +134,8 @@ class Server:
 - **Unnecessary fields**: Pollutes class namespace with redundant state
 - **Maintenance burden**: More fields to track and understand
 
-**No performance exception**: Python is not for performance-critical code. Don't cache fields for "performance" - the overhead is negligible and the complexity isn't worth it.
+**No performance exception**: Python is not for performance-critical code. Don't cache fields for "performance" - the
+overhead is negligible and the complexity isn't worth it.
 
 ### When Intermediate Variables ARE Good
 
@@ -225,7 +228,8 @@ result = await call_tool_typed(sess, "exec", payload, BaseExecResult)
 # Type checker knows: result is BaseExecResult
 ```
 
-**Principle**: If a function signature already provides full type information through TypeVars, don't duplicate it with explicit annotations at call sites. Let type inference work.
+**Principle**: If a function signature already provides full type information through TypeVars, don't duplicate it with
+explicit annotations at call sites. Let type inference work.
 
 ## Pattern 2.7: Verbose Default Derivation
 
@@ -434,7 +438,9 @@ def process_all(things):
 
 ### Principle: Prefer Code That Handles All Cases
 
-**Avoid special-casing empty inputs** when the general case already handles them correctly. Operations like loops, TaskGroups, comprehensions, and aggregations naturally handle empty collections without explicit checks. Adding `if not items: return` is:
+**Avoid special-casing empty inputs** when the general case already handles them correctly. Operations like loops,
+TaskGroups, comprehensions, and aggregations naturally handle empty collections without explicit checks. Adding
+`if not items: return` is:
 
 - **Unnecessary**: The loop/operation is a no-op anyway for empty inputs
 - **Verbose**: Adds extra line and indentation
@@ -503,7 +509,8 @@ result = [item.upper() for item in items]
 
 ## Pattern 6: Walrus Operator Opportunities
 
-The walrus operator (`:=`) can eliminate unnecessary intermediate variables when assigning and immediately checking/using a value.
+The walrus operator (`:=`) can eliminate unnecessary intermediate variables when assigning and immediately
+checking/using a value.
 
 ### BAD: Assign-then-check
 
@@ -576,7 +583,8 @@ if result is not None:
 
 ## Detection Strategy
 
-**Primary Method**: Manual code reading - read through source files, understand the context, look for verbose patterns. Automated tools find candidates but miss context.
+**Primary Method**: Manual code reading - read through source files, understand the context, look for verbose patterns.
+Automated tools find candidates but miss context.
 
 **Automated Preprocessing** (high recall, requires manual verification):
 
@@ -600,7 +608,8 @@ Build AST analyzers to find candidates:
    - Look for: body has `return True`, orelse has `return False`
    - Check for Constant nodes with boolean values
 
-**Implementation**: Strong coding LLM can reconstruct these from description above. Key is walking AST, tracking variables, checking adjacency.
+**Implementation**: Strong coding LLM can reconstruct these from description above. Key is walking AST, tracking
+variables, checking adjacency.
 
 ### Grep Patterns (Quick High-Recall Scan)
 
@@ -627,7 +636,8 @@ rg --type py "^\s*for\s+\w+\s+in.*:\s*$" -A1 --multiline | rg "append\("
 rg --type py "(\w+)\s*=\s*[^\n]+\n\s*return\s+\1\s*$" --multiline
 ```
 
-**Critical**: These patterns have false positives. Always read the actual code, understand intent, check if simplification makes sense.
+**Critical**: These patterns have false positives. Always read the actual code, understand intent, check if
+simplification makes sense.
 
 ## Context Analysis
 
@@ -690,10 +700,8 @@ rg --type py "(\w+)\s*=\s*[^\n]+\n\s*return\s+\1\s*$" --multiline
 
 ## Benefits
 
-✅ **Fewer lines** - Less code to read and maintain
-✅ **Clearer intent** - Direct expression of what's happening
-✅ **Reduced noise** - Fewer meaningless variable names
-✅ **Better signal-to-noise** - Code that matters stands out
+✅ **Fewer lines** - Less code to read and maintain ✅ **Clearer intent** - Direct expression of what's happening ✅
+**Reduced noise** - Fewer meaningless variable names ✅ **Better signal-to-noise** - Code that matters stands out
 
 ## References
 

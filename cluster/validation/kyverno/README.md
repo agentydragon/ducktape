@@ -1,9 +1,8 @@
 # Kyverno policy tests
 
-Tests for the ClusterPolicies in <../../generated/kyverno/policies/> (and the parked
-`inject-mitmproxy`, rendered from its cdk8s chart), driven by the real `kyverno` CLI
-from the multitool lockfile — so they exercise the policy engine itself, not a
-model of it.
+Tests for the ClusterPolicies in <../../generated/kyverno/policies/> (and the parked `inject-mitmproxy`, rendered from
+its cdk8s chart), driven by the real `kyverno` CLI from the multitool lockfile — so they exercise the policy engine
+itself, not a model of it.
 
 ## Layout
 
@@ -15,34 +14,29 @@ model of it.
 | `testdata/`        | input manifests, prefixed by the policy that consumes them             |
 | `__snapshots__/`   | syrupy snapshots, one `.ambr` per snapshot-backed test module          |
 
-**One target per policy.** A failure names the policy it belongs to, and a
-single policy can be run alone. `test_proxy_injection` is the deliberate
-exception: it asserts behaviour every proxy-injection policy shares and is
+**One target per policy.** A failure names the policy it belongs to, and a single policy can be run alone.
+`test_proxy_injection` is the deliberate exception: it asserts behaviour every proxy-injection policy shares and is
 parameterized over them.
 
 ## Coverage
 
-Tested: `default-vpa-requests-only`, `default-disable-service-links`, `inject-mitmproxy`,
-`inject-haku-egress-proxy`, `require-secret-store-conditions`,
-`restrict-agent-gateway-routes`.
+Tested: `default-vpa-requests-only`, `default-disable-service-links`, `inject-mitmproxy`, `inject-haku-egress-proxy`,
+`require-secret-store-conditions`, `restrict-agent-gateway-routes`.
 
 Untested, and why:
 
-- `require-gitops` matches on `request.userInfo`, which plain `kyverno apply`
-  does not supply. It needs
-  `--userinfo` or a mock admission context.
-- `default-revision-history-limit` has no test yet; it is the same shape as
-  `default-vpa-requests-only` (mutate, add-if-absent), so
-  `test_default_vpa_requests_only.py` is the template to copy.
+- `require-gitops` matches on `request.userInfo`, which plain `kyverno apply` does not supply. It needs `--userinfo` or
+  a mock admission context.
+- `default-revision-history-limit` has no test yet; it is the same shape as `default-vpa-requests-only` (mutate,
+  add-if-absent), so `test_default_vpa_requests_only.py` is the template to copy.
 
 ## Gotchas
 
-- **Do not name a shared helper `test*`.** pytest's default
-  `python_functions = test*` collects any imported callable starting with
-  "test", so a helper named `testdata` is picked up as a test and fails looking
-  for a fixture. Hence `manifest()`.
-- **Syrupy names the `.ambr` after the test module**, so splitting or renaming a
-  snapshot-backed module means renaming its snapshot file in the same change.
-- **New testdata must match its target's `glob`.** The globs are prefix-scoped
-  per target (`testdata/pod_*.yaml`, `testdata/namespace_vpa_*.yaml`, …); a file
-  outside the prefix is not in runfiles and the target fails at analysis time.
+- **Do not name a shared helper `test*`.** pytest's default `python_functions = test*` collects any imported callable
+  starting with "test", so a helper named `testdata` is picked up as a test and fails looking for a fixture. Hence
+  `manifest()`.
+- **Syrupy names the `.ambr` after the test module**, so splitting or renaming a snapshot-backed module means renaming
+  its snapshot file in the same change.
+- **New testdata must match its target's `glob`.** The globs are prefix-scoped per target (`testdata/pod_*.yaml`,
+  `testdata/namespace_vpa_*.yaml`, …); a file outside the prefix is not in runfiles and the target fails at analysis
+  time.

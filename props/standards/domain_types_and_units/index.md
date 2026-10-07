@@ -3,7 +3,8 @@ title: Domain‑appropriate types and explicit units
 kind: outcome
 ---
 
-Use semantically rich, domain‑appropriate types instead of bare primitives, and make units explicit. Convert primitive inputs at boundaries; keep a single canonical internal unit/type.
+Use semantically rich, domain‑appropriate types instead of bare primitives, and make units explicit. Convert primitive
+inputs at boundaries; keep a single canonical internal unit/type.
 
 ## Acceptance criteria (checklist)
 
@@ -11,7 +12,8 @@ Use semantically rich, domain‑appropriate types instead of bare primitives, an
 - Paths: use platform path libraries (`pathlib.Path` in Python; `path/filepath` in Go); no string concatenation
 - URLs: build/parse with standard libraries (`urllib.parse`, `net/url`); no manual string concatenation
 - Byte sizes: explicit unit suffixes (e.g., `_bytes`, `_mib`) or typed wrappers; one source of truth for limits
-- Physical quantities: explicit unit suffixes (e.g., `_meters`, `_celsius`) or unit libraries; normalize to canonical internal units
+- Physical quantities: explicit unit suffixes (e.g., `_meters`, `_celsius`) or unit libraries; normalize to canonical
+  internal units
 - Boundary conversion: convert inbound/outbound primitives at edges
 
 ## Motivating examples

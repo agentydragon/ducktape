@@ -6,7 +6,9 @@ metadata:
   labels:
     app.kubernetes.io/name: kubectl-machine-mcp
   annotations:
-    description: "containers/kubernetes-mcp-server in OAuth passthrough mode, trusting the kubectl-sandbox-client-credentials (machine) issuer. Caller's Authentik JWT is forwarded directly to kube-apiserver; server itself is unprivileged."
+    description:
+      "containers/kubernetes-mcp-server in OAuth passthrough mode, trusting the kubectl-sandbox-client-credentials
+      (machine) issuer. Caller's Authentik JWT is forwarded directly to kube-apiserver; server itself is unprivileged."
     reloader.stakater.com/auto: "true"
 spec:
   replicas: 1

@@ -3,15 +3,19 @@ title: Imports at the top
 kind: outcome
 ---
 
-All imports appear at the top of the module (not inside functions/classes); the only exception is a localized import used to break an otherwise unavoidable import cycle and must be documented with an inline comment.
+All imports appear at the top of the module (not inside functions/classes); the only exception is a localized import
+used to break an otherwise unavoidable import cycle and must be documented with an inline comment.
 
 ## Acceptance criteria (checklist)
 
 - No `import` or `from ... import ...` statements inside functions, methods, or class bodies
 - Module-level imports are grouped at the top (after optional shebang/encoding line and module docstring)
-- The only permitted in-function imports are narrowly justified cases and must include an inline comment explaining the reason: breaking an import cycle; dynamic runtime import by string (plugin discovery, `module:function` resolution) or hot-reload; or truly excessive import cost that would unacceptably degrade startup time
+- The only permitted in-function imports are narrowly justified cases and must include an inline comment explaining the
+  reason: breaking an import cycle; dynamic runtime import by string (plugin discovery, `module:function` resolution) or
+  hot-reload; or truly excessive import cost that would unacceptably degrade startup time
 
-- Dynamic imports via `__import__` and `importlib.import_module` follow the same restriction; they are not allowed inside functions unless one of the allowed exceptions applies
+- Dynamic imports via `__import__` and `importlib.import_module` follow the same restriction; they are not allowed
+  inside functions unless one of the allowed exceptions applies
 
 ## Positive examples
 
@@ -43,12 +47,16 @@ import logging
 
 ## Exceptions (narrow, justified)
 
-Verified presence of certain listed unusual cases may justify a local import, but only with a verifiable AND accurate inline comment explaining the reason:
+Verified presence of certain listed unusual cases may justify a local import, but only with a verifiable AND accurate
+inline comment explaining the reason:
 
-- Import cycle: comment must specifically describe the cycle a module-level import would create; prefer refactoring to remove the cycle when feasible.
-- Heavy import: the module must be measurably expensive at import time and the localized import must materially reduce startup cost.
-- Dynamic plugin/entrypoint or hot-reload: the behavior truly requires runtime import.
-  Do not apply an exception if the module is already imported at the top elsewhere, the cost is negligible, or the cycle can be eliminated with a small refactor.
+- Import cycle: comment must specifically describe the cycle a module-level import would create; prefer refactoring to
+  remove the cycle when feasible.
+- Heavy import: the module must be measurably expensive at import time and the localized import must materially reduce
+  startup cost.
+- Dynamic plugin/entrypoint or hot-reload: the behavior truly requires runtime import. Do not apply an exception if the
+  module is already imported at the top elsewhere, the cost is negligible, or the cycle can be eliminated with a small
+  refactor.
 
 ### Import cycle
 
@@ -148,4 +156,6 @@ def compute_now():
 
 ## Cross-references
 
-- [Truthfulness](../truthfulness.md): misleading "avoid cycle"/"heavy import" comments are untruthful when no cycle/heaviness exists; moving imports into functions can also misrepresent real dependency structure. Keep comments and structure honest about why an exception is taken.
+- [Truthfulness](../truthfulness.md): misleading "avoid cycle"/"heavy import" comments are untruthful when no
+  cycle/heaviness exists; moving imports into functions can also misrepresent real dependency structure. Keep comments
+  and structure honest about why an exception is taken.

@@ -3,13 +3,15 @@ title: Uses str.removeprefix / str.removesuffix for fixed prefix/suffix removal
 kind: outcome
 ---
 
-Agent-edited Python uses `str.removeprefix` and `str.removesuffix` for removing fixed prefixes/suffixes instead of manual slicing.
+Agent-edited Python uses `str.removeprefix` and `str.removesuffix` for removing fixed prefixes/suffixes instead of
+manual slicing.
 
 ## Acceptance criteria (checklist)
 
 - For fixed prefix removal, use `s.removeprefix(prefix)` instead of `s[len(prefix):]` or `s[4:]`
 - For fixed suffix removal, use `s.removesuffix(suffix)` instead of `s[:-len(suffix)]` or `s[:-4]`
-- Logic that conditionally removes only when present should not duplicate checks; `removeprefix`/`removesuffix` are already safe
+- Logic that conditionally removes only when present should not duplicate checks; `removeprefix`/`removesuffix` are
+  already safe
 
 ## Positive examples
 

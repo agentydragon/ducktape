@@ -1,7 +1,6 @@
 # environment-manager RE Plan (495ea204)
 
-Reconstruction plan for `environment-manager` binary
-(Build ID `495ea204294a4d78ef9d6d3ef7cd2d433486514b`).
+Reconstruction plan for `environment-manager` binary (Build ID `495ea204294a4d78ef9d6d3ef7cd2d433486514b`).
 
 ## Binary Summary
 
@@ -20,33 +19,28 @@ Reconstruction plan for `environment-manager` binary
 
 **The RE assumption that "nothing changed except obfuscation" is false.**
 
-The binary diff between a6f96673 (symbols) and 495ea204 (garbled) reveals major
-application-level changes. See `BINDIFF_RESULTS.md` for full details.
+The binary diff between a6f96673 (symbols) and 495ea204 (garbled) reveals major application-level changes. See
+`BINDIFF_RESULTS.md` for full details.
 
 ### Removed Features
 
-1. **Supabase MCP server** -- entire `internal/mcp/servers/supabase/` removed
-   (199 string matches in old, 0 in new). All Supabase auth fields, MCP tools
-   (`provision_database`, `deploy_function`, `list_migrations`, `apply_migration`,
+1. **Supabase MCP server** -- entire `internal/mcp/servers/supabase/` removed (199 string matches in old, 0 in new). All
+   Supabase auth fields, MCP tools (`provision_database`, `deploy_function`, `list_migrations`, `apply_migration`,
    `generate_types`), and API endpoints removed.
 
-2. **Vercel deploy** -- `internal/tunnel/actions/deploy/vercel.go` removed
-   (32 string matches in old, 0 in new). Deploy tokens and Vercel-specific
-   response fields removed.
+2. **Vercel deploy** -- `internal/tunnel/actions/deploy/vercel.go` removed (32 string matches in old, 0 in new). Deploy
+   tokens and Vercel-specific response fields removed.
 
-3. **Antspace deploy** -- `internal/tunnel/actions/deploy/antspace.go` removed
-   (42 string matches in old, 0 in new). Control plane URL, auth token, and
-   Antspace-specific error messages removed.
+3. **Antspace deploy** -- `internal/tunnel/actions/deploy/antspace.go` removed (42 string matches in old, 0 in new).
+   Control plane URL, auth token, and Antspace-specific error messages removed.
 
-4. **Baku project features** -- Baku initialization, template copying, and
-   settings bootstrap functions removed (34 string matches in old, 1 garbled in
-   new). Paths `/opt/baku-templates/vite-template`,
+4. **Baku project features** -- Baku initialization, template copying, and settings bootstrap functions removed (34
+   string matches in old, 1 garbled in new). Paths `/opt/baku-templates/vite-template`,
    `/home/claude/project/.baku/{explorations,drafts}` removed.
 
 ### New Features
 
-- `json:"filestore_url"` and `json:"filesystem_id"` -- new deploy mechanism
-  fields, likely replacing Vercel/Antspace.
+- `json:"filestore_url"` and `json:"filesystem_id"` -- new deploy mechanism fields, likely replacing Vercel/Antspace.
 - `json:"jwt"` -- new auth field.
 
 ### Unchanged
@@ -69,14 +63,13 @@ The source in `src/` was carried forward from a6f96673 and requires updates:
 
 ### Files to UPDATE in `src/`
 
-- `internal/auth/context.go` -- remove Supabase fields (`supabaseAnonKey`,
-  `supabaseDBPass`, `supabasePAT`, `supabaseProjectRef`, `HasSupabase()`) and
-  Vercel/Antspace fields (`vercelDeployToken`, `antspaceAuthToken`,
+- `internal/auth/context.go` -- remove Supabase fields (`supabaseAnonKey`, `supabaseDBPass`, `supabasePAT`,
+  `supabaseProjectRef`, `HasSupabase()`) and Vercel/Antspace fields (`vercelDeployToken`, `antspaceAuthToken`,
   `antspaceControlPlaneURL`)
-- `internal/tunnel/actions/deploy/action.go` -- update to use `filestore_url`
-  and `filesystem_id` instead of Vercel/Antspace
-- `internal/envtype/anthropic/anthropic.go` -- remove Baku-specific functions
-  (`findExistingBakuProject`, `initializeBakuProject`, `bootstrapBakuSettings`)
+- `internal/tunnel/actions/deploy/action.go` -- update to use `filestore_url` and `filesystem_id` instead of
+  Vercel/Antspace
+- `internal/envtype/anthropic/anthropic.go` -- remove Baku-specific functions (`findExistingBakuProject`,
+  `initializeBakuProject`, `bootstrapBakuSettings`)
 - `internal/manager/mcp.go` -- remove Supabase MCP server registration
 
 ### Previously missing files (now present in `src/`)
@@ -95,9 +88,8 @@ All 12 files identified from old binary DWARF paths have been created:
 - `internal/util/net.go`
 - `internal/util/streamer.go`
 
-**Still missing**: `internal/envtype/shared/` package (embedded content currently
-lives in `skill_content.go`; in the actual source this is a separate `shared`
-package used by both `anthropic` and `byoc` env types).
+**Still missing**: `internal/envtype/shared/` package (embedded content currently lives in `skill_content.go`; in the
+actual source this is a separate `shared` package used by both `anthropic` and `byoc` env types).
 
 ## Obfuscation Evidence
 
@@ -147,7 +139,7 @@ These come from updated gRPC and OTel dependency versions, not application-level
 
 ## Open Items
 
-1. **New deploy mechanism**: `filestore_url` and `filesystem_id` replace Vercel/Antspace.
-   Logic is fully garbled; cannot be recovered without runtime observation.
+1. **New deploy mechanism**: `filestore_url` and `filesystem_id` replace Vercel/Antspace. Logic is fully garbled; cannot
+   be recovered without runtime observation.
 2. **Dependency versions**: Cannot extract from garbled binary; go.mod reflects a6f96673.
 3. **`shared/` package**: `internal/envtype/shared/` not yet split out from `skill_content.go`.

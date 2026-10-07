@@ -24,7 +24,8 @@ GitHub Copilot coding agent is an AI agent that you can assign issues to on GitH
 
 ### 1. Environment Setup (`.github/workflows/copilot-setup-steps.yml`) ⭐ NEW
 
-**What it is**: A GitHub Actions workflow that runs before Copilot starts working, allowing you to install dependencies, tools, and configure the environment.
+**What it is**: A GitHub Actions workflow that runs before Copilot starts working, allowing you to install dependencies,
+tools, and configure the environment.
 
 **Location**: `.github/workflows/copilot-setup-steps.yml`
 
@@ -45,7 +46,8 @@ GitHub Copilot coding agent is an AI agent that you can assign issues to on GitH
 - Cache dependencies for faster setup
 - Set environment variables (via GitHub Actions secrets/variables in the `copilot` environment)
 
-**Documentation**: [Customize the agent environment](https://docs.github.com/en/copilot/how-tos/use-copilot-agents/coding-agent/customize-the-agent-environment)
+**Documentation**:
+[Customize the agent environment](https://docs.github.com/en/copilot/how-tos/use-copilot-agents/coding-agent/customize-the-agent-environment)
 
 ### 2. Repository Custom Instructions (`.github/COPILOT_INSTRUCTIONS.md`)
 
@@ -112,7 +114,8 @@ GitHub Copilot coding agent is an AI agent that you can assign issues to on GitH
 
 ### 1. Keep copilot-setup-steps.yml Updated
 
-When you add new dependencies or tools to the project, update `.github/workflows/copilot-setup-steps.yml` to ensure Copilot has access to them.
+When you add new dependencies or tools to the project, update `.github/workflows/copilot-setup-steps.yml` to ensure
+Copilot has access to them.
 
 **Example**: If you start using PostgreSQL in your tests:
 
@@ -140,14 +143,16 @@ For complex subdirectories (like `ansible/`), create local `AGENTS.md` files wit
 
 ## When to Use GitHub Codespaces Instead
 
-If you need custom environment setup (like what Claude Code hooks provide), use **GitHub Codespaces** with `.devcontainer/devcontainer.json`:
+If you need custom environment setup (like what Claude Code hooks provide), use **GitHub Codespaces** with
+`.devcontainer/devcontainer.json`:
 
 - Custom Docker images
 - Environment variables
 - Tool installations via lifecycle hooks
 - Service configuration
 
-**Note**: Codespaces is for interactive development, not for the GitHub Copilot coding agent which runs automatically in the background.
+**Note**: Codespaces is for interactive development, not for the GitHub Copilot coding agent which runs automatically in
+the background.
 
 ## References
 
@@ -158,8 +163,10 @@ If you need custom environment setup (like what Claude Code hooks provide), use 
 
 ## Summary
 
-**Environment Setup**: Use `.github/workflows/copilot-setup-steps.yml` to install tools, dependencies, and configure services before Copilot starts working.
+**Environment Setup**: Use `.github/workflows/copilot-setup-steps.yml` to install tools, dependencies, and configure
+services before Copilot starts working.
 
 **Instructions**: Use `AGENTS.md` files to provide guidance on how to work with the code.
 
-**For Interactive Development**: Use GitHub Codespaces with `.devcontainer/` configuration if you need a persistent development environment.
+**For Interactive Development**: Use GitHub Codespaces with `.devcontainer/` configuration if you need a persistent
+development environment.

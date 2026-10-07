@@ -13,8 +13,8 @@ occurrences:
       inop/io/jsonl_logger.py:
         - [15, 19]
     note: >-
-      Opens file with 'with self.log_path.open("a")' on every log() call.
-      Should keep file handle open as instance state for efficiency.
+      Opens file with 'with self.log_path.open("a")' on every log() call. Should keep file handle open as instance state
+      for efficiency.
     critic_scopes_expected_to_recall:
       - - inop/io/jsonl_logger.py
     match_file_restriction:

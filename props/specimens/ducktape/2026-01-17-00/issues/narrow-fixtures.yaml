@@ -30,10 +30,9 @@ occurrences:
       agent_server/conftest.py:
         - [462, 462]
     note: >-
-      `fresh_ui_state` is a trivial wrapper (`return new_state()`), only used
-      by test_reducer.py. Other tests (e.g. test_end_turn_ui_integration.py)
-      call `new_state()` directly. Delete the fixture and replace its 6 uses
-      in test_reducer.py with direct `new_state()` calls.
+      `fresh_ui_state` is a trivial wrapper (`return new_state()`), only used by test_reducer.py. Other tests (e.g.
+      test_end_turn_ui_integration.py) call `new_state()` directly. Delete the fixture and replace its 6 uses in
+      test_reducer.py with direct `new_state()` calls.
     critic_scopes_expected_to_recall:
       - [agent_server/conftest.py]
       - [agent_server/server/test_reducer.py]
@@ -45,10 +44,8 @@ occurrences:
       agent_server/conftest.py:
         - [530, 583]
     note: >-
-      `event_ts`, `make_event_record`,
-      `make_user_text_event`, `make_tool_call_event`,
-      `make_function_output_event` — entire chain only
-      used by `test_history_fold_typed.py`
+      `event_ts`, `make_event_record`, `make_user_text_event`, `make_tool_call_event`, `make_function_output_event` —
+      entire chain only used by `test_history_fold_typed.py`
     critic_scopes_expected_to_recall:
       - [agent_server/conftest.py]
       - [agent_server/server/test_history_fold_typed.py]

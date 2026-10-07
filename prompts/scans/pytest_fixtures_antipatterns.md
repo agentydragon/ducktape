@@ -6,7 +6,8 @@
 
 ## Overview
 
-Pytest provides powerful fixtures and utilities that should be used instead of manual environment manipulation. This scan identifies tests that manually manage:
+Pytest provides powerful fixtures and utilities that should be used instead of manual environment manipulation. This
+scan identifies tests that manually manage:
 
 - **Temporary files/directories** - Use `tmp_path` instead of `tempfile`
 - **Environment variables** - Use `monkeypatch` instead of `os.environ` manipulation
@@ -14,7 +15,8 @@ Pytest provides powerful fixtures and utilities that should be used instead of m
 - **File system state** - Use `tmp_path` for test file operations
 - **System attributes** - Use `monkeypatch.setattr()` instead of direct mutation
 
-Manual manipulation is error-prone (forgotten cleanup, test isolation failures, race conditions). Pytest fixtures provide automatic cleanup and isolation.
+Manual manipulation is error-prone (forgotten cleanup, test isolation failures, race conditions). Pytest fixtures
+provide automatic cleanup and isolation.
 
 ## Pattern: Manual tempfile Instead of Pytest Fixtures
 
@@ -436,21 +438,16 @@ Session-level setup that pytest fixtures can't handle (also rare).
 
 ### tmp_path / tmp_path_factory
 
-✅ **Automatic cleanup** - No finally blocks, no forgotten cleanup
-✅ **Unique per test** - Each test gets fresh directory, no conflicts
-✅ **Pathlib by default** - `tmp_path` is `Path`, not string
-✅ **Configurable retention** - `pytest --basetemp` to inspect failed test artifacts
-✅ **Better errors** - pytest shows temp dir location on failure
-✅ **Scoping support** - function/class/module/session scopes
+✅ **Automatic cleanup** - No finally blocks, no forgotten cleanup ✅ **Unique per test** - Each test gets fresh
+directory, no conflicts ✅ **Pathlib by default** - `tmp_path` is `Path`, not string ✅ **Configurable retention** -
+`pytest --basetemp` to inspect failed test artifacts ✅ **Better errors** - pytest shows temp dir location on failure ✅
+**Scoping support** - function/class/module/session scopes
 
 ### monkeypatch
 
-✅ **Automatic restoration** - All changes reverted after test
-✅ **Test isolation** - Changes don't leak between tests
-✅ **No try/finally** - Cleaner test code
-✅ **Context tracking** - pytest tracks what was changed
-✅ **Multiple changes** - Can patch many things, all restored
-✅ **Deletion support** - Can delete env vars, restore original state
+✅ **Automatic restoration** - All changes reverted after test ✅ **Test isolation** - Changes don't leak between tests
+✅ **No try/finally** - Cleaner test code ✅ **Context tracking** - pytest tracks what was changed ✅ **Multiple
+changes** - Can patch many things, all restored ✅ **Deletion support** - Can delete env vars, restore original state
 
 ## References
 

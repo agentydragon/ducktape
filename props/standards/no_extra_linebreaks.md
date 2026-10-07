@@ -3,15 +3,17 @@ title: No unnecessary line breaks
 kind: outcome
 ---
 
-The parse tree is laid out in the minimum number of lines allowed by the configured linter, except where newlines are deliberately added to improve readability.
-If code can fit on one line without harming readability and the linter would preserve it, it does.
+The parse tree is laid out in the minimum number of lines allowed by the configured linter, except where newlines are
+deliberately added to improve readability. If code can fit on one line without harming readability and the linter would
+preserve it, it does.
 
 ## Acceptance criteria (checklist)
 
 - Calls/constructors with short argument lists are on one line when the linter would not split them
 - Expressions that can be a single line without reducing readability are written on one line
 - It is acceptable to add at most one blank line to separate logical sections (e.g., Arrange/Act/Assert in tests)
-- It is acceptable to break lines deliberately for readability (e.g., multi‑line string assembly), even if a single line would be valid
+- It is acceptable to break lines deliberately for readability (e.g., multi‑line string assembly), even if a single line
+  would be valid
 - Do not introduce two or more consecutive blank lines for spacing
 
 ## Positive examples

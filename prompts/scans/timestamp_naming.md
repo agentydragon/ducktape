@@ -84,7 +84,8 @@ rg --type py '^\s+\w+_ts:\s*datetime'
 rg --type py 'last_update|last_modified|creation_time'
 ```
 
-**Note**: This is one of the few patterns where automation has high accuracy (timestamp suffixes are fairly unambiguous).
+**Note**: This is one of the few patterns where automation has high accuracy (timestamp suffixes are fairly
+unambiguous).
 
 ## Fix Strategy
 
@@ -150,11 +151,9 @@ created: date  # Why date not datetime?
 
 ## Benefits
 
-✅ **Consistency** - Matches 90% of modern codebases
-✅ **Readability** - "created at" reads naturally
-✅ **Brevity** - Shorter than verbose alternatives
-✅ **IDE support** - Autocomplete recognizes common pattern
-✅ **Onboarding** - New developers expect `_at` convention
+✅ **Consistency** - Matches 90% of modern codebases ✅ **Readability** - "created at" reads naturally ✅ **Brevity** -
+Shorter than verbose alternatives ✅ **IDE support** - Autocomplete recognizes common pattern ✅ **Onboarding** - New
+developers expect `_at` convention
 
 ## Examples from rspcache
 

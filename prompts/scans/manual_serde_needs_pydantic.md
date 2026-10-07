@@ -6,11 +6,13 @@
 
 ## Pattern Description
 
-Code using manual JSON serialization/deserialization, dict construction, and validation instead of leveraging Pydantic's built-in capabilities.
+Code using manual JSON serialization/deserialization, dict construction, and validation instead of leveraging Pydantic's
+built-in capabilities.
 
 ## Core Principle
 
-**String-literal keyed dict access in internal code is suspect.** If you're accessing `data["key"]` with a literal string, and the keys are known at development time, you should use a Pydantic model.
+**String-literal keyed dict access in internal code is suspect.** If you're accessing `data["key"]` with a literal
+string, and the keys are known at development time, you should use a Pydantic model.
 
 ## Examples of Antipatterns
 
@@ -212,7 +214,8 @@ Use Pydantic when you have:
 - Do not sample or skip any results - process every dict literal and Pydantic model found
 - Prevents lazy analysis by forcing examination of all dict construction patterns
 
-**Note**: This scan has high false positives (many dict literals are legitimate at I/O boundaries), but you must still process all results to ensure comprehensive review.
+**Note**: This scan has high false positives (many dict literals are legitimate at I/O boundaries), but you must still
+process all results to ensure comprehensive review.
 
 **Key questions for manual review**:
 
@@ -232,7 +235,8 @@ Use Pydantic when you have:
    - Particularly useful when dict is in internal code (not I/O boundary)
 2. **Pydantic BaseModel classes** - All models with their fields and types
    - Raw data for you to analyze for design issues
-   - You can identify: overlapping fields, duplicate field sets, single-field models, opportunities for shared sub-models
+   - You can identify: overlapping fields, duplicate field sets, single-field models, opportunities for shared
+     sub-models
 
 **Usage**:
 

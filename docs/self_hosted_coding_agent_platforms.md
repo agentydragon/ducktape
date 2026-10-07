@@ -1,6 +1,7 @@
 # Self-Hosted Coding Agent Platforms — Survey
 
-Goal: pick a platform for running long-lived code-writing agents in this homelab cluster, with a Claude-Code-Web / Codex-Cloud-style chat UI (diffs, PR linkage, sessions) reachable from anywhere.
+Goal: pick a platform for running long-lived code-writing agents in this homelab cluster, with a Claude-Code-Web /
+Codex-Cloud-style chat UI (diffs, PR linkage, sessions) reachable from anywhere.
 
 Last updated: 2026-05-08.
 
@@ -8,7 +9,8 @@ Last updated: 2026-05-08.
 
 Pulled from <../agent-system-desiderata>:
 
-- Agents execute commands in a separate Kubernetes pod (or DinD container) — not on the gateway/controller alongside LLM credentials.
+- Agents execute commands in a separate Kubernetes pod (or DinD container) — not on the gateway/controller alongside LLM
+  credentials.
 - Pluggable LLM endpoints: Anthropic, OpenAI, **and** in-cluster Ollama.
 - Chat front-end reachable from at least Telegram, ideally Matrix.
 - Agent configurable with MCP servers, including OAuth-authenticated remote ones.
@@ -16,7 +18,12 @@ Pulled from <../agent-system-desiderata>:
 - Native support for the Claude **AI skills** standard.
 - Agents triggered by schedules and webhooks, and able to install their own automations.
 - Web UI that's at least as good as Claude Code Web for diff review and PR linkage.
-- **Robust against runaway tool output.** A single MCP / shell tool call that emits hundreds of MB to multi-GB of stdout (kubectl logs of a noisy pod, `find /`, `cat` on a big binary, a stuck process printing ANSI spam) must not blow the agent's context window or wedge the harness. The platform has to truncate / spool / offload tool results before they reach the model. Discovered the hard way on kagent + z.ai coding plan: kagent has no client-side output budget, so the next request after a few `kubectl get events` calls on a busy cluster trips z.ai's 1261 "Prompt exceeds max length" cap and the session is dead.
+- **Robust against runaway tool output.** A single MCP / shell tool call that emits hundreds of MB to multi-GB of stdout
+  (kubectl logs of a noisy pod, `find /`, `cat` on a big binary, a stuck process printing ANSI spam) must not blow the
+  agent's context window or wedge the harness. The platform has to truncate / spool / offload tool results before they
+  reach the model. Discovered the hard way on kagent + z.ai coding plan: kagent has no client-side output budget, so the
+  next request after a few `kubectl get events` calls on a busy cluster trips z.ai's 1261 "Prompt exceeds max length"
+  cap and the session is dead.
 
 ## Findings at a glance
 
@@ -47,24 +54,40 @@ Legend — UI quality is the diff/PR-review experience specifically.
 | **Open WebUI**                             | MIT                                                     | Browser Pyodide or per-user Docker terminal (enterprise); **no per-conversation isolation**                                                                             | No                                           | Good (polished chat, file upload, code blocks)                                                                         | None                         | Yes (client + server)       | None                | Chat front-end, not a coding agent. MCP support is extensive. "Open Terminal" is per-user, not per-conversation.                                                                                                                                                                                                                        |
 | **LibreChat**                              | MIT                                                     | Hosted code-interpreter API (`api.librechat.ai`); **no self-hosted sandbox option**                                                                                     | No                                           | Good (multi-model chat, presets, file upload)                                                                          | None                         | Yes (STDIO/SSE/HTTP, OAuth) | None                | Chat front-end, not a coding agent. MCP support is production-grade with per-user isolation. Code execution is SaaS-only.                                                                                                                                                                                                               |
 
-For chat front-ends that pair with any of the above (when the platform's UI doesn't fit): **Open WebUI**, **LibreChat** — now listed as first-class entries above with full assessment.
+For chat front-ends that pair with any of the above (when the platform's UI doesn't fit): **Open WebUI**, **LibreChat**
+— now listed as first-class entries above with full assessment.
 
 ## Why the obvious answer (OpenHands) doesn't fit cleanly
 
-OpenHands is the closest analog to Codex Cloud, but the **open-source** parts only get you so far against this cluster's desiderata.
+OpenHands is the closest analog to Codex Cloud, but the **open-source** parts only get you so far against this cluster's
+desiderata.
 
 Investigated 2026-05-07 against `ghcr.io/all-hands-ai/openhands:main` running in <../cluster/parked/openhands/>:
 
-- The legacy `KubernetesRuntime` was deleted upstream (commit `e86067c15` "Removed V0 runtime", `bc4706524` "Remove unused core.schema package and KubernetesConfig"). The `[core] runtime = kubernetes` and `[kubernetes]` blocks in <../cluster/parked/openhands/app/configmap-toml.yaml> are now silently ignored.
-- The new App Server (`openhands/app_server/sandbox/`) ships only three sandbox backends: `DockerSandboxService`, `ProcessSandboxService`, `RemoteSandboxService`. There is **no `kubernetes_sandbox_service.py`**.
-- Selection logic at `openhands/app_server/config.py:158` falls back to Docker when `RUNTIME` isn't `remote` or `local`/`process`. So a clean install in k8s without a Docker socket faults every time the sandbox is touched (`docker.errors.DockerException: ... /var/run/docker.sock ... No such file or directory`) — the symptom that prompted this doc.
-- The `RemoteSandboxService` calls a separate **`runtime-api`** server (`/start`, `/sessions/{id}`, `/sessions/batch`, `/resume`, `/pause`, `/stop`, `/destroy`). All-Hands operates that server as a SaaS at `runtime.eval.all-hands.dev` and ships it as `ghcr.io/openhands/runtime-api:<sha>`, but:
+- The legacy `KubernetesRuntime` was deleted upstream (commit `e86067c15` "Removed V0 runtime", `bc4706524` "Remove
+  unused core.schema package and KubernetesConfig"). The `[core] runtime = kubernetes` and `[kubernetes]` blocks in
+  <../cluster/parked/openhands/app/configmap-toml.yaml> are now silently ignored.
+- The new App Server (`openhands/app_server/sandbox/`) ships only three sandbox backends: `DockerSandboxService`,
+  `ProcessSandboxService`, `RemoteSandboxService`. There is **no `kubernetes_sandbox_service.py`**.
+- Selection logic at `openhands/app_server/config.py:158` falls back to Docker when `RUNTIME` isn't `remote` or
+  `local`/`process`. So a clean install in k8s without a Docker socket faults every time the sandbox is touched
+  (`docker.errors.DockerException: ... /var/run/docker.sock ... No such file or directory`) — the symptom that prompted
+  this doc.
+- The `RemoteSandboxService` calls a separate **`runtime-api`** server (`/start`, `/sessions/{id}`, `/sessions/batch`,
+  `/resume`, `/pause`, `/stop`, `/destroy`). All-Hands operates that server as a SaaS at `runtime.eval.all-hands.dev`
+  and ships it as `ghcr.io/openhands/runtime-api:<sha>`, but:
   - The image registry returns 401 without `ghcr-login-secret` — **not publicly pullable**.
   - The image source is **not in any public OpenHands repository** (verified against the GitHub org listing).
-  - The Helm chart that wires it together (<https://github.com/All-Hands-AI/OpenHands-Cloud>) is **PolyForm Free Trial 1.0.0** — source-available, capped at 30 days/year non-commercial. Not OSS.
-- The MIT-licensed `openhands/software-agent-sdk` ships workspace backends for `apptainer/`, `cloud/`, `docker/`, `remote_api/` — still no `kubernetes/`.
+  - The Helm chart that wires it together (<https://github.com/All-Hands-AI/OpenHands-Cloud>) is **PolyForm Free Trial
+    1.0.0** — source-available, capped at 30 days/year non-commercial. Not OSS.
+- The MIT-licensed `openhands/software-agent-sdk` ships workspace backends for `apptainer/`, `cloud/`, `docker/`,
+  `remote_api/` — still no `kubernetes/`.
 
-Net: to use OpenHands in this cluster with k8s-pod sandboxes you'd either (a) write a FastAPI shim implementing the runtime-api wire protocol over the kube API (the existing <../cluster/parked/openhands/sandboxes/> namespace + `openhands-sandbox-manager` Role already grant what such a shim would need), (b) buy an OpenHands-Cloud commercial license, or (c) point at the All-Hands SaaS runtime-api so sandboxes live in their cluster, not yours. Process-runtime is a same-day unblocker but defeats the whole isolation goal.
+Net: to use OpenHands in this cluster with k8s-pod sandboxes you'd either (a) write a FastAPI shim implementing the
+runtime-api wire protocol over the kube API (the existing <../cluster/parked/openhands/sandboxes/> namespace +
+`openhands-sandbox-manager` Role already grant what such a shim would need), (b) buy an OpenHands-Cloud commercial
+license, or (c) point at the All-Hands SaaS runtime-api so sandboxes live in their cluster, not yours. Process-runtime
+is a same-day unblocker but defeats the whole isolation goal.
 
 ## Notes on the other contenders
 
@@ -72,42 +95,76 @@ Net: to use OpenHands in this cluster with k8s-pod sandboxes you'd either (a) wr
 
 The Coder ecosystem **looked** like the cleanest answer until the licensing trajectory landed:
 
-- **Coder Tasks** (the original "spin up a workspace, run a coding-agent CLI in it, dashboard shows all running tasks" loop) is being **deprecated 2026-06-02**, removed from new releases starting **v2.37 (2026-09-01)**, and only available via the 12-month Extended Support Release for **Premium customers** thereafter. Don't start new homelab builds on Tasks.
-- **Coder Agents** (the announced replacement, launched 2026-05-06) is **Premium/Enterprise-only**. The implementation lives in `coder/coder/enterprise/aibridged/` (Coder's non-AGPL tree); `codersdk` defines `FeatureAIBridge FeatureName = "aibridge"` and the entitlement code carries comments like "inherited from FeatureSet (Premium)". A `FeatureManagedAgentLimit` and `enterprise/aiseats/` directory confirm usage-based metering. The "beta with full feature access through September" is a time-limited free unlock, not a perpetual OSS offering. _Architecturally_ it's the strongest match for these desiderata — control-plane-side agent loop, native chat UI with diffs / image attachments / queuing / parallel sub-agents, model-agnostic (Anthropic / OpenAI / Bedrock / OpenAI-compatible incl. Ollama), workspaces stay dumb compute. _Practically_, it's a paid Coder feature.
-- **`coder/agentapi`** is the only piece of the Coder coding-agent stack that is genuinely usable standalone in OSS. Apache-2.0 Go HTTP shim that controls Claude Code / Goose / Aider / Gemini / Amp / Codex through terminal emulation. **Ships its own chat web UI** at `:3284/chat` plus `GET /messages`, `POST /message`, `GET /status`, `GET /events` (SSE), `/openapi.json`, `/docs`. Critical caveat: **one agentapi process = one agent**. There is no built-in multi-session dispatcher. To get a "list all my agents, click into one" dashboard you'd need to spawn N agentapi processes (one per workspace Pod) and put your own router/index page in front. That's roughly a weekend of glue code, and it reproduces the bones of what Coder Tasks/Agents do — minus the polished dashboard.
+- **Coder Tasks** (the original "spin up a workspace, run a coding-agent CLI in it, dashboard shows all running tasks"
+  loop) is being **deprecated 2026-06-02**, removed from new releases starting **v2.37 (2026-09-01)**, and only
+  available via the 12-month Extended Support Release for **Premium customers** thereafter. Don't start new homelab
+  builds on Tasks.
+- **Coder Agents** (the announced replacement, launched 2026-05-06) is **Premium/Enterprise-only**. The implementation
+  lives in `coder/coder/enterprise/aibridged/` (Coder's non-AGPL tree); `codersdk` defines
+  `FeatureAIBridge FeatureName = "aibridge"` and the entitlement code carries comments like "inherited from FeatureSet
+  (Premium)". A `FeatureManagedAgentLimit` and `enterprise/aiseats/` directory confirm usage-based metering. The "beta
+  with full feature access through September" is a time-limited free unlock, not a perpetual OSS offering.
+  _Architecturally_ it's the strongest match for these desiderata — control-plane-side agent loop, native chat UI with
+  diffs / image attachments / queuing / parallel sub-agents, model-agnostic (Anthropic / OpenAI / Bedrock /
+  OpenAI-compatible incl. Ollama), workspaces stay dumb compute. _Practically_, it's a paid Coder feature.
+- **`coder/agentapi`** is the only piece of the Coder coding-agent stack that is genuinely usable standalone in OSS.
+  Apache-2.0 Go HTTP shim that controls Claude Code / Goose / Aider / Gemini / Amp / Codex through terminal emulation.
+  **Ships its own chat web UI** at `:3284/chat` plus `GET /messages`, `POST /message`, `GET /status`, `GET /events`
+  (SSE), `/openapi.json`, `/docs`. Critical caveat: **one agentapi process = one agent**. There is no built-in
+  multi-session dispatcher. To get a "list all my agents, click into one" dashboard you'd need to spawn N agentapi
+  processes (one per workspace Pod) and put your own router/index page in front. That's roughly a weekend of glue code,
+  and it reproduces the bones of what Coder Tasks/Agents do — minus the polished dashboard.
 
 ### siteboon/claudecodeui (CloudCLI)
 
-Most literal answer to "Claude Code Web but self-hosted". Reads/writes the same `~/.claude` config, so MCP setup and skills carry over. Per-project UI with chat, integrated git explorer, terminal, file tree, mobile-responsive. Designed to run on your machine; in a cluster you'd deploy it as a Pod with a PVC for the project tree. **Caveat:** the agent and the UI share that Pod's filesystem and credentials — there's no per-task isolation by default. Closer to "remote Claude Code session" than "Codex Cloud".
+Most literal answer to "Claude Code Web but self-hosted". Reads/writes the same `~/.claude` config, so MCP setup and
+skills carry over. Per-project UI with chat, integrated git explorer, terminal, file tree, mobile-responsive. Designed
+to run on your machine; in a cluster you'd deploy it as a Pod with a PVC for the project tree. **Caveat:** the agent and
+the UI share that Pod's filesystem and credentials — there's no per-task isolation by default. Closer to "remote Claude
+Code session" than "Codex Cloud".
 
 ### kubernetes-sigs/agent-sandbox + your own UI
 
-Right primitive for the cluster. The `Sandbox` CRD gives you a singleton, stateful Pod with stable identity and persistent storage; `SandboxTemplate` / `SandboxClaim` / `SandboxWarmPool` add pooling and scale-to-zero; the execution layer is decoupled (gVisor / Kata). What it doesn't give you: the chat/diff/PR UI. Pair with anything from this list (e.g., claudecodeui pointed at a sandboxed workspace, or a custom UI talking via `agentapi`). Kubernetes blog post 2026-03-20 is the canonical intro.
+Right primitive for the cluster. The `Sandbox` CRD gives you a singleton, stateful Pod with stable identity and
+persistent storage; `SandboxTemplate` / `SandboxClaim` / `SandboxWarmPool` add pooling and scale-to-zero; the execution
+layer is decoupled (gVisor / Kata). What it doesn't give you: the chat/diff/PR UI. Pair with anything from this list
+(e.g., claudecodeui pointed at a sandboxed workspace, or a custom UI talking via `agentapi`). Kubernetes blog post
+2026-03-20 is the canonical intro.
 
 ### Netclode (Stanislas Polu)
 
-Reference architecture that hits almost the entire desiderata list — except the UI is iOS-native, not browser. Useful as design inspiration: k3s + Kata + JuiceFS for persistent agent workspaces, supports Claude Code / Codex / OpenCode / Copilot, GitHub integration with optional write access. Code is MIT (<https://github.com/angristan/netclode>). Could be a starting point for a fork that adds a web UI.
+Reference architecture that hits almost the entire desiderata list — except the UI is iOS-native, not browser. Useful as
+design inspiration: k3s + Kata + JuiceFS for persistent agent workspaces, supports Claude Code / Codex / OpenCode /
+Copilot, GitHub integration with optional write access. Code is MIT (<https://github.com/angristan/netclode>). Could be
+a starting point for a fork that adds a web UI.
 
 ### vibe-kanban
 
-Different mental model: kanban board where cards are tasks the agent picks up. Connects to GitHub for PR/commit sync. Self-host via Docker Compose. Best fit if you want **multiple parallel coding agents** with explicit task tracking, less so if you want one chat per agent.
+Different mental model: kanban board where cards are tasks the agent picks up. Connects to GitHub for PR/commit sync.
+Self-host via Docker Compose. Best fit if you want **multiple parallel coding agents** with explicit task tracking, less
+so if you want one chat per agent.
 
 ### Sweep
 
-Has the GitHub-PR side nailed (issue → branch → PR with review), but it's not interactive — there's no chat UI, you talk to it via GitHub comments. Pair with a chat front-end if you want both.
+Has the GitHub-PR side nailed (issue → branch → PR with review), but it's not interactive — there's no chat UI, you talk
+to it via GitHub comments. Pair with a chat front-end if you want both.
 
 ### OpenClaw + GitHub workflow (cluster-current option)
 
-The pragmatic "use what's already running" path: keep OpenClaw, give it a dedicated GitHub identity, and lean on **GitHub itself as the review UI** (PR diffs, review comments, suggested-change blocks). The old execution-model objection (sandbox running on the gateway) no longer applies — execution is delegated to OpenShell sandbox pods (<../cluster/docs/openclaw*command_execution.md>) — and the missing pieces of the desiderata that \_we built this list to solve* — diff review, PR linkage, multi-session UI — are filled by github.com itself. No new platform to operate.
+The pragmatic "use what's already running" path: keep OpenClaw, give it a dedicated GitHub identity, and lean on
+**GitHub itself as the review UI** (PR diffs, review comments, suggested-change blocks). The old execution-model
+objection (sandbox running on the gateway) no longer applies — execution is delegated to OpenShell sandbox pods
+(<../cluster/docs/openclaw*command_execution.md>) — and the missing pieces of the desiderata that \_we built this list
+to solve* — diff review, PR linkage, multi-session UI — are filled by github.com itself. No new platform to operate.
 
 ### kagent (retired from this cluster)
 
-Apache-2.0. The former cluster deployment is preserved under
-<../cluster/archive/2026_07_kagent/>, but it is no longer active Flux configuration.
-Revival requires reviewing the archived assumptions against the current upstream release,
-not merely unsuspending old manifests.
+Apache-2.0. The former cluster deployment is preserved under <../cluster/archive/2026_07_kagent/>, but it is no longer
+active Flux configuration. Revival requires reviewing the archived assumptions against the current upstream release, not
+merely unsuspending old manifests.
 
-**Ships a real web UI**: Next.js + Nginx + supervisord in one Pod. Three top-level surfaces — chat, MCP-server / tool management, model configuration. The chat does have the "+ new session" affordance you'd want.
+**Ships a real web UI**: Next.js + Nginx + supervisord in one Pod. Three top-level surfaces — chat, MCP-server / tool
+management, model configuration. The chat does have the "+ new session" affordance you'd want.
 
 **Conversation model — read carefully, this is the bit that determines whether kagent fits**:
 
@@ -117,65 +174,92 @@ not merely unsuspending old manifests.
 | `Session`          | Logical conversation thread = persisted event history (`KAgentSessionService`, controller DB). Created via `POST /sessions` with `user_id` + `agent_ref`.                                                                                  | Rows in the controller's DB; **no per-session Pod** |
 | `SandboxAgent` CRD | Same one-workload-per-CRD as `Agent`, but the workload is a `kubernetes-sigs/agent-sandbox` Sandbox (gVisor / Kata, deny-all egress + read-only FS by default). **Doesn't change the count of pods per CRD** — only the isolation backend. | One Pod per Agent CRD                               |
 
-So the UI does let you click "+ new chat" without authoring CRDs — but every session for one Agent shares that Agent's Pod filesystem and tool state. Logical conversation context is isolated; physical workspace is not. That's fine for "talk to a long-running ops agent that knows my cluster"; it's _not_ the "press +, fresh container, fresh git checkout" model that Codex Cloud / Coder Tasks ship.
+So the UI does let you click "+ new chat" without authoring CRDs — but every session for one Agent shares that Agent's
+Pod filesystem and tool state. Logical conversation context is isolated; physical workspace is not. That's fine for
+"talk to a long-running ops agent that knows my cluster"; it's _not_ the "press +, fresh container, fresh git checkout"
+model that Codex Cloud / Coder Tasks ship.
 
-**The thing the SandboxAgent CRD is _not_:** a per-session sandbox. It's a per-Agent-CRD sandbox. For users who don't care about gVisor-grade isolation and just want "concurrent tasks on the same template don't fight over the same Pod", plain `Agent` is the right choice — `SandboxAgent` only adds restrictions you'd then have to undo (`spec.sandbox.network.allowedDomains` etc.).
+**The thing the SandboxAgent CRD is _not_:** a per-session sandbox. It's a per-Agent-CRD sandbox. For users who don't
+care about gVisor-grade isolation and just want "concurrent tasks on the same template don't fight over the same Pod",
+plain `Agent` is the right choice — `SandboxAgent` only adds restrictions you'd then have to undo
+(`spec.sandbox.network.allowedDomains` etc.).
 
 **To turn kagent into the fresh-pod-per-task model**, the path depends on how much glue you tolerate:
 
-1. **A pool of long-lived Agents + the existing UI**, zero code. Define 3–5 `Agent` CRDs (`coder-1` … `coder-5`) from one profile; the kagent UI's chat dropdown becomes "pick a worker"; "+ new session" against a free one is your "+ new task". Sequential sessions on the same Agent share the Pod, so you have to be disciplined about closing a task before starting another there. Cheapest revival.
-2. **CRD-per-task**: on "+ new task", stamp a fresh `Agent` CRD from a saved profile and route the new Session at it; delete on close. ~50–100 lines of glue (a Next.js page that POSTs Agent YAML, or a small operator that watches a higher-level "AgentProfile" CRD). Reuses the kagent UI's chat plumbing.
-3. **`SandboxClaim` from `kubernetes-sigs/agent-sandbox`**: pre-warm a `SandboxWarmPool`, claim one per task. More moving pieces, lower task-start latency. Worth it only if you're spinning up tasks faster than ~10s.
+1. **A pool of long-lived Agents + the existing UI**, zero code. Define 3–5 `Agent` CRDs (`coder-1` … `coder-5`) from
+   one profile; the kagent UI's chat dropdown becomes "pick a worker"; "+ new session" against a free one is your "+ new
+   task". Sequential sessions on the same Agent share the Pod, so you have to be disciplined about closing a task before
+   starting another there. Cheapest revival.
+2. **CRD-per-task**: on "+ new task", stamp a fresh `Agent` CRD from a saved profile and route the new Session at it;
+   delete on close. ~50–100 lines of glue (a Next.js page that POSTs Agent YAML, or a small operator that watches a
+   higher-level "AgentProfile" CRD). Reuses the kagent UI's chat plumbing.
+3. **`SandboxClaim` from `kubernetes-sigs/agent-sandbox`**: pre-warm a `SandboxWarmPool`, claim one per task. More
+   moving pieces, lower task-start latency. Worth it only if you're spinning up tasks faster than ~10s.
 
-See <../cluster/archive/2026_07_kagent/docs/kagent_persistent_agents.md> for the archived
-desktop-pod sketch (an unrelated angle: Kagent plus per-agent VNC desktop pods for
-"computer use" tasks).
+See <../cluster/archive/2026_07_kagent/docs/kagent_persistent_agents.md> for the archived desktop-pod sketch (an
+unrelated angle: Kagent plus per-agent VNC desktop pods for "computer use" tasks).
 
 ### Dify (langgenius)
 
-LLM application platform with visual workflow builder, agent mode, RAG pipeline, 50+ built-in tools, and LLMOps observability. Deployed via Docker Compose or community Helm charts.
+LLM application platform with visual workflow builder, agent mode, RAG pipeline, 50+ built-in tools, and LLMOps
+observability. Deployed via Docker Compose or community Helm charts.
 
-**Not a coding agent.** No diff viewer, git integration, or PR review. The "agent" mode is a ReAct/plan-and-execute loop with tool calling — suitable for building LLM-powered apps, not for running coding sessions against a repo. The `dify-sandbox` sidecar runs code execution via libseccomp syscall filtering in a shared container — no per-session or per-conversation isolation. Kubernetes pod sandboxing is not supported.
+**Not a coding agent.** No diff viewer, git integration, or PR review. The "agent" mode is a ReAct/plan-and-execute loop
+with tool calling — suitable for building LLM-powered apps, not for running coding sessions against a repo. The
+`dify-sandbox` sidecar runs code execution via libseccomp syscall filtering in a shared container — no per-session or
+per-conversation isolation. Kubernetes pod sandboxing is not supported.
 
-License is Apache 2.0 with additional terms: multi-tenant SaaS hosting requires a commercial license; logo/copyright notices must be preserved; contributor agreement grants LangGenius broad commercial rights. Fine for single-tenant self-hosted use.
+License is Apache 2.0 with additional terms: multi-tenant SaaS hosting requires a commercial license; logo/copyright
+notices must be preserved; contributor agreement grants LangGenius broad commercial rights. Fine for single-tenant
+self-hosted use.
 
 ### Open WebUI
 
-Polished, self-hostable chat UI. Supports multiple LLM backends (Ollama, OpenAI-compatible, Anthropic, etc.), file upload, code highlighting, and a growing MCP ecosystem — both as an MCP client (connecting to external tool servers) and as an MCP server (exposing itself to other tools).
+Polished, self-hostable chat UI. Supports multiple LLM backends (Ollama, OpenAI-compatible, Anthropic, etc.), file
+upload, code highlighting, and a growing MCP ecosystem — both as an MCP client (connecting to external tool servers) and
+as an MCP server (exposing itself to other tools).
 
 **Code execution options:**
 
 - **Browser Pyodide**: Python runs client-side via WebAssembly. No server-side sandbox.
-- **Open Terminal (Docker)**: AI gets a real shell inside a Docker container. **Per-user** in the enterprise tier, not per-conversation. Multiple conversations share the same terminal container.
+- **Open Terminal (Docker)**: AI gets a real shell inside a Docker container. **Per-user** in the enterprise tier, not
+  per-conversation. Multiple conversations share the same terminal container.
 - **Open Terminal (bare metal)**: No isolation; AI has full host access.
 
 No Kubernetes pod sandboxing. No per-conversation container isolation on any tier.
 
-Could serve as a chat front-end for an external coding agent if the agent is accessible via MCP or an OpenAI-compatible API, but it doesn't host or manage agent workspaces itself.
+Could serve as a chat front-end for an external coding agent if the agent is accessible via MCP or an OpenAI-compatible
+API, but it doesn't host or manage agent workspaces itself.
 
 ### LibreChat
 
-Multi-model chat front-end with presets, conversation branching, file upload, and comprehensive MCP support (STDIO, SSE, Streamable HTTP transports; OAuth 2.0 with PKCE for remote servers; per-user connection isolation; smithery.ai integration).
+Multi-model chat front-end with presets, conversation branching, file upload, and comprehensive MCP support (STDIO, SSE,
+Streamable HTTP transports; OAuth 2.0 with PKCE for remote servers; per-user connection isolation; smithery.ai
+integration).
 
-**Code execution** is a hosted SaaS service at `api.librechat.ai` — there is no self-hosted sandbox backend. The sandbox is entirely opaque to the deployer; no Docker or Kubernetes option exists. For a homelab that wants air-gapped or self-contained code execution, this is a hard blocker.
+**Code execution** is a hosted SaaS service at `api.librechat.ai` — there is no self-hosted sandbox backend. The sandbox
+is entirely opaque to the deployer; no Docker or Kubernetes option exists. For a homelab that wants air-gapped or
+self-contained code execution, this is a hard blocker.
 
-Like Open WebUI, LibreChat is a chat front-end, not a coding agent platform. It could drive an external agent via MCP (its MCP support is arguably the most mature of the three), but it doesn't manage workspaces, git checkouts, or container lifecycles.
+Like Open WebUI, LibreChat is a chat front-end, not a coding agent platform. It could drive an external agent via MCP
+(its MCP support is arguably the most mature of the three), but it doesn't manage workspaces, git checkouts, or
+container lifecycles.
 
 ### Sculptor / cmux / coder-mux / Conductor.build
 
-All desktop-only — listed for completeness because they're frequently mentioned alongside the cluster-hosted options, but they don't satisfy "reachable from anywhere over a browser tab".
+All desktop-only — listed for completeness because they're frequently mentioned alongside the cluster-hosted options,
+but they don't satisfy "reachable from anywhere over a browser tab".
 
 ### Devika
 
-Once a buzzy "Devin clone", now effectively dormant (last meaningful release predates the App Server era). Listed only so we don't keep re-discovering it.
+Once a buzzy "Devin clone", now effectively dormant (last meaningful release predates the App Server era). Listed only
+so we don't keep re-discovering it.
 
 ## Tool-output robustness
 
-How each contender handles "the agent ran a tool that just dumped 20 GB of stdout".
-Empirically the most common cause of "session dead, can't continue" on long
-homelab tasks. The wrappers around `claude-code` / `codex` / `goose` inherit
-their underlying CLI's behavior — usually good. The independently-implemented
-agent loops are mostly weaker.
+How each contender handles "the agent ran a tool that just dumped 20 GB of stdout". Empirically the most common cause of
+"session dead, can't continue" on long homelab tasks. The wrappers around `claude-code` / `codex` / `goose` inherit
+their underlying CLI's behavior — usually good. The independently-implemented agent loops are mostly weaker.
 
 | Platform                                                                                                                                                                      | Verdict              | Mechanism                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
 | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -196,39 +280,62 @@ agent loops are mostly weaker.
 | **Open WebUI**                                                                                                                                                                | N/A                  | Chat front-end, not an agent loop. Output bounding depends on the connected LLM backend and MCP servers.                                                                                                                                                                                                                                                                                                                                                                                                                                                                               |
 | **LibreChat**                                                                                                                                                                 | N/A                  | Chat front-end, not an agent loop. Output bounding depends on the connected LLM backend and MCP servers.                                                                                                                                                                                                                                                                                                                                                                                                                                                                               |
 
-**Why the wrapper options win this dimension by default.** Claude Code, Codex, Goose, etc. all bake output bounding into their Bash tool implementation: the agent never sees more than a configured budget worth of stdout, and the truncation marker tells the model "output was N chars, showing first/last X". If you wrap one of those CLIs, you inherit that behavior for free. If you write your own agent loop (kagent, the custom Coder Agents loop, possibly open-swe), you have to re-implement it — and most homelab-scale projects haven't. OpenClaw is the counterexample: it has its own loop but did implement a per-result guard.
+**Why the wrapper options win this dimension by default.** Claude Code, Codex, Goose, etc. all bake output bounding into
+their Bash tool implementation: the agent never sees more than a configured budget worth of stdout, and the truncation
+marker tells the model "output was N chars, showing first/last X". If you wrap one of those CLIs, you inherit that
+behavior for free. If you write your own agent loop (kagent, the custom Coder Agents loop, possibly open-swe), you have
+to re-implement it — and most homelab-scale projects haven't. OpenClaw is the counterexample: it has its own loop but
+did implement a per-result guard.
 
 ## Recommendations for this cluster
 
-After the Coder licensing news _and_ the kagent tool-output issue, the OSS picture
-narrows: **prefer options that wrap a CLI which already bounds tool output**
-(Claude Code / Codex / Goose). Independent agent loops without a
-token-budget-aware tool-output guard (kagent, possibly open-swe) are
-disqualified for serious cluster-ops use until they grow one. OpenClaw grew one
-(per-result guard, see the table above), so it is no longer in that category —
-though its aggregate-per-turn overflow gap is still open.
+After the Coder licensing news _and_ the kagent tool-output issue, the OSS picture narrows: **prefer options that wrap a
+CLI which already bounds tool output** (Claude Code / Codex / Goose). Independent agent loops without a
+token-budget-aware tool-output guard (kagent, possibly open-swe) are disqualified for serious cluster-ops use until they
+grow one. OpenClaw grew one (per-result guard, see the table above), so it is no longer in that category — though its
+aggregate-per-turn overflow gap is still open.
 
 Ranked by effort vs. desiderata fit:
 
-1. **siteboon/claudecodeui as a Pod** — fastest path to "Claude Code in a browser tab on the cluster". AGPL-3.0, single-user, Claude-Code skills/MCP/CLAUDE.md carry over via shared `~/.claude`. **Inherits Claude Code's 30K-char middle-truncating Bash tool**, so 20-GB-stdout commands don't kill the session. Per-task isolation is its weak spot; treat it as a remote-IDE-for-one.
-2. **`agent-sandbox` (CRD) + N×`coder/agentapi` + a thin index page**, with **Claude Code or Codex as the inner CLI** — roll-your-own multi-agent dispatcher in OSS. The CRD gives you isolated stateful Pods with persistent storage; agentapi gives you the per-agent chat UI; the wrapped CLI gives you tool-output bounding for free; you write the dashboard that lists them. ~weekend of glue. Reproduces what Coder Tasks/Agents do, in OSS, without paying.
-3. **Build the OpenHands runtime-api k8s shim** only if OpenHands' UI is the one you actually want. OpenHands at least has _some_ `_maybe_truncate` (lossy middle-truncate at 30K chars) so it won't die outright, but the smarter context-offload (issue #12353) isn't merged yet. ~few hundred lines of FastAPI + the kube client.
-4. **Coder Agents** if you decide to pay for Coder Premium. Strongest architectural fit; tool-output handling is presumed ✓ but unverified (closed source).
-5. **OpenClaw + GitHub-as-review-UI** — still below the wrappers, but on one sharp edge rather than two: OpenClaw does bound individual tool results (see the table above), leaving only the open aggregate-per-turn overflow gap. Execution is in the harness container: the OpenShell delegation described here was deleted on 2026-07-31 along with the gateway that used it, and the surviving agent confines itself with a NetworkPolicy and a credential-substituting egress proxy instead (`docs/personal_agents/verdicts.md`). Reasonable to stay here if (1) or (2) is more work than it's worth.
-6. ~~kagent~~ — **retired**: no client-side output budget, so it could not survive a
-   session that ran `kubectl logs` or anything similarly noisy. Reconsider only after
-   upstream adds pre-history, token-budget-aware tool-output bounding. See
-   <../cluster/archive/2026_07_kagent/README.md>.
+1. **siteboon/claudecodeui as a Pod** — fastest path to "Claude Code in a browser tab on the cluster". AGPL-3.0,
+   single-user, Claude-Code skills/MCP/CLAUDE.md carry over via shared `~/.claude`. **Inherits Claude Code's 30K-char
+   middle-truncating Bash tool**, so 20-GB-stdout commands don't kill the session. Per-task isolation is its weak spot;
+   treat it as a remote-IDE-for-one.
+2. **`agent-sandbox` (CRD) + N×`coder/agentapi` + a thin index page**, with **Claude Code or Codex as the inner CLI** —
+   roll-your-own multi-agent dispatcher in OSS. The CRD gives you isolated stateful Pods with persistent storage;
+   agentapi gives you the per-agent chat UI; the wrapped CLI gives you tool-output bounding for free; you write the
+   dashboard that lists them. ~weekend of glue. Reproduces what Coder Tasks/Agents do, in OSS, without paying.
+3. **Build the OpenHands runtime-api k8s shim** only if OpenHands' UI is the one you actually want. OpenHands at least
+   has _some_ `_maybe_truncate` (lossy middle-truncate at 30K chars) so it won't die outright, but the smarter
+   context-offload (issue #12353) isn't merged yet. ~few hundred lines of FastAPI + the kube client.
+4. **Coder Agents** if you decide to pay for Coder Premium. Strongest architectural fit; tool-output handling is
+   presumed ✓ but unverified (closed source).
+5. **OpenClaw + GitHub-as-review-UI** — still below the wrappers, but on one sharp edge rather than two: OpenClaw does
+   bound individual tool results (see the table above), leaving only the open aggregate-per-turn overflow gap. Execution
+   is in the harness container: the OpenShell delegation described here was deleted on 2026-07-31 along with the gateway
+   that used it, and the surviving agent confines itself with a NetworkPolicy and a credential-substituting egress proxy
+   instead (`docs/personal_agents/verdicts.md`). Reasonable to stay here if (1) or (2) is more work than it's worth.
+6. ~~kagent~~ — **retired**: no client-side output budget, so it could not survive a session that ran `kubectl logs` or
+   anything similarly noisy. Reconsider only after upstream adds pre-history, token-budget-aware tool-output bounding.
+   See <../cluster/archive/2026_07_kagent/README.md>.
 7. ~~Coder OSS + Coder Tasks~~ — **don't start new builds here**: deprecated 2026-06-02, removed in v2.37 (2026-09-01).
 
 ## Sources
 
 - [siteboon/claudecodeui (CloudCLI)](https://github.com/siteboon/claudecodeui)
-- [BloopAI/vibe-kanban](https://github.com/BloopAI/vibe-kanban) · [self-hosting docs](https://vibekanban.com/docs/self-hosting/deploy-docker)
+- [BloopAI/vibe-kanban](https://github.com/BloopAI/vibe-kanban) ·
+  [self-hosting docs](https://vibekanban.com/docs/self-hosting/deploy-docker)
 - [manaflow-ai/cmux](https://github.com/manaflow-ai/cmux) · [coder/mux](https://github.com/coder/mux)
-- [kubernetes-sigs/agent-sandbox](https://github.com/kubernetes-sigs/agent-sandbox) · [docs](https://agent-sandbox.sigs.k8s.io/) · [Kubernetes blog announcement](https://kubernetes.io/blog/2026/03/20/running-agents-on-kubernetes-with-agent-sandbox/)
-- [Stanislas Polu — Building a self-hosted cloud coding agent](https://stanislas.blog/2026/02/netclode-self-hosted-cloud-coding-agent/) · [angristan/netclode](https://github.com/angristan/netclode)
-- [coder/coder](https://github.com/coder/coder) · [Coder Tasks docs (deprecation notice)](https://coder.com/docs/ai-coder/tasks) · [Coder Agents docs](https://coder.com/docs/ai-coder/agents) · [Coder Agents launch announcement](https://coder.com/blog/self-hosted-ai-model-agnostic-coder-agents) · [coder/agentapi](https://github.com/coder/agentapi)
+- [kubernetes-sigs/agent-sandbox](https://github.com/kubernetes-sigs/agent-sandbox) ·
+  [docs](https://agent-sandbox.sigs.k8s.io/) ·
+  [Kubernetes blog announcement](https://kubernetes.io/blog/2026/03/20/running-agents-on-kubernetes-with-agent-sandbox/)
+- [Stanislas Polu — Building a self-hosted cloud coding agent](https://stanislas.blog/2026/02/netclode-self-hosted-cloud-coding-agent/)
+  · [angristan/netclode](https://github.com/angristan/netclode)
+- [coder/coder](https://github.com/coder/coder) ·
+  [Coder Tasks docs (deprecation notice)](https://coder.com/docs/ai-coder/tasks) ·
+  [Coder Agents docs](https://coder.com/docs/ai-coder/agents) ·
+  [Coder Agents launch announcement](https://coder.com/blog/self-hosted-ai-model-agnostic-coder-agents) ·
+  [coder/agentapi](https://github.com/coder/agentapi)
 - [imbue-ai/sculptor](https://github.com/imbue-ai/sculptor)
 - [Upsonic/sweep](https://github.com/Upsonic/sweep)
 - [langchain-ai/open-swe](https://github.com/langchain-ai/open-swe)
@@ -236,7 +343,8 @@ Ranked by effort vs. desiderata fit:
 - [stitionai/devika](https://github.com/stitionai/devika)
 - [All-Hands-AI/OpenHands-Cloud (PolyForm Free Trial)](https://github.com/All-Hands-AI/OpenHands-Cloud)
 - [OpenHands Remote Runtime SaaS landing](https://runtime.all-hands.dev/)
-- [Anthropic Bash tool docs (output truncation)](https://docs.claude.com/en/docs/agents-and-tools/tool-use/bash-tool) · [claude-code issue #19901 documenting the 30K cap](https://github.com/anthropics/claude-code/issues/19901)
+- [Anthropic Bash tool docs (output truncation)](https://docs.claude.com/en/docs/agents-and-tools/tool-use/bash-tool) ·
+  [claude-code issue #19901 documenting the 30K cap](https://github.com/anthropics/claude-code/issues/19901)
 - [openai/codex issue #6426 — replace line-based truncation with token budget](https://github.com/openai/codex/issues/6426)
 - [Goose — Adjusting Tool Output Verbosity](https://block.github.io/goose/docs/guides/managing-tools/adjust-tool-output/)
 - [OpenHands feature request #12353 — context offloading for large tool outputs](https://github.com/OpenHands/OpenHands/issues/12353)

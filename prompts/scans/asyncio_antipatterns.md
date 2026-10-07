@@ -228,14 +228,17 @@ with Transaction(db) as tx:
 
 ### 1. Unnecessary @pytest.mark.asyncio Decorators
 
-**Context**: Projects can configure `asyncio_mode = "auto"` in `[tool.pytest.ini_options]` section of `pyproject.toml` (or `pytest.ini`), which automatically detects async test functions without requiring explicit `@pytest.mark.asyncio` decorators.
+**Context**: Projects can configure `asyncio_mode = "auto"` in `[tool.pytest.ini_options]` section of `pyproject.toml`
+(or `pytest.ini`), which automatically detects async test functions without requiring explicit `@pytest.mark.asyncio`
+decorators.
 
 **Antipattern**: Using `@pytest.mark.asyncio` decorators when `asyncio_mode = "auto"` is configured.
 
 **Fix Strategy**:
 
 1. **Check pytest configuration**: Look for `asyncio_mode = "auto"` in project's `pyproject.toml` or `pytest.ini`
-2. **If auto-detection is enabled**: Remove `@pytest.mark.asyncio` decorators - pytest will automatically detect `async def test_*()` functions
+2. **If auto-detection is enabled**: Remove `@pytest.mark.asyncio` decorators - pytest will automatically detect
+   `async def test_*()` functions
 3. **If auto-detection is NOT enabled**: Consider enabling it by adding to `pyproject.toml`:
 
    ```toml

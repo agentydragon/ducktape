@@ -15,8 +15,8 @@ occurrences:
         - [157, 157]
         - [71, 80]
     note: >-
-      _manual_refresh_task is created but not cancelled in stop() (lines 71-80
-      only handle _periodic_task). Task errors are silently lost.
+      _manual_refresh_task is created but not cancelled in stop() (lines 71-80 only handle _periodic_task). Task errors
+      are silently lost.
     critic_scopes_expected_to_recall:
       - - wt/server/github_watcher.py
     match_file_restriction:

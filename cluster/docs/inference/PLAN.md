@@ -5,13 +5,13 @@ Updated: 2026-09-26. The September 24 measurements and exact commands are in
 
 ## Objective and decision
 
-User priority, verbatim: "The strongest model this machine can run, even if slow".
-Also refresh releases since the last substantive inference experiments, July 17–18.
-September Git edits mostly maintain paths and deployment wiring; they are not September model evaluations.
+User priority, verbatim: "The strongest model this machine can run, even if slow". Also refresh releases since the last
+substantive inference experiments, July 17–18. September Git edits mostly maintain paths and deployment wiring; they are
+not September model evaluations.
 
-Choose a model, quantization, runtime, reasoning setting, and usable context together.
-Optimize task success and independence from human rescue first; retain latency measurements to expose the cost.
-No blanket tokens/s cutoff. A slow model earns its place by solving tasks the faster ones cannot.
+Choose a model, quantization, runtime, reasoning setting, and usable context together. Optimize task success and
+independence from human rescue first; retain latency measurements to expose the cost. No blanket tokens/s cutoff. A slow
+model earns its place by solving tasks the faster ones cannot.
 
 ## Initial machine snapshot (before storage work and experiments)
 
@@ -23,17 +23,17 @@ No blanket tokens/s cutoff. A slow model earns its place by solving tasks the fa
 - `/var/lib/colibri`: 492G total, 447G used, 20G available, 96% used.
 - At the post-GC recheck, node `Ready=True`, `DiskPressure=True`; `node.kubernetes.io/disk-pressure:NoSchedule` taint.
 - Ollama Deployment `0/1`; replacement pod Pending/Unschedulable. Model PVC still Bound, 200Gi HDD class.
-- No pods in `llm-bench`. Both GPUs respond; queried seven-day kernel log returned no matching Xid/reset entries.
-  This does not establish stability under sustained inference or cover unavailable historical logs.
+- No pods in `llm-bench`. Both GPUs respond; queried seven-day kernel log returned no matching Xid/reset entries. This
+  does not establish stability under sustained inference or cover unavailable historical logs.
 - Existing GLM-5.2 Colibri and DeepSeek-V4 IQ2 directories remain on disk; completeness not revalidated.
 
-Reproduce with `nvidia-smi`, `nvidia-smi topo -m`, `nvidia-smi topo -p2p r`, `free -h`,
-`df -h / /var/lib/colibri`, `kubectl get node wyrm2 -o json`, and `kubectl -n ollama get pods,deploy,pvc`.
+Reproduce with `nvidia-smi`, `nvidia-smi topo -m`, `nvidia-smi topo -p2p r`, `free -h`, `df -h / /var/lib/colibri`,
+`kubectl get node wyrm2 -o json`, and `kubectl -n ollama get pods,deploy,pvc`.
 
 ## Existing evidence and its limits
 
-Run paths below are relative to this directory. The July run records are historical evidence;
-the September measurements below are separate from these historical results.
+Run paths below are relative to this directory. The July run records are historical evidence; the September measurements
+below are separate from these historical results.
 
 | Evidence                                                  | Finding                                                                                                                              | Limitation                                                                                                                                        |
 | --------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -45,23 +45,23 @@ the September measurements below are separate from these historical results.
 | <runs/2026-07-17_glm52_colibri_deepening/README.md>       | GLM-5.2 Colibri: ~0.15–0.16 tok/s warm in longer follow-up                                                                           | 64K allocation used a short prompt; not a filled-context result. Framework overhead was substantial, so storage alone is not an established cause |
 | <runs/2026-04-29_swebench_n100_shuffled_gpt20/README.md>  | SWE-bench attempts aborted                                                                                                           | No usable N=100 capability result                                                                                                                 |
 
-Other hubs: `x/local_llm/`, `x/benchmark_ollama/`, `props/docs/local_llm_evaluation/`,
-and `cluster/docs/inference/model_comparison/`. Props local measurements were CPU-only in an older web environment,
-not measurements of the two 5090s. Existing inference `PLAN.md` already favors lightweight run records over a new framework.
+Other hubs: `x/local_llm/`, `x/benchmark_ollama/`, `props/docs/local_llm_evaluation/`, and
+`cluster/docs/inference/model_comparison/`. Props local measurements were CPU-only in an older web environment, not
+measurements of the two 5090s. Existing inference `PLAN.md` already favors lightweight run records over a new framework.
 
 Audit cautions:
 
-- E2's 1,000–1,500 tok/s gpt-oss numbers need remeasurement. The harness divides total reported completion tokens
-  by time after first visible delta; unstreamed reasoning or buffered chunks could inflate that rate. This is a risk,
-  not a proven explanation. Its nominal 128K input was actually 109,277 tokens, with null reasoning counts.
+- E2's 1,000–1,500 tok/s gpt-oss numbers need remeasurement. The harness divides total reported completion tokens by
+  time after first visible delta; unstreamed reasoning or buffered chunks could inflate that rate. This is a risk, not a
+  proven explanation. Its nominal 128K input was actually 109,277 tokens, with null reasoning counts.
 - E5 says it was the only parallel-tool success, but E1 also passed. A single weather probe is only a smoke test.
 - A model card's full-precision quality score does not establish the quality of an IQ2 local deployment.
 - A theoretical memory-bandwidth ceiling does not promise a corresponding attainable speedup.
 
 ## Refreshed candidates
 
-All file sizes below are decimal GB, summed from quantizer file metadata, not peak RAM/VRAM requirements.
-Runtime buffers, non-expert tensors, KV, page cache, the desktop, and temporary loading copies require headroom.
+All file sizes below are decimal GB, summed from quantizer file metadata, not peak RAM/VRAM requirements. Runtime
+buffers, non-expert tensors, KV, page cache, the desktop, and temporary loading copies require headroom.
 
 | Candidate              | Initial configuration to investigate                                                     | Why                                                                                                                       |
 | ---------------------- | ---------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------- |
@@ -72,9 +72,9 @@ Runtime buffers, non-expert tensors, KV, page cache, the desktop, and temporary 
 | DeepSeek-V4.1-Flash    | JigSawPT `dsv41-porte` streaming fork with matching 502 GB checkpoint                    | Highest-priority ambitious feasibility track; new implementation makes a much larger model testable in principle          |
 | MiniMax-M3             | IQ2_M 134.21 GB                                                                          | Already on old backlog; still untested. Bare 2-bit parameter arithmetic understated actual artifact size                  |
 
-GLM-5.3-Flash upstream llama.cpp PR #27754 was OPEN/unmerged at inspection; pin a compatible implementation,
-including its tool-template and long-context fixes. Qwen3.8's reported Blackwell SOFT_MAX issue #28403 was closed;
-the reporter resolved that instance by rebuilding with a consistent CUDA toolchain. Neither fact proves a local run.
+GLM-5.3-Flash upstream llama.cpp PR #27754 was OPEN/unmerged at inspection; pin a compatible implementation, including
+its tool-template and long-context fixes. Qwen3.8's reported Blackwell SOFT_MAX issue #28403 was closed; the reporter
+resolved that instance by rebuilding with a consistent CUDA toolchain. Neither fact proves a local run.
 
 Primary sources:
 
@@ -94,22 +94,20 @@ Primary sources:
 - [MiniMax card](https://huggingface.co/MiniMaxAI/MiniMax-M3),
   [quantizer inventory](https://huggingface.co/unsloth/MiniMax-M3-GGUF/tree/main).
 
-The V4.1 author reports ~5.1 tok/s on new content and ~21 on repeated content with one 5090,
-125.7 GiB RAM and PCIe 5 NVMe. A September 23 direct-I/O update reports ~8.9–10.0 tok/s on first-pass prompts.
-These are short-prompt, short-output external measurements. Wyrm2 has less RAM and a virtualized storage path;
-two-GPU scaling, reasoning quality, sustained changing expert working sets, and long-context behavior are unknown.
-Use the expanded VM model disk for the 502 GB checkpoint, archiving inactive checkpoints for working headroom.
-Keep every expert; caching changes placement, whereas dropping experts changes the model.
+The V4.1 author reports ~5.1 tok/s on new content and ~21 on repeated content with one 5090, 125.7 GiB RAM and PCIe 5
+NVMe. A September 23 direct-I/O update reports ~8.9–10.0 tok/s on first-pass prompts. These are short-prompt,
+short-output external measurements. Wyrm2 has less RAM and a virtualized storage path; two-GPU scaling, reasoning
+quality, sustained changing expert working sets, and long-context behavior are unknown. Use the expanded VM model disk
+for the 502 GB checkpoint, archiving inactive checkpoints for working headroom. Keep every expert; caching changes
+placement, whereas dropping experts changes the model.
 
 ## Storage recommendation
 
-Subsequent September 24 inspection of Atlas confirmed that `virtio8` is
-`local-zfs:vm-110-disk-7`, backed by the 4 TB Sabrent NVMe in `rpool`.
-ZFS reported about 1.03 TB (956 GiB) available to datasets, shared with other VMs;
-the pool had about 1.22 TB physically free. These are different accounting figures,
-not additive capacity. The HDD share had about 27 TiB free.
-Root free space had increased to 105 GiB by this later check; the earlier disk-pressure
-observation above was not rechecked at that time.
+Subsequent September 24 inspection of Atlas confirmed that `virtio8` is `local-zfs:vm-110-disk-7`, backed by the 4 TB
+Sabrent NVMe in `rpool`. ZFS reported about 1.03 TB (956 GiB) available to datasets, shared with other VMs; the pool had
+about 1.22 TB physically free. These are different accounting figures, not additive capacity. The HDD share had about 27
+TiB free. Root free space had increased to 105 GiB by this later check; the earlier disk-pressure observation above was
+not rechecked at that time.
 
 | Storage                             | Current allocation | Proposed allocation | Reason                               |
 | ----------------------------------- | ------------------ | ------------------- | ------------------------------------ |
@@ -117,97 +115,77 @@ observation above was not rechecked at that time.
 | Root (`scsi0`)                      | 500 GiB            | 500 GiB             | 105 GiB free after cleanup           |
 | Games, containerd, Kubernetes disks | Existing           | Existing            | No expansion needed for this program |
 
-The model-volume change was applied online on September 24:
-**1,024 GiB at `/var/lib/llm-models-ssd`**, with about 515 GiB free and all existing
-models retained. Implementation and verification are in
-[PR #7893](https://github.com/agentydragon/ducktape/pull/7893).
-The VM was not rebooted and its running system generation and critical service PIDs
-were unchanged. The NixOS configuration was staged for the next normal boot;
-only the reviewed mount-related files were applied to the running system.
-Terraform currently ignores disk changes to protect legacy CSI attachments, so this
-grow used a targeted Proxmox resize rather than bootstrap. The PR also updates
-launcher defaults and the monitoring selector for the normal Flux rollout after merge.
+The model-volume change was applied online on September 24: **1,024 GiB at `/var/lib/llm-models-ssd`**, with about 515
+GiB free and all existing models retained. Implementation and verification are in
+[PR #7893](https://github.com/agentydragon/ducktape/pull/7893). The VM was not rebooted and its running system
+generation and critical service PIDs were unchanged. The NixOS configuration was staged for the next normal boot; only
+the reviewed mount-related files were applied to the running system. Terraform currently ignores disk changes to protect
+legacy CSI attachments, so this grow used a targeted Proxmox resize rather than bootstrap. The PR also updates launcher
+defaults and the monitoring selector for the normal Flux rollout after merge.
 
-The operator is comfortable archiving or deleting unused models. Candidate archives
-are GLM-5.2 Colibri (358 GiB) and the July DeepSeek IQ2 checkpoint (86 GiB).
-Confirm they are unused, copy to HDD and verify before removing the SSD copies;
-retain small run records. With both archived, the 502 GB V4.1 checkpoint and three
-comparison checkpoints total roughly 770 GiB, fitting the expanded model filesystem.
-Use 400 GiB of pool-available SSD space as an operating headroom target, checking it
-before downloads. Existing disks are thin-provisioned: shrinking an empty allocation
-does not recover the nominal size as physical space.
+The operator is comfortable archiving or deleting unused models. Candidate archives are GLM-5.2 Colibri (358 GiB) and
+the July DeepSeek IQ2 checkpoint (86 GiB). Confirm they are unused, copy to HDD and verify before removing the SSD
+copies; retain small run records. With both archived, the 502 GB V4.1 checkpoint and three comparison checkpoints total
+roughly 770 GiB, fitting the expanded model filesystem. Use 400 GiB of pool-available SSD space as an operating headroom
+target, checking it before downloads. Existing disks are thin-provisioned: shrinking an empty allocation does not
+recover the nominal size as physical space.
 
 ## September 26 checkpoint and decision
 
-**Treat Qwen3.8-Flash-Next as the working baseline and validate its local quality
-with a bounded, meaningful Terminal-Bench subset.** Published scores justify
-investigation, not local Q4 equivalence to a GPT/Claude effort level. Pair Q4 and
-Q5 on the same tasks after checking context handling and safe placement; retain
-single-session capacity measurements and exploration of alternative models.
+**Treat Qwen3.8-Flash-Next as the working baseline and validate its local quality with a bounded, meaningful
+Terminal-Bench subset.** Published scores justify investigation, not local Q4 equivalence to a GPT/Claude effort level.
+Pair Q4 and Q5 on the same tasks after checking context handling and safe placement; retain single-session capacity
+measurements and exploration of alternative models.
 
-**All inference experiments are strictly serial at the operator's request:** one
-active task, one model configuration, one server slot, and no competing inference
-requests. This includes preflight probes, subagent model calls and alternative-model
-experiments. Verify exclusive use before starting; defer if interactive usage would
-compete. Simultaneous-generation tests are deferred because they change KV-cache
-pressure and would confound this evaluation.
-The operator reports that Flash-Next **completed a long, real knowledge-management
-task reasonably in OpenCode, without obvious bugs or breakages, across more than
-128K cumulative context, at least one compaction and about four subagent calls**. This is a useful
-end-to-end agent outcome, not just a favorable impression. It is operator-reported,
-not an independently scored coding task. The operator-supplied
-[OpenCode and server recipes](runs/2026-09-26_harbor_review/README.md) are captured;
-effective client defaults and compaction trigger/reserve still need capture.
-The reported compaction is evidence of working history management in that client;
-it does not establish that Mini-SWE uses the same policy. Preserve OpenCode as the reference client and prioritize making that
-working everyday/overnight workflow reliable. Use small checks to investigate
-regressions and choose improvements. The interrupted Harbor benchmark is not a
-reason to reject a model that already did useful work. The operator also finds it
-substantially nicer than their GPT-OSS experience roughly a year earlier on the
-same hardware. Preserve that observed practical advance; do not require another
-benchmark campaign before accepting Qwen as the working baseline.
+**All inference experiments are strictly serial at the operator's request:** one active task, one model configuration,
+one server slot, and no competing inference requests. This includes preflight probes, subagent model calls and
+alternative-model experiments. Verify exclusive use before starting; defer if interactive usage would compete.
+Simultaneous-generation tests are deferred because they change KV-cache pressure and would confound this evaluation. The
+operator reports that Flash-Next **completed a long, real knowledge-management task reasonably in OpenCode, without
+obvious bugs or breakages, across more than 128K cumulative context, at least one compaction and about four subagent
+calls**. This is a useful end-to-end agent outcome, not just a favorable impression. It is operator-reported, not an
+independently scored coding task. The operator-supplied
+[OpenCode and server recipes](runs/2026-09-26_harbor_review/README.md) are captured; effective client defaults and
+compaction trigger/reserve still need capture. The reported compaction is evidence of working history management in that
+client; it does not establish that Mini-SWE uses the same policy. Preserve OpenCode as the reference client and
+prioritize making that working everyday/overnight workflow reliable. Use small checks to investigate regressions and
+choose improvements. The interrupted Harbor benchmark is not a reason to reject a model that already did useful work.
+The operator also finds it substantially nicer than their GPT-OSS experience roughly a year earlier on the same
+hardware. Preserve that observed practical advance; do not require another benchmark campaign before accepting Qwen as
+the working baseline.
 
 Completed here:
 
-- Model SSD expanded to 1 TiB and renamed `/var/lib/llm-models-ssd` (#7893).
-  Dense Q8 and all four Flash Q4 shards are downloaded and SHA256 verified.
-- Dense Qwen3.8-27B Q8: about 51 tokens/s on GPU1, 50 with equal layer splitting;
-  tensor splitting with a container-only NCCL update gives 68–72 tokens/s.
-  Both GPUs demonstrably help dense decode with the right split.
-- Flash-Next Q4: 32.73 tokens/s on the short prompt; at 24,132 actual input tokens,
-  126.703 s fresh prefill and 30.72 tokens/s decode. One synthetic tool-result
-  grounding failure was retained; seeded repeats were clean. These are smoke
+- Model SSD expanded to 1 TiB and renamed `/var/lib/llm-models-ssd` (#7893). Dense Q8 and all four Flash Q4 shards are
+  downloaded and SHA256 verified.
+- Dense Qwen3.8-27B Q8: about 51 tokens/s on GPU1, 50 with equal layer splitting; tensor splitting with a container-only
+  NCCL update gives 68–72 tokens/s. Both GPUs demonstrably help dense decode with the right split.
+- Flash-Next Q4: 32.73 tokens/s on the short prompt; at 24,132 actual input tokens, 126.703 s fresh prefill and 30.72
+  tokens/s decode. One synthetic tool-result grounding failure was retained; seeded repeats were clean. These are smoke
   measurements, not a coding pass rate. See [results](results.md).
-- The operator subsequently ran Harbor/mini-swe-agent, apparently with 128K
-  configured context, and reported 1 success in 11 completed tasks after 11h49m.
-  Configuration, errors, and partial-result interpretation belong in the
-  [bounded Harbor audit](runs/2026-09-26_harbor_review/README.md). The saved job now
-  has 12 completed trials, one pass and six context-overflow exits at a 131,072-token
-  limit. It records 1,326,739 output tokens and about 98.1% of input tokens cached.
-  At 30 tokens/s, that output alone takes about 12.3 hours: long reasoning/output
-  trajectories can explain hour-scale tasks without a broken timeout. These are
-  recorded harness counters, not independently validated server accounting.
+- The operator subsequently ran Harbor/mini-swe-agent, apparently with 128K configured context, and reported 1 success
+  in 11 completed tasks after 11h49m. Configuration, errors, and partial-result interpretation belong in the
+  [bounded Harbor audit](runs/2026-09-26_harbor_review/README.md). The saved job now has 12 completed trials, one pass
+  and six context-overflow exits at a 131,072-token limit. It records 1,326,739 output tokens and about 98.1% of input
+  tokens cached. At 30 tokens/s, that output alone takes about 12.3 hours: long reasoning/output trajectories can
+  explain hour-scale tasks without a broken timeout. These are recorded harness counters, not independently validated
+  server accounting.
 
-Historical state checked September 26: no host Docker experiment containers running;
-Ollama was re-enabled by #8000 and ran image `ollama/ollama:0.34.4`, context
-default 131072, on a 350 GiB HDD PVC. The model SSD has about 384 GiB available;
-host RAM about 30 GiB available while Ollama is loaded. An initial GPU snapshot
-showed only about 1 GiB free on desktop GPU0. This is not evidence of a desktop
-stall, but is less headroom than our experiment policy. Do not launch a competing
-server. Pause Ollama by a focused GitOps PR immediately before exclusive experiments;
-the operator has authorized this again. No reboot or full NixOS activation.
+Historical state checked September 26: no host Docker experiment containers running; Ollama was re-enabled by #8000 and
+ran image `ollama/ollama:0.34.4`, context default 131072, on a 350 GiB HDD PVC. The model SSD has about 384 GiB
+available; host RAM about 30 GiB available while Ollama is loaded. An initial GPU snapshot showed only about 1 GiB free
+on desktop GPU0. This is not evidence of a desktop stall, but is less headroom than our experiment policy. Do not launch
+a competing server. Pause Ollama by a focused GitOps PR immediately before exclusive experiments; the operator has
+authorized this again. No reboot or full NixOS activation.
 
-The reported ~1 token/s on HDD/Ollama versus ~30 on SSD/llama.cpp changes several
-variables at once. The September 27 SSD-backed Ollama run measured 29.07 tok/s while
-continuing a cached 145K history, but also changed quant, prompt, context, placement,
-and cache state; it does not isolate the earlier slowdown's cause. #8041 records older
-Ollama findings. Check current logs and the actual loaded model/context, rather than
-only the environment default.
+The reported ~1 token/s on HDD/Ollama versus ~30 on SSD/llama.cpp changes several variables at once. The September 27
+SSD-backed Ollama run measured 29.07 tok/s while continuing a cached 145K history, but also changed quant, prompt,
+context, placement, and cache state; it does not isolate the earlier slowdown's cause. #8041 records older Ollama
+findings. Check current logs and the actual loaded model/context, rather than only the environment default.
 
 ### What the Artificial Analysis comparison does and does not say
 
-Live [AA leaderboard](https://artificialanalysis.ai/leaderboards/models) checked
-September 26, index v4.3.2:
+Live [AA leaderboard](https://artificialanalysis.ai/leaderboards/models) checked September 26, index v4.3.2:
 
 | Model              | Intelligence Index | Terminal-Bench 4.0 |
 | ------------------ | -----------------: | -----------------: |
@@ -215,45 +193,39 @@ September 26, index v4.3.2:
 | GPT-6 Sol low      |              33.90 |              9.09% |
 | GPT-6 Sol medium   |              39.78 |             18.69% |
 
-The aggregate comparison is approximately Sol medium. It is not a forecast of
-local Q4 pass rate. AA's [Terminal-Bench methodology](https://artificialanalysis.ai/evaluations/terminalbench-4-0)
-uses all 66 tasks, mini-swe-agent, and three repeats per task. Its detailed
-[implementation](https://artificialanalysis.ai/methodology/intelligence-benchmarking)
-specifies 500 steps, upstream task deadlines, and no transcript compaction.
-Our partial run has
-few outcomes, harness failures, a different serving configuration, and no matched
-reasoning/output/time-budget record. Its early completion order is not a random
-sample. Do not infer that larger context alone explains the difference, or declare
-either equivalence or collapse from 1/11.
+The aggregate comparison is approximately Sol medium. It is not a forecast of local Q4 pass rate. AA's
+[Terminal-Bench methodology](https://artificialanalysis.ai/evaluations/terminalbench-4-0) uses all 66 tasks,
+mini-swe-agent, and three repeats per task. Its detailed
+[implementation](https://artificialanalysis.ai/methodology/intelligence-benchmarking) specifies 500 steps, upstream task
+deadlines, and no transcript compaction. Our partial run has few outcomes, harness failures, a different serving
+configuration, and no matched reasoning/output/time-budget record. Its early completion order is not a random sample. Do
+not infer that larger context alone explains the difference, or declare either equivalence or collapse from 1/11.
 
 ## Two complementary tracks
 
-Maintain both Qwen improvement and alternative-model research, executing every
-inference run serially. Do one bounded Qwen quality/capacity batch, then give the strongest credible alternative
-a feasibility pass; do not exhaust Qwen's tuning space before exploring. This is
-an experiment-allocation policy, not a claim that either model will win.
+Maintain both Qwen improvement and alternative-model research, executing every inference run serially. Do one bounded
+Qwen quality/capacity batch, then give the strongest credible alternative a feasibility pass; do not exhaust Qwen's
+tuning space before exploring. This is an experiment-allocation policy, not a claim that either model will win.
 
 ## Improve the working Qwen configuration
 
 ### 1. Measure usable context for one session
 
-September 27: [cluster SSD serving acceptance](runs/2026-09-27_ollama_ssd/README.md)
-now passes 24/24 LiteLLM text/tool probes across both 128K/256K routes and all three
-API shapes. With 4/2 GiB fit targets, short 1,024-token generations measured 50.21 /
-60.01 tok/s at 128K and 44.39 / 49.48 tok/s at 256K (first / repeat); the 145K
-continuation measured 29.07 tok/s. A 145K input passes at 256K. The 2/0 GiB target
-passes short requests but OOMs during that long prefill. Full-window reasoning quality
-and parallel slots remain untested. The [updated tradeoff plan](runs/2026-09-27_ollama_ssd/tradeoffs.md)
-separates measured capacity from projections and records Ollama's native-context clamp.
+September 27: [cluster SSD serving acceptance](runs/2026-09-27_ollama_ssd/README.md) now passes 24/24 LiteLLM text/tool
+probes across both 128K/256K routes and all three API shapes. With 4/2 GiB fit targets, short 1,024-token generations
+measured 50.21 / 60.01 tok/s at 128K and 44.39 / 49.48 tok/s at 256K (first / repeat); the 145K continuation measured
+29.07 tok/s. A 145K input passes at 256K. The 2/0 GiB target passes short requests but OOMs during that long prefill.
+Full-window reasoning quality and parallel slots remain untested. The
+[updated tradeoff plan](runs/2026-09-27_ollama_ssd/tradeoffs.md) separates measured capacity from projections and
+records Ollama's native-context clamp.
 
-Reuse the demonstrated SSD configuration for these measurements.
-Capture effective settings and do only enough startup/tool checking to establish
-that the reference is running. Ollama deployment and a new coding harness are not
+Reuse the demonstrated SSD configuration for these measurements. Capture effective settings and do only enough
+startup/tool checking to establish that the reference is running. Ollama deployment and a new coding harness are not
 prerequisites.
 
-The [official model card](https://huggingface.co/Qwen/Qwen3.8-Flash-Next) specifies
-262,144 native total tokens, with extension to 1M using supported scaling. Test
-native context first; advertising 1M is not proof of allocation or useful recall.
+The [official model card](https://huggingface.co/Qwen/Qwen3.8-Flash-Next) specifies 262,144 native total tokens, with
+extension to 1M using supported scaling. Test native context first; advertising 1M is not proof of allocation or useful
+recall.
 
 | Experiment     | Per-conversation total context | Simultaneous sequences | Purpose                                   |
 | -------------- | -----------------------------: | ---------------------: | ----------------------------------------- |
@@ -261,131 +233,109 @@ native context first; advertising 1M is not proof of allocation or useful recall
 | Working agent  |                           128K |                      1 | Establish useful single-agent capacity    |
 | Native ceiling |                           256K |                      1 | Test capacity and retained task facts     |
 
-At each size fill most of the window, reserve output, and test retrieval at multiple
-depths plus a multi-turn edit depending on earlier facts. Report advertised,
-allocated, and effective context separately. Measure fresh and cached prefill,
-per-request decode, aggregate throughput, peak memory and completed tasks/hour.
-Verify actual `n_ctx_slot` and overflow behavior from logs with `--parallel 1`.
-Account for KV, recurrent state, checkpoints and prompt-cache RAM. Multiple-context
-capacity remains an open question, but concurrent generation is outside the current
-run plan. Allocation arithmetic alone would not prove useful simultaneous capacity.
+At each size fill most of the window, reserve output, and test retrieval at multiple depths plus a multi-turn edit
+depending on earlier facts. Report advertised, allocated, and effective context separately. Measure fresh and cached
+prefill, per-request decode, aggregate throughput, peak memory and completed tasks/hour. Verify actual `n_ctx_slot` and
+overflow behavior from logs with `--parallel 1`. Account for KV, recurrent state, checkpoints and prompt-cache RAM.
+Multiple-context capacity remains an open question, but concurrent generation is outside the current run plan.
+Allocation arithmetic alone would not prove useful simultaneous capacity.
 
-Only after native 256K is useful, try a bounded 512K/1M extension if the runtime
-supports this architecture's scaling correctly. Longer context can increase prefill
-and displace resident weights, so it is a capacity/quality experiment, not a free fix.
+Only after native 256K is useful, try a bounded 512K/1M extension if the runtime supports this architecture's scaling
+correctly. Longer context can increase prefill and displace resident weights, so it is a capacity/quality experiment,
+not a free fix.
 
 ### 2. Compare published capability with neighboring GPT/Claude effort levels
 
-Keep a compact dated comparison of the aggregate index and its individual coding,
-agentic, long-context and grounding measures where available. Use the same benchmark
-version and explicit effort level; preserve served-model/provider and precision
-caveats. The [September 26 neighbor snapshot](runs/2026-09-26_harbor_review/aa_neighbours.json)
-extends the table above to Sonnet/Opus and adjacent GPT effort levels. Qwen is close
-to Sol medium on the aggregate index and close to Sol high on this Terminal-Bench
-score; neither means interchangeability across tasks. The [per-evaluation breakdown](runs/2026-09-26_harbor_review/README.md#trust-and-per-evaluation-differences)
-shows substantial reversals across metrics. Neither aggregate positioning nor
-provider scores establish the quality retained by the local quantization.
+Keep a compact dated comparison of the aggregate index and its individual coding, agentic, long-context and grounding
+measures where available. Use the same benchmark version and explicit effort level; preserve served-model/provider and
+precision caveats. The [September 26 neighbor snapshot](runs/2026-09-26_harbor_review/aa_neighbours.json) extends the
+table above to Sonnet/Opus and adjacent GPT effort levels. Qwen is close to Sol medium on the aggregate index and close
+to Sol high on this Terminal-Bench score; neither means interchangeability across tasks. The
+[per-evaluation breakdown](runs/2026-09-26_harbor_review/README.md#trust-and-per-evaluation-differences) shows
+substantial reversals across metrics. Neither aggregate positioning nor provider scores establish the quality retained
+by the local quantization.
 
 ### 3. Trade precision and reasoning against context and latency
 
-The [September 26 capacity calculation](runs/2026-09-26_qwen38_capacity/README.md)
-uses actual GGUF metadata and pinned runtime source, including indexer and recurrent
-state. The [serial queue](runs/2026-09-26_qwen38_queue/README.md) completed its first
-frozen task at 128K/Q8 with Q4 and Terminus-2:
-[reward 1.0, six verifier checks passed, two compactions](runs/2026-09-26_qwen38_q4_terminus_result/README.md)
-in 7h 40m total. Q5 and IQ4_XS downloads finished at 04:48 Pacific. The matched
-[IQ4_XS attempt](runs/2026-09-26_qwen38_iq4_terminus_result/README.md) also passed all
-six verifier tests after three compactions, but exhausted its eight-hour agent limit
-while still testing. Its wrapper exited cleanly; decode averaged 40.79 tokens/s
-versus Q4's 24.74, without earlier agent completion. The KV sweep, filled-window
-256K task quality and Q5 comparison remain follow-ups. Desktop RAM/VRAM reserves remain enforced; overlapping
-download traffic in Q4's first hour is a latency confounder. Its wrapper guard failed
-after the passing result because the Kubernetes API was unreachable; distinguish
-that cleanup outcome from the completed evaluation.
-Parallel-window numbers in that note are arithmetic only, not permission to run
-concurrent evaluations.
+The [September 26 capacity calculation](runs/2026-09-26_qwen38_capacity/README.md) uses actual GGUF metadata and pinned
+runtime source, including indexer and recurrent state. The [serial queue](runs/2026-09-26_qwen38_queue/README.md)
+completed its first frozen task at 128K/Q8 with Q4 and Terminus-2:
+[reward 1.0, six verifier checks passed, two compactions](runs/2026-09-26_qwen38_q4_terminus_result/README.md) in 7h 40m
+total. Q5 and IQ4_XS downloads finished at 04:48 Pacific. The matched
+[IQ4_XS attempt](runs/2026-09-26_qwen38_iq4_terminus_result/README.md) also passed all six verifier tests after three
+compactions, but exhausted its eight-hour agent limit while still testing. Its wrapper exited cleanly; decode averaged
+40.79 tokens/s versus Q4's 24.74, without earlier agent completion. The KV sweep, filled-window 256K task quality and Q5
+comparison remain follow-ups. Desktop RAM/VRAM reserves remain enforced; overlapping download traffic in Q4's first hour
+is a latency confounder. Its wrapper guard failed after the passing result because the Kubernetes API was unreachable;
+distinguish that cleanup outcome from the completed evaluation. Parallel-window numbers in that note are arithmetic
+only, not permission to run concurrent evaluations.
 
-Vary one axis at a time. 'Lower quant' can mean either fewer bits (smaller/faster)
-or less quantization (more precision); these address different hypotheses.
-[Current GGUF sizes](https://unsloth.ai/docs/models/qwen3.8-next): Q4_K_XL 111.3 GB,
-IQ4_XS 93.7 GB, Q3_K_XL 90.0 GB, Q5_K_XL 158.3 GB. These are file sizes,
-not required VRAM, and the large embedding tables complicate simple bits/parameter
-intuition.
+Vary one axis at a time. 'Lower quant' can mean either fewer bits (smaller/faster) or less quantization (more
+precision); these address different hypotheses. [Current GGUF sizes](https://unsloth.ai/docs/models/qwen3.8-next):
+Q4_K_XL 111.3 GB, IQ4_XS 93.7 GB, Q3_K_XL 90.0 GB, Q5_K_XL 158.3 GB. These are file sizes, not required VRAM, and the
+large embedding tables complicate simple bits/parameter intuition.
 
-- Keep Q4 as control and try Q5 later to test quality retention, once safe placement
-  is established. Its larger working set may cost speed or page-cache capacity;
-  more bits do not guarantee a better completed task within the available budget.
-- IQ4_XS is now the deployed baseline. IQ3_XXS is the next substantial capacity
-  comparison (10.92 GiB fewer non-PLE weights); Q3_K_XL is a smaller 3.44 GiB step.
-  Assess matched tasks before adopting either; published fidelity is not agent success.
-- Set reasoning explicitly. The official default is xhigh; our initial probes used
-  medium. Compare medium and xhigh under an adequate, explicit output allowance.
-  Short-output protocol probes cannot establish the model's reasoning ceiling.
-- Try Q8 versus smaller KV formats only with supported kernels and recall checks.
-  Test MTP/speculation last, measuring accepted draft tokens and end-to-end gains;
-  faster token loops that increase SSD reads need not improve agent completion.
+- Keep Q4 as control and try Q5 later to test quality retention, once safe placement is established. Its larger working
+  set may cost speed or page-cache capacity; more bits do not guarantee a better completed task within the available
+  budget.
+- IQ4_XS is now the deployed baseline. IQ3_XXS is the next substantial capacity comparison (10.92 GiB fewer non-PLE
+  weights); Q3_K_XL is a smaller 3.44 GiB step. Assess matched tasks before adopting either; published fidelity is not
+  agent success.
+- Set reasoning explicitly. The official default is xhigh; our initial probes used medium. Compare medium and xhigh
+  under an adequate, explicit output allowance. Short-output protocol probes cannot establish the model's reasoning
+  ceiling.
+- Try Q8 versus smaller KV formats only with supported kernels and recall checks. Test MTP/speculation last, measuring
+  accepted draft tokens and end-to-end gains; faster token loops that increase SSD reads need not improve agent
+  completion.
 
 ### 4. Bounded local capability validation
 
-Terminal-Bench 4.0 is a substantial agent evaluation, worth a carefully controlled
-rerun. The first predetermined CPU-only task passed with Terminus-2 at 128K,
-preserving original task verifiers and deadlines and recovering after two natural
-compactions. IQ4 passed the same verifier after three compactions but timed out
-while testing. Audit late-run stopping behavior and deadline communication, then
-broaden to a different predetermined task serially. Follow the
-[settings audit](runs/2026-09-26_qwen38_queue/SETTINGS_AUDIT.md) for separate sampling
-and reasoning-history comparisons. Two passing solutions on one shared task establish
-feasibility, not a suite-level pass rate or equivalent quant quality.
-Reserve up to 24–48 hours for a subsequent
-bounded batch and analysis. This is a compute budget,
-not a promise to finish every selected task. Record unfinished work explicitly.
+Terminal-Bench 4.0 is a substantial agent evaluation, worth a carefully controlled rerun. The first predetermined
+CPU-only task passed with Terminus-2 at 128K, preserving original task verifiers and deadlines and recovering after two
+natural compactions. IQ4 passed the same verifier after three compactions but timed out while testing. Audit late-run
+stopping behavior and deadline communication, then broaden to a different predetermined task serially. Follow the
+[settings audit](runs/2026-09-26_qwen38_queue/SETTINGS_AUDIT.md) for separate sampling and reasoning-history
+comparisons. Two passing solutions on one shared task establish feasibility, not a suite-level pass rate or equivalent
+quant quality. Reserve up to 24–48 hours for a subsequent bounded batch and analysis. This is a compute budget, not a
+promise to finish every selected task. Record unfinished work explicitly.
 
-The [next-run protocol](runs/2026-09-26_harbor_review/NEXT_RUN.md) specifies preflight,
-matched settings, scheduling and reporting. Check the installed agent's context
-policy before spending the budget. Keep an uncompacted Mini-SWE track distinct from
-practical OpenCode compaction; a larger window alone cannot bound a growing transcript.
-Do not launch another full 66-task suite until the smaller run establishes that the
-configuration is usable and the result would answer a remaining question.
+The [next-run protocol](runs/2026-09-26_harbor_review/NEXT_RUN.md) specifies preflight, matched settings, scheduling and
+reporting. Check the installed agent's context policy before spending the budget. Keep an uncompacted Mini-SWE track
+distinct from practical OpenCode compaction; a larger window alone cannot bound a growing transcript. Do not launch
+another full 66-task suite until the smaller run establishes that the configuration is usable and the result would
+answer a remaining question.
 
-Keep task/scoring implementation in `x/local_llm/eval`, with records here; Agentplane
-is optional. The two tasks in #7910 are smoke gates, not evidence of hard-task quality.
-A selected CPU-only subset cannot establish equivalence to AA's full-suite score.
-Context failures still count as failures of the local configuration; report their
-cause rather than removing them from the denominator. A matched cloud control would
-be more informative than comparing headline percentages, but requires an available,
-authorized API budget; no paid comparison is scheduled here.
+Keep task/scoring implementation in `x/local_llm/eval`, with records here; Agentplane is optional. The two tasks in
+#7910 are smoke gates, not evidence of hard-task quality. A selected CPU-only subset cannot establish equivalence to
+AA's full-suite score. Context failures still count as failures of the local configuration; report their cause rather
+than removing them from the denominator. A matched cloud control would be more informative than comparing headline
+percentages, but requires an available, authorized API budget; no paid comparison is scheduled here.
 
 ### 5. Deployment follow-up after the interesting measurements
 
-Making Ollama serve this efficiently, choosing a persistent deployment and wiring
-routes are useful operational work, with lower priority than context/concurrency
-and capability comparison. Keep the already working SSD llama.cpp path while
-answering those questions. Change runtime only when correctness or measured capacity
-requires it; do not make a broad runtime bake-off the opening experiment.
+Making Ollama serve this efficiently, choosing a persistent deployment and wiring routes are useful operational work,
+with lower priority than context/concurrency and capability comparison. Keep the already working SSD llama.cpp path
+while answering those questions. Change runtime only when correctness or measured capacity requires it; do not make a
+broad runtime bake-off the opening experiment.
 
-When deploying, compare current Ollama and llama.cpp on SSD using matched model,
-context, template and placement. Measure cold loading and conversation reuse,
-retaining desktop headroom. Use server timings and existing `pidstat`/`iostat`/cgroup
-metrics if explaining a bottleneck becomes necessary. Promote one useful configuration
-through GitOps and its intended client after selection; Agentplane stays optional.
+When deploying, compare current Ollama and llama.cpp on SSD using matched model, context, template and placement.
+Measure cold loading and conversation reuse, retaining desktop headroom. Use server timings and existing
+`pidstat`/`iostat`/cgroup metrics if explaining a bottleneck becomes necessary. Promote one useful configuration through
+GitOps and its intended client after selection; Agentplane stays optional.
 
 ## Explore alternative models and runtimes
 
-Prioritize **GLM-5.3-Flash** for the next conventional offload feasibility check:
-its [published AA index](https://artificialanalysis.ai/models/glm-5-3-flash) is about
-42 versus Qwen's 40, and its model card advertises 1M context. Neither establishes
-local IQ3 quality or fit, so first verify current architecture/runtime support,
-placement, actual context, and a useful task. The larger 18B active working set may
-cost substantial latency. Refresh **DeepSeek-V4-Flash-0731** as an alternative using
-the July runtime knowledge, without assuming its older local results predict the
-new checkpoint. Other candidates earn attention through better external capability,
-more usable context/concurrency, or a materially different memory/compute approach. Keep the DeepSeek-V4.1 SSD
-streaming feasibility lane from the source-linked shortlist: inspect
-the runtime first, archive unused checkpoints with verification before downloading
-its ~502 GB weights, and use a cache sized for actual available host RAM.
-One successful hard task can justify a slow configuration; a token-rate result alone
-cannot. Do not postpone this lane for exhaustive Qwen tuning. RAM reallocation,
-host changes or full NixOS activation remain separate decisions requiring approval.
+Prioritize **GLM-5.3-Flash** for the next conventional offload feasibility check: its
+[published AA index](https://artificialanalysis.ai/models/glm-5-3-flash) is about 42 versus Qwen's 40, and its model
+card advertises 1M context. Neither establishes local IQ3 quality or fit, so first verify current architecture/runtime
+support, placement, actual context, and a useful task. The larger 18B active working set may cost substantial latency.
+Refresh **DeepSeek-V4-Flash-0731** as an alternative using the July runtime knowledge, without assuming its older local
+results predict the new checkpoint. Other candidates earn attention through better external capability, more usable
+context/concurrency, or a materially different memory/compute approach. Keep the DeepSeek-V4.1 SSD streaming feasibility
+lane from the source-linked shortlist: inspect the runtime first, archive unused checkpoints with verification before
+downloading its ~502 GB weights, and use a cache sized for actual available host RAM. One successful hard task can
+justify a slow configuration; a token-rate result alone cannot. Do not postpone this lane for exhaustive Qwen tuning.
+RAM reallocation, host changes or full NixOS activation remain separate decisions requiring approval.
 
 ## Uncertainty register and competing outcomes
 
@@ -398,9 +348,9 @@ host changes or full NixOS activation remain separate decisions requiring approv
 | Will changing expert demand erase warm-cache speed?      | Known risk for streaming                                               | Diverse sequential tasks, not repeated prompts  |
 | Which runtime best uses two non-P2P GPUs?                | Dense tensor split helps decode; Flash concurrency unmeasured          | Same checkpoint, matched placement and workload |
 
-Possible outcomes: large offloaded model wins on difficult tasks; resident dense model beats degraded large quants;
-new streaming implementation raises the ceiling; integration failures dominate; no candidate is reliable without frequent rescue.
-No numerical probabilities or future speed estimates are justified by this review.
+Possible outcomes: large offloaded model wins on difficult tasks; resident dense model beats degraded large quants; new
+streaming implementation raises the ceiling; integration failures dominate; no candidate is reliable without frequent
+rescue. No numerical probabilities or future speed estimates are justified by this review.
 
 ## Decision branches and stopping criteria
 
@@ -410,27 +360,27 @@ No numerical probabilities or future speed estimates are justified by this revie
   considering RAM/storage changes. Do not repeat the unsafe historical 112 GiB VM allocation at the host's expense.
 - Retain slow configurations that solve additional tasks without disproportionate human intervention.
 - Stop a tuning branch when changes do not improve task quality, usable context, or completion time.
-- Completion means one reviewed local configuration finishes representative coding jobs through the intended agent client,
-  plus a measured frontier and documented failures. Loading a checkpoint or passing a weather call is insufficient.
+- Completion means one reviewed local configuration finishes representative coding jobs through the intended agent
+  client, plus a measured frontier and documented failures. Loading a checkpoint or passing a weather call is
+  insufficient.
 
 ## Planning assumptions
 
-Candidate ordering and the bounded subset size are planning choices. Freeze task
-selection before observing new outcomes; expand only under a declared budget.
-No promised tokens/s for new models; no claimed IQ2/IQ3 capability retention; no hardware-purchase recommendation yet.
-Illustrative decode-only arithmetic: 10,000 output tokens take ~56 minutes at 3 tok/s or ~17 minutes at 10 tok/s,
-before prefill, tools, retries, and additional turns. Actual agent jobs can generate far more tokens.
+Candidate ordering and the bounded subset size are planning choices. Freeze task selection before observing new
+outcomes; expand only under a declared budget. No promised tokens/s for new models; no claimed IQ2/IQ3 capability
+retention; no hardware-purchase recommendation yet. Illustrative decode-only arithmetic: 10,000 output tokens take ~56
+minutes at 3 tok/s or ~17 minutes at 10 tok/s, before prefill, tools, retries, and additional turns. Actual agent jobs
+can generate far more tokens.
 
 ## Experiment records and deployment
 
-Keep one dated `runs/<run-id>/` directory per experiment, with its exact launch configuration,
-measurements, anomalies, and verdict. Pin the runtime commit or image digest and checkpoint revision.
-Add a source-linked row to <results.md>; preserve accepted historical measurements. Use `local` for
-measured results, `local~` for smoke probes, `ext` for comparable external evidence, and `ext?` when
-precision, runtime, or task protocol differs. Avoid a new evaluation framework or generated report pipeline.
+Keep one dated `runs/<run-id>/` directory per experiment, with its exact launch configuration, measurements, anomalies,
+and verdict. Pin the runtime commit or image digest and checkpoint revision. Add a source-linked row to <results.md>;
+preserve accepted historical measurements. Use `local` for measured results, `local~` for smoke probes, `ext` for
+comparable external evidence, and `ext?` when precision, runtime, or task protocol differs. Avoid a new evaluation
+framework or generated report pipeline.
 
-Use ad-hoc Kubernetes workloads where the runtime fits that environment; use host runs for experiments
-requiring direct storage/cache control. Promote only a selected configuration to Flux and LiteLLM, then
-verify tool calls and a representative coding task through the intended agent client. This PR records
-research, experiment recipes and captured responses. It changes no deployed workload
-or storage allocation; production routing is a separate decision.
+Use ad-hoc Kubernetes workloads where the runtime fits that environment; use host runs for experiments requiring direct
+storage/cache control. Promote only a selected configuration to Flux and LiteLLM, then verify tool calls and a
+representative coding task through the intended agent client. This PR records research, experiment recipes and captured
+responses. It changes no deployed workload or storage allocation; production routing is a separate decision.

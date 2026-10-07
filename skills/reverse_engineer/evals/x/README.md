@@ -1,9 +1,8 @@
 # Reverse-engineering eval — Inspect AI
 
-Inspect AI port of the manually-scored Agent Framework eval at
-`../agent_framework/`. A `react` agent recovers Go source from a
-`garble`-obfuscated binary; an LLM judge grades it against
-`../tasks/go_crypto_server/RUBRIC.yaml` in a separate grader container.
+Inspect AI port of the manually-scored Agent Framework eval at `../agent_framework/`. A `react` agent recovers Go source
+from a `garble`-obfuscated binary; an LLM judge grades it against `../tasks/go_crypto_server/RUBRIC.yaml` in a separate
+grader container.
 
 For the architecture and design rationale see <PLAN.md>.
 
@@ -40,13 +39,11 @@ bb run //skills/reverse_engineer/evals/x:validate_empty
 bb run //skills/reverse_engineer/evals/x:validate_reference
 ```
 
-`bb run` builds on RBE and runs the binary locally. The Python process
-needs to talk to a local docker daemon, which is why we use `bb run`
-(not `bbr`) — the binary runs on the host where Docker is available.
+`bb run` builds on RBE and runs the binary locally. The Python process needs to talk to a local docker daemon, which is
+why we use `bb run` (not `bbr`) — the binary runs on the host where Docker is available.
 
-Eval logs land in `./eval_logs/<utc-stamp>/`; judge-validation logs in
-`./validate_judge_logs/<case>/<utc-stamp>/`. Both relative to
-`BUILD_WORKING_DIRECTORY`.
+Eval logs land in `./eval_logs/<utc-stamp>/`; judge-validation logs in `./validate_judge_logs/<case>/<utc-stamp>/`. Both
+relative to `BUILD_WORKING_DIRECTORY`.
 
 ## Inspecting logs
 
@@ -54,43 +51,34 @@ Eval logs land in `./eval_logs/<utc-stamp>/`; judge-validation logs in
 env -u PYTHONPATH uvx --from inspect-ai inspect view start --log-dir eval_logs
 ```
 
-`uvx` resolves Inspect into a one-shot venv. The `env -u PYTHONPATH`
-prefix is the same NixOS dodge `cluster/docs/inference/runs/.../run_aime.py`
-uses — without it the Nix-store `pydantic` leaks into the uv venv and
-clashes with the venv's `pydantic_core`. If `inspect-ai` is installed
-globally (`uv tool install inspect-ai`), `inspect view start --log-dir …`
-works the same way.
+`uvx` resolves Inspect into a one-shot venv. The `env -u PYTHONPATH` prefix is the same NixOS dodge
+`cluster/docs/inference/runs/.../run_aime.py` uses — without it the Nix-store `pydantic` leaks into the uv venv and
+clashes with the venv's `pydantic_core`. If `inspect-ai` is installed globally (`uv tool install inspect-ai`),
+`inspect view start --log-dir …` works the same way.
 
-There is no Bazel `:view` target — Inspect's view server mounts its
-frontend `dist/` via Starlette `StaticFiles`, which `realpath`s every
-request and rejects runfiles symlinks. The `.eval` files are
-self-contained; serve them with `uvx` instead.
+There is no Bazel `:view` target — Inspect's view server mounts its frontend `dist/` via Starlette `StaticFiles`, which
+`realpath`s every request and rejects runfiles symlinks. The `.eval` files are self-contained; serve them with `uvx`
+instead.
 
 ## Status (2026-04-29)
 
-- **Agent eval**: end-to-end runnable. Verified against
-  `anthropic/claude-haiku-4-5-20251001` (last full run: 6:34 wall, 131
-  messages, 2.3M tokens, cache-read:input ratio ~14000:1).
-- **Rubric judge**: drives a second react loop in its own grader
-  docker container; reads recovered/reference/spec/rubric over `bash`,
-  emits a schema-validated `submit_grade` tool call. Per-item grades +
-  justifications land in `Score.metadata['per_item']`.
-- **Floor/ceiling validation**: empty → 0.000 (high confidence);
-  reference `*.go` → 0.940 (high confidence). Both verified, both have
-  Bazel targets.
-- **Rubric**: 11 items, weights sum to 94. The original
-  `mac_security_analysis` item (which asked whether the agent reasoned
-  about a length-extension vulnerability) was removed — the rubric is
-  now scoped to source reconstruction only.
+- **Agent eval**: end-to-end runnable. Verified against `anthropic/claude-haiku-4-5-20251001` (last full run: 6:34 wall,
+  131 messages, 2.3M tokens, cache-read:input ratio ~14000:1).
+- **Rubric judge**: drives a second react loop in its own grader docker container; reads recovered/reference/spec/rubric
+  over `bash`, emits a schema-validated `submit_grade` tool call. Per-item grades + justifications land in
+  `Score.metadata['per_item']`.
+- **Floor/ceiling validation**: empty → 0.000 (high confidence); reference `*.go` → 0.940 (high confidence). Both
+  verified, both have Bazel targets.
+- **Rubric**: 11 items, weights sum to 94. The original `mac_security_analysis` item (which asked whether the agent
+  reasoned about a length-extension vulnerability) was removed — the rubric is now scoped to source reconstruction only.
 
 ## Followups
 
 Tracked in <PLAN.md>:
 
-- Anthropic strict tool mode (provider doesn't yet emit
-  `strict: true` on custom tools — would need a `_StrictAnthropicClient`
-  subclass mirroring `skills/eval_infra/af_chat_client.py`).
-- Stage 3 differential verification — compile recovered Go in the
-  grader, run `test_smoke.py` against the agent's binary.
+- Anthropic strict tool mode (provider doesn't yet emit `strict: true` on custom tools — would need a
+  `_StrictAnthropicClient` subclass mirroring `skills/eval_infra/af_chat_client.py`).
+- Stage 3 differential verification — compile recovered Go in the grader, run `test_smoke.py` against the agent's
+  binary.
 - Multi-specimen support.
 - Judge determinism check.

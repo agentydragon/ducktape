@@ -2,19 +2,17 @@
 
 What each harness binary exposes on its stdio protocol, against what the scripted tests in
 `agentplane/harness_tests/{claude,codex}/` exercise. Pinned builds: Claude Code 2.1.252
-(`--input-format stream-json --output-format stream-json --permission-prompt-tool stdio`) and
-Codex app-server 0.157.0 (`codex app-server --listen stdio://`, JSON-RPC v2 protocol), matching the
-runner image's Codex version from the locked nixpkgs-unstable input. Codex rows
-come from `codex-rs/app-server-protocol/src/protocol/v2/` and the generated schema bundle; Claude
-Code ships no source, so rows marked "(inferred)" come from `strings`/JS fragments in the binary
-rather than `--help`. `Covered` names the test; "partial" means the harness uses the surface but no
-assertion pins it, or only one branch is exercised.
+(`--input-format stream-json --output-format stream-json --permission-prompt-tool stdio`) and Codex app-server 0.157.0
+(`codex app-server --listen stdio://`, JSON-RPC v2 protocol), matching the runner image's Codex version from the locked
+nixpkgs-unstable input. Codex rows come from `codex-rs/app-server-protocol/src/protocol/v2/` and the generated schema
+bundle; Claude Code ships no source, so rows marked "(inferred)" come from `strings`/JS fragments in the binary rather
+than `--help`. `Covered` names the test; "partial" means the harness uses the surface but no assertion pins it, or only
+one branch is exercised.
 
 ## Claude Code 2.1.252
 
-Driver: `agentplane/native/claude/{driver,scenarios,async_run}.py`. Every test enters a
-`ClaudeRun`, which runs the `initialize` handshake (`control_request` `initialize` →
-`control_response`), sends `user` frames, and auto-allows
+Driver: `agentplane/native/claude/{driver,scenarios,async_run}.py`. Every test enters a `ClaudeRun`, which runs the
+`initialize` handshake (`control_request` `initialize` → `control_response`), sends `user` frames, and auto-allows
 `can_use_tool` in `harness_tests/claude/harness.py`.
 
 ### Session lifecycle
@@ -105,11 +103,10 @@ Driver: `agentplane/native/claude/{driver,scenarios,async_run}.py`. Every test e
 
 ## Codex app-server 0.157.0
 
-Driver: `agentplane/native/codex/{driver,scenarios}.py`. Config is passed as `-c key=value`
-overrides; the model id `agentplane-test-model` is deliberately absent from Codex's catalog
-(`models-manager/models.json`), because catalog entries carry `tool_mode: code_mode_only`, which
-swaps the upstream wire shape for one JS `exec` tool the model scripts against. An unknown or routed
-id keeps the classic `exec_command` function-call shape the tests assert.
+Driver: `agentplane/native/codex/{driver,scenarios}.py`. Config is passed as `-c key=value` overrides; the model id
+`agentplane-test-model` is deliberately absent from Codex's catalog (`models-manager/models.json`), because catalog
+entries carry `tool_mode: code_mode_only`, which swaps the upstream wire shape for one JS `exec` tool the model scripts
+against. An unknown or routed id keeps the classic `exec_command` function-call shape the tests assert.
 
 ### Session lifecycle
 
@@ -212,48 +209,45 @@ id keeps the classic `exec_command` function-call shape the tests assert.
 
 ## What the runner consumes
 
-The runner in `agentplane/runner/` translates these surfaces into its protocol; everything else
-stays evidence in `Native` events. Observed with the pinned builds while writing it:
+The runner in `agentplane/runner/` translates these surfaces into its protocol; everything else stays evidence in
+`Native` events. Observed with the pinned builds while writing it:
 
-- Claude: `--session-id` fixes a fresh session's id, so the runner never waits for one;
-  `--replay-user-messages` also emits `command_lifecycle` frames (`queued`, `started`,
-  `completed`) per user frame uuid, and `queued` arrives on receipt even for an input the harness
-  later delivers inside a running tool's result; `--effort` is accepted; `stream_event`
-  `content_block_start`/deltas map to item lifecycle and `assistant` frames complete each block;
-  `can_use_tool` is answered with allow, every other control request with an error; the transcript
-  is written on clean exit, so a harness killed outright loses the conversation since its last
-  write.
-- Codex: `turn/start` during a turn returns the running turn's id; `turn/started`,
-  `item/started`, `item/*/delta`, `item/completed`, and `turn/completed` drive the lifecycle;
-  server requests (approvals, user input, elicitation) are answered with a JSON-RPC error; a
-  `commandExecution` item that outlives its first read completes with `aggregatedOutput: null`;
-  `turn/interrupt` completes the turn as `interrupted` and closes the in-flight streamed model
+- Claude: `--session-id` fixes a fresh session's id, so the runner never waits for one; `--replay-user-messages` also
+  emits `command_lifecycle` frames (`queued`, `started`, `completed`) per user frame uuid, and `queued` arrives on
+  receipt even for an input the harness later delivers inside a running tool's result; `--effort` is accepted;
+  `stream_event` `content_block_start`/deltas map to item lifecycle and `assistant` frames complete each block;
+  `can_use_tool` is answered with allow, every other control request with an error; the transcript is written on clean
+  exit, so a harness killed outright loses the conversation since its last write.
+- Codex: `turn/start` during a turn returns the running turn's id; `turn/started`, `item/started`, `item/*/delta`,
+  `item/completed`, and `turn/completed` drive the lifecycle; server requests (approvals, user input, elicitation) are
+  answered with a JSON-RPC error; a `commandExecution` item that outlives its first read completes with
+  `aggregatedOutput: null`; `turn/interrupt` completes the turn as `interrupted` and closes the in-flight streamed model
   request.
 
 ## Deliberately unsupported
 
-Configured off in `scenarios.command`/`scenarios.config` so recorded model requests contain only
-the scenario under test; a bridge that turns any of these on must widen the roster above.
+Configured off in `scenarios.command`/`scenarios.config` so recorded model requests contain only the scenario under
+test; a bridge that turns any of these on must widen the roster above.
 
 - **Skills and slash commands**: Claude `--disable-slash-commands`; Codex `skills.bundled.enabled = false`,
   `skills.include_instructions = false`. They add a catalog block to every prompt.
-- **Plugins, hooks, settings files**: Claude `--safe-mode`, `--setting-sources=`; Codex hooks unconfigured.
-  Hooks would require answering `hook_callback` / `hook/*` and change tool timing; what each
-  harness offers is in [hooks](../../docs/hooks.md).
-- **MCP servers**: Claude `--strict-mcp-config` with no `--mcp-config`; Codex none configured. Tool
-  rosters must stay the fixed lists the tests assert (`Bash,Edit,Read`; `exec_command`, `write_stdin`,
-  `request_user_input`, `get_goal`, `create_goal`, `update_goal`).
-- **Multi-agent / subagents**: Claude `--tools` omits `Task`; Codex `features.multi_agent = false`.
-  `parent_tool_use_id` and `subAgentActivity` stay unexercised.
-- **Web search and image viewing**: Codex `web_search = "disabled"`, `features.view_image = false`;
-  Claude `--tools` omits `WebSearch`, `WebFetch`.
-- **Code mode**: avoided by using a model id outside Codex's catalog (`MODEL = "agentplane-test-model"`);
-  a catalog id would replace the function-call tools with one JS `exec` tool.
-- **Session title generation**: Claude `--name` preset suppresses the separate title model call;
-  Codex threads start `ephemeral` unless a test resumes.
+- **Plugins, hooks, settings files**: Claude `--safe-mode`, `--setting-sources=`; Codex hooks unconfigured. Hooks would
+  require answering `hook_callback` / `hook/*` and change tool timing; what each harness offers is in
+  [hooks](../../docs/hooks.md).
+- **MCP servers**: Claude `--strict-mcp-config` with no `--mcp-config`; Codex none configured. Tool rosters must stay
+  the fixed lists the tests assert (`Bash,Edit,Read`; `exec_command`, `write_stdin`, `request_user_input`, `get_goal`,
+  `create_goal`, `update_goal`).
+- **Multi-agent / subagents**: Claude `--tools` omits `Task`; Codex `features.multi_agent = false`. `parent_tool_use_id`
+  and `subAgentActivity` stay unexercised.
+- **Web search and image viewing**: Codex `web_search = "disabled"`, `features.view_image = false`; Claude `--tools`
+  omits `WebSearch`, `WebFetch`.
+- **Code mode**: avoided by using a model id outside Codex's catalog (`MODEL = "agentplane-test-model"`); a catalog id
+  would replace the function-call tools with one JS `exec` tool.
+- **Session title generation**: Claude `--name` preset suppresses the separate title model call; Codex threads start
+  `ephemeral` unless a test resumes.
 - **Prompt suggestions**: Claude `--prompt-suggestions=false` suppresses the post-turn model call.
 - **Nonessential traffic**: Claude `CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=1`; Codex
   `include_environment_context = false`. The baseline tests count upstream requests per turn.
-- **Thinking stays on** for both harnesses: Claude `thinking.type == "enabled"` and signature echo,
-  Codex `model_reasoning_effort` and encrypted reasoning echo are asserted, since replaying them
-  correctly across resume is part of the contract.
+- **Thinking stays on** for both harnesses: Claude `thinking.type == "enabled"` and signature echo, Codex
+  `model_reasoning_effort` and encrypted reasoning echo are asserted, since replaying them correctly across resume is
+  part of the contract.

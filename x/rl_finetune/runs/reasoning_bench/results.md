@@ -1,7 +1,7 @@
 # Wordle GRPO reasoning-mode bench
 
-Goal: run Qwen3-1.7B GRPO in thinking mode (`--think`) using the same two-GPU
-server layout as the non-reasoning throughput bench.
+Goal: run Qwen3-1.7B GRPO in thinking mode (`--think`) using the same two-GPU server layout as the non-reasoning
+throughput bench.
 
 Hardware: 2x RTX 5090, 32 GB each.
 
@@ -37,15 +37,13 @@ Result:
 
 Takeaways:
 
-- Server-mode thinking runs successfully and the model emits real Wordle tool
-  calls in thinking mode.
-- The vLLM side is the fit bottleneck. `--max-model-len 4096` already reserves
-  about 30.8 GiB at server ready and peaked at about 30.9 GiB.
-- `--max-completion-length 1024` is too short for this naive thinking prompt:
-  98.4% of completions clipped. The run still produced tool calls, but many
-  rollouts spent too much budget on thought before finishing useful play.
-- Trainer GPU headroom is large in the safe config, so next probes should tune
-  vLLM context / thinking length before increasing trainer micro-batch.
+- Server-mode thinking runs successfully and the model emits real Wordle tool calls in thinking mode.
+- The vLLM side is the fit bottleneck. `--max-model-len 4096` already reserves about 30.8 GiB at server ready and peaked
+  at about 30.9 GiB.
+- `--max-completion-length 1024` is too short for this naive thinking prompt: 98.4% of completions clipped. The run
+  still produced tool calls, but many rollouts spent too much budget on thought before finishing useful play.
+- Trainer GPU headroom is large in the safe config, so next probes should tune vLLM context / thinking length before
+  increasing trainer micro-batch.
 
 Artifacts:
 
@@ -62,8 +60,7 @@ Command:
 python bench.py --suite thinking --probes think_1024_mem075 --max-steps 1
 ```
 
-Same training config as `think_1024_safe`, but the vLLM server used
-`--gpu-memory-utilization 0.75`:
+Same training config as `think_1024_safe`, but the vLLM server used `--gpu-memory-utilization 0.75`:
 
 ```bash
 trl vllm-serve --model Qwen/Qwen3-1.7B --max-model-len 4096 --gpu-memory-utilization 0.75
@@ -88,13 +85,12 @@ Result:
 
 Takeaways:
 
-- `--gpu-memory-utilization 0.75` still runs the 4096-context thinking probe
-  and leaves roughly 3.5 GiB more GPU 0 headroom than the default reservation.
-- It is slower in this one-step probe: 147 s trainer runtime vs 106 s for the
-  default-reservation run. Some of that may be sampling variance, but it is
-  large enough to keep both probes in the suite.
-- The behavioral signal is the same: the model calls tools, but the naive
-  thinking prompt spends too much of the 1024-token completion budget on thought.
+- `--gpu-memory-utilization 0.75` still runs the 4096-context thinking probe and leaves roughly 3.5 GiB more GPU 0
+  headroom than the default reservation.
+- It is slower in this one-step probe: 147 s trainer runtime vs 106 s for the default-reservation run. Some of that may
+  be sampling variance, but it is large enough to keep both probes in the suite.
+- The behavioral signal is the same: the model calls tools, but the naive thinking prompt spends too much of the
+  1024-token completion budget on thought.
 
 ## 2026-05-05 larger rollout budget probes
 
@@ -107,12 +103,11 @@ python bench.py --suite thinking --probes think_8192_mem075 --max-steps 1
 
 Probe configs:
 
-- `think_4096_mem075`: vLLM `--max-model-len 8192 --gpu-memory-utilization 0.75`,
-  trainer `--think --max-completion-length 4096 --vllm-max-model-length 8192`
-- `think_8192_mem075`: vLLM `--max-model-len 16384 --gpu-memory-utilization 0.75`,
-  trainer `--think --max-completion-length 8192 --vllm-max-model-length 16384`
-- Both use `batch-size=1`, `grad-accum=64`, `num-generations=8`,
-  `gradient-checkpointing=on`
+- `think_4096_mem075`: vLLM `--max-model-len 8192 --gpu-memory-utilization 0.75`, trainer
+  `--think --max-completion-length 4096 --vllm-max-model-length 8192`
+- `think_8192_mem075`: vLLM `--max-model-len 16384 --gpu-memory-utilization 0.75`, trainer
+  `--think --max-completion-length 8192 --vllm-max-model-length 16384`
+- Both use `batch-size=1`, `grad-accum=64`, `num-generations=8`, `gradient-checkpointing=on`
 
 Result:
 
@@ -148,17 +143,13 @@ Transcript check from `/tmp/wordle_grpo_output/completions/completions_00001.par
 
 Takeaways:
 
-- `max_completion_length` is the total multi-turn rollout budget. At 1024,
-  almost every thinking rollout clips before meaningful play; at 4096, most
-  still clip; at 8192, clipping drops to 14.1%.
-- `8192` rollout budget with `16384` vLLM context fits on the 2x32 GiB setup,
-  but the trainer GPU peaked at 29.8 GiB. There is not much room to raise the
-  trainer-side sequence length further without changing another knob.
-- The 8192 probe is the first one that naturally gets a median rollout through
-  all six Wordle feedback turns. It still does not get all rollouts there:
-  32/64 reached six tool responses.
-- Remaining waste is mostly behavioral, not only context length: the model
-  repeats guesses, emits invalid words, and sometimes stops to answer in prose.
-  The next high-leverage step is likely a more explicit concise-thinking prompt
-  or reward shaping for valid unique guesses / using the available attempts,
-  while keeping the measured `8192/16384` memory envelope.
+- `max_completion_length` is the total multi-turn rollout budget. At 1024, almost every thinking rollout clips before
+  meaningful play; at 4096, most still clip; at 8192, clipping drops to 14.1%.
+- `8192` rollout budget with `16384` vLLM context fits on the 2x32 GiB setup, but the trainer GPU peaked at 29.8 GiB.
+  There is not much room to raise the trainer-side sequence length further without changing another knob.
+- The 8192 probe is the first one that naturally gets a median rollout through all six Wordle feedback turns. It still
+  does not get all rollouts there: 32/64 reached six tool responses.
+- Remaining waste is mostly behavioral, not only context length: the model repeats guesses, emits invalid words, and
+  sometimes stops to answer in prose. The next high-leverage step is likely a more explicit concise-thinking prompt or
+  reward shaping for valid unique guesses / using the available attempts, while keeping the measured `8192/16384` memory
+  envelope.

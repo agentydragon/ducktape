@@ -49,7 +49,8 @@ echo -e "type ip addr\nenter\nsleep 1\nscreenshot" | vm-interact 110 --stdin
 
 ## QEMU Key Names
 
-Common keys: `a`-`z`, `0`-`9`, `ret` (Enter), `spc` (Space), `tab`, `minus`, `equal`, `comma`, `dot`, `slash`, `backslash`, `semicolon`, `apostrophe`, `bracket_left`, `bracket_right`, `grave_accent`
+Common keys: `a`-`z`, `0`-`9`, `ret` (Enter), `spc` (Space), `tab`, `minus`, `equal`, `comma`, `dot`, `slash`,
+`backslash`, `semicolon`, `apostrophe`, `bracket_left`, `bracket_right`, `grave_accent`
 
 Modifiers: `shift-X`, `ctrl-X`, `alt-X` (e.g., `shift-a` for 'A', `ctrl-c` for Ctrl+C)
 

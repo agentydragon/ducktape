@@ -191,4 +191,5 @@ specimens/
 4. **Create seed prompt generator** from specimen templates
 5. **Add specimen collection tools** to capture new violations from optimization runs
 
-This gives us both validation of grader accuracy AND a systematic way to generate challenging test cases for the optimization loop.
+This gives us both validation of grader accuracy AND a systematic way to generate challenging test cases for the
+optimization loop.

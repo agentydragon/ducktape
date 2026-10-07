@@ -28,8 +28,8 @@ occurrences:
         - [86, 92]
         - [95, 102]
     note: >-
-      stderr/stdout included in message at raise sites (L91, L97, L101) and again by
-      __init__ (L36) - content appears twice in final error
+      stderr/stdout included in message at raise sites (L91, L97, L101) and again by __init__ (L36) - content appears
+      twice in final error
     critic_scopes_expected_to_recall:
       - - agent_pkg/host/init_runner.py
     match_file_restriction:

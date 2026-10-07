@@ -30,8 +30,8 @@ All commands run from `~/code/ducktape/`.
 
 ### NixOS Hosts (iguana, rugged, wyrm2)
 
-These hosts inline home-manager through the NixOS system configuration, so a
-single `nixos-rebuild` applies both system and user config.
+These hosts inline home-manager through the NixOS system configuration, so a single `nixos-rebuild` applies both system
+and user config.
 
 ```bash
 # System + inline home-manager configuration (requires sudo)
@@ -48,14 +48,14 @@ home-manager switch --impure --flake ~/code/ducktape#atlas
 home-manager switch --impure --flake ~/code/ducktape#claude-web
 ```
 
-Note: `atlas` needs `--impure` because it uses nixGL on a non-NixOS system.
-`claude-web` needs `--impure` because it reads `home.username`/`home.homeDirectory`
-from `$USER`/`$HOME` so the same profile works for whatever user the web container runs as.
+Note: `atlas` needs `--impure` because it uses nixGL on a non-NixOS system. `claude-web` needs `--impure` because it
+reads `home.username`/`home.homeDirectory` from `$USER`/`$HOME` so the same profile works for whatever user the web
+container runs as.
 
 ### Phone (pixel6)
 
-Different runtime (Android via nix-on-droid, not NixOS/home-manager) — see
-[droid/README.md](droid/README.md) for prerequisites and bring-up.
+Different runtime (Android via nix-on-droid, not NixOS/home-manager) — see [droid/README.md](droid/README.md) for
+prerequisites and bring-up.
 
 ## Available Hosts
 

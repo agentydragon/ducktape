@@ -6,8 +6,8 @@ ansible-galaxy role install -r requirements.yaml
 ansible-galaxy collection install -r requirements.yaml
 ```
 
-These install into the default `~/.ansible/{roles,collections}` paths so
-third-party content never lands in `ansible/roles` or `ansible/collections`.
+These install into the default `~/.ansible/{roles,collections}` paths so third-party content never lands in
+`ansible/roles` or `ansible/collections`.
 
 ## To deploy
 
@@ -16,8 +16,8 @@ cd ansible
 ansible-playbook vps.yaml
 ```
 
-NOTE: running with `--skip-tags` might not work in any reasonable way. I didn't
-assign task particularly with that in mind... :/
+NOTE: running with `--skip-tags` might not work in any reasonable way. I didn't assign task particularly with that in
+mind... :/
 
 ## To deploy gpd
 

@@ -24,8 +24,7 @@ occurrences:
           - 319
         - - 346
           - 346
-    note: 'Lines 319, 346: "Call persistence to get ACTUAL ID", "Create proposal and get actual database-assigned
-      ID"'
+    note: 'Lines 319, 346: "Call persistence to get ACTUAL ID", "Create proposal and get actual database-assigned ID"'
     critic_scopes_expected_to_recall:
       - - adgn/src/adgn/agent/approvals.py
     match_file_restriction:

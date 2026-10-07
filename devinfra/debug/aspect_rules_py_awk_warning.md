@@ -6,26 +6,22 @@
 awk: cmd. line:8: warning: escape sequence `\.' treated as plain `.'
 ```
 
-Emitted during `bazel build` for any target using `py_image_layer` (e.g.
-`//airlock:layers_manifests`).
+Emitted during `bazel build` for any target using `py_image_layer` (e.g. `//airlock:layers_manifests`).
 
 ## Root cause
 
-`py_image_layer.bzl` in `aspect_rules_py` defines `default_layer_groups` with
-regex patterns like:
+`py_image_layer.bzl` in `aspect_rules_py` defines `default_layer_groups` with regex patterns like:
 
 ```python
 "interpreter": "\\\\.runfiles/[^/]*?python[^/]*?(x86|arm64|aarch64).*?/",
 "packages": "\\\\.runfiles/.*/site-packages",
 ```
 
-After Starlark string unescaping, this becomes `\\.runfiles/...` in the
-generated awk script. The awk script uses these regexes inside double-quoted
-strings (`$$1 ~ "\\."`) rather than awk regex literals (`$$1 ~ /\\./`).
+After Starlark string unescaping, this becomes `\\.runfiles/...` in the generated awk script. The awk script uses these
+regexes inside double-quoted strings (`$$1 ~ "\\."`) rather than awk regex literals (`$$1 ~ /\\./`).
 
-In POSIX awk, `\.` inside a double-quoted string is not a recognized escape
-sequence. GNU awk treats it as a literal `.` (which is the intended behavior)
-but emits a warning.
+In POSIX awk, `\.` inside a double-quoted string is not a recognized escape sequence. GNU awk treats it as a literal `.`
+(which is the intended behavior) but emits a warning.
 
 ## Fix
 

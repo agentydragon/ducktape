@@ -1,17 +1,19 @@
 ---
 name: debundle_intake
-description: Turn `debundle modules propose` output into named, dispatchable seed clusters for debundle lane workers. Use for reading factorizer proposals, lightly grounding source meaning, choosing tentative destinations, and producing seeds.json without editing the spec or running gates.
+description:
+  Turn `debundle modules propose` output into named, dispatchable seed clusters for debundle lane workers. Use for
+  reading factorizer proposals, lightly grounding source meaning, choosing tentative destinations, and producing
+  seeds.json without editing the spec or running gates.
 ---
 
 # Debundle Intake
 
-Use this role after `debundle_plan_work` has produced planner output. Intake
-translates certified structural proposals into work packets for lane workers.
+Use this role after `debundle_plan_work` has produced planner output. Intake translates certified structural proposals
+into work packets for lane workers.
 
 Shared CLI workflows land here so proposal/batch semantics stay in one place:
 
-@references/docs/cli.md
-@references/docs/spec_editing.md
+@references/docs/cli.md @references/docs/spec_editing.md
 
 Read other bundled references as needed:
 
@@ -27,8 +29,7 @@ The orchestrator or project adapter provides:
 - `<graph>` and `<modules-dir>` for follow-up `describe` or `show-source`
 - `<source-root>` or emitted JS root for short body reads
 - `<conventions-docs>` and any current architecture notes
-- a scratch directory for `seeds.json`, `inflight.json`, `landed.json`, and
-  `notes.md`
+- a scratch directory for `seeds.json`, `inflight.json`, `landed.json`, and `notes.md`
 
 ## Job
 
@@ -40,25 +41,20 @@ For each `proposals[]` entry with `landable_today: true`:
 - flag ambiguous or oversized proposals for the architect
 - skip `diagnostics[]` as dispatchable work
 
-Entries with `landable_today: false` are not dispatchable as-is. Seed
-`status: blocked_residual_dependency` rows only as a combined closure with
-the cells they reference (`references/docs/cli.md` § `--batch` JSON format), or
-flag them for the architect.
-Unaddressable-anonymous rows stay advisory until the selector question
-is resolved.
+Entries with `landable_today: false` are not dispatchable as-is. Seed `status: blocked_residual_dependency` rows only as
+a combined closure with the cells they reference (`references/docs/cli.md` § `--batch` JSON format), or flag them for
+the architect. Unaddressable-anonymous rows stay advisory until the selector question is resolved.
 
-Use `debundle_plan_work` for `describe` and `show-source` lookups. Do not
-reimplement graph parsing by grepping generated output unless the graph lacks
-the needed evidence.
+Use `debundle_plan_work` for `describe` and `show-source` lookups. Do not reimplement graph parsing by grepping
+generated output unless the graph lacks the needed evidence.
 
 ## Source Reading Budget
 
-Read small slices, usually 10-50 lines around the proposal or owner. Look for
-visible strings, exported readable names, API names, component or class shapes,
-registry keys, schema names, command IDs, and source proximity.
+Read small slices, usually 10-50 lines around the proposal or owner. Look for visible strings, exported readable names,
+API names, component or class shapes, registry keys, schema names, command IDs, and source proximity.
 
-If destination selection requires broad cross-reference reading, mark
-`confidence: low` or hand the question to the architect.
+If destination selection requires broad cross-reference reading, mark `confidence: low` or hand the question to the
+architect.
 
 ## Output
 
@@ -82,10 +78,9 @@ Write `<scratch>/seeds.json`:
 ]
 ```
 
-For workers consuming seeds via `debundle bindings assign --batch`, pass only
-binding-only fresh/extension proposal rows, or re-shape them to
-`{sym, module, readable?}` when adding readable names. The shared guide covers
-the rejected proposal shapes.
+For workers consuming seeds via `debundle bindings assign --batch`, pass only binding-only fresh/extension proposal
+rows, or re-shape them to `{sym, module, readable?}` when adding readable names. The shared guide covers the rejected
+proposal shapes.
 
 Sort seeds by:
 
@@ -94,14 +89,12 @@ Sort seeds by:
 3. high-confidence active-module extensions before fresh modules
 4. lower-risk side-effect cells after ordinary binding cells
 
-Track inflight and landed work by stable `binding_ids` / `owner_ids`, not only
-auto-generated proposal IDs, because proposal IDs may renumber after each
-integration.
+Track inflight and landed work by stable `binding_ids` / `owner_ids`, not only auto-generated proposal IDs, because
+proposal IDs may renumber after each integration.
 
 ## Boundaries
 
 - Do not author spec edits.
 - Do not run gate or regen commands.
 - Do not integrate worker branches.
-- Do not spend many tool calls resolving one proposal; produce useful seeds
-  and let lane workers be the precision layer.
+- Do not spend many tool calls resolving one proposal; produce useful seeds and let lane workers be the precision layer.

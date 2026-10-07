@@ -7,7 +7,8 @@ metadata:
     app.kubernetes.io/name: authentik-mcp-poc
     app.kubernetes.io/component: backend
   annotations:
-    description: "Whoami backend sitting behind the Authentik proxy outpost. Trusts X-Authentik-* headers injected by the outpost."
+    description:
+      "Whoami backend sitting behind the Authentik proxy outpost. Trusts X-Authentik-* headers injected by the outpost."
     reloader.stakater.com/auto: "true"
 spec:
   replicas: 1

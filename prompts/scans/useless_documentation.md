@@ -6,7 +6,8 @@
 
 ## Pattern Description
 
-Documentation that merely repeats what is already obvious from function names, parameter names, and type annotations. Good documentation adds information that isn't immediately obvious from reading the code.
+Documentation that merely repeats what is already obvious from function names, parameter names, and type annotations.
+Good documentation adds information that isn't immediately obvious from reading the code.
 
 ## Examples of Useless Documentation
 
@@ -171,7 +172,8 @@ def skip_global_compinit() -> None:
 
 ### Discovery Approach: Code Skeleton Generation
 
-Create an intermediate file that strips function bodies, preserving only signatures, types, and documentation. This allows LLM to efficiently review many functions without reading implementations.
+Create an intermediate file that strips function bodies, preserving only signatures, types, and documentation. This
+allows LLM to efficiently review many functions without reading implementations.
 
 **Helper script** (pseudocode):
 
@@ -235,7 +237,8 @@ rg --type py '    \w+: The \w+'
 
 **Inline Comments:**
 
-Automated detection is unreliable - requires semantic understanding of whether comment explains "why" or just restates "what". Use manual reading.
+Automated detection is unreliable - requires semantic understanding of whether comment explains "why" or just restates
+"what". Use manual reading.
 
 **Manual review heuristics**:
 

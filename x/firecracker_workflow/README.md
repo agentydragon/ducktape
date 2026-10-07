@@ -1,8 +1,8 @@
 # `bb box` / `bbr` Firecracker VM Workflow
 
-Exploration of BuildBuddy's Firecracker microVM features: `bb box` (persistent SSH-accessible
-dev boxes), `bbr` (Remote Bazel with warm snapshot recycling), and `bb execute` (raw RBE
-commands). Tested from a Claude Code web session (Linux 4.4.0 kernel, HTTPS-only egress proxy).
+Exploration of BuildBuddy's Firecracker microVM features: `bb box` (persistent SSH-accessible dev boxes), `bbr` (Remote
+Bazel with warm snapshot recycling), and `bb execute` (raw RBE commands). Tested from a Claude Code web session (Linux
+4.4.0 kernel, HTTPS-only egress proxy).
 
 ## What BuildBuddy Offers
 
@@ -16,8 +16,8 @@ commands). Tested from a Claude Code web session (Linux 4.4.0 kernel, HTTPS-only
 
 ## `bb box` — Persistent Dev Boxes
 
-`bb box create [name]` submits a **24-hour RBE action** running `bb ssh-server` inside a
-Firecracker VM, then exits immediately. The VM keeps running independently.
+`bb box create [name]` submits a **24-hour RBE action** running `bb ssh-server` inside a Firecracker VM, then exits
+immediately. The VM keeps running independently.
 
 ```
 $ bb box create ducktape-dev
@@ -28,20 +28,20 @@ Box "ducktape-dev" is ready.
   Connect: bb ssh ducktape-dev
 ```
 
-Named boxes (`bb box create NAME`) set `runner-recycling-key=NAME`, so `bb box create NAME`
-again reconnects to the same physical VM. Unnamed boxes are ephemeral.
+Named boxes (`bb box create NAME`) set `runner-recycling-key=NAME`, so `bb box create NAME` again reconnects to the same
+physical VM. Unnamed boxes are ephemeral.
 
 ### `bb box` internals (from `cli/box/box.go`)
 
 1. Uploads the local `bb` binary to the remote cache
-2. Submits an RBE action with `workload-isolation-type=firecracker`, `network=external`,
-   `recycle-runner=true`, `runner-recycling-key=<name>`, timeout 24h
+2. Submits an RBE action with `workload-isolation-type=firecracker`, `network=external`, `recycle-runner=true`,
+   `runner-recycling-key=<name>`, timeout 24h
 3. Action runs inside VM: `./bb ssh-server --gateway=... --grace_period=...`
 4. `bb box create` polls BES logs for the `bb-ssh://` READY line, then exits
 5. VM stays alive with `bb ssh-server` for up to 24h
 
-`grace_period` (max 5m, default 1m) only applies after the **last SSH client disconnects**.
-While `bb ssh-server` is running, the VM is alive regardless.
+`grace_period` (max 5m, default 1m) only applies after the **last SSH client disconnects**. While `bb ssh-server` is
+running, the VM is alive regardless.
 
 ### Timeout behavior
 
@@ -54,8 +54,8 @@ While `bb ssh-server` is running, the VM is alive regardless.
 | After `grace_period`       | `bb ssh-server` exits, runner is released       |
 | Next `bb box create NAME`  | New VM (or same if runner not yet GC'd)         |
 
-**Observed**: named box created, never SSH'd into → destroyed after ~10 min idle
-(grace_period expired). Next `bb box create ducktape-dev` created a new VM (different IP).
+**Observed**: named box created, never SSH'd into → destroyed after ~10 min idle (grace_period expired). Next
+`bb box create ducktape-dev` created a new VM (different IP).
 
 ### `bb ssh` — WireGuard requirement
 
@@ -67,9 +67,8 @@ While `bb ssh-server` is running, the VM is alive regardless.
 4. Resolve WireGuard server endpoint via DNS, bring up WireGuard, send UDP
 5. Dial SSH through the WireGuard TUN
 
-**Claude Code web limitation**: all traffic routes through an HTTPS proxy (`21.0.0.191:15004`).
-UDP cannot traverse an HTTP CONNECT proxy, and DNS for raw sockets is also broken. `bb ssh`
-fails with:
+**Claude Code web limitation**: all traffic routes through an HTTPS proxy (`21.0.0.191:15004`). UDP cannot traverse an
+HTTP CONNECT proxy, and DNS for raw sockets is also broken. `bb ssh` fails with:
 
 ```
 Warning: wg: Unable to update bind: operation not supported
@@ -93,8 +92,8 @@ bb ssh mybox hostname          # single command
 - Auto-syncs local git diffs as patches (no `git push` needed for uncommitted changes)
 - Uses the custom `buildbuddy-remote-runner` Ubuntu image (configured in `devinfra/bbr.json`)
 - Mints and prints the Bazel invocation ID (`--invocation-id-file=PATH` records it)
-- Supports **Firecracker snapshot recycling** — the running Bazel server (JVM, analysis
-  cache, output base) survives across builds
+- Supports **Firecracker snapshot recycling** — the running Bazel server (JVM, analysis cache, output base) survives
+  across builds
 
 ```bash
 bbr build //devinfra/buildbuddy_cli:bbapi
@@ -105,14 +104,14 @@ bbr build //devinfra/buildbuddy_cli:bbapi
 Source: BB docs at <https://www.buildbuddy.io/docs/remote-runner-introduction> and
 `enterprise/server/remote_execution/containers/firecracker/firecracker.go`.
 
-The Firecracker process is **fully stopped and restarted** from a snapshot each time — it is
-not kept alive. The lifecycle per build:
+The Firecracker process is **fully stopped and restarted** from a snapshot each time — it is not kept alive. The
+lifecycle per build:
 
 1. Action runs inside the VM (Bazel build, git sync, etc.)
-2. `Pause()`: workspace drive is swapped to an empty placeholder; full or diff memory snapshot
-   is saved to BB's remote cache; Firecracker process is killed
-3. Next build with the same snapshot key: new Firecracker process starts, snapshot is loaded
-   (lazily via UFFD), VM resumes from exact saved state
+2. `Pause()`: workspace drive is swapped to an empty placeholder; full or diff memory snapshot is saved to BB's remote
+   cache; Firecracker process is killed
+3. Next build with the same snapshot key: new Firecracker process starts, snapshot is loaded (lazily via UFFD), VM
+   resumes from exact saved state
 
 **What is preserved in the snapshot:**
 
@@ -120,16 +119,14 @@ not kept alive. The lifecycle per build:
 - Root filesystem (`/tmp`, `/root`, `/root/.cache/bazel/`) → bazelisk downloads, Bazel output base
 - The workspace drive (`/workspace/`) is **excluded** from the snapshot (repacked per-action)
 
-**`boot_id` always changes on snapshot restore** — Firecracker intentionally regenerates
-entropy-related state per clone to prevent `boot_id` collisions
-(see Firecracker's `docs/snapshotting/random-for-clones.md`). It is NOT evidence of a cold
-boot or a different runner.
+**`boot_id` always changes on snapshot restore** — Firecracker intentionally regenerates entropy-related state per clone
+to prevent `boot_id` collisions (see Firecracker's `docs/snapshotting/random-for-clones.md`). It is NOT evidence of a
+cold boot or a different runner.
 
 ### Snapshot key and policies
 
-The snapshot is keyed on: remote instance name, platform property hash (all
-`runner_exec_properties`), VM config (CPUs, memory, disk), and git branch. Any change to
-these forces a cold start.
+The snapshot is keyed on: remote instance name, platform property hash (all `runner_exec_properties`), VM config (CPUs,
+memory, disk), and git branch. Any change to these forces a cold start.
 
 Snapshot behavior is controlled by two `runner_exec_properties`:
 
@@ -138,9 +135,8 @@ Snapshot behavior is controlled by two `runner_exec_properties`:
 | `remote-snapshot-save-policy` | `first-non-default-ref` | `always`, `first-non-default-ref`, `none-available` |
 | `snapshot-read-policy`        | `newest`                | `newest`, `local-first`, `local-only`               |
 
-**Default `first-non-default-ref`**: saves a snapshot only on the first run for a non-default
-branch, and always on the default branch. Subsequent runs on the same branch read the existing
-snapshot but don't write a new one.
+**Default `first-non-default-ref`**: saves a snapshot only on the first run for a non-default branch, and always on the
+default branch. Subsequent runs on the same branch read the existing snapshot but don't write a new one.
 
 **This repo uses `always` + `newest` as the default** (set in `devinfra/bbr.json`):
 
@@ -154,26 +150,23 @@ snapshot but don't write a new one.
 }
 ```
 
-`bbr` picks these up automatically. The same properties are applied to CI via
-`.github/actions/bb-remote/action.yml`. No `BBR_REMOTE_ARGS` override is needed.
+`bbr` picks these up automatically. The same properties are applied to CI via `.github/actions/bb-remote/action.yml`. No
+`BBR_REMOTE_ARGS` override is needed.
 
-With the default policy, back-to-back builds frequently cold-start due to a snapshot
-serialization race (snapshot not yet written before the next build starts) or landing on a
-different executor. The `always` policy ensures every build saves a snapshot, so the next
-build can always find one.
+With the default policy, back-to-back builds frequently cold-start due to a snapshot serialization race (snapshot not
+yet written before the next build starts) or landing on a different executor. The `always` policy ensures every build
+saves a snapshot, so the next build can always find one.
 
 ### `runner-recycling-key` — not needed for snapshot recycling
 
-`runner-recycling-key` routes calls to the same **physical executor node** (same machine in
-BB's executor pool), but snapshot recycling works via the **BB remote cache** — any executor
-that loads the same snapshot key gets the warm state. `recycle-runner=true` alone enables
-recycling; `runner-recycling-key` is optional and only matters if you want executor affinity
-(e.g., for local-only snapshots with `snapshot-read-policy=local-only`).
+`runner-recycling-key` routes calls to the same **physical executor node** (same machine in BB's executor pool), but
+snapshot recycling works via the **BB remote cache** — any executor that loads the same snapshot key gets the warm
+state. `recycle-runner=true` alone enables recycling; `runner-recycling-key` is optional and only matters if you want
+executor affinity (e.g., for local-only snapshots with `snapshot-read-policy=local-only`).
 
 ### Observed build times
 
-Three consecutive `bbr build //devinfra/buildbuddy_cli:bbapi` with
-`remote-snapshot-save-policy=always`:
+Three consecutive `bbr build //devinfra/buildbuddy_cli:bbapi` with `remote-snapshot-save-policy=always`:
 
 | Build | Snapshot state        | Bazel elapsed | Packages loaded      |
 | ----- | --------------------- | ------------- | -------------------- |
@@ -181,15 +174,15 @@ Three consecutive `bbr build //devinfra/buildbuddy_cli:bbapi` with
 | 2     | Warm (snapshot found) | 1.284s        | 1                    |
 | 3     | Warm (same snapshot)  | 0.652s        | **0** (fully cached) |
 
-Build 3 with "0 packages loaded, 0 targets configured" is a fully warm Bazel server — Bazel
-re-uses the in-memory analysis cache with zero analysis work.
+Build 3 with "0 packages loaded, 0 targets configured" is a fully warm Bazel server — Bazel re-uses the in-memory
+analysis cache with zero analysis work.
 
 ---
 
 ## `bb execute` — Ad-hoc RBE Commands
 
-`bb execute` runs a single RBE action. **No snapshot recycling** — every call cold-boots a
-fresh Firecracker VM (~4-5s uptime). Useful for one-off commands from Claude Code web.
+`bb execute` runs a single RBE action. **No snapshot recycling** — every call cold-boots a fresh Firecracker VM (~4-5s
+uptime). Useful for one-off commands from Claude Code web.
 
 ```bash
 export BUILDBUDDY_API_KEY=$(sops -d --extract '["stringData"]["api-key"]' \
@@ -206,12 +199,11 @@ bb execute \
   -- bash -c 'hostname && uname -a && curl -s ifconfig.me'
 ```
 
-`runner-recycling-key` routes calls to the same physical executor, but each action still
-gets a fresh VM snapshot restore (workspace cleared, `/tmp` cleared, new `boot_id`). The
-`preserve-workspace=true` exec property exists in the BB source and is supposed to preserve
-non-output workspace files between recycled calls, but **has no observable effect on BB Cloud
-for `bb execute`** (workspace is always `lost+found`-only on every call). The property works
-for Bazel RBE actions with declared input roots, not for `bb execute` with an empty input root.
+`runner-recycling-key` routes calls to the same physical executor, but each action still gets a fresh VM snapshot
+restore (workspace cleared, `/tmp` cleared, new `boot_id`). The `preserve-workspace=true` exec property exists in the BB
+source and is supposed to preserve non-output workspace files between recycled calls, but **has no observable effect on
+BB Cloud for `bb execute`** (workspace is always `lost+found`-only on every call). The property works for Bazel RBE
+actions with declared input roots, not for `bb execute` with an empty input root.
 
 ### Helper for repeated commands
 
@@ -253,8 +245,7 @@ export BUILDBUDDY_API_KEY=$(sops -d --extract '["stringData"]["api-key"]' \
 
 ## Invocation IDs
 
-`bbr` produces two invocation IDs
-([details](../../devinfra/docs/bb_remote_internals.md)):
+`bbr` produces two invocation IDs ([details](../../devinfra/docs/bb_remote_internals.md)):
 
 ```bash
 # Inner (Bazel RBE build) — minted and printed by bbr ("bbr: invocation <id>");
@@ -304,6 +295,6 @@ Tools (default image):  git 2.7.4, bazelisk, java, curl — no rsync, no bb bina
 | `bbr` with default BB policy              | Maybe warm, maybe cold             | Yes                            | Race condition / different executor → often cold                         |
 | `bb execute`                              | None                               | Yes                            | Fresh VM every call; `preserve-workspace` ineffective on BB Cloud        |
 
-`boot_id` is **not** a reliable indicator of snapshot reuse — it always changes on Firecracker
-snapshot restore by design (entropy regeneration per clone). Use Bazel analysis time and
-"packages loaded" count as the actual warm-vs-cold indicator.
+`boot_id` is **not** a reliable indicator of snapshot reuse — it always changes on Firecracker snapshot restore by
+design (entropy regeneration per clone). Use Bazel analysis time and "packages loaded" count as the actual warm-vs-cold
+indicator.

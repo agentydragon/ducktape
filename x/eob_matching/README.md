@@ -4,8 +4,8 @@ Match Anthem bank deposits to their constituent medical/pharmacy claims and prov
 
 ## Status
 
-Actual matching algorithm is sketched out but mid-WIP. Answer to question that needed answering was
-found just with data extraction from PDFs without needing full matching.
+Actual matching algorithm is sketched out but mid-WIP. Answer to question that needed answering was found just with data
+extraction from PDFs without needing full matching.
 
 ## Layout
 

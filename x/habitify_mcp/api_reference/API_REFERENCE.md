@@ -1,6 +1,7 @@
 # Habitify API Reference
 
-This documentation outlines the available endpoints and usage patterns for the Habitify API based on collected examples and responses.
+This documentation outlines the available endpoints and usage patterns for the Habitify API based on collected examples
+and responses.
 
 ## Base URL
 
@@ -198,8 +199,7 @@ GET https://api.habitify.me/status/{habit_id}?target_date=2025-05-04T00:00:00+00
 | none        | No action has been taken on the habit for the date (default) |
 | in_progress | The habit is partially completed (for habits with goals)     |
 
-**Error Response (500):**
-Invalid date format:
+**Error Response (500):** Invalid date format:
 
 ```json
 {
@@ -275,7 +275,8 @@ See corresponding YAML example file for the complete request and response struct
 
 ## Write Operations and Limitations
 
-The following write operations were tested but returned 404 errors, indicating they may not be supported in the current API version:
+The following write operations were tested but returned 404 errors, indicating they may not be supported in the current
+API version:
 
 - `POST /habits` - Create a new habit
 - `POST /areas` - Create a new area/category
@@ -284,11 +285,14 @@ The following write operations were tested but returned 404 errors, indicating t
 
 ### Missing or Limited Functionality
 
-Based on our testing and the Habitify documentation, the following functionality appears to be limited or unavailable in the current API version:
+Based on our testing and the Habitify documentation, the following functionality appears to be limited or unavailable in
+the current API version:
 
-The only working write operations are habit status updates via `PUT /status/{habit_id}`. There might be more to implement but currently not implemented.
+The only working write operations are habit status updates via `PUT /status/{habit_id}`. There might be more to
+implement but currently not implemented.
 
-This suggests that the current API is primarily read-only, with limited write functionality focused on habit status updates.
+This suggests that the current API is primarily read-only, with limited write functionality focused on habit status
+updates.
 
 ## Habit Object Structure
 

@@ -16,8 +16,8 @@ occurrences:
         - [75, 75]
         - [81, 81]
     note: >-
-      self._get_client and self.get_client both store the same callable.
-      Pick one - either private with wrapper method, or public used everywhere.
+      self._get_client and self.get_client both store the same callable. Pick one - either private with wrapper method,
+      or public used everywhere.
     critic_scopes_expected_to_recall:
       - - wt/server/services.py
     match_file_restriction:
@@ -29,8 +29,7 @@ occurrences:
         - [118, 118]
         - [122, 122]
     note: >-
-      self._is_scanning and self.is_scanning both store the same callable.
-      Same redundant pattern as GitstatusdService.
+      self._is_scanning and self.is_scanning both store the same callable. Same redundant pattern as GitstatusdService.
     critic_scopes_expected_to_recall:
       - - wt/server/services.py
     match_file_restriction:

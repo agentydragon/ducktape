@@ -1,21 +1,18 @@
 # Valkey Kimsufi Local-Storage Migration
 
-Status: paved through Phase 5 for all operator-managed MCP Valkeys; Manifold,
-Grocy SF MCP, Grocy Vallejo MCP, and Tana MCP facade are now on
-`local-path-ovh`.
-Last live inventory refresh: 2026-05-20.
+Status: paved through Phase 5 for all operator-managed MCP Valkeys; Manifold, Grocy SF MCP, Grocy Vallejo MCP, and Tana
+MCP facade are now on `local-path-ovh`. Last live inventory refresh: 2026-05-20.
 
 This note covers two related tasks:
 
-- deciding what blocks decommissioning `talos-vps-worker-0` and
-  `talos-vps-worker-1`, plus what still lives on other Hetzner/VPS-backed
-  storage;
+- deciding what blocks decommissioning `talos-vps-worker-0` and `talos-vps-worker-1`, plus what still lives on other
+  Hetzner/VPS-backed storage;
 - moving operator-managed Valkey state to Kimsufi local storage through Flux.
 
 ## Current Hetzner/VPS PVCs
 
-These PVCs are currently still backed by Hetzner/VPS storage. PV names are
-included because local-path PVs are bound to a specific node and host path.
+These PVCs are currently still backed by Hetzner/VPS storage. PV names are included because local-path PVs are bound to
+a specific node and host path.
 
 No operator-managed MCP Valkey PVCs remain on Hetzner storage.
 
@@ -44,8 +41,7 @@ No operator-managed MCP Valkey PVCs remain on Hetzner storage.
 
 ### VPS Control-Plane Local PVCs
 
-These are not on the two worker nodes, but they are still local-path PVs pinned
-to `talos-vps-cp-*` hosts.
+These are not on the two worker nodes, but they are still local-path PVs pinned to `talos-vps-cp-*` hosts.
 
 | PV                                         | PVC                                       | Node             | Pod                         | Purpose                                 | Notes                                            |
 | ------------------------------------------ | ----------------------------------------- | ---------------- | --------------------------- | --------------------------------------- | ------------------------------------------------ |
@@ -67,35 +63,31 @@ Current cluster state:
 
 - HelmRelease: `cluster/generated/valkey/helmrelease.yaml`
 - chart version: `0.24.0`
-- running operator image: `quay.io/opstree/redis-operator:v0.25.0`,
-  deployed through chart `0.24.0` with image-tag overrides
+- running operator image: `quay.io/opstree/redis-operator:v0.25.0`, deployed through chart `0.24.0` with image-tag
+  overrides
 - local source checkout: `/home/agentydragon/code/redis-operator`
 - latest local source tag checked: `v0.25.0`
-- `quay.io/opstree/redis-operator:v0.25.0` exists; the OT Helm repository
-  does not currently publish chart `0.25.0`
+- `quay.io/opstree/redis-operator:v0.25.0` exists; the OT Helm repository does not currently publish chart `0.25.0`
 
 Relevant source findings:
 
-- `RedisReplication` has no declarative `spec.masterNode`; the controller
-  derives the master from live Valkey roles and writes `.status.masterNode`.
-- The `*-master` service selects pods by the `redis-role=master` label; labels
-  are reconciled by connecting to the pods and reading their live role.
-- StatefulSet ordinals are still `0..N-1`; regular scale-down removes the
-  highest ordinal first, so YAML cannot say "remove ordinal 0 but keep ordinal
-  1" for the existing Valkey StatefulSet.
-- `v0.25.0` is useful but does not solve declarative promotion. It improves
-  master fallback when all replication pods restart and fixes Sentinel config
-  persistence across container restarts.
-- `additionalRedisConfig` is only reliable for our `valkey/valkey:8-alpine`
-  pods when `GenerateConfigInInitContainer=true`, because the init container
-  generates `/etc/redis/redis.conf` and starts Valkey with that file.
+- `RedisReplication` has no declarative `spec.masterNode`; the controller derives the master from live Valkey roles and
+  writes `.status.masterNode`.
+- The `*-master` service selects pods by the `redis-role=master` label; labels are reconciled by connecting to the pods
+  and reading their live role.
+- StatefulSet ordinals are still `0..N-1`; regular scale-down removes the highest ordinal first, so YAML cannot say
+  "remove ordinal 0 but keep ordinal 1" for the existing Valkey StatefulSet.
+- `v0.25.0` is useful but does not solve declarative promotion. It improves master fallback when all replication pods
+  restart and fixes Sentinel config persistence across container restarts.
+- `additionalRedisConfig` is only reliable for our `valkey/valkey:8-alpine` pods when
+  `GenerateConfigInInitContainer=true`, because the init container generates `/etc/redis/redis.conf` and starts Valkey
+  with that file.
 
-TODO: replace the chart `0.24.0` plus image-tag override with a normal chart
-version bump after the OT Helm repository publishes a `redis-operator` chart
-for `v0.25.0` or newer.
+TODO: replace the chart `0.24.0` plus image-tag override with a normal chart version bump after the OT Helm repository
+publishes a `redis-operator` chart for `v0.25.0` or newer.
 
-If we bump for this migration, use it as a Phase 0 hardening step. Keep the
-chart at `0.24.0` and override the operator/init image tags:
+If we bump for this migration, use it as a Phase 0 hardening step. Keep the chart at `0.24.0` and override the
+operator/init image tags:
 
 ```yaml
 values:
@@ -108,44 +100,34 @@ values:
 
 ## Why Not "Just YAML" On The Existing CR
 
-For the current `manifold-valkey` pair, the old master is
-`manifold-valkey-0` on `talos-vps-worker-0`; the Kimsufi replica is
-`manifold-valkey-1`.
+For the current `manifold-valkey` pair, the old master is `manifold-valkey-0` on `talos-vps-worker-0`; the Kimsufi
+replica is `manifold-valkey-1`.
 
-A same-CR Git change can pin future pods to Kimsufi, but it cannot express all
-of this atomically:
+A same-CR Git change can pin future pods to Kimsufi, but it cannot express all of this atomically:
 
 1. promote `manifold-valkey-1`;
 2. make `manifold-valkey-0` follow it;
 3. delete only the VPS-bound ordinal/PVC;
 4. keep the service endpoint stable throughout.
 
-The operator has no desired-master field, and StatefulSet semantics do not let
-us remove ordinal 0 while keeping ordinal 1. The low-downtime way to do that is
-a data-plane command (`REPLICAOF NO ONE` on the Kimsufi replica and
-`REPLICAOF <new-master>` on the old master), whether issued by `kubectl exec`
-or by a Git-applied Job. That keeps the existing service name, but it is still
-an imperative role change.
+The operator has no desired-master field, and StatefulSet semantics do not let us remove ordinal 0 while keeping
+ordinal 1. The low-downtime way to do that is a data-plane command (`REPLICAOF NO ONE` on the Kimsufi replica and
+`REPLICAOF <new-master>` on the old master), whether issued by `kubectl exec` or by a Git-applied Job. That keeps the
+existing service name, but it is still an imperative role change.
 
 ## GitOps Replacement Path
 
-This path avoids imperative promotion by creating a new Kimsufi-only
-`RedisReplication`, letting it replicate from the old master, then cutting the
-consumer to the new service. It does not mutate the existing StatefulSet
-ordinals.
+This path avoids imperative promotion by creating a new Kimsufi-only `RedisReplication`, letting it replicate from the
+old master, then cutting the consumer to the new service. It does not mutate the existing StatefulSet ordinals.
 
-This is suitable for the MCP facade Valkeys because they hold OAuth/session
-state. For strictly lossless state, insert a brief app write pause before the
-detach/cutover step. Without that pause, writes that land on the old master
-after the final catch-up check but before the app restarts against the new
-Valkey can be lost.
+This is suitable for the MCP facade Valkeys because they hold OAuth/session state. For strictly lossless state, insert a
+brief app write pause before the detach/cutover step. Without that pause, writes that land on the old master after the
+final catch-up check but before the app restarts against the new Valkey can be lost.
 
 ### Phase 0: Operator Prep
 
-Decide whether to bump the operator image and enable
-`GenerateConfigInInitContainer`. If enabling the feature gate, roll this out and
-verify the existing Valkey pods stay healthy before creating any replacement
-Valkey:
+Decide whether to bump the operator image and enable `GenerateConfigInInitContainer`. If enabling the feature gate, roll
+this out and verify the existing Valkey pods stay healthy before creating any replacement Valkey:
 
 ```bash
 kubectl -n valkey-system get deploy redis-operator -o wide
@@ -155,10 +137,9 @@ kubectl get pods -A -l redis_setup_type=replication -o wide
 
 ### Phase 1: Add Kimsufi Followers
 
-For `manifold-mcp`, add a second Valkey CR with a distinct name and Kimsufi-only
-storage. The extra config makes both new pods start as replicas of the old
-master service. Use size 2 so the final replacement remains replicated across
-the two Kimsufi workers.
+For `manifold-mcp`, add a second Valkey CR with a distinct name and Kimsufi-only storage. The extra config makes both
+new pods start as replicas of the old master service. Use size 2 so the final replacement remains replicated across the
+two Kimsufi workers.
 
 ```yaml
 apiVersion: v1
@@ -215,8 +196,7 @@ spec:
           topologyKey: kubernetes.io/hostname
 ```
 
-Commit and push through Flux. Verify the new pod is on a Kimsufi worker and is
-replicating from the old service:
+Commit and push through Flux. Verify the new pod is on a Kimsufi worker and is replicating from the old service:
 
 ```bash
 kubectl -n manifold-mcp get pod -l app=manifold-valkey-kimsufi -o wide
@@ -230,29 +210,25 @@ Expected: role is `slave`, `master_link_status:up`, and persistence is enabled.
 
 ### Phase 2: Stop Writers
 
-Pause the consumer by Git before detaching the new Valkey. This avoids losing
-writes between the final replication catch-up check and the app restart against
-the new service:
+Pause the consumer by Git before detaching the new Valkey. This avoids losing writes between the final replication
+catch-up check and the app restart against the new service:
 
 ```yaml
 spec:
   replicas: 0
 ```
 
-Commit, push, and wait until the app pod is gone. Then re-check the replacement
-Valkey's replication status.
+Commit, push, and wait until the app pod is gone. Then re-check the replacement Valkey's replication status.
 
 ### Phase 3: Detach The Replacement
 
 In one Git change:
 
-- remove `redisConfig.additionalRedisConfig` from
-  `manifold-valkey-kimsufi`;
+- remove `redisConfig.additionalRedisConfig` from `manifold-valkey-kimsufi`;
 - remove the replica config `ConfigMap` from kustomization;
 
-Push and wait for Flux. The two replacement pods will restart as standalone
-masters, then the operator should choose one as master and configure the other
-as a replica. Verify before unpausing the app:
+Push and wait for Flux. The two replacement pods will restart as standalone masters, then the operator should choose one
+as master and configure the other as a replica. Verify before unpausing the app:
 
 ```bash
 kubectl -n manifold-mcp get pod -l app=manifold-valkey-kimsufi -L redis-role -o wide
@@ -261,15 +237,14 @@ kubectl -n manifold-mcp exec manifold-valkey-kimsufi-0 -- valkey-cli role
 kubectl -n manifold-mcp exec manifold-valkey-kimsufi-1 -- valkey-cli role
 ```
 
-Expected: exactly one pod is `redis-role=master`, the new master service has
-one endpoint, and the other pod is a replica.
+Expected: exactly one pod is `redis-role=master`, the new master service has one endpoint, and the other pod is a
+replica.
 
 ### Phase 4: Cut Over And Unpause
 
 In one Git change:
 
-- set `MCP_FACADE_PERSISTENCE__HOST` to
-  `manifold-valkey-kimsufi-master.manifold-mcp.svc.cluster.local`;
+- set `MCP_FACADE_PERSISTENCE__HOST` to `manifold-valkey-kimsufi-master.manifold-mcp.svc.cluster.local`;
 - restore the consumer deployment to `replicas: 1`.
 
 Push and wait for Flux. Verify:
@@ -295,16 +270,13 @@ The Manifold MCP trial was run on 2026-05-19 with these Git commits:
 Observed results:
 
 - Phase 0 rolled the existing Valkeys and they recovered.
-- Phase 1 created two `local-path-ovh` PVCs on
-  `talos-kimsufi-worker-0` and `talos-kimsufi-worker-1`.
-- Phase 3 did roll the replacement pods after removing
-  `additionalRedisConfig`; no extra rollout nudge was needed.
+- Phase 1 created two `local-path-ovh` PVCs on `talos-kimsufi-worker-0` and `talos-kimsufi-worker-1`.
+- Phase 3 did roll the replacement pods after removing `additionalRedisConfig`; no extra rollout nudge was needed.
 - Phase 4 restored `manifold-mcp` to `1/1`; the running facade pod had
-  `MCP_FACADE_PERSISTENCE__HOST=manifold-valkey-kimsufi-master.manifold-mcp.svc.cluster.local`
-  and public `/healthz` returned `200`.
-- Phase 5 removed the old `manifold-valkey` CR, StatefulSet, pods, PVCs, and
-  PVs. The only remaining Manifold Valkey storage is the two
-  `local-path-ovh` PVCs for `manifold-valkey-kimsufi`.
+  `MCP_FACADE_PERSISTENCE__HOST=manifold-valkey-kimsufi-master.manifold-mcp.svc.cluster.local` and public `/healthz`
+  returned `200`.
+- Phase 5 removed the old `manifold-valkey` CR, StatefulSet, pods, PVCs, and PVs. The only remaining Manifold Valkey
+  storage is the two `local-path-ovh` PVCs for `manifold-valkey-kimsufi`.
 
 ## Batch Run Notes
 
@@ -319,28 +291,23 @@ The remaining MCP Valkeys were migrated on 2026-05-20 using the same pattern:
 Migrated CRs:
 
 - `grocy-sf/grocy-sf-valkey` -> `grocy-sf/grocy-sf-valkey-ovh`
-- `grocy-vallejo/grocy-vallejo-valkey` ->
-  `grocy-vallejo/grocy-vallejo-valkey-ovh`
+- `grocy-vallejo/grocy-vallejo-valkey` -> `grocy-vallejo/grocy-vallejo-valkey-ovh`
 - `tana-mcp/mcp-valkey` -> `tana-mcp/mcp-valkey-ovh`
 
 Observed results:
 
-- All replacement pods landed on `talos-kimsufi-worker-0` and
-  `talos-kimsufi-worker-1` with `local-path-ovh` PVCs.
-- Removing `additionalRedisConfig` rolled the replacement StatefulSets and the
-  operator selected ordinal `0` as master, with ordinal `1` as replica.
-- The Grocy MCP services do not expose `/healthz`; `/mcp` returned the expected
-  unauthenticated `401`, and pod logs showed clean startup. Tana MCP facade
-  `/healthz` returned `200`.
-- Flux sometimes reported a stale `gateway` dependency gate; reconciling
-  `gateway` first cleared it, after which the MCP Kustomizations applied
-  normally.
+- All replacement pods landed on `talos-kimsufi-worker-0` and `talos-kimsufi-worker-1` with `local-path-ovh` PVCs.
+- Removing `additionalRedisConfig` rolled the replacement StatefulSets and the operator selected ordinal `0` as master,
+  with ordinal `1` as replica.
+- The Grocy MCP services do not expose `/healthz`; `/mcp` returned the expected unauthenticated `401`, and pod logs
+  showed clean startup. Tana MCP facade `/healthz` returned `200`.
+- Flux sometimes reported a stale `gateway` dependency gate; reconciling `gateway` first cleared it, after which the MCP
+  Kustomizations applied normally.
 
 ### Phase 5: Retire Old Valkey
 
-After the consumer has been stable on the new service, remove the old
-`manifold-valkey` CR from Git. The local-path PVs use `Delete` reclaim policy,
-so the old VPS-bound PV should disappear after the CR and PVC are removed.
+After the consumer has been stable on the new service, remove the old `manifold-valkey` CR from Git. The local-path PVs
+use `Delete` reclaim policy, so the old VPS-bound PV should disappear after the CR and PVC are removed.
 
 Verify no remaining Manifold Valkey storage is on a VPS worker:
 
@@ -352,25 +319,22 @@ kubectl -n manifold-mcp get pod -o wide
 
 ## Rollback
 
-Before Phase 3, delete the replacement CR and ConfigMap from Git; the consumer
-still points at the old `manifold-valkey-master` service.
+Before Phase 3, delete the replacement CR and ConfigMap from Git; the consumer still points at the old
+`manifold-valkey-master` service.
 
-After Phase 4, rollback is a Git change that points
-`MCP_FACADE_PERSISTENCE__HOST` back to
-`manifold-valkey-master.manifold-mcp.svc.cluster.local`. Any writes accepted by
-the replacement after cutover will not automatically flow back to the old
-Valkey.
+After Phase 4, rollback is a Git change that points `MCP_FACADE_PERSISTENCE__HOST` back to
+`manifold-valkey-master.manifold-mcp.svc.cluster.local`. Any writes accepted by the replacement after cutover will not
+automatically flow back to the old Valkey.
 
 ## Paving Protocol For The First Run
 
-Use `manifold-mcp` as the trial because its old master is the only Valkey master
-currently on `talos-vps-worker-0`, and the state is OAuth/session persistence.
+Use `manifold-mcp` as the trial because its old master is the only Valkey master currently on `talos-vps-worker-0`, and
+the state is OAuth/session persistence.
 
 Before pushing live changes:
 
-1. verify whether the Helm repository exposes an operator chart newer than
-   `0.24.0`, and whether `quay.io/opstree/redis-operator:v0.25.0` exists;
+1. verify whether the Helm repository exposes an operator chart newer than `0.24.0`, and whether
+   `quay.io/opstree/redis-operator:v0.25.0` exists;
 2. pause `manifold-mcp` during detach and cutover;
 3. commit Phase 0 by itself if enabling the feature gate or bumping the image;
-4. run Phases 1 through 5 as separate Git commits, recording every Flux or
-   operator surprise back into this runbook.
+4. run Phases 1 through 5 as separate Git commits, recording every Flux or operator surprise back into this runbook.

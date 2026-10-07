@@ -1,9 +1,8 @@
 # Gitea mirror + Docker exec integration
 
-This document explains how to run a local Gitea instance, prepare pull mirrors,
-and expose them to the Docker exec MCP server as a read-only volume. Clients can
-then compose the `gitea_mirror` and `docker_exec` MCP servers to keep mirrors up
-to date and clone them inside sandboxed containers.
+This document explains how to run a local Gitea instance, prepare pull mirrors, and expose them to the Docker exec MCP
+server as a read-only volume. Clients can then compose the `gitea_mirror` and `docker_exec` MCP servers to keep mirrors
+up to date and clone them inside sandboxed containers.
 
 ## Overview
 
@@ -24,22 +23,19 @@ to date and clone them inside sandboxed containers.
 ```
 
 1. `gitea_mirror` MCP is run on the host with access to the Gitea API.
-2. `docker_exec` MCP runs sandboxed containers with a read-only bind mount of
-   the mirror store (e.g. `/Users/<user>/.combo_mcp/gitea/git/repositories`).
+2. `docker_exec` MCP runs sandboxed containers with a read-only bind mount of the mirror store (e.g.
+   `/Users/<user>/.combo_mcp/gitea/git/repositories`).
 3. Agents call `get_repo_info` to get the initial repository state (GET `/repos/{owner}/{repo}`).
-4. Agents call `trigger_mirror_sync` with an HTTPS repository URL. The tool creates
-   a pull mirror (POST `/repos/migrate`), triggers an async sync (POST
-   `/repos/{owner}/{repo}/mirror-sync`), and returns immediately (empty response,
-   matching Gitea API).
-5. Agents poll `get_repo_info` until the `mirror_updated` timestamp changes,
-   indicating the sync is complete.
-6. Once synced, agents construct the mirror path as `{owner}/{repo}.git` and clone
-   from the read-only bind mount using `git clone --reference` for fast object reuse.
+4. Agents call `trigger_mirror_sync` with an HTTPS repository URL. The tool creates a pull mirror (POST
+   `/repos/migrate`), triggers an async sync (POST `/repos/{owner}/{repo}/mirror-sync`), and returns immediately (empty
+   response, matching Gitea API).
+5. Agents poll `get_repo_info` until the `mirror_updated` timestamp changes, indicating the sync is complete.
+6. Once synced, agents construct the mirror path as `{owner}/{repo}.git` and clone from the read-only bind mount using
+   `git clone --reference` for fast object reuse.
 
 ## Running Gitea locally
 
-A minimal docker-compose file is available at
-`src/adgn_llm/mcp/gitea/docker-compose.yml`:
+A minimal docker-compose file is available at `src/adgn_llm/mcp/gitea/docker-compose.yml`:
 
 ```bash
 docker compose -f src/adgn_llm/mcp/gitea/docker-compose.yml up -d
@@ -50,11 +46,9 @@ Complete the initial setup, create an admin token, and record:
 
 - Base URL, e.g. `http://localhost:3000`
 - Access token with `write:repository` scope (required for migrate + sync API)
-- Mirror storage path inside the volume (`/data/git/repositories` inside the
-  container, bind-mounted on the host).
+- Mirror storage path inside the volume (`/data/git/repositories` inside the container, bind-mounted on the host).
 
-To discover the host path of the mirror store when using Docker Desktop or
-Colima:
+To discover the host path of the mirror store when using Docker Desktop or Colima:
 
 ```bash
 docker inspect adgn-gitea --format '{{range .Mounts}}{{if eq .Destination "/data"}}{{.Source}}{{end}}{{end}}'
@@ -75,7 +69,8 @@ adgn-mcp-gitea-mirror
 The server exposes two tools:
 
 - `get_repo_info`: Returns full repository information from Gitea API (matches GET /repos/{owner}/{repo})
-- `trigger_mirror_sync`: Ensures mirror exists, triggers async sync, returns empty (matches POST /repos/{owner}/{repo}/mirror-sync)
+- `trigger_mirror_sync`: Ensures mirror exists, triggers async sync, returns empty (matches POST
+  /repos/{owner}/{repo}/mirror-sync)
 
 ### Docker exec MCP
 
@@ -93,10 +88,9 @@ adgn-mcp-docker-exec \
 Flags of note:
 
 - `--image` must include `git` and other tools needed inside the container.
-- `--network-mode none` keeps containers offline; change if API access is
-  required.
-- `--volumes` accepts comma-separated bind specs (`host:container[:mode]`). Use
-  `:ro` to keep the mirror read-only inside the container.
+- `--network-mode none` keeps containers offline; change if API access is required.
+- `--volumes` accepts comma-separated bind specs (`host:container[:mode]`). Use `:ro` to keep the mirror read-only
+  inside the container.
 
 ## Client workflow
 
@@ -171,5 +165,5 @@ Flags of note:
    }
    ```
 
-5. **Work with the repo**: Subsequent `exec` calls can operate inside the checkout
-   (e.g. run tests or edit files under `/workspace/repos/repo`).
+5. **Work with the repo**: Subsequent `exec` calls can operate inside the checkout (e.g. run tests or edit files under
+   `/workspace/repos/repo`).

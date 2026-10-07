@@ -1,15 +1,13 @@
 # OAuth and identity work across Ducktape
 
-- **Status:** Haku's canonical Operator/Agent authority and enrollment cutover is complete and
-  deployed. This file plans only remaining work.
+- **Status:** Haku's canonical Operator/Agent authority and enrollment cutover is complete and deployed. This file plans
+  only remaining work.
 - **Updated:** 2026-07-16
-- **Implemented contract:**
-  <../haku/console/README.md#canonical-agent-authority-and-enrollment>
+- **Implemented contract:** <../haku/console/README.md#canonical-agent-authority-and-enrollment>
 - **Tactical Haku backlog:** <../haku/console/TODO.md>
 
-Git and the closed prototype PRs are the archive for P0-P5. The former execution diary, spike
-narrative, PR ledger, proposed schema, and #3122 parts bin were removed after the terminal cutover;
-they are not current plans.
+Git and the closed prototype PRs are the archive for P0-P5. The former execution diary, spike narrative, PR ledger,
+proposed schema, and #3122 parts bin were removed after the terminal cutover; they are not current plans.
 
 ## Decisions that still govern future work
 
@@ -27,78 +25,71 @@ Keep these ownership boundaries:
 The remaining work must preserve these distinctions:
 
 - OAuth client software and `client_id` are registration metadata, not a Haku Agent.
-- Browser OIDC login, MCP Agent enrollment, and a downstream provider connection are separate
-  authorization relationships.
-- A principal is a canonical local ID; a binding is accepted credential evidence; a display name
-  is presentation; a grant is one OAuth relationship/token family.
-- Exact `(issuer, subject)` identities converge only through an explicitly configured trust-domain
-  anchor. Username is never durable authority.
+- Browser OIDC login, MCP Agent enrollment, and a downstream provider connection are separate authorization
+  relationships.
+- A principal is a canonical local ID; a binding is accepted credential evidence; a display name is presentation; a
+  grant is one OAuth relationship/token family.
+- Exact `(issuer, subject)` identities converge only through an explicitly configured trust-domain anchor. Username is
+  never durable authority.
 - Logout, silence, and `last_seen_at` are not revocation. Haku-local revoke/disable is authoritative.
-- Private Postgres/Valkey/Kubernetes Secret storage is an accepted credential boundary. Additional
-  application encryption is optional, not a prerequisite.
+- Private Postgres/Valkey/Kubernetes Secret storage is an accepted credential boundary. Additional application
+  encryption is optional, not a prerequisite.
 
-FastMCP `3.4.4` is the current pinned engine, not a permanent ceiling. Haku's accepted compatibility
-surface is one private `_code_store` read/delete plus version-pinned claim, scope-translation, and
-transparent-refresh hooks. Reconsider the design only if an upgrade would require callback
-interception, transaction-store access, copied issuance, broader private state, or route overrides.
-A DCR-capable IdP alone is not a reason to switch authorization servers: DCR registers software and
-does not supply Haku's Agent ceremony or lifecycle.
+FastMCP `3.4.4` is the current pinned engine, not a permanent ceiling. Haku's accepted compatibility surface is one
+private `_code_store` read/delete plus version-pinned claim, scope-translation, and transparent-refresh hooks.
+Reconsider the design only if an upgrade would require callback interception, transaction-store access, copied issuance,
+broader private state, or route overrides. A DCR-capable IdP alone is not a reason to switch authorization servers: DCR
+registers software and does not supply Haku's Agent ceremony or lifecycle.
 
 ## Remaining plan
 
 ### R0: make independent console rollouts skew-safe
 
-Do this before the next change that couples server code, runtime config schema, and static frontend.
-The 2026-07-14 cutover demonstrated the gap: Flux applied the new `static_agents` config before the
-matching server image was published, so the old image crash-looped until image automation caught
-up. `Recreate` turned that temporary skew into full unavailability.
+Do this before the next change that couples server code, runtime config schema, and static frontend. The 2026-07-14
+cutover demonstrated the gap: Flux applied the new `static_agents` config before the matching server image was
+published, so the old image crash-looped until image automation caught up. `Recreate` turned that temporary skew into
+full unavailability.
 
-Keep the server image, static image, and live config independently deployable. Evolve their
-contracts over one rollout window: readers before writers for config, server API additions before
-frontend consumers, and removals only after every consumer has moved. CI should exercise the
-server against its current and next config shapes and the frontend against every supported server
-contract. Revisit `Recreate` so a failed replacement leaves the last serving version available.
+Keep the server image, static image, and live config independently deployable. Evolve their contracts over one rollout
+window: readers before writers for config, server API additions before frontend consumers, and removals only after every
+consumer has moved. CI should exercise the server against its current and next config shapes and the frontend against
+every supported server contract. Revisit `Recreate` so a failed replacement leaves the last serving version available.
 
 Acceptance:
 
 - every intermediate server/static/config combination within the supported rollout window works;
 - CI rejects a writer or frontend that requires a contract not yet served;
 - contract removal is gated on the last old consumer leaving service; and
-- a failed rollout leaves the last serving version available rather than requiring image
-  automation to repair an outage.
+- a failed rollout leaves the last serving version available rather than requiring image automation to repair an outage.
 
 ### C1: simplify the authority schema after Connected Agents
 
-The deployed graph is safe but implements too much of its state machine twice: once in the
-transactional authority and again through 33 `haku_0009_*` PostgreSQL functions retained in the
-deployed `0010` baseline. Simplify the entities after H1 establishes the Connected Agents read
-contract and shows which joins are genuine friction, but before H3 lifecycle mutations make the
-current graph a product dependency. Then delete triggers made unnecessary by the smaller graph.
-Retain ordinary `NOT NULL`/`CHECK`/unique/FK constraints, the one-active-binding index, same-Agent
-predecessor integrity, and genuinely cross-row security rules.
+The deployed graph is safe but implements too much of its state machine twice: once in the transactional authority and
+again through 33 `haku_0009_*` PostgreSQL functions retained in the deployed `0010` baseline. Simplify the entities
+after H1 establishes the Connected Agents read contract and shows which joins are genuine friction, but before H3
+lifecycle mutations make the current graph a product dependency. Then delete triggers made unnecessary by the smaller
+graph. Retain ordinary `NOT NULL`/`CHECK`/unique/FK constraints, the one-active-binding index, same-Agent predecessor
+integrity, and genuinely cross-row security rules.
 
 Recommended terminal shape:
 
-- Put required `display_name` and normalized unique key on `Agent`. Allow creates the draft Agent;
-  exchange still proves the upstream principal belongs to the same Operator before issuing a
-  binding. Remove the deferred `AgentNameReservation` ownership cycle. Add a small rename-audit
-  table later only if name history is a product requirement; do not permanently reserve retired
-  names by default.
-- Let FastMCP own registration. Replace Haku's speculative `ClientSoftware` mirror with only the
-  immutable client ID and optional display-name snapshot needed by the enrollment interaction and
-  grant. Do not store unprovable DCR/CIMD provenance, a write-only metadata hash, or an always-null
-  icon.
+- Put required `display_name` and normalized unique key on `Agent`. Allow creates the draft Agent; exchange still proves
+  the upstream principal belongs to the same Operator before issuing a binding. Remove the deferred
+  `AgentNameReservation` ownership cycle. Add a small rename-audit table later only if name history is a product
+  requirement; do not permanently reserve retired names by default.
+- Let FastMCP own registration. Replace Haku's speculative `ClientSoftware` mirror with only the immutable client ID and
+  optional display-name snapshot needed by the enrollment interaction and grant. Do not store unprovable DCR/CIMD
+  provenance, a write-only metadata hash, or an always-null icon.
 - Put nullable `operator_id` and `binding_id` FKs directly on `mcp_tool_calls` with
-  `CHECK (num_nonnulls(operator_id, binding_id) = 1)`. This remains a relational discriminated union
-  and removes the mandatory one-to-one principal table and completeness triggers.
-- Remove deployment-only `secret_reference` from static credential authority; fingerprint
-  uniqueness already prevents reuse across Agents.
-- Keep Agent, credential binding, and grant as separate entities. Reconsider redundant Agent status
-  transitions only when disable/delete semantics are specified; do not derive away a future
-  Agent-level policy control prematurely.
+  `CHECK (num_nonnulls(operator_id, binding_id) = 1)`. This remains a relational discriminated union and removes the
+  mandatory one-to-one principal table and completeness triggers.
+- Remove deployment-only `secret_reference` from static credential authority; fingerprint uniqueness already prevents
+  reuse across Agents.
+- Keep Agent, credential binding, and grant as separate entities. Reconsider redundant Agent status transitions only
+  when disable/delete semantics are specified; do not derive away a future Agent-level policy control prematurely.
 
-This is not a five-second-stamp PR. Stage it after H1, with one schema migration and focused
-invariant tests, before H3 makes lifecycle contracts depend on the current graph.
+This is not a five-second-stamp PR. Stage it after H1, with one schema migration and focused invariant tests, before H3
+makes lifecycle contracts depend on the current graph.
 
 ### Haku product sequence
 
@@ -114,8 +105,7 @@ These are vertical product PRs, not another identity migration:
 | H4    | Per-Agent approval policy       | Store typed policy by canonical Agent, with the current global policy as inherited/default. Reuse `AgentActor`; do not change OAuth identity or tenant routing.                                                                                                                                      |
 | H5    | Per-Agent tool surface          | Derive `tools/list` from the verified binding and policy, emit `tools/list_changed` after policy edits, and never key authority on unverified `client_id`.                                                                                                                                           |
 
-The per-tool-call deep link is an independent console improvement tracked in
-<../haku/console/TODO.md>.
+The per-tool-call deep link is an independent console improvement tracked in <../haku/console/TODO.md>.
 
 ### Independent security and consolidation lanes
 
@@ -128,10 +118,9 @@ These do not block H1-H3:
 | I1: singular Authentik ownership | Inventory remaining provider/application/controller ownership, assign shared mappings one owner, update `<../cluster/docs/mcp_oauth_authentik_notes.md>` for preregistration/CIMD/DCR preference, and add drift checks.    |
 | D1: public-client abuse controls | Add Haku-side enrollment/registration rate limits and transaction quotas if public DCR remains enabled. FastMCP retains redirect/CIMD mechanics and protocol TTLs; Haku retains interaction/activation expiry.             |
 
-Retiring Airlock's remaining OAuth grants is a separate credential-migration program. Its removed
-MCP proxy and approval queue must not be revived as part of that migration. The retired
-`x/agent_server` experiment remains design archaeology in Git history, not an implementation base
-or cleanup prerequisite.
+Retiring Airlock's remaining OAuth grants is a separate credential-migration program. Its removed MCP proxy and approval
+queue must not be revived as part of that migration. The retired `x/agent_server` experiment remains design archaeology
+in Git history, not an implementation base or cleanup prerequisite.
 
 ## Future-change guardrails
 
@@ -151,14 +140,13 @@ or cleanup prerequisite.
 
 ## Acceptance gates
 
-- Every new Agent read, filter, lifecycle route, event, cache, and idempotency key begins with
-  canonical Operator ownership and includes Agent/binding scope where applicable.
-- Every lifecycle operation revalidates the submitted binding at decision/execution time; a
-  replacement credential never inherits queued authority.
-- UI metadata comes from canonical joins and is treated as untrusted presentation. Secrets and raw
-  OAuth material never enter API models, logs, traces, or test artifacts.
-- FastMCP repins run the exact-version adapter plus mounted enrollment/token/refresh/revocation
-  contract suite before rollout.
+- Every new Agent read, filter, lifecycle route, event, cache, and idempotency key begins with canonical Operator
+  ownership and includes Agent/binding scope where applicable.
+- Every lifecycle operation revalidates the submitted binding at decision/execution time; a replacement credential never
+  inherits queued authority.
+- UI metadata comes from canonical joins and is treated as untrusted presentation. Secrets and raw OAuth material never
+  enter API models, logs, traces, or test artifacts.
+- FastMCP repins run the exact-version adapter plus mounted enrollment/token/refresh/revocation contract suite before
+  rollout.
 - Release automation validates and promotes one server/static/config tuple.
-- Airlock changes prove credentials work only on intended route surfaces and anonymous provider
-  initiation fails.
+- Airlock changes prove credentials work only on intended route surfaces and anonymous provider initiation fails.

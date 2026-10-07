@@ -1,19 +1,18 @@
 # Home Assistant Notes
 
-Instance: `https://home.e621.co.uk` (local: `10.0.0.3`) — location name: Howleroi (SF, America/Los_Angeles)
-Version: 2026.3.4
+Instance: `https://home.e621.co.uk` (local: `10.0.0.3`) — location name: Howleroi (SF, America/Los_Angeles) Version:
+2026.3.4
 
-> **Legacy instance (2026-06-27):** the 15 Leroy household was left. This config (`iaqi`,
-> `packages/rai`, `deploy.sh`) is retained as migration reference for the Kubernetes Home
-> Assistant deployment under `cluster/k8s/home-assistant`. The
-> `~/.ssh/15leroy` key + `nix/home/modules/15leroy-ssh.nix` module were removed (see TODO.md).
+> **Legacy instance (2026-06-27):** the 15 Leroy household was left. This config (`iaqi`, `packages/rai`, `deploy.sh`)
+> is retained as migration reference for the Kubernetes Home Assistant deployment under `cluster/k8s/home-assistant`.
+> The `~/.ssh/15leroy` key + `nix/home/modules/15leroy-ssh.nix` module were removed (see TODO.md).
 
 ## Access
 
 - **Web UI**: `https://home.e621.co.uk`
-- **SSH**: `ssh homeassistant` → `root@10.0.0.3:22` (LAN only; dormant — see note above).
-  The `~/.ssh/15leroy` key, `nix/home/modules/15leroy-ssh.nix` module, and `homeassistant`
-  SSH host alias in `nix/home/home.nix` were removed when the household was left; re-add to revive.
+- **SSH**: `ssh homeassistant` → `root@10.0.0.3:22` (LAN only; dormant — see note above). The `~/.ssh/15leroy` key,
+  `nix/home/modules/15leroy-ssh.nix` module, and `homeassistant` SSH host alias in `nix/home/home.nix` were removed when
+  the household was left; re-add to revive.
 
 ## Household
 
@@ -31,8 +30,8 @@ Version: 2026.3.4
 ### Lights
 
 - `light.rai_s_room_ceiling_lights` — ceiling group
-- 9 individual LED rows (`light.left_row_*`, `light.middle_row_*`, `light.right_row_*`):
-  left: closet, shelving, nook · middle: doorway, room center, nightstand · right: above desk, bed walkway, corner nightstand
+- 9 individual LED rows (`light.left_row_*`, `light.middle_row_*`, `light.right_row_*`): left: closet, shelving, nook ·
+  middle: doorway, room center, nightstand · right: above desk, bed walkway, corner nightstand
 - Govee: `light.room_led_strip`, `light.side_leds` (unavailable — Govee to MQTT Bridge addon in error)
 - Adaptive Lighting: `switch.adaptive_lighting_rai_room_lights`
 

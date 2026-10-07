@@ -17,11 +17,9 @@ Chain:
 
 ## Display hardware
 
-**Update 2026-03-20**: Virtual display switched from QXL to VirtIO-GPU
-(`vga: virtio,memory=256`) to fix QXL TTM freezes. See
-<../wyrm2/wyrm2_freezes.md>. Proxmox noVNC console works with smooth
-composited desktop rendering and dynamic resize. The 256MB VGA memory is
-required — the 16MB default caused `INVALID_RESOURCE_ID` errors.
+**Update 2026-03-20**: Virtual display switched from QXL to VirtIO-GPU (`vga: virtio,memory=256`) to fix QXL TTM
+freezes. See <../wyrm2/wyrm2_freezes.md>. Proxmox noVNC console works with smooth composited desktop rendering and
+dynamic resize. The 256MB VGA memory is required — the 16MB default caused `INVALID_RESOURCE_ID` errors.
 
 Previously QXL-driven:
 
@@ -31,9 +29,8 @@ Previously QXL-driven:
 | card1    | **QXL**         | **connected** (Virtual-1) |
 | card2    | NVIDIA RTX 5090 | disconnected              |
 
-NVIDIA GPUs are headless compute (VFIO passthrough, no monitors). The NixOS
-auto-disable of Wayland for NVIDIA is wrong for this setup — the NVIDIA GPUs
-aren't driving any display.
+NVIDIA GPUs are headless compute (VFIO passthrough, no monitors). The NixOS auto-disable of Wayland for NVIDIA is wrong
+for this setup — the NVIDIA GPUs aren't driving any display.
 
 ## Fix applied
 
@@ -46,18 +43,16 @@ Overrides NixOS's NVIDIA auto-disable. GNOME 49 is Wayland-only, no alternative.
 
 ## SPICE resize: works on Wayland (with workaround)
 
-Display resize works. The nixpkgs `spice-vdagent` is built X11-only (no GTK/Wayland
-build flags), but it connects to XWayland and uses mutter's D-Bus interface
-(`vdagent_mutter_get_resolutions`) for the actual resize.
+Display resize works. The nixpkgs `spice-vdagent` is built X11-only (no GTK/Wayland build flags), but it connects to
+XWayland and uses mutter's D-Bus interface (`vdagent_mutter_get_resolutions`) for the actual resize.
 
 ### NixOS module gap
 
-`services.spice-vdagentd.enable` only starts the system daemon. The per-user
-`spice-vdagent` process relies on an XDG autostart `.desktop` file, but **GNOME 49
-ignores it** (`X-GNOME-Autostart-Phase` is no longer honored).
+`services.spice-vdagentd.enable` only starts the system daemon. The per-user `spice-vdagent` process relies on an XDG
+autostart `.desktop` file, but **GNOME 49 ignores it** (`X-GNOME-Autostart-Phase` is no longer honored).
 
-Fix: added a `systemd.user.services.spice-vdagent` unit in `vm-hardware.nix` that
-starts the user agent after `graphical-session.target`.
+Fix: added a `systemd.user.services.spice-vdagent` unit in `vm-hardware.nix` that starts the user agent after
+`graphical-session.target`.
 
 Upstream tracking:
 
@@ -66,15 +61,14 @@ Upstream tracking:
 
 ### Clipboard sharing
 
-Broken on Wayland — upstream limitation. spice-vdagent can't access the Wayland
-clipboard (no standard protocol; `wlr-data-control` is wlroots-only, not GNOME).
-See [upstream issue #26](https://gitlab.freedesktop.org/spice/linux/vd_agent/-/issues/26).
+Broken on Wayland — upstream limitation. spice-vdagent can't access the Wayland clipboard (no standard protocol;
+`wlr-data-control` is wlroots-only, not GNOME). See
+[upstream issue #26](https://gitlab.freedesktop.org/spice/linux/vd_agent/-/issues/26).
 
 ### Resize flow
 
-**Update 2026-03-20**: Resize works with virtio-gpu over noVNC after increasing
-VGA memory to 256MB. Virtio-gpu handles resize natively via DRM mode changes —
-no spice-vdagent needed. The flow below is the legacy QXL/SPICE path.
+**Update 2026-03-20**: Resize works with virtio-gpu over noVNC after increasing VGA memory to 256MB. Virtio-gpu handles
+resize natively via DRM mode changes — no spice-vdagent needed. The flow below is the legacy QXL/SPICE path.
 
 1. SPICE client tells QEMU desired resolution
 2. QEMU updates QXL's available DRM modes

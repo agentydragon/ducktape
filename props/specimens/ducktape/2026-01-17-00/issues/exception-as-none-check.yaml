@@ -27,8 +27,8 @@ occurrences:
       gmail_archiver/gmail_client.py:
         - [50, 57]
     note: >-
-      AttributeError catch used as None check for exception.content. Should use explicit
-      None check. Also decode() called twice unnecessarily.
+      AttributeError catch used as None check for exception.content. Should use explicit None check. Also decode()
+      called twice unnecessarily.
     critic_scopes_expected_to_recall:
       - - gmail_archiver/gmail_client.py
     match_file_restriction:

@@ -21,8 +21,7 @@ occurrences:
         - [257, 257]
         - [262, 262]
     note: >-
-      policy_ui_send_message_allow, policy_failing_tests,
-      policy_version_test, policy_invalid_syntax,
+      policy_ui_send_message_allow, policy_failing_tests, policy_version_test, policy_invalid_syntax,
       policy_context_checking, policy_const — no test uses any
     critic_scopes_expected_to_recall:
       - [agent_server/conftest.py]
@@ -36,9 +35,8 @@ occurrences:
         - [348, 348]
         - [359, 359]
     note: >-
-      create_live_agent, patch_agent_build_client,
-      agent_app_client, agent_test_client — no test uses
-      any; last two form a chain
+      create_live_agent, patch_agent_build_client, agent_app_client, agent_test_client — no test uses any; last two form
+      a chain
     critic_scopes_expected_to_recall:
       - [agent_server/conftest.py]
     match_file_restriction:
@@ -96,9 +94,7 @@ occurrences:
         - [33, 71]
         - [104, 110]
     note: >-
-      `local_git_repo_for_remote_hook` and
-      `pre_commit_config_remote` — no test uses either;
-      latter depends on former
+      `local_git_repo_for_remote_hook` and `pre_commit_config_remote` — no test uses either; latter depends on former
     critic_scopes_expected_to_recall:
       - [llm/ducktape_llm_common/ducktape_llm_common/claude_linter/conftest.py]
     match_file_restriction:

@@ -1,7 +1,6 @@
 # Property: No Useless list() Around Dict Views
 
-**Status:** Planned
-**Kind:** outcome
+**Status:** Planned **Kind:** outcome
 
 ## Predicate
 
@@ -9,7 +8,8 @@ Forbid useless `list(...)` around dict views in loops when not mutating the dict
 
 ## Rationale
 
-When iterating over dict views (`.keys()`, `.values()`, `.items()`), wrapping them in `list()` is unnecessary unless you need to mutate the dictionary during iteration. The overhead of creating a list copy is wasteful.
+When iterating over dict views (`.keys()`, `.values()`, `.items()`), wrapping them in `list()` is unnecessary unless you
+need to mutate the dictionary during iteration. The overhead of creating a list copy is wasteful.
 
 ## Acceptance Criteria
 

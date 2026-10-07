@@ -1,9 +1,8 @@
 # Benchmark Results: OLLAMA_NUM_CTX=131072
 
-**Date**: 2026-02-24
-**Hardware**: 2x NVIDIA RTX 5090 (32 GB each), 28 GB system RAM, 8 CPU threads
-**Ollama**: OLLAMA_KV_CACHE_TYPE=q8_0, OLLAMA_FLASH_ATTENTION=1, OLLAMA_NUM_CTX=131072
-**Benchmark**: 300s/config, 10 NIAH samples (evenly spaced depths 0.0–1.0)
+**Date**: 2026-02-24 **Hardware**: 2x NVIDIA RTX 5090 (32 GB each), 28 GB system RAM, 8 CPU threads **Ollama**:
+OLLAMA_KV_CACHE_TYPE=q8_0, OLLAMA_FLASH_ATTENTION=1, OLLAMA_NUM_CTX=131072 **Benchmark**: 300s/config, 10 NIAH samples
+(evenly spaced depths 0.0–1.0)
 
 ## Model Info
 
@@ -25,9 +24,9 @@
 | input 128k | 2109.9 ± 590.0 t/s (n=5)   |
 | input 256k | 1589.8 ± 165.4 t/s (n=4)   |
 
-High variance in input speed is due to KV cache reallocation: each context size
-uses a different `num_ctx`, triggering Ollama to reload the model (~10-40s) before
-the first timed sample. One slow sample pulls the mean down and inflates stdev.
+High variance in input speed is due to KV cache reallocation: each context size uses a different `num_ctx`, triggering
+Ollama to reload the model (~10-40s) before the first timed sample. One slow sample pulls the mean down and inflates
+stdev.
 
 ### 20b NIAH Recall
 
@@ -68,40 +67,36 @@ the first timed sample. One slow sample pulls the mean down and inflates stdev.
 
 ### NIAH Context Limit
 
-Both models hit a wall at 128k. The benchmark requests `num_ctx = int(128000 * 1.15 + 512)
-= 147712`, which exceeds `OLLAMA_NUM_CTX=131072`. Ollama appears to cap the effective
-context at the server-side limit, truncating the beginning of the prompt. Needles placed
-at the start (depths 0.00–0.37) are lost.
+Both models hit a wall at 128k. The benchmark requests `num_ctx = int(128000 * 1.15 + 512) = 147712`, which exceeds
+`OLLAMA_NUM_CTX=131072`. Ollama appears to cap the effective context at the server-side limit, truncating the beginning
+of the prompt. Needles placed at the start (depths 0.00–0.37) are lost.
 
-The 20b model's single pass at depth=0.64 (128k) confirms this: the needle was in the
-latter half of the prompt and survived truncation.
+The 20b model's single pass at depth=0.64 (128k) confirms this: the needle was in the latter half of the prompt and
+survived truncation.
 
 ### Speed Comparison
 
-The 120b model is ~22x slower at output (10.4 vs 228 t/s) and runs 9% on CPU, which
-bottlenecks throughput. The 120b input speed improves significantly at larger contexts
-(40 → 1456 t/s from 1k to 128k), likely because the KV cache reallocation cost is
-amortized over more tokens.
+The 120b model is ~22x slower at output (10.4 vs 228 t/s) and runs 9% on CPU, which bottlenecks throughput. The 120b
+input speed improves significantly at larger contexts (40 → 1456 t/s from 1k to 128k), likely because the KV cache
+reallocation cost is amortized over more tokens.
 
 ### KV Cache Reallocation Noise
 
-Input throughput has enormous variance (stdev > mean in several cases). This is caused
-by the benchmark sending different `num_ctx` values per context size, triggering Ollama
-to reload the model with a new KV cache allocation. The first sample after a reload
-includes the reload cost (~10-40s) while subsequent samples run at native speed.
+Input throughput has enormous variance (stdev > mean in several cases). This is caused by the benchmark sending
+different `num_ctx` values per context size, triggering Ollama to reload the model with a new KV cache allocation. The
+first sample after a reload includes the reload cost (~10-40s) while subsequent samples run at native speed.
 
-A future improvement would be to warm up at each new `num_ctx` before starting timed
-measurements (this benchmark already does this via `prewarm`, but the first timed input
-sample sometimes still catches a reload).
+A future improvement would be to warm up at each new `num_ctx` before starting timed measurements (this benchmark
+already does this via `prewarm`, but the first timed input sample sometimes still catches a reload).
 
 ### 120b GPU Fit
 
-The 120b model is 91% GPU / 9% CPU (69 GB total, 64 GB VRAM). The 9% CPU portion
-bottlenecks decode speed. Options to fit 100% in GPU:
+The 120b model is 91% GPU / 9% CPU (69 GB total, 64 GB VRAM). The 9% CPU portion bottlenecks decode speed. Options to
+fit 100% in GPU:
 
 1. **Switch KV cache from q8_0 to q4_0**: Saves ~8 GiB at 128k context. Minimal quality impact.
 2. **Reduce context**: 64k instead of 128k halves KV cache (~8 GiB saved).
 3. **Both**: Would give ample headroom.
 
-The model itself (MXFP4, 65 GB) is already aggressively quantized — there is no
-lower quantization available for this specific model format.
+The model itself (MXFP4, 65 GB) is already aggressively quantized — there is no lower quantization available for this
+specific model format.

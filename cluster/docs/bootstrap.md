@@ -1,7 +1,7 @@
 # Talos Cluster Bootstrap Playbook
 
-Step-by-step instructions for cold-starting the hybrid Talos cluster.
-See <../README.md> for architecture overview, node topology, and networking details.
+Step-by-step instructions for cold-starting the hybrid Talos cluster. See <../README.md> for architecture overview, node
+topology, and networking details.
 
 ## Prerequisites
 
@@ -18,13 +18,11 @@ See <../README.md> for architecture overview, node topology, and networking deta
 
 ### Persistent Auth Resources
 
-Persistent Terraform resources (Proxmox API tokens and SOPS age key deployment)
-live in `terraform/main/persistent-auth.tf` with `lifecycle { prevent_destroy = true }`.
-Nebula node identities are durable inputs: public certificates and SOPS-encrypted
-private keys in `secrets/nebula/`, read by tofu via the `sops` provider rather
-than generated during an apply.
-Talos machine secrets are ephemeral (fresh `cluster.id` per lifecycle).
-See <bootstrap_dependencies.md> for the full dependency graph.
+Persistent Terraform resources (Proxmox API tokens and SOPS age key deployment) live in
+`terraform/main/persistent-auth.tf` with `lifecycle { prevent_destroy = true }`. Nebula node identities are durable
+inputs: public certificates and SOPS-encrypted private keys in `secrets/nebula/`, read by tofu via the `sops` provider
+rather than generated during an apply. Talos machine secrets are ephemeral (fresh `cluster.id` per lifecycle). See
+<bootstrap_dependencies.md> for the full dependency graph.
 
 ## Cold-Start Deployment
 
@@ -32,8 +30,8 @@ See <bootstrap_dependencies.md> for the full dependency graph.
 bazel run //cluster:bootstrap
 ```
 
-The bootstrap script executes a multi-phase deployment against a single TF root
-(`terraform/main/`, PG backend via CNPG `tofu-state-db-ovh`):
+The bootstrap script executes a multi-phase deployment against a single TF root (`terraform/main/`, PG backend via CNPG
+`tofu-state-db-ovh`):
 
 ### Phase 0: Preflight Validation
 
@@ -55,9 +53,8 @@ The bootstrap script executes a multi-phase deployment against a single TF root
 
 ### Phase 3: Full Apply (`tofu apply`)
 
-- Flux Bootstrap → applies committed Flux manifests; the root `ducktape` source
-  reads public GitHub anonymously, then Flux decrypts GitHub App auth for
-  private/write paths
+- Flux Bootstrap → applies committed Flux manifests; the root `ducktape` source reads public GitHub anonymously, then
+  Flux decrypts GitHub App auth for private/write paths
 - Core Services → cert-manager, Cilium Gateway API
 - Storage → local-path/SeaweedFS/OpenEBS/Proxmox CSI
 - Platform → ESO, Authentik
@@ -73,24 +70,22 @@ kubectl get storageclass               # should match the StorageClasses under k
 
 ## Dependency Chain
 
-See <bootstrap_dependencies.md> for the full L0–L7 bootstrap dependency graph
-(external creds → SOPS → persistent auth → infrastructure → networking → Flux →
-services → NixOS workers) plus per-layer recovery procedures.
+See <bootstrap_dependencies.md> for the full L0–L7 bootstrap dependency graph (external creds → SOPS → persistent auth →
+infrastructure → networking → Flux → services → NixOS workers) plus per-layer recovery procedures.
 
 ## Let's Encrypt Issuer Toggle
 
-Two always-present ClusterIssuers (`letsencrypt-prod`, `letsencrypt-staging`). The
-`LETSENCRYPT_ISSUER` constant in `cdk8s/cert_manager/config.py` selects the active one, and
-the generator renders it into cert-manager's default issuer, the shared Gateway's
-`cert-manager.io/cluster-issuer` annotation and the Certificates that name their issuer.
-Flipping the toggle re-issues all certificates. The trust bundle follows via the
-`<issuer>-root-ca` Secret naming convention.
+Two always-present ClusterIssuers (`letsencrypt-prod`, `letsencrypt-staging`). The `LETSENCRYPT_ISSUER` constant in
+`cdk8s/cert_manager/config.py` selects the active one, and the generator renders it into cert-manager's default issuer,
+the shared Gateway's `cert-manager.io/cluster-issuer` annotation and the Certificates that name their issuer. Flipping
+the toggle re-issues all certificates. The trust bundle follows via the `<issuer>-root-ca` Secret naming convention.
 
 ## External Connectivity
 
 ### DNS Delegation
 
-1. Route 53 is authoritative for `allegedly.works`. ExternalDNS manages public records; Terraform manages domain registration and nameserver delegation.
+1. Route 53 is authoritative for `allegedly.works`. ExternalDNS manages public records; Terraform manages domain
+   registration and nameserver delegation.
 2. cert-manager uses Route 53 DNS-01 solver for ACME challenges
 
 ### Ingress (Gateway API)
@@ -102,6 +97,5 @@ Flipping the toggle re-issues all certificates. The trust bundle follows via the
 
 ### Cluster Endpoint
 
-Uses `localhost:7445` (Talos KubePrism on CP nodes, haproxy on NixOS workers) during
-bootstrap to avoid circular dependency. Kubeconfig is patched post-bootstrap with
-`api.allegedly.works` for external access.
+Uses `localhost:7445` (Talos KubePrism on CP nodes, haproxy on NixOS workers) during bootstrap to avoid circular
+dependency. Kubeconfig is patched post-bootstrap with `api.allegedly.works` for external access.

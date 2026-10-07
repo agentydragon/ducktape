@@ -6,9 +6,12 @@
 
 ## Pattern Description
 
-Error swallowing occurs when exceptions are caught but not re-raised, causing failures to be hidden instead of propagating. This violates the "fail fast, fail visibly" principle - when the application cannot successfully continue, it should crash rather than silently degrade.
+Error swallowing occurs when exceptions are caught but not re-raised, causing failures to be hidden instead of
+propagating. This violates the "fail fast, fail visibly" principle - when the application cannot successfully continue,
+it should crash rather than silently degrade.
 
-**Core Principle**: Let it crash. If infrastructure fails or critical invariants are violated, the system should stop immediately rather than continue in a degraded state.
+**Core Principle**: Let it crash. If infrastructure fails or critical invariants are violated, the system should stop
+immediately rather than continue in a degraded state.
 
 ## Why Error Swallowing is Problematic
 
@@ -35,7 +38,8 @@ Error swallowing occurs when exceptions are caught but not re-raised, causing fa
 - **Expected business logic**: Permission denied, resource not found
 - **Validation failures**: Schema mismatch, constraint violation
 
-**Key Distinction**: Can the system continue to function correctly after this error? If no → crash. If yes → handle gracefully.
+**Key Distinction**: Can the system continue to function correctly after this error? If no → crash. If yes → handle
+gracefully.
 
 ## Common Antipatterns
 

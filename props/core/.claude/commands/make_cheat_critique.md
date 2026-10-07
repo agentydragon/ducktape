@@ -1,6 +1,7 @@
 # Make Cheat Critique (Calibration Test)
 
-Generate a **new, independent critique** of the specimen code as if written by a **different, equally competent reviewer**.
+Generate a **new, independent critique** of the specimen code as if written by a **different, equally competent
+reviewer**.
 
 **Purpose**: Create a "cheat" critique that should achieve ~100% recall when graded, to verify:
 
@@ -16,7 +17,9 @@ Generate a **new, independent critique** of the specimen code as if written by a
 - AND groups/names issues differently
 - AND has their own style and priorities
 
-**CRITICAL REQUIREMENT**: The cheat critique **MUST** identify **EVERY logical problem** the canonical covers (same code issues, same actual defects), but can (and should) look very different in how it presents them (grouping, naming, description style).
+**CRITICAL REQUIREMENT**: The cheat critique **MUST** identify **EVERY logical problem** the canonical covers (same code
+issues, same actual defects), but can (and should) look very different in how it presents them (grouping, naming,
+description style).
 
 **Input**: Specimen slug (e.g., `ducktape/2025-11-22-01`)
 
@@ -37,13 +40,15 @@ Generate a **new, independent critique** of the specimen code as if written by a
 
 ## Task
 
-You are **role-playing as a different code reviewer** who is analyzing the same specimen code independently. Your job is to:
+You are **role-playing as a different code reviewer** who is analyzing the same specimen code independently. Your job is
+to:
 
 1. **Find all the same problems** the canonical reviewer found (same logical defects)
 2. **Describe them in your own way** - different words, different framing, different grouping
 3. **Write issues as YOU would naturally write them** - your IDs, your style, your priorities
 
-This tests whether the grading system can recognize when **two reviewers independently found the same problems** even though they wrote about them differently.
+This tests whether the grading system can recognize when **two reviewers independently found the same problems** even
+though they wrote about them differently.
 
 ### Step 1: Load Ground Truth
 
@@ -80,7 +85,8 @@ Parse **ALL** canonical issues in the specimen (from the repository), noting:
 - Occurrence structures (one issue can have multiple occurrences)
 - The actual specimen code (to verify line ranges are plausible)
 
-**Count the total number of canonical issues** - your cheat critique must cover all of them, but the count of reported issues may differ due to merges/splits (document these changes).
+**Count the total number of canonical issues** - your cheat critique must cover all of them, but the count of reported
+issues may differ due to merges/splits (document these changes).
 
 **Important grading semantics**:
 
@@ -93,7 +99,8 @@ Parse **ALL** canonical issues in the specimen (from the repository), noting:
 
 ### Step 2: Verify All Files and Anchors
 
-**CRITICAL**: Before paraphrasing any issue, verify that all referenced files and line ranges actually exist in the specimen:
+**CRITICAL**: Before paraphrasing any issue, verify that all referenced files and line ranges actually exist in the
+specimen:
 
 ```bash
 # List all Python files to confirm structure
@@ -257,9 +264,12 @@ Include:
 
 ## Notes
 
-- **COMPLETE COVERAGE IS MANDATORY**: Every logical problem in the canonical must be identified in your cheat critique. This is non-negotiable for calibration testing.
-- **Think like a different reviewer**: Don't just rephrase - reimagine how someone else would see and describe these problems
-- **Issue IDs should be independent**: Don't mirror or modify canonical IDs - choose what THIS reviewer would naturally name things
+- **COMPLETE COVERAGE IS MANDATORY**: Every logical problem in the canonical must be identified in your cheat critique.
+  This is non-negotiable for calibration testing.
+- **Think like a different reviewer**: Don't just rephrase - reimagine how someone else would see and describe these
+  problems
+- **Issue IDs should be independent**: Don't mirror or modify canonical IDs - choose what THIS reviewer would naturally
+  name things
 - **Before submitting**: Verify every canonical problem is covered (check your coverage map)
 
 ## Example Usage

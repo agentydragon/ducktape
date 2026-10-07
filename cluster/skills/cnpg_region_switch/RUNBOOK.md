@@ -1,20 +1,24 @@
 # CNPG Cross-Region Migration via Streaming Replication
 
-Migrate a single-instance CNPG PostgreSQL cluster between regions (or region-pinned storage classes) with sub-second downtime.
+Migrate a single-instance CNPG PostgreSQL cluster between regions (or region-pinned storage classes) with sub-second
+downtime.
 
-Uses CNPG's **Standalone Replica Cluster** pattern: target bootstrapped via `pg_basebackup`, runs as streaming replica, then promoted to independent primary. Irreversible — no demotion back to replica.
+Uses CNPG's **Standalone Replica Cluster** pattern: target bootstrapped via `pg_basebackup`, runs as streaming replica,
+then promoted to independent primary. Irreversible — no demotion back to replica.
 
 ## Prerequisites
 
 - CNPG operator installed in cluster
-- Source and target storage classes exist and are region-pinned (see `cluster/docs/cnpg_conventions.md` for the current profiles and region names)
+- Source and target storage classes exist and are region-pinned (see `cluster/docs/cnpg_conventions.md` for the current
+  profiles and region names)
 - Both regions' nodes can reach each other over pod network (Nebula mesh)
 - `kubectl` access to the namespace
 - Same PostgreSQL image version on both clusters (required for physical replication)
 
 ## Migration procedure
 
-Set `<SOURCE_STORAGECLASS>` / `<TARGET_STORAGECLASS>` to the region-pinned storage classes for the source and target regions. The procedure is identical in either direction — just swap which region is source vs. target.
+Set `<SOURCE_STORAGECLASS>` / `<TARGET_STORAGECLASS>` to the region-pinned storage classes for the source and target
+regions. The procedure is identical in either direction — just swap which region is source vs. target.
 
 ### Step 1: Create source cluster (if not existing)
 
@@ -176,12 +180,16 @@ CNPG finalizers clean up PVCs automatically.
 ## Gotchas
 
 - **Field name**: Use `sslRootCert` (not `sslRootCertificate`) in `externalClusters[]`.
-- **Same image version**: Both clusters must use identical PostgreSQL image. Physical replication requires same major version.
+- **Same image version**: Both clusters must use identical PostgreSQL image. Physical replication requires same major
+  version.
 - **Peer auth**: Use `psql -U postgres` to connect; app users may fail with peer auth.
-- **Services quota**: CNPG creates 3 services per cluster (`-r`, `-ro`, `-rw`). Ensure namespace quota allows ≥6 services during migration (source + target coexist).
+- **Services quota**: CNPG creates 3 services per cluster (`-r`, `-ro`, `-rw`). Ensure namespace quota allows ≥6
+  services during migration (source + target coexist).
 - **Standalone replica**: Promotion is irreversible — target cannot demote back to replica.
-- **No demotion token needed**: The standalone replica pattern (`spec.replica.enabled: false`) promotes directly. Demotion tokens are only for the Distributed Topology pattern.
+- **No demotion token needed**: The standalone replica pattern (`spec.replica.enabled: false`) promotes directly.
+  Demotion tokens are only for the Distributed Topology pattern.
 
 ## Downtime
 
-Promotion is a single Postgres operation (comparable to HA switchover). Application downtime = time to update connection string + restart.
+Promotion is a single Postgres operation (comparable to HA switchover). Application downtime = time to update connection
+string + restart.

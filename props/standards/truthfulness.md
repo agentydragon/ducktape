@@ -3,7 +3,8 @@ title: Truthfulness
 kind: behavior
 ---
 
-All text and identifiers truthfully represent reality: code, names, docs, comments, logs, metrics, schemas, and help reflect actual behavior and intent.
+All text and identifiers truthfully represent reality: code, names, docs, comments, logs, metrics, schemas, and help
+reflect actual behavior and intent.
 
 ## Acceptance criteria (checklist)
 

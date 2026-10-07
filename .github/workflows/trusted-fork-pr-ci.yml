@@ -116,8 +116,7 @@ jobs:
           'Fork Nix check not applicable' }}
     needs: [nix-wheel-check]
     if: >-
-      always() &&
-      github.event.pull_request.head.repo.full_name != github.repository
+      always() && github.event.pull_request.head.repo.full_name != github.repository
     runs-on: ubuntu-latest
     steps:
       - name: Require the trusted fork Nix result

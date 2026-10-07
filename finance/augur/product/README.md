@@ -1,46 +1,36 @@
 # Product projections
 
-`action_projection.metric_arrays` reduces finished `ActionSession` outcomes into
-the arrays consumed by the <metrics.py> fan/terminal reducers, checked against a world
-composed like the session's. It owns no session or policy. On a dense/forensic result,
-`trace.events` carries the same rollout's columnar event log;
-`projection.project_product_rollout` combines those events with the arrays using only
-the original `rollout_id`. Metric arrays
-retain their ordered IDs; `select(ids)` subsets/reorders those IDs with their
-columns. Event logs retain owning IDs even for eventless paths. A projection
-rejects an ID absent from either input; array-column positions are internal.
+`action_projection.metric_arrays` reduces finished `ActionSession` outcomes into the arrays consumed by the <metrics.py>
+fan/terminal reducers, checked against a world composed like the session's. It owns no session or policy. On a
+dense/forensic result, `trace.events` carries the same rollout's columnar event log;
+`projection.project_product_rollout` combines those events with the arrays using only the original `rollout_id`. Metric
+arrays retain their ordered IDs; `select(ids)` subsets/reorders those IDs with their columns. Event logs retain owning
+IDs even for eventless paths. A projection rejects an ID absent from either input; array-column positions are internal.
 
-Compact public cash/securities and held-bond principal histories suffice for population
-metrics; absent detail is `trace=None`. Bond carrying value uses each declared bond's
-captured principal, including redemption and stopped-event marks, not a sale quote or
-an inferred history from its ending book. Missing/duplicate bond histories reject.
-Property and private-equity histories remain unsupported and raise explicitly.
-`ProductService` checks the deployment's portfolio once at startup in <holdings.py>
-(`opening_holdings`), then prepares each request once in <scenarios.py> (`build_situation`:
-the household's accounts, holdings, home and counterparties as exact facts in the
-request's currency, and the household the funding policy describes), samples the series that situation reads, and
-composes one world per path (`compose`) with that household tracked on it — a
-<../policy/cash_band_household.py> household over the funding policy's sleeves, or, with
-none left, a <../policy/funding.py> `ClaimPayer` that never sells; <simulation.py> steps
-each world. The app never buys. The funding policy's sleeves come in two kinds: a
-security sleeve names a held symbol and sells its lots in whole units at the quote, and a
-managed sleeve names a TLH portfolio by `portfolio_id` and withdraws exact money from it.
-The two never merge, even when the portfolio tracks a held symbol's index. These projection functions do not route between
-engines. Between steps the runner records each path's `WorldResult`: the <metrics.py>
-`product_row` slab every month, and under dense/forensic capture the library's
-`FinancialCapture` output and event log. Metric definitions and the stop boundary:
-<docs/metrics.md>.
+Compact public cash/securities and held-bond principal histories suffice for population metrics; absent detail is
+`trace=None`. Bond carrying value uses each declared bond's captured principal, including redemption and stopped-event
+marks, not a sale quote or an inferred history from its ending book. Missing/duplicate bond histories reject. Property
+and private-equity histories remain unsupported and raise explicitly. `ProductService` checks the deployment's portfolio
+once at startup in <holdings.py> (`opening_holdings`), then prepares each request once in <scenarios.py>
+(`build_situation`: the household's accounts, holdings, home and counterparties as exact facts in the request's
+currency, and the household the funding policy describes), samples the series that situation reads, and composes one
+world per path (`compose`) with that household tracked on it — a <../policy/cash_band_household.py> household over the
+funding policy's sleeves, or, with none left, a <../policy/funding.py> `ClaimPayer` that never sells; <simulation.py>
+steps each world. The app never buys. The funding policy's sleeves come in two kinds: a security sleeve names a held
+symbol and sells its lots in whole units at the quote, and a managed sleeve names a TLH portfolio by `portfolio_id` and
+withdraws exact money from it. The two never merge, even when the portfolio tracks a held symbol's index. These
+projection functions do not route between engines. Between steps the runner records each path's `WorldResult`: the
+<metrics.py> `product_row` slab every month, and under dense/forensic capture the library's `FinancialCapture` output
+and event log. Metric definitions and the stop boundary: <docs/metrics.md>.
 
-`shortfall_quanta` sums unpaid due claims and valid attempted consumption gaps,
-not additional cash needed to fund payment or newly incurred debt. Malformed
-actions and unattempted consumption add no monetary shortfall; the canonical
-`stop` and attempted receipt prefix retain nonmonetary failure reasons. Wealth
-fan observations exclude the stop closing's unobserved next market mark;
-selected detail retains the actual stop book. Post-stop padding is unobserved.
+`shortfall_quanta` sums unpaid due claims and valid attempted consumption gaps, not additional cash needed to fund
+payment or newly incurred debt. Malformed actions and unattempted consumption add no monetary shortfall; the canonical
+`stop` and attempted receipt prefix retain nonmonetary failure reasons. Wealth fan observations exclude the stop
+closing's unobserved next market mark; selected detail retains the actual stop book. Post-stop padding is unobserved.
 
-The real-session integration control covers both captured modes, summary-only
-population reductions, a taxable sale/year crossing, ordered payment failure,
-consumption rejection, bond redemption/stopped-CPI marks and selected/reordered replay:
+The real-session integration control covers both captured modes, summary-only population reductions, a taxable sale/year
+crossing, ordered payment failure, consumption rejection, bond redemption/stopped-CPI marks and selected/reordered
+replay:
 
 ```bash
 bbr test //finance/augur/product:test_action_projection

@@ -1,6 +1,7 @@
 # Gmail Email Archiver
 
-Auto-archive old Gmail emails based on extracted dates from email content. Uses Gmail filters (managed via YAML config) to label emails, then periodically scans and archives old ones.
+Auto-archive old Gmail emails based on extracted dates from email content. Uses Gmail filters (managed via YAML config)
+to label emails, then periodically scans and archives old ones.
 
 **V0 Scope**: Anthropic API receipts, USPS Informed Delivery, and other receipt types.
 
@@ -35,7 +36,8 @@ Archived emails get `gmail-archiver/inbox-auto-cleaned` label and are removed fr
 - **Plan display** (`gmail_archiver/plan_display.py`): plan rendering / display helpers
 - **Inbox** (`gmail_archiver/inbox.py`): cached Gmail access interface
 - **Gmail Client** (`gmail_archiver/gmail_client.py`): Gmail API wrapper
-- **Filter Models** (`gmail_archiver/gmail_yaml_filters_models.py`): Pydantic V2 models for filter YAML (compatible with [gmail-yaml-filters](https://github.com/mesozoic/gmail-yaml-filters))
+- **Filter Models** (`gmail_archiver/gmail_yaml_filters_models.py`): Pydantic V2 models for filter YAML (compatible with
+  [gmail-yaml-filters](https://github.com/mesozoic/gmail-yaml-filters))
 - **Filter Sync** (`gmail_archiver/filter_sync.py`): filter normalization, diffing, CRUD
 
 ## TODO

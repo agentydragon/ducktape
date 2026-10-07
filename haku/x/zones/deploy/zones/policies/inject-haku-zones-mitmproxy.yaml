@@ -69,10 +69,9 @@ metadata:
     policies.kyverno.io/severity: medium
     policies.kyverno.io/subject: Pod
     policies.kyverno.io/description: >-
-      Mutates pods in the Haku worker-zone namespaces to inject the shared
-      haku-zones-mitmproxy proxy env vars (HTTP_PROXY, HTTPS_PROXY, NO_PROXY,
-      SSL_CERT_FILE, CURL_CA_BUNDLE, REQUESTS_CA_BUNDLE, NODE_EXTRA_CA_CERTS)
-      and mount the haku-zones-mitmproxy trust bundle at /mitmproxy-ca/ca-certificates.crt.
+      Mutates pods in the Haku worker-zone namespaces to inject the shared haku-zones-mitmproxy proxy env vars
+      (HTTP_PROXY, HTTPS_PROXY, NO_PROXY, SSL_CERT_FILE, CURL_CA_BUNDLE, REQUESTS_CA_BUNDLE, NODE_EXTRA_CA_CERTS) and
+      mount the haku-zones-mitmproxy trust bundle at /mitmproxy-ca/ca-certificates.crt.
 spec:
   mutateExistingOnPolicyUpdate: false
   rules:

@@ -1,68 +1,56 @@
 # haku/console/frontend — dashboard SPA
 
-React 18 single-page app for the Haku console, bundled with esbuild and served
-same-origin by the console service. Production serves the fingerprinted bundle
-from the baked `haku-console-static` nginx image, with route-specific cache
-headers. Styled with the repo's house stack — **Mantine v7**
-components + **Tailwind v4** utilities — modeled on
-`finance/augur/frontend` (references root `//:node_modules/*`; no per-package
-`package.json`).
+React 18 single-page app for the Haku console, bundled with esbuild and served same-origin by the console service.
+Production serves the fingerprinted bundle from the baked `haku-console-static` nginx image, with route-specific cache
+headers. Styled with the repo's house stack — **Mantine v7** components + **Tailwind v4** utilities — modeled on
+`finance/augur/frontend` (references root `//:node_modules/*`; no per-package `package.json`).
 
-Every module is its own `ts_library` (`//devinfra/js:ts_library.bzl`), one target per file. tsc
-type-checks each target as it compiles it, so `bbr build` is the type check — there is no separate
-whole-project checker whose file list could drift from the library graph. esbuild bundles the
-emitted `.js`, and vitest runs the emitted `.test.js`.
+Every module is its own `ts_library` (`//devinfra/js:ts_library.bzl`), one target per file. tsc type-checks each target
+as it compiles it, so `bbr build` is the type check — there is no separate whole-project checker whose file list could
+drift from the library graph. esbuild bundles the emitted `.js`, and vitest runs the emitted `.test.js`.
 
-- `main.tsx` → `app.tsx` → `haku_ui_embed.tsx`, the persistent application shell. The cross-origin
-  iframe remains mounted while the content area switches between Haku UI, Settings, and Past tool
-  calls, preserving Agent UI bridge and in-frame state.
+- `main.tsx` → `app.tsx` → `haku_ui_embed.tsx`, the persistent application shell. The cross-origin iframe remains
+  mounted while the content area switches between Haku UI, Settings, and Past tool calls, preserving Agent UI bridge and
+  in-frame state.
 - `routing.ts` — `/_console/settings` and `/_console/tool-calls` are trusted console pages, while
-  `/_console/approvals-embed` is the chrome-free tool-approval surface used by the desktop window;
-  `/_console/assets/*` holds fingerprinted browser assets. Every other pathname is mirrored into
-  haku-ui, and the last frame path is remembered per tab across console-page detours.
-- `shell_chrome.tsx` — a fixed-width icon rail that reserves the left edge of the viewport. Its
-  top approvals trigger controls an independent non-modal drawer over the content area; page icons
-  select Haku UI, Settings, or Past tool calls; bottom indicators expose sync, location-sharing,
-  and screenshot-capture state through compact popovers.
-- `approvals_embed_page.tsx` — the small-window tool-approval surface. It reuses the approvals tab
-  and shared tool-call cards without mounting navigation chrome or the cross-origin Haku UI iframe;
-  Agent UI bridge-only location and screenshot approvals remain in the full shell.
-- `settings_panel.tsx` — the Settings page for Agent access, grants, Web Push registration, and
-  deployment commit links. MCP server status and Console Recall freshness were removed with the
-  corresponding inactive deployment integrations.
-- `open_external.ts` — `openExternal(url)`: opens a link in a new tab with the opener
-  severed, shared by the embed shell (the `openLink` Agent UI bridge action) and the settings panel
-  (the account-link popup).
-- `tool_arguments_field.tsx` / `icons.tsx` — shared tool-argument renderer (per-server
-  preview or raw JSON) and the icon set, used by both the approvals panel and the history view.
-  Icons are thin wrappers over **per-icon `@tabler` subpath imports**, never the barrel, which OOMs
-  esbuild on RBE at ~8.7 GB; their ambient types live in
-  `tabler_icons.d.ts`.
-- `tool_result_field.tsx` — the result-side counterpart: a finished call's result as a
-  per-server widget (`tool_rendering/<server>/responses.tsx`) over the unwrapped
-  `CallToolResult` payload, else the raw-JSON `Result` field (detailed only).
-- `console_events.ts` — `useConsoleEvents(onEvent)`: the shared live signal (the `/api/events/ws`
-  WebSocket) carrying tool-call and operator-link changes. The server broadcasts typed
-  invalidations to every connected tab, so panels and the history view
-  stay live without a reload and without client-side cross-tab plumbing. It auto-reconnects with backoff,
-  refetches on reconnect to catch up, and returns a `LiveStatus` (`connecting`/`live`/`offline`)
-  the shell uses to warn when the channel is down.
-- `coalesced_refresh.ts` — `useCoalescedRefresh(read)`: at most one refetch in flight, with a burst
-  of live events collapsing into a single catch-up afterwards, since overlapping fetches buy answers
-  the next one discards. Used by the history page.
-- `client.ts` — typed `openapi-fetch` client; the types come from the backend's
-  OpenAPI schema (the `:schema` target runs `//haku/console:export_schema_bin`), so
-  the Pydantic models are the single source of truth for the wire contract. Includes the
-  launch-routine helper and approval/history helpers (`pending`, approve, deny).
-- `confirm_dialog.tsx` — trusted top-layer confirmations for Agent UI bridge launches, geolocation
-  grants, off-whitelist opens, and MCP tool-call approvals.
-- `styles.src.css` — `@import`s Tailwind + `@mantine/core` CSS; compiled by
-  `@tailwindcss/cli` to `generated/styles.css`, then fingerprinted into
-  `dist/assets/styles-<hash>.css` and served at `/_console/assets/…`. Deviation from a plain Tailwind setup: the `@source`
-  content index is a generated file (`tailwind_content_index`) concatenating the sources
-  Tailwind must scan, since Bazel sandboxes the inputs.
-- `index.html` — the docroot shell template; `spa_bundle(fingerprint = True)` rewrites
-  placeholders to hashed JS/CSS/logo URLs under `/_console/assets/`.
+  `/_console/approvals-embed` is the chrome-free tool-approval surface used by the desktop window; `/_console/assets/*`
+  holds fingerprinted browser assets. Every other pathname is mirrored into haku-ui, and the last frame path is
+  remembered per tab across console-page detours.
+- `shell_chrome.tsx` — a fixed-width icon rail that reserves the left edge of the viewport. Its top approvals trigger
+  controls an independent non-modal drawer over the content area; page icons select Haku UI, Settings, or Past tool
+  calls; bottom indicators expose sync, location-sharing, and screenshot-capture state through compact popovers.
+- `approvals_embed_page.tsx` — the small-window tool-approval surface. It reuses the approvals tab and shared tool-call
+  cards without mounting navigation chrome or the cross-origin Haku UI iframe; Agent UI bridge-only location and
+  screenshot approvals remain in the full shell.
+- `settings_panel.tsx` — the Settings page for Agent access, grants, Web Push registration, and deployment commit links.
+  MCP server status and Console Recall freshness were removed with the corresponding inactive deployment integrations.
+- `open_external.ts` — `openExternal(url)`: opens a link in a new tab with the opener severed, shared by the embed shell
+  (the `openLink` Agent UI bridge action) and the settings panel (the account-link popup).
+- `tool_arguments_field.tsx` / `icons.tsx` — shared tool-argument renderer (per-server preview or raw JSON) and the icon
+  set, used by both the approvals panel and the history view. Icons are thin wrappers over **per-icon `@tabler` subpath
+  imports**, never the barrel, which OOMs esbuild on RBE at ~8.7 GB; their ambient types live in `tabler_icons.d.ts`.
+- `tool_result_field.tsx` — the result-side counterpart: a finished call's result as a per-server widget
+  (`tool_rendering/<server>/responses.tsx`) over the unwrapped `CallToolResult` payload, else the raw-JSON `Result`
+  field (detailed only).
+- `console_events.ts` — `useConsoleEvents(onEvent)`: the shared live signal (the `/api/events/ws` WebSocket) carrying
+  tool-call and operator-link changes. The server broadcasts typed invalidations to every connected tab, so panels and
+  the history view stay live without a reload and without client-side cross-tab plumbing. It auto-reconnects with
+  backoff, refetches on reconnect to catch up, and returns a `LiveStatus` (`connecting`/`live`/`offline`) the shell uses
+  to warn when the channel is down.
+- `coalesced_refresh.ts` — `useCoalescedRefresh(read)`: at most one refetch in flight, with a burst of live events
+  collapsing into a single catch-up afterwards, since overlapping fetches buy answers the next one discards. Used by the
+  history page.
+- `client.ts` — typed `openapi-fetch` client; the types come from the backend's OpenAPI schema (the `:schema` target
+  runs `//haku/console:export_schema_bin`), so the Pydantic models are the single source of truth for the wire contract.
+  Includes the launch-routine helper and approval/history helpers (`pending`, approve, deny).
+- `confirm_dialog.tsx` — trusted top-layer confirmations for Agent UI bridge launches, geolocation grants, off-whitelist
+  opens, and MCP tool-call approvals.
+- `styles.src.css` — `@import`s Tailwind + `@mantine/core` CSS; compiled by `@tailwindcss/cli` to
+  `generated/styles.css`, then fingerprinted into `dist/assets/styles-<hash>.css` and served at `/_console/assets/…`.
+  Deviation from a plain Tailwind setup: the `@source` content index is a generated file (`tailwind_content_index`)
+  concatenating the sources Tailwind must scan, since Bazel sandboxes the inputs.
+- `index.html` — the docroot shell template; `spa_bundle(fingerprint = True)` rewrites placeholders to hashed
+  JS/CSS/logo URLs under `/_console/assets/`.
 
 ```bash
 bbr build //haku/console/frontend/...      # compile + type-check everything

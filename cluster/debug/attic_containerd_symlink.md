@@ -1,7 +1,7 @@
 # Attic Container: `path escapes from parent` on NixOS Workers
 
-**Date**: 2026-03-23
-**Status**: Fixed — 2.2.3 overlay in k8s-worker.nix; pending nixos-25.11 channel update so overlay can be removed
+**Date**: 2026-03-23 **Status**: Fixed — 2.2.3 overlay in k8s-worker.nix; pending nixos-25.11 channel update so overlay
+can be removed
 
 ## Symptom
 
@@ -19,39 +19,34 @@ Works fine on Talos nodes (containerd 2.1.6, Go 1.23).
 
 Three things intersect:
 
-1. **Go 1.24.0** (Feb 2025) tightened `os.DirFS` as part of introducing the new
-   `os.Root` traversal-resistant file API. Absolute symlinks are now **rejected by
-   design** — `DirFS.Open` sees a symlink target starting with `/` and treats it as
-   a path escape, even if the target exists inside the DirFS root. This is intentional
-   security hardening, not a Go bug
-   ([Go blog](https://go.dev/blog/osroot),
+1. **Go 1.24.0** (Feb 2025) tightened `os.DirFS` as part of introducing the new `os.Root` traversal-resistant file API.
+   Absolute symlinks are now **rejected by design** — `DirFS.Open` sees a symlink target starting with `/` and treats it
+   as a path escape, even if the target exists inside the DirFS root. This is intentional security hardening, not a Go
+   bug ([Go blog](https://go.dev/blog/osroot),
    [#75335 — closed as expected behavior](https://github.com/golang/go/issues/75335)).
 
-2. **NixOS container images** symlink `/etc/passwd` → `/nix/store/...` (absolute
-   path). Most distro images have a regular file at `/etc/passwd`, so they're
-   unaffected.
+2. **NixOS container images** symlink `/etc/passwd` → `/nix/store/...` (absolute path). Most distro images have a
+   regular file at `/etc/passwd`, so they're unaffected.
 
-3. **containerd's `UserFromFS`** (in `pkg/oci/spec_opts.go`) resolves UIDs by
-   calling `root.Open("etc/passwd")` where `root` is an `os.DirFS` of the container
-   rootfs. When the pod spec sets `runAsUser` (like our attic deployment does),
-   containerd hits this code path before the container starts. With Go 1.24, the
-   `Open` call fails on the NixOS absolute symlink → `CreateContainerError`.
+3. **containerd's `UserFromFS`** (in `pkg/oci/spec_opts.go`) resolves UIDs by calling `root.Open("etc/passwd")` where
+   `root` is an `os.DirFS` of the container rootfs. When the pod spec sets `runAsUser` (like our attic deployment does),
+   containerd hits this code path before the container starts. With Go 1.24, the `Open` call fails on the NixOS absolute
+   symlink → `CreateContainerError`.
 
-The bug is in **containerd** — it doesn't handle Go 1.24's stricter `DirFS` behavior
-for absolute symlinks.
+The bug is in **containerd** — it doesn't handle Go 1.24's stricter `DirFS` behavior for absolute symlinks.
 
 - **containerd issue**: <https://github.com/containerd/containerd/issues/12683>
-- **Fix**: PR [#12732](https://github.com/containerd/containerd/pull/12732) — adds
-  `openUserFile` helper that catches the `Open` failure, reads the symlink target
-  with `Readlink`, strips the leading `/` to make it relative, and retries.
+- **Fix**: PR [#12732](https://github.com/containerd/containerd/pull/12732) — adds `openUserFile` helper that catches
+  the `Open` failure, reads the symlink target with `Readlink`, strips the leading `/` to make it relative, and retries.
 
 ## Fix in containerd 2.2.3
 
-PR #12732 was merged to `main` on 2026-01-14. It was cherry-picked to `release/2.2`
-via [PR #13015](https://github.com/containerd/containerd/pull/13015), merge commit
-`66751400b1249f624231cd439c5927ac22a3a8db`. A follow-up ([`ee4179e5`](https://github.com/containerd/containerd/commit/ee4179e5))
-extended the fix to `/etc/group` as well. Both fixes shipped in **v2.2.3** (not v2.2.2 —
-v2.2.2 was tagged on 2026-03-10, two days before the cherry-pick landed on 2026-03-12).
+PR #12732 was merged to `main` on 2026-01-14. It was cherry-picked to `release/2.2` via
+[PR #13015](https://github.com/containerd/containerd/pull/13015), merge commit
+`66751400b1249f624231cd439c5927ac22a3a8db`. A follow-up
+([`ee4179e5`](https://github.com/containerd/containerd/commit/ee4179e5)) extended the fix to `/etc/group` as well. Both
+fixes shipped in **v2.2.3** (not v2.2.2 — v2.2.2 was tagged on 2026-03-10, two days before the cherry-pick landed on
+2026-03-12).
 
 ## Current State (2026-05-15)
 

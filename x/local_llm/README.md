@@ -1,8 +1,7 @@
 # Local LLM scripts (wyrm2 host)
 
-Runnable artifacts for local inference on wyrm2 (2× RTX 5090, 64 GB VRAM).
-Analysis, comparisons, and lessons-learned have moved to the hub at
-<../../cluster/docs/inference/>.
+Runnable artifacts for local inference on wyrm2 (2× RTX 5090, 64 GB VRAM). Analysis, comparisons, and lessons-learned
+have moved to the hub at <../../cluster/docs/inference/>.
 
 ## Quick Start
 

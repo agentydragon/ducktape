@@ -1,8 +1,7 @@
 # Local LLM Benchmarks — Older Claude Code Web Environment
 
-Benchmarks of open-weight LLMs running locally via llama.cpp on the Claude Code
-web CPU-only environment at the time of measurement. These numbers are kept as
-historical data, not as current Firecracker platform guidance.
+Benchmarks of open-weight LLMs running locally via llama.cpp on the Claude Code web CPU-only environment at the time of
+measurement. These numbers are kept as historical data, not as current Firecracker platform guidance.
 
 ## Environment
 
@@ -12,8 +11,8 @@ historical data, not as current Firecracker platform guidance.
 - **OS**: Linux 4.4.0 as reported by the older web sandbox
 - **Runtime**: llama.cpp b7993 (commit 2cce9fd)
 
-AMX (Advanced Matrix Extensions) instructions were unavailable in that
-environment. Bare-metal performance would be higher.
+AMX (Advanced Matrix Extensions) instructions were unavailable in that environment. Bare-metal performance would be
+higher.
 
 ## Summary
 
@@ -24,12 +23,11 @@ environment. Bare-metal performance would be higher.
 
 Key observations:
 
-- gpt-oss-20b's MoE architecture (only 3.6B active params per token) gives it
-  **faster text generation** than the dense 8.2B Qwen3-8B despite having 2.5x
-  more total parameters.
+- gpt-oss-20b's MoE architecture (only 3.6B active params per token) gives it **faster text generation** than the dense
+  8.2B Qwen3-8B despite having 2.5x more total parameters.
 - Qwen3-8B has **faster prompt processing** thanks to its smaller total weight.
-- Qwen3-8B fits comfortably in ~5 GiB (vs ~11 GiB), leaving more headroom for
-  PostgreSQL, backend services, and other containers.
+- Qwen3-8B fits comfortably in ~5 GiB (vs ~11 GiB), leaving more headroom for PostgreSQL, backend services, and other
+  containers.
 
 ## gpt-oss-20b
 
@@ -53,11 +51,10 @@ Key observations:
 
 ### Notes
 
-- All quantizations of this model are similar in size (~11-12 GiB) because
-  90%+ of parameters are MoE FFN weights that OpenAI post-trained with
-  MXFP4 quantization.
-- MoE architecture means only 3.6B parameters are active per token, which is
-  why text generation is faster than Qwen3-8B despite the larger total size.
+- All quantizations of this model are similar in size (~11-12 GiB) because 90%+ of parameters are MoE FFN weights that
+  OpenAI post-trained with MXFP4 quantization.
+- MoE architecture means only 3.6B parameters are active per token, which is why text generation is faster than Qwen3-8B
+  despite the larger total size.
 
 ## Qwen3-8B
 
@@ -81,14 +78,12 @@ Key observations:
 
 ### Notes
 
-- Qwen3-8B natively supports tool calling via its chat template (works with
-  `--jinja` flag in llama-server). Tested with `/v1/responses` API and
-  `tools` parameter — correctly emits `function_call` output items.
-- Qwen3 text-only models are instruct-tuned by default (no separate
-  `-Instruct` suffix). Use `/no_think` in prompts to disable the thinking
-  mode for faster responses.
-- At ~8-9 t/s text generation, a 500-token critic response takes ~55-60
-  seconds. Usable for evaluation but slower than gpt-oss-20b.
+- Qwen3-8B natively supports tool calling via its chat template (works with `--jinja` flag in llama-server). Tested with
+  `/v1/responses` API and `tools` parameter — correctly emits `function_call` output items.
+- Qwen3 text-only models are instruct-tuned by default (no separate `-Instruct` suffix). Use `/no_think` in prompts to
+  disable the thinking mode for faster responses.
+- At ~8-9 t/s text generation, a 500-token critic response takes ~55-60 seconds. Usable for evaluation but slower than
+  gpt-oss-20b.
 
 ## Memory Estimates (Qwen3-8B Q4_K_M)
 
@@ -107,9 +102,8 @@ Qwen3-8B KV dimensions: 36 layers, 8 GQA heads, 128 head dim.
 |        16384 |           2.25 GB |   1.12 GB |   0.56 GB |       8.8 GB |
 |        32768 |           4.50 GB |   2.25 GB |   1.12 GB |       9.3 GB |
 
-Use `-ctk q4_0 -ctv q4_0` to quantize the KV cache. This reduces KV memory
-by 4x vs the default f16. With q4_0, 32K context uses only ~9.3 GB total,
-well under the 15 GB `process_api` kill threshold in this environment.
+Use `-ctk q4_0 -ctv q4_0` to quantize the KV cache. This reduces KV memory by 4x vs the default f16. With q4_0, 32K
+context uses only ~9.3 GB total, well under the 15 GB `process_api` kill threshold in this environment.
 
 ## Terminology
 

@@ -71,10 +71,7 @@
 
 - name: "Certbot | obtain or renew certificate"
   ansible.builtin.command: >-
-    certbot certonly --non-interactive --agree-tos --keep-until-expiring
-    --authenticator nginx
-    --cert-name {{ letsencrypt_cert_name }}
-    {{ letsencrypt_certbot_email_arg }}
-    {{ letsencrypt_certbot_domain_args }}
+    certbot certonly --non-interactive --agree-tos --keep-until-expiring --authenticator nginx --cert-name {{
+    letsencrypt_cert_name }} {{ letsencrypt_certbot_email_arg }} {{ letsencrypt_certbot_domain_args }}
   args:
     creates: "/etc/letsencrypt/live/{{ letsencrypt_cert_name }}/fullchain.pem"

@@ -19,8 +19,7 @@ occurrences:
           - 123
         - - 144
           - 144
-    note: all_handlers variable created from list(handlers) + self._extra_handlers, used once in MiniCodex.create
-      call
+    note: all_handlers variable created from list(handlers) + self._extra_handlers, used once in MiniCodex.create call
     critic_scopes_expected_to_recall:
       - - adgn/src/adgn/agent/runtime/local_runtime.py
     match_file_restriction:

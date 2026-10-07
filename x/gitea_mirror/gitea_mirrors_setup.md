@@ -2,7 +2,9 @@
 
 ## Overview
 
-Setting up a dedicated Gitea instance (`gitea-mirrors`) to host public repository mirrors, enabling efficient git cloning with `--reference` across all VMs. This creates a separate storage slice from tankshare specifically for git mirrors.
+Setting up a dedicated Gitea instance (`gitea-mirrors`) to host public repository mirrors, enabling efficient git
+cloning with `--reference` across all VMs. This creates a separate storage slice from tankshare specifically for git
+mirrors.
 
 ## Architecture
 

@@ -1,8 +1,7 @@
 # Claude Code Web Container Specification
 
-Runtime context for the Claude Code web environment. The reproducible container
-definition lives in the [Dockerfile](../Dockerfile); this file documents the
-parts that aren't captured there.
+Runtime context for the Claude Code web environment. The reproducible container definition lives in the
+[Dockerfile](../Dockerfile); this file documents the parts that aren't captured there.
 
 **Captured**: 2026-03-30 (storage details updated 2026-04-01).
 
@@ -33,38 +32,32 @@ parts that aren't captured there.
 
 #### Reserved blocks — not reclaimable, as of 2026-08-17
 
-The root ext4 filesystem ships with **~85% of blocks reserved** for UID/GID 65534
-(`nobody:nogroup`), and the container runs as root, so a session sees ~14 GiB of
-the 256 GiB disk however much is actually free. Measured on 2026-08-17: 214.92
-GiB reserved of 251.97 GiB total, `bfree` 228.59 GiB against `bavail` 13.66 GiB.
+The root ext4 filesystem ships with **~85% of blocks reserved** for UID/GID 65534 (`nobody:nogroup`), and the container
+runs as root, so a session sees ~14 GiB of the 256 GiB disk however much is actually free. Measured on 2026-08-17:
+214.92 GiB reserved of 251.97 GiB total, `bfree` 228.59 GiB against `bavail` 13.66 GiB.
 
-**`tune2fs -m`/`-r` no longer works, and neither does the mount-option route.**
-Both were measured, not inferred:
+**`tune2fs -m`/`-r` no longer works, and neither does the mount-option route.** Both were measured, not inferred:
 
-- **The device cannot be opened at all.** `open("/dev/vda")` returns `EPERM` for
-  UID 0 with a full capability set and `Seccomp: 0` — as do `/dev/vdc` and
-  `/dev/vdd`. The `devices:` cgroup is what denies it. So `tune2fs -l` fails
-  before it can read the superblock, and every `tune2fs` recipe below it is dead.
-- **`mount -o remount,resuid=0 /` is accepted and changes nothing.** The mount
-  table shows `resuid=0` afterwards, but `fallocate` still stops at exactly
-  14,671,716,352 bytes (13.66 GiB) with `ENOSPC`. `resv_strict` is in the mount
+- **The device cannot be opened at all.** `open("/dev/vda")` returns `EPERM` for UID 0 with a full capability set and
+  `Seccomp: 0` — as do `/dev/vdc` and `/dev/vdd`. The `devices:` cgroup is what denies it. So `tune2fs -l` fails before
+  it can read the superblock, and every `tune2fs` recipe below it is dead.
+- **`mount -o remount,resuid=0 /` is accepted and changes nothing.** The mount table shows `resuid=0` afterwards, but
+  `fallocate` still stops at exactly 14,671,716,352 bytes (13.66 GiB) with `ENOSPC`. `resv_strict` is in the mount
   options and it does what its name says.
-- `/sys/fs/ext4/vda/reserved_clusters` is a red herring — 4096 clusters (16 MiB),
-  a separate small delalloc reserve, not `s_r_blocks_count`.
+- `/sys/fs/ext4/vda/reserved_clusters` is a red herring — 4096 clusters (16 MiB), a separate small delalloc reserve, not
+  `s_r_blocks_count`.
 
-So **treat the usable disk as ~14 GiB**, not ~235 GiB, and reclaim space by
-deleting rather than by enlarging the pool. In practice the thing that fills it
-is agent worktrees under `.claude/worktrees/` (41 of them held 14 GiB in one
-session) and Bazel caches — see Typical Disk Usage below. Deletes still succeed
-while writes fail with `ENOSPC`, and freed space is immediately writable.
+So **treat the usable disk as ~14 GiB**, not ~235 GiB, and reclaim space by deleting rather than by enlarging the pool.
+In practice the thing that fills it is agent worktrees under `.claude/worktrees/` (41 of them held 14 GiB in one
+session) and Bazel caches — see Typical Disk Usage below. Deletes still succeed while writes fail with `ENOSPC`, and
+freed space is immediately writable.
 
-The `tune2fs -r` reclaim that used to live in `web_setup.sh` Step 0 has been
-removed: every path through it reached its "could not read `tune2fs -l`" warning,
-so it produced a warning line per session and nothing else. `git log` has it if
+The `tune2fs -r` reclaim that used to live in `web_setup.sh` Step 0 has been removed: every path through it reached its
+"could not read `tune2fs -l`" warning, so it produced a warning line per session and nothing else. `git log` has it if
 device access ever returns.
 
-The Bazel cache (`~/.claude/session-env/<id>/bazel-cache`) lives on the ext4
-root disk. There are **no tmpfs mounts** for Bazel cache or container storage.
+The Bazel cache (`~/.claude/session-env/<id>/bazel-cache`) lives on the ext4 root disk. There are **no tmpfs mounts**
+for Bazel cache or container storage.
 
 ### Typical Disk Usage (observed 2026-04-01)
 
@@ -94,24 +87,21 @@ Measured with `dd` on a Firecracker microVM (4 vCPU, 16Gi RAM).
 | `/dev/shm`    | tmpfs   | 345 MB/s  | 2.4 GB/s | 1.3 GB/s        |
 | `/tmp` (disk) | ext4    | 118 MB/s  | 422 MB/s | 94 MB/s         |
 
-Disk I/O is adequate for Bazel cache (sequential reads dominate). tmpfs is
-~3-10x faster but consumes RAM. On Firecracker ext4, tmpfs is unnecessary for
-normal Bazel cache and container storage.
+Disk I/O is adequate for Bazel cache (sequential reads dominate). tmpfs is ~3-10x faster but consumes RAM. On
+Firecracker ext4, tmpfs is unnecessary for normal Bazel cache and container storage.
 
 ### Platform Contract
 
-As of 2026-03-30, the environment runs on **Firecracker microVMs with a real
-Linux kernel**. The root filesystem is ext4 on a virtio block device. The Rust
-session start hook checks PID 1 for `--firecracker-init` and, when present,
-sizes Bazel's JVM heap to 8Gi for full-monorepo Skyframe analysis. If a live
-web/remote session lacks that marker, treat it as platform drift and report it.
+As of 2026-03-30, the environment runs on **Firecracker microVMs with a real Linux kernel**. The root filesystem is ext4
+on a virtio block device. The Rust session start hook checks PID 1 for `--firecracker-init` and, when present, sizes
+Bazel's JVM heap to 8Gi for full-monorepo Skyframe analysis. If a live web/remote session lacks that marker, treat it as
+platform drift and report it.
 
 ### Bazel JVM Heap
 
-Java auto-sizes max heap to ~25% of physical memory (~4Gi). For full-monorepo
-`bazel query` operations (6000+ packages), this is insufficient — the Skyframe
-analysis cache alone needs ~4Gi. The session bazelrc template sets `-Xmx8g`
-when it detects Firecracker.
+Java auto-sizes max heap to ~25% of physical memory (~4Gi). For full-monorepo `bazel query` operations (6000+ packages),
+this is insufficient — the Skyframe analysis cache alone needs ~4Gi. The session bazelrc template sets `-Xmx8g` when it
+detects Firecracker.
 
 ## Anthropic-Specific Components
 
@@ -122,36 +112,31 @@ Proprietary binaries stored in `reference/`:
 | environment-manager | `/opt/env-runner/environment-manager` (symlink from `/usr/local/bin`) | Session orchestration, Claude Code lifecycle   |
 | process_api         | `/process_api`                                                        | Container init (PID 1), WebSocket API, VM init |
 
-`process_api` runs with `--firecracker-init` which handles Firecracker VM
-initialization (root mount, pivot_root, networking, FUSE, rclone) before
-starting the WebSocket listener.
+`process_api` runs with `--firecracker-init` which handles Firecracker VM initialization (root mount, pivot_root,
+networking, FUSE, rclone) before starting the WebSocket listener.
 
-The `sandbox-runtime` (`@anthropic-ai/sandbox-runtime`) is now **open source**
-at <https://github.com/anthropic-experimental/sandbox-runtime>.
+The `sandbox-runtime` (`@anthropic-ai/sandbox-runtime`) is now **open source** at
+<https://github.com/anthropic-experimental/sandbox-runtime>.
 
-`/container_info.json` contains per-session metadata (`container_name`,
-`creation_time`).
+`/container_info.json` contains per-session metadata (`container_name`, `creation_time`).
 
 ### Git Commit Signing
 
-Commits are signed via SSH key at `/home/claude/.ssh/commit_signing_key.pub`
-using `/tmp/code-sign` as the gpg ssh program. See `config/gitconfig`.
+Commits are signed via SSH key at `/home/claude/.ssh/commit_signing_key.pub` using `/tmp/code-sign` as the gpg ssh
+program. See `config/gitconfig`.
 
 ### Claude Code Settings
 
-Runtime settings in `/root/.claude/settings.json` and
-`/home/claude/.claude/settings.json` — see `config/global-settings.json` and
-`config/sandbox-settings.json`.
+Runtime settings in `/root/.claude/settings.json` and `/home/claude/.claude/settings.json` — see
+`config/global-settings.json` and `config/sandbox-settings.json`.
 
 ## Network Architecture
 
-Outbound HTTP/HTTPS is proxied through `environment-manager`. The proxy performs
-TLS inspection, injecting its own CA certificate. Proxy credentials are
-JWT-based, passed via `Proxy-Authorization: Basic` header.
+Outbound HTTP/HTTPS is proxied through `environment-manager`. The proxy performs TLS inspection, injecting its own CA
+certificate. Proxy credentials are JWT-based, passed via `Proxy-Authorization: Basic` header.
 
-The proxy returns non-standard HTTP 401 (not 407) with `www-authenticate` (not
-`Proxy-Authenticate`), which breaks Java's `Authenticator` class. See
-`devinfra/claude/proxy_setup.py` for the local proxy workaround.
+The proxy returns non-standard HTTP 401 (not 407) with `www-authenticate` (not `Proxy-Authenticate`), which breaks
+Java's `Authenticator` class. See `devinfra/claude/proxy_setup.py` for the local proxy workaround.
 
 | Interface | IP Address   |
 | --------- | ------------ |

@@ -2,7 +2,8 @@
 
 ## Overview
 
-Two separate routing middlewares in the MCP bridge both inherit from `BaseHTTPMiddleware` and suffer from the same architectural problem: they reconstruct responses by buffering ASGI messages, which breaks important HTTP semantics.
+Two separate routing middlewares in the MCP bridge both inherit from `BaseHTTPMiddleware` and suffer from the same
+architectural problem: they reconstruct responses by buffering ASGI messages, which breaks important HTTP semantics.
 
 ## Affected Clusters
 
@@ -29,7 +30,8 @@ class SomeMiddleware(BaseHTTPMiddleware):
         return response
 ```
 
-However, when routing to another ASGI app (not calling `call_next`), they must manually invoke the backend app and reconstruct a Response:
+However, when routing to another ASGI app (not calling `call_next`), they must manually invoke the backend app and
+reconstruct a Response:
 
 ```python
 async def dispatch(self, request: Request, call_next) -> Response:
@@ -138,7 +140,8 @@ adgn-properties snapshot exec ducktape/2025-11-20-00 -- \
 
 ## Unified Solution: Pure ASGI Middleware
 
-Both issues share the same fix: **stop reconstructing responses**. Use pure ASGI middleware that forwards messages directly.
+Both issues share the same fix: **stop reconstructing responses**. Use pure ASGI middleware that forwards messages
+directly.
 
 ### Example: MCP Routing (fixes both issues if applied to both files)
 
@@ -257,7 +260,8 @@ class CompositorRoutingMiddleware:
   - Must parse scope manually
   - Can't use `request.state` directly (but can use `scope["state"]`)
 
-**Trade-off verdict:** The advantages far outweigh the disadvantages for routing middleware. The lower-level API is worth it for correctness.
+**Trade-off verdict:** The advantages far outweigh the disadvantages for routing middleware. The lower-level API is
+worth it for correctness.
 
 ## Alternative Solutions (Not Recommended)
 

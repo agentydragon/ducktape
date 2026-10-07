@@ -1,133 +1,109 @@
 # Haku — Personal Background Agent
 
-**This doc is forward-looking.** It holds the vision and the **not-yet-built / open
-design questions** — nothing else. What Haku is and its current status: `README.md`.
-What it promises today: `SPEC.md`. Implemented architecture, deployment detail, and the
-security doctrine live where the code lives (`README.md` → _Where things live_); git
-history holds the original full design rationale. The **actionable build checklist is
-`TODO.md`.**
+**This doc is forward-looking.** It holds the vision and the **not-yet-built / open design questions** — nothing else.
+What Haku is and its current status: `README.md`. What it promises today: `SPEC.md`. Implemented architecture,
+deployment detail, and the security doctrine live where the code lives (`README.md` → _Where things live_); git history
+holds the original full design rationale. The **actionable build checklist is `TODO.md`.**
 
 ## Not yet built
 
-- **More sources behind read-only facades.** Three proven ways to make an upstream MCP
-  server safe for Haku, cheapest first: (1) **action-policy filtering** — wire the upstream's
-  full-tool server as an agentplane ActionGroup and allowlist the specific safe tools in an
-  action policy set (`TODO.md` → _Mutating-tool sources behind agentplane_) instead of
-  standing up a second Deployment or a dedicated credential; (2)
-  **credential-scoping** — no facade at all, when the upstream itself enforces per-user
-  permissions and Haku only ever needs read access with no path to writes-with-approval:
-  cheaper than (1), but a dead end if write access is ever wanted, since the credential's
-  identity has no write permission to begin with; (3) **a dedicated read-only facade** —
-  the generic `mcp-oauth-facade` image (default-deny tool allowlist + a server-held
-  upstream credential callers never see) for an upstream with neither of the above: a
-  Deployment + a `config.yaml` allowlist + the upstream secret + a bearer-gated route —
-  no new boundary code, the generalization is mechanical. Still to wire this way:
-  Manifold. (The Authentik OAuth facades are _auth_ only — they forward the full tool
-  set — so they don't substitute for this.)
-- **Console executions panel + one-in-flight guard.** Both want a routine-runs-**listing**
-  API, and **none is known to exist** for `claude_code` routines (only `/fire`), so the
-  interim "review past runs" affordance is the deep-link to the routine's `claude.ai/code`
-  page. When a listing API surfaces and the panel is built, adopt the `anthropic` Python
-  SDK (it auto-sends `anthropic-version` — the omission that 502'd the bare-`httpx`
-  fire — plus bearer auth, typed errors, retries) and migrate the launch POST onto it then.
-  (An earlier "richer declarative UI" direction — a typed widget schema rendered by the
-  trusted console — is retired: the console renders nothing by design now; free-form UI in
+- **More sources behind read-only facades.** Three proven ways to make an upstream MCP server safe for Haku, cheapest
+  first: (1) **action-policy filtering** — wire the upstream's full-tool server as an agentplane ActionGroup and
+  allowlist the specific safe tools in an action policy set (`TODO.md` → _Mutating-tool sources behind agentplane_)
+  instead of standing up a second Deployment or a dedicated credential; (2) **credential-scoping** — no facade at all,
+  when the upstream itself enforces per-user permissions and Haku only ever needs read access with no path to
+  writes-with-approval: cheaper than (1), but a dead end if write access is ever wanted, since the credential's identity
+  has no write permission to begin with; (3) **a dedicated read-only facade** — the generic `mcp-oauth-facade` image
+  (default-deny tool allowlist + a server-held upstream credential callers never see) for an upstream with neither of
+  the above: a Deployment + a `config.yaml` allowlist + the upstream secret + a bearer-gated route — no new boundary
+  code, the generalization is mechanical. Still to wire this way: Manifold. (The Authentik OAuth facades are _auth_ only
+  — they forward the full tool set — so they don't substitute for this.)
+- **Console executions panel + one-in-flight guard.** Both want a routine-runs-**listing** API, and **none is known to
+  exist** for `claude_code` routines (only `/fire`), so the interim "review past runs" affordance is the deep-link to
+  the routine's `claude.ai/code` page. When a listing API surfaces and the panel is built, adopt the `anthropic` Python
+  SDK (it auto-sends `anthropic-version` — the omission that 502'd the bare-`httpx` fire — plus bearer auth, typed
+  errors, retries) and migrate the launch POST onto it then. (An earlier "richer declarative UI" direction — a typed
+  widget schema rendered by the trusted console — is retired: the console renders nothing by design now; free-form UI in
   Haku's own iframe service superseded it.)
-- **Share the iframe bridge protocol** instead of hand-duplicating the message shapes
-  between `haku/console/frontend/bridge.ts` (authoritative) and Haku's UI — a tiny shared
-  package or a sync-checked artifact. (The remaining cleanup from the realized free-form
-  UI design; see `console/docs/containment.md` → _The bridge protocol_.)
-- **An in-cluster runtime as the default instead of the web home.** Both candidates are
-  built — `runtime/agent` (Runtime C) and `runtime/x/managed_agent/self_hosted` (Runtime B) —
-  so what is undecided is whether either replaces the web home rather than sitting beside
-  it. Per-runtime state: `TODO.md` → _Later_.
-- **Capability registry** (a ConfigMap mapping `service → facade URL → secret name`) —
-  a possible later formalization of today's ad-hoc `kubectl get secret` discovery; not
-  required by the current model.
-- **Several agents at different information trust levels** (operator, 2026-08-15), with Haku
-  delegating unsensitive work — k8s diagnostics, ducktape code, kitchen — down to them. Design
-  sketch in <plans/information_trust_tiers.md>, which supersedes the retired zone experiment in
-  `archive/2026_08_multi_agent.md`. The reframing it turns on: the trust level belongs to the
-  **model provider**, not the agent, since everything in an agent's context reaches its provider —
-  so the thing to label is the corpus, and the enforcement points (mounted workspace, reflected
-  credential, LiteLLM route, egress perimeter) are ones this deployment already has per zone. Two
-  findings worth knowing before picking it up: an information-flow classifier must run on local
-  GPUs or it discloses the content to the party it is deciding about, and the first workloads need
-  no classifier at all because they **delegate a capability, not a corpus**.
+- **Share the iframe bridge protocol** instead of hand-duplicating the message shapes between
+  `haku/console/frontend/bridge.ts` (authoritative) and Haku's UI — a tiny shared package or a sync-checked artifact.
+  (The remaining cleanup from the realized free-form UI design; see `console/docs/containment.md` → _The bridge
+  protocol_.)
+- **An in-cluster runtime as the default instead of the web home.** Both candidates are built — `runtime/agent` (Runtime
+  C) and `runtime/x/managed_agent/self_hosted` (Runtime B) — so what is undecided is whether either replaces the web
+  home rather than sitting beside it. Per-runtime state: `TODO.md` → _Later_.
+- **Capability registry** (a ConfigMap mapping `service → facade URL → secret name`) — a possible later formalization of
+  today's ad-hoc `kubectl get secret` discovery; not required by the current model.
+- **Several agents at different information trust levels** (operator, 2026-08-15), with Haku delegating unsensitive work
+  — k8s diagnostics, ducktape code, kitchen — down to them. Design sketch in <plans/information_trust_tiers.md>, which
+  supersedes the retired zone experiment in `archive/2026_08_multi_agent.md`. The reframing it turns on: the trust level
+  belongs to the **model provider**, not the agent, since everything in an agent's context reaches its provider — so the
+  thing to label is the corpus, and the enforcement points (mounted workspace, reflected credential, LiteLLM route,
+  egress perimeter) are ones this deployment already has per zone. Two findings worth knowing before picking it up: an
+  information-flow classifier must run on local GPUs or it discloses the content to the party it is deciding about, and
+  the first workloads need no classifier at all because they **delegate a capability, not a corpus**.
 
 ## Future: letting Haku take some actions itself (permission-elevation tokens)
 
-Today's contract is read-only + hand-off (`SPEC.md`). A future direction
-(operator, 2026-06-26) is to let Haku take **some** actions autonomously that aren't
-allowed now — e.g. _draft an email_ (into Drafts, not send), _explore less-restricted
-websites_ for research, and similar low-blast-radius moves — without giving up the
-transparency and containment that make the read-only posture safe.
+Today's contract is read-only + hand-off (`SPEC.md`). A future direction (operator, 2026-06-26) is to let Haku take
+**some** actions autonomously that aren't allowed now — e.g. _draft an email_ (into Drafts, not send), _explore
+less-restricted websites_ for research, and similar low-blast-radius moves — without giving up the transparency and
+containment that make the read-only posture safe.
 
 Sketch to design out later (a real mechanism-design + security effort, not built):
 
-- **Permission-elevation tokens.** The operator mints a scoped, expiring grant ("you
-  may draft emails in account X", "you may browse the open web for N hours for
-  research") that Haku may exercise only under defined, limited circumstances — a
-  capability, not standing privilege; explicit, narrow, revocable. The default stays
-  read-only.
-- **Outbound mail to the operator** is the exception that may not need a grant at
-  all: enabling submission on the mailserver (`cluster/k8s/haku/mailbox/`, currently
-  receive-only) with a server-enforced recipient allowlist (`To: <operator>` only)
-  has a blast radius of "can email the operator" — safe as standing capability.
-  Needs deliverability work first: update the apex SPF `-all` / DMARC `reject`
-  records in `cluster/cdk8s/external_dns.py`, OVH rDNS for the gateway IPs, and Gmail may
-  still junk a fresh sender for a while.
-- **Transparency by construction.** Every elevated action is logged and surfaced (what
-  it did, under which grant, why), so the operator-facing surface is also the
-  accountability surface.
-- **Enforced by the perimeter, not by trust.** Per `docs/security.md`, an elevation
-  must be enforced by what the token actually unlocks (the mechanism), never by trusting
-  Haku to stay in bounds. Drafting (write to Drafts, no send) and sandboxed browsing
-  are good first candidates — small, reviewable blast radius.
-- **Open questions:** how grants are minted/stored (operator UI? a signed token in a
-  secret?), how Haku proves it's acting under one, how scopes compose with the existing
-  token/RBAC model, how "less-restricted browsing" stays contained, and where the line
-  sits between "draft for review" and "act."
+- **Permission-elevation tokens.** The operator mints a scoped, expiring grant ("you may draft emails in account X",
+  "you may browse the open web for N hours for research") that Haku may exercise only under defined, limited
+  circumstances — a capability, not standing privilege; explicit, narrow, revocable. The default stays read-only.
+- **Outbound mail to the operator** is the exception that may not need a grant at all: enabling submission on the
+  mailserver (`cluster/k8s/haku/mailbox/`, currently receive-only) with a server-enforced recipient allowlist
+  (`To: <operator>` only) has a blast radius of "can email the operator" — safe as standing capability. Needs
+  deliverability work first: update the apex SPF `-all` / DMARC `reject` records in `cluster/cdk8s/external_dns.py`, OVH
+  rDNS for the gateway IPs, and Gmail may still junk a fresh sender for a while.
+- **Transparency by construction.** Every elevated action is logged and surfaced (what it did, under which grant, why),
+  so the operator-facing surface is also the accountability surface.
+- **Enforced by the perimeter, not by trust.** Per `docs/security.md`, an elevation must be enforced by what the token
+  actually unlocks (the mechanism), never by trusting Haku to stay in bounds. Drafting (write to Drafts, no send) and
+  sandboxed browsing are good first candidates — small, reviewable blast radius.
+- **Open questions:** how grants are minted/stored (operator UI? a signed token in a secret?), how Haku proves it's
+  acting under one, how scopes compose with the existing token/RBAC model, how "less-restricted browsing" stays
+  contained, and where the line sits between "draft for review" and "act."
 
 ## Haku Console risky-tool broker
 
-Haku Console is the MCP/HTTP policy and approval boundary: calls that pass reviewed auto-approval
-policy execute immediately, while all others become operator approval requests. The invariant stays
-the same: exact call reviewed, trusted console approval, console-owned audit/result state, and
-credentials scoped or proxied rather than trusted to Haku's restraint.
+Haku Console is the MCP/HTTP policy and approval boundary: calls that pass reviewed auto-approval policy execute
+immediately, while all others become operator approval requests. The invariant stays the same: exact call reviewed,
+trusted console approval, console-owned audit/result state, and credentials scoped or proxied rather than trusted to
+Haku's restraint.
 
 ## A conversational interface with Haku (operator, 2026-07-06)
 
-The ask was a chat-like surface instead of only the console's fire-and-forget launch dialog:
-quick dispatch, follow-ups without re-stating context, and separate threads per topic. A Matrix
-channel answered this for a time — a message in Element drove a real turn in a console-hosted
-session, with the console owning the session and the approval gate — but the console's whole
-hosted-session runtime (and the Matrix channel that rode on it) has since been retired, so this is
-open again. The notification half was answered separately and differently:
-Web Push from the console's own origin (`console/notifications/push.py`), with Approve/Deny rendered by
-the OS from console-authored content, because a third-party service with action buttons would
-have to carry a deciding credential outside the trust boundary (`docs/security.md` invariant #4).
+The ask was a chat-like surface instead of only the console's fire-and-forget launch dialog: quick dispatch, follow-ups
+without re-stating context, and separate threads per topic. A Matrix channel answered this for a time — a message in
+Element drove a real turn in a console-hosted session, with the console owning the session and the approval gate — but
+the console's whole hosted-session runtime (and the Matrix channel that rode on it) has since been retired, so this is
+open again. The notification half was answered separately and differently: Web Push from the console's own origin
+(`console/notifications/push.py`), with Approve/Deny rendered by the OS from console-authored content, because a
+third-party service with action buttons would have to carry a deciding credential outside the trust boundary
+(`docs/security.md` invariant #4).
 
 What the ask still does not have:
 
-- **Inline action affordances** — clickable prebaked answers/actions inside Haku's chat
-  messages, the way `haku-ui`'s markdown affordance widgets (`<signal-toggle>`, `<handoff>`,
-  `<launch>`, `<feedback>`) work in the iframe. The blocker is the same one that made Web Push
-  the answer for approvals: a click-to-action in a room carries the risk shape of
-  `requestLaunch`, and a Matrix client is not trusted-rendered chrome, so nothing may wire a
-  room button to a mutating action without a confirm on a console surface.
-- **Whether a chat-dispatched task can route to a lower-trust agent** rather than running at
-  Haku's own orchestrator privilege. The worker zones this used to point at are retired; the
-  live question is <plans/information_trust_tiers.md>'s.
+- **Inline action affordances** — clickable prebaked answers/actions inside Haku's chat messages, the way `haku-ui`'s
+  markdown affordance widgets (`<signal-toggle>`, `<handoff>`, `<launch>`, `<feedback>`) work in the iframe. The blocker
+  is the same one that made Web Push the answer for approvals: a click-to-action in a room carries the risk shape of
+  `requestLaunch`, and a Matrix client is not trusted-rendered chrome, so nothing may wire a room button to a mutating
+  action without a confirm on a console surface.
+- **Whether a chat-dispatched task can route to a lower-trust agent** rather than running at Haku's own orchestrator
+  privilege. The worker zones this used to point at are retired; the live question is
+  <plans/information_trust_tiers.md>'s.
 
 ## Open questions
 
-- **Value scoring**: single curator-owned 0–100 plus deadline is probably enough; resist
-  building an expected-utility framework before the queue has real traffic.
-- **Notification thresholds**: the channel is settled (Web Push for a pending tool call, the
-  room for prose); when to ping vs. wait for a dashboard visit is a `memory/` matter, tuned
-  via intake.
-- **Git as item store at scale**: a repo gives auditability, trivial backup, and
-  human-editable state, but no queries or concurrent-writer safety. Fine at personal
-  volumes with effectively serialized writers. If volume/concurrency ever outgrows it,
-  add a read index (the repo stays source of truth) rather than moving authority to a DB.
+- **Value scoring**: single curator-owned 0–100 plus deadline is probably enough; resist building an expected-utility
+  framework before the queue has real traffic.
+- **Notification thresholds**: the channel is settled (Web Push for a pending tool call, the room for prose); when to
+  ping vs. wait for a dashboard visit is a `memory/` matter, tuned via intake.
+- **Git as item store at scale**: a repo gives auditability, trivial backup, and human-editable state, but no queries or
+  concurrent-writer safety. Fine at personal volumes with effectively serialized writers. If volume/concurrency ever
+  outgrows it, add a read index (the repo stays source of truth) rather than moving authority to a DB.

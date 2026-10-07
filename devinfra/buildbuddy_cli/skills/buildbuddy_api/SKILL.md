@@ -1,9 +1,8 @@
 ---
 name: buildbuddy_api
 description: >-
-  Reference for querying the BuildBuddy API: build/test logs, invocations, RBE
-  execution details, cache stats, undeclared test outputs, target pass/fail
-  history for bisecting, workflow re-runs. Use for any why-did-CI-fail,
+  Reference for querying the BuildBuddy API: build/test logs, invocations, RBE execution details, cache stats,
+  undeclared test outputs, target pass/fail history for bisecting, workflow re-runs. Use for any why-did-CI-fail,
   show-me-the-log, or when-did-this-test-break task.
 ---
 
@@ -121,9 +120,8 @@ bbapi trend [--days N] [--repo URL]
 
 All `bbapi` commands support `--json` for raw JSON output.
 
-Responses are parsed against pinned BuildBuddy protos but unknown fields are
-discarded, so `bbapi` tolerates API/proto drift between repins (newly added
-response fields) instead of hard-failing on the parse.
+Responses are parsed against pinned BuildBuddy protos but unknown fields are discarded, so `bbapi` tolerates API/proto
+drift between repins (newly added response fields) instead of hard-failing on the parse.
 
 ## Investigating Failed CI Builds
 
@@ -144,14 +142,12 @@ bbapi target log <invocation-id> <target-substring>
 
 ### Workflow vs Child Invocations
 
-BuildBuddy CI runs use **workflow invocations** that spawn **child invocations**.
-The workflow invocation (command: `workflow run`) is a wrapper; the child
-invocation contains the actual `bazel test` results, targets, and artifacts.
+BuildBuddy CI runs use **workflow invocations** that spawn **child invocations**. The workflow invocation (command:
+`workflow run`) is a wrapper; the child invocation contains the actual `bazel test` results, targets, and artifacts.
 
 - `bbapi invocation` shows `Child: <child-id>` for workflow invocations
-- `bbapi artifact {list,cat,download}` and `bbapi target log` auto-resolve
-  workflow invocations to their children — you can pass either the workflow
-  or child ID
+- `bbapi artifact {list,cat,download}` and `bbapi target log` auto-resolve workflow invocations to their children — you
+  can pass either the workflow or child ID
 - `bbapi target` also auto-resolves workflow invocations to their children
 
 ### Artifact Name Matching
@@ -162,19 +158,17 @@ invocation contains the actual `bazel test` results, targets, and artifacts.
 - `"test_lifecycle/test.xml"` matches the XML output specifically
 - `"compositor/test_lifecycle"` matches `//mcp_infra/compositor:test_lifecycle/test.log`
 
-When no match is found, the CLI prints available labels as hints, and the names that would
-match if `-` and `_` were alike. Names are what the test wrote, not what you would derive from
-a target or a scenario (a visual scenario's PNG is `test.outputs/<outputName>-actual.png`, where
-the outputName is hyphenated for some scenarios and not for others), so `bbapi artifact list`
-first beats guessing.
+When no match is found, the CLI prints available labels as hints, and the names that would match if `-` and `_` were
+alike. Names are what the test wrote, not what you would derive from a target or a scenario (a visual scenario's PNG is
+`test.outputs/<outputName>-actual.png`, where the outputName is hyphenated for some scenarios and not for others), so
+`bbapi artifact list` first beats guessing.
 
 ### Sharded, repeated and retried tests
 
-A test with `shard_count`, `--runs_per_test` or `--flaky_test_attempts` reports one result per
-shard, run and attempt, and each has its own `test.log`, `test.xml` and outputs under the same
-names. `bbapi artifact list` gives each its `RESULT` (`shard 4/6`, `run 2/3`, `attempt 2`) and
-its own `STATUS` (`PASSED`, `FAILED`, `TIMEOUT`, ...); `--json` adds `shard`, `shardCount`,
-`run`, `runCount`, `attempt` and `status`. Numbers count from 1, as in
+A test with `shard_count`, `--runs_per_test` or `--flaky_test_attempts` reports one result per shard, run and attempt,
+and each has its own `test.log`, `test.xml` and outputs under the same names. `bbapi artifact list` gives each its
+`RESULT` (`shard 4/6`, `run 2/3`, `attempt 2`) and its own `STATUS` (`PASSED`, `FAILED`, `TIMEOUT`, ...); `--json` adds
+`shard`, `shardCount`, `run`, `runCount`, `attempt` and `status`. Numbers count from 1, as in
 `bazel-testlogs/.../shard_4_of_6/`.
 
 Narrow with flags on `artifact {list,cat,download}` and `target log`:
@@ -187,41 +181,33 @@ bbapi target log <id> visual --failed                # the failing shards' logs,
 bbapi target log <id> visual --all                   # every shard's log
 ```
 
-Several matches never mean "pick one silently": `target log` lists every match with its shard and
-status on stderr, then prints the results that failed, or the first if none did. `artifact cat`
-and `download` without `--all` still take the first match, and say which. With `--all`, files of
-one name are saved as `<label>__shard_4_of_6__test.log`; a name nothing else shares keeps its own.
+Several matches never mean "pick one silently": `target log` lists every match with its shard and status on stderr, then
+prints the results that failed, or the first if none did. `artifact cat` and `download` without `--all` still take the
+first match, and say which. With `--all`, files of one name are saved as `<label>__shard_4_of_6__test.log`; a name
+nothing else shares keeps its own.
 
 ### Three kinds of file, three commands
 
-Bazel files attached to the invocation itself, such as `command.profile.gz`, are BES
-`BuildToolLogs` — use `bbapi tool-log {list,cat,download}`. They can be inline
-(`elapsed time`, `critical path`, `process stats`) or bytestream-backed
-(`command.profile.gz`); `bbapi tool-log cat` handles both.
+Bazel files attached to the invocation itself, such as `command.profile.gz`, are BES `BuildToolLogs` — use
+`bbapi tool-log {list,cat,download}`. They can be inline (`elapsed time`, `critical path`, `process stats`) or
+bytestream-backed (`command.profile.gz`); `bbapi tool-log cat` handles both.
 
 Everything a target produced is `bbapi artifact`, in two kinds:
 
-- `--kind test` — outputs of a test action: `test.log`, `test.xml`, files under
-  `test.outputs/`.
-- `--kind build` — files in a completed target's output groups: a wheel, a
-  `.skill`, an `oci_image`'s `.json.sha256`. Lint aspects contribute their own
-  groups, so filter on the `GROUP` column (`default` for a target's real
-  outputs, `rules_lint_report` / `mypy` / `clippy_checks` / `rustfmt_checks` for
-  the aspects).
+- `--kind test` — outputs of a test action: `test.log`, `test.xml`, files under `test.outputs/`.
+- `--kind build` — files in a completed target's output groups: a wheel, a `.skill`, an `oci_image`'s `.json.sha256`.
+  Lint aspects contribute their own groups, so filter on the `GROUP` column (`default` for a target's real outputs,
+  `rules_lint_report` / `mypy` / `clippy_checks` / `rustfmt_checks` for the aspects).
 
-**Deviation from what BuildBuddy's web UI shows:** the UI surfaces test artifacts
-only. Build outputs reach the BES stream as `TargetComplete` → output group →
-`NamedSetOfFiles`, and `bbapi` walks that graph.
+**Deviation from what BuildBuddy's web UI shows:** the UI surfaces test artifacts only. Build outputs reach the BES
+stream as `TargetComplete` → output group → `NamedSetOfFiles`, and `bbapi` walks that graph.
 
-`--json` carries each file's `digest` and `size` as BES reports them. For a
-single-file release the digest is the content identity, so a caller can compare
-against a published tag without fetching the bytes.
+`--json` carries each file's `digest` and `size` as BES reports them. For a single-file release the digest is the
+content identity, so a caller can compare against a published tag without fetching the bytes.
 
-**Gotcha:** identify a file by `pathPrefix` + `name`, never `name` alone. A
-source file has an empty prefix while the generated file of the same name lives
-under `bazel-out/k8-fastbuild/bin`, and a configuration transition writes to
-`bazel-out/k8-fastbuild-ST-<hash>/bin`. On devel's `//...` sweep four names
-collide across prefixes.
+**Gotcha:** identify a file by `pathPrefix` + `name`, never `name` alone. A source file has an empty prefix while the
+generated file of the same name lives under `bazel-out/k8-fastbuild/bin`, and a configuration transition writes to
+`bazel-out/k8-fastbuild-ST-<hash>/bin`. On devel's `//...` sweep four names collide across prefixes.
 
 For CI phase profiling, start with:
 
@@ -233,18 +219,16 @@ bbapi tool-log cat <child-invocation> "process stats"
 bbapi tool-log download <runner-invocation> command.profile.gz --all -o profiles/
 ```
 
-The runner log line `Syncing existing repo...` identifies a warm outer `bb remote` runner
-workspace, but it does not by itself prove the inner Bazel analysis cache survived. Check
-Bazel's package/configuration counts, elapsed time, `targetConfiguredCount`, and
-`command.profile.gz`. Treat `targetConfiguredCount` as the configured graph size/result
-count, not by itself proof that those configured targets were recomputed; profile markers,
-`discarding analysis cache` warnings, and time-to-first-action are better recomputation
-signals.
+The runner log line `Syncing existing repo...` identifies a warm outer `bb remote` runner workspace, but it does not by
+itself prove the inner Bazel analysis cache survived. Check Bazel's package/configuration counts, elapsed time,
+`targetConfiguredCount`, and `command.profile.gz`. Treat `targetConfiguredCount` as the configured graph size/result
+count, not by itself proof that those configured targets were recomputed; profile markers, `discarding analysis cache`
+warnings, and time-to-first-action are better recomputation signals.
 
 ## Bisecting Test Failures with Target History
 
-When a test is failing and you need to find the commit that broke it, use target
-history instead of `git bisect` — BuildBuddy already has all the results:
+When a test is failing and you need to find the commit that broke it, use target history instead of `git bisect` —
+BuildBuddy already has all the results:
 
 ```bash
 # 1. Check recent pass/fail history for the target (failures only)
@@ -260,12 +244,13 @@ git log --oneline <last-pass-commit>..<first-fail-commit>
 bbapi target log <first-failing-invocation-id> test_target
 ```
 
-This is much faster than `git bisect` because it doesn't require re-running the
-test — the results are already in BuildBuddy's database.
+This is much faster than `git bisect` because it doesn't require re-running the test — the results are already in
+BuildBuddy's database.
 
 ## Diagnosing Executor Environments
 
-Use `bb execute` to run one-off commands directly on a BuildBuddy executor to probe the container image, check installed tools, verify library paths, etc. Useful when builds fail due to missing dependencies or environment issues.
+Use `bb execute` to run one-off commands directly on a BuildBuddy executor to probe the container image, check installed
+tools, verify library paths, etc. Useful when builds fail due to missing dependencies or environment issues.
 
 ```bash
 # Probe what's in a container image
@@ -284,7 +269,9 @@ bb execute \
   -- bash -c 'python3 -m pip install --dry-run some-package==1.0'
 ```
 
-`bb execute` runs on the default executor image (Ubuntu 16.04, glibc 2.23) unless you specify `-exec_properties=container-image=...`. Use `-exec_properties=workload-isolation-type=firecracker` to test with Firecracker isolation.
+`bb execute` runs on the default executor image (Ubuntu 16.04, glibc 2.23) unless you specify
+`-exec_properties=container-image=...`. Use `-exec_properties=workload-isolation-type=firecracker` to test with
+Firecracker isolation.
 
 ### Interactive debugging with `bb ssh`
 
@@ -298,25 +285,23 @@ bb ssh-server my-debug-session
 bb ssh my-debug-session
 ```
 
-This gives a full shell on the executor for investigating build failures, inspecting the filesystem, testing commands interactively, etc.
+This gives a full shell on the executor for investigating build failures, inspecting the filesystem, testing commands
+interactively, etc.
 
 ## BuildBuddy Concepts
 
-**Group ID**: BuildBuddy's organization identifier (e.g., `GR7963402054611859571`).
-Scopes API queries to the org's data. Auto-detected by `bbapi` from a recent invocation's
-ACL — no manual configuration needed.
+**Group ID**: BuildBuddy's organization identifier (e.g., `GR7963402054611859571`). Scopes API queries to the org's
+data. Auto-detected by `bbapi` from a recent invocation's ACL — no manual configuration needed.
 
 **Workflow ID**: For repos using `buildbuddy.yaml` + GitHub app, workflow IDs are synthetic:
-`WF#GitRepository:{group_id}:{repo_url}`. The `bbapi workflow run` command auto-constructs
-this from the detected group_id and repo URL. `GetWorkflows` returns empty for these repos
-(it only lists explicitly created workflows).
+`WF#GitRepository:{group_id}:{repo_url}`. The `bbapi workflow run` command auto-constructs this from the detected
+group_id and repo URL. `GetWorkflows` returns empty for these repos (it only lists explicitly created workflows).
 
 ## Raw API Fallback
 
-If `bbapi` is not available, use the Twirp JSON API at `app.buildbuddy.io` directly
-with curl. Read `devinfra/buildbuddy_cli/client.go` for how the CLI talks to the API
-(Twirp JSON over HTTP). The API key comes from `BUILDBUDDY_API_KEY` env var, or
-parse it from `~/.config/bazel/buildbuddy.bazelrc` (`x-buildbuddy-api-key=...`).
+If `bbapi` is not available, use the Twirp JSON API at `app.buildbuddy.io` directly with curl. Read
+`devinfra/buildbuddy_cli/client.go` for how the CLI talks to the API (Twirp JSON over HTTP). The API key comes from
+`BUILDBUDDY_API_KEY` env var, or parse it from `~/.config/bazel/buildbuddy.bazelrc` (`x-buildbuddy-api-key=...`).
 
 Proto definitions for request/response schemas:
 
@@ -325,11 +310,8 @@ Proto definitions for request/response schemas:
 
 ## Known Limitations
 
-**Fork PRs have BuildBuddy invocations only through `trusted-fork-pr-ci.yml`.**
-GitHub Actions does not pass `BUILDBUDDY_API_KEY` to `pull_request` workflows
-triggered by forks (head repo != base repo), so `ci.yml` skips `bazel-ci` for them.
-Revisions authored by the agent identity or the repository owner run it
-automatically through `trusted-fork-pr-ci.yml`; every other author waits for
-review of the `fork-ci-review` environment. When investigating a fork PR that
-has not run there, BuildBuddy has no record of the run — check GitHub Actions
-logs directly instead.
+**Fork PRs have BuildBuddy invocations only through `trusted-fork-pr-ci.yml`.** GitHub Actions does not pass
+`BUILDBUDDY_API_KEY` to `pull_request` workflows triggered by forks (head repo != base repo), so `ci.yml` skips
+`bazel-ci` for them. Revisions authored by the agent identity or the repository owner run it automatically through
+`trusted-fork-pr-ci.yml`; every other author waits for review of the `fork-ci-review` environment. When investigating a
+fork PR that has not run there, BuildBuddy has no record of the run — check GitHub Actions logs directly instead.

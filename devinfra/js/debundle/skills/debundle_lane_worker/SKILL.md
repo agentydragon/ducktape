@@ -1,20 +1,20 @@
 ---
 name: debundle_lane_worker
-description: Apply one scoped debundle module-assignment or reorganization task in a worktree. Use for confirming atomic-DAG unit coverage, reading binding context, choosing honest module boundaries, editing debundle YAML (directly or via `debundle bindings assign` / `bindings rename` / `modules merge`), running the adapter-provided gate and regen commands, and committing one reviewable worker branch.
+description:
+  Apply one scoped debundle module-assignment or reorganization task in a worktree. Use for confirming atomic-DAG unit
+  coverage, reading binding context, choosing honest module boundaries, editing debundle YAML (directly or via `debundle
+  bindings assign` / `bindings rename` / `modules merge`), running the adapter-provided gate and regen commands, and
+  committing one reviewable worker branch.
 ---
 
 # Debundle Lane Worker
 
-Use this role for one scoped implementation assignment: a seed cluster from
-intake, a binding-patch/residual cohort, or a firm reorganization task from
-the architect.
+Use this role for one scoped implementation assignment: a seed cluster from intake, a binding-patch/residual cohort, or
+a firm reorganization task from the architect.
 
-Shared CLI workflows land here for binding moves, renames, module merges, and
-atom-split recovery:
+Shared CLI workflows land here for binding moves, renames, module merges, and atom-split recovery:
 
-@references/docs/cli.md
-@references/docs/selectors.md
-@references/docs/spec_editing.md
+@references/docs/cli.md @references/docs/selectors.md @references/docs/spec_editing.md
 
 Read other bundled references as needed:
 
@@ -35,51 +35,37 @@ The orchestrator or project adapter provides:
 ## Procedure
 
 1. Confirm the worktree is at the expected base before editing.
-2. Check the assignment against the current graph with `debundle describe`
-   and `debundle show-source`; if needed, scan with `debundle atoms`,
-   `coverage`, or `cluster <sym>` (see the shared CLI guide above).
-3. Read each binding's surrounding code: consumers, dependencies, and nearby
-   implementation details.
-4. Choose a module boundary that looks like a real JavaScript seam under the
-   project conventions.
-5. Apply the assignment using the shared guide's CLI workflows. Prefer
-   `bindings assign`, `bindings rename`, and `modules merge` over
-   hand-editing module YAML. Which proposals `bindings assign --batch` takes
-   directly, and what the others need: `references/docs/cli.md` § `--batch` JSON
-   format.
+2. Check the assignment against the current graph with `debundle describe` and `debundle show-source`; if needed, scan
+   with `debundle atoms`, `coverage`, or `cluster <sym>` (see the shared CLI guide above).
+3. Read each binding's surrounding code: consumers, dependencies, and nearby implementation details.
+4. Choose a module boundary that looks like a real JavaScript seam under the project conventions.
+5. Apply the assignment using the shared guide's CLI workflows. Prefer `bindings assign`, `bindings rename`, and
+   `modules merge` over hand-editing module YAML. Which proposals `bindings assign --batch` takes directly, and what the
+   others need: `references/docs/cli.md` § `--batch` JSON format.
 
-   For selector-stabilization assignments, follow `references/docs/selectors.md`
-   (the ladder and § "Bulk conversion loop"): confirm the bucket with
-   `selector-debt`, draft with `synthesize-selectors` dry-run scoped to the
-   assignment, minimize before `--apply`, then run `git diff --check`, the
-   adapter's gate/regen command and `selector-debt` again to report the debt
-   delta. Never modify the upstream/source bundle. A binding Ducktape cannot yet
-   stabilize becomes selector debt (`references/docs/selectors.md` § Selector
-   debt), routed back to Ducktape tooling.
+   For selector-stabilization assignments, follow `references/docs/selectors.md` (the ladder and § "Bulk conversion
+   loop"): confirm the bucket with `selector-debt`, draft with `synthesize-selectors` dry-run scoped to the assignment,
+   minimize before `--apply`, then run `git diff --check`, the adapter's gate/regen command and `selector-debt` again to
+   report the debt delta. Never modify the upstream/source bundle. A binding Ducktape cannot yet stabilize becomes
+   selector debt (`references/docs/selectors.md` § Selector debt), routed back to Ducktape tooling.
 
-6. Remove now-owned entries from the non-emitting rename/annotation patch
-   stream when the project uses one.
+6. Remove now-owned entries from the non-emitting rename/annotation patch stream when the project uses one.
 7. Run the adapter-provided uniqueness check, gate, and regen commands.
 8. Commit one reviewable branch and report the result.
 
 ## Boundary Heuristics
 
-A good module has a coherent reason to exist: stable public surface, internal
-references dominating external references, clear layer ownership, or multiple
-meaningful consumers. Member count alone is not the rule.
+A good module has a coherent reason to exist: stable public surface, internal references dominating external references,
+clear layer ownership, or multiple meaningful consumers. Member count alone is not the rule.
 
-Tiny modules are a smell — try to fold them. The chunker over-splits when it
-emits a separate module for what a developer would have written inline in a
-larger file. Judge by LINES OF CODE, not member count: a one-binding module that
-is a 500-line React component is idiomatic and must be left alone; the smell is
-small-LOC standalone files (a 1-3 line accessor, predicate, constant, or
-wrapper). Fold a small-LOC module into its single real consumer (excluding
-non-semantic re-export catalogs / bundle barrels), or into a sibling that was
-clearly the same original source file (use `source_location` adjacency / shared
-CSS-module class prefixes as evidence). Do NOT fold widely-consumed shared
-primitives (a shared constant, a React context, a public predicate), real
-public-API/service/class boundaries, or anything whose fold would cross a layer
-boundary or break the gate. See `references/module_shape.md`.
+Tiny modules are a smell — try to fold them. The chunker over-splits when it emits a separate module for what a
+developer would have written inline in a larger file. Judge by LINES OF CODE, not member count: a one-binding module
+that is a 500-line React component is idiomatic and must be left alone; the smell is small-LOC standalone files (a 1-3
+line accessor, predicate, constant, or wrapper). Fold a small-LOC module into its single real consumer (excluding
+non-semantic re-export catalogs / bundle barrels), or into a sibling that was clearly the same original source file (use
+`source_location` adjacency / shared CSS-module class prefixes as evidence). Do NOT fold widely-consumed shared
+primitives (a shared constant, a React context, a public predicate), real public-API/service/class boundaries, or
+anything whose fold would cross a layer boundary or break the gate. See `references/module_shape.md`.
 
 Usually avoid standalone modules for:
 
@@ -88,29 +74,23 @@ Usually avoid standalone modules for:
 - enum-like values that only parametrize a larger owner
 - local style/config/data artifacts with no public contract
 
-Do not co-locate solely by consumer count when that would violate layer
-ownership. Policy, domain, persistence, infra, and integration logic keep
-their own homes even when a presenter is currently the only caller.
+Do not co-locate solely by consumer count when that would violate layer ownership. Policy, domain, persistence, infra,
+and integration logic keep their own homes even when a presenter is currently the only caller.
 
-You may expand the batch when the assigned peel would split an atomic unit or
-create a worse module shape. You may also skip assigned items when their
-natural owner still belongs to a larger atomic unit that should move together.
+You may expand the batch when the assigned peel would split an atomic unit or create a worse module shape. You may also
+skip assigned items when their natural owner still belongs to a larger atomic unit that should move together.
 
 ## Failure Handling
 
-- If the graph is stale, rerun the adapter-provided graph refresh or report
-  the stale evidence.
-- If `bindings assign` refuses with an atom-split diagnostic, follow the
-  shared guide's atom-split workflow before changing the assignment shape.
-- If the gate rejects via `debundle run`, read the structured cycle/report
-  output (`cycles.json`, `atomic_unit_conflicts.json`) first. Use the
-  cut/evidence if present. For an unknown-call side-effect cycle, follow the
-  shared workflow's purity-annotation guidance before changing the assignment;
-  keep the source evidence and the exact asserted contract in the review.
-- If broad minified-source analysis is needed, stop and ask for intake
-  grounding.
-- If the destination is architecturally unclear, stop and route to the
-  architect instead of inventing a dump bucket.
+- If the graph is stale, rerun the adapter-provided graph refresh or report the stale evidence.
+- If `bindings assign` refuses with an atom-split diagnostic, follow the shared guide's atom-split workflow before
+  changing the assignment shape.
+- If the gate rejects via `debundle run`, read the structured cycle/report output (`cycles.json`,
+  `atomic_unit_conflicts.json`) first. Use the cut/evidence if present. For an unknown-call side-effect cycle, follow
+  the shared workflow's purity-annotation guidance before changing the assignment; keep the source evidence and the
+  exact asserted contract in the review.
+- If broad minified-source analysis is needed, stop and ask for intake grounding.
+- If the destination is architecturally unclear, stop and route to the architect instead of inventing a dump bucket.
 
 ## Report
 

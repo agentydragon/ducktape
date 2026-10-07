@@ -33,6 +33,8 @@
 
 ## Known Problems
 
-1. **Playwright module identity**: pnpm workspaces create separate node_modules trees per project, causing Playwright to load from different paths and crash
-2. **Module resolution in sandbox**: Tools expect node_modules relative to their working directory; flattening the workspace breaks this
+1. **Playwright module identity**: pnpm workspaces create separate node_modules trees per project, causing Playwright to
+   load from different paths and crash
+2. **Module resolution in sandbox**: Tools expect node_modules relative to their working directory; flattening the
+   workspace breaks this
 3. **Version duplication**: Dependencies declared in both root and per-project package.json

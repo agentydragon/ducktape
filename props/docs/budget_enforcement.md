@@ -4,20 +4,22 @@ Budget tracking and enforcement for agent runs.
 
 ## Overview
 
-Every agent run has an explicit `budget_usd` limit. The LLM proxy enforces this budget before forwarding requests, preventing agents from exceeding their allocation.
+Every agent run has an explicit `budget_usd` limit. The LLM proxy enforces this budget before forwarding requests,
+preventing agents from exceeding their allocation.
 
 ## Schema
 
-**`agent_runs.budget_usd`** (FLOAT NOT NULL): Maximum USD cost for this agent's LLM requests. All agents have explicit budget - no defaults, no "unlimited".
+**`agent_runs.budget_usd`** (FLOAT NOT NULL): Maximum USD cost for this agent's LLM requests. All agents have explicit
+budget - no defaults, no "unlimited".
 
-**`model_metadata`** table: Cost per token for each model. Foreign key from `agent_runs.model` ensures all models have known costs.
+**`model_metadata`** table: Cost per token for each model. Foreign key from `agent_runs.model` ensures all models have
+known costs.
 
 **`llm_requests`** table: Logs all LLM requests with token counts for cost tracking.
 
 ## Budget Checking
 
-The LLM proxy (`/v1/responses`, `/v1/chat/completions`, and `/v1/messages`)
-checks budget before forwarding:
+The LLM proxy (`/v1/responses`, `/v1/chat/completions`, and `/v1/messages`) checks budget before forwarding:
 
 ```python
 # Compute consumed cost via recursive CTE (self + all descendants)
@@ -60,4 +62,5 @@ When an agent exceeds its budget:
 
 ## Concurrent Overspend
 
-Slight budget overspend is possible if parallel in-flight requests all pass the pre-flight check before any complete. This is acceptable - budget is a limit, not a hard cap.
+Slight budget overspend is possible if parallel in-flight requests all pass the pre-flight check before any complete.
+This is acceptable - budget is a limit, not a hard cap.

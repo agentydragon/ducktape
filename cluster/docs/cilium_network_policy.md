@@ -2,21 +2,17 @@
 
 ## Gateway API backends must admit `reserved:ingress`
 
-A default-deny `CiliumNetworkPolicy` in front of a pod that is the backend of a
-Gateway API `HTTPRoute` (Cilium gateway implementation) must admit
-`reserved:ingress` — **not** the gateway pod's namespace, **not** `reserved:host`,
-**not** `reserved:remote-node`.
+A default-deny `CiliumNetworkPolicy` in front of a pod that is the backend of a Gateway API `HTTPRoute` (Cilium gateway
+implementation) must admit `reserved:ingress` — **not** the gateway pod's namespace, **not** `reserved:host`, **not**
+`reserved:remote-node`.
 
 ### Why
 
-`cilium-envoy` runs `hostNetwork: true` on each node. Its egress to backend pods
-uses the node's `cilium_host` interface IP, and Cilium assigns those interface
-IPs the `reserved:ingress` identity — not `reserved:host`, not `reserved:remote-node`,
-and not the `kube-system/cilium-envoy` pod identity. Any other selector drops the
-SYN-ACK on the return path, so external requests through
-`https://<host>.allegedly.works` return `503` even though the `HTTPRoute` is
-`Accepted`, `ResolvedRefs=True`, the Service has endpoints, and the pod is
-`Ready`.
+`cilium-envoy` runs `hostNetwork: true` on each node. Its egress to backend pods uses the node's `cilium_host` interface
+IP, and Cilium assigns those interface IPs the `reserved:ingress` identity — not `reserved:host`, not
+`reserved:remote-node`, and not the `kube-system/cilium-envoy` pod identity. Any other selector drops the SYN-ACK on the
+return path, so external requests through `https://<host>.allegedly.works` return `503` even though the `HTTPRoute` is
+`Accepted`, `ResolvedRefs=True`, the Service has endpoints, and the pod is `Ready`.
 
 ### Pattern
 
@@ -38,62 +34,52 @@ Parked example: <../parked/manifold-mcp/networkpolicy.yaml>.
 
 ### Debugging a mis-classified source
 
-1. `kubectl exec -n kube-system ds/cilium -- hubble observe --to-namespace <ns>` —
-   SYN forwards reaching the pod with no return flow indicate a reverse-path
-   policy drop.
-2. `cilium ip get <source-ip>/32` from the destination node's cilium-agent
-   reveals the identity Cilium assigned to that source.
+1. `kubectl exec -n kube-system ds/cilium -- hubble observe --to-namespace <ns>` — SYN forwards reaching the pod with no
+   return flow indicate a reverse-path policy drop.
+2. `cilium ip get <source-ip>/32` from the destination node's cilium-agent reveals the identity Cilium assigned to that
+   source.
 3. Match the policy `fromEntities`/`fromEndpoints` to the actual identity.
 
 Origin: manifold-mcp deployment (2026-04-30).
 
 ## Egress to a ClusterIP: allow the backend targetPort, not the Service port
 
-A port-restricted egress rule to an in-cluster Service must list the backend
-**`targetPort`**, not the Service `port`. With kube-proxy replacement, Cilium's
-socket-LB rewrites `ClusterIP:port → podIP:targetPort` in the `connect()` hook —
-**before** L4 egress policy is enforced — so the policy only ever sees the
-translated backend port.
+A port-restricted egress rule to an in-cluster Service must list the backend **`targetPort`**, not the Service `port`.
+With kube-proxy replacement, Cilium's socket-LB rewrites `ClusterIP:port → podIP:targetPort` in the `connect()` hook —
+**before** L4 egress policy is enforced — so the policy only ever sees the translated backend port.
 
 ### Symptom
 
-The client's TCP connection to the Service times out ("connection refused"/dial
-timeout / `Client.Timeout ... while awaiting connection`), even though the egress
-rule allows the Service's advertised port and DNS resolves fine. A pod with
-unrestricted egress (all ports, or `toEntities: cluster` with no `toPorts`) reaches
-the same Service without trouble — which is the tell that it's a port, not a
-routing/DNS, problem.
+The client's TCP connection to the Service times out ("connection refused"/dial timeout /
+`Client.Timeout ... while awaiting connection`), even though the egress rule allows the Service's advertised port and
+DNS resolves fine. A pod with unrestricted egress (all ports, or `toEntities: cluster` with no `toPorts`) reaches the
+same Service without trouble — which is the tell that it's a port, not a routing/DNS, problem.
 
 ### Example
 
-`oci-cache`'s Service is `:80 → targetPort 5000`. Exposing it on `:80` did **not**
-let `haku-ci`'s `toEntities: cluster` rule (ports `80/443/3000`) reach it — the
-policy had to allow **5000**, the pod's container port. See
+`oci-cache`'s Service is `:80 → targetPort 5000`. Exposing it on `:80` did **not** let `haku-ci`'s `toEntities: cluster`
+rule (ports `80/443/3000`) reach it — the policy had to allow **5000**, the pod's container port. See
 <../cdk8s/haku_ci/runner.py>.
 
 ### Debugging
 
-`kubectl exec -n kube-system ds/cilium -- hubble observe --from-namespace <ns>
---type drop` shows the dropped egress flow with the actual (translated) destination
-port — compare that to the ports your `toPorts` allows.
+`kubectl exec -n kube-system ds/cilium -- hubble observe --from-namespace <ns> --type drop` shows the dropped egress
+flow with the actual (translated) destination port — compare that to the ports your `toPorts` allows.
 
 Origin: oci-cache pull-through mirror wiring (2026-07-04).
 
 ## Egress to `*.allegedly.works`: `world` excludes our own nodes
 
-`toEntities: [world]` does not mean "any address outside this pod". Cilium carves
-the cluster's own nodes out of `world` and gives them `reserved:remote-node`
-(other nodes) or `reserved:host` (the node the pod runs on). Because the public
-Gateway binds Envoy on the OVH nodes in `hostNetwork` mode, **every**
-`*.allegedly.works` name resolves to those five node ExternalIPs — so a
-`world`-only egress rule can reach the entire internet and still not reach any of
-our own public services.
+`toEntities: [world]` does not mean "any address outside this pod". Cilium carves the cluster's own nodes out of `world`
+and gives them `reserved:remote-node` (other nodes) or `reserved:host` (the node the pod runs on). Because the public
+Gateway binds Envoy on the OVH nodes in `hostNetwork` mode, **every** `*.allegedly.works` name resolves to those five
+node ExternalIPs — so a `world`-only egress rule can reach the entire internet and still not reach any of our own public
+services.
 
 ### Symptom: a hang, not a refusal
 
-A dial that hangs for the client's full connect timeout and fails with `i/o
-timeout` (not `connection refused`), to a host that resolves and that an
-unrestricted pod on the same node reaches without trouble.
+A dial that hangs for the client's full connect timeout and fails with `i/o timeout` (not `connection refused`), to a
+host that resolves and that an unrestricted pod on the same node reaches without trouble.
 
 ### Pattern: name the node entities
 
@@ -108,71 +94,57 @@ unrestricted pod on the same node reaches without trouble.
           protocol: TCP
 ```
 
-`toEntities: [cluster]` also covers it — `cluster` expands to include
-`remote-node` and `host` — and is why `haku-egress-proxy` reaches these IPs
-today (`haku_cloud_api` in <../cdk8s/egress_fences.py>). Prefer
-the narrower pair when the pod is deliberately barred from in-cluster pod-to-pod
-egress.
+`toEntities: [cluster]` also covers it — `cluster` expands to include `remote-node` and `host` — and is why
+`haku-egress-proxy` reaches these IPs today (`haku_cloud_api` in <../cdk8s/egress_fences.py>). Prefer the narrower pair
+when the pod is deliberately barred from in-cluster pod-to-pod egress.
 
-**A `toFQDNs`/`toCIDR` rule cannot substitute.** `policy-cidr-match-mode` is unset
-cluster-wide, so CIDR-derived selectors do not match node IPs at all — a
-`toFQDNs: matchName: <something>.allegedly.works` rule looks correct, validates,
-and still drops.
+**A `toFQDNs`/`toCIDR` rule cannot substitute.** `policy-cidr-match-mode` is unset cluster-wide, so CIDR-derived
+selectors do not match node IPs at all — a `toFQDNs: matchName: <something>.allegedly.works` rule looks correct,
+validates, and still drops.
 
 ### Consequence: an FQDN allowlist cannot fence our own public services
 
-An egress allowlist built from `toFQDNs` is a fence over the real internet only.
-Every `*.allegedly.works` name is outside what it can express, so such a name
-appearing in a `toFQDNs` block **grants nothing** — either a `toEntities` rule
-elsewhere in the same policy is what actually permits it, or it does not work at
-all. Both cases are live today; see the comments in <../cdk8s/egress_fences.py>.
+An egress allowlist built from `toFQDNs` is a fence over the real internet only. Every `*.allegedly.works` name is
+outside what it can express, so such a name appearing in a `toFQDNs` block **grants nothing** — either a `toEntities`
+rule elsewhere in the same policy is what actually permits it, or it does not work at all. Both cases are live today;
+see the comments in <../cdk8s/egress_fences.py>.
 
-The layer that _can_ fence these names is the DNS rule under
-`toPorts.rules.dns`: the DNS proxy matches on the **query name** the pod sends,
-before any identity is involved, so `matchName: haku-mailbox.allegedly.works`
-there means exactly what it says. It bounds resolution rather than connection —
-a pod that already holds the IP is unaffected — but for a proxy that resolves
-what its clients ask for, that is the enforcement point.
+The layer that _can_ fence these names is the DNS rule under `toPorts.rules.dns`: the DNS proxy matches on the **query
+name** the pod sends, before any identity is involved, so `matchName: haku-mailbox.allegedly.works` there means exactly
+what it says. It bounds resolution rather than connection — a pod that already holds the IP is unaffected — but for a
+proxy that resolves what its clients ask for, that is the enforcement point.
 
 ### Debugging: check the destination's identity
 
-`cilium-dbg ip get <ip>/32` (note: CIDR form, a bare IP is rejected) prints the
-identity. `reserved:remote-node` on the destination against a `world`-only rule is
-the whole diagnosis. A true-world address is simply absent from the ipcache.
+`cilium-dbg ip get <ip>/32` (note: CIDR form, a bare IP is rejected) prints the identity. `reserved:remote-node` on the
+destination against a `world`-only rule is the whole diagnosis. A true-world address is simply absent from the ipcache.
 
-Origin: public-coder-agent's Haku Console MCP server timing out at 30s while the
-same proxy reached GitHub and BuildBuddy fine (2026-08-01).
+Origin: public-coder-agent's Haku Console MCP server timing out at 30s while the same proxy reached GitHub and
+BuildBuddy fine (2026-08-01).
 
 ## Egress through the Gateway Service: checked against the backend, with the client's SNI
 
-A pod connecting to the Gateway's ClusterIP
-(`gateway-system/cilium-gateway-cluster-gateway`, `10.106.122.5:443`) is not
-policy-checked as pod → Service. `bpf_lxc.c` hands L7 Service traffic to the
-node's Envoy before ordinary egress policy runs; the proxy captures the original
-SNI (`cilium/network_filter.cc`) and applies the source pod's egress policy in the
-upstream callback (`cilium/filter_state_cilium_policy.cc`) against the **selected
-backend's** identity and `targetPort`, with that SNI. A rule admitting
-`host`/`remote-node`:443 with `serverNames` therefore covers the node-IP path only;
-through the Service the TLS handshake completes and the request gets HTTP 403
-(`server: envoy`, `Access denied`).
+A pod connecting to the Gateway's ClusterIP (`gateway-system/cilium-gateway-cluster-gateway`, `10.106.122.5:443`) is not
+policy-checked as pod → Service. `bpf_lxc.c` hands L7 Service traffic to the node's Envoy before ordinary egress policy
+runs; the proxy captures the original SNI (`cilium/network_filter.cc`) and applies the source pod's egress policy in the
+upstream callback (`cilium/filter_state_cilium_policy.cc`) against the **selected backend's** identity and `targetPort`,
+with that SNI. A rule admitting `host`/`remote-node`:443 with `serverNames` therefore covers the node-IP path only;
+through the Service the TLS handshake completes and the request gets HTTP 403 (`server: envoy`, `Access denied`).
 
 ### Pattern: select the backend with the same SNI
 
-Keep the node-entity rule and add the backend pods on their `targetPort` with the
-same `serverNames` — the Authentik server pods on 9000 in
-<../k8s/agentplane-staging/agentplane-staging.k8s.yaml>. Verify all three from the
-client's network namespace: canonical SNI → 200, wrong SNI with the canonical
-`Host` → 403, direct plaintext to `backend:9000` → reset (SNI scoping is intact).
+Keep the node-entity rule and add the backend pods on their `targetPort` with the same `serverNames` — the Authentik
+server pods on 9000 in <../k8s/agentplane-staging/agentplane-staging.k8s.yaml>. Verify all three from the client's
+network namespace: canonical SNI → 200, wrong SNI with the canonical `Host` → 403, direct plaintext to `backend:9000` →
+reset (SNI scoping is intact).
 
 ### Gotchas
 
-- The generated Service's EndpointSlice lists `192.192.192.192:9999`; that is a
-  placeholder, not the datapath backend. `cilium-dbg service list` on the node
-  shows the real local proxy backend, and a node the Gateway does not select has
-  the Service entry with **no** backends: clients there fail with `EHOSTUNREACH`
-  (errno 113), which is why <../terraform/main/cilium-values.yaml> selects every
-  node for the Gateway.
-- A TLS handshake succeeding through the Service proves nothing about the request:
-  a wrong SNI completes TLS there and is only denied at HTTP.
+- The generated Service's EndpointSlice lists `192.192.192.192:9999`; that is a placeholder, not the datapath backend.
+  `cilium-dbg service list` on the node shows the real local proxy backend, and a node the Gateway does not select has
+  the Service entry with **no** backends: clients there fail with `EHOSTUNREACH` (errno 113), which is why
+  <../terraform/main/cilium-values.yaml> selects every node for the Gateway.
+- A TLS handshake succeeding through the Service proves nothing about the request: a wrong SNI completes TLS there and
+  is only denied at HTTP.
 
 Origin: agentplane-staging OIDC clients (2026-09-10, #6007, #6012).

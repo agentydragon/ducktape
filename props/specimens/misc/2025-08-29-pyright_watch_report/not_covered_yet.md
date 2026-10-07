@@ -1,7 +1,7 @@
 ## Lower-level
 
-- Prefer equivalent formulations with fewer lines and less state when readability is equal or better.
-  Patterns here include:
+- Prefer equivalent formulations with fewer lines and less state when readability is equal or better. Patterns here
+  include:
   - Comprehensions over imperative accumulation
   - Inlining throwaway temporaries
   - Deriving output from a single source of truth (constants)

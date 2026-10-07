@@ -2,7 +2,8 @@
 
 ## Bazel Build
 
-Each `ts_library` type-checks its source. `bbr build //props/frontend:bundle` checks the app dependency graph. ESLint runs via the workspace lint aspect.
+Each `ts_library` type-checks its source. `bbr build //props/frontend:bundle` checks the app dependency graph. ESLint
+runs via the workspace lint aspect.
 
 **Adding a new component/page/lib file**:
 
@@ -26,9 +27,7 @@ Each `ts_library` type-checks its source. `bbr build //props/frontend:bundle` ch
 ## `@tabler/icons-react` imports (preventive)
 
 **Deviation** from the stock barrel import: `@tabler/icons-react`'s barrel
-(`import { IconX } from "@tabler/icons-react"`) makes esbuild peak ~8.7 GB and
-OOMs the default RBE VM — there is no per-action memory lever, only a blunt
-platform-global override that hurts CI concurrency. This bundle uses the same
+(`import { IconX } from "@tabler/icons-react"`) makes esbuild peak ~8.7 GB and OOMs the default RBE VM — there is no
+per-action memory lever, only a blunt platform-global override that hurts CI concurrency. This bundle uses the same
 `spa_bundle` esbuild path, so if you add `@tabler` icons, import each by subpath
-(`@tabler/icons-react/dist/esm/icons/IconX.mjs`, default export) and add an
-ambient `declare module` for `tsc`.
+(`@tabler/icons-react/dist/esm/icons/IconX.mjs`, default export) and add an ambient `declare module` for `tsc`.

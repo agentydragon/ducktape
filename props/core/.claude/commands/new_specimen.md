@@ -45,4 +45,5 @@ Interactively scaffold a new specimen under `specimens/` per @README.md. Ask use
 ## Notes
 
 - Keep this command DRY; when specifics change, @README.md is the only place to update.
-- Prefer concise, confirmation‑oriented prompts (offer sensible defaults). Avoid duplicating policy text from @README.md.
+- Prefer concise, confirmation‑oriented prompts (offer sensible defaults). Avoid duplicating policy text from
+  @README.md.

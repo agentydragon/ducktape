@@ -1,7 +1,7 @@
 # Ember — Specification
 
-Ember is a containerised LLM agent (`emberd`) that watches Matrix rooms and
-responds via OpenAI tool calls. It runs on k3s with minimal infrastructure.
+Ember is a containerised LLM agent (`emberd`) that watches Matrix rooms and responds via OpenAI tool calls. It runs on
+k3s with minimal infrastructure.
 
 ## Architecture
 
@@ -13,8 +13,7 @@ Matrix room ←→ emberd (poll + post) ←→ OpenAI Responses API
                  └── projected secrets (/var/run/ember/secrets/)
 ```
 
-**LLM contract:** The model is forced to call tools — never raw text.
-Two tools form the v0 surface:
+**LLM contract:** The model is forced to call tools — never raw text. Two tools form the v0 surface:
 
 | Tool                       | Purpose                               |
 | -------------------------- | ------------------------------------- |
@@ -41,8 +40,7 @@ Two tools form the v0 surface:
 
 - `MATRIX_BASE_URL`, `MATRIX_ADMIN_USER_ID` via config map or TOML.
 - Matrix token and OpenAI API key projected into `/var/run/ember/secrets/`.
-- Model selected via `OPENAI_MODEL` env or the TOML `model` key; the default
-  lives in `config.py`.
+- Model selected via `OPENAI_MODEL` env or the TOML `model` key; the default lives in `config.py`.
 
 ### Runtime loop
 

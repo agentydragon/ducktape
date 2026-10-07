@@ -8,9 +8,8 @@ Snapshot: ${snapshot_slug}
 % if scope_files is None:
 Review: ALL files in snapshot
 % else:
-Files to review: ${", ".join(scope_files)}
-% endif
-Location: ${workspace_dir}
+Files to review: ${",
+".join(scope_files)} % endif Location: ${workspace_dir}
 
 ## What to Flag
 
@@ -26,7 +25,8 @@ Location: ${workspace_dir}
 ### Analysis Strategy
 
 1. **Read code and build mental model first** - Identify entrypoints and plausible flows before consulting tools
-2. **Use tools only as spotters/hints** - When a tool suggests a candidate, validate by reading code and constructing a proof
+2. **Use tools only as spotters/hints** - When a tool suggests a candidate, validate by reading code and constructing a
+   proof
 3. **Prefer precise anchors** - Use function/class names and 1-based line ranges over long code dumps
 
 ### Process Steps
@@ -129,7 +129,8 @@ pyan /workspace/**/*.py --uses --no-defines -o /tmp/callgraph.dot
 
 The following cases are NOT dead code:
 
-- **Plugin hooks/interfaces**: Dynamically resolved from registries, entry-points, or configuration. Must have a comment proving reachability:
+- **Plugin hooks/interfaces**: Dynamically resolved from registries, entry-points, or configuration. Must have a comment
+  proving reachability:
 
   ```python
   def plugin_has_no_references_in_python():
@@ -220,7 +221,8 @@ DEFAULT_TIMEOUT_SECONDS = 30  # not referenced anywhere - remove
 ## Heuristics & Confidence
 
 - **Prefer typed proofs** (Mypy + Enums/choices) over rg-only hints; annotate confidence accordingly
-- **Treat registry/plugin interfaces as dynamic entrypoints** - Avoid false positives unless registry scan proves otherwise
+- **Treat registry/plugin interfaces as dynamic entrypoints** - Avoid false positives unless registry scan proves
+  otherwise
 - **Validation required** - Every tool suggestion must be validated by reading code
 - **Use local reasoning**: If a branch is obviously unreachable given established invariants, delete it
 - **Strengthen invariants**: Prefer strengthening validations over keeping speculative fallback branches
@@ -228,5 +230,6 @@ DEFAULT_TIMEOUT_SECONDS = 30  # not referenced anywhere - remove
 ## Notes on Application
 
 - Identify target app CLI entrypoints (console scripts or modules) and any subpackages to exclude from analysis
-- If HTTP route decorations are non-standard, provide route patterns; otherwise index FastAPI/Flask decorators by default
+- If HTTP route decorations are non-standard, provide route patterns; otherwise index FastAPI/Flask decorators by
+  default
 - Provide exclude globs for generated/vendor directories to reduce noise

@@ -1,23 +1,19 @@
 # Verdicts — what we evaluated, what we concluded, and why
 
-The point of this file is to stop us re-litigating settled questions. Every row is
-something that was considered and closed, with the reason it closed and where the
-working lives. If you find yourself about to propose one of these, read the reason
-first — and if the reason no longer holds, say so explicitly rather than
-re-deriving from scratch.
+The point of this file is to stop us re-litigating settled questions. Every row is something that was considered and
+closed, with the reason it closed and where the working lives. If you find yourself about to propose one of these, read
+the reason first — and if the reason no longer holds, say so explicitly rather than re-deriving from scratch.
 
 Two kinds of evidence, and they are not interchangeable:
 
-- **Measured** — an `F` number. Someone ran it and recorded what happened.
-  [findings/](findings/README.md).
-- **Sourced** — read out of upstream code, CRD schemas read live off the cluster,
-  or vendor documentation. The survey carrying the per-claim citations is in this
-  tree's git history (a `survey/` directory); its upstream OpenClaw claims were
-  verified at tag `v2026.7.1` and `@openclaw/openshell-sandbox@2026.7.1` — the
-  artifacts `openclaw/Dockerfile` pins — not at `main`.
+- **Measured** — an `F` number. Someone ran it and recorded what happened. [findings/](findings/README.md).
+- **Sourced** — read out of upstream code, CRD schemas read live off the cluster, or vendor documentation. The survey
+  carrying the per-claim citations is in this tree's git history (a `survey/` directory); its upstream OpenClaw claims
+  were verified at tag `v2026.7.1` and `@openclaw/openshell-sandbox@2026.7.1` — the artifacts `openclaw/Dockerfile` pins
+  — not at `main`.
 
-Where the two disagree the measurement wins, but most rows here were never
-measured because the sourced answer was decisive enough to stop.
+Where the two disagree the measurement wins, but most rows here were never measured because the sourced answer was
+decisive enough to stop.
 
 ## Harnesses
 
@@ -29,11 +25,10 @@ measured because the sourced answer was decisive enough to stop.
 | **OpenHarness/Ohmo, Letta, RustFox, Moltworker** | Ruled out                              | Surveyed against C2 (must run in k8s); none has a k8s story, and none had a property worth the switching cost. Moltworker is cloud-only by construction.                                                                                                                               |
 | **kagent's own `Agent`/`SandboxAgent` runtime**  | Ruled out, the hard way                | No client-side tool-output budget; noisy `kubectl` output killed sessions. Already retired from this repo (`cluster/archive/2026_07_kagent/`). Note this failure is specific to kagent's runtime and does **not** transfer to its `AgentHarness` CRD, which bakes in no runtime.       |
 
-**The generalisation worth keeping:** no harness in the survey ships k8s-native
-tooling, so hand-rolling Deployment/Service/PVC is unavoidable whichever you pick.
-That means harness choice and isolation choice are **mostly separable**, and a
-harness should be chosen on tool-output robustness, rollout capture, and workspace
-fit — not on the strength of its own built-in sandbox.
+**The generalisation worth keeping:** no harness in the survey ships k8s-native tooling, so hand-rolling
+Deployment/Service/PVC is unavoidable whichever you pick. That means harness choice and isolation choice are **mostly
+separable**, and a harness should be chosen on tool-output robustness, rollout capture, and workspace fit — not on the
+strength of its own built-in sandbox.
 
 ## Isolation and sandboxing
 
@@ -55,9 +50,8 @@ fit — not on the strength of its own built-in sandbox.
 | **Composing `OpenClawInstance` + `OpenShellSandbox`/`OpenShellPolicy` directly** | Superseded by F3            | Was the recommended alternative to reinstating kagent. Then F3 ruled out the OpenClaw operator entirely, so the composition lost one of its two halves.                                                                                                                                                                                                                                                                                                                              |
 | **kagent `Agent` (BYO mode)**                                                    | Ruled out                   | Not the "point at an arbitrary binary, get sandboxing for free" tool it sounds like: BYO requires the container to speak the A2A protocol (JSON-RPC/SSE, `.well-known/agent.json`), and no adapter exists for a raw CLI harness — hosting OpenClaw this way means writing that shim yourself. Sandboxing/egress is delegated to young Solo.io-led side projects (agentgateway, Agent Substrate), not core.                                                                           |
 
-**Loose end:** the orphaned `kagent.dev` CRDs are still installed with no
-controller. They should be cleaned up or consciously kept; right now they are
-neither.
+**Loose end:** the orphaned `kagent.dev` CRDs are still installed with no controller. They should be cleaned up or
+consciously kept; right now they are neither.
 
 ## Credentials
 
@@ -72,12 +66,10 @@ neither.
 
 **Two anti-patterns with teeth**, both learned by being bitten:
 
-- `require: true` on an iron-proxy `secrets` transform is evaluated against the
-  header-less `CONNECT` and rejects **every** HTTPS request with 403 in
-  explicit-proxy mode (**F15**).
-- Scoping allowlist rules by method or path blocks their own `CONNECT` preflight
-  unless you pair each with a `methods: ["CONNECT"]` rule — the host becomes
-  unreachable while the config looks correct (**F15**).
+- `require: true` on an iron-proxy `secrets` transform is evaluated against the header-less `CONNECT` and rejects
+  **every** HTTPS request with 403 in explicit-proxy mode (**F15**).
+- Scoping allowlist rules by method or path blocks their own `CONNECT` preflight unless you pair each with a
+  `methods: ["CONNECT"]` rule — the host becomes unreachable while the config looks correct (**F15**).
 
 ## Egress and TLS
 
@@ -87,89 +79,70 @@ neither.
 | **CA by per-tool environment variable** | Ruled out   | `GIT_SSL_CAINFO` is stripped from the exec environment by name, and git links GnuTLS so neither `SSL_CERT_FILE` nor `CURL_CA_BUNDLE` reaches it (**F17**). Put the CA in the **system trust store** instead; it covers git, curl and Python at once, and removes the variable name the denylist was catching. |
 | **Self-generated mitmproxy CA**         | Ruled out   | It re-keys on restart, and the agent responded to the broken trust chain by turning TLS verification off and carrying on silently (**F8**). cert-manager owns the keypair now.                                                                                                                                |
 
-**The `NODE_EXTRA_CA_CERTS` trap** is worth its own line because it costs a
-deploy cycle every time: Node ignores a **missing** file silently, falls back to
-its bundled roots, and fails with `SELF_SIGNED_CERT_IN_CHAIN` — which reads like a
-trust problem rather than the typo it is (**F18**).
+**The `NODE_EXTRA_CA_CERTS` trap** is worth its own line because it costs a deploy cycle every time: Node ignores a
+**missing** file silently, falls back to its bundled roots, and fails with `SELF_SIGNED_CERT_IN_CHAIN` — which reads
+like a trust problem rather than the typo it is (**F18**).
 
 ## Model routing
 
-**Codex subscription access goes through the CLIProxyAPI lane, not LiteLLM's
-native `chatgpt/` provider.** The native provider is usable only via streaming
-([BerriAI/litellm#25429](https://github.com/BerriAI/litellm/issues/25429)), hits
-Cloudflare 403s even with valid tokens
-([#27175](https://github.com/BerriAI/litellm/issues/27175)), and its
-`/v1/responses` bridge produces no Langfuse traces
-(`cluster/debug/2026-06-05-litellm-responses-langfuse-otel.md`); the
-`anthropic/`-shaped CLIProxyAPI lane avoids all three. Token renewal is handled
-on both lanes without interactive re-login (LiteLLM rotates the OAuth token on a
-PVC under single-writer discipline; CLIProxyAPI refreshes independently). If
-both lanes rot, the fallback is invoking the `codex` CLI headlessly
-(`codex exec`) rather than proxying the API shape at all.
+**Codex subscription access goes through the CLIProxyAPI lane, not LiteLLM's native `chatgpt/` provider.** The native
+provider is usable only via streaming ([BerriAI/litellm#25429](https://github.com/BerriAI/litellm/issues/25429)), hits
+Cloudflare 403s even with valid tokens ([#27175](https://github.com/BerriAI/litellm/issues/27175)), and its
+`/v1/responses` bridge produces no Langfuse traces (`cluster/debug/2026-06-05-litellm-responses-langfuse-otel.md`); the
+`anthropic/`-shaped CLIProxyAPI lane avoids all three. Token renewal is handled on both lanes without interactive
+re-login (LiteLLM rotates the OAuth token on a PVC under single-writer discipline; CLIProxyAPI refreshes independently).
+If both lanes rot, the fallback is invoking the `codex` CLI headlessly (`codex exec`) rather than proxying the API shape
+at all.
 
 ## Knowledge garden (K1–K5)
 
-Surveyed and ranked, not adopted — no garden is deployed. Ten tools evaluated
-(Quartz, Obsidian+Datacore/DataviewJS, Logseq, Foam, Dendron, TiddlyWiki,
-Athens, AFFiNE, SiYuan, SilverBullet):
+Surveyed and ranked, not adopted — no garden is deployed. Ten tools evaluated (Quartz, Obsidian+Datacore/DataviewJS,
+Logseq, Foam, Dendron, TiddlyWiki, Athens, AFFiNE, SiYuan, SilverBullet):
 
-1. **Obsidian vault + Datacore/DataviewJS, published via Quartz** — richest
-   agent-editable dynamic-component story (a live spending chart is a plain-file
-   block in the same git repo as the notes); Quartz supplies the self-hosted
+1. **Obsidian vault + Datacore/DataviewJS, published via Quartz** — richest agent-editable dynamic-component story (a
+   live spending chart is a plain-file block in the same git repo as the notes); Quartz supplies the self-hosted
    graph/backlinks site.
-2. **SilverBullet** — the purpose-built single-tool answer (Space Lua widgets do
-   async HTTP + render, self-hosted out of the box); younger ecosystem, no graph
-   view found.
+2. **SilverBullet** — the purpose-built single-tool answer (Space Lua widgets do async HTTP + render, self-hosted out of
+   the box); younger ecosystem, no graph view found.
 3. **Quartz alone** — if "dynamic" only needs client-side fetching.
 
-Killed on constraints: AFFiNE and SiYuan are not plain-file/git-backed (fail
-K1); Athens is dead; Dendron is maintenance-only; Logseq is mid-split into a
-DB-backed version with data-loss risk during migration; Foam has no
-dynamic-component story. K5 — where the harness's own working state ends and the
-garden begins — is a modeling decision no surveyed tool resolves, and is still
-open.
+Killed on constraints: AFFiNE and SiYuan are not plain-file/git-backed (fail K1); Athens is dead; Dendron is
+maintenance-only; Logseq is mid-split into a DB-backed version with data-loss risk during migration; Foam has no
+dynamic-component story. K5 — where the harness's own working state ends and the garden begins — is a modeling decision
+no surveyed tool resolves, and is still open.
 
 ## Still open — shapes worth costing, not settled
 
-**A Kubernetes `WorkerProvider` is the most promising unexplored path to W2**
-(execution off the harness container), and it is the strongest reason not to treat
-this research as finished.
+**A Kubernetes `WorkerProvider` is the most promising unexplored path to W2** (execution off the harness container), and
+it is the strongest reason not to treat this research as finished.
 
-First, what nothing here currently runs. `public-coder-agent` is
-`sandbox.mode: "off"` — no execution split at all, exec in the harness container.
-The main `openclaw` gateway is configured for the OpenShell mirror but is unused
-and believed broken. So **we have no working split-execution deployment of any
-kind**, and W2 is unattempted rather than tried and failed.
+First, what nothing here currently runs. `public-coder-agent` is `sandbox.mode: "off"` — no execution split at all, exec
+in the harness container. The main `openclaw` gateway is configured for the OpenShell mirror but is unused and believed
+broken. So **we have no working split-execution deployment of any kind**, and W2 is unattempted rather than tried and
+failed.
 
-That makes the comparison below a code comparison between two upstream
-mechanisms, not a report on something running here.
+That makes the comparison below a code comparison between two upstream mechanisms, not a report on something running
+here.
 
-OpenClaw already implements git-backed workspace synchronisation for its **cloud
-workers** feature, and it is markedly better engineered than the OpenShell mirror.
-Outbound it ships a git pack and the worker reconstructs a pinned shallow
-repo. Inbound, results arrive as a git ref staged under
-`refs/openclaw/worker-results/` _before_ being applied, so it stays recoverable if
-the gateway dies mid-apply, and the apply is a three-way merge against the
-dispatch-time manifest — cloud-only changes applied, local-only left alone,
-conflicts resolved keep-local with the staged ref named for inspection. Compare
-the OpenShell mirror: tar upload, whole-tree destructive replace, no merge base,
-no conflict handling, no staging ref, and a sync that fires on yield.
+OpenClaw already implements git-backed workspace synchronisation for its **cloud workers** feature, and it is markedly
+better engineered than the OpenShell mirror. Outbound it ships a git pack and the worker reconstructs a pinned shallow
+repo. Inbound, results arrive as a git ref staged under `refs/openclaw/worker-results/` _before_ being applied, so it
+stays recoverable if the gateway dies mid-apply, and the apply is a three-way merge against the dispatch-time manifest —
+cloud-only changes applied, local-only left alone, conflicts resolved keep-local with the staged ref named for
+inspection. Compare the OpenShell mirror: tar upload, whole-tree destructive replace, no merge base, no conflict
+handling, no staging ref, and a sync that fires on yield.
 
-That contrast is the strongest available evidence for "the execute-elsewhere path
-is under-tested" — it is under-tested **in the OpenShell plugin**, while the
-cloud-worker path got the careful design.
+That contrast is the strongest available evidence for "the execute-elsewhere path is under-tested" — it is under-tested
+**in the OpenShell plugin**, while the cloud-worker path got the careful design.
 
 Two properties make it more than an implementation detail:
 
-- **Credential placement is inverted, in the good direction.** Workspace git
-  history is authored on the box credential-free; the gateway adopts commits and
-  owns push/PR, with no standing model, forge, or cloud credentials on the box.
-  That is strictly better than what we run now, and it makes opening a PR a
-  first-class supported path rather than something the agent improvises with `gh`.
-- **The provider is pluggable.** `WorkerProvider` is a public plugin-SDK type with
-  `registerWorkerProvider`. The bundled `crabbox` provider leases cloud VMs, which
-  is wrong for personal-data agents, but the interface is not cloud-specific.
+- **Credential placement is inverted, in the good direction.** Workspace git history is authored on the box
+  credential-free; the gateway adopts commits and owns push/PR, with no standing model, forge, or cloud credentials on
+  the box. That is strictly better than what we run now, and it makes opening a PR a first-class supported path rather
+  than something the agent improvises with `gh`.
+- **The provider is pluggable.** `WorkerProvider` is a public plugin-SDK type with `registerWorkerProvider`. The bundled
+  `crabbox` provider leases cloud VMs, which is wrong for personal-data agents, but the interface is not cloud-specific.
 
-Unknowns to resolve before committing: how much of the provider contract is
-VM-shaped, whether a pod can satisfy the setup/lease lifecycle, and whether
-sandboxing would then have to come from the pod spec rather than from OpenShell.
+Unknowns to resolve before committing: how much of the provider contract is VM-shaped, whether a pod can satisfy the
+setup/lease lifecycle, and whether sandboxing would then have to come from the pod spec rather than from OpenShell.

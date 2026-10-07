@@ -1,64 +1,52 @@
 ---
 name: web_selfcheck
 description: >-
-  Diagnose a Claude Code session's health against the hook daemon SPEC's
-  acceptance criteria, plus setup/pin/buildbuddy-remote-runner/git-hook diagnostics. Use
-  for "did setup go ok", "why isn't bbr working", "why do my commits fail",
-  "selfcheck".
+  Diagnose a Claude Code session's health against the hook daemon SPEC's acceptance criteria, plus
+  setup/pin/buildbuddy-remote-runner/git-hook diagnostics. Use for "did setup go ok", "why isn't bbr working", "why do
+  my commits fail", "selfcheck".
 ---
 
 # Session Selfcheck
 
-This skill is the **runnable acceptance test** for the Rust hook daemon
-specification at `devinfra/claude/claude_hook/SPEC.md`.
+This skill is the **runnable acceptance test** for the Rust hook daemon specification at
+`devinfra/claude/claude_hook/SPEC.md`.
 
 ## How to use this skill
 
-1. **Read SPEC.md first.** It enumerates every behavior a healthy session
-   must satisfy, as a numbered list under the `## Observable Acceptance Criteria`
-   heading; profile-specific criteria are prefixed `CLI profile:` or
-   `Web profile:`, the rest are common.
-   The SPEC is the source of truth. If the SPEC and this skill disagree,
-   the SPEC wins — update the skill.
-2. **Detect the profile.** `$DUCKTAPE_CLAUDE_HOOKS_PROFILE` (or the file
-   path that the daemon was launched with) tells you whether to run the
-   CLI or Web criteria. Always run the Common criteria.
-3. **For each SPEC criterion, run the matching check** from the
-   "SPEC acceptance checks" section below.
-4. **Then run the out-of-SPEC diagnostics** section, which catches
-   real-world failure modes the SPEC does not (yet) codify.
+1. **Read SPEC.md first.** It enumerates every behavior a healthy session must satisfy, as a numbered list under the
+   `## Observable Acceptance Criteria` heading; profile-specific criteria are prefixed `CLI profile:` or `Web profile:`,
+   the rest are common. The SPEC is the source of truth. If the SPEC and this skill disagree, the SPEC wins — update the
+   skill.
+2. **Detect the profile.** `$DUCKTAPE_CLAUDE_HOOKS_PROFILE` (or the file path that the daemon was launched with) tells
+   you whether to run the CLI or Web criteria. Always run the Common criteria.
+3. **For each SPEC criterion, run the matching check** from the "SPEC acceptance checks" section below.
+4. **Then run the out-of-SPEC diagnostics** section, which catches real-world failure modes the SPEC does not (yet)
+   codify.
 5. **Produce the report** using the format at the end.
 
-Run all `Bash` commands with `dangerouslyDisableSandbox: true` (needs
-network and filesystem access outside the sandbox). Run independent checks
-in parallel where possible.
+Run all `Bash` commands with `dangerouslyDisableSandbox: true` (needs network and filesystem access outside the
+sandbox). Run independent checks in parallel where possible.
 
 ## CRITICAL: observe only — do NOT fix without explicit user approval
 
-This is a **diagnostic skill**. Treat a broken session like a crime scene:
-observe, document, and report — do not touch.
+This is a **diagnostic skill**. Treat a broken session like a crime scene: observe, document, and report — do not touch.
 
-**Do NOT run any remediation commands** (e.g. `web_setup.sh`, re-triggering
-SessionStart, sourcing env files, installing packages, re-running
-`git remote add`) unless the user explicitly says to proceed. If a check
-fails, the fix is "the daemon is broken, tell the user" — not "let me
-work around it."
+**Do NOT run any remediation commands** (e.g. `web_setup.sh`, re-triggering SessionStart, sourcing env files, installing
+packages, re-running `git remote add`) unless the user explicitly says to proceed. If a check fails, the fix is "the
+daemon is broken, tell the user" — not "let me work around it."
 
-**Exception — debugging workarounds**: when the session hooks are
-demonstrably broken and you are actively debugging or documenting, the
-following lightweight workarounds are acceptable without explicit
-approval:
+**Exception — debugging workarounds**: when the session hooks are demonstrably broken and you are actively debugging or
+documenting, the following lightweight workarounds are acceptable without explicit approval:
 
-- Committing with hooks bypassed: `git commit --no-verify` to record
-  diagnostic work while hooks are broken
+- Committing with hooks bypassed: `git commit --no-verify` to record diagnostic work while hooks are broken
 - Unsetting `BUILDBUDDY_API_KEY` to force local bazel when bbr is broken
-- Creating a `bazel` wrapper in the session bin that injects `--bazelrc`
-  when the session bazelrc exists but the shim is missing
+- Creating a `bazel` wrapper in the session bin that injects `--bazelrc` when the session bazelrc exists but the shim is
+  missing
 
 ## Log file inventory
 
-When diagnosing a broken session, these are the log files worth reading, in
-order of "most likely to contain the smoking gun":
+When diagnosing a broken session, these are the log files worth reading, in order of "most likely to contain the smoking
+gun":
 
 | Path                                                 | What's in it                                                                                                                                                                      |
 | ---------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -77,15 +65,13 @@ echo "$LIVE"
 
 or from `$CLAUDE_ENV_FILE` (the basename of its parent directory).
 
-Agent discipline: when a check below fails, dump the relevant log section
-verbatim into the report's "Issues & remediation" block. Do not paraphrase
-tracebacks — the exact text is what the user needs to correlate with git log.
+Agent discipline: when a check below fails, dump the relevant log section verbatim into the report's "Issues &
+remediation" block. Do not paraphrase tracebacks — the exact text is what the user needs to correlate with git log.
 
 ## SPEC acceptance checks
 
-Each check below corresponds one-to-one with a numbered criterion in
-SPEC.md. Cross-reference the SPEC for the authoritative statement of what
-the check is verifying.
+Each check below corresponds one-to-one with a numbered criterion in SPEC.md. Cross-reference the SPEC for the
+authoritative statement of what the check is verifying.
 
 ### Common
 
@@ -96,12 +82,10 @@ the check is verifying.
   || echo "FAIL: BUILDBUDDY_API_KEY unset"
 ```
 
-Presence only — there is **no working lightweight HTTP probe**. The
-`remote.buildbuddy.io` gateway returns `415` for the old `GetUser` curl _with
-or without_ the key (it rejects the content type before auth), so that probe
-cannot distinguish a valid key. The authoritative validity test is the live
-RBE build in **C3 / W4**: a `401`/`403` or a BES auth rejection there is the
-real signal of a bad key.
+Presence only — there is **no working lightweight HTTP probe**. The `remote.buildbuddy.io` gateway returns `415` for the
+old `GetUser` curl _with or without_ the key (it rejects the content type before auth), so that probe cannot distinguish
+a valid key. The authoritative validity test is the live RBE build in **C3 / W4**: a `401`/`403` or a BES auth rejection
+there is the real signal of a bad key.
 
 **C2 — GITHUB_TOKEN is present and valid.**
 
@@ -110,8 +94,7 @@ curl -s -H "Authorization: Bearer ${GITHUB_TOKEN}" https://api.github.com/user \
   | python3 -c "import sys,json; d=json.load(sys.stdin); print('login:', d.get('login'), 'message:', d.get('message',''))"
 ```
 
-Pass on web: `login: agentydragon-agent`. Pass on CLI: the user's own
-GitHub login. `Bad credentials` = expired/revoked.
+Pass on web: `login: agentydragon-agent`. Pass on CLI: the user's own GitHub login. `Bad credentials` = expired/revoked.
 
 **C3 — `bbr build <trivial>` succeeds without TLS or proxy errors.**
 
@@ -120,8 +103,7 @@ cd /home/user/ducktape
 bbr build //devinfra:gazelle --nobuild 2>&1 | tail -5
 ```
 
-Pass: exit 0 with no `Unable to resolve host`, `certificate`,
-`127.0.0.1:*`, or proxy errors.
+Pass: exit 0 with no `Unable to resolve host`, `certificate`, `127.0.0.1:*`, or proxy errors.
 
 **C4 — bazelisk shim is active and invocations are session-tagged.**
 
@@ -133,13 +115,12 @@ ls -l "$(command -v bazelisk)"  # must point into $SESSION_DIR/bin
 grep -E 'build_metadata|TAGS' "$SESSION_DIR/bbr.bazelrc" 2>/dev/null
 ```
 
-Pass: bazelisk resolves inside the session dir, and bbr.bazelrc contains
-`session:<id>` metadata.
+Pass: bazelisk resolves inside the session dir, and bbr.bazelrc contains `session:<id>` metadata.
 
 **C5 — bbr imports the generated session metadata.**
 
-Covered by the `bbr.bazelrc` metadata check above and by checking the
-BuildBuddy invocation tags after a real `bbr` invocation.
+Covered by the `bbr.bazelrc` metadata check above and by checking the BuildBuddy invocation tags after a real `bbr`
+invocation.
 
 **C6 — throwaway-commit pre-commit end-to-end.**
 
@@ -156,8 +137,8 @@ git commit -m "test: selfcheck — delete me" 2>&1 | tail -40
 echo "exit: ${PIPESTATUS[0]}"
 ```
 
-Pass: exit 0 with every hook Passed/Skipped. No commit-msg trailer is required
-— a bare commit message is expected to go through.
+Pass: exit 0 with every hook Passed/Skipped. No commit-msg trailer is required — a bare commit message is expected to go
+through.
 
 **C7 — hook daemon logs present, no unhandled exceptions.**
 
@@ -179,20 +160,17 @@ curl -s -o /dev/null -w "%{http_code}\n" \
   https://alloy-otlp.allegedly.works/v1/traces
 ```
 
-Pass: `200` or `400` (bad proto = auth passed). `401` = token rotated or
-missing.
+Pass: `200` or `400` (bad proto = auth passed). `401` = token rotated or missing.
 
 **C9 — `bbr` preserves the analysis cache on a second identical run.**
 
-Low-precision, high-recall sensor with a high false-positive rate (runner
-rotation, BB server restart, cache eviction can all cause transient cold
-hits). Report the finding but don't act on a single failure. Stop early
-rather than spending many minutes retrying.
+Low-precision, high-recall sensor with a high false-positive rate (runner rotation, BB server restart, cache eviction
+can all cause transient cold hits). Report the finding but don't act on a single failure. Stop early rather than
+spending many minutes retrying.
 
-**Method — cache poisoning**: append a comment to `MODULE.bazel` so the
-first build is guaranteed cold, then time an immediately-following
-identical build. The SPEC permits occasional cold-hits; only flag if
-warm ≈ cold across **two** repeated runs.
+**Method — cache poisoning**: append a comment to `MODULE.bazel` so the first build is guaranteed cold, then time an
+immediately-following identical build. The SPEC permits occasional cold-hits; only flag if warm ≈ cold across **two**
+repeated runs.
 
 ```bash
 cd /home/user/ducktape
@@ -207,10 +185,9 @@ git checkout -- MODULE.bazel
 echo "cold=${T1_SEC}s warm=${T2_SEC}s"
 ```
 
-Interpret: `warm < cold/3` = recycling works. `warm ≈ cold` = likely not
-recycling (but re-run before diagnosing — high FP rate). `cold < 5s` =
-build graph too small to measure. If consistently warm≈cold across two
-runs, inspect `bbapi invocation <id>` for runner IDs.
+Interpret: `warm < cold/3` = recycling works. `warm ≈ cold` = likely not recycling (but re-run before diagnosing — high
+FP rate). `cold < 5s` = build graph too small to measure. If consistently warm≈cold across two runs, inspect
+`bbapi invocation <id>` for runner IDs.
 
 ### CLI only
 
@@ -260,16 +237,14 @@ Pass: `1` (or whatever var your `.envrc` exports).
 kubectl -n claude-sandbox get pods 2>&1 | tail -5
 ```
 
-Then use the connected `haku-console` Kubernetes passthrough MCP tool for the
-same namespace and compare. Pass: both succeed and agree; Haku's operator
-approval boundary must remain intact.
+Then use the connected `haku-console` Kubernetes passthrough MCP tool for the same namespace and compare. Pass: both
+succeed and agree; Haku's operator approval boundary must remain intact.
 
 **W2 — `$GITHUB_TOKEN` identifies as `agentydragon-agent`.**
 
 Covered by C2 on web — no separate check.
 
-**W3 — `bbr build <any target>` works out of the box, no manual remote
-setup, no remote picker.**
+**W3 — `bbr build <any target>` works out of the box, no manual remote setup, no remote picker.**
 
 ```bash
 cd /home/user/ducktape
@@ -278,8 +253,7 @@ cd /home/user/ducktape
 timeout 60 bbr build //devinfra:gazelle --nobuild 2>&1 | tail -10
 ```
 
-Pass: exit 0, no "which remote" prompt, no `Unable to resolve host`, no
-`127.0.0.1:*` in the runner's origin URL.
+Pass: exit 0, no "which remote" prompt, no `Unable to resolve host`, no `127.0.0.1:*` in the runner's origin URL.
 
 **W5 — Docker (non-goal: the Rust daemon does not set one up).**
 
@@ -287,32 +261,27 @@ Pass: exit 0, no "which remote" prompt, no `Unable to resolve host`, no
 docker info >/dev/null 2>&1 && echo "present" || echo "absent (expected)"
 ```
 
-The web profile's `setup_docker` key is **ignored** by the Rust daemon — only
-the retired Python daemon started Docker (see `devinfra/claude/TODO.md`). So an
-absent local Docker daemon is **expected, not a failure**: Docker-dependent
-tests run on BuildBuddy RBE workers, not locally. Report `present`/`absent`
-informationally; only flag if a workflow genuinely needs local Docker.
+The web profile's `setup_docker` key is **ignored** by the Rust daemon — only the retired Python daemon started Docker
+(see `devinfra/claude/TODO.md`). So an absent local Docker daemon is **expected, not a failure**: Docker-dependent tests
+run on BuildBuddy RBE workers, not locally. Report `present`/`absent` informationally; only flag if a workflow genuinely
+needs local Docker.
 
 ## Out-of-SPEC diagnostics
 
-These are not in SPEC.md but catch real-world failure modes. Include them
-in the report under a separate "Diagnostics" heading.
+These are not in SPEC.md but catch real-world failure modes. Include them in the report under a separate "Diagnostics"
+heading.
 
-**Before running D1/D2**, skim `devinfra/claude/docs/web-setup-debug.md`
-— it documents the historical failure modes (SHA-pinned setup URLs, the
-Firecracker "pin drift on persistent rootfs" class, the Nix 2.34.3 SIGABRT
-masking issue) and is the authoritative reference for
-how `web_setup.sh` is supposed to behave. In particular, the
-**"Pin drift on persistent rootfs"** section explains why a container
-running for more than a day or two can silently have a stale `.#devtools`
-closure even though `web_setup.sh` re-runs every session, and gives the
-installed `claude-hook` diagnostic below.
+**Before running D1/D2**, skim `devinfra/claude/docs/web-setup-debug.md` — it documents the historical failure modes
+(SHA-pinned setup URLs, the Firecracker "pin drift on persistent rootfs" class, the Nix 2.34.3 SIGABRT masking issue)
+and is the authoritative reference for how `web_setup.sh` is supposed to behave. In particular, the **"Pin drift on
+persistent rootfs"** section explains why a container running for more than a day or two can silently have a stale
+`.#devtools` closure even though `web_setup.sh` re-runs every session, and gives the installed `claude-hook` diagnostic
+below.
 
 ### D1 — `web_setup.sh` freshness (web only)
 
-Anthropic reuses Firecracker microVMs; `/tmp/web-setup.log` may be from a
-prior session running an older `web_setup.sh`. A stale setup means Nix
-devtools and skills may not match the current code.
+Anthropic reuses Firecracker microVMs; `/tmp/web-setup.log` may be from a prior session running an older `web_setup.sh`.
+A stale setup means Nix devtools and skills may not match the current code.
 
 ```bash
 ls -la /tmp/web-setup.log 2>/dev/null || echo "MISSING"
@@ -324,28 +293,21 @@ HEAD_COMMIT=$(git -C /home/user/ducktape rev-parse HEAD)
 
 ### D2 — Claude hook and statusline artifact freshness
 
-The Nix outputs are `.#claude-hook` (Rust dispatcher) and
-`.#claude-statusline` (Python statusline). Their CI artifact pin IDs are
-`claude-hook` and `claude-statusline`, respectively. A stale installed Rust
-dispatcher can cause session hook failures. There are **two** independent
-kinds of staleness to check:
+The Nix outputs are `.#claude-hook` (Rust dispatcher) and `.#claude-statusline` (Python statusline). Their CI artifact
+pin IDs are `claude-hook` and `claude-statusline`, respectively. A stale installed Rust dispatcher can cause session
+hook failures. There are **two** independent kinds of staleness to check:
 
-**(a) Artifact pins are stale** — `sync-pins.yml` did not run recently, or
-`release.yml` is failing. Check both pin URLs and the corresponding release
-and sync workflow runs. The tag suffix is a content digest, not a source
-commit; on a **shallow clone** (Claude Code web clones ~50 commits — check
-`.git/shallow`), it cannot be compared directly with Git history. The practical
-signal for a hook incompatibility is a schema/template error in `daemon.err.log`.
+**(a) Artifact pins are stale** — `sync-pins.yml` did not run recently, or `release.yml` is failing. Check both pin URLs
+and the corresponding release and sync workflow runs. The tag suffix is a content digest, not a source commit; on a
+**shallow clone** (Claude Code web clones ~50 commits — check `.git/shallow`), it cannot be compared directly with Git
+history. The practical signal for a hook incompatibility is a schema/template error in `daemon.err.log`.
 
-**(b) Installed `.#devtools` closure is behind the pins** — on Firecracker web
-sessions with a persistent rootfs, `nix profile install` is a no-op when
-devtools is already installed, so the Rust dispatcher and Python statusline
-can remain at first-boot versions even though `nix/artifact-pins.json` moved
-forward. This is the class of failure described in `devinfra/claude/docs/web-setup-debug.md`
-"Pin drift on persistent rootfs". Typical symptom: SessionStart crashes
-with `'Undefined' object has no attribute '<field>'` in `daemon.err.log`,
-or silently missing env vars because `serde` ignores an unrecognized
-`profile.yaml` field.
+**(b) Installed `.#devtools` closure is behind the pins** — on Firecracker web sessions with a persistent rootfs,
+`nix profile install` is a no-op when devtools is already installed, so the Rust dispatcher and Python statusline can
+remain at first-boot versions even though `nix/artifact-pins.json` moved forward. This is the class of failure described
+in `devinfra/claude/docs/web-setup-debug.md` "Pin drift on persistent rootfs". Typical symptom: SessionStart crashes
+with `'Undefined' object has no attribute '<field>'` in `daemon.err.log`, or silently missing env vars because `serde`
+ignores an unrecognized `profile.yaml` field.
 
 ```bash
 # (a) Pin in artifact-pins vs HEAD
@@ -365,22 +327,18 @@ claude-hook --version
 tail -50 /tmp/claude-hd/*/daemon.err.log 2>/dev/null
 ```
 
-If (a) the pin is behind HEAD, diff the installed Nix store package
-against the repo source for breaking changes (renamed classes, changed
-config paths, removed hooks). Check GitHub CI on `agentydragon/ducktape`:
-recent `release.yml` and `sync-pins.yml` runs on `devel`.
+If (a) the pin is behind HEAD, diff the installed Nix store package against the repo source for breaking changes
+(renamed classes, changed config paths, removed hooks). Check GitHub CI on `agentydragon/ducktape`: recent `release.yml`
+and `sync-pins.yml` runs on `devel`.
 
-If (b) the installed wheel is behind the pin, the remediation is to
-re-run `bash devinfra/claude/web_setup.sh` — but do **not** do this
-unprompted per the "observe only" rule above. Report the drift in the
-Issues section with exact commit SHAs and let the user decide.
+If (b) the installed wheel is behind the pin, the remediation is to re-run `bash devinfra/claude/web_setup.sh` — but do
+**not** do this unprompted per the "observe only" rule above. Report the drift in the Issues section with exact commit
+SHAs and let the user decide.
 
 ### D3 — `git remote origin` URL reachability (web only)
 
-Known failure mode: `bb remote` reads `git remote -v` locally and sends
-the URL to the cloud runner. If `origin` is `127.0.0.1:*` (Claude Code
-web session proxy), the runner can't reach it and `bbr` fails on hook
-invocations.
+Known failure mode: `bb remote` reads `git remote -v` locally and sends the URL to the cloud runner. If `origin` is
+`127.0.0.1:*` (Claude Code web session proxy), the runner can't reach it and `bbr` fails on hook invocations.
 
 ```bash
 ORIGIN=$(git -C /home/user/ducktape remote get-url origin)
@@ -429,5 +387,4 @@ Profile: <CLI/Web>    Summary: <healthy / degraded / broken>
 **Fix** (for the user to run, not the skill): <exact commands>
 ```
 
-Prioritize: SPEC violations first (the daemon is broken), then out-of-SPEC
-diagnostics.
+Prioritize: SPEC violations first (the daemon is broken), then out-of-SPEC diagnostics.

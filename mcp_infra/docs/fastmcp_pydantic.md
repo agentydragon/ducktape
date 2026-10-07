@@ -55,4 +55,5 @@ Only for parsing outside tools (tests, ad-hoc validation). Inside tools, FastMCP
 
 ## Schema Wiring
 
-MCP `list_tools` -> `inputSchema` (JSON Schema) -> mapped to OpenAI/Anthropic tool definitions as `{server}_{tool}`. Correct types = correct schema = no need to restate parameters in prompts.
+MCP `list_tools` -> `inputSchema` (JSON Schema) -> mapped to OpenAI/Anthropic tool definitions as `{server}_{tool}`.
+Correct types = correct schema = no need to restate parameters in prompts.

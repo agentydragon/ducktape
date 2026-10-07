@@ -320,12 +320,12 @@ resource "null_resource" "verify_talos_services" {
 
 ## Conclusion
 
-Our current dependencies are **mostly sufficient** for the happy path, but lack robustness for detecting and
-handling common failure modes like:
+Our current dependencies are **mostly sufficient** for the happy path, but lack robustness for detecting and handling
+common failure modes like:
 
 - Worker nodes failing to mount kubelet volumes
 - Partial CNI deployment
 - Slow node initialization
 
-The main issue is that we proceed based on **resource creation** rather than **actual health verification**.
-Adding explicit health checks at each stage would make the bootstrap process much more reliable.
+The main issue is that we proceed based on **resource creation** rather than **actual health verification**. Adding
+explicit health checks at each stage would make the bootstrap process much more reliable.
