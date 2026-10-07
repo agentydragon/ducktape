@@ -1,6 +1,6 @@
 import { ActionIcon, Box, Button, Flex, Group, Menu, Paper, Select, Stack, Text, Textarea } from "@mantine/core";
 import { create } from "@bufbuild/protobuf";
-import { useVirtualizer } from "@tanstack/react-virtual";
+import { defaultRangeExtractor, useVirtualizer } from "@tanstack/react-virtual";
 import IconArrowDown from "@tabler/icons-react/dist/esm/icons/IconArrowDown.mjs";
 import IconDotsVertical from "@tabler/icons-react/dist/esm/icons/IconDotsVertical.mjs";
 import IconHistory from "@tabler/icons-react/dist/esm/icons/IconHistory.mjs";
@@ -278,6 +278,9 @@ function VirtualizedHistory({
   const previousCount = useRef(rows.length);
   const previousFirstKey = useRef<string | null>(null);
   const readingAnchor = useRef<ReadingAnchor | null>(null);
+  // Keep a nested sticky row rendered while collapsing it can shrink the row out of the
+  // virtual window. A later scroll gesture releases it.
+  const [stickyAnchorKey, setStickyAnchorKey] = useState<string | null>(null);
   // Widened around a just-landed older page so every one of its rows mounts and measures in the
   // same pass, rather than progressively as scrolling reveals more of it -- each of *those* later
   // corrections is itself a visible, uncalled-for jump (see restoreAnchor/restoringScroll below).
@@ -289,6 +292,15 @@ function VirtualizedHistory({
   // stream into it, but gains a new first step when older history loads into it.
   const anchorIndex = (key: string): number =>
     rows.findIndex((row) => row.entities.some((entity) => `${entity.entityKind}:${entity.entityId}` === key));
+  const stickyAnchorIndex = stickyAnchorKey === null ? -1 : anchorIndex(stickyAnchorKey);
+  const rangeExtractor = useCallback(
+    (range: Parameters<typeof defaultRangeExtractor>[0]) => {
+      const indexes = defaultRangeExtractor(range);
+      if (stickyAnchorIndex < 0 || indexes.includes(stickyAnchorIndex)) return indexes;
+      return [...indexes, stickyAnchorIndex].sort((left, right) => left - right);
+    },
+    [stickyAnchorIndex]
+  );
   const anchorElement = (key: string): HTMLElement | null => {
     const index = anchorIndex(key);
     if (index < 0) return null;
@@ -363,6 +375,7 @@ function VirtualizedHistory({
       return height;
     },
     getItemKey: (index) => rowKey(rows[index]),
+    rangeExtractor,
     measureElement: (element) => {
       const measured = element.getBoundingClientRect().height;
       const row = rows[Number(element.getAttribute("data-index"))];
@@ -415,6 +428,7 @@ function VirtualizedHistory({
   // instance hook in the pinned virtual-core version, rather than an option.
   virtualizer.shouldAdjustScrollPositionOnItemSizeChange = () => false;
   const expectUserScroll = () => {
+    setStickyAnchorKey(null);
     if (captureNextScroll.current) return;
     captureNextScroll.current = true;
     scrolledSinceInput.current = false;
@@ -461,6 +475,7 @@ function VirtualizedHistory({
           ...(anchorTarget !== anchorRowElement ? { target: anchorTarget } : {}),
         };
         readingAnchor.current = anchor;
+        if (clickedTarget) setStickyAnchorKey(clickedHeadingIsSticky ? anchor.key : null);
         historyTrace.record({ kind: "anchor", key: anchor.key, offset: anchor.offset });
       }
     },
@@ -620,6 +635,7 @@ function VirtualizedHistory({
     const element = viewport.current;
     if (!element) return;
     setFollowing(true, "jump-to-latest");
+    setStickyAnchorKey(null);
     clickedAt.current = null;
     cancelRestoration();
     element.scrollTop = element.scrollHeight;
