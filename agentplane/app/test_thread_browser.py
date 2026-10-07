@@ -657,7 +657,9 @@ async def test_chronological_debug_is_lazy_paged_and_keeps_the_thread(
         frame = record.locator(".agentplane-code-block")
         code_or_placeholder = record.locator(".agentplane-code-block-placeholder, .agentplane-code-block")
         await expect(code_or_placeholder).to_be_visible()
-        await code_or_placeholder.scroll_into_view_if_needed()
+        # Scrolling the placeholder can race its IntersectionObserver replacing it with
+        # CodeMirror. The observation card stays mounted while its code view is lazy-mounted.
+        await record.scroll_into_view_if_needed()
         await expect(frame).to_be_visible()
         assert json_format.Parse(await frame.inner_text(), event_log_pb2.EventEntry()) == entry
         assert any(url.endswith(f"/observations/{entry.cursor}") for url in requests)
