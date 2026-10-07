@@ -356,8 +356,8 @@ def calculate(
             record(transaction, rule, Disposition.FIXED if rule.kind == Kind.FIXED else Disposition.EXCLUDED)
             continue
         amount = int((transaction.amount * 100).quantize(Decimal(1), rounding=ROUND_HALF_UP))
-        # An inferred category alone cannot associate a refund with an actual discretionary purchase.
-        if amount < 0 and (rule is None or rule.kind == Kind.REVIEW or not isinstance(rule.condition, NamePrefix)):
+        # A merchant rule does not prove which earlier purchase a credit reverses.
+        if amount < 0:
             if transaction.date >= start.date():
                 unmatched += -amount
             record(transaction, rule, Disposition.HELD_REFUND)

@@ -78,15 +78,18 @@ Configured account IDs should cover **all accounts used for purchases** (credit 
 checking/debit); otherwise this is not a reliable allowance. If an account is missing,
 inactive, or its sync exceeds `max_sync_age_hours`, the allowance shows _unavailable_
 with no available balance. Ordered private rules match `name`/`merchant_name`
-prefixes, case-insensitive substrings, exact `pfc_primary`/`pfc_detailed` values, or an `all_of` of two or more of those conditions; first match wins. For a named transfer embedded in a long bank descriptor, combine `name_contains` with an exact transfer category rather than excluding all wires. An `all_of` is not an explicit merchant-name flexible refund match; verify refund handling separately.
+prefixes, case-insensitive substrings, exact `pfc_primary`/`pfc_detailed` values,
+or an `all_of` of two or more of those conditions; first match wins. For a named
+transfer embedded in a long bank descriptor, combine `name_contains` with an exact
+transfer category rather than excluding all wires.
 **No spending categories are hard-coded.** A purchase with no matching rule counts
 as flexible and appears in the review tally; configure exclusions for repayments,
 income, transfers, and other non-purchases or they will consume allowance.
 Plaid category fields are inferences: audit exclusions and fixed classifications,
-and prefer names where available. A negative charge restores room only if an explicit
-merchant-name flexible rule matches; otherwise it appears as an unmatched refund.
-Pending
-transactions are counted, then suppressed if their posted replacement is present;
+and prefer names where available. Negative charges are held outside the allowance;
+the app does not automatically match credits to earlier flexible purchases. A merchant
+match alone does not establish that relationship. Pending transactions are counted,
+then suppressed if their posted replacement is present;
 removed transactions are ignored. Explicit non-USD charges are omitted, so review
 foreign spending separately before calling the coverage complete.
 
