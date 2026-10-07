@@ -26,7 +26,8 @@ async function drawn(node: ReactNode | null): Promise<HTMLDivElement> {
 /** The labels of the output streams shown, in order, with each one's text. */
 function streams(container: HTMLElement): Array<[string, string]> {
   return [...container.querySelectorAll(".agentplane-code-block-block")].map((block) => [
-    block.closest(".agentplane-clamped-block")?.querySelector(".agentplane-output-label")?.textContent?.trim() ?? "",
+    block.closest(".agentplane-output-disclosure")?.querySelector(".agentplane-output-label")?.textContent?.trim() ??
+      "",
     [...block.querySelectorAll(".cm-line")].map((line) => line.textContent ?? "").join("\n"),
   ]);
 }

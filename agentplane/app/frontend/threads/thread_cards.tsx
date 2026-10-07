@@ -390,6 +390,7 @@ function ToolCard({
   const [raw, setRaw] = useRetainedDisclosure(`${id}:raw`);
   const input = useRetainedDisclosure(`${id}:input`);
   const output = useRetainedDisclosure(`${id}:output`);
+  const outputDisclosure = useRetainedDisclosure(`${id}:output:disclosure`, true);
   const disclosable =
     entity.argumentsRef !== null || entity.outputRef !== null || entity.textRef !== null || state.recovery !== null;
   const opened = open && disclosable;
@@ -452,6 +453,7 @@ function ToolCard({
                     name={state.recovery === RecoveryDisposition.REVISED ? "Continuation output" : "Output"}
                     text={text}
                     expansion={output}
+                    disclosure={outputDisclosure}
                   />
                 )}
               </PayloadView>

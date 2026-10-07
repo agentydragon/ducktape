@@ -1,7 +1,7 @@
-import { UnstyledButton } from "@mantine/core";
+import { Button, UnstyledButton } from "@mantine/core";
 import { type JSX, type ReactNode, useLayoutEffect, useRef, useState } from "react";
 
-import { StickyCollapseControl } from "./disclosure";
+import { Disclosure } from "./disclosure";
 
 /** How many lines `text` has, a final newline ending its last line rather than starting another. */
 export function lineCount(text: string): number {
@@ -23,6 +23,7 @@ export function ClampedBlock({
   label = "Expanded content",
   header,
   expansion,
+  stickyCollapse = true,
   children,
 }: {
   maxHeightRem: number;
@@ -32,6 +33,8 @@ export function ClampedBlock({
   /** Existing heading to turn into the sticky control row when the block opens. */
   header?: ReactNode;
   expansion?: readonly [boolean, (expanded: boolean) => void];
+  /** Use an enclosing Disclosure's sticky heading when this block is already nested in one. */
+  stickyCollapse?: boolean;
   children: ReactNode;
 }): JSX.Element {
   const local = useState(false);
@@ -53,44 +56,70 @@ export function ClampedBlock({
   }, [maxHeightRem]);
   const clipped = overflows && !expanded;
   const showStickyCollapse = overflows && expanded;
+  const body = (
+    <div
+      data-clamped={clipped}
+      style={{
+        position: "relative",
+        overflow: "hidden",
+        ...(clipped && { maxHeight: `${maxHeightRem}rem` }),
+      }}
+    >
+      <div ref={content}>{children}</div>
+      {clipped && (
+        <UnstyledButton
+          aria-expanded={false}
+          onClick={() => setExpanded(true)}
+          style={{
+            position: "absolute",
+            insetInline: 0,
+            bottom: 0,
+            height: "2.5rem",
+            display: "flex",
+            alignItems: "flex-end",
+            justifyContent: "center",
+            paddingBottom: 2,
+            background: "linear-gradient(to bottom, transparent, var(--mantine-color-body) 85%)",
+            color: "var(--mantine-color-dimmed)",
+            fontSize: "var(--mantine-font-size-xs)",
+          }}
+        >
+          {lines !== undefined && lines > 1 ? `Show all ${lines} lines` : "Show all"}
+        </UnstyledButton>
+      )}
+    </div>
+  );
+
   return (
     <div className="agentplane-clamped-block" data-expanded={expanded && overflows} data-label={label}>
-      {showStickyCollapse ? (
-        <StickyCollapseControl label={label} header={header} expanded onCollapse={() => setExpanded(false)} />
+      {showStickyCollapse && stickyCollapse ? (
+        <Disclosure
+          className="agentplane-clamped-disclosure"
+          summary={header ?? label}
+          summaryAside={
+            <Button
+              variant="subtle"
+              size="sm"
+              aria-expanded={true}
+              aria-label={`Collapse ${label}`}
+              onClick={() => setExpanded(false)}
+            >
+              Collapse {label}
+            </Button>
+          }
+          open
+          onOpenChange={(open) => {
+            if (!open) setExpanded(false);
+          }}
+        >
+          {body}
+        </Disclosure>
       ) : (
-        header
+        <>
+          {header}
+          {body}
+        </>
       )}
-      <div
-        data-clamped={clipped}
-        style={{
-          position: "relative",
-          overflow: "hidden",
-          ...(clipped && { maxHeight: `${maxHeightRem}rem` }),
-        }}
-      >
-        <div ref={content}>{children}</div>
-        {clipped && (
-          <UnstyledButton
-            aria-expanded={false}
-            onClick={() => setExpanded(true)}
-            style={{
-              position: "absolute",
-              insetInline: 0,
-              bottom: 0,
-              height: "2.5rem",
-              display: "flex",
-              alignItems: "flex-end",
-              justifyContent: "center",
-              paddingBottom: 2,
-              background: "linear-gradient(to bottom, transparent, var(--mantine-color-body) 85%)",
-              color: "var(--mantine-color-dimmed)",
-              fontSize: "var(--mantine-font-size-xs)",
-            }}
-          >
-            {lines !== undefined && lines > 1 ? `Show all ${lines} lines` : "Show all"}
-          </UnstyledButton>
-        )}
-      </div>
     </div>
   );
 }

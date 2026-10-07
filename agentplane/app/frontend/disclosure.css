@@ -35,37 +35,5 @@
 .agentplane-disclosure-panel,
 .agentplane-disclosure-content {
   min-width: 0;
-}
-
-.agentplane-disclosure-collapse {
-  position: sticky;
-  box-sizing: border-box;
-  display: flex;
-  min-width: 0;
-  min-height: 2.75rem;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--mantine-spacing-xs);
-  padding-inline: var(--mantine-spacing-xs);
-  overflow: hidden;
-  border-bottom: 1px solid var(--mantine-color-default-border);
-  border-radius: var(--mantine-radius-xs);
-  background: var(--mantine-color-body);
-  box-shadow: 0 2px 5px rgb(0 0 0 / 12%);
-}
-
-.agentplane-disclosure-collapse-button {
-  flex: 0 0 auto;
-  min-height: 2.75rem;
-  padding-inline: var(--mantine-spacing-md);
-  white-space: nowrap;
-}
-
-.agentplane-disclosure-collapse-label {
-  min-width: 0;
-  overflow: hidden;
-  color: var(--mantine-color-dimmed);
-  font-size: var(--mantine-font-size-xs);
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  overflow: visible;
 }

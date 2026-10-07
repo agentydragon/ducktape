@@ -1015,6 +1015,101 @@
     ],
     "captureViewport": true
   },
+  "disclosure_component_phone_nested_parent_only": {
+    "element": "#shot",
+    "route": "/",
+    "viewport": { "width": 412, "height": 915, "deviceScaleFactor": 2.625 },
+    "outputName": "disclosure-component-phone-nested-parent-only",
+    "disclosureVisual": "nested-parent-only-scrolled",
+    "readySelectors": [
+      "[data-disclosure-demo-scroll][data-scroll-ready='true']",
+      ".demo-outer .agentplane-disclosure-heading",
+      ".demo-inner .agentplane-disclosure-heading"
+    ],
+    "captureViewport": true
+  },
+  "disclosure_component_phone_nested_after_outer": {
+    "element": "#shot",
+    "route": "/",
+    "viewport": { "width": 412, "height": 915, "deviceScaleFactor": 2.625 },
+    "outputName": "disclosure-component-phone-nested-after-outer",
+    "disclosureVisual": "nested-after-outer",
+    "readySelectors": [
+      "[data-disclosure-demo-scroll][data-scroll-ready='true']",
+      ".demo-outer .agentplane-disclosure-heading",
+      ".demo-inner .agentplane-disclosure-heading"
+    ],
+    "captureViewport": true
+  },
+  "disclosure_component_phone_nested_wrapped_headings": {
+    "element": "#shot",
+    "route": "/",
+    "viewport": { "width": 412, "height": 915, "deviceScaleFactor": 2.625 },
+    "outputName": "disclosure-component-phone-nested-wrapped-headings",
+    "disclosureVisual": "nested-wrapped-headings",
+    "readySelectors": [
+      "[data-disclosure-demo-scroll][data-scroll-ready='true']",
+      ".demo-outer .agentplane-disclosure-heading",
+      ".demo-inner .agentplane-disclosure-heading"
+    ],
+    "captureViewport": true
+  },
+  "disclosure_component_phone_nested_expanded_output": {
+    "element": "#shot",
+    "route": "/",
+    "viewport": { "width": 412, "height": 915, "deviceScaleFactor": 2.625 },
+    "outputName": "disclosure-component-phone-nested-expanded-output",
+    "disclosureVisual": "nested-expanded-output",
+    "readySelectors": [
+      "[data-disclosure-demo-scroll][data-scroll-ready='true']",
+      ".demo-outer .agentplane-disclosure-heading",
+      ".demo-inner .agentplane-disclosure-heading",
+      ".demo-output .agentplane-disclosure-heading"
+    ],
+    "captureViewport": true
+  },
+  "disclosure_component_phone_nested_before_output": {
+    "element": "#shot",
+    "route": "/",
+    "viewport": { "width": 412, "height": 915, "deviceScaleFactor": 2.625 },
+    "outputName": "disclosure-component-phone-nested-before-output",
+    "disclosureVisual": "nested-before-output",
+    "readySelectors": [
+      "[data-disclosure-demo-scroll][data-scroll-ready='true']",
+      ".demo-outer .agentplane-disclosure-heading",
+      ".demo-inner .agentplane-disclosure-heading",
+      ".demo-output .agentplane-disclosure-heading"
+    ],
+    "captureViewport": true
+  },
+  "disclosure_component_phone_nested_after_output": {
+    "element": "#shot",
+    "route": "/",
+    "viewport": { "width": 412, "height": 915, "deviceScaleFactor": 2.625 },
+    "outputName": "disclosure-component-phone-nested-after-output",
+    "disclosureVisual": "nested-after-output",
+    "readySelectors": [
+      "[data-disclosure-demo-scroll][data-scroll-ready='true']",
+      ".demo-outer .agentplane-disclosure-heading",
+      ".demo-inner .agentplane-disclosure-heading",
+      ".demo-output .agentplane-disclosure-heading"
+    ],
+    "captureViewport": true
+  },
+  "disclosure_component_phone_nested_output_collapsed": {
+    "element": "#shot",
+    "route": "/",
+    "viewport": { "width": 412, "height": 915, "deviceScaleFactor": 2.625 },
+    "outputName": "disclosure-component-phone-nested-output-collapsed",
+    "disclosureVisual": "nested-output-collapsed",
+    "readySelectors": [
+      "[data-disclosure-demo-scroll][data-scroll-ready='true']",
+      ".demo-outer .agentplane-disclosure-heading",
+      ".demo-inner .agentplane-disclosure-heading",
+      ".demo-output .agentplane-disclosure-heading"
+    ],
+    "captureViewport": true
+  },
   "session_evidence": {
     "element": "#app",
     "route": "/threads/5f1c4a2e-0000-4000-8000-000000000001",

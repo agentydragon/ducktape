@@ -45,8 +45,8 @@ it("restores an open disclosure after its virtualized row remounts", async () =>
   expect(container.textContent).toContain("selected output");
 });
 
-function ButtonDisclosure({ id }: { id: string }): JSX.Element {
-  const [open, setOpen] = useRetainedDisclosure(id);
+function ButtonDisclosure({ id, defaultOpen = false }: { id: string; defaultOpen?: boolean }): JSX.Element {
+  const [open, setOpen] = useRetainedDisclosure(id, defaultOpen);
   return (
     <>
       <button aria-expanded={open} onClick={() => setOpen(!open)}>
@@ -56,6 +56,32 @@ function ButtonDisclosure({ id }: { id: string }): JSX.Element {
     </>
   );
 }
+
+it("uses its default open state until the reader makes a choice", async () => {
+  const container = document.createElement("div");
+  const root = createRoot(container);
+  roots.push(root);
+  const render = async (visible: boolean) =>
+    act(async () =>
+      root.render(
+        <MantineProvider env="test">
+          <RetainedDisclosureProvider>
+            {visible && <ButtonDisclosure id="output" defaultOpen />}
+          </RetainedDisclosureProvider>
+        </MantineProvider>
+      )
+    );
+  const press = async () => act(async () => container.querySelector("button")!.click());
+
+  await render(true);
+  expect(container.querySelector("button")?.getAttribute("aria-expanded")).toBe("true");
+  await press();
+  expect(container.querySelector("button")?.getAttribute("aria-expanded")).toBe("false");
+
+  await render(false);
+  await render(true);
+  expect(container.querySelector("button")?.getAttribute("aria-expanded")).toBe("false");
+});
 
 it("restores a button-toggled disclosure after its virtualized row remounts", async () => {
   const container = document.createElement("div");

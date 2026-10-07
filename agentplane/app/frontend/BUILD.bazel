@@ -337,6 +337,7 @@ ts_library(
     deps = [
         ":clamped_block",
         ":code_block",
+        ":disclosure",
         ":json_view",
         "//:node_modules/@mantine/core",
         "//:node_modules/@types/react",
@@ -1202,6 +1203,7 @@ ts_library(
         ":actions_client",
         ":app",
         ":client",
+        ":clamped_block",
         ":command_view",
         ":connections_fixture",
         ":disclosure",

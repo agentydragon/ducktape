@@ -14,8 +14,15 @@ export type DisclosureVisualStage =
   | "long-top"
   | "long-scrolled"
   | "after-disclosure"
+  | "nested-parent-only-scrolled"
   | "nested-child-scrolled"
-  | "nested-after-child";
+  | "nested-after-child"
+  | "nested-after-outer"
+  | "nested-wrapped-headings"
+  | "nested-before-output"
+  | "nested-expanded-output"
+  | "nested-after-output"
+  | "nested-output-collapsed";
 
 export interface Scenario {
   /** Mount the isolated shared-disclosure phone scene instead of the full app. */
