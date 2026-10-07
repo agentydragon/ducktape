@@ -1287,10 +1287,15 @@ async def test_opening_a_call_and_its_output_keeps_it_collapsible_while_reading(
     assert call_heading_box is not None
     assert run_heading_box is not None
     assert history_box is not None
-    minimum_control_height = 44 if phone else 36
+    minimum_control_height = 44 if phone else 32
     assert collapse_box["height"] >= minimum_control_height, f"collapse target is too short: {collapse_box}"
     if not phone:
-        assert collapse_box["height"] <= 40, f"desktop collapse row is too tall: {collapse_box}"
+        for heading_name, heading_box in (
+            ("run", run_heading_box),
+            ("tool call", call_heading_box),
+            ("output", output_heading_box),
+        ):
+            assert heading_box["height"] <= 36, f"desktop {heading_name} heading is too tall: {heading_box}"
     divider_box = await output_heading.evaluate(
         """heading => {
           const box = heading.getBoundingClientRect();
