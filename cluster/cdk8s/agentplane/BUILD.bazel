@@ -5,6 +5,15 @@ load("//devinfra/python:defs.bzl", "py_library", "py_test")
 package(default_visibility = ["//cluster/cdk8s:__pkg__"])
 
 py_library(
+    name = "testing_resource_limits",
+    srcs = ["testing_resource_limits.py"],
+    deps = [
+        "@pypi//cdk8s_plus_34",
+        "@pypi//constructs",
+    ],
+)
+
+py_library(
     name = "rbac",
     srcs = ["rbac.py"],
     deps = [
@@ -530,6 +539,7 @@ py_library(
         ":generation",
         ":grpc_channel_config",
         ":testing_config",
+        ":testing_resource_limits",
         "//agentplane/action_service:catalog",
         "//agentplane/action_service:main",
         "//agentplane/action_service:mcp_linkage",

@@ -25,7 +25,15 @@ from agentplane.action_service.mcp_linkage import McpOAuthServer
 from agentplane.action_service.operator_oidc import OperatorOidcSettings, OperatorTokenProfile
 from agentplane.app.action_federation import DirectFederationSettings
 from cluster.cdk8s import cilium
-from cluster.cdk8s.agentplane import actions, app as app_component, dex, egress, rbac, testing_config
+from cluster.cdk8s.agentplane import (
+    actions,
+    app as app_component,
+    dex,
+    egress,
+    rbac,
+    testing_config,
+    testing_resource_limits,
+)
 from cluster.cdk8s.agentplane.actions_testing_fixtures import (
     MCP_EVERYTHING_NAME,
     MCP_EVERYTHING_PORT,
@@ -163,7 +171,7 @@ ENV = Environment(
 
 def chart(app: App) -> Chart:
     chart = environment_chart(app, ENV)
-    rbac.TestingNamespaceResourceLimits(chart, "namespace-resource-limits", ENV.namespace)
+    testing_resource_limits.TestingNamespaceResourceLimits(chart, "namespace-resource-limits", ENV.namespace)
     # Only this environment's chart gets the agent-operator Role/RoleBinding -- see
     # `rbac.AgentRbac`'s own docstring for why it must not be in staging's.
     rbac.AgentRbac(chart, "rbac", ENV)
