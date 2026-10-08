@@ -307,7 +307,7 @@ func saveToolLog(c *client, l toolLog, dest string) error {
 
 func readToolLog(c *client, l toolLog) ([]byte, error) {
 	if l.URI != "" {
-		return fetchBytestream(c, l.URI)
+		return fetchBytestream(c, l.InvocationID, l.URI)
 	}
 	if len(l.contents) > 0 {
 		return l.contents, nil
@@ -315,9 +315,8 @@ func readToolLog(c *client, l toolLog) ([]byte, error) {
 	return nil, fmt.Errorf("build tool log %q has neither URI nor inline contents", l.Name)
 }
 
-func fetchBytestream(c *client, uri string) ([]byte, error) {
-	downloadURL := fmt.Sprintf("%s/file/download?bytestream_url=%s", c.baseURL, url.QueryEscape(uri))
-	return c.fetchURL(downloadURL)
+func fetchBytestream(c *client, invocationID, uri string) ([]byte, error) {
+	return c.fetchURL(c.bytestreamDownloadURL(invocationID, uri))
 }
 
 func toolLogSourceAndSize(uri string, contents []byte) (string, int) {

@@ -1,6 +1,14 @@
 package main
 
-import "testing"
+import (
+	"bytes"
+	"io"
+	"net/http"
+	"net/http/httptest"
+	"os"
+	"path/filepath"
+	"testing"
+)
 
 // A BES stream in the shape BuildBuddy serves it, exercising the indirection a
 // build output sits behind: target -> output group -> file set -> (file set) ->
@@ -286,4 +294,137 @@ func TestNearArtifacts(t *testing.T) {
 	if got := nearArtifacts(arts, "*.png", 5); got != nil {
 		t.Errorf("a glob names what it means: %+v", got)
 	}
+}
+
+func TestArtifactAndToolLogDownloadsIncludeInvocationID(t *testing.T) {
+	const (
+		invocationID = "old-invocation-id"
+		uri          = "bytestream://cache.example/instance/blobs/abc123/7"
+		payload      = "log data"
+	)
+
+	artifactStream := `[{"id":{"testResult":{"label":"//pkg:test"}},"testResult":{"testActionOutput":[{"name":"test.log","uri":"` + uri + `","length":"7"}]}}]`
+	toolLogStream := `[{"buildToolLogs":{"log":[{"name":"command.profile.gz","uri":"` + uri + `"}]}}]`
+	for _, test := range []struct {
+		name       string
+		stream     string
+		downloaded func(*testing.T, *client) ([]byte, error)
+	}{
+		{
+			name:   "artifact cat",
+			stream: artifactStream,
+			downloaded: func(t *testing.T, c *client) ([]byte, error) {
+				artifacts, err := listArtifacts(c, invocationID)
+				if err != nil {
+					return nil, err
+				}
+				if len(artifacts) != 1 {
+					t.Fatalf("got %d artifacts, want 1", len(artifacts))
+				}
+				return captureStdout(t, func() error { return printArtifact(c, artifacts[0]) })
+			},
+		},
+		{
+			name:   "artifact download",
+			stream: artifactStream,
+			downloaded: func(t *testing.T, c *client) ([]byte, error) {
+				artifacts, err := listArtifacts(c, invocationID)
+				if err != nil {
+					return nil, err
+				}
+				if len(artifacts) != 1 {
+					t.Fatalf("got %d artifacts, want 1", len(artifacts))
+				}
+				path := filepath.Join(t.TempDir(), "test.log")
+				if err := saveArtifact(c, artifacts[0], path); err != nil {
+					return nil, err
+				}
+				return os.ReadFile(path)
+			},
+		},
+		{
+			name:   "tool log",
+			stream: toolLogStream,
+			downloaded: func(t *testing.T, c *client) ([]byte, error) {
+				logs, err := listToolLogs(c, invocationID)
+				if err != nil {
+					return nil, err
+				}
+				if len(logs) != 1 {
+					t.Fatalf("got %d tool logs, want 1", len(logs))
+				}
+				return readToolLog(c, logs[0])
+			},
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				query := r.URL.Query()
+				if r.URL.Path != "/file/download" {
+					t.Errorf("request path = %q, want /file/download", r.URL.Path)
+					http.Error(w, "unexpected path", http.StatusBadRequest)
+					return
+				}
+				if query.Get("artifact") == "raw_json" {
+					if query.Get("invocation_id") != invocationID {
+						t.Errorf("raw BES invocation_id = %q, want %q", query.Get("invocation_id"), invocationID)
+						http.Error(w, "missing invocation_id", http.StatusBadRequest)
+						return
+					}
+					_, _ = io.WriteString(w, test.stream)
+					return
+				}
+				if query.Get("invocation_id") == "" {
+					http.Error(w, "Missing invocation_id param", http.StatusBadRequest)
+					return
+				}
+				if got := query.Get("invocation_id"); got != invocationID {
+					t.Errorf("download invocation_id = %q, want %q", got, invocationID)
+					http.Error(w, "wrong invocation_id", http.StatusBadRequest)
+					return
+				}
+				if got := query.Get("bytestream_url"); got != uri {
+					t.Errorf("bytestream_url = %q, want %q", got, uri)
+					http.Error(w, "wrong bytestream_url", http.StatusBadRequest)
+					return
+				}
+				_, _ = io.WriteString(w, payload)
+			}))
+			defer server.Close()
+
+			c := &client{baseURL: server.URL, http: server.Client()}
+			got, err := test.downloaded(t, c)
+			if err != nil {
+				t.Fatalf("download: %v", err)
+			}
+			if !bytes.Equal(got, []byte(payload)) {
+				t.Errorf("downloaded %q, want %q", got, payload)
+			}
+		})
+	}
+}
+
+func captureStdout(t *testing.T, run func() error) ([]byte, error) {
+	t.Helper()
+	reader, writer, err := os.Pipe()
+	if err != nil {
+		return nil, err
+	}
+	oldStdout := os.Stdout
+	os.Stdout = writer
+	runErr := run()
+	closeErr := writer.Close()
+	os.Stdout = oldStdout
+	output, readErr := io.ReadAll(reader)
+	reader.Close()
+	if runErr != nil {
+		return nil, runErr
+	}
+	if closeErr != nil {
+		return nil, closeErr
+	}
+	if readErr != nil {
+		return nil, readErr
+	}
+	return output, nil
 }

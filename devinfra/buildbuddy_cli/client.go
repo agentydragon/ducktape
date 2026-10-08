@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"os"
 
 	invocationpb "github.com/buildbuddy-io/buildbuddy/proto/invocation"
@@ -125,4 +126,14 @@ func (c *client) fetchURL(url string) ([]byte, error) {
 		return nil, fmt.Errorf("HTTP %d: %s", resp.StatusCode, string(body))
 	}
 	return body, nil
+}
+
+// bytestreamDownloadURL includes invocation_id because BuildBuddy's legacy
+// artifact fallback uses it to authorize and locate blobs that are no longer
+// present in the CAS cache.
+func (c *client) bytestreamDownloadURL(invocationID, uri string) string {
+	params := url.Values{}
+	params.Set("invocation_id", invocationID)
+	params.Set("bytestream_url", uri)
+	return fmt.Sprintf("%s/file/download?%s", c.baseURL, params.Encode())
 }

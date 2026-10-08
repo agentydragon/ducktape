@@ -72,10 +72,11 @@ func addResultFlags(cmd *cobra.Command) {
 }
 
 type artifact struct {
-	Label string `json:"label"`
-	Name  string `json:"name"`
-	URI   string `json:"uri"`
-	Kind  string `json:"kind"`
+	Label        string `json:"label"`
+	Name         string `json:"name"`
+	URI          string `json:"uri"`
+	Kind         string `json:"kind"`
+	invocationID string
 	// Bazel output group, for build artifacts only. Aspects contribute their own
 	// groups (this repo adds rules_lint_report, mypy, clippy_checks,
 	// rustfmt_checks), so the group is what separates a target's real outputs
@@ -435,8 +436,7 @@ func catArtifact(c *client, artifacts []artifact, substr string) error {
 
 // printArtifact streams one artifact's content to stdout.
 func printArtifact(c *client, match artifact) error {
-	downloadURL := fmt.Sprintf("%s/file/download?bytestream_url=%s",
-		c.baseURL, url.QueryEscape(match.URI))
+	downloadURL := c.bytestreamDownloadURL(match.invocationID, match.URI)
 	data, err := c.fetchURL(downloadURL)
 	if err != nil {
 		return err
@@ -511,8 +511,7 @@ func downloadNames(artifacts []artifact) []string {
 }
 
 func saveArtifact(c *client, a artifact, dest string) error {
-	downloadURL := fmt.Sprintf("%s/file/download?bytestream_url=%s",
-		c.baseURL, url.QueryEscape(a.URI))
+	downloadURL := c.bytestreamDownloadURL(a.invocationID, a.URI)
 	data, err := c.fetchURL(downloadURL)
 	if err != nil {
 		return err
@@ -552,7 +551,14 @@ func listArtifacts(c *client, invocationID string) ([]artifact, error) {
 	if err != nil {
 		return nil, fmt.Errorf("fetch BES event stream: %w", err)
 	}
-	return parseArtifacts(data)
+	artifacts, err := parseArtifacts(data)
+	if err != nil {
+		return nil, err
+	}
+	for i := range artifacts {
+		artifacts[i].invocationID = invocationID
+	}
+	return artifacts, nil
 }
 
 // parseArtifacts extracts both test and build artifacts from a raw BES stream.
