@@ -59,7 +59,7 @@ py_test(
         "//agentplane/sandbox_service:protocol_pb2",
         "@pypi//protobuf",
         "@pypi//pytest",
-        "@pypi//sqlalchemy",
         "@pypi//pytest_bazel",
+        "@pypi//sqlalchemy",
     ],
 )
