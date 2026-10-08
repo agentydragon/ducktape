@@ -1,5 +1,5 @@
 import { Fragment, useEffect, useMemo, useRef, useState } from "react";
-import { Alert, Card, Center, Group, Loader, SegmentedControl, Stack, Table, Text, Title } from "@mantine/core";
+import { Alert, Card, Group, SegmentedControl, Skeleton, Stack, Table, Text, Title } from "@mantine/core";
 import {
   BarController,
   BarElement,
@@ -277,9 +277,59 @@ export function SpendingHistoryChart({
             {error}
           </Alert>
         ) : loading && !transactions ? (
-          <Center mih={220}>
-            <Loader size="sm" />
-          </Center>
+          <>
+            <Text size="sm" c="dimmed" role="status" aria-live="polite">
+              Updating spending history…
+            </Text>
+            <Skeleton height={250} radius="md" />
+            <details
+              open={legendOpen}
+              onToggle={(event) => setLegendOpen(event.currentTarget.open)}
+              style={{ minWidth: 0 }}
+            >
+              <summary style={{ cursor: "pointer", fontWeight: 600, marginBottom: legendOpen ? 8 : 0 }}>
+                Category totals and reference lines
+              </summary>
+              <Table
+                aria-label="Loading category totals and reference lines"
+                verticalSpacing="xs"
+                horizontalSpacing="sm"
+                withTableBorder
+              >
+                <Table.Caption>
+                  Loading totals for the selected period; reference lines show daily amounts.
+                </Table.Caption>
+                <Table.Thead>
+                  <Table.Tr>
+                    {Array.from({ length: legendColumns }, (_, columnIndex) => (
+                      <Fragment key={`loading-legend-header-${columnIndex}`}>
+                        <Table.Th scope="col">Series</Table.Th>
+                        <Table.Th scope="col" ta="right">
+                          Amount
+                        </Table.Th>
+                      </Fragment>
+                    ))}
+                  </Table.Tr>
+                </Table.Thead>
+                <Table.Tbody>
+                  {Array.from({ length: 4 }, (_, rowIndex) => (
+                    <Table.Tr key={`loading-legend-row-${rowIndex}`}>
+                      {Array.from({ length: legendColumns }, (_, columnIndex) => (
+                        <Fragment key={`loading-legend-cell-${rowIndex}-${columnIndex}`}>
+                          <Table.Td>
+                            <Skeleton height={14} width="70%" />
+                          </Table.Td>
+                          <Table.Td>
+                            <Skeleton height={14} width="60%" ml="auto" />
+                          </Table.Td>
+                        </Fragment>
+                      ))}
+                    </Table.Tr>
+                  ))}
+                </Table.Tbody>
+              </Table>
+            </details>
+          </>
         ) : transactions && chart ? (
           <>
             <Text id="spending-history-summary" size="sm" c="dimmed">

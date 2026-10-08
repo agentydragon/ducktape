@@ -20,6 +20,7 @@ import {
   ScrollArea,
   SegmentedControl,
   SimpleGrid,
+  Skeleton,
   Stack,
   Table,
   Tabs,
@@ -141,10 +142,12 @@ function PurchaseCheck({
   allowance,
   purchase,
   onPurchaseChange,
+  estimateLoading,
 }: {
   allowance: Allowance;
   purchase: number | string;
   onPurchaseChange: (value: number | string) => void;
+  estimateLoading: boolean;
 }) {
   const cents = typeof purchase === "number" ? Math.round(purchase * 100) : NaN;
   const valid = typeof purchase === "number" && purchase >= 0 && Number.isSafeInteger(cents);
@@ -156,9 +159,10 @@ function PurchaseCheck({
     after != null
       ? after <= 0
         ? "exceeded"
-        : allowance.spending_signal === "warning" || (projectedAfter != null && projectedAfter < 0)
+        : !estimateLoading &&
+            (allowance.spending_signal === "warning" || (projectedAfter != null && projectedAfter < 0))
           ? "warning"
-          : projectedAfter != null
+          : !estimateLoading && projectedAfter != null
             ? signalFor(after, projectedAfter)
             : null
       : null;
@@ -188,11 +192,13 @@ function PurchaseCheck({
         />
         <Paper
           bg={
-            signal === "exceeded"
-              ? "var(--mantine-color-red-light)"
-              : signal === "warning"
-                ? "var(--mantine-color-yellow-light)"
-                : "var(--mantine-color-gray-light)"
+            estimateLoading
+              ? "var(--mantine-color-gray-light)"
+              : signal === "exceeded"
+                ? "var(--mantine-color-red-light)"
+                : signal === "warning"
+                  ? "var(--mantine-color-yellow-light)"
+                  : "var(--mantine-color-gray-light)"
           }
           p="md"
           radius="md"
@@ -207,10 +213,19 @@ function PurchaseCheck({
                     {m(after)}
                   </Text>
                 </div>
-                {signal && <SignalLabel signal={signal} />}
+                {estimateLoading && after > 0 ? (
+                  <Skeleton height={20} width={112} radius="xl" />
+                ) : (
+                  signal && <SignalLabel signal={signal} />
+                )}
               </Group>
               <Text size="sm">
-                {projectedAfter == null ? (
+                {estimateLoading ? (
+                  <>
+                    At the estimated pace, <Skeleton component="span" height={12} width={88} display="inline-block" />{" "}
+                    before the next credit.
+                  </>
+                ) : projectedAfter == null ? (
                   "Pace estimate warming up; use the available balance rather than the forecast."
                 ) : (
                   <>
@@ -245,10 +260,12 @@ function AllowancePanel({
   allowance,
   purchase,
   onPurchaseChange,
+  estimateLoading,
 }: {
   allowance: Allowance;
   purchase: number | string;
   onPurchaseChange: (value: number | string) => void;
+  estimateLoading: boolean;
 }) {
   if (allowance.status !== "active" || allowance.available_minor_units == null) {
     return (
@@ -279,7 +296,9 @@ function AllowancePanel({
         <Paper
           component="section"
           aria-labelledby="allowance-title"
-          bg={signal === "exceeded" ? "red.9" : signal === "warning" ? "yellow.9" : "teal.9"}
+          bg={
+            estimateLoading ? "gray.8" : signal === "exceeded" ? "red.9" : signal === "warning" ? "yellow.9" : "teal.9"
+          }
           c="white"
           radius="lg"
           p="xl"
@@ -289,7 +308,9 @@ function AllowancePanel({
               <Text id="allowance-title" size="sm" fw={700}>
                 Flexible spending available
               </Text>
-              {signal ? (
+              {estimateLoading ? (
+                <Skeleton height={20} width={112} radius="xl" />
+              ) : signal ? (
                 <SignalLabel signal={signal} />
               ) : (
                 <Badge color="gray" variant="light">
@@ -320,10 +341,14 @@ function AllowancePanel({
             <Text size="sm" fw={700} c="dimmed">
               Estimated balance before next credit
             </Text>
-            <Text fz={{ base: 32, sm: 38 }} fw={700} lh={1.1} style={{ overflowWrap: "anywhere" }}>
-              {projected == null ? "Not enough data" : m(projected)}
-            </Text>
-            {projected == null && (
+            {estimateLoading ? (
+              <Skeleton height={42} width={180} />
+            ) : (
+              <Text fz={{ base: 32, sm: 38 }} fw={700} lh={1.1} style={{ overflowWrap: "anywhere" }}>
+                {projected == null ? "Not enough data" : m(projected)}
+              </Text>
+            )}
+            {projected == null && !estimateLoading && (
               <Text size="sm" c="dimmed">
                 No reliable pace yet; the allowance balance above is still available.
               </Text>
@@ -334,7 +359,9 @@ function AllowancePanel({
                 Recorded flexible spending pace
               </Text>
               <Text size="sm" fw={700}>
-                {selectedPace?.observed_daily_minor_units == null ? (
+                {estimateLoading ? (
+                  <Skeleton height={18} width={100} />
+                ) : selectedPace?.observed_daily_minor_units == null ? (
                   "Warming up"
                 ) : (
                   <>{m(selectedPace.observed_daily_minor_units)} / day</>
@@ -349,27 +376,46 @@ function AllowancePanel({
               Positive recorded purchases, including history before activation; unmatched purchases count as flexible.
               Earlier purchases inform pace but do not reduce available allowance. Plaid data may lag.
             </Text>
-            {unmatched && unmatched.count > 0 && (
+            {(estimateLoading || (unmatched && unmatched.count > 0)) && (
               <Text size="xs" c="dimmed">
-                Unmatched in selected window: {unmatched.count} ({m(unmatched.amount_minor_units)}) · counted as
-                flexible.
+                {estimateLoading ? (
+                  <>
+                    Unmatched in selected window:{" "}
+                    <Skeleton component="span" height={10} width={90} display="inline-block" />
+                  </>
+                ) : (
+                  <>
+                    Unmatched in selected window: {unmatched.count} ({m(unmatched.amount_minor_units)}) · counted as
+                    flexible.
+                  </>
+                )}
               </Text>
             )}
             <Text size="xs" c="dimmed">
               The estimate may use a higher daily pace when purchases since the allowance began are concentrated in
               fewer days.
             </Text>
-            {allowance.forecast.estimated_exhaustion_at && (
+            {(estimateLoading || allowance.forecast.estimated_exhaustion_at) && (
               <Text size="sm">
                 Without future credits, this pace would use up the cushion around{" "}
-                <strong>{time(allowance.forecast.estimated_exhaustion_at)}</strong>.
+                {estimateLoading ? (
+                  <Skeleton component="span" height={12} width={130} display="inline-block" />
+                ) : (
+                  <strong>{time(allowance.forecast.estimated_exhaustion_at)}</strong>
+                )}
+                .
               </Text>
             )}
           </Stack>
         </Paper>
       </SimpleGrid>
       <SimpleGrid cols={{ base: 1, sm: 2 }} spacing="lg">
-        <PurchaseCheck allowance={allowance} purchase={purchase} onPurchaseChange={onPurchaseChange} />
+        <PurchaseCheck
+          allowance={allowance}
+          purchase={purchase}
+          onPurchaseChange={onPurchaseChange}
+          estimateLoading={estimateLoading}
+        />
         <Card component="section" aria-labelledby="cycle-title" withBorder radius="lg" padding="xl">
           <Stack gap="lg">
             <div>
@@ -1499,13 +1545,9 @@ function App() {
               </Group>
               {view?.allowance?.status === "active" && (
                 <SpendingHistoryChart
-                  transactions={
-                    !estimatePending && transactions?.requested_period_id === estimatePeriodId ? transactions : null
-                  }
+                  transactions={transactions?.requested_period_id === estimatePeriodId ? transactions : null}
                   allowance={view.allowance}
-                  loading={
-                    transactionsLoading || estimatePending || transactions?.requested_period_id !== estimatePeriodId
-                  }
+                  loading={transactionsLoading || transactions?.requested_period_id !== estimatePeriodId}
                   error={transactionsError}
                   periodId={estimatePeriodId}
                   onPeriodChange={(periodId) => {
@@ -1519,15 +1561,13 @@ function App() {
                   {error}. Showing the most recent data we have.
                 </Alert>
               )}
-              {estimatePending ? (
-                <Alert
-                  color={error ? "red" : "blue"}
-                  title={error ? "Selected estimate unavailable" : "Updating estimate"}
-                >
-                  {error || `Calculating from ${periodLabels[estimatePeriodId].toLowerCase()} of purchases…`}
-                </Alert>
-              ) : view?.allowance ? (
-                <AllowancePanel allowance={view.allowance} purchase={purchase} onPurchaseChange={setPurchase} />
+              {view?.allowance ? (
+                <AllowancePanel
+                  allowance={view.allowance}
+                  purchase={purchase}
+                  onPurchaseChange={setPurchase}
+                  estimateLoading={estimatePending && !error}
+                />
               ) : (
                 <Alert color="yellow" title="No flexible allowance yet">
                   {view
