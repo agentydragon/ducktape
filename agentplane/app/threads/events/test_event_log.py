@@ -86,7 +86,8 @@ async def test_remote_history_read_fails_closed_when_service_prefix_lags(
     reader.last_cursor = 1
     assert await remote.events(thread_id, limit=1) == [entry]
     observed = await remote.observation_entry(thread_id, 1)
-    assert observed is not None and observed.entry["cursor"] == "1"
+    assert observed is not None
+    assert observed.entry["cursor"] == "1"
 
 
 async def test_concurrent_replicas_create_one_thread(event_logs: EventLogStore, replica: Replica) -> None:

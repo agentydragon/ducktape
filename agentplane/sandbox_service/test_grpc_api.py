@@ -966,7 +966,7 @@ async def test_history_read_requires_explicit_reader_even_after_sandbox_deletion
         assert page.last_cursor == 1
         assert list(page.entries) == [event]
         assert not (await remote.read_session_events(str(public_id), after_cursor=1, limit=1)).entries
-        with pytest.raises(ValueError):
+        with pytest.raises(ValueError, match="invalid session history page"):
             await remote.read_session_events(str(public_id), limit=1001)
 
 
