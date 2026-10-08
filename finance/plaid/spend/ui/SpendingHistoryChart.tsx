@@ -126,6 +126,7 @@ export function SpendingHistoryChart({
         borderWidth: 0,
         stack: "spending",
       })),
+      // Give each reference line its own stack on the stacked y scale.
       {
         type: "line" as const,
         label: "Average over period",
@@ -136,6 +137,7 @@ export function SpendingHistoryChart({
         pointRadius: 0,
         pointHitRadius: 8,
         tension: 0,
+        stack: "average",
         order: -2,
       },
       {
@@ -148,6 +150,7 @@ export function SpendingHistoryChart({
         pointRadius: 0,
         pointHitRadius: 8,
         tension: 0,
+        stack: "leash",
         order: -1,
       },
     ];
