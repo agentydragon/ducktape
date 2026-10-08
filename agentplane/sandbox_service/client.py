@@ -128,6 +128,16 @@ class SandboxServiceClient:
         except grpc.aio.AioRpcError as error:
             _raise(error)
 
+    async def read_session_events(
+        self, session_id: str, *, after_cursor: int = 0, limit: int = 128
+    ) -> protocol_pb2.ReadSessionEventsResponse:
+        if not session_id or after_cursor < 0 or not 1 <= limit <= 1000:
+            raise ValueError("invalid session history page")
+        return await self.unary(
+            self.stub.ReadSessionEvents,
+            protocol_pb2.ReadSessionEventsRequest(session_id=session_id, after_cursor=after_cursor, limit=limit),
+        )
+
     async def list_sandboxes(self) -> list[Sandbox]:
         result = await self.unary(self.stub.ListSandboxes, Empty())
         return list(result.sandboxes)

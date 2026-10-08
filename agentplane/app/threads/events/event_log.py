@@ -27,6 +27,7 @@ from agentplane.app.threads.models import Event, EventLog, FeedState
 from agentplane.protocol import event_log_pb2
 from agentplane.runner import protocol_pb2
 from agentplane.runner.harness import Harness
+from agentplane.sandbox_service.client import SandboxServiceClient
 
 # The generated protocol stubs' own stub chain, which the mypy aspect resolves for direct deps only.
 # gazelle:include_dep @pypi//protobuf
@@ -70,8 +71,9 @@ class RunnerSession:
 
 
 class EventLogStore:
-    def __init__(self, engine: AsyncEngine) -> None:
+    def __init__(self, engine: AsyncEngine, *, history_reader: SandboxServiceClient | None = None) -> None:
         self._sessions = async_sessionmaker(engine, expire_on_commit=False)
+        self._history_reader = history_reader
 
     async def open(self, sandbox: str, session_id: str, spec: protocol_pb2.SessionSpec) -> UUID:
         """Materialize the Session's Thread; preserve any existing legacy mapping."""
@@ -144,6 +146,25 @@ class EventLogStore:
 
     async def events(self, thread_id: UUID, *, after_cursor: int = 0, limit: int) -> list[event_log_pb2.EventEntry]:
         """Up to `limit` entries after the cursor, in cursor order; a reader pages until a short page."""
+        if self._history_reader is not None:
+            # A missing/lagging service prefix is an error, never a reason to
+            # serve stale app events as a silent fallback. App folds still copy
+            # runner events until the separate write-authority handoff.
+            result: list[event_log_pb2.EventEntry] = []
+            cursor = after_cursor
+            while len(result) < limit:
+                page = await self._history_reader.read_session_events(
+                    str(thread_id), after_cursor=cursor, limit=min(limit - len(result), 1000)
+                )
+                if page.last_cursor < await self.last_cursor(thread_id):
+                    raise ConnectionError("Sandbox Service history is behind the app's confirmed prefix")
+                if not page.entries:
+                    break
+                if any(entry.cursor != cursor + index + 1 for index, entry in enumerate(page.entries)):
+                    raise ConnectionError("Sandbox Service history page is not contiguous")
+                result.extend(page.entries)
+                cursor = result[-1].cursor
+            return result
         async with self._sessions() as session:
             payloads = await session.scalars(
                 select(Event.payload)

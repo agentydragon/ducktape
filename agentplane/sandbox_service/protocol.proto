@@ -35,6 +35,8 @@ service SandboxService {
   // Returns the original matching CommandAdmitted entry, not command completion.
   rpc SubmitCommand(SubmitCommandRequest) returns (ducktape.agentplane.protocol.v1.EventEntry);
   rpc FollowSession(FollowSessionRequest) returns (stream FollowSessionResponse);
+  // Privileged, bounded retained raw history by public Session ID; survives Sandbox deletion.
+  rpc ReadSessionEvents(ReadSessionEventsRequest) returns (ReadSessionEventsResponse);
 }
 
 message ServiceAccount {
@@ -99,6 +101,17 @@ message LookupSessionResponse {
   // The runner has terminal setup/launch failure evidence without a successful native start.
   // A reserved but still in-flight Open leaves both summary and failed unset.
   bool failed = 3;
+}
+
+message ReadSessionEventsRequest {
+  string session_id = 1;
+  uint64 after_cursor = 2;
+  uint32 limit = 3;
+}
+
+message ReadSessionEventsResponse {
+  uint64 last_cursor = 1;
+  repeated ducktape.agentplane.protocol.v1.EventEntry entries = 2;
 }
 
 // Internal frozen launch snapshot, committed before contacting the runner.

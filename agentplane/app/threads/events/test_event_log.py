@@ -5,14 +5,19 @@ from __future__ import annotations
 
 import asyncio
 from datetime import UTC, datetime
+from typing import cast
 
+import pytest
 import pytest_bazel
+from sqlalchemy.ext.asyncio import AsyncEngine
 
 from agentplane.app.testing.thread_test_support import SPEC, Replica, event_entry
 from agentplane.app.threads.events.event_log import EventLogStore
 from agentplane.app.threads.events.ingestion_lease import IngestionLease
 from agentplane.app.threads.ingestion import Ingestion
 from agentplane.protocol import event_pb2
+from agentplane.sandbox_service import protocol_pb2
+from agentplane.sandbox_service.client import SandboxServiceClient
 
 # The generated protocol stubs' own stub chain, which the mypy aspect resolves for direct deps only.
 # gazelle:include_dep @pypi//protobuf
@@ -53,6 +58,33 @@ async def test_a_session_is_one_thread_and_its_events_read_back_in_order(
     assert [entry.cursor for entry in await event_logs.events(thread, after_cursor=1, limit=2)] == [2, 3]
     assert await event_logs.last_cursor(thread) == 4
     assert await event_logs.last_cursor(other) == 0
+
+
+async def test_remote_history_read_fails_closed_when_service_prefix_lags(
+    engine: AsyncEngine, event_logs: EventLogStore, ingestion: Ingestion, lease: IngestionLease
+) -> None:
+    thread_id = await event_logs.open("sb-1", "s-1", SPEC)
+    entry = event_entry(1, harness_started=event_pb2.HarnessStarted(resumed=False, pid=7))
+    await ingestion.record(thread_id, [entry], lease=lease)
+
+    class Reader:
+        last_cursor = 0
+
+        async def read_session_events(
+            self, session_id: str, *, after_cursor: int = 0, limit: int = 128
+        ) -> protocol_pb2.ReadSessionEventsResponse:
+            assert session_id == str(thread_id)
+            assert limit == 1
+            return protocol_pb2.ReadSessionEventsResponse(
+                last_cursor=self.last_cursor, entries=[entry] if after_cursor == 0 and self.last_cursor else []
+            )
+
+    reader = Reader()
+    remote = EventLogStore(engine, history_reader=cast(SandboxServiceClient, reader))
+    with pytest.raises(ConnectionError, match="behind"):
+        await remote.events(thread_id, limit=1)
+    reader.last_cursor = 1
+    assert await remote.events(thread_id, limit=1) == [entry]
 
 
 async def test_concurrent_replicas_create_one_thread(event_logs: EventLogStore, replica: Replica) -> None:

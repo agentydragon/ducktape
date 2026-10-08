@@ -46,6 +46,7 @@ class Settings(BaseSettings):
     # import has been verified; the app remains the UI's raw Event authority.
     history_ingestion_enabled: bool = False
     caller_accounts: frozenset[ServiceAccountRef] = Field(min_length=1)
+    history_reader_accounts: frozenset[ServiceAccountRef] = frozenset()
     platform_instructions: str = Field(min_length=1)
     lifecycle_timeout_s: float = Field(default=300, gt=0)
     default_egress_policies: list[str] = Field(default_factory=list)
@@ -155,6 +156,7 @@ async def serve_with_engine(settings: Settings, configuration: k8s_client.Config
             runner_admission_ack_timeout_s=settings.runner_admission_ack_timeout_s,
             follow_lease_s=settings.follow_lease_s,
             caller_accounts=settings.caller_accounts,
+            history_reader_accounts=settings.history_reader_accounts,
             platform_instructions=settings.platform_instructions,
             lifecycle_timeout_s=settings.lifecycle_timeout_s,
             runner_grpc_channel_options=settings.runner_grpc_channel_options,

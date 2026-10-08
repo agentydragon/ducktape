@@ -937,5 +937,33 @@ async def test_successor_pod_same_sandbox_and_account_keeps_destination(resource
     assert resolved.target == f"[::1]:{resources.destinations.runner_port}"
 
 
+
+async def test_history_read_requires_explicit_reader_even_after_sandbox_deletion(
+    resources: Resources, token_file: Path, engine: AsyncEngine
+) -> None:
+    store = Store(engine)
+    public_id = uuid4()
+    await store.open(
+        public_id, sandbox_namespace=SANDBOX_NAMESPACE, sandbox_name="deleted-sandbox",
+        sandbox_uid=None, runner_session_id="legacy-runner",
+    )
+    event = event_log_pb2.EventEntry(
+        cursor=1, origin=event_log_pb2.EventOrigin(source_id="old-runner", sequence=1),
+        event=event_pb2.Event(harness_stderr=event_pb2.HarnessStderr(text="retained")),
+    )
+    await store.append(public_id, [event])
+    async with service_client(replace(resources, history=store), token_file) as remote:
+        with pytest.raises(ServiceError) as denied:
+            await remote.read_session_events(str(public_id), limit=1)
+        assert denied.value.code == grpc.StatusCode.PERMISSION_DENIED
+    async with service_client(replace(resources, history=store, history_reader_accounts=frozenset({OWNER})), token_file) as remote:
+        page = await remote.read_session_events(str(public_id), limit=1)
+        assert page.last_cursor == 1
+        assert list(page.entries) == [event]
+        assert not (await remote.read_session_events(str(public_id), after_cursor=1, limit=1)).entries
+        with pytest.raises(ValueError):
+            await remote.read_session_events(str(public_id), limit=1001)
+
+
 if __name__ == "__main__":
     pytest_bazel.main()

@@ -190,6 +190,7 @@ class Settings(AppSettingsConfig):
     notifications_token_file: Path | None = None
     sandbox_service_token_file: Path = Path("/var/run/secrets/agentplane-sandbox-service/token")
     sandbox_service_request_timeout_s: float = Field(default=20, gt=0, allow_inf_nan=False)
+    history_reads_enabled: bool = False
     sandbox_service_lifecycle_timeout_s: float = Field(default=310, gt=0, allow_inf_nan=False)
     sandbox_service_follow_timeout_s: float = Field(default=960, gt=0, allow_inf_nan=False)
     sandbox_service_command_admission_timeout_s: float = Field(
@@ -310,7 +311,7 @@ async def async_main(settings: Settings) -> None:
         engine = connect(settings.database_url)
         database_updates = DatabaseUpdates(engine.url)
         store = ThreadStore(engine)
-        event_logs = EventLogStore(engine)
+        event_logs = EventLogStore(engine, history_reader=inventory if settings.history_reads_enabled else None)
         content = ContentStore(engine)
         runners = SandboxSessions(live, inventory)
         ingester = Ingester(runners=runners, event_logs=event_logs, ingestion=Ingestion(engine))
