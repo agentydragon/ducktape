@@ -75,12 +75,14 @@ pytest_plugins = ("util.playwright",)
 _UI_DIR = get_required_path("_main/finance/plaid/spend/ui/dist/index.html").parent
 
 
+_FROZEN_NOW_MS = int(datetime(2026, 10, 15, tzinfo=UTC).timestamp() * 1000)
+_TRANSACTION_VIEWPORTS = [(1280, 960), (390, 844), (320, 720)]
+
+
 @pytest.fixture
 async def page(playwright: Playwright) -> AsyncIterator[Page]:
-    async with await deterministic_browser_context(
-        playwright,
-        viewport={"width": 1280, "height": 960},
-        frozen_now_ms=int(datetime(2026, 10, 15, tzinfo=UTC).timestamp() * 1000),
+    async with deterministic_browser_context(
+        playwright, viewport={"width": 1280, "height": 960}, frozen_now_ms=_FROZEN_NOW_MS
     ) as context:
         yield await context.new_page()
 
@@ -93,9 +95,20 @@ def view(page: Page) -> VisualPage:
 async def _expand_accordion(control: Locator) -> None:
     await control.click()
     await expect(control).to_have_attribute("aria-expanded", "true")
-    # These real-page tests run transitions rather than pinning them. Finish the
-    # outer expansion before opening a nested accordion or measuring a full page.
-    await control.page.wait_for_function("() => document.getAnimations().length === 0")
+    panel_id = await control.get_attribute("aria-controls")
+    assert panel_id is not None
+    # Wait for this panel's full content height, not unrelated page animations.
+    await control.page.wait_for_function(
+        """id => {
+            const panel = document.getElementById(id);
+            if (!panel || panel.getBoundingClientRect().height === 0) return false;
+            const expanding = panel.getAnimations().some(animation =>
+                animation instanceof CSSTransition && animation.transitionProperty === "height"
+                && animation.playState !== "finished");
+            return !expanding && panel.scrollHeight <= panel.clientHeight + 1;
+        }""",
+        arg=panel_id,
+    )
 
 
 @pytest.fixture(scope="module")
@@ -572,8 +585,29 @@ async def test_review_rule_configuration_render(
     )
 
 
+async def _open_transaction_details(page: Page, rows: Locator, width: int) -> None:
+    await page.get_by_text("Credit cycle", exact=True).click()
+    await page.get_by_text("Allowance bridge", exact=True).wait_for()
+    if width >= 992:
+        await rows.locator("tbody tr[data-transaction-row]").filter(has_text="UPS").click()
+        await expect(rows.locator("tbody tr")).to_have_count(5)
+    else:
+        await _expand_accordion(rows.get_by_role("button", name="UPS", exact=False))
+    await rows.get_by_text("Required document shipping for a synthetic example.").wait_for()
+    await expect(rows.get_by_text("Counterparties: Example Shipping", exact=True)).to_have_count(1)
+    await expect(rows.get_by_text("Example Shipping · merchant", exact=True)).to_have_count(1)
+    await expect(rows.get_by_text("Mandatory · outside allowance", exact=False)).to_have_count(1)
+    await expect(rows.get_by_text("Card statement: Counted in card cycle", exact=False).first).to_be_attached()
+    await _expand_accordion(rows.get_by_role("button", name="Plaid source fields"))
+    await rows.get_by_text("Plaid amount (major units): 18.50", exact=True).wait_for()
+    await expect(rows.get_by_text("Original description: EXAMPLE SHIPPING PAYMENT", exact=True)).to_have_count(1)
+    await expect(rows.get_by_text("City: Example City", exact=True)).to_have_count(1)
+    await expect(rows.get_by_text("Reference number: synthetic-reference", exact=True)).to_have_count(1)
+    await expect(rows.get_by_text("Personal detail: TRANSPORTATION_SHIPPING", exact=True)).to_have_count(1)
+
+
 @pytest.mark.asyncio
-@pytest.mark.parametrize(("width", "height"), [(1280, 960), (390, 844), (320, 720)])
+@pytest.mark.parametrize(("width", "height"), _TRANSACTION_VIEWPORTS)
 async def test_transaction_explanations_render(
     page: Page, view: VisualPage, dashboard_url: str, width: int, height: int
 ) -> None:
@@ -594,24 +628,7 @@ async def test_transaction_explanations_render(
     assert await page.evaluate("document.documentElement.scrollWidth <= window.innerWidth")
     image = f"transactions-{width}.png"
     await view.capture(image.removesuffix(".png"), label=f"{width}px all rows", full_page=True, animations="disabled")
-    await page.get_by_text("Credit cycle", exact=True).click()
-    await page.get_by_text("Allowance bridge", exact=True).wait_for()
-    if width >= 992:
-        await rows.locator("tbody tr[data-transaction-row]").filter(has_text="UPS").click()
-        await expect(rows.locator("tbody tr")).to_have_count(5)
-    else:
-        await _expand_accordion(rows.get_by_role("button", name="UPS", exact=False))
-    await rows.get_by_text("Required document shipping for a synthetic example.").wait_for()
-    await expect(rows.get_by_text("Counterparties: Example Shipping", exact=True)).to_have_count(1)
-    await expect(rows.get_by_text("Example Shipping · merchant", exact=True)).to_have_count(1)
-    await expect(rows.get_by_text("Mandatory · outside allowance", exact=False)).to_have_count(1)
-    await expect(rows.get_by_text("Card statement: Counted in card cycle", exact=False).first).to_be_attached()
-    await _expand_accordion(rows.get_by_role("button", name="Plaid source fields"))
-    await rows.get_by_text("Plaid amount (major units): 18.50", exact=True).wait_for()
-    await expect(rows.get_by_text("Original description: EXAMPLE SHIPPING PAYMENT", exact=True)).to_have_count(1)
-    await expect(rows.get_by_text("City: Example City", exact=True)).to_have_count(1)
-    await expect(rows.get_by_text("Reference number: synthetic-reference", exact=True)).to_have_count(1)
-    await expect(rows.get_by_text("Personal detail: TRANSPORTATION_SHIPPING", exact=True)).to_have_count(1)
+    await _open_transaction_details(page, rows, width)
     view.errors.assert_none(context="Spend")
     assert await page.evaluate("document.documentElement.scrollWidth <= window.innerWidth")
     expanded = f"transactions-expanded-{width}.png"
@@ -643,6 +660,28 @@ async def test_transaction_explanations_dark_theme(page: Page, view: VisualPage,
     assert await page.evaluate("document.documentElement.scrollWidth <= window.innerWidth")
     image = "transactions-dark-390.png"
     await view.capture(image.removesuffix(".png"), label="390px dark theme", full_page=True, animations="disabled")
+
+
+async def test_accordion_readiness_ignores_unrelated_animations(page: Page) -> None:
+    await page.set_content("""
+        <style>
+          @keyframes pulse { to { opacity: 0.5 } }
+          #spinner { animation: pulse 1s linear infinite }
+          #panel { height: 0; overflow: hidden; transition: height 150ms }
+        </style>
+        <div id="spinner">An unrelated animation never finishes</div>
+        <button aria-expanded="false" aria-controls="panel">Expand</button>
+        <div id="panel"><div style="height: 120px">Panel contents</div></div>
+        <script>
+          document.querySelector('button').onclick = event => {
+            event.currentTarget.setAttribute('aria-expanded', 'true');
+            requestAnimationFrame(() => { document.querySelector('#panel').style.height = '120px'; });
+          };
+        </script>
+    """)
+    await _expand_accordion(page.get_by_role("button", name="Expand"))
+    await expect(page.locator("#panel")).to_have_css("height", "120px")
+    assert await page.locator("#spinner").evaluate("element => element.getAnimations().length") == 1
 
 
 if __name__ == "__main__":

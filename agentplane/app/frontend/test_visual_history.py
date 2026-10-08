@@ -4,15 +4,16 @@ import re
 from textwrap import dedent
 
 import pytest
+import pytest_asyncio
 import pytest_bazel
-from playwright.async_api import expect
+from playwright.async_api import Page, expect
 
 from agentplane.app.frontend.visual_app import IDLE_THREAD, RUNNING_THREAD, AgentplaneFixture
 from agentplane.app.frontend.visual_assertions import (
+    _expand_tool_steps,
     _focus,
     _in_viewport,
     _open_debug_history,
-    _open_recovery_details,
     _open_run,
     _open_tool_run,
     _rollout_run,
@@ -111,13 +112,39 @@ async def test_realistic_rollout_call(completed_rollout: VisualPage, expanded_ou
     await completed_rollout.capture()
 
 
+async def _open_discarded_recovery(page: Page) -> None:
+    discarded = page.locator(".agentplane-disclosure-summary").filter(has_text="not retained in model context")
+    await expect(discarded).to_have_count(1)
+    await discarded.click()
+    await expect(discarded).to_have_attribute("aria-expanded", "true")
+
+
+@pytest_asyncio.fixture(loop_scope="session")
+async def recovery_tools(view: VisualPage, app: AgentplaneFixture) -> VisualPage:
+    await app.recovery("tools")
+    await app.mount_thread(IDLE_THREAD)
+    await view.check(context="fixture ready")
+    await _open_run(view.page)
+    await _open_discarded_recovery(view.page)
+    await _expand_tool_steps(view.page)
+    tools = view.page.locator(".agentplane-step-details").filter(
+        has_not=view.page.locator(".agentplane-step-title:text-is('Reasoning')")
+    )
+    # The discarded call uses DiscardedCard, not a normal StepLine.
+    await expect(tools).to_have_count(3)
+    await expect(view.page.get_by_text("Succeeded, then discarded from context", exact=True)).to_be_visible()
+    await expect(tools.locator(".agentplane-disclosure-summary[aria-expanded='false']")).to_have_count(0)
+    return view
+
+
 @pytest.mark.parametrize("viewport", [DESKTOP, MOBILE], ids=["desktop", "mobile"])
 async def test_recovery_messages_open(view: VisualPage, app: AgentplaneFixture) -> None:
     await app.recovery("messages")
     await app.mount_thread(IDLE_THREAD)
     await view.check(context="fixture ready")
     page = view.page
-    await _open_recovery_details(page)
+    await _open_discarded_recovery(page)
+    await expect(page.get_by_text("Remember the name in the margin", exact=True)).to_be_visible()
     await expect(page.locator('[aria-label="Not retained in context"]')).to_be_visible()
     await expect(page.locator('[aria-label="Retention unknown"]')).to_be_visible()
     await expect(page.locator(".agentplane-disclosure-summary[aria-expanded='true']").first).to_be_visible()
@@ -129,7 +156,12 @@ async def test_recovery_quiet_open(view: VisualPage, app: AgentplaneFixture) -> 
     await app.mount_thread(IDLE_THREAD)
     await view.check(context="fixture ready")
     page = view.page
-    await _open_recovery_details(page)
+    await _open_tool_run(page)
+    tools = page.locator(".agentplane-step-details").filter(
+        has_not=page.locator(".agentplane-step-title:text-is('Reasoning')")
+    )
+    await expect(tools).to_have_count(2)
+    await expect(tools.locator(".agentplane-disclosure-summary[aria-expanded='false']")).to_have_count(0)
     await expect(page.locator(".agentplane-step-details .agentplane-code-block").first).to_be_visible()
     await view.capture()
 
@@ -209,24 +241,18 @@ async def test_thread_setup_output(view: VisualPage, app: AgentplaneFixture) -> 
 
 
 @pytest.mark.parametrize("viewport", [DESKTOP, MOBILE], ids=["desktop", "mobile"])
-async def test_recovery_tool_lower_states(view: VisualPage, app: AgentplaneFixture) -> None:
-    await app.recovery("tools")
-    await app.mount_thread(IDLE_THREAD)
-    await view.check(context="fixture ready")
+async def test_recovery_tool_lower_states(recovery_tools: VisualPage) -> None:
+    view = recovery_tools
     page = view.page
-    await _open_recovery_details(page)
     await _in_viewport(page.get_by_text("Failed, still in context", exact=True))
     await _focus(page, page.locator('[aria-label="Retention unknown"]').last)
     await view.capture()
 
 
 @pytest.mark.parametrize("viewport", [DESKTOP, MOBILE], ids=["desktop", "mobile"])
-async def test_revised_recovery_tool_output(view: VisualPage, app: AgentplaneFixture) -> None:
-    await app.recovery("tools")
-    await app.mount_thread(IDLE_THREAD)
-    await view.check(context="fixture ready")
+async def test_revised_recovery_tool_output(recovery_tools: VisualPage) -> None:
+    view = recovery_tools
     page = view.page
-    await _open_recovery_details(page)
     output = page.locator(".agentplane-output-label").filter(has_text="Continuation output")
     await _focus(page, output)
     await _in_viewport(page.get_by_text("aborted", exact=True))

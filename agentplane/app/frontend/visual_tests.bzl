@@ -25,6 +25,7 @@ def agentplane_visual_test(name, src, title, shard_count = 1):
             "//util/testing:visual_capture",
             "@pypi//playwright",
             "@pypi//pytest",
+            "@pypi//pytest_asyncio",
             "@pypi//pytest_bazel",
         ],
         test_module = "agentplane.app.frontend." + src.removesuffix(".py"),

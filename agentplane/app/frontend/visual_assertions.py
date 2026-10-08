@@ -115,29 +115,6 @@ async def _rollout_geometry(view: VisualPage, state: str) -> None:
     (undeclared_outputs_dir() / f"{view.capture_name}-{state}-geometry.json").write_text(json.dumps(geometry, indent=2))
 
 
-async def _open_recovery_details(page: Page) -> None:
-    folded_run = page.locator(".agentplane-disclosure-summary[aria-expanded='false']").filter(
-        has_text=re.compile("tool call", re.IGNORECASE)
-    )
-    if await folded_run.count():
-        await _open_run(page)
-    discarded = page.locator(".agentplane-disclosure-summary[aria-expanded='false']").filter(
-        has_text="not retained in model context"
-    )
-    while await discarded.count():
-        await discarded.first.click()
-    steps = page.locator(".agentplane-step-details").filter(
-        has_not=page.locator(".agentplane-step-title:text-is('Reasoning')")
-    )
-    await expect(steps.locator('[aria-busy="true"]')).to_have_count(0)
-    count = await steps.count()
-    for index in range(count):
-        control = steps.nth(index).locator(".agentplane-disclosure-summary").first
-        if await control.get_attribute("aria-expanded") == "false":
-            await control.click()
-    await wait_for_stable(page)
-
-
 async def _box(page: Page, selector: str) -> FloatRect:
     box = await page.locator(selector).bounding_box()
     assert box is not None, f"missing box for {selector}"
@@ -218,6 +195,10 @@ async def _assert_phone_composer_layout(page: Page) -> None:
 
 async def _open_tool_run(page: Page) -> None:
     await _open_run(page)
+    await _expand_tool_steps(page)
+
+
+async def _expand_tool_steps(page: Page) -> None:
     steps = page.locator(".agentplane-step-details")
     await expect(steps.first).to_be_visible()
     # Wait for the opened run's payloads to render before counting its tool lines. A count sampled

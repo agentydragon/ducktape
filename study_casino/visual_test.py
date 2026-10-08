@@ -1,8 +1,8 @@
 """Render-health checks + PR-visuals publication for each casino view.
 
 Every (view, viewport) case boots the real server, waits for load-bearing DOM,
-renders twice to prove determinism, and fails on any browser page error. The
-rendered PNGs plus a `visual-review.json` manifest go to undeclared outputs,
+captures once, and fails on any browser page error. The rendered PNGs plus a
+`visual-review.json` manifest go to undeclared outputs,
 where trusted CI (`devinfra/pr_visuals/publisher.py` via the "Publish PR
 visuals" workflow) publishes them as a browsable bundle, diffs them against the
 merge-base baseline, and comments on the PR.
@@ -15,13 +15,11 @@ devinfra/pr_visuals/plans/goldens_to_pr_visuals.md).
 from __future__ import annotations
 
 import json
-import shutil
 import urllib.error
 import urllib.parse
 import urllib.request
-from collections.abc import Iterator
-from dataclasses import dataclass
-from pathlib import Path
+from collections.abc import AsyncIterator, Iterator
+from contextlib import asynccontextmanager
 
 import pytest
 import pytest_bazel
@@ -33,15 +31,15 @@ from study_casino.config import Settings
 from util.bazel.runfiles import get_required_path
 from util.testing.asgi import serve_app_sync
 from util.testing.frontend_visual import deterministic_browser_context, stability_style
-from util.testing.page_capture import PageErrors, wait_for_stable
 from util.testing.postgres_fixtures import start_postgres_container
 from util.testing.undeclared_outputs import undeclared_outputs_dir
-from util.testing.visual_review import retain_review_asset
+from util.testing.visual_capture import VisualPage
 
 # pytest_plugins loads util.playwright by name; gazelle cannot see the dependency.
 # gazelle:include_dep //util:playwright
+# gazelle:include_dep //util/testing:visual_fixtures
 
-pytest_plugins = ("util.playwright",)
+pytest_plugins = ("util.playwright", "util.testing.visual_fixtures")
 
 
 # Two viewports per case: a desktop width that exercises the two-column casino
@@ -56,29 +54,21 @@ MOBILE_VIEWPORT: ViewportSize = {"width": 390, "height": 844}
 FROZEN_NOW_MS = 1_779_768_000_000  # 2026-05-15T12:00:00Z.
 
 
-@dataclass(frozen=True)
-class Case:
-    name: str
-    query: str  # appended to "/", e.g. "?view=casino&game=roulette"
-    visible_text: str  # selector text that must be visible before screenshotting
-    viewport: ViewportSize
-
-
-def _both_widths(slug: str, query: str, visible_text: str) -> tuple[Case, Case]:
-    return (
-        Case(name=f"{slug}.desktop", query=query, visible_text=visible_text, viewport=DESKTOP_VIEWPORT),
-        Case(name=f"{slug}.mobile", query=query, visible_text=visible_text, viewport=MOBILE_VIEWPORT),
-    )
-
-
-CASES: tuple[Case, ...] = (
-    *_both_widths("study", "?view=study", "Today"),
-    *_both_widths("casino_roulette", "?view=casino&game=roulette", "ROULETTE"),
-    *_both_widths("casino_blackjack", "?view=casino&game=blackjack", "BLACKJACK"),
-    *_both_widths("casino_slots", "?view=casino&game=slots", "SLOTS"),
-    *_both_widths("prizes", "?view=prizes", "The Vault"),
-    *_both_widths("stats", "?view=stats", "The Ledger"),
-)
+@asynccontextmanager
+async def casino_view(
+    playwright: Playwright, casino_server: str, viewport: ViewportSize, query: str
+) -> AsyncIterator[VisualPage]:
+    async with deterministic_browser_context(
+        playwright, viewport=viewport, frozen_now_ms=FROZEN_NOW_MS, color_scheme="dark"
+    ) as context:
+        page = await context.new_page()
+        view = VisualPage(page, output_dir=undeclared_outputs_dir(), title="Study Casino views", output_suffix="")
+        await page.goto(f"{casino_server}/{query}", wait_until="networkidle", timeout=30_000)
+        await page.add_style_tag(content=stability_style())
+        try:
+            yield view
+        finally:
+            view.errors.assert_none(context=query)
 
 
 @pytest.fixture(scope="module")
@@ -150,44 +140,25 @@ def _post(origin: str, path: str, payload: dict) -> None:
             raise RuntimeError(f"seed {path} failed: HTTP {response.status}")
 
 
-async def _render_case(playwright: Playwright, origin: str, case: Case, out_dir: Path, suffix: str) -> Path:
-    """Render one case; fails on any browser page error (render health)."""
-    async with await deterministic_browser_context(
-        playwright, viewport=case.viewport, frozen_now_ms=FROZEN_NOW_MS, color_scheme="dark"
-    ) as context:
-        page = await context.new_page()
-        page_errors = PageErrors(page)
-        await page.goto(f"{origin}/{case.query}", wait_until="networkidle", timeout=30_000)
-        await page.add_style_tag(content=stability_style())
-        await page.get_by_text(case.visible_text).first.wait_for(state="visible", timeout=15_000)
-        await wait_for_stable(page)
-        actual_path = out_dir / f"{case.name}.{suffix}.png"
-        await page.screenshot(path=str(actual_path), full_page=True, animations="disabled", caret="hide", scale="css")
-        page_errors.assert_none(context=case.name)
-        return actual_path
-
-
-@pytest.mark.parametrize("case", CASES, ids=[case.name for case in CASES])
-async def test_casino_views_render(playwright: Playwright, casino_server: str, tmp_path: Path, case: Case) -> None:
-    undeclared_dir = undeclared_outputs_dir()
-    first_path = await _render_case(playwright, casino_server, case, tmp_path, "first")
-    second_path = await _render_case(playwright, casino_server, case, tmp_path, "second")
-    if first_path.read_bytes() != second_path.read_bytes():
-        shutil.copy(first_path, undeclared_dir / f"{case.name}.first.png")
-        shutil.copy(second_path, undeclared_dir / f"{case.name}.second.png")
-        raise AssertionError(
-            f"{case.name} visual render is not deterministic across reloads; "
-            f"inspect {case.name}.first.png and {case.name}.second.png in {undeclared_dir}"
-        )
-
-    # Retain the render + visual-review manifest for the PR visual-review
-    # publisher (devinfra/pr_visuals/publisher.py) — the pixel-review path.
-    retain_review_asset(
-        first_path,
-        title="Study Casino views",
-        label=case.name.replace("_", " ").replace(".", " · "),
-        name=f"{case.name}.png",
-    )
+@pytest.mark.parametrize("viewport", [DESKTOP_VIEWPORT, MOBILE_VIEWPORT], ids=["desktop", "mobile"])
+@pytest.mark.parametrize(
+    ("query", "visible_text"),
+    [
+        ("?view=study", "Today"),
+        ("?view=casino&game=roulette", "ROULETTE"),
+        ("?view=casino&game=blackjack", "BLACKJACK"),
+        ("?view=casino&game=slots", "SLOTS"),
+        ("?view=prizes", "The Vault"),
+        ("?view=stats", "The Ledger"),
+    ],
+    ids=["study", "casino_roulette", "casino_blackjack", "casino_slots", "prizes", "stats"],
+)
+async def test_casino_views_render(
+    playwright: Playwright, casino_server: str, viewport: ViewportSize, query: str, visible_text: str, capture_name: str
+) -> None:
+    async with casino_view(playwright, casino_server, viewport, query) as view:
+        await view.page.get_by_text(visible_text).first.wait_for(state="visible", timeout=15_000)
+        await view.capture(capture_name, full_page=True, animations="disabled", scale="css")
 
 
 if __name__ == "__main__":

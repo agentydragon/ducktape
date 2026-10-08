@@ -131,6 +131,27 @@ async def test_stable_does_not_wait_on_an_image_that_cannot_decode(page: Page) -
     await wait_for_stable(page)
 
 
+@pytest.mark.parametrize(
+    ("stage", "stall"),
+    [
+        ("fonts", "Object.defineProperty(document.fonts, 'ready', {value: new Promise(() => {})})"),
+        (
+            "image decoding",
+            """const image = new Image();
+            Object.defineProperty(image, 'complete', {value: false});
+            image.decode = () => new Promise(() => {});
+            document.body.append(image);""",
+        ),
+        ("paint frames", "window.requestAnimationFrame = () => 0"),
+    ],
+)
+async def test_render_readiness_has_a_deadline_and_names_the_stalled_stage(page: Page, stage: str, stall: str) -> None:
+    await page.set_content("<p>ready except for one stalled resource</p>")
+    await page.evaluate(f"() => {{ {stall}; }}")
+    with pytest.raises(AssertionError, match=f"render readiness: {stage} did not settle within 200ms"):
+        await wait_for_stable(page, timeout_ms=200)
+
+
 async def test_screenshot_names_the_selector_that_matched_nothing(page: Page) -> None:
     await page.set_content("<div id='present'>x</div>")
 

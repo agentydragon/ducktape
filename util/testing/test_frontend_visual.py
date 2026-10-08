@@ -31,7 +31,7 @@ async def _platform_families(page: Page, selector: str) -> list[str]:
 
 
 async def test_generic_families_are_browser_pinned(playwright: Playwright) -> None:
-    async with await deterministic_browser_context(
+    async with deterministic_browser_context(
         playwright, viewport={"width": 800, "height": 600}, frozen_now_ms=0
     ) as context:
         page = await context.new_page()
@@ -67,7 +67,7 @@ async def test_generic_families_are_browser_pinned(playwright: Playwright) -> No
 
 @pytest.mark.usefixtures("los_angeles_process_timezone")
 async def test_the_page_timezone_is_utc_whatever_the_process_timezone(playwright: Playwright) -> None:
-    async with await deterministic_browser_context(
+    async with deterministic_browser_context(
         playwright, viewport={"width": 800, "height": 600}, frozen_now_ms=0
     ) as context:
         page = await context.new_page()
@@ -80,7 +80,7 @@ async def test_the_page_timezone_is_utc_whatever_the_process_timezone(playwright
 
 
 async def test_animations_and_transitions_are_pinned_by_the_css(playwright: Playwright) -> None:
-    async with await deterministic_browser_context(
+    async with deterministic_browser_context(
         playwright, viewport={"width": 800, "height": 600}, frozen_now_ms=0
     ) as context:
         page = await context.new_page()

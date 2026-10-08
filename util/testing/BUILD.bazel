@@ -315,25 +315,3 @@ py_library(
         "@pypi//pillow",
     ],
 )
-
-py_library(
-    name = "stable_capture",
-    srcs = ["stable_capture.py"],
-    visibility = ["//visibility:public"],
-    deps = [
-        ":page_capture",
-        "@pypi//playwright",
-    ],
-)
-
-py_test(
-    name = "test_stable_capture",
-    srcs = ["test_stable_capture.py"],
-    deps = [
-        ":stable_capture",
-        "//:conftest",
-        "@pypi//playwright",
-        "@pypi//pytest",
-        "@pypi//pytest_bazel",
-    ],
-)

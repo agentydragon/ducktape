@@ -100,3 +100,10 @@ when migrating so the publisher can match existing baselines.
 Run browser tests on RBE through `bbr`, or use PR CI. Pytest selection/sharding and the
 weekly `visual`-tagged determinism sweep continue to apply. Inspect both test results and
 the PR visual comparison; a passing test is not proof of an unchanged image.
+
+Check reproducibility by repeating the same test externally (for example,
+`bbr test --runs_per_test=5 //study_casino:visual_test`) or using the weekly
+visual determinism sweep, which compares artifacts across runs. Do not add a
+second browser render and pixel-equality assertion to each screenshot test.
+Repeated test success alone checks for flakes, not identical pixels; compare
+artifacts when investigating image reproducibility.

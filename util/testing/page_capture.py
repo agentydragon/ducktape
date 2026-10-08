@@ -38,18 +38,6 @@ from playwright.async_api import (
 # naming the selector it waited for, rather than be killed by Bazel.
 WAIT_TIMEOUT_MS = 30_000
 
-_WAIT_FOR_STABLE_JS = """async () => {
-    await document.fonts.ready;
-    await Promise.all(
-        Array.from(document.images)
-            .filter((image) => !image.complete)
-            // A broken src rejects; that is the page's problem to render, not ours to wait on.
-            .map((image) => image.decode().catch(() => {}))
-    );
-    // Two frames: the first flushes pending style and layout, the second lands after paint.
-    await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
-}"""
-
 # Polled once per frame. Quiet means `pending` stayed empty across a painted frame, so a response
 # whose re-render immediately starts another fetch is drained rather than captured between the two.
 # Three polls: empty, empty a frame later, empty a frame after that. The predicate is synchronous
@@ -100,18 +88,29 @@ class DevtoolsViewport:
         return base64.b64decode(capture["data"])
 
 
-async def wait_for_stable(page: Page) -> None:
-    """Wait until the page is done rendering what it has: fonts applied, images decoded, a frame painted.
+async def wait_for_stable(page: Page, *, timeout_ms: int = WAIT_TIMEOUT_MS) -> None:
+    """Wait for fonts, image decoding and a painted frame within one deadline.
 
-    Finishes as soon as those hold, and cannot pass early on a loaded runner the way a sleep can.
-    Deliberately does not await `document.getAnimations()`: harness pages pin animations with
-    `animation-play-state: paused`, and a paused animation's `finished` never settles, so awaiting it
-    would hang instead of capturing.
-
-    It cannot know a scene's own readiness (data arriving, a component mounting lazily); wait for
-    that with a selector on the thing the scene is about, then call this.
+    This is render readiness, not application readiness or animation convergence.
+    Paused harness animations deliberately never finish. Tests still wait for the
+    state they intend to photograph before calling this helper.
     """
-    await page.evaluate(_WAIT_FOR_STABLE_JS)
+    stage = "fonts"
+    try:
+        async with asyncio.timeout(timeout_ms / 1000):
+            await page.evaluate("() => document.fonts.ready.then(() => true)")
+            stage = "image decoding"
+            await page.evaluate("""() => Promise.all(
+                Array.from(document.images)
+                    .filter(image => !image.complete)
+                    // Broken images are the page's problem to render, not a reason to hang.
+                    .map(image => image.decode().catch(() => {}))
+            )""")
+            stage = "paint frames"
+            await page.evaluate("""() => new Promise(resolve =>
+                requestAnimationFrame(() => requestAnimationFrame(resolve)))""")
+    except TimeoutError as exc:
+        raise AssertionError(f"render readiness: {stage} did not settle within {timeout_ms}ms") from exc
 
 
 class PageErrors:

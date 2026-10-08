@@ -230,7 +230,7 @@ class VisualHarness:
             raise ValueError("window globals require an inline harness")
         if config.inline_page is not None and query is not None:
             raise ValueError("an inline harness is selected by window globals, not query")
-        async with await deterministic_browser_context(
+        async with deterministic_browser_context(
             self.playwright,
             viewport=viewport.size,
             frozen_now_ms=frozen_now_ms,

@@ -45,40 +45,66 @@ async def _park_pointer(view: VisualPage) -> None:
     await wait_for_stable(view.page)
 
 
-async def _capture(view: VisualPage, name: str) -> None:
-    # Approval controls arm asynchronously; page-specific tests wait for their own content.
-    for selector in (
-        "button:has-text('Approve'):disabled",
-        "button:has-text('Deny'):disabled",
-        "[aria-label='Loading MCP servers']",
-        "[aria-label='Loading Agents']",
-        "[aria-label='Loading Agent enrollment']",
-        "[aria-label='Checking connection status']",
-    ):
-        await view.page.wait_for_selector(selector, state="hidden")
-    await view.capture(name)
+async def _approvals_ready(view: VisualPage) -> None:
+    # Approval controls arm asynchronously.
+    for label in ("Approve", "Deny"):
+        await expect(view.page.locator(f"button:has-text('{label}'):disabled")).to_have_count(0)
 
 
-async def test_console(visual: VisualHarness, color_scheme: Literal["light", "dark"], capture_name: str) -> None:
-    async with _fixture(visual, "console", color_scheme, width=1200, height=800) as view:
-        await expect(view.page.frame_locator("iframe[src^='https://haku-ui.test/']").locator("main")).to_be_attached()
+async def _shell_ready(view: VisualPage) -> None:
+    await expect(view.page.frame_locator("iframe[src^='https://haku-ui.test/']").locator("main")).to_be_attached()
+    await view.page.wait_for_selector("[aria-label='Syncing']", state="hidden")
+
+
+@pytest.fixture
+def console_viewport() -> Viewport:
+    return Viewport(width=1200, height=800)
+
+
+@pytest_asyncio.fixture(loop_scope="session")
+async def console_view(
+    visual: VisualHarness, color_scheme: Literal["light", "dark"], console_viewport: Viewport
+) -> AsyncIterator[VisualPage]:
+    async with _fixture(
+        visual, "console", color_scheme, width=console_viewport.width, height=console_viewport.height
+    ) as view:
+        await _shell_ready(view)
+        await _approvals_ready(view)
+        yield view
+
+
+@pytest.fixture
+def history_fixture() -> str:
+    return "history"
+
+
+@pytest.fixture
+def history_viewport() -> Viewport:
+    return Viewport(width=1200, height=1500)
+
+
+@pytest_asyncio.fixture(loop_scope="session")
+async def history_view(
+    visual: VisualHarness, color_scheme: Literal["light", "dark"], history_fixture: str, history_viewport: Viewport
+) -> AsyncIterator[VisualPage]:
+    async with _fixture(
+        visual, history_fixture, color_scheme, width=history_viewport.width, height=history_viewport.height
+    ) as view:
+        await _shell_ready(view)
         await _close_approvals(view)
-        await view.page.wait_for_selector("[aria-label='Syncing']", state="hidden")
-        await _capture(view, capture_name)
+        yield view
 
 
-async def test_console_drawer(visual: VisualHarness, color_scheme: Literal["light", "dark"], capture_name: str) -> None:
-    async with _fixture(visual, "console", color_scheme, width=1200, height=800) as view:
-        await expect(view.page.frame_locator("iframe[src^='https://haku-ui.test/']").locator("main")).to_be_attached()
-        await view.page.wait_for_selector("[aria-label='Syncing']", state="hidden")
-        await _capture(view, capture_name)
+async def test_console(console_view: VisualPage, capture_name: str) -> None:
+    await _close_approvals(console_view)
+    await console_view.capture(capture_name)
 
 
-async def test_console_mobile(visual: VisualHarness, color_scheme: Literal["light", "dark"], capture_name: str) -> None:
-    async with _fixture(visual, "console", color_scheme, width=390, height=760) as view:
-        await expect(view.page.frame_locator("iframe[src^='https://haku-ui.test/']").locator("main")).to_be_attached()
-        await view.page.wait_for_selector("[aria-label='Syncing']", state="hidden")
-        await _capture(view, capture_name)
+@pytest.mark.parametrize(
+    "console_viewport", [Viewport(width=1200, height=800), Viewport(width=390, height=760)], ids=["desktop", "mobile"]
+)
+async def test_console_drawer(console_view: VisualPage, capture_name: str) -> None:
+    await console_view.capture(capture_name)
 
 
 async def test_not_found(visual: VisualHarness, color_scheme: Literal["light", "dark"], capture_name: str) -> None:
@@ -87,7 +113,7 @@ async def test_not_found(visual: VisualHarness, color_scheme: Literal["light", "
         await expect(view.page.frame_locator("iframe[src^='https://haku-ui.test/']").locator("main")).to_be_attached()
         await _close_approvals(view)
         await view.page.wait_for_selector("[aria-label='Syncing']", state="hidden")
-        await _capture(view, capture_name)
+        await view.capture(capture_name)
 
 
 async def test_approvals_embed(
@@ -95,7 +121,8 @@ async def test_approvals_embed(
 ) -> None:
     async with _fixture(visual, "approvals-embed", color_scheme, width=560, height=820) as view:
         await view.page.wait_for_selector("button:has-text('Approve')", state="attached")
-        await _capture(view, capture_name)
+        await _approvals_ready(view)
+        await view.capture(capture_name)
 
 
 @pytest.fixture
@@ -112,6 +139,7 @@ async def settings_view(
     ) as view:
         await expect(view.page.frame_locator("iframe[src^='https://haku-ui.test/']").locator("main")).to_be_attached()
         await _close_approvals(view)
+        await view.page.wait_for_selector("[aria-label='Loading Agents']", state="hidden")
         yield view
 
 
@@ -120,7 +148,7 @@ async def settings_view(
 )
 async def test_settings(settings_view: VisualPage, capture_name: str) -> None:
     await settings_view.page.wait_for_selector("[aria-label='Syncing']", state="hidden")
-    await _capture(settings_view, capture_name)
+    await settings_view.capture(capture_name)
 
 
 @pytest.mark.parametrize(
@@ -139,7 +167,7 @@ async def test_settings_tab(settings_view: VisualPage, tab: str, ready_text: str
     await settings_view.page.wait_for_selector(f":text('{ready_text}')", state="visible")
     await _park_pointer(settings_view)
     await settings_view.page.wait_for_selector("[aria-label='Syncing']", state="hidden")
-    await _capture(settings_view, capture_name)
+    await settings_view.capture(capture_name)
 
 
 async def test_settings_grants_history(settings_view: VisualPage, capture_name: str) -> None:
@@ -152,7 +180,7 @@ async def test_settings_grants_history(settings_view: VisualPage, capture_name: 
     )
     await _park_pointer(settings_view)
     await settings_view.page.wait_for_selector("[aria-label='Syncing']", state="hidden")
-    await _capture(settings_view, capture_name)
+    await settings_view.capture(capture_name)
 
 
 async def test_settings_grants_revoke(settings_view: VisualPage, capture_name: str) -> None:
@@ -163,7 +191,7 @@ async def test_settings_grants_revoke(settings_view: VisualPage, capture_name: s
     await settings_view.page.wait_for_selector(":text('Confirm')", state="visible")
     await _park_pointer(settings_view)
     await settings_view.page.wait_for_selector("[aria-label='Syncing']", state="hidden")
-    await _capture(settings_view, capture_name)
+    await settings_view.capture(capture_name)
 
 
 async def test_agent_enrollment(
@@ -173,7 +201,8 @@ async def test_agent_enrollment(
         await expect(view.page.frame_locator("iframe[src^='https://haku-ui.test/']").locator("main")).to_be_attached()
         await _close_approvals(view)
         await view.page.wait_for_selector("[aria-label='Syncing']", state="hidden")
-        await _capture(view, capture_name)
+        await view.page.wait_for_selector("[aria-label='Loading Agent enrollment']", state="hidden")
+        await view.capture(capture_name)
 
 
 async def test_agent_enrollment_reconnect(
@@ -183,7 +212,8 @@ async def test_agent_enrollment_reconnect(
         await expect(view.page.frame_locator("iframe[src^='https://haku-ui.test/']").locator("main")).to_be_attached()
         await _close_approvals(view)
         await view.page.wait_for_selector("[aria-label='Syncing']", state="hidden")
-        await _capture(view, capture_name)
+        await view.page.wait_for_selector("[aria-label='Loading Agent enrollment']", state="hidden")
+        await view.capture(capture_name)
 
 
 async def test_agent_enrollment_mobile(
@@ -193,70 +223,51 @@ async def test_agent_enrollment_mobile(
         await expect(view.page.frame_locator("iframe[src^='https://haku-ui.test/']").locator("main")).to_be_attached()
         await _close_approvals(view)
         await view.page.wait_for_selector("[aria-label='Syncing']", state="hidden")
-        await _capture(view, capture_name)
+        await view.page.wait_for_selector("[aria-label='Loading Agent enrollment']", state="hidden")
+        await view.capture(capture_name)
 
 
-async def test_history(visual: VisualHarness, color_scheme: Literal["light", "dark"], capture_name: str) -> None:
-    async with _fixture(visual, "history", color_scheme, width=1200, height=1500) as view:
-        await expect(view.page.frame_locator("iframe[src^='https://haku-ui.test/']").locator("main")).to_be_attached()
-        await _close_approvals(view)
-        await view.page.locator("[aria-label='Full'] >> nth=0").click()
-        await view.page.wait_for_selector("summary:has-text('Metadata')", state="visible")
-        await _park_pointer(view)
-        await view.page.locator("summary:has-text('Metadata')").click()
-        await view.page.wait_for_selector(".haku-shell-disclosure[open] .haku-shell-disclosure-body", state="visible")
-        await _park_pointer(view)
-        await view.page.wait_for_selector("[aria-label='Syncing']", state="hidden")
-        await _capture(view, capture_name)
+async def test_history(history_view: VisualPage, capture_name: str) -> None:
+    view = history_view
+    await view.page.locator("[aria-label='Full'] >> nth=0").click()
+    await view.page.wait_for_selector("summary:has-text('Metadata')", state="visible")
+    await _park_pointer(view)
+    await view.page.locator("summary:has-text('Metadata')").click()
+    await view.page.wait_for_selector(".haku-shell-disclosure[open] .haku-shell-disclosure-body", state="visible")
+    await _park_pointer(view)
+    await view.capture(capture_name)
 
 
-async def test_history_auto_approved(
-    visual: VisualHarness, color_scheme: Literal["light", "dark"], capture_name: str
+async def test_history_auto_approved(history_view: VisualPage, capture_name: str) -> None:
+    view = history_view
+    await view.page.locator("[aria-label='Show auto-approved']").click()
+    await view.page.wait_for_selector(":text('Auto-approved by unconditional_v1')", state="visible")
+    await _park_pointer(view)
+    await view.capture(capture_name)
+
+
+@pytest.mark.parametrize("history_fixture", ["history-paged"])
+@pytest.mark.parametrize("history_viewport", [Viewport(width=1200, height=900)], ids=["desktop"])
+async def test_history_paged(history_view: VisualPage, capture_name: str) -> None:
+    view = history_view
+    await view.page.wait_for_selector("button:has-text('Load older calls')", state="attached")
+    await view.page.locator(".haku-page-scroll").evaluate("element => { element.scrollTop = element.scrollHeight; }")
+    await view.capture(capture_name)
+
+
+@pytest.mark.parametrize(
+    ("fixture_id", "status"),
+    [("sync-current", "Up to date"), ("sync-syncing", "Syncing"), ("sync-error", "Sync error")],
+    ids=["current", "syncing", "error"],
+)
+async def test_sync_status(
+    visual: VisualHarness, color_scheme: Literal["light", "dark"], capture_name: str, fixture_id: str, status: str
 ) -> None:
-    async with _fixture(visual, "history", color_scheme, width=1200, height=1500) as view:
-        await expect(view.page.frame_locator("iframe[src^='https://haku-ui.test/']").locator("main")).to_be_attached()
-        await _close_approvals(view)
-        await view.page.locator("[aria-label='Show auto-approved']").click()
-        await view.page.wait_for_selector(":text('Auto-approved by unconditional_v1')", state="visible")
-        await _park_pointer(view)
-        await view.page.wait_for_selector("[aria-label='Syncing']", state="hidden")
-        await _capture(view, capture_name)
-
-
-async def test_history_paged(visual: VisualHarness, color_scheme: Literal["light", "dark"], capture_name: str) -> None:
-    async with _fixture(visual, "history-paged", color_scheme, width=1200, height=900) as view:
-        await view.page.wait_for_selector("button:has-text('Load older calls')", state="attached")
-        await expect(view.page.frame_locator("iframe[src^='https://haku-ui.test/']").locator("main")).to_be_attached()
-        await _close_approvals(view)
-        await view.page.wait_for_selector("[aria-label='Syncing']", state="hidden")
-        await view.page.locator(".haku-page-scroll").evaluate(
-            "element => { element.scrollTop = element.scrollHeight; }"
-        )
-        await _capture(view, capture_name)
-
-
-async def test_sync_current(visual: VisualHarness, color_scheme: Literal["light", "dark"], capture_name: str) -> None:
-    async with _fixture(visual, "sync-current", color_scheme, width=600, height=420) as view:
-        await view.page.locator("[aria-label='Up to date']").click()
+    async with _fixture(visual, fixture_id, color_scheme, width=600, height=420) as view:
+        await view.page.get_by_label(status, exact=True).click()
         await view.page.wait_for_selector("[aria-label='Sync status']", state="visible")
         await _park_pointer(view)
-        await _capture(view, capture_name)
-
-
-async def test_sync_syncing(visual: VisualHarness, color_scheme: Literal["light", "dark"], capture_name: str) -> None:
-    async with _fixture(visual, "sync-syncing", color_scheme, width=600, height=420) as view:
-        await view.page.locator("[aria-label='Syncing']").click()
-        await view.page.wait_for_selector("[aria-label='Sync status']", state="visible")
-        await _park_pointer(view)
-        await _capture(view, capture_name)
-
-
-async def test_sync_error(visual: VisualHarness, color_scheme: Literal["light", "dark"], capture_name: str) -> None:
-    async with _fixture(visual, "sync-error", color_scheme, width=600, height=420) as view:
-        await view.page.locator("[aria-label='Sync error']").click()
-        await view.page.wait_for_selector("[aria-label='Sync status']", state="visible")
-        await _park_pointer(view)
-        await _capture(view, capture_name)
+        await view.capture(capture_name)
 
 
 async def test_session_expiring(
@@ -266,7 +277,7 @@ async def test_session_expiring(
         await view.page.locator("[aria-label='Session expiring soon']").click()
         await view.page.wait_for_selector("[aria-label='Console session']", state="visible")
         await _park_pointer(view)
-        await _capture(view, capture_name)
+        await view.capture(capture_name)
 
 
 if __name__ == "__main__":
