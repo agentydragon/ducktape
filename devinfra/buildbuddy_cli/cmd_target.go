@@ -105,7 +105,7 @@ func targetHistorySubCmd() *cobra.Command {
 				return fmt.Errorf("--since: %w", err)
 			}
 
-			resp, err := fetchAllTargetHistory(c, req)
+			resp, err := fetchAllTargetHistory(c, req, sinceTime)
 			if err != nil {
 				return err
 			}
@@ -139,7 +139,7 @@ func targetHistorySubCmd() *cobra.Command {
 	return cmd
 }
 
-func fetchAllTargetHistory(c *client, req *targetpb.GetTargetHistoryRequest) (*targetpb.GetTargetHistoryResponse, error) {
+func fetchAllTargetHistory(c *client, req *targetpb.GetTargetHistoryRequest, since time.Time) (*targetpb.GetTargetHistoryResponse, error) {
 	result := &targetpb.GetTargetHistoryResponse{}
 	indexesByLabel := make(map[string]int)
 	for {
@@ -147,7 +147,13 @@ func fetchAllTargetHistory(c *client, req *targetpb.GetTargetHistoryRequest) (*t
 		if err := c.call("GetTargetHistory", req, page); err != nil {
 			return nil, err
 		}
+		if !since.IsZero() && targetHistoryPageIsOlderThan(page, since) {
+			break
+		}
 		for _, history := range page.GetInvocationTargets() {
+			if !since.IsZero() {
+				history.TargetStatus = filterTargetHistoryStatuses(history.GetTargetStatus(), false, since)
+			}
 			label := history.GetTarget().GetLabel()
 			if index, ok := indexesByLabel[label]; ok {
 				result.InvocationTargets[index].TargetStatus = append(
@@ -166,25 +172,31 @@ func fetchAllTargetHistory(c *client, req *targetpb.GetTargetHistoryRequest) (*t
 	return result, nil
 }
 
+// BuildBuddy orders commits by their maximum invocation start time, newest first, and
+// puts all invocations for a page of commits together. A page is a safe cutoff only
+// when every status has a valid creation time strictly before since.
+func targetHistoryPageIsOlderThan(page *targetpb.GetTargetHistoryResponse, since time.Time) bool {
+	statusCount := 0
+	for _, history := range page.GetInvocationTargets() {
+		for _, status := range history.GetTargetStatus() {
+			statusCount++
+			createdAtUsec := status.GetInvocationCreatedAtUsec()
+			if createdAtUsec <= 0 || !time.UnixMicro(createdAtUsec).Before(since) {
+				return false
+			}
+		}
+	}
+	return statusCount > 0
+}
+
 func filterTargetHistory(resp *targetpb.GetTargetHistoryResponse, label string, failuresOnly bool, since time.Time, count int) {
 	filteredTargets := make([]*targetpb.TargetHistory, 0, len(resp.GetInvocationTargets()))
 	for _, history := range resp.GetInvocationTargets() {
 		if label != "" && history.GetTarget().GetLabel() != label {
 			continue
 		}
-		filteredStatuses := make([]*targetpb.TargetStatus, 0, len(history.GetTargetStatus()))
-		for _, status := range history.GetTargetStatus() {
-			if failuresOnly && status.GetStatus().String() == "PASSED" {
-				continue
-			}
-			// Use invocation creation time, not test start time (cached tests report original start).
-			invocationTime := time.UnixMicro(status.GetInvocationCreatedAtUsec())
-			if !since.IsZero() && invocationTime.Before(since) {
-				continue
-			}
-			filteredStatuses = append(filteredStatuses, status)
-		}
-		if failuresOnly && len(filteredStatuses) == 0 {
+		filteredStatuses := filterTargetHistoryStatuses(history.GetTargetStatus(), failuresOnly, since)
+		if len(filteredStatuses) == 0 && (failuresOnly || !since.IsZero()) {
 			continue
 		}
 		history.TargetStatus = filteredStatuses
@@ -195,6 +207,22 @@ func filterTargetHistory(resp *targetpb.GetTargetHistoryResponse, label string, 
 	}
 	resp.InvocationTargets = filteredTargets
 	resp.NextPageToken = ""
+}
+
+func filterTargetHistoryStatuses(statuses []*targetpb.TargetStatus, failuresOnly bool, since time.Time) []*targetpb.TargetStatus {
+	filtered := make([]*targetpb.TargetStatus, 0, len(statuses))
+	for _, status := range statuses {
+		if failuresOnly && status.GetStatus().String() == "PASSED" {
+			continue
+		}
+		// Use invocation creation time, not test start time (cached tests report original start).
+		invocationTime := time.UnixMicro(status.GetInvocationCreatedAtUsec())
+		if !since.IsZero() && invocationTime.Before(since) {
+			continue
+		}
+		filtered = append(filtered, status)
+	}
+	return filtered
 }
 
 func targetStatsSubCmd() *cobra.Command {
