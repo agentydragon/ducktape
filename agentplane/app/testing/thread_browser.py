@@ -82,6 +82,16 @@ async def page(
             await browser.close()
 
 
+async def expect_projected_cursor(page: Page, cursor: int) -> None:
+    await page.wait_for_function(
+        """cursor => {
+            const value = document.querySelector('[data-projection-cursor]')?.dataset.projectionCursor;
+            return value !== undefined && BigInt(value) >= BigInt(cursor);
+        }""",
+        arg=str(cursor),
+    )
+
+
 @dataclass
 class ThreadBrowser:
     page: Page
@@ -92,6 +102,11 @@ class ThreadBrowser:
     opened: Opened
     app: AppProcess
     ingress: Ingress
+
+    async def start_replay(self) -> None:
+        """Release runner replay and wait until the browser applies its current projection."""
+        self.opened.replay.set()
+        await expect_projected_cursor(self.page, self.source.entries[-1].cursor)
 
 
 @pytest.fixture
