@@ -363,6 +363,7 @@ py_test(
         "//agentplane/runner:protocol_pb2",
         "//agentplane/runner:service",
         "//agentplane/runner:session",
+        "//agentplane/runner/testing:diagnostics",
         "//agentplane/runner/testing:fixtures",
         "//agentplane/runner/testing:scripted_model",
         "//agentplane/sandbox_service:client",
