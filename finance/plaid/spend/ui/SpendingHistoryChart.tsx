@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef } from "react";
-import { Alert, Card, Center, Loader, Stack, Text, Title } from "@mantine/core";
+import { Alert, Card, Center, Group, Loader, SegmentedControl, Stack, Text, Title } from "@mantine/core";
 import {
   BarController,
   BarElement,
@@ -28,6 +28,7 @@ Chart.register(
 
 type Allowance = components["schemas"]["AllowanceView"];
 type TransactionsView = components["schemas"]["SpendTransactionsView"];
+type EstimatePeriodId = Extract<components["schemas"]["Period"]["id"], "rolling_7d" | "rolling_30d">;
 
 function formatMoney(minorUnits: number, currency: string): string {
   const code = currency.length === 3 ? currency.toUpperCase() : "USD";
@@ -55,11 +56,15 @@ export function SpendingHistoryChart({
   allowance,
   loading,
   error,
+  periodId,
+  onPeriodChange,
 }: {
   transactions: TransactionsView | null;
   allowance: Allowance;
   loading: boolean;
   error: string | null;
+  periodId: EstimatePeriodId;
+  onPeriodChange: (periodId: EstimatePeriodId) => void;
 }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const dates = useMemo(
@@ -71,16 +76,17 @@ export function SpendingHistoryChart({
     const amounts = new Map<string, Map<string, number>>();
     const categories = new Map<string, { label: string; color: string; total: number }>();
     for (const row of transactions.rows) {
-      if (row.allowance_minor_units <= 0 || !row.category) continue;
+      const amount = row.pace_effects.find((effect) => effect.period_id === periodId)?.amount_minor_units ?? 0;
+      if (amount <= 0 || !row.category) continue;
       const category = categories.get(row.category.id) ?? {
         label: row.category.label,
         color: row.category.color,
         total: 0,
       };
-      category.total += row.allowance_minor_units;
+      category.total += amount;
       categories.set(row.category.id, category);
       const day = amounts.get(row.date) ?? new Map<string, number>();
-      day.set(row.category.id, (day.get(row.category.id) ?? 0) + row.allowance_minor_units);
+      day.set(row.category.id, (day.get(row.category.id) ?? 0) + amount);
       amounts.set(row.date, day);
     }
 
@@ -122,7 +128,7 @@ export function SpendingHistoryChart({
       totalMinorUnits,
       days: dates.length,
     };
-  }, [allowance.monthly_minor_units, dates, transactions]);
+  }, [allowance.monthly_minor_units, dates, periodId, transactions]);
 
   useEffect(() => {
     if (!canvasRef.current || !transactions || !chart) return;
@@ -177,14 +183,31 @@ export function SpendingHistoryChart({
   return (
     <Card component="section" aria-labelledby="spending-history-title" withBorder radius="lg" padding="xl">
       <Stack gap="md">
-        <div>
-          <Title id="spending-history-title" order={2} size="h3">
-            Spending over time
-          </Title>
-          <Text size="sm" c="dimmed" mt="xs">
-            Daily flexible purchases by configured category.
-          </Text>
-        </div>
+        <Group align="flex-start" justify="space-between" gap="sm" wrap="wrap">
+          <div>
+            <Title id="spending-history-title" order={2} size="h3">
+              Spending over time
+            </Title>
+            <Text size="sm" c="dimmed" mt="xs">
+              Daily flexible purchases by configured category.
+            </Text>
+          </div>
+          <Stack gap={4} align="flex-end" style={{ flexShrink: 0 }}>
+            <Text size="xs" c="dimmed" fw={600}>
+              Estimate window
+            </Text>
+            <SegmentedControl
+              aria-label="Estimate window"
+              size="xs"
+              value={periodId}
+              onChange={(value) => onPeriodChange(value as EstimatePeriodId)}
+              data={[
+                { value: "rolling_7d", label: "7 days" },
+                { value: "rolling_30d", label: "30 days" },
+              ]}
+            />
+          </Stack>
+        </Group>
         {error ? (
           <Alert color="red" title="Couldn't load spending history">
             {error}
@@ -202,10 +225,11 @@ export function SpendingHistoryChart({
               <canvas ref={canvasRef} role="img" aria-label={summary} aria-describedby="spending-history-summary" />
             </div>
             <Text size="xs" c="dimmed">
-              Posted and pending flexible purchases after activation are included; unmatched purchases count as
-              unclassified flexible spending. Fixed and excluded purchases are omitted. The dashed leash line is the
-              monthly credit translated to a daily reference pace; carryforward affects the available balance
-              separately.
+              Posted and pending positive flexible purchases in the selected window are included, including purchases
+              before allowance activation. Earlier purchases inform this graph and the pace estimate but do not reduce
+              the available allowance. Unmatched purchases count as unclassified flexible spending; fixed and excluded
+              purchases are omitted. The dashed leash line shows the monthly credit as a daily reference pace;
+              carryforward affects the available balance separately.
             </Text>
           </>
         ) : (

@@ -426,10 +426,33 @@ async def test_spending_decision_render(
     page: Page, view: VisualPage, dashboard_url: str, width: int, height: int
 ) -> None:
     await page.set_viewport_size({"width": width, "height": height})
+
+    async def serve_pre_activation_history(route: Route) -> None:
+        response = await route.fetch()
+        transactions = await response.json()
+        if transactions["requested_period_id"] == "rolling_30d":
+            historical = next(row for row in transactions["rows"] if row["name"] == "EXAMPLE TRAVEL PURCHASE")
+            historical["date"] = "2026-09-30"
+            historical["disposition"] = "pace_only"
+            historical["allowance_minor_units"] = 0
+        await route.fulfill(response=response, json=transactions)
+
+    await page.route("**/api/v1/transactions*", serve_pre_activation_history)
     await page.goto(dashboard_url, wait_until="domcontentloaded")
     await page.locator("canvas[aria-label]").wait_for()
     await page.get_by_text("$200", exact=True).wait_for()
     await expect(page.get_by_role("heading", name="Flexible spending", level=1)).to_have_count(1)
+    await expect(page.get_by_text("Earlier purchases inform this graph", exact=False)).to_be_visible()
+    assert await page.evaluate(
+        """() => {
+            const chart = document.getElementById("spending-history-title");
+            const allowance = document.getElementById("allowance-title");
+            return Boolean(
+                chart && allowance &&
+                (chart.compareDocumentPosition(allowance) & Node.DOCUMENT_POSITION_FOLLOWING)
+            );
+        }"""
+    )
     await expect(page.get_by_role("alert").get_by_text("2 charges ($15) need review")).to_have_count(1)
     await expect(page.get_by_role("heading", name="Can I afford this?")).to_have_count(1)
     await expect(page.get_by_text("7 days", exact=True)).to_have_count(1)

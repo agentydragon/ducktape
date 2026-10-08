@@ -1497,24 +1497,22 @@ function App() {
                   {state}
                 </Badge>
               </Group>
-              {view?.allowance && (
-                <Group justify="space-between" gap="sm">
-                  <Text size="sm" fw={600}>
-                    Estimate window
-                  </Text>
-                  <SegmentedControl
-                    aria-label="Estimate window"
-                    value={estimatePeriodId}
-                    onChange={(periodId) => {
-                      setError(null);
-                      setSelectedEstimatePeriodId(periodId as EstimatePeriodId);
-                    }}
-                    data={[
-                      { value: "rolling_7d", label: "7 days" },
-                      { value: "rolling_30d", label: "30 days" },
-                    ]}
-                  />
-                </Group>
+              {view?.allowance?.status === "active" && (
+                <SpendingHistoryChart
+                  transactions={
+                    !estimatePending && transactions?.requested_period_id === estimatePeriodId ? transactions : null
+                  }
+                  allowance={view.allowance}
+                  loading={
+                    transactionsLoading || estimatePending || transactions?.requested_period_id !== estimatePeriodId
+                  }
+                  error={transactionsError}
+                  periodId={estimatePeriodId}
+                  onPeriodChange={(periodId) => {
+                    setError(null);
+                    setSelectedEstimatePeriodId(periodId);
+                  }}
+                />
               )}
               {error && (
                 <Alert color="red" title="Couldn't refresh your view">
@@ -1536,14 +1534,6 @@ function App() {
                     ? "No allowance is configured. Card totals below are not a flexible-spend budget."
                     : "Loading your spending picture…"}
                 </Alert>
-              )}
-              {view?.allowance?.status === "active" && !estimatePending && (
-                <SpendingHistoryChart
-                  transactions={transactions?.requested_period_id === estimatePeriodId ? transactions : null}
-                  allowance={view.allowance}
-                  loading={transactionsLoading}
-                  error={transactionsError}
-                />
               )}
               <section aria-labelledby="cards-title">
                 <Group justify="space-between" align="baseline">
