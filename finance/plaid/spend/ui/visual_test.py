@@ -111,6 +111,15 @@ async def _expand_accordion(control: Locator) -> None:
     )
 
 
+async def _select_spend_page(page: Page, label: str) -> None:
+    navigation_button = page.get_by_role("button", name="Open page navigation")
+    if await navigation_button.is_visible():
+        await navigation_button.click()
+        await page.get_by_role("menuitem", name=label).click()
+    else:
+        await page.get_by_role("tab", name=label).click()
+
+
 @pytest.fixture(scope="module")
 def dashboard_url() -> Iterator[str]:
     app = FastAPI()
@@ -574,7 +583,7 @@ async def test_review_rule_configuration_render(
 ) -> None:
     await page.set_viewport_size({"width": width, "height": height})
     await page.goto(dashboard_url, wait_until="domcontentloaded")
-    await page.get_by_role("tab", name="Configuration").click()
+    await _select_spend_page(page, "Configuration")
     await page.get_by_text("Unverified credit; inspect the earlier purchase before netting it.").wait_for()
     await expect(page.get_by_text("Review", exact=True)).to_have_count(1)
     await expect(page.get_by_text("Amount is negative AND (Transaction name starts with", exact=False)).to_have_count(1)
@@ -613,7 +622,7 @@ async def test_transaction_explanations_render(
 ) -> None:
     await page.set_viewport_size({"width": width, "height": height})
     await page.goto(dashboard_url, wait_until="domcontentloaded")
-    await page.get_by_role("tab", name="Transactions").click()
+    await _select_spend_page(page, "Transactions")
     rows = page.get_by_role("table") if width >= 992 else page.locator(".mantine-Accordion-root").first
     await rows.get_by_text("Example Cafe", exact=True).wait_for()
     await expect(page.get_by_role("heading", name="Transactions", level=1)).to_have_count(1)
@@ -651,7 +660,7 @@ async def test_transaction_explanations_dark_theme(page: Page, view: VisualPage,
     await page.emulate_media(color_scheme="dark")
     await page.set_viewport_size({"width": 390, "height": 844})
     await page.goto(dashboard_url, wait_until="domcontentloaded")
-    await page.get_by_role("tab", name="Transactions").click()
+    await _select_spend_page(page, "Transactions")
     rows = page.locator(".mantine-Accordion-root")
     await rows.get_by_text("Example Cafe", exact=True).wait_for()
     await _expand_accordion(rows.get_by_role("button", name="UPS", exact=False))

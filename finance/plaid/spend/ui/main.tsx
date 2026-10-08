@@ -8,6 +8,7 @@ import {
   Badge,
   Box,
   Button,
+  Burger,
   Card,
   Center,
   Container,
@@ -15,6 +16,7 @@ import {
   Grid,
   Group,
   MantineProvider,
+  Menu,
   NumberInput,
   Paper,
   ScrollArea,
@@ -46,6 +48,12 @@ type EstimatePeriodId = Extract<AllowancePeriodId, "rolling_7d" | "rolling_30d">
 type RuleCondition = components["schemas"]["Rule"]["condition"];
 type RuleKind = components["schemas"]["Rule"]["kind"];
 type SpendTab = "spending" | "transactions" | "configuration";
+
+const spendTabs: { value: SpendTab; label: string }[] = [
+  { value: "spending", label: "Spending" },
+  { value: "transactions", label: "Transactions" },
+  { value: "configuration", label: "Configuration" },
+];
 
 const periodLabels = {
   credit_cycle: "Credit cycle",
@@ -1343,6 +1351,7 @@ function App() {
   const [state, setState] = useState("Connecting");
   const [error, setError] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<SpendTab>(() => tabForHash(window.location.hash));
+  const [navigationMenuOpened, setNavigationMenuOpened] = useState(false);
   const [configuration, setConfiguration] = useState<SpendConfiguration | null>(null);
   const [configurationLoading, setConfigurationLoading] = useState(false);
   const [configurationError, setConfigurationError] = useState<string | null>(null);
@@ -1495,39 +1504,51 @@ function App() {
                   Spend
                 </Anchor>
               </Grid.Col>
-              <Grid.Col span={{ base: 12, xs: 4 }} order={{ base: 3, xs: 2 }}>
-                <ScrollArea type="auto" scrollbars="x" w="100%">
-                  <Center>
-                    <Tabs.List aria-label="Spend pages" miw="max-content">
-                      <Tabs.Tab value="spending" aria-label="Spending">
-                        <Text span visibleFrom="xs">
-                          Spending
-                        </Text>
-                        <Text span hiddenFrom="xs">
-                          Spend
-                        </Text>
-                      </Tabs.Tab>
-                      <Tabs.Tab value="transactions">Transactions</Tabs.Tab>
-                      <Tabs.Tab value="configuration" aria-label="Configuration">
-                        <Text span visibleFrom="xs">
-                          Configuration
-                        </Text>
-                        <Text span hiddenFrom="xs">
-                          Config
-                        </Text>
-                      </Tabs.Tab>
-                    </Tabs.List>
-                  </Center>
-                </ScrollArea>
-              </Grid.Col>
               <Grid.Col span={{ base: 6, xs: 4 }} order={{ base: 2, xs: 3 }}>
-                <Group justify="flex-end">
+                <Group justify="flex-end" gap="xs">
+                  <Box hiddenFrom="lg">
+                    <Menu position="bottom-end" opened={navigationMenuOpened} onChange={setNavigationMenuOpened}>
+                      <Menu.Target>
+                        <Burger
+                          opened={navigationMenuOpened}
+                          aria-label={navigationMenuOpened ? "Close page navigation" : "Open page navigation"}
+                          size="sm"
+                        />
+                      </Menu.Target>
+                      <Menu.Dropdown>
+                        <Menu.Label>Pages</Menu.Label>
+                        {spendTabs.map((tab) => (
+                          <Menu.Item
+                            key={tab.value}
+                            data-active={activeTab === tab.value}
+                            aria-current={activeTab === tab.value ? "page" : undefined}
+                            onClick={() => {
+                              window.location.hash = `/${tab.value}`;
+                            }}
+                          >
+                            {tab.label}
+                          </Menu.Item>
+                        ))}
+                      </Menu.Dropdown>
+                    </Menu>
+                  </Box>
                   <form action="/auth/logout" method="post">
                     <Button type="submit" variant="subtle" color="gray" size="sm">
                       Sign out
                     </Button>
                   </form>
                 </Group>
+              </Grid.Col>
+              <Grid.Col span={{ base: 12, xs: 4 }} order={{ base: 3, xs: 2 }} visibleFrom="lg">
+                <Center>
+                  <Tabs.List aria-label="Spend pages">
+                    {spendTabs.map((tab) => (
+                      <Tabs.Tab key={tab.value} value={tab.value}>
+                        {tab.label}
+                      </Tabs.Tab>
+                    ))}
+                  </Tabs.List>
+                </Center>
               </Grid.Col>
             </Grid>
           </Container>
