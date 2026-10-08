@@ -63,6 +63,8 @@ class Resources:
             raise ValueError("timeouts must be positive")
         if not self.caller_accounts:
             raise ValueError("at least one service caller is required")
+        if not self.history_reader_accounts <= self.caller_accounts:
+            raise ValueError("history readers must be allowed service callers")
 
     async def authenticate(self, context: grpc.aio.ServicerContext) -> ServiceAccountRef:
         values = [value for key, value in (context.invocation_metadata() or ()) if key == "authorization"]

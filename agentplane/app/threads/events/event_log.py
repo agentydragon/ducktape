@@ -159,6 +159,8 @@ class EventLogStore:
                 if page.last_cursor < await self.last_cursor(thread_id):
                     raise ConnectionError("Sandbox Service history is behind the app's confirmed prefix")
                 if not page.entries:
+                    if cursor < page.last_cursor:
+                        raise ConnectionError("Sandbox Service omitted entries from a published prefix")
                     break
                 if any(entry.cursor != cursor + index + 1 for index, entry in enumerate(page.entries)):
                     raise ConnectionError("Sandbox Service history page is not contiguous")
