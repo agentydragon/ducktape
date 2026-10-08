@@ -4,6 +4,7 @@ import json
 from uuid import UUID, uuid4
 
 import pytest
+import pytest_bazel
 from google.protobuf.json_format import MessageToDict
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncEngine
@@ -69,3 +70,7 @@ async def test_legacy_and_reserved_session_backfill_can_replay(engine: AsyncEngi
         )
     with pytest.raises(HistoryConflictError):
         await backfill(engine, engine, namespace="testing")
+
+
+if __name__ == "__main__":
+    pytest_bazel.main()

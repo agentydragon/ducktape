@@ -169,6 +169,7 @@ py_test(
         "//agentplane/sandbox_service:conftest",
         "@pypi//protobuf",
         "@pypi//pytest",
+        "@pypi//pytest_bazel",
         "@pypi//sqlalchemy",
     ],
 )
