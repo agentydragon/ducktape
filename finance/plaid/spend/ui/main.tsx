@@ -385,8 +385,8 @@ function AllowancePanel({
                   </>
                 ) : (
                   <>
-                    Unmatched in selected window: {unmatched.count} ({m(unmatched.amount_minor_units)}) · counted as
-                    flexible.
+                    Unmatched in selected window: {unmatched?.count ?? 0} ({m(unmatched?.amount_minor_units)}) · counted
+                    as flexible.
                   </>
                 )}
               </Text>
