@@ -163,6 +163,7 @@ ENV = Environment(
 
 def chart(app: App) -> Chart:
     chart = environment_chart(app, ENV)
+    rbac.TestingNamespaceResourceLimits(chart, "namespace-resource-limits", ENV.namespace)
     # Only this environment's chart gets the agent-operator Role/RoleBinding -- see
     # `rbac.AgentRbac`'s own docstring for why it must not be in staging's.
     rbac.AgentRbac(chart, "rbac", ENV)
