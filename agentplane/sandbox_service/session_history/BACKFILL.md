@@ -10,7 +10,7 @@ and are **not** eligible for shadow runner polling. Do not fabricate a UID based
 only on a currently matching Sandbox name.
 
 This is not a continuously running reconciler. The example Kubernetes Job at
-`cluster/k8s/agentplane-staging/manual/session-history-backfill.yaml` is
+`agentplane/plans/session_history_backfill_job.yaml` is
 **deliberately excluded** from Flux's kustomization: it must not launch when
 merely merging/deploying an image. Before using it, pin a built image, verify
 Sandbox Service history schema migration and ingress defaults, and review DB
