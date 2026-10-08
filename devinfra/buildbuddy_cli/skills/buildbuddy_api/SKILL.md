@@ -49,7 +49,7 @@ bbapi target log <invocation-id> <target> --all        # every shard, each under
 bbapi target <invocation-id> [--filter SUBSTR] [--label LABEL]
 
 # Show pass/fail/flake history for targets (auto-detects group_id)
-bbapi target history [--repo URL] [--label LABEL] [--failures-only]
+bbapi target history [--repo URL] [--label LABEL] [--failures-only] [--since DURATION|DATE] [--count N]
 
 # Show flake statistics for targets (last 7 days)
 bbapi target stats [--repo URL]

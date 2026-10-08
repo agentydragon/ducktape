@@ -105,46 +105,19 @@ func targetHistorySubCmd() *cobra.Command {
 				return fmt.Errorf("--since: %w", err)
 			}
 
-			var allTargets []*targetpb.TargetHistory
-			printed := 0
-			for {
-				resp := &targetpb.GetTargetHistoryResponse{}
-				if err := c.call("GetTargetHistory", req, resp); err != nil {
-					return err
-				}
-				if jsonOutput {
-					return printProtoJSON(resp)
-				}
-				allTargets = append(allTargets, resp.GetInvocationTargets()...)
-				if resp.GetNextPageToken() == "" {
-					break
-				}
-				req.PageToken = resp.GetNextPageToken()
+			resp, err := fetchAllTargetHistory(c, req)
+			if err != nil {
+				return err
 			}
-			for _, th := range allTargets {
-				if label != "" && th.GetTarget().GetLabel() != label {
-					continue
-				}
-				// Filter statuses by --since and --failures-only
-				var filtered []*targetpb.TargetStatus
-				for _, s := range th.GetTargetStatus() {
-					if failuresOnly && s.GetStatus().String() == "PASSED" {
-						continue
-					}
-					// Use invocation creation time, not test start time (cached tests report original start)
-					invTime := time.UnixMicro(s.GetInvocationCreatedAtUsec())
-					if !sinceTime.IsZero() && invTime.Before(sinceTime) {
-						continue
-					}
-					filtered = append(filtered, s)
-				}
-				if failuresOnly && len(filtered) == 0 {
-					continue
-				}
+			filterTargetHistory(resp, label, failuresOnly, sinceTime, count)
+			if jsonOutput {
+				return printProtoJSON(resp)
+			}
+			for _, th := range resp.GetInvocationTargets() {
 				fmt.Printf("Target: %s\n", th.GetTarget().GetLabel())
 				t := newTable()
 				t.header("STATUS", "DUR", "STARTED", "COMMIT", "INVOCATION")
-				for _, s := range filtered {
+				for _, s := range th.GetTargetStatus() {
 					started := s.GetTiming().GetStartTime().AsTime().Format("2006-01-02 15:04")
 					dur := fmtDurationUsec(s.GetTiming().GetDuration().AsDuration().Microseconds())
 					sha := s.GetCommitSha()
@@ -154,10 +127,6 @@ func targetHistorySubCmd() *cobra.Command {
 					t.row(s.GetStatus().String(), dur, started, sha, s.GetInvocationId())
 				}
 				t.flush()
-				printed++
-				if count > 0 && printed >= count {
-					break
-				}
 			}
 			return nil
 		},
@@ -168,6 +137,64 @@ func targetHistorySubCmd() *cobra.Command {
 	cmd.Flags().IntVar(&count, "count", 0, "Maximum number of targets to show (0 = all)")
 	cmd.Flags().StringVar(&since, "since", "", "Show only entries after this time (e.g., 168h, 720h, 2026-04-01)")
 	return cmd
+}
+
+func fetchAllTargetHistory(c *client, req *targetpb.GetTargetHistoryRequest) (*targetpb.GetTargetHistoryResponse, error) {
+	result := &targetpb.GetTargetHistoryResponse{}
+	indexesByLabel := make(map[string]int)
+	for {
+		page := &targetpb.GetTargetHistoryResponse{}
+		if err := c.call("GetTargetHistory", req, page); err != nil {
+			return nil, err
+		}
+		for _, history := range page.GetInvocationTargets() {
+			label := history.GetTarget().GetLabel()
+			if index, ok := indexesByLabel[label]; ok {
+				result.InvocationTargets[index].TargetStatus = append(
+					result.InvocationTargets[index].GetTargetStatus(), history.GetTargetStatus()...,
+				)
+				continue
+			}
+			indexesByLabel[label] = len(result.InvocationTargets)
+			result.InvocationTargets = append(result.InvocationTargets, history)
+		}
+		if page.GetNextPageToken() == "" {
+			break
+		}
+		req.PageToken = page.GetNextPageToken()
+	}
+	return result, nil
+}
+
+func filterTargetHistory(resp *targetpb.GetTargetHistoryResponse, label string, failuresOnly bool, since time.Time, count int) {
+	filteredTargets := make([]*targetpb.TargetHistory, 0, len(resp.GetInvocationTargets()))
+	for _, history := range resp.GetInvocationTargets() {
+		if label != "" && history.GetTarget().GetLabel() != label {
+			continue
+		}
+		filteredStatuses := make([]*targetpb.TargetStatus, 0, len(history.GetTargetStatus()))
+		for _, status := range history.GetTargetStatus() {
+			if failuresOnly && status.GetStatus().String() == "PASSED" {
+				continue
+			}
+			// Use invocation creation time, not test start time (cached tests report original start).
+			invocationTime := time.UnixMicro(status.GetInvocationCreatedAtUsec())
+			if !since.IsZero() && invocationTime.Before(since) {
+				continue
+			}
+			filteredStatuses = append(filteredStatuses, status)
+		}
+		if failuresOnly && len(filteredStatuses) == 0 {
+			continue
+		}
+		history.TargetStatus = filteredStatuses
+		filteredTargets = append(filteredTargets, history)
+		if count > 0 && len(filteredTargets) >= count {
+			break
+		}
+	}
+	resp.InvocationTargets = filteredTargets
+	resp.NextPageToken = ""
 }
 
 func targetStatsSubCmd() *cobra.Command {
