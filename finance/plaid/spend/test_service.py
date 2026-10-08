@@ -15,7 +15,7 @@ import pytest_asyncio
 from sqlalchemy.engine import make_url
 
 from finance.plaid.db.link_store import PlaidLinkStorage
-from finance.plaid.spend.allowance import AllowancePolicy, CategoryExact, Kind, PeriodId, Rule, Status
+from finance.plaid.spend.allowance import AllowancePolicy, AnalysisCategory, CategoryExact, Kind, PeriodId, Rule, Status
 from finance.plaid.spend.app import _event_stream
 from finance.plaid.spend.models import AlertState, CardConfig, SpendConfiguration
 from finance.plaid.spend.service import SpendService
@@ -219,6 +219,9 @@ async def test_allowance_account_coverage_and_freshness_gate(connection: asyncpg
             monthly_minor_units=10_000,
             activation_at=midnight.date(),
             spending_account_ids={"card-1", "checking-1"},
+            analysis_categories={
+                "unclassified": AnalysisCategory(label="Unclassified", color="#D97706"),
+            },
             rules=[Rule(condition=CategoryExact(field="pfc_primary", value="SHOPPING"), kind=Kind.FLEXIBLE)],
         ),
     )
@@ -257,6 +260,9 @@ async def test_prior_purchases_are_queried_for_pace_but_not_balance(
             monthly_minor_units=10_000,
             activation_at=now.date(),
             spending_account_ids={"card-1"},
+            analysis_categories={
+                "unclassified": AnalysisCategory(label="Unclassified", color="#D97706"),
+            },
             rules=[Rule(condition=CategoryExact(field="pfc_primary", value="SHOPPING"), kind=Kind.FLEXIBLE)],
         ),
     )

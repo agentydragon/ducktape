@@ -24,6 +24,7 @@ from finance.plaid.spend.allowance import (
     AllowanceSpendPeriod,
     AllowanceView,
     AmountSign,
+    AnalysisCategory,
     AnyOf,
     Disposition,
     EstimatePeriodId,
@@ -44,6 +45,7 @@ from finance.plaid.spend.allowance import (
 from finance.plaid.spend.models import (
     AlertState,
     AllowanceConfigurationView,
+    AnalysisCategoryView,
     CardConfigurationView,
     CardView,
     PaceEffect,
@@ -249,6 +251,12 @@ def dashboard_url() -> Iterator[str]:
                         description="Unverified credit; inspect the earlier purchase before netting it.",
                     )
                 ],
+                analysis_categories={
+                    "unclassified": AnalysisCategory(label="Unclassified", color="#D97706"),
+                    "refund_review": AnalysisCategory(label="Refund review", color="#B45309"),
+                    "shipping": AnalysisCategory(label="Document shipping", color="#0F766E"),
+                    "travel": AnalysisCategory(label="Holiday travel", color="#7C3AED"),
+                },
             ),
         )
 
@@ -278,6 +286,7 @@ def dashboard_url() -> Iterator[str]:
                 pfc_primary="FOOD_AND_DRINK",
                 pfc_detailed="FOOD_AND_DRINK_COFFEE",
                 merchant_category_code="5812",
+                category=AnalysisCategoryView(id="unclassified", label="Unclassified", color="#D97706"),
             ),
             SpendTransactionRow(
                 date=date(2026, 10, 14),
@@ -306,7 +315,7 @@ def dashboard_url() -> Iterator[str]:
                 pfc_primary="TRANSPORTATION",
                 pfc_detailed="TRANSPORTATION_SHIPPING",
                 merchant_category_code="4215",
-                analysis_category_label="Document shipping",
+                category=AnalysisCategoryView(id="shipping", label="Document shipping", color="#0F766E"),
                 counterparties=[
                     PlaidCounterparty(
                         name="Example Shipping",
@@ -357,6 +366,7 @@ def dashboard_url() -> Iterator[str]:
                 pfc_primary="GENERAL_MERCHANDISE",
                 pfc_detailed="GENERAL_MERCHANDISE_OTHER",
                 merchant_category_code=None,
+                category=AnalysisCategoryView(id="unclassified", label="Unclassified", color="#D97706"),
             ),
             SpendTransactionRow(
                 date=date(2026, 10, 2),
@@ -387,7 +397,7 @@ def dashboard_url() -> Iterator[str]:
                 pfc_primary="TRAVEL",
                 pfc_detailed="TRAVEL_OTHER",
                 merchant_category_code=None,
-                analysis_category_label="Holiday travel",
+                category=AnalysisCategoryView(id="travel", label="Holiday travel", color="#7C3AED"),
             ),
         ]
         shown = [row for row in rows if row.date >= PeriodId(period).start(today, date(2026, 10, 1))]
@@ -417,6 +427,7 @@ async def test_spending_decision_render(
 ) -> None:
     await page.set_viewport_size({"width": width, "height": height})
     await page.goto(dashboard_url, wait_until="domcontentloaded")
+    await page.locator("canvas[aria-label]").wait_for()
     await page.get_by_text("$200", exact=True).wait_for()
     await expect(page.get_by_role("heading", name="Flexible spending", level=1)).to_have_count(1)
     await expect(page.get_by_role("alert").get_by_text("2 charges ($15) need review")).to_have_count(1)
@@ -535,6 +546,7 @@ async def test_transaction_explanations_render(
     await expect(rows.get_by_text("Refund held", exact=True)).to_have_count(1)
     await expect(rows.get_by_text("Document shipping", exact=True)).to_have_count(1)
     await expect(rows.get_by_text("Holiday travel", exact=True)).to_have_count(1)
+    await expect(rows.locator('[data-category-id="travel"]')).to_have_count(1)
     await expect(page.get_by_text("1 · $15", exact=True)).to_have_count(1)
     if width >= 992:
         await expect(rows.locator("tbody tr")).to_have_count(4)

@@ -30,6 +30,7 @@ from finance.plaid.spend.allowance import (
 from finance.plaid.spend.models import (
     AlertState,
     AllowanceConfigurationView,
+    AnalysisCategoryView,
     CardConfigurationView,
     CardView,
     PaceEffect,
@@ -111,7 +112,7 @@ class SpendService:
                 max_sync_age_hours=policy.max_sync_age_hours,
                 forecast_basis_period_id=policy.forecast_basis_period_id,
                 rules=policy.rules,
-                analysis_category_labels=policy.analysis_category_labels,
+                analysis_categories=policy.analysis_categories,
             )
         return SpendConfigurationView(
             cards=[
@@ -403,9 +404,7 @@ class SpendService:
         }
         card_ids = {card.account_id for card in self._configuration.cards if card.enabled}
         allowance_ids = self._configuration.allowance.spending_account_ids if self._configuration.allowance else set()
-        category_labels = (
-            self._configuration.allowance.analysis_category_labels if self._configuration.allowance else {}
-        )
+        allowance_policy = self._configuration.allowance
         for row in card_rows:
             details_by_key.setdefault((row["account_id"], row["transaction_id"]), _plaid_details(row["raw_json"]))
         labels.update({card.account_id: card.label for card in self._configuration.cards if card.enabled})
@@ -432,6 +431,19 @@ class SpendService:
                 statement_reason = StatementReason.UNAVAILABLE
             else:
                 statement_reason = None
+            category = None
+            if decision is not None and allowance_policy is not None:
+                category_id = (
+                    decision.rule.analysis_category
+                    if decision.rule is not None and decision.rule.analysis_category is not None
+                    else "unclassified"
+                )
+                category_config = allowance_policy.analysis_categories[category_id]
+                category = AnalysisCategoryView(
+                    id=category_id,
+                    label=category_config.label,
+                    color=category_config.color,
+                )
             rows.append(
                 SpendTransactionRow(
                     date=transaction.date,
@@ -463,9 +475,7 @@ class SpendService:
                     pfc_primary=transaction.pfc_primary,
                     pfc_detailed=transaction.pfc_detailed,
                     merchant_category_code=transaction.merchant_category_code,
-                    analysis_category_label=category_labels.get(decision.rule.analysis_category)
-                    if decision and decision.rule and decision.rule.analysis_category
-                    else None,
+                    category=category,
                     counterparties=transaction.counterparties or [],
                     details=details,
                 )

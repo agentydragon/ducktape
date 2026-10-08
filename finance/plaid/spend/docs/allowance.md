@@ -21,9 +21,19 @@ allowance:
   currency: USD
   max_sync_age_hours: 72
   forecast_basis_period_id: rolling_7d
-  analysis_category_labels:
-    fixed_housing: Housing
-    elastic_online_services: Online services
+  analysis_categories:
+    fixed_housing:
+      label: Housing
+      color: "#64748B"
+    elastic_online_services:
+      label: Online services
+      color: "#7C3AED"
+    excluded_transfer_or_fee:
+      label: Transfer or fee
+      color: "#94A3B8"
+    unclassified:
+      label: Unclassified
+      color: "#D97706"
   rules:
     - condition:
         type: name_prefix

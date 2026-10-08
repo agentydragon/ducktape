@@ -13,6 +13,7 @@ from finance.plaid.spend.allowance import (
     AllowancePolicy,
     AllowanceView,
     AmountSign,
+    AnalysisCategory,
     AnyOf,
     CategoryExact,
     FieldExact,
@@ -43,13 +44,24 @@ def name_rule(field: Literal["name", "merchant_name"], prefix: str, kind: Kind) 
 
 
 def policy(*, activation_at: date = START_DATE, rules: list[Rule] | None = None) -> AllowancePolicy:
+    configured_rules = (
+        rules
+        if rules is not None
+        else [category_rule(field="pfc_primary", value="SHOPPING", kind=Kind.FLEXIBLE)]
+    )
+    category_ids = {
+        "unclassified",
+        *(rule.analysis_category for rule in configured_rules if rule.analysis_category is not None),
+    }
     return AllowancePolicy(
         monthly_minor_units=10_000,
         spending_account_ids={"card-1"},
         activation_at=activation_at,
-        rules=rules
-        if rules is not None
-        else [category_rule(field="pfc_primary", value="SHOPPING", kind=Kind.FLEXIBLE)],
+        rules=configured_rules,
+        analysis_categories={
+            category_id: AnalysisCategory(label=category_id.replace("_", " ").title(), color="#336699")
+            for category_id in category_ids
+        },
     )
 
 
@@ -103,6 +115,7 @@ def test_single_config_parses_cards_and_optional_allowance():
     config = SpendConfiguration.model_validate_json(
         '{"cards":[],"allowance":{"monthly_minor_units":10000,"activation_at":"2026-01-31",'
         '"spending_account_ids":["example-card"],'
+        '"analysis_categories":{"unclassified":{"label":"Unclassified","color":"#64748B"}},'
         '"rules":[{"condition":{"type":"name_prefix","field":"name","prefix":"EXAMPLE"},"kind":"flexible"}]}}'
     )
     assert config.allowance is not None

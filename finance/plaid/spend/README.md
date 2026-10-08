@@ -64,10 +64,11 @@ configured source.
 Allowance rules are evaluated in order; the first match determines the classification. `review` rules keep positive
 purchases in provisional spending and the unmatched total, while unverified negative credits remain separate from
 spending. Conditions can combine merchant or category matches, account type, merchant category code, counterparty type
-and name, and amount sign. Private analyses use the same ordered matcher and policy file as the app. Optional
-`allowance.analysis_category_labels` maps analysis-category codes to human-readable names. The Configuration API
-includes these names, and the Transactions API includes each matched transaction's resolved category label. Labels do
-not affect rule matching or allowance accounting.
+and name, and amount sign. Private analyses use the same ordered matcher and policy file as the app. Required
+`allowance.analysis_categories` entries map stable analysis-category codes to a display label and color; include
+`unclassified` for purchases without a category. The Configuration API includes the catalog, and the Transactions
+API includes each transaction's resolved category metadata. Display metadata does not affect rule matching or
+allowance accounting.
 
 ## Runtime settings
 

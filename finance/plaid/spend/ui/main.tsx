@@ -28,6 +28,7 @@ import {
 } from "@mantine/core";
 import IconChevronDown from "@tabler/icons-react/dist/esm/icons/IconChevronDown.mjs";
 import IconChevronRight from "@tabler/icons-react/dist/esm/icons/IconChevronRight.mjs";
+import { SpendingHistoryChart } from "./SpendingHistoryChart";
 import "@mantine/core/styles.css";
 import "./styles.css";
 import type { components } from "./api/schema";
@@ -603,6 +604,36 @@ function ConfigurationPanel({
                 <Divider />
                 <div>
                   <Text fw={650} mb="sm">
+                    Analysis categories
+                  </Text>
+                  <SimpleGrid cols={{ base: 1, sm: 2, md: 3 }} spacing="xs">
+                    {Object.entries(allowance.analysis_categories).map(([id, category]) => (
+                      <Group key={id} gap="xs" wrap="nowrap">
+                        <Box
+                          component="span"
+                          aria-hidden="true"
+                          style={{
+                            display: "inline-block",
+                            width: 10,
+                            height: 10,
+                            flex: "0 0 auto",
+                            borderRadius: "50%",
+                            backgroundColor: category.color,
+                          }}
+                        />
+                        <Text size="sm" style={{ overflowWrap: "anywhere" }}>
+                          {category.label}
+                        </Text>
+                        <Text size="xs" c="dimmed" style={{ overflowWrap: "anywhere" }}>
+                          {id}
+                        </Text>
+                      </Group>
+                    ))}
+                  </SimpleGrid>
+                </div>
+                <Divider />
+                <div>
+                  <Text fw={650} mb="sm">
                     Classification rules
                   </Text>
                   <Stack gap="xs">
@@ -728,7 +759,26 @@ function classificationForRow(row: TransactionRow): { label: string; color: stri
 }
 
 function categoryForRow(row: TransactionRow): string {
-  return row.analysis_category_label || row.rule?.analysis_category || "No category inferred";
+  return row.category?.label || row.rule?.analysis_category || "No category inferred";
+}
+
+function CategoryMarker({ row }: { row: TransactionRow }): ReactNode {
+  if (!row.category) return null;
+  return (
+    <Box
+      component="span"
+      aria-hidden="true"
+      data-category-id={row.category.id}
+      style={{
+        display: "inline-block",
+        width: 10,
+        height: 10,
+        flex: "0 0 auto",
+        borderRadius: "50%",
+        backgroundColor: row.category.color,
+      }}
+    />
+  );
 }
 
 function CompactCounterparties({ counterparties }: { counterparties: TransactionRow["counterparties"] }) {
@@ -897,10 +947,10 @@ function TransactionDetails({ row, currency }: { row: TransactionRow; currency: 
               {row.rule.description}
             </Text>
           )}
-          {row.rule.analysis_category && (
+          {row.category && (
             <Text size="xs" c="dimmed">
               Analysis category: {categoryForRow(row)}
-              {row.analysis_category_label && ` (${row.rule.analysis_category})`}
+              {row.category.id !== "unclassified" && ` (${row.category.id})`}
             </Text>
           )}
           <Button component="a" href="#/configuration" variant="subtle" size="xs" w="fit-content" px={0}>
@@ -1156,9 +1206,12 @@ function TransactionsPanel({
                         <Table.Td>{row.account_label}</Table.Td>
                         <Table.Td>
                           <Stack gap={2}>
-                            <Text size="sm" fw={600} style={{ overflowWrap: "anywhere" }}>
-                              {categoryForRow(row)}
-                            </Text>
+                            <Group gap="xs" wrap="nowrap">
+                              <CategoryMarker row={row} />
+                              <Text size="sm" fw={600} style={{ overflowWrap: "anywhere" }}>
+                                {categoryForRow(row)}
+                              </Text>
+                            </Group>
                             <Badge size="sm" variant="light" color={classification.color} w="fit-content">
                               {classification.label}
                             </Badge>
@@ -1194,9 +1247,12 @@ function TransactionsPanel({
                       <Group justify="space-between" gap="sm" wrap="nowrap">
                         <Stack gap={2} miw={0} style={{ flex: "1 1 0" }}>
                           <TransactionTitle row={row} />
-                          <Text size="xs" c="dimmed" style={{ overflowWrap: "anywhere" }}>
-                            {categoryForRow(row)}
-                          </Text>
+                          <Group gap="xs" wrap="nowrap">
+                            <CategoryMarker row={row} />
+                            <Text size="xs" c="dimmed" style={{ overflowWrap: "anywhere" }}>
+                              {categoryForRow(row)}
+                            </Text>
+                          </Group>
                           <Group gap="xs">
                             <Text size="xs" c="dimmed">
                               {row.date} · {row.account_label}
@@ -1251,6 +1307,9 @@ function App() {
   const [transactionsLoading, setTransactionsLoading] = useState(false);
   const [transactionsError, setTransactionsError] = useState<string | null>(null);
   const [viewRevision, setViewRevision] = useState(0);
+  const estimatePeriodId =
+    selectedEstimatePeriodId ??
+    (view?.allowance?.forecast.basis_period.id === "rolling_30d" ? "rolling_30d" : "rolling_7d");
   useEffect(() => {
     if (!window.location.hash) window.history.replaceState(null, "", "#/spending");
     const updateTab = () => setActiveTab(tabForHash(window.location.hash));
@@ -1335,13 +1394,15 @@ function App() {
     };
   }, [activeTab, configuration]);
   useEffect(() => {
-    if (activeTab !== "transactions") return;
+    if (activeTab !== "transactions" && activeTab !== "spending") return;
+    if (activeTab === "spending" && view?.allowance?.status !== "active") return;
     const controller = new AbortController();
+    const requestedPeriod = activeTab === "spending" ? estimatePeriodId : transactionPeriodId;
     const load = async () => {
       setTransactionsLoading(true);
       setTransactionsError(null);
       try {
-        const response = await fetch(`/api/v1/transactions?period=${transactionPeriodId}`, {
+        const response = await fetch(`/api/v1/transactions?period=${requestedPeriod}`, {
           cache: "no-store",
           credentials: "same-origin",
           signal: controller.signal,
@@ -1363,11 +1424,8 @@ function App() {
     };
     void load();
     return () => controller.abort();
-  }, [activeTab, transactionPeriodId, viewRevision]);
+  }, [activeTab, estimatePeriodId, transactionPeriodId, view?.allowance?.status, viewRevision]);
   const cards = view?.cards || [];
-  const estimatePeriodId =
-    selectedEstimatePeriodId ??
-    (view?.allowance?.forecast.basis_period.id === "rolling_30d" ? "rolling_30d" : "rolling_7d");
   const estimatePending =
     selectedEstimatePeriodId != null &&
     view?.allowance != null &&
@@ -1478,6 +1536,16 @@ function App() {
                     ? "No allowance is configured. Card totals below are not a flexible-spend budget."
                     : "Loading your spending picture…"}
                 </Alert>
+              )}
+              {view?.allowance?.status === "active" && !estimatePending && (
+                <SpendingHistoryChart
+                  transactions={
+                    transactions?.requested_period_id === estimatePeriodId ? transactions : null
+                  }
+                  allowance={view.allowance}
+                  loading={transactionsLoading}
+                  error={transactionsError}
+                />
               )}
               <section aria-labelledby="cards-title">
                 <Group justify="space-between" align="baseline">

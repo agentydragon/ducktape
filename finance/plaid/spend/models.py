@@ -14,6 +14,7 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator, model_valida
 from finance.plaid.spend.allowance import (
     AllowancePolicy,
     AllowanceView,
+    AnalysisCategory,
     Disposition,
     Period,
     PeriodId,
@@ -112,7 +113,7 @@ class AllowanceConfigurationView(BaseModel):
     max_sync_age_hours: int
     forecast_basis_period_id: PeriodId
     rules: list[Rule]
-    analysis_category_labels: dict[str, str] = Field(default_factory=dict)
+    analysis_categories: dict[str, AnalysisCategory]
 
 
 class SpendConfigurationView(BaseModel):
@@ -276,6 +277,16 @@ class PaceEffect(BaseModel):
     amount_minor_units: int
 
 
+class AnalysisCategoryView(BaseModel):
+    """Resolved category metadata for a transaction, including its stable key."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    id: str
+    label: str
+    color: str
+
+
 class SpendTransactionRow(BaseModel):
     """A read-only explanation plus named, typed Plaid source fields."""
 
@@ -299,7 +310,7 @@ class SpendTransactionRow(BaseModel):
     pfc_primary: str | None
     pfc_detailed: str | None
     merchant_category_code: str | None
-    analysis_category_label: str | None = None
+    category: AnalysisCategoryView | None = None
     counterparties: list[PlaidCounterparty] = Field(default_factory=list)
     details: PlaidTransactionDetails = Field(default_factory=PlaidTransactionDetails)
 

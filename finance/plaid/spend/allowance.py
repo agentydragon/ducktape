@@ -241,6 +241,23 @@ class Rule(BaseModel):
     )
 
 
+class AnalysisCategory(BaseModel):
+    """Configured display metadata for a stable analysis-category key."""
+
+    model_config = ConfigDict(extra="forbid", strict=True, frozen=True)
+
+    label: str = Field(min_length=1, max_length=80)
+    color: str = Field(pattern=r"^#[0-9A-Fa-f]{6}$")
+
+    @field_validator("label")
+    @classmethod
+    def _strip_label(cls, value: str) -> str:
+        value = value.strip()
+        if not value:
+            raise ValueError("category labels must not be blank")
+        return value
+
+
 class AllowancePolicy(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
     monthly_minor_units: int = Field(gt=0)
@@ -250,19 +267,10 @@ class AllowancePolicy(BaseModel):
     rules: list[Rule] = Field(min_length=1)
     max_sync_age_hours: int = Field(default=72, ge=1, le=720)
     forecast_basis_period_id: PeriodId = PeriodId.ROLLING_7D
-    analysis_category_labels: dict[str, str] = Field(
-        default_factory=dict, description="Optional display labels for rule analysis_category values."
+    analysis_categories: dict[str, AnalysisCategory] = Field(
+        min_length=1,
+        description="Display labels and colors keyed by rule analysis_category; includes unclassified.",
     )
-
-    @field_validator("analysis_category_labels")
-    @classmethod
-    def _valid_category_labels(cls, labels: dict[str, str]) -> dict[str, str]:
-        if any(
-            not category or category.strip() != category or not label.strip() or len(label.strip()) > 80
-            for category, label in labels.items()
-        ):
-            raise ValueError("analysis category keys must be nonblank; labels must be 1 to 80 characters")
-        return {category: label.strip() for category, label in labels.items()}
 
     @field_validator("forecast_basis_period_id")
     @classmethod
@@ -270,6 +278,21 @@ class AllowancePolicy(BaseModel):
         if period_id.rolling_days is None:
             raise ValueError("forecast basis must be a rolling period")
         return period_id
+
+    @model_validator(mode="after")
+    def _configured_analysis_categories(self) -> AllowancePolicy:
+        if any(not category or category.strip() != category for category in self.analysis_categories):
+            raise ValueError("analysis category keys must be nonblank and trimmed")
+        if "unclassified" not in self.analysis_categories:
+            raise ValueError("analysis_categories must define the reserved unclassified category")
+        missing = {
+            rule.analysis_category
+            for rule in self.rules
+            if rule.analysis_category is not None and rule.analysis_category not in self.analysis_categories
+        }
+        if missing:
+            raise ValueError(f"analysis_categories is missing rule categories: {', '.join(sorted(missing))}")
+        return self
 
 
 class Transaction(BaseModel):
