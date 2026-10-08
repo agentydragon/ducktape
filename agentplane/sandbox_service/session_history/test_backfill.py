@@ -53,9 +53,14 @@ async def test_legacy_and_reserved_session_backfill_can_replay(engine: AsyncEngi
     assert await backfill(engine, engine, namespace="testing") == (2, 2)
     assert (await store.read(legacy))[0] == 1
     assert (await store.read(managed))[0] == 1
-    assert await store.runner_id(managed, sandbox_namespace="testing", sandbox_name="sb", sandbox_uid=uid) == f"r-{managed}"
+    assert (
+        await store.runner_id(managed, sandbox_namespace="testing", sandbox_name="sb", sandbox_uid=uid)
+        == f"r-{managed}"
+    )
     await add_event(legacy, 2)
-    assert await import_log(engine, engine, namespace="testing", log_id=legacy, sandbox="sb", runner_id=f"s-{legacy}") == 2
+    assert (
+        await import_log(engine, engine, namespace="testing", log_id=legacy, sandbox="sb", runner_id=f"s-{legacy}") == 2
+    )
     assert (await store.read(legacy))[0] == 2
     async with engine.begin() as connection:
         await connection.execute(

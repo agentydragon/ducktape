@@ -47,27 +47,28 @@ async def import_log(
         await store.open(
             log_id, sandbox_namespace=namespace, sandbox_name=sandbox, sandbox_uid=None, runner_session_id=runner_id
         )
-    else:
-        if (
-            existing.sandbox_namespace != namespace
-            or existing.sandbox_name != sandbox
-            or existing.runner_session_id not in (runner_id, f"r-{log_id}")
-            or (existing.runner_session_id != runner_id and runner_id != str(log_id))
-        ):
-            raise HistoryConflictError(f"source locator disagrees for Session {log_id}")
+    elif (
+        existing.sandbox_namespace != namespace
+        or existing.sandbox_name != sandbox
+        or existing.runner_session_id not in (runner_id, f"r-{log_id}")
+        or (existing.runner_session_id != runner_id and runner_id != str(log_id))
+    ):
+        raise HistoryConflictError(f"source locator disagrees for Session {log_id}")
 
     async with source.connect() as connection:
         ceiling = await connection.scalar(
-            text('SELECT COALESCE(MAX(cursor), 0) FROM event WHERE thread_id = :id'), {"id": log_id}
+            text("SELECT COALESCE(MAX(cursor), 0) FROM event WHERE thread_id = :id"), {"id": log_id}
         )
         assert isinstance(ceiling, int)
         cursor = 0
         while cursor < ceiling:
             rows = (
                 await connection.execute(
-                    text('SELECT cursor, payload::text AS payload FROM event '
-                         'WHERE thread_id = :id AND cursor > :cursor AND cursor <= :ceiling '
-                         'ORDER BY cursor LIMIT :limit'),
+                    text(
+                        "SELECT cursor, payload::text AS payload FROM event "
+                        "WHERE thread_id = :id AND cursor > :cursor AND cursor <= :ceiling "
+                        "ORDER BY cursor LIMIT :limit"
+                    ),
                     {"id": log_id, "cursor": cursor, "ceiling": ceiling, "limit": PAGE_SIZE},
                 )
             ).all()
@@ -91,8 +92,7 @@ async def backfill(source: AsyncEngine, destination: AsyncEngine, *, namespace: 
         async with source.connect() as connection:
             rows = (
                 await connection.execute(
-                    text('SELECT id, sandbox, session_id FROM event_log '
-                         'WHERE id > :last_id ORDER BY id LIMIT :limit'),
+                    text("SELECT id, sandbox, session_id FROM event_log WHERE id > :last_id ORDER BY id LIMIT :limit"),
                     {"last_id": last_id, "limit": PAGE_SIZE},
                 )
             ).all()
