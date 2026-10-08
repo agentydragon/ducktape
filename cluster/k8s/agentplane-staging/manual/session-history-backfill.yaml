@@ -1,0 +1,78 @@
+# Deliberately NOT included in kustomization.yaml: apply only after #9456 deploys
+# with history_ingestion_enabled=false and after replacing :unset with a pinned image.
+# A failed import stops; inspect the Job and correct the issue before a deliberate rerun.
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: agentplane-session-history-backfill-v1
+  namespace: agentplane-staging
+spec:
+  backoffLimit: 0
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: agentplane-session-history-backfill
+    spec:
+      restartPolicy: Never
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+      imagePullSecrets:
+        - name: forgejo-images-creds
+      containers:
+        - name: backfill
+          image: git.allegedly.works/ducktape-ci/agentplane-sandbox-service-history-backfill:unset
+          imagePullPolicy: IfNotPresent
+          env:
+            - name: AGENTPLANE_HISTORY_BACKFILL_SANDBOX_NAMESPACE
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.namespace
+            - name: APP_DB_USER
+              valueFrom: { secretKeyRef: { name: postgres-app, key: username } }
+            - name: APP_DB_PASSWORD
+              valueFrom: { secretKeyRef: { name: postgres-app, key: password } }
+            - name: APP_DB_HOST
+              valueFrom: { secretKeyRef: { name: postgres-app, key: host } }
+            - name: APP_DB_PORT
+              valueFrom: { secretKeyRef: { name: postgres-app, key: port } }
+            - name: APP_DB_NAME
+              valueFrom: { secretKeyRef: { name: postgres-app, key: dbname } }
+            - name: AGENTPLANE_HISTORY_BACKFILL_APP_DATABASE_URL
+              value: postgresql+asyncpg://$(APP_DB_USER):$(APP_DB_PASSWORD)@$(APP_DB_HOST):$(APP_DB_PORT)/$(APP_DB_NAME)
+            - name: HISTORY_DB_USER
+              valueFrom: { secretKeyRef: { name: postgres-sandbox-service, key: username } }
+            - name: HISTORY_DB_PASSWORD
+              valueFrom: { secretKeyRef: { name: postgres-sandbox-service, key: password } }
+            - name: HISTORY_DB_HOST
+              valueFrom: { secretKeyRef: { name: postgres-sandbox-service, key: host } }
+            - name: HISTORY_DB_PORT
+              valueFrom: { secretKeyRef: { name: postgres-sandbox-service, key: port } }
+            - name: HISTORY_DB_NAME
+              valueFrom: { secretKeyRef: { name: postgres-sandbox-service, key: dbname } }
+            - name: AGENTPLANE_HISTORY_BACKFILL_SANDBOX_SERVICE_DATABASE_URL
+              value: postgresql+asyncpg://$(HISTORY_DB_USER):$(HISTORY_DB_PASSWORD)@$(HISTORY_DB_HOST):$(HISTORY_DB_PORT)/$(HISTORY_DB_NAME)
+          resources:
+            requests: { cpu: 50m, memory: 128Mi }
+            limits: { memory: 512Mi }
+---
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: agentplane-session-history-backfill
+  namespace: agentplane-staging
+spec:
+  endpointSelector:
+    matchLabels:
+      app.kubernetes.io/name: agentplane-session-history-backfill
+  egress:
+    - toEndpoints:
+        - matchLabels:
+            k8s:io.kubernetes.pod.namespace: agentplane-staging
+            k8s:cnpg.io/cluster: postgres
+      toPorts:
+        - ports:
+            - port: "5432"
+              protocol: TCP

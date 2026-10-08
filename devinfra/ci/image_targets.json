@@ -258,6 +258,11 @@
       "test": "//agentplane/action_service/testing/...",
       "registry": "forgejo"
     },
+    "agentplane-sandbox-service-history-backfill": {
+      "target": "//agentplane/sandbox_service/session_history:backfill_image",
+      "test": "//agentplane/sandbox_service/session_history/...",
+      "registry": "forgejo"
+    },
     "agentplane-sandbox-service-history-migrate": {
       "target": "//agentplane/sandbox_service/session_history:migration_image",
       "test": "//agentplane/sandbox_service/session_history/...",

@@ -116,3 +116,59 @@ oci_image(
     user = "1000:1000",
     visibility = ["//visibility:public"],
 )
+
+# One-shot, explicitly launched import from the app's proto-JSON Event log.
+py_library(
+    name = "backfill",
+    srcs = ["backfill.py"],
+    deps = [
+        ":db",
+        ":store",
+        "//agentplane/protocol:event_log_pb2",
+        "@pypi//asyncpg",
+        "@pypi//protobuf",
+        "@pypi//pydantic_settings",
+        "@pypi//sqlalchemy",
+    ],
+)
+
+aspect_py_binary(
+    name = "backfill_image_bin",
+    main = "backfill.py",
+    deps = [":backfill"],
+)
+
+py_image_layer(
+    name = "backfill_layers",
+    binary = ":backfill_image_bin",
+    group = "1000",
+    owner = "1000",
+)
+
+oci_image(
+    name = "backfill_image",
+    base = "@debian_trixie_slim_linux_amd64",
+    entrypoint = py_image_entrypoint("backfill_image_bin"),
+    env = py_image_env(binary_name = "backfill_image_bin"),
+    labels = {"org.opencontainers.image.source": "https://github.com/agentydragon/ducktape"},
+    tars = [":backfill_layers"],
+    user = "1000:1000",
+    visibility = ["//visibility:public"],
+)
+
+py_test(
+    name = "test_backfill",
+    srcs = ["test_backfill.py"],
+    deps = [
+        ":backfill",
+        ":conftest",
+        ":store",
+        "//:conftest",
+        "//agentplane/protocol:event_log_pb2",
+        "//agentplane/protocol:event_pb2",
+        "@pypi//protobuf",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+        "@pypi//sqlalchemy",
+    ],
+)
