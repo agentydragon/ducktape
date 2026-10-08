@@ -1,9 +1,7 @@
 {
-  "source_devel_commit": "787817a16ec2e9c812793e11364f6f9cc7b868ac",
-  "window_start_utc": "2026-10-05T00:00:00Z",
-  "window_end_utc": "2026-10-07T08:32:00Z",
-  "published_at_utc": "2026-10-07T08:58:42.397995+00:00",
-  "attribution": "not collected",
-  "updated_at_utc": "2026-10-07T09:35:10.182323+00:00",
-  "update_scope": "Record merged #9369 and retain prior effect estimates; observation window unchanged; no post-merge measurements"
+  "source_devel_commit": "d35786fbacef03dfd60223d026b45cec2e656542",
+  "window_start_utc": "2026-10-01T21:45:00Z",
+  "window_end_utc": "2026-10-08T21:45:00Z",
+  "published_at_utc": "2026-10-08T22:17:04.755353+00:00",
+  "attribution": "not collected"
 }
