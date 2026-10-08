@@ -216,6 +216,22 @@ class EventLogStore:
 
     async def observation_entry(self, thread_id: UUID, cursor: int) -> ArchivedObservationEntry | None:
         """One raw archive entry, read only when a reader expands that observation."""
+        if self._history_reader is not None:
+            if cursor < 1:
+                return None
+            page = await self._history_reader.read_session_events(
+                str(thread_id), after_cursor=cursor - 1, limit=1
+            )
+            if page.last_cursor < await self.last_cursor(thread_id):
+                raise ConnectionError("Sandbox Service history is behind the app's confirmed prefix")
+            if not page.entries:
+                if cursor <= page.last_cursor:
+                    raise ConnectionError("Sandbox Service omitted a published entry")
+                return None
+            entry = page.entries[0]
+            if entry.cursor != cursor:
+                raise ConnectionError("Sandbox Service returned a noncontiguous entry")
+            return ArchivedObservationEntry(cursor=str(cursor), entry=MessageToDict(entry))
         async with self._sessions() as session:
             payload = await session.scalar(
                 select(Event.payload).where(Event.thread_id == thread_id, Event.cursor == cursor)
