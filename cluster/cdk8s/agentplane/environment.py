@@ -130,8 +130,9 @@ class Environment:
     app: AppProps
     actions: ActionsProps
     notifications_github: GitHubAppProps | None = None
-    # Aggregate namespace quota is optional per environment; LimitRange still applies.
+    # Aggregate quota and per-container defaults/caps can be scoped per environment.
     namespace_resource_quota_enabled: bool = True
+    namespace_limit_range_enabled: bool = True
     # Non-secret environment defaults shared by every SandboxTemplate workload container;
     # the common pod builder applies them, and the runner explicitly forwards these names to harnesses.
     sandbox_workload_env: Mapping[str, str] = field(default_factory=lambda: {"TZ": "America/Los_Angeles"})

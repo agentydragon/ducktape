@@ -1,4 +1,4 @@
-"""The Namespace with its optional ResourceQuota/LimitRange, and the operator Role/RoleBinding.
+"""The Namespace with optional ResourceQuota/LimitRange, and the operator Role/RoleBinding.
 
 A resourceNames-scoped rule needs an `IApiResource` whose `resourceName` is set:
 `ApiResource.custom()` never sets one and no cdk8s-plus type covers the
@@ -58,7 +58,7 @@ _ACTION_POLICY_RULE = RolePolicyRule(
 
 
 class NamespaceQuota(Construct):
-    """Namespace, optional aggregate ResourceQuota, and per-container LimitRange."""
+    """Namespace, optional aggregate ResourceQuota, and optional per-container LimitRange."""
 
     def __init__(self, scope: Construct, id: str, env: Environment) -> None:
         super().__init__(scope, id)
@@ -83,10 +83,9 @@ class NamespaceQuota(Construct):
             # Aggregate resources only. A cap per object kind bounds an untrusted creator,
             # and only Flux and the integration app create objects here.
             #
-            # Load-bearing pair with the LimitRange below: it supplies the requests and
-            # limits that several containers omit (the CNPG postgres container declares
-            # none), and LimitRanger mutates before quota validates. Narrowing it while
-            # these compute dimensions stand rejects those pods outright.
+            # The LimitRange supplies defaults for containers that omit them (the CNPG
+            # postgres container declares none); when enabled with this quota, its
+            # mutations are applied before quota validation.
             k8s.KubeResourceQuota(
                 self,
                 "resourcequota",
@@ -101,29 +100,33 @@ class NamespaceQuota(Construct):
                     }
                 ),
             )
-        k8s.KubeLimitRange(
-            self,
-            "limitrange",
-            metadata=k8s.ObjectMeta(name="limits", namespace=env.namespace),
-            spec=k8s.LimitRangeSpec(
-                limits=[
-                    k8s.LimitRangeItem(
-                        type="Container",
-                        max={"cpu": k8s.Quantity.from_string("2"), "memory": k8s.Quantity.from_string("4Gi")},
-                        min={"cpu": k8s.Quantity.from_string("10m"), "memory": k8s.Quantity.from_string("16Mi")},
-                        default={"cpu": k8s.Quantity.from_string("500m"), "memory": k8s.Quantity.from_string("512Mi")},
-                        default_request={
-                            "cpu": k8s.Quantity.from_string("100m"),
-                            "memory": k8s.Quantity.from_string("128Mi"),
-                        },
-                    ),
-                    k8s.LimitRangeItem(
-                        type="Pod",
-                        max={"cpu": k8s.Quantity.from_string("4"), "memory": k8s.Quantity.from_string("8Gi")},
-                    ),
-                ]
-            ),
-        )
+        if env.namespace_limit_range_enabled:
+            k8s.KubeLimitRange(
+                self,
+                "limitrange",
+                metadata=k8s.ObjectMeta(name="limits", namespace=env.namespace),
+                spec=k8s.LimitRangeSpec(
+                    limits=[
+                        k8s.LimitRangeItem(
+                            type="Container",
+                            max={"cpu": k8s.Quantity.from_string("2"), "memory": k8s.Quantity.from_string("4Gi")},
+                            min={"cpu": k8s.Quantity.from_string("10m"), "memory": k8s.Quantity.from_string("16Mi")},
+                            default={
+                                "cpu": k8s.Quantity.from_string("500m"),
+                                "memory": k8s.Quantity.from_string("512Mi"),
+                            },
+                            default_request={
+                                "cpu": k8s.Quantity.from_string("100m"),
+                                "memory": k8s.Quantity.from_string("128Mi"),
+                            },
+                        ),
+                        k8s.LimitRangeItem(
+                            type="Pod",
+                            max={"cpu": k8s.Quantity.from_string("4"), "memory": k8s.Quantity.from_string("8Gi")},
+                        ),
+                    ]
+                ),
+            )
 
 
 class AgentRbac(Construct):
