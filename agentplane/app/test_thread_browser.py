@@ -1592,14 +1592,10 @@ async def expect_projected_cursor(page: Page, cursor: int, *, timeout_ms: int = 
     )
 
 
-async def start_replay_and_wait_for_projection(
-    thread_browser: ThreadBrowser, *, timeout_ms: int = 30_000
-) -> None:
+async def start_replay_and_wait_for_projection(thread_browser: ThreadBrowser, *, timeout_ms: int = 30_000) -> None:
     """Release runner replay and wait until the browser applies its current projection."""
     thread_browser.opened.replay.set()
-    await expect_projected_cursor(
-        thread_browser.page, thread_browser.source.entries[-1].cursor, timeout_ms=timeout_ms
-    )
+    await expect_projected_cursor(thread_browser.page, thread_browser.source.entries[-1].cursor, timeout_ms=timeout_ms)
 
 
 async def expect_archived_events(
