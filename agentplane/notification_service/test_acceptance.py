@@ -228,13 +228,14 @@ async def test_listen_deliver_read_ack_and_recover_lost_response_without_app(
                         )
                         admission_diagnostics.phase = "seed_noop_journal"
                         admission_diagnostics.progress = f"{index + 1}/130"
+
+                        async def submit_seed(
+                            command: command_pb2.Command = command, after_cursor: int = history_cursor
+                        ) -> event_log_pb2.EventEntry:
+                            return await native.command("notifications", command, after_cursor=after_cursor)
+
                         receipt = await admission_diagnostics.command(
-                            "notifications",
-                            command,
-                            after_cursor=history_cursor,
-                            send=lambda command=command, after_cursor=history_cursor: native.command(
-                                "notifications", command, after_cursor=after_cursor
-                            ),
+                            "notifications", command, after_cursor=history_cursor, send=submit_seed
                         )
                         history_cursor = receipt.cursor
                     assert history_cursor > 128

@@ -21,6 +21,8 @@ from agentplane.runner.testing.diagnostics import (
 from agentplane.runner.testing.fixtures import RunnerHandle
 from util.testing.undeclared_outputs import undeclared_outputs_dir
 
+# gazelle:include_dep @pypi//protobuf
+
 
 async def test_uncertain_admission_artifact_keeps_context_without_content(request: pytest.FixtureRequest) -> None:
     secret_marker = "command-body-and-token-must-not-be-copied"

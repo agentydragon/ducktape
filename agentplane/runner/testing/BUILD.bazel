@@ -56,7 +56,7 @@ py_library(
         "//agentplane/runner:protocol_pb2",
         "//agentplane/runner:service",
         "@pypi//grpcio",
-        "@pypi//types_protobuf",  # keep: mypy follows generated protobuf interfaces
+        "@pypi//protobuf",
     ],
 )
 
@@ -82,9 +82,9 @@ py_test(
         "//agentplane/runner:conftest",
         "//agentplane/runner:protocol_pb2",
         "//util/testing:undeclared_outputs",
+        "@pypi//protobuf",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
-        "@pypi//types_protobuf",  # keep: mypy follows generated protobuf interfaces
     ],
 )
 

@@ -16,6 +16,8 @@ from agentplane.protocol import command_pb2, event_log_pb2
 from agentplane.runner import protocol_pb2
 from agentplane.runner.service import Runner
 
+# gazelle:include_dep @pypi//protobuf
+
 logger = logging.getLogger(__name__)
 
 SAFE_LOG_TEMPLATES = {
