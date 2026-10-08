@@ -59,7 +59,6 @@ from agentplane.runner.session import Session
 from agentplane.runner.testing.diagnostics import (
     AdmissionTrace,
     best_effort_write_admission_diagnostics,
-    case_id,
     native_journal_evidence,
     service_log_evidence,
 )
@@ -144,9 +143,8 @@ async def failed_native_journal(
     )
     try:
         async with asyncio.timeout(3):
-            case = case_id(request.node.nodeid)
             for session_id, session in runner.runner.sessions.items():
-                target = undeclared_outputs_dir() / case / session_id
+                target = undeclared_outputs_dir() / request.node.name / session_id
                 for dialect, history in (("claude", "projects"), ("codex", "sessions")):
                     source = session.directory / dialect / history
                     if source.exists():
@@ -155,7 +153,7 @@ async def failed_native_journal(
             for session_id, session in runner.runner.sessions.items():
                 entries = await session.journal.since(0, limit=512)
                 sessions[session_id] = [MessageToDict(entry, preserving_proto_field_name=True) for entry in entries]
-            (undeclared_outputs_dir() / f"{case}-native-journal.json").write_text(
+            (undeclared_outputs_dir() / f"{request.node.name}-native-journal.json").write_text(
                 json.dumps(sessions, indent=2, sort_keys=True)
             )
     except Exception as error:
