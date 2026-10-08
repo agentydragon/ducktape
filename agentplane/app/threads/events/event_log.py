@@ -219,9 +219,7 @@ class EventLogStore:
         if self._history_reader is not None:
             if cursor < 1:
                 return None
-            page = await self._history_reader.read_session_events(
-                str(thread_id), after_cursor=cursor - 1, limit=1
-            )
+            page = await self._history_reader.read_session_events(str(thread_id), after_cursor=cursor - 1, limit=1)
             if page.last_cursor < await self.last_cursor(thread_id):
                 raise ConnectionError("Sandbox Service history is behind the app's confirmed prefix")
             if not page.entries:

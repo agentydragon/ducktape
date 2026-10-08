@@ -16,5 +16,5 @@ parity and handoff under concurrent writes, deploy the service reader first,
 then enable the app read switch. Confirm paging, SSE replay/resume, old native
 frames, and inability to read raw history with a non-app ServiceAccount.
 A follow-on change must make the service the durable write authority and
-move remaining app raw observation *metadata* reads without breaking app-only folds.
+move remaining app raw observation _metadata_ reads without breaking app-only folds.
 Until then keep app event ingestion and do not remove its tables.
