@@ -1,11 +1,10 @@
 import { useEffect, useMemo, useRef } from "react";
-import { Alert, Card, Center, Group, Loader, SegmentedControl, Stack, Text, Title } from "@mantine/core";
+import { Alert, Card, Center, Group, Loader, SegmentedControl, Stack, Table, Text, Title } from "@mantine/core";
 import {
   BarController,
   BarElement,
   CategoryScale,
   Chart,
-  Legend,
   LinearScale,
   LineController,
   LineElement,
@@ -22,8 +21,7 @@ Chart.register(
   LineController,
   LineElement,
   PointElement,
-  Tooltip,
-  Legend
+  Tooltip
 );
 
 type Allowance = components["schemas"]["AllowanceView"];
@@ -98,6 +96,7 @@ export function SpendingHistoryChart({
     const orderedCategories = [...categories.entries()].sort((left, right) => right[1].total - left[1].total);
     const leashDailyMinorUnits = Math.round((allowance.monthly_minor_units * 12) / 365.2425);
     const totalMinorUnits = orderedCategories.reduce((total, [, category]) => total + category.total, 0);
+    const dailyAverageMinorUnits = dates.length > 0 ? Math.round(totalMinorUnits / dates.length) : 0;
     const datasets = [
       ...orderedCategories.map(([id, category]) => ({
         type: "bar" as const,
@@ -108,6 +107,18 @@ export function SpendingHistoryChart({
         borderWidth: 0,
         stack: "spending",
       })),
+      {
+        type: "line" as const,
+        label: "Average over period",
+        data: dates.map(() => dailyAverageMinorUnits),
+        borderColor: "#1971C2",
+        borderDash: [2, 3],
+        borderWidth: 2,
+        pointRadius: 0,
+        pointHitRadius: 8,
+        tension: 0,
+        order: -2,
+      },
       {
         type: "line" as const,
         label: "Leash level",
@@ -124,6 +135,8 @@ export function SpendingHistoryChart({
     return {
       labels: dayLabels,
       datasets,
+      categories: orderedCategories.map(([id, category]) => ({ id, ...category })),
+      dailyAverageMinorUnits,
       leashDailyMinorUnits,
       totalMinorUnits,
       days: dates.length,
@@ -143,8 +156,12 @@ export function SpendingHistoryChart({
         maintainAspectRatio: false,
         interaction: { mode: "index", intersect: false },
         plugins: {
-          legend: { position: "bottom" },
+          legend: { display: false },
           tooltip: {
+            filter: (context) => {
+              const value = Number(context.parsed.y ?? 0);
+              return value > 0 && formatMoney(value, allowance.currency) !== formatMoney(0, allowance.currency);
+            },
             callbacks: {
               label: (context) =>
                 `${context.dataset.label}: ${formatMoney(Number(context.parsed.y ?? 0), allowance.currency)}`,
@@ -173,8 +190,8 @@ export function SpendingHistoryChart({
   }, [allowance.currency, chart, transactions]);
 
   const totalMinorUnits = chart?.totalMinorUnits ?? 0;
+  const dailyAverageMinorUnits = chart?.dailyAverageMinorUnits ?? 0;
   const leashDailyMinorUnits = chart?.leashDailyMinorUnits ?? 0;
-  const dailyAverageMinorUnits = chart?.days ? Math.round(totalMinorUnits / chart.days) : 0;
   const summary =
     chart && transactions
       ? `${formatMoney(totalMinorUnits, allowance.currency)} flexible spending over ${chart.days} days; average ${formatMoney(dailyAverageMinorUnits, allowance.currency)} per day; leash reference ${formatMoney(leashDailyMinorUnits, allowance.currency)} per day.`
@@ -224,12 +241,77 @@ export function SpendingHistoryChart({
             <div style={{ height: 250, minWidth: 0 }}>
               <canvas ref={canvasRef} role="img" aria-label={summary} aria-describedby="spending-history-summary" />
             </div>
+            <Table
+              aria-label={`Chart legend and totals for the selected ${chart.days}-day period`}
+              verticalSpacing="xs"
+              horizontalSpacing="sm"
+              withTableBorder
+            >
+              <Table.Caption>
+                Category values total the selected {chart.days}-day period; reference lines show daily amounts.
+              </Table.Caption>
+              <Table.Thead>
+                <Table.Tr>
+                  <Table.Th scope="col">Series</Table.Th>
+                  <Table.Th scope="col" ta="right">
+                    Amount
+                  </Table.Th>
+                </Table.Tr>
+              </Table.Thead>
+              <Table.Tbody>
+                {chart.categories.map((category) => (
+                  <Table.Tr key={category.id}>
+                    <Table.Td>
+                      <Group gap="xs" wrap="nowrap">
+                        <span
+                          aria-hidden="true"
+                          style={{ width: 12, height: 12, flex: "0 0 auto", backgroundColor: category.color }}
+                        />
+                        <span>{category.label}</span>
+                      </Group>
+                    </Table.Td>
+                    <Table.Td ta="right" style={{ fontVariantNumeric: "tabular-nums" }}>
+                      {formatMoney(category.total, allowance.currency)}
+                    </Table.Td>
+                  </Table.Tr>
+                ))}
+                <Table.Tr>
+                  <Table.Td>
+                    <Group gap="xs" wrap="nowrap">
+                      <span
+                        aria-hidden="true"
+                        style={{ width: 18, flex: "0 0 auto", borderTop: "2px dotted #1971C2" }}
+                      />
+                      <span>Average over period</span>
+                    </Group>
+                  </Table.Td>
+                  <Table.Td ta="right" style={{ fontVariantNumeric: "tabular-nums" }}>
+                    {formatMoney(dailyAverageMinorUnits, allowance.currency)}/day
+                  </Table.Td>
+                </Table.Tr>
+                <Table.Tr>
+                  <Table.Td>
+                    <Group gap="xs" wrap="nowrap">
+                      <span
+                        aria-hidden="true"
+                        style={{ width: 18, flex: "0 0 auto", borderTop: "2px dashed #E8590C" }}
+                      />
+                      <span>Leash level</span>
+                    </Group>
+                  </Table.Td>
+                  <Table.Td ta="right" style={{ fontVariantNumeric: "tabular-nums" }}>
+                    {formatMoney(leashDailyMinorUnits, allowance.currency)}/day
+                  </Table.Td>
+                </Table.Tr>
+              </Table.Tbody>
+            </Table>
             <Text size="xs" c="dimmed">
               Posted and pending positive flexible purchases in the selected window are included, including purchases
               before allowance activation. Earlier purchases inform this graph and the pace estimate but do not reduce
               the available allowance. Unmatched purchases count as unclassified flexible spending; fixed and excluded
-              purchases are omitted. The dashed leash line shows the monthly credit as a daily reference pace;
-              carryforward affects the available balance separately.
+              purchases are omitted. The dotted average line shows average daily spending over this period; the dashed
+              leash line shows monthly credit as a daily reference pace. Carryforward affects the available balance
+              separately.
             </Text>
           </>
         ) : (
