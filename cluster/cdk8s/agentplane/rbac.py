@@ -1,4 +1,4 @@
-"""The Namespace with its ResourceQuota/LimitRange, and the operator Role/RoleBinding.
+"""The Namespace with its optional ResourceQuota/LimitRange, and the operator Role/RoleBinding.
 
 A resourceNames-scoped rule needs an `IApiResource` whose `resourceName` is set:
 `ApiResource.custom()` never sets one and no cdk8s-plus type covers the
@@ -58,9 +58,7 @@ _ACTION_POLICY_RULE = RolePolicyRule(
 
 
 class NamespaceQuota(Construct):
-    """Namespace, ResourceQuota, and LimitRange bounding what Sandbox runner Pods
-    and the integration app may consume.
-    """
+    """Namespace, optional aggregate ResourceQuota, and per-container LimitRange."""
 
     def __init__(self, scope: Construct, id: str, env: Environment) -> None:
         super().__init__(scope, id)
@@ -75,34 +73,34 @@ class NamespaceQuota(Construct):
             labels={"name": env.namespace},
             annotations={"description": env.description},
         )
-        # Bounds what runner sandboxes take from the node. Each costs 2500m of limits.cpu
-        # (2 for the runner, 500m the LimitRange default for the egress sidecar), about
-        # 4.1Gi of limits.memory and a 10Gi state PVC, and the namespace's own service
-        # Pods count against the same totals. Sized for those services plus four
-        # sandboxes at once, with room left for a rollout's surge Pods; for more
-        # headroom, raise the limits, not a count.
-        #
-        # Aggregate resources only. A cap per object kind bounds an untrusted creator,
-        # and only Flux and the integration app create objects here.
-        #
-        # Load-bearing pair with the LimitRange below: it supplies the requests and
-        # limits that several containers omit (the CNPG postgres container declares
-        # none), and LimitRanger mutates before quota validates. Narrowing it while
-        # these compute dimensions stand rejects those pods outright.
-        k8s.KubeResourceQuota(
-            self,
-            "resourcequota",
-            metadata=k8s.ObjectMeta(name="quota", namespace=env.namespace),
-            spec=k8s.ResourceQuotaSpec(
-                hard={
-                    "requests.cpu": k8s.Quantity.from_string("4"),
-                    "requests.memory": k8s.Quantity.from_string("8Gi"),
-                    "limits.cpu": k8s.Quantity.from_string("18"),
-                    "limits.memory": k8s.Quantity.from_string("28Gi"),
-                    "requests.storage": k8s.Quantity.from_string("80Gi"),
-                }
-            ),
-        )
+        if env.namespace_resource_quota_enabled:
+            # Bounds what runner sandboxes take from the node. Each costs 2100m of limits.cpu
+            # (2 for the runner, 100m for the egress sidecar), about 4.1Gi of limits.memory
+            # and a 10Gi state PVC, and the namespace's own service Pods count against the
+            # same totals. Sized for those services plus four sandboxes at once, with room
+            # left for a rollout's surge Pods; for more headroom, raise the limits, not a count.
+            #
+            # Aggregate resources only. A cap per object kind bounds an untrusted creator,
+            # and only Flux and the integration app create objects here.
+            #
+            # Load-bearing pair with the LimitRange below: it supplies the requests and
+            # limits that several containers omit (the CNPG postgres container declares
+            # none), and LimitRanger mutates before quota validates. Narrowing it while
+            # these compute dimensions stand rejects those pods outright.
+            k8s.KubeResourceQuota(
+                self,
+                "resourcequota",
+                metadata=k8s.ObjectMeta(name="quota", namespace=env.namespace),
+                spec=k8s.ResourceQuotaSpec(
+                    hard={
+                        "requests.cpu": k8s.Quantity.from_string("4"),
+                        "requests.memory": k8s.Quantity.from_string("8Gi"),
+                        "limits.cpu": k8s.Quantity.from_string("18"),
+                        "limits.memory": k8s.Quantity.from_string("28Gi"),
+                        "requests.storage": k8s.Quantity.from_string("80Gi"),
+                    }
+                ),
+            )
         k8s.KubeLimitRange(
             self,
             "limitrange",

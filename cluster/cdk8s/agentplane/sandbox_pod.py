@@ -258,7 +258,10 @@ def _egress_sidecar(env: Environment) -> SandboxTemplateSpecPodTemplateSpecConta
                 "cpu": SandboxTemplateSpecPodTemplateSpecContainersResourcesRequests.from_string("10m"),
                 "memory": SandboxTemplateSpecPodTemplateSpecContainersResourcesRequests.from_string("32Mi"),
             },
-            limits={"memory": SandboxTemplateSpecPodTemplateSpecContainersResourcesLimits.from_string("128Mi")},
+            limits={
+                "cpu": SandboxTemplateSpecPodTemplateSpecContainersResourcesLimits.from_string("100m"),
+                "memory": SandboxTemplateSpecPodTemplateSpecContainersResourcesLimits.from_string("128Mi"),
+            },
         ),
         volume_mounts=[
             SandboxTemplateSpecPodTemplateSpecContainersVolumeMounts(

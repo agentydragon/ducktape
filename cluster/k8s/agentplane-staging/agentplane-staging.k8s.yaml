@@ -11,19 +11,6 @@ metadata:
 spec: {}
 ---
 apiVersion: v1
-kind: ResourceQuota
-metadata:
-  name: quota
-  namespace: agentplane-staging
-spec:
-  hard:
-    limits.cpu: "18"
-    limits.memory: 28Gi
-    requests.cpu: "4"
-    requests.memory: 8Gi
-    requests.storage: 80Gi
----
-apiVersion: v1
 kind: LimitRange
 metadata:
   name: limits
@@ -4689,6 +4676,7 @@ spec:
             timeoutSeconds: 1
           resources:
             limits:
+              cpu: 100m
               memory: 128Mi
             requests:
               cpu: 10m
@@ -6046,6 +6034,7 @@ spec:
             timeoutSeconds: 1
           resources:
             limits:
+              cpu: 100m
               memory: 128Mi
             requests:
               cpu: 10m
@@ -6254,6 +6243,7 @@ spec:
             timeoutSeconds: 1
           resources:
             limits:
+              cpu: 100m
               memory: 128Mi
             requests:
               cpu: 10m
@@ -6408,6 +6398,7 @@ spec:
             timeoutSeconds: 1
           resources:
             limits:
+              cpu: 100m
               memory: 128Mi
             requests:
               cpu: 10m
