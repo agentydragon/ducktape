@@ -45,9 +45,7 @@ def name_rule(field: Literal["name", "merchant_name"], prefix: str, kind: Kind) 
 
 def policy(*, activation_at: date = START_DATE, rules: list[Rule] | None = None) -> AllowancePolicy:
     configured_rules = (
-        rules
-        if rules is not None
-        else [category_rule(field="pfc_primary", value="SHOPPING", kind=Kind.FLEXIBLE)]
+        rules if rules is not None else [category_rule(field="pfc_primary", value="SHOPPING", kind=Kind.FLEXIBLE)]
     )
     category_ids = {
         "unclassified",

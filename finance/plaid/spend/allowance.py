@@ -268,8 +268,7 @@ class AllowancePolicy(BaseModel):
     max_sync_age_hours: int = Field(default=72, ge=1, le=720)
     forecast_basis_period_id: PeriodId = PeriodId.ROLLING_7D
     analysis_categories: dict[str, AnalysisCategory] = Field(
-        min_length=1,
-        description="Display labels and colors keyed by rule analysis_category; includes unclassified.",
+        min_length=1, description="Display labels and colors keyed by rule analysis_category; includes unclassified."
     )
 
     @field_validator("forecast_basis_period_id")

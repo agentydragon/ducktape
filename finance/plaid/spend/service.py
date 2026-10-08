@@ -440,9 +440,7 @@ class SpendService:
                 )
                 category_config = allowance_policy.analysis_categories[category_id]
                 category = AnalysisCategoryView(
-                    id=category_id,
-                    label=category_config.label,
-                    color=category_config.color,
+                    id=category_id, label=category_config.label, color=category_config.color
                 )
             rows.append(
                 SpendTransactionRow(

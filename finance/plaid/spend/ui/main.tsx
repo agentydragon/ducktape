@@ -1539,9 +1539,7 @@ function App() {
               )}
               {view?.allowance?.status === "active" && !estimatePending && (
                 <SpendingHistoryChart
-                  transactions={
-                    transactions?.requested_period_id === estimatePeriodId ? transactions : null
-                  }
+                  transactions={transactions?.requested_period_id === estimatePeriodId ? transactions : null}
                   allowance={view.allowance}
                   loading={transactionsLoading}
                   error={transactionsError}

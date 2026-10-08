@@ -199,12 +199,7 @@ export function SpendingHistoryChart({
               {summary}
             </Text>
             <div style={{ height: 250, minWidth: 0 }}>
-              <canvas
-                ref={canvasRef}
-                role="img"
-                aria-label={summary}
-                aria-describedby="spending-history-summary"
-              />
+              <canvas ref={canvasRef} role="img" aria-label={summary} aria-describedby="spending-history-summary" />
             </div>
             <Text size="xs" c="dimmed">
               Posted and pending flexible purchases after activation are included; unmatched purchases count as
