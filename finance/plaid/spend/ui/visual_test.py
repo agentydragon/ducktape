@@ -446,7 +446,7 @@ async def test_spending_decision_render(
     assert await page.evaluate("document.documentElement.scrollWidth <= window.innerWidth")
     normal = f"dashboard-{width}.png"
     await view.capture(normal.removesuffix(".png"), label=f"{width}px available", full_page=True, animations="disabled")
-    await page.get_by_role("radio", name="30 days", exact=True).check()
+    await page.get_by_text("30 days", exact=True).click()
     await expect(page.locator("#spending-history-summary")).to_have_text(
         "$550 flexible spending over 30 days; average $18 per day; leash reference $23 per day."
     )
@@ -459,7 +459,7 @@ async def test_spending_decision_render(
         full_page=True,
         animations="disabled",
     )
-    await page.get_by_role("radio", name="7 days", exact=True).check()
+    await page.get_by_text("7 days", exact=True).click()
     await expect(page.locator("#spending-history-summary")).to_have_text(
         "$15 flexible spending over 7 days; average $2 per day; leash reference $23 per day."
     )
