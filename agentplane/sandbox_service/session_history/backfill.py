@@ -19,6 +19,10 @@ from agentplane.protocol import event_log_pb2
 from agentplane.sandbox_service.session_history.db import SessionHistory
 from agentplane.sandbox_service.session_history.store import HistoryConflictError, Store
 
+# SQLAlchemy loads this dialect by URL. Generated EventEntry stubs also need protobuf.
+# gazelle:include_dep @pypi//asyncpg
+# gazelle:include_dep @pypi//protobuf
+
 logger = logging.getLogger(__name__)
 PAGE_SIZE = 128
 
