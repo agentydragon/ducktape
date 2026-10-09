@@ -620,7 +620,7 @@ def test_constructor_rejects_discovery_or_configuration_mismatch() -> None:
         {"client_id": "  "},
     ]
     for override in invalid_overrides:
-        with pytest.raises(ValueError, match=r"issuer|jwks|algorithm|client_id|RS256"):
+        with pytest.raises(ValueError, match=r"issuer|jwks|algorithm|client_id|RS256|URL must use HTTPS"):
             AuthentikOidcPrincipalResolver(**(base | override))
 
 
