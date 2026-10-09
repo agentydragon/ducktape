@@ -52,7 +52,7 @@ resource "kubernetes_secret" "claude_forgejo_credentials_source" {
 }
 
 # Source credential for forgejo-token-rotation, copied into agents-infra
-# (cluster/cdk8s/forgejo_token_rotation.py). The rotator mints the API token
+# (cluster/cdk8s/forgejo/token_rotation.py). The rotator mints the API token
 # that `tea` consumes, while this Terraform root remains the owner of the
 # account password.
 resource "kubernetes_secret" "claude_forgejo_token_mint_source" {

@@ -9,7 +9,6 @@ py_library(
     deps = [
         "//cluster/cdk8s:config_format",
         "//cluster/cdk8s:flux",
-        "//cluster/cdk8s:forgejo_images",
         "//cluster/cdk8s:gateway",
         "//cluster/cdk8s:generation",
         "//cluster/cdk8s:manifest_roots",
@@ -17,6 +16,7 @@ py_library(
         "//cluster/cdk8s:secret_ref",
         "//cluster/cdk8s:service_ref",
         "//cluster/cdk8s/external_secrets:minted_secret",
+        "//cluster/cdk8s/forgejo:images",
         "//cluster/cdk8s/providers/external_secrets:externalsecret",
         "//cluster/cdk8s/providers/prometheus_operator:prometheus_rule",
         "//cluster/cdk8s/providers/prometheus_operator:service_monitor",

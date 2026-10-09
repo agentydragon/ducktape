@@ -32,9 +32,6 @@ from cluster.cdk8s import (
     flux,
     flux_monitoring,
     flux_sources,
-    forgejo_image_automation,
-    forgejo_images,
-    forgejo_token_rotation,
     gateway,
     github_branch_protection,
     github_tf,
@@ -124,7 +121,10 @@ from cluster.cdk8s.forgejo import (
     db as forgejo_db,
     flux_kustomizations as forgejo_flux_kustomizations,
     gitops_modules as forgejo_gitops_modules,
+    image_automation as forgejo_image_automation,
+    images as forgejo_images,
     namespace as forgejo_namespace,
+    token_rotation as forgejo_token_rotation,
 )
 from cluster.cdk8s.gaffer_private_source import (
     flux_kustomizations as gaffer_private_source_flux_kustomizations,

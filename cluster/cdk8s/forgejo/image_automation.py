@@ -6,7 +6,7 @@ policy -- so the roster below is just the names. The `ImageUpdateAutomation` tha
 the selected tags back into each directory's `image-pins/` Component lives in
 `cluster/generated/flux-image-automation-ghcr`, not here; nothing in this chart carries an
 `$imagepolicy` marker, so Flux never rewrites this generated file. The Receiver that scans an
-image on its push (`forgejo_images.py`) is built from the same roster.
+image on its push (`forgejo/images.py`) is built from the same roster.
 """
 
 from __future__ import annotations

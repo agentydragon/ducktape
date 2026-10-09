@@ -55,7 +55,7 @@ from constructs import Construct
 from prometheus_operator_crds.com.coreos.monitoring import ServiceMonitorSpecSelector
 
 from cluster.cdk8s import agent_access_profiles as access, node_scheduling, pod_policy, service_ref
-from cluster.cdk8s.forgejo_images import forgejo_images_creds_secret_ref
+from cluster.cdk8s.forgejo.images import forgejo_images_creds_secret_ref
 from cluster.cdk8s.gateway import https_route
 from cluster.cdk8s.haku import console_config, database
 from cluster.cdk8s.probes import http_probe

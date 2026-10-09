@@ -22,7 +22,7 @@ from constructs import Construct
 from agentplane.llm_ingress.settings import CONFIG_FILE_ENV, Settings
 from cluster.cdk8s import cilium, node_scheduling, pod_policy
 from cluster.cdk8s.agentplane.environment import Environment
-from cluster.cdk8s.forgejo_images import forgejo_images_creds_secret_ref
+from cluster.cdk8s.forgejo.images import forgejo_images_creds_secret_ref
 from cluster.cdk8s.probes import http_probe
 from cluster.cdk8s.providers.cilium.network_policy import EgressRule, Entity, IngressRule, NetworkPolicy
 from cluster.cdk8s.secret_ref import SecretRef

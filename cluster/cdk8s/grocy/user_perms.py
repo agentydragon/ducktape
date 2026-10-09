@@ -19,7 +19,7 @@ from cdk8s_plus_34 import k8s
 
 from cluster.cdk8s.config_format import yaml_config
 from cluster.cdk8s.flux import ConfigMapArgs, kustomize_kustomization
-from cluster.cdk8s.forgejo_images import SECRET_NAME
+from cluster.cdk8s.forgejo.images import SECRET_NAME
 from cluster.cdk8s.generation import write_charts, write_yaml
 from cluster.cdk8s.grocy import app as grocy  # `app` is the cdk8s App parameter here
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
