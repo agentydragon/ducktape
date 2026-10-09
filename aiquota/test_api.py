@@ -8,8 +8,9 @@ import pytest
 import pytest_asyncio
 import pytest_bazel
 
-from aiquota.api import BrowserOAuth, QuotaSnapshot, RawUpstreamResponse, Settings, _CapturingClientFactory, create_app
+from aiquota.api import BrowserOAuth, QuotaSnapshot, RawUpstreamResponse, _CapturingClientFactory, create_app
 from aiquota.models import AllQuotas, FetchSuccess, ProviderFetch, ProviderQuota, QuotaWindow
+from aiquota.settings import Settings
 
 if __name__ == "__main__":
     pytest_bazel.main()

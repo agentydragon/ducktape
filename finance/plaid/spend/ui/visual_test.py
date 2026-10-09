@@ -443,6 +443,26 @@ def dashboard_url() -> Iterator[str]:
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("width", [390, 1024, 1280])
+async def test_header_menu_at_right_with_sign_out(page: Page, dashboard_url: str, width: int) -> None:
+    await page.set_viewport_size({"width": width, "height": 844})
+    await page.goto(dashboard_url, wait_until="domcontentloaded")
+    menu_button = page.get_by_role("button", name="Open page navigation")
+    await expect(menu_button).to_be_visible()
+    container = page.locator("header .mantine-Container-root")
+    container_bounds = await container.bounding_box()
+    button_bounds = await menu_button.bounding_box()
+    assert container_bounds is not None
+    assert button_bounds is not None
+    assert abs(button_bounds["x"] + button_bounds["width"] - container_bounds["x"] - container_bounds["width"]) < 20
+    await expect(page.get_by_role("button", name="Sign out")).to_have_count(0)
+    await menu_button.click()
+    sign_out = page.get_by_role("menuitem", name="Sign out")
+    await expect(sign_out).to_be_visible()
+    assert await sign_out.locator("xpath=ancestor::form").get_attribute("action") == "/auth/logout"
+    assert await sign_out.locator("xpath=ancestor::form").get_attribute("method") == "post"
+
+
 @pytest.mark.parametrize(("width", "height"), [(1280, 960), (390, 844)])
 async def test_spending_decision_render(
     page: Page, view: VisualPage, dashboard_url: str, width: int, height: int
@@ -520,6 +540,23 @@ async def test_spending_decision_render(
     await view.capture(
         exceeded.removesuffix(".png"), label=f"{width}px hypothetical purchase", full_page=True, animations="disabled"
     )
+
+
+@pytest.mark.asyncio
+async def test_chart_transactions_start_before_view_finishes(page: Page, dashboard_url: str) -> None:
+    release_view = asyncio.Event()
+
+    async def delayed_view(route: Route) -> None:
+        await release_view.wait()
+        await route.continue_()
+
+    await page.route("**/api/v1/view*", delayed_view)
+    try:
+        async with page.expect_request("**/api/v1/transactions?period=rolling_7d"):
+            await page.goto(dashboard_url, wait_until="domcontentloaded")
+    finally:
+        release_view.set()
+    await page.locator("canvas[aria-label]").wait_for()
 
 
 @pytest.mark.asyncio

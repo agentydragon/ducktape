@@ -164,3 +164,5 @@ cluster/parked/haku-openclaw-spike/proxy/kustomization.yaml linguist-generated=t
 
 cluster/parked/agents-mitmproxy/kustomization.yaml linguist-generated=true
 cluster/parked/agent-workspaces/kustomization.yaml linguist-generated=true
+
+cluster/k8s/activitywatch/kustomization.yaml linguist-generated=true

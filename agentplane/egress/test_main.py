@@ -8,7 +8,7 @@ import pytest
 import pytest_bazel
 from pydantic import ValidationError
 
-from agentplane.egress.main import Settings
+from agentplane.egress.settings import Settings
 
 CONFIG_FILE_ENV = "AGENTPLANE_EGRESS_CONFIG_FILE"
 

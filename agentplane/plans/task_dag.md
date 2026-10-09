@@ -66,6 +66,7 @@ flowchart TB
     EGRESS_CHANGE["Deferred design<br/>agent-requested egress<br/>policy expansion"]:::future
     BINDING_SUBJECT_ARITY["Schema cleanup<br/>singular subject across binding kinds<br/>before multi-subject use"]:::future
     NOTIFICATION_ACTION_FEED["Deferred optimization<br/>event-driven Action consumption<br/>replace idle history polling"]:::future
+    NOTIFICATION_GITHUB_RETENTION["Storage follow-up<br/>bound GitHub webhook receipt payloads<br/>preserve dedup and subscription replay"]:::future
     NOTIFICATION_WORKER_ISOLATION["Deferred reliability refactor<br/>separate notification HTTP and delivery workers<br/>independent failure domains"]:::future
     NOTIFICATION_NOTICE_PACING["Incremental improvement<br/>stage-aware notice pacing<br/>avoid redundant busy-turn notices"]:::future
     HOME_ASSISTANT_NOTIFICATIONS["Unranked future source<br/>Home Assistant events and state changes"]:::future
@@ -98,6 +99,7 @@ flowchart TB
     THREAD_ARCHIVE_INGEST["Live archive ingester<br/>runner replay, exact duplicates and fencing<br/>independent of fold projection"]:::future
     THREAD_ARCHIVE_UI_CUTOVER["App projection cutover<br/>consume archive replay, track fold lag<br/>retire app archive writes and SA bypass"]:::future
     THREAD_ARCHIVE_OWNERSHIP["Capstone<br/>single durable Session Event archive authority<br/>app is a consumer, not a backend source"]:::milestone
+    SESSION_EVENT_RETENTION["Storage follow-up<br/>measure and compact redundant Session deltas<br/>preserve native/debug and replay contracts"]:::future
     APP_ALEMBIC_SQUASH["One-off app schema cleanup<br/>new baseline after identity/archive cutover<br/>stamp each deployed database before pruning"]:::future
     SANDBOX_COMPARTMENT_DESIGN["Trust-boundary decision<br/>Sandbox compartment assignment and enforcement<br/>shared filesystem and SA"]:::decision
     SANDBOX_COMPARTMENT_BOUNDARY["Enforce Sandbox trust domain<br/>reject incompatible Open and replacement<br/>no false cross-compartment isolation"]:::future
@@ -176,6 +178,7 @@ flowchart TB
     RUNNER_IMAGE_ROLLOUT --> THREAD_EVENT_CONTINUITY
     THREAD_IDENTITY_NEW --> THREAD_EVENT_CONTINUITY
     THREAD_EVENT_CONTINUITY --> APP_ALEMBIC_SQUASH
+    THREAD_ARCHIVE_OWNERSHIP --> SESSION_EVENT_RETENTION
     THREAD_ARCHIVE_OWNERSHIP --> APP_ALEMBIC_SQUASH
     THREAD_OUTLIVES_SANDBOX --> THREAD_ON_DEMAND_RUNTIME
     THREAD_PORTABLE_STATE --> THREAD_ON_DEMAND_RUNTIME
@@ -947,6 +950,30 @@ remove the transitional stamp/import machinery and obsolete revisions, while ret
 the migration runbook and rollback backups. Action Service and other Alembic histories
 are independent; this task does not silently squash them.
 
+### `SESSION_EVENT_RETENTION` — reduce redundant Session history storage
+
+**Measured staging growth (2026-10-09 UTC):** the app `event` relation was ~6.2 GiB
+(~11m rows); `thread_native_link` and `thread_evidence` added ~959 and ~847 MiB.
+A 0.1% sample of `event` found ~5.9k native frames (3.05 MB sampled payload)
+and ~5.5k `text_delta` entries (1.37 MB); together they dominated sampled rows
+and payload bytes. The Sandbox Service's `session_event` copy was only partly
+backfilled when measured: do not extrapolate its current size or count the old app
+copy as permanent savings before the cutover and legacy-table retirement.
+
+**Post-ownership implementation:** measure storage by Event kind and by native
+harness frame subtype, including TOAST/index and derived fold/link/evidence cost.
+Choose a documented, configurable retention policy for intermediate text/arguments/
+output deltas: keep them while a turn is incomplete, optionally discard _only after_
+a durable terminal/full-value observation makes replay and debug reads safe. Native
+protocol wires remain available by default; evaluate a separate opt-in native-delta
+policy only after proving which frames are reconstructible without losing harness-
+specific packets, opaque reasoning, or recovery evidence. Never infer that a final
+visible UI value reproduces a native frame. Prove live follow/cursor continuity,
+partial/interrupted turns, raw reads, fold rebuilds, runner replay and native resume
+for both harnesses; use non-destructive migration/compaction with size and correctness
+checks before deleting historical data. Preserve the authority's append/replay
+contract or explicitly version a new compacted-history contract and its clients.
+
 ### `THREAD_ARCHIVE_PLACEMENT` — choose the durable history authority
 
 Decide between an archive component in Sandbox Service and an independent history
@@ -1353,6 +1380,25 @@ resume due inboxes across replicas without concurrent ownership, with errors vis
 age/backlog monitored. Exercise independent rollouts and worker-only failure/restart without
 restarting or draining healthy HTTP pods. Diagnose any current worker crash separately; this
 split is not its root-cause fix.
+
+### `NOTIFICATION_GITHUB_RETENTION` — bound GitHub delivery receipt storage
+
+**Measured staging growth (2026-10-09 UTC):** `notifications` was about 941 MiB;
+`github_delivery` alone was 907 MiB (roughly 147k rows). `entry` was 27 MiB.
+A 1% table sample put `workflow_run` and `check_run` first by stored payload bytes,
+followed by `check_suite`; remeasure on both instances before changing retention.
+`store.cleanup()` expires _inbox entry_ payloads after 30 days and purges retired
+inboxes, but does not expire the separate GitHub ingress receipts or their payloads.
+
+**Independent retention implementation:** decide how long a full receipt is needed for
+active subscription matching, creation-position boundaries, webhook-redelivery
+idempotence and cross-replica recovery. Then age out full `github_delivery` payloads
+with an explicit bounded dedup identity/tombstone policy (or expire whole receipts
+only after proving those properties); keep late redeliveries from creating duplicate
+notices. Test active and newly created subscriptions, backlog/restarts, late webhook
+redelivery, payload expiry and bounded cleanup batches. Measure actual PostgreSQL
+relation/TOAST/index sizes before and after; a smaller logical payload does not by
+itself reclaim on-disk space. Do not apply Session-delta retention rules to webhooks.
 
 ### `NOTIFICATION_ACTION_FEED` — remove idle Action-history polling
 

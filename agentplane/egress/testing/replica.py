@@ -12,7 +12,8 @@ from textwrap import dedent
 import aiohttp
 from tenacity import AsyncRetrying, stop_after_delay, wait_fixed
 
-from agentplane.egress.main import Settings, async_main
+from agentplane.egress.main import async_main
+from agentplane.egress.settings import Settings
 from agentplane.egress.upstream import PinnedDialEventLoop
 
 

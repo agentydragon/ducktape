@@ -108,9 +108,9 @@ py_library(
         "@pypi//itsdangerous",
         "@pypi//prometheus_client",
         "@pypi//pydantic",
-        "@pypi//pydantic_settings",
         "@pypi//starlette",
         "@pypi//uvicorn",
+        ":settings",
     ],
 )
 
@@ -268,6 +268,7 @@ py_test(
     deps = [
         ":api",
         ":models",
+        ":settings",
         "//:conftest",
         "@pypi//httpx",
         "@pypi//pytest",
@@ -326,4 +327,14 @@ py_library(
     name = "export_schema",
     srcs = ["export_schema.py"],
     deps = [":api"],
+)
+
+py_library(
+    name = "settings",
+    srcs = ["settings.py"],
+    visibility = ["//cluster/cdk8s:__pkg__"],
+    deps = [
+        "@pypi//pydantic",
+        "@pypi//pydantic_settings",
+    ],
 )

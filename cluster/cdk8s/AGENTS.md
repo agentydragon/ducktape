@@ -277,7 +277,7 @@ indirection, stop and ask before changing the design.
 - **Render identity across a conversion**: `render_diff.py` reconciles the whole Flux
   graph at two revisions (sources, ArtifactGenerator copies, `kustomize build`, before
   `postBuild`) and diffs every Kustomization's objects, exiting 1 on any difference.
-  From the devshell: `python3 cluster/cdk8s/render_diff.py origin/devel HEAD`; renders
+  From the devshell: `bb run //cluster/cdk8s:render_diff_bin -- origin/devel HEAD --repo "$PWD"`; renders
   cache under `~/.cache/render-diff` (`--cache-dir` moves it). Its docstring lists the
   Flux semantics it reproduces.
 
@@ -324,9 +324,6 @@ and lands in its own PR with the violations fixed. Exceptions are explicit param
 - `Chart(namespace=...)` would drop `namespace=` from every object's `ApiObjectMetadata`,
   but it injects the namespace into cluster-scoped objects too (ClusterRole,
   Bundle) with no opt-out; usable only once cluster-scoped objects get their own chart.
-- Synth imports each service's `main` for its `Settings`, pulling the runtime in; synth
-  tests are `size = "medium"` until a light `settings.py` per service exists
-  (`TODO.md`).
 - `cdk8s import` names a multi-version CRD's _first listed_ version plainly and
   suffixes the others, regardless of which is the storage version: tofu-controller's
   `Terraform` is v1alpha1, the cluster's CRs are `TerraformV1Alpha2`
