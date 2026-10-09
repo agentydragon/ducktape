@@ -65,7 +65,7 @@ from cluster.cdk8s.model_selections import TESTING_APP_MODELS
 from cluster.cdk8s.providers.cilium.network_policy import EgressRule, NetworkPolicy
 from model_catalog.catalog import GPT6_LUNA_RESPONSES
 
-_NAMESPACE = TESTING_NAMESPACE
+_NAMESPACE = "agentplane-testing"
 _HOSTNAME = "agentplane-testing.allegedly.works"
 _DEX_HOSTNAME = "agentplane-dex-testing.allegedly.works"
 _DEX_ISSUER = f"https://{_DEX_HOSTNAME}/dex"

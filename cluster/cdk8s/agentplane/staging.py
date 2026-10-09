@@ -58,7 +58,7 @@ from cluster.cdk8s.providers.external_secrets.external_secret import ExternalSec
 from cluster.cdk8s.public_coder import egress as public_coder_egress
 from cluster.cdk8s.ssh_mcp.config import BEARER_SECRET_KEY, BEARER_SECRET_NAME, MCP_URL
 
-_NAMESPACE = STAGING_NAMESPACE
+_NAMESPACE = "agentplane-staging"
 _HOSTNAME = "agentplane-staging.allegedly.works"
 _ACTIONS_HOSTNAME = "agentplane-actions-staging.allegedly.works"
 _NOTIFICATIONS_HOSTNAME = "agentplane-notifications-staging.allegedly.works"
