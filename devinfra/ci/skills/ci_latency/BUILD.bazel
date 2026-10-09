@@ -3,6 +3,8 @@ load("@bazel_skylib//rules:diff_test.bzl", "diff_test")
 load("//devinfra/python:defs.bzl", "py_library", "py_test")
 load("//skills:defs.bzl", "skill_package")
 
+exports_files(["scripts/publish.py"])
+
 skill_package(
     name = "ci_latency",
     srcs = [
