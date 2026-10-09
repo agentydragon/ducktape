@@ -306,7 +306,7 @@ async def review(
                 service_url="http://test-actions.invalid",
                 token_endpoint=AnyHttpUrl(f"http://127.0.0.1:{pick_free_port()}/exchange")
                 if operator_connection == "exchange-disconnected"
-                else f"{idp_origin}/exchange",
+                else AnyHttpUrl(f"{idp_origin}/exchange"),
                 login_jwks_uri=f"{idp_origin}/federation-keys?private=test-private-query"
                 if operator_connection in {"jwks-unavailable", "jwks-malformed"}
                 else f"{idp_url}jwks/",
