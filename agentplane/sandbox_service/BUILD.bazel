@@ -139,7 +139,7 @@ py_library(
         ":kubernetes_bindings",
         ":kubernetes_grants",
         ":provisioning",
-        "//agentplane:subjects",
+        ":settings",
         "//agentplane/sandbox_service/session_history:ingestion",
         "//agentplane/sandbox_service/session_history:store",
         "//agentplane/workload_auth:principal",
@@ -148,8 +148,6 @@ py_library(
         "@pypi//fastapi",
         "@pypi//grpcio",
         "@pypi//kubernetes_asyncio",
-        "@pypi//pydantic",
-        "@pypi//pydantic_settings",
         "@pypi//sqlalchemy",
         "@pypi//uvicorn",
     ],
@@ -649,5 +647,20 @@ py_library(
     deps = [
         "//agentplane/sandbox_service:protocol_pb2",
         "@pypi//protobuf",
+    ],
+)
+
+py_library(
+    name = "settings",
+    srcs = ["settings.py"],
+    visibility = [
+        "//agentplane:__subpackages__",
+        "//cluster/cdk8s/agentplane:__pkg__",
+    ],
+    deps = [
+        ":kubernetes_grants",
+        "//agentplane:subjects",
+        "@pypi//pydantic",
+        "@pypi//pydantic_settings",
     ],
 )

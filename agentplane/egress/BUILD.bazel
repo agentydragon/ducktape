@@ -90,15 +90,13 @@ py_library(
         ":policy",
         ":proxy",
         ":rules_api",
+        ":settings",
         ":upstream",
         "//agentplane:kubernetes_watch",
         "//agentplane/workload_auth:http",
         "//agentplane/workload_auth:principal",
         "//util:kubernetes",
         "@pypi//kubernetes_asyncio",
-        "@pypi//pydantic",
-        "@pypi//pydantic_settings",
-        "@pypi//pyyaml",
     ],
 )
 
@@ -228,11 +226,11 @@ py_test(
         ":decision_log",
         ":decisions",
         ":identity",
-        ":main",
         ":policy",
         ":proxy",
         ":resources",
         ":rules_api",
+        ":settings",
         ":sidecar",
         ":upstream",
         "//:conftest",
@@ -560,10 +558,24 @@ py_test(
     srcs = ["test_main.py"],
     deps = [
         ":conftest",
-        ":main",
+        ":settings",
         "//:conftest",
         "@pypi//pydantic",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
+    ],
+)
+
+py_library(
+    name = "settings",
+    srcs = ["settings.py"],
+    visibility = [
+        "//agentplane:__subpackages__",
+        "//cluster/cdk8s/agentplane:__pkg__",
+    ],
+    deps = [
+        "@pypi//pydantic",
+        "@pypi//pydantic_settings",
+        "@pypi//pyyaml",
     ],
 )

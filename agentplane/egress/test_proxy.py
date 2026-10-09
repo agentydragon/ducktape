@@ -55,7 +55,6 @@ from agentplane.egress.conftest import (
 from agentplane.egress.decision_log import DecisionLog
 from agentplane.egress.decisions import Phase
 from agentplane.egress.identity import IdentityRejectedError, ProjectedTokenVerifier, WorkloadIdentityVerifier
-from agentplane.egress.main import Settings
 from agentplane.egress.policy import DenyReason, Index
 from agentplane.egress.proxy import EgressProxyServer, write_interception_ca
 from agentplane.egress.resources import TargetMethod, placeholder_of
@@ -66,6 +65,7 @@ from agentplane.egress.rules_api import (
     create_rules_app,
     serve_rules_api,
 )
+from agentplane.egress.settings import Settings
 from agentplane.egress.sidecar import SidecarRelay
 from agentplane.egress.testing.replica import kubeconfig, replica
 from agentplane.egress.testing.tls import (

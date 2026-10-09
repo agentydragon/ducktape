@@ -49,7 +49,7 @@ from trust_manager_crds.io.cert_manager.trust import (
 )
 
 from agentplane.egress.database_migrate import MigrationSettings
-from agentplane.egress.main import CONFIG_FILE_ENV, Settings
+from agentplane.egress.settings import CONFIG_FILE_ENV, Settings
 from cluster.cdk8s import cilium, node_scheduling, pod_policy
 from cluster.cdk8s.agentplane import actions, database, llm_ingress, notifications
 from cluster.cdk8s.agentplane.egress_credentials import BUILDBUDDY_API_KEY_SECRET, GITHUB_PAT_SECRET
