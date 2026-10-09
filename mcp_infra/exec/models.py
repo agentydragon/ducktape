@@ -48,7 +48,7 @@ CMD_DESCRIPTION: Final[str] = (
 
 
 class ExecArgsBase(BaseModel):
-    """Shared fields for all exec args models (direct, bwrap, seatbelt)."""
+    """Common command, output limit, working directory, and timeout fields."""
 
     cmd: list[str] = Field(min_length=1, description=CMD_DESCRIPTION)
     max_bytes: int = Field(

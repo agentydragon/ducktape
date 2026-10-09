@@ -1,7 +1,7 @@
 """Run one bounded, non-interactive script inside a Kubernetes Pod over ``pods/exec``.
 
-The Kubernetes backend beside this package's other exec substrates (``direct``, ``docker``,
-``bwrap``): the caller supplies a Pod that already exists and this runs a script in one of its
+The Kubernetes backend beside this package's other exec substrates (``direct``,
+``docker``): the caller supplies a Pod that already exists and this runs a script in one of its
 containers, bounding wall-clock time and retained output. It owns no Pod lifecycle -- whoever
 created the Pod decides when it goes away.
 

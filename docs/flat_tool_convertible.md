@@ -14,7 +14,6 @@ functions with `Annotated[T, "description"]` parameters instead.
 | `git_commit_ai/git_ro/server.py`           | `rev_parse`             | `RevParseInput`      |
 | `mcp_infra/exec/seatbelt.py`               | `read_image`            | `ReadImageInput`     |
 | `mcp_infra/exec/direct.py`                 | `read_image`            | `ReadImageInput`     |
-| `mcp_infra/exec/bwrap.py`                  | `read_image`            | `ReadImageInput`     |
 | `mcp_infra/exec/docker/server.py`          | `read_image`            | `ReadImageInput`     |
 | `x/inop/prompt_feedback_mcp.py`            | `propose_prompt`        | `ProposePromptInput` |
 | `agent_core_testing/echo_server.py`        | `echo`                  | `EchoInput`          |
@@ -41,5 +40,4 @@ Require FlatTool for: nested models, `Field(ge=, le=, min_length=, pattern=)`,
 | `adgn/mcp/gitea_mirror/server.py`          | `get_repo_info`            | `ConfigDict(extra="forbid")`                                  |
 | `mcp_infra/exec/seatbelt.py`               | `sandbox_exec`             | Nested models, `Field(min_length=1)`, `ConfigDict`            |
 | `mcp_infra/exec/direct.py`                 | `exec`                     | `Field(min_length=1)`, `Field(ge=0, le=100000)`, `ConfigDict` |
-| `mcp_infra/exec/bwrap.py`                  | `exec`                     | `Field(ge=0, le=100000)`, `ConfigDict`                        |
 | `mcp_infra/exec/docker/server.py`          | `exec`                     | Custom method, `Field(pattern=...)`, `ConfigDict`             |

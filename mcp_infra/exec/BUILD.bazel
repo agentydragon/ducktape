@@ -24,7 +24,7 @@ py_library(
     deps = [":models"],
 )
 
-# Image reading utility (shared by direct, bwrap, and docker)
+# Image reading utility (shared by direct and docker)
 py_library(
     name = "read_image",
     srcs = ["read_image.py"],
@@ -93,24 +93,6 @@ oci_load(
     visibility = ["//visibility:public"],
 )
 
-# Linux bubblewrap sandbox exec MCP server
-py_library(
-    name = "bwrap",
-    testonly = True,
-    srcs = ["bwrap.py"],
-    visibility = ["//visibility:public"],
-    deps = [
-        ":models",
-        ":read_image",
-        ":subprocess",
-        "//mcp_infra:flat_tool",
-        "//mcp_infra/enhanced:server",
-        "@pypi//fastmcp_slim",
-        "@pypi//mcp",
-        "@pypi//mcp_types",
-    ],
-)
-
 # Docker container types (no MCP dependencies)
 py_binary(
     name = "docker_launcher",
@@ -143,23 +125,6 @@ py_test(
         "//mcp_infra:conftest",
         "//mcp_infra/testing:exec_stubs",
         "@pypi//fastmcp_slim",
-        "@pypi//pytest_bazel",
-    ],
-)
-
-py_test(
-    name = "test_bwrap",
-    srcs = ["test_bwrap.py"],
-    requires_docker = True,
-    deps = [
-        ":bwrap",
-        ":conftest",
-        ":models",
-        "//:conftest",
-        "//mcp_infra:conftest",
-        "//mcp_infra/testing:exec_stubs",
-        "@pypi//fastmcp_slim",
-        "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],
 )

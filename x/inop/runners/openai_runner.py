@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import os
 import shutil
-import sys
 import tempfile
 import time
 import uuid
@@ -23,7 +22,6 @@ from agent_core.transcript_handler import TranscriptHandler
 from mcp_infra.compositor.compositor import Compositor
 from mcp_infra.constants import WORKING_DIR
 from mcp_infra.display.event_renderer import DisplayEventsHandler
-from mcp_infra.exec.bwrap import BwrapExecServer
 from mcp_infra.exec.direct import DirectExecServer
 from mcp_infra.exec.docker.server import ContainerExecServer
 from mcp_infra.exec.docker.types import BindMount, ContainerExecServerConfig, DefaultValue, NetworkMode
@@ -146,9 +144,7 @@ class OpenAIRunner(AgentRunner):
         def _factory_local(verifier) -> FastMCP:
             # When sandbox is required, do not fall back to unsandboxed exec; crash instead.
             if sandbox_enabled:
-                if os.name == "posix" and sys.platform == "linux":
-                    return BwrapExecServer(default_cwd=self.workspace_path)
-                raise RuntimeError("Sandbox (bubblewrap) required but not available on this platform")
+                raise RuntimeError("Local sandbox execution is unavailable; configure a Docker environment")
             # Explicitly unsandboxed path allowed via config/env override
             return DirectExecServer(default_cwd=self.workspace_path)
 
