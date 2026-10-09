@@ -1,7 +1,4 @@
-"""Shared agentplane/app/main.py `Settings` shape assembled by both
-staging_config.py and testing_config.py, which own the per-namespace model
-routes and policies passed in here.
-"""
+"""Shared app settings and presets, parameterized by each environment's model routes and policies."""
 
 from __future__ import annotations
 

@@ -58,7 +58,7 @@ from cluster.cdk8s.providers.external_secrets.external_secret import ExternalSec
 from cluster.cdk8s.public_coder import egress as public_coder_egress
 from cluster.cdk8s.ssh_mcp.config import BEARER_SECRET_KEY, BEARER_SECRET_NAME, MCP_URL
 
-_NAMESPACE = "agentplane-staging"
+_NAMESPACE = STAGING_NAMESPACE
 _HOSTNAME = "agentplane-staging.allegedly.works"
 _ACTIONS_HOSTNAME = "agentplane-actions-staging.allegedly.works"
 _NOTIFICATIONS_HOSTNAME = "agentplane-notifications-staging.allegedly.works"
@@ -305,7 +305,10 @@ ENV = Environment(
     ),
     model_routes=STAGING_APP_MODELS,
     app_config=staging_config.config(
-        action_federation=_ACTION_FEDERATION, sandbox_service_grpc_channel_options=LARGE_EVENT_GRPC_CHANNEL_OPTIONS
+        namespace=_NAMESPACE,
+        models=STAGING_APP_MODELS,
+        action_federation=_ACTION_FEDERATION,
+        sandbox_service_grpc_channel_options=LARGE_EVENT_GRPC_CHANNEL_OPTIONS,
     ),
     runner_grpc_channel_options=LARGE_EVENT_GRPC_CHANNEL_OPTIONS,
     sandbox_service_history_ingestion_enabled=False,

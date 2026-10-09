@@ -36,7 +36,7 @@ from agentplane.action_service.mcp_linkage import McpOAuthServer
 from agentplane.action_service.operator_oidc import OperatorOidcSettings, OperatorTokenProfile
 from agentplane.app.action_federation import DirectFederationSettings
 from cluster.cdk8s import agent_access_profiles as access, cilium
-from cluster.cdk8s.agentplane import actions, app as app_component, dex, egress, testing_config
+from cluster.cdk8s.agentplane import actions, app as app_component, app_settings, dex, egress
 from cluster.cdk8s.agentplane.actions_testing_fixtures import (
     MCP_EVERYTHING_NAME,
     MCP_EVERYTHING_PORT,
@@ -63,8 +63,9 @@ from cluster.cdk8s.generation import CNPG_DATABASE_READY
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT, HAND_WRITTEN_ROOT
 from cluster.cdk8s.model_selections import TESTING_APP_MODELS
 from cluster.cdk8s.providers.cilium.network_policy import EgressRule, NetworkPolicy
+from model_catalog.catalog import GPT6_LUNA_RESPONSES
 
-_NAMESPACE = "agentplane-testing"
+_NAMESPACE = TESTING_NAMESPACE
 _HOSTNAME = "agentplane-testing.allegedly.works"
 _DEX_HOSTNAME = "agentplane-dex-testing.allegedly.works"
 _DEX_ISSUER = f"https://{_DEX_HOSTNAME}/dex"
@@ -149,8 +150,12 @@ ENV = Environment(
     extra_resources=(),
     replicas=ReplicaProfile(count=1, strategy=DeploymentStrategy.recreate(), min_ready=None, pdb_min_available=None),
     model_routes=TESTING_APP_MODELS,
-    app_config=testing_config.config(
-        action_federation=_ACTION_FEDERATION, sandbox_service_grpc_channel_options=LARGE_EVENT_GRPC_CHANNEL_OPTIONS
+    app_config=app_settings.settings(
+        namespace=_NAMESPACE,
+        models=TESTING_APP_MODELS,
+        thread_preset_codex_model=GPT6_LUNA_RESPONSES,
+        action_federation=_ACTION_FEDERATION,
+        sandbox_service_grpc_channel_options=LARGE_EVENT_GRPC_CHANNEL_OPTIONS,
     ),
     runner_grpc_channel_options=LARGE_EVENT_GRPC_CHANNEL_OPTIONS,
     sandbox_service_history_ingestion_enabled=True,
