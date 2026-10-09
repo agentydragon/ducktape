@@ -9,7 +9,7 @@ from external_secrets_crds.io.external_secrets import (
 
 from cluster.cdk8s import egress_fences, external_creds
 from cluster.cdk8s.config_format import yaml_config
-from cluster.cdk8s.forgejo_images import SECRET_NAME
+from cluster.cdk8s.forgejo.images import SECRET_NAME
 from cluster.cdk8s.manifest_roots import PARKED_ROOT
 from cluster.cdk8s.providers.external_secrets.external_secret import ExternalSecret, remote_data
 from cluster.cdk8s.secret_ref import SecretKey, SecretRef

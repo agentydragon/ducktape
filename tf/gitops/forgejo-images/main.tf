@@ -45,7 +45,7 @@ resource "forgejo_user" "images" {
 # linked to no repository, which every ducktape-ci image is; a repository-scoped hook would
 # need each package linked to a repository first.
 #
-# The Receiver it calls (cluster/cdk8s/forgejo_images.py) serves /hook/<sha256 of token, receiver
+# The Receiver it calls (cluster/cdk8s/forgejo/images.py) serves /hook/<sha256 of token, receiver
 # name and namespace> and checks no signature: the unguessable path is the secret. An External
 # Secrets `Password` generator mints the token once and never refreshes it, since a new token
 # changes that path; it is read here from the namespace it is minted into.

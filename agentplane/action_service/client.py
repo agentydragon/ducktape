@@ -12,7 +12,7 @@ import httpx
 from anyio import CancelScope
 
 from agentplane.action_service.catalog import ActionGroupView
-from agentplane.action_service.connections import Connection, ConnectionRename, ConnectionVersion
+from agentplane.action_service.connections import Connection, ConnectionRebind, ConnectionRename, ConnectionVersion
 from agentplane.action_service.enrollments import (
     EnrollmentDecisionInput,
     EnrollmentDecisionResult,
@@ -155,6 +155,12 @@ class OperatorActionServiceClient(_BearerClient):
     async def rename_connection(self, connection_id: UUID, body: ConnectionRename) -> Connection:
         response = await self._request(
             "PATCH", f"/v1/operator/connections/{connection_id}", json=body.model_dump(mode="json")
+        )
+        return Connection.model_validate(response.json())
+
+    async def rebind_connection(self, connection_id: UUID, body: ConnectionRebind) -> Connection:
+        response = await self._request(
+            "POST", f"/v1/operator/connections/{connection_id}/rebind", json=body.model_dump(mode="json")
         )
         return Connection.model_validate(response.json())
 

@@ -48,7 +48,7 @@ from prometheus_operator_podmonitor_crds.com.coreos.monitoring import PodMonitor
 from cluster.cdk8s import cilium, namespaces
 from cluster.cdk8s.cert_manager.cluster_ca import LONG_LIVED_CA
 from cluster.cdk8s.cert_manager.config import LETSENCRYPT_ISSUER
-from cluster.cdk8s.forgejo_images import SECRET_NAME, forgejo_images_creds_external_secret
+from cluster.cdk8s.forgejo.images import SECRET_NAME, forgejo_images_creds_external_secret
 from cluster.cdk8s.gateway import GATEWAY_CLASS
 from cluster.cdk8s.generation import write_charts
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT

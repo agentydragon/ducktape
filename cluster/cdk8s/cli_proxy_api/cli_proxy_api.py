@@ -30,7 +30,7 @@ from external_secrets_crds.io.external_secrets import (
 
 from cluster.cdk8s import cilium, namespaces, node_scheduling
 from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on_many
-from cluster.cdk8s.forgejo_images import SECRET_NAME
+from cluster.cdk8s.forgejo.images import SECRET_NAME
 from cluster.cdk8s.gateway import https_route
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 from cluster.cdk8s.namespaces import Vpa

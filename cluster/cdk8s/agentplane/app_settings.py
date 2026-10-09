@@ -26,6 +26,7 @@ from cluster.cdk8s.agentplane.egress import (
     GITHUB_CLONE_POLICY,
     INFERENCE_EXPERIMENTS_POLICY,
     PACKAGES_POLICY,
+    PUBLIC_CODER_VISUALS_POLICY,
 )
 from cluster.cdk8s.model_selections import HarnessRoutes
 from model_catalog.catalog import Route
@@ -98,6 +99,7 @@ def settings(
                     GITHUB_CLONE_POLICY,
                     GITHUB_ACTIONS_LOGS_POLICY,
                     BUILDBUDDY_POLICY,
+                    PUBLIC_CODER_VISUALS_POLICY,
                 ],
                 **({"action_policy_sets": action_policy_sets} if action_policy_sets is not None else {}),
                 thread_preset=_THREAD_PRESET_PUBLIC_CODER_CODEX,

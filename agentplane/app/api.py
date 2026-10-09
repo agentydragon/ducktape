@@ -21,7 +21,7 @@ from pydantic import AfterValidator, BaseModel, ConfigDict, Field, field_validat
 
 from agentplane.action_service.catalog import ActionGroupView
 from agentplane.action_service.client import OperatorActionServiceClient
-from agentplane.action_service.connections import Connection, ConnectionRename, ConnectionVersion
+from agentplane.action_service.connections import Connection, ConnectionRebind, ConnectionRename, ConnectionVersion
 from agentplane.action_service.enrollments import EnrollmentDecisionResult
 from agentplane.action_service.mcp_linkage import McpLinkageStart, McpLinkageStartView, McpLinkageView
 from agentplane.action_service.models import (
@@ -553,6 +553,11 @@ async def get_connection(connection_id: UUID, client: OperatorActions) -> Connec
 @connections_router.patch("/connections/{connection_id}")
 async def rename_connection(connection_id: UUID, body: ConnectionRename, client: OperatorActions) -> Connection:
     return await client.rename_connection(connection_id, body)
+
+
+@connections_router.post("/connections/{connection_id}/rebind")
+async def rebind_connection(connection_id: UUID, body: ConnectionRebind, client: OperatorActions) -> Connection:
+    return await client.rebind_connection(connection_id, body)
 
 
 @connections_router.post("/connections/{connection_id}/unbind")

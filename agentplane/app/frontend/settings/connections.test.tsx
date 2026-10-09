@@ -40,6 +40,7 @@ function service(): ConnectionService {
     list: vi.fn(async () => [sampleConnection()]),
     callerServiceAccounts: vi.fn(async () => [{ namespace: "agentplane-test", name: "other" }]),
     rename: vi.fn(),
+    rebind: vi.fn(),
     unbind: vi.fn(),
   };
 }

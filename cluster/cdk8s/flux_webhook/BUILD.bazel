@@ -5,7 +5,10 @@ load("//devinfra/python:defs.bzl", "py_library")
 py_library(
     name = "chart",
     srcs = ["chart.py"],
-    visibility = ["//cluster/cdk8s:__pkg__"],
+    visibility = [
+        "//cluster/cdk8s:__pkg__",
+        "//cluster/cdk8s/forgejo:__pkg__",
+    ],
     deps = [
         "//cluster/cdk8s:config_format",
         "//cluster/cdk8s:flux",

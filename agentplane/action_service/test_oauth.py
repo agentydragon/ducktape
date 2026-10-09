@@ -349,6 +349,33 @@ async def test_dcr_consent_pkce_refresh_and_revocation(oauth: OAuthFixture, db_u
     assert refused.json()["error_description"] == "grant is not authorized"
 
 
+async def test_rebind_preserves_issued_access_and_refresh_tokens(oauth: OAuthFixture) -> None:
+    client_id = await oauth.register()
+    handle, verifier = await oauth.authorize(client_id)
+    code = await oauth.callback(await oauth.approve(handle))
+    response = await oauth.exchange(client_id, code, verifier)
+    assert response.status_code == 200
+    tokens = response.json()
+    grant = await oauth.proxy.authenticate(tokens["access_token"])
+    assert grant is not None
+    assert grant.caller == PERSONAL
+    connection = await oauth.connections.get(grant.connection_id)
+    await oauth.connections.rebind(connection.id, expected_version=connection.version, caller=OTHER, operator=OPERATOR)
+    rebound = await oauth.proxy.authenticate(tokens["access_token"])
+    assert rebound is not None
+    assert rebound.caller == OTHER
+    assert rebound.id == grant.id
+    refresh = await oauth.browser.post(
+        oauth.metadata["token_endpoint"],
+        data={"grant_type": "refresh_token", "client_id": client_id, "refresh_token": tokens["refresh_token"]},
+    )
+    assert refresh.status_code == 200
+    refreshed = await oauth.proxy.authenticate(refresh.json()["access_token"])
+    assert refreshed is not None
+    assert refreshed.caller == OTHER
+    assert refreshed.id == grant.id
+
+
 async def test_concurrent_code_exchange_issues_at_most_one_family(oauth: OAuthFixture) -> None:
     client_id = await oauth.register()
     handle, verifier = await oauth.authorize(client_id)

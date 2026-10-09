@@ -149,7 +149,7 @@ resource "kubernetes_secret" "haku_console_agent_api_source" {
 }
 
 # Source credential for forgejo-token-rotation, copied into agents-infra
-# (cluster/cdk8s/forgejo_token_rotation.py). The rotator uses Basic auth only to
+# (cluster/cdk8s/forgejo/token_rotation.py). The rotator uses Basic auth only to
 # mint full-account API tokens, then writes the distributed `tea` configs as SOPS
 # outputs in git.
 resource "kubernetes_secret" "haku_forgejo_token_mint_source" {

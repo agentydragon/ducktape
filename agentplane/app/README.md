@@ -345,7 +345,8 @@ response, including page reload; changing it requires a fresh OAuth authorizatio
 The existing Connection's reviewed version is part of that exact decision; a 409 never silently
 refreshes it or retries replacement. Consent does not revoke old authority: token exchange's
 version-checked reservation does, before replacement activation. Failed issuance does not restore
-old grants, and old credentials and Action provenance never change ServiceAccount.
+old grants or rewrite Action provenance; deliberate operator Connection rebinding (below) is
+separate from consent and can change the account an existing credential acts as.
 The v2 session interaction namespace requires in-flight pre-upgrade consent pages to restart OAuth;
 ordinary operator login sessions remain valid.
 
@@ -398,20 +399,22 @@ callback's redirect target (see below): landing there opens the modal pre-select
 instead of showing the Threads landing view as if the linkage completed silently.
 
 The OAuth clients tab lists the Action Service's runtime named Connections, each row showing its
-most recent grant's OAuth client ID and the ServiceAccount it acts as; superseded grants stay in
-the Action Service's own history but are not listed here. The operator can explicitly confirm
-unlink, which revokes active/pending authority without deleting history or stopping already claimed
-executions. Whether that grant's ServiceAccount is still a labeled caller is displayed separately
-from the grant's lifecycle status: an active grant does not imply its ServiceAccount remains
-eligible. The tab does not offer renaming a Connection.
+most recent grant's OAuth client ID and its current bound ServiceAccount; superseded grants stay
+in the Action Service's own history but are not listed here. The operator can select an eligible
+ServiceAccount and explicitly confirm rebinding: the existing client token remains usable, but
+future Actions act as the new account. The version-checked update never silently retries a stale
+choice. Unlink instead revokes active/pending authority without deleting history or stopping
+already claimed executions. An ineligible current account is flagged separately from the grant's
+lifecycle status. The tab does not offer renaming a Connection.
 
 The BFF proxies `GET /connections[/{id}]`, `PATCH /connections/{id}`,
-`POST /connections/{id}/unbind`, and `GET /connection-service-accounts` through the same request-bound
+`POST /connections/{id}/rebind`, `POST /connections/{id}/unbind`, and
+`GET /connection-service-accounts` through the same request-bound
 operator federation as Action review. Unsafe browser requests require exact Origin. Canonical
-`ConnectionRename` and `ConnectionVersion` models carry the version the operator reviewed; a 409
+`ConnectionRename`, `ConnectionRebind`, and `ConnectionVersion` models carry the version the operator reviewed; a 409
 refreshes the inventory and asks for review, never automatically retrying a destructive operation.
-The app owns no Connection state. Reconnect/rebind begins with fresh authorization from the external
-client and selecting this Connection on the consent page; management has no direct retarget action.
+The app owns no Connection state. Reconnect requires fresh OAuth authorization from the external
+client; the management rebind is a separate operator-authorized retarget of an existing token.
 Policy editing and deployment are outside this surface.
 
 The MCP servers tab lists the Action Service's OAuth-linked MCP server groups and links or

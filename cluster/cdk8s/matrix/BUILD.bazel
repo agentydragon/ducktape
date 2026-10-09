@@ -32,9 +32,9 @@ py_library(
     deps = [
         ":matrix",
         "//cluster/cdk8s:flux",
-        "//cluster/cdk8s:forgejo_images",
         "//cluster/cdk8s:manifest_roots",
         "//cluster/cdk8s:secret_ref",
+        "//cluster/cdk8s/forgejo:images",
         "//cluster/cdk8s/providers/flux:kustomization",
         "@pypi//cdk8s",
         "@pypi//cdk8s_plus_34",

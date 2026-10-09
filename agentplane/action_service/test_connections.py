@@ -11,7 +11,7 @@ from uuid import uuid4
 import httpx
 import pytest
 import pytest_bazel
-from sqlalchemy import update
+from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncEngine
 
 from agentplane.action_service.api import create_app
@@ -31,6 +31,8 @@ from agentplane.action_service.db import (
     ActionNotFoundError,
     ActionStore,
     ConnectionGrantRow,
+    ConnectionRebindRow,
+    ConnectionRow,
     make_sessionmaker,
 )
 from agentplane.action_service.models import ActionRequestInput, OperatorPrincipal, service_account_key
@@ -103,6 +105,133 @@ async def test_binding_retries_are_atomic_and_survive_authority_replacement(engi
     for issuer, client_id in [("https://different.example", request.client_id), (ISSUER, "another-client")]:
         with pytest.raises(GrantRejectedError):
             await replacement.resolve(request.grant_id, issuer=issuer, client_id=client_id)
+
+
+async def test_rebind_keeps_token_and_history_but_not_old_pending_action_authority(engine: AsyncEngine) -> None:
+    service = authority(engine)
+    request = binding()
+    await service.bind(request)
+    await service.activate(request.grant_id)
+    before = await service.resolve(request.grant_id, issuer=ISSUER, client_id=request.client_id)
+    snapshot = before.provenance()
+    connection = await service.get(before.connection_id)
+    operator = OperatorPrincipal(issuer="https://operator.example", subject="test-operator")
+    changed = await service.rebind(connection.id, expected_version=connection.version, caller=OTHER, operator=operator)
+    assert changed.bound_caller == OTHER
+    assert changed.grants[0].caller == PERSONAL  # Immutable original authorization evidence.
+    assert changed.grants[0].id == before.id  # Existing OAuth token still addresses this grant.
+    assert changed.version == connection.version + 1
+    after = await service.resolve(request.grant_id, issuer=ISSUER, client_id=request.client_id)
+    assert after.principal().account == OTHER
+    assert after.provenance().binding_version == snapshot.binding_version + 1
+    async with make_sessionmaker(engine).begin() as db:
+        assert not await service.authorize_action(db, snapshot)
+        assert await service.authorize_action(db, after.provenance())
+        stored = await db.get(ConnectionGrantRow, request.grant_id)
+        assert stored is not None
+        assert stored.caller == OTHER.model_dump(mode="json")  # Legacy replicas resolve the current SA.
+        assert stored.original_caller == PERSONAL.model_dump(mode="json")
+        log = list(await db.scalars(select(ConnectionRebindRow)))
+        assert len(log) == 1
+        assert (log[0].operator_issuer, log[0].operator_subject) == (operator.issuer, operator.subject)
+        assert log[0].previous_caller == PERSONAL.model_dump(mode="json")
+        assert log[0].caller == OTHER.model_dump(mode="json")
+    with pytest.raises(ConnectionConflictError):
+        await service.rebind(connection.id, expected_version=connection.version, caller=PERSONAL, operator=operator)
+    with pytest.raises(GrantRejectedError):
+        await service.rebind(changed.id, expected_version=changed.version, caller=UNLABELED, operator=operator)
+    assert (await service.get(changed.id)).bound_caller == OTHER
+    await service.unbind(changed.id, expected_version=changed.version)
+    with pytest.raises(GrantRejectedError):
+        await service.resolve(request.grant_id, issuer=ISSUER, client_id=request.client_id)
+
+
+async def test_rebind_rejects_pending_grant_without_changing_original_caller(engine: AsyncEngine) -> None:
+    service = authority(engine)
+    request = binding()
+    await service.bind(request)
+    connection = (await service.list())[0]
+    with pytest.raises(GrantRejectedError, match="pending grant"):
+        await service.rebind(
+            connection.id,
+            expected_version=connection.version,
+            caller=OTHER,
+            operator=OperatorPrincipal(issuer="https://operator.example", subject="test-operator"),
+        )
+    assert (await service.get(connection.id)).bound_caller == PERSONAL
+    async with make_sessionmaker(engine)() as db:
+        grant = await db.get(ConnectionGrantRow, request.grant_id)
+        assert grant is not None
+        assert grant.caller == PERSONAL.model_dump(mode="json")
+
+
+async def test_rebind_preserves_history_of_grant_inserted_by_legacy_replica(engine: AsyncEngine) -> None:
+    service = authority(engine)
+    request = binding()
+    await service.bind(request)
+    await service.activate(request.grant_id)
+    async with make_sessionmaker(engine).begin() as db:
+        grant = await db.get(ConnectionGrantRow, request.grant_id)
+        assert grant is not None
+        grant.original_caller = None  # Legacy replicas do not write the new column.
+    connection = (await service.list())[0]
+    await service.rebind(
+        connection.id,
+        expected_version=connection.version,
+        caller=OTHER,
+        operator=OperatorPrincipal(issuer="https://operator.example", subject="test-operator"),
+    )
+    async with make_sessionmaker(engine)() as db:
+        grant = await db.get(ConnectionGrantRow, request.grant_id)
+        assert grant is not None
+        assert grant.original_caller == PERSONAL.model_dump(mode="json")
+        assert grant.caller == OTHER.model_dump(mode="json")
+    assert (await service.get(connection.id)).grants[0].caller == PERSONAL
+
+
+async def test_legacy_created_connection_keeps_token_usable_and_can_rebind(engine: AsyncEngine) -> None:
+    service = authority(engine)
+    request = binding()
+    await service.bind(request)
+    await service.activate(request.grant_id)
+    connection = (await service.list())[0]
+    async with make_sessionmaker(engine).begin() as db:
+        row = await db.get(ConnectionRow, connection.id)
+        assert row is not None
+        row.bound_caller = None  # A legacy replica did not know this column.
+        grant = await db.get(ConnectionGrantRow, request.grant_id)
+        assert grant is not None
+        grant.original_caller = None
+    assert (await service.resolve(request.grant_id, issuer=ISSUER, client_id=request.client_id)).caller == PERSONAL
+    legacy = await service.get(connection.id)
+    assert legacy.bound_caller == PERSONAL
+    rebound = await service.rebind(
+        connection.id,
+        expected_version=legacy.version,
+        caller=OTHER,
+        operator=OperatorPrincipal(issuer="https://operator.example", subject="test-operator"),
+    )
+    assert rebound.bound_caller == OTHER
+    assert rebound.grants[0].caller == PERSONAL
+    assert (await service.resolve(request.grant_id, issuer=ISSUER, client_id=request.client_id)).caller == OTHER
+
+
+async def test_legacy_reconnect_cannot_acquire_stale_connection_binding(engine: AsyncEngine) -> None:
+    service = authority(engine)
+    request = binding()
+    await service.bind(request)
+    await service.activate(request.grant_id)
+    snapshot = (await service.resolve(request.grant_id, issuer=ISSUER, client_id=request.client_id)).provenance()
+    # Simulate an old replica reconnecting to a different caller: it changes the
+    # grant row but knows nothing about the Connection's new bound_caller field.
+    async with make_sessionmaker(engine).begin() as db:
+        grant = await db.get(ConnectionGrantRow, request.grant_id)
+        assert grant is not None
+        grant.caller = OTHER.model_dump(mode="json")
+    with pytest.raises(GrantRejectedError, match="connection and grant caller differ"):
+        await service.resolve(request.grant_id, issuer=ISSUER, client_id=request.client_id)
+    async with make_sessionmaker(engine).begin() as db:
+        assert not await service.authorize_action(db, snapshot)
 
 
 async def test_same_service_account_shares_receipts_while_distinct_accounts_are_isolated(engine: AsyncEngine) -> None:
@@ -279,9 +408,20 @@ async def test_operator_routes_do_not_expose_binding_or_accept_workload_credenti
             json={"display_name": "Forged", "expected_version": 2, "service_account": OTHER.model_dump()},
         )
         assert forged.status_code == 422
+        endpoint = f"/v1/operator/connections/{grant.connection_id}/rebind"
+        rebind = {"expected_version": 2, "service_account": OTHER.model_dump()}
+        assert (await http.post(endpoint, json={**rebind, "caller": PERSONAL.model_dump()})).status_code == 422
+        assert (await http.post(endpoint, json={**rebind, "expected_version": 1})).status_code == 409
+        assert (await http.post(endpoint, json=rebind)).status_code == 400  # Grant is pending, not issued.
+        await service.activate(grant.id)
+        assert (await http.post(endpoint, json=rebind)).status_code == 409  # Activation changed the version.
+        rebound = await http.post(endpoint, json={**rebind, "expected_version": 3})
+        assert rebound.status_code == 200
+        assert rebound.json()["bound_caller"] == OTHER.model_dump()
+        assert (await service.resolve(grant.id, issuer=ISSUER, client_id=grant.client_id)).caller == OTHER
         assert (await http.post("/v1/operator/connections", json={})).status_code == 405
         unbound = await http.post(
-            f"/v1/operator/connections/{grant.connection_id}/unbind", json={"expected_version": 2}
+            f"/v1/operator/connections/{grant.connection_id}/unbind", json={"expected_version": 4}
         )
         assert unbound.status_code == 200
         assert unbound.json()["grants"][0]["status"] == "revoked"

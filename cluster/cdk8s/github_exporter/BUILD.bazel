@@ -10,10 +10,10 @@ py_library(
     deps = [
         "//cluster/cdk8s:external_creds",
         "//cluster/cdk8s:flux",
-        "//cluster/cdk8s:forgejo_images",
         "//cluster/cdk8s:grafana_dashboards",
         "//cluster/cdk8s:manifest_roots",
         "//cluster/cdk8s:service_ref",
+        "//cluster/cdk8s/forgejo:images",
         "//cluster/cdk8s/providers/external_secrets:external_secret",
         "//cluster/cdk8s/providers/external_secrets:externalsecret",
         "//cluster/cdk8s/providers/grafana_operator:grafana_dashboard",

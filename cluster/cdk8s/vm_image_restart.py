@@ -27,8 +27,9 @@ from cdk8s_plus_34 import (
 )
 from constructs import Construct
 
-from cluster.cdk8s import cilium, forgejo_images, pod_policy
+from cluster.cdk8s import cilium, pod_policy
 from cluster.cdk8s.api_resource import custom_resource
+from cluster.cdk8s.forgejo import images as forgejo_images
 from cluster.cdk8s.providers.cilium.network_policy import EgressRule, Entity, NetworkPolicy
 from cluster.cdk8s.providers.kubevirt.virtual_machine import VirtualMachine
 from cluster.controllers.vm_image_restart.settings import Settings

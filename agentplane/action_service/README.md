@@ -23,12 +23,13 @@ nothing there enrolls an external Connection, and the acceptance suite creates t
 needs at run time. `policy_informer.PolicyInformer` watches them with a label selector into the
 `PolicyIndex`,
 and `connections.ConnectionAuthority` resolves grants against that index: a grant whose
-ServiceAccount is missing, unlabeled, or not yet listed by the watch refuses resolution.
+currently bound ServiceAccount is missing, unlabeled, or not yet listed by the watch refuses resolution.
 `ConnectionAuthority` persists runtime named Connections and immutable grant revisions in the
 existing database (migration `0008_external_connections`; `0014_action_policies` stores the
 ServiceAccount as a typed `caller` JSON value). The operator API exposes
 `GET /v1/operator/caller-service-accounts`, list/detail at `/v1/operator/connections`, `PATCH` of
-a name with `expected_version`, and `POST .../{id}/unbind` with `expected_version`.
+a name with `expected_version`, `POST .../{id}/rebind` with `expected_version` and an
+eligible `service_account`, and `POST .../{id}/unbind` with `expected_version`.
 
 Only the internal OAuth adapter may call `bind`, `activate`, `resolve`, or grant-specific `revoke`;
 there is no HTTP endpoint accepting client-provided ServiceAccount/issuer/client/grant bindings.
@@ -37,14 +38,29 @@ grant, and activation is bounded by its deadline. The [app consent UI](../app/RE
 [OAuth adapter](#external-oauth) use this authority. An authenticated external adapter submits a resolved
 `Grant.provenance()` through the trusted `ActionService.submit(..., external_grant=...)` keyword,
 never a caller-envelope field. Admission stores the exact issuer/client/Connection/grant/revision
-snapshot atomically with the first request. A shared-ServiceAccount repeat of the key is refused;
-the lookup by key returns the original snapshot, including after rename or reconnect. Existing
+snapshot, including the current binding version, atomically with the first request.
+A shared-ServiceAccount repeat of the key is refused; the lookup by key returns the original snapshot, including after rename, rebind or reconnect. Existing
 workload requests retain a null snapshot.
 
-`ActionStore` validates that snapshot against the original active grant and its ServiceAccount's
-current eligibility under the Connection row lock, both during admission and before the dispatch
-claim. A revoked, missing or unlabeled original authority prevents dispatch even if another grant
-now acts as the same ServiceAccount: the unstarted Execution fails with
+`ActionStore` validates that snapshot against the active grant and the Connection's current
+binding version and eligible ServiceAccount under the Connection row lock, both during admission
+and before the dispatch claim. The operator may rebind an active Connection to a different eligible
+ServiceAccount without issuing a new OAuth token; this increments the binding version, retains
+immutable original grant history in `original_caller`, and records the operator and previous/new caller in an audit row
+(migration `0021_connection_rebind`). Future requests from the existing token use the new account. For rolling deployments,
+`grant.caller` mirrors the current bound account in the same transaction, so older replicas
+cannot resolve a rebound token as the previous account; `original_caller` retains the
+original grant identity (nullable during rollout for legacy inserts, filled at rebind).
+Connections created by legacy replicas without `bound_caller` use their active grant
+while binding version is zero, so their tokens continue working through the rollout.
+Pending grants cannot be rebound. Older replicas do not know
+the binding version and may admit a new request that a newer replica refuses to dispatch
+during the rollout; retrying after rollout is safe. New readers fail closed if a
+legacy replica reconnects with a different caller but leaves the Connection binding
+stale; the rollout must finish before relying on new rebind functionality.
+A revoked, missing, unlabeled or rebound original authority prevents an older unclaimed Action
+from dispatching even if another grant now acts as the same ServiceAccount: the unstarted
+Execution fails with
 `external_grant_not_authorized`, retaining the historical Decision. Already claimed work is not
 stopped. Receipt and executor projections carry the original snapshot; no credentials are stored
 in it. Migration `0009_action_external_grant` adds its nullable column without inventing
@@ -218,7 +234,8 @@ single-operator mapping, validates the pending binding, and atomically claims th
 before FastMCP consumes its code. Only one token family may issue per enrollment. Failures before
 the claim can be retried; an ambiguous failure after it requires fresh OAuth, not another issuance.
 Tokens contain an opaque grant reference. Every bearer admission and refresh resolves the current
-canonical grant; unbind/revocation cannot silently retarget an old token to a new ServiceAccount.
+canonical grant; unbind/revocation cannot silently retarget an old token to a new ServiceAccount; an
+operator-only rebind explicitly can, while recording a new binding version.
 The local revocation endpoint ends the canonical grant independently of upstream IdP revocation;
 it does not forward local credentials upstream or revoke an upstream account. Encrypted SDK
 metadata remains bounded by its existing TTL after the grant is ended.

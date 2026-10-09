@@ -497,12 +497,21 @@ ts_library(
     ],
 )
 
+js_library(
+    name = "connections_css",
+    srcs = ["settings/connections.css"],
+)
+
 ts_library(
     name = "connections",
-    srcs = ["settings/connections.tsx"],
+    srcs = [
+        "css.d.ts",
+        "settings/connections.tsx",
+    ],
     tsconfig = TSCONFIG,
     deps = [
         ":client",
+        ":connections_css",
         ":live_stream",
         "//:node_modules/@mantine/core",
         "//:node_modules/@types/react",

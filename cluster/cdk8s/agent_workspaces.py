@@ -36,8 +36,9 @@ from agent_sandbox_sandboxtemplate_crds.io.x_k8s.agents.extensions import (
 from cdk8s import ApiObjectMetadata, App, Chart
 from cdk8s_plus_34 import k8s
 
-from cluster.cdk8s import agent_sandbox, forgejo_images, namespaces
+from cluster.cdk8s import agent_sandbox, namespaces
 from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on_many
+from cluster.cdk8s.forgejo import images as forgejo_images
 from cluster.cdk8s.kyverno.janitor import SANDBOX_KINDS, janitor
 from cluster.cdk8s.manifest_roots import PARKED_ROOT
 from cluster.cdk8s.namespaces import Vpa

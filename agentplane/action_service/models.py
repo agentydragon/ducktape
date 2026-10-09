@@ -148,6 +148,7 @@ class ExternalGrantProvenance(BaseModel):
     connection_id: UUID
     grant_id: UUID
     revision: int = Field(ge=1)
+    binding_version: int = Field(default=0, ge=0)
 
     def principal(self) -> CallerPrincipal:
         return CallerPrincipal(account=self.caller)

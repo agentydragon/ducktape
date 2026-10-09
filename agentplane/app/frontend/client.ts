@@ -179,6 +179,7 @@ export interface ConnectionService {
   list(): Promise<Connection[]>;
   callerServiceAccounts(): Promise<CallerServiceAccount[]>;
   rename(connection: Connection, displayName: string): Promise<Connection>;
+  rebind(connection: Connection, caller: CallerServiceAccount): Promise<Connection>;
   unbind(connection: Connection): Promise<Connection>;
 }
 
@@ -199,6 +200,14 @@ export const connectionService: ConnectionService = {
     const { data, error, response } = await api.PATCH("/connections/{connection_id}", {
       params: { path: { connection_id: connection.id } },
       body: { display_name: displayName, expected_version: connection.version },
+    });
+    if (error) throw new ConnectionRequestError(response.status, displayableError(error));
+    return data;
+  },
+  async rebind(connection, caller) {
+    const { data, error, response } = await api.POST("/connections/{connection_id}/rebind", {
+      params: { path: { connection_id: connection.id } },
+      body: { expected_version: connection.version, service_account: caller },
     });
     if (error) throw new ConnectionRequestError(response.status, displayableError(error));
     return data;

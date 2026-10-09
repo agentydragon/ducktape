@@ -23,7 +23,7 @@ from external_secrets_crds.io.external_secrets import ExternalSecretSpecTargetCr
 from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpecHealthCheckExprs, KustomizationSpecHealthChecks
 
 from agentplane.indexing.settings import Settings
-from cluster.cdk8s import cnpg, forgejo_images, namespaces, node_scheduling
+from cluster.cdk8s import cnpg, namespaces, node_scheduling
 from cluster.cdk8s.external_secrets.minted_secret import mint_bearer_secret
 from cluster.cdk8s.flux import (
     ConfigMapArgs,
@@ -32,7 +32,10 @@ from cluster.cdk8s.flux import (
     flux_kustomization,
     flux_kustomization_depends_on_many,
 )
-from cluster.cdk8s.forgejo import app as forgejo  # a bare `app.HTTP` would not say whose
+from cluster.cdk8s.forgejo import (
+    app as forgejo,  # a bare `app.HTTP` would not say whose
+    images as forgejo_images,
+)
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT, HAND_WRITTEN_ROOT
 from cluster.cdk8s.namespaces import Vpa
 from cluster.cdk8s.providers.cnpg.database import Database

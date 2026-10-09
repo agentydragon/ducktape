@@ -120,7 +120,6 @@ flowchart TB
     CROSS_THREAD_DELIVERY["Deferred design<br/>agents send to other Threads<br/>command vs notification inbox"]:::decision
     THREAD_CREATE_POLICY["Deferred design<br/>SA-authorized Thread creation<br/>scoped Sandbox and stable identity"]:::decision
     AG["Capstone<br/>hosted Agent and Thread model<br/>lifecycle, surfaces and read policy together"]:::milestone
-    CONNECTION_SA_REBIND["Planned mutation<br/>rebind a Connection's ServiceAccount in place<br/>no mutation exists; only a fresh OAuth consent does"]:::future
     SANDBOX_RBAC["Managed Kubernetes access<br/>catalog choices and SA bindings<br/>live acceptance pending; see #8596"]:::active
     KUBERNETES_RBAC_POLICIES["Deferred design<br/>reusable Kubernetes RBAC policies<br/>shared bindings, propagation, compact UI"]:::future
     CALLER_GRANT_VIEW["Planned UI<br/>one grant view for Sandboxes and unmanaged agents<br/>an unmanaged agent's policy is invisible today"]:::future
@@ -256,23 +255,6 @@ The request may become a policy-gated Action with operator approval, or use anot
 configuration path. Keep the authority, approval, persistence, and rollback model open until a
 concrete caller and policy owner are chosen. This does not grant agents a direct policy mutation
 path and does not block current credential-placeholder egress.
-
-### `CONNECTION_SA_REBIND` — rebind a Connection's ServiceAccount in place
-
-**Planned mutation:** no mutation exists today, frontend or backend, to change which ServiceAccount
-an existing Connection acts as. `connections.py`'s `ConnectionAuthority` and the exposed
-`ConnectionService` (`list`/`callerServiceAccounts`/`rename`/`unbind` in `client.ts`) cover listing,
-renaming, and unbinding, but the only way to change a Connection's bound ServiceAccount is a fresh
-OAuth consent authorization (`consent.tsx`) that creates a new grant — a new revision, prior grants
-revoked, not an in-place edit. The frontend's OAuth-clients settings table currently shows the
-ServiceAccount as read-only text for exactly this reason.
-
-**Design questions, not yet settled:** should rebinding revoke the prior grant's revision the same
-way a fresh consent does, or coexist with it; does it need its own audit trail distinct from a
-reconnect; and does it require re-running eligibility checks (the ServiceAccount must still carry
-`agentplane.allegedly.works/use-action-service: "true"`) at rebind time, not just at original consent.
-No dependency on anything else; nothing waits on this. Once it exists, the settings table's
-ServiceAccount column becomes a real dropdown instead of static text.
 
 ### `SANDBOX_RBAC` — verify deployed Sandbox Kubernetes grants
 

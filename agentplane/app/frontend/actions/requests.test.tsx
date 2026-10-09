@@ -34,6 +34,7 @@ describe("ActionRequests", () => {
       connection_id: "40000000-0000-4000-8000-000000000001",
       grant_id: "50000000-0000-4000-8000-000000000001",
       revision: 7,
+      binding_version: 0,
     };
     const row = {
       ...request("decision_pending", 1),

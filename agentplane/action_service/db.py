@@ -104,9 +104,24 @@ class ConnectionRow(Base):
 
     id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True)
     display_name: Mapped[str] = mapped_column(Text)
+    bound_caller: Mapped[dict[str, JsonValue] | None] = mapped_column(JSONB, nullable=True)
+    binding_version: Mapped[int] = mapped_column(Integer, default=0)
     version: Mapped[int] = mapped_column(Integer)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+
+
+class ConnectionRebindRow(Base):
+    __tablename__ = "external_connection_rebind"
+
+    id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True)
+    connection_id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), ForeignKey("external_connection.id"))
+    version: Mapped[int] = mapped_column(Integer)
+    previous_caller: Mapped[dict[str, JsonValue]] = mapped_column(JSONB)
+    caller: Mapped[dict[str, JsonValue]] = mapped_column(JSONB)
+    operator_issuer: Mapped[str] = mapped_column(Text)
+    operator_subject: Mapped[str] = mapped_column(Text)
+    at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
 
 
 class ConnectionGrantRow(Base):
@@ -116,8 +131,10 @@ class ConnectionGrantRow(Base):
     id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True)
     connection_id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), ForeignKey("external_connection.id"))
     revision: Mapped[int] = mapped_column(Integer)
-    # A `models.ServiceAccountRef`: the ServiceAccount the grant acts as.
+    # Mirror the current binding for older Action Service replicas during rolling deploys.
     caller: Mapped[dict[str, JsonValue]] = mapped_column(JSONB)
+    # Immutable authorization evidence, independent of the current Connection binding.
+    original_caller: Mapped[dict[str, JsonValue] | None] = mapped_column(JSONB, nullable=True)
     issuer: Mapped[str] = mapped_column(Text)
     client_id: Mapped[str] = mapped_column(Text)
     request_digest: Mapped[str] = mapped_column(Text)

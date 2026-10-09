@@ -1545,6 +1545,20 @@ spec:
 apiVersion: agentplane.allegedly.works/v1alpha1
 kind: EgressPolicy
 metadata:
+  name: public-coder-pr-visuals
+  namespace: agentplane-staging
+spec:
+  rules:
+    - hosts:
+        - s3.allegedly.works
+      methods:
+        - GET
+      paths:
+        - /pr-visuals/**
+---
+apiVersion: agentplane.allegedly.works/v1alpha1
+kind: EgressPolicy
+metadata:
   name: buildbuddy
   namespace: agentplane-staging
 spec:
@@ -3221,6 +3235,7 @@ data:
           - github-clone
           - github-actions-logs
           - buildbuddy
+          - public-coder-pr-visuals
           - agentplane-testing
         action_policy_sets:
           - public-github-reads
@@ -3506,6 +3521,7 @@ data:
           - github-clone
           - github-actions-logs
           - buildbuddy
+          - public-coder-pr-visuals
           - agentplane-testing
         action_policy_sets:
           - public-github-reads

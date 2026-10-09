@@ -59,7 +59,7 @@ from cluster.cdk8s.agentplane.pod_disruption_budget import add_pod_disruption_bu
 from cluster.cdk8s.api_resource import custom_resource
 from cluster.cdk8s.cert_manager.interception_ca import interception_root_ca
 from cluster.cdk8s.forgejo import app as forgejo  # a bare `app.HTTP` would not say whose
-from cluster.cdk8s.forgejo_images import forgejo_images_creds_secret_ref
+from cluster.cdk8s.forgejo.images import forgejo_images_creds_secret_ref
 from cluster.cdk8s.home_assistant import app as home_assistant  # a bare `app.SERVICE` would not say whose
 from cluster.cdk8s.litellm import proxy as litellm_proxy
 from cluster.cdk8s.litellm.credentials import CHEAP_EXPERIMENTS_KEY
@@ -121,6 +121,7 @@ GITHUB_AGENTYDRAGON_AGENT_POLICY = "github-agentydragon-agent"
 GITHUB_CLONE_POLICY = "github-clone"
 GITHUB_ACTIONS_LOGS_POLICY = "github-actions-logs"
 BUILDBUDDY_POLICY = "buildbuddy"
+PUBLIC_CODER_VISUALS_POLICY = "public-coder-pr-visuals"
 PUBLIC_INTERNET_POLICY = "public-internet"
 
 
@@ -477,6 +478,19 @@ def _egress_policies(scope: Construct, *, namespace: str) -> None:
             # credentialRef here -- this is the same shape as `packages` below. GET-only:
             # retrieving a log or artifact archive, never uploading one.
             EgressPolicySpecRules(hosts=["*.blob.core.windows.net"], methods=[EgressPolicySpecRulesMethods.GET])
+        ],
+    )
+    EgressPolicy(
+        scope,
+        "egresspolicy-public-coder-pr-visuals",
+        metadata=ApiObjectMetadata(name=PUBLIC_CODER_VISUALS_POLICY, namespace=namespace),
+        rules=[
+            # PR visual review publishes public before/after screenshots under this path.
+            # No credential is sent: GET-only for the report and its image assets, not
+            # general access to the S3 host or arbitrary object storage operations.
+            EgressPolicySpecRules(
+                hosts=["s3.allegedly.works"], methods=[EgressPolicySpecRulesMethods.GET], paths=["/pr-visuals/**"]
+            )
         ],
     )
     EgressPolicy(

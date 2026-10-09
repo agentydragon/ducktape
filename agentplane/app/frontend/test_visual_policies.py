@@ -96,13 +96,41 @@ async def test_sandbox_status_raw_switches(view: VisualPage, app: AgentplaneFixt
     await view.capture(target=view.page.locator("#app"))
 
 
+@pytest.mark.parametrize("viewport", [DESKTOP, MOBILE], ids=["desktop", "mobile"])
 async def test_connections_settings_modal_connections(view: VisualPage, app: AgentplaneFixture) -> None:
     await app.mount_app("/")
     await view.check(context="fixture ready")
     page = view.page
+    if page.viewport_size and page.viewport_size["width"] < 600:
+        await page.get_by_role("button", name="Toggle navigation").click()
     await page.get_by_role("button", name="Settings").click()
     await expect(page.locator("[data-connection-id]").first).to_be_visible()
+    if page.viewport_size and page.viewport_size["width"] < 600:
+        assert await page.locator(".mantine-Modal-content").evaluate("el => el.scrollWidth <= el.clientWidth")
+        assert await page.locator(".agentplane-connections").evaluate("el => el.scrollWidth <= el.clientWidth")
+        await expect(page.locator(".agentplane-connection-mobile-label").first).to_be_visible()
     await view.capture(target=view.page.locator("#app"))
+
+
+@pytest.mark.parametrize("viewport", [DESKTOP, MOBILE], ids=["desktop", "mobile"])
+async def test_connection_sa_rebind_confirmation(view: VisualPage, app: AgentplaneFixture) -> None:
+    await app.mount_app("/")
+    await view.check(context="fixture ready")
+    page = view.page
+    if page.viewport_size and page.viewport_size["width"] < 600:
+        await page.get_by_role("button", name="Toggle navigation").click()
+    await page.get_by_role("button", name="Settings").click()
+    picker = page.get_by_role("combobox", name="Service account for Claude desktop")
+    await picker.click()
+    await page.get_by_role("option", name="agentplane-visual/operator-assistant").click()
+    await page.get_by_role("button", name="Apply").click()
+    confirm = page.get_by_role("button", name="Confirm change")
+    await expect(confirm).to_be_visible()
+    await expect(page.get_by_text("Existing client tokens will act as", exact=False)).to_be_visible()
+    if page.viewport_size and page.viewport_size["width"] < 600:
+        assert await page.locator(".mantine-Modal-content").evaluate("el => el.scrollWidth <= el.clientWidth")
+        await confirm.scroll_into_view_if_needed()
+    await view.capture()
 
 
 async def test_oauth_clients_update_while_settings_stays_open(view: VisualPage, app: AgentplaneFixture) -> None:

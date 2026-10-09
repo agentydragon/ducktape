@@ -1,0 +1,48 @@
+.agentplane-connection-account-select {
+  width: 240px;
+  max-width: 100%;
+}
+
+.agentplane-connection-mobile-label {
+  display: none;
+}
+
+/* A three-column table leaves neither a readable client nor a tappable account picker on phones. */
+@media (max-width: 48em) {
+  .agentplane-connections,
+  .agentplane-connections tbody,
+  .agentplane-connections tr,
+  .agentplane-connections td {
+    display: block;
+    width: 100%;
+  }
+
+  .agentplane-connections thead {
+    display: none;
+  }
+
+  .agentplane-connections tr {
+    border: 1px solid var(--mantine-color-default-border);
+    border-radius: var(--mantine-radius-sm);
+    margin-bottom: var(--mantine-spacing-sm);
+    overflow: visible;
+  }
+
+  .agentplane-connections td {
+    border: 0;
+    padding: var(--mantine-spacing-xs) var(--mantine-spacing-sm);
+    min-width: 0;
+  }
+
+  .agentplane-connections td + td {
+    padding-top: 0;
+  }
+
+  .agentplane-connection-mobile-label {
+    display: block;
+  }
+
+  .agentplane-connection-account-select {
+    width: 100%;
+  }
+}
