@@ -14,7 +14,7 @@ import jwt
 from cryptography.hazmat.primitives.asymmetric.rsa import RSAPublicKey
 from jwt import PyJWK, PyJWKSet
 from jwt.exceptions import InvalidTokenError, PyJWKError, PyJWKSetError, PyJWTError
-from pydantic import BaseModel, ConfigDict, ValidationError, field_validator
+from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator
 
 from util.urls import HttpAllowance, parse_https_url
 
@@ -52,15 +52,8 @@ class _TokenResponse(BaseModel):
 
     model_config = ConfigDict(extra="ignore", frozen=True, strict=True)
 
-    access_token: str
+    access_token: str = Field(pattern=r"\S")
     token_type: str
-
-    @field_validator("access_token")
-    @classmethod
-    def _nonblank_access_token(cls, value: str) -> str:
-        if not value.strip():
-            raise ValueError("access_token must not be blank")
-        return value
 
     @field_validator("token_type")
     @classmethod
@@ -85,14 +78,6 @@ class _CachedSigningKeys:
     expires_at: float
 
 
-def _validate_oidc_url(value: str, *, field_name: str, allow_query: bool) -> None:
-    try:
-        parsed = parse_https_url(value, http_allowance=HttpAllowance.LOOPBACK, allow_query=allow_query)
-        _ = parsed.port
-    except ValueError as error:
-        raise ValueError(f"{field_name} must be an absolute HTTPS URL or loopback HTTP URL") from error
-
-
 class OidcPrincipalResolver(ABC):
     """Verify single-audience RS256 access tokens using pinned OIDC metadata.
 
@@ -111,12 +96,12 @@ class OidcPrincipalResolver(ABC):
     ) -> None:
         if not expected_issuer or discovered_issuer != expected_issuer:
             raise ValueError("discovered issuer must exactly match expected_issuer")
-        _validate_oidc_url(expected_issuer, field_name="expected_issuer", allow_query=False)
+        parse_https_url(expected_issuer, http_allowance=HttpAllowance.LOOPBACK)
         if not client_id.strip():
             raise ValueError("client_id must not be blank")
         if not jwks_uri:
             raise ValueError("OIDC discovery metadata must contain jwks_uri")
-        _validate_oidc_url(jwks_uri, field_name="jwks_uri", allow_query=True)
+        parse_https_url(jwks_uri, http_allowance=HttpAllowance.LOOPBACK, allow_query=True)
         if signing_algorithms is None or isinstance(signing_algorithms, str):
             raise ValueError("OIDC discovery metadata must advertise signing algorithms")
         if any(not isinstance(algorithm, str) for algorithm in signing_algorithms):
@@ -175,8 +160,7 @@ class OidcPrincipalResolver(ABC):
             raise OidcPrincipalVerificationUnavailableError from None
 
         try:
-            claims = await asyncio.to_thread(
-                jwt.decode,
+            claims = jwt.decode(
                 token,
                 signing_key.key,
                 algorithms=[_SIGNING_ALGORITHM],

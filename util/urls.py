@@ -43,6 +43,8 @@ def parse_https_url(
 ) -> SplitResult:
     """Parse an absolute HTTPS URL, optionally allowing HTTP within a named scope."""
     parsed = urlsplit(value)
+    # Accessing port validates its syntax and range; urlsplit itself does not.
+    _ = parsed.port
     if (
         (parsed.scheme != "https" and (parsed.scheme != "http" or not _allows_http(parsed, http_allowance)))
         or not parsed.netloc

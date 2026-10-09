@@ -50,6 +50,12 @@ def test_credentials_query_and_fragment_are_rejected_by_default(http_allowance: 
         parse_https_url(value, http_allowance=http_allowance)
 
 
+@pytest.mark.parametrize("value", ["https://example.test:invalid/path", "https://example.test:65536/path"])
+def test_invalid_ports_are_rejected(value: str) -> None:
+    with pytest.raises(ValueError, match="Port"):
+        parse_https_url(value)
+
+
 def test_query_can_be_allowed_without_allowing_fragments() -> None:
     assert parse_https_url("https://example.test/jwks?tenant=one", allow_query=True).query == "tenant=one"
     assert (
