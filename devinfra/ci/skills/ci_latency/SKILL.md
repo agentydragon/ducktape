@@ -11,11 +11,12 @@ rules**, how long does it take for different kinds of PRs? When do each status,
 check result and diagnostic log become available to agents watching PR updates?
 Where do runner time and remote compute go, what blocks the user-visible critical
 path, and what changes offer the best payoff for the least cost/risk? Use reviewed
-snapshots and their commit history on the canonical [`ci-latency-history` branch](https://github.com/agentydragon/ducktape/tree/ci-latency-history)
-as an existing investigation to continue, with historical measurements and conclusions
-checked against current CI. Keep
-working reports and measurement snapshots out of `devel`; publish each reviewed
-run as the latest snapshot on the history branch (below). `cihealth` covers
+snapshots and their commit history in `latency/` on the canonical
+[`ci-reports` branch](https://github.com/agentydragon/ducktape/tree/ci-reports) as
+an existing investigation to continue, with historical measurements and conclusions
+checked against current CI. Keep working reports and measurement snapshots out of
+`devel`; publish each reviewed
+run as the latest snapshot in that namespace (below). `cihealth` covers
 release/pin currency and failed CI more broadly. No Mimir metric, Shapley
 calculation, or dashboard is required for a useful report; propose
 instrumentation only when it closes a decision-relevant evidence gap.
@@ -23,7 +24,7 @@ instrumentation only when it closes a decision-relevant evidence gap.
 ## Start from the previous investigation
 
 Before selecting new cohorts, collecting fresh measurements or choosing experiments,
-fetch the canonical history branch and create a separate worktree at its tip. Read
+fetch the canonical `ci-reports` branch and create a separate worktree at its tip. Read
 the **complete latest report**, including expandable sections, and its manifest.
 Inspect the supporting evidence for its substantive findings and experiments. Read
 in bounded chunks when necessary: headings, search hits, truncated output and the
@@ -368,50 +369,59 @@ covering queue/runtime arithmetic and CodeQL contention. Package and tests are u
 
 ## Durable history and test-cost attribution
 
-`agentydragon/ducktape`'s canonical [`ci-latency-history` branch](https://github.com/agentydragon/ducktape/tree/ci-latency-history)
-holds the latest reviewed report and its evidence. Its root contains `README.md`,
-`evidence.json`, `manifest.json`, a standalone `index.html`, and optionally
-`attribution.json`. The README provides durable navigation; `index.html` is the
-only published report. Author and visually review the standalone HTML according
-to the reader objectives above; do not commit a duplicate `report.md`. Escape
+`agentydragon/ducktape`'s canonical [`ci-reports` branch](https://github.com/agentydragon/ducktape/tree/ci-reports)
+holds independent latest snapshots under `latency/` and `reliability/`. This skill
+owns `latency/`; the root `README.md` provides durable navigation. The latency
+directory contains `evidence.json`, `manifest.json`, a standalone `index.html`, and
+optionally `attribution.json`. `index.html` is the only published report. Author
+and visually review the standalone HTML according to the reader objectives above;
+do not commit a duplicate `report.md`. Escape
 external strings during authoring and never copy raw logs, payloads or scripts into
 the page blindly. Keep exactly one snapshot at
-the root, with no dated run directories or generated archive index. Git commit
-history preserves earlier snapshots. Each new report replaces only the snapshot
-files; preserve the README and any unrelated files. If a new run has no attribution,
-remove the old `attribution.json` so it cannot be mistaken for current evidence.
-The history branch is not a mirror of `devel`. Its earlier commits preserve the
+the namespace root, with no dated run directories or generated archive index. Git
+commit history preserves earlier snapshots. Each new report replaces only its
+namespace's snapshot files; preserve the root README, sibling namespace, and
+unrelated files. If a new run has no attribution, remove the old `attribution.json`
+in that namespace so it cannot be mistaken for current evidence.
+The `ci-reports` branch is not a mirror of `devel`. Its earlier commits preserve the
 explicitly labeled _historical_ copy of the former maintained report, not a fresh
-cdk8s comparison. Read it as a baseline for **methodology**, not proof of current
-performance.
+cdk8s comparison. Before migration, latency snapshots lived at the branch root;
+earlier commits retain that layout. Read the current `latency/` snapshot as the
+latest report and earlier history as a baseline for **methodology**, not proof of
+current performance.
 
-Use the history worktree and baseline review established at the start of the run.
+Use the `ci-reports` worktree and baseline review established at the start of the run.
 Collect fresh evidence and read the current workflow/path filters and BuildBuddy
 profiles. Pin the actual inspected devel SHA
-(do not use a merge SHA, PR head or the history branch's HEAD). Publish into the
-history worktree root:
+(do not use a merge SHA, PR head or the `ci-reports` branch's HEAD). Publish into the
+`ci-reports` worktree root:
 
 ```bash
 SKILL=devinfra/ci/skills/ci_latency/scripts
-python3 "$SKILL/publish.py" --source "$DEVEL_SHA" \
+python3 "$SKILL/publish.py" --source "$DEVEL_SHA" --kind latency \
   --window-start "$SINCE" --window-end "$UNTIL" \
   --report "$REPORT" --evidence "$EVIDENCE" --out "$HISTORY"
 # Add --attribution "$ATTRIBUTION" only when measured attribution is available.
 ```
 
+Use `--kind reliability` to publish to `reliability/`; each invocation updates
+only its selected namespace. Compare observation windows with prior reports of the
+same kind because latency and reliability runs may cover different periods.
+
 `publish.py` copies the **already written and reviewed standalone HTML** to
-`index.html` byte for byte; it does not render, sanitize or validate the report,
-investigate CI, rank fixes, or validate conclusions. Review the narrative and
-rendered page before publishing. The publisher replaces only the root snapshot
-files, removes any leftover `report.md`, and leaves `README.md` and unrelated files
-intact. Do not mistake successful script execution for completion of the skill. Open a PR
-targeting the canonical `ci-latency-history` branch. Before submitting, fetch the
+`latency/index.html` byte for byte; it does not render, sanitize or validate the
+report, investigate CI, rank fixes, or validate conclusions. Review the narrative
+and rendered page before publishing. The publisher replaces only the selected
+namespace's snapshot files, removes any leftover `report.md` there, and leaves the
+root README and sibling namespace intact. Do not mistake successful script
+execution for completion of the skill. Open a PR targeting the canonical
+`ci-reports` branch. Before submitting, fetch the
 branch again and confirm the PR includes its latest tip. If another run landed
-first, compare the observation windows and do not let an older run replace a
-newer snapshot; rebase or rebuild on that tip and republish when the new run is
-later. Never reset, amend, or force-push history. Review the report and diff for
+first, compare the observation windows within the same report kind and do not let
+an older run replace a newer snapshot; rebase or rebuild on that tip and republish
+when the new run is later. Never reset, amend, or force-push history. Review the report and diff for
 credentials, identities, raw logs, payloads and personal data before publishing.
-History updates go through a PR to `ci-latency-history`; changes to this skill or
+History updates go through a PR to `ci-reports`; changes to this skill or
 its scripts go through a normal source PR. GitHub does not serve branch HTML as a hosted page:
 download/open the artifact locally, or use the raw URL; don't imply Pages is
 deployed.

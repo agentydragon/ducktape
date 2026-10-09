@@ -44,13 +44,17 @@ def test_bad_values(triggers, seconds):
         )
 
 
-def test_publish_replaces_root_snapshot_and_removes_obsolete_artifacts(tmp_path, monkeypatch):
+def test_publish_updates_only_selected_namespace_and_removes_obsolete_artifacts(tmp_path, monkeypatch):
     history = tmp_path / "history"
     history.mkdir()
     (history / "README.md").write_text("Navigation stays at the root.\n")
     (history / "unrelated.txt").write_text("Keep this file.\n")
-    for name in ["report.md", "evidence.json", "manifest.json", "index.html", "attribution.json"]:
-        (history / name).write_text("old snapshot\n")
+    names = ["report.md", "evidence.json", "manifest.json", "index.html", "attribution.json"]
+    for kind in ["latency", "reliability"]:
+        directory = history / kind
+        directory.mkdir()
+        for name in names:
+            (directory / name).write_text(f"old {kind} snapshot\n")
 
     report = tmp_path / "report.html"
     report.write_text(
@@ -64,39 +68,62 @@ def test_publish_replaces_root_snapshot_and_removes_obsolete_artifacts(tmp_path,
     evidence = tmp_path / "evidence.json"
     evidence.write_text('{"jobs": 3}\n')
     monkeypatch.setattr(publish, "git", lambda *_: "commit")
-    monkeypatch.setattr(
-        sys,
-        "argv",
-        [
-            "publish.py",
-            "--source",
-            "a" * 40,
-            "--window-start",
-            "2026-10-04T20:00:00+00:00",
-            "--window-end",
-            "2026-10-04T21:00:00+00:00",
-            "--report",
-            str(report),
-            "--evidence",
-            str(evidence),
-            "--out",
-            str(history),
-        ],
-    )
+    sibling = history / "reliability"
+    sibling_before = {path.name: path.read_bytes() for path in sibling.iterdir()}
 
-    publish.main()
+    def publish_kind(kind):
+        monkeypatch.setattr(
+            sys,
+            "argv",
+            [
+                "publish.py",
+                "--source",
+                "a" * 40,
+                "--window-start",
+                "2026-10-04T20:00:00+00:00",
+                "--window-end",
+                "2026-10-04T21:00:00+00:00",
+                "--kind",
+                kind,
+                "--report",
+                str(report),
+                "--evidence",
+                str(evidence),
+                "--out",
+                str(history),
+            ],
+        )
+        publish.main()
 
-    assert not (history / "report.md").exists()
-    assert json.loads((history / "evidence.json").read_text()) == {"jobs": 3}
-    manifest = json.loads((history / "manifest.json").read_text())
+    publish_kind("latency")
+
+    latency = history / "latency"
+    assert not (latency / "report.md").exists()
+    assert json.loads((latency / "evidence.json").read_text()) == {"jobs": 3}
+    manifest = json.loads((latency / "manifest.json").read_text())
     assert manifest["source_devel_commit"] == "a" * 40
     assert manifest["window_start_utc"] == "2026-10-04T20:00:00+00:00"
     assert manifest["window_end_utc"] == "2026-10-04T21:00:00+00:00"
     assert manifest["attribution"] == "not collected"
-    assert (history / "index.html").read_bytes() == report.read_bytes()
-    assert not (history / "attribution.json").exists()
+    assert (latency / "index.html").read_bytes() == report.read_bytes()
+    assert not (latency / "attribution.json").exists()
+    assert {path.name: path.read_bytes() for path in sibling.iterdir()} == sibling_before
+
+    latency_after_publish = {path.name: path.read_bytes() for path in latency.iterdir()}
+    publish_kind("reliability")
+
+    reliability = history / "reliability"
+    assert not (reliability / "report.md").exists()
+    assert json.loads((reliability / "evidence.json").read_text()) == {"jobs": 3}
+    assert json.loads((reliability / "manifest.json").read_text())["attribution"] == (
+        "not collected"
+    )
+    assert (reliability / "index.html").read_bytes() == report.read_bytes()
+    assert not (reliability / "attribution.json").exists()
+    assert {path.name: path.read_bytes() for path in latency.iterdir()} == latency_after_publish
     assert (history / "README.md").read_text() == "Navigation stays at the root.\n"
     assert (history / "unrelated.txt").read_text() == "Keep this file.\n"
+    assert {path.name for path in history.iterdir()} == {"README.md", "unrelated.txt", "latency", "reliability"}
 
 
 if __name__ == "__main__":
