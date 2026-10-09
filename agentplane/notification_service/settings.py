@@ -55,6 +55,7 @@ class GitHubSettings(BaseModel):
         description="Maximum concurrent webhook requests per replica, held through durable commit; saturation returns 503.",
     )
 
+
 class SandboxServiceSettings(BaseModel):
     model_config = ConfigDict(extra="forbid", hide_input_in_errors=True)
     target: str = Field(description="Sandbox Service gRPC host:port for session access and runner commands.")

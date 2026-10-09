@@ -19,6 +19,7 @@ class _ActionFederationSettings(BaseModel):
     target: OperatorOidcSettings
     scope: str = Field(min_length=1)
 
+
 class ExchangeFederationSettings(_ActionFederationSettings):
     mode: Literal["exchange"] = "exchange"
     token_endpoint: HttpsOrLoopbackHttpEndpointUrl

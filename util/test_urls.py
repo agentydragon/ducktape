@@ -42,7 +42,7 @@ def test_oidc_http_allowance_is_loopback_scoped(http_allowance: HttpAllowance, v
     if accepted:
         assert parse_https_url(value, http_allowance=http_allowance).scheme == "http"
     else:
-        with pytest.raises(ValueError, match="HTTPS|loopback"):
+        with pytest.raises(ValueError, match=r"HTTPS|loopback"):
             parse_https_url(value, http_allowance=http_allowance)
 
 
@@ -56,7 +56,7 @@ def test_oidc_http_allowance_is_loopback_scoped(http_allowance: HttpAllowance, v
     ],
 )
 def test_oidc_parser_rejects_sensitive_components_by_default(http_allowance: HttpAllowance, value: str) -> None:
-    with pytest.raises(ValueError):
+    with pytest.raises(ValueError, match=r"URL must not contain (credentials|a query|a fragment)"):
         parse_https_url(value, http_allowance=http_allowance)
 
 
@@ -79,10 +79,12 @@ def test_parser_returns_pydantic_normalized_url() -> None:
 def test_oidc_parser_can_allow_query_without_allowing_fragments() -> None:
     assert parse_https_url("https://example.test/jwks?tenant=one", allow_query=True).query == "tenant=one"
     assert (
-        parse_https_url("http://127.0.0.1/jwks?tenant=one", http_allowance=HttpAllowance.LOOPBACK, allow_query=True).query
+        parse_https_url(
+            "http://127.0.0.1/jwks?tenant=one", http_allowance=HttpAllowance.LOOPBACK, allow_query=True
+        ).query
         == "tenant=one"
     )
-    with pytest.raises(ValueError):
+    with pytest.raises(ValueError, match=r"URL must not contain a fragment"):
         parse_https_url("https://example.test/jwks?tenant=one#fragment", allow_query=True)
 
 
@@ -118,9 +120,7 @@ def test_endpoint_types_accept_their_url_schemes_and_scopes(adapter: TypeAdapter
         pytest.param(_HTTPS_ENDPOINT, "https://example.test/path#fragment", id="https-fragment"),
         pytest.param(_HTTPS_ENDPOINT, "https://example.test/path#", id="https-empty-fragment"),
         pytest.param(_HTTPS_OR_LOOPBACK_HTTP_ENDPOINT, "http://remote.example.test/path", id="remote-http"),
-        pytest.param(
-            _HTTPS_OR_LOOPBACK_HTTP_ENDPOINT, "http://user:secret@localhost/path", id="loopback-credentials"
-        ),
+        pytest.param(_HTTPS_OR_LOOPBACK_HTTP_ENDPOINT, "http://user:secret@localhost/path", id="loopback-credentials"),
         pytest.param(_HTTPS_OR_LOOPBACK_HTTP_ENDPOINT, "http://localhost/path?token=secret", id="loopback-query"),
         pytest.param(_HTTPS_OR_LOOPBACK_HTTP_ENDPOINT, "http://localhost/path?", id="loopback-empty-query"),
         pytest.param(_HTTPS_OR_LOOPBACK_HTTP_ENDPOINT, "http://localhost/path#fragment", id="loopback-fragment"),
@@ -133,8 +133,7 @@ def test_endpoint_types_reject_disallowed_scheme_or_components(adapter: TypeAdap
 
 
 @pytest.mark.parametrize(
-    "value",
-    ["/relative/path", "https://", "https://example.test:invalid/path", "https://example.test:65536/path"],
+    "value", ["/relative/path", "https://", "https://example.test:invalid/path", "https://example.test:65536/path"]
 )
 def test_endpoint_types_reject_invalid_http_urls(value: str) -> None:
     for adapter in (_HTTP_ENDPOINT, _HTTPS_ENDPOINT, _HTTPS_OR_LOOPBACK_HTTP_ENDPOINT):

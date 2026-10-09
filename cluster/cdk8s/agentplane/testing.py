@@ -23,12 +23,12 @@ from cdk8s_plus_34 import (
     k8s,
 )
 from constructs import Construct
-from pydantic import AnyHttpUrl
 from flux_kustomize.io.fluxcd.toolkit.kustomize import (
     KustomizationSpecDeletionPolicy,
     KustomizationSpecHealthCheckExprs,
     KustomizationSpecHealthChecks,
 )
+from pydantic import AnyHttpUrl
 from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
 
 from agentplane.action_service.catalog import ActionGroup, McpExecutorBinding
