@@ -9,11 +9,7 @@ py_library(
     srcs = ["rbac.py"],
     deps = [
         ":environment",
-        "//cluster/cdk8s:agent_access_profiles",
-        "//cluster/cdk8s:api_resource",
         "//cluster/cdk8s:namespaces",
-        "@pypi//cdk8s",
-        "@pypi//cdk8s_plus_34",
         "@pypi//constructs",
     ],
 )
@@ -535,6 +531,8 @@ py_library(
         "//agentplane/action_service:mcp_linkage",
         "//agentplane/action_service:operator_oidc",
         "//agentplane/app:action_federation",
+        "//cluster/cdk8s:agent_access_profiles",
+        "//cluster/cdk8s:api_resource",
         "//cluster/cdk8s:cilium",
         "//cluster/cdk8s:manifest_roots",
         "//cluster/cdk8s:model_selections",

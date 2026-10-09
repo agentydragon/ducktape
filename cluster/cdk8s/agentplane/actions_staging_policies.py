@@ -606,7 +606,7 @@ def add_staging_action_policies(scope: Construct) -> None:
     # (agentplane/acceptance/README.md): by its Service rather than its public name, which would
     # hairpin out through the Gateway and back. Plain HTTP, so the proxy reads the request without
     # bumping TLS. Nothing is substituted: the suite presents the app token it mints in
-    # agentplane-testing (rbac.AcceptanceToken), so any method may pass.
+    # agentplane-testing (testing.AcceptanceToken), so any method may pass.
     testing_app = app_component.service(testing.ENV.namespace)
     # Browser/OIDC acceptance tests follow the app's public callback and Dex issuer.
     # Neither staging's app nor its real Authentik issuer belongs in this policy.
