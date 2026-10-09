@@ -10,7 +10,6 @@ import logging
 import secrets
 from datetime import UTC, datetime, timedelta
 from enum import StrEnum
-from urllib.parse import urlencode
 from uuid import UUID, uuid4
 
 import httpx2
@@ -239,7 +238,9 @@ class McpLinkageAuthority:
         if resource:
             query["resource"] = resource
         return McpLinkageStartView(
-            flow_id=flow_id, authorization_url=f"{authorization_endpoint}?{urlencode(query)}", expires_at=expires_at
+            flow_id=flow_id,
+            authorization_url=str(httpx2.URL(authorization_endpoint).copy_merge_params(query)),
+            expires_at=expires_at,
         )
 
     async def callback(self, state: str, code: str) -> McpLinkageView:

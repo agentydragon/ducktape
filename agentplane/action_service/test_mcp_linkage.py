@@ -1,4 +1,4 @@
-"""MCP OAuth token refresh against PostgreSQL with a mocked provider."""
+"""MCP OAuth linkage and token refresh against PostgreSQL with a mocked provider."""
 
 from __future__ import annotations
 
@@ -54,6 +54,36 @@ def _provider(refresh: httpx2.Response) -> httpx2.MockTransport:
 async def _link(authority: McpLinkageAuthority) -> None:
     started = await authority.start(SERVER.server_id, McpLinkageStart(), OPERATOR)
     await authority.callback(one(parse_qs(urlparse(started.authorization_url).query)["state"]), "test-code")
+
+
+@pytest.mark.parametrize("existing_query", ["", "?tenant=a%2Bb%26c&tag=one&tag=two&empty=&state=stale&client_id=stale"])
+async def test_authorization_url_merges_provider_query_parameters(engine: AsyncEngine, existing_query: str) -> None:
+    server = SERVER.model_copy(
+        update={
+            "authorization_endpoint": f"https://idp.example.test/authorize{existing_query}",
+            "scopes": ["read", "write"],
+        }
+    )
+    async with httpx2.AsyncClient(transport=_provider(httpx2.Response(200))) as http:
+        authority = McpLinkageAuthority(make_sessionmaker(engine), {server.server_id: server}, http=http)
+        started = await authority.start(server.server_id, McpLinkageStart(), OPERATOR)
+        url = urlparse(started.authorization_url)
+        query = parse_qs(url.query, keep_blank_values=True)
+        assert (url.scheme, url.netloc, url.path) == ("https", "idp.example.test", "/authorize")
+        if existing_query:
+            assert query["tenant"] == ["a+b&c"]
+            assert query["tag"] == ["one", "two"]
+            assert query["empty"] == [""]
+        assert query["response_type"] == ["code"]
+        assert query["client_id"] == ["test-client"]
+        assert query["redirect_uri"] == [server.redirect_uri]
+        assert query["scope"] == ["read write"]
+        assert query["code_challenge_method"] == ["S256"]
+        assert len(one(query["code_challenge"])) == 43
+        state = one(query["state"])
+        assert state != "stale"
+        await authority.callback(state, "test-code")
+        assert (await authority.status(server.server_id)).status is McpLinkageStatus.LINKED
 
 
 async def test_a_refreshed_token_is_served_and_wakes_the_servers_executors(engine: AsyncEngine) -> None:
