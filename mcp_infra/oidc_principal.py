@@ -16,7 +16,7 @@ from jwt import PyJWK, PyJWKSet
 from jwt.exceptions import InvalidTokenError, PyJWKError, PyJWKSetError, PyJWTError
 from pydantic import BaseModel, ConfigDict, ValidationError, field_validator
 
-from mcp_infra.urls import HttpAllowance, parse_https_url
+from util.urls import HttpAllowance, parse_https_url
 
 _SIGNING_ALGORITHM = "RS256"
 _CLOCK_SKEW_SECONDS = 30

@@ -35,7 +35,7 @@ from sqlalchemy.ext.asyncio import AsyncEngine
 from agentplane.action_service.catalog import Key
 from agentplane.action_service.db import McpLinkageFlowRow, McpOAuthTokenStateRow, McpServerLinkageRow, SessionMaker
 from agentplane.action_service.models import OperatorPrincipal, operator_or_none
-from mcp_infra.urls import HttpsUrlString
+from util.urls import HttpsUrlString
 
 logger = logging.getLogger(__name__)
 _REFRESH_SKEW = timedelta(minutes=1)

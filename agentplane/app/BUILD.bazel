@@ -1355,7 +1355,7 @@ py_library(
     ],
     deps = [
         "//agentplane/action_service:operator_oidc_settings",
-        "//mcp_infra:urls",
+        "//util:urls",
         "@pypi//pydantic",
     ],
 )

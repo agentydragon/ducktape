@@ -8,7 +8,7 @@ from urllib.parse import urlsplit
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from agentplane.action_service.operator_oidc_settings import OperatorOidcSettings, OperatorTokenProfile
-from mcp_infra.urls import HttpsOrLocalhostHttpUrlString
+from util.urls import HttpsOrLocalhostHttpUrlString
 
 
 class _ActionFederationSettings(BaseModel):

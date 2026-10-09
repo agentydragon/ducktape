@@ -341,3 +341,22 @@ py_test(
         "@pypi//pytest_bazel",
     ],
 )
+
+py_library(
+    name = "urls",
+    srcs = ["urls.py"],
+    visibility = ["//visibility:public"],
+    deps = ["@pypi//pydantic"],
+)
+
+py_test(
+    name = "test_urls",
+    srcs = ["test_urls.py"],
+    deps = [
+        ":urls",
+        "//:conftest",
+        "@pypi//pydantic",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)

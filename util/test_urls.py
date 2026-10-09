@@ -2,7 +2,7 @@ import pytest
 import pytest_bazel
 from pydantic import TypeAdapter, ValidationError
 
-from mcp_infra.urls import HttpAllowance, HttpsOrLocalhostHttpUrlString, HttpsUrlString, parse_https_url
+from util.urls import HttpAllowance, HttpsOrLocalhostHttpUrlString, HttpsUrlString, parse_https_url
 
 
 @pytest.mark.parametrize("http_allowance", list(HttpAllowance))
