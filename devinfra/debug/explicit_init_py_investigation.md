@@ -87,7 +87,7 @@ so `_main/util/bazel/subprocess.py` is found before stdlib's `subprocess`.
 | Target                                  | Root cause                                                                    |
 | --------------------------------------- | ----------------------------------------------------------------------------- |
 | `//util/bazel:test_subprocess`          | `util/bazel/subprocess.py` shadows stdlib in `run_python_module` subprocesses |
-| `//mcp_infra/exec:test_mcp_integration` | `mcp_infra/exec/subprocess.py` same mechanism                                 |
+| `//mcp_infra/exec:test_mcp_integration` | `util/exec/subprocess.py` same mechanism                                      |
 | `//x/claude_linter_v2:test_integration` | `run_python_module` subprocess fails, same class                              |
 | `//wt/shared:test_style`                | Different: `wt` becomes namespace package, `__file__` is `None`               |
 | `//props/backend/routes:test_runs`      | TIMEOUT, likely related                                                       |

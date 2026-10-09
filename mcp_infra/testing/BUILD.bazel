@@ -20,9 +20,9 @@ py_library(
     srcs = ["exec_stubs.py"],
     visibility = ["//:__subpackages__"],
     deps = [
-        "//mcp_infra/exec:models",
-        "//mcp_infra/exec:subprocess",
         "//mcp_infra/stubs:server_stubs",
+        "//util/exec:models",
+        "//util/exec:subprocess",
     ],
 )
 

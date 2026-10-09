@@ -45,7 +45,7 @@ it isn't fully isolated.)
 
 ## Mitigation applied
 
-- **Removed the `env` / `inherit_env` knob from `DirectExecArgs`** (`mcp_infra/exec/subprocess.py`).
+- **Removed the `env` / `inherit_env` knob from `DirectExecArgs`** (`util/exec/subprocess.py`).
   Direct exec now always inherits the ambient environment; nothing set `env` on direct exec, and
   agents reviewing code never need it. The model no longer sees the field, so it can't trip on it.
 - **Removed `stdin_text` from `ExecArgsBase`**. Direct, bwrap, and seatbelt exec tools now expose no

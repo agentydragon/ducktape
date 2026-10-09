@@ -4,9 +4,9 @@ from collections.abc import Generator
 
 from agent_core.testing.mcp.responses import MCPDecoratorMock
 from agent_core.testing.responses import tool_roundtrip
-from mcp_infra.exec.models import BaseExecResult
-from mcp_infra.exec.subprocess import DirectExecArgs
 from openai_utils.model import FunctionCallItem, ResponsesRequest
+from util.exec.models import BaseExecResult
+from util.exec.subprocess import DirectExecArgs
 
 
 def get_system_prompt_text(req: ResponsesRequest) -> str:

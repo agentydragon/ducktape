@@ -19,9 +19,9 @@ from agent_core.tool_provider import ToolResult
 from mcp_infra.display.rich_display import CompactDisplayHandler
 from mcp_infra.exec.docker.server import ContainerExecServer, _make_exec_input_model
 from mcp_infra.exec.docker.types import DefaultValue
-from mcp_infra.exec.models import BaseExecResult, Exited
 from mcp_infra.naming import build_mcp_function
 from mcp_infra.prefix import MCPMountPrefix
+from util.exec.models import BaseExecResult, Exited
 
 # Dynamic model matching a server with all fields enabled
 _TestExecInput: type[BaseModel] = _make_exec_input_model(

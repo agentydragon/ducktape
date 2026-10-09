@@ -24,7 +24,6 @@ from more_itertools import one
 
 from agent_core.testing.responses import PlayGen
 from mcp_infra.exec.matchers import exited_successfully, stdout_contains
-from mcp_infra.exec.models import BaseExecResult
 from props.agents.critic.testing.mocks import CriticMock
 from props.agents.critic_dev.testing.mocks import CriticDevMock
 from props.agents.critic_dev.testing.orchestration_fixtures import (
@@ -40,6 +39,7 @@ from props.core.models.examples import ExampleKind, WholeSnapshotExample
 from props.db.models import AgentRun, AgentRunStatus
 from props.testing.constants import DEFAULT_TEST_MODEL
 from props.testing.mocks import get_system_prompt_text
+from util.exec.models import BaseExecResult
 
 logger = logging.getLogger(__name__)
 

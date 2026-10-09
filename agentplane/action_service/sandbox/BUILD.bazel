@@ -32,7 +32,7 @@ py_library(
     name = "models",
     srcs = ["models.py"],
     deps = [
-        "//mcp_infra/exec:models",
+        "//util/exec:models",
         "@pypi//pydantic",
     ],
 )
@@ -48,8 +48,8 @@ py_test(
         "//agentplane:subjects",
         "//agentplane/action_service:conftest",
         "//mcp_infra/exec:kubernetes",
-        "//mcp_infra/exec:models",
         "//util:agent_sandbox",
+        "//util/exec:models",
         "@pypi//kubernetes_asyncio",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
@@ -88,7 +88,7 @@ py_test(
         "//agentplane/action_service:models",
         "//agentplane/action_service:service",
         "//mcp_infra/exec:kubernetes",
-        "//mcp_infra/exec:models",
+        "//util/exec:models",
         "@pypi//pydantic",
         "@pypi//pytest",
         "@pypi//pytest_bazel",

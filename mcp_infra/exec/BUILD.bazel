@@ -1,28 +1,10 @@
 load("@aspect_rules_py//py:defs.bzl", "py_image_layer", aspect_py_binary = "py_binary")
 load("@rules_oci//oci:defs.bzl", "oci_image", "oci_load")
-load("//devinfra/deps:check.bzl", "assert_no_deps")
 load("//devinfra/python:defs.bzl", "py_binary", "py_library", "py_test")
 load("//openai_utils/testing:testing.bzl", "live_openai_py_test")
 load("//props:oci.bzl", "py_image_entrypoint", "py_image_env")
 
 # gazelle:exclude test_exec_roundtrip.py
-
-# Core models - no MCP dependencies, usable outside fastmcp
-py_library(
-    name = "models",
-    srcs = ["models.py"],
-    visibility = ["//visibility:public"],
-    deps = ["@pypi//pydantic"],
-)
-
-# Subprocess execution utility - no MCP dependencies
-# Includes DirectExecArgs and run_direct_exec for in-container agent loops
-py_library(
-    name = "subprocess",
-    srcs = ["subprocess.py"],
-    visibility = ["//visibility:public"],
-    deps = [":models"],
-)
 
 # Image reading utility (shared by direct and docker)
 py_library(
@@ -42,11 +24,11 @@ py_library(
     srcs = ["direct.py"],
     visibility = ["//visibility:public"],
     deps = [
-        ":models",
         ":read_image",
-        ":subprocess",
         "//mcp_infra:flat_tool",
         "//mcp_infra/enhanced:server",
+        "//util/exec:models",
+        "//util/exec:subprocess",
         "@pypi//fastmcp_slim",
         "@pypi//mcp",
         "@pypi//mcp_types",
@@ -107,7 +89,7 @@ py_library(
     srcs = ["matchers.py"],
     visibility = ["//:__subpackages__"],
     deps = [
-        ":models",
+        "//util/exec:models",
         "@pypi//pyhamcrest",
     ],
 )
@@ -119,11 +101,11 @@ py_test(
     deps = [
         ":conftest",
         ":direct",
-        ":models",
-        ":subprocess",
         "//:conftest",
         "//mcp_infra:conftest",
         "//mcp_infra/testing:exec_stubs",
+        "//util/exec:models",
+        "//util/exec:subprocess",
         "@pypi//fastmcp_slim",
         "@pypi//pytest_bazel",
     ],
@@ -147,25 +129,6 @@ py_test(
     ],
 )
 
-# Verify models and subprocess have no MCP/fastmcp dependencies
-assert_no_deps(
-    name = "test_models_no_mcp_deps",
-    forbidden = [
-        "@pypi//fastmcp_slim",
-        "@pypi//mcp",
-    ],
-    targets = ["//mcp_infra/exec:models"],
-)
-
-assert_no_deps(
-    name = "test_subprocess_no_mcp_deps",
-    forbidden = [
-        "@pypi//fastmcp_slim",
-        "@pypi//mcp",
-    ],
-    targets = ["//mcp_infra/exec:subprocess"],
-)
-
 py_library(
     name = "conftest",
     testonly = True,
@@ -186,12 +149,12 @@ py_test(
     requires_docker = True,
     deps = [
         ":conftest",
-        ":models",
         "//:conftest",
         "//mcp_infra:conftest",
         "//mcp_infra/exec/docker:server",
         "//mcp_infra/exec/docker:types",
         "//mcp_infra/testing:fixtures",
+        "//util/exec:models",
         "@pypi//fastmcp_slim",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
@@ -204,11 +167,11 @@ py_test(
     srcs = ["test_exec_input_schema.py"],
     deps = [
         ":conftest",
-        ":models",
         "//:conftest",
         "//mcp_infra:conftest",
         "//mcp_infra/exec/docker:server",
         "//mcp_infra/exec/docker:types",
+        "//util/exec:models",
         "@pypi//pydantic",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
@@ -229,10 +192,10 @@ live_openai_py_test(
         "//agent_core/testing:responses",
         "//agent_core/testing/mcp:responses",
         "//mcp_infra:prefix",
-        "//mcp_infra/exec:models",
         "//mcp_infra/testing:fixtures",
         "//openai_utils:model",
         "//openai_utils/testing:fixtures",
+        "//util/exec:models",
         "@pypi//pytest",
         "@pypi//pytest_asyncio",  # keep
         "@pypi//pytest_bazel",
@@ -246,8 +209,6 @@ py_test(
     deps = [
         ":conftest",
         ":direct",
-        ":models",
-        ":subprocess",
         "//:conftest",
         "//mcp_infra:conftest",
         "//mcp_infra:naming",
@@ -255,6 +216,8 @@ py_test(
         "//mcp_infra/exec/docker:server",
         "//mcp_infra/stubs:typed_stubs",
         "//mcp_infra/testing:simple_servers",
+        "//util/exec:models",
+        "//util/exec:subprocess",
         "@pypi//fastmcp_slim",
         "@pypi//pytest_asyncio",  # keep
         "@pypi//pytest_bazel",
@@ -268,7 +231,7 @@ py_library(
     srcs = ["kubernetes.py"],
     visibility = ["//visibility:public"],
     deps = [
-        ":models",
+        "//util/exec:models",
         "@pypi//aiohttp",
         "@pypi//kubernetes_asyncio",
     ],

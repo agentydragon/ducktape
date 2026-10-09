@@ -43,4 +43,4 @@ templates. Output goes to the agent's system prompt.
 
 **Example - right:**
 
-> Init output must stay under `mcp_infra.exec.models.MAX_BYTES_CAP`. If exceeded, the agent run fails.
+> Init output must stay under `util.exec.models.MAX_BYTES_CAP`. If exceeded, the agent run fails.

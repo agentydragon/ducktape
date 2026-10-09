@@ -49,11 +49,11 @@ from agent_core.events import ToolCallOutput
 from agent_core.handler import BaseHandler
 from agent_core.loop_control import InjectItems, LoopDecision, NoAction
 from agent_core.tool_provider import ToolResult
-from mcp_infra.exec.models import BaseExecResult, Exited
 from mcp_infra.naming import build_mcp_function
 from mcp_infra.prefix import MCPMountPrefix
 from openai_utils.builders import ItemFactory
 from openai_utils.model import FunctionCallItem, SystemMessage, UserMessage
+from util.exec.models import BaseExecResult, Exited
 
 if TYPE_CHECKING:
     from mcp_infra.exec.docker.server import ContainerExecServer

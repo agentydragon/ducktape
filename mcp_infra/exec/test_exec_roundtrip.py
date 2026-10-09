@@ -14,9 +14,9 @@ from agent_core.loop_control import AllowAnyToolOrTextMessage
 from agent_core.mcp_provider import MCPToolProvider
 from agent_core.testing.mcp.responses import MCPDecoratorMock
 from agent_core.testing.responses import tool_roundtrip
-from mcp_infra.exec.models import BaseExecResult, Exited
 from mcp_infra.prefix import MCPMountPrefix
 from openai_utils.model import UserMessage
+from util.exec.models import BaseExecResult, Exited
 
 ECHO_CMD = ["/bin/echo", "-n", "hello"]
 SERVER_NAME = MCPMountPrefix("box")

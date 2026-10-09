@@ -21,9 +21,9 @@ from agent_core.script_handler import (
     script_handler,
 )
 from agent_core.tool_provider import ToolResult
-from mcp_infra.exec.models import BaseExecResult, Exited
 from mcp_infra.prefix import MCPMountPrefix
 from openai_utils.model import FunctionCallItem, UserMessage
+from util.exec.models import BaseExecResult, Exited
 
 TEST_PREFIX = MCPMountPrefix("test")
 

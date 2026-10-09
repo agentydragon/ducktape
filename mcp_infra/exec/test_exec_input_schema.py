@@ -17,7 +17,7 @@ from pydantic import BaseModel, ValidationError
 
 from mcp_infra.exec.docker.server import _make_exec_input_model
 from mcp_infra.exec.docker.types import AlwaysSetTo
-from mcp_infra.exec.models import MAX_EXEC_TIMEOUT_MS
+from util.exec.models import MAX_EXEC_TIMEOUT_MS
 
 
 @pytest.fixture

@@ -51,7 +51,7 @@ from agentplane.action_service.testing.callers import OTHER, PERSONAL, TEST_NAME
 from agentplane.action_service.testing.fixtures import ScriptedExecutor, lifespan_in_own_task
 from agentplane.action_service.updates import ActionUpdates
 from agentplane.workload_auth.principal import WorkloadPrincipalResolver
-from mcp_infra.exec.models import Exited
+from util.exec.models import Exited
 
 EXTERNAL_TOKEN = "test-external-token"
 WORKLOAD_TOKEN = "test-workload-token"

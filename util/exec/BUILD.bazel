@@ -1,0 +1,38 @@
+load("//devinfra/deps:check.bzl", "assert_no_deps")
+load("//devinfra/python:defs.bzl", "py_library")
+
+# Core models - no MCP dependencies, usable outside fastmcp
+py_library(
+    name = "models",
+    srcs = ["models.py"],
+    visibility = ["//visibility:public"],
+    deps = ["@pypi//pydantic"],
+)
+
+# Subprocess execution utility - no MCP dependencies
+# Includes DirectExecArgs and run_direct_exec for in-container agent loops
+py_library(
+    name = "subprocess",
+    srcs = ["subprocess.py"],
+    visibility = ["//visibility:public"],
+    deps = [":models"],
+)
+
+# Verify models and subprocess have no MCP/fastmcp dependencies
+assert_no_deps(
+    name = "test_models_no_mcp_deps",
+    forbidden = [
+        "@pypi//fastmcp_slim",
+        "@pypi//mcp",
+    ],
+    targets = ["//util/exec:models"],
+)
+
+assert_no_deps(
+    name = "test_subprocess_no_mcp_deps",
+    forbidden = [
+        "@pypi//fastmcp_slim",
+        "@pypi//mcp",
+    ],
+    targets = ["//util/exec:subprocess"],
+)

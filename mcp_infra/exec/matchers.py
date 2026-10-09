@@ -6,7 +6,7 @@ from hamcrest.core.base_matcher import BaseMatcher
 from hamcrest.core.description import Description
 from hamcrest.core.matcher import Matcher
 
-from mcp_infra.exec.models import BaseExecResult, Exited, TruncatedStream
+from util.exec.models import BaseExecResult, Exited, TruncatedStream
 
 
 def _get_stream_text(stream: str | TruncatedStream) -> str:

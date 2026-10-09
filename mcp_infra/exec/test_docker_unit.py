@@ -9,8 +9,8 @@ from fastmcp.resources.template import match_uri_template
 
 from mcp_infra.exec.docker.server import FILE_RESOURCE_URI_TEMPLATE, ContainerExecServer
 from mcp_infra.exec.docker.types import AlwaysSetTo, BindMount, ContainerExecServerConfig
-from mcp_infra.exec.models import BaseExecResult, Exited, TimedOut
 from mcp_infra.testing.fixtures import make_container_opts
+from util.exec.models import BaseExecResult, Exited, TimedOut
 
 
 @pytest.fixture

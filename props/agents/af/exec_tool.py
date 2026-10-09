@@ -13,8 +13,8 @@ from pathlib import Path
 
 from agent_framework import FunctionTool
 
-from mcp_infra.exec.models import BaseExecResult
-from mcp_infra.exec.subprocess import DirectExecArgs, run_direct_exec
+from util.exec.models import BaseExecResult
+from util.exec.subprocess import DirectExecArgs, run_direct_exec
 
 EXEC_DESCRIPTION = (
     "Run a program via execve (argv vector, NOT a shell). cmd[0] is the program (resolved on "

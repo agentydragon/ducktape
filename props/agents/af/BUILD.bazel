@@ -62,8 +62,8 @@ py_library(
     srcs = ["exec_tool.py"],
     visibility = ["//props:__subpackages__"],
     deps = [
-        "//mcp_infra/exec:models",
-        "//mcp_infra/exec:subprocess",
+        "//util/exec:models",
+        "//util/exec:subprocess",
         "@pypi//agent_framework_anthropic",  # keep: core's stub __init__ chains into it; mypy needs it present
         "@pypi//agent_framework_claude",  # keep: core's stub __init__ chains into it; mypy needs it present
         "@pypi//agent_framework_core",

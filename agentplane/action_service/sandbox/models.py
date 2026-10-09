@@ -12,7 +12,7 @@ from typing import Annotated
 from pydantic import BaseModel, ConfigDict, Field
 from pydantic.alias_generators import to_camel
 
-from mcp_infra.exec.models import ExecStream, ExitStatus
+from util.exec.models import ExecStream, ExitStatus
 
 SandboxName = Annotated[
     str,

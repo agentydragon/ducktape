@@ -142,12 +142,12 @@ py_library(
         "//mcp_infra:mounted",
         "//mcp_infra:naming",
         "//mcp_infra:prefix",
-        "//mcp_infra/exec:models",
         "//mcp_infra/exec/docker:container_session",  # keep: script_handler.py is unparseable to gazelle (PEP 695 defaults)
         "//mcp_infra/exec/docker:launcher",  # keep: script_handler.py is unparseable to gazelle (PEP 695 defaults)
         "//mcp_infra/exec/docker:server",
         "//openai_utils:builders",
         "//openai_utils:model",
+        "//util/exec:models",
         "@pypi//more_itertools",
         "@pypi//pydantic",
     ],
@@ -289,8 +289,8 @@ py_test(
         ":tool_provider",
         "//:conftest",
         "//mcp_infra:prefix",
-        "//mcp_infra/exec:models",
         "//openai_utils:model",
+        "//util/exec:models",
         "@pypi//pydantic",
         "@pypi//pytest",
         "@pypi//pytest_bazel",

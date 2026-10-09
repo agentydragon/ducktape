@@ -116,7 +116,7 @@ class ExecOutcome:
 
 
 class BaseExecResult(BaseModel):
-    """Standard MCP exec response - basic servers return this directly (output model).
+    """Shared execution result with bounded stdout/stderr and an explicit exit status.
 
     Preserves str | TruncatedStream distinction to encode truncation information.
     """

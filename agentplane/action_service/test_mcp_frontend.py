@@ -69,7 +69,7 @@ from agentplane.workload_auth.principal import (
     WorkloadPrincipal,
     WorkloadPrincipalResolver,
 )
-from mcp_infra.exec.models import Exited
+from util.exec.models import Exited
 
 AUDIENCE = "test-action-audience"
 NAMESPACE = "test-action-sandboxes"

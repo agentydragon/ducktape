@@ -26,7 +26,7 @@ from agentplane.action_service.sandbox.models import READY_CONDITION, SandboxCon
 from agentplane.action_service.service import ExecutionOutcomeUnknownError
 from agentplane.subjects import ServiceAccountRef
 from mcp_infra.exec.kubernetes import CommandResult, PodExecError
-from mcp_infra.exec.models import Exited
+from util.exec.models import Exited
 
 NAMESPACE = "agentplane-test"
 CALLER = ServiceAccountRef(namespace=NAMESPACE, name="caller-one")

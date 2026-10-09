@@ -79,7 +79,7 @@ def python_env(*, inherit: bool = True) -> dict[str, str]:
     ``--incompatible_default_to_explicit_init_py``, the rules_python bootstrap
     prepends the test's package directory to ``sys.path[0]``, which leaks into
     PYTHONPATH and causes stdlib shadowing when a local file collides with a
-    stdlib module (e.g., ``mcp_infra/exec/subprocess.py`` shadowing stdlib
+    stdlib module (e.g., ``util/exec/subprocess.py`` shadowing stdlib
     ``subprocess`` in any subprocess spawned from a test in that package).
     See <devinfra/debug/explicit_init_py_investigation.md>.
     """

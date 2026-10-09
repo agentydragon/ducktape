@@ -20,12 +20,12 @@ from hamcrest import assert_that
 
 from agent_core.testing.responses import PlayGen
 from mcp_infra.exec.matchers import exited_successfully
-from mcp_infra.exec.models import BaseExecResult
 from openai_utils.model import FunctionCallItem, ResponsesRequest
 from props.agents.critic_dev.testing.mocks import CriticDevMock
 from props.core.agent_types import TargetMetric
 from props.db.models import AgentRun
 from props.testing.constants import DEFAULT_TEST_MODEL
+from util.exec.models import BaseExecResult
 
 logger = logging.getLogger(__name__)
 

@@ -27,7 +27,7 @@ from kubernetes_asyncio.client import ApiException, Configuration
 from kubernetes_asyncio.stream import WsApiClient
 from kubernetes_asyncio.stream.ws_client import ERROR_CHANNEL, STDERR_CHANNEL, STDOUT_CHANNEL
 
-from mcp_infra.exec.models import ExecStream, Exited, Killed, TimedOut, TruncatedStream
+from util.exec.models import ExecStream, Exited, Killed, TimedOut, TruncatedStream
 
 logger = logging.getLogger(__name__)
 
