@@ -46,7 +46,7 @@ from prometheus_operator_crds.com.coreos.monitoring import ServiceMonitorSpecSel
 from aiquota.config import Config
 from aiquota.settings import Settings
 from cluster.cdk8s import pod_policy
-from cluster.cdk8s.agentplane.egress_credentials import STAGING_NAMESPACE
+from cluster.cdk8s.agentplane.egress_credentials import STAGING_CREDENTIALS_NAMESPACE
 from cluster.cdk8s.cli_proxy_api import cli_proxy_api as cli_proxy_api_app  # aiquota()'s parameter is its Kustomization
 from cluster.cdk8s.clickhouse import client
 from cluster.cdk8s.fleet_rules import add_fleet_rules
@@ -138,7 +138,7 @@ PUBLIC_CODER_BEARER = BearerMirror(
 # The same for agentplane-staging's egress proxy (agentplane/egress_staging_credentials.py).
 AGENTPLANE_STAGING_BEARER = BearerMirror(
     consumer="agentplane-staging",
-    namespace=STAGING_NAMESPACE,
+    namespace=STAGING_CREDENTIALS_NAMESPACE,
     description="Shared AIQuota API bearer mirrored only to agentplane-staging's egress proxy credentials.",
 )
 

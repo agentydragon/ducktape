@@ -466,6 +466,7 @@ py_library(
         ":environment",
         ":generation",
         ":grpc_channel_config",
+        ":namespaces",
         ":notifications",
         ":staging_config",
         "//agentplane/action_service:catalog",
@@ -512,6 +513,7 @@ py_library(
         ":environment",
         ":generation",
         ":grpc_channel_config",
+        ":namespaces",
         "//agentplane/action_service:catalog",
         "//agentplane/action_service:main",
         "//agentplane/action_service:mcp_linkage",
@@ -803,4 +805,9 @@ py_library(
         "@pypi//cdk8s_plus_34",
         "@pypi//constructs",
     ],
+)
+
+py_library(
+    name = "namespaces",
+    srcs = ["namespaces.py"],
 )
