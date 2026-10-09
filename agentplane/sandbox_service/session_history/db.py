@@ -3,10 +3,16 @@
 The migration is owned by Sandbox Service. No app tables or app-issued identities are used.
 """
 
+from datetime import datetime
 from uuid import UUID
 
-from sqlalchemy import BigInteger, CheckConstraint, ForeignKey, Index, LargeBinary, String, text
+from sqlalchemy import BigInteger, CheckConstraint, DateTime, ForeignKey, Index, LargeBinary, String, func, text
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
+
+from agentplane.protocol import command_pb2, event_log_pb2
+from util.sqlalchemy_protobuf import ProtobufColumn
+
+# gazelle:include_dep @pypi//protobuf
 
 
 class Base(DeclarativeBase):
@@ -68,3 +74,28 @@ class SessionEvent(Base):
     # Preserve the complete wire entry (including unknown fields and native frames). JSONB
     # cannot represent arbitrary native bytes, and a parsed fold is not a replayable history.
     payload: Mapped[bytes] = mapped_column(LargeBinary)
+
+
+class CommandSubmission(Base):
+    """Service-owned command envelope, distinct from the runner's execution journal."""
+
+    __tablename__ = "command_submission"
+    __table_args__ = (
+        CheckConstraint("state IN ('pending_admission', 'admitted', 'rejected')", name="submission_state"),
+        CheckConstraint(
+            "(state = 'admitted' AND admission IS NOT NULL AND rejection IS NULL) OR "
+            "(state = 'pending_admission' AND admission IS NULL AND rejection IS NULL) OR "
+            "(state = 'rejected' AND admission IS NULL AND rejection IS NOT NULL)",
+            name="submission_evidence",
+        ),
+    )
+
+    session_id: Mapped[UUID] = mapped_column(ForeignKey("session_history.id"), primary_key=True)
+    command_id: Mapped[str] = mapped_column(String(128), primary_key=True)
+    runner_command: Mapped[command_pb2.Command] = mapped_column(ProtobufColumn(command_pb2.Command))
+    caller_namespace: Mapped[str] = mapped_column(String)
+    caller_name: Mapped[str] = mapped_column(String)
+    accepted_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    state: Mapped[str] = mapped_column(String)
+    admission: Mapped[event_log_pb2.EventEntry | None] = mapped_column(ProtobufColumn(event_log_pb2.EventEntry))
+    rejection: Mapped[str | None] = mapped_column(String(512))

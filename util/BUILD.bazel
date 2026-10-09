@@ -396,3 +396,25 @@ py_test(
         "@pypi//starlette",
     ],
 )
+
+py_library(
+    name = "sqlalchemy_protobuf",
+    srcs = ["sqlalchemy_protobuf.py"],
+    visibility = ["//visibility:public"],
+    deps = [
+        "@pypi//protobuf",
+        "@pypi//sqlalchemy",
+    ],
+)
+
+py_test(
+    name = "test_sqlalchemy_protobuf",
+    srcs = ["test_sqlalchemy_protobuf.py"],
+    deps = [
+        ":sqlalchemy_protobuf",
+        "//:conftest",
+        "@pypi//protobuf",
+        "@pypi//pytest_bazel",
+        "@pypi//sqlalchemy",
+    ],
+)

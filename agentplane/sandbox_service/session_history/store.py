@@ -13,6 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncEngine, async_sessionmaker
 
 from agentplane.protocol import event_log_pb2
 from agentplane.sandbox_service.session_history.db import SessionEvent, SessionHistory
+from agentplane.sandbox_service.session_history.submissions import reconcile_admission
 
 # The generated protobuf stubs need the protobuf runtime as a direct mypy dependency.
 # gazelle:include_dep @pypi//protobuf
@@ -236,7 +237,11 @@ class Store:
         back. An empty batch is a checkpoint read, not an inferred runner high-water mark.
         """
         async with self._sessions.begin() as session:
-            row = await session.scalar(select(SessionHistory).where(SessionHistory.id == session_id).with_for_update())
+            # Serialize prefix writers, but allow FK KEY SHARE checks from independent
+            # command acceptance. Neither the Session ID nor any locator key changes here.
+            row = await session.scalar(
+                select(SessionHistory).where(SessionHistory.id == session_id).with_for_update(key_share=True)
+            )
             if row is None:
                 raise HistoryNotFoundError(session_id)
             for entry in entries:
@@ -250,12 +255,14 @@ class Store:
                     existing = await session.get(SessionEvent, (session_id, cursor))
                     if existing is None or existing.payload != payload:
                         raise HistoryConflictError(f"conflicting entry at {cursor}")
+                    await reconcile_admission(session, session_id, entry)
                     continue
                 if cursor != row.last_cursor + 1:
                     raise HistoryConflictError(f"expected {row.last_cursor + 1}, received {cursor}")
                 session.add(SessionEvent(session_id=session_id, cursor=cursor, payload=payload))
                 row.source_id = entry.origin.source_id
                 row.last_cursor = cursor
+                await reconcile_admission(session, session_id, entry)
             return row.last_cursor
 
     async def read(
