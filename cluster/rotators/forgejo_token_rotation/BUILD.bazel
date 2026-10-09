@@ -8,7 +8,10 @@ py_library(
     name = "config",
     srcs = ["config.py"],
     # cluster/cdk8s/forgejo/token_rotation.py builds the roster from this model.
-    visibility = ["//cluster/cdk8s:__pkg__"],
+    visibility = [
+        "//cluster/cdk8s:__pkg__",
+        "//cluster/cdk8s/forgejo:__pkg__",
+    ],
     deps = ["@pypi//pydantic"],
 )
 
