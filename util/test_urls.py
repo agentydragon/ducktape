@@ -52,8 +52,18 @@ def test_credentials_query_and_fragment_are_rejected_by_default(http_allowance: 
 
 @pytest.mark.parametrize("value", ["https://example.test:invalid/path", "https://example.test:65536/path"])
 def test_invalid_ports_are_rejected(value: str) -> None:
-    with pytest.raises(ValueError, match="Port"):
+    with pytest.raises(ValueError, match="invalid port number"):
         parse_https_url(value)
+
+
+@pytest.mark.parametrize("value", ["/relative/path", "https://", "file:///etc/passwd"])
+def test_invalid_http_urls_are_rejected(value: str) -> None:
+    with pytest.raises(ValidationError, match="URL"):
+        parse_https_url(value)
+
+
+def test_parser_returns_pydantic_normalized_url() -> None:
+    assert str(parse_https_url("https://EXAMPLE.test:443")) == "https://example.test/"
 
 
 def test_query_can_be_allowed_without_allowing_fragments() -> None:

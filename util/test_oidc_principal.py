@@ -139,6 +139,26 @@ async def test_resolves_only_issuer_and_subject_from_access_token(
     assert state.requests == 1
 
 
+async def test_issuer_comparison_preserves_original_url_spelling(
+    jwks_server, signing_keys: tuple[_SigningKey, _SigningKey, _SigningKey]
+) -> None:
+    _state, jwks_uri = jwks_server
+    issuer = "https://AUTH.example.test:443"
+    resolver = AuthentikOidcPrincipalResolver(
+        expected_issuer=issuer,
+        discovered_issuer=issuer,
+        jwks_uri=jwks_uri,
+        signing_algorithms=["RS256"],
+        client_id=_CLIENT_ID,
+    )
+    result = await resolver.resolve(_token_response(_token(signing_keys[0], claims=_claims(iss=issuer))))
+    assert result.issuer == issuer
+    with pytest.raises(InvalidOidcPrincipalError):
+        await resolver.resolve(
+            _token_response(_token(signing_keys[0], claims=_claims(iss="https://auth.example.test/")))
+        )
+
+
 @pytest.mark.parametrize("with_azp", [False, True])
 async def test_dex_single_audience_does_not_require_azp(
     jwks_server, signing_keys: tuple[_SigningKey, _SigningKey, _SigningKey], with_azp: bool
@@ -620,7 +640,7 @@ def test_constructor_rejects_discovery_or_configuration_mismatch() -> None:
         {"client_id": "  "},
     ]
     for override in invalid_overrides:
-        with pytest.raises(ValueError, match=r"issuer|jwks|algorithm|client_id|RS256|URL must use HTTPS"):
+        with pytest.raises(ValueError, match=r"issuer|jwks|algorithm|client_id|RS256|URL"):
             AuthentikOidcPrincipalResolver(**(base | override))
 
 

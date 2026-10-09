@@ -3,12 +3,14 @@ from __future__ import annotations
 import ipaddress
 from enum import StrEnum
 from typing import Annotated
-from urllib.parse import SplitResult, urlsplit
 
-from pydantic import AfterValidator, AnyUrl, TypeAdapter
+from pydantic import AfterValidator, AnyUrl, TypeAdapter, UrlConstraints
 
 # Single shared AnyUrl adapter for fast validation/coercion across modules
 ANY_URL: TypeAdapter[AnyUrl] = TypeAdapter(AnyUrl)
+_HTTP_URL: TypeAdapter[AnyUrl] = TypeAdapter(
+    Annotated[AnyUrl, UrlConstraints(allowed_schemes=["https", "http"], host_required=True)]
+)
 
 
 class HttpAllowance(StrEnum):
@@ -17,22 +19,21 @@ class HttpAllowance(StrEnum):
     LOOPBACK = "loopback"
 
 
-def _is_loopback_url(parsed: SplitResult) -> bool:
-    hostname = parsed.hostname
+def _is_loopback_url(parsed: AnyUrl) -> bool:
+    hostname = parsed.host
     if hostname is None:
         return False
-    hostname = hostname.casefold()
     if hostname == "localhost" or hostname.endswith(".localhost"):
         return True
     try:
-        return ipaddress.ip_address(hostname).is_loopback
+        return ipaddress.ip_address(hostname.removeprefix("[").removesuffix("]")).is_loopback
     except ValueError:
         return False
 
 
-def _allows_http(parsed: SplitResult, allowance: HttpAllowance) -> bool:
+def _allows_http(parsed: AnyUrl, allowance: HttpAllowance) -> bool:
     if allowance is HttpAllowance.LOCALHOST:
-        return parsed.hostname in {"localhost", "127.0.0.1"}
+        return parsed.host in {"localhost", "127.0.0.1"}
     if allowance is HttpAllowance.LOOPBACK:
         return _is_loopback_url(parsed)
     return False
@@ -40,15 +41,11 @@ def _allows_http(parsed: SplitResult, allowance: HttpAllowance) -> bool:
 
 def parse_https_url(
     value: str, *, http_allowance: HttpAllowance = HttpAllowance.NONE, allow_query: bool = False
-) -> SplitResult:
+) -> AnyUrl:
     """Parse an absolute HTTPS URL, optionally allowing HTTP within a named scope."""
-    parsed = urlsplit(value)
-    # Accessing port validates its syntax and range; urlsplit itself does not.
-    _ = parsed.port
+    parsed = _HTTP_URL.validate_python(value)
     if (
-        (parsed.scheme != "https" and (parsed.scheme != "http" or not _allows_http(parsed, http_allowance)))
-        or not parsed.netloc
-        or parsed.hostname is None
+        (parsed.scheme == "http" and not _allows_http(parsed, http_allowance))
         or parsed.username is not None
         or parsed.password is not None
         or parsed.fragment
