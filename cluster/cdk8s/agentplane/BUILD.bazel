@@ -5,16 +5,6 @@ load("//devinfra/python:defs.bzl", "py_library", "py_test")
 package(default_visibility = ["//cluster/cdk8s:__pkg__"])
 
 py_library(
-    name = "namespace",
-    srcs = ["namespace.py"],
-    deps = [
-        ":environment",
-        "//cluster/cdk8s:namespaces",
-        "@pypi//constructs",
-    ],
-)
-
-py_library(
     name = "electric",
     srcs = ["electric.py"],
     deps = [
@@ -454,13 +444,14 @@ py_library(
         ":egress",
         ":environment",
         ":llm_ingress",
-        ":namespace",
         ":notifications",
         ":sandbox_pod",
         ":sandbox_service",
         "//agentplane:subjects",
         "//cluster/cdk8s:fleet_rules",
+        "//cluster/cdk8s:namespaces",
         "@pypi//cdk8s",
+        "@pypi//constructs",
     ],
 )
 

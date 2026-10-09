@@ -7,8 +7,10 @@ generate_manifests (writes them to disk) and the tests (synthesize them in memor
 from __future__ import annotations
 
 from cdk8s import App, Chart
+from constructs import Construct
 
 from agentplane.subjects import ServiceAccountRef
+from cluster.cdk8s import namespaces
 from cluster.cdk8s.agentplane import (
     actions,
     app as app_component,
@@ -16,13 +18,31 @@ from cluster.cdk8s.agentplane import (
     egress,
     electric,
     llm_ingress,
-    namespace,
     notifications,
     sandbox_pod,
     sandbox_service,
 )
 from cluster.cdk8s.agentplane.environment import Environment
 from cluster.cdk8s.fleet_rules import add_fleet_rules
+from cluster.cdk8s.namespaces import Vpa
+
+
+class Namespace(Construct):
+    """The namespace shared by an Agentplane environment."""
+
+    def __init__(self, scope: Construct, id: str, env: Environment) -> None:
+        super().__init__(scope, id)
+        namespaces.namespace(
+            self,
+            "namespace",
+            name=env.namespace,
+            # Runner Pods are Sandbox-owned, not Deployments; nothing here is VPA-managed.
+            vpa=Vpa.DISABLED,
+            # Standing agent access to metadata and logs (Kyverno-generated bindings).
+            # Environment-specific write access is layered on by its chart.
+            labels={"name": env.namespace},
+            annotations={"description": env.description},
+        )
 
 
 def environment_chart(app: App, env: Environment) -> Chart:
@@ -32,7 +52,7 @@ def environment_chart(app: App, env: Environment) -> Chart:
     Deliberately excludes testing-only RBAC and namespace resource limits; `testing.chart`
     adds them."""
     chart = Chart(app, "agentplane", disable_resource_name_hashes=True)
-    namespace.Namespace(chart, "namespace", env)
+    Namespace(chart, "namespace", env)
     database.Db(chart, "db", env)
     electric.Electric(chart, "electric", env)
     llm_ingress.LlmIngress(chart, "llm-ingress", env)
