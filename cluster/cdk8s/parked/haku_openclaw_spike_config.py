@@ -39,7 +39,7 @@ from cluster.cdk8s.flux import (
     flux_kustomization,
     flux_kustomization_depends_on_many,
 )
-from cluster.cdk8s.forgejo.images import SECRET_NAME, forgejo_images_creds_external_secret
+from cluster.cdk8s.forgejo_registry.chart import SECRET_NAME, forgejo_images_creds_external_secret
 from cluster.cdk8s.generation import config_map_chart, copy_source_file
 from cluster.cdk8s.manifest_roots import PARKED_ROOT
 from cluster.cdk8s.namespaces import Vpa

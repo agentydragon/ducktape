@@ -38,7 +38,7 @@ py_library(
         "//cluster/cdk8s:probes",
         "//cluster/cdk8s:secret_ref",
         "//cluster/cdk8s/external_secrets:minted_secret",
-        "//cluster/cdk8s/forgejo:images",
+        "//cluster/cdk8s/forgejo_registry:chart",
         "//cluster/cdk8s/providers/cilium:ciliumnetworkpolicy",
         "//cluster/cdk8s/providers/cilium:network_policy",
         "//cluster/cdk8s/providers/external_secrets:externalsecret",

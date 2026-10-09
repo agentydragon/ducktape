@@ -17,7 +17,7 @@ py_library(
         "//cluster/cdk8s:service_ref",
         "//cluster/cdk8s/external_secrets:minted_secret",
         "//cluster/cdk8s/forgejo:app",
-        "//cluster/cdk8s/forgejo:images",
+        "//cluster/cdk8s/forgejo_registry:chart",
         "//cluster/cdk8s/providers/cnpg:cluster",
         "//cluster/cdk8s/providers/cnpg:cnpg_database",
         "//cluster/cdk8s/providers/cnpg:database",

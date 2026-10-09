@@ -54,7 +54,7 @@ def check_image_automation_webhook(cluster: ParsedCluster) -> list[str]:
         *(
             f"ImageRepository '{name}' is not listed in any Receiver; new tags will only be picked up on the 5m poll, "
             "not on push. Add it to the Receiver for its registry (cluster/cdk8s/flux_webhook/chart.py for GHCR, "
-            "cluster/cdk8s/forgejo/images.py for the Forgejo registry)."
+            "cluster/cdk8s/forgejo_registry/chart.py for the Forgejo registry)."
             for name in sorted(image_repos - webhook_repos)
         ),
         *(

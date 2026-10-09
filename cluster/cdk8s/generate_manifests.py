@@ -121,11 +121,10 @@ from cluster.cdk8s.forgejo import (
     db as forgejo_db,
     flux_kustomizations as forgejo_flux_kustomizations,
     gitops_modules as forgejo_gitops_modules,
-    image_automation as forgejo_image_automation,
-    images as forgejo_images,
     namespace as forgejo_namespace,
     token_rotation as forgejo_token_rotation,
 )
+from cluster.cdk8s.forgejo_registry import chart as forgejo_images, image_automation as forgejo_image_automation
 from cluster.cdk8s.gaffer_private_source import (
     flux_kustomizations as gaffer_private_source_flux_kustomizations,
     source as gaffer_private_source,

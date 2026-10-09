@@ -34,7 +34,7 @@ from constructs import Construct
 
 from cluster.cdk8s import cilium, pod_policy
 from cluster.cdk8s.agentplane import dex
-from cluster.cdk8s.forgejo.images import forgejo_images_creds_secret_ref
+from cluster.cdk8s.forgejo_registry.chart import forgejo_images_creds_secret_ref
 from cluster.cdk8s.providers.cilium.network_policy import EgressRule, IngressRule, NetworkPolicy, deny_all_egress
 
 _NAMESPACE = "agentplane-testing"

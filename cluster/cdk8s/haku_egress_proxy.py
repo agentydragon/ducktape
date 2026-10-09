@@ -13,7 +13,7 @@ from cdk8s_plus_34 import k8s
 from cluster.cdk8s import cilium, egress_fences
 from cluster.cdk8s.agents import namespaces
 from cluster.cdk8s.cert_manager.interception_ca import interception_root_ca
-from cluster.cdk8s.forgejo.images import forgejo_images_creds_external_secret
+from cluster.cdk8s.forgejo_registry.chart import forgejo_images_creds_external_secret
 from cluster.cdk8s.generation import write_charts
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 from cluster.cdk8s.service_ref import Pods, Port, ServiceRef

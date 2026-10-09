@@ -13,7 +13,7 @@ import pytest_bazel
 from pydantic import BaseModel
 
 from cluster.cdk8s.dns_automation import DnsRecordsVars
-from cluster.cdk8s.forgejo.images import ForgejoImagesVars
+from cluster.cdk8s.forgejo_registry.chart import ForgejoImagesVars
 from cluster.cdk8s.litellm.keys import KeysVars
 from util.bazel.runfiles import get_required_path
 

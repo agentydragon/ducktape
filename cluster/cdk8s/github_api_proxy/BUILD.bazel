@@ -28,7 +28,7 @@ py_library(
         "//cluster/cdk8s:service_ref",
         "//cluster/cdk8s/cert_manager:cluster_ca",
         "//cluster/cdk8s/cert_manager:config",
-        "//cluster/cdk8s/forgejo:images",
+        "//cluster/cdk8s/forgejo_registry:chart",
         "//cluster/cdk8s/providers/cert_manager:cert_manager_certificate",
         "//cluster/cdk8s/providers/cert_manager:certificate",
         "//cluster/cdk8s/providers/cilium:ciliumnetworkpolicy",
