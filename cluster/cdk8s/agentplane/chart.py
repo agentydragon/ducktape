@@ -29,8 +29,8 @@ def environment_chart(app: App, env: Environment) -> Chart:
     """The shared objects. The fleet rules attach as a synth-time validation, so a caller
     may keep adding objects to the returned chart and they are still checked.
 
-    Deliberately excludes `rbac.AgentRbac` and `testing_resource_limits.TestingNamespaceResourceLimits`;
-    both are testing-only (see their docstrings)."""
+    Deliberately excludes testing-only `rbac.AgentRbac` and namespace resource limits;
+    `testing.chart` adds them."""
     chart = Chart(app, "agentplane", disable_resource_name_hashes=True)
     rbac.Namespace(chart, "namespace", env)
     database.Db(chart, "db", env)
