@@ -19,7 +19,7 @@ from sqlalchemy.ext.asyncio import create_async_engine
 
 from agentplane.action_service.operator_oidc_settings import OperatorOidcSettings
 from agentplane.app.action_federation import FederatedOperatorActions
-from agentplane.app.action_federation_settings import DirectFederationSettings
+from agentplane.app.action_federation_settings import DirectFederationSettings, parse_action_service_url
 from agentplane.app.action_policy import ActionPolicyInventory, ActionPolicyUnavailable, ActionPolicyView
 from agentplane.app.api import create_app
 from agentplane.app.conftest import stored_login
@@ -224,7 +224,7 @@ async def test_a_policy_the_service_cannot_be_asked_for_is_said_so_in_the_frame(
     app.state.operator_actions = (
         FederatedOperatorActions(
             DirectFederationSettings(
-                service_url="http://test-actions.invalid",
+                service_url=parse_action_service_url("http://test-actions.invalid"),
                 login_jwks_uri=f"http://127.0.0.1:{pick_free_port()}/jwks",
                 target=OperatorOidcSettings(
                     issuer="https://login.test.invalid/application/o/actions/",

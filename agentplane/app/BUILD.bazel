@@ -974,6 +974,21 @@ py_test(
 )
 
 py_test(
+    name = "test_action_federation_settings",
+    srcs = ["test_action_federation_settings.py"],
+    deps = [
+        ":action_federation_settings",
+        ":conftest",
+        ":model_catalog",
+        ":settings",
+        "//:conftest",
+        "@pypi//pydantic",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
     name = "test_action_federation",
     size = "medium",
     srcs = ["test_action_federation.py"],

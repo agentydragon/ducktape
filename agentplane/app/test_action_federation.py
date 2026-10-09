@@ -20,7 +20,7 @@ from starlette.routing import Route
 
 from agentplane.action_service.operator_oidc_settings import OperatorOidcSettings, OperatorTokenProfile
 from agentplane.app.action_federation import FederatedOperatorActions, OperatorFederationError
-from agentplane.app.action_federation_settings import DirectFederationSettings
+from agentplane.app.action_federation_settings import DirectFederationSettings, parse_action_service_url
 from agentplane.app.conftest import stored_login
 from agentplane.app.database import connect
 from agentplane.app.oidc import OIDCSettings
@@ -87,7 +87,7 @@ async def test_direct_dex_token_requires_both_explicit_profiles(
         public_base_url="http://test-app.invalid",
     )
     config = DirectFederationSettings(
-        service_url="http://test-actions.invalid",
+        service_url=parse_action_service_url("http://test-actions.invalid"),
         login_jwks_uri=f"{dex_session.issuer}/keys",
         login_token_profile=login_profile,
         target=OperatorOidcSettings(
@@ -137,7 +137,7 @@ async def login_provider() -> AsyncIterator[LoginProvider]:
         public_base_url="http://test-app.invalid",
     )
     config = DirectFederationSettings(
-        service_url="http://test-actions.invalid",
+        service_url=parse_action_service_url("http://test-actions.invalid"),
         login_jwks_uri=f"{issuer}jwks/",
         target=OperatorOidcSettings(issuer=issuer, audience=CLIENT, jwks_uri=f"{issuer}jwks/"),
         scope="openid",

@@ -47,7 +47,11 @@ from agentplane.action_service.service import ActionService
 from agentplane.action_service.testing.callers import PERSONAL, admitted_callers
 from agentplane.action_service.updates import ActionUpdates
 from agentplane.app.action_federation import FederatedOperatorActions
-from agentplane.app.action_federation_settings import DirectFederationSettings, ExchangeFederationSettings
+from agentplane.app.action_federation_settings import (
+    DirectFederationSettings,
+    ExchangeFederationSettings,
+    parse_action_service_url,
+)
 from agentplane.app.action_policy import (
     ActionPolicyInventory,
     ActionPolicyUnavailable,
@@ -296,14 +300,14 @@ async def review(
         )
         federation = (
             DirectFederationSettings(
-                service_url="http://test-actions.invalid",
+                service_url=parse_action_service_url("http://test-actions.invalid"),
                 login_jwks_uri=f"{idp_url}jwks/",
                 target=target,
                 scope="openid profile",
             )
             if direct_federation
             else ExchangeFederationSettings(
-                service_url="http://test-actions.invalid",
+                service_url=parse_action_service_url("http://test-actions.invalid"),
                 token_endpoint=AnyHttpUrl(f"http://127.0.0.1:{pick_free_port()}/exchange")
                 if operator_connection == "exchange-disconnected"
                 else AnyHttpUrl(f"{idp_origin}/exchange"),

@@ -27,7 +27,7 @@ from agentplane.action_service.operator_oidc_settings import OperatorOidcSetting
 from agentplane.action_service.sandbox.actions import SandboxAction
 from agentplane.action_service.sandbox.binding import SandboxExecutorBinding
 from agentplane.action_service.settings import ActionServiceDeploymentSettings, WebPushDeploymentSettings
-from agentplane.app.action_federation_settings import ExchangeFederationSettings
+from agentplane.app.action_federation_settings import ExchangeFederationSettings, parse_action_service_url
 from cluster.cdk8s import cilium, external_creds, ha_mcp, node_scheduling
 from cluster.cdk8s.agentplane import actions, command_sandbox, notifications, staging_config
 from cluster.cdk8s.agentplane.actions_staging_policies import add_staging_action_policies
@@ -104,7 +104,7 @@ _FEDERATION_TARGET = OperatorOidcSettings(
 )
 _ACTION_FEDERATION = ExchangeFederationSettings(
     mode="exchange",
-    service_url=actions.service(STAGING_NAMESPACE).url,
+    service_url=parse_action_service_url(actions.service(STAGING_NAMESPACE).url),
     token_endpoint=AnyHttpUrl(f"{_AUTHENTIK}/application/o/token/"),
     login_jwks_uri=f"{_AUTHENTIK}/application/o/agentplane-staging/jwks/",
     target=_FEDERATION_TARGET,

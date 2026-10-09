@@ -34,7 +34,7 @@ from agentplane.action_service.catalog import ActionGroup, McpExecutorBinding
 from agentplane.action_service.mcp_settings import McpOAuthServer
 from agentplane.action_service.operator_oidc_settings import OperatorOidcSettings, OperatorTokenProfile
 from agentplane.action_service.settings import ActionServiceDeploymentSettings
-from agentplane.app.action_federation_settings import DirectFederationSettings
+from agentplane.app.action_federation_settings import DirectFederationSettings, parse_action_service_url
 from cluster.cdk8s import agent_access_profiles as access, cilium
 from cluster.cdk8s.agentplane import actions, app as app_component, app_settings, dex, egress
 from cluster.cdk8s.agentplane.actions_testing_fixtures import (
@@ -82,7 +82,7 @@ _FEDERATION_TARGET = OperatorOidcSettings(
 )
 _ACTION_FEDERATION = DirectFederationSettings(
     mode="direct",
-    service_url=actions.service(TESTING_NAMESPACE).url,
+    service_url=parse_action_service_url(actions.service(TESTING_NAMESPACE).url),
     login_jwks_uri=f"{_DEX_ISSUER}/keys",
     login_token_profile=OperatorTokenProfile.DEX,
     target=_FEDERATION_TARGET,

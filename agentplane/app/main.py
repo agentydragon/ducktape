@@ -111,7 +111,7 @@ async def async_main(settings: Settings) -> None:
     async with (
         ApiClient(configuration=configuration) as api,
         httpx.AsyncClient(
-            base_url=settings.action_federation.service_url
+            base_url=str(settings.action_federation.service_url)
             if settings.action_federation
             else "http://disabled.invalid",
             timeout=10,
