@@ -23,7 +23,7 @@ def _validate_action_service_url(value: AnyHttpUrl) -> AnyHttpUrl:
 
 ActionServiceUrl = Annotated[
     AnyHttpUrl,
-    UrlConstraints(allowed_schemes=["http", "https"], host_required=True, preserve_empty_path=True),
+    UrlConstraints(host_required=True, preserve_empty_path=True),
     AfterValidator(_validate_action_service_url),
 ]
 _ACTION_SERVICE_URL: TypeAdapter[ActionServiceUrl] = TypeAdapter(ActionServiceUrl)
