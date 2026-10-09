@@ -209,6 +209,7 @@ py_package(
     packages = [
         "util",
         "util.bazel",
+        "util.exec",
     ],
     # `util.bazel.runfiles` is intentionally not shipped: it calls into
     # `rules_python.runfiles`, which fails when imported from a path that
@@ -230,6 +231,8 @@ py_package(
         ":urls",
         "//util/bazel:subprocess",
         "//util/bazel:workspace",
+        "//util/exec:models",
+        "//util/exec:subprocess",
     ],
 )
 
