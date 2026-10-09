@@ -48,6 +48,7 @@ py_library(
         "//agentplane/app:electric",
         "//agentplane/app:identity",
         "//agentplane/app:live",
+        "//agentplane/app:model_catalog",
         "//agentplane/app:operator_sessions",
         "//agentplane/app/threads:bridge",
         "//agentplane/app/threads:ingestion",
