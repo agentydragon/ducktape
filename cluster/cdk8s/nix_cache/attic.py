@@ -23,7 +23,7 @@ from external_secrets_crds.io.external_secrets import (
 from cluster.cdk8s import cnpg, external_creds, namespaces, node_scheduling
 from cluster.cdk8s.config_format import yaml_config
 from cluster.cdk8s.flux import ConfigMapArgs
-from cluster.cdk8s.forgejo import images as forgejo_images
+from cluster.cdk8s.forgejo_registry import chart as forgejo_images
 from cluster.cdk8s.gateway import https_route
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 from cluster.cdk8s.namespaces import Vpa

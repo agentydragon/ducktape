@@ -25,7 +25,7 @@ from prometheus_operator_crds.com.coreos.monitoring import (
 
 from cluster.cdk8s import external_creds
 from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on_many
-from cluster.cdk8s.forgejo import images as forgejo_images
+from cluster.cdk8s.forgejo_registry import chart as forgejo_images
 from cluster.cdk8s.grafana_dashboards import DashboardFile
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT, HAND_WRITTEN_ROOT
 from cluster.cdk8s.providers.external_secrets.external_secret import ExternalSecret, remote_data

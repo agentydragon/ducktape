@@ -40,7 +40,7 @@ from cluster.cdk8s import node_scheduling
 from cluster.cdk8s.config_format import yaml_config
 from cluster.cdk8s.external_secrets.minted_secret import mint_bearer_secret
 from cluster.cdk8s.flux import ConfigMapArgs, GeneratorOptions, kustomize_kustomization
-from cluster.cdk8s.forgejo.images import SECRET_NAME, forgejo_images_creds_external_secret
+from cluster.cdk8s.forgejo_registry.chart import SECRET_NAME, forgejo_images_creds_external_secret
 from cluster.cdk8s.gateway import https_route
 from cluster.cdk8s.generation import write_charts, write_yaml
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT

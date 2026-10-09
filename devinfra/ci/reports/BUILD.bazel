@@ -1,0 +1,19 @@
+load("//devinfra/python:defs.bzl", "py_library", "py_test")
+
+exports_files(["publish.py"])
+
+py_library(
+    name = "publish",
+    srcs = ["publish.py"],
+)
+
+py_test(
+    name = "test_publish",
+    srcs = ["test_publish.py"],
+    deps = [
+        ":publish",
+        "//:conftest",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)

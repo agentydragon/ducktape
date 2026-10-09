@@ -30,7 +30,7 @@ from cluster.cdk8s.external_secrets.minted_secret import mint_bearer_secret
 from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on_many
 from cluster.cdk8s.flux_image_automation_ghcr.image_automation import AUTOMATION_NAME
 from cluster.cdk8s.flux_webhook.chart import WEBHOOK_HOST
-from cluster.cdk8s.forgejo import image_automation as forgejo_image_automation
+from cluster.cdk8s.forgejo_registry import image_automation as forgejo_image_automation
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 from cluster.cdk8s.namespaces import Vpa
 from cluster.cdk8s.providers.external_secrets.external_secret import DataFrom, ExternalSecret, SecretStoreRef

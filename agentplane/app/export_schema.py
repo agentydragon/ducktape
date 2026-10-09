@@ -18,13 +18,14 @@ from kubernetes_asyncio.client import CoreV1Api
 from pydantic import TypeAdapter
 
 from agentplane.app.action_policy import ActionPolicyInventory
-from agentplane.app.api import ModelCatalog, ModelOption, create_app
+from agentplane.app.api import create_app
 from agentplane.app.database import connect
 from agentplane.app.database_updates import DatabaseUpdates
 from agentplane.app.decisions import DecisionsClient
 from agentplane.app.egress_access import EgressAccess
 from agentplane.app.electric import ThreadScopeResponse
 from agentplane.app.live import LiveIndex
+from agentplane.app.model_catalog import ModelCatalog, ModelOption
 from agentplane.app.operator_sessions import OperatorSessionStore
 from agentplane.app.threads.bridge import RunnerBridge
 from agentplane.app.threads.events.event_log import EventLogStore

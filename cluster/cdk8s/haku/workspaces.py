@@ -15,7 +15,8 @@ from external_secrets_crds.io.external_secrets import (
 
 from cluster.cdk8s import external_creds
 from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on_many
-from cluster.cdk8s.forgejo import images as forgejo_images, secret_copy
+from cluster.cdk8s.forgejo import secret_copy
+from cluster.cdk8s.forgejo_registry import chart as forgejo_images
 from cluster.cdk8s.haku.namespace import NAMESPACE
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
 from cluster.cdk8s.providers.external_secrets.external_secret import (

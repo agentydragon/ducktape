@@ -4,12 +4,14 @@ environment's own module decides which credentials it gets."""
 import pytest_bazel
 from cdk8s import Testing as Cdk8sTesting
 
-from cluster.cdk8s.agentplane.egress_credentials import TESTING_NAMESPACE, EgressCredentials
+from cluster.cdk8s.agentplane.egress_credentials import TESTING_CREDENTIALS_NAMESPACE, EgressCredentials
 
 
 def test_only_the_proxy_reads_and_nothing_is_copied() -> None:
     chart = Cdk8sTesting.chart()
-    EgressCredentials(chart, "credentials", namespace=TESTING_NAMESPACE, proxy_namespace="agentplane-testing")
+    EgressCredentials(
+        chart, "credentials", namespace=TESTING_CREDENTIALS_NAMESPACE, proxy_namespace="agentplane-testing"
+    )
     objects = Cdk8sTesting.synth(chart)
     assert not any(obj["kind"] in {"ExternalSecret", "ClusterSecretStore", "ServiceAccount"} for obj in objects)
     bindings = [obj for obj in objects if obj["kind"] == "RoleBinding"]

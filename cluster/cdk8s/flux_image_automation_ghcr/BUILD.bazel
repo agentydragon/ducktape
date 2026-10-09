@@ -7,7 +7,7 @@ py_library(
     srcs = ["image_automation.py"],
     visibility = [
         "//cluster/cdk8s:__pkg__",
-        "//cluster/cdk8s/forgejo:__pkg__",
+        "//cluster/cdk8s/forgejo_registry:__pkg__",
     ],
     deps = [
         "//cluster/cdk8s:ducktape_flux",

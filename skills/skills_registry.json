@@ -301,6 +301,13 @@
       "target": "//devinfra/ci/skills/ci_latency:ci_latency_skill",
       "output": "bb-out/bazel-out/k8-fastbuild/bin/devinfra/ci/skills/ci_latency/ci_latency.skill",
       "filename": "ci_latency.skill"
+    },
+    {
+      "name": "ci_reliability",
+      "pkg": "skill-ci_reliability",
+      "target": "//devinfra/ci/skills/ci_reliability:ci_reliability_skill",
+      "output": "bb-out/bazel-out/k8-fastbuild/bin/devinfra/ci/skills/ci_reliability/ci_reliability.skill",
+      "filename": "ci_reliability.skill"
     }
   ]
 }

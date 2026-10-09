@@ -21,11 +21,12 @@ from starlette.types import Message, Scope
 from agentplane.action_service.client import OperatorActionServiceClient
 from agentplane.app.action_federation import FederatedOperatorActions
 from agentplane.app.action_policy import ActionPolicyInventory
-from agentplane.app.api import ModelCatalog, ModelOption, create_app
+from agentplane.app.api import create_app
 from agentplane.app.database_updates import DatabaseUpdates
 from agentplane.app.decisions import DecisionsClient
 from agentplane.app.egress_access import EgressAccess
 from agentplane.app.live import LiveIndex
+from agentplane.app.model_catalog import ModelCatalog, ModelOption
 from agentplane.app.oidc import INSECURE_COOKIE, OIDCSettings
 from agentplane.app.operator_sessions import BrowserSession, OperatorSession, OperatorSessionStore, request_session
 from agentplane.app.testing.model_test_data import TEST_REASONING_EFFORTS

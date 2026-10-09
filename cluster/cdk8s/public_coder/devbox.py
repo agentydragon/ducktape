@@ -141,7 +141,7 @@ def virtual_machine(scope: Construct) -> VirtualMachine:
         # state survives an image update or VM restart). Flux ImageUpdateAutomation
         # sets the tag in image-pins/ after .github/workflows/public-coder-devbox-image.yml
         # publishes a new one -- see the public-coder-devbox ImagePolicy in
-        # forgejo/image_automation.py.
+        # forgejo_registry/image_automation.py.
         image=_IMAGE,
         # 4 cores / 8Gi limit, 2 cores / 4Gi request: the two hil, kubevirt.io/schedulable=true
         # nodes (ovh-ns102453, ovh-ns103711) are 8-core/32Gi OVH KS-5 boxes already carrying the

@@ -32,7 +32,7 @@ from cdk8s_plus_34 import (
 from constructs import Construct
 
 from cluster.cdk8s import node_scheduling, pod_policy
-from cluster.cdk8s.forgejo.images import forgejo_images_creds_secret_ref
+from cluster.cdk8s.forgejo_registry.chart import forgejo_images_creds_secret_ref
 from cluster.cdk8s.haku import console
 
 NAME = "migration"

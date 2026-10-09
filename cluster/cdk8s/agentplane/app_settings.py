@@ -1,16 +1,13 @@
-"""Shared agentplane/app/main.py `Settings` shape assembled by both
-staging_config.py and testing_config.py, which own the per-namespace model
-routes and policies passed in here.
-"""
+"""Shared app settings and presets, parameterized by each environment's model routes and policies."""
 
 from __future__ import annotations
 
 from pathlib import Path
 
-from agentplane.app.action_federation import ActionFederationSettings
-from agentplane.app.api import ModelCatalog, ModelOption
-from agentplane.app.main import AppSettingsConfig
+from agentplane.app.action_federation_settings import ActionFederationSettings
+from agentplane.app.model_catalog import ModelCatalog, ModelOption
 from agentplane.app.presets import SandboxPreset, ThreadPreset
+from agentplane.app.settings import AppSettingsConfig
 from agentplane.runner.harness import Harness
 from agentplane.sandbox_service.kubernetes_grants import KubernetesGrant
 

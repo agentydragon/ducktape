@@ -22,7 +22,7 @@ from cilium_crds.io.cilium import (
 from cluster.cdk8s import cilium, cnpg, gateway, namespaces, node_scheduling
 from cluster.cdk8s.cert_manager.config import LETSENCRYPT_ISSUER
 from cluster.cdk8s.flux import ConfigMapArgs, GeneratorOptions
-from cluster.cdk8s.forgejo import images as forgejo_images
+from cluster.cdk8s.forgejo_registry import chart as forgejo_images
 from cluster.cdk8s.haku import namespace
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 from cluster.cdk8s.namespaces import Vpa

@@ -1,20 +1,28 @@
 load("@aspect_bazel_lib//lib:jq.bzl", "jq")
 load("@bazel_skylib//rules:diff_test.bzl", "diff_test")
 load("//devinfra/python:defs.bzl", "py_library", "py_test")
-load("//skills:defs.bzl", "skill_package")
+load("//skills:defs.bzl", "skill_mapping", "skill_package")
 
 skill_package(
     name = "ci_latency",
-    srcs = [
-        "SKILL.md",
-        "scripts/attribution.py",
-        "scripts/checks.jq",
-        "scripts/collect.sh",
-        "scripts/contention.jq",
-        "scripts/evidence.sh",
-        "scripts/inspect.sh",
-        "scripts/publish.py",
-        "scripts/summarize.jq",
+    contents = [
+        skill_mapping(
+            srcs = [
+                "SKILL.md",
+                "scripts/attribution.py",
+                "scripts/checks.jq",
+                "scripts/collect.sh",
+                "scripts/contention.jq",
+                "scripts/evidence.sh",
+                "scripts/inspect.sh",
+                "scripts/summarize.jq",
+            ],
+            preserve_paths = True,
+        ),
+        skill_mapping(
+            srcs = ["//devinfra/ci/reports:publish.py"],
+            prefix = "scripts",
+        ),
     ],
 )
 
@@ -62,7 +70,6 @@ py_library(
     name = "artifact_tools",
     srcs = [
         "scripts/attribution.py",
-        "scripts/publish.py",
     ],
 )
 

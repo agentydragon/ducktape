@@ -1,5 +1,5 @@
 """Generates agentplane-staging's `agentplane-app-config` ConfigMap's `config.yaml`
-content -- agentplane/app/main.py's `Settings`, mounted by the Deployment. See
+content -- agentplane/app/settings.py's `AppSettingsConfig`, mounted by the Deployment. See
 model_catalog/catalog.py for the model-name scheme.
 """
 
@@ -7,9 +7,9 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from agentplane.app.action_federation import ActionFederationSettings
-from agentplane.app.main import AppSettingsConfig
+from agentplane.app.action_federation_settings import ActionFederationSettings
 from agentplane.app.presets import SandboxPreset, ThreadPreset
+from agentplane.app.settings import AppSettingsConfig
 from agentplane.runner.harness import Harness
 from agentplane.sandbox_service.kubernetes_grants import RoleBindingGrant, RoleRef
 from cluster.cdk8s import agent_access_profiles
@@ -55,10 +55,9 @@ from cluster.cdk8s.agentplane.egress_staging_credentials import (
     PLAID_PGWEB_POLICY,
 )
 from cluster.cdk8s.agentplane.sandbox_pod import TOOL_CONFIG_READER_ROLE_NAME
-from cluster.cdk8s.model_selections import STAGING_APP_MODELS
+from cluster.cdk8s.model_selections import HarnessRoutes
 from model_catalog.catalog import GPT6_LUNA_RESPONSES, OLLAMA_QWEN_IQ4XS_256K
 
-_NAMESPACE = "agentplane-staging"
 _THREAD_PRESET_FINANCE_AGENT_CODEX = "finance-agent-codex"
 _THREAD_PRESET_HAKU_CODEX = "haku-codex"
 _HAKU_THREAD_SETUP = Path(__file__).with_name("haku_thread_setup.sh").read_text(encoding="utf-8")
@@ -101,14 +100,15 @@ HAKU_ACTION_POLICY_SETS = (
 
 
 def config(
+    *,
+    namespace: str,
+    models: HarnessRoutes,
     action_federation: ActionFederationSettings | None = None,
     sandbox_service_grpc_channel_options: dict[str, int | str] | None = None,
 ) -> AppSettingsConfig:
     cfg = settings(
-        namespace=_NAMESPACE,
-        # The staging key admits GPT-6 subscription routes, the full Antigravity lineup,
-        # and local Ollama chat routes.
-        models=STAGING_APP_MODELS,
+        namespace=namespace,
+        models=models,
         thread_preset_codex_model=GPT6_LUNA_RESPONSES,
         action_federation=action_federation,
         sandbox_service_grpc_channel_options=sandbox_service_grpc_channel_options,
@@ -116,7 +116,7 @@ def config(
         kubernetes_grants={
             "sandbox-tool-config": RoleBindingGrant(
                 kind="RoleBinding",
-                namespace=_NAMESPACE,
+                namespace=namespace,
                 role_ref=RoleRef(kind="Role", name=TOOL_CONFIG_READER_ROLE_NAME),
             ),
             **agent_access_profiles.catalog(),

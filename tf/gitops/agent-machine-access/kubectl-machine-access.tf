@@ -5,7 +5,7 @@
 # kube-api-proxy access and kubectl-machine-mcp. The provider's machine-only
 # scope mapping is an explicit principal-to-groups allowlist.
 #
-# Consumer: the authentik-jwt-rotation CronJob (cluster/cdk8s/authentik_jwt_rotation.py). It mints JWTs
+# Consumer: the authentik-jwt-rotation CronJob (cluster/cdk8s/authentik/jwt_rotation.py). It mints JWTs
 # for Claude Code Web, Haku, the agent-box Codex VM, and other explicitly
 # configured machine principals.
 
@@ -43,7 +43,7 @@ resource "authentik_provider_oauth2" "kubectl_sandbox_client_credentials" {
   include_claims_in_id_token = true
 
   # 45d access-token validity — comfortable margin over the biweekly rotation
-  # CronJob. See cluster/cdk8s/authentik_jwt_rotation.py for cadence math.
+  # CronJob. See cluster/cdk8s/authentik/jwt_rotation.py for cadence math.
   access_token_validity = "hours=1080"
 
   property_mappings = [

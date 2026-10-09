@@ -24,7 +24,7 @@ from cluster.cdk8s import namespaces
 from cluster.cdk8s.config_format import yaml_config
 from cluster.cdk8s.external_secrets.minted_secret import mint_bearer_secret
 from cluster.cdk8s.flux import ConfigMapArgs
-from cluster.cdk8s.forgejo.images import SECRET_NAME, forgejo_images_creds_external_secret
+from cluster.cdk8s.forgejo_registry.chart import SECRET_NAME, forgejo_images_creds_external_secret
 from cluster.cdk8s.gateway import https_route
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 from cluster.cdk8s.namespaces import Vpa
@@ -356,7 +356,7 @@ def chart(app: App) -> Chart:
         # agentplane-staging's egress proxy substitutes this into a sandbox's Google read requests
         # (cluster/cdk8s/agentplane/egress_staging_credentials.py's `google-readonly`
         # EgressCredential). The proxy's Secret watch is scoped to its isolated credentials
-        # namespace (cluster/cdk8s/agentplane/egress_credentials.py's STAGING_NAMESPACE), not the
+        # namespace (cluster/cdk8s/agentplane/egress_credentials.py's STAGING_CREDENTIALS_NAMESPACE), not the
         # app namespace. Not agentplane-testing: testing reaches no real account.
         ["agentplane-staging-egress-credentials"],
     )
