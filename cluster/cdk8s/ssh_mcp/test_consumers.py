@@ -34,8 +34,7 @@ def _locate(relative: str) -> Path:
 
 @pytest.fixture(scope="module")
 def ssh_config() -> ssh_mcp_config.SshMcpConfig:
-    chart = Cdk8sTesting.chart()
-    return ssh_mcp_config.load(public_coder_devbox.ssh_service(chart))
+    return ssh_mcp_config.load(public_coder_devbox.SSH)
 
 
 @pytest.fixture(scope="module")

@@ -20,8 +20,6 @@ py_library(
         "//cluster/cdk8s:service_ref",
         "//util/bazel:runfiles",
         "//x/ssh_mcp_server:server",
-        "@pypi//cdk8s",
-        "@pypi//cdk8s_plus_34",
     ],
 )
 

@@ -8,8 +8,6 @@ whose image-automation marker overrides the VM placeholder image tag
 
 from __future__ import annotations
 
-from pathlib import Path
-
 from cdk8s import ApiObjectMetadata, App, Chart
 from cdk8s_plus_34 import Pods, Service, ServiceType, k8s
 from constructs import Construct
@@ -34,17 +32,9 @@ from kubevirt_virtualmachine_crds.io.kubevirt import (
     VirtualMachineSpecTemplateSpecVolumesPersistentVolumeClaim,
     VirtualMachineSpecTemplateSpecVolumesSecret,
 )
-from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
 
 from cluster.cdk8s import external_creds, node_scheduling, service_ref
-from cluster.cdk8s.flux import (
-    SOPS_DECRYPTION,
-    Kustomization,
-    flux_kustomization,
-    flux_kustomization_depends_on_many,
-    kustomize_kustomization,
-)
-from cluster.cdk8s.generation import write_app, write_yaml
+from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on_many
 from cluster.cdk8s.kubevirt.virtual_machine import container_disk_vm, domain_labels
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 from cluster.cdk8s.providers.external_secrets.external_secret import ExternalSecret, remote_data
@@ -205,39 +195,28 @@ def virtual_machine(scope: Construct) -> VirtualMachine:
     )
 
 
-def write_manifests(root: Path) -> Service:
-    """Write the devbox manifests and return the generated SSH Service."""
-    app = App()
+def chart(app: App) -> Chart:
+    """The devbox VM and its in-cluster SSH Service."""
     chart = Chart(app, VM_NAME, disable_resource_name_hashes=True)
-    service = ssh_service(chart)
+    ssh_service(chart)
     virtual_machine(chart)
     _bazel_cache_claim(chart)
     _buildbuddy_api_key(chart)
-    write_yaml(
-        root / OUTPUT_DIR / "kustomization.yaml",
-        kustomize_kustomization(
-            resources=["ssh-host-key.sops.yaml", write_app(root, OUTPUT_DIR, app)], components=["./image-pins"]
-        ),
-    )
-    return service
+    return chart
 
 
 def public_coder_agent_devbox(
-    chart: Chart,
-    artifact: ArtifactGeneratorSpecArtifacts,
-    kubevirt: Kustomization,
-    external_secrets_operator: Kustomization,
+    chart: Chart, directory: RenderedDirectory, kubevirt: Kustomization, external_secrets_operator: Kustomization
 ) -> Kustomization:
     name = "public-coder-agent-devbox"
     return flux_kustomization(
         chart,
         name,
-        artifact,
+        directory,
         # A deliberately halted VM is not Ready. Do not block Flux on guest readiness.
         wait=False,
         deletion_policy=KustomizationSpecDeletionPolicy.ORPHAN,
         timeout="30m",
-        decryption=SOPS_DECRYPTION,
         depends_on=flux_kustomization_depends_on_many(kubevirt, external_secrets_operator),
         description=(
             "Paused Public Coder devbox: VM halted and image restart controller removed; "

@@ -8,10 +8,6 @@ here so the two generated outputs cannot disagree.
 from __future__ import annotations
 
 from dataclasses import asdict, dataclass
-from typing import Any, cast
-
-from cdk8s import ApiObject
-from cdk8s_plus_34 import Service
 
 from cluster.cdk8s.service_ref import Pods, Port, ServiceRef
 from util.bazel.runfiles import get_required_path, own_repo_rlocation
@@ -98,12 +94,9 @@ def _host_key(relative: str) -> str:
     return f"{key_type} {key}"
 
 
-def load(devbox_service: Service) -> SshMcpConfig:
-    """Read canonical key inputs and derive the SSH endpoint from its cdk8s Service."""
-    service = cast(dict[str, Any], ApiObject.of(devbox_service).to_json())
-    service_metadata = service["metadata"]
-    devbox_host = f"{service_metadata['name']}.{service_metadata['namespace']}.svc.cluster.local"
-    [ssh_port] = service["spec"]["ports"]
+def load(devbox_ssh: ServiceRef) -> SshMcpConfig:
+    """Read canonical key inputs and derive the SSH endpoint from its Service reference."""
+    devbox_host = devbox_ssh.fqdn
     key_type, key, *_comment = _read_input(DEVBOX_HOST_KEY).split()
     targets = _targets(devbox_host)
     settings: dict[str, object] = {
@@ -125,7 +118,7 @@ def load(devbox_service: Service) -> SshMcpConfig:
         devbox_host=devbox_host,
         devbox_key_type=key_type,
         devbox_key=key,
-        devbox_port=int(ssh_port["port"]),
+        devbox_port=devbox_ssh.port.number,
         targets=targets,
         settings=settings,
         known_hosts=known_hosts,

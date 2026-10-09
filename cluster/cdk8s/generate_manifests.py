@@ -252,7 +252,6 @@ def generate_manifests(root: Path) -> None:
     """Write every converted directory's generated manifests under ``root``."""
     write_generated_readme(root)
     mesh = nebula_mesh.load(get_required_path("_main/nebula-mesh.json"))
-    devbox_service = public_coder_devbox.write_manifests(root)
     agentplane_staging_resource_chart = agentplane_generation.write_environment_manifests(
         root, staging.ENV, staging.chart
     )
@@ -268,7 +267,7 @@ def generate_manifests(root: Path) -> None:
     )
     public_coder_app.write_manifests(root)
     public_coder_proxy.write_manifests(root, aiquota_bearer=aiquota.PUBLIC_CODER_BEARER.secret_key)
-    ssh_config = ssh_mcp_config.load(devbox_service)
+    ssh_config = ssh_mcp_config.load(public_coder_devbox.SSH)
     public_coder_sshpiper.write_manifests(
         root,
         functools.partial(ssh_mcp_generation.sshpiper_pipe_chart, ssh_config=ssh_config),
@@ -1526,7 +1525,16 @@ def generate_manifests(root: Path) -> None:
     )
     public_coder_agent_devbox_artifact = artifact("public-coder-agent-devbox", public_coder_devbox.OUTPUT_DIR)
     public_coder_devbox.public_coder_agent_devbox(
-        flux_chart, public_coder_agent_devbox_artifact, kubevirt_kustomization, external_secrets_operator_kustomization
+        flux_chart,
+        write_directory(
+            root,
+            public_coder_agent_devbox_artifact,
+            public_coder_devbox.chart,
+            siblings=["ssh-host-key.sops.yaml"],
+            components=["./image-pins"],
+        ),
+        kubevirt_kustomization,
+        external_secrets_operator_kustomization,
     )
     namespace_dependencies = {
         "activitywatch": activitywatch_kustomization,
