@@ -18,24 +18,3 @@ rust_library(
         "@crates//:serde",
     ],
 )
-
-rust_library(
-    name = "fixer_converter",
-    srcs = ["fixer_converter.rs"],
-    edition = "2024",
-    proc_macro_deps = [
-        "@crates//:async-trait",
-    ],
-    visibility = ["//visibility:public"],
-    deps = [
-        "//finance/worthy:asset",
-        "//finance/worthy:converter",
-        "//finance/worthy:denomination",
-        "//finance/worthy:exchange_rate",
-        "@crates//:log",
-        "@crates//:reqwest",
-        "@crates//:rust_decimal",
-        "@crates//:serde",
-        "@crates//:url",
-    ],
-)

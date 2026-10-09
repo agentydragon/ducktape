@@ -181,9 +181,7 @@ external/protobuf+/upb/wire/decode.c:281 -Werror=maybe-uninitialized
 Bad: `reqwest ^0.12 → ^0.13 | API breaking changes, 12 call sites`
 
 Good: `reqwest ^0.12 → ^0.13 | Client::new() now returns Result instead of
-panicking. 4 call sites: finance/worthy/main.rs:365,
-finance/worthy/converter/fixer_converter.rs:45,
-finance/worthy/ibflex.rs:280,300. Migration PR: #985`
+panicking. Affected call sites and the migration patch are linked in PR #985.`
 
 Bad: `aspect_rules_js 2.9.2 → 3.0.3 | Major v3 breaking API: pnpm_lock_import
 removed`

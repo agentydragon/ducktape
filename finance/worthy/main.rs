@@ -7,7 +7,6 @@ use config::{Config, ConverterConfig, SourceConfig};
 use converter::Converter;
 use denomination::Denomination;
 use exchange_rate::ExchangeRate;
-use fixer_converter::FixerConverter;
 use flags::Opt;
 use futures::prelude::*;
 use glob::glob;
@@ -89,6 +88,7 @@ async fn get_source_snapshots(
 
 enum ConverterType {
     AlphaVantage,
+    // Historical snapshot provenance; no longer a configurable converter.
     Fixer,
 }
 
@@ -115,7 +115,6 @@ async fn get_converter_snapshots(
                     // short a time.
                     AlphaVantageConverter::take_snapshot(config, denominations, base)
                 }
-                Fixer(config) => FixerConverter::take_snapshot(config, denominations, base),
             } // TODO
             .map(move |conversions| {
                 let conversions = conversions.unwrap();
@@ -123,7 +122,6 @@ async fn get_converter_snapshots(
                     id: converter_name.clone(),
                     converter_type: match converter_config {
                         AlphaVantage(_) => ConverterType::AlphaVantage,
-                        Fixer(_) => ConverterType::Fixer,
                     },
                     snapshot: conversions,
                 }

@@ -1,6 +1,5 @@
 use alphavantage_converter::AlphaVantageConverterConfig;
 use asset::Asset;
-use fixer_converter::FixerConverterConfig;
 use ibflex_source::IBFlexSourceConfig;
 use rust_decimal::prelude::Decimal;
 use serde::Deserialize;
@@ -26,7 +25,6 @@ pub struct SourceConfig {
 #[serde(tag = "type")]
 pub enum ConverterConfig {
     AlphaVantage(AlphaVantageConverterConfig),
-    Fixer(FixerConverterConfig),
 }
 
 #[derive(Deserialize, Debug)]

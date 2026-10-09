@@ -35,9 +35,8 @@ Removed: Coinbase (legacy API deprecated), FTX (exchange collapsed).
 _Converters_ provide exchange rates to convert everything into `common_currency`:
 
 - **Alpha Vantage** — stock prices and FX rates
-- **Fixer.io** — foreign exchange rates
 
-Removed: Coinbase converter.
+Removed: Coinbase and Fixer converters. Historical Fixer snapshots remain readable.
 
 ## Configuration
 
@@ -65,9 +64,6 @@ converters:
   alpha_vantage:
     type: alphavantage
     api_key: alphavantage_api_key
-  fixer:
-    type: fixer
-    api_key: fixer_api_key
 
 common_currency: GEL
 dated_json_output: "~/worthy-snapshots/%s.json"

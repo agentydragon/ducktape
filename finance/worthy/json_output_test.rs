@@ -119,3 +119,12 @@ fn parse_snapshot() {
 
     assert_eq!(expected, parsed);
 }
+
+#[test]
+fn historical_fixer_snapshot_remains_readable() {
+    let saved = serde_json::json!({"Id": "fixer", "Type": "fixer", "Snapshot": []});
+    let snapshot: json_output::ConverterSnapshot = serde_json::from_value(saved.clone()).unwrap();
+
+    assert_eq!(snapshot.converter_type, json_output::ConverterType::Fixer);
+    assert_eq!(serde_json::to_value(snapshot).unwrap(), saved);
+}

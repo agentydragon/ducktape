@@ -65,6 +65,7 @@ pub struct Asset {
 pub enum ConverterType {
     #[serde(rename = "alphavantage")]
     AlphaVantage,
+    // Retained so saved snapshots remain readable after the converter was removed.
     #[serde(rename = "fixer")]
     Fixer,
 }
