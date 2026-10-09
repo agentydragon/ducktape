@@ -45,7 +45,8 @@ from agentplane.action_service.enrollments import (
 )
 from agentplane.action_service.mcp_frontend import CancellationView, Receipt, RequestField
 from agentplane.action_service.models import CallerPrincipal, Executor, OperatorPrincipal
-from agentplane.action_service.oauth import ActionsOAuthProxy, OAuthSettings, running_oauth
+from agentplane.action_service.oauth import ActionsOAuthProxy, running_oauth
+from agentplane.action_service.oauth_settings import OAuthSettings
 from agentplane.action_service.policy_informer import PolicyIndex
 from agentplane.action_service.service import ActionService
 from agentplane.action_service.testing.callers import OTHER, PERSONAL, admitted_callers

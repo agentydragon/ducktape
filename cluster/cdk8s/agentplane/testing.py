@@ -31,9 +31,9 @@ from flux_kustomize.io.fluxcd.toolkit.kustomize import (
 from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
 
 from agentplane.action_service.catalog import ActionGroup, McpExecutorBinding
-from agentplane.action_service.main import ActionServiceDeploymentSettings
-from agentplane.action_service.mcp_linkage import McpOAuthServer
-from agentplane.action_service.operator_oidc import OperatorOidcSettings, OperatorTokenProfile
+from agentplane.action_service.mcp_settings import McpOAuthServer
+from agentplane.action_service.operator_oidc_settings import OperatorOidcSettings, OperatorTokenProfile
+from agentplane.action_service.settings import ActionServiceDeploymentSettings
 from agentplane.app.action_federation import DirectFederationSettings
 from cluster.cdk8s import agent_access_profiles as access, cilium
 from cluster.cdk8s.agentplane import actions, app as app_component, dex, egress, testing_config

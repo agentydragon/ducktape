@@ -38,7 +38,8 @@ from agentplane.action_service.models import (
     CallerPrincipal,
     OperatorPrincipal,
 )
-from agentplane.action_service.operator_oidc import OidcOperatorAuthenticator, OperatorOidcSettings
+from agentplane.action_service.operator_oidc import OidcOperatorAuthenticator
+from agentplane.action_service.operator_oidc_settings import OperatorOidcSettings
 from agentplane.action_service.policies.resources import parse_binding, parse_policy_set
 from agentplane.action_service.policy_informer import PolicyIndex
 from agentplane.action_service.service import ActionService

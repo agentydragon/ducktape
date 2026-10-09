@@ -16,7 +16,8 @@ from sqlalchemy.ext.asyncio import AsyncEngine
 from agentplane.action_service.catalog import ActionGroup, ActionIdentity, McpExecutorBinding
 from agentplane.action_service.db import make_sessionmaker
 from agentplane.action_service.mcp_executor import McpActionGroupExecutor
-from agentplane.action_service.mcp_linkage import McpLinkageAuthority, McpLinkageStart, McpLinkageStatus, McpOAuthServer
+from agentplane.action_service.mcp_linkage import McpLinkageAuthority, McpLinkageStart, McpLinkageStatus
+from agentplane.action_service.mcp_settings import McpOAuthServer
 from agentplane.action_service.models import ExecutionLease, ExecutionRequest, OperatorPrincipal
 from agentplane.action_service.testing.lifecycle import wait_available
 from agentplane.action_service.testing.oauth_mcp_server import CLIENT_ID, PATH, build_app, build_dex_app

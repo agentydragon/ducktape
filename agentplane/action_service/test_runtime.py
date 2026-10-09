@@ -29,7 +29,7 @@ from agentplane.action_service.api import create_app
 from agentplane.action_service.auth import DisabledOperatorAuthenticator
 from agentplane.action_service.catalog import ActionCatalog, ActionGroup, ActionIdentity, McpExecutorBinding
 from agentplane.action_service.db import ActionConflictError, ActionStore, make_sessionmaker
-from agentplane.action_service.main import ActionServer, Settings, async_main
+from agentplane.action_service.main import ActionServer, async_main
 from agentplane.action_service.mcp_executor import McpActionGroupExecutor
 from agentplane.action_service.models import (
     ActionRequestInput,
@@ -47,6 +47,7 @@ from agentplane.action_service.policy_evaluation import PROVIDER_NAME
 from agentplane.action_service.policy_informer import PolicyIndex
 from agentplane.action_service.runtime import running_executor
 from agentplane.action_service.service import ActionService, UnsupportedActionError
+from agentplane.action_service.settings import Settings
 from agentplane.action_service.testing.callers import in_sync_index
 from agentplane.action_service.testing.lifecycle import wait_available
 from agentplane.action_service.updates import ActionUpdates

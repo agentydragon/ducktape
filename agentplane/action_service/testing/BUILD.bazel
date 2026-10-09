@@ -80,6 +80,7 @@ py_test(
         "//agentplane/action_service:db",
         "//agentplane/action_service:mcp_executor",
         "//agentplane/action_service:mcp_linkage",
+        "//agentplane/action_service:mcp_settings",
         "//agentplane/action_service:models",
         "//util:net",
         "//util/testing:asgi",

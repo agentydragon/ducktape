@@ -51,13 +51,9 @@ py_library(
 py_library(
     name = "mcp_linkage",
     srcs = ["mcp_linkage.py"],
-    visibility = [
-        "//agentplane:__subpackages__",
-        "//cluster/cdk8s:__subpackages__",
-    ],
     deps = [
-        ":catalog",
         ":db",
+        ":mcp_settings",
         ":models",
         "@pypi//fastmcp_slim",
         "@pypi//httpx2",
@@ -116,6 +112,7 @@ py_library(
     deps = [
         ":db",
         ":models",
+        ":push_settings",
         ":updates",
         "@pypi//cryptography",
         "@pypi//httpx",
@@ -186,10 +183,6 @@ py_library(
 py_library(
     name = "main",
     srcs = ["main.py"],
-    visibility = [
-        "//agentplane:__subpackages__",
-        "//cluster/cdk8s:__subpackages__",
-    ],
     deps = [
         ":api",
         ":auth",
@@ -205,9 +198,10 @@ py_library(
         ":push",
         ":runtime",
         ":service",
+        ":settings",
         ":updates",
         "//agentplane:kubernetes_watch",
-        "//agentplane:subjects",
+        "//agentplane/action_service/github_policy:settings",
         "//agentplane/action_service/github_policy:visibility",
         "//agentplane/action_service/sandbox:inventory",
         "//agentplane/workload_auth:principal",
@@ -215,9 +209,6 @@ py_library(
         "//util:kubernetes",
         "@pypi//httpx",
         "@pypi//kubernetes_asyncio",
-        "@pypi//pydantic",
-        "@pypi//pydantic_settings",
-        "@pypi//pyyaml",
         "@pypi//uvicorn",
     ],
 )
@@ -478,6 +469,7 @@ py_test(
         ":policy_informer",
         ":runtime",
         ":service",
+        ":settings",
         ":updates",
         "//:conftest",
         "//agentplane:crd_group",
@@ -517,9 +509,10 @@ py_test(
         ":mcp_executor",
         ":mcp_linkage",
         ":models",
-        ":oauth",
+        ":oauth_settings",
         ":runtime",
         ":service",
+        ":settings",
         "//:conftest",
         "//agentplane:subjects",
         "//agentplane/action_service/testing:lifecycle",
@@ -542,14 +535,10 @@ py_test(
 py_library(
     name = "operator_oidc",
     srcs = ["operator_oidc.py"],
-    visibility = [
-        "//agentplane:__subpackages__",
-        "//cluster/cdk8s:__subpackages__",
-    ],
     deps = [
         ":models",
+        ":operator_oidc_settings",
         "//mcp_infra:oidc_principal",
-        "@pypi//pydantic",
     ],
 )
 
@@ -563,6 +552,7 @@ py_test(
         ":conftest",
         ":db",
         ":operator_oidc",
+        ":operator_oidc_settings",
         ":service",
         ":updates",
         "//:conftest",
@@ -872,7 +862,7 @@ py_library(
     deps = [
         ":connections",
         ":enrollments",
-        ":models",
+        ":oauth_settings",
         "//mcp_infra:oidc_principal",
         "//mcp_infra:persistence",
         "//mcp_infra/authentik_auth:fastmcp_proxy",
@@ -905,6 +895,7 @@ py_test(
         ":mcp_frontend",
         ":models",
         ":oauth",
+        ":oauth_settings",
         ":policy_informer",
         ":service",
         ":updates",
@@ -942,6 +933,7 @@ py_test(
         ":db",
         ":models",
         ":push",
+        ":push_settings",
         ":updates",
         "//:conftest",
         "//agentplane:subjects",
@@ -962,6 +954,7 @@ py_test(
         ":conftest",
         ":db",
         ":mcp_linkage",
+        ":mcp_settings",
         ":models",
         ":updates",
         "//:conftest",
@@ -987,6 +980,7 @@ py_test(
         ":conftest",
         ":db",
         ":mcp_linkage",
+        ":mcp_settings",
         ":models",
         ":service",
         ":updates",
@@ -1169,5 +1163,64 @@ py_test(
         "@pypi//pytest_bazel",
         "@pypi//sqlalchemy",
         "@pypi//starlette",
+    ],
+)
+
+py_library(
+    name = "mcp_settings",
+    srcs = ["mcp_settings.py"],
+    visibility = [
+        "//agentplane:__subpackages__",
+        "//cluster/cdk8s:__subpackages__",
+    ],
+    deps = [
+        ":catalog",
+        "@pypi//pydantic",
+    ],
+)
+
+py_library(
+    name = "oauth_settings",
+    srcs = ["oauth_settings.py"],
+    deps = [
+        ":models",
+        "@pypi//pydantic",
+    ],
+)
+
+py_library(
+    name = "operator_oidc_settings",
+    srcs = ["operator_oidc_settings.py"],
+    visibility = [
+        "//agentplane:__subpackages__",
+        "//cluster/cdk8s:__subpackages__",
+    ],
+    deps = ["@pypi//pydantic"],
+)
+
+py_library(
+    name = "push_settings",
+    srcs = ["push_settings.py"],
+    deps = ["@pypi//pydantic"],
+)
+
+py_library(
+    name = "settings",
+    srcs = ["settings.py"],
+    visibility = [
+        "//agentplane:__subpackages__",
+        "//cluster/cdk8s:__subpackages__",
+    ],
+    deps = [
+        ":catalog",
+        ":mcp_settings",
+        ":oauth_settings",
+        ":operator_oidc_settings",
+        ":push_settings",
+        "//agentplane:subjects",
+        "//agentplane/action_service/github_policy:settings",
+        "@pypi//pydantic",
+        "@pypi//pydantic_settings",
+        "@pypi//pyyaml",
     ],
 )

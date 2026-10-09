@@ -6,11 +6,8 @@ resulting issuer, audience, signature, and lifetime without maintaining a second
 
 from __future__ import annotations
 
-from enum import StrEnum
-
-from pydantic import BaseModel, ConfigDict
-
 from agentplane.action_service.models import OperatorPrincipal
+from agentplane.action_service.operator_oidc_settings import OperatorOidcSettings, OperatorTokenProfile
 from mcp_infra.oidc_principal import (
     AuthentikOidcPrincipalResolver,
     DexOidcPrincipalResolver,
@@ -20,38 +17,25 @@ from mcp_infra.oidc_principal import (
 )
 
 
-class OperatorTokenProfile(StrEnum):
-    AUTHENTIK = "authentik"
-    DEX = "dex"
-
-
-class OperatorOidcSettings(BaseModel):
-    model_config = ConfigDict(extra="forbid", frozen=True)
-
-    issuer: str
-    audience: str
-    jwks_uri: str
-    token_profile: OperatorTokenProfile = OperatorTokenProfile.AUTHENTIK
-
-    def resolver(self) -> OidcPrincipalResolver:
-        # These are reviewed configuration pins, not metadata taken from the presented token.
-        resolver = (
-            AuthentikOidcPrincipalResolver
-            if self.token_profile is OperatorTokenProfile.AUTHENTIK
-            else DexOidcPrincipalResolver
-        )
-        return resolver(
-            expected_issuer=self.issuer,
-            discovered_issuer=self.issuer,
-            jwks_uri=self.jwks_uri,
-            signing_algorithms=["RS256"],
-            client_id=self.audience,
-        )
+def resolver_for(settings: OperatorOidcSettings) -> OidcPrincipalResolver:
+    # These are reviewed configuration pins, not metadata taken from the presented token.
+    resolver = (
+        AuthentikOidcPrincipalResolver
+        if settings.token_profile is OperatorTokenProfile.AUTHENTIK
+        else DexOidcPrincipalResolver
+    )
+    return resolver(
+        expected_issuer=settings.issuer,
+        discovered_issuer=settings.issuer,
+        jwks_uri=settings.jwks_uri,
+        signing_algorithms=["RS256"],
+        client_id=settings.audience,
+    )
 
 
 class OidcOperatorAuthenticator:
     def __init__(self, settings: OperatorOidcSettings) -> None:
-        self._resolver = settings.resolver()
+        self._resolver = resolver_for(settings)
 
     async def authenticate(self, token: str) -> OperatorPrincipal | None:
         try:

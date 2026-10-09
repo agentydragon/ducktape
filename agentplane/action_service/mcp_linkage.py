@@ -10,8 +10,7 @@ import logging
 import secrets
 from datetime import UTC, datetime, timedelta
 from enum import StrEnum
-from pathlib import Path
-from urllib.parse import urlencode, urlsplit
+from urllib.parse import urlencode
 from uuid import UUID, uuid4
 
 import httpx2
@@ -28,12 +27,12 @@ from mcp.client.auth.utils import (
 from mcp.shared.auth import OAuthMetadata, ProtectedResourceMetadata
 from mcp.shared.auth_utils import check_resource_allowed, resource_url_from_server_url
 from prometheus_client import Histogram
-from pydantic import AnyHttpUrl, BaseModel, ConfigDict, Field, model_validator
+from pydantic import AnyHttpUrl, BaseModel, ConfigDict, Field
 from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncEngine
 
-from agentplane.action_service.catalog import Key
 from agentplane.action_service.db import McpLinkageFlowRow, McpOAuthTokenStateRow, McpServerLinkageRow, SessionMaker
+from agentplane.action_service.mcp_settings import McpClientMetadataSettings, McpOAuthServer
 from agentplane.action_service.models import OperatorPrincipal, operator_or_none
 
 logger = logging.getLogger(__name__)
@@ -48,56 +47,6 @@ MCP_OAUTH_TOKEN_REQUEST_DURATION = Histogram(
     "MCP OAuth discovery and token endpoint request duration",
     ["operation", "outcome"],
 )
-
-
-class McpOAuthServer(BaseModel):
-    model_config = ConfigDict(extra="forbid", frozen=True)
-
-    server_id: Key
-    server_url: str = Field(min_length=1)
-    authorization_endpoint: str | None = None
-    token_endpoint: str | None = None
-    client_id: str | None = Field(default=None, min_length=1)
-    use_shared_cimd: bool = False
-    client_secret_file: Path | None = None
-    redirect_uri: str = Field(min_length=1)
-    scopes: list[str] = Field(default_factory=list)
-    resource: str | None = None
-
-    @model_validator(mode="after")
-    def validate_client_configuration(self) -> McpOAuthServer:
-        if (self.client_id is None) != self.use_shared_cimd:
-            raise ValueError("configure exactly one of client_id or use_shared_cimd")
-        if self.use_shared_cimd and self.client_secret_file is not None:
-            raise ValueError("CIMD clients use public token authentication and cannot have a client secret")
-        return self
-
-
-class McpClientMetadataSettings(BaseModel):
-    """The one public OAuth client identity shared by MCP linkages in this deployment."""
-
-    model_config = ConfigDict(extra="forbid", frozen=True)
-
-    url: str = Field(min_length=1)
-    client_name: str = Field(min_length=1)
-
-    @model_validator(mode="after")
-    def validate_url(self) -> McpClientMetadataSettings:
-        parsed = urlsplit(self.url)
-        if (
-            parsed.scheme != "https"
-            or not parsed.hostname
-            or parsed.username is not None
-            or parsed.password is not None
-            or parsed.port is not None
-            or parsed.query
-            or parsed.fragment
-            or parsed.path != "/oauth/client-metadata.json"
-        ):
-            raise ValueError("mcp_client_metadata.url must be an HTTPS URL at /oauth/client-metadata.json")
-        if str(AnyHttpUrl(self.url)) != self.url:
-            raise ValueError("mcp_client_metadata.url must use its canonical URL form")
-        return self
 
 
 class McpLinkageStart(BaseModel):

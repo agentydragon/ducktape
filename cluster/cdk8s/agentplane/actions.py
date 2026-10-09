@@ -30,7 +30,7 @@ from cdk8s_plus_34 import (
 )
 from constructs import Construct
 
-from agentplane.action_service.main import CONFIG_FILE_ENV, Settings
+from agentplane.action_service.settings import CONFIG_FILE_ENV, Settings
 from agentplane.subjects import ServiceAccountRef
 from cluster.cdk8s import cilium, node_scheduling, pod_policy
 from cluster.cdk8s.agentplane import database, llm_ingress, notifications

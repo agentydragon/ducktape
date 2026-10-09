@@ -29,8 +29,8 @@ from agentplane.action_service.push import (
     PushRetract,
     PushShow,
     PushSubscriptionStore,
-    WebPushSettings,
 )
+from agentplane.action_service.push_settings import WebPushSettings
 from agentplane.action_service.updates import ActionUpdates
 from agentplane.subjects import ServiceAccountRef
 

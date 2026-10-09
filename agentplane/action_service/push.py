@@ -17,7 +17,7 @@ from uuid import UUID
 import httpx
 from cryptography.hazmat.primitives import serialization
 from py_vapid import Vapid02
-from pydantic import BaseModel, Field, SecretStr
+from pydantic import BaseModel
 from pywebpush import WebPusher
 from sqlalchemy import and_, func, or_, select
 from sqlalchemy.dialects.postgresql import insert
@@ -26,20 +26,12 @@ from sqlalchemy.sql.elements import ColumnElement
 
 from agentplane.action_service.db import ActionRequestRow, PushDeliveryRow, PushSubscriptionRow
 from agentplane.action_service.models import ActionState, OperatorPrincipal
+from agentplane.action_service.push_settings import WebPushSettings
 from agentplane.action_service.updates import PUSH_CHANNEL, ActionUpdates
 
 logger = logging.getLogger(__name__)
 PUSH_TTL_SECONDS = 600
 _DEAD_SUBSCRIPTION_STATUSES = {404, 410}
-
-
-class WebPushSettings(BaseModel):
-    private_key_pem: SecretStr = Field(min_length=1)
-    subject: str = Field(min_length=1)
-    public_base_url: str = Field(min_length=1)
-    allowed_push_hosts: frozenset[str] = Field(
-        min_length=1, description="Exact reviewed browser push-service hostnames; no arbitrary callback destinations."
-    )
 
 
 class PushShow(BaseModel):

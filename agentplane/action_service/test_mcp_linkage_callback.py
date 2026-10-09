@@ -16,14 +16,13 @@ from agentplane.action_service.auth import DisabledOperatorAuthenticator
 from agentplane.action_service.catalog import ActionCatalog
 from agentplane.action_service.db import ActionStore, McpOAuthTokenStateRow, make_sessionmaker
 from agentplane.action_service.mcp_linkage import (
-    McpClientMetadataSettings,
     McpLinkageAuthority,
     McpLinkageConflictError,
     McpLinkageStart,
     McpLinkageStatus,
     McpLinkageView,
-    McpOAuthServer,
 )
+from agentplane.action_service.mcp_settings import McpClientMetadataSettings, McpOAuthServer
 from agentplane.action_service.models import OperatorPrincipal
 from agentplane.action_service.service import ActionService
 from agentplane.action_service.testing.callers import admitted_callers

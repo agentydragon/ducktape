@@ -12,7 +12,8 @@ from more_itertools import one
 from sqlalchemy.ext.asyncio import AsyncEngine
 
 from agentplane.action_service.db import make_sessionmaker
-from agentplane.action_service.mcp_linkage import McpLinkageAuthority, McpLinkageStart, McpLinkageStatus, McpOAuthServer
+from agentplane.action_service.mcp_linkage import McpLinkageAuthority, McpLinkageStart, McpLinkageStatus
+from agentplane.action_service.mcp_settings import McpOAuthServer
 from agentplane.action_service.models import OperatorPrincipal
 from agentplane.action_service.updates import ActionUpdates
 

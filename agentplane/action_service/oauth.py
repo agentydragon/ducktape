@@ -7,7 +7,6 @@ from collections.abc import AsyncIterator, Mapping
 from contextlib import asynccontextmanager
 from contextvars import ContextVar
 from datetime import UTC, datetime, timedelta
-from pathlib import Path
 from typing import Any, SupportsFloat, cast
 from uuid import UUID
 
@@ -34,7 +33,7 @@ from mcp.server.auth.provider import (
 from mcp.server.auth.routes import cors_middleware
 from mcp.server.auth.settings import RevocationOptions
 from mcp.shared.auth import OAuthClientInformationFull, OAuthToken
-from pydantic import BaseModel, ConfigDict, Field, ValidationError
+from pydantic import ValidationError
 from sqlalchemy.engine import make_url
 from sqlalchemy.exc import SQLAlchemyError
 from starlette.requests import Request
@@ -49,7 +48,7 @@ from agentplane.action_service.connections import (
     GrantRejectedError,
 )
 from agentplane.action_service.enrollments import EnrollmentAuthority, EnrollmentInput, EnrollmentRejectedError
-from agentplane.action_service.models import OperatorPrincipal
+from agentplane.action_service.oauth_settings import OAuthSettings
 from mcp_infra.authentik_auth.fastmcp_proxy import DownstreamClientIdentityOIDCProxy, RetryableJWTVerifier
 from mcp_infra.oidc_principal import (
     AuthentikOidcPrincipalResolver,
@@ -113,23 +112,6 @@ class _ObservedVerifier(RetryableJWTVerifier):
         except Exception as error:
             _observe_failure(error)
             raise
-
-
-class OAuthSettings(BaseModel):
-    """Explicit deployment pins; no default issuer, operator mapping, or ephemeral keys."""
-
-    model_config = ConfigDict(extra="forbid", frozen=True)
-
-    config_url: str
-    upstream_client_id: str = Field(min_length=1)
-    upstream_client_secret_file: Path
-    base_url: str
-    integration_app_url: str
-    jwt_signing_key_file: Path
-    encryption_key_file: Path
-    upstream_issuer: str
-    upstream_subject: str = Field(min_length=1)
-    approving_operator: OperatorPrincipal
 
 
 class ActionsOAuthProxy(DownstreamClientIdentityOIDCProxy):

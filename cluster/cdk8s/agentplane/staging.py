@@ -21,11 +21,11 @@ from flux_kustomize.io.fluxcd.toolkit.kustomize import (
 from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
 
 from agentplane.action_service.catalog import ActionGroup, McpExecutorBinding
-from agentplane.action_service.main import ActionServiceDeploymentSettings, WebPushDeploymentSettings
-from agentplane.action_service.mcp_linkage import McpClientMetadataSettings, McpOAuthServer
-from agentplane.action_service.operator_oidc import OperatorOidcSettings
+from agentplane.action_service.mcp_settings import McpClientMetadataSettings, McpOAuthServer
+from agentplane.action_service.operator_oidc_settings import OperatorOidcSettings
 from agentplane.action_service.sandbox.actions import SandboxAction
 from agentplane.action_service.sandbox.binding import SandboxExecutorBinding
+from agentplane.action_service.settings import ActionServiceDeploymentSettings, WebPushDeploymentSettings
 from agentplane.app.action_federation import ExchangeFederationSettings
 from cluster.cdk8s import cilium, external_creds, ha_mcp, node_scheduling, public_coder_egress
 from cluster.cdk8s.agentplane import actions, command_sandbox, notifications, staging_config

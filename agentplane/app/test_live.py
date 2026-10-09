@@ -17,7 +17,7 @@ from pydantic import SecretStr
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import create_async_engine
 
-from agentplane.action_service.operator_oidc import OperatorOidcSettings
+from agentplane.action_service.operator_oidc_settings import OperatorOidcSettings
 from agentplane.app.action_federation import DirectFederationSettings, FederatedOperatorActions
 from agentplane.app.action_policy import ActionPolicyInventory, ActionPolicyUnavailable, ActionPolicyView
 from agentplane.app.api import ModelCatalog, ModelOption, create_app

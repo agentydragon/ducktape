@@ -23,7 +23,8 @@ from fastapi import Request
 from pydantic import BaseModel, ConfigDict, Field, SecretStr, ValidationError, field_validator
 
 from agentplane.action_service.client import OperatorActionServiceClient
-from agentplane.action_service.operator_oidc import OperatorOidcSettings, OperatorTokenProfile
+from agentplane.action_service.operator_oidc import resolver_for
+from agentplane.action_service.operator_oidc_settings import OperatorOidcSettings, OperatorTokenProfile
 from agentplane.app.identity import CallerIdentity, CallerKind
 from agentplane.app.oidc import CLIENT_NAME, OIDCSettings, TokenResponse, build_oauth, operator_session
 from agentplane.app.operator_sessions import LoginTokens, OperatorSession, SessionRow, operator_session_row
@@ -130,13 +131,15 @@ class FederatedOperatorActions:
         self._login_issuer = oidc.issuer
         self._renew_before = timedelta(seconds=oidc.token_renew_before_seconds)
         self._login = build_oauth(oidc).create_client(CLIENT_NAME)
-        self._upstream = OperatorOidcSettings(
-            issuer=oidc.issuer,
-            audience=oidc.client_id,
-            jwks_uri=config.login_jwks_uri,
-            token_profile=config.login_token_profile,
-        ).resolver()
-        self._target = config.target.resolver()
+        self._upstream = resolver_for(
+            OperatorOidcSettings(
+                issuer=oidc.issuer,
+                audience=oidc.client_id,
+                jwks_uri=config.login_jwks_uri,
+                token_profile=config.login_token_profile,
+            )
+        )
+        self._target = resolver_for(config.target)
 
     def for_request(self, request: Request) -> OperatorActionServiceClient:
         return OperatorActionServiceClient(self._http, _SessionToken(self, operator_session_row(request)))

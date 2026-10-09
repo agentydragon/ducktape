@@ -42,7 +42,7 @@ from agentplane.action_service.catalog import (
     McpExecutorBinding,
 )
 from agentplane.action_service.db import ActionConflictError, ExecutionRow, make_sessionmaker
-from agentplane.action_service.main import Settings, async_main
+from agentplane.action_service.main import async_main
 from agentplane.action_service.mcp_executor import McpActionGroupExecutor, _LinkageBearerAuth
 from agentplane.action_service.mcp_linkage import McpLinkageStatus
 from agentplane.action_service.models import (
@@ -56,9 +56,10 @@ from agentplane.action_service.models import (
     OperatorPrincipal,
     Verdict,
 )
-from agentplane.action_service.oauth import OAuthSettings
+from agentplane.action_service.oauth_settings import OAuthSettings
 from agentplane.action_service.runtime import running_executor
 from agentplane.action_service.service import ActionService, ExecutionOutcomeUnknownError
+from agentplane.action_service.settings import Settings
 from agentplane.action_service.testing.lifecycle import wait_available, wait_retry
 from agentplane.subjects import ServiceAccountRef
 from util.net import bind_free_port

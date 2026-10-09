@@ -18,7 +18,7 @@ from starlette.requests import Request
 from starlette.responses import JSONResponse
 from starlette.routing import Route
 
-from agentplane.action_service.operator_oidc import OperatorOidcSettings, OperatorTokenProfile
+from agentplane.action_service.operator_oidc_settings import OperatorOidcSettings, OperatorTokenProfile
 from agentplane.app.action_federation import DirectFederationSettings, FederatedOperatorActions, OperatorFederationError
 from agentplane.app.conftest import stored_login
 from agentplane.app.database import connect

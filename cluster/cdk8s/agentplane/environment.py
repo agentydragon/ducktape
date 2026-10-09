@@ -13,7 +13,7 @@ from cdk8s import Duration
 from cdk8s_plus_34 import DeploymentStrategy
 from cilium_crds.io.cilium import CiliumNetworkPolicySpecEgress
 
-from agentplane.action_service.main import ActionServiceDeploymentSettings
+from agentplane.action_service.settings import ActionServiceDeploymentSettings
 from agentplane.app.main import AppSettingsConfig
 from cluster.cdk8s.model_selections import HarnessRoutes
 
