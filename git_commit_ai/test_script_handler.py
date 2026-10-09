@@ -10,7 +10,7 @@ from pydantic import BaseModel
 
 from agent_core.events import ToolCallOutput
 from agent_core.loop_control import InjectItems, NoAction
-from agent_core.script_handler import (
+from git_commit_ai.script_handler import (
     ScriptBuilder,
     ScriptError,
     ScriptEvent,

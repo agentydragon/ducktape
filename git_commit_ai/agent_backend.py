@@ -15,8 +15,8 @@ from agent_core.agent import Agent
 from agent_core.handler import BaseHandler, RedirectOnTextMessageHandler
 from agent_core.loop_control import Abort, AllowAnyToolOrTextMessage, NoAction
 from agent_core.mcp_provider import MCPToolProvider
-from agent_core.script_handler import ScriptBuilder, ScriptGen, script_handler
 from git_commit_ai.git_ro.server import DiffFormat, DiffInput, GitRoServer, ListSlice, ShowInput, StatusInput, TextSlice
+from git_commit_ai.script_handler import ScriptBuilder, ScriptGen, script_handler
 from mcp_infra.compositor.compositor import Compositor
 from mcp_infra.display.rich_display import CompactDisplayHandler
 from mcp_infra.enhanced.simple import SimpleFastMCP

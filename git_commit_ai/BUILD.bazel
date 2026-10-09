@@ -15,6 +15,7 @@ py_library(
         ":agent_backend",
         ":cli",
         ":editor",
+        ":script_handler",
         "//git_commit_ai/git_ro:formatting",
         "//git_commit_ai/git_ro:server",
     ],
@@ -111,16 +112,38 @@ py_binary(
 # )
 
 py_library(
+    name = "script_handler",
+    srcs = ["script_handler.py"],
+    deps = [
+        "//agent_core:events",
+        "//agent_core:handler",
+        "//agent_core:loop_control",
+        "//agent_core:tool_provider",
+        "//mcp_infra:mounted",
+        "//mcp_infra:naming",
+        "//mcp_infra:prefix",
+        "//mcp_infra/exec/docker:container_session",  # keep: script_handler.py is unparseable to gazelle (PEP 695 defaults)
+        "//mcp_infra/exec/docker:launcher",  # keep: script_handler.py is unparseable to gazelle (PEP 695 defaults)
+        "//mcp_infra/exec/docker:server",
+        "//openai_utils:builders",
+        "//openai_utils:model",
+        "//util/exec:models",
+        "@pypi//more_itertools",
+        "@pypi//pydantic",
+    ],
+)
+
+py_library(
     name = "agent_backend",
     srcs = ["agent_backend.py"],
     data = ["commit_prompt.mako"],
     visibility = ["//:__subpackages__"],
     deps = [
+        ":script_handler",
         "//agent_core:agent",
         "//agent_core:handler",
         "//agent_core:loop_control",
         "//agent_core:mcp_provider",
-        "//agent_core:script_handler",
         "//git_commit_ai/git_ro:server",
         "//mcp_infra:mounted",
         "//mcp_infra:prefix",
@@ -181,6 +204,25 @@ py_test(
         ":conftest",
         ":editor",
         "//:conftest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_script_handler",
+    srcs = ["test_script_handler.py"],
+    deps = [
+        ":conftest",
+        ":script_handler",
+        "//:conftest",
+        "//agent_core:events",
+        "//agent_core:loop_control",
+        "//agent_core:tool_provider",
+        "//mcp_infra:prefix",
+        "//openai_utils:model",
+        "//util/exec:models",
+        "@pypi//pydantic",
+        "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],
 )

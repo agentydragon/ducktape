@@ -16,7 +16,7 @@ Generator protocol (batch semantics)::
 
 Usage::
 
-    from agent_core.script_handler import ScriptBuilder, ScriptGen, ScriptHandler
+    from git_commit_ai.script_handler import ScriptBuilder, ScriptGen, ScriptHandler
 
     def my_bootstrap(b: ScriptBuilder, runtime: Mounted[ContainerExecServer]) -> ScriptGen:
         yield None  # prime

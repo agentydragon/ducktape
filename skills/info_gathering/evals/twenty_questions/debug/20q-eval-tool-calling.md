@@ -312,7 +312,7 @@ curl -s -X POST https://litellm.allegedly.works/v1/responses \
 
 This means `agent_core` (which uses the Responses API via `openai.AsyncOpenAI`)
 can work with the Ollama/LiteLLM stack. A smoke test exists at
-`agent_core/test_ollama_tool_calling.py` (mock target passes; live target
+`skills/info_gathering/evals/twenty_questions/test_ollama_tool_calling.py` (mock target passes; live target
 requires `OPENAI_API_KEY` + `OPENAI_BASE_URL` + `OPENAI_MODEL` env vars).
 
 ## Running the 20Q Eval with gpt-oss via LiteLLM
@@ -365,11 +365,11 @@ LITELLM_KEY=$(kubectl get secret litellm-master-key -n litellm \
   -o jsonpath='{.data.api-key}' | base64 -d)
 
 # Mock test (no cluster needed)
-bazel test //agent_core:test_ollama_tool_calling.mock
+bazel test //skills/info_gathering/evals/twenty_questions:test_ollama_tool_calling.mock
 
 # Live test (requires Ollama/LiteLLM)
 OPENAI_API_KEY=$LITELLM_KEY \
   OPENAI_BASE_URL=https://litellm.allegedly.works/v1 \
   OPENAI_MODEL=openai/gpt-oss:20b \
-  bazel test //agent_core:test_ollama_tool_calling.live
+  bazel test //skills/info_gathering/evals/twenty_questions:test_ollama_tool_calling.live
 ```

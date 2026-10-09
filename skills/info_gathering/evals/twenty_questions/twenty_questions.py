@@ -18,7 +18,6 @@ from typing import Literal
 from pydantic import BaseModel, ConfigDict
 
 from agent_core.agent import Agent
-from agent_core.direct_provider import DirectToolProvider
 from agent_core.events import AssistantText, Response, ToolCall
 from agent_core.handler import BaseHandler
 from agent_core.loop_control import AllowAnyToolOrTextMessage, RequireAnyTool
@@ -34,6 +33,7 @@ from skills.info_gathering.evals.harness import (
     run_output_paths,
     save_summary,
 )
+from skills.info_gathering.evals.twenty_questions.direct_provider import DirectToolProvider
 from skills.info_gathering.evals.twenty_questions.prompts import (
     first_user_message as build_first_user_message,
     load_scratch_system_note,

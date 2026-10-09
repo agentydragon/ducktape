@@ -1,4 +1,14 @@
-load("//devinfra/python:defs.bzl", "py_binary", "py_library")
+load("//devinfra/python:defs.bzl", "py_binary", "py_library", "py_test")
+
+py_library(
+    name = "compaction",
+    srcs = ["compaction.py"],
+    deps = [
+        "//agent_core:events",
+        "//agent_core:handler",
+        "//agent_core:loop_control",
+    ],
+)
 
 py_library(
     name = "cli",
@@ -6,8 +16,8 @@ py_library(
     visibility = ["//visibility:public"],
     deps = [
         ":config_loader",
+        ":compaction",
         "//agent_core:agent",
-        "//agent_core:compaction",
         "//agent_core:handler",
         "//agent_core:loop_control",
         "//agent_core:mcp_provider",
@@ -21,6 +31,18 @@ py_library(
         "@pypi//fastmcp_slim",
         "@pypi//rich",
         "@pypi//typer",
+    ],
+)
+
+py_test(
+    name = "test_compaction",
+    srcs = ["test_compaction.py"],
+    deps = [
+        ":compaction",
+        "//agent_core:events",
+        "//agent_core:loop_control",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
     ],
 )
 

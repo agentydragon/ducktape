@@ -33,9 +33,8 @@ class Mounted[T: FastMCP]:
         # Access server: runtime.server
         # Access tool: runtime.server.exec_tool.name
 
-        # Build tool call requests via ScriptBuilder:
-        b = ScriptBuilder()
-        call = b.call(runtime.prefix, runtime.server.exec_tool.name, {"cmd": [...], "timeout_ms": 5000})
+        # Get the fully-qualified tool name:
+        tool_name = runtime.tool_name(runtime.server.exec_tool)
     """
 
     prefix: MCPMountPrefix

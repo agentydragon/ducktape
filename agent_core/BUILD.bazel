@@ -2,7 +2,6 @@ load("//devinfra/python:defs.bzl", "py_library", "py_test")
 load("//openai_utils/testing:testing.bzl", "live_openai_py_test")
 
 # gazelle:exclude test_ollama_reasoning.py
-# gazelle:exclude test_ollama_tool_calling.py
 
 py_library(
     name = "pydantic_utils",
@@ -50,18 +49,6 @@ py_library(
 )
 
 py_library(
-    name = "compaction",
-    srcs = ["compaction.py"],
-    data = ["compaction_prompt.md"],
-    visibility = ["//:__subpackages__"],
-    deps = [
-        ":events",
-        ":handler",
-        ":loop_control",
-    ],
-)
-
-py_library(
     name = "transcript_handler",
     srcs = ["transcript_handler.py"],
     visibility = ["//:__subpackages__"],
@@ -90,6 +77,7 @@ py_library(
 py_library(
     name = "agent",
     srcs = ["agent.py"],
+    data = ["compaction_prompt.md"],
     visibility = ["//visibility:public"],
     deps = [
         ":events",
@@ -106,19 +94,6 @@ py_library(
 )
 
 py_library(
-    name = "direct_provider",
-    srcs = ["direct_provider.py"],
-    visibility = ["//visibility:public"],
-    deps = [
-        ":pydantic_utils",
-        ":tool_provider",
-        "//openai_utils:json_schema",
-        "@pypi//pydantic",
-        "@pypi//pydantic_core",
-    ],
-)
-
-py_library(
     name = "mcp_provider",
     srcs = ["mcp_provider.py"],
     visibility = ["//visibility:public"],
@@ -127,29 +102,6 @@ py_library(
         "@pypi//fastmcp_slim",
         "@pypi//mcp",
         "@pypi//mcp_types",
-    ],
-)
-
-py_library(
-    name = "script_handler",
-    srcs = ["script_handler.py"],
-    visibility = ["//:__subpackages__"],
-    deps = [
-        ":events",
-        ":handler",
-        ":loop_control",
-        ":tool_provider",
-        "//mcp_infra:mounted",
-        "//mcp_infra:naming",
-        "//mcp_infra:prefix",
-        "//mcp_infra/exec/docker:container_session",  # keep: script_handler.py is unparseable to gazelle (PEP 695 defaults)
-        "//mcp_infra/exec/docker:launcher",  # keep: script_handler.py is unparseable to gazelle (PEP 695 defaults)
-        "//mcp_infra/exec/docker:server",
-        "//openai_utils:builders",
-        "//openai_utils:model",
-        "//util/exec:models",
-        "@pypi//more_itertools",
-        "@pypi//pydantic",
     ],
 )
 
@@ -279,25 +231,6 @@ py_test(
 )
 
 py_test(
-    name = "test_script_handler",
-    srcs = ["test_script_handler.py"],
-    deps = [
-        ":conftest",
-        ":events",
-        ":loop_control",
-        ":script_handler",
-        ":tool_provider",
-        "//:conftest",
-        "//mcp_infra:prefix",
-        "//openai_utils:model",
-        "//util/exec:models",
-        "@pypi//pydantic",
-        "@pypi//pytest",
-        "@pypi//pytest_bazel",
-    ],
-)
-
-py_test(
     name = "test_handler",
     srcs = ["test_handler.py"],
     deps = [
@@ -320,9 +253,7 @@ py_test(
     srcs = ["test_compaction.py"],
     deps = [
         ":agent",
-        ":compaction",
         ":conftest",
-        ":events",
         ":handler",
         ":loop_control",
         "//:conftest",
@@ -345,25 +276,6 @@ live_openai_py_test(
         "//agent_core/testing/mcp:responses",
         "//openai_utils:model",
         "//openai_utils/testing:fixtures",
-        "@pypi//pytest_bazel",
-    ],
-)
-
-live_openai_py_test(
-    name = "test_ollama_tool_calling",
-    srcs = ["test_ollama_tool_calling.py"],
-    tags = ["ollama"],
-    deps = [
-        ":agent",
-        ":conftest",
-        ":direct_provider",
-        ":handler",
-        ":loop_control",
-        "//:conftest",  # keep: macro rule — gazelle does not manage the conftest chain here
-        "//agent_core/testing:responses",
-        "//openai_utils:model",
-        "//openai_utils/testing:fixtures",
-        "@pypi//pydantic",
         "@pypi//pytest_bazel",
     ],
 )

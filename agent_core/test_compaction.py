@@ -1,4 +1,4 @@
-"""Tests for compaction.py: CompactionHandler."""
+"""Tests for Agent transcript compaction."""
 
 from __future__ import annotations
 
@@ -6,10 +6,8 @@ import pytest
 import pytest_bazel
 
 from agent_core.agent import Agent
-from agent_core.compaction import CompactionHandler
-from agent_core.events import GroundTruthUsage, Response
 from agent_core.handler import BaseHandler
-from agent_core.loop_control import Compact, NoAction, RequireAnyTool
+from agent_core.loop_control import RequireAnyTool
 from openai_utils.model import (
     AssistantMessage,
     AssistantMessageOut,
@@ -100,35 +98,6 @@ async def test_compact_transcript_insufficient_history(mcp_tool_provider, summar
     assert not result.compacted
     assert summarizing_client.call_count == 0
     assert agent._transcript == original_transcript
-
-
-async def test_compaction_handler_triggers_at_threshold(mcp_tool_provider):
-    """Test that CompactionHandler tracks tokens and returns Compact decision when threshold exceeded."""
-    handler = CompactionHandler(threshold_tokens=1000, keep_recent_turns=2)
-
-    # Simulate token usage below threshold
-    handler.on_response(
-        Response(
-            response_id="test-id", usage=GroundTruthUsage(model="gpt-4o-mini", total_tokens=500), model="gpt-4o-mini"
-        )
-    )
-    assert isinstance(handler.on_before_sample(), NoAction)
-
-    # Simulate token usage exceeding threshold
-    handler.on_response(
-        Response(
-            response_id="test-id2", usage=GroundTruthUsage(model="gpt-4o-mini", total_tokens=600), model="gpt-4o-mini"
-        )
-    )
-    decision = handler.on_before_sample()
-    assert isinstance(decision, Compact)
-    assert decision.keep_recent_turns == 2
-
-    # Simulate successful compaction (resets token counter)
-    handler.on_compaction_complete(compacted=True)
-
-    # After successful compaction, should return NoAction
-    assert isinstance(handler.on_before_sample(), NoAction)
 
 
 if __name__ == "__main__":

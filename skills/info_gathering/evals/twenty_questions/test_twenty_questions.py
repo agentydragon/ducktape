@@ -5,8 +5,8 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest_bazel
 
-from agent_core.direct_provider import DirectToolProvider
 from openai_utils.model import AssistantMessageOut, FunctionCallItem, OutputText, ResponsesResult, ResponseUsage
+from skills.info_gathering.evals.twenty_questions.direct_provider import DirectToolProvider
 from skills.info_gathering.evals.twenty_questions.twenty_questions import Correct, Timeout, run_twenty_questions
 
 

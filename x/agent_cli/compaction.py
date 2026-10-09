@@ -1,4 +1,4 @@
-"""Automatic transcript compaction handler for Agent agents.
+"""Automatic transcript compaction handler for the CLI's Agent REPL.
 
 Monitors cumulative token usage and triggers compaction when approaching limits.
 
