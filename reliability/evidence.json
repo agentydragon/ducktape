@@ -8156,6 +8156,205 @@
     "next_passing_invocation": "6ac759eb-aa21-52f2-b4f6-1d266f91065a"
   },
   "report_validation": {
+    "invocation": "17d99d59-5bd3-4f47-aa82-cb09adc08d36",
+    "status": "PASSED",
+    "target": "//devinfra/ci/report_preview:preview",
+    "viewports": {
+      "desktop": [
+        1440,
+        1000
+      ],
+      "phone": [
+        390,
+        844
+      ]
+    },
+    "checks": [
+      "No document horizontal overflow",
+      "FreeCAD filter yields 2 patterns",
+      "Desktop and phone screenshots visually inspected",
+      "Original evidence fields preserved",
+      "Latency, root navigation and .gitattributes byte-identical"
+    ],
+    "html_sha256": "9091f466b9d0ffe28807e90d5ecf1f54753fc9ad34e67661d9bc30bd21a153ac"
+  },
+  "historical_baseline_metadata": {
+    "source_devel_commit": "d35786fbacef03dfd60223d026b45cec2e656542",
+    "window_start_utc": "2026-10-01T21:45:00Z",
+    "window_end_utc": "2026-10-08T21:45:00Z",
+    "collected_at_utc": "2026-10-08T22:02:04.292906+00:00"
+  },
+  "follow_up": {
+    "window_start_utc": "2026-10-09T00:20:28Z",
+    "window_end_utc": "2026-10-09T02:20:00Z",
+    "source_devel_commit": "d5742e7707c91df69d4b919c161a00493ec74164",
+    "population": "Workflow runs created in this interval; latest attempt states as captured during the earlier investigation. Not a new seven-day census.",
+    "workflows": {
+      "ci.yml": {
+        "total_runs": 97,
+        "outcomes": {
+          "in_progress": 1,
+          "skipped": 35,
+          "cancelled": 9,
+          "success": 49,
+          "failure": 3
+        },
+        "first_created_at": "2026-10-09T00:20:31Z",
+        "last_created_at": "2026-10-09T02:19:40Z",
+        "retried_run_ids": [
+          37872752813
+        ]
+      },
+      "trusted-fork-pr-ci.yml": {
+        "total_runs": 74,
+        "outcomes": {
+          "skipped": 38,
+          "success": 17,
+          "failure": 9,
+          "cancelled": 10
+        },
+        "first_created_at": "2026-10-09T00:28:04Z",
+        "last_created_at": "2026-10-09T02:19:38Z",
+        "retried_run_ids": []
+      }
+    },
+    "coverage_limits": [
+      "Repository-wide query hit GitHub 1000-result search limit; replaced with complete workflow-specific results (97 and 74 runs).",
+      "Creation-time windows differ from original BuildBuddy update-time census. Do not combine denominators.",
+      "One CI run was still in progress at capture. Latest statuses are not refreshed for this publication.",
+      "Mainline target history includes cached passes and omits PR target tracking.",
+      "Gap between original window end and follow-up start was not surveyed.",
+      "No matched fresh-execution before/after comparison and no scheduled monitoring."
+    ],
+    "bridge_retry": {
+      "workflow_run_id": 37872752813,
+      "target": "//agentplane/app:test_bridge",
+      "case": "test_the_bridge_streams_a_turn_to_every_tab_and_resumes_from_the_last_event_id[codex]",
+      "tested_sha": "2299e5b1685f304f2518b68a50c72b5a02595a62",
+      "github_head_sha": "5bf71de9f2ea1c1489fb22183ff13192cda1ffa8",
+      "failed_invocation": "08476376-e4b4-5184-88e9-c0bbf8f76ec4",
+      "passed_invocation": "eebbe85c-d0b4-5f02-8a31-a0348172f838",
+      "pass_duration_seconds": 182.977,
+      "passing_execution": "fresh",
+      "http_sequence": [
+        200,
+        409
+      ],
+      "error": "Sandbox Service refused the requested session or resource state",
+      "verified_recoveries": 1,
+      "comparable_failed_runs_with_available_retries": 1,
+      "interpretation": "Selected retry recovery, not a repository or target flake rate. Missing journal prevents direct observation of the production CI interleaving."
+    },
+    "controlled_reproduction": {
+      "invocation": "69962504-0a9d-4bc2-be03-b85ce29c0554",
+      "local_commit": "b4e992d71fcadcf825562299bbeeb43f8db9ef9d",
+      "base_commit": "d5742e7707c91df69d4b919c161a00493ec74164",
+      "publication_status": "Local committed test-only experiment; not pushed or merged. No production changes.",
+      "target": "//agentplane/app:test_bridge",
+      "pytest_filter": "test_retry_receipt_when_archive_advances_after_lookup",
+      "cases": 4,
+      "control_passes": 2,
+      "forced_interleaving_failures": 2,
+      "dialects": [
+        "claude",
+        "codex"
+      ],
+      "failure": "HTTP 409 instead of 200 when ingestion records the original receipt after receipt lookup and before replay cursor read.",
+      "deduplication": "Exactly one native command_admitted entry in all four cases.",
+      "scope": "Real HTTP, Postgres, Sandbox Service and runner; controlled Ingester.start interleaving under an ingestion lease. Not a natural-frequency estimate.",
+      "decision": "Production fix explicitly deferred by owner because this code will change soon."
+    },
+    "diagnostic_gap": {
+      "observed_outputs": [
+        "test.log",
+        "test.xml",
+        "test.warnings",
+        "container_setup.log",
+        "MANIFEST"
+      ],
+      "missing": "native-journal JSON and native history from failed_native_journal",
+      "cause": "Not established; no diagnostic-plumbing fix made."
+    },
+    "mainline_target_history": {
+      "//agentplane/app:test_bridge": {
+        "observations": 23,
+        "outcomes": {
+          "PASSED": 23
+        },
+        "includes_cached_results": true
+      },
+      "//agentplane/app:test_thread_browser": {
+        "observations": 23,
+        "outcomes": {
+          "PASSED": 23
+        },
+        "includes_cached_results": true
+      },
+      "//agentplane/notification_service:test_acceptance": {
+        "observations": 23,
+        "outcomes": {
+          "PASSED": 23
+        },
+        "includes_cached_results": true
+      }
+    },
+    "other_failures": [
+      {
+        "workflow_run_id": 37870655065,
+        "classification": "infrastructure",
+        "signature": "remote.buildbuddy.io DNS lookup at 127.0.0.53 timed out in release aw-importer before tests"
+      },
+      {
+        "workflow_run_id": 37869265298,
+        "classification": "source",
+        "signature": "Forgejo py_library visibility error"
+      },
+      {
+        "workflow_run_id": 37870727208,
+        "classification": "source",
+        "signature": "cdk8s settings assertions / agentplane-staging KeyError"
+      },
+      {
+        "workflow_run_id": 37866801202,
+        "classification": "source",
+        "signature": "visual_policies mobile screenshot FileExistsError; duplicate output name across viewports"
+      },
+      {
+        "workflow_run_id": 37868365568,
+        "classification": "source",
+        "signature": "notification migration PostgreSQL character varying[] @> text[] operator missing"
+      },
+      {
+        "workflow_run_id": 37868908803,
+        "classification": "source",
+        "signature": "stale generated staging manifest"
+      }
+    ],
+    "landed_interventions": [
+      {
+        "pr": 9481,
+        "change": "ThreadBrowser.start_replay waits for projection readiness",
+        "effect": "Landed; matched recurrence reduction not measured"
+      },
+      {
+        "pr": 9484,
+        "change": "Standard HTTP logs and notification admission progress plus failure artifacts",
+        "effect": "HTTP logs exposed 200 then 409; bridge journal artifact missing"
+      },
+      {
+        "pr": 9492,
+        "change": "Namespaced shared report publication",
+        "effect": "Merged"
+      },
+      {
+        "pr": 9513,
+        "change": "Reliability skill and shared publisher ownership",
+        "effect": "Merged; installed local skills still stale at follow-up check"
+      }
+    ]
+  },
+  "snapshot_scope": "Original baseline fields/counts retain their original observation window; follow_up is a separate population. Manifest window is the envelope, with an unsurveyed gap.",
+  "historical_baseline_report_validation": {
     "bazel_target": "//devinfra/ci/report_preview:preview",
     "invocation_id": "ed601d79-d957-465d-8b3e-75cb1eb83da0",
     "result": "PASSED",
