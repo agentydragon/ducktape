@@ -60,11 +60,6 @@ from cluster.cdk8s import (
     nvidia_runtimeclass,
     platform_monitoring,
     proxmox_proxy,
-    public_coder_agent_config,
-    public_coder_backup,
-    public_coder_devbox,
-    public_coder_proxy,
-    public_coder_sshpiper,
     reflector,
     reloader,
     talos_cloud_controller_manager,
@@ -218,6 +213,13 @@ from cluster.cdk8s.plaid_mcp import (
     pgweb as plaid_mcp_pgweb,
     spend as plaid_mcp_spend,
 )
+from cluster.cdk8s.public_coder import (
+    app as public_coder_app,
+    backup as public_coder_backup,
+    devbox as public_coder_devbox,
+    proxy as public_coder_proxy,
+    sshpiper as public_coder_sshpiper,
+)
 from cluster.cdk8s.seaweedfs import (
     cluster as seaweedfs_cluster,
     drivefs_artifacts_bucket as seaweedfs_drivefs_artifacts_bucket,
@@ -265,14 +267,14 @@ def generate_manifests(root: Path) -> None:
     agentplane_testing_health_checks = agentplane_generation.environment_health_checks(
         agentplane_testing_resource_chart, testing.ENV.namespace
     )
-    public_coder_agent_config.write_manifests(root)
+    public_coder_app.write_manifests(root)
     public_coder_proxy.write_manifests(root, aiquota_bearer=aiquota.PUBLIC_CODER_BEARER.secret_key)
     ssh_config = ssh_mcp_config.load(devbox_service)
     public_coder_sshpiper.write_manifests(
         root,
         functools.partial(ssh_mcp_generation.sshpiper_pipe_chart, ssh_config=ssh_config),
-        app_namespace=public_coder_agent_config.NAMESPACE,
-        app_labels=public_coder_agent_config.LABELS,
+        app_namespace=public_coder_app.NAMESPACE,
+        app_labels=public_coder_app.LABELS,
     )
     seaweedfs_cluster.write_manifests(root)
     litellm_namespace.write_manifests(root)

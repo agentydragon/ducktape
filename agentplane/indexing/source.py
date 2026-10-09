@@ -10,8 +10,9 @@ from types import MappingProxyType
 
 import pathspec
 import pygit2
-from pydantic import BaseModel, ConfigDict, Field
 from pygit2.enums import FetchPrune, FileMode
+
+from agentplane.indexing.settings import SnapshotLimits
 
 
 @dataclass(frozen=True)
@@ -20,14 +21,6 @@ class Snapshot:
     tree_id: str
     repository_url: str
     files: Mapping[str, bytes]
-
-
-class SnapshotLimits(BaseModel):
-    model_config = ConfigDict(frozen=True)
-
-    total_bytes: int = Field(default=512 * 1024 * 1024, gt=0)
-    file_bytes: int = Field(default=8 * 1024 * 1024, gt=0)
-    entries: int = Field(default=100_000, gt=0)
 
 
 def read_tree(

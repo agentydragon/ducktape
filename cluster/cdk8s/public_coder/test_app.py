@@ -21,19 +21,16 @@ from cdk8s import (
 )
 from more_itertools import one
 
-from cluster.cdk8s import (
-    agent_rbac_base,
-    agent_shared_rbac,
-    aiquota,
-    ducktape_flux,
-    public_coder_agent_config,
-    public_coder_devbox,
-    public_coder_egress,
-    public_coder_proxy,
-)
+from cluster.cdk8s import agent_rbac_base, agent_shared_rbac, aiquota, ducktape_flux
 from cluster.cdk8s.clickhouse import client, installation
 from cluster.cdk8s.haku import console_config
 from cluster.cdk8s.haku.charts import console_chart
+from cluster.cdk8s.public_coder import (
+    app as public_coder_app,
+    devbox as public_coder_devbox,
+    egress as public_coder_egress,
+    proxy as public_coder_proxy,
+)
 
 _PUBLIC_CODER_SUBJECT = {
     "kind": "Group",
@@ -70,7 +67,7 @@ def _one(objects: list[dict[str, Any]], kind: str, name: str | None = None) -> d
 
 @pytest.fixture(scope="module")
 def app_objects() -> list[dict[str, Any]]:
-    return _synth(public_coder_agent_config.app_chart)
+    return _synth(public_coder_app.app_chart)
 
 
 @pytest.fixture(scope="module")
@@ -246,7 +243,7 @@ def test_iron_only_admits_the_vm(proxy_objects: list[dict[str, Any]]) -> None:
 
 
 def test_kubeconfig_retains_haku_identity_over_the_relay() -> None:
-    config_map = _one(_synth(public_coder_agent_config.kubeconfig_chart), "ConfigMap", "kubeconfig")
+    config_map = _one(_synth(public_coder_app.kubeconfig_chart), "ConfigMap", "kubeconfig")
     config = yaml.safe_load(config_map["data"]["config"])
     cluster = one(config["clusters"])["cluster"]
     assert cluster["server"] == "https://haku-kubeapi.allegedly.works"

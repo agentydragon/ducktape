@@ -78,6 +78,7 @@ flowchart TB
     AGENT_MESSAGING["Unranked capability<br/>send and receive authorized agent messages<br/>durable delivery and batching"]:::future
     AGENT_MESSAGE_CLASSIFICATION["Optional later safeguard<br/>classify agent messages for leakage<br/>without silently losing delivery"]:::future
     NOTIFICATION_PRESENTATION["Unranked future capability<br/>structured notification provenance<br/>compact frontend presentation"]:::future
+    THREAD_NOTIFICATION_INDICATOR["Unranked UI improvement<br/>Thread sidebar pending-notice indicator<br/>including upcoming delivery"]:::future
     KUBERNETES_MONITORING["Unranked future capability<br/>agent-visible Kubernetes rollout monitoring<br/>notifications are an option"]:::future
     DT["P2 deferred<br/>Action-backed driver tools and background control"]:::future
     HARNESS_CONFIG_ISOLATION["Unranked prerequisite<br/>separate hosted feature config from capture scenarios<br/>keep project and host settings isolated"]:::future
@@ -552,7 +553,7 @@ After acceptance, remove only OpenClaw-specific proxy dependencies and Console c
 Keep the Iron path used by the devbox and shared `iron-proxy` resources. The separate
 `haku-egress-proxy` still serves Haku Sandboxes, Haku CI, and another OpenClaw workload; confirm
 current consumers before removing or splitting any shared resource. Source inventory starts at
-[`public_coder_proxy.py`](../../cluster/cdk8s/public_coder_proxy.py) and
+[`public_coder/proxy.py`](../../cluster/cdk8s/public_coder/proxy.py) and
 [`haku_egress_proxy.py`](../../cluster/cdk8s/haku_egress_proxy.py).
 
 ### `ANTHROPIC_INCLUDED_API_ROUTING` — use subscription-linked Anthropic API credit
@@ -1585,6 +1586,23 @@ whole machine-oriented message, with expansion/raw evidence available.
 The owning backend/protocol carries metadata without depending on the integration app; the app is
 its presentation client. This is independent of the shipped notice debounce and of Kubernetes
 source selection.
+
+### `THREAD_NOTIFICATION_INDICATOR` — show pending and upcoming notices in the Thread sidebar
+
+**Unranked UI improvement:** put a small notification-state cue in the left-hand Thread list,
+perhaps integrated into each Thread icon. In particular, an idle Thread with an inbox update
+waiting for its next notice (for example, due in a few seconds) should look different from a
+Thread with no pending notification. Explore a restrained ticking/countdown treatment, with an
+accessible static label and reduced-motion fallback; distinguish queued/delayed notice delivery
+from a notice already sent or acknowledged rather than treating "idle" as "nothing happening."
+
+Use an authorized per-Thread view of the notification authority's state, including any next
+eligible delivery time if available, without exposing another Thread's inbox or inferring state
+from the rendered transcript or a browser-only timer. A deadline is an estimate: delivery may
+be suppressed by acknowledgement, delayed by lifecycle/runner state, or fail. Reconcile after
+reconnect and avoid claiming a guaranteed notice at an exact second. This is independent of
+`NOTIFICATION_PRESENTATION`'s compact rendering of _delivered_ notifications and must not
+acknowledge an inbox merely because its icon is displayed.
 
 ### `KUBERNETES_MONITORING` — agents observe rollout progress and outcomes
 

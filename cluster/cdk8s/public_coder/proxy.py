@@ -33,7 +33,7 @@ from external_secrets_crds.io.external_secrets import (
     ExternalSecretSpecTargetDeletionPolicy,
 )
 
-from cluster.cdk8s import cilium, external_creds, public_coder_devbox
+from cluster.cdk8s import cilium, external_creds
 from cluster.cdk8s.cert_manager.interception_ca import interception_root_ca
 from cluster.cdk8s.clickhouse import client
 from cluster.cdk8s.config_format import yaml_config
@@ -43,6 +43,7 @@ from cluster.cdk8s.haku import kube_api_proxy
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 from cluster.cdk8s.providers.cilium.network_policy import EgressRule, IngressRule, NetworkPolicy
 from cluster.cdk8s.providers.external_secrets.external_secret import ExternalSecret, remote_data
+from cluster.cdk8s.public_coder import devbox as public_coder_devbox
 from cluster.cdk8s.secret_ref import SecretKey, SecretRef
 from cluster.cdk8s.service_ref import Pods, Port, ServiceRef
 
@@ -60,7 +61,7 @@ PROXY = ServiceRef(
 )
 _METRICS = ServiceRef(name=PROXY.name, port=Port(name="metrics", number=9090), pods=PROXY.pods)
 _IMAGE = "git.allegedly.works/ducktape-ci/iron-proxy:unset"
-# public_coder_agent_config's ExternalSecret writes it; here, because that module imports this one.
+# public_coder_app's ExternalSecret writes it; here, because that module imports this one.
 GITHUB_TOKEN = SecretRef(namespace=NAMESPACE, name="public-coder-agent-github-token").key("GITHUB_TOKEN")
 # Each credential iron's `secrets` transform reads from the proxy container's env, and the
 # non-secret placeholder the app presents in its place.

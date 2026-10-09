@@ -47,12 +47,13 @@ from clickhouse_keeper_installation_crds.com.altinity.clickhouse_keeper import (
 from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpecHealthCheckExprs
 from prometheus_operator_podmonitor_crds.com.coreos.monitoring import PodMonitorSpecSelector
 
-from cluster.cdk8s import agent_access_profiles as access, cilium, node_scheduling, public_coder_proxy
+from cluster.cdk8s import agent_access_profiles as access, cilium, node_scheduling
 from cluster.cdk8s.clickhouse import client
 from cluster.cdk8s.external_secrets.minted_secret import mint_bearer_secret
 from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 from cluster.cdk8s.providers.prometheus_operator.pod_monitor import Endpoint, PodMonitor
+from cluster.cdk8s.public_coder import proxy as public_coder_proxy
 from cluster.cdk8s.service_ref import Pods, Port, ServiceRef
 
 OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/clickhouse/cluster"

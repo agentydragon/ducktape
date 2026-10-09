@@ -62,7 +62,7 @@ def chart(app: App) -> Chart:
         chart,
         "sshpiper-source",
         url="https://github.com/tg123/sshpiper.git",
-        # Match the sshpiperd image tag in public_coder_sshpiper.py.
+        # Match the sshpiperd image tag in public_coder/sshpiper.py.
         tag="v1.6.1",
         # Keep only the CRD. In particular, plugin/kubernetes/sample.yaml is an example
         # Pipe, not a production route to apply. Flux generates a kustomization.yaml for

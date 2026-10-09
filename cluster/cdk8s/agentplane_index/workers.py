@@ -22,7 +22,7 @@ from cnpg_database_crds.io.cnpg.postgresql import (
 from external_secrets_crds.io.external_secrets import ExternalSecretSpecTargetCreationPolicy
 from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpecHealthCheckExprs, KustomizationSpecHealthChecks
 
-from agentplane.indexing.main import Settings
+from agentplane.indexing.settings import Settings
 from cluster.cdk8s import cnpg, forgejo_images, namespaces, node_scheduling
 from cluster.cdk8s.external_secrets.minted_secret import mint_bearer_secret
 from cluster.cdk8s.flux import (

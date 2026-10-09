@@ -1373,6 +1373,7 @@ function App() {
   }, []);
   useEffect(() => {
     let mounted = true;
+    let firstEvent = true;
     const estimateQuery = selectedEstimatePeriodId ? `?estimate_period_id=${selectedEstimatePeriodId}` : "";
     const load = async () => {
       try {
@@ -1402,7 +1403,9 @@ function App() {
           setView(JSON.parse(event.data));
           setError(null);
           setState("Live updates");
-          setViewRevision((revision) => revision + 1);
+          // The initial SSE snapshot duplicates the initial GET; only refresh transactions on later updates.
+          if (!firstEvent) setViewRevision((revision) => revision + 1);
+          firstEvent = false;
         }
       } catch (cause) {
         if (mounted) setError(cause instanceof Error ? cause.message : "Could not read live update");
@@ -1450,7 +1453,6 @@ function App() {
   }, [activeTab, configuration]);
   useEffect(() => {
     if (activeTab !== "transactions" && activeTab !== "spending") return;
-    if (activeTab === "spending" && view?.allowance?.status !== "active") return;
     const controller = new AbortController();
     const requestedPeriod = activeTab === "spending" ? estimatePeriodId : transactionPeriodId;
     const load = async () => {
@@ -1479,7 +1481,7 @@ function App() {
     };
     void load();
     return () => controller.abort();
-  }, [activeTab, estimatePeriodId, transactionPeriodId, view?.allowance?.status, viewRevision]);
+  }, [activeTab, estimatePeriodId, transactionPeriodId, viewRevision]);
   const cards = view?.cards || [];
   const estimatePending =
     selectedEstimatePeriodId != null &&
@@ -1499,14 +1501,14 @@ function App() {
         <Paper component="header" radius={0} withBorder>
           <Container size="lg" py="xs">
             <Grid align="center" gap="xs">
-              <Grid.Col span={{ base: 6, xs: 4 }} order={1}>
+              <Grid.Col span={{ base: 6, lg: 4 }} order={1}>
                 <Anchor href="#/spending" size="lg" fw={700} c="var(--mantine-color-text)" underline="never">
                   Spend
                 </Anchor>
               </Grid.Col>
-              <Grid.Col span={{ base: 6, xs: 4 }} order={{ base: 2, xs: 3 }}>
+              <Grid.Col span={{ base: 6, lg: 4 }} order={{ base: 2, lg: 3 }}>
                 <Group justify="flex-end" gap="xs">
-                  <Box hiddenFrom="lg">
+                  <Box>
                     <Menu position="bottom-end" opened={navigationMenuOpened} onChange={setNavigationMenuOpened}>
                       <Menu.Target>
                         <Burger
@@ -1529,17 +1531,16 @@ function App() {
                             {tab.label}
                           </Menu.Item>
                         ))}
+                        <Menu.Divider />
+                        <form action="/auth/logout" method="post">
+                          <Menu.Item type="submit">Sign out</Menu.Item>
+                        </form>
                       </Menu.Dropdown>
                     </Menu>
                   </Box>
-                  <form action="/auth/logout" method="post">
-                    <Button type="submit" variant="subtle" color="gray" size="sm">
-                      Sign out
-                    </Button>
-                  </form>
                 </Group>
               </Grid.Col>
-              <Grid.Col span={{ base: 12, xs: 4 }} order={{ base: 3, xs: 2 }} visibleFrom="lg">
+              <Grid.Col span={4} order={2} visibleFrom="lg">
                 <Center>
                   <Tabs.List aria-label="Spend pages">
                     {spendTabs.map((tab) => (

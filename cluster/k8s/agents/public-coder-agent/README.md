@@ -95,7 +95,7 @@ Two layers, and the split matters:
 2. **The proxy's `allow-public-coder-agent-proxy-egress` policy is the allowlist.** Enforced by Cilium `toFQDNs` on
    the _proxy's_ egress, not by proxy configuration, so a CONNECT to a
    non-allowlisted host fails at the network layer. Every widening is a
-   reviewable diff in `cluster/cdk8s/public_coder_proxy.py`.
+   reviewable diff in `cluster/cdk8s/public_coder/proxy.py`.
 
 The model path never leaves the cluster: LiteLLM is reached directly, bypassing
 the proxy, via `NO_PROXY`.

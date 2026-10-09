@@ -26,7 +26,7 @@ from constructs import Construct
 
 from agentplane.sandbox_service.instructions import combine_instructions, render_platform_instructions
 from agentplane.sandbox_service.kubernetes_grants import ClusterRoleBindingGrant, RoleBindingGrant
-from agentplane.sandbox_service.main import CONFIG_FILE_ENV, Settings
+from agentplane.sandbox_service.settings import CONFIG_FILE_ENV, Settings
 from agentplane.subjects import ServiceAccountRef
 from cluster.cdk8s import cilium, node_scheduling, pod_policy
 from cluster.cdk8s.agentplane import actions, database, egress, notifications

@@ -45,7 +45,7 @@ from prometheus_operator_crds.com.coreos.monitoring import ServiceMonitorSpecSel
 
 from aiquota.config import Config
 from aiquota.settings import Settings
-from cluster.cdk8s import pod_policy, public_coder_proxy
+from cluster.cdk8s import pod_policy
 from cluster.cdk8s.agentplane.egress_credentials import STAGING_NAMESPACE
 from cluster.cdk8s.cli_proxy_api import cli_proxy_api as cli_proxy_api_app  # aiquota()'s parameter is its Kustomization
 from cluster.cdk8s.clickhouse import client
@@ -63,6 +63,7 @@ from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 from cluster.cdk8s.probes import http_probe
 from cluster.cdk8s.providers.external_secrets.external_secret import ExternalSecret, SecretStoreRef, remote_data
 from cluster.cdk8s.providers.prometheus_operator.service_monitor import Endpoint, ServiceMonitor
+from cluster.cdk8s.public_coder import proxy as public_coder_proxy
 from cluster.cdk8s.secret_ref import SecretKey, SecretRef
 from cluster.cdk8s.service_ref import Pods, Port, ServiceRef
 from util.settings_contract import checked_value, env_name, settings_file

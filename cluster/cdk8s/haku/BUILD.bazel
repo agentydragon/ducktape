@@ -11,6 +11,7 @@ py_library(
         "//cluster/cdk8s:__pkg__",
         "//cluster/cdk8s/clickhouse:__pkg__",
         "//cluster/cdk8s/haku:__pkg__",
+        "//cluster/cdk8s/public_coder:__pkg__",
     ],
 )
 
@@ -32,6 +33,10 @@ py_library(
 py_library(
     name = "console",
     srcs = ["console.py"],
+    visibility = [
+        "//cluster/cdk8s:__pkg__",
+        "//cluster/cdk8s/public_coder:__pkg__",
+    ],
     deps = [
         ":console_config",
         ":database",
@@ -59,6 +64,10 @@ py_library(
 py_library(
     name = "kube_api_proxy",
     srcs = ["kube_api_proxy.py"],
+    visibility = [
+        "//cluster/cdk8s:__pkg__",
+        "//cluster/cdk8s/public_coder:__pkg__",
+    ],
     deps = [
         ":console",
         "//cluster/cdk8s:cilium",
@@ -93,7 +102,10 @@ py_library(
 py_library(
     name = "charts",
     srcs = ["charts.py"],
-    visibility = ["//cluster/cdk8s:__pkg__"],
+    visibility = [
+        "//cluster/cdk8s:__pkg__",
+        "//cluster/cdk8s/public_coder:__pkg__",
+    ],
     deps = [
         ":console",
         ":database",

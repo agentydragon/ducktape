@@ -1,0 +1,179 @@
+# gazelle:resolve py agentplane_egresspolicy_crds //agentplane/crds:egresspolicy
+# gazelle:resolve py agentplane_egresscredential_crds //agentplane/crds:egresscredential
+# gazelle:resolve py agentplane_egressbinding_crds //agentplane/crds:egressbinding
+# gazelle:resolve py kubevirt_virtualmachine_crds //cluster/cdk8s/providers/kubevirt:virtualmachine
+# gazelle:resolve py volsync_replicationsource_crds //cluster/cdk8s/providers/volsync:replicationsource
+load("//devinfra/python:defs.bzl", "py_library", "py_test")
+
+package(default_visibility = ["//cluster/cdk8s:__subpackages__"])
+
+py_library(
+    name = "app",
+    srcs = ["app.py"],
+    visibility = ["//cluster/cdk8s:__subpackages__"],
+    deps = [
+        ":egress",
+        ":proxy",
+        ":sshpiper",
+        "//agentplane/egress:resources",
+        "//cluster/cdk8s:agent_access_profiles",
+        "//cluster/cdk8s:config_format",
+        "//cluster/cdk8s:external_creds",
+        "//cluster/cdk8s:forgejo_images",
+        "//cluster/cdk8s:generation",
+        "//cluster/cdk8s:manifest_roots",
+        "//cluster/cdk8s:namespaces",
+        "//cluster/cdk8s:openclaw_gateway",
+        "//cluster/cdk8s:secret_ref",
+        "//cluster/cdk8s:service_ref",
+        "//cluster/cdk8s/clickhouse:client",
+        "//cluster/cdk8s/external_secrets:minted_secret",
+        "//cluster/cdk8s/haku:console",
+        "//cluster/cdk8s/haku:kube_api_proxy",
+        "//cluster/cdk8s/providers/external_secrets:external_secret",
+        "//cluster/cdk8s/providers/external_secrets:externalsecret",
+        "//model_catalog:catalog",
+        "@pypi//cdk8s",
+        "@pypi//cdk8s_plus_34",
+        "@pypi//constructs",
+    ],
+)
+
+py_library(
+    name = "backup",
+    srcs = ["backup.py"],
+    deps = [
+        "//cluster/cdk8s:flux",
+        "//cluster/cdk8s:manifest_roots",
+        "//cluster/cdk8s:restic_backup",
+        "//cluster/cdk8s/providers/volsync:replicationsource",
+        "//cluster/cdk8s/seaweedfs:s3",
+        "@pypi//cdk8s",
+    ],
+)
+
+py_library(
+    name = "devbox",
+    srcs = ["devbox.py"],
+    visibility = ["//cluster/cdk8s:__subpackages__"],
+    deps = [
+        "//cluster/cdk8s:external_creds",
+        "//cluster/cdk8s:flux",
+        "//cluster/cdk8s:generation",
+        "//cluster/cdk8s:manifest_roots",
+        "//cluster/cdk8s:node_scheduling",
+        "//cluster/cdk8s:service_ref",
+        "//cluster/cdk8s/kubevirt:virtual_machine",
+        "//cluster/cdk8s/providers/external_secrets:external_secret",
+        "//cluster/cdk8s/providers/external_secrets:externalsecret",
+        "//cluster/cdk8s/providers/flux:kustomization",
+        "//cluster/cdk8s/providers/kubevirt:virtual_machine",
+        "//cluster/cdk8s/providers/kubevirt:virtualmachine",
+        "//cluster/cdk8s/providers/source_watcher:artifactgenerator",
+        "@pypi//cdk8s",
+        "@pypi//cdk8s_plus_34",
+        "@pypi//constructs",
+    ],
+)
+
+py_library(
+    name = "egress",
+    srcs = ["egress.py"],
+    visibility = ["//cluster/cdk8s:__subpackages__"],
+    deps = [
+        "//agentplane/crds:egressbinding",
+        "//agentplane/crds:egresscredential",
+        "//agentplane/crds:egresspolicy",
+        "//agentplane/egress:sidecar",
+        "//cluster/cdk8s:cilium",
+        "//cluster/cdk8s/agentplane:actions",
+        "//cluster/cdk8s/agentplane:egress",
+        "//cluster/cdk8s/agentplane:egress_credentials",
+        "//cluster/cdk8s/clickhouse:client",
+        "//cluster/cdk8s/external_secrets:single_secret_store",
+        "//cluster/cdk8s/haku:kube_api_proxy",
+        "//cluster/cdk8s/providers/agentplane:egress_binding",
+        "//cluster/cdk8s/providers/agentplane:egress_credential",
+        "//cluster/cdk8s/providers/agentplane:egress_policy",
+        "//cluster/cdk8s/providers/cilium:network_policy",
+        "//util:settings_contract",
+        "@pypi//cdk8s",
+        "@pypi//cdk8s_plus_34",
+        "@pypi//constructs",
+    ],
+)
+
+py_library(
+    name = "proxy",
+    srcs = ["proxy.py"],
+    visibility = [
+        "//cluster/cdk8s:__subpackages__",
+        "//cluster/validation:__pkg__",
+    ],
+    deps = [
+        ":devbox",
+        "//cluster/cdk8s:cilium",
+        "//cluster/cdk8s:config_format",
+        "//cluster/cdk8s:external_creds",
+        "//cluster/cdk8s:forgejo_images",
+        "//cluster/cdk8s:generation",
+        "//cluster/cdk8s:manifest_roots",
+        "//cluster/cdk8s:secret_ref",
+        "//cluster/cdk8s:service_ref",
+        "//cluster/cdk8s/cert_manager:interception_ca",
+        "//cluster/cdk8s/clickhouse:client",
+        "//cluster/cdk8s/haku:kube_api_proxy",
+        "//cluster/cdk8s/providers/cilium:network_policy",
+        "//cluster/cdk8s/providers/external_secrets:external_secret",
+        "//cluster/cdk8s/providers/external_secrets:externalsecret",
+        "@pypi//cdk8s",
+        "@pypi//cdk8s_plus_34",
+        "@pypi//constructs",
+    ],
+)
+
+py_library(
+    name = "sshpiper",
+    srcs = ["sshpiper.py"],
+    deps = [
+        ":devbox",
+        "//cluster/cdk8s:cilium",
+        "//cluster/cdk8s:flux",
+        "//cluster/cdk8s:generation",
+        "//cluster/cdk8s:manifest_roots",
+        "//cluster/cdk8s:service_ref",
+        "//cluster/cdk8s/providers/cilium:network_policy",
+        "@pypi//cdk8s",
+        "@pypi//cdk8s_plus_34",
+        "@pypi//constructs",
+    ],
+)
+
+py_test(
+    name = "test_app",
+    # Synth imports the console's Settings, and with it the console runtime.
+    size = "medium",
+    srcs = ["test_app.py"],
+    data = ["@nodejs_linux_amd64//:bin/node"],
+    env = {"JSII_NODE": "$(rootpath @nodejs_linux_amd64//:bin/node)"},
+    deps = [
+        ":app",
+        ":devbox",
+        ":egress",
+        ":proxy",
+        "//:conftest",
+        "//cluster/cdk8s:agent_rbac_base",
+        "//cluster/cdk8s:agent_shared_rbac",
+        "//cluster/cdk8s:aiquota",
+        "//cluster/cdk8s:ducktape_flux",
+        "//cluster/cdk8s/clickhouse:client",
+        "//cluster/cdk8s/clickhouse:installation",
+        "//cluster/cdk8s/haku:charts",
+        "//cluster/cdk8s/haku:console_config",
+        "@pypi//cdk8s",
+        "@pypi//more_itertools",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+        "@pypi//pyyaml",
+    ],
+)

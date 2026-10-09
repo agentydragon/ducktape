@@ -81,6 +81,6 @@ container in the proxy Pod that holds the GitHub PAT and Console bearer.
 
 ## Bumping the image
 
-The image tag in `cluster/cdk8s/public_coder_sshpiper.py`, the `sshpiper-source` tag in
+The image tag in `cluster/cdk8s/public_coder/sshpiper.py`, the `sshpiper-source` tag in
 `cluster/cdk8s/flux_sources.py`, and the `sshpiper_pipe_crd` `http_file` URL and digest in the root
 `MODULE.bazel` must move together.

@@ -20,11 +20,12 @@ from cdk8s import ApiObjectMetadata, App, Chart
 from cdk8s_plus_34 import k8s
 from constructs import Construct
 
-from cluster.cdk8s import cilium, public_coder_devbox
+from cluster.cdk8s import cilium
 from cluster.cdk8s.flux import kustomize_kustomization
 from cluster.cdk8s.generation import write_charts, write_yaml
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 from cluster.cdk8s.providers.cilium.network_policy import EgressRule, Entity, IngressRule, NetworkPolicy
+from cluster.cdk8s.public_coder import devbox as public_coder_devbox
 from cluster.cdk8s.service_ref import Pods, Port, ServiceRef
 
 NAME = "public-coder-agent-sshpiper"  # the chart's id and the Pods' `app.kubernetes.io/name` value
@@ -276,7 +277,7 @@ def _network_policies(scope: Construct, app_namespace: str, app_labels: dict[str
 
 
 def chart(app: App, *, app_namespace: str, app_labels: dict[str, str]) -> Chart:
-    """`app_namespace` and `app_labels` are the OpenClaw Agent pod's: public_coder_agent_config
+    """`app_namespace` and `app_labels` are the OpenClaw Agent pod's: public_coder_app
     exports them, and imports this module for the piper's address."""
     chart = Chart(app, NAME, disable_resource_name_hashes=True)
     _rbac(chart)

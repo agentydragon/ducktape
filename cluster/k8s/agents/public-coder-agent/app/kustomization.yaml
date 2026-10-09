@@ -4,7 +4,7 @@ resources:
   # keep-sorted start
   - ../proxy
   - ../sshpiper
-  # cdk8s-generated (cluster/cdk8s/public_coder_agent_config.py) -- see cluster/docs/cdk8s.md.
+  # cdk8s-generated (cluster/cdk8s/public_coder/app.py) -- see cluster/docs/cdk8s.md.
   - app.k8s.yaml
   - devbox-ssh-key.sops.yaml
   # keep-sorted end
