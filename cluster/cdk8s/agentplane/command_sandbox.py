@@ -54,8 +54,8 @@ _COMMAND_RESOURCES = SandboxTemplateSpecPodTemplateSpecContainersResources(
         "memory": SandboxTemplateSpecPodTemplateSpecContainersResourcesLimits.from_string("2Gi"),
     },
 )
-# The most the LimitRange lets one container have (rbac.py), which a Bazel build of the acceptance
-# suite fit in.
+# The most the testing LimitRange lets one container have (testing.py); a Bazel build of the
+# acceptance suite fits in.
 _BUILD_RESOURCES = SandboxTemplateSpecPodTemplateSpecContainersResources(
     requests={
         "cpu": SandboxTemplateSpecPodTemplateSpecContainersResourcesRequests.from_string("500m"),

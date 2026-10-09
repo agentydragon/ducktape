@@ -5,8 +5,8 @@ load("//devinfra/python:defs.bzl", "py_library", "py_test")
 package(default_visibility = ["//cluster/cdk8s:__pkg__"])
 
 py_library(
-    name = "rbac",
-    srcs = ["rbac.py"],
+    name = "namespace",
+    srcs = ["namespace.py"],
     deps = [
         ":environment",
         "//cluster/cdk8s:namespaces",
@@ -406,7 +406,6 @@ py_library(
         ":app_settings",
         ":egress",
         ":egress_staging_credentials",
-        ":rbac",
         ":sandbox_pod",
         "//agentplane/app:action_federation",
         "//agentplane/app:main",
@@ -455,8 +454,8 @@ py_library(
         ":egress",
         ":environment",
         ":llm_ingress",
+        ":namespace",
         ":notifications",
-        ":rbac",
         ":sandbox_pod",
         ":sandbox_service",
         "//agentplane:subjects",

@@ -16,8 +16,8 @@ from cluster.cdk8s.agentplane import (
     egress,
     electric,
     llm_ingress,
+    namespace,
     notifications,
-    rbac,
     sandbox_pod,
     sandbox_service,
 )
@@ -32,7 +32,7 @@ def environment_chart(app: App, env: Environment) -> Chart:
     Deliberately excludes testing-only RBAC and namespace resource limits; `testing.chart`
     adds them."""
     chart = Chart(app, "agentplane", disable_resource_name_hashes=True)
-    rbac.Namespace(chart, "namespace", env)
+    namespace.Namespace(chart, "namespace", env)
     database.Db(chart, "db", env)
     electric.Electric(chart, "electric", env)
     llm_ingress.LlmIngress(chart, "llm-ingress", env)
