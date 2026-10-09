@@ -13,11 +13,8 @@ from sqlalchemy.ext.asyncio import AsyncEngine
 from agentplane.action_service.api import create_app
 from agentplane.action_service.catalog import ActionCatalog
 from agentplane.action_service.db import ActionStore, make_sessionmaker
-from agentplane.action_service.operator_oidc import (
-    OidcOperatorAuthenticator,
-    OperatorOidcSettings,
-    OperatorTokenProfile,
-)
+from agentplane.action_service.operator_oidc import OidcOperatorAuthenticator
+from agentplane.action_service.operator_oidc_settings import OperatorOidcSettings, OperatorTokenProfile
 from agentplane.action_service.service import ActionService
 from agentplane.action_service.testing.callers import admitted_callers
 from agentplane.action_service.updates import ActionUpdates

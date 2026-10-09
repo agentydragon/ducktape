@@ -200,6 +200,7 @@ py_library(
         ":mcp_linkage",
         ":oauth",
         ":operator_oidc",
+        ":operator_oidc_settings",
         ":policy_evaluation",
         ":policy_informer",
         ":push",
@@ -542,14 +543,10 @@ py_test(
 py_library(
     name = "operator_oidc",
     srcs = ["operator_oidc.py"],
-    visibility = [
-        "//agentplane:__subpackages__",
-        "//cluster/cdk8s:__subpackages__",
-    ],
     deps = [
         ":models",
+        ":operator_oidc_settings",
         "//mcp_infra:oidc_principal",
-        "@pypi//pydantic",
     ],
 )
 
@@ -563,6 +560,7 @@ py_test(
         ":conftest",
         ":db",
         ":operator_oidc",
+        ":operator_oidc_settings",
         ":service",
         ":updates",
         "//:conftest",
@@ -1170,4 +1168,14 @@ py_test(
         "@pypi//sqlalchemy",
         "@pypi//starlette",
     ],
+)
+
+py_library(
+    name = "operator_oidc_settings",
+    srcs = ["operator_oidc_settings.py"],
+    visibility = [
+        "//agentplane:__subpackages__",
+        "//cluster/cdk8s:__subpackages__",
+    ],
+    deps = ["@pypi//pydantic"],
 )

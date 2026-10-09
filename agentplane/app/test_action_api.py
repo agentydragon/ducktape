@@ -38,24 +38,22 @@ from agentplane.action_service.models import (
     CallerPrincipal,
     OperatorPrincipal,
 )
-from agentplane.action_service.operator_oidc import OidcOperatorAuthenticator, OperatorOidcSettings
+from agentplane.action_service.operator_oidc import OidcOperatorAuthenticator
+from agentplane.action_service.operator_oidc_settings import OperatorOidcSettings
 from agentplane.action_service.policies.resources import parse_binding, parse_policy_set
 from agentplane.action_service.policy_informer import PolicyIndex
 from agentplane.action_service.service import ActionService
 from agentplane.action_service.testing.callers import PERSONAL, admitted_callers
 from agentplane.action_service.updates import ActionUpdates
-from agentplane.app.action_federation import (
-    DirectFederationSettings,
-    ExchangeFederationSettings,
-    FederatedOperatorActions,
-)
+from agentplane.app.action_federation import FederatedOperatorActions
+from agentplane.app.action_federation_settings import DirectFederationSettings, ExchangeFederationSettings
 from agentplane.app.action_policy import (
     ActionPolicyInventory,
     ActionPolicyUnavailable,
     ActionPolicyView,
     BindingProvenance,
 )
-from agentplane.app.api import ModelCatalog, ModelOption, create_app
+from agentplane.app.api import create_app
 from agentplane.app.conftest import AGENT_AUTH
 from agentplane.app.consent import ConsentAllow
 from agentplane.app.database import connect
@@ -64,6 +62,7 @@ from agentplane.app.decisions import DecisionsClient
 from agentplane.app.egress_access import EgressAccess
 from agentplane.app.identity import TokenReviewer
 from agentplane.app.live import LiveIndex, SandboxSnapshot
+from agentplane.app.model_catalog import ModelCatalog, ModelOption
 from agentplane.app.oidc import INSECURE_COOKIE, OIDCSettings
 from agentplane.app.operator_sessions import BrowserSession, OperatorSession, OperatorSessionStore
 from agentplane.app.testing.model_test_data import TEST_REASONING_EFFORTS

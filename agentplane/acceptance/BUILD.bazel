@@ -363,7 +363,7 @@ py_library(
     name = "ollama_catalog",
     srcs = ["ollama_catalog.py"],
     deps = [
-        "//agentplane/app:api",
+        "//agentplane/app:model_catalog",
         "//agentplane/runner:harness",
         "//agentplane/runner:protocol_pb2",
         "@pypi//protobuf",

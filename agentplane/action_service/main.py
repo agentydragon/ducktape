@@ -35,7 +35,8 @@ from agentplane.action_service.github_policy.visibility import (
 )
 from agentplane.action_service.mcp_linkage import McpClientMetadataSettings, McpLinkageAuthority, McpOAuthServer
 from agentplane.action_service.oauth import OAuthSettings, running_oauth
-from agentplane.action_service.operator_oidc import OidcOperatorAuthenticator, OperatorOidcSettings
+from agentplane.action_service.operator_oidc import OidcOperatorAuthenticator
+from agentplane.action_service.operator_oidc_settings import OperatorOidcSettings
 from agentplane.action_service.policy_evaluation import PolicySetDecisionProvider
 from agentplane.action_service.policy_informer import PolicyIndex, PolicyInformer
 from agentplane.action_service.push import ActionPushNotifier, PushIdentity, PushSubscriptionStore, WebPushSettings

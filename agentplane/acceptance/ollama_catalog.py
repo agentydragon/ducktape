@@ -4,7 +4,7 @@ from pathlib import Path
 
 import yaml
 
-from agentplane.app.api import ModelCatalog
+from agentplane.app.model_catalog import ModelCatalog
 from agentplane.runner import protocol_pb2
 from agentplane.runner.harness import Harness
 

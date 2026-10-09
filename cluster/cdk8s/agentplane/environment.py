@@ -14,7 +14,7 @@ from cdk8s_plus_34 import DeploymentStrategy
 from cilium_crds.io.cilium import CiliumNetworkPolicySpecEgress
 
 from agentplane.action_service.main import ActionServiceDeploymentSettings
-from agentplane.app.main import AppSettingsConfig
+from agentplane.app.settings import AppSettingsConfig
 from cluster.cdk8s.model_selections import HarnessRoutes
 
 
@@ -116,7 +116,7 @@ class Environment:
     # Files the root Kustomization lists beside the generated one.
     extra_resources: Sequence[str]
     replicas: ReplicaProfile
-    # The ConfigMap-authored portion of agentplane/app/main.py's `Settings`.
+    # The ConfigMap-authored portion of agentplane/app/settings.py's `Settings`.
     app_config: AppSettingsConfig
     # Options for Sandbox Service's gRPC channel to the runner, authored into its ConfigMap.
     runner_grpc_channel_options: Mapping[str, int | str]

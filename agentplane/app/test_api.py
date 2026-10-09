@@ -17,7 +17,7 @@ import pytest_bazel
 from fastapi.testclient import TestClient
 
 from agentplane.app.action_policy import ActionPolicyInventory
-from agentplane.app.api import ModelCatalog, ModelOption, create_app, upstream_http_error
+from agentplane.app.api import create_app, upstream_http_error
 from agentplane.app.conftest import AGENT_AUTH
 from agentplane.app.database_updates import Channel, DatabaseUpdates
 from agentplane.app.decisions import DecisionsClient
@@ -25,6 +25,7 @@ from agentplane.app.egress_access import EgressAccess
 from agentplane.app.electric import ElectricProxy
 from agentplane.app.identity import CallerIdentity, CallerKind, TokenReviewer, require_caller
 from agentplane.app.live import LiveIndex
+from agentplane.app.model_catalog import ModelCatalog, ModelOption
 from agentplane.app.operator_sessions import OperatorSessionStore
 from agentplane.app.presets import PresetCatalog, SandboxPreset, ThreadPreset
 from agentplane.app.testing.egress_proxy import FakeEgressAdmin, decision
