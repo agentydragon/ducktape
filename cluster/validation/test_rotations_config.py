@@ -1,6 +1,6 @@
 """The authentik-jwt-rotation roster's entries stay independent.
 
-The generator builds the roster (`cluster/cdk8s/authentik_jwt_rotation.py`'s `ROTATIONS`) from
+The generator builds the roster (`cluster/cdk8s/authentik/jwt_rotation.py`'s `ROTATIONS`) from
 the rotator's own `Config`, so every entry satisfies the model by construction. What the model
 cannot express is cross-entry, and a violation would pass CI and fail hourly in the cluster
 instead, which is the wrong place to find out.
@@ -15,7 +15,7 @@ import re
 import pytest_bazel
 import yaml
 
-from cluster.cdk8s.authentik_jwt_rotation import ROTATIONS
+from cluster.cdk8s.authentik.jwt_rotation import ROTATIONS
 from util.bazel.runfiles import get_required_path
 
 _SOPS_CONFIG = "_main/.sops.yaml"

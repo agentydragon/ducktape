@@ -18,8 +18,6 @@ from cluster.cdk8s import (
     aiquota,
     airlock,
     alloy_otlp_bearer,
-    authentik_jwt_rotation,
-    authentik_tf,
     claude_sandbox_secrets,
     cnpg_operator,
     descheduler,
@@ -85,9 +83,11 @@ from cluster.cdk8s.authentik import (
     db as authentik_db,
     db_backups as authentik_db_backups,
     flux_kustomizations as authentik_flux_kustomizations,
+    jwt_rotation as authentik_jwt_rotation,
     namespace as authentik_namespace,
     proxy_routes as authentik_proxy_routes,
     sso_providers,
+    tf as authentik_tf,
 )
 from cluster.cdk8s.cert_manager import (
     app as cert_manager_app,

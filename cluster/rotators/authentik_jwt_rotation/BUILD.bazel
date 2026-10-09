@@ -7,8 +7,11 @@ load("//props:oci.bzl", "py_image_entrypoint", "py_image_env")
 py_library(
     name = "config",
     srcs = ["config.py"],
-    # cluster/cdk8s/authentik_jwt_rotation.py builds the roster from this model.
-    visibility = ["//cluster/cdk8s:__pkg__"],
+    # cluster/cdk8s/authentik/jwt_rotation.py builds the roster from this model.
+    visibility = [
+        "//cluster/cdk8s:__pkg__",
+        "//cluster/cdk8s/authentik:__pkg__",
+    ],
     deps = ["@pypi//pydantic"],
 )
 

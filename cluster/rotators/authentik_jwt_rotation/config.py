@@ -1,6 +1,6 @@
 """The rotator's configuration schema: the roster `rotate.py --config` reads.
 
-Kept apart from `rotate.py` so the cdk8s generator (cluster/cdk8s/authentik_jwt_rotation.py),
+Kept apart from `rotate.py` so the cdk8s generator (cluster/cdk8s/authentik/jwt_rotation.py),
 which builds the roster from these models, imports pydantic and nothing of the runtime.
 """
 
