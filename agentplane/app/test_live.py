@@ -18,10 +18,9 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import create_async_engine
 
 from agentplane.action_service.operator_oidc_settings import OperatorOidcSettings
-from agentplane.app.action_federation import FederatedOperatorActions
-from agentplane.app.action_federation_settings import DirectFederationSettings
+from agentplane.app.action_federation import DirectFederationSettings, FederatedOperatorActions
 from agentplane.app.action_policy import ActionPolicyInventory, ActionPolicyUnavailable, ActionPolicyView
-from agentplane.app.api import create_app
+from agentplane.app.api import ModelCatalog, ModelOption, create_app
 from agentplane.app.conftest import stored_login
 from agentplane.app.database import connect
 from agentplane.app.database_updates import DatabaseUpdates
@@ -39,7 +38,6 @@ from agentplane.app.live import (
     frames,
     live_threads,
 )
-from agentplane.app.model_catalog import ModelCatalog, ModelOption
 from agentplane.app.oidc import OIDCSettings
 from agentplane.app.operator_sessions import (
     LoginTokens,

@@ -12,18 +12,19 @@ from __future__ import annotations
 import logging
 from dataclasses import replace
 from datetime import UTC, datetime, timedelta
+from typing import Annotated, Literal
+from urllib.parse import urlsplit
 
 import httpx
 import httpx2
 from authlib.integrations.base_client.errors import OAuthError
 from authlib.integrations.httpx_client import AsyncOAuth2Client
 from fastapi import Request
-from pydantic import BaseModel, ConfigDict, Field, SecretStr, ValidationError
+from pydantic import BaseModel, ConfigDict, Field, SecretStr, ValidationError, field_validator
 
 from agentplane.action_service.client import OperatorActionServiceClient
 from agentplane.action_service.operator_oidc import resolver_for
-from agentplane.action_service.operator_oidc_settings import OperatorOidcSettings
-from agentplane.app.action_federation_settings import ActionFederationSettings
+from agentplane.action_service.operator_oidc_settings import OperatorOidcSettings, OperatorTokenProfile
 from agentplane.app.identity import CallerIdentity, CallerKind
 from agentplane.app.oidc import CLIENT_NAME, OIDCSettings, TokenResponse, build_oauth, operator_session
 from agentplane.app.operator_sessions import LoginTokens, OperatorSession, SessionRow, operator_session_row
@@ -68,6 +69,59 @@ def upstream_failure_detail(
 async def _check_token_response(response: httpx2.Response) -> None:
     # Authlib otherwise discards the HTTP response when raising OAuthError.
     response.raise_for_status()
+
+
+class _ActionFederationSettings(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    service_url: str
+    login_jwks_uri: str
+    login_token_profile: OperatorTokenProfile = OperatorTokenProfile.AUTHENTIK
+    target: OperatorOidcSettings
+    scope: str = Field(min_length=1)
+
+    @field_validator("service_url")
+    @classmethod
+    def service_endpoint(cls, value: str) -> str:
+        url = urlsplit(value)
+        if (
+            url.scheme not in {"http", "https"}
+            or not url.hostname
+            or url.username is not None
+            or url.password is not None
+            or url.query
+            or url.fragment
+        ):
+            raise ValueError("service_url must be an HTTP(S) URL without credentials, query, or fragment")
+        return value
+
+
+class ExchangeFederationSettings(_ActionFederationSettings):
+    mode: Literal["exchange"] = "exchange"
+    token_endpoint: str
+
+    @field_validator("token_endpoint")
+    @classmethod
+    def secure_exchange_endpoint(cls, value: str) -> str:
+        url = urlsplit(value)
+        if (
+            not url.hostname
+            or url.username is not None
+            or url.password is not None
+            or url.fragment
+            or url.query
+            or (url.scheme != "https" and not (url.scheme == "http" and url.hostname in {"127.0.0.1", "localhost"}))
+        ):
+            raise ValueError("token_endpoint must be HTTPS (loopback HTTP is allowed for tests)")
+        return value
+
+
+class DirectFederationSettings(_ActionFederationSettings):
+    mode: Literal["direct"] = "direct"
+    token_endpoint: None = None
+
+
+ActionFederationSettings = Annotated[ExchangeFederationSettings | DirectFederationSettings, Field(discriminator="mode")]
 
 
 class FederatedOperatorActions:
