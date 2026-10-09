@@ -740,6 +740,7 @@ py_library(
         "//agentplane/action_service:operator_oidc",
         "//agentplane/action_service:operator_oidc_settings",
         "//mcp_infra:oidc_principal",
+        "//mcp_infra:urls",
         "@pypi//authlib",
         "@pypi//fastapi",
         "@pypi//httpx",

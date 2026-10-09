@@ -216,6 +216,7 @@ py_library(
     srcs = ["oidc_principal.py"],
     visibility = ["//:__subpackages__"],
     deps = [
+        ":urls",
         "@pypi//cryptography",
         "@pypi//httpx",
         "@pypi//pydantic",
@@ -239,5 +240,17 @@ py_test(
         "@pypi//pytest",
         "@pypi//pytest_bazel",
         "@pypi//starlette",
+    ],
+)
+
+py_test(
+    name = "test_urls",
+    srcs = ["test_urls.py"],
+    deps = [
+        ":conftest",
+        ":urls",
+        "//:conftest",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
     ],
 )
