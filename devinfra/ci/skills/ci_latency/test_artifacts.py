@@ -115,9 +115,7 @@ def test_publish_updates_only_selected_namespace_and_removes_obsolete_artifacts(
     reliability = history / "reliability"
     assert not (reliability / "report.md").exists()
     assert json.loads((reliability / "evidence.json").read_text()) == {"jobs": 3}
-    assert json.loads((reliability / "manifest.json").read_text())["attribution"] == (
-        "not collected"
-    )
+    assert json.loads((reliability / "manifest.json").read_text())["attribution"] == ("not collected")
     assert (reliability / "index.html").read_bytes() == report.read_bytes()
     assert not (reliability / "attribution.json").exists()
     assert {path.name: path.read_bytes() for path in latency.iterdir()} == latency_after_publish

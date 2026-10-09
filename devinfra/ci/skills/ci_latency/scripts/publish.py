@@ -18,9 +18,7 @@ def main():
     parser.add_argument("--source", required=True, help="Full SHA of inspected devel commit")
     parser.add_argument("--window-start", required=True, help="UTC ISO-8601")
     parser.add_argument("--window-end", required=True, help="UTC ISO-8601")
-    parser.add_argument(
-        "--kind", required=True, choices=["latency", "reliability"], help="Report namespace"
-    )
+    parser.add_argument("--kind", required=True, choices=["latency", "reliability"], help="Report namespace")
     parser.add_argument(
         "--report", required=True, type=Path, help="Authored standalone HTML report copied to index.html"
     )
