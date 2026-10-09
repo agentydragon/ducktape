@@ -4,8 +4,8 @@ This dedicated branch holds independent, latest-only CI report snapshots:
 
 - **Latency:** [standalone HTML](latency/index.html), [evidence](latency/evidence.json),
   [source and observation window](latency/manifest.json).
-- **Reliability:** migration of the flakiness report is under review in
-  [#9474](https://github.com/agentydragon/ducktape/pull/9474), using `reliability/`.
+- **Reliability:** [standalone HTML](reliability/index.html),
+  [evidence](reliability/evidence.json), [source and observation window](reliability/manifest.json).
 
 Each refresh replaces only its own directory's `index.html`, `evidence.json`,
 `manifest.json`, and optional `attribution.json`, through a PR against `ci-reports`.
