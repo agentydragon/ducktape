@@ -1,4 +1,4 @@
-Retired ROTATIONS entry from cluster/cdk8s/authentik_jwt_rotation.py.
+Retired ROTATIONS entry from cluster/cdk8s/authentik/jwt_rotation.py.
 Restore deliberately with fresh credentials, not the archived expired token.
 
         Rotation(

@@ -32,7 +32,11 @@ from cluster.cdk8s.agentplane import actions, command_sandbox, notifications, st
 from cluster.cdk8s.agentplane.actions_staging_policies import add_staging_action_policies
 from cluster.cdk8s.agentplane.app import RunnerTemplate
 from cluster.cdk8s.agentplane.chart import environment_chart
-from cluster.cdk8s.agentplane.egress_credentials import STAGING_NAMESPACE, EgressCredentials, credential_external_secret
+from cluster.cdk8s.agentplane.egress_credentials import (
+    STAGING_CREDENTIALS_NAMESPACE,
+    EgressCredentials,
+    credential_external_secret,
+)
 from cluster.cdk8s.agentplane.egress_staging_credentials import add_staging_egress_credentials
 from cluster.cdk8s.agentplane.environment import (
     ActionsProps,
@@ -46,6 +50,7 @@ from cluster.cdk8s.agentplane.environment import (
     ReplicaProfile,
 )
 from cluster.cdk8s.agentplane.grpc_channel_config import LARGE_EVENT_GRPC_CHANNEL_OPTIONS
+from cluster.cdk8s.agentplane.namespaces import STAGING_NAMESPACE
 from cluster.cdk8s.external_secrets.minted_secret import mint_bearer_secret
 from cluster.cdk8s.external_secrets.single_secret_store import single_secret_store
 from cluster.cdk8s.flux import Kustomization, flux_kustomization, flux_kustomization_depends_on_many
@@ -58,7 +63,6 @@ from cluster.cdk8s.providers.external_secrets.external_secret import ExternalSec
 from cluster.cdk8s.public_coder import egress as public_coder_egress
 from cluster.cdk8s.ssh_mcp.config import BEARER_SECRET_KEY, BEARER_SECRET_NAME, MCP_URL
 
-_NAMESPACE = "agentplane-staging"
 _HOSTNAME = "agentplane-staging.allegedly.works"
 _ACTIONS_HOSTNAME = "agentplane-actions-staging.allegedly.works"
 _NOTIFICATIONS_HOSTNAME = "agentplane-notifications-staging.allegedly.works"
@@ -98,7 +102,7 @@ _FEDERATION_TARGET = OperatorOidcSettings(
 )
 _ACTION_FEDERATION = ExchangeFederationSettings(
     mode="exchange",
-    service_url=actions.service(_NAMESPACE).url,
+    service_url=actions.service(STAGING_NAMESPACE).url,
     token_endpoint=f"{_AUTHENTIK}/application/o/token/",
     login_jwks_uri=f"{_AUTHENTIK}/application/o/agentplane-staging/jwks/",
     target=_FEDERATION_TARGET,
@@ -106,8 +110,8 @@ _ACTION_FEDERATION = ExchangeFederationSettings(
 )
 _ACTIONS_SETTINGS = ActionServiceDeploymentSettings(
     operator_oidc=_FEDERATION_TARGET,
-    policy_namespace=_NAMESPACE,
-    caller_service_account_namespaces=frozenset({_NAMESPACE, public_coder_egress.NAMESPACE}),
+    policy_namespace=STAGING_NAMESPACE,
+    caller_service_account_namespaces=frozenset({STAGING_NAMESPACE, public_coder_egress.NAMESPACE}),
     direct_wait_seconds=30,
     max_wait_seconds=180,
     web_push=WebPushDeploymentSettings(
@@ -200,7 +204,7 @@ _ACTIONS_SETTINGS = ActionServiceDeploymentSettings(
             executor=SandboxExecutorBinding(
                 kind="sandbox",
                 description="Stamped and exec'd by this service, as the caller, in its own namespace.",
-                namespace=_NAMESPACE,
+                namespace=STAGING_NAMESPACE,
                 # Each describes itself in the annotation the sandbox Actions read. The integration app's
                 # runner template is offered for a caller that wants the harnesses or a state volume
                 # that survives its Pod.
@@ -284,7 +288,7 @@ _ACTIONS_SETTINGS = ActionServiceDeploymentSettings(
 )
 
 ENV = Environment(
-    namespace=_NAMESPACE,
+    namespace=STAGING_NAMESPACE,
     description=(
         "Agentplane staging - sandboxed runner Pods (one per Sandbox) and the integration app that drives them."
     ),
@@ -292,8 +296,8 @@ ENV = Environment(
         "Complete Agentplane staging environment, including namespace, database, egress, LLM ingress, "
         "Actions, app, runner template, and operator RBAC."
     ),
-    output_dir=f"{HAND_WRITTEN_ROOT}/{_NAMESPACE}",
-    image_pins=f"{HAND_WRITTEN_ROOT}/{_NAMESPACE}/image-pins",
+    output_dir=f"{HAND_WRITTEN_ROOT}/{STAGING_NAMESPACE}",
+    image_pins=f"{HAND_WRITTEN_ROOT}/{STAGING_NAMESPACE}/image-pins",
     extra_resources=(_WEB_PUSH_SECRET_FILE, "github-app.sops.yaml"),
     replicas=ReplicaProfile(
         count=2,
@@ -305,7 +309,10 @@ ENV = Environment(
     ),
     model_routes=STAGING_APP_MODELS,
     app_config=staging_config.config(
-        action_federation=_ACTION_FEDERATION, sandbox_service_grpc_channel_options=LARGE_EVENT_GRPC_CHANNEL_OPTIONS
+        namespace=STAGING_NAMESPACE,
+        models=STAGING_APP_MODELS,
+        action_federation=_ACTION_FEDERATION,
+        sandbox_service_grpc_channel_options=LARGE_EVENT_GRPC_CHANNEL_OPTIONS,
     ),
     runner_grpc_channel_options=LARGE_EVENT_GRPC_CHANNEL_OPTIONS,
     sandbox_service_history_ingestion_enabled=False,
@@ -314,7 +321,7 @@ ENV = Environment(
     llm_ingress=LlmIngressProps(litellm_key_secret_name=_LITELLM_KEY_SECRET, log_llm_requests=True),
     egress=EgressProps(
         ca_secret_name=public_coder_egress.CA_BUNDLE_NAME,
-        credentials_namespace=STAGING_NAMESPACE,
+        credentials_namespace=STAGING_CREDENTIALS_NAMESPACE,
         external_workload_namespaces=(public_coder_egress.NAMESPACE,),
     ),
     app=AppProps(
@@ -390,11 +397,11 @@ def chart(app: App) -> Chart:
             "permissions as the generic runner; use remote execution for builds."
         ),
     )
-    notification_service = notifications.service(_NAMESPACE)
+    notification_service = notifications.service(STAGING_NAMESPACE)
     https_route(
         chart,
         "notifications-github-webhook-route",
-        metadata=ApiObjectMetadata(name="agentplane-notifications-github-webhook", namespace=_NAMESPACE),
+        metadata=ApiObjectMetadata(name="agentplane-notifications-github-webhook", namespace=STAGING_NAMESPACE),
         hostnames=[_NOTIFICATIONS_HOSTNAME],
         backend=notification_service,
         paths=["/v1/webhooks/github"],
@@ -403,7 +410,7 @@ def chart(app: App) -> Chart:
     NetworkPolicy(
         chart,
         "notifications-github-webhook-policy",
-        metadata=ApiObjectMetadata(name="agentplane-notifications-github-webhook", namespace=_NAMESPACE),
+        metadata=ApiObjectMetadata(name="agentplane-notifications-github-webhook", namespace=STAGING_NAMESPACE),
         endpoint_selector=notification_service.pods.selector,
         ingress=[IngressRule.from_gateway(notification_service.pod_port)],
     )
@@ -411,7 +418,7 @@ def chart(app: App) -> Chart:
     reader = ServiceAccount(
         chart,
         "external-creds-reader",
-        metadata=ApiObjectMetadata(name="external-creds-reader", namespace=_NAMESPACE),
+        metadata=ApiObjectMetadata(name="external-creds-reader", namespace=STAGING_NAMESPACE),
         automount_token=False,
     )
     ExternalSecret(
@@ -419,7 +426,7 @@ def chart(app: App) -> Chart:
         "tana-pat-external-secret",
         metadata=ApiObjectMetadata(
             name=_TANA_MCP_BEARER_SECRET,
-            namespace=_NAMESPACE,
+            namespace=STAGING_NAMESPACE,
             annotations={"description": "ESO copy of the canonical Tana PAT from external-creds."},
         ),
         refresh_interval="1h",
@@ -435,7 +442,7 @@ def chart(app: App) -> Chart:
     ):
         credential_external_secret(
             chart,
-            namespace=_NAMESPACE,
+            namespace=STAGING_NAMESPACE,
             target=target,
             source=source,
             key="bearer-token",
@@ -445,7 +452,7 @@ def chart(app: App) -> Chart:
                 reader=reader,
                 source_namespace=backend,
                 source_secret=source,
-                consumer_namespace=_NAMESPACE,
+                consumer_namespace=STAGING_NAMESPACE,
             ),
         )
     # The GitHub App's pre-registered OAuth client, whose SOPS source stays in haku-console
@@ -453,7 +460,7 @@ def chart(app: App) -> Chart:
     ExternalSecret(
         chart,
         "github-mcp-client-external-secret",
-        metadata=ApiObjectMetadata(name=_GITHUB_MCP_CLIENT_SECRET, namespace=_NAMESPACE),
+        metadata=ApiObjectMetadata(name=_GITHUB_MCP_CLIENT_SECRET, namespace=STAGING_NAMESPACE),
         refresh_interval="1h",
         secret_store_ref=SecretStoreRef.cluster(
             single_secret_store(
@@ -462,7 +469,7 @@ def chart(app: App) -> Chart:
                 reader=reader,
                 source_namespace="haku-console",
                 source_secret=_GITHUB_MCP_CLIENT_SECRET,
-                consumer_namespace=_NAMESPACE,
+                consumer_namespace=STAGING_NAMESPACE,
             )
         ),
         data=[remote_data(_GITHUB_MCP_CLIENT_SECRET, key) for key in ("client_id", "client_secret")],
@@ -490,7 +497,7 @@ def _add_session_secret(scope: Chart) -> None:
         scope,
         "session-external-secret",
         name=_OIDC_SESSION_SECRET,
-        namespace=_NAMESPACE,
+        namespace=STAGING_NAMESPACE,
         key="session-secret",
         length=64,
         digits=16,
@@ -541,7 +548,7 @@ def agentplane_staging(
                 api_version="external-secrets.io/v1",
                 kind="ExternalSecret",
                 name=_OIDC_SESSION_SECRET,
-                namespace=_NAMESPACE,
+                namespace=STAGING_NAMESPACE,
             ),
         ],
         health_check_exprs=[

@@ -36,7 +36,7 @@ from agentplane.action_service.mcp_linkage import McpOAuthServer
 from agentplane.action_service.operator_oidc_settings import OperatorOidcSettings, OperatorTokenProfile
 from agentplane.app.action_federation_settings import DirectFederationSettings
 from cluster.cdk8s import agent_access_profiles as access, cilium
-from cluster.cdk8s.agentplane import actions, app as app_component, dex, egress, testing_config
+from cluster.cdk8s.agentplane import actions, app as app_component, app_settings, dex, egress
 from cluster.cdk8s.agentplane.actions_testing_fixtures import (
     MCP_EVERYTHING_NAME,
     MCP_EVERYTHING_PORT,
@@ -45,7 +45,7 @@ from cluster.cdk8s.agentplane.actions_testing_fixtures import (
     add_testing_fixtures,
 )
 from cluster.cdk8s.agentplane.chart import environment_chart
-from cluster.cdk8s.agentplane.egress_credentials import TESTING_NAMESPACE, EgressCredentials
+from cluster.cdk8s.agentplane.egress_credentials import TESTING_CREDENTIALS_NAMESPACE, EgressCredentials
 from cluster.cdk8s.agentplane.egress_testing_credentials import add_testing_egress_credentials
 from cluster.cdk8s.agentplane.environment import (
     ActionsProps,
@@ -57,21 +57,22 @@ from cluster.cdk8s.agentplane.environment import (
     ReplicaProfile,
 )
 from cluster.cdk8s.agentplane.grpc_channel_config import LARGE_EVENT_GRPC_CHANNEL_OPTIONS
+from cluster.cdk8s.agentplane.namespaces import TESTING_NAMESPACE
 from cluster.cdk8s.api_resource import custom_resource, named_resource
 from cluster.cdk8s.flux import Kustomization, flux_kustomization, flux_kustomization_depends_on_many
 from cluster.cdk8s.generation import CNPG_DATABASE_READY
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT, HAND_WRITTEN_ROOT
 from cluster.cdk8s.model_selections import TESTING_APP_MODELS
 from cluster.cdk8s.providers.cilium.network_policy import EgressRule, NetworkPolicy
+from model_catalog.catalog import GPT6_LUNA_RESPONSES
 
-_NAMESPACE = "agentplane-testing"
 _HOSTNAME = "agentplane-testing.allegedly.works"
 _DEX_HOSTNAME = "agentplane-dex-testing.allegedly.works"
 _DEX_ISSUER = f"https://{_DEX_HOSTNAME}/dex"
 # The Terraform-owned key, replicated into this namespace by `litellm/credentials.py`'s
 # ExternalSecret.
 _LITELLM_KEY_SECRET = "litellm-key-cheap-experiments"
-_OAUTH_FIXTURE_MCP_URL = f"http://{OAUTH_FIXTURE_NAME}.{_NAMESPACE}.svc.cluster.local:{OAUTH_FIXTURE_PORT}/mcp"
+_OAUTH_FIXTURE_MCP_URL = f"http://{OAUTH_FIXTURE_NAME}.{TESTING_NAMESPACE}.svc.cluster.local:{OAUTH_FIXTURE_PORT}/mcp"
 
 _FEDERATION_TARGET = OperatorOidcSettings(
     issuer=_DEX_ISSUER,
@@ -81,7 +82,7 @@ _FEDERATION_TARGET = OperatorOidcSettings(
 )
 _ACTION_FEDERATION = DirectFederationSettings(
     mode="direct",
-    service_url=actions.service(_NAMESPACE).url,
+    service_url=actions.service(TESTING_NAMESPACE).url,
     login_jwks_uri=f"{_DEX_ISSUER}/keys",
     login_token_profile=OperatorTokenProfile.DEX,
     target=_FEDERATION_TARGET,
@@ -89,8 +90,8 @@ _ACTION_FEDERATION = DirectFederationSettings(
 )
 _ACTIONS_SETTINGS = ActionServiceDeploymentSettings(
     operator_oidc=_FEDERATION_TARGET,
-    policy_namespace=_NAMESPACE,
-    caller_service_account_namespaces=frozenset({_NAMESPACE}),
+    policy_namespace=TESTING_NAMESPACE,
+    caller_service_account_namespaces=frozenset({TESTING_NAMESPACE}),
     direct_wait_seconds=30,
     max_wait_seconds=180,
     mcp_servers={
@@ -112,7 +113,7 @@ _ACTIONS_SETTINGS = ActionServiceDeploymentSettings(
                 description="Community-built Everything image; no user account, workload token, or mounted credentials.",
                 config={
                     "transport": "streamable-http",
-                    "url": f"http://{MCP_EVERYTHING_NAME}.{_NAMESPACE}.svc.cluster.local:{MCP_EVERYTHING_PORT}/mcp",
+                    "url": f"http://{MCP_EVERYTHING_NAME}.{TESTING_NAMESPACE}.svc.cluster.local:{MCP_EVERYTHING_PORT}/mcp",
                     "auth": "none",
                 },
             ),
@@ -136,7 +137,7 @@ _ACTIONS_SETTINGS = ActionServiceDeploymentSettings(
 
 
 ENV = Environment(
-    namespace=_NAMESPACE,
+    namespace=TESTING_NAMESPACE,
     description=(
         "Agentplane testing - sandboxed runner Pods (one per Sandbox) and the integration app that drives them."
     ),
@@ -144,19 +145,25 @@ ENV = Environment(
         "Complete Agentplane testing environment, including namespace, database, Dex, egress, LLM ingress, "
         "Actions fixtures, app, runner template, and operator RBAC."
     ),
-    output_dir=f"{GENERATED_ROOT}/{_NAMESPACE}",
+    output_dir=f"{GENERATED_ROOT}/{TESTING_NAMESPACE}",
     image_pins=f"{HAND_WRITTEN_ROOT}/agentplane-testing-image-pins",
     extra_resources=(),
     replicas=ReplicaProfile(count=1, strategy=DeploymentStrategy.recreate(), min_ready=None, pdb_min_available=None),
     model_routes=TESTING_APP_MODELS,
-    app_config=testing_config.config(
-        action_federation=_ACTION_FEDERATION, sandbox_service_grpc_channel_options=LARGE_EVENT_GRPC_CHANNEL_OPTIONS
+    app_config=app_settings.settings(
+        namespace=TESTING_NAMESPACE,
+        models=TESTING_APP_MODELS,
+        thread_preset_codex_model=GPT6_LUNA_RESPONSES,
+        action_federation=_ACTION_FEDERATION,
+        sandbox_service_grpc_channel_options=LARGE_EVENT_GRPC_CHANNEL_OPTIONS,
     ),
     runner_grpc_channel_options=LARGE_EVENT_GRPC_CHANNEL_OPTIONS,
     sandbox_service_history_ingestion_enabled=True,
     db=DbProps(instances=1),
     llm_ingress=LlmIngressProps(litellm_key_secret_name=_LITELLM_KEY_SECRET),
-    egress=EgressProps(ca_secret_name="agentplane-testing-egress-ca", credentials_namespace=TESTING_NAMESPACE),
+    egress=EgressProps(
+        ca_secret_name="agentplane-testing-egress-ca", credentials_namespace=TESTING_CREDENTIALS_NAMESPACE
+    ),
     app=AppProps(hostname=_HOSTNAME, oidc_issuer=_DEX_ISSUER, reach_incluster_authentik=False, runner_zone=None),
     actions=ActionsProps(
         hostname="agentplane-actions-testing.allegedly.works",
@@ -167,7 +174,7 @@ ENV = Environment(
             # MCP OAuth discovery/token exchange/tool calls for the linked "example" fixture:
             # cluster-internal only, unlike the real GitHub/Kubernetes MCP OAuth providers
             # linked in staging.
-            EgressRule.to_endpoints(cilium.endpoint_labels(_NAMESPACE, OAUTH_FIXTURE_NAME), OAUTH_FIXTURE_PORT),
+            EgressRule.to_endpoints(cilium.endpoint_labels(TESTING_NAMESPACE, OAUTH_FIXTURE_NAME), OAUTH_FIXTURE_PORT),
         ],
     ),
 )

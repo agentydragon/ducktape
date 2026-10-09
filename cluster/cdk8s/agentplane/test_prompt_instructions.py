@@ -20,7 +20,7 @@ from cluster.cdk8s.agentplane.actions_staging_policies import (
     FINANCE_AGENT_GAFFER_PR_CREATION_SET,
 )
 from cluster.cdk8s.agentplane.app_settings import _PUBLIC_CODER_INSTRUCTIONS, DUCKTAPE_PR_INSTRUCTIONS
-from cluster.cdk8s.agentplane.staging_config import _FINANCE_AGENT_INSTRUCTIONS, HAKU_ACTION_POLICY_SETS, config
+from cluster.cdk8s.agentplane.staging_config import _FINANCE_AGENT_INSTRUCTIONS, HAKU_ACTION_POLICY_SETS
 
 
 def test_ducktape_pr_instructions_are_shared_once() -> None:
@@ -31,7 +31,7 @@ def test_ducktape_pr_instructions_are_shared_once() -> None:
 
 
 def test_gaffer_write_policies_are_finance_agent_only() -> None:
-    cfg = config()
+    cfg = staging.ENV.app_config
     finance_policies = cfg.sandbox_presets["finance-agent"].action_policy_sets
     assert FINANCE_AGENT_GAFFER_BRANCH_CREATION_SET in finance_policies
     assert FINANCE_AGENT_GAFFER_PR_CREATION_SET in finance_policies

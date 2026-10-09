@@ -382,7 +382,7 @@ py_test(
     ],
     env = {"JSII_NODE": "$(rootpath @nodejs_linux_amd64//:bin/node)"},
     deps = [
-        "//cluster/cdk8s:authentik_jwt_rotation",
+        "//cluster/cdk8s/authentik:jwt_rotation",
         "//util/bazel:runfiles",
         "@pypi//pytest_bazel",
         "@pypi//pyyaml",

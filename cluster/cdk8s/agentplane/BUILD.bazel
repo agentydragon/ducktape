@@ -372,18 +372,6 @@ py_test(
 )
 
 py_library(
-    name = "testing_config",
-    srcs = ["testing_config.py"],
-    deps = [
-        ":app_settings",
-        "//agentplane/app:action_federation_settings",
-        "//agentplane/app:settings",
-        "//cluster/cdk8s:model_selections",
-        "//model_catalog:catalog",
-    ],
-)
-
-py_library(
     name = "grpc_channel_config",
     srcs = ["grpc_channel_config.py"],
 )
@@ -477,6 +465,7 @@ py_library(
         ":environment",
         ":generation",
         ":grpc_channel_config",
+        ":namespaces",
         ":notifications",
         ":staging_config",
         "//agentplane/action_service:catalog",
@@ -514,6 +503,7 @@ py_library(
         ":actions",
         ":actions_testing_fixtures",
         ":app",
+        ":app_settings",
         ":chart",
         ":dex",
         ":egress",
@@ -522,7 +512,7 @@ py_library(
         ":environment",
         ":generation",
         ":grpc_channel_config",
-        ":testing_config",
+        ":namespaces",
         "//agentplane/action_service:catalog",
         "//agentplane/action_service:main",
         "//agentplane/action_service:mcp_linkage",
@@ -535,6 +525,7 @@ py_library(
         "//cluster/cdk8s:model_selections",
         "//cluster/cdk8s/providers/cilium:network_policy",
         "//cluster/cdk8s/providers/source_watcher:artifactgenerator",
+        "//model_catalog:catalog",
         "@pypi//cdk8s",
         "@pypi//cdk8s_plus_34",
         "@pypi//constructs",
@@ -813,4 +804,9 @@ py_library(
         "@pypi//cdk8s_plus_34",
         "@pypi//constructs",
     ],
+)
+
+py_library(
+    name = "namespaces",
+    srcs = ["namespaces.py"],
 )

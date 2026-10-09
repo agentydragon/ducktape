@@ -356,7 +356,7 @@ def chart(app: App) -> Chart:
         # agentplane-staging's egress proxy substitutes this into a sandbox's Google read requests
         # (cluster/cdk8s/agentplane/egress_staging_credentials.py's `google-readonly`
         # EgressCredential). The proxy's Secret watch is scoped to its isolated credentials
-        # namespace (cluster/cdk8s/agentplane/egress_credentials.py's STAGING_NAMESPACE), not the
+        # namespace (cluster/cdk8s/agentplane/egress_credentials.py's STAGING_CREDENTIALS_NAMESPACE), not the
         # app namespace. Not agentplane-testing: testing reaches no real account.
         ["agentplane-staging-egress-credentials"],
     )

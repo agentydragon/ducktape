@@ -32,7 +32,10 @@ py_library(
 py_library(
     name = "alloy_otlp_bearer_token",
     srcs = ["alloy_otlp_bearer_token.py"],
-    visibility = ["//cluster/cdk8s:__pkg__"],
+    visibility = [
+        "//cluster/cdk8s:__pkg__",
+        "//cluster/cdk8s/authentik:__pkg__",
+    ],
     deps = [
         "//cluster/cdk8s:terraform",
         "@pypi//cdk8s",

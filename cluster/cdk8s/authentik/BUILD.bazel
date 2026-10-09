@@ -106,3 +106,43 @@ py_library(
         "@pypi//cdk8s",
     ],
 )
+
+py_library(
+    name = "jwt_rotation",
+    srcs = ["jwt_rotation.py"],
+    visibility = [
+        "//cluster/cdk8s:__pkg__",
+        "//cluster/validation:__pkg__",
+    ],
+    deps = [
+        "//cluster/cdk8s:config_format",
+        "//cluster/cdk8s:external_creds",
+        "//cluster/cdk8s:flux",
+        "//cluster/cdk8s:manifest_roots",
+        "//cluster/cdk8s:namespaces",
+        "//cluster/cdk8s/forgejo:images",
+        "//cluster/cdk8s/providers/external_secrets:external_secret",
+        "//cluster/cdk8s/providers/external_secrets:externalsecret",
+        "//cluster/cdk8s/providers/flux:kustomization",
+        "//cluster/rotators/authentik_jwt_rotation:config",
+        "@pypi//cdk8s",
+        "@pypi//cdk8s_plus_34",
+    ],
+)
+
+py_library(
+    name = "tf",
+    srcs = ["tf.py"],
+    visibility = ["//cluster/cdk8s:__pkg__"],
+    deps = [
+        "//cluster/cdk8s:agent_machine_access",
+        "//cluster/cdk8s:flux",
+        "//cluster/cdk8s:manifest_roots",
+        "//cluster/cdk8s:terraform",
+        "//cluster/cdk8s/authentik:sso_providers",
+        "//cluster/cdk8s/gatus:sso",
+        "//cluster/cdk8s/monitoring:alloy_otlp_bearer_token",
+        "//cluster/cdk8s/providers/flux:kustomization",
+        "@pypi//cdk8s",
+    ],
+)
