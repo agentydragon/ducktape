@@ -1,16 +1,20 @@
-# Latest CI latency report
+# CI reports
 
-This dedicated branch holds the latest reviewed CI latency snapshot:
+This dedicated branch holds independent, latest-only CI report snapshots:
 
-- [Report (standalone HTML)](index.html)
-- [Supporting evidence](evidence.json)
-- [Inspected source commit and observation window](manifest.json)
-- Optional `attribution.json` when cost attribution was collected
+- **Latency:** [standalone HTML](latency/index.html), [evidence](latency/evidence.json),
+  [source and observation window](latency/manifest.json).
+- **Reliability:** migration of the flakiness report is under review in
+  [#9474](https://github.com/agentydragon/ducktape/pull/9474), using `reliability/`.
 
-Each refresh replaces these root files in a new commit through a PR against
-`ci-latency-history`. Use Git history for earlier measurements; do not accumulate
-run directories in the current tree. Download/open HTML locally; this branch is
-not a deployed GitHub Pages site.
+Each refresh replaces only its own directory's `index.html`, `evidence.json`,
+`manifest.json`, and optional `attribution.json`, through a PR against `ci-reports`.
+Preserve the other report directory and this navigation. Remove stale optional
+attribution only within the report being refreshed. Use Git history for earlier
+measurements; do not accumulate dated run directories. This branch continues the
+history of `ci-latency-history`; pre-migration latency snapshots are at the root
+of their historical commits. Download/open HTML locally; this branch is not a
+deployed GitHub Pages site.
 
 Collection and publication tools remain on
 [devel](https://github.com/agentydragon/ducktape/tree/devel/devinfra/ci/skills/ci_latency).
