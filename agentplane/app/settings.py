@@ -13,6 +13,7 @@ from agentplane.app.action_federation_settings import ActionFederationSettings
 from agentplane.app.model_catalog import ModelCatalog
 from agentplane.app.presets import SandboxPreset, ThreadPreset
 from agentplane.sandbox_service.kubernetes_grants import KubernetesGrant
+from util.urls import HttpEndpointUrl
 
 # YamlConfigSettingsSource loads yaml lazily inside pydantic-settings; gazelle cannot see the dependency.
 # gazelle:include_dep @pypi//pyyaml
@@ -59,7 +60,7 @@ class AppSettingsConfig(BaseSettings):
     sandbox_service_grpc_channel_options: dict[str, int | str] = Field(
         default_factory=dict, description="gRPC channel options for the App's connection to Sandbox Service."
     )
-    egress_admin_url: str = Field(description="The egress proxy's admin port, serving /decisions.")
+    egress_admin_url: HttpEndpointUrl = Field(description="The egress proxy's admin port, serving /decisions.")
     action_federation: ActionFederationSettings | None = None
 
 
@@ -77,7 +78,7 @@ class Settings(AppSettingsConfig):
         "so a sandbox shares a namespace with neither the app, its database, nor the rules that govern it."
     )
     sandbox_service_target: str = Field(min_length=1)
-    notifications_url: str | None = None
+    notifications_url: HttpEndpointUrl | None = None
     notifications_token_file: Path | None = None
     sandbox_service_token_file: Path = Path("/var/run/secrets/agentplane-sandbox-service/token")
     sandbox_service_request_timeout_s: float = Field(default=20, gt=0, allow_inf_nan=False)
@@ -95,7 +96,7 @@ class Settings(AppSettingsConfig):
     port: int = Field(default=8080, description="Bind port.")
     kubeconfig: Path | None = Field(default=None, description="Kubeconfig to use; omit for in-cluster.")
     database_url: str = Field(description="SQLAlchemy asyncpg URL of the thread store.")
-    electric_url: str | None = Field(
+    electric_url: HttpEndpointUrl | None = Field(
         default=None, description="Cluster-internal Electric root URL; omitted leaves thread sync routes disabled."
     )
     egress_admin_timeout: float = Field(

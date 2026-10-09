@@ -117,11 +117,15 @@ async def async_main(settings: Settings) -> None:
             timeout=10,
         ) as actions_http,
         httpx.AsyncClient(
-            base_url=settings.notifications_url or "http://disabled.invalid", timeout=5
+            base_url=str(settings.notifications_url)
+            if settings.notifications_url is not None
+            else "http://disabled.invalid",
+            timeout=5,
         ) as notifications_http,
-        httpx.AsyncClient(base_url=settings.egress_admin_url, timeout=settings.egress_admin_timeout) as admin_http,
+        httpx.AsyncClient(base_url=str(settings.egress_admin_url), timeout=settings.egress_admin_timeout) as admin_http,
         httpx.AsyncClient(
-            base_url=settings.electric_url or "http://disabled.invalid", timeout=httpx.Timeout(65, connect=5)
+            base_url=str(settings.electric_url) if settings.electric_url is not None else "http://disabled.invalid",
+            timeout=httpx.Timeout(65, connect=5),
         ) as electric_http,
     ):
         # Cast so `patch_namespaced_custom_object` accepts `_content_type` (see util.kubernetes).
@@ -193,7 +197,7 @@ async def async_main(settings: Settings) -> None:
             content=content,
             database_updates=database_updates,
             operator_sessions=OperatorSessionStore(engine),
-            notifications_http=notifications_http if settings.notifications_url else None,
+            notifications_http=notifications_http if settings.notifications_url is not None else None,
             notifications_token_file=settings.notifications_token_file,
         )
         worker = await asyncio.to_thread(Path(get_required_path(SERVICE_WORKER)).read_bytes)

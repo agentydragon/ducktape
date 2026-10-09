@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from pydantic import AnyHttpUrl
+
 from agentplane.app.action_federation_settings import ActionFederationSettings
 from agentplane.app.model_catalog import ModelCatalog, ModelOption
 from agentplane.app.presets import SandboxPreset, ThreadPreset
@@ -115,6 +117,6 @@ def settings(
         # The egress proxy's admin port (agentplane/egress `Settings.admin_port`), asked
         # for each sandbox's recent decisions; until the proxy Deployment lands the page
         # shows the rules alone.
-        egress_admin_url=f"http://agentplane-egress-admin.{namespace}.svc:8081",
+        egress_admin_url=AnyHttpUrl(f"http://agentplane-egress-admin.{namespace}.svc:8081"),
         action_federation=action_federation,
     )

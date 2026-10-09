@@ -4082,7 +4082,7 @@ data:
       - inference-experiments
     sandbox_service_grpc_channel_options:
       grpc.max_receive_message_length: 33554432
-    egress_admin_url: http://agentplane-egress-admin.agentplane-staging.svc:8081
+    egress_admin_url: http://agentplane-egress-admin.agentplane-staging.svc:8081/
     action_federation:
       service_url: http://agentplane-actions.agentplane-staging.svc:8080/
       login_jwks_uri: https://auth.allegedly.works/application/o/agentplane-staging/jwks/

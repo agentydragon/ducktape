@@ -15,6 +15,7 @@ import pytest_bazel
 import uvicorn
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
+from pydantic import ValidationError
 from sqlalchemy import func, select, text
 from sqlalchemy.ext.asyncio import AsyncEngine, create_async_engine
 from tenacity import AsyncRetrying, retry_if_exception_type, stop_after_delay, wait_fixed
@@ -121,6 +122,36 @@ def test_the_two_settings_models_read_one_environment_without_colliding(monkeypa
     )
     # https, so the cookie takes the __Host- prefix that binds it to this exact origin.
     assert oidc.cookie_name.startswith("__Host-")
+
+
+def test_endpoint_settings_parse_urls_and_keep_optional_fields_absent(monkeypatch: pytest.MonkeyPatch) -> None:
+    for name, value in APP_ENVIRONMENT.items():
+        monkeypatch.setenv(name, value)
+
+    settings = Settings(_cli_parse_args=[])
+    assert str(settings.egress_admin_url) == "http://egress.test.invalid:8081/"
+    assert settings.notifications_url is None
+    assert settings.electric_url is None
+
+    monkeypatch.setenv("AGENTPLANE_NOTIFICATIONS_URL", "http://notifications.test.invalid:8080")
+    monkeypatch.setenv("AGENTPLANE_ELECTRIC_URL", "http://electric.test.invalid:3000")
+    settings = Settings(_cli_parse_args=[])
+    assert settings.notifications_url is not None
+    assert settings.electric_url is not None
+    assert str(settings.notifications_url) == "http://notifications.test.invalid:8080/"
+    assert str(settings.electric_url) == "http://electric.test.invalid:3000/"
+
+
+@pytest.mark.parametrize(
+    "field", ["AGENTPLANE_EGRESS_ADMIN_URL", "AGENTPLANE_NOTIFICATIONS_URL", "AGENTPLANE_ELECTRIC_URL"]
+)
+def test_endpoint_settings_reject_query_components(field: str, monkeypatch: pytest.MonkeyPatch) -> None:
+    for name, value in APP_ENVIRONMENT.items():
+        monkeypatch.setenv(name, value)
+    monkeypatch.setenv(field, "http://service.test.invalid/?tenant=one")
+
+    with pytest.raises(ValidationError):
+        Settings(_cli_parse_args=[])
 
 
 def test_without_an_issuer_there_is_no_login(monkeypatch: pytest.MonkeyPatch) -> None:
