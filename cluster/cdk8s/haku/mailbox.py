@@ -55,13 +55,13 @@ _IMAGE = "git.allegedly.works/ducktape-ci/stalwart:unset"
 # Stalwart's SMTP listener, and the one the ingress's nginx.conf listens on too.
 _SMTP_PORT = 2525
 # Stalwart's HTTP listener: JMAP and the management API.
-_HTTP = ServiceRef(
+HTTP = ServiceRef(
     name=NAME,
     port=Port(name="http", number=8080),
     pods=Pods(namespace=NAMESPACE, labels=(("app.kubernetes.io/name", NAME),)),
 )
-_IMAP = ServiceRef(name=_HTTP.name, port=Port(name="imap", number=1143), pods=_HTTP.pods)
-_SMTP = ServiceRef(name="smtp", port=Port(name="smtp", number=_SMTP_PORT), pods=_HTTP.pods)
+_IMAP = ServiceRef(name=HTTP.name, port=Port(name="imap", number=1143), pods=HTTP.pods)
+_SMTP = ServiceRef(name="smtp", port=Port(name="smtp", number=_SMTP_PORT), pods=HTTP.pods)
 _CONFIG_DIR = "/etc/stalwart"  # where CONFIG_MAP is mounted
 _INITIALIZE = "initialize.sh"
 _SERVER_CONFIG = "config.json"
@@ -99,7 +99,7 @@ def _stalwart_mounts() -> list[k8s.VolumeMount]:
 
 def _curl_probe(path: str, *, period_seconds: int, failure_threshold: int | None = None) -> k8s.Probe:
     return k8s.Probe(
-        exec=k8s.ExecAction(command=["curl", "--fail", "--silent", f"http://127.0.0.1:{_HTTP.pod_port}{path}"]),
+        exec=k8s.ExecAction(command=["curl", "--fail", "--silent", f"http://127.0.0.1:{HTTP.pod_port}{path}"]),
         period_seconds=period_seconds,
         failure_threshold=failure_threshold,
     )
@@ -133,13 +133,13 @@ def _add_deployment(chart: Chart) -> None:
     k8s.KubeDeployment(
         chart,
         "deployment",
-        metadata=k8s.ObjectMeta(name=NAME, namespace=NAMESPACE, labels=_HTTP.pods.selector),
+        metadata=k8s.ObjectMeta(name=NAME, namespace=NAMESPACE, labels=HTTP.pods.selector),
         spec=k8s.DeploymentSpec(
             replicas=1,
             strategy=k8s.DeploymentStrategy(type="Recreate"),
-            selector=k8s.LabelSelector(match_labels=_HTTP.pods.selector),
+            selector=k8s.LabelSelector(match_labels=HTTP.pods.selector),
             template=k8s.PodTemplateSpec(
-                metadata=k8s.ObjectMeta(labels=_HTTP.pods.selector),
+                metadata=k8s.ObjectMeta(labels=HTTP.pods.selector),
                 spec=k8s.PodSpec(
                     image_pull_secrets=[k8s.LocalObjectReference(name=forgejo_images.SECRET_NAME)],
                     automount_service_account_token=False,
@@ -183,7 +183,7 @@ def _add_deployment(chart: Chart) -> None:
                             termination_message_policy="FallbackToLogsOnError",
                             ports=[
                                 _SMTP.port.k8s_container_port(),
-                                _HTTP.port.k8s_container_port(),
+                                HTTP.port.k8s_container_port(),
                                 _IMAP.port.k8s_container_port(),
                             ],
                             env=[_DB_PASSWORD.env_var("STALWART_DB_PASSWORD"), public_url],
@@ -238,7 +238,7 @@ def _add_services(chart: Chart) -> None:
         chart,
         "service",
         metadata=k8s.ObjectMeta(
-            name=_HTTP.name,
+            name=HTTP.name,
             namespace=NAMESPACE,
             annotations={
                 "description": (
@@ -250,7 +250,7 @@ def _add_services(chart: Chart) -> None:
             },
         ),
         spec=k8s.ServiceSpec(
-            selector=_HTTP.pods.selector, ports=[_HTTP.port.k8s_service_port(), _IMAP.port.k8s_service_port()]
+            selector=HTTP.pods.selector, ports=[HTTP.port.k8s_service_port(), _IMAP.port.k8s_service_port()]
         ),
     )
 
@@ -375,10 +375,10 @@ def _add_smtp_ingress(chart: Chart) -> None:
         chart,
         "policy",
         metadata=ApiObjectMetadata(name=NAME, namespace=NAMESPACE),
-        endpoint_selector=_HTTP.pods.selector,
+        endpoint_selector=HTTP.pods.selector,
         ingress=[
             IngressRule.from_endpoints(_INGRESS_LABELS, ports=[_SMTP.pod_port]),
-            IngressRule.from_gateway(_HTTP.pod_port),
+            IngressRule.from_gateway(HTTP.pod_port),
             IngressRule.from_endpoints(
                 {"k8s:io.kubernetes.pod.namespace": namespace.NAMESPACE}, ports=[_IMAP.pod_port]
             ),
@@ -447,7 +447,7 @@ def chart(app: App) -> Chart:
             },
         ),
         hostnames=["haku-mailbox.allegedly.works"],
-        backend=_HTTP,
+        backend=HTTP,
         timeout="60s",
         hsts=False,
         listener=None,

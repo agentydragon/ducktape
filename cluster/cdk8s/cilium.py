@@ -37,7 +37,7 @@ from cluster.cdk8s.service_ref import Pods
 # kube-dns's own selector -- every environment's DNS egress rule selects it the same way.
 KUBE_DNS_LABELS = {"k8s:io.kubernetes.pod.namespace": "kube-system", "k8s-app": "kube-dns"}
 # Authentik's server Pods, reached through the Gateway Service with the client's original SNI
-# (cluster/docs/cilium_network_policy.md § Egress through the Gateway Service).
+# (cluster/docs/cilium_network_policy.md § Egress through a local Gateway).
 AUTHENTIK_SERVER_LABELS = {
     "k8s:io.kubernetes.pod.namespace": "authentik",
     "app.kubernetes.io/name": "authentik",

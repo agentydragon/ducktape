@@ -2,6 +2,12 @@
 sandbox, with the Secret plumbing that delivers it and, beyond the GitHub PAT whose EgressCredential
 and policy both environments share (`egress.py`), the EgressPolicy that scopes where it is
 presented. Testing shares GitHub, BuildBuddy, and inference credentials (`egress_testing_credentials.py`).
+
+Keep each public Gateway EgressPolicy in sync with a Cilium backend grant beside it: a Gateway
+on the proxy's own node rechecks the proxy's egress against the selected backend's identity and
+target port. Node:443 alone completes TLS but returns HTTP 403 (#9495). Reuse the backend's
+ServiceRef so selector/port changes propagate; the EgressPolicy still fences hosts, paths,
+methods and credentials. See cluster/docs/cilium_network_policy.md, "Egress through a local Gateway".
 """
 
 from agentplane_egresscredential_crds.works.allegedly.agentplane import (
@@ -18,6 +24,7 @@ from cdk8s_plus_34 import ServiceAccount
 from constructs import Construct
 
 from cluster.cdk8s import cilium
+from cluster.cdk8s.activitywatch import app as activitywatch
 from cluster.cdk8s.agentplane.egress import FORGEJO_HOST, FORGEJO_HOST_ALIASES, FORGEJO_PUBLIC_HOST, HOME_ASSISTANT_HOST
 from cluster.cdk8s.agentplane.egress_credentials import (
     EXTERNAL_CREDS_READER,
@@ -27,8 +34,10 @@ from cluster.cdk8s.agentplane.egress_credentials import (
     inference_credentials,
 )
 from cluster.cdk8s.aiquota import AGENTPLANE_STAGING_BEARER, SERVICE as AIQUOTA_SERVICE
+from cluster.cdk8s.authentik import app as authentik
 from cluster.cdk8s.clickhouse import client as clickhouse
 from cluster.cdk8s.external_secrets.single_secret_store import single_secret_store
+from cluster.cdk8s.haku import mailbox
 from cluster.cdk8s.home_assistant.app import AGENTPLANE_READER_TOKEN
 from cluster.cdk8s.plaid_mcp import pgweb as plaid_pgweb
 from cluster.cdk8s.providers.agentplane.egress_credential import EgressCredential, Source
@@ -336,6 +345,14 @@ def _grocy_sf_readonly(scope: Construct, *, reader: ServiceAccount, namespace: s
             )
         ],
     )
+    # Grocy's public route targets Authentik's embedded outpost; keep this grant with its EgressPolicy.
+    NetworkPolicy(
+        scope,
+        "networkpolicy-egress-to-grocy-sf",
+        metadata=ApiObjectMetadata(name="agentplane-egress-to-grocy-sf", namespace=namespace),
+        endpoint_selector=cilium.AGENTPLANE_STAGING_PROXY.selector,
+        egress=[authentik.SERVER.egress()],
+    )
 
 
 def _home_assistant_readonly(
@@ -451,6 +468,14 @@ def _activitywatch_read(
             ),
         ],
     )
+    # Keep the public read policy and its Gateway backend grant together; use the bearer read port.
+    NetworkPolicy(
+        scope,
+        "networkpolicy-egress-to-activitywatch-read",
+        metadata=ApiObjectMetadata(name="agentplane-egress-to-activitywatch-read", namespace=namespace),
+        endpoint_selector=cilium.AGENTPLANE_STAGING_PROXY.selector,
+        egress=[activitywatch.READ.egress()],
+    )
 
 
 def _aiquota_read(scope: Construct, *, namespace: str) -> None:
@@ -495,6 +520,15 @@ def _aiquota_read(scope: Construct, *, namespace: str) -> None:
                 credential_ref=EgressPolicySpecRulesCredentialRef(name="aiquota-read"),
             ),
         ],
+    )
+
+    # Both the public Gateway policy and the internal Service policy need this backend grant.
+    NetworkPolicy(
+        scope,
+        "networkpolicy-egress-to-aiquota",
+        metadata=ApiObjectMetadata(name="agentplane-egress-to-aiquota", namespace=namespace),
+        endpoint_selector=cilium.AGENTPLANE_STAGING_PROXY.selector,
+        egress=[AIQUOTA_SERVICE.egress()],
     )
 
 
@@ -547,13 +581,6 @@ def _finance_aiquota_history(
         metadata=ApiObjectMetadata(name="agentplane-egress-to-finance-clickhouse", namespace=namespace),
         endpoint_selector=cilium.AGENTPLANE_STAGING_PROXY.selector,
         egress=[clickhouse.HTTP.egress()],
-    )
-    NetworkPolicy(
-        scope,
-        "networkpolicy-egress-to-aiquota",
-        metadata=ApiObjectMetadata(name="agentplane-egress-to-aiquota", namespace=namespace),
-        endpoint_selector=cilium.AGENTPLANE_STAGING_PROXY.selector,
-        egress=[AIQUOTA_SERVICE.egress()],
     )
 
 
@@ -612,6 +639,14 @@ def _haku_mailbox(scope: Construct, *, reader: ServiceAccount, namespace: str, c
                 credential_ref=EgressPolicySpecRulesCredentialRef(name="haku-mailbox"),
             ),
         ],
+    )
+    # Keep this backend grant with the public JMAP policy above; that policy excludes management APIs.
+    NetworkPolicy(
+        scope,
+        "networkpolicy-egress-to-haku-mailbox",
+        metadata=ApiObjectMetadata(name="agentplane-egress-to-haku-mailbox", namespace=namespace),
+        endpoint_selector=cilium.AGENTPLANE_STAGING_PROXY.selector,
+        egress=[mailbox.HTTP.egress()],
     )
 
 

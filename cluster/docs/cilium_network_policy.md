@@ -143,18 +143,22 @@ the whole diagnosis. A true-world address is simply absent from the ipcache.
 Origin: public-coder-agent's Haku Console MCP server timing out at 30s while the
 same proxy reached GitHub and BuildBuddy fine (2026-08-01).
 
-## Egress through the Gateway Service: checked against the backend, with the client's SNI
+## Egress through a local Gateway
 
-A pod connecting to the Gateway's ClusterIP
-(`gateway-system/cilium-gateway-cluster-gateway`, `10.106.122.5:443`) is not
-policy-checked as pod → Service. `bpf_lxc.c` hands L7 Service traffic to the
-node's Envoy before ordinary egress policy runs; the proxy captures the original
-SNI (`cilium/network_filter.cc`) and applies the source pod's egress policy in the
-upstream callback (`cilium/filter_state_cilium_policy.cc`) against the **selected
-backend's** identity and `targetPort`, with that SNI. A rule admitting
-`host`/`remote-node`:443 with `serverNames` therefore covers the node-IP path only;
-through the Service the TLS handshake completes and the request gets HTTP 403
-(`server: envoy`, `Access denied`).
+A pod reaching its own node's Gateway through the public IP, Nebula IP, or Gateway
+Service also needs egress permission for the **selected backend's** identity and
+`targetPort`. Envoy retains the local source pod's policy (`cilium/bpf_metadata.cc`)
+and checks it after backend selection (`cilium/l7policy.cc`), with the client's SNI.
+Allowing `host`/`remote-node`:443 alone completes TLS but returns HTTP 403
+(`server: envoy`, `Access denied`). A remote Gateway does not have that local source
+pod policy, so the same request can succeed there (#9495).
+
+Keep a public-origin Agentplane `EgressPolicy` beside its backend Cilium grant
+(`agentplane/egress_staging_credentials.py`). Reference the Service's selector and
+**target** port: ActivityWatch's read Service maps 5600 to 5603, and Grocy's public
+route targets Authentik on 9000. The proxy's application policy continues to scope
+hosts, paths, methods and credentials. Validate HTTP from a restricted source pod;
+a TLS-only probe or an unrestricted source does not exercise this check.
 
 ### Pattern: select the backend with the same SNI
 

@@ -224,6 +224,10 @@ py_library(
 py_library(
     name = "mailbox",
     srcs = ["mailbox.py"],
+    visibility = [
+        "//cluster/cdk8s:__pkg__",
+        "//cluster/cdk8s/agentplane:__pkg__",
+    ],
     deps = [
         ":namespace",
         "//cluster/cdk8s:cilium",

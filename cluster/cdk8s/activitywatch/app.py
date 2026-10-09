@@ -53,7 +53,7 @@ _HTTP = Port(name="http", number=5600)
 _READONLY = ServiceRef(name="readonly", port=_HTTP, pods=_PODS, target_port=5601)
 # The bearer-proxy sidecar, one Service per direction.
 _WRITE = ServiceRef(name="write", port=_HTTP, pods=_PODS, target_port=5602)
-_READ = ServiceRef(name="read", port=_HTTP, pods=_PODS, target_port=5603)
+READ = ServiceRef(name="read", port=_HTTP, pods=_PODS, target_port=5603)
 # The SOPS-managed bearers the bearer-proxy checks.
 _WRITE_TOKEN = SecretRef(namespace=_NAMESPACE, name="activitywatch-write-token").key("token")
 _READ_TOKEN = SecretRef(namespace=_NAMESPACE, name="activitywatch-read-token").key("token")
@@ -146,7 +146,7 @@ def _bearer_proxy_container() -> k8s.Container:
         ],
         ports=[
             k8s.ContainerPort(container_port=_WRITE.pod_port, name="write"),
-            k8s.ContainerPort(container_port=_READ.pod_port, name="read"),
+            k8s.ContainerPort(container_port=READ.pod_port, name="read"),
         ],
         volume_mounts=[k8s.VolumeMount(name="bearer-proxy-config", mount_path="/etc/nginx/templates", read_only=True)],
         resources=k8s.ResourceRequirements(
@@ -272,7 +272,7 @@ def _network_policy(scope: Construct) -> None:
             # Public write + read routes: the Gateway (Envoy, hostNetwork) reaches the
             # bearer-gated bearer-proxy sidecar on 5602 (write) and 5603 (read).
             # See docs/cilium_network_policy.md (fromEntities: ingress).
-            IngressRule.from_gateway(_WRITE.pod_port, _READ.pod_port),
+            IngressRule.from_gateway(_WRITE.pod_port, READ.pod_port),
         ],
         egress=[cilium.dns_egress()],
     )
@@ -299,7 +299,7 @@ def chart(app: App) -> Chart:
     _service(
         chart,
         "read-service",
-        service=_READ,
+        service=READ,
         description=(
             "Bearer-gated read-only ActivityWatch endpoint (bearer-proxy sidecar, 5603), fronted by the public "
             "read HTTPRoute for the Haku agent."
@@ -312,6 +312,6 @@ def chart(app: App) -> Chart:
     _route(chart, "write-route", backend=_WRITE, hostname="activitywatch-write.allegedly.works")
     # Public read route for the Haku agent. Reaches the bearer-gated read Service, which
     # allows read methods only, so even a leaked read token can't write.
-    _route(chart, "read-route", backend=_READ, hostname="activitywatch-read.allegedly.works")
+    _route(chart, "read-route", backend=READ, hostname="activitywatch-read.allegedly.works")
     _network_policy(chart)
     return chart

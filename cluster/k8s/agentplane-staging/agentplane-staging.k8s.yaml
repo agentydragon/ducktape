@@ -8089,6 +8089,26 @@ spec:
       credentialRef:
         name: grocy-sf-readonly
 ---
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: agentplane-egress-to-grocy-sf
+  namespace: agentplane-staging
+spec:
+  egress:
+    - toEndpoints:
+        - matchLabels:
+            app.kubernetes.io/component: server
+            app.kubernetes.io/name: authentik
+            k8s:io.kubernetes.pod.namespace: authentik
+      toPorts:
+        - ports:
+            - port: "9000"
+              protocol: TCP
+  endpointSelector:
+    matchLabels:
+      app.kubernetes.io/name: agentplane-egress
+---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: Role
 metadata:
@@ -8306,6 +8326,25 @@ spec:
       credentialRef:
         name: activitywatch-read
 ---
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: agentplane-egress-to-activitywatch-read
+  namespace: agentplane-staging
+spec:
+  egress:
+    - toEndpoints:
+        - matchLabels:
+            app.kubernetes.io/name: activitywatch
+            k8s:io.kubernetes.pod.namespace: activitywatch
+      toPorts:
+        - ports:
+            - port: "5603"
+              protocol: TCP
+  endpointSelector:
+    matchLabels:
+      app.kubernetes.io/name: agentplane-egress
+---
 apiVersion: agentplane.allegedly.works/v1alpha1
 kind: EgressCredential
 metadata:
@@ -8347,6 +8386,25 @@ spec:
       clusterInternal: true
       credentialRef:
         name: aiquota-read
+---
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: agentplane-egress-to-aiquota
+  namespace: agentplane-staging
+spec:
+  egress:
+    - toEndpoints:
+        - matchLabels:
+            app.kubernetes.io/name: aiquota
+            k8s:io.kubernetes.pod.namespace: cli-proxy-api
+      toPorts:
+        - ports:
+            - port: "8080"
+              protocol: TCP
+  endpointSelector:
+    matchLabels:
+      app.kubernetes.io/name: agentplane-egress
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: Role
@@ -8473,25 +8531,6 @@ spec:
     matchLabels:
       app.kubernetes.io/name: agentplane-egress
 ---
-apiVersion: cilium.io/v2
-kind: CiliumNetworkPolicy
-metadata:
-  name: agentplane-egress-to-aiquota
-  namespace: agentplane-staging
-spec:
-  egress:
-    - toEndpoints:
-        - matchLabels:
-            app.kubernetes.io/name: aiquota
-            k8s:io.kubernetes.pod.namespace: cli-proxy-api
-      toPorts:
-        - ports:
-            - port: "8080"
-              protocol: TCP
-  endpointSelector:
-    matchLabels:
-      app.kubernetes.io/name: agentplane-egress
----
 apiVersion: rbac.authorization.k8s.io/v1
 kind: Role
 metadata:
@@ -8603,6 +8642,25 @@ spec:
         - /jmap/**
       credentialRef:
         name: haku-mailbox
+---
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: agentplane-egress-to-haku-mailbox
+  namespace: agentplane-staging
+spec:
+  egress:
+    - toEndpoints:
+        - matchLabels:
+            app.kubernetes.io/name: haku-mailbox
+            k8s:io.kubernetes.pod.namespace: haku-mailbox
+      toPorts:
+        - ports:
+            - port: "8080"
+              protocol: TCP
+  endpointSelector:
+    matchLabels:
+      app.kubernetes.io/name: agentplane-egress
 ---
 apiVersion: external-secrets.io/v1
 kind: ExternalSecret
