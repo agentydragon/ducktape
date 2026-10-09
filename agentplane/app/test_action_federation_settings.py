@@ -32,7 +32,10 @@ def test_host_only_service_url_remains_a_url_value_and_serializes_without_slash(
         egress_admin_url="http://egress.test:8081",
         action_federation=federation,
     )
-    assert config.model_dump(mode="json", exclude_unset=True)["action_federation"]["service_url"] == "http://actions.test:8080"
+    assert (
+        config.model_dump(mode="json", exclude_unset=True)["action_federation"]["service_url"]
+        == "http://actions.test:8080"
+    )
 
 
 @pytest.mark.parametrize(
