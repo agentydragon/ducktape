@@ -125,7 +125,7 @@ Keep compact reviewed measurements and provenance in `evidence.json`. Full API
 payloads, logs, credentials, and profiles stay local. Preserve still-relevant prior
 findings with commit-pinned links rather than copying every historical report.
 
-The packaged publisher is the same implementation used by `ci_latency`. From the
+Both skills package `devinfra/ci/reports/publish.py` as `scripts/publish.py`. From the
 inspected source checkout, with the reports worktree at `$HISTORY`, run:
 
 ```bash

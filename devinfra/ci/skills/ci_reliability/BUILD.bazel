@@ -5,7 +5,7 @@ skill_package(
     contents = [
         skill_mapping(srcs = ["SKILL.md"]),
         skill_mapping(
-            srcs = ["//devinfra/ci/skills/ci_latency:scripts/publish.py"],
+            srcs = ["//devinfra/ci/reports:publish.py"],
             prefix = "scripts",
         ),
     ],

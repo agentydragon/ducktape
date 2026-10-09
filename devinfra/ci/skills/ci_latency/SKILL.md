@@ -397,8 +397,7 @@ profiles. Pin the actual inspected devel SHA
 `ci-reports` worktree root:
 
 ```bash
-SKILL=devinfra/ci/skills/ci_latency/scripts
-python3 "$SKILL/publish.py" --source "$DEVEL_SHA" --kind latency \
+python3 devinfra/ci/reports/publish.py --source "$DEVEL_SHA" --kind latency \
   --window-start "$SINCE" --window-end "$UNTIL" \
   --report "$REPORT" --evidence "$EVIDENCE" --out "$HISTORY"
 # Add --attribution "$ATTRIBUTION" only when measured attribution is available.
@@ -408,7 +407,8 @@ Use `--kind reliability` to publish to `reliability/`; each invocation updates
 only its selected namespace. Compare observation windows with prior reports of the
 same kind because latency and reliability runs may cover different periods.
 
-`publish.py` copies the **already written and reviewed standalone HTML** to
+The shared `devinfra/ci/reports/publish.py` (also packaged as `scripts/publish.py`
+in both reporting skills) copies the **already written and reviewed standalone HTML** to
 `latency/index.html` byte for byte; it does not render, sanitize or validate the
 report, investigate CI, rank fixes, or validate conclusions. Review the narrative
 and rendered page before publishing. The publisher replaces only the selected
