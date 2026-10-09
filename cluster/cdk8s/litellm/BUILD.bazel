@@ -146,7 +146,7 @@ py_test(
         ":config",
         "//:conftest",
         "//cluster/cdk8s/parked:haku_openclaw_spike_config",
-        "//cluster/cdk8s/public_coder:app",
+        "//cluster/cdk8s/public_coder:config",
         "//model_catalog:catalog",
         "@pypi//cdk8s",
         "@pypi//pytest",

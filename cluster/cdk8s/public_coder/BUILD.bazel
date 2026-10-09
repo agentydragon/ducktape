@@ -12,6 +12,7 @@ py_library(
     srcs = ["app.py"],
     visibility = ["//cluster/cdk8s:__subpackages__"],
     deps = [
+        ":config",
         ":egress",
         ":proxy",
         ":sshpiper",
@@ -22,7 +23,6 @@ py_library(
         "//cluster/cdk8s:generation",
         "//cluster/cdk8s:manifest_roots",
         "//cluster/cdk8s:namespaces",
-        "//cluster/cdk8s:openclaw_gateway",
         "//cluster/cdk8s:secret_ref",
         "//cluster/cdk8s:service_ref",
         "//cluster/cdk8s/clickhouse:client",
@@ -32,7 +32,6 @@ py_library(
         "//cluster/cdk8s/haku:kube_api_proxy",
         "//cluster/cdk8s/providers/external_secrets:external_secret",
         "//cluster/cdk8s/providers/external_secrets:externalsecret",
-        "//model_catalog:catalog",
         "@pypi//cdk8s",
         "@pypi//cdk8s_plus_34",
         "@pypi//constructs",
@@ -175,5 +174,15 @@ py_test(
         "@pypi//pytest",
         "@pypi//pytest_bazel",
         "@pypi//pyyaml",
+    ],
+)
+
+py_library(
+    name = "config",
+    srcs = ["config.py"],
+    deps = [
+        ":egress",
+        "//cluster/cdk8s:openclaw_gateway",
+        "//model_catalog:catalog",
     ],
 )
