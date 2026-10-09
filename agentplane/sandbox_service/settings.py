@@ -9,6 +9,8 @@ from typing import Any
 from pydantic import Field
 from pydantic_settings import BaseSettings, PydanticBaseSettingsSource, SettingsConfigDict, YamlConfigSettingsSource
 
+# YamlConfigSettingsSource loads yaml lazily inside pydantic-settings; gazelle cannot see the dependency.
+# gazelle:include_dep @pypi//pyyaml
 from agentplane.sandbox_service.kubernetes_grants import KubernetesGrant
 from agentplane.subjects import ServiceAccountRef
 

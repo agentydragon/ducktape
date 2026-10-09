@@ -662,5 +662,6 @@ py_library(
         "//agentplane:subjects",
         "@pypi//pydantic",
         "@pypi//pydantic_settings",
+        "@pypi//pyyaml",
     ],
 )
