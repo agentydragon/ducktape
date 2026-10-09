@@ -1,9 +1,13 @@
 """Real PostgreSQL, migrated by the same image-owned runner used in deployment."""
 
+import asyncio
+import json
+import logging
 from collections.abc import AsyncIterator, Generator, Iterator
 from uuid import uuid4
 
 import pytest
+from google.protobuf.json_format import MessageToDict
 from sqlalchemy.engine import make_url
 from sqlalchemy.ext.asyncio import AsyncEngine, create_async_engine
 from testcontainers.postgres import PostgresContainer
@@ -13,12 +17,6 @@ from agentplane.action_service.database_migrate import RUNNER as ACTIONS_MIGRATI
 from agentplane.action_service.testing.fixtures import echo_catalog, echo_executor
 from agentplane.notification_service.database_migrate import RUNNER
 from agentplane.notification_service.store import Store
-from agentplane.runner.testing.diagnostics import (
-    AdmissionTrace,
-    best_effort_write_admission_diagnostics,
-    native_journal_evidence,
-    service_log_evidence,
-)
 from agentplane.runner.testing.fixtures import RunnerHandle, config, endpoint, harness, model, runner, spec, workspace
 from util.testing.postgres import create_database_sync, force_drop_database_sync
 from util.testing.postgres_fixtures import postgres_container
@@ -27,7 +25,7 @@ from util.testing.undeclared_outputs import undeclared_outputs_dir
 # gazelle:include_dep @pypi//asyncpg
 # gazelle:include_dep @pypi//psycopg
 
-
+logger = logging.getLogger(__name__)
 _CALL_REPORT = pytest.StashKey[pytest.TestReport]()
 
 
@@ -42,30 +40,22 @@ def pytest_runtest_makereport(
 
 
 @pytest.fixture
-async def admission_diagnostics(
-    request: pytest.FixtureRequest, runner: RunnerHandle, caplog: pytest.LogCaptureFixture
-) -> AsyncIterator[AdmissionTrace]:
-    trace = AdmissionTrace()
-    yield trace
+async def failed_native_journal(request: pytest.FixtureRequest, runner: RunnerHandle) -> AsyncIterator[None]:
+    yield
     report = request.node.stash.get(_CALL_REPORT, None)
     if report is None or not report.failed:
         return
-    native_sessions: list[dict[str, object]] = []
-    capture_errors: list[str] = []
     try:
-        native_sessions = await native_journal_evidence(runner.runner)
+        async with asyncio.timeout(3):
+            sessions: dict[str, list[dict[str, object]]] = {}
+            for session_id, session in runner.runner.sessions.items():
+                entries = await session.journal.since(0, limit=512)
+                sessions[session_id] = [MessageToDict(entry, preserving_proto_field_name=True) for entry in entries]
+            (undeclared_outputs_dir() / f"{request.node.name}-native-journal.json").write_text(
+                json.dumps(sessions, indent=2, sort_keys=True)
+            )
     except Exception as error:
-        capture_errors.append(f"native_journal:{type(error).__name__}")
-    best_effort_write_admission_diagnostics(
-        undeclared_outputs_dir(),
-        nodeid=request.node.nodeid,
-        attempts=trace.attempts,
-        client_responses=trace.client_responses,
-        service_logs=service_log_evidence([*caplog.get_records("setup"), *caplog.get_records("call")]),
-        native_sessions=native_sessions,
-        capture_errors=capture_errors,
-        trigger="test_call_failed",
-    )
+        logger.warning("native journal capture failed: %s", type(error).__name__)
 
 
 @pytest.fixture

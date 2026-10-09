@@ -18,7 +18,6 @@ from datetime import timedelta
 from pathlib import Path
 from typing import Any
 from unittest.mock import AsyncMock
-from urllib.parse import urlsplit
 from uuid import UUID
 
 import httpx
@@ -56,15 +55,9 @@ from agentplane.runner.client import RunnerClient
 from agentplane.runner.errors import RunnerError, StreamClosedError
 from agentplane.runner.harness import Harness
 from agentplane.runner.session import Session
-from agentplane.runner.testing.diagnostics import (
-    AdmissionTrace,
-    best_effort_write_admission_diagnostics,
-    native_journal_evidence,
-    service_log_evidence,
-)
 from agentplane.runner.testing.fixtures import RunnerClientFactory, RunnerHandle
 from agentplane.runner.testing.scripted_model import ScriptedModel, ShellCall, Text
-from agentplane.sandbox_service.client import Attachment, Runner, SandboxServiceClient
+from agentplane.sandbox_service.client import Attachment, SandboxServiceClient
 from agentplane.sandbox_service.testing.backend import Endpoint, seed_runner
 from agentplane.sandbox_service.testing.fake_inventory import FakeCoreV1Api, FakeCustomObjectsApi
 from util.net import bind_free_port
@@ -77,87 +70,31 @@ from util.testing.undeclared_outputs import undeclared_outputs_dir
 SANDBOX = "bridge-test-sandbox"
 SESSION = "bridge-1"
 SESSIONS = f"/sandboxes/{SANDBOX}/sessions"
-logger = logging.getLogger(__name__)
 
 
 @pytest.fixture
 async def failed_native_journal(
-    request: pytest.FixtureRequest,
-    runner: RunnerHandle,
-    caplog: pytest.LogCaptureFixture,
-    monkeypatch: pytest.MonkeyPatch,
+    request: pytest.FixtureRequest, runner: RunnerHandle, caplog: pytest.LogCaptureFixture
 ) -> AsyncIterator[None]:
     """Preserve native history and journal evidence when an app-level bridge case fails."""
-    trace = AdmissionTrace()
-    trace.phase = "app_to_sandbox_service_admission"
-    original = Runner.command
-    invocation = 0
-
-    async def record_command(
-        self: Runner, session_id: str, command: command_pb2.Command, *, after_cursor: int
-    ) -> event_log_pb2.EventEntry:
-        nonlocal invocation
-        invocation += 1
-        trace.progress = f"bridge command {invocation}"
-        return await trace.command(
-            session_id,
-            command,
-            after_cursor=after_cursor,
-            send=lambda: original(self, session_id, command, after_cursor=after_cursor),
-        )
-
-    monkeypatch.setattr(Runner, "command", record_command)
-
-    original_request = httpx.AsyncClient.request
-
-    async def record_response(
-        self: httpx.AsyncClient, method: str, url: str | httpx.URL, *args: Any, **kwargs: Any
-    ) -> httpx.Response:
-        response = await original_request(self, method, url, *args, **kwargs)
-        path = urlsplit(str(url)).path
-        if method.upper() == "POST" and "/threads/" in path and path.endswith("/commands"):
-            trace.client_responses.append({"route": "thread_command", "status_code": response.status_code})
-            del trace.client_responses[:-128]
-        return response
-
-    monkeypatch.setattr(httpx.AsyncClient, "request", record_response)
+    caplog.set_level(logging.INFO, logger="httpx")
     yield
     report = request.node.stash.get(_CALL_REPORT, None)
     if report is None or not report.failed:
         return
-    native_sessions: list[dict[str, object]] = []
-    capture_errors: list[str] = []
-    try:
-        native_sessions = await native_journal_evidence(runner.runner)
-    except Exception as error:
-        capture_errors.append(f"native_journal:{type(error).__name__}")
-    best_effort_write_admission_diagnostics(
-        undeclared_outputs_dir(),
-        nodeid=request.node.nodeid,
-        attempts=trace.attempts,
-        client_responses=trace.client_responses,
-        service_logs=service_log_evidence([*caplog.get_records("setup"), *caplog.get_records("call")]),
-        native_sessions=native_sessions,
-        capture_errors=capture_errors,
-        trigger="test_call_failed",
+    for session_id, session in runner.runner.sessions.items():
+        target = undeclared_outputs_dir() / request.node.name / session_id
+        for dialect, history in (("claude", "projects"), ("codex", "sessions")):
+            source = session.directory / dialect / history
+            if source.exists():
+                shutil.copytree(source, target / dialect / history, dirs_exist_ok=True)
+    sessions: dict[str, list[dict[str, Any]]] = {}
+    for session_id, session in runner.runner.sessions.items():
+        entries = await session.journal.since(0, limit=512)
+        sessions[session_id] = [MessageToDict(entry, preserving_proto_field_name=True) for entry in entries]
+    (undeclared_outputs_dir() / f"{request.node.name}-native-journal.json").write_text(
+        json.dumps(sessions, indent=2, sort_keys=True)
     )
-    try:
-        async with asyncio.timeout(3):
-            for session_id, session in runner.runner.sessions.items():
-                target = undeclared_outputs_dir() / request.node.name / session_id
-                for dialect, history in (("claude", "projects"), ("codex", "sessions")):
-                    source = session.directory / dialect / history
-                    if source.exists():
-                        shutil.copytree(source, target / dialect / history, dirs_exist_ok=True)
-            sessions: dict[str, list[dict[str, Any]]] = {}
-            for session_id, session in runner.runner.sessions.items():
-                entries = await session.journal.since(0, limit=512)
-                sessions[session_id] = [MessageToDict(entry, preserving_proto_field_name=True) for entry in entries]
-            (undeclared_outputs_dir() / f"{request.node.name}-native-journal.json").write_text(
-                json.dumps(sessions, indent=2, sort_keys=True)
-            )
-    except Exception as error:
-        logger.warning("native history capture failed: %s", type(error).__name__)
 
 
 async def _thread_id(http: httpx.AsyncClient, session_id: str = SESSION) -> str:

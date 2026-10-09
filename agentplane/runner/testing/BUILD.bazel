@@ -1,4 +1,4 @@
-load("//devinfra/python:defs.bzl", "py_library", "py_test")
+load("//devinfra/python:defs.bzl", "py_library")
 
 package(
     default_testonly = True,
@@ -44,47 +44,6 @@ py_library(
         "//agentplane/protocol:event_log_pb2",
         "//agentplane/protocol:event_pb2",
         "@pypi//protobuf",
-    ],
-)
-
-py_library(
-    name = "diagnostics",
-    srcs = ["diagnostics.py"],
-    deps = [
-        "//agentplane/protocol:command_pb2",
-        "//agentplane/protocol:event_log_pb2",
-        "//agentplane/runner:protocol_pb2",
-        "//agentplane/runner:service",
-        "@pypi//grpcio",
-        "@pypi//protobuf",
-    ],
-)
-
-py_test(
-    name = "test_diagnostics",
-    size = "medium",
-    srcs = ["test_diagnostics.py"],
-    data = [
-        "@agentplane_codex_cli_linux_x64//:files",  # keep: the runner acceptance fixture starts the pinned harness
-        "@claude_code_cli_linux_x64//:claude",  # keep: the runner acceptance fixture starts the pinned harness
-    ],
-    target_compatible_with = [
-        "@platforms//cpu:x86_64",
-        "@platforms//os:linux",
-    ],
-    deps = [
-        ":diagnostics",
-        ":fixtures",
-        "//:conftest",
-        "//agentplane/protocol:command_pb2",
-        "//agentplane/protocol:event_log_pb2",
-        "//agentplane/runner:client",
-        "//agentplane/runner:conftest",
-        "//agentplane/runner:protocol_pb2",
-        "//util/testing:undeclared_outputs",
-        "@pypi//protobuf",
-        "@pypi//pytest",
-        "@pypi//pytest_bazel",
     ],
 )
 

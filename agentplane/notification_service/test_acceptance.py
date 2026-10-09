@@ -2,6 +2,7 @@
 
 import asyncio
 import json
+import logging
 from datetime import UTC, datetime
 from pathlib import Path
 from uuid import UUID
@@ -31,7 +32,6 @@ from agentplane.notification_service.sources.actions import Actions
 from agentplane.notification_service.store import Store
 from agentplane.protocol import command_pb2, event_log_pb2
 from agentplane.runner import protocol_pb2
-from agentplane.runner.testing.diagnostics import AdmissionTrace
 from agentplane.runner.testing.fixtures import RunnerHandle
 from agentplane.runner.testing.scripted_model import ScriptedModel, Text
 from agentplane.sandbox_service.client import Runner
@@ -50,6 +50,8 @@ from agentplane.workload_auth.principal import WorkloadPrincipalResolver
 
 # gazelle:include_dep @pypi//protobuf
 
+logger = logging.getLogger(__name__)
+
 
 @pytest.mark.parametrize("busy", [False, True])
 @pytest.mark.parametrize("failed_before_rpc", [False, True])
@@ -64,10 +66,12 @@ async def test_listen_deliver_read_ack_and_recover_lost_response_without_app(
     model: ScriptedModel,
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
-    admission_diagnostics: AdmissionTrace,
+    caplog: pytest.LogCaptureFixture,
+    failed_native_journal: None,
     busy: bool,
     failed_before_rpc: bool,
 ) -> None:
+    caplog.set_level(logging.INFO, logger=__name__)
     owner = ServiceAccountRef(namespace=SANDBOX_NAMESPACE, name=ACCOUNT)
     delegate = ServiceAccountRef(namespace=SANDBOX_NAMESPACE, name="notifications")
     other = ServiceAccountRef(namespace=SANDBOX_NAMESPACE, name="other")
@@ -206,16 +210,12 @@ async def test_listen_deliver_read_ack_and_recover_lost_response_without_app(
                     assert (await agent.post("/v1/subscriptions", json=body)).json() == subscription
                     initial = None
                     if busy:
-                        initial_command = command_pb2.Command(
-                            command_id="initial", submit_input=command_pb2.SubmitInput(text="Do other work")
-                        )
-                        admission_diagnostics.phase = "busy_setup"
-                        admission_diagnostics.progress = "1/1"
-                        await admission_diagnostics.command(
+                        await native.command(
                             "notifications",
-                            initial_command,
+                            command_pb2.Command(
+                                command_id="initial", submit_input=command_pb2.SubmitInput(text="Do other work")
+                            ),
                             after_cursor=0,
-                            send=lambda: native.command("notifications", initial_command, after_cursor=0),
                         )
                         initial = await model.request()
                     # Real native journal longer than a worker replay batch. First delivery must
@@ -226,18 +226,21 @@ async def test_listen_deliver_read_ack_and_recover_lost_response_without_app(
                             command_id=f"old-{index}",
                             interrupt_turn=command_pb2.InterruptTurn(turn_id="nonexistent-turn"),
                         )
-                        admission_diagnostics.phase = "seed_noop_journal"
-                        admission_diagnostics.progress = f"{index + 1}/130"
-
-                        async def submit_seed(
-                            command: command_pb2.Command = command, after_cursor: int = history_cursor
-                        ) -> event_log_pb2.EventEntry:
-                            return await native.command("notifications", command, after_cursor=after_cursor)
-
-                        receipt = await admission_diagnostics.command(
-                            "notifications", command, after_cursor=history_cursor, send=submit_seed
+                        logger.info(
+                            "notification journal seed %d/130: submitting command_id=%s operation=%s after_cursor=%d",
+                            index + 1,
+                            command.command_id,
+                            command.WhichOneof("operation"),
+                            history_cursor,
                         )
+                        receipt = await native.command("notifications", command, after_cursor=history_cursor)
                         history_cursor = receipt.cursor
+                        logger.info(
+                            "notification journal seed %d/130: admitted command_id=%s cursor=%d",
+                            index + 1,
+                            command.command_id,
+                            history_cursor,
+                        )
                     assert history_cursor > 128
                     original = Runner.command
                     lost = False
@@ -247,31 +250,22 @@ async def test_listen_deliver_read_ack_and_recover_lost_response_without_app(
                         self: Runner, session_id: str, command: command_pb2.Command, *, after_cursor: int
                     ) -> event_log_pb2.EventEntry:
                         nonlocal lost, attempted_id
-
-                        async def submit() -> event_log_pb2.EventEntry:
-                            nonlocal lost, attempted_id
-                            if command.HasField("submit_input"):
-                                assert after_cursor >= history_cursor
-                                if attempted_id is None:
-                                    attempted_id = command.command_id
-                                else:
-                                    assert command.command_id == attempted_id
-                                if failed_before_rpc and not lost:
-                                    lost = True
-                                    raise ValueError("simulated local failure before SubmitCommand")
-                            receipt = await original(self, session_id, command, after_cursor=after_cursor)
-                            if not lost and command.HasField("submit_input"):
+                        if command.HasField("submit_input"):
+                            assert after_cursor >= history_cursor
+                            if attempted_id is None:
+                                attempted_id = command.command_id
+                            else:
+                                assert command.command_id == attempted_id
+                            if failed_before_rpc and not lost:
                                 lost = True
-                                raise ConnectionError("simulated lost admission response")
-                            return receipt
-
-                        return await admission_diagnostics.command(
-                            session_id, command, after_cursor=after_cursor, send=submit
-                        )
+                                raise ValueError("simulated local failure before SubmitCommand")
+                        receipt = await original(self, session_id, command, after_cursor=after_cursor)
+                        if not lost and command.HasField("submit_input"):
+                            lost = True
+                            raise ConnectionError("simulated lost admission response")
+                        return receipt
 
                     monkeypatch.setattr(Runner, "command", lose_response)
-                    admission_diagnostics.phase = "notification_delivery"
-                    admission_diagnostics.progress = "attempt 1"
                     if failed_before_rpc:
                         with pytest.raises(ValueError, match="before SubmitCommand"):
                             await service.step()
@@ -288,7 +282,6 @@ async def test_listen_deliver_read_ack_and_recover_lost_response_without_app(
                                 .where(Inbox.id == UUID(subscription["inbox_id"]))
                                 .values(next_attempt=datetime.now(UTC))
                             )
-                        admission_diagnostics.progress = "attempt 2"
                         await service.step()
                     notice_request = await model.request()
                     notices = [
@@ -315,13 +308,11 @@ async def test_listen_deliver_read_ack_and_recover_lost_response_without_app(
                     )
                     inbox_id = UUID(hint["inbox_id"])
                     page = None
-                    for retry in range(10):
+                    for _ in range(10):
                         async with store.sessions.begin() as session:
                             await session.execute(
                                 update(Inbox).where(Inbox.id == inbox_id).values(next_attempt=datetime.now(UTC))
                             )
-                        admission_diagnostics.phase = "confirmation_retry"
-                        admission_diagnostics.progress = f"attempt {retry + 1}/10"
                         await recovered.step()
                         response = await agent.get(
                             f"/v1/inboxes/{inbox_id}/entries",
@@ -366,8 +357,6 @@ async def test_listen_deliver_read_ack_and_recover_lost_response_without_app(
                         if entry.event.HasField("command_admitted")
                     ]
                     assert admitted.count(page["notice"]["command_id"]) == 1
-                    admission_diagnostics.phase = "test_cleanup"
-                    admission_diagnostics.progress = "stop notifications session"
                     await native.command(
                         "notifications",
                         command_pb2.Command(command_id="stop", stop_runner_session=command_pb2.StopRunnerSession()),
