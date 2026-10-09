@@ -50,12 +50,12 @@ from agentplane.action_service.connections import (
 from agentplane.action_service.enrollments import EnrollmentAuthority, EnrollmentInput, EnrollmentRejectedError
 from agentplane.action_service.oauth_settings import OAuthSettings
 from mcp_infra.authentik_auth.fastmcp_proxy import DownstreamClientIdentityOIDCProxy, RetryableJWTVerifier
-from mcp_infra.oidc_principal import (
+from mcp_infra.persistence import PostgresPersistence, build_shared_client_storage
+from util.oidc_principal import (
     AuthentikOidcPrincipalResolver,
     InvalidOidcPrincipalError,
     OidcPrincipalVerificationUnavailableError,
 )
-from mcp_infra.persistence import PostgresPersistence, build_shared_client_storage
 
 _ISSUING: ContextVar[UUID | None] = ContextVar("agentplane_oauth_issuing", default=None)
 _VERIFY_FAILURES: ContextVar[list[Exception] | None] = ContextVar("agentplane_oauth_verify_failures", default=None)

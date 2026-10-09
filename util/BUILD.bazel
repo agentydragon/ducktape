@@ -362,3 +362,34 @@ py_test(
         "@pypi//pytest_bazel",
     ],
 )
+
+py_library(
+    name = "oidc_principal",
+    srcs = ["oidc_principal.py"],
+    visibility = ["//:__subpackages__"],
+    deps = [
+        ":urls",
+        "@pypi//cryptography",
+        "@pypi//httpx",
+        "@pypi//pydantic",
+        "@pypi//pyjwt",
+    ],
+)
+
+py_test(
+    name = "test_oidc_principal",
+    srcs = ["test_oidc_principal.py"],
+    deps = [
+        ":net",
+        ":oidc_principal",
+        "//:conftest",
+        "//util/testing:asgi",
+        "//util/testing:mock_oidc",
+        "@pypi//cryptography",
+        "@pypi//httpx",
+        "@pypi//pyjwt",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+        "@pypi//starlette",
+    ],
+)

@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from agentplane.action_service.models import OperatorPrincipal
 from agentplane.action_service.operator_oidc_settings import OperatorOidcSettings, OperatorTokenProfile
-from mcp_infra.oidc_principal import (
+from util.oidc_principal import (
     AuthentikOidcPrincipalResolver,
     DexOidcPrincipalResolver,
     InvalidOidcPrincipalError,

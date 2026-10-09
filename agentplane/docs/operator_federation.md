@@ -173,7 +173,7 @@ The explicit `dex` profile permits this absence while still rejecting a supplied
 configured client, a nonblank subject, and valid integral `iat`/`exp`. Multiple audiences and
 cross-client Dex grants are not supported. Authentik's required `azp` contract is unchanged,
 including for Haku and MCP enrollment callers. The shared implementation lives in
-[`mcp_infra/oidc_principal.py`](../../mcp_infra/oidc_principal.py).
+[`util/oidc_principal.py`](../../util/oidc_principal.py).
 
 To activate Dex, first deploy app and Action Service images supporting the profile, then set
 `login_token_profile`, `target.token_profile`, and Action Service `token_profile` to `dex` in
@@ -298,7 +298,7 @@ by L7 HTTP inspection of encrypted TLS. A different Gateway/DNS/L7-proxy setup r
 - `//agentplane/action_service:test_runtime`: Settings/catalog validation and production runtime composition.
 - `//agentplane/app:test_action_api` and `//agentplane/action_service:test_operator_oidc`: signed
   offline request/authorization seams, including distinct operator identities and rejected token claims.
-- `//mcp_infra:test_oidc_principal` and `//agentplane/app:test_action_federation`: strict shared
+- `//util:test_oidc_principal` and `//agentplane/app:test_action_federation`: strict shared
   verification and the independently selected login/target profiles for direct Dex federation; login
   token renewal, one refresh for two replicas renewing at once, and a refused renewal ending the session.
 

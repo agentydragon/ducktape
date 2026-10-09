@@ -22,8 +22,8 @@ from finance.plaid.spend.models import (
 )
 from finance.plaid.spend.service import SpendService
 from finance.plaid.spend.settings import SpendSettings
-from mcp_infra.oidc_principal import InvalidOidcPrincipalError, VerifiedOidcPrincipal
 from util.oidc_login import LoginSession
+from util.oidc_principal import InvalidOidcPrincipalError, VerifiedOidcPrincipal
 
 
 def test_ui_bundle() -> None:

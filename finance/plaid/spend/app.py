@@ -21,13 +21,13 @@ from finance.plaid.spend.allowance import EstimatePeriodId, PeriodId, Transactio
 from finance.plaid.spend.models import SpendConfigurationView, SpendTransactionsView, SpendView, load_configuration
 from finance.plaid.spend.service import SpendService
 from finance.plaid.spend.settings import SpendSettings
-from mcp_infra.oidc_principal import (
+from util.oidc_login import LoginConfig, current_session_is_valid, install_login
+from util.oidc_principal import (
     AuthentikOidcPrincipalResolver,
     InvalidOidcPrincipalError,
     OidcPrincipalVerificationUnavailableError,
     VerifiedOidcPrincipal,
 )
-from util.oidc_login import LoginConfig, current_session_is_valid, install_login
 
 _UI_DIR = Path(__file__).resolve().parent / "ui" / "dist"
 

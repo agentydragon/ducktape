@@ -27,7 +27,7 @@ from agentplane.app.action_federation_settings import ActionFederationSettings
 from agentplane.app.identity import CallerIdentity, CallerKind
 from agentplane.app.oidc import CLIENT_NAME, OIDCSettings, TokenResponse, build_oauth, operator_session
 from agentplane.app.operator_sessions import LoginTokens, OperatorSession, SessionRow, operator_session_row
-from mcp_infra.oidc_principal import InvalidOidcPrincipalError, OidcPrincipalVerificationUnavailableError
+from util.oidc_principal import InvalidOidcPrincipalError, OidcPrincipalVerificationUnavailableError
 
 logger = logging.getLogger(__name__)
 

@@ -87,7 +87,7 @@ py_library(
         ":operator_identity_store",
         "//haku/console:database_schema",
         "//haku/console:tool_call_actor",
-        "//mcp_infra:oidc_principal",
+        "//util:oidc_principal",
         "@pypi//sqlalchemy",
     ],
 )
@@ -163,7 +163,7 @@ py_test(
         "//haku/console:database_schema",
         "//haku/console:tool_call_actor",
         "//haku/console/mcp:approval",
-        "//mcp_infra:oidc_principal",
+        "//util:oidc_principal",
         "//util/testing:postgres",
         "@pypi//pytest",
         "@pypi//pytest_bazel",

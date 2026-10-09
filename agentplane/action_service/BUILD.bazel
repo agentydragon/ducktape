@@ -537,7 +537,7 @@ py_library(
     deps = [
         ":models",
         ":operator_oidc_settings",
-        "//mcp_infra:oidc_principal",
+        "//util:oidc_principal",
     ],
 )
 
@@ -862,9 +862,9 @@ py_library(
         ":connections",
         ":enrollments",
         ":oauth_settings",
-        "//mcp_infra:oidc_principal",
         "//mcp_infra:persistence",
         "//mcp_infra/authentik_auth:fastmcp_proxy",
+        "//util:oidc_principal",
         "@pypi//cryptography",
         "@pypi//fastapi",
         "@pypi//fastmcp_slim",
