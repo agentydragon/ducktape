@@ -11,6 +11,7 @@ filegroup(
         "//agentplane/notification_service/migrations/versions:0005_github.py",
         "//agentplane/notification_service/migrations/versions:0006_stale_inbox.py",
         "//agentplane/notification_service/migrations/versions:0007_subscription_health.py",
+        "//agentplane/notification_service/migrations/versions:0008_github_entities.py",
     ],
     visibility = ["//agentplane/notification_service:__pkg__"],
 )

@@ -334,7 +334,9 @@ function AllowancePanel({
               and pending charges are included.
             </Text>
             <Divider color="teal.6" />
-            <Text size="sm">Allowance began: {time(`${allowance.activation_at}T00:00:00Z`)}</Text>
+            <Text size="sm">
+              Allowance began: {allowance.activation_at} at midnight ({allowance.time_zone ?? "UTC"})
+            </Text>
             <Text size="sm">Next credit: {time(allowance.next_credit_at)}</Text>
             <Text size="xs" c="teal.0">
               Oldest account sync: {time(allowance.last_synced_at)}. New purchases may appear later.
@@ -651,6 +653,7 @@ function ConfigurationPanel({
                     value={<Money value={allowance.monthly_minor_units} currency={allowance.currency} />}
                   />
                   <Metric label="START DATE" value={allowance.activation_at} />
+                  <Metric label="DAY CUTOVER TIME ZONE" value={allowance.time_zone ?? "UTC"} />
                   <Metric label="ACCOUNTS IN SCOPE" value={allowance.spending_account_count} />
                   <Metric label="MAX SYNC AGE" value={`${allowance.max_sync_age_hours} hours`} />
                   <Metric label="DEFAULT ESTIMATE WINDOW" value={periodLabels[allowance.forecast_basis_period_id]} />

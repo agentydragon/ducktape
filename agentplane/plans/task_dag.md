@@ -79,6 +79,7 @@ flowchart TB
     AGENT_MESSAGE_CLASSIFICATION["Optional later safeguard<br/>classify agent messages for leakage<br/>without silently losing delivery"]:::future
     NOTIFICATION_PRESENTATION["Unranked future capability<br/>structured notification provenance<br/>compact frontend presentation"]:::future
     THREAD_NOTIFICATION_INDICATOR["Unranked UI improvement<br/>Thread sidebar pending-notice indicator<br/>including upcoming delivery"]:::future
+    THREAD_CACHE_WARMTH["Unranked UI improvement<br/>Thread last-turn age and likely provider cache warmth<br/>heuristic, not cache evidence"]:::future
     KUBERNETES_MONITORING["Unranked future capability<br/>agent-visible Kubernetes rollout monitoring<br/>notifications are an option"]:::future
     DT["P2 deferred<br/>Action-backed driver tools and background control"]:::future
     HARNESS_CONFIG_ISOLATION["Unranked prerequisite<br/>separate hosted feature config from capture scenarios<br/>keep project and host settings isolated"]:::future
@@ -1585,6 +1586,23 @@ be suppressed by acknowledgement, delayed by lifecycle/runner state, or fail. Re
 reconnect and avoid claiming a guaranteed notice at an exact second. This is independent of
 `NOTIFICATION_PRESENTATION`'s compact rendering of _delivered_ notifications and must not
 acknowledge an inbox merely because its icon is displayed.
+
+### `THREAD_CACHE_WARMTH` — show Thread recency and likely provider cache warmth
+
+**Unranked UI improvement:** show how long ago a Thread's last turn completed (and optionally
+its last activity) in the Thread UI, including a compact sidebar cue. A configurable color/icon
+or other accessible indicator could suggest whether the next turn is _likely_ to reuse a warm
+LLM-provider prompt cache. Show the underlying timestamp or age as text as well; color alone
+must not carry the meaning. Update elapsed-time displays without requiring Thread activity,
+with a reduced-motion treatment if the indicator animates.
+
+Keep the estimate separate from observed cache hits: provider/model-specific retention windows,
+model changes, prefix changes, compaction, suspension and missing usage evidence can make a
+recent Thread cold. Prefer a configurable per-provider/model heuristic with an explicit
+unknown/unavailable state over a universal TTL or a claim that the cache is definitely warm.
+Use the authoritative completed-turn time, not a delayed notification or unrelated status
+update, and handle active turns, reconnect and old Threads without a completion timestamp.
+This can ship independently of `THREAD_NOTIFICATION_INDICATOR`.
 
 ### `KUBERNETES_MONITORING` — agents observe rollout progress and outcomes
 

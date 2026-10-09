@@ -123,3 +123,13 @@ class GitHubBinding(Model):
     app_id: int = Field(gt=0)
     installation_id: int = Field(gt=0)
     repository_id: int = Field(gt=0)
+
+
+def subject_key(subject: Subject) -> str:
+    match subject:
+        case PullRequestSubject(number=number):
+            return str(number)
+        case BranchSubject(name=name):
+            return name
+        case CommitSubject(sha=sha):
+            return sha

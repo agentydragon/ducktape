@@ -8,6 +8,7 @@
 """
 
 import json
+import os
 import subprocess
 import sys
 import uuid
@@ -20,6 +21,7 @@ import pytest_bazel
 from devinfra.bbr import (
     _STALE_BASE_ERROR_THRESHOLD,
     _bazelrc_args,
+    _bb_environment,
     _env_args,
     _extract_invocation_id_file,
     _read_repo_config,
@@ -287,6 +289,29 @@ class TestExtractInvocationIdFile:
         assert path == Path("/tmp/b")
 
 
+def test_mounted_key_only_forwarded_in_child_environment(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    key_file = tmp_path / "api-key"
+    key_file.write_text("fake-test-key\n")
+    monkeypatch.setenv("BBR_BUILDBUDDY_API_KEY_FILE", str(key_file))
+    monkeypatch.delenv("BUILDBUDDY_API_KEY", raising=False)
+    env = _bb_environment()
+    assert env is not None
+    assert env["BUILDBUDDY_API_KEY"] == "fake-test-key"
+    assert "BUILDBUDDY_API_KEY" not in os.environ
+    monkeypatch.setenv("BUILDBUDDY_API_KEY", "existing-key")
+    assert _bb_environment() is None  # explicit environment wins
+
+
+def test_missing_key_file_is_not_read_for_dry_run(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    repo = _make_repo(tmp_path)
+    _setup_repo_config(repo)
+    monkeypatch.setattr("devinfra.bbr._find_bb", lambda: BB)
+    monkeypatch.chdir(Path(repo.workdir))
+    monkeypatch.setattr(sys, "argv", ["bbr", "--dry-run", "build", "//foo"])
+    monkeypatch.setenv("BBR_BUILDBUDDY_API_KEY_FILE", str(tmp_path / "missing"))
+    main()  # dry-run must not read the key file
+
+
 class TestMain:
     def _setup(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, argv: list[str]) -> None:
         repo = _make_repo(tmp_path)
@@ -322,6 +347,27 @@ class TestMain:
         post_run = capsys.readouterr().err
         assert inv_id in post_run
         assert "bbapi" in post_run
+
+    def test_key_file_passed_only_to_bb_child(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        self._setup(tmp_path, monkeypatch, ["build", "//foo"])
+        key_file = tmp_path / "api-key"
+        key_file.write_text("fake-test-key\n")
+        monkeypatch.setenv("BBR_BUILDBUDDY_API_KEY_FILE", str(key_file))
+        monkeypatch.delenv("BUILDBUDDY_API_KEY", raising=False)
+        received = []
+
+        def fake_run(cmd: list[str], check: bool, env: dict[str, str]) -> subprocess.CompletedProcess[bytes]:
+            received.append(env["BUILDBUDDY_API_KEY"])
+            return subprocess.CompletedProcess(cmd, 0)
+
+        monkeypatch.setattr("devinfra.bbr.subprocess.run", fake_run)
+        with pytest.raises(SystemExit) as excinfo:
+            main()
+        assert excinfo.value.code == 0
+        assert received == ["fake-test-key"]
+        assert "fake-test-key" not in capsys.readouterr().err
 
     def test_invocation_id_file_without_verb_errors(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]

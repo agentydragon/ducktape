@@ -2,6 +2,7 @@
 
 import hashlib
 import json
+from collections.abc import Sequence
 from dataclasses import asdict
 from datetime import UTC, datetime, timedelta
 from uuid import UUID, uuid4
@@ -12,12 +13,40 @@ from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 
 from agentplane.action_service.models import ActionEventView
-from agentplane.notification_service.db import Entry, GitHubDelivery, Inbox, Match, Notice, Subscription
+from agentplane.notification_service.db import (
+    Entry,
+    GitHubDelivery,
+    GitHubDeliverySubject,
+    GitHubInstallation,
+    GitHubRepository,
+    GitHubRepositoryAccess,
+    GitHubSubject,
+    GitHubSubjectRevision,
+    Inbox,
+    Match,
+    Notice,
+    Subscription,
+)
+from agentplane.notification_service.github_state import (
+    AccessFence,
+    HeadRevision,
+    RefreshDeferredError,
+    RefreshRow,
+    SubjectKey,
+    access_valid,
+    add_revisions,
+    fences_valid,
+    github_lock,
+)
 from agentplane.notification_service.models import (
     ActionsEvent,
     ActionsSource,
     EntryView,
     EventIdentity,
+    GitHubAccessStatus,
+    GitHubRefreshStatus,
+    GitHubStatus,
+    GitHubSubjectStatus,
     InboxEntrySummary,
     InboxPage,
     InboxStatus,
@@ -30,7 +59,7 @@ from agentplane.notification_service.models import (
     SubscriptionUpdate,
     SubscriptionView,
 )
-from agentplane.notification_service.sources.github_models import GitHubBinding, GitHubEvent, GitHubSource
+from agentplane.notification_service.sources.github_models import GitHubBinding, GitHubEvent, GitHubSource, subject_key
 from agentplane.notification_service.updates import Wakeups, notify
 from agentplane.protocol import event_log_pb2
 from agentplane.subjects import ServiceAccountRef
@@ -40,7 +69,6 @@ from agentplane.workload_auth.principal import WorkloadPrincipal
 
 
 _EVENT: TypeAdapter[EventIdentity] = TypeAdapter(EventIdentity)
-GITHUB_INGRESS_LOCK = 0x474854504E
 
 
 class NotFoundError(Exception):
@@ -59,8 +87,67 @@ class ClaimLostError(Exception):
     pass
 
 
-def subscription_view(row: Subscription) -> SubscriptionView:
+def refresh_status(row: RefreshRow) -> GitHubRefreshStatus:
+    return GitHubRefreshStatus(
+        last_success_at=row.last_success_at,
+        error_kind=SourceFailureKind(row.error_kind) if row.error_kind else None,
+        error=row.error,
+        error_since=row.error_since,
+        error_observed_at=row.error_observed_at,
+        retry_at=row.next_attempt if row.error is not None else None,
+        refreshing_until=row.claim_until if row.claim is not None else None,
+    )
+
+
+async def github_status(session: AsyncSession, row: Subscription) -> GitHubStatus | None:
+    if row.github_app_id is None:
+        return None
+    revisions = select(GitHubSubjectRevision.head_repository_id).where(
+        GitHubSubjectRevision.repository_id == row.github_repository_id,
+        GitHubSubjectRevision.kind == row.github_subject_kind,
+        GitHubSubjectRevision.subject_key == row.github_subject_key,
+    )
+    accesses = await session.scalars(
+        select(GitHubRepositoryAccess)
+        .where(
+            GitHubRepositoryAccess.app_id == row.github_app_id,
+            (
+                (GitHubRepositoryAccess.repository_id == row.github_repository_id)
+                & (GitHubRepositoryAccess.installation_id == row.github_installation_id)
+            )
+            | GitHubRepositoryAccess.repository_id.in_(revisions),
+        )
+        .order_by(GitHubRepositoryAccess.repository_id, GitHubRepositoryAccess.installation_id)
+    )
+    subject = await session.get(
+        GitHubSubject, (row.github_repository_id, row.github_subject_kind, row.github_subject_key)
+    )
+    assert subject is not None
+    return GitHubStatus(
+        access=[
+            GitHubAccessStatus(
+                **refresh_status(access).model_dump(),
+                app_id=access.app_id,
+                installation_id=access.installation_id,
+                repository_id=access.repository_id,
+                checked_at=access.checked_at,
+                valid_until=access.valid_until,
+                currently_valid=await access_valid(session, access, datetime.now(UTC)),
+            )
+            for access in accesses
+        ],
+        subject=GitHubSubjectStatus(
+            **refresh_status(subject).model_dump(),
+            repository_id=subject.repository_id,
+            kind=subject.kind,
+            subject_key=subject.subject_key,
+        ),
+    )
+
+
+async def subscription_view(session: AsyncSession, row: Subscription) -> SubscriptionView:
     return SubscriptionView(
+        github=await github_status(session, row),
         id=row.id,
         inbox_id=row.inbox_id,
         source=Subscribe.model_validate(row.creation).source,
@@ -105,7 +192,7 @@ class Store:
         ).hexdigest()
         async with self.sessions.begin() as session:
             if isinstance(body.source, GitHubSource):
-                await session.execute(select(func.pg_advisory_xact_lock(GITHUB_INGRESS_LOCK)))
+                await github_lock(session)
             # Serialize only creation for an owner, to enforce the total destination quota.
             await session.execute(
                 select(func.pg_advisory_xact_lock(func.hashtextextended(f"{owner.namespace}/{owner.name}", 0)))
@@ -165,7 +252,7 @@ class Store:
             if row is not None:
                 if Subscribe.model_validate(row.creation) != body:
                     raise ConflictError("idempotency key already names another subscription")
-                return subscription_view(row)
+                return await subscription_view(session, row)
             count = await session.scalar(
                 select(func.count()).select_from(Subscription).where(Subscription.inbox_id == inbox.id)
             )
@@ -184,6 +271,36 @@ class Store:
                     select(func.coalesce(func.max(GitHubDelivery.position), 0))
                 )
                 assert github_start_position is not None
+                await session.execute(
+                    insert(GitHubInstallation)
+                    .values(app_id=binding.app_id, installation_id=binding.installation_id, generation=0)
+                    .on_conflict_do_nothing()
+                )
+                await session.execute(
+                    insert(GitHubRepository)
+                    .values(repository_id=binding.repository_id, full_name=body.source.repository)
+                    .on_conflict_do_nothing()
+                )
+                await session.execute(
+                    insert(GitHubRepositoryAccess)
+                    .values(
+                        app_id=binding.app_id,
+                        installation_id=binding.installation_id,
+                        repository_id=binding.repository_id,
+                        generation=0,
+                    )
+                    .on_conflict_do_nothing()
+                )
+                await session.execute(
+                    insert(GitHubSubject)
+                    .values(
+                        repository_id=binding.repository_id,
+                        kind=body.source.subject.kind,
+                        subject_key=subject_key(body.source.subject),
+                        generation=0,
+                    )
+                    .on_conflict_do_nothing()
+                )
             row = Subscription(
                 id=uuid4(),
                 inbox_id=inbox.id,
@@ -193,7 +310,11 @@ class Store:
                 version=1,
                 actions_after_sequence=actions_after_sequence,
                 github_start_position=github_start_position,
-                github_binding=binding.model_dump(mode="json") if binding else None,
+                github_app_id=binding.app_id if binding else None,
+                github_installation_id=binding.installation_id if binding else None,
+                github_repository_id=binding.repository_id if binding else None,
+                github_subject_kind=body.source.subject.kind if isinstance(body.source, GitHubSource) else None,
+                github_subject_key=subject_key(body.source.subject) if isinstance(body.source, GitHubSource) else None,
                 cancelled=False,
                 expires_at=now + timedelta(days=body.lifetime_days),
                 next_attempt=now,
@@ -203,7 +324,7 @@ class Store:
             inbox.next_attempt = now
             await notify(session)
             await session.flush()
-            return subscription_view(row)
+            return await subscription_view(session, row)
 
     async def subscriptions(self, owner: ServiceAccountRef, after_id: UUID | None = None) -> list[SubscriptionView]:
         async with self.sessions() as session:
@@ -218,7 +339,7 @@ class Store:
                 .order_by(Subscription.id)
                 .limit(128)
             )
-            return [subscription_view(row) for row in rows]
+            return [await subscription_view(session, row) for row in rows]
 
     async def subscription(self, owner: ServiceAccountRef, subscription_id: UUID) -> SubscriptionView:
         async with self.sessions() as session:
@@ -233,7 +354,7 @@ class Store:
             )
             if row is None:
                 raise NotFoundError
-            return subscription_view(row)
+            return await subscription_view(session, row)
 
     async def change(
         self, owner: ServiceAccountRef, subscription_id: UUID, update: SubscriptionUpdate | None
@@ -248,7 +369,7 @@ class Store:
             await session.refresh(row)
             if update is None:
                 if row.cancelled:
-                    return subscription_view(row)
+                    return await subscription_view(session, row)
                 row.cancelled = True
             else:
                 if row.version != update.version or row.cancelled:
@@ -258,7 +379,7 @@ class Store:
             row.version += 1
             inbox.next_attempt = datetime.now(UTC)
             await notify(session)
-            return subscription_view(row)
+            return await subscription_view(session, row)
 
     async def sandbox_status(
         self, namespace: str, name: str, uid: str, *, quiet_seconds: float, max_wait_seconds: float
@@ -357,6 +478,7 @@ class Store:
                         notice=NoticeView.model_validate(notice) if notice else None,
                         subscriptions=[
                             SubscriptionStatus(
+                                github=await github_status(session, sub),
                                 id=sub.id,
                                 source=Subscribe.model_validate(sub.creation).source,
                                 cancelled=sub.cancelled,
@@ -660,11 +782,13 @@ class Store:
         *,
         action: str | None,
         head_sha: str | None,
-        subjects: list[str],
+        subjects: Sequence[SubjectKey],
+        repository_name: str | None = None,
+        revisions: Sequence[HeadRevision] = (),
     ) -> bool:
         async with self.sessions.begin() as session:
             # Allocate identities in committed order, also fencing the subscription start boundary.
-            await session.execute(select(func.pg_advisory_xact_lock(GITHUB_INGRESS_LOCK)))
+            await github_lock(session)
             existing = await session.scalar(
                 select(GitHubDelivery).where(GitHubDelivery.app_id == app_id, GitHubDelivery.delivery_id == delivery_id)
             )
@@ -672,24 +796,76 @@ class Store:
                 if existing.digest != digest:
                     raise ConflictError("GitHub delivery ID reused with different content")
                 return False
-            session.add(
-                GitHubDelivery(
-                    app_id=app_id,
-                    delivery_id=delivery_id,
-                    installation_id=installation_id,
-                    repository_id=repository_id,
-                    event=event,
-                    digest=digest,
-                    payload=payload,
-                    action=action,
-                    head_sha=head_sha,
-                    subjects=subjects,
-                    received_at=datetime.now(UTC),
-                )
+            await session.execute(
+                insert(GitHubInstallation)
+                .values(app_id=app_id, installation_id=installation_id)
+                .on_conflict_do_nothing()
             )
+            if event in ("installation", "installation_repositories"):
+                await session.execute(
+                    update(GitHubInstallation)
+                    .where(GitHubInstallation.app_id == app_id, GitHubInstallation.installation_id == installation_id)
+                    .values(generation=GitHubInstallation.generation + 1)
+                )
+                affected = select(GitHubRepositoryAccess.repository_id).where(
+                    GitHubRepositoryAccess.app_id == app_id, GitHubRepositoryAccess.installation_id == installation_id
+                )
+                await session.execute(
+                    update(GitHubSubject)
+                    .where(GitHubSubject.repository_id.in_(affected))
+                    .values(generation=GitHubSubject.generation + 1, last_success_at=None, claim=None, claim_until=None)
+                )
+                await session.execute(
+                    update(GitHubRepositoryAccess)
+                    .where(
+                        GitHubRepositoryAccess.app_id == app_id,
+                        GitHubRepositoryAccess.installation_id == installation_id,
+                    )
+                    .values(
+                        generation=GitHubRepositoryAccess.generation + 1, valid_until=None, claim=None, claim_until=None
+                    )
+                )
+            if repository_id is not None and repository_name is not None:
+                await session.execute(
+                    insert(GitHubRepository)
+                    .values(repository_id=repository_id, full_name=repository_name)
+                    .on_conflict_do_nothing()
+                )
+            for key in subjects:
+                await session.execute(
+                    insert(GitHubSubject)
+                    .values(repository_id=key.repository_id, kind=key.kind, subject_key=key.subject_key)
+                    .on_conflict_do_nothing()
+                )
+                await add_revisions(session, key, revisions)
+            receipt = GitHubDelivery(
+                app_id=app_id,
+                delivery_id=delivery_id,
+                installation_id=installation_id,
+                repository_id=repository_id,
+                event=event,
+                digest=digest,
+                payload=payload,
+                action=action,
+                head_sha=head_sha,
+                received_at=datetime.now(UTC),
+            )
+            session.add(receipt)
+            await session.flush()
+            for key in subjects:
+                await session.execute(
+                    insert(GitHubDeliverySubject)
+                    .values(
+                        delivery_position=receipt.position,
+                        repository_id=key.repository_id,
+                        kind=key.kind,
+                        subject_key=key.subject_key,
+                    )
+                    .on_conflict_do_nothing()
+                )
             now = datetime.now(UTC)
             active = (
-                (Subscription.github_binding["app_id"].astext == str(app_id))
+                (Subscription.github_app_id == app_id)
                 & ~Subscription.cancelled
                 & (Subscription.expires_at > func.now())
             )
@@ -751,23 +927,56 @@ class Store:
             )
 
     async def record_github(
-        self, claim: Inbox, source: Subscription, matched: list[tuple[GitHubDelivery, GitHubEvent]], *, more: bool
+        self,
+        claim: Inbox,
+        source: Subscription,
+        matched: list[tuple[GitHubDelivery, GitHubEvent]],
+        *,
+        more: bool,
+        fences: Sequence[AccessFence],
+        subject_key: SubjectKey,
+        subject_generation: int,
+        repair_at: datetime,
     ) -> None:
         async with self.sessions.begin() as session:
+            await github_lock(session)
             inbox = await self.fenced(session, claim)
             row = await session.get(Subscription, source.id)
             assert row is not None
             if row.cancelled or row.version != source.version or row.expires_at <= datetime.now(UTC):
                 return
             assert isinstance(Subscribe.model_validate(row.creation).source, GitHubSource)
+            subject = await subject_key.load(session)
+            if (
+                not fences
+                or repair_at <= datetime.now(UTC)
+                or subject.generation != subject_generation
+                or not await fences_valid(session, fences)
+            ):
+                row.next_attempt = datetime.now(UTC)
+                await notify(session)
+                return
             for delivery, identity in matched:
                 await self.append_event(session, inbox, row, identity, delivery.payload)
             # An ingress commit during matching must not be overwritten by this worker's idle state.
-            row.next_attempt = datetime.now(UTC) if more or row.generation != source.generation else None
+            row.next_attempt = datetime.now(UTC) if more or row.generation != source.generation else repair_at
             self.source_succeeded(row)
             if matched:
                 inbox.updated_at = datetime.now(UTC)
+            await session.flush()
+            if repair_at <= datetime.now(UTC) or not await fences_valid(session, fences):
+                # Roll back the entire appended prefix if access expired while writing the page.
+                raise RefreshDeferredError(datetime.now(UTC))
             await notify(session)
+
+    async def source_deferred(self, claim: Inbox, source: Subscription, until: datetime) -> None:
+        async with self.sessions.begin() as session:
+            await self.fenced(session, claim)
+            row = await session.get(Subscription, source.id)
+            assert row is not None
+            if not row.cancelled and row.version == source.version:
+                row.next_attempt = until
+                await notify(session)
 
     async def get_pending_entry_times(self, claim: Inbox) -> tuple[datetime, datetime] | None:
         """Timestamp bounds of entries not yet covered, acknowledged or expired."""

@@ -227,6 +227,7 @@ py_package(
         ":net",
         ":otel",
         ":typer",
+        ":urls",
         "//util/bazel:subprocess",
         "//util/bazel:workspace",
     ],
@@ -239,6 +240,7 @@ py_wheel(
     requires = [
         "opentelemetry-api",
         "opentelemetry-sdk",
+        "pydantic>=2.0",
         "tenacity",
     ],
     version = "0.1.0",
@@ -338,6 +340,25 @@ py_test(
         ":visual_diff",
         "//:conftest",
         "@pypi//pillow",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_library(
+    name = "urls",
+    srcs = ["urls.py"],
+    visibility = ["//visibility:public"],
+    deps = ["@pypi//pydantic"],
+)
+
+py_test(
+    name = "test_urls",
+    srcs = ["test_urls.py"],
+    deps = [
+        ":urls",
+        "//:conftest",
+        "@pypi//pydantic",
+        "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],
 )

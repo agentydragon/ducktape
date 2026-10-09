@@ -71,7 +71,38 @@ class SubscriptionUpdate(Model):
     lifetime_days: int = Field(default=7, ge=1, le=30)
 
 
+class GitHubRefreshStatus(Model):
+    last_success_at: datetime | None
+    error_kind: SourceFailureKind | None
+    error: str | None
+    error_since: datetime | None
+    error_observed_at: datetime | None
+    retry_at: datetime | None
+    refreshing_until: datetime | None
+
+
+class GitHubAccessStatus(GitHubRefreshStatus):
+    app_id: int
+    installation_id: int
+    repository_id: int
+    checked_at: datetime | None
+    valid_until: datetime | None
+    currently_valid: bool
+
+
+class GitHubSubjectStatus(GitHubRefreshStatus):
+    repository_id: int
+    kind: str
+    subject_key: str
+
+
+class GitHubStatus(Model):
+    access: list[GitHubAccessStatus]
+    subject: GitHubSubjectStatus
+
+
 class SubscriptionView(Model):
+    github: GitHubStatus | None
     id: UUID
     inbox_id: UUID
     source: Source
@@ -126,6 +157,7 @@ class Acknowledge(Model):
 
 
 class SubscriptionStatus(Model):
+    github: GitHubStatus | None
     id: UUID
     source: Source
     cancelled: bool

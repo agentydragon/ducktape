@@ -190,13 +190,6 @@ py_library(
 )
 
 py_library(
-    name = "urls",
-    srcs = ["urls.py"],
-    visibility = ["//:__subpackages__"],
-    deps = ["@pypi//pydantic"],
-)
-
-py_library(
     name = "conftest",
     testonly = True,
     srcs = ["conftest.py"],
@@ -216,6 +209,7 @@ py_library(
     srcs = ["oidc_principal.py"],
     visibility = ["//:__subpackages__"],
     deps = [
+        "//util:urls",
         "@pypi//cryptography",
         "@pypi//httpx",
         "@pypi//pydantic",

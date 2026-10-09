@@ -29,6 +29,12 @@ class GitHubSettings(BaseModel):
     webhook_secret: SecretStr = Field(
         min_length=16, description="Webhook HMAC signing secret, supplied through a Secret-backed environment variable."
     )
+    freshness_seconds: int = Field(
+        default=600,
+        ge=60,
+        le=3600,
+        description="Maximum age of shared GitHub access validation and subject repair, in seconds.",
+    )
     max_body_bytes: int = Field(
         default=1024 * 1024, ge=1024, le=25 * 1024 * 1024, description="Maximum raw webhook request body size in bytes."
     )

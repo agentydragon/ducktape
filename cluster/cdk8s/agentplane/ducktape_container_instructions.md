@@ -3,6 +3,8 @@ The repository's shared tool set is already on PATH: `bb`, `bbr`, Bazelisk, `pre
 Ruff, Prettier and its pinned plugins, nixfmt, Buildifier, and the repo-configured Gazelle.
 Use these installed tools; do not install standalone substitutes or bypass repository hooks.
 Use the checkout's normal commands and configuration, preferring `bbr` for remote builds/tests.
+The Thread setup clones `devel` into its own workspace and installs the repo's Git hooks.
+The image has neither `nix` nor `direnv`; do not run `direnv allow` here.
 
 Outbound access still follows Agentplane egress policy. Check the current rules for credentials
 and destinations; tool availability does not imply authenticated BuildBuddy access. Preserve the

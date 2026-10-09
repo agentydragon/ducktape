@@ -92,6 +92,7 @@ CREDENTIALS = (
         consumers=(
             ApprovedConsumer("claude-sandbox", "buildbuddy-api-key-claude-sandbox-reader"),
             ApprovedConsumer("public-coder-agent", "buildbuddy-api-key-public-coder-agent-reader"),
+            ApprovedConsumer("agentplane-staging", "buildbuddy-api-key-agentplane-staging-reader"),
             ApprovedConsumer("flux-system", "buildbuddy-api-key-flux-system-reader"),
             ApprovedConsumer(
                 "agentplane-staging-egress-credentials",

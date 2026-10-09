@@ -8,6 +8,7 @@ exports_files([
     "0005_github.py",
     "0006_stale_inbox.py",
     "0007_subscription_health.py",
+    "0008_github_entities.py",
 ])
 
 py_library(
@@ -61,6 +62,15 @@ py_library(
 py_library(
     name = "0007_subscription_health",
     srcs = ["0007_subscription_health.py"],
+    deps = [
+        "@pypi//alembic",
+        "@pypi//sqlalchemy",
+    ],
+)
+
+py_library(
+    name = "0008_github_entities",
+    srcs = ["0008_github_entities.py"],
     deps = [
         "@pypi//alembic",
         "@pypi//sqlalchemy",

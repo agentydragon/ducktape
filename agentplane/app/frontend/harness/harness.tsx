@@ -1866,6 +1866,7 @@ routes.push(
                       subscriptions: [
                         {
                           id: "subscription-one",
+                          github: null,
                           source: { provider: "actions", request_id: "d49b85b5-849f-4e7d-a644-d4a8b8c16127" },
                           cancelled: false,
                           expires_at: new Date(NOW + HOUR).toISOString(),
@@ -1878,6 +1879,37 @@ routes.push(
                         },
                         {
                           id: "subscription-two",
+                          github: {
+                            access: [
+                              {
+                                app_id: 42,
+                                installation_id: 11,
+                                repository_id: 102,
+                                checked_at: ago(60000),
+                                valid_until: ago(30000),
+                                currently_valid: false,
+                                last_success_at: ago(60000),
+                                error_kind: null,
+                                error: null,
+                                error_since: null,
+                                error_observed_at: null,
+                                retry_at: null,
+                                refreshing_until: null,
+                              },
+                            ],
+                            subject: {
+                              repository_id: 102,
+                              kind: "pull_request",
+                              subject_key: "42",
+                              last_success_at: ago(60000),
+                              error_kind: null,
+                              error: null,
+                              error_since: null,
+                              error_observed_at: null,
+                              retry_at: null,
+                              refreshing_until: null,
+                            },
+                          },
                           source: {
                             provider: "github",
                             repository: "agentydragon/ducktape",
@@ -1902,13 +1934,44 @@ routes.push(
                           cancelled: false,
                           expires_at: new Date(NOW + HOUR).toISOString(),
                           last_success_at: ago(60000),
-                          error_kind: kind,
-                          error_since: ago(30000),
-                          error_observed_at: ago(10000),
-                          error:
-                            kind === "rate_limited"
-                              ? "GitHub rate limited (HTTP 429)"
-                              : "GitHub App access unavailable (HTTP 403)",
+                          error_kind: null,
+                          error_since: null,
+                          error_observed_at: null,
+                          error: null,
+                          github: {
+                            access: [
+                              {
+                                app_id: 42,
+                                installation_id: 11,
+                                repository_id: 100 + index,
+                                checked_at: ago(10000),
+                                valid_until: null,
+                                currently_valid: false,
+                                last_success_at: ago(60000),
+                                error_kind: kind,
+                                error_since: ago(30000),
+                                error_observed_at: ago(10000),
+                                error:
+                                  kind === "rate_limited"
+                                    ? "GitHub rate limited (HTTP 429)"
+                                    : "GitHub App access unavailable (HTTP 403)",
+                                retry_at: new Date(NOW + 60000).toISOString(),
+                                refreshing_until: null,
+                              },
+                            ],
+                            subject: {
+                              repository_id: 100 + index,
+                              kind: "pull_request",
+                              subject_key: String(index + 1),
+                              last_success_at: ago(60000),
+                              error_kind: null,
+                              error: null,
+                              error_since: null,
+                              error_observed_at: null,
+                              retry_at: null,
+                              refreshing_until: null,
+                            },
+                          },
                           next_source_check_at: new Date(NOW + 60000).toISOString(),
                         })),
                       ],
@@ -2004,6 +2067,7 @@ routes.push(
                       subscriptions: [
                         {
                           id: "subscription-three",
+                          github: null,
                           source: { provider: "actions", request_id: "d49b85b5-849f-4e7d-a644-d4a8b8c16127" },
                           cancelled: false,
                           expires_at: ago(HOUR),

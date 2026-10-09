@@ -3,13 +3,11 @@
 from __future__ import annotations
 
 import asyncio
-import ipaddress
 import time
 from abc import ABC, abstractmethod
 from collections.abc import Collection, Mapping
 from dataclasses import dataclass
 from typing import Any
-from urllib.parse import SplitResult, urlsplit
 
 import httpx
 import jwt
@@ -17,6 +15,8 @@ from cryptography.hazmat.primitives.asymmetric.rsa import RSAPublicKey
 from jwt import PyJWK, PyJWKSet
 from jwt.exceptions import InvalidTokenError, PyJWKError, PyJWKSetError, PyJWTError
 from pydantic import BaseModel, ConfigDict, ValidationError, field_validator
+
+from util.urls import HttpAllowance, parse_https_url
 
 _SIGNING_ALGORITHM = "RS256"
 _CLOCK_SKEW_SECONDS = 30
@@ -85,36 +85,12 @@ class _CachedSigningKeys:
     expires_at: float
 
 
-def _is_loopback_url(parsed: SplitResult) -> bool:
-    hostname = parsed.hostname
-    if hostname is None:
-        return False
-    hostname = hostname.casefold()
-    if hostname == "localhost" or hostname.endswith(".localhost"):
-        return True
-    try:
-        return ipaddress.ip_address(hostname).is_loopback
-    except ValueError:
-        return False
-
-
 def _validate_oidc_url(value: str, *, field_name: str, allow_query: bool) -> None:
-    parsed = urlsplit(value)
     try:
+        parsed = parse_https_url(value, http_allowance=HttpAllowance.LOOPBACK, allow_query=allow_query)
         _ = parsed.port
     except ValueError as error:
         raise ValueError(f"{field_name} must be an absolute HTTPS URL or loopback HTTP URL") from error
-    if (
-        parsed.scheme not in {"http", "https"}
-        or not parsed.netloc
-        or parsed.hostname is None
-        or parsed.username is not None
-        or parsed.password is not None
-        or parsed.fragment
-        or (parsed.query and not allow_query)
-        or (parsed.scheme == "http" and not _is_loopback_url(parsed))
-    ):
-        raise ValueError(f"{field_name} must be an absolute HTTPS URL or loopback HTTP URL")
 
 
 class OidcPrincipalResolver(ABC):

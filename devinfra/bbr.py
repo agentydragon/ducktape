@@ -246,6 +246,21 @@ def build_command(repo: pygit2.Repository, user_args: list[str]) -> tuple[list[s
     return cmd, invocation_id
 
 
+def _bb_environment() -> dict[str, str] | None:
+    """Pass a mounted key to bb only for this run, never to dry-run output or repo configuration.
+
+    `bb remote` forwards this key to hosted Bazel. The caller must trust both the sandbox
+    and the hosted runner with the key; a file mount is not an isolation boundary.
+    """
+    file = os.environ.get("BBR_BUILDBUDDY_API_KEY_FILE")
+    if not file or os.environ.get("BUILDBUDDY_API_KEY"):
+        return None
+    key = Path(file).read_text().strip()
+    if not key:
+        raise ValueError("BBR_BUILDBUDDY_API_KEY_FILE is empty")
+    return {**os.environ, "BUILDBUDDY_API_KEY": key}
+
+
 def _extract_invocation_id_file(args: list[str]) -> tuple[list[str], Path | None]:
     """Strip bbr's own --invocation-id-file=PATH flag from args (last wins)."""
     path = None
@@ -278,6 +293,7 @@ Environment variables:
   BBR_BAZELRC       Path to a bazelrc-format file with Bazel flags to forward.
                     Lines are parsed as "<command> <flag>" (prefix stripped).
   BBR_REMOTE_ARGS   Space-separated `bb remote` flags injected before the verb.
+  BBR_BUILDBUDDY_API_KEY_FILE  Optional mounted key file, passed to bb for real runs only.
   BBR_ALLOW_STALE_BASE  Run even when the likely diff base looks stale (bbr
                     normally refuses — see bb_remote_internals.md).
 
@@ -321,7 +337,9 @@ def main() -> None:
             invocation_id_file.parent.mkdir(parents=True, exist_ok=True)
             invocation_id_file.write_text(invocation_id)
 
-    result = subprocess.run(cmd, check=False)
+    # Do not pass an env override unless a key file was explicitly configured.
+    env = _bb_environment()
+    result = subprocess.run(cmd, check=False) if env is None else subprocess.run(cmd, check=False, env=env)
     if invocation_id is not None:
         print(
             f'bbr: invocation {invocation_id}  (bbapi {{target,"target log",artifact,invocation}} {invocation_id})',

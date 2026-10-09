@@ -22,6 +22,13 @@ service publishes their generated schema at `/openapi.json`; the browser generat
 values calculated by the service are integer currency minor units. Original Plaid transaction amounts in the
 authenticated detail view remain decimal strings in major units.
 
+- Allowance policies may set `time_zone` to an IANA zone (default `UTC`). The
+  zone determines the local midnight for 7d/30d and calendar periods, the
+  monthly-credit anniversary, and the transaction-date cutoff for reports;
+  `generated_at`, sync timestamps, and duration-based freshness stay UTC.
+  Plaid supplies transaction **dates**, not purchase instants, so changing the
+  zone does not re-date individual Plaid transactions. A change to an existing
+  policy shifts its next monthly credit instant; review that effect before rollout.
 - `GET /api/v1/view` returns the card and allowance view. Optional `estimate_period_id=rolling_7d|rolling_30d`
   selects the allowance forecast and spending signal; omission uses the policy default.
 - `GET /api/v1/transactions?period=rolling_30d` returns transaction explanations and a period summary. If a requested

@@ -111,8 +111,8 @@ class ConnectionRow(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
 
 
-class ConnectionRebindRow(Base):
-    __tablename__ = "external_connection_rebind"
+class ConnectionBindingChangeRow(Base):
+    __tablename__ = "external_connection_binding_change"
 
     id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True)
     connection_id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), ForeignKey("external_connection.id"))

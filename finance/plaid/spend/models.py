@@ -110,6 +110,7 @@ class AllowanceConfigurationView(BaseModel):
     activation_at: date
     currency: str
     spending_account_count: int
+    time_zone: str = "UTC"
     max_sync_age_hours: int
     forecast_basis_period_id: PeriodId
     rules: list[Rule]

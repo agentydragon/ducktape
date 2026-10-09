@@ -94,6 +94,12 @@ class SpendService:
             await self._pool.close()
             self._pool = None
 
+    def report_day(self, instant: datetime) -> date:
+        """Policy-local reporting date; UTC when no allowance is configured."""
+        policy = self._configuration.allowance
+        zone = policy.time_zone if policy else UTC
+        return instant.astimezone(zone).date()
+
     def subscribe(self) -> asyncio.Queue[None]:
         queue: asyncio.Queue[None] = asyncio.Queue(maxsize=1)
         self._subscribers.add(queue)
@@ -107,6 +113,7 @@ class SpendService:
             allowance = AllowanceConfigurationView(
                 monthly_minor_units=policy.monthly_minor_units,
                 activation_at=policy.activation_at,
+                time_zone=policy.time_zone.key,
                 currency=policy.currency,
                 spending_account_count=len(policy.spending_account_ids),
                 max_sync_age_hours=policy.max_sync_age_hours,
@@ -141,7 +148,7 @@ class SpendService:
         transaction_details: dict[tuple[str, str], PlaidTransactionDetails] | None = None,
     ) -> SpendView:
         generated_at = datetime.now(UTC)
-        today = generated_at.date()
+        today = self.report_day(generated_at)
         card_configs = {card.account_id: card for card in self._configuration.cards if card.enabled}
         if not card_configs:
             return SpendView(
@@ -386,7 +393,7 @@ class SpendService:
             statement_decisions=statement_decisions,
             transaction_details=details_by_key,
         )
-        today = view.generated_at.date()
+        today = self.report_day(view.generated_at)
         cycle_report = (
             next((report for report in view.allowance.spend_periods if report.period.id == PeriodId.CREDIT_CYCLE), None)
             if view.allowance is not None
@@ -561,6 +568,7 @@ class SpendService:
                     currency=policy.currency,
                     monthly_minor_units=policy.monthly_minor_units,
                     activation_at=policy.activation_at,
+                    time_zone=policy.time_zone.key,
                     available_minor_units=None,
                     next_credit_at=None,
                     posted_minor_units=0,
@@ -571,7 +579,9 @@ class SpendService:
                     spend_periods=[],
                     recorded_pace_periods=[],
                     forecast=ForecastView(
-                        basis_period=Period.for_id(estimate_period_id or policy.forecast_basis_period_id, now.date()),
+                        basis_period=Period.for_id(
+                            estimate_period_id or policy.forecast_basis_period_id, self.report_day(now)
+                        ),
                         daily_pace_minor_units=None,
                         projected_cycle_end_minor_units=None,
                         estimated_exhaustion_at=None,
@@ -582,7 +592,8 @@ class SpendService:
                     note="Account coverage or sync freshness unavailable; do not rely on the allowance.",
                 )
             rows = []
-            if policy.activation_at <= now.date():
+            today = self.report_day(now)
+            if policy.activation_at <= today:
                 raw_column = "t.raw_json," if transaction_details is not None else ""
                 rows = await connection.fetch(
                     f"""SELECT t.account_id, t.transaction_id, t.pending_transaction_id,
@@ -599,8 +610,8 @@ class SpendService:
                        WHERE t.account_id = ANY($1::text[]) AND t.date >= $2 AND t.date <= $3
                          AND t.removed IS FALSE AND l.status = 'active'""",
                     list(policy.spending_account_ids),
-                    min(policy.activation_at, (now - timedelta(days=29)).date()),
-                    now.date(),
+                    min(policy.activation_at, today - timedelta(days=29)),
+                    today,
                 )
             if transaction_details is not None:
                 transaction_details.update(

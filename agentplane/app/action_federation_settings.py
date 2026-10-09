@@ -8,6 +8,7 @@ from urllib.parse import urlsplit
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from agentplane.action_service.operator_oidc_settings import OperatorOidcSettings, OperatorTokenProfile
+from util.urls import HttpsOrLocalhostHttpUrlString
 
 
 class _ActionFederationSettings(BaseModel):
@@ -37,22 +38,7 @@ class _ActionFederationSettings(BaseModel):
 
 class ExchangeFederationSettings(_ActionFederationSettings):
     mode: Literal["exchange"] = "exchange"
-    token_endpoint: str
-
-    @field_validator("token_endpoint")
-    @classmethod
-    def secure_exchange_endpoint(cls, value: str) -> str:
-        url = urlsplit(value)
-        if (
-            not url.hostname
-            or url.username is not None
-            or url.password is not None
-            or url.fragment
-            or url.query
-            or (url.scheme != "https" and not (url.scheme == "http" and url.hostname in {"127.0.0.1", "localhost"}))
-        ):
-            raise ValueError("token_endpoint must be HTTPS (loopback HTTP is allowed for tests)")
-        return value
+    token_endpoint: HttpsOrLocalhostHttpUrlString
 
 
 class DirectFederationSettings(_ActionFederationSettings):

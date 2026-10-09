@@ -5,6 +5,17 @@ would need, and what the smallest feasible workaround does and does not protect.
 transport contract is [the egress specification](../egress/SPEC.md); whether to accept the
 workaround is still open.
 
+## Staging-only direct-key stopgap
+
+The staging `runner-ducktape` template projects the existing canonical BuildBuddy key through
+ESO into its **workload container only**. It exposes the file path to the harness but
+does not change `bbr` itself; consuming the key from that file is a separate change.
+The existing BuildBuddy egress policy still limits the sandbox's destination hosts. This does **not** keep the key secret from agent-controlled sandbox code or the
+BuildBuddy-hosted runner: `bb remote` embeds it in the hosted Bazel command. It must not be
+represented as credential isolation, and the generic runner and egress sidecar do not mount
+it. Revoking the canonical key affects all its consumers; this change does not introduce
+a new key or a new credential lifecycle.
+
 ## Two products called "remote"
 
 1. **Local Bazel client, remote BuildBuddy actions.** The Bazel process stays in the Agentplane

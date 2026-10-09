@@ -3,6 +3,7 @@
 from datetime import UTC, date, datetime
 from decimal import Decimal
 from typing import Literal
+from zoneinfo import ZoneInfo
 
 import pytest
 import pytest_bazel
@@ -43,7 +44,9 @@ def name_rule(field: Literal["name", "merchant_name"], prefix: str, kind: Kind) 
     return Rule(condition=NamePrefix(field=field, prefix=prefix), kind=kind)
 
 
-def policy(*, activation_at: date = START_DATE, rules: list[Rule] | None = None) -> AllowancePolicy:
+def policy(
+    *, activation_at: date = START_DATE, rules: list[Rule] | None = None, time_zone: ZoneInfo | None = None
+) -> AllowancePolicy:
     configured_rules = (
         rules if rules is not None else [category_rule(field="pfc_primary", value="SHOPPING", kind=Kind.FLEXIBLE)]
     )
@@ -55,6 +58,7 @@ def policy(*, activation_at: date = START_DATE, rules: list[Rule] | None = None)
         monthly_minor_units=10_000,
         spending_account_ids={"card-1"},
         activation_at=activation_at,
+        time_zone=time_zone or ZoneInfo("UTC"),
         rules=configured_rules,
         analysis_categories={
             category_id: AnalysisCategory(label=category_id.replace("_", " ").title(), color="#336699")
@@ -106,6 +110,34 @@ def unmatched(report: AllowanceView, period_id: PeriodId) -> tuple[int, int]:
     period = next(period for period in report.recorded_pace_periods if period.period.id == period_id)
     assert period.unmatched_charges is not None
     return period.unmatched_charges.count, period.unmatched_charges.amount_minor_units
+
+
+def test_pacific_calendar_day_and_monthly_credit_follow_local_midnight():
+    chosen = policy(activation_at=date(2026, 10, 5), time_zone=ZoneInfo("America/Los_Angeles"))
+    transactions = [row("2026-10-05", 25), row("2026-11-04", 40), row("2026-11-05", 70)]
+    before_activation = datetime(2026, 10, 5, 6, 59, tzinfo=UTC)
+    with pytest.raises(ValueError, match="future"):
+        calculate(chosen, [], now=before_activation, last_synced_at=before_activation)
+    activated = datetime(2026, 10, 5, 7, tzinfo=UTC)
+    first = calculate(chosen, transactions, now=activated, last_synced_at=activated)
+    assert first.next_credit_at == datetime.fromisoformat("2026-11-05T00:00:00-08:00")
+    assert first.time_zone == "America/Los_Angeles"
+    before_credit = datetime(2026, 11, 5, 7, 59, tzinfo=UTC)
+    previous_day = calculate(chosen, transactions, now=before_credit, last_synced_at=before_credit)
+    assert previous_day.available_minor_units == 10_000 - 2_500 - 4_000
+    assert previous_day.forecast.basis_period.end == date(2026, 11, 4)
+    assert spend(previous_day, PeriodId.CREDIT_CYCLE) == 6_500
+    at_credit = datetime(2026, 11, 5, 8, tzinfo=UTC)
+    current_day = calculate(chosen, transactions, now=at_credit, last_synced_at=at_credit)
+    assert current_day.available_minor_units == 20_000 - 2_500 - 4_000 - 7_000
+    assert current_day.forecast.basis_period.end == date(2026, 11, 5)
+    assert current_day.next_credit_at == datetime.fromisoformat("2026-12-05T00:00:00-08:00")
+    assert spend(current_day, PeriodId.CREDIT_CYCLE) == 7_000
+
+
+def test_policy_rejects_invalid_time_zone():
+    with pytest.raises(ValidationError, match="time_zone"):
+        AllowancePolicy.model_validate({**policy().model_dump(mode="json"), "time_zone": "not/a-real-zone"})
 
 
 def test_single_config_parses_cards_and_optional_allowance():

@@ -191,6 +191,7 @@ let
     propagatedBuildInputs = with python314Packages; [
       opentelemetry-api
       opentelemetry-sdk
+      pydantic
       tenacity
     ];
   };

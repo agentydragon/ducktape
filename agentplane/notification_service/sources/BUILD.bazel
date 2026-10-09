@@ -19,6 +19,8 @@ py_library(
     deps = [
         ":github_models",
         "//agentplane/notification_service:db",
+        "//agentplane/notification_service:github_state",
+        "//agentplane/notification_service:models",
         "//agentplane/notification_service:settings",
         "//agentplane/notification_service:store",
         "@pypi//cryptography",

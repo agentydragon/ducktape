@@ -23,6 +23,7 @@ exports_files(
         "0019_action_history_page.py",
         "0020_drop_action_request_provenance.py",
         "0021_connection_rebind.py",
+        "0022_connection_binding_change.py",
     ],
     visibility = ["//agentplane/action_service/migrations:__pkg__"],
 )
@@ -211,4 +212,10 @@ py_library(
         "@pypi//alembic",
         "@pypi//sqlalchemy",
     ],
+)
+
+py_library(
+    name = "0022_connection_binding_change",
+    srcs = ["0022_connection_binding_change.py"],
+    deps = ["@pypi//alembic"],
 )

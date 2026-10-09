@@ -83,7 +83,7 @@ def test_sandbox_sidecars_project_the_notifications_audience(
             )
 
 
-def test_ducktape_template_is_staging_only_and_changes_only_image(
+def test_ducktape_template_is_staging_only_and_projects_buildbuddy_key_to_runner_only(
     agentplane_manifests: dict[str, list[dict[str, Any]]],
 ) -> None:
     for namespace, docs in agentplane_manifests.items():
@@ -92,17 +92,46 @@ def test_ducktape_template_is_staging_only_and_changes_only_image(
             doc for doc in docs if doc["kind"] == "ConfigMap" and doc["metadata"]["name"] == "agentplane-app-config"
         )
         presets = yaml.safe_load(app_config["data"]["config.yaml"])["sandbox_presets"]
+        key_copies = [
+            doc
+            for doc in docs
+            if doc["kind"] == "ExternalSecret"
+            and doc["metadata"]["name"] == "buildbuddy-api-key"
+            and doc["metadata"]["namespace"] == namespace
+        ]
         if namespace != "agentplane-staging":
+            assert not key_copies
             assert "runner-ducktape" not in templates
             assert "public-coder-ducktape" not in presets
             continue
         assert presets["public-coder-ducktape"]["template"] == "runner-ducktape"
+        assert len(key_copies) == 1
+        copy = key_copies[0]
+        assert copy["spec"]["data"] == [
+            {"remoteRef": {"key": "buildbuddy-api-key", "property": "api-key"}, "secretKey": "api-key"}
+        ]
+        assert copy["spec"]["secretStoreRef"]["name"] == "kubernetes-external-creds-secret-store"
         generic = templates["runner"]["spec"]
         specialized = deepcopy(templates["runner-ducktape"]["spec"])
         container = specialized["podTemplate"]["spec"]["containers"][0]
         assert container["image"] == "git.allegedly.works/ducktape-ci/runner-ducktape:unset"
         container["image"] = generic["podTemplate"]["spec"]["containers"][0]["image"]
-        # Security context, resources, sidecar, labels, env, storage and command stay identical.
+        pod = specialized["podTemplate"]["spec"]
+        secret = next(volume for volume in pod["volumes"] if volume["name"] == "buildbuddy-api-key")
+        assert secret["secret"] == {"secretName": "buildbuddy-api-key", "defaultMode": 288}
+        pod["volumes"].remove(secret)
+        mount = next(mount for mount in container["volumeMounts"] if mount["name"] == "buildbuddy-api-key")
+        assert mount == {"name": "buildbuddy-api-key", "mountPath": "/run/buildbuddy", "readOnly": True}
+        container["volumeMounts"].remove(mount)
+        assert all(mount["name"] != "buildbuddy-api-key" for mount in pod["containers"][1]["volumeMounts"])
+        key_file = next(env for env in container["env"] if env["name"] == "BBR_BUILDBUDDY_API_KEY_FILE")
+        assert key_file["value"] == "/run/buildbuddy/api-key"
+        container["env"].remove(key_file)
+        args = container["args"]
+        i = args.index("BBR_BUILDBUDDY_API_KEY_FILE")
+        assert args[i - 1] == "--harness-env"
+        del args[i - 1 : i + 1]
+        # No extra authority in generic runners, testing, or the egress sidecar.
         assert specialized == generic
 
 

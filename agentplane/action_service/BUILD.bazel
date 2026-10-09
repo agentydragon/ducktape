@@ -1175,6 +1175,7 @@ py_library(
     ],
     deps = [
         ":catalog",
+        "//util:urls",
         "@pypi//pydantic",
     ],
 )

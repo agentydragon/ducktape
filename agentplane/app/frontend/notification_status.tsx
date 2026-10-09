@@ -10,7 +10,28 @@ type Source = {
   repository?: string;
   subject?: { kind: string; number?: number; name?: string; sha?: string };
 };
+type GitHubRefresh = {
+  last_success_at: string | null;
+  error_kind: string | null;
+  error: string | null;
+  error_since: string | null;
+  error_observed_at: string | null;
+  retry_at: string | null;
+  refreshing_until: string | null;
+};
+type GitHubStatus = {
+  access: (GitHubRefresh & {
+    app_id: number;
+    installation_id: number;
+    repository_id: number;
+    checked_at: string | null;
+    valid_until: string | null;
+    currently_valid: boolean;
+  })[];
+  subject: GitHubRefresh & { repository_id: number; kind: string; subject_key: string };
+};
 type Subscription = {
+  github: GitHubStatus | null;
   id: string;
   source: Source;
   cancelled: boolean;
@@ -22,6 +43,18 @@ type Subscription = {
   error: string | null;
   next_source_check_at: string | null;
 };
+function SharedRefresh({ label, state }: { label: string; state: GitHubRefresh }): JSX.Element {
+  return (
+    <Text size="xs" c={state.error ? "red" : "dimmed"}>
+      {label}:{" "}
+      {state.error ?? (state.last_success_at ? `last success ${timestamp(state.last_success_at)}` : "not yet observed")}
+      {state.error_since ? ` · since ${timestamp(state.error_since)}` : ""}
+      {state.error_observed_at ? ` · last observed ${timestamp(state.error_observed_at)}` : ""}
+      {state.retry_at ? ` · retry ${timestamp(state.retry_at)}` : ""}
+      {state.refreshing_until ? ` · refresh lease until ${timestamp(state.refreshing_until)}` : ""}
+    </Text>
+  );
+}
 type Inbox = {
   inbox: {
     id: string;
@@ -62,7 +95,14 @@ function subscriptionState(sub: Subscription, observedAt?: string): Subscription
 
 function subscriptionLabel(sub: Subscription, observedAt?: string): string {
   const state = subscriptionState(sub, observedAt);
-  return state === "active" ? (sub.error_kind?.replaceAll("_", " ") ?? "no current source error") : state;
+  if (state !== "active") return state;
+  const errorKind =
+    sub.error_kind ??
+    sub.github?.access.find((access) => access.error_kind)?.error_kind ??
+    sub.github?.subject.error_kind;
+  if (errorKind) return errorKind.replaceAll("_", " ");
+  if (sub.github?.access.some((access) => !access.currently_valid)) return "GitHub access not validated";
+  return "no current source error";
 }
 
 function sourceLabel(source: Source): string {
@@ -293,6 +333,27 @@ export function NotificationStatus({
                             ? `Last successful processing: ${timestamp(sub.last_success_at)}`
                             : "No successful processing recorded"}
                         </Text>
+                        {sub.github && (
+                          <Stack gap={2}>
+                            {sub.github.access.map((access) => (
+                              <Stack gap={0} key={`${access.app_id}/${access.installation_id}/${access.repository_id}`}>
+                                <SharedRefresh
+                                  label={`Shared GitHub access · repository ${access.repository_id} · installation ${access.installation_id}`}
+                                  state={access}
+                                />
+                                <Text size="xs" c="dimmed">
+                                  {access.currently_valid
+                                    ? `Validated until ${timestamp(access.valid_until!)}`
+                                    : "Access not currently validated"}
+                                </Text>
+                              </Stack>
+                            ))}
+                            <SharedRefresh
+                              label={`Shared GitHub subject · ${sub.github.subject.kind} ${sub.github.subject.subject_key}`}
+                              state={sub.github.subject}
+                            />
+                          </Stack>
+                        )}
                         {sub.error && (
                           <Text c="red" size="xs">
                             Source: {sub.error} · since {timestamp(sub.error_since!)} · last observed{" "}

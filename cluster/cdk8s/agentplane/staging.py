@@ -33,6 +33,7 @@ from cluster.cdk8s.agentplane.actions_staging_policies import add_staging_action
 from cluster.cdk8s.agentplane.app import RunnerTemplate
 from cluster.cdk8s.agentplane.chart import environment_chart
 from cluster.cdk8s.agentplane.egress_credentials import (
+    EXTERNAL_CREDS_STORE,
     STAGING_CREDENTIALS_NAMESPACE,
     EgressCredentials,
     credential_external_secret,
@@ -385,16 +386,27 @@ ENV = Environment(
 
 def chart(app: App) -> Chart:
     chart = environment_chart(app, ENV)
+    # Reuse the canonical key via ESO; do not grant the sandbox ServiceAccount get-secrets RBAC.
+    credential_external_secret(
+        chart,
+        namespace=STAGING_NAMESPACE,
+        target="buildbuddy-api-key",
+        source="buildbuddy-api-key",
+        key="api-key",
+        store=EXTERNAL_CREDS_STORE,
+    )
     RunnerTemplate(
         chart,
         "ducktape-runner-template",
         ENV,
         name="runner-ducktape",
         image="git.allegedly.works/ducktape-ci/runner-ducktape",
+        buildbuddy_secret=True,
+        extra_harness_env=("BBR_BUILDBUDDY_API_KEY_FILE",),
         description=(
             "Public ducktape development: the runner and harnesses plus the repository's shared "
             "bb/bbr, Bazelisk, pre-commit, formatters and Gazelle. Same container isolation and "
-            "permissions as the generic runner; use remote execution for builds."
+            "permissions as the generic runner except for a mounted BuildBuddy key; use remote execution for builds."
         ),
     )
     notification_service = notifications.service(STAGING_NAMESPACE)

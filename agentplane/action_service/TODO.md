@@ -57,3 +57,13 @@ Consider a policy of that kind for Actions that run with the operator's credenti
 Every external Connection sees the same configured `direct_tools`, narrowed only by its
 ServiceAccount's policy. A client that should see a different set, or a workload that should see
 any, needs a per-caller selection, e.g. on the ServiceAccount or the Connection.
+
+## Consider a shared GitHub observation service
+
+Consider whether Actions' anonymous repository-visibility checks and Notifications' durable
+GitHub webhook, repository, App-access and subject observations should share a small GitHub
+service owning refresh, backoff and invalidation. Keep public visibility, App-installation access
+and operator access distinct; they are not interchangeable authorization facts. Actions would
+retain policy decisions and operator-linked MCP execution; Notifications would retain
+subscriptions, matching and inbox delivery. This is a possibility to evaluate, not a committed
+extraction.

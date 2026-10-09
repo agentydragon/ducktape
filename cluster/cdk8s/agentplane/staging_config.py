@@ -61,6 +61,7 @@ from model_catalog.catalog import GPT6_LUNA_RESPONSES, OLLAMA_QWEN_IQ4XS_256K
 _THREAD_PRESET_FINANCE_AGENT_CODEX = "finance-agent-codex"
 _THREAD_PRESET_HAKU_CODEX = "haku-codex"
 _HAKU_THREAD_SETUP = Path(__file__).with_name("haku_thread_setup.sh").read_text(encoding="utf-8")
+_DUCKTAPE_THREAD_SETUP = Path(__file__).with_name("ducktape_thread_setup.sh").read_text(encoding="utf-8")
 _FINANCE_AGENT_INSTRUCTIONS = "\n\n".join(
     [
         Path(__file__).with_name("finance_agent_instructions.md").read_text(encoding="utf-8").strip(),
@@ -242,6 +243,7 @@ def config(
     public_coder = cfg.sandbox_presets["public-coder"]
     thread = cfg.thread_presets[public_coder.thread_preset].model_copy(deep=True)
     thread.title = "Public coder / ducktape / Codex"
+    thread.setup_script = _DUCKTAPE_THREAD_SETUP
     thread.instructions += "\n\n" + Path(__file__).with_name("ducktape_container_instructions.md").read_text().strip()
     cfg.thread_presets["public-coder-ducktape-codex"] = thread
     sandbox = public_coder.model_copy(deep=True)

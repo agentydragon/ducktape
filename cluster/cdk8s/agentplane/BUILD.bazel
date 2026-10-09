@@ -381,6 +381,7 @@ py_library(
     srcs = ["staging_config.py"],
     data = [
         "ducktape_container_instructions.md",
+        "ducktape_thread_setup.sh",
         "finance_agent_instructions.md",
         "finance_agent_thread_setup.sh",
         "haku_thread_setup.sh",

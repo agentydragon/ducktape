@@ -8,6 +8,7 @@ import logging
 import sys
 from collections.abc import AsyncGenerator, AsyncIterator
 from contextlib import asynccontextmanager
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Annotated, cast
 
@@ -160,14 +161,16 @@ async def _event_stream(
 ) -> AsyncGenerator[str]:
     queue = service.subscribe()
     initial_sent = False
+    last_report_day = None
     try:
         while not await request.is_disconnected():
             if initial_sent or not service.listening.is_set():
                 try:
                     await asyncio.wait_for(queue.get(), timeout=15)
                 except TimeoutError:
-                    yield ": keepalive\n\n"
-                    continue
+                    if not service.listening.is_set() or last_report_day == service.report_day(datetime.now(UTC)):
+                        yield ": keepalive\n\n"
+                        continue
 
             if not service.listening.is_set():
                 continue
@@ -175,6 +178,7 @@ async def _event_stream(
             view = await service.read_view(estimate_period_id=estimate_period_id)
             if service.listening.is_set() and service.revision == revision:
                 initial_sent = True
+                last_report_day = service.report_day(view.generated_at)
                 yield _sse_view(view)
     finally:
         service.unsubscribe(queue)

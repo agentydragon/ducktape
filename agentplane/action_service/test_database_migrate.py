@@ -120,6 +120,34 @@ def _round_trip(connection: Connection) -> None:
     # `0017` drops the linkage's `provider` and keeps the linkage and its token state both ways; on
     # the way down `provider` comes back as the `server_id`.
     _seed_linkage_at_0016(connection)
+    command.upgrade(config, "0021_connection_rebind")
+    audit_connection = UUID("00000000-0000-4000-8000-000000000004")
+    audit_change = UUID("00000000-0000-4000-8000-000000000005")
+    connection.execute(
+        text(
+            """INSERT INTO external_connection
+               (id, display_name, bound_caller, binding_version, version, created_at, updated_at)
+               VALUES (:id, 'Test connection', '{"namespace":"agentplane-test","name":"new"}',
+                       1, 2, now(), now())"""
+        ).bindparams(id=audit_connection)
+    )
+    connection.execute(
+        text(
+            """INSERT INTO external_connection_rebind
+               (id, connection_id, version, previous_caller, caller, operator_issuer, operator_subject, at)
+               VALUES (:id, :connection_id, 2,
+                       '{"namespace":"agentplane-test","name":"old"}',
+                       '{"namespace":"agentplane-test","name":"new"}',
+                       'https://operator.example', 'test-operator', now())"""
+        ).bindparams(id=audit_change, connection_id=audit_connection)
+    )
+    command.upgrade(config, "head")
+    assert connection.scalar(text("SELECT operator_subject FROM external_connection_binding_change")) == "test-operator"
+    # The new migration must not rewrite or discard an existing audit entry, in either direction.
+    command.downgrade(config, "0021_connection_rebind")
+    assert connection.scalar(text("SELECT operator_subject FROM external_connection_rebind")) == "test-operator"
+    connection.execute(text("DELETE FROM external_connection_rebind"))
+    connection.execute(text("DELETE FROM external_connection"))
     command.upgrade(config, "head")
     assert _linked_access_token(connection) == ACCESS_TOKEN
     # `0018` clears a refresh failure that predates recorded errors, and the next sweep retries.

@@ -16,8 +16,8 @@ from mcp_infra.prefix import MCPMountPrefix
 from mcp_infra.resource_utils import add_resource_prefix
 from mcp_infra.resources.types import ResourceEntry
 from mcp_infra.snapshots import RunningServerEntry
-from mcp_infra.urls import ANY_URL
 from openai_utils.pydantic_strict_mode import OpenAIStrictModeBaseModel
+from util.urls import ANY_URL
 
 ## ResourceEntry moved to adgn.mcp.resources.types to avoid cycles
 

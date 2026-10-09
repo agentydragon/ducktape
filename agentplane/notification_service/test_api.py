@@ -12,7 +12,13 @@ import pytest_bazel
 
 from agentplane.action_service.models import ActionEventView, ActionState
 from agentplane.notification_service.api import authenticated_caller, create_app, sandbox_status_frames
-from agentplane.notification_service.models import ActionsSource, DestinationRef, Subscribe, SubscriptionView
+from agentplane.notification_service.models import (
+    ActionsSource,
+    DestinationRef,
+    Subscribe,
+    SubscriptionStatus,
+    SubscriptionView,
+)
 from agentplane.notification_service.service import Service
 from agentplane.notification_service.settings import NoticeDebounceSettings
 from agentplane.notification_service.store import Store
@@ -53,6 +59,7 @@ async def test_subscription_patch_renews_without_pause(store: Store) -> None:
         response = await client.patch(path, json={"version": 1, "lifetime_days": 30})
         assert response.status_code == 200
         assert response.json()["version"] == 2
+        assert response.json()["github"] is None
         assert "paused" not in response.json()
         assert response.json()["source"] == subscription.source.model_dump(mode="json")
         assert (await client.get("/v1/subscriptions")).json() == [response.json()]
@@ -62,6 +69,14 @@ async def test_subscription_patch_renews_without_pause(store: Store) -> None:
         assert (await client.patch(path, json={"version": 3})).status_code == 409
     for model in ["Subscribe", "SubscriptionUpdate", "SubscriptionView"]:
         assert "paused" not in app.openapi()["components"]["schemas"][model]["properties"]
+
+
+@pytest.mark.parametrize("model", [SubscriptionView, SubscriptionStatus])
+def test_github_status_field_is_required_but_nullable(model: type[SubscriptionView] | type[SubscriptionStatus]) -> None:
+    schema = model.model_json_schema()
+    assert "github" in schema["required"]
+    assert "default" not in schema["properties"]["github"]
+    assert {"type": "null"} in schema["properties"]["github"]["anyOf"]
 
 
 async def test_lifespan_owns_workers_and_readiness_tracks_failure_and_shutdown(

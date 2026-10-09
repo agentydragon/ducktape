@@ -3216,6 +3216,8 @@ data:
           Ruff, Prettier and its pinned plugins, nixfmt, Buildifier, and the repo-configured Gazelle.
           Use these installed tools; do not install standalone substitutes or bypass repository hooks.
           Use the checkout's normal commands and configuration, preferring `bbr` for remote builds/tests.
+          The Thread setup clones `devel` into its own workspace and installs the repo's Git hooks.
+          The image has neither `nix` nor `direnv`; do not run `direnv allow` here.
 
           Outbound access still follows Agentplane egress policy. Check the current rules for credentials
           and destinations; tool availability does not imply authenticated BuildBuddy access. Preserve the
@@ -3224,6 +3226,24 @@ data:
           This is still a container sharing resources with the harness, not a VM with isolated tool
           processes. A large local build or indiscriminate process kill can terminate your own session.
           Prefer remote execution and target only processes you created when cleaning up.
+        setup_script: |
+          #!/bin/sh
+          # Setup runs once per Thread, from its dedicated workspace. Leave an existing checkout
+          # and its uncommitted changes alone when a Thread is resumed or an operator supplied one.
+          set -eu
+          if [ ! -d .git ]; then
+            if [ -n "$(ls -A)" ]; then
+              echo 'ducktape setup: nonempty directory is not a checkout; refusing to clone over it' >&2
+              exit 1
+            fi
+            git clone --depth 1 --branch devel --single-branch https://github.com/agentydragon/ducktape.git .
+          fi
+          if [ "$(git rev-parse --show-toplevel)" != "$PWD" ]; then
+            echo 'ducktape setup: expected a checkout rooted in the Thread workspace' >&2
+            exit 1
+          fi
+          # Uses the repository's default_install_hook_types (pre-commit and prepare-commit-msg).
+          pre-commit install
     sandbox_presets:
       public-coder:
         title: Public coder
@@ -5870,11 +5890,31 @@ spec:
     matchLabels:
       app.kubernetes.io/name: agentplane-notifications
 ---
+apiVersion: external-secrets.io/v1
+kind: ExternalSecret
+metadata:
+  name: buildbuddy-api-key
+  namespace: agentplane-staging
+spec:
+  data:
+    - remoteRef:
+        key: buildbuddy-api-key
+        property: api-key
+      secretKey: api-key
+  refreshInterval: 1h
+  secretStoreRef:
+    kind: ClusterSecretStore
+    name: kubernetes-external-creds-secret-store
+  target:
+    creationPolicy: Owner
+    deletionPolicy: Retain
+    name: buildbuddy-api-key
+---
 apiVersion: extensions.agents.x-k8s.io/v1beta1
 kind: SandboxTemplate
 metadata:
   annotations:
-    sandbox-actions.agentplane.allegedly.works/description: "Public ducktape development: the runner and harnesses plus the repository's shared bb/bbr, Bazelisk, pre-commit, formatters and Gazelle. Same container isolation and permissions as the generic runner; use remote execution for builds."
+    sandbox-actions.agentplane.allegedly.works/description: "Public ducktape development: the runner and harnesses plus the repository's shared bb/bbr, Bazelisk, pre-commit, formatters and Gazelle. Same container isolation and permissions as the generic runner except for a mounted BuildBuddy key; use remote execution for builds."
   name: runner-ducktape
   namespace: agentplane-staging
 spec:
@@ -5929,11 +5969,15 @@ spec:
             - REQUESTS_CA_BUNDLE
             - --harness-env
             - KUBECONFIG
+            - --harness-env
+            - BBR_BUILDBUDDY_API_KEY_FILE
             - --harness-inherit-env
             - TZDIR
           env:
             - name: LITELLM_URL
               value: http://agentplane-llm-ingress.agentplane-staging.svc.cluster.local:8080
+            - name: BBR_BUILDBUDDY_API_KEY_FILE
+              value: /run/buildbuddy/api-key
             - name: AGENTPLANE_MODEL_CONTEXT_WINDOWS
               value: '{"ollama/oai-chat/qwen3.8-flash-next-iq4xs-128k":131072,"ollama/oai-chat/qwen3.8-flash-next-iq4xs-256k":262144,"ollama/olm-chat/qwen3.8-flash-next-iq4xs-128k":131072,"ollama/olm-chat/qwen3.8-flash-next-iq4xs-256k":262144}'
             - name: HTTP_PROXY
@@ -5998,6 +6042,9 @@ spec:
               name: tool-config
               readOnly: true
               subPath: kubeconfig
+            - mountPath: /run/buildbuddy
+              name: buildbuddy-api-key
+              readOnly: true
           workingDir: /state
         - env:
             - name: AGENTPLANE_EGRESS_SIDECAR_PROXY_HOST
@@ -6074,6 +6121,10 @@ spec:
                   audience: agentplane-notifications
                   expirationSeconds: 600
                   path: notifications-token
+        - name: buildbuddy-api-key
+          secret:
+            defaultMode: 288
+            secretName: buildbuddy-api-key
   volumeClaimTemplates:
     - metadata:
         name: state

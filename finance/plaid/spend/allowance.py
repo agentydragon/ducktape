@@ -9,6 +9,7 @@ from datetime import UTC, date, datetime, timedelta
 from decimal import ROUND_HALF_UP, Decimal
 from enum import StrEnum
 from typing import Annotated, Literal
+from zoneinfo import ZoneInfo
 
 from pydantic import BaseModel, ConfigDict, Field, Json, TypeAdapter, ValidationError, field_validator, model_validator
 
@@ -262,6 +263,7 @@ class AllowancePolicy(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
     monthly_minor_units: int = Field(gt=0)
     activation_at: date
+    time_zone: ZoneInfo = ZoneInfo("UTC")
     spending_account_ids: set[str] = Field(min_length=1)
     currency: Literal["USD"] = "USD"
     rules: list[Rule] = Field(min_length=1)
@@ -346,6 +348,7 @@ class AllowanceView(BaseModel):
     currency: str
     monthly_minor_units: int
     activation_at: date
+    time_zone: str = "UTC"
     available_minor_units: int | None
     next_credit_at: datetime | None
     posted_minor_units: int
@@ -456,7 +459,9 @@ def calculate(
     if now.utcoffset() is None:
         raise ValueError("now must be timezone-aware")
     now = now.astimezone(UTC)
-    start = datetime.combine(policy.activation_at, datetime.min.time(), tzinfo=UTC)
+    zone = policy.time_zone
+    local_now = now.astimezone(zone)
+    start = datetime.combine(policy.activation_at, datetime.min.time(), tzinfo=zone)
     if start > now:
         raise ValueError("allowance start date cannot be in the future")
 
@@ -472,7 +477,7 @@ def calculate(
     # Keep each included purchase once, with its category and posting state.
     included: list[Purchase] = []
     rolling_periods = tuple(period_id for period_id in PeriodId if period_id.rolling_days is not None)
-    today = now.date()
+    today = local_now.date()
     rolling_starts = {period_id: period_id.start(today) for period_id in rolling_periods}
     positive_by_period = dict.fromkeys(rolling_periods, 0)
     unmatched_count_by_period = dict.fromkeys(rolling_periods, 0)
@@ -585,7 +590,7 @@ def calculate(
     if daily is None and elapsed_days == basis_days:
         daily = 0
     available = credits * policy.monthly_minor_units - posted - pending
-    projected_end = available - daily * max(1, (next_credit.date() - now.date()).days) if daily is not None else None
+    projected_end = available - daily * max(1, (next_credit.date() - today).days) if daily is not None else None
     alert = (
         PaceAlert.EXCEEDED
         if available <= 0
@@ -616,6 +621,7 @@ def calculate(
         currency=policy.currency,
         monthly_minor_units=policy.monthly_minor_units,
         activation_at=policy.activation_at,
+        time_zone=policy.time_zone.key,
         available_minor_units=available,
         next_credit_at=next_credit,
         posted_minor_units=posted,

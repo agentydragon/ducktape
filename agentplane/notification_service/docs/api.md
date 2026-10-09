@@ -175,16 +175,18 @@ Payload SHA, not inbox order, identifies the revision involved.
 
 Event and action filters are unordered sets. Reordering or repeating identical selectors does not
 change subscription identity; JSON responses and stored creation specifications use canonical ordering.
-An installation-lookup 404 leaves a PR fork uncovered and logs that limitation. Other access failures,
-including authentication errors and suspended installations, surface as subscription errors.
+An installation-lookup 404 leaves a PR fork uncovered until a subsequent subject repair discovers
+coverage. Authentication errors, suspended installations and refresh backoff are exposed through
+shared access/subject observations in subscription introspection.
 
 Any authenticated workload may subscribe to repositories accessible through this App, including private
 repositories; normal inbox ownership still applies. Revocation/suspension/identity changes stop new matching
-and expose subscription errors; delivered entries stay available. Transient/rate-limit failures retry with
-backoff. Subscription views expose the safe `error` and an absolute `retry_at` for a scheduled
-source retry (null after success, cancellation or expiry); this is not a runner-delivery deadline.
+and expose shared access failures through subscription introspection; delivered entries stay available.
+Transient/rate-limit failures retry with backoff. Shared observations expose safe `error` and absolute
+`retry_at` values; these are not runner-delivery deadlines. A cancelled subscription can still show
+shared observations maintained for another active subscriber.
 Rate-limit retries respect both `Retry-After` and an exhausted primary quota's `X-RateLimit-Reset`,
-with a minimum 60-second delay when GitHub supplies no later deadline. Workers log the subscription,
+with a minimum 60-second delay when GitHub supplies no later deadline. Workers log the shared entity,
 safe failure category and retry delay, never upstream bodies or credentials.
 
 Accepted webhooks remain durable while a source is backing off. New ingress does not shorten that
@@ -249,3 +251,61 @@ These updates never append inbox entries, advance cursors or prepare agent notic
 shows current source observations separately from subscription lifecycle and delivery status.
 Shared GitHub access/repair failures belong to their shared records, not duplicated subscription
 errors; subscription-owned observations describe that subscription's processing.
+
+## GitHub entity ownership
+
+GitHub subscription bindings reference shared repository-access and subject rows through composite
+foreign keys. An App/installation/repository grant is distinct from a repository/subject identity;
+the common repository ID prevents a subscription from binding a subject to an unrelated repository.
+The immutable creation JSON is the original request for idempotency, not a mutable repository cache.
+Repository names are observations, not primary keys. Matching installation IDs remain mandatory.
+
+`github_installation` owns the App/installation identity and access invalidation generation.
+`github_repository` owns the numeric repository identity and observed name.
+`github_repository_access` owns validation timestamps (`checked_at`, `valid_until`), validation
+failure facts, retry schedule and refresh lease for an App/installation/repository grant.
+`github_subject` owns repair observations and lease for a PR, branch or commit.
+`github_subject_revision` holds additive associations keyed by subject, head repository and SHA;
+an association cannot grant access to the head repository.
+`github_delivery_subject` links each receipt to its structured subject references through foreign
+keys, including comments and branch events without a SHA. The delivery journal has no encoded
+subject-string array; direct matching uses the indexed relation. Migration preserves existing
+references before removing the old array and its GIN index.
+
+Subscription `last_success_at` and current failure describe that subscription's processing. Shared
+access or repair failures belong on the grant or subject. GET/list and operator status expose them
+in `github.access` and `github.subject`, independently of the subscription's processing fields.
+The `github` response field is required: Actions subscriptions explicitly return `null`; GitHub
+subscriptions return the shared observations. Omission is not treated as `null`.
+Each observation includes current failure facts, retry deadline and refresh lease deadline. Access
+observations also expose validation time, expiry and `currently_valid` as of the read; this is not
+a promise about later delivery. No refresh failure or recovery creates an inbox entry.
+
+The normalized binding migration preserves subscription IDs, inboxes, event checkpoints and raw
+receipts. It does not claim historical validation times. Reverse migration refuses to discard
+shared observations or revision associations.
+
+### Durable GitHub refresh and matching
+
+`github.freshness_seconds` bounds cached access validation and subject repair (default 600 seconds,
+configurable from 60 to 3600). Successful processing schedules the earliest access expiry or subject
+repair deadline, including when no webhook arrives. A missing webhook is repaired for current
+subject metadata, not replayed as an activity event.
+
+Workers claim shared access/subject refreshes through PostgreSQL leases. Other workers reuse the
+observation or defer until the persisted retry/lease deadline; no network call occurs under a database
+lock. A worker that loses its lease cannot overwrite a newer success or failure. Signed installation
+and installation-repository lifecycle events invalidate cached access and in-flight refreshes with
+generation fences. Ordinary activity webhooks add repository-qualified SHA associations; delayed
+observations cannot erase newer associations.
+
+Matching uses durable observations and makes no GitHub API calls while they remain fresh. Every
+inbox append rechecks the access generations and expiry under the same transaction lock used by
+invalidation. Stale access fails closed. Fork SHA associations alone never authorize a fork receipt:
+its repository and installation must also match a separately validated grant. A missing head
+repository in a PR payload does not infer fork identity. Shared failures remain queryable after a
+restart and never become per-subscription copies or inbox history.
+
+These are current-state tables, not temporal versions. `github_subject_revision` accumulates observed
+membership without ordering or a current-head marker. Retained webhook receipts remain the event
+journal; repository names, access observations, refresh failures and leases are updated in place.

@@ -10,6 +10,7 @@ resource in the Kustomization, so image-pins/ covers them too.
 from __future__ import annotations
 
 import json
+from collections.abc import Sequence
 from typing import cast
 from urllib.parse import urlsplit
 
@@ -24,6 +25,8 @@ from agent_sandbox_sandboxtemplate_crds.io.x_k8s.agents.extensions import (
     SandboxTemplateSpecPodTemplateSpecContainersResourcesLimits,
     SandboxTemplateSpecPodTemplateSpecContainersResourcesRequests,
     SandboxTemplateSpecPodTemplateSpecContainersVolumeMounts,
+    SandboxTemplateSpecPodTemplateSpecVolumes,
+    SandboxTemplateSpecPodTemplateSpecVolumesSecret,
     SandboxTemplateSpecVolumeClaimTemplates,
     SandboxTemplateSpecVolumeClaimTemplatesMetadata,
     SandboxTemplateSpecVolumeClaimTemplatesPolicy,
@@ -96,6 +99,8 @@ _RUNNER_LABELS = {"app.kubernetes.io/name": "agentplane-runner"}
 # SandboxTemplate's own VolumeClaimTemplate -- all three must name the same volume.
 _STATE_VOLUME_NAME = "state"
 _STATE_DIR = "/state"
+_BUILDBUDDY_SECRET = "buildbuddy-api-key"
+_BUILDBUDDY_MOUNT = "/run/buildbuddy"
 
 
 def service(namespace: str) -> ServiceRef:
@@ -452,11 +457,24 @@ class App(Construct):
 
 
 class RunnerTemplate(Construct):
-    """Shared runner Pod and storage wiring; an image variant adds no authority or isolation."""
+    """Shared runner Pod and storage wiring; staging ducktape may opt into a direct BuildBuddy key."""
 
-    def __init__(self, scope: Construct, id: str, env: Environment, *, name: str, image: str, description: str) -> None:
+    def __init__(
+        self,
+        scope: Construct,
+        id: str,
+        env: Environment,
+        *,
+        name: str,
+        image: str,
+        description: str,
+        buildbuddy_secret: bool = False,
+        extra_harness_env: Sequence[str] = (),
+    ) -> None:
         super().__init__(scope, id)
         self.env = env
+        self.buildbuddy_secret = buildbuddy_secret
+        self.extra_harness_env = extra_harness_env
         self._add_sandbox_template(name=name, image=image, description=description)
 
     def _runner_container(self, image: str) -> SandboxTemplateSpecPodTemplateSpecContainers:
@@ -473,7 +491,13 @@ class RunnerTemplate(Construct):
         # repeating a value the deployment has no business choosing.
         harness_env = list(
             dict.fromkeys(
-                ["HOME", "PATH", *self.env.sandbox_workload_env, *(var.name for var in sandbox_pod.egress_env())]
+                [
+                    "HOME",
+                    "PATH",
+                    *self.env.sandbox_workload_env,
+                    *(var.name for var in sandbox_pod.egress_env()),
+                    *self.extra_harness_env,
+                ]
             )
         )
         args = [
@@ -508,6 +532,15 @@ class RunnerTemplate(Construct):
                 self.env,
                 [
                     SandboxTemplateSpecPodTemplateSpecContainersEnv(name="LITELLM_URL", value=litellm_url),
+                    *(
+                        [
+                            SandboxTemplateSpecPodTemplateSpecContainersEnv(
+                                name="BBR_BUILDBUDDY_API_KEY_FILE", value=f"{_BUILDBUDDY_MOUNT}/api-key"
+                            )
+                        ]
+                        if self.buildbuddy_secret
+                        else []
+                    ),
                     # Optional runner-only config. Older runner images ignore this environment
                     # variable; the updated runner applies it when a model is listed.
                     SandboxTemplateSpecPodTemplateSpecContainersEnv(
@@ -548,6 +581,15 @@ class RunnerTemplate(Construct):
                     name=_STATE_VOLUME_NAME, mount_path=_STATE_DIR
                 ),
                 *sandbox_pod.egress_mounts(),
+                *(
+                    [
+                        SandboxTemplateSpecPodTemplateSpecContainersVolumeMounts(
+                            name=_BUILDBUDDY_SECRET, mount_path=_BUILDBUDDY_MOUNT, read_only=True
+                        )
+                    ]
+                    if self.buildbuddy_secret
+                    else []
+                ),
             ],
         )
 
@@ -568,7 +610,22 @@ class RunnerTemplate(Construct):
             pod_template=SandboxTemplateSpecPodTemplate(
                 metadata=SandboxTemplateSpecPodTemplateMetadata(labels=_RUNNER_LABELS),
                 spec=sandbox_pod.pod_spec(
-                    self.env, workload=self._runner_container(image), service_account_name="agentplane-runner"
+                    self.env,
+                    workload=self._runner_container(image),
+                    service_account_name="agentplane-runner",
+                    workload_volumes=(
+                        [
+                            SandboxTemplateSpecPodTemplateSpecVolumes(
+                                name=_BUILDBUDDY_SECRET,
+                                secret=SandboxTemplateSpecPodTemplateSpecVolumesSecret(
+                                    secret_name=_BUILDBUDDY_SECRET,
+                                    default_mode=288,  # 0440; readable via fsGroup 1000
+                                ),
+                            )
+                        ]
+                        if self.buildbuddy_secret
+                        else []
+                    ),
                 ),
             ),
             volume_claim_templates=[
