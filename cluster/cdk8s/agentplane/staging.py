@@ -26,7 +26,7 @@ from agentplane.action_service.operator_oidc_settings import OperatorOidcSetting
 from agentplane.action_service.sandbox.actions import SandboxAction
 from agentplane.action_service.sandbox.binding import SandboxExecutorBinding
 from agentplane.action_service.settings import ActionServiceDeploymentSettings, WebPushDeploymentSettings
-from agentplane.app.action_federation import ExchangeFederationSettings
+from agentplane.app.action_federation_settings import ExchangeFederationSettings
 from cluster.cdk8s import cilium, external_creds, ha_mcp, node_scheduling, public_coder_egress
 from cluster.cdk8s.agentplane import actions, command_sandbox, notifications, staging_config
 from cluster.cdk8s.agentplane.actions_staging_policies import add_staging_action_policies

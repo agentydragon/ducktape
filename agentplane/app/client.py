@@ -18,8 +18,9 @@ from uuid import UUID
 import httpx
 from google.protobuf.json_format import MessageToDict, ParseDict, ParseError
 
-from agentplane.app.api import EgressGrant, ModelCatalog
+from agentplane.app.api import EgressGrant
 from agentplane.app.decisions import Decision
+from agentplane.app.model_catalog import ModelCatalog
 from agentplane.app.presets import SandboxPresetView
 from agentplane.app.sandbox_models import NewSandbox, SandboxView, sandbox_has_ready_pod
 from agentplane.app.threads.bridge import NewSession

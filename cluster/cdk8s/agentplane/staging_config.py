@@ -1,5 +1,5 @@
 """Generates agentplane-staging's `agentplane-app-config` ConfigMap's `config.yaml`
-content -- agentplane/app/main.py's `Settings`, mounted by the Deployment. See
+content -- agentplane/app/settings.py's `AppSettingsConfig`, mounted by the Deployment. See
 model_catalog/catalog.py for the model-name scheme.
 """
 
@@ -7,9 +7,9 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from agentplane.app.action_federation import ActionFederationSettings
-from agentplane.app.main import AppSettingsConfig
+from agentplane.app.action_federation_settings import ActionFederationSettings
 from agentplane.app.presets import SandboxPreset, ThreadPreset
+from agentplane.app.settings import AppSettingsConfig
 from agentplane.runner.harness import Harness
 from agentplane.sandbox_service.kubernetes_grants import RoleBindingGrant, RoleRef
 from cluster.cdk8s import agent_access_profiles

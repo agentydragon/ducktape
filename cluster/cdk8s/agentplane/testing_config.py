@@ -1,12 +1,12 @@
 """Generates agentplane-testing's `agentplane-app-config` ConfigMap's `config.yaml`
-content -- agentplane/app/main.py's `Settings`, mounted by the Deployment. See
+content -- agentplane/app/settings.py's `AppSettingsConfig`, mounted by the Deployment. See
 model_catalog/catalog.py for the model-name scheme.
 """
 
 from __future__ import annotations
 
-from agentplane.app.action_federation import ActionFederationSettings
-from agentplane.app.main import AppSettingsConfig
+from agentplane.app.action_federation_settings import ActionFederationSettings
+from agentplane.app.settings import AppSettingsConfig
 from cluster.cdk8s.agentplane.app_settings import settings
 from cluster.cdk8s.model_selections import TESTING_APP_MODELS
 from model_catalog.catalog import GPT6_LUNA_RESPONSES
