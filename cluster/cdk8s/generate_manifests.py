@@ -307,7 +307,6 @@ def generate_manifests(root: Path) -> None:
     tana_mcp.write_manifests(root)
     haku_egress_proxy.write_manifests(root)
     parked_augur_evidence.write_manifests(root)
-    activitywatch_app.write_manifests(root)
     github_api_proxy.write_manifests(root)
     ducktape_flux.write_manifests(root)
     flux_sources.write_manifests(root)
@@ -1072,7 +1071,16 @@ def generate_manifests(root: Path) -> None:
     )
     activitywatch_artifact = artifact("activitywatch", activitywatch_app.OUTPUT_DIR)
     activitywatch_kustomization = activitywatch_flux_kustomizations.activitywatch(
-        flux_chart, activitywatch_artifact, external_secrets_operator_kustomization
+        flux_chart,
+        write_directory(
+            root,
+            activitywatch_artifact,
+            activitywatch_app.chart,
+            siblings=["activitywatch-write-token.sops.yaml", "activitywatch-read-token.sops.yaml"],
+            components=["./image-pins"],
+            config_map_generator=activitywatch_app.CONFIG_MAPS,
+        ),
+        external_secrets_operator_kustomization,
     )
     agentplane_index_artifact = artifact(
         "agentplane-index", agentplane_index_workers.OUTPUT_DIR, agentplane_index_workers.PINS_DIR

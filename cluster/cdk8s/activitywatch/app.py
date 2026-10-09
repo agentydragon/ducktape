@@ -4,13 +4,12 @@ write/read proxy, with its storage, Services, routes and network policy.
 The aw-server image tag is the placeholder "unset"; the hand-written
 cluster/k8s/activitywatch/image-pins/kustomization.yaml overrides it at `kustomize build` time
 via Flux's image-automation marker. Also hand-written: the nginx configs the directory's
-`configMapGenerator` renders, the two SOPS token Secrets, and that `kustomization.yaml`.
+`configMapGenerator` renders and the two SOPS token Secrets.
 """
 
 from __future__ import annotations
 
 from dataclasses import replace
-from pathlib import Path
 
 from cdk8s import ApiObjectMetadata, App, Chart
 from cdk8s_plus_34 import k8s
@@ -25,9 +24,9 @@ from constructs import Construct
 
 from cluster.cdk8s import cilium, namespaces
 from cluster.cdk8s.authentik import app as authentik
+from cluster.cdk8s.flux import ConfigMapArgs
 from cluster.cdk8s.forgejo_images import SECRET_NAME, forgejo_images_creds_external_secret
 from cluster.cdk8s.gateway import https_route
-from cluster.cdk8s.generation import write_charts
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 from cluster.cdk8s.namespaces import Vpa
 from cluster.cdk8s.providers.cilium.network_policy import IngressRule, NetworkPolicy
@@ -40,6 +39,13 @@ _NAMESPACE = "activitywatch"
 _IMAGE = "git.allegedly.works/ducktape-ci/aw-server:unset"
 _DATA_CLAIM = "activitywatch-data"
 _SERVER_PORT = 5600
+_READONLY_CONFIG = ConfigMapArgs(
+    name="activitywatch-readonly-proxy", namespace=_NAMESPACE, files=["default.conf=readonly-proxy.conf"]
+)
+_BEARER_CONFIG = ConfigMapArgs(
+    name="activitywatch-bearer-proxy", namespace=_NAMESPACE, files=["default.conf.template=bearer-proxy.conf.template"]
+)
+CONFIG_MAPS = (_READONLY_CONFIG, _BEARER_CONFIG)
 _PODS = Pods(namespace=_NAMESPACE, labels=(("app.kubernetes.io/name", _NAME),))
 # The three Services share one Service port, each in front of a different sidecar port.
 _HTTP = Port(name="http", number=5600)
@@ -177,11 +183,10 @@ def _deployment(scope: Construct) -> None:
                         ),
                         k8s.Volume(
                             name="readonly-proxy-config",
-                            config_map=k8s.ConfigMapVolumeSource(name="activitywatch-readonly-proxy"),
+                            config_map=k8s.ConfigMapVolumeSource(name=_READONLY_CONFIG.name),
                         ),
                         k8s.Volume(
-                            name="bearer-proxy-config",
-                            config_map=k8s.ConfigMapVolumeSource(name="activitywatch-bearer-proxy"),
+                            name="bearer-proxy-config", config_map=k8s.ConfigMapVolumeSource(name=_BEARER_CONFIG.name)
                         ),
                     ],
                 ),
@@ -310,7 +315,3 @@ def chart(app: App) -> Chart:
     _route(chart, "read-route", backend=_READ, hostname="activitywatch-read.allegedly.works")
     _network_policy(chart)
     return chart
-
-
-def write_manifests(root: Path) -> None:
-    write_charts(root, OUTPUT_DIR, chart)
