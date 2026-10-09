@@ -277,7 +277,7 @@ indirection, stop and ask before changing the design.
 - **Render identity across a conversion**: `render_diff.py` reconciles the whole Flux
   graph at two revisions (sources, ArtifactGenerator copies, `kustomize build`, before
   `postBuild`) and diffs every Kustomization's objects, exiting 1 on any difference.
-  From the devshell: `python3 cluster/cdk8s/render_diff.py origin/devel HEAD`; renders
+  From the devshell: `bb run //cluster/cdk8s:render_diff_bin -- origin/devel HEAD --repo "$PWD"`; renders
   cache under `~/.cache/render-diff` (`--cache-dir` moves it). Its docstring lists the
   Flux semantics it reproduces.
 
