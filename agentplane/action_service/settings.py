@@ -9,7 +9,7 @@ from pydantic import BaseModel, ConfigDict, Field, field_serializer, model_valid
 from pydantic_settings import BaseSettings, PydanticBaseSettingsSource, SettingsConfigDict, YamlConfigSettingsSource
 
 from agentplane.action_service.catalog import ActionGroup, Key
-from agentplane.action_service.github_policy.constants import API_BASE_URL, CACHE_TTL_SECONDS
+from agentplane.action_service.github_policy.visibility import API_BASE_URL, CACHE_TTL_SECONDS
 from agentplane.action_service.mcp_settings import McpClientMetadataSettings, McpOAuthServer
 from agentplane.action_service.oauth_settings import OAuthSettings
 from agentplane.action_service.operator_oidc_settings import OperatorOidcSettings
