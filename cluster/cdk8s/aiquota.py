@@ -43,8 +43,8 @@ from external_secrets_crds.io.external_secrets import (
 )
 from prometheus_operator_crds.com.coreos.monitoring import ServiceMonitorSpecSelector
 
-from aiquota.api import Settings
 from aiquota.config import Config
+from aiquota.settings import Settings
 from cluster.cdk8s import pod_policy, public_coder_proxy
 from cluster.cdk8s.agentplane.egress_credentials import STAGING_NAMESPACE
 from cluster.cdk8s.cli_proxy_api import cli_proxy_api as cli_proxy_api_app  # aiquota()'s parameter is its Kustomization
