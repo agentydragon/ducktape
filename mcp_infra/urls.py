@@ -2,9 +2,10 @@ from __future__ import annotations
 
 import ipaddress
 from enum import StrEnum
+from typing import Annotated
 from urllib.parse import SplitResult, urlsplit
 
-from pydantic import AnyUrl, TypeAdapter
+from pydantic import AfterValidator, AnyUrl, TypeAdapter
 
 # Single shared AnyUrl adapter for fast validation/coercion across modules
 ANY_URL: TypeAdapter[AnyUrl] = TypeAdapter(AnyUrl)
@@ -53,6 +54,20 @@ def parse_https_url(
     ):
         raise ValueError("URL must use HTTPS or explicitly allowed HTTP")
     return parsed
+
+
+def _validate_https_url_string(value: str) -> str:
+    parse_https_url(value)
+    return value
+
+
+def _validate_https_or_localhost_http_url_string(value: str) -> str:
+    parse_https_url(value, http_allowance=HttpAllowance.LOCALHOST)
+    return value
+
+
+HttpsUrlString = Annotated[str, AfterValidator(_validate_https_url_string)]
+HttpsOrLocalhostHttpUrlString = Annotated[str, AfterValidator(_validate_https_or_localhost_http_url_string)]
 
 
 # Internal module; keep imports explicit rather than curating a public API

@@ -250,6 +250,7 @@ py_test(
         ":conftest",
         ":urls",
         "//:conftest",
+        "@pypi//pydantic",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],

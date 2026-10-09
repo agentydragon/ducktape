@@ -1,7 +1,8 @@
 import pytest
 import pytest_bazel
+from pydantic import TypeAdapter, ValidationError
 
-from mcp_infra.urls import HttpAllowance, parse_https_url
+from mcp_infra.urls import HttpAllowance, HttpsOrLocalhostHttpUrlString, HttpsUrlString, parse_https_url
 
 
 @pytest.mark.parametrize("http_allowance", list(HttpAllowance))
@@ -59,6 +60,26 @@ def test_query_can_be_allowed_without_allowing_fragments() -> None:
     )
     with pytest.raises(ValueError, match="URL must use HTTPS or explicitly allowed HTTP"):
         parse_https_url("https://example.test/jwks?tenant=one#fragment", allow_query=True)
+
+
+def test_https_string_alias_validates_and_preserves_raw_value() -> None:
+    value = "https://Example.test:443/a%2fb"
+    assert TypeAdapter(HttpsUrlString).validate_python(value) is value
+    with pytest.raises(ValidationError):
+        TypeAdapter(HttpsUrlString).validate_python("http://localhost/path")
+
+
+@pytest.mark.parametrize("value", ["http://localhost/path", "http://127.0.0.1/path"])
+def test_localhost_http_string_alias_validates_and_preserves_raw_value(value: str) -> None:
+    assert TypeAdapter(HttpsOrLocalhostHttpUrlString).validate_python(value) is value
+
+
+@pytest.mark.parametrize(
+    "value", ["http://remote.example.test/path", "http://service.localhost/path", "http://[::1]/path"]
+)
+def test_localhost_http_string_alias_rejects_other_http_hosts(value: str) -> None:
+    with pytest.raises(ValidationError):
+        TypeAdapter(HttpsOrLocalhostHttpUrlString).validate_python(value)
 
 
 if __name__ == "__main__":

@@ -11,7 +11,7 @@ import secrets
 from datetime import UTC, datetime, timedelta
 from enum import StrEnum
 from pathlib import Path
-from urllib.parse import urlencode
+from urllib.parse import urlencode, urlsplit
 from uuid import UUID, uuid4
 
 import httpx2
@@ -35,7 +35,7 @@ from sqlalchemy.ext.asyncio import AsyncEngine
 from agentplane.action_service.catalog import Key
 from agentplane.action_service.db import McpLinkageFlowRow, McpOAuthTokenStateRow, McpServerLinkageRow, SessionMaker
 from agentplane.action_service.models import OperatorPrincipal, operator_or_none
-from mcp_infra.urls import HttpAllowance, parse_https_url
+from mcp_infra.urls import HttpsUrlString
 
 logger = logging.getLogger(__name__)
 _REFRESH_SKEW = timedelta(minutes=1)
@@ -79,15 +79,12 @@ class McpClientMetadataSettings(BaseModel):
 
     model_config = ConfigDict(extra="forbid", frozen=True)
 
-    url: str = Field(min_length=1)
+    url: HttpsUrlString = Field(min_length=1)
     client_name: str = Field(min_length=1)
 
     @model_validator(mode="after")
     def validate_url(self) -> McpClientMetadataSettings:
-        try:
-            parsed = parse_https_url(self.url, http_allowance=HttpAllowance.NONE)
-        except ValueError as error:
-            raise ValueError("mcp_client_metadata.url must be an HTTPS URL at /oauth/client-metadata.json") from error
+        parsed = urlsplit(self.url)
         if parsed.port is not None or parsed.path != "/oauth/client-metadata.json":
             raise ValueError("mcp_client_metadata.url must be an HTTPS URL at /oauth/client-metadata.json")
         if str(AnyHttpUrl(self.url)) != self.url:
