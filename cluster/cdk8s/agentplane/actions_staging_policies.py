@@ -53,7 +53,7 @@ from cluster.cdk8s.providers.agentplane.egress_binding import EgressBinding
 from cluster.cdk8s.providers.agentplane.egress_policy import EgressPolicy
 from cluster.cdk8s.providers.cilium.network_policy import EgressRule, NetworkPolicy
 from cluster.cdk8s.providers.external_secrets.external_secret import ExternalSecret, remote_data
-from cluster.cdk8s.public_coder_egress import NAMESPACE, SERVICE_ACCOUNT
+from cluster.cdk8s.public_coder.egress import NAMESPACE, SERVICE_ACCOUNT
 
 _NAMESPACE = "agentplane-staging"
 # The reviewed read sets and sandbox use below are named because a launch preset binds them

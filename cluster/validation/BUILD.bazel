@@ -348,8 +348,8 @@ py_test(
     deps = [
         ":conftest",
         "//:conftest",
-        "//cluster/cdk8s:public_coder_proxy",
         "//cluster/cdk8s/clickhouse:client",
+        "//cluster/cdk8s/public_coder:proxy",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
         "@pypi//pyyaml",

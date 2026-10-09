@@ -549,7 +549,7 @@ After acceptance, remove only OpenClaw-specific proxy dependencies and Console c
 Keep the Iron path used by the devbox and shared `iron-proxy` resources. The separate
 `haku-egress-proxy` still serves Haku Sandboxes, Haku CI, and another OpenClaw workload; confirm
 current consumers before removing or splitting any shared resource. Source inventory starts at
-[`public_coder_proxy.py`](../../cluster/cdk8s/public_coder_proxy.py) and
+[`public_coder/proxy.py`](../../cluster/cdk8s/public_coder/proxy.py) and
 [`haku_egress_proxy.py`](../../cluster/cdk8s/haku_egress_proxy.py).
 
 ### `ANTHROPIC_INCLUDED_API_ROUTING` — use subscription-linked Anthropic API credit

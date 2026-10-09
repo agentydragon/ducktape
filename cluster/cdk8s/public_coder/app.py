@@ -22,15 +22,7 @@ from external_secrets_crds.io.external_secrets import (
 )
 
 from agentplane.egress.resources import placeholder_of
-from cluster.cdk8s import (
-    agent_access_profiles as access,
-    external_creds,
-    forgejo_images,
-    namespaces,
-    public_coder_egress,
-    public_coder_proxy,
-    public_coder_sshpiper,
-)
+from cluster.cdk8s import agent_access_profiles as access, external_creds, forgejo_images, namespaces
 from cluster.cdk8s.clickhouse import client
 from cluster.cdk8s.config_format import json5_config, yaml_config
 from cluster.cdk8s.external_secrets.minted_secret import mint_bearer_secret
@@ -40,6 +32,11 @@ from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 from cluster.cdk8s.namespaces import Vpa
 from cluster.cdk8s.openclaw_gateway import disabled_commands, session_memory_hook, trusted_proxy_gateway
 from cluster.cdk8s.providers.external_secrets.external_secret import ExternalSecret, remote_data
+from cluster.cdk8s.public_coder import (
+    egress as public_coder_egress,
+    proxy as public_coder_proxy,
+    sshpiper as public_coder_sshpiper,
+)
 from cluster.cdk8s.secret_ref import SecretRef
 from cluster.cdk8s.service_ref import Pods, Port, ServiceRef
 from model_catalog.catalog import (
@@ -694,7 +691,7 @@ def _claims(scope: Construct) -> None:
     # have. RWO is no obstacle to reading a snapshot out: a throwaway Pod on the same node mounts
     # it alongside the gateway.
     #
-    # Deliberately outside the VolSync backup set (public_coder_backup.py, which covers the state
+    # Deliberately outside the VolSync backup set (public_coder/backup.py, which covers the state
     # claim): disposable investigation artifacts.
     k8s.KubePersistentVolumeClaim(
         scope,

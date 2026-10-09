@@ -4,14 +4,14 @@ import pytest
 import pytest_bazel
 from cdk8s import Testing as Cdk8sTesting  # pytest auto-collects classes named Test*
 
-from cluster.cdk8s import public_coder_agent_config
 from cluster.cdk8s.litellm.config import main_proxy_config
 from cluster.cdk8s.parked import haku_openclaw_spike_config
+from cluster.cdk8s.public_coder import app as public_coder_app
 from model_catalog.catalog import ANTHROPIC_SUBSCRIPTION_ROUTES, GPT6_ASTRA_RESPONSES
 
 
 def _public_coder_agent_models() -> list[dict]:
-    providers = public_coder_agent_config.config()["models"]["providers"]
+    providers = public_coder_app.config()["models"]["providers"]
     return [model for provider in providers.values() for model in provider["models"]]
 
 
@@ -45,7 +45,7 @@ def test_public_coder_agent_catalog_names_only_served_routes() -> None:
 def test_public_coder_rejects_unknown_reasoning_capability() -> None:
     route = GPT6_ASTRA_RESPONSES
     with pytest.raises(ValueError, match="missing OpenClaw metadata"):
-        public_coder_agent_config._model_entry(
+        public_coder_app._model_entry(
             replace(route, model=replace(route.model, reasoning=None)), context_budget=128_000, output_budget=16_000
         )
 
@@ -73,7 +73,7 @@ def test_current_anthropic_roster_matches_haku_openclaw() -> None:
 
 
 def test_public_coder_memory_model_is_a_served_embedding_route() -> None:
-    model = public_coder_agent_config.config()["memory"]["search"]["model"]
+    model = public_coder_app.config()["memory"]["search"]["model"]
     served = _litellm_models()
 
     assert model in served

@@ -134,6 +134,7 @@ py_library(
         "//agentplane:__subpackages__",
         "//cluster/cdk8s:__pkg__",
         "//cluster/cdk8s/agentplane:__pkg__",
+        "//cluster/cdk8s/public_coder:__pkg__",
         "//cluster/validation:__pkg__",
     ],
     deps = [
@@ -324,6 +325,7 @@ py_library(
         "//agentplane:__subpackages__",
         "//cluster/cdk8s:__pkg__",
         "//cluster/cdk8s/agentplane:__pkg__",
+        "//cluster/cdk8s/public_coder:__pkg__",
     ],
     deps = [
         "@pypi//aiohttp",

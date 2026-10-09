@@ -17,7 +17,7 @@ import yaml
 from cdk8s import Testing as Cdk8sTesting  # pytest auto-collects classes named Test*
 from more_itertools import one
 
-from cluster.cdk8s import public_coder_devbox
+from cluster.cdk8s.public_coder import devbox as public_coder_devbox
 from cluster.cdk8s.ssh_mcp import backend as ssh_mcp_backend, config as ssh_mcp_config, sshpiper
 from cluster.scripts import nebula_mesh
 from util.bazel.runfiles import get_required_path

@@ -11,8 +11,8 @@ import pytest
 import pytest_bazel
 import yaml
 
-from cluster.cdk8s import public_coder_proxy
 from cluster.cdk8s.clickhouse import client
+from cluster.cdk8s.public_coder import proxy as public_coder_proxy
 
 
 @pytest.fixture

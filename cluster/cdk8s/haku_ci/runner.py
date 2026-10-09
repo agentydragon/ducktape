@@ -81,7 +81,7 @@ _PROXY_ENV = {
 }
 # Trust the haku-egress-proxy CA, in the runner and every job container.
 # TODO: dedupe with the same CA env-var lists in kyverno/proxy_injection.py,
-# agentplane/sandbox_pod.py, public_coder_agent_config.py and haku_openclaw_spike_config.py.
+# agentplane/sandbox_pod.py, public_coder/app.py and haku_openclaw_spike_config.py.
 # TODO(after 1st green): in job containers the `/etc/ssl/certs` mount makes the CA the system
 # default, so SSL_CERT_FILE/CURL_CA_BUNDLE/GIT_SSL_CAINFO are likely redundant there, and
 # REQUESTS_CA_BUNDLE/NODE_EXTRA_CA_CERTS only matter to python-requests and node. Bazel's Java

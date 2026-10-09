@@ -83,6 +83,10 @@ py_library(
 py_library(
     name = "egress",
     srcs = ["egress.py"],
+    visibility = [
+        "//cluster/cdk8s:__pkg__",
+        "//cluster/cdk8s/public_coder:__pkg__",
+    ],
     deps = [
         ":actions",
         ":database",
@@ -246,6 +250,10 @@ py_library(
 py_library(
     name = "actions",
     srcs = ["actions.py"],
+    visibility = [
+        "//cluster/cdk8s:__pkg__",
+        "//cluster/cdk8s/public_coder:__pkg__",
+    ],
     deps = [
         ":database",
         ":environment",
@@ -294,12 +302,12 @@ py_library(
         "//cluster/cdk8s:agent_access_profiles",
         "//cluster/cdk8s:cilium",
         "//cluster/cdk8s:external_creds",
-        "//cluster/cdk8s:public_coder_egress",
         "//cluster/cdk8s/providers/agentplane:action_policy_set",
         "//cluster/cdk8s/providers/agentplane:egress_binding",
         "//cluster/cdk8s/providers/agentplane:egress_policy",
         "//cluster/cdk8s/providers/cilium:network_policy",
         "//cluster/cdk8s/providers/external_secrets:external_secret",
+        "//cluster/cdk8s/public_coder:egress",
         "@pypi//cdk8s",
         "@pypi//cdk8s_plus_34",
         "@pypi//constructs",
@@ -486,13 +494,13 @@ py_library(
         "//cluster/cdk8s:manifest_roots",
         "//cluster/cdk8s:model_selections",
         "//cluster/cdk8s:node_scheduling",
-        "//cluster/cdk8s:public_coder_egress",
         "//cluster/cdk8s/external_secrets:minted_secret",
         "//cluster/cdk8s/external_secrets:single_secret_store",
         "//cluster/cdk8s/providers/cilium:network_policy",
         "//cluster/cdk8s/providers/external_secrets:external_secret",
         "//cluster/cdk8s/providers/external_secrets:externalsecret",
         "//cluster/cdk8s/providers/source_watcher:artifactgenerator",
+        "//cluster/cdk8s/public_coder:egress",
         "//cluster/cdk8s/ssh_mcp:config",
         "@pypi//cdk8s",
         "@pypi//cdk8s_plus_34",
@@ -613,6 +621,10 @@ py_test(
 py_library(
     name = "egress_credentials",
     srcs = ["egress_credentials.py"],
+    visibility = [
+        "//cluster/cdk8s:__pkg__",
+        "//cluster/cdk8s/public_coder:__pkg__",
+    ],
     deps = [
         "//cluster/cdk8s:api_resource",
         "//cluster/cdk8s:namespaces",
@@ -637,7 +649,6 @@ py_library(
         "//agentplane/crds:egresspolicy",
         "//cluster/cdk8s:aiquota",
         "//cluster/cdk8s:cilium",
-        "//cluster/cdk8s:public_coder_egress",
         "//cluster/cdk8s/clickhouse:client",
         "//cluster/cdk8s/external_secrets:single_secret_store",
         "//cluster/cdk8s/home_assistant:app",
@@ -645,6 +656,7 @@ py_library(
         "//cluster/cdk8s/providers/agentplane:egress_credential",
         "//cluster/cdk8s/providers/agentplane:egress_policy",
         "//cluster/cdk8s/providers/cilium:network_policy",
+        "//cluster/cdk8s/public_coder:egress",
         "@pypi//cdk8s",
         "@pypi//cdk8s_plus_34",
         "@pypi//constructs",
