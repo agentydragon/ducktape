@@ -1,12 +1,24 @@
 load("@aspect_rules_py//py:defs.bzl", "py_image_layer", aspect_py_binary = "py_binary")
 load("@rules_oci//oci:defs.bzl", "oci_image", "oci_load")
-load("//devinfra/python:defs.bzl", "py_library")
+load("//devinfra/python:defs.bzl", "py_library", "py_test")
 load("//props:oci.bzl", "py_image_entrypoint", "py_image_env")
 
 py_library(
     name = "server",
     srcs = ["server.py"],
-    deps = ["//mcp_infra/oauth_facade:server"],
+    deps = [
+        ":config",
+        ":proxy",
+        ":upstream_probe",
+        "//mcp_infra:persistence",
+        "//mcp_infra:static_bearer",
+        "//mcp_infra:tool_filter",
+        "//mcp_infra/authentik_auth:provider",
+        "@pypi//fastmcp_slim",
+        "@pypi//prometheus_client",
+        "@pypi//starlette",
+        "@pypi//uvicorn",
+    ],
 )
 
 aspect_py_binary(
@@ -43,4 +55,95 @@ oci_load(
     name = "load",
     image = ":image",
     repo_tags = ["mcp-oauth-facade:latest"],
+)
+
+py_library(
+    name = "config",
+    srcs = ["config.py"],
+    deps = [
+        "//mcp_infra:persistence",
+        "//mcp_infra:tool_filter",
+        "//mcp_infra/authentik_auth:config",
+        "@pypi//pydantic",
+        "@pypi//pydantic_settings",
+        "@pypi//pyyaml",
+    ],
+)
+
+py_library(
+    name = "proxy",
+    srcs = ["proxy.py"],
+    deps = [
+        ":config",
+        "@pypi//fastmcp_slim",
+    ],
+)
+
+py_library(
+    name = "upstream_probe",
+    srcs = ["upstream_probe.py"],
+    deps = [
+        ":config",
+        ":proxy",
+        "@pypi//fastmcp_slim",
+        "@pypi//prometheus_client",
+    ],
+)
+
+py_test(
+    name = "test_config",
+    srcs = ["test_config.py"],
+    deps = [
+        ":config",
+        "//:conftest",
+        "//mcp_infra:tool_filter",
+        "//mcp_infra/authentik_auth:config",
+        "@pypi//pydantic",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_proxy",
+    srcs = ["test_proxy.py"],
+    deps = [
+        ":config",
+        ":proxy",
+        "//:conftest",
+        "//mcp_infra:tool_filter",
+        "//mcp_infra/authentik_auth:config",
+        "//mcp_infra/testing:remote_server",
+        "@pypi//fastmcp_slim",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_server",
+    srcs = ["test_server.py"],
+    deps = [
+        ":config",
+        ":server",
+        "//:conftest",
+        "//mcp_infra:static_bearer",
+        "@pypi//httpx",
+        "@pypi//pytest_bazel",
+        "@pypi//starlette",
+    ],
+)
+
+py_test(
+    name = "test_upstream_probe",
+    srcs = ["test_upstream_probe.py"],
+    deps = [
+        ":config",
+        ":upstream_probe",
+        "//:conftest",
+        "//mcp_infra/authentik_auth:config",
+        "//mcp_infra/testing:remote_server",
+        "@pypi//fastmcp_slim",
+        "@pypi//pytest_bazel",
+    ],
 )

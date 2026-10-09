@@ -7,9 +7,9 @@ from starlette.responses import PlainTextResponse
 from starlette.routing import Mount, Route
 from starlette.testclient import TestClient
 
-from mcp_infra.oauth_facade.config import FacadeLoggingConfig, FacadeSettings, HttpUpstream, StaticBearerClientAuth
-from mcp_infra.oauth_facade.server import build_server
 from mcp_infra.static_bearer import StaticBearerGuard
+from x.mcp_oauth_facade.config import FacadeLoggingConfig, FacadeSettings, HttpUpstream, StaticBearerClientAuth
+from x.mcp_oauth_facade.server import build_server
 
 # TestClient drives the app over httpx, imported inside starlette; gazelle cannot see it.
 # gazelle:include_dep @pypi//httpx

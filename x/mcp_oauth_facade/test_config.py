@@ -7,8 +7,8 @@ import pytest_bazel
 from pydantic import ValidationError
 
 from mcp_infra.authentik_auth.config import AuthentikAuthConfig
-from mcp_infra.oauth_facade.config import FacadeSettings, HttpUpstream, StaticBearerClientAuth, StdioUpstream
 from mcp_infra.tool_filter import ToolFilter
+from x.mcp_oauth_facade.config import FacadeSettings, HttpUpstream, StaticBearerClientAuth, StdioUpstream
 
 
 def _auth() -> AuthentikAuthConfig:

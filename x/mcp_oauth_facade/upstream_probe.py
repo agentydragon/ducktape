@@ -22,8 +22,8 @@ from dataclasses import dataclass
 from fastmcp.client import Client
 from prometheus_client import Gauge
 
-from mcp_infra.oauth_facade.config import FacadeSettings
-from mcp_infra.oauth_facade.proxy import build_transport
+from x.mcp_oauth_facade.config import FacadeSettings
+from x.mcp_oauth_facade.proxy import build_transport
 
 logger = logging.getLogger(__name__)
 

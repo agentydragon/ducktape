@@ -65,7 +65,7 @@
     },
     "mcp-oauth-facade": {
       "target": "//x/mcp_oauth_facade:image",
-      "test": "//mcp_infra/oauth_facade/... //x/mcp_oauth_facade/...",
+      "test": "//x/mcp_oauth_facade/...",
       "registry": "forgejo"
     },
     "osm-mcp": {

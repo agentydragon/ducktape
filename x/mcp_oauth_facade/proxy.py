@@ -9,7 +9,7 @@ from fastmcp.client.transports import ClientTransport, StdioTransport, Streamabl
 from fastmcp.server import create_proxy
 from fastmcp.server.providers.proxy import ProxyClient
 
-from mcp_infra.oauth_facade.config import FacadeSettings, HttpUpstream, StdioUpstream
+from x.mcp_oauth_facade.config import FacadeSettings, HttpUpstream, StdioUpstream
 
 
 def build_transport(settings: FacadeSettings) -> ClientTransport:

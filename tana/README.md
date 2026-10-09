@@ -27,7 +27,7 @@ Key layout (`tana/`):
   (development/demo integration).
 
 The public Authentik-backed MCP OAuth facade is now the shared
-`mcp-oauth-facade` image (`mcp_infra/oauth_facade/`); the per-tana facade was
+`mcp-oauth-facade` image (`x/mcp_oauth_facade/`); the per-tana facade was
 removed when the facade was generalized.
 
 Tests and golden fixtures are in `testdata/`.

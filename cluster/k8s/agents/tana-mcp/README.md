@@ -221,7 +221,7 @@ This split is intentional:
 ### Facade readiness & monitoring
 
 The facade probes the upstream's tool list every 60s and exposes it as
-readiness + Prometheus metrics (see <../../../../mcp_infra/oauth_facade/README.md>).
+readiness + Prometheus metrics (see <../../../../x/mcp_oauth_facade/README.md>).
 Its `readinessProbe` is `/readyz`, so the pod goes NotReady (and the public
 route stops serving) when Tana rejects the PAT instead of silently advertising
 zero tools. A `ServiceMonitor` scrapes `:9090/metrics` and a `PrometheusRule`
