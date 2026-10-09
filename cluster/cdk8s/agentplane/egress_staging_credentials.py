@@ -3,9 +3,9 @@ sandbox, with the Secret plumbing that delivers it and, beyond the GitHub PAT wh
 and policy both environments share (`egress.py`), the EgressPolicy that scopes where it is
 presented. Testing shares GitHub, BuildBuddy, and inference credentials (`egress_testing_credentials.py`).
 
-Keep each public Gateway EgressPolicy in sync with a Cilium backend grant beside it: a Gateway
-on the proxy's own node rechecks the proxy's egress against the selected backend's identity and
-target port. Node:443 alone completes TLS but returns HTTP 403 (#9495). Reuse the backend's
+Keep each public Gateway EgressPolicy in sync with the shared Cilium backend grants in
+add_staging_egress_credentials: a Gateway on the proxy's own node rechecks the proxy's egress
+against the selected backend's identity and target port. Node:443 alone completes TLS but returns HTTP 403 (#9495). Reuse the backend's
 ServiceRef so selector/port changes propagate; the EgressPolicy still fences hosts, paths,
 methods and credentials. See cluster/docs/cilium_network_policy.md, "Egress through a local Gateway".
 """
@@ -94,6 +94,22 @@ def add_staging_egress_credentials(scope: Construct, *, namespace: str, credenti
     _plaid_pgweb(construct, reader=reader, namespace=namespace, credentials_namespace=credentials_namespace)
     inference_credentials(construct, reader=reader, credentials_namespace=credentials_namespace)
     add_gateway_resources(construct, reader=reader, namespace=namespace, credentials_namespace=credentials_namespace)
+    # Keep these grants in sync with the EgressPolicies in the named functions below.
+    # Local Gateways check the selected backend's identity/target port, even for a public hostname.
+    NetworkPolicy(
+        construct,
+        "networkpolicy-egress-staging-credentials",
+        metadata=ApiObjectMetadata(name="agentplane-egress-staging-credentials", namespace=namespace),
+        endpoint_selector=cilium.AGENTPLANE_STAGING_PROXY.selector,
+        egress=[
+            authentik.SERVER.egress(),  # _grocy_sf_readonly: the public route targets Authentik's outpost.
+            activitywatch.READ.egress(),  # _activitywatch_read: bearer read sidecar.
+            AIQUOTA_SERVICE.egress(),  # _aiquota_read: public Gateway and internal Service routes.
+            clickhouse.HTTP.egress(),  # _finance_aiquota_history.
+            mailbox.HTTP.egress(),  # _haku_mailbox: application policy excludes management APIs.
+            plaid_pgweb.SERVICE.egress(),  # _plaid_pgweb.
+        ],
+    )
 
 
 def _forgejo_haku(scope: Construct, *, reader: ServiceAccount, namespace: str, credentials_namespace: str) -> None:
@@ -314,6 +330,7 @@ def _grocy_sf_readonly(scope: Construct, *, reader: ServiceAccount, namespace: s
             EgressCredentialSpecTargets(header="Authorization", method=EgressCredentialSpecTargetsMethod.BASIC_PASSWORD)
         ],
     )
+    # Keep this policy in sync with its backend grant in add_staging_egress_credentials.
     EgressPolicy(
         scope,
         "egresspolicy-grocy-sf-readonly",
@@ -344,14 +361,6 @@ def _grocy_sf_readonly(scope: Construct, *, reader: ServiceAccount, namespace: s
                 credential_ref=EgressPolicySpecRulesCredentialRef(name="grocy-sf-readonly"),
             )
         ],
-    )
-    # Grocy's public route targets Authentik's embedded outpost; keep this grant with its EgressPolicy.
-    NetworkPolicy(
-        scope,
-        "networkpolicy-egress-to-grocy-sf",
-        metadata=ApiObjectMetadata(name="agentplane-egress-to-grocy-sf", namespace=namespace),
-        endpoint_selector=cilium.AGENTPLANE_STAGING_PROXY.selector,
-        egress=[authentik.SERVER.egress()],
     )
 
 
@@ -446,6 +455,7 @@ def _activitywatch_read(
             )
         ],
     )
+    # Keep this policy in sync with its backend grant in add_staging_egress_credentials.
     EgressPolicy(
         scope,
         "egresspolicy-activitywatch-read",
@@ -467,14 +477,6 @@ def _activitywatch_read(
                 credential_ref=EgressPolicySpecRulesCredentialRef(name="activitywatch-read"),
             ),
         ],
-    )
-    # Keep the public read policy and its Gateway backend grant together; use the bearer read port.
-    NetworkPolicy(
-        scope,
-        "networkpolicy-egress-to-activitywatch-read",
-        metadata=ApiObjectMetadata(name="agentplane-egress-to-activitywatch-read", namespace=namespace),
-        endpoint_selector=cilium.AGENTPLANE_STAGING_PROXY.selector,
-        egress=[activitywatch.READ.egress()],
     )
 
 
@@ -499,6 +501,7 @@ def _aiquota_read(scope: Construct, *, namespace: str) -> None:
             )
         ],
     )
+    # Keep this policy in sync with its backend grant in add_staging_egress_credentials.
     EgressPolicy(
         scope,
         "egresspolicy-aiquota-read",
@@ -520,15 +523,6 @@ def _aiquota_read(scope: Construct, *, namespace: str) -> None:
                 credential_ref=EgressPolicySpecRulesCredentialRef(name="aiquota-read"),
             ),
         ],
-    )
-
-    # Both the public Gateway policy and the internal Service policy need this backend grant.
-    NetworkPolicy(
-        scope,
-        "networkpolicy-egress-to-aiquota",
-        metadata=ApiObjectMetadata(name="agentplane-egress-to-aiquota", namespace=namespace),
-        endpoint_selector=cilium.AGENTPLANE_STAGING_PROXY.selector,
-        egress=[AIQUOTA_SERVICE.egress()],
     )
 
 
@@ -561,6 +555,7 @@ def _finance_aiquota_history(
             EgressCredentialSpecTargets(header="Authorization", method=EgressCredentialSpecTargetsMethod.BASIC_PASSWORD)
         ],
     )
+    # Keep this policy in sync with its backend grant in add_staging_egress_credentials.
     EgressPolicy(
         scope,
         "egresspolicy-finance-aiquota-history",
@@ -574,13 +569,6 @@ def _finance_aiquota_history(
                 credential_ref=EgressPolicySpecRulesCredentialRef(name=name),
             )
         ],
-    )
-    NetworkPolicy(
-        scope,
-        "networkpolicy-egress-to-finance-clickhouse",
-        metadata=ApiObjectMetadata(name="agentplane-egress-to-finance-clickhouse", namespace=namespace),
-        endpoint_selector=cilium.AGENTPLANE_STAGING_PROXY.selector,
-        egress=[clickhouse.HTTP.egress()],
     )
 
 
@@ -617,6 +605,7 @@ def _haku_mailbox(scope: Construct, *, reader: ServiceAccount, namespace: str, c
             )
         ],
     )
+    # Keep this policy in sync with its backend grant in add_staging_egress_credentials.
     EgressPolicy(
         scope,
         "egresspolicy-haku-mailbox",
@@ -639,14 +628,6 @@ def _haku_mailbox(scope: Construct, *, reader: ServiceAccount, namespace: str, c
                 credential_ref=EgressPolicySpecRulesCredentialRef(name="haku-mailbox"),
             ),
         ],
-    )
-    # Keep this backend grant with the public JMAP policy above; that policy excludes management APIs.
-    NetworkPolicy(
-        scope,
-        "networkpolicy-egress-to-haku-mailbox",
-        metadata=ApiObjectMetadata(name="agentplane-egress-to-haku-mailbox", namespace=namespace),
-        endpoint_selector=cilium.AGENTPLANE_STAGING_PROXY.selector,
-        egress=[mailbox.HTTP.egress()],
     )
 
 
@@ -708,6 +689,7 @@ def _plaid_pgweb(scope: Construct, *, reader: ServiceAccount, namespace: str, cr
         "/api/tables/**",
         # keep-sorted end
     ]
+    # Keep this policy in sync with its backend grant in add_staging_egress_credentials.
     EgressPolicy(
         scope,
         "egresspolicy-plaid-pgweb",
@@ -728,11 +710,4 @@ def _plaid_pgweb(scope: Construct, *, reader: ServiceAccount, namespace: str, cr
                 credential_ref=EgressPolicySpecRulesCredentialRef(name="plaid-pgweb"),
             ),
         ],
-    )
-    NetworkPolicy(
-        scope,
-        "networkpolicy-egress-to-plaid-pgweb",
-        metadata=ApiObjectMetadata(name="agentplane-egress-to-plaid-pgweb", namespace=namespace),
-        endpoint_selector=cilium.AGENTPLANE_STAGING_PROXY.selector,
-        egress=[plaid_pgweb.SERVICE.egress()],
     )

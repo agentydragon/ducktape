@@ -811,7 +811,7 @@ class Egress(Construct):
                 # hostNetwork: Cilium sees the node, not an endpoint.
                 EgressRule.to_entities(Entity.REMOTE_NODE, Entity.HOST, ports=[home_assistant.SERVICE.port.number]),
                 # Local Gateway requests also need backend identity/target-port grants: keep those
-                # beside the public-origin EgressPolicies in egress_staging_credentials.py (#9495).
+                # with the public-origin EgressPolicies in egress_staging_credentials.py (#9495).
                 *cilium.open_internet_egress(ports=[443, 80]),
             ],
         )

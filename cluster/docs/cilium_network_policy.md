@@ -153,8 +153,8 @@ Allowing `host`/`remote-node`:443 alone completes TLS but returns HTTP 403
 (`server: envoy`, `Access denied`). A remote Gateway does not have that local source
 pod policy, so the same request can succeed there (#9495).
 
-Keep a public-origin Agentplane `EgressPolicy` beside its backend Cilium grant
-(`agentplane/egress_staging_credentials.py`). Reference the Service's selector and
+Keep public-origin Agentplane `EgressPolicy` rules in sync with the shared backend
+Cilium grants in `agentplane/egress_staging_credentials.py`. Reference the Service's selector and
 **target** port: ActivityWatch's read Service maps 5600 to 5603, and Grocy's public
 route targets Authentik on 9000. The proxy's application policy continues to scope
 hosts, paths, methods and credentials. Validate HTTP from a restricted source pod;
