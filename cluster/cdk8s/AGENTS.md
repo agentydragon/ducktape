@@ -324,9 +324,6 @@ and lands in its own PR with the violations fixed. Exceptions are explicit param
 - `Chart(namespace=...)` would drop `namespace=` from every object's `ApiObjectMetadata`,
   but it injects the namespace into cluster-scoped objects too (ClusterRole,
   Bundle) with no opt-out; usable only once cluster-scoped objects get their own chart.
-- Synth imports each service's `main` for its `Settings`, pulling the runtime in; synth
-  tests are `size = "medium"` until a light `settings.py` per service exists
-  (`TODO.md`).
 - `cdk8s import` names a multi-version CRD's _first listed_ version plainly and
   suffixes the others, regardless of which is the storage version: tofu-controller's
   `Terraform` is v1alpha1, the cluster's CRs are `TerraformV1Alpha2`
