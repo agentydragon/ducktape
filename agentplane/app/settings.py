@@ -9,11 +9,7 @@ from typing import Any
 from pydantic import Field
 from pydantic_settings import BaseSettings, PydanticBaseSettingsSource, SettingsConfigDict, YamlConfigSettingsSource
 
-from agentplane.app.action_federation_settings import (
-    ActionFederationSettings,
-    DirectFederationSettings,
-    ExchangeFederationSettings,
-)
+from agentplane.app.action_federation_settings import ActionFederationSettings
 from agentplane.app.model_catalog import ModelCatalog
 from agentplane.app.presets import SandboxPreset, ThreadPreset
 from agentplane.sandbox_service.kubernetes_grants import KubernetesGrant
@@ -64,30 +60,7 @@ class AppSettingsConfig(BaseSettings):
         default_factory=dict, description="gRPC channel options for the App's connection to Sandbox Service."
     )
     egress_admin_url: str = Field(description="The egress proxy's admin port, serving /decisions.")
-    # Last to retain the app config file's historical top-level key order.
     action_federation: ActionFederationSettings | None = None
-
-    def to_config_file(self) -> dict[str, Any]:
-        """Serialize this fragment at the ConfigMap boundary, preserving historical key order."""
-        values = self.model_dump(mode="json", exclude_unset=True, exclude={"action_federation"})
-        if federation := self.action_federation:
-            # These subclasses declare `mode` (and exchange's token_endpoint) after the
-            # shared fields. Keep the rendered YAML's established inner key order too.
-            if isinstance(federation, ExchangeFederationSettings):
-                values["action_federation"] = {
-                    "mode": federation.mode,
-                    "service_url": federation.service_url,
-                    "token_endpoint": str(federation.token_endpoint),
-                    **federation.model_dump(
-                        mode="json", exclude_unset=True, exclude={"mode", "service_url", "token_endpoint"}
-                    ),
-                }
-            elif isinstance(federation, DirectFederationSettings):
-                values["action_federation"] = {
-                    "mode": federation.mode,
-                    **federation.model_dump(mode="json", exclude_unset=True, exclude={"mode"}),
-                }
-        return values
 
 
 class Settings(AppSettingsConfig):

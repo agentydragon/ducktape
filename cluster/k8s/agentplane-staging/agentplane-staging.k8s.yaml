@@ -4083,15 +4083,15 @@ data:
       grpc.max_receive_message_length: 33554432
     egress_admin_url: http://agentplane-egress-admin.agentplane-staging.svc:8081
     action_federation:
-      mode: exchange
       service_url: http://agentplane-actions.agentplane-staging.svc:8080
-      token_endpoint: https://auth.allegedly.works/application/o/token/
       login_jwks_uri: https://auth.allegedly.works/application/o/agentplane-staging/jwks/
       target:
         issuer: https://auth.allegedly.works/application/o/agentplane-staging-actions/
         audience: agentplane-staging-actions
         jwks_uri: https://auth.allegedly.works/application/o/agentplane-staging-actions/jwks/
       scope: openid
+      mode: exchange
+      token_endpoint: https://auth.allegedly.works/application/o/token/
 immutable: false
 ---
 apiVersion: apps/v1

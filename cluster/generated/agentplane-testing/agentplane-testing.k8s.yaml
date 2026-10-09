@@ -2464,7 +2464,6 @@ data:
       grpc.max_receive_message_length: 33554432
     egress_admin_url: http://agentplane-egress-admin.agentplane-testing.svc:8081
     action_federation:
-      mode: direct
       service_url: http://agentplane-actions.agentplane-testing.svc:8080
       login_jwks_uri: https://agentplane-dex-testing.allegedly.works/dex/keys
       login_token_profile: dex
@@ -2474,6 +2473,7 @@ data:
         jwks_uri: https://agentplane-dex-testing.allegedly.works/dex/keys
         token_profile: dex
       scope: openid
+      mode: direct
 immutable: false
 ---
 apiVersion: apps/v1
