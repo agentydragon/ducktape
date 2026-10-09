@@ -143,6 +143,7 @@ async def test_issuer_comparison_preserves_original_url_spelling(
     jwks_server, signing_keys: tuple[_SigningKey, _SigningKey, _SigningKey]
 ) -> None:
     _state, jwks_uri = jwks_server
+    # Distinct StringOrURI identifiers: https://www.rfc-editor.org/rfc/rfc7519.html#section-2
     issuer = "https://AUTH.example.test:443"
     resolver = AuthentikOidcPrincipalResolver(
         expected_issuer=issuer,

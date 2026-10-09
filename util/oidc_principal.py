@@ -109,6 +109,8 @@ class OidcPrincipalResolver(ABC):
         if _SIGNING_ALGORITHM not in signing_algorithms:
             raise ValueError(f"OIDC discovery metadata must advertise {_SIGNING_ALGORITHM}")
 
+        # JWT issuer comparison forbids normalization (RFC 7519 §§2, 4.1.1).
+        # https://www.rfc-editor.org/rfc/rfc7519.html#section-2
         self._issuer = expected_issuer
         self._client_id = client_id
         self._jwks_uri = jwks_uri
