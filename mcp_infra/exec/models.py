@@ -115,42 +115,6 @@ class ExecOutcome:
     duration_ms: int
 
 
-# Corresponds to Docker Engine API v1.52 ContainerExec:
-# https://docs.docker.com/reference/api/engine/version/v1.52/#tag/Exec/operation/ContainerExec
-# Specifically: Cmd (command array) and Env (environment variables as "NAME=value" strings)
-
-# Type alias for environment variable validation
-EnvVar = Annotated[
-    str,
-    Field(
-        description="Environment variable in 'NAME=value' format",
-        pattern=r"^[^=]+=.*$",  # Must have at least one char before '=', anything after
-    ),
-]
-
-
-@dataclass(frozen=True)
-class ResolvedExecInput:
-    """Resolved execution parameters for docker container exec (internal).
-
-    Constructed by the server handler after applying CwdPolicy and field gating.
-    Not the tool's input schema — the LLM-facing schema is dynamically generated
-    by ``_make_exec_input_model`` in ``mcp_infra.exec.docker.server``.
-    """
-
-    cmd: list[str]
-    cwd: str | None
-    env: list[str] | None
-    user: str | None
-    timeout_ms: int
-
-    def env_dict(self) -> dict[str, str]:
-        """Convert env list to dict for docker exec API."""
-        if not self.env:
-            return {}
-        return {k: v for s in self.env for k, _, v in [s.partition("=")]}
-
-
 class BaseExecResult(BaseModel):
     """Standard MCP exec response - basic servers return this directly (output model).
 
