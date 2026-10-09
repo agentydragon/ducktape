@@ -5,13 +5,13 @@ py_library(
     srcs = ["cli.py"],
     visibility = ["//visibility:public"],
     deps = [
+        ":config_loader",
         "//agent_core:agent",
         "//agent_core:compaction",
         "//agent_core:handler",
         "//agent_core:loop_control",
         "//agent_core:mcp_provider",
         "//agent_core:transcript_handler",
-        "//mcp_infra:config_loader",
         "//mcp_infra/compositor",
         "//mcp_infra/display:rich_display",
         "//openai_utils:client_factory",
@@ -29,4 +29,10 @@ py_binary(
     main_module = "x.agent_cli.cli",
     visibility = ["//visibility:public"],
     deps = [":cli"],
+)
+
+py_library(
+    name = "config_loader",
+    srcs = ["config_loader.py"],
+    deps = ["@pypi//fastmcp_slim"],
 )

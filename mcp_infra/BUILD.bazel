@@ -43,13 +43,6 @@ py_test(
 )
 
 py_library(
-    name = "config_loader",
-    srcs = ["config_loader.py"],
-    visibility = ["//:__subpackages__"],
-    deps = ["@pypi//fastmcp_slim"],
-)
-
-py_library(
     name = "constants",
     srcs = ["constants.py"],
     visibility = ["//:__subpackages__"],
