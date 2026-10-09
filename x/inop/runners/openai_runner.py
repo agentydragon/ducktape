@@ -21,7 +21,7 @@ from agent_core.mcp_provider import MCPToolProvider
 from agent_core.transcript_handler import TranscriptHandler
 from mcp_infra.compositor.compositor import Compositor
 from mcp_infra.constants import WORKING_DIR
-from mcp_infra.display.event_renderer import DisplayEventsHandler
+from mcp_infra.display.rich_display import CompactDisplayHandler
 from mcp_infra.exec.direct import DirectExecServer
 from mcp_infra.exec.docker.server import ContainerExecServer
 from mcp_infra.exec.docker.types import BindMount, ContainerExecServerConfig, DefaultValue, NetworkMode
@@ -87,7 +87,7 @@ class OpenAIRunner(AgentRunner):
         run_dir = Path.cwd() / "logs" / "agent" / "openai_runner"
         run_dir = run_dir / f"run_{int(time.time())}_{os.getpid()}"
         run_dir.mkdir(parents=True, exist_ok=True)
-        default_handlers: list = [DisplayEventsHandler(), TranscriptHandler(events_path=run_dir / "events.jsonl")]
+        default_handlers: list = [CompactDisplayHandler(), TranscriptHandler(events_path=run_dir / "events.jsonl")]
         handlers: list[BaseHandler] = self._handlers or default_handlers
         mcp_client = await self._exit_stack.enter_async_context(Client(comp))
         agent = await Agent.create(

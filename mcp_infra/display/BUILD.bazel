@@ -1,26 +1,6 @@
 load("//devinfra/python:defs.bzl", "py_library", "py_test")
 
 py_library(
-    name = "event_renderer",
-    testonly = True,
-    srcs = ["event_renderer.py"],
-    visibility = ["//:__subpackages__"],
-    deps = [
-        ":json_utils",
-        ":result_utils",
-        "//agent_core:events",
-        "//agent_core:handler",
-        "//mcp_infra:flat_tool",
-        "//mcp_infra:naming",
-        "//mcp_infra:tool_schemas",
-        "//mcp_infra/compositor",
-        "//openai_utils:model",
-        "@pypi//fastmcp_slim",
-        "@pypi//pydantic_core",
-    ],
-)
-
-py_library(
     name = "json_utils",
     srcs = ["json_utils.py"],
     visibility = ["//:__subpackages__"],

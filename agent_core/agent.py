@@ -347,7 +347,7 @@ class Agent:
                 "At least one handler required to control the agent loop. "
                 "Without handlers, the agent will loop indefinitely. "
                 "Add a handler:\n"
-                "  • DisplayEventsHandler() - for console output\n"
+                "  • CompactDisplayHandler() - for console output\n"
                 "  • TranscriptHandler(events_path=...) - for logging\n"
                 "  • Custom handler - subclass BaseHandler for specialized control"
             )
