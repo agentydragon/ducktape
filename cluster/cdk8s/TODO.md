@@ -47,10 +47,11 @@ live Secret existence or service readiness.
 
 ## Lightweight settings imports
 
-Agentplane constructs import Settings from `agentplane/{app,egress,llm_ingress,
-action_service,indexing}/main.py`; aiquota imports `aiquota/api.py`. Move schema
+Agentplane constructs still import Settings from runtime modules such as
+`agentplane/{app,egress,action_service,sandbox_service}/main.py`; aiquota imports
+`aiquota/api.py`. Follow the existing `agentplane/llm_ingress/settings.py` pattern. Move schema
 definitions and their required submodels into application-owned modules, updating all
-callers. Use the same approach for the rotators when converting their config.
+callers. Keep already-separated rotator schemas in their application-owned modules.
 
 Done: synthesis imports the deployment contract without importing service runtimes.
 Measure before changing Bazel test sizes; removing an import is not timing evidence.

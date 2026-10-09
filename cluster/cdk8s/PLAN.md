@@ -23,14 +23,8 @@ changing Renovate or adding cdk8s regeneration.
 Done: the chosen policy identifies each pin's source of truth, update owner, and generated
 output path without creating two writers.
 
-### C. Convert useful YAML seams
+### Convert useful YAML seams
 
-Airlock's typed configuration is complete. Attic's rotator roster is now typed data built
-from the rotator's schema, with cdk8s generating its ConfigMap and directory Kustomization.
-Authentik and Forgejo now derive their rotator wiring from each component's `ROTATIONS`
-model: Authentik mounts the referenced credential directories and derives probe Secret names,
-while Forgejo derives its mounted credentials and copied Secret names. The changes landed
-separately; do not add a generic rotator framework.
 Authentik blueprints need a separate ownership decision consistent with
 `cluster/docs/sso.md`; embedding their text in Python is not completion.
 
@@ -43,10 +37,10 @@ Done per slice: one source supplies the duplicated values, the YAML overlay or d
 roster is removed, and the final resource/config semantics are checked. Preserve
 ConfigMap rollout behavior; serialization changes can change hashes and restart Pods.
 
-### D. Close validation gaps before moving checks
+### Close validation gaps before moving checks
 
-`fleet_rules.add_fleet_rules` has 12 production registration sites, not universal
-coverage. `resolved_references` only rejects a reference when the same name exists as
+`fleet_rules.add_fleet_rules` is attached explicitly by selected charts; coverage
+is not universal. `resolved_references` only rejects a reference when the same name exists as
 the other kind in that chart. Unknown names pass; namespace is not part of its lookup.
 It does not establish that every Secret or ConfigMap reference resolves.
 
@@ -70,11 +64,10 @@ unrepresentable, not because its inputs became generated.
 Done: the declared validation scope matches its behavior, and the known ESO wiring
 failures are caught without maintaining a second provider inventory.
 
-### E. Reduce raw construction where it buys relationships
+### Reduce raw construction where it buys relationships
 
-No production `ApiObject(...)` constructors were found in `cluster/cdk8s`; the
-remaining low-level code is mostly typed `k8s.Kube*` bindings, Helm values and a small
-patch surface. Typed schema bindings are valid cdk8s adoption.
+Typed schema bindings are valid cdk8s adoption; converting every `k8s.Kube*` call
+or Helm values dictionary is not a completion criterion.
 
 Prefer fluent constructs when they remove independent selectors, names, ports or volume
 references. Preserve exact behavior with typed core/CRD bindings when the fluent layer
@@ -87,7 +80,7 @@ would require several compensating patches. Treat these as targeted improvements
 Done per slice: fewer separately authored facts or untyped values, no loss of expressible
 Kubernetes fields, and a reviewed rendered diff.
 
-### F. Make chart composition consistent in small steps
+### Make chart composition consistent in small steps
 
 The existing target is `chart(app, ...values) -> Chart`, with synthesis/writing outside
 resource construction and Flux nodes receiving already-built dependencies and values.
@@ -105,14 +98,15 @@ class or a parallel deployment specification.
 Done: a workload can be synthesized without building its Flux node or writing to a real
 checkout, and new abstractions demonstrate their value on actual callers.
 
-### G. Finish layout only where it simplifies ownership
+### Finish layout only where it simplifies ownership
 
 Keep mixed directories colocated under `cluster/k8s` under the current rule. Move a
 whole directory to `cluster/generated` when all its files are generator-owned.
 A smaller hand-written tree is useful visibility, not an end in itself.
 
-Cross-root Components remain an open design option, not an approved migration.
-The preserved mechanism findings and alternatives are in the remainder backlog.
+Image-pin Components already cross the roots under the
+[documented exception](../docs/cdk8s_remainder.md#mixed-directory-layout). Other
+hand-written siblings stay colocated; cross-root SOPS composition remains undecided.
 Do not create per-app Secret Kustomizations, copy ciphertext, change image automation,
 or change resource ownership merely to make a directory qualify as generated.
 
