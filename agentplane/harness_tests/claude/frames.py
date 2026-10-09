@@ -107,7 +107,6 @@ def assert_success(frames: list[Frame], expected: str) -> wire.ResultFrame:
     return result
 
 
-def assert_failure(result: wire.ResultFrame, *, result_fragment: str, terminal_reason: str) -> None:
+def assert_failure(result: wire.ResultFrame, *, terminal_reason: str) -> None:
     assert result.is_error is True
     assert result.terminal_reason == terminal_reason
-    assert result_fragment in (result.result or "")

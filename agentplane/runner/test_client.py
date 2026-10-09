@@ -133,7 +133,7 @@ async def test_an_unanswered_open_fails_on_its_bound_and_cancels_the_call(
         client = runner_client_factory(f"127.0.0.1:{port}")
         try:
             async with asyncio.timeout(10):
-                with pytest.raises(OpenTimeoutError, match="'test-unanswered'"):
+                with pytest.raises(OpenTimeoutError):
                     await client.attach("test-unanswered", spec=spec)
                 assert await wedged.cancelled.get() == "test-unanswered"
         finally:

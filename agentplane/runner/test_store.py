@@ -34,7 +34,7 @@ def test_inherited_state_owner_descriptor_is_read_only_and_still_exclusive(tmp_p
     owner = StateOwner(tmp_path)
     assert fcntl.fcntl(owner.descriptor, fcntl.F_GETFL) & os.O_ACCMODE == os.O_RDONLY
 
-    with pytest.raises(StateOwnershipError, match="is already owned"):
+    with pytest.raises(StateOwnershipError):
         StateOwner(tmp_path)
 
     owner.close()

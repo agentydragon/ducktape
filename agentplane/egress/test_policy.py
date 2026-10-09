@@ -499,8 +499,9 @@ def test_credential_source_requires_exactly_one_known_tag() -> None:
             authenticated_workload_token=AuthenticatedWorkloadTokenSource(),
             projected_workload_token=ProjectedWorkloadTokenSource(audience=KUBERNETES_AUDIENCE),
         )
-    with pytest.raises(ValueError, match="Extra inputs are not permitted"):
+    with pytest.raises(ValidationError) as unknown_tag:
         CredentialSource.model_validate({"forgedSource": {}})
+    assert unknown_tag.value.errors()[0]["type"] == "extra_forbidden"
 
 
 def test_a_basic_username_target_takes_the_half_before_the_first_colon() -> None:

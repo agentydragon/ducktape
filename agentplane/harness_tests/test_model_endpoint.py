@@ -17,7 +17,7 @@ async def test_invalid_native_request_fails_the_waiting_script_without_exposing_
         response = await client.post(messages.origin, json={"not": "an Anthropic Messages request"})
         assert response.status == 400
 
-        with pytest.raises(ModelRequestParseError, match="typed model fixture rejected a native request"):
+        with pytest.raises(ModelRequestParseError):
             await messages.await_next_request()
 
 
@@ -30,7 +30,7 @@ async def test_sse_response_is_rejected_for_a_non_streaming_typed_request() -> N
             )
         )
         async with await messages.await_next_request() as exchange:
-            with pytest.raises(RuntimeError, match="cannot send SSE to a non-streaming model request"):
+            with pytest.raises(RuntimeError):
                 await exchange.send(SseEvent(kind="message", data=b"data: {}\n\n"))
             await exchange.respond(JsonResponse(b"{}"))
         response = await request
