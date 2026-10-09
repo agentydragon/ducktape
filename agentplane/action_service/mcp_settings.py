@@ -3,12 +3,19 @@
 from __future__ import annotations
 
 from pathlib import Path
-from urllib.parse import urlsplit
 
-from pydantic import AnyHttpUrl, BaseModel, ConfigDict, Field, model_validator
+from pydantic import (
+    AnyHttpUrl,
+    BaseModel,
+    ConfigDict,
+    Field,
+    ValidatorFunctionWrapHandler,
+    field_validator,
+    model_validator,
+)
 
 from agentplane.action_service.catalog import Key
-from util.urls import HttpsUrlString
+from util.urls import HttpsUrl
 
 
 class McpOAuthServer(BaseModel):
@@ -39,14 +46,15 @@ class McpClientMetadataSettings(BaseModel):
 
     model_config = ConfigDict(extra="forbid", frozen=True)
 
-    url: HttpsUrlString = Field(min_length=1)
+    url: HttpsUrl
     client_name: str = Field(min_length=1)
 
-    @model_validator(mode="after")
-    def validate_url(self) -> McpClientMetadataSettings:
-        parsed = urlsplit(self.url)
-        if parsed.port is not None or parsed.path != "/oauth/client-metadata.json":
+    @field_validator("url", mode="wrap")
+    @classmethod
+    def validate_url(cls, value: object, handler: ValidatorFunctionWrapHandler) -> AnyHttpUrl:
+        url: AnyHttpUrl = handler(value)
+        if url.port != 443 or url.path != "/oauth/client-metadata.json":
             raise ValueError("mcp_client_metadata.url must be an HTTPS URL at /oauth/client-metadata.json")
-        if str(AnyHttpUrl(self.url)) != self.url:
+        if isinstance(value, str) and str(url) != value:
             raise ValueError("mcp_client_metadata.url must use its canonical URL form")
-        return self
+        return url

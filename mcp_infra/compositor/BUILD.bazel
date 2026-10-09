@@ -48,7 +48,6 @@ py_library(
         "//mcp_infra/enhanced:server",
         "//mcp_infra/resources:types",
         "//openai_utils:pydantic_strict_mode",
-        "//util:urls",
         "@pypi//fastmcp_slim",
         "@pypi//mcp",
         "@pypi//mcp_types",

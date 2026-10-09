@@ -1,8 +1,8 @@
 import pytest
 import pytest_bazel
-from pydantic import TypeAdapter, ValidationError
+from pydantic import AnyHttpUrl, TypeAdapter, ValidationError
 
-from util.urls import HttpAllowance, HttpsOrLocalhostHttpUrlString, HttpsUrlString, parse_https_url
+from util.urls import HttpAllowance, HttpsOrLocalhostHttpUrl, HttpsUrl, parse_https_url
 
 
 @pytest.mark.parametrize("http_allowance", list(HttpAllowance))
@@ -78,24 +78,33 @@ def test_query_can_be_allowed_without_allowing_fragments() -> None:
         parse_https_url("https://example.test/jwks?tenant=one#fragment", allow_query=True)
 
 
-def test_https_string_alias_validates_and_preserves_raw_value() -> None:
+def test_https_alias_returns_parsed_url() -> None:
     value = "https://Example.test:443/a%2fb"
-    assert TypeAdapter(HttpsUrlString).validate_python(value) is value
+    parsed = TypeAdapter(HttpsUrl).validate_python(value)
+    assert isinstance(parsed, AnyHttpUrl)
+    assert str(parsed) == "https://example.test/a%2fb"
     with pytest.raises(ValidationError):
-        TypeAdapter(HttpsUrlString).validate_python("http://localhost/path")
+        TypeAdapter(HttpsUrl).validate_python("http://localhost/path")
 
 
 @pytest.mark.parametrize("value", ["http://localhost/path", "http://127.0.0.1/path"])
-def test_localhost_http_string_alias_validates_and_preserves_raw_value(value: str) -> None:
-    assert TypeAdapter(HttpsOrLocalhostHttpUrlString).validate_python(value) is value
+def test_localhost_http_alias_returns_parsed_url(value: str) -> None:
+    assert str(TypeAdapter(HttpsOrLocalhostHttpUrl).validate_python(value)) == value
 
 
 @pytest.mark.parametrize(
     "value", ["http://remote.example.test/path", "http://service.localhost/path", "http://[::1]/path"]
 )
-def test_localhost_http_string_alias_rejects_other_http_hosts(value: str) -> None:
+def test_localhost_http_alias_rejects_other_http_hosts(value: str) -> None:
     with pytest.raises(ValidationError):
-        TypeAdapter(HttpsOrLocalhostHttpUrlString).validate_python(value)
+        TypeAdapter(HttpsOrLocalhostHttpUrl).validate_python(value)
+
+
+def test_endpoint_alias_preserves_empty_path_and_serializes() -> None:
+    adapter = TypeAdapter(HttpsOrLocalhostHttpUrl)
+    url = adapter.validate_python("https://EXAMPLE.test:443")
+    assert str(url) == "https://example.test"
+    assert adapter.dump_python(url, mode="json") == "https://example.test"
 
 
 if __name__ == "__main__":

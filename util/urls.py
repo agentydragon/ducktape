@@ -4,10 +4,8 @@ import ipaddress
 from enum import StrEnum
 from typing import Annotated
 
-from pydantic import AfterValidator, AnyUrl, TypeAdapter, UrlConstraints
+from pydantic import AfterValidator, AnyHttpUrl, AnyUrl, TypeAdapter, UrlConstraints
 
-# Single shared AnyUrl adapter for fast validation/coercion across modules
-ANY_URL: TypeAdapter[AnyUrl] = TypeAdapter(AnyUrl)
 _HTTP_URL: TypeAdapter[AnyUrl] = TypeAdapter(
     Annotated[AnyUrl, UrlConstraints(allowed_schemes=["https", "http"], host_required=True)]
 )
@@ -43,7 +41,12 @@ def parse_https_url(
     value: str, *, http_allowance: HttpAllowance = HttpAllowance.NONE, allow_query: bool = False
 ) -> AnyUrl:
     """Parse an absolute HTTPS URL, optionally allowing HTTP within a named scope."""
-    parsed = _HTTP_URL.validate_python(value)
+    return _validate_https_url(_HTTP_URL.validate_python(value), http_allowance=http_allowance, allow_query=allow_query)
+
+
+def _validate_https_url(
+    parsed: AnyUrl, *, http_allowance: HttpAllowance = HttpAllowance.NONE, allow_query: bool = False
+) -> AnyUrl:
     if (
         (parsed.scheme == "http" and not _allows_http(parsed, http_allowance))
         or parsed.username is not None
@@ -55,18 +58,17 @@ def parse_https_url(
     return parsed
 
 
-def _validate_https_url_string(value: str) -> str:
-    parse_https_url(value)
-    return value
+def _validate_https_or_localhost_http_url(value: AnyUrl) -> AnyUrl:
+    return _validate_https_url(value, http_allowance=HttpAllowance.LOCALHOST)
 
 
-def _validate_https_or_localhost_http_url_string(value: str) -> str:
-    parse_https_url(value, http_allowance=HttpAllowance.LOCALHOST)
-    return value
-
-
-HttpsUrlString = Annotated[str, AfterValidator(_validate_https_url_string)]
-HttpsOrLocalhostHttpUrlString = Annotated[str, AfterValidator(_validate_https_or_localhost_http_url_string)]
-
-
-# Internal module; keep imports explicit rather than curating a public API
+HttpsUrl = Annotated[
+    AnyHttpUrl,
+    UrlConstraints(allowed_schemes=["https"], host_required=True, preserve_empty_path=True),
+    AfterValidator(_validate_https_url),
+]
+HttpsOrLocalhostHttpUrl = Annotated[
+    AnyHttpUrl,
+    UrlConstraints(host_required=True, preserve_empty_path=True),
+    AfterValidator(_validate_https_or_localhost_http_url),
+]

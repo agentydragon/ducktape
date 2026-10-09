@@ -101,7 +101,7 @@ class OidcPrincipalResolver(ABC):
             raise ValueError("client_id must not be blank")
         if not jwks_uri:
             raise ValueError("OIDC discovery metadata must contain jwks_uri")
-        parse_https_url(jwks_uri, http_allowance=HttpAllowance.LOOPBACK, allow_query=True)
+        parsed_jwks_uri = parse_https_url(jwks_uri, http_allowance=HttpAllowance.LOOPBACK, allow_query=True)
         if signing_algorithms is None or isinstance(signing_algorithms, str):
             raise ValueError("OIDC discovery metadata must advertise signing algorithms")
         if any(not isinstance(algorithm, str) for algorithm in signing_algorithms):
@@ -113,7 +113,7 @@ class OidcPrincipalResolver(ABC):
         # https://www.rfc-editor.org/rfc/rfc7519.html#section-2
         self._issuer = expected_issuer
         self._client_id = client_id
-        self._jwks_uri = jwks_uri
+        self._jwks_uri = parsed_jwks_uri
         self._cached_signing_keys: _CachedSigningKeys | None = None
         self._jwks_lock = asyncio.Lock()
 
@@ -213,7 +213,7 @@ class OidcPrincipalResolver(ABC):
         raise _UnknownSigningKeyError
 
     def _refresh_keys(self) -> _CachedSigningKeys:
-        response = httpx.get(self._jwks_uri, timeout=_JWKS_TIMEOUT_SECONDS, follow_redirects=False)
+        response = httpx.get(str(self._jwks_uri), timeout=_JWKS_TIMEOUT_SECONDS, follow_redirects=False)
         response.raise_for_status()
         document = response.json()
         if not isinstance(document, dict):

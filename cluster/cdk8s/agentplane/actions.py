@@ -6,7 +6,6 @@ objects (staging's policy sets, testing's MCP fixtures) come from `Environment.e
 from __future__ import annotations
 
 import json
-from urllib.parse import urlsplit
 
 from cdk8s import ApiObjectMetadata, Duration, Size
 from cdk8s_plus_34 import (
@@ -346,9 +345,10 @@ class Actions(Construct):
         client_metadata_paths = []
         client_metadata = self.env.actions.settings.mcp_client_metadata
         if client_metadata is not None:
-            metadata_url = urlsplit(client_metadata.url)
-            if metadata_url.hostname != self.env.actions.hostname or metadata_url.port is not None:
+            metadata_url = client_metadata.url
+            if metadata_url.host != self.env.actions.hostname or metadata_url.port != 443:
                 raise ValueError("mcp_client_metadata.url must use this Action Service's HTTPS hostname")
+            assert metadata_url.path is not None
             client_metadata_paths.append(metadata_url.path)
         https_route(
             self,

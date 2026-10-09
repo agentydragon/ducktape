@@ -18,6 +18,7 @@ from flux_kustomize.io.fluxcd.toolkit.kustomize import (
     KustomizationSpecHealthCheckExprs,
     KustomizationSpecHealthChecks,
 )
+from pydantic import AnyHttpUrl
 from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
 
 from agentplane.action_service.catalog import ActionGroup, McpExecutorBinding
@@ -104,7 +105,7 @@ _FEDERATION_TARGET = OperatorOidcSettings(
 _ACTION_FEDERATION = ExchangeFederationSettings(
     mode="exchange",
     service_url=actions.service(STAGING_NAMESPACE).url,
-    token_endpoint=f"{_AUTHENTIK}/application/o/token/",
+    token_endpoint=AnyHttpUrl(f"{_AUTHENTIK}/application/o/token/"),
     login_jwks_uri=f"{_AUTHENTIK}/application/o/agentplane-staging/jwks/",
     target=_FEDERATION_TARGET,
     scope="openid",
@@ -120,7 +121,9 @@ _ACTIONS_SETTINGS = ActionServiceDeploymentSettings(
         public_base_url=f"https://{_HOSTNAME}",
         allowed_push_hosts=list(_WEB_PUSH_ALLOWED_HOSTS),
     ),
-    mcp_client_metadata=McpClientMetadataSettings(url=_MCP_CLIENT_METADATA_URL, client_name="Agentplane staging"),
+    mcp_client_metadata=McpClientMetadataSettings(
+        url=AnyHttpUrl(_MCP_CLIENT_METADATA_URL), client_name="Agentplane staging"
+    ),
     mcp_servers={
         "github": McpOAuthServer(
             server_id="github",

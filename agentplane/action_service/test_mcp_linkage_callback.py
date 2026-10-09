@@ -8,6 +8,7 @@ import httpx
 import httpx2
 import pytest
 import pytest_bazel
+from pydantic import AnyHttpUrl
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncEngine
 
@@ -107,7 +108,9 @@ async def linkage(engine: AsyncEngine, cimd_advertised: bool) -> AsyncIterator[M
                 cimd_server.server_id: cimd_server,
                 other_cimd_server.server_id: other_cimd_server,
             },
-            client_metadata=McpClientMetadataSettings(url=cimd_client_id, client_name="Test Agentplane application"),
+            client_metadata=McpClientMetadataSettings(
+                url=AnyHttpUrl(cimd_client_id), client_name="Test Agentplane application"
+            ),
             http=http,
         )
 

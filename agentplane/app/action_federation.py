@@ -115,7 +115,7 @@ class FederatedOperatorActions:
                     event_hooks={"response": [_check_token_response]},
                 ) as client:
                     token = await client.fetch_token(
-                        url=self._config.token_endpoint,
+                        url=str(self._config.token_endpoint),
                         grant_type="client_credentials",
                         client_assertion_type="urn:ietf:params:oauth:client-assertion-type:jwt-bearer",
                         client_assertion=login_token,

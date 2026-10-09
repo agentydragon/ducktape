@@ -19,6 +19,7 @@ import pytest
 import pytest_bazel
 from fastapi import FastAPI
 from fastmcp import FastMCP
+from pydantic import AnyHttpUrl
 from sqlalchemy import select
 from starlette.requests import Request
 from starlette.responses import JSONResponse, Response
@@ -303,7 +304,7 @@ async def review(
             if direct_federation
             else ExchangeFederationSettings(
                 service_url="http://test-actions.invalid",
-                token_endpoint=f"http://127.0.0.1:{pick_free_port()}/exchange"
+                token_endpoint=AnyHttpUrl(f"http://127.0.0.1:{pick_free_port()}/exchange")
                 if operator_connection == "exchange-disconnected"
                 else f"{idp_origin}/exchange",
                 login_jwks_uri=f"{idp_origin}/federation-keys?private=test-private-query"

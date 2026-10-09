@@ -251,6 +251,7 @@ py_test(
         "@pypi//fastapi",
         "@pypi//fastmcp_slim",
         "@pypi//httpx",
+        "@pypi//pydantic",
         "@pypi//pyjwt",
         "@pypi//pytest",
         "@pypi//pytest_bazel",

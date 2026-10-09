@@ -988,6 +988,7 @@ py_test(
         "//agentplane/workload_auth:principal",
         "@pypi//httpx",
         "@pypi//httpx2",
+        "@pypi//pydantic",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
         "@pypi//sqlalchemy",
@@ -1222,5 +1223,18 @@ py_library(
         "@pypi//pydantic",
         "@pypi//pydantic_settings",
         "@pypi//pyyaml",
+    ],
+)
+
+py_test(
+    name = "test_mcp_settings",
+    srcs = ["test_mcp_settings.py"],
+    deps = [
+        ":conftest",
+        ":mcp_settings",
+        "//:conftest",
+        "@pypi//pydantic",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
     ],
 )

@@ -8,7 +8,7 @@ from urllib.parse import urlsplit
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from agentplane.action_service.operator_oidc_settings import OperatorOidcSettings, OperatorTokenProfile
-from util.urls import HttpsOrLocalhostHttpUrlString
+from util.urls import HttpsOrLocalhostHttpUrl
 
 
 class _ActionFederationSettings(BaseModel):
@@ -38,7 +38,7 @@ class _ActionFederationSettings(BaseModel):
 
 class ExchangeFederationSettings(_ActionFederationSettings):
     mode: Literal["exchange"] = "exchange"
-    token_endpoint: HttpsOrLocalhostHttpUrlString
+    token_endpoint: HttpsOrLocalhostHttpUrl
 
 
 class DirectFederationSettings(_ActionFederationSettings):

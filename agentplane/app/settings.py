@@ -77,7 +77,7 @@ class AppSettingsConfig(BaseSettings):
                 values["action_federation"] = {
                     "mode": federation.mode,
                     "service_url": federation.service_url,
-                    "token_endpoint": federation.token_endpoint,
+                    "token_endpoint": str(federation.token_endpoint),
                     **federation.model_dump(
                         mode="json", exclude_unset=True, exclude={"mode", "service_url", "token_endpoint"}
                     ),

@@ -7,7 +7,7 @@ from typing import Annotated, Final, Literal
 from fastmcp.exceptions import ToolError
 from mcp import types as mcp_types
 from mcp.shared.exceptions import MCPError
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import AnyUrl, BaseModel, ConfigDict, Field
 
 from mcp_infra.compositor.server import BaseCompositor
 from mcp_infra.enhanced.server import EnhancedFastMCP
@@ -17,7 +17,6 @@ from mcp_infra.resource_utils import add_resource_prefix
 from mcp_infra.resources.types import ResourceEntry
 from mcp_infra.snapshots import RunningServerEntry
 from openai_utils.pydantic_strict_mode import OpenAIStrictModeBaseModel
-from util.urls import ANY_URL
 
 ## ResourceEntry moved to adgn.mcp.resources.types to avoid cycles
 
@@ -369,7 +368,7 @@ class ResourcesServer(EnhancedFastMCP):
             Use list_resources first to see what resources are available.
             """
             prefixed = add_resource_prefix(input.uri, input.server)
-            uri_value = ANY_URL.validate_python(prefixed)
+            uri_value = AnyUrl(prefixed)
             # Call compositor method that converts FastMCP types to MCP protocol types
             # (resources server is tightly coupled to compositor for metadata)
             try:
@@ -400,7 +399,7 @@ class ResourcesServer(EnhancedFastMCP):
             - Blob: slice base64 string directly (always valid since base64 is ASCII)
             """
             prefixed = add_resource_prefix(input.uri, input.server)
-            uri_value = ANY_URL.validate_python(prefixed)
+            uri_value = AnyUrl(prefixed)
             try:
                 contents = await self._compositor.read_resource_contents(uri_value)
             except MCPError as e:

@@ -27,7 +27,7 @@ from mcp.client.auth.utils import (
 from mcp.shared.auth import OAuthMetadata, ProtectedResourceMetadata
 from mcp.shared.auth_utils import check_resource_allowed, resource_url_from_server_url
 from prometheus_client import Histogram
-from pydantic import AnyHttpUrl, BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncEngine
 
@@ -355,7 +355,7 @@ class McpLinkageAuthority:
         if self._client_metadata is None:
             raise McpLinkageNotFoundError("unknown MCP client metadata document")
         return CIMDDocument(
-            client_id=AnyHttpUrl(self._client_metadata.url),
+            client_id=self._client_metadata.url,
             client_name=self._client_metadata.client_name,
             redirect_uris=sorted({server.redirect_uri for server in self._servers.values() if server.use_shared_cimd}),
             token_endpoint_auth_method="none",
@@ -366,7 +366,7 @@ class McpLinkageAuthority:
     def _oauth_client_id(self, server: McpOAuthServer) -> str:
         if server.use_shared_cimd:
             assert self._client_metadata is not None
-            return self._client_metadata.url
+            return str(self._client_metadata.url)
         assert server.client_id is not None
         return server.client_id
 
