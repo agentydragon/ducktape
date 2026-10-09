@@ -7,16 +7,37 @@ import time
 from abc import ABC, abstractmethod
 from collections.abc import Collection, Mapping
 from dataclasses import dataclass
-from typing import Any
+from typing import Annotated, Any
 
 import httpx
 import jwt
 from cryptography.hazmat.primitives.asymmetric.rsa import RSAPublicKey
 from jwt import PyJWK, PyJWKSet
 from jwt.exceptions import InvalidTokenError, PyJWKError, PyJWKSetError, PyJWTError
-from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator
+from pydantic import (
+    AfterValidator,
+    AnyHttpUrl,
+    BaseModel,
+    ConfigDict,
+    Field,
+    TypeAdapter,
+    UrlConstraints,
+    ValidationError,
+    field_validator,
+)
 
-from util.urls import HttpAllowance, parse_https_url
+from util.urls import HttpsOrLoopbackHttpEndpointUrl, https_or_loopback_http, no_credentials, no_fragment
+
+_ISSUER_URL: TypeAdapter[AnyHttpUrl] = TypeAdapter(HttpsOrLoopbackHttpEndpointUrl)
+_JWKS_URL: TypeAdapter[AnyHttpUrl] = TypeAdapter(
+    Annotated[
+        AnyHttpUrl,
+        UrlConstraints(host_required=True),
+        AfterValidator(no_credentials),
+        AfterValidator(no_fragment),
+        AfterValidator(https_or_loopback_http),
+    ]
+)
 
 _SIGNING_ALGORITHM = "RS256"
 _CLOCK_SKEW_SECONDS = 30
@@ -96,12 +117,12 @@ class OidcPrincipalResolver(ABC):
     ) -> None:
         if not expected_issuer or discovered_issuer != expected_issuer:
             raise ValueError("discovered issuer must exactly match expected_issuer")
-        parse_https_url(expected_issuer, http_allowance=HttpAllowance.LOOPBACK)
+        _ISSUER_URL.validate_python(expected_issuer)
         if not client_id.strip():
             raise ValueError("client_id must not be blank")
         if not jwks_uri:
             raise ValueError("OIDC discovery metadata must contain jwks_uri")
-        parsed_jwks_uri = parse_https_url(jwks_uri, http_allowance=HttpAllowance.LOOPBACK, allow_query=True)
+        parsed_jwks_uri = _JWKS_URL.validate_python(jwks_uri)
         if signing_algorithms is None or isinstance(signing_algorithms, str):
             raise ValueError("OIDC discovery metadata must advertise signing algorithms")
         if any(not isinstance(algorithm, str) for algorithm in signing_algorithms):
