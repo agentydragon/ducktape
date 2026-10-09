@@ -15,8 +15,8 @@ py_library(
     srcs = ["cli.py"],
     visibility = ["//visibility:public"],
     deps = [
-        ":config_loader",
         ":compaction",
+        ":config_loader",
         "//agent_core:agent",
         "//agent_core:handler",
         "//agent_core:loop_control",
@@ -39,9 +39,9 @@ py_test(
     srcs = ["test_compaction.py"],
     deps = [
         ":compaction",
+        "//:conftest",
         "//agent_core:events",
         "//agent_core:loop_control",
-        "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],
 )
