@@ -1,0 +1,2037 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>CI feedback · Ducktape · 7 October 2026</title>
+    <style>
+      * {
+        box-sizing: border-box;
+      }
+      html {
+        scroll-behavior: smooth;
+      }
+      body {
+        margin: 0;
+        background: #f5f6f3;
+        color: #172b34;
+        font:
+          16px/1.65 system-ui,
+          sans-serif;
+      }
+      main {
+        max-width: 1120px;
+        margin: auto;
+        padding: 40px 28px 70px;
+      }
+      a {
+        color: #086977;
+        text-underline-offset: 3px;
+      }
+      h1,
+      h2,
+      h3 {
+        line-height: 1.2;
+        letter-spacing: -0.025em;
+      }
+      h1 {
+        font-size: clamp(34px, 5vw, 54px);
+        max-width: 950px;
+        margin: 12px 0 24px;
+      }
+      h2 {
+        font-size: 28px;
+        margin: 0 0 16px;
+      }
+      h3 {
+        font-size: 21px;
+      }
+      p {
+        margin: 0 0 16px;
+      }
+      .eyebrow {
+        font-size: 12px;
+        font-weight: 750;
+        letter-spacing: 0.14em;
+        text-transform: uppercase;
+        color: #40666b;
+      }
+      .lead {
+        font-size: 20px;
+        max-width: 960px;
+      }
+      .muted,
+      small {
+        color: #536970;
+      }
+      .meta {
+        font-size: 13px;
+        color: #536970;
+      }
+      nav {
+        display: flex;
+        gap: 20px;
+        flex-wrap: wrap;
+        padding: 17px 0;
+        border-block: 1px solid #cddbd7;
+        margin: 24px 0;
+      }
+      .metrics {
+        display: grid;
+        grid-template-columns: repeat(3, 1fr);
+        gap: 12px;
+        margin: 24px 0;
+      }
+      .metric {
+        background: #173f4b;
+        color: white;
+        padding: 22px;
+        border-radius: 10px;
+      }
+      .metric strong {
+        display: block;
+        font-size: 37px;
+        line-height: 1.2;
+        margin: 7px 0;
+      }
+      .metric small {
+        color: #d7e5e6;
+      }
+      .callout {
+        background: #e3eee8;
+        border-left: 4px solid #377761;
+        padding: 18px 22px;
+        border-radius: 4px;
+        margin: 22px 0;
+      }
+      .caution {
+        background: #f7ead5;
+        border-color: #a96a15;
+      }
+      section {
+        margin-top: 44px;
+      }
+      article,
+      .card,
+      details {
+        background: #fff;
+        border: 1px solid #d5dfdb;
+        border-radius: 10px;
+        padding: 24px;
+        margin: 16px 0;
+      }
+      .grid {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+        gap: 16px;
+      }
+      .grid article {
+        margin: 0;
+      }
+      .table-scroll {
+        overflow-x: auto;
+        max-width: 100%;
+        margin: 18px 0;
+        border: 1px solid #d5dfdb;
+        border-radius: 8px;
+        background: white;
+      }
+      table {
+        border-collapse: collapse;
+        width: 100%;
+        font-size: 13px;
+        min-width: 600px;
+        text-align: left;
+      }
+      .compact {
+        min-width: 0;
+        table-layout: fixed;
+      }
+      .compact th:first-child,
+      .compact td:first-child {
+        width: 72%;
+        overflow-wrap: anywhere;
+      }
+      th,
+      td {
+        padding: 12px 14px;
+        border-bottom: 1px solid #e2e9e5;
+        vertical-align: top;
+      }
+      th {
+        background: #e6eee9;
+        font-size: 12px;
+      }
+      tr:last-child td {
+        border-bottom: 0;
+      }
+      code {
+        font-size: 0.87em;
+        background: #edf2ef;
+        padding: 2px 4px;
+        border-radius: 3px;
+        overflow-wrap: anywhere;
+      }
+      pre {
+        white-space: pre-wrap;
+        overflow-wrap: anywhere;
+        font-size: 12px;
+        background: #edf2ef;
+        padding: 16px;
+        border-radius: 6px;
+      }
+      summary {
+        cursor: pointer;
+        font-weight: 700;
+      }
+      details[open] summary {
+        margin-bottom: 18px;
+      }
+      .chart {
+        margin: 20px 0;
+      }
+      .barrow {
+        display: grid;
+        grid-template-columns: 155px 1fr 75px;
+        gap: 12px;
+        align-items: center;
+        margin: 13px 0;
+        font-size: 13px;
+      }
+      .track {
+        height: 16px;
+        background: #e2e9e6;
+        border-radius: 3px;
+      }
+      .fill {
+        height: 100%;
+        background: #2b7a72;
+        border-radius: 3px;
+      }
+      .barrow strong {
+        text-align: right;
+      }
+      .timeline {
+        display: flex;
+        height: 24px;
+        gap: 2px;
+        overflow: hidden;
+        border-radius: 5px;
+        margin: 18px 0;
+      }
+      .timeline span {
+        background: #38786f;
+      }
+      .timeline span:nth-child(2n) {
+        background: #89ada2;
+      }
+      .timeline span:nth-child(3n) {
+        background: #ba8434;
+      }
+      .foot {
+        font-size: 13px;
+        color: #536970;
+        border-top: 1px solid #cddbd7;
+        margin-top: 36px;
+        padding-top: 22px;
+      }
+      li {
+        margin: 8px 0;
+      }
+      section,
+      article {
+        scroll-margin-top: 20px;
+      }
+      @media (max-width: 650px) {
+        main {
+          padding: 25px 17px 45px;
+        }
+        .metrics,
+        .grid {
+          grid-template-columns: minmax(0, 1fr);
+        }
+        .metric strong {
+          font-size: 32px;
+        }
+        .metric {
+          padding: 17px;
+        }
+        .lead {
+          font-size: 18px;
+        }
+        article,
+        .card,
+        details {
+          padding: 18px;
+        }
+        h2 {
+          font-size: 25px;
+        }
+        .barrow {
+          grid-template-columns: 115px 1fr 64px;
+          gap: 8px;
+          font-size: 12px;
+        }
+        nav {
+          gap: 12px;
+        }
+        table {
+          min-width: 640px;
+        }
+        .meta {
+          overflow-wrap: anywhere;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <div class="eyebrow">Ducktape · CI latency · 7 October 2026 UTC</div>
+      <h1>
+        Sampled passing checks finish in 2½ minutes.<br />Cancellation change
+        merged; savings unmeasured.
+      </h1>
+      <p class="lead">
+        Current runner queues are short. PR #9369 changed Bazel cancellation to
+        group superseded heads by PR. Before that change, six old jobs consumed
+        <strong>20.4 runner-minutes after replacement events</strong>. Longer
+        feedback tails come from test execution and reruns. Buying more runner
+        capacity is unsupported by this window.
+      </p>
+      <p class="meta">
+        PR creation cohort: 5 October 00:00–7 October 08:32 UTC · Busy-window
+        census: 7 October 07:00–08:32 UTC · Inspected devel:
+        <a
+          href="https://github.com/agentydragon/ducktape/commit/787817a16ec2e9c812793e11364f6f9cc7b868ac"
+          >787817a16ec2</a
+        >
+      </p>
+      <div class="metrics">
+        <div class="metric">
+          Passing required-check proxy<strong>2m 30s</strong
+          ><small>p50 · 51 passing heads; p90 5m 39s</small>
+        </div>
+        <div class="metric">
+          PR Bazel runner queue<strong>3 seconds</strong
+          ><small>p90 and maximum · 27 assigned completed jobs</small>
+        </div>
+        <div class="metric">
+          Superseded work<strong>6 old jobs</strong
+          ><small>One actively revised PR; cancellation spike confirmed</small>
+        </div>
+      </div>
+      <p class="meta">
+        <strong>Clock limit:</strong> these are
+        workflow-creation-to-required-check-completion measurements. Exact
+        push-to-auto-merge readiness and agent receipt latency were not
+        observable; neither is assigned a percentile.
+      </p>
+      <nav aria-label="Report navigation">
+        <a href="#effects">Measured effects</a><a href="#decisions">Follow-up</a
+        ><a href="#population">PR classes</a><a href="#cases">Case timelines</a
+        ><a href="#resources">Compute</a
+        ><a href="#methods">Evidence &amp; limits</a>
+      </nav>
+      <section id="effects">
+        <h2>What the earlier fixes have demonstrated</h2>
+        <p>
+          The
+          <a
+            href="https://github.com/agentydragon/ducktape/blob/2a5caccf2b135081ec70c07882ea4f74e0fa7e04/index.html"
+            >prior reviewed report</a
+          >
+          already quantified these effects. They are historical estimates, not
+          new October 7 comparisons. Positive savings mean faster.
+        </p>
+        <div class="table-scroll" tabindex="0">
+          <table>
+            <thead>
+              <tr>
+                <th scope="col">Outcome</th>
+                <th scope="col">Median before → after</th>
+                <th scope="col">Saving; approximate 95% interval</th>
+                <th scope="col">Heads before → after</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>Bazel checkout</td>
+                <td>17s → 7s</td>
+                <td>10s; 9 to 10.5s</td>
+                <td>45 → 90</td>
+              </tr>
+              <tr>
+                <td>Wheel checkout</td>
+                <td>17s → 7s</td>
+                <td>10s; 9 to 10s</td>
+                <td>43 → 90</td>
+              </tr>
+              <tr>
+                <td>All passing feedback, raw</td>
+                <td>225s → 198s</td>
+                <td>27s; −6 to 65s</td>
+                <td>262 → 60</td>
+              </tr>
+              <tr>
+                <td>Feedback, adjusted for broad workload mix</td>
+                <td>198s → 198s</td>
+                <td>0s; −34 to 40s</td>
+                <td>262 → 60</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <p>
+          Checkout has a statistically clear observational improvement. Both
+          overall intervals include zero: the bundle's effect remains
+          inconclusive. Intervals resample PRs to account for multiple heads;
+          they do not remove cache, infrastructure or concurrent-code
+          confounding. The overall comparison uses October 1–4 versus October 5,
+          02:23–05:25 UTC, same-repository heads, and earliest passing
+          completion of four gates.
+        </p>
+        <p>
+          Browser sharding saved 70.5s on the critical path and retaining Bazel
+          saved 27.1s in controlled comparisons. Replication is insufficient for
+          population confidence intervals. These parallel/component savings
+          cannot be added into an overall PR saving.
+        </p>
+        <div class="callout">
+          <strong>The planned statistical follow-up remains incomplete.</strong>
+          This run collected newer data but did not perform the comparable
+          before/after analysis. Its 150s median includes forks, uses different
+          class precedence and selects latest passing attempts; comparing it
+          directly with the older medians would not establish improvement.
+        </div>
+        <p>
+          The earlier overall comparison predates the pytest aspect (#9134) and
+          setup/Nix changes (#9157, #9164, #9180, #9194). Their combined
+          whole-PR effect is still unmeasured. Follow-up should retain the
+          earlier baseline, harmonize trust paths, class rules and
+          earliest-passing clocks, verify executed rollout revisions, and
+          cluster uncertainty by PR. Report p50/p90, sample sizes,
+          failures/reruns, last-gate frequency and runner-minutes per head, with
+          cache/target differences where observable. Treat #9369 as a separate
+          later intervention. Visual publisher cost remains a separate outcome
+          from required-check feedback.
+        </p>
+      </section>
+      <section id="decisions">
+        <h2>
+          Cancellation change landed; production effects need measurement.
+        </h2>
+        <article>
+          <div class="eyebrow">
+            1 · Merged #9369 · Production savings unmeasured
+          </div>
+          <h3>Bazel cancellation now groups runs by PR identity.</h3>
+          <p>
+            <a href="https://github.com/agentydragon/ducktape/pull/9369"
+              >PR #9369</a
+            >
+            merged on 7 October at <strong>09:09:40 UTC</strong>, commit
+            <a
+              href="https://github.com/agentydragon/ducktape/commit/d579a8f918881b4956564eda677d029426b900f4"
+              >d579a8f91888</a
+            >. In <code>.github/workflows/bazel-ci.yml</code>, the group now
+            uses <code>github.event.pull_request.number || github.ref</code>,
+            with the existing prefix and cancellation condition retained. The
+            prior head-SHA group differed on every same-repository PR push.
+            Trusted forks already had an outer PR-number cancellation group.
+          </p>
+          <p>
+            <strong>Rollout boundary:</strong> all cohort and waste measurements
+            below precede this merge. Classify future runs by the workflow
+            revision actually executed; merge time alone does not prove a run
+            used the new grouping.
+          </p>
+          <p>
+            Across 252 uncapped <code>pull_request</code> CI runs on 6–7
+            October, six assigned old/new job pairs on PR #9297 actually
+            overlap. They overlap newer assigned jobs for 19.8 runner-minutes
+            and continue for 20.4 runner-minutes after replacement workflow
+            creation. A seventh candidate was rejected after inspecting
+            attempts: its first job had already finished; the later run update
+            was not proof of overlap.
+          </p>
+          <p>
+            <strong>Expected benefit:</strong> reclaim part of that 0–20.4
+            runner-minute upper bound in a comparable revision burst, less
+            cancellation lag. Typical single-head PR latency may save zero.
+            Remote compute reclamation was not measured: cancelling the GitHub
+            job does not by itself prove that its BuildBuddy work stops.
+          </p>
+          <p>
+            <strong>Validation:</strong> an isolated two-head GitHub experiment
+            kept the SHA-keyed job running to success and cancelled the
+            stable-ref job; both replacement jobs succeeded. The replacement
+            arrived near the first jobs’ end, so this establishes grouping
+            semantics, not a measured time saving. Production follow-up must
+            check a two-push PR, a trusted fork and a devel push, including
+            exact-source verification, all four required contexts and
+            non-cancelling devel publication. Measure cancellation lag, obsolete
+            assigned runner-seconds per replacement event, replacement-head
+            feedback, and whether the remote BuildBuddy invocation stops.
+            Compare similar revision bursts and report event/PR counts; the six
+            historical jobs all belong to one PR.
+          </p>
+          <p>
+            <a
+              href="https://github.com/agentydragon/ducktape/actions/runs/37595605826"
+              >First experiment head</a
+            >
+            ·
+            <a
+              href="https://github.com/agentydragon/ducktape/actions/runs/37595695235"
+              >Replacement head</a
+            >
+            ·
+            <a
+              href="https://github.com/agentydragon/ducktape/blob/c0ea460f82724bd9e1c4eddc5fcbc0d53169601b/.github/workflows/ci-latency-concurrency-spike.yml"
+              >Exact experiment</a
+            >
+          </p>
+        </article>
+        <div class="grid">
+          <article>
+            <div class="eyebrow">
+              2 · Product/test tail · Separate diagnosis
+            </div>
+            <h3>Keep browser follow-state failures visible.</h3>
+            <p>
+              The sampled browser failure reaches the page and renders rows.
+              Resizing changes the scroll position, then
+              <code>onScroll</code> records <code>scrolled-up</code> and
+              disables following before the test has performed its scrolling
+              gesture. The same source passes on rerun.
+            </p>
+            <p>
+              A candidate change belongs in
+              <code>threads/projected_session.tsx</code>: distinguish
+              layout-induced scroll movement from reader input when dropping
+              follow state. Retain wheel, keyboard, touch and disclosure
+              behavior. Validate with the existing desktop/phone follow-latest
+              cases and repeated RBE runs; do not increase deadlines or suppress
+              this assertion. The captured trace identifies the transition, but
+              does not prove the initiating browser event or a complete fix. PR
+              #9297 is still in active development, so this is an input to that
+              work, not a claim about all mainline failures.
+            </p>
+          </article>
+          <article>
+            <div class="eyebrow">3 · Measured experiment · Defer</div>
+            <h3>Combining Nix evaluation is a small opportunity.</h3>
+            <p>
+              The docs wheel gate spends 20s on generated policy checks and 30s
+              on the final imports step. A bounded experiment evaluated the
+              three policy and ten package derivations separately and together.
+              Every derivation path matched; combining saved only
+              <strong>0.91–1.28 CPU seconds</strong> across three repetitions.
+            </p>
+            <p>
+              If implemented, append all three checks to the existing final
+              <code>nix build --impure</code> after artifact override assembly.
+              Keep missing-output failures and every imports check. The
+              experiment used pinned artifacts, not fresh PR overrides, and did
+              not run builds. It cannot turn the 50s observed step total into a
+              savings claim. A hosted comparison with real overrides is needed
+              before prioritizing this change.
+            </p>
+          </article>
+        </div>
+        <div class="callout">
+          <strong>No capacity or packaging change recommended.</strong> All 27
+          recent PR Bazel jobs started within three seconds of job creation. The
+          prior prepared-container experiment was slower than Nix setup. Neither
+          current evidence nor the new evaluation spike justifies changing that
+          conclusion.
+        </div>
+      </section>
+      <section id="population">
+        <h2>What different PRs experience</h2>
+        <p>
+          53 sampled latest heads target devel; 51 have a passing set of
+          required checks, and two lack required checks. One history-branch PR
+          was excluded. Selection took 18 evenly spaced PRs per UTC day from 327
+          PRs created in the cohort. This balances days and is not a random or
+          volume-weighted population estimate.
+        </p>
+        <div class="table-scroll" tabindex="0">
+          <table>
+            <thead>
+              <tr>
+                <th scope="col">PR class</th>
+                <th scope="col">Heads</th>
+                <th scope="col">Passing</th>
+                <th scope="col">Passing p50</th>
+                <th scope="col">Passing p90</th>
+                <th scope="col">Missing gates</th>
+                <th scope="col">Runner-minutes</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>Build tooling/CI</td>
+                <td>3</td>
+                <td>2</td>
+                <td>3m 44s</td>
+                <td>11m 32s</td>
+                <td>1</td>
+                <td>29.6</td>
+              </tr>
+              <tr>
+                <td>Documentation</td>
+                <td>13</td>
+                <td>13</td>
+                <td>2m 12s</td>
+                <td>2m 54s</td>
+                <td>0</td>
+                <td>66.8</td>
+              </tr>
+              <tr>
+                <td>Frontend/UI</td>
+                <td>9</td>
+                <td>8</td>
+                <td>2m 14s</td>
+                <td>2m 54s</td>
+                <td>1</td>
+                <td>46.4</td>
+              </tr>
+              <tr>
+                <td>Other cluster/Terraform</td>
+                <td>3</td>
+                <td>3</td>
+                <td>3m 09s</td>
+                <td>3m 23s</td>
+                <td>0</td>
+                <td>25.4</td>
+              </tr>
+              <tr>
+                <td>Other code/config</td>
+                <td>15</td>
+                <td>15</td>
+                <td>2m 28s</td>
+                <td>7m 01s</td>
+                <td>0</td>
+                <td>128.1</td>
+              </tr>
+              <tr>
+                <td>cdk8s</td>
+                <td>10</td>
+                <td>10</td>
+                <td>2m 37s</td>
+                <td>4m 32s</td>
+                <td>0</td>
+                <td>77.2</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <p class="meta">
+          All durations start at earliest matching-head PR workflow creation.
+          Stop: latest actual result for each required context, all passing. No
+          terminal failed/cancelled or in-progress gate set in this latest-head
+          sample; historical failed attempts remain in costs and passing
+          durations. The independent recent census includes seven failed and one
+          cancelled PR Bazel attempts. Missing checks are not passing.
+        </p>
+        <div class="grid">
+          <article>
+            <h3>Which gate finishes last?</h3>
+            <div class="chart">
+              <div class="barrow">
+                <span>Bazel · 31 heads</span>
+                <div class="track">
+                  <div class="fill" style="width: 100%"></div>
+                </div>
+                <strong>61%</strong>
+              </div>
+              <div class="barrow">
+                <span>Wheel/import · 20</span>
+                <div class="track">
+                  <div class="fill" style="width: 64.5%"></div>
+                </div>
+                <strong>39%</strong>
+              </div>
+            </div>
+            <p>
+              Pre-commit and Gazelle were never the final required gate among
+              these 51 heads. Improving either alone would not have changed
+              their recorded required-check finish.
+            </p>
+          </article>
+          <article>
+            <h3>Trust paths and workload mix</h3>
+            <p>
+              Same repository: 38 heads, 37 passing, p50/p90
+              <strong>149s / 420s</strong>. Forks: 15 heads, 14 passing,
+              <strong>151s / 180s</strong>. Different workload mixes prevent
+              attributing this difference to fork overhead. Untrusted-fork
+              approval waits are not represented well enough to estimate.
+            </p>
+            <p>
+              Mixed changes use precedence: docs/text-only → cdk8s → other
+              cluster/Terraform → build tooling/CI → frontend/UI → other code.
+              The expandable per-head table includes file and line counts. These
+              classes do not prove causal test triggers.
+            </p>
+          </article>
+        </div>
+        <details>
+          <summary>Per-head revisions, sizes, outcomes and final gates</summary>
+          <div class="table-scroll" tabindex="0">
+            <table>
+              <thead>
+                <tr>
+                  <th scope="col">PR</th>
+                  <th scope="col">Head SHA</th>
+                  <th scope="col">Class</th>
+                  <th scope="col">Files / changed lines</th>
+                  <th scope="col">Trust path</th>
+                  <th scope="col">State</th>
+                  <th scope="col">Passing proxy</th>
+                  <th scope="col">Last gate</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td>
+                    <a href="https://github.com/agentydragon/ducktape/pull/9033"
+                      >#9033</a
+                    >
+                  </td>
+                  <td><code>0f8833372576</code></td>
+                  <td>Build tooling/CI</td>
+                  <td>5 / 105</td>
+                  <td>Same repo</td>
+                  <td>passing</td>
+                  <td>3m 44s</td>
+                  <td>bazel-ci / Test &amp; Build</td>
+                </tr>
+                <tr>
+                  <td>
+                    <a href="https://github.com/agentydragon/ducktape/pull/9048"
+                      >#9048</a
+                    >
+                  </td>
+                  <td><code>c3a4f8026785</code></td>
+                  <td>Frontend/UI</td>
+                  <td>22 / 212</td>
+                  <td>Same repo</td>
+                  <td>passing</td>
+                  <td>2m 41s</td>
+                  <td>bazel-ci / Test &amp; Build</td>
+                </tr>
+                <tr>
+                  <td>
+                    <a href="https://github.com/agentydragon/ducktape/pull/9063"
+                      >#9063</a
+                    >
+                  </td>
+                  <td><code>79ad34a2d5a6</code></td>
+                  <td>Frontend/UI</td>
+                  <td>11 / 145</td>
+                  <td>Same repo</td>
+                  <td>passing</td>
+                  <td>2m 54s</td>
+                  <td>bazel-ci / Test &amp; Build</td>
+                </tr>
+                <tr>
+                  <td>
+                    <a href="https://github.com/agentydragon/ducktape/pull/9077"
+                      >#9077</a
+                    >
+                  </td>
+                  <td><code>304474e249d2</code></td>
+                  <td>Other code/config</td>
+                  <td>6 / 76</td>
+                  <td>Fork</td>
+                  <td>passing</td>
+                  <td>3m 00s</td>
+                  <td>Build artifacts + imports check</td>
+                </tr>
+                <tr>
+                  <td>
+                    <a href="https://github.com/agentydragon/ducktape/pull/9092"
+                      >#9092</a
+                    >
+                  </td>
+                  <td><code>06d24302c185</code></td>
+                  <td>Other code/config</td>
+                  <td>1 / 15</td>
+                  <td>Same repo</td>
+                  <td>passing</td>
+                  <td>7m 01s</td>
+                  <td>bazel-ci / Test &amp; Build</td>
+                </tr>
+                <tr>
+                  <td>
+                    <a href="https://github.com/agentydragon/ducktape/pull/9107"
+                      >#9107</a
+                    >
+                  </td>
+                  <td><code>5bde17ec6cf6</code></td>
+                  <td>Other code/config</td>
+                  <td>4 / 205</td>
+                  <td>Same repo</td>
+                  <td>passing</td>
+                  <td>4m 03s</td>
+                  <td>bazel-ci / Test &amp; Build</td>
+                </tr>
+                <tr>
+                  <td>
+                    <a href="https://github.com/agentydragon/ducktape/pull/9123"
+                      >#9123</a
+                    >
+                  </td>
+                  <td><code>102f3f0821a0</code></td>
+                  <td>Other code/config</td>
+                  <td>3 / 357</td>
+                  <td>Same repo</td>
+                  <td>passing</td>
+                  <td>7m 00s</td>
+                  <td>bazel-ci / Test &amp; Build</td>
+                </tr>
+                <tr>
+                  <td>
+                    <a href="https://github.com/agentydragon/ducktape/pull/9139"
+                      >#9139</a
+                    >
+                  </td>
+                  <td><code>3da2d8d581aa</code></td>
+                  <td>Other code/config</td>
+                  <td>3 / 18</td>
+                  <td>Same repo</td>
+                  <td>passing</td>
+                  <td>3m 02s</td>
+                  <td>bazel-ci / Test &amp; Build</td>
+                </tr>
+                <tr>
+                  <td>
+                    <a href="https://github.com/agentydragon/ducktape/pull/9168"
+                      >#9168</a
+                    >
+                  </td>
+                  <td><code>cb906a29cfb4</code></td>
+                  <td>Frontend/UI</td>
+                  <td>7 / 81</td>
+                  <td>Same repo</td>
+                  <td>passing</td>
+                  <td>1m 46s</td>
+                  <td>bazel-ci / Test &amp; Build</td>
+                </tr>
+                <tr>
+                  <td>
+                    <a href="https://github.com/agentydragon/ducktape/pull/9183"
+                      >#9183</a
+                    >
+                  </td>
+                  <td><code>61c8945da7a7</code></td>
+                  <td>Other code/config</td>
+                  <td>2 / 38</td>
+                  <td>Same repo</td>
+                  <td>passing</td>
+                  <td>2m 16s</td>
+                  <td>bazel-ci / Test &amp; Build</td>
+                </tr>
+                <tr>
+                  <td>
+                    <a href="https://github.com/agentydragon/ducktape/pull/9198"
+                      >#9198</a
+                    >
+                  </td>
+                  <td><code>c66d77c380e8</code></td>
+                  <td>Other code/config</td>
+                  <td>1 / 44</td>
+                  <td>Same repo</td>
+                  <td>passing</td>
+                  <td>1m 54s</td>
+                  <td>Build artifacts + imports check</td>
+                </tr>
+                <tr>
+                  <td>
+                    <a href="https://github.com/agentydragon/ducktape/pull/9213"
+                      >#9213</a
+                    >
+                  </td>
+                  <td><code>9a411c79858d</code></td>
+                  <td>Other code/config</td>
+                  <td>9 / 462</td>
+                  <td>Same repo</td>
+                  <td>passing</td>
+                  <td>2m 26s</td>
+                  <td>bazel-ci / Test &amp; Build</td>
+                </tr>
+                <tr>
+                  <td>
+                    <a href="https://github.com/agentydragon/ducktape/pull/9228"
+                      >#9228</a
+                    >
+                  </td>
+                  <td><code>eedd780bdd2e</code></td>
+                  <td>cdk8s</td>
+                  <td>3 / 41</td>
+                  <td>Same repo</td>
+                  <td>passing</td>
+                  <td>2m 35s</td>
+                  <td>bazel-ci / Test &amp; Build</td>
+                </tr>
+                <tr>
+                  <td>
+                    <a href="https://github.com/agentydragon/ducktape/pull/9244"
+                      >#9244</a
+                    >
+                  </td>
+                  <td><code>db4ffd20241a</code></td>
+                  <td>Other cluster/Terraform</td>
+                  <td>5 / 32</td>
+                  <td>Same repo</td>
+                  <td>passing</td>
+                  <td>2m 29s</td>
+                  <td>bazel-ci / Test &amp; Build</td>
+                </tr>
+                <tr>
+                  <td>
+                    <a href="https://github.com/agentydragon/ducktape/pull/9259"
+                      >#9259</a
+                    >
+                  </td>
+                  <td><code>bc925e05fd31</code></td>
+                  <td>Other code/config</td>
+                  <td>2 / 62</td>
+                  <td>Same repo</td>
+                  <td>passing</td>
+                  <td>2m 08s</td>
+                  <td>Build artifacts + imports check</td>
+                </tr>
+                <tr>
+                  <td>
+                    <a href="https://github.com/agentydragon/ducktape/pull/9275"
+                      >#9275</a
+                    >
+                  </td>
+                  <td><code>49f7ee4780c4</code></td>
+                  <td>cdk8s</td>
+                  <td>9 / 157</td>
+                  <td>Same repo</td>
+                  <td>passing</td>
+                  <td>3m 12s</td>
+                  <td>bazel-ci / Test &amp; Build</td>
+                </tr>
+                <tr>
+                  <td>
+                    <a href="https://github.com/agentydragon/ducktape/pull/9290"
+                      >#9290</a
+                    >
+                  </td>
+                  <td><code>727e3887a9d4</code></td>
+                  <td>Other cluster/Terraform</td>
+                  <td>3 / 21</td>
+                  <td>Same repo</td>
+                  <td>passing</td>
+                  <td>3m 09s</td>
+                  <td>bazel-ci / Test &amp; Build</td>
+                </tr>
+                <tr>
+                  <td>
+                    <a href="https://github.com/agentydragon/ducktape/pull/9291"
+                      >#9291</a
+                    >
+                  </td>
+                  <td><code>7ed094f66a35</code></td>
+                  <td>Other code/config</td>
+                  <td>5 / 52</td>
+                  <td>Same repo</td>
+                  <td>passing</td>
+                  <td>6m 10s</td>
+                  <td>bazel-ci / Test &amp; Build</td>
+                </tr>
+                <tr>
+                  <td>
+                    <a href="https://github.com/agentydragon/ducktape/pull/9293"
+                      >#9293</a
+                    >
+                  </td>
+                  <td><code>18b35f738454</code></td>
+                  <td>Documentation</td>
+                  <td>1 / 8</td>
+                  <td>Fork</td>
+                  <td>passing</td>
+                  <td>2m 12s</td>
+                  <td>Build artifacts + imports check</td>
+                </tr>
+                <tr>
+                  <td>
+                    <a href="https://github.com/agentydragon/ducktape/pull/9295"
+                      >#9295</a
+                    >
+                  </td>
+                  <td><code>b6c54cffe531</code></td>
+                  <td>Frontend/UI</td>
+                  <td>9 / 229</td>
+                  <td>Same repo</td>
+                  <td>passing</td>
+                  <td>2m 14s</td>
+                  <td>bazel-ci / Test &amp; Build</td>
+                </tr>
+                <tr>
+                  <td>
+                    <a href="https://github.com/agentydragon/ducktape/pull/9297"
+                      >#9297</a
+                    >
+                  </td>
+                  <td><code>05b8d8aaec52</code></td>
+                  <td>Frontend/UI</td>
+                  <td>30 / 2075</td>
+                  <td>Same repo</td>
+                  <td>missing</td>
+                  <td>Unobserved</td>
+                  <td>None</td>
+                </tr>
+                <tr>
+                  <td>
+                    <a href="https://github.com/agentydragon/ducktape/pull/9299"
+                      >#9299</a
+                    >
+                  </td>
+                  <td><code>a7631269d002</code></td>
+                  <td>Frontend/UI</td>
+                  <td>5 / 34</td>
+                  <td>Same repo</td>
+                  <td>passing</td>
+                  <td>2m 03s</td>
+                  <td>Build artifacts + imports check</td>
+                </tr>
+                <tr>
+                  <td>
+                    <a href="https://github.com/agentydragon/ducktape/pull/9302"
+                      >#9302</a
+                    >
+                  </td>
+                  <td><code>675221823263</code></td>
+                  <td>Other code/config</td>
+                  <td>8 / 150</td>
+                  <td>Same repo</td>
+                  <td>passing</td>
+                  <td>10m 14s</td>
+                  <td>bazel-ci / Test &amp; Build</td>
+                </tr>
+                <tr>
+                  <td>
+                    <a href="https://github.com/agentydragon/ducktape/pull/9304"
+                      >#9304</a
+                    >
+                  </td>
+                  <td><code>a62d4a627c33</code></td>
+                  <td>Build tooling/CI</td>
+                  <td>42 / 894</td>
+                  <td>Same repo</td>
+                  <td>passing</td>
+                  <td>11m 32s</td>
+                  <td>bazel-ci / Test &amp; Build</td>
+                </tr>
+                <tr>
+                  <td>
+                    <a href="https://github.com/agentydragon/ducktape/pull/9306"
+                      >#9306</a
+                    >
+                  </td>
+                  <td><code>bafdb4d44be2</code></td>
+                  <td>Documentation</td>
+                  <td>1 / 36</td>
+                  <td>Same repo</td>
+                  <td>passing</td>
+                  <td>1m 55s</td>
+                  <td>Build artifacts + imports check</td>
+                </tr>
+                <tr>
+                  <td>
+                    <a href="https://github.com/agentydragon/ducktape/pull/9308"
+                      >#9308</a
+                    >
+                  </td>
+                  <td><code>80a0dbc212a6</code></td>
+                  <td>Documentation</td>
+                  <td>2 / 14</td>
+                  <td>Same repo</td>
+                  <td>passing</td>
+                  <td>2m 03s</td>
+                  <td>Build artifacts + imports check</td>
+                </tr>
+                <tr>
+                  <td>
+                    <a href="https://github.com/agentydragon/ducktape/pull/9310"
+                      >#9310</a
+                    >
+                  </td>
+                  <td><code>0241277d1808</code></td>
+                  <td>Other code/config</td>
+                  <td>4 / 26</td>
+                  <td>Same repo</td>
+                  <td>passing</td>
+                  <td>2m 10s</td>
+                  <td>Build artifacts + imports check</td>
+                </tr>
+                <tr>
+                  <td>
+                    <a href="https://github.com/agentydragon/ducktape/pull/9312"
+                      >#9312</a
+                    >
+                  </td>
+                  <td><code>3f2993b3d6b5</code></td>
+                  <td>Documentation</td>
+                  <td>1 / 80</td>
+                  <td>Same repo</td>
+                  <td>passing</td>
+                  <td>2m 16s</td>
+                  <td>Build artifacts + imports check</td>
+                </tr>
+                <tr>
+                  <td>
+                    <a href="https://github.com/agentydragon/ducktape/pull/9314"
+                      >#9314</a
+                    >
+                  </td>
+                  <td><code>973b3e3b1bd8</code></td>
+                  <td>cdk8s</td>
+                  <td>4 / 173</td>
+                  <td>Fork</td>
+                  <td>passing</td>
+                  <td>2m 50s</td>
+                  <td>Build artifacts + imports check</td>
+                </tr>
+                <tr>
+                  <td>
+                    <a href="https://github.com/agentydragon/ducktape/pull/9316"
+                      >#9316</a
+                    >
+                  </td>
+                  <td><code>11c4a578fa87</code></td>
+                  <td>Documentation</td>
+                  <td>4 / 513</td>
+                  <td>Same repo</td>
+                  <td>passing</td>
+                  <td>2m 08s</td>
+                  <td>Build artifacts + imports check</td>
+                </tr>
+                <tr>
+                  <td>
+                    <a href="https://github.com/agentydragon/ducktape/pull/9319"
+                      >#9319</a
+                    >
+                  </td>
+                  <td><code>ff255a308563</code></td>
+                  <td>cdk8s</td>
+                  <td>31 / 823</td>
+                  <td>Same repo</td>
+                  <td>passing</td>
+                  <td>3m 04s</td>
+                  <td>bazel-ci / Test &amp; Build</td>
+                </tr>
+                <tr>
+                  <td>
+                    <a href="https://github.com/agentydragon/ducktape/pull/9321"
+                      >#9321</a
+                    >
+                  </td>
+                  <td><code>40de048b1ffb</code></td>
+                  <td>cdk8s</td>
+                  <td>11 / 230</td>
+                  <td>Same repo</td>
+                  <td>passing</td>
+                  <td>5m 39s</td>
+                  <td>bazel-ci / Test &amp; Build</td>
+                </tr>
+                <tr>
+                  <td>
+                    <a href="https://github.com/agentydragon/ducktape/pull/9323"
+                      >#9323</a
+                    >
+                  </td>
+                  <td><code>e46c8b3e80ed</code></td>
+                  <td>Other code/config</td>
+                  <td>2 / 97</td>
+                  <td>Same repo</td>
+                  <td>passing</td>
+                  <td>2m 28s</td>
+                  <td>bazel-ci / Test &amp; Build</td>
+                </tr>
+                <tr>
+                  <td>
+                    <a href="https://github.com/agentydragon/ducktape/pull/9325"
+                      >#9325</a
+                    >
+                  </td>
+                  <td><code>6449dcc598b0</code></td>
+                  <td>cdk8s</td>
+                  <td>4 / 55</td>
+                  <td>Fork</td>
+                  <td>passing</td>
+                  <td>2m 37s</td>
+                  <td>bazel-ci / Test &amp; Build</td>
+                </tr>
+                <tr>
+                  <td>
+                    <a href="https://github.com/agentydragon/ducktape/pull/9327"
+                      >#9327</a
+                    >
+                  </td>
+                  <td><code>c1f167227b27</code></td>
+                  <td>Build tooling/CI</td>
+                  <td>2 / 18</td>
+                  <td>Fork</td>
+                  <td>missing</td>
+                  <td>Unobserved</td>
+                  <td>Build artifacts + imports check</td>
+                </tr>
+                <tr>
+                  <td>
+                    <a href="https://github.com/agentydragon/ducktape/pull/9328"
+                      >#9328</a
+                    >
+                  </td>
+                  <td><code>9e1201af7450</code></td>
+                  <td>cdk8s</td>
+                  <td>29 / 1361</td>
+                  <td>Same repo</td>
+                  <td>passing</td>
+                  <td>4m 32s</td>
+                  <td>bazel-ci / Test &amp; Build</td>
+                </tr>
+                <tr>
+                  <td>
+                    <a href="https://github.com/agentydragon/ducktape/pull/9330"
+                      >#9330</a
+                    >
+                  </td>
+                  <td><code>5bcfa93d8d56</code></td>
+                  <td>cdk8s</td>
+                  <td>13 / 311</td>
+                  <td>Same repo</td>
+                  <td>passing</td>
+                  <td>2m 12s</td>
+                  <td>bazel-ci / Test &amp; Build</td>
+                </tr>
+                <tr>
+                  <td>
+                    <a href="https://github.com/agentydragon/ducktape/pull/9332"
+                      >#9332</a
+                    >
+                  </td>
+                  <td><code>c790f0386fa2</code></td>
+                  <td>Documentation</td>
+                  <td>2 / 31</td>
+                  <td>Fork</td>
+                  <td>passing</td>
+                  <td>2m 00s</td>
+                  <td>Build artifacts + imports check</td>
+                </tr>
+                <tr>
+                  <td>
+                    <a href="https://github.com/agentydragon/ducktape/pull/9334"
+                      >#9334</a
+                    >
+                  </td>
+                  <td><code>2047d9d718ca</code></td>
+                  <td>Documentation</td>
+                  <td>1 / 74</td>
+                  <td>Fork</td>
+                  <td>passing</td>
+                  <td>1m 55s</td>
+                  <td>Build artifacts + imports check</td>
+                </tr>
+                <tr>
+                  <td>
+                    <a href="https://github.com/agentydragon/ducktape/pull/9336"
+                      >#9336</a
+                    >
+                  </td>
+                  <td><code>1dbc4054dcb5</code></td>
+                  <td>Documentation</td>
+                  <td>1 / 31</td>
+                  <td>Fork</td>
+                  <td>passing</td>
+                  <td>2m 58s</td>
+                  <td>Build artifacts + imports check</td>
+                </tr>
+                <tr>
+                  <td>
+                    <a href="https://github.com/agentydragon/ducktape/pull/9339"
+                      >#9339</a
+                    >
+                  </td>
+                  <td><code>01d8cefaa0f0</code></td>
+                  <td>Documentation</td>
+                  <td>2 / 49</td>
+                  <td>Fork</td>
+                  <td>passing</td>
+                  <td>2m 41s</td>
+                  <td>Build artifacts + imports check</td>
+                </tr>
+                <tr>
+                  <td>
+                    <a href="https://github.com/agentydragon/ducktape/pull/9341"
+                      >#9341</a
+                    >
+                  </td>
+                  <td><code>0acc6fdfa83a</code></td>
+                  <td>Other code/config</td>
+                  <td>11 / 205</td>
+                  <td>Fork</td>
+                  <td>passing</td>
+                  <td>2m 10s</td>
+                  <td>bazel-ci / Test &amp; Build</td>
+                </tr>
+                <tr>
+                  <td>
+                    <a href="https://github.com/agentydragon/ducktape/pull/9343"
+                      >#9343</a
+                    >
+                  </td>
+                  <td><code>ad0d310c175c</code></td>
+                  <td>Frontend/UI</td>
+                  <td>13 / 1237</td>
+                  <td>Same repo</td>
+                  <td>passing</td>
+                  <td>2m 30s</td>
+                  <td>bazel-ci / Test &amp; Build</td>
+                </tr>
+                <tr>
+                  <td>
+                    <a href="https://github.com/agentydragon/ducktape/pull/9345"
+                      >#9345</a
+                    >
+                  </td>
+                  <td><code>aa650db86233</code></td>
+                  <td>cdk8s</td>
+                  <td>20 / 512</td>
+                  <td>Same repo</td>
+                  <td>passing</td>
+                  <td>2m 26s</td>
+                  <td>bazel-ci / Test &amp; Build</td>
+                </tr>
+                <tr>
+                  <td>
+                    <a href="https://github.com/agentydragon/ducktape/pull/9347"
+                      >#9347</a
+                    >
+                  </td>
+                  <td><code>848466e8518c</code></td>
+                  <td>Documentation</td>
+                  <td>1 / 34</td>
+                  <td>Fork</td>
+                  <td>passing</td>
+                  <td>2m 54s</td>
+                  <td>Build artifacts + imports check</td>
+                </tr>
+                <tr>
+                  <td>
+                    <a href="https://github.com/agentydragon/ducktape/pull/9349"
+                      >#9349</a
+                    >
+                  </td>
+                  <td><code>8ee4dead6e15</code></td>
+                  <td>Frontend/UI</td>
+                  <td>3 / 52</td>
+                  <td>Same repo</td>
+                  <td>passing</td>
+                  <td>2m 07s</td>
+                  <td>bazel-ci / Test &amp; Build</td>
+                </tr>
+                <tr>
+                  <td>
+                    <a href="https://github.com/agentydragon/ducktape/pull/9351"
+                      >#9351</a
+                    >
+                  </td>
+                  <td><code>78f622f40c16</code></td>
+                  <td>Documentation</td>
+                  <td>2 / 35</td>
+                  <td>Fork</td>
+                  <td>passing</td>
+                  <td>2m 29s</td>
+                  <td>Build artifacts + imports check</td>
+                </tr>
+                <tr>
+                  <td>
+                    <a href="https://github.com/agentydragon/ducktape/pull/9353"
+                      >#9353</a
+                    >
+                  </td>
+                  <td><code>fd95d70fd643</code></td>
+                  <td>Other code/config</td>
+                  <td>3 / 19</td>
+                  <td>Same repo</td>
+                  <td>passing</td>
+                  <td>2m 19s</td>
+                  <td>bazel-ci / Test &amp; Build</td>
+                </tr>
+                <tr>
+                  <td>
+                    <a href="https://github.com/agentydragon/ducktape/pull/9356"
+                      >#9356</a
+                    >
+                  </td>
+                  <td><code>6b7c1b15d56c</code></td>
+                  <td>Other cluster/Terraform</td>
+                  <td>21 / 135</td>
+                  <td>Fork</td>
+                  <td>passing</td>
+                  <td>3m 23s</td>
+                  <td>Build artifacts + imports check</td>
+                </tr>
+                <tr>
+                  <td>
+                    <a href="https://github.com/agentydragon/ducktape/pull/9358"
+                      >#9358</a
+                    >
+                  </td>
+                  <td><code>14d3c0bfbed6</code></td>
+                  <td>Documentation</td>
+                  <td>1 / 25</td>
+                  <td>Fork</td>
+                  <td>passing</td>
+                  <td>2m 17s</td>
+                  <td>Build artifacts + imports check</td>
+                </tr>
+                <tr>
+                  <td>
+                    <a href="https://github.com/agentydragon/ducktape/pull/9360"
+                      >#9360</a
+                    >
+                  </td>
+                  <td><code>9252aa4180f3</code></td>
+                  <td>Frontend/UI</td>
+                  <td>3 / 16</td>
+                  <td>Same repo</td>
+                  <td>passing</td>
+                  <td>2m 54s</td>
+                  <td>bazel-ci / Test &amp; Build</td>
+                </tr>
+                <tr>
+                  <td>
+                    <a href="https://github.com/agentydragon/ducktape/pull/9362"
+                      >#9362</a
+                    >
+                  </td>
+                  <td><code>32e6a61dc64b</code></td>
+                  <td>cdk8s</td>
+                  <td>4 / 22</td>
+                  <td>Fork</td>
+                  <td>passing</td>
+                  <td>2m 31s</td>
+                  <td>bazel-ci / Test &amp; Build</td>
+                </tr>
+                <tr>
+                  <td>
+                    <a href="https://github.com/agentydragon/ducktape/pull/9364"
+                      >#9364</a
+                    >
+                  </td>
+                  <td><code>23a12d47d490</code></td>
+                  <td>Documentation</td>
+                  <td>3 / 64</td>
+                  <td>Same repo</td>
+                  <td>passing</td>
+                  <td>1m 45s</td>
+                  <td>Build artifacts + imports check</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </details>
+        <p>
+          <strong>Historical comparison:</strong> the original 1–4 October table
+          in the preceding history snapshot reported documentation p50/p90
+          146s/316s (6 passing), cdk8s 236s/419s (14), and frontend 319s/3113s
+          (9). The current rows are lower. Samples, revisions and failures
+          differ, and several changes landed between them; this is descriptive
+          improvement, not a causal estimate for cdk8s or any individual
+          optimization. Earlier snapshots and controlled spikes remain in Git
+          history.
+        </p>
+      </section>
+      <section id="cases">
+        <h2>The critical paths explain the clock.</h2>
+        <article>
+          <h3>
+            Documentation
+            <a href="https://github.com/agentydragon/ducktape/pull/9364"
+              >#9364</a
+            >
+            · 105 seconds to required checks passing
+          </h3>
+          <p>
+            Head <code>23a12d47d490</code> ; full revision in evidence. First
+            workflow 08:11:07; wheel job starts 08:11:10 and finishes 08:12:52
+            UTC. The other gates finish at 08:11:45 (Gazelle), 08:12:05
+            (pre-commit) and 08:12:20 (Bazel).
+          </p>
+          <div class="table-scroll" tabindex="0">
+            <table class="compact">
+              <thead>
+                <tr>
+                  <th scope="col">Serial wheel path</th>
+                  <th scope="col">Seconds</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td>Workflow creation → assigned runner</td>
+                  <td>3</td>
+                </tr>
+                <tr>
+                  <td>Checkout</td>
+                  <td>8</td>
+                </tr>
+                <tr>
+                  <td>Nix/Attic + citools</td>
+                  <td>16</td>
+                </tr>
+                <tr>
+                  <td>Generated policy checks</td>
+                  <td>20</td>
+                </tr>
+                <tr>
+                  <td>Build source artifacts</td>
+                  <td>24</td>
+                </tr>
+                <tr>
+                  <td>Assemble overrides</td>
+                  <td>0 at 1s resolution</td>
+                </tr>
+                <tr>
+                  <td>Nix build + imports check</td>
+                  <td>30</td>
+                </tr>
+                <tr>
+                  <td>Other setup/cleanup and timestamp gaps</td>
+                  <td>4</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+          <p>
+            Bazel’s 57-second remote step finished 32 seconds before the wheel
+            gate. Removing all of that Bazel step could save at most zero
+            seconds on this head’s required-check finish.
+            <a
+              href="https://github.com/agentydragon/ducktape/actions/runs/37592081969/job/112695733368"
+              >Wheel job</a
+            >
+          </p>
+        </article>
+        <article>
+          <h3>
+            cdk8s
+            <a href="https://github.com/agentydragon/ducktape/pull/9362"
+              >#9362</a
+            >
+            · 151 seconds · mypy sets the finish
+          </h3>
+          <p>
+            Head <code>32e6a61dc64b</code>; tested merge
+            <code>413a1d4d19ec</code>. First workflow 08:08:41; Bazel job
+            08:09:01–08:11:12 UTC. Resolve/orchestration accounts for 17 seconds
+            before job creation and assigned-runner wait is 3 seconds. Local
+            setup is 10 seconds, the remote step 117 seconds and cleanup 4
+            seconds.
+          </p>
+          <p>
+            The remote step contains a
+            <strong>46.601s test invocation</strong> and a
+            <strong>4.006s build</strong>. The remaining 66.4s covers
+            request/setup, repository synchronization, bazel-diff selection and
+            finalization; the available timestamps do not split those intervals
+            reliably. A warm-repository marker is emitted about nine seconds
+            after the step starts. That gap is not proof of VM boot time.
+          </p>
+          <p>
+            The confirmed action critical path is 41.60s, dominated by
+            <code>mypy //cluster/cdk8s/agentplane:test_notifications</code> at
+            41.39s. Remote critical-path time is 96.52% process and 0.14% queue.
+            The test profile first enters action processing after 4.93s; Bazel
+            merges analysis with execution, so this is not total analysis time.
+            More workers cannot shorten this one type-check action without
+            changing its work.
+          </p>
+          <p>
+            <a
+              href="https://github.com/agentydragon/ducktape/actions/runs/37591818139/job/112694955775"
+              >GitHub job</a
+            >
+            ·
+            <a
+              href="https://app.buildbuddy.io/invocation/22f175cd-1c47-5438-a834-17594d7062dd"
+              >22f175cd</a
+            >
+          </p>
+        </article>
+        <article>
+          <h3>
+            Agentplane
+            <a href="https://github.com/agentydragon/ducktape/pull/9346"
+              >#9346</a
+            >
+            · 6m 12s for the linked Bazel path
+          </h3>
+          <p>
+            Fork head <code>f6c2b44c76af</code>, tested merge
+            <code>6cff363670f6</code>. Workflow 07:49:40; Bazel job
+            07:49:56–07:55:52 UTC. This is a targeted slow case outside the
+            deterministic latest-head sample; 6m12s labels the Bazel path, not a
+            reconstructed all-policy readiness time.
+          </p>
+          <p>
+            The serial path is 14s resolve/orchestration → 2s runner assignment
+            → 10s local setup → 343s remote step → 3s cleanup. It selects 555
+            affected targets, including 91 tests. Inner test/build durations are
+            289.713s/2.977s; the 50.3s remainder is unallocated remote setup,
+            selection and finalization.
+          </p>
+          <p>
+            The 226.09s action chain includes 188.06s in
+            <code>test_thread_browser</code> shard 5/8, 16.99s generating
+            OpenAPI, 6.12s TypeScript client checking and 14.44s esbuild.
+            Process execution is 98.16% and queueing 0.11% of the remote
+            critical path. Across returned execution records this invocation
+            consumes 8,144.8 process-seconds and 9,410.3 CPU-seconds. Those
+            parallel costs are much larger than elapsed time.
+          </p>
+          <p>
+            <a
+              href="https://github.com/agentydragon/ducktape/actions/runs/37589752608/job/112688223053"
+              >GitHub job</a
+            >
+            ·
+            <a
+              href="https://app.buildbuddy.io/invocation/23a5b439-3fb8-515a-b3bd-97cabe24f8cd"
+              >23a5b439</a
+            >
+          </p>
+        </article>
+        <article>
+          <h3>
+            Browser
+            <a href="https://github.com/agentydragon/ducktape/pull/9297"
+              >#9297</a
+            >
+            · same-source retry, 9m 07s Bazel feedback
+          </h3>
+          <p>
+            Historical head <code>f593614448e1</code>, tested merge
+            <code>fa879393f9ab</code>; this is distinct from the later sampled
+            head lacking checks. First workflow 08:08:18; failure 08:12:18;
+            attempt two created 08:13:42; success 08:17:25 UTC.
+          </p>
+          <div
+            class="timeline"
+            role="img"
+            aria-label="240 seconds to failure, 84 seconds until rerun creation, 223 seconds to successful rerun completion"
+          >
+            <span style="width: 43.88%"></span
+            ><span style="width: 15.36%"></span
+            ><span style="width: 40.76%"></span>
+          </div>
+          <p>
+            <strong
+              >4m00s first failure → 1m24s rerun gap → 3m43s successful
+              retry.</strong
+            >
+            The triggering account matches the original run; GitHub does not
+            establish who or what decided to retry, nor why at that time. It is
+            not labelled operator delay.
+          </p>
+          <p>
+            The failed mobile “scrolling up” case times out before its
+            deliberate gesture: row measurements grow after a layout change, the
+            handler sees a decreased scroll position, and follow mode becomes
+            false. Its 153.44s browser action dominates the first critical path;
+            retry shard 1 takes 132.94s. A passing retry does not establish
+            recovery of this product defect.
+          </p>
+          <p>
+            <a
+              href="https://github.com/agentydragon/ducktape/actions/runs/37591778199/job/112694720433"
+              >Failed attempt</a
+            >
+            ·
+            <a
+              href="https://github.com/agentydragon/ducktape/actions/runs/37591778199/job/112696667819"
+              >Successful retry</a
+            >
+            ·
+            <a
+              href="https://app.buildbuddy.io/invocation/7417aac3-684d-5deb-8536-902e46d65aa3"
+              >7417aac3</a
+            >
+            ·
+            <a
+              href="https://app.buildbuddy.io/invocation/199a9b01-a3a5-5a41-9921-984ba4360dc6"
+              >199a9b01</a
+            >
+          </p>
+        </article>
+        <details>
+          <summary>
+            Two sampled rerun tails: what the retained evidence proves
+          </summary>
+          <p>
+            <a href="https://github.com/agentydragon/ducktape/pull/9302"
+              >#9302</a
+            >
+            takes 614s to its passing gate set. Attempt one fails in
+            <code>test_bridge</code>: interrupt admission is not confirmed
+            within 15 seconds and the API returns 504. The first job ends
+            05:34:15, the rerun is created 05:35:53 (98s later), and the
+            successful job ends 05:40:26.
+            <a
+              href="https://github.com/agentydragon/ducktape/actions/runs/37418852612/job/112123466097"
+              >First attempt</a
+            >
+            ·
+            <a
+              href="https://app.buildbuddy.io/invocation/f84ce8d4-e505-5559-a872-0a9e55fbedcb"
+              >f84ce8d4</a
+            >.
+          </p>
+          <p>
+            <a href="https://github.com/agentydragon/ducktape/pull/9304"
+              >#9304</a
+            >
+            takes 692s. Its first attempt times out in
+            <code>test_visibility</code>, <code>test_argument_schema</code> and
+            <code>test_acceptance</code>. Both small-test logs stop before the
+            pytest session header; acceptance stops at <code>.FE</code>. The
+            artifact listing exposes only logs, JUnit and empty warning files,
+            with no captured stack or service history that identifies the
+            blocked operation. First job ends 06:21:47; rerun creation 06:23:42
+            (115s later); success 06:26:26.
+            <a
+              href="https://github.com/agentydragon/ducktape/actions/runs/37422686540/job/112135341566"
+              >First attempt</a
+            >
+            ·
+            <a
+              href="https://app.buildbuddy.io/invocation/a832660d-ede9-5eb0-ac79-fe2a2a5b60dd"
+              >a832660d</a
+            >.
+          </p>
+          <p>
+            Attempt metadata was read for both reruns; neither proves the reason
+            for the waiting interval. These historical failures do not justify a
+            larger timeout or blanket retry. Recovering their blocked operation
+            would require a repeat with early stack capture, including pytest
+            startup, or retained runner/service journals not present in these
+            test artifacts. No root cause or promised speedup is assigned to
+            them.
+          </p>
+        </details>
+      </section>
+      <section id="resources">
+        <h2>Compute demand is not elapsed feedback.</h2>
+        <div class="grid">
+          <article>
+            <h3>562.6 runner-minutes in 92 minutes</h3>
+            <p>
+              Completed assigned jobs occupy an average of 6.1 runners; observed
+              peak is 17. These are repository lower bounds, not account-wide
+              utilization. The two largest workflow groups include release/image
+              jobs and visual publication, which consume capacity after or
+              outside required PR gates.
+            </p>
+            <div class="table-scroll" tabindex="0">
+              <table class="compact">
+                <thead>
+                  <tr>
+                    <th scope="col">Workflow</th>
+                    <th scope="col">Runner-minutes</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr>
+                    <td>ci.yml</td>
+                    <td>176.8</td>
+                  </tr>
+                  <tr>
+                    <td>pr-visuals-publish.yml</td>
+                    <td>91.4</td>
+                  </tr>
+                  <tr>
+                    <td>trusted-fork-pr-ci.yml</td>
+                    <td>57.9</td>
+                  </tr>
+                  <tr>
+                    <td>nix-attic-push.yml</td>
+                    <td>56.1</td>
+                  </tr>
+                  <tr>
+                    <td>nix-wheel-check.yml</td>
+                    <td>53.8</td>
+                  </tr>
+                  <tr>
+                    <td>pre-commit.yml</td>
+                    <td>47.1</td>
+                  </tr>
+                  <tr>
+                    <td>gazelle-diff.yml</td>
+                    <td>22.9</td>
+                  </tr>
+                  <tr>
+                    <td>buildbuddy-remote-runner-image.yml</td>
+                    <td>20.3</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </article>
+          <article>
+            <h3>No current runner-queue bottleneck</h3>
+            <p>
+              All 40 assigned completed Bazel jobs in the window have queue
+              p50/p90 2s/3s and runtime p50/p90 129s/267s. Restricting to 27 PR
+              jobs keeps queue p50/p90 at 2s/3s, with a 3s maximum.
+            </p>
+            <p>
+              The 52-second maximum across all Bazel jobs is a devel push, where
+              workflow concurrency deliberately serializes publishing work. It
+              is not evidence of PR runner starvation. No job was queued or in
+              progress at its individual metadata read; old workflow-level
+              “active” discoveries can outlive completed jobs.
+            </p>
+            <p>
+              CodeQL default setup currently reports
+              <code>not-configured</code>. Its stale discovered record
+              contributes zero occupied runner time in this window. The earlier
+              CodeQL-contention hypothesis is unsupported here. Other owner
+              repositories and account billing entitlement were not measured.
+            </p>
+          </article>
+        </div>
+        <div class="table-scroll" tabindex="0">
+          <table>
+            <thead>
+              <tr>
+                <th scope="col">Test invocation</th>
+                <th scope="col">Wall seconds</th>
+                <th scope="col">Execution records</th>
+                <th scope="col">Process-seconds</th>
+                <th scope="col">CPU-seconds</th>
+                <th scope="col">First action offset, s</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>
+                  <a
+                    href="https://app.buildbuddy.io/invocation/199a9b01-a3a5-5a41-9921-984ba4360dc6"
+                    >199a9b01</a
+                  >
+                </td>
+                <td>139.7</td>
+                <td>1</td>
+                <td>127.9</td>
+                <td>246.6</td>
+                <td>4.65</td>
+              </tr>
+              <tr>
+                <td>
+                  <a
+                    href="https://app.buildbuddy.io/invocation/22f175cd-1c47-5438-a834-17594d7062dd"
+                    >22f175cd</a
+                  >
+                </td>
+                <td>46.6</td>
+                <td>2</td>
+                <td>78.0</td>
+                <td>82.9</td>
+                <td>4.93</td>
+              </tr>
+              <tr>
+                <td>
+                  <a
+                    href="https://app.buildbuddy.io/invocation/23a5b439-3fb8-515a-b3bd-97cabe24f8cd"
+                    >23a5b439</a
+                  >
+                </td>
+                <td>289.7</td>
+                <td>328</td>
+                <td>8144.8</td>
+                <td>9410.3</td>
+                <td>1.75</td>
+              </tr>
+              <tr>
+                <td>
+                  <a
+                    href="https://app.buildbuddy.io/invocation/7417aac3-684d-5deb-8536-902e46d65aa3"
+                    >7417aac3</a
+                  >
+                </td>
+                <td>159.3</td>
+                <td>12</td>
+                <td>1029.7</td>
+                <td>1885.0</td>
+                <td>3.85</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <p class="meta">
+          Process-seconds sum execution intervals; CPU-seconds come from worker
+          usage records and may exceed wall time with multithreading. Only
+          API-returned executed actions are counted; cached actions do not incur
+          their historical runtime. Costs overlap and must not be added to
+          GitHub runner-seconds. No Shapley attribution was collected.
+        </p>
+      </section>
+      <section id="methods">
+        <h2>Clocks, policy and evidence boundaries</h2>
+        <article>
+          <h3>Required checks are only part of auto-merge eligibility.</h3>
+          <p>
+            Live devel rules require <strong>Gazelle diff</strong>,
+            <strong>Build artifacts + imports check</strong>,
+            <strong>Pre-commit checks</strong> and
+            <strong>bazel-ci / Test &amp; Build</strong>. Review count is zero;
+            code-owner, last-push and thread-resolution requirements are off.
+            The returned rule includes extra approval for unattributed changes.
+            Strict up-to-date checking is off; linear history is required. No
+            deployment or merge-queue rule appeared.
+          </p>
+          <p>
+            Draft status, conflicts, special approval applicability, auto-merge
+            enablement and historical GitHub mergeability were not continuously
+            observed. The passing proxy is not an auto-merge-ready timestamp or
+            the eventual merge time. The sampled missing heads are #9297 (later
+            head with no check set) and #9327 (closed with incomplete required
+            contexts); missing checks remain censored.
+          </p>
+        </article>
+        <div class="table-scroll" tabindex="0">
+          <table>
+            <thead>
+              <tr>
+                <th scope="col">Milestone</th>
+                <th scope="col">Production sample / p50 / p90</th>
+                <th scope="col">What is observable</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>Push → eligible for auto-merge</td>
+                <td>n=0 / unobserved / unobserved</td>
+                <td>No exact head-push/policy history</td>
+              </tr>
+              <tr>
+                <td>Workflow creation → latest required checks passing</td>
+                <td>n=51 / 150s / 339s</td>
+                <td>GitHub reported completion times; start is a proxy</td>
+              </tr>
+              <tr>
+                <td>Check/log first queryable</td>
+                <td>n=0 / unobserved / unobserved</td>
+                <td>Retrospective successful retrieval only</td>
+              </tr>
+              <tr>
+                <td>Webhook accepted → inbox → harness receipt/read</td>
+                <td>n=0 / unobserved / unobserved</td>
+                <td>No session inbox/receipt trace collected</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <p>
+          Four “Syncing existing repo” messages appear in the GitHub log with
+          timestamps 24.6–27.6s after their embedded BuildBuddy event times
+          (nearest-rank p50 25.1s, p90 27.6s). This demonstrates buffered log
+          timestamps, <em>not</em> first API accessibility or agent delivery. It
+          cautions against using the outer line timestamps to infer VM
+          provisioning. All four cases report an existing outer repository; none
+          proves inner Bazel analysis-cache reuse.
+        </p>
+        <p>
+          The notification contract distinguishes durable webhook acceptance,
+          subscription matching, runner command admission, harness confirmation
+          and user read. Default CI filters select completed
+          <code>check_run</code> and <code>status</code> events. Source
+          timestamps cannot substitute for any delivery hop. No webhook payload
+          or inbox content was copied into this report.
+        </p>
+        <details>
+          <summary>Reproduction, sampling and experiment detail</summary>
+          <p>
+            The recent sweep ran 08:33:04–08:35:09 UTC (exact timestamps in
+            evidence): 422 newly created workflows plus older active discoveries
+            produce 441 runs and 957 job records. Percentiles exclude unfinished
+            and unassigned jobs. Occupancy clips completed assigned intervals to
+            the 92-minute window; omitted earlier completed runs and unfinished
+            jobs make it a lower bound. Generated “longest” lists also contain
+            old discovered runs and are not used as current-window rankings.
+          </p>
+          <p>
+            The cohort sweep begins 08:34:55 UTC and ends at the timestamp in
+            evidence. Queries page every selected head’s checks and all related
+            job attempts. PR metadata can advance during a sweep; exact check
+            head and immutable run SHA are used, not a later mutable PR
+            association. Rerun results are attached to the same head. Superseded
+            heads are a separate 252-run cancellation investigation, not
+            successful observations in the latest-head cohort. No matched
+            pre-cdk8s or population-wide cache-state sample was available.
+          </p>
+          <p>
+            The initial broad four-day workflow query hit GitHub’s 1,000-result
+            cap and was discarded. The published cohort uses an uncapped 327-PR
+            creation search; the independent census contains 422 runs. Selection
+            takes indices <code>round(i*(N-1)/17)</code> within each day sorted
+            by creation time. Class precedence and full selected numbers appear
+            above and in evidence.
+          </p>
+          <pre>
+bash scripts/collect.sh agentydragon/ducktape   2026-10-07T07:00:00Z 2026-10-07T08:32:00Z NEW_DIRECTORY
+bash scripts/evidence.sh NEW_DIRECTORY
+bbapi invocation INVOCATION --json
+bbapi tool-log download INVOCATION command.profile.gz -o profile.gz
+bbapi tool-log cat INVOCATION 'critical path'
+bbapi execution INVOCATION --json</pre>
+          <p>
+            Nix experiment at pinned devel evaluates
+            <code>map (x: x.drvPath)</code> over the three
+            <code>checks.x86_64-linux</code> policy attributes and the ten
+            <code>nixPackage</code> entries from
+            <code>artifact_targets.json</code>, with
+            <code>NIX_SHOW_STATS=1 nix eval --impure --json --expr …</code>.
+            Three repetitions preserve the same 13 derivation paths. Combined
+            evaluation uses 2.13–2.22 CPU seconds versus 3.13–3.48 separately.
+            It tests evaluator sharing only, with pinned artifact inputs and no
+            builds; a complete hosted workflow or PR override validation was not
+            performed.
+          </p>
+          <p>
+            The GitHub cancellation experiment is a branch-only push workflow
+            with read-only contents permission and two 45-second sleep jobs. The
+            first source is
+            <code>378cc3ab5e015331be680c7f3a0ccc94eb98d4ef</code>, replacement
+            <code>c0ea460f82724bd9e1c4eddc5fcbc0d53169601b</code>. Both new jobs
+            pass. The experiment itself changed no production policy; the later
+            production grouping change is recorded above. This experiment does
+            not validate cancellation of an already-running remote Bazel
+            invocation.
+          </p>
+        </details>
+      </section>
+      <footer class="foot">
+        <p>
+          Supporting data: <a href="evidence.json">reviewed evidence.json</a> ·
+          <a href="manifest.json">source/window manifest</a> ·
+          <a
+            href="https://github.com/agentydragon/ducktape/commits/ci-latency-history/"
+            >previous snapshots</a
+          >. This standalone HTML is intended to be downloaded and opened
+          locally; no GitHub Pages deployment is implied. All times UTC; GitHub
+          metadata has second resolution and clock skew was not independently
+          measured.
+        </p>
+      </footer>
+    </main>
+  </body>
+</html>
