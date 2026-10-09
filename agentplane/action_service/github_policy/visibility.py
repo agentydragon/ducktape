@@ -16,7 +16,7 @@ from dataclasses import dataclass
 
 import httpx
 
-from agentplane.action_service.github_policy.settings import API_BASE_URL, CACHE_TTL_SECONDS, REQUEST_TIMEOUT_SECONDS
+from agentplane.action_service.github_policy.constants import API_BASE_URL, CACHE_TTL_SECONDS, REQUEST_TIMEOUT_SECONDS
 
 
 class RepositoryVisibilityUnavailableError(RuntimeError):

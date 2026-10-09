@@ -12,7 +12,7 @@ py_library(
     name = "visibility",
     srcs = ["visibility.py"],
     deps = [
-        ":settings",
+        ":constants",
         "@pypi//httpx",
     ],
 )
@@ -44,6 +44,6 @@ py_test(
 )
 
 py_library(
-    name = "settings",
-    srcs = ["settings.py"],
+    name = "constants",
+    srcs = ["constants.py"],
 )

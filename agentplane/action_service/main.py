@@ -23,7 +23,7 @@ from agentplane.action_service.catalog import ActionCatalog
 from agentplane.action_service.connections import ConnectionAuthority
 from agentplane.action_service.db import ActionStore, make_engine, make_sessionmaker, verify_schema
 from agentplane.action_service.enrollments import EnrollmentAuthority
-from agentplane.action_service.github_policy.settings import REQUEST_TIMEOUT_SECONDS
+from agentplane.action_service.github_policy.constants import REQUEST_TIMEOUT_SECONDS
 from agentplane.action_service.github_policy.visibility import RepositoryVisibilityService
 from agentplane.action_service.mcp_linkage import McpLinkageAuthority
 from agentplane.action_service.oauth import running_oauth
