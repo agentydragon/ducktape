@@ -7,6 +7,7 @@ import pytest_bazel
 from fastmcp import FastMCP
 from fastmcp.client import Client
 from fastmcp.exceptions import ToolError
+from pydantic import AnyHttpUrl
 
 from mcp_infra.authentik_auth.config import AuthentikAuthConfig
 from mcp_infra.testing.remote_server import as_remote_server
@@ -23,7 +24,7 @@ def _settings(downstream_url: str) -> FacadeSettings:
             oidc_client_secret="secret",
             public_base_url="https://test.example.com",
         ),
-        upstream=HttpUpstream(url=downstream_url, bearer_token="server-pat"),
+        upstream=HttpUpstream(url=AnyHttpUrl(downstream_url), bearer_token="server-pat"),
         facade_name="Test Facade",
     )
 

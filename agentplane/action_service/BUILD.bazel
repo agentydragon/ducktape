@@ -38,6 +38,7 @@ py_library(
         ":mcp_linkage",
         ":models",
         ":service",
+        "//util:urls",
         "@pypi//fastmcp_slim",
         "@pypi//httpx2",
         "@pypi//jsonschema",

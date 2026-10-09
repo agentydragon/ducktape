@@ -24,7 +24,7 @@ from __future__ import annotations
 import os
 from typing import Annotated, Literal
 
-from pydantic import BaseModel, Field, model_validator
+from pydantic import AnyHttpUrl, BaseModel, Field, model_validator
 from pydantic_settings import BaseSettings, PydanticBaseSettingsSource, SettingsConfigDict, YamlConfigSettingsSource
 
 from mcp_infra.authentik_auth.config import AuthentikAuthConfig
@@ -40,7 +40,7 @@ class HttpUpstream(BaseModel):
     """Upstream MCP server reachable over Streamable HTTP."""
 
     kind: Literal["http"] = "http"
-    url: str = Field(description="URL of the upstream Streamable HTTP MCP endpoint.")
+    url: AnyHttpUrl = Field(description="URL of the upstream Streamable HTTP MCP endpoint.")
     bearer_token: str | None = Field(
         default=None, description="Optional server-held bearer token forwarded to the upstream."
     )

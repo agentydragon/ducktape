@@ -355,6 +355,7 @@ py_library(
         "//cluster/cdk8s/agentplane:__pkg__",
     ],
     deps = [
+        "//util:urls",
         "@pypi//pydantic",
         "@pypi//pydantic_settings",
         "@pypi//pyyaml",

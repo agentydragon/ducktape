@@ -41,7 +41,7 @@ async def serve(settings: Settings) -> None:
     try:
         async with (
             k8s_client.ApiClient() as kube,
-            httpx.AsyncClient(base_url=settings.actions.url, timeout=5, follow_redirects=False) as http,
+            httpx.AsyncClient(base_url=str(settings.actions.url), timeout=5, follow_redirects=False) as http,
             AsyncExitStack() as github_stack,
         ):
             principals = WorkloadPrincipalResolver(

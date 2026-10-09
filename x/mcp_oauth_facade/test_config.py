@@ -4,7 +4,7 @@ import textwrap
 
 import pytest
 import pytest_bazel
-from pydantic import ValidationError
+from pydantic import AnyHttpUrl, ValidationError
 
 from mcp_infra.authentik_auth.config import AuthentikAuthConfig
 from mcp_infra.tool_filter import ToolFilter
@@ -48,7 +48,7 @@ def test_static_bearer_client_auth_with_tool_filter(monkeypatch) -> None:
 
 def test_requires_an_auth_mode() -> None:
     with pytest.raises(ValidationError):
-        FacadeSettings(upstream=HttpUpstream(url="http://upstream.svc:8263/mcp"), facade_name="x")
+        FacadeSettings(upstream=HttpUpstream(url=AnyHttpUrl("http://upstream.svc:8263/mcp")), facade_name="x")
 
 
 def test_rejects_both_auth_modes() -> None:
@@ -56,7 +56,7 @@ def test_rejects_both_auth_modes() -> None:
         FacadeSettings(
             auth=_auth(),
             client_auth=StaticBearerClientAuth(static_bearer="t"),
-            upstream=HttpUpstream(url="http://upstream.svc:8263/mcp"),
+            upstream=HttpUpstream(url=AnyHttpUrl("http://upstream.svc:8263/mcp")),
             facade_name="x",
         )
 

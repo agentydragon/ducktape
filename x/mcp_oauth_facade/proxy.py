@@ -21,7 +21,7 @@ def build_transport(settings: FacadeSettings) -> ClientTransport:
     upstream = settings.upstream
     match upstream:
         case HttpUpstream():
-            return StreamableHttpTransport(upstream.url, auth=upstream.bearer_token)
+            return StreamableHttpTransport(str(upstream.url), auth=upstream.bearer_token)
         case StdioUpstream():
             return StdioTransport(command=upstream.command[0], args=upstream.command[1:], env=os.environ.copy())
 

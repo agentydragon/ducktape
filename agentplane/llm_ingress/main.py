@@ -35,7 +35,7 @@ async def async_main(settings: Settings) -> None:
     timeout = httpx.Timeout(connect=5, read=None, write=60, pool=5)
     async with (
         ApiClient(configuration=configuration) as api,
-        httpx.AsyncClient(base_url=settings.litellm_url, timeout=timeout) as backend,
+        httpx.AsyncClient(base_url=str(settings.litellm_url), timeout=timeout) as backend,
     ):
         resolver = WorkloadPrincipalResolver(
             authentication=AuthenticationV1Api(api),

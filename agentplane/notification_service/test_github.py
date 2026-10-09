@@ -1179,7 +1179,7 @@ github: null
 """)
     monkeypatch.setenv(CONFIG_FILE_ENV, str(config))
     settings = Settings(database_url="postgresql://unused", _cli_parse_args=False)
-    assert settings.actions.url == "http://actions"
+    assert str(settings.actions.url) == "http://actions/"
     assert settings.actions.token_file == Path("/tokens/actions")
     assert settings.sandbox_service.target == "sandboxes:8080"
     assert settings.sandbox_service.token_file == Path("/tokens/sandboxes")
@@ -1189,7 +1189,7 @@ github: null
     monkeypatch.setenv("AGENTPLANE_NOTIFICATIONS_SANDBOX_SERVICE__TARGET", "overridden-sandboxes:8080")
     monkeypatch.setenv("AGENTPLANE_NOTIFICATIONS_ACTIONS__URL", "http://overridden-actions")
     settings = Settings(database_url="postgresql://unused", _cli_parse_args=False)
-    assert settings.actions.url == "http://overridden-actions"
+    assert str(settings.actions.url) == "http://overridden-actions/"
     assert settings.sandbox_service.target == "overridden-sandboxes:8080"
     assert settings.sandbox_service.token_file == Path("/tokens/sandboxes")
     # A present mapping enables GitHub and must be complete; secrets overlay public YAML.

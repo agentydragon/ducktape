@@ -296,14 +296,14 @@ async def review(
         )
         federation = (
             DirectFederationSettings(
-                service_url="http://test-actions.invalid",
+                service_url=AnyHttpUrl("http://test-actions.invalid"),
                 login_jwks_uri=f"{idp_url}jwks/",
                 target=target,
                 scope="openid profile",
             )
             if direct_federation
             else ExchangeFederationSettings(
-                service_url="http://test-actions.invalid",
+                service_url=AnyHttpUrl("http://test-actions.invalid"),
                 token_endpoint=AnyHttpUrl(f"http://127.0.0.1:{pick_free_port()}/exchange")
                 if operator_connection == "exchange-disconnected"
                 else AnyHttpUrl(f"{idp_origin}/exchange"),

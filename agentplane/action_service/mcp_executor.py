@@ -26,7 +26,7 @@ import mcp.types
 from fastmcp.client import Client, ClientTransport
 from fastmcp.client.messages import MessageHandler
 from fastmcp.client.transports import StdioTransport, StreamableHttpTransport
-from pydantic import AnyHttpUrl, BaseModel, ConfigDict, Field, TypeAdapter, ValidationError, field_validator
+from pydantic import BaseModel, ConfigDict, Field, TypeAdapter, ValidationError, field_validator
 from tenacity import RetryCallState, Retrying, wait_random_exponential
 
 from agentplane.action_service.catalog import (
@@ -41,6 +41,7 @@ from agentplane.action_service.catalog import (
 from agentplane.action_service.mcp_linkage import McpLinkageAuthority, McpLinkageStatus
 from agentplane.action_service.models import ExecutionLease, ExecutionRequest, ExecutionResult, ExecutionState, Executor
 from agentplane.action_service.service import ExecutionOutcomeUnknownError, hold_lease, renew_lease
+from util.urls import HttpEndpointUrl
 
 logger = logging.getLogger(__name__)
 
@@ -66,18 +67,11 @@ class _McpHttpServerConfigBase(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     transport: Literal["streamable-http"]
-    url: AnyHttpUrl
+    url: HttpEndpointUrl
     # Extra request headers sent on every call to this server, alongside its auth header (e.g.
     # GitHub's hosted MCP server keys its toolset selection off `X-MCP-Toolsets`, since Actions
     # is not in its default catalog). Never `Authorization`: that header is owned by `auth`.
     headers: dict[str, str] = Field(default_factory=dict)
-
-    @field_validator("url")
-    @classmethod
-    def validate_endpoint(cls, url: AnyHttpUrl) -> AnyHttpUrl:
-        if url.username is not None or url.password is not None or url.fragment is not None or url.query is not None:
-            raise ValueError("MCP endpoint must not contain userinfo, a query, or a fragment")
-        return url
 
     @field_validator("headers")
     @classmethod

@@ -1,8 +1,23 @@
+from typing import Annotated
+
 import pytest
 import pytest_bazel
-from pydantic import AnyHttpUrl, TypeAdapter, ValidationError
+from pydantic import AfterValidator, AnyHttpUrl, TypeAdapter, ValidationError
 
-from util.urls import HttpAllowance, HttpsOrLocalhostHttpUrl, HttpsUrl, parse_https_url
+from util.urls import (
+    HttpAllowance,
+    HttpEndpointUrl,
+    HttpsEndpointUrl,
+    HttpsOrLoopbackHttpEndpointUrl,
+    no_credentials,
+    no_fragment,
+    no_query,
+    parse_https_url,
+)
+
+_HTTP_ENDPOINT: TypeAdapter[AnyHttpUrl] = TypeAdapter(HttpEndpointUrl)
+_HTTPS_ENDPOINT: TypeAdapter[AnyHttpUrl] = TypeAdapter(HttpsEndpointUrl)
+_HTTPS_OR_LOOPBACK_HTTP_ENDPOINT: TypeAdapter[AnyHttpUrl] = TypeAdapter(HttpsOrLoopbackHttpEndpointUrl)
 
 
 @pytest.mark.parametrize("http_allowance", list(HttpAllowance))
@@ -13,14 +28,9 @@ def test_https_is_accepted_under_every_http_allowance(http_allowance: HttpAllowa
 @pytest.mark.parametrize(
     ("http_allowance", "value", "accepted"),
     [
-        pytest.param(HttpAllowance.NONE, "http://localhost/path", False, id="https-only"),
+        pytest.param(HttpAllowance.NONE, "http://localhost/path", False, id="https-only-localhost"),
         pytest.param(HttpAllowance.NONE, "http://127.0.0.1/path", False, id="https-only-ipv4-loopback"),
         pytest.param(HttpAllowance.NONE, "http://remote.example.test/path", False, id="https-only-remote"),
-        pytest.param(HttpAllowance.LOCALHOST, "http://localhost/path", True, id="app-localhost"),
-        pytest.param(HttpAllowance.LOCALHOST, "http://127.0.0.1/path", True, id="app-ipv4-loopback"),
-        pytest.param(HttpAllowance.LOCALHOST, "http://service.localhost/path", False, id="app-subdomain-localhost"),
-        pytest.param(HttpAllowance.LOCALHOST, "http://[::1]/path", False, id="app-ipv6-loopback"),
-        pytest.param(HttpAllowance.LOCALHOST, "http://remote.example.test/path", False, id="app-remote"),
         pytest.param(HttpAllowance.LOOPBACK, "http://localhost/path", True, id="oidc-localhost"),
         pytest.param(HttpAllowance.LOOPBACK, "http://127.0.0.1/path", True, id="oidc-ipv4-loopback"),
         pytest.param(HttpAllowance.LOOPBACK, "http://service.localhost/path", True, id="oidc-subdomain-localhost"),
@@ -28,11 +38,11 @@ def test_https_is_accepted_under_every_http_allowance(http_allowance: HttpAllowa
         pytest.param(HttpAllowance.LOOPBACK, "http://remote.example.test/path", False, id="oidc-remote"),
     ],
 )
-def test_http_allowance_preserves_service_scope(http_allowance: HttpAllowance, value: str, accepted: bool) -> None:
+def test_oidc_http_allowance_is_loopback_scoped(http_allowance: HttpAllowance, value: str, accepted: bool) -> None:
     if accepted:
         assert parse_https_url(value, http_allowance=http_allowance).scheme == "http"
     else:
-        with pytest.raises(ValueError, match="URL must use HTTPS or explicitly allowed HTTP"):
+        with pytest.raises(ValueError, match="HTTPS|loopback"):
             parse_https_url(value, http_allowance=http_allowance)
 
 
@@ -45,14 +55,14 @@ def test_http_allowance_preserves_service_scope(http_allowance: HttpAllowance, v
         "https://example.test/path#fragment",
     ],
 )
-def test_credentials_query_and_fragment_are_rejected_by_default(http_allowance: HttpAllowance, value: str) -> None:
-    with pytest.raises(ValueError, match="URL must use HTTPS or explicitly allowed HTTP"):
+def test_oidc_parser_rejects_sensitive_components_by_default(http_allowance: HttpAllowance, value: str) -> None:
+    with pytest.raises(ValueError):
         parse_https_url(value, http_allowance=http_allowance)
 
 
 @pytest.mark.parametrize("value", ["https://example.test:invalid/path", "https://example.test:65536/path"])
 def test_invalid_ports_are_rejected(value: str) -> None:
-    with pytest.raises(ValueError, match="invalid port number"):
+    with pytest.raises(ValidationError, match="invalid port number"):
         parse_https_url(value)
 
 
@@ -66,45 +76,93 @@ def test_parser_returns_pydantic_normalized_url() -> None:
     assert str(parse_https_url("https://EXAMPLE.test:443")) == "https://example.test/"
 
 
-def test_query_can_be_allowed_without_allowing_fragments() -> None:
+def test_oidc_parser_can_allow_query_without_allowing_fragments() -> None:
     assert parse_https_url("https://example.test/jwks?tenant=one", allow_query=True).query == "tenant=one"
     assert (
-        parse_https_url(
-            "http://127.0.0.1/jwks?tenant=one", http_allowance=HttpAllowance.LOOPBACK, allow_query=True
-        ).query
+        parse_https_url("http://127.0.0.1/jwks?tenant=one", http_allowance=HttpAllowance.LOOPBACK, allow_query=True).query
         == "tenant=one"
     )
-    with pytest.raises(ValueError, match="URL must use HTTPS or explicitly allowed HTTP"):
+    with pytest.raises(ValueError):
         parse_https_url("https://example.test/jwks?tenant=one#fragment", allow_query=True)
 
 
-def test_https_alias_returns_parsed_url() -> None:
-    value = "https://Example.test:443/a%2fb"
-    parsed = TypeAdapter(HttpsUrl).validate_python(value)
-    assert isinstance(parsed, AnyHttpUrl)
-    assert str(parsed) == "https://example.test/a%2fb"
-    with pytest.raises(ValidationError):
-        TypeAdapter(HttpsUrl).validate_python("http://localhost/path")
-
-
-@pytest.mark.parametrize("value", ["http://localhost/path", "http://127.0.0.1/path"])
-def test_localhost_http_alias_returns_parsed_url(value: str) -> None:
-    assert str(TypeAdapter(HttpsOrLocalhostHttpUrl).validate_python(value)) == value
+@pytest.mark.parametrize(
+    ("adapter", "value"),
+    [
+        pytest.param(_HTTP_ENDPOINT, "http://example.test/path", id="http-endpoint"),
+        pytest.param(_HTTP_ENDPOINT, "https://example.test/path", id="https-endpoint"),
+        pytest.param(_HTTPS_ENDPOINT, "https://example.test/path", id="https-only-endpoint"),
+        pytest.param(_HTTPS_OR_LOOPBACK_HTTP_ENDPOINT, "https://example.test/path", id="https-or-loopback-endpoint"),
+        pytest.param(_HTTPS_OR_LOOPBACK_HTTP_ENDPOINT, "http://localhost/path", id="localhost-http-endpoint"),
+        pytest.param(_HTTPS_OR_LOOPBACK_HTTP_ENDPOINT, "http://service.localhost/path", id="subdomain-localhost"),
+        pytest.param(_HTTPS_OR_LOOPBACK_HTTP_ENDPOINT, "http://127.0.0.2/path", id="ipv4-loopback"),
+        pytest.param(_HTTPS_OR_LOOPBACK_HTTP_ENDPOINT, "http://[::1]/path", id="ipv6-loopback"),
+    ],
+)
+def test_endpoint_types_accept_their_url_schemes_and_scopes(adapter: TypeAdapter[AnyHttpUrl], value: str) -> None:
+    assert str(adapter.validate_python(value)) == value
 
 
 @pytest.mark.parametrize(
-    "value", ["http://remote.example.test/path", "http://service.localhost/path", "http://[::1]/path"]
+    ("adapter", "value"),
+    [
+        pytest.param(_HTTP_ENDPOINT, "https://user:secret@example.test/path", id="http-credentials"),
+        pytest.param(_HTTP_ENDPOINT, "https://example.test/path?token=secret", id="http-query"),
+        pytest.param(_HTTP_ENDPOINT, "https://example.test/path?", id="http-empty-query"),
+        pytest.param(_HTTP_ENDPOINT, "https://example.test/path#fragment", id="http-fragment"),
+        pytest.param(_HTTP_ENDPOINT, "https://example.test/path#", id="http-empty-fragment"),
+        pytest.param(_HTTPS_ENDPOINT, "http://localhost/path", id="https-only-scheme"),
+        pytest.param(_HTTPS_ENDPOINT, "https://user:secret@example.test/path", id="https-credentials"),
+        pytest.param(_HTTPS_ENDPOINT, "https://example.test/path?token=secret", id="https-query"),
+        pytest.param(_HTTPS_ENDPOINT, "https://example.test/path?", id="https-empty-query"),
+        pytest.param(_HTTPS_ENDPOINT, "https://example.test/path#fragment", id="https-fragment"),
+        pytest.param(_HTTPS_ENDPOINT, "https://example.test/path#", id="https-empty-fragment"),
+        pytest.param(_HTTPS_OR_LOOPBACK_HTTP_ENDPOINT, "http://remote.example.test/path", id="remote-http"),
+        pytest.param(
+            _HTTPS_OR_LOOPBACK_HTTP_ENDPOINT, "http://user:secret@localhost/path", id="loopback-credentials"
+        ),
+        pytest.param(_HTTPS_OR_LOOPBACK_HTTP_ENDPOINT, "http://localhost/path?token=secret", id="loopback-query"),
+        pytest.param(_HTTPS_OR_LOOPBACK_HTTP_ENDPOINT, "http://localhost/path?", id="loopback-empty-query"),
+        pytest.param(_HTTPS_OR_LOOPBACK_HTTP_ENDPOINT, "http://localhost/path#fragment", id="loopback-fragment"),
+        pytest.param(_HTTPS_OR_LOOPBACK_HTTP_ENDPOINT, "http://localhost/path#", id="loopback-empty-fragment"),
+    ],
 )
-def test_localhost_http_alias_rejects_other_http_hosts(value: str) -> None:
+def test_endpoint_types_reject_disallowed_scheme_or_components(adapter: TypeAdapter[AnyHttpUrl], value: str) -> None:
     with pytest.raises(ValidationError):
-        TypeAdapter(HttpsOrLocalhostHttpUrl).validate_python(value)
+        adapter.validate_python(value)
 
 
-def test_endpoint_alias_preserves_empty_path_and_serializes() -> None:
-    adapter = TypeAdapter(HttpsOrLocalhostHttpUrl)
-    url = adapter.validate_python("https://EXAMPLE.test:443")
-    assert str(url) == "https://example.test"
-    assert adapter.dump_python(url, mode="json") == "https://example.test"
+@pytest.mark.parametrize(
+    "value",
+    ["/relative/path", "https://", "https://example.test:invalid/path", "https://example.test:65536/path"],
+)
+def test_endpoint_types_reject_invalid_http_urls(value: str) -> None:
+    for adapter in (_HTTP_ENDPOINT, _HTTPS_ENDPOINT, _HTTPS_OR_LOOPBACK_HTTP_ENDPOINT):
+        with pytest.raises(ValidationError):
+            adapter.validate_python(value)
+
+
+def test_endpoint_types_use_pydantic_url_normalization() -> None:
+    url = _HTTP_ENDPOINT.validate_python("http://EXAMPLE.test:80")
+    assert isinstance(url, AnyHttpUrl)
+    assert str(url) == "http://example.test/"
+    assert _HTTP_ENDPOINT.dump_python(url, mode="json") == "http://example.test/"
+
+
+def test_public_url_validators_compose_with_annotated_types() -> None:
+    without_query = Annotated[AnyHttpUrl, AfterValidator(no_query)]
+    without_fragment = Annotated[AnyHttpUrl, AfterValidator(no_fragment)]
+    without_credentials = Annotated[AnyHttpUrl, AfterValidator(no_credentials)]
+
+    assert TypeAdapter(without_query).validate_python("https://example.test/path#fragment")
+    assert TypeAdapter(without_fragment).validate_python("https://example.test/path?query=one")
+    assert TypeAdapter(without_credentials).validate_python("https://example.test/path")
+    with pytest.raises(ValidationError):
+        TypeAdapter(without_query).validate_python("https://example.test/path?query=one")
+    with pytest.raises(ValidationError):
+        TypeAdapter(without_fragment).validate_python("https://example.test/path#fragment")
+    with pytest.raises(ValidationError):
+        TypeAdapter(without_credentials).validate_python("https://user:secret@example.test/path")
 
 
 if __name__ == "__main__":

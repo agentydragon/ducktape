@@ -15,7 +15,7 @@ from pydantic import (
 )
 
 from agentplane.action_service.catalog import Key
-from util.urls import HttpsUrl
+from util.urls import HttpsEndpointUrl
 
 
 class McpOAuthServer(BaseModel):
@@ -46,7 +46,7 @@ class McpClientMetadataSettings(BaseModel):
 
     model_config = ConfigDict(extra="forbid", frozen=True)
 
-    url: HttpsUrl
+    url: HttpsEndpointUrl
     client_name: str = Field(min_length=1)
 
     @field_validator("url", mode="wrap")

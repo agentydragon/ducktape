@@ -33,7 +33,7 @@ sandbox_service:
     monkeypatch.setenv("AGENTPLANE_NOTIFICATIONS_DATABASE_URL", "postgresql://unused")
     settings = Settings(_cli_parse_args=False)
     assert settings.notice_debounce == NoticeDebounceSettings(quiet_seconds=3, max_wait_seconds=15)
-    assert settings.actions.url == "http://actions"
+    assert str(settings.actions.url) == "http://actions/"
     assert settings.actions.token_file == Path("/tokens/actions")
     assert settings.sandbox_service.target == "sandboxes:8080"
     assert settings.sandbox_service.token_file == Path("/tokens/sandboxes")
@@ -49,7 +49,7 @@ sandbox_service:
     monkeypatch.setenv("AGENTPLANE_NOTIFICATIONS_SANDBOX_SERVICE__REQUEST_TIMEOUT_S", "7")
     settings = Settings(_cli_parse_args=False)
     assert settings.notice_debounce == NoticeDebounceSettings(quiet_seconds=0, max_wait_seconds=15)
-    assert settings.actions.url == "http://overridden-actions"
+    assert str(settings.actions.url) == "http://overridden-actions/"
     assert settings.sandbox_service.target == "overridden-sandboxes:8080"
     assert settings.sandbox_service.command_admission_timeout_s == 22
     assert settings.sandbox_service.request_timeout_s == 7

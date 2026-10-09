@@ -6,6 +6,8 @@ from pathlib import Path
 from pydantic import Field, SecretStr
 from pydantic_settings import BaseSettings, PydanticBaseSettingsSource, SettingsConfigDict, YamlConfigSettingsSource
 
+from util.urls import HttpEndpointUrl
+
 # YamlConfigSettingsSource loads yaml lazily inside pydantic-settings; gazelle cannot see the dependency.
 # gazelle:include_dep @pypi//pyyaml
 
@@ -32,7 +34,7 @@ class Settings(BaseSettings):
             "reasoning, generated text, and tool arguments."
         ),
     )
-    litellm_url: str = Field(description="Internal LiteLLM base URL.")
+    litellm_url: HttpEndpointUrl = Field(description="Internal LiteLLM base URL.")
     litellm_key: SecretStr = Field(description="The one server-held LiteLLM virtual key.")
     host: str = Field(default="0.0.0.0", description="Listener bind address.")
     port: int = Field(default=8080, description="Listener port.")

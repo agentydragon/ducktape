@@ -11,7 +11,7 @@ from urllib.parse import parse_qs
 import httpx
 import pytest
 import pytest_bazel
-from pydantic import SecretStr
+from pydantic import AnyHttpUrl, SecretStr
 from sqlalchemy import select, text
 from starlette.applications import Starlette
 from starlette.requests import Request
@@ -87,7 +87,7 @@ async def test_direct_dex_token_requires_both_explicit_profiles(
         public_base_url="http://test-app.invalid",
     )
     config = DirectFederationSettings(
-        service_url="http://test-actions.invalid",
+        service_url=AnyHttpUrl("http://test-actions.invalid"),
         login_jwks_uri=f"{dex_session.issuer}/keys",
         login_token_profile=login_profile,
         target=OperatorOidcSettings(
@@ -137,7 +137,7 @@ async def login_provider() -> AsyncIterator[LoginProvider]:
         public_base_url="http://test-app.invalid",
     )
     config = DirectFederationSettings(
-        service_url="http://test-actions.invalid",
+        service_url=AnyHttpUrl("http://test-actions.invalid"),
         login_jwks_uri=f"{issuer}jwks/",
         target=OperatorOidcSettings(issuer=issuer, audience=CLIENT, jwks_uri=f"{issuer}jwks/"),
         scope="openid",

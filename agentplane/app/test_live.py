@@ -13,7 +13,7 @@ import pytest
 import pytest_bazel
 from fastapi import FastAPI, Request
 from fastapi.testclient import TestClient
-from pydantic import SecretStr
+from pydantic import AnyHttpUrl, SecretStr
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import create_async_engine
 
@@ -224,7 +224,7 @@ async def test_a_policy_the_service_cannot_be_asked_for_is_said_so_in_the_frame(
     app.state.operator_actions = (
         FederatedOperatorActions(
             DirectFederationSettings(
-                service_url="http://test-actions.invalid",
+                service_url=AnyHttpUrl("http://test-actions.invalid"),
                 login_jwks_uri=f"http://127.0.0.1:{pick_free_port()}/jwks",
                 target=OperatorOidcSettings(
                     issuer="https://login.test.invalid/application/o/actions/",

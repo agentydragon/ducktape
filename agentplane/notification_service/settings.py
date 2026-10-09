@@ -4,8 +4,10 @@ import os
 from datetime import date
 from pathlib import Path
 
-from pydantic import AnyHttpUrl, BaseModel, ConfigDict, Field, SecretStr, field_validator
+from pydantic import AnyHttpUrl, BaseModel, ConfigDict, Field, SecretStr
 from pydantic_settings import BaseSettings, PydanticBaseSettingsSource, SettingsConfigDict, YamlConfigSettingsSource
+
+from util.urls import HttpEndpointUrl
 
 # gazelle:include_dep @pypi//pyyaml
 
@@ -15,7 +17,7 @@ TOKEN_AUDIENCE = "agentplane-notifications"
 
 class ActionsSettings(BaseModel):
     model_config = ConfigDict(extra="forbid", hide_input_in_errors=True)
-    url: str = Field(description="Base URL of the Actions Service's canonical request/event read API.")
+    url: HttpEndpointUrl = Field(description="Base URL of the Actions Service's canonical request/event read API.")
     token_file: Path = Field(
         description="Path to the projected ServiceAccount token for Actions; reread for each request to follow rotation."
     )
@@ -23,7 +25,7 @@ class ActionsSettings(BaseModel):
 
 class GitHubSettings(BaseModel):
     model_config = ConfigDict(extra="forbid", hide_input_in_errors=True)
-    api_url: AnyHttpUrl = Field(
+    api_url: HttpEndpointUrl = Field(
         default=AnyHttpUrl("https://api.github.com"),
         description="Trusted GitHub REST API base URL; receives App JWTs and installation tokens. Supports a path prefix.",
     )
@@ -52,19 +54,6 @@ class GitHubSettings(BaseModel):
         le=64,
         description="Maximum concurrent webhook requests per replica, held through durable commit; saturation returns 503.",
     )
-
-    @field_validator("api_url")
-    @classmethod
-    def api_url_without_credentials_or_query(cls, value: AnyHttpUrl) -> AnyHttpUrl:
-        if (
-            value.username is not None
-            or value.password is not None
-            or value.query is not None
-            or value.fragment is not None
-        ):
-            raise ValueError("GitHub API URL must not contain credentials, query or fragment")
-        return value
-
 
 class SandboxServiceSettings(BaseModel):
     model_config = ConfigDict(extra="forbid", hide_input_in_errors=True)

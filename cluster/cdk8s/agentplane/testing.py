@@ -23,6 +23,7 @@ from cdk8s_plus_34 import (
     k8s,
 )
 from constructs import Construct
+from pydantic import AnyHttpUrl
 from flux_kustomize.io.fluxcd.toolkit.kustomize import (
     KustomizationSpecDeletionPolicy,
     KustomizationSpecHealthCheckExprs,
@@ -82,7 +83,7 @@ _FEDERATION_TARGET = OperatorOidcSettings(
 )
 _ACTION_FEDERATION = DirectFederationSettings(
     mode="direct",
-    service_url=actions.service(TESTING_NAMESPACE).url,
+    service_url=AnyHttpUrl(actions.service(TESTING_NAMESPACE).url),
     login_jwks_uri=f"{_DEX_ISSUER}/keys",
     login_token_profile=OperatorTokenProfile.DEX,
     target=_FEDERATION_TARGET,

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import pytest_bazel
+from pydantic import AnyHttpUrl
 from starlette.applications import Starlette
 from starlette.requests import Request
 from starlette.responses import PlainTextResponse
@@ -47,7 +48,7 @@ def test_correct_token_allowed() -> None:
 def test_mcp_message_logging_middleware_is_optional() -> None:
     settings = FacadeSettings(
         client_auth=StaticBearerClientAuth(static_bearer="sekret"),
-        upstream=HttpUpstream(url="http://upstream.svc:8263/mcp"),
+        upstream=HttpUpstream(url=AnyHttpUrl("http://upstream.svc:8263/mcp")),
         facade_name="Test Facade",
     )
     server, _client_storage = build_server(settings)
@@ -57,7 +58,7 @@ def test_mcp_message_logging_middleware_is_optional() -> None:
 def test_mcp_message_logging_middleware_can_be_enabled() -> None:
     settings = FacadeSettings(
         client_auth=StaticBearerClientAuth(static_bearer="sekret"),
-        upstream=HttpUpstream(url="http://upstream.svc:8263/mcp"),
+        upstream=HttpUpstream(url=AnyHttpUrl("http://upstream.svc:8263/mcp")),
         facade_name="Test Facade",
         logging=FacadeLoggingConfig(
             mcp_messages=True,
