@@ -55,7 +55,7 @@ pub(super) fn hole_class(class: &Class, kept: &BTreeSet<AnchorSpan>) -> Class {
 /// inside a member body) map to their token spans so only the member runs
 /// carrying them survive between `ANYTHING` class-member run holes. A class the
 /// read-off cannot single out through its own value features yields no candidate
-/// and is reported as debt (never a full-AST pin).
+/// here; the caller then tries exact-declaration relaxation.
 pub(crate) fn minimize_class_selector_candidates(
     index: &ChunkSelectorIndex<'_>,
     class: &Class,

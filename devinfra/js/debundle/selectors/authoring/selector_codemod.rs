@@ -31,7 +31,7 @@ use swc_ecma_visit::{VisitMut, VisitMutWith};
 
 // Hole keyword spellings come from `source_match_holes` so the minimizer
 // emits exactly the tokens the matcher resolves.
-use source_match_holes::DECLARATORS_HOLE_KEYWORD;
+use source_match_holes::{DECLARATORS_HOLE_KEYWORD, STMT_LIST_HOLE_KEYWORD};
 
 // The selector minimizer is split by form: the AST-holing engine (`render`),
 // the regex-over-string-literal anchors (`regex_anchor`), and the per-form
@@ -46,8 +46,9 @@ pub mod match_selector;
 pub mod source_input;
 
 use crate::minimize::{
-    minimize_class_selector_candidates, minimize_function_selector_candidates,
-    minimize_var_group_selector, minimize_var_group_selector_candidates,
+    collapse_statement_hole_runs, minimize_class_selector_candidates,
+    minimize_function_selector_candidates, minimize_var_group_selector,
+    minimize_var_group_selector_candidates, relax_exact_declaration,
 };
 
 #[derive(Debug, Clone)]
@@ -914,9 +915,8 @@ impl IndexedDeclaration {
 
 /// Outcome of trying to synthesize a selector for one declaration group.
 ///
-/// `Skipped` is returned when minimization produces no proving sparse selector:
-/// rather than pin the rebuild-fragile exact AST, the caller skips the members
-/// with this reason.
+/// `Skipped` is returned when neither sparse read-off nor exact-declaration
+/// relaxation produces a proving selector.
 enum GroupSelectorOutcome {
     Synthesized(SynthesizedSelectorGroup),
     Skipped(String),
@@ -944,15 +944,25 @@ fn synthesize_simplest_selector_for_group(
             runtime_binding: member.binding_name.clone(),
         })
         .collect::<Vec<_>>();
-    let Some(specialized) = synthesize_specialized_selector(index, item, decl, &targets)? else {
+    let specialized = match synthesize_specialized_selector(index, item, decl, &targets)? {
+        Some(selector) => Some(selector),
+        None => relax_exact_declaration(index, item, decl, &targets)?,
+    };
+    let Some(specialized) = specialized else {
         return Ok(GroupSelectorOutcome::Skipped(
-            "minimization found no sparse selector; skipping full-AST pin".to_string(),
+            "minimization found no proving own-declaration selector".to_string(),
         ));
     };
-    let match_source = trim_selector_source_line_suffixes(&specialized.match_source);
+    let mut match_source = trim_selector_source_line_suffixes(&specialized.match_source);
+    if specialized.rewritten_holes.contains(STMT_LIST_HOLE_KEYWORD) {
+        let collapsed = collapse_statement_hole_runs(&match_source)?;
+        if prove_synthesized_selector(index, decl, &targets, &collapsed).is_ok() {
+            match_source = collapsed;
+        }
+    }
     if prove_synthesized_selector(index, decl, &targets, &match_source).is_err() {
         return Ok(GroupSelectorOutcome::Skipped(
-            "minimization found no sparse selector; skipping full-AST pin".to_string(),
+            "minimization found no proving own-declaration selector".to_string(),
         ));
     };
     let rewritten_holes = specialized.rewritten_holes;
@@ -1293,8 +1303,8 @@ fn synthesize_specialized_selector(
 ) -> Result<Option<SpecializedSelector>> {
     match decl.kind {
         // Function and class single-pick is the candidates read-off at limit 1
-        // (`read_off_candidates` stops at the first proving selector). On an
-        // empty result the caller skips instead of emitting a full-AST pin.
+        // (`read_off_candidates` stops at the first proving selector). The
+        // caller tries exact-declaration relaxation on an empty result.
         IndexedDeclarationKind::Function | IndexedDeclarationKind::Class => Ok(
             synthesize_specialized_selector_candidates(index, item, decl, targets, 1)?
                 .into_iter()
@@ -1358,8 +1368,8 @@ fn synthesize_specialized_var_selector(
 ) -> Result<Option<SpecializedSelector>> {
     let var = item_var_decl(item).context("indexed var declaration no longer has var AST")?;
     // Single-target and multi-target vars both route through the AST-prune group
-    // path (the single case is the N=1 group). On `None`, the caller skips
-    // instead of emitting a full-AST pin.
+    // path (the single case is the N=1 group). On `None`, the caller tries
+    // exact-declaration relaxation.
     minimize_var_group_selector(index, var, decl, targets)
 }
 

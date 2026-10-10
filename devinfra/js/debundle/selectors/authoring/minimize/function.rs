@@ -36,8 +36,8 @@ fn function_render_with<'a>(
 /// param), so a structural / skeleton anchor needs no kept span; value anchors
 /// (string/number/bool literals, member/method names, member-path callees) map
 /// to the spans of the tokens that exhibit them. The matcher proves the result
-/// (gate 1); a target the read-off cannot single out yields no candidate and is
-/// reported as debt (never a full-AST pin).
+/// (gate 1); when this read-off cannot single out a target, the caller tries
+/// exact-declaration relaxation before reporting debt.
 pub(crate) fn minimize_function_selector_candidates(
     index: &ChunkSelectorIndex<'_>,
     function: &Function,

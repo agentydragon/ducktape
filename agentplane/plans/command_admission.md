@@ -58,7 +58,7 @@ unavailability before mapping runner errors to the internal draft's terminal ref
 ## Transport-independent core and outbound integration
 
 The coordinator depends on a submit-command operation returning a durable receipt or explicit
-refusal, not on `Attach`, replay cursors or WebSocket framing. The public Sandbox Service envelope
+refusal, not on `Attach`, replay cursors or channel framing. The public Sandbox Service envelope
 is a protobuf/gRPC request containing destination and the runner Command, with a comment reserving
 future service-only metadata design space; do not add a parallel Pydantic wrapper or metadata fields
 now. The full command is a protobuf message with a oneof, not an operation enum. Preserve its wire
@@ -68,9 +68,9 @@ mutable protobufs before awaiting; unsupported operations still cannot be dispat
 The runner keeps its journal and reusable admission/receipt lookup separate from transport handlers.
 The first adapter reuses today's `Attach`-based relay, including its internal receipt/replay handling;
 the public durable submission contract does not expose a replay cursor. This lets admission ship
-without inversion. The later runner-initiated WS first replaces command delivery; independent spool
-Events move afterward. One connection per runner incarnation multiplexes Sessions using protobuf
-binary frames. Postgres notifications are routing/wakeup signals over durable state, not delivery.
+without inversion. The later runner-initiated [channel](../docs/runner_channel.md) first replaces command delivery;
+independent spool Events move afterward. One gRPC connection per runner process multiplexes
+Sessions. Postgres notifications are routing/wakeup signals over durable state, not delivery.
 Do not first migrate Sandbox Service to new inbound `InsertCommand`/`ListenSpool` RPCs: their logical
 operations belong in the outbound protocol. Submission needs no replay cursor; lifecycle controls
 must be mapped explicitly rather than accidentally lost when retiring `Attach`.
@@ -101,7 +101,7 @@ See [outbound-channel design and rollout](runner_discovery.md#outbound-control-c
 
 Cross-replica dispatch uses `NOTIFY` only to wake readers of durable state. Retained pending status
 alone does not authorize future delivery: routing must refer to a bounded active submission/retry
-attempt, with its precise deadline/ownership semantics reviewed before WS implementation. Reconnect
+attempt, with its precise deadline/ownership semantics reviewed before channel implementation. Reconnect
 or a missed notification must not turn into an offline pending-command drain. Expiry/cancellation
 cannot retract a command already sent; persist and reconcile late admission receipts.
 

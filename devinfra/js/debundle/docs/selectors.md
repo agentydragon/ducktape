@@ -274,10 +274,18 @@ debundle spec synthesize-selectors \
 
 Dry-run is the default. Add `--apply` only after inspecting the JSON summary.
 The command builds a per-chunk declaration/binding index, groups requested
-exports that come from the same top-level declaration, renders the lowest-cost
-selector for that group — holes and stable anchors over incidental detail
-wherever uniqueness holds — and proves uniqueness with normal `source_match`
-resolution. The report includes the matched top-level statement index,
+exports that come from the same top-level declaration, and tries indexed
+structural anchors first. If those miss, it starts from that declaration's
+exact AST and relaxes one supported hole at a time while the normal
+`source_match` resolver still proves the target. Relaxation visits each eligible
+site once and has a fixed trial budget, so large declarations can retain exact
+syntax. This finds an own-declaration selector when its discriminator is absent
+from the feature index; the resulting selector may retain incidental syntax. For the
+matcher-supported own-declaration hole family, an exact target declaration is
+the most specific witness: if a holed variant uniquely matches, the exact form
+does too, so the fallback can always return a proven selector. This guarantee
+does not cover use-site or relational selectors. The report
+includes the matched top-level statement index,
 candidate count, group id, rewritten holes, files scanned, members scanned, and
 a structured skip reason for any item it cannot prove. Automated forms:
 

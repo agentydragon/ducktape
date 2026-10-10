@@ -415,13 +415,13 @@ does not grant history read, messaging, credentials or execution of another prin
 
 The [KubeVirt plan](kubevirt_environments.md) contains completed prototype evidence and the detailed
 provider design. Split implementation rather than making “VM support” one indivisible task. This is
-an unranked candidate lane, not authorization for local Bazel in current containers. Co-design
-runner dial-out with VM control networking before committing to guest inbound routing. Changing
-connection direction need not move command durability or remove the runner journal.
+an unranked candidate lane, not authorization for local Bazel in current containers. The
+[runner channel](../docs/runner_channel.md) settles the dial-out contract VM control networking
+builds on; changing connection direction does not move command durability or remove the runner
+journal.
 
 ```mermaid
 flowchart LR
-    RUNNER_TRANSPORT_DESIGN[Decision: outbound channel contract]
     RUNNER_OUTBOUND_CHANNEL[Blocked: outbound command delivery peers]
     RUNNER_OUTBOUND_CANARY[Blocked: service-first deployment and fresh runner canary]
     SESSION_COMMAND_SUBMISSION[Blocked: durable submission through existing relay]
@@ -434,9 +434,8 @@ flowchart LR
     VM_EGRESS[Candidate: production admission and egress integration]
     VM_PROCESS_ISOLATION[Blocked: harness/process resource boundary]
     VM_LIFECYCLE[Blocked: integrated lifecycle]
-    RUNNER_TRANSPORT_DESIGN --> RUNNER_OUTBOUND_CHANNEL
     SESSION_COMMAND_CONTRACT[Decision: generic command admission contract] --> RUNNER_OUTBOUND_CHANNEL
-    RUNNER_TRANSPORT_DESIGN --> VM_CONTROL_NETWORKING
+    SESSION_COMMAND_CORE[Draft: admission foundation] --> RUNNER_OUTBOUND_CHANNEL
     RUNNER_OUTBOUND_CHANNEL --> VM_CONTROL_NETWORKING
     RUNNER_OUTBOUND_LIFECYCLE --> VM_CONTROL_NETWORKING
     RUNNER_OUTBOUND_SPOOL --> VM_CONTROL_NETWORKING
@@ -463,31 +462,14 @@ flowchart LR
     SANDBOX_VM_ISOLATION --> LOCAL_BAZEL[Blocked: bounded local Bazel client in VM]
 ```
 
-### `RUNNER_TRANSPORT_DESIGN` — runner dial-out and connection lifecycle
-
-**Decision.** The operator selected
-one runner-initiated connection per runner incarnation, multiplexing Sessions, using protobuf over
-binary WebSocket frames. On disconnect the runner reconnects to an available service replica.
-Postgres `LISTEN`/`NOTIFY` is a wakeup/routing signal only, not durable delivery or an admission
-receipt. RemoteIO inspires connection direction, not the wire protocol or authority model.
-
-Review the minimum command/receipt framing, incarnation authentication/bootstrap, ownership/epoch
-fencing and active dispatch-attempt lifetime. Resolve these before channel implementation, but do
-not require the complete spool or lifecycle protocol to ship durable admission over the old relay.
-Spool replay/backpressure review belongs to `RUNNER_OUTBOUND_SPOOL`; inventory remaining lifecycle
-consumers early and finish their mappings separately. Keep runner journal authority and offline
-queue policy unchanged. Channel authentication is the runner authentication the
-[runner-auth TODO](runner_discovery.md#todo-proper-runner-authentication-and-transport-security)
-asks for; choose it here rather than for the inbound RPC that is being retired. Details:
-[runner transport design](runner_discovery.md#outbound-control-channel-design).
 
 ### `RUNNER_OUTBOUND_CHANNEL` — implement outbound command delivery
 
-**Blocked on command-channel and admission contract review; draft code/isolated tests permitted,
-with merge/deployment gated on those contract reviews.** Implement both WS peers, command/receipt
-correlation, authenticated incarnation binding, ownership/fencing and reconnect. Use durable command
-and outcome records with Postgres notifications to wake the connection owner and waiting caller.
-Define active dispatch attempts before routing; reconnect must not scan pending commands for delivery.
+**Blocked on the admission contract review and admission core; draft code/isolated tests permitted,
+with merge/deployment gated on them.** Implement both gRPC peers of the
+[runner channel](../docs/runner_channel.md): framing and capabilities, the dedicated token audience
+and its egress policy, incarnation binding, epoch fencing, dispatch attempts over the core's
+submission records, heartbeats and reconnect. Reconnect must not scan pending commands for delivery.
 Keep existing spool ingestion unchanged. Test missed/duplicate/delayed notifications, owner loss,
 authentication denial/revocation, stale connections and ambiguous sends. No new inbound unary API.
 
@@ -495,7 +477,7 @@ authentication denial/revocation, stale connections and ambiguous sends. No new 
 
 **Blocked on outbound command peers and durable submission through the existing relay.** Deploy
 compatible service support first with old routes unchanged, then a compatible runner image in a fresh
-canary. Select one explicit command route per incarnation and switch its submission adapter to WS;
+canary. Select one explicit command route per incarnation and switch its submission adapter to the channel;
 keep the existing spool reader. Verify the real proxy path, cross-replica routing, owner loss and
 reconnect, receipt persistence and exact retries. No silent fallback after an ambiguous send. This
 proves command delivery independently of moving spool traffic or migrating existing environments.

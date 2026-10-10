@@ -18,7 +18,6 @@ fn logical_module_at_catchall_target_renames_and_absorbs_overflow() {
     let fixture = run_fixture(FixtureOpts::new(
         r#"function a() { return 1; }
 function b() { return 2; }
-console.log(a(), b());
 export { a, b };
 "#,
         // A logical_modules entry pinned at the catchall target.

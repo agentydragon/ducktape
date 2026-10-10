@@ -1011,19 +1011,20 @@ impl ChunkPlanBuilder {
         Ok(())
     }
 
-    /// With no explicit modules, the catchall preserves the whole statement
-    /// sequence. Otherwise, route only anonymous owners that share an atomic
-    /// unit with bindings already assigned to the catchall. Unrelated effects
-    /// stay in the entry, where they may run after other peeled modules.
+    /// When the catchall is the only module, preserve the whole statement
+    /// sequence there, even if the spec names some of its bindings explicitly.
+    /// Otherwise, route only anonymous owners that share an atomic unit with
+    /// catchall-owned bindings. Unrelated effects stay in the entry, where
+    /// they may run after other peeled modules.
     pub(super) fn route_unclaimed_anonymous_to_catchall(
         &mut self,
         precomputed: &OwnerGraphAndUnits,
         body: &[ModuleItem],
-        whole_chunk: bool,
     ) {
         let Some(index) = self.residual_plan_index else {
             return;
         };
+        let whole_chunk = self.module_plans.len() == 1;
         let graph = &precomputed.owner_graph;
         let mut body_indices = BTreeSet::new();
         for unit in &precomputed.atomic_units {

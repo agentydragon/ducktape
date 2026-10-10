@@ -73,8 +73,14 @@ fn cover_object_slot(
         ranked,
         |kept| Ok(prove_synthesized_selector(index, decl, targets, &render_with(kept)?).is_ok()),
         |trial| {
-            let matches =
-                match_single_member_selector(index, &target.export_name, &render_with(trial)?)?;
+            let source = render_with(trial)?;
+            // A read-off candidate may put a source identifier named like a
+            // run hole outside a list. Reject that candidate and leave the
+            // exact-declaration fallback reachable.
+            let Ok(matches) = match_single_member_selector(index, &target.export_name, &source)
+            else {
+                return Ok((true, usize::MAX));
+            };
             // Object ranking distinguishes the declaration as well as the binding.
             let target_unresolved = !matches.iter().any(|m| {
                 m.body_idx == decl.body_idx && m.binding.binding_name == target.runtime_binding

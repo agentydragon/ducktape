@@ -452,11 +452,7 @@ pub(super) fn finish_logical_chunk(
     }
     builder.route_nested_var_statements(&runtime_ast.module.body, &declarations)?;
     if matches!(chunk_unassigned_mode, UnassignedMode::CatchallFile { .. }) {
-        builder.route_unclaimed_anonymous_to_catchall(
-            &precomputed,
-            &runtime_ast.module.body,
-            explicit_requests.is_empty(),
-        );
+        builder.route_unclaimed_anonymous_to_catchall(&precomputed, &runtime_ast.module.body);
     }
     if let Some(report) = builder.selector_outcome_report()
         && let Some(report_out_dir) = report_emission.rejection_dir()

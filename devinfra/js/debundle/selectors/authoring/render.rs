@@ -431,7 +431,7 @@ fn hole_array(array: &ArrayLit, kept: &BTreeSet<AnchorSpan>) -> ArrayLit {
 /// A destructure-pattern run-absorber hole — a shorthand binding whose name is
 /// `ANYTHING` — absorbing a run of dropped destructured properties. The pattern
 /// analog of [`object_props_prop`].
-fn object_props_pat_prop() -> ObjectPatProp {
+pub(crate) fn object_props_pat_prop() -> ObjectPatProp {
     ObjectPatProp::Assign(AssignPatProp {
         span: DUMMY_SP,
         key: BindingIdent {
