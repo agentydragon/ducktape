@@ -80,7 +80,9 @@ async def test_sidebar_compact_pod_approval(
     await expect(section.get_by_text("kubernetes_admin / pods_list_in_namespace", exact=True)).to_have_count(0)
     if expanded:
         await section.get_by_role("button", name="Expand inspect running demo pods").click()
-        await expect(section.get_by_text("List pods in namespace")).to_be_visible()
+        await expect(
+            section.locator(".agentplane-actions-sidebar-preview").get_by_text("List pods in namespace")
+        ).to_be_visible()
         await expect(section.locator(".agentplane-actions-sidebar-preview").get_by_text("test-apps")).to_be_visible()
         await expect(section.get_by_text("app=demo")).to_be_visible()
         await expect(section.get_by_role("button", name="Approve inspect running demo pods")).to_be_visible()
