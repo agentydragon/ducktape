@@ -561,7 +561,7 @@ async def test_managed_open_lost_response_uses_same_reservation(
 
 
 async def test_managed_open_expands_default_cwd_with_reserved_id(
-    resources: Resources, token_file: Path, peer: Peer, engine: AsyncEngine, cluster: Cluster
+    resources: Resources, token_file: Path, peer: Peer, engine: AsyncEngine, sessions: SessionRegistry, cluster: Cluster
 ) -> None:
     cluster.set_binding(
         protocol_pb2.SandboxBinding(
@@ -570,7 +570,7 @@ async def test_managed_open_expands_default_cwd_with_reserved_id(
             )
         )
     )
-    async with service_client(replace(resources, history=Store(engine)), token_file) as remote:
+    async with service_client(replace(resources, history=Store(engine), sessions=sessions), token_file) as remote:
         created = await remote.runner(DESTINATION).create(idempotency_key="default-cwd", spec={})
         opened = await peer.attachments.get()
         assert opened.opened.spec.cwd == f"/state/workspaces/{created.session_id}"
