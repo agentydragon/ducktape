@@ -139,6 +139,10 @@ class Environment:
     app: AppProps
     actions: ActionsProps
     notifications_github: GitHubAppProps | None = None
+    # Binding scopes and cluster binding management the Sandbox Service keeps after their catalog
+    # entries are removed, so the bindings existing Sandboxes still hold can be cleaned up.
+    kubernetes_binding_cleanup_namespaces: frozenset[str] = frozenset()
+    kubernetes_cluster_binding_cleanup: bool = False
     # Non-secret environment defaults shared by every SandboxTemplate workload container;
     # the common pod builder applies them, and the runner explicitly forwards these names to harnesses.
     sandbox_workload_env: Mapping[str, str] = field(default_factory=lambda: {"TZ": "America/Los_Angeles"})

@@ -7,6 +7,7 @@ import asyncio
 import json
 from collections.abc import AsyncIterator
 from datetime import UTC, datetime, timedelta
+from pathlib import Path
 
 import httpx
 import pytest
@@ -24,9 +25,10 @@ from agentplane.app.action_policy import ActionPolicyInventory, ActionPolicyUnav
 from agentplane.app.api import create_app
 from agentplane.app.conftest import stored_login
 from agentplane.app.database import connect
-from agentplane.app.database_updates import DatabaseUpdates
+from agentplane.app.database_updates import Channel, DatabaseUpdates
 from agentplane.app.decisions import DecisionsClient
 from agentplane.app.egress_access import EgressAccess
+from agentplane.app.electric import ElectricProxy
 from agentplane.app.identity import CallerIdentity, CallerKind, TokenReviewer
 from agentplane.app.live import (
     PODS_PLURAL,
@@ -311,6 +313,9 @@ def app(
     reviewer: TokenReviewer,
     history_peer: HistoryService,
     history_client: HistoryServiceClient,
+    electric_http: httpx.AsyncClient,
+    notifications_http: httpx.AsyncClient,
+    notifications_token_file: Path,
 ) -> FastAPI:
     """Neither test below reaches a database or a runner -- the guard answers before a route body
     runs, and the document comes from the signatures -- so the engine here never connects."""
@@ -345,6 +350,11 @@ def app(
         content=content,
         database_updates=database_updates,
         operator_sessions=OperatorSessionStore(engine),
+        electric=ElectricProxy(
+            electric_http, content, event_logs=event_logs, thread_changes=database_updates.changes[Channel.THREADS]
+        ),
+        notifications_http=notifications_http,
+        notifications_token_file=notifications_token_file,
     )
 
 

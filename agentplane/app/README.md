@@ -236,8 +236,8 @@ and both are cryptographic:
 - **An operator's OIDC session.** `AGENTPLANE_OIDC_ISSUER` and its siblings register the app as an
   Authentik client; `/auth/login` runs an authorization-code flow with PKCE and stores the
   `iss`, stable `sub`, and display `preferred_username` in PostgreSQL behind an opaque signed `__Host-` cookie. Unsafe methods additionally have to be
-  same-origin, which is the CSRF defence `SameSite=lax` leaves open. Unset the issuer and there is
-  no login at all, which is how the tests and a local run work.
+  same-origin, which is the CSRF defence `SameSite=lax` leaves open. The deployed app requires these
+  settings; an app the tests build without them has no login at all.
 - **A Kubernetes token.** `Authorization: Bearer <token>` goes to TokenReview, which returns the
   username the API server vouches for. The token has to carry the app's audience
   (`--token-audience`, `agentplane`), so a token minted for anything else cannot be replayed here,

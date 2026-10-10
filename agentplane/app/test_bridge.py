@@ -36,6 +36,7 @@ from agentplane.app.database import connect
 from agentplane.app.database_updates import Channel, DatabaseUpdates
 from agentplane.app.decisions import DecisionsClient
 from agentplane.app.egress_access import EgressAccess
+from agentplane.app.electric import ElectricProxy
 from agentplane.app.identity import TokenReviewer
 from agentplane.app.live import LiveIndex
 from agentplane.app.model_catalog import ModelCatalog, ModelOption
@@ -206,6 +207,9 @@ async def app_url(
     event_logs: EventLogStore,
     content: ContentStore,
     ingestion: Ingestion,
+    electric_proxy: ElectricProxy,
+    notifications_http: httpx.AsyncClient,
+    notifications_token_file: Path,
 ) -> AsyncIterator[str]:
     """The app served by uvicorn, with the one test sandbox resolving to the local runner. The
     server is real because SSE needs a response that streams, which an in-process ASGI transport
@@ -233,6 +237,9 @@ async def app_url(
         content=content,
         database_updates=database_updates,
         operator_sessions=operator_sessions,
+        electric=electric_proxy,
+        notifications_http=notifications_http,
+        notifications_token_file=notifications_token_file,
     )
     sock = bind_free_port()
     try:

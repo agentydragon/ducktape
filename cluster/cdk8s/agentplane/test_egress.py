@@ -11,7 +11,7 @@ import yaml
 from cdk8s import Testing as Cdk8sTesting
 from more_itertools import one
 
-from cluster.cdk8s.agentplane import binding_delegation, notifications, staging, testing
+from cluster.cdk8s.agentplane import binding_delegation, notifications, sandbox_service, staging, testing
 from cluster.cdk8s.agentplane.actions_staging_policies import AGENTPLANE_TESTING_POLICY, COINBASE_POLICY
 from cluster.cdk8s.agentplane.conftest import NAMESPACES
 from cluster.cdk8s.agentplane.egress import (
@@ -49,6 +49,13 @@ def _by_name(docs: list[dict[str, Any]], kind: str, name: str) -> dict[str, Any]
     return one(doc for doc in docs if doc["kind"] == kind and doc["metadata"]["name"] == name)
 
 
+def _default_policies(docs: list[dict[str, Any]]) -> list[str]:
+    """What the Sandbox Service grants every new sandbox."""
+    config = _by_name(docs, "ConfigMap", f"{sandbox_service.NAME}-config")
+    defaults: list[str] = yaml.safe_load(config["data"]["config.yaml"])["default_egress_policies"]
+    return defaults
+
+
 @pytest.mark.parametrize("namespace", NAMESPACES)
 def test_public_internet_is_available_but_never_implicitly_granted(
     agentplane_manifests: dict[str, list[dict[str, Any]]], namespace: str
@@ -56,9 +63,9 @@ def test_public_internet_is_available_but_never_implicitly_granted(
     docs = agentplane_manifests[namespace]
     public = _by_name(docs, "EgressPolicy", PUBLIC_INTERNET_POLICY)
     assert public["spec"]["rules"] == [{"hosts": ["*"]}]
-    config = _by_name(docs, "ConfigMap", "agentplane-app-config")
-    # Includes defaults and every preset, not just today's public-coder preset.
-    assert PUBLIC_INTERNET_POLICY not in config["data"]["config.yaml"]
+    # Every preset, not just today's public-coder preset, and the defaults.
+    assert PUBLIC_INTERNET_POLICY not in _by_name(docs, "ConfigMap", "agentplane-app-config")["data"]["config.yaml"]
+    assert PUBLIC_INTERNET_POLICY not in _default_policies(docs)
     for doc in docs:
         if doc["kind"] == "EgressBinding":
             if namespace == "agentplane-staging" and doc["metadata"]["name"] == "public-coder-openclaw":
@@ -121,8 +128,7 @@ def test_kubernetes_access_is_part_of_what_every_sandbox_is_granted(
     assert source["projectedWorkloadToken"]["audience"] == KUBERNETES_AUDIENCE, source
 
     # And `basic` reaches a sandbox that picks nothing, which is the whole claim.
-    app_config = _by_name(docs, "ConfigMap", "agentplane-app-config")
-    defaults: list[str] = yaml.safe_load(app_config["data"]["config.yaml"])["default_egress_policies"]
+    defaults = _default_policies(docs)
     assert BASIC_POLICY in defaults, defaults
 
 
@@ -345,8 +351,7 @@ def test_inference_is_granted_separately_from_platform_operations(
     docs = agentplane_manifests[namespace]
     granted = _by_name(docs, "EgressPolicy", INFERENCE_EXPERIMENTS_POLICY)
     basic = _by_name(docs, "EgressPolicy", BASIC_POLICY)
-    config = _by_name(docs, "ConfigMap", "agentplane-app-config")
-    assert INFERENCE_EXPERIMENTS_POLICY in yaml.safe_load(config["data"]["config.yaml"])["default_egress_policies"]
+    assert INFERENCE_EXPERIMENTS_POLICY in _default_policies(docs)
     # Standing caller identities and static OpenClaw must receive the separate grant too.
     for binding in (doc for doc in docs if doc["kind"] == "EgressBinding"):
         policies = binding["spec"]["policies"]

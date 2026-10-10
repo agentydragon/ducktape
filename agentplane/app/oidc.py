@@ -6,14 +6,13 @@ it has gone unused for `session_idle_seconds` or reached `session_max_seconds`, 
 first; the tokens' own lifetimes do not bound it. Action federation renews the access token with
 the refresh token as it needs one (`action_federation.py`).
 
-A login exists iff `AGENTPLANE_OIDC_ISSUER` is set. Unset, a browser has no way in and the only
-credential the app accepts is a Kubernetes token (`identity.py`); the API is guarded either way.
+The deployed app always has a login. An app built without these settings, as tests build it, gives
+a browser no way in and accepts only a Kubernetes token (`identity.py`); the API is guarded either way.
 """
 
 from __future__ import annotations
 
 import logging
-import os
 from datetime import datetime
 
 from authlib.integrations.starlette_client import OAuth
@@ -24,8 +23,6 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 from agentplane.app.operator_sessions import OperatorSession, request_session
 
 logger = logging.getLogger(__name__)
-
-ENV_ISSUER = "AGENTPLANE_OIDC_ISSUER"
 
 # The authlib client registration name; the /auth routes look it up by this.
 CLIENT_NAME = "authentik"
@@ -80,11 +77,6 @@ class OIDCSettings(BaseSettings):
     @property
     def cookie_name(self) -> str:
         return SECURE_COOKIE if self.secure else INSECURE_COOKIE
-
-
-def load_settings() -> OIDCSettings | None:
-    """The OIDC settings, or None when the app is to run without a login."""
-    return OIDCSettings() if os.environ.get(ENV_ISSUER) else None
 
 
 def build_oauth(settings: OIDCSettings) -> OAuth:

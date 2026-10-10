@@ -9,6 +9,7 @@ from collections.abc import AsyncIterator, Callable
 from contextlib import AsyncExitStack, asynccontextmanager
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
+from pathlib import Path
 from typing import cast
 from urllib.parse import parse_qs
 from uuid import uuid4
@@ -61,6 +62,7 @@ from agentplane.app.database import connect
 from agentplane.app.database_updates import DatabaseUpdates
 from agentplane.app.decisions import DecisionsClient
 from agentplane.app.egress_access import EgressAccess
+from agentplane.app.electric import ElectricProxy
 from agentplane.app.identity import TokenReviewer
 from agentplane.app.live import LiveIndex, SandboxSnapshot
 from agentplane.app.model_catalog import ModelCatalog, ModelOption
@@ -148,6 +150,9 @@ async def review(
     content: ContentStore,
     history_peer: HistoryService,
     history_client: HistoryServiceClient,
+    electric_proxy: ElectricProxy,
+    notifications_http: httpx.AsyncClient,
+    notifications_token_file: Path,
 ) -> AsyncIterator[Review]:
     ACTIONS_RUNNER.apply(db_url)
     server = FastMCP("test-review")
@@ -345,6 +350,9 @@ async def review(
             content=content,
             database_updates=database_updates,
             operator_sessions=operator_sessions,
+            electric=electric_proxy,
+            notifications_http=notifications_http,
+            notifications_token_file=notifications_token_file,
         )
         await stack.enter_async_context(serve_app(idp, sock=idp_sock))
         browser = await stack.enter_async_context(
@@ -380,6 +388,9 @@ async def review(
             # Never started: nothing served here listens; the replica shares only the operator sessions.
             database_updates=DatabaseUpdates(replica_engine.url),
             operator_sessions=OperatorSessionStore(replica_engine),
+            electric=electric_proxy,
+            notifications_http=notifications_http,
+            notifications_token_file=notifications_token_file,
         )
         second_browser = await stack.enter_async_context(
             httpx.AsyncClient(

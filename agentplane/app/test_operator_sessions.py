@@ -9,6 +9,7 @@ bounded, because the regression it guards against waits for the parked request, 
 import asyncio
 from collections.abc import AsyncIterator
 from datetime import UTC, datetime, timedelta
+from pathlib import Path
 
 import httpx
 import pytest
@@ -25,6 +26,7 @@ from agentplane.app.api import create_app
 from agentplane.app.database_updates import DatabaseUpdates
 from agentplane.app.decisions import DecisionsClient
 from agentplane.app.egress_access import EgressAccess
+from agentplane.app.electric import ElectricProxy
 from agentplane.app.live import LiveIndex
 from agentplane.app.model_catalog import ModelCatalog, ModelOption
 from agentplane.app.oidc import INSECURE_COOKIE, OIDCSettings
@@ -108,6 +110,9 @@ async def app(
     content: ContentStore,
     operator_sessions: OperatorSessionStore,
     database_updates: DatabaseUpdates,
+    electric_proxy: ElectricProxy,
+    notifications_http: httpx.AsyncClient,
+    notifications_token_file: Path,
 ) -> AsyncIterator[FastAPI]:
     """The app with a login that needs no identity provider, and an Action Service that answers once
     `gate` opens."""
@@ -132,6 +137,9 @@ async def app(
         content=content,
         database_updates=database_updates,
         operator_sessions=operator_sessions,
+        electric=electric_proxy,
+        notifications_http=notifications_http,
+        notifications_token_file=notifications_token_file,
     )
 
     @app.post("/test-login")

@@ -52,17 +52,6 @@ class AppSettingsConfig(BaseSettings):
     kubernetes_grants: dict[str, KubernetesGrant] = Field(
         default_factory=dict, description="Enabled Kubernetes binding templates; launch requests select names only."
     )
-    kubernetes_binding_cleanup_namespaces: list[str] = Field(
-        default_factory=list, description="Past namespaced binding scopes retained for cleanup after catalog removal."
-    )
-    kubernetes_cluster_binding_cleanup: bool = Field(
-        default=False, description="Retain cluster binding cleanup after a cluster grant is removed from the catalog."
-    )
-    default_egress_policies: list[str] = Field(
-        default_factory=list,
-        description="EgressPolicy names every new sandbox is granted before the caller's own picks: "
-        "what no sandbox works without, the model endpoint above all.",
-    )
     sandbox_service_grpc_channel_options: dict[str, int | str] = Field(
         default_factory=dict, description="gRPC channel options for the App's connection to Sandbox Service."
     )
@@ -70,7 +59,7 @@ class AppSettingsConfig(BaseSettings):
         default_factory=dict, description="gRPC channel options for the App's connection to History Service."
     )
     egress_admin_url: HttpEndpointUrl = Field(description="The egress proxy's admin port, serving /decisions.")
-    action_federation: ActionFederationSettings | None = None
+    action_federation: ActionFederationSettings
 
 
 class Settings(AppSettingsConfig):
@@ -88,8 +77,8 @@ class Settings(AppSettingsConfig):
     )
     sandbox_service_target: str = Field(min_length=1)
     history_service_target: str = Field(min_length=1)
-    notifications_url: HttpEndpointUrl | None = None
-    notifications_token_file: Path | None = None
+    notifications_url: HttpEndpointUrl
+    notifications_token_file: Path
     sandbox_service_token_file: Path = Path("/var/run/secrets/agentplane-sandbox-service/token")
     history_service_token_file: Path = Path("/var/run/secrets/agentplane-history-service/token")
     history_service_request_timeout_s: float = Field(default=20, gt=0, allow_inf_nan=False)
@@ -113,9 +102,7 @@ class Settings(AppSettingsConfig):
     port: int = Field(default=8080, description="Bind port.")
     kubeconfig: Path | None = Field(default=None, description="Kubeconfig to use; omit for in-cluster.")
     database_url: str = Field(description="SQLAlchemy asyncpg URL of the thread store.")
-    electric_url: HttpEndpointUrl | None = Field(
-        default=None, description="Cluster-internal Electric root URL; omitted leaves thread sync routes disabled."
-    )
+    electric_url: HttpEndpointUrl = Field(description="Cluster-internal Electric root URL.")
     thread_reads: ThreadReads = Field(
         default=ThreadReads.APP,
         description="Which fold Thread reads come from. `history_service` also stops the app's own projector, "

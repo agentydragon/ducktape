@@ -29,7 +29,7 @@ from agentplane.app.egress_access import EgressAccess
 from agentplane.app.electric import ElectricProxy
 from agentplane.app.identity import TokenReviewer
 from agentplane.app.live import LiveIndex, watch_for
-from agentplane.app.oidc import load_settings
+from agentplane.app.oidc import OIDCSettings
 from agentplane.app.operator_sessions import OperatorSessionStore
 from agentplane.app.presets import PresetCatalog
 from agentplane.app.settings import Settings, ThreadReads
@@ -55,9 +55,6 @@ from util.kubernetes import CustomObjectsClient
 # The bundle's entry; runfiles resolve files, not directories, so the mount is its parent.
 FRONTEND_INDEX = "_main/agentplane/app/frontend/dist/index.html"
 SERVICE_WORKER = "_main/agentplane/app/frontend/service_worker/bundled/sw.js"
-
-
-logger = logging.getLogger(__name__)
 
 
 class SpaFiles(StaticFiles):
@@ -105,9 +102,7 @@ def main() -> None:
 
 
 async def async_main(settings: Settings) -> None:
-    oidc = load_settings()
-    if settings.action_federation is not None and oidc is None:
-        raise ValueError("Action federation requires operator OIDC login")
+    oidc = OIDCSettings()
     configuration = k8s_client.Configuration()
     if settings.kubeconfig is None:
         k8s_config.load_incluster_config(client_configuration=configuration)
@@ -115,23 +110,10 @@ async def async_main(settings: Settings) -> None:
         await k8s_config.load_kube_config(config_file=str(settings.kubeconfig), client_configuration=configuration)
     async with (
         ApiClient(configuration=configuration) as api,
-        httpx.AsyncClient(
-            base_url=str(settings.action_federation.service_url)
-            if settings.action_federation
-            else "http://disabled.invalid",
-            timeout=10,
-        ) as actions_http,
-        httpx.AsyncClient(
-            base_url=str(settings.notifications_url)
-            if settings.notifications_url is not None
-            else "http://disabled.invalid",
-            timeout=5,
-        ) as notifications_http,
+        httpx.AsyncClient(base_url=str(settings.action_federation.service_url), timeout=10) as actions_http,
+        httpx.AsyncClient(base_url=str(settings.notifications_url), timeout=5) as notifications_http,
         httpx.AsyncClient(base_url=str(settings.egress_admin_url), timeout=settings.egress_admin_timeout) as admin_http,
-        httpx.AsyncClient(
-            base_url=str(settings.electric_url) if settings.electric_url is not None else "http://disabled.invalid",
-            timeout=httpx.Timeout(65, connect=5),
-        ) as electric_http,
+        httpx.AsyncClient(base_url=str(settings.electric_url), timeout=httpx.Timeout(65, connect=5)) as electric_http,
     ):
         # Cast so `patch_namespaced_custom_object` accepts `_content_type` (see util.kubernetes).
         custom_objects = cast(CustomObjectsClient, CustomObjectsApi(api))
@@ -198,12 +180,6 @@ async def async_main(settings: Settings) -> None:
         )
         bridge = RunnerBridge(runners=runners, event_logs=event_logs, content=content, ingester=ingester)
 
-        operator_actions = (
-            FederatedOperatorActions(settings.action_federation, oidc, actions_http)
-            if settings.action_federation is not None and oidc is not None
-            else None
-        )
-        logger.info("browser login: %s", f"OIDC at {oidc.issuer}" if oidc else "none configured")
         app = create_app(
             inventory,
             bridge,
@@ -215,16 +191,9 @@ async def async_main(settings: Settings) -> None:
             action_policy,
             oidc,
             TokenReviewer(AuthenticationV1Api(api), audience=settings.token_audience, subjects=settings.token_subjects),
-            operator_actions=operator_actions,
-            electric=(
-                ElectricProxy(
-                    electric_http,
-                    content,
-                    event_logs=event_logs,
-                    thread_changes=database_updates.changes[Channel.THREADS],
-                )
-                if settings.electric_url is not None
-                else None
+            operator_actions=FederatedOperatorActions(settings.action_federation, oidc, actions_http),
+            electric=ElectricProxy(
+                electric_http, content, event_logs=event_logs, thread_changes=database_updates.changes[Channel.THREADS]
             ),
             presets=PresetCatalog(sandboxes=settings.sandbox_presets, threads=settings.thread_presets),
             kubernetes_grants=settings.kubernetes_grants,
@@ -232,7 +201,7 @@ async def async_main(settings: Settings) -> None:
             content=content,
             database_updates=database_updates,
             operator_sessions=OperatorSessionStore(engine),
-            notifications_http=notifications_http if settings.notifications_url is not None else None,
+            notifications_http=notifications_http,
             notifications_token_file=settings.notifications_token_file,
         )
         worker = await asyncio.to_thread(Path(get_required_path(SERVICE_WORKER)).read_bytes)

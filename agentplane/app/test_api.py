@@ -20,7 +20,7 @@ from fastapi.testclient import TestClient
 from agentplane.app.action_policy import ActionPolicyInventory
 from agentplane.app.api import create_app, upstream_http_error
 from agentplane.app.conftest import AGENT_AUTH
-from agentplane.app.database_updates import Channel, DatabaseUpdates
+from agentplane.app.database_updates import DatabaseUpdates
 from agentplane.app.decisions import DecisionsClient
 from agentplane.app.egress_access import EgressAccess
 from agentplane.app.electric import ElectricProxy
@@ -138,19 +138,6 @@ TEST_PRESETS = PresetCatalog(
 
 
 @pytest.fixture
-async def electric(
-    content: ContentStore, event_logs: EventLogStore, database_updates: DatabaseUpdates
-) -> AsyncIterator[ElectricProxy]:
-    async def unexpected(request: httpx.Request) -> httpx.Response:
-        raise AssertionError(f"API contract tests must not dispatch Electric requests: {request.url}")
-
-    async with httpx.AsyncClient(transport=httpx.MockTransport(unexpected), base_url="http://electric") as client:
-        yield ElectricProxy(
-            client, content, event_logs=event_logs, thread_changes=database_updates.changes[Channel.THREADS]
-        )
-
-
-@pytest.fixture
 def client(
     model_catalog: ModelCatalog,
     inventory: SandboxServiceClient,
@@ -165,7 +152,9 @@ def client(
     custom_objects: FakeCustomObjectsApi,
     core_v1: FakeCoreV1Api,
     reviewer: TokenReviewer,
-    electric: ElectricProxy,
+    electric_proxy: ElectricProxy,
+    notifications_http: httpx.AsyncClient,
+    notifications_token_file: Path,
     event_logs: EventLogStore,
     content: ContentStore,
 ) -> Iterator[TestClient]:
@@ -204,11 +193,13 @@ def client(
         action_policy,
         reviewer=reviewer,
         presets=TEST_PRESETS,
-        electric=electric,
+        electric=electric_proxy,
         event_logs=event_logs,
         content=content,
         database_updates=database_updates,
         operator_sessions=operator_sessions,
+        notifications_http=notifications_http,
+        notifications_token_file=notifications_token_file,
     )
     with TestClient(app, headers=AGENT_AUTH) as test_client:
         yield test_client
@@ -706,6 +697,9 @@ def test_a_runner_that_does_not_answer_is_a_503(
     event_logs: EventLogStore,
     content: ContentStore,
     ingestion: Ingestion,
+    electric_proxy: ElectricProxy,
+    notifications_http: httpx.AsyncClient,
+    notifications_token_file: Path,
 ) -> None:
     """A Pod with an address but no runner listening yet, as right after a resume."""
     live_index.sandboxes["live"], live_index.pods["live"] = seed_runner(custom_objects, core_v1, "live")
@@ -736,6 +730,9 @@ def test_a_runner_that_does_not_answer_is_a_503(
                 content=content,
                 database_updates=database_updates,
                 operator_sessions=operator_sessions,
+                electric=electric_proxy,
+                notifications_http=notifications_http,
+                notifications_token_file=notifications_token_file,
             )
             with TestClient(app, headers=AGENT_AUTH) as client:
                 response = client.get("/sandboxes/live/sessions")
@@ -806,6 +803,9 @@ async def test_unanswered_service_command_is_a_504_and_cancels_its_rpc(
     event_logs: EventLogStore,
     content: ContentStore,
     ingestion: Ingestion,
+    electric_proxy: ElectricProxy,
+    notifications_http: httpx.AsyncClient,
+    notifications_token_file: Path,
 ) -> None:
     """Bound command admission at the public service RPC, without runner internals."""
     live_index.sandboxes["live"], live_index.pods["live"] = seed_runner(custom_objects, core_v1, "live")
@@ -829,6 +829,9 @@ async def test_unanswered_service_command_is_a_504_and_cancels_its_rpc(
             content=content,
             database_updates=database_updates,
             operator_sessions=operator_sessions,
+            electric=electric_proxy,
+            notifications_http=notifications_http,
+            notifications_token_file=notifications_token_file,
         )
         try:
             async with (
@@ -1021,6 +1024,9 @@ async def test_a_thread_is_found_by_its_session_and_renamed_in_place(
     action_policy: ActionPolicyInventory,
     reviewer: TokenReviewer,
     content: ContentStore,
+    electric_proxy: ElectricProxy,
+    notifications_http: httpx.AsyncClient,
+    notifications_token_file: Path,
 ) -> None:
     """Over ASGI on this loop, not TestClient's thread: the store's pooled asyncpg connections
     belong to the loop that opened them."""
@@ -1041,6 +1047,9 @@ async def test_a_thread_is_found_by_its_session_and_renamed_in_place(
         content=content,
         database_updates=database_updates,
         operator_sessions=operator_sessions,
+        electric=electric_proxy,
+        notifications_http=notifications_http,
+        notifications_token_file=notifications_token_file,
     )
     async with httpx.AsyncClient(
         transport=httpx.ASGITransport(app=app), base_url="http://test", headers=AGENT_AUTH
@@ -1072,6 +1081,9 @@ async def test_a_thread_archives_and_unarchives_and_hides_from_the_default_listi
     action_policy: ActionPolicyInventory,
     reviewer: TokenReviewer,
     content: ContentStore,
+    electric_proxy: ElectricProxy,
+    notifications_http: httpx.AsyncClient,
+    notifications_token_file: Path,
 ) -> None:
     spec = protocol_pb2.SessionSpec(harness=protocol_pb2.HARNESS_CLAUDE, cwd="/w", model="test-model")
     thread_id = str(await event_logs.open("live", "s-1", spec))
@@ -1089,6 +1101,9 @@ async def test_a_thread_archives_and_unarchives_and_hides_from_the_default_listi
         content=content,
         database_updates=database_updates,
         operator_sessions=operator_sessions,
+        electric=electric_proxy,
+        notifications_http=notifications_http,
+        notifications_token_file=notifications_token_file,
     )
     async with httpx.AsyncClient(
         transport=httpx.ASGITransport(app=app), base_url="http://test", headers=AGENT_AUTH
@@ -1123,6 +1138,9 @@ async def test_a_running_thread_cannot_be_archived(
     custom_objects: FakeCustomObjectsApi,
     core_v1: FakeCoreV1Api,
     monkeypatch: pytest.MonkeyPatch,
+    electric_proxy: ElectricProxy,
+    notifications_http: httpx.AsyncClient,
+    notifications_token_file: Path,
 ) -> None:
     custom_objects.objects[("sandboxes", "live")], core_v1.pods["live"] = seed_runner(custom_objects, core_v1, "live")
     spec = protocol_pb2.SessionSpec(harness=protocol_pb2.HARNESS_CLAUDE, cwd="/w", model="test-model")
@@ -1153,6 +1171,9 @@ async def test_a_running_thread_cannot_be_archived(
         content=content,
         database_updates=database_updates,
         operator_sessions=operator_sessions,
+        electric=electric_proxy,
+        notifications_http=notifications_http,
+        notifications_token_file=notifications_token_file,
     )
     async with httpx.AsyncClient(
         transport=httpx.ASGITransport(app=app), base_url="http://test", headers=AGENT_AUTH

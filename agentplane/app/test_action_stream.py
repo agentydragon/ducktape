@@ -9,6 +9,7 @@ import asyncio
 from collections.abc import AsyncIterator, Callable
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime, timedelta
+from pathlib import Path
 
 import httpx
 import pytest
@@ -24,6 +25,7 @@ from agentplane.app.api import create_app
 from agentplane.app.database_updates import Channel, DatabaseUpdates
 from agentplane.app.decisions import DecisionsClient
 from agentplane.app.egress_access import EgressAccess
+from agentplane.app.electric import ElectricProxy
 from agentplane.app.live import LiveIndex
 from agentplane.app.model_catalog import ModelCatalog, ModelOption
 from agentplane.app.oidc import INSECURE_COOKIE, OIDCSettings
@@ -170,6 +172,9 @@ def serve(
     action_policy: ActionPolicyInventory,
     event_logs: EventLogStore,
     content: ContentStore,
+    electric_proxy: ElectricProxy,
+    notifications_http: httpx.AsyncClient,
+    notifications_token_file: Path,
 ) -> ServeApp:
     def serving(sessions: OperatorSessionStore, updates: DatabaseUpdates) -> FastAPI:
         app = create_app(
@@ -193,6 +198,9 @@ def serve(
             content=content,
             database_updates=updates,
             operator_sessions=sessions,
+            electric=electric_proxy,
+            notifications_http=notifications_http,
+            notifications_token_file=notifications_token_file,
         )
 
         @app.post("/test-login")

@@ -302,6 +302,7 @@ async def _serve(
             httpx.AsyncClient(
                 base_url=electric_url or "http://test-unused-electric.invalid", timeout=65
             ) as electric_http,
+            httpx.AsyncClient(base_url="http://test-unused-notifications.invalid") as notifications_http,
         ):
             egress = EgressAccess(EgressReader(namespace=NAMESPACE, custom_objects=custom), inventory)
             action_policy = ActionPolicyInventory(namespace=NAMESPACE, custom_objects=custom)
@@ -328,20 +329,18 @@ async def _serve(
                 DecisionsClient(decisions_http),
                 index,
                 action_policy,
-                electric=(
-                    ElectricProxy(
-                        electric_http,
-                        content,
-                        event_logs=event_logs,
-                        thread_changes=database_updates.changes[Channel.THREADS],
-                    )
-                    if electric_url is not None
-                    else None
+                electric=ElectricProxy(
+                    electric_http,
+                    content,
+                    event_logs=event_logs,
+                    thread_changes=database_updates.changes[Channel.THREADS],
                 ),
                 event_logs=event_logs,
                 content=content,
                 database_updates=database_updates,
                 operator_sessions=OperatorSessionStore(engine),
+                notifications_http=notifications_http,
+                notifications_token_file=Path(directory) / "notifications-token",
             )
             # Authentication is tested separately; the production routes, HTTP transport, ingestion,
             # PostgreSQL notifications, and SSE generator all run here unchanged.

@@ -24,6 +24,7 @@ from agentplane.app.database_migrate import RUNNER
 from agentplane.app.database_updates import Channel, DatabaseUpdates
 from agentplane.app.decisions import DecisionsClient
 from agentplane.app.egress_access import EgressAccess
+from agentplane.app.electric import ElectricProxy
 from agentplane.app.identity import TokenReviewer
 from agentplane.app.live import LiveIndex
 from agentplane.app.operator_sessions import BrowserSession, OperatorSession, OperatorSessionStore, SessionRow
@@ -384,3 +385,43 @@ def egress_admin() -> FakeEgressAdmin:
 @pytest.fixture
 def decisions(egress_admin: FakeEgressAdmin) -> DecisionsClient:
     return DecisionsClient(httpx.AsyncClient(base_url="http://egress-admin.test", transport=egress_admin.transport()))
+
+
+def _refusing(service: str) -> httpx.MockTransport:
+    def refuse(request: httpx.Request) -> httpx.Response:
+        raise AssertionError(f"this test calls no {service}, yet requested {request.url}")
+
+    return httpx.MockTransport(refuse)
+
+
+@pytest.fixture
+async def electric_http() -> AsyncIterator[httpx.AsyncClient]:
+    """Electric for a test that syncs no thread; the sync tests run a real one."""
+    async with httpx.AsyncClient(base_url="http://electric.test", transport=_refusing("Electric")) as client:
+        yield client
+
+
+@pytest.fixture
+def electric_proxy(
+    electric_http: httpx.AsyncClient,
+    content: ContentStore,
+    event_logs: EventLogStore,
+    database_updates: DatabaseUpdates,
+) -> ElectricProxy:
+    return ElectricProxy(
+        electric_http, content, event_logs=event_logs, thread_changes=database_updates.changes[Channel.THREADS]
+    )
+
+
+@pytest.fixture
+async def notifications_http() -> AsyncIterator[httpx.AsyncClient]:
+    async with httpx.AsyncClient(
+        base_url="http://notifications.test", transport=_refusing("Notification Service")
+    ) as client:
+        yield client
+
+
+@pytest.fixture
+def notifications_token_file(tmp_path: Path) -> Path:
+    """Read only on a call into `notifications_http`, which these tests never make."""
+    return tmp_path / "notifications-token"

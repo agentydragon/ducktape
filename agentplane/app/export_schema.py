@@ -20,10 +20,10 @@ from pydantic import TypeAdapter
 from agentplane.app.action_policy import ActionPolicyInventory
 from agentplane.app.api import create_app
 from agentplane.app.database import connect
-from agentplane.app.database_updates import DatabaseUpdates, notify_threads
+from agentplane.app.database_updates import Channel, DatabaseUpdates, notify_threads
 from agentplane.app.decisions import DecisionsClient
 from agentplane.app.egress_access import EgressAccess
-from agentplane.app.electric import ThreadScopeResponse
+from agentplane.app.electric import ElectricProxy
 from agentplane.app.live import LiveIndex
 from agentplane.app.model_catalog import ModelCatalog, ModelOption
 from agentplane.app.operator_sessions import OperatorSessionStore
@@ -93,21 +93,26 @@ def _openapi_document(api_client: k8s_client.ApiClient) -> dict[str, Any]:
         DecisionsClient(httpx.AsyncClient(base_url="http://schema.invalid")),
         live,
         ActionPolicyInventory(namespace="schema", custom_objects=cast(Any, None)),
+        electric=ElectricProxy(
+            httpx.AsyncClient(base_url="http://schema.invalid"),
+            content,
+            event_logs=event_logs,
+            thread_changes=database_updates.changes[Channel.THREADS],
+        ),
         event_logs=event_logs,
         content=content,
         database_updates=database_updates,
         operator_sessions=OperatorSessionStore(engine),
+        notifications_http=httpx.AsyncClient(base_url="http://schema.invalid"),
+        notifications_token_file=Path("/schema-unused-token"),
     ).openapi()
     components = document["components"]
     if not isinstance(components, dict) or not isinstance(components.get("schemas"), dict):
         raise ValueError("OpenAPI document has no schema components")
-    for name, adapter in (
-        ("ThreadEntityView", TypeAdapter(ThreadEntityView)),
-        ("ThreadScopeResponse", TypeAdapter(ThreadScopeResponse)),
-    ):
-        schema = adapter.json_schema(ref_template="#/components/schemas/{model}")
-        components["schemas"].update(schema.pop("$defs", {}))
-        components["schemas"][name] = schema
+    # The entity routes stream Electric's rows, so no route declares the model the frontend reads them as.
+    schema = TypeAdapter(ThreadEntityView).json_schema(ref_template="#/components/schemas/{model}")
+    components["schemas"].update(schema.pop("$defs", {}))
+    components["schemas"]["ThreadEntityView"] = schema
     return document
 
 

@@ -211,7 +211,14 @@ def test_managed_agent_read_grants_cover_declarative_namespace_opt_ins(
         if (grant := catalog[name])["role_ref"]["name"] in reader_roles
     }
     assert actual == expected
-    cleanup_namespaces = set(config["kubernetes_binding_cleanup_namespaces"])
+    sandbox_service_config = one(
+        doc
+        for doc in staging_docs
+        if doc["kind"] == "ConfigMap" and doc["metadata"]["name"] == "agentplane-sandbox-service-config"
+    )
+    cleanup_namespaces = set(
+        yaml.safe_load(sandbox_service_config["data"]["config.yaml"])["kubernetes_binding_cleanup_namespaces"]
+    )
     expected_namespaces = {namespace for namespace, _ in expected}
     expected_external_namespaces = expected_namespaces - {"agentplane-staging"}
     assert expected_external_namespaces <= cleanup_namespaces

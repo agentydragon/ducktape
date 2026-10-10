@@ -2961,9 +2961,6 @@ data:
             printf '%s\n' 'public-coder workspace initialized' > "$marker"
           fi
     kubernetes_grants: {}
-    default_egress_policies:
-      - basic
-      - inference-experiments
     sandbox_service_grpc_channel_options:
       grpc.max_receive_message_length: 33554432
     history_service_grpc_channel_options:

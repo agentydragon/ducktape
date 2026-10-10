@@ -1,6 +1,7 @@
 """Evidence and raw expansion use scoped, keyset reads over actual projected PostgreSQL rows."""
 
 from datetime import timedelta
+from pathlib import Path
 
 import httpx
 import pytest_bazel
@@ -11,6 +12,7 @@ from agentplane.app.conftest import AGENT_AUTH
 from agentplane.app.database_updates import DatabaseUpdates
 from agentplane.app.decisions import DecisionsClient
 from agentplane.app.egress_access import EgressAccess
+from agentplane.app.electric import ElectricProxy
 from agentplane.app.identity import TokenReviewer
 from agentplane.app.live import LiveIndex
 from agentplane.app.model_catalog import ModelCatalog, ModelOption
@@ -42,6 +44,9 @@ async def test_lazy_scoped_evidence_and_native_expansion(
     live_index: LiveIndex,
     action_policy: ActionPolicyInventory,
     reviewer: TokenReviewer,
+    electric_proxy: ElectricProxy,
+    notifications_http: httpx.AsyncClient,
+    notifications_token_file: Path,
 ) -> None:
     source = ReplicationSource()
     source.append(event_pb2.Event(harness_started=event_pb2.HarnessStarted(pid=123)))
@@ -94,6 +99,9 @@ async def test_lazy_scoped_evidence_and_native_expansion(
         content=content,
         database_updates=database_updates,
         operator_sessions=operator_sessions,
+        electric=electric_proxy,
+        notifications_http=notifications_http,
+        notifications_token_file=notifications_token_file,
     )
     path = f"/threads/{thread}/evidence"
     params = {"projection_epoch": scope.projection_epoch, "entity_kind": "item", "entity_id": "first"}

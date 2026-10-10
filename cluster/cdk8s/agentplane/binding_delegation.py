@@ -29,7 +29,7 @@ def external_scopes(env: Environment) -> tuple[str, ...]:
     """Keep delegation for old bindings after their catalog entry is removed."""
     scopes = {
         grant.namespace for grant in env.app_config.kubernetes_grants.values() if isinstance(grant, RoleBindingGrant)
-    } | set(env.app_config.kubernetes_binding_cleanup_namespaces)
+    } | env.kubernetes_binding_cleanup_namespaces
     return tuple(sorted(scopes - {env.namespace}))
 
 

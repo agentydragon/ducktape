@@ -4557,43 +4557,6 @@ data:
         role_ref:
           kind: Role
           name: agentplane-testing-login-reader
-    kubernetes_binding_cleanup_namespaces:
-      - activitywatch
-      - agent-sandbox-system
-      - agentplane-index
-      - agentplane-testing
-      - airlock
-      - authentik
-      - cert-manager
-      - cli-proxy-api
-      - clickhouse
-      - cnpg-system
-      - ducktape-flux
-      - flux-system
-      - gatus
-      - grocy-sf
-      - grocy-vallejo
-      - haku-ci
-      - haku-console
-      - haku-sandbox
-      - litellm
-      - local-path-storage
-      - loki
-      - monitoring
-      - nix-cache
-      - node-feature-discovery
-      - nvidia-device-plugin
-      - oci-cache
-      - openebs
-      - proxmox-proxy
-      - public-coder-agent
-      - study-casino
-      - tana-mcp
-      - vm-images-publisher
-    kubernetes_cluster_binding_cleanup: true
-    default_egress_policies:
-      - basic
-      - inference-experiments
     sandbox_service_grpc_channel_options:
       grpc.max_receive_message_length: 33554432
     history_service_grpc_channel_options:

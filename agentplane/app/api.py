@@ -236,8 +236,6 @@ async def sandbox_notifications_stream(
         raise HTTPException(403, "operator login required")
     client = request.app.state.notifications_http
     token_file = request.app.state.notifications_token_file
-    if client is None or token_file is None:
-        raise HTTPException(503, "notification diagnostics unavailable")
     sandbox = sandbox_view(await inventory.get(name))
     sessions = _operator_sessions(request)
     session_id = operator_session_row(request).id
@@ -985,15 +983,15 @@ def create_app(
     reviewer: TokenReviewer | None = None,
     presets: PresetCatalog | None = None,
     operator_actions: FederatedOperatorActions | None = None,
-    electric: ElectricProxy | None = None,
     kubernetes_grants: dict[str, KubernetesGrant] | None = None,
     *,
+    electric: ElectricProxy,
     event_logs: EventLogStore,
     content: ContentStore,
     database_updates: DatabaseUpdates,
     operator_sessions: OperatorSessionStore,
-    notifications_http: httpx.AsyncClient | None = None,
-    notifications_token_file: FilePath | None = None,
+    notifications_http: httpx.AsyncClient,
+    notifications_token_file: FilePath,
 ) -> FastAPI:
     """The whole HTTP surface, guarded. Each of `oidc` and `reviewer` enables one way to authenticate,
     and an app given neither answers 401 to everything but /healthz."""
@@ -1083,10 +1081,9 @@ def create_app(
         egress_router,
         action_policy_router,
         live_router,
+        electric_router,
     ):
         app.include_router(api_router, dependencies=[Depends(require_caller)])
-    if electric is not None:
-        app.include_router(electric_router, dependencies=[Depends(require_caller)])
     if oidc is not None:
         app.add_middleware(
             OperatorSessionMiddleware,

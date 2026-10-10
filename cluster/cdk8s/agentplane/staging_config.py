@@ -104,7 +104,7 @@ def config(
     *,
     namespace: str,
     models: HarnessRoutes,
-    action_federation: ActionFederationSettings | None = None,
+    action_federation: ActionFederationSettings,
     sandbox_service_grpc_channel_options: dict[str, int | str] | None = None,
     history_service_grpc_channel_options: dict[str, int | str] | None = None,
 ) -> AppSettingsConfig:
@@ -124,10 +124,6 @@ def config(
             ),
             **agent_access_profiles.catalog(),
         },
-        # Retain cleanup authority when a catalog choice is disabled while its
-        # existing Sandboxes still hold a binding in that scope.
-        kubernetes_binding_cleanup_namespaces=agent_access_profiles.cleanup_namespaces(),
-        kubernetes_cluster_binding_cleanup=True,
     )
     cfg.sandbox_presets["public-coder"].kubernetes_grants = list(agent_access_profiles.MANAGED_GRANTS["public-coder"])
     # The "haku" and "finance-agent" launch presets live only here, not in app_settings.py:

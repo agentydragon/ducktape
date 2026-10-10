@@ -17,13 +17,13 @@ from agentplane.sandbox_service.kubernetes_grants import KubernetesGrant
 # preset its baseline policies, so it refers to them; each comes from the module that creates the
 # policy answering to it, which is what lets either environment's preset name the same policy
 # without repeating the string.
+from cluster.cdk8s.agentplane import egress
 from cluster.cdk8s.agentplane.egress import (
     BASIC_POLICY,
     BUILDBUDDY_POLICY,
     GITHUB_ACTIONS_LOGS_POLICY,
     GITHUB_AGENTYDRAGON_AGENT_POLICY,
     GITHUB_CLONE_POLICY,
-    INFERENCE_EXPERIMENTS_POLICY,
     PACKAGES_POLICY,
     PUBLIC_CODER_VISUALS_POLICY,
 )
@@ -46,13 +46,11 @@ def settings(
     namespace: str,
     models: HarnessRoutes,
     thread_preset_codex_model: Route,
-    action_federation: ActionFederationSettings | None = None,
+    action_federation: ActionFederationSettings,
     action_policy_sets: list[str] | None = None,
     sandbox_service_grpc_channel_options: dict[str, int | str] | None = None,
     history_service_grpc_channel_options: dict[str, int | str] | None = None,
     kubernetes_grants: dict[str, KubernetesGrant] | None = None,
-    kubernetes_binding_cleanup_namespaces: list[str] | None = None,
-    kubernetes_cluster_binding_cleanup: bool = False,
 ) -> AppSettingsConfig:
     return AppSettingsConfig(
         sandbox_service_grpc_channel_options=sandbox_service_grpc_channel_options or {},
@@ -70,12 +68,6 @@ def settings(
             },
         ),
         kubernetes_grants=kubernetes_grants if kubernetes_grants is not None else {},
-        **(
-            {"kubernetes_binding_cleanup_namespaces": kubernetes_binding_cleanup_namespaces}
-            if kubernetes_binding_cleanup_namespaces
-            else {}
-        ),
-        **({"kubernetes_cluster_binding_cleanup": True} if kubernetes_cluster_binding_cleanup else {}),
         # App-owned launch-form presets. The browser expands one into editable concrete
         # template, policy, bootstrap, and SessionSpec fields; neither a Sandbox CR nor a
         # runner receives a preset name.
@@ -113,12 +105,7 @@ def settings(
                 ),
             )
         },
-        # Grant platform operations and inference experiments independently. The latter
-        # is a fleet default, not part of the basic Agentplane platform policy.
-        default_egress_policies=[BASIC_POLICY, INFERENCE_EXPERIMENTS_POLICY],
-        # The egress proxy's admin port (agentplane/egress `Settings.admin_port`), asked
-        # for each sandbox's recent decisions; until the proxy Deployment lands the page
-        # shows the rules alone.
-        egress_admin_url=AnyHttpUrl(f"http://agentplane-egress-admin.{namespace}.svc:8081"),
+        # Asked for each sandbox's recent decisions; the page shows the rules alone when it does not answer.
+        egress_admin_url=AnyHttpUrl(egress.admin(namespace).url),
         action_federation=action_federation,
     )

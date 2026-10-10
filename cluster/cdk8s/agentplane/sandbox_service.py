@@ -90,10 +90,10 @@ class SandboxService(Construct):
                 ),
                 KUBERNETES_ADMIN_INSTRUCTIONS,
             ),
-            default_egress_policies=env.app_config.default_egress_policies,
+            default_egress_policies=list(egress.DEFAULT_POLICIES),
             kubernetes_grants=env.app_config.kubernetes_grants,
-            kubernetes_binding_cleanup_namespaces=set(env.app_config.kubernetes_binding_cleanup_namespaces),
-            kubernetes_cluster_binding_cleanup=env.app_config.kubernetes_cluster_binding_cleanup,
+            kubernetes_binding_cleanup_namespaces=set(env.kubernetes_binding_cleanup_namespaces),
+            kubernetes_cluster_binding_cleanup=env.kubernetes_cluster_binding_cleanup,
             runner_grpc_channel_options=dict(env.runner_grpc_channel_options),
             ingest_history=env.history_writer is HistoryWriter.SANDBOX_SERVICE,
         )
@@ -221,7 +221,7 @@ class SandboxService(Construct):
         grants = tuple(self.env.app_config.kubernetes_grants.values())
         # Retain management of scopes with live bindings even if an operator removes a
         # catalog entry. Removing an enabled choice must not strand its old bindings.
-        cleanup_namespaces = set(self.env.app_config.kubernetes_binding_cleanup_namespaces)
+        cleanup_namespaces = set(self.env.kubernetes_binding_cleanup_namespaces)
         role_binding_namespaces = {
             grant.namespace for grant in grants if isinstance(grant, RoleBindingGrant)
         } | cleanup_namespaces
@@ -258,7 +258,7 @@ class SandboxService(Construct):
         # Kustomization per target by binding_delegation.py. This service's
         # Kustomization must not fail because an unrelated namespace is absent.
         bind_cluster_roles = sorted({grant.role_ref.name for grant in grants if grant.role_ref.kind == "ClusterRole"})
-        uses_cluster_binding = self.env.app_config.kubernetes_cluster_binding_cleanup or any(
+        uses_cluster_binding = self.env.kubernetes_cluster_binding_cleanup or any(
             isinstance(grant, ClusterRoleBindingGrant) for grant in grants
         )
         if bind_cluster_roles or uses_cluster_binding:

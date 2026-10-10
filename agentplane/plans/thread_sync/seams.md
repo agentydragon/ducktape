@@ -13,7 +13,7 @@ rendering, scroll anchoring, sending commands — is shared.
 Electric sits behind one module on each side:
 
 - **Backend:** `electric.py` holds `ElectricProxy` and the `/threads/{thread_id}/sync/*` router,
-  mounted only when `electric_url` is set (`main.py`, `api.py`). Its only read of the fold is
+  which `api.py` always mounts; `electric_url` is a required setting. Its only read of the fold is
   `ContentStore.current_scope`, which any implementation needs for **P7**.
 - **Frontend:** `thread_sync.ts` defines the `ThreadSync` interface, and `projected_session.tsx`
   reads only that, from a context `app.tsx` fills. `thread_store.tsx` implements it as
@@ -95,7 +95,8 @@ a dynamic `import()` already keeps it off the page.
    scroll up then stream, edit mid-window, reconnect. The rest of the browser suite runs on the
    default.
 2. **Electric costs something when nobody picks it.** Its replication slot retains WAL and its shape
-   storage holds state regardless of traffic. Unsetting `electric_url` turns it off.
+   storage holds state regardless of traffic, and the app cannot run without it today: turning it
+   off needs the deploy-time choice above.
 3. **The interface must not be Electric-shaped.** Extracted from today's `thread_store.tsx` props,
    it would hand every other implementation shape and subset concepts it has no use for. It is
    written from the list above, and Electric is adapted to it.

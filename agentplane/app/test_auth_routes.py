@@ -12,6 +12,7 @@ import re
 from collections.abc import AsyncIterator, Collection
 from contextlib import AbstractAsyncContextManager, asynccontextmanager
 from datetime import UTC, datetime, timedelta
+from pathlib import Path
 from typing import Any, Protocol, cast
 
 import httpx
@@ -27,6 +28,7 @@ from agentplane.app.conftest import AGENT, AGENT_AUTH, AUDIENCE, STRANGER_AUTH
 from agentplane.app.database_updates import DatabaseUpdates
 from agentplane.app.decisions import DecisionsClient
 from agentplane.app.egress_access import EgressAccess
+from agentplane.app.electric import ElectricProxy
 from agentplane.app.identity import TokenReviewer
 from agentplane.app.live import LiveIndex
 from agentplane.app.model_catalog import ModelCatalog, ModelOption
@@ -82,6 +84,9 @@ def serve(
     action_policy: ActionPolicyInventory,
     event_logs: EventLogStore,
     content: ContentStore,
+    electric_proxy: ElectricProxy,
+    notifications_http: httpx.AsyncClient,
+    notifications_token_file: Path,
 ) -> ServeApp:
     """The app as staging runs it -- a login and the token path on one port -- and its IdP."""
 
@@ -142,6 +147,9 @@ def serve(
             content=content,
             database_updates=database_updates,
             operator_sessions=operator_sessions,
+            electric=electric_proxy,
+            notifications_http=notifications_http,
+            notifications_token_file=notifications_token_file,
         )
         # The database pool belongs to this event loop, not serve_app's dedicated thread.
         async with serve_app(idp, sock=idp_sock), serve_app_in_loop(app, sock=app_sock):

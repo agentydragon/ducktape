@@ -26,11 +26,12 @@ from agentplane.app.conftest import AGENT_AUTH
 from agentplane.app.database_updates import DatabaseUpdates
 from agentplane.app.decisions import DecisionsClient
 from agentplane.app.egress_access import EgressAccess
+from agentplane.app.electric import ElectricProxy
 from agentplane.app.identity import TokenReviewer
 from agentplane.app.live import LiveIndex
 from agentplane.app.main import AppServer, SpaFiles, serve_then_close
 from agentplane.app.model_catalog import ModelCatalog, ModelOption
-from agentplane.app.oidc import load_settings
+from agentplane.app.oidc import OIDCSettings
 from agentplane.app.operator_sessions import OperatorSessionStore
 from agentplane.app.settings import Settings
 from agentplane.app.shutdown import drain_of
@@ -68,6 +69,22 @@ APP_ENVIRONMENT = {
         }
     ),
     "AGENTPLANE_EGRESS_ADMIN_URL": "http://egress.test.invalid:8081",
+    "AGENTPLANE_NOTIFICATIONS_URL": "http://notifications.test.invalid:8080",
+    "AGENTPLANE_NOTIFICATIONS_TOKEN_FILE": "/test/notifications-token",
+    "AGENTPLANE_ELECTRIC_URL": "http://electric.test.invalid:3000",
+    "AGENTPLANE_ACTION_FEDERATION": json.dumps(
+        {
+            "mode": "direct",
+            "service_url": "http://actions.test.invalid:8080",
+            "login_jwks_uri": "https://auth.test.invalid/jwks/",
+            "target": {
+                "issuer": "https://auth.test.invalid/application/o/test-app/",
+                "audience": "test-client",
+                "jwks_uri": "https://auth.test.invalid/jwks/",
+            },
+            "scope": "openid profile",
+        }
+    ),
 }
 OIDC_ENVIRONMENT = {
     "AGENTPLANE_OIDC_ISSUER": "https://auth.test.invalid/application/o/test-app/",
@@ -110,38 +127,19 @@ def test_the_two_settings_models_read_one_environment_without_colliding(monkeypa
         monkeypatch.setenv(name, value)
 
     settings = Settings(_cli_parse_args=[])
-    oidc = load_settings()
+    oidc = OIDCSettings()
 
     assert (settings.namespace, settings.sandbox_namespace) == ("test-namespace", "test-sandbox-namespace")
     assert settings.sandbox_service_request_timeout_s == 20
     assert settings.sandbox_service_lifecycle_timeout_s == 310
     assert settings.sandbox_service_follow_timeout_s == 960
     assert (settings.port, settings.token_audience) == (8080, "agentplane")
-    assert oidc is not None
     assert oidc.redirect_uri == "https://app.test.invalid/auth/callback"
     assert (
         oidc.server_metadata_url == "https://auth.test.invalid/application/o/test-app/.well-known/openid-configuration"
     )
     # https, so the cookie takes the __Host- prefix that binds it to this exact origin.
     assert oidc.cookie_name.startswith("__Host-")
-
-
-def test_endpoint_settings_parse_urls_and_keep_optional_fields_absent(monkeypatch: pytest.MonkeyPatch) -> None:
-    for name, value in APP_ENVIRONMENT.items():
-        monkeypatch.setenv(name, value)
-
-    settings = Settings(_cli_parse_args=[])
-    assert str(settings.egress_admin_url) == "http://egress.test.invalid:8081/"
-    assert settings.notifications_url is None
-    assert settings.electric_url is None
-
-    monkeypatch.setenv("AGENTPLANE_NOTIFICATIONS_URL", "http://notifications.test.invalid:8080")
-    monkeypatch.setenv("AGENTPLANE_ELECTRIC_URL", "http://electric.test.invalid:3000")
-    settings = Settings(_cli_parse_args=[])
-    assert settings.notifications_url is not None
-    assert settings.electric_url is not None
-    assert str(settings.notifications_url) == "http://notifications.test.invalid:8080/"
-    assert str(settings.electric_url) == "http://electric.test.invalid:3000/"
 
 
 @pytest.mark.parametrize(
@@ -154,14 +152,6 @@ def test_endpoint_settings_reject_query_components(field: str, monkeypatch: pyte
 
     with pytest.raises(ValidationError):
         Settings(_cli_parse_args=[])
-
-
-def test_without_an_issuer_there_is_no_login(monkeypatch: pytest.MonkeyPatch) -> None:
-    """The app is guarded either way; unset, what is missing is the browser's way to get a session."""
-    for name in OIDC_ENVIRONMENT:
-        monkeypatch.delenv(name, raising=False)
-
-    assert load_settings() is None
 
 
 SANDBOX = "shutdown-test-sandbox"
@@ -241,6 +231,9 @@ async def test_sigterm_ends_open_streams_fails_readiness_and_closes_the_ingester
     ingester: Ingester,
     custom_objects: FakeCustomObjectsApi,
     core_v1: FakeCoreV1Api,
+    electric_proxy: ElectricProxy,
+    notifications_http: httpx.AsyncClient,
+    notifications_token_file: Path,
 ) -> None:
     """A tab holding `/live/sandboxes` open used to hold Uvicorn's shutdown open with it. The stream
     now ends at the signal -- cleanly, which a stream cancelled at the budget would not -- readiness
@@ -264,6 +257,9 @@ async def test_sigterm_ends_open_streams_fails_readiness_and_closes_the_ingester
         content=content,
         database_updates=database_updates,
         operator_sessions=operator_sessions,
+        electric=electric_proxy,
+        notifications_http=notifications_http,
+        notifications_token_file=notifications_token_file,
     )
     port = pick_free_port()
     # A budget the test would never wait out: the stream has to end because of the drain, not this.
