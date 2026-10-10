@@ -12,9 +12,9 @@ locals {
       install_disk = "/dev/disk/by-id/nvme-BC511_NVMe_SK_hynix_256GB_AS9CN54631CA0CT13"
       region       = "home"
       zone         = "home-lan"
-      # A fixed LAN address beside the DHCP lease, below the AT&T BGW320's default DHCP
-      # pool (192.168.1.64-253). The home switch sends its syslog here: keep in sync with
-      # tf/gitops/home-switch and cluster/cdk8s/monitoring/alloy.py.
+      # A fixed LAN address beside the DHCP lease, below the AT&T gateway's DHCP pool
+      # (192.168.1.64-253, its Subnets & DHCP page). The home switch sends its syslog here:
+      # keep in sync with tf/gitops/home-switch and cluster/cdk8s/monitoring/alloy.py.
       lan_address = "192.168.1.10/24"
       lan_mac     = "e4:54:e8:85:9f:b2"
     }
