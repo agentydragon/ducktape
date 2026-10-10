@@ -19,7 +19,7 @@ is the only imperative installation step.
 | Topology zone                           | `home-lan`                                                         |
 | Storage tier                            | `ssd`                                                              |
 | Maintenance address during installation | `192.168.1.89/24` (DHCP; ephemeral)                                |
-| Fixed LAN address (beside DHCP)         | `192.168.1.10/24`, the home switch's syslog target                 |
+| Fixed LAN address (beside DHCP)         | `192.168.1.10/24` (<../../docs/home_lan.md>)                       |
 | NIC                                     | Intel I219-LM `eno1`, MAC `e4:54:e8:85:9f:b2`                      |
 | Install disk                            | SK hynix BC511 256 GB, serial `AS9CN54631CA0CT13`                  |
 | Stable install path                     | `/dev/disk/by-id/nvme-BC511_NVMe_SK_hynix_256GB_AS9CN54631CA0CT13` |
