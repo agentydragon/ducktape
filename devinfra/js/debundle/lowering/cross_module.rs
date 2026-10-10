@@ -278,13 +278,10 @@ pub(super) fn collect_cross_module_imported_purities(
                 imports,
                 exports,
                 source: Some((
-                    chunk_artifact
-                        .js
-                        .get_file(entry_file)
-                        .map_or_else(
-                            || chunk_artifact.analysis.source_path.clone(),
-                            |file| file.metadata.source_path.clone(),
-                        ),
+                    chunk_artifact.js.get_file(entry_file).map_or_else(
+                        || chunk_artifact.analysis.source_path.clone(),
+                        |file| file.metadata.source_path.clone(),
+                    ),
                     parsed.line_index(),
                 )),
             },
