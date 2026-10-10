@@ -98,12 +98,20 @@
 }
 
 .agentplane-mosaic-resize-handle {
+  position: relative;
   z-index: 2;
   min-width: 0;
   min-height: 0;
-  background: var(--mantine-color-default-border);
+  background: transparent;
   touch-action: none;
   outline: none;
+}
+
+.agentplane-mosaic-resize-handle::after {
+  position: absolute;
+  background: var(--mantine-color-default-border);
+  content: "";
+  pointer-events: none;
 }
 
 .agentplane-mosaic-split[data-direction="horizontal"] > .agentplane-mosaic-resize-handle {
@@ -118,8 +126,22 @@
   cursor: row-resize;
 }
 
-.agentplane-mosaic-resize-handle:hover,
-.agentplane-mosaic-resize-handle:focus-visible {
+.agentplane-mosaic-split[data-direction="horizontal"] > .agentplane-mosaic-resize-handle::after {
+  inset-block: 0;
+  left: 50%;
+  width: 1px;
+  transform: translateX(-50%);
+}
+
+.agentplane-mosaic-split[data-direction="vertical"] > .agentplane-mosaic-resize-handle::after {
+  inset-inline: 0;
+  top: 50%;
+  height: 1px;
+  transform: translateY(-50%);
+}
+
+.agentplane-mosaic-resize-handle:hover::after,
+.agentplane-mosaic-resize-handle:focus-visible::after {
   background: var(--mantine-primary-color-filled);
 }
 
