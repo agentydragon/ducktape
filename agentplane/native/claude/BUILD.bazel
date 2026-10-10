@@ -78,6 +78,7 @@ py_test(
 
 py_library(
     name = "mcp",
+    testonly = True,
     srcs = ["mcp.py"],
     deps = [
         ":driver",

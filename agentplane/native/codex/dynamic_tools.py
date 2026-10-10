@@ -1,5 +1,5 @@
 """Answers `item/tool/call` server requests for tools declared via `thread/start.dynamicTools`, for
-driving Codex's client-supplied-tool role from a test or capture, not a real subprocess."""
+driving Codex's client-supplied-tool role from the harness tests, not a real subprocess."""
 
 from __future__ import annotations
 

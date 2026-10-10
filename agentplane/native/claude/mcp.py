@@ -1,5 +1,5 @@
 """A minimal MCP server answered entirely through `mcp_message` control requests, for driving
-Claude Code's SDK MCP host role (`sdkMcpServers`) from a test or capture, not a real subprocess.
+Claude Code's SDK MCP host role (`sdkMcpServers`) from the harness tests, not a real subprocess.
 
 The tool registry and its execution run on a real `fastmcp.FastMCP` server reached over an
 in-memory `fastmcp` `Client` (the same in-process pattern as
