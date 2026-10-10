@@ -22,6 +22,12 @@ cannot receive comments. The publisher rechecks the PR before updating its
 singleton comment so a push during artifact processing does not replace a newer
 review with an older result.
 
+The comment leads with CI or baseline warnings and aggregate change counts, then
+groups changed targets by impact in collapsible sections. The two highest-impact
+targets open by default; each section includes its modified, new, or removed
+screenshots. The comment uses up to 55,000 characters, with the complete gallery
+available for any target omitted to stay within budget.
+
 ## Determinism checks
 
 `//devinfra/pr_visuals:determinism_bin` repeats visual targets and checks the PNGs

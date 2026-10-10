@@ -40,23 +40,23 @@
         <div class="assets">
           {% if test.preview and test.preview.classification == "modified" %}
           <figure>
-            <a href="tests/{{ test.slug }}/index.html#{{ test.preview.path }}">
-              <img src="tests/{{ test.slug }}/diff/{{ test.preview.path }}" alt="{{ test.preview.label }} diff" loading="lazy">
+            <a href="{{ test.preview.anchor_url }}">
+              <img src="{{ test.preview.diff_url }}" alt="{{ test.preview.label }} diff" loading="lazy">
             </a>
             <figcaption>{{ test.preview.label }} diff</figcaption>
           </figure>
           {% elif test.preview %}
           <figure>
-            <a href="tests/{{ test.slug }}/index.html#{{ test.preview.path }}">
-              <img src="tests/{{ test.slug }}/{{ test.preview.path }}" alt="{{ test.preview.label }}" loading="lazy">
+            <a href="{{ test.preview.anchor_url }}">
+              <img src="{{ test.preview.candidate_url }}" alt="{{ test.preview.label }}" loading="lazy">
             </a>
             <figcaption>{{ test.preview.label }} (new)</figcaption>
           </figure>
           {% elif not test.summary %}
             {% for asset in test.assets[:2] %}
             <figure>
-              <a href="tests/{{ test.slug }}/index.html#{{ asset.path }}">
-                <img src="tests/{{ test.slug }}/{{ asset.path }}" alt="{{ asset.label }}" loading="lazy">
+              <a href="{{ asset.anchor_url }}">
+                <img src="{{ asset.candidate_url }}" alt="{{ asset.label }}" loading="lazy">
               </a>
               <figcaption>{{ asset.label }}</figcaption>
             </figure>

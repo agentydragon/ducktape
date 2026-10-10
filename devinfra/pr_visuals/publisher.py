@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import hashlib
+import html
 import json
 import mimetypes
 import os
@@ -36,7 +37,9 @@ from util.visual_review import MANIFEST_NAME, VisualReviewAsset, VisualReviewMan
 
 FULL_SHA = re.compile(r"^[0-9a-f]{40}$")
 COMMENT_MARKER = "<!-- pr-visuals -->"
-COMMENT_BUDGET = 6000
+COMMENT_BUDGET = 55_000
+COMMENT_OPEN_TARGETS = 2
+INLINE_ASSET_LIMIT = 3
 
 
 @dataclass(frozen=True)
@@ -447,6 +450,46 @@ def _asset_summary(assets: list[ReviewAsset]) -> ClassificationCounts:
     return summary
 
 
+def _ordered_assets(assets: list[ReviewAsset]) -> list[ReviewAsset]:
+    """Put changed screenshots first and sort each class by review impact."""
+    classification_order = {"modified": 0, "new": 1, "removed": 2, "unchanged": 3, None: 4}
+    return sorted(
+        assets,
+        key=lambda asset: (
+            classification_order[asset.classification],
+            -(asset.changed_fraction or 0.0),
+            asset.label.casefold(),
+            asset.path,
+        ),
+    )
+
+
+def _asset_url(asset_base: str, asset: ReviewAsset, variant: Literal["candidate", "baseline", "diff"]) -> str:
+    prefix = {"candidate": "", "baseline": "baseline/", "diff": "diff/"}[variant]
+    return f"{asset_base}{prefix}{urllib.parse.quote(asset.path, safe='/')}"
+
+
+def _asset_page_data(asset: ReviewAsset, *, asset_base: str, page_url: str) -> dict[str, Any]:
+    path = urllib.parse.quote(asset.path, safe="/")
+    return {
+        **asset.model_dump(exclude_none=True),
+        "candidate_url": _asset_url(asset_base, asset, "candidate"),
+        "baseline_url": _asset_url(asset_base, asset, "baseline"),
+        "diff_url": _asset_url(asset_base, asset, "diff"),
+        "anchor_url": f"{page_url}#{path}",
+    }
+
+
+def _review_test_page_data(test: ReviewTest, *, asset_base: str, page_url: str) -> dict[str, Any]:
+    page = test.model_dump(exclude_none=True)
+    page["assets"] = [
+        _asset_page_data(asset, asset_base=asset_base, page_url=page_url) for asset in _ordered_assets(test.assets)
+    ]
+    if test.preview is not None:
+        page["preview"] = _asset_page_data(test.preview, asset_base=asset_base, page_url=page_url)
+    return page
+
+
 def _pick_preview(assets: list[ReviewAsset]) -> ReviewAsset | None:
     """The one asset shown as a test's thumbnail on the aggregate index page.
 
@@ -454,9 +497,10 @@ def _pick_preview(assets: list[ReviewAsset]) -> ReviewAsset | None:
     (a target whose assets are all new — e.g. its first publish, or a PR that only adds fixtures
     to an existing target — otherwise gets no thumbnail at all).
     """
+    ordered = _ordered_assets(assets)
     return next(
-        (asset for asset in assets if asset.classification == "modified"),
-        next((asset for asset in assets if asset.classification == "new"), None),
+        (asset for asset in ordered if asset.classification == "modified"),
+        next((asset for asset in ordered if asset.classification == "new"), None),
     )
 
 
@@ -567,13 +611,17 @@ def build_bundle(
             preview=_pick_preview(assets) if base_sha else None,
         )
         (target_dir / "metadata.json").write_text(review_test.model_dump_json(indent=2, exclude_none=True) + "\n")
-        page = review_test.model_dump(exclude_none=True)
+        page = _review_test_page_data(review_test, asset_base="", page_url="")
         (target_dir / "index.html").write_text(
             environment.get_template("pr_visual_test.html.j2").render(
                 repository=repository, commit_sha=commit_sha, **page
             )
         )
-        page_tests.append(page)
+        page_tests.append(
+            _review_test_page_data(
+                review_test, asset_base=f"tests/{test.slug}/", page_url=f"tests/{test.slug}/index.html"
+            )
+        )
         review_tests.append(review_test)
 
     bundle.mkdir(parents=True, exist_ok=True)
@@ -633,97 +681,145 @@ def _totals(review_tests: list[ReviewTest]) -> ClassificationCounts:
     return totals
 
 
-def _preview_img(url: str) -> str:
-    """One before/after/diff table cell; 3 × 260px fits GitHub's comment width."""
-    return f'<img src="{url}" width="260">'
+def _preview_img(url: str, alt: str) -> str:
+    escaped_url = html.escape(url, quote=True)
+    escaped_alt = html.escape(alt, quote=True)
+    return f'<a href="{escaped_url}"><img src="{escaped_url}" width="260" alt="{escaped_alt}"></a>'
 
 
-def _previews(review_tests: list[ReviewTest], url: str, limit: int) -> list[str]:
-    """Up to `limit` modified-asset before/after/diff tables, then up to `limit` new-asset
-    previews; the lines to append after the target list."""
-    modified = [
-        (asset.changed_fraction or 0.0, test.slug, asset)
-        for test in review_tests
-        for asset in test.assets
-        if asset.classification == "modified"
-    ]
-    modified.sort(key=lambda item: item[0], reverse=True)
-    new = [(test.slug, asset) for test in review_tests for asset in test.assets if asset.classification == "new"]
-    lines: list[str] = []
-    if modified:
-        lines += ["", "### Top changes"]
-        for fraction, slug, asset in modified[:limit]:
-            test_url = f"{url}tests/{slug}"
-            # Dimension changes produce no diff overlay (the images can't be
-            # compared pixel-for-pixel), so that cell degrades to text.
-            diff_cell = (
-                _preview_img(f"{test_url}/diff/{asset.path}")
-                if not asset.dimension_changed
-                else "_(dimensions changed)_"
-            )
-            lines += [
-                "",
-                f"`{asset.label}` · {fraction:.1%} changed",
-                "",
-                "| Before | After | Diff |",
-                "| --- | --- | --- |",
-                f"| {_preview_img(f'{test_url}/baseline/{asset.path}')} "
-                f"| {_preview_img(f'{test_url}/{asset.path}')} "
-                f"| {diff_cell} |",
-            ]
-    if new:
-        # No baseline to compare against — one image each, not a before/after/diff table.
-        lines += ["", "### New screenshots"]
-        for slug, asset in new[:limit]:
-            test_url = f"{url}tests/{slug}"
-            lines += ["", f"`{asset.label}`", "", _preview_img(f"{test_url}/{asset.path}")]
-    return lines
-
-
-def _target_list(review_tests: list[ReviewTest], url: str, *, collapse_unchanged: bool) -> list[str]:
-    """One bullet per target with changes; the unchanged ones folded under a `<details>` so the
-    list reads as what changed, and can be dropped to a count when the budget is tight."""
-
-    def bullet(test: ReviewTest) -> str:
-        counts = test.summary or ClassificationCounts()
-        return f"- [`{test.target_label}`]({url}tests/{test.slug}/index.html): {_format_test_counts(counts)}"
-
-    changed = [
-        test for test in review_tests if _format_test_counts(test.summary or ClassificationCounts()) != "unchanged"
-    ]
-    unchanged = [test for test in review_tests if test not in changed]
-    lines = [bullet(test) for test in changed]
-    if unchanged:
-        plural = "" if len(unchanged) == 1 else "s"
-        if collapse_unchanged:
-            lines += [
-                "",
-                "<details>",
-                f"<summary>{len(unchanged)} unchanged target{plural}</summary>",
-                "",
-                *(bullet(test) for test in unchanged),
-                "",
-                "</details>",
-            ]
-        else:
-            lines += ["", f"{len(unchanged)} unchanged target{plural}."]
-    return lines
-
-
-def _with_target_list_and_previews(head: list[str], review_tests: list[ReviewTest], url: str) -> str:
-    """The comment within budget: previews are what a reviewer opens the comment for, so the
-    collapsed unchanged list goes first when something has to give, then the preview count."""
-    for collapse_unchanged, limit in ((True, 2), (True, 1), (False, 2), (False, 1)):
-        body = "\n".join(
-            [
-                *head,
-                *_target_list(review_tests, url, collapse_unchanged=collapse_unchanged),
-                *_previews(review_tests, url, limit),
-            ]
+def _asset_comment_lines(asset: ReviewAsset, *, asset_base: str) -> list[str]:
+    label = html.escape(asset.label)
+    if asset.classification == "modified":
+        fraction = asset.changed_fraction or 0.0
+        diff = (
+            "_(dimensions changed)_"
+            if asset.dimension_changed
+            else _preview_img(_asset_url(asset_base, asset, "diff"), f"{asset.label} diff")
         )
-        if len(body) <= COMMENT_BUDGET:
-            return body
-    return "\n".join([*head, *_target_list(review_tests, url, collapse_unchanged=False)])
+        return [
+            f"<p><strong>{label}</strong> · {fraction:.1%} changed</p>",
+            "",
+            "| Before | After | Diff |",
+            "| --- | --- | --- |",
+            f"| {_preview_img(_asset_url(asset_base, asset, 'baseline'), f'{asset.label} baseline')} "
+            f"| {_preview_img(_asset_url(asset_base, asset, 'candidate'), f'{asset.label} candidate')} "
+            f"| {diff} |",
+        ]
+    if asset.classification == "new":
+        return [
+            f"<p><strong>{label}</strong> · new</p>",
+            "",
+            _preview_img(_asset_url(asset_base, asset, "candidate"), asset.label),
+        ]
+    if asset.classification == "removed":
+        return [
+            f"<p><strong>{label}</strong> · removed</p>",
+            "",
+            _preview_img(_asset_url(asset_base, asset, "baseline"), f"{asset.label} baseline"),
+        ]
+    return []
+
+
+def _test_impact_key(test: ReviewTest) -> tuple[float, int, str]:
+    changed = [asset for asset in test.assets if asset.classification in {"modified", "new", "removed"}]
+    largest_change = max(
+        (asset.changed_fraction or 0.0 for asset in changed if asset.classification == "modified"), default=0.0
+    )
+    return (-largest_change, -len(changed), test.target_label)
+
+
+def _is_unchanged(test: ReviewTest) -> bool:
+    return test.summary is not None and test.summary.modified == test.summary.new == test.summary.removed == 0
+
+
+def _target_section(test: ReviewTest, *, url: str, open_section: bool) -> list[str]:
+    counts = test.summary or ClassificationCounts()
+    assets = [asset for asset in _ordered_assets(test.assets) if asset.classification in {"modified", "new", "removed"}]
+    largest_change = max(
+        (asset.changed_fraction or 0.0 for asset in assets if asset.classification == "modified"), default=None
+    )
+    impact = f" · largest change {largest_change:.1%}" if largest_change is not None else ""
+    details = "<details open>" if open_section else "<details>"
+    gallery_url = f"{url}tests/{test.slug}/index.html"
+    asset_base = f"{url}tests/{test.slug}/"
+    lines = [
+        details,
+        f"<summary><code>{html.escape(test.target_label)}</code> — {_format_test_counts(counts)}{impact} · "
+        f"{html.escape(test.title)}</summary>",
+        "",
+        f'<p><a href="{html.escape(gallery_url, quote=True)}">Open this test in the gallery</a></p>',
+        "",
+    ]
+    for index, asset in enumerate(assets):
+        content = _asset_comment_lines(asset, asset_base=asset_base)
+        if len(assets) <= INLINE_ASSET_LIMIT:
+            lines.extend([*content, ""])
+            continue
+        asset_title = html.escape(asset.label)
+        if asset.classification == "modified" and asset.changed_fraction is not None:
+            asset_title += f" — {asset.changed_fraction:.1%} changed"
+        elif asset.classification is not None:
+            asset_title += f" — {asset.classification}"
+        asset_open = open_section and index == 0
+        lines += [
+            "<details open>" if asset_open else "<details>",
+            f"<summary>{asset_title}</summary>",
+            "",
+            *content,
+            "",
+            "</details>",
+            "",
+        ]
+    lines.append("</details>")
+    return lines
+
+
+def _unchanged_section(review_tests: list[ReviewTest], *, url: str) -> list[str]:
+    unchanged = [test for test in review_tests if _is_unchanged(test)]
+    if not unchanged:
+        return []
+    plural = "" if len(unchanged) == 1 else "s"
+    return [
+        "<details>",
+        f"<summary>{len(unchanged)} unchanged target{plural}</summary>",
+        "",
+        *(f"- [`{test.target_label}`]({url}tests/{test.slug}/index.html)" for test in unchanged),
+        "",
+        "</details>",
+    ]
+
+
+def _with_target_sections(head: list[str], review_tests: list[ReviewTest], url: str) -> str:
+    changed = [test for test in review_tests if test.summary and not _is_unchanged(test)]
+    changed.sort(key=_test_impact_key)
+    unchanged = _unchanged_section(review_tests, url=url)
+    lines = [*head, "### Changed tests", ""]
+    omitted = 0
+    included = 0
+    for test in changed:
+        section = _target_section(test, url=url, open_section=included < COMMENT_OPEN_TARGETS)
+        candidate = "\n".join([*lines, *section])
+        if len(candidate) + 160 > COMMENT_BUDGET:
+            omitted += 1
+            continue
+        lines.extend(section)
+        included += 1
+
+    if unchanged:
+        candidate = "\n".join([*lines, *unchanged])
+        if len(candidate) + (160 if omitted else 0) <= COMMENT_BUDGET:
+            lines.extend(unchanged)
+        else:
+            unchanged_count = sum(1 for test in review_tests if _is_unchanged(test))
+            lines += ["", f"{unchanged_count} unchanged targets; see the full gallery."]
+
+    if omitted:
+        lines += [
+            "",
+            f"{omitted} changed test section{'' if omitted == 1 else 's'} omitted to keep this comment within its character budget. "
+            f"[Open the full gallery]({url}index.html) for the rest.",
+        ]
+    return "\n".join(lines)
 
 
 def _format_test_counts(counts: ClassificationCounts) -> str:
@@ -828,7 +924,7 @@ def success_comment_body(
         f"{totals.unchanged} unchanged. [Open visual review]({page_url}).",
         "",
     ]
-    return _with_target_list_and_previews(lines, review_tests, url)
+    return _with_target_sections(lines, review_tests, url)
 
 
 def no_visual_comment_body(

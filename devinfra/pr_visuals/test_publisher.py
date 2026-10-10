@@ -1095,12 +1095,11 @@ def test_success_comment_body_hides_zero_count_buckets_per_test() -> None:
         review_tests=review_tests,
         base_sha="f" * 40,
     )
-    # Exact-line membership, not substring: the headline totals legitimately spell out
-    # "0 removed" too (it always reports all four buckets), so a bare `in body` check would
-    # pass even if the per-test bullet still leaked its own zero segments.
+    # The target disclosure omits zero-count buckets from its summary.
     lines = body.splitlines()
-    assert "- [`//a:x`](https://v/commits/sha/tests/a/index.html): 4 modified, 12 new" in lines
-    assert "- [`//b:y`](https://v/commits/sha/tests/b/index.html): unchanged" in lines
+    assert "<summary><code>//a:x</code> — 4 modified, 12 new · A</summary>" in lines
+    assert "<summary>1 unchanged target</summary>" in lines
+    assert "- [`//b:y`](https://v/commits/sha/tests/b/index.html)" in lines
 
 
 def test_success_comment_body_is_compact_when_every_affected_test_is_unchanged() -> None:
@@ -1153,9 +1152,8 @@ def test_success_comment_body_shows_new_previews_when_nothing_modified() -> None
     assert body.count("<img ") == 2
 
 
-def test_success_comment_body_folds_unchanged_targets_and_keeps_the_new_preview() -> None:
-    """A sweep over many untouched targets must not push the one new screenshot out of the
-    comment: the unchanged targets fold under a details block, and the preview stays."""
+def test_success_comment_body_groups_changed_tests_and_folds_unchanged_targets() -> None:
+    """Changed tests get their own disclosure and the unchanged list stays compact."""
     review_tests = [
         ReviewTest(
             target_label=f"//untouched{index}:visuals",
@@ -1183,13 +1181,11 @@ def test_success_comment_body_folds_unchanged_targets_and_keeps_the_new_preview(
     )
     lines = body.splitlines()
     assert "tests/ex-visuals-abcdef/fresh.png" in body
-    # The changed target is listed in the open, before the fold; the untouched ones sit inside it.
-    assert (
-        lines.index("- [`//ex:visuals`](https://v/commits/sha/tests/ex-visuals-abcdef/index.html): 1 new")
-        < lines.index("<details>")
-        < lines.index("- [`//untouched0:visuals`](https://v/commits/sha/tests/untouched-0/index.html): unchanged")
-        < lines.index("</details>")
+    assert "<summary><code>//ex:visuals</code> — 1 new · Ex</summary>" in lines
+    assert lines.index("<summary><code>//ex:visuals</code> — 1 new · Ex</summary>") < lines.index(
+        "<summary>22 unchanged targets</summary>"
     )
+    assert "- [`//untouched0:visuals`](https://v/commits/sha/tests/untouched-0/index.html)" in lines
     assert len(body) <= COMMENT_BUDGET
 
 
@@ -1256,7 +1252,7 @@ def test_success_comment_body_dimension_change_degrades_diff_cell() -> None:
     assert "diff/a.png" not in body
 
 
-def test_success_comment_body_drops_previews_over_budget() -> None:
+def test_success_comment_body_uses_more_of_the_comment_budget_for_previews() -> None:
     big = "x" * 3500
     review_tests = [
         ReviewTest(
@@ -1277,11 +1273,12 @@ def test_success_comment_body_drops_previews_over_budget() -> None:
         review_tests=review_tests,
         base_sha="f" * 40,
     )
-    # Over budget with two previews → falls back to one (three imgs: before/after/diff).
-    assert body.count("<img ") == 3
+    # Both changed screenshots fit under the expanded budget.
+    assert body.count("<img ") == 6
     assert "baseline/a.png" in body
     assert "diff/a.png" in body
-    assert "b.png" not in body
+    assert "baseline/b.png" in body
+    assert "diff/b.png" in body
     assert len(body) <= COMMENT_BUDGET
 
 
