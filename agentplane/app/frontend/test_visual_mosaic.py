@@ -19,7 +19,7 @@ async def _mount_mosaic(view: VisualPage, app: AgentplaneFixture) -> None:
     await app.mount_app("/mosaic")
     await expect(view.page.locator("[data-mosaic-pane-kind='action'] button[aria-label^='Approve']")).to_be_attached()
     await expect(view.page.locator("[data-mosaic-pane]")).to_have_count(3)
-    await expect(view.page.get_by_role("button", name="Mosaic preview")).to_be_visible()
+    await expect(view.page.get_by_role("heading", name="Mosaic")).to_be_visible()
     await view.check(context="mosaic fixture ready")
 
 
@@ -119,7 +119,7 @@ async def test_desktop_browses_threads_actions_and_history(
     await expect(detail_pane).to_be_attached()
     await detail_pane.get_by_role("button", name="Approve").click()
     await expect(detail_pane).to_have_count(0)
-    await expect(page.get_by_role("combobox", name="Active pane")).to_have_value("actions")
+    await expect(page.get_by_role("combobox", name="Active pane")).to_have_value("Actions")
     await view.check(context="resolved action returned to its originating pane")
     await view.capture(name="mosaic-desktop-action-decision-returns-to-actions", target=page.locator("#app"))
 
