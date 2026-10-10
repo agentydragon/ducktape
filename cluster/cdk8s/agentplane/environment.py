@@ -129,6 +129,8 @@ class Environment:
     runner_grpc_channel_options: Mapping[str, int | str]
     # Which service copies runner journals into the history tables; the other's ingester is off.
     history_writer: HistoryWriter
+    # Whether the History Service rebuilds the thread fold from the raw log beside the app's.
+    fold_shadow: bool
     db: DbProps
     llm_ingress: LlmIngressProps
     egress: EgressProps

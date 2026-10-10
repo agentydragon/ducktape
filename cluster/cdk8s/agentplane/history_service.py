@@ -87,6 +87,7 @@ class HistoryService(Construct):
                     "grpc_channel_options": env.app_config.sandbox_service_grpc_channel_options,
                 },
                 "ingester": {"enabled": env.history_writer is HistoryWriter.HISTORY_SERVICE},
+                "fold_shadow": env.fold_shadow,
             },
             path="/etc/agentplane-history-service/config.yaml",
             supplied=[("database_url",)],

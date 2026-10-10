@@ -2533,6 +2533,7 @@ data:
         grpc.max_receive_message_length: 33554432
     ingester:
       enabled: true
+    fold_shadow: false
 immutable: false
 ---
 apiVersion: apps/v1
