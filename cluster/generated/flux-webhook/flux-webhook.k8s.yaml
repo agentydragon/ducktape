@@ -20,6 +20,10 @@ spec:
       kind: ImageRepository
       name: tofu-controller
       namespace: flux-system
+    - apiVersion: image.toolkit.fluxcd.io/v1
+      kind: ImageRepository
+      name: tf-runner
+      namespace: flux-system
   secretRef:
     name: github-webhook-token
   type: github

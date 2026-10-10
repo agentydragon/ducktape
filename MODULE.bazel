@@ -258,6 +258,16 @@ oci.pull(
     tag = "1.8.1",
 )
 
+# Base of //cluster/tf_runner:image. Keep it at the upstream release third_party/tofu_controller's
+# fork branch is based on (v0.16.5, runner/ untouched), which release.py's chart version names.
+oci.pull(
+    name = "tf_runner",
+    digest = "sha256:7209171093907ec1d0559c682949fcee4b625205a6a058c16fe0ce0017af5f41",
+    image = "ghcr.io/flux-iac/tf-runner",
+    platforms = ["linux/amd64"],
+    tag = "v0.16.5",
+)
+
 # Test infrastructure: PostgreSQL for Testcontainers (match production version)
 oci.pull(
     name = "postgres_18",
@@ -356,7 +366,7 @@ oci.pull(
     platforms = ["linux/amd64"],
     tag = "v0.16.22",
 )
-use_repo(oci, "debian_trixie_slim", "debian_trixie_slim_linux_amd64", "distroless_cc_debian12", "distroless_cc_debian12_linux_amd64", "electric_1_8_1", "electric_1_8_1_linux_amd64", "grocy", "grocy_linux_amd64", "inventree_stable", "inventree_stable_linux_amd64", "litellm_upstream", "litellm_upstream_linux_amd64", "nginx_unprivileged", "nginx_unprivileged_linux_amd64", "pgvector_pg18", "pgvector_pg18_linux_amd64", "postgres_18", "postgres_18_linux_amd64", "python_3_14_slim", "python_3_14_slim_linux_amd64", "registry_3", "registry_3_linux_amd64", "ryuk", "ryuk_linux_amd64", "stalwart", "stalwart_linux_amd64")
+use_repo(oci, "debian_trixie_slim", "debian_trixie_slim_linux_amd64", "distroless_cc_debian12", "distroless_cc_debian12_linux_amd64", "electric_1_8_1", "electric_1_8_1_linux_amd64", "grocy", "grocy_linux_amd64", "inventree_stable", "inventree_stable_linux_amd64", "litellm_upstream", "litellm_upstream_linux_amd64", "nginx_unprivileged", "nginx_unprivileged_linux_amd64", "pgvector_pg18", "pgvector_pg18_linux_amd64", "postgres_18", "postgres_18_linux_amd64", "python_3_14_slim", "python_3_14_slim_linux_amd64", "registry_3", "registry_3_linux_amd64", "ryuk", "ryuk_linux_amd64", "stalwart", "stalwart_linux_amd64", "tf_runner", "tf_runner_linux_amd64")
 
 # Container image pins from devinfra/image_pins.json.
 # - Generates @image_pins//:pins.bzl with NAME_IMAGE / NAME_DIGEST constants

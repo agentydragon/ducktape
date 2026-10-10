@@ -5,7 +5,7 @@ exports_files(["variables.tf"])
 tf_providers_versions(
     name = "providers",
     providers = {
-        "aws": "hashicorp/aws:~>5.0",
+        "aws": "hashicorp/aws:~>6.0",
     },
     tf_version = "1.12.6",
 )

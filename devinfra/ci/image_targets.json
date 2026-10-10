@@ -285,6 +285,10 @@
       "target": "//agentplane/notification_service:migration_image",
       "test": "//agentplane/notification_service/...",
       "registry": "forgejo"
+    },
+    "tf-runner": {
+      "target": "//cluster/tf_runner:image",
+      "test": "//cluster/tf_runner/..."
     }
   }
 }

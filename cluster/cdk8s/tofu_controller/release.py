@@ -4,8 +4,9 @@ image automation that rolls the controller image.
 The controller image is ours: `third_party/tofu_controller` patches upstream to accept a Flux
 `ExternalArtifact` as a `Terraform` source. So the CRD installed here is that module's patched
 copy, not the chart's (the HelmRelease skips CRDs), and a post-renderer grants the chart's
-manager ClusterRole read access to ExternalArtifacts. `PINS_DIR` sets the HelmRelease's
-controller image from the image policy below.
+manager ClusterRole read access to ExternalArtifacts. The runner pods' image is ours too
+(`cluster/tf_runner`: upstream's runner with every provider baked in). `PINS_DIR` sets both
+images in the HelmRelease from the image policies below.
 
 `values` is an untyped dict: Helm values carry no schema for `cdk8s_import` to ingest.
 """
@@ -38,8 +39,11 @@ NAMESPACE = "flux-system"
 OUTPUT_DIR = f"{GENERATED_ROOT}/tofu-controller"
 PINS_DIR = f"{HAND_WRITTEN_ROOT}/{NAME}-image-pins"
 # GHCR, not the Forgejo registry: the Forgejo pull credential's user is created by a Terraform
-# this controller applies, so a Forgejo-hosted controller could never start on a fresh cluster.
+# this controller applies, so a Forgejo-hosted controller or runner could never start on a fresh
+# cluster.
 IMAGE = "ghcr.io/agentydragon/tofu-controller"
+RUNNER_NAME = "tf-runner"
+RUNNER_IMAGE = "ghcr.io/agentydragon/tf-runner"
 _CRD = "ducktape_tofu_controller/infra.contrib.fluxcd.io_terraforms.yaml"
 # The chart's `tofu-manager-role` lists the source kinds upstream supports; the patched
 # controller also reads (and watches) ExternalArtifacts.
@@ -105,16 +109,17 @@ def chart(app: App) -> Chart:
             "logLevel": "info",
         },
     )
-    newest_ci_tag_policy(
-        chart,
-        ImageRepository(
+    for name, image in ((NAME, IMAGE), (RUNNER_NAME, RUNNER_IMAGE)):
+        newest_ci_tag_policy(
             chart,
-            "image-repository",
-            metadata=ApiObjectMetadata(name=NAME, namespace=NAMESPACE),
-            image=IMAGE,
-            interval="5m",
-        ),
-    )
+            ImageRepository(
+                chart,
+                f"{name}-image-repository",
+                metadata=ApiObjectMetadata(name=name, namespace=NAMESPACE),
+                image=image,
+                interval="5m",
+            ),
+        )
     return chart
 
 

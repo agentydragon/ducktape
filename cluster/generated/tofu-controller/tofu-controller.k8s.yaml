@@ -10965,3 +10965,26 @@ spec:
   policy:
     alphabetical:
       order: asc
+---
+apiVersion: image.toolkit.fluxcd.io/v1
+kind: ImageRepository
+metadata:
+  name: tf-runner
+  namespace: flux-system
+spec:
+  image: ghcr.io/agentydragon/tf-runner
+  interval: 5m
+---
+apiVersion: image.toolkit.fluxcd.io/v1
+kind: ImagePolicy
+metadata:
+  name: tf-runner
+  namespace: flux-system
+spec:
+  filterTags:
+    pattern: ^devel-\d{14}-[0-9a-f]{7}$
+  imageRepositoryRef:
+    name: tf-runner
+  policy:
+    alphabetical:
+      order: asc

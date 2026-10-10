@@ -87,6 +87,7 @@ def chart(app: App) -> Chart:
             # it immediately on a Ducktape push rather than waiting for its poll.
             ReceiverResource.git_repository("ducktape", namespace="ducktape-flux"),
             ReceiverResource.image_repository("tofu-controller", namespace="flux-system"),
+            ReceiverResource.image_repository("tf-runner", namespace="flux-system"),
         ],
     )
     grafana = Provider(
