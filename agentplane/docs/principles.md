@@ -66,8 +66,16 @@ out of? If it is hard to reverse, is that cost stated and accepted?
 What crossed a boundary is retained as it crossed, so a later reader can see what actually
 happened rather than a summary of it.
 
-- The runner journals harness frames verbatim in both directions; derived events cite the native
-  frames they came from ([runner spec](../runner/SPEC.md)).
+The boundary where this matters most is **harness ↔ runner**. Claude Code and Codex are
+third-party binaries we do not control, so when one misbehaves the exact frames it sent and
+received are the evidence. The runner journals those frames verbatim in both directions, and
+derived events cite the native frames they came from ([runner spec](../runner/SPEC.md)). A weird
+bug's frames can then be pulled straight out of the log and turned into a harness ↔ runner
+behavior test ([scripted harness tests](../harness_tests/README.md)). Any change that trims or
+reshapes payloads must keep this boundary verbatim.
+
+Elsewhere:
+
 - The Action Service keeps an append-only event history per request, the policy versions behind
   each Decision, and the upstream `CallToolResult` as returned.
 - The LLM ingress forwards provider-native request and response bodies untranslated.
