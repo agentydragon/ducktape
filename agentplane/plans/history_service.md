@@ -1,6 +1,6 @@
 # History Service extraction, runner dial-out and delta settlement
 
-Status: **proposed sequence, nothing implemented.** The operator agreed to the target wiring in
+Status: **in progress.** The operator agreed to the target wiring in
 discussion on 2026-10-10 PDT. The [task DAG](task_dag.md#7-history-service-extraction-and-delta-settlement)
 owns every step, its status and its edges; this plan owns the target, the facts the order rests
 on, and the alternatives behind each decision node.
@@ -139,24 +139,16 @@ A sketch, starting from `agentplane/sandbox_service/protocol.proto`; names are n
 ```proto
 service SandboxService {
   // Unchanged: sandboxes, templates, egress, CreateSession, OpenSession, ResumeSession,
-  // LookupSession, ListSessions, SubmitCommand.
+  // LookupSession, ListSessions, SubmitCommand, WatchSessions.
   // Changed: fence, stop, seal, wait for holds, then delete. Progress comes from GetSandbox.
   rpc DeleteSandbox(DeleteSandboxRequest) returns (google.protobuf.Empty);
-  rpc WatchSessions(WatchSessionsRequest) returns (stream SessionChange);           // new
   rpc GetCommand(GetCommandRequest) returns (CommandStatus);                        // new
-  // Changed: replays from the runner journal below the live tail; adds a `sealed` frame.
+  // Replays from the runner journal below the live tail; sends `sealed` once runners seal.
   rpc FollowSession(FollowSessionRequest) returns (stream FollowSessionResponse);
   rpc PlaceHold(PlaceHoldRequest) returns (Hold);                                   // new, idempotent per holder
   rpc ConfirmHold(ConfirmHoldRequest) returns (Hold);                               // new: through_cursor
   rpc ReleaseHold(ReleaseHoldRequest) returns (google.protobuf.Empty);              // new
   // ReadSessionEvents and ReadSessionObservations move to the History Service.
-}
-
-message SessionChange {
-  string session_id = 1;    // public UUID
-  string sandbox_uid = 2;   // current incarnation
-  SessionState state = 3;   // created, running, stopped, sealing, sealed
-  bytes resume_token = 4;
 }
 
 message Hold {

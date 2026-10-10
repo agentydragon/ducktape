@@ -1,4 +1,4 @@
-"""Scripted Sandbox Service peer for app process and browser recovery tests."""
+"""Scripted Sandbox Service and History Service peer for app process and browser recovery tests."""
 
 import asyncio
 from collections.abc import AsyncIterator
@@ -99,19 +99,10 @@ class ReplicationSource(HistoryService):
         server = grpc.aio.server()
         server.add_generic_rpc_handlers(
             [
+                self.handler(),
                 grpc.method_handlers_generic_handler(
                     "ducktape.agentplane.sandbox.v1.SandboxService",
                     {
-                        "ReadSessionEvents": grpc.unary_unary_rpc_method_handler(
-                            self.read_events,
-                            request_deserializer=service_pb2.ReadSessionEventsRequest.FromString,
-                            response_serializer=service_pb2.ReadSessionEventsResponse.SerializeToString,
-                        ),
-                        "ReadSessionObservations": grpc.unary_unary_rpc_method_handler(
-                            self.read_observations,
-                            request_deserializer=service_pb2.ReadSessionObservationsRequest.FromString,
-                            response_serializer=service_pb2.ReadSessionObservationsResponse.SerializeToString,
-                        ),
                         "SubmitCommand": grpc.unary_unary_rpc_method_handler(
                             self.submit_command,
                             request_deserializer=service_pb2.SubmitCommandRequest.FromString,
@@ -123,7 +114,7 @@ class ReplicationSource(HistoryService):
                             response_serializer=protocol_pb2.ListSessionsResponse.SerializeToString,
                         ),
                     },
-                )
+                ),
             ]
         )
         port = server.add_insecure_port("127.0.0.1:0")

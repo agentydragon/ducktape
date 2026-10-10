@@ -31,8 +31,8 @@ from agentplane.app.electric import SUBSET_BODY_LIMIT, SUBSET_ROW_LIMIT, Electri
 from agentplane.app.testing.history import ProjectedHistory as Ingestion, SeededEventLogStore as EventLogStore
 from agentplane.app.testing.replication_source import SANDBOX, SESSION, ReplicationSource
 from agentplane.app.threads.view.content import ContentStore, ThreadScope
+from agentplane.history_service.client import HistoryServiceClient
 from agentplane.protocol import event_pb2
-from agentplane.sandbox_service.client import SandboxServiceClient
 from agentplane.thread_fold.projection_lease import ProjectionLease
 
 # The generated protocol stubs' own stub chain, which the mypy aspect resolves for direct deps only.
@@ -140,7 +140,7 @@ async def test_scope_names_the_epoch_and_how_far_the_fold_has_applied(seeded: Se
 class ScopeReads(ContentStore):
     """Signals a scope read that found no fold, so a case can record one while the read waits."""
 
-    def __init__(self, engine: AsyncEngine, history_reader: SandboxServiceClient) -> None:
+    def __init__(self, engine: AsyncEngine, history_reader: HistoryServiceClient) -> None:
         super().__init__(engine, history_reader=history_reader)
         self.unfolded = asyncio.Event()
 

@@ -77,7 +77,7 @@ fn cover_object_slot(
             // A read-off candidate may put a source identifier named like a
             // run hole outside a list. Reject that candidate and leave the
             // exact-declaration fallback reachable.
-            let Ok(matches) = match_single_member_selector(index, &target.export_name, &source)
+            let Ok(matches) = match_single_member_selector(index, &target.selector_local, &source)
             else {
                 return Ok((true, usize::MAX));
             };
@@ -125,7 +125,7 @@ pub(crate) fn try_object_read_off_candidates(
     let only_target = BTreeSet::from([target_slot]);
     let no_regex: BTreeMap<AnchorSpan, String> = BTreeMap::new();
     let export_for =
-        |name: &str| (name == target.runtime_binding).then(|| target.export_name.clone());
+        |name: &str| (name == target.runtime_binding).then(|| target.selector_local.clone());
     let render_with = |kept: &BTreeSet<AnchorSpan>| -> Result<String> {
         render_var_slots(var, &only_target, &export_for, kept, &no_regex)
     };

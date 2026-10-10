@@ -5,8 +5,8 @@ The `electric` role is the cluster's replication login; Electric reads only thes
 
 from alembic import op
 
-revision = "0006_electric_publication"
-down_revision = "0005_summary_first_event"
+revision = "0007_electric_publication"
+down_revision = "0006_summary_first_event"
 branch_labels = None
 depends_on = None
 

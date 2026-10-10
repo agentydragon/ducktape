@@ -422,6 +422,7 @@ debundle_e2e_test(
     ]),
     deps = [
         "//devinfra/js/debundle:js_ast",
+        "@crates//:serde_json",
         "@crates//:serde_yaml",
         "@crates//:tempfile",
     ],

@@ -14,6 +14,7 @@ import pytest_bazel
 from google.protobuf.empty_pb2 import Empty
 from google.protobuf.json_format import MessageToDict, ParseDict
 from kubernetes_asyncio import client as k8s_client
+from sqlalchemy.engine import make_url
 from sqlalchemy.ext.asyncio import AsyncEngine
 
 from agentplane.protocol import command_pb2, event_log_pb2, event_pb2
@@ -32,6 +33,7 @@ from agentplane.sandbox_service.kubernetes_views import (
 )
 from agentplane.sandbox_service.protocol_pb2 import ResolvedGrant, SandboxDestination
 from agentplane.sandbox_service.session_history.ingestion import copy_confirmed_prefix
+from agentplane.sandbox_service.session_history.session_changes import SessionChanges
 from agentplane.sandbox_service.session_history.store import HistoryConflictError, Store
 from agentplane.sandbox_service.testing.grpc_service import service_client
 from agentplane.sandbox_service.testing.kubernetes import ACCOUNT, SANDBOX, SANDBOX_UID, Cluster
@@ -73,6 +75,9 @@ class Peer:
         self.answer_open = True
         self.opened_ids: dict[str, runner_pb2.Open] = {}
         self.history: dict[str, list[event_log_pb2.EventEntry]] = {}
+        # Replay pauses after this cursor until released, as a slow journal read would.
+        self.replay_paused_after: int | None = None
+        self.replay_released = asyncio.Event()
 
     async def list_sessions(
         self, request: runner_pb2.ListSessionsRequest, context: grpc.aio.ServicerContext
@@ -115,6 +120,8 @@ class Peer:
                 )
                 for entry in self.history.get(first.open.session_id, []):
                     if entry.cursor > first.open.follow.after_cursor:
+                        if self.replay_paused_after is not None and entry.cursor > self.replay_paused_after:
+                            await self.replay_released.wait()
                         yield runner_pb2.ServerMessage(event_entry=entry)
             while (message := await connection.responses.get()) is not None:
                 if isinstance(message, grpc.StatusCode):
@@ -568,6 +575,67 @@ async def test_follow_reconnect_rechecks_token_and_preserves_cursor(
         assert peer.attachments.empty()
 
 
+def journal_entry(cursor: int) -> event_log_pb2.EventEntry:
+    return event_log_pb2.EventEntry(
+        cursor=cursor,
+        origin=event_log_pb2.EventOrigin(source_id="test-journal", sequence=cursor),
+        event=event_pb2.Event(native=event_pb2.Native(line=f"line {cursor}")),
+    )
+
+
+# The fixture's Resources has no history store: entries can only come from the runner journal.
+@pytest.mark.parametrize("after_cursor", [2, 5], ids=["mid-journal", "live-edge"])
+async def test_follow_replays_runner_journal_then_continues_live(
+    remote: SandboxServiceClient, peer: Peer, after_cursor: int
+) -> None:
+    peer.history["session"] = [journal_entry(cursor) for cursor in range(1, 6)]
+    async with asyncio.timeout(8):
+        attachment = await remote.runner(DESTINATION).attach("session", after_cursor=after_cursor)
+        connection = await peer.attachments.get()
+        try:
+            assert connection.opened.follow.after_cursor == after_cursor
+            assert attachment.attached.last_cursor == 5
+            replayed = [await attachment.next_entry() for _ in range(5 - after_cursor)]
+            assert replayed == peer.history["session"][after_cursor:]
+            connection.responses.put_nowait(runner_pb2.ServerMessage(event_entry=journal_entry(6)))
+            assert await attachment.next_entry() == journal_entry(6)
+        finally:
+            attachment.cancel()
+        await connection.closed.wait()
+
+
+async def test_follow_renewal_mid_replay_resumes_without_gap_or_duplicate(
+    remote: SandboxServiceClient, peer: Peer
+) -> None:
+    peer.history["session"] = [journal_entry(cursor) for cursor in range(1, 7)]
+    peer.replay_paused_after = 3
+    runner = remote.runner(DESTINATION)
+    received: list[event_log_pb2.EventEntry] = []
+    renewed_during_replay = False
+    async with asyncio.timeout(8):
+        cursor = 1
+        while cursor < 7:
+            attachment = await runner.attach("session", after_cursor=cursor)
+            connection = await peer.attachments.get()
+            try:
+                while cursor < 7:
+                    if cursor == 6:
+                        connection.responses.put_nowait(runner_pb2.ServerMessage(event_entry=journal_entry(7)))
+                    try:
+                        entry = await attachment.next_entry()
+                    except ReconnectRequiredError:
+                        renewed_during_replay |= cursor < attachment.attached.last_cursor
+                        peer.replay_released.set()
+                        break
+                    received.append(entry)
+                    cursor = entry.cursor
+            finally:
+                attachment.cancel()
+            await connection.closed.wait()
+    assert renewed_during_replay
+    assert received == [journal_entry(cursor) for cursor in range(2, 8)]
+
+
 @pytest.mark.parametrize("ending", [None, grpc.StatusCode.UNAVAILABLE])
 async def test_native_eof_is_distinct_from_backend_failure(
     remote: SandboxServiceClient, peer: Peer, ending: grpc.StatusCode | None
@@ -979,6 +1047,93 @@ async def test_history_read_requires_explicit_reader_even_after_sandbox_deletion
 
         with pytest.raises(ValueError, match="invalid session history page"):
             await remote.read_session_events(str(public_id), limit=1001)
+
+
+@pytest.fixture
+async def session_changes(db_url: str) -> AsyncIterator[SessionChanges]:
+    changes = SessionChanges(make_url(db_url))
+    async with changes.listener.listen():
+        yield changes
+
+
+async def test_watch_sessions_resumes_after_disconnect_and_wakes_on_other_writers(
+    resources: Resources, token_file: Path, engine: AsyncEngine, session_changes: SessionChanges
+) -> None:
+    store = Store(engine)
+    legacy_id, current_id = uuid4(), uuid4()
+    await store.open(
+        legacy_id,
+        sandbox_namespace=SANDBOX_NAMESPACE,
+        sandbox_name="deleted-sandbox",
+        sandbox_uid=None,
+        runner_session_id="legacy-runner",
+    )
+    await store.open(
+        current_id,
+        sandbox_namespace=SANDBOX_NAMESPACE,
+        sandbox_name=SANDBOX,
+        sandbox_uid=UUID(SANDBOX_UID),
+        runner_session_id=f"r-{current_id}",
+    )
+    configured = replace(resources, history=store, session_changes=session_changes, follow_lease_s=2)
+    async with service_client(configured, token_file) as remote:
+        first_call = remote.stub.WatchSessions(
+            protocol_pb2.WatchSessionsRequest(), metadata=await remote.metadata(), timeout=10
+        )
+        legacy = (await first_call.read()).change
+        assert (legacy.session_id, legacy.sandbox, legacy.sandbox_uid) == (str(legacy_id), "deleted-sandbox", "")
+        first_call.cancel()  # disconnect before acknowledging the second Session
+
+        resumed = remote.stub.WatchSessions(
+            protocol_pb2.WatchSessionsRequest(after_position=legacy.position),
+            metadata=await remote.metadata(),
+            timeout=10,
+        )
+        current = (await resumed.read()).change
+        assert (current.session_id, current.sandbox, current.sandbox_uid) == (str(current_id), SANDBOX, SANDBOX_UID)
+        assert current.position > legacy.position
+
+        # Another replica's commit reaches this stream through NOTIFY, not this replica's Store.
+        reserved = await Store(engine).reserve(
+            caller_namespace=OWNER.namespace,
+            caller_name=OWNER.name,
+            sandbox_namespace=SANDBOX_NAMESPACE,
+            sandbox_name=SANDBOX,
+            sandbox_uid=UUID(SANDBOX_UID),
+            open_key="watched-key",
+            open_request=b"watched inputs",
+            launch_spec=lambda _: b"watched launch",
+        )
+        created = (await resumed.read()).change
+        assert created.session_id == str(reserved.session_id)
+        assert created.position > current.position
+        assert (await resumed.read()).HasField("reconnect_required")
+        assert await resumed.read() is grpc.aio.EOF
+        assert await resumed.code() == grpc.StatusCode.OK
+
+
+async def test_watch_sessions_requires_allowed_caller(
+    resources: Resources, token_file: Path, engine: AsyncEngine, session_changes: SessionChanges
+) -> None:
+    await Store(engine).open(
+        uuid4(),
+        sandbox_namespace=SANDBOX_NAMESPACE,
+        sandbox_name=SANDBOX,
+        sandbox_uid=UUID(SANDBOX_UID),
+        runner_session_id="unwatchable-runner",
+    )
+    # The token authenticates OWNER, which this configuration does not allow as a service caller.
+    configured = replace(
+        resources,
+        history=Store(engine),
+        session_changes=session_changes,
+        caller_accounts=frozenset({ServiceAccountRef(namespace=SANDBOX_NAMESPACE, name="allowed-service")}),
+    )
+    async with service_client(configured, token_file) as remote:
+        call = remote.stub.WatchSessions(protocol_pb2.WatchSessionsRequest(), metadata=await remote.metadata())
+        with pytest.raises(grpc.aio.AioRpcError) as denied:
+            await call.read()
+        assert denied.value.code() == grpc.StatusCode.PERMISSION_DENIED
 
 
 @pytest.mark.parametrize("outcome", ["eof", "timeout", "transport_error", "new_event"])

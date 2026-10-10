@@ -69,7 +69,7 @@ a second runner-command queue.
 
 Runner journals remain durable on runner state volumes. Sandbox Service ingests them into its
 Session Event archive, which outlives the runner volume; the app reads history from that archive
-and keeps its UI projections; its legacy raw tables await retirement.
+through the History Service and keeps its UI projections; its legacy raw tables await retirement.
 
 Sandbox Service uses a protobuf/gRPC service API; the app retains its browser-facing HTTP API.
 After cutover, Sandbox Service is the sole normal production client of runner control/event RPCs.

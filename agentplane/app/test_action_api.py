@@ -72,6 +72,7 @@ from agentplane.app.testing.model_test_data import TEST_REASONING_EFFORTS
 from agentplane.app.threads.bridge import RunnerBridge
 from agentplane.app.threads.store import ThreadStore
 from agentplane.app.threads.view.content import ContentStore
+from agentplane.history_service.client import HistoryServiceClient
 from agentplane.runner.harness import Harness
 from agentplane.sandbox_service.action_policy_views import MANAGED_BY_APP, MANAGED_BY_LABEL
 from agentplane.sandbox_service.client import SandboxServiceClient
@@ -145,7 +146,7 @@ async def review(
     event_logs: EventLogStore,
     content: ContentStore,
     history_peer: HistoryService,
-    history_client: SandboxServiceClient,
+    history_client: HistoryServiceClient,
 ) -> AsyncIterator[Review]:
     ACTIONS_RUNNER.apply(db_url)
     server = FastMCP("test-review")

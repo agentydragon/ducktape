@@ -86,7 +86,89 @@ fn rename_members_and_source_match_shorthand_rekeys_annotations() {
 }
 
 #[test]
-fn source_match_groups_cannot_be_split_by_assign_or_unassign() {
+fn assign_moves_source_match_claim_and_annotation() {
+    let fixture = GraphFixture::new(
+        "const a = 1; const b = 2; console.log(a + b);",
+        &[(
+            "src.yaml",
+            "source_matches: [{match: 'const a = 1;', bindings: [{local: a, name: Alpha}], note: selector note}, {match: 'const b = 2;', bindings: [b]}]\nannotations: {Alpha: {note: binding note}}\n",
+        )],
+    );
+    let before = fs::read(fixture.modules.join("src.yaml")).unwrap();
+    let args = ["bindings", "assign", "Alpha:dest:Foo"];
+    assert_eq!(
+        fixture.json(&["bindings", "assign", "Alpha:dest:Foo", "--dry-run"])["action"],
+        "dry-run"
+    );
+    assert_eq!(fs::read(fixture.modules.join("src.yaml")).unwrap(), before);
+    assert!(!fixture.modules.join("dest.yaml").exists());
+    assert_eq!(fixture.json(&args)["moves_applied"], 1);
+    let source = module(&fixture, "src.yaml");
+    assert_eq!(source["source_matches"].as_sequence().unwrap().len(), 1);
+    assert_eq!(source["source_matches"][0]["bindings"][0], "b");
+    let dest = module(&fixture, "dest.yaml");
+    assert_eq!(dest["source_matches"][0]["bindings"][0]["name"], "Foo");
+    assert_eq!(dest["source_matches"][0]["note"], "selector note");
+    assert_eq!(dest["annotations"]["Foo"]["note"], "binding note");
+    fixture.assert_runs("3\n");
+}
+
+#[test]
+fn assign_splits_source_match_claim_for_independent_bindings() {
+    let fixture = GraphFixture::new(
+        "const a = 1; const b = 2; console.log(a + b);",
+        &[(
+            "src.yaml",
+            "source_matches: [{match: 'console.log(a + b);', bindings: [{local: a, name: Alpha}, {local: b, name: Beta}], note: shared pattern}]\nannotations: {Alpha: {note: first}, Beta: {note: second}}\n",
+        )],
+    );
+    assert_eq!(
+        fixture.json(&["bindings", "assign", "Alpha:dest"])["moves_applied"],
+        1
+    );
+    let source = module(&fixture, "src.yaml");
+    let dest = module(&fixture, "dest.yaml");
+    assert_eq!(source["source_matches"][0]["bindings"][0]["name"], "Beta");
+    assert_eq!(dest["source_matches"][0]["bindings"][0]["name"], "Alpha");
+    assert_eq!(source["source_matches"][0]["note"], "shared pattern");
+    assert_eq!(dest["source_matches"][0]["note"], "shared pattern");
+    assert_eq!(source["annotations"]["Beta"]["note"], "second");
+    assert_eq!(dest["annotations"]["Alpha"]["note"], "first");
+    fixture.assert_runs("3\n");
+}
+
+#[test]
+fn assign_moves_atomic_source_match_group_in_one_batch() {
+    let fixture = GraphFixture::new(
+        "let a = 0; function b() { a = 1; } console.log(a, typeof b);",
+        &[(
+            "src.yaml",
+            "source_matches: [{match: 'function b() { a = 1; }', bindings: [{local: a, name: Alpha}, {local: b, name: Beta}]}]",
+        )],
+    );
+    fixture.assert_rejected_unchanged(
+        &["bindings", "assign", "Alpha:dest"],
+        &["splits one or more atomic units"],
+    );
+    assert_eq!(
+        fixture.json(&["bindings", "assign", "Alpha:dest", "Beta:dest"])["moves_applied"],
+        2
+    );
+    assert!(!fixture.modules.join("src.yaml").exists());
+    let dest = module(&fixture, "dest.yaml");
+    assert_eq!(dest["source_matches"].as_sequence().unwrap().len(), 1);
+    assert_eq!(
+        dest["source_matches"][0]["bindings"]
+            .as_sequence()
+            .unwrap()
+            .len(),
+        2
+    );
+    fixture.assert_runs("0 function\n");
+}
+
+#[test]
+fn source_match_groups_cannot_be_unassigned() {
     let fixture = GraphFixture::new(
         "const a = 1; console.log(a);",
         &[(
@@ -94,12 +176,10 @@ fn source_match_groups_cannot_be_split_by_assign_or_unassign() {
             "source_matches: [{match: 'const a = 1;', bindings: [a]}]",
         )],
     );
-    for (verb, operand) in [("assign", "a:dest"), ("unassign", "a")] {
-        fixture.assert_rejected_unchanged(
-            &["bindings", verb, operand],
-            &["does not yet support", "source_matches[0].bindings[0]"],
-        );
-    }
+    fixture.assert_rejected_unchanged(
+        &["bindings", "unassign", "a"],
+        &["does not yet support", "source_matches[0].bindings[0]"],
+    );
 }
 
 #[test]

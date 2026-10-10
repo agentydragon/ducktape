@@ -87,6 +87,7 @@ from agentplane.app.threads.sessions import SandboxNotReachableError
 from agentplane.app.threads.store import ThreadStore
 from agentplane.app.threads.thread_view import ThreadView
 from agentplane.app.threads.view.content import CommandIdConflictError, ContentStore, ThreadScopeResetError
+from agentplane.history_service.client import HistoryServiceError
 from agentplane.notification_service.models import SandboxNotificationStatus
 from agentplane.runner import protocol_pb2
 from agentplane.runner.errors import OpenTimeoutError, RunnerError
@@ -1128,6 +1129,11 @@ def create_app(
             grpc.StatusCode.ALREADY_EXISTS: 409,
             grpc.StatusCode.INVALID_ARGUMENT: 422,
         }.get(error.code, 503)
+        return JSONResponse({"detail": str(error)}, status_code=code)
+
+    @app.exception_handler(HistoryServiceError)
+    async def history_service_error(request: Request, error: HistoryServiceError) -> JSONResponse:
+        code = {grpc.StatusCode.NOT_FOUND: 404, grpc.StatusCode.INVALID_ARGUMENT: 422}.get(error.code, 503)
         return JSONResponse({"detail": str(error)}, status_code=code)
 
     @app.exception_handler(ConnectionError)

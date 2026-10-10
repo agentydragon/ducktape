@@ -16,15 +16,6 @@ export const zImportTanaPasteArgs: z.ZodType<{ parentNodeId: string; content: st
   parentNodeId: z.string(),
   content: z.string(),
 });
-export const zGetOrCreateCalendarNodeArgs: z.ZodType<{
-  workspaceId: string;
-  granularity: "day" | "week" | "month" | "year";
-  date?: string;
-}> = z.object({
-  workspaceId: z.string(),
-  granularity: z.enum(["day", "week", "month", "year"]),
-  date: z.string().optional(),
-});
 export const zTrashNodeArgs: z.ZodType<{ nodeId: string }> = z.object({ nodeId: z.string() });
 export const zEditNodeArgs: z.ZodType<{
   nodeId: string;

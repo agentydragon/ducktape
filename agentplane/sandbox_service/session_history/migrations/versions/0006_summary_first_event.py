@@ -2,8 +2,8 @@
 
 from alembic import op
 
-revision = "0005_summary_first_event"
-down_revision = "0004_thread_fold_projection"
+revision = "0006_summary_first_event"
+down_revision = "0005_thread_fold_projection"
 branch_labels = None
 depends_on = None
 

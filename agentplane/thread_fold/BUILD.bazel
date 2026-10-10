@@ -80,7 +80,7 @@ py_library(
         ":models",
         ":projection_lease",
         ":recording",
-        "//agentplane/sandbox_service:client",
+        "//agentplane/history_service:client",
         "//agentplane/sandbox_service:protocol_pb2",
         "@pypi//grpcio",
         "@pypi//protobuf",
