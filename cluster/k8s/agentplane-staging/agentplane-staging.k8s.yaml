@@ -308,6 +308,7 @@ spec:
     enablePodMonitor: true
   postgresql:
     parameters:
+      max_connections: "300"
       max_slot_wal_keep_size: 512MB
   probes:
     liveness:
