@@ -32,6 +32,8 @@ _NAME = "alloy"
 NAMESPACE = "monitoring"
 OUTPUT_DIR = f"{GENERATED_ROOT}/monitoring/alloy"
 _OTLP_HTTP_PORT = 4318
+# The chart's default `alloy.listenPort`, serving Alloy's own /metrics.
+_HTTP_PORT = 12345
 _CONFIG_MAP = "alloy-config"
 _CONFIG_KEY = "config.alloy"
 _NODE_NAME = "alloy-node"
@@ -175,7 +177,16 @@ def chart(app: App) -> Chart:
                         )
                     ],
                     ports=[k8s.NetworkPolicyPort(port=k8s.IntOrString.from_number(_OTLP_HTTP_PORT), protocol="TCP")],
-                )
+                ),
+                # The chart's ServiceMonitor targets this pod, so the alloy-node on its node scrapes it.
+                k8s.NetworkPolicyIngressRule(
+                    from_=[
+                        k8s.NetworkPolicyPeer(
+                            pod_selector=k8s.LabelSelector(match_labels={"app.kubernetes.io/name": _NODE_NAME})
+                        )
+                    ],
+                    ports=[k8s.NetworkPolicyPort(port=k8s.IntOrString.from_number(_HTTP_PORT), protocol="TCP")],
+                ),
             ],
         ),
     )

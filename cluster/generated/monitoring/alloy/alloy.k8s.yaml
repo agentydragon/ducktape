@@ -125,6 +125,13 @@ spec:
       ports:
         - port: 4318
           protocol: TCP
+    - from:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: alloy-node
+      ports:
+        - port: 12345
+          protocol: TCP
   podSelector:
     matchLabels:
       app.kubernetes.io/name: alloy
