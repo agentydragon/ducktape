@@ -230,7 +230,7 @@ pub(crate) fn for_each_relaxation(
     mut inspect: impl FnMut(Module) -> Result<bool>,
 ) -> Result<()> {
     for kind in RELAXATIONS {
-        let total = apply_relaxation(&mut selector.clone(), kind, usize::MAX, target_binding);
+        let total = apply_relaxation(&mut selector.clone(), kind, usize::MAX, target_binding).0;
         for index in 0..total {
             let mut relaxed = selector.clone();
             apply_relaxation(&mut relaxed, kind, index, target_binding);
@@ -242,6 +242,43 @@ pub(crate) fn for_each_relaxation(
     Ok(())
 }
 
+/// Greedily edit a selector with a forward cursor over each relaxation kind.
+/// Keeping the cursor avoids restarting the full walk after every accepted
+/// edit. Rejected sites are not retried, so this pass favors bounded work over
+/// exhausting every order of greedy edits.
+/// `max_probes` also bounds AST clones and resolver calls for a huge exact
+/// declaration; the original selector remains a proven witness throughout.
+pub(crate) fn relax_progressively(
+    mut selector: Module,
+    target_binding: Option<&str>,
+    max_probes: usize,
+    mut inspect: impl FnMut(&Module) -> Result<bool>,
+) -> Result<Module> {
+    let mut probes = 0;
+    'kinds: for kind in RELAXATIONS {
+        let mut cursor = 0;
+        loop {
+            if probes == max_probes {
+                break 'kinds;
+            }
+            let mut candidate = selector.clone();
+            let (_, applied) = apply_relaxation(&mut candidate, kind, cursor, target_binding);
+            if !applied {
+                break;
+            }
+            probes += 1;
+            if inspect(&candidate)? {
+                selector = candidate;
+                // The edited site disappeared from this kind's candidate list;
+                // its successor now occupies the same cursor.
+            } else {
+                cursor += 1;
+            }
+        }
+    }
+    Ok(selector)
+}
+
 /// Apply the `target`-th relaxation of `kind` (pre-order) to `module`, returning
 /// the number of relaxation sites of that kind. With `target == usize::MAX` it
 /// edits nothing and just counts. `target_binding` (the selector-local target
@@ -251,7 +288,7 @@ fn apply_relaxation(
     kind: Relaxation,
     target: usize,
     target_binding: Option<&str>,
-) -> usize {
+) -> (usize, bool) {
     let mut relaxer = Relaxer {
         kind,
         target,
@@ -260,7 +297,7 @@ fn apply_relaxation(
         done: false,
     };
     module.visit_mut_with(&mut relaxer);
-    relaxer.seen
+    (relaxer.seen, relaxer.done)
 }
 
 struct Relaxer<'a> {

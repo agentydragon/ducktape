@@ -277,9 +277,10 @@ The command builds a per-chunk declaration/binding index, groups requested
 exports that come from the same top-level declaration, and tries indexed
 structural anchors first. If those miss, it starts from that declaration's
 exact AST and relaxes one supported hole at a time while the normal
-`source_match` resolver still proves the target. This finds an own-declaration
-selector when its discriminator is absent from the feature index; the resulting
-selector is only locally minimized and may retain incidental syntax. For the
+`source_match` resolver still proves the target. Relaxation visits each eligible
+site once and has a fixed trial budget, so large declarations can retain exact
+syntax. This finds an own-declaration selector when its discriminator is absent
+from the feature index; the resulting selector may retain incidental syntax. For the
 matcher-supported own-declaration hole family, an exact target declaration is
 the most specific witness: if a holed variant uniquely matches, the exact form
 does too, so the fallback can always return a proven selector. This guarantee

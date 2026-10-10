@@ -52,7 +52,7 @@ use source_match_holes::{
 use swc_ecma_ast::*;
 use swc_ecma_visit::{Visit, VisitMut, VisitMutWith, VisitWith};
 
-use crate::match_selector::for_each_relaxation;
+use crate::match_selector::relax_progressively;
 use crate::regex_anchor::RegexAnchorSubstitution;
 use crate::render::{
     AnchorSpan, declarator_hole, emit_selector, hole_expr, hole_function, hole_object_padded,
@@ -63,12 +63,16 @@ use crate::{
     declarator_hole_name, matched_body_indices, prove_synthesized_selector, single_ident_pat_name,
 };
 
+// Keep whole-declaration proof work bounded even when its AST is enormous.
+const MAX_EXACT_RELAXATION_PROBES: usize = 128;
+
 /// Last-resort own-declaration search. The exact target is the most specific
 /// member of the supported hole lattice: if a relaxation uniquely identifies
 /// this declaration, the exact form does too, provided the matcher accepts the
 /// declaration itself. Starting here covers discriminators absent from the
 /// feature index (for example a binary operator). Each accepted edit is proven
-/// by the production resolver; rejected strings are cached across rounds.
+/// by the production resolver; repeated emitted candidates share one proof.
+/// The exact witness preserves completeness if the trial budget is exhausted.
 pub(crate) fn relax_exact_declaration(
     index: &ChunkSelectorIndex<'_>,
     item: &ModuleItem,
@@ -86,28 +90,16 @@ pub(crate) fn relax_exact_declaration(
     let mut current = js_ast::parse_js_module_consuming("<exact selector>", source)?.module;
     js_ast::strip_parens(&mut current);
     let mut seen = BTreeSet::from([js_ast::emit_module_source(&current)?]);
-    loop {
-        let mut next = None;
-        for_each_relaxation(
-            &current,
-            targets.first().map(|target| target.export_name.as_str()),
-            |candidate| {
-                let source = js_ast::emit_module_source(&candidate)?;
-                if !seen.insert(source.clone()) {
-                    return Ok(false);
-                }
-                if prove_synthesized_selector(index, decl, targets, &source).is_ok() {
-                    next = Some(candidate);
-                    return Ok(true);
-                }
-                Ok(false)
-            },
-        )?;
-        match next {
-            Some(candidate) => current = candidate,
-            None => break,
-        }
-    }
+    current = relax_progressively(
+        current,
+        targets.first().map(|target| target.export_name.as_str()),
+        MAX_EXACT_RELAXATION_PROBES,
+        |candidate| {
+            let source = js_ast::emit_module_source(candidate)?;
+            Ok(seen.insert(source.clone())
+                && prove_synthesized_selector(index, decl, targets, &source).is_ok())
+        },
+    )?;
     // Adjacent run holes express the same language as one run hole. Collapse
     // them after greedy editing so a long body remains readable.
     let collapsed_source = collapse_statement_hole_runs(&js_ast::emit_module_source(&current)?)?;
@@ -727,23 +719,34 @@ fn render_var_slots(
 }
 
 /// Greedily extend a retention set using caller-specific proof and scoring.
-/// Exhaustion returns partial progress: object callers must prove the result,
-/// while groups can combine partial slot covers before proving the whole tuple.
+/// At most two rounds of the indexed anchor window are scored; otherwise a
+/// large ambiguous declaration can trigger a quadratic number of matcher
+/// calls. Exhaustion returns partial progress: object callers must prove the
+/// result, while groups can combine partial slot covers before proving the
+/// whole tuple or trying the exact-declaration fallback.
 fn extend_anchor_cover(
     mut kept: BTreeSet<AnchorSpan>,
     ranked: &[AnchorSpan],
     resolves: impl Fn(&BTreeSet<AnchorSpan>) -> Result<bool>,
     score: impl Fn(&BTreeSet<AnchorSpan>) -> Result<(bool, usize)>,
 ) -> Result<BTreeSet<AnchorSpan>> {
+    let mut scored = 0;
     while !resolves(&kept)? {
         let mut best = None;
         for &anchor in ranked.iter().take(crate::render::MAX_MINIMIZER_ANCHORS) {
             if kept.contains(&anchor) {
                 continue;
             }
+            if scored == 2 * crate::render::MAX_MINIMIZER_ANCHORS {
+                if let Some((_, best_anchor)) = best {
+                    kept.insert(best_anchor);
+                }
+                return Ok(kept);
+            }
             let mut trial = kept.clone();
             trial.insert(anchor);
             let candidate_score = score(&trial)?;
+            scored += 1;
             if best.is_none_or(|(best_score, _)| candidate_score < best_score) {
                 best = Some((candidate_score, anchor));
             }
@@ -758,6 +761,29 @@ fn extend_anchor_cover(
 
 #[cfg(test)]
 mod run_hole_tests {
+    #[test]
+    fn progressive_relaxation_skips_rejected_site_and_obeys_probe_budget() {
+        js_ast::with_swc_globals(|| {
+            let module = js_ast::parse_js_module_consuming(
+                "<selector>",
+                "function Selected(x) { x += 1; x += 2; x += 3; return x * 4; }".to_string(),
+            )
+            .unwrap()
+            .module;
+            let mut probes = 0;
+            let relaxed =
+                crate::match_selector::relax_progressively(module, Some("Selected"), 3, |_| {
+                    probes += 1;
+                    Ok(probes > 1)
+                })
+                .unwrap();
+            let source = js_ast::emit_module_source(&relaxed).unwrap();
+            assert_eq!(probes, 3);
+            assert_eq!(source.matches("STMT_LIST").count(), 2, "{source}");
+            assert!(source.contains("x += 1"), "{source}");
+        });
+    }
+
     #[test]
     fn collapses_adjacent_statement_run_holes() {
         js_ast::with_swc_globals(|| {

@@ -168,18 +168,22 @@ fn try_var_group_read_off(
                 .is_ok(),
         )
     };
+    let mut resolved = resolves(&union)?;
     for anchor in tuple_ranked {
-        if resolves(&union)? {
+        if resolved {
             break;
         }
-        union.insert(anchor);
+        if union.insert(anchor) {
+            resolved = resolves(&union)?;
+        }
     }
-    if !resolves(&union)? {
+    if !resolved {
         // Bound greedy search, not completeness: one full-anchor proof handles
         // a discriminator beyond the search budget without a second renderer.
         union.extend(tuple_fallback);
+        resolved = resolves(&union)?;
     }
-    if !resolves(&union)? {
+    if !resolved {
         // The tuple read-off has exhausted its indexed anchors. An operator or
         // other unindexed AST detail may still distinguish the declaration;
         // relax that exact witness before borrowing an adjacent statement.
