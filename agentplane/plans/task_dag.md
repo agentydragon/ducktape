@@ -595,7 +595,13 @@ provisioning and driving without the archive (its ingester always runs today) or
 service-side command submission. Unreviewed candidate: driver, admission authority and journal stay
 in the runner; provisioning and routing stay in the Sandbox Service; the archive and the thread fold
 move together into a history service the app fronts, so history storage policy (such as
-`SESSION_EVENT_RETENTION`) and folding stop crossing a read API. Open question: who owns the
+`SESSION_EVENT_RETENTION`) and folding stop crossing a read API. Candidate wiring: the runner's
+one outbound connection ends at the Sandbox Service, so commands come from it (app → Sandbox
+Service submission → runner channel), and it forwards the spool to the history service through an
+append idempotent by cursor; the app reads threads from the history service behind its own auth.
+Command outcomes need no separate path: admission comes back as a journal event. Without a
+configured history sink the Sandbox Service only drives. Still to choose: how browsers get live
+fold updates once the fold leaves the app database. Open question: who owns the
 Session locator ↔ Sandbox identity binding the archive checks before reading a runner. Co-design
 with `RUNNER_TRANSPORT_DESIGN`, since a dialing-out runner must know which service it reports to;
 this does not reopen `SESSION_COMMAND_CONTRACT`.
