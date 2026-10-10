@@ -19,8 +19,8 @@ from agentplane.sandbox_service import protocol_pb2
 from agentplane.sandbox_service.client import SandboxServiceClient
 from agentplane.thread_fold.models import ThreadHistorySummary
 from agentplane.thread_fold.projection_lease import ProjectionLease
-from agentplane.thread_fold.projector import HistoryProjector
-from agentplane.thread_fold.recording import set_operational
+from agentplane.thread_fold.projector import HistoryProjector, service_pages
+from agentplane.thread_fold.recording import THREAD_FOLD_EPOCH, set_operational
 
 # gazelle:include_dep @pypi//protobuf
 
@@ -84,7 +84,9 @@ class ProjectedHistory(Ingestion):
         super().__init__(engine)
         self.peer = peer
         self.reader = history_reader
-        self.projector = HistoryProjector(engine, history_reader, notify=notify_threads)
+        self.projector = HistoryProjector(
+            engine, service_pages(history_reader), projection_epoch=THREAD_FOLD_EPOCH, notify=notify_threads
+        )
         self._attachments: dict[UUID, runner_pb2.Attached] = {}
 
     async def project(self, thread_id: UUID, lease: ProjectionLease) -> None:

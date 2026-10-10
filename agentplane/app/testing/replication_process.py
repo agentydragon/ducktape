@@ -56,7 +56,8 @@ from agentplane.sandbox_service.egress_views import EgressReader
 from agentplane.sandbox_service.testing.backend import seed_runner
 from agentplane.sandbox_service.testing.fake_inventory import NAMESPACE, FakeCoreV1Api, FakeCustomObjectsApi
 from agentplane.thread_fold.projection_lease import ProjectionLease
-from agentplane.thread_fold.projector import HistoryProjector, ProjectionProgress
+from agentplane.thread_fold.projector import HistoryProjector, ProjectionProgress, service_pages
+from agentplane.thread_fold.recording import THREAD_FOLD_EPOCH
 
 # gazelle:include_dep @pypi//protobuf
 # gazelle:include_dep @pypi//asyncpg
@@ -191,7 +192,8 @@ class GatedSession(AsyncSession):
 
 class GatedProjector(HistoryProjector):
     def __init__(self, engine: AsyncEngine, reader: SandboxServiceClient, gate: Gate, cursor: int) -> None:
-        super().__init__(engine, reader, notify=notify_threads)
+        super().__init__(engine, service_pages(reader), projection_epoch=THREAD_FOLD_EPOCH, notify=notify_threads)
+        self._reader = reader
         self._sessions = async_sessionmaker(engine, class_=GatedSession, expire_on_commit=False)
         self._gate = gate
         self._cursor = cursor
@@ -284,7 +286,9 @@ async def _serve(
         projector = (
             GatedProjector(engine, inventory, Gate(boundary, connection), cursor)
             if boundary is not None
-            else HistoryProjector(engine, inventory, notify=notify_threads)
+            else HistoryProjector(
+                engine, service_pages(inventory), projection_epoch=THREAD_FOLD_EPOCH, notify=notify_threads
+            )
         )
         runners = SandboxSessions(index, inventory)
         ingester = Ingester(runners=runners, event_logs=event_logs, ingestion=ingestion, history_projector=projector)

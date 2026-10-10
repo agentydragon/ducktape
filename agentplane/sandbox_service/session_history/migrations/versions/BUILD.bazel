@@ -4,6 +4,7 @@ exports_files([
     "0001_session_history.py",
     "0002_session_open_reservations.py",
     "0003_history_feed_state.py",
+    "0004_thread_fold_projection.py",
 ])
 
 py_library(
@@ -31,4 +32,10 @@ py_library(
         "@pypi//alembic",
         "@pypi//sqlalchemy",
     ],
+)
+
+py_library(
+    name = "0004_thread_fold_projection",
+    srcs = ["0004_thread_fold_projection.py"],
+    deps = ["@pypi//alembic"],
 )

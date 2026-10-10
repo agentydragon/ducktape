@@ -52,6 +52,43 @@ py_library(
 )
 
 py_library(
+    name = "fold_shadow",
+    srcs = ["fold_shadow.py"],
+    deps = [
+        "//agentplane/sandbox_service:protocol_pb2",
+        "//agentplane/sandbox_service/session_history:db",
+        "//agentplane/sandbox_service/session_history:store",
+        "//agentplane/thread_fold:models",
+        "//agentplane/thread_fold:projection_lease",
+        "//agentplane/thread_fold:projector",
+        "//agentplane/thread_fold:recording",
+        "@pypi//protobuf",
+        "@pypi//sqlalchemy",
+    ],
+)
+
+py_test(
+    name = "test_fold_shadow",
+    size = "medium",
+    srcs = ["test_fold_shadow.py"],
+    requires_docker = True,
+    deps = [
+        ":fold_shadow",
+        "//:conftest",
+        "//agentplane/protocol:event_log_pb2",
+        "//agentplane/protocol:event_pb2",
+        "//agentplane/sandbox_service/session_history:conftest",
+        "//agentplane/sandbox_service/session_history:store",
+        "//agentplane/thread_fold:models",
+        "//agentplane/thread_fold:views",
+        "@pypi//protobuf",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+        "@pypi//sqlalchemy",
+    ],
+)
+
+py_library(
     name = "settings",
     srcs = ["settings.py"],
     visibility = [
@@ -70,6 +107,7 @@ py_library(
     name = "main",
     srcs = ["main.py"],
     deps = [
+        ":fold_shadow",
         ":grpc_api",
         ":settings",
         "//agentplane/sandbox_service/session_history:store",
