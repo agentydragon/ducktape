@@ -538,14 +538,6 @@ in
     "d /home/agentydragon/.cache/bazel/_bazel_agentydragon/cache/repos 0755 agentydragon users -"
     # Keep the dedicated scratch filesystem bounded without disrupting active files.
     "q /tmp 1777 root root 14d"
-    # The alloy-node DaemonSet's hostPath WAL (cluster/cdk8s/monitoring/alloy.py), on the HDD
-    # scratch disk rather than the SSD root. A path with its own line is skipped by the /tmp
-    # age cleanup above.
-    # TODO: give the WAL its own tank-hdd virtio disk and mount it at /var/lib/alloy-node,
-    # replacing this symlink. Blocked on wyrm2's `ignore_changes = [disk]` CLEANUP in
-    # cluster/terraform/main/proxmox-vms.tf, which keeps tofu from adding a disk.
-    "d /tmp/alloy-node 0700 root root -"
-    "L+ /var/lib/alloy-node - - - - /tmp/alloy-node"
     # Steam library mount (/dev/vdb) must be user-writable; the fresh ext4 root
     # is created root:root, so chown it after the mount lands.
     "d /games 0755 agentydragon users -"
