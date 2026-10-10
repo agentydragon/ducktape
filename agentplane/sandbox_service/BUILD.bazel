@@ -912,7 +912,6 @@ py_test(
         "//agentplane/sandbox_service:protocol_pb2",
         "//agentplane/sandbox_service/commands:db",
         "//agentplane/sandbox_service/session_history:conftest",
-        "//agentplane/sandbox_service/session_history:store",
         "//agentplane/sandbox_service/testing:backend",
         "//agentplane/sandbox_service/testing:fake_inventory",
         "//util:agent_sandbox",

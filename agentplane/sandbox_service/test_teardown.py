@@ -18,7 +18,6 @@ from agentplane.sandbox_service.destinations import DestinationResolver, Destina
 from agentplane.sandbox_service.inventory import SandboxInventory
 from agentplane.sandbox_service.models import SandboxTearingDownError
 from agentplane.sandbox_service.protocol_pb2 import Hold, Sandbox, SandboxDestination, TeardownPhase
-from agentplane.sandbox_service.session_history.store import Store
 from agentplane.sandbox_service.session_registry import SessionRegistry
 from agentplane.sandbox_service.teardown import Teardown
 from agentplane.sandbox_service.testing.backend import seed_runner
@@ -126,7 +125,7 @@ async def teardown(destinations: DestinationResolver, engine: AsyncEngine) -> Te
     # The registry tables share the history test database; production keeps them apart.
     async with engine.begin() as connection:
         await connection.run_sync(commands_db.Base.metadata.create_all)
-    return Teardown(destinations, SessionRegistry(engine, Store(engine)), runner_grpc_channel_options={})
+    return Teardown(destinations, SessionRegistry(engine), runner_grpc_channel_options={})
 
 
 @pytest.fixture
