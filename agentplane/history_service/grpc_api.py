@@ -14,6 +14,7 @@ from pydantic import ValidationError
 from sqlalchemy.exc import SQLAlchemyError
 
 from agentplane.history_service import protocol_pb2 as history_pb2, protocol_pb2_grpc
+from agentplane.history_service.evidence import EvidenceNotFoundError, EvidenceReader
 from agentplane.history_service.summaries import SummaryReader
 from agentplane.history_service.thread_reads import PayloadNotFoundError, ThreadReader, ThreadScopeResetError
 from agentplane.sandbox_service import protocol_pb2
@@ -34,6 +35,7 @@ class Resources:
     history: Store
     summaries: SummaryReader
     threads: ThreadReader
+    evidence: EvidenceReader
     # A public Session UUID is not itself authority: only these accounts read transcripts.
     reader_accounts: frozenset[ServiceAccountRef]
     request_timeout_s: float
@@ -69,6 +71,8 @@ class HistoryService(protocol_pb2_grpc.HistoryServiceServicer):
             await context.abort(grpc.StatusCode.NOT_FOUND, "session history not found")
         except PayloadNotFoundError:
             await context.abort(grpc.StatusCode.NOT_FOUND, "payload revision not found")
+        except EvidenceNotFoundError:
+            await context.abort(grpc.StatusCode.NOT_FOUND, "entity evidence not found")
         except ThreadScopeResetError:
             await context.abort(grpc.StatusCode.FAILED_PRECONDITION, "thread projection epoch was reset")
         except ValidationError:
@@ -136,6 +140,20 @@ class HistoryService(protocol_pb2_grpc.HistoryServiceServicer):
     ) -> history_pb2.ReadPayloadResponse:
         async with self.reader(context):
             return await self.resources.threads.payload(request)
+
+    @override
+    async def ReadEntityEvidence(
+        self, request: history_pb2.ReadEntityEvidenceRequest, context: grpc.aio.ServicerContext
+    ) -> history_pb2.ReadEntityEvidenceResponse:
+        async with self.reader(context):
+            return await self.resources.evidence.evidence(request)
+
+    @override
+    async def ReadNativeFrames(
+        self, request: history_pb2.ReadNativeFramesRequest, context: grpc.aio.ServicerContext
+    ) -> history_pb2.ReadNativeFramesResponse:
+        async with self.reader(context):
+            return await self.resources.evidence.native_frames(request)
 
 
 def add_service(resources: Resources, server: grpc.aio.Server) -> None:
