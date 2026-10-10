@@ -21,8 +21,8 @@ ssh_opts=(-o ControlMaster=auto -o "ControlPath=$tmp/ssh" -o ControlPersist=60)
 trap 'ssh "${ssh_opts[@]}" -O exit "$admin@$switch" 2>/dev/null || true; rm -rf "$tmp"' EXIT
 
 for key in tls.crt tls.key; do
-  kubectl get secret --namespace monitoring home-switch-bootstrap-tls --output "jsonpath={.data.${key//./\\.}}" |
-    base64 --decode >"$tmp/home-switch-bootstrap.${key#tls.}"
+  kubectl get secret --namespace monitoring home-switch-bootstrap-tls --output "jsonpath={.data.${key//./\\.}}" \
+    | base64 --decode >"$tmp/home-switch-bootstrap.${key#tls.}"
 done
 
 # Hex, so it needs no quoting inside the RouterOS script.
