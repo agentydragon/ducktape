@@ -1,4 +1,6 @@
 import { Button, Group, Paper, Stack, Text, Title } from "@mantine/core";
+import IconCheck from "@tabler/icons-react/dist/esm/icons/IconCheck.mjs";
+import IconX from "@tabler/icons-react/dist/esm/icons/IconX.mjs";
 import { createContext, type JSX, type ReactNode, useCallback, useContext, useEffect, useRef, useState } from "react";
 
 import { displayableError } from "../client";
@@ -9,6 +11,49 @@ import { actionService, type ActionRequestView, type ActionService, type ActionS
 
 export function stateLabel(state: ActionState): string {
   return state.replaceAll("_", " ");
+}
+
+/** Paired human decisions, shared by the Actions list, detail page, and sidebar quick review. */
+export function ActionDecisionButtons({
+  deciding,
+  onDecide,
+  size,
+  title,
+}: {
+  deciding: boolean;
+  onDecide: (verdict: Verdict) => void;
+  size: "xs" | "sm";
+  title?: string;
+}): JSX.Element {
+  const iconSize = size === "sm" ? 15 : 13;
+  return (
+    <Group gap={6} wrap="nowrap">
+      <Button
+        className={size === "sm" ? "action-decision-button" : undefined}
+        aria-label={title === undefined ? "Deny" : `Deny ${title}`}
+        size={size}
+        variant="light"
+        color="red"
+        leftSection={<IconX size={iconSize} aria-hidden="true" />}
+        loading={deciding}
+        onClick={() => onDecide("deny")}
+      >
+        Deny
+      </Button>
+      <Button
+        className={size === "sm" ? "action-decision-button" : undefined}
+        aria-label={title === undefined ? "Approve" : `Approve ${title}`}
+        size={size}
+        variant="filled"
+        color="green"
+        leftSection={<IconCheck size={iconSize} aria-hidden="true" />}
+        loading={deciding}
+        onClick={() => onDecide("allow")}
+      >
+        Approve
+      </Button>
+    </Group>
+  );
 }
 
 /** Shared fetch/decide plumbing for the pending and history views: one live snapshot (the real
@@ -253,29 +298,7 @@ export function PendingActionCard({
         <ActionCall
           request={request}
           headerActions={
-            <Group gap="xs" wrap="nowrap">
-              <Button
-                className="action-decision-button"
-                aria-label="Deny"
-                size="sm"
-                variant="light"
-                color="red"
-                loading={deciding}
-                onClick={() => onDecide(request, "deny")}
-              >
-                Deny
-              </Button>
-              <Button
-                className="action-decision-button"
-                aria-label="Approve"
-                size="sm"
-                variant="filled"
-                loading={deciding}
-                onClick={() => onDecide(request, "allow")}
-              >
-                Approve
-              </Button>
-            </Group>
+            <ActionDecisionButtons size="sm" deciding={deciding} onDecide={(verdict) => onDecide(request, verdict)} />
           }
           raw={raw}
           onRawChange={setRaw}

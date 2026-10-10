@@ -133,7 +133,14 @@ it("expands a compact action preview and only offers inline approval to eligible
   await act(async () => podDisclosure.click());
   expect(container.textContent).toContain("List pods in namespace");
   expect(container.textContent).toContain("test-namespace");
-  expect(container.querySelector<HTMLButtonElement>(`button[aria-label="Approve ${pod.title}"]`)).not.toBeNull();
+  expect(container.textContent).not.toContain("Requested by");
+  expect(container.textContent).not.toContain("test description adding what the decision_pending title leaves out");
+  const approveButton = container.querySelector<HTMLButtonElement>(`button[aria-label="Approve ${pod.title}"]`);
+  const denyButton = container.querySelector<HTMLButtonElement>(`button[aria-label="Deny ${pod.title}"]`);
+  expect(approveButton).not.toBeNull();
+  expect(denyButton).not.toBeNull();
+  expect(approveButton?.querySelector("svg")).not.toBeNull();
+  expect(denyButton?.querySelector("svg")).not.toBeNull();
   expect(container.textContent).not.toContain("Exact arguments (unredacted)");
 
   const sshDisclosure = container.querySelector<HTMLButtonElement>(`button[aria-label="Expand ${ssh.title}"]`);

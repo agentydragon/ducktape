@@ -5,11 +5,10 @@ import IconChevronRight from "@tabler/icons-react/dist/esm/icons/IconChevronRigh
 import { type JSX, useContext, useEffect, useMemo, useRef, useState, type PointerEvent } from "react";
 import { Link, useLocation } from "react-router";
 
-import { serviceAccountKey } from "../client";
 import { JsonView } from "../json_view";
 import { StaleNotice } from "../stream_status";
 import { canApproveInline, renderActionLabel, renderPaneCollapsed, renderPaneOpened } from "./rendering/index";
-import { ActionRequestsContext } from "./requests";
+import { ActionDecisionButtons, ActionRequestsContext } from "./requests";
 import "./sidebar.css";
 
 const MANUAL_CLOSE_KEY = "agentplane-actions-sidebar-manually-closed";
@@ -300,16 +299,6 @@ export function ActionsSidebarSection({ onNavigate }: { onNavigate?: () => void 
                 </div>
                 {expanded && (
                   <Stack className="agentplane-actions-sidebar-preview" gap="xs">
-                    {request.description && (
-                      <Text size="xs" c="dimmed">
-                        {request.description}
-                      </Text>
-                    )}
-                    {request.caller && (
-                      <Text size="xs" c="dimmed">
-                        Requested by {serviceAccountKey(request.caller)}
-                      </Text>
-                    )}
                     {request.external_grant && (
                       <Text size="xs" fw={600}>
                         Authenticated external caller
@@ -318,14 +307,12 @@ export function ActionsSidebarSection({ onNavigate }: { onNavigate?: () => void 
                     {openedPreview ?? <JsonView value={request.arguments} />}
                     <Group justify="space-between" wrap="nowrap" gap="xs">
                       {canQuickApprove ? (
-                        <Button
+                        <ActionDecisionButtons
                           size="xs"
-                          loading={actions.deciding === request.id}
-                          onClick={() => actions.decide(request, "allow")}
-                          aria-label={`Approve ${request.title}`}
-                        >
-                          Approve
-                        </Button>
+                          deciding={actions.deciding === request.id}
+                          title={request.title}
+                          onDecide={(verdict) => actions.decide(request, verdict)}
+                        />
                       ) : (
                         <Text size="xs" c="dimmed">
                           Decisions require full review.

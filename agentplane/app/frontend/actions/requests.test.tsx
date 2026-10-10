@@ -77,6 +77,8 @@ describe("ActionRequests", () => {
     expect(container.textContent).not.toContain(stateLabel("decision_pending"));
     expect(button(container, "Approve").getAttribute("aria-label")).toBe("Approve");
     expect(button(container, "Deny").getAttribute("aria-label")).toBe("Deny");
+    expect(button(container, "Approve").querySelector("svg")).not.toBeNull();
+    expect(button(container, "Deny").querySelector("svg")).not.toBeNull();
     expect(container.textContent).toContain("Exact arguments (unredacted)");
     expect(container.textContent).toContain("test-exact-token");
     expect(container.textContent).toContain("test-exact-password");
