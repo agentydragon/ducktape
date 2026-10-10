@@ -1028,7 +1028,7 @@ verifiable condition in code (`keepingOffset` in `thread_store.tsx`, the jsdom p
 flowchart TD
     OPEN_SESSION_RETIRE[Candidate: delete the caller-chosen OpenSession path]
     SANDBOX_SERVICE_RESOURCES_REQUIRED[Candidate: Sandbox Service wiring stops being optional]
-    ACTION_CONNECTION_REBIND_SHIMS[Candidate: drop pre-rebind connection fallbacks]
+    ACTION_GRANT_CALLER_DROP[Decision: drop the unread grant caller column]
     RUNNER_LAUNCH_SETTINGS[Decision: runner launch settings separate from capture probes]
     WORKLOAD_AUDIENCE_RENAME[Decision: rename the agentplane-egress audience]
     APP_THREAD_VIEW_CLEANUP[Blocked: app Thread view and event_log shims]
@@ -1063,14 +1063,15 @@ convenience, which leaves "not configured" branches production never takes. `dat
 `commands_database_url` are optional settings that `main.py` then requires; pass them as
 `supplied=` from the cdk8s settings file, as the History Service does. Code and fixtures only.
 
-### `ACTION_CONNECTION_REBIND_SHIMS` — drop pre-rebind connection fallbacks
+### `ACTION_GRANT_CALLER_DROP` — drop the unread grant caller column
 
-**Candidate; Legacy burn-down lane.** `action_service/connections.py` still falls back to
-`grant.caller` for `binding_version == 0`, refuses rebinds while a grant is pending for a "legacy
-replica", mirrors `grant.caller` and reads `original_caller or caller`. No replica predating
-`0021_connection_rebind` runs on either environment. A new migration backfills `original_caller`
-(and `bound_caller` for unrevoked connections) and makes `original_caller` NOT NULL; then the
-fallbacks and their legacy-replica tests go. No data is deleted.
+**Decision for the operator (a column drop); Legacy burn-down lane.** Since
+`0023_connection_binding_required`, nothing reads `connection_grant.caller`: the Connection's
+`original_caller` and `bound_caller` carry the binding, and `bind` writes the original account into
+`caller` only because the column is NOT NULL. Rows rebound earlier hold the account bound at their
+last rebind. Dropping the column is data deletion. With it, `Connection.bound_caller` in the API
+becomes required for unrevoked Connections, and the frontend's fallback to the grant's caller in
+`settings/connections.tsx` and its fixtures go.
 
 ### `RUNNER_LAUNCH_SETTINGS` — runner launch settings separate from capture probes
 

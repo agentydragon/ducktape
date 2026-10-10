@@ -131,10 +131,11 @@ class ConnectionGrantRow(Base):
     id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True)
     connection_id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), ForeignKey("external_connection.id"))
     revision: Mapped[int] = mapped_column(Integer)
-    # Mirror the current binding for older Action Service replicas during rolling deploys.
+    # Unread; written only because the column is NOT NULL. Rebinds before
+    # 0023_connection_binding_required overwrote it with the then-current binding.
     caller: Mapped[dict[str, JsonValue]] = mapped_column(JSONB)
     # Immutable authorization evidence, independent of the current Connection binding.
-    original_caller: Mapped[dict[str, JsonValue] | None] = mapped_column(JSONB, nullable=True)
+    original_caller: Mapped[dict[str, JsonValue]] = mapped_column(JSONB)
     issuer: Mapped[str] = mapped_column(Text)
     client_id: Mapped[str] = mapped_column(Text)
     request_digest: Mapped[str] = mapped_column(Text)

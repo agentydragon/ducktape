@@ -18,6 +18,9 @@ from agentplane.action_service.db import Base
 NOTE = "Existing deployed note — preserved."
 LINKAGE = "test-linkage"
 ACCESS_TOKEN = "test-only-access-token"
+BOUND = UUID("00000000-0000-4000-8000-000000000006")
+UNBOUND = UUID("00000000-0000-4000-8000-000000000007")
+CALLER = '{"namespace": "agentplane-test", "name": "personal"}'
 
 
 def _seed_at_0005(connection: Connection) -> None:
@@ -90,6 +93,28 @@ def _linked_access_token(connection: Connection) -> object:
     )
 
 
+def _seed_pre_binding_connections_at_0021(connection: Connection) -> None:
+    """A writer predating `0021` left `bound_caller` and `original_caller` NULL: one Connection with
+    an active grant, one unlinked so that all its grants are revoked."""
+    for connection_id, status in [(BOUND, "active"), (UNBOUND, "revoked")]:
+        connection.execute(
+            text(
+                """INSERT INTO external_connection
+                   (id, display_name, bound_caller, binding_version, version, created_at, updated_at)
+                   VALUES (:id, 'Test connection', NULL, 0, 2, now(), now())"""
+            ).bindparams(id=connection_id)
+        )
+        connection.execute(
+            text(
+                """INSERT INTO external_connection_grant
+                   (id, connection_id, revision, caller, original_caller, issuer, client_id, request_digest,
+                    activation_deadline, status, created_at)
+                   VALUES (gen_random_uuid(), :connection_id, 1, CAST(:caller AS jsonb), NULL,
+                           'https://actions.example.test', 'test-client', 'test-digest', now(), :status, now())"""
+            ).bindparams(connection_id=connection_id, caller=CALLER, status=status)
+        )
+
+
 def _round_trip(connection: Connection) -> None:
     config = Config()
     config.set_main_option("script_location", str(Path(__file__).parent / "migrations"))
@@ -148,7 +173,14 @@ def _round_trip(connection: Connection) -> None:
     assert connection.scalar(text("SELECT operator_subject FROM external_connection_rebind")) == "test-operator"
     connection.execute(text("DELETE FROM external_connection_rebind"))
     connection.execute(text("DELETE FROM external_connection"))
+    _seed_pre_binding_connections_at_0021(connection)
     command.upgrade(config, "head")
+    # `0023` backfills both from the grant, except an unlinked Connection's binding.
+    assert connection.scalar(text("SELECT count(*) FROM external_connection_grant WHERE original_caller IS NULL")) == 0
+    bindings = {
+        row.id: row.bound_caller for row in connection.execute(text("SELECT id, bound_caller FROM external_connection"))
+    }
+    assert bindings == {BOUND: {"namespace": "agentplane-test", "name": "personal"}, UNBOUND: None}
     assert _linked_access_token(connection) == ACCESS_TOKEN
     # `0018` clears a refresh failure that predates recorded errors, and the next sweep retries.
     assert connection.scalar(text("SELECT refresh_failure_action FROM mcp_oauth_token_state")) is None
