@@ -116,6 +116,44 @@ export { a };
 }
 
 #[test]
+fn catchall_with_unrelated_pure_module_preserves_interleaved_effects() {
+    let fixture = run_fixture(
+        FixtureOpts::new(
+            r#"console.log("before");
+const a = console.log("middle");
+function provider() { return "ok"; }
+console.log("after", a);
+export { a, provider };
+"#,
+            vec![
+                logical_module("foo", &[Member::new("a")]),
+                logical_module("bar", &[Member::new("provider")]),
+            ],
+        )
+        .with_unassigned_mode(unassigned_mode_catchall_file(Some("foo"))),
+    );
+    assert_entry_output(&fixture, "before\nmiddle\nafter undefined\n");
+    assert_module_source(
+        &fixture.out_root,
+        "static/app/modules/foo.js",
+        &["before", "middle"],
+        &["after"],
+    );
+    assert_module_source(
+        &fixture.out_root,
+        "static/app/modules/bar.js",
+        &["function provider"],
+        &["before", "middle", "after"],
+    );
+    assert_module_source(
+        &fixture.out_root,
+        "static/app/entry.js",
+        &["after"],
+        &["before", "middle"],
+    );
+}
+
+#[test]
 fn explicit_anonymous_claim_stays_out_of_catchall() {
     let fixture = run_fixture(
         FixtureOpts::new(

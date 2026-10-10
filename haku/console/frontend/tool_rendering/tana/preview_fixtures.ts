@@ -16,12 +16,6 @@ export const PREVIEW_FIXTURES: (RegisteredToolPreviewFixture & { title: string }
     },
   },
   {
-    title: "Open today's calendar node",
-    serverId: "tana",
-    toolName: "get_or_create_calendar_node",
-    args: { workspaceId: "workspace", granularity: "day", date: "2026-07-11" },
-  },
-  {
     title: "Trash the obsolete task",
     serverId: "tana",
     toolName: "trash_node",

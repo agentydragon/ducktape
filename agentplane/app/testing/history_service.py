@@ -1,4 +1,4 @@
-"""Controlled Sandbox Service history responses at the app's gRPC boundary.
+"""Controlled History Service responses at the app's gRPC boundary.
 
 This fixture owns no service database, runner, copier, or service implementation.
 Tests publish external evidence; only the app under test projects it into its DB.
@@ -13,9 +13,9 @@ from uuid import UUID
 
 import grpc
 
+from agentplane.history_service.client import HistoryServiceClient
 from agentplane.protocol import event_log_pb2
 from agentplane.sandbox_service import protocol_pb2
-from agentplane.sandbox_service.client import SandboxServiceClient
 
 # gazelle:include_dep @pypi//protobuf
 
@@ -88,41 +88,32 @@ class HistoryService:
             ],
         )
 
-    @asynccontextmanager
-    async def connect(self, token_file: Path) -> AsyncIterator[SandboxServiceClient]:
-        server = grpc.aio.server()
+    def handler(self) -> grpc.GenericRpcHandler:
         # Register only the public methods this fixture controls. Unscripted RPCs
         # fail UNIMPLEMENTED rather than silently reaching a real backend.
-        server.add_generic_rpc_handlers(
-            [
-                grpc.method_handlers_generic_handler(
-                    "ducktape.agentplane.sandbox.v1.SandboxService",
-                    {
-                        "ReadSessionEvents": grpc.unary_unary_rpc_method_handler(
-                            self.read_events,
-                            request_deserializer=protocol_pb2.ReadSessionEventsRequest.FromString,
-                            response_serializer=protocol_pb2.ReadSessionEventsResponse.SerializeToString,
-                        ),
-                        "ReadSessionObservations": grpc.unary_unary_rpc_method_handler(
-                            self.read_observations,
-                            request_deserializer=protocol_pb2.ReadSessionObservationsRequest.FromString,
-                            response_serializer=protocol_pb2.ReadSessionObservationsResponse.SerializeToString,
-                        ),
-                    },
-                )
-            ]
+        return grpc.method_handlers_generic_handler(
+            "ducktape.agentplane.history.v1.HistoryService",
+            {
+                "ReadSessionEvents": grpc.unary_unary_rpc_method_handler(
+                    self.read_events,
+                    request_deserializer=protocol_pb2.ReadSessionEventsRequest.FromString,
+                    response_serializer=protocol_pb2.ReadSessionEventsResponse.SerializeToString,
+                ),
+                "ReadSessionObservations": grpc.unary_unary_rpc_method_handler(
+                    self.read_observations,
+                    request_deserializer=protocol_pb2.ReadSessionObservationsRequest.FromString,
+                    response_serializer=protocol_pb2.ReadSessionObservationsResponse.SerializeToString,
+                ),
+            },
         )
+
+    @asynccontextmanager
+    async def connect(self, token_file: Path) -> AsyncIterator[HistoryServiceClient]:
+        server = grpc.aio.server()
+        server.add_generic_rpc_handlers([self.handler()])
         port = server.add_insecure_port("127.0.0.1:0")
         await asyncio.to_thread(token_file.write_text, "test-app-history-peer")
-        client = SandboxServiceClient(
-            f"127.0.0.1:{port}",
-            namespace="test",
-            token_file=token_file,
-            command_admission_timeout_s=10,
-            request_timeout_s=10,
-            lifecycle_timeout_s=10,
-            follow_timeout_s=10,
-        )
+        client = HistoryServiceClient(f"127.0.0.1:{port}", token_file=token_file, request_timeout_s=10)
         await server.start()
         try:
             yield client

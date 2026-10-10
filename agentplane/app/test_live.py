@@ -62,6 +62,7 @@ from agentplane.app.threads.bridge import RunnerBridge
 from agentplane.app.threads.sessions import SandboxSessions
 from agentplane.app.threads.store import ThreadStore
 from agentplane.app.threads.view.content import ContentStore
+from agentplane.history_service.client import HistoryServiceClient
 from agentplane.runner import protocol_pb2
 from agentplane.runner.harness import Harness
 from agentplane.sandbox_service.client import SandboxServiceClient
@@ -308,7 +309,7 @@ def app(
     action_policy: ActionPolicyInventory,
     reviewer: TokenReviewer,
     history_peer: HistoryService,
-    history_client: SandboxServiceClient,
+    history_client: HistoryServiceClient,
 ) -> FastAPI:
     """Neither test below reaches a database or a runner -- the guard answers before a route body
     runs, and the document comes from the signatures -- so the engine here never connects."""

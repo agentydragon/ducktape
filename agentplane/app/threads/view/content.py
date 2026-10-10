@@ -22,8 +22,8 @@ from agentplane.app.threads.events.debug import (
 )
 from agentplane.app.threads.events.event_log import ThreadNotFoundError
 from agentplane.app.threads.models import EventLog
+from agentplane.history_service.client import HistoryServiceClient
 from agentplane.protocol import command_pb2, event_log_pb2
-from agentplane.sandbox_service.client import SandboxServiceClient
 from agentplane.thread_fold import fold
 from agentplane.thread_fold.models import ThreadCheckpoint, ThreadEntity, ThreadEvidence, ThreadNativeLink
 from agentplane.thread_fold.views import EntityKind, ThreadCommandState
@@ -48,7 +48,7 @@ class ThreadScope:
 
 
 class ContentStore:
-    def __init__(self, engine: AsyncEngine, *, history_reader: SandboxServiceClient) -> None:
+    def __init__(self, engine: AsyncEngine, *, history_reader: HistoryServiceClient) -> None:
         self._sessions = async_sessionmaker(engine, expire_on_commit=False)
         self._history_reader = history_reader
 

@@ -5,8 +5,8 @@ The History Service writes them; nothing in the Sandbox Service reads them.
 
 from alembic import op
 
-revision = "0004_thread_fold_projection"
-down_revision = "0003_history_feed_state"
+revision = "0005_thread_fold_projection"
+down_revision = "0004_session_change_position"
 branch_labels = None
 depends_on = None
 
