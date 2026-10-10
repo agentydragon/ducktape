@@ -70,8 +70,14 @@ async def test_sidebar_compact_pod_approval(
         (
             "kubernetes_admin",
             "resources_get",
-            {"apiVersion": "apps/v1", "kind": "Deployment", "name": "web", "namespace": "apps"},
+            {"apiVersion": "apps/v1", "kind": "Deployment", "name": "web"},
             "Deployment",
+        ),
+        (
+            "kubernetes_admin",
+            "pods_list_in_namespace",
+            {"namespace": "apps", "labelSelector": "app=web", "fieldSelector": "status.phase=Running"},
+            "status.phase=Running",
         ),
         (
             "kubernetes_admin",
@@ -79,12 +85,7 @@ async def test_sidebar_compact_pod_approval(
             {"apiVersion": "v1", "kind": "Pod", "namespace": "apps", "labelSelector": "app=web"},
             "app=web",
         ),
-        (
-            "kubernetes_admin",
-            "pods_log",
-            {"name": "web-0", "namespace": "apps", "previous": True, "tail": 10},
-            "previous: yes",
-        ),
+        ("kubernetes_admin", "pods_log", {"name": "web-0", "previous": True, "tail": -1}, "previous: yes"),
         (
             "kubernetes_admin",
             "resources_delete",
@@ -106,7 +107,15 @@ async def test_sidebar_compact_pod_approval(
             "Update docs",
         ),
     ],
-    ids=["resource-get", "resource-list", "pod-log", "resource-delete", "events-list", "github-pr"],
+    ids=[
+        "resource-get",
+        "pods-in-namespace",
+        "resource-list",
+        "pod-log",
+        "resource-delete",
+        "events-list",
+        "github-pr",
+    ],
 )
 async def test_compact_action_chips(
     view: VisualPage,
@@ -125,6 +134,12 @@ async def test_compact_action_chips(
     await section.get_by_role("button", name=f"Expand review {name}").click()
     await expect(section.get_by_text(visible)).to_be_visible()
     await expect(section.get_by_role("link", name=re.compile("View details"))).to_be_visible()
+    if group == "kubernetes_admin" and name in {"resources_get", "pods_list_in_namespace", "pods_log"}:
+        await expect(section.get_by_role("button", name=f"Approve review {name}")).to_be_visible()
+    if group == "kubernetes_admin" and name in {"resources_get", "pods_log"}:
+        await expect(section.get_by_text("namespace: (not specified)", exact=True)).to_be_visible()
+    if group == "kubernetes_admin" and name == "pods_log":
+        await expect(section.get_by_text("container: (not specified)", exact=True)).to_be_visible()
     await view.capture(target=section)
 
 

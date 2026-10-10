@@ -113,3 +113,47 @@ it("expands a compact action preview and only offers inline approval to eligible
   expect(container.querySelector('a[aria-label*="View details for ssh / exec"]')).not.toBeNull();
   expect(container.querySelector('[data-testid="current-path"]')?.textContent).toBe("/threads/test-thread");
 });
+
+it("shows approval widgets for Kubernetes resource, pod-list, and log reads", async () => {
+  vi.stubGlobal("EventSource", ActionStream);
+  const container = await mount(
+    <MemoryRouter initialEntries={["/threads/test-thread"]}>
+      <ActionRequestsProvider>
+        <ActionsSidebarSection />
+      </ActionRequestsProvider>
+    </MemoryRouter>
+  );
+  const reads = [
+    {
+      ...request("decision_pending", 3),
+      action: { group: "kubernetes_admin", name: "resources_get" },
+      arguments: { apiVersion: "apps/v1", kind: "Deployment", name: "api" },
+      title: "inspect deployment",
+      visible: ["Get resource", "apps/v1", "Deployment", "namespace: (not specified)"],
+    },
+    {
+      ...request("decision_pending", 4),
+      action: { group: "kubernetes_admin", name: "pods_list_in_namespace" },
+      arguments: { namespace: "test-namespace", labelSelector: "app=example", fieldSelector: "status.phase=Running" },
+      title: "list namespace pods",
+      visible: ["List pods in namespace", "test-namespace", "app=example", "status.phase=Running"],
+    },
+    {
+      ...request("decision_pending", 5),
+      action: { group: "kubernetes_admin", name: "pods_log" },
+      arguments: { name: "api-0", container: "sidecar", previous: true, tail: -1 },
+      title: "inspect pod logs",
+      visible: ["Get pod logs", "api-0", "namespace: (not specified)", "sidecar", "previous: yes", "tail: -1"],
+    },
+  ];
+  await send(reads);
+
+  for (const read of reads) {
+    const disclosure = container.querySelector<HTMLButtonElement>(`button[aria-label="Expand ${read.title}"]`);
+    if (!disclosure) throw new Error(`missing disclosure for ${read.title}`);
+    await act(async () => disclosure.click());
+    for (const value of read.visible) expect(container.textContent).toContain(value);
+    expect(container.querySelector<HTMLButtonElement>(`button[aria-label="Approve ${read.title}"]`)).not.toBeNull();
+    expect(container.textContent).not.toContain("Decisions require full review.");
+  }
+});

@@ -13,14 +13,14 @@ export const resource: Record<"apiVersion" | "kind" | "name" | "namespace", z.Zo
 export function ResourceChips({
   args,
 }: {
-  args: { apiVersion: string; kind: string; name: string; namespace: string };
+  args: { apiVersion: string; kind: string; name: string; namespace?: string };
 }): JSX.Element {
   return (
     <>
       <Chip label="API" value={args.apiVersion} />
       <Chip label="kind" value={args.kind} />
       <Chip label="name" value={args.name} />
-      <Chip label="namespace" value={args.namespace} />
+      <Chip label="namespace" value={args.namespace ?? "(not specified)"} />
     </>
   );
 }

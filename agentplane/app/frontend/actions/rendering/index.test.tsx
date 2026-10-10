@@ -27,6 +27,17 @@ describe("renderArguments", () => {
     expect(renderArguments({ group: "test_group", name: "exec" }, SSH_EXEC_ARGUMENTS)).toBeNull();
     expect(renderArguments({ group: "__proto__", name: "constructor" }, SSH_EXEC_ARGUMENTS)).toBeNull();
   });
+
+  it.each([
+    ["resources_get", { apiVersion: "apps/v1", kind: "Deployment", name: "api" }, ["namespace: (not specified)"]],
+    ["pods_log", { name: "api-0", tail: -1 }, ["namespace: (not specified)", "container: (not specified)"]],
+  ] as const)(
+    "uses the Kubernetes argument widget for %s when optional fields are omitted",
+    async (name, args, visible) => {
+      const container = await mount(renderArguments({ group: "kubernetes_admin", name }, args));
+      for (const value of visible) expect(container.textContent).toContain(value);
+    }
+  );
 });
 
 describe("renderMcpResult", () => {
@@ -63,8 +74,14 @@ const compactCases: Array<{ group: string; name: string; args: Record<string, un
   {
     group: "kubernetes_admin",
     name: "resources_get",
-    args: { apiVersion: "apps/v1", kind: "Deployment", name: "api", namespace: "prod" },
-    visible: ["apps/v1", "Deployment", "api", "prod"],
+    args: { apiVersion: "apps/v1", kind: "Deployment", name: "api" },
+    visible: ["apps/v1", "Deployment", "api", "namespace: (not specified)"],
+  },
+  {
+    group: "kubernetes_admin",
+    name: "pods_list_in_namespace",
+    args: { namespace: "prod", fieldSelector: "status.phase=Running", labelSelector: "app=web" },
+    visible: ["Get pods", "prod", "status.phase=Running", "app=web"],
   },
   {
     group: "kubernetes_admin",
@@ -75,8 +92,8 @@ const compactCases: Array<{ group: string; name: string; args: Record<string, un
   {
     group: "kubernetes_admin",
     name: "pods_log",
-    args: { name: "api-0", namespace: "prod", container: "sidecar", previous: true, tail: 0 },
-    visible: ["api-0", "prod", "sidecar", "previous: yes", "tail: 0"],
+    args: { name: "api-0", container: "sidecar", previous: true, tail: -1 },
+    visible: ["api-0", "namespace: (not specified)", "sidecar", "previous: yes", "tail: -1"],
   },
   {
     group: "kubernetes_admin",

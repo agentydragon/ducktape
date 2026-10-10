@@ -12,9 +12,9 @@ import { renderPreview, type ArgumentsPreview } from "./entry";
 import { canApprovePullRequestInline, createPullRequestCompact } from "./github/create_pull_request";
 import { eventsListCompact } from "./kubernetes_admin/events_list";
 import { podsInNamespaceCompact, podsInNamespacePreview } from "./kubernetes_admin/pods_list_in_namespace";
-import { podsLogCompact } from "./kubernetes_admin/pods_log";
+import { podsLogCompact, podsLogPreview } from "./kubernetes_admin/pods_log";
 import { resourcesDeleteCompact } from "./kubernetes_admin/resources_delete";
-import { resourcesGetCompact } from "./kubernetes_admin/resources_get";
+import { resourcesGetCompact, resourcesGetPreview } from "./kubernetes_admin/resources_get";
 import { resourcesListCompact } from "./kubernetes_admin/resources_list";
 import { renderResultPreview, type ResultPreview } from "./result_entry";
 import { execArgumentsPreview, execResultPreview } from "./ssh/exec";
@@ -40,10 +40,10 @@ const REGISTRY: ReadonlyMap<string, ReadonlyMap<string, ActionRendering>> = new 
         "pods_list_in_namespace",
         { arguments: podsInNamespacePreview, compact: podsInNamespaceCompact, canApproveInline: () => true },
       ],
-      ["resources_get", { compact: resourcesGetCompact, canApproveInline: () => true }],
+      ["resources_get", { arguments: resourcesGetPreview, compact: resourcesGetCompact, canApproveInline: () => true }],
       ["resources_list", { compact: resourcesListCompact, canApproveInline: () => true }],
       ["resources_delete", { compact: resourcesDeleteCompact, canApproveInline: () => true }],
-      ["pods_log", { compact: podsLogCompact, canApproveInline: () => true }],
+      ["pods_log", { arguments: podsLogPreview, compact: podsLogCompact, canApproveInline: () => true }],
       ["events_list", { compact: eventsListCompact, canApproveInline: () => true }],
     ]),
   ],
