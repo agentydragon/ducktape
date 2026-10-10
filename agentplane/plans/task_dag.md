@@ -1058,8 +1058,9 @@ plain name if it carries a history-specific one.
 
 ### `SANDBOX_BINDING_ANNOTATION_RENAME` — write the current field name
 
-**Candidate.** `sandbox_service/binding_storage.py` writes `session_defaults` and still reads the
-pre-cutover `thread_defaults` key. Once that release is on staging, delete the read translation.
+**Candidate.** `sandbox_service/binding_storage.py` writes `session_defaults`, still reads the
+pre-cutover `thread_defaults` key, and reconcile rewrites stored legacy annotations. Once no Sandbox
+on testing or staging carries `thread_defaults`, delete the translation and the rewrite.
 
 ### `PROTO_DIRECTORY` — protocols in one place
 

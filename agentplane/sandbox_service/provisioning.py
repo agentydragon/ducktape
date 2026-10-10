@@ -87,6 +87,7 @@ class Provisioning:
     async def ensure(self, sandbox: Sandbox) -> None:
         if sandbox.deleting:
             return
+        await self.inventory.rewrite_legacy_binding(sandbox.name)
         initializing = await self.inventory.initialization_pending(sandbox.name)
         if initializing:
             await self.inventory.ensure_service_account(sandbox)
