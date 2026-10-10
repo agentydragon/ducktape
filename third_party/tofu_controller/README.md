@@ -17,16 +17,25 @@ upstream Helm chart with the image, CRD and RBAC swapped in by that module.
 
 ## Patch ownership
 
-- `patches/external-artifact-source.patch`: the `ExternalArtifact` case in `getSource`, its
-  field index and watch, the RBAC markers and `config/rbac/role.yaml`, and the `v1alpha2`
-  `sourceRef.kind` enum in the generated CRD.
-- `patches/api-external-artifact.patch`: the same enum marker and the index key in the nested
-  `api` module, a separate archive.
-- `patches/bazel.patch`: exports the CRD YAML. Build glue, not an upstream feature.
+`patches/external-artifact-source.patch` and `patches/api-external-artifact.patch` are one
+upstream-ready change, split because the nested `api` module is a separate archive:
 
-`external_artifact_source_test.go` covers source resolution and the revision-change mapping;
-it lives here, embedding the patched `controllers` library, so it runs without upstream's
-envtest suite.
+- the `ExternalArtifact` case in `getSource`, its field index and watch, and the RBAC markers;
+- the `v1alpha2` `sourceRef.kind` enum marker and the index key (`api` patch);
+- everything upstream regenerates from those (`make manifests api-docs`: CRD, `role.yaml`, the
+  chart's CRD copy, the API reference) and the chart's RBAC template;
+- `SetupWithManager` taking the manager's context instead of `context.TODO()`;
+- an envtest case, `tc000012_src_externalartifact_no_outputs_test.go`, with the source-controller
+  `ExternalArtifact` CRD it loads, and a usage page under `docs/use-tf-controller/`.
+
+The upstream change also lets `tfctl create --source` name an `ExternalArtifact`. `tfctl` is a
+third Go module this build never fetches, so that hunk is not here.
+
+`patches/bazel.patch` exports the CRD YAML: build glue, not an upstream feature.
+
+`external_artifact_source_test.go` covers source resolution and the revision-change mapping
+with a fake client, embedding the patched `controllers` library: upstream's envtest suite needs
+a `kube-apiserver` and a `tofu` binary, so it does not run under Bazel here.
 
 **Gotcha:** the `MODULE.bazel` overrides are build fixes, not features: `//conditions` labels
 in `fluxcd/pkg/runtime` resolve to the main repository, and proto generation in `runner/`
@@ -38,8 +47,9 @@ No upstream release supports `ExternalArtifact` sources yet. Remove the module, 
 ## Updating upstream
 
 Bump both proxy archives (the main module's tag and the `api` module's pseudo-version at the
-same commit) with their checksums, rebase the patches, regenerate the CRD-carrying
-`external-artifact-source.patch` hunk with upstream's `controller-gen` if the schema changed,
-and refresh `go.mod`/`go.sum` with `go mod tidy` over the manager's imports (`gomega` and
+same commit) with their checksums. Rebase the change in an upstream checkout, rerun
+`make manifests api-docs` there, and re-export both patches from its diff
+(`git diff -- . ':!api' ':!tfctl'` and `git diff --relative=api -- api`). Refresh
+`go.mod`/`go.sum` with `go mod tidy` over the manager's imports (`gomega` and
 controller-runtime's `fake` for the test). Keep `cluster/cdk8s/tofu_controller/release.py`'s
 chart version on the same release.

@@ -1,3 +1,257 @@
+diff --git a/Makefile b/Makefile
+index 9ae41f7..e8b08ae 100644
+--- a/Makefile
++++ b/Makefile
+@@ -92,6 +92,7 @@ download-crd-deps:
+ 	curl -s https://raw.githubusercontent.com/fluxcd/source-controller/${SOURCE_VER}/config/crd/bases/source.toolkit.fluxcd.io_gitrepositories.yaml > config/crd/bases/gitrepositories.yaml
+ 	curl -s https://raw.githubusercontent.com/fluxcd/source-controller/${SOURCE_VER}/config/crd/bases/source.toolkit.fluxcd.io_buckets.yaml > config/crd/bases/buckets.yaml
+ 	curl -s https://raw.githubusercontent.com/fluxcd/source-controller/${SOURCE_VER}/config/crd/bases/source.toolkit.fluxcd.io_ocirepositories.yaml > config/crd/bases/ocirepositories.yaml
++	curl -s https://raw.githubusercontent.com/fluxcd/source-controller/${SOURCE_VER}/config/crd/bases/source.toolkit.fluxcd.io_externalartifacts.yaml > config/crd/bases/externalartifacts.yaml
+ 
+ TEST_SETTINGS=INSECURE_LOCAL_RUNNER=1 DISABLE_K8S_LOGS=1 DISABLE_TF_LOGS=1 DISABLE_TF_K8S_BACKEND=1 DISABLE_WEBHOOK_TLS_VERIFY=1 KUBEBUILDER_ASSETS="$(shell $(ENVTEST) --arch=$(ENVTEST_ARCH) use -i $(ENVTEST_KUBERNETES_VERSION) --bin-dir=$(ENVTEST_ASSETS_DIR) -p path)"
+ 
+diff --git a/charts/tofu-controller/crds/crds.yaml b/charts/tofu-controller/crds/crds.yaml
+index ca05c05..3820c5d 100644
+--- a/charts/tofu-controller/crds/crds.yaml
++++ b/charts/tofu-controller/crds/crds.yaml
+@@ -10920,6 +10920,7 @@ spec:
+                     - GitRepository
+                     - Bucket
+                     - OCIRepository
++                    - ExternalArtifact
+                     type: string
+                   name:
+                     description: Name of the referent.
+diff --git a/charts/tofu-controller/templates/rbac.yaml b/charts/tofu-controller/templates/rbac.yaml
+index 8ff36cb..3a47a7e 100644
+--- a/charts/tofu-controller/templates/rbac.yaml
++++ b/charts/tofu-controller/templates/rbac.yaml
+@@ -151,6 +151,7 @@ rules:
+   - source.toolkit.fluxcd.io
+   resources:
+   - buckets
++  - externalartifacts
+   - gitrepositories
+   - ocirepositories
+   verbs:
+@@ -165,6 +166,7 @@ rules:
+   - source.toolkit.fluxcd.io
+   resources:
+   - buckets/status
++  - externalartifacts/status
+   - gitrepositories/status
+   - ocirepositories/status
+   verbs:
+diff --git a/cmd/manager/main.go b/cmd/manager/main.go
+index 283e2c9..f528e8c 100644
+--- a/cmd/manager/main.go
++++ b/cmd/manager/main.go
+@@ -272,7 +272,7 @@ func main() {
+ 		QuotaRetryJitterFactor:    quotaRetryJitterFactor,
+ 	}
+ 
+-	if err = reconciler.SetupWithManager(mgr, concurrent, httpRetry); err != nil {
++	if err = reconciler.SetupWithManager(signalHandlerContext, mgr, concurrent, httpRetry); err != nil {
+ 		setupLog.Error(err, "unable to create controller", "controller", "Terraform")
+ 		os.Exit(1)
+ 	}
+diff --git a/config/crd/bases/externalartifacts.yaml b/config/crd/bases/externalartifacts.yaml
+new file mode 100644
+index 0000000..23cdf63
+--- /dev/null
++++ b/config/crd/bases/externalartifacts.yaml
+@@ -0,0 +1,191 @@
++---
++apiVersion: apiextensions.k8s.io/v1
++kind: CustomResourceDefinition
++metadata:
++  annotations:
++    controller-gen.kubebuilder.io/version: v0.19.0
++  name: externalartifacts.source.toolkit.fluxcd.io
++spec:
++  group: source.toolkit.fluxcd.io
++  names:
++    kind: ExternalArtifact
++    listKind: ExternalArtifactList
++    plural: externalartifacts
++    singular: externalartifact
++  scope: Namespaced
++  versions:
++  - additionalPrinterColumns:
++    - jsonPath: .metadata.creationTimestamp
++      name: Age
++      type: date
++    - jsonPath: .status.conditions[?(@.type=="Ready")].status
++      name: Ready
++      type: string
++    - jsonPath: .status.conditions[?(@.type=="Ready")].message
++      name: Status
++      type: string
++    - jsonPath: .spec.sourceRef.name
++      name: Source
++      type: string
++    name: v1
++    schema:
++      openAPIV3Schema:
++        description: ExternalArtifact is the Schema for the external artifacts API
++        properties:
++          apiVersion:
++            description: |-
++              APIVersion defines the versioned schema of this representation of an object.
++              Servers should convert recognized schemas to the latest internal value, and
++              may reject unrecognized values.
++              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources
++            type: string
++          kind:
++            description: |-
++              Kind is a string value representing the REST resource this object represents.
++              Servers may infer this from the endpoint the client submits requests to.
++              Cannot be updated.
++              In CamelCase.
++              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds
++            type: string
++          metadata:
++            type: object
++          spec:
++            description: ExternalArtifactSpec defines the desired state of ExternalArtifact
++            properties:
++              sourceRef:
++                description: |-
++                  SourceRef points to the Kubernetes custom resource for
++                  which the artifact is generated.
++                properties:
++                  apiVersion:
++                    description: API version of the referent, if not specified the
++                      Kubernetes preferred version will be used.
++                    type: string
++                  kind:
++                    description: Kind of the referent.
++                    type: string
++                  name:
++                    description: Name of the referent.
++                    type: string
++                  namespace:
++                    description: Namespace of the referent, when not specified it
++                      acts as LocalObjectReference.
++                    type: string
++                required:
++                - kind
++                - name
++                type: object
++            type: object
++          status:
++            description: ExternalArtifactStatus defines the observed state of ExternalArtifact
++            properties:
++              artifact:
++                description: Artifact represents the output of an ExternalArtifact
++                  reconciliation.
++                properties:
++                  digest:
++                    description: Digest is the digest of the file in the form of '<algorithm>:<checksum>'.
++                    pattern: ^[a-z0-9]+(?:[.+_-][a-z0-9]+)*:[a-zA-Z0-9=_-]+$
++                    type: string
++                  lastUpdateTime:
++                    description: |-
++                      LastUpdateTime is the timestamp corresponding to the last update of the
++                      Artifact.
++                    format: date-time
++                    type: string
++                  metadata:
++                    additionalProperties:
++                      type: string
++                    description: Metadata holds upstream information such as OCI annotations.
++                    type: object
++                  path:
++                    description: |-
++                      Path is the relative file path of the Artifact. It can be used to locate
++                      the file in the root of the Artifact storage on the local file system of
++                      the controller managing the Source.
++                    type: string
++                  revision:
++                    description: |-
++                      Revision is a human-readable identifier traceable in the origin source
++                      system. It can be a Git commit SHA, Git tag, a Helm chart version, etc.
++                    type: string
++                  size:
++                    description: Size is the number of bytes in the file.
++                    format: int64
++                    type: integer
++                  url:
++                    description: |-
++                      URL is the HTTP address of the Artifact as exposed by the controller
++                      managing the Source. It can be used to retrieve the Artifact for
++                      consumption, e.g. by another controller applying the Artifact contents.
++                    type: string
++                required:
++                - digest
++                - lastUpdateTime
++                - path
++                - revision
++                - url
++                type: object
++              conditions:
++                description: Conditions holds the conditions for the ExternalArtifact.
++                items:
++                  description: Condition contains details for one aspect of the current
++                    state of this API Resource.
++                  properties:
++                    lastTransitionTime:
++                      description: |-
++                        lastTransitionTime is the last time the condition transitioned from one status to another.
++                        This should be when the underlying condition changed.  If that is not known, then using the time when the API field changed is acceptable.
++                      format: date-time
++                      type: string
++                    message:
++                      description: |-
++                        message is a human readable message indicating details about the transition.
++                        This may be an empty string.
++                      maxLength: 32768
++                      type: string
++                    observedGeneration:
++                      description: |-
++                        observedGeneration represents the .metadata.generation that the condition was set based upon.
++                        For instance, if .metadata.generation is currently 12, but the .status.conditions[x].observedGeneration is 9, the condition is out of date
++                        with respect to the current state of the instance.
++                      format: int64
++                      minimum: 0
++                      type: integer
++                    reason:
++                      description: |-
++                        reason contains a programmatic identifier indicating the reason for the condition's last transition.
++                        Producers of specific condition types may define expected values and meanings for this field,
++                        and whether the values are considered a guaranteed API.
++                        The value should be a CamelCase string.
++                        This field may not be empty.
++                      maxLength: 1024
++                      minLength: 1
++                      pattern: ^[A-Za-z]([A-Za-z0-9_,:]*[A-Za-z0-9_])?$
++                      type: string
++                    status:
++                      description: status of the condition, one of True, False, Unknown.
++                      enum:
++                      - "True"
++                      - "False"
++                      - Unknown
++                      type: string
++                    type:
++                      description: type of condition in CamelCase or in foo.example.com/CamelCase.
++                      maxLength: 316
++                      pattern: ^([a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*/)?(([A-Za-z0-9][-A-Za-z0-9_.]*)?[A-Za-z0-9])$
++                      type: string
++                  required:
++                  - lastTransitionTime
++                  - message
++                  - reason
++                  - status
++                  - type
++                  type: object
++                type: array
++            type: object
++        type: object
++    served: true
++    storage: true
++    subresources:
++      status: {}
 diff --git a/config/crd/bases/infra.contrib.fluxcd.io_terraforms.yaml b/config/crd/bases/infra.contrib.fluxcd.io_terraforms.yaml
 index ca05c05..3820c5d 100644
 --- a/config/crd/bases/infra.contrib.fluxcd.io_terraforms.yaml
@@ -30,8 +284,164 @@ index f8b15f2..f7f3c93 100644
    - gitrepositories/status
    - ocirepositories/status
    verbs:
+diff --git a/controllers/suite_test.go b/controllers/suite_test.go
+index 68af9d9..6787c84 100644
+--- a/controllers/suite_test.go
++++ b/controllers/suite_test.go
+@@ -185,7 +185,7 @@ func TestMain(m *testing.M) {
+ 	}
+ 
+ 	// We use 1 concurrent and 10s httpRetry in the test
+-	err = reconciler.SetupWithManager(k8sManager, 1, 10)
++	err = reconciler.SetupWithManager(ctx, k8sManager, 1, 10)
+ 	if err != nil {
+ 		panic(err.Error())
+ 	}
+diff --git a/controllers/tc000012_src_externalartifact_no_outputs_test.go b/controllers/tc000012_src_externalartifact_no_outputs_test.go
+new file mode 100644
+index 0000000..dd8306d
+--- /dev/null
++++ b/controllers/tc000012_src_externalartifact_no_outputs_test.go
+@@ -0,0 +1,137 @@
++package controllers
++
++import (
++	"testing"
++	"time"
++
++	infrav1 "github.com/flux-iac/tofu-controller/api/v1alpha2"
++	. "github.com/onsi/gomega"
++
++	"github.com/fluxcd/pkg/apis/meta"
++	sourcev1 "github.com/fluxcd/source-controller/api/v1"
++	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
++	"k8s.io/apimachinery/pkg/types"
++	"k8s.io/apimachinery/pkg/util/rand"
++)
++
++// +kubebuilder:docs-gen:collapse=Imports
++
++func Test_000012_src_externalartifact_no_outputs_test(t *testing.T) {
++	Spec("This spec describes the behaviour of a Terraform resource which is stored in an ExternalArtifact. There is no backend and auto-approve is enabled.")
++	It("should be reconciled, and re-reconciled when the ExternalArtifact's revision changes.")
++
++	var (
++		sourceName    = "test-tf-controller-src-externalartifact-no-output"
++		terraformName = "src-externalartifact-helloworld-no-outputs-" + rand.String(6)
++	)
++	g := NewWithT(t)
++	ctx := t.Context()
++
++	Given("an ExternalArtifact")
++	By("defining a new ExternalArtifact resource, as produced by an ArtifactGenerator.")
++	testExternalArtifact := sourcev1.ExternalArtifact{
++		ObjectMeta: metav1.ObjectMeta{
++			Name:      sourceName,
++			Namespace: "flux-system",
++		},
++	}
++
++	By("creating the ExternalArtifact resource in the cluster.")
++	It("should be created successfully.")
++	g.Expect(k8sClient.Create(ctx, &testExternalArtifact)).Should(Succeed())
++	defer waitResourceToBeDelete(g, &testExternalArtifact)
++
++	Given("the ExternalArtifact's reconciled status.")
++	By("setting the ExternalArtifact's status, with the downloadable BLOB's URL, and the correct checksum.")
++	updatedTime := time.Now()
++	testExternalArtifact.Status = sourcev1.ExternalArtifactStatus{
++		Conditions: []metav1.Condition{
++			{
++				Type:               "Ready",
++				Status:             metav1.ConditionTrue,
++				LastTransitionTime: metav1.Time{Time: updatedTime},
++				Reason:             "Succeeded",
++				Message:            "reconciliation succeeded",
++			},
++		},
++		Artifact: &meta.Artifact{
++			Path:           "externalartifact/flux-system/" + sourceName + "/80ddfd18eb96f7d31cadc1a8a5171c6e2d95df3f6c23b0ed9cd8dddf6dba1406.tar.gz",
++			URL:            server.URL() + "/file.tar.gz",
++			Revision:       "latest@sha256:80ddfd18eb96f7d31cadc1a8a5171c6e2d95df3f6c23b0ed9cd8dddf6dba1406",
++			Digest:         "sha256:80ddfd18eb96f7d31cadc1a8a5171c6e2d95df3f6c23b0ed9cd8dddf6dba1406",
++			LastUpdateTime: metav1.Time{Time: updatedTime},
++		},
++	}
++
++	It("should be updated successfully.")
++	g.Expect(k8sClient.Status().Update(ctx, &testExternalArtifact)).Should(Succeed())
++
++	Given("a Terraform resource with auto approve, attached to the given ExternalArtifact resource.")
++	By("creating a new TF resource and attaching to the artifact via `sourceRef`, with an interval long enough that only a source change triggers a new reconciliation.")
++	helloWorldTF := infrav1.Terraform{
++		ObjectMeta: metav1.ObjectMeta{
++			Name:      terraformName,
++			Namespace: "flux-system",
++		},
++		Spec: infrav1.TerraformSpec{
++			ApprovePlan: "auto",
++			Path:        "./terraform-hello-world-example",
++			SourceRef: infrav1.CrossNamespaceSourceReference{
++				Kind:      sourcev1.ExternalArtifactKind,
++				Name:      sourceName,
++				Namespace: "flux-system",
++			},
++			Interval: metav1.Duration{Duration: time.Hour},
++		},
++	}
++	It("should be created and attached successfully.")
++	g.Expect(k8sClient.Create(ctx, &helloWorldTF)).Should(Succeed())
++	defer waitResourceToBeDelete(g, &helloWorldTF)
++
++	helloWorldTFKey := types.NamespacedName{Namespace: "flux-system", Name: terraformName}
++	createdHelloWorldTF := infrav1.Terraform{}
++	lastApplied := func() map[string]any {
++		err := k8sClient.Get(ctx, helloWorldTFKey, &createdHelloWorldTF)
++		if err != nil {
++			return nil
++		}
++		for _, c := range createdHelloWorldTF.Status.Conditions {
++			if c.Type == "Apply" {
++				return map[string]any{
++					"Type":            c.Type,
++					"Reason":          c.Reason,
++					"LastAppliedPlan": createdHelloWorldTF.Status.Plan.LastApplied,
++				}
++			}
++		}
++		return nil
++	}
++
++	It("should be applied with the plan named after the artifact revision.")
++	By("checking that the reason of the Apply condition is TerraformAppliedSucceed, and the LastAppliedPlan is plan-latest-80ddfd18eb.")
++	g.Eventually(lastApplied, timeout, interval).Should(Equal(map[string]any{
++		"Type":            infrav1.ConditionTypeApply,
++		"Reason":          infrav1.TFExecApplySucceedReason,
++		"LastAppliedPlan": "plan-latest-80ddfd18eb",
++	}))
++
++	Given("a new revision of the ExternalArtifact.")
++	By("updating the ExternalArtifact's status to point at a new artifact.")
++	updatedTime = time.Now()
++	testExternalArtifact.Status.Artifact = &meta.Artifact{
++		Path:           "externalartifact/flux-system/" + sourceName + "/525802635a47a5ae3f9c058a2b958aac0daef08efbe100a4fc16833df5201b94.tar.gz",
++		URL:            server.URL() + "/2222.tar.gz",
++		Revision:       "latest@sha256:525802635a47a5ae3f9c058a2b958aac0daef08efbe100a4fc16833df5201b94",
++		Digest:         "sha256:525802635a47a5ae3f9c058a2b958aac0daef08efbe100a4fc16833df5201b94",
++		LastUpdateTime: metav1.Time{Time: updatedTime},
++	}
++	g.Expect(k8sClient.Status().Update(ctx, &testExternalArtifact)).Should(Succeed())
++
++	It("should be re-applied with the new revision, before its interval elapses.")
++	By("checking that the LastAppliedPlan becomes plan-latest-525802635a.")
++	g.Eventually(lastApplied, timeout, interval).Should(Equal(map[string]any{
++		"Type":            infrav1.ConditionTypeApply,
++		"Reason":          infrav1.TFExecApplySucceedReason,
++		"LastAppliedPlan": "plan-latest-525802635a",
++	}))
++}
 diff --git a/controllers/tf_controller.go b/controllers/tf_controller.go
-index 934c42f..da93752 100644
+index 934c42f..490dcca 100644
 --- a/controllers/tf_controller.go
 +++ b/controllers/tf_controller.go
 @@ -103,8 +103,8 @@ type TerraformReconciler struct {
@@ -40,17 +450,40 @@ index 934c42f..da93752 100644
  //+kubebuilder:rbac:groups=infra.contrib.fluxcd.io,resources=terraforms/finalizers,verbs=get;create;update;patch;delete
 -//+kubebuilder:rbac:groups=source.toolkit.fluxcd.io,resources=buckets;gitrepositories;ocirepositories,verbs=get;list;watch
 -//+kubebuilder:rbac:groups=source.toolkit.fluxcd.io,resources=buckets/status;gitrepositories/status;ocirepositories/status,verbs=get
-+//+kubebuilder:rbac:groups=source.toolkit.fluxcd.io,resources=buckets;gitrepositories;ocirepositories;externalartifacts,verbs=get;list;watch
-+//+kubebuilder:rbac:groups=source.toolkit.fluxcd.io,resources=buckets/status;gitrepositories/status;ocirepositories/status;externalartifacts/status,verbs=get
++//+kubebuilder:rbac:groups=source.toolkit.fluxcd.io,resources=buckets;externalartifacts;gitrepositories;ocirepositories,verbs=get;list;watch
++//+kubebuilder:rbac:groups=source.toolkit.fluxcd.io,resources=buckets/status;externalartifacts/status;gitrepositories/status;ocirepositories/status,verbs=get
  //+kubebuilder:rbac:groups="",resources=configmaps;secrets;serviceaccounts,verbs=get;list;watch
  //+kubebuilder:rbac:groups="",resources=events,verbs=create;patch
  
-@@ -719,6 +719,12 @@ func (r *TerraformReconciler) SetupWithManager(mgr ctrl.Manager, maxConcurrentRe
+@@ -700,25 +700,31 @@ func isBeingDeleted(terraform *infrav1.Terraform) bool {
+ }
+ 
+ // SetupWithManager sets up the controller with the Manager.
+-func (r *TerraformReconciler) SetupWithManager(mgr ctrl.Manager, maxConcurrentReconciles int, httpRetry int) error {
++func (r *TerraformReconciler) SetupWithManager(ctx context.Context, mgr ctrl.Manager, maxConcurrentReconciles int, httpRetry int) error {
+ 	// Index the Terraforms by the GitRepository references they (may) point at.
+-	if err := mgr.GetCache().IndexField(context.TODO(), &infrav1.Terraform{}, infrav1.GitRepositoryIndexKey,
++	if err := mgr.GetCache().IndexField(ctx, &infrav1.Terraform{}, infrav1.GitRepositoryIndexKey,
+ 		r.IndexBy(sourcev1.GitRepositoryKind)); err != nil {
+ 		return fmt.Errorf("failed setting index fields: %w", err)
+ 	}
+ 
+ 	// Index the Terraforms by the Bucket references they (may) point at.
+-	if err := mgr.GetCache().IndexField(context.TODO(), &infrav1.Terraform{}, infrav1.BucketIndexKey,
++	if err := mgr.GetCache().IndexField(ctx, &infrav1.Terraform{}, infrav1.BucketIndexKey,
+ 		r.IndexBy(sourcev1.BucketKind)); err != nil {
+ 		return fmt.Errorf("failed setting index fields: %w", err)
+ 	}
+ 
+ 	// Index the Terraforms by the OCIRepository references they (may) point at.
+-	if err := mgr.GetCache().IndexField(context.TODO(), &infrav1.Terraform{}, infrav1.OCIRepositoryIndexKey,
++	if err := mgr.GetCache().IndexField(ctx, &infrav1.Terraform{}, infrav1.OCIRepositoryIndexKey,
+ 		r.IndexBy(sourcev1.OCIRepositoryKind)); err != nil {
  		return fmt.Errorf("failed setting index fields: %w", err)
  	}
  
 +	// Index the Terraforms by the ExternalArtifact references they (may) point at.
-+	if err := mgr.GetCache().IndexField(context.TODO(), &infrav1.Terraform{}, infrav1.ExternalArtifactIndexKey,
++	if err := mgr.GetCache().IndexField(ctx, &infrav1.Terraform{}, infrav1.ExternalArtifactIndexKey,
 +		r.IndexBy(sourcev1.ExternalArtifactKind)); err != nil {
 +		return fmt.Errorf("failed setting index fields: %w", err)
 +	}
@@ -87,3 +520,89 @@ index 934c42f..da93752 100644
  	default:
  		return sourceObj, fmt.Errorf("source `%s` kind '%s' not supported",
  			terraform.Spec.SourceRef.Name, terraform.Spec.SourceRef.Kind)
+diff --git a/docs/References/terraform.md b/docs/References/terraform.md
+index 507d92b..7d6fcb3 100644
+--- a/docs/References/terraform.md
++++ b/docs/References/terraform.md
+@@ -89,7 +89,7 @@ _Appears in:_
+ | Field | Description | Default | Validation |
+ | --- | --- | --- | --- |
+ | `apiVersion` _string_ | API version of the referent. |  | Optional: \{\} <br /> |
+-| `kind` _string_ | Kind of the referent. |  | Enum: [GitRepository Bucket OCIRepository] <br />Required: \{\} <br /> |
++| `kind` _string_ | Kind of the referent. |  | Enum: [GitRepository Bucket OCIRepository ExternalArtifact] <br />Required: \{\} <br /> |
+ | `name` _string_ | Name of the referent. |  | Required: \{\} <br /> |
+ | `namespace` _string_ | Namespace of the referent, defaults to the namespace of the Kubernetes resource object that contains the reference. |  | Optional: \{\} <br /> |
+ 
+diff --git a/docs/use-tf-controller/index.md b/docs/use-tf-controller/index.md
+index c3aaa53..4aa3104 100644
+--- a/docs/use-tf-controller/index.md
++++ b/docs/use-tf-controller/index.md
+@@ -9,6 +9,7 @@
+ - [Use Tofu Controller to **set variables** for Terraform resources](set-variables-for-terraform-resources.md)
+ - [Use Tofu Controller with a **custom backend**](with-a-custom-backend.md)
+ - [Use Tofu Controller with an **OCI Artifact as Source**](with-an-oci-artifact-as-source.md)
++- [Use Tofu Controller with an **External Artifact as Source**](with-an-external-artifact-as-source.md)
+ - [Use Tofu Controller to provision Terraform resources that are required **health checks**](provision-Terraform-resources-that-are-required-health-checks.md)
+ - [Use Tofu Controller to provision resources and **destroy them when the Terraform object gets deleted**](provision-resources-and-destroy-them-when-terraform-object-gets-deleted.md)
+ - [Use Tofu Controller to **force unlock** Terraform states](force-unlock-terraform-states.md)
+diff --git a/docs/use-tf-controller/with-an-external-artifact-as-source.md b/docs/use-tf-controller/with-an-external-artifact-as-source.md
+new file mode 100644
+index 0000000..fb5bb26
+--- /dev/null
++++ b/docs/use-tf-controller/with-an-external-artifact-as-source.md
+@@ -0,0 +1,55 @@
++# Use Tofu Controller with an External Artifact as Source
++
++An `ExternalArtifact` is a Flux source whose artifact is produced by a controller other than
++source-controller, for example the [source-watcher](https://github.com/fluxcd/source-watcher)
++`ArtifactGenerator`. It requires Flux **v2.7.0** or higher.
++
++A common use is giving each Terraform object an artifact that contains only its own module,
++so that a commit touching one module does not trigger a new plan for every Terraform object
++reading from the same repository. The following `ArtifactGenerator` produces one
++`ExternalArtifact` per module from a single `GitRepository`:
++
++```yaml
++---
++apiVersion: source.extensions.fluxcd.io/v1beta1
++kind: ArtifactGenerator
++metadata:
++  name: terraform-modules
++  namespace: flux-system
++spec:
++  sources:
++    - alias: repo
++      kind: GitRepository
++      name: infra
++  artifacts:
++    - name: networking
++      originRevision: "@repo"
++      copy:
++        - from: "@repo/terraform/networking/**"
++          to: "@artifact/"
++    - name: dns
++      originRevision: "@repo"
++      copy:
++        - from: "@repo/terraform/dns/**"
++          to: "@artifact/"
++```
++
++Then use the generated `ExternalArtifact` as the `sourceRef` of your Terraform object.
++The artifact's revision changes only when the copied files change, so the Terraform
++object is re-planned only when its own module changes.
++
++```yaml hl_lines="10-12"
++---
++apiVersion: infra.contrib.fluxcd.io/v1alpha2
++kind: Terraform
++metadata:
++  name: networking
++  namespace: flux-system
++spec:
++  path: ./
++  interval: 1h
++  sourceRef:
++    kind: ExternalArtifact
++    name: networking
++  approvePlan: auto
++```

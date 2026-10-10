@@ -12,16 +12,26 @@ index cd78e8f..d12c7e0 100644
  	Kind string `json:"kind"`
  
 diff --git a/v1alpha2/terraform_types.go b/v1alpha2/terraform_types.go
-index a9827f6..b10018b 100644
+index a9827f6..fa7b514 100644
 --- a/v1alpha2/terraform_types.go
 +++ b/v1alpha2/terraform_types.go
-@@ -49,6 +49,9 @@ const (
- 	BreakTheGlassAnnotation = "break-the-glass.tf-controller/requestedAt"
+@@ -41,12 +41,13 @@ const (
+ 	CACertSecretName = "tf-controller.tls"
+ 	// RunnerTLSSecretName is the name of the secret containing a TLS cert that will be written to
+ 	// the namespace in which a terraform runner is created
+-	RunnerTLSSecretName     = "terraform-runner.tls"
+-	RunnerLabel             = "infra.contrib.fluxcd.io/terraform"
+-	GitRepositoryIndexKey   = ".metadata.gitRepository"
+-	BucketIndexKey          = ".metadata.bucket"
+-	OCIRepositoryIndexKey   = ".metadata.ociRepository"
+-	BreakTheGlassAnnotation = "break-the-glass.tf-controller/requestedAt"
++	RunnerTLSSecretName      = "terraform-runner.tls"
++	RunnerLabel              = "infra.contrib.fluxcd.io/terraform"
++	GitRepositoryIndexKey    = ".metadata.gitRepository"
++	BucketIndexKey           = ".metadata.bucket"
++	OCIRepositoryIndexKey    = ".metadata.ociRepository"
++	ExternalArtifactIndexKey = ".metadata.externalArtifact"
++	BreakTheGlassAnnotation  = "break-the-glass.tf-controller/requestedAt"
  )
  
-+// ExternalArtifactIndexKey indexes Terraforms by the Flux ExternalArtifact they reference.
-+const ExternalArtifactIndexKey = ".metadata.externalArtifact"
-+
  type ReadInputsFromSecretSpec struct {
- 	// +required
- 	Name string `json:"name"`
