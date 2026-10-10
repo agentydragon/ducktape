@@ -1304,14 +1304,217 @@
       }
     },
     {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "mimir"
+      },
+      "description": "Entries in the gateway's NAT session table against its capacity. A full table drops new connections.",
+      "gridPos": {
+        "h": 6,
+        "w": 12,
+        "x": 0,
+        "y": 39
+      },
+      "id": 20,
+      "title": "Gateway NAT sessions",
+      "type": "timeseries",
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "mimir"
+          },
+          "editorMode": "code",
+          "expr": "att_gateway_nat_sessions_in_use",
+          "legendFormat": "in use",
+          "refId": "A",
+          "range": true
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "mimir"
+          },
+          "editorMode": "code",
+          "expr": "att_gateway_nat_sessions_available",
+          "legendFormat": "capacity",
+          "refId": "B",
+          "range": true
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 2,
+            "fillOpacity": 10,
+            "spanNulls": false,
+            "showPoints": "never"
+          },
+          "min": 0
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "none"
+        }
+      }
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "mimir"
+      },
+      "description": "Result of the gateway's latest successful speed test to AT&T, protocol overhead included.",
+      "gridPos": {
+        "h": 6,
+        "w": 4,
+        "x": 12,
+        "y": 39
+      },
+      "id": 21,
+      "title": "Speed test throughput",
+      "type": "stat",
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "mimir"
+          },
+          "editorMode": "code",
+          "expr": "att_gateway_speedtest_throughput_bps",
+          "legendFormat": "{{direction}}",
+          "refId": "A",
+          "range": true
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "bps"
+        },
+        "overrides": []
+      },
+      "options": {
+        "colorMode": "none",
+        "graphMode": "none",
+        "justifyMode": "auto",
+        "reduceOptions": {
+          "calcs": ["lastNotNull"],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "auto"
+      }
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "mimir"
+      },
+      "description": "Average round-trip latency during the latest successful speed test.",
+      "gridPos": {
+        "h": 6,
+        "w": 4,
+        "x": 16,
+        "y": 39
+      },
+      "id": 22,
+      "title": "Speed test latency",
+      "type": "stat",
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "mimir"
+          },
+          "editorMode": "code",
+          "expr": "att_gateway_speedtest_latency_seconds",
+          "legendFormat": "{{direction}}",
+          "refId": "A",
+          "range": true
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s"
+        },
+        "overrides": []
+      },
+      "options": {
+        "colorMode": "none",
+        "graphMode": "none",
+        "justifyMode": "auto",
+        "reduceOptions": {
+          "calcs": ["lastNotNull"],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "auto"
+      }
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "mimir"
+      },
+      "description": "When the latest successful speed test in each direction completed.",
+      "gridPos": {
+        "h": 6,
+        "w": 4,
+        "x": 20,
+        "y": 39
+      },
+      "id": 23,
+      "title": "Speed test ran",
+      "type": "stat",
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "mimir"
+          },
+          "editorMode": "code",
+          "expr": "att_gateway_speedtest_completed_timestamp_seconds * 1000",
+          "legendFormat": "{{direction}}",
+          "refId": "A",
+          "range": true
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "dateTimeFromNow"
+        },
+        "overrides": []
+      },
+      "options": {
+        "colorMode": "none",
+        "graphMode": "none",
+        "justifyMode": "auto",
+        "reduceOptions": {
+          "calcs": ["lastNotNull"],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "auto"
+      }
+    },
+    {
       "collapsed": false,
       "gridPos": {
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 39
+        "y": 45
       },
-      "id": 20,
+      "id": 24,
       "panels": [],
       "title": "Home nodes",
       "type": "row"
@@ -1326,9 +1529,9 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 40
+        "y": 46
       },
-      "id": 21,
+      "id": 25,
       "title": "Home node LAN throughput",
       "type": "timeseries",
       "targets": [
@@ -1391,9 +1594,9 @@
         "h": 8,
         "w": 6,
         "x": 12,
-        "y": 40
+        "y": 46
       },
-      "id": 22,
+      "id": 26,
       "title": "Home node NIC errors and drops",
       "type": "timeseries",
       "targets": [
@@ -1445,9 +1648,9 @@
         "h": 8,
         "w": 6,
         "x": 18,
-        "y": 40
+        "y": 46
       },
-      "id": 23,
+      "id": 27,
       "title": "Home node NIC link flaps",
       "type": "timeseries",
       "targets": [
@@ -1495,9 +1698,9 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 48
+        "y": 54
       },
-      "id": 24,
+      "id": 28,
       "panels": [],
       "title": "Outage buffering (home Alloy)",
       "type": "row"
@@ -1512,9 +1715,9 @@
         "h": 8,
         "w": 8,
         "x": 0,
-        "y": 49
+        "y": 55
       },
-      "id": 25,
+      "id": 29,
       "title": "Remote-write delay per home node",
       "type": "timeseries",
       "targets": [
@@ -1566,9 +1769,9 @@
         "h": 8,
         "w": 8,
         "x": 8,
-        "y": 49
+        "y": 55
       },
-      "id": 26,
+      "id": 30,
       "title": "Samples waiting to send",
       "type": "timeseries",
       "targets": [
@@ -1620,9 +1823,9 @@
         "h": 8,
         "w": 8,
         "x": 16,
-        "y": 49
+        "y": 55
       },
-      "id": 27,
+      "id": 31,
       "title": "Series in WAL",
       "type": "timeseries",
       "targets": [
