@@ -18,8 +18,10 @@ from agentplane.protocol import command_pb2, event_log_pb2
 from agentplane.runner import protocol_pb2 as runner_pb2
 from agentplane.runner.client import RunnerClient
 from agentplane.runner.errors import OpenTimeoutError, RunnerError, SessionSealedError, StreamClosedError
+from agentplane.runner_channel import protocol_pb2 as channel_pb2
 from agentplane.sandbox_service import protocol_pb2, protocol_pb2_grpc, session_lifecycle, wire
 from agentplane.sandbox_service.action_policy_views import UnknownPolicySetError
+from agentplane.sandbox_service.channel_delivery import ChannelDelivery, CommandRefusedError
 from agentplane.sandbox_service.command_relay import admit_running_command
 from agentplane.sandbox_service.commands.store import (
     CommandSubmission,
@@ -39,6 +41,7 @@ from agentplane.sandbox_service.models import (
 from agentplane.sandbox_service.protocol_pb2 import Sandbox, SandboxDestination
 from agentplane.sandbox_service.provisioning import Provisioning
 from agentplane.sandbox_service.retention_holds import MAX_HOLD_KEY_LENGTH
+from agentplane.sandbox_service.runner_channel import ChannelOperation
 from agentplane.sandbox_service.session_history.session_changes import SessionChanges
 from agentplane.sandbox_service.session_history.store import HistoryNotFoundError, Store
 from agentplane.subjects import ServiceAccountRef
@@ -61,6 +64,7 @@ class Resources:
     runner_admission_ack_timeout_s: float
     history: Store | None = None
     submissions: SubmissionStore | None = None
+    delivery: ChannelDelivery | None = None
     session_changes: SessionChanges | None = None
     admission_timeout_s: float = 15
     follow_lease_s: float = 900
@@ -112,6 +116,12 @@ async def errors(context: grpc.aio.ServicerContext) -> AsyncIterator[None]:
         await context.abort(grpc.StatusCode.ALREADY_EXISTS, "sandbox name or initialization conflicts")
     except SubmissionConflictError:
         await context.abort(grpc.StatusCode.ALREADY_EXISTS, "command ID already belongs to a different submission")
+    except CommandRefusedError as refused:
+        code = {
+            channel_pb2.CommandRefused.REASON_COMMAND_CONFLICT: grpc.StatusCode.ALREADY_EXISTS,
+            channel_pb2.CommandRefused.REASON_INVALID_COMMAND: grpc.StatusCode.INVALID_ARGUMENT,
+        }.get(refused.refusal.reason, grpc.StatusCode.FAILED_PRECONDITION)
+        await context.abort(code, f"runner refused the command: {refused}")
     except ValueError, ParseError, UnknownPolicyError, UnknownPolicySetError:
         await context.abort(grpc.StatusCode.INVALID_ARGUMENT, "invalid service request or grant selection")
     except TimeoutError, OpenTimeoutError:
@@ -365,6 +375,11 @@ class SandboxService(protocol_pb2_grpc.SandboxServiceServicer):
             raise DestinationUnavailableError("command admission database not configured")
         return self.resources.submissions
 
+    def delivery(self) -> ChannelDelivery:
+        if self.resources.delivery is None:
+            raise DestinationUnavailableError("runner channel delivery not configured")
+        return self.resources.delivery
+
     async def runner_session_id(self, destination: protocol_pb2.SessionDestination) -> str:
         """Keep physical runner identifiers behind this service, including on follow."""
         if (session_id := public_session_id(destination.session_id)) is None:
@@ -522,7 +537,14 @@ class SandboxService(protocol_pb2_grpc.SandboxServiceServicer):
             # is persisted for it.
             runner_session_id = await self.runner_session_id(destination)
             public_id = public_session_id(destination.session_id)
+            # Once a runner of this Sandbox has agreed commands over the channel, they never fall
+            # back to the relay.
+            channel_routed = self.resources.delivery is not None and ChannelOperation.COMMANDS in (
+                await self.resources.delivery.connections.read_operations(UUID(destination.sandbox.sandbox_uid))
+            )
             if public_id is None:
+                if channel_routed:
+                    raise DestinationUnavailableError("a channel-routed Sandbox takes public Session IDs only")
                 # CLEANUP(added 2026-10-10): Remove the relay-only path once OpenSession, the only
                 # producer of caller-chosen runner IDs, is gone and no such Session remains.
                 async with self.runner(destination.sandbox) as (client, _):
@@ -535,18 +557,35 @@ class SandboxService(protocol_pb2_grpc.SandboxServiceServicer):
                     )
             submissions = self.submissions()
 
-            async def dispatch(command: command_pb2.Command) -> event_log_pb2.EventEntry:
-                # A reconciled admission would already have settled the submission, so its receipt,
-                # if any, lies after the reconciled cursor. The caller's follow cursor is ignored.
-                after_cursor = await submissions.read_reconciled_through(public_id)
-                async with self.runner(destination.sandbox) as (client, _):
-                    return await admit_running_command(
-                        client,
-                        runner_session_id,
-                        command,
-                        after_cursor=after_cursor,
-                        timeout_s=self.resources.runner_admission_ack_timeout_s,
+            if channel_routed:
+                delivery = self.delivery()
+                # Verifies the incarnation and its owner, as the relay's runner lookup does.
+                await self.resources.destinations.resolve(destination.sandbox)
+
+                async def dispatch(command: command_pb2.Command) -> event_log_pb2.EventEntry:
+                    return await delivery.deliver(
+                        sandbox_uid=UUID(destination.sandbox.sandbox_uid),
+                        session_id=public_id,
+                        command_id=command.command_id,
+                        runner_session_id=runner_session_id,
+                        deadline_s=min(self.resources.runner_admission_ack_timeout_s, 60),
                     )
+
+            else:
+
+                async def dispatch(command: command_pb2.Command) -> event_log_pb2.EventEntry:
+                    # A reconciled admission would already have settled the submission, so its
+                    # receipt, if any, lies after the reconciled cursor. The caller's follow cursor
+                    # is ignored.
+                    after_cursor = await submissions.read_reconciled_through(public_id)
+                    async with self.runner(destination.sandbox) as (client, _):
+                        return await admit_running_command(
+                            client,
+                            runner_session_id,
+                            command,
+                            after_cursor=after_cursor,
+                            timeout_s=self.resources.runner_admission_ack_timeout_s,
+                        )
 
             return await submit_command(submissions, public_id, submission, caller=caller, dispatch=dispatch)
 

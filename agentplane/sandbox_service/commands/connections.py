@@ -1,7 +1,7 @@
 """Runner channel connection ownership: the newest accepted connection for a Sandbox wins."""
 
 from collections.abc import Set
-from datetime import datetime
+from datetime import datetime, timedelta
 from uuid import UUID
 
 from sqlalchemy import func, select, text, update
@@ -62,6 +62,17 @@ class ConnectionStore:
             )
         if touched is None:
             raise ConnectionSupersededError(sandbox_uid)
+
+    async def read_live_epoch(self, sandbox_uid: UUID, *, liveness_s: float) -> int | None:
+        """The current connection's epoch while it was heard from within `liveness_s`, else None."""
+        async with self._sessions() as session:
+            connection = await session.scalar(
+                select(db.RunnerConnection).where(
+                    db.RunnerConnection.sandbox_uid == sandbox_uid,
+                    db.RunnerConnection.last_seen_at > func.now() - timedelta(seconds=liveness_s),
+                )
+            )
+        return None if connection is None else connection.connection_epoch
 
     async def read_operations(self, sandbox_uid: UUID) -> frozenset[str]:
         """The operations any connection of this Sandbox has agreed, whether or not one is live now."""

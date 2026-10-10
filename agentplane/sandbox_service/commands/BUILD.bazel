@@ -11,6 +11,7 @@ py_library(
     deps = [
         "//agentplane/protocol:command_pb2",
         "//agentplane/protocol:event_log_pb2",
+        "//agentplane/runner_channel:protocol_pb2",
         "//util:sqlalchemy_protobuf",
         "@pypi//protobuf",
         "@pypi//sqlalchemy",
@@ -117,6 +118,43 @@ py_library(
     srcs = ["connections.py"],
     deps = [
         ":db",
+        "@pypi//sqlalchemy",
+    ],
+)
+
+py_library(
+    name = "dispatch",
+    srcs = ["dispatch.py"],
+    deps = [
+        ":db",
+        ":store",
+        "//agentplane/protocol:command_pb2",
+        "//agentplane/protocol:event_log_pb2",
+        "//agentplane/runner_channel:protocol_pb2",
+        "@pypi//protobuf",
+        "@pypi//sqlalchemy",
+    ],
+)
+
+py_test(
+    name = "test_dispatch",
+    size = "medium",
+    srcs = ["test_dispatch.py"],
+    requires_docker = True,
+    deps = [
+        ":conftest",
+        ":connections",
+        ":dispatch",
+        ":store",
+        "//:conftest",
+        "//agentplane:subjects",
+        "//agentplane/protocol:command_pb2",
+        "//agentplane/protocol:event_log_pb2",
+        "//agentplane/runner_channel:protocol_pb2",
+        "//agentplane/sandbox_service:conftest",
+        "@pypi//protobuf",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
         "@pypi//sqlalchemy",
     ],
 )

@@ -3,6 +3,7 @@ load("//devinfra/python:defs.bzl", "py_library")
 exports_files([
     "0001_command_admission.py",
     "0002_runner_connection.py",
+    "0003_submission_attempt.py",
 ])
 
 py_library(
@@ -17,6 +18,15 @@ py_library(
 py_library(
     name = "0002_runner_connection",
     srcs = ["0002_runner_connection.py"],
+    deps = [
+        "@pypi//alembic",
+        "@pypi//sqlalchemy",
+    ],
+)
+
+py_library(
+    name = "0003_submission_attempt",
+    srcs = ["0003_submission_attempt.py"],
     deps = [
         "@pypi//alembic",
         "@pypi//sqlalchemy",
