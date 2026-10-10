@@ -5,7 +5,8 @@ import type { ActionNotificationParts } from "../types";
 
 import { kubernetesTarget } from "./target";
 
-const resourcesGetNotificationArguments = z.object({
+const resourcesGetNotificationArguments = z.strictObject({
+  apiVersion: z.string().min(1),
   kind: z.string().min(1),
   name: z.string().min(1),
   namespace: z.string().min(1).optional(),

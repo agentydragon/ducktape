@@ -3,7 +3,11 @@ import { z } from "zod";
 import type { ActionRequestView } from "../../types";
 import type { ActionNotificationParts } from "../types";
 
-const podsInNamespaceNotificationArguments = z.object({ namespace: z.string().min(1) });
+const podsInNamespaceNotificationArguments = z.strictObject({
+  namespace: z.string().min(1),
+  fieldSelector: z.string().min(1).optional(),
+  labelSelector: z.string().min(1).optional(),
+});
 
 export function podsInNamespaceNotification(request: ActionRequestView): ActionNotificationParts | null {
   const parsed = podsInNamespaceNotificationArguments.safeParse(request.arguments);

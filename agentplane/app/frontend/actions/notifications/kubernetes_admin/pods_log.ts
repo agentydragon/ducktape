@@ -5,9 +5,12 @@ import type { ActionNotificationParts } from "../types";
 
 import { kubernetesTarget } from "./target";
 
-const podsLogNotificationArguments = z.object({
+const podsLogNotificationArguments = z.strictObject({
   name: z.string().min(1),
   namespace: z.string().min(1).optional(),
+  container: z.string().min(1).optional(),
+  previous: z.boolean().optional(),
+  tail: z.int().optional(),
 });
 
 export function podsLogNotification(request: ActionRequestView): ActionNotificationParts | null {

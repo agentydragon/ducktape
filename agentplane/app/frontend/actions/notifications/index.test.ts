@@ -21,6 +21,46 @@ function actionRequest(
   };
 }
 
+const kubernetesNotificationCases = [
+  ["resources_create_or_update", { resource: "apiVersion: v1\nkind: Secret" }, "Apply Kubernetes resource"],
+  [
+    "resources_get",
+    { apiVersion: "apps/v1", kind: "Deployment", name: "api", namespace: "apps" },
+    "Get Deployment apps/api",
+  ],
+  [
+    "resources_delete",
+    { apiVersion: "apps/v1", kind: "Deployment", name: "api", namespace: "apps", gracePeriodSeconds: 0 },
+    "⚠ Delete Deployment apps/api",
+  ],
+  ["pods_delete", { name: "api-0", namespace: "apps" }, "⚠ Delete Pod apps/api-0"],
+  [
+    "pods_list_in_namespace",
+    { namespace: "apps", labelSelector: "app=api", fieldSelector: "status.phase=Running" },
+    "List pods in namespace apps",
+  ],
+  [
+    "pods_exec",
+    { name: "api-0", namespace: "apps", container: "api", command: ["id"] },
+    "Run command in Pod apps/api-0",
+  ],
+  [
+    "pods_log",
+    { name: "api-0", namespace: "apps", container: "api", previous: false, tail: 50 },
+    "View logs for Pod apps/api-0",
+  ],
+] as const;
+
+const malformedKubernetesNotificationCases = [
+  ["resources_create_or_update", { resource: 123 }],
+  ["resources_get", { apiVersion: "apps/v1", kind: "Deployment", name: "api", namespace: 7 }],
+  ["resources_delete", { apiVersion: "apps/v1", kind: "Deployment", name: "api", gracePeriodSeconds: "0" }],
+  ["pods_delete", { name: "api-0", namespace: 7 }],
+  ["pods_list_in_namespace", { namespace: "apps", labelSelector: 123 }],
+  ["pods_exec", { name: "api-0", namespace: "apps", command: "id" }],
+  ["pods_log", { name: "api-0", namespace: "apps", previous: "false" }],
+] as const;
+
 describe("action notification formatting", () => {
   it("snapshots the fallback for an unhandled Action", () => {
     const request = actionRequest({
@@ -143,19 +183,7 @@ describe("action notification formatting", () => {
     });
   });
 
-  it.each([
-    ["resources_create_or_update", { resource: "apiVersion: v1\nkind: Secret" }, "Apply Kubernetes resource"],
-    ["resources_get", { kind: "Deployment", name: "api", namespace: "apps", unshown: true }, "Get Deployment apps/api"],
-    [
-      "resources_delete",
-      { kind: "Deployment", name: "api", namespace: "apps", unshown: true },
-      "⚠ Delete Deployment apps/api",
-    ],
-    ["pods_delete", { name: "api-0", namespace: "apps" }, "⚠ Delete Pod apps/api-0"],
-    ["pods_list_in_namespace", { namespace: "apps", labelSelector: 123 }, "List pods in namespace apps"],
-    ["pods_exec", { name: "api-0", namespace: "apps", command: ["id"] }, "Run command in Pod apps/api-0"],
-    ["pods_log", { name: "api-0", namespace: "apps", unshown: true }, "View logs for Pod apps/api-0"],
-  ] as const)("formats the Kubernetes notification for %s", (name, args, actionTitle) => {
+  it.each(kubernetesNotificationCases)("formats the Kubernetes notification for %s", (name, args, actionTitle) => {
     const request = actionRequest({
       action: { group: "kubernetes_admin", name },
       arguments: args,
@@ -167,6 +195,28 @@ describe("action notification formatting", () => {
       title: `Review the cluster operation · ${actionTitle}`,
       text: "The controller is waiting for this change.",
     });
+  });
+
+  it.each(kubernetesNotificationCases)("falls back for %s when arguments contain an unknown field", (name, args) => {
+    const request = actionRequest({
+      action: { group: "kubernetes_admin", name },
+      arguments: { ...args, unshown: true },
+      title: "Review the cluster operation",
+      description: "The controller is waiting for this change.",
+    });
+
+    expect(formatActionNotification(request).title).toBe(`Review the cluster operation · kubernetes_admin / ${name}`);
+  });
+
+  it.each(malformedKubernetesNotificationCases)("falls back for malformed %s arguments", (name, args) => {
+    const request = actionRequest({
+      action: { group: "kubernetes_admin", name },
+      arguments: args,
+      title: "Review the cluster operation",
+      description: "The controller is waiting for this change.",
+    });
+
+    expect(formatActionNotification(request).title).toBe(`Review the cluster operation · kubernetes_admin / ${name}`);
   });
 
   it.each([

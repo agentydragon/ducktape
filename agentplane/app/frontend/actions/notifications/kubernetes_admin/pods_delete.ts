@@ -5,7 +5,7 @@ import type { ActionNotificationParts } from "../types";
 
 import { kubernetesTarget } from "./target";
 
-const podsDeleteNotificationArguments = z.object({
+const podsDeleteNotificationArguments = z.strictObject({
   name: z.string().min(1),
   namespace: z.string().min(1).optional(),
 });

@@ -5,10 +5,12 @@ import type { ActionNotificationParts } from "../types";
 
 import { kubernetesTarget } from "./target";
 
-const resourcesDeleteNotificationArguments = z.object({
+const resourcesDeleteNotificationArguments = z.strictObject({
+  apiVersion: z.string().min(1),
   kind: z.string().min(1),
   name: z.string().min(1),
   namespace: z.string().min(1).optional(),
+  gracePeriodSeconds: z.int().nonnegative().optional(),
 });
 
 export function resourcesDeleteNotification(request: ActionRequestView): ActionNotificationParts | null {
