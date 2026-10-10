@@ -1,7 +1,9 @@
-"""A scripted Sandbox Service serving WatchSessions and FollowSession over in-memory journals.
+"""A scripted Sandbox Service serving WatchSessions, FollowSession and retention holds over
+in-memory journals.
 
 It owns no Store: it plays the runner journals and the Session feed the ingester under test
-subscribes to, including the `sealed` frame that ends a Session's incarnation.
+subscribes to, including the `sealed` frame that ends a Session's incarnation, and keeps the holds
+its teardown would wait on.
 """
 
 import asyncio
@@ -28,12 +30,19 @@ class Journal:
     change: protocol_pb2.SessionChange
     entries: list[event_log_pb2.EventEntry] = field(default_factory=list)
     sealed: bool = False
+    holds: dict[str, protocol_pb2.Hold] = field(default_factory=dict)
+
+    def deletable(self) -> bool:
+        """Whether teardown would delete the Sandbox: sealed, and every hold confirmed through the seal."""
+        return self.sealed and all(hold.confirmed_through >= len(self.entries) for hold in self.holds.values())
 
 
 @dataclass(frozen=True)
 class Follow:
     bearer: str
     request: protocol_pb2.FollowSessionRequest
+    # The holders whose hold was in place when the follow started.
+    holders: frozenset[str]
 
 
 class ScriptedSandboxService:
@@ -48,6 +57,8 @@ class ScriptedSandboxService:
         self.watch_failures = 0
         # The client address of every WatchSessions call; a new address means a new connection.
         self.watch_peers: asyncio.Queue[str] = asyncio.Queue()
+        # Every hold confirmation, in arrival order.
+        self.confirmations: asyncio.Queue[protocol_pb2.Hold] = asyncio.Queue()
         self._position = 0
         self._changed = asyncio.Event()
 
@@ -93,13 +104,7 @@ class ScriptedSandboxService:
                 break
         yield protocol_pb2.WatchSessionsResponse(reconnect_required=Empty())
 
-    async def follow(
-        self, request: protocol_pb2.FollowSessionRequest, context: grpc.aio.ServicerContext
-    ) -> AsyncIterator[protocol_pb2.FollowSessionResponse]:
-        [bearer] = [value for key, value in context.invocation_metadata() or () if key == "authorization"]
-        assert isinstance(bearer, str)
-        self.follows.put_nowait(Follow(bearer, request))
-        destination = request.destination
+    async def journal(self, destination: protocol_pb2.SessionDestination, context: grpc.aio.ServicerContext) -> Journal:
         journal = self.journals.get(destination.session_id)
         if journal is None or (
             destination.sandbox.owner,
@@ -108,6 +113,38 @@ class ScriptedSandboxService:
         ) != (journal.change.owner, journal.change.sandbox, journal.change.sandbox_uid):
             await context.abort(grpc.StatusCode.NOT_FOUND, "sandbox incarnation not found")
         assert journal is not None
+        return journal
+
+    async def place_hold(
+        self, request: protocol_pb2.HoldRequest, context: grpc.aio.ServicerContext
+    ) -> protocol_pb2.Hold:
+        journal = await self.journal(request.destination, context)
+        return journal.holds.setdefault(
+            request.holder, protocol_pb2.Hold(session_id=request.destination.session_id, holder=request.holder)
+        )
+
+    async def confirm_hold(
+        self, request: protocol_pb2.ConfirmHoldRequest, context: grpc.aio.ServicerContext
+    ) -> protocol_pb2.Hold:
+        journal = await self.journal(request.destination, context)
+        hold = journal.holds.get(request.holder)
+        if hold is None:
+            await context.abort(grpc.StatusCode.NOT_FOUND, "no such hold")
+        assert hold is not None
+        hold.confirmed_through = max(hold.confirmed_through, request.through_cursor)
+        snapshot = protocol_pb2.Hold()
+        snapshot.CopyFrom(hold)  # the stored hold keeps changing
+        self.confirmations.put_nowait(snapshot)
+        return hold
+
+    async def follow(
+        self, request: protocol_pb2.FollowSessionRequest, context: grpc.aio.ServicerContext
+    ) -> AsyncIterator[protocol_pb2.FollowSessionResponse]:
+        [bearer] = [value for key, value in context.invocation_metadata() or () if key == "authorization"]
+        assert isinstance(bearer, str)
+        destination = request.destination
+        journal = await self.journal(destination, context)
+        self.follows.put_nowait(Follow(bearer, request, frozenset(journal.holds)))
         cursor = request.follow.after_cursor
         if cursor > len(journal.entries):
             await context.abort(grpc.StatusCode.FAILED_PRECONDITION, "cursor beyond the journal")
@@ -154,6 +191,16 @@ class ScriptedSandboxService:
                             self.follow,
                             request_deserializer=protocol_pb2.FollowSessionRequest.FromString,
                             response_serializer=protocol_pb2.FollowSessionResponse.SerializeToString,
+                        ),
+                        "PlaceHold": grpc.unary_unary_rpc_method_handler(
+                            self.place_hold,
+                            request_deserializer=protocol_pb2.HoldRequest.FromString,
+                            response_serializer=protocol_pb2.Hold.SerializeToString,
+                        ),
+                        "ConfirmHold": grpc.unary_unary_rpc_method_handler(
+                            self.confirm_hold,
+                            request_deserializer=protocol_pb2.ConfirmHoldRequest.FromString,
+                            response_serializer=protocol_pb2.Hold.SerializeToString,
                         ),
                     },
                 )

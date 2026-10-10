@@ -630,8 +630,7 @@ node switches which service reads or writes it. Only the fold double-runs.
 
 ```mermaid
 flowchart TD
-    HISTORY_RETENTION_HOLDS[Candidate: History Service ingester places and confirms holds]
-    HISTORY_WRITE_HANDOFF[Blocked: History Service ingester takes over staging]
+    HISTORY_WRITE_HANDOFF[Candidate: History Service ingester takes over staging]
     SANDBOX_LOCAL_HISTORY_RETIRE[Blocked: delete Sandbox Service ingester and store]
     APP_PROJECTOR_RETIRE[Candidate: delete app projector code]
     APP_PROJECTION_RETIRE[Blocked: drop app projection tables]
@@ -643,7 +642,6 @@ flowchart TD
     HISTORY_REPACK[Blocked: return freed space to the volume]
     APP_ALEMBIC_SQUASH[Baseline final app schema]
     THREAD_READ_POLICY[Scoped archive reads]
-    HISTORY_RETENTION_HOLDS --> HISTORY_WRITE_HANDOFF
     HISTORY_WRITE_HANDOFF --> SANDBOX_LOCAL_HISTORY_RETIRE
     APP_PROJECTOR_RETIRE --> APP_PROJECTION_RETIRE
     APP_EVENT_LOG_COPIES_RETIRE --> HISTORY_SERVICE_OWNERSHIP
@@ -657,20 +655,12 @@ flowchart TD
     HISTORY_SERVICE_OWNERSHIP -. enforce at the final owner .-> THREAD_READ_POLICY
 ```
 
-### `HISTORY_RETENTION_HOLDS` — the History Service holds what it has not archived
-
-**Candidate; History Service bring-up lane.** The ingester places a
-[retention hold](../sandbox_service/API.md#retention-holds) on each Session it follows before
-reading it, confirms it as batches commit, and keeps it through the seal until the Sandbox is gone.
-Test that teardown waits for an ingester that is behind, and proceeds once it confirms the seal.
-
 ### `HISTORY_WRITE_HANDOFF` — the History Service ingester takes over
 
-**Blocked on the History Service placing retention holds.** The History Service ingester writes testing's
-history ([History Service](../history_service/README.md#ingester)). What remains is staging: set
-`history_writer` to the History Service and verify new entries are committed by it alone. Until it
-holds every Session, nothing keeps a Sandbox from being deleted before the History Service has copied its
-journal, unless the operator accepts that. Rollback: set it back; the tables are the same.
+**Candidate.** The History Service ingester writes testing's history
+([History Service](../history_service/README.md#ingester)). What remains is staging: set
+`history_writer` to the History Service and verify new entries are committed by it alone, and that
+every followed Session carries its `history` hold. Rollback: set it back; the tables are the same.
 
 ### `SANDBOX_LOCAL_HISTORY_RETIRE` — remove the local store
 

@@ -14,7 +14,7 @@ from sqlalchemy.ext.asyncio import AsyncEngine, create_async_engine
 
 from agentplane.history_service import protocol_pb2 as history_pb2
 from agentplane.history_service.conftest import ScriptedSandboxService, subscriber
-from agentplane.history_service.ingester import HistoryIngester, claim, logger
+from agentplane.history_service.ingester import HOLDER, HistoryIngester, claim, logger
 from agentplane.protocol import event_log_pb2, event_pb2
 from agentplane.sandbox_service import protocol_pb2
 from agentplane.sandbox_service.session_history.store import HistoryConflictError, HistoryNotFoundError, Store
@@ -313,6 +313,27 @@ async def test_seal_is_recorded_as_the_incarnations_end(
     page = await store.read_page(session_id)
     assert page.last_cursor == 2
     assert page.feed_state.sealed.cursor == 2
+
+
+async def test_teardown_waits_for_a_behind_ingester_until_it_confirms_the_seal(
+    store: Store, sandbox_service: ScriptedSandboxService, replica: Replica
+) -> None:
+    session_id = session(sandbox_service)
+    sandbox_service.append(str(session_id), entry(1), entry(2), entry(3))
+    sandbox_service.seal(str(session_id))
+    sandbox_service.replay_gate = asyncio.Event()
+    journal = sandbox_service.journals[str(session_id)]
+    async with running(replica("test-replica")):
+        follow = await sandbox_service.follows.get()
+        assert follow.holders == {HOLDER}  # held before the first read
+        assert not journal.deletable()
+        sandbox_service.replay_gate.set()
+        async with asyncio.timeout(10):
+            confirmed = await sandbox_service.confirmations.get()
+        assert confirmed.confirmed_through == 3
+        assert journal.deletable()
+        # Confirmed only once the copy is durable.
+        assert list((await store.read_page(session_id)).entries) == [entry(1), entry(2), entry(3)]
 
 
 if __name__ == "__main__":

@@ -266,6 +266,19 @@ class Runner:
             timeout_s=self.service.lifecycle_timeout_s,
         )
 
+    async def place_hold(self, session_id: str, *, holder: str) -> protocol_pb2.Hold:
+        destination = protocol_pb2.SessionDestination(sandbox=self.destination, session_id=session_id)
+        return await self.service.unary(
+            self.service.stub.PlaceHold, protocol_pb2.HoldRequest(destination=destination, holder=holder)
+        )
+
+    async def confirm_hold(self, session_id: str, *, holder: str, through_cursor: int) -> protocol_pb2.Hold:
+        destination = protocol_pb2.SessionDestination(sandbox=self.destination, session_id=session_id)
+        return await self.service.unary(
+            self.service.stub.ConfirmHold,
+            protocol_pb2.ConfirmHoldRequest(destination=destination, holder=holder, through_cursor=through_cursor),
+        )
+
     async def resume(self, session_id: str) -> runner_pb2.Attached:
         return await self.service.unary(
             self.service.stub.ResumeSession,

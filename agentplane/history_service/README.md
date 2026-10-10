@@ -18,6 +18,12 @@ committed here, one `Store.append` transaction per batch. It records feed state 
 Service ingester does, and a `sealed` frame as the incarnation's end. After an outage it resumes
 from the committed cursor; the runner journal is the buffer.
 
+Before reading a Session it places a [retention hold](../sandbox_service/API.md#retention-holds)
+named `history`, and confirms it once the seal's prefix is committed, so teardown deletes no Sandbox
+whose journal it has not copied. It confirms only at the seal, the one confirmation that changes the
+deletion gate. A Session left without a seal in a sealed Sandbox cannot be held; it is copied
+without one, with a warning.
+
 One replica writes a Session at a time: a follow holds a PostgreSQL session advisory lock keyed by
 Session ID on its own connection, which the server releases if the replica dies. Correctness does
 not rest on it: `Store.append` accepts exact replays and refuses gaps and conflicting entries.
@@ -27,8 +33,7 @@ restarted replica rereads the feed and each Session resumes from its cursor. Aft
 feed failures the ingester dials a fresh Sandbox Service channel.
 
 One ingester writes the tables per environment: the cdk8s `Environment.history_writer` turns this
-one's `ingester.enabled` on and the Sandbox Service's `ingest_history` off, or the reverse. It places
-no retention holds yet.
+one's `ingester.enabled` on and the Sandbox Service's `ingest_history` off, or the reverse.
 
 ## Delta settlement
 

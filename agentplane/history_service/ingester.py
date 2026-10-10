@@ -3,9 +3,10 @@
 `WatchSessions` names every Session and its current incarnation; each is followed with
 `FollowSession` from the cursor this service committed (creating its history row first), and every
 batch is one `Store.append`. The runner journal is the buffer: after an outage or restart,
-following resumes from the committed cursor. A per-Session claim keeps replicas from duplicating
-work, while `Store.append` (exact replays accepted, gaps and conflicts refused) keeps a log correct
-without it.
+following resumes from the committed cursor, and a retention hold on each followed Session keeps
+its Sandbox from being deleted until the copy reaches the seal. A per-Session claim keeps replicas
+from duplicating work, while `Store.append` (exact replays accepted, gaps and conflicts refused)
+keeps a log correct without it.
 """
 
 import asyncio
@@ -26,6 +27,7 @@ from agentplane.runner.errors import RunnerError, StreamClosedError
 from agentplane.sandbox_service.client import (
     Attachment,
     ReconnectRequiredError,
+    Runner,
     SandboxServiceClient,
     SealedError,
     ServiceError,
@@ -37,6 +39,9 @@ from agentplane.sandbox_service.session_history.store import HistoryConflictErro
 # gazelle:include_dep @pypi//protobuf
 
 logger = logging.getLogger(__name__)
+
+# This service's name on the retention holds it places.
+HOLDER = "history"
 
 
 @asynccontextmanager
@@ -103,7 +108,6 @@ class HistoryIngester:
         self._ready: asyncio.Queue[UUID] = asyncio.Queue()
 
     async def run(self) -> None:
-        # TODO: place retention holds, which a Session's journaled seal clears.
         async with asyncio.TaskGroup() as tasks:
             for _ in range(self.concurrency):
                 tasks.create_task(self._work())
@@ -182,15 +186,31 @@ class HistoryIngester:
                 sandbox_uid=UUID(change.sandbox_uid),
                 runner_session_id=None,
             )
-            cursor, _ = await self.store.read(session_id, limit=1)
             destination = SandboxDestination(owner=change.owner, sandbox=change.sandbox, sandbox_uid=change.sandbox_uid)
-            attachment = await self.sandboxes.runner(destination).attach(change.session_id, after_cursor=cursor)
+            runner = self.sandboxes.runner(destination)
+            await self._hold(runner, change.session_id)
+            cursor, _ = await self.store.read(session_id, limit=1)
+            attachment = await runner.attach(change.session_id, after_cursor=cursor)
             try:
-                return await self._copy(session_id, attachment, cursor)
+                return await self._copy(session_id, runner, attachment, cursor)
             finally:
                 attachment.cancel()
 
-    async def _copy(self, session_id: UUID, attachment: Attachment, cursor: int) -> Next:
+    async def _hold(self, runner: Runner, session_id: str) -> None:
+        """Keep the Sandbox from being deleted before this service has the Session through its seal.
+
+        The hold stays after the seal is confirmed: it goes with the Sandbox incarnation it holds.
+        """
+        try:
+            await runner.place_hold(session_id, holder=HOLDER)
+        except ServiceError as error:
+            if error.code != grpc.StatusCode.INVALID_ARGUMENT:
+                raise
+            # The Sandbox is sealed and this Session has no seal: nothing can satisfy a hold, but
+            # the runner may still serve what it journaled.
+            logger.warning("Session %s cannot be held in its sealed Sandbox; copying without a hold", session_id)
+
+    async def _copy(self, session_id: UUID, runner: Runner, attachment: Attachment, cursor: int) -> Next:
         through = attachment.attached.last_cursor
         if through < cursor:
             raise HistoryConflictError(f"runner journal ends at {through}, below committed cursor {cursor}")
@@ -216,6 +236,9 @@ class HistoryIngester:
                 await self.store.record_feed_state(
                     session_id, SessionFeedState(attached=attachment.attached, sealed=Sealed(cursor=cursor))
                 )
+                # Only a confirmation at the seal changes the deletion gate, so earlier batches skip
+                # the Kubernetes write.
+                await runner.confirm_hold(str(session_id), holder=HOLDER, through_cursor=cursor)
                 return Next.ON_CHANGE
             except StreamClosedError:
                 await commit()
