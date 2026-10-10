@@ -19,7 +19,7 @@ flowchart LR
     App -- thread and raw reads --> HS[History Service]
     Electric -- logical replication --> HSDB[(history database)]
     App -- auth proxy --> Electric
-    Runner -- one outbound WS: commands in, journal out --> SS
+    Runner -- one outbound gRPC connection: commands in, journal out --> SS
     HS -- WatchSessions, FollowSession, holds --> SS
     HS --> HSDB
     SS --> SSDB[(sandbox_service database: command admission)]

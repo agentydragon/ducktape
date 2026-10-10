@@ -116,8 +116,7 @@ RPC protocol. Do not claim this TODO is implemented because a connection test su
 ## Outbound control-channel design
 
 **Selected direction and framing; staged implementation, not a deployed migration.**
-The operator selected one runner-initiated connection per runner incarnation, multiplexing Sessions,
-with protobuf over binary WebSocket frames. If its service replica disappears, the runner reconnects
+One runner-initiated gRPC connection per runner process multiplexes Sessions. If its service replica disappears, the runner reconnects
 to an available replica. Postgres `LISTEN`/`NOTIFY` provides cross-replica wakeup/routing only; durable
 records remain authoritative. Claude RemoteIO inspires the connection direction, not our protocol,
 authorization or delivery guarantees.
@@ -131,7 +130,7 @@ sequenceDiagram
     participant C as Caller
     participant S as Sandbox Service
     participant R as Runner
-    R->>S: Authenticate and establish outbound WS
+    R->>S: Authenticate and open outbound gRPC streams
     S->>R: Resume spool after committed archive cursor
     C->>S: SubmitCommand RPC
     S->>S: Persist pending_admission
@@ -161,7 +160,7 @@ separates persistence, command transport and event transport rather than making 
    does not expose that cursor. Reuse is not a new inbound `InsertCommand`/`ListenSpool` rollout.
 2. `RUNNER_OUTBOUND_CHANNEL` / `RUNNER_OUTBOUND_CANARY`: implement both command-channel peers. Deploy
    compatible service support first with old routes unchanged, then a compatible runner image in a
-   fresh canary. Switch its command adapter to WS and validate the actual proxy path, cross-replica
+   fresh canary. Switch its command adapter to the channel and validate the actual proxy path, cross-replica
    routing, reconnect/fencing and receipts. Keep spool transport unchanged in this stage.
 3. `RUNNER_OUTBOUND_SPOOL`: review and add replay/live Events, committed-prefix acknowledgements and
    backpressure; switch the canary reader. Preserve archive identities and duplicate/conflict rules.
@@ -170,7 +169,7 @@ separates persistence, command transport and event transport rather than making 
    makes outbound the default for new Sandboxes; old Sandboxes are archived and deleted rather
    than upgraded, after which inbound access is retired.
 
-Each operation has an explicit route per environment/incarnation. Command WS plus the legacy spool
+Each operation has an explicit route per environment/incarnation. Channel commands plus the legacy spool
 reader is deliberate staged coexistence, not two competing command routes. Do not silently fall back
 per request or blindly resend ambiguous commands through an old route. Rollback preserves pending
 submissions, command IDs, journal/history and exclusive command-route ownership. Remove inbound

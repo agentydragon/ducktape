@@ -4,17 +4,23 @@ Status: **accepted design, not implemented.** Runners still serve the inbound `A
 ([runner discovery](../plans/runner_discovery.md)); this is the contract the runner-initiated
 replacement implements. It covers command delivery, authentication, connection ownership and
 dispatch attempts. Event replay over the channel and the remaining lifecycle operations are added
-to it later as separate frame kinds and do not change what is fixed here.
+to it later as separate RPCs and do not change what is fixed here.
 
 ## Shape
 
-Each runner process opens one WebSocket to the Sandbox Service and multiplexes every Session in
-its state directory over it. Every WebSocket message is one binary protobuf frame: `RunnerFrame`
-from the runner, `ServiceFrame` from the service. Command delivery and, later, event following are
-independent logical operations on the connection, not reverse unary RPCs, and neither creates a
+Each runner process is a gRPC client of the Sandbox Service and holds one HTTP/2 connection to
+it. On that connection it keeps one long-lived bidirectional `Connect` stream, which carries
+command delivery for every Session in its state directory. Each later operation (event following,
+lifecycle controls) is its own RPC on the same connection, so HTTP/2's per-stream flow control
+keeps a large event catch-up from starving commands. The runner is the client, so service-to-runner
+traffic is messages on streams the runner opened, never reverse RPCs. No operation creates a
 Session or starts a stopped harness.
 
 ```protobuf
+service RunnerChannel {
+  rpc Connect(stream RunnerFrame) returns (stream ServiceFrame);
+}
+
 message RunnerFrame {
   oneof frame {
     Hello hello = 1;                  // first frame, exactly once
@@ -73,24 +79,27 @@ message CommandRefused {
 message Heartbeat {}
 ```
 
-- **Versioning.** The WebSocket subprotocol is `agentplane.runner.v1`; an incompatible change is a
-  new subprotocol. Additive operations are capabilities: a peer sends a frame kind only after both
-  sides listed its capability in `Hello`/`Welcome`. A frame of a kind the receiver did not agree
-  to is a protocol error that closes the connection, so a skew shows up at the first frame rather
-  than as silently dropped work. Rolling either side is safe because capabilities are negotiated
-  per connection.
-- **Frame size.** 4 MiB per message in both directions, the gRPC default the `Attach` path
-  enforces today, so no command that is deliverable now becomes undeliverable.
+- **Versioning.** The package is `ducktape.agentplane.runner_channel.v1`; an incompatible change is
+  a new package. Additive frame kinds and RPCs are capabilities: a peer uses one only after both
+  sides listed it in `Hello`/`Welcome`. A frame of a kind the receiver did not agree to fails the
+  stream, and an RPC the service does not implement returns `UNIMPLEMENTED`, so a skew shows up at
+  first use rather than as silently dropped work. Rolling either side is safe because capabilities
+  are negotiated per connection.
+- **Later streams bind to the epoch.** Every RPC other than `Connect` carries the connection epoch
+  from `Welcome` in metadata and is refused once that epoch is superseded.
+- **Message size.** gRPC's default 4 MiB per message, the same limit the `Attach` path has today,
+  so no command that is deliverable now becomes undeliverable.
 - **Receipts are facts.** A receipt reports the runner journal. Re-delivering a command already
   journaled with the same payload returns its existing `CommandAdmitted` entry, which the runner
   already guarantees by deduplicating on `command_id`. The service never infers admission from a
-  channel write, a heartbeat or a WebSocket acknowledgement. Which refusal reasons are terminal for
+  stream write, a heartbeat or HTTP/2 flow-control progress. Which refusal reasons are terminal for
   a submission is the [command admission](../plans/command_admission.md) contract's decision, not
   the channel's.
-- **Close codes.** The service closes with an application code naming the cause: `4401`
-  authentication failed, `4403` not a channel-routed Sandbox, `4409` superseded by a newer
-  connection, `4400` protocol error. The runner logs the code and reconnects, except that `4403`
-  backs off to its maximum interval.
+- **Status codes.** The service ends a stream with a gRPC status naming the cause:
+  `UNAUTHENTICATED`, `PERMISSION_DENIED` (not a channel-routed Sandbox), `ABORTED` (superseded by a
+  newer connection), `INVALID_ARGUMENT` (protocol error) or `UNAVAILABLE` (replica draining or the
+  connection's maximum age). The runner logs the status and reconnects, except that
+  `PERMISSION_DENIED` backs off to its maximum interval.
 
 ## Prior art and alternatives
 
@@ -110,26 +119,29 @@ Two harnesses already ship a dial-out control channel, and the choices above bor
 
 Alternatives for the transport itself:
 
-1. **One WebSocket of protobuf frames** (this design; the direction the operator selected). One
-   authenticated connection, both directions, no per-message request overhead; the egress proxy
-   already relays WebSockets.
-2. **RemoteIO's shape: SSE down, HTTP `POST` up.** Works through any HTTP proxy, and every upload
-   re-authenticates, which makes revocation immediate. It costs a request per upload batch and
-   pairs a stream with separate requests that can land on different replicas, so receipts need
-   the same cross-replica routing as commands. Not chosen: every hop on the path carries
-   WebSockets.
-3. **Codex's envelope wholesale, with a transport-level acknowledgement buffer.** Its unacked
+1. **A gRPC bidirectional stream** (this design). It is the RPC stack every other Agentplane hop
+   uses, with typed stubs, deadlines, status codes and per-stream flow control. The egress proxy
+   already substitutes credentials in gRPC metadata on a bidirectional stream (BuildBuddy's Build
+   Event Service, [egress spec](../egress/SPEC.md)).
+2. **One WebSocket of protobuf frames.** This was the operator's first selection, and the egress
+   proxy relays WebSockets too. It needs hand-rolled close codes, versioning and a multiplexing
+   scheme, and one byte stream gives no per-operation flow control. gRPC was chosen when the
+   design was reviewed.
+3. **RemoteIO's shape: SSE down, HTTP `POST` up.** Every upload re-authenticates, which makes
+   revocation immediate, but it costs a request per upload batch and pairs a stream with separate
+   requests that can land on different replicas, so receipts would need the same cross-replica
+   routing as commands. Not chosen.
+4. **Codex's envelope wholesale, with a transport-level acknowledgement buffer.** Its unacked
    buffer exists because the relay is not durable. Here the runner journal and the service
    database already are, so command delivery relies on idempotent re-delivery instead of a second
    ledger. Event following still needs cursors and acknowledgements, which the event-replay design
-   takes from this model; segmenting is adopted only if a hop on the path limits frame size below
-   4 MiB.
+   takes from this model.
 
 ## Authentication and incarnation binding
 
-The runner dials `ws://<sandbox-service channel host>/v1/runner-channel` through the Pod's egress
-sidecar, like every other destination it reaches; the Sandbox's network fence admits nothing
-else. It sends a placeholder in `Authorization: Bearer`. The egress proxy authenticates the Pod
+The runner dials the Sandbox Service's channel listener through the Pod's egress sidecar, like
+every other destination it reaches; the Sandbox's network fence admits nothing else. It sends a
+placeholder in `authorization: Bearer` metadata on every RPC. The egress proxy authenticates the Pod
 hop and substitutes that Pod's own projected token for the dedicated audience
 `agentplane-runner-channel`, the same mechanism and per-destination audience that
 [notifications](../notification_service/README.md) uses. The token is projected only into the
@@ -144,7 +156,7 @@ The rule that admits the channel host lives in its own egress policy, which the 
 binds to every channel-routed Sandbox at creation. It is not one of the launch-selectable
 policies, so choosing a narrow egress set cannot cut a Sandbox off from its own control plane.
 
-On upgrade the Sandbox Service authenticates the bearer with the shared
+When a `Connect` stream opens, the Sandbox Service authenticates the bearer with the shared
 `WorkloadPrincipalAuthenticator` ([workload authentication](workload_authentication.md)) and then
 resolves the principal the way destination resolution does, in reverse:
 
@@ -162,9 +174,9 @@ to the Sandbox UID and Pod UID that resolution returned. A Sandbox being deleted
 accepted, because the runner must stay reachable while it seals its Sessions; a deleted Pod fails
 TokenReview.
 
-**Revocation.** Each replica watches the Pods and Sandboxes behind the connections it holds, and
-closes a connection when its Pod is deleted or replaced or its Sandbox's ServiceAccount changes. As a backstop for a
-missed watch event, it closes every connection after one hour; the runner reconnects and
+**Revocation.** Every RPC is authenticated when it opens. Each replica watches the Pods and Sandboxes behind the connections it holds, and
+ends a connection's streams when its Pod is deleted or replaced or its Sandbox's ServiceAccount changes. As a backstop for a
+missed watch event, it ends every `Connect` stream after one hour; the runner reconnects and
 authenticates again.
 
 **Trust boundary.** The token proves the Pod, not the runner process. The harness and every
@@ -203,13 +215,13 @@ The Sandbox Service keeps one row per Sandbox in its own database:
 | `last_seen_at`     | last frame received, written at most every 15 s    |
 
 Accepting a connection increments the epoch and sets the owner in one transaction, commits, then
-sends `Welcome` with the new epoch. The previous owner, if it still holds a socket, sees its epoch
-superseded at its next send check or heartbeat write and closes with `4409`. A runner keeps at most
-one connection: it closes the old socket before dialing a new one, and acts only on frames from the
+sends `Welcome` with the new epoch. The previous owner, if it still holds a stream, sees its epoch
+superseded at its next send check or heartbeat write and ends it with `ABORTED`. A runner keeps at
+most one `Connect` stream: it cancels the old one before opening a new one, and acts only on frames from the
 connection that received its latest `Welcome`.
 
 Stale sends are harmless rather than impossible. A replica that has not yet noticed it was
-superseded can write to a dead socket, and a command that reaches the runner twice is deduplicated
+superseded can write to a dead stream, and a command that reaches the runner twice is deduplicated
 by `command_id`. The epoch decides which replica routes new deliveries and which connection's
 heartbeats count; it is not a Session, Event or command identity, and a new epoch neither starts a
 harness nor proves that anything failed.
@@ -249,14 +261,23 @@ receipt is still recorded on the submission. A caller retry with the same comman
 attempt. Reconnecting never scans pending submissions for delivery, so a stale interrupt or stop
 command is never fired at a reconnecting runner.
 
-Each connection carries at most 64 undelivered-receipt attempts; past that, a claim fails and the
+Each `Connect` stream carries at most 64 undelivered-receipt attempts; past that, a claim fails and the
 attempt waits for its next re-notification.
 
 ## Heartbeat and liveness
 
-Each side sends `Heartbeat` every 10 s, and closes the connection after 30 s without any frame from
-the peer. A runner reconnects with exponential backoff and jitter, from 0.5 s up to 30 s, and
+Each side sends `Heartbeat` on `Connect` every 10 s, and ends the stream after 30 s without any
+frame from the peer. A runner reconnects with exponential backoff and jitter, from 0.5 s up to 30 s, and
 retries indefinitely. The service reports a runner as connected while its current epoch's
 `last_seen_at` is under 30 s old. Connected is not ready to act: it says nothing about harness
 state, an active turn or whether a command was carried out, and losing the connection proves none of
 those either.
+
+## Path through the egress proxy
+
+A gRPC client behind an HTTP proxy opens a `CONNECT` tunnel, and the egress proxy intercepts the
+tunnel to read and substitute metadata. That interception is proven for TLS upstreams on a
+bidirectional stream; the Sandbox Service listens in plaintext. The implementation therefore
+either proves plaintext HTTP/2 inside an intercepted tunnel through the real sidecar and proxy,
+or serves the channel listener over TLS that the proxy verifies. Long streams also cross proxy
+replica drains, which end them; the runner reconnects like after any other `UNAVAILABLE`.

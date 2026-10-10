@@ -477,7 +477,7 @@ This does not reopen `SESSION_COMMAND_CONTRACT` beyond the reconciliation clause
 ### `RUNNER_OUTBOUND_CHANNEL` — implement outbound command delivery
 
 **Blocked on the admission contract review and admission core; draft code/isolated tests permitted,
-with merge/deployment gated on them.** Implement both WS peers of the
+with merge/deployment gated on them.** Implement both gRPC peers of the
 [runner channel](../docs/runner_channel.md): framing and capabilities, the dedicated token audience
 and its egress policy, incarnation binding, epoch fencing, dispatch attempts over the core's
 submission records, heartbeats and reconnect. Reconnect must not scan pending commands for delivery.
@@ -488,7 +488,7 @@ authentication denial/revocation, stale connections and ambiguous sends. No new 
 
 **Blocked on outbound command peers and durable submission through the existing relay.** Deploy
 compatible service support first with old routes unchanged, then a compatible runner image in a fresh
-canary. Select one explicit command route per incarnation and switch its submission adapter to WS;
+canary. Select one explicit command route per incarnation and switch its submission adapter to the channel;
 keep the existing spool reader. Verify the real proxy path, cross-replica routing, owner loss and
 reconnect, receipt persistence and exact retries. No silent fallback after an ambiguous send. This
 proves command delivery independently of moving spool traffic or migrating existing environments.
