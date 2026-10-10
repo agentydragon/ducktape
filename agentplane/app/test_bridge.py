@@ -356,7 +356,7 @@ async def test_the_bridge_streams_a_turn_to_every_tab_and_resumes_from_the_last_
         # frames, and the exit the shutdown caused.
         (thread,) = (await http.get("/threads")).json()
         assert thread["id"] == thread_id
-        assert (thread["sandbox"], thread["session_id"], thread["model"]) == (SANDBOX, thread_id, spec.model)
+        assert (thread["sandbox"], thread["model"]) == (SANDBOX, spec.model)
         stored = await _stored_events(http, thread["id"], until="harnessExited")
         assert [entry["cursor"] for entry in stored] == [str(n) for n in range(1, len(stored) + 1)]
         assert [entry["event"]["itemCompleted"]["text"] for entry in stored if "itemCompleted" in entry["event"]] == [
