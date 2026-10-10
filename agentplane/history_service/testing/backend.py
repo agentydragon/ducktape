@@ -24,6 +24,7 @@ from agentplane.history_service.summary_changes import SummaryChanges, notify_su
 from agentplane.history_service.thread_reads import ThreadReader
 from agentplane.sandbox_service.session_history.store import Store
 from agentplane.subjects import ServiceAccountRef
+from agentplane.thread_fold.models import Base
 from agentplane.workload_auth.principal import POD_NAME_CLAIM, POD_UID_CLAIM, WorkloadPrincipalResolver
 
 # The asyncpg dialect is loaded by SQLAlchemy from the driver name.
@@ -92,9 +93,14 @@ async def history_service(
 
 
 async def fold_history(database_url: str) -> None:
-    """Fold every retained Session in the history database until the History Service fold has caught up."""
+    """Fold every retained Session in the history database until the History Service fold has caught up.
+
+    The fold is this database's writer of the projection tables, so it creates them as migrations would.
+    """
     engine = create_async_engine(make_url(database_url).set(drivername="postgresql+asyncpg"))
     try:
+        async with engine.begin() as connection:
+            await connection.run_sync(Base.metadata.create_all)
         shadow = FoldShadow(engine=engine, history=Store(engine), concurrency=1)
         try:
             while (await shadow.cycle()).behind:

@@ -19,6 +19,7 @@ py_library(
         "//agentplane/history_service:summary_changes",
         "//agentplane/history_service:thread_reads",
         "//agentplane/sandbox_service/session_history:store",
+        "//agentplane/thread_fold:models",
         "//agentplane/workload_auth:principal",
         "@pypi//asyncpg",
         "@pypi//grpcio",
