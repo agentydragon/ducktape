@@ -5,32 +5,8 @@
     <meta name="viewport" content="width=device-width,initial-scale=1">
     <title>{{ title }} · {{ commit_sha }}</title>
     <link rel="stylesheet" href="{{ gallery_stylesheet }}">
-    <style>
-      :root { color-scheme: light dark; font: 15px/1.45 system-ui, sans-serif; background: #f4f5f7; color: #16181d; }
-      body { margin: 0; }
-      header { padding: 16px 24px; background: Canvas; border-bottom: 1px solid #bbb; }
-      h1 { margin: 0 0 4px; font-size: 18px; }
-      code { overflow-wrap: anywhere; font-size: 12px; }
-      main { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(520px, 100%), 1fr)); gap: 20px; padding: 20px; align-items: start; }
-      figure { margin: 0; padding: 12px; border: 1px solid #bbb; border-radius: 10px; background: Canvas; }
-      img { display: block; max-width: 100%; height: auto; border-radius: 6px; background: white; }
-      .sample-frame--empty { padding: 12px; box-sizing: border-box; color: #555; font-size: 13px; text-align: center; }
-      figcaption { padding-top: 9px; font-weight: 600; }
-      .pair { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
-      .pair > div { font-size: 12px; color: #666; }
-      .badge { display: inline-block; padding: 1px 7px; border-radius: 999px; font-size: 12px; font-weight: 600; margin-left: 6px; }
-      .modified { background: #ffe1e1; color: #8a1f1f; }
-      .new { background: #e1f4ff; color: #0b4a78; }
-      .removed { background: #f0e1ff; color: #5a1a8a; }
-      .metric { font-weight: 400; color: #666; }
-      .label-line { font-size: 12px; color: #666; margin-top: 8px; }
-      details { grid-column: 1 / -1; }
-      details summary { cursor: pointer; padding: 8px 0; }
-      @media (max-width: 700px) { .pair { grid-template-columns: 1fr; } }
-      @media (prefers-color-scheme: dark) { :root { background: #17181b; color: #eee; } figure, header { border-color: #444; } .sample-frame--empty { color: #ccc; } .metric, .pair > div, .label-line { color: #aaa; } }
-    </style>
   </head>
-  <body>
+  <body class="gallery-test">
     <header>
       <a href="../../index.html">All visual tests</a>
       <h1>{{ title }}</h1>

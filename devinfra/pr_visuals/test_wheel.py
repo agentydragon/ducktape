@@ -27,7 +27,7 @@ def test_wheel_contains_import_closure_templates_and_runnable_entry_points(tmp_p
         assert {
             "devinfra/pr_visuals/check_run.py",
             "devinfra/pr_visuals/publisher.py",
-            "devinfra/pr_visuals/gallery_frames.css",
+            "devinfra/pr_visuals/gallery.css",
             "devinfra/pr_visuals/gallery_sort.js",
             "devinfra/pr_visuals/pr_visual_test.html.j2",
             "devinfra/pr_visuals/pr_visuals.html.j2",
@@ -107,9 +107,9 @@ bundle = build_bundle(
 )
 index_html = (bundle / "index.html").read_text()
 assert "Visual review" in index_html
-assert 'href="gallery_frames.css"' in index_html
+assert 'href="gallery.css"' in index_html
 assert 'src="gallery_sort.js"' in index_html
-assert (bundle / "gallery_frames.css").is_file()
+assert (bundle / "gallery.css").is_file()
 assert (bundle / "gallery_sort.js").is_file()
 test_page = (bundle / "tests/smoke-test/index.html").read_text()
 assert "Packaging smoke" in test_page and "screen.png" in test_page

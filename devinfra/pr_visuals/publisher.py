@@ -584,7 +584,7 @@ def build_bundle(
     bundle = output_root / "commits" / commit_sha
     environment = _templates()
     bundle.mkdir(parents=True, exist_ok=True)
-    shutil.copyfile(Path(__file__).with_name("gallery_frames.css"), bundle / "gallery_frames.css")
+    shutil.copyfile(Path(__file__).with_name("gallery.css"), bundle / "gallery.css")
     shutil.copyfile(Path(__file__).with_name("gallery_sort.js"), bundle / "gallery_sort.js")
     review_tests: list[ReviewTest] = []
     for test in tests:
@@ -619,7 +619,7 @@ def build_bundle(
         page = _review_test_page_data(review_test, asset_base="", page_url="")
         (target_dir / "index.html").write_text(
             environment.get_template("pr_visual_test.html.j2").render(
-                repository=repository, commit_sha=commit_sha, gallery_stylesheet="../../gallery_frames.css", **page
+                repository=repository, commit_sha=commit_sha, gallery_stylesheet="../../gallery.css", **page
             )
         )
         review_tests.append(review_test)
@@ -632,7 +632,7 @@ def build_bundle(
     ]
     (bundle / "index.html").write_text(
         environment.get_template("pr_visuals.html.j2").render(
-            repository=repository, commit_sha=commit_sha, gallery_stylesheet="gallery_frames.css", tests=page_tests
+            repository=repository, commit_sha=commit_sha, gallery_stylesheet="gallery.css", tests=page_tests
         )
     )
     return bundle

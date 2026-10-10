@@ -69,7 +69,7 @@ py_library(
     name = "publisher",
     srcs = ["publisher.py"],
     data = [
-        "gallery_frames.css",
+        "gallery.css",
         "gallery_sort.js",
         "pr_visual_test.html.j2",
         "pr_visuals.html.j2",
