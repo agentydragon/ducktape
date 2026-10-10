@@ -962,12 +962,13 @@ are irreplaceable, and a node that deletes a column or row stops for the operato
 
 ```mermaid
 flowchart TD
-    SESSION_REGISTRY_PLACEMENT[Decision: where the Sandbox Service keeps Session records]
-    SESSION_REGISTRY_MOVE[Blocked: Sandbox Service Session records in its own database]
+    SESSION_REGISTRY_MOVE[Candidate: Sandbox Service Session records in its own database]
+    SESSION_HISTORY_ROW_FROM_FEED[Blocked: ingesters create their own history rows]
     HISTORY_SESSION_COLUMNS_DROP[Blocked: drop registry columns from the history database]
     HISTORY_STORE_MOVE[Blocked: history store and migrations move to the History Service]
     HISTORY_WRITER_SWITCH_RETIRE[Blocked: delete the history_writer switch]
     HISTORY_DATABASE_RENAME[Blocked: rename the sandbox_service database and role]
+    SANDBOX_DATABASE_RENAME[Blocked: name the sandbox_commands database for the Sandbox Service]
     HISTORY_PROTO_OWNERSHIP[Blocked: History Service owns its request messages]
     HISTORY_PROJECTION_NAMING[Decision: names of the History Service projection tables]
     APP_ELECTRIC_RETIRE[Blocked: remove Electric's access to the app database]
@@ -981,15 +982,16 @@ flowchart TD
     FOLD_SHADOW[History Service folds in shadow]
     APP_PROJECTOR_RETIRE[Delete app projector]
     HISTORY_SERVICE_OWNERSHIP[History Service ownership]
-    SESSION_REGISTRY_PLACEMENT --> SESSION_REGISTRY_MOVE
     SESSION_REGISTRY_MOVE --> SANDBOX_LOCAL_HISTORY_RETIRE
-    SESSION_REGISTRY_MOVE --> HISTORY_SESSION_COLUMNS_DROP
+    SESSION_REGISTRY_MOVE --> SESSION_HISTORY_ROW_FROM_FEED
+    SESSION_HISTORY_ROW_FROM_FEED --> HISTORY_SESSION_COLUMNS_DROP
     HISTORY_WRITE_HANDOFF --> HISTORY_SESSION_COLUMNS_DROP
     SANDBOX_LOCAL_HISTORY_RETIRE --> HISTORY_STORE_MOVE
     SANDBOX_LOCAL_HISTORY_RETIRE --> HISTORY_WRITER_SWITCH_RETIRE
     HISTORY_STORE_MOVE --> HISTORY_SERVICE_OWNERSHIP
     HISTORY_STORE_MOVE --> HISTORY_DATABASE_RENAME
     HISTORY_SESSION_COLUMNS_DROP --> HISTORY_DATABASE_RENAME
+    HISTORY_DATABASE_RENAME --> SANDBOX_DATABASE_RENAME
     SANDBOX_HISTORY_READS_RETIRE --> HISTORY_PROTO_OWNERSHIP
     HISTORY_PROJECTION_NAMING -. cheapest before the tables exist .-> FOLD_SHADOW
     APP_PROJECTOR_RETIRE --> APP_ELECTRIC_RETIRE
@@ -997,32 +999,42 @@ flowchart TD
     RUNNER_OUTBOUND_CHANNEL -. after proto churn settles .-> PROTO_DIRECTORY
 ```
 
-### `SESSION_REGISTRY_PLACEMENT` — where the Sandbox Service keeps Session records
-
-**Decision.** The `sandbox_service` database is not history only: its `session_history` table is
-also the Sandbox Service's Session registry (`sandbox_service/session_history/db.py`): public
-Session ID, runner locator and Sandbox incarnation, Open reservation (`open_key`, `open_request`,
-`launch_spec`) and the `WatchSessions` change position. `CreateSession`, `OpenSession`,
-`LookupSession` and `WatchSessions` need it, so the History Service cannot own that database
-outright while the Sandbox Service writes it. Recommendation: the registry moves into the Sandbox
-Service's own database next to command admission, as a table named for what it holds (`session`),
-and that database is then named for the service rather than `sandbox_commands`. Alternative: keep
-the registry in the history database and give the Sandbox Service a second database role there,
-which is two services on one database.
-
 ### `SESSION_REGISTRY_MOVE` — Session records in the Sandbox Service's database
 
-**Blocked on the placement decision.** Create the registry table and its position sequence in the
-Sandbox Service's database, copy existing rows once with their public IDs, locators and positions,
-and switch the Session RPCs and `WatchSessions` to it. The history tables keep the Session ID with
-no foreign key into the registry. Verify every public Session ID resolves to the same locator
-before and after, and that a `WatchSessions` reader resumes without losing a change.
+**Candidate; migrations follow the runner channel's `0003_submission_attempt`.** The history
+database's `session_history` is also the Sandbox Service's Session registry: public Session ID,
+runner locator and Sandbox incarnation, Open reservation (`open_key`, `open_request`,
+`launch_spec`) and the `WatchSessions` change position. `CreateSession`, `OpenSession`,
+`LookupSession`, `WatchSessions` and inventory read it. Move it into `sandbox_commands` as
+`session` with its own `session_change_position` sequence (`0004_session`):
+
+- At startup, under an advisory lock, the Sandbox Service copies every registry row missing from
+  `session`, with its public ID, locator, reservation and position, refuses a row that differs from
+  the one already copied, and sets the sequence past the largest position. Only then does it serve.
+- The registry RPCs, `WatchSessions` and its `NOTIFY` move to `session`. Create and Open commit the
+  registry row first, then insert the history row with the same values, so both ingesters still
+  find the row they append to; an Open retry repeats the history insert.
+- This release deploys with `Recreate`: a replica allocating positions from the history sequence
+  must never run beside one allocating from the new sequence, or a `WatchSessions` reader could skip
+  a change. Rolling deploys return in the next release.
+
+The history tables keep the Session ID with no foreign key into the registry. Verify on staging that
+every public Session ID resolves to the same locator before and after, and that the History Service
+ingester's `WatchSessions` resumes without losing a change.
+
+### `SESSION_HISTORY_ROW_FROM_FEED` — history rows come from the feed
+
+**Blocked on the registry move.** Each ingester creates its Session's history row on first append,
+from the `SessionChange` it follows, so the Sandbox Service no longer writes the history database on
+Create or Open and the startup copy is deleted. The History Service keeps the Sandbox locator it
+reads by (`ListSessionSummaries` filters by Sandbox).
 
 ### `HISTORY_SESSION_COLUMNS_DROP` — history keeps only history
 
-**Blocked on the registry move and the write handoff; stops for the operator.** Drop the registry
-columns from the history database's `session_history`, leaving per-Session ingestion state
-(`source_id`, `last_cursor`, `feed_state`) beside `session_event`. The table name is then accurate.
+**Blocked on history rows from the feed and the write handoff; stops for the operator.** Drop the
+registry-only columns from the history database's `session_history`: the Open reservation, the
+runner session ID and the change position. Per-Session ingestion state (`source_id`, `last_cursor`,
+`feed_state`) and the Sandbox locator stay beside `session_event`.
 
 ### `HISTORY_STORE_MOVE` — the history store belongs to the History Service
 
@@ -1043,6 +1055,13 @@ History Service's `ingester.enabled` and the Sandbox Service's `ingest_history`.
 `cluster/cdk8s/agentplane/database.py`. Rename in place (`ALTER DATABASE`/`ALTER ROLE ... RENAME`)
 and have the CNPG `Database` and managed role adopt the new names; recreating the database under a
 new name would copy the log. Verify the History Service and Electric reconnect with no data movement.
+
+### `SANDBOX_DATABASE_RENAME` — name the Sandbox Service's database for it
+
+**Blocked on the history database rename**, which frees the `sandbox_service` name. Rename
+`sandbox_commands` and its role and Secret to `sandbox_service` in place, as that node does, and
+point the Sandbox Service, its migration init container and `commands_database_url` at the new
+names.
 
 ### `HISTORY_PROTO_OWNERSHIP` — History Service request messages
 
