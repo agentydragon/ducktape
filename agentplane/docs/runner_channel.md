@@ -1,10 +1,11 @@
 # Runner channel
 
-Status: **accepted design, partly implemented.** The Sandbox Service's side is built: the channel
-listener (`sandbox_service/runner_channel.py`) authenticates, fences and keeps connections alive,
-and delivers dispatch attempts (`sandbox_service/channel_delivery.py`) for Sandboxes routed to it.
-The runner's side is not built yet, so runners still serve the inbound `Attach` RPC, which
-Cilium admits only from the Sandbox Service. This is the contract the
+Status: **accepted design, both peers built, not deployed.** The Sandbox Service's channel listener
+(`sandbox_service/runner_channel.py`) authenticates, fences and keeps connections alive, and
+delivers dispatch attempts (`sandbox_service/channel_delivery.py`) for Sandboxes routed to it. The
+runner dials it when started with `--channel-target` (`runner/channel.py`); no Sandbox is started
+that way yet, so runners are reached through the inbound `Attach` RPC, which Cilium admits only
+from the Sandbox Service. This is the contract the
 runner-initiated replacement implements. It covers command delivery, authentication, connection ownership and
 dispatch attempts. Event replay over the channel and the remaining lifecycle operations are added
 to it later as separate RPCs and do not change what is fixed here.

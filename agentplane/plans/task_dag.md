@@ -379,12 +379,11 @@ flowchart LR
 
 ### `RUNNER_OUTBOUND_CHANNEL` — implement outbound command delivery
 
-**Service peer merged (#9754); remaining: the runner peer.** Implement both gRPC peers of the
-[runner channel](../docs/runner_channel.md): framing and capabilities, the dedicated token audience
-and its egress policy, incarnation binding, epoch fencing, dispatch attempts over the
-`sandbox_commands` submission records, heartbeats and reconnect. Reconnect must not scan pending commands for delivery.
-Keep existing spool ingestion unchanged. Test missed/duplicate/delayed notifications, owner loss,
-authentication denial/revocation, stale connections and ambiguous sends. No new inbound unary API.
+**Both gRPC peers of the [runner channel](../docs/runner_channel.md) are built; remaining: the
+channel's egress policy.** Add the egress credential that substitutes the Pod's token for the
+`agentplane-runner-channel` audience, and the policy admitting the channel host, which the Sandbox
+Service binds to every Sandbox at creation and which no launch selection can drop. Keep existing
+spool ingestion unchanged. No new inbound unary API.
 
 ### `RUNNER_OUTBOUND_CANARY` — switch command delivery on a fresh runner
 

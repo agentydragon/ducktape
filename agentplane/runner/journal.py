@@ -577,3 +577,11 @@ class Journal:
     async def get(self, command_id: str) -> Command | None:
         async with self._reading() as session:
             return await session.get(Command, command_id)
+
+    async def admitted_entry(self, command_id: str) -> event_log_pb2.EventEntry:
+        """The `CommandAdmitted` entry a journaled command was admitted with."""
+        command = await self.get(command_id)
+        if command is None:
+            raise ValueError(f"unknown command id {command_id!r}")
+        (entry,) = await self.since(command.admitted_cursor - 1, limit=1)
+        return entry

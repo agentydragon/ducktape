@@ -76,6 +76,19 @@ Thread-page projection. Their cross-layer contract is [Thread, runner, and harne
 - `StopRunnerSession` interrupts an active turn, stops the harness, reports `HarnessExited`, and
   ends the streams after every observer drains the terminal events. The session stays resumable.
 
+## Runner channel
+
+- Given `--channel-target`, the runner also dials the Sandbox Service's
+  [runner channel](../docs/runner_channel.md) and keeps one `Connect` stream for as long as it runs,
+  reconnecting on a fresh connection after any loss. It offers `commands`.
+- A delivered command is admitted exactly as an `Attach` command is, and answered from the journal:
+  its `CommandAdmitted` entry, also when the command was already journaled with the same payload.
+  Otherwise it is refused with its cause: an unknown session, a harness that is not running or a
+  sealed journal, a command ID already used for other work, or a command without an ID and an
+  operation. Delivery never creates a session or starts a harness.
+- The bearer it sends is a placeholder the egress proxy substitutes; the runner never holds the
+  channel token.
+
 ## Teardown seal
 
 - `Seal` is for Sandbox teardown only. The runner first records, durably, that the Sandbox is sealed;

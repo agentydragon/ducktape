@@ -180,6 +180,14 @@ class Runner:
                 await self.sessions[session_id].load_setup_state()
             return self.sessions[session_id]
 
+    async def stored_session(self, session_id: str) -> Session | None:
+        """The session if this runner holds it. Never creates one or starts its harness."""
+        try:
+            session_id = validate_session_id(session_id)
+        except ValueError:
+            return None
+        return await self._load(session_id) if self.store.exists(session_id) else None
+
     async def open(self, request: protocol_pb2.Open) -> Session:
         try:
             session_id = validate_session_id(request.session_id)
@@ -458,7 +466,7 @@ async def _wake(session: Session, closing: asyncio.Event, cursor: int) -> None:
         await asyncio.gather(*waits, return_exceptions=True)
 
 
-async def _finish_command(command: Awaitable[None]) -> None:
+async def finish_command(command: Awaitable[None]) -> None:
     # A connection disappearing must not cancel a shared harness operation halfway through.
     task = asyncio.ensure_future(command)
     try:
@@ -475,7 +483,7 @@ async def _consume(
         async for message in requests:
             match message.WhichOneof("message"):
                 case "command":
-                    await _finish_command(session.command(message.command))
+                    await finish_command(session.command(message.command))
                 case "detach":
                     return
                 case other:

@@ -195,6 +195,7 @@ py_library(
     name = "main",
     srcs = ["main.py"],
     deps = [
+        ":channel",
         ":config",
         ":service",
         "@pypi//typer",
@@ -847,6 +848,47 @@ py_test(
         "//:conftest",
         "//agentplane/protocol:event_pb2",
         "//agentplane/runner:protocol_pb2",
+        "@pypi//grpcio",
+        "@pypi//protobuf",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_library(
+    name = "channel",
+    srcs = ["channel.py"],
+    deps = [
+        ":journal",
+        ":service",
+        "//agentplane:grpc_options",
+        "//agentplane/protocol:command_pb2",
+        "//agentplane/runner_channel:protocol_pb2",
+        "//agentplane/runner_channel:protocol_pb2_grpc",
+        "@pypi//grpcio",
+        "@pypi//protobuf",
+        "@pypi//sqlalchemy",
+        "@pypi//tenacity",
+    ],
+)
+
+py_test(
+    name = "test_channel",
+    srcs = ["test_channel.py"],
+    deps = [
+        ":adapter",
+        ":channel",
+        ":config",
+        ":conftest",
+        ":harness_process",
+        ":service",
+        ":store",
+        "//:conftest",
+        "//agentplane/protocol:command_pb2",
+        "//agentplane/protocol:event_pb2",
+        "//agentplane/runner:protocol_pb2",
+        "//agentplane/runner_channel:protocol_pb2",
+        "//agentplane/runner_channel:protocol_pb2_grpc",
         "@pypi//grpcio",
         "@pypi//protobuf",
         "@pypi//pytest",

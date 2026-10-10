@@ -15,6 +15,8 @@ bbr test //agentplane/runner/...
   `grpcio-tools` and `mypy-protobuf` plugins.
 - `service.py`: the `Attach` RPC, session lookup, and `serve()`; `main.py` is the process entry
   point, configured by flags and credentialed from its environment.
+- `channel.py`: the runner's peer of the [runner channel](../docs/runner_channel.md), off unless
+  `--channel-target` is given.
 - `session.py`: one session's harness process and derived state; `store.py` the session metadata
   and durable directory creation.
 - `journal.py`: one SQLite database per durable runner session. SQLAlchemy/aiosqlite transactions
