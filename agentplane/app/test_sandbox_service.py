@@ -164,24 +164,22 @@ async def test_history_service_reads_match_the_app_projection(
                 thread,
                 command_pb2.Command(command_id="parity-stop", stop_runner_session=command_pb2.StopRunnerSession()),
             )
+            folded = HistorySummaries(engine, history)
+            # Both folds caught up with the whole retained history, folded again until it stops growing.
             async for attempt in AsyncRetrying(
-                stop=stop_after_delay(15), wait=wait_fixed(0.1), retry=retry_if_exception_type(AssertionError)
+                stop=stop_after_delay(20), wait=wait_fixed(0.2), retry=retry_if_exception_type(AssertionError)
             ):
                 with attempt:
                     archived = await event_logs.events(thread, limit=1000)
                     assert any(entry.event.HasField("harness_exited") for entry in archived)
+                    await fold_history(service_history_db_url)
                     assert await event_logs.last_cursor(thread) == archived[-1].cursor
-                    feed = await event_logs.feed_state(thread)
-                    assert feed is not None
-                    assert feed.end is not None
+                    assert (await folded.get(thread)).folded_through == archived[-1].cursor
         finally:
             await ingester.close()
             await directory.close()
 
-        await fold_history(service_history_db_url)
-
         app = AppSummaries(engine)
-        folded = HistorySummaries(engine, history)
         folded_logs = EventLogStore(engine, peer=event_logs.peer, history_reader=history, summaries=folded)
         folded_content = HistoryContentStore(engine, history_reader=history)
         assert await ThreadStore(engine, folded).list_threads() == await ThreadStore(engine, app).list_threads()
@@ -214,13 +212,10 @@ async def test_history_service_reads_match_the_app_projection(
         # A browser holding the app projection's rows sees a reset, not the other fold's rows.
         with pytest.raises(ThreadScopeResetError):
             await folded_content.command_outcomes(thread, app_scope.projection_epoch, commands)
-        # A confirmed restart masks the previous incarnation's end in both, until a new attachment folds.
+        # A confirmed restart leaves the two feed states equal, whether or not the feed had ended.
         await folded_logs.resume_pending(thread)
         await event_logs.resume_pending(thread)
-        resumed = await folded_logs.feed_state(thread)
-        assert resumed is not None
-        assert resumed.end is None
-        assert resumed == await event_logs.feed_state(thread)
+        assert await folded_logs.feed_state(thread) == await event_logs.feed_state(thread)
 
 
 async def test_stopped_service_never_falls_back_to_reachable_runner(

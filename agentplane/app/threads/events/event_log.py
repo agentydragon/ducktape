@@ -126,8 +126,7 @@ class EventLogStore:
 
     async def last_cursor(self, thread_id: UUID) -> int:
         """The committed fold cursor, independent of archive progress."""
-        summary = await self._summaries.get(thread_id)
-        return 0 if summary is None else summary.folded_through
+        return await self._summaries.folded_through(thread_id)
 
     async def projection_sessions(self) -> dict[UUID, ServiceSessionReference]:
         """Sessions with app projection metadata, including deleted Sandboxes."""

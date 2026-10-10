@@ -78,6 +78,15 @@ class AppSummaries:
             )
             return {summary.thread_id: _app_summary(summary, cursor) for summary, cursor in rows}
 
+    async def folded_through(self, thread_id: UUID) -> int:
+        """The checkpoint's cursor, which a Thread can have before its summary row."""
+        async with self._sessions() as session:
+            return (
+                await session.scalar(
+                    select(ThreadCheckpoint.through_cursor).where(ThreadCheckpoint.thread_id == thread_id)
+                )
+            ) or 0
+
     async def resume_pending(self, thread_id: UUID) -> None:
         """A runner-confirmed restart supersedes a normal terminal feed, not a replay error.
 
@@ -130,6 +139,9 @@ class HistorySummaries:
             else NOTHING_FOLDED
             for thread_id in thread_ids
         }
+
+    async def folded_through(self, thread_id: UUID) -> int:
+        return (await self.get(thread_id)).folded_through
 
     async def resume_pending(self, thread_id: UUID) -> None:
         """Mask a normal terminal feed until the fold attaches past it, as the app projector does."""
