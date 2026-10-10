@@ -18,6 +18,7 @@ py_library(
     srcs = ["store.py"],
     deps = [
         ":db",
+        ":settlement",
         "//agentplane/protocol:event_log_pb2",
         "//agentplane/sandbox_service:protocol_pb2",
         "@pypi//protobuf",
@@ -83,6 +84,7 @@ py_test(
         "//agentplane/runner:protocol_pb2",
         "//agentplane/sandbox_service:conftest",
         "//agentplane/sandbox_service:protocol_pb2",
+        "//agentplane/sandbox_service/testing:delta_spans",
         "@pypi//protobuf",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
@@ -165,5 +167,36 @@ py_test(
         "@pypi//pytest",
         "@pypi//pytest_bazel",
         "@pypi//sqlalchemy",
+    ],
+)
+
+py_library(
+    name = "settlement",
+    srcs = ["settlement.py"],
+    deps = [
+        "//agentplane/native:delta_templates",
+        "//agentplane/protocol:event_log_pb2",
+        "//agentplane/protocol:event_pb2",
+        "//agentplane/sandbox_service:protocol_pb2",
+        "@pypi//protobuf",
+    ],
+)
+
+py_test(
+    name = "test_settlement",
+    srcs = ["test_settlement.py"],
+    deps = [
+        ":conftest",
+        ":settlement",
+        "//:conftest",
+        "//agentplane/native:delta_templates",
+        "//agentplane/protocol:event_log_pb2",
+        "//agentplane/protocol:event_pb2",
+        "//agentplane/sandbox_service:conftest",
+        "//agentplane/sandbox_service:protocol_pb2",
+        "//agentplane/sandbox_service/testing:delta_spans",
+        "@pypi//protobuf",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
     ],
 )

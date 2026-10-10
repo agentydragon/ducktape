@@ -17,6 +17,7 @@ from agentplane.protocol import event_log_pb2
 from agentplane.runner import protocol_pb2
 from agentplane.runner.harness import Harness
 from agentplane.sandbox_service.client import SandboxServiceClient
+from agentplane.sandbox_service.settled_cursors import next_stored, previous_stored, settled_ranges
 
 # The generated protocol stubs' own stub chain, which the mypy aspect resolves for direct deps only.
 # gazelle:include_dep @pypi//protobuf
@@ -204,11 +205,16 @@ class EventLogStore:
                 through = page.last_cursor
             if page.last_cursor < through or cursor > page.last_cursor:
                 raise ConnectionError("Sandbox Service history regressed behind the reader's cursor")
-            if len(page.entries) > requested or any(
-                entry.cursor != cursor + index + 1 or entry.cursor > page.last_cursor
-                for index, entry in enumerate(page.entries)
-            ):
-                raise ConnectionError("Sandbox Service history page is not contiguous or exceeds its watermark")
+            if len(page.entries) > requested:
+                raise ConnectionError("Sandbox Service history page exceeds its limit")
+            settled = settled_ranges(
+                cursor_range for settlement in page.settlements for cursor_range in settlement.ranges
+            )
+            expected = cursor
+            for entry in page.entries:
+                expected = next_stored(expected, settled)
+                if entry.cursor != expected or entry.cursor > page.last_cursor:
+                    raise ConnectionError("Sandbox Service history page is not contiguous or exceeds its watermark")
             if not page.entries:
                 if cursor < through:
                     raise ConnectionError("Sandbox Service omitted entries from a published prefix")
@@ -232,15 +238,24 @@ class EventLogStore:
             str(thread_id), before_cursor=before_cursor, after_cursor=after_cursor, limit=limit
         )
         observations = page.observations
-        # Service history is a contiguous, immutable prefix. Boundaries need no
-        # app raw lookups and refer to the watermark captured by this response.
+        # Service history is an immutable prefix, contiguous but for the settled ranges the page
+        # reports. Boundaries need no app raw lookups and refer to the watermark captured by this
+        # response.
+        settled = settled_ranges(page.settled)
+        expected: list[int] = []
         if after_cursor is not None:
-            start = after_cursor + 1
-            end = min(page.last_cursor, after_cursor + limit)
+            cursor = next_stored(after_cursor, settled)
+            while len(expected) < limit and cursor <= page.last_cursor:
+                expected.append(cursor)
+                cursor = next_stored(cursor, settled)
         else:
             end = page.last_cursor if before_cursor is None else min(page.last_cursor, max(0, before_cursor - 1))
-            start = max(1, end - limit + 1)
-        if [row.cursor for row in observations] != list(range(start, end + 1)):
+            cursor = previous_stored(end + 1, settled)
+            while len(expected) < limit and cursor >= 1:
+                expected.append(cursor)
+                cursor = previous_stored(cursor, settled)
+            expected.reverse()
+        if [row.cursor for row in observations] != expected:
             raise ConnectionError("invalid service observation page")
         return ObservationPage(
             observations=[ArchivedObservation(cursor=str(row.cursor), kind=row.kind) for row in observations],
@@ -261,6 +276,9 @@ class EventLogStore:
             if cursor <= page.last_cursor:
                 raise ConnectionError("Sandbox Service omitted a published entry")
             return None
+        settled = settled_ranges(cursor_range for settlement in page.settlements for cursor_range in settlement.ranges)
+        if next_stored(cursor - 1, settled) != cursor:
+            return None  # a settled delta the service no longer stores
         entry = page.entries[0]
         if len(page.entries) != 1 or entry.cursor != cursor or entry.cursor > page.last_cursor:
             raise ConnectionError("Sandbox Service returned an entry outside the requested committed position")

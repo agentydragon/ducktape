@@ -26,6 +26,7 @@ from agentplane.app.threads.view import fold
 from agentplane.app.threads.view.views import EntityKind, ThreadCommandState
 from agentplane.protocol import command_pb2, event_log_pb2
 from agentplane.sandbox_service.client import SandboxServiceClient
+from agentplane.sandbox_service.settled_cursors import next_stored, settled_ranges
 
 # The generated protocol stubs' own stub chain, which the mypy aspect resolves for direct deps only.
 # gazelle:include_dep @pypi//protobuf
@@ -154,8 +155,9 @@ class ContentStore:
     async def _archived_entry(self, thread_id: UUID, cursor: int, source_id: str) -> event_log_pb2.EventEntry | None:
         # Exact indexed lookup through the history API, never an app raw-table fallback.
         page = await self._history_reader.read_session_events(str(thread_id), after_cursor=cursor - 1, limit=1)
-        if not page.entries:
-            return None
+        settled = settled_ranges(cursor_range for settlement in page.settlements for cursor_range in settlement.ranges)
+        if not page.entries or next_stored(cursor - 1, settled) != cursor:
+            return None  # beyond the stored prefix, or a settled delta the service no longer stores
         entry = page.entries[0]
         if (
             len(page.entries) != 1

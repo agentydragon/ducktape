@@ -6,7 +6,7 @@ from collections.abc import Sequence
 from typing import Literal
 from uuid import UUID
 
-from sqlalchemy import func, select, tuple_
+from sqlalchemy import delete, func, or_, select, tuple_
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -31,6 +31,8 @@ from agentplane.app.threads.view.views import (
     ThreadViewState,
 )
 from agentplane.protocol import event_log_pb2
+from agentplane.sandbox_service import protocol_pb2
+from agentplane.sandbox_service.settled_cursors import settled_ranges
 
 # The generated protocol stubs' own stub chain, which the mypy aspect resolves for direct deps only.
 # gazelle:include_dep @pypi//protobuf
@@ -44,7 +46,11 @@ class ThreadFoldError(EventReplicationError):
 
 
 async def record_thread_fold(
-    session: AsyncSession, thread_id: UUID, source_id: str, entries: Sequence[event_log_pb2.EventEntry]
+    session: AsyncSession,
+    thread_id: UUID,
+    source_id: str,
+    entries: Sequence[event_log_pb2.EventEntry],
+    settlements: Sequence[protocol_pb2.SettledDeltas],
 ) -> None:
     checkpoint = await session.scalar(
         select(ThreadCheckpoint).where(ThreadCheckpoint.thread_id == thread_id).with_for_update()
@@ -63,7 +69,12 @@ async def record_thread_fold(
                 cursor=entries[0].cursor,
             )
         state, operational = await _fold_state(session, checkpoint)
-    batch = fold.EventBatch(source_id, state.position.through_cursor, tuple(entries))
+    batch = fold.EventBatch(
+        source_id,
+        state.position.through_cursor,
+        tuple(entries),
+        settled_ranges(cursor_range for settlement in settlements for cursor_range in settlement.ranges),
+    )
     result = fold.advance(state, batch, await _prior_entities(session, thread_id, batch))
     await write_payloads(session, thread_id, result.payload_writes)
     # Numbered here rather than in the fold, which reports upserts without saying which are new.
@@ -99,6 +110,7 @@ async def record_thread_fold(
             await session.execute(
                 insert(ThreadNativeLink).values(**values, source_sequence=source_sequence).on_conflict_do_nothing()
             )
+    await _forget_settled(session, thread_id, result.state.position.projection_epoch, settlements)
     checkpoint_values = {
         "source_id": result.state.position.source_id,
         "projection_epoch": result.state.position.projection_epoch,
@@ -109,6 +121,40 @@ async def record_thread_fold(
         .values(thread_id=thread_id, **checkpoint_values)
         .on_conflict_do_update(index_elements=[ThreadCheckpoint.thread_id], set_=checkpoint_values)
     )
+
+
+async def _forget_settled(
+    session: AsyncSession, thread_id: UUID, projection_epoch: str, settlements: Sequence[protocol_pb2.SettledDeltas]
+) -> None:
+    """Drop the evidence of deltas folded before their item settled; their cursors are gone."""
+    for settlement in settlements:
+        entity_cursor = await session.scalar(
+            select(ThreadEntity.cursor).where(
+                ThreadEntity.thread_id == thread_id,
+                ThreadEntity.projection_epoch == projection_epoch,
+                ThreadEntity.entity_kind == EntityKind.ITEM,
+                ThreadEntity.entity_id == settlement.item_id,
+            )
+        )
+        if entity_cursor is None:
+            continue
+        settled = [(cursor_range.first, cursor_range.last) for cursor_range in settlement.ranges]
+        await session.execute(
+            delete(ThreadNativeLink).where(
+                ThreadNativeLink.thread_id == thread_id,
+                ThreadNativeLink.projection_epoch == projection_epoch,
+                ThreadNativeLink.entity_cursor == entity_cursor,
+                or_(*(ThreadNativeLink.observation_cursor.between(first, last) for first, last in settled)),
+            )
+        )
+        await session.execute(
+            delete(ThreadEvidence).where(
+                ThreadEvidence.thread_id == thread_id,
+                ThreadEvidence.projection_epoch == projection_epoch,
+                ThreadEvidence.entity_cursor == entity_cursor,
+                or_(*(ThreadEvidence.observation_cursor.between(first, last) for first, last in settled)),
+            )
+        )
 
 
 async def _fold_state(

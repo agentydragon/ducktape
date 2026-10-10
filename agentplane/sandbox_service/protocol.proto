@@ -82,6 +82,9 @@ message CreateSessionRequest {
   // inherits all defaults, regardless of spec's scalar default values.
   google.protobuf.FieldMask override_mask = 4;
   optional string setup_script = 5;
+  // Overrides the service's default for removing settled streamed deltas from this Session's
+  // stored history (SettledDeltas). Absent inherits the default; false keeps every entry.
+  optional bool settle_deltas = 6;
 }
 
 message CreateSessionResponse {
@@ -114,9 +117,37 @@ message ReadSessionEventsRequest {
 
 message ReadSessionEventsResponse {
   uint64 last_cursor = 1;
+  // Runner entries in ascending cursor order. A cursor missing between them, or between
+  // after_cursor and the first of them, is covered by a range of one of `settlements`.
   repeated ducktape.agentplane.protocol.v1.EventEntry entries = 2;
   // Absent for imported history without a retained runner attachment.
   SessionFeedState feed_state = 3;
+  // Every settlement whose completion entry or settled range falls after after_cursor and at or
+  // before the last returned entry, including ranges below after_cursor that a reader may have
+  // read before they were settled.
+  repeated SettledDeltas settlements = 4;
+}
+
+message CursorRange {
+  uint64 first = 1;
+  uint64 last = 2;
+}
+
+// Authored by the Sandbox Service, not the runner: the streamed delta entries of one item field
+// (native frames and the runner's derived delta Events) were removed from stored history because
+// the retained completion entry holds exactly their concatenation. What was dropped is how the
+// content was split into chunks, each chunk's timestamp, cursor and per-frame ids, and the frames'
+// serialization.
+message SettledDeltas {
+  string item_id = 1;
+  // Exact-shape template every removed native frame matched, with its version.
+  string template = 2;
+  // The retained runner entry (ItemCompleted or ToolArguments) holding the content.
+  uint64 completion_cursor = 3;
+  repeated CursorRange ranges = 4;
+  uint64 chunk_count = 5;
+  google.protobuf.Timestamp first_chunk_at = 6;
+  google.protobuf.Timestamp last_chunk_at = 7;
 }
 
 message SessionFeedState {
@@ -142,6 +173,8 @@ message SessionObservation {
 message ReadSessionObservationsResponse {
   uint64 last_cursor = 1;
   repeated SessionObservation observations = 2;
+  // Settled cursor ranges intersecting the window; they account for cursors with no observation.
+  repeated CursorRange settled = 3;
 }
 
 // Internal frozen launch snapshot, committed before contacting the runner.

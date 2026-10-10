@@ -22,6 +22,7 @@ from agentplane.app.threads.models import ThreadCheckpoint, ThreadHistorySummary
 from agentplane.app.threads.projected_lifecycle import project_lifecycle
 from agentplane.app.threads.view.recording import record_thread_fold, set_operational
 from agentplane.sandbox_service.client import SandboxServiceClient
+from agentplane.sandbox_service.settled_cursors import next_stored, settled_ranges
 
 # gazelle:include_dep @pypi//protobuf
 # gazelle:include_dep //agentplane/sandbox_service:protocol_pb2
@@ -79,14 +80,20 @@ class HistoryProjector:
         page = await self._reader.read_session_events(str(thread_id), after_cursor=after, limit=128)
         if page.last_cursor < after:
             raise ConnectionError("Sandbox Service has not covered the app projection checkpoint")
-        if len(page.entries) > 128 or any(
-            entry.cursor != after + index + 1
-            or entry.cursor > page.last_cursor
-            or entry.origin.sequence != entry.cursor
-            or not entry.origin.source_id
-            for index, entry in enumerate(page.entries)
-        ):
+        if len(page.entries) > 128:
             raise EventReplicationError("invalid service history projection page")
+        # Cursors a settlement removed are covered by its ranges, not missing.
+        settled = settled_ranges(cursor_range for settlement in page.settlements for cursor_range in settlement.ranges)
+        expected = after
+        for entry in page.entries:
+            expected = next_stored(expected, settled)
+            if (
+                entry.cursor != expected
+                or entry.cursor > page.last_cursor
+                or entry.origin.sequence != entry.cursor
+                or not entry.origin.source_id
+            ):
+                raise EventReplicationError("invalid service history projection page")
         if not page.entries and after < page.last_cursor:
             raise EventReplicationError("service omitted entries from its committed prefix")
         async with self._sessions.begin() as session:
@@ -111,7 +118,7 @@ class HistoryProjector:
             source_id = page.entries[0].origin.source_id
             if any(entry.origin.source_id != source_id for entry in page.entries):
                 raise EventReplicationError("mixed source identities in projection page")
-            await record_thread_fold(session, thread_id, source_id, page.entries)
+            await record_thread_fold(session, thread_id, source_id, page.entries, page.settlements)
             await record_model_activity(session, thread_id, page.entries)
             for entry in page.entries:
                 at = entry.event.at.ToDatetime(tzinfo=UTC)

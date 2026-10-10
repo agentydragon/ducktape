@@ -167,17 +167,18 @@ class SandboxService(protocol_pb2_grpc.SandboxServiceServicer):
                 await context.abort(grpc.StatusCode.PERMISSION_DENIED, "session history reader not allowed")
             if self.resources.history is None:
                 raise ConnectionError("history unavailable")
-            last_cursor, observations = await self.resources.history.read_observations(
+            page = await self.resources.history.read_observations(
                 UUID(request.session_id),
                 before_cursor=request.before_cursor if request.HasField("before_cursor") else None,
                 after_cursor=request.after_cursor if request.HasField("after_cursor") else None,
                 limit=request.limit,
             )
             return protocol_pb2.ReadSessionObservationsResponse(
-                last_cursor=last_cursor,
+                last_cursor=page.last_cursor,
                 observations=[
-                    protocol_pb2.SessionObservation(cursor=cursor, kind=kind) for cursor, kind in observations
+                    protocol_pb2.SessionObservation(cursor=cursor, kind=kind) for cursor, kind in page.observations
                 ],
+                settled=[protocol_pb2.CursorRange(first=first, last=last) for first, last in page.settled],
             )
 
     @override
@@ -384,6 +385,7 @@ class SandboxService(protocol_pb2_grpc.SandboxServiceServicer):
                     open_key=request.idempotency_key,
                     open_request=request.SerializeToString(deterministic=True),
                     launch_spec=freeze,
+                    settle_deltas=request.settle_deltas if request.HasField("settle_deltas") else None,
                 )
                 launch = protocol_pb2.FrozenLaunch.FromString(reservation.launch_spec)
                 public_id = str(reservation.session_id)

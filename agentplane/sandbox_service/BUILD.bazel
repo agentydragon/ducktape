@@ -703,3 +703,25 @@ py_library(
         "@pypi//pyyaml",
     ],
 )
+
+py_library(
+    name = "settled_cursors",
+    srcs = ["settled_cursors.py"],
+    visibility = ["//agentplane:__subpackages__"],
+    deps = [
+        "//agentplane/sandbox_service:protocol_pb2",
+        "@pypi//protobuf",
+    ],
+)
+
+py_test(
+    name = "test_settled_cursors",
+    srcs = ["test_settled_cursors.py"],
+    deps = [
+        ":conftest",
+        ":settled_cursors",
+        "//:conftest",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)

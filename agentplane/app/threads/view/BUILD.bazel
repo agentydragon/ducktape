@@ -13,6 +13,7 @@ py_library(
         "//agentplane/protocol:command_pb2",
         "//agentplane/protocol:event_log_pb2",
         "//agentplane/protocol:event_pb2",
+        "//agentplane/sandbox_service:settled_cursors",
         "@pypi//protobuf",  # keep: mypy follows generated protobuf interfaces
         "@pypi//types_protobuf",  # keep: mypy follows generated protobuf interfaces
     ],
@@ -29,6 +30,8 @@ py_library(
         "//agentplane/app/threads:models",
         "//agentplane/app/threads/events:event_log",
         "//agentplane/protocol:event_log_pb2",
+        "//agentplane/sandbox_service:protocol_pb2",
+        "//agentplane/sandbox_service:settled_cursors",
         "@pypi//protobuf",
         "@pypi//sqlalchemy",
     ],
@@ -67,6 +70,7 @@ py_library(
         "//agentplane/protocol:event_log_pb2",
         "//agentplane/sandbox_service:client",
         "//agentplane/sandbox_service:protocol_pb2",
+        "//agentplane/sandbox_service:settled_cursors",
         "@pypi//protobuf",
         "@pypi//sqlalchemy",
     ],
