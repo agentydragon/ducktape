@@ -183,6 +183,7 @@ py_library(
         "//agentplane/protocol:event_log_pb2",
         "//agentplane/runner:errors",
         "//agentplane/runner:protocol_pb2",
+        "//agentplane/sandbox_service:protocol_pb2",
         "@pypi//fastapi",
         "@pypi//grpcio",
         "@pypi//protobuf",

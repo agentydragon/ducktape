@@ -288,6 +288,15 @@ class Runner:
             raise ConnectionError("Sandbox Service did not return the exact command admission")
         return receipt
 
+    async def get_command(self, session_id: str, command_id: str) -> protocol_pb2.CommandStatus:
+        return await self.service.unary(
+            self.service.stub.GetCommand,
+            protocol_pb2.GetCommandRequest(
+                destination=protocol_pb2.SessionDestination(sandbox=self.destination, session_id=session_id),
+                command_id=command_id,
+            ),
+        )
+
     async def attach(self, session_id: str, *, after_cursor: int = 0) -> Attachment:
         call = self.service.stub.FollowSession(
             protocol_pb2.FollowSessionRequest(

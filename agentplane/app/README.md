@@ -109,6 +109,12 @@ projected sync publish the archived entry and eventual outcome. Once the archive
 identical retries return that entry before contacting the runner; until then the runner deduplicates
 the same id and payload, rejecting conflicting reuse. There is no database command queue.
 
+`GET /threads/{id}/commands/{command_id}` reads what the Sandbox Service retained for a command
+without contacting the runner. After an unconfirmed delivery the browser asks it: an admission it
+records, a rejection it shows as refused, and a command still pending admission gets its own light,
+stored by the service but not yet seen admitted by the runner. That is neither proof the runner never
+saw it nor a promise it will, so the command keeps Retry and never Cancel.
+
 One app replica leases each sandbox's ingestion in PostgreSQL. Each write locks and validates
 the lease token against database time, so an expired owner cannot write after takeover. A batch
 must extend the contiguous copied prefix with the same runner source and original sequence;

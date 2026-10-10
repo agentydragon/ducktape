@@ -2,10 +2,18 @@ import IconCheck from "@tabler/icons-react/dist/esm/icons/IconCheck.mjs";
 import { type JSX, useState } from "react";
 
 /** Only durable evidence advances the lights; a lost reply is not a runner refusal. */
-export type CommandStage = "local" | "unconfirmed" | "admitted" | "effected" | "failed" | "noop" | "refused";
+export type CommandStage =
+  | "local"
+  | "unconfirmed"
+  | "retained"
+  | "admitted"
+  | "effected"
+  | "failed"
+  | "noop"
+  | "refused";
 export type CommandSubject = "input" | "model" | "effort" | "other";
 
-type LightState = "done" | "waiting" | "uncertain" | "failed" | "future";
+type LightState = "done" | "waiting" | "uncertain" | "retained" | "failed" | "future";
 
 export function CommandProgress({
   stage,
@@ -34,6 +42,9 @@ export function CommandProgress({
   const labels: Record<Exclude<CommandStage, "noop">, string> = {
     local: "Saved in browser · waiting for runner to accept",
     unconfirmed: "Runner receipt unconfirmed",
+    // Between browser retention and runner admission: neither proof it reached the runner nor a
+    // promise that it will.
+    retained: "Stored by Sandbox Service · runner admission unconfirmed",
     admitted: `Runner accepted · waiting for ${waitingFor}`,
     effected: subject === "input" ? "Agent confirmed message" : "Applied",
     failed: "Failed",
@@ -47,7 +58,7 @@ export function CommandProgress({
         : labels[stage];
   const label = `${description}${reason ? `: ${reason}` : ""}`;
   // The first light means submitted, not proof that another browser saved it locally.
-  const current = stage === "local" || stage === "unconfirmed" || stage === "refused" ? 2 : 3;
+  const current = stage === "local" || stage === "unconfirmed" || stage === "retained" || stage === "refused" ? 2 : 3;
   const lights: LightState[] = [1, 2, 3].map((step) =>
     step < current
       ? "done"
@@ -57,7 +68,9 @@ export function CommandProgress({
           ? "failed"
           : stage === "unconfirmed"
             ? "uncertain"
-            : "waiting"
+            : stage === "retained"
+              ? "retained"
+              : "waiting"
   );
   return (
     <span

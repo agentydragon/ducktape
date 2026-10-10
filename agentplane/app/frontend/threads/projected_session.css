@@ -317,6 +317,11 @@
   border-style: dashed;
 }
 
+/* Half full: the Sandbox Service holds the command, the runner has not been seen to take it. */
+.agentplane-command-light[data-state="retained"] {
+  background: linear-gradient(to top, var(--mantine-color-dimmed) 50%, transparent 50%);
+}
+
 .agentplane-command-light[data-state="future"] {
   opacity: 0.45;
 }

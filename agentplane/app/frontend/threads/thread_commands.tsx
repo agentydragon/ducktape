@@ -2,7 +2,7 @@ import { Box, Button, Group, Paper, Stack, Text } from "@mantine/core";
 import { type Command } from "../../../protocol/command_pb";
 import { type JSX, useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 
-import { command, CommandSubmissionRefused, displayableError } from "../client";
+import { command, CommandSubmissionRefused, displayableError, retainedCommand } from "../client";
 import { Body, UserInputBubble, pendingSentMessage } from "./thread_cards";
 import { CommandProgress, type CommandStage, type CommandSubject } from "./command_progress";
 import { EvidencePanel, EvidenceToggle, revealEvidenceOnTap } from "./thread_evidence";
@@ -12,7 +12,8 @@ import { decimalBigInt, useThreadSync, type ThreadEntity } from "./thread_sync";
 const EMPTY_LOCAL: LocalCommandSnapshot = { commands: [], inputEchoes: [], error: null };
 
 export interface CommandIssue {
-  kind: "refused" | "unconfirmed";
+  /** `retained`: the delivery reply was lost, but the Sandbox Service holds the command. */
+  kind: "refused" | "unconfirmed" | "retained";
   message: string;
 }
 
@@ -28,6 +29,33 @@ interface ProjectedCommands {
   submit: (value: Command) => boolean;
   deliver: (value: LocalCommand) => Promise<void>;
   store: LocalCommands;
+}
+
+/** A lost reply says nothing about how far the command got; ask the Sandbox Service what it
+ * retained. Null once it shows the runner's admission, which this browser then records. */
+async function reconcileUnconfirmed(
+  store: LocalCommands,
+  threadId: string,
+  value: LocalCommand,
+  message: string
+): Promise<CommandIssue | null> {
+  try {
+    const retained = await retainedCommand(threadId, value.command.commandId);
+    if (retained === null) return { kind: "unconfirmed", message };
+    switch (retained.state) {
+      case "pending_admission":
+        return { kind: "retained", message };
+      case "rejected":
+        return { kind: "refused", message: retained.rejection ?? message };
+      case "admitted":
+        store.acknowledge(value.command, retained.admission);
+        return null;
+    }
+  } catch (reason) {
+    // A failed read leaves the delivery's own verdict standing.
+    console.warn(`command ${value.command.commandId}: status reconciliation failed`, reason);
+    return { kind: "unconfirmed", message };
+  }
 }
 
 export function useProjectedCommands(threadId: string, entities: ThreadEntity[]): ProjectedCommands {
@@ -53,23 +81,27 @@ export function useProjectedCommands(threadId: string, entities: ThreadEntity[])
       const id = value.command.commandId;
       if (active.current.has(id)) return;
       active.current.add(id);
+      const settle = (issue: CommandIssue | null) => {
+        if (issue === null)
+          setErrors((previous) => {
+            if (!previous.has(id)) return previous;
+            const next = new Map(previous);
+            next.delete(id);
+            return next;
+          });
+        else if (store.getSnapshot().commands.some((command) => command.command.commandId === id))
+          setErrors((previous) => new Map(previous).set(id, issue));
+      };
       try {
         if (!navigator.onLine || !store.markAttempted(id)) return;
         store.acknowledge(value.command, await command(threadId, value.command));
-        setErrors((previous) => {
-          if (!previous.has(id)) return previous;
-          const next = new Map(previous);
-          next.delete(id);
-          return next;
-        });
+        settle(null);
       } catch (reason) {
-        if (store.getSnapshot().commands.some((command) => command.command.commandId === id))
-          setErrors((previous) =>
-            new Map(previous).set(id, {
-              kind: reason instanceof CommandSubmissionRefused ? "refused" : "unconfirmed",
-              message: displayableError(reason),
-            })
-          );
+        settle(
+          reason instanceof CommandSubmissionRefused
+            ? { kind: "refused", message: displayableError(reason) }
+            : await reconcileUnconfirmed(store, threadId, value, displayableError(reason))
+        );
       } finally {
         active.current.delete(id);
       }
@@ -113,8 +145,7 @@ function subject(operation: string): CommandSubject {
 function progressStage(outcome: string | null, admitted: boolean, issue?: CommandIssue): CommandStage {
   if (outcome === "effected" || outcome === "failed" || outcome === "noop") return outcome;
   if (admitted) return "admitted";
-  if (issue?.kind === "refused") return "refused";
-  return issue?.kind === "unconfirmed" ? "unconfirmed" : "local";
+  return issue?.kind ?? "local";
 }
 
 /** No-op is a settled result, not a fourth progress state. Keep its reason readable,

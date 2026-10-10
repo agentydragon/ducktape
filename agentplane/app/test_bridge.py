@@ -991,6 +991,21 @@ async def test_thread_command_reports_id_conflict_after_runner_admitted_before_a
         }
 
 
+async def test_command_status_reads_what_the_sandbox_service_retained(
+    app_url: str, spec: protocol_pb2.SessionSpec, failed_native_journal: None
+) -> None:
+    async with httpx.AsyncClient(base_url=app_url, timeout=60, headers=AGENT_AUTH) as http:
+        thread_id = await _create(http, spec)
+        admitted = await http.post(
+            _commands(thread_id), json={"commandId": "status-read", "interruptTurn": {"turnId": "no-such-turn"}}
+        )
+        assert admitted.status_code == 200, admitted.text
+        status = await http.get(f"{_commands(thread_id)}/status-read")
+        assert status.status_code == 200, status.text
+        assert status.json() == {"state": "admitted", "admission": admitted.json(), "rejection": None}
+        assert (await http.get(f"{_commands(thread_id)}/never-submitted")).status_code == 404
+
+
 async def test_stop_command_returns_after_admission_before_native_shutdown_effect(
     app_url: str,
     runner: RunnerHandle,

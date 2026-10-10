@@ -105,15 +105,6 @@ human text using prefix heuristics. Initially render mixed messages normally wit
 
 ## Frontend behavior
 
-### Submission status TODO
-
-Extend the command-state dots with **stored by Sandbox Service; runner admission unconfirmed**
-between browser retention and runner admission. Drive this from authorized submission status reads
-or a feed, including recovery after a lost RPC response; a waiting RPC alone does not expose the
-intermediate state. Do not label it definitely unsent or guaranteed eventual delivery. Keep runner
-admission distinct from harness confirmation. This status work is independent of compact notice
-rendering and must not give the app dispatch ownership.
-
 ### Notification rendering
 
 - Compact notification-only messages by default, with accessible expansion to full retained text.
@@ -127,13 +118,11 @@ rendering and must not give the app dispatch ownership.
 
 The [DAG](task_dag.md#2-service-owned-command-admission-and-later-notification-presentation) owns status and edges:
 
-1. `SESSION_COMMAND_STATUS_UI`: show the service-retained state dot, independently of notification
-   rendering.
-2. `SESSION_INPUT_METADATA`: add typed annotations and producer
+1. `SESSION_INPUT_METADATA`: add typed annotations and producer
    authorization. This is not part of the initial command-admission PR.
-3. `SESSION_INPUT_METADATA_READ` and `NOTIFICATION_NOTICE_METADATA`: authorized annotation reads and
+2. `SESSION_INPUT_METADATA_READ` and `NOTIFICATION_NOTICE_METADATA`: authorized annotation reads and
    producer integration after the metadata extension exists.
-4. `NOTIFICATION_PRESENTATION`: compact rendering after metadata reads and producer integration.
+3. `NOTIFICATION_PRESENTATION`: compact rendering after metadata reads and producer integration.
 
 Tests cover ordinary input, restricted provenance, destination authorization, identical/conflicting
 retries (including concurrent requests), crashes around dispatch, pending/rejected inputs, replay

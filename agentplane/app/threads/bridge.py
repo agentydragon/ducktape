@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from enum import StrEnum
 from typing import Annotated, Literal
 from uuid import UUID
 
@@ -17,6 +18,9 @@ from agentplane.app.threads.view.content import ContentStore
 from agentplane.protocol import command_pb2, event_log_pb2
 from agentplane.runner import protocol_pb2
 from agentplane.runner.errors import RunnerError
+
+# Not `protocol_pb2`: that name is the runner's protocol here.
+from agentplane.sandbox_service import protocol_pb2 as service_pb2
 
 # gazelle:include_dep @pypi//protobuf
 # gazelle:include_dep @pypi//grpcio
@@ -45,6 +49,28 @@ class NewSession(BaseModel):
 class OpenStatus(BaseModel):
     status: Literal["absent", "unconfirmed", "failed", "ready"]
     session_id: str | None = None
+
+
+class CommandState(StrEnum):
+    # Retained by the Sandbox Service; it may or may not have reached the runner.
+    PENDING_ADMISSION = "pending_admission"
+    ADMITTED = "admitted"
+    REJECTED = "rejected"
+
+
+_COMMAND_STATES = {
+    service_pb2.COMMAND_STATE_PENDING_ADMISSION: CommandState.PENDING_ADMISSION,
+    service_pb2.COMMAND_STATE_ADMITTED: CommandState.ADMITTED,
+    service_pb2.COMMAND_STATE_REJECTED: CommandState.REJECTED,
+}
+
+
+class CommandStatus(BaseModel):
+    state: CommandState
+    admission: dict[str, object] | None = Field(
+        default=None, description="The runner's CommandAdmitted EventEntry as proto-JSON, once admitted."
+    )
+    rejection: str | None = Field(default=None, description="Why the runner refused the command.")
 
 
 class RunnerBridge:
@@ -158,6 +184,18 @@ class RunnerBridge:
             )
         except TimeoutError as error:
             raise RunnerAdmissionTimeoutError(command.command_id) from error
+
+    async def command_status(self, thread_id: UUID, command_id: str) -> CommandStatus:
+        """What the Sandbox Service retained for the command, without contacting the runner."""
+        runner_session = await self._event_logs.service_session(thread_id)
+        if runner_session is None:
+            raise ThreadNotFoundError(thread_id)
+        status = await self._runners.client(runner_session.sandbox).get_command(runner_session.session_id, command_id)
+        return CommandStatus(
+            state=_COMMAND_STATES[status.state],
+            admission=MessageToDict(status.admission) if status.HasField("admission") else None,
+            rejection=status.rejection if status.HasField("rejection") else None,
+        )
 
     async def _command(
         self, sandbox: str, session_id: str, command: command_pb2.Command, *, after_cursor: int
