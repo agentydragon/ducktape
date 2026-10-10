@@ -2,7 +2,6 @@
 import { describe, expect, it } from "vitest";
 
 import { type CallToolResult, parseCallToolResult } from "../call_tool_result";
-import { ACTION_PRESENTATION_CATALOG, actionPresentationSpec } from "../presentation_catalog";
 import { mount, SSH_EXEC_ARGUMENTS, sshExec } from "../testing";
 import {
   canApproveInline,
@@ -61,16 +60,6 @@ describe("Action presentation slots", () => {
     expect(shouldRenderPaneRequestTitle(action, args, "Inspect the running demo pods")).toBe(true);
   });
 
-  it("uses the shared JSON view for fallback arguments", async () => {
-    const action = { group: "ssh", name: "list_targets" };
-    const args = { vendor_field: "fixture" };
-    const opened = await mount(renderPaneOpened(action, args));
-    const details = await mount(renderDetailsArguments(action, args));
-
-    expect(opened.textContent).toContain('"vendor_field": "fixture"');
-    expect(details.textContent).toBe(opened.textContent);
-  });
-
   it("uses SSH's custom pane and full-details argument renderers", async () => {
     const collapsed = await mount(renderPaneCollapsed(SSH_EXEC, SSH_EXEC_ARGUMENTS));
     const opened = await mount(renderPaneOpened(SSH_EXEC, SSH_EXEC_ARGUMENTS));
@@ -79,112 +68,6 @@ describe("Action presentation slots", () => {
     expect(collapsed.textContent).toContain("$ echo test-output");
     expect(opened.textContent).toContain("test-user@test-host.example");
     expect(details.textContent).toContain("test-user@test-host.example");
-  });
-
-  it("does not register actions whose Haku renderers depend on lookups", async () => {
-    const excluded = [
-      ["gmail", "threads_modify_labels"],
-      ["gmail", "threads_get"],
-      ["gmail", "messages_get"],
-      ["google_calendar", "create_event"],
-      ["google_calendar", "update_event"],
-      ["google_calendar", "get_event"],
-      ["google_calendar", "list_events"],
-      ["google_calendar", "list_event_instances"],
-      ["google_calendar", "delete_event"],
-      ["grocy_sf", "stock_add"],
-      ["grocy_sf", "stock_consume"],
-      ["grocy_sf", "stock_entry_edit"],
-      ["grocy_sf", "stock_get"],
-      ["grocy_sf", "products_create"],
-      ["grocy_sf", "products_edit"],
-      ["grocy_sf", "shopping_list_get"],
-      ["grocy_sf", "shopping_list_items_add"],
-      ["grocy_sf", "shopping_list_items_remove"],
-      ["grocy_sf", "shopping_list_item_edit"],
-      ["tana", "import_tana_paste"],
-      ["tana", "trash_node"],
-      ["tana", "edit_node"],
-      ["tana", "move_node"],
-      ["tana", "set_field_option"],
-    ] as const;
-    const result = parseCallToolResult({
-      content: [],
-      structuredContent: { lookup_dependent_value: "preserve raw response" },
-      isError: false,
-    });
-    if (result === null) throw new Error("the fixture is not a CallToolResult");
-
-    for (const [group, name] of excluded) {
-      const action = { group, name };
-      expect(actionPresentationSpec(action)).toBeUndefined();
-      expect(renderActionLabel(action, { id: "opaque-id" })).toBeNull();
-      expect(renderPaneCollapsed(action, { id: "opaque-id" })).toBeNull();
-      expect(renderPaneOpened(action, { id: "opaque-id" })).toBeNull();
-      expect(renderDetailsArguments(action, { id: "opaque-id" })).toBeNull();
-
-      const raw = await mount(renderDetailsResult(action, result));
-      expect(raw.textContent).toContain("Structured content");
-      expect(raw.textContent).toContain('"lookup_dependent_value": "preserve raw response"');
-    }
-  });
-
-  it("registers readable label, pane, and full-details views for every migrated action", async () => {
-    const argumentsFor = (group: string, name: string): Record<string, unknown> => {
-      if (group === "kubernetes_admin") {
-        if (name === "pods_list_in_namespace") return { namespace: "demo", fieldSelector: "type=Warning" };
-        if (name === "resources_get") return { apiVersion: "v1", kind: "Pod", name: "demo", namespace: "demo" };
-        if (name === "resources_delete") {
-          return { apiVersion: "v1", kind: "Pod", name: "demo", namespace: "demo", gracePeriodSeconds: 0 };
-        }
-        if (name === "resources_list")
-          return { apiVersion: "v1", kind: "Pod", namespace: "demo", labelSelector: "app=demo" };
-        if (name === "events_list") return { namespace: "demo", fieldSelector: "type=Warning" };
-        if (name === "pods_log") return { name: "demo", namespace: "demo", container: "main", tail: 20 };
-        if (name === "pods_exec")
-          return { name: "demo", namespace: "demo", container: "main", command: ["echo", "ok"] };
-        if (name === "pods_delete") return { name: "demo", namespace: "demo" };
-        return { resource: "apiVersion: v1\nkind: ConfigMap" };
-      }
-      if (group === "github") {
-        return {
-          owner: "example",
-          repo: "demo",
-          title: "Update docs",
-          head: "docs",
-          base: "devel",
-          body: "",
-          draft: true,
-          maintainer_can_modify: false,
-          reviewers: ["reviewer"],
-        };
-      }
-      if (group === "ssh" && name === "exec") return SSH_EXEC_ARGUMENTS as Record<string, unknown>;
-      return { example: "value" };
-    };
-
-    for (const { group, name } of ACTION_PRESENTATION_CATALOG) {
-      const action = { group, name };
-      const args = argumentsFor(group, name);
-      const label = renderActionLabel(action, args);
-      const opened = renderPaneOpened(action, args);
-      const details = renderDetailsArguments(action, args);
-      expect(label).not.toBeNull();
-      expect(opened).not.toBeNull();
-      expect(details).not.toBeNull();
-      expect((await mount(label)).textContent).not.toBe("");
-    }
-
-    const resultSpecs = ACTION_PRESENTATION_CATALOG.filter(
-      (spec): spec is (typeof ACTION_PRESENTATION_CATALOG)[number] & { resultLabel: string } =>
-        spec.resultLabel !== undefined
-    );
-    for (const { group, name, resultLabel } of resultSpecs) {
-      const action = { group, name };
-      const result = group === "ssh" && name === "exec" ? stored() : stored({ example: "value" });
-      const expectedLabel = group === "ssh" && name === "exec" ? "Exit 0" : resultLabel;
-      expect((await mount(renderDetailsResult(action, result))).textContent).toContain(expectedLabel);
-    }
   });
 
   it("leaves a slot to the host when no registered widget accepts it", () => {

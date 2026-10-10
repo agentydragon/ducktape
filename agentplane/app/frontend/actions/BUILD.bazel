@@ -31,13 +31,6 @@ ts_library(
 )
 
 ts_library(
-    name = "presentation_catalog",
-    srcs = ["presentation_catalog.ts"],
-    tsconfig = TSCONFIG,
-    deps = [":types"],
-)
-
-ts_library(
     name = "action_client",
     srcs = ["client.ts"],
     tsconfig = TSCONFIG,
@@ -61,7 +54,7 @@ ts_library(
         "//agentplane/app/frontend:disclosure",
         "//agentplane/app/frontend:json_view",
         "//agentplane/app/frontend:raw_switch",
-        "//agentplane/app/frontend/actions/rendering",
+        "//agentplane/app/frontend/actions/rendering:index",
     ],
 )
 
@@ -105,7 +98,7 @@ ts_library(
         "//agentplane/app/frontend:client",
         "//agentplane/app/frontend:json_view",
         "//agentplane/app/frontend:stream_status",
-        "//agentplane/app/frontend/actions/rendering",
+        "//agentplane/app/frontend/actions/rendering:index",
     ],
 )
 
@@ -191,7 +184,7 @@ ts_library(
         "//agentplane/app/frontend:live_stream",
         "//agentplane/app/frontend:stream_status",
         "//agentplane/app/frontend:topbar",
-        "//agentplane/app/frontend/actions/rendering",
+        "//agentplane/app/frontend/actions/rendering:index",
     ],
 )
 
@@ -306,7 +299,6 @@ ts_library(
     tsconfig = TSCONFIG,
     deps = [
         ":kubernetes_pod_list_schema",
-        ":presentation_catalog",
         ":ssh_action_schemas",
         ":types",
     ],
@@ -317,7 +309,6 @@ agentplane_vitest_test(
     srcs = ["notifications/index.test.ts"],
     deps = [
         ":notifications",
-        ":presentation_catalog",
         ":types",
         "//:node_modules/vitest",
     ],

@@ -7,8 +7,6 @@ import type { ReactNode } from "react";
 
 import { type CallToolResult, CallToolResultView, toolValue } from "../call_tool_result";
 import type { ActionRequestView } from "../client";
-import { ACTION_PRESENTATION_CATALOG, isActionTitleRedundant } from "../presentation_catalog";
-import { fallbackActionPresentation } from "./action_data";
 import { renderPreview, type ArgumentsPreview } from "./entry";
 import { canApprovePullRequestInline, createPullRequestPane } from "./github/create_pull_request";
 import { canQuickApproveEventsList, eventsListPane } from "./kubernetes_admin/events_list";
@@ -92,19 +90,6 @@ const ACTION_RENDERERS: ReadonlyMap<string, ReadonlyMap<string, ActionPresentati
   ],
 ]);
 
-const CATALOG_PRESENTATIONS: ReadonlyMap<string, ReadonlyMap<string, ActionPresentation>> = (() => {
-  const groups = new Map<string, Map<string, ActionPresentation>>();
-  for (const spec of ACTION_PRESENTATION_CATALOG) {
-    let group = groups.get(spec.group);
-    if (group === undefined) {
-      group = new Map();
-      groups.set(spec.group, group);
-    }
-    group.set(spec.name, fallbackActionPresentation(spec));
-  }
-  return groups;
-})();
-
 // Quick approval is deliberately a separate capability: a custom pane renderer does not grant an
 // inline decision. Each entry validates the complete Action arguments independently of its views.
 const QUICK_APPROVALS: ReadonlyMap<string, ReadonlyMap<string, (args: unknown) => boolean>> = new Map([
@@ -123,16 +108,7 @@ const QUICK_APPROVALS: ReadonlyMap<string, ReadonlyMap<string, (args: unknown) =
 ]);
 
 function presentation(action: ActionIdentity): ActionPresentation | undefined {
-  const catalog = CATALOG_PRESENTATIONS.get(action.group)?.get(action.name);
-  const override = ACTION_RENDERERS.get(action.group)?.get(action.name);
-  if (catalog === undefined) return override;
-  if (override === undefined) return catalog;
-  return {
-    ...catalog,
-    ...override,
-    pane: { ...catalog.pane, ...override.pane },
-    details: { ...catalog.details, ...override.details },
-  };
+  return ACTION_RENDERERS.get(action.group)?.get(action.name);
 }
 
 /** An Action's human-facing name; `null` keeps the host's group/name label. */
@@ -156,7 +132,7 @@ export function renderPaneOpened(action: ActionIdentity, args: unknown): ReactNo
 /** Whether the caller's title repeats the Action label shown in the pane heading. */
 export function shouldRenderPaneRequestTitle(action: ActionIdentity, args: unknown, title: string): boolean {
   const customCheck = presentation(action)?.pane?.requestTitleIsRedundant;
-  return !(customCheck?.(title, args) ?? isActionTitleRedundant(action, args, title));
+  return !(customCheck?.(title, args) ?? false);
 }
 
 /** The pretty argument view on the full details page; Raw remains the host's shared exact-JSON view. */

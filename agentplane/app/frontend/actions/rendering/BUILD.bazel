@@ -8,26 +8,24 @@ TSCONFIG = "//agentplane/app/frontend:tsconfig"
 # Widgets for particular Actions' requests and responses, registered by the Action's identity:
 # index.tsx dispatches; each Action widget lives under its group.
 ts_library(
-    name = "rendering",
+    name = "index",
     srcs = ["index.tsx"],
     tsconfig = TSCONFIG,
     deps = [
-        ":rendering_data",
-        ":rendering_entry",
-        ":rendering_github",
-        ":rendering_kubernetes_admin",
-        ":rendering_result_entry",
-        ":rendering_ssh",
+        ":entry",
+        ":github",
+        ":kubernetes_admin",
+        ":result_entry",
+        ":ssh",
         "//:node_modules/@types/react",
         "//:node_modules/react",
         "//agentplane/app/frontend/actions:action_client",
         "//agentplane/app/frontend/actions:call_tool_result",
-        "//agentplane/app/frontend/actions:presentation_catalog",
     ],
 )
 
 ts_library(
-    name = "rendering_chips",
+    name = "chips",
     srcs = ["chips.tsx"],
     tsconfig = TSCONFIG,
     deps = [
@@ -38,28 +36,12 @@ ts_library(
 )
 
 ts_library(
-    name = "rendering_data",
-    srcs = ["action_data.tsx"],
-    tsconfig = TSCONFIG,
-    deps = [
-        ":rendering_entry",
-        ":rendering_result_entry",
-        "//:node_modules/@mantine/core",
-        "//:node_modules/@types/react",
-        "//:node_modules/react",
-        "//:node_modules/zod",
-        "//agentplane/app/frontend:json_view",
-        "//agentplane/app/frontend/actions:presentation_catalog",
-    ],
-)
-
-ts_library(
-    name = "rendering_github",
+    name = "github",
     srcs = ["github/create_pull_request.tsx"],
     tsconfig = TSCONFIG,
     deps = [
-        ":rendering_chips",
-        ":rendering_entry",
+        ":chips",
+        ":entry",
         "//:node_modules/@types/react",
         "//:node_modules/react",
         "//:node_modules/zod",
@@ -67,7 +49,7 @@ ts_library(
 )
 
 ts_library(
-    name = "rendering_kubernetes_admin",
+    name = "kubernetes_admin",
     srcs = [
         "kubernetes_admin/events_list.tsx",
         "kubernetes_admin/pods_list_in_namespace.tsx",
@@ -79,8 +61,8 @@ ts_library(
     ],
     tsconfig = TSCONFIG,
     deps = [
-        ":rendering_chips",
-        ":rendering_entry",
+        ":chips",
+        ":entry",
         "//:node_modules/@mantine/core",
         "//:node_modules/@types/react",
         "//:node_modules/react",
@@ -90,7 +72,7 @@ ts_library(
 )
 
 ts_library(
-    name = "rendering_entry",
+    name = "entry",
     srcs = ["entry.tsx"],
     tsconfig = TSCONFIG,
     deps = [
@@ -101,7 +83,7 @@ ts_library(
 )
 
 ts_library(
-    name = "rendering_result_entry",
+    name = "result_entry",
     srcs = ["result_entry.tsx"],
     tsconfig = TSCONFIG,
     deps = [
@@ -112,12 +94,12 @@ ts_library(
 )
 
 ts_library(
-    name = "rendering_ssh",
+    name = "ssh",
     srcs = ["ssh/exec.tsx"],
     tsconfig = TSCONFIG,
     deps = [
-        ":rendering_entry",
-        ":rendering_result_entry",
+        ":entry",
+        ":result_entry",
         "//:node_modules/@mantine/core",
         "//:node_modules/@types/react",
         "//:node_modules/react",
@@ -129,25 +111,24 @@ ts_library(
 )
 
 agentplane_vitest_test(
-    name = "rendering_test",
+    name = "index_test",
     srcs = ["index.test.tsx"],
     deps = [
-        ":rendering",
+        ":index",
         "//:node_modules/@types/react",
         "//:node_modules/vitest",
         "//agentplane/app/frontend/actions:call_tool_result",
-        "//agentplane/app/frontend/actions:presentation_catalog",
         "//agentplane/app/frontend/actions:testing",
     ],
 )
 
 agentplane_vitest_test(
-    name = "rendering_ssh_test",
+    name = "ssh_test",
     srcs = ["ssh/exec.test.tsx"],
     deps = [
-        ":rendering_entry",
-        ":rendering_result_entry",
-        ":rendering_ssh",
+        ":entry",
+        ":result_entry",
+        ":ssh",
         "//:node_modules/@types/react",
         "//:node_modules/react",
         "//:node_modules/vitest",

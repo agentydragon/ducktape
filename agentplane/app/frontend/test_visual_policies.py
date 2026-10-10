@@ -114,7 +114,7 @@ async def test_sidebar_compact_pod_approval(
             "kubernetes_admin",
             "resources_get",
             {"apiVersion": "apps/v1", "kind": "Deployment", "name": "web"},
-            "Deployment",
+            "API version: apps/v1",
         ),
         (
             "kubernetes_admin",
@@ -133,7 +133,7 @@ async def test_sidebar_compact_pod_approval(
             "kubernetes_admin",
             "resources_delete",
             {"apiVersion": "v1", "kind": "Pod", "name": "web-0", "namespace": "apps", "gracePeriodSeconds": 0},
-            "Delete Pod apps/web-0",
+            "grace period: 0s",
         ),
         ("kubernetes_admin", "events_list", {"namespace": "apps", "fieldSelector": "type=Warning"}, "type=Warning"),
         (
@@ -188,8 +188,6 @@ async def test_compact_action_chips(
     await expect(section.get_by_role("link", name=f"View details for {title}")).to_be_visible()
     if group == "kubernetes_admin" and name in {"resources_get", "pods_list_in_namespace", "pods_log"}:
         await expect(section.get_by_role("button", name=f"Approve {title}")).to_be_visible()
-    if group == "kubernetes_admin" and name == "resources_get":
-        await expect(section.get_by_text("Get Deployment web", exact=False)).to_be_visible()
     if group == "kubernetes_admin" and name == "pods_log":
         await expect(section.get_by_text("container: (default)", exact=True)).to_be_visible()
     await view.capture(target=section)
@@ -198,7 +196,7 @@ async def test_compact_action_chips(
 @pytest.mark.parametrize(
     ("group", "name"),
     [("ssh", "list_targets"), ("uncatalogued", "unknown_action")],
-    ids=["catalogued-fallback", "uncatalogued-fallback"],
+    ids=["unregistered-action", "unknown-action"],
 )
 async def test_action_argument_fallbacks_use_json_view(
     view: VisualPage, app: AgentplaneFixture, group: str, name: str
