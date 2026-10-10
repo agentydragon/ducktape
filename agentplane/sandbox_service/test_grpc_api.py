@@ -346,10 +346,16 @@ async def test_public_session_command_survives_a_lost_reply(
 
 
 async def test_command_status_reads_retained_submissions_without_the_runner(
-    resources: Resources, token_file: Path, peer: Peer, sessions: SessionRegistry, submissions: SubmissionStore
+    resources: Resources,
+    token_file: Path,
+    peer: Peer,
+    engine: AsyncEngine,
+    sessions: SessionRegistry,
+    submissions: SubmissionStore,
 ) -> None:
     session_id = uuid4()
-    await sessions.open(
+    await register_session(
+        engine,
         session_id,
         sandbox_namespace=SANDBOX_NAMESPACE,
         sandbox_name=SANDBOX,
