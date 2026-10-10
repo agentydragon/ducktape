@@ -244,6 +244,68 @@ Sandbox, hence `-control`.
   reconnect. The Sandbox Service gains RBAC to write Leases, Services and EndpointSlices in the
   Sandbox namespace. Network policy is unchanged: the endpoints are Sandbox Service Pods.
 
+## Lifecycle operations
+
+Status: **proposed, under review.** Not built; until it is, every runner's lifecycle calls use the
+inbound API.
+
+A runner that lists `lifecycle` in `Hello` takes every remaining inbound call over `Connect` as a
+control request, and once a connection of a Sandbox has agreed it, the Sandbox Service makes none of
+those calls inbound. Each request names an explicit verb; nothing is inferred from which fields are
+present, unlike `Attach`, where any matching spec restarts a stopped harness.
+
+```protobuf
+message ServiceFrame {
+  oneof frame {
+    // ...
+    ControlRequest control = 6;
+  }
+}
+
+message RunnerFrame {
+  oneof frame {
+    // ...
+    ControlResult control_result = 4;
+  }
+}
+
+message ControlRequest {
+  string request_id = 1;              // chosen by the service; the runner answers each once
+  oneof verb {
+    ListSessions list_sessions = 2;   // read
+    Initialize initialize = 3;        // bootstrap once per Sandbox; an identical retry replays
+    OpenSession open = 4;             // create with a spec and start it; an existing Session is
+                                      // confirmed only, never restarted
+    ResumeSession resume = 5;         // restart a stopped harness on its retained spec
+    Seal seal = 6;                    // fence, stop every harness and setup, seal every journal
+  }
+}
+
+message ControlResult {
+  string request_id = 1;
+  oneof outcome { /* one result per verb */ ControlRefused refused = 9; }
+}
+```
+
+The contract's rule becomes: no operation creates a Session or starts a harness implicitly; only
+`OpenSession` and `ResumeSession` do. `Seal` travels on `Connect` behind every command already
+sent, so no command delivered before it lands after it. A control request reaching a replica that
+does not own the connection goes through the same relay as a follow. Requests are bounded by the
+calling RPC's deadline, like dispatch attempts, and a reconnect replays none of them.
+
+| Inbound caller (Sandbox Service)                     | Channel operation                             |
+| ---------------------------------------------------- | --------------------------------------------- |
+| `ListSessions` RPC, `journal_reader`                 | `ListSessions`                                |
+| `CreateSession` (`Initialize`, then `Attach` + spec) | `Initialize`, then `OpenSession`              |
+| `ResumeSession` (`Attach` + retained spec)           | `ResumeSession`                               |
+| `LookupSession` (journal scan from cursor 0)         | `ListSessions`, then a follow from 0          |
+| `FollowSession`, `AdmissionReconciler`               | follows ([Event following](#event-following)) |
+| `Teardown` sealing (`Seal`)                          | `Seal`                                        |
+| `SubmitCommand` relay                                | `DeliverCommand` (built)                      |
+
+The VM experiment's runtime acceptance drives the guest runner directly through a port-forward and
+moves with the selected VM control path.
+
 ## Prior art and alternatives
 
 Two harnesses already ship a dial-out control channel, and the choices above borrow from both:
