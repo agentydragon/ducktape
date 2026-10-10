@@ -19,6 +19,7 @@ from google.protobuf.json_format import MessageToDict
 from kubernetes_asyncio import client as k8s_client
 from kubernetes_asyncio.client import CoreV1Api
 from pydantic import BaseModel, ConfigDict, Field
+from tenacity import retry, retry_if_exception, stop_after_attempt
 
 from agentplane.action_service.policies.resources import CALLER_LABEL
 from agentplane.sandbox_service.binding_storage import read_binding
@@ -29,19 +30,39 @@ from agentplane.sandbox_service.kubernetes_views import (
     KUBERNETES_GRANTS_READY_ANNOTATION,
     MANAGED_LABEL,
     PROVISIONING_ANNOTATION,
+    RETENTION_HOLDS_ANNOTATION,
     SANDBOX_BINDING_ANNOTATION,
     SandboxResource,
     sandbox_view,
     sandbox_views,
 )
-from agentplane.sandbox_service.models import SandboxConflictError, SandboxNotFoundError, SandboxRunningError
-from agentplane.sandbox_service.protocol_pb2 import CreateSandboxRequest, Sandbox, SandboxBinding
+from agentplane.sandbox_service.models import (
+    HoldNotFoundError,
+    RetentionHeldError,
+    SandboxConflictError,
+    SandboxNotFoundError,
+    SandboxRunningError,
+)
+from agentplane.sandbox_service.protocol_pb2 import CreateSandboxRequest, Hold, Sandbox, SandboxBinding
+from agentplane.sandbox_service.retention_holds import RetentionHolds, read_holds
 from agentplane.sandbox_service.session_config import LaunchGrants
 from agentplane.subjects import ServiceAccountRef
 from util.agent_sandbox import EXTENSIONS_API, SANDBOX_API, SANDBOXES_PLURAL, TEMPLATES_PLURAL, OperatingMode
 from util.kubernetes import CustomObjectsClient
 
 _MERGE_PATCH = "application/merge-patch+json"
+
+
+def _is_conflict(error: BaseException) -> bool:
+    return isinstance(error, k8s_client.ApiException) and error.status == 409
+
+
+def _retry_on_conflict[F: Callable[..., Awaitable[object]]](fn: F) -> F:
+    """A resourceVersion guard failed: another writer changed the Sandbox between our read and write.
+    Read it again and decide again; the decision must see what the other writer committed."""
+    # Annotated: tenacity's keyword-configured decorator does not carry the wrapped signature.
+    retried: F = retry(retry=retry_if_exception(_is_conflict), stop=stop_after_attempt(5), reraise=True)(fn)
+    return retried
 
 
 # Kubernetes-boundary models: the subset of each CR the inventory reads, parsed once off the wire.
@@ -319,20 +340,90 @@ class SandboxInventory:
     async def resume(self, name: str, *, uid: str | None = None) -> None:
         await self._set_operating_mode(name, OperatingMode.RUNNING, uid=uid)
 
+    @_retry_on_conflict
     async def delete(self, name: str, *, uid: str | None = None) -> None:
         """Delete a suspended Sandbox; the controller removes its Pod and PVC, and with them
         everything on the volume. A running one is refused, so the irreversible step is a
-        deliberate second one for a browser and for an agent calling the API alike."""
+        deliberate second one for a browser and for an agent calling the API alike.
+
+        So is one with an unsatisfied retention hold. The delete is conditional on the
+        resourceVersion the holds were read at, so a hold placed concurrently either lands first
+        and refuses the deletion, or finds the deletion committed and is refused itself."""
         sandbox = await self._mutable_sandbox(name, uid=uid)
         if sandbox.spec.operating_mode != OperatingMode.SUSPENDED:
             raise SandboxRunningError(name)
+        if self._holds(sandbox).blocking():
+            raise RetentionHeldError(name)
         await self._custom_objects.delete_namespaced_custom_object(
             *SANDBOX_API,
             self._namespace,
             SANDBOXES_PLURAL,
             name,
-            body=k8s_client.V1DeleteOptions(preconditions=k8s_client.V1Preconditions(uid=str(sandbox.metadata.uid))),
+            body=k8s_client.V1DeleteOptions(
+                preconditions=k8s_client.V1Preconditions(
+                    uid=str(sandbox.metadata.uid), resource_version=sandbox.metadata.resource_version
+                )
+            ),
         )
+
+    @_retry_on_conflict
+    async def place_hold(self, name: str, *, uid: str, session_id: str, holder: str) -> Hold:
+        sandbox = await self._incarnation(name, uid=uid)
+        if sandbox.metadata.deletion_timestamp is not None:
+            raise SandboxNotFoundError(name)  # Deletion is committed; nothing can hold it back now.
+        held = await self._write_holds(sandbox, self._holds(sandbox).place(session_id, holder))
+        return self._held(held, session_id, holder)
+
+    @_retry_on_conflict
+    async def confirm_hold(self, name: str, *, uid: str, session_id: str, holder: str, through_cursor: int) -> Hold:
+        sandbox = await self._incarnation(name, uid=uid)
+        holds = self._holds(sandbox)
+        self._held(holds, session_id, holder)
+        return self._held(
+            await self._write_holds(sandbox, holds.confirm(session_id, holder, through_cursor)), session_id, holder
+        )
+
+    @_retry_on_conflict
+    async def release_hold(self, name: str, *, uid: str, session_id: str, holder: str) -> None:
+        sandbox = await self._incarnation(name, uid=uid)
+        await self._write_holds(sandbox, self._holds(sandbox).release(session_id, holder))
+
+    async def list_holds(self, name: str, *, uid: str) -> list[Hold]:
+        return self._holds(await self._incarnation(name, uid=uid)).holds()
+
+    @staticmethod
+    def _holds(sandbox: SandboxResource) -> RetentionHolds:
+        return read_holds(sandbox.metadata.annotations.get(RETENTION_HOLDS_ANNOTATION))
+
+    @staticmethod
+    def _held(holds: RetentionHolds, session_id: str, holder: str) -> Hold:
+        hold = holds.hold(session_id, holder)
+        if hold is None:
+            raise HoldNotFoundError(session_id, holder)
+        return hold
+
+    async def _write_holds(self, sandbox: SandboxResource, holds: RetentionHolds) -> RetentionHolds:
+        """Write only a change, guarded by the resourceVersion the holds were read at."""
+        if holds == self._holds(sandbox):
+            return holds
+        try:
+            await self._patch(
+                sandbox.metadata.name,
+                {
+                    "metadata": {
+                        "uid": sandbox.metadata.uid,
+                        "resourceVersion": sandbox.metadata.resource_version,
+                        "annotations": {
+                            RETENTION_HOLDS_ANNOTATION: holds.model_dump_json() if holds.sessions else None
+                        },
+                    }
+                },
+            )
+        except k8s_client.ApiException as error:
+            if error.status == 404:  # Deleted since it was read.
+                raise SandboxNotFoundError(sandbox.metadata.name) from error
+            raise
+        return holds
 
     async def _set_operating_mode(self, name: str, mode: OperatingMode, *, uid: str | None = None) -> None:
         sandbox = await self._mutable_sandbox(name, uid=uid)
@@ -340,11 +431,15 @@ class SandboxInventory:
 
     async def _mutable_sandbox(self, name: str, *, uid: str | None) -> SandboxResource:
         """Require the named incarnation to have finished initialization before lifecycle changes."""
-        sandbox = await self._sandbox(name)
-        if uid is not None and sandbox.metadata.uid != uid:
-            raise SandboxNotFoundError(name)
+        sandbox = await self._sandbox(name) if uid is None else await self._incarnation(name, uid=uid)
         if INITIALIZING in sandbox.metadata.annotations:
             raise SandboxConflictError(name)
+        return sandbox
+
+    async def _incarnation(self, name: str, *, uid: str) -> SandboxResource:
+        sandbox = await self._sandbox(name)
+        if sandbox.metadata.uid != uid:
+            raise SandboxNotFoundError(name)
         return sandbox
 
     async def _patch(self, name: str, patch: dict[str, object]) -> None:

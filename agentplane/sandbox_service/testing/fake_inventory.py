@@ -144,12 +144,19 @@ class FakeCustomObjectsApi:
     async def delete_namespaced_custom_object(
         self, group: str, version: str, namespace: str, plural: str, name: str, *, body: k8s_client.V1DeleteOptions
     ) -> object:
-        del group, version, body
+        del group, version
         assert namespace == NAMESPACE
-        await self.get_namespaced_custom_object("", "", namespace, plural, name)
-        target = self.objects[(plural, name)]
-        if target["metadata"].get("finalizers"):
-            target["metadata"]["deletionTimestamp"] = "2026-09-02T10:01:00Z"
+        target = await self.get_namespaced_custom_object("", "", namespace, plural, name)
+        metadata = target["metadata"]
+        preconditions = body.preconditions or k8s_client.V1Preconditions()
+        if (preconditions.uid is not None and preconditions.uid != metadata["uid"]) or (
+            preconditions.resource_version is not None
+            and preconditions.resource_version != metadata.get("resourceVersion", "")
+        ):
+            raise k8s_client.ApiException(status=409)
+        if metadata.get("finalizers"):
+            metadata["deletionTimestamp"] = "2026-09-02T10:01:00Z"
+            metadata["resourceVersion"] = str(int(metadata.get("resourceVersion", "1")) + 1)
         else:
             del self.objects[(plural, name)]
         self.deleted.append((plural, name))
@@ -231,6 +238,7 @@ def sandbox(
             "name": name,
             "namespace": NAMESPACE,
             "uid": str(uuid4()),
+            "resourceVersion": "1",
             "labels": {MANAGED_LABEL: "true", **(labels or {})},
             "creationTimestamp": "2026-09-01T12:00:00Z",
         },

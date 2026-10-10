@@ -20,3 +20,16 @@ class SandboxRunningError(InventoryError):
 
     def __init__(self, name: str) -> None:
         super().__init__(f"sandbox {name} is running; suspend it before deleting it")
+
+
+class RetentionHeldError(InventoryError):
+    """Deletion is refused while a retention hold has not confirmed its Session through the seal."""
+
+    def __init__(self, name: str) -> None:
+        super().__init__(f"sandbox {name} has unsatisfied retention holds; the sandbox lists them")
+        self.name = name
+
+
+class HoldNotFoundError(InventoryError):
+    def __init__(self, session_id: str, holder: str) -> None:
+        super().__init__(f"no retention hold {session_id=} {holder=}")
