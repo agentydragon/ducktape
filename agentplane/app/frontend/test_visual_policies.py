@@ -178,7 +178,9 @@ async def test_action_detail_ssh_raw_view(view: VisualPage, app: AgentplaneFixtu
     await app.mount_app("/actions/70000000-0000-4000-8000-000000000006")
     await view.check(context="fixture ready")
     page = view.page
-    await expect(page.get_by_text("restart the test backup service")).to_be_visible()
+    await expect(
+        page.locator(".agentplane-shell-main-content").get_by_text("restart the test backup service")
+    ).to_be_visible()
     await expect(page.get_by_role("button", name="Approve")).to_be_visible()
     await expect(page.get_by_role("button", name="Deny")).to_be_visible()
     await view.capture(target=page.locator("#app"), name=f"action_detail_ssh_pretty_{viewport.width}")

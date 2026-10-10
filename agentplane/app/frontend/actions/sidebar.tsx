@@ -141,7 +141,7 @@ export function ActionsSidebarSection({ onNavigate }: { onNavigate?: () => void 
             const expanded = expandedId === request.id;
             const preview = compactActionArguments(request.action, request.arguments);
             const canQuickApprove =
-              request.external_grant === null &&
+              (request.external_grant === null || request.external_grant === undefined) &&
               preview !== null &&
               canApproveInline(request.action, request.arguments);
             const detailsPath = `/actions/${encodeURIComponent(request.id)}`;

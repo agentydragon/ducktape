@@ -22,7 +22,7 @@ class ActionStream extends EventTarget {
 
   constructor(url: string) {
     super();
-    expect(url).toBe("/actions/stream?state=decision_pending");
+    if (url !== "/actions/stream?state=decision_pending") throw new Error(`unexpected Action stream URL: ${url}`);
     stream.current = this;
   }
 }
