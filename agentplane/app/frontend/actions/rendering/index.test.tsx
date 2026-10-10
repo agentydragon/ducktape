@@ -45,7 +45,7 @@ describe("Action presentation slots", () => {
     const opened = await mount(renderPaneOpened(SSH_EXEC, SSH_EXEC_ARGUMENTS));
     const details = await mount(renderDetailsArguments(SSH_EXEC, SSH_EXEC_ARGUMENTS));
 
-    expect(collapsed.textContent).toContain("$ echo hello");
+    expect(collapsed.textContent).toContain("$ echo test-output");
     expect(opened.textContent).toContain("test-user@test-host.example");
     expect(details.textContent).toContain("test-user@test-host.example");
   });
