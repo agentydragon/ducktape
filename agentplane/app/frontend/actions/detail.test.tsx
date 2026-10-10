@@ -74,7 +74,7 @@ it("opens cached stream details without a reload and Back returns to the origina
   const disclosure = container.querySelector<HTMLButtonElement>(`button[aria-label="Expand ${ROW.title}"]`);
   if (!disclosure) throw new Error("missing pending action disclosure");
   await act(async () => disclosure.click());
-  const detailsLink = container.querySelector<HTMLAnchorElement>('a[aria-label^="View details for ssh / exec"]');
+  const detailsLink = container.querySelector<HTMLAnchorElement>(`a[aria-label="View details for ${ROW.title}"]`);
   if (!detailsLink) throw new Error("missing action details link");
   await act(async () => detailsLink.click());
 
@@ -123,7 +123,7 @@ it.each([
     const disclosure = container.querySelector<HTMLButtonElement>(`button[aria-label="Expand ${ROW.title}"]`);
     if (!disclosure) throw new Error("missing pending action disclosure");
     await act(async () => disclosure.click());
-    const detailsLink = container.querySelector<HTMLAnchorElement>('a[aria-label^="View details for ssh / exec"]');
+    const detailsLink = container.querySelector<HTMLAnchorElement>(`a[aria-label="View details for ${ROW.title}"]`);
     if (!detailsLink) throw new Error("missing action details link");
     await act(async () => detailsLink.click());
 
@@ -146,7 +146,7 @@ it("stays on action details when a decision fails", async () => {
   const disclosure = container.querySelector<HTMLButtonElement>(`button[aria-label="Expand ${ROW.title}"]`);
   if (!disclosure) throw new Error("missing pending action disclosure");
   await act(async () => disclosure.click());
-  const detailsLink = container.querySelector<HTMLAnchorElement>('a[aria-label^="View details for ssh / exec"]');
+  const detailsLink = container.querySelector<HTMLAnchorElement>(`a[aria-label="View details for ${ROW.title}"]`);
   if (!detailsLink) throw new Error("missing action details link");
   await act(async () => detailsLink.click());
   const approve = container.querySelector<HTMLButtonElement>('button[aria-label="Approve"]');
@@ -214,7 +214,7 @@ it("refreshes the durable receipt when SSE removes an action that was pending", 
   const disclosure = container.querySelector<HTMLButtonElement>(`button[aria-label="Expand ${ROW.title}"]`);
   if (!disclosure) throw new Error("missing pending action disclosure");
   await act(async () => disclosure.click());
-  const detailsLink = container.querySelector<HTMLAnchorElement>('a[aria-label^="View details for ssh / exec"]');
+  const detailsLink = container.querySelector<HTMLAnchorElement>(`a[aria-label="View details for ${ROW.title}"]`);
   if (!detailsLink) throw new Error("missing action details link");
   await act(async () => detailsLink.click());
   expect(get).not.toHaveBeenCalled();
