@@ -23,7 +23,8 @@ Session ID on its own connection, which the server releases if the replica dies.
 not rest on it: `Store.append` accepts exact replays and refuses gaps and conflicting entries.
 At most `ingester.concurrency` Sessions are followed per replica; a follow ends at the Sandbox
 Service's planned renewal, so waiting Sessions rotate in. The feed position is kept in memory, so a
-restarted replica rereads the feed and each Session resumes from its cursor.
+restarted replica rereads the feed and each Session resumes from its cursor. After four consecutive
+feed failures the ingester dials a fresh Sandbox Service channel.
 
 One ingester writes the tables per environment: the cdk8s `Environment.history_writer` turns this
 one's `ingester.enabled` on and the Sandbox Service's `ingest_history` off, or the reverse. It places

@@ -128,7 +128,12 @@ def replica(target: str, db_url: str, tmp_path: Path, commits: Commits) -> Calla
         try:
             async with subscriber(target, token_file) as client:
                 await HistoryIngester(
-                    ObservedStore(engine, commits), engine, client, concurrency=2, retry_interval_s=0.05
+                    ObservedStore(engine, commits),
+                    engine,
+                    client,
+                    concurrency=2,
+                    retry_interval_s=0.05,
+                    fresh_channel_after=2,
                 ).run()
         finally:
             await engine.dispose()
@@ -172,6 +177,19 @@ async def test_discovered_session_is_copied_through_its_owners_destination(
     assert list(page.entries) == [entry(1), entry(2), entry(3)]
     # Stored as the Sandbox Service ingester stores it, so either can write the same row.
     assert page.feed_state.attached.session_id == f"r-{session_id}"
+
+
+async def test_repeated_feed_failures_dial_a_fresh_connection(
+    store: Store, sandbox_service: ScriptedSandboxService, replica: Replica, committed: Committed
+) -> None:
+    sandbox_service.watch_failures = 2
+    session_id = await session(store, sandbox_service)
+    sandbox_service.append(str(session_id), entry(1))
+    async with running(replica("test-replica")):
+        await committed(session_id, 1)
+    first, second, third = [await sandbox_service.watch_peers.get() for _ in range(3)]
+    assert first == second  # one failure reconnects on the same channel
+    assert third != second
 
 
 async def test_restart_resumes_from_committed_cursor(

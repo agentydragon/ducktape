@@ -44,6 +44,10 @@ class ScriptedSandboxService:
         self.following: Counter[str] = Counter()
         # While set to an unset Event, follows pause after their Attached snapshot.
         self.replay_gate: asyncio.Event | None = None
+        # The next this many WatchSessions calls fail UNAVAILABLE.
+        self.watch_failures = 0
+        # The client address of every WatchSessions call; a new address means a new connection.
+        self.watch_peers: asyncio.Queue[str] = asyncio.Queue()
         self._position = 0
         self._changed = asyncio.Event()
 
@@ -70,6 +74,10 @@ class ScriptedSandboxService:
     async def watch(
         self, request: protocol_pb2.WatchSessionsRequest, context: grpc.aio.ServicerContext
     ) -> AsyncIterator[protocol_pb2.WatchSessionsResponse]:
+        self.watch_peers.put_nowait(context.peer())
+        if self.watch_failures:
+            self.watch_failures -= 1
+            await context.abort(grpc.StatusCode.UNAVAILABLE, "scripted feed outage")
         deadline = asyncio.get_running_loop().time() + self.lease_s
         position = request.after_position
         while True:

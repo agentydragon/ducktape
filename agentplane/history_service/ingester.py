@@ -84,15 +84,17 @@ class HistoryIngester:
         concurrency: int,
         retry_interval_s: float,
         batch_size: int = 128,
+        fresh_channel_after: int = 4,
     ) -> None:
-        if concurrency < 1 or retry_interval_s <= 0 or batch_size < 1:
-            raise ValueError("concurrency, retry interval and batch size must be positive")
+        if concurrency < 1 or retry_interval_s <= 0 or batch_size < 1 or fresh_channel_after < 1:
+            raise ValueError("concurrency, retry interval, batch size and fresh-channel threshold must be positive")
         self.store = store
         self.engine = engine
         self.sandboxes = sandboxes
         self.concurrency = concurrency
         self.retry_interval_s = retry_interval_s
         self.batch_size = batch_size
+        self.fresh_channel_after = fresh_channel_after
         self._latest: dict[UUID, SessionChange] = {}
         # Sessions queued, being followed, or waiting to retry; each is in the queue at most once.
         self._scheduled: set[UUID] = set()
@@ -109,14 +111,23 @@ class HistoryIngester:
         # The position lives in memory: a restarted replica reads every Session's latest record
         # again, and each resumes from its committed cursor.
         position = 0
+        failures = 0
         while True:
             try:
                 async for change in self.sandboxes.watch_sessions(after_position=position):
+                    failures = 0
                     self._observe(change)
                     position = change.position
+                failures = 0
             except ConnectionError, TimeoutError, RunnerError:
+                failures += 1
                 # The chained gRPC error carries the status details the client keeps out of its message.
                 logger.warning("Session feed failed after position %d; reconnecting", position, exc_info=True)
+                if failures % self.fresh_channel_after == 0:
+                    # A channel once stayed UNAVAILABLE for half an hour against a healthy Sandbox Service
+                    # that a fresh process reached at once. Follows on the old channel fail and retry.
+                    logger.warning("Session feed failed %d times in a row; dialing a fresh channel", failures)
+                    await self.sandboxes.close()
                 await asyncio.sleep(self.retry_interval_s)
 
     def _observe(self, change: SessionChange) -> None:

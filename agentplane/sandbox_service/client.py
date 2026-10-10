@@ -121,9 +121,13 @@ class SandboxServiceClient:
     def stub(self) -> protocol_pb2_grpc.SandboxServiceAsyncStub:
         if self._stub is None:
             # No retry service config: uncertain mutations need domain-specific reconciliation.
+            # A local subchannel pool makes a channel after `close()` dial anew; from the process-wide
+            # pool it would inherit the closed channel's connection.
             self._channel = grpc.aio.insecure_channel(
                 self.target,
-                options=grpc_channel_option_kvps(self._channel_options, required={"grpc.enable_retries": 0}),
+                options=grpc_channel_option_kvps(
+                    self._channel_options, required={"grpc.enable_retries": 0, "grpc.use_local_subchannel_pool": 1}
+                ),
             )
             self._stub = protocol_pb2_grpc.SandboxServiceStub(self._channel)
         return self._stub
