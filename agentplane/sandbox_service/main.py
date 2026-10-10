@@ -22,6 +22,7 @@ from agentplane.sandbox_service.kubernetes_bindings import KubernetesBindings
 from agentplane.sandbox_service.kubernetes_grants import ClusterRoleBindingGrant, RoleBindingGrant
 from agentplane.sandbox_service.provisioning import Provisioning
 from agentplane.sandbox_service.session_history.ingestion import HistoryIngester
+from agentplane.sandbox_service.session_history.session_changes import SessionChanges
 from agentplane.sandbox_service.session_history.store import Store
 from agentplane.sandbox_service.settings import Settings
 from agentplane.workload_auth.principal import WorkloadPrincipalResolver
@@ -49,7 +50,8 @@ async def serve(settings: Settings) -> None:
 
 
 async def serve_with_engine(settings: Settings, configuration: k8s_client.Configuration, engine: AsyncEngine) -> None:
-    async with k8s_client.ApiClient(configuration) as api:
+    session_changes = SessionChanges(engine.url)
+    async with k8s_client.ApiClient(configuration) as api, session_changes.listener.listen():
         core = k8s_client.CoreV1Api(api)
         inventory = SandboxInventory(
             namespace=settings.sandbox_namespace,
@@ -91,6 +93,7 @@ async def serve_with_engine(settings: Settings, configuration: k8s_client.Config
         resources = Resources(
             principals=principals,
             history=history_store,
+            session_changes=session_changes,
             destinations=DestinationResolver(inventory, core, settings.runner_port),
             admission_timeout_s=settings.admission_timeout_s,
             runner_admission_ack_timeout_s=settings.runner_admission_ack_timeout_s,
