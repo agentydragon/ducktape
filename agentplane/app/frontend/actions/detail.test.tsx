@@ -90,6 +90,66 @@ it("opens cached stream details without a reload and Back returns to the origina
   expect(container.textContent).toContain("Thread contents remain open");
 });
 
+it.each([
+  { verdict: "allow" as const, resultState: "allowed" as const, buttonName: "Approve" },
+  { verdict: "deny" as const, resultState: "denied" as const, buttonName: "Deny" },
+])(
+  "returns to the originating page after a successful $verdict decision",
+  async ({ verdict, resultState, buttonName }) => {
+    const decide = vi.spyOn(actionService, "decide").mockImplementation(async (row) => ({
+      ...row,
+      ...request(resultState, 21),
+      action: ROW.action,
+      arguments: ROW.arguments,
+      title: ROW.title,
+    }));
+    const container = await mount(<App initialPath="/threads/example-thread" />);
+    await send([ROW]);
+
+    const disclosure = container.querySelector<HTMLButtonElement>(`button[aria-label="Expand ${ROW.title}"]`);
+    if (!disclosure) throw new Error("missing pending action disclosure");
+    await act(async () => disclosure.click());
+    const detailsLink = container.querySelector<HTMLAnchorElement>('a[aria-label^="View details for ssh / exec"]');
+    if (!detailsLink) throw new Error("missing action details link");
+    await act(async () => detailsLink.click());
+
+    const decisionButton = container.querySelector<HTMLButtonElement>(`button[aria-label="${buttonName}"]`);
+    if (!decisionButton) throw new Error(`missing ${buttonName} button`);
+    await act(async () => {
+      decisionButton.click();
+      await vi.waitFor(() =>
+        expect(container.querySelector('[data-testid="current-path"]')?.textContent).toBe("/threads/example-thread")
+      );
+    });
+
+    expect(decide).toHaveBeenCalledWith(ROW, verdict);
+    expect(container.textContent).toContain("Thread contents remain open");
+  }
+);
+
+it("stays on action details when a decision fails", async () => {
+  vi.spyOn(actionService, "decide").mockRejectedValue(new Error("decision was rejected"));
+  const container = await mount(<App initialPath="/threads/example-thread" />);
+  await send([ROW]);
+
+  const disclosure = container.querySelector<HTMLButtonElement>(`button[aria-label="Expand ${ROW.title}"]`);
+  if (!disclosure) throw new Error("missing pending action disclosure");
+  await act(async () => disclosure.click());
+  const detailsLink = container.querySelector<HTMLAnchorElement>('a[aria-label^="View details for ssh / exec"]');
+  if (!detailsLink) throw new Error("missing action details link");
+  await act(async () => detailsLink.click());
+  const approve = container.querySelector<HTMLButtonElement>('button[aria-label="Approve"]');
+  if (!approve) throw new Error("missing Approve button");
+
+  await act(async () => {
+    approve.click();
+    await vi.waitFor(() => expect(container.textContent).toContain("decision was rejected"));
+  });
+
+  expect(container.querySelector('[data-testid="current-path"]')?.textContent).toBe(`/actions/${ROW.id}`);
+  expect(container.textContent).toContain("Exact arguments (unredacted)");
+});
+
 it("loads uncached deep links and falls back to the Actions page on Back", async () => {
   const get = vi.spyOn(actionService, "get").mockResolvedValue(ROW);
   const container = await mount(<App initialPath={`/actions/${ROW.id}`} />);

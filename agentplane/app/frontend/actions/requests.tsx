@@ -23,7 +23,7 @@ export function useActionRequests(
   loading: boolean;
   stream: StreamStatus | null;
   deciding: string | null;
-  decide: (request: ActionRequestView, verdict: Verdict) => void;
+  decide: (request: ActionRequestView, verdict: Verdict) => Promise<boolean>;
   knownRequests: ReadonlyMap<string, ActionRequestView>;
   staleRequestIds: ReadonlySet<string>;
   detailLoadingIds: ReadonlySet<string>;
@@ -195,7 +195,7 @@ export function useActionRequests(
     });
   }, [enabled, refresh, service, storePendingSnapshot]);
 
-  async function decideRequest(request: ActionRequestView, verdict: Verdict): Promise<void> {
+  async function decideRequest(request: ActionRequestView, verdict: Verdict): Promise<boolean> {
     setDeciding(request.id);
     try {
       const updated = await service.decide(request, verdict);
@@ -206,8 +206,10 @@ export function useActionRequests(
       rememberRequests([updated]);
       setError(null);
       if (service !== actionService) await refresh();
+      return true;
     } catch (failure) {
       setError(displayableError(failure));
+      return false;
     } finally {
       setDeciding(null);
     }
@@ -219,7 +221,7 @@ export function useActionRequests(
     loading,
     stream,
     deciding,
-    decide: (request, verdict) => void decideRequest(request, verdict),
+    decide: (request, verdict) => decideRequest(request, verdict),
     knownRequests,
     staleRequestIds,
     detailLoadingIds,

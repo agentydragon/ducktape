@@ -107,7 +107,12 @@ export function ActionRequestDetail({ requestId }: { requestId: string }): JSX.E
           <PendingActionCard
             request={request}
             deciding={actions?.deciding === request.id}
-            onDecide={(row, verdict) => actions?.decide(row, verdict)}
+            onDecide={(row, verdict) => {
+              if (actions === null) return;
+              void actions.decide(row, verdict).then((succeeded) => {
+                if (succeeded && hasReturnTo) goBack();
+              });
+            }}
           />
         </Stack>
       )}
