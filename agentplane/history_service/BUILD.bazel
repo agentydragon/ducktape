@@ -44,6 +44,7 @@ py_library(
     srcs = ["grpc_api.py"],
     deps = [
         ":summaries",
+        ":thread_reads",
         "//agentplane:subjects",
         "//agentplane/history_service:protocol_pb2",
         "//agentplane/history_service:protocol_pb2_grpc",
@@ -54,6 +55,7 @@ py_library(
         "@pypi//grpcio",
         "@pypi//kubernetes_asyncio",
         "@pypi//protobuf",
+        "@pypi//pydantic",
         "@pypi//sqlalchemy",
     ],
 )
@@ -131,6 +133,42 @@ py_test(
 )
 
 py_library(
+    name = "thread_reads",
+    srcs = ["thread_reads.py"],
+    deps = [
+        "//agentplane/history_service:protocol_pb2",
+        "//agentplane/sandbox_service/session_history:db",
+        "//agentplane/sandbox_service/session_history:store",
+        "//agentplane/thread_fold:models",
+        "//agentplane/thread_fold:views",
+        "@pypi//pydantic",
+        "@pypi//sqlalchemy",
+    ],
+)
+
+py_test(
+    name = "test_thread_reads",
+    size = "medium",
+    srcs = ["test_thread_reads.py"],
+    requires_docker = True,
+    deps = [
+        ":fold_shadow",
+        ":thread_reads",
+        "//:conftest",
+        "//agentplane/history_service:protocol_pb2",
+        "//agentplane/protocol:event_log_pb2",
+        "//agentplane/protocol:event_pb2",
+        "//agentplane/sandbox_service/session_history:conftest",
+        "//agentplane/sandbox_service/session_history:store",
+        "//agentplane/thread_fold:views",
+        "@pypi//pydantic",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+        "@pypi//sqlalchemy",
+    ],
+)
+
+py_library(
     name = "settings",
     srcs = ["settings.py"],
     visibility = [
@@ -153,6 +191,7 @@ py_library(
         ":grpc_api",
         ":settings",
         ":summaries",
+        ":thread_reads",
         "//agentplane/sandbox_service/session_history:store",
         "//agentplane/workload_auth:principal",
         "@pypi//asyncpg",
@@ -171,6 +210,7 @@ py_test(
     deps = [
         ":grpc_api",
         ":summaries",
+        ":thread_reads",
         "//:conftest",
         "//agentplane:subjects",
         "//agentplane/history_service:protocol_pb2",

@@ -15,6 +15,7 @@ from agentplane.history_service.fold_shadow import FoldShadow
 from agentplane.history_service.grpc_api import Resources, add_service
 from agentplane.history_service.settings import Settings
 from agentplane.history_service.summaries import SummaryReader
+from agentplane.history_service.thread_reads import ThreadReader
 from agentplane.sandbox_service.session_history.store import Store
 from agentplane.workload_auth.principal import WorkloadPrincipalResolver
 
@@ -68,6 +69,7 @@ async def serve(settings: Settings) -> None:
                 ),
                 history=history,
                 summaries=SummaryReader(engine),
+                threads=ThreadReader(engine),
                 reader_accounts=settings.reader_accounts,
                 request_timeout_s=settings.request_timeout_s,
             )
