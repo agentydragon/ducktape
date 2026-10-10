@@ -1,2 +1,2 @@
 var First = ((ANYTHING) => ((ANYTHING.FIRST = "FIRST"), SEQ_EXPRS))(ARGS),
-  Second = ANYTHING;
+  Second = ((ANYTHING) => ((ANYTHING.SECOND = "SECOND"), SEQ_EXPRS))(ARGS);

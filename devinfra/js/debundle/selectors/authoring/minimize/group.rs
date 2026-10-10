@@ -81,7 +81,7 @@ fn try_var_group_read_off(
     targets: &[SynthesizedTargetBinding],
     target_slots: &BTreeSet<usize>,
     value_first: bool,
-) -> Result<Option<SpecializedSelector>> {
+) -> Result<Option<(SpecializedSelector, bool)>> {
     let export_for = |runtime: &str| {
         targets
             .iter()
@@ -175,7 +175,8 @@ fn try_var_group_read_off(
     if !resolves(&union)? {
         if let [target] = targets {
             let scaffold = render_with(&BTreeSet::new(), &no_regex)?;
-            return render_via_neighbor_context(index, decl, target, &scaffold);
+            return Ok(render_via_neighbor_context(index, decl, target, &scaffold)?
+                .map(|selector| (selector, false)));
         }
         return Ok(None);
     }
@@ -197,10 +198,20 @@ fn try_var_group_read_off(
 
     let source = render_with(&union, &regex_anchors)?;
     let rewritten_holes = holes_present(&source)?;
-    Ok(Some(SpecializedSelector {
-        match_source: source,
-        rewritten_holes,
-    }))
+    let all_slots_anchored = target_slots.iter().all(|&slot| {
+        var.decls[slot].init.as_ref().is_some_and(|init| {
+            union
+                .iter()
+                .any(|span| node_holds_anchor(init.span(), *span))
+        })
+    });
+    Ok(Some((
+        SpecializedSelector {
+            match_source: source,
+            rewritten_holes,
+        },
+        all_slots_anchored,
+    )))
 }
 
 /// Up to `limit` distinct, proven selectors. Single-target forms retain their
@@ -244,21 +255,29 @@ pub(crate) fn minimize_var_group_selector_candidates(
             return Ok(var_candidates);
         }
     }
-    let mut out: Vec<SpecializedSelector> = Vec::new();
+    let mut out: Vec<(SpecializedSelector, bool)> = Vec::new();
+    // A tuple can prove solely from slot positions while leaving a target's
+    // initializer as `ANYTHING`. Prefer the value-first alternative only when
+    // it anchors every slot and the selective-first choice does not.
     for value_first in [false, true] {
-        if out.len() >= limit {
+        if limit == 0 || (limit == 1 && out.first().is_some_and(|(_, anchored)| *anchored)) {
             break;
         }
-        if let Some(selector) =
+        if let Some((selector, all_slots_anchored)) =
             try_var_group_read_off(index, var, decl, targets, &target_slots, value_first)?
             && !out
                 .iter()
-                .any(|kept| kept.match_source == selector.match_source)
+                .any(|(kept, _)| kept.match_source == selector.match_source)
         {
-            out.push(selector);
+            out.push((selector, all_slots_anchored));
         }
     }
-    Ok(out)
+    out.sort_by_key(|(_, anchored)| !anchored);
+    Ok(out
+        .into_iter()
+        .take(limit)
+        .map(|(selector, _)| selector)
+        .collect())
 }
 
 /// The default pick is exactly the first candidate, so dispatch cannot drift
