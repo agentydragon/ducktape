@@ -39,6 +39,7 @@ from util.kubernetes import CustomObjectsClient
 # gazelle:include_dep @pypi//asyncpg
 # The channel servicer stub names its messages; mypy reads stubs only from direct deps.
 # gazelle:include_dep //agentplane/runner_channel:protocol_pb2
+# gazelle:include_dep @pypi//protobuf
 
 
 async def serve(settings: Settings) -> None:
