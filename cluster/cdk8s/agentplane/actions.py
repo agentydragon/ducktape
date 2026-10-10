@@ -31,8 +31,9 @@ from constructs import Construct
 
 from agentplane.action_service.settings import CONFIG_FILE_ENV, Settings
 from agentplane.subjects import ServiceAccountRef
+from agentplane.workload_auth.audience import WORKLOAD_TOKEN_AUDIENCE
 from cluster.cdk8s import cilium, node_scheduling, pod_policy
-from cluster.cdk8s.agentplane import database, llm_ingress, notifications
+from cluster.cdk8s.agentplane import database, notifications
 from cluster.cdk8s.agentplane.environment import Environment
 from cluster.cdk8s.agentplane.migrate_container import migrate_init_container
 from cluster.cdk8s.agentplane.pod_disruption_budget import add_pod_disruption_budget
@@ -89,8 +90,8 @@ class Actions(Construct):
 
         service_account = self._add_service_account()
         self._add_rbac(service_account)
-        # These leaves come from container environment variables, not the settings file.
-        supplied: list[tuple[str, ...]] = [("database_url",)]
+        # These leaves come from the container's environment variables and arguments, not the settings file.
+        supplied: list[tuple[str, ...]] = [("database_url",), ("token_audience",)]
         if env.actions.web_push_secret_name is not None:
             supplied.append(("web_push", "private_key_pem"))
         settings = SettingsFile(
@@ -274,9 +275,7 @@ class Actions(Construct):
             name="actions",
             image=f"{_ACTIONS_IMAGE}:{_PLACEHOLDER_TAG}",
             image_pull_policy=ImagePullPolicy.ALWAYS,
-            args=cli_args(
-                Settings, host="0.0.0.0", port=self.service.pod_port, token_audience=llm_ingress.WORKLOAD_TOKEN_AUDIENCE
-            ),
+            args=cli_args(Settings, host="0.0.0.0", port=self.service.pod_port, token_audience=WORKLOAD_TOKEN_AUDIENCE),
             env_variables=env,
             ports=[self.service.port.container_port()],
             readiness=http_probe(

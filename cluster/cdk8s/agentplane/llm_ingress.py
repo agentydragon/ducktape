@@ -21,6 +21,7 @@ from constructs import Construct
 
 from agentplane.llm_ingress.models import ModelConfig
 from agentplane.llm_ingress.settings import CONFIG_FILE_ENV, Settings
+from agentplane.workload_auth.audience import WORKLOAD_TOKEN_AUDIENCE
 from cluster.cdk8s import cilium, node_scheduling, pod_policy
 from cluster.cdk8s.agentplane.environment import Environment
 from cluster.cdk8s.forgejo_registry.chart import forgejo_images_creds_secret_ref
@@ -37,11 +38,6 @@ _PLACEHOLDER_TAG = "unset"  # always overridden by image-pins/kustomization.yaml
 _NAME = "agentplane-llm-ingress"
 _IMAGE_NAME = "git.allegedly.works/ducktape-ci/agentplane-llm-ingress"
 _LABELS = {"app.kubernetes.io/name": _NAME}
-# The Sandbox runner's workload token audience: minted once by the runner
-# (app.py's projected ServiceAccountToken), verified unchanged by the
-# central egress proxy, then forwarded and verified again here -- every hop must accept
-# the same audience string.
-WORKLOAD_TOKEN_AUDIENCE = "agentplane-egress"
 
 
 def model_configs(models: HarnessRoutes) -> list[ModelConfig]:

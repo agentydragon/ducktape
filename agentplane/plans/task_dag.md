@@ -1040,7 +1040,6 @@ flowchart TD
     APP_SETTINGS_REQUIRED[Candidate: app integrations required, carrier settings moved]
     ACTION_CONNECTION_REBIND_SHIMS[Candidate: drop pre-rebind connection fallbacks]
     RUNNER_LAUNCH_SETTINGS[Decision: runner launch settings separate from capture probes]
-    WORKLOAD_AUDIENCE_DEFAULTS[Candidate: workload token audience has no code default]
     WORKLOAD_AUDIENCE_RENAME[Decision: rename the agentplane-egress audience]
     APP_THREAD_VIEW_CLEANUP[Blocked: app Thread view and event_log shims]
     RUNNER_INBOUND_RETIRE[Retire inbound runner access]
@@ -1048,7 +1047,6 @@ flowchart TD
     OPEN_SESSION_RETIRE --> RUNNER_INBOUND_RETIRE
     RUNNER_LAUNCH_SETTINGS_SPLIT[Blocked: give the runner its own launch settings]
     RUNNER_LAUNCH_SETTINGS --> RUNNER_LAUNCH_SETTINGS_SPLIT
-    WORKLOAD_AUDIENCE_DEFAULTS -. same constant .-> WORKLOAD_AUDIENCE_RENAME
     FOLD_READ_CUTOVER --> APP_THREAD_VIEW_CLEANUP
     RUNNER_SESSION_RECORD_SHIMS[Blocked: drop runner session record compatibility]
     LEGACY_SANDBOX_RETIRE[Retire pre-dial-out Sandboxes]
@@ -1110,13 +1108,6 @@ budget.
 **Blocked on the decision; Legacy burn-down lane.** The runner gets its own launch settings with the
 decided values; the scenario values stay with capture and `harness_tests`. Model-visible change, new
 Sandboxes only.
-
-### `WORKLOAD_AUDIENCE_DEFAULTS` — workload token audience has no code default
-
-**Candidate; Legacy burn-down lane.** `llm_ingress`, `action_service` and `egress` settings default
-the workload token audience to `agentplane-egress` although every deployment sets it, and the
-shared constant lives in `cluster/cdk8s/agentplane/llm_ingress.py`. Make the field required and
-give the constant a shared home.
 
 ### `WORKLOAD_AUDIENCE_RENAME` — rename the `agentplane-egress` audience
 

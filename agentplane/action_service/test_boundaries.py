@@ -29,7 +29,7 @@ from agentplane.workload_auth.principal import (
     WorkloadPrincipalResolver,
 )
 
-AUDIENCE = "agentplane-egress"
+AUDIENCE = "action-service-test-audience"
 NAMESPACE = "agentplane-staging"
 SUBJECT = f"system:serviceaccount:{NAMESPACE}:agentplane-runner"
 TOKEN_A = "opaque-bound-workload-a"

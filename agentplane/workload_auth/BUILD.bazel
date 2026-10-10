@@ -49,6 +49,16 @@ py_test(
 )
 
 py_library(
+    name = "audience",
+    srcs = ["audience.py"],
+    visibility = [
+        "//agentplane:__subpackages__",
+        "//cluster/cdk8s/agentplane:__pkg__",
+        "//cluster/cdk8s/public_coder:__pkg__",
+    ],
+)
+
+py_library(
     name = "bearer",
     srcs = ["bearer.py"],
 )

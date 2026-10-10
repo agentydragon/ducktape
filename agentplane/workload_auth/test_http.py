@@ -21,6 +21,7 @@ from agentplane.workload_auth.principal import (
 )
 
 TOKEN = "workload-token"
+AUDIENCE = "workload-auth-test-audience"
 NAMESPACE = "sandboxes"
 SUBJECT = f"system:serviceaccount:{NAMESPACE}:runner"
 PRINCIPAL = WorkloadPrincipal(NAMESPACE, "runner", SUBJECT, "pod-a", "pod-uid")
@@ -29,10 +30,10 @@ PRINCIPAL = WorkloadPrincipal(NAMESPACE, "runner", SUBJECT, "pod-a", "pod-uid")
 def authenticator() -> tuple[WorkloadPrincipalAuthenticator, AsyncMock]:
     create_token_review = AsyncMock(
         return_value=k8s_client.V1TokenReview(
-            spec=k8s_client.V1TokenReviewSpec(token=TOKEN, audiences=["agentplane-egress"]),
+            spec=k8s_client.V1TokenReviewSpec(token=TOKEN, audiences=[AUDIENCE]),
             status=k8s_client.V1TokenReviewStatus(
                 authenticated=True,
-                audiences=["agentplane-egress"],
+                audiences=[AUDIENCE],
                 user=k8s_client.V1UserInfo(
                     username=SUBJECT, extra={POD_NAME_CLAIM: [PRINCIPAL.pod_name], POD_UID_CLAIM: [PRINCIPAL.pod_uid]}
                 ),
@@ -43,7 +44,7 @@ def authenticator() -> tuple[WorkloadPrincipalAuthenticator, AsyncMock]:
         WorkloadPrincipalAuthenticator(
             WorkloadPrincipalResolver(
                 authentication=cast(AuthenticationV1Api, SimpleNamespace(create_token_review=create_token_review)),
-                audience="agentplane-egress",
+                audience=AUDIENCE,
                 allowed_service_account_namespaces=(NAMESPACE,),
             )
         ),

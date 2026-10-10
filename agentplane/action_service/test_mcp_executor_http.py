@@ -158,6 +158,7 @@ def sse() -> bool:
 
 
 # Directly parametrizing `sse` overrides the fixture for the whole fixture chain of the test.
+TOKEN_AUDIENCE = "action-service-test-audience"
 REPLY_ENCODINGS = pytest.mark.parametrize("sse", [False, True], ids=["json", "sse"])
 
 
@@ -585,7 +586,11 @@ async def test_main_oauth_serves_during_backend_outage_and_recovers(
     """Real production startup, OAuth persistence, and MCP transport; no backend-readiness startup gate."""
     fake_server.list_unavailable = True
     settings = Settings(
-        database_url=db_url, action_groups={"remote": http_group}, oauth=oauth_settings, _cli_parse_args=False
+        database_url=db_url,
+        action_groups={"remote": http_group},
+        oauth=oauth_settings,
+        token_audience=TOKEN_AUDIENCE,
+        _cli_parse_args=False,
     )
 
     async def serve(server: uvicorn.Server) -> None:
@@ -658,7 +663,9 @@ async def test_production_http_composition_one_execution_no_replay(
     """Real main, HTTP MCP, and PostgreSQL; only Kubernetes setup and the serving loop are replaced."""
     caller = CallerPrincipal(account=ServiceAccountRef(namespace="agentplane-test", name="sandbox-uid"))
     operator = OperatorPrincipal(issuer="test-http", subject="operator")
-    settings = Settings(database_url=db_url, action_groups={"remote": http_group}, _cli_parse_args=False)
+    settings = Settings(
+        database_url=db_url, action_groups={"remote": http_group}, token_audience=TOKEN_AUDIENCE, _cli_parse_args=False
+    )
 
     async def serve(server: uvicorn.Server) -> None:
         app = cast(FastAPI, server.config.app)

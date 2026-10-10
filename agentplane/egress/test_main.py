@@ -21,6 +21,7 @@ def _args(tmp_path: Path) -> list[str]:
         f"--ca-key={tmp_path / 'ca.key'}",
         f"--confdir={tmp_path}",
         "--database-url=postgresql://egress-test.invalid/egress-test",
+        "--token-audience=egress-test-audience",
     ]
 
 

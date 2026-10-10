@@ -12,8 +12,10 @@
 destination authorizes against. Whatever else owns the Pod is not the caller.
 
 Configure the accepted audience and a non-empty namespace allowlist when constructing the resolver.
-The current compatibility audience is `agentplane-egress`; deployments may migrate it to
-`agentplane-workload` without changing this API.
+The audience of a Sandbox's workload token, which the egress proxy, the LLM ingress and the Action
+Service all verify, is `WORKLOAD_TOKEN_AUDIENCE` in `audience.py`; the cluster configuration passes it
+to each, since none of them defaults it. It is the compatibility value `agentplane-egress`;
+deployments may migrate it to `agentplane-workload` without changing this API.
 
 Resolution requires an authenticated TokenReview for that audience, an allowed ServiceAccount
 subject, and exactly one Pod name/UID claim pair. Nothing else is read: the API server validates the

@@ -40,8 +40,9 @@ from constructs import Construct
 
 from agentplane.egress import sidecar
 from agentplane.egress.resources import placeholder_of
+from agentplane.workload_auth.audience import WORKLOAD_TOKEN_AUDIENCE
 from cluster.cdk8s import node_scheduling
-from cluster.cdk8s.agentplane import egress, llm_ingress, notifications
+from cluster.cdk8s.agentplane import egress, notifications
 from cluster.cdk8s.agentplane.environment import Environment
 from cluster.cdk8s.config_format import yaml_config
 from cluster.cdk8s.forgejo_registry.chart import SECRET_NAME
@@ -293,7 +294,7 @@ def _egress_volumes(env: Environment) -> list[SandboxTemplateSpecPodTemplateSpec
                 sources=[
                     SandboxTemplateSpecPodTemplateSpecVolumesProjectedSources(
                         service_account_token=SandboxTemplateSpecPodTemplateSpecVolumesProjectedSourcesServiceAccountToken(
-                            audience=llm_ingress.WORKLOAD_TOKEN_AUDIENCE, expiration_seconds=600, path="token"
+                            audience=WORKLOAD_TOKEN_AUDIENCE, expiration_seconds=600, path="token"
                         )
                     ),
                     *(

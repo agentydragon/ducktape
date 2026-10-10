@@ -50,6 +50,7 @@ from trust_manager_crds.io.cert_manager.trust import (
 
 from agentplane.egress.database_migrate import MigrationSettings
 from agentplane.egress.settings import CONFIG_FILE_ENV, Settings
+from agentplane.workload_auth.audience import WORKLOAD_TOKEN_AUDIENCE
 from cluster.cdk8s import cilium, node_scheduling, pod_policy
 from cluster.cdk8s.agentplane import actions, database, llm_ingress, notifications
 from cluster.cdk8s.agentplane.egress_credentials import BUILDBUDDY_API_KEY_SECRET, GITHUB_PAT_SECRET
@@ -721,7 +722,7 @@ class Egress(Construct):
                 ca_key="/etc/agentplane-egress/ca/tls.key",
                 confdir="/var/lib/agentplane-egress",
                 upstream_ca_file=f"{_UPSTREAM_CA_DIR}/{CA_BUNDLE_KEY}",
-                token_audience=llm_ingress.WORKLOAD_TOKEN_AUDIENCE,
+                token_audience=WORKLOAD_TOKEN_AUDIENCE,
             ),
             env_variables={
                 env_name(Settings, "database_url"): database_url.env_value(self, "postgres-egress-secret-proxy")

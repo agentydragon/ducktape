@@ -31,7 +31,7 @@ from agentplane.workload_auth.http import WorkloadPrincipalAuthenticator
 from agentplane.workload_auth.principal import WorkloadPrincipalResolver
 from util.agent_sandbox import SANDBOXES_PLURAL
 
-AUDIENCE = "agentplane-egress"
+AUDIENCE = "llm-ingress-test-audience"
 SUBJECT = f"system:serviceaccount:{SANDBOX_NAMESPACE}:agentplane-runner"
 TOKEN_A = "opaque-workload-token-a"
 TOKEN_B = "opaque-workload-token-b"

@@ -22,7 +22,7 @@ from agentplane.workload_auth.principal import (
     WorkloadPrincipalResolver,
 )
 
-AUDIENCE = "agentplane-egress"
+AUDIENCE = "workload-auth-test-audience"
 NAMESPACE = "sandboxes"
 TOKEN = "opaque-workload-token"
 SUBJECT = f"system:serviceaccount:{NAMESPACE}:runner"

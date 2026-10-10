@@ -111,7 +111,7 @@ class Settings(BaseSettings):
     database_url: str = Field(description="Action Service-owned PostgreSQL database URL.")
     host: str = "127.0.0.1"
     port: int = 8080
-    token_audience: str = "agentplane-egress"
+    token_audience: str = Field(min_length=1, description="Accepted projected-token audience of Sandbox callers.")
     reader_accounts: frozenset[ServiceAccountRef] = frozenset()
     policy_namespace: str = Field(
         default="agentplane-staging",

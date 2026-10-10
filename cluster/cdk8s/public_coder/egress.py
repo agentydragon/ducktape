@@ -19,6 +19,7 @@ from cdk8s_plus_34 import ServiceAccount, k8s
 from constructs import Construct
 
 from agentplane.egress import sidecar
+from agentplane.workload_auth.audience import WORKLOAD_TOKEN_AUDIENCE
 from cluster.cdk8s import cilium
 from cluster.cdk8s.agentplane import actions, egress
 from cluster.cdk8s.agentplane.egress_credentials import EXTERNAL_CREDS_STORE, credential_external_secret
@@ -88,7 +89,7 @@ def token_volume() -> k8s.Volume:
             sources=[
                 k8s.VolumeProjection(
                     service_account_token=k8s.ServiceAccountTokenProjection(
-                        audience="agentplane-egress", expiration_seconds=600, path="token"
+                        audience=WORKLOAD_TOKEN_AUDIENCE, expiration_seconds=600, path="token"
                     )
                 )
             ],

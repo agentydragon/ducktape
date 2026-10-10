@@ -50,7 +50,7 @@ class Settings(BaseSettings):
         "certificate no public root signs. Unset falls back to mitmproxy's bundled roots, which reach "
         "public hosts only.",
     )
-    token_audience: str = Field(default="agentplane-egress", description="Audience of the sidecars' projected tokens.")
+    token_audience: str = Field(min_length=1, description="Audience of the sidecars' projected tokens.")
     projected_token_audiences: frozenset[str] = Field(
         default=frozenset(),
         description="Every audience a rule may substitute a sidecar's projected token for, the API server's "

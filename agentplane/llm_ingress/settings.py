@@ -27,7 +27,7 @@ class Settings(BaseSettings):
         "only client, so this must admit at least what the proxy's own allowlist does: a workload it "
         "authenticated and sent on is refused here if its namespace is missing.",
     )
-    token_audience: str = Field(default="agentplane-egress", description="Accepted projected-token audience.")
+    token_audience: str = Field(min_length=1, description="Accepted projected-token audience.")
     log_llm_requests: bool = Field(
         default=False,
         description=(
