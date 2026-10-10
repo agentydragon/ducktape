@@ -18,6 +18,7 @@ export function canQuickApproveResourcesDelete(args: unknown): boolean {
 function Delete({ args }: { args: z.infer<typeof resourcesDeleteArguments> }): JSX.Element {
   return (
     <>
+      <Chip label="API version" value={args.apiVersion} />
       <Chip
         label="grace period"
         value={args.gracePeriodSeconds === undefined ? "default" : `${args.gracePeriodSeconds}s`}

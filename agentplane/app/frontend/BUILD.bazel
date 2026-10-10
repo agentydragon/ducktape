@@ -485,9 +485,13 @@ ts_library(
         ":actions_rendering_data",
         ":actions_rendering_entry",
         ":actions_rendering_github",
+        ":actions_rendering_gmail",
+        ":actions_rendering_google_calendar",
+        ":actions_rendering_grocy",
         ":actions_rendering_kubernetes_admin",
         ":actions_rendering_result_entry",
         ":actions_rendering_ssh",
+        ":actions_rendering_tana",
         "//:node_modules/@types/react",
         "//:node_modules/react",
     ],
@@ -533,12 +537,74 @@ ts_library(
 )
 
 ts_library(
+    name = "actions_rendering_gmail",
+    srcs = ["actions/rendering/gmail.tsx"],
+    tsconfig = TSCONFIG,
+    deps = [
+        ":actions_rendering_chips",
+        ":actions_rendering_entry",
+        ":actions_rendering_result_entry",
+        ":code_block",
+        "//:node_modules/@mantine/core",
+        "//:node_modules/@types/react",
+        "//:node_modules/react",
+        "//:node_modules/zod",
+    ],
+)
+
+ts_library(
+    name = "actions_rendering_grocy",
+    srcs = ["actions/rendering/grocy.tsx"],
+    tsconfig = TSCONFIG,
+    deps = [
+        ":actions_rendering_chips",
+        ":actions_rendering_entry",
+        ":actions_rendering_result_entry",
+        "//:node_modules/@mantine/core",
+        "//:node_modules/@types/react",
+        "//:node_modules/react",
+        "//:node_modules/zod",
+    ],
+)
+
+ts_library(
+    name = "actions_rendering_google_calendar",
+    srcs = ["actions/rendering/google_calendar.tsx"],
+    tsconfig = TSCONFIG,
+    deps = [
+        ":actions_rendering_chips",
+        ":actions_rendering_entry",
+        ":actions_rendering_result_entry",
+        "//:node_modules/@mantine/core",
+        "//:node_modules/@types/react",
+        "//:node_modules/react",
+        "//:node_modules/zod",
+    ],
+)
+
+ts_library(
+    name = "actions_rendering_tana",
+    srcs = ["actions/rendering/tana.tsx"],
+    tsconfig = TSCONFIG,
+    deps = [
+        ":actions_rendering_chips",
+        ":actions_rendering_entry",
+        "//:node_modules/@mantine/core",
+        "//:node_modules/@types/react",
+        "//:node_modules/react",
+        "//:node_modules/zod",
+    ],
+)
+
+ts_library(
     name = "actions_rendering_kubernetes_admin",
     srcs = [
         "actions/rendering/kubernetes_admin/events_list.tsx",
+        "actions/rendering/kubernetes_admin/pods_exec.tsx",
         "actions/rendering/kubernetes_admin/pods_list_in_namespace.tsx",
         "actions/rendering/kubernetes_admin/pods_log.tsx",
         "actions/rendering/kubernetes_admin/resource_common.tsx",
+        "actions/rendering/kubernetes_admin/resources_apply.tsx",
         "actions/rendering/kubernetes_admin/resources_delete.tsx",
         "actions/rendering/kubernetes_admin/resources_get.tsx",
         "actions/rendering/kubernetes_admin/resources_list.tsx",
@@ -548,6 +614,7 @@ ts_library(
         ":actions_kubernetes_pod_list_schema",
         ":actions_rendering_chips",
         ":actions_rendering_entry",
+        ":code_block",
         "//:node_modules/@mantine/core",
         "//:node_modules/@types/react",
         "//:node_modules/react",

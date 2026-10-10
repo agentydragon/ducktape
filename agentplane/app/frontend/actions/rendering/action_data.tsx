@@ -47,31 +47,6 @@ function fieldLabel(key: string): string {
   return spaced.length === 0 ? key : spaced[0]!.toUpperCase() + spaced.slice(1);
 }
 
-function shortValue(value: unknown): string {
-  if (value === null) return "null";
-  if (typeof value === "string") {
-    const text = value.replace(/\s+/g, " ").trim();
-    return text.length > 100 ? `${text.slice(0, 97)}…` : text;
-  }
-  if (typeof value === "number" || typeof value === "boolean") return String(value);
-  if (Array.isArray(value)) {
-    if (value.length === 0) return "empty list";
-    if (value.every((item) => ["string", "number", "boolean"].includes(typeof item))) {
-      const shown = value
-        .slice(0, 3)
-        .map((item) => String(item))
-        .join(", ");
-      return value.length > 3 ? `${shown}, … (${value.length} total)` : shown;
-    }
-    return `${value.length} ${value.length === 1 ? "item" : "items"}`;
-  }
-  if (typeof value === "object") {
-    const count = Object.keys(value).length;
-    return `${count} ${count === 1 ? "field" : "fields"}`;
-  }
-  return String(value);
-}
-
 function StructuredValue({ value, depth = 0 }: { value: unknown; depth?: number }): JSX.Element {
   if (value === null)
     return (
@@ -116,23 +91,12 @@ function StructuredValue({ value, depth = 0 }: { value: unknown; depth?: number 
   return <Code>{String(value)}</Code>;
 }
 
-function StructuredFields({
-  value,
-  exclude = [],
-  include,
-  depth = 0,
-}: {
-  value: Record<string, unknown>;
-  exclude?: readonly string[];
-  include?: readonly string[];
-  depth?: number;
-}): JSX.Element {
-  const selected = include === undefined ? Object.keys(value) : include.filter((key) => key in value);
-  const keys = selected.filter((key) => !exclude.includes(key));
+function StructuredFields({ value, depth = 0 }: { value: Record<string, unknown>; depth?: number }): JSX.Element {
+  const keys = Object.keys(value);
   if (keys.length === 0) {
     return (
       <Text size="sm" c="dimmed">
-        No additional arguments.
+        No arguments.
       </Text>
     );
   }
@@ -154,22 +118,6 @@ function ActionLabel({ args, spec }: PreviewProps<ActionObject> & { spec: Action
   return <Text fw={600}>{spec.label(args)}</Text>;
 }
 
-function ActionSummary({ args, spec }: PreviewProps<ActionObject> & { spec: ActionPresentationSpec }): JSX.Element {
-  const summary = (spec.summaryFields ?? [])
-    .filter((key) => key in args)
-    .map((key) => `${fieldLabel(key)}: ${shortValue(args[key])}`)
-    .join(" · ");
-  return (
-    <Text size="xs" style={{ overflowWrap: "anywhere" }}>
-      {summary || "No additional summary fields"}
-    </Text>
-  );
-}
-
-function OpenedArguments({ args, spec }: PreviewProps<ActionObject> & { spec: ActionPresentationSpec }): JSX.Element {
-  return <StructuredFields value={args} exclude={spec.labelFields} />;
-}
-
 function FullArguments({ args }: PreviewProps<ActionObject>): JSX.Element {
   return <StructuredFields value={args} />;
 }
@@ -185,7 +133,7 @@ function ActionResult({ result, title }: ResultPreviewProps<unknown> & { title: 
   );
 }
 
-export interface ActionDataPresentation {
+export interface ActionPresentationFallback {
   label: ArgumentsPreview;
   pane: {
     collapsed?: ArgumentsPreview;
@@ -198,15 +146,10 @@ export interface ActionDataPresentation {
   };
 }
 
-/** Build the common readable view slots for a catalog entry; action wording remains per-action. */
-export function actionDataPresentation(spec: ActionPresentationSpec): ActionDataPresentation {
+/** Generic fallback only. Actions with a purpose-built widget register their own DOM in each slot. */
+export function fallbackActionPresentation(spec: ActionPresentationSpec): ActionPresentationFallback {
   const label = definePreview(objectSchema, (props) => <ActionLabel {...props} spec={spec} />);
-  const collapsed =
-    spec.summaryFields !== undefined && spec.summaryFields.length > 0
-      ? definePreview(objectSchema, (props) => <ActionSummary {...props} spec={spec} />)
-      : undefined;
-  const opened = definePreview(objectSchema, (props) => <OpenedArguments {...props} spec={spec} />);
-  const argumentsPreview = definePreview(objectSchema, FullArguments);
+  const fullArguments = definePreview(objectSchema, FullArguments);
   const result =
     spec.resultLabel === undefined
       ? undefined
@@ -225,7 +168,7 @@ export function actionDataPresentation(spec: ActionPresentationSpec): ActionData
 
   return {
     label,
-    pane: { ...(collapsed === undefined ? {} : { collapsed }), opened, requestTitleIsRedundant },
-    details: { arguments: argumentsPreview, ...(result === undefined ? {} : { result }) },
+    pane: { opened: fullArguments, requestTitleIsRedundant },
+    details: { arguments: fullArguments, ...(result === undefined ? {} : { result }) },
   };
 }

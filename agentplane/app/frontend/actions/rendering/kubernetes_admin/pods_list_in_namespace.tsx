@@ -17,17 +17,6 @@ export function podsInNamespaceTitleIsRedundant(title: string, args: unknown): b
   return normalizedTitle === actionLabel;
 }
 
-function PodsInNamespace({ args }: { args: z.infer<typeof zPodsInNamespaceArguments> }): JSX.Element {
-  return (
-    <Text size="sm" style={{ overflowWrap: "anywhere" }}>
-      List pods in namespace <Code>{args.namespace}</Code>
-      {podsInNamespaceFilters(args)}
-    </Text>
-  );
-}
-
-export const podsInNamespacePreview: ArgumentsPreview = definePreview(zPodsInNamespaceArguments, PodsInNamespace);
-
 function podsInNamespaceFilters(args: z.infer<typeof zPodsInNamespaceArguments>): JSX.Element {
   return (
     <>
@@ -59,6 +48,7 @@ function PodsInNamespacePane({ args }: { args: z.infer<typeof zPodsInNamespaceAr
 }
 
 export const podsInNamespacePane: ArgumentsPreview = definePreview(zPodsInNamespaceArguments, PodsInNamespacePane);
+export const podsInNamespaceDetails: ArgumentsPreview = podsInNamespacePane;
 
 function PodsInNamespaceLabel({ args }: { args: z.infer<typeof zPodsInNamespaceArguments> }): JSX.Element {
   return (

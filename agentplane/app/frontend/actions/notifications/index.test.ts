@@ -117,4 +117,21 @@ describe("action notification formatting", () => {
 
     expect(formatActionNotification(request).title).toBe("List pods in namespace tofu-controller");
   });
+
+  it("composes the request context and action-provided title through the shared boundary", () => {
+    const request = actionRequest({
+      action: { group: "gmail", name: "drafts_create" },
+      arguments: { to: ["reader@example.com"], subject: "Release notes", body: "Ready" },
+      title: "Compose a release email",
+      description: "Review before saving the draft.",
+    });
+
+    expect(formatActionNotification(request)).toEqual({
+      title: "Compose a release email · Draft email: Release notes",
+      text: "Review before saving the draft.",
+    });
+    expect(formatActionNotification({ ...request, title: "Draft email: Release notes" }).title).toBe(
+      "Draft email: Release notes"
+    );
+  });
 });

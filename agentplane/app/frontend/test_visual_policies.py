@@ -133,7 +133,7 @@ async def test_sidebar_compact_pod_approval(
             "kubernetes_admin",
             "resources_delete",
             {"apiVersion": "v1", "kind": "Pod", "name": "web-0", "namespace": "apps", "gracePeriodSeconds": 0},
-            "Delete Pod web-0 in namespace apps",
+            "Delete Pod apps/web-0",
         ),
         ("kubernetes_admin", "events_list", {"namespace": "apps", "fieldSelector": "type=Warning"}, "type=Warning"),
         (

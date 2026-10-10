@@ -8,43 +8,89 @@ import type { ReactNode } from "react";
 import { type CallToolResult, CallToolResultView, toolValue } from "../call_tool_result";
 import type { ActionRequestView } from "../client";
 import { ACTION_PRESENTATION_CATALOG, isActionTitleRedundant } from "../presentation_catalog";
-import { actionDataPresentation } from "./action_data";
+import { fallbackActionPresentation } from "./action_data";
 import { renderPreview, type ArgumentsPreview } from "./entry";
 import { canApprovePullRequestInline, createPullRequestPane } from "./github/create_pull_request";
+import {
+  calendarEventResult,
+  calendarEventsResult,
+  createEventCollapsed,
+  createEventDetails,
+  createEventLabel,
+  createEventOpened,
+  deleteEventArguments,
+  getEventArguments,
+  listEventInstancesArguments,
+  listEventsArguments,
+  updateEventCollapsed,
+  updateEventDetails,
+  updateEventLabel,
+  updateEventOpened,
+} from "./google_calendar";
+import {
+  gmailDraftCollapsed,
+  gmailDraftDetails,
+  gmailDraftLabel,
+  gmailDraftOpened,
+  gmailDraftResult,
+  gmailThreadSearchCollapsed,
+  gmailThreadSearchLabel,
+  gmailThreadSearchOpened,
+  gmailThreadsResult,
+} from "./gmail";
+import {
+  productsCreateResult,
+  productsListArguments,
+  productsListResult,
+  quantityUnitsListArguments,
+  quantityUnitsListResult,
+  shoppingListItemsAddResult,
+  shoppingListItemsRemoveResult,
+  shoppingListResult,
+  stockAddResult,
+  stockEntryEditResult,
+  stockGetResult,
+  systemInfoArguments,
+  systemInfoResult,
+} from "./grocy";
 import { canQuickApproveEventsList, eventsListPane } from "./kubernetes_admin/events_list";
 import {
   canQuickApprovePodsInNamespace,
   podsInNamespaceCollapsed,
+  podsInNamespaceDetails,
   podsInNamespaceLabel,
   podsInNamespacePane,
-  podsInNamespacePreview,
   podsInNamespaceTitleIsRedundant,
 } from "./kubernetes_admin/pods_list_in_namespace";
+import { podsDeletePane, podsExecCollapsed, podsExecPane } from "./kubernetes_admin/pods_exec";
 import { canQuickApprovePodsLog, podsLogPreview } from "./kubernetes_admin/pods_log";
+import { resourcesApplyCollapsed, resourcesApplyManifest } from "./kubernetes_admin/resources_apply";
 import { canQuickApproveResourcesDelete, resourcesDeletePane } from "./kubernetes_admin/resources_delete";
-import { canQuickApproveResourcesGet, resourcesGetPane, resourcesGetPreview } from "./kubernetes_admin/resources_get";
+import { canQuickApproveResourcesGet, resourcesGetPane } from "./kubernetes_admin/resources_get";
 import { canQuickApproveResourcesList, resourcesListPane } from "./kubernetes_admin/resources_list";
 import { renderResultPreview, type ResultPreview } from "./result_entry";
 import { execArgumentsPreview, execCollapsedPreview, execResultPreview } from "./ssh/exec";
+import { calendarNodeArgumentsPreview } from "./tana";
 
 type ActionIdentity = ActionRequestView["action"];
 
 interface ActionPresentation {
-  /** Replaces the host's technical group/name label in the pane and full details header. */
-  label?: ArgumentsPreview;
+  /** Omit a slot for the generic fallback, set null to suppress it, or provide its own React DOM. */
+  label?: ArgumentsPreview | null;
   pane?: {
-    collapsed?: ArgumentsPreview;
-    opened?: ArgumentsPreview;
+    collapsed?: ArgumentsPreview | null;
+    opened?: ArgumentsPreview | null;
     requestTitleIsRedundant?: (title: string, args: unknown) => boolean;
   };
   details?: {
-    arguments?: ArgumentsPreview;
-    result?: ResultPreview;
+    arguments?: ArgumentsPreview | null;
+    result?: ResultPreview | null;
   };
 }
 
-// Maps rather than object literals, so no group or Action name reaches `Object.prototype`.
-const PRESENTATION_OVERRIDES: ReadonlyMap<string, ReadonlyMap<string, ActionPresentation>> = new Map([
+// React-only per-Action registry. Entries own arbitrary DOM for the slots they implement; they do
+// not describe data fields for a shared renderer. Maps avoid prototype-key lookups for Action names.
+const ACTION_RENDERERS: ReadonlyMap<string, ReadonlyMap<string, ActionPresentation>> = new Map([
   [
     "kubernetes_admin",
     new Map<string, ActionPresentation>([
@@ -57,19 +103,148 @@ const PRESENTATION_OVERRIDES: ReadonlyMap<string, ReadonlyMap<string, ActionPres
             opened: podsInNamespacePane,
             requestTitleIsRedundant: podsInNamespaceTitleIsRedundant,
           },
-          details: { arguments: podsInNamespacePreview },
+          details: { arguments: podsInNamespaceDetails },
         },
       ],
-      ["resources_get", { pane: { opened: resourcesGetPane }, details: { arguments: resourcesGetPreview } }],
-      ["resources_list", { pane: { opened: resourcesListPane } }],
-      ["resources_delete", { pane: { opened: resourcesDeletePane } }],
+      [
+        "resources_create_or_update",
+        {
+          pane: { collapsed: resourcesApplyCollapsed, opened: resourcesApplyManifest },
+          details: { arguments: resourcesApplyManifest },
+        },
+      ],
+      ["pods_delete", { pane: { opened: podsDeletePane }, details: { arguments: podsDeletePane } }],
+      [
+        "pods_exec",
+        {
+          pane: { collapsed: podsExecCollapsed, opened: podsExecPane },
+          details: { arguments: podsExecPane },
+        },
+      ],
+      ["resources_get", { pane: { opened: resourcesGetPane }, details: { arguments: resourcesGetPane } }],
+      ["resources_list", { pane: { opened: resourcesListPane }, details: { arguments: resourcesListPane } }],
+      ["resources_delete", { pane: { opened: resourcesDeletePane }, details: { arguments: resourcesDeletePane } }],
       ["pods_log", { pane: { opened: podsLogPreview }, details: { arguments: podsLogPreview } }],
-      ["events_list", { pane: { opened: eventsListPane } }],
+      ["events_list", { pane: { opened: eventsListPane }, details: { arguments: eventsListPane } }],
     ]),
   ],
   [
     "github",
-    new Map<string, ActionPresentation>([["create_pull_request", { pane: { opened: createPullRequestPane } }]]),
+    new Map<string, ActionPresentation>([
+      [
+        "create_pull_request",
+        { pane: { opened: createPullRequestPane }, details: { arguments: createPullRequestPane } },
+      ],
+    ]),
+  ],
+  [
+    "gmail",
+    // These static views need no Gmail read lookup. Subject/label resolution for thread and message
+    // actions stays on the submitted-data fallback until Agentplane has an explicit lookup surface.
+    new Map<string, ActionPresentation>([
+      [
+        "drafts_create",
+        {
+          label: gmailDraftLabel,
+          pane: { collapsed: gmailDraftCollapsed, opened: gmailDraftOpened },
+          details: { arguments: gmailDraftDetails, result: gmailDraftResult },
+        },
+      ],
+      [
+        "threads_list",
+        {
+          label: gmailThreadSearchLabel,
+          pane: { collapsed: gmailThreadSearchCollapsed, opened: gmailThreadSearchOpened },
+          details: { arguments: gmailThreadSearchOpened, result: gmailThreadsResult },
+        },
+      ],
+    ]),
+  ],
+  [
+    "google_calendar",
+    // Calendar renderers show calendar IDs as submitted; resolving a display name would add a lookup.
+    new Map<string, ActionPresentation>([
+      [
+        "create_event",
+        {
+          label: createEventLabel,
+          pane: { collapsed: createEventCollapsed, opened: createEventOpened },
+          details: { arguments: createEventDetails, result: calendarEventResult },
+        },
+      ],
+      [
+        "update_event",
+        {
+          label: updateEventLabel,
+          pane: { collapsed: updateEventCollapsed, opened: updateEventOpened },
+          details: { arguments: updateEventDetails, result: calendarEventResult },
+        },
+      ],
+      [
+        "get_event",
+        { pane: { opened: getEventArguments }, details: { arguments: getEventArguments, result: calendarEventResult } },
+      ],
+      ["delete_event", { pane: { opened: deleteEventArguments }, details: { arguments: deleteEventArguments } }],
+      [
+        "list_events",
+        {
+          pane: { opened: listEventsArguments },
+          details: { arguments: listEventsArguments, result: calendarEventsResult },
+        },
+      ],
+      [
+        "list_event_instances",
+        {
+          pane: { opened: listEventInstancesArguments },
+          details: { arguments: listEventInstancesArguments, result: calendarEventsResult },
+        },
+      ],
+    ]),
+  ],
+  [
+    "grocy_sf",
+    // These views format the submitted list options or returned data only. Grocy request views
+    // that resolve IDs to names remain on the host's generic argument renderer until Agentplane
+    // has an explicit lookup surface.
+    new Map<string, ActionPresentation>([
+      [
+        "products_list",
+        {
+          pane: { opened: productsListArguments },
+          details: { arguments: productsListArguments, result: productsListResult },
+        },
+      ],
+      [
+        "quantity_units_list",
+        {
+          pane: { opened: quantityUnitsListArguments },
+          details: { arguments: quantityUnitsListArguments, result: quantityUnitsListResult },
+        },
+      ],
+      [
+        "get_system_info",
+        {
+          pane: { opened: systemInfoArguments },
+          details: { arguments: systemInfoArguments, result: systemInfoResult },
+        },
+      ],
+      ["stock_add", { details: { result: stockAddResult } }],
+      ["stock_entry_edit", { details: { result: stockEntryEditResult } }],
+      ["stock_get", { details: { result: stockGetResult } }],
+      ["products_create", { details: { result: productsCreateResult } }],
+      ["shopping_list_get", { details: { result: shoppingListResult } }],
+      ["shopping_list_items_add", { details: { result: shoppingListItemsAddResult } }],
+      ["shopping_list_items_remove", { details: { result: shoppingListItemsRemoveResult } }],
+    ]),
+  ],
+  [
+    "tana",
+    new Map<string, ActionPresentation>([
+      [
+        "get_or_create_calendar_node",
+        { pane: { opened: calendarNodeArgumentsPreview }, details: { arguments: calendarNodeArgumentsPreview } },
+      ],
+    ]),
   ],
   // x/ssh_mcp_server/server.py, under the group name staging configures it as.
   [
@@ -94,7 +269,7 @@ const CATALOG_PRESENTATIONS: ReadonlyMap<string, ReadonlyMap<string, ActionPrese
       group = new Map();
       groups.set(spec.group, group);
     }
-    group.set(spec.name, actionDataPresentation(spec));
+    group.set(spec.name, fallbackActionPresentation(spec));
   }
   return groups;
 })();
@@ -118,7 +293,7 @@ const QUICK_APPROVALS: ReadonlyMap<string, ReadonlyMap<string, (args: unknown) =
 
 function presentation(action: ActionIdentity): ActionPresentation | undefined {
   const catalog = CATALOG_PRESENTATIONS.get(action.group)?.get(action.name);
-  const override = PRESENTATION_OVERRIDES.get(action.group)?.get(action.name);
+  const override = ACTION_RENDERERS.get(action.group)?.get(action.name);
   if (catalog === undefined) return override;
   if (override === undefined) return catalog;
   return {
