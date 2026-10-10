@@ -662,8 +662,8 @@ leases. The data is derived and rebuildable from the raw log.
 ### `APP_EVENT_LOG_COPIES_RETIRE` — drop the app's launch copies
 
 **Candidate; decided by the operator, 2026-10-10 PDT.** The app reads
-harness and cwd from the Sandbox Service's session record and the current model and last model
-activity from the History Service summary, then an explicit schema PR drops those `event_log`
+harness, cwd, model and last model activity from the History Service summary (the attached runner
+spec; absent until a runner attachment is folded), then an explicit schema PR drops those `event_log`
 columns, leaving it the Thread → Session link. `event_log.last_model_activity_at` is already
 neither written nor read (its CLEANUP tombstone) and drops in the same migration. `APP_SESSION_SCHEMA_RENAME` renames the same
 table; either may land first, and the second rebases its migration.
