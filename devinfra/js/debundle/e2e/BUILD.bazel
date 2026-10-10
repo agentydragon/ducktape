@@ -36,6 +36,10 @@ rust_library(
 )
 
 debundle_e2e_test(name = "chunk_admission_test")
+debundle_e2e_test(
+    name = "impure_call_reason_growth_test",
+    deps = ["@crates//:serde_json"],
+)
 
 debundle_e2e_test(name = "comma_list_owner_split_test")
 

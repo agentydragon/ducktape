@@ -14,7 +14,10 @@ use super::*;
 ///
 /// Reasons collected by `Purity::worst` are concatenated, so a
 /// composite like `f() + g()` records both `UnknownCall` reasons
-/// (with their respective spans), rather than only the first.
+/// (with their respective spans), rather than only the first. A call
+/// to a known impure function contributes one `ImpureFunctionCall`
+/// reason at its own call site; copying the callee's transitive list
+/// would duplicate reasons along branching call graphs.
 #[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum Purity {
@@ -49,6 +52,10 @@ pub enum PurityRule {
     ThrowStmt,
     DebuggerStmt,
     UnknownCall,
+    /// A direct call to a chunk-top or imported function whose body was
+    /// classified as impure. Record this call site once rather than copying
+    /// the callee's (possibly shared) transitive reason list.
+    ImpureFunctionCall,
     UnknownNew,
     UnknownMember,
     SuperProp,
@@ -91,6 +98,7 @@ impl PurityRule {
             Self::ThrowStmt => "throw_stmt",
             Self::DebuggerStmt => "debugger_stmt",
             Self::UnknownCall => "unknown_call",
+            Self::ImpureFunctionCall => "impure_function_call",
             Self::UnknownNew => "unknown_new",
             Self::UnknownMember => "unknown_member",
             Self::SuperProp => "super_prop",

@@ -248,9 +248,9 @@ impl ChunkCodeGraph {
     /// Purity of the chunk-local function bound to `name`, if any.
     /// Returns `None` for non-function bindings (imports, vars,
     /// classes) and for names not bound at chunk top.
-    pub(crate) fn function_purity(&self, name: &str) -> Option<Purity> {
+    pub(crate) fn function_purity(&self, name: &str) -> Option<&Purity> {
         match self.bindings.get(name)? {
-            ChunkBinding::Function { purity } => Some(purity.clone()),
+            ChunkBinding::Function { purity } => Some(purity),
             ChunkBinding::PlainData => None,
         }
     }
@@ -276,8 +276,8 @@ impl ChunkCodeGraph {
 
     /// Cross-module purity verdict for an imported function binding,
     /// when the program-level oracle resolved one.
-    pub(crate) fn imported_purity(&self, name: &str) -> Option<Purity> {
-        self.imported_purities.get(name).cloned()
+    pub(crate) fn imported_purity(&self, name: &str) -> Option<&Purity> {
+        self.imported_purities.get(name)
     }
 
     /// Whether `<recv>.<prop>(args)` is admitted as pure by an author

@@ -178,7 +178,7 @@ pub fn resolve_imported_purities(
                     continue;
                 };
                 if export_purity[&slot_key].is_pure() && !purity.is_pure() {
-                    export_purity.insert(slot_key, purity);
+                    export_purity.insert(slot_key, purity.clone());
                     changed = true;
                 }
             }

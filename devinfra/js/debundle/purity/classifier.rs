@@ -621,6 +621,18 @@ pub(crate) fn classify_fluent_chain(
 /// `Expr::Call` and `OptChainBase::Call` is the null-coalesce
 /// short-circuit on the optional form, which is irrelevant for
 /// side-effect classification.
+fn known_function_call_purity(callee: &Purity, name: &str, span: Span) -> Purity {
+    if callee.is_pure() {
+        Purity::Pure
+    } else {
+        Purity::from_reason_with_detail(
+            PurityRule::ImpureFunctionCall,
+            span,
+            format!("function `{name}` has an impure body"),
+        )
+    }
+}
+
 fn classify_callee_call(
     callee_expr: &Expr,
     args: &[ExprOrSpread],
@@ -704,38 +716,31 @@ fn classify_callee_call(
     }
     // Chunk-local function declaration: consult the per-chunk
     // function-body purity cache. `Pure` callee + Pure args → Pure;
-    // non-Pure callee inherits its reasons (so the chain points
-    // back through to the unhandled construct in the function body).
+    // non-Pure callee contributes one reason at this call site. Copying its
+    // transitive reasons here makes branching call graphs exponential and
+    // can resolve callee spans against the wrong chunk's source file.
     // A body-local binding of the same name shadows the chunk-top
     // function — the called value is unknown then.
     if let Expr::Ident(ident) = callee_expr
         && !local_shadowed.contains(ident.sym.as_ref())
         && let Some(callee_purity) = graph.function_purity(ident.sym.as_ref())
     {
-        return callee_purity.worst(all_args_pure(
-            args,
-            shadowed,
-            local_shadowed,
-            declared_pure,
-            graph,
-        ));
+        return known_function_call_purity(callee_purity, ident.sym.as_ref(), call_span).worst(
+            all_args_pure(args, shadowed, local_shadowed, declared_pure, graph),
+        );
     }
     // Imported function with a cross-module purity verdict from the
     // program-level oracle (`imported_purities`). Same shape as the
     // chunk-local arm: a `Pure` import + Pure args → Pure; an impure
-    // import inherits its reasons. A body-local binding of the same name
+    // import contributes one call-site reason. A body-local binding of the same name
     // shadows the import, so the called value is unknown then.
     if let Expr::Ident(ident) = callee_expr
         && !local_shadowed.contains(ident.sym.as_ref())
         && let Some(callee_purity) = graph.imported_purity(ident.sym.as_ref())
     {
-        return callee_purity.worst(all_args_pure(
-            args,
-            shadowed,
-            local_shadowed,
-            declared_pure,
-            graph,
-        ));
+        return known_function_call_purity(callee_purity, ident.sym.as_ref(), call_span).worst(
+            all_args_pure(args, shadowed, local_shadowed, declared_pure, graph),
+        );
     }
     // `Recv.method(args)` against PURE_STATIC_CALLS.
     if let Expr::Member(member) = callee_expr
