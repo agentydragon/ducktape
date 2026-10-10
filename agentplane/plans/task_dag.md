@@ -991,6 +991,8 @@ flowchart TD
     APP_ELECTRIC_RETIRE[Blocked: remove Electric's access to the app database]
     SANDBOX_BINDING_ANNOTATION_RENAME[Candidate: write session_defaults, not thread_defaults]
     MIGRATION_TOOLING_RETIRE[Candidate: delete archive-migration tools and grants]
+    PROTO_DIRECTORY[Unscheduled: cross-component protos under one proto directory]
+    RUNNER_OUTBOUND_CHANNEL[Outbound command delivery peers]
     HISTORY_WRITE_HANDOFF[History Service ingester takes over]
     SANDBOX_HISTORY_READS_RETIRE[Delete Sandbox Service history reads]
     SANDBOX_LOCAL_HISTORY_RETIRE[Delete Sandbox Service ingester and store]
@@ -1009,6 +1011,8 @@ flowchart TD
     SANDBOX_HISTORY_READS_RETIRE --> HISTORY_PROTO_OWNERSHIP
     HISTORY_PROJECTION_NAMING -. cheapest before the tables exist .-> FOLD_SHADOW
     APP_PROJECTOR_RETIRE --> APP_ELECTRIC_RETIRE
+    HISTORY_PROTO_OWNERSHIP -. after proto churn settles .-> PROTO_DIRECTORY
+    RUNNER_OUTBOUND_CHANNEL -. after proto churn settles .-> PROTO_DIRECTORY
 ```
 
 ### `SESSION_REGISTRY_PLACEMENT` — where the Sandbox Service keeps Session records
@@ -1088,6 +1092,17 @@ and keep reading both for one release, then delete the translation.
 **Candidate.** Inventory tools and grants that only served the archive cutover and delete them,
 starting with the operator-run preflight `sandbox_service/session_history/verify.py`
 (`:verify_bin`) and its test.
+
+### `PROTO_DIRECTORY` — protocols in one place
+
+**Unscheduled; operator direction, 2026-10-10 PDT.** Adopt google3's `proto/` convention: protobuf
+messages and gRPC services that cross components live in a dedicated proto location rather than
+inside one implementing package. Candidates: `sandbox_service/protocol.proto`,
+`history_service/protocol.proto`, `runner/protocol.proto`, the `RunnerChannel` service
+([runner channel](../docs/runner_channel.md), being added by the dial-out lane), and
+the shared `protocol/` messages already outside any service. Decide the location and Bazel
+package layout, then move each file with its generated-code imports in one change. Wait until the
+runner channel and History Service proto churn lands so moves do not conflict with open lanes.
 
 ## Scope and retirement of stale gates
 
