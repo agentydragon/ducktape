@@ -8,9 +8,10 @@ prometheus.remote_write "mimir" {
     url = sys.env("MIMIR_PUSH_URL")
   }
 
-  // The default 8h would drop the oldest unsent samples of a longer outage.
+  // The default 8h would drop the oldest unsent samples of a longer outage. Matches Mimir's
+  // `out_of_order_time_window`, past which replayed samples would be rejected anyway.
   wal {
-    max_keepalive_time = "48h"
+    max_keepalive_time = "720h"
   }
 }
 
