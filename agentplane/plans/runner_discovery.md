@@ -154,7 +154,7 @@ message mappings separately. A replay cursor is not part of command submission i
 The [admission plan](command_admission.md) owns persistence/retry semantics. The sequence intentionally
 separates persistence, command transport and event transport rather than making one large migration:
 
-1. `SESSION_COMMAND_CORE` / `SESSION_COMMAND_SUBMISSION`: ship durable admission behind a transport
+1. `SESSION_COMMAND_SUBMISSION`: ship durable admission behind a transport
    interface using the existing `Attach`-based relay and existing service-owned spool reader. The
    adapter can internally use replay to find the receipt; the public durable submission contract
    does not expose that cursor. Reuse is not a new inbound `InsertCommand`/`ListenSpool` rollout.

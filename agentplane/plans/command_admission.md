@@ -105,9 +105,9 @@ attempt, with its precise deadline/ownership semantics reviewed before channel i
 or a missed notification must not turn into an offline pending-command drain. Expiry/cancellation
 cannot retract a command already sent; persist and reconcile late admission receipts.
 
-As of 2026-10-09 PDT, the operator discussion and draft
-[#9573](https://github.com/agentydragon/ducktape/pull/9573) report internal admission work in progress,
-not a deployed public handler or verified runtime test result. New inbound RPC prototypes are not a
+The admission store (`sandbox_service/commands/`) persists submissions in the `sandbox_commands`
+database with its own per-Session reconciliation cursor, since history lives in another database
+with no shared transaction. No public handler uses it yet. New inbound RPC prototypes are not a
 selected rollout prerequisite. This plans-only change neither applies schema nor changes traffic.
 
 Acceptance covers authenticated destination/retry authorization, immutable/concurrent retries,
