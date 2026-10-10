@@ -1377,7 +1377,6 @@ function SyncedThread({
   thread,
   available,
   inventory,
-  manageGlobalChrome,
   onStatusChange,
 }: {
   threadId: string;
@@ -1385,7 +1384,6 @@ function SyncedThread({
   available: boolean;
   /** The sandbox inventory's stream, which the page's one stale notice covers too. */
   inventory: StreamStatus;
-  manageGlobalChrome: boolean;
   onStatusChange: (status: ThreadTabTitleStatus) => void;
 }): JSX.Element {
   const { window: shown, error } = useThreadSync().useThread();
@@ -1541,7 +1539,6 @@ export function ProjectedSession({
               thread={thread}
               available={inventoryFresh && sandboxReady(sandbox)}
               inventory={environment.stream}
-              manageGlobalChrome={manageGlobalChrome}
               onStatusChange={setTabStatus}
             />
           </sync.Thread>
