@@ -188,11 +188,17 @@ class AgentplaneFixture:
     async def pending_commands(self) -> None:
         await self.page.evaluate("() => window.agentplaneVisual.pendingCommands()")
 
+    async def pending_input_echo(self) -> None:
+        await self.page.evaluate("() => window.agentplaneVisual.pendingInputEcho()")
+
     async def command_outcomes(self) -> None:
         await self.page.evaluate("() => window.agentplaneVisual.commandOutcomes()")
 
     async def remember_pending_input(self) -> None:
         await self.page.evaluate("() => window.agentplaneVisual.rememberPendingInput()")
+
+    async def remember_input_echo(self) -> None:
+        await self.page.evaluate("() => window.agentplaneVisual.rememberInputEcho()")
 
     async def remember_settled_commands(self) -> None:
         await self.page.evaluate("() => window.agentplaneVisual.rememberSettledCommands()")

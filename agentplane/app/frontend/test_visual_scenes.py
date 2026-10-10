@@ -389,6 +389,22 @@ async def test_session_pending(view: VisualPage, app: AgentplaneFixture) -> None
 
 
 @pytest.mark.parametrize("viewport", [DESKTOP, MOBILE], ids=["desktop", "mobile"])
+async def test_session_pending_input_echo(view: VisualPage, app: AgentplaneFixture) -> None:
+    await app.pending_input_echo()
+    await app.remember_input_echo()
+    await app.mount_thread(RUNNING_THREAD)
+    await view.page.wait_for_selector(
+        '[data-command-id="locally-retained"] .agentplane-verbatim:has-text("This browser already knows the text it sent.")',
+        state="attached",
+    )
+    await view.page.wait_for_selector(
+        '[data-command-id="remote-pending"] :text("Loading complete revision…")', state="attached"
+    )
+    await view.check(context="fixture ready")
+    await view.capture()
+
+
+@pytest.mark.parametrize("viewport", [DESKTOP, MOBILE], ids=["desktop", "mobile"])
 async def test_session_pending_failed(view: VisualPage, app: AgentplaneFixture) -> None:
     await app.time_out_command_admission()
     await app.pending_commands()

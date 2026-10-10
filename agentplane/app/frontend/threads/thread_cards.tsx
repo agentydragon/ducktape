@@ -1,6 +1,6 @@
 import { Alert, Badge, Box, Button, Group, Paper, Stack, Text, type MantineColor } from "@mantine/core";
 import { ItemKind, RecoveryDisposition } from "../../../protocol/event_pb";
-import { type JSX, type ReactNode, useLayoutEffect, useRef, useState } from "react";
+import { type JSX, type ReactNode, useEffect, useLayoutEffect, useRef, useState } from "react";
 
 import { ClampedBlock, lineCount } from "../clamped_block";
 import { InlineCode } from "../code_block";
@@ -26,26 +26,48 @@ export function Body({
   reference,
   format,
   streaming = false,
+  fallbackText,
+  onBodyLoaded,
 }: {
   reference: PayloadRef | null;
   format: BodyFormat;
   streaming?: boolean;
+  fallbackText?: string;
+  onBodyLoaded?: () => void;
 }): JSX.Element {
-  if (!reference) return <Text c="dimmed">Body not observed</Text>;
-  return <PayloadText reference={reference} format={format} streaming={streaming} />;
+  if (!reference) {
+    return fallbackText !== undefined ? (
+      <VerbatimText text={fallbackText} />
+    ) : (
+      <Text c="dimmed">Body not observed</Text>
+    );
+  }
+  return (
+    <PayloadText
+      reference={reference}
+      format={format}
+      streaming={streaming}
+      fallbackText={fallbackText}
+      onBodyLoaded={onBodyLoaded}
+    />
+  );
 }
 
 function PayloadText({
   reference,
   format,
   streaming,
+  fallbackText,
+  onBodyLoaded,
 }: {
   reference: PayloadRef;
   format: BodyFormat;
   streaming: boolean;
+  fallbackText?: string;
+  onBodyLoaded?: () => void;
 }): JSX.Element {
   return (
-    <PayloadView reference={reference}>
+    <PayloadView reference={reference} fallbackText={fallbackText} onBodyLoaded={onBodyLoaded}>
       {(body) => <FormattedBody body={body} format={format} streaming={streaming} />}
     </PayloadView>
   );
@@ -56,11 +78,23 @@ function PayloadText({
 function PayloadView({
   reference,
   children,
+  fallbackText,
+  onBodyLoaded,
 }: {
   reference: PayloadRef;
   children: (body: string) => ReactNode;
+  fallbackText?: string;
+  onBodyLoaded?: () => void;
 }): JSX.Element {
   const { body, error, retry } = useThreadSync().usePayload(reference);
+  const loadedReference = `${reference.projection_epoch}:${reference.owner_id}:${reference.field}:${reference.generation}:${reference.revision_cursor}`;
+  const reportedLoadedReference = useRef<string | null>(null);
+  useEffect(() => {
+    if (body !== null && reportedLoadedReference.current !== loadedReference) {
+      reportedLoadedReference.current = loadedReference;
+      onBodyLoaded?.();
+    }
+  }, [body, loadedReference, onBodyLoaded]);
   return (
     <>
       {error && (
@@ -68,7 +102,9 @@ function PayloadView({
           Payload synchronization stopped: {error} <button onClick={retry}>Retry payload synchronization</button>
         </p>
       )}
-      {body === null ? (
+      {body === null && fallbackText !== undefined ? (
+        <VerbatimText text={fallbackText} />
+      ) : body === null ? (
         <Text c="dimmed" aria-busy={error === null}>
           Loading complete revision…
         </Text>
@@ -136,6 +172,8 @@ export function UserInputBubble({
   entity,
   commandId,
   text,
+  fallbackText,
+  onFallbackLoaded,
   progress,
   pending = false,
   phase,
@@ -145,6 +183,8 @@ export function UserInputBubble({
   entity?: ThreadEntity;
   commandId?: string;
   text?: string;
+  fallbackText?: string;
+  onFallbackLoaded?: () => void;
   progress?: JSX.Element;
   pending?: boolean;
   phase?: "local" | "pending" | "failed" | "noop" | "confirmed";
@@ -180,7 +220,12 @@ export function UserInputBubble({
       >
         {entity && <EvidenceToggle entity={entity} />}
         {entity ? (
-          <Body reference={entity.inputRef} format="text" />
+          <Body
+            reference={entity.inputRef}
+            format="text"
+            fallbackText={fallbackText}
+            onBodyLoaded={fallbackText === undefined ? undefined : onFallbackLoaded}
+          />
         ) : text !== undefined ? (
           <VerbatimText text={text} />
         ) : null}
@@ -514,10 +559,14 @@ export function EntityCard({
   threadId,
   entity,
   live,
+  fallbackText,
+  onFallbackLoaded,
 }: {
   threadId: string;
   entity: ThreadEntity;
   live: boolean;
+  fallbackText?: string;
+  onFallbackLoaded?: () => void;
 }): JSX.Element {
   // Computed unconditionally (hooks can't follow the entity-kind branches below): null, and so
   // always closed, for anything but a reasoning step with a body to disclose.
@@ -531,13 +580,23 @@ export function EntityCard({
       ? `${entity.projectionEpoch}:${entity.entityId}:discarded`
       : null;
   if (entity.entityKind === "confirmed_input") {
-    return <UserInputBubble threadId={threadId} entity={entity} phase="confirmed" />;
+    return (
+      <UserInputBubble
+        threadId={threadId}
+        entity={entity}
+        fallbackText={fallbackText}
+        onFallbackLoaded={onFallbackLoaded}
+        phase="confirmed"
+      />
+    );
   }
   if (pendingSentMessage(entity)) {
     return (
       <UserInputBubble
         threadId={threadId}
         entity={entity}
+        fallbackText={fallbackText}
+        onFallbackLoaded={onFallbackLoaded}
         phase="pending"
         pending
         progress={<CommandProgress stage="admitted" subject="input" />}

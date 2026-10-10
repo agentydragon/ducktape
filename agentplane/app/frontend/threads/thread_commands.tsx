@@ -9,7 +9,7 @@ import { EvidencePanel, EvidenceToggle, revealEvidenceOnTap } from "./thread_evi
 import { LocalCommands, type LocalCommand, type LocalCommandSnapshot } from "./local_commands";
 import { decimalBigInt, useThreadSync, type ThreadEntity } from "./thread_sync";
 
-const EMPTY_LOCAL: LocalCommandSnapshot = { commands: [], error: null };
+const EMPTY_LOCAL: LocalCommandSnapshot = { commands: [], inputEchoes: [], error: null };
 
 export interface CommandIssue {
   kind: "refused" | "unconfirmed";
@@ -175,12 +175,16 @@ export function LocalControlCommands({
 export function PendingInputMessages({
   commands,
   entities,
+  inputEchoes,
+  onInputEchoLoaded,
   errors,
   store,
   deliver,
 }: {
   commands: LocalCommand[];
   entities: ThreadEntity[];
+  inputEchoes?: ReadonlyMap<string, string>;
+  onInputEchoLoaded?: (commandId: string) => void;
   errors: ReadonlyMap<string, CommandIssue>;
   store: LocalCommands;
   deliver: (value: LocalCommand) => Promise<void>;
@@ -264,6 +268,8 @@ export function PendingInputMessages({
             key={row.entityId}
             threadId={row.threadId}
             entity={row}
+            fallbackText={inputEchoes?.get(row.entityId)}
+            onFallbackLoaded={onInputEchoLoaded ? () => onInputEchoLoaded(row.entityId) : undefined}
             phase={failed ? "failed" : noop ? "noop" : "confirmed"}
             progress={
               <CommandOutcome

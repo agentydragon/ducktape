@@ -1004,7 +1004,10 @@ it("keeps a still-pending sent message out of the pending-commands box, since it
 async function renderHistory(
   segments: ThreadEntity[],
   live: boolean,
-  bodies: Record<string, string> = {}
+  bodies: Record<string, string> = {},
+  inputEchoes: ReadonlyMap<string, string> = new Map(),
+  loading: ReadonlySet<string> = new Set(),
+  onInputEchoLoaded?: (commandId: string) => void
 ): Promise<HTMLElement[]> {
   const container = document.createElement("div");
   document.body.append(container);
@@ -1013,11 +1016,17 @@ async function renderHistory(
   await act(async () =>
     root.render(
       <MantineProvider env="test">
-        <ThreadSyncContext.Provider value={serving(new Map(Object.entries(bodies)))}>
+        <ThreadSyncContext.Provider value={serving(new Map(Object.entries(bodies)), new Map(), loading)}>
           <RetainedDisclosureProvider>
             {historyRows(segments).map((row) => (
               <section key={rowKey(row)}>
-                <HistoryRowView threadId="test-thread" row={row} live={() => live} />
+                <HistoryRowView
+                  threadId="test-thread"
+                  row={row}
+                  live={() => live}
+                  inputEchoes={inputEchoes}
+                  onInputEchoLoaded={onInputEchoLoaded}
+                />
               </section>
             ))}
           </RetainedDisclosureProvider>
@@ -1027,6 +1036,57 @@ async function renderHistory(
   );
   return [...container.querySelectorAll("section")];
 }
+
+function pendingInput(id: string, cursor: string): ThreadEntity {
+  const row = entity(
+    "command",
+    {
+      operation: "submit_input",
+      outcome: "pending",
+      outcome_cursor: null,
+      outcome_reason: null,
+      requested_value: null,
+    },
+    { inputRef: reference(id, "command_input") }
+  );
+  row.entityId = id;
+  row.cursor = cursor;
+  row.revisionCursor = cursor;
+  return row;
+}
+
+it("uses this browser's submitted text while the echo loads and leaves remote input loading", async () => {
+  const localId = "local-input";
+  const remoteId = "remote-input";
+  const sections = await renderHistory(
+    [pendingInput(localId, "1"), pendingInput(remoteId, "2")],
+    false,
+    {},
+    new Map([[localId, "Text submitted by this browser."]]),
+    new Set([`${localId}:command_input`, `${remoteId}:command_input`])
+  );
+  const local = sections.find((section) => section.querySelector(`[data-command-id="${localId}"]`))!;
+  const remote = sections.find((section) => section.querySelector(`[data-command-id="${remoteId}"]`))!;
+
+  expect(local.querySelector(".agentplane-verbatim")?.textContent).toBe("Text submitted by this browser.");
+  expect(local.textContent).not.toContain("Loading complete revision");
+  expect(remote.textContent).toContain("Loading complete revision");
+});
+
+it("replaces locally known text with the service echo once that payload arrives", async () => {
+  const onInputEchoLoaded = vi.fn();
+  const [section] = await renderHistory(
+    [pendingInput("local-input", "1")],
+    false,
+    { "local-input:command_input": "Text returned by the service." },
+    new Map([["local-input", "Text submitted by this browser."]]),
+    new Set(),
+    onInputEchoLoaded
+  );
+
+  expect(section.querySelector(".agentplane-verbatim")?.textContent).toBe("Text returned by the service.");
+  expect(onInputEchoLoaded).toHaveBeenCalledWith("local-input");
+});
 
 it("folds a run of tool calls and reasoning behind its summary until it is opened", async () => {
   const [run] = await renderHistory(

@@ -128,7 +128,8 @@ export function entity(
  * (by `owner:field`), whose reads failed before any of them arrived and which `retry` reads again. */
 export function serving(
   bodies: ReadonlyMap<string, string>,
-  stopped: ReadonlyMap<string, () => void> = new Map()
+  stopped: ReadonlyMap<string, () => void> = new Map(),
+  loading: ReadonlySet<string> = new Set()
 ): ThreadSync {
   const empty = threadState({ rows: [] });
   return {
@@ -139,6 +140,7 @@ export function serving(
       const key = `${owner_id}:${field}`;
       const retry = stopped.get(key);
       if (retry) return { body: null, error: "test read failure", retry };
+      if (loading.has(key)) return { body: null, error: null, retry: () => {} };
       const body = bodies.get(key);
       if (body === undefined) throw new Error(`test fixture has no ${field} body for ${owner_id}`);
       return { body, error: null, retry: () => {} };

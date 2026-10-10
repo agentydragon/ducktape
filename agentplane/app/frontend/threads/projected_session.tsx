@@ -202,10 +202,14 @@ export function HistoryRowView({
   threadId,
   row,
   live,
+  inputEchoes,
+  onInputEchoLoaded,
 }: {
   threadId: string;
   row: HistoryRow;
   live: (entity: ThreadEntity) => boolean;
+  inputEchoes?: ReadonlyMap<string, string>;
+  onInputEchoLoaded?: (commandId: string) => void;
 }): JSX.Element {
   const [first] = row.entities;
   if (row.kind === "setup") return <SetupView threadId={threadId} entities={row.entities} live={live} />;
@@ -217,10 +221,26 @@ export function HistoryRowView({
     (row.entities.length === 1 &&
       (row.kind === "lifecycle_group" || ("kind" in first.state && first.state.kind === ItemKind.REASONING)));
   if (lone) {
+    const echoCommandId = pendingSentMessage(first)
+      ? first.entityId
+      : first.entityKind === "confirmed_input" && "origin_command_ids" in first.state
+        ? first.state.origin_command_ids.find((id) => inputEchoes?.has(id))
+        : undefined;
+    const fallbackText = echoCommandId === undefined ? undefined : inputEchoes?.get(echoCommandId);
     return first.entityKind === "command" && !pendingSentMessage(first) ? (
       <ProjectedControlCommand threadId={threadId} row={first} />
     ) : (
-      <EntityCard threadId={threadId} entity={first} live={live(first)} />
+      <EntityCard
+        threadId={threadId}
+        entity={first}
+        live={live(first)}
+        fallbackText={fallbackText}
+        onFallbackLoaded={
+          fallbackText === undefined || echoCommandId === undefined || !onInputEchoLoaded
+            ? undefined
+            : () => onInputEchoLoaded(echoCommandId)
+        }
+      />
     );
   }
   return row.kind === "run" ? (
@@ -249,6 +269,8 @@ const ESTIMATED_ROW_HEIGHT = 180;
 function VirtualizedHistory({
   threadId,
   rows,
+  inputEchoes,
+  onInputEchoLoaded,
   tail,
   running,
   activeTurn,
@@ -256,6 +278,8 @@ function VirtualizedHistory({
 }: {
   threadId: string;
   rows: HistoryRow[];
+  inputEchoes: ReadonlyMap<string, string>;
+  onInputEchoLoaded: (commandId: string) => void;
   /** Local input without an admission cursor yet: shown provisionally after ordered history. */
   tail?: ReactNode;
   running: boolean;
@@ -924,6 +948,8 @@ function VirtualizedHistory({
                 threadId={threadId}
                 row={row}
                 live={(entity) => running && entity.turnId === activeTurn}
+                inputEchoes={inputEchoes}
+                onInputEchoLoaded={onInputEchoLoaded}
               />
             </div>
           ) : null;
@@ -1023,6 +1049,10 @@ function ProjectedSessionBody({
   const [notificationsOpen, setNotificationsOpen] = useState(false);
   const sync = useThreadSync().useThread();
   const commands = useProjectedCommands(threadId, entities);
+  const onInputEchoLoaded = useCallback(
+    (commandId: string) => commands.store.acknowledgeEcho(commandId),
+    [commands.store]
+  );
   const openDebug = useOpenChronologicalDebug();
   const view = entities.find((row) => row.entityKind === "view_state");
   const controls = view && "controls" in view.state ? view.state.controls : null;
@@ -1084,11 +1114,19 @@ function ProjectedSessionBody({
       )
   );
   const localCommands = commands.local.commands;
+  const inputEchoes = new Map(commands.local.inputEchoes.map(({ commandId, text }) => [commandId, text]));
+  for (const local of localCommands) {
+    if (local.command.operation.case === "submitInput") {
+      inputEchoes.set(local.command.commandId, local.command.operation.value.text);
+    }
+  }
   const commandTail = (
     <Stack gap="xs">
       <PendingInputMessages
         commands={localCommands}
         entities={entities}
+        inputEchoes={inputEchoes}
+        onInputEchoLoaded={onInputEchoLoaded}
         errors={commands.errors}
         store={commands.store}
         deliver={commands.deliver}
@@ -1166,6 +1204,8 @@ function ProjectedSessionBody({
         <VirtualizedHistory
           threadId={threadId}
           rows={rows}
+          inputEchoes={inputEchoes}
+          onInputEchoLoaded={onInputEchoLoaded}
           tail={commandTail}
           running={running}
           activeTurn={activeTurn}

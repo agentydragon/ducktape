@@ -49,6 +49,9 @@ it("retains ahead-of-prefix HTTP admission evidence until matching replay takes 
   expect(restored.getSnapshot().commands).toHaveLength(1);
   restored.observePrefix([admitted]);
   expect(restored.getSnapshot().commands).toEqual([]);
+  expect(restored.getSnapshot().inputEchoes).toEqual([
+    { commandId: COMMAND.commandId, text: "  exact text\nsecond line  " },
+  ]);
   expect(new LocalCommands("thread").getSnapshot().commands).toEqual([]);
 });
 
@@ -58,6 +61,27 @@ it("does not resurrect local input when replay wins the race with its HTTP respo
   store.observePrefix([admission()]);
   store.acknowledge(COMMAND, admission());
   expect(store.getSnapshot().commands).toEqual([]);
+  expect(store.getSnapshot().inputEchoes).toEqual([
+    { commandId: COMMAND.commandId, text: "  exact text\nsecond line  " },
+  ]);
+  expect(localStorage.length).toBe(1);
+});
+
+it("keeps a projected local input available until its echo body is fetched", () => {
+  const store = new LocalCommands("thread");
+  store.remember(COMMAND);
+  store.observeCommandIds(new Set([COMMAND.commandId]));
+
+  expect(store.getSnapshot().commands).toEqual([]);
+  expect(store.getSnapshot().inputEchoes).toEqual([
+    { commandId: COMMAND.commandId, text: "  exact text\nsecond line  " },
+  ]);
+  expect(new LocalCommands("thread").getSnapshot().inputEchoes).toEqual([
+    { commandId: COMMAND.commandId, text: "  exact text\nsecond line  " },
+  ]);
+
+  store.acknowledgeEcho(COMMAND.commandId);
+  expect(store.getSnapshot().inputEchoes).toEqual([]);
   expect(localStorage.length).toBe(0);
 });
 

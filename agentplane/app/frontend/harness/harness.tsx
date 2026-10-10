@@ -1176,6 +1176,22 @@ function commandProgressRows(threadId: string): Record<string, unknown>[] {
   ];
 }
 
+/** Local and remote pending inputs whose payload references are present but bodies are withheld. */
+function pendingInputEchoRows(threadId: string): Record<string, unknown>[] {
+  const local = command(
+    15,
+    "locally-retained",
+    "submit_input",
+    "pending",
+    null,
+    "This browser already knows the text it sent."
+  );
+  const remote = command(16, "remote-pending", "submit_input", "pending", null, "This text is still unknown here.");
+  payloadBodies.delete(payloadKey("locally-retained", "command_input", "1"));
+  payloadBodies.delete(payloadKey("remote-pending", "command_input", "1"));
+  return [{ ...viewState(16, "t-input-echo"), thread_id: threadId }, local, remote];
+}
+
 /**
  * The statuses the main thread fixture does not produce on its own: a standalone failed tool call, a
  * run whose reasoning is still streaming beside a tool call, and queued commands. Both runs render
@@ -1677,6 +1693,19 @@ function rememberPendingInput(): void {
       operation: {
         case: "submitInput",
         value: { text: "Continue when ready. This message has no saved confirmation yet." },
+      },
+    })
+  );
+}
+
+function rememberInputEcho(): void {
+  const local = new LocalCommands(THREADS[2].id);
+  local.remember(
+    create(CommandSchema, {
+      commandId: "locally-retained",
+      operation: {
+        case: "submitInput",
+        value: { text: "This browser already knows the text it sent." },
       },
     })
   );
@@ -2898,10 +2927,14 @@ const visualHarness = {
   pendingCommands(): void {
     threadEntityRows = (id) => statesRows(id);
   },
+  pendingInputEcho(): void {
+    threadEntityRows = pendingInputEchoRows;
+  },
   commandOutcomes(): void {
     threadEntityRows = (id) => statesRows(id, true);
   },
   rememberPendingInput,
+  rememberInputEcho,
   rememberSettledCommands,
   completedRollout(): void {
     mapThread = (thread) =>
