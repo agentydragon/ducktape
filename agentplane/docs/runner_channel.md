@@ -223,22 +223,20 @@ endpoints: [{ addresses: [<owning replica's Pod IP>] }]
 ports: [{ name: grpc, port: 8080 }]
 ```
 
-The Sandbox carries `agentplane.ducktape.dev/runner-operations: commands,events`, the operations any
-connection has agreed; it only grows. Agent-sandbox already names a Service after the Sandbox, hence
-`-control`.
+No routing record is kept: once every runner dials out, as the operator decided for a clean cutover
+(2026-10-10 PDT), nothing is routed inbound. Agent-sandbox already names a Service after the
+Sandbox, hence `-control`.
 
 - **Accepting a connection.** After authenticating `Hello`, the replica updates the Lease with the
   `resourceVersion` it read: holder itself, transitions plus one, fresh renew time and annotations.
   A conflict means another replica won a race; it re-reads and retries, and the runner's own
-  newest-connection rule decides which stream survives. It then adds the agreed operations to the
-  Sandbox annotation, writes the EndpointSlice with the new epoch, and only then sends `Welcome`.
+  newest-connection rule decides which stream survives. It then writes the EndpointSlice with the new epoch, and only then sends `Welcome`.
   An EndpointSlice write carrying an older epoch than the one stored is skipped.
 - **Liveness.** The holder renews the Lease with each liveness write. A renew that finds another
   holder or a newer epoch means the connection was superseded, and the replica ends the stream with
   `ABORTED`. A runner counts as connected while `renewTime` is under 30 s old.
-- **Reading.** Every replica keeps an informer on Leases and Sandboxes in the namespace: routing
-  reads the operations annotation, `SubmitCommand` reads liveness, and the reconciler picks the
-  Leases it holds. No read goes to the API server per request.
+- **Reading.** Every replica keeps an informer on Leases in the namespace: `SubmitCommand` reads
+  liveness, and the reconciler picks the Leases it holds. No read goes to the API server per request.
 - **Stale endpoints.** During a roll, DNS can return a replica that no longer holds the stream for a
   few seconds; it refuses, and the client retries. Nothing reads the endpoint as proof of
   ownership.

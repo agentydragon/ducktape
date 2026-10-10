@@ -324,22 +324,24 @@ journal.
 
 ```mermaid
 flowchart LR
-    RUNNER_OUTBOUND_SPOOL[Candidate: move spool delivery onto channel]
-    RUNNER_OUTBOUND_LIFECYCLE[Candidate: migrate remaining lifecycle consumers]
-    RUNNER_OUTBOUND_ROLLOUT[Blocked: outbound by default for new Sandboxes]
+    RUNNER_CONNECTION_RECORDS[Candidate: connection records in Kubernetes]
+    RUNNER_OUTBOUND_SPOOL[Candidate: serve follows over the channel]
+    RUNNER_OUTBOUND_LIFECYCLE[Candidate: lifecycle requests over the channel]
+    RUNNER_OUTBOUND_ROLLOUT[Blocked: every template dials out]
     VM_CONTROL_NETWORKING[Blocked: integrate selected VM control path]
     VM_IMAGE[Candidate: packaged guest and storage]
     VM_PROVIDER[Candidate: production provider and API]
     VM_EGRESS[Candidate: production admission and egress integration]
     VM_PROCESS_ISOLATION[Blocked: harness/process resource boundary]
     VM_LIFECYCLE[Blocked: integrated lifecycle]
+    RUNNER_CONNECTION_RECORDS --> RUNNER_OUTBOUND_SPOOL
+    RUNNER_CONNECTION_RECORDS --> RUNNER_OUTBOUND_LIFECYCLE
     RUNNER_OUTBOUND_LIFECYCLE --> VM_CONTROL_NETWORKING
     RUNNER_OUTBOUND_SPOOL --> VM_CONTROL_NETWORKING
     RUNNER_OUTBOUND_SPOOL --> RUNNER_OUTBOUND_ROLLOUT
     RUNNER_OUTBOUND_LIFECYCLE --> RUNNER_OUTBOUND_ROLLOUT
-    RUNNER_OUTBOUND_ROLLOUT --> RUNNER_INBOUND_RETIRE[Blocked: retire inbound runner access]
-    RUNNER_OUTBOUND_ROLLOUT --> LEGACY_SANDBOX_RETIRE[Blocked: archive and delete pre-dial-out Sandboxes]
-    LEGACY_SANDBOX_RETIRE --> RUNNER_INBOUND_RETIRE
+    RUNNER_OUTBOUND_ROLLOUT --> LEGACY_SANDBOX_RETIRE[Blocked: operator deletes every pre-cutover Sandbox]
+    LEGACY_SANDBOX_RETIRE --> RUNNER_INBOUND_RETIRE[Blocked: retire inbound runner access]
     VM_PROVIDER --> VM_CONTROL_NETWORKING
     VM_CONTROL_NETWORKING --> VM_LIFECYCLE
     VM_IMAGE --> VM_PROCESS_ISOLATION
@@ -352,49 +354,48 @@ flowchart LR
     SANDBOX_VM_ISOLATION --> LOCAL_BAZEL[Blocked: bounded local Bazel client in VM]
 ```
 
-### `RUNNER_OUTBOUND_SPOOL` — move spool delivery onto the channel
+### `RUNNER_CONNECTION_RECORDS` — connection records in Kubernetes
 
-**Candidate; review replay/acknowledgement and backpressure here.** Add independent
-cursor-based replay/live Events, acknowledged once the Sandbox Service commits its own admission
-reconciliation ([decided](history_service.md#decided-operator-2026-10-10-pdt)); the journal stays the buffer for every subscriber. Preserve existing
-archive identities, duplicate/conflict checks and direct/spooled admission reconciliation. Bound
-buffers and keep controls/receipts responsive during catch-up; test reconnect, checkpoint rollback
-and slow readers. Acknowledge only what is committed, never Events held in a lost owner's memory, and
-never read a transport cancellation as harness cancellation. Switch the staging `runner-channel-canary` Sandboxes' ingester explicitly, then expand this capability in bounded
-steps. This changes event transport, not archive storage or admission authority. Replay through
-the channel then serves `FollowSession` from any cursor.
+**Candidate; design in [runner channel](../docs/runner_channel.md#connection-records-in-kubernetes).**
+Replace `runner_connection` rows with a per-Sandbox Lease, and have the connection's owner write the
+Sandbox's headless control Service and EndpointSlice, epoch-guarded; replicas read Leases from an
+informer. RBAC first, in the same image release, and manifests only once that image is published.
+The table itself goes with `RUNNER_INBOUND_RETIRE`.
 
-### `RUNNER_OUTBOUND_LIFECYCLE` — migrate remaining inbound control consumers
+### `RUNNER_OUTBOUND_SPOOL` — serve follows over the channel
 
-**Candidate.** Map remaining lifecycle
-and other inbound/`Attach` consumers onto the channel without accidental startup/resume semantics.
-Verify each consumer's auth and retry behavior before retiring its old route. Completion establishes
-that selected environments no longer require inbound controls; no automatic fleet migration.
+**Blocked on connection records; the runner side is built.** The Sandbox Service agrees `events`,
+serves `FollowSession` over the owner's `Follow` streams with subscribers dialing the control
+Service, and moves its admission reconciliation onto locally held follows, advancing its cursor
+only after each commit. Test reconnect, checkpoint rollback and slow readers; never read a
+transport cancellation as harness cancellation.
 
-### `RUNNER_OUTBOUND_ROLLOUT` — outbound by default for new Sandboxes
+### `RUNNER_OUTBOUND_LIFECYCLE` — lifecycle requests over the channel
 
-**Blocked on outbound spool and remaining lifecycle integration.** New Sandboxes start on an image
-that dials out, with the route chosen per incarnation and rollback preserving submissions, command
-IDs and history. Existing runners are not upgraded in place (operator, 2026-10-10 PDT); they keep
-the inbound route until `LEGACY_SANDBOX_RETIRE`. Never blindly resend ambiguous commands through a
-competing route. Not a gate on first VM use.
+**Blocked on connection records.** Implement the explicit `ListSessions`, `Initialize`,
+`OpenSession`, `ResumeSession` and `Seal` control requests on both peers and move every remaining inbound caller onto them
+([runner channel](../docs/runner_channel.md)). Only
+`OpenSession` and `ResumeSession` start a harness.
 
-### `LEGACY_SANDBOX_RETIRE` — wind down pre-dial-out Sandboxes
+### `RUNNER_OUTBOUND_ROLLOUT` — every template dials out
 
-**Blocked on the rollout.** The History Service's retention holds keep each Sandbox until its
-history is archived. The operator approved on 2026-10-10 PDT
-archiving and then deleting Sandboxes whose runner image cannot dial out, instead of upgrading them.
-Settle each one's history (final prefix archived), then delete it with its runner storage. Exit: no
-live Sandbox runs a pre-dial-out image. This is a deliberate exception to the staging-preservation
-rule for runner volumes; archived history and public Session identities are kept.
+**Blocked on follows and lifecycle requests.** Every Sandbox template starts its runner with the
+channel flags, and the canary template goes. Pre-cutover Sandboxes are not upgraded.
+
+### `LEGACY_SANDBOX_RETIRE` — delete pre-cutover Sandboxes
+
+**Blocked on the rollout; the operator's step.** The operator chose a clean cutover (2026-10-10
+PDT) and deletes every Sandbox created before it through `DeleteSandbox`, so each runner seals its
+journals and retention holds keep it until the History Service has archived them. Exit: no live
+Sandbox's runner lacks the channel.
 
 ### `RUNNER_INBOUND_RETIRE` — remove inbound runner access
 
 **Blocked on legacy Sandbox retirement.** Remove
 `Attach` command submission, the pull ingester, the runner control port and its network policy.
-With no inbound route left, also remove the inbound fallback in routing: `runner_connection.operations`
-and the routing check on it in `SubmitCommand` go (a migration), leaving `Hello`/`Welcome`
-capabilities to negotiate only what a connection carries. The legacy caller-chosen runner Session ID
+With no inbound route left, the `runner_connection` table goes (a drop migration the operator
+merges) together with the routing check on its operations in `SubmitCommand`, leaving
+`Hello`/`Welcome` capabilities to negotiate only what a connection carries. The legacy caller-chosen runner Session ID
 path goes too, as do the runner SPEC's and Sandbox Service README's notes on the unauthenticated
 inbound listener.
 
