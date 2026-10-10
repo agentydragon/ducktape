@@ -2,7 +2,7 @@
 
 import pytest
 import pytest_bazel
-from playwright.async_api import expect
+from playwright.async_api import Page, expect
 
 from agentplane.app.frontend.visual_app import AgentplaneFixture
 from util.testing.viewports import DESKTOP, MOBILE, Viewport
@@ -19,7 +19,15 @@ async def _mount_mosaic(view: VisualPage, app: AgentplaneFixture) -> None:
     await app.mount_app("/mosaic")
     await expect(view.page.locator("[data-mosaic-pane-kind='action'] button[aria-label^='Approve']")).to_be_attached()
     await expect(view.page.locator("[data-mosaic-pane]")).to_have_count(3)
+    await expect(view.page.get_by_role("button", name="Mosaic preview")).to_be_visible()
     await view.check(context="mosaic fixture ready")
+
+
+async def _add_pane(page: Page, label: str, kind: str) -> None:
+    await page.get_by_role("button", name="Add pane").click()
+    await page.get_by_role("textbox", name="Find a pane or thread").fill(label)
+    await page.get_by_role("menuitem", name=label, exact=True).click()
+    await expect(page.locator(f"[data-mosaic-pane-kind='{kind}']")).to_be_attached()
 
 
 @pytest.mark.parametrize("viewport", [DESKTOP], ids=["desktop"])
@@ -81,6 +89,39 @@ async def test_desktop_shows_two_threads_and_an_action(
     assert restored_layout == saved_layout
     await view.check(context="mosaic dock and resize persisted after route remount")
     await view.capture(name="mosaic-desktop-docked-resized-persisted", target=page.locator("#app"))
+
+
+@pytest.mark.parametrize("viewport", [DESKTOP], ids=["desktop"])
+async def test_desktop_browses_threads_actions_and_history(
+    view: VisualPage, app: AgentplaneFixture, viewport: Viewport
+) -> None:
+    await _mount_mosaic(view, app)
+    page = view.page
+    panes = page.locator("[data-mosaic-pane]")
+    while await panes.count() > 0:
+        await panes.first.locator("button[aria-label^='Close']").click()
+    await expect(panes).to_have_count(0)
+
+    await _add_pane(page, "Threads", "threads")
+    await _add_pane(page, "Actions", "actions")
+    await _add_pane(page, "Action history", "history")
+    await expect(page.locator("[data-mosaic-pane-kind='threads'] [aria-label='Filter threads']")).to_be_visible()
+    await expect(page.locator("[data-mosaic-pane-kind='actions']")).to_contain_text("Pending (2)")
+    await expect(
+        page.locator("[data-mosaic-pane-kind='history'] [aria-label^='Open details for']").first
+    ).to_be_visible()
+    await view.check(context="thread browser, pending actions and action history panes ready")
+    await view.capture(name="mosaic-desktop-thread-browser-actions-history", target=page.locator("#app"))
+
+    actions_pane = page.locator("[data-mosaic-pane-kind='actions']")
+    await actions_pane.get_by_role("button", name="Open details for echo the test repository handle back").click()
+    detail_pane = page.locator("[data-mosaic-pane-kind='action']")
+    await expect(detail_pane).to_be_attached()
+    await detail_pane.get_by_role("button", name="Approve").click()
+    await expect(detail_pane).to_have_count(0)
+    await expect(page.get_by_role("combobox", name="Active pane")).to_have_value("actions")
+    await view.check(context="resolved action returned to its originating pane")
+    await view.capture(name="mosaic-desktop-action-decision-returns-to-actions", target=page.locator("#app"))
 
 
 @pytest.mark.parametrize("viewport", [MOBILE], ids=["mobile"])

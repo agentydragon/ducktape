@@ -97,6 +97,25 @@
   padding: var(--mantine-spacing-sm);
 }
 
+.agentplane-mosaic-thread-browser {
+  display: flex;
+  min-height: 0;
+  height: 100%;
+  flex-direction: column;
+  padding: var(--mantine-spacing-xs);
+}
+
+.agentplane-mosaic-thread-browser-scroll {
+  min-height: 0;
+  flex: 1;
+}
+
+.agentplane-mosaic-thread-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .agentplane-mosaic-resize-handle {
   position: relative;
   z-index: 2;

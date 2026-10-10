@@ -1,6 +1,10 @@
 /** User-owned pane arrangement for the experimental mosaic view. */
 export type MosaicPane =
-  { kind: "thread"; id: string; threadId: string } | { kind: "action"; id: string; requestId: string };
+  | { kind: "threads"; id: "threads" }
+  | { kind: "actions"; id: "actions" }
+  | { kind: "history"; id: "history" }
+  | { kind: "thread"; id: string; threadId: string }
+  | { kind: "action"; id: string; requestId: string };
 
 export type MosaicDockEdge = "left" | "right" | "top" | "bottom";
 
@@ -165,6 +169,9 @@ export function resizeSplit(node: MosaicLayoutNode | null, splitId: string, rati
 function parsePane(value: unknown): MosaicPane | null {
   if (typeof value !== "object" || value === null) return null;
   const pane = value as Record<string, unknown>;
+  if (pane.kind === "threads" && pane.id === "threads") return { kind: "threads", id: "threads" };
+  if (pane.kind === "actions" && pane.id === "actions") return { kind: "actions", id: "actions" };
+  if (pane.kind === "history" && pane.id === "history") return { kind: "history", id: "history" };
   if (pane.kind === "thread" && typeof pane.threadId === "string" && pane.id === `thread:${pane.threadId}`) {
     return { kind: "thread", id: pane.id, threadId: pane.threadId };
   }

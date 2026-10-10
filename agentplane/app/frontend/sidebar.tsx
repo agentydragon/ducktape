@@ -7,6 +7,7 @@ import { ActionIcon, Alert, Switch, Text, Tooltip } from "@mantine/core";
 import IconArchive from "@tabler/icons-react/dist/esm/icons/IconArchive.mjs";
 import IconArchiveOff from "@tabler/icons-react/dist/esm/icons/IconArchiveOff.mjs";
 import IconBox from "@tabler/icons-react/dist/esm/icons/IconBox.mjs";
+import IconLayoutDashboard from "@tabler/icons-react/dist/esm/icons/IconLayoutDashboard.mjs";
 import IconListCheck from "@tabler/icons-react/dist/esm/icons/IconListCheck.mjs";
 import IconPlus from "@tabler/icons-react/dist/esm/icons/IconPlus.mjs";
 import IconSettings from "@tabler/icons-react/dist/esm/icons/IconSettings.mjs";
@@ -488,6 +489,15 @@ function SidebarView({
             onClick={() => goTo("/actions")}
           >
             <IconListCheck size={15} />
+          </ActionIcon>
+        </Tooltip>
+        <Tooltip label="Mosaic preview" withArrow>
+          <ActionIcon
+            variant={location.pathname === "/mosaic" ? "light" : "subtle"}
+            aria-label="Mosaic preview"
+            onClick={() => goTo("/mosaic")}
+          >
+            <IconLayoutDashboard size={15} />
           </ActionIcon>
         </Tooltip>
         <Tooltip label="Settings" withArrow>
