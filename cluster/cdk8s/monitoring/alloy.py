@@ -204,6 +204,8 @@ def chart(app: App) -> Chart:
                     },
                 ],
                 "resources": {"requests": {"cpu": "10m", "memory": "128Mi"}},
+                # The gateway listener's `raw` syslog format is experimental.
+                "stabilityLevel": "experimental",
             },
             "controller": {
                 "type": "deployment",

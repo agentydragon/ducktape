@@ -1,7 +1,8 @@
 // Syslog receiver (Deployment on optiplex): the home switch sends RouterOS's BSD syslog, and the
 // AT&T gateway its firewall log, over UDP to optiplex's fixed LAN address, which a hostPort per
 // sender forwards here. Entries carry the time they arrive: RFC 3164 timestamps have no year or
-// zone, the gateway's are in its unnamed local zone, and both senders are one LAN hop away.
+// zone, and both senders are one LAN hop away. The gateway's datagrams carry no `<PRI>` header,
+// so no syslog parser accepts them and its listener keeps each datagram whole.
 
 loki.source.syslog "lan" {
   listener {
@@ -13,7 +14,7 @@ loki.source.syslog "lan" {
   listener {
     address       = sys.env("GATEWAY_SYSLOG_LISTEN_ADDRESS")
     protocol      = "udp"
-    syslog_format = "rfc3164"
+    syslog_format = "raw"
     labels        = { job = "home-gateway" }
   }
   relabel_rules = loki.relabel.syslog.rules

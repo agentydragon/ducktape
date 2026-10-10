@@ -151,6 +151,7 @@ spec:
         requests:
           cpu: 10m
           memory: 128Mi
+      stabilityLevel: experimental
     controller:
       nodeSelector:
         kubernetes.io/hostname: optiplex
