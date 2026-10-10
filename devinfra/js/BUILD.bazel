@@ -2,7 +2,7 @@
 
 load("@aspect_rules_js//js:defs.bzl", "js_binary")
 load("@rules_python//python:defs.bzl", "py_library")
-load("//devinfra/python:defs.bzl", "py_binary")
+load("//devinfra/python:defs.bzl", "py_binary", "py_test")
 
 js_binary(
     name = "strip_ts_types",
@@ -21,4 +21,26 @@ py_binary(
     main_module = "devinfra.js.spa_fingerprint",
     visibility = ["//visibility:public"],
     deps = [":spa_fingerprint"],
+)
+
+py_library(
+    name = "bun_standalone_extract_lib",
+    srcs = ["bun_standalone_extract.py"],
+)
+
+py_binary(
+    name = "bun_standalone_extract",
+    main_module = "devinfra.js.bun_standalone_extract",
+    visibility = ["//visibility:public"],
+    deps = [":bun_standalone_extract_lib"],
+)
+
+py_test(
+    name = "bun_standalone_extract_test",
+    srcs = ["bun_standalone_extract_test.py"],
+    deps = [
+        ":bun_standalone_extract_lib",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
 )
