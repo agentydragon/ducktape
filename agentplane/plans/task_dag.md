@@ -752,7 +752,6 @@ flowchart TD
     SESSION_COMMAND_CONTRACT[Command admission contract]
     HISTORY_READ_CUTOVER[App reads raw history from History Service]
     SANDBOX_HISTORY_READS_RETIRE[Blocked: delete Sandbox Service history reads]
-    SESSION_WATCH[Blocked: Sandbox Service Session feed]
     HISTORY_WRITE_HANDOFF[Blocked: History Service ingester takes over]
     SANDBOX_LOCAL_HISTORY_RETIRE[Blocked: delete Sandbox Service ingester and store]
     FOLD_LIBRARY_EXTRACT[Blocked: fold and projector in a neutral package]
@@ -775,8 +774,6 @@ flowchart TD
     RUNNER_INBOUND_RETIRE[Retire inbound runner access]
     SESSION_COMMAND_CONTRACT --> SESSION_FOLLOW_CONTRACT
     HISTORY_READ_CUTOVER --> SANDBOX_HISTORY_READS_RETIRE
-    SESSION_FOLLOW_CONTRACT --> SESSION_WATCH
-    SESSION_WATCH --> HISTORY_WRITE_HANDOFF
     HISTORY_READ_CUTOVER --> HISTORY_WRITE_HANDOFF
     HISTORY_WRITE_HANDOFF --> SANDBOX_LOCAL_HISTORY_RETIRE
     SANDBOX_HISTORY_READS_RETIRE --> SANDBOX_LOCAL_HISTORY_RETIRE
@@ -830,15 +827,9 @@ both environments. Rollback: point the app back at the same tables.
 **Blocked on the read cutover, one release later.** Remove the Sandbox Service history read RPCs and
 their client code.
 
-### `SESSION_WATCH` — a feed of Sessions
-
-**Blocked on the follow contract.** `WatchSessions` streams every Session the caller may see, then
-creations and state changes (including the current Sandbox incarnation), from a resumable position.
-No callers yet. Test resume after disconnect and that authorization filters the feed.
-
 ### `HISTORY_WRITE_HANDOFF` — the History Service ingester takes over
 
-**Blocked on the Session feed and the read cutover.** Move the Sandbox Service's
+**Blocked on the read cutover.** Move the Sandbox Service's
 ingester into the History Service as a subscriber of those calls, with its per-log claim; one writer
 at a time. Test a History Service outage (it resumes from its cursor; the runner journal is the
 buffer), duplicate and conflicting replays, and claim handover between replicas. Rollback: run the

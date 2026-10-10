@@ -4,6 +4,7 @@ exports_files([
     "0001_session_history.py",
     "0002_session_open_reservations.py",
     "0003_history_feed_state.py",
+    "0004_session_change_position.py",
 ])
 
 py_library(
@@ -27,6 +28,15 @@ py_library(
 py_library(
     name = "0003_history_feed_state",
     srcs = ["0003_history_feed_state.py"],
+    deps = [
+        "@pypi//alembic",
+        "@pypi//sqlalchemy",
+    ],
+)
+
+py_library(
+    name = "0004_session_change_position",
+    srcs = ["0004_session_change_position.py"],
     deps = [
         "@pypi//alembic",
         "@pypi//sqlalchemy",

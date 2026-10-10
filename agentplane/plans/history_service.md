@@ -139,10 +139,9 @@ A sketch, starting from `agentplane/sandbox_service/protocol.proto`; names are n
 ```proto
 service SandboxService {
   // Unchanged: sandboxes, templates, egress, CreateSession, OpenSession, ResumeSession,
-  // LookupSession, ListSessions, SubmitCommand.
+  // LookupSession, ListSessions, SubmitCommand, WatchSessions.
   // Changed: fence, stop, seal, wait for holds, then delete. Progress comes from GetSandbox.
   rpc DeleteSandbox(DeleteSandboxRequest) returns (google.protobuf.Empty);
-  rpc WatchSessions(WatchSessionsRequest) returns (stream SessionChange);           // new
   rpc GetCommand(GetCommandRequest) returns (CommandStatus);                        // new
   // Replays from the runner journal below the live tail; sends `sealed` once runners seal.
   rpc FollowSession(FollowSessionRequest) returns (stream FollowSessionResponse);
@@ -150,13 +149,6 @@ service SandboxService {
   rpc ConfirmHold(ConfirmHoldRequest) returns (Hold);                               // new: through_cursor
   rpc ReleaseHold(ReleaseHoldRequest) returns (google.protobuf.Empty);              // new
   // ReadSessionEvents and ReadSessionObservations move to the History Service.
-}
-
-message SessionChange {
-  string session_id = 1;    // public UUID
-  string sandbox_uid = 2;   // current incarnation
-  SessionState state = 3;   // created, running, stopped, sealing, sealed
-  bytes resume_token = 4;
 }
 
 message Hold {
