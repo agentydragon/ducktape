@@ -19,7 +19,7 @@ execution sequence. This is a priority decision, not a technical dependency.
 
 - [Native session discovery](native_session_discovery.md) — harness characterization evidence and deferred
   shared-session design with identity, attribution and durability gates
-- [Thread sync](thread_sync/README.md) — what is still open on the deployed Electric design (eviction, pending-command paging, body compaction, measurement), and the seams and candidates for a second implementation
+- [Thread sync](thread_sync/README.md) — what is still open on the deployed Electric design (pending-command paging, body compaction, measurement), and the seams and candidates for a second implementation
 - [Task DAG](task_dag.md) — remaining work and proposed priorities, including unranked future
   harness-capability candidates, deployed acceptance, UI/history, and native recovery
 - [Durable SSH-backed processes](ssh_durable_processes.md) — deferred systemd-backed host daemon for processes that outlive an SSH connection
@@ -54,7 +54,7 @@ inside one.
 [Thread, runner, and harness layering](../docs/thread_layering.md) owns the command/Event
 architecture, Thread identity continuity, native recovery, and optional
 app-first acceptance. [Thread view synchronization](../docs/thread_view_sync.md)
-owns the proposed conversation model and sync-engine integration, on-demand Raw, history/catch-up and
+owns the conversation model and sync-engine integration, on-demand Raw, history/catch-up and
 frontend state; it is distinct from the implemented raw-replay API.
 Require bounded deployed acceptance only for an identified deployment-specific uncertainty; existing
 automated evidence suffices for covered behavior. Do not reopen waived or operator-accepted checks.

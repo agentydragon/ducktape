@@ -56,10 +56,6 @@ Missing:
 - **Executor wiring contract.** Select and validate one concrete adapter/backend, process and
   credential boundary, dispatch/result transport, health discovery, and exactly-one/no-retry
   behavior across loss.
-- **Delivery to Rai and the Thread.** Send a redacted notification with approve/deny through the
-  same DecisionProvider, and expose the Decision/result — already pollable from the durable Action
-  event sequence — through the standalone service's inbox. Deliver a small runner input telling the
-  agent to retrieve it; fetching does not acknowledge it. See the [v1 plan](notifications.md).
 - **Standing grants as a separate product.** An `EgressBinding` or Kubernetes binding can represent
   reusable authority; it is not another outcome or repeated Execution of one ActionRequest.
 
@@ -170,9 +166,6 @@ Missing:
 
 - **A long-lived session as a first-class thing**: a thread that is never archived, survives
   harness compaction and pin refreshes, and is woken by events rather than only by Rai.
-- **Memory writes as git commits** from inside the sandbox, through the proxy, with the same audit
-  as any other egress. What is missing is Haku's own credential and rule, not the mechanism: a
-  Forgejo `EgressCredential` and a policy that admits the write, where staging has a GitHub one.
 
 ## 5. Agentic UI: Haku authors its own affordances
 

@@ -154,15 +154,15 @@ operations fall where.
 
 ## Per-system inventory
 
-| System                                       | Delegated identity                                                     | Broker needed for                                                       |
-| -------------------------------------------- | ---------------------------------------------------------------------- | ----------------------------------------------------------------------- |
-| Kubernetes                                   | Open: [Sandbox access decisions](#kubernetes-sandbox-access-decisions) | operations outside delegated authority, subject to broker authorization |
-| GitHub                                       | fine-grained token or App installation per repo                        | public-repository policy across search; writes under review             |
-| Forgejo                                      | scoped tokens (controller-minted)                                      | nothing identified yet                                                  |
-| HTTP egress                                  | fence allowlist by host, method, and path                              | requests outside the allowlist                                          |
-| BuildBuddy local clients                     | proxy-held key in `x-buildbuddy-api-key` for HTTP and gRPC             | `bb remote`: choose local-only body rewrite or stronger hosted boundary |
-| Gmail                                        | OAuth scopes only                                                      | label-namespace confinement; every mutation                             |
-| Others (Matrix, Home Assistant, Tana, Grocy) | unassessed                                                             | unassessed; default to brokered until assessed                          |
+| System                                       | Delegated identity                                                                 | Broker needed for                                                       |
+| -------------------------------------------- | ---------------------------------------------------------------------------------- | ----------------------------------------------------------------------- |
+| Kubernetes                                   | one ServiceAccount per Sandbox ([decisions](#kubernetes-sandbox-access-decisions)) | operations outside delegated authority, subject to broker authorization |
+| GitHub                                       | fine-grained token or App installation per repo                                    | public-repository policy across search; writes under review             |
+| Forgejo                                      | scoped tokens (controller-minted)                                                  | nothing identified yet                                                  |
+| HTTP egress                                  | fence allowlist by host, method, and path                                          | requests outside the allowlist                                          |
+| BuildBuddy local clients                     | proxy-held key in `x-buildbuddy-api-key` for HTTP and gRPC                         | `bb remote`: choose local-only body rewrite or stronger hosted boundary |
+| Gmail                                        | OAuth scopes only                                                                  | label-namespace confinement; every mutation                             |
+| Others (Matrix, Home Assistant, Tana, Grocy) | unassessed                                                                         | unassessed; default to brokered until assessed                          |
 
 ## Compatibility evaluation: GitHub, Kubernetes, HTTP
 

@@ -109,7 +109,7 @@ The admission store (`sandbox_service/commands/`) persists submissions in the `s
 database with its own per-Session reconciliation cursor, since history lives in another database
 with no shared transaction. `SubmitCommand` records public-Session commands there, and admission
 reconciliation settles pending ones from the runner journal, independent of history ingestion. New inbound RPC prototypes are not a
-selected rollout prerequisite. This plans-only change neither applies schema nor changes traffic.
+selected rollout prerequisite.
 
 Acceptance covers authenticated destination/retry authorization, immutable/concurrent retries,
 unknown wire fields, lost replies, explicit refusal versus ambiguous disconnect, receipt/spool races,
