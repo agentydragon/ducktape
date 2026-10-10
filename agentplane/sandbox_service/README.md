@@ -67,11 +67,9 @@ validation, and the staging preservation/rollback gate must complete before roll
 Flux independently switch RBAC/network policies while an old app image is still running. See the
 [handoff checklist](../plans/sandbox_service.md#production-handoff-checklist).
 
-Runner journals remain on their state volume as execution evidence. The initial app-owned archive is now being
-migrated to service-owned PostgreSQL; see [archive cutover](../plans/session_archive_placement.md).
-Store/import/shadow-copy code and opt-in reads are present, but the in-flight backfill is not a
-completed write/read handoff. Preserve app history until the explicit ownership/retirement gates.
-The runner journal still authors execution Events.
+Runner journals remain on their state volume as execution evidence, and the runner journal still
+authors execution Events. Retained history lives in service-owned PostgreSQL
+([cutover record](session_history/CUTOVER.md)), read through the [History Service](../history_service/README.md).
 
 TODO: proper runner RPC authentication/TLS. V1 uses network isolation for service-to-runner traffic,
 not runner command RBAC. App-to-service calls already require a Pod-bound workload TokenReview.

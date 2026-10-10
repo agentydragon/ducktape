@@ -301,6 +301,9 @@ Do not reconstruct all segment maps, sort all history or recount every pending c
 batch. Required work is proportional to incoming observations, touched entities and new
 content. Store pending counts with the same transactional transitions. Projection rebuild
 is explicit background work into a new epoch, never a first-view or reconnect operation.
+The fold keeps its own checkpoint and epoch over the raw log. An unrecognized Event or a broken
+fold stops the fold, never the raw copy; fold lag and errors are visible to authorized operators,
+and a fold never advertises a cursor beyond the committed raw prefix.
 Workers release preloaded entities, payload writes and evidence associations after each
 committed batch. Replay and rebuild page through durable storage; neither needs a complete
 conversation map in memory. A stalled reader cannot make ingestion or proxy queues grow

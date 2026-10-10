@@ -6,8 +6,6 @@ This directory contains current design gates, genuinely deferred decisions, and 
 the [task DAG](task_dag.md) is authoritative for status and dependencies.
 [Maintenance conventions](../AGENTS.md#task-dag-maintenance) distinguish dispatchable phases,
 operator decisions and proportional acceptance from the [low-priority freezer](task_freezer.md).
-The Session Event archive cutover and retirement are complete; the archive-migration scheduling
-hold is lifted. See the DAG for remaining task-specific dependencies.
 
 **Dependency rule:** the integration app is a user-facing client. Other services must not depend on
 its APIs, private tables, implementation, process, or bootstrap, including in v1. The accepted
@@ -33,8 +31,7 @@ execution sequence. This is a priority decision, not a technical dependency.
   launcher proxy, resource isolation, persistent state and implementation gates
 - [User stories](user_stories.md) — north-star product context, not an implementation queue
 - [Sandbox Service](sandbox_service.md) — independent sandbox lifecycle/session access;
-  [Session archive migration](session_archive_placement.md) and [input metadata](notification_presentation.md)
-  are sequenced follow-ups; [discovery/access notes](runner_discovery.md) retain network-policy access and the runner-auth TODO
+  [input metadata](notification_presentation.md) is a sequenced follow-up; [discovery/access notes](runner_discovery.md) retain network-policy access and the runner-auth TODO
 - [History Service](history_service.md) — target split (runner, Sandbox Service, History Service,
   app facade) and the gated sequence for moving the raw log and thread fold, runner dial-out and
   delta settlement

@@ -1,9 +1,8 @@
 # History Service extraction, runner dial-out and delta settlement
 
-Status: **in progress.** The operator agreed to the target wiring in
-discussion on 2026-10-10 PDT. The [task DAG](task_dag.md#7-history-service-extraction-and-delta-settlement)
+Status: **in progress.** The [task DAG](task_dag.md#7-history-service-extraction-and-delta-settlement)
 owns every step, its status and its edges; this plan owns the target, the facts the order rests
-on, and the alternatives behind each decision node.
+on, and the decisions behind it.
 
 Three workstreams meet here: moving the raw event log and the thread fold into one History Service,
 inverting runner connections, and settling streamed deltas. They touch the same ingestion path, so
@@ -55,11 +54,10 @@ Properties the target keeps:
 
 ## Facts the order rests on
 
-- **The `sandbox_service` database holds only Session history today** (`session_history` and
-  `session_event`, `sandbox_service/session_history/db.py`; the package has its own migrations).
-  Handing that database to the History Service moves the raw log with no copy. The Sandbox Service
-  then needs a fresh database for command admission (`sandbox_commands`),
-  which would otherwise be the first non-history table in the one being handed over.
+- **The `sandbox_service` database holds only Session history** (`session_history` and
+  `session_event`, `sandbox_service/session_history/db.py`; the package has its own migrations), so
+  handing it to the History Service moves the raw log with no copy. Command admission lives in its
+  own `sandbox_commands` database.
 - **The fold's tables live in the `app` database** (`thread_entity`, `thread_evidence`,
   `thread_native_link`, `thread_payload_chunk`/`_manifest`, `thread_checkpoint`,
   `session_projection_lease`), and Electric replicates from it. Moving the fold means a new
@@ -68,12 +66,8 @@ Properties the target keeps:
   ([storage and durability](../docs/thread_view_sync.md#storage-and-durability)); only the raw log is
   irreplaceable. The staging-preservation rule ([`AGENTS.md`](../AGENTS.md#preserve-staging-data-during-the-sandbox-service-extraction))
   binds the raw log and identities, not a rebuildable projection.
-- **Command admission reconciles spooled receipts in the same transaction as the archive checkpoint**
-  ([command admission](command_admission.md#transport-independent-core-and-outbound-integration)).
-  Once the archive leaves the Sandbox Service that cannot hold, so the follow contract restates it.
-- **The biggest disk win is unrelated:** the retired `app.event` (7.5 GB of the app's 10 GB) is
-  dropped by the raw-history retirement ([#9725](https://github.com/agentydragon/ducktape/pull/9725)). Settlement addresses the 4.3 GB `session_event` and the
-  2.2 GB of per-delta evidence rows.
+- **Settlement's target** is the 4.3 GB `session_event` and the 2.2 GB of per-delta evidence rows
+  (2026-10-10 sample).
 
 ## Decided (operator, 2026-10-10 PDT)
 
@@ -88,79 +82,37 @@ Properties the target keeps:
 - **Live updates:** Electric replicates the history database behind the app's unchanged
   authorization proxy, at least for now. A History Service subscription API stays one of the
   [thread sync](thread_sync/README.md#a-second-implementation) candidates.
+- **Admission reconciliation:** the Sandbox Service reconciles spooled receipts from the stream it
+  terminates and acknowledges a prefix to the runner after its own commit, waiting on no subscriber.
+  Positive admission evidence still cannot regress. This replaces reconciling in the archive
+  transaction, which cannot hold once the archive leaves the Sandbox Service.
+- **Fold placement:** the projector (`app/threads/history_projector.py`, `projected_lifecycle.py`),
+  the fold (`app/threads/view/`), the projection tables above with their per-Session leases, and
+  `thread_history_summary` (every field derived from the log) move. Thread `name` and `archived`,
+  which the operator authors, stay in the app, as does `event_log` reduced to the Thread → Session
+  link, its harness, model and cwd copies dropped. The read API keys by public Session ID and serves
+  list summaries, an entity window, payloads by reference and raw/debug reads.
+- **Reads:** for now only the app's ServiceAccount reads history, for every Session; agent reads
+  come with `THREAD_READ_POLICY`, enforced in the History Service.
 - **Existing runners:** not upgraded in place. Sandboxes on images that cannot dial out are archived
   and deleted, and inbound access is retired once none is left.
 
-## Open decisions
-
-### Follow and hold contract (`SESSION_FOLLOW_CONTRACT`)
-
-Accepted 2026-10-10 PDT.
-
-- Discovery: `WatchSessions` streams every Session the caller may see, then each creation and state
-  change, from a resume token. Each change names the current incarnation (`sandbox_uid`), so the
-  History Service records incarnations without a registration call, and creating a Session does not
-  depend on it.
-- Follow: `FollowSession` from the caller's cursor serves one stream for catch-up and live;
-  entries older than the live tail are replayed from the runner journal over the runner channel. A
-  `sealed` frame carries an incarnation's final cursor.
-- Ingestion: the existing ingester and its per-log claim move into the History Service, still
-  idempotent by cursor and rejecting a conflicting duplicate, as `Store.append` does today.
-- Admission: the Sandbox Service reconciles spooled receipts from the stream it terminates and
-  acknowledges a prefix to the runner after its own commit, waiting on no subscriber. Positive
-  admission evidence still cannot regress. This amends the one clause in
-  [command admission](command_admission.md) that puts reconciliation in the archive transaction.
-- Completeness before deletion: at Sandbox teardown, after stopping every harness, the Sandbox
-  Service sends a seal command; the runner journals a seal entry with each Session's final cursor and
-  then refuses resume and writes. An ordinary stop never seals, since a stopped Session can resume.
-  `DeleteSandbox` deletes once every hold on every Session has `confirmed_through >= seal_cursor`,
-  and asks the operator when a runner is unreachable. Old-image runners cannot seal, so their
-  wind-down compares the committed cursor with the journal head read over the old route.
-- Reads: for now only the app's ServiceAccount reads, for every Session; agent reads come with
-  `THREAD_READ_POLICY`, enforced here.
-- Holders (decided): any permitted Sandbox Service caller may watch and place a hold for now,
-  since only a few services call it.
-- Expiry (decided): holds never expire. A stale hold keeps the Sandbox until the operator
-  releases it, and `GetSandbox` shows which hold blocks deletion.
-
-### Fold placement (decided 2026-10-10 PDT)
-
-Moves: the projector (`app/threads/history_projector.py`, `projected_lifecycle.py`), the fold
-(`app/threads/view/`), the projection tables above with their per-Session leases, and
-`thread_history_summary`, every field of which is derived from the log. Stays in the app: Thread
-`name` and `archived`, which the operator authors, and `event_log` reduced to the Thread → Session
-link, its harness, model and cwd copies dropped. The read API keys by public Session ID and serves
-list summaries, an entity window, payloads by reference and raw/debug reads.
-
 ## APIs
 
-A sketch, starting from `agentplane/sandbox_service/protocol.proto`; names are not final.
+What is still to build, beside the implemented `sandbox_service/protocol.proto` and
+`history_service/protocol.proto` ([Sandbox Service API](../sandbox_service/API.md)); names are not
+final.
 
 ```proto
 service SandboxService {
-  // Unchanged: sandboxes, templates, egress, CreateSession, OpenSession, ResumeSession,
-  // LookupSession, ListSessions, SubmitCommand, WatchSessions.
-  // Changed: fence, stop, seal, wait for holds, then delete. Progress comes from GetSandbox.
+  // Changed: fence, stop and seal before the hold check. Progress comes from GetSandbox.
   rpc DeleteSandbox(DeleteSandboxRequest) returns (google.protobuf.Empty);
   rpc GetCommand(GetCommandRequest) returns (CommandStatus);                        // new
-  // Replays from the runner journal below the live tail; sends `sealed` once runners seal.
-  rpc FollowSession(FollowSessionRequest) returns (stream FollowSessionResponse);
-  rpc PlaceHold(PlaceHoldRequest) returns (Hold);                                   // new, idempotent per holder
-  rpc ConfirmHold(ConfirmHoldRequest) returns (Hold);                               // new: through_cursor
-  rpc ReleaseHold(ReleaseHoldRequest) returns (google.protobuf.Empty);              // new
-  // ReadSessionEvents and ReadSessionObservations move to the History Service.
-}
-
-message Hold {
-  string session_id = 1;
-  string holder = 2;
-  uint64 confirmed_through = 3;
-  optional uint64 seal_cursor = 4;  // satisfied once confirmed_through >= seal_cursor
+  // ReadSessionEvents and ReadSessionObservations are removed (served by the History Service).
 }
 
 service HistoryService {
-  rpc ReadSessionEvents(ReadSessionEventsRequest) returns (ReadSessionEventsResponse); // + settlements
-  rpc ReadSessionObservations(ReadSessionObservationsRequest) returns (ReadSessionObservationsResponse);
+  // ReadSessionEvents gains settlements.
   rpc ListSessionSummaries(ListSessionSummariesRequest) returns (ListSessionSummariesResponse);
   rpc ReadThreadEntities(ReadThreadEntitiesRequest) returns (ReadThreadEntitiesResponse);
   rpc ReadPayload(ReadPayloadRequest) returns (Payload);

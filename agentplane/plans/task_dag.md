@@ -7,24 +7,11 @@ hardening live in the [freezer](task_freezer.md), not the execution graph.
 
 ## Current state and scheduling
 
-The archive ownership cutover is complete in testing and staging. Sandbox Service
-owns raw history; the app consumes it through gRPC and owns UI projections. Backfill,
-writer/read/UI handoff, runtime migration flags/tooling, per-Session leases and app
-locator retirement are completed work, with evidence in the
-[cutover completion record](../sandbox_service/session_history/CUTOVER.md#completion-and-retirement).
-The old archive-ownership scheduling hold is lifted; contract review, authorization,
-and task-specific dependencies below still apply. Do not repeat backfill or full-history
-verification. The six empty staging Sessions remain explicitly excluded from extra checks.
-
-Raw-table/fence retirement (#9725) is deployed in both environments, and #9723
-removed the temporary rollout override/test. The
-[retirement evidence and staging overlap incident](../sandbox_service/session_history/CUTOVER.md#completion-and-retirement)
-close that task; the incident is not a clean coordinated-rollout result. Remaining
-schema naming, metadata/tooling/grant audits and identity-checklist reconciliation
-remain unfinished. Audit metadata consumers (`sandbox`, `harness`, `model`, `cwd`,
-summary/activity fields) before deleting useful UI projections; inventory remaining
-migration-only tools and grants before removing them. Naming and identity work are
-tracked below; squash Alembic only once that schema settles.
+Session Event archive backfill and full-history verification are done; do not repeat them. The six
+empty staging Sessions stay excluded from extra checks. Audit metadata consumers (`sandbox`,
+`harness`, `model`, `cwd`, summary/activity fields) before deleting useful UI projections, and
+inventory remaining migration-only tools and grants before removing them. Squash Alembic only once
+the app schema settles.
 
 States: **in flight** means reported work is underway; **decision** needs a reviewed outcome;
 **blocked** names prerequisites; **candidate** is dispatchable when selected, not a priority claim.
@@ -99,11 +86,10 @@ Details: [Command admission](command_admission.md); later
 
 ### `SESSION_COMMAND_CONTRACT` — review durable command admission
 
-**Decision.** Route all supported runner Commands through
-Sandbox Service with persistence, immediate dispatch and spool-based admission reconciliation.
-No notification metadata or producer integration in the initial PR. Review authenticated destination
-scope, immutable retries, rejection semantics and retention. The command is a protobuf message, not
-an operation enum; typed SQLAlchemy columns retain its wire payload and unknown fields.
+**Decision; remaining: authenticated destination scope and retention.** Immutable retries,
+refusal recorded only when definitive, and admission evidence that never regresses were accepted
+with the admission store (#9741). No notification metadata or producer integration in the
+initial PR.
 
 ### `SESSION_COMMAND_STATUS_READ` — authorized submission status
 
@@ -447,7 +433,7 @@ proves command delivery independently of moving spool traffic or migrating exist
 
 **Blocked on the command canary; review replay/acknowledgement and backpressure here.** Add independent
 cursor-based replay/live Events, acknowledged once the Sandbox Service commits its own admission
-reconciliation (`SESSION_FOLLOW_CONTRACT`); the journal stays the buffer for every subscriber. Preserve existing
+reconciliation ([decided](history_service.md#decided-operator-2026-10-10-pdt)); the journal stays the buffer for every subscriber. Preserve existing
 archive identities, duplicate/conflict checks and direct/spooled admission reconciliation. Bound
 buffers and keep controls/receipts responsive during catch-up; test reconnect, checkpoint rollback
 and slow readers. Switch the canary's ingester explicitly, then expand this capability in bounded
@@ -698,7 +684,7 @@ one must first archive its final prefix.
 
 ## 7. History Service extraction and delta settlement
 
-Not scheduled. Target and the reasoning behind this order: [History Service plan](history_service.md).
+Target and the reasoning behind this order: [History Service plan](history_service.md).
 Decided by the operator on 2026-10-10 PDT: the History Service takes over the existing
 `sandbox_service` database; the fold's projection is rebuilt from the raw log, not copied; Electric
 replicates the history database; `session_event` keeps its name.
@@ -711,7 +697,6 @@ node switches which service reads or writes it. Only the fold double-runs.
 
 ```mermaid
 flowchart TD
-    SESSION_FOLLOW_CONTRACT[Decision: History Service as an ordinary subscriber]
     SESSION_COMMAND_CONTRACT[Command admission contract]
     SANDBOX_HISTORY_READS_RETIRE[Blocked: delete Sandbox Service history reads]
     HISTORY_WRITE_HANDOFF[Blocked: History Service ingester takes over staging]
@@ -734,8 +719,7 @@ flowchart TD
     THREAD_BROWSE_PAGINATE[Bounded history browsing]
     THREAD_READ_POLICY[Scoped archive reads]
     RUNNER_INBOUND_RETIRE[Retire inbound runner access]
-    SESSION_COMMAND_CONTRACT --> SESSION_FOLLOW_CONTRACT
-    SESSION_FOLLOW_CONTRACT --> HISTORY_WRITE_HANDOFF
+    SESSION_COMMAND_CONTRACT --> HISTORY_WRITE_HANDOFF
     RUNNER_TEARDOWN_SEAL[Runner seals Sessions at teardown] -. holds clear .-> HISTORY_WRITE_HANDOFF
     HISTORY_WRITE_HANDOFF --> SANDBOX_LOCAL_HISTORY_RETIRE
     SANDBOX_HISTORY_READS_RETIRE --> SANDBOX_LOCAL_HISTORY_RETIRE
@@ -761,22 +745,6 @@ flowchart TD
     APP_PROJECTION_RETIRE -. smaller baseline, not required .-> APP_ALEMBIC_SQUASH
     HISTORY_SERVICE_OWNERSHIP -. enforce at the final owner .-> THREAD_READ_POLICY
 ```
-
-### `SESSION_FOLLOW_CONTRACT` — History Service as an ordinary subscriber
-
-**Decision; design accepted by the operator, 2026-10-10 PDT.** The History Service uses the same
-Sandbox Service calls as a historyless client: it discovers Sessions with `WatchSessions`, follows
-each from its own committed cursor with `FollowSession`, and places a retention hold. The Sandbox
-Service stores no history and pushes to no one; older entries are replayed from the runner journal.
-Running without history means running no subscriber. Command admission is still reconciled in the
-Sandbox Service from the stream it terminates, and its acknowledgement to the runner waits only on
-its own commit; this replaces the [command admission](command_admission.md) clause that reconciles in
-the archive transaction. A Session's incarnations (`SessionChange.sandbox_uid`) come from the feed.
-For now only the app's ServiceAccount reads history, for every Session; agent reads are
-`THREAD_READ_POLICY`. Any permitted Sandbox Service caller may place a hold for now (operator,
-2026-10-10 PDT), since only a few services call it. Holds never expire: a stale hold keeps the Sandbox until
-the operator releases it, and `ListHolds` shows which hold blocks deletion. API sketch:
-[History Service plan](history_service.md#apis).
 
 ### `SANDBOX_HISTORY_READS_RETIRE` — delete the old read path
 
@@ -849,9 +817,7 @@ code and the app's Electric deployment. Retained tables stay.
 ### `APP_PROJECTION_RETIRE` — drop the app projection
 
 **Blocked on projector retirement.** An explicit deletion PR for the app projection tables and
-leases. The data is derived and rebuildable from the raw log. Skip
-[post-cutover cleanup](session_history_read_cutover.md#post-cutover-schema-cleanup) renames of
-tables this drops.
+leases. The data is derived and rebuildable from the raw log.
 
 ### `APP_EVENT_LOG_COPIES_RETIRE` — drop the app's launch copies
 
@@ -859,8 +825,7 @@ tables this drops.
 harness and cwd from the Sandbox Service's session record and the current model and last model
 activity from the History Service summary, then an explicit schema PR drops those `event_log`
 columns, leaving it the Thread → Session link. `APP_SESSION_SCHEMA_RENAME` renames the same
-table; either may land first, and the second rebases its migration. Replaces that item of the
-[post-cutover cleanup audit](session_history_read_cutover.md#post-cutover-schema-cleanup).
+table; either may land first, and the second rebases its migration.
 
 ### `HISTORY_SERVICE_OWNERSHIP` — capstone
 
@@ -923,14 +888,12 @@ flowchart TD
     THREAD_SUCCESSOR_DELIVERY[Blocked: commands unsettled across incarnations]
     HOSTED_THREAD_SURFACES[Blocked: show and revive Sessions without a Sandbox]
     THREAD_IDENTITY_NEW[Service-owned Session identity]
-    SESSION_FOLLOW_CONTRACT[Follow and hold contract]
     HISTORY_SERVICE_OWNERSHIP[History Service ownership]
     RUNNER_TEARDOWN_SEAL[Teardown seal]
     LEGACY_SANDBOX_RETIRE[Retire pre-dial-out Sandboxes]
     DURABLE_SESSION_LIFECYCLE --> SESSION_STATE_VOLUME_DESIGN
     DURABLE_SESSION_LIFECYCLE --> SESSION_INCARNATIONS
     THREAD_IDENTITY_NEW --> SESSION_INCARNATIONS
-    SESSION_FOLLOW_CONTRACT -. incarnation in the Session feed .-> SESSION_INCARNATIONS
     SESSION_STATE_VOLUME_DESIGN --> CLAUDE_PORTABLE_STATE
     SESSION_STATE_VOLUME_DESIGN --> CODEX_PORTABLE_STATE
     SESSION_STATE_VOLUME_DESIGN --> STATE_VOLUME_RETENTION
@@ -1020,8 +983,6 @@ reads their history from the History Service, and offers an explicit revive. Mov
 - Native subsessions and runner durability/thin-adapter redesign remain frozen. Transport direction
   has its own decision co-sequenced with VMs; neither that nor multiagent design unfreezes the broader
   runner-state redesign.
-- Archive placement/store were removed as future tasks because the selected service-owned store and
-  import/read code and the verified backfill/writer/read cutover are complete.
 - `CROSS_THREAD_DELIVERY` is consolidated into `AGENT_MESSAGING_DESIGN`; `THREAD_OPEN_RELOAD_RECOVERY` is part
   of the identity cutover. Do not dispatch duplicate work under the old names.
 - Existing security boundaries, data-preserving migration checks and representative deployment
